@@ -1,0 +1,6 @@
+# Use glob syntax
+syntax: glob
+
+*.pyc
+*.DS_Store
+
