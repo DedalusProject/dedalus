@@ -11,6 +11,7 @@ class System(object):
         # Store inputs
         self.field_names = field_names
         self.domain = domain
+        self.N = len(field_names)
 
         # Build fields
         self.fields = OrderedDict()

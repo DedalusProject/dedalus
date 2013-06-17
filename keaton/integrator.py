@@ -5,7 +5,7 @@ import time
 from scipy import sparse
 from scipy.sparse import linalg
 
-from systems import System
+from system import System
 from pencils import Pencil
 
 
@@ -24,12 +24,13 @@ class Integrator(object):
 
         # Build pencils
         self.pencils = []
+        primary_basis = domain.primary_basis
         for _slice in domain.slices:
             pencil = Pencil(_slice)
-            pencil.M0 = problem.M0
-            pencil.M1 = problem.M1
-            pencil.L0 = problem.L0
-            pencil.L1 = problem.L1
+            pencil.M = (sparse.kron(problem.M0, domain.primary_basis.Eval) +
+                        sparse.kron(problem.M1, domain.primary_basis.Deriv))
+            pencil.L = (sparse.kron(problem.L0, domain.primary_basis.Eval) +
+                        sparse.kron(problem.L1, domain.primary_basis.Deriv))
             pencil.CL = problem.CL
             pencil.CR = problem.CR
             pencil.b = problem.b
@@ -80,19 +81,13 @@ class Integrator(object):
         for pencil in self.pencils:
 
             # Compute Kronecker products
-            A_Eval = sparse.kron(pencil.A, primary_basis.Eval)
-            B_Deriv = sparse.kron(pencil.B, primary_basis.Deriv)
             CL_Left = sparse.kron(pencil.CL, primary_basis.Left)
             CR_Right = sparse.kron(pencil.CR, primary_basis.Right)
-
-            I_E = sparse.kron(I, primary_basis.Eval)
-            rhs = pencil.get(self.rhs)
-            I_E_rhs = I_E.dot(rhs)
             b_last = np.kron(pencil.b, primary_basis.last)
 
             # Construct Tau system
-            LHS = A_Eval + B_Deriv + CL_Left + CR_Right
-            RHS = I_E_rhs + b_last
+            LHS = pencil.LHS + CL_Left + CR_Right
+            RHS = pencil.get(self.rhs) + b_last
 
             # Solve Tau system
             X = linalg.spsolve(LHS, RHS)
