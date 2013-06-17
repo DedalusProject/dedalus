@@ -27,13 +27,15 @@ class Integrator(object):
         primary_basis = domain.primary_basis
         for _slice in domain.slices:
             pencil = Pencil(_slice)
+
             pencil.M = (sparse.kron(problem.M0, domain.primary_basis.Eval) +
                         sparse.kron(problem.M1, domain.primary_basis.Deriv))
             pencil.L = (sparse.kron(problem.L0, domain.primary_basis.Eval) +
                         sparse.kron(problem.L1, domain.primary_basis.Deriv))
-            pencil.CL = problem.CL
-            pencil.CR = problem.CR
-            pencil.b = problem.b
+            pencil.CL = sparse.kron(problem.CL, domain.primary_basis.Left)
+            pencil.CR = sparse.kron(problem.CR, domain.primary_basis.Right)
+            pencil.b = np.kron(problem.b, domain.primary_basis.last)
+
             self.pencils.append(pencil)
 
         # Initialize timestepper
@@ -80,14 +82,9 @@ class Integrator(object):
 
         for pencil in self.pencils:
 
-            # Compute Kronecker products
-            CL_Left = sparse.kron(pencil.CL, primary_basis.Left)
-            CR_Right = sparse.kron(pencil.CR, primary_basis.Right)
-            b_last = np.kron(pencil.b, primary_basis.last)
-
-            # Construct Tau system
-            LHS = pencil.LHS + CL_Left + CR_Right
-            RHS = pencil.get(self.rhs) + b_last
+            # Add boundary conditions
+            LHS = pencil.LHS + pencil.CL + pencil.CR
+            RHS = pencil.get(self.rhs) + pencil.b
 
             # Solve Tau system
             X = linalg.spsolve(LHS, RHS)
