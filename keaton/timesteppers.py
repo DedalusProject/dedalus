@@ -53,6 +53,8 @@ class IMEXBase(object):
         F.rotate()
 
         for pencil in self.pencils:
+
+            # (Assuming no coupling between pencils)
             mx = pencil.M.dot(pencil.get(state))
             lx = pencil.L.dot(pencil.get(state))
             f = pencil.get(state) * 0.##########################################
@@ -64,7 +66,7 @@ class IMEXBase(object):
         # Compute IMEX coefficients
         a, b, c = self.compute_coefficients(iteration)
 
-        # Construct pencil LHS
+        # Construct pencil LHS matrix
         for pencil in self.pencils:
             pencil.LHS = a[-1] * pencil.M + b[-1] * pencil.L
 
@@ -101,12 +103,19 @@ class CNAB3(IMEXBase):
         a[0] = 1.
         b[0] = -dt[0] / 2.
 
-        if iteration < 2:
+        if iteration == 0:
             c[0] = 1.
+        elif iteration == 1:
+            c[1] = -dt[0] / (2. * dt[1])
+            c[0] = 1. - c[1]
         else:
-            c[2] = dt[0] * (2.*dt[0] + 3*dt[1]) / 6. / dt[2] / (dt[1] + dt[2])
-            c[1] = -(dt[0] + 2*c[2]*(dt[1] + dt[2])) / 2. / dt[1]
+            c[2] = dt[0] * (2.*dt[0] + 3*dt[1]) / (6. * dt[2] * (dt[1] + dt[2]))
+            c[1] = -(dt[0] + 2*c[2]*(dt[1] + dt[2])) / (2. * dt[1])
             c[0] = 1. - c[1] - c[2]
+
+        c[0] *= dt[0]
+        c[1] *= dt[0]
+        c[2] *= dt[0]
 
         return a, b, c
 
