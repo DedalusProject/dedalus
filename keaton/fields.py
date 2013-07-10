@@ -3,29 +3,44 @@
 import numpy as np
 
 
-class FieldBase(object):
-    """Base class for fields."""
+class Field(object):
 
-    pass
+    def __init__(self, primary_basis, transverse_basis=None):
 
-
-class OneDimensionalField(FieldBase):
-    """One dimensional fields"""
-
-    def __init__(self, primary_basis):
-
-        # Input parameters
+        # Inputs
         self.primary_basis = primary_basis
+        self.transverse_basis = transverse_basis
 
         # Setup data containers
-        shape = (primary_basis.size,)
-        self._xdata = np.zeros(shape, dtype=np.complex128)
-        self._kdata = np.zeros(shape, dtype=np.complex128)
-        self._kderiv = np.zeros(shape, dtype=np.complex128)
+        if transverse_basis:
+            shape = transverse_basis.shape + primary_basis.shape
+        else:
+            shape = primary_basis.shape
+
+        self.dim = len(shape)
+        self.data = np.zeros(shape, dtype=np.complex128)
+        self._temp = np.zeros(shape, dtype=np.complex128)
 
         # Initial space
-        self.current_space = 'xspace'
-        self.data = self._xdata
+        self.current_space = ['x']
+
+    def require_space(self, space):
+
+        # Expand full-space shortcuts
+        if space == 'K':
+            space = 'k' * self.dim
+        elif space == 'X':
+            space = 'x' * self.dim
+
+        # Perform necessary transforms
+        for i in xrange(self.dim):
+            if self.current_space[i] != space[i]:
+                if space[i] == 'x':
+                    self.backward(i)
+                elif space[i] == 'k':
+                    self.forward(i)
+                else:
+                    raise KeyError("'space' must be 'x' or 'k'")
 
     def __getitem__(self, space):
 
@@ -35,48 +50,48 @@ class OneDimensionalField(FieldBase):
 
     def __setitem__(self, space, data):
 
-        if space == 'xspace':
-            self.data = self._xdata
-        elif space == 'kspace':
-            self.data = self._kdata
-        else:
-            raise KeyError("'space' must be 'xspace' or 'kspace'")
+        # Expand full-space shortcuts
+        if space == 'K':
+            space = 'k' * self.dim
+        elif space == 'X':
+            space = 'x' * self.dim
 
+        # Set space and data
+        self.current_space = list(space)
         self.data[:] = data
-        self.current_space = space
 
-    def require_space(self, space):
+    def forward(self, i):
 
-        if self.current_space != space:
-            if space == 'xspace':
-                self.backward()
-            elif space == 'kspace':
-                self.forward()
-            else:
-                raise ValueError("'space' must be 'kspace' or 'xspace'")
+        if self.current_space[i] == 'k':
+            raise ValueError('Cannot perform forward transform from k.')
 
-    def forward(self):
+        if i == (self.dim - 1):
+            self.primary_basis.forward(self.data, self.data)
+        else:
+            self.transverse_basis.forward(self.data, self.data, i)
 
-        if self.current_space == 'kspace':
-            raise ValueError('Cannot perform forward transform from kspace.')
+        self.current_space[i] = 'k'
 
-        self.primary_basis.forward(self._xdata, self._kdata)
-        self.data = self._kdata
-        self.current_space = 'kspace'
+    def backward(self, i):
 
-    def backward(self):
+        if self.current_space[i] == 'x':
+            raise ValueError('Cannot perform backward transform from x.')
 
-        if self.current_space == 'xspace':
-            raise ValueError('Cannot perform backward transform from xspace.')
+        if i == (self.dim - 1):
+            self.primary_basis.backward(self.data, self.data)
+        else:
+            self.transverse_basis.backward(self.data, self.data, i)
 
-        self.primary_basis.backward(self._kdata, self._xdata)
-        self.data = self._xdata
-        self.current_space = 'xspace'
+        self.current_space[i] = 'x'
 
-    def differentiate(self):
+    def differentiate(self, i):
 
-        self.require_space('kspace')
-        self.primary_basis.differentiate(self._kdata, self._kderiv)
+        self.require_space('K')
 
-        return self._kderiv
+        if i == (self.dim - 1):
+            self.primary_basis.differentiate(self.data, self._temp)
+        else:
+            self.transverse_basis.differentaite(self.data, self._temp, i)
+
+        return self._temp
 

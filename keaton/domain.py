@@ -3,7 +3,7 @@
 import numpy as np
 
 from primary import PrimaryBasis
-from fields import OneDimensionalField
+from fields import Field
 
 
 class DomainBase(object):
@@ -17,10 +17,6 @@ class OneDimensionalDomain(DomainBase):
 
     def __init__(self, primary_basis):
 
-        # Check basis type
-        if not isinstance(primary_basis, PrimaryBasis):
-            raise ValueError("'primary_basis' must be a PrimaryBasis instance")
-
         # Input parameters
         self.primary_basis = primary_basis
 
@@ -32,7 +28,7 @@ class OneDimensionalDomain(DomainBase):
 
     def create_field(self):
 
-        field = OneDimensionalField(self.primary_basis)
+        field = Field(self.primary_basis)
 
         return field
 
@@ -42,8 +38,23 @@ class TwoDimensionalDomain(DomainBase):
 
     def __init__(self, transverse_basis, primary_basis):
 
-        pass
+        # Inputs
+        self.transverse_basis = transverse_basis
+        self.primary_basis = primary_basis
 
+
+        self.shape = transverse_basis.shape + primary_basis.shape
+
+        # Pencil slices
+        self.slices = []
+        for i in xrange(transverse_basis.size):
+            self.slices.append((i, slice(None)))
+
+    def create_field(self):
+
+        field = Field(self.primary_basis, self.transverse_basis)
+
+        return field
 
 class ThreeDimensionalDomain(DomainBase):
     """3D domains: primary basis + 2D transverse basis"""

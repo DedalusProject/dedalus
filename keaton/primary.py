@@ -26,6 +26,7 @@ class Chebyshev(PrimaryBasis):
 
         # Input parameters
         self.size = size
+        self.shape = (size,)
         self.N = size - 1
         self.range = range
 
@@ -54,8 +55,8 @@ class Chebyshev(PrimaryBasis):
 
         # DCT with adjusted coefficients
         N = self.N
-        kdata.real = fft.dct(xdata.real, type=1, norm=None)
-        kdata.imag = fft.dct(xdata.imag, type=1, norm=None)
+        kdata.real = fft.dct(xdata.real, type=1, norm=None, axis=-1)
+        kdata.imag = fft.dct(xdata.imag, type=1, norm=None, axis=-1)
         kdata /= N
         kdata[0] /= 2.
         kdata[N] /= 2.
@@ -67,8 +68,8 @@ class Chebyshev(PrimaryBasis):
         N = self.N
         self._math[:] = kdata
         self._math[1:N] /= 2.
-        xdata.real = fft.dct(self._math.real, type=1, norm=None)
-        xdata.imag = fft.dct(self._math.imag, type=1, norm=None)
+        xdata.real = fft.dct(self._math.real, type=1, norm=None, axis=-1)
+        xdata.imag = fft.dct(self._math.imag, type=1, norm=None, axis=-1)
 
     def differentiate(self, kdata, kderiv):
         """Diffentiation by recursion on coefficients"""

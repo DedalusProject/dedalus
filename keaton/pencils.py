@@ -16,7 +16,7 @@ class Pencil(object):
         data = []
 
         for field in system.fields.itervalues():
-            data.append(field['kspace'][self.slice])
+            data.append(field['k'][self.slice])
 
         data = np.hstack(data)
 
@@ -28,6 +28,6 @@ class Pencil(object):
         start = 0
         for field in system.fields.itervalues():
             end = start + field.primary_basis.size
-            field['kspace'][self.slice] = data[start:end]
+            field['k'][self.slice] = data[start:end]
             start = end
 

@@ -72,12 +72,12 @@ class IMEXBase(object):
 
         # Construct RHS
         for fn in rhs.field_names:
-            rhs[fn]['kspace'] = 0.
+            rhs[fn]['k'] = 0.
             for q in xrange(self.qmax):
-                rhs[fn]['kspace'] += a[q] * MX[q][fn]['kspace']
-                rhs[fn]['kspace'] += b[q] * LX[q][fn]['kspace']
+                rhs[fn]['k'] += a[q] * MX[q][fn]['k']
+                rhs[fn]['k'] += b[q] * LX[q][fn]['k']
             for p in xrange(self.pmax):
-                rhs[fn]['kspace'] += c[p] * F[p][fn]['kspace']
+                rhs[fn]['k'] += c[p] * F[p][fn]['k']
 
 
 class CNAB3(IMEXBase):
@@ -93,29 +93,31 @@ class CNAB3(IMEXBase):
         c = [0.] * self.pmax
 
         # References
-        dt = self.dt
+        dt0 = self.dt[0]
+        dt1 = self.dt[1]
+        dt2 = self.dt[2]
 
         # LHS coefficients
         a[-1] = 1.
-        b[-1] = dt[0] / 2.
+        b[-1] = dt0 / 2.
 
         # RHS coefficients
         a[0] = 1.
-        b[0] = -dt[0] / 2.
+        b[0] = -dt0 / 2.
 
         if iteration == 0:
             c[0] = 1.
         elif iteration == 1:
-            c[1] = -dt[0] / (2. * dt[1])
+            c[1] = -dt0 / (2. * dt1)
             c[0] = 1. - c[1]
         else:
-            c[2] = dt[0] * (2.*dt[0] + 3.*dt[1]) / (6. * dt[2] * (dt[1] + dt[2]))
-            c[1] = -(dt[0] + 2.*c[2]*(dt[1] + dt[2])) / (2. * dt[1])
+            c[2] = dt0 * (2.*dt0 + 3.*dt1) / (6.*dt2*(dt1 + dt2))
+            c[1] = -(dt0 + 2.*c[2]*(dt1 + dt2)) / (2. * dt1)
             c[0] = 1. - c[1] - c[2]
 
-        c[0] *= dt[0]
-        c[1] *= dt[0]
-        c[2] *= dt[0]
+        c[0] *= dt0
+        c[1] *= dt0
+        c[2] *= dt0
 
         return a, b, c
 

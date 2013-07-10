@@ -77,9 +77,6 @@ class Integrator(object):
         # Update pencil arrays
         self.timestepper.update_pencils(dt, self.iteration)
 
-        primary_basis = self.domain.primary_basis
-        I = sparse.identity(self.problem.size)
-
         for pencil in self.pencils:
 
             # Add boundary conditions
