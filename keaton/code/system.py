@@ -4,7 +4,7 @@ from collections import OrderedDict
 
 
 class System(object):
-    """System of fields"""
+    """Collection of fields"""
 
     def __init__(self, field_names, domain):
 
@@ -21,4 +21,12 @@ class System(object):
     def __getitem__(self, item):
 
         return self.fields[item]
+
+    # def __iadd__(self, other):
+
+    #     if self.field_names != other.field_names:
+    #         raise ValueError("Cannot add systems with incompatible field names.")
+
+    #     for fn in self.field_names:
+    #         self.fields[fn] += other.fields[fn]
 

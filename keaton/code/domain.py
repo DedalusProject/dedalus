@@ -28,7 +28,7 @@ class OneDimensionalDomain(DomainBase):
 
     def create_field(self):
 
-        field = Field(self.primary_basis)
+        field = Field([self.primary_basis])
 
         return field
 

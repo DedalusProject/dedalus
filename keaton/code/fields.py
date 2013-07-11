@@ -5,26 +5,25 @@ import numpy as np
 
 class Field(object):
 
-    def __init__(self, primary_basis, transverse_basis=None):
+    def __init__(self, bases):
 
         # Inputs
-        self.primary_basis = primary_basis
-        self.transverse_basis = transverse_basis
+        self.bases = bases
 
-        # Setup data containers
-        if transverse_basis:
-            shape = transverse_basis.shape + primary_basis.shape
-        else:
-            shape = primary_basis.shape
+        # Build shape
+        self.shape = tuple([b.size for b in bases])
+        self.dim = len(self.shape)
+        print self.shape, self.dim
 
-        self.dim = len(shape)
-        self.data = np.zeros(shape, dtype=np.complex128)
-        self._temp = np.zeros(shape, dtype=np.complex128)
+        # Allocate data
+        self.data = np.zeros(self.shape, dtype=np.complex128)
+        self._temp = np.zeros(self.shape, dtype=np.complex128)
 
-        # Initial space
-        self.current_space = ['x']
+        # Initial space and distribution
+        self.space = ['x'] * self.dim
+        self.local = [True] * self.dim
 
-    def require_space(self, space):
+    def require_global_space(self, space):
 
         # Expand full-space shortcuts
         if space == 'K':
@@ -32,19 +31,26 @@ class Field(object):
         elif space == 'X':
             space = 'x' * self.dim
 
-        # Perform necessary transforms
+        # Check each space
         for i in xrange(self.dim):
-            if self.current_space[i] != space[i]:
-                if space[i] == 'x':
-                    self.backward(i)
-                elif space[i] == 'k':
-                    self.forward(i)
-                else:
-                    raise KeyError("'space' must be 'x' or 'k'")
+            self.require_space(i, space[i])
+
+    def require_space(self, index, space):
+
+        # Transform if necessary
+        if self.space[index] != space:
+            self.transform(index)
+
+    def require_local(self, index):
+
+        # Transpose if necessary
+        if not self.local[index]:
+            self.transpose(index)
 
     def __getitem__(self, space):
 
-        self.require_space(space)
+        # Check space
+        self.require_global_space(space)
 
         return self.data
 
@@ -57,41 +63,34 @@ class Field(object):
             space = 'x' * self.dim
 
         # Set space and data
-        self.current_space = list(space)
+        self.space = list(space)
         self.data[:] = data
 
-    def forward(self, i):
+    def transform(self, i):
 
-        if self.current_space[i] == 'k':
-            raise ValueError('Cannot perform forward transform from k.')
+        # All transforms are performed locally
+        self.require_local(i)
 
-        if i == (self.dim - 1):
-            self.primary_basis.forward(self.data, self.data)
-        else:
-            self.transverse_basis.forward(self.data, self.data, i)
+        # Call basis transform
+        if self.space[i] == 'x':
+            self.bases[i].forward(self.data, self.data)
+            self.space[i] = 'k'
 
-        self.current_space[i] = 'k'
+        elif self.space[i] == 'k':
+            self.bases[i].backward(self.data, self.data)
+            self.space[i] = 'x'
 
-    def backward(self, i):
+    def transpose(self, i):
 
-        if self.current_space[i] == 'x':
-            raise ValueError('Cannot perform backward transform from x.')
-
-        if i == (self.dim - 1):
-            self.primary_basis.backward(self.data, self.data)
-        else:
-            self.transverse_basis.backward(self.data, self.data, i)
-
-        self.current_space[i] = 'x'
+        pass
 
     def differentiate(self, i):
 
-        self.require_space('K')
+        # Check differentation space
+        self.require_space(i, self.bases[i].diff_space)
 
-        if i == (self.dim - 1):
-            self.primary_basis.differentiate(self.data, self._temp)
-        else:
-            self.transverse_basis.differentaite(self.data, self._temp, i)
+        # Call basis differentiation
+        self.bases[i].differentiate(self.data, self._temp)
 
         return self._temp
 

@@ -22,6 +22,8 @@ class PrimaryBasis(object):
 class Chebyshev(PrimaryBasis):
     """Chebyshev polynomial basis on the extrema grid"""
 
+    diff_space = 'k'
+
     def __init__(self, size, range=[-1., 1.]):
 
         # Input parameters
