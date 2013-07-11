@@ -23,7 +23,7 @@ x = domain.grid
 a = 0.1
 y = int.state['y']
 dy = int.state['dy']
-y['x'] = np.sin(np.pi * 4 * x)
+y['x'] = np.cos(np.pi * 4 * x)
 dy['k'] = y.differentiate(0)
 
 # Integration parameters

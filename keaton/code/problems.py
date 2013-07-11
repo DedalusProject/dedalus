@@ -53,9 +53,13 @@ heat_equation_1d.L0 = np.array([[0., -1.],
                                 [0., 0.]])
 heat_equation_1d.L1 = np.array([[1., 0.],
                                 [0., -1.]])
-heat_equation_1d.CL = np.array([[1., 0.],
+heat_equation_1d.ML = np.array([[1., 0.],
                                 [0., 0.]])
-heat_equation_1d.CR = np.array([[0., 0.],
+heat_equation_1d.MR = np.array([[0., 0.],
                                 [1., 0.]])
+heat_equation_1d.LL = np.array([[100., 0.],
+                                [0., 0.]])
+heat_equation_1d.LR = np.array([[0., 0.],
+                                [0., 0.]])
 heat_equation_1d.b = np.array([0., 0.])
 

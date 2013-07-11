@@ -17,8 +17,8 @@ class System(object):
 
         # Build fields
         self.fields = OrderedDict()
-        for field_name in field_names:
-            self.fields[field_name] = domain.create_field()
+        for fn in field_names:
+            self.fields[fn] = domain.create_field()
 
     def __getitem__(self, item):
 

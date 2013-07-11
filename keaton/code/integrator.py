@@ -29,11 +29,13 @@ class Integrator(object):
             pencil = Pencil(_slice)
 
             pencil.M = (sparse.kron(problem.M0, domain.primary_basis.Eval) +
-                        sparse.kron(problem.M1, domain.primary_basis.Deriv))
+                        sparse.kron(problem.M1, domain.primary_basis.Deriv) +
+                        sparse.kron(problem.ML, domain.primary_basis.Left) +
+                        sparse.kron(problem.MR, domain.primary_basis.Right))
             pencil.L = (sparse.kron(problem.L0, domain.primary_basis.Eval) +
-                        sparse.kron(problem.L1, domain.primary_basis.Deriv))
-            pencil.CL = sparse.kron(problem.CL, domain.primary_basis.Left)
-            pencil.CR = sparse.kron(problem.CR, domain.primary_basis.Right)
+                        sparse.kron(problem.L1, domain.primary_basis.Deriv) +
+                        sparse.kron(problem.LL, domain.primary_basis.Left) +
+                        sparse.kron(problem.LR, domain.primary_basis.Right))
             pencil.b = np.kron(problem.b, domain.primary_basis.last)
 
             self.pencils.append(pencil)
@@ -80,8 +82,8 @@ class Integrator(object):
         for pencil in self.pencils:
 
             # Add boundary conditions
-            LHS = pencil.LHS + pencil.CL + pencil.CR
-            RHS = self.rhs[pencil] + pencil.b
+            LHS = pencil.LHS
+            RHS = self.rhs[pencil]
 
             # Solve Tau system
             X = linalg.spsolve(LHS, RHS)

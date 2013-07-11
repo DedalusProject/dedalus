@@ -57,7 +57,8 @@ class IMEXBase(object):
             # (Assuming no coupling between pencils)
             mx = pencil.M.dot(state[pencil])
             lx = pencil.L.dot(state[pencil])
-            f = state[pencil] * 0.##########################################
+            # Need to add RHS (for eqns and BCs)
+            f = state[pencil] * 0. + pencil.b###################################
 
             MX[0][pencil] = mx
             LX[0][pencil] = lx
