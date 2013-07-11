@@ -2,6 +2,8 @@
 
 from collections import OrderedDict
 
+from pencils import Pencil
+
 
 class System(object):
     """Collection of fields"""
@@ -20,7 +22,17 @@ class System(object):
 
     def __getitem__(self, item):
 
-        return self.fields[item]
+        if isinstance(item, Pencil):
+            return item.get(self)
+        else:
+            return self.fields[item]
+
+    def __setitem__(self, item, data):
+
+        if isinstance(item, Pencil):
+            item.set(self, data)
+        else:
+            raise NotImplementedError()
 
     # def __iadd__(self, other):
 

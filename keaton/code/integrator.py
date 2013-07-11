@@ -81,13 +81,13 @@ class Integrator(object):
 
             # Add boundary conditions
             LHS = pencil.LHS + pencil.CL + pencil.CR
-            RHS = pencil.get(self.rhs) + pencil.b
+            RHS = self.rhs[pencil] + pencil.b
 
             # Solve Tau system
             X = linalg.spsolve(LHS, RHS)
 
             # Update state
-            pencil.set(self.state, X)
+            self.state[pencil] = X
 
         self.time += dt
         self.iteration += 1

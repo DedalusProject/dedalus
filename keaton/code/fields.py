@@ -81,7 +81,7 @@ class Field(object):
 
     def transpose(self, i):
 
-        pass
+        raise NotImplementedError()
 
     def differentiate(self, i):
 

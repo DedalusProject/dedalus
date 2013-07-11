@@ -55,13 +55,13 @@ class IMEXBase(object):
         for pencil in self.pencils:
 
             # (Assuming no coupling between pencils)
-            mx = pencil.M.dot(pencil.get(state))
-            lx = pencil.L.dot(pencil.get(state))
-            f = pencil.get(state) * 0.##########################################
+            mx = pencil.M.dot(state[pencil])
+            lx = pencil.L.dot(state[pencil])
+            f = state[pencil] * 0.##########################################
 
-            pencil.set(MX[0], mx)
-            pencil.set(LX[0], lx)
-            pencil.set(F[0], f)
+            MX[0][pencil] = mx
+            LX[0][pencil] = lx
+            F[0][pencil] = f
 
         # Compute IMEX coefficients
         a, b, c = self.compute_coefficients(iteration)

@@ -28,7 +28,6 @@ class Chebyshev(PrimaryBasis):
 
         # Input parameters
         self.size = size
-        self.shape = (size,)
         self.N = size - 1
         self.range = range
 
