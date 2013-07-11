@@ -13,7 +13,6 @@ class Field(object):
         # Build shape
         self.shape = tuple([b.size for b in bases])
         self.dim = len(self.shape)
-        print self.shape, self.dim
 
         # Allocate data
         self.data = np.zeros(self.shape, dtype=np.complex128)
