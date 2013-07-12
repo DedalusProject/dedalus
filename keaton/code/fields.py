@@ -28,8 +28,8 @@ class Field(object):
             space = 'x' * self.domain.dim
 
         # Check each space
-        for i in xrange(self.domain.dim):
-            self.require_space(i, space[i])
+        for i, s in enumerate(space):
+            self.require_space(i, s)
 
     def require_space(self, index, space):
 

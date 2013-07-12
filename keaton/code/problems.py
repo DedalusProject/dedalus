@@ -61,5 +61,5 @@ heat_equation_1d.LL = np.array([[1., 0.],
                                 [0., 0.]])
 heat_equation_1d.LR = np.array([[0., 0.],
                                 [1., 0.]])
-heat_equation_1d.b = np.array([1., 1.])
+heat_equation_1d.b = np.array([0., 0.])
 

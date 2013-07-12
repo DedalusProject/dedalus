@@ -25,19 +25,9 @@ class Integrator(object):
         # Build pencils
         self.pencils = []
         primary_basis = domain.bases[-1]
-        for _slice in domain.slices:
-            pencil = Pencil(_slice)
-
-            pencil.M = (sparse.kron(problem.M0, primary_basis.Eval) +
-                        sparse.kron(problem.M1, primary_basis.Deriv) +
-                        sparse.kron(problem.ML, primary_basis.Left) +
-                        sparse.kron(problem.MR, primary_basis.Right))
-            pencil.L = (sparse.kron(problem.L0, primary_basis.Eval) +
-                        sparse.kron(problem.L1, primary_basis.Deriv) +
-                        sparse.kron(problem.LL, primary_basis.Left) +
-                        sparse.kron(problem.LR, primary_basis.Right))
-            pencil.b = np.kron(problem.b, primary_basis.last)
-
+        for s in domain.slices:
+            pencil = Pencil(s)
+            pencil.build_matrices(problem, primary_basis)
             self.pencils.append(pencil)
 
         # Initialize timestepper

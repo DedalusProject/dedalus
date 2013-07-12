@@ -19,6 +19,15 @@ class PrimaryBasis(object):
         return last
 
 
+# class PiecewiseBasis(object):
+
+#     def __init__(self, bases):
+
+#         self.bases = bases
+#         self.grid = np.hstack([b.grid for b in bases])
+#         self.last = np.hstack([])
+
+
 class Chebyshev(PrimaryBasis):
     """Chebyshev polynomial basis on the extrema grid"""
 

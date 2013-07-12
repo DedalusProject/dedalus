@@ -10,7 +10,7 @@ class System(object):
 
     def __init__(self, field_names, domain):
 
-        # Store inputs
+        # Inputs
         self.field_names = field_names
         self.domain = domain
         self.N = len(field_names)

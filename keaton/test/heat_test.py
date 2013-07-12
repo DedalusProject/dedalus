@@ -22,19 +22,19 @@ int = Integrator(pde, domain, ts)
 x = domain.grid
 y = int.state['y']
 dy = int.state['dy']
-y['x'] = np.cos(np.pi * 4. * x)
+y['x'] = np.sin(np.pi * 4. * x)
 dy['k'] = y.differentiate(0)
 
 # Integration parameters
-int.dt = 1e-4
-int.sim_stop_time = 0.05
+int.dt = 1e-5
+int.sim_stop_time = 1.
 int.wall_stop_time = np.inf
 int.stop_iteration = np.inf
 
 # Create storage lists
 t_list = [int.time]
 y_list = [np.copy(y['x'])]
-copy_cadence = 1
+copy_cadence = 100
 
 # Main loop
 start_time = time.time()
