@@ -100,9 +100,9 @@ class Chebyshev(PrimaryBasis):
 
         # Diagonal entries
         size = self.size
-        i1 = np.arange(0, size, dtype=np.int64)
-        j1 = np.arange(0, size, dtype=np.int64)
-        v1 = np.ones(size, dtype=np.complex128) * 0.5
+        i1 = np.arange(0, size-1, dtype=np.int64)
+        j1 = np.arange(0, size-1, dtype=np.int64)
+        v1 = np.ones(size-1, dtype=np.complex128) * 0.5
         v1[0] = 1.
 
         # 2nd superdiagonal entries
