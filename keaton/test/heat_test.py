@@ -8,8 +8,8 @@ from fk.public import *
 
 
 # Set domain
-basis = primary.Chebyshev(64, range=[0.,1.])
-domain = OneDimensionalDomain(basis)
+x_basis = primary.Chebyshev(64, range=[0., 1.])
+domain = Domain([x_basis])
 
 # Choose PDE and integrator
 pde = problems.heat_equation_1d
@@ -20,15 +20,14 @@ int = Integrator(pde, domain, ts)
 
 # Initial conditions
 x = domain.grid
-a = 0.1
 y = int.state['y']
 dy = int.state['dy']
-y['x'] = np.cos(np.pi * 4 * x)
+y['x'] = np.cos(np.pi * 4. * x)
 dy['k'] = y.differentiate(0)
 
 # Integration parameters
 int.dt = 1e-4
-int.sim_stop_time = 0.02
+int.sim_stop_time = 0.05
 int.wall_stop_time = np.inf
 int.stop_iteration = np.inf
 
@@ -76,7 +75,7 @@ shelf.close()
 
 # Plot error
 computed = y['x'].real
-expected = np.sin(np.pi * 4 * x) * np.exp(-int.time * (4 * np.pi)**2)
+expected = np.cos(np.pi * 4 * x) * np.exp(-int.time * (4 * np.pi)**2)
 
 fig = plt.figure(1)
 ax1 = fig.add_subplot(211)

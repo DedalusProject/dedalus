@@ -30,8 +30,18 @@ for i in xrange(1, t.size):
     line[0].set_ydata(y[i])
     title.set_text('t = %e' %t[i])
 
-    ax.set_ylim(y[i].min(), y[i].max())
+    #ax.set_ylim(y[i].min(), y[i].max())
 
     fig.canvas.draw()
     time.sleep(0.01)
 
+
+fig = plt.figure(2, figsize=(8, 8))
+plt.clf()
+neg = (y[:,0] < 1)
+plt.semilogy(t[~neg], np.abs((y[:,0][~neg] - 1)), 'b.')
+plt.semilogy(t[neg], np.abs((y[:,0][neg] - 1)), 'r.')
+plt.savefig('last.png', dpi=200)
+
+p = np.polyfit(t, np.log(np.abs(y[:,0] - 1)), 1)
+print p
