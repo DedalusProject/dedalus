@@ -27,7 +27,7 @@ class Pencil(object):
 
         start = 0
         for field in system.fields.itervalues():
-            end = start + field.bases[-1].size
+            end = start + field.domain.bases[-1].size
             field['k'][self.slice] = data[start:end]
             start = end
 

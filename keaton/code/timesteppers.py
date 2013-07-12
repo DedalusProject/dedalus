@@ -71,7 +71,7 @@ class IMEXBase(object):
         for pencil in self.pencils:
             pencil.LHS = a[-1] * pencil.M + b[-1] * pencil.L
 
-        # Construct RHS
+        # Construct RHS field
         for fn in rhs.field_names:
             rhs[fn]['k'] = 0.
             for q in xrange(self.qmax):

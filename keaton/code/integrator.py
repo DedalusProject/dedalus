@@ -24,19 +24,19 @@ class Integrator(object):
 
         # Build pencils
         self.pencils = []
-        primary_basis = domain.primary_basis
+        primary_basis = domain.bases[-1]
         for _slice in domain.slices:
             pencil = Pencil(_slice)
 
-            pencil.M = (sparse.kron(problem.M0, domain.primary_basis.Eval) +
-                        sparse.kron(problem.M1, domain.primary_basis.Deriv) +
-                        sparse.kron(problem.ML, domain.primary_basis.Left) +
-                        sparse.kron(problem.MR, domain.primary_basis.Right))
-            pencil.L = (sparse.kron(problem.L0, domain.primary_basis.Eval) +
-                        sparse.kron(problem.L1, domain.primary_basis.Deriv) +
-                        sparse.kron(problem.LL, domain.primary_basis.Left) +
-                        sparse.kron(problem.LR, domain.primary_basis.Right))
-            pencil.b = np.kron(problem.b, domain.primary_basis.last)
+            pencil.M = (sparse.kron(problem.M0, primary_basis.Eval) +
+                        sparse.kron(problem.M1, primary_basis.Deriv) +
+                        sparse.kron(problem.ML, primary_basis.Left) +
+                        sparse.kron(problem.MR, primary_basis.Right))
+            pencil.L = (sparse.kron(problem.L0, primary_basis.Eval) +
+                        sparse.kron(problem.L1, primary_basis.Deriv) +
+                        sparse.kron(problem.LL, primary_basis.Left) +
+                        sparse.kron(problem.LR, primary_basis.Right))
+            pencil.b = np.kron(problem.b, primary_basis.last)
 
             self.pencils.append(pencil)
 
@@ -80,12 +80,9 @@ class Integrator(object):
         self.timestepper.update_pencils(dt, self.iteration)
 
         for pencil in self.pencils:
-
-            # Add boundary conditions
+            # Solve Tau system
             LHS = pencil.LHS
             RHS = self.rhs[pencil]
-
-            # Solve Tau system
             X = linalg.spsolve(LHS, RHS)
 
             # Update state
