@@ -5,8 +5,8 @@ import time
 from scipy import sparse
 from scipy.sparse import linalg
 
-from system import System
-from pencils import Pencil
+from ..data.system import System
+from ..data.pencil import Pencil
 
 
 class Integrator(object):

@@ -8,7 +8,7 @@ from fk.public import *
 
 
 # Set domain
-x_basis = primary.Chebyshev(64, range=[0., 1.])
+x_basis = Chebyshev(64, range=[-1., 1.])
 domain = Domain([x_basis])
 
 # Choose PDE and integrator
@@ -22,19 +22,21 @@ int = Integrator(pde, domain, ts)
 x = domain.grid
 y = int.state['y']
 dy = int.state['dy']
-y['x'] = np.sin(np.pi * 4. * x)
+#y['x'] = np.sin(np.pi * 4. * x)
+y['k'][3:] = np.random.rand(61)# * np.exp(-np.arange(61) / 10.)
+y['x'] *= np.cos(np.pi/2. * x)
 dy['k'] = y.differentiate(0)
 
 # Integration parameters
 int.dt = 1e-5
-int.sim_stop_time = 1.
+int.sim_stop_time = 0.01
 int.wall_stop_time = np.inf
 int.stop_iteration = np.inf
 
 # Create storage lists
 t_list = [int.time]
 y_list = [np.copy(y['x'])]
-copy_cadence = 100
+copy_cadence = 10
 
 # Main loop
 start_time = time.time()

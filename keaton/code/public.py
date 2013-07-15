@@ -1,9 +1,8 @@
 
 
-import primary
-import problems
-import timesteppers
-
-from domain import Domain
-from integrator import Integrator
+from data.domain import Domain
+from pde.basis import Chebyshev
+from pde.integrator import Integrator
+from pde import problems
+from pde import timesteppers
 

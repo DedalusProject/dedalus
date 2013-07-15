@@ -2,8 +2,6 @@
 
 import numpy as np
 
-from fields import Field
-
 
 class Domain(object):
     """Problem domain."""
@@ -22,8 +20,4 @@ class Domain(object):
 
         # Pencil slices
         self.slices = [slice(None)]
-
-    def create_field(self):
-
-        return Field(self)
 

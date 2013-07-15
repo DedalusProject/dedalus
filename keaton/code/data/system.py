@@ -2,7 +2,8 @@
 
 from collections import OrderedDict
 
-from pencils import Pencil
+from field import Field
+from pencil import Pencil
 
 
 class System(object):
@@ -17,7 +18,7 @@ class System(object):
         # Build fields
         self.fields = OrderedDict()
         for fn in field_names:
-            self.fields[fn] = domain.create_field()
+            self.fields[fn] = Field(domain)
 
     def __getitem__(self, item):
 

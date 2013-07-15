@@ -3,7 +3,7 @@
 import numpy as np
 from collections import deque
 
-from system import System
+from ..data.system import System
 
 
 class IMEXBase(object):
