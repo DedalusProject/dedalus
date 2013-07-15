@@ -14,7 +14,7 @@ class Domain(object):
         self.bases = bases
 
         # Build shape
-        self.shape = tuple([b.size for b in bases])
+        self.shape = [b.size for b in bases]
         self.dim = len(self.shape)
 
         # Grid

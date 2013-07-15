@@ -6,14 +6,13 @@ from pencils import Pencil
 
 
 class System(object):
-    """Collection of fields"""
+    """Collection of fields."""
 
     def __init__(self, field_names, domain):
 
         # Inputs
         self.field_names = field_names
         self.domain = domain
-        self.N = len(field_names)
 
         # Build fields
         self.fields = OrderedDict()
@@ -22,6 +21,7 @@ class System(object):
 
     def __getitem__(self, item):
 
+        # Handle pencils and field names
         if isinstance(item, Pencil):
             return item.get(self)
         else:
@@ -29,16 +29,9 @@ class System(object):
 
     def __setitem__(self, item, data):
 
+        # Handle pencils and field names
         if isinstance(item, Pencil):
             item.set(self, data)
         else:
-            raise NotImplementedError()
-
-    # def __iadd__(self, other):
-
-    #     if self.field_names != other.field_names:
-    #         raise ValueError("Cannot add systems with incompatible field names.")
-
-    #     for fn in self.field_names:
-    #         self.fields[fn] += other.fields[fn]
+            self.fields[item] = data
 
