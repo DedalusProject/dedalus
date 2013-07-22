@@ -89,32 +89,3 @@ class Graph(object):
 
         return paths[shortest]
 
-
-def local(i):
-    test = lambda layout: layout.local[i]
-    return test
-
-
-class Layout(object):
-    pass
-
-A = Layout()
-A.local = [False, False, True]
-
-B = Layout()
-B.local = [False, True, False]
-
-C = Layout()
-C.local = [False, False, False]
-
-
-graph = Graph()
-graph.add_vertex(A)
-graph.add_vertex(B)
-graph.add_vertex(C)
-
-graph.add_edge(A, B, 'A2B')
-graph.add_edge(A, C, 'A2C')
-graph.add_edge(B, A, 'B2A')
-graph.add_edge(C, A, 'C2A')
-graph.add_edge(C, B, 'C2B')
