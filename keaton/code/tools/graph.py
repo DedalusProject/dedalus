@@ -70,7 +70,7 @@ class Graph(object):
 
         return paths
 
-    def find_shortest_path(self, start, test):
+    def find_shortest_path(self, start, test, weight=len):
 
         # Get edge paths
         paths = self.find_edge_paths(start, test)
@@ -81,11 +81,11 @@ class Graph(object):
         if len(paths) == 0:
             raise ValueError("No paths found.")
 
-        # Count edges
-        steps = [len(p) for p in paths]
+        # Check weights (counts edges by default)
+        cost = [weight(p) for p in paths]
 
         # Return shortest
-        shortest = np.argmin(steps)
+        shortest = np.argmin(cost)
 
         return paths[shortest]
 
