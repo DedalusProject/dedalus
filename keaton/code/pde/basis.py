@@ -101,14 +101,15 @@ class Chebyshev(PrimaryBasis):
 
     def _build_Eval(self):
         """
-        T-to-U evaluation matrix
+        T-to-U evaluation matrix with last row empty for boundary condition.
 
         T_n = (U_n - U_(n-2)) / 2
 
         """
 
-        # Diagonal entries
         size = self.size
+
+        # Diagonal entries
         i1 = np.arange(0, size-1, dtype=np.int64)
         j1 = np.arange(0, size-1, dtype=np.int64)
         v1 = np.ones(size-1, dtype=np.complex128) * 0.5
@@ -126,40 +127,40 @@ class Chebyshev(PrimaryBasis):
 
         # Construct sparse matrix
         Eval = sparse.coo_matrix((v, (i, j)), shape=(size, size), dtype=np.complex128)
-        Eval.tocsr()
 
-        return Eval
+        return Eval.tocsr()
 
     def _build_Deriv(self):
         """
-        T-to-U differentiation matrix
+        T-to-U differentiation matrix (last row naturally empty).
 
         d_x(T_n) = n U_(n-1)
 
         """
 
-        # Superdiagonal entries
         size = self.size
+
+        # Superdiagonal entries
         i = np.arange(0, size-1, dtype=np.int64)
         j = np.arange(1, size, dtype=np.int64)
         v = np.arange(1, size, dtype=np.complex128) * self._diff_scale
 
         # Construct sparse matrix
         Deriv = sparse.coo_matrix((v, (i, j)), shape=(size, size), dtype=np.complex128)
-        Deriv.tocsr()
 
-        return Deriv
+        return Deriv.tocsr()
 
     def _build_Left(self):
         """
-        Left boundary evaluation
+        Left boundary evaluation in last row for boundary condition.
 
         T_n(-1) = (-1)**n
 
         """
 
-        # Last row entries
         size = self.size
+
+        # Last row entries
         i = np.ones(size, dtype=np.int64) * (size - 1)
         j = np.arange(0, size, dtype=np.int64)
         v = np.ones(size, dtype=np.complex128)
@@ -167,30 +168,64 @@ class Chebyshev(PrimaryBasis):
 
         # Construct sparse matrix
         Left = sparse.coo_matrix((v, (i, j)), shape=(size, size), dtype=np.complex128)
-        Left.tocsr()
 
-        return Left
+        return Left.tocsr()
 
     def _build_Right(self):
         """
-        Right boundary evaluation
+        Right boundary evaluation in last row for boundary condition.
 
         T_n(1) = 1
 
         """
 
-        # Last row entries
         size = self.size
+
+        # Last row entries
         i = np.ones(size, dtype=np.int64) * (size - 1)
         j = np.arange(0, size, dtype=np.int64)
         v = np.ones(size, dtype=np.complex128)
 
         # Construct sparse matrix
         Right = sparse.coo_matrix((v, (i, j)), shape=(size, size), dtype=np.complex128)
-        Right.tocsr()
 
-        return Right
+        return Right.tocsr()
 
+    def _build_Mult(self, p):
+        """
+        U-times-T_p multiplication matrix.
+
+        T_p * U_n = (U_(n+p) + U_(n-p)) / 2
+        U_(n-p) = -U_(p-n-2)
+        U_(-1) = 0
+
+        """
+
+        size = self.size
+
+        # Construct sparse matrix
+        Mult = sparse.lil_matrix((size, size), dtype=np.complex128)
+
+        # Add elements
+        for n in xrange(0, size):
+            # Upper product
+            i = n + p
+            if i < size:
+                Mult[i, n] += 0.5
+            # Lower product
+            i = n - p
+            # Handle negatives
+            if i == -1:
+                continue
+            elif i < -1:
+                Mult[-i-2, n] -= 0.5
+            else:
+                Mult[i, n] += 0.5
+
+        # Empty last row
+        Mult[size-1, :] = 0
+
+        return Mult.tocsr()
 
 class Fourier(PrimaryBasis):
     """Fourier complex exponential basis"""
