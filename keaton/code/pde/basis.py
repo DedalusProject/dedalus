@@ -101,7 +101,7 @@ class Chebyshev(PrimaryBasis):
 
     def _build_Eval(self):
         """
-        T-to-U evaluation matrix with last row empty for boundary condition.
+        T-to-U evaluation matrix.
 
         T_n = (U_n - U_(n-2)) / 2
 
@@ -109,30 +109,27 @@ class Chebyshev(PrimaryBasis):
 
         size = self.size
 
-        # Diagonal entries
-        i1 = np.arange(0, size-1, dtype=np.int64)
-        j1 = np.arange(0, size-1, dtype=np.int64)
-        v1 = np.ones(size-1, dtype=np.complex128) * 0.5
-        v1[0] = 1.
-
-        # 2nd superdiagonal entries
-        i2 = np.arange(0, size-2, dtype=np.int64)
-        j2 = np.arange(2, size, dtype=np.int64)
-        v2 = np.ones(size-2, dtype=np.complex128) * (-0.5)
-
-        # Combine entries
-        i = np.hstack((i1, i2))
-        j = np.hstack((j1, j2))
-        v = np.hstack((v1, v2))
-
         # Construct sparse matrix
-        Eval = sparse.coo_matrix((v, (i, j)), shape=(size, size), dtype=np.complex128)
+        Eval = sparse.lil_matrix((size, size), dtype=np.complex128)
+
+        # Add elements
+        for n in xrange(size):
+
+            # Diagonal
+            if n == 0:
+                Eval[n, n] = 1.
+            else:
+                Eval[n, n] = 0.5
+
+            # 2nd superdiagonal
+            if n >= 2:
+                Eval[n-2, n] = -0.5
 
         return Eval.tocsr()
 
     def _build_Deriv(self):
         """
-        T-to-U differentiation matrix (last row naturally empty).
+        T-to-U differentiation matrix.
 
         d_x(T_n) = n U_(n-1)
 
@@ -140,13 +137,12 @@ class Chebyshev(PrimaryBasis):
 
         size = self.size
 
-        # Superdiagonal entries
-        i = np.arange(0, size-1, dtype=np.int64)
-        j = np.arange(1, size, dtype=np.int64)
-        v = np.arange(1, size, dtype=np.complex128) * self._diff_scale
-
         # Construct sparse matrix
-        Deriv = sparse.coo_matrix((v, (i, j)), shape=(size, size), dtype=np.complex128)
+        Deriv = sparse.lil_matrix((size, size), dtype=np.complex128)
+
+        # Add elements
+        for n in xrange(1, size):
+            Deriv[n-1, n] = n * self._diff_scale
 
         return Deriv.tocsr()
 
@@ -160,14 +156,15 @@ class Chebyshev(PrimaryBasis):
 
         size = self.size
 
-        # Last row entries
-        i = np.ones(size, dtype=np.int64) * (size - 1)
-        j = np.arange(0, size, dtype=np.int64)
-        v = np.ones(size, dtype=np.complex128)
-        v[1::2] = -1.
-
         # Construct sparse matrix
-        Left = sparse.coo_matrix((v, (i, j)), shape=(size, size), dtype=np.complex128)
+        Left = sparse.lil_matrix((size, size), dtype=np.complex128)
+
+        # Add elements
+        for n in xrange(size):
+            if (n % 2) == 0:
+                Left[size-1, n] = 1.
+            else:
+                Left[size-1, n] = -1.
 
         return Left.tocsr()
 
@@ -181,13 +178,14 @@ class Chebyshev(PrimaryBasis):
 
         size = self.size
 
-        # Last row entries
-        i = np.ones(size, dtype=np.int64) * (size - 1)
-        j = np.arange(0, size, dtype=np.int64)
-        v = np.ones(size, dtype=np.complex128)
-
         # Construct sparse matrix
-        Right = sparse.coo_matrix((v, (i, j)), shape=(size, size), dtype=np.complex128)
+        Right = sparse.lil_matrix((size, size), dtype=np.complex128)
+
+        # Add elements
+        for n in xrange(size):
+
+            # Last row entries
+            Right[size-1, n] = 1.
 
         return Right.tocsr()
 
@@ -207,23 +205,19 @@ class Chebyshev(PrimaryBasis):
         Mult = sparse.lil_matrix((size, size), dtype=np.complex128)
 
         # Add elements
-        for n in xrange(0, size):
+        for n in xrange(size):
+
             # Upper product
             i = n + p
             if i < size:
                 Mult[i, n] += 0.5
+
             # Lower product
             i = n - p
-            # Handle negatives
-            if i == -1:
-                continue
+            if i > -1:
+                Mult[i, n] += 0.5
             elif i < -1:
                 Mult[-i-2, n] -= 0.5
-            else:
-                Mult[i, n] += 0.5
-
-        # Empty last row
-        Mult[size-1, :] = 0
 
         return Mult.tocsr()
 
