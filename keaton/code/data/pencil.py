@@ -52,6 +52,12 @@ class Pencil(object):
         M_bc = M_bc.tocoo()
         L_bc = L_bc.tocoo()
 
+        # Clear boundary condition rows in PDE matrices
+        bc_rows = set(M_bc.row).union(set(L_bc.row))
+        for r in bc_rows:
+            M[r, :] = 0
+            L[r, :] = 0
+
         # Substitute boundary condition rows into PDE matrices
         for i, j, v in izip(M_bc.row, M_bc.col, M_bc.data):
             M[i, j] = v
