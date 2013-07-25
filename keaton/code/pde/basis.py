@@ -221,6 +221,7 @@ class Chebyshev(PrimaryBasis):
 
         return Mult.tocsr()
 
+
 class Fourier(PrimaryBasis):
     """Fourier complex exponential basis"""
 
