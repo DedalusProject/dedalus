@@ -19,17 +19,15 @@ ts = timesteppers.CNAB3
 int = Integrator(pde, domain, ts)
 
 # Initial conditions
-x = domain.grid
+x = domain.grids[0]
 y = int.state['y']
 dy = int.state['dy']
-#y['x'] = np.sin(np.pi * 4. * x)
-y['k'][3:] = np.random.rand(61)# * np.exp(-np.arange(61) / 10.)
-y['x'] *= np.cos(np.pi/2. * x)
+y['x'] = np.cos(np.pi * 2. * x)
 dy['k'] = y.differentiate(0)
 
 # Integration parameters
-int.dt = 1e-5
-int.sim_stop_time = 0.01
+int.dt = 1e-4
+int.sim_stop_time = 0.1
 int.wall_stop_time = np.inf
 int.stop_iteration = np.inf
 
