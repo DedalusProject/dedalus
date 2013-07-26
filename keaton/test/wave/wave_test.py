@@ -8,7 +8,7 @@ from fk.public import *
 
 
 # Set domain
-x_basis = Chebyshev(128, range=[-1., 1.])
+x_basis = Chebyshev(32, range=[-1., 1.])
 domain = Domain([x_basis])
 
 # Choose PDE and integrator
@@ -24,25 +24,26 @@ y = int.state['y']
 dy = int.state['dy']
 v = int.state['v']
 
-# y['x'] = np.cos(np.pi * 2. * x)
+# y['x'] = np.cos(np.pi * 12. * x)
 # dy['k'] = y.differentiate(0)
 # v['x'] = 0.
 
-a = 0.1
+a = 0.15
 y['xspace'] = np.exp(-x**2/a**2)
 dy['k'] = y.differentiate(0)
 v['k'] = -y.differentiate(0)
+v['x'] *= (1. + x/2.)**2
 
 # Integration parameters
-int.dt = 1e-3
-int.sim_stop_time = 5.
+int.dt = 1e-2
+int.sim_stop_time = 8.
 int.wall_stop_time = np.inf
 int.stop_iteration = np.inf
 
 # Create storage lists
 t_list = [int.time]
 y_list = [np.copy(y['x'])]
-copy_cadence = 10
+copy_cadence = 5
 
 # Main loop
 start_time = time.time()
