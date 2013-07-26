@@ -61,14 +61,15 @@ wave_equation_1d.b = np.array([0., 0., 0.])
 # y_t - dy_x = 0
 #
 heat_equation_1d = Problem(['y', 'dy'])
-heat_equation_1d.M0 = np.array([[0., 0.],
-                                [1., 0.]])
-heat_equation_1d.M1 = np.array([[0., 0.],
-                                [0., 0.]])
-heat_equation_1d.L0 = np.array([[0., -1.],
-                                [0., 0.]])
-heat_equation_1d.L1 = np.array([[1., 0.],
-                                [0., -1.]])
+heat_equation_1d.order = 1
+heat_equation_1d.M0 = [np.array([[0., 0.],
+                                [1., 0.]])]
+heat_equation_1d.M1 = [np.array([[0., 0.],
+                                [0., 0.]])]
+heat_equation_1d.L0 = [np.array([[0., -1.],
+                                [0., 0.]])]
+heat_equation_1d.L1 = [np.array([[1., 0.],
+                                [0., -1.]])]
 heat_equation_1d.ML = np.array([[0., 0.],
                                 [0., 0.]])
 heat_equation_1d.MR = np.array([[0., 0.],

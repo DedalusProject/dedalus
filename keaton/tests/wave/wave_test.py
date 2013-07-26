@@ -4,15 +4,15 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 import shelve
-from fk.public import *
+from fluid_matrix.public import *
 
 
 # Set domain
-x_basis = Chebyshev(64, range=[-1., 1.])
+x_basis = Chebyshev(32, range=[-1., 1.])
 domain = Domain([x_basis])
 
 # Choose PDE and integrator
-pde = problems.heat_equation_1d
+pde = problems.wave_equation_1d
 ts = timesteppers.CNAB3
 
 # Build solver
@@ -22,19 +22,28 @@ int = Integrator(pde, domain, ts)
 x = domain.grids[0]
 y = int.state['y']
 dy = int.state['dy']
-y['x'] = np.cos(np.pi * 2. * x)
+v = int.state['v']
+
+# y['x'] = np.cos(np.pi * 12. * x)
+# dy['k'] = y.differentiate(0)
+# v['x'] = 0.
+
+a = 0.15
+y['xspace'] = np.exp(-x**2/a**2)
 dy['k'] = y.differentiate(0)
+v['k'] = -y.differentiate(0)
+v['x'] *= (1. + x/2.)**2
 
 # Integration parameters
-int.dt = 1e-4
-int.sim_stop_time = 0.1
+int.dt = 1e-2
+int.sim_stop_time = 8.
 int.wall_stop_time = np.inf
 int.stop_iteration = np.inf
 
 # Create storage lists
 t_list = [int.time]
 y_list = [np.copy(y['x'])]
-copy_cadence = 10
+copy_cadence = 5
 
 # Main loop
 start_time = time.time()
@@ -73,14 +82,3 @@ shelf['x'] = x
 shelf['y'] = np.array(y_list)
 shelf.close()
 
-# Plot error
-computed = y['x'].real
-expected = np.cos(np.pi * 4 * x) * np.exp(-int.time * (4 * np.pi)**2)
-
-fig = plt.figure(1)
-ax1 = fig.add_subplot(211)
-ax1.plot(x, expected, '-k')
-ax1.plot(x, computed, 'ob')
-ax2 = fig.add_subplot(212)
-ax2.plot(x, computed - expected, 'o-')
-plt.savefig('error.png', dpi=200)
