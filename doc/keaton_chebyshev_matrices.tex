@@ -22,7 +22,7 @@ We begin with the trigonometric definitions of the Chebyshev polynomials, using 
     \end{equation*}
 \end{itemize}
 
-We observe that the first derivatives of $\{T_n\}$ can be sparsely expressed in terms of $\{U_n\}$:
+We observe that the first derivatives of $\{T_n\}$ can be sparsely expressed in terms of $\{U_n\}$ (derived in \S \ref{deriv_diff}):
 
 \begin{equation*}
 \partial_x T_n = n U_{n-1}
@@ -218,6 +218,8 @@ Note: Even though the expressions look similar, $M_p \neq N_p$ because $U_{-n} =
 
 \section{Chebyshev operations}
 
+\subsection{Individual operations}
+
 Given $X$, the type-1 Chebyshev coefficients of a function $f$, we can compute:
 
 \begin{itemize}
@@ -244,12 +246,16 @@ Given $X$, the type-1 Chebyshev coefficients of a function $f$, we can compute:
     \begin{equation*}
     M_p.E.X
     \end{equation*}
-    
-    \begin{equation*}
-     E.N_p.X
-    \end{equation*}
 
-    These two methods, however, are not identical because truncation and multiplication do not commute.  The correct truncation is given by the former (i.e. it yields a solution that's properly truncated in terms of type-2 Chebyshev polynomials), as confirmed by numerical tests.  You essentially want the truncation to occur in the last operation so that its effects do not go on to contaminate the other coefficients.
+    Since truncation and multiplication do not commute, however, this result should \emph{not} be computed using
+     
+    \begin{equation}
+    E.N_p.X \quad \textrm{(bad)}
+    \end{equation}
+
+    The former method will yield the correctly truncated type-2 expansion of the product, while the latter will yield the type-2 coefficients corresponding to the truncated type-1 expansion of the product.  
+    
+    The truncation should occur in the last operation so that it does not go on to contaminate the other coefficients in future transformations. 
     
     \item The type-2 Chebyshev coefficients of $(T_p \cdot \partial_x f)$:
     
@@ -257,6 +263,27 @@ Given $X$, the type-1 Chebyshev coefficients of a function $f$, we can compute:
     M_p.D.X
     \end{equation*}
 \end{itemize}
+
+\subsection{Combining the operations}
+
+Given $X$, the type-1 Chebyshev coefficients of a function $f$, we can compute the product
+
+\begin{equation*}
+C(x) \cdot f
+\end{equation*}
+
+\noindent using combinations of these matrix operations.  First, we expand the coefficient $C(x)$ to $P$-th order as a type-1 Chebyshev series:
+
+\begin{equation*}
+C(x) = \sum_{p=0}^P c_p T_p(x)
+\end{equation*}
+
+The properly truncated type-2 Chebyshev coefficients of the product are simply given by
+
+\begin{equation}
+\sum_{p=0}^P c_p M_p.E.X
+\end{equation}
+
 
 \section{Matrix derivations}
 
