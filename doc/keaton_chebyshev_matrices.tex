@@ -1,0 +1,339 @@
+\documentclass{article}
+\usepackage[paperheight=11in, paperwidth=8.5in, margin=2in]{geometry}
+\usepackage{amsmath, amssymb}
+
+\begin{document}
+
+\section{Chebyshev matrices}
+
+We begin with the trigonometric definitions of the Chebyshev polynomials, using the change of variables $x = \cos(\theta)$:
+
+\begin{itemize}
+    \item 1-st kind:
+    
+    \begin{equation*}
+    T_n = \cos(n \theta)
+    \end{equation*}
+    
+    \item 2-nd kind:
+    
+    \begin{equation*}
+    U_n = \frac{\sin((n+1) \theta)}{\sin(\theta)}
+    \end{equation*}
+\end{itemize}
+
+We observe that the first derivatives of $\{T_n\}$ can be sparsely expressed in terms of $\{U_n\}$:
+
+\begin{equation*}
+\partial_x T_n = n U_{n-1}
+\end{equation*}
+
+We can compute the type-1 Chebyshev coefficients of a function efficiently via the FFT, but we wish to solve the first-order Tau system in terms of the type-2 coefficients due to the sparsity of this derivative expression.  To do so we need to construct the following matrices:
+
+\subsection{The evaluation matrix}
+
+First we define $E$, the $T$-to-$U$ evaluation matrix:
+
+\begin{itemize}
+    \item \textbf{Inputs}: type-1 Chebyshev coefficients of a function $f$
+    \item \textbf{Outputs}: type-2 Chebyshev coefficients of $f$
+\end{itemize}
+
+This matrix encodes the linear transformation (derived in \S \ref{deriv_eval}):
+
+\begin{equation*}
+T_n = \frac{U_n - U_{n-2}}{2}
+\end{equation*} 
+
+The matrix looks like:
+
+\begin{equation*}
+\renewcommand*{\arraystretch}{1.5}
+E =
+\begin{pmatrix}
+1 & \cdot & -\frac{1}{2} & \cdot & \cdot & \cdot \\
+\cdot & \frac{1}{2} & \cdot & -\frac{1}{2} & \cdot & \cdot \\
+\cdot & \cdot & \frac{1}{2} & \cdot & -\frac{1}{2} & \cdot \\
+\cdot & \cdot & \cdot & \frac{1}{2} & \cdot & \ddots \\
+\cdot & \cdot & \cdot & \cdot & \frac{1}{2} & \cdot \\
+\cdot & \cdot & \cdot & \cdot & \cdot & \ddots
+\end{pmatrix}
+\end{equation*}
+
+Note: $U_{-n} = - U_{n-2}$ and $U_{-1} = 0$ by the trigonometric definitions. 
+
+\subsection{The differentiation matrix}
+
+Next we define $D$, the $T$-to-$U$ differentiation matrix:
+
+\begin{itemize}
+    \item \textbf{Inputs}: type-1 Chebyshev coefficients of a function $f$
+    \item \textbf{Outputs}: type-2 Chebyshev coefficients of the derivative $\partial_x f$
+\end{itemize}
+
+This matrix encodes the linear operation (derived in \S \ref{deriv_diff}):
+
+\begin{equation*}
+\partial_x T_n = n U_{n-1}
+\end{equation*}
+
+The matrix looks like:
+
+\begin{equation*}
+\renewcommand*{\arraystretch}{1.2}
+D =
+\begin{pmatrix}
+\cdot & 1 & \cdot & \cdot & \cdot & \cdot \\
+\cdot & \cdot & 2 & \cdot & \cdot & \cdot \\
+\cdot & \cdot & \cdot & 3 & \cdot & \cdot \\
+\cdot & \cdot & \cdot & \cdot & 4 & \cdot \\
+\cdot & \cdot & \cdot & \cdot & \cdot & \ddots \\
+\cdot & \cdot & \cdot & \cdot & \cdot & \cdot
+\end{pmatrix}
+\end{equation*}
+
+\subsection{The first multiplication matrices}
+
+Next we define $N_p$, the $T$-to-$T$ multiplication matrices:
+
+\begin{itemize}
+    \item \textbf{Inputs}: type-1 Chebyshev coefficients of a function $f$
+    \item \textbf{Outputs}: type-1 Chebyshev coefficients of the product $(T_p \cdot f)$
+\end{itemize}
+
+These matrices encode the linear operations (derived in \S \ref{deriv_mult1}):
+
+\begin{equation*}
+T_p \cdot T_n = \frac{T_{n+p} + T_{n-p}}{2}
+\end{equation*}
+
+The first few matrices look like:
+
+\begin{equation*}
+N_0 = I
+\end{equation*}
+
+\begin{equation*}
+\renewcommand*{\arraystretch}{1.2}
+N_1 =
+\begin{pmatrix}
+\cdot & \frac{1}{2} & \cdot & \cdot & \cdot & \cdot \\
+1 & \cdot & \frac{1}{2} & \cdot & \cdot & \cdot \\
+\cdot & \frac{1}{2} & \cdot & \frac{1}{2} & \cdot & \cdot \\
+\cdot & \cdot & \frac{1}{2} & \cdot & \frac{1}{2} & \cdot \\
+\cdot & \cdot & \cdot & \frac{1}{2} & \cdot & \ddots \\
+\cdot & \cdot & \cdot & \cdot & \ddots & \cdot
+\end{pmatrix}
+\end{equation*}
+
+\begin{equation*}
+\renewcommand*{\arraystretch}{1.2}
+N_2 =
+\begin{pmatrix}
+\cdot & \cdot & \frac{1}{2} & \cdot & \cdot & \cdot \\
+\cdot & \frac{1}{2} & \cdot & \frac{1}{2} & \cdot & \cdot \\
+1 & \cdot & \cdot & \cdot & \frac{1}{2} & \cdot \\
+\cdot & \frac{1}{2} & \cdot & \cdot & \cdot & \ddots \\
+\cdot & \cdot & \frac{1}{2} & \cdot & \cdot & \cdot \\
+\cdot & \cdot & \cdot & \ddots & \cdot & \cdot
+\end{pmatrix}
+\end{equation*}
+
+\begin{equation*}
+\renewcommand*{\arraystretch}{1.2}
+N_3 =
+\begin{pmatrix}
+\cdot & \cdot & \cdot & \frac{1}{2} & \cdot & \cdot \\
+\cdot & \cdot & \frac{1}{2} & \cdot & \frac{1}{2} & \cdot \\
+\cdot & \frac{1}{2} & \cdot & \cdot & \cdot & \ddots \\
+1 & \cdot & \cdot & \cdot & \cdot & \cdot \\
+\cdot & \frac{1}{2} & \cdot & \cdot & \cdot & \cdot \\
+\cdot & \cdot & \ddots & \cdot & \cdot & \cdot
+\end{pmatrix}
+\end{equation*}
+
+Note: $T_{-n} = T_n$ by the trigonometric definition.
+
+\subsection{The second multiplication matrices}
+
+Next we define $M_p$, the $U$-to-$U$ multiplication matrices:
+
+\begin{itemize}
+    \item \textbf{Inputs}: type-2 Chebyshev coefficients of a function $f$
+    \item \textbf{Outputs}: type-2 Chebyshev coefficients of the product $(T_p \cdot f)$
+\end{itemize}
+
+These matrices encode the linear operations (derived in \S \ref{deriv_mult2}):
+
+\begin{equation*}
+T_p \cdot U_n = \frac{U_{n+p} + U_{n-p}}{2}
+\end{equation*}
+
+The first few matrices look like:
+
+\begin{equation*}
+M_0 = I
+\end{equation*}
+
+\begin{equation*}
+\renewcommand*{\arraystretch}{1.2}
+M_1 =
+\begin{pmatrix}
+\cdot & \frac{1}{2} & \cdot & \cdot & \cdot & \cdot \\
+\frac{1}{2} & \cdot & \frac{1}{2} & \cdot & \cdot & \cdot \\
+\cdot & \frac{1}{2} & \cdot & \frac{1}{2} & \cdot & \cdot \\
+\cdot & \cdot & \frac{1}{2} & \cdot & \frac{1}{2} & \cdot \\
+\cdot & \cdot & \cdot & \frac{1}{2} & \cdot & \ddots \\
+\cdot & \cdot & \cdot & \cdot & \ddots & \cdot
+\end{pmatrix}
+\end{equation*}
+
+\begin{equation*}
+\renewcommand*{\arraystretch}{1.2}
+M_2 =
+\begin{pmatrix}
+-\frac{1}{2} & \cdot & \frac{1}{2} & \cdot & \cdot & \cdot \\
+\cdot & \cdot & \cdot & \frac{1}{2} & \cdot & \cdot \\
+\frac{1}{2} & \cdot & \cdot & \cdot & \frac{1}{2} & \cdot \\
+\cdot & \frac{1}{2} & \cdot & \cdot & \cdot & \ddots \\
+\cdot & \cdot & \frac{1}{2} & \cdot & \cdot & \cdot \\
+\cdot & \cdot & \cdot & \ddots & \cdot & \cdot
+\end{pmatrix}
+\end{equation*}
+
+\begin{equation*}
+\renewcommand*{\arraystretch}{1.2}
+M_3 =
+\begin{pmatrix}
+\cdot & -\frac{1}{2} & \cdot & \frac{1}{2} & \cdot & \cdot \\
+-\frac{1}{2} & \cdot & \cdot & \cdot & \frac{1}{2} & \cdot \\
+\cdot & \cdot & \cdot & \cdot & \cdot & \ddots \\
+\frac{1}{2} & \cdot & \cdot & \cdot & \cdot & \cdot \\
+\cdot & \frac{1}{2} & \cdot & \cdot & \cdot & \cdot \\
+\cdot & \cdot & \ddots & \cdot & \cdot & \cdot
+\end{pmatrix}
+\end{equation*}
+
+Note: Even though the expressions look similar, $M_p \neq N_p$ because $U_{-n} = -U_{n-2}$ while $T_{-n} = T_n$.
+
+\section{Chebyshev operations}
+
+Given $X$, the type-1 Chebyshev coefficients of a function $f$, we can compute:
+
+\begin{itemize}
+    \item The type-2 Chebyshev coefficients of $f$:
+    
+    \begin{equation*}
+    E.X
+    \end{equation*}
+    
+    \item The type-2 Chebyshev coefficients of $\partial_x f$:
+    
+    \begin{equation*}
+    D.X
+    \end{equation*}
+    
+    \item The type-1 Chebyshev coefficients of $(T_p \cdot f)$:
+    
+    \begin{equation*}
+    N_p.X
+    \end{equation*}
+    
+    \item The type-2 Chebyshev coefficients of $(T_p \cdot f)$:
+
+    \begin{equation*}
+    M_p.E.X
+    \end{equation*}
+    
+    \begin{equation*}
+     E.N_p.X
+    \end{equation*}
+
+    These two methods, however, are not identical because truncation and multiplication do not commute.  The correct truncation is given by the former (i.e. it yields a solution that's properly truncated in terms of type-2 Chebyshev polynomials), as confirmed by numerical tests.  You essentially want the truncation to occur in the last operation so that its effects do not go on to contaminate the other coefficients.
+    
+    \item The type-2 Chebyshev coefficients of $(T_p \cdot \partial_x f)$:
+    
+    \begin{equation*}
+    M_p.D.X
+    \end{equation*}
+\end{itemize}
+
+\section{Matrix derivations}
+
+\subsection{The evaluation expression}\label{deriv_eval}
+
+\begin{align*}
+U_n &= \frac{\sin((n+1) \theta)}{\sin(\theta)} \\
+&= \frac{\sin(\theta)}{\sin(\theta)} \cos(n \theta) + \cos(\theta) \frac{\sin(n \theta)}{\sin(\theta)} \\
+&= T_n + T_1 \cdot U_{n-1}
+\end{align*}
+
+\begin{align*}
+U_{n-2} &= \frac{\sin((n-1) \theta)}{\sin(\theta)} \\
+&= \frac{\sin(-\theta)}{\sin(\theta)} \cos(n \theta) + \cos(-\theta) \frac{\sin(n \theta)}{\sin(\theta)} \\
+&= -T_n + T_1 \cdot U_{n-1}
+\end{align*}
+
+\begin{equation*}
+\therefore U_n - U_{n-2} = 2 T_n \quad \quad \square
+\end{equation*}
+    
+\subsection{The differentiation expression}\label{deriv_diff}
+
+\begin{align*}
+\partial_x T_n &= -n \sin(n \theta) \left(\frac{-1}{\sin(\theta)}\right) \\
+&= \frac{n \sin(n \theta)}{\sin(\theta)} \\
+&= n U_{n-1} \quad \quad \square
+\end{align*}
+
+\subsection{The first multiplication expression}\label{deriv_mult1}
+
+\begin{align*}
+T_{n+p} &= \cos((n+p) \theta) \\
+&= \cos(n \theta) \cos(p \theta) - \sin(n \theta) \sin(p \theta) \\
+&= T_n \cdot T_p - \sin(n \theta) \sin(p \theta)
+\end{align*}
+
+\begin{align*}
+T_{n-p} &= \cos((n-p) \theta) \\
+&= \cos(n \theta) \cos(p \theta) + \sin(n \theta) \sin(p \theta) \\
+&= T_n \cdot T_p + \sin(n \theta) \sin(p \theta)
+\end{align*}
+
+\begin{equation*}
+\therefore T_{n+p} + T_{n-p} = 2 T_n \cdot T_p \quad \quad \square
+\end{equation*}
+
+\subsection{The second multiplication expression}\label{deriv_mult2}
+
+\begin{align*}
+U_{n+p} &= \frac{\sin((n+p+1) \theta)}{\sin(\theta)} \\ 
+&= \frac{\sin((n+1) \theta)}{\sin(\theta)} \cos(p \theta) + \cos((n+1) \theta) \frac{\sin(p \theta)}{\sin(\theta)} \\ 
+&= U_n \cdot T_p + T_{n+1} \cdot U_{p-1}
+\end{align*}
+
+\begin{align*}
+U_{n-p} &= \frac{\sin((n-p+1) \theta)}{\sin(\theta)} \\ 
+&= \frac{\sin((n+1) \theta)}{\sin(\theta)} \cos(-p \theta) + \cos((n+1) \theta) \frac{\sin(-p \theta)}{\sin(\theta)} \\ 
+&= \frac{\sin((n+1) \theta)}{\sin(\theta)} \cos(p \theta) - \cos((n+1) \theta) \frac{\sin(p \theta)}{\sin(\theta)} \\ 
+&= U_n \cdot T_p - T_{n+1} \cdot U_{p-1}
+\end{align*}
+
+\begin{equation*}
+\therefore U_{n+p} + U_{n-p} = 2 U_n \cdot T_p \quad \quad \square
+\end{equation*}
+
+\end{document}
+
+\begin{equation*}
+\renewcommand*{\arraystretch}{1.2}
+0 =
+\begin{pmatrix}
+\cdot & \cdot & \cdot & \cdot & \cdot & \cdot \\
+\cdot & \cdot & \cdot & \cdot & \cdot & \cdot \\
+\cdot & \cdot & \cdot & \cdot & \cdot & \cdot \\
+\cdot & \cdot & \cdot & \cdot & \cdot & \cdot \\
+\cdot & \cdot & \cdot & \cdot & \cdot & \cdot \\
+\cdot & \cdot & \cdot & \cdot & \cdot & \cdot
+\end{pmatrix}
+\end{equation*}
