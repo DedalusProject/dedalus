@@ -221,6 +221,37 @@ class Chebyshev(PrimaryBasis):
 
         return Mult.tocsr()
 
+    def _build_Mult1(self, p):
+        """
+        T-times-T_p multiplication matrix
+
+        T_p * T_n = (T_(n+p) + T_(n-p)) / 2
+        T_(-n) = T_n
+
+        """
+
+        size = self.size
+
+        # Construct sparse matrix
+        Mult = sparse.lil_matrix((size, size), dtype=np.complex128)
+
+        # Add elements
+        for n in xrange(size):
+
+            # Upper product
+            i = n + p
+            if i < size:
+                Mult[i, n] += 0.5
+
+            # Lower product
+            i = n - p
+            if i >= 0:
+                Mult[i, n] += 0.5
+            else:
+                Mult[-i, n] += 0.5
+
+        return Mult.tocsr()
+
 
 class Fourier(PrimaryBasis):
     """Fourier complex exponential basis"""
