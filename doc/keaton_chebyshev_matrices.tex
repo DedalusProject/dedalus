@@ -11,22 +11,22 @@ We begin with the trigonometric definitions of the Chebyshev polynomials, using 
 \begin{itemize}
     \item 1-st kind:
     
-    \begin{equation*}
+    \begin{equation}
     T_n = \cos(n \theta)
-    \end{equation*}
+    \end{equation}
     
     \item 2-nd kind:
     
-    \begin{equation*}
+    \begin{equation}
     U_n = \frac{\sin((n+1) \theta)}{\sin(\theta)}
-    \end{equation*}
+    \end{equation}
 \end{itemize}
 
 We observe that the first derivatives of $\{T_n\}$ can be sparsely expressed in terms of $\{U_n\}$ (derived in \S \ref{deriv_diff}):
 
-\begin{equation*}
+\begin{equation}
 \partial_x T_n = n U_{n-1}
-\end{equation*}
+\end{equation}
 
 We can compute the type-1 Chebyshev coefficients of a function efficiently via the FFT, but we wish to solve the first-order Tau system in terms of the type-2 coefficients due to the sparsity of this derivative expression.  To do so we need to construct the following matrices:
 
@@ -41,9 +41,9 @@ First we define $E$, the $T$-to-$U$ evaluation matrix:
 
 This matrix encodes the linear transformation (derived in \S \ref{deriv_eval}):
 
-\begin{equation*}
+\begin{equation}
 T_n = \frac{U_n - U_{n-2}}{2}
-\end{equation*} 
+\end{equation} 
 
 The matrix looks like:
 
@@ -73,9 +73,9 @@ Next we define $D$, the $T$-to-$U$ differentiation matrix:
 
 This matrix encodes the linear operation (derived in \S \ref{deriv_diff}):
 
-\begin{equation*}
+\begin{equation}
 \partial_x T_n = n U_{n-1}
-\end{equation*}
+\end{equation}
 
 The matrix looks like:
 
@@ -103,9 +103,9 @@ Next we define $N_p$, the $T$-to-$T$ multiplication matrices:
 
 These matrices encode the linear operations (derived in \S \ref{deriv_mult1}):
 
-\begin{equation*}
+\begin{equation}
 T_p \cdot T_n = \frac{T_{n+p} + T_{n-p}}{2}
-\end{equation*}
+\end{equation}
 
 The first few matrices look like:
 
@@ -165,9 +165,9 @@ Next we define $M_p$, the $U$-to-$U$ multiplication matrices:
 
 These matrices encode the linear operations (derived in \S \ref{deriv_mult2}):
 
-\begin{equation*}
+\begin{equation}
 T_p \cdot U_n = \frac{U_{n+p} + U_{n-p}}{2}
-\end{equation*}
+\end{equation}
 
 The first few matrices look like:
 
@@ -249,9 +249,9 @@ Given $X$, the type-1 Chebyshev coefficients of a function $f$, we can compute:
 
     Since truncation and multiplication do not commute, however, this result should \emph{not} be computed using
      
-    \begin{equation}
+    \begin{equation*}
     E.N_p.X \quad \textrm{(bad)}
-    \end{equation}
+    \end{equation*}
 
     The former method will yield the correctly truncated type-2 expansion of the product, while the latter will yield the type-2 coefficients corresponding to the truncated type-1 expansion of the product.  
     
