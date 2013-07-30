@@ -6,8 +6,36 @@ from scipy.sparse import linalg
 from scipy import fftpack as fft
 
 
-class PrimaryBasis(object):
-    """Base class for primary bases"""
+class Basis(object):
+    """Base class for all bases."""
+
+    def __init__(self, size, range):
+
+        # Inputs
+        self.size = size
+        self.range = range
+
+        # Grid constructors
+        self._radius = (range[1] - range[0]) / 2.
+        self._center = (range[1] + range[0]) / 2.
+        self._diff_scale = 1. / self._radius
+
+
+class TauBasis(Basis):
+    """Base class for bases supporting Tau solves."""
+
+    def __init__(self, size, range):
+
+        # Inherited initialization
+        Basis.__init__(self, size, range)
+
+        # Build Tau matrices
+        self.Eval = self._build_Eval()
+        self.Deriv = self._build_Deriv()
+        self.Left = self._build_Left()
+        self.Right = self._build_Right()
+        self.last = self._build_last()
+        self.InvEval = linalg.inv(self.Eval.tocsc())
 
     def _build_last(self):
         """Last-element vector"""
@@ -20,45 +48,24 @@ class PrimaryBasis(object):
         return last
 
 
-# class PiecewiseBasis(object):
-
-#     def __init__(self, bases):
-
-#         self.bases = bases
-#         self.grid = np.hstack([b.grid for b in bases])
-#         self.last = np.hstack([])
-
-
-class Chebyshev(PrimaryBasis):
+class Chebyshev(TauBasis):
     """Chebyshev polynomial basis on the extrema grid"""
 
     diff_space = 'k'
 
     def __init__(self, size, range=[-1., 1.]):
 
-        # Input parameters
-        self.size = size
+        # Inherited initialization
+        TauBasis.__init__(self, size, range)
+
+        # Parameters
         self.N = size - 1
-        self.range = range
 
         # Grid
-        radius = (range[1] - range[0]) / 2.
-        center = (range[1] + range[0]) / 2.
-        self._diff_scale = 1. / radius
-
         i = np.arange(self.N + 1)
         self.grid = np.cos(np.pi * i / self.N)
-        self.grid *= radius
-        self.grid += center
-
-        # Tau matrices
-        self.Eval = self._build_Eval()
-        self.Deriv = self._build_Deriv()
-        self.Left = self._build_Left()
-        self.Right = self._build_Right()
-        self.last = self._build_last()
-
-        self.InvEval = linalg.inv(self.Eval.tocsc())
+        self.grid *= self._radius
+        self.grid += self._center
 
         # Math array
         self._math = np.zeros(size, dtype=np.complex128)
@@ -256,10 +263,19 @@ class Chebyshev(PrimaryBasis):
         return Mult.tocsr()
 
 
-class Fourier(PrimaryBasis):
+class Fourier(Basis):
     """Fourier complex exponential basis"""
 
     def __init__(self, range=[0., 2*np.pi]):
 
         pass
+
+
+# class PiecewiseBasis(object):
+
+#     def __init__(self, bases):
+
+#         self.bases = bases
+#         self.grid = np.hstack([b.grid for b in bases])
+#         self.last = np.hstack([])
 
