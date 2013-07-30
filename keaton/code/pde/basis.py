@@ -79,16 +79,16 @@ class Chebyshev(TauBasis):
         kdata.real = fft.dct(xdata.real, type=1, norm=None, axis=-1)
         kdata.imag = fft.dct(xdata.imag, type=1, norm=None, axis=-1)
         kdata /= N
-        kdata[0] /= 2.
-        kdata[N] /= 2.
+        kdata[..., 0] /= 2.
+        kdata[..., N] /= 2.
 
     def backward(self, kdata, xdata):
         """Coefficient to grid values transform"""
 
         # DCT with adjusted coefficients
         N = self.N
-        self._math[:] = kdata
-        self._math[1:N] /= 2.
+        self._math[..., :] = kdata
+        self._math[..., 1:N] /= 2.
         xdata.real = fft.dct(self._math.real, type=1, norm=None, axis=-1)
         xdata.imag = fft.dct(self._math.imag, type=1, norm=None, axis=-1)
 
@@ -101,11 +101,11 @@ class Chebyshev(TauBasis):
         N = self.N
 
         # Apply recursive differentiation
-        b[N] = 0.
-        b[N-1] = 2. * N * a[N]
+        b[..., N] = 0.
+        b[..., N-1] = 2. * N * a[..., N]
         for i in xrange(N-2, 0, -1):
-            b[i] = 2 * (i+1) * a[i+1] + b[i+2]
-        b[0] = a[1] + b[2] / 2.
+            b[..., i] = 2 * (i+1) * a[..., i+1] + b[..., i+2]
+        b[..., 0] = a[..., 1] + b[..., 2] / 2.
 
         # Scale for grid
         kderiv *= self._diff_scale
