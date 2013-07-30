@@ -71,29 +71,44 @@ class Chebyshev(TauBasis):
         # Math array
         self._math = np.zeros(size, dtype=np.complex128)
 
-    def forward(self, xdata, kdata):
+    def forward(self, xdata, kdata, axis=-1):
         """Grid values to coefficients transform"""
+
+        # Currently setup just for last axis
+        if axis != -1:
+            if axis != (len(xdata.shape) - 1):
+                raise NotImplementedError()
 
         # DCT with adjusted coefficients
         N = self.N
-        kdata.real = fft.dct(xdata.real, type=1, norm=None, axis=-1)
-        kdata.imag = fft.dct(xdata.imag, type=1, norm=None, axis=-1)
+        kdata.real = fft.dct(xdata.real, type=1, norm=None, axis=axis)
+        kdata.imag = fft.dct(xdata.imag, type=1, norm=None, axis=axis)
         kdata /= N
         kdata[..., 0] /= 2.
         kdata[..., N] /= 2.
 
-    def backward(self, kdata, xdata):
+    def backward(self, kdata, xdata, axis=-1):
         """Coefficient to grid values transform"""
+
+        # Currently setup just for last axis
+        if axis != -1:
+            if axis != (len(kdata.shape) - 1):
+                raise NotImplementedError()
 
         # DCT with adjusted coefficients
         N = self.N
         self._math[..., :] = kdata
         self._math[..., 1:N] /= 2.
-        xdata.real = fft.dct(self._math.real, type=1, norm=None, axis=-1)
-        xdata.imag = fft.dct(self._math.imag, type=1, norm=None, axis=-1)
+        xdata.real = fft.dct(self._math.real, type=1, norm=None, axis=axis)
+        xdata.imag = fft.dct(self._math.imag, type=1, norm=None, axis=axis)
 
-    def differentiate(self, kdata, kderiv):
+    def differentiate(self, kdata, kderiv, axis=-1):
         """Diffentiation by recursion on coefficients"""
+
+        # Currently setup just for last axis
+        if axis != -1:
+            if axis != (len(kdata.shape) - 1):
+                raise NotImplementedError()
 
         # Referencess
         a = kdata

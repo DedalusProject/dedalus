@@ -69,11 +69,11 @@ class Field(object):
 
         # Call basis transform
         if self.space[i] == 'x':
-            self.domain.bases[i].forward(self.data, self.data)
+            self.domain.bases[i].forward(self.data, self.data, axis=i)
             self.space[i] = 'k'
 
         elif self.space[i] == 'k':
-            self.domain.bases[i].backward(self.data, self.data)
+            self.domain.bases[i].backward(self.data, self.data, axis=i)
             self.space[i] = 'x'
 
     def transpose(self, i):
@@ -87,7 +87,7 @@ class Field(object):
         self.require_space(i, self.domain.bases[i].diff_space)
 
         # Call basis differentiation
-        self.domain.bases[i].differentiate(self.data, self._temp)
+        self.domain.bases[i].differentiate(self.data, self._temp, axis=i)
 
         return self._temp
 
