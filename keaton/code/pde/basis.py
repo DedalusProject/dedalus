@@ -2,6 +2,7 @@
 
 import numpy as np
 from scipy import sparse
+from scipy.sparse import linalg
 from scipy import fftpack as fft
 
 
@@ -56,6 +57,8 @@ class Chebyshev(PrimaryBasis):
         self.Left = self._build_Left()
         self.Right = self._build_Right()
         self.last = self._build_last()
+
+        self.InvEval = linalg.inv(self.Eval.tocsc())
 
         # Math array
         self._math = np.zeros(size, dtype=np.complex128)

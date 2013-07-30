@@ -46,9 +46,9 @@ class Pencil(object):
 
         # Add higher order terms
         for i in xrange(1, problem.order):
-            Mult_i = basis._build_Mult(i)
-            Eval_i = Mult_i.dot(basis.Eval)
-            Deriv_i = Mult_i.dot(basis.Deriv)
+            Ni = basis._build_Mult1(i)
+            Eval_i = basis.Eval * Ni
+            Deriv_i = basis.Eval * Ni * basis.InvEval * basis.Deriv
             if i < len(problem.M0):
                 M += sparse.kron(problem.M0[i], Eval_i)
             if i < len(problem.M1):

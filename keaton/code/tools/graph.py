@@ -82,10 +82,10 @@ class Graph(object):
             raise ValueError("No paths found.")
 
         # Check weights (counts edges by default)
-        cost = [weight(p) for p in paths]
+        costs = [weight(p) for p in paths]
 
         # Return shortest
-        shortest = np.argmin(cost)
+        shortest = np.argmin(costs)
 
         return paths[shortest]
 
