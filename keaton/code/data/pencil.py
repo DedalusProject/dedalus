@@ -34,6 +34,8 @@ class Pencil(object):
 
     def build_matrices(self, problem, basis):
 
+        basis.build_matrices()
+
         # Build PDE matrices starting with constant terms
         M = (sparse.kron(problem.M0[0], basis.Eval) +
              sparse.kron(problem.M1[0], basis.Deriv))

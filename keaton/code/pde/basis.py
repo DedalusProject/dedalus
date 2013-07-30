@@ -24,6 +24,8 @@ class TauBasis(Basis):
         # Inherited initialization
         Basis.__init__(self, size, range)
 
+    def build_matrices(self):
+
         # Build Tau matrices
         self.Eval = self._build_Eval()
         self.Deriv = self._build_Deriv()
