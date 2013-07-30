@@ -15,11 +15,6 @@ class Basis(object):
         self.size = size
         self.range = range
 
-        # Grid constructors
-        self._radius = (range[1] - range[0]) / 2.
-        self._center = (range[1] + range[0]) / 2.
-        self._diff_scale = 1. / self._radius
-
 
 class TauBasis(Basis):
     """Base class for bases supporting Tau solves."""
@@ -49,7 +44,7 @@ class TauBasis(Basis):
 
 
 class Chebyshev(TauBasis):
-    """Chebyshev polynomial basis on the extrema grid"""
+    """Chebyshev polynomial basis on the extrema grid."""
 
     diff_space = 'k'
 
@@ -62,10 +57,14 @@ class Chebyshev(TauBasis):
         self.N = size - 1
 
         # Grid
+        radius = (range[1] - range[0]) / 2.
+        center = (range[1] + range[0]) / 2.
+        self._diff_scale = 1. / radius
+
         i = np.arange(self.N + 1)
         self.grid = np.cos(np.pi * i / self.N)
-        self.grid *= self._radius
-        self.grid += self._center
+        self.grid *= radius
+        self.grid += center
 
         # Math array
         self._math = np.zeros(size, dtype=np.complex128)
@@ -264,11 +263,47 @@ class Chebyshev(TauBasis):
 
 
 class Fourier(Basis):
-    """Fourier complex exponential basis"""
+    """Fourier complex exponential basis."""
 
-    def __init__(self, range=[0., 2*np.pi]):
+    diff_space = 'k'
 
-        pass
+    def __init__(self, size, range=[0., 2*np.pi]):
+
+        # Inherited initialization
+        Basis.__init__(self, size, range)
+
+        # Grid
+        length = range[1] - range[0]
+        start = range[0]
+        self._diff_scale = 2. * np.pi / length
+
+        self.grid = np.linspace(0., 1., size, endpoint=False)
+        self.grid *= length
+        self.grid += start
+
+        # Math array
+        self._math = np.zeros(size, dtype=np.complex128)
+
+    def forward(self, xdata, kdata):
+        """Grid values to coefficients transform"""
+
+        # FFT with mode-amplitude weighting
+        kdata[:] = fft.fft(xdata, axis=-1)
+        kdata /= self.size
+
+    def backward(self, kdata, xdata):
+        """Coefficient to grid values transform"""
+
+        # FFT with mode-amplitude weighting
+        xdata[:] = fft.ifft(kdata, axis=-1)
+        xdata *= self.size
+
+    def differentiate(self, kdata, kderiv):
+        """Diffentiation wavenumber multiplication."""
+
+        # Wavenumber multiplication
+        k = 1j * np.arange(self.size) * self._diff_scale
+        kderiv[:] = kdata * k
 
 
 # class PiecewiseBasis(object):
