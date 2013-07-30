@@ -283,29 +283,33 @@ class Fourier(Basis):
         self.grid *= length
         self.grid += start
 
-        # Math array
-        self._math = np.zeros(size, dtype=np.complex128)
+        # Wavenumbers
+        self.wavenumbers = np.arange(self.size) * self._diff_scale
 
-    def forward(self, xdata, kdata):
+    def forward(self, xdata, kdata, axis=-1):
         """Grid values to coefficients transform"""
 
         # FFT with mode-amplitude weighting
-        kdata[:] = fft.fft(xdata, axis=-1)
+        kdata[:] = fft.fft(xdata, axis=axis)
         kdata /= self.size
 
-    def backward(self, kdata, xdata):
+    def backward(self, kdata, xdata, axis=-1):
         """Coefficient to grid values transform"""
 
         # FFT with mode-amplitude weighting
-        xdata[:] = fft.ifft(kdata, axis=-1)
+        xdata[:] = fft.ifft(kdata, axis=axis)
         xdata *= self.size
 
-    def differentiate(self, kdata, kderiv):
+    def differentiate(self, kdata, kderiv, axis=-1):
         """Diffentiation wavenumber multiplication."""
 
-        # Wavenumber multiplication
-        k = 1j * np.arange(self.size) * self._diff_scale
-        kderiv[:] = kdata * k
+        # Wavenumber array
+        shape = [1] * len(kdata.shape)
+        shape[axis] = self.size
+        k = self.wavenumbers.reshape(shape)
+
+        # Multiplication
+        kderiv[:] = kdata * 1j * k
 
 
 # class PiecewiseBasis(object):
