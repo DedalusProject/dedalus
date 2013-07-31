@@ -46,6 +46,7 @@ class IMEXBase(object):
         # Cycle and compute timesteps
         self.dt.rotate()
         self.dt[0] = dt
+        print dt
 
         # Cycle and compute RHS components
         MX.rotate()
@@ -65,11 +66,11 @@ class IMEXBase(object):
             F[0][pencil] = f
 
         # Compute IMEX coefficients
-        a, b, c = self.compute_coefficients(iteration)
+        a, b, c, d = self.compute_coefficients(iteration)
 
         # Construct pencil LHS matrix
         for pencil in self.pencils:
-            pencil.LHS = a[-1] * pencil.M + b[-1] * pencil.L
+            pencil.LHS = d[0] * pencil.M + d[1] * pencil.L
 
         # Construct RHS field
         for fn in rhs.field_names:
@@ -92,6 +93,7 @@ class CNAB3(IMEXBase):
         a = [0.] * (self.qmax+1)
         b = [0.] * (self.qmax+1)
         c = [0.] * self.pmax
+        d = [0.] * 2
 
         # References
         dt0 = self.dt[0]
@@ -99,12 +101,14 @@ class CNAB3(IMEXBase):
         dt2 = self.dt[2]
 
         # LHS coefficients
-        a[-1] = 1.
-        b[-1] = dt0 / 2.
+        d[0] = 1.
+        d[d] = dt0 / 2.
 
         # RHS coefficients
         a[0] = 1.
         b[0] = -dt0 / 2.
+
+        print self.dt
 
         if iteration == 0:
             c[0] = 1.
@@ -120,5 +124,20 @@ class CNAB3(IMEXBase):
         c[1] *= dt0
         c[2] *= dt0
 
-        return a, b, c
+        return a, b, c, d
 
+
+class SimpleSolve(IMEXBase):
+    """Simple BVP solve"""
+
+    qmax = 1
+    pmax = 1
+
+    def compute_coefficients(self, iteration):
+
+        a = [0.]
+        b = [0.]
+        c = [1.]
+        d = [0., 1.]
+
+        return a, b, c, d
