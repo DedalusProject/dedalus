@@ -12,8 +12,8 @@ from fluid_matrix.public import *
 # u_z - du = 0
 # du_z + (a + bz) u = 0
 #
-a = 0.
-b = -300.
+a = 1.
+b = -100.
 c = 5.
 d = -5.
 airy = problems.Problem(['u', 'du'], 2)
