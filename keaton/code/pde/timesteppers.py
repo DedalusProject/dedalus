@@ -46,7 +46,6 @@ class IMEXBase(object):
         # Cycle and compute timesteps
         self.dt.rotate()
         self.dt[0] = dt
-        print dt
 
         # Cycle and compute RHS components
         MX.rotate()
