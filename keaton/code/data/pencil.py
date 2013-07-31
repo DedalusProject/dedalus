@@ -51,6 +51,9 @@ class Pencil(object):
             Ni = basis._build_Mult1(i)
             Eval_i = basis.Eval * Ni
             Deriv_i = basis.Eval * Ni * basis.InvEval * basis.Deriv
+            # Mi = basis._build_Mult(i)
+            # Eval_i = Mi * basis.Eval
+            # Deriv_i = Mi * basis.Deriv
             if i < len(problem.M0):
                 M += sparse.kron(problem.M0[i], Eval_i)
             if i < len(problem.M1):

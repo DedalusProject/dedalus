@@ -13,7 +13,7 @@ from fluid_matrix.public import *
 # du_z + (a + bz) u = 0
 #
 a = 1.
-b = -100.
+b = -1000.
 c = 5.
 d = -5
 airy = problems.Problem(['u', 'du'], 2)
@@ -63,8 +63,8 @@ fig.clear()
 
 ax1 = fig.add_subplot(211)
 ax1.plot(z, exact, '-k', label='Exact')
-ax1.plot(z, u, 'ob', label='Numerical')
-ax1.legend()
+ax1.plot(z, u, 'ob', label='Numerical (%i)' %z.size)
+ax1.legend(fontsize='small')
 
 ax2 = fig.add_subplot(212)
 ax2.plot(z, u - exact, 'r.-')
