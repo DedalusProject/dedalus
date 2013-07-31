@@ -71,7 +71,8 @@ ax1.plot(z, u, 'ob', label='Numerical (%i)' %z.size)
 ax1.legend(fontsize='small')
 
 ax2 = fig.add_subplot(212)
-ax2.plot(z, u - exact(z), 'r.-')
+ax2.axhline(0, c='k', ls='dashed')
+ax2.plot(z, u - exact(z), 'o-r')
 ax2.set_xlabel(r'$z$')
 ax2.set_ylabel('Error = Numerical - Exact')
 
