@@ -12,10 +12,10 @@ from fluid_matrix.public import *
 # u_z - du = 0
 # du_z + (a + bz) u = 0
 #
-a = 1.
-b = -1000.
-c = 5.
-d = -5
+a = 0.
+b = -300.
+c = 1.
+d = 1.
 airy = problems.Problem(['u', 'du'], 2)
 airy.L0 = [np.array([[0., -1.],
                      [a, 0.]]),
@@ -30,7 +30,7 @@ airy.LR = np.array([[0., 0.],
 airy.b = np.array([c, d])
 
 # Set domain
-x_basis = Chebyshev(64, range=[-1., 1.])
+x_basis = Chebyshev(32, range=[-1., 1.])
 domain = Domain([x_basis])
 
 # Choose PDE and integrator
@@ -46,28 +46,32 @@ int.sim_stop_time = np.inf
 int.advance()
 
 # Exact solution
-z = x_basis.grid
-arg = -(a + b*z) / (-b)**(2./3.)
-Ai, Aip, Bi, Bip = scipy.special.airy(arg)
-L = np.array([[Ai[0], Bi[0]],
-              [Ai[-1], Bi[-1]]])
-R = np.array([d, c])
-c1, c2 = np.linalg.solve(L, R)
-exact = c1*Ai + c2*Bi
+def exact(z):
+    arg = -(a + b*z) / (-b)**(2./3.)
+    Ai, Aip, Bi, Bip = scipy.special.airy(arg)
+    L = np.array([[Ai[0], Bi[0]],
+                  [Ai[-1], Bi[-1]]])
+    R = np.array([d, c])
+    c1, c2 = np.linalg.solve(L, R)
+    u = c1*Ai + c2*Bi
+
+    return u
 
 # Plot
+z = x_basis.grid
+z_dense = np.linspace(-1, 1, 10000)
 u = int.state['u']['x'].real
 
 fig = plt.figure(1)
 fig.clear()
 
 ax1 = fig.add_subplot(211)
-ax1.plot(z, exact, '-k', label='Exact')
+ax1.plot(z_dense, exact(z_dense), '-k', label='Exact')
 ax1.plot(z, u, 'ob', label='Numerical (%i)' %z.size)
 ax1.legend(fontsize='small')
 
 ax2 = fig.add_subplot(212)
-ax2.plot(z, u - exact, 'r.-')
+ax2.plot(z, u - exact(z), 'r.-')
 ax2.set_xlabel(r'$z$')
 ax2.set_ylabel('Error = Numerical - Exact')
 
