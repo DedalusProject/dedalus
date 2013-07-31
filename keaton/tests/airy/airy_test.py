@@ -1,0 +1,78 @@
+
+
+import numpy as np
+import scipy.special
+import matplotlib.pyplot as plt
+
+from fluid_matrix.public import *
+
+
+## Airy test: u_zz + (a + bz)u = 0
+#
+# u_z - du = 0
+# du_z + (a + bz) u = 0
+#
+a = 1.
+b = -100.
+c = 5.
+d = -5
+airy = problems.Problem(['u', 'du'], 2)
+airy.L0 = [np.array([[0., -1.],
+                     [a, 0.]]),
+           np.array([[0., 0.],
+                     [b, 0.]])]
+airy.L1 = [np.array([[1., 0.],
+                     [0., 1.]])]
+airy.LL = np.array([[1., 0.],
+                    [0., 0.]])
+airy.LR = np.array([[0., 0.],
+                    [1., 0.]])
+airy.b = np.array([c, d])
+
+# Set domain
+x_basis = Chebyshev(64, range=[-1., 1.])
+domain = Domain([x_basis])
+
+# Choose PDE and integrator
+pde = airy
+ts = timesteppers.SimpleSolve
+
+# Build solver
+int = Integrator(pde, domain, ts)
+
+# Solve/integrate
+int.dt = 1.
+int.sim_stop_time = np.inf
+int.advance()
+
+# Exact solution
+z = x_basis.grid
+arg = -(a + b*z) / (-b)**(2./3.)
+Ai, Aip, Bi, Bip = scipy.special.airy(arg)
+L = np.array([[Ai[0], Bi[0]],
+              [Ai[-1], Bi[-1]]])
+R = np.array([d, c])
+c1, c2 = np.linalg.solve(L, R)
+exact = c1*Ai + c2*Bi
+
+# Plot
+u = int.state['u']['x'].real
+
+fig = plt.figure(1)
+fig.clear()
+
+ax1 = fig.add_subplot(211)
+ax1.plot(z, exact, '-k', label='Exact')
+ax1.plot(z, u, 'ob', label='Numerical')
+ax1.legend()
+
+ax2 = fig.add_subplot(212)
+ax2.plot(z, u - exact, 'r.-')
+ax2.set_xlabel(r'$z$')
+ax2.set_ylabel('Error = Numerical - Exact')
+
+fig.suptitle(r"$u'' + (a + b z) u = 0, \quad u(-1) = c, \quad u(1) = d$")
+ax1.set_title(r"$a = %.1f, \quad b = %.1f, \quad c = %.1f, \quad d = %.1f$" %(a,b,c,d), size='small')
+
+plt.savefig('airy.png', dpi=200)
+
