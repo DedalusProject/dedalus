@@ -14,8 +14,8 @@ from fluid_matrix.public import *
 #
 a = 0.
 b = -300.
-c = 1.
-d = 1.
+c = 5.
+d = -5.
 airy = problems.Problem(['u', 'du'], 2)
 airy.L0 = [np.array([[0., -1.],
                      [a, 0.]]),
@@ -59,7 +59,7 @@ def exact(z):
 
 # Plot
 z = x_basis.grid
-z_dense = np.linspace(-1, 1, 10000)
+z_dense = np.linspace(1, -1, 10000)
 u = int.state['u']['x'].real
 
 fig = plt.figure(1)
