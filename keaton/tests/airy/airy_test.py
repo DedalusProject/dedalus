@@ -12,17 +12,17 @@ from fluid_matrix.public import *
 # u_z - du = 0
 # du_z + (a + bz) u = 0
 #
-a = 1.
+a = 100.
 b = -100.
-c = 5.
-d = -5.
+c = 1.
+d = 2.
 airy = problems.Problem(['u', 'du'], 2)
-airy.L0 = [np.array([[0., -1.],
-                     [a, 0.]]),
-           np.array([[0., 0.],
-                     [b, 0.]])]
-airy.L1 = [np.array([[1., 0.],
-                     [0., 1.]])]
+airy.L0[0] = np.array([[0., -1.],
+                       [a, 0.]])
+airy.L0[1] = np.array([[0., 0.],
+                       [b, 0.]])
+airy.L1[0] = np.array([[1., 0.],
+                       [0., 1.]])
 airy.LL = np.array([[1., 0.],
                     [0., 0.]])
 airy.LR = np.array([[0., 0.],
@@ -54,6 +54,7 @@ def exact(z):
     R = np.array([d, c])
     c1, c2 = np.linalg.solve(L, R)
     u = c1*Ai + c2*Bi
+    print c1,c2
 
     return u
 

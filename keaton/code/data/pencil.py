@@ -54,14 +54,11 @@ class Pencil(object):
             # Mi = basis._build_Mult(i)
             # Eval_i = Mi * basis.Eval
             # Deriv_i = Mi * basis.Deriv
-            if i < len(problem.M0):
-                M += sparse.kron(problem.M0[i], Eval_i)
-            if i < len(problem.M1):
-                M += sparse.kron(problem.M1[i], Deriv_i)
-            if i < len(problem.L0):
-                L += sparse.kron(problem.L0[i], Eval_i)
-            if i < len(problem.L1):
-                L += sparse.kron(problem.L1[i], Deriv_i)
+
+            M += sparse.kron(problem.M0[i], Eval_i)
+            M += sparse.kron(problem.M1[i], Deriv_i)
+            L += sparse.kron(problem.L0[i], Eval_i)
+            L += sparse.kron(problem.L1[i], Deriv_i)
 
         # Build boundary condition matrices
         M_bc = (sparse.kron(problem.ML, basis.Left) +
