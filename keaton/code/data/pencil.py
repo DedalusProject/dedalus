@@ -48,12 +48,14 @@ class Pencil(object):
 
         # Add higher order terms
         for i in xrange(1, problem.order):
-            Ni = basis._build_Mult1(i)
-            Eval_i = basis.Eval * Ni
-            Deriv_i = basis.Eval * Ni * basis.InvEval * basis.Deriv
-            # Mi = basis._build_Mult(i)
-            # Eval_i = Mi * basis.Eval
-            # Deriv_i = Mi * basis.Deriv
+            # Type-1 mult
+            Mult_i = basis._build_Mult1(i)
+            Eval_i = basis.Eval * Mult_i
+            Deriv_i = basis.Eval * Mult_i * basis.InvEval * basis.Deriv
+            # Type-2 mult
+            # Mult_i = basis._build_Mult(i)
+            # Eval_i = Mult_i * basis.Eval
+            # Deriv_i = Mult_i * basis.Deriv
 
             M += sparse.kron(problem.M0[i], Eval_i)
             M += sparse.kron(problem.M1[i], Deriv_i)
@@ -61,28 +63,28 @@ class Pencil(object):
             L += sparse.kron(problem.L1[i], Deriv_i)
 
         # Build boundary condition matrices
-        M_bc = (sparse.kron(problem.ML, basis.Left) +
-                sparse.kron(problem.MR, basis.Right))
-        L_bc = (sparse.kron(problem.LL, basis.Left) +
-                sparse.kron(problem.LR, basis.Right))
+        Mb = (sparse.kron(problem.ML, basis.Left) +
+              sparse.kron(problem.MR, basis.Right))
+        Lb = (sparse.kron(problem.LL, basis.Left) +
+              sparse.kron(problem.LR, basis.Right))
 
         # Convert to easily iterable structures
-        M_bc = M_bc.tocoo()
-        L_bc = L_bc.tocoo()
+        Mb = Mb.tocoo()
+        Lb = Lb.tocoo()
 
         # Clear boundary condition rows in PDE matrices
-        bc_rows = set(M_bc.row).union(set(L_bc.row))
-        for i in bc_rows:
+        rows = set(Mb.row).union(set(Lb.row))
+        for i in rows:
             M[i, :] = 0
             L[i, :] = 0
 
         # Substitute boundary condition terms into PDE matrices
-        for i, j, v in izip(M_bc.row, M_bc.col, M_bc.data):
+        for i, j, v in izip(Mb.row, Mb.col, Mb.data):
             M[i, j] = v
-        for i, j, v in izip(L_bc.row, L_bc.col, L_bc.data):
+        for i, j, v in izip(Lb.row, Lb.col, Lb.data):
             L[i, j] = v
 
-        # Convert for efficient manipulation
+        # Convert for efficient manipulation and store
         self.M = M.tocsr()
         self.L = L.tocsr()
 
