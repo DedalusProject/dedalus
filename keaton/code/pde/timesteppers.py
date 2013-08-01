@@ -101,13 +101,11 @@ class CNAB3(IMEXBase):
 
         # LHS coefficients
         d[0] = 1.
-        d[d] = dt0 / 2.
+        d[1] = dt0 / 2.
 
         # RHS coefficients
         a[0] = 1.
         b[0] = -dt0 / 2.
-
-        print self.dt
 
         if iteration == 0:
             c[0] = 1.
