@@ -215,7 +215,7 @@ class Chebyshev(TauBasis):
 
         return Right.tocsr()
 
-    def _build_Mult(self, p):
+    def _build_Mult_U(self, p):
         """
         U-times-T_p multiplication matrix.
 
@@ -247,7 +247,7 @@ class Chebyshev(TauBasis):
 
         return Mult.tocsr()
 
-    def _build_Mult1(self, p):
+    def _build_Mult(self, p):
         """
         T-times-T_p multiplication matrix
 

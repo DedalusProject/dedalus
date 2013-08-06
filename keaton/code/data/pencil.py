@@ -34,6 +34,7 @@ class Pencil(object):
 
     def build_matrices(self, problem, basis):
 
+        # Instruct basis to build its matrices
         basis.build_matrices()
 
         # Build PDE matrices starting with constant terms
@@ -48,14 +49,9 @@ class Pencil(object):
 
         # Add higher order terms
         for i in xrange(1, problem.order):
-            # Type-1 mult
-            Mult_i = basis._build_Mult1(i)
+            Mult_i = basis._build_Mult(i)
             Eval_i = basis.Eval * Mult_i
             Deriv_i = basis.Eval * Mult_i * basis.InvEval * basis.Deriv
-            # Type-2 mult
-            # Mult_i = basis._build_Mult(i)
-            # Eval_i = Mult_i * basis.Eval
-            # Deriv_i = Mult_i * basis.Deriv
 
             M += sparse.kron(problem.M0[i], Eval_i)
             M += sparse.kron(problem.M1[i], Deriv_i)
