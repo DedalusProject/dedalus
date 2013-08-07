@@ -1,6 +1,6 @@
 
 
-from graph import Graph
+from .graph import Graph
 
 
 class Layout(object):

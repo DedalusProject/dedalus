@@ -2,8 +2,8 @@
 
 from collections import OrderedDict
 
-from field import Field
-from pencil import Pencil
+from .field import Field
+from .pencil import Pencil
 
 
 class System(object):

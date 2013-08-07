@@ -12,10 +12,10 @@ from fluid_matrix.public import *
 # u_z - du = 0
 # du_z + (a + bz) u = 0
 #
-a = 100.
-b = -100.
+a = 0.
+b = -300.
 c = 1.
-d = 2.
+d = 1.
 airy = problems.Problem(['u', 'du'], 2)
 airy.L0[0] = np.array([[0., -1.],
                        [a, 0.]])
