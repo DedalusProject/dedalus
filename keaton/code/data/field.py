@@ -19,6 +19,24 @@ class Field(object):
         self.space = ['x'] * domain.dim
         self.local = [True] * domain.dim
 
+    def __clone__(self, copy_data=False):
+
+        clone = Field(self.domain)
+
+        if copy_data:
+            clone[self.space] = self[self.space]
+
+        return clone
+
+    def __add__(self, other):
+
+        out = self.__clone__()
+        space = self.space
+
+        out[space] = self[space] + other[space]
+
+        return out
+
     def require_global_space(self, space):
 
         # Expand full-space shortcuts
