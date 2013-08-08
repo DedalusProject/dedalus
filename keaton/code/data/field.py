@@ -1,6 +1,49 @@
 
 
 import numpy as np
+import gc
+from collections import defaultdict
+
+
+class FieldManager(object):
+
+    def __init__(self):
+
+        # Dictionaries for field lists and counts by domain
+        self.field_lists = defaultdict(list)
+        self.field_count = defaultdict(int)
+
+    def add_field(self, field):
+
+        # Get field list
+        field_list = self.field_lists[field.domain]
+
+        # Add field
+        field_list.append(field)
+        #print 'FM received field: ' + str(id(field))
+
+    def get_field(self, domain):
+
+        # Get field list
+        field_list = self.field_lists[domain]
+
+        # Run garbage collector to make sure any free fields have been collected
+        gc.collect()
+
+        if len(field_list):
+            # Return a free field
+            field = field_list.pop()
+            #print 'FM found field: ' + str(id(field))
+        else:
+            # Build a new field and increment count
+            field = Field(domain)
+            self.field_count[domain] += 1
+            #print 'FM made field: ' + str(id(field))
+
+        return field
+
+
+field_manager = FieldManager()
 
 
 class Field(object):
@@ -18,6 +61,14 @@ class Field(object):
         # Initial space and distribution
         self.space = ['x'] * domain.dim
         self.local = [True] * domain.dim
+
+    def __del__(self):
+
+        #print 'Del field: ' + str(id(self))
+
+        # Add self to field manager
+        if field_manager:
+            field_manager.add_field(self)
 
     def __clone__(self, copy_data=False):
 
