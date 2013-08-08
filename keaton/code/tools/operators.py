@@ -59,18 +59,6 @@ class Operator(object):
 
         return r_op + '(' + ', '.join(r_args) + ')'
 
-    def evaluate_args(self):
-
-        # Recursively evaluate operator arguments
-        for i, a in enumerate(self.args):
-            if isinstance(a, Operator):
-                self.args[i] = a.evaluate()
-
-    def evaluate(self):
-
-        # This must be implemented in subclasses
-        raise NotImplementedError()
-
     def __neg__(self):
 
         return Negative(self)
@@ -87,6 +75,47 @@ class Operator(object):
 
         return Multiply(self, other)
 
+    def field_set(self):
+
+        # Recursively collect Field arguments
+        fields = set([])
+        for a in self.args:
+            if isinstance(a, Field):
+                fields.add(a)
+            else:
+                fields.update(a.field_set())
+
+        return fields
+
+    def attempt_evaluation(self):
+
+        # Recursively attempt evaluation of operator arguments
+        for i, a in enumerate(self.args):
+            if isinstance(a, Operator):
+                a_eval = a.attempt_evaluation()
+                if a_eval:
+                    # Replace argument with its evaluation
+                    self.args[i] = a_eval
+                else:
+                    # Cannot evaluate if arguments cannot be evaluated
+                    return None
+
+        # Check layout support
+            # if supported:
+                # return self.evaluate()
+            # else:
+                # return None
+
+        return self.evaluate()
+
+    def evaluate(self):
+
+        # This method must be implemented in subclasses
+        # All args can be assumed to be Fields
+        # Should return a Field object
+
+        raise NotImplementedError()
+
 
 class Negative(Operator):
 
@@ -102,8 +131,7 @@ class Negative(Operator):
 
     def evaluate(self):
 
-        self.evaluate_args()
-        out_name = '(' + self.__str__() + ')'
+        out_name = 'F' + str(np.random.randint(10,99))
         out = Field(out_name)
         out.data = -self.args[0].data
 
@@ -124,8 +152,7 @@ class Add(Operator):
 
     def evaluate(self):
 
-        self.evaluate_args()
-        out_name = '(' + self.__str__() + ')'
+        out_name = 'F' + str(np.random.randint(10,99))
         out = Field(out_name)
         out.data = self.args[0].data + self.args[1].data
 
@@ -146,8 +173,7 @@ class Subtract(Operator):
 
     def evaluate(self):
 
-        self.evaluate_args()
-        out_name = '(' + self.__str__() + ')'
+        out_name = 'F' + str(np.random.randint(10,99))
         out = Field(out_name)
         out.data = self.args[0].data - self.args[1].data
 
@@ -173,8 +199,7 @@ class Multiply(Operator):
 
     def evaluate(self):
 
-        self.evaluate_args()
-        out_name = '(' + self.__str__() + ')'
+        out_name = 'F' + str(np.random.randint(10,99))#'(' + self.__str__() + ')'
         out = Field(out_name)
         out.data = self.args[0].data * self.args[1].data
 
