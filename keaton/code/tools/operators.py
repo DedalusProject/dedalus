@@ -4,6 +4,7 @@ import numpy as np
 
 
 class Field(object):
+    """TEST CLASS FOR DEBUGGING"""
 
     def __init__(self, name):
 
@@ -100,12 +101,13 @@ class Operator(object):
                     # Cannot evaluate if arguments cannot be evaluated
                     return None
 
-        # Check layout support
-            # if supported:
+        # Check layout and space conditions
+            # if conditions are satisfied:
                 # return self.evaluate()
             # else:
                 # return None
 
+        # FOR DEBUGGING*********************************************************
         return self.evaluate()
 
     def evaluate(self):
