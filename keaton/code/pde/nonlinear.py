@@ -4,75 +4,43 @@ from scipy import sparse
 from itertools import izip
 
 
-class Nonlinear(object):
+def compute_expressions(rhs_expressions):
 
-    def __init__(self, F):
+    # Loop from K to X
+    for i in reveresed(xrange(dimensions)):
 
-        # Convert to easily iterable structures
-        F = [sparse.coo_matrix(f) for f in F]
+        # Transpose fields
+        fields = set([])
+        for re in rhs_expressions:
+            fields.update(re.field_set())
+        for f in fields:
+            f.require_local(i)
 
-        # Make sure each f is upper-diagonal
-        for f in F:
-            for i, j, v in izip(f.row, f.col, f.data):
-                if i > j:
-                    raise ValueError("Specify F matrices in upper-diagonal form.")
+        # Attempt evaluation
+        for re in rhs_expressions:
+            re.attempt_evaluation()
 
-        # Get set of factor indeces
-        factor_indeces = set()
-        for f in F:
-            factor_indeces.update(set(f.row))
-            factor_indeces.update(set(f.col))
+        # Transform fields
+        fields = set([])
+        for re in rhs_expressions:
+            fields.update(re.field_set())
+        for f in fields:
+            f.require_space(i, 'x')
 
-        # Build factor dictionary
-        factors = {}
-        for fi in factor_indeces:
-            operator_index, field_index = divmod(fi, problem.size)
-            factors[fi] = {'operator_index': operator_index,
-                          'field_index': field_index,
-                          'computed': False,
-                          'field': state.fields[field_index]}
+        # Attempt evaluation
+        for re in rhs_expressions:
+            re.attempt_evaluation()
 
-        # Loop through dimensions
-        for i in reveresed(xrange(dimensions)):
-            # Transpose fields
-            for f in factors:
-                f['field'].require_local(i)
-            # Check operators
-            for f in factors:
-                attempt_operation(f)
-            # Tranform fields
-            for f in factors:
-                f['field'].require_space(i, 'x')
-            # Check operators
-            for f in factors:
-                attempt_operation(f)
+    # Non-linear products should now be computed (we are in X)
 
-        # Compute products
+    # Repeat looping from X to K to compute operators acting on products
 
-        # Loop back through spaces
-            # Check if value operators can operate
-                # If yes, reduce
-
-        # Done
-
-    def attempt_operation(factor):
-
-        if not factor['computed']:
-            if f['operator'].check_layout(layout):
-                operator.apply(f['field'])
+    # If necessary, perform this multiple times until everything is computed
+    #   (In case someone does "dx(u*v) * dx(u*v)" or similar)
 
 
+# It may be the case that the loops to check if evaluations can occur take up
+# too much time.  In this case, we want to perform this process once at the
+# beginning to build some sort of schedule of tasks that can then be done
+# quickly on the fly.
 
-
-
-
-
-
-
-
-
-    # schedule = {}
-    # for lo in layouts:
-    #     schedule[lo] = {'pre-ops': [],
-    #                     'transforms': [],
-    #                     'post-ops': []}
