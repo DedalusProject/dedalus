@@ -9,7 +9,7 @@ from ..data.system import System
 from ..data.pencil import Pencil
 
 
-class Integrator(object):
+class Integrator:
     """Tau method"""
 
     def __init__(self, problem, domain, timestepper):
@@ -49,13 +49,13 @@ class Integrator(object):
 
         if self.time >= self.sim_stop_time:
             ok_flag = False
-            print 'Simulation stop time reached.'
+            print('Simulation stop time reached.')
         elif (time.time() - self.start_time) >= self.wall_stop_time:
             ok_flag = False
-            print 'Wall stop time reached.'
+            print('Wall stop time reached.')
         elif self.iteration >= self.stop_iteration:
             ok_flag = False
-            print 'Stop iteration reached.'
+            print('Stop iteration reached.')
         else:
             ok_flag = True
 

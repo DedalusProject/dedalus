@@ -3,7 +3,7 @@
 from .graph import Graph
 
 
-class Layout(object):
+class Layout:
     pass
 
 A = Layout()

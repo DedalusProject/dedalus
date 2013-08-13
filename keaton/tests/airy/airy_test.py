@@ -54,7 +54,7 @@ def exact(z):
     R = np.array([d, c])
     c1, c2 = np.linalg.solve(L, R)
     u = c1*Ai + c2*Bi
-    print c1,c2
+    print(c1, c2)
 
     return u
 
@@ -75,7 +75,7 @@ ax2 = fig.add_subplot(212)
 ax2.axhline(0, c='k', ls='dashed')
 ax2.plot(z, u - exact(z), 'o-r')
 ax2.set_xlabel(r'$z$')
-ax2.set_ylabel('Error = Numerical - Exact')
+ax2.set_ylabel('Error = Numerical - Exact', size='small')
 
 fig.suptitle(r"$u'' + (a + b z) u = 0, \quad u(-1) = c, \quad u(1) = d$")
 ax1.set_title(r"$a = %.1f, \quad b = %.1f, \quad c = %.1f, \quad d = %.1f$" %(a,b,c,d), size='small')

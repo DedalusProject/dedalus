@@ -6,7 +6,7 @@ from collections import deque
 from ..data.system import System
 
 
-class IMEXBase(object):
+class IMEXBase:
     """Base class for implicit-explicit timesteppers."""
 
     def __init__(self, pencils, state, rhs):
@@ -28,10 +28,10 @@ class IMEXBase(object):
         self.LX = deque()
         self.F = deque()
 
-        for q in xrange(self.qmax):
+        for q in range(self.qmax):
             self.MX.append(System(field_names, domain))
             self.LX.append(System(field_names, domain))
-        for p in xrange(self.pmax):
+        for p in range(self.pmax):
             self.F.append(System(field_names, domain))
 
     def update_pencils(self, dt, iteration):
@@ -74,10 +74,10 @@ class IMEXBase(object):
         # Construct RHS field
         for fn in rhs.field_names:
             rhs[fn]['k'] = 0.
-            for q in xrange(self.qmax):
+            for q in range(self.qmax):
                 rhs[fn]['k'] += a[q] * MX[q][fn]['k']
                 rhs[fn]['k'] += b[q] * LX[q][fn]['k']
-            for p in xrange(self.pmax):
+            for p in range(self.pmax):
                 rhs[fn]['k'] += c[p] * F[p][fn]['k']
 
 

@@ -3,7 +3,7 @@
 import numpy as np
 
 
-class Graph(object):
+class Graph:
     """Basic directed graph."""
 
     def __init__(self):
@@ -61,7 +61,7 @@ class Graph(object):
             # Loop through vertices
             path = []
             n_edges = len(vp) - 1
-            for i in xrange(n_edges):
+            for i in range(n_edges):
                 # Get edge from graph
                 current = vp[i]
                 next = vp[i+1]

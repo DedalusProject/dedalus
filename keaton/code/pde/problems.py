@@ -3,7 +3,7 @@
 import numpy as np
 
 
-class Problem(object):
+class Problem:
     """Class defining PDE through matrices and non-linear constructor"""
 
     def __init__(self, field_names, order=1):
@@ -17,10 +17,10 @@ class Problem(object):
 
         # Build matrix lists
         size = self.size
-        self.M0 = [np.zeros((size, size)) for i in xrange(order)]
-        self.M1 = [np.zeros((size, size)) for i in xrange(order)]
-        self.L0 = [np.zeros((size, size)) for i in xrange(order)]
-        self.L1 = [np.zeros((size, size)) for i in xrange(order)]
+        self.M0 = [np.zeros((size, size)) for i in range(order)]
+        self.M1 = [np.zeros((size, size)) for i in range(order)]
+        self.L0 = [np.zeros((size, size)) for i in range(order)]
+        self.L1 = [np.zeros((size, size)) for i in range(order)]
         self.ML = np.zeros((size, size))
         self.MR = np.zeros((size, size))
         self.LL = np.zeros((size, size))

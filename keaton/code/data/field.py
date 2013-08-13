@@ -5,7 +5,7 @@ import gc
 from collections import defaultdict
 
 
-class FieldManager(object):
+class FieldManager:
 
     def __init__(self):
 
@@ -46,7 +46,7 @@ class FieldManager(object):
 field_manager = FieldManager()
 
 
-class Field(object):
+class Field:
     """Scalar field defined over the domain."""
 
     def __init__(self, domain):

@@ -6,7 +6,7 @@ from .field import field_manager
 from .pencil import Pencil
 
 
-class System(object):
+class System:
     """Collection of fields."""
 
     def __init__(self, field_names, domain):

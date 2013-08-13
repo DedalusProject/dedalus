@@ -3,7 +3,7 @@
 import numpy as np
 
 
-class Field(object):
+class Field:
     """TEST CLASS FOR DEBUGGING"""
 
     def __init__(self, name):
@@ -32,7 +32,7 @@ class Field(object):
         return Multiply(self, other)
 
 
-class Operator(object):
+class Operator:
 
     name = 'Operator'
     n_args = None
@@ -50,7 +50,7 @@ class Operator(object):
         # Check argument types
         for a in args:
             if not isinstance(a, (Field, Operator)):
-                raise TypeError("Operators cannot accept arguments of type '%s'." %type(a).__name__)
+                raise TypeError("Operators cannot accept arguments of type '%s'." % type(a).__name__)
 
     def __repr__(self):
 
@@ -79,7 +79,7 @@ class Operator(object):
     def field_set(self):
 
         # Recursively collect Field arguments
-        fields = set([])
+        fields = set()
         for a in self.args:
             if isinstance(a, Field):
                 fields.add(a)

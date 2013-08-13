@@ -1,16 +1,15 @@
 
 
 from scipy import sparse
-from itertools import izip
 
 
 def compute_expressions(rhs_expressions):
 
     # Loop from K to X
-    for i in reveresed(xrange(dimensions)):
+    for i in reveresed(range(dimensions)):
 
         # Transpose fields
-        fields = set([])
+        fields = set()
         for re in rhs_expressions:
             fields.update(re.field_set())
         for f in fields:
@@ -21,7 +20,7 @@ def compute_expressions(rhs_expressions):
             re.attempt_evaluation()
 
         # Transform fields
-        fields = set([])
+        fields = set()
         for re in rhs_expressions:
             fields.update(re.field_set())
         for f in fields:

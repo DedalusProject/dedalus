@@ -5,12 +5,12 @@ try:
     from mpi4py import MPI
 except ImportError:
     MPI = None
-    print 'Cannot import mpi4py. Parallelism disabled.'
+    print('Cannot import mpi4py. Parallelism disabled.')
 
 from graph import Graph
 
 
-class Distributor(object):
+class Distributor:
 
     def __init__(self, domain, mesh=[]):
 
@@ -33,7 +33,7 @@ class Distributor(object):
 
         # Build layouts
         self.layouts = []
-        for i in xrange(len(mesh)+1):
+        for i in range(len(mesh)+1):
             self.layouts.append(Layout(domain, mesh, i))
 
         # Build graph
@@ -42,14 +42,14 @@ class Distributor(object):
         for lo in self.layouts:
             self.graph.add_vertex(lo)
         # Add transpose plans
-        for i in xrange(1, len(mesh)+1):
+        for i in range(1, len(mesh)+1):
             forward_transpose = '%i_%i' %(0, i)
             backward_transpose = '%i_%i' %(i, 0)
             self.graph.add_edge(self.layouts[0], self.layouts[i], forward_transpose)
             self.graph.add_edge(self.layouts[i], self.layouts[0], backward_transpose)
 
 
-class Layout(object):
+class Layout:
 
     def __init__(self, domain, mesh, index):
 
@@ -72,20 +72,20 @@ class Layout(object):
 
         shape = []
         local = []
-        for i in xrange(0, L):
+        for i in range(0, L):
             shape.append(D[i] / R[i])
             local.append(False)
         shape.append(D[L])
         local.append(True)
-        for i in xrange(L+1, r+1):
+        for i in range(L+1, r+1):
             shape.append(D[i] / R[i-1])
             local.append(False)
-        for i in xrange(r+1, d):
+        for i in range(r+1, d):
             shape.append(D[i])
             local.append(True)
 
-        print shape
-        print local
+        print(shape)
+        print(local)
 
 # How fields might determine proper transpose
         # distributor.graph.find_shortest_path(self.layout, local(i))

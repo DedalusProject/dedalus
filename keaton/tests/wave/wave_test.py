@@ -59,7 +59,7 @@ while int.ok:
 
     # Print progress
     if int.iteration % copy_cadence == 0:
-        print 'Iteration: %i, Time: %e' %(int.iteration, int.time)
+        print('Iteration: %i, Time: %e' %(int.iteration, int.time))
 
 # Store final state
 if int.iteration % copy_cadence != 0:
@@ -69,11 +69,11 @@ if int.iteration % copy_cadence != 0:
 end_time = time.time()
 
 # Print statistics
-print '-' * 20
-print 'Total time:', end_time - start_time
-print 'Iterations:', int.iteration
-print 'Average timestep:', int.time / int.iteration
-print '-' * 20
+print('-' * 20)
+print('Total time:', end_time - start_time)
+print('Iterations:', int.iteration)
+print('Average timestep:', int.time / int.iteration)
+print('-' * 20)
 
 # Write storage lists
 shelf = shelve.open('data.db', flag='n')

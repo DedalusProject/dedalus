@@ -2,10 +2,9 @@
 
 import numpy as np
 from scipy import sparse
-from itertools import izip
 
 
-class Pencil(object):
+class Pencil:
     """Pencil object for viewing one k_trans across system"""
 
     def __init__(self, slice):
@@ -17,7 +16,7 @@ class Pencil(object):
 
         # Retrieve slice of all fields
         data = []
-        for field in system.fields.itervalues():
+        for field in system.fields.values():
             data.append(field['k'][self.slice])
         data = np.hstack(data)
 
@@ -27,7 +26,7 @@ class Pencil(object):
 
         # Set slice of all fields
         start = 0
-        for field in system.fields.itervalues():
+        for field in system.fields.values():
             end = start + field.domain.bases[-1].size
             field['k'][self.slice] = data[start:end]
             start = end
@@ -48,7 +47,7 @@ class Pencil(object):
         L = L.tolil()
 
         # Add higher order terms
-        for i in xrange(1, problem.order):
+        for i in range(1, problem.order):
             Mult_i = basis._build_Mult(i)
             Eval_i = basis.Eval * Mult_i
             Deriv_i = basis.Eval * Mult_i * basis.InvEval * basis.Deriv
@@ -75,9 +74,9 @@ class Pencil(object):
             L[i, :] = 0
 
         # Substitute boundary condition terms into PDE matrices
-        for i, j, v in izip(Mb.row, Mb.col, Mb.data):
+        for i, j, v in zip(Mb.row, Mb.col, Mb.data):
             M[i, j] = v
-        for i, j, v in izip(Lb.row, Lb.col, Lb.data):
+        for i, j, v in zip(Lb.row, Lb.col, Lb.data):
             L[i, j] = v
 
         # Convert for efficient manipulation and store

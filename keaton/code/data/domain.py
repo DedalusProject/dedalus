@@ -3,7 +3,7 @@
 import numpy as np
 
 
-class Domain(object):
+class Domain:
     """Problem domain."""
 
     def __init__(self, bases):

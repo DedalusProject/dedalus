@@ -6,7 +6,7 @@ from scipy.sparse import linalg
 from scipy import fftpack as fft
 
 
-class Basis(object):
+class Basis:
     """Base class for all bases."""
 
     def __init__(self, size, range):
@@ -16,7 +16,7 @@ class Basis(object):
         self.range = range
 
 
-class TauBasis(Basis):
+class TauBasis:
     """Base class for bases supporting Tau solves."""
 
     def __init__(self, size, range):
@@ -118,7 +118,7 @@ class Chebyshev(TauBasis):
         # Apply recursive differentiation
         b[..., N] = 0.
         b[..., N-1] = 2. * N * a[..., N]
-        for i in xrange(N-2, 0, -1):
+        for i in range(N-2, 0, -1):
             b[..., i] = 2 * (i+1) * a[..., i+1] + b[..., i+2]
         b[..., 0] = a[..., 1] + b[..., 2] / 2.
 
@@ -139,7 +139,7 @@ class Chebyshev(TauBasis):
         Eval = sparse.lil_matrix((size, size), dtype=np.complex128)
 
         # Add elements
-        for n in xrange(size):
+        for n in range(size):
 
             # Diagonal
             if n == 0:
@@ -167,7 +167,7 @@ class Chebyshev(TauBasis):
         Deriv = sparse.lil_matrix((size, size), dtype=np.complex128)
 
         # Add elements
-        for n in xrange(1, size):
+        for n in range(1, size):
             Deriv[n-1, n] = n * self._diff_scale
 
         return Deriv.tocsr()
@@ -186,7 +186,7 @@ class Chebyshev(TauBasis):
         Left = sparse.lil_matrix((size, size), dtype=np.complex128)
 
         # Add elements
-        for n in xrange(size):
+        for n in range(size):
             if (n % 2) == 0:
                 Left[size-1, n] = 1.
             else:
@@ -208,7 +208,7 @@ class Chebyshev(TauBasis):
         Right = sparse.lil_matrix((size, size), dtype=np.complex128)
 
         # Add elements
-        for n in xrange(size):
+        for n in range(size):
 
             # Last row entries
             Right[size-1, n] = 1.
@@ -231,7 +231,7 @@ class Chebyshev(TauBasis):
         Mult = sparse.lil_matrix((size, size), dtype=np.complex128)
 
         # Add elements
-        for n in xrange(size):
+        for n in range(size):
 
             # Upper product
             i = n + p
@@ -262,7 +262,7 @@ class Chebyshev(TauBasis):
         Mult = sparse.lil_matrix((size, size), dtype=np.complex128)
 
         # Add elements
-        for n in xrange(size):
+        for n in range(size):
 
             # Upper product
             i = n + p
@@ -327,7 +327,7 @@ class Fourier(Basis):
         kderiv[:] = kdata * 1j * k
 
 
-# class PiecewiseBasis(object):
+# class PiecewiseBasis:
 
 #     def __init__(self, bases):
 
