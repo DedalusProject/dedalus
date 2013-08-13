@@ -57,6 +57,9 @@ class Operator:
         # Inputs
         self.args = list(args)
 
+        # Store original arguments for resetting
+        self._original_args = list(args)
+
         # Check number of arguments
         if self.n_args:
             if len(args) != self.n_args:
@@ -98,6 +101,11 @@ class Operator:
 
         return Multiply(other, self)
 
+    def _reset(self):
+
+        for i, a in enumerate(self._original_args):
+            self.args[i] = a
+
     def field_set(self):
 
         # Recursively collect Field arguments
@@ -110,18 +118,28 @@ class Operator:
 
         return fields
 
-    def attempt_evaluation(self):
+    def evaluate(self):
+
+        # Create flag to track if all arguments are evaluable
+        arg_flag = True
 
         # Recursively attempt evaluation of operator arguments
+        # Note: We use a flag in order to attempt evaluation of all operator
+        #       arguments, i.e. not just returning None after reaching the
+        #       first unevaluable operator argument.
         for i, a in enumerate(self.args):
             if isinstance(a, Operator):
-                a_eval = a.attempt_evaluation()
-                if a_eval:
-                    # Replace argument with its evaluation
+                a_eval = a.evaluate()
+                # If arg evaluates, replace it with its result
+                if a_eval is not None:
                     self.args[i] = a_eval
+                # Otherwise change argument flag
                 else:
-                    # Cannot evaluate if arguments cannot be evaluated
-                    return None
+                    arg_flag = False
+
+        # Return if any arguments are not evaluable
+        if not arg_flag:
+            return None
 
         # Check layout and space conditions
             # if conditions are satisfied:
@@ -130,13 +148,13 @@ class Operator:
                 # return None
 
         # FOR DEBUGGING*********************************************************
-        return self.evaluate()
+        return self.operation()
 
-    def evaluate(self):
+    def operation(self):
 
-        # This method must be implemented in subclasses.
-        # Assume all Operator args have been evaluated to Fields.
-        # Should return a Field object.
+        # This method must be implemented in derived classes.
+        # Assume all operator arguments have been evaluated to fields.
+        # Return a field object.
 
         raise NotImplementedError()
 
@@ -153,7 +171,7 @@ class Negative(Operator):
 
         return '-' + s_arg
 
-    def evaluate(self):
+    def operation(self):
 
         out = Field()
         out.data[:] = -self.args[0].data
@@ -187,7 +205,7 @@ class Add(Operator):
         else:
             raise TypeError("Unsupported type: %s" %type(arg).__name__)
 
-    def evaluate(self):
+    def operation(self):
 
         out = Field()
         out.data[:] = self.get_data(self.args[0]) + self.get_data(self.args[1])
@@ -221,7 +239,7 @@ class Subtract(Operator):
         else:
             raise TypeError("Unsupported type: %s" %type(arg).__name__)
 
-    def evaluate(self):
+    def operation(self):
 
         out = Field()
         out.data[:] = self.get_data(self.args[0]) - self.get_data(self.args[1])
@@ -255,7 +273,7 @@ class Multiply(Operator):
         else:
             raise TypeError("Unsupported type: %s" %type(arg).__name__)
 
-    def evaluate(self):
+    def operation(self):
 
         out = Field()
         out.data[:] = self.get_data(self.args[0]) * self.get_data(self.args[1])
