@@ -6,10 +6,13 @@ import numpy as np
 class Field:
     """TEST CLASS FOR DEBUGGING"""
 
-    def __init__(self, name):
+    def __init__(self, name=None):
+
+        if name is None:
+            name = 'F' + str(np.random.randint(10,99)
 
         self.name = name
-        self.data = 0.
+        self.data = np.zeros(10)
 
     def __repr__(self):
 
@@ -23,13 +26,25 @@ class Field:
 
         return Add(self, other)
 
+    def __radd__(self, other):
+
+        return Add(other, self)
+
     def __sub__(self, other):
 
         return Subtract(self, other)
 
+    def __rsub__(self, other):
+
+        return Subtract(other, self)
+
     def __mul__(self, other):
 
         return Multiply(self, other)
+
+    def __rmul__(self, other):
+
+        return Multiply(other, self)
 
 
 class Operator:
@@ -47,11 +62,6 @@ class Operator:
             if len(args) != self.n_args:
                 raise ValueError("Wrong number of arguments.")
 
-        # Check argument types
-        for a in args:
-            if not isinstance(a, (Field, Operator)):
-                raise TypeError("Operators cannot accept arguments of type '%s'." % type(a).__name__)
-
     def __repr__(self):
 
         # Represent as "name(arguments)"
@@ -68,13 +78,25 @@ class Operator:
 
         return Add(self, other)
 
+    def __radd__(self, other):
+
+        return Add(other, self)
+
     def __sub__(self, other):
 
         return Subtract(self, other)
 
+    def __rsub__(self, other):
+
+        return Subtract(other, self)
+
     def __mul__(self, other):
 
         return Multiply(self, other)
+
+    def __rmul__(self, other):
+
+        return Multiply(other, self)
 
     def field_set(self):
 
@@ -83,7 +105,7 @@ class Operator:
         for a in self.args:
             if isinstance(a, Field):
                 fields.add(a)
-            else:
+            elif isinstance(a, Operator):
                 fields.update(a.field_set())
 
         return fields
@@ -133,9 +155,8 @@ class Negative(Operator):
 
     def evaluate(self):
 
-        out_name = 'F' + str(np.random.randint(10,99))
-        out = Field(out_name)
-        out.data = -self.args[0].data
+        out = Field()
+        out.data[:] = -self.args[0].data
 
         return out
 
@@ -152,11 +173,19 @@ class Add(Operator):
 
         return ' + '.join(s_args)
 
+    def get_data(self, arg):
+
+        if isinstance(arg, Field):
+            return arg.data
+        elif np.isscalar(arg):
+            return arg
+        else:
+            raise TypeError("Unsupported type: %s" %type(arg).__name__)
+
     def evaluate(self):
 
-        out_name = 'F' + str(np.random.randint(10,99))
-        out = Field(out_name)
-        out.data = self.args[0].data + self.args[1].data
+        out = Field()
+        out.data[:] = self.get_data(self.args[0]) + self.get_data(self.args[1])
 
         return out
 
@@ -173,11 +202,19 @@ class Subtract(Operator):
 
         return ' - '.join(s_args)
 
+    def get_data(self, arg):
+
+        if isinstance(arg, Field):
+            return arg.data
+        elif np.isscalar(arg):
+            return arg
+        else:
+            raise TypeError("Unsupported type: %s" %type(arg).__name__)
+
     def evaluate(self):
 
-        out_name = 'F' + str(np.random.randint(10,99))
-        out = Field(out_name)
-        out.data = self.args[0].data - self.args[1].data
+        out = Field()
+        out.data[:] = self.get_data(self.args[0]) - self.get_data(self.args[1])
 
         return out
 
@@ -192,18 +229,26 @@ class Multiply(Operator):
         # Print as "arg1 * arg2"
         s_args = [a.__str__() for a in self.args]
 
-        # Parenthesize addition, subtraction, and negation
+        # Parenthesize arithmetic operations
         for i, a in enumerate(self.args):
-            if isinstance(a, (Negative, Add, Subtract)):
+            if isinstance(a, (Negative, Add, Subtract, Multiply)):
                 s_args[i] = '(' + s_args[i] + ')'
 
         return ' * '.join(s_args)
 
+    def get_data(self, arg):
+
+        if isinstance(arg, Field):
+            return arg.data
+        elif np.isscalar(arg):
+            return arg
+        else:
+            raise TypeError("Unsupported type: %s" %type(arg).__name__)
+
     def evaluate(self):
 
-        out_name = 'F' + str(np.random.randint(10,99))#'(' + self.__str__() + ')'
-        out = Field(out_name)
-        out.data = self.args[0].data * self.args[1].data
+        out = Field()
+        out.data[:] = self.get_data(self.args[0]) * self.get_data(self.args[1])
 
         return out
 

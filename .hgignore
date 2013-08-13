@@ -3,4 +3,6 @@ syntax: glob
 
 *.pyc
 *.DS_Store
-
+keaton/tests/heat/test
+keaton/tests/wave/test
+keaton/tests/airy/test
