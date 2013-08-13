@@ -9,7 +9,7 @@ class Field:
     def __init__(self, name=None):
 
         if name is None:
-            name = 'F' + str(np.random.randint(10,99)
+            name = 'F' + str(np.random.randint(10,99))
 
         self.name = name
         self.data = np.zeros(10)
@@ -134,9 +134,9 @@ class Operator:
 
     def evaluate(self):
 
-        # This method must be implemented in subclasses
-        # All args can be assumed to be Fields
-        # Should return a Field object
+        # This method must be implemented in subclasses.
+        # Assume all Operator args have been evaluated to Fields.
+        # Should return a Field object.
 
         raise NotImplementedError()
 
@@ -171,6 +171,11 @@ class Add(Operator):
         # Print as "arg1 + arg2"
         s_args = [a.__str__() for a in self.args]
 
+        # Parenthesize arithmetic operations
+        for i, a in enumerate(self.args):
+            if isinstance(a, (Negative, Add, Subtract, Multiply)):
+                s_args[i] = '(' + s_args[i] + ')'
+
         return ' + '.join(s_args)
 
     def get_data(self, arg):
@@ -199,6 +204,11 @@ class Subtract(Operator):
 
         # Print as "arg1 - arg2"
         s_args = [a.__str__() for a in self.args]
+
+        # Parenthesize arithmetic operations
+        for i, a in enumerate(self.args):
+            if isinstance(a, (Negative, Add, Subtract, Multiply)):
+                s_args[i] = '(' + s_args[i] + ')'
 
         return ' - '.join(s_args)
 
