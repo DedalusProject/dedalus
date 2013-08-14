@@ -2,6 +2,7 @@
 
 import numpy as np
 
+# DEBUG: skipping real import
 #from ..data.fields import field_manager, Field
 
 
@@ -46,16 +47,17 @@ class Operator:
     name = 'Operator'
     n_args = None
 
-    def __init__(self, *args):
+    def __init__(self, *args, out=None):
 
         # Inputs
         self.args = list(args)
+        self.out = out
 
         # Store original arguments for resetting
         self._original_args = list(args)
 
         # Check number of arguments
-        if self.n_args:
+        if self.n_args is not None:
             if len(args) != self.n_args:
                 raise ValueError("Wrong number of arguments.")
 
@@ -130,9 +132,7 @@ class Operator:
         if not arg_flag:
             return None
 
-        # DEBUG: skip conditions and operate
-        return self.operation()
-
+        # DEBUG:  Check that all field layouts match
         # # Get field layout
         # layout = None
         # for i, a in enumerate(self.arsg):
@@ -143,18 +143,28 @@ class Operator:
         #         else:
         #             layout = a.layout
 
+        # DEBUG: skip conditions
         # Check layout/space conditions
-            # if conditions are satisfied:
-                # return self.evaluate()
-            # else:
-                # return None
+        # Return None if any condition is not satisfied
+        # loop over conditions:
+        #     if condition is not satisfied:
+        #         return None
 
-    def operation(self):
+        # Allocate out field if necessary
+        if self.out is None:
+            out = Field()
+        else:
+            out = self.out
+
+        # Perform operation and return the result
+        return self.operation(out)
+
+    def operation(self, out):
 
         # This method must be implemented in derived classes and should:
+        #   - take an output field as its only argument, and return this field
         #   - assume all operator arguments have been evaluated to fields
         #   - not modify arguments
-        #   - return a field object
 
         raise NotImplementedError()
 
@@ -175,9 +185,8 @@ class Negative(Operator):
 
         return '-' + s_arg
 
-    def operation(self):
+    def operation(self, out):
 
-        out = Field()
         out.data[:] = -self.args[0].data
 
         return out
@@ -209,9 +218,8 @@ class Add(Operator):
         else:
             raise TypeError("Unsupported type: %s" %type(arg).__name__)
 
-    def operation(self):
+    def operation(self, out):
 
-        out = Field()
         out.data[:] = self.get_data(self.args[0]) + self.get_data(self.args[1])
 
         return out
@@ -243,9 +251,8 @@ class Subtract(Operator):
         else:
             raise TypeError("Unsupported type: %s" %type(arg).__name__)
 
-    def operation(self):
+    def operation(self, out):
 
-        out = Field()
         out.data[:] = self.get_data(self.args[0]) - self.get_data(self.args[1])
 
         return out
@@ -277,9 +284,8 @@ class Multiply(Operator):
         else:
             raise TypeError("Unsupported type: %s" %type(arg).__name__)
 
-    def operation(self):
+    def operation(self, out):
 
-        out = Field()
         out.data[:] = self.get_data(self.args[0]) * self.get_data(self.args[1])
 
         return out
