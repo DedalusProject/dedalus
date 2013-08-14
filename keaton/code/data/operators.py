@@ -86,7 +86,6 @@ class Operator:
             if isinstance(a, Operator):
                 a_eval = a.evaluate()
                 # If argument evaluates, replace it with its result
-                # DEBUG: Might want to reset the operator here to free its field args
                 if a_eval is not None:
                     self.args[i] = a_eval
                 # Otherwise change argument flag
@@ -125,8 +124,13 @@ class Operator:
         else:
             out = self.out
 
-        # Perform operation and return the result
-        return self.operation(out)
+        # Perform operation
+        result = self.operation(out)
+
+        # Reset to free field arguments
+        self.reset()
+
+        return result
 
     def operation(self, out):
 
