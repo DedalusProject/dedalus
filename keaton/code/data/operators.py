@@ -10,7 +10,7 @@ import numpy as np
 class Operator:
 
     name = 'Operator'
-    n_args = None
+    arity = None
 
     def __init__(self, *args, out=None):
 
@@ -22,8 +22,8 @@ class Operator:
         self.original_args = list(args)
 
         # Check number of arguments
-        if self.n_args is not None:
-            if len(args) != self.n_args:
+        if self.arity is not None:
+            if len(args) != self.arity:
                 raise ValueError("Wrong number of arguments.")
 
     def __repr__(self):
@@ -141,7 +141,7 @@ class Operator:
 class Negation(Operator):
 
     name = 'Neg'
-    n_args = 1
+    arity = 1
 
     def __str__(self):
 
@@ -159,7 +159,7 @@ class Negation(Operator):
 
 class Arithmetic(Operator):
 
-    n_args = 2
+    arity = 2
 
     def __str__(self):
 
