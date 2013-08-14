@@ -6,7 +6,7 @@ from collections import defaultdict
 
 # Bottom of module:
 # # Import after definitions to resolve cyclic dependencies
-# from .operators import Negative, Add, Subtract, Multiply
+# from .operators import Negation, Addition, Subtraction, Multiplication
 
 
 class FieldManager:
@@ -77,25 +77,25 @@ class Field:
         return self.name
 
     def __neg__(self):
-        return Negative(self)
+        return Negation(self)
 
     def __add__(self, other):
-        return Add(self, other)
+        return Addition(self, other)
 
     def __radd__(self, other):
-        return Add(other, self)
+        return Addition(other, self)
 
     def __sub__(self, other):
-        return Subtract(self, other)
+        return Subtraction(self, other)
 
     def __rsub__(self, other):
-        return Subtract(other, self)
+        return Subtraction(other, self)
 
     def __mul__(self, other):
-        return Multiply(self, other)
+        return Multiplication(self, other)
 
     def __rmul__(self, other):
-        return Multiply(other, self)
+        return Multiplication(other, self)
 
     def require_global_space(self, space):
 
@@ -171,5 +171,5 @@ class Field:
 
 
 # Import after definitions to resolve cyclic dependencies
-from .operators import Negative, Add, Subtract, Multiply
+from .operators import Negation, Addition, Subtraction, Multiplication
 

@@ -19,7 +19,7 @@ class Operator:
         self.out = out
 
         # Store original arguments for resetting
-        self._original_args = list(args)
+        self.original_args = list(args)
 
         # Check number of arguments
         if self.n_args is not None:
@@ -28,37 +28,37 @@ class Operator:
 
     def __repr__(self):
 
-        # Represent as "name(arguments)"
-        r_op = self.name
-        r_args = [a.__repr__() for a in self.args]
+        # Represent as "name(args)"
+        repr_op = self.name
+        repr_args = [a.__repr__() for a in self.args]
 
-        return r_op + '(' + ', '.join(r_args) + ')'
+        return repr_op + '(' + ', '.join(repr_args) + ')'
 
     def __neg__(self):
-        return Negative(self)
+        return Negation(self)
 
     def __add__(self, other):
-        return Add(self, other)
+        return Addition(self, other)
 
     def __radd__(self, other):
-        return Add(other, self)
+        return Addition(other, self)
 
     def __sub__(self, other):
-        return Subtract(self, other)
+        return Subtraction(self, other)
 
     def __rsub__(self, other):
-        return Subtract(other, self)
+        return Subtraction(other, self)
 
     def __mul__(self, other):
-        return Multiply(self, other)
+        return Multiplication(self, other)
 
     def __rmul__(self, other):
-        return Multiply(other, self)
+        return Multiplication(other, self)
 
     def reset(self):
 
         # Restore original arguments
-        for i, a in enumerate(self._original_args):
+        for i, a in enumerate(self.original_args):
             self.args[i] = a
 
     def field_set(self):
@@ -138,21 +138,17 @@ class Operator:
         raise NotImplementedError()
 
 
-class Negative(Operator):
+class Negation(Operator):
 
     name = 'Neg'
     n_args = 1
 
     def __str__(self):
 
-        # Print as "-arg"
-        s_arg = self.args[0].__str__()
+        # Print as "(-arg)"
+        str_arg = self.args[0].__str__()
 
-        # Parenthesize arithmetic operations
-        if isinstance(self.args[0], (Negative, Add, Subtract, Multiply)):
-            s_arg = '(' + s_arg + ')'
-
-        return '-' + s_arg
+        return '(' + '-' + str_arg + ')'
 
     def operation(self, out):
 
@@ -161,22 +157,17 @@ class Negative(Operator):
         return out
 
 
-class Add(Operator):
+class Arithmetic(Operator):
 
-    name = 'Add'
     n_args = 2
 
     def __str__(self):
 
-        # Print as "arg1 + arg2"
-        s_args = [a.__str__() for a in self.args]
+        # Print as "(arg1 [] arg2)"
+        str_op = self.str_op
+        str_args = [a.__str__() for a in self.args]
 
-        # Parenthesize arithmetic operations
-        for i, a in enumerate(self.args):
-            if isinstance(a, (Negative, Add, Subtract, Multiply)):
-                s_args[i] = '(' + s_args[i] + ')'
-
-        return ' + '.join(s_args)
+        return '(' + str_op.join(str_args) + ')'
 
     def get_data(self, arg):
 
@@ -186,6 +177,12 @@ class Add(Operator):
             return arg
         else:
             raise TypeError("Unsupported type: %s" %type(arg).__name__)
+
+
+class Addition(Arithmetic):
+
+    name = 'Add'
+    str_op = ' + '
 
     def operation(self, out):
 
@@ -194,31 +191,10 @@ class Add(Operator):
         return out
 
 
-class Subtract(Operator):
+class Subtraction(Arithmetic):
 
     name = 'Sub'
-    n_args = 2
-
-    def __str__(self):
-
-        # Print as "arg1 - arg2"
-        s_args = [a.__str__() for a in self.args]
-
-        # Parenthesize arithmetic operations
-        for i, a in enumerate(self.args):
-            if isinstance(a, (Negative, Add, Subtract, Multiply)):
-                s_args[i] = '(' + s_args[i] + ')'
-
-        return ' - '.join(s_args)
-
-    def get_data(self, arg):
-
-        if isinstance(arg, Field):
-            return arg.data
-        elif np.isscalar(arg):
-            return arg
-        else:
-            raise TypeError("Unsupported type: %s" %type(arg).__name__)
+    str_op = ' - '
 
     def operation(self, out):
 
@@ -227,31 +203,10 @@ class Subtract(Operator):
         return out
 
 
-class Multiply(Operator):
+class Multiplication(Arithmetic):
 
     name = 'Mult'
-    n_args = 2
-
-    def __str__(self):
-
-        # Print as "arg1 * arg2"
-        s_args = [a.__str__() for a in self.args]
-
-        # Parenthesize arithmetic operations
-        for i, a in enumerate(self.args):
-            if isinstance(a, (Negative, Add, Subtract, Multiply)):
-                s_args[i] = '(' + s_args[i] + ')'
-
-        return ' * '.join(s_args)
-
-    def get_data(self, arg):
-
-        if isinstance(arg, Field):
-            return arg.data
-        elif np.isscalar(arg):
-            return arg
-        else:
-            raise TypeError("Unsupported type: %s" %type(arg).__name__)
+    str_op = ' * '
 
     def operation(self, out):
 
