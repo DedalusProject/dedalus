@@ -20,7 +20,6 @@ class FieldManager:
 
         # Add field
         field_list.append(field)
-        #print 'FM received field: ' + str(id(field))
 
     def get_field(self, domain):
 
@@ -30,15 +29,13 @@ class FieldManager:
         # Run garbage collector to make sure any free fields have been collected
         gc.collect()
 
-        if len(field_list):
-            # Return a free field
+        # Return a free field if available
+        if field_list:
             field = field_list.pop()
-            #print 'FM found field: ' + str(id(field))
+        # Otherwise build a new field
         else:
-            # Build a new field and increment count
             field = Field(domain)
             self.field_count[domain] += 1
-            #print 'FM made field: ' + str(id(field))
 
         return field
 
@@ -64,29 +61,9 @@ class Field:
 
     def __del__(self):
 
-        #print 'Del field: ' + str(id(self))
-
         # Add self to field manager
         if field_manager:
             field_manager.add_field(self)
-
-    def __clone__(self, copy_data=False):
-
-        clone = Field(self.domain)
-
-        if copy_data:
-            clone[self.space] = self[self.space]
-
-        return clone
-
-    def __add__(self, other):
-
-        out = self.__clone__()
-        space = self.space
-
-        out[space] = self[space] + other[space]
-
-        return out
 
     def require_global_space(self, space):
 

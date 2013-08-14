@@ -2,9 +2,11 @@
 
 import numpy as np
 
+#from ..data.fields import field_manager, Field
+
 
 class Field:
-    """TEST CLASS FOR DEBUGGING"""
+    # DEBUG: drop-in test class
 
     def __init__(self, name=None):
 
@@ -15,35 +17,27 @@ class Field:
         self.data = np.zeros(10)
 
     def __repr__(self):
-
         return self.name
 
     def __neg__(self):
-
         return Negative(self)
 
     def __add__(self, other):
-
         return Add(self, other)
 
     def __radd__(self, other):
-
         return Add(other, self)
 
     def __sub__(self, other):
-
         return Subtract(self, other)
 
     def __rsub__(self, other):
-
         return Subtract(other, self)
 
     def __mul__(self, other):
-
         return Multiply(self, other)
 
     def __rmul__(self, other):
-
         return Multiply(other, self)
 
 
@@ -74,41 +68,35 @@ class Operator:
         return r_op + '(' + ', '.join(r_args) + ')'
 
     def __neg__(self):
-
         return Negative(self)
 
     def __add__(self, other):
-
         return Add(self, other)
 
     def __radd__(self, other):
-
         return Add(other, self)
 
     def __sub__(self, other):
-
         return Subtract(self, other)
 
     def __rsub__(self, other):
-
         return Subtract(other, self)
 
     def __mul__(self, other):
-
         return Multiply(self, other)
 
     def __rmul__(self, other):
-
         return Multiply(other, self)
 
-    def _reset(self):
+    def reset(self):
 
+        # Restore original arguments
         for i, a in enumerate(self._original_args):
             self.args[i] = a
 
     def field_set(self):
 
-        # Recursively collect Field arguments
+        # Recursively collect field arguments
         fields = set()
         for a in self.args:
             if isinstance(a, Field):
@@ -130,31 +118,43 @@ class Operator:
         for i, a in enumerate(self.args):
             if isinstance(a, Operator):
                 a_eval = a.evaluate()
-                # If arg evaluates, replace it with its result
+                # If argument evaluates, replace it with its result
+                # DEBUG: Might want to reset the operator here to free its field args
                 if a_eval is not None:
                     self.args[i] = a_eval
                 # Otherwise change argument flag
                 else:
                     arg_flag = False
 
-        # Return if any arguments are not evaluable
+        # Return None if any arguments are not evaluable
         if not arg_flag:
             return None
 
-        # Check layout and space conditions
+        # DEBUG: skip conditions and operate
+        return self.operation()
+
+        # # Get field layout
+        # layout = None
+        # for i, a in enumerate(self.arsg):
+        #     if isinstance(a, Field):
+        #         if layout:
+        #             if a.layout is not layout:
+        #                 raise ValueError("Operator arguments must have same layout.")
+        #         else:
+        #             layout = a.layout
+
+        # Check layout/space conditions
             # if conditions are satisfied:
                 # return self.evaluate()
             # else:
                 # return None
 
-        # FOR DEBUGGING*********************************************************
-        return self.operation()
-
     def operation(self):
 
-        # This method must be implemented in derived classes.
-        # Assume all operator arguments have been evaluated to fields.
-        # Return a field object.
+        # This method must be implemented in derived classes and should:
+        #   - assume all operator arguments have been evaluated to fields
+        #   - not modify arguments
+        #   - return a field object
 
         raise NotImplementedError()
 
@@ -168,6 +168,10 @@ class Negative(Operator):
 
         # Print as "-arg"
         s_arg = self.args[0].__str__()
+
+        # Parenthesize arithmetic operations
+        if isinstance(self.args[0], (Negative, Add, Subtract, Multiply)):
+            s_arg = '(' + s_arg + ')'
 
         return '-' + s_arg
 
