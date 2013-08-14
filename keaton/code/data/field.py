@@ -4,6 +4,10 @@ import numpy as np
 import gc
 from collections import defaultdict
 
+# Bottom of module:
+# # Import after definitions to resolve cyclic dependencies
+# from .operators import Negative, Add, Subtract, Multiply
+
 
 class FieldManager:
 
@@ -46,10 +50,14 @@ field_manager = FieldManager()
 class Field:
     """Scalar field defined over the domain."""
 
-    def __init__(self, domain):
+    def __init__(self, domain, name=None):
 
         # Inputs
         self.domain = domain
+        if name is not None:
+            self.name = name
+        else:
+            self.name = 'F' + str(id(self))
 
         # Allocate data
         self.data = np.zeros(domain.shape, dtype=np.complex128)
@@ -64,6 +72,30 @@ class Field:
         # Add self to field manager
         if field_manager:
             field_manager.add_field(self)
+
+    def __repr__(self):
+        return self.name
+
+    def __neg__(self):
+        return Negative(self)
+
+    def __add__(self, other):
+        return Add(self, other)
+
+    def __radd__(self, other):
+        return Add(other, self)
+
+    def __sub__(self, other):
+        return Subtract(self, other)
+
+    def __rsub__(self, other):
+        return Subtract(other, self)
+
+    def __mul__(self, other):
+        return Multiply(self, other)
+
+    def __rmul__(self, other):
+        return Multiply(other, self)
 
     def require_global_space(self, space):
 
@@ -136,4 +168,8 @@ class Field:
         self.domain.bases[i].differentiate(self.data, self._temp, axis=i)
 
         return self._temp
+
+
+# Import after definitions to resolve cyclic dependencies
+from .operators import Negative, Add, Subtract, Multiply
 

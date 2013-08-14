@@ -2,44 +2,9 @@
 
 import numpy as np
 
-# DEBUG: skipping real import
-#from ..data.fields import field_manager, Field
-
-
-class Field:
-    # DEBUG: drop-in test class
-
-    def __init__(self, name=None):
-
-        if name is None:
-            name = 'F' + str(np.random.randint(10,99))
-
-        self.name = name
-        self.data = np.zeros(10)
-
-    def __repr__(self):
-        return self.name
-
-    def __neg__(self):
-        return Negative(self)
-
-    def __add__(self, other):
-        return Add(self, other)
-
-    def __radd__(self, other):
-        return Add(other, self)
-
-    def __sub__(self, other):
-        return Subtract(self, other)
-
-    def __rsub__(self, other):
-        return Subtract(other, self)
-
-    def __mul__(self, other):
-        return Multiply(self, other)
-
-    def __rmul__(self, other):
-        return Multiply(other, self)
+# Bottom of module:
+# # Import after definitions to resolve cyclic dependencies
+# from .field import field_manager, Field
 
 
 class Operator:
@@ -152,7 +117,11 @@ class Operator:
 
         # Allocate out field if necessary
         if self.out is None:
-            out = Field()
+            for a in self.args:
+                if isinstance(a, Field):
+                    domain = a.domain
+                    break
+            out = field_manager.get_field(domain)
         else:
             out = self.out
 
@@ -289,4 +258,8 @@ class Multiply(Operator):
         out.data[:] = self.get_data(self.args[0]) * self.get_data(self.args[1])
 
         return out
+
+
+# Import after definitions to resolve cyclic dependencies
+from .field import field_manager, Field
 
