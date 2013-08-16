@@ -11,3 +11,5 @@ from .pde import integrator
 from .pde import problems
 from .pde import timesteppers
 
+from .tools.plot_op import plot_operator
+
