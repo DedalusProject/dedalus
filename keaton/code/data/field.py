@@ -1,7 +1,6 @@
 
 
 import numpy as np
-import gc
 from collections import defaultdict
 
 # Bottom of module:
@@ -29,9 +28,6 @@ class FieldManager:
 
         # Get field list
         field_list = self.field_lists[domain]
-
-        # Run garbage collector to make sure any free fields have been collected
-        gc.collect()
 
         # Return a free field if available
         if field_list:
