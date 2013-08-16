@@ -9,7 +9,7 @@ import numpy as np
 
 class Operator:
 
-    name = 'Operator'
+    name = 'Op'
     arity = None
 
     def __init__(self, *args, out=None):
@@ -27,8 +27,7 @@ class Operator:
                 raise ValueError("Wrong number of arguments.")
 
         # Check that domains match
-        fields = self.field_set(include_out=True)
-        self.domain = unique_domain(fields)
+        self.domain = unique_domain(self.field_set(include_out=True))
         if not self.domain:
             raise ValueError("Arguments / outputs have multiple domains.")
 
@@ -107,8 +106,7 @@ class Operator:
             return None
 
         # Return None if field arguments have different layouts
-        fields = self.field_set()
-        layout = unique_layout(fields)
+        layout = unique_layout(self.field_set())
         if not layout:
             return None
 
