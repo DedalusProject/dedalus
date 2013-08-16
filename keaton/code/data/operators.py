@@ -172,9 +172,6 @@ class Negation(Operator):
 
         out.data[:] = -self.args[0].data
 
-        #DEBUG
-        out.space[:] = self.args[0].space[:]
-
         return out
 
 
@@ -209,11 +206,6 @@ class Addition(Arithmetic):
 
         out.data[:] = self.get_data(self.args[0]) + self.get_data(self.args[1])
 
-        # DEBUG
-        for a in self.args:
-            if isinstance(a, Field):
-                out.space[:] = a.space[:]
-
         return out
 
 
@@ -225,11 +217,6 @@ class Subtraction(Arithmetic):
     def operation(self, out):
 
         out.data[:] = self.get_data(self.args[0]) - self.get_data(self.args[1])
-
-        # DEBUG
-        for a in self.args:
-            if isinstance(a, Field):
-                out.space[:] = a.space[:]
 
         return out
 
@@ -251,11 +238,6 @@ class Multiplication(Arithmetic):
     def operation(self, out):
 
         out.data[:] = self.get_data(self.args[0]) * self.get_data(self.args[1])
-
-        # DEBUG
-        for a in self.args:
-            if isinstance(a, Field):
-                out.space[:] = a.space[:]
 
         return out
 

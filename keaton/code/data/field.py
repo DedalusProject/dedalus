@@ -63,6 +63,14 @@ class Field:
         self.space = ['x'] * domain.dim
         self.local = [True] * domain.dim
 
+    @property
+    def layout(self):
+        return ''.join(self.space)
+
+    @layout.setter
+    def layout(self, value):
+        self.space = list(value)
+
     def __del__(self):
 
         # Add self to field manager
