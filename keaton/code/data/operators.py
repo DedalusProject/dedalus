@@ -26,6 +26,12 @@ class Operator:
             if len(args) != self.arity:
                 raise ValueError("Wrong number of arguments.")
 
+        # Check that domains match
+        fields = self.field_set(include_out=True)
+        self.domain = unique_domain(fields)
+        if not self.domain:
+            raise ValueError("Arguments / outputs have multiple domains.")
+
     def __repr__(self):
 
         # Represent as "name(args)"
@@ -58,10 +64,9 @@ class Operator:
     def reset(self):
 
         # Restore original arguments
-        for i, a in enumerate(self.original_args):
-            self.args[i] = a
+        self.args = list(self.original_args)
 
-    def field_set(self):
+    def field_set(self, include_out=False):
 
         # Recursively collect field arguments
         fields = set()
@@ -69,7 +74,12 @@ class Operator:
             if isinstance(a, Field):
                 fields.add(a)
             elif isinstance(a, Operator):
-                fields.update(a.field_set())
+                fields.update(a.field_set(include_out=include_out))
+
+        # Add output field if requested
+        if include_out:
+            if self.out:
+                fields.add(self.out)
 
         return fields
 
@@ -86,7 +96,7 @@ class Operator:
             if isinstance(a, Operator):
                 a_eval = a.evaluate()
                 # If argument evaluates, replace it with its result
-                if a_eval is not None:
+                if a_eval:
                     self.args[i] = a_eval
                 # Otherwise change argument flag
                 else:
@@ -96,16 +106,14 @@ class Operator:
         if not arg_flag:
             return None
 
-        # DEBUG:  Check that all field layouts match
-        # # Get field layout
-        # layout = None
-        # for i, a in enumerate(self.arsg):
-        #     if isinstance(a, Field):
-        #         if layout:
-        #             if a.layout is not layout:
-        #                 raise ValueError("Operator arguments must have same layout.")
-        #         else:
-        #             layout = a.layout
+        # Return None if field arguments have different layouts
+        fields = self.field_set()
+        layout = unique_layout(fields)
+        if not layout:
+            return None
+
+
+
 
         # DEBUG: skip conditions
         # Check layout/space conditions
@@ -113,24 +121,32 @@ class Operator:
         # loop over conditions:
         #     if condition is not satisfied:
         #         return None
+        if not self.conditions():
+            return None
 
-        # Allocate out field if necessary
-        if self.out is None:
-            for a in self.args:
-                if isinstance(a, Field):
-                    domain = a.domain
-                    break
-            out = field_manager.get_field(domain)
-        else:
+
+
+
+        # Allocate output field if necessary
+        if self.out:
             out = self.out
+        else:
+            out = field_manager.get_field(self.domain)
+
+        # Set output layout to argument layout
+        out.layout = layout
 
         # Perform operation
         result = self.operation(out)
 
-        # Reset to free field arguments
+        # Reset self to free field arguments
         self.reset()
 
         return result
+
+    def conditions(self):
+
+        return True
 
     def operation(self, out):
 
@@ -157,6 +173,9 @@ class Negation(Operator):
     def operation(self, out):
 
         out.data[:] = -self.args[0].data
+
+        #DEBUG
+        out.space[:] = self.args[0].space[:]
 
         return out
 
@@ -192,6 +211,11 @@ class Addition(Arithmetic):
 
         out.data[:] = self.get_data(self.args[0]) + self.get_data(self.args[1])
 
+        # DEBUG
+        for a in self.args:
+            if isinstance(a, Field):
+                out.space[:] = a.space[:]
+
         return out
 
 
@@ -204,6 +228,11 @@ class Subtraction(Arithmetic):
 
         out.data[:] = self.get_data(self.args[0]) - self.get_data(self.args[1])
 
+        # DEBUG
+        for a in self.args:
+            if isinstance(a, Field):
+                out.space[:] = a.space[:]
+
         return out
 
 
@@ -212,11 +241,51 @@ class Multiplication(Arithmetic):
     name = 'Mult'
     str_op = ' * '
 
+    def conditions(self):
+
+        flag = True
+        for a in self.args:
+            if isinstance(a, Field):
+                if a.space[0] == 'k':
+                    flag = False
+        return flag
+
     def operation(self, out):
 
         out.data[:] = self.get_data(self.args[0]) * self.get_data(self.args[1])
 
+        # DEBUG
+        for a in self.args:
+            if isinstance(a, Field):
+                out.space[:] = a.space[:]
+
         return out
+
+
+def unique_domain(fields):
+
+    # Get set of domains
+    domains = set(f.domain for f in fields)
+
+    # Return domain if unique
+    if len(domains) == 1:
+        return list(domains)[0]
+    # Otherwise return None
+    else:
+        return None
+
+
+def unique_layout(fields):
+
+    # Get set of layouts
+    layouts = set(f.layout for f in fields)
+
+    # Return layout if unique
+    if len(layouts) == 1:
+        return list(layouts)[0]
+    # Otherwise return None
+    else:
+        return None
 
 
 # Import after definitions to resolve cyclic dependencies
