@@ -14,6 +14,7 @@ class Problem:
 
         # Parameters
         self.size = len(field_names)
+        self.parameters = {}
 
         # Build matrix lists
         size = self.size
@@ -26,6 +27,7 @@ class Problem:
         self.LL = np.zeros((size, size))
         self.LR = np.zeros((size, size))
         self.b = np.zeros(size)
+        self.F = [None] * self.size
 
 
 # Wave equation:  y_tt = c2 y_xx

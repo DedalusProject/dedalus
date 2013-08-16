@@ -86,3 +86,11 @@ class Pencil:
         # BC RHS
         self.b = np.kron(problem.b, basis.last)
 
+        # Reference nonlinear expressions
+        self.F = problem.F
+        self._bc_rows = list(rows)
+        self._bc_f = [self.b[r] for r in rows]
+        self._parameters = problem.parameters
+
+        print(self._bc_rows)
+        print(self._bc_f)

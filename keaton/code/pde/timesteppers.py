@@ -3,6 +3,7 @@
 import numpy as np
 from collections import deque
 
+from .nonlinear import compute_expressions
 from ..data.system import System
 
 
@@ -34,6 +35,18 @@ class IMEXBase:
         for p in range(self.pmax):
             self.F.append(System(field_names, domain))
 
+        # F expressions
+        self.F_expressions = []
+        for fn in state.field_names:
+            locals()[fn] = state.fields[fn]
+        for key, val in self.pencils[0]._parameters.items():
+            locals()[key] = val
+        for f in self.pencils[0].F:
+            if f is None:
+                self.F_expressions.append(None)
+            else:
+                self.F_expressions.append(eval(f))
+
     def update_pencils(self, dt, iteration):
 
         # References
@@ -52,17 +65,23 @@ class IMEXBase:
         LX.rotate()
         F.rotate()
 
+        # Compute nonlinear component
+        compute_expressions(self.F_expressions, F[0])
+
         for pencil in self.pencils:
 
             # (Assuming no coupling between pencils)
             mx = pencil.M.dot(state[pencil])
             lx = pencil.L.dot(state[pencil])
             # Need to add RHS (for eqns and BCs)
-            f = state[pencil] * 0. + pencil.b###################################
+            #f = state[pencil] * 0. + pencil.b###################################
 
             MX[0][pencil] = mx
             LX[0][pencil] = lx
-            F[0][pencil] = f
+
+            for i, r in enumerate(pencil._bc_rows):
+                F[0][pencil][r] = pencil._bc_f[i]
+            #F[0][pencil] += pencil.b
 
         # Compute IMEX coefficients
         a, b, c, d = self.compute_coefficients(iteration)
