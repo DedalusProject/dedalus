@@ -242,6 +242,27 @@ class Multiplication(Arithmetic):
         return out
 
 
+class MagSquared(Operator):
+
+    name = 'MagSq'
+    arity = 1
+
+    def conditions(self):
+
+        flag = True
+        for a in self.args:
+            if isinstance(a, Field):
+                if a.space[0] == 'k':
+                    flag = False
+        return flag
+
+    def operation(self, out):
+
+        out.data[:] = self.args[0].data * self.args[0].data.conj()
+
+        return out
+
+
 def unique_domain(fields):
 
     # Get set of domains
