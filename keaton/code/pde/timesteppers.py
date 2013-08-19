@@ -79,6 +79,8 @@ class IMEXBase:
             MX[0][pencil] = mx
             LX[0][pencil] = lx
 
+            F[0][pencil] = pencil.F_eval.dot(F[0][pencil])
+
             for i, r in enumerate(pencil._bc_rows):
                 F[0][pencil][r] = pencil._bc_f[i]
             #F[0][pencil] += pencil.b
@@ -100,6 +102,34 @@ class IMEXBase:
                 rhs[fn]['k'] += c[p] * F[p][fn]['k']
 
 
+class Euler(IMEXBase):
+    """Backward-Euler/Forward-Euler"""
+
+    qmax = 1
+    pmax = 1
+
+    def compute_coefficients(self, iteration):
+
+        a = [0.] * self.qmax
+        b = [0.] * self.qmax
+        c = [0.] * self.pmax
+        d = [0.] * 2
+
+        # References
+        dt = self.dt[0]
+
+        # LHS coefficients
+        d[0] = 1.
+        d[1] = dt
+
+        # RHS coefficients
+        a[0] = 1.
+        b[0] = 0.
+        c[0] = dt
+
+        return a, b, c, d
+
+
 class CNAB3(IMEXBase):
     """Third order Crank-Nicolson-Adams-Bashforth"""
 
@@ -108,8 +138,8 @@ class CNAB3(IMEXBase):
 
     def compute_coefficients(self, iteration):
 
-        a = [0.] * (self.qmax+1)
-        b = [0.] * (self.qmax+1)
+        a = [0.] * self.qmax
+        b = [0.] * self.qmax
         c = [0.] * self.pmax
         d = [0.] * 2
 
