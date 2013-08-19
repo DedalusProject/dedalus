@@ -83,14 +83,11 @@ class Pencil:
         self.M = M.tocsr()
         self.L = L.tocsr()
 
-        # BC RHS
-        self.b = np.kron(problem.b, basis.last)
-
         # Reference nonlinear expressions
         self.F = problem.F
-        self._bc_rows = list(rows)
-        self._bc_f = [self.b[r] for r in rows]
-        self._parameters = problem.parameters
+        self.b = np.kron(problem.b, basis.last)
+        self.bc_rows = list(rows)
+        self.bc_f = [self.b[r] for r in rows]
+        self.parameters = problem.parameters
+        self.F_eval = sparse.kron(np.eye(problem.size), basis.Eval)
 
-        print(self._bc_rows)
-        print(self._bc_f)

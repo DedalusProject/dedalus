@@ -39,7 +39,7 @@ class IMEXBase:
         self.F_expressions = []
         for fn in state.field_names:
             locals()[fn] = state.fields[fn]
-        for key, val in self.pencils[0]._parameters.items():
+        for key, val in self.pencils[0].parameters.items():
             locals()[key] = val
         for f in self.pencils[0].F:
             if f is None:
@@ -73,17 +73,14 @@ class IMEXBase:
             # (Assuming no coupling between pencils)
             mx = pencil.M.dot(state[pencil])
             lx = pencil.L.dot(state[pencil])
-            # Need to add RHS (for eqns and BCs)
-            #f = state[pencil] * 0. + pencil.b###################################
 
             MX[0][pencil] = mx
             LX[0][pencil] = lx
 
             F[0][pencil] = pencil.F_eval.dot(F[0][pencil])
 
-            for i, r in enumerate(pencil._bc_rows):
-                F[0][pencil][r] = pencil._bc_f[i]
-            #F[0][pencil] += pencil.b
+            for i, r in enumerate(pencil.bc_rows):
+                F[0][pencil][r] = pencil.bc_f[i]
 
         # Compute IMEX coefficients
         a, b, c, d = self.compute_coefficients(iteration)
