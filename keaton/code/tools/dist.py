@@ -28,8 +28,8 @@ class Distributor:
             self.total_processes = 1
 
         # Check total processes
-        if self.total_processes != np.prod(mesh):
-            raise ValueError("Requires %i processes" %np.prod(mesh))
+        # if self.total_processes != np.prod(mesh):
+        #     raise ValueError("Requires %i processes" %np.prod(mesh))
 
         # Build layouts
         self.layouts = []
@@ -59,7 +59,7 @@ class Layout:
         self.index = index
 
         # Sizes
-        D = domain.shape
+        D = domain
         R = mesh
         d = len(D)
         r = len(R)
@@ -86,6 +86,7 @@ class Layout:
 
         print(shape)
         print(local)
+        print('-'*10)
 
 # How fields might determine proper transpose
         # distributor.graph.find_shortest_path(self.layout, local(i))
