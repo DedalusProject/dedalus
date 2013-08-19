@@ -18,15 +18,15 @@ class Problem:
 
         # Build matrix lists
         size = self.size
-        self.M0 = [np.zeros((size, size)) for i in range(order)]
-        self.M1 = [np.zeros((size, size)) for i in range(order)]
-        self.L0 = [np.zeros((size, size)) for i in range(order)]
-        self.L1 = [np.zeros((size, size)) for i in range(order)]
-        self.ML = np.zeros((size, size))
-        self.MR = np.zeros((size, size))
-        self.LL = np.zeros((size, size))
-        self.LR = np.zeros((size, size))
-        self.b = np.zeros(size)
+        self.M0 = [np.zeros((size, size), dtype=np.complex128) for i in range(order)]
+        self.M1 = [np.zeros((size, size), dtype=np.complex128) for i in range(order)]
+        self.L0 = [np.zeros((size, size), dtype=np.complex128) for i in range(order)]
+        self.L1 = [np.zeros((size, size), dtype=np.complex128) for i in range(order)]
+        self.ML = np.zeros((size, size), dtype=np.complex128)
+        self.MR = np.zeros((size, size), dtype=np.complex128)
+        self.LL = np.zeros((size, size), dtype=np.complex128)
+        self.LR = np.zeros((size, size), dtype=np.complex128)
+        self.b = np.zeros(size, dtype=np.complex128)
         self.F = [None] * self.size
 
 
