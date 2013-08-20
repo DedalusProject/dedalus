@@ -75,13 +75,13 @@ class Tree:
         return node.position
 
 
-def plot_operator(operator, saveas=None):
+def plot_operator(operator, fontsize=8, figsize=8, saveas=None):
 
     # Create tree
     tree = Tree(operator)
 
     # Create figure
-    fig = plt.figure(1, figsize=(8, 8))
+    fig = plt.figure(1, figsize=(figsize, figsize))
     fig.clear()
     fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
 
@@ -111,7 +111,7 @@ def plot_operator(operator, saveas=None):
         fig.gca().add_artist(c)
 
         # Plot node label
-        plt.text(x[-1], y[-1], s, fontsize=8, zorder=2,
+        plt.text(x[-1], y[-1], s, fontsize=fontsize, zorder=2,
             verticalalignment='center', horizontalalignment='center')
 
     # Set limits
