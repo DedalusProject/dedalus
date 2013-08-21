@@ -237,7 +237,7 @@ class MagSquared(Operator):
     name = 'MagSq'
     arity = 1
 
-    def conditions(self):
+    def conditions(self, layout):
 
         flag = True
         for a in self.args:
