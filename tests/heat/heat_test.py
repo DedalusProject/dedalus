@@ -4,15 +4,32 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 import shelve
-from fluid_matrix.public import *
+from dedalus2.public import *
 
 
 # Set domain
 x_basis = Chebyshev(64, range=[-1., 1.])
 domain = Domain([x_basis])
 
-# Choose PDE and integrator
-pde = problems.heat_equation_1d
+# Heat equation: y_t = y_xx
+#
+# y_x - dy = 0
+# y_t - dy_x = 0
+#
+heat_equation_1d = Problem(['y', 'dy'], 1)
+heat_equation_1d.M0[0] = np.array([[0., 0.],
+                                   [1., 0.]])
+heat_equation_1d.L0[0] = np.array([[0., -1.],
+                                   [0., 0.]])
+heat_equation_1d.L1[0] = np.array([[1., 0.],
+                                   [0., -1.]])
+heat_equation_1d.LL = np.array([[1., 0.],
+                                [0., 0.]])
+heat_equation_1d.LR = np.array([[0., 0.],
+                                [1., 0.]])
+heat_equation_1d.b = np.array([1., 1.])
+
+pde = heat_equation_1d
 ts = timesteppers.CNAB3
 
 # Build solver

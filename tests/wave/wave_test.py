@@ -4,15 +4,41 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 import shelve
-from fluid_matrix.public import *
+from dedalus2.public import *
 
 
 # Set domain
 x_basis = Chebyshev(32, range=[-1., 1.])
 domain = Domain([x_basis])
 
-# Choose PDE and integrator
-pde = problems.wave_equation_1d
+# Wave equation:  y_tt = c2 y_xx
+#
+# y_t - v = 0
+# y_x - dy = 0
+# v_t - c2 dy_x = 0
+#
+# y(left) = 0
+# y(right) = 0
+#
+# Index ordering:  Matrix[Order][Equation][Variable]
+#
+wave_equation_1d = Problem(['y', 'dy', 'v'], 3)
+
+wave_equation_1d.M0[0][0][0] = 1.
+wave_equation_1d.L0[0][0][2] = -1.
+
+wave_equation_1d.L0[0][1][1] = -1.
+wave_equation_1d.L1[0][1][0] = 1.
+
+wave_equation_1d.M0[0][2][2] = 1.
+wave_equation_1d.L1[0][2][1] = -9./8.
+wave_equation_1d.L1[1][2][1] = -1.
+wave_equation_1d.L1[2][2][1] = -1./8.
+
+wave_equation_1d.LL[1][0] = 1.
+wave_equation_1d.LR[2][0] = 1.
+
+pde = wave_equation_1d
 ts = timesteppers.CNAB3
 
 # Build solver

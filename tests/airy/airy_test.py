@@ -4,7 +4,7 @@ import numpy as np
 import scipy.special
 import matplotlib.pyplot as plt
 
-from fluid_matrix.public import *
+from dedalus2.public import *
 
 
 ## Airy test: u_zz + (a + bz)u = 0
@@ -16,7 +16,7 @@ a = 0.
 b = -300.
 c = 1.
 d = 1.
-airy = problems.Problem(['u', 'du'], 2)
+airy = Problem(['u', 'du'], 2)
 airy.L0[0] = np.array([[0., -1.],
                        [a, 0.]])
 airy.L0[1] = np.array([[0., 0.],
