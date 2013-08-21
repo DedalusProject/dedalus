@@ -110,20 +110,10 @@ class Operator:
         if not layout:
             return None
 
-
-
-
-        # DEBUG: skip conditions
-        # Check layout/space conditions
-        # Return None if any condition is not satisfied
-        # loop over conditions:
-        #     if condition is not satisfied:
-        #         return None
-        if not self.conditions():
+        # Return None if operator conditions are not satisfied
+        conditions = self.conditions(layout)
+        if not conditions:
             return None
-
-
-
 
         # Allocate output field if necessary
         if self.out:
@@ -142,7 +132,7 @@ class Operator:
 
         return result
 
-    def conditions(self):
+    def conditions(self, layout):
 
         return True
 
@@ -226,7 +216,7 @@ class Multiplication(Arithmetic):
     name = 'Mult'
     str_op = ' * '
 
-    def conditions(self):
+    def conditions(self, layout):
 
         flag = True
         for a in self.args:

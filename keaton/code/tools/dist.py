@@ -12,7 +12,7 @@ from graph import Graph
 
 class Distributor:
 
-    def __init__(self, domain, mesh=[]):
+    def __init__(self, domain, mesh=None):
 
         # Inputs
         self.domain = domain
