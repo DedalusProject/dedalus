@@ -80,7 +80,10 @@ class IMEXBase:
             F[0][pencil] = pencil.F_eval.dot(F[0][pencil])
 
             for i, r in enumerate(pencil.bc_rows):
-                F[0][pencil][r] = pencil.bc_f[i]
+                # DEBUG: requires slow copies: find better way to change necessary rows
+                f = F[0][pencil]
+                f[r] = pencil.bc_f[i]
+                F[0][pencil] = f
 
         # Compute IMEX coefficients
         a, b, c, d = self.compute_coefficients(iteration)
