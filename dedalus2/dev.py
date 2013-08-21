@@ -8,6 +8,7 @@ from .data import system
 
 from .pde import basis
 from .pde import integrator
+from .pde import nonlinear
 from .pde import problems
 from .pde import timesteppers
 
