@@ -7,12 +7,10 @@ except ImportError:
     MPI = None
     print('Cannot import mpi4py. Parallelism disabled.')
 
-from graph import Graph
-
 
 class Distributor:
 
-    def __init__(self, domain, mesh=None):
+    def __init__(self, domain, mesh=[]):
 
         # Inputs
         self.domain = domain
@@ -27,67 +25,58 @@ class Distributor:
             self.local_process = 0
             self.total_processes = 1
 
+        # DEBUG: want to enforce something like this after done testing
         # Check total processes
         # if self.total_processes != np.prod(mesh):
         #     raise ValueError("Requires %i processes" %np.prod(mesh))
 
         # Build layouts
         self.layouts = []
-        for i in range(len(mesh)+1):
+        for i in range(len(domain.bases)+len(mesh)+1):
             self.layouts.append(Layout(domain, mesh, i))
-
-        # Build graph
-        self.graph = Graph()
-        # Add layouts
-        for lo in self.layouts:
-            self.graph.add_vertex(lo)
-        # Add transpose plans
-        for i in range(1, len(mesh)+1):
-            forward_transpose = '%i_%i' %(0, i)
-            backward_transpose = '%i_%i' %(i, 0)
-            self.graph.add_edge(self.layouts[0], self.layouts[i], forward_transpose)
-            self.graph.add_edge(self.layouts[i], self.layouts[0], backward_transpose)
 
 
 class Layout:
 
     def __init__(self, domain, mesh, index):
 
-        # Inputs
-        self.domain = domain
-        self.mesh = mesh
-        self.index = index
-
         # Sizes
-        D = domain
-        R = mesh
-        d = len(D)
-        r = len(R)
-        L = index
+        d = domain.dim
+        r = len(mesh)
 
         if r >= d:
             raise ValueError("r must be less than d")
-        if L > r:
-            raise ValueError("num must be less than or equal to r")
 
-        shape = []
-        local = []
-        for i in range(0, L):
-            shape.append(D[i] / R[i])
-            local.append(False)
-        shape.append(D[L])
-        local.append(True)
-        for i in range(L+1, r+1):
-            shape.append(D[i] / R[i-1])
-            local.append(False)
-        for i in range(r+1, d):
-            shape.append(D[i])
-            local.append(True)
+        # Build local and grid space flags
+        self.local = [False] * r + [True] * (d-r)
+        self.grid_space = [False] * d
+        self.dtype = domain.bases[-1]._coeff_dtype
 
-        print(shape)
-        print(local)
-        print('-'*10)
+        for op in range(index):
+            for i in reversed(range(d)):
+                if not self.grid_space[i]:
+                    if self.local[i]:
+                        self.grid_space[i] = True
+                        self.dtype = domain.bases[i]._grid_dtype
+                        break
+                    else:
+                        self.local[i] = True
+                        self.local[i+1] = False
+                        break
 
-# How fields might determine proper transpose
-        # distributor.graph.find_shortest_path(self.layout, local(i))
-        # path = self.distributor.require_local(i)
+        # Build global shape
+        global_shape = []
+        for i in range(d):
+            if self.grid_space[i]:
+                global_shape.append(domain.bases[i]._grid_size)
+            else:
+                global_shape.append(domain.bases[i]._coeff_size)
+
+        # Build local shape
+        j = 0
+        self.shape = global_shape
+        for i in range(d):
+            if not self.local[i]:
+                self.shape[i] /= mesh[j]
+                j += 1
+
