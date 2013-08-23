@@ -71,6 +71,27 @@ class Chebyshev(TauBasis):
         # Math array
         self._math = np.zeros(size, dtype=np.complex128)
 
+    def _set_dtype(self, dtype):
+
+        #self._set_transforms(dtype)
+
+        self._grid_dtype = dtype
+        self._grid_size = self.size
+
+        self._coeff_dtype = self._grid_dtype
+        self._coeff_size = self._grid_size
+
+        return self._coeff_dtype
+
+    def _set_transforms(self, dtype):
+
+        if dtype is np.float64:
+            self.forward = self._forward_r2r
+            self.backward = self._backward_r2r
+        elif dtype is np.complex128:
+            self.forward = self._forward_c2c
+            self.backward = self._backward_c2c
+
     def forward(self, xdata, kdata, axis=-1):
         """Grid values to coefficients transform"""
 
@@ -301,17 +322,47 @@ class Fourier(Basis):
         # Wavenumbers
         self.wavenumbers = np.arange(self.size) * self._diff_scale
 
-    def forward(self, xdata, kdata, axis=-1):
-        """Grid values to coefficients transform"""
+    def _set_dtype(self, dtype):
 
-        # FFT with mode-amplitude weighting
+        #self._set_transforms(dtype)
+
+        self._grid_dtype = dtype
+        self._grid_size = self.size
+
+        self._coeff_dtype = np.complex128
+        if dtype is np.float64:
+            self._coeff_size = self._grid_size // 2 + 1
+        elif dtype is np.complex128:
+            self._coeff_size = self._grid_size
+
+        return self._coeff_dtype
+
+    def _set_transforms(self, dtype):
+
+        if dtype is np.float64:
+            self.forward = self._forward_r2c
+            self.backward = self._backward_c2r
+        elif dtype is np.complex128:
+            self.forward = self._forward_c2c
+            self.backward = self._backward_c2c
+
+    def _forward_r2c(self, xdata, kdata, axis=-1):
+
+        kdata[:] = fft.rfft(xdata, axis=axis)
+        kdata /= self.size
+
+    def _forward_c2c(self, xdata, kdata, axis=-1):
+
         kdata[:] = fft.fft(xdata, axis=axis)
         kdata /= self.size
 
-    def backward(self, kdata, xdata, axis=-1):
-        """Coefficient to grid values transform"""
+    def _backward_c2r(self, kdata, xdata, axis=-1):
 
-        # FFT with mode-amplitude weighting
+        xdata[:] = fft.irfft(kdata, axis=axis)
+        xdata *= self.size
+
+    def _backward_c2c(self, kdata, xdata, axis=-1):
+
         xdata[:] = fft.ifft(kdata, axis=axis)
         xdata *= self.size
 

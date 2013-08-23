@@ -6,10 +6,21 @@ import numpy as np
 class Domain:
     """Problem domain."""
 
-    def __init__(self, bases):
+    def __init__(self, bases, dtype=np.complex128):
 
         # Inputs
         self.bases = bases
+        self.dtype = dtype
+
+        # Iteratively set basis data types
+        for b in self.bases:
+            dtype = b._set_dtype(dtype)
+
+        # Dimension
+        self.dim = len(bases)
+
+
+
 
         # Build shape
         self.shape = [b.size for b in bases]
