@@ -26,7 +26,7 @@ ax.set_ylim(y.min(), y.max())
 ax.set_xlabel(r'$x$')
 ax.set_ylabel(r'$y$')
 
-for i in xrange(1, t.size):
+for i in range(1, t.size):
     line[0].set_ydata(y[i])
     title.set_text('t = %e' %t[i])
     #ax.set_ylim(y[i].min(), y[i].max())

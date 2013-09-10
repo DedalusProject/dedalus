@@ -62,7 +62,7 @@ Ax['k'] = A.differentiate(0)
 
 # Integration parameters
 int.dt = 1e-3
-int.sim_stop_time = 200
+int.sim_stop_time = 20
 int.wall_stop_time = np.inf
 int.stop_iteration = np.inf
 
