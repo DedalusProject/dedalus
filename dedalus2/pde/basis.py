@@ -9,38 +9,75 @@ from scipy import fftpack as fft
 class Basis:
     """Base class for all bases."""
 
-    def __init__(self, size, range):
+    def __init__(self, grid_size, interval):
 
         # Inputs
-        self.size = size
-        self.range = range
+        self.grid_size = grid_size
+        self.interval = interval
+
+    def _set_dtype(self, dtype):
+
+        raise NotImplementedError()
+
+    def forward(self, xdata, kdata, axis):
+
+        raise NotImplementedError()
+
+    def backward(self, kdata, xdata, axis):
+
+        raise NotImplementedError()
+
+    def differentiate(self, kdata, kderiv, axis):
+
+        raise NotImplementedError()
 
 
-class TauBasis:
+class TauBasis(Basis):
     """Base class for bases supporting Tau solves."""
 
-    def __init__(self, size, range):
+    def _build_tau_matrices(self):
+        """Build matrices for constructing the Tau LHS."""
 
-        # Inherited initialization
-        Basis.__init__(self, size, range)
+        self._Pre = self._build_Pre()
+        self._Deriv = self._build_Diff()
+        self._Left = self._build_Left()
+        self._Right = self._build_Right()
+        self._last = self._build_last()
 
-    def build_matrices(self):
+    def _build_Pre(self):
+        """Build preconditioning matrix."""
 
-        # Build Tau matrices
-        self.Eval = self._build_Eval()
-        self.Deriv = self._build_Deriv()
-        self.Left = self._build_Left()
-        self.Right = self._build_Right()
-        self.last = self._build_last()
-        self.InvEval = linalg.inv(self.Eval.tocsc())
+        # Construct sparse identity matrix
+        Pre = sparse.identity(self.coeff_size, dtype=self.coeff_dtype)
+
+        return Pre.tocsr()
+
+    def _build_Diff(self):
+        """Build differentiation matrix."""
+
+        raise NotImplementedError()
+
+    def _build_Left(self):
+        """Build left-endpoint-evaluation matrix."""
+
+        raise NotImplementedError()
+
+    def _build_Right(self):
+        """Build right-endpoint-evaluation matrix."""
+
+        raise NotImplementedError()
+
+    def _build_Mult(self, p):
+        """Build p-element multiplication matrix."""
+
+        raise NotImplementedError()
 
     def _build_last(self):
-        """Last-element vector"""
+        """Build last-coefficient vector."""
 
         # Construct dense vector
-        size = self.size
-        last = np.zeros(size, dtype=np.complex128)
-        last[size-1] = 1.
+        last = np.zeros(self.coeff_size, dtype=self.coeff_dtype)
+        last[-1] = 1.
 
         return last
 
@@ -48,52 +85,47 @@ class TauBasis:
 class Chebyshev(TauBasis):
     """Chebyshev polynomial basis on the extrema grid."""
 
-    diff_space = 'k'
-
-    def __init__(self, size, range=[-1., 1.]):
+    def __init__(self, grid_size, interval=[-1., 1.]):
 
         # Inherited initialization
-        TauBasis.__init__(self, size, range)
+        TauBasis.__init__(self, grid_size, interval)
 
         # Parameters
-        self.N = size - 1
+        self.coeff_size = grid_size
+        self.N = grid_size - 1
 
         # Grid
-        radius = (range[1] - range[0]) / 2.
-        center = (range[1] + range[0]) / 2.
+        radius = (interval[1] - interval[0]) / 2.
+        center = (interval[1] + interval[0]) / 2.
+        i = np.arange(self.N + 1)
+        native_grid = np.cos(np.pi * i / self.N)
+        self.grid = center + radius * native_grid
         self._diff_scale = 1. / radius
 
-        i = np.arange(self.N + 1)
-        self.grid = np.cos(np.pi * i / self.N)
-        self.grid *= radius
-        self.grid += center
-
-        # Math array
-        self._math = np.zeros(size, dtype=np.complex128)
-
     def _set_dtype(self, dtype):
+        """Specify datatypes."""
 
-        #self._set_transforms(dtype)
+        # Set datatypes
+        self.grid_dtype = dtype
+        self.coeff_dtype = dtype
 
-        self._grid_dtype = dtype
-        self._grid_size = self.size
+        # Allocate scratch array
+        self._math = np.zeros(self.coeff_size, dtype=dtype)
 
-        self._coeff_dtype = self._grid_dtype
-        self._coeff_size = self._grid_size
-
-        return self._coeff_dtype
-
-    def _set_transforms(self, dtype):
-
+        # Set transforms
         if dtype is np.float64:
             self.forward = self._forward_r2r
             self.backward = self._backward_r2r
         elif dtype is np.complex128:
             self.forward = self._forward_c2c
             self.backward = self._backward_c2c
+        else:
+            raise ValueError("Unsupported dtype.")
 
-    def forward(self, xdata, kdata, axis=-1):
-        """Grid values to coefficients transform"""
+        return self.coeff_dtype
+
+    def _forward_r2r(self, xdata, kdata, axis):
+        """Grid-to-coefficient transform on real data."""
 
         # Currently setup just for last axis
         if axis != -1:
@@ -108,8 +140,38 @@ class Chebyshev(TauBasis):
         kdata[..., 0] /= 2.
         kdata[..., N] /= 2.
 
-    def backward(self, kdata, xdata, axis=-1):
-        """Coefficient to grid values transform"""
+
+    def _forward_c2c(self, xdata, kdata, axis):
+        """Grid-to-coefficient transfrom on complex data."""
+
+        # Currently setup just for last axis
+        if axis != -1:
+            if axis != (len(xdata.shape) - 1):
+                raise NotImplementedError()
+
+        # DCT with adjusted coefficients
+        N = self.N
+        kdata[:] = fft.dct(xdata, type=1, norm=None, axis=axis)
+        kdata /= N
+        kdata[..., 0] /= 2.
+        kdata[..., N] /= 2.
+
+    def _backward_r2r(self, kdata, xdata, axis):
+        """Coefficient-to-grid transform on real data."""
+
+        # Currently setup just for last axis
+        if axis != -1:
+            if axis != (len(kdata.shape) - 1):
+                raise NotImplementedError()
+
+        # DCT with adjusted coefficients
+        N = self.N
+        self._math[..., :] = kdata
+        self._math[..., 1:N] /= 2.
+        xdata[:] = fft.dct(self._math, type=1, norm=None, axis=axis)
+
+    def _backward_c2c(self, kdata, xdata, axis):
+        """Coefficient-to-grid transform on complex data."""
 
         # Currently setup just for last axis
         if axis != -1:
@@ -123,8 +185,8 @@ class Chebyshev(TauBasis):
         xdata.real = fft.dct(self._math.real, type=1, norm=None, axis=axis)
         xdata.imag = fft.dct(self._math.imag, type=1, norm=None, axis=axis)
 
-    def differentiate(self, kdata, kderiv, axis=-1):
-        """Diffentiation by recursion on coefficients"""
+    def differentiate(self, kdata, kderiv, axis):
+        """Differentiation by recursion on coefficients."""
 
         # Currently setup just for last axis
         if axis != -1:
@@ -146,141 +208,115 @@ class Chebyshev(TauBasis):
         # Scale for grid
         kderiv *= self._diff_scale
 
-    def _build_Eval(self):
+    def _build_Pre(self):
         """
-        T-to-U evaluation matrix.
+        Build preconditioning matrix.
 
         T_n = (U_n - U_(n-2)) / 2
+        U_(-n) = -U_(n-2)
 
         """
 
-        size = self.size
+        size = self.coeff_size
 
-        # Construct sparse matrix
-        Eval = sparse.lil_matrix((size, size), dtype=np.complex128)
+        # Initialize sparse matrix
+        Pre = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
 
         # Add elements
         for n in range(size):
 
             # Diagonal
             if n == 0:
-                Eval[n, n] = 1.
+                Pre[n, n] = 1.
             else:
-                Eval[n, n] = 0.5
+                Pre[n, n] = 0.5
 
             # 2nd superdiagonal
             if n >= 2:
-                Eval[n-2, n] = -0.5
+                Pre[n-2, n] = -0.5
 
-        return Eval.tocsr()
+        return Pre.tocsr()
 
-    def _build_Deriv(self):
+    def _build_Diff(self):
         """
-        T-to-U differentiation matrix.
+        DEBUG
+        Build T-to-U differentiation matrix.
 
         d_x(T_n) = n U_(n-1)
 
         """
 
-        size = self.size
+        size = self.coeff_size
 
-        # Construct sparse matrix
-        Deriv = sparse.lil_matrix((size, size), dtype=np.complex128)
+        # Initialize sparse matrix
+        Deriv = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
 
         # Add elements
         for n in range(1, size):
+
+            # 1st superdiagonal
             Deriv[n-1, n] = n * self._diff_scale
 
         return Deriv.tocsr()
 
     def _build_Left(self):
         """
-        Left boundary evaluation in last row for boundary condition.
+        Build left-endpoint-evaluation matrix.
 
         T_n(-1) = (-1)**n
 
         """
 
-        size = self.size
+        size = self.coeff_size
 
-        # Construct sparse matrix
-        Left = sparse.lil_matrix((size, size), dtype=np.complex128)
+        # Initialize sparse matrix
+        Left = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
 
         # Add elements
         for n in range(size):
+
+            # Last row
             if (n % 2) == 0:
-                Left[size-1, n] = 1.
+                Left[-1, n] = 1.
             else:
-                Left[size-1, n] = -1.
+                Left[-1, n] = -1.
 
         return Left.tocsr()
 
     def _build_Right(self):
         """
-        Right boundary evaluation in last row for boundary condition.
+        Build right-endpoint-evaluation matrix.
 
         T_n(1) = 1
 
         """
 
-        size = self.size
+        size = self.coeff_size
 
-        # Construct sparse matrix
-        Right = sparse.lil_matrix((size, size), dtype=np.complex128)
+        # Initialize sparse matrix
+        Right = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
 
         # Add elements
         for n in range(size):
 
-            # Last row entries
-            Right[size-1, n] = 1.
+            # Last row
+            Right[-1, n] = 1.
 
         return Right.tocsr()
 
-    def _build_Mult_U(self, p):
-        """
-        U-times-T_p multiplication matrix.
-
-        T_p * U_n = (U_(n+p) + U_(n-p)) / 2
-        U_(n-p) = -U_(p-n-2)
-        U_(-1) = 0
-
-        """
-
-        size = self.size
-
-        # Construct sparse matrix
-        Mult = sparse.lil_matrix((size, size), dtype=np.complex128)
-
-        # Add elements
-        for n in range(size):
-
-            # Upper product
-            i = n + p
-            if i < size:
-                Mult[i, n] += 0.5
-
-            # Lower product
-            i = n - p
-            if i > -1:
-                Mult[i, n] += 0.5
-            elif i < -1:
-                Mult[-i-2, n] -= 0.5
-
-        return Mult.tocsr()
-
     def _build_Mult(self, p):
         """
-        T-times-T_p multiplication matrix
+        Build p-element multiplication matrix
 
         T_p * T_n = (T_(n+p) + T_(n-p)) / 2
         T_(-n) = T_n
 
         """
 
-        size = self.size
+        size = self.coeff_size
 
         # Construct sparse matrix
-        Mult = sparse.lil_matrix((size, size), dtype=np.complex128)
+        Mult = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
 
         # Add elements
         for n in range(size):
@@ -291,11 +327,9 @@ class Chebyshev(TauBasis):
                 Mult[i, n] += 0.5
 
             # Lower product
-            i = n - p
-            if i >= 0:
+            i = abs(n - p)
+            if i < size:
                 Mult[i, n] += 0.5
-            else:
-                Mult[-i, n] += 0.5
 
         return Mult.tocsr()
 
@@ -303,86 +337,77 @@ class Chebyshev(TauBasis):
 class Fourier(Basis):
     """Fourier complex exponential basis."""
 
-    diff_space = 'k'
-
-    def __init__(self, size, range=[0., 2*np.pi]):
+    def __init__(self, grid_size, interval=[0., 2.*np.pi]):
 
         # Inherited initialization
-        Basis.__init__(self, size, range)
+        Basis.__init__(self, grid_size, interval)
 
         # Grid
-        length = range[1] - range[0]
-        start = range[0]
+        length = interval[1] - interval[0]
+        start = interval[0]
+        native_grid = np.linspace(0., 1., grid_size, endpoint=False)
+        self.grid = start + length * native_grid
         self._diff_scale = 2. * np.pi / length
 
-        self.grid = np.linspace(0., 1., size, endpoint=False)
-        self.grid *= length
-        self.grid += start
-
-        # Wavenumbers
-        self.wavenumbers = np.arange(self.size) * self._diff_scale
-
     def _set_dtype(self, dtype):
+        """Specify datatypes."""
 
-        #self._set_transforms(dtype)
+        # Set datatypes
+        self.grid_dtype = dtype
+        self.coeff_dtype = np.complex128
 
-        self._grid_dtype = dtype
-        self._grid_size = self.size
-
-        self._coeff_dtype = np.complex128
-        if dtype is np.float64:
-            self._coeff_size = self._grid_size // 2 + 1
-        elif dtype is np.complex128:
-            self._coeff_size = self._grid_size
-
-        return self._coeff_dtype
-
-    def _set_transforms(self, dtype):
-
+        # Set transforms
+        n = self.grid_size
         if dtype is np.float64:
             self.forward = self._forward_r2c
             self.backward = self._backward_c2r
+            self.coeff_size = n//2 + 1
+            self.wavenumbers = np.arange(0, n//2 + 1)
         elif dtype is np.complex128:
             self.forward = self._forward_c2c
             self.backward = self._backward_c2c
+            self.coeff_size = n
+            self.wavenumbers = np.hstack((np.arange(0, n//2+1),
+                                          np.arange((-n)//2+1, 0)))
+        else:
+            raise ValueError("Unsupported dtype.")
 
-    def _forward_r2c(self, xdata, kdata, axis=-1):
+        self.wavenumbers *= self._diff_scale
+
+        return self._coeff_dtype
+
+    def _forward_r2c(self, xdata, kdata, axis):
+        """Grid-to-coefficient transform on real data."""
 
         kdata[:] = fft.rfft(xdata, axis=axis)
-        kdata /= self.size
+        kdata /= self.grid_size
 
-    def _forward_c2c(self, xdata, kdata, axis=-1):
+    def _forward_c2c(self, xdata, kdata, axis):
+        """Grid-to-coefficient transform on complex data."""
 
         kdata[:] = fft.fft(xdata, axis=axis)
-        kdata /= self.size
+        kdata /= self.grid_size
 
-    def _backward_c2r(self, kdata, xdata, axis=-1):
+    def _backward_c2r(self, kdata, xdata, axis):
+        """Coefficient-to-grid transform on real data."""
 
         xdata[:] = fft.irfft(kdata, axis=axis)
-        xdata *= self.size
+        xdata *= self.grid_size
 
-    def _backward_c2c(self, kdata, xdata, axis=-1):
+    def _backward_c2c(self, kdata, xdata, axis):
+        """Coefficient-to-grid transform on complex data."""
 
         xdata[:] = fft.ifft(kdata, axis=axis)
-        xdata *= self.size
+        xdata *= self.grid_size
 
-    def differentiate(self, kdata, kderiv, axis=-1):
-        """Diffentiation wavenumber multiplication."""
+    def differentiate(self, kdata, kderiv, axis):
+        """Differentiation by wavenumber multiplication."""
 
         # Wavenumber array
         shape = [1] * len(kdata.shape)
-        shape[axis] = self.size
-        k = self.wavenumbers.reshape(shape)
+        shape[axis] = self.coeff_size
+        ik = 1j * self.wavenumbers.reshape(shape)
 
         # Multiplication
-        kderiv[:] = kdata * 1j * k
-
-
-# class PiecewiseBasis:
-
-#     def __init__(self, bases):
-
-#         self.bases = bases
-#         self.grid = np.hstack([b.grid for b in bases])
-#         self.last = np.hstack([])
+        kderiv[:] = kdata * ik
 
