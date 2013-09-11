@@ -2,7 +2,6 @@
 
 import numpy as np
 from scipy import sparse
-from scipy.sparse import linalg
 from scipy import fftpack as fft
 
 
@@ -16,18 +15,22 @@ class Basis:
         self.interval = interval
 
     def _set_dtype(self, dtype):
+        """Specify datatypes."""
 
         raise NotImplementedError()
 
     def forward(self, xdata, kdata, axis):
+        """Grid-to-coefficient transform."""
 
         raise NotImplementedError()
 
     def backward(self, kdata, xdata, axis):
+        """Coefficient-to-grid transform."""
 
         raise NotImplementedError()
 
     def differentiate(self, kdata, kderiv, axis):
+        """Differentiate using coefficients."""
 
         raise NotImplementedError()
 
@@ -125,7 +128,7 @@ class Chebyshev(TauBasis):
         return self.coeff_dtype
 
     def _forward_r2r(self, xdata, kdata, axis):
-        """Grid-to-coefficient transform on real data."""
+        """Scipy DCT on real data."""
 
         # Currently setup just for last axis
         if axis != -1:
@@ -140,9 +143,8 @@ class Chebyshev(TauBasis):
         kdata[..., 0] /= 2.
         kdata[..., N] /= 2.
 
-
     def _forward_c2c(self, xdata, kdata, axis):
-        """Grid-to-coefficient transfrom on complex data."""
+        """Scipy DCT on complex data."""
 
         # Currently setup just for last axis
         if axis != -1:
@@ -157,7 +159,7 @@ class Chebyshev(TauBasis):
         kdata[..., N] /= 2.
 
     def _backward_r2r(self, kdata, xdata, axis):
-        """Coefficient-to-grid transform on real data."""
+        """Scipy IDCT on real data."""
 
         # Currently setup just for last axis
         if axis != -1:
@@ -171,7 +173,7 @@ class Chebyshev(TauBasis):
         xdata[:] = fft.dct(self._math, type=1, norm=None, axis=axis)
 
     def _backward_c2c(self, kdata, xdata, axis):
-        """Coefficient-to-grid transform on complex data."""
+        """Scipy IDCT on complex data."""
 
         # Currently setup just for last axis
         if axis != -1:
@@ -239,8 +241,8 @@ class Chebyshev(TauBasis):
 
     def _build_Diff(self):
         """
-        DEBUG
-        Build T-to-U differentiation matrix.
+        DEBUG to T-T
+        Build differentiation matrix.
 
         d_x(T_n) = n U_(n-1)
 
@@ -377,25 +379,25 @@ class Fourier(Basis):
         return self._coeff_dtype
 
     def _forward_r2c(self, xdata, kdata, axis):
-        """Grid-to-coefficient transform on real data."""
+        """Scipy R2C FFT"""
 
         kdata[:] = fft.rfft(xdata, axis=axis)
         kdata /= self.grid_size
 
     def _forward_c2c(self, xdata, kdata, axis):
-        """Grid-to-coefficient transform on complex data."""
+        """Scipy C2C FFT."""
 
         kdata[:] = fft.fft(xdata, axis=axis)
         kdata /= self.grid_size
 
     def _backward_c2r(self, kdata, xdata, axis):
-        """Coefficient-to-grid transform on real data."""
+        """Scipy C2R IFFT"""
 
         xdata[:] = fft.irfft(kdata, axis=axis)
         xdata *= self.grid_size
 
     def _backward_c2c(self, kdata, xdata, axis):
-        """Coefficient-to-grid transform on complex data."""
+        """Scipy C2C IFFT."""
 
         xdata[:] = fft.ifft(kdata, axis=axis)
         xdata *= self.grid_size
