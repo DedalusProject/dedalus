@@ -250,17 +250,17 @@ class Chebyshev(TauBasis):
         size = self.coeff_size
 
         # Initialize sparse matrix
-        Deriv = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
+        Diff = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
 
         # Add elements
         for i in range(size-1):
             for j in range(i+1, size, 2):
                 if i == 0:
-                    Deriv[i, j] = j * self._diff_scale
+                    Diff[i, j] = j * self._diff_scale
                 else:
-                    Deriv[i, j] = 2. * j * self._diff_scale
+                    Diff[i, j] = 2. * j * self._diff_scale
 
-        return Deriv.tocsr()
+        return Diff.tocsr()
 
     def _build_Left(self):
         """
@@ -337,13 +337,13 @@ class Chebyshev(TauBasis):
         return Mult.tocsr()
 
 
-class Fourier(Basis):
+class Fourier(TauBasis):
     """Fourier complex exponential basis."""
 
     def __init__(self, grid_size, interval=[0., 2.*np.pi]):
 
         # Inherited initialization
-        Basis.__init__(self, grid_size, interval)
+        TauBasis.__init__(self, grid_size, interval)
 
         # Grid
         length = interval[1] - interval[0]
@@ -377,7 +377,7 @@ class Fourier(Basis):
 
         self.wavenumbers *= self._diff_scale
 
-        return self._coeff_dtype
+        return self.coeff_dtype
 
     def _forward_r2c(self, xdata, kdata, axis):
         """Scipy R2C FFT"""
@@ -413,4 +413,53 @@ class Fourier(Basis):
 
         # Multiplication
         kderiv[:] = kdata * ik
+
+    def _build_Diff(self):
+        """
+        Build differentiation matrix.
+
+        d_x(F_n) = i k_n F_n
+
+        """
+
+        size = self.coeff_size
+
+        # Initialize sparse matrix
+        Diff = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
+
+        # Add elements
+        for i in range(size):
+            Diff[i, i] = 1j * self.wavenumbers[i]
+
+        return Diff.tocsr()
+
+    def _build_Left(self):
+        """
+        Build left-endpoint-evaluation matrix.
+
+        (Empty since boundaries are periodic.)
+
+        """
+
+        size = self.coeff_size
+
+        # Initialize sparse matrix
+        Left = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
+
+        return Left.tocsr()
+
+    def _build_Right(self):
+        """
+        Build right-endpoint-evaluation matrix.
+
+        (Empty since boundaries are periodic.)
+
+        """
+
+        size = self.coeff_size
+
+        # Initialize sparse matrix
+        Right = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
+
+        return Right.tocsr()
 
