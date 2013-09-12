@@ -42,7 +42,7 @@ class TauBasis(Basis):
         """Build matrices for constructing the Tau LHS."""
 
         self._Pre = self._build_Pre()
-        self._Deriv = self._build_Diff()
+        self._Diff = self._build_Diff()
         self._Left = self._build_Left()
         self._Right = self._build_Right()
         self._last = self._build_last()
@@ -241,10 +241,9 @@ class Chebyshev(TauBasis):
 
     def _build_Diff(self):
         """
-        DEBUG to T-T
         Build differentiation matrix.
 
-        d_x(T_n) = n U_(n-1)
+        d_x(T_n) / n = 2 T_n + d_x(T_(n-2)) / (n-2)
 
         """
 
@@ -254,10 +253,12 @@ class Chebyshev(TauBasis):
         Deriv = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
 
         # Add elements
-        for n in range(1, size):
-
-            # 1st superdiagonal
-            Deriv[n-1, n] = n * self._diff_scale
+        for i in range(size-1):
+            for j in range(i+1, size, 2):
+                if i == 0:
+                    Deriv[i, j] = j * self._diff_scale
+                else:
+                    Deriv[i, j] = 2. * j * self._diff_scale
 
         return Deriv.tocsr()
 
