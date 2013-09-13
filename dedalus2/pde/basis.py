@@ -38,14 +38,15 @@ class Basis:
 class TauBasis(Basis):
     """Base class for bases supporting Tau solves."""
 
-    def build_tau_matrices(self):
+    def build_tau_matrices(self, order):
         """Build matrices for constructing the Tau LHS."""
 
-        self._Pre = self._build_Pre()
-        self._Diff = self._build_Diff()
-        self._Left = self._build_Left()
-        self._Right = self._build_Right()
-        self._last = self._build_last()
+        self.Pre = self._build_Pre()
+        self.Diff = self._build_Diff()
+        self.Left = self._build_Left()
+        self.Right = self._build_Right()
+        self.Mult = [self._build_Mult(p) for p in range(order)]
+        self.last = self._build_last()
 
     def _build_Pre(self):
         """Build preconditioning matrix."""
