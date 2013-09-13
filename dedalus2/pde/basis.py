@@ -14,7 +14,7 @@ class Basis:
         self.grid_size = grid_size
         self.interval = interval
 
-    def _set_dtype(self, dtype):
+    def set_dtype(self, dtype):
         """Specify datatypes."""
 
         raise NotImplementedError()
@@ -38,7 +38,7 @@ class Basis:
 class TauBasis(Basis):
     """Base class for bases supporting Tau solves."""
 
-    def _build_tau_matrices(self):
+    def build_tau_matrices(self):
         """Build matrices for constructing the Tau LHS."""
 
         self._Pre = self._build_Pre()
@@ -105,7 +105,7 @@ class Chebyshev(TauBasis):
         self.grid = center + radius * native_grid
         self._diff_scale = 1. / radius
 
-    def _set_dtype(self, dtype):
+    def set_dtype(self, dtype):
         """Specify datatypes."""
 
         # Set datatypes
@@ -352,7 +352,7 @@ class Fourier(TauBasis):
         self.grid = start + length * native_grid
         self._diff_scale = 2. * np.pi / length
 
-    def _set_dtype(self, dtype):
+    def set_dtype(self, dtype):
         """Specify datatypes."""
 
         # Set datatypes
