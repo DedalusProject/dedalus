@@ -14,7 +14,7 @@ class Domain:
 
         # Iteratively set basis data types
         for b in self.bases:
-            dtype = b._set_dtype(dtype)
+            dtype = b.set_dtype(dtype)
 
         # Dimension
         self.dim = len(bases)
@@ -23,7 +23,7 @@ class Domain:
 
 
         # Build shape
-        self.shape = [b.size for b in bases]
+        self.shape = [b.grid_size for b in bases]
         self.dim = len(self.shape)
 
         # Grid
