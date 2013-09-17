@@ -30,7 +30,7 @@ airy.LR = np.array([[0., 0.],
 airy.b = np.array([c, d])
 
 # Set domain
-x_basis = Chebyshev(32, range=[-1., 1.])
+x_basis = Chebyshev(32, interval=[-1., 1.])
 domain = Domain([x_basis])
 
 # Choose PDE and integrator

@@ -9,7 +9,7 @@ from dedalus2.public import *
 
 # Set domain
 L = 200.
-x_basis = Chebyshev(256, range=[0., L])
+x_basis = Chebyshev(256, interval=[0., L])
 domain = Domain([x_basis])
 
 mu = 1.
@@ -61,15 +61,15 @@ A['x'] = np.complex128(A0 * (1 + 1j) / np.cosh(arg))
 Ax['k'] = A.differentiate(0)
 
 # Integration parameters
-int.dt = 1e-3
-int.sim_stop_time = 20
+int.dt = 0.1
+int.sim_stop_time = 200
 int.wall_stop_time = np.inf
 int.stop_iteration = np.inf
 
 # Create storage lists
 t_list = [int.time]
 A_list = [np.copy(A['x'])]
-copy_cadence = 200
+copy_cadence = 10
 
 # Main loop
 start_time = time.time()

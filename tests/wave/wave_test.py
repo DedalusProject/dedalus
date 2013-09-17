@@ -8,7 +8,7 @@ from dedalus2.public import *
 
 
 # Set domain
-x_basis = Chebyshev(32, range=[-1., 1.])
+x_basis = Chebyshev(32, interval=[-1., 1.])
 domain = Domain([x_basis])
 
 # Wave equation:  y_tt = c2 y_xx

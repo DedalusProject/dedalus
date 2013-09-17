@@ -8,7 +8,7 @@ from dedalus2.public import *
 
 
 # Set domain
-x_basis = Chebyshev(64, range=[-1., 1.])
+x_basis = Chebyshev(64, interval=[-1., 1.])
 domain = Domain([x_basis])
 
 # Heat equation: y_t = y_xx
