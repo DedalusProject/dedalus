@@ -45,7 +45,7 @@ class TauBasis(Basis):
         self.Diff = self._build_Diff()
         self.Left = self._build_Left()
         self.Right = self._build_Right()
-        self.Mult = [self._build_Mult(p) for p in range(order)]
+        self.Mult = [self._build_Mult(p) for p in range(1, order)]
         self.last = self._build_last()
 
     def _build_Pre(self):

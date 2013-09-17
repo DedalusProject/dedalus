@@ -48,8 +48,8 @@ class Pencil:
 
         # Add higher order terms
         for i in range(1, problem.order):
-            Pre_i = basis.Pre * basis.Mult[i]
-            Diff_i = basis.Pre * basis.Mult[i] * basis.Diff
+            Pre_i = basis.Pre * basis.Mult[i-1]
+            Diff_i = basis.Pre * basis.Mult[i-1] * basis.Diff
 
             M += sparse.kron(problem.M0[i], Pre_i)
             M += sparse.kron(problem.M1[i], Diff_i)
