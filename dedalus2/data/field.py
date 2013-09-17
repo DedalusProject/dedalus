@@ -166,7 +166,7 @@ class Field:
     def differentiate(self, i):
 
         # Check differentation space
-        self.require_space(i, self.domain.bases[i].diff_space)
+        self.require_space(i, 'k')
 
         # Call basis differentiation
         self.domain.bases[i].differentiate(self.data, self._temp, axis=i)
