@@ -138,8 +138,7 @@ class Chebyshev(TauBasis):
 
         # DCT with adjusted coefficients
         N = self.N
-        kdata.real = fft.dct(xdata.real, type=1, norm=None, axis=axis)
-        kdata.imag = fft.dct(xdata.imag, type=1, norm=None, axis=axis)
+        kdata[:] = fft.dct(xdata, type=1, norm=None, axis=axis)
         kdata /= N
         kdata[..., 0] /= 2.
         kdata[..., N] /= 2.
@@ -154,7 +153,8 @@ class Chebyshev(TauBasis):
 
         # DCT with adjusted coefficients
         N = self.N
-        kdata[:] = fft.dct(xdata, type=1, norm=None, axis=axis)
+        kdata.real = fft.dct(xdata.real, type=1, norm=None, axis=axis)
+        kdata.imag = fft.dct(xdata.imag, type=1, norm=None, axis=axis)
         kdata /= N
         kdata[..., 0] /= 2.
         kdata[..., N] /= 2.
