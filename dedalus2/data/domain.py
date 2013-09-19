@@ -18,32 +18,36 @@ class Domain:
             dtype = b.set_dtype(dtype)
 
         # Construct pencil slices
-        n_pencils = np.prod(b.coeff_size for b in bases)
+        n_pencils = np.prod([b.coeff_size for b in bases])
         n_pencils /= bases[-1].coeff_size
-        n = np.arange(n_pencils)
+        n = np.arange(int(n_pencils))
+        bi_list = []
         d_list = []
 
         j = 1
         for b in bases:
             if b is not bases[-1]:
-                d_list.append(divmod(x, j) % b.coeff_size)
+                bi = divmod(n, j)[0] % b.coeff_size
+                bi_list.append(bi)
+                d_list.append(b.diff_factor([bi]))
                 j *= b.coeff_size
             else:
                 if len(bases) == 1:
+                    bi_list.append(bi)
                     d_list.append([])
 
-        self.d_list = np.transpose(D_list)
+        self.d_list = np.transpose(d_list)
         self.slices = []
-        for DL in self.d_list:
+        for bl in np.transpose(bi_list):
             sli = []
-            for i in DL:
+            for i in bl:
                 sli.append(slice(i, i+1))
             sli.append(slice(None))
             self.slices.append(sli)
 
 
         # Build shape
-        self.shape = [b.size for b in bases]
+        self.shape = [b.grid_size for b in bases]
         self.dim = len(self.shape)
 
         # Grid
