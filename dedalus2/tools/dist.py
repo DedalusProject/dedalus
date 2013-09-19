@@ -10,7 +10,11 @@ except ImportError:
 
 class Distributor:
 
-    def __init__(self, domain, mesh=[]):
+    def __init__(self):
+
+        self.layouts = {}
+
+    def build_layouts(self, domain, mesh=[]):
 
         # Inputs
         self.domain = domain
@@ -31,9 +35,35 @@ class Distributor:
         #     raise ValueError("Requires %i processes" %np.prod(mesh))
 
         # Build layouts
-        self.layouts = []
+        layouts = []
         for i in range(len(domain.bases)+len(mesh)+1):
-            self.layouts.append(Layout(domain, mesh, i))
+            layouts.append(Layout(domain, mesh, i))
+
+        # Store layouts
+        self.layouts[Domain] = layouts
+        self.buffer_size[Domain] = max([l.buffer_size for l in layouts])
+
+    def increment_layout(self, field):
+
+        index = field.layout.index
+        domain = field.domain
+
+        self.increment[domain][index](field)
+
+        field.layout = self.layouts[domain][index + 1]
+
+    def decrement_layout(self, field):
+
+        index = field.layout.index
+        domain = field.domain
+
+        input = field.data
+        field.layout = self.layouts[domain][index - 1]
+        output = field.data
+        self.decrement[domain][index](input, output)
+
+
+distributor = Distributor()
 
 
 class Layout:
@@ -79,4 +109,16 @@ class Layout:
             if not self.local[i]:
                 self.shape[i] /= mesh[j]
                 j += 1
+
+        # Compute necessary buffer size
+        n_bytes = np.dtype(self.dtype).itemsize
+        self.byte_size = np.prod(self.shape) * n_bytes
+
+    def view_data(self, buffer):
+
+        data = np.ndarray(shape=self.shape,
+                          dtype=self.dtype,
+                          buffer=buffer)
+
+        return data
 
