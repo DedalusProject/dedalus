@@ -94,12 +94,12 @@ class IMEXBase:
 
         # Construct RHS field
         for fn in rhs.field_names:
-            rhs[fn]['k'] = 0.
+            rhs[fn]['K'] = 0.
             for q in range(self.qmax):
-                rhs[fn]['k'] += a[q] * MX[q][fn]['k']
-                rhs[fn]['k'] += b[q] * LX[q][fn]['k']
+                rhs[fn]['K'] += a[q] * MX[q][fn]['K']
+                rhs[fn]['K'] += b[q] * LX[q][fn]['K']
             for p in range(self.pmax):
-                rhs[fn]['k'] += c[p] * F[p][fn]['k']
+                rhs[fn]['K'] += c[p] * F[p][fn]['K']
 
 
 class Euler(IMEXBase):

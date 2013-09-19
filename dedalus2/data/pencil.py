@@ -18,7 +18,7 @@ class Pencil:
         # Retrieve slice of all fields
         data = []
         for field in system.fields.values():
-            data.append(field['k'][self.slice])
+            data.append(field['K'][self.slice])
         data = np.hstack(data)
 
         return data
@@ -29,7 +29,7 @@ class Pencil:
         start = 0
         for field in system.fields.values():
             end = start + field.domain.bases[-1].coeff_size
-            field['k'][self.slice] = data[start:end]
+            field['K'][self.slice] = data[start:end]
             start = end
 
     def build_matrices(self, problem, basis):
