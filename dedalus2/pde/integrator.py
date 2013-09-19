@@ -25,9 +25,8 @@ class Integrator:
         # Build pencils
         self.pencils = []
         primary_basis = domain.bases[-1]
-        for s in domain.slices:
-            d_trans = domain.get_d_trans(s)
-            pencil = Pencil(s, d_trans)
+        for s, d in zip(domain.slices, domain.d_trans):
+            pencil = Pencil(s, d)
             pencil.build_matrices(problem, primary_basis)
             self.pencils.append(pencil)
 

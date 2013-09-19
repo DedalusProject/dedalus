@@ -21,20 +21,20 @@ class Domain:
         n_pencils = np.prod(b.coeff_size for b in bases)
         n_pencils /= bases[-1].coeff_size
         n = np.arange(n_pencils)
-        D_list = []
+        d_list = []
 
         j = 1
         for b in bases:
             if b is not bases[-1]:
-                D_list.append(divmod(x, j) % b.coeff_size)
+                d_list.append(divmod(x, j) % b.coeff_size)
                 j *= b.coeff_size
             else:
                 if len(bases) == 1:
-                    D_list.append([])
+                    d_list.append([])
 
-        self.D_list = np.transpose(D_list)
+        self.d_list = np.transpose(D_list)
         self.slices = []
-        for DL in self.D_list:
+        for DL in self.d_list:
             sli = []
             for i in DL:
                 sli.append(slice(i, i+1))
