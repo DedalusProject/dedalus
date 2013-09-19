@@ -464,3 +464,7 @@ class Fourier(TauBasis):
 
         return Right.tocsr()
 
+    def diff_factor(self, i):
+        """Deriv coeff for matrix construction. DEBUG (clean)"""
+
+        return 1j * self.wavenumbers[i]
