@@ -7,10 +7,11 @@ from scipy import sparse
 class Pencil:
     """Pencil object for viewing one k_trans across system"""
 
-    def __init__(self, slice):
+    def __init__(self, slice, d_trans):
 
         # Inputs
         self.slice = slice
+        self.d_trans = d_trans
 
     def get(self, system):
 
@@ -37,10 +38,10 @@ class Pencil:
         basis.build_tau_matrices(problem.order)
 
         # Build PDE matrices starting with constant terms
-        M = (sparse.kron(problem.M0[0], basis.Pre) +
-             sparse.kron(problem.M1[0], basis.Pre * basis.Diff))
-        L = (sparse.kron(problem.L0[0], basis.Pre) +
-             sparse.kron(problem.L1[0], basis.Pre * basis.Diff))
+        M = (sparse.kron(problem.M0[0](self.d_trans), basis.Pre) +
+             sparse.kron(problem.M1[0](self.d_trans), basis.Pre * basis.Diff))
+        L = (sparse.kron(problem.L0[0](self.d_trans), basis.Pre) +
+             sparse.kron(problem.L1[0](self.d_trans), basis.Pre * basis.Diff))
 
         # Convert to easily modifiable structures
         M = M.tolil()
@@ -51,10 +52,10 @@ class Pencil:
             Pre_i = basis.Pre * basis.Mult[i-1]
             Diff_i = basis.Pre * basis.Mult[i-1] * basis.Diff
 
-            M += sparse.kron(problem.M0[i], Pre_i)
-            M += sparse.kron(problem.M1[i], Diff_i)
-            L += sparse.kron(problem.L0[i], Pre_i)
-            L += sparse.kron(problem.L1[i], Diff_i)
+            M += sparse.kron(problem.M0[i](self.d_trans), Pre_i)
+            M += sparse.kron(problem.M1[i](self.d_trans), Diff_i)
+            L += sparse.kron(problem.L0[i](self.d_trans), Pre_i)
+            L += sparse.kron(problem.L1[i](self.d_trans), Diff_i)
 
         # Build boundary condition matrices
         Mb = (sparse.kron(problem.ML, basis.Left) +
