@@ -8,14 +8,14 @@ from dedalus2.public import *
 
 
 # Set domain
-L = 100.
-x_basis = Fourier(256, interval=[0., L])
+L = 300
+x_basis = Chebyshev(512, interval=[-L/2., L/2.])
 domain = Domain([x_basis])
 
 mu = 1.
-s = 0.05
-b = 0.5
-c = -1.76
+s = 0.0
+b = 0.6
+c = -1.4
 
 MagSq = operators.MagSquared
 
@@ -40,6 +40,12 @@ cgle.F[0] = "-(1 + 1j*c) * MagSq(A) * A"
 cgle.L1[0][1][0] = 1.
 cgle.L0[0][1][1] = -1.
 
+cgle.LL[0][0] = 1.
+cgle.LR[1][0] = 1.
+
+cgle.b[0] = 1.
+cgle.b[1] = 1.
+
 # Choose PDE and integrator
 pde = cgle
 ts = timesteppers.CNAB3
@@ -50,16 +56,14 @@ int = Integrator(pde, domain, ts)
 # Initial conditions
 x = domain.grids[0]
 A, Ax = int.state.fields.values()
-xa = L / 2.
-A0 = 0.01
-gamma = 0.1
-arg = np.float128(gamma * (x - xa))
-A['x'] = A0 * (1 + 1j) * np.sin(2 * np.pi * x / L)**2
+qex = 2 * np.pi / L
+gamma = 1.
+A['x'] = np.exp(1j * (qex*x + np.pi/2. * np.tanh(gamma*x)))
 Ax['k'] = A.differentiate(0)
 
 # Integration parameters
 int.dt = 0.1
-int.sim_stop_time = 200
+int.sim_stop_time = 150
 int.wall_stop_time = np.inf
 int.stop_iteration = np.inf
 

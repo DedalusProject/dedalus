@@ -20,7 +20,7 @@ airy = Problem(['u', 'du'], 2)
 airy.L0[0] = np.array([[0., -1.],
                        [a, 0.]])
 airy.L0[1] = np.array([[0., 0.],
-                       [b, 0.]])
+                       [2*b, 0.]])
 airy.L1[0] = np.array([[1., 0.],
                        [0., 1.]])
 airy.LL = np.array([[1., 0.],
@@ -30,7 +30,7 @@ airy.LR = np.array([[0., 0.],
 airy.b = np.array([c, d])
 
 # Set domain
-x_basis = Chebyshev(32, interval=[-1., 1.])
+x_basis = Chebyshev(64, interval=[-2., 2.])
 domain = Domain([x_basis])
 
 # Choose PDE and integrator
@@ -60,7 +60,7 @@ def exact(z):
 
 # Plot
 z = x_basis.grid
-z_dense = np.linspace(1, -1, 10000)
+z_dense = np.linspace(2, -2, 10000)
 u = int.state['u']['x'].real
 
 fig = plt.figure(1)
