@@ -31,14 +31,11 @@ cgle = Problem(['A', 'Ax'], 1)
 cgle.parameters['c'] = c
 cgle.parameters['MagSq'] = MagSq
 
-cgle.M0[0][0][0] = 1.
-cgle.L0[0][0][0] = -mu
-cgle.L0[0][0][1] = -s
-cgle.L1[0][0][1] = -(1. + 1j*b)
+cgle.M0[0] = lambda d_trans: np.array([[1.,0.],[0.,0.]])
+cgle.L0[0] = lambda d_trans: np.array([[-mu,-s],[0.,-1.]])
+cgle.L1[0] = lambda d_trans: np.array([[0.,-(1. + 1j*b)],[1.,0.]])
 cgle.F[0] = "-(1 + 1j*c) * MagSq(A) * A"
 
-cgle.L1[0][1][0] = 1.
-cgle.L0[0][1][1] = -1.
 
 cgle.LL[0][0] = 1.
 cgle.LR[1][0] = 1.
