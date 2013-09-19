@@ -58,10 +58,10 @@ class Pencil:
             L += sparse.kron(problem.L1[i](self.d_trans), Diff_i)
 
         # Build boundary condition matrices
-        Mb = (sparse.kron(problem.ML, basis.Left) +
-              sparse.kron(problem.MR, basis.Right))
-        Lb = (sparse.kron(problem.LL, basis.Left) +
-              sparse.kron(problem.LR, basis.Right))
+        Mb = (sparse.kron(problem.ML(self.d_trans), basis.Left) +
+              sparse.kron(problem.MR(self.d_trans), basis.Right))
+        Lb = (sparse.kron(problem.LL(self.d_trans), basis.Left) +
+              sparse.kron(problem.LR(self.d_trans), basis.Right))
 
         # Convert to easily iterable structures
         Mb = Mb.tocoo()
@@ -85,7 +85,7 @@ class Pencil:
 
         # Reference nonlinear expressions
         self.F = problem.F
-        self.b = np.kron(problem.b, basis.last)
+        self.b = np.kron(problem.b(self.d_trans), basis.last)
         self.bc_rows = list(rows)
         self.bc_f = [self.b[r] for r in rows]
         self.parameters = problem.parameters
