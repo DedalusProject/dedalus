@@ -71,17 +71,17 @@ class IMEXBase:
         for pencil in self.pencils:
 
             # (Assuming no coupling between pencils)
-            mx = pencil.M.dot(state[pencil])
-            lx = pencil.L.dot(state[pencil])
+            mx = pencil.M.dot(state[pencil][0])
+            lx = pencil.L.dot(state[pencil][0])
 
             MX[0][pencil] = mx
             LX[0][pencil] = lx
 
-            F[0][pencil] = pencil.F_eval.dot(F[0][pencil])
+            F[0][pencil] = pencil.F_eval.dot(F[0][pencil][0])
 
             for i, r in enumerate(pencil.bc_rows):
                 # DEBUG: requires slow copies: find better way to change necessary rows
-                f = F[0][pencil]
+                f = F[0][pencil][0]
                 f[r] = pencil.bc_f[i]
                 F[0][pencil] = f
 
