@@ -12,7 +12,7 @@ x_basis = Fourier(32, interval=[0.,1.])
 z_basis = Chebyshev(32, interval=[0.,1.])
 domain = Domain([x_basis, z_basis])
 
-Ra = 1000.
+Ra = 50000.
 Pr = 1.
 iPr = 1./Pr
 
@@ -20,9 +20,9 @@ rb = Problem(['p','u','w','t','uz','tz'], 1)
 # Equations:
 #
 # Dx u + Dz w = 0
-# iPr*Dt u + Dx p - Dx^2 u - Dz uz = - iPr * ( u Dx u + w uz )
-# iPr*Dt w + Dz p - Ra t - Dx^2 w + Dx uz = - iPr * (u Dx w - w Dx u)
-# Dt t - w - Dx^2 t - Dz tz = - u Dx t - w tz
+# iPr Dt u + Dx p        - Dx Dx u - Dz uz = - iPr (u Dx u + w uz  )
+# iPr Dt w + Dz p - Ra t - Dx Dx w + Dx uz = - iPr (u Dx w - w Dx u)
+# Dt t - w - Dx Dx t - Dz tz = - u Dx t - w tz
 # Dz u - uz = 0
 # Dz t - tz = 0
 #
@@ -39,10 +39,11 @@ rb.M0[0] = M
 
 def L0(d_trans):
   Dx = d_trans[0]
+  print(Dx)
   return np.array([[ 0,     Dx,      0,      0,    0,    0],
-                   [Dx, -Dx**2,      0,      0,    0,    0],
-                   [ 0,      0, -Dx**2,    -Ra,   Dx,    0],
-                   [ 0,      0,   -1.0, -Dx**2,    0,    0],
+                   [Dx, -Dx*Dx,      0,      0,    0,    0],
+                   [ 0,      0, -Dx*Dx,    -Ra,   Dx,    0],
+                   [ 0,      0,   -1.0, -Dx*Dx,    0,    0],
                    [ 0,      0,      0,      0, -1.0,    0],
                    [ 0,      0,      0,      0,    0, -1.0]])
 
@@ -91,9 +92,10 @@ u  = int.state['u']
 uz = int.state['uz']
 w  = int.state['w']
 T = int.state['t']
-u['X']   = np.cos(np.pi * 2. * z) * np.cos(2*np.pi*x + np.pi/4.)
-uz['xk'] = u.differentiate(1)
-w['X']   = np.sin(np.pi * 2. * z) * np.sin(2*np.pi*x + np.pi/4.)
+T['X'] = 1e-6 * np.sin(np.pi * z) * np.random.randn(*T['X'].shape)
+#u['X']   = np.cos(np.pi * 2. * z) * np.cos(2*np.pi*x + np.pi/4.)
+#uz['xk'] = u.differentiate(1)
+#w['X']   = np.sin(np.pi * 2. * z) * np.sin(2*np.pi*x + np.pi/4.)
 
 # wz = field_manager.get_field(domain)
 # ux = field_manager.get_field(domain)
@@ -105,8 +107,8 @@ w['X']   = np.sin(np.pi * 2. * z) * np.sin(2*np.pi*x + np.pi/4.)
 
 # integrate parameters
 
-int.dt = 1e-3
-int.sim_stop_time = 1.0
+int.dt = 1e-2
+int.sim_stop_time = 1.
 int.wall_stop_time = np.inf
 int.stop_iteration = np.inf
 
@@ -115,7 +117,7 @@ t_list = [int.time]
 u_list = [np.copy(u['X'])]
 w_list = [np.copy(w['X'])]
 T_list = [np.copy(T['X'])]
-copy_cadence = 10
+copy_cadence = 1
 
 # Main loop
 start_time = time.time()
@@ -135,6 +137,7 @@ while int.ok:
 if int.iteration % copy_cadence != 0:
   t_list.append(int.time)
   u_list.append(np.copy(u['X']))
+  w_list.append(np.copy(w['X']))
   T_list.append(np.copy(T['X']))
 
 end_time = time.time()
