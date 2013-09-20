@@ -6,15 +6,26 @@ import shelve
 from dedalus2.public import *
 
 # set domain
-x_basis = Fourier(16, interval=[0.,2.*np.pi])
-z_basis = Chebyshev(16, interval=[0.,1.])
+x_basis = Fourier(32, interval=[0.,1.])
+z_basis = Chebyshev(32, interval=[0.,1.])
 domain = Domain([x_basis,z_basis])
 
-Ra = 800.
+Ra = 2000.
 Pr = 1.
 iPr = 1./Pr
 
 rb = Problem(['p','u','w','t','uz','tz'], 1)
+
+# Equations:
+#
+# Dx u + Dz w = 0
+# iPr*Dt u + Dx p - Dx^2 u - Dz uz = - iPr * ( u Dx u + w uz )
+# iPr*Dt w + Dz p - Ra t - Dx^2 w + Dx uz = - iPr * (u Dx w - w Dx u)
+# Dt t - w - Dx^2 t - Dz tz = - u Dx t - w tz
+# Dz u - uz = 0
+# Dz t - tz = 0
+# 
+
 
 def M(d_trans):
   return np.array([[0,   0,   0,   0, 0, 0],
@@ -79,15 +90,15 @@ z = domain.grids[1]
 u  = int.state['u']
 uz = int.state['uz']
 w  = int.state['w']
-u['X']   = np.cos(np.pi * 2. * z) * np.cos(x) * np.pi*2.
+u['X']   = np.cos(np.pi * 2. * z) * np.cos(np.pi * 2. * x)
 uz['xk'] = u.differentiate(1)
-w['X']   = np.sin(np.pi * 2. * z) * np.sin(x)
+w['X']   = np.sin(np.pi * 2. * z) * np.sin(np.pi * 2. * x)
 
-wz = field_manager.get_field(domain)
-ux = field_manager.get_field(domain)
+#wz = field_manager.get_field(domain)
+#ux = field_manager.get_field(domain)
 
-wz['xk'] = w.differentiate(1)
-ux['K'] = u.differentiate(0)
+#wz['xk'] = w.differentiate(1)
+#ux['K'] = u.differentiate(0)
 
 #psi = field_manager.get_field(domain)
 
@@ -101,7 +112,7 @@ int.stop_iteration = np.inf
 # storage lists
 t_list = [int.time]
 u_list = [np.copy(u['X'])]
-copy_cadence = 10
+copy_cadence = 1
 
 # Main loop
 start_time = time.time()
@@ -116,7 +127,7 @@ while int.ok:
     u_list.append(np.copy(u['X']))
     print('Iteration: %i, Time: %e' %(int.iteration, int.time))
 
-if int.iteration % copy_candence != 0:
+if int.iteration % copy_cadence != 0:
   t_list.append(int.time)
   u_list.append(np.copy(u['X']))
 
