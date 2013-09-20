@@ -90,6 +90,7 @@ z = domain.grids[1]
 u  = int.state['u']
 uz = int.state['uz']
 w  = int.state['w']
+temp = int.state['t']
 u['X']   = np.cos(np.pi * 2. * z) * np.cos(np.pi * 2. * x)
 uz['xk'] = u.differentiate(1)
 w['X']   = np.sin(np.pi * 2. * z) * np.sin(np.pi * 2. * x)
@@ -104,7 +105,7 @@ w['X']   = np.sin(np.pi * 2. * z) * np.sin(np.pi * 2. * x)
 
 # integrate parameters
 
-int.dt = 1e-2
+int.dt = 2e-2
 int.sim_stop_time = 1.0
 int.wall_stop_time = np.inf
 int.stop_iteration = np.inf
@@ -112,6 +113,8 @@ int.stop_iteration = np.inf
 # storage lists
 t_list = [int.time]
 u_list = [np.copy(u['X'])]
+w_list = [np.copy(w['X'])]
+theta_list = [np.copy(temp['X'])]
 copy_cadence = 1
 
 # Main loop
@@ -125,6 +128,8 @@ while int.ok:
   if int.iteration % copy_cadence == 0:
     t_list.append(int.time)
     u_list.append(np.copy(u['X']))
+    w_list.append(np.copy(w['X']))
+    theta_list.append(np.copy(temp['X']))
     print('Iteration: %i, Time: %e' %(int.iteration, int.time))
 
 if int.iteration % copy_cadence != 0:
@@ -144,7 +149,10 @@ print('-' * 20)
 shelf = shelve.open('data.db', flag='n')
 shelf['t'] = np.array(t_list)
 shelf['x'] = x
-shelf['y'] = np.array(y_list)
+shelf['z'] = z
+shelf['u'] = np.array(u_list)
+shelf['w'] = np.array(w_list)
+shelf['temp'] = np.array(theta_list)
 shelf.close()
 
 

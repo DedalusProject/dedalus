@@ -52,6 +52,7 @@ int.stop_iteration = np.inf
 t_list = [int.time]
 y_list = [np.copy(y['X'])]
 dy_list = [np.copy(dy['X'])]
+energy_list = [(y['X']*y['X'].conj()).mean()]
 copy_cadence = 1
 
 # Main loop
@@ -66,6 +67,7 @@ while int.ok:
         t_list.append(int.time)
         y_list.append(np.copy(y['X']))
         dy_list.append(np.copy(dy['X']))
+        energy_list.append((y['X']*y['X'].conj()).mean())
 
     # Print progress
     if int.iteration % copy_cadence == 0:
@@ -76,6 +78,7 @@ if int.iteration % copy_cadence != 0:
     t_list.append(int.time)
     y_list.append(np.copy(y['X']))
     dy_list.append(np.copy(dy['X']))
+    energy_list.append(np.copy(y['X']*y['X'].conj()))
 
 end_time = time.time()
 
@@ -93,5 +96,6 @@ shelf['x'] = x
 shelf['z'] = z
 shelf['y'] = np.array(y_list)
 shelf['dy'] = np.array(dy_list)
+shelf['energy'] = np.array(energy_list)
 shelf.close()
 
