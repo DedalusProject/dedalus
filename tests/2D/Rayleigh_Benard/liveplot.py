@@ -9,12 +9,12 @@ import time
 
 
 # Options
-fnames = ['u', 'w', 'T']
+fnames = ['w', 'theta']
 xstr = 'z'
 ystr = 'x'
 cmapname = 'Spectral_r'
 even_scale = True
-units = False
+units = True
 static_scale = False
 
 # Read storage

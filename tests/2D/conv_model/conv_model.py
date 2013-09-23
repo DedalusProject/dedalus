@@ -1,16 +1,17 @@
 
+
 import numpy as np
-import matplotlib.pyplot as plt
 import time
 import shelve
 from dedalus2.public import *
 
+
 # set domain
 x_basis = Fourier(32, interval=[0.,1.])
 z_basis = Chebyshev(32, interval=[0.,1.])
-domain = Domain([x_basis,z_basis])
+domain = Domain([x_basis, z_basis])
 
-Ra = 2000.
+Ra = 300
 
 conv = Problem(['w','t','wz','tz'], 1)
 
@@ -20,44 +21,43 @@ conv = Problem(['w','t','wz','tz'], 1)
 # Dt t - w - Dx^2 t - Dz tz = 0
 # Dz w - wz = 0
 # Dz t - tz = 0
-# 
+#
 
+def M0(d_trans):
+  return np.array([[1., 0., 0., 0.],
+                   [0., 1., 0., 0.],
+                   [0., 0., 0., 0.],
+                   [0., 0., 0., 0.]])
 
-def M(d_trans):
-  return np.array([[1.0,   0,   0,   0],
-                   [  0, 1.0,   0,   0],
-                   [  0,   0,   0,   0],
-                   [  0,   0,   0,   0]])
-
-conv.M0[0] = M
+conv.M0[0] = M0
 
 def L0(d_trans):
   Dx = d_trans[0]
-  return np.array([[ -Dx**2,    -Ra,     0,   0],
-                   [   -1.0, -Dx**2,     0,   0],
-                   [      0,      0, -1.0,    0],
-                   [      0,      0,    0, -1.0]])
+  return np.array([[-Dx**2,    -Ra,  0.,  0.],
+                   [   -1., -Dx**2,  0.,  0.],
+                   [    0.,     0., -1.,  0.],
+                   [    0.,     0.,  0., -1.]])
 
 
 conv.L0[0] = L0
 
 def L1(d_trans):
-  return np.array([[   0,   0, -1.0,    0],
-                   [   0,   0,    0, -1.0],
-                   [ 1.0,   0,    0,    0],
-                   [   0, 1.0,    0,    0]])
+  return np.array([[0., 0., -1.,  0.],
+                   [0., 0.,  0., -1.],
+                   [1., 0.,  0.,  0.],
+                   [0., 1.,  0.,  0.]])
 
 conv.L1[0] = L1
 
-conv.LL = lambda d_trans: np.array([[ 1.0,   0, 0, 0],
-                                  [   0, 1.0, 0, 0],
-                                  [   0,   0, 0, 0],
-                                  [   0,   0, 0, 0]])
+conv.LL = lambda d_trans: np.array([[1., 0., 0., 0.],
+                                    [0., 1., 0., 0.],
+                                    [0., 0., 0., 0.],
+                                    [0., 0., 0., 0.]])
 
-conv.LR = lambda d_trans: np.array([[   0,   0, 0, 0],
-                                  [   0,   0, 0, 0],
-                                  [ 1.0,   0, 0, 0],
-                                  [   0, 1.0, 0, 0]])
+conv.LR = lambda d_trans: np.array([[0., 0., 0., 0.],
+                                    [0., 0., 0., 0.],
+                                    [1., 0., 0., 0.],
+                                    [0., 1., 0., 0.]])
 
 
 pde = conv
@@ -72,13 +72,14 @@ z = domain.grids[1]
 w  = int.state['w']
 wz = int.state['wz']
 t = int.state['t']
-w['X']   = np.sin(np.pi * 2. * z) * np.sin(np.pi * 2. * x)
-wz['xk'] = w.differentiate(1)
+t['X'] = 1e-5 * (2*np.random.randn(*t['X'].shape)-1) * np.sin(np.pi*z)
+#w['X']   = np.sin(np.pi * 2. * z) * np.sin(np.pi * 2. * x)
+#wz['xk'] = w.differentiate(1)
 
 # integrate parameters
 
-int.dt = 2e-2
-int.sim_stop_time = 1.0
+int.dt = 1e-1
+int.sim_stop_time = 10.
 int.wall_stop_time = np.inf
 int.stop_iteration = np.inf
 
@@ -86,6 +87,7 @@ int.stop_iteration = np.inf
 t_list = [int.time]
 w_list = [np.copy(w['X'])]
 theta_list = [np.copy(t['X'])]
+E_list = [np.sum(np.abs(w['X'])**2)]
 copy_cadence = 1
 
 # Main loop
@@ -100,11 +102,14 @@ while int.ok:
     t_list.append(int.time)
     w_list.append(np.copy(w['X']))
     theta_list.append(np.copy(t['X']))
+    E_list.append(np.sum(np.abs(w['X'])**2))
     print('Iteration: %i, Time: %e' %(int.iteration, int.time))
 
 if int.iteration % copy_cadence != 0:
   t_list.append(int.time)
   w_list.append(np.copy(w['X']))
+  theta_list.append(np.copy(t['X']))
+  E_list.append(np.sum(np.abs(w['X'])**2))
 
 end_time = time.time()
 
@@ -121,9 +126,14 @@ shelf['t'] = np.array(t_list)
 shelf['x'] = x
 shelf['z'] = z
 shelf['w'] = np.array(w_list)
+shelf['theta'] = np.array(theta_list)
+shelf['E'] = np.array(E_list)
 shelf.close()
 
 
+k = np.pi
+omega = np.sqrt(Ra) - k**2
+print('Expected energy growth rate = 2(Ra^0.5 - k^2) = %f' %(2*omega))
 
 
 
