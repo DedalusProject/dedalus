@@ -11,7 +11,15 @@ x_basis = Fourier(32, interval=[0.,1.])
 z_basis = Chebyshev(32, interval=[0.,1.])
 domain = Domain([x_basis, z_basis])
 
-Ra = 300
+Ra = 90
+k = np.pi
+omega = np.sqrt(Ra) - k**2
+T = np.abs(1. / omega)
+print('Expected mode growth rate = 2(Ra^0.5 - k^2) = %f' %omega)
+print('Expected mode time scale = %f' %T)
+print('Expected energy growth rate = 2(Ra^0.5 - k^2) = %f' %(2*omega))
+print('Expected energy time scale = %f' %(T/2.))
+
 
 conv = Problem(['w','t','wz','tz'], 1)
 
@@ -78,8 +86,8 @@ t['X'] = 1e-5 * (2*np.random.randn(*t['X'].shape)-1) * np.sin(np.pi*z)
 
 # integrate parameters
 
-int.dt = 1e-1
-int.sim_stop_time = 10.
+int.dt = T / 20.
+int.sim_stop_time = 5 * T
 int.wall_stop_time = np.inf
 int.stop_iteration = np.inf
 
@@ -131,9 +139,7 @@ shelf['E'] = np.array(E_list)
 shelf.close()
 
 
-k = np.pi
-omega = np.sqrt(Ra) - k**2
-print('Expected energy growth rate = 2(Ra^0.5 - k^2) = %f' %(2*omega))
+
 
 
 
