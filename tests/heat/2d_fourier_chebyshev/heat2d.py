@@ -7,10 +7,10 @@ from dedalus2.public import *
 
 
 # Set domain
-z_basis = Chebyshev(32, interval=[-1., 1.])
-x_basis = Fourier(32, interval=[-1.,1.])
-#z_basis = Chebyshev(64, interval=[-1., 1.])
-#x_basis = Fourier(64, interval=[-1.,1.])
+# z_basis = Chebyshev(32, interval=[-1., 1.])
+# x_basis = Fourier(32, interval=[-1.,1.])
+z_basis = Chebyshev(64, interval=[-1., 1.])
+x_basis = Fourier(64, interval=[-1.,1.])
 domain = Domain([x_basis, z_basis])
 
 # Heat equation: y_t = y_xx + y_zz
@@ -45,8 +45,17 @@ y['X'] = np.sin(np.pi*z)*np.cos(np.pi*x) + 1000.*np.sin(np.pi*8.*z)*np.cos(np.pi
 dy['xk'] = y.differentiate(1)
 
 # Integration parameters
-int.dt = 4e-3
-int.sim_stop_time = 1.0
+c1 = (np.pi)**2 + (np.pi)**2
+c8 = (8*np.pi)**2 + (8*np.pi)**2
+
+int.dt = 1. / c8 # Resolve both scales
+#int.dt = 2.399 / c8 # Resolve c1 scale.  c8 mode will decay correctly but oscillate
+#int.dt = 1./ c1 # Resolve first scale.  c8 mode will oscillate AND decay too slowly.
+
+print('h c1 = %f' %(int.dt*c1))
+print('h c8 = %f' %(int.dt*c8))
+
+int.sim_stop_time = int.dt * 100
 int.wall_stop_time = np.inf
 int.stop_iteration = np.inf
 
