@@ -33,12 +33,15 @@ class Domain:
                 j *= b.coeff_size
             else:
                 if len(bases) == 1:
-                    bi_list.append(bi)
+                    bi_list.append([])
                     d_list.append([])
+                else:
+                    bi_list = list(zip(*bi_list))
+                    d_list = list(zip(*d_list))
 
-        self.d_list = np.transpose(d_list)
+        self.d_list = d_list
         self.slices = []
-        for bl in np.transpose(bi_list):
+        for bl in bi_list:
             sli = []
             for i in bl:
                 sli.append(slice(i, i+1))
