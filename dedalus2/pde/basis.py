@@ -169,7 +169,7 @@ class Chebyshev(TauBasis):
 
         # DCT with adjusted coefficients
         N = self.N
-        self._math[..., :] = kdata
+        self._math = np.copy(kdata)
         self._math[..., 1:N] /= 2.
         xdata[:] = fft.dct(self._math, type=1, norm=None, axis=axis)
 
@@ -183,7 +183,7 @@ class Chebyshev(TauBasis):
 
         # DCT with adjusted coefficients
         N = self.N
-        self._math[..., :] = kdata
+        self._math = np.copy(kdata)
         self._math[..., 1:N] /= 2.
         xdata.real = fft.dct(self._math.real, type=1, norm=None, axis=axis)
         xdata.imag = fft.dct(self._math.imag, type=1, norm=None, axis=axis)
@@ -366,17 +366,17 @@ class Fourier(TauBasis):
             self.forward = self._forward_r2c
             self.backward = self._backward_c2r
             self.coeff_size = n//2 + 1
-            self.wavenumbers = np.arange(0, n//2 + 1)
+            wavenumbers = np.arange(0, n//2 + 1)
         elif dtype is np.complex128:
             self.forward = self._forward_c2c
             self.backward = self._backward_c2c
             self.coeff_size = n
-            self.wavenumbers = np.hstack((np.arange(0, n//2+1),
-                                          np.arange((-n)//2+1, 0)))
+            wavenumbers = np.hstack((np.arange(0, n//2+1),
+                                     np.arange((-n)//2+1, 0)))
         else:
             raise ValueError("Unsupported dtype.")
 
-        self.wavenumbers *= self._diff_scale
+        self.wavenumbers = wavenumbers * self._diff_scale
 
         return self.coeff_dtype
 
