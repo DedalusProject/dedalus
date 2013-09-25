@@ -81,12 +81,13 @@ w  = int.state['w']
 wz = int.state['wz']
 t = int.state['t']
 t['X'] = 1e-5 * (2*np.random.randn(*t['X'].shape)-1) * np.sin(np.pi*z)
+tz['xk'] = t.differentiate(1)
 #w['X']   = np.sin(np.pi * 2. * z) * np.sin(np.pi * 2. * x)
 #wz['xk'] = w.differentiate(1)
 
 # integrate parameters
 
-int.dt = T / 20.
+int.dt = T / 100.
 int.sim_stop_time = 5 * T
 int.wall_stop_time = np.inf
 int.stop_iteration = np.inf

@@ -7,8 +7,10 @@ from dedalus2.public import *
 
 
 # Set domain
-z_basis = Fourier(32, interval=[-1., 1.])
+z_basis = Chebyshev(32, interval=[-1., 1.])
 x_basis = Fourier(32, interval=[-1.,1.])
+#z_basis = Chebyshev(64, interval=[-1., 1.])
+#x_basis = Fourier(64, interval=[-1.,1.])
 domain = Domain([x_basis, z_basis])
 
 # Heat equation: y_t = y_xx + y_zz
@@ -23,11 +25,11 @@ heat_eq.L0[0] = lambda d_trans: np.array([[-d_trans[0]**2, 0.],
                                           [0.            , 1.]])
 heat_eq.L1[0] = lambda d_trans: np.array([[ 0., -1.],
                                           [-1.,  0.]])
-# heat_eq.LL = lambda d_trans: np.array([[0., 1.],
-#                                        [0., 0.]])
-# heat_eq.LR = lambda d_trans: np.array([[0., 0.],
-#                                        [0., 1.]])
-# heat_eq.b = lambda d_trans: np.array([0., 0.])
+heat_eq.LL = lambda d_trans: np.array([[1., 0.],
+                                       [0., 0.]])
+heat_eq.LR = lambda d_trans: np.array([[0., 0.],
+                                       [1., 0.]])
+heat_eq.b = lambda d_trans: np.array([0., 0.])
 
 pde = heat_eq
 ts = timesteppers.CNAB3
@@ -39,12 +41,12 @@ int = Integrator(pde, domain, ts)
 x, z = domain.grids
 y = int.state['y']
 dy = int.state['dy']
-y['X'] = np.sin(2*np.pi*z) * np.cos(4*np.pi*x)
+y['X'] = np.sin(np.pi*z)*np.cos(np.pi*x) + 1000.*np.sin(np.pi*8.*z)*np.cos(np.pi*8.*x)
 dy['xk'] = y.differentiate(1)
 
 # Integration parameters
-int.dt = 1e-3
-int.sim_stop_time = 0.1
+int.dt = 4e-3
+int.sim_stop_time = 1.0
 int.wall_stop_time = np.inf
 int.stop_iteration = np.inf
 
