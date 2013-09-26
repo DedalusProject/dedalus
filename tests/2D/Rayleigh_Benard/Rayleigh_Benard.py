@@ -8,11 +8,11 @@ from dedalus2.public import *
 
 
 # Set domain
-x_basis = Fourier(32, interval=[0.,1.])
+x_basis = Fourier(32, interval=[0., 1])
 z_basis = Chebyshev(32, interval=[0.,1.])
 domain = Domain([x_basis, z_basis])
 
-Ra = 50000.
+Ra = 0.
 Pr = 1.
 iPr = 1./Pr
 
@@ -39,7 +39,6 @@ rb.M0[0] = M
 
 def L0(d_trans):
   Dx = d_trans[0]
-  print(Dx)
   return np.array([[ 0,     Dx,      0,      0,    0,    0],
                    [Dx, -Dx*Dx,      0,      0,    0,    0],
                    [ 0,      0, -Dx*Dx,    -Ra,   Dx,    0],
@@ -92,7 +91,7 @@ u  = int.state['u']
 uz = int.state['uz']
 w  = int.state['w']
 T = int.state['t']
-T['X'] = 1e-6 * np.sin(np.pi * z) * np.random.randn(*T['X'].shape)
+T['X'] = 1. * np.sin(np.pi * z) * np.random.randn(*T['X'].shape)
 #u['X']   = np.cos(np.pi * 2. * z) * np.cos(2*np.pi*x + np.pi/4.)
 #uz['xk'] = u.differentiate(1)
 #w['X']   = np.sin(np.pi * 2. * z) * np.sin(2*np.pi*x + np.pi/4.)
@@ -107,8 +106,8 @@ T['X'] = 1e-6 * np.sin(np.pi * z) * np.random.randn(*T['X'].shape)
 
 # integrate parameters
 
-int.dt = 1e-2
-int.sim_stop_time = 1.
+int.dt = 1e-4
+int.sim_stop_time = int.dt * 100
 int.wall_stop_time = np.inf
 int.stop_iteration = np.inf
 
