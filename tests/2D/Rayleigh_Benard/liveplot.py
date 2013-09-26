@@ -9,7 +9,7 @@ import time
 
 
 # Options
-fnames = ['w', 'theta']
+fnames = ['u', 'w', 'T']
 xstr = 'z'
 ystr = 'x'
 cmapname = 'Spectral_r'
