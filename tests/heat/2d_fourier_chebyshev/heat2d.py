@@ -29,7 +29,15 @@ heat_eq.LL = lambda d_trans: np.array([[1., 0.],
                                        [0., 0.]])
 heat_eq.LR = lambda d_trans: np.array([[0., 0.],
                                        [1., 0.]])
-heat_eq.b = lambda d_trans: np.array([0., 0.])
+
+def b(d_trans):
+  dx = d_trans[0]
+  if dx == 0:
+    return np.array([1., 1.])
+  else:
+    return np.array([0., 0.])
+
+heat_eq.b = b
 
 pde = heat_eq
 ts = timesteppers.CNAB3
@@ -41,7 +49,7 @@ int = Integrator(pde, domain, ts)
 x, z = domain.grids
 y = int.state['y']
 dy = int.state['dy']
-y['X'] = np.sin(np.pi*z)*np.cos(np.pi*x) + 1000.*np.sin(np.pi*8.*z)*np.cos(np.pi*8.*x)
+y['X'] = 1 + np.sin(np.pi*z)*np.cos(np.pi*x) + 1000.*np.sin(np.pi*8.*z)*np.cos(np.pi*8.*x)
 dy['xk'] = y.differentiate(1)
 
 # Integration parameters
