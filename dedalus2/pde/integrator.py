@@ -73,7 +73,10 @@ class Integrator:
             # Solve Tau system
             LHS = pencil.LHS
             RHS = self.rhs[pencil]
-            X = linalg.spsolve(LHS, RHS)
+            #print(np.max(np.abs(LHS.todense())))
+            #print(np.max(np.abs(RHS)))
+            s = 1.
+            X = linalg.spsolve((s*LHS), (s*RHS))
 
             # Update state
             self.state[pencil] = X
