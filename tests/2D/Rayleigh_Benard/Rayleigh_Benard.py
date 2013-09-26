@@ -1,18 +1,17 @@
 
 
 import numpy as np
-import matplotlib.pyplot as plt
 import time
 import shelve
 from dedalus2.public import *
 
 
 # Set domain
-x_basis = Fourier(32, interval=[0., 1])
+x_basis = Fourier(32, interval=[0., 4*np.sqrt(2)])
 z_basis = Chebyshev(32, interval=[0.,1.])
 domain = Domain([x_basis, z_basis])
 
-Ra = 0.
+Ra = 700.
 Pr = 1.
 iPr = 1./Pr
 
@@ -46,7 +45,6 @@ def L0(d_trans):
                    [ 0,      0,      0,      0, -1.0,    0],
                    [ 0,      0,      0,      0,    0, -1.0]])
 
-
 rb.L0[0] = L0
 
 def L1(d_trans):
@@ -70,44 +68,43 @@ rb.LL = lambda d_trans: np.array([[ 0, 0, 1.0,   0,   0, 0],
                                   [ 0, 0,   0,   0,   0, 0],
                                   [ 0, 0,   0,   0,   0, 0]])
 
-rb.LR = lambda d_trans: np.array([[ 0, 0,   0,   0,   0, 0],
-                                  [ 0, 0,   0,   0,   0, 0],
-                                  [ 0, 0,   0,   0,   0, 0],
-                                  [ 0, 0, 1.0,   0,   0, 0],
-                                  [ 0, 0,   0, 1.0,   0, 0],
-                                  [ 0, 0,   0,   0, 1.0, 0]])
+def LR(d_trans):
+    Dx = d_trans[0]
+    if Dx == 0:
+        return np.array([[   0, 0, 0,   0,   0, 0],
+                         [   0, 0, 0,   0,   0, 0],
+                         [   0, 0, 0,   0,   0, 0],
+                         [ 1.0, 0, 0,   0,   0, 0],
+                         [   0, 0, 0, 1.0,   0, 0],
+                         [   0, 0, 0,   0, 1.0, 0]])
+    else:
+        return np.array([[ 0, 0,   0,   0,   0, 0],
+                         [ 0, 0,   0,   0,   0, 0],
+                         [ 0, 0,   0,   0,   0, 0],
+                         [ 0, 0, 1.0,   0,   0, 0],
+                         [ 0, 0,   0, 1.0,   0, 0],
+                         [ 0, 0,   0,   0, 1.0, 0]])
 
-
-pde = rb
-ts = timesteppers.CNAB3
+rb.LR = LR
 
 # Build solver
-int = Integrator(pde, domain, ts)
+ts = timesteppers.CNAB3
+int = Integrator(rb, domain, ts)
 
 # initial conditions
 x = domain.grids[0]
 z = domain.grids[1]
+
 u  = int.state['u']
 uz = int.state['uz']
 w  = int.state['w']
 T = int.state['t']
-T['X'] = 1. * np.sin(np.pi * z) * np.random.randn(*T['X'].shape)
-#u['X']   = np.cos(np.pi * 2. * z) * np.cos(2*np.pi*x + np.pi/4.)
-#uz['xk'] = u.differentiate(1)
-#w['X']   = np.sin(np.pi * 2. * z) * np.sin(2*np.pi*x + np.pi/4.)
 
-# wz = field_manager.get_field(domain)
-# ux = field_manager.get_field(domain)
-
-# wz['xk'] = w.differentiate(1)
-# ux['K'] = u.differentiate(0)
-
-#psi = field_manager.get_field(domain)
+T['X'] = 1e-6 * np.sin(np.pi * z) * np.random.randn(*T['X'].shape)
 
 # integrate parameters
-
-int.dt = 1e-4
-int.sim_stop_time = int.dt * 100
+int.dt = 1e-1
+int.sim_stop_time = int.dt * 200
 int.wall_stop_time = np.inf
 int.stop_iteration = np.inf
 
@@ -122,22 +119,22 @@ copy_cadence = 1
 start_time = time.time()
 while int.ok:
 
-  # advance
-  int.advance()
+    # advance
+    int.advance()
 
-  # update lists
-  if int.iteration % copy_cadence == 0:
+    # update lists
+    if int.iteration % copy_cadence == 0:
+        t_list.append(int.time)
+        u_list.append(np.copy(u['X']))
+        w_list.append(np.copy(w['X']))
+        T_list.append(np.copy(T['X']))
+        print('Iteration: %i, Time: %e' %(int.iteration, int.time))
+
+if int.iteration % copy_cadence != 0:
     t_list.append(int.time)
     u_list.append(np.copy(u['X']))
     w_list.append(np.copy(w['X']))
     T_list.append(np.copy(T['X']))
-    print('Iteration: %i, Time: %e' %(int.iteration, int.time))
-
-if int.iteration % copy_cadence != 0:
-  t_list.append(int.time)
-  u_list.append(np.copy(u['X']))
-  w_list.append(np.copy(w['X']))
-  T_list.append(np.copy(T['X']))
 
 end_time = time.time()
 
@@ -157,8 +154,4 @@ shelf['u'] = np.array(u_list)
 shelf['w'] = np.array(w_list)
 shelf['T'] = np.array(T_list)
 shelf.close()
-
-
-
-
 
