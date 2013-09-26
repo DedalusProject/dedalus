@@ -84,6 +84,9 @@ ts = timesteppers.CNAB3
 # Build solver
 int = Integrator(pde, domain, ts)
 
+int.pencils[0].L[0,0]=1.
+int.pencils[0].L[0,2]=-0.5
+
 # initial conditions
 x = domain.grids[0]
 z = domain.grids[1]
@@ -92,7 +95,7 @@ uz = int.state['uz']
 w  = int.state['w']
 T = int.state['t']
 Tz = int.state['tz']
-#T['X'] = 1e-10 * np.sin(np.pi * z) * np.random.randn(*T['X'].shape) + np.sin(np.pi*2.*z)
+#T['X'] = 1 * np.sin(np.pi * z) * np.random.randn(*T['X'].shape)
 #Tz['xk'] = T.differentiate(1)
 u['X']   = np.cos(1.*np.pi * z) * np.cos(2.*np.pi*x + np.pi/4.)
 uz['xk'] = u.differentiate(1)
@@ -119,7 +122,7 @@ u_list = [np.copy(u['X'])]
 w_list = [np.copy(w['X'])]
 T_list = [np.copy(T['X'])]
 E_list = [np.sum(np.abs(w['X'])**2)]
-copy_cadence = 5
+copy_cadence = 9
 
 # Main loop
 start_time = time.time()
