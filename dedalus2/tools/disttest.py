@@ -8,7 +8,7 @@ zb = basis.Chebyshev(20)
 yb = basis.Fourier(20)
 xb = basis.Fourier(20)
 
-dom = domain.Domain([xb, yb, zb], dtype=np.float64)
+dom = domain.Domain([xb, yb, zb], dtype=np.complex128)
 mesh = [2, 2]
 
 dist = dist.Distributor(dom, mesh)
