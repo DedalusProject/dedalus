@@ -57,14 +57,14 @@ def L1(d_trans):
 
 rb.L1[0] = L1
 
-derx = operators.Derivative
+D = operators.create_diff_operators(domain)
 
 rb.parameters['Pr'] = Pr
-rb.parameters['d'] = derx
+rb.parameters['Dx'] = D[0]
 
-rb.F[1] = "-1/Pr*(u*d(u)+w*uz)"
-rb.F[2] = "-1/Pr*(u*d(w)-w*d(u))"
-rb.F[3] = "-u*d(t)-w*tz"
+rb.F[1] = "-1/Pr*(u*Dx(u)+w*uz)"
+rb.F[2] = "-1/Pr*(u*Dx(w)-w*Dx(u))"
+rb.F[3] = "-u*Dx(t)-w*tz"
 
 rb.LL = lambda d_trans: np.array([[ 0, 0, 1.0,   0,   0, 0],
                                   [ 0, 0,   0, 1.0,   0, 0],
