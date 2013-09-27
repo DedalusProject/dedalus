@@ -221,7 +221,7 @@ class Multiplication(Arithmetic):
         flag = True
         for a in self.args:
             if isinstance(a, Field):
-                if a.space[0] == 'k':
+                if 'k' in a.space:
                     flag = False
         return flag
 
@@ -231,26 +231,46 @@ class Multiplication(Arithmetic):
 
         return out
 
-class Derivative(Operator):
 
-    name = 'deriv'
-    arity = 1
-    str_op = ' der '
+def create_diff_operators(domain):
 
-    def conditions(self, layout):
+    ops = []
 
-        flag = True
-        for a in self.args:
-            if isinstance(a, Field):
-                if (not a.local[0] or a.space[0] == 'x'):
-                    flag = False
-        return flag
+    for i, b in enumerate(domain.bases):
 
-    def operation(self, out):
+        class diff(Operator):
 
-        out.data[:] = self.args[0].domain.d_list[0] * self.args[0].data
+            name = 'D' + str(i)
+            arity = 1
 
-        return out
+            index = i
+            basis = domain.bases[i]
+
+            def conditions(self, layout):
+
+                flag = True
+                for a in self.args:
+                    if isinstance(a, Field):
+                        if a.space[self.index] == 'x':
+                            flag = False
+                        if not a.local[self.index]:
+                            flag = False
+                return flag
+
+                #return (not layout.grid_space[self.index])
+
+            def operation(self, out):
+
+                self.basis.differentiate(self.args[0].data,
+                                         out.data,
+                                         axis=self.index)
+
+                return out
+
+        ops.append(diff)
+
+    return ops
+
 
 class MagSquared(Operator):
 
@@ -262,7 +282,7 @@ class MagSquared(Operator):
         flag = True
         for a in self.args:
             if isinstance(a, Field):
-                if a.space[0] == 'k':
+                if 'k' in a.space:
                     flag = False
         return flag
 
