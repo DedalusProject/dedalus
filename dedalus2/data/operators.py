@@ -231,6 +231,26 @@ class Multiplication(Arithmetic):
 
         return out
 
+class Derivative(Operator):
+
+    name = 'deriv'
+    arity = 1
+    str_op = ' der '
+
+    def conditions(self, layout):
+
+        flag = True
+        for a in self.args:
+            if isinstance(a, Field):
+                if (not a.local[0] or a.space[0] == 'x'):
+                    flag = False
+        return flag
+
+    def operation(self, out):
+
+        out.data[:] = self.args[0].domain.d_list[0] * self.args[0].data
+
+        return out
 
 class MagSquared(Operator):
 

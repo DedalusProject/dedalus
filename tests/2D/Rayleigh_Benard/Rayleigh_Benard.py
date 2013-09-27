@@ -7,11 +7,11 @@ from dedalus2.public import *
 
 
 # Set domain
-x_basis = Fourier(32, interval=[0., 4*np.sqrt(2)])
+x_basis = Fourier(32, interval=[0., 4.])
 z_basis = Chebyshev(32, interval=[0.,1.])
 domain = Domain([x_basis, z_basis])
 
-Ra = 700.
+Ra = 2000.
 Pr = 1.
 iPr = 1./Pr
 
@@ -57,9 +57,14 @@ def L1(d_trans):
 
 rb.L1[0] = L1
 
-# rb.F[1] = "-1/Pr*(u*d_trans[0]*u+w*uz)"
-# rb.F[2] = "-1/Pr*(u*d_trans[0]*w-w*d_trans[0]*u)"
-# rb.F[3] = "-u*d_trans[0]*t-w*tz"
+derx = operators.Derivative
+
+rb.parameters['Pr'] = Pr
+rb.parameters['d'] = derx
+
+rb.F[1] = "-1/Pr*(u*d(u)+w*uz)"
+rb.F[2] = "-1/Pr*(u*d(w)-w*d(u))"
+rb.F[3] = "-u*d(t)-w*tz"
 
 rb.LL = lambda d_trans: np.array([[ 0, 0, 1.0,   0,   0, 0],
                                   [ 0, 0,   0, 1.0,   0, 0],
@@ -100,11 +105,11 @@ uz = int.state['uz']
 w  = int.state['w']
 T = int.state['t']
 
-T['X'] = 1e-6 * np.sin(np.pi * z) * np.random.randn(*T['X'].shape)
+T['X'] = 1e-1 * np.sin(np.pi * z) * np.random.randn(*T['X'].shape)
 
 # integrate parameters
-int.dt = 1e-1
-int.sim_stop_time = int.dt * 200
+int.dt = 5e-4
+int.sim_stop_time = 1.25
 int.wall_stop_time = np.inf
 int.stop_iteration = np.inf
 
@@ -113,7 +118,8 @@ t_list = [int.time]
 u_list = [np.copy(u['X'])]
 w_list = [np.copy(w['X'])]
 T_list = [np.copy(T['X'])]
-copy_cadence = 1
+E_list = [np.sum(u['X']**2+w['X']**2+T['X']**2)]
+copy_cadence = 20
 
 # Main loop
 start_time = time.time()
@@ -128,6 +134,7 @@ while int.ok:
         u_list.append(np.copy(u['X']))
         w_list.append(np.copy(w['X']))
         T_list.append(np.copy(T['X']))
+        E_list.append(np.sum(u['X']**2+w['X']**2+T['X']**2))
         print('Iteration: %i, Time: %e' %(int.iteration, int.time))
 
 if int.iteration % copy_cadence != 0:
@@ -135,6 +142,7 @@ if int.iteration % copy_cadence != 0:
     u_list.append(np.copy(u['X']))
     w_list.append(np.copy(w['X']))
     T_list.append(np.copy(T['X']))
+    E_list.append(np.sum(u['X']**2+w['X']**2+T['X']**2))
 
 end_time = time.time()
 
@@ -153,5 +161,6 @@ shelf['z'] = z
 shelf['u'] = np.array(u_list)
 shelf['w'] = np.array(w_list)
 shelf['T'] = np.array(T_list)
+shelf['E'] = np.array(E_list)
 shelf.close()
 
