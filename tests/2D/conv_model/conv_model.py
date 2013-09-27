@@ -11,7 +11,7 @@ x_basis = Fourier(32, interval=[0.,1.])
 z_basis = Chebyshev(32, interval=[0.,1.])
 domain = Domain([x_basis, z_basis])
 
-Ra = 90
+Ra = 150
 k = np.pi
 omega = np.sqrt(Ra) - k**2
 T = np.abs(1. / omega)
@@ -80,6 +80,7 @@ z = domain.grids[1]
 w  = int.state['w']
 wz = int.state['wz']
 t = int.state['t']
+tz = int.state['tz']
 t['X'] = 1e-5 * (2*np.random.randn(*t['X'].shape)-1) * np.sin(np.pi*z)
 tz['xk'] = t.differentiate(1)
 #w['X']   = np.sin(np.pi * 2. * z) * np.sin(np.pi * 2. * x)
@@ -88,7 +89,7 @@ tz['xk'] = t.differentiate(1)
 # integrate parameters
 
 int.dt = T / 100.
-int.sim_stop_time = 5 * T
+int.sim_stop_time = 1 * T
 int.wall_stop_time = np.inf
 int.stop_iteration = np.inf
 
