@@ -34,14 +34,14 @@ class Pencil:
 
     def build_matrices(self, problem, basis):
 
-        # Instruct basis to build its matrices
-        basis.build_tau_matrices(problem.order)
-
         # Build PDE matrices starting with constant terms
-        M = (sparse.kron(problem.M0[0](self.d_trans), basis.Pre) +
-             sparse.kron(problem.M1[0](self.d_trans), basis.Pre * basis.Diff))
-        L = (sparse.kron(problem.L0[0](self.d_trans), basis.Pre) +
-             sparse.kron(problem.L1[0](self.d_trans), basis.Pre * basis.Diff))
+        Pre_0 = basis.Pre
+        Diff_0 = basis.Pre * basis.Diff
+
+        M = (sparse.kron(problem.M0[0](self.d_trans), Pre_0) +
+             sparse.kron(problem.M1[0](self.d_trans), Diff_0))
+        L = (sparse.kron(problem.L0[0](self.d_trans), Pre_0) +
+             sparse.kron(problem.L1[0](self.d_trans), Diff_0))
 
         # Convert to easily modifiable structures
         M = M.tolil()
@@ -58,10 +58,16 @@ class Pencil:
             L += sparse.kron(problem.L1[i](self.d_trans), Diff_i)
 
         # Build boundary condition matrices
-        Mb = (sparse.kron(problem.ML(self.d_trans), basis.Left) +
-              sparse.kron(problem.MR(self.d_trans), basis.Right))
-        Lb = (sparse.kron(problem.LL(self.d_trans), basis.Left) +
-              sparse.kron(problem.LR(self.d_trans), basis.Right))
+        Left = sparse.kron(basis.Left, basis.BC_row)
+        Right = sparse.kron(basis.Right, basis.BC_row)
+        Int = sparse.kron(basis.Int, basis.BC_row)
+
+        Mb = (sparse.kron(problem.ML(self.d_trans), Left) +
+              sparse.kron(problem.MR(self.d_trans), Right) +
+              sparse.kron(problem.MI(self.d_trans), Int))
+        Lb = (sparse.kron(problem.LL(self.d_trans), Left) +
+              sparse.kron(problem.LR(self.d_trans), Right) +
+              sparse.kron(problem.LI(self.d_trans), Int))
 
         # Convert to easily iterable structures
         Mb = Mb.tocoo()
@@ -85,7 +91,7 @@ class Pencil:
 
         # Reference nonlinear expressions
         self.F = problem.F
-        self.b = np.kron(problem.b(self.d_trans), basis.last)
+        self.b = np.kron(problem.b(self.d_trans), basis.BC_row[:,0])
         self.bc_rows = list(rows)
         self.bc_f = [self.b[r] for r in rows]
         self.parameters = problem.parameters

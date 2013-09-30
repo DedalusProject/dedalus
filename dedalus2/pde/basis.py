@@ -5,6 +5,35 @@ from scipy import sparse
 from scipy import fftpack as fft
 
 
+class CachedAttribute:
+    """
+    Descriptor for building attributes during first attempted access.
+    Based on Denis Otkidach's implementation.
+
+    """
+
+    def __init__(self, method):
+
+        # Parameters
+        self.method = method
+        self.name = method.__name__
+        self.__doc__ = method.__doc__
+
+    def __get__(self, instance, owner):
+
+        # Return self when accessed from class
+        if instance is None:
+            return self
+
+        # Build attribute
+        attribute = self.method(instance)
+
+        # Cache attribute (overwriting descriptor)
+        setattr(instance, self.name, attribute)
+
+        return attribute
+
+
 class Basis:
     """Base class for all bases."""
 
@@ -50,55 +79,51 @@ class TauBasis(Basis):
     def build_tau_matrices(self, order):
         """Build matrices for constructing the Tau LHS."""
 
-        self.Pre = self._build_Pre()
-        self.Diff = self._build_Diff()
-        self.Left = self._build_Left()
-        self.Right = self._build_Right()
-        self.Int = self._build_Int()
         self.Mult = [self._build_Mult(p) for p in range(1, order)]
-        self.last = self._build_last()
 
-    def _build_Pre(self):
-        """Build preconditioning matrix."""
+    @CachedAttribute
+    def Pre(self):
+        """Preconditioning matrix."""
 
         # Construct sparse identity matrix
         Pre = sparse.identity(self.coeff_size, dtype=self.coeff_dtype)
 
         return Pre.tocsr()
 
-    def _build_Diff(self):
-        """Build differentiation matrix."""
+    @CachedAttribute
+    def Diff(self):
+        """Differentiation matrix."""
 
         raise NotImplementedError()
 
-    def _build_Left(self):
-        """Build left-endpoint-evaluation matrix."""
+    def Mult(self, p):
+        """p-element multiplication matrix."""
 
         raise NotImplementedError()
 
-    def _build_Right(self):
-        """Build right-endpoint-evaluation matrix."""
+    @CachedAttribute
+    def Left(self):
+        """Left-endpoint-evaluation matrix."""
 
         raise NotImplementedError()
 
-    def _build_Int(self):
-        """Build integral-evaluation matrix."""
+    @CachedAttribute
+    def Right(self):
+        """Right-endpoint-evaluation matrix."""
 
         raise NotImplementedError()
 
-    def _build_Mult(self, p):
-        """Build p-element multiplication matrix."""
+    @CachedAttribute
+    def Int(self):
+        """Integral-evaluation matrix."""
 
         raise NotImplementedError()
 
-    def _build_last(self):
-        """Build last-coefficient vector."""
+    @CachedAttribute
+    def BC_row(self):
+        """Boundary-row matrix."""
 
-        # Construct dense vector
-        last = np.zeros(self.coeff_size, dtype=self.coeff_dtype)
-        last[-1] = 1.
-
-        return last
+        raise NotImplementedError()
 
 
 class Chebyshev(TauBasis):
@@ -226,15 +251,17 @@ class Chebyshev(TauBasis):
         # Scale for grid
         cderiv *= self._diff_scale
 
-    def _build_Pre(self):
+    @CachedAttribute
+    def Pre(self):
         """
-        Build preconditioning matrix.
+        Preconditioning matrix.
 
         T_n = (U_n - U_(n-2)) / 2
         U_(-n) = -U_(n-2)
 
         """
 
+        print('Build Pre')
         size = self.coeff_size
 
         # Initialize sparse matrix
@@ -255,9 +282,10 @@ class Chebyshev(TauBasis):
 
         return Pre.tocsr()
 
-    def _build_Diff(self):
+    @CachedAttribute
+    def Diff(self):
         """
-        Build differentiation matrix.
+        Differentiation matrix.
 
         d_x(T_n) / n = 2 T_n + d_x(T_(n-2)) / (n-2)
 
@@ -278,50 +306,6 @@ class Chebyshev(TauBasis):
 
         return Diff.tocsr()
 
-    def _build_Left(self):
-        """
-        Build left-endpoint-evaluation matrix.
-
-        T_n(-1) = (-1)**n
-
-        """
-
-        size = self.coeff_size
-
-        # Initialize sparse matrix
-        Left = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
-
-        # Add elements
-        for n in range(size):
-
-            # Last row
-            if (n % 2) == 0:
-                Left[-1, n] = 1.
-            else:
-                Left[-1, n] = -1.
-
-        return Left.tocsr()
-
-    def _build_Right(self):
-        """
-        Build right-endpoint-evaluation matrix.
-
-        T_n(1) = 1
-
-        """
-
-        size = self.coeff_size
-
-        # Initialize sparse matrix
-        Right = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
-
-        # Add elements
-        for n in range(size):
-
-            # Last row
-            Right[-1, n] = 1.
-
-        return Right.tocsr()
 
     def _build_Mult(self, p):
         """
@@ -351,6 +335,61 @@ class Chebyshev(TauBasis):
                 Mult[i, n] += 0.5
 
         return Mult.tocsr()
+
+    @CachedAttribute
+    def Left(self):
+        """
+        Left-endpoint-evaluation matrix.
+
+        T_n(-1) = (-1)**n
+
+        """
+
+        # Construct dense row vector
+        Left = np.ones((1, self.coeff_size), dtype=self.coeff_dtype)
+        Left[:, 1::2] = -1.
+
+        return Left
+
+    @CachedAttribute
+    def Right(self):
+        """
+        Right-endpoint-evaluation matrix.
+
+        T_n(1) = 1
+
+        """
+
+        # Construct dense row vector
+        Right = np.ones((1, self.coeff_size), dtype=self.coeff_dtype)
+
+        return Right
+
+    @CachedAttribute
+    def Int(self):
+        """
+        Integral-evaluation matrix.
+
+        int(T_n) = (1 + (-1)^n) / (1 - n^2)
+
+        """
+
+        # Construct dense row vector
+        Int = np.zeros((1, self.coeff_size), dtype=self.coeff_dtype)
+        for n in range(0, self.coeff_size, 2):
+            Int[:, n] = 2. / (1. - n*n)
+
+        return Int / self._diff_scale
+
+    @CachedAttribute
+    def BC_row(self):
+        """Last-row matrix for boundary conditions."""
+
+        # Construct dense column vector
+        BC_row = np.zeros((self.coeff_size, 1), dtype=self.coeff_dtype)
+        BC_row[-1, :] = 1.
+
+        return BC_row
 
 
 class Fourier(TransverseBasis, TauBasis):
@@ -430,9 +469,10 @@ class Fourier(TransverseBasis, TauBasis):
         # Multiplication
         cderiv[:] = cdata * ik
 
-    def _build_Diff(self):
+    @CachedAttribute
+    def Diff(self):
         """
-        Build differentiation matrix.
+        Differentiation matrix.
 
         d_x(F_n) = i k_n F_n
 
@@ -449,37 +489,62 @@ class Fourier(TransverseBasis, TauBasis):
 
         return Diff.tocsr()
 
-    def _build_Left(self):
+    @CachedAttribute
+    def Left(self):
         """
-        Build left-endpoint-evaluation matrix.
+        Left-endpoint-evaluation matrix.
 
         (Empty since boundaries are periodic.)
 
         """
 
-        size = self.coeff_size
+        # Construct dense row vector
+        Left = np.zeros((1, self.coeff_size), dtype=self.coeff_dtype)
 
-        # Initialize sparse matrix
-        Left = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
+        return Left
 
-        return Left.tocsr()
-
-    def _build_Right(self):
+    @CachedAttribute
+    def Right(self):
         """
-        Build right-endpoint-evaluation matrix.
+        Right-endpoint-evaluation matrix.
 
         (Empty since boundaries are periodic.)
 
         """
 
-        size = self.coeff_size
+        # Construct dense row vector
+        Right = np.zeros((1, self.coeff_size), dtype=self.coeff_dtype)
 
-        # Initialize sparse matrix
-        Right = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
+        return Right
 
-        return Right.tocsr()
+    @CachedAttribute
+    def Int(self):
+        """
+        Integral-evaluation matrix.
+
+        int(F_n) = 2 pi    if n = 0
+                 = 0       otherwise
+
+        """
+
+        # Construct dense row vector
+        Int = np.zeros((1, self.coeff_size), dtype=self.coeff_dtype)
+        Int[:, 0] = 2. * np.pi
+
+        return Int / self._diff_scale
+
+    @CachedAttribute
+    def BC_row(self):
+        """First-row matrix for boundary conditions."""
+
+        # Construct dense column vector
+        BC_row = np.zeros((self.coeff_size, 1), dtype=self.coeff_dtype)
+        BC_row[0, :] = 1.
+
+        return BC_row
 
     def trans_diff(self, i):
         """Transverse differentation constant for i-th term."""
 
         return 1j * self.wavenumbers[i]
+

@@ -24,8 +24,10 @@ class Problem:
         self.L1 = [lambda d_trans: np.zeros((size, size), dtype=np.complex128) for i in range(order)]
         self.ML = lambda d_trans: np.zeros((size, size), dtype=np.complex128)
         self.MR = lambda d_trans: np.zeros((size, size), dtype=np.complex128)
+        self.MI = lambda d_trans: np.zeros((size, size), dtype=np.complex128)
         self.LL = lambda d_trans: np.zeros((size, size), dtype=np.complex128)
         self.LR = lambda d_trans: np.zeros((size, size), dtype=np.complex128)
+        self.LI = lambda d_trans: np.zeros((size, size), dtype=np.complex128)
         self.b = lambda d_trans: np.zeros(size, dtype=np.complex128)
         self.F = [None] * self.size
 
