@@ -19,18 +19,27 @@ class Basis:
 
         raise NotImplementedError()
 
-    def forward(self, xdata, kdata, axis):
+    def forward(self, gdata, cdata, axis):
         """Grid-to-coefficient transform."""
 
         raise NotImplementedError()
 
-    def backward(self, kdata, xdata, axis):
+    def backward(self, cdata, gdata, axis):
         """Coefficient-to-grid transform."""
 
         raise NotImplementedError()
 
-    def differentiate(self, kdata, kderiv, axis):
+    def differentiate(self, cdata, cderiv, axis):
         """Differentiate using coefficients."""
+
+        raise NotImplementedError()
+
+
+class TransverseBasis(Basis):
+    """Base class for bases supporting transverse differentiation."""
+
+    def trans_diff(self, i):
+        """Transverse differentation constant for i-th term."""
 
         raise NotImplementedError()
 
@@ -45,6 +54,7 @@ class TauBasis(Basis):
         self.Diff = self._build_Diff()
         self.Left = self._build_Left()
         self.Right = self._build_Right()
+        self.Int = self._build_Int()
         self.Mult = [self._build_Mult(p) for p in range(1, order)]
         self.last = self._build_last()
 
@@ -68,6 +78,11 @@ class TauBasis(Basis):
 
     def _build_Right(self):
         """Build right-endpoint-evaluation matrix."""
+
+        raise NotImplementedError()
+
+    def _build_Int(self):
+        """Build integral-evaluation matrix."""
 
         raise NotImplementedError()
 
@@ -128,77 +143,77 @@ class Chebyshev(TauBasis):
 
         return self.coeff_dtype
 
-    def _forward_r2r(self, xdata, kdata, axis):
+    def _forward_r2r(self, gdata, cdata, axis):
         """Scipy DCT on real data."""
 
         # Currently setup just for last axis
         if axis != -1:
-            if axis != (len(xdata.shape) - 1):
+            if axis != (len(gdata.shape) - 1):
                 raise NotImplementedError()
 
         # DCT with adjusted coefficients
         N = self.N
-        kdata[:] = fft.dct(xdata, type=1, norm=None, axis=axis)
-        kdata /= N
-        kdata[..., 0] /= 2.
-        kdata[..., N] /= 2.
+        cdata[:] = fft.dct(gdata, type=1, norm=None, axis=axis)
+        cdata /= N
+        cdata[..., 0] /= 2.
+        cdata[..., N] /= 2.
 
-    def _forward_c2c(self, xdata, kdata, axis):
+    def _forward_c2c(self, gdata, cdata, axis):
         """Scipy DCT on complex data."""
 
         # Currently setup just for last axis
         if axis != -1:
-            if axis != (len(xdata.shape) - 1):
+            if axis != (len(gdata.shape) - 1):
                 raise NotImplementedError()
 
         # DCT with adjusted coefficients
         N = self.N
-        kdata.real = fft.dct(xdata.real, type=1, norm=None, axis=axis)
-        kdata.imag = fft.dct(xdata.imag, type=1, norm=None, axis=axis)
-        kdata /= N
-        kdata[..., 0] /= 2.
-        kdata[..., N] /= 2.
+        cdata.real = fft.dct(gdata.real, type=1, norm=None, axis=axis)
+        cdata.imag = fft.dct(gdata.imag, type=1, norm=None, axis=axis)
+        cdata /= N
+        cdata[..., 0] /= 2.
+        cdata[..., N] /= 2.
 
-    def _backward_r2r(self, kdata, xdata, axis):
+    def _backward_r2r(self, cdata, gdata, axis):
         """Scipy IDCT on real data."""
 
         # Currently setup just for last axis
         if axis != -1:
-            if axis != (len(kdata.shape) - 1):
+            if axis != (len(cdata.shape) - 1):
                 raise NotImplementedError()
 
         # DCT with adjusted coefficients
         N = self.N
-        self._math = np.copy(kdata)
+        self._math = np.copy(cdata)
         self._math[..., 1:N] /= 2.
-        xdata[:] = fft.dct(self._math, type=1, norm=None, axis=axis)
+        gdata[:] = fft.dct(self._math, type=1, norm=None, axis=axis)
 
-    def _backward_c2c(self, kdata, xdata, axis):
+    def _backward_c2c(self, cdata, gdata, axis):
         """Scipy IDCT on complex data."""
 
         # Currently setup just for last axis
         if axis != -1:
-            if axis != (len(kdata.shape) - 1):
+            if axis != (len(cdata.shape) - 1):
                 raise NotImplementedError()
 
         # DCT with adjusted coefficients
         N = self.N
-        self._math = np.copy(kdata)
+        self._math = np.copy(cdata)
         self._math[..., 1:N] /= 2.
-        xdata.real = fft.dct(self._math.real, type=1, norm=None, axis=axis)
-        xdata.imag = fft.dct(self._math.imag, type=1, norm=None, axis=axis)
+        gdata.real = fft.dct(self._math.real, type=1, norm=None, axis=axis)
+        gdata.imag = fft.dct(self._math.imag, type=1, norm=None, axis=axis)
 
-    def differentiate(self, kdata, kderiv, axis):
+    def differentiate(self, cdata, cderiv, axis):
         """Differentiation by recursion on coefficients."""
 
         # Currently setup just for last axis
         if axis != -1:
-            if axis != (len(kdata.shape) - 1):
+            if axis != (len(cdata.shape) - 1):
                 raise NotImplementedError()
 
         # Referencess
-        a = kdata
-        b = kderiv
+        a = cdata
+        b = cderiv
         N = self.N
 
         # Apply recursive differentiation
@@ -209,7 +224,7 @@ class Chebyshev(TauBasis):
         b[..., 0] = a[..., 1] + b[..., 2] / 2.
 
         # Scale for grid
-        kderiv *= self._diff_scale
+        cderiv *= self._diff_scale
 
     def _build_Pre(self):
         """
@@ -338,7 +353,7 @@ class Chebyshev(TauBasis):
         return Mult.tocsr()
 
 
-class Fourier(TauBasis):
+class Fourier(TransverseBasis, TauBasis):
     """Fourier complex exponential basis."""
 
     def __init__(self, grid_size, interval=[0., 2.*np.pi]):
@@ -380,40 +395,40 @@ class Fourier(TauBasis):
 
         return self.coeff_dtype
 
-    def _forward_r2c(self, xdata, kdata, axis):
+    def _forward_r2c(self, gdata, cdata, axis):
         """Scipy R2C FFT"""
 
-        kdata[:] = fft.rfft(xdata, axis=axis)
-        kdata /= self.grid_size
+        cdata[:] = fft.rfft(gdata, axis=axis)
+        cdata /= self.grid_size
 
-    def _forward_c2c(self, xdata, kdata, axis):
+    def _forward_c2c(self, gdata, cdata, axis):
         """Scipy C2C FFT."""
 
-        kdata[:] = fft.fft(xdata, axis=axis)
-        kdata /= self.grid_size
+        cdata[:] = fft.fft(gdata, axis=axis)
+        cdata /= self.grid_size
 
-    def _backward_c2r(self, kdata, xdata, axis):
+    def _backward_c2r(self, cdata, gdata, axis):
         """Scipy C2R IFFT"""
 
-        xdata[:] = fft.irfft(kdata, axis=axis)
-        xdata *= self.grid_size
+        gdata[:] = fft.irfft(cdata, axis=axis)
+        gdata *= self.grid_size
 
-    def _backward_c2c(self, kdata, xdata, axis):
+    def _backward_c2c(self, cdata, gdata, axis):
         """Scipy C2C IFFT."""
 
-        xdata[:] = fft.ifft(kdata, axis=axis)
-        xdata *= self.grid_size
+        gdata[:] = fft.ifft(cdata, axis=axis)
+        gdata *= self.grid_size
 
-    def differentiate(self, kdata, kderiv, axis):
+    def differentiate(self, cdata, cderiv, axis):
         """Differentiation by wavenumber multiplication."""
 
         # Wavenumber array
-        shape = [1] * len(kdata.shape)
+        shape = [1] * len(cdata.shape)
         shape[axis] = self.coeff_size
         ik = 1j * self.wavenumbers.reshape(shape)
 
         # Multiplication
-        kderiv[:] = kdata * ik
+        cderiv[:] = cdata * ik
 
     def _build_Diff(self):
         """
@@ -464,7 +479,7 @@ class Fourier(TauBasis):
 
         return Right.tocsr()
 
-    def diff_factor(self, i):
-        """Deriv coeff for matrix construction. DEBUG (clean)"""
+    def trans_diff(self, i):
+        """Transverse differentation constant for i-th term."""
 
         return 1j * self.wavenumbers[i]
