@@ -29,7 +29,7 @@ class Domain:
             if b is not bases[-1]:
                 bi = divmod(n, j)[0] % b.coeff_size
                 bi_list.append(bi)
-                d_list.append(b.diff_factor([bi]))
+                d_list.append(b.trans_diff([bi]))
                 j *= b.coeff_size
             else:
                 if len(bases) == 1:
