@@ -17,6 +17,6 @@ plt.semilogy(t, E, '.b')
 fit = np.polyfit(t, np.log(E), 1)
 print('E growth rate = %f' %fit[0])
 
-plt.semilogy(t, np.exp(fit[0]*t + fit[1]), '--k')
+#plt.semilogy(t, np.exp(fit[0]*t + fit[1]), '--k')
 
 plt.savefig('energy.png')

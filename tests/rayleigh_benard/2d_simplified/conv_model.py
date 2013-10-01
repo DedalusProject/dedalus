@@ -14,12 +14,12 @@ domain = Domain([x_basis, z_basis])
 Ra = 150
 k = np.pi
 omega = np.sqrt(Ra) - k**2
-T = np.abs(1. / omega)
+T = 1. / np.abs(omega)
 print('Expected mode growth rate = 2(Ra^0.5 - k^2) = %f' %omega)
 print('Expected mode time scale = %f' %T)
 print('Expected energy growth rate = 2(Ra^0.5 - k^2) = %f' %(2*omega))
 print('Expected energy time scale = %f' %(T/2.))
-
+print('Expected theta amp when (|w|=1) = %f' %(1./np.sqrt(Ra)))
 
 conv = Problem(['w','t','wz','tz'], 1)
 
@@ -88,8 +88,9 @@ tz['xk'] = t.differentiate(1)
 
 # integrate parameters
 
-int.dt = T / 100.
-int.sim_stop_time = 1 * T
+int.dt = T / 10.
+print('Timestep = %f' %int.dt)
+int.sim_stop_time = int.dt * 200
 int.wall_stop_time = np.inf
 int.stop_iteration = np.inf
 

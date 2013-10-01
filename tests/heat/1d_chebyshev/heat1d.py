@@ -23,11 +23,11 @@ heat_equation_1d.L0[0] = lambda d_trans: np.array([[0., -1.],
                                                    [0., 0.]])
 heat_equation_1d.L1[0] = lambda d_trans: np.array([[1., 0.],
                                                    [0., -1.]])
-heat_equation_1d.LL = np.array([[1., 0.],
-                                [0., 0.]])
-heat_equation_1d.LR = np.array([[0., 0.],
-                                [1., 0.]])
-heat_equation_1d.b = np.array([1., 1.])
+heat_equation_1d.LL = lambda d_trans: np.array([[1., 0.],
+                                                [0., 0.]])
+heat_equation_1d.LR = lambda d_transe: np.array([[0., 0.],
+                                                 [1., 0.]])
+heat_equation_1d.b = lambda d_transe: np.array([0., 0.])
 
 pde = heat_equation_1d
 ts = timesteppers.CNAB3
@@ -39,19 +39,22 @@ int = Integrator(pde, domain, ts)
 x = domain.grids[0]
 y = int.state['y']
 dy = int.state['dy']
-y['x'] = np.cos(np.pi * 2. * x)
+size = x_basis.grid_size
+y['k'][1:size/2+1] = np.random.randn(size/2)
+y['k'][0] = 0
+y['x'] *= np.cos(np.pi/2. * x)
 dy['k'] = y.differentiate(0)
 
 # Integration parameters
 int.dt = 1e-4
-int.sim_stop_time = 0.1
+int.sim_stop_time = int.dt * 100
 int.wall_stop_time = np.inf
 int.stop_iteration = np.inf
 
 # Create storage lists
 t_list = [int.time]
 y_list = [np.copy(y['x'])]
-copy_cadence = 10
+copy_cadence = 1
 
 # Main loop
 start_time = time.time()

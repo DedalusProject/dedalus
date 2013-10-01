@@ -17,12 +17,12 @@ domain = Domain([x_basis])
 # y_t - dy_x = 0
 #
 heat_equation_1d = Problem(['y', 'dy'], 1)
-heat_equation_1d.M0[0] = np.array([[0., 0.],
-                                   [1., 0.]])
-heat_equation_1d.L0[0] = np.array([[0., -1.],
-                                   [0., 0.]])
-heat_equation_1d.L1[0] = np.array([[1., 0.],
-                                   [0., -1.]])
+heat_equation_1d.M0[0] = lambda d_trans: np.array([[0., 0.],
+                                                   [1., 0.]])
+heat_equation_1d.L0[0] = lambda d_trans: np.array([[0., -1.],
+                                                   [0., 0.]])
+heat_equation_1d.L1[0] = lambda d_trans: np.array([[1., 0.],
+                                                   [0., -1.]])
 
 pde = heat_equation_1d
 ts = timesteppers.CNAB3

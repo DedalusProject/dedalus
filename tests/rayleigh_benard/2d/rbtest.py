@@ -60,11 +60,11 @@ rb.L1[0] = L1
 D = operators.create_diff_operators(domain)
 
 rb.parameters['Pr'] = Pr
-rb.parameters['Dx'] = D[0]
+rb.parameters['d'] = D[0]
 
-rb.F[1] = "-1/Pr*(u*Dx(u)+w*uz)"
-rb.F[2] = "-1/Pr*(u*Dx(w)-w*Dx(u))"
-rb.F[3] = "-u*Dx(t)-w*tz"
+rb.F[1] = "-1/Pr*(u*d(u)+w*uz)"
+rb.F[2] = "-1/Pr*(u*d(w)-w*d(u))"
+rb.F[3] = "-u*d(t)-w*tz"
 
 rb.LL = lambda d_trans: np.array([[ 0, 0, 1.0,   0,   0, 0],
                                   [ 0, 0,   0, 1.0,   0, 0],
@@ -121,46 +121,18 @@ T_list = [np.copy(T['X'])]
 E_list = [np.sum(u['X']**2+w['X']**2+T['X']**2)]
 copy_cadence = 20
 
-# Main loop
-start_time = time.time()
-while int.ok:
 
-    # advance
-    int.advance()
+int.timestepper.update_pencils(int.dt, int.iteration)
 
-    # update lists
-    if int.iteration % copy_cadence == 0:
-        t_list.append(int.time)
-        u_list.append(np.copy(u['X']))
-        w_list.append(np.copy(w['X']))
-        T_list.append(np.copy(T['X']))
-        E_list.append(np.sum(u['X']**2+w['X']**2+T['X']**2))
-        print('Iteration: %i, Time: %e' %(int.iteration, int.time))
 
-if int.iteration % copy_cadence != 0:
-    t_list.append(int.time)
-    u_list.append(np.copy(u['X']))
-    w_list.append(np.copy(w['X']))
-    T_list.append(np.copy(T['X']))
-    E_list.append(np.sum(u['X']**2+w['X']**2+T['X']**2))
-
-end_time = time.time()
-
-# Print statistics
-print('-' * 20)
-print('Total time:', end_time - start_time)
-print('Iterations:', int.iteration)
-print('Average timestep:', int.time / int.iteration)
-print('-' * 20)
-
-# Write storage lists
-shelf = shelve.open('data.db', flag='n')
-shelf['t'] = np.array(t_list)
-shelf['x'] = x
-shelf['z'] = z
-shelf['u'] = np.array(u_list)
-shelf['w'] = np.array(w_list)
-shelf['T'] = np.array(T_list)
-shelf['E'] = np.array(E_list)
-shelf.close()
+plt.figure(1, figsize=(10,10))
+plt.imshow(np.log10(np.abs(int.pencils[0].LHS.todense())))
+for i in range(1, 6):
+    p = i * 32
+    plt.axhline(p-0.5, ls='solid', c='k')
+    plt.axvline(p-0.5, ls='solid', c='k')
+plt.xlabel('j')
+plt.ylabel('i')
+plt.title('Chebyshev RB k=0 LHS')
+plt.savefig('chebyshev_rb_k0_lhs_MOD.png')
 
