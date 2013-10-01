@@ -76,10 +76,12 @@ class TransverseBasis(Basis):
 class TauBasis(Basis):
     """Base class for bases supporting Tau solves."""
 
-    def build_tau_matrices(self, order):
+    def build_mult_matrices(self, order):
         """Build matrices for constructing the Tau LHS."""
 
-        self.Mult = [self._build_Mult(p) for p in range(1, order)]
+        if not hasattr(self, 'Mult'):
+            print('build mult')
+            self.Mult = [self.Mult(p) for p in range(1, order)]
 
     @CachedAttribute
     def Pre(self):
@@ -99,6 +101,8 @@ class TauBasis(Basis):
     def Mult(self, p):
         """p-element multiplication matrix."""
 
+        if p not in self._M:
+            pass
         raise NotImplementedError()
 
     @CachedAttribute
@@ -120,7 +124,7 @@ class TauBasis(Basis):
         raise NotImplementedError()
 
     @CachedAttribute
-    def BC_row(self):
+    def bc_row(self):
         """Boundary-row matrix."""
 
         raise NotImplementedError()
@@ -261,7 +265,6 @@ class Chebyshev(TauBasis):
 
         """
 
-        print('Build Pre')
         size = self.coeff_size
 
         # Initialize sparse matrix
@@ -346,8 +349,11 @@ class Chebyshev(TauBasis):
         """
 
         # Construct dense row vector
-        Left = np.ones((1, self.coeff_size), dtype=self.coeff_dtype)
-        Left[:, 1::2] = -1.
+        left = np.ones((1, self.coeff_size), dtype=self.coeff_dtype)
+        left[:, 1::2] = -1.
+
+        # Sparse kronecker with BC column vector
+        Left = sparse.kron(left, self.bc_row)
 
         return Left
 
@@ -361,7 +367,10 @@ class Chebyshev(TauBasis):
         """
 
         # Construct dense row vector
-        Right = np.ones((1, self.coeff_size), dtype=self.coeff_dtype)
+        right = np.ones((1, self.coeff_size), dtype=self.coeff_dtype)
+
+        # Sparse kronecker with BC column vector
+        Right = sparse.kron(right, self.bc_row)
 
         return Right
 
@@ -375,21 +384,24 @@ class Chebyshev(TauBasis):
         """
 
         # Construct dense row vector
-        Int = np.zeros((1, self.coeff_size), dtype=self.coeff_dtype)
+        int = np.zeros((1, self.coeff_size), dtype=self.coeff_dtype)
         for n in range(0, self.coeff_size, 2):
-            Int[:, n] = 2. / (1. - n*n)
+            int[:, n] = 2. / (1. - n*n)
+
+        # Sparse kronecker with BC column vector
+        Int = sparse.kron(int, self.bc_row)
 
         return Int / self._diff_scale
 
     @CachedAttribute
-    def BC_row(self):
+    def bc_row(self):
         """Last-row matrix for boundary conditions."""
 
         # Construct dense column vector
-        BC_row = np.zeros((self.coeff_size, 1), dtype=self.coeff_dtype)
-        BC_row[-1, :] = 1.
+        bc_row = np.zeros((self.coeff_size, 1), dtype=self.coeff_dtype)
+        bc_row[-1, :] = 1.
 
-        return BC_row
+        return bc_row
 
 
 class Fourier(TransverseBasis, TauBasis):
@@ -490,34 +502,6 @@ class Fourier(TransverseBasis, TauBasis):
         return Diff.tocsr()
 
     @CachedAttribute
-    def Left(self):
-        """
-        Left-endpoint-evaluation matrix.
-
-        (Empty since boundaries are periodic.)
-
-        """
-
-        # Construct dense row vector
-        Left = np.zeros((1, self.coeff_size), dtype=self.coeff_dtype)
-
-        return Left
-
-    @CachedAttribute
-    def Right(self):
-        """
-        Right-endpoint-evaluation matrix.
-
-        (Empty since boundaries are periodic.)
-
-        """
-
-        # Construct dense row vector
-        Right = np.zeros((1, self.coeff_size), dtype=self.coeff_dtype)
-
-        return Right
-
-    @CachedAttribute
     def Int(self):
         """
         Integral-evaluation matrix.
@@ -528,20 +512,23 @@ class Fourier(TransverseBasis, TauBasis):
         """
 
         # Construct dense row vector
-        Int = np.zeros((1, self.coeff_size), dtype=self.coeff_dtype)
-        Int[:, 0] = 2. * np.pi
+        int = np.zeros((1, self.coeff_size), dtype=self.coeff_dtype)
+        int[:, 0] = 2. * np.pi
+
+        # Sparse kronecker with BC column vector
+        Int = sparse.kron(int, self.bc_row)
 
         return Int / self._diff_scale
 
     @CachedAttribute
-    def BC_row(self):
+    def bc_row(self):
         """First-row matrix for boundary conditions."""
 
         # Construct dense column vector
-        BC_row = np.zeros((self.coeff_size, 1), dtype=self.coeff_dtype)
-        BC_row[0, :] = 1.
+        bc_row = np.zeros((self.coeff_size, 1), dtype=self.coeff_dtype)
+        bc_row[0, :] = 1.
 
-        return BC_row
+        return bc_row
 
     def trans_diff(self, i):
         """Transverse differentation constant for i-th term."""
