@@ -4,34 +4,8 @@ import numpy as np
 from scipy import sparse
 from scipy import fftpack as fft
 
+from ..tools.general import CachedAttribute, CachedMethod
 
-class CachedAttribute:
-    """
-    Descriptor for building attributes during first attempted access.
-    Based on Denis Otkidach's implementation.
-
-    """
-
-    def __init__(self, method):
-
-        # Parameters
-        self.method = method
-        self.name = method.__name__
-        self.__doc__ = method.__doc__
-
-    def __get__(self, instance, owner):
-
-        # Return self when accessed from class
-        if instance is None:
-            return self
-
-        # Build attribute
-        attribute = self.method(instance)
-
-        # Cache attribute (overwriting descriptor)
-        setattr(instance, self.name, attribute)
-
-        return attribute
 
 
 class Basis:
@@ -76,13 +50,6 @@ class TransverseBasis(Basis):
 class TauBasis(Basis):
     """Base class for bases supporting Tau solves."""
 
-    def build_mult_matrices(self, order):
-        """Build matrices for constructing the Tau LHS."""
-
-        if not hasattr(self, 'Mult'):
-            print('build mult')
-            self.Mult = [self.Mult(p) for p in range(1, order)]
-
     @CachedAttribute
     def Pre(self):
         """Preconditioning matrix."""
@@ -98,11 +65,10 @@ class TauBasis(Basis):
 
         raise NotImplementedError()
 
+    @CachedMethod
     def Mult(self, p):
         """p-element multiplication matrix."""
 
-        if p not in self._M:
-            pass
         raise NotImplementedError()
 
     @CachedAttribute
@@ -309,10 +275,10 @@ class Chebyshev(TauBasis):
 
         return Diff.tocsr()
 
-
-    def _build_Mult(self, p):
+    @CachedMethod
+    def Mult(self, p):
         """
-        Build p-element multiplication matrix
+        p-element multiplication matrix
 
         T_p * T_n = (T_(n+p) + T_(n-p)) / 2
         T_(-n) = T_n
