@@ -8,43 +8,23 @@ from dedalus2.public import *
 
 
 # Set domain
-L = 200.
-x_basis = Chebyshev(256, interval=[0., L])
+x_basis = Fourier(64, interval=[-1., 1.])
 domain = Domain([x_basis])
 
-mu = 1.
-s = 0.05
-b = 0.5
-c = -1.76
-
-MagSq = operators.MagSquared
-
-# Complex Ginzburg-Landau equation
+# Heat equation: y_t = y_xx
 #
-# A_t - mu A - s Ax - (1 + ib) A_xx = - (1 + ic) |A|^2 A
-# A_x - Ax = 0
+# y_x - dy = 0
+# y_t - dy_x = 0
 #
-# A(0) = 0.
-# A(L) = 0.
-#
-cgle = Problem(['A', 'Ax'], 1)
-cgle.parameters['c'] = c
-cgle.parameters['MagSq'] = MagSq
+heat_equation_1d = Problem(['y', 'dy'], 1)
+heat_equation_1d.M0[0] = lambda d_trans: np.array([[0., 0.],
+                                                   [1., 0.]])
+heat_equation_1d.L0[0] = lambda d_trans: np.array([[0., -1.],
+                                                   [0., 0.]])
+heat_equation_1d.L1[0] = lambda d_trans: np.array([[1., 0.],
+                                                   [0., -1.]])
 
-cgle.M0[0][0][0] = 1.
-cgle.L0[0][0][0] = -mu
-cgle.L0[0][0][1] = -s
-cgle.L1[0][0][1] = -(1. + 1j*b)
-cgle.F[0] = "-(1 + 1j*c) * MagSq(A) * A"
-
-cgle.L1[0][1][0] = 1.
-cgle.L0[0][1][1] = -1.
-
-cgle.LL[0][0] = 1.
-cgle.LR[1][0] = 1.
-
-# Choose PDE and integrator
-pde = cgle
+pde = heat_equation_1d
 ts = timesteppers.CNAB3
 
 # Build solver
@@ -52,23 +32,20 @@ int = Integrator(pde, domain, ts)
 
 # Initial conditions
 x = domain.grids[0]
-A, Ax = int.state.fields.values()
-xa = L / 2.
-A0 = 0.01
-gamma = 0.1
-arg = np.float128(gamma * (x - xa))
-A['x'] = np.complex128(A0 * (1 + 1j) / np.cosh(arg))
-Ax['k'] = A.differentiate(0)
+y = int.state['y']
+dy = int.state['dy']
+y['x'] = np.sin(2 * np.pi * x)
+dy['k'] = y.differentiate(0)
 
 # Integration parameters
-int.dt = 0.1
-int.sim_stop_time = 200
+int.dt = 1e-4
+int.sim_stop_time = 0.1
 int.wall_stop_time = np.inf
 int.stop_iteration = np.inf
 
 # Create storage lists
 t_list = [int.time]
-A_list = [np.copy(A['x'])]
+y_list = [np.copy(y['x'])]
 copy_cadence = 10
 
 # Main loop
@@ -81,7 +58,7 @@ while int.ok:
     # Update storage lists
     if int.iteration % copy_cadence == 0:
         t_list.append(int.time)
-        A_list.append(np.copy(A['x']))
+        y_list.append(np.copy(y['x']))
 
     # Print progress
     if int.iteration % copy_cadence == 0:
@@ -90,7 +67,7 @@ while int.ok:
 # Store final state
 if int.iteration % copy_cadence != 0:
     t_list.append(int.time)
-    A_list.append(np.copy(A['x']))
+    y_list.append(np.copy(y['x']))
 
 end_time = time.time()
 
@@ -105,9 +82,6 @@ print('-' * 20)
 shelf = shelve.open('data.db', flag='n')
 shelf['t'] = np.array(t_list)
 shelf['x'] = x
-shelf['u'] = np.array(A_list).real
-shelf['v'] = np.array(A_list).imag
+shelf['y'] = np.array(y_list)
 shelf.close()
 
-from dedalus2.data.field import field_manager
-print(field_manager.field_count[domain], ' fields allocated')

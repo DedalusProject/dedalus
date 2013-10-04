@@ -17,17 +17,17 @@ b = -300.
 c = 1.
 d = 1.
 airy = Problem(['u', 'du'], 2)
-airy.L0[0] = np.array([[0., -1.],
-                       [a, 0.]])
-airy.L0[1] = np.array([[0., 0.],
-                       [b, 0.]])
-airy.L1[0] = np.array([[1., 0.],
-                       [0., 1.]])
-airy.LL = np.array([[1., 0.],
-                    [0., 0.]])
-airy.LR = np.array([[0., 0.],
-                    [1., 0.]])
-airy.b = np.array([c, d])
+airy.L0[0] = lambda d_trans: np.array([[0., -1.],
+                                        [a, 0.]])
+airy.L0[1] = lambda d_trans: np.array([[0., 0.],
+                                        [b, 0.]])
+airy.L1[0] = lambda d_trans: np.array([[1., 0.],
+                                        [0., 1.]])
+airy.LL = lambda d_trans: np.array([[1., 0.],
+                                    [0., 0.]])
+airy.LR = lambda d_trans: np.array([[0., 0.],
+                                    [1., 0.]])
+airy.b = lambda d_trans: np.array([c, d])
 
 # Set domain
 x_basis = Chebyshev(32, interval=[-1., 1.])

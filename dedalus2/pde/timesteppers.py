@@ -71,17 +71,17 @@ class IMEXBase:
         for pencil in self.pencils:
 
             # (Assuming no coupling between pencils)
-            mx = pencil.M.dot(state[pencil])
-            lx = pencil.L.dot(state[pencil])
+            mx = pencil.M.dot(state[pencil].flatten())
+            lx = pencil.L.dot(state[pencil].flatten())
 
             MX[0][pencil] = mx
             LX[0][pencil] = lx
 
-            F[0][pencil] = pencil.F_eval.dot(F[0][pencil])
+            F[0][pencil] = pencil.F_eval.dot(F[0][pencil].flatten())
 
             for i, r in enumerate(pencil.bc_rows):
                 # DEBUG: requires slow copies: find better way to change necessary rows
-                f = F[0][pencil]
+                f = F[0][pencil].flatten()
                 f[r] = pencil.bc_f[i]
                 F[0][pencil] = f
 
@@ -94,12 +94,12 @@ class IMEXBase:
 
         # Construct RHS field
         for fn in rhs.field_names:
-            rhs[fn]['k'] = 0.
+            rhs[fn]['K'] = 0.
             for q in range(self.qmax):
-                rhs[fn]['k'] += a[q] * MX[q][fn]['k']
-                rhs[fn]['k'] += b[q] * LX[q][fn]['k']
+                rhs[fn]['K'] += a[q] * MX[q][fn]['K']
+                rhs[fn]['K'] += b[q] * LX[q][fn]['K']
             for p in range(self.pmax):
-                rhs[fn]['k'] += c[p] * F[p][fn]['k']
+                rhs[fn]['K'] += c[p] * F[p][fn]['K']
 
 
 class Euler(IMEXBase):

@@ -221,7 +221,7 @@ class Multiplication(Arithmetic):
         flag = True
         for a in self.args:
             if isinstance(a, Field):
-                if a.space[0] == 'k':
+                if 'k' in a.space:
                     flag = False
         return flag
 
@@ -230,6 +230,46 @@ class Multiplication(Arithmetic):
         out.data[:] = self.get_data(self.args[0]) * self.get_data(self.args[1])
 
         return out
+
+
+def create_diff_operators(domain):
+
+    ops = []
+
+    for i, b in enumerate(domain.bases):
+
+        class diff(Operator):
+
+            name = 'D' + str(i)
+            arity = 1
+
+            index = i
+            basis = domain.bases[i]
+
+            def conditions(self, layout):
+
+                flag = True
+                for a in self.args:
+                    if isinstance(a, Field):
+                        if a.space[self.index] == 'x':
+                            flag = False
+                        if not a.local[self.index]:
+                            flag = False
+                return flag
+
+                #return (not layout.grid_space[self.index])
+
+            def operation(self, out):
+
+                self.basis.differentiate(self.args[0].data,
+                                         out.data,
+                                         axis=self.index)
+
+                return out
+
+        ops.append(diff)
+
+    return ops
 
 
 class MagSquared(Operator):
@@ -242,7 +282,7 @@ class MagSquared(Operator):
         flag = True
         for a in self.args:
             if isinstance(a, Field):
-                if a.space[0] == 'k':
+                if 'k' in a.space:
                     flag = False
         return flag
 
