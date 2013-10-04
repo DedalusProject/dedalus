@@ -71,3 +71,12 @@ class Domain:
     #     local_grids = [g[s] for (g, s) in zip(grids, slices)]
 
     #     return np.meshgrid(*local_grids, indexing='ij')
+
+    def integrate(self, field):
+
+        data = field['K']
+        for b in self.bases:
+            data = b.integrate(data, 0)
+            data = b.grid_dtype(data)
+
+        return data
