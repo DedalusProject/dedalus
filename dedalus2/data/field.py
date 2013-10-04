@@ -3,6 +3,8 @@
 import numpy as np
 from collections import defaultdict
 
+from ..tools.dist import distributor
+
 # Bottom of module:
 # # Import after definitions to resolve cyclic dependencies
 # from .operators import Negation, Addition, Subtraction, Multiplication
@@ -17,6 +19,10 @@ class FieldManager:
         self.field_count = defaultdict(int)
 
     def add_field(self, field):
+
+        # Clean field
+        field.layout = distributor.layouts[field.domain][0]
+        field.data *= 0.
 
         # Get field list
         field_list = self.field_lists[field.domain]
@@ -44,11 +50,11 @@ field_manager = FieldManager()
 
 
 class Field:
-    """Scalar field defined over the domain."""
+    """Scalar field defined over the distributed domain."""
 
     def __init__(self, domain, name=None):
 
-        # Inputs
+        # Properties
         self.domain = domain
         if name is not None:
             self.name = name
@@ -56,20 +62,17 @@ class Field:
             self.name = 'F' + str(id(self))
 
         # Allocate data
-        self.data = np.zeros(domain.shape, dtype=np.complex128)
-        self._temp = np.zeros(domain.shape, dtype=np.complex128)
-
-        # Initial space and distribution
-        self.space = ['x'] * domain.dim
-        self.local = [True] * domain.dim
+        self._buffer = np.zeros(distributor.buffer_size(domain), dtype=np.byte)
+        self.layout = distributor.layouts[domain][0]
 
     @property
     def layout(self):
-        return ''.join(self.space)
+        return self._layout
 
     @layout.setter
-    def layout(self, value):
-        self.space = list(value)
+    def layout(self, layout):
+        self._layout = layout
+        self.data = layout.view_data(self._buffer)
 
     def __del__(self):
 
