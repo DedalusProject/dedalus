@@ -37,6 +37,11 @@ class Basis:
 
         raise NotImplementedError()
 
+    def integrate(self, cdata, axis):
+        """Integrate over interval using coefficients."""
+
+        raise NotImplementedError()
+
 
 class TransverseBasis(Basis):
     """Base class for bases supporting transverse differentiation."""
@@ -220,6 +225,16 @@ class Chebyshev(TauBasis):
 
         # Scale for grid
         cderiv *= self._diff_scale
+
+    def integrate(self, cdata, axis):
+        """Integrate over interval using coefficients."""
+
+        # Construct dense row vector
+        int = np.zeros(self.coeff_size, dtype=self.coeff_dtype)
+        for n in range(0, self.coeff_size, 2):
+            int[n] = 2. / (1. - n*n) / self._diff_scale
+
+        return np.tensordot(cdata, int, (axis, 0))
 
     @CachedAttribute
     def Pre(self):
@@ -446,6 +461,15 @@ class Fourier(TransverseBasis, TauBasis):
 
         # Multiplication
         cderiv[:] = cdata * ik
+
+    def integrate(self, cdata, axis):
+        """Integrate over interval using coefficients."""
+
+        # Construct dense row vector
+        int = np.zeros(self.coeff_size, dtype=self.coeff_dtype)
+        int[0] = 2. * np.pi / self._diff_scale
+
+        return np.tensordot(cdata, int, (axis, 0))
 
     @CachedAttribute
     def Diff(self):
