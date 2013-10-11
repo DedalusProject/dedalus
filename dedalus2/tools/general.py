@@ -39,11 +39,14 @@ class CachedMethod:
 
     def __call__(self, instance, *args):
 
-        # Call method for new arguments
-        if args not in self.cache:
-            self.cache[args] = self.method(instance, *args)
+        if instance not in self.cache:
+            self.cache[instance] = dict()
 
-        return self.cache[args]
+        # Call method for new arguments
+        if args not in self.cache[instance]:
+            self.cache[instance][args] = self.method(instance, *args)
+
+        return self.cache[instance][args]
 
     def __get__(self, instance, owner):
 
