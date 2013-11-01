@@ -87,7 +87,7 @@ class TauBasis(Basis):
     def Left(self):
         """Left-endpoint-evaluation matrix."""
 
-        # Sparse kronecker with BC column vector
+        # Sparse kronecker BC column vector with left row vector
         Left = sparse.kron(self.bc_vector, self.left_vector)
 
         return Left
@@ -96,7 +96,7 @@ class TauBasis(Basis):
     def Right(self):
         """Right-endpoint-evaluation matrix."""
 
-        # Sparse kronecker with BC column vector
+        # Sparse kronecker BC column vector with right row vector
         Right = sparse.kron(self.bc_vector, self.right_vector)
 
         return Right
@@ -105,32 +105,32 @@ class TauBasis(Basis):
     def Int(self):
         """Integral-evaluation matrix."""
 
-        # Sparse kronecker with BC column vector
+        # Sparse kronecker BC column vector with int row vector
         Int = sparse.kron(self.bc_vector, self.int_vector)
 
         return Int
 
     @CachedAttribute
     def left_vector(self):
-        """Left-endpoint-evaluation vector."""
+        """Left-endpoint-evaluation row vector."""
 
         raise NotImplementedError()
 
     @CachedAttribute
     def right_vector(self):
-        """Right-endpoint-evaluation vector."""
+        """Right-endpoint-evaluation row vector."""
 
         raise NotImplementedError()
 
     @CachedAttribute
     def int_vector(self):
-        """Integral-evaluation vector."""
+        """Integral-evaluation row vector."""
 
         raise NotImplementedError()
 
     @CachedAttribute
     def bc_vector(self):
-        """Boundary-row vector."""
+        """Boundary-row column vector."""
 
         raise NotImplementedError()
 
@@ -189,6 +189,20 @@ class Chebyshev(TauBasis):
         cdata[..., 0] /= 2.
         cdata[..., N] /= 2.
 
+    def _backward_r2r(self, cdata, gdata, axis):
+        """Scipy IDCT on real data."""
+
+        # Currently setup just for last axis
+        if axis != -1:
+            if axis != (len(cdata.shape) - 1):
+                raise NotImplementedError()
+
+        # DCT with adjusted coefficients
+        N = self.N
+        gdata[:] = cdata
+        gdata[..., 1:N] /= 2.
+        gdata[:] = fft.dct(gdata, type=1, norm=None, axis=axis)
+
     def _forward_c2c(self, gdata, cdata, axis):
         """Scipy DCT on complex data."""
 
@@ -205,26 +219,11 @@ class Chebyshev(TauBasis):
 
         # DCT with adjusted coefficients
         N = self.N
+        cdata[:] = gdata
         cdata_iv[:] = fft.dct(cdata_iv, type=1, norm=None, axis=axis)
-        #cdata.real = fft.dct(gdata.real, type=1, norm=None, axis=axis)
-        #cdata.imag = fft.dct(gdata.imag, type=1, norm=None, axis=axis)
         cdata /= N
         cdata[..., 0] /= 2.
         cdata[..., N] /= 2.
-
-    def _backward_r2r(self, cdata, gdata, axis):
-        """Scipy IDCT on real data."""
-
-        # Currently setup just for last axis
-        if axis != -1:
-            if axis != (len(cdata.shape) - 1):
-                raise NotImplementedError()
-
-        # DCT with adjusted coefficients
-        N = self.N
-        gdata[:] = cdata
-        gdata[..., 1:N] /= 2.
-        gdata[:] = fft.dct(gdata, type=1, norm=None, axis=axis)
 
     def _backward_c2c(self, cdata, gdata, axis):
         """Scipy IDCT on complex data."""
@@ -245,8 +244,6 @@ class Chebyshev(TauBasis):
         gdata[:] = cdata
         gdata[..., 1:N] /= 2.
         gdata_iv[:] = fft.dct(gdata_iv, type=1, norm=None, axis=axis)
-        #gdata.real = fft.dct(gdata.real, type=1, norm=None, axis=axis)
-        #gdata.imag = fft.dct(gdata.imag, type=1, norm=None, axis=axis)
 
     def differentiate(self, cdata, cderiv, axis):
         """Differentiation by recursion on coefficients."""
@@ -358,7 +355,7 @@ class Chebyshev(TauBasis):
     @CachedAttribute
     def left_vector(self):
         """
-        Left-endpoint-evaluation vector.
+        Left-endpoint-evaluation row vector.
 
         T_n(-1) = (-1)**n
 
@@ -373,7 +370,7 @@ class Chebyshev(TauBasis):
     @CachedAttribute
     def right_vector(self):
         """
-        Right-endpoint-evaluation vector.
+        Right-endpoint-evaluation row vector.
 
         T_n(1) = 1
 
@@ -387,7 +384,7 @@ class Chebyshev(TauBasis):
     @CachedAttribute
     def int_vector(self):
         """
-        Integral-evaluation vector.
+        Integral-evaluation row vector.
 
         int(T_n) = (1 + (-1)^n) / (1 - n^2)
 
@@ -415,10 +412,10 @@ class Chebyshev(TauBasis):
 class Fourier(TransverseBasis, TauBasis):
     """Fourier complex exponential basis."""
 
-    def __init__(self, grid_size, interval=[0., 2.*np.pi]):
+    def __init__(self, grid_size, interval=(0., 2.*np.pi)):
 
         # Inherited initialization
-        TauBasis.__init__(self, grid_size, interval)
+        Basis.__init__(self, grid_size, interval)
 
         # Grid
         length = interval[1] - interval[0]
@@ -512,7 +509,7 @@ class Fourier(TransverseBasis, TauBasis):
     @CachedAttribute
     def int_vector(self):
         """
-        Integral-evaluation vector.
+        Integral-evaluation row vector.
 
         int(F_n) = 2 pi    if n = 0
                  = 0       otherwise
