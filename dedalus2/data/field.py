@@ -3,7 +3,6 @@
 import numpy as np
 import weakref
 
-from ..tools.dist import distributor
 
 # Bottom of module:
 # # Import after definitions to resolve cyclic dependencies
@@ -28,10 +27,10 @@ class Field:
         domain._field_count += 1
 
         # Allocate buffer
-        #self._buffer = np.zeros(distributor.buffer_size[domain], dtype=np.byte)
+        self._buffer = np.zeros(domain.distributor.buffer_size, dtype=np.byte)
 
         # Set initial layout
-        #self.layout = distributor.layouts[domain][0]
+        self.layout = domain.distributor.grid_layout
 
     @property
     def layout(self):
@@ -72,77 +71,93 @@ class Field:
     def __rmul__(self, other):
         return Multiplication(other, self)
 
-    def require_global_space(self, space):
+    def __getitem__(self, layout):
 
-        # Expand full-space shortcuts
-        if space == 'K':
-            space = 'k' * self.domain().dim
-        elif space == 'X':
-            space = 'x' * self.domain().dim
+        if isinstance(layout, str):
+            layout = self.domain.distributor.string_references[layout]
 
-        # Check each space
-        for i, s in enumerate(space):
-            self.require_space(i, s)
+        if self.layout.index < layout.index:
+            while self.layout.index < layout.index:
+                self.towards_grid_space()
+        elif self.layout.index > layout.index:
+            while self.layout.index > layout.index:
+                self.towards_coeff_space()
 
-    def require_space(self, index, space):
+        return self.data:
 
-        # Transform if necessary
-        if self.space[index] != space:
-            self.transform(index)
+    def __setitem__(self, layout, data):
 
-    def require_local(self, index):
+        if isinstance(layout, str):
+            layout = self.domain.distributor.string_references[layout]
 
-        # Transpose if necessary
-        if not self.local[index]:
-            self.transpose(index)
+        self.layout = layout
+        np.copyto(data, self.data)
 
-    def __getitem__(self, space):
+    def towards_grid_space(self):
+        pass
 
-        # Check space
-        self.require_global_space(space)
+    def towards_coeff_space(self):
+        pass
 
-        return self.data
+    def require_grid_space(self, axis=None):
 
-    def __setitem__(self, space, data):
+        if axis is None:
+            while not all(self.layout.grid_space)
+                self.towards_grid_space()
+        else:
+            while not self.layout.grid_space[axis]:
+                self.towards_grid_space()
 
-        # Expand full-space shortcuts
-        if space == 'K':
-            space = 'k' * self.domain().dim
-        elif space == 'X':
-            space = 'x' * self.domain().dim
+    def require_coeff_space(self, axis=None):
 
-        # Set space and data
-        self.space = list(space)
-        self.data[:] = data
+        if axis is None:
+            while any(self.layout.grid_space):
+                self.towards_coeff_space()
+        else:
+            while self.layout.grid_space[axis]:
+                self.towards_coeff_space()
 
-    def transform(self, i):
+    def require_local(self, axis):
 
-        # All transforms are performed locally
-        self.require_local(i)
+        # Handle negative axes
+        if axis < 0:
+            axis += self.domain.dim
 
-        # Call basis transform
-        if self.space[i] == 'x':
-            self.domain().bases[i].forward(self.data, self.data, axis=i)
-            self.space[i] = 'k'
+        while not self.layout.local[axis]:
+            if axis == 0:
+                self.towards_grid_space()
+            elif axis == 1:
+                self.towards_coeff_space()
+            else:
+                raise ValueError("Assumption that axis > 1 always local has failed.")
 
-        elif self.space[i] == 'k':
-            self.domain().bases[i].backward(self.data, self.data, axis=i)
-            self.space[i] = 'x'
+    def differentiate(self, axis, out):
 
-    def transpose(self, i):
-
-        # NOT IMPLEMENTED
-        raise NotImplementedError()
-
-    def differentiate(self, i):
-
-        # Check differentation space
-        self.require_space(i, 'k')
+        # Require axis to be local and in coefficient space
+        self.require_local(axis)
+        self.require_coeff_space(axis)
 
         # Call basis differentiation
-        self.domain().bases[i].differentiate(self.data, self._temp, axis=i)
+        out.layout = self.layout
+        self.domain().bases[axis].differentiate(self.data, out.data, axis=axis)
 
-        return self._temp
+    def integrate(self, axes=None):
+        """Integrate field over domain."""
+
+        # Integrate over all axes by default
+        if axes is None:
+            axes = range(self.domain.dim)
+        else:
+            axes = list(axis)
+
+        # Integrate by coefficients
+        data = field['K']
+        for i in reversed(sorted(axes)):
+            b = self.domain.bases[i]
+            data = b.integrate(data, i)
+            data = b.grid_dtype(data)
+
+        return data
 
 
 # Import after definitions to resolve cyclic dependencies
