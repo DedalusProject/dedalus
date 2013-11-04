@@ -16,7 +16,7 @@ class Basis:
         self.grid_size = grid_size
         self.interval = tuple(interval)
 
-    def set_dtype(self, grid_dtype):
+    def set_dtypes(self, grid_dtype):
         """Specify datatypes."""
 
         raise NotImplementedError()
@@ -155,7 +155,7 @@ class Chebyshev(TauBasis):
         self.grid = center + radius * native_grid
         self._grid_stretch = radius
 
-    def set_dtype(self, grid_dtype):
+    def set_dtypes(self, grid_dtype):
         """Specify datatypes."""
 
         # Set datatypes
@@ -424,7 +424,7 @@ class Fourier(TransverseBasis, TauBasis):
         self.grid = start + length * native_grid
         self._grid_stretch = length / (2. * np.pi)
 
-    def set_dtype(self, dtype):
+    def set_dtypes(self, dtype):
         """Specify datatypes."""
 
         # Set datatypes
