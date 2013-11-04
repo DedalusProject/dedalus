@@ -10,15 +10,10 @@ except ImportError:
 
 class Distributor:
 
-    def __init__(self):
+    def __init__(self, domain):
 
-        self.layouts = {}
-
-    def build_layouts(self, domain, mesh=[]):
-
-        # Inputs
+        # Initial attributes
         self.domain = domain
-        self.mesh = mesh
 
         # MPI communicator
         if MPI:
@@ -26,44 +21,46 @@ class Distributor:
             self.local_process = self.communicator.Get_rank()
             self.total_processes = self.communicator.Get_size()
         else:
+            self.communicator = None
             self.local_process = 0
             self.total_processes = 1
 
-        # DEBUG: want to enforce something like this after done testing
-        # Check total processes
-        # if self.total_processes != np.prod(mesh):
-        #     raise ValueError("Requires %i processes" %np.prod(mesh))
+    def build_layouts(self):
+
+        if self.total_processes > 1:
+            mesh = [self.total_processes]
+        else:
+            mesh = []
 
         # Build layouts
-        layouts = []
-        for i in range(len(domain.bases)+len(mesh)+1):
-            layouts.append(Layout(domain, mesh, i))
+        self.layouts = []
+        for i in range(domain.dim+len(mesh)+1):
+            self.layouts.append(Layout(domain, mesh, i))
 
-        # Store layouts
-        self.layouts[Domain] = layouts
-        self.buffer_size[Domain] = max([l.buffer_size for l in layouts])
+        self.coeff_layout = self.layouts[0]
+        self.grid_layout = self.layouts[-1]
 
-    def increment_layout(self, field):
+        # Compute buffer size
+        self.buffer_size = max([l.buffer_size for l in self.layouts])
 
-        index = field.layout.index
-        domain = field.domain
+    # def increment_layout(self, field):
 
-        self.increment[domain][index](field)
+    #     index = field.layout.index
+    #     domain = field.domain
 
-        field.layout = self.layouts[domain][index + 1]
+    #     self.increment[domain][index](field)
 
-    def decrement_layout(self, field):
+    #     field.layout = self.layouts[domain][index + 1]
 
-        index = field.layout.index
-        domain = field.domain
+    # def decrement_layout(self, field):
 
-        input = field.data
-        field.layout = self.layouts[domain][index - 1]
-        output = field.data
-        self.decrement[domain][index](input, output)
+    #     index = field.layout.index
+    #     domain = field.domain
 
-
-distributor = Distributor()
+    #     input = field.data
+    #     field.layout = self.layouts[domain][index - 1]
+    #     output = field.data
+    #     self.decrement[domain][index](input, output)
 
 
 class Layout:
@@ -80,14 +77,14 @@ class Layout:
         # Build local and grid space flags
         self.local = [False] * r + [True] * (d-r)
         self.grid_space = [False] * d
-        self.dtype = domain.bases[-1]._coeff_dtype
+        self.dtype = domain.bases[-1].coeff_dtype
 
         for op in range(index):
             for i in reversed(range(d)):
                 if not self.grid_space[i]:
                     if self.local[i]:
                         self.grid_space[i] = True
-                        self.dtype = domain.bases[i]._grid_dtype
+                        self.dtype = domain.bases[i].grid_dtype
                         break
                     else:
                         self.local[i] = True
@@ -98,9 +95,9 @@ class Layout:
         global_shape = []
         for i in range(d):
             if self.grid_space[i]:
-                global_shape.append(domain.bases[i]._grid_size)
+                global_shape.append(domain.bases[i].grid_size)
             else:
-                global_shape.append(domain.bases[i]._coeff_size)
+                global_shape.append(domain.bases[i].coeff_size)
 
         # Build local shape
         j = 0
@@ -112,7 +109,7 @@ class Layout:
 
         # Compute necessary buffer size
         n_bytes = np.dtype(self.dtype).itemsize
-        self.byte_size = np.prod(self.shape) * n_bytes
+        self.buffer_size = np.prod(self.shape) * n_bytes
 
     def view_data(self, buffer):
 
