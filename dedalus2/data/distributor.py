@@ -25,7 +25,10 @@ class Distributor:
             self.local_process = 0
             self.total_processes = 1
 
-    def build_layouts(self):
+        # Build layouts
+        self._build_layouts()
+
+    def _build_layouts(self):
 
         if self.total_processes > 1:
             mesh = [self.total_processes]
@@ -34,8 +37,8 @@ class Distributor:
 
         # Build layouts
         self.layouts = []
-        for i in range(domain.dim+len(mesh)+1):
-            self.layouts.append(Layout(domain, mesh, i))
+        for i in range(self.domain.dim+len(mesh)+1):
+            self.layouts.append(Layout(self.domain, mesh, i))
 
         self.coeff_layout = self.layouts[0]
         self.grid_layout = self.layouts[-1]
