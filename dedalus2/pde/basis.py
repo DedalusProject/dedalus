@@ -2,7 +2,7 @@
 
 import numpy as np
 from scipy import sparse
-from scipy import fftpack as fft
+from scipy import fftpack
 
 from ..tools.general import CachedAttribute, CachedMethod, interleaved_view
 
@@ -184,7 +184,7 @@ class Chebyshev(TauBasis):
 
         # DCT with adjusted coefficients
         N = self.N
-        cdata[:] = fft.dct(gdata, type=1, norm=None, axis=axis)
+        cdata[:] = fftpack.dct(gdata, type=1, norm=None, axis=axis)
         cdata /= N
         cdata[..., 0] /= 2.
         cdata[..., N] /= 2.
@@ -201,7 +201,7 @@ class Chebyshev(TauBasis):
         N = self.N
         gdata[:] = cdata
         gdata[..., 1:N] /= 2.
-        gdata[:] = fft.dct(gdata, type=1, norm=None, axis=axis)
+        gdata[:] = fftpack.dct(gdata, type=1, norm=None, axis=axis)
 
     def _forward_c2c(self, gdata, cdata, axis):
         """Scipy DCT on complex data."""
@@ -220,7 +220,7 @@ class Chebyshev(TauBasis):
         # DCT with adjusted coefficients
         N = self.N
         cdata[:] = gdata
-        cdata_iv[:] = fft.dct(cdata_iv, type=1, norm=None, axis=axis)
+        cdata_iv[:] = fftpack.dct(cdata_iv, type=1, norm=None, axis=axis)
         cdata /= N
         cdata[..., 0] /= 2.
         cdata[..., N] /= 2.
@@ -243,7 +243,7 @@ class Chebyshev(TauBasis):
         N = self.N
         gdata[:] = cdata
         gdata[..., 1:N] /= 2.
-        gdata_iv[:] = fft.dct(gdata_iv, type=1, norm=None, axis=axis)
+        gdata_iv[:] = fftpack.dct(gdata_iv, type=1, norm=None, axis=axis)
 
     def differentiate(self, cdata, cderiv, axis):
         """Differentiation by recursion on coefficients."""
@@ -454,25 +454,25 @@ class Fourier(TransverseBasis, TauBasis):
     def _forward_r2c(self, gdata, cdata, axis):
         """Scipy R2C FFT"""
 
-        cdata[:] = fft.rfft(gdata, axis=axis)
+        cdata[:] = fftpack.rfft(gdata, axis=axis)
         cdata /= self.grid_size
 
     def _forward_c2c(self, gdata, cdata, axis):
         """Scipy C2C FFT."""
 
-        cdata[:] = fft.fft(gdata, axis=axis)
+        cdata[:] = fftpack.fft(gdata, axis=axis)
         cdata /= self.grid_size
 
     def _backward_c2r(self, cdata, gdata, axis):
         """Scipy C2R IFFT"""
 
-        gdata[:] = fft.irfft(cdata, axis=axis)
+        gdata[:] = fftpack.irfft(cdata, axis=axis)
         gdata *= self.grid_size
 
     def _backward_c2c(self, cdata, gdata, axis):
         """Scipy C2C IFFT."""
 
-        gdata[:] = fft.ifft(cdata, axis=axis)
+        gdata[:] = fftpack.ifft(cdata, axis=axis)
         gdata *= self.grid_size
 
     def differentiate(self, cdata, cderiv, axis):
