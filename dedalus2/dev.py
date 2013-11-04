@@ -1,5 +1,6 @@
 
 
+from .data import distributor
 from .data import domain
 from .data import field
 from .data import operators
@@ -14,5 +15,4 @@ from .pde import timesteppers
 
 from .tools import general
 from .tools import plot_op
-from .tools import dist
 
