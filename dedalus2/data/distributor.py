@@ -1,8 +1,10 @@
 
 
 import numpy as np
+import weakref
 try:
     from mpi4py import MPI
+    print('Successfully imported mpi4py.  Parallelism enabled.')
 except ImportError:
     MPI = None
     print('Cannot import mpi4py. Parallelism disabled.')
@@ -13,7 +15,7 @@ class Distributor:
     def __init__(self, domain):
 
         # Initial attributes
-        self.domain = domain
+        self.domain = weakref.ref(domain)
 
         # MPI communicator
         if MPI:
@@ -37,8 +39,8 @@ class Distributor:
 
         # Build layouts
         self.layouts = []
-        for i in range(self.domain.dim+len(mesh)+1):
-            self.layouts.append(Layout(self.domain, mesh, i))
+        for i in range(self.domain().dim+len(mesh)+1):
+            self.layouts.append(Layout(self.domain(), mesh, i))
 
         self.coeff_layout = self.layouts[0]
         self.grid_layout = self.layouts[-1]
