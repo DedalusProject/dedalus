@@ -78,10 +78,10 @@ class Field:
 
         if self.layout.index < layout.index:
             while self.layout.index < layout.index:
-                self.towards_grid_space()
+                self._towards_grid_space()
         elif self.layout.index > layout.index:
             while self.layout.index > layout.index:
-                self.towards_coeff_space()
+                self._towards_coeff_space()
 
         return self.data:
 
@@ -93,31 +93,38 @@ class Field:
         self.layout = layout
         np.copyto(data, self.data)
 
-    def towards_grid_space(self):
+    def _towards_grid_space(self):
+        """Change to next layout towards grid space."""
+
         pass
 
-    def towards_coeff_space(self):
+    def _towards_coeff_space(self):
+        """Change to next layout towards coefficient space."""
+
         pass
 
     def require_grid_space(self, axis=None):
+        """Require one axis (default: all axes) to be in grid space."""
 
         if axis is None:
             while not all(self.layout.grid_space)
-                self.towards_grid_space()
+                self._towards_grid_space()
         else:
             while not self.layout.grid_space[axis]:
-                self.towards_grid_space()
+                self._towards_grid_space()
 
     def require_coeff_space(self, axis=None):
+        """Require one axis (default: all axes) to be in coefficient space."""
 
         if axis is None:
             while any(self.layout.grid_space):
-                self.towards_coeff_space()
+                self._towards_coeff_space()
         else:
             while self.layout.grid_space[axis]:
-                self.towards_coeff_space()
+                self._towards_coeff_space()
 
     def require_local(self, axis):
+        """Require an axis to be local."""
 
         # Handle negative axes
         if axis < 0:
@@ -125,13 +132,14 @@ class Field:
 
         while not self.layout.local[axis]:
             if axis == 0:
-                self.towards_grid_space()
+                self._towards_grid_space()
             elif axis == 1:
-                self.towards_coeff_space()
+                self._towards_coeff_space()
             else:
                 raise ValueError("Assumption that axis > 1 always local has failed.")
 
     def differentiate(self, axis, out):
+        """Differentiate field across one axis."""
 
         # Require axis to be local and in coefficient space
         self.require_local(axis)
