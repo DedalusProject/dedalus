@@ -42,8 +42,15 @@ class Distributor:
         for i in range(self.domain().dim+len(mesh)+1):
             self.layouts.append(Layout(self.domain(), mesh, i))
 
+        # Directly reference coefficient and grid space layouts
         self.coeff_layout = self.layouts[0]
         self.grid_layout = self.layouts[-1]
+
+        # Allow reference to coefficient and grid space layouts by string
+        self.string_references = {'c': self.coeff_layout,
+                                  'g': self.grid_layout,
+                                  'coeff': self.coeff_layout,
+                                  'grid': self.grid_layout}
 
         # Compute buffer size
         self.buffer_size = max([l.buffer_size for l in self.layouts])
@@ -71,6 +78,9 @@ class Distributor:
 class Layout:
 
     def __init__(self, domain, mesh, index):
+
+        # Initial attributes
+        self.index = index
 
         # Sizes
         d = domain.dim
