@@ -2,7 +2,9 @@
 
 import numpy as np
 
+from .distributor import Distributor
 from .field import Field
+from .pencil import Pencil
 from ..tools.general import CachedMethod, reshape_vector
 
 
@@ -41,20 +43,21 @@ class Domain:
         dtrans_list = []
 
         j = 1
-        for b in bases:
-            if b is not bases[-1]:
+        for b in self.bases:
+            if b is not self.bases[-1]:
                 bi = divmod(n, j)[0] % b.coeff_size
                 index_list.append(bi)
                 dtrans_list.append(b.trans_diff([bi]))
                 j *= b.coeff_size
             else:
-                if len(bases) == 1:
+                if self.dim == 1:
                     index_list.append([])
                     dtrans_list.append([])
                 else:
                     index_list = list(zip(*index_list))
                     dtrans_list = list(zip(*dtrans_list))
 
+        slices = []
         for bl in index_list:
             sli = []
             for i in bl:
