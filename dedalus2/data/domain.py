@@ -69,9 +69,6 @@ class Domain:
 
     #     return np.meshgrid(*local_grids, indexing='ij')
 
-    def __del__(self):
-        print("__del__ on domain")
-
     def integrate(self, field):
         """Integrate field over domain."""
 
