@@ -153,14 +153,19 @@ class Field:
     def integrate(self, axes=None):
         """Integrate field over domain."""
 
+        # Require full coefficient space
+        self.require_coeff_space()
+        if not all(self.layout.local):
+            raise NotImplementedError("Distributed integral not implemented.")
+
         # Integrate over all axes by default
         if axes is None:
             axes = range(self.domain().dim)
         else:
-            axes = list(axis)
+            axes = tuple(axes)
 
         # Integrate by coefficients
-        data = field['K']
+        data = self.data
         for i in reversed(sorted(axes)):
             b = self.domain().bases[i]
             data = b.integrate(data, i)
