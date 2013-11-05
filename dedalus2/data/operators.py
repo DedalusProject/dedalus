@@ -4,7 +4,7 @@ import numpy as np
 
 # Bottom of module:
 # # Import after definitions to resolve cyclic dependencies
-# from .field import field_manager, Field
+# from .field import Field
 
 
 class Operator:
@@ -119,7 +119,7 @@ class Operator:
         if self.out:
             out = self.out
         else:
-            out = field_manager.get_field(self.domain)
+            out = self.domain.get_field()
 
         # Set output layout to argument layout
         out.layout = layout
@@ -320,5 +320,5 @@ def unique_layout(fields):
 
 
 # Import after definitions to resolve cyclic dependencies
-from .field import field_manager, Field
+from .field import Field
 

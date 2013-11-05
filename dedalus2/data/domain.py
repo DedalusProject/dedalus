@@ -68,8 +68,9 @@ class Domain:
         # Build pencil objects
         self.pencils = []
         pencil_dtype = self.distributor.coeff_layout.dtype
+        pencil_length = self.bases[-1].coeff_size
         for s, d in zip(slices, dtrans_list):
-            self.pencils.append(Pencil(s, d, pencil_dtype))
+            self.pencils.append(Pencil(s, d, pencil_dtype, pencil_length))
 
     @CachedMethod
     def grid(self, axis):
