@@ -73,7 +73,6 @@ class Distributor:
                             operation = 'transpose'
                             break
 
-            print(operation)
             self.layouts.append(Layout(domain, local, grid_space, dtype, index))
             if operation == 'transform':
                 j = op_index
