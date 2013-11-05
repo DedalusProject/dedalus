@@ -30,10 +30,10 @@ class Domain:
         # Create distributor
         self.distributor = Distributor(self)
 
-        # Construct pencils
-        self._construct_pencils()
+        # Construct pencil info
+        self._construct_pencil_info()
 
-    def _construct_pencils(self):
+    def _construct_pencil_info(self):
 
         # Construct pencil slices
         n_pencils = np.prod([b.coeff_size for b in self.bases])
@@ -65,12 +65,8 @@ class Domain:
             sli.append(slice(None))
             slices.append(sli)
 
-        # Build pencil objects
-        self.pencils = []
-        pencil_dtype = self.distributor.coeff_layout.dtype
-        pencil_length = self.bases[-1].coeff_size
-        for s, d in zip(slices, dtrans_list):
-            self.pencils.append(Pencil(s, d, pencil_dtype, pencil_length))
+        self.pencil_slices = slices
+        self.pencils_dtrans = dtrans_list
 
     @CachedMethod
     def grid(self, axis):

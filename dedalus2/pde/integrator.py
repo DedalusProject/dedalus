@@ -22,11 +22,13 @@ class Integrator:
         self.state = System(problem.field_names, domain)
         self.rhs = System(problem.field_names, domain)
 
-        # Build pencils
+        # Build pencil matrices
         self.pencils = []
         primary_basis = domain.bases[-1]
-        for s, d in zip(domain.slices, domain.d_list):
-            pencil = Pencil(s, d)
+        pencil_dtype = primary_basis.dtype
+        pencil_length = primary_basis.coeff_size
+        for s, d in zip(domain.pencil_slices, domain.pencil_dtrans):
+            pencil = Pencil(s, d, pencil_dtype, pencil_length)
             pencil.build_matrices(problem, primary_basis)
             self.pencils.append(pencil)
 
