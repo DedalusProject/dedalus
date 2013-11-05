@@ -163,10 +163,10 @@ class Chebyshev(TauBasis):
         self.coeff_dtype = grid_dtype
 
         # Set transforms
-        if grid_dtype is np.float64:
+        if grid_dtype == np.float64:
             self.forward = self._forward_r2r
             self.backward = self._backward_r2r
-        elif grid_dtype is np.complex128:
+        elif grid_dtype == np.complex128:
             self.forward = self._forward_c2c
             self.backward = self._backward_c2c
         else:
@@ -433,12 +433,12 @@ class Fourier(TransverseBasis, TauBasis):
 
         # Set transforms
         n = self.grid_size
-        if dtype is np.float64:
+        if dtype == np.float64:
             self.forward = self._forward_r2c
             self.backward = self._backward_c2r
             self.coeff_size = n//2 + 1
             wavenumbers = np.arange(0, n//2 + 1)
-        elif dtype is np.complex128:
+        elif dtype == np.complex128:
             self.forward = self._forward_c2c
             self.backward = self._backward_c2c
             self.coeff_size = n
