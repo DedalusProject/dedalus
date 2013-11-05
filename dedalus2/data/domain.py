@@ -73,8 +73,10 @@ class Domain:
     @CachedMethod
     def grid(self, axis):
 
-        sli = self.distributor.grid_layout.slices[axis]
-        grid = self.bases[axis].grid[sli]
+        if not self.distributor.grid_layout.local[axis]:
+            raise NotImplementedError("Distributed grid not implemented.")
+        #sli = self.distributor.grid_layout.slices[axis]
+        grid = self.bases[axis].grid#[sli]
         grid = reshape_vector(grid, self.dim, axis)
 
         return grid
