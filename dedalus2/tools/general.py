@@ -1,5 +1,6 @@
 
 
+import numpy as np
 import types
 
 
@@ -91,14 +92,12 @@ def interleaved_view(data):
     """
 
     # Check datatype
-    if data.dtype is not np.complex128:
+    if data.dtype != np.complex128:
         raise ValueError("Complex array required.")
 
-    # Build new shape
-    shape = list(data.shape).append(2)
-
     # Create view array
-    view = np.ndarray(shape, dtype=np.float64, buffer=data.data)
+    viewshape = data.shape + (2,)
+    view = np.ndarray(viewshape, dtype=np.float64, buffer=data.data)
 
     return view
 
