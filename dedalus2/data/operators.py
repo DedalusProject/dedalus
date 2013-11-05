@@ -119,7 +119,7 @@ class Operator:
         if self.out:
             out = self.out
         else:
-            out = self.domain.get_field()
+            out = self.domain.new_field()
 
         # Set output layout to argument layout
         out.layout = layout
@@ -221,7 +221,7 @@ class Multiplication(Arithmetic):
         flag = True
         for a in self.args:
             if isinstance(a, Field):
-                if 'k' in a.space:
+                if not all(a.layout.grid_space)
                     flag = False
         return flag
 
@@ -282,7 +282,7 @@ class MagSquared(Operator):
         flag = True
         for a in self.args:
             if isinstance(a, Field):
-                if 'k' in a.space:
+                if not all(a.layout.grid_space)
                     flag = False
         return flag
 
