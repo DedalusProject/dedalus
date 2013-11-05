@@ -91,17 +91,17 @@ class Field:
             layout = self.domain.distributor.string_references[layout]
 
         self.layout = layout
-        np.copyto(data, self.data)
+        np.copyto(self.data, data)
 
     def _towards_grid_space(self):
         """Change to next layout towards grid space."""
 
-        pass
+        self.domain.distributor.increment_layout(self)
 
     def _towards_coeff_space(self):
         """Change to next layout towards coefficient space."""
 
-        pass
+        self.domain.distributor.decrement_layout(self)
 
     def require_grid_space(self, axis=None):
         """Require one axis (default: all axes) to be in grid space."""
@@ -130,13 +130,14 @@ class Field:
         if axis < 0:
             axis += self.domain.dim
 
-        while not self.layout.local[axis]:
-            if axis == 0:
+        if axis == 0:
+            while not self.layout.local[axis]:
                 self._towards_grid_space()
-            elif axis == 1:
+        elif axis == 1:
+            while not self.layout.local[axis]:
                 self._towards_coeff_space()
-            else:
-                raise ValueError("Assumption that axis > 1 always local has failed.")
+        else:
+            raise ValueError("Assumption that axis > 1 always local has failed.")
 
     def differentiate(self, axis, out):
         """Differentiate field across one axis."""
