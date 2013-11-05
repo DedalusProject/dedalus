@@ -454,7 +454,7 @@ class Fourier(TransverseBasis, TauBasis):
     def _forward_r2c(self, gdata, cdata, axis):
         """Scipy R2C FFT"""
 
-        cdata[:] = fftpack.rfft(gdata, axis=axis)
+        cdata[:] = np.fft.rfft(gdata, axis=axis)
         cdata /= self.grid_size
 
     def _forward_c2c(self, gdata, cdata, axis):
@@ -466,7 +466,7 @@ class Fourier(TransverseBasis, TauBasis):
     def _backward_c2r(self, cdata, gdata, axis):
         """Scipy C2R IFFT"""
 
-        gdata[:] = fftpack.irfft(cdata, axis=axis)
+        gdata[:] = np.fft.irfft(cdata, axis=axis)
         gdata *= self.grid_size
 
     def _backward_c2c(self, cdata, gdata, axis):
