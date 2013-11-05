@@ -7,30 +7,40 @@ from scipy import sparse
 class Pencil:
     """Pencil object for viewing one k_trans across system"""
 
-    def __init__(self, slice, d_trans):
+    def __init__(self, slice, d_trans, dtype, length):
 
         # Inputs
         self.slice = slice
         self.d_trans = d_trans
+        self.dtype = dtype
+        self.length = length
 
-    def get(self, system):
+        self.get = self._initial_get
+
+    def _initial_get(self, system):
+
+        self.data = np.zeros(system.n_fields * self.length, self.dtype)
+        self.get = self._subsequent_get
+
+        return self.get(system)
+
+    def _subsequent_get(self, system):
 
         # Retrieve slice of all fields
-        data = []
-        for field in system.fields.values():
-            data.append(field['K'][self.slice].squeeze())
-        data = np.hstack(data)
+        for i, fn in enumerate(system.field_names):
+            start = i * self.length
+            end = (i+1) * self.length
+            self.data[start:end] = system.fields[fn]['c'][self.slice].squeeze()
 
-        return data
+        return self.data
 
     def set(self, system, data):
 
         # Set slice of all fields
-        start = 0
-        for field in system.fields.values():
-            end = start + field.domain.bases[-1].coeff_size
-            field['K'][self.slice] = data[start:end]
-            start = end
+        for i, fn in enumerate(system.field_names):
+            start = i * self.length
+            end = (i+1) * self.length
+            system.fields[fn]['c'][self.slice] = data[start:end]
 
     def build_matrices(self, problem, basis):
 
@@ -111,7 +121,7 @@ class Pencil:
 
         # Reference nonlinear expressions
         self.F = problem.F
-        self.b = np.kron(problem.b(D), basis.bc_row[:,0])
+        self.b = np.kron(problem.b(D), basis.bc_vector[:,0])
         self.bc_rows = list(rows)
         self.bc_f = [self.b[r] for r in rows]
         self.parameters = problem.parameters

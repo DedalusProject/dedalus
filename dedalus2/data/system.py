@@ -12,6 +12,7 @@ class System:
 
         # Initial attributes
         self.field_names = field_names
+        self.n_fields = len(field_names)
         self.domain = domain
 
         # Build fields
