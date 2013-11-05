@@ -2,6 +2,7 @@
 
 import numpy as np
 import weakref
+import functools
 try:
     from mpi4py import MPI
     print('Successfully imported mpi4py.  Parallelism enabled.')
@@ -39,8 +40,48 @@ class Distributor:
 
         # Build layouts
         self.layouts = []
-        for i in range(self.domain().dim+len(mesh)+1):
-            self.layouts.append(Layout(self.domain(), mesh, i))
+        self.increment = []
+        self.decrement = []
+
+        # Sizes
+        domain = self.domain()
+        d = domain.dim
+        r = len(mesh)
+
+        if r >= d:
+            raise ValueError("r must be less than d")
+
+        # Build local and grid space flags
+        local = [False] * r + [True] * (d-r)
+        grid_space = [False] * d
+        dtype = domain.bases[-1].coeff_dtype
+
+        for index in range(r+d+1):
+            operation = None
+            for op in range(index):
+                for i in reversed(range(d)):
+                    if not grid_space[i]:
+                        if local[i]:
+                            grid_space[i] = True
+                            dtype = domain.bases[i].grid_dtype
+                            operation = 'transform'
+                            op_index = i
+                            break
+                        else:
+                            local[i] = True
+                            local[i+1] = False
+                            operation = 'transpose'
+                            break
+
+            print(operation)
+            self.layouts.append(Layout(domain, local, grid_space, dtype, index))
+            if operation == 'transform':
+                j = op_index
+                self.increment.append(functools.partial(domain.bases[j].backward, axis=j))
+                self.decrement.append(functools.partial(domain.bases[j].forward, axis=j))
+            elif operation == 'transpose':
+                self.increment.append('transpose')
+                self.decrement.append('transpose')
 
         # Directly reference coefficient and grid space layouts
         self.coeff_layout = self.layouts[0]
@@ -52,61 +93,38 @@ class Distributor:
                                   'coeff': self.coeff_layout,
                                   'grid': self.grid_layout}
 
-        # Compute buffer size
+        # Compute buffer size (in bytes)
         self.buffer_size = max([l.buffer_size for l in self.layouts])
 
-    # def increment_layout(self, field):
+    def increment_layout(self, field):
 
-    #     index = field.layout.index
-    #     domain = field.domain
+        index = field.layout.index
+        orig_data = field.data
+        field.layout = self.layouts[index+1]
 
-    #     self.increment[domain][index](field)
+        self.increment[index](orig_data, field.data)
 
-    #     field.layout = self.layouts[domain][index + 1]
+    def decrement_layout(self, field):
 
-    # def decrement_layout(self, field):
+        index = field.layout.index
+        orig_data = field.data
+        field.layout = self.layouts[index-1]
 
-    #     index = field.layout.index
-    #     domain = field.domain
-
-    #     input = field.data
-    #     field.layout = self.layouts[domain][index - 1]
-    #     output = field.data
-    #     self.decrement[domain][index](input, output)
+        self.decrement[index-1](orig_data, field.data)
 
 
 class Layout:
 
-    def __init__(self, domain, mesh, index):
+    def __init__(self, domain, local, grid_space, dtype, index):
 
         # Initial attributes
+        self.local = tuple(local)
+        self.grid_space = tuple(grid_space)
+        self.dtype = dtype
         self.index = index
 
-        # Sizes
-        d = domain.dim
-        r = len(mesh)
-
-        if r >= d:
-            raise ValueError("r must be less than d")
-
-        # Build local and grid space flags
-        self.local = [False] * r + [True] * (d-r)
-        self.grid_space = [False] * d
-        self.dtype = domain.bases[-1].coeff_dtype
-
-        for op in range(index):
-            for i in reversed(range(d)):
-                if not self.grid_space[i]:
-                    if self.local[i]:
-                        self.grid_space[i] = True
-                        self.dtype = domain.bases[i].grid_dtype
-                        break
-                    else:
-                        self.local[i] = True
-                        self.local[i+1] = False
-                        break
-
         # Build global shape
+        d = domain.dim
         global_shape = []
         for i in range(d):
             if self.grid_space[i]:
@@ -122,9 +140,8 @@ class Layout:
                 self.shape[i] /= mesh[j]
                 j += 1
 
-        # Compute necessary buffer size
-        n_bytes = np.dtype(self.dtype).itemsize
-        self.buffer_size = np.prod(self.shape) * n_bytes
+        # Compute necessary buffer size (in bytes)
+        self.buffer_size = np.prod(self.shape) * np.dtype(self.dtype).itemsize
 
     def view_data(self, buffer):
 
