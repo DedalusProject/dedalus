@@ -74,7 +74,7 @@ class Field:
     def __getitem__(self, layout):
 
         if isinstance(layout, str):
-            layout = self.domain.distributor.string_references[layout]
+            layout = self.domain().distributor.string_references[layout]
 
         if self.layout.index < layout.index:
             while self.layout.index < layout.index:
@@ -83,12 +83,12 @@ class Field:
             while self.layout.index > layout.index:
                 self._towards_coeff_space()
 
-        return self.data:
+        return self.data
 
     def __setitem__(self, layout, data):
 
         if isinstance(layout, str):
-            layout = self.domain.distributor.string_references[layout]
+            layout = self.domain().distributor.string_references[layout]
 
         self.layout = layout
         np.copyto(self.data, data)
@@ -96,18 +96,18 @@ class Field:
     def _towards_grid_space(self):
         """Change to next layout towards grid space."""
 
-        self.domain.distributor.increment_layout(self)
+        self.domain().distributor.increment_layout(self)
 
     def _towards_coeff_space(self):
         """Change to next layout towards coefficient space."""
 
-        self.domain.distributor.decrement_layout(self)
+        self.domain().distributor.decrement_layout(self)
 
     def require_grid_space(self, axis=None):
         """Require one axis (default: all axes) to be in grid space."""
 
         if axis is None:
-            while not all(self.layout.grid_space)
+            while not all(self.layout.grid_space):
                 self._towards_grid_space()
         else:
             while not self.layout.grid_space[axis]:
@@ -128,7 +128,7 @@ class Field:
 
         # Handle negative axes
         if axis < 0:
-            axis += self.domain.dim
+            axis += self.domain().dim
 
         if axis == 0:
             while not self.layout.local[axis]:
@@ -155,14 +155,14 @@ class Field:
 
         # Integrate over all axes by default
         if axes is None:
-            axes = range(self.domain.dim)
+            axes = range(self.domain().dim)
         else:
             axes = list(axis)
 
         # Integrate by coefficients
         data = field['K']
         for i in reversed(sorted(axes)):
-            b = self.domain.bases[i]
+            b = self.domain().bases[i]
             data = b.integrate(data, i)
             data = b.grid_dtype(data)
 
