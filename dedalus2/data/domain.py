@@ -23,15 +23,15 @@ class Domain:
         for b in self.bases:
             grid_dtype = b.set_dtypes(grid_dtype)
 
-        # Construct pencil slices
-        self._construct_pencils()
-
         # Field management
         self._field_list = list()
         self._field_count = 0
 
         # Create distributor
         self.distributor = Distributor(self)
+
+        # Construct pencils
+        self._construct_pencils()
 
     def _construct_pencils(self):
 
@@ -67,8 +67,9 @@ class Domain:
 
         # Build pencil objects
         self.pencils = []
+        pencil_dtype = self.distributor.coeff_layout.dtype
         for s, d in zip(slices, dtrans_list):
-            self.pencils.append(Pencil(s, d))
+            self.pencils.append(Pencil(s, d, pencil_dtype))
 
     @CachedMethod
     def grid(self, axis):
