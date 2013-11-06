@@ -174,6 +174,53 @@ class CNAB3(IMEXBase):
         return a, b, c, d
 
 
+class MCNAB2(IMEXBase):
+    """Second order Modified Crank-Nicolson-Adams-Bashforth with variable timestep size (VSIMEX)"""
+
+    qmax = 2   # 2nd order in implicit operator
+    pmax = 2   # 2nd order in explicit operator
+
+    def compute_coefficients(self, iteration):
+
+        a = [0.] * self.qmax
+        b = [0.] * self.qmax
+        c = [0.] * self.pmax
+        d = [0.] * 2
+
+        # References
+        dt0 = self.dt[0]
+        dt1 = self.dt[1]
+
+        # LHS coefficients
+        d[0] = 1.
+        d[1] = dt0 * (1./16.)*(8. + (dt1/dt0))
+
+        # RHS coefficients
+        a[0] = 1.    # u_n
+        a[1] = 0.    # no u_n-1
+
+        # the c coefs are the "explicit" part
+        # same as in CNAB2
+        if iteration == 0:
+            # do CNAB2 for first step
+            c[0] = 1.
+            c[1] = 0.
+            b[0] = -dt0/2.
+            b[1] = 0.
+        else:
+            c[1] = -1./2. * (dt0 / dt1)
+            c[0] = 1. + 1./2. *(dt0 / dt1)
+            b[0] = -dt0 * (1./16.)*(7. - (dt1/dt0)) # This is L_{n}
+            b[1] = -dt0 * (1./16.)                  # This is L_{n-1}
+
+
+        c[0] *= dt0
+        c[1] *= dt0
+
+        return a, b, c, d
+
+
+
 class SimpleSolve(IMEXBase):
     """Simple BVP solve"""
 
