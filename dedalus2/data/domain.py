@@ -30,44 +30,6 @@ class Domain:
         # Create distributor
         self.distributor = Distributor(self)
 
-        # Construct pencil info
-        self._construct_pencil_info()
-
-    def _construct_pencil_info(self):
-
-        # Construct pencil slices
-        n_pencils = np.prod([b.coeff_size for b in self.bases])
-        n_pencils /= self.bases[-1].coeff_size
-        n = np.arange(int(n_pencils))
-        index_list = []
-        dtrans_list = []
-
-        j = 1
-        for b in self.bases:
-            if b is not self.bases[-1]:
-                bi = divmod(n, j)[0] % b.coeff_size
-                index_list.append(bi)
-                dtrans_list.append(b.trans_diff([bi]))
-                j *= b.coeff_size
-            else:
-                if self.dim == 1:
-                    index_list.append([])
-                    dtrans_list.append([])
-                else:
-                    index_list = list(zip(*index_list))
-                    dtrans_list = list(zip(*dtrans_list))
-
-        slices = []
-        for bl in index_list:
-            sli = []
-            for i in bl:
-                sli.append(slice(i, i+1))
-            sli.append(slice(None))
-            slices.append(sli)
-
-        self.pencil_slices = slices
-        self.pencils_dtrans = dtrans_list
-
     @CachedMethod
     def grid(self, axis):
 

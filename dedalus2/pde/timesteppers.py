@@ -10,10 +10,10 @@ from ..data.system import System
 class IMEXBase:
     """Base class for implicit-explicit timesteppers."""
 
-    def __init__(self, pencils, state, rhs):
+    def __init__(self, pencilset, state, rhs):
 
         # Store inputs
-        self.pencils = pencils
+        self.pencilset = pencilset
         self.state = state
         self.rhs = rhs
 
@@ -39,9 +39,9 @@ class IMEXBase:
         self.F_expressions = []
         for fn in state.field_names:
             locals()[fn] = state.fields[fn]
-        for key, val in self.pencils[0].parameters.items():
+        for key, val in self.pencilset.pencils[0].parameters.items():
             locals()[key] = val
-        for f in self.pencils[0].F:
+        for f in self.pencilset.pencils[0].F:
             if f is None:
                 self.F_expressions.append(None)
             else:
@@ -50,6 +50,7 @@ class IMEXBase:
     def update_pencils(self, dt, iteration):
 
         # References
+        pencilset = self.pencilset
         state = self.state
         rhs = self.rhs
         MX = self.MX
@@ -68,28 +69,28 @@ class IMEXBase:
         # Compute nonlinear component
         compute_expressions(self.F_expressions, F[0])
 
-        for pencil in self.pencils:
+        pencilset.get_system(state)
+        for pencil in pencilset.pencils:
+            pencil.data = pencil.M.dot(pencil.data)
+        pencilset.set_system(MX[0])
 
-            # (Assuming no coupling between pencils)
-            mx = pencil.M.dot(state[pencil].flatten())
-            lx = pencil.L.dot(state[pencil].flatten())
+        pencilset.get_system(state)
+        for pencil in pencilset.pencils:
+            pencil.data = pencil.L.dot(pencil.data)
+        pencilset.set_system(LX[0])
 
-            MX[0][pencil] = mx
-            LX[0][pencil] = lx
-
-            F[0][pencil] = pencil.F_eval.dot(F[0][pencil].flatten())
-
+        pencilset.get_system(F[0])
+        for pencil in pencilset.pencils:
+            pencil.data = pencil.F_eval.dot(pencil.data)
             for i, r in enumerate(pencil.bc_rows):
-                # DEBUG: requires slow copies: find better way to change necessary rows
-                f = F[0][pencil].flatten()
-                f[r] = pencil.bc_f[i]
-                F[0][pencil] = f
+                pencil.data[r] = pencil.bc_f[i]
+        pencilset.set_system(F[0])
 
         # Compute IMEX coefficients
         a, b, c, d = self.compute_coefficients(iteration)
 
         # Construct pencil LHS matrix
-        for pencil in self.pencils:
+        for pencil in pencilset.pencils:
             pencil.LHS = d[0] * pencil.M + d[1] * pencil.L
 
         # Construct RHS field
