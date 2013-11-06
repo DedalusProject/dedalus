@@ -4,43 +4,100 @@ import numpy as np
 from scipy import sparse
 
 
+class PencilSet:
+    """Adjascent-memory pencil system for efficient computations."""
+
+    def __init__(self, domain, n_fields):
+
+        # Extend layout shape
+        shape = list(domain.distributor.coeff_layout.shape)
+        self.stride = shape[-1]
+        shape[-1] *= n_fields
+
+        # Allocate data
+        dtype = domain.distributor.coeff_layout.dtype
+        self.data = np.zeros(shape, dtype=dtype)
+
+        # Build pencils
+        self._construct_pencil_info(domain)
+        self.pencils = []
+        for s, d in zip(self.pencil_slices, self.pencil_dtrans):
+            pencil = Pencil(self.data, s, d)
+            self.pencils.append(pencil)
+
+    def get_system(self, system):
+
+        for i, field in enumerate(system.fields.values()):
+            start = i * self.stride
+            end = start + self.stride
+
+            field.require_coeff_space()
+            np.copyto(self.data[..., start:end], field.data)
+
+    def set_system(self, system):
+
+        for i, field in enumerate(system.fields.values()):
+            start = i * self.stride
+            end = start + self.stride
+
+            field.require_coeff_space()
+            np.copyto(field.data, self.data[..., start:end])
+
+    def _construct_pencil_info(self, domain):
+
+        # Construct pencil slices
+        n_pencils = np.prod([b.coeff_size for b in domain.bases])
+        n_pencils /= domain.bases[-1].coeff_size
+        n = np.arange(int(n_pencils))
+        index_list = []
+        dtrans_list = []
+
+        j = 1
+        for b in domain.bases:
+            if b is not domain.bases[-1]:
+                bi = divmod(n, j)[0] % b.coeff_size
+                index_list.append(bi)
+                dtrans_list.append(b.trans_diff([bi]))
+                j *= b.coeff_size
+            else:
+                if domain.dim == 1:
+                    index_list.append([])
+                    dtrans_list.append([])
+                else:
+                    index_list = list(zip(*index_list))
+                    dtrans_list = list(zip(*dtrans_list))
+
+        slices = []
+        for bl in index_list:
+            sli = []
+            for i in bl:
+                sli.append(slice(i, i+1))
+            sli.append(slice(None))
+            slices.append(sli)
+
+        self.pencil_slices = slices
+        self.pencil_dtrans = dtrans_list
+
+
 class Pencil:
     """Pencil object for viewing one k_trans across system"""
 
-    def __init__(self, slice, d_trans, dtype, length):
+    def __init__(self, setdata, slice, d_trans):
 
-        # Inputs
+        # Initial attributes
+        self.setdata = setdata
         self.slice = slice
         self.d_trans = d_trans
-        self.dtype = dtype
-        self.length = length
 
-        self.get = self._initial_get
+    @property
+    def data(self):
 
-    def _initial_get(self, system):
+        return self.setdata[self.slice].squeeze()
 
-        self.data = np.zeros(system.n_fields * self.length, self.dtype)
-        self.get = self._subsequent_get
+    @data.setter
+    def data(self, data):
 
-        return self.get(system)
-
-    def _subsequent_get(self, system):
-
-        # Retrieve slice of all fields
-        for i, fn in enumerate(system.field_names):
-            start = i * self.length
-            end = (i+1) * self.length
-            self.data[start:end] = system.fields[fn]['c'][self.slice].squeeze()
-
-        return self.data
-
-    def set(self, system, data):
-
-        # Set slice of all fields
-        for i, fn in enumerate(system.field_names):
-            start = i * self.length
-            end = (i+1) * self.length
-            system.fields[fn]['c'][self.slice] = data[start:end]
+        self.setdata[self.slice] = data
 
     def build_matrices(self, problem, basis):
 
