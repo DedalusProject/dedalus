@@ -58,7 +58,7 @@ class Distributor:
 
         for index in range(r+d+1):
             operation = None
-            for op in range(index):
+            if index != 0:
                 for i in reversed(range(d)):
                     if not grid_space[i]:
                         if local[i]:
@@ -73,7 +73,7 @@ class Distributor:
                             operation = 'transpose'
                             break
 
-            self.layouts.append(Layout(domain, local, grid_space, dtype, index))
+            self.layouts.append(Layout(domain, local, grid_space, dtype, index, mesh))
             if operation == 'transform':
                 j = op_index
                 self.increment.append(functools.partial(domain.bases[j].backward, axis=j))
@@ -114,7 +114,7 @@ class Distributor:
 
 class Layout:
 
-    def __init__(self, domain, local, grid_space, dtype, index):
+    def __init__(self, domain, local, grid_space, dtype, index, mesh):
 
         # Initial attributes
         self.local = tuple(local)
