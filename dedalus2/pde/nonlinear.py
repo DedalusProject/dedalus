@@ -22,22 +22,22 @@ def compute_expressions(rhs_expressions, out_system):
     for i, re in enumerate(expressions):
         if re is None:
             fn = out_system.field_names[i]
-            out_system[fn]['K'] = 0.
+            out_system[fn]['c'] = 0.
 
-    # Start all from k space
+    # Start all from coefficient space
     fields = get_fields(expressions)
     for f in fields:
-        f.require_global_space('K')
+        f.require_coeff_space()
 
-    dimensions = out_system.domain.dim
+    n_layouts = len(out_system.domain.distributor.layouts)
 
-    # Loop from K to X
-    for i in reversed(range(dimensions)):
+    # Loop from coefficient to grid space
+    for i in range(n_layouts - 1):
 
-        # Transpose fields
+        # Next layout
         fields = get_fields(expressions)
         for f in fields:
-            f.require_local(i)
+            f.towards_grid_space()
 
         # Attempt evaluation
         for j, re in enumerate(expressions):
@@ -45,14 +45,21 @@ def compute_expressions(rhs_expressions, out_system):
                 re_eval = re.evaluate()
                 if re_eval is not None:
                     fn = out_system.field_names[j]
-                    space = ''.join(re_eval.space)
-                    out_system[fn][space] = re_eval[space]
+                    layout = re_eval.layout
+                    out_system[fn][layout] = re_eval[layout]
                     expressions[j] = None
 
-        # Transform fields
+    # Non-linear products should now be computed (we are in grid space)
+
+    # Repeat looping from grid to coefficient space to compute operators acting on products?
+
+    # Loop from grid to coefficient space
+    for i in range(n_layouts - 1):
+
+        # Previous layout
         fields = get_fields(expressions)
         for f in fields:
-            f.require_space(i, 'x')
+            f.towards_coeff_space()
 
         # Attempt evaluation
         for j, re in enumerate(expressions):
@@ -60,45 +67,8 @@ def compute_expressions(rhs_expressions, out_system):
                 re_eval = re.evaluate()
                 if re_eval is not None:
                     fn = out_system.field_names[j]
-                    space = ''.join(re_eval.space)
-                    out_system[fn][space] = re_eval[space]
-                    expressions[j] = None
-
-    # Non-linear products should now be computed (we are in X)
-
-    # Repeat looping from X to K to compute operators acting on products
-
-    # Loop from X to K
-    for i in range(dimensions):
-
-        # Transpose fields
-        fields = get_fields(expressions)
-        for f in fields:
-            f.require_local(i)
-
-        # Attempt evaluation
-        for j, re in enumerate(expressions):
-            if re is not None:
-                re_eval = re.evaluate()
-                if re_eval is not None:
-                    fn = out_system.field_names[j]
-                    space = ''.join(re_eval.space)
-                    out_system[fn][space] = re_eval[space]
-                    expressions[j] = None
-
-        # Transform fields
-        fields = get_fields(expressions)
-        for f in fields:
-            f.require_space(i, 'k')
-
-        # Attempt evaluation
-        for j, re in enumerate(expressions):
-            if re is not None:
-                re_eval = re.evaluate()
-                if re_eval is not None:
-                    fn = out_system.field_names[j]
-                    space = ''.join(re_eval.space)
-                    out_system[fn][space] = re_eval[space]
+                    layout = re_eval.layout
+                    out_system[fn][layout] = re_eval[layout]
                     expressions[j] = None
 
     # If necessary, perform this multiple times until everything is computed
