@@ -4,7 +4,7 @@ import numpy as np
 import time
 import shelve
 
-from dedalus2.public import *
+from dedalus2_burns.public import *
 
 
 # Set domain
@@ -159,21 +159,21 @@ ts = timesteppers.Euler
 int = Integrator(BIH, domain, ts)
 
 # Initial conditions
-x = domain.grids[0]
-z = domain.grids[1]
+x = domain.grid(0)
+z = domain.grid(1)
 h = int.state['h']
 hz = int.state['hz']
 
 pert = 1e-3
 profile = -(z - zbottom) * (z - ztop)
 profile /= profile.max()
-delta = pert * profile * np.random.randn(*h['X'].shape)
-h['X'] = z + delta
-hz['xk'] = h.differentiate(1)
+delta = pert * profile * np.random.randn(*h['g'].shape)
+h['g'] = z + delta
+h.differentiate(1, hz)
 
 # Integration parameters
 min_dt = 1e-3
-int.sim_stop_time = 5e-2
+int.sim_stop_time = 1.2e-2
 int.wall_stop_time = 2*60*60
 int.stop_iteration = 100000
 
@@ -181,9 +181,9 @@ int.stop_iteration = 100000
 storage_list = ['p', 'h', 'u', 'w']
 storage = {}
 storage['time'] = [int.time]
-storage['r'] = [np.copy(-int.state['h']['X']**2)]
+storage['r'] = [np.copy(-int.state['h']['g']**2)]
 for fn in storage_list:
-    storage[fn] = [np.copy(int.state[fn]['X'])]
+    storage[fn] = [np.copy(int.state[fn]['g'])]
 copy_cadence = 15
 dt_cadence = 5
 
@@ -193,9 +193,9 @@ for i in range(presteps):
     int.advance(min_dt/presteps)
 
     storage['time'].append(int.time)
-    storage['r'].append(np.copy(-int.state['h']['X']**2))
+    storage['r'].append(np.copy(-int.state['h']['g']**2))
     for fn in storage_list:
-        storage[fn].append(np.copy(int.state[fn]['X']))
+        storage[fn].append(np.copy(int.state[fn]['g']))
     print('Iteration: %i, Time: %e' %(int.iteration-presteps, int.time))
 
 int.timestepper = timesteppers.MCNAB2(int.pencils, int.state, int.rhs)
@@ -217,8 +217,8 @@ dx = grid_spacing(xg).reshape((xg.size, 1))
 dz = grid_spacing(zg).reshape((1, zg.size))
 
 def cfl_dt(safety=1.):
-    minut = np.min(np.abs(dx / int.state['u']['X'].real))
-    minwt = np.min(np.abs(dz / int.state['w']['X'].real))
+    minut = np.min(np.abs(dx / int.state['u']['g'].real))
+    minwt = np.min(np.abs(dz / int.state['w']['g'].real))
 
     return safety * min(minut, minwt)
 
@@ -235,9 +235,9 @@ while int.ok:
     # update lists
     if int.iteration % copy_cadence == 0:
         storage['time'].append(int.time)
-        storage['r'].append(np.copy(-int.state['h']['X']**2))
+        storage['r'].append(np.copy(-int.state['h']['g']**2))
         for fn in storage_list:
-            storage[fn].append(np.copy(int.state[fn]['X']))
+            storage[fn].append(np.copy(int.state[fn]['g']))
         print('Iteration: %i, Time: %e, dt: %e' %(int.iteration, int.time, int.dt))
 
     if int.iteration % dt_cadence == 0:
@@ -246,9 +246,9 @@ while int.ok:
 
 if int.iteration % copy_cadence != 0:
     storage['time'].append(int.time)
-    storage['r'].append(np.copy(-int.state['h']['X']**2))
+    storage['r'].append(np.copy(-int.state['h']['g']**2))
     for fn in storage_list:
-        storage[fn].append(np.copy(int.state[fn]['X']))
+        storage[fn].append(np.copy(int.state[fn]['g']))
 
 end_time = time.time()
 
