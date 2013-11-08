@@ -11,8 +11,8 @@ from dedalus2_burns.public import *
 zbottom = -1.
 ztop = 3.
 x_basis = Fourier(128, interval=(-1., 1.))
-z_basis = Chebyshev(128, interval=(zbottom, ztop))
-domain = Domain([x_basis, z_basis])
+z_basis = Chebyshev(129, interval=(zbottom, ztop))
+domain = Domain([x_basis, z_basis], grid_dtype=np.float64)
 
 # Equations:
 #
@@ -173,9 +173,9 @@ h.differentiate(1, hz)
 
 # Integration parameters
 min_dt = 1e-3
-int.sim_stop_time = 1.2e-2
+int.sim_stop_time = 1e-1
 int.wall_stop_time = 2*60*60
-int.stop_iteration = 100000
+int.stop_iteration = 200
 
 # Storage lists
 storage_list = ['p', 'h', 'u', 'w']
@@ -188,7 +188,7 @@ copy_cadence = 15
 dt_cadence = 5
 
 # Pre-Euler steps
-presteps = 100
+presteps = 10
 for i in range(presteps):
     int.advance(min_dt/presteps)
 
@@ -198,7 +198,7 @@ for i in range(presteps):
         storage[fn].append(np.copy(int.state[fn]['g']))
     print('Iteration: %i, Time: %e' %(int.iteration-presteps, int.time))
 
-int.timestepper = timesteppers.MCNAB2(int.pencils, int.state, int.rhs)
+int.timestepper = timesteppers.MCNAB2(int.pencilset, int.state, int.rhs)
 int.iteration = 0
 
 def grid_spacing(grid):
