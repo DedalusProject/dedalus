@@ -29,7 +29,7 @@ cdef extern from "fftw3-mpi.h":
     # Using MPI plans (6.12.3)
     # Distributed transposes count as rank-zero r2r plans
     void fftw_mpi_execute_r2r(fftw_plan plan,
-                              double *in,
+                              double *in_,
                               double *out)
 
     # MPI data distribution functions (6.12.4)
@@ -50,7 +50,7 @@ cdef extern from "fftw3-mpi.h":
                                            ptrdiff_t itemsize,
                                            ptrdiff_t block0,
                                            ptrdiff_t block1,
-                                           double *in,
+                                           double *in_,
                                            double *out,
                                            MPI.MPI_Comm comm,
                                            unsigned flags)
