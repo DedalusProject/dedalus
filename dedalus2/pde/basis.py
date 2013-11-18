@@ -4,17 +4,23 @@ import numpy as np
 from scipy import sparse
 from scipy import fftpack
 
-from ..tools.general import CachedAttribute, CachedMethod, interleaved_view
+from ..tools.general import CachedAttribute
+from ..tools.general import CachedMethod
+from ..tools.general import interleaved_view
+from ..tools.general import reshape_vector
 
 
 class Basis:
     """Base class for all bases."""
 
-    def __init__(self, grid_size, interval):
-
-        # Initial attributes
-        self.grid_size = grid_size
-        self.interval = tuple(interval)
+    # Abstract attributes: must be defined by subclasses
+    #   self.interval
+    #   self.grid_size
+    #   self.grid_embed
+    #   self.grid_dtype
+    #   self.coeff_size
+    #   self.coeff_embed
+    #   self.coeff_dtype
 
     def set_dtypes(self, grid_dtype):
         """Specify datatypes."""
@@ -140,11 +146,12 @@ class Chebyshev(TauBasis):
 
     def __init__(self, grid_size, interval=(-1., 1.)):
 
-        # Inherited initialization
-        Basis.__init__(self, grid_size, interval)
-
         # Initial attributes
+        self.interval = tuple(interval)
+        self.grid_size = grid_size
+        self.grid_embed = grid_size
         self.coeff_size = grid_size
+        self.coeff_embed = grid_size
         self.N = grid_size - 1
 
         # Grid
@@ -414,8 +421,9 @@ class Fourier(TransverseBasis, TauBasis):
 
     def __init__(self, grid_size, interval=(0., 2.*np.pi)):
 
-        # Inherited initialization
-        Basis.__init__(self, grid_size, interval)
+        # Initial attributes
+        self.interval = tuple(interval)
+        self.grid_size = grid_size
 
         # Grid
         length = interval[1] - interval[0]
@@ -432,18 +440,26 @@ class Fourier(TransverseBasis, TauBasis):
         self.coeff_dtype = np.complex128
 
         # Set transforms
-        n = self.grid_size
+        ng = self.grid_size
         if dtype == np.float64:
+            nc = ng//2 + 1
+            self.grid_embed = 2 * nc
+            self.coeff_size = nc
+            self.coeff_embed = nc
+
             self.forward = self._forward_r2c
             self.backward = self._backward_c2r
-            self.coeff_size = n//2 + 1
-            wavenumbers = np.arange(0, n//2 + 1)
+            wavenumbers = np.arange(0, nc)
+
         elif dtype == np.complex128:
+            self.grid_embed = ng
+            self.coeff_size = ng
+            self.coeff_embed = ng
+
             self.forward = self._forward_c2c
             self.backward = self._backward_c2c
-            self.coeff_size = n
-            wavenumbers = np.hstack((np.arange(0, n//2+1),
-                                     np.arange((-n)//2+1, 0)))
+            wavenumbers = np.arange((-n)//2+1, n//2+1)
+            wavenumbers = np.roll(wavenumbers, n//2+1)
         else:
             raise ValueError("Unsupported dtype.")
 
@@ -479,9 +495,8 @@ class Fourier(TransverseBasis, TauBasis):
         """Differentiation by wavenumber multiplication."""
 
         # Wavenumber array
-        shape = [1] * len(cdata.shape)
-        shape[axis] = self.coeff_size
-        ik = 1j * self.wavenumbers.reshape(shape)
+        dim = len(cdata.shape)
+        ik = 1j * reshape_vector(self.wavenumbers, dim=dim, axis=axis)
 
         # Multiplication
         cderiv[:] = cdata * ik
