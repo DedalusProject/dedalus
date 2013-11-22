@@ -1,6 +1,7 @@
 
 
-from mpi4py cimport MPI
+from mpi4py.mpi_c cimport MPI_Comm as mpi_comm_t
+from libc.stddef cimport ptrdiff_t
 
 
 # Make C99 complex types available to FFTW
@@ -38,21 +39,21 @@ cdef extern from "fftw3-mpi.h":
                                                   ptrdiff_t itemsize,
                                                   ptrdiff_t block0,
                                                   ptrdiff_t block1,
-                                                  MPI.MPI_Comm comm,
+                                                  mpi_comm_t comm,
                                                   ptrdiff_t *local0,
                                                   ptrdiff_t *start0,
                                                   ptrdiff_t *local1,
                                                   ptrdiff_t *start1)
 
     # MPI plan creation (6.12.5)
-    fftw_plan fftw_mpi_plan_many_transpose(ptrdiff_t n0,
-                                           ptrdiff_t n1,
+    fftw_plan fftw_mpi_plan_many_transpose(ptrdiff_t shape0,
+                                           ptrdiff_t shape1,
                                            ptrdiff_t itemsize,
                                            ptrdiff_t block0,
                                            ptrdiff_t block1,
                                            double *in_,
                                            double *out,
-                                           MPI.MPI_Comm comm,
+                                           mpi_comm_t comm,
                                            unsigned flags)
 
 
@@ -61,7 +62,6 @@ cdef enum:
     FFTW_ESTIMATE = (1 << 6)
     FFTW_EXHAUSTIVE = (1 << 3)
     FFTW_MEASURE = 0
-    FFTW_MPI_DEFAULT_BLOCK = 0
     FFTW_MPI_TRANSPOSED_IN = (1 << 29)
     FFTW_MPI_TRANSPOSED_OUT = (1 << 30)
     FFTW_PATIENT = (1 << 5)
