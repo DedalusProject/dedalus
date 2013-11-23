@@ -219,10 +219,8 @@ class Multiplication(Arithmetic):
     def conditions(self, layout):
 
         flag = True
-        for a in self.args:
-            if isinstance(a, Field):
-                if not all(a.layout.grid_space):
-                    flag = False
+        if not all(layout.grid_space):
+            flag = False
         return flag
 
     def operation(self, out):
@@ -249,12 +247,11 @@ def create_diff_operators(domain):
             def conditions(self, layout):
 
                 flag = True
-                for a in self.args:
-                    if isinstance(a, Field):
-                        if a.layout.grid_space[self.index]:
-                            flag = False
-                        if not a.layout.local[self.index]:
-                            flag = False
+                if layout.grid_space[self.index]:
+                    flag = False
+                if not layout.local[self.index]:
+                    flag = False
+
                 return flag
 
                 #return (not layout.grid_space[self.index])
@@ -280,10 +277,8 @@ class MagSquared(Operator):
     def conditions(self, layout):
 
         flag = True
-        for a in self.args:
-            if isinstance(a, Field):
-                if not all(a.layout.grid_space):
-                    flag = False
+        if not all(layout.grid_space):
+            flag = False
         return flag
 
     def operation(self, out):
