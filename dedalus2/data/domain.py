@@ -11,7 +11,7 @@ from ..tools.general import CachedMethod, reshape_vector
 class Domain:
     """Global domain composed of orthogonal bases."""
 
-    def __init__(self, bases, grid_dtype=np.complex128):
+    def __init__(self, bases, grid_dtype=np.complex128, mesh=None):
 
         # Initial attributes
         self.bases = bases
@@ -28,15 +28,19 @@ class Domain:
         self._field_count = 0
 
         # Create distributor
-        self.distributor = Distributor(self)
+        self.distributor = Distributor(self, mesh)
 
     @CachedMethod
     def grid(self, axis):
 
+        # Get local part of grid
+        grid = self.bases[axis].grid
         if not self.distributor.grid_layout.local[axis]:
-            raise NotImplementedError("Distributed grid not implemented.")
-        #sli = self.distributor.grid_layout.slices[axis]
-        grid = self.bases[axis].grid#[sli]
+            start = self.distributor.grid_layout.start[axis]
+            size = self.distributor.grid_layout.shape[axis]
+            grid = grid[start:start+size]
+
+        # Reshape as multidimensional vector
         grid = reshape_vector(grid, self.dim, axis)
 
         return grid
