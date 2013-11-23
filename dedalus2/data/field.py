@@ -20,14 +20,14 @@ class Field:
         else:
             self.name = 'F' + str(id(self))
 
-        # Weak reference to domain to allow cyclic garbage collection
+        # Weak-reference domain to allow cyclic garbage collection
         self.domain = weakref.ref(domain)
 
         # Increment domain field count
         domain._field_count += 1
 
         # Allocate buffer
-        self._buffer = np.zeros(domain.distributor.buffer_size, dtype=np.byte)
+        self._buffer = domain.distributor.create_buffer()
 
         # Set initial layout
         self.layout = domain.distributor.grid_layout
@@ -39,6 +39,7 @@ class Field:
     @layout.setter
     def layout(self, layout):
         self._layout = layout
+        self._embedding = layout.view_embedding(self._buffer)
         self.data = layout.view_data(self._buffer)
 
     def __del__(self):
@@ -74,7 +75,7 @@ class Field:
     def __getitem__(self, layout):
 
         if isinstance(layout, str):
-            layout = self.domain().distributor.string_references[layout]
+            layout = self.domain().distributor.string_layouts[layout]
 
         if self.layout.index < layout.index:
             while self.layout.index < layout.index:
@@ -88,7 +89,7 @@ class Field:
     def __setitem__(self, layout, data):
 
         if isinstance(layout, str):
-            layout = self.domain().distributor.string_references[layout]
+            layout = self.domain().distributor.string_layouts[layout]
 
         self.layout = layout
         np.copyto(self.data, data)
@@ -130,14 +131,12 @@ class Field:
         if axis < 0:
             axis += self.domain().dim
 
-        if axis == 0:
-            while not self.layout.local[axis]:
-                self.towards_grid_space()
-        elif axis == 1:
+        if self.layout.grid_space[axis]:
             while not self.layout.local[axis]:
                 self.towards_coeff_space()
         else:
-            raise ValueError("Assumption that axis > 1 always local has failed.")
+            while not self.layout.local[axis]:
+                self.towards_grid_space()
 
     def differentiate(self, axis, out):
         """Differentiate field across one axis."""
