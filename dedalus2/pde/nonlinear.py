@@ -1,5 +1,6 @@
 
 
+import numpy as np
 from scipy import sparse
 
 
@@ -28,6 +29,16 @@ def compute_expressions(rhs_expressions, out_system):
     fields = get_fields(expressions)
     for f in fields:
         f.require_coeff_space()
+
+    # Attempt evaluation
+    for j, re in enumerate(expressions):
+        if re is not None:
+            re_eval = re.evaluate()
+            if re_eval is not None:
+                fn = out_system.field_names[j]
+                layout = re_eval.layout
+                out_system[fn][layout] = re_eval[layout]
+                expressions[j] = None
 
     n_layouts = len(out_system.domain.distributor.layouts)
 
@@ -70,6 +81,9 @@ def compute_expressions(rhs_expressions, out_system):
                     layout = re_eval.layout
                     out_system[fn][layout] = re_eval[layout]
                     expressions[j] = None
+
+    if any(expressions):
+        raise ValueError("Not all expressions evaluated.")
 
     # If necessary, perform this multiple times until everything is computed
     #   (In case someone does "dx(u*v) * dx(u*v)" or similar)
