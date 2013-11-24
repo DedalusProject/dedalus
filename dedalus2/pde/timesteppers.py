@@ -66,8 +66,7 @@ class IMEXBase:
         LX.rotate()
         F.rotate()
 
-        # Compute nonlinear component
-        compute_expressions(self.F_expressions, F[0])
+
 
         pencilset.get_system(state)
         for pencil in pencilset.pencils:
@@ -78,6 +77,9 @@ class IMEXBase:
         for pencil in pencilset.pencils:
             pencil.data = pencil.L.dot(pencil.data)
         pencilset.set_system(LX[0])
+
+        # Compute nonlinear component
+        compute_expressions(self.F_expressions, F[0])
 
         pencilset.get_system(F[0])
         for pencil in pencilset.pencils:
