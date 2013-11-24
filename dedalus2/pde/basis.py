@@ -443,7 +443,7 @@ class Fourier(TransverseBasis, TauBasis):
         ng = self.grid_size
         if dtype == np.float64:
             nc = ng//2 + 1
-            self.grid_embed = 2 * nc
+            self.grid_embed = ng #2 * nc
             self.coeff_size = nc
             self.coeff_embed = nc
 
@@ -458,8 +458,8 @@ class Fourier(TransverseBasis, TauBasis):
 
             self.forward = self._forward_c2c
             self.backward = self._backward_c2c
-            wavenumbers = np.arange((-n)//2+1, n//2+1)
-            wavenumbers = np.roll(wavenumbers, n//2+1)
+            wavenumbers = np.arange((-ng)//2+1, ng//2+1)
+            wavenumbers = np.roll(wavenumbers, ng//2+1)
         else:
             raise ValueError("Unsupported dtype.")
 
@@ -482,7 +482,7 @@ class Fourier(TransverseBasis, TauBasis):
     def _backward_c2r(self, cdata, gdata, axis):
         """Scipy C2R IFFT"""
 
-        gdata[:] = np.fft.irfft(cdata, axis=axis)
+        gdata[:] = np.fft.irfft(cdata, n=self.grid_size, axis=axis)
         gdata *= self.grid_size
 
     def _backward_c2c(self, cdata, gdata, axis):
@@ -552,4 +552,53 @@ class Fourier(TransverseBasis, TauBasis):
         """Transverse differentation constant for i-th term."""
 
         return 1j * self.wavenumbers[i]
+
+
+class NoOp(Basis):
+    """No-operation test basis."""
+
+    def __init__(self, grid_size, interval=(0., 1.)):
+
+        # Initial attributes
+        self.interval = tuple(interval)
+        self.grid_size = grid_size
+        self.grid_embed = grid_size
+        self.coeff_size = grid_size
+        self.coeff_embed = grid_size
+
+        # Grid
+        length = interval[1] - interval[0]
+        start = interval[0]
+        native_grid = np.linspace(0., 1., grid_size, endpoint=True)
+        self.grid = start + length * native_grid
+        self._grid_stretch = length
+
+    def differentiate(self, cdata, cderiv, axis):
+        """Differentiate using coefficients."""
+
+        raise NotImplementedError()
+
+    def integrate(self, cdata, axis):
+        """Integrate over interval using coefficients."""
+
+        raise NotImplementedError()
+
+    def set_dtypes(self, dtype):
+        """Specify datatypes."""
+
+        # Set datatypes
+        self.grid_dtype = dtype
+        self.coeff_dtype = dtype
+
+        return self.coeff_dtype
+
+    def forward(self, gdata, cdata, axis):
+        """Grid-to-coefficient transform."""
+
+        cdata[:] = gdata
+
+    def backward(self, cdata, gdata, axis):
+        """Coefficient-to-grid transform."""
+
+        gdata[:] = cdata
 
