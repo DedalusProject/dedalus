@@ -3,6 +3,8 @@
 import numpy as np
 from scipy import sparse
 
+from ..tools.general import rev_enumerate
+
 
 class PencilSet:
     """Adjascent-memory pencil system for efficient computations."""
@@ -40,32 +42,32 @@ class PencilSet:
             start = i * self.stride
             end = start + self.stride
 
-            field.require_coeff_space()
+            #field.require_coeff_space()
+            field.layout = field.domain.dist.coeff_layout
             np.copyto(field.data, self.data[..., start:end])
 
     def _construct_pencil_info(self, domain):
 
         # Construct pencil slices
-        n_pencils = np.prod([b.coeff_size for b in domain.bases])
-        n_pencils /= domain.bases[-1].coeff_size
-        n = np.arange(int(n_pencils))
+        coeff_layout = domain.distributor.coeff_layout
+        n_pencils = np.prod(coeff_layout.shape[:-1])
+        n = np.arange(n_pencils)
         index_list = []
         dtrans_list = []
 
-        j = 1
-        for b in domain.bases:
-            if b is not domain.bases[-1]:
-                bi = divmod(n, j)[0] % b.coeff_size
-                index_list.append(bi)
-                dtrans_list.append(b.trans_diff([bi]))
-                j *= b.coeff_size
-            else:
-                if domain.dim == 1:
-                    index_list.append([])
-                    dtrans_list.append([])
-                else:
-                    index_list = list(zip(*index_list))
-                    dtrans_list = list(zip(*dtrans_list))
+        div = n
+        start = coeff_layout.start[:-1]
+        for i, s in rev_enumerate(coeff_layout.shape[:-1]):
+            div, mod = divmod(div, s)
+            index_list.append(mod)
+            dtrans_list.append(domain.bases[i].trans_diff(start[i]+mod))
+
+        if domain.dim == 1:
+            index_list.append([])
+            dtrans_list.append([])
+        else:
+            index_list = list(zip(*index_list))
+            dtrans_list = list(zip(*dtrans_list))
 
         slices = []
         for bl in index_list:
