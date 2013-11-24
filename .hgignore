@@ -5,3 +5,6 @@ syntax: glob
 *.DS_Store
 *.png
 *.db
+*.c
+*.so
+*.o
