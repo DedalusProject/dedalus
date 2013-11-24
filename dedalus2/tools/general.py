@@ -111,3 +111,12 @@ def reshape_vector(data, dim=2, axis=-1):
 
     return data.reshape(shape)
 
+
+def rev_enumerate(sequence):
+    """Simple reversed enumerate."""
+
+    n = len(sequence) - 1
+    for element in reversed(sequence):
+        yield n, element
+        n -= 1
+
