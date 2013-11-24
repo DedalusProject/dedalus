@@ -1,7 +1,7 @@
 from distutils.core import setup
 from distutils.extension import Extension
 from distutils.command.build_py import build_py
-from Cython.Distutils import build_ext
+from Cython.Build import cythonize
 import numpy as np
 import mpi4py
 import os
@@ -54,7 +54,7 @@ def fftw_get_include():
 def fftw_get_lib():
     base = find_path('fftw')
     return os.path.join(base,"lib")
-        
+
 def mpi_get_include():
     base = find_path('mpi')
     print(base)
@@ -63,7 +63,7 @@ def mpi_get_include():
 def mpi_get_lib():
     base = find_path('mpi')
     return os.path.join(base,"lib")
-        
+
 def get_mercurial_changeset_id(targetDir):
     """adapted from a script by Jason F. Harris, published at
 
@@ -73,11 +73,11 @@ def get_mercurial_changeset_id(targetDir):
     import subprocess
     import re
     getChangeset = subprocess.Popen('hg parent --template "{node|short}" --cwd ' + targetDir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-        
+
     if (getChangeset.stderr.read() != ""):
         print("Error in obtaining current changeset of the Mercurial repository")
         changeset = None
-        
+
     changeset = getChangeset.stdout.read()
     if (not re.search("^[0-9a-f]{12}$", changeset)):
         print("Current changeset of the Mercurial repository is malformed")
@@ -85,13 +85,12 @@ def get_mercurial_changeset_id(targetDir):
 
     return changeset
 
-
 class my_build_py(build_py):
     def run(self):
         # honor the --dry-run flag
         if not self.dry_run:
             target_dir = os.path.join(self.build_lib,'dedalus2')
-            src_dir =  os.getcwd() 
+            src_dir =  os.getcwd()
             changeset = get_mercurial_changeset_id(src_dir)
             self.mkpath(target_dir)
             with open(os.path.join(target_dir, '__hg_version__.py'), 'w') as fobj:
@@ -99,24 +98,26 @@ class my_build_py(build_py):
 
             build_py.run(self)
 
+fftw_ext = Extension(
+    name='dedalus2.tools.fftw.fftw_wrappers',
+    sources=['dedalus2/tools/fftw/fftw_wrappers.pyx'],
+    include_dirs=["dedalus2/tools/fftw", mpi4py.get_include(), fftw_get_include(), mpi_get_include()],
+    libraries=['fftw3_mpi', 'fftw3', 'm'],
+    library_dirs=[fftw_get_lib()]
+    )
+
 setup(
-    name='dedalus',
-    version='2.0a',
-    author='Keaton Burns',
+    name='Dedalus2',
+    version='2.0.1',
+    author='Keaton J. Burns',
     author_email='keaton.burns@gmail.com',
     license='GPL3',
-    packages = ['dedalus.data',
+    packages = ['dedalus',
+                'dedalus.data',
                 'dedalus.pde',
-                'dedalus',
                 'dedalus.tools',
                 'dedalus.tools.fftw'],
+    cmdclass = {'build_py': my_build_py},
     include_dirs = [np.get_include()],
-    cmdclass = {'build_ext': build_ext,
-                'build_py': my_build_py},
-    ext_modules = [Extension("dedalus2.tools.fftw.fftw",
-                             ["dedalus2/tools/fftw/_fftw.pyx"],
-                             libraries=["fftw3_mpi", "fftw3" ,"m"],
-                             #extra_objects=[os.path.join(fftw_get_lib(),"libfftw3_mpi.a"), os.path.join(fftw_get_lib(),"libfftw3.a")],
-                             include_dirs=["dedalus2/tools/fftw", mpi4py.get_include(), fftw_get_include(), mpi_get_include()],
-                             library_dirs=[fftw_get_lib()])]
+    ext_modules = cythonize([fftw_ext], include_path=[mpi4py.get_include()])
     )
