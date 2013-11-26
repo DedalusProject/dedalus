@@ -3,10 +3,12 @@
 import numpy as np
 from scipy import sparse
 
+from ..tools.general import OrderedSet
+
 
 def get_fields(expressions):
 
-    fields = set()
+    fields = OrderedSet()
     for re in expressions:
         if re is not None:
             fields.update(re.field_set())

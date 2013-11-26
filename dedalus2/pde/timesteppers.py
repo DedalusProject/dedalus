@@ -66,8 +66,6 @@ class IMEXBase:
         LX.rotate()
         F.rotate()
 
-
-
         pencilset.get_system(state)
         for pencil in pencilset.pencils:
             pencil.data = pencil.M.dot(pencil.data)

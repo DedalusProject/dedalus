@@ -2,6 +2,7 @@
 
 import numpy as np
 import types
+import collections
 
 
 class CachedAttribute:
@@ -82,6 +83,20 @@ class CachedFunction:
             self.cache[args] = self.function(*args)
 
         return self.cache[args]
+
+
+class OrderedSet(collections.OrderedDict):
+    """Ordered set based on uniqueness of dictionary keys."""
+
+    def update(self, *args):
+
+        for arg in args:
+            for item in arg:
+                self.add(item)
+
+    def add(self, item):
+
+        self[item] = None
 
 
 def interleaved_view(data):

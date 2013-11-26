@@ -6,6 +6,8 @@ import numpy as np
 # # Import after definitions to resolve cyclic dependencies
 # from .field import Field
 
+from ..tools.general import OrderedSet
+
 
 class Operator:
 
@@ -68,7 +70,7 @@ class Operator:
     def field_set(self, include_out=False):
 
         # Recursively collect field arguments
-        fields = set()
+        fields = OrderedSet()
         for a in self.args:
             if isinstance(a, Field):
                 fields.add(a)
