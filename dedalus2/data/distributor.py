@@ -42,7 +42,7 @@ class Distributor:
         self.mesh = np.array([i for i in mesh if (i>1)], dtype=int)
 
         # Reconcile mesh
-        if mesh.size >= domain.dim:
+        if self.mesh.size >= domain.dim:
             raise ValueError("Mesh must have lower dimension than domain.")
         if np.prod(self.mesh) > self.size:
             raise ValueError("Insufficient processes for specified mesh.")
