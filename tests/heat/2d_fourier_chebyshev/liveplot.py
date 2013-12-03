@@ -17,9 +17,9 @@ units = True
 static_scale = False
 
 # Read storage
-data = shelve.open('data.db', flag='r')
+data = shelve.open('data_0.db', flag='r')
 t = data['t']
-x = data['z'][0]
+x = data['z'][0,:]
 y = data['x'][:,0]
 fields = [data[fn].real for fn in fnames]
 
@@ -77,9 +77,9 @@ def create_limits_mesh(x, y):
     shape = x.shape
     xm = np.zeros((y.size+1, x.size+1))
     ym = np.zeros((y.size+1, x.size+1))
-    xm[: 0] = x[0] - xd[0] / 2.
+    xm[:, 0] = x[0] - xd[0] / 2.
     xm[:, 1:-1] = x[:-1] + xd / 2.
-    xm[:, -1] = x[-1] + yd[-1] / 2.
+    xm[:, -1] = x[-1] + xd[-1] / 2.
     ym[0, :] = y[0] - yd[0] / 2.
     ym[1:-1, :] = (y[:-1] + yd / 2.)[:, None]
     ym[-1, :] = y[-1] + yd[-1] / 2.
