@@ -3,7 +3,7 @@
 import numpy as np
 import time
 import shelve
-from dedalus2_temp.public import *
+from dedalus2.public import *
 
 
 # Set domain
