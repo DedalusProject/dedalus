@@ -3,7 +3,7 @@
 import numpy as np
 import time
 import shelve
-from dedalus2.public import *
+from dedalus2_temp.public import *
 
 
 # Set domain
@@ -31,10 +31,6 @@ heat_eq.LR = lambda d_trans: np.array([[0., 0.],
                                        [1., 0.]])
 
 def b(d_trans):
-  dx = d_trans[0]
-  if dx == 0:
-    return np.array([1., 1.])
-  else:
     return np.array([0., 0.])
 
 heat_eq.b = b
@@ -46,15 +42,16 @@ ts = timesteppers.CNAB3
 int = Integrator(pde, domain, ts)
 
 # Initial conditions
-x, z = domain.grids
+x = domain.grid(0)
+z = domain.grid(1)
 y = int.state['y']
 dy = int.state['dy']
-y['X'] = np.sin(np.pi*z)*np.cos(np.pi*x) + 100.*np.sin(np.pi*8.*z)*np.cos(np.pi*8.*x)
-dy['xk'] = y.differentiate(1)
+y['g'] = np.sin(np.pi*z)*np.sin(np.pi*x) + np.sin(np.pi*8.*z)*np.sin(np.pi*8.*x)
+y.differentiate(1, out=dy)
 
 # Integration parameters
-c1 = (np.pi)**2 + (np.pi)**2
-c8 = (8.*np.pi)**2 + (8.*np.pi)**2
+c1 = 2*(np.pi)**2
+c8 = 2*(8.*np.pi)**2
 
 int.dt = 1. / c8 # Resolve both scales
 #int.dt = 2.399 / c8 # Resolve c1 scale.  c8 mode will decay correctly but oscillate
@@ -63,15 +60,15 @@ int.dt = 1. / c8 # Resolve both scales
 print('h c1 = %f' %(int.dt*c1))
 print('h c8 = %f' %(int.dt*c8))
 
-int.sim_stop_time = int.dt * 200
+int.sim_stop_time = int.dt * 100
 int.wall_stop_time = np.inf
 int.stop_iteration = np.inf
 
 # Create storage lists
 t_list = [int.time]
-y_list = [np.copy(y['X'])]
-dy_list = [np.copy(dy['X'])]
-E_list = [np.sum(np.abs(y['X'])**2)]
+y_list = [np.copy(y['g'])]
+dy_list = [np.copy(dy['g'])]
+E_list = [np.sum(np.abs(y['g'])**2)]
 copy_cadence = 1
 
 # Main loop
@@ -84,9 +81,9 @@ while int.ok:
     # Update storage lists
     if int.iteration % copy_cadence == 0:
         t_list.append(int.time)
-        y_list.append(np.copy(y['X']))
-        dy_list.append(np.copy(dy['X']))
-        E_list.append(np.sum(np.abs(y['X'])**2))
+        y_list.append(np.copy(y['g']))
+        dy_list.append(np.copy(dy['g']))
+        E_list.append(np.sum(np.abs(y['g'])**2))
 
     # Print progress
     if int.iteration % copy_cadence == 0:
@@ -95,9 +92,9 @@ while int.ok:
 # Store final state
 if int.iteration % copy_cadence != 0:
     t_list.append(int.time)
-    y_list.append(np.copy(y['X']))
-    dy_list.append(np.copy(dy['X']))
-    E_list.append(np.sum(np.abs(y['X'])**2))
+    y_list.append(np.copy(y['g']))
+    dy_list.append(np.copy(dy['g']))
+    E_list.append(np.sum(np.abs(y['g'])**2))
 
 end_time = time.time()
 
@@ -109,7 +106,7 @@ print('Average timestep:', int.time / int.iteration)
 print('-' * 20)
 
 # Write storage lists
-shelf = shelve.open('data.db', flag='n')
+shelf = shelve.open('data_%i.db' %domain.distributor.rank, flag='n')
 shelf['t'] = np.array(t_list)
 shelf['x'] = x
 shelf['z'] = z
