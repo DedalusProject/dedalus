@@ -111,9 +111,15 @@ class Pencil:
 
         # Reference nonlinear expressions
         self.F = problem.F
+        # self.BL = problem.BL
+        # self.BR = problem.BR
+        # self.BI = problem.BI
         self.b = np.kron(problem.b(D), basis.bc_row[:,0])
         self.bc_rows = list(rows)
         self.bc_f = [self.b[r] for r in rows]
         self.parameters = problem.parameters
         self.F_eval = sparse.kron(np.eye(problem.size), basis.Pre)
+        # self.BL_eval = sparse.kron(np.eye(problem.size), basis.Left)
+        # self.BR_eval = sparse.kron(np.eye(problem.size), basis.Right)
+        # self.BI_eval = sparse.kron(np.eye(problem.size), basis.Int)
 
