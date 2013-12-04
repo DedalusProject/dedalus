@@ -29,7 +29,7 @@ class Integrator:
             pencil.build_matrices(problem, primary_basis)
 
         # Initialize timestepper
-        self.timestepper = timestepper(self.pencilset, self.state, self.rhs)
+        self.timestepper = timestepper(problem, self.pencilset, self.state, self.rhs)
 
         # Integration parameters
         self.dt = 0.01

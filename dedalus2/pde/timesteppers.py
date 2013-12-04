@@ -10,7 +10,7 @@ from ..data.system import System
 class IMEXBase:
     """Base class for implicit-explicit timesteppers."""
 
-    def __init__(self, pencilset, state, rhs):
+    def __init__(self, problem, pencilset, state, rhs):
 
         # Store inputs
         self.pencilset = pencilset
@@ -39,9 +39,9 @@ class IMEXBase:
         self.F_expressions = []
         for fn in state.field_names:
             locals()[fn] = state.fields[fn]
-        for key, val in self.pencilset.pencils[0].parameters.items():
+        for key, val in problem.parameters.items():
             locals()[key] = val
-        for f in self.pencilset.pencils[0].F:
+        for f in problem.F:
             if f is None:
                 self.F_expressions.append(None)
             else:
