@@ -5,7 +5,8 @@ import numpy as np
 from .distributor import Distributor
 from .field import Field
 from .pencil import Pencil
-from ..tools.general import CachedMethod, reshape_vector
+from ..tools.cache import CachedMethod
+from ..tools.array import reshape_vector
 
 
 class Domain:

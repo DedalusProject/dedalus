@@ -4,10 +4,10 @@ import numpy as np
 from scipy import sparse
 from scipy import fftpack
 
-from ..tools.general import CachedAttribute
-from ..tools.general import CachedMethod
-from ..tools.general import interleaved_view
-from ..tools.general import reshape_vector
+from ..tools.cache import CachedAttribute
+from ..tools.cache import CachedMethod
+from ..tools.array import interleaved_view
+from ..tools.array import reshape_vector
 
 
 class Basis:
