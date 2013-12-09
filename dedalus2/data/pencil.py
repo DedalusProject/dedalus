@@ -43,7 +43,7 @@ class PencilSet:
             end = start + self.stride
 
             #field.require_coeff_space()
-            field.layout = field.domain().distributor.coeff_layout
+            field.layout = field.domain.distributor.coeff_layout
             np.copyto(field.data, self.data[..., start:end])
 
     def _construct_pencil_info(self, domain):

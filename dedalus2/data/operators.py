@@ -426,7 +426,7 @@ def unique_domain(fields):
     """Check if a set of fields are defined over the same domain."""
 
     # Get set of domains
-    domains = set(f.domain() for f in fields)
+    domains = set(f.domain for f in fields)
 
     # Return domain if unique
     if len(domains) == 1:

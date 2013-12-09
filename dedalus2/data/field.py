@@ -1,11 +1,12 @@
+"""
+Field class definition.
 
+"""
 
 import numpy as np
 import weakref
 
-
-# Bottom of module:
-# # Import after definitions to resolve cyclic dependencies
+# Bottom-import to resolve cyclic dependencies:
 # from .operators import Negation, Addition, Subtraction, Multiplication
 
 
@@ -21,7 +22,7 @@ class Field:
             self.name = 'F' + str(id(self))
 
         # Weak-reference domain to allow cyclic garbage collection
-        self.domain = weakref.ref(domain)
+        self._domain_weak_ref = weakref.ref(domain)
 
         # Increment domain field count
         domain._field_count += 1
@@ -42,11 +43,15 @@ class Field:
         self._embedding = layout.view_embedding(self._buffer)
         self.data = layout.view_data(self._buffer)
 
+    @property
+    def domain(self):
+        return self._domain_weak_ref()
+
     def __del__(self):
 
         # Add self to domain manager
-        if self.domain():
-            self.domain()._collect_field(self)
+        if self.domain:
+            self.domain._collect_field(self)
 
     def __repr__(self):
         return self.name
@@ -75,7 +80,7 @@ class Field:
     def __getitem__(self, layout):
 
         if isinstance(layout, str):
-            layout = self.domain().distributor.string_layouts[layout]
+            layout = self.domain.distributor.string_layouts[layout]
 
         if self.layout.index < layout.index:
             while self.layout.index < layout.index:
@@ -89,7 +94,7 @@ class Field:
     def __setitem__(self, layout, data):
 
         if isinstance(layout, str):
-            layout = self.domain().distributor.string_layouts[layout]
+            layout = self.domain.distributor.string_layouts[layout]
 
         self.layout = layout
         np.copyto(self.data, data)
@@ -97,12 +102,12 @@ class Field:
     def towards_grid_space(self):
         """Change to next layout towards grid space."""
 
-        self.domain().distributor.increment_layout(self)
+        self.domain.distributor.increment_layout(self)
 
     def towards_coeff_space(self):
         """Change to next layout towards coefficient space."""
 
-        self.domain().distributor.decrement_layout(self)
+        self.domain.distributor.decrement_layout(self)
 
     def require_grid_space(self, axis=None):
         """Require one axis (default: all axes) to be in grid space."""
@@ -129,7 +134,7 @@ class Field:
 
         # Handle negative axes
         if axis < 0:
-            axis += self.domain().dim
+            axis += self.domain.dim
 
         if self.layout.grid_space[axis]:
             while not self.layout.local[axis]:
@@ -147,7 +152,7 @@ class Field:
 
         # Call basis differentiation
         out.layout = self.layout
-        self.domain().bases[axis].differentiate(self.data, out.data, axis=axis)
+        self.domain.bases[axis].differentiate(self.data, out.data, axis=axis)
 
     def integrate(self, axes=None):
         """Integrate field over domain."""
@@ -159,20 +164,20 @@ class Field:
 
         # Integrate over all axes by default
         if axes is None:
-            axes = range(self.domain().dim)
+            axes = range(self.domain.dim)
         else:
             axes = tuple(axes)
 
         # Integrate by coefficients
         data = self.data
         for i in reversed(sorted(axes)):
-            b = self.domain().bases[i]
+            b = self.domain.bases[i]
             data = b.integrate(data, i)
             data = b.grid_dtype(data)
 
         return data
 
 
-# Import after definitions to resolve cyclic dependencies
+# Bottom-import to resolve cyclic dependencies:
 from .operators import Negation, Addition, Subtraction, Multiplication
 
