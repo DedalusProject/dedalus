@@ -1,7 +1,11 @@
+"""
+Tools for emulating multiple dispatch.
+
+"""
 
 
 class MultiClass(type):
-    """Metaclass that dispatches instantiation to subclasses."""
+    """Metaclass for dispatching instantiation to subclasses."""
 
     def __call__(cls, *args, **kw):
         """Dispatch instantiation based on the supplied arguments."""
