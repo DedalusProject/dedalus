@@ -3,6 +3,8 @@ Tools for caching computations.
 
 """
 
+import types
+
 
 class CachedAttribute:
     """Descriptor for building attributes during first access."""

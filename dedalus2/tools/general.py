@@ -3,7 +3,6 @@ Extended built-ins, etc.
 
 """
 
-import types
 import collections
 
 
