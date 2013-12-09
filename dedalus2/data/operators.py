@@ -139,7 +139,7 @@ class Operator:
         self.operate(out)
 
         # Reset to free temporary field arguments
-        self.reset()
+        self._reset()
 
         return out
 
