@@ -1,29 +1,47 @@
+"""
+Operator classes for fields.
 
+"""
 
 import numpy as np
 
-# Bottom of module:
-# # Import after definitions to resolve cyclic dependencies
-# from .field import Field
-
 from ..tools.general import OrderedSet
+from ..tools.dispatch import MultiClass
+# Bottom-import to resolve cyclic dependencies:
+# from .field import Field
 
 
 class Operator:
+    """
+    Base class for operations on fields.
+
+    Parameters
+    ----------
+    *args : fields, operators, and numeric types
+        Operands. Number must match class attribute `arity`, if present.
+    out : field, optional
+        Output field.  If not specified, a new field will be used.
+
+    Notes
+    -----
+    Operators are stacked (i.e. provided as inputs to other operators) to
+    construct trees that represent more complicated expressions.  Nodes
+    are evaluated by first recursively evaluating their subtrees, and then
+    calling the `operate` method.
+
+    """
 
     name = 'Op'
     arity = None
 
     def __init__(self, *args, out=None):
 
-        # Inputs
+        # Initial attributes
         self.args = list(args)
+        self.original_args = list(args)  # For resetting
         self.out = out
 
-        # Store original arguments for resetting
-        self.original_args = list(args)
-
-        # Check number of arguments
+        # Check arity
         if self.arity is not None:
             if len(args) != self.arity:
                 raise ValueError("Wrong number of arguments.")
@@ -31,11 +49,11 @@ class Operator:
         # Check that domains match
         self.domain = unique_domain(self.field_set(include_out=True))
         if not self.domain:
-            raise ValueError("Arguments / outputs have multiple domains.")
+            raise ValueError("Arguments/outputs have multiple domains.")
 
     def __repr__(self):
 
-        # Represent as "name(args)"
+        # Represent as "name(*args)"
         repr_op = self.name
         repr_args = [a.__repr__() for a in self.args]
 
@@ -62,12 +80,13 @@ class Operator:
     def __rmul__(self, other):
         return Multiplication(other, self)
 
-    def reset(self):
+    def _reset(self):
 
         # Restore original arguments
         self.args = list(self.original_args)
 
     def field_set(self, include_out=False):
+        """Set of field leaves."""
 
         # Recursively collect field arguments
         fields = OrderedSet()
@@ -77,45 +96,38 @@ class Operator:
             elif isinstance(a, Operator):
                 fields.update(a.field_set(include_out=include_out))
 
-        # Add output field if requested
+        # Add output field as directed
         if include_out:
             if self.out:
                 fields.add(self.out)
 
         return fields
 
-    def evaluate(self):
+    def evaluate(self, force=True):
+        """Recursively evaluate operation."""
 
-        # Create flag to track if all arguments are evaluable
-        arg_flag = True
-
-        # Recursively attempt evaluation of operator arguments
-        # Note: We use a flag in order to attempt evaluation of all operator
-        #       arguments, i.e. not just returning None after reaching the
-        #       first unevaluable operator argument.
+        # Recursively attempt evaluation of all operator arguments
+        # Track evaluation success with flag
+        all_eval = True
         for i, a in enumerate(self.args):
             if isinstance(a, Operator):
-                a_eval = a.evaluate()
-                # If argument evaluates, replace it with its result
+                a_eval = a.evaluate(force=force)
+                # If evaluation succeeds, substitute result
                 if a_eval:
                     self.args[i] = a_eval
-                # Otherwise change argument flag
+                # Otherwise change flag
                 else:
-                    arg_flag = False
+                    all_eval = False
 
         # Return None if any arguments are not evaluable
-        if not arg_flag:
+        if not all_eval:
             return None
 
-        # Return None if field arguments have different layouts
-        layout = unique_layout(self.field_set())
-        if not layout:
-            return None
-
-        # Return None if operator conditions are not satisfied
-        conditions = self.conditions(layout)
-        if not conditions:
-            return None
+        # Check conditions unless forcing evaluation
+        if not force:
+            # Return None if operator conditions are not satisfied
+            if not self.check_conditions():
+                return None
 
         # Allocate output field if necessary
         if self.out:
@@ -123,27 +135,34 @@ class Operator:
         else:
             out = self.domain.new_field()
 
-        # Set output layout to argument layout
-        out.layout = layout
-
         # Perform operation
-        result = self.operation(out)
+        self.operate(out)
 
-        # Reset self to free field arguments
+        # Reset to free temporary field arguments
         self.reset()
 
-        return result
+        return out
 
-    def conditions(self, layout):
+    def attempt(self):
+        """Recursively attempt to evaluate operation."""
 
-        return True
+        return self.evaluate(force=False)
 
-    def operation(self, out):
+    def check_conditions(self):
+        """Check that all argument fields are in proper layouts."""
 
-        # This method must be implemented in derived classes and should:
-        #   - take an output field as its only argument, and return this field
-        #   - assume all operator arguments have been evaluated to fields
-        #   - not modify arguments
+        # This method must be implemented in derived classes and should return
+        # a boolean indicating whether the operation can be computed without
+        # changing the layout of any of the field arguments.
+
+        raise NotImplementedError()
+
+    def operate(self, out):
+        """Perform operation."""
+
+        # This method must be implemented in derived classes and should take an
+        # output field as its only argument, and evaluate the operation into
+        # this field without modifying the data of the arguments.
 
         raise NotImplementedError()
 
@@ -154,17 +173,18 @@ class Negation(Operator):
     arity = 1
 
     def __str__(self):
-
         # Print as "(-arg)"
         str_arg = self.args[0].__str__()
-
         return '(' + '-' + str_arg + ')'
 
-    def operation(self, out):
+    def check_conditions(self):
+        # No conditions
+        return True
 
-        out.data[:] = -self.args[0].data
-
-        return out
+    def operate(self, out):
+        # Negate in current layout
+        layout = self.args[0].layout
+        out[layout] = -self.args[0][layout]
 
 
 class Arithmetic(Operator):
@@ -172,64 +192,188 @@ class Arithmetic(Operator):
     arity = 2
 
     def __str__(self):
-
         # Print as "(arg1 [] arg2)"
         str_op = self.str_op
         str_args = [a.__str__() for a in self.args]
-
         return '(' + str_op.join(str_args) + ')'
 
-    def get_data(self, arg):
 
-        if isinstance(arg, Field):
-            return arg.data
-        elif np.isscalar(arg):
-            return arg
-        else:
-            raise TypeError("Unsupported type: %s" %type(arg).__name__)
-
-
-class Addition(Arithmetic):
+class Addition(Arithmetic, metaclass=MultiClass):
 
     name = 'Add'
     str_op = ' + '
 
-    def operation(self, out):
 
-        out.data[:] = self.get_data(self.args[0]) + self.get_data(self.args[1])
+class AddFieldField(Addition):
 
-        return out
+    @staticmethod
+    def _check_args(arg0, arg1):
+        return (is_field(arg0) and is_field(arg1))
+
+    def check_conditions(self):
+        # Layouts must match
+        return (self.args[0].layout is self.args[1].layout)
+
+    def operate(self, out):
+        # Add in args[0] layout (arbitrary choice)
+        layout = self.args[0].layout
+        out[layout] = self.args[0][layout] + self.args[1][layout]
 
 
-class Subtraction(Arithmetic):
+class AddScalarField(Addition):
+
+    @staticmethod
+    def _check_args(arg0, arg1):
+        return (is_scalar(arg0) and is_field(arg1))
+
+    def check_conditions(self):
+        # Must be in grid space
+        grid_layout = self.domain.distributor.grid_layout
+        return (self.args[1].layout is grid_layout)
+
+    def operate(self, out):
+        # Add in grid space
+        out['g'] = self.args[0] + self.args[1]['g']
+
+
+class AddFieldScalar(Addition):
+
+    @staticmethod
+    def _check_args(arg0, arg1):
+        return (is_field(arg0) and is_scalar(arg1))
+
+    def check_conditions(self):
+        # Must be in grid space
+        grid_layout = self.domain.distributor.grid_layout
+        return (self.args[0].layout is grid_layout)
+
+    def operate(self, out):
+        # Add in grid space
+        out['g'] = self.args[0]['g'] + self.args[1]
+
+
+class Subtraction(Arithmetic, metaclass=MultiClass):
 
     name = 'Sub'
     str_op = ' - '
 
-    def operation(self, out):
 
-        out.data[:] = self.get_data(self.args[0]) - self.get_data(self.args[1])
+class SubFieldField(Subtraction):
 
-        return out
+    @staticmethod
+    def _check_args(arg0, arg1):
+        return (is_field(arg0) and is_field(arg1))
+
+    def check_conditions(self):
+        # Layouts must match
+        return (self.args[0].layout is self.args[1].layout)
+
+    def operate(self, out):
+        # Subtract in args[0] layout (arbitrary choice)
+        layout = self.args[0].layout
+        out[layout] = self.args[0][layout] - self.args[1][layout]
 
 
-class Multiplication(Arithmetic):
+class SubScalarField(Subtraction):
+
+    @staticmethod
+    def _check_args(arg0, arg1):
+        return (is_scalar(arg0) and is_field(arg1))
+
+    def check_conditions(self):
+        # Must be in grid space
+        grid_layout = self.domain.distributor.grid_layout
+        return (self.args[1].layout is grid_layout)
+
+    def operate(self, out):
+        # Subtract in grid space
+        out['g'] = self.args[0] - self.args[1]['g']
+
+
+class SubFieldScalar(Subtraction):
+
+    @staticmethod
+    def _check_args(arg0, arg1):
+        return (is_field(arg0) and is_scalar(arg1))
+
+    def check_conditions(self):
+        # Must be in grid space
+        grid_layout = self.domain.distributor.grid_layout
+        return (self.args[0].layout is grid_layout)
+
+    def operate(self, out):
+        # Subtract in grid space
+        out['g'] = self.args[0]['g'] - self.args[1]
+
+
+class Multiplication(Arithmetic, metaclass=MultiClass):
 
     name = 'Mult'
     str_op = ' * '
 
-    def conditions(self, layout):
 
-        flag = True
-        if not all(layout.grid_space):
-            flag = False
-        return flag
+class MultFieldField(Multiplication):
 
-    def operation(self, out):
+    @staticmethod
+    def _check_args(arg0, arg1):
+        return (is_field(arg0) and is_field(arg1))
 
-        out.data[:] = self.get_data(self.args[0]) * self.get_data(self.args[1])
+    def check_conditions(self):
+        # Must be in grid space
+        grid_layout = self.domain.distributor.grid_layout
+        return ((self.args[0].layout is grid_layout) and
+                (self.args[1].layout is grid_layout))
 
-        return out
+    def operate(self, out):
+        # Multiply in grid space
+        out['g'] = self.args[0]['g'] * self.args[1]['g']
+
+
+class MultScalarField(Multiplication):
+
+    @staticmethod
+    def _check_args(arg0, arg1):
+        return (is_scalar(arg0) and is_field(arg1))
+
+    def check_conditions(self):
+        # No conditions
+        return True
+
+    def operate(self, out):
+        # Multiply in current layout
+        layout = self.args[1].layout
+        out[layout] = self.args[0] * self.args[1][layout]
+
+
+class MultFieldScalar(Multiplication):
+
+    @staticmethod
+    def _check_args(arg0, arg1):
+        return (is_field(arg0) and is_scalar(arg1))
+
+    def check_conditions(self):
+        # No conditions
+        return True
+
+    def operate(self, out):
+        # Multiply in current layout
+        layout = self.args[0].layout
+        out[layout] = self.args[0][layout] * self.args[1]
+
+
+class MagSquared(Operator):
+
+    name = 'MagSq'
+    arity = 1
+
+    def check_conditions(self):
+        # Must be in grid space
+        grid_layout = self.domain.distributor.grid_layout
+        return (self.args[0].layout is grid_layout)
+
+    def operate(self, out):
+        # Multiply by complex conjugate in grid space
+        out['g'] = self.args[0]['g'] * self.args[0]['g'].conj()
 
 
 def create_diff_operators(domain):
@@ -246,51 +390,40 @@ def create_diff_operators(domain):
             index = i
             basis = domain.bases[i]
 
-            def conditions(self, layout):
+            def check_conditions(self):
+                # Must be in ceoff space and local
+                is_coeff = not self.args[0].layout.grid_space[self.index]
+                is_local = self.args[0].layout.local[self.index]
+                return (is_coeff and is_local)
 
-                flag = True
-                if layout.grid_space[self.index]:
-                    flag = False
-                if not layout.local[self.index]:
-                    flag = False
-
-                return flag
-
-                #return (not layout.grid_space[self.index])
-
-            def operation(self, out):
-
+            def operate(self, out):
+                # Differentiate in proper space
+                self.args[0].require_coeff_space(self.index)
+                self.args[0].require_local(self.index)
+                out.layout = self.args[0].layout
                 self.basis.differentiate(self.args[0].data,
                                          out.data,
                                          axis=self.index)
-
-                return out
 
         ops.append(diff)
 
     return ops
 
 
-class MagSquared(Operator):
+def is_field(arg):
+    """Check if an object is a field or an operator (resolves to a field)."""
 
-    name = 'MagSq'
-    arity = 1
+    return isinstance(arg, (Field, Operator))
 
-    def conditions(self, layout):
 
-        flag = True
-        if not all(layout.grid_space):
-            flag = False
-        return flag
+def is_scalar(arg):
+    """Check if an object is a scalar."""
 
-    def operation(self, out):
-
-        out.data[:] = self.args[0].data * self.args[0].data.conj()
-
-        return out
+    return np.isscalar(arg)
 
 
 def unique_domain(fields):
+    """Check if a set of fields are defined over the same domain."""
 
     # Get set of domains
     domains = set(f.domain() for f in fields)
@@ -303,19 +436,6 @@ def unique_domain(fields):
         return None
 
 
-def unique_layout(fields):
-
-    # Get set of layouts
-    layouts = set(f.layout for f in fields)
-
-    # Return layout if unique
-    if len(layouts) == 1:
-        return list(layouts)[0]
-    # Otherwise return None
-    else:
-        return None
-
-
-# Import after definitions to resolve cyclic dependencies
+# Bottom-import to resolve cyclic dependencies:
 from .field import Field
 

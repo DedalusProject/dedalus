@@ -35,7 +35,7 @@ def compute_expressions(rhs_expressions, out_system):
     # Attempt evaluation
     for j, re in enumerate(expressions):
         if re is not None:
-            re_eval = re.evaluate()
+            re_eval = re.attempt()
             if re_eval is not None:
                 fn = out_system.field_names[j]
                 layout = re_eval.layout
@@ -55,7 +55,7 @@ def compute_expressions(rhs_expressions, out_system):
         # Attempt evaluation
         for j, re in enumerate(expressions):
             if re is not None:
-                re_eval = re.evaluate()
+                re_eval = re.attempt()
                 if re_eval is not None:
                     fn = out_system.field_names[j]
                     layout = re_eval.layout
@@ -77,7 +77,7 @@ def compute_expressions(rhs_expressions, out_system):
         # Attempt evaluation
         for j, re in enumerate(expressions):
             if re is not None:
-                re_eval = re.evaluate()
+                re_eval = re.attempt()
                 if re_eval is not None:
                     fn = out_system.field_names[j]
                     layout = re_eval.layout
