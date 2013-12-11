@@ -1,4 +1,7 @@
+"""
+Spectral bases.
 
+"""
 
 import numpy as np
 from scipy import sparse
@@ -11,19 +14,33 @@ from ..tools.array import reshape_vector
 
 
 class Basis:
-    """Base class for all bases."""
+    """
+    Base class for spectral bases.
 
-    # Abstract attributes: must be defined by subclasses
-    #   self.interval
-    #   self.grid_size
-    #   self.grid_embed
-    #   self.grid_dtype
-    #   self.coeff_size
-    #   self.coeff_embed
-    #   self.coeff_dtype
+    Parameters
+    ----------
+    grid_size : int
+        Number of points in grid space
+    interval : tuple of floats
+        Spatial domain of basis
+
+    Attributes
+    ----------
+    grid_embed : int
+        Padded number of points to store grid data.
+    grid_dtype : dtype
+        Data type in grid space
+    coeff_size : int
+        Number of points in grid/coeff space
+    coeff_embed : int
+        Padded number of points to store coeff data.
+    coeff_dtype : dtype
+        Data type in coeff space
+
+    """
 
     def set_dtypes(self, grid_dtype):
-        """Specify datatypes."""
+        """Set transforms based on datatypes."""
 
         raise NotImplementedError()
 
