@@ -14,5 +14,5 @@ from .pde import problems
 from .pde import timesteppers
 
 from .tools import general
-from .tools import plot_op
+#from .tools import plot_op
 

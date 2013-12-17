@@ -66,8 +66,8 @@ class PencilSet:
             index_list.append([])
             dtrans_list.append([])
         else:
-            index_list = list(zip(*index_list))
-            dtrans_list = list(zip(*dtrans_list))
+            index_list = list(zip(*reversed(index_list)))
+            dtrans_list = list(zip(*reversed(dtrans_list)))
 
         slices = []
         for bl in index_list:
