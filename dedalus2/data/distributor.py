@@ -1,21 +1,17 @@
 
 
 import numpy as np
-try:
-    from mpi4py import MPI
-    print('Successfully imported mpi4py.') #LOG
-except ImportError:
-    MPI = None
-    print('Cannot import mpi4py.') #LOG
+from mpi4py import MPI
 
+from ..tools.logging import logger
 from ..tools.general import rev_enumerate
 try:
     from ..tools.fftw import fftw_wrappers as fftw
-    print("Successfully imported fftw wrappers.") #LOG
+    logger.debug("Successfully imported FFTW wrappers.")
     fftw.fftw_mpi_init()
 except ImportError:
-    print("Cannot import fftw wrappers.") #LOG
-    print("Don't forget to build using: 'python3 setup.py build_ext --inplace'")
+    logger.warning("Cannot import FFTW wrappers.")
+    logger.warning("Don't forget to build using 'python3 setup.py build_ext --inplace'")
 
 
 class Distributor:
@@ -47,8 +43,9 @@ class Distributor:
         if np.prod(self.mesh) > self.size:
             raise ValueError("Insufficient processes for specified mesh.")
         elif self.size > np.prod(self.mesh):
-            #LOG warn if: More processes than needed for specified mesh.
-            pass
+            logger.warning("There are more available processes than will be "
+                           "utilized by the specified mesh.  Some processes "
+                           "may be idle.")
 
         # Create cartesian communicator for parallel runs
         if self.mesh.size:
