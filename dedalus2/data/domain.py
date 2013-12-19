@@ -49,7 +49,7 @@ class Domain:
     def _collect_field(self, field):
 
         # Clean field
-        field.layout = self.distributor.grid_layout
+        field.layout = self.distributor.coeff_layout
         field.data.fill(0)
 
         # Add to field list

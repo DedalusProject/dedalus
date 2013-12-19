@@ -31,7 +31,7 @@ class Field:
         self._buffer = domain.distributor.create_buffer()
 
         # Set initial layout
-        self.layout = domain.distributor.grid_layout
+        self.layout = domain.distributor.coeff_layout
 
     @property
     def layout(self):
