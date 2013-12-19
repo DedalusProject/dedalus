@@ -33,3 +33,12 @@ def reshape_vector(data, dim=2, axis=-1):
 
     return data.reshape(shape)
 
+
+def axslice(axis, start, stop, step=None):
+    """Slice array along a specified axis."""
+
+    slicelist = [slice(None)] * axis
+    slicelist.append(slice(start, stop, step))
+
+    return slicelist
+
