@@ -57,7 +57,7 @@ class PencilSet:
 
         div = n
         start = coeff_layout.start[:-1]
-        for i, s in enumerate(coeff_layout.shape[:-1]):
+        for i, s in rev_enumerate(coeff_layout.shape[:-1]):
             div, mod = divmod(div, s)
             index_list.append(mod)
             dtrans_list.append(domain.bases[i].trans_diff(start[i]+mod))
