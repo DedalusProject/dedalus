@@ -40,7 +40,6 @@ class Field:
     @layout.setter
     def layout(self, layout):
         self._layout = layout
-        self._embedding = layout.view_embedding(self._buffer)
         self.data = layout.view_data(self._buffer)
 
     @property
