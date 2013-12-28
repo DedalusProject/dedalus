@@ -151,99 +151,60 @@ class Layout:
         self.grid_space = tuple(grid_space)
         self.dtype = dtype
 
-        # Compute global shape and embed
+        # Compute global shape
         g_shape = np.zeros(domain.dim, dtype=int)
-        g_embed = np.zeros(domain.dim, dtype=int)
         for i, b in enumerate(domain.bases):
             if self.grid_space[i]:
                 g_shape[i] = b.grid_size
-                g_embed[i] = b.grid_embed
             else:
                 g_shape[i] = b.coeff_size
-                g_embed[i] = b.coeff_embed
 
-        # Compute distributed global shape and embed
+        # Compute distributed global shape
         dg_shape = []
-        dg_embed = []
         for i in range(domain.dim):
             if not self.local[i]:
                 dg_shape.append(g_shape[i])
-                dg_embed.append(g_embed[i])
         dg_shape = np.array(dg_shape, dtype=int)
-        dg_embed = np.array(dg_embed, dtype=int)
 
         # Compute blocks and distributed local start
-        blocks = np.ceil(dg_embed / mesh).astype(int)
+        blocks = np.ceil(dg_shape / mesh).astype(int)
         dl_start = coords * blocks
 
-        # Compute distributed local shape and embed
-        scut = np.floor(dg_shape / blocks).astype(int)
-        ecut = np.floor(dg_embed / blocks).astype(int)
+        # Compute distributed local shape
+        cuts = np.floor(dg_shape / blocks).astype(int)
         dl_shape = np.zeros(mesh.size, dtype=int)
-        dl_embed = np.zeros(mesh.size, dtype=int)
-        dl_shape[coords < scut] = blocks[coords < scut]
-        dl_embed[coords < ecut] = blocks[coords < ecut]
-        dl_shape[coords == scut] = (dg_shape - scut*blocks)[coords == scut]
-        dl_embed[coords == ecut] = (dg_embed - ecut*blocks)[coords == ecut]
+        dl_shape[coords < cuts] = blocks[coords < cuts]
+        dl_shape[coords == cuts] = (dg_shape - cuts*blocks)[coords == cuts]
 
-        # Compute local start, shape, and embed
+        # Compute local start and shape
         l_start = np.zeros(domain.dim, dtype=int)
         l_shape = np.zeros(domain.dim, dtype=int)
-        l_embed = np.zeros(domain.dim, dtype=int)
         j = 0
         for i in range(domain.dim):
             if self.local[i]:
                 l_shape[i] = g_shape[i]
-                l_embed[i] = g_embed[i]
             else:
                 l_start[i] = dl_start[j]
                 l_shape[i] = dl_shape[j]
-                l_embed[i] = dl_shape[j]
                 j += 1
 
         # Compute local strides and required allocation
-        nbytes = np.prod(l_embed) * np.dtype(dtype).itemsize
-        if nbytes:
-            self.strides = nbytes / np.cumprod(l_embed)
-        else:
-            self.strides = np.zeros(domain.dim, dtype=int)
+        nbytes = np.prod(l_shape) * np.dtype(dtype).itemsize
         self.alloc_doubles = nbytes // 8
 
-        # Create slice
-        self.slice = []
-        for i in range(domain.dim):
-            if self.local[i]:
-                self.slice.append(slice(None))
-            else:
-                start = l_start[i]
-                size = l_shape[i]
-                self.slice.append(slice(start, start+size))
-
-        # Store local start, shape, embed, and blocks
+        # Store local start, shape, and blocks
         self.start = l_start
         self.shape = l_shape
-        self.embed = l_embed
         self.blocks = blocks
 
     def view_data(self, buffer):
 
         # Create view of buffer
         data = np.ndarray(shape=self.shape,
-                          strides=self.strides,
                           dtype=self.dtype,
                           buffer=buffer)
 
         return data
-
-    def view_embedding(self, buffer):
-
-        # Create view of buffer
-        embedding = np.ndarray(shape=self.embed,
-                               strides=self.strides,
-                               dtype=self.dtype,
-                               buffer=buffer)
-
-        return embedding
 
 
 class Transform:
@@ -255,6 +216,32 @@ class Transform:
         self.layout1 = layout1
         self.axis = axis
         self.basis = basis
+
+        # Compute embedded shapes
+        shape0 = np.copy(layout0.shape)
+        shape0[axis] = basis.coeff_embed
+        shape1 = np.copy(layout1.shape)
+        shape1[axis] = basis.grid_embed
+
+        # Embedded dtypes
+        dtype0 = layout0.dtype
+        dtype1 = layout1.dtype
+
+        # Size
+        doubles0 = np.prod(shape0) * np.dtype(dtype0).itemsize // 8
+        doubles1 = np.prod(shape1) * np.dtype(dtype1).itemsize // 8
+
+        # Buffer size
+        buffsize = max(doubles0, doubles1)
+        self.buffer = fftw.create_buffer(buffsize)
+
+        # Create views
+        self.embed0 = np.ndarray(shape=shape0,
+                                 dtype=dtype0,
+                                 buffer = self.buffer)
+        self.embed1 = np.ndarray(shape=shape1,
+                                 dtype=dtype1,
+                                 buffer = self.buffer)
 
         # Compute required buffer size (in doubles)
         self.alloc_doubles = max(layout0.alloc_doubles, layout1.alloc_doubles)
@@ -276,7 +263,8 @@ class Transform:
         gdata = field.data
 
         # Call basis transform
-        self.basis.backward(cdata, gdata, axis=self.axis)
+        self.basis.pad(cdata, self.embed0, axis=self.axis)
+        self.basis.backward(self.embed0, gdata, axis=self.axis)
 
     def _forward(self, field):
 
@@ -286,7 +274,8 @@ class Transform:
         cdata = field.data
 
         # Call basis transform
-        self.basis.forward(gdata, cdata, axis=self.axis)
+        self.basis.forward(gdata, self.embed0, axis=self.axis)
+        self.basis.unpad(self.embed0, cdata, axis=self.axis)
 
     def _no_op_backward(self, field):
 
@@ -314,9 +303,9 @@ class Transpose:
         self.comm_sub = comm_cart.Sub(remain_dims)
 
         # FFTW transpose parameters
-        n0 = layout1.embed[axis]
-        n1 = layout0.embed[axis+1]
-        howmany = np.prod(layout0.embed[:axis]) * np.prod(layout0.embed[axis+2:])
+        n0 = layout1.shape[axis]
+        n1 = layout0.shape[axis+1]
+        howmany = np.prod(layout0.shape[:axis]) * np.prod(layout0.shape[axis+2:])
         block0 = layout0.blocks[axis]
         block1 = layout1.blocks[axis]
         dtype = layout0.dtype
@@ -335,14 +324,14 @@ class Transpose:
         else:
             # Create buffer for intermediate local transposes
             self._temp_buff = fftw.create_buffer(self.alloc_doubles)
-            self._rolled_axes = np.roll(np.arange(layout0.embed.size), -axis)
+            self._rolled_axes = np.roll(np.arange(layout0.shape.size), -axis)
             self.increment = self._gather_ldl
             self.decrement = self._scatter_ldl
 
     def _gather_d(self, field):
 
-        # Call FFTW plan on embedding view
-        view0 = field._embedding
+        # Call FFTW plan on data view
+        view0 = field.data
         self.fftw_plans.gather(view0)
 
         # Update layout
@@ -350,8 +339,8 @@ class Transpose:
 
     def _scatter_d(self, field):
 
-        # Call FFTW plan on embedding view
-        view1 = field._embedding
+        # Call FFTW plan on data view
+        view1 = field.data
         self.fftw_plans.scatter(view1)
 
         # Update layout
@@ -360,7 +349,7 @@ class Transpose:
     def _gather_ldl(self, field):
 
         # Local transpose axis to first index
-        view0 = field._embedding
+        view0 = field.data
         tr_view0 = np.transpose(view0, self._rolled_axes)
         temp_view = np.ndarray(shape=tr_view0.shape, dtype=tr_view0.dtype, buffer=self._temp_buff)
         np.copyto(temp_view, tr_view0)
@@ -372,7 +361,7 @@ class Transpose:
         field.layout = self.layout1
 
         # Local transpose first index to axis
-        view1 = field._embedding
+        view1 = field.data
         tr_view1 = np.transpose(view1, self._rolled_axes)
         temp_view.resize(tr_view1.shape)
         np.copyto(tr_view1, temp_view)
@@ -380,7 +369,7 @@ class Transpose:
     def _scatter_ldl(self, field):
 
         # Local transpose axis to first index
-        view1 = field._embedding
+        view1 = field.data
         tr_view1 = np.transpose(view1, self._rolled_axes)
         temp_view = np.ndarray(shape=tr_view1.shape, dtype=tr_view1.dtype, buffer=self._temp_buff)
         np.copyto(temp_view, tr_view1)
@@ -392,7 +381,7 @@ class Transpose:
         field.layout = self.layout0
 
         # Local transpose first index to axis
-        view0 = field._embedding
+        view0 = field.data
         tr_view0 = np.transpose(view0, self._rolled_axes)
         temp_view.resize(tr_view0.shape)
         np.copyto(tr_view0, temp_view)
