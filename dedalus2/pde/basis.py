@@ -3,6 +3,7 @@ Spectral bases.
 
 """
 
+import math
 import numpy as np
 from scipy import sparse
 from scipy import fftpack
@@ -11,6 +12,7 @@ from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
 from ..tools.array import interleaved_view
 from ..tools.array import reshape_vector
+from ..tools.array import axslice
 
 
 class Basis:
@@ -23,6 +25,8 @@ class Basis:
         Number of points in grid space
     interval : tuple of floats
         Spatial domain of basis
+    cut : float, optional
+        Fractional cutoff for dealiasing
 
     Attributes
     ----------
@@ -31,7 +35,7 @@ class Basis:
     grid_dtype : dtype
         Data type in grid space
     coeff_size : int
-        Number of points in grid/coeff space
+        Number of points in coeff space
     coeff_embed : int
         Padded number of points to store coeff data.
     coeff_dtype : dtype
@@ -41,6 +45,16 @@ class Basis:
 
     def set_dtypes(self, grid_dtype):
         """Set transforms based on datatypes."""
+
+        raise NotImplementedError()
+
+    def pad(self, cdata, pdata, axis):
+        """Pad out coefficients."""
+
+        raise NotImplementedError()
+
+    def unpad(self, cdata, pdata, axis):
+        """Unpad coefficients."""
 
         raise NotImplementedError()
 
@@ -161,21 +175,21 @@ class TauBasis(Basis):
 class Chebyshev(TauBasis):
     """Chebyshev polynomial basis on the extrema grid."""
 
-    def __init__(self, grid_size, interval=(-1., 1.)):
+    def __init__(self, grid_size, interval=(-1., 1.), cut=1.):
 
         # Initial attributes
         self.interval = tuple(interval)
+        self.coeff_size = math.floor(cut * grid_size)
+        self.coeff_embed = grid_size
         self.grid_size = grid_size
         self.grid_embed = grid_size
-        self.coeff_size = grid_size
-        self.coeff_embed = grid_size
-        self.N = grid_size - 1
 
         # Grid
         radius = (interval[1] - interval[0]) / 2.
         center = (interval[1] + interval[0]) / 2.
-        i = np.arange(self.N + 1)
-        native_grid = np.cos(np.pi * i / self.N)
+        i = np.arange(grid_size)
+        N = grid_size - 1
+        native_grid = np.cos(np.pi * i / N)
         self.grid = center + radius * native_grid
         self._grid_stretch = radius
 
@@ -198,6 +212,23 @@ class Chebyshev(TauBasis):
 
         return self.coeff_dtype
 
+    def pad(self, cdata, pdata, axis):
+        """Pad out coefficients."""
+
+        size = self.coeff_size
+
+        # Copy data and zero pad
+        np.copyto(pdata[axslice(axis, 0, size)], cdata)
+        np.copyto(pdata[axslice(axis, size, None)], 0.)
+
+    def unpad(self, pdata, cdata, axis):
+        """Unpad coefficients."""
+
+        size = self.coeff_size
+
+        # Copy data
+        np.copyto(cdata, pdata[axslice(axis, 0, size)])
+
     def _forward_r2r(self, gdata, cdata, axis):
         """Scipy DCT on real data."""
 
@@ -207,7 +238,7 @@ class Chebyshev(TauBasis):
                 raise NotImplementedError()
 
         # DCT with adjusted coefficients
-        N = self.N
+        N = self.coeff_embed - 1
         cdata[:] = fftpack.dct(gdata, type=1, norm=None, axis=axis)
         cdata /= N
         cdata[..., 0] /= 2.
@@ -222,7 +253,7 @@ class Chebyshev(TauBasis):
                 raise NotImplementedError()
 
         # DCT with adjusted coefficients
-        N = self.N
+        N = self.coeff_embed - 1
         gdata[:] = cdata
         gdata[..., 1:N] /= 2.
         gdata[:] = fftpack.dct(gdata, type=1, norm=None, axis=axis)
@@ -242,7 +273,7 @@ class Chebyshev(TauBasis):
         cdata_iv = interleaved_view(cdata)
 
         # DCT with adjusted coefficients
-        N = self.N
+        N = self.coeff_embed - 1
         cdata[:] = gdata
         cdata_iv[:] = fftpack.dct(cdata_iv, type=1, norm=None, axis=axis)
         cdata /= N
@@ -264,7 +295,7 @@ class Chebyshev(TauBasis):
         gdata_iv = interleaved_view(gdata)
 
         # DCT with adjusted coefficients
-        N = self.N
+        N = self.coeff_embed - 1
         gdata[:] = cdata
         gdata[..., 1:N] /= 2.
         gdata_iv[:] = fftpack.dct(gdata_iv, type=1, norm=None, axis=axis)
@@ -280,7 +311,7 @@ class Chebyshev(TauBasis):
         # Referencess
         a = cdata
         b = cderiv
-        N = self.N
+        N = self.coeff_size - 1
 
         # Apply recursive differentiation
         b[..., N] = 0.
@@ -433,14 +464,24 @@ class Chebyshev(TauBasis):
         return bc_vector
 
 
+def odd_floor(x):
+    f = math.floor(x)
+    if f % 2 == 0:
+        f -= 1
+    return f
+
+
 class Fourier(TransverseBasis, TauBasis):
     """Fourier complex exponential basis."""
 
-    def __init__(self, grid_size, interval=(0., 2.*np.pi)):
+    def __init__(self, grid_size, interval=(0., 2.*np.pi), cut=1.):
 
         # Initial attributes
         self.interval = tuple(interval)
+        self.coeff_size = odd_floor(cut * grid_size)
+        self.coeff_embed = grid_size
         self.grid_size = grid_size
+        self.grid_embed = grid_size
 
         # Grid
         length = interval[1] - interval[0]
@@ -457,32 +498,55 @@ class Fourier(TransverseBasis, TauBasis):
         self.coeff_dtype = np.complex128
 
         # Set transforms
-        ng = self.grid_size
+        kmax = self.coeff_size // 2
         if dtype == np.float64:
-            nc = ng//2 + 1
-            self.grid_embed = ng #2 * nc
-            self.coeff_size = nc
-            self.coeff_embed = nc
-
+            self.coeff_size = self.coeff_size // 2 + 1
+            self.coeff_embed = self.coeff_embed // 2 + 1
             self.forward = self._forward_r2c
             self.backward = self._backward_c2r
-            wavenumbers = np.arange(0, nc)
-
+            wavenumbers = np.arange(0, kmax+1)
+            self.pad = self._pad_c2r
+            self.unpad = self._unpad_r2c
         elif dtype == np.complex128:
-            self.grid_embed = ng
-            self.coeff_size = ng
-            self.coeff_embed = ng
-
             self.forward = self._forward_c2c
             self.backward = self._backward_c2c
-            wavenumbers = np.arange((-ng)//2+1, ng//2+1)
-            wavenumbers = np.roll(wavenumbers, ng//2+1)
+            wavenumbers = np.arange(-kmax, kmax+1)
+            wavenumbers = np.roll(wavenumbers, -kmax)
+            self.pad = self._pad_c2c
+            self.unpad = self._unpad_c2c
         else:
             raise ValueError("Unsupported dtype.")
 
         self.wavenumbers = wavenumbers / self._grid_stretch
 
         return self.coeff_dtype
+
+    def _pad_c2r(self, cdata, pdata, axis):
+        """Pad out coefficients."""
+
+        size = self.coeff_size
+
+        # Copy data and zero pad
+        np.copyto(pdata[axslice(axis, 0, size)], cdata)
+        np.copyto(pdata[axslice(axis, size, None)], 0.)
+
+    def _unpad_r2c(self, pdata, cdata, axis):
+        """Unpad coefficients."""
+
+        size = self.coeff_size
+
+        # Copy data
+        np.copyto(cdata, pdata[axslice(axis, 0, size)])
+
+    def _pad_c2c(self, cdata, pdata, axis):
+        """Pad out coefficients."""
+
+        raise NotImplementedError()
+
+    def _unpad_c2c(self, pdata, cdata, axis):
+        """Unpad coefficients."""
+
+        raise NotImplementedError()
 
     def _forward_r2c(self, gdata, cdata, axis):
         """Scipy R2C FFT"""
@@ -574,14 +638,14 @@ class Fourier(TransverseBasis, TauBasis):
 class NoOp(Basis):
     """No-operation test basis."""
 
-    def __init__(self, grid_size, interval=(0., 1.)):
+    def __init__(self, grid_size, interval=(0., 1.), cut=1.):
 
         # Initial attributes
         self.interval = tuple(interval)
+        self.coeff_size = math.floor(cut * size)
+        self.coeff_embed = grid_size
         self.grid_size = grid_size
         self.grid_embed = grid_size
-        self.coeff_size = grid_size
-        self.coeff_embed = grid_size
 
         # Grid
         length = interval[1] - interval[0]
