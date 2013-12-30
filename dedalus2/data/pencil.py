@@ -106,7 +106,6 @@ class Pencil:
         # Size
         size = problem.size * basis.coeff_size
         dtype = basis.coeff_dtype
-
         D = self.d_trans
 
         # Problem matrices
@@ -117,66 +116,58 @@ class Pencil:
         LR = problem.LR(self.d_trans)
         LI = problem.LI(self.d_trans)
 
-        # Build PDE matrices starting with constant terms
-        Pre_0 = basis.Pre
-        Diff_0 = basis.Pre * basis.Diff
+        # Allocate PDE matrices
+        M = sparse.csr_matrix((size, size), dtype=dtype)
+        L = sparse.csr_matrix((size, size), dtype=dtype)
 
-        M = (sparse.kron(problem.M0[0](D), Pre_0) +
-             sparse.kron(problem.M1[0](D), Diff_0))
-        L = (sparse.kron(problem.L0[0](D), Pre_0) +
-             sparse.kron(problem.L1[0](D), Diff_0))
-
-        # Convert to easily modifiable structures
-        M = M.tolil()
-        L = L.tolil()
-
-        # Add higher order terms
-        for i in range(1, problem.order):
+        # Add terms to PDE matrices
+        for i in range(problem.order):
             Pre_i = basis.Pre * basis.Mult(i)
             Diff_i = basis.Pre * basis.Mult(i) * basis.Diff
 
-            M += sparse.kron(problem.M0[i](D), Pre_i)
-            M += sparse.kron(problem.M1[i](D), Diff_i)
-            L += sparse.kron(problem.L0[i](D), Pre_i)
-            L += sparse.kron(problem.L1[i](D), Diff_i)
+            M = M + sparse.kron(problem.M0[i](D), Pre_i, format='csr')
+            M = M + sparse.kron(problem.M1[i](D), Diff_i, format='csr')
+            L = L + sparse.kron(problem.L0[i](D), Pre_i, format='csr')
+            L = L + sparse.kron(problem.L1[i](D), Diff_i, format='csr')
 
         # Allocate boundary condition matrices
-        Mb = sparse.lil_matrix((size, size), dtype=dtype)
-        Lb = sparse.lil_matrix((size, size), dtype=dtype)
+        Mb = sparse.csr_matrix((size, size), dtype=dtype)
+        Lb = sparse.csr_matrix((size, size), dtype=dtype)
 
         # Add terms to boundary condition matrices
         if np.any(ML):
-            Mb += sparse.kron(ML, basis.Left)
+            Mb = Mb + sparse.kron(ML, basis.Left, format='csr')
         if np.any(MR):
-            Mb += sparse.kron(MR, basis.Right)
+            Mb = Mb + sparse.kron(MR, basis.Right, format='csr')
         if np.any(MI):
-            Mb += sparse.kron(MI, basis.Int)
+            Mb = Mb + sparse.kron(MI, basis.Int, format='csr')
         if np.any(LL):
-            Lb += sparse.kron(LL, basis.Left)
+            Lb = Lb + sparse.kron(LL, basis.Left, format='csr')
         if np.any(LR):
-            Lb += sparse.kron(LR, basis.Right)
+            Lb = Lb + sparse.kron(LR, basis.Right, format='csr')
         if np.any(LI):
-            Lb += sparse.kron(LI, basis.Int)
+            Lb = Lb + sparse.kron(LI, basis.Int, format='csr')
 
-        # Convert to easily iterable structures
-        Mb = Mb.tocoo()
-        Lb = Lb.tocoo()
+        # Get set of boundary condition rows
+        Mb_rows = Mb.nonzero()[0]
+        Lb_rows = Lb.nonzero()[0]
+        rows = set(Mb_rows).union(set(Lb_rows))
 
         # Clear boundary condition rows in PDE matrices
-        rows = set(Mb.row).union(set(Lb.row))
+        clear_bc = sparse.eye(size, dtype=dtype, format='dok')
         for i in rows:
-            M[i, :] = 0
-            L[i, :] = 0
+            clear_bc[i, i] = 0.
 
-        # Substitute boundary condition terms into PDE matrices
-        for i, j, v in zip(Mb.row, Mb.col, Mb.data):
-            M[i, j] = v
-        for i, j, v in zip(Lb.row, Lb.col, Lb.data):
-            L[i, j] = v
+        clear_bc = clear_bc.tocsr()
+        M = M.tocsr()
+        L = L.tocsr()
 
-        # Convert for efficient manipulation and store
-        self.M = M.tocsr()
-        self.L = L.tocsr()
+        M = clear_bc * M
+        L = clear_bc * L
+
+        # Add boundary condition terms to PDE matrices and store
+        self.M = M + Mb
+        self.L = L + Lb
 
         # Reference nonlinear expressions
         self.F = problem.F
