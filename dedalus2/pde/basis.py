@@ -22,48 +22,56 @@ class Basis:
     Parameters
     ----------
     grid_size : int
-        Number of points in grid space
+        Number of grid points
     interval : tuple of floats
         Spatial domain of basis
-    cut : float, optional
-        Fractional cutoff for dealiasing
+    dealias : float, optional
+        Fraction of modes to keep after dealiasing (default: 1.)
 
     Attributes
     ----------
     grid_embed : int
-        Padded number of points to store grid data.
+        Padded number of grid points for transform
     grid_dtype : dtype
-        Data type in grid space
+        Grid data type
     coeff_size : int
-        Number of points in coeff space
+        Number of spectral coefficients
     coeff_embed : int
-        Padded number of points to store coeff data.
+        Padded number of spectral coefficients for transform
     coeff_dtype : dtype
-        Data type in coeff space
+        Coefficient data type
 
     """
 
-    def set_dtypes(self, grid_dtype):
-        """Set transforms based on datatypes."""
+    def set_transforms(self, grid_dtype):
+        """Set transforms based on grid data type."""
 
         raise NotImplementedError()
 
-    def pad(self, cdata, pdata, axis):
-        """Pad out coefficients."""
+    def pad_grid(self, gdata, pgdata, axis):
+        """Pad grid data before forward transform."""
 
         raise NotImplementedError()
 
-    def unpad(self, cdata, pdata, axis):
-        """Unpad coefficients."""
+    def unpad_grid(self, pgdata, gdata, axis):
+        """Unpad grid data after backward transform."""
 
         raise NotImplementedError()
 
-    def forward(self, gdata, cdata, axis):
+    def pad_coeff(self, cdata, pcdata, axis):
+        """Pad coefficient data before backward transform."""
+
+        raise NotImplementedError()
+
+    def unpad_coeff(self, pcdata, cdata, axis):
+        """Unpad coefficient data after forward transfrom."""
+
+    def forward(self, pgdata, pcdata, axis):
         """Grid-to-coefficient transform."""
 
         raise NotImplementedError()
 
-    def backward(self, cdata, gdata, axis):
+    def backward(self, pcdata, pgdata, axis):
         """Coefficient-to-grid transform."""
 
         raise NotImplementedError()
@@ -88,13 +96,33 @@ class TransverseBasis(Basis):
         raise NotImplementedError()
 
 
-class TauBasis(Basis):
-    """Base class for bases supporting Tau solves."""
+class ImplicitBasis(Basis):
+    """
+    Base class for bases supporting implicit methods.
+
+    These bases define the following matrices encoding the respective linear
+    functions acting on a series represented by its spectral coefficients:
+
+    Linear operators (square matrices):
+        Pre     : preconditioning
+        Diff    : differentiation
+        Mult(p) : multiplication by p-th basis element
+
+    Linear functionals (vectors):
+        left_vector  : left-endpoint evaluation
+        right_vector : right-endpoint evaluation
+        int_vector   : integration over interval
+
+    Additionally, they define a vector `bc_vector` indicating which
+    coefficient's Galerkin constraint is to be replaced by the boundary
+    condition on a differential equation (i.e. the order of the tau term).
+
+    """
 
     def integrate(self, cdata, axis):
         """Integrate over interval using coefficients."""
 
-        # Dot coefficients with basis function integrals
+        # Contract coefficients with basis function integrals
         integral = np.tensordot(cdata, self.int_vector, (axis, 0))
 
         return integral
@@ -103,7 +131,7 @@ class TauBasis(Basis):
     def Pre(self):
         """Preconditioning matrix."""
 
-        # Construct sparse identity matrix
+        # Default to identity matrix
         Pre = sparse.identity(self.coeff_size, dtype=self.coeff_dtype)
 
         return Pre.tocsr()
@@ -122,46 +150,46 @@ class TauBasis(Basis):
 
     @CachedAttribute
     def Left(self):
-        """Left-endpoint-evaluation matrix."""
+        """Left-endpoint matrix."""
 
-        # Sparse kronecker BC column vector with left row vector
+        # Take outer product of boundary-row and left-endpoint vectors
         Left = sparse.kron(self.bc_vector, self.left_vector)
 
         return Left
 
     @CachedAttribute
     def Right(self):
-        """Right-endpoint-evaluation matrix."""
+        """Right-endpoint matrix."""
 
-        # Sparse kronecker BC column vector with right row vector
+        # Take outer product of boundary-row and right-endpoint vectors
         Right = sparse.kron(self.bc_vector, self.right_vector)
 
         return Right
 
     @CachedAttribute
     def Int(self):
-        """Integral-evaluation matrix."""
+        """Integral matrix."""
 
-        # Sparse kronecker BC column vector with int row vector
+        # Take outer product of boundary-row and integral vectors
         Int = sparse.kron(self.bc_vector, self.int_vector)
 
         return Int
 
     @CachedAttribute
     def left_vector(self):
-        """Left-endpoint-evaluation row vector."""
+        """Left-endpoint row vector."""
 
         raise NotImplementedError()
 
     @CachedAttribute
     def right_vector(self):
-        """Right-endpoint-evaluation row vector."""
+        """Right-endpoint row vector."""
 
         raise NotImplementedError()
 
     @CachedAttribute
     def int_vector(self):
-        """Integral-evaluation row vector."""
+        """Integral row vector."""
 
         raise NotImplementedError()
 
@@ -172,19 +200,24 @@ class TauBasis(Basis):
         raise NotImplementedError()
 
 
-class Chebyshev(TauBasis):
+class Chebyshev(ImplicitBasis):
     """Chebyshev polynomial basis on the extrema grid."""
 
-    def __init__(self, grid_size, interval=(-1., 1.), cut=1.):
+    def __init__(self, grid_size, interval=(-1., 1.), dealias=1.):
 
         # Initial attributes
-        self.interval = tuple(interval)
-        self.coeff_size = math.floor(cut * grid_size)
-        self.coeff_embed = grid_size
         self.grid_size = grid_size
-        self.grid_embed = grid_size
+        self.interval = tuple(interval)
+        self.dealias = dealias
 
-        # Grid
+        # Grid-sized embedding
+        self.grid_embed = grid_size
+        self.coeff_embed = grid_size
+
+        # Maximum number of coefficients below dealiasing threshold
+        self.coeff_size = math.floor(dealias * grid_size)
+
+        # Extrema grid
         radius = (interval[1] - interval[0]) / 2.
         center = (interval[1] + interval[0]) / 2.
         i = np.arange(grid_size)
@@ -193,14 +226,14 @@ class Chebyshev(TauBasis):
         self.grid = center + radius * native_grid
         self._grid_stretch = radius
 
-    def set_dtypes(self, grid_dtype):
-        """Specify datatypes."""
+    def set_transforms(self, grid_dtype):
+        """Set transforms based on grid data type."""
 
-        # Set datatypes
+        # Transform retains data type
         self.grid_dtype = grid_dtype
         self.coeff_dtype = grid_dtype
 
-        # Set transforms
+        # Dispatch transform functions
         if grid_dtype == np.float64:
             self.forward = self._forward_r2r
             self.backward = self._backward_r2r
@@ -212,93 +245,71 @@ class Chebyshev(TauBasis):
 
         return self.coeff_dtype
 
-    def pad(self, cdata, pdata, axis):
-        """Pad out coefficients."""
+    def pad_grid(self, gdata, pgdata, axis):
+        """Pad grid data before forward transform."""
+
+        # No padding
+        np.copyto(pgdata, gdata)
+
+    def unpad_grid(self, pgdata, gdata, axis):
+        """Unpad grid data after backward transform."""
+
+        # No padding
+        np.copyto(gdata, pgdata)
+
+    def pad_coeff(self, cdata, pcdata, axis):
+        """Pad coefficient data before backward transform."""
 
         size = self.coeff_size
 
-        # Copy data and zero pad
-        np.copyto(pdata[axslice(axis, 0, size)], cdata)
-        np.copyto(pdata[axslice(axis, size, None)], 0.)
+        # Pad with higher order polynomials at end of data
+        np.copyto(pcdata[axslice(axis, 0, size)], cdata)
+        np.copyto(pcdata[axslice(axis, size, None)], 0.)
 
-    def unpad(self, pdata, cdata, axis):
-        """Unpad coefficients."""
+    def unpad_coeff(self, pcdata, cdata, axis):
+        """Unpad coefficient data after forward transfrom."""
 
         size = self.coeff_size
 
-        # Copy data
-        np.copyto(cdata, pdata[axslice(axis, 0, size)])
+        # Discard higher order polynomials at end of data
+        np.copyto(cdata, pcdata[axslice(axis, 0, size)])
 
-    def _forward_r2r(self, gdata, cdata, axis):
-        """Scipy DCT on real data."""
+    def _forward_r2r(self, pgdata, pcdata, axis):
+        """Scipy-based DCT on real data."""
 
-        # Currently setup just for last axis
-        if axis != -1:
-            if axis != (len(gdata.shape) - 1):
-                raise NotImplementedError()
+        # Scipy DCT
+        np.copyto(pcdata, fftpack.dct(pgdata, type=1, norm=None, axis=axis))
 
-        # DCT with adjusted coefficients
-        N = self.coeff_embed - 1
-        cdata[:] = fftpack.dct(gdata, type=1, norm=None, axis=axis)
-        cdata /= N
-        cdata[..., 0] /= 2.
-        cdata[..., N] /= 2.
+        # Normalize as true mode amplitudes
+        pcdata /= (self.grid_size - 1)
+        pcdata[axslice(axis, 0, 1)] /= 2.
+        pcdata[axslice(axis, -1, None)] /= 2.
 
-    def _backward_r2r(self, cdata, gdata, axis):
-        """Scipy IDCT on real data."""
+    def _backward_r2r(self, pcdata, pgdata, axis):
+        """Scipy-based IDCT on real data."""
 
-        # Currently setup just for last axis
-        if axis != -1:
-            if axis != (len(cdata.shape) - 1):
-                raise NotImplementedError()
+        # Renormalize in output to avoid modifying input
+        np.copyto(pgdata, pcdata)
+        pgdata[axslice(axis, 1, -1)] /= 2.
 
-        # DCT with adjusted coefficients
-        N = self.coeff_embed - 1
-        gdata[:] = cdata
-        gdata[..., 1:N] /= 2.
-        gdata[:] = fftpack.dct(gdata, type=1, norm=None, axis=axis)
+        # Scipy DCT
+        np.copyto(pgdata, fftpack.dct(pgdata, type=1, norm=None, axis=axis))
 
-    def _forward_c2c(self, gdata, cdata, axis):
-        """Scipy DCT on complex data."""
+    def _forward_c2c(self, pgdata, pcdata, axis):
+        """Scipy-based DCT on complex data."""
 
-        # Handle negative axes
-        if axis < 0:
-            axis += len(gdata.shape)
+        # Call real transform on interleaved views of data
+        pgdata_iv = interleaved_view(pgdata)
+        pcdata_iv = interleaved_view(pcdata)
+        self._forward_r2r(pgdata_iv, pcdata_iv, axis)
 
-        # Currently setup just for last axis
-        if axis != (len(gdata.shape) - 1):
-            raise NotImplementedError()
+    def _backward_c2c(self, pcdata, pgdata, axis):
+        """Scipy-based IDCT on complex data."""
 
-        # Create interleaved view
-        cdata_iv = interleaved_view(cdata)
-
-        # DCT with adjusted coefficients
-        N = self.coeff_embed - 1
-        cdata[:] = gdata
-        cdata_iv[:] = fftpack.dct(cdata_iv, type=1, norm=None, axis=axis)
-        cdata /= N
-        cdata[..., 0] /= 2.
-        cdata[..., N] /= 2.
-
-    def _backward_c2c(self, cdata, gdata, axis):
-        """Scipy IDCT on complex data."""
-
-        # Handle negative axes
-        if axis < 0:
-            axis += len(gdata.shape)
-
-        # Currently setup just for last axis
-        if axis != (len(gdata.shape) - 1):
-            raise NotImplementedError()
-
-        # Create interleaved view
-        gdata_iv = interleaved_view(gdata)
-
-        # DCT with adjusted coefficients
-        N = self.coeff_embed - 1
-        gdata[:] = cdata
-        gdata[..., 1:N] /= 2.
-        gdata_iv[:] = fftpack.dct(gdata_iv, type=1, norm=None, axis=axis)
+        # Call real transform on interleaved views of data
+        pcdata_iv = interleaved_view(pcdata)
+        pgdata_iv = interleaved_view(pgdata)
+        self._backward_r2r(pcdata_iv, pgdata_iv, axis)
 
     def differentiate(self, cdata, cderiv, axis):
         """Differentiation by recursion on coefficients."""
@@ -335,21 +346,13 @@ class Chebyshev(TauBasis):
 
         size = self.coeff_size
 
-        # Initialize sparse matrix
+        # Construct sparse matrix
         Pre = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
-
-        # Add elements
-        for n in range(size):
-
-            # Diagonal
-            if n == 0:
-                Pre[n, n] = 1.
-            else:
-                Pre[n, n] = 0.5
-
-            # 2nd superdiagonal
-            if n >= 2:
-                Pre[n-2, n] = -0.5
+        Pre[0, 0] = 1.
+        Pre[1, 1] = 0.5
+        for n in range(2, size):
+            Pre[n, n] = 0.5
+            Pre[n-2, n] = -0.5
 
         return Pre.tocsr()
 
@@ -364,10 +367,8 @@ class Chebyshev(TauBasis):
 
         size = self.coeff_size
 
-        # Initialize sparse matrix
+        # Construct sparse matrix
         Diff = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
-
-        # Add elements
         for i in range(size-1):
             for j in range(i+1, size, 2):
                 if i == 0:
@@ -391,26 +392,20 @@ class Chebyshev(TauBasis):
 
         # Construct sparse matrix
         Mult = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
-
-        # Add elements
         for n in range(size):
-
-            # Upper product
-            i = n + p
-            if i < size:
-                Mult[i, n] += 0.5
-
-            # Lower product
-            i = abs(n - p)
-            if i < size:
-                Mult[i, n] += 0.5
+            upper = n + p
+            if upper < size:
+                Mult[upper, n] += 0.5
+            lower = abs(n - p)
+            if lower < size:
+                Mult[lower, n] += 0.5
 
         return Mult.tocsr()
 
     @CachedAttribute
     def left_vector(self):
         """
-        Left-endpoint-evaluation row vector.
+        Left-endpoint row vector.
 
         T_n(-1) = (-1)**n
 
@@ -425,7 +420,7 @@ class Chebyshev(TauBasis):
     @CachedAttribute
     def right_vector(self):
         """
-        Right-endpoint-evaluation row vector.
+        Right-endpoint row vector.
 
         T_n(1) = 1
 
@@ -439,7 +434,7 @@ class Chebyshev(TauBasis):
     @CachedAttribute
     def int_vector(self):
         """
-        Integral-evaluation row vector.
+        Integral row vector.
 
         int(T_n) = (1 + (-1)^n) / (1 - n^2)
 
@@ -459,7 +454,7 @@ class Chebyshev(TauBasis):
 
         # Construct dense column vector
         bc_vector = np.zeros((self.coeff_size, 1), dtype=self.coeff_dtype)
-        bc_vector[-1, :] = 1.
+        bc_vector[-1, 0] = 1.
 
         return bc_vector
 
@@ -471,7 +466,7 @@ def odd_floor(x):
     return f
 
 
-class Fourier(TransverseBasis, TauBasis):
+class Fourier(TransverseBasis, ImplicitBasis):
     """Fourier complex exponential basis."""
 
     def __init__(self, grid_size, interval=(0., 2.*np.pi), cut=1.):
@@ -490,7 +485,7 @@ class Fourier(TransverseBasis, TauBasis):
         self.grid = start + length * native_grid
         self._grid_stretch = length / (2. * np.pi)
 
-    def set_dtypes(self, dtype):
+    def set_transforms(self, dtype):
         """Specify datatypes."""
 
         # Set datatypes
@@ -505,15 +500,15 @@ class Fourier(TransverseBasis, TauBasis):
             self.forward = self._forward_r2c
             self.backward = self._backward_c2r
             wavenumbers = np.arange(0, kmax+1)
-            self.pad = self._pad_c2r
-            self.unpad = self._unpad_r2c
+            self.pad_coeff = self._pad_c2r
+            self.unpad_coeff = self._unpad_r2c
         elif dtype == np.complex128:
             self.forward = self._forward_c2c
             self.backward = self._backward_c2c
             wavenumbers = np.arange(-kmax, kmax+1)
             wavenumbers = np.roll(wavenumbers, -kmax)
-            self.pad = self._pad_c2c
-            self.unpad = self._unpad_c2c
+            self.pad_coeff = self._pad_c2c
+            self.unpad_coeff = self._unpad_c2c
         else:
             raise ValueError("Unsupported dtype.")
 
@@ -664,7 +659,7 @@ class NoOp(Basis):
 
         raise NotImplementedError()
 
-    def set_dtypes(self, dtype):
+    def set_transforms(self, dtype):
         """Specify datatypes."""
 
         # Set datatypes
