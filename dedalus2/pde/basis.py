@@ -643,14 +643,16 @@ class Fourier(TransverseBasis, ImplicitBasis):
 class NoOp(Basis):
     """No-operation test basis."""
 
-    def __init__(self, grid_size, interval=(0., 1.), cut=1.):
+    def __init__(self, grid_size, interval=(0., 1.), dealias=1.):
 
         # Initial attributes
-        self.interval = tuple(interval)
-        self.coeff_size = math.floor(cut * size)
-        self.coeff_embed = grid_size
         self.grid_size = grid_size
-        self.grid_embed = grid_size
+        self.interval = tuple(interval)
+        self.dealias = dealias
+
+        # Retain maximum number of coefficients below threshold
+        self.coeff_embed = grid_size
+        self.coeff_size = math.floor(dealias * grid_size)
 
         # Grid
         length = interval[1] - interval[0]
@@ -659,32 +661,41 @@ class NoOp(Basis):
         self.grid = start + length * native_grid
         self._grid_stretch = length
 
-    def differentiate(self, cdata, cderiv, axis):
-        """Differentiate using coefficients."""
-
-        raise NotImplementedError()
-
-    def integrate(self, cdata, axis):
-        """Integrate over interval using coefficients."""
-
-        raise NotImplementedError()
-
     def set_transforms(self, dtype):
-        """Specify datatypes."""
+        """Set transforms based on grid data type."""
 
-        # Set datatypes
+        # No-op transform retains data type
         self.grid_dtype = dtype
         self.coeff_dtype = dtype
 
         return self.coeff_dtype
 
-    def forward(self, gdata, cdata, axis):
+    def pad_coeff(self, cdata, pdata, axis):
+        """Pad coefficient data before backward transform."""
+
+        size = self.coeff_size
+
+        # Pad with zeros at end of data
+        np.copyto(pdata[axslice(axis, 0, size)], cdata)
+        np.copyto(pdata[axslice(axis, size, None)], 0.)
+
+    def unpad_coeff(self, pdata, cdata, axis):
+        """Unpad coefficient data after forward transfrom."""
+
+        size = self.coeff_size
+
+        # Discard zeros at end of data
+        np.copyto(cdata, pdata[axslice(axis, 0, size)])
+
+    def forward(self, gdata, pdata, axis):
         """Grid-to-coefficient transform."""
 
-        cdata[:] = gdata
+        # Copy data
+        np.copyto(pdata, gdata)
 
-    def backward(self, cdata, gdata, axis):
+    def backward(self, pdata, gdata, axis):
         """Coefficient-to-grid transform."""
 
-        gdata[:] = cdata
+        # Copy data
+        np.copyto(gdata, pdata)
 
