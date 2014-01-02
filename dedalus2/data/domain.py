@@ -22,7 +22,7 @@ class Domain:
         # Iteratively set basis data types
         # (Transforms from grid-to-coeff proceed in the listed order)
         for b in self.bases:
-            grid_dtype = b.set_dtypes(grid_dtype)
+            grid_dtype = b.set_transforms(grid_dtype)
 
         # Field management
         self._field_list = list()
