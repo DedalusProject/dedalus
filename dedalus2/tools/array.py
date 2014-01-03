@@ -37,6 +37,9 @@ def reshape_vector(data, dim=2, axis=-1):
 def axslice(axis, start, stop, step=None):
     """Slice array along a specified axis."""
 
+    if axis < 0:
+        raise ValueError("`axis` must be positive")
+
     slicelist = [slice(None)] * axis
     slicelist.append(slice(start, stop, step))
 
