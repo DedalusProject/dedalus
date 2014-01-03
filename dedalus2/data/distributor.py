@@ -217,31 +217,15 @@ class Transform:
         self.axis = axis
         self.basis = basis
 
-        # Compute embedded shapes
-        shape0 = np.copy(layout0.shape)
-        shape0[axis] = basis.coeff_embed
-        shape1 = np.copy(layout1.shape)
-        shape1[axis] = basis.grid_embed
-
-        # Embedded dtypes
-        dtype0 = layout0.dtype
-        dtype1 = layout1.dtype
-
-        # Size
-        doubles0 = np.prod(shape0) * np.dtype(dtype0).itemsize // 8
-        doubles1 = np.prod(shape1) * np.dtype(dtype1).itemsize // 8
-
-        # Buffer size
-        buffsize = max(doubles0, doubles1)
-        self.buffer = fftw.create_buffer(buffsize)
-
-        # Create views
-        self.embed0 = np.ndarray(shape=shape0,
-                                 dtype=dtype0,
-                                 buffer = self.buffer)
-        self.embed1 = np.ndarray(shape=shape1,
-                                 dtype=dtype1,
-                                 buffer = self.buffer)
+        # Construct buffer for padded coefficients
+        pshape = np.copy(layout0.shape)
+        pshape[axis] = basis.coeff_embed
+        pdtype = layout0.dtype
+        pdoubles = np.prod(pshape) * np.dtype(pdtype).itemsize // 8
+        self.buffer = fftw.create_buffer(pdoubles)
+        self.embed = np.ndarray(shape=pshape,
+                                dtype=pdtype,
+                                buffer=self.buffer)
 
         # Compute required buffer size (in doubles)
         self.alloc_doubles = max(layout0.alloc_doubles, layout1.alloc_doubles)
@@ -263,8 +247,8 @@ class Transform:
         gdata = field.data
 
         # Call basis transform
-        self.basis.pad(cdata, self.embed0, axis=self.axis)
-        self.basis.backward(self.embed0, gdata, axis=self.axis)
+        self.basis.pad_coeff(cdata, self.embed, axis=self.axis)
+        self.basis.backward(self.embed, gdata, axis=self.axis)
 
     def _forward(self, field):
 
@@ -274,8 +258,8 @@ class Transform:
         cdata = field.data
 
         # Call basis transform
-        self.basis.forward(gdata, self.embed0, axis=self.axis)
-        self.basis.unpad(self.embed0, cdata, axis=self.axis)
+        self.basis.forward(gdata, self.embed, axis=self.axis)
+        self.basis.unpad_coeff(self.embed, cdata, axis=self.axis)
 
     def _no_op_backward(self, field):
 
