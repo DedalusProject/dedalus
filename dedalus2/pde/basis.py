@@ -101,7 +101,7 @@ class ImplicitBasis(Basis):
         right_vector : right-endpoint evaluation
         int_vector   : integration over interval
 
-    Additionally, they define a vector `bc_vector` indicating which
+    Additionally, they define a column vector `bc_vector` indicating which
     coefficient's Galerkin constraint is to be replaced by the boundary
     condition on a differential equation (i.e. the order of the tau term).
 
