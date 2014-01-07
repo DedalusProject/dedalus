@@ -5,4 +5,5 @@ Installing Dedalus
 
    dedalus_install_preliminaries
    trestles
+   stampede
    mac_os
