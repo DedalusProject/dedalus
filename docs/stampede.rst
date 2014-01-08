@@ -120,6 +120,30 @@ suggest doing this in your home directory::
      mkdir ~/venv
 
 
+Installing freetype2
+--------------------------
+
+Freetype is necessary for matplotlib ::
+
+     cd ~/build
+     wget http://sourceforge.net/projects/freetype/files/freetype2/2.5.2/freetype-2.5.2.tar.gz
+     tar -xvf freetype-2.5.2.tar.gz 
+     cd freetype-2.5.2
+     ./configure --prefix=$HOME/build
+     make
+     make install
+
+
+Installing libpng
+--------------------------
+
+May need this for matplotlib?::
+
+     cd ~/build
+     wget http://prdownloads.sourceforge.net/libpng/libpng-1.6.8.tar.gz
+     SW
+     make
+     make install
 
 BLAS libraries
 ======================================
@@ -275,45 +299,83 @@ Installing Scipy
 -------------------------
 
 Scipy is easier, because it just gets its config from numpy.  Download
-an install in your appropriate ``~/venv/INSTANCE`` directory:
+an install in your appropriate ``~/venv/INSTANCE`` directory::
 
      wget http://sourceforge.net/projects/scipy/files/scipy/0.13.2/scipy-0.13.2.tar.gz
      tar -xvf scipy-0.13.2.tar.gz
      cd scipy-0.13.2
 
+Then run ::
 
-* `$ python setup.py config`
+     python3 setup.py config
 
-This notes a lack of UMFPACK...will that make a speed difference? Nevertheless, it works ok.
 
-Do
+As on Trestles, this notes a lack of ``UMFPACK``; we're unsure whether
+this matters, but for now will proceed without it.  
 
-* `$ python setup.py build`
 
-if successful, 
+For now, blindly continue and ::
 
-* `$ python setup.py install`
+    python3 setup.py build
+
+if successful :: 
+
+    python3 setup.py install
 
 
 Installing mpi4py
------------------
+-------------------------
 
-This should just be pip installed, `$ pip install mpi4py`
+This should just be pip installed::
+
+      pip3 install mpi4py
+
+.. note:
+    
+      Failed.
 
 Installing cython
------------------
+-------------------------
 
-This should just be pip installed, `$ pip install cython`
+This should just be pip installed::
+
+     pip3 install cython
+
+.. note:
+    
+      worked.
+
 
 Installing matplotlib
------------------
+-------------------------
 
-This should just be pip installed, `$ pip install matplotlib`
+This should just be pip installed::
+
+     pip3 install matplotlib
+
+.. note::
+
+     Failed.
+
+     Right now we're stuck here. 
+
+     We're dying on the ft2font build.
+
+     gcc -pthread -DNDEBUG -g -fwrapv -O3 -Wall -I/home1/00364/tg456434/build/include/freetype2 -I/home1/00364/tg456434/build/include -fPIC -DPY_ARRAY_UNIQUE_SYMBOL=MPL_ARRAY_API -DPYCXX_ISO_CPP_LIB=1 -I/home1/00364/tg456434/venv/openblas/lib/python3.3/site-packages/numpy/core/include -I/usr/include/freetype2 -I/usr/local/include -I/usr/include -I. -I/home1/00364/tg456434/build/include/python3.3m -c src/ft2font.cpp -o build/temp.linux-x86_64-3.3/src/ft2font.o
+
+     export CPPFLAGS="-I/home1/00364/tg456434/build/include/freetype2 -I/home1/00364/tg456434/build/include"
 
 UMFPACK
 -------
 
 Requires AMD (another package by the same group, not processor) and SuiteSparse_config, too.
+
+If we need UMFPACK, we
+can try installing it from ``suite-sparse`` as in the Mac install.
+UMFPACK docs are `here <http://www.cise.ufl.edu/research/sparse/umfpack/>`_ 
+and Suite-sparse is `here <http://www.cise.ufl.edu/research/sparse/>`_
+**We'll check and update this later.**
+
 
 Dedalus2
 --------
