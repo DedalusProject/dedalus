@@ -15,18 +15,31 @@ Modules
 
 Here is my current build environment (from running ``module list``)
 
-  1) TACC-paths
-  2) Linux
-  3) cluster-paths
-  4) intel/13.0.2.146
-  5) TACC  
-  6) cluster  
-  7) mvapich2/1.9a2   
+  1) TACC-paths   
+  2) Linux        
+  3) cluster-paths   
+  4) TACC            
+  5) cluster     
+  6) gcc/4.7.1   
+  7) mvapich2/1.9a2
   8) fftw3/3.3.2
+  9) mkl/13.0.2.146
+
+.. note ::
+    TACC support suggested swapping from intel compilers to the latest
+    ``gcc``.  To do this do ``module swap intel gcc/4.7.1``, followed
+    by a ``module load mkl``.  The mpi and fftw modules get
+    auto-reloaded following the ``module swap`` command.
+
 
 Stampede does not appear to have OpenMPI, but does have ``fftw3`` built
-properly on ``mvapich2``.  See the `Stampede user guide <https://www.tacc.utexas.edu/user-services/user-guides/stampede-user-guide#compenv-modules-login>`_
-if you need to modify the modules that are auto-loaded at startup.
+properly on ``mvapich2``.  See the 
+`Stampede user guide <https://www.tacc.utexas.edu/user-services/user-guides/stampede-user-guide#compenv-modules-login>`_
+for more details.  If you would like to always auto-load the same
+modules at startup, build your desired module configuration and then
+run::
+
+     module save
 
 Python stack
 =========================
@@ -84,7 +97,7 @@ Installing pip
 -------------------------
 
 We'll use ``pip`` to install our python library depdencies.
-Instructions on doing this are available `here <http://www.pip-installer.org/en/latest/installing.htm>`_ 
+Instructions on doing this are available `here <http://www.pip-installer.org/en/latest/installing.html>`_ 
 and summarized below.  First
 download and install setup tools::
 
@@ -141,7 +154,7 @@ May need this for matplotlib?::
 
      cd ~/build
      wget http://prdownloads.sourceforge.net/libpng/libpng-1.6.8.tar.gz
-     SW
+     ./configure --prefix=$HOME/build
      make
      make install
 
@@ -293,7 +306,8 @@ OpenBLAS shared library, see above note about ``$LD_LIBRARY_PATH``.*
 
 Python library stack
 =====================
-
+Right now all of these need to be installed in each existing
+virtualenv instance (e.g., ``openblas``, ``mkl``, etc.).
 
 Installing Scipy
 -------------------------
@@ -328,11 +342,16 @@ Installing mpi4py
 
 This should just be pip installed::
 
-      pip3 install mpi4py
+      pip3 install -v http://mpi4py.googlecode.com/files/mpi4py-1.3.1.tar.gz
 
 .. note:
     
-      Failed.
+      If we use use ::
+
+           pip3 install mpi4py
+           
+      then stampede tries to pull version 0.6.0 of mpi4py.  Hence the
+      explicit version pull above.
 
 Installing cython
 -------------------------
@@ -341,29 +360,24 @@ This should just be pip installed::
 
      pip3 install cython
 
-.. note:
-    
-      worked.
-
 
 Installing matplotlib
 -------------------------
 
 This should just be pip installed::
 
-     pip3 install matplotlib
+
+     pip3 install -v https://downloads.sourceforge.net/project/matplotlib/matplotlib/matplotlib-1.3.1/matplotlib-1.3.1.tar.gz
 
 .. note::
 
-     Failed.
+      If we use use ::
 
-     Right now we're stuck here. 
+           pip3 install matplotlib
+           
+      then stampede tries to pull version 1.1.1 of matplotlib.  Hence the
+      explicit version pull above.
 
-     We're dying on the ft2font build.
-
-     gcc -pthread -DNDEBUG -g -fwrapv -O3 -Wall -I/home1/00364/tg456434/build/include/freetype2 -I/home1/00364/tg456434/build/include -fPIC -DPY_ARRAY_UNIQUE_SYMBOL=MPL_ARRAY_API -DPYCXX_ISO_CPP_LIB=1 -I/home1/00364/tg456434/venv/openblas/lib/python3.3/site-packages/numpy/core/include -I/usr/include/freetype2 -I/usr/local/include -I/usr/include -I. -I/home1/00364/tg456434/build/include/python3.3m -c src/ft2font.cpp -o build/temp.linux-x86_64-3.3/src/ft2font.o
-
-     export CPPFLAGS="-I/home1/00364/tg456434/build/include/freetype2 -I/home1/00364/tg456434/build/include"
 
 UMFPACK
 -------
@@ -378,13 +392,22 @@ and Suite-sparse is `here <http://www.cise.ufl.edu/research/sparse/>`_
 
 
 Dedalus2
---------
+========================================
 
-With the modules set as above (for NOW), set `$ export
-FFTW_PATH=/opt/fftw/3.3.3/gnu/openmpi/ib` and `$ export
-MPI_PATH=/opt/openmpi/gnu/ib`. Then do `$ python setup.py build_ext
---inplace`.
+With the modules set as above, set::
 
+     export FFTW_PATH=$TACC_FFTW3_DIR
+     export MPI_PATH=$MPICH_HOME
 
+Then change into your root dedalus directory and run::
 
+     python setup.py build_ext --inplace
 
+Running Dedalus on Stampede
+========================================
+
+Source the appropriate virtualenv::
+
+     source ~/venv/openblas/bin/activate
+
+grab an interactive dev node with ``idev``.  Play.

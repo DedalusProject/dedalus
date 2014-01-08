@@ -3,7 +3,11 @@ Using Sphinx with Dedalus
 
 Here are extremely rough notes on using ``sphinx`` with ``Dedalus``.
 
+To install ``sphinx``, do::
 
+     pip3 install sphinx
+
+(for python3 install).
 
 To setup ``sphinx`` on your system, run the following at the terminal in the ``sphinx_docs`` directory::
 
