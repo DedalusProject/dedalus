@@ -1,5 +1,5 @@
 """
-Problem domains.
+Class for problem domain.
 
 """
 
@@ -7,7 +7,6 @@ import numpy as np
 
 from .distributor import Distributor
 from .field import Field
-from .pencil import Pencil
 from ..tools.cache import CachedMethod
 from ..tools.array import reshape_vector
 
@@ -66,6 +65,29 @@ class Domain:
         grid = reshape_vector(grid, self.dim, axis)
 
         return grid
+
+    @CachedMethod
+    def grid_spacing(self, axis):
+        """Return minimum grid spacing along specified axis."""
+
+        # Compute spacing on basis grid to include non-local spaces
+        grid = self.bases[axis].grid
+        diff = np.abs(np.diff(grid))
+        spacing = np.zeros_like(grid)
+        spacing[0] = diff[0]
+        for i in range(1, grid.size-1):
+            spacing[i] = min(diff[i], diff[i-1])
+        spacing[-1] = diff[-1]
+
+        # Get local part of basis spacing
+        start = self.distributor.grid_layout.start[axis]
+        size = self.distributor.grid_layout.shape[axis]
+        spacing = spacing[start:start+size]
+
+        # Reshape as multidimensional vector
+        spacing = reshape_vector(spacing, self.dim, axis)
+
+        return spacing
 
     def _collect_field(self, field):
         """Cache free field."""
