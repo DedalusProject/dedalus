@@ -6,23 +6,37 @@
 Dedalus
 ===================================
 
-Contents:
+Getting started
+
+.. toctree::
+   :maxdepth: 1
+
+   installation
+
+
+Code documentation
 
 .. toctree::
    :maxdepth: 1
 
    transforms
-   installation
    dedalus2
 
 Help
 ====
 
-* :doc:`using_sphinx`
+.. toctree::
+   :maxdepth: 1
+
+   using_sphinx
+   using_mercurial
+
+Useful external references:
+
 * `Sphinx documentation <http://sphinx-doc.org/contents.html>`_
 * `Using restructed text (reST) with sphinx <http://sphinx-doc.org/rest.html>`_
-* `full reStructuredText documentation <http://docutils.sourceforge.net/rst.html>`_
-* `tutorial on Python documentation with sphinx <http://pythonhosted.org/an_example_pypi_project/sphinx.html>`_
+* `Full reStructuredText documentation <http://docutils.sourceforge.net/rst.html>`_
+* `Tutorial on Python documentation with sphinx <http://pythonhosted.org/an_example_pypi_project/sphinx.html>`_
 
 Indices and tables
 ==================
