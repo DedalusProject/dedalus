@@ -13,7 +13,7 @@ Contents:
 
    transforms
    installation
-   dedalus2.public
+   dedalus2
 
 Help
 ====
