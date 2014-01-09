@@ -1,5 +1,5 @@
 """
-Spectral bases.
+Abstract and built-in classes for spectral bases.
 
 """
 
@@ -18,6 +18,9 @@ from ..tools.array import axslice
 class Basis:
     """
     Base class for spectral bases.
+
+    These classes define methods for transforming, differentiating, and
+    integrating corresponding series represented by their spectral coefficients.
 
     Parameters
     ----------
@@ -92,7 +95,7 @@ class ImplicitBasis(Basis):
     functions acting on a series represented by its spectral coefficients:
 
     Linear operators (square matrices):
-        Pre     : preconditioning
+        Pre     : preconditioning (default: identity)
         Diff    : differentiation
         Mult(p) : multiplication by p-th basis element
 
@@ -493,8 +496,6 @@ class Fourier(TransverseBasis, ImplicitBasis):
             # Positive then negative wavenumbers
             wavenumbers = np.arange(-kmax, kmax+1)
             wavenumbers = np.roll(wavenumbers, -kmax)
-        else:
-            raise ValueError("Unsupported grid_dtype.")
 
         # Scale native (integer) wavenumbers
         self.wavenumbers = wavenumbers / self._grid_stretch
