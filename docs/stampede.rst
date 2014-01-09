@@ -158,156 +158,56 @@ May need this for matplotlib?::
      make
      make install
 
-BLAS libraries
+
+UMFPACK
+-------
+
+We may wish to deploy UMFPACK for sparse matrix solves.  Keaton is
+starting to look at this now.  If we do, both numpy and scipy will
+require UMFPACK, so we should build it before proceeding with those builds.
+
+UMFPACK requires AMD (another package by the same group, not processor) and SuiteSparse_config, too.
+
+If we need UMFPACK, we
+can try installing it from ``suite-sparse`` as in the Mac install.
+UMFPACK docs are `here <http://www.cise.ufl.edu/research/sparse/umfpack/>`_ 
+and Suite-sparse is `here <http://www.cise.ufl.edu/research/sparse/>`_
+
+.. note::
+     We'll check and update this later. (1/9/14)
+
+
+Numpy and BLAS libraries
 ======================================
 
-Intel MKL
+Numpy will be built against a specific BLAS library.  Detailed
+instructions appear below for both MKL and OpenBlas.  
+Follow these and then return to this document.
+
+MKL
 --------------------------
-On Stampede we will likely generally use the Intel MKL libraries for
-BLAS; these are loaded through a module command and should be
-available by default.  
 
-.. note ::
-
-   I'm hitting frustrating errors with MKL (1/7/14), so for now we'll
-   proceed with OpenBLAS.  I have a ticket open with TACC to start
-   resolving some of this.
-
-Building numpy against MKL
-----------------------------------
-
-`See some useful but outdated notes here <https://www.cac.cornell.edu/stampede/python/nscompile.aspx>`_
-
-First, create an Intel MKL virtualenv instance::
-
-     cd ~/venv
-     virtualenv mkl
-     source ~/venv/mkl/bin/activate
-
-Now, acquire ``numpy`` (1.8.0)::
-
-     cd ~/venv/mkl
-     wget http://sourceforge.net/projects/numpy/files/NumPy/1.8.0/numpy-1.8.0.tar.gz
-     tar -xvf numpy-1.8.0.tar.gz
-     cd numpy-1.8.0
-
-We'll now need to make sure that ``numpy`` is building against the MKL
-libraries.  Start by making a ``site.cfg`` file::
-
-     cp site.cfg.example site.cfg
-
+.. toctree::
+    :maxdepth: 1
+    
+    stampede_mkl
 
 OpenBLAS
 --------------------------
 
-We may also wish to build and test against
-OpenBLAS.
-
-To download and install openBLAS, first do the following::
-
-      cd ~/build
-      git clone https://github.com/xianyi/OpenBLAS.git
-      cd OpenBLAS
-      make
-      make PREFIX=$HOME/build install
-
-This builds and automatically makes a multi-threaded version of
-OpenBLAS (16 threads right now). 
-
- .. note :: 
-
-  I'm uncertain whether this is all working correctly.  Namely,
-  we may need to do a compute-node targeted build, rather than a
-  login-targeted build, and use ifort.  We'll see.
-
-Building numpy against openblas
-------------------------------------
-
-
-First, create an OpenBLAS virtualenv instance::
-
-     cd ~/venv
-     virtualenv openblas
-     source ~/venv/openblas/bin/activate
-
-Now, acquire ``numpy`` (1.8.0)::
-
-     cd ~/venv/openblas
-     wget http://sourceforge.net/projects/numpy/files/NumPy/1.8.0/numpy-1.8.0.tar.gz
-     tar -xvf numpy-1.8.0.tar.gz
-     cd numpy-1.8.0
-
-Next, make a site specific config file::
-
-      cp site.cfg.example site.cfg
-      emacs -nw site.cfg
-
-Edit ``site.cfg`` to uncomment the ``[openblas]`` section; modify the
-library and include directories so that they correctly point to your
-``~/build/lib`` and ``~/build/include`` (note, you may need to do fully expanded
-paths).
-
-Then proceed with::
-
-     python3 setup.py config
-
-After executing config, check that numpy has correctly found the
-OpenBLAS install.  You should see something like this:
-
-::
-
-      (openblas)login2$ python3 setup.py config
-      Running from numpy source directory.
-      F2PY Version 2
-      blas_opt_info:
-      blas_mkl_info:
-      /home1/00364/tg456434/venv/openblas/numpy-1.8.0/numpy/distutils/system_info.py:576: UserWarning: Specified path /opt/apps/intel/13/composer_xe_2013.2.146/mkl/lib/em64t is invalid.
-        warnings.warn('Specified path %s is invalid.' % d)
-        libraries mkl,vml,guide not found in []
-        NOT AVAILABLE
-
-      openblas_info:
-        FOUND:
-          language = f77
-          library_dirs = ['/home1/00364/tg456434/build/lib']
-          libraries = ['openblas', 'openblas']
-
-        FOUND:
-          language = f77
-          library_dirs = ['/home1/00364/tg456434/build/lib']
-          libraries = ['openblas', 'openblas']
-
-      non-existing path in 'numpy/lib': 'benchmarks'
-      lapack_opt_info:
-        FOUND:
-          language = f77
-          library_dirs = ['/home1/00364/tg456434/build/lib']
-          libraries = ['openblas', 'openblas']
-
-      /home1/00364/tg456434/build/lib/python3.3/distutils/dist.py:257: UserWarning: Unknown distribution option: 'define_macros'
-        warnings.warn(msg)
-      running config
-      (openblas)login2$
-
-Next do::
-
-     python3 setup.py build
-     python3 setup.py install
-
-Test that things worked by launching ``python3`` and then doing::
-
-     import numpy as np
-     np.__config__.show()
-
-
-*Note: if on ``import numpy as np`` you get an error on loading the
-OpenBLAS shared library, see above note about ``$LD_LIBRARY_PATH``.*
+.. toctree::
+    :maxdepth: 1
+    
+    stampede_openblas
 
 
 Python library stack
 =====================
-Right now all of these need to be installed in each existing
-virtualenv instance (e.g., ``openblas``, ``mkl``, etc.).
+
+After ``numpy`` has been built (see links above) 
+we will proceed with the rest of our python stack.
+Right now, all of these need to be installed in each existing
+virtualenv instance (e.g., ``openblas``, ``mkl``, etc.).  
 
 Installing Scipy
 -------------------------
@@ -378,17 +278,6 @@ This should just be pip installed::
       then stampede tries to pull version 1.1.1 of matplotlib.  Hence the
       explicit version pull above.
 
-
-UMFPACK
--------
-
-Requires AMD (another package by the same group, not processor) and SuiteSparse_config, too.
-
-If we need UMFPACK, we
-can try installing it from ``suite-sparse`` as in the Mac install.
-UMFPACK docs are `here <http://www.cise.ufl.edu/research/sparse/umfpack/>`_ 
-and Suite-sparse is `here <http://www.cise.ufl.edu/research/sparse/>`_
-**We'll check and update this later.**
 
 
 Dedalus2
