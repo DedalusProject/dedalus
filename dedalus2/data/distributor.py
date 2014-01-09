@@ -1,4 +1,7 @@
+"""
+Classes for available data layouts and the paths between them.
 
+"""
 
 import numpy as np
 from mpi4py import MPI
@@ -7,37 +10,79 @@ from ..tools.logging import logger
 from ..tools.general import rev_enumerate
 try:
     from ..tools.fftw import fftw_wrappers as fftw
-    logger.debug("Successfully imported FFTW wrappers.")
     fftw.fftw_mpi_init()
 except ImportError:
-    logger.warning("Cannot import FFTW wrappers.")
-    logger.warning("Don't forget to build using 'python3 setup.py build_ext --inplace'")
+    logger.error("Don't forget to buid using 'python3 setup.py build_ext --inplace'")
+    raise
 
 
 class Distributor:
+    """
+    Director of parallelized distribution and transformation of fields.
+
+    Parameters
+    ----------
+    domain : domain object
+        Problem domain
+    mesh : tuple of ints, optional
+        Process mesh for parallelization (default: 1-D mesh of available processes)
+
+    Attributes
+    ----------
+    comm_world : MPI communicator
+        Global MPI communicator
+    rank : int
+        Internal MPI process number
+    size : int
+        Number of MPI processes
+    comm_cart : MPI communicator
+        Cartesian MPI communicator over mesh
+    coords : array of ints
+        Coordinates in cartesian communicator (None if outside mesh)
+    layouts : list of layout objects
+        Available layouts for domain
+    paths : list of path objects
+        Transforms and transposes between layouts
+
+    Notes
+    -----
+    Computations are parallelized by splitting D-dimensional data fields over
+    an R-dimensional mesh of MPI processes, where R < D.  In coefficient space,
+    we take the first R dimensions of the data to be distributed over the mesh,
+    leaving the last (D-R) dimensions local.  To transform such a data cube to
+    grid space, we loop backwards over the D dimensions, performing each
+    transform if the corresponding dimension is local, and performing an MPI
+    transpose with the next dimension otherwise.  This effectively bubbles the
+    first local dimension up from the (D-R)-th to the first dimension,
+    transforming to grid space along the way.  In grid space, then, the first
+    dimensional is local, followed by R dimensions distributed over the mesh,
+    and the last (D-R-1) dimensions local.
+
+    The distributor object for a given domain constructs layout objects
+    describing each of the (D+R+1) layouts (sets of transform and locality
+    states) and the paths between them (D transforms and R transposes).
+
+    """
 
     def __init__(self, domain, mesh=None):
 
         # Initial attributes
         self.domain = domain
 
-        # MPI / global statistics
-        if MPI:
-            self.comm_world = MPI.COMM_WORLD
-            self.rank = self.comm_world.rank
-            self.size = self.comm_world.size
-        else:
-            self.rank = 0
-            self.size = 1
+        # MPI communicator and statistics
+        self.comm_world = MPI.COMM_WORLD
+        self.rank = self.comm_world.rank
+        self.size = self.comm_world.size
 
-        # Default mesh: 1D
+        # Default to 1-D mesh of available processes
         if mesh is None:
-            mesh = (np.array([self.size], dtype=int))
+            mesh = np.array([self.size], dtype=int)
 
-        # Squeeze out local (size 1) dimensions
+        # Squeeze out local and bad (size <= 1) dimensions
         self.mesh = np.array([i for i in mesh if (i>1)], dtype=int)
 
-        # Reconcile mesh
+        # Check mesh compatibility
+        logger.debug('Mesh: %s' %str(self.mesh))
         if self.mesh.size >= domain.dim:
             raise ValueError("Mesh must have lower dimension than domain.")
         if np.prod(self.mesh) > self.size:
@@ -48,32 +93,27 @@ class Distributor:
                            "may be idle.")
 
         # Create cartesian communicator for parallel runs
-        if self.mesh.size:
-            self.parallel = True
-            self.comm_cart = self.comm_world.Create_cart(self.mesh)
-            self.coords = np.array(self.comm_cart.coords, dtype=int)
+        self.comm_cart = self.comm_world.Create_cart(self.mesh)
+
+        # Get cartesian coordinates
+        # Non-mesh processes receive null communicators
+        if self.comm_cart == MPI.COMM_NULL:
+            self.coords = None
         else:
-            self.parallel = False
-            self.coords = np.array([], dtype=int)
-
-        # Log parallelism information
-        #LOG: print self.parallel, self.size, self.mesh, self.coords
-
-        # Build layouts
-        self._build_layouts()
+            self.coords = np.array(self.comm_cart.coords, dtype=int)
+            self._build_layouts()
 
     def _build_layouts(self):
+        """Construct layout objects."""
 
         # References
         domain = self.domain
         mesh = self.mesh
         coords = self.coords
-
-        # Sizes
         D = domain.dim
         R = mesh.size
 
-        # Initial layout: full coefficient space
+        # First layout: full coefficient space
         local = [False] * R + [True] * (D-R)
         grid_space = [False] * D
         dtype = domain.bases[-1].coeff_dtype
@@ -86,9 +126,8 @@ class Distributor:
 
         # Subsequent layouts
         for i in range(1, R+D+1):
-            # Iterate backwards over bases
+            # Iterate backwards over bases to last coefficient space basis
             for d, basis in rev_enumerate(domain.bases):
-                # Find coeff_space basis
                 if not grid_space[d]:
                     # Transform if local
                     if local[d]:
@@ -119,92 +158,102 @@ class Distributor:
                                'coeff': self.coeff_layout,
                                'grid': self.grid_layout}
 
-        # Compute required buffer size (in doubles)
-        self.alloc_doubles = max([p.alloc_doubles for p in self.paths])
+        # Take maximum required buffer size (in doubles)
+        self.alloc_doubles = max(i.alloc_doubles for i in (self.layouts+self.paths))
 
     def create_buffer(self):
+        """Allocate memory using FFTW for SIMD alignment."""
 
-        # Allocate memory using FFTW for SIMD alignment
-        buffer = fftw.create_buffer(self.alloc_doubles)
-
-        return buffer
+        return fftw.create_buffer(self.alloc_doubles)
 
     def increment_layout(self, field):
+        """Transform field to subsequent layout (towards grid space)."""
 
-        # Call proper path method
         index = field.layout.index
         self.paths[index].increment(field)
 
     def decrement_layout(self, field):
+        """Transform field to preceding layout (towards coefficient space)."""
 
-        # Call proper path method
         index = field.layout.index
         self.paths[index-1].decrement(field)
 
 
 class Layout:
+    """
+    Specify local part of a transform and locality state.
+
+    Parameters
+    ----------
+    domain : domain object
+    mesh : array of ints
+    coords : array of ints
+    local : list of bools
+    grid_space : list of bools
+    dtype : data type
+
+    Attributes
+    ----------
+    start
+    shape
+    blocks
+
+    """
 
     def __init__(self, domain, mesh, coords, local, grid_space, dtype):
 
+        # Freeze local and grid_space lists by creating boolean arrays
+        local = np.array(local)
+        grid_space = np.array(grid_space)
+
         # Initial attributes
-        self.local = tuple(local)
-        self.grid_space = tuple(grid_space)
+        self.local = local
+        self.grid_space = grid_space
         self.dtype = dtype
 
         # Compute global shape
         g_shape = np.zeros(domain.dim, dtype=int)
         for i, b in enumerate(domain.bases):
-            if self.grid_space[i]:
+            if grid_space[i]:
                 g_shape[i] = b.grid_size
             else:
                 g_shape[i] = b.coeff_size
 
-        # Compute distributed global shape
-        dg_shape = []
-        for i in range(domain.dim):
-            if not self.local[i]:
-                dg_shape.append(g_shape[i])
-        dg_shape = np.array(dg_shape, dtype=int)
+        # Distributed global shape: subset of global shape
+        dg_shape = g_shape[~local]
 
-        # Compute blocks and distributed local start
-        blocks = np.ceil(dg_shape / mesh).astype(int)
+        # Block sizes: FFTW standard
+        self.blocks = blocks = np.ceil(dg_shape / mesh).astype(int)
+
+        # Cutoff coordinates: coordinates of first empty/partial blocks
+        cuts = np.floor(dg_shape / blocks).astype(int)
+
+        # Distributed local start
         dl_start = coords * blocks
 
-        # Compute distributed local shape
-        cuts = np.floor(dg_shape / blocks).astype(int)
+        # Distributed local shape
         dl_shape = np.zeros(mesh.size, dtype=int)
         dl_shape[coords < cuts] = blocks[coords < cuts]
         dl_shape[coords == cuts] = (dg_shape - cuts*blocks)[coords == cuts]
 
-        # Compute local start and shape
-        l_start = np.zeros(domain.dim, dtype=int)
-        l_shape = np.zeros(domain.dim, dtype=int)
-        j = 0
-        for i in range(domain.dim):
-            if self.local[i]:
-                l_shape[i] = g_shape[i]
-            else:
-                l_start[i] = dl_start[j]
-                l_shape[i] = dl_shape[j]
-                j += 1
+        # Local start
+        self.start = np.zeros(domain.dim, dtype=int)
+        self.start[~local] = dl_start
 
-        # Compute local strides and required allocation
-        nbytes = np.prod(l_shape) * np.dtype(dtype).itemsize
+        # Local shape
+        self.shape = g_shape
+        self.shape[~local] = dl_shape
+
+        # Required buffer size (in doubles)
+        nbytes = np.prod(self.shape) * np.dtype(dtype).itemsize
         self.alloc_doubles = nbytes // 8
 
-        # Store local start, shape, and blocks
-        self.start = l_start
-        self.shape = l_shape
-        self.blocks = blocks
-
     def view_data(self, buffer):
+        """View buffer in this layout."""
 
-        # Create view of buffer
-        data = np.ndarray(shape=self.shape,
+        return np.ndarray(shape=self.shape,
                           dtype=self.dtype,
                           buffer=buffer)
-
-        return data
 
 
 class Transform:
