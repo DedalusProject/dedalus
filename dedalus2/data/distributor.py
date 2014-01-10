@@ -18,14 +18,7 @@ except ImportError:
 
 class Distributor:
     """
-    Director of parallelized distribution and transformation of fields.
-
-    Parameters
-    ----------
-    domain : domain object
-        Problem domain
-    mesh : tuple of ints, optional
-        Process mesh for parallelization (default: 1-D mesh of available processes)
+    Directs parallelized distribution and transformation of fields over a domain.
 
     Attributes
     ----------
@@ -35,6 +28,8 @@ class Distributor:
         Internal MPI process number
     size : int
         Number of MPI processes
+    mesh : tuple of ints, optional
+        Process mesh for parallelization (default: 1-D mesh of available processes)
     comm_cart : MPI communicator
         Cartesian MPI communicator over mesh
     coords : array of ints
@@ -59,15 +54,12 @@ class Distributor:
     and the last (D-R-1) dimensions local.
 
     The distributor object for a given domain constructs layout objects
-    describing each of the (D+R+1) layouts (sets of transform and locality
+    describing each of the (D+R+1) layouts (sets of transform/distribution
     states) and the paths between them (D transforms and R transposes).
 
     """
 
     def __init__(self, domain, mesh=None):
-
-        # Initial attributes
-        self.domain = domain
 
         # MPI communicator and statistics
         self.comm_world = MPI.COMM_WORLD
@@ -101,13 +93,12 @@ class Distributor:
             self.coords = None
         else:
             self.coords = np.array(self.comm_cart.coords, dtype=int)
-            self._build_layouts()
+            self._build_layouts(domain)
 
-    def _build_layouts(self):
+    def _build_layouts(self, domain):
         """Construct layout objects."""
 
         # References
-        domain = self.domain
         mesh = self.mesh
         coords = self.coords
         D = domain.dim
@@ -181,22 +172,23 @@ class Distributor:
 
 class Layout:
     """
-    Specify local part of a transform and locality state.
-
-    Parameters
-    ----------
-    domain : domain object
-    mesh : array of ints
-    coords : array of ints
-    local : list of bools
-    grid_space : list of bools
-    dtype : data type
+    Specifications for the local part of a given data layout, specified by the
+    transform and distribution states
 
     Attributes
     ----------
-    start
-    shape
-    blocks
+    local : array of bools
+        Locality flags for each dimension
+    grid_space : array of bools
+        Grid space flags for each dimension
+    dtype : numeric type
+        Numeric type of data
+    blocks : arrays of ints
+        Distributed block sizes
+    start : array of ints
+        Local data start indices
+    shape : array of ints
+        Local data shape
 
     """
 
@@ -257,6 +249,16 @@ class Layout:
 
 
 class Transform:
+    """
+    Directs transforms between two layouts.
+
+    Notes
+    -----
+    A local buffer is used to pad coefficients according to the basis
+    parameters, and out-of-place transforms between this buffer and the
+    field's buffer are performed.
+
+    """
 
     def __init__(self, layout0, layout1, axis, basis):
 
@@ -267,61 +269,74 @@ class Transform:
         self.basis = basis
 
         # Construct buffer for padded coefficients
-        pshape = np.copy(layout0.shape)
-        pshape[axis] = basis.coeff_embed
-        pdtype = layout0.dtype
-        pdoubles = np.prod(pshape) * np.dtype(pdtype).itemsize // 8
-        self.buffer = fftw.create_buffer(pdoubles)
-        self.embed = np.ndarray(shape=pshape,
-                                dtype=pdtype,
+        pad_shape = np.copy(layout0.shape)
+        pad_shape[axis] = basis.coeff_embed
+        pad_dtype = layout0.dtype
+        pad_doubles = np.prod(pad_shape) * np.dtype(pad_dtype).itemsize // 8
+        self.buffer = fftw.create_buffer(pad_doubles)
+        self.embed = np.ndarray(shape=pad_shape,
+                                dtype=pad_dtype,
                                 buffer=self.buffer)
 
-        # Compute required buffer size (in doubles)
-        self.alloc_doubles = max(layout0.alloc_doubles, layout1.alloc_doubles)
+        # By using buffer, transforms/padding don't impact field allocations
+        self.alloc_doubles = 0
 
+        # Dispatch based on local distribution
         if np.prod(layout0.shape):
-            # Increasing layout index: moving towards grid space
+            # Increment layout <==> towards grid space
             self.increment = self._backward
             self.decrement = self._forward
         else:
-            # No-op for no local data
+            # No-op if there's no local data
             self.increment = self._no_op_backward
             self.decrement = self._no_op_forward
 
     def _backward(self, field):
+        """Coefficient-to-grid padding and transform."""
 
-        # Get coefficient and grid data views
+        # Get coefficient and grid space views
         cdata = field.data
         field.layout = self.layout1
         gdata = field.data
 
-        # Call basis transform
+        # Call basis padding and transform
         self.basis.pad_coeff(cdata, self.embed, axis=self.axis)
         self.basis.backward(self.embed, gdata, axis=self.axis)
 
     def _forward(self, field):
+        """Grid-to-coefficient transform and unpadding."""
 
-        # Get coefficient and grid data views
+        # Get coefficient and grid space views
         gdata = field.data
         field.layout = self.layout0
         cdata = field.data
 
-        # Call basis transform
+        # Call basis transform and unpadding
         self.basis.forward(gdata, self.embed, axis=self.axis)
         self.basis.unpad_coeff(self.embed, cdata, axis=self.axis)
 
     def _no_op_backward(self, field):
+        """Update layout, no data handling."""
 
-        # Update layout
         field.layout = self.layout1
 
     def _no_op_forward(self, field):
+        """Update layout, no data handling."""
 
-        # Update layout
         field.layout = self.layout0
 
 
 class Transpose:
+    """
+    Directs transposes between two layouts.
+
+    Notes
+    -----
+    If the transpose is not between the first two dimensions, then local
+    transposes to an internal buffer are called before and after the global
+    MPI transpose to achieve such an ordering.
+
+    """
 
     def __init__(self, layout0, layout1, axis, comm_cart):
 
@@ -330,7 +345,7 @@ class Transpose:
         self.layout1 = layout1
         self.axis = axis
 
-        # Create subgrid communicator
+        # Create subgrid communicator along the mesh axis that switches dimension
         remain_dims = [0] * comm_cart.dim
         remain_dims[axis] = 1
         self.comm_sub = comm_cart.Sub(remain_dims)
@@ -347,75 +362,78 @@ class Transpose:
         self.fftw_plans = fftw.Transpose(n0, n1, howmany, block0, block1,
                                          dtype, self.comm_sub, flags=['FFTW_MEASURE'])
 
-        # Compute required buffer size (in doubles)
+        # Required buffer size (in doubles)
         self.alloc_doubles = self.fftw_plans.alloc_doubles
 
-        # Increasing layout index: gather axis
+        # Dispatch based on transpose axis
+        # Increment layout <==> gather specified axis
         if axis == 0:
             self.increment = self._gather_d
             self.decrement = self._scatter_d
         else:
             # Create buffer for intermediate local transposes
-            self._temp_buff = fftw.create_buffer(self.alloc_doubles)
+            self._buffer = fftw.create_buffer(self.alloc_doubles)
             self._rolled_axes = np.roll(np.arange(layout0.shape.size), -axis)
             self.increment = self._gather_ldl
             self.decrement = self._scatter_ldl
 
     def _gather_d(self, field):
+        """FFTW transpose to gather axis == 0."""
 
         # Call FFTW plan on data view
-        view0 = field.data
-        self.fftw_plans.gather(view0)
+        self.fftw_plans.gather(field.data)
 
         # Update layout
         field.layout = self.layout1
 
     def _scatter_d(self, field):
+        """FFTW transpose to scatter axis == 0."""
 
         # Call FFTW plan on data view
-        view1 = field.data
-        self.fftw_plans.scatter(view1)
+        self.fftw_plans.scatter(field.data)
 
         # Update layout
         field.layout = self.layout0
 
     def _gather_ldl(self, field):
+        """FFTW and local transposes to gather axis > 0."""
 
-        # Local transpose axis to first index
+        # Local transpose from field to internal buffer
         view0 = field.data
         tr_view0 = np.transpose(view0, self._rolled_axes)
-        temp_view = np.ndarray(shape=tr_view0.shape, dtype=tr_view0.dtype, buffer=self._temp_buff)
-        np.copyto(temp_view, tr_view0)
+        temp = np.ndarray(shape=tr_view0.shape, dtype=tr_view0.dtype, buffer=self._buffer)
+        np.copyto(temp, tr_view0)
 
         # Global transpose
-        self.fftw_plans.gather(temp_view)
+        self.fftw_plans.gather(temp)
 
         # Update field layout
         field.layout = self.layout1
 
-        # Local transpose first index to axis
+        # Local transpose from internal buffer to field
         view1 = field.data
         tr_view1 = np.transpose(view1, self._rolled_axes)
-        temp_view.resize(tr_view1.shape)
-        np.copyto(tr_view1, temp_view)
+        temp.resize(tr_view1.shape)
+        np.copyto(tr_view1, temp)
 
     def _scatter_ldl(self, field):
+        """FFTW and local transposes to scatter axis > 0."""
 
-        # Local transpose axis to first index
+        # Local transpose from field to internal buffer
         view1 = field.data
         tr_view1 = np.transpose(view1, self._rolled_axes)
-        temp_view = np.ndarray(shape=tr_view1.shape, dtype=tr_view1.dtype, buffer=self._temp_buff)
-        np.copyto(temp_view, tr_view1)
+        temp = np.ndarray(shape=tr_view1.shape, dtype=tr_view1.dtype, buffer=self._buffer)
+        np.copyto(temp, tr_view1)
 
         # Global transpose
-        self.fftw_plans.scatter(temp_view)
+        self.fftw_plans.scatter(temp)
 
         # Update field layout
         field.layout = self.layout0
 
-        # Local transpose first index to axis
+        # Local transpose from internal buffer to field
         view0 = field.data
         tr_view0 = np.transpose(view0, self._rolled_axes)
-        temp_view.resize(tr_view0.shape)
-        np.copyto(tr_view0, temp_view)
+        temp.resize(tr_view0.shape)
+        np.copyto(tr_view0, temp)
 
