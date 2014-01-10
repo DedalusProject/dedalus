@@ -7,6 +7,7 @@ import numpy as np
 
 from .distributor import Distributor
 from .field import Field
+from ..tools.logging import logger
 from ..tools.cache import CachedMethod
 from ..tools.array import reshape_vector
 
@@ -42,8 +43,14 @@ class Domain:
 
         # Iteratively set basis data types
         # (Grid-to-coefficient transforms proceed in the listed order)
-        for b in self.bases:
+        for b in bases:
             grid_dtype = b.set_transforms(grid_dtype)
+
+        # Get global grid and coefficient shapes
+        self.grid_shape = np.array([b.grid_size for b in bases], dtype=int)
+        self.coeff_shape = np.array([b.coeff_size for b in bases], dtype=int)
+        logger.debug('Global grid shape: %s' %str(self.grid_shape))
+        logger.debug('Global coeff shape: %s' %str(self.coeff_shape))
 
         # Manage field allocation
         self._field_cache = list()

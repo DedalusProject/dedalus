@@ -90,6 +90,7 @@ class Distributor:
         # Get cartesian coordinates
         # Non-mesh processes receive null communicators
         if self.comm_cart == MPI.COMM_NULL:
+            # UPGRADE: figure out what to do when outside mesh
             self.coords = None
         else:
             self.coords = np.array(self.comm_cart.coords, dtype=int)
@@ -142,6 +143,8 @@ class Distributor:
         # Directly reference coefficient and grid space layouts
         self.coeff_layout = self.layouts[0]
         self.grid_layout = self.layouts[-1]
+        logger.debug('Local grid shape: %s' %str(self.grid_layout.shape))
+        logger.debug('Local coeff shape: %s' %str(self.coeff_layout.shape))
 
         # Allow string references to coefficient and grid space layouts
         self.string_layouts = {'c': self.coeff_layout,
@@ -204,12 +207,8 @@ class Layout:
         self.dtype = dtype
 
         # Compute global shape
-        g_shape = np.zeros(domain.dim, dtype=int)
-        for i, b in enumerate(domain.bases):
-            if grid_space[i]:
-                g_shape[i] = b.grid_size
-            else:
-                g_shape[i] = b.coeff_size
+        g_shape = np.copy(domain.coeff_shape)
+        g_shape[grid_space] = domain.grid_shape[grid_space]
 
         # Distributed global shape: subset of global shape
         dg_shape = g_shape[~local]
