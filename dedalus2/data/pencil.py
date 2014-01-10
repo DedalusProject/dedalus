@@ -24,7 +24,7 @@ class PencilSet:
     def __init__(self, domain, n_fields):
 
         # Extend coefficient data shape for system-wide data set
-        shape = np.copy(domain.coeff_shape)
+        shape = np.copy(domain.distributor.coeff_layout.shape)
         self.stride = shape[-1]
         shape[-1] *= n_fields
 
