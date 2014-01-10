@@ -1,18 +1,30 @@
+"""
+Classes for manipulating pencils.
 
+"""
 
 import numpy as np
 from scipy import sparse
 
-from ..tools.general import rev_enumerate
-
 
 class PencilSet:
-    """Adjascent-memory pencil system for efficient computations."""
+    """
+    Pencil system with adjascent memory for efficient computations.
+
+    Attributes
+    ----------
+    data : ndarray
+        Contiguous array for system-wide coefficient data concatenated along
+        last axis.
+    pencils : list of pencil objects
+        Individual pencils
+
+    """
 
     def __init__(self, domain, n_fields):
 
-        # Extend layout shape
-        shape = list(domain.distributor.coeff_layout.shape)
+        # Extend coefficient data shape for system-wide data set
+        shape = np.copy(domain.coeff_shape)
         self.stride = shape[-1]
         shape[-1] *= n_fields
 
@@ -21,13 +33,14 @@ class PencilSet:
         self.data = np.zeros(shape, dtype=dtype)
 
         # Build pencils
-        self._construct_pencil_info(domain)
         self.pencils = []
-        for s, d in zip(self.pencil_slices, self.pencil_dtrans):
+        slice_list, dtrans_list = self._construct_pencil_info(domain)
+        for s, d in zip(slice_list, dtrans_list):
             pencil = Pencil(self.data, s, d)
             self.pencils.append(pencil)
 
     def get_system(self, system):
+        """Copy fields into contiguous pencil buffer."""
 
         for i, field in enumerate(system.fields.values()):
             start = i * self.stride
@@ -37,71 +50,85 @@ class PencilSet:
             np.copyto(self.data[..., start:end], field.data)
 
     def set_system(self, system):
+        """Extract fields from contiguous pencil buffer."""
 
         for i, field in enumerate(system.fields.values()):
             start = i * self.stride
             end = start + self.stride
 
-            #field.require_coeff_space()
             field.layout = field.domain.distributor.coeff_layout
             np.copyto(field.data, self.data[..., start:end])
 
     def _construct_pencil_info(self, domain):
+        """Construct slice and dtrans lists for each pencil in set."""
 
-        # Construct pencil slices
-        coeff_layout = domain.distributor.coeff_layout
-        n_pencils = np.prod(coeff_layout.shape[:-1])
-        n = np.arange(n_pencils)
+        # Get transverse indeces in fastest sequence
         index_list = []
-        dtrans_list = []
-
-        div = n
-        start = coeff_layout.start[:-1]
-        for i, s in rev_enumerate(coeff_layout.shape[:-1]):
-            div, mod = divmod(div, s)
-            index_list.append(mod)
-            dtrans_list.append(domain.bases[i].trans_diff(start[i]+mod))
-
         if domain.dim == 1:
             index_list.append([])
-            dtrans_list.append([])
         else:
-            index_list = list(zip(*index_list))
-            dtrans_list = list(zip(*dtrans_list))
+            trans_shape = self.data.shape[:-1]
+            div = np.arange(np.prod(trans_shape))
+            for s in reversed(trans_shape):
+                div, mod = divmod(div, s)
+                index_list.append(mod)
+            index_list = list(zip(*reversed(index_list)))
 
-        slices = []
-        for bl in index_list:
-            sli = []
-            for i in bl:
-                sli.append(slice(i, i+1))
-            sli.append(slice(None))
-            slices.append(sli)
+        # Construct corresponding slice and dtrans lists
+        slice_list = []
+        dtrans_list = []
+        start = domain.distributor.coeff_layout.start
+        for pencil_index in index_list:
+            pencil_slices = []
+            pencil_dtrans = []
+            for n, b in enumerate(domain.bases[:-1]):
+                i = pencil_index[n]
+                pencil_slices.append(slice(i, i+1))
+                pencil_dtrans.append(b.trans_diff(start[n]+i))
+            # Add empty slice for last dimension
+            pencil_slices.append(slice(None))
+            slice_list.append(pencil_slices)
+            dtrans_list.append(pencil_dtrans)
 
-        self.pencil_slices = slices
-        self.pencil_dtrans = dtrans_list
+        return slice_list, dtrans_list
 
 
 class Pencil:
-    """Pencil object for viewing one k_trans across system"""
+    """
+    Pencil holding problem matrices for a given transverse wavevector.
 
-    def __init__(self, setdata, slice, d_trans):
+    Parameters
+    ----------
+    set_data : ndarray
+        Array of pencil set data
+    slice : list of slice objects
+        Slices for retrieving pencil from set data
+    d_trans :  list of floats
+        Perpendicular differentiation constants
+
+    """
+
+    def __init__(self, set_data, slice, d_trans):
 
         # Initial attributes
-        self.setdata = setdata
+        self.set_data = set_data
         self.slice = slice
         self.d_trans = d_trans
 
     @property
     def data(self):
+        """View corresponding data from pencil set."""
 
-        return self.setdata[self.slice].squeeze()
+        return self.set_data[self.slice].squeeze()
 
     @data.setter
     def data(self, data):
+        """Set corresponding data in pencil set."""
 
-        self.setdata[self.slice] = data
+        self.set_data[self.slice] = data
 
     def build_matrices(self, problem, basis):
+        """Construct PDE matrices from problem and basis matrices."""
 
         # Size
         size = problem.size * basis.coeff_size
@@ -171,14 +198,16 @@ class Pencil:
 
         # Reference nonlinear expressions
         self.F = problem.F
+        self.F_eval = sparse.kron(np.eye(problem.size), basis.Pre)
+        b = np.kron(problem.b(D), basis.bc_vector[:,0])
+        self.bc_f = [b[r] for r in rows]
+        self.bc_rows = list(rows)
+        self.parameters = problem.parameters
+
+        # UPGRADE: Caste boundary conditions as functionals on operator trees
         # self.BL = problem.BL
         # self.BR = problem.BR
         # self.BI = problem.BI
-        self.b = np.kron(problem.b(D), basis.bc_vector[:,0])
-        self.bc_rows = list(rows)
-        self.bc_f = [self.b[r] for r in rows]
-        self.parameters = problem.parameters
-        self.F_eval = sparse.kron(np.eye(problem.size), basis.Pre)
         # self.BL_eval = sparse.kron(np.eye(problem.size), basis.Left)
         # self.BR_eval = sparse.kron(np.eye(problem.size), basis.Right)
         # self.BI_eval = sparse.kron(np.eye(problem.size), basis.Int)

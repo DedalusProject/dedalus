@@ -377,6 +377,7 @@ class MagSquared(Operator):
 
 
 def create_diff_operators(domain):
+    """Create operators representing differentiation along each axis."""
 
     ops = []
 
