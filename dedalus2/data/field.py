@@ -6,7 +6,6 @@ Class for data fields.
 import numpy as np
 import weakref
 
-from ..pde.basis import TransverseBasis
 # Bottom-import to resolve cyclic dependencies:
 # from .operators import Negation, Addition, Subtraction, Multiplication
 
@@ -181,6 +180,7 @@ class Field:
         """Integrate field over domain."""
 
         # Require full coefficient space
+        # UPGRADE: implement distributed integral
         self.require_coeff_space()
         if not all(self.layout.local):
             raise NotImplementedError("Distributed integral not implemented.")
