@@ -1,17 +1,35 @@
 """
-Field class definition.
+Class for data fields.
 
 """
 
 import numpy as np
 import weakref
 
+from ..pde.basis import TransverseBasis
 # Bottom-import to resolve cyclic dependencies:
 # from .operators import Negation, Addition, Subtraction, Multiplication
 
 
 class Field:
-    """Scalar field defined over the distributed domain."""
+    """
+    Scalar field over a domain.
+
+    Parameters
+    ----------
+    domain : domain object
+        Problem domain
+    name : str, optional
+        Field name (default: Python object id)
+
+    Attributes
+    ----------
+    layout : layout object
+        Current layout of field
+    data : ndarray
+        View of internal buffer in current layout
+
+    """
 
     def __init__(self, domain, name=None):
 
@@ -30,7 +48,7 @@ class Field:
         # Allocate buffer
         self._buffer = domain.distributor.create_buffer()
 
-        # Set initial layout
+        # Set initial layout (property hook sets data view)
         self.layout = domain.distributor.coeff_layout
 
     @property
@@ -47,13 +65,16 @@ class Field:
         return self._domain_weak_ref()
 
     def __del__(self):
+        """Intercept deallocation to cache unused fields in domain."""
 
-        # Add self to domain manager
+        # Check that domain is still instantiated
         if self.domain:
             self.domain._collect_field(self)
 
     def __repr__(self):
         return self.name
+
+    # Use operators to define arithmetic on field objects
 
     def __neg__(self):
         return Negation(self)
@@ -77,10 +98,13 @@ class Field:
         return Multiplication(other, self)
 
     def __getitem__(self, layout):
+        """Return data viewed in specified layout."""
 
+        # Resolve layout strings to corresponding layout objects
         if isinstance(layout, str):
             layout = self.domain.distributor.string_layouts[layout]
 
+        # Transform to specified layout
         if self.layout.index < layout.index:
             while self.layout.index < layout.index:
                 self.towards_grid_space()
@@ -91,7 +115,9 @@ class Field:
         return self.data
 
     def __setitem__(self, layout, data):
+        """Set data viewed in a specified layout."""
 
+        # Resolve layout strings to corresponding layout objects
         if isinstance(layout, str):
             layout = self.domain.distributor.string_layouts[layout]
 
@@ -131,10 +157,7 @@ class Field:
     def require_local(self, axis):
         """Require an axis to be local."""
 
-        # Handle negative axes
-        if axis < 0:
-            axis += self.domain.dim
-
+        # Move towards transform path, since the surrounding layouts are local
         if self.layout.grid_space[axis]:
             while not self.layout.local[axis]:
                 self.towards_coeff_space()
@@ -143,9 +166,10 @@ class Field:
                 self.towards_grid_space()
 
     def differentiate(self, axis, out):
-        """Differentiate field across one axis."""
+        """Differentiate field along one axis."""
 
         # Require axis to be local and in coefficient space
+        # UPGRADE: non-transverse bases don't strictly require locality
         self.require_local(axis)
         self.require_coeff_space(axis)
 
