@@ -1,5 +1,5 @@
 """
-Operator classes for fields.
+Abstract and built-in classes defining delayed-evaluation operations on fields.
 
 """
 
@@ -13,7 +13,7 @@ from ..tools.dispatch import MultiClass
 
 class Operator:
     """
-    Base class for operations on fields.
+    Base class for delayed operations on fields.
 
     Parameters
     ----------
@@ -81,12 +81,12 @@ class Operator:
         return Multiplication(other, self)
 
     def _reset(self):
+        """Restore original arguments."""
 
-        # Restore original arguments
         self.args = list(self.original_args)
 
     def field_set(self, include_out=False):
-        """Set of field leaves."""
+        """Get set of field leaves."""
 
         # Recursively collect field arguments
         fields = OrderedSet()
@@ -113,7 +113,7 @@ class Operator:
             if isinstance(a, Operator):
                 a_eval = a.evaluate(force=force)
                 # If evaluation succeeds, substitute result
-                if a_eval:
+                if a_eval is not None:
                     self.args[i] = a_eval
                 # Otherwise change flag
                 else:
