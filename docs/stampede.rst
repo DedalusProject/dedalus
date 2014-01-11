@@ -97,7 +97,7 @@ Installing pip
 -------------------------
 
 We'll use ``pip`` to install our python library depdencies.
-Instructions on doing this are available `here <http://www.pip-installer.org/en/latest/installing.html>`_ 
+Instructions on doing this are `available here <http://www.pip-installer.org/en/latest/installing.html>`_ 
 and summarized below.  First
 download and install setup tools::
 
@@ -170,8 +170,8 @@ UMFPACK requires AMD (another package by the same group, not processor) and Suit
 
 If we need UMFPACK, we
 can try installing it from ``suite-sparse`` as in the Mac install.
-UMFPACK docs are `here <http://www.cise.ufl.edu/research/sparse/umfpack/>`_ 
-and Suite-sparse is `here <http://www.cise.ufl.edu/research/sparse/>`_
+Here are links to `UMFPACK docs <http://www.cise.ufl.edu/research/sparse/umfpack/>`_ 
+and `Suite-sparse <http://www.cise.ufl.edu/research/sparse/>`_
 
 .. note::
      We'll check and update this later. (1/9/14)
@@ -244,7 +244,7 @@ This should just be pip installed::
 
       pip3 install -v http://mpi4py.googlecode.com/files/mpi4py-1.3.1.tar.gz
 
-.. note:
+.. note::
     
       If we use use ::
 
@@ -298,5 +298,10 @@ Running Dedalus on Stampede
 Source the appropriate virtualenv::
 
      source ~/venv/openblas/bin/activate
+
+or::
+
+     source ~/venv/mkl/bin/activate
+
 
 grab an interactive dev node with ``idev``.  Play.

@@ -41,15 +41,20 @@ With the modules loaded above, this looks like::
 
      [mkl]
      library_dirs = /opt/apps/intel/13/composer_xe_2013.2.146/mkl/lib/intel64/
-     mkl_libs = mkl_gnu_thread
+     include_dirs = /opt/apps/intel/13/composer_xe_2013.2.146/mkl/include/
+     mkl_libs = mkl_rt
+     lapack_libs =
 
+These are based on intels instructions for 
+`compiling numpy with ifort <http://software.intel.com/en-us/articles/numpyscipy-with-intel-mkl>`_
+and they seem to work so far.
 
 Then proceed with::
 
      python3 setup.py config
 
 After executing config, check that numpy has correctly found the
-OpenBLAS install.  You should see something like this:
+MKL install.  You should see something like this:
 
 ::
 
@@ -59,16 +64,16 @@ OpenBLAS install.  You should see something like this:
     blas_opt_info:
     blas_mkl_info:
       FOUND:
-        libraries = ['mkl_gnu_thread', 'pthread']
-        library_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/lib/intel64/']
-        include_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/include']
         define_macros = [('SCIPY_MKL_H', None)]
+        libraries = ['mkl_rt', 'pthread']
+        include_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/include/']
+        library_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/lib/intel64/']
 
       FOUND:
-          libraries = ['mkl_gnu_thread', 'pthread']
+        define_macros = [('SCIPY_MKL_H', None)]
+        libraries = ['mkl_rt', 'pthread']
+          include_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/include/']
           library_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/lib/intel64/']
-          include_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/include']
-          define_macros = [('SCIPY_MKL_H', None)]
 
       non-existing path in 'numpy/lib': 'benchmarks'
       lapack_opt_info:
@@ -76,45 +81,35 @@ OpenBLAS install.  You should see something like this:
         libraries openblas not found in ['/home1/00364/tg456434/venv/mkl/lib', '/usr/local/lib64', '/usr/local/lib', '/usr/lib64', '/usr/lib']
         NOT AVAILABLE
 
-      lapack_mkl_info:
-      mkl_info:
-        FOUND:
-          libraries = ['mkl_gnu_thread', 'pthread']
-          library_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/lib/intel64/']
-          include_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/include']
-          define_macros = [('SCIPY_MKL_H', None)]
+    lapack_mkl_info:
+    mkl_info:
+      FOUND:
+        define_macros = [('SCIPY_MKL_H', None)]
+        libraries = ['mkl_rt', 'pthread']
+        include_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/include/']
+        library_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/lib/intel64/']
 
-        FOUND:
-          libraries = ['mkl_lapack32', 'mkl_lapack64', 'mkl_gnu_thread', 'pthread']
-          library_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/lib/intel64/']
-          include_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/include']
-          define_macros = [('SCIPY_MKL_H', None)]
+      FOUND:
+        define_macros = [('SCIPY_MKL_H', None)]
+        libraries = ['mkl_rt', 'pthread']
+        include_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/include/']
+        library_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/lib/intel64/']
 
-        FOUND:
-          libraries = ['mkl_lapack32', 'mkl_lapack64', 'mkl_gnu_thread', 'pthread']
-          library_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/lib/intel64/']
-          include_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/include']
-          define_macros = [('SCIPY_MKL_H', None)]
+      FOUND:
+        define_macros = [('SCIPY_MKL_H', None)]
+        libraries = ['mkl_rt', 'pthread']
+        include_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/include/']
+        library_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/lib/intel64/']
 
-      /home1/00364/tg456434/build/lib/python3.3/distutils/dist.py:257: UserWarning: Unknown distribution option: 'define_macros'
-        warnings.warn(msg)
-      running config
-      (mkl)login2$ 
-
+    /home1/00364/tg456434/build/lib/python3.3/distutils/dist.py:257: UserWarning: Unknown distribution option: 'define_macros'
+      warnings.warn(msg)
+    running config
+    (mkl)login2$
 
 Next do::
 
      python3 setup.py build
      python3 setup.py install
-
-We're hitting an error on ``install``::
-
-      gcc -pthread -shared build/temp.linux-x86_64-3.3/numpy/linalg/lapack_litemodule.o build/temp.linux-x86_64-3.3/numpy/linalg/lapack_lite/python_xerbla.o -L/opt/apps/intel/13/composer_xe_2013.2.146/mkl/lib/intel64/ -Lbuild/temp.linux-x86_64-3.3 -lmkl_lapack32 -lmkl_lapack64 -lmkl_gnu_thread -lpthread -o build/lib.linux-x86_64-3.3/numpy/linalg/lapack_lite.cpython-33m.so
-      /usr/bin/ld: cannot find -lmkl_lapack32
-      collect2: error: ld returned 1 exit status
-      /usr/bin/ld: cannot find -lmkl_lapack32
-      collect2: error: ld returned 1 exit status
-      error: Command "gcc -pthread -shared build/temp.linux-x86_64-3.3/numpy/linalg/lapack_litemodule.o build/temp.linux-x86_64-3.3/numpy/linalg/lapack_lite/python_xerbla.o -L/opt/apps/intel/13/composer_xe_2013.2.146/mkl/lib/intel64/ -Lbuild/temp.linux-x86_64-3.3 -lmkl_lapack32 -lmkl_lapack64 -lmkl_gnu_thread -lpthread -o build/lib.linux-x86_64-3.3/numpy/linalg/lapack_lite.cpython-33m.so" failed with exit status 1
 
 Test that things worked by launching ``python3`` and then doing::
 
@@ -126,3 +121,27 @@ we can further test our numpy build with::
 
      np.test()
      np.test('full')
+
+We pass ``np.test()`` with no errors (takes roughly 54 seconds); we
+have one failure on ``np.test('full')`` ::
+
+      ======================================================================
+      FAIL: test_allnans (test_nanfunctions.TestNanFunctions_Sum)
+      ----------------------------------------------------------------------
+      Traceback (most recent call last):
+        File "/home1/00364/tg456434/venv/mkl/lib/python3.3/site-packages/numpy/lib/tests/test_nanfunctions.py", line 308, in test_allnans
+          assert_(len(w) == 1, 'no warning raised')
+        File "/home1/00364/tg456434/venv/mkl/lib/python3.3/site-packages/numpy/testing/utils.py", line 44, in assert_
+          raise AssertionError(msg)
+      AssertionError: no warning raised
+
+      ----------------------------------------------------------------------
+      Ran 5000 tests in 253.836s
+
+      FAILED (KNOWNFAIL=6, SKIP=4, failures=1)
+      <nose.result.TextTestResult run=5000 errors=0 failures=1>
+      >>> 
+
+This is the same error as in the OpenBLAS install
+(:doc:`stampede_openblas`).  Also, overall test times are very similar
+for the full test.
