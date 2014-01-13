@@ -1,4 +1,8 @@
+"""
+FFTW Cython declarations.  Comments refer to corresponding sections of the
+FFTW3 documentation.
 
+"""
 
 from mpi4py.mpi_c cimport MPI_Comm as mpi_comm_t
 from libc.stddef cimport ptrdiff_t
@@ -12,7 +16,7 @@ cdef extern from "complex.h":
 cdef extern from "fftw3.h":
 
     # Using plans (4.2)
-    # Plan type as opaque pointer
+    # Use opaque pointer as plan type
     ctypedef void *fftw_plan
     void fftw_destroy_plan(fftw_plan plan)
 
@@ -59,6 +63,7 @@ cdef extern from "fftw3-mpi.h":
 
 cdef enum:
 
+    # FFTW flags, defined in fftw headers
     FFTW_ESTIMATE = (1 << 6)
     FFTW_EXHAUSTIVE = (1 << 3)
     FFTW_MEASURE = 0
