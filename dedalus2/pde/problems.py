@@ -12,7 +12,7 @@ class Problem:
 
     Equations are assumed to take the form (LHS = RHS), where the left-hand side
     contains terms that are linear in the dependent variables (and will be
-    represented by coefficient matrices), and the right-hand side contains terms
+    represented in coefficient matrices), and the right-hand side contains terms
     that are non-linear (and will be represented by operator trees).  For
     simplicity, the last axis is referred to as the "z" direction.
 
@@ -69,15 +69,20 @@ class Problem:
 
     Notes
     -----
+    The (i,j)-th element of a coefficient matrix encodes the dependence of the
+    i-th equation/constraint on the j-th field named in the `field_names` list.
+
     The linear terms are separated into several matrices depending on the
     presence of temporal derivatives and spatial derivatives along the z axis,
     i.e. the last/pencil/implict axis.  Other axes must be represented by
     TransverseBasis objects, and hence their differential operators reduce to
-    multiplicative constants for each pencil.  The attributes defining the
-    problem matrices are lists of functions, one for each term in the spectral
-    expansion of the non-constant coefficients, that take as an argument the
-    list of multiplicative constants for transverse differentiation for a given
-    pencil, and return the resulting problem coefficients.
+    multiplicative constants for each pencil.
+
+    The attributes defining the problem matrices are lists of functions, one for
+    each term in the spectralmexpansion of the non-constant coefficients, that
+    take as an argument the list of multiplicative constants for transverse
+    differentiation for a given pencil, and return the resulting problem
+    coefficients.
 
     """
 
