@@ -9,7 +9,7 @@ from mpi4py import MPI
 from ..tools.logging import logger
 from ..tools.general import rev_enumerate
 try:
-    from ..tools.fftw import fftw_wrappers as fftw
+    from ..libraries.fftw import fftw_wrappers as fftw
     fftw.fftw_mpi_init()
 except ImportError:
     logger.error("Don't forget to buid using 'python3 setup.py build_ext --inplace'")
