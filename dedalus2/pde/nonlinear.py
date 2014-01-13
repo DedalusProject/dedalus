@@ -1,4 +1,7 @@
+"""
+Functions for evaluating operator trees.
 
+"""
 
 import numpy as np
 from scipy import sparse
@@ -7,6 +10,7 @@ from ..tools.general import OrderedSet
 
 
 def get_fields(expressions):
+    """Get set of field leaves from multiple operators."""
 
     fields = OrderedSet()
     for re in expressions:
@@ -17,6 +21,17 @@ def get_fields(expressions):
 
 
 def compute_expressions(rhs_expressions, out_system):
+    """
+    Evaluate a list of expressions by incrementally transforming all fields.
+
+    Parameters
+    ----------
+    rhs_expressions : list of operator objects
+        Expressions to evaluate
+    out_system : system object
+        System to copy results to
+
+    """
 
     # Make local copy of list
     expressions = list(rhs_expressions)
