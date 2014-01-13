@@ -1,4 +1,7 @@
+"""
+Interface for tools typically accessed for solving a problem.
 
+"""
 
 from .data.domain import Domain
 from .data import operators

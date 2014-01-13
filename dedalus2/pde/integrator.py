@@ -1,16 +1,48 @@
+"""
+Classes for solving differential equations.
 
+"""
 
 import numpy as np
 import time
-from scipy import sparse
 from scipy.sparse import linalg
 
 from ..data.system import System
 from ..data.pencil import PencilSet
+from ..tools.logging import logger
 
 
 class Integrator:
-    """Tau method"""
+    """
+    Initial value problem solver.
+
+    Parameters
+    ----------
+    problem : problem object
+        Problem describing system of differential equations and constraints
+    domain : domain object
+        Problem domain
+    timestepper : timestepper class
+        Timestepper to use in evolving initial conditions
+
+    Attributes
+    ----------
+    state : system object
+        System containing current solution fields
+    dt : float
+        Timestep
+    sim_stop_time : float
+        Simulation stop time, in simulation units
+    wall_stop_time : float
+        Wall stop time, in seconds from instantiation
+    stop_iteration : int
+        Stop iteration
+    time : float
+        Current simulation time
+    iteration : int
+        Current iteration
+
+    """
 
     def __init__(self, problem, domain, timestepper):
 
@@ -44,32 +76,35 @@ class Integrator:
 
     @property
     def ok(self):
+        """Check that current time and iteration pass stop conditions."""
 
         if self.time >= self.sim_stop_time:
             ok_flag = False
-            print('Simulation stop time reached.')
+            logger.info('Simulation stop time reached.')
         elif (time.time() - self.start_time) >= self.wall_stop_time:
             ok_flag = False
-            print('Wall stop time reached.')
+            logger.info('Wall stop time reached.')
         elif self.iteration >= self.stop_iteration:
             ok_flag = False
-            print('Stop iteration reached.')
+            logger.info('Stop iteration reached.')
         else:
             ok_flag = True
 
         return ok_flag
 
     def advance(self, dt=None):
+        """Advance system by one iteration/timestep."""
 
+        # Default to attribute-specified timestep
         if dt is None:
             dt = self.dt
 
-        # Update pencil arrays
+        # Update pencil LHS matrices and compute RHS fields
         self.timestepper.update_pencils(dt, self.iteration)
-
         self.pencilset.get_system(self.rhs)
+
+        # Solve system for each pencil
         for pencil in self.pencilset.pencils:
-            # Solve Tau system
             LHS = pencil.LHS
             RHS = pencil.data
             pencil.data = linalg.spsolve(LHS, RHS)
@@ -77,6 +112,7 @@ class Integrator:
         # Update state
         self.pencilset.set_system(self.state)
 
+        # Update solver statistics
         self.time += dt
         self.iteration += 1
 

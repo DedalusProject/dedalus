@@ -1,4 +1,7 @@
+"""
+Custom FFTW interface.
 
+"""
 
 import numpy as np
 cimport numpy as cnp
@@ -17,11 +20,13 @@ fftw_flags = {'FFTW_ESTIMATE': cfftw.FFTW_ESTIMATE,
 
 
 def fftw_mpi_init():
+    """Run FFTW MPI initialization."""
 
     cfftw.fftw_mpi_init()
 
 
 def create_buffer(size_t alloc_doubles):
+    """Allocate memory using FFTW for SIMD alignment."""
 
     # Allocate using FFTW
     cdef double *c_data
@@ -39,6 +44,37 @@ def create_buffer(size_t alloc_doubles):
 
 
 cdef class Transpose:
+    """
+    FFTW distributed matrix transpose.  Interface can be used to direct a
+    transpose of the first two dimensions of an N-dimensional array.
+
+    Parameters
+    ----------
+    n0, n1 : int
+        Global dimensions of matrix to be transposed, or alternately the first
+        two dimensions of an N-dimensional array.
+    howmany : int
+        Number of array elements composing each matrix element, i.e the product
+        of the remaining dimensions of an N-dimensional array.
+    block0, block1 : int
+        Block sizes for distribution amongst processes
+    dtype : data type
+        Matrix/array data type
+    pycomm : MPI_Comm object
+        Communicator
+    flags : list of str, optional
+        List of wrapped FFTW flags (default: ['FFTW_MEASURE'])
+
+    Attributes
+    ----------
+    alloc_doubles : int
+        Required buffer size (in doubles)
+    local0, local1 : int
+        Local distributed sizes
+    start0, start1 : int
+        Local distributed start indeces
+
+    """
 
     cdef readonly p_t alloc_doubles
     cdef readonly p_t local0
@@ -54,7 +90,7 @@ cdef class Transpose:
         # Shape array
         cdef p_t *shape = [n0, n1]
 
-        # Dtype information
+        # Get item size from provided data type
         cdef p_t itemsize
         if dtype == np.float64:
             itemsize = 1
@@ -63,7 +99,7 @@ cdef class Transpose:
         else:
             raise ValueError("Only np.float64 and np.complex128 arrays supported.")
 
-        # MPI communicators
+        # Actual MPI communicator
         cdef mpi_comm_t comm = pycomm.ob_mpi
 
         # Build flags
@@ -71,7 +107,7 @@ cdef class Transpose:
         for f in flags:
             intflags = intflags | fftw_flags[f]
 
-        # Memory allocation
+        # Required buffer size (in doubles)
         self.alloc_doubles = cfftw.fftw_mpi_local_size_many_transposed(2,
                                                                        shape,
                                                                        howmany*itemsize,
@@ -83,7 +119,7 @@ cdef class Transpose:
                                                                        &self.local1,
                                                                        &self.start1)
 
-        # Create plans
+        # Create plans using a temporary memory allocation
         cdef double *data
         data = cfftw.fftw_alloc_real(self.alloc_doubles)
         self.scatter_plan = cfftw.fftw_mpi_plan_many_transpose(n1,
@@ -106,17 +142,18 @@ cdef class Transpose:
                                                               intflags | cfftw.FFTW_MPI_TRANSPOSED_OUT)
         cfftw.fftw_free(data)
 
-        # Check plan creation
+        # Check that plan creation succeeded
         if (self.gather_plan == NULL) or (self.scatter_plan == NULL):
             raise RuntimeError("FFTW could not create plans.")
 
     def __dealloc__(self):
+        """Destroy plans on deallocation."""
 
-        # Destroy plans
         cfftw.fftw_destroy_plan(self.gather_plan)
         cfftw.fftw_destroy_plan(self.scatter_plan)
 
     def gather(self, cnp.ndarray data):
+        """Gather along first axis (0), scattering from second axis (1)."""
 
         # Execute plan using new-array interface
         cfftw.fftw_mpi_execute_r2r(self.gather_plan,
@@ -124,6 +161,7 @@ cdef class Transpose:
                                    <double *> data.data)
 
     def scatter(self, cnp.ndarray data):
+        """Scatter from first axis (0), gathering along second axis (1)."""
 
         # Execute plan using new-array interface
         cfftw.fftw_mpi_execute_r2r(self.scatter_plan,

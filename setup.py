@@ -99,9 +99,9 @@ class my_build_py(build_py):
             build_py.run(self)
 
 fftw_ext = Extension(
-    name='dedalus2.tools.fftw.fftw_wrappers',
-    sources=['dedalus2/tools/fftw/fftw_wrappers.pyx'],
-    include_dirs=["dedalus2/tools/fftw", mpi4py.get_include(), fftw_get_include(), mpi_get_include()],
+    name='dedalus2.libraries.fftw.fftw_wrappers',
+    sources=['dedalus2/libraries/fftw/fftw_wrappers.pyx'],
+    include_dirs=["dedalus2/libraries/fftw", mpi4py.get_include(), fftw_get_include(), mpi_get_include()],
     libraries=['fftw3_mpi', 'fftw3', 'm'],
     library_dirs=[fftw_get_lib()]
     )
@@ -115,8 +115,8 @@ setup(
     packages = ['dedalus',
                 'dedalus.data',
                 'dedalus.pde',
-                'dedalus.tools',
-                'dedalus.tools.fftw'],
+                'dedalus.libraries',
+                'dedalus.libraries.fftw'],
     cmdclass = {'build_py': my_build_py},
     include_dirs = [np.get_include()],
     ext_modules = cythonize([fftw_ext], include_path=[mpi4py.get_include()])

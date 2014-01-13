@@ -1,4 +1,7 @@
+"""
+ODE solvers for timestepping.
 
+"""
 
 import numpy as np
 from collections import deque
@@ -8,20 +11,34 @@ from ..data.system import System
 
 
 class IMEXBase:
-    """Base class for implicit-explicit timesteppers."""
+    """
+    Base class for implicit-explicit timesteppers.
+
+    Parameters
+    ----------
+    problem : problem object
+        Problem describing system of differential equations and constraints
+    pencilset : pencilset object
+        Pencilset for problem domain
+    state : system object
+        System containing current solution fields
+    rhs : system object
+        System for storing the RHS fields
+
+    """
 
     def __init__(self, problem, pencilset, state, rhs):
 
-        # Store inputs
+        # Initial attributes
         self.pencilset = pencilset
         self.state = state
         self.rhs = rhs
 
-        # Create timestep deque
+        # Create deque for storing recent timesteps
         N = max(self.qmax, self.pmax)
         self.dt = deque([0.]*N)
 
-        # Create RHS components
+        # Create systems needed for multistep history
         field_names = state.field_names
         domain = state.domain
 
@@ -35,7 +52,7 @@ class IMEXBase:
         for p in range(self.pmax):
             self.F.append(System(field_names, domain))
 
-        # F expressions
+        # Create F operator trees for string representations
         self.F_expressions = []
         for fn in state.field_names:
             locals()[fn] = state.fields[fn]
@@ -48,6 +65,7 @@ class IMEXBase:
                 self.F_expressions.append(eval(f))
 
     def update_pencils(self, dt, iteration):
+        """Compute elements for the implicit solve, by pencil."""
 
         # References
         pencilset = self.pencilset
@@ -220,7 +238,6 @@ class MCNAB2(IMEXBase):
         return a, b, c, d
 
 
-
 class SimpleSolve(IMEXBase):
     """Simple BVP solve"""
 
@@ -235,3 +252,4 @@ class SimpleSolve(IMEXBase):
         d = [0., 1.]
 
         return a, b, c, d
+

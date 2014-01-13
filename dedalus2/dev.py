@@ -1,4 +1,7 @@
+"""
+Interface for accessing all submodules.
 
+"""
 
 from .data import distributor
 from .data import domain
@@ -13,6 +16,11 @@ from .pde import nonlinear
 from .pde import problems
 from .pde import timesteppers
 
+from .tools import array
+from .tools import cache
+from .tools import config
+from .tools import dispatch
 from .tools import general
-#from .tools import plot_op
+from .tools import logging
+from .tools import parallel
 
