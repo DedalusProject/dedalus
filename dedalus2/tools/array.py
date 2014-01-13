@@ -18,10 +18,10 @@ def interleaved_view(data):
         raise ValueError("Complex array required.")
 
     # Create view array
-    viewshape = data.shape + (2,)
-    view = np.ndarray(viewshape, dtype=np.float64, buffer=data.data)
+    iv_shape = data.shape + (2,)
+    iv = np.ndarray(iv_shape, dtype=np.float64, buffer=data.data)
 
-    return view
+    return iv
 
 
 def reshape_vector(data, dim=2, axis=-1):

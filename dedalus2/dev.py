@@ -1,4 +1,7 @@
+"""
+Interface for accessing all submodules.
 
+"""
 
 from .data import distributor
 from .data import domain

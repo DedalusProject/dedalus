@@ -2,7 +2,6 @@
 
 import numpy as np
 import time
-from scipy import sparse
 from scipy.sparse import linalg
 
 from ..data.system import System
@@ -10,7 +9,7 @@ from ..data.pencil import PencilSet
 
 
 class Integrator:
-    """Tau method"""
+    """Initial value problem solver."""
 
     def __init__(self, problem, domain, timestepper):
 

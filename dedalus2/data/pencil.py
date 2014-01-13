@@ -106,6 +106,11 @@ class Pencil:
     d_trans :  list of floats
         Perpendicular differentiation constants
 
+    Attributes
+    ----------
+    data : ndarray
+        View of corresponding data in pencil set
+
     """
 
     def __init__(self, set_data, slice, d_trans):
