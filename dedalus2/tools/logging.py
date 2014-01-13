@@ -29,11 +29,9 @@ if MPI.COMM_WORLD.rank == 0:
 else:
     base_level = max(nonroot_level, min(stdout_level, file_level))
 
-# Delete previous log file from rank 0
-with Sync():
-    if MPI.COMM_WORLD.rank == 0:
-        if os.path.exists(filename):
-            os.remove(filename)
+# Base logger
+baselogger = logging.getLogger('Dedalus2')
+baselogger.setLevel(base_level)
 
 # Formatter
 formatter = logging.Formatter('%(asctime)s %(name)s %(rank)s/%(size)s %(levelname)-7s : %(message)s')
@@ -42,17 +40,21 @@ formatter = logging.Formatter('%(asctime)s %(name)s %(rank)s/%(size)s %(levelnam
 stdout_handler = logging.StreamHandler(sys.stdout)
 stdout_handler.setLevel(stdout_level)
 stdout_handler.setFormatter(formatter)
+baselogger.addHandler(stdout_handler)
 
 # File handler
-file_handler = logging.FileHandler(filename)
-file_handler.setLevel(file_level)
-file_handler.setFormatter(formatter)
+if filename.lower() != 'none':
 
-# Base logger
-baselogger = logging.getLogger('Dedalus2')
-baselogger.setLevel(base_level)
-baselogger.addHandler(stdout_handler)
-baselogger.addHandler(file_handler)
+    # Delete previous log file from rank 0
+    with Sync():
+        if MPI.COMM_WORLD.rank == 0:
+            if os.path.exists(filename):
+                os.remove(filename)
+
+    file_handler = logging.FileHandler(filename)
+    file_handler.setLevel(file_level)
+    file_handler.setFormatter(formatter)
+    baselogger.addHandler(file_handler)
 
 # Adapter with MPI information
 sizestr = str(MPI.COMM_WORLD.size)
