@@ -43,21 +43,21 @@ class PencilSet:
         """Copy fields into contiguous pencil buffer."""
 
         for i, field in enumerate(system.fields.values()):
-            start = i * self.stride
-            end = start + self.stride
+            start = i
+            stride = system.n_fields
 
             field.require_coeff_space()
-            np.copyto(self.data[..., start:end], field.data)
+            np.copyto(self.data[..., start::stride], field.data)
 
     def set_system(self, system):
         """Extract fields from contiguous pencil buffer."""
 
         for i, field in enumerate(system.fields.values()):
-            start = i * self.stride
-            end = start + self.stride
+            start = i
+            stride = system.n_fields
 
             field.layout = field.domain.distributor.coeff_layout
-            np.copyto(field.data, self.data[..., start:end])
+            np.copyto(field.data, self.data[..., start::stride])
 
     def _construct_pencil_info(self, domain):
         """Construct slice and dtrans lists for each pencil in set."""
@@ -157,10 +157,10 @@ class Pencil:
             Pre_i = basis.Pre * basis.Mult(i)
             Diff_i = basis.Pre * basis.Mult(i) * basis.Diff
 
-            M = M + sparse.kron(problem.M0[i](D), Pre_i, format='csr')
-            M = M + sparse.kron(problem.M1[i](D), Diff_i, format='csr')
-            L = L + sparse.kron(problem.L0[i](D), Pre_i, format='csr')
-            L = L + sparse.kron(problem.L1[i](D), Diff_i, format='csr')
+            M = M + sparse.kron(Pre_i, problem.M0[i](D), format='csr')
+            M = M + sparse.kron(Diff_i, problem.M1[i](D), format='csr')
+            L = L + sparse.kron(Pre_i, problem.L0[i](D), format='csr')
+            L = L + sparse.kron(Diff_i, problem.L1[i](D), format='csr')
 
         # Allocate boundary condition matrices
         Mb = sparse.csr_matrix((size, size), dtype=dtype)
@@ -168,17 +168,17 @@ class Pencil:
 
         # Add terms to boundary condition matrices
         if np.any(ML):
-            Mb = Mb + sparse.kron(ML, basis.Left, format='csr')
+            Mb = Mb + sparse.kron(basis.Left, ML, format='csr')
         if np.any(MR):
-            Mb = Mb + sparse.kron(MR, basis.Right, format='csr')
+            Mb = Mb + sparse.kron(basis.Right, MR, format='csr')
         if np.any(MI):
-            Mb = Mb + sparse.kron(MI, basis.Int, format='csr')
+            Mb = Mb + sparse.kron(basis.Int, MI, format='csr')
         if np.any(LL):
-            Lb = Lb + sparse.kron(LL, basis.Left, format='csr')
+            Lb = Lb + sparse.kron(basis.Left, LL, format='csr')
         if np.any(LR):
-            Lb = Lb + sparse.kron(LR, basis.Right, format='csr')
+            Lb = Lb + sparse.kron(basis.Right, LR, format='csr')
         if np.any(LI):
-            Lb = Lb + sparse.kron(LI, basis.Int, format='csr')
+            Lb = Lb + sparse.kron(basis.Int, LI, format='csr')
 
         # Get set of boundary condition rows
         Mb_rows = Mb.nonzero()[0]
@@ -203,8 +203,8 @@ class Pencil:
 
         # Reference nonlinear expressions
         self.F = problem.F
-        self.F_eval = sparse.kron(np.eye(problem.size), basis.Pre)
-        b = np.kron(problem.b(D), basis.bc_vector[:,0])
+        self.F_eval = sparse.kron(basis.Pre, np.eye(problem.size))
+        b = np.kron(basis.bc_vector[:,0], problem.b(D))
         self.bc_f = [b[r] for r in rows]
         self.bc_rows = list(rows)
         self.parameters = problem.parameters
