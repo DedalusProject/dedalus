@@ -107,7 +107,7 @@ class Integrator:
         for pencil in self.pencilset.pencils:
             LHS = pencil.LHS
             RHS = pencil.data
-            pencil.data = linalg.spsolve(LHS, RHS)
+            pencil.data = linalg.spsolve(LHS, RHS, use_umfpack=False, permc_spec='NATURAL')
 
         # Update state
         self.pencilset.set_system(self.state)
