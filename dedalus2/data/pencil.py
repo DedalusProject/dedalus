@@ -6,6 +6,9 @@ Classes for manipulating pencils.
 import numpy as np
 from scipy import sparse
 
+from ..tools.array import zeros_with_pattern
+from ..tools.array import expand_pattern
+
 
 class PencilSet:
     """
@@ -119,18 +122,7 @@ class Pencil:
         self.set_data = set_data
         self.slice = slice
         self.d_trans = d_trans
-
-    @property
-    def data(self):
-        """View corresponding data from pencil set."""
-
-        return self.set_data[self.slice].squeeze()
-
-    @data.setter
-    def data(self, data):
-        """Set corresponding data in pencil set."""
-
-        self.set_data[self.slice] = data
+        self.data = set_data[slice].squeeze()
 
     def build_matrices(self, problem, basis):
         """Construct PDE matrices from problem and basis matrices."""
@@ -197,9 +189,14 @@ class Pencil:
         M = clear_bc * M
         L = clear_bc * L
 
-        # Add boundary condition terms to PDE matrices and store
-        self.M = M + Mb
-        self.L = L + Lb
+        # Add boundary condition terms to PDE matrices
+        M = M + Mb
+        L = L + Lb
+
+        # Store with expanded sparsity for fast combination during integration
+        self.LHS = zeros_with_pattern(M, L).tocsr()
+        self.M = expand_pattern(M, self.LHS).tocsr()
+        self.L = expand_pattern(L, self.LHS).tocsr()
 
         # Reference nonlinear expressions
         self.F = problem.F

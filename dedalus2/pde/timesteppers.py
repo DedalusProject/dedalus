@@ -54,15 +54,14 @@ class IMEXBase:
 
         # Create F operator trees for string representations
         self.F_expressions = []
-        for fn in state.field_names:
-            locals()[fn] = state.fields[fn]
-        for key, val in problem.parameters.items():
-            locals()[key] = val
+        namespace = dict()
+        namespace.update(state.fields)
+        namespace.update(problem.parameters)
         for f in problem.F:
             if f is None:
                 self.F_expressions.append(None)
             else:
-                self.F_expressions.append(eval(f))
+                self.F_expressions.append(eval(f, namespace))
 
     def update_pencils(self, dt, iteration):
         """Compute elements for the implicit solve, by pencil."""
@@ -86,12 +85,12 @@ class IMEXBase:
 
         pencilset.get_system(state)
         for pencil in pencilset.pencils:
-            pencil.data = pencil.M.dot(pencil.data)
+            np.copyto(pencil.data, pencil.M.dot(pencil.data))
         pencilset.set_system(MX[0])
 
         pencilset.get_system(state)
         for pencil in pencilset.pencils:
-            pencil.data = pencil.L.dot(pencil.data)
+            np.copyto(pencil.data, pencil.L.dot(pencil.data))
         pencilset.set_system(LX[0])
 
         # Compute nonlinear component
@@ -99,7 +98,7 @@ class IMEXBase:
 
         pencilset.get_system(F[0])
         for pencil in pencilset.pencils:
-            pencil.data = pencil.F_eval.dot(pencil.data)
+            np.copyto(pencil.data, pencil.F_eval.dot(pencil.data))
             for i, r in enumerate(pencil.bc_rows):
                 pencil.data[r] = pencil.bc_f[i]
         pencilset.set_system(F[0])
@@ -109,7 +108,7 @@ class IMEXBase:
 
         # Construct pencil LHS matrix
         for pencil in pencilset.pencils:
-            pencil.LHS = d[0] * pencil.M + d[1] * pencil.L
+            np.copyto(pencil.LHS.data, d[0]*pencil.M.data + d[1]*pencil.L.data)
 
         # Construct RHS field
         for fn in rhs.field_names:

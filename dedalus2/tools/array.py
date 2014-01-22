@@ -4,6 +4,7 @@ Tools for array manipulations.
 """
 
 import numpy as np
+from scipy import sparse
 
 
 def interleaved_view(data):
@@ -44,4 +45,35 @@ def axslice(axis, start, stop, step=None):
     slicelist.append(slice(start, stop, step))
 
     return slicelist
+
+
+def zeros_with_pattern(*args):
+    """Create sparse matrix with the combined pattern of other sparse matrices."""
+
+    # Join individual patterns in COO format
+    coo = [A.tocoo() for A in args]
+    rows = np.concatenate([A.row for A in coo])
+    cols = np.concatenate([A.col for A in coo])
+    shape = coo[0].shape
+
+    # Create new COO matrix with zeroed data and combined pattern
+    data = np.concatenate([A.data*0 for A in coo])
+
+    return sparse.coo_matrix((data, (rows, cols)), shape=shape)
+
+
+def expand_pattern(input, pattern):
+    """Return copy of sparse matrix with extended pattern."""
+
+    # Join input and pattern in COO format
+    A = input.tocoo()
+    P = pattern.tocoo()
+    rows = np.concatenate((A.row, P.row))
+    cols = np.concatenate((A.col, P.col))
+    shape = A.shape
+
+    # Create new COO matrix with expanded data and combined pattern
+    data = np.concatenate((A.data, P.data*0))
+
+    return sparse.coo_matrix((data, (rows, cols)), shape=shape)
 
