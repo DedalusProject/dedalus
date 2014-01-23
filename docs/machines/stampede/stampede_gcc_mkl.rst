@@ -10,6 +10,8 @@ available by default.
    We have a ticket open with TACC to start
    resolving problems with numpy builds against MKL.
 
+   Note: do this under ifort
+
 Building numpy against MKL
 ----------------------------------
 
@@ -145,3 +147,95 @@ have one failure on ``np.test('full')`` ::
 This is the same error as in the OpenBLAS install
 (:doc:`stampede_openblas`).  Also, overall test times are very similar
 for the full test.
+
+
+MKL BLAS failure
+=====================
+
+Though we've built numpy successfully, it has failed to link properly
+against the BLAS libraries in MKL.  The TACC python 2.7 build does
+work correctly ::
+
+    login3$ ./numpy_test
+    FAST BLAS
+    ('version:', '1.6.1')
+    ()
+    ('dot:', 0.16252517700195312, 'sec')
+    login3$ python
+    Enthought Python Distribution -- www.enthought.com
+    Version: 7.3-2 (64-bit)
+
+    Python 2.7.3 |EPD 7.3-2 (64-bit)| (default, Apr 11 2012, 17:52:16) 
+    [GCC 4.1.2 20080704 (Red Hat 4.1.2-44)] on linux2
+    Type "credits", "demo" or "enthought" for more information.
+    >>> import numpy as np
+    >>> np.__config__.show()
+    lapack_opt_info:
+        libraries = ['mkl_lapack95_lp64', 'mkl_intel_lp64', 'mkl_intel_thread', 'mkl_core', 'iomp5', 'pthread']
+        library_dirs = ['/home/builder/master/lib']
+        define_macros = [('SCIPY_MKL_H', None)]
+        include_dirs = ['/home/builder/master/include']
+    blas_opt_info:
+        libraries = ['mkl_intel_lp64', 'mkl_intel_thread', 'mkl_core', 'iomp5', 'pthread']
+        library_dirs = ['/home/builder/master/lib']
+        define_macros = [('SCIPY_MKL_H', None)]
+        include_dirs = ['/home/builder/master/include']
+    lapack_mkl_info:
+        libraries = ['mkl_lapack95_lp64', 'mkl_intel_lp64', 'mkl_intel_thread', 'mkl_core', 'iomp5', 'pthread']
+        library_dirs = ['/home/builder/master/lib']
+        define_macros = [('SCIPY_MKL_H', None)]
+        include_dirs = ['/home/builder/master/include']
+    blas_mkl_info:
+        libraries = ['mkl_intel_lp64', 'mkl_intel_thread', 'mkl_core', 'iomp5', 'pthread']
+        library_dirs = ['/home/builder/master/lib']
+        define_macros = [('SCIPY_MKL_H', None)]
+        include_dirs = ['/home/builder/master/include']
+    mkl_info:
+        libraries = ['mkl_intel_lp64', 'mkl_intel_thread', 'mkl_core', 'iomp5', 'pthread']
+        library_dirs = ['/home/builder/master/lib']
+        define_macros = [('SCIPY_MKL_H', None)]
+        include_dirs = ['/home/builder/master/include']
+    >>> 
+
+
+Whereas my python 3.3 build does not ::
+
+    (mkl)c557-703$ ./numpy_test
+    slow blas
+    version: 1.8.0
+
+    dot: 0.995588791416958 sec
+    (mkl)c557-703$ python3
+    Python 3.3.3 (default, Jan  8 2014, 11:50:50) 
+    [GCC 4.7.1] on linux
+    Type "help", "copyright", "credits" or "license" for more information.
+    >>> import numpy as np
+    >>> np.__config__.show()
+    lapack_opt_info:
+        include_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/include/']
+        library_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/lib/intel64/']
+        libraries = ['mkl_rt', 'pthread']
+        define_macros = [('SCIPY_MKL_H', None)]
+    lapack_mkl_info:
+        include_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/include/']
+        library_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/lib/intel64/']
+        libraries = ['mkl_rt', 'pthread']
+        define_macros = [('SCIPY_MKL_H', None)]
+    blas_opt_info:
+        include_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/include/']
+        library_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/lib/intel64/']
+        libraries = ['mkl_rt', 'pthread']
+        define_macros = [('SCIPY_MKL_H', None)]
+    blas_mkl_info:
+        include_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/include/']
+        library_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/lib/intel64/']
+        libraries = ['mkl_rt', 'pthread']
+      define_macros = [('SCIPY_MKL_H', None)]
+  mkl_info:
+      include_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/include/']
+      library_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/lib/intel64/']
+      libraries = ['mkl_rt', 'pthread']
+      define_macros = [('SCIPY_MKL_H', None)]
+  openblas_info:
+    NOT AVAILABLE
+  >>> 
