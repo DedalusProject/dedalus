@@ -189,7 +189,7 @@ MKL
 .. toctree::
     :maxdepth: 1
     
-    stampede_mkl
+    stampede_gcc_mkl
 
 OpenBLAS
 --------------------------
@@ -197,7 +197,7 @@ OpenBLAS
 .. toctree::
     :maxdepth: 1
     
-    stampede_openblas
+    stampede_gcc_openblas
 
 
 Python library stack

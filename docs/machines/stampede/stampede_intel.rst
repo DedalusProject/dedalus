@@ -143,52 +143,6 @@ suggest doing this in your home directory::
      mkdir ~/venv
 
 
-Installing freetype2
---------------------------
-
-Freetype is necessary for matplotlib ::
-
-     cd ~/build
-     wget http://sourceforge.net/projects/freetype/files/freetype2/2.5.2/freetype-2.5.2.tar.gz
-     tar -xvf freetype-2.5.2.tar.gz 
-     cd freetype-2.5.2
-     ./configure --prefix=$HOME/build
-     make
-     make install
-
-.. note::
-     Skipping for now
-
-Installing libpng
---------------------------
-
-May need this for matplotlib?::
-
-     cd ~/build
-     wget http://prdownloads.sourceforge.net/libpng/libpng-1.6.8.tar.gz
-     ./configure --prefix=$HOME/build
-     make
-     make install
-
-.. note::
-     Skipping for now
-
-UMFPACK
--------
-
-We may wish to deploy UMFPACK for sparse matrix solves.  Keaton is
-starting to look at this now.  If we do, both numpy and scipy will
-require UMFPACK, so we should build it before proceeding with those builds.
-
-UMFPACK requires AMD (another package by the same group, not processor) and SuiteSparse_config, too.
-
-If we need UMFPACK, we
-can try installing it from ``suite-sparse`` as in the Mac install.
-Here are links to `UMFPACK docs <http://www.cise.ufl.edu/research/sparse/umfpack/>`_ 
-and `Suite-sparse <http://www.cise.ufl.edu/research/sparse/>`_
-
-.. note::
-     We'll check and update this later. (1/9/14)
 
 
 Numpy and BLAS libraries
@@ -229,20 +183,9 @@ an install in your appropriate ``~/venv/INSTANCE`` directory::
 
 Then run ::
 
-     python3 setup.py config
-
-
-As on Trestles, this notes a lack of ``UMFPACK``; we're unsure whether
-this matters, but for now will proceed without it.  
-
-
-For now, blindly continue and ::
-
-    python3 setup.py build
-
-if successful :: 
-
-    python3 setup.py install
+    python3 setup.py config --compiler=intelem --fcompiler=intelem build_clib \
+                                            --compiler=intelem --fcompiler=intelem build_ext \
+                                            --compiler=intelem --fcompiler=intelem install
 
 
 Installing mpi4py
@@ -317,46 +260,53 @@ grab an interactive dev node with ``idev``.  Play.
 
 
 
-Ifort stack build
-==================================
 
+Skipped libraries
+==============================
 
+Installing freetype2
+--------------------------
 
-For python 3.3.3
+Freetype is necessary for matplotlib ::
 
-(many thanks to Yaakoub El Khamra at TACC)
-::
+     cd ~/build
+     wget http://sourceforge.net/projects/freetype/files/freetype2/2.5.2/freetype-2.5.2.tar.gz
+     tar -xvf freetype-2.5.2.tar.gz 
+     cd freetype-2.5.2
+     ./configure --prefix=$HOME/build
+     make
+     make install
 
-    ./configure --prefix=$HOME/build_ifort CC=icc CFLAGS="-mkl -O3 -xHost -fPIC -ipo" CPPFLAGS="-mkl -O3 -xHost -fPIC -ipo" CXX=icpc --enable-shared --with-cxx-main=icpc LDFLAGS="-lpthread" --with-system-ffi
+.. note::
+     Skipping for now
 
-    make
-    make install
+Installing libpng
+--------------------------
 
-On ``make``, we're getting one important error::
+May need this for matplotlib?::
 
-    icc -fPIC -Wno-unused-result -DNDEBUG -g -O3 -Wall -Wstrict-prototypes -mkl -O3 -xHost -fPIC -ipo -Ibuild/temp.linux-x86_64-3.3/libffi/include -Ibuild/temp.linux-x86_64-3.3/libffi -I/home1/00364/tg456434/build_ifort/Python-3.3.3/Modules/_ctypes/libffi/src -I./Include -I/home1/00364/tg456434/build_ifort/include -I. -IInclude -I/usr/local/include -I/home1/00364/tg456434/build_ifort/Python-3.3.3/Include -I/home1/00364/tg456434/build_ifort/Python-3.3.3 -c /home1/00364/tg456434/build_ifort/Python-3.3.3/Modules/_ctypes/libffi/src/x86/ffi64.c -o build/temp.linux-x86_64-3.3/home1/00364/tg456434/build_ifort/Python-3.3.3/Modules/_ctypes/libffi/src/x86/ffi64.o -Wall -fexceptions
-    icc: command line warning #10006: ignoring unknown option '-Wno-unused-result'
-    /home1/00364/tg456434/build_ifort/Python-3.3.3/Modules/_ctypes/libffi/src/x86/ffi64.c(56): error: identifier "__m128" is undefined
-        UINT128 i128;
-        ^
+     cd ~/build
+     wget http://prdownloads.sourceforge.net/libpng/libpng-1.6.8.tar.gz
+     ./configure --prefix=$HOME/build
+     make
+     make install
 
-    compilation aborted for /home1/00364/tg456434/build_ifort/Python-3.3.3/Modules/_ctypes/libffi/src/x86/ffi64.c (code 2)
+.. note::
+     Skipping for now
 
-    Failed to build these modules:
-    _ctypes                                               
+UMFPACK
+-------
 
-    running build_scripts
+We may wish to deploy UMFPACK for sparse matrix solves.  Keaton is
+starting to look at this now.  If we do, both numpy and scipy will
+require UMFPACK, so we should build it before proceeding with those builds.
 
+UMFPACK requires AMD (another package by the same group, not processor) and SuiteSparse_config, too.
 
-Numpy
-===========
+If we need UMFPACK, we
+can try installing it from ``suite-sparse`` as in the Mac install.
+Here are links to `UMFPACK docs <http://www.cise.ufl.edu/research/sparse/umfpack/>`_ 
+and `Suite-sparse <http://www.cise.ufl.edu/research/sparse/>`_
 
-
-
-This all works.  We pass our numpy_test_full testsuite.
-
-And for scipy::
-
-    python3 setup.py config --compiler=intelem --fcompiler=intelem build_clib \
-                                            --compiler=intelem --fcompiler=intelem build_ext \
-                                            --compiler=intelem --fcompiler=intelem install
+.. note::
+     We'll check and update this later. (1/9/14)

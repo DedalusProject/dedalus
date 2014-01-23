@@ -59,8 +59,41 @@ This will unpack and overwrite::
       numpy/distutils/fcompiler/intel.py
 
 Then proceed with::
+
     python3 setup.py config --compiler=intelem build_clib --compiler=intelem build_ext --compiler=intelem install
 
+This will config, build and install numpy.
+
+
+Test numpy install
+------------------------------
+
+Test that things worked with this executable script
+:download:`numpy_test_full<numpy_test_full>`, 
+or do so manually by launching ``python3`` 
+and then doing::
+
+     import numpy as np
+     np.__config__.show()
+
+If you've installed ``nose`` (with ``pip3 install nose``), 
+we can further test our numpy build with::
+
+     np.test()
+     np.test('full')
+
+We fail ``np.test()`` with two failures, while ``np.test('full')`` has
+3 failures and 19 errors.  But we do successfully link against the
+fast BLAS libraries (look for ``FAST BLAS`` output, and fast dot
+product time).
+
+.. note::
+     We should check what impact these failed tests have on our results.
+
+
+
+Numpy config check
+------------------------------
 After executing config, check that numpy has correctly found the
 MKL install.  You should see something like this:
 
@@ -110,117 +143,3 @@ MKL install.  You should see something like this:
 
   /home1/00364/tg456434/build_ifort/lib/python3.3/distutils/dist.py:257: UserWarning: Unknown distribution option: 'define_macros'
     warnings.warn(msg)
-
-Next do::
-
-     python3 setup.py build
-     python3 setup.py install
-
-Test that things worked with this executable script
-:download:`numpy_test_full<numpy_test_full>`, 
-or do so manually by launching ``python3`` 
-and then doing::
-
-     import numpy as np
-     np.__config__.show()
-
-If you've installed ``nose`` (with ``pip3 install nose``), 
-we can further test our numpy build with::
-
-     np.test()
-     np.test('full')
-
-We fail ``np.test()`` with two failures, while ``np.test('full')`` has
-3 failures and 19 errors.
-
-
-MKL BLAS failure
-=====================
-
-Though we've built numpy successfully, it has failed to link properly
-against the BLAS libraries in MKL.  The TACC python 2.7 build does
-work correctly ::
-
-    login3$ ./numpy_test
-    FAST BLAS
-    ('version:', '1.6.1')
-    ()
-    ('dot:', 0.16252517700195312, 'sec')
-    login3$ python
-    Enthought Python Distribution -- www.enthought.com
-    Version: 7.3-2 (64-bit)
-
-    Python 2.7.3 |EPD 7.3-2 (64-bit)| (default, Apr 11 2012, 17:52:16) 
-    [GCC 4.1.2 20080704 (Red Hat 4.1.2-44)] on linux2
-    Type "credits", "demo" or "enthought" for more information.
-    >>> import numpy as np
-    >>> np.__config__.show()
-    lapack_opt_info:
-        libraries = ['mkl_lapack95_lp64', 'mkl_intel_lp64', 'mkl_intel_thread', 'mkl_core', 'iomp5', 'pthread']
-        library_dirs = ['/home/builder/master/lib']
-        define_macros = [('SCIPY_MKL_H', None)]
-        include_dirs = ['/home/builder/master/include']
-    blas_opt_info:
-        libraries = ['mkl_intel_lp64', 'mkl_intel_thread', 'mkl_core', 'iomp5', 'pthread']
-        library_dirs = ['/home/builder/master/lib']
-        define_macros = [('SCIPY_MKL_H', None)]
-        include_dirs = ['/home/builder/master/include']
-    lapack_mkl_info:
-        libraries = ['mkl_lapack95_lp64', 'mkl_intel_lp64', 'mkl_intel_thread', 'mkl_core', 'iomp5', 'pthread']
-        library_dirs = ['/home/builder/master/lib']
-        define_macros = [('SCIPY_MKL_H', None)]
-        include_dirs = ['/home/builder/master/include']
-    blas_mkl_info:
-        libraries = ['mkl_intel_lp64', 'mkl_intel_thread', 'mkl_core', 'iomp5', 'pthread']
-        library_dirs = ['/home/builder/master/lib']
-        define_macros = [('SCIPY_MKL_H', None)]
-        include_dirs = ['/home/builder/master/include']
-    mkl_info:
-        libraries = ['mkl_intel_lp64', 'mkl_intel_thread', 'mkl_core', 'iomp5', 'pthread']
-        library_dirs = ['/home/builder/master/lib']
-        define_macros = [('SCIPY_MKL_H', None)]
-        include_dirs = ['/home/builder/master/include']
-    >>> 
-
-
-Whereas my python 3.3 build does not ::
-
-    (mkl)c557-703$ ./numpy_test
-    slow blas
-    version: 1.8.0
-
-    dot: 0.995588791416958 sec
-    (mkl)c557-703$ python3
-    Python 3.3.3 (default, Jan  8 2014, 11:50:50) 
-    [GCC 4.7.1] on linux
-    Type "help", "copyright", "credits" or "license" for more information.
-    >>> import numpy as np
-    >>> np.__config__.show()
-    lapack_opt_info:
-        include_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/include/']
-        library_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/lib/intel64/']
-        libraries = ['mkl_rt', 'pthread']
-        define_macros = [('SCIPY_MKL_H', None)]
-    lapack_mkl_info:
-        include_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/include/']
-        library_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/lib/intel64/']
-        libraries = ['mkl_rt', 'pthread']
-        define_macros = [('SCIPY_MKL_H', None)]
-    blas_opt_info:
-        include_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/include/']
-        library_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/lib/intel64/']
-        libraries = ['mkl_rt', 'pthread']
-        define_macros = [('SCIPY_MKL_H', None)]
-    blas_mkl_info:
-        include_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/include/']
-        library_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/lib/intel64/']
-        libraries = ['mkl_rt', 'pthread']
-      define_macros = [('SCIPY_MKL_H', None)]
-  mkl_info:
-      include_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/include/']
-      library_dirs = ['/opt/apps/intel/13/composer_xe_2013.2.146/mkl/lib/intel64/']
-      libraries = ['mkl_rt', 'pthread']
-      define_macros = [('SCIPY_MKL_H', None)]
-  openblas_info:
-    NOT AVAILABLE
-  >>> 
