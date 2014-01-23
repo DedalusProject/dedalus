@@ -243,6 +243,41 @@ Then change into your root dedalus directory and run::
 
      python setup.py build_ext --inplace
 
+Right now we're dying from an mpi header problem::
+
+    (intel_mkl)login3$ python setup.py build_ext --inplace
+    /opt/apps/intel13/impi/4.1.0.030
+    Compiling dedalus2/libraries/fftw/fftw_wrappers.pyx because it changed.
+    Cythonizing dedalus2/libraries/fftw/fftw_wrappers.pyx
+    running build_ext
+    building 'dedalus2.libraries.fftw.fftw_wrappers' extension
+    creating build
+    creating build/temp.linux-x86_64-3.3
+    creating build/temp.linux-x86_64-3.3/dedalus2
+    creating build/temp.linux-x86_64-3.3/dedalus2/libraries
+    creating build/temp.linux-x86_64-3.3/dedalus2/libraries/fftw
+    icc -Wno-unused-result -DNDEBUG -g -O3 -Wall -Wstrict-prototypes -mkl -O3 -xHost -fPIC -ipo -fPIC -Idedalus2/libraries/fftw -I/home1/00364/tg456434/venv/intel_mkl/lib/python3.3/site-packages/mpi4py/include -I/opt/apps/intel13/impi_4_1/fftw3/3.3.2/include -I/opt/apps/intel13/impi/4.1.0.030/include -I/home1/00364/tg456434/venv/intel_mkl/lib/python3.3/site-packages/numpy/core/include -I/home1/00364/tg456434/build_ifort/include/python3.3m -c dedalus2/libraries/fftw/fftw_wrappers.c -o build/temp.linux-x86_64-3.3/dedalus2/libraries/fftw/fftw_wrappers.o
+    icc: command line warning #10006: ignoring unknown option '-Wno-unused-result'
+    /home1/00364/tg456434/venv/intel_mkl/lib/python3.3/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h(15): warning #1224: #warning directive: "Using deprecated NumPy API, disable it by "          "#defining NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION"
+      #warning "Using deprecated NumPy API, disable it by " \
+       ^
+
+    /opt/apps/intel13/impi/4.1.0.030/include/mpi.h(84): catastrophic error: #error directive: A wrong version of mpi.h file was included. Check include path.
+      #		    error A wrong version of mpi.h file was included. Check include path.
+                        ^
+
+    compilation aborted for dedalus2/libraries/fftw/fftw_wrappers.c (code 4)
+    error: command 'icc' failed with exit status 4
+    (intel_mkl)login3$
+
+
+Here's a second attempt::
+     icc -mkl -O3 -xHost -fPIC -ipo -fPIC -Idedalus2/libraries/fftw -I/home1/00364/tg456434/venv/intel_mkl/lib/python3.3/site-packages/mpi4py/include -I/opt/apps/intel13/impi_4_1/fftw3/3.3.2/include -I/opt/apps/intel13/impi/4.1.0.030/include -I/home1/00364/tg456434/venv/intel_mkl/lib/python3.3/site-packages/numpy/core/include -I/home1/00364/tg456434/build_ifort/include/python3.3m -c dedalus2/libraries/fftw/fftw_wrappers.c -o build/temp.linux-x86_64-3.3/dedalus2/libraries/fftw/fftw_wrappers.o
+
+.. note::
+     I give up for now.  Continue from here.
+
+
 Running Dedalus on Stampede
 ========================================
 

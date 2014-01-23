@@ -49,6 +49,6 @@ First, set your ``FFTW_PATH`` and ``MPI_PATH`` environment variables
 (see system specific documentation). 
 Then change into your root dedalus directory and run::
 
-     python setup.py build_ext --inplace
+     python3 setup.py build_ext --inplace
 
 Dedalus2 is now ready to run
