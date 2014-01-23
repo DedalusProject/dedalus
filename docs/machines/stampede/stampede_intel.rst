@@ -3,6 +3,32 @@ Building with intel/impi stack
 Install notes for building our python3 stack on TACC/Stampede, using the intel compiler suite.  
 Many thanks to Yaakoub El Khamra at TACC for help in sorting out the python3 build and numpy linking against a fast MKL BLAS.
 
+.. note::
+   
+     Just got a direct call from Yaakoub.  Very, very helpful.  Here's
+     the quick rundown.
+
+     He got _ctypes to work by editing the following file:
+
+          vim /work/00364/tg456434/yye00/src/Python-3.3.3/Modules/_ctypes/libffi/src/x86/ffi64.c
+
+     Do build with intel 14
+     use mvapich2/2.0b
+     Will need to do our own build of fftw3
+
+     set mpicc as c compiler rather than icc, same for CXX, FC and
+     others, when configuring python.  should help with mpi4py.
+
+     in mpi4py, can edit mpi.cfg (non-pip install).
+
+     Keep Yaakoub updated with direct e-mail on progress.
+
+     Also, Yaakoub is spear-heading TACCs efforts in doing 
+     auto-offload to Xenon Phi.
+    
+
+     
+
 Modules
 ==========================================
 
