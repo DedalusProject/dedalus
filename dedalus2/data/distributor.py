@@ -412,7 +412,8 @@ class Transpose:
         # Local transpose from internal buffer to field
         view1 = field.data
         tr_view1 = np.transpose(view1, self._rolled_axes)
-        temp.resize(tr_view1.shape)
+        temp = np.ndarray(shape=tr_view1.shape, dtype=tr_view1.dtype, buffer=self._buffer)
+        # temp.resize(tr_view1.shape)
         np.copyto(tr_view1, temp)
 
     def _scatter_ldl(self, field):
@@ -433,6 +434,7 @@ class Transpose:
         # Local transpose from internal buffer to field
         view0 = field.data
         tr_view0 = np.transpose(view0, self._rolled_axes)
-        temp.resize(tr_view0.shape)
+        temp = np.ndarray(shape=tr_view0.shape, dtype=tr_view0.dtype, buffer=self._buffer)
+        # temp.resize(tr_view0.shape)
         np.copyto(tr_view0, temp)
 
