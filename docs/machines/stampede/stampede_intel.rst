@@ -1,4 +1,4 @@
-Building with intel/impi stack
+Building with intel compiler stack
 ***************************************************************************
 Install notes for building our python3 stack on TACC/Stampede, using the intel compiler suite.  
 Many thanks to Yaakoub El Khamra at TACC for help in sorting out the python3 build and numpy linking against a fast MKL BLAS.
@@ -27,6 +27,9 @@ Many thanks to Yaakoub El Khamra at TACC for help in sorting out the python3 bui
      auto-offload to Xenon Phi.
     
 
+     Beware of disk quotas if you're trying many builds; I hit 5GB
+     pretty fast and blew my matplotlib install due to quota limits :)
+
      
 
 Modules
@@ -34,24 +37,24 @@ Modules
 
 Here is my current build environment (from running ``module list``)
 
-  1) TACC-paths   
-  2) Linux   
-  3) cluster-paths   
-  4) TACC   
-  5) cluster   
-  6) intel/13.0.2.146   
-  7) impi/4.1.0.030   
-  8) fftw3/3.3.2
+    1) TACC-paths   
+    2) Linux   
+    3) cluster-paths   
+    4) TACC   
+    5) cluster
+    6) intel/14.0.1.106   
+    7) mvapich2/2.0b
 
 .. note ::
     To get here from a gcc default do the following:
 
     module unload mkl
-    module swap gcc intel
-    module swap mvapich2 impi
+    module swap gcc intel/14.0.1.106
 
-In the ``intel`` compiler stack, we can use either ``mvapich2`` or ``impi``, and ``fftw3`` 
-is built on both of these.
+In the ``intel`` compiler stack, we need to use ``mvapich2/2.0b``,
+which then implies ``intel/14.0.1.106``.  Right now, TACC has not built
+``fftw3`` for this stack, so we'll be doing our own FFTW build.
+
 See the  `Stampede user guide <https://www.tacc.utexas.edu/user-services/user-guides/stampede-user-guide#compenv-modules-login>`_
 for more details.  If you would like to always auto-load the same
 modules at startup, build your desired module configuration and then
@@ -72,29 +75,63 @@ Create ``~\build_intel`` and then proceed with downloading and installing Python
     tar -xzf Python-3.3.3.tgz
     cd Python-3.3.3
 
-    ./configure --prefix=$HOME/build_ifort CC=icc CFLAGS="-mkl -O3 -xHost -fPIC -ipo" CPPFLAGS="-mkl -O3 -xHost -fPIC -ipo" CXX=icpc --enable-shared --with-cxx-main=icpc LDFLAGS="-lpthread" --with-system-ffi
+    cp -p  /work/00364/tg456434/yye00/src/Python-3.3.3/Modules/_ctypes/libffi/src/x86/ffi64.c Modules/_ctypes/libffi/src/x86/ffi64.c 
+
+    ./configure --prefix=$HOME/build_intel \
+                         CC=icc CFLAGS="-mkl -O3 -xHost -fPIC -ipo" \
+                         CXX=icpc CPPFLAGS="-mkl -O3 -xHost -fPIC -ipo" \
+                         F90=ifort F90FLAGS="-mkl -O3 -xHost -fPIC -ipo" \
+                         --enable-shared LDFLAGS="-lpthread" \
+                         --with-cxx-main=icpc --with-system-ffi
 
     make
     make install
 
-On ``make``, we're getting one important error::
+.. note::
 
-    icc -fPIC -Wno-unused-result -DNDEBUG -g -O3 -Wall -Wstrict-prototypes -mkl -O3 -xHost -fPIC -ipo -Ibuild/temp.linux-x86_64-3.3/libffi/include -Ibuild/temp.linux-x86_64-3.3/libffi -I/home1/00364/tg456434/build_ifort/Python-3.3.3/Modules/_ctypes/libffi/src -I./Include -I/home1/00364/tg456434/build_ifort/include -I. -IInclude -I/usr/local/include -I/home1/00364/tg456434/build_ifort/Python-3.3.3/Include -I/home1/00364/tg456434/build_ifort/Python-3.3.3 -c /home1/00364/tg456434/build_ifort/Python-3.3.3/Modules/_ctypes/libffi/src/x86/ffi64.c -o build/temp.linux-x86_64-3.3/home1/00364/tg456434/build_ifort/Python-3.3.3/Modules/_ctypes/libffi/src/x86/ffi64.o -Wall -fexceptions
-    icc: command line warning #10006: ignoring unknown option '-Wno-unused-result'
-    /home1/00364/tg456434/build_ifort/Python-3.3.3/Modules/_ctypes/libffi/src/x86/ffi64.c(56): error: identifier "__m128" is undefined
-        UINT128 i128;
-        ^
+     With help from Yaakoub, we now build ``_ctypes`` successfully.
+     Key is the ffi64.c replacement above.  I'll wrap this into a
+     crude, deployable tar file patch.
 
-    compilation aborted for /home1/00364/tg456434/build_ifort/Python-3.3.3/Modules/_ctypes/libffi/src/x86/ffi64.c (code 2)
+     Also, the mpicc build is much, much slower than icc.  Interesting.
+     And we crashed out.  Here's what we tried with mpicc::
 
-    Failed to build these modules:
-    _ctypes                                               
+        ./configure --prefix=$HOME/build_intel \
+                         CC=mpicc CFLAGS="-mkl -O3 -xHost -fPIC -ipo" \
+                         CXX=mpicxx CPPFLAGS="-mkl -O3 -xHost -fPIC -ipo" \
+                         F90=mpif90 F90FLAGS="-mkl -O3 -xHost -fPIC -ipo" \
+                         --enable-shared LDFLAGS="-lpthread" \
+                         --with-cxx-main=mpicxx --with-system-ffi
 
-    running build_scripts
 
 Here we are building everything in ``~/build_intel``; you can do it
 whereever, but adjust things appropriately in the above instructions.
 The build proceeeds quickly (few minutes).
+
+Installing FFTW3
+------------------------------
+
+We need to build our own FFTW3, under intel 14 and mvapich2/2.0b::
+
+    wget http://www.fftw.org/fftw-3.3.3.tar.gz
+    tar -xzf fftw-3.3.3.tar.gz
+    cd fftw-3.3.3
+
+    ./configure --prefix=$HOME/build_intel \
+                         CC=icc CFLAGS="-mkl -O3 -xHost -fPIC" \
+                         CXX=icpc CPPFLAGS="-mkl -O3 -xHost -fPIC" \
+                         F77=ifort FFLAGS="-mkl -O3 -xHost -fPIC" \
+                         MPICC=mpicc MPICXX=mpicxx \
+                         --enable-shared LDFLAGS="-lpthread" \
+                         --enable-mpi
+
+    make
+    make install
+
+Last one works!
+
+Also:
+`Intel docs <http://software.intel.com/en-us/articles/performance-tools-for-software-developers-building-fftw-with-the-intel-compilers>`_
 
 Updating shell settings
 ------------------------------
@@ -197,6 +234,8 @@ we will proceed with the rest of our python stack.
 Right now, all of these need to be installed in each existing
 virtualenv instance (e.g., ``openblas``, ``mkl``, etc.).  
 
+For now, skip the venv process.
+
 Installing Scipy
 -------------------------
 
@@ -262,46 +301,36 @@ Dedalus2
 
 With the modules set as above, set::
 
-     export FFTW_PATH=$TACC_FFTW3_DIR
+     export BUILD_HOME=$HOME/build_intel
+     export FFTW_PATH=$BUILD_HOME
      export MPI_PATH=$MPICH_HOME
 
 Then change into your root dedalus directory and run::
 
      python setup.py build_ext --inplace
 
-Right now we're dying from an mpi header problem::
+Our new stack (``intel/14``, ``mvapich2/2.0b``) builds to completion
+without the ``mpi.h`` import/conflict error that I was seeing under
+``mvapich2/1.9``.  However, it looks like I've got a potential problem
+in my fftw build (see below).
 
-    (intel_mkl)login3$ python setup.py build_ext --inplace
-    /opt/apps/intel13/impi/4.1.0.030
-    Compiling dedalus2/libraries/fftw/fftw_wrappers.pyx because it changed.
-    Cythonizing dedalus2/libraries/fftw/fftw_wrappers.pyx
-    running build_ext
-    building 'dedalus2.libraries.fftw.fftw_wrappers' extension
-    creating build
-    creating build/temp.linux-x86_64-3.3
-    creating build/temp.linux-x86_64-3.3/dedalus2
-    creating build/temp.linux-x86_64-3.3/dedalus2/libraries
-    creating build/temp.linux-x86_64-3.3/dedalus2/libraries/fftw
-    icc -Wno-unused-result -DNDEBUG -g -O3 -Wall -Wstrict-prototypes -mkl -O3 -xHost -fPIC -ipo -fPIC -Idedalus2/libraries/fftw -I/home1/00364/tg456434/venv/intel_mkl/lib/python3.3/site-packages/mpi4py/include -I/opt/apps/intel13/impi_4_1/fftw3/3.3.2/include -I/opt/apps/intel13/impi/4.1.0.030/include -I/home1/00364/tg456434/venv/intel_mkl/lib/python3.3/site-packages/numpy/core/include -I/home1/00364/tg456434/build_ifort/include/python3.3m -c dedalus2/libraries/fftw/fftw_wrappers.c -o build/temp.linux-x86_64-3.3/dedalus2/libraries/fftw/fftw_wrappers.o
-    icc: command line warning #10006: ignoring unknown option '-Wno-unused-result'
-    /home1/00364/tg456434/venv/intel_mkl/lib/python3.3/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h(15): warning #1224: #warning directive: "Using deprecated NumPy API, disable it by "          "#defining NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION"
-      #warning "Using deprecated NumPy API, disable it by " \
-       ^
+Current error::
 
-    /opt/apps/intel13/impi/4.1.0.030/include/mpi.h(84): catastrophic error: #error directive: A wrong version of mpi.h file was included. Check include path.
-      #		    error A wrong version of mpi.h file was included. Check include path.
-                        ^
-
-    compilation aborted for dedalus2/libraries/fftw/fftw_wrappers.c (code 4)
-    error: command 'icc' failed with exit status 4
-    (intel_mkl)login3$
-
-
-Here's a second attempt::
-     icc -mkl -O3 -xHost -fPIC -ipo -fPIC -Idedalus2/libraries/fftw -I/home1/00364/tg456434/venv/intel_mkl/lib/python3.3/site-packages/mpi4py/include -I/opt/apps/intel13/impi_4_1/fftw3/3.3.2/include -I/opt/apps/intel13/impi/4.1.0.030/include -I/home1/00364/tg456434/venv/intel_mkl/lib/python3.3/site-packages/numpy/core/include -I/home1/00364/tg456434/build_ifort/include/python3.3m -c dedalus2/libraries/fftw/fftw_wrappers.c -o build/temp.linux-x86_64-3.3/dedalus2/libraries/fftw/fftw_wrappers.o
-
-.. note::
-     I give up for now.  Continue from here.
+    login2$ python3 bessel_disk_test.py 
+    2014-01-24 16:58:25,198 Dedalus2 0/1 ERROR   : Don't forget to buid using 'python3 setup.py build_ext --inplace'
+    Traceback (most recent call last):
+      File "bessel_disk_test.py", line 4, in <module>
+        import special_functions
+      File "/home1/00364/tg456434/code/examples2-bpbrown/dev/bessel_disk/special_functions.py", line 1, in <module>
+        import dedalus2.public as d2
+      File "/home1/00364/tg456434/build_intel/dedalus2/dedalus2/public.py", line 7, in <module>
+        from .data.domain import Domain
+      File "/home1/00364/tg456434/build_intel/dedalus2/dedalus2/data/domain.py", line 8, in <module>
+        from .distributor import Distributor
+      File "/home1/00364/tg456434/build_intel/dedalus2/dedalus2/data/distributor.py", line 12, in <module>
+        from ..libraries.fftw import fftw_wrappers as fftw
+    ImportError: /home1/00364/tg456434/build_intel/lib/libfftw3_mpi.so.3: undefined symbol: MPI_Bcast
+    login2$ 
 
 
 Running Dedalus on Stampede
@@ -371,3 +400,16 @@ and `Suite-sparse <http://www.cise.ufl.edu/research/sparse/>`_
 
 .. note::
      We'll check and update this later. (1/9/14)
+
+
+
+All I want for christmas is suitesparse
+----------------------------------------
+
+Well, maybe :)  Let's give it a try, and lets grab the whole library::
+
+     wget http://www.cise.ufl.edu/research/sparse/SuiteSparse/current/SuiteSparse.tar.gz
+     tar xvf SuiteSparse.tar.gz
+
+     <edit SuiteSparse_config/SuiteSparse_config.mk>
+     
