@@ -268,14 +268,15 @@ class Transform:
         self.basis = basis
 
         # Construct buffer for padded coefficients
-        pad_shape = np.copy(layout0.shape)
-        pad_shape[axis] = basis.coeff_embed
-        pad_dtype = layout0.dtype
-        pad_doubles = np.prod(pad_shape) * np.dtype(pad_dtype).itemsize // 8
-        self.buffer = fftw.create_buffer(pad_doubles)
-        self.embed = np.ndarray(shape=pad_shape,
-                                dtype=pad_dtype,
-                                buffer=self.buffer)
+        if np.prod(layout0.shape):
+            pad_shape = np.copy(layout0.shape)
+            pad_shape[axis] = basis.coeff_embed
+            pad_dtype = layout0.dtype
+            pad_doubles = np.prod(pad_shape) * np.dtype(pad_dtype).itemsize // 8
+            self.buffer = fftw.create_buffer(pad_doubles)
+            self.embed = np.ndarray(shape=pad_shape,
+                                    dtype=pad_dtype,
+                                    buffer=self.buffer)
 
         # By using buffer, transforms/padding don't impact field allocations
         self.alloc_doubles = 0
