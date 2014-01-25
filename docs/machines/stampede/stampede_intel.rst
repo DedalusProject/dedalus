@@ -117,21 +117,37 @@ We need to build our own FFTW3, under intel 14 and mvapich2/2.0b::
     tar -xzf fftw-3.3.3.tar.gz
     cd fftw-3.3.3
 
-    ./configure --prefix=$HOME/build_intel \
-                         CC=icc CFLAGS="-mkl -O3 -xHost -fPIC" \
-                         CXX=icpc CPPFLAGS="-mkl -O3 -xHost -fPIC" \
-                         F77=ifort FFLAGS="-mkl -O3 -xHost -fPIC" \
+   ./configure --prefix=$HOME/build_intel \
+                         CC=mpicc \
+                         CXX=mpicxx \
+                         F77=mpif90 \
                          MPICC=mpicc MPICXX=mpicxx \
-                         --enable-shared LDFLAGS="-lpthread" \
-                         --enable-mpi
-
+                         --enable-shared \
+                         --enable-mpi --enable-openmp --enable-threads
     make
     make install
 
-Last one works!
+It's critical that you use ``mpicc`` as the C-compiler, etc.
+Otherwise the libmpich libraries are not being correctly linked into
+``libfftw3_mpi.so`` and dedalus failes on fftw import.
 
-Also:
-`Intel docs <http://software.intel.com/en-us/articles/performance-tools-for-software-developers-building-fftw-with-the-intel-compilers>`_
+
+
+.. note::
+     Consider further cflag settings... e.g.::
+
+         ./configure --prefix=$HOME/build_intel \
+                         CC=icc CFLAGS="-mkl -O3 -xHost -fPIC -I$MPI_PATH/include" \
+                         CXX=icpc CPPFLAGS="-mkl -O3 -xHost -fPIC -I$MPI_PATH/include" \
+                         F77=ifort FFLAGS="-mkl -O3 -xHost -fPIC -I$MPI_PATH/include" \
+                         MPICC=mpicc MPICXX=mpicxx \
+                         LDFLAGS="-L$MPI_PATH/libs -lpthread" \
+                         --enable-shared \
+                         --enable-mpi
+     
+      These may be useful in time (but outdated): 
+     `Intel docs <http://software.intel.com/en-us/articles/performance-tools-for-software-developers-building-fftw-with-the-intel-compilers>`_
+
 
 Updating shell settings
 ------------------------------
@@ -310,27 +326,8 @@ Then change into your root dedalus directory and run::
      python setup.py build_ext --inplace
 
 Our new stack (``intel/14``, ``mvapich2/2.0b``) builds to completion
-without the ``mpi.h`` import/conflict error that I was seeing under
-``mvapich2/1.9``.  However, it looks like I've got a potential problem
-in my fftw build (see below).
-
-Current error::
-
-    login2$ python3 bessel_disk_test.py 
-    2014-01-24 16:58:25,198 Dedalus2 0/1 ERROR   : Don't forget to buid using 'python3 setup.py build_ext --inplace'
-    Traceback (most recent call last):
-      File "bessel_disk_test.py", line 4, in <module>
-        import special_functions
-      File "/home1/00364/tg456434/code/examples2-bpbrown/dev/bessel_disk/special_functions.py", line 1, in <module>
-        import dedalus2.public as d2
-      File "/home1/00364/tg456434/build_intel/dedalus2/dedalus2/public.py", line 7, in <module>
-        from .data.domain import Domain
-      File "/home1/00364/tg456434/build_intel/dedalus2/dedalus2/data/domain.py", line 8, in <module>
-        from .distributor import Distributor
-      File "/home1/00364/tg456434/build_intel/dedalus2/dedalus2/data/distributor.py", line 12, in <module>
-        from ..libraries.fftw import fftw_wrappers as fftw
-    ImportError: /home1/00364/tg456434/build_intel/lib/libfftw3_mpi.so.3: undefined symbol: MPI_Bcast
-    login2$ 
+and runs test problems successfully.  We have good scaling in limited
+early tests.
 
 
 Running Dedalus on Stampede
