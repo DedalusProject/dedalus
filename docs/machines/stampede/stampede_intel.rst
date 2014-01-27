@@ -75,7 +75,8 @@ Create ``~\build_intel`` and then proceed with downloading and installing Python
     tar -xzf Python-3.3.3.tgz
     cd Python-3.3.3
 
-    cp -p  /work/00364/tg456434/yye00/src/Python-3.3.3/Modules/_ctypes/libffi/src/x86/ffi64.c Modules/_ctypes/libffi/src/x86/ffi64.c 
+    # make sure you have the python patch, put it in Python-3.3.3
+    tar xvf python_intel_patch.tar 
 
     ./configure --prefix=$HOME/build_intel \
                          CC=icc CFLAGS="-mkl -O3 -xHost -fPIC -ipo" \
@@ -87,11 +88,20 @@ Create ``~\build_intel`` and then proceed with downloading and installing Python
     make
     make install
 
+To successfully build ``python3``, 
+the key is replacing the file ``ffi64.c``, which is done
+automatically by downloading and unpacking this crude patch
+:download:`python_intel_patch.tar<python_intel_patch.tar>` in
+your ``Python-3.3.3`` directory.   Unpack it in ``Python-3.3.3``
+(``tar xvf python_intel_patch.tar`` line above) 
+and it will overwrite ``ffi64.c``.  If you forget to do this, you'll
+see a warning/error that ``_ctypes`` couldn't be built.  This is important.
+
+
 .. note::
 
      With help from Yaakoub, we now build ``_ctypes`` successfully.
-     Key is the ffi64.c replacement above.  I'll wrap this into a
-     crude, deployable tar file patch.
+     
 
      Also, the mpicc build is much, much slower than icc.  Interesting.
      And we crashed out.  Here's what we tried with mpicc::
