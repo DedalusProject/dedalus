@@ -606,6 +606,23 @@ class Fourier(TransverseBasis, ImplicitBasis):
 
         return Diff.tocsr()
 
+    @CachedMethod
+    def Mult(self, p):
+        """
+        p-element multiplication matrix
+
+        F_0 * F_n = F_n
+
+        """
+
+        if p == 0:
+            # Identity matrix
+            Mult = sparse.identity(self.coeff_size, dtype=self.coeff_dtype)
+
+            return Mult.tocsr()
+        else:
+            raise NotImplementedError()
+
     @CachedAttribute
     def int_vector(self):
         """
