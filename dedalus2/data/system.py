@@ -44,7 +44,7 @@ class System:
         for fn in field_names:
             fields[fn] = domain.new_field()
 
-        # Allocate data of extended coeff data shape
+        # Allocate data with extended coeff data shape
         coeff_layout = domain.distributor.coeff_layout
         shape = np.copy(coeff_layout.shape)
         shape[-1] *= nfields
@@ -63,20 +63,16 @@ class System:
     def gather(self):
         """Copy fields into system buffer."""
 
-        for i, field in enumerate(self.fields.values()):
-            start = i
-            stride = self.nfields
-
+        stride = self.nfields
+        for start, field in enumerate(self.fields.values()):
             field.require_coeff_space()
             np.copyto(self.data[..., start::stride], field.data)
 
     def scatter(self):
         """Extract fields from system buffer."""
 
-        for i, field in enumerate(self.fields.values()):
-            start = i
-            stride = self.nfields
-
+        stride = self.nfields
+        for start, field in enumerate(self.fields.values()):
             field.layout = self._coeff_layout
             np.copyto(field.data, self.data[..., start::stride])
 
