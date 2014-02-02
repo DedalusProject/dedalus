@@ -11,44 +11,44 @@ from ..tools.array import zeros_with_pattern
 from ..tools.array import expand_pattern
 
 
-class PencilSet:
+def build_pencils(domain):
     """
-    Set of pencils in a domain.
+    Create the set of pencils over a domain.
 
     Parameters
     ----------
     domain : domain object
         Problem domain
 
-    Attributes
-    ----------
-    pencils : list of pencil objects
-        Individual pencils
+    Returns
+    -------
+    pencils : list
+        Pencil objects
 
     """
 
-    def __init__(self, domain):
+    # Get transverse indeces in fastest sequence
+    index_list = []
+    if domain.dim == 1:
+        index_list.append([])
+    else:
+        trans_shape = domain.distributor.coeff_layout.shape[:-1]
+        div = np.arange(np.prod(trans_shape))
+        for s in reversed(trans_shape):
+            div, mod = divmod(div, s)
+            index_list.append(mod)
+        index_list = list(zip(*reversed(index_list)))
 
-        # Get transverse indeces in fastest sequence
-        index_list = []
-        if domain.dim == 1:
-            index_list.append([])
-        else:
-            trans_shape = domain.distributor.coeff_layout.shape[:-1]
-            div = np.arange(np.prod(trans_shape))
-            for s in reversed(trans_shape):
-                div, mod = divmod(div, s)
-                index_list.append(mod)
-            index_list = list(zip(*reversed(index_list)))
+    # Construct corresponding trans diff consts and build pencils
+    pencils = []
+    start = domain.distributor.coeff_layout.start
+    for index in index_list:
+        trans = []
+        for i, b in enumerate(domain.bases[:-1]):
+            trans.append(b.trans_diff(start[i]+index[i]))
+        pencils.append(Pencil(index, trans))
 
-        # Construct corresponding trans diff consts and build pencils
-        self.pencils = []
-        start = domain.distributor.coeff_layout.start
-        for index in index_list:
-            trans = []
-            for i, b in enumerate(domain.bases[:-1]):
-                trans.append(b.trans_diff(start[i]+index[i]))
-            self.pencils.append(Pencil(index, trans))
+    return pencils
 
 
 class Pencil:
@@ -135,10 +135,10 @@ class Pencil:
         # Build filter matrix to eliminate boundary condition rows
         Mb_rows = Mb.nonzero()[0]
         Lb_rows = Lb.nonzero()[0]
-        rows = set(Mb_rows).union(set(Lb_rows))
+        bc_rows = set(Mb_rows).union(set(Lb_rows))
         F = sparse.eye(size, dtype=dtype, format='dok')
-        for i in rows:
-            F[i, i] = 0.
+        for i in bc_rows:
+            F[i, i] = 0
         F = F.tocsr()
 
         # Combine filtered PDE matrices with BC matrices
@@ -151,7 +151,7 @@ class Pencil:
         self.L = expand_pattern(L, self.LHS).tocsr()
 
         # Store selection/restriction operators for RHS
-        # Start G_bc with integral term, since that matrix is always defined
+        # Start G_bc with integral term, since the Int matrix is always defined
         self.G_eq = F * kron(basis.Pre, Se)
         self.G_bc = kron(basis.Int, Si)
         if Sl.any():

@@ -64,7 +64,7 @@ class FieldSystem(CoeffSystem):
     ----------
     data : ndarray
         Contiguous buffer for field coefficients
-    fields : list of field objects
+    fields : list
         Field objects
     nfields : int
         Number of fields in system
