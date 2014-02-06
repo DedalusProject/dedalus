@@ -449,7 +449,7 @@ class MatrixProblem:
         self.axis_names = axis_names
         self.diff_names = ['d'+an for an in axis_names]
         self.field_names = field_names
-        self.nfields = len(field_names)
+        self.nfields = problem.neqns = problen.nbcs = len(field_names)
         self.order = order
         self.parameters = dict()
 
