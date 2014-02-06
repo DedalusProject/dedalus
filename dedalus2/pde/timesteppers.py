@@ -57,10 +57,11 @@ class IMEXBase:
         a, b, c, d = self.compute_coefficients(self._iteration)
         self._iteration += 1
 
-        # Cycle and update RHS components and LHS matrix
+        # Update RHS components and LHS matrices
         MX.rotate()
         LX.rotate()
         F.rotate()
+
         for p in pencils:
             x = state.get_pencil(p)
             pFe = Fe.get_pencil(p)
@@ -72,7 +73,7 @@ class IMEXBase:
 
             np.copyto(p.LHS.data, d[0]*p.M.data + d[1]*p.L.data)
 
-        # Construct RHS field
+        # Build RHS
         RHS.data.fill(0)
         for q in range(self.qmax):
             RHS.data += a[q] * MX[q].data
@@ -194,22 +195,6 @@ class MCNAB2(IMEXBase):
 
         c[0] *= dt0
         c[1] *= dt0
-
-        return a, b, c, d
-
-
-class SimpleSolve(IMEXBase):
-    """Simple BVP solve"""
-
-    qmax = 1
-    pmax = 1
-
-    def compute_coefficients(self, iteration):
-
-        a = [0.]
-        b = [0.]
-        c = [1.]
-        d = [0., 1.]
 
         return a, b, c, d
 

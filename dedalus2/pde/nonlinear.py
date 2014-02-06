@@ -39,7 +39,7 @@ def compute_expressions(rhs_expressions, out_system):
     # Skip where no F is specified
     for j, re in enumerate(expressions):
         if np.isscalar(re):
-            out_system.fields[j]['g'].fill(re)
+            out_system.fields[j]['g'] = re
             expressions[j] = None
 
     # Start all from coefficient space
