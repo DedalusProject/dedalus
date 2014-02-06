@@ -11,9 +11,9 @@ from .data import pencil
 from .data import system
 
 from .pde import basis
-from .pde import integrator
 from .pde import nonlinear
 from .pde import problems
+from .pde import solvers
 from .pde import timesteppers
 
 from .tools import array
