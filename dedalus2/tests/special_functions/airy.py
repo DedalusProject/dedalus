@@ -1,21 +1,21 @@
 """
 Compute Airy functions by solving the Airy equation:
 
-u_xx - (a + bx) u = 0
-u(-1) = c
-u(+1) = d
+y_xx - (a + bx) y = 0
+y(-1) = c
+y(+1) = d
 
 """
 
 import numpy as np
 from scipy import special
 
-from dedalus2.public import *
+from ...public import *
 
 
 default_params = {}
-default_params['a'] = 0.
-default_params['b'] = 600.
+default_params['a'] = 100.
+default_params['b'] = 500.
 default_params['c'] = 1.
 default_params['d'] = 1.
 default_params['N'] = 65
@@ -33,41 +33,30 @@ def dedalus_domain(N):
 def dedalus_solution(a, b, c, d, N):
     """Use Dedalus to solve the Airy equation."""
 
-    # First-order system:
-    # dz(uz) - (a + bz) u = 0
-    # dz(u) - uz = 0
+    # Problem
+    airy = ParsedProblem(axis_names=['x',],
+                         field_names=['y', 'yx'],
+                         param_names=['a', 'b', 'c' ,'d'])
+    airy.add_equation("dx(yx) - (a + b*x)*y = 0")
+    airy.add_equation("yx - dx(y) = 0")
+    airy.add_left_bc("y = c")
+    airy.add_right_bc("y = d")
 
-    airy = Problem(['u', 'uz'], 2)
+    # Domain
+    domain = dedalus_domain(N)
 
-    airy.L0[0] = lambda d_trans: np.array([[-a, 0],
-                                           [ 0,-1]])
-
-    airy.L0[1] = lambda d_trans: np.array([[-b, 0],
-                                           [ 0, 0]])
-
-    airy.L1[0] = lambda d_trans: np.array([[0, 1],
-                                           [1, 0]])
-
-    # Boundary conditions:
-    # u(L) = c
-    # u(R) = d
-
-    airy.LL = lambda d_trans: np.array([[1, 0],
-                                        [0, 0]])
-
-    airy.LR = lambda d_trans: np.array([[0, 0],
-                                        [1, 0]])
-
-    airy.b = lambda d_trans: np.array([c, d])
+    # Parameters
+    airy.parameters['a'] = a
+    airy.parameters['b'] = b
+    airy.parameters['c'] = c
+    airy.parameters['d'] = d
+    airy.expand(domain, order=2)
 
     # Solve
-    domain = dedalus_domain(N)
-    ts = timesteppers.SimpleSolve
-    int = Integrator(airy, domain, ts)
-    int.advance()
-    u = int.state['u']
+    bvp = LinearBVP(airy, domain)
+    bvp.solve()
 
-    return np.copy(u['g'])
+    return np.copy(bvp.state['y']['g'])
 
 
 def exact_solution(a, b, c, d, N):
@@ -78,15 +67,15 @@ def exact_solution(a, b, c, d, N):
     x = domain.grid(0)
 
     # Compute Airy functions on rescaled grid
-    y = (a + b*x) * b**(-2/3)
-    Ai, Aip, Bi, Bip = special.airy(y)
+    z = (a + b*x) * b**(-2/3)
+    Ai, Aip, Bi, Bip = special.airy(z)
 
     # Solve for coefficients using boundary conditions
     L = np.array([[ Ai[0],  Bi[0]],
                   [Ai[-1], Bi[-1]]])
     R = np.array([d, c])
     c1, c2 = np.linalg.solve(L, R)
-    u_exact = c1*Ai + c2*Bi
+    y_exact = c1*Ai + c2*Bi
 
-    return u_exact
+    return y_exact
 
