@@ -7,6 +7,7 @@ import numpy as np
 
 from .distributor import Distributor
 from .field import Field
+from .operators import create_diff_operators
 from ..tools.logging import logger
 from ..tools.cache import CachedMethod
 from ..tools.array import reshape_vector
@@ -59,6 +60,9 @@ class Domain:
         # Create distributor
         self.distributor = Distributor(self, mesh)
 
+        # Create differential operators
+        self.diff_ops = create_diff_operators(self)
+
     @CachedMethod
     def grid(self, axis):
         """Return local grid along specified axis."""
@@ -72,6 +76,11 @@ class Domain:
         grid = reshape_vector(grid, self.dim, axis)
 
         return grid
+
+    def grids(self):
+        """Return list of local grids along each axis."""
+
+        return [self.grid(i) for i in range(self.dim)]
 
     @CachedMethod
     def grid_spacing(self, axis):
