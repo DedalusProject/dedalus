@@ -92,15 +92,13 @@ class Pencil:
         Le = sparse.csr_matrix((size, size), dtype=dtype)
 
         # Add terms to PDE matrices
-        for i in range(problem.order):
-            if i > 0:
-                raise ValueError("Nonconstant coefficients not supported.")
-            PM  = basis.Pre * basis.Mult(i)
-            PMD = basis.Pre * basis.Mult(i) * basis.Diff
-            Me = Me + kron(PM,  Se*M0e)
-            Me = Me + kron(PMD, Se*M1e)
-            Le = Le + kron(PM,  Se*L0e)
-            Le = Le + kron(PMD, Se*L1e)
+        for p in range(problem.order):
+            PM  = basis.Pre * basis.Mult(p)
+            PMD = basis.Pre * basis.Mult(p) * basis.Diff
+            Me = Me + kron(PM,  Se*M0e[p])
+            Me = Me + kron(PMD, Se*M1e[p])
+            Le = Le + kron(PM,  Se*L0e[p])
+            Le = Le + kron(PMD, Se*L1e[p])
 
         # Allocate BC matrices
         Mb = sparse.csr_matrix((size, size), dtype=dtype)
@@ -108,29 +106,29 @@ class Pencil:
 
         # Add terms to BC matrices
         if Sl.any():
-            for i in range(problem.order):
-                LM  = basis.Left * basis.Mult(i)
-                LMD = basis.Left * basis.Mult(i) * basis.Diff
-                Mb = Mb + kron(LM,  Sl*M0b)
-                Mb = Mb + kron(LMD, Sl*M1b)
-                Lb = Lb + kron(LM,  Sl*L0b)
-                Lb = Lb + kron(LMD, Sl*L1b)
+            for p in range(problem.order):
+                LM  = basis.Left * basis.Mult(p)
+                LMD = basis.Left * basis.Mult(p) * basis.Diff
+                Mb = Mb + kron(LM,  Sl*M0b[p])
+                Mb = Mb + kron(LMD, Sl*M1b[p])
+                Lb = Lb + kron(LM,  Sl*L0b[p])
+                Lb = Lb + kron(LMD, Sl*L1b[p])
         if Sr.any():
-            for i in range(problem.order):
-                RM  = basis.Right * basis.Mult(i)
-                RMD = basis.Right * basis.Mult(i) * basis.Diff
-                Mb = Mb + kron(RM,  Sr*M0b)
-                Mb = Mb + kron(RMD, Sr*M1b)
-                Lb = Lb + kron(RM,  Sr*L0b)
-                Lb = Lb + kron(RMD, Sr*L1b)
+            for p in range(problem.order):
+                RM  = basis.Right * basis.Mult(p)
+                RMD = basis.Right * basis.Mult(p) * basis.Diff
+                Mb = Mb + kron(RM,  Sr*M0b[p])
+                Mb = Mb + kron(RMD, Sr*M1b[p])
+                Lb = Lb + kron(RM,  Sr*L0b[p])
+                Lb = Lb + kron(RMD, Sr*L1b[p])
         if Si.any():
-            for i in range(problem.order):
-                IM  = basis.Int * basis.Mult(i)
-                IMD = basis.Int * basis.Mult(i) * basis.Diff
-                Mb = Mb + kron(IM,  Si*M0b)
-                Mb = Mb + kron(IMD, Si*M1b)
-                Lb = Lb + kron(IM,  Si*L0b)
-                Lb = Lb + kron(IMD, Si*L1b)
+            for p in range(problem.order):
+                IM  = basis.Int * basis.Mult(p)
+                IMD = basis.Int * basis.Mult(p) * basis.Diff
+                Mb = Mb + kron(IM,  Si*M0b[p])
+                Mb = Mb + kron(IMD, Si*M1b[p])
+                Lb = Lb + kron(IM,  Si*L0b[p])
+                Lb = Lb + kron(IMD, Si*L1b[p])
 
         # Build filter matrix to eliminate boundary condition rows
         Mb_rows = Mb.nonzero()[0]
@@ -145,17 +143,17 @@ class Pencil:
         M = F*Me + Mb
         L = F*Le + Lb
 
-        # Store with expanded sparsity for fast combination during integration
+        # Store with expanded sparsity for fast combination during timestepping
         self.LHS = zeros_with_pattern(M, L).tocsr()
         self.M = expand_pattern(M, self.LHS).tocsr()
         self.L = expand_pattern(L, self.LHS).tocsr()
 
-        # Store selection/restriction operators for RHS
+        # Store selection/restriction matrices for RHS
         # Start G_bc with integral term, since the Int matrix is always defined
         self.G_eq = F * kron(basis.Pre, Se)
         self.G_bc = kron(basis.Int, Si)
         if Sl.any():
-            self.G_bc = self.G_bc + kron(L, Sl)
+            self.G_bc = self.G_bc + kron(basis.Left, Sl)
         if Sr.any():
-            self.G_bc = self.G_bc + kron(R, Sr)
+            self.G_bc = self.G_bc + kron(basis.Right, Sr)
 
