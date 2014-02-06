@@ -3,11 +3,10 @@ ODE solvers for timestepping.
 
 """
 
-import numpy as np
 from collections import deque
+import numpy as np
 
-from .nonlinear import compute_expressions
-from ..data.system import System
+from ..data.system import CoeffSystem, FieldSystem
 
 
 class IMEXBase:
@@ -16,60 +15,36 @@ class IMEXBase:
 
     Parameters
     ----------
-    problem : problem object
-        Problem describing system of differential equations and constraints
-    pencilset : pencilset object
-        Pencilset for problem domain
-    state : system object
-        System containing current solution fields
-    rhs : system object
-        System for storing the RHS fields
+    nfields : int
+        Number of fields in problem
+    domain : domain object
+        Problem domain
 
     """
 
-    def __init__(self, problem, pencilset, state, rhs):
-
-        # Initial attributes
-        self.pencilset = pencilset
-        self.state = state
-        self.rhs = rhs
+    def __init__(self, nfields, domain):
 
         # Create deque for storing recent timesteps
         N = max(self.qmax, self.pmax)
         self.dt = deque([0.]*N)
 
-        # Create systems needed for multistep history
-        field_names = state.field_names
-        domain = state.domain
-
-        self.MX = deque()
-        self.LX = deque()
-        self.F = deque()
-
+        # Create systems for multistep history
+        self.MX = MX = deque()
+        self.LX = LX = deque()
+        self.F = F = deque()
         for q in range(self.qmax):
-            self.MX.append(System(field_names, domain))
-            self.LX.append(System(field_names, domain))
+            MX.append(CoeffSystem(nfields, domain))
+            LX.append(CoeffSystem(nfields, domain))
         for p in range(self.pmax):
-            self.F.append(System(field_names, domain))
+            F.append(CoeffSystem(nfields, domain))
 
-        # Create F operator trees for string representations
-        self.F_expressions = []
-        namespace = dict()
-        namespace.update(state.fields)
-        namespace.update(problem.parameters)
-        for f in problem.F:
-            if f is None:
-                self.F_expressions.append(None)
-            else:
-                self.F_expressions.append(eval(f, namespace))
+        # Attributes
+        self._iteration = 0
 
-    def update_pencils(self, dt, iteration):
+    def update_pencils(self, pencils, state, RHS, Fe, Fb, dt):
         """Compute elements for the implicit solve, by pencil."""
 
         # References
-        pencilset = self.pencilset
-        state = self.state
-        rhs = self.rhs
         MX = self.MX
         LX = self.LX
         F = self.F
@@ -78,46 +53,32 @@ class IMEXBase:
         self.dt.rotate()
         self.dt[0] = dt
 
-        # Cycle and compute RHS components
+        # Compute IMEX coefficients
+        a, b, c, d = self.compute_coefficients(self._iteration)
+        self._iteration += 1
+
+        # Cycle and update RHS components and LHS matrix
         MX.rotate()
         LX.rotate()
         F.rotate()
+        for p in pencils:
+            x = state.get_pencil(p)
+            pFe = Fe.get_pencil(p)
+            pFb = Fb.get_pencil(p)
 
-        pencilset.get_system(state)
-        for pencil in pencilset.pencils:
-            np.copyto(pencil.data, pencil.M.dot(pencil.data))
-        pencilset.set_system(MX[0])
+            MX[0].set_pencil(p, p.M*x)
+            LX[0].set_pencil(p, p.L*x)
+            F[0].set_pencil(p, p.G_eq*pFe + p.G_bc*pFb)
 
-        pencilset.get_system(state)
-        for pencil in pencilset.pencils:
-            np.copyto(pencil.data, pencil.L.dot(pencil.data))
-        pencilset.set_system(LX[0])
-
-        # Compute nonlinear component
-        compute_expressions(self.F_expressions, F[0])
-
-        pencilset.get_system(F[0])
-        for pencil in pencilset.pencils:
-            np.copyto(pencil.data, pencil.F_eval.dot(pencil.data))
-            for i, r in enumerate(pencil.bc_rows):
-                pencil.data[r] = pencil.bc_f[i]
-        pencilset.set_system(F[0])
-
-        # Compute IMEX coefficients
-        a, b, c, d = self.compute_coefficients(iteration)
-
-        # Construct pencil LHS matrix
-        for pencil in pencilset.pencils:
-            np.copyto(pencil.LHS.data, d[0]*pencil.M.data + d[1]*pencil.L.data)
+            np.copyto(p.LHS.data, d[0]*p.M.data + d[1]*p.L.data)
 
         # Construct RHS field
-        for fn in rhs.field_names:
-            rhs[fn]['c'] = 0.
-            for q in range(self.qmax):
-                rhs[fn]['c'] += a[q] * MX[q][fn]['c']
-                rhs[fn]['c'] += b[q] * LX[q][fn]['c']
-            for p in range(self.pmax):
-                rhs[fn]['c'] += c[p] * F[p][fn]['c']
+        RHS.data.fill(0)
+        for q in range(self.qmax):
+            RHS.data += a[q] * MX[q].data
+            RHS.data += b[q] * LX[q].data
+        for p in range(self.pmax):
+            RHS.data += c[p] * F[p].data
 
 
 class Euler(IMEXBase):
