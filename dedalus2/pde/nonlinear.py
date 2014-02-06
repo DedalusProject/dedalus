@@ -37,10 +37,10 @@ def compute_expressions(rhs_expressions, out_system):
     expressions = list(rhs_expressions)
 
     # Skip where no F is specified
-    for i, re in enumerate(expressions):
-        if re is None:
-            fn = out_system.field_names[i]
-            out_system[fn]['c'] = 0.
+    for j, re in enumerate(expressions):
+        if np.isscalar(re):
+            out_system.fields[j]['g'].fill(re)
+            expressions[j] = None
 
     # Start all from coefficient space
     fields = get_fields(expressions)
@@ -52,9 +52,8 @@ def compute_expressions(rhs_expressions, out_system):
         if re is not None:
             re_eval = re.attempt()
             if re_eval is not None:
-                fn = out_system.field_names[j]
                 layout = re_eval.layout
-                out_system[fn][layout] = re_eval[layout]
+                out_system.fields[j][layout] = re_eval[layout]
                 expressions[j] = None
 
     n_layouts = len(out_system.domain.distributor.layouts)
@@ -72,9 +71,8 @@ def compute_expressions(rhs_expressions, out_system):
             if re is not None:
                 re_eval = re.attempt()
                 if re_eval is not None:
-                    fn = out_system.field_names[j]
                     layout = re_eval.layout
-                    out_system[fn][layout] = re_eval[layout]
+                    out_system.fields[j][layout] = re_eval[layout]
                     expressions[j] = None
 
     # Non-linear products should now be computed (we are in grid space)
@@ -94,9 +92,8 @@ def compute_expressions(rhs_expressions, out_system):
             if re is not None:
                 re_eval = re.attempt()
                 if re_eval is not None:
-                    fn = out_system.field_names[j]
                     layout = re_eval.layout
-                    out_system[fn][layout] = re_eval[layout]
+                    out_system.fields[j][layout] = re_eval[layout]
                     expressions[j] = None
 
     if any(expressions):
