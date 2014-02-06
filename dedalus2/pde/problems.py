@@ -498,7 +498,7 @@ class MatrixProblem:
         Sl = np.matrix(np.zeros((nfields, nfields), dtype=int))
         Sr = np.matrix(np.zeros((nfields, nfields), dtype=int))
         Si = np.matrix(np.zeros((nfields, nfields), dtype=int))
-        for i, f in enumerate(bc_set['functional'])
+        for i, f in enumerate(bc_set['functional']):
             if f == 'left':
                 Sl[i,i] = 1
             elif f == 'right':
