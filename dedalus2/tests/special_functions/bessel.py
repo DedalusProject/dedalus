@@ -49,7 +49,7 @@ def dedalus_solution(a, b, N):
     bessel.expand(domain, order=3)
 
     # Solve
-    bvp = LinearBVP(bessel, domain)
+    bvp = solvers.LinearBVP(bessel, domain)
     bvp.solve()
 
     return np.copy(bvp.state['y']['g'])

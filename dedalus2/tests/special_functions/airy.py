@@ -53,7 +53,7 @@ def dedalus_solution(a, b, c, d, N):
     airy.expand(domain, order=2)
 
     # Solve
-    bvp = LinearBVP(airy, domain)
+    bvp = solvers.LinearBVP(airy, domain)
     bvp.solve()
 
     return np.copy(bvp.state['y']['g'])
