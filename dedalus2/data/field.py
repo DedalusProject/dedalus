@@ -99,17 +99,7 @@ class Field:
     def __getitem__(self, layout):
         """Return data viewed in specified layout."""
 
-        # Resolve layout strings to corresponding layout objects
-        if isinstance(layout, str):
-            layout = self.domain.distributor.string_layouts[layout]
-
-        # Transform to specified layout
-        if self.layout.index < layout.index:
-            while self.layout.index < layout.index:
-                self.towards_grid_space()
-        elif self.layout.index > layout.index:
-            while self.layout.index > layout.index:
-                self.towards_coeff_space()
+        self.require_layout(layout)
 
         return self.data
 
@@ -122,6 +112,20 @@ class Field:
 
         self.layout = layout
         np.copyto(self.data, data)
+
+    def require_layout(self, layout):
+
+        # Resolve layout strings to corresponding layout objects
+        if isinstance(layout, str):
+            layout = self.domain.distributor.string_layouts[layout]
+
+        # Transform to specified layout
+        if self.layout.index < layout.index:
+            while self.layout.index < layout.index:
+                self.towards_grid_space()
+        elif self.layout.index > layout.index:
+            while self.layout.index > layout.index:
+                self.towards_coeff_space()
 
     def towards_grid_space(self):
         """Change to next layout towards grid space."""

@@ -8,6 +8,7 @@ import time
 from scipy.sparse import linalg
 
 from .nonlinear import compute_expressions
+from ..data.evaluator import Evaluator
 from ..data.system import CoeffSystem, FieldSystem
 from ..data.pencil import build_pencils
 from ..tools.logging import logger
@@ -45,8 +46,6 @@ class LinearBVP:
 
         # Build systems
         self.state = FieldSystem(problem.field_names, domain)
-        self.Fe = FieldSystem(range(problem.neqns), domain)
-        self.Fb = FieldSystem(range(problem.nbc), domain)
 
         # Create F operator trees
         # Linear BVP: available terms are axes, parameters, and diff ops
@@ -54,19 +53,22 @@ class LinearBVP:
         vars.update(zip(problem.axis_names, domain.grids()))
         vars.update(zip(problem.diff_names, domain.diff_ops))
         vars.update(problem.parameters)
-        self.F_eq = [eval(f, vars) for f in problem.eqn_set['F']]
-        self.F_bc = [eval(f, vars) for f in problem.bc_set['F']]
+
+        self.rhs_evaluator = Evaluator(domain, vars)
+        self.Fe_handler = self.rhs_evaluator.add_system_handler(iter=1)
+        self.Fb_handler = self.rhs_evaluator.add_system_handler(iter=1)
+        self.Fe_handler.add_tasks(problem.eqn_set['F'])
+        self.Fb_handler.add_tasks(problem.bc_set['F'])
+        self.Fe = self.Fe_handler.build_system()
+        self.Fb = self.Fb_handler.build_system()
 
     def solve(self):
         """Solve BVP."""
 
         # Compute RHS
-        compute_expressions(self.F_eq, self.Fe)
-        compute_expressions(self.F_bc, self.Fb)
+        self.rhs_evaluator.evaluate(0, 0, 0, force=True)
 
         # Solve system for each pencil, updating state
-        self.Fe.gather()
-        self.Fb.gather()
         for p in self.pencils:
             pFe = self.Fe.get_pencil(p)
             pFb = self.Fb.get_pencil(p)
@@ -120,8 +122,6 @@ class IVP:
         # Build systems
         self.state = state = FieldSystem(problem.field_names, domain)
         self.RHS = RHS = CoeffSystem(problem.nfields, domain)
-        self.Fe = Fe = FieldSystem(range(problem.neqns), domain)
-        self.Fb = Fb = FieldSystem(range(problem.nbc), domain)
 
         # Create F operator trees
         # IVP: available terms are axes, parameters, and diff ops
@@ -130,8 +130,14 @@ class IVP:
         vars.update(zip(problem.diff_names, domain.diff_ops))
         vars.update(state.field_dict)
         vars.update(problem.parameters)
-        self.F_eq = [eval(f, vars) for f in problem.eqn_set['F']]
-        self.F_bc = [eval(f, vars) for f in problem.bc_set['F']]
+
+        self.rhs_evaluator = Evaluator(domain, vars)
+        self.Fe_handler = self.rhs_evaluator.add_system_handler(iter=1)
+        self.Fb_handler = self.rhs_evaluator.add_system_handler(iter=1)
+        self.Fe_handler.add_tasks(problem.eqn_set['F'])
+        self.Fb_handler.add_tasks(problem.bc_set['F'])
+        self.Fe = self.Fe_handler.build_system()
+        self.Fb = self.Fb_handler.build_system()
 
         # Initialize timestepper
         self.timestepper = timestepper(problem.nfields, domain)
@@ -175,10 +181,8 @@ class IVP:
 
         # Compute RHS
         state.gather()
-        compute_expressions(self.F_eq, Fe)
-        compute_expressions(self.F_bc, Fb)
-        Fe.gather()
-        Fb.gather()
+        wall_time = time.time() - self.start_time
+        self.rhs_evaluator.evaluate(wall_time, self.time, self.iteration, force=True)
 
         # Update pencil matrices
         self.timestepper.update_pencils(pencils, state, RHS, Fe, Fb, dt)

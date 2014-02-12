@@ -209,6 +209,7 @@ class Layout:
         # Compute global shape
         g_shape = np.copy(domain.coeff_shape)
         g_shape[grid_space] = domain.grid_shape[grid_space]
+        self.global_shape = np.copy(g_shape)
 
         # Distributed global shape: subset of global shape
         dg_shape = g_shape[~local]
@@ -234,6 +235,9 @@ class Layout:
         # Local shape
         self.shape = g_shape
         self.shape[~local] = dl_shape
+
+        # Slices
+        self.slices = tuple(slice(start, start+size) for (start, size) in zip(self.start, self.shape))
 
         # Required buffer size (in doubles)
         nbytes = np.prod(self.shape) * np.dtype(dtype).itemsize
