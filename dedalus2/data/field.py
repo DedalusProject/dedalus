@@ -96,6 +96,12 @@ class Field:
     def __rmul__(self, other):
         return Multiplication(other, self)
 
+    def __truediv__(self, other):
+        return Division(self, other)
+
+    def __rtruediv__(self, other):
+        return Division(other, self)
+
     def __getitem__(self, layout):
         """Return data viewed in specified layout."""
 
@@ -202,5 +208,5 @@ class Field:
 
 
 # Bottom-import to resolve cyclic dependencies:
-from .operators import Negation, Addition, Subtraction, Multiplication
+from .operators import Negation, Addition, Subtraction, Multiplication, Division
 
