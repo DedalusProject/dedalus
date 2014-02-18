@@ -70,31 +70,22 @@ class Distributor:
         if mesh is None:
             mesh = np.array([self.size], dtype=int)
 
-        # Squeeze out local and bad (size <= 1) dimensions
+        # Squeeze out local/bad (size <= 1) dimensions
         self.mesh = np.array([i for i in mesh if (i>1)], dtype=int)
 
         # Check mesh compatibility
         logger.debug('Mesh: %s' %str(self.mesh))
         if self.mesh.size >= domain.dim:
             raise ValueError("Mesh must have lower dimension than domain.")
-        if np.prod(self.mesh) > self.size:
-            raise ValueError("Insufficient processes for specified mesh.")
-        elif self.size > np.prod(self.mesh):
-            logger.warning("There are more available processes than will be "
-                           "utilized by the specified mesh.  Some processes "
-                           "may be idle.")
+        if np.prod(self.mesh) != self.size:
+            raise ValueError("Wrong number of processes (%i) for specified mesh (%s)" %(self.size, self.mesh))
 
         # Create cartesian communicator for parallel runs
         self.comm_cart = self.comm_world.Create_cart(self.mesh)
 
         # Get cartesian coordinates
-        # Non-mesh processes receive null communicators
-        if self.comm_cart == MPI.COMM_NULL:
-            # UPGRADE: figure out what to do when outside mesh
-            self.coords = None
-        else:
-            self.coords = np.array(self.comm_cart.coords, dtype=int)
-            self._build_layouts(domain)
+        self.coords = np.array(self.comm_cart.coords, dtype=int)
+        self._build_layouts(domain)
 
     def _build_layouts(self, domain):
         """Construct layout objects."""
@@ -158,7 +149,10 @@ class Distributor:
     def create_buffer(self):
         """Allocate memory using FFTW for SIMD alignment."""
 
-        return fftw.create_buffer(self.alloc_doubles)
+        if self.alloc_doubles:
+            return fftw.create_buffer(self.alloc_doubles)
+        else:
+            return np.ndarray(shape=(0,), dtype=np.float64)
 
     def increment_layout(self, field):
         """Transform field to subsequent layout (towards grid space)."""
@@ -362,24 +356,31 @@ class Transpose:
         block1 = layout1.blocks[axis]
         dtype = layout0.dtype
 
-        # Create FFTW transpose plans
-        self.fftw_plans = fftw.Transpose(n0, n1, howmany, block0, block1,
-                                         dtype, self.comm_sub, flags=['FFTW_MEASURE'])
+        # Dispatch based on local distribution
+        if howmany:
+            # Create FFTW transpose plans
+            self.fftw_plans = fftw.Transpose(n0, n1, howmany, block0, block1,
+                                             dtype, self.comm_sub, flags=['FFTW_MEASURE'])
 
-        # Required buffer size (in doubles)
-        self.alloc_doubles = self.fftw_plans.alloc_doubles
+            # Required buffer size (in doubles)
+            self.alloc_doubles = self.fftw_plans.alloc_doubles
 
-        # Dispatch based on transpose axis
-        # Increment layout <==> gather specified axis
-        if axis == 0:
-            self.increment = self._gather_d
-            self.decrement = self._scatter_d
+            # Dispatch based on transpose axis
+            # Increment layout <==> gather specified axis
+            if axis == 0:
+                self.increment = self._gather_d
+                self.decrement = self._scatter_d
+            else:
+                # Create buffer for intermediate local transposes
+                self._buffer = fftw.create_buffer(self.alloc_doubles)
+                self._rolled_axes = np.roll(np.arange(layout0.shape.size), -axis)
+                self.increment = self._gather_ldl
+                self.decrement = self._scatter_ldl
         else:
-            # Create buffer for intermediate local transposes
-            self._buffer = fftw.create_buffer(self.alloc_doubles)
-            self._rolled_axes = np.roll(np.arange(layout0.shape.size), -axis)
-            self.increment = self._gather_ldl
-            self.decrement = self._scatter_ldl
+            # No-op if there's no local data
+            self.alloc_doubles = 0
+            self.increment = self._no_op_gather
+            self.decrement = self._no_op_scatter
 
     def _gather_d(self, field):
         """FFTW transpose to gather axis == 0."""
@@ -442,4 +443,14 @@ class Transpose:
         temp = np.ndarray(shape=tr_view0.shape, dtype=tr_view0.dtype, buffer=self._buffer)
         # temp.resize(tr_view0.shape)
         np.copyto(tr_view0, temp)
+
+    def _no_op_gather(self, field):
+        """Update layout, no data handling."""
+
+        field.layout = self.layout1
+
+    def _no_op_scatter(self, field):
+        """Update layout, no data handling."""
+
+        field.layout = self.layout0
 
