@@ -77,10 +77,10 @@ class Operator:
         return Multiply(other, self)
 
     def __truediv__(self, other):
-        return Division(self, other)
+        return Divide(self, other)
 
     def __rtruediv__(self, other):
-        return Division(other, self)
+        return Divide(other, self)
 
     def _reset(self):
         """Restore original arguments."""
@@ -585,55 +585,98 @@ class Division(Arithmetic, metaclass=MultiClass):
     str_op = ' / '
 
 
-class DivFieldField(Division):
+class DivFieldField(Divide):
+
+    @staticmethod
+    def _check_args(*args, **kw):
+        return (is_fieldlike(args[0]) and is_fieldlike(args[1]))
+
+    def __init__(self, *args, **kw):
+        Divide.__init__(*args, **kw)
+        self._grid_layout = self.domain.distributor.grid_layout
+
+    def check_conditions(self):
+        # Must be in grid layout
+        return ((self.args[0].layout is self._grid_layout) and
+                (self.args[1].layout is self._grid_layout))
+
+    def operate(self, out):
+        # References
+        arg0, arg1 = self.args
+        # Divide in grid layout
+        arg0.require_grid_space()
+        arg1.require_grid_space()
+        out.layout = self._grid_layout
+        np.divide(arg0.data, arg1.data, out.data)
+        out.constant = arg0.constant & arg1.constant
+
+
+class DivFieldScalar(Divide):
 
     @staticmethod
     def _check_args(arg0, arg1):
-        return (is_field(arg0) and is_field(arg1))
+        return (is_fieldlike(arg0) and is_scalar(arg1))
 
     def check_conditions(self):
-        # Must be in grid space
-        grid_layout = self.domain.distributor.grid_layout
-        return ((self.args[0].layout is grid_layout) and
-                (self.args[1].layout is grid_layout))
+        return True
 
     def operate(self, out):
-        # Divide in grid space
-        out['g'] = self.args[0]['g'] / self.args[1]['g']
-
-
-class DivScalarField(Division):
-
-    @staticmethod
-    def _check_args(arg0, arg1):
-        return (is_scalar(arg0) and is_field(arg1))
-
-    def check_conditions(self):
-        # Must be in grid space
-        grid_layout = self.domain.distributor.grid_layout
-        return (self.args[1].layout is grid_layout)
-
-    def operate(self, out):
+        # References
+        arg0, arg1 = self.args
         # Divide in current layout
-        layout = self.args[1].layout
-        out[layout] = self.args[0] / self.args[1][layout]
+        out.layout = arg0.layout
+        np.divide(arg0.data, arg1, out.data)
+        np.copyto(out.constant, arg0.constant)
 
 
-class DivFieldScalar(Division):
+class DivFieldArray(Divide):
 
     @staticmethod
     def _check_args(arg0, arg1):
-        return (is_field(arg0) and is_scalar(arg1))
+        return (is_fieldlike(arg0) and is_array(arg1))
+
+    def __init__(self, *args, **kw):
+        Divide.__init__(*args, **kw)
+        self._arg1_constant = numeric_constant(args[1], self.domain)
+        self._grid_layout = self.domain.distributor.grid_layout
 
     def check_conditions(self):
-        # Must be in grid space
-        grid_layout = self.domain.distributor.grid_layout
-        return (self.args[1].layout is grid_layout)
+        # Must be in grid layout
+        return (self.args[0].layout is self._grid_layout)
 
     def operate(self, out):
-        # Multiply in current layout
-        layout = self.args[0].layout
-        out[layout] = self.args[0][layout] / self.args[1]
+        # References
+        arg0, arg1 = self.args
+        # Divide in grid layout
+        arg0.require_grid_space()
+        out.layout = self._grid_layout
+        np.divide(arg0.data, arg1, out.data)
+        out.constant = arg0.constant & self._arg1_constant
+
+
+class DivNumericField(Divide):
+
+    @staticmethod
+    def _check_args(arg0, arg1):
+        return (is_numeric(arg0) and is_fieldlike(arg1))
+
+    def __init__(self, *args, **kw):
+        Divide.__init__(*args, **kw)
+        self._arg0_constant = numeric_constant(args[0], self.domain)
+        self._grid_layout = self.domain.distributor.grid_layout
+
+    def check_conditions(self):
+        # Must be in grid layout
+        return (self.args[1].layout is self._grid_layout)
+
+    def operate(self, out):
+        # References
+        arg0, arg1 = self.args
+        # Divide in grid layout
+        arg1.require_grid_space()
+        out.layout = self._grid_layout
+        np.divide(arg0, arg1.data, out.data)
+        out.constant = self._arg0_constant & arg1.constant
 
 
 class MagSquared(Operator):
