@@ -62,16 +62,20 @@ class IMEXBase:
         LX.rotate()
         F.rotate()
 
+        MX0 = MX[0]
+        LX0 = LX[0]
+        F0 = F[0]
+        d0, d1 = d
         for p in pencils:
             x = state.get_pencil(p)
             pFe = Fe.get_pencil(p)
             pFb = Fb.get_pencil(p)
 
-            MX[0].set_pencil(p, p.M*x)
-            LX[0].set_pencil(p, p.L*x)
-            F[0].set_pencil(p, p.G_eq*pFe + p.G_bc*pFb)
+            MX0.set_pencil(p, p.M*x)
+            LX0.set_pencil(p, p.L*x)
+            F0.set_pencil(p, p.G_eq*pFe + p.G_bc*pFb)
 
-            np.copyto(p.LHS.data, d[0]*p.M.data + d[1]*p.L.data)
+            np.copyto(p.LHS.data, d0*p.M.data + d1*p.L.data)
 
         # Build RHS
         RHS.data.fill(0)
