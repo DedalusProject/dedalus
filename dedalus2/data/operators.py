@@ -82,7 +82,7 @@ class Operator:
     def __rtruediv__(self, other):
         return Divide(other, self)
 
-    def _reset(self):
+    def reset(self):
         """Restore original arguments."""
 
         self.args = list(self.original_args)
@@ -220,7 +220,7 @@ class CastNumeric(Cast):
         return is_numeric(args[0])
 
     def __init__(self, *args, **kw):
-        Cast.__init__(*args, **kw)
+        Cast.__init__(self, *args, **kw)
         self._arg0_constant = numeric_constant(args[0], self.domain)
 
     def check_conditions(self):
@@ -229,7 +229,7 @@ class CastNumeric(Cast):
     def operate(self, out):
         # Copy in grid layout
         out['g'] = self.args[0]
-        out.constant = self._arg0_constant
+        np.copyto(out.constant, self._arg0_constant)
 
 
 class Integrate(Operator):
@@ -342,7 +342,7 @@ class AddFieldNumeric(Add):
         return (is_fieldlike(arg0) and is_numeric(arg1))
 
     def __init__(self, *args, **kw):
-        Add.__init__(*args, **kw)
+        Add.__init__(self, *args, **kw)
         self._arg1_constant = numeric_constant(args[1], self.domain)
         self._grid_layout = self.domain.distributor.grid_layout
 
@@ -367,7 +367,7 @@ class AddNumericField(Add):
         return (is_numeric(args[0]) and is_fieldlike(args[1]))
 
     def __init__(self, *args, **kw):
-        Add.__init__(*args, **kw)
+        Add.__init__(self, *args, **kw)
         self._arg0_constant = numeric_constant(args[0], self.domain)
         self._grid_layout = self.domain.distributor.grid_layout
 
@@ -379,7 +379,7 @@ class AddNumericField(Add):
         # References
         arg0, arg1 = self.args
         # Add in grid layout
-        arg1.require_grid_layout()
+        arg1.require_grid_space()
         out.layout = self._grid_layout
         np.add(arg0, arg1.data, out.data)
         out.constant = self._arg0_constant & arg1.constant
@@ -418,7 +418,7 @@ class SubFieldNumeric(Subtract):
         return (is_fieldlike(arg0) and is_numeric(arg1))
 
     def __init__(self, *args, **kw):
-        Subtract.__init__(*args, **kw)
+        Subtract.__init__(self, *args, **kw)
         self._arg1_constant = numeric_constant(args[1], self.domain)
         self._grid_layout = self.domain.distributor.grid_layout
 
@@ -443,7 +443,7 @@ class SubNumericField(Subtract):
         return (is_numeric(args[0]) and is_fieldlike(args[1]))
 
     def __init__(self, *args, **kw):
-        Subtract.__init__(*args, **kw)
+        Subtract.__init__(self, *args, **kw)
         self._arg0_constant = numeric_constant(args[0], self.domain)
         self._grid_layout = self.domain.distributor.grid_layout
 
@@ -474,7 +474,7 @@ class MultFieldField(Multiply):
         return (is_fieldlike(args[0]) and is_fieldlike(args[1]))
 
     def __init__(self, *args, **kw):
-        Multiply.__init__(*args, **kw)
+        Multiply.__init__(self, *args, **kw)
         self._grid_layout = self.domain.distributor.grid_layout
 
     def check_conditions(self):
@@ -536,7 +536,7 @@ class MultFieldArray(Multiply):
         return (is_fieldlike(arg0) and is_array(arg1))
 
     def __init__(self, *args, **kw):
-        Multiply.__init__(*args, **kw)
+        Multiply.__init__(self, *args, **kw)
         self._arg1_constant = numeric_constant(args[1], self.domain)
         self._grid_layout = self.domain.distributor.grid_layout
 
@@ -561,7 +561,7 @@ class MultArrayField(Multiply):
         return (is_array(arg0) and is_fieldlike(arg1))
 
     def __init__(self, *args, **kw):
-        Multiply.__init__(*args, **kw)
+        Multiply.__init__(self, *args, **kw)
         self._arg0_constant = numeric_constant(args[0], self.domain)
         self._grid_layout = self.domain.distributor.grid_layout
 
@@ -592,7 +592,7 @@ class DivFieldField(Divide):
         return (is_fieldlike(args[0]) and is_fieldlike(args[1]))
 
     def __init__(self, *args, **kw):
-        Divide.__init__(*args, **kw)
+        Divide.__init__(self, *args, **kw)
         self._grid_layout = self.domain.distributor.grid_layout
 
     def check_conditions(self):
@@ -636,7 +636,7 @@ class DivFieldArray(Divide):
         return (is_fieldlike(arg0) and is_array(arg1))
 
     def __init__(self, *args, **kw):
-        Divide.__init__(*args, **kw)
+        Divide.__init__(self, *args, **kw)
         self._arg1_constant = numeric_constant(args[1], self.domain)
         self._grid_layout = self.domain.distributor.grid_layout
 
@@ -661,7 +661,7 @@ class DivNumericField(Divide):
         return (is_numeric(arg0) and is_fieldlike(arg1))
 
     def __init__(self, *args, **kw):
-        Divide.__init__(*args, **kw)
+        Divide.__init__(self, *args, **kw)
         self._arg0_constant = numeric_constant(args[0], self.domain)
         self._grid_layout = self.domain.distributor.grid_layout
 
@@ -702,20 +702,20 @@ class MagSquared(Operator):
         np.copyto(out.constant, arg0.constant)
 
 
-def create_diff_operator(basis, axis):
+def create_diff_operator(basis_, axis_):
     """Create differentiation operator for a basis+axis."""
 
-    if basis.name is not None:
-        name = basis.name
+    if basis_.name is not None:
+        name_ = 'd' + basis.name
     else:
-        name = str(axis)
+        name_ = 'd' + str(axis_)
 
     class diff(Operator):
 
-        name = 'd' + name
+        name = name_
         arity = 1
-        basis = basis
-        axis = axis
+        basis = basis_
+        axis = axis_
 
         def check_conditions(self):
             # References
