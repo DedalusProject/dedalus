@@ -783,6 +783,7 @@ def numeric_constant(arg0, domain):
     elif is_numeric(arg0):
         # BUG: this could potentially give inconsistent results across
         # processes for edge cases where layout.shape[i] == 1
+        # FIX: compare to blocks?
         return np.less(arg0.shape, domain.distributor.grid_layout.shape)
 
 def unique_domain(*args):

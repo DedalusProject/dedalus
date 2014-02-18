@@ -203,13 +203,12 @@ class Layout:
         # Compute global shape
         g_shape = np.copy(domain.coeff_shape)
         g_shape[grid_space] = domain.grid_shape[grid_space]
-        self.global_shape = np.copy(g_shape)
 
         # Distributed global shape: subset of global shape
         dg_shape = g_shape[~local]
 
         # Block sizes: FFTW standard
-        self.blocks = blocks = np.ceil(dg_shape / mesh).astype(int)
+        blocks = np.ceil(dg_shape / mesh).astype(int)
 
         # Cutoff coordinates: coordinates of first empty/partial blocks
         cuts = np.floor(dg_shape / blocks).astype(int)
@@ -223,18 +222,25 @@ class Layout:
         dl_shape[coords == cuts] = (dg_shape - cuts*blocks)[coords == cuts]
 
         # Local start
-        self.start = np.zeros(domain.dim, dtype=int)
-        self.start[~local] = dl_start
+        start = np.zeros(domain.dim, dtype=int)
+        start[~local] = dl_start
 
         # Local shape
-        self.shape = g_shape
-        self.shape[~local] = dl_shape
+        shape = g_shape.copy()
+        shape[~local] = dl_shape
 
         # Slices
-        self.slices = tuple(slice(start, start+size) for (start, size) in zip(self.start, self.shape))
+        slices = tuple(slice(start, start+size) for (start, size) in zip(start, shape))
 
         # Required buffer size (in doubles)
-        nbytes = np.prod(self.shape) * np.dtype(dtype).itemsize
+        nbytes = np.prod(shape) * np.dtype(dtype).itemsize
+
+        # Attributes
+        self.global_shape = g_shape
+        self.blocks = blocks
+        self.start = start
+        self.shape = shape
+        self.slices = slices
         self.alloc_doubles = nbytes // 8
 
     def view_data(self, buffer):
