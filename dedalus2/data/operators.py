@@ -1,5 +1,5 @@
 """
-Abstract and built-in classes defining delayed-evaluation operations on fields.
+Abstract and built-in classes defining deferred-evaluation operations on fields.
 
 """
 
@@ -13,7 +13,7 @@ from ..tools.dispatch import MultiClass
 
 class Operator:
     """
-    Base class for delayed operations on fields.
+    Base class for deferred operations on fields.
 
     Parameters
     ----------
@@ -24,10 +24,10 @@ class Operator:
 
     Notes
     -----
-    Operators are stacked (i.e. provided as inputs to other operators) to
-    construct trees that represent more complicated expressions.  Nodes
-    are evaluated by first recursively evaluating their subtrees, and then
-    calling the `operate` method.
+    Operators are stacked (i.e. provided as arguments to other operators) to
+    construct trees that represent compound expressions.  Nodes are evaluated
+    by first recursively evaluating their subtrees, and then calling the
+    `operate` method.
 
     """
 
@@ -36,53 +36,47 @@ class Operator:
 
     def __init__(self, *args, out=None):
 
-        # Initial attributes
-        self.args = list(args)
-        self.original_args = list(args)  # For resetting
-        self.out = out
-
         # Check arity
         if self.arity is not None:
             if len(args) != self.arity:
                 raise ValueError("Wrong number of arguments.")
 
-        # Check that domains match
-        self.domain = unique_domain(self.field_set(include_out=True))
-        if not self.domain:
-            raise ValueError("Arguments/outputs have multiple domains.")
+        # Required attributes
+        self.args = list(args)
+        self.original_args = list(args)
+        self.domain = unique_domain(out, *args)
+        self.out = out
 
     def __repr__(self):
+        repr_args = map(repr, self.args)
+        return '%s(%s)' %(self.name, ', '.join(repr_args))
 
-        # Represent as "name(*args)"
-        repr_op = self.name
-        repr_args = [a.__repr__() for a in self.args]
-
-        return repr_op + '(' + ', '.join(repr_args) + ')'
+    def __str__(self):
+        str_args = map(str, self.args)
+        return '%s(%s)' %(self.name, ', '.join(str_args))
 
     def __neg__(self):
-        return Negation(self)
+        return Negate(self)
 
     def __add__(self, other):
-        return Addition(self, other)
+        return Add(self, other)
 
     def __radd__(self, other):
-        return Addition(other, self)
+        return Add(other, self)
 
     def __sub__(self, other):
-        return Subtraction(self, other)
+        return Subtract(self, other)
 
     def __rsub__(self, other):
-        return Subtraction(other, self)
+        return Subtract(other, self)
 
     def __mul__(self, other):
-        return Multiplication(self, other)
+        return Multiply(self, other)
 
     def __rmul__(self, other):
-        return Multiplication(other, self)
+        return Multiply(other, self)
 
-    def _reset(self):
-        """Restore original arguments."""
-
+    def reset(self):
         self.args = list(self.original_args)
 
     def field_set(self, include_out=False):
@@ -139,7 +133,7 @@ class Operator:
         self.operate(out)
 
         # Reset to free temporary field arguments
-        self._reset()
+        self.reset()
 
         return out
 
@@ -160,31 +154,142 @@ class Operator:
     def operate(self, out):
         """Perform operation."""
 
-        # This method must be implemented in derived classes and should take an
-        # output field as its only argument, and evaluate the operation into
-        # this field without modifying the data of the arguments.
+        # This method must be implemented in derived classes, take an output
+        # field as its only argument, and evaluate the operation into this
+        # field without modifying the data of the arguments.
 
         raise NotImplementedError()
 
+    @staticmethod
+    def from_string(string, vars, domain):
+        """Build operator tree from string expression."""
 
-class Negation(Operator):
+        expression = eval(string, vars)
+        if isinstance(expression, Operator):
+            return expression
+        else:
+            return Cast(expression, domain)
+
+
+class Cast(Operator, metaclass=MultiClass):
+
+    name = 'Cast'
+
+    def __init__(self, arg0, domain, out=None):
+        # Required attributes
+        self.args = [arg0]
+        self.original_args = [arg0]
+        self.domain = domain
+        self.out = out
+
+
+class CastField(Cast):
+
+    @staticmethod
+    def _check_args(*args, **kw):
+        return is_field(args[0])
+
+    def __init__(self, arg0, out=None):
+        # Initialize using field domain
+        Cast.__init__(self, arg0, arg0.domain, out=out)
+
+    def check_conditions(self):
+        return True
+
+    def operate(self, out):
+        # References
+        arg0, = self.args
+        # Copy in current layout
+        layout = arg0.layout
+        out[layout] = arg0[layout]
+        np.copyto(out.constant, arg0.constant)
+
+
+class CastNumeric(Cast):
+
+    @staticmethod
+    def _check_args(*args, **kw):
+        return is_numeric(args[0])
+
+    def __init__(self, *args, **kw):
+        Cast.__init__(*args, **kw)
+        self._arg0_constant = numeric_constant(args[0], self.domain)
+
+    def check_conditions(self):
+        return True
+
+    def operate(self, out):
+        # Copy in grid layout
+        out['g'] = self.args[0]
+        out.constant = self._arg0_constant
+
+
+class Integrate(Operator):
+
+    def __init__(self, arg0, *bases, out=None):
+        # No bases: integrate over whole domain
+        if len(bases) == 0:
+            bases = list(arg0.domain.bases)
+        # Multiple bases: recursively integrate
+        if len(bases) > 1:
+            arg0 = Integrate(arg0, *bases[:-1])
+        # Required attributes
+        self.args = [arg0]
+        self.original_args = [arg0]
+        self.domain = arg0.domain
+        self.out = out
+        # Additional attributes
+        self.basis = bases[-1]
+        self.axis = arg0.domain.bases.index(self.basis)
+
+    def __repr__(self):
+        return 'Int(%r, %r)' %(self.args[0], self.basis)
+
+    def __str__(self):
+        return 'Int(%s, %s)' %(self.args[0], self.basis)
+
+    def check_conditions(self):
+        # References
+        arg0, = self.args
+        axis = self.axis
+        # Must be in ceoff+local layout
+        is_coeff = not arg0.layout.grid_space[axis]
+        is_local = arg0.layout.local[axis]
+
+        return (is_coeff and is_local)
+
+    def operate(self, out):
+        # References
+        arg0, = self.args
+        axis = self.axis
+        # Integrate in coeff+local layout
+        arg0.require_coeff_space(axis)
+        arg0.require_local(axis)
+        out.layout = arg0.layout
+        # Use basis integration method
+        self.basis.integrate(arg0.data, out.data, axis=axis)
+        np.copyto(out.constant, arg0.constant)
+        out.constant[axis] = True
+
+
+class Negate(Operator):
 
     name = 'Neg'
     arity = 1
 
     def __str__(self):
-        # Print as "(-arg)"
-        str_arg = self.args[0].__str__()
-        return '(' + '-' + str_arg + ')'
+        return '(-%s)' %self.args[0]
 
     def check_conditions(self):
-        # No conditions
         return True
 
     def operate(self, out):
+        # References
+        arg0, = self.args
         # Negate in current layout
-        layout = self.args[0].layout
-        out[layout] = -self.args[0][layout]
+        layout = arg0.layout
+        out[layout] = -arg0[layout]
+        np.copyto(out.constant, arg0.constant)
 
 
 class Arithmetic(Operator):
@@ -192,173 +297,261 @@ class Arithmetic(Operator):
     arity = 2
 
     def __str__(self):
-        # Print as "(arg1 [] arg2)"
-        str_op = self.str_op
-        str_args = [a.__str__() for a in self.args]
-        return '(' + str_op.join(str_args) + ')'
+        str_args = map(str, self.args)
+        return '(%s)' %self.str_op.join(str_args)
 
 
-class Addition(Arithmetic, metaclass=MultiClass):
+class Add(Arithmetic, metaclass=MultiClass):
 
     name = 'Add'
     str_op = ' + '
 
 
-class AddFieldField(Addition):
+class AddFieldField(Add):
 
     @staticmethod
-    def _check_args(arg0, arg1):
-        return (is_field(arg0) and is_field(arg1))
+    def _check_args(*args, **kw):
+        return (is_fieldlike(args[0]) and is_fieldlike(args[1]))
 
     def check_conditions(self):
         # Layouts must match
         return (self.args[0].layout is self.args[1].layout)
 
     def operate(self, out):
-        # Add in args[0] layout (arbitrary choice)
-        layout = self.args[0].layout
-        out[layout] = self.args[0][layout] + self.args[1][layout]
+        # References
+        arg0, arg1 = self.args
+        # Add in arg0 layout (arbitrary choice)
+        layout = arg0.layout
+        out[layout] = arg0[layout] + arg1[layout]
+        out.constant = arg0.constant & arg1.constant
 
 
-class AddScalarField(Addition):
-
-    @staticmethod
-    def _check_args(arg0, arg1):
-        return (is_scalar(arg0) and is_field(arg1))
-
-    def check_conditions(self):
-        # Must be in grid space
-        grid_layout = self.domain.distributor.grid_layout
-        return (self.args[1].layout is grid_layout)
-
-    def operate(self, out):
-        # Add in grid space
-        out['g'] = self.args[0] + self.args[1]['g']
-
-
-class AddFieldScalar(Addition):
+class AddFieldNumeric(Add):
 
     @staticmethod
     def _check_args(arg0, arg1):
-        return (is_field(arg0) and is_scalar(arg1))
+        return (is_fieldlike(arg0) and is_numeric(arg1))
+
+    def __init__(self, *args, **kw):
+        Add.__init__(*args, **kw)
+        self._arg1_constant = numeric_constant(args[1], self.domain)
+        self._grid_layout = self.domain.distributor.grid_layout
 
     def check_conditions(self):
-        # Must be in grid space
-        grid_layout = self.domain.distributor.grid_layout
-        return (self.args[0].layout is grid_layout)
+        # Must be in grid layout
+        return (self.args[0].layout is self._grid_layout)
 
     def operate(self, out):
-        # Add in grid space
-        out['g'] = self.args[0]['g'] + self.args[1]
+        # References
+        arg0, arg1 = self.args
+        # Add in grid layout
+        out['g'] = arg0['g'] + arg1
+        out.constant = arg0.constant & self._arg1_constant
 
 
-class Subtraction(Arithmetic, metaclass=MultiClass):
+class AddNumericField(Add):
+
+    @staticmethod
+    def _check_args(*args, **kw):
+        return (is_numeric(args[0]) and is_fieldlike(args[1]))
+
+    def __init__(self, *args, **kw):
+        Add.__init__(*args, **kw)
+        self._arg0_constant = numeric_constant(args[0], self.domain)
+        self._grid_layout = self.domain.distributor.grid_layout
+
+    def check_conditions(self):
+        # Must be in grid layout
+        return (self.args[1].layout is self._grid_layout)
+
+    def operate(self, out):
+        # References
+        arg0, arg1 = self.args
+        # Add in grid layout
+        out['g'] = arg0 + arg1['g']
+        out.constant = self._arg0_constant & arg1.constant
+
+
+class Subtract(Arithmetic, metaclass=MultiClass):
 
     name = 'Sub'
     str_op = ' - '
 
 
-class SubFieldField(Subtraction):
+class SubFieldField(Subtract):
 
     @staticmethod
-    def _check_args(arg0, arg1):
-        return (is_field(arg0) and is_field(arg1))
+    def _check_args(*args, **kw):
+        return (is_fieldlike(args[0]) and is_fieldlike(args[1]))
 
     def check_conditions(self):
         # Layouts must match
         return (self.args[0].layout is self.args[1].layout)
 
     def operate(self, out):
-        # Subtract in args[0] layout (arbitrary choice)
-        layout = self.args[0].layout
-        out[layout] = self.args[0][layout] - self.args[1][layout]
+        # References
+        arg0, arg1 = self.args
+        # Subtract in arg0 layout (arbitrary choice)
+        layout = arg0.layout
+        out[layout] = arg0[layout] - arg1[layout]
+        out.constant = arg0.constant & arg1.constant
 
 
-class SubScalarField(Subtraction):
-
-    @staticmethod
-    def _check_args(arg0, arg1):
-        return (is_scalar(arg0) and is_field(arg1))
-
-    def check_conditions(self):
-        # Must be in grid space
-        grid_layout = self.domain.distributor.grid_layout
-        return (self.args[1].layout is grid_layout)
-
-    def operate(self, out):
-        # Subtract in grid space
-        out['g'] = self.args[0] - self.args[1]['g']
-
-
-class SubFieldScalar(Subtraction):
+class SubFieldNumeric(Subtract):
 
     @staticmethod
     def _check_args(arg0, arg1):
-        return (is_field(arg0) and is_scalar(arg1))
+        return (is_fieldlike(arg0) and is_numeric(arg1))
+
+    def __init__(self, *args, **kw):
+        Subtract.__init__(*args, **kw)
+        self._arg1_constant = numeric_constant(args[1], self.domain)
+        self._grid_layout = self.domain.distributor.grid_layout
 
     def check_conditions(self):
-        # Must be in grid space
-        grid_layout = self.domain.distributor.grid_layout
-        return (self.args[0].layout is grid_layout)
+        # Must be in grid layout
+        return (self.args[0].layout is self._grid_layout)
 
     def operate(self, out):
-        # Subtract in grid space
-        out['g'] = self.args[0]['g'] - self.args[1]
+        # References
+        arg0, arg1 = self.args
+        # Subtract in grid layout
+        out['g'] = arg0['g'] - arg1
+        out.constant = arg0.constant & self._arg1_constant
 
 
-class Multiplication(Arithmetic, metaclass=MultiClass):
+class SubNumericField(Subtract):
+
+    @staticmethod
+    def _check_args(*args, **kw):
+        return (is_numeric(args[0]) and is_fieldlike(args[1]))
+
+    def __init__(self, *args, **kw):
+        Subtract.__init__(*args, **kw)
+        self._arg0_constant = numeric_constant(args[0], self.domain)
+        self._grid_layout = self.domain.distributor.grid_layout
+
+    def check_conditions(self):
+        # Must be in grid layout
+        return (self.args[1].layout is self._grid_layout)
+
+    def operate(self, out):
+        # References
+        arg0, arg1 = self.args
+        # Subtract in grid layout
+        out['g'] = arg0 - arg1['g']
+        out.constant = self._arg0_constant & arg1.constant
+
+
+class Multiply(Arithmetic, metaclass=MultiClass):
 
     name = 'Mult'
     str_op = ' * '
 
 
-class MultFieldField(Multiplication):
+class MultFieldField(Multiply):
 
     @staticmethod
-    def _check_args(arg0, arg1):
-        return (is_field(arg0) and is_field(arg1))
+    def _check_args(*args, **kw):
+        return (is_fieldlike(args[0]) and is_fieldlike(args[1]))
+
+    def __init__(self, *args, **kw):
+        Multiply.__init__(*args, **kw)
+        self._grid_layout = self.domain.distributor.grid_layout
 
     def check_conditions(self):
-        # Must be in grid space
-        grid_layout = self.domain.distributor.grid_layout
-        return ((self.args[0].layout is grid_layout) and
-                (self.args[1].layout is grid_layout))
+        # Must be in grid layout
+        return ((self.args[0].layout is self._grid_layout) and
+                (self.args[1].layout is self._grid_layout))
 
     def operate(self, out):
-        # Multiply in grid space
-        out['g'] = self.args[0]['g'] * self.args[1]['g']
+        # References
+        arg0, arg1 = self.args
+        # Multiply in grid layout
+        out['g'] = arg0['g'] * arg1['g']
+        out.constant = arg0.constant & arg1.constant
 
 
-class MultScalarField(Multiplication):
+class MultFieldScalar(Multiply):
 
     @staticmethod
     def _check_args(arg0, arg1):
-        return (is_scalar(arg0) and is_field(arg1))
+        return (is_fieldlike(arg0) and is_scalar(arg1))
 
     def check_conditions(self):
-        # No conditions
         return True
 
     def operate(self, out):
+        # References
+        arg0, arg1 = self.args
         # Multiply in current layout
-        layout = self.args[1].layout
-        out[layout] = self.args[0] * self.args[1][layout]
+        layout = arg1.layout
+        out[layout] = arg0[layout] * arg1
+        np.copyto(out.constant, arg0.constant)
 
 
-class MultFieldScalar(Multiplication):
+class MultScalarField(Multiply):
 
     @staticmethod
     def _check_args(arg0, arg1):
-        return (is_field(arg0) and is_scalar(arg1))
+        return (is_scalar(arg0) and is_fieldlike(arg1))
 
     def check_conditions(self):
-        # No conditions
         return True
 
     def operate(self, out):
+        # References
+        arg0, arg1 = self.args
         # Multiply in current layout
-        layout = self.args[0].layout
-        out[layout] = self.args[0][layout] * self.args[1]
+        layout = arg1.layout
+        out[layout] = arg0 * arg1[layout]
+        np.copyto(out.constant, arg1.constant)
+
+
+class MultFieldArray(Multiply):
+
+    @staticmethod
+    def _check_args(arg0, arg1):
+        return (is_fieldlike(arg0) and is_array(arg1))
+
+    def __init__(self, *args, **kw):
+        Multiply.__init__(*args, **kw)
+        self._arg1_constant = numeric_constant(args[1], self.domain)
+        self._grid_layout = self.domain.distributor.grid_layout
+
+    def check_conditions(self):
+        # Must be in grid layout
+        return (self.args[0].layout is self._grid_layout)
+
+    def operate(self, out):
+        # References
+        arg0, arg1 = self.args
+        # Multiply in grid layout
+        out['g'] = arg0['g'] * arg1
+        out.constant = arg0.constant & self._arg1_constant
+
+
+class MultArrayField(Multiply):
+
+    @staticmethod
+    def _check_args(arg0, arg1):
+        return (is_array(arg0) and is_fieldlike(arg1))
+
+    def __init__(self, *args, **kw):
+        Multiply.__init__(*args, **kw)
+        self._arg0_constant = numeric_constant(args[0], self.domain)
+        self._grid_layout = self.domain.distributor.grid_layout
+
+    def check_conditions(self):
+        # Must be in grid layout
+        return (self.args[1].layout is self._grid_layout)
+
+    def operate(self, out):
+        # References
+        arg0, arg1 = self.args
+        # Multiply in grid layout
+        out['g'] = arg0 * arg1['g']
+        out.constant = self._arg0_constant & arg1.constant
 
 
 class MagSquared(Operator):
@@ -366,75 +559,99 @@ class MagSquared(Operator):
     name = 'MagSq'
     arity = 1
 
+    def __init__(self, *args, **kw):
+        Operator.__init__(self, *args, **kw)
+        self._grid_layout = self.domain.distributor.grid_layout
+
     def check_conditions(self):
-        # Must be in grid space
-        grid_layout = self.domain.distributor.grid_layout
-        return (self.args[0].layout is grid_layout)
+        # Must be in grid layout
+        return (self.args[0].layout is self._grid_layout)
 
     def operate(self, out):
-        # Multiply by complex conjugate in grid space
-        out['g'] = self.args[0]['g'] * self.args[0]['g'].conj()
+        # References
+        arg0, = self.args
+        # Multiply by complex conjugate in grid layout
+        out['g'] = arg0['g'] * arg0['g'].conj()
+        np.copyto(out.constant, arg0.constant)
 
 
-def create_diff_operators(domain):
-    """Create operators representing differentiation along each axis."""
+def create_diff_operator(basis, axis):
+    """Create differentiation operator for a basis+axis."""
 
-    ops = []
+    if basis.name is not None:
+        name = basis.name
+    else:
+        name = str(axis)
 
-    for i, b in enumerate(domain.bases):
+    class diff(Operator):
 
-        class diff(Operator):
+        name = 'd' + name
+        arity = 1
+        basis = basis
+        axis = axis
 
-            name = 'D' + str(i)
-            arity = 1
+        def check_conditions(self):
+            # References
+            arg0, = self.args
+            axis = self.axis
+            # Must be in ceoff+local layout
+            is_coeff = not arg0.layout.grid_space[axis]
+            is_local = arg0.layout.local[axis]
 
-            index = i
-            basis = domain.bases[i]
+            return (is_coeff and is_local)
 
-            def check_conditions(self):
-                # Must be in ceoff space and local
-                is_coeff = not self.args[0].layout.grid_space[self.index]
-                is_local = self.args[0].layout.local[self.index]
-                return (is_coeff and is_local)
+        def operate(self, out):
+            # References
+            arg0, = self.args
+            axis = self.axis
+            # Differentiate in coeff+local space
+            arg0.require_coeff_space(axis)
+            arg0.require_local(axis)
+            out.layout = arg0.layout
+            # Use basis differentiation method
+            self.basis.differentiate(arg0.data, out.data, axis=axis)
+            np.copyto(out.constant, arg0.constant)
 
-            def operate(self, out):
-                # Differentiate in proper space
-                self.args[0].require_coeff_space(self.index)
-                self.args[0].require_local(self.index)
-                out.layout = self.args[0].layout
-                self.basis.differentiate(self.args[0].data,
-                                         out.data,
-                                         axis=self.index)
-
-        ops.append(diff)
-
-    return ops
-
-
-def is_field(arg):
-    """Check if an object is a field or an operator (resolves to a field)."""
-
-    return isinstance(arg, (Field, Operator))
+    return diff
 
 
 def is_scalar(arg):
-    """Check if an object is a scalar."""
-
     return np.isscalar(arg)
 
+def is_array(arg):
+    return isinstance(arg, np.ndarray)
 
-def unique_domain(fields):
+def is_numeric(arg):
+    return (is_scalar(arg) or is_array(arg))
+
+def is_field(arg):
+    return isinstance(arg, Field)
+
+def is_fieldlike(arg):
+    return isinstance(arg, (Field, Operator))
+
+def numeric_constant(arg0, domain):
+    if is_scalar(arg0):
+        return np.array([True]*domain.dim)
+    elif is_numeric(arg0):
+        # BUG: this could potentially give inconsistent results across
+        # processes for edge cases where layout.shape[i] == 1
+        return np.less(arg0.shape, domain.distributor.grid_layout.shape)
+
+def unique_domain(*args):
     """Check if a set of fields are defined over the same domain."""
 
     # Get set of domains
-    domains = set(f.domain for f in fields)
+    domains = []
+    for arg in args:
+        if is_fieldlike(arg):
+            domains.append(arg.domain)
+    domain_set = set(domains)
 
-    # Return domain if unique
-    if len(domains) == 1:
-        return list(domains)[0]
-    # Otherwise return None
+    if len(domain_set) > 1:
+        raise ValueError("Non-unique domains")
     else:
-        return None
+        return list(domain_set)[0]
 
 
 # Bottom-import to resolve cyclic dependencies:
