@@ -33,6 +33,7 @@ class Operator:
 
     name = 'Op'
     arity = None
+    __array_priority__ = 100.
 
     def __init__(self, *args, out=None):
 

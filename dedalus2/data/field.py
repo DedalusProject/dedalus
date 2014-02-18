@@ -30,13 +30,12 @@ class Field:
 
     """
 
+    __array_priority__ = 100.
+
     def __init__(self, domain, name=None):
 
         # Initial attributes
-        if name is not None:
-            self.name = name
-        else:
-            self.name = 'F' + str(id(self))
+        self.name = name
 
         # Weak-reference domain to allow cyclic garbage collection
         self._domain_weak_ref = weakref.ref(domain)
@@ -49,6 +48,7 @@ class Field:
 
         # Set initial layout (property hook sets data view)
         self.layout = domain.distributor.coeff_layout
+        self.constant = np.array([False] * domain.dim)
 
     @property
     def layout(self):
@@ -71,7 +71,13 @@ class Field:
             self.domain._collect_field(self)
 
     def __repr__(self):
-        return self.name
+        return '<Field %i>' %id(self)
+
+    def __str__(self):
+        if self.name:
+            return self.name
+        else:
+            return self.__repr__()
 
     # Use operators to define arithmetic on field objects
 
