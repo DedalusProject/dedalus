@@ -5,7 +5,6 @@ Abstract and built-in classes defining deferred operations on fields.
 
 import numpy as np
 
-from ..pde.basis import Basis
 from ..tools.general import OrderedSet
 from ..tools.dispatch import MultiClass
 # Bottom-import to resolve cyclic dependencies:
@@ -251,7 +250,7 @@ class Integrate(Operator):
         self.domain = arg0.domain
         self.out = out
         # Additional attributes
-        self.basis = get_basis_object(bases[-1])
+        self.basis = self.domain.get_basis_object(bases[-1])
         self.axis = arg0.domain.bases.index(self.basis)
 
     def __repr__(self):
@@ -734,13 +733,13 @@ class Differentiate(Operator):
 
 
 # Collect operators to expose to parser
-parsable = {'Integrate': Integrate,
-            'Negate': Negate,
-            'Add': Add,
-            'Subtract': Subtract,
-            'Multiply': Multiply,
-            'Divide': Divide,
-            'MagSquared': MagSquared}
+parsable_ops = {'Integrate': Integrate,
+                'Negate': Negate,
+                'Add': Add,
+                'Subtract': Subtract,
+                'Multiply': Multiply,
+                'Divide': Divide,
+                'MagSquared': MagSquared}
 
 
 # Type tests
@@ -785,16 +784,6 @@ def numeric_constant(arg0, domain):
         # BUG: this could potentially give inconsistent results across
         # processes for edge cases where layout.shape[i] == 1
         return np.less(arg0.shape, domain.distributor.grid_layout.shape)
-
-def get_basis_object(basis_like):
-    """Return basis from a related object."""
-
-    if isinstance(basis_like, Basis):
-        return basis_like
-    elif issubclass(basis_like, Differentiate):
-        return basis_like.basis
-    else:
-        raise ValueError("Cannot identify with a basis object.")
 
 def unique_domain(*args):
     """Return unique domain from a set of fields."""
