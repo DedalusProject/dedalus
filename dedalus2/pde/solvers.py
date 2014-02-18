@@ -7,7 +7,7 @@ import numpy as np
 import time
 from scipy.sparse import linalg
 
-from .nonlinear import compute_expressions
+from ..data.operators import parsable_ops
 from ..data.evaluator import Evaluator
 from ..data.system import CoeffSystem, FieldSystem
 from ..data.pencil import build_pencils
@@ -38,6 +38,10 @@ class LinearBVP:
 
     def __init__(self, problem, domain):
 
+        # Assign axis names to bases
+        for i, b in enumerate(domain.bases):
+            b.name = problem.axis_names[i]
+
         # Build pencils and pencil matrices
         self.pencils = build_pencils(domain)
         primary_basis = domain.bases[-1]
@@ -48,10 +52,11 @@ class LinearBVP:
         self.state = FieldSystem(problem.field_names, domain)
 
         # Create F operator trees
-        # Linear BVP: available terms are axes, parameters, and diff ops
+        # Linear BVP: available terms are parse ops, diff ops, axes, and parameters
         vars = dict()
-        vars.update(zip(problem.axis_names, domain.grids()))
+        vars.update(parsable_ops)
         vars.update(zip(problem.diff_names, domain.diff_ops))
+        vars.update(zip(problem.axis_names, domain.grids()))
         vars.update(problem.parameters)
 
         self.rhs_evaluator = Evaluator(domain, vars)
@@ -113,6 +118,10 @@ class IVP:
 
     def __init__(self, problem, domain, timestepper):
 
+        # Assign axis names to bases
+        for i, b in enumerate(domain.bases):
+            b.name = problem.axis_names[i]
+
         # Build pencils and pencil matrices
         self.pencils = pencils = build_pencils(domain)
         primary_basis = domain.bases[-1]
@@ -124,12 +133,13 @@ class IVP:
         self.RHS = RHS = CoeffSystem(problem.nfields, domain)
 
         # Create F operator trees
-        # IVP: available terms are axes, parameters, and diff ops
+        # IVP: available terms are parse ops, diff ops, axes, parameters, and state
         vars = dict()
-        vars.update(zip(problem.axis_names, domain.grids()))
+        vars.update(parsable_ops)
         vars.update(zip(problem.diff_names, domain.diff_ops))
-        vars.update(state.field_dict)
+        vars.update(zip(problem.axis_names, domain.grids()))
         vars.update(problem.parameters)
+        vars.update(state.field_dict)
 
         self.rhs_evaluator = Evaluator(domain, vars)
         self.Fe_handler = self.rhs_evaluator.add_system_handler(iter=1)
