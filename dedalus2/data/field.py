@@ -7,7 +7,7 @@ import numpy as np
 import weakref
 
 # Bottom-import to resolve cyclic dependencies:
-# from .operators import Negation, Addition, Subtraction, Multiplication
+# from .operators import Negate, Add, Subtract, Multiply, Divide, Integrate
 
 
 class Field:
@@ -47,8 +47,15 @@ class Field:
         self._buffer = domain.distributor.create_buffer()
 
         # Set initial layout (property hook sets data view)
-        self.layout = domain.distributor.coeff_layout
+        self.layout = self.domain.distributor.coeff_layout
         self.constant = np.array([False] * domain.dim)
+
+    def clean(self):
+        """Revert field to state at instantiation."""
+
+        self.layout = self.domain.distributor.coeff_layout
+        self.constant[:] = False
+        self.data.fill(0.)
 
     @property
     def layout(self):
@@ -78,8 +85,6 @@ class Field:
             return self.name
         else:
             return self.__repr__()
-
-    # Use operators to define arithmetic on field objects
 
     def __neg__(self):
         return Negate(self)
@@ -126,6 +131,7 @@ class Field:
         np.copyto(self.data, data)
 
     def require_layout(self, layout):
+        """Change to specified layout."""
 
         # Resolve layout strings to corresponding layout objects
         if isinstance(layout, str):
@@ -180,43 +186,22 @@ class Field:
             while not self.layout.local[axis]:
                 self.towards_grid_space()
 
-    def differentiate(self, axis, out):
-        """Differentiate field along one axis."""
+    def differentiate(self, basis, out=None):
+        """Differentiate field along one basis."""
 
-        # Require axis to be local and in coefficient space
-        # UPGRADE: non-transverse bases don't strictly require locality
-        self.require_local(axis)
-        self.require_coeff_space(axis)
+        # Use differentiation operator
+        basis = self.domain.get_basis_object(basis)
+        axis = self.domain.bases.index(basis)
+        diff_op = self.domain.diff_ops[axis]
+        return diff_op(self, out=out).evaluate()
 
-        # Call basis differentiation
-        out.layout = self.layout
-        self.domain.bases[axis].differentiate(self.data, out.data, axis=axis)
+    def integrate(self, *bases, out=None):
+        """Integrate field over bases."""
 
-    def integrate(self, axes=None):
-        """Integrate field over domain."""
-
-        # Require full coefficient space
-        # UPGRADE: implement distributed integral
-        self.require_coeff_space()
-        if not all(self.layout.local):
-            raise NotImplementedError("Distributed integral not implemented.")
-
-        # Integrate over all axes by default
-        if axes is None:
-            axes = range(self.domain.dim)
-        else:
-            axes = tuple(axes)
-
-        # Integrate by coefficients
-        data = self.data
-        for i in reversed(sorted(axes)):
-            b = self.domain.bases[i]
-            data = b.integrate(data, i)
-            data = b.grid_dtype(data)
-
-        return data
+        # Use integration operator
+        return Integrate(self, *bases, out=out).evaluate()
 
 
 # Bottom-import to resolve cyclic dependencies:
-from .operators import Negate, Add, Subtract, Multiply, Divide
+from .operators import Negate, Add, Subtract, Multiply, Divide, Integrate
 
