@@ -7,7 +7,7 @@ import numpy as np
 
 from .distributor import Distributor
 from .field import Field
-from .operators import create_diff_operators
+from .operators import create_diff_operator
 from ..tools.logging import logger
 from ..tools.cache import CachedMethod
 from ..tools.array import reshape_vector
@@ -61,7 +61,23 @@ class Domain:
         self.distributor = Distributor(self, mesh)
 
         # Create differential operators
-        self.diff_ops = create_diff_operators(self)
+        self.diff_ops = [create_diff_operator(b,i) for (i,b) in enumerate(self.bases)]
+
+    def get_basis_object(self, basis_like):
+        """Return basis from a related object."""
+
+        if basis_like in self.bases:
+            return basis_like
+        if basis_like in self.diff_ops:
+            axis = self.diff_ops.index(basis_like)
+            return self.bases[axis]
+        if isinstance(basis_like, str):
+            for b in self.bases:
+                if basis_like == b.name:
+                    return b
+            raise ValueError("No matching basis name.")
+        else:
+            return self.bases[basis_like]
 
     @CachedMethod
     def grid(self, axis):
@@ -108,11 +124,8 @@ class Domain:
     def _collect_field(self, field):
         """Cache free field."""
 
-        # Clean field
-        field.layout = self.distributor.coeff_layout
-        field.data.fill(0)
-
-        # Add to cache
+        # Add cleaned field to cache
+        field.clean()
         self._field_cache.append(field)
 
     def new_field(self):
