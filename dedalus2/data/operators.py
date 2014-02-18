@@ -176,6 +176,8 @@ class Operator:
         expression = eval(string, vars)
         if isinstance(expression, Operator):
             return expression
+        elif isinstance(expression, Field):
+            return Cast(expression)
         else:
             return Cast(expression, domain)
 
