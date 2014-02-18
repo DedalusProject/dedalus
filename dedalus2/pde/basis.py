@@ -44,6 +44,15 @@ class Basis:
 
     """
 
+    def __repr__(self):
+        return '<%s %i>' %(self.__class__.__name__, id(self))
+
+    def __str__(self):
+        if self.name:
+            return self.name
+        else:
+            return self.__repr__()
+
     def set_transforms(self, grid_dtype):
         """Set transforms based on grid data type."""
 
@@ -110,13 +119,16 @@ class ImplicitBasis(Basis):
 
     """
 
-    def integrate(self, cdata, axis):
+    def integrate(self, cdata, cint, axis):
         """Integrate over interval using coefficients."""
 
         # Contract coefficients with basis function integrals
-        integral = np.tensordot(cdata, self.int_vector, (axis, 0))
+        dim = len(cdata.shape)
+        weights = reshape_vector(self.int_vector, dim=dim, axis=axis)
+        integral = np.sum(cdata * weights, axis=axis, keepdims=True)
 
-        return integral
+        cint.fill(0)
+        np.copyto(cint[axslice(axis, 0, 1)], integral)
 
     @CachedAttribute
     def Pre(self):
@@ -194,9 +206,10 @@ class ImplicitBasis(Basis):
 class Chebyshev(ImplicitBasis):
     """Chebyshev polynomial basis on the extrema grid."""
 
-    def __init__(self, grid_size, interval=(-1., 1.), dealias=1.):
+    def __init__(self, grid_size, interval=(-1., 1.), dealias=1., name=None):
 
         # Initial attributes
+        self.name = name
         self.grid_size = grid_size
         self.interval = tuple(interval)
         self.dealias = dealias
@@ -442,9 +455,10 @@ class Chebyshev(ImplicitBasis):
 class Fourier(TransverseBasis, ImplicitBasis):
     """Fourier complex exponential basis."""
 
-    def __init__(self, grid_size, interval=(0., 2.*np.pi), dealias=1.):
+    def __init__(self, grid_size, interval=(0., 2.*np.pi), dealias=1., name=None):
 
         # Initial attributes
+        self.name = name
         self.grid_size = grid_size
         self.interval = tuple(interval)
         self.dealias = dealias
