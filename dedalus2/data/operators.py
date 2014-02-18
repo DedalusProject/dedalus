@@ -76,7 +76,15 @@ class Operator:
     def __rmul__(self, other):
         return Multiply(other, self)
 
-    def reset(self):
+    def __truediv__(self, other):
+        return Division(self, other)
+
+    def __rtruediv__(self, other):
+        return Division(other, self)
+
+    def _reset(self):
+        """Restore original arguments."""
+
         self.args = list(self.original_args)
 
     def field_set(self, include_out=False):
@@ -569,6 +577,63 @@ class MultArrayField(Multiply):
         out.layout = self._grid_layout
         np.multiply(arg0, arg1.data, out.data)
         out.constant = self._arg0_constant & arg1.constant
+
+
+class Division(Arithmetic, metaclass=MultiClass):
+
+    name = 'Div'
+    str_op = ' / '
+
+
+class DivFieldField(Division):
+
+    @staticmethod
+    def _check_args(arg0, arg1):
+        return (is_field(arg0) and is_field(arg1))
+
+    def check_conditions(self):
+        # Must be in grid space
+        grid_layout = self.domain.distributor.grid_layout
+        return ((self.args[0].layout is grid_layout) and
+                (self.args[1].layout is grid_layout))
+
+    def operate(self, out):
+        # Divide in grid space
+        out['g'] = self.args[0]['g'] / self.args[1]['g']
+
+
+class DivScalarField(Division):
+
+    @staticmethod
+    def _check_args(arg0, arg1):
+        return (is_scalar(arg0) and is_field(arg1))
+
+    def check_conditions(self):
+        # Must be in grid space
+        grid_layout = self.domain.distributor.grid_layout
+        return (self.args[1].layout is grid_layout)
+
+    def operate(self, out):
+        # Divide in current layout
+        layout = self.args[1].layout
+        out[layout] = self.args[0] / self.args[1][layout]
+
+
+class DivFieldScalar(Division):
+
+    @staticmethod
+    def _check_args(arg0, arg1):
+        return (is_field(arg0) and is_scalar(arg1))
+
+    def check_conditions(self):
+        # Must be in grid space
+        grid_layout = self.domain.distributor.grid_layout
+        return (self.args[1].layout is grid_layout)
+
+    def operate(self, out):
+        # Multiply in current layout
+        layout = self.args[0].layout
+        out[layout] = self.args[0][layout] / self.args[1]
 
 
 class MagSquared(Operator):
