@@ -1,10 +1,11 @@
 """
-Abstract and built-in classes defining deferred-evaluation operations on fields.
+Abstract and built-in classes defining deferred operations on fields.
 
 """
 
 import numpy as np
 
+from ..pde.basis import Basis
 from ..tools.general import OrderedSet
 from ..tools.dispatch import MultiClass
 # Bottom-import to resolve cyclic dependencies:
@@ -250,7 +251,7 @@ class Integrate(Operator):
         self.domain = arg0.domain
         self.out = out
         # Additional attributes
-        self.basis = bases[-1]
+        self.basis = get_basis_object(bases[-1])
         self.axis = arg0.domain.bases.index(self.basis)
 
     def __repr__(self):
@@ -705,46 +706,44 @@ class MagSquared(Operator):
         np.copyto(out.constant, arg0.constant)
 
 
-def create_diff_operator(basis_, axis_):
-    """Create differentiation operator for a basis+axis."""
+class Differentiate(Operator):
 
-    if basis_.name is not None:
-        name_ = 'd' + basis.name
-    else:
-        name_ = 'd' + str(axis_)
+    arity = 1
 
-    class diff(Operator):
+    def check_conditions(self):
+        # References
+        arg0, = self.args
+        axis = self.axis
+        # Must be in ceoff+local layout
+        is_coeff = not arg0.layout.grid_space[axis]
+        is_local = arg0.layout.local[axis]
 
-        name = name_
-        arity = 1
-        basis = basis_
-        axis = axis_
+        return (is_coeff and is_local)
 
-        def check_conditions(self):
-            # References
-            arg0, = self.args
-            axis = self.axis
-            # Must be in ceoff+local layout
-            is_coeff = not arg0.layout.grid_space[axis]
-            is_local = arg0.layout.local[axis]
-
-            return (is_coeff and is_local)
-
-        def operate(self, out):
-            # References
-            arg0, = self.args
-            axis = self.axis
-            # Differentiate in coeff+local space
-            arg0.require_coeff_space(axis)
-            arg0.require_local(axis)
-            out.layout = arg0.layout
-            # Use basis differentiation method
-            self.basis.differentiate(arg0.data, out.data, axis=axis)
-            np.copyto(out.constant, arg0.constant)
-
-    return diff
+    def operate(self, out):
+        # References
+        arg0, = self.args
+        axis = self.axis
+        # Differentiate in coeff+local space
+        arg0.require_coeff_space(axis)
+        arg0.require_local(axis)
+        out.layout = arg0.layout
+        # Use basis differentiation method
+        self.basis.differentiate(arg0.data, out.data, axis=axis)
+        np.copyto(out.constant, arg0.constant)
 
 
+# Collect operators to expose to parser
+parsable = {'Integrate': Integrate,
+            'Negate': Negate,
+            'Add': Add,
+            'Subtract': Subtract,
+            'Multiply': Multiply,
+            'Divide': Divide,
+            'MagSquared': MagSquared}
+
+
+# Type tests
 def is_scalar(arg):
     return np.isscalar(arg)
 
@@ -760,7 +759,26 @@ def is_field(arg):
 def is_fieldlike(arg):
     return isinstance(arg, (Field, Operator))
 
+
+# Convenience functions
+def create_diff_operator(basis_, axis_):
+    """Create differentiation operator for a basis+axis."""
+
+    if basis_.name is not None:
+        name_ = 'd' + basis.name
+    else:
+        name_ = 'd' + str(axis_)
+
+    class d_(Differentiate):
+        name = name_
+        basis = basis_
+        axis = axis_
+
+    return d_
+
 def numeric_constant(arg0, domain):
+    """Determine `constant` array for a numeric type."""
+
     if is_scalar(arg0):
         return np.array([True]*domain.dim)
     elif is_numeric(arg0):
@@ -768,8 +786,18 @@ def numeric_constant(arg0, domain):
         # processes for edge cases where layout.shape[i] == 1
         return np.less(arg0.shape, domain.distributor.grid_layout.shape)
 
+def get_basis_object(basis_like):
+    """Return basis from a related object."""
+
+    if isinstance(basis_like, Basis):
+        return basis_like
+    elif issubclass(basis_like, Differentiate):
+        return basis_like.basis
+    else:
+        raise ValueError("Cannot identify with a basis object.")
+
 def unique_domain(*args):
-    """Check if a set of fields are defined over the same domain."""
+    """Return unique domain from a set of fields."""
 
     # Get set of domains
     domains = []
