@@ -287,8 +287,8 @@ class Negate(Operator):
         # References
         arg0, = self.args
         # Negate in current layout
-        layout = arg0.layout
-        out[layout] = -arg0[layout]
+        out.layout = arg0.layout
+        np.negative(arg0.data, out.data)
         np.copyto(out.constant, arg0.constant)
 
 
@@ -321,8 +321,9 @@ class AddFieldField(Add):
         # References
         arg0, arg1 = self.args
         # Add in arg0 layout (arbitrary choice)
-        layout = arg0.layout
-        out[layout] = arg0[layout] + arg1[layout]
+        arg1.require_layout(arg0.layout)
+        out.layout = arg0.layout
+        np.add(arg0.data, arg1.data, out.data)
         out.constant = arg0.constant & arg1.constant
 
 
@@ -345,7 +346,9 @@ class AddFieldNumeric(Add):
         # References
         arg0, arg1 = self.args
         # Add in grid layout
-        out['g'] = arg0['g'] + arg1
+        arg0.require_grid_space()
+        out.layout = self._grid_layout
+        np.add(arg0.data, arg1, out.data)
         out.constant = arg0.constant & self._arg1_constant
 
 
@@ -368,7 +371,9 @@ class AddNumericField(Add):
         # References
         arg0, arg1 = self.args
         # Add in grid layout
-        out['g'] = arg0 + arg1['g']
+        arg1.require_grid_layout()
+        out.layout = self._grid_layout
+        np.add(arg0, arg1.data, out.data)
         out.constant = self._arg0_constant & arg1.constant
 
 
@@ -392,8 +397,9 @@ class SubFieldField(Subtract):
         # References
         arg0, arg1 = self.args
         # Subtract in arg0 layout (arbitrary choice)
-        layout = arg0.layout
-        out[layout] = arg0[layout] - arg1[layout]
+        arg1.require_layout(arg0.layout)
+        out.layout = arg0.layout
+        np.subtract(arg0.data, arg1.data, out.data)
         out.constant = arg0.constant & arg1.constant
 
 
@@ -416,7 +422,9 @@ class SubFieldNumeric(Subtract):
         # References
         arg0, arg1 = self.args
         # Subtract in grid layout
-        out['g'] = arg0['g'] - arg1
+        arg0.require_grid_space()
+        out.layout = self._grid_layout
+        np.subtract(arg0.data, arg1, out.data)
         out.constant = arg0.constant & self._arg1_constant
 
 
@@ -439,7 +447,9 @@ class SubNumericField(Subtract):
         # References
         arg0, arg1 = self.args
         # Subtract in grid layout
-        out['g'] = arg0 - arg1['g']
+        arg1.require_grid_space()
+        out.layout = self._grid_layout
+        np.subtract(arg0, arg1.data, out.data)
         out.constant = self._arg0_constant & arg1.constant
 
 
@@ -468,7 +478,10 @@ class MultFieldField(Multiply):
         # References
         arg0, arg1 = self.args
         # Multiply in grid layout
-        out['g'] = arg0['g'] * arg1['g']
+        arg0.require_grid_space()
+        arg1.require_grid_space()
+        out.layout = self._grid_layout
+        np.multiply(arg0.data, arg1.data, out.data)
         out.constant = arg0.constant & arg1.constant
 
 
@@ -485,8 +498,8 @@ class MultFieldScalar(Multiply):
         # References
         arg0, arg1 = self.args
         # Multiply in current layout
-        layout = arg1.layout
-        out[layout] = arg0[layout] * arg1
+        out.layout = arg0.layout
+        np.multiply(arg0.data, arg1, out.data)
         np.copyto(out.constant, arg0.constant)
 
 
@@ -503,8 +516,8 @@ class MultScalarField(Multiply):
         # References
         arg0, arg1 = self.args
         # Multiply in current layout
-        layout = arg1.layout
-        out[layout] = arg0 * arg1[layout]
+        out.layout = arg1.layout
+        np.multiply(arg0, arg1.data, out.data)
         np.copyto(out.constant, arg1.constant)
 
 
@@ -527,7 +540,9 @@ class MultFieldArray(Multiply):
         # References
         arg0, arg1 = self.args
         # Multiply in grid layout
-        out['g'] = arg0['g'] * arg1
+        arg0.require_grid_space()
+        out.layout = self._grid_layout
+        np.multiply(arg0.data, arg1, out.data)
         out.constant = arg0.constant & self._arg1_constant
 
 
@@ -550,7 +565,9 @@ class MultArrayField(Multiply):
         # References
         arg0, arg1 = self.args
         # Multiply in grid layout
-        out['g'] = arg0 * arg1['g']
+        arg1.require_grid_space()
+        out.layout = self._grid_layout
+        np.multiply(arg0, arg1.data, out.data)
         out.constant = self._arg0_constant & arg1.constant
 
 
@@ -571,7 +588,9 @@ class MagSquared(Operator):
         # References
         arg0, = self.args
         # Multiply by complex conjugate in grid layout
-        out['g'] = arg0['g'] * arg0['g'].conj()
+        arg0.require_grid_space()
+        out.layout = self._grid_layout
+        np.multiply(arg0.data, arg0.data.conj(), out.data)
         np.copyto(out.constant, arg0.constant)
 
 
