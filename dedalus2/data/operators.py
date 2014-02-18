@@ -579,7 +579,7 @@ class MultArrayField(Multiply):
         out.constant = self._arg0_constant & arg1.constant
 
 
-class Division(Arithmetic, metaclass=MultiClass):
+class Divide(Arithmetic, metaclass=MultiClass):
 
     name = 'Div'
     str_op = ' / '

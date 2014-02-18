@@ -76,25 +76,31 @@ class Field:
     # Use operators to define arithmetic on field objects
 
     def __neg__(self):
-        return Negation(self)
+        return Negate(self)
 
     def __add__(self, other):
-        return Addition(self, other)
+        return Add(self, other)
 
     def __radd__(self, other):
-        return Addition(other, self)
+        return Add(other, self)
 
     def __sub__(self, other):
-        return Subtraction(self, other)
+        return Subtract(self, other)
 
     def __rsub__(self, other):
-        return Subtraction(other, self)
+        return Subtract(other, self)
 
     def __mul__(self, other):
-        return Multiplication(self, other)
+        return Multiply(self, other)
 
     def __rmul__(self, other):
-        return Multiplication(other, self)
+        return Multiply(other, self)
+
+    def __truediv__(self, other):
+        return Divide(self, other)
+
+    def __rtruediv__(self, other):
+        return Divide(other, self)
 
     def __getitem__(self, layout):
         """Return data viewed in specified layout."""
@@ -206,5 +212,5 @@ class Field:
 
 
 # Bottom-import to resolve cyclic dependencies:
-from .operators import Negation, Addition, Subtraction, Multiplication
+from .operators import Negate, Add, Subtract, Multiply, Divide
 
