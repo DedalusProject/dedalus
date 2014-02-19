@@ -1,24 +1,30 @@
-# Copyright (c) 2013-2014, Keaton J. Burns.
-#
-# This file is part of Dedalus, which is free software distributed
-# under the terms of the GPLv3 license.  A copy of the license should
-# have been included in the file 'LICENSE.txt', and is also available
-# online at <http://www.gnu.org/licenses/gpl-3.0.html>.
-
 """
 Class for centralized evaluation of expression trees.
 
 """
 
+import os
 import h5py
 from mpi4py import MPI
 import numpy as np
 from .system import FieldSystem
 
+from .operators import Operator
 from ..tools.general import OrderedSet
 
 
 class Evaluator:
+    """
+    Coordinated evaluation of operator trees through handlers.
+
+    Parameters
+    ----------
+    domain : domain object
+        Problem domain
+    vars : dict
+        Variables for parsing task expression strings
+
+    """
 
     def __init__(self, domain, vars):
 
@@ -35,7 +41,7 @@ class Evaluator:
 
     def add_file_handler(self, filename, **kw):
 
-        FH = FileHandler(filename, self.vars, **kw)
+        FH = FileHandler(filename, self.domain, self.vars, **kw)
         self.handlers.append(FH)
 
         return FH
@@ -48,6 +54,7 @@ class Evaluator:
     #     return SH
 
     def evaluate(self, wall_time, sim_time, iteration, force=False):
+        """Evaluate scheduled handlers/tasks."""
 
         # Find scheduled tasks
         current_handlers = []
@@ -58,16 +65,20 @@ class Evaluator:
             sim_div  = sim_time  // handler.sim_dt
             iter_div = iteration // handler.iter
 
-            wall_up = (wall_div > handler.wall_div)
-            sim_up  = (sim_div  > handler.sim_div)
-            iter_up = (iter_div > handler.iter_div)
+            wall_up = (wall_div > handler.last_wall_div)
+            sim_up  = (sim_div  > handler.last_sim_div)
+            iter_up = (iter_div > handler.last_iter_div)
 
             if force or any((wall_up, sim_up, iter_up)):
                 current_handlers.append(handler)
                 tasks.extend(handler.tasks)
-                handler.wall_div = wall_div
-                handler.sim_div  = sim_div
-                handler.iter_div = iter_div
+                handler.last_wall_div = wall_div
+                handler.last_sim_div  = sim_div
+                handler.last_iter_div = iter_div
+
+        # Return if there are no scheduled handlers
+        if not current_handlers:
+            return None
 
         # Start from coefficient space
         fields = self.get_fields(tasks)
@@ -90,23 +101,26 @@ class Evaluator:
                 if dL > 0:
                     f.towards_grid_space()
                 else:
-                    f.toward_coeff_space()
+                    f.towards_coeff_space()
             L += dL
             # Attempt evaluation
             tasks = self.attempt_tasks(tasks)
 
+        # Transform all outputs to coefficient space to dealias
+        for handler in current_handlers:
+            for task in handler.tasks:
+                task['out'].require_coeff_space()
+
         # Process
         for handler in current_handlers:
             handler.process(wall_time, sim_time, iteration)
-
 
     @staticmethod
     def get_fields(tasks):
 
         fields = OrderedSet()
         for task in tasks:
-            if not np.isscalar(task['operator']):
-                fields.update(task['operator'].field_set())
+            fields.update(task['operator'].field_set())
 
         return fields
 
@@ -115,36 +129,50 @@ class Evaluator:
 
         unfinished = []
         for task in tasks:
-            if np.isscalar(task['operator']):
-                task['out']['g'] = task['operator']
+            output = task['operator'].attempt()
+            if output is None:
+                unfinished.append(task)
             else:
-                output = task['operator'].attempt()
-                if output is None:
-                    unfinished.append(task)
-                else:
-                    task['out'] = output
-                    # layout = output.layout
-                    # task['out'][layout] = output.data
+                task['out'] = output
 
         return unfinished
 
 
 class Handler:
+    """
+    Group of tasks with associated scheduling data.
 
-    def __init__(self, vars, wall_dt=np.inf, sim_dt=np.inf, iter=np.inf):
+    Parameters
+    ----------
+    domain : domain object
+        Problem domain
+    vars : dict
+        Variables for parsing task expression strings
+    wall_dt : float, optional
+        Wall time cadence for evaluating tasks (default: infinite)
+    sim_dt : float, optional
+        Simulation time cadence for evaluating tasks (default: infinite)
+    iter : int, optional
+        Iteration cadence for evaluating tasks (default: infinite)
 
+    """
+
+    def __init__(self, domain, vars, wall_dt=np.inf, sim_dt=np.inf, iter=np.inf):
+
+        # Attributes
+        self.domain = domain
         self.vars = vars
-        self.tasks = []
-
         self.wall_dt = wall_dt
         self.sim_dt = sim_dt
         self.iter = iter
 
-        self.wall_div = 0.
-        self.sim_div = 0.
-        self.iter_div = 0.
+        self.tasks = []
+        self.last_wall_div = 0.
+        self.last_sim_div = 0.
+        self.last_iter_div = 0.
 
     def add_task(self, task_str, layout='g', name=None):
+        """Add task in string form."""
 
         # Default name
         if name is None:
@@ -152,63 +180,111 @@ class Handler:
 
         # Build task dictionary
         task = dict()
-        task['operator'] = eval(task_str, self.vars)
+        task['operator'] = Operator.from_string(task_str, self.vars, self.domain)
         task['layout'] = layout
         task['name'] = name
 
         self.tasks.append(task)
 
-class SystemHandler(Handler):
-
-    def __init__(self, domain, *args, **kw):
-
-        self.domain = domain
-        Handler.__init__(self, *args, **kw)
-
-    def add_tasks(self, tasks):
+    def add_tasks(self, tasks, **kw):
+        """Add multiple tasks."""
 
         for task in tasks:
-            self.add_task(task)
+            self.add_task(task, **kw)
+
+
+class SystemHandler(Handler):
+    """Handler that sets fields in a FieldSystem. """
 
     def build_system(self):
+        """Build FieldSystem and set task outputs."""
 
         nfields = len(self.tasks)
         self.system = FieldSystem(range(nfields), self.domain)
 
         for i, task in enumerate(self.tasks):
-            if not np.isscalar(task['operator']):
-                task['operator'].out = self.system.fields[i]
-            else:
-                task['out'] = self.system.fields[i]
+            task['operator'].out = self.system.fields[i]
 
         return self.system
 
-    def process(self, wall_tiem, sim_time, iteration):
+    def process(self, wall_time, sim_time, iteration):
+        """Gather fields into system."""
 
         self.system.gather()
 
 
 class FileHandler(Handler):
+    """
+    Handler that writes tasks to an HDF5 file.
 
-    def __init__(self, filename, *args, **kw):
+    Parameters
+    ----------
+    filename : str
+        Base of filename, without an extension
+    max_writes : int, optional
+        Maximum number of writes to a single file (default: infinite)
+    max_size : int, optional
+        Maximum file size to write to, in bytes (default: 2**30 = 1 GB).
+        (Note: files may be larger after final write.)
 
-        self.file_base = filename
-        self.file_num = 1
+    """
+
+    def __init__(self, filename, *args, max_writes=np.inf, max_size=2**30, **kw):
+
         Handler.__init__(self, *args, **kw)
 
+        # Check filename
+        if '.' in filename:
+            raise ValueError("Provide filename without an extension.")
+
+        # Attributes
+        self.filename_base = filename
+        self.max_writes = max_writes
+        self.max_size = max_size
+
+        self.file_num = 0
+        self.current_file = '.'
+        self.write_num = 0
+
+    def get_file(self):
+        """Return current HDF5 file, creating if necessary."""
+
+        # Check file limits
+        write_limit = ((self.write_num % self.max_writes) == 0)
+        size_limit = (os.path.getsize(self.current_file) >= self.max_size)
+
+        if (write_limit or size_limit):
+            file = self.new_file()
+        else:
+            file = h5py.File(self.current_file, 'a', driver='mpio', comm=MPI.COMM_WORLD)
+
+        return file
+
+    def new_file(self):
+        """Generate new HDF5 file."""
+
+        # Create next file
+        self.file_num += 1
+        self.current_file = '%s_%06i.hdf5' %(self.filename_base, self.file_num)
+        file = h5py.File(self.current_file, 'w', driver='mpio', comm=MPI.COMM_WORLD)
+
+        # Metadeta
+        file.create_group('tasks')
+        #file.create_group('scales')
+
+        return file
+
     def process(self, wall_time, sim_time, iteration):
+        """Save task outputs to HDF5 file."""
 
-        # Build filename
-        filename = self.file_base + '%06i.hdf5' %self.file_num
+        file = self.get_file()
+        self.write_num += 1
 
-        # Create HDF5 structure
-        file = h5py.File(filename, 'w', driver='mpio', comm=MPI.COMM_WORLD)
-        #scale_group = file.create_group('scales')
-        task_group = file.create_group('tasks')
-
-        file.attrs['wall_time'] = wall_time
-        file.attrs['sim_time'] = sim_time
-        file.attrs['iteration'] = iteration
+        # Create task group and write timestep attributes
+        task_group = file.create_group('tasks/write_%06i' %self.write_num)
+        task_group.attrs['wall_time'] = wall_time
+        task_group.attrs['sim_time'] = sim_time
+        task_group.attrs['iteration'] = iteration
 
         # Create task datasets
         for task in self.tasks:
@@ -222,6 +298,4 @@ class FileHandler(Handler):
             dset[out.layout.slices] = out.data
 
         file.close()
-        self.file_num += 1
 
-#     def add_task(self, )

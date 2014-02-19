@@ -59,19 +59,19 @@ class LinearBVP:
         vars.update(zip(problem.axis_names, domain.grids()))
         vars.update(problem.parameters)
 
-        self.rhs_evaluator = Evaluator(domain, vars)
-        self.Fe_handler = self.rhs_evaluator.add_system_handler(iter=1)
-        self.Fb_handler = self.rhs_evaluator.add_system_handler(iter=1)
-        self.Fe_handler.add_tasks(problem.eqn_set['F'])
-        self.Fb_handler.add_tasks(problem.bc_set['F'])
-        self.Fe = self.Fe_handler.build_system()
-        self.Fb = self.Fb_handler.build_system()
+        self.evaluator = Evaluator(domain, vars)
+        Fe_handler = self.evaluator.add_system_handler(iter=1)
+        Fb_handler = self.evaluator.add_system_handler(iter=1)
+        Fe_handler.add_tasks(problem.eqn_set['F'])
+        Fb_handler.add_tasks(problem.bc_set['F'])
+        self.Fe = Fe_handler.build_system()
+        self.Fb = Fb_handler.build_system()
 
     def solve(self):
         """Solve BVP."""
 
         # Compute RHS
-        self.rhs_evaluator.evaluate(0, 0, 0, force=True)
+        self.evaluator.evaluate(0, 0, 0, force=True)
 
         # Solve system for each pencil, updating state
         for p in self.pencils:
@@ -141,13 +141,13 @@ class IVP:
         vars.update(problem.parameters)
         vars.update(state.field_dict)
 
-        self.rhs_evaluator = Evaluator(domain, vars)
-        self.Fe_handler = self.rhs_evaluator.add_system_handler(iter=1)
-        self.Fb_handler = self.rhs_evaluator.add_system_handler(iter=1)
-        self.Fe_handler.add_tasks(problem.eqn_set['F'])
-        self.Fb_handler.add_tasks(problem.bc_set['F'])
-        self.Fe = self.Fe_handler.build_system()
-        self.Fb = self.Fb_handler.build_system()
+        self.evaluator = Evaluator(domain, vars)
+        Fe_handler = self.evaluator.add_system_handler(iter=1)
+        Fb_handler = self.evaluator.add_system_handler(iter=1)
+        Fe_handler.add_tasks(problem.eqn_set['F'])
+        Fb_handler.add_tasks(problem.bc_set['F'])
+        self.Fe = Fe_handler.build_system()
+        self.Fb = Fb_handler.build_system()
 
         # Initialize timestepper
         self.timestepper = timestepper(problem.nfields, domain)
@@ -192,7 +192,7 @@ class IVP:
         # Compute RHS
         state.gather()
         wall_time = time.time() - self.start_time
-        self.rhs_evaluator.evaluate(wall_time, self.time, self.iteration, force=True)
+        self.evaluator.evaluate(wall_time, self.time, self.iteration, force=True)
 
         # Update pencil matrices
         self.timestepper.update_pencils(pencils, state, RHS, Fe, Fb, dt)
