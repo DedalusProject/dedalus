@@ -5,7 +5,6 @@ Class for centralized evaluation of expression trees.
 
 import os
 import h5py
-from mpi4py import MPI
 import numpy as np
 from .system import FieldSystem
 
@@ -256,7 +255,8 @@ class FileHandler(Handler):
         if (write_limit or size_limit):
             file = self.new_file()
         else:
-            file = h5py.File(self.current_file, 'a', driver='mpio', comm=MPI.COMM_WORLD)
+            comm = self.domain.distributor.comm_cart
+            file = h5py.File(self.current_file, 'a', driver='mpio', comm=comm)
 
         return file
 
@@ -266,7 +266,8 @@ class FileHandler(Handler):
         # Create next file
         self.file_num += 1
         self.current_file = '%s_%06i.hdf5' %(self.filename_base, self.file_num)
-        file = h5py.File(self.current_file, 'w', driver='mpio', comm=MPI.COMM_WORLD)
+        comm = self.domain.distributor.comm_cart
+        file = h5py.File(self.current_file, 'w', driver='mpio', comm=comm)
 
         # Metadeta
         file.create_group('tasks')
