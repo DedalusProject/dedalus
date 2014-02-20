@@ -291,10 +291,10 @@ class FileHandler(Handler):
         for task in self.tasks:
             out = task['out']
             name = task['name']
+            out.require_layout(task['layout'])
             dtype = out.layout.dtype
 
-            # Transform and assemble nonconstant subspace
-            out.require_layout(task['layout'])
+            # Assemble nonconstant subspace
             subshape, subslices, subdata = self.get_subspace(out)
             dset = task_group.create_dataset(name=name, shape=subshape, dtype=dtype)
             dset[subslices] = subdata
