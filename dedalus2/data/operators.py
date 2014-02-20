@@ -255,10 +255,10 @@ class Integrate(Operator):
         self.axis = arg0.domain.bases.index(self.basis)
 
     def __repr__(self):
-        return 'Int(%r, %r)' %(self.args[0], self.basis)
+        return 'Integ(%r, %r)' %(self.args[0], self.basis)
 
     def __str__(self):
-        return 'Int(%s, %s)' %(self.args[0], self.basis)
+        return 'Integ(%s, %s)' %(self.args[0], self.basis)
 
     def check_conditions(self):
         # References
@@ -280,6 +280,50 @@ class Integrate(Operator):
         out.layout = arg0.layout
         # Use basis integration method
         self.basis.integrate(arg0.data, out.data, axis=axis)
+        np.copyto(out.constant, arg0.constant)
+        out.constant[axis] = True
+
+
+class Interpolate(Operator):
+
+    def __init__(self, arg0, basis, position, out=None):
+
+        # Required attributes
+        self.args = [arg0]
+        self.original_args = [arg0]
+        self.domain = arg0.domain
+        self.out = out
+        # Additional attributes
+        self.basis = self.domain.get_basis_object(basis)
+        self.axis = arg0.domain.bases.index(self.basis)
+        self.position = position
+
+    def __repr__(self):
+        return 'Interp(%r, %r, %r)' %(self.args[0], self.basis, self.position)
+
+    def __str__(self):
+        return 'Interp(%s, %s, %s)' %(self.args[0], self.basis, self.position)
+
+    def check_conditions(self):
+        # References
+        arg0, = self.args
+        axis = self.axis
+        # Must be in ceoff+local layout
+        is_coeff = not arg0.layout.grid_space[axis]
+        is_local = arg0.layout.local[axis]
+
+        return (is_coeff and is_local)
+
+    def operate(self, out):
+        # References
+        arg0, = self.args
+        axis = self.axis
+        # Integrate in coeff+local layout
+        arg0.require_coeff_space(axis)
+        arg0.require_local(axis)
+        out.layout = arg0.layout
+        # Use basis integration method
+        self.basis.interpolate(arg0.data, out.data, self.position, axis=axis)
         np.copyto(out.constant, arg0.constant)
         out.constant[axis] = True
 
@@ -735,6 +779,7 @@ class Differentiate(Operator):
 
 # Collect operators to expose to parser
 parsable_ops = {'Integrate': Integrate,
+                'Interpolate': Interpolate,
                 'Negate': Negate,
                 'Add': Add,
                 'Subtract': Subtract,

@@ -81,8 +81,13 @@ class Basis:
 
         raise NotImplementedError()
 
-    def integrate(self, cdata, axis):
+    def integrate(self, cdata, cint, axis):
         """Integrate over interval using coefficients."""
+
+        raise NotImplementedError()
+
+    def integrate(self, cdata, cint, position, axis):
+        """Interpolate in interval using coefficients."""
 
         raise NotImplementedError()
 
@@ -109,9 +114,10 @@ class ImplicitBasis(Basis):
         Mult(p) : multiplication by p-th basis element
 
     Linear functionals (vectors):
-        left_vector  : left-endpoint evaluation
-        right_vector : right-endpoint evaluation
-        int_vector   : integration over interval
+        left_vector   : left-endpoint evaluation
+        right_vector  : right-endpoint evaluation
+        integ_vector  : integration over interval
+        interp_vector : interpolation in interval
 
     Additionally, they define a column vector `bc_vector` indicating which
     coefficient's Galerkin constraint is to be replaced by the boundary
@@ -124,11 +130,22 @@ class ImplicitBasis(Basis):
 
         # Contract coefficients with basis function integrals
         dim = len(cdata.shape)
-        weights = reshape_vector(self.int_vector, dim=dim, axis=axis)
+        weights = reshape_vector(self.integ_vector, dim=dim, axis=axis)
         integral = np.sum(cdata * weights, axis=axis, keepdims=True)
 
         cint.fill(0)
         np.copyto(cint[axslice(axis, 0, 1)], integral)
+
+    def interpolate(self, cdata, cint, position, axis):
+        """Integrate over interval using coefficients."""
+
+        # Contract coefficients with basis function evaluations
+        dim = len(cdata.shape)
+        weights = reshape_vector(self.interp_vector(position), dim=dim, axis=axis)
+        interpolation = np.sum(cdata * weights, axis=axis, keepdims=True)
+
+        cint.fill(0)
+        np.copyto(cint[axslice(axis, 0, 1)], interpolation)
 
     @CachedAttribute
     def Pre(self):
@@ -174,7 +191,7 @@ class ImplicitBasis(Basis):
         """Integral matrix."""
 
         # Outer product of boundary-row and integral vectors
-        Int = sparse.kron(self.bc_vector, self.int_vector)
+        Int = sparse.kron(self.bc_vector, self.integ_vector)
 
         return Int
 
@@ -191,8 +208,14 @@ class ImplicitBasis(Basis):
         raise NotImplementedError()
 
     @CachedAttribute
-    def int_vector(self):
+    def integ_vector(self):
         """Integral row vector."""
+
+        raise NotImplementedError()
+
+    @CachedMethod
+    def interp_vector(self, position):
+        """Interpolation row vector."""
 
         raise NotImplementedError()
 
@@ -221,11 +244,14 @@ class Chebyshev(ImplicitBasis):
         # Extrema grid
         radius = (interval[1] - interval[0]) / 2.
         center = (interval[1] + interval[0]) / 2.
+        self._grid_stretch = radius
+        self._basis_coord = lambda X: (X - center) / radius
+        self._problem_coord = lambda x: center + (x * radius)
+
         i = np.arange(grid_size)
         N = grid_size - 1
         native_grid = np.cos(np.pi * i / N)
-        self.grid = center + radius * native_grid
-        self._grid_stretch = radius
+        self.grid = self._problem_coord(native_grid)
 
     def set_transforms(self, grid_dtype):
         """Set transforms based on grid data type."""
@@ -243,6 +269,9 @@ class Chebyshev(ImplicitBasis):
             self.backward = self._backward_c2c
         else:
             raise ValueError("Unsupported grid_dtype.")
+
+        # Basis elements
+        self.elements = np.arange(self.coeff_size)
 
         return self.coeff_dtype
 
@@ -421,7 +450,7 @@ class Chebyshev(ImplicitBasis):
         return right_vector
 
     @CachedAttribute
-    def int_vector(self):
+    def integ_vector(self):
         """
         Integral row vector.
 
@@ -430,12 +459,27 @@ class Chebyshev(ImplicitBasis):
         """
 
         # Construct dense row vector
-        int_vector = np.zeros(self.coeff_size, dtype=self.coeff_dtype)
+        integ_vector = np.zeros(self.coeff_size, dtype=self.coeff_dtype)
         for n in range(0, self.coeff_size, 2):
-            int_vector[n] = 2. / (1. - n*n)
-        int_vector *= self._grid_stretch
+            integ_vector[n] = 2. / (1. - n*n)
+        integ_vector *= self._grid_stretch
 
-        return int_vector
+        return integ_vector
+
+    @CachedMethod
+    def interp_vector(self, position):
+        """
+        Interpolation row vector.
+
+        T_n(x) = cos(n * acos(x))
+
+        """
+
+        # Construct dense row vector
+        theta = np.arccos(self._basis_coord(position))
+        interp_vector = np.cos(self.elements * theta)
+
+        return interp_vector
 
     @CachedAttribute
     def bc_vector(self):
@@ -473,9 +517,12 @@ class Fourier(TransverseBasis, ImplicitBasis):
         # Evenly spaced grid
         length = interval[1] - interval[0]
         start = interval[0]
-        native_grid = np.linspace(0., 1., grid_size, endpoint=False)
-        self.grid = start + length * native_grid
         self._grid_stretch = length / (2. * np.pi)
+        self._basis_coord = lambda X: (X - start) / length
+        self._problem_coord = lambda x: start + (x * length)
+
+        native_grid = np.linspace(0., 1., grid_size, endpoint=False)
+        self.grid = self._problem_coord(native_grid)
 
     def set_transforms(self, dtype):
         """Set transforms based on grid data type."""
@@ -513,6 +560,7 @@ class Fourier(TransverseBasis, ImplicitBasis):
 
         # Scale native (integer) wavenumbers
         self.wavenumbers = wavenumbers / self._grid_stretch
+        self.elements = self.wavenumbers
 
         return self.coeff_dtype
 
@@ -638,7 +686,7 @@ class Fourier(TransverseBasis, ImplicitBasis):
             raise NotImplementedError()
 
     @CachedAttribute
-    def int_vector(self):
+    def integ_vector(self):
         """
         Integral row vector.
 
@@ -648,11 +696,43 @@ class Fourier(TransverseBasis, ImplicitBasis):
         """
 
         # Construct dense row vector
-        int_vector = np.zeros(self.coeff_size, dtype=self.coeff_dtype)
-        int_vector[0] = 2. * np.pi
-        int_vector *= self._grid_stretch
+        integ_vector = np.zeros(self.coeff_size, dtype=self.coeff_dtype)
+        integ_vector[0] = 2. * np.pi
+        integ_vector *= self._grid_stretch
 
-        return int_vector
+        return integ_vector
+
+    def interpolate(self, cdata, cint, position, axis):
+        """Integrate over interval using coefficients."""
+
+        # Contract coefficients with basis function evaluations
+        dim = len(cdata.shape)
+        weights = reshape_vector(self.interp_vector(position), dim=dim, axis=axis)
+        if self.grid_dtype == np.float64:
+            pos_interp = np.sum(cdata * weights, axis=axis, keepdims=True)
+            interpolation = pos_interp + pos_interp.conj()
+        elif self.grid_dtype == np.complex128:
+            interpolation = np.sum(cdata * weights, axis=axis, keepdims=True)
+
+        cint.fill(0)
+        np.copyto(cint[axslice(axis, 0, 1)], interpolation)
+
+    @CachedMethod
+    def interp_vector(self, position):
+        """
+        Interpolation row vector.
+
+        F_n(x) = exp(i k_n x)
+
+        """
+
+        # Construct dense row vector
+        x = position - self.interval[0]
+        interp_vector = np.exp(1j * self.wavenumbers * x)
+        if self.grid_dtype == np.float64:
+            interp_vector[0] /= 2
+
+        return interp_vector
 
     @CachedAttribute
     def bc_vector(self):
