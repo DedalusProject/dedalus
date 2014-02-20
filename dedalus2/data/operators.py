@@ -3,6 +3,7 @@ Abstract and built-in classes defining deferred operations on fields.
 
 """
 
+from functools import reduce
 import numpy as np
 
 from ..tools.general import OrderedSet
@@ -776,15 +777,27 @@ def create_diff_operator(basis_, axis_):
     return d_
 
 def numeric_constant(arg0, domain):
-    """Determine `constant` array for a numeric type."""
+    """
+    Determine constant array for numeric types. This may give false negatives
+    for determining constancy along directions with a block size of 1.
+
+    """
 
     if is_scalar(arg0):
         return np.array([True]*domain.dim)
-    elif is_numeric(arg0):
-        # BUG: this could potentially give inconsistent results across
-        # processes for edge cases where layout.shape[i] == 1
-        # FIX: compare to blocks?
-        return np.less(arg0.shape, domain.distributor.grid_layout.shape)
+    elif is_array(arg0):
+        # Determine local constant array by comparing to grid shape
+        comm = domain.distributor.comm_cart
+        local_constant = np.less(arg0.shape, domain.distributor.grid_layout.shape)
+        # Communicate to eliminate edge cases where grid_layout.shape[i] == 1
+        gathered_constant = comm.gather(local_constant, root=0)
+        if domain.distributor.rank == 0:
+            global_constant = reduce(np.bitwise_or, gathered_constant)
+        else:
+            global_constant = None
+        global_constant = comm.bcast(global_constant, root=0)
+
+        return global_constant
 
 def unique_domain(*args):
     """Return unique domain from a set of fields."""
