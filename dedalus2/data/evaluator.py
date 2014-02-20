@@ -289,13 +289,42 @@ class FileHandler(Handler):
         # Create task datasets
         for task in self.tasks:
             out = task['out']
-            out.require_layout(task['layout'])
             name = task['name']
-            shape = out.layout.global_shape
             dtype = out.layout.dtype
 
-            dset = task_group.create_dataset(name=name, shape=shape, dtype=dtype)
-            dset[out.layout.slices] = out.data
+            # Transform and assemble nonconstant subspace
+            out.require_layout(task['layout'])
+            subshape, subslices, subdata = self.get_subspace(out)
+            dset = task_group.create_dataset(name=name, shape=subshape, dtype=dtype)
+            dset[subslices] = subdata
 
         file.close()
 
+    @staticmethod
+    def get_subspace(field):
+        """Return nonconstant subspace of a field, and the corresponding global parameters."""
+
+        # References
+        constant = field.constant
+        gshape = field.layout.global_shape
+        lshape = field.layout.shape
+        start = field.layout.start
+        slices = field.layout.slices
+
+        # Build subshape from global shape
+        subshape = gshape.copy()
+        subshape[constant] = 1
+
+        # Build global and local slices
+        first = (start == 0)
+        subslices = np.array(slices)
+        datslices = np.array([slice(ls) for ls in lshape])
+        subslices[constant & first] = slice(1)
+        datslices[constant & first] = slice(1)
+        subslices[constant & ~first] = slice(0)
+        datslices[constant & ~first] = slice(0)
+
+        subslices = tuple(subslices)
+        subdata = field.data[tuple(datslices)]
+
+        return subshape, subslices, subdata
