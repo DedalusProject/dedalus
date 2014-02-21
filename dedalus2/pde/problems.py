@@ -6,6 +6,8 @@ Classes for representing systems of equations.
 import numpy as np
 import sympy as sy
 
+from ..tools.logging import logger
+
 
 class ParsedProblem:
     """
@@ -231,11 +233,13 @@ class ParsedProblem:
                 # Use symbol as key for sympy subs
                 psym = self.param_dict[pn]
                 c_params[psym] = v
-            else:
+            elif isinstance(v, np.ndarray):
                 if v.shape != zbasis.grid.shape:
                     raise ValueError("Nonconstant coefficients must have same shape as last basis grid: %s" %pn)
                 # Use name as key for python eval
                 nc_params[pn] = v
+            else:
+                logger.warning("Non-scalar and non-array parameters not currently implemented for LHS.")
 
         # Add z grid to nonconstant parameters
         nc_params[self.axis_names[-1]] = zbasis.grid
