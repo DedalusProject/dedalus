@@ -8,7 +8,7 @@ import h5py
 import numpy as np
 from .system import FieldSystem
 
-from .operators import Operator
+from .operators import Operator, Cast
 from ..tools.general import OrderedSet
 
 
@@ -170,16 +170,24 @@ class Handler:
         self.last_sim_div = 0.
         self.last_iter_div = 0.
 
-    def add_task(self, task_str, layout='g', name=None):
-        """Add task in string form."""
+    def add_task(self, task, layout='g', name=None):
+        """Add task to handler."""
 
         # Default name
         if name is None:
-            name = task_str
+            name = str(task)
+
+        # Create operator
+        if isinstance(task, Operator):
+            op = task
+        elif isinstance(task, str):
+            op = Operator.from_string(task, self.vars, self.domain)
+        else:
+            op = Cast(task)
 
         # Build task dictionary
         task = dict()
-        task['operator'] = Operator.from_string(task_str, self.vars, self.domain)
+        task['operator'] = op
         task['layout'] = layout
         task['name'] = name
 
@@ -190,6 +198,11 @@ class Handler:
 
         for task in tasks:
             self.add_task(task, **kw)
+
+    def add_system(self, system, **kw):
+        """Add fields from a field system."""
+
+        self.add_tasks(system.fields, **kw)
 
 
 class SystemHandler(Handler):

@@ -192,7 +192,7 @@ class IVP:
         # Compute RHS
         state.gather()
         wall_time = time.time() - self.start_time
-        self.evaluator.evaluate(wall_time, self.time, self.iteration, force=True)
+        self.evaluator.evaluate(wall_time, self.time, self.iteration)
 
         # Update pencil matrices
         self.timestepper.update_pencils(pencils, state, RHS, Fe, Fb, dt)

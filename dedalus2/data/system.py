@@ -77,6 +77,8 @@ class FieldSystem(CoeffSystem):
 
         # Build fields
         fields = [domain.new_field() for fn in field_names]
+        for i, f in enumerate(fields):
+            f.name = field_names[i]
         field_dict = dict(zip(field_names, fields))
         nfields = len(field_names)
 
