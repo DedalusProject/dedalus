@@ -107,8 +107,8 @@ fftw_ext = Extension(
     )
 
 setup(
-    name='Dedalus2',
-    version='2.0.1',
+    name='Dedalus',
+    version='2.1',
     author='Keaton J. Burns',
     author_email='keaton.burns@gmail.com',
     license='GPL3',

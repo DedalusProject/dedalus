@@ -1,0 +1,6 @@
+cython
+numpy
+scipy
+sympy
+mpi4py
+h5py
