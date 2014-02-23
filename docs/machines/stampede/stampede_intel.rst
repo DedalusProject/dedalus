@@ -332,9 +332,14 @@ building directly from source (see
 for further details).  Here we go::
 
      git clone https://github.com/h5py/h5py.git
+     cd h5py
      export CC=mpicc
      export HDF5_DIR=$BUILD_HOME
      python3 setup.py build --mpi   
+     python3 setup.py install --mpi
+
+I'm having difficulty getting this h5py build to actually install to
+``site-packages``.  More later.
 
 
 Dedalus2
