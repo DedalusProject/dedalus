@@ -3,34 +3,6 @@ Building with intel compiler stack
 Install notes for building our python3 stack on TACC/Stampede, using the intel compiler suite.  
 Many thanks to Yaakoub El Khamra at TACC for help in sorting out the python3 build and numpy linking against a fast MKL BLAS.
 
-.. note::
-   
-     Just got a direct call from Yaakoub.  Very, very helpful.  Here's
-     the quick rundown.
-
-     He got _ctypes to work by editing the following file:
-
-          vim /work/00364/tg456434/yye00/src/Python-3.3.3/Modules/_ctypes/libffi/src/x86/ffi64.c
-
-     Do build with intel 14
-     use mvapich2/2.0b
-     Will need to do our own build of fftw3
-
-     set mpicc as c compiler rather than icc, same for CXX, FC and
-     others, when configuring python.  should help with mpi4py.
-
-     in mpi4py, can edit mpi.cfg (non-pip install).
-
-     Keep Yaakoub updated with direct e-mail on progress.
-
-     Also, Yaakoub is spear-heading TACCs efforts in doing 
-     auto-offload to Xenon Phi.
-    
-
-     Beware of disk quotas if you're trying many builds; I hit 5GB
-     pretty fast and blew my matplotlib install due to quota limits :)
-
-     
 
 Modules
 ==========================================
@@ -62,6 +34,12 @@ run::
 
      module save
 
+
+For ease in structuring the build, for now we'll define::
+
+     export BUILD_HOME=$HOME/build_intel
+
+
 Python stack
 =========================
 
@@ -78,7 +56,7 @@ Create ``~\build_intel`` and then proceed with downloading and installing Python
     # make sure you have the python patch, put it in Python-3.3.3
     tar xvf python_intel_patch.tar 
 
-    ./configure --prefix=$HOME/build_intel \
+    ./configure --prefix=$BUILD_HOME \
                          CC=icc CFLAGS="-mkl -O3 -xHost -fPIC -ipo" \
                          CXX=icpc CPPFLAGS="-mkl -O3 -xHost -fPIC -ipo" \
                          F90=ifort F90FLAGS="-mkl -O3 -xHost -fPIC -ipo" \
@@ -106,7 +84,7 @@ see a warning/error that ``_ctypes`` couldn't be built.  This is important.
      Also, the mpicc build is much, much slower than icc.  Interesting.
      And we crashed out.  Here's what we tried with mpicc::
 
-        ./configure --prefix=$HOME/build_intel \
+        ./configure --prefix=$BUILD_HOME \
                          CC=mpicc CFLAGS="-mkl -O3 -xHost -fPIC -ipo" \
                          CXX=mpicxx CPPFLAGS="-mkl -O3 -xHost -fPIC -ipo" \
                          F90=mpif90 F90FLAGS="-mkl -O3 -xHost -fPIC -ipo" \
@@ -127,7 +105,7 @@ We need to build our own FFTW3, under intel 14 and mvapich2/2.0b::
     tar -xzf fftw-3.3.3.tar.gz
     cd fftw-3.3.3
 
-   ./configure --prefix=$HOME/build_intel \
+   ./configure --prefix=$BUILD_HOME \
                          CC=mpicc \
                          CXX=mpicxx \
                          F77=mpif90 \
@@ -146,7 +124,7 @@ Otherwise the libmpich libraries are not being correctly linked into
 .. note::
      Consider further cflag settings... e.g.::
 
-         ./configure --prefix=$HOME/build_intel \
+         ./configure --prefix=$BUILD_HOME \
                          CC=icc CFLAGS="-mkl -O3 -xHost -fPIC -I$MPI_PATH/include" \
                          CXX=icpc CPPFLAGS="-mkl -O3 -xHost -fPIC -I$MPI_PATH/include" \
                          F77=ifort FFLAGS="-mkl -O3 -xHost -fPIC -I$MPI_PATH/include" \
@@ -321,13 +299,50 @@ This should just be pip installed::
       explicit version pull above.
 
 
+Installing HDF5 with parallel support
+--------------------------------------------------
+
+The new analysis package brings HDF5 file writing capbaility.  This
+needs to be compiled with support for parallel (mpi) I/O::
+
+     wget http://www.hdfgroup.org/ftp/HDF5/current/src/hdf5-1.8.12.tar
+     tar xvf hdf5-1.8.12.tar
+     cd hdf5-1.8.12
+     ./configure --prefix=$BUILD_HOME \
+                         CC=mpicc \
+                         CXX=mpicxx \
+                         F77=mpif90 \
+                         MPICC=mpicc MPICXX=mpicxx \
+                         --enable-shared --enable-parallel
+     make
+     make install
+
+Next, install h5py.  If we just want HDF5 file access (in serial),
+then we can pip install, though we'll need to set env variables.  Here
+we build against the parallel HDF5:
+
+     export CC=mpicc
+     export HDF5_DIR=$BUILD_HOME
+     pip3 install h5py
+
+Alternatively, we may wish for full HDF5 parallel goodness, so we can
+do parallel file access during analysis as well.  This will require
+building directly from source (see 
+`Parallel HDF5 in h5py<http://docs.h5py.org/en/latest/mpi.html#parallel>`_
+for further details).  Here we go::
+
+     git clone https://github.com/h5py/h5py.git
+     export CC=mpicc
+     export HDF5_DIR=$BUILD_HOME
+     python3 setup.py build --mpi   
+
 
 Dedalus2
 ========================================
 
 With the modules set as above, set::
 
-     export BUILD_HOME=$HOME/build_intel
+     export BUILD_HOME=$BUILD_HOME
      export FFTW_PATH=$BUILD_HOME
      export MPI_PATH=$MPICH_HOME
 
@@ -419,4 +434,37 @@ Well, maybe :)  Let's give it a try, and lets grab the whole library::
      tar xvf SuiteSparse.tar.gz
 
      <edit SuiteSparse_config/SuiteSparse_config.mk>
+     
+
+
+
+.. note::
+     
+     Notes from the original successful build process:
+   
+     Just got a direct call from Yaakoub.  Very, very helpful.  Here's
+     the quick rundown.
+
+     He got _ctypes to work by editing the following file:
+
+          vim /work/00364/tg456434/yye00/src/Python-3.3.3/Modules/_ctypes/libffi/src/x86/ffi64.c
+
+     Do build with intel 14
+     use mvapich2/2.0b
+     Will need to do our own build of fftw3
+
+     set mpicc as c compiler rather than icc, same for CXX, FC and
+     others, when configuring python.  should help with mpi4py.
+
+     in mpi4py, can edit mpi.cfg (non-pip install).
+
+     Keep Yaakoub updated with direct e-mail on progress.
+
+     Also, Yaakoub is spear-heading TACCs efforts in doing 
+     auto-offload to Xenon Phi.
+    
+
+     Beware of disk quotas if you're trying many builds; I hit 5GB
+     pretty fast and blew my matplotlib install due to quota limits :)
+
      
