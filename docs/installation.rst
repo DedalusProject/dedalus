@@ -31,11 +31,20 @@ Python 3 stack
 Here are detailed instructions on installing the 
 full python3 software stack on a variety of machines.
 
+Supercomputers
+
 .. toctree::
    :maxdepth: 1
 
-   machines/trestles/trestles
    machines/stampede/stampede
+   machines/nasa_pleiades/pleiades_intel
+   machines/trestles/trestles
+
+Development machines
+
+.. toctree::
+   :maxdepth: 1
+
    machines/mac_os/mac_os
 
 

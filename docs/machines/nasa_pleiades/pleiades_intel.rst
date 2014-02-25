@@ -1,4 +1,4 @@
-Building with intel compiler stack
+Install notes for NASA/Pleiades
 ***************************************************************************
 
 Modules
@@ -53,6 +53,8 @@ and it will overwrite ``ffi64.c``.  If you forget to do this, you'll
 see a warning/error that ``_ctypes`` couldn't be built.  This is
 important.  This patch is identical to the patch on stampede.
 
+.. note::
+     We're getting a problem on ``_curses_panel``; ignoring for now.
 
 Installing FFTW3
 ------------------------------
@@ -78,21 +80,6 @@ Otherwise the libmpich libraries are not being correctly linked into
 ``libfftw3_mpi.so`` and dedalus failes on fftw import.
 
 
-
-.. note::
-     Consider further cflag settings... e.g.::
-
-         ./configure --prefix=$BUILD_HOME \
-                         CC=icc CFLAGS="-mkl -O3 -xHost -fPIC -I$MPI_PATH/include" \
-                         CXX=icpc CPPFLAGS="-mkl -O3 -xHost -fPIC -I$MPI_PATH/include" \
-                         F77=ifort FFLAGS="-mkl -O3 -xHost -fPIC -I$MPI_PATH/include" \
-                         MPICC=mpicc MPICXX=mpicxx \
-                         LDFLAGS="-L$MPI_PATH/libs -lpthread" \
-                         --enable-shared \
-                         --enable-mpi
-     
-      These may be useful in time (but outdated): 
-     `Intel docs <http://software.intel.com/en-us/articles/performance-tools-for-software-developers-building-fftw-with-the-intel-compilers>`_
 
 
 Updating shell settings
@@ -138,6 +125,8 @@ Then install ``pip``::
 
     wget https://raw.github.com/pypa/pip/master/contrib/get-pip.py
     python3 get-pip.py
+
+FRACK.  pip install is failing on a certificate problem.
 
 You will now have ``pip3`` and ``pip`` installed in ``~/build/bin``.
 You might try doing ``pip -V`` to confirm that ``pip`` is built
