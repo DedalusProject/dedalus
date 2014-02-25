@@ -272,6 +272,7 @@ class Chebyshev(ImplicitBasis):
 
         # Basis elements
         self.elements = np.arange(self.coeff_size)
+        self.element_label = "T"
 
         return self.coeff_dtype
 
@@ -561,6 +562,7 @@ class Fourier(TransverseBasis, ImplicitBasis):
         # Scale native (integer) wavenumbers
         self.wavenumbers = wavenumbers / self._grid_stretch
         self.elements = self.wavenumbers
+        self.element_label = 'k'
 
         return self.coeff_dtype
 

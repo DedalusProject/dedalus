@@ -9,6 +9,7 @@ import numpy as np
 from .system import FieldSystem
 
 from .operators import Operator, Cast
+from ..tools.array import reshape_vector
 from ..tools.general import OrderedSet
 
 
@@ -276,15 +277,27 @@ class FileHandler(Handler):
     def new_file(self):
         """Generate new HDF5 file."""
 
+        # References
+        domain = self.domain
+        comm = domain.distributor.comm_cart
+
         # Create next file
         self.file_num += 1
         self.current_file = '%s_%06i.hdf5' %(self.filename_base, self.file_num)
-        comm = self.domain.distributor.comm_cart
         file = h5py.File(self.current_file, 'w', driver='mpio', comm=comm)
 
         # Metadeta
         file.create_group('tasks')
-        #file.create_group('scales')
+        scale_group = file.create_group('scales')
+        const = scale_group.create_dataset(name='constant', shape=[1]*domain.dim, dtype=np.float64)
+        for axis, basis in enumerate(domain.bases):
+            grid = reshape_vector(basis.grid, domain.dim, axis)
+            elem = reshape_vector(basis.elements, domain.dim, axis)
+            gdset = scale_group.create_dataset(name=basis.name, shape=grid.shape, dtype=grid.dtype)
+            edset = scale_group.create_dataset(name=basis.element_label+basis.name, shape=elem.shape, dtype=elem.dtype)
+            if domain.distributor.rank == 0:
+                gdset[:] = grid
+                edset[:] = elem
 
         return file
 
@@ -311,6 +324,22 @@ class FileHandler(Handler):
             subshape, subslices, subdata = self.get_subspace(out)
             dset = task_group.create_dataset(name=name, shape=subshape, dtype=dtype)
             dset[subslices] = subdata
+
+            # Metadata and scales
+            dset.attrs['constant'] = out.constant
+            dset.attrs['grid_space'] = out.layout.grid_space
+            for axis, basis in enumerate(self.domain.bases):
+                if out.constant[axis]:
+                    sn = 'constant'
+                else:
+                    if out.layout.grid_space[axis]:
+                        sn = basis.name
+                    else:
+                        sn = basis.element_label + basis.name
+                scale = file['scales'][sn]
+                dset.dims.create_scale(scale, sn)
+                dset.dims[axis].label = sn
+                dset.dims[axis].attach_scale(scale)
 
         file.close()
 
