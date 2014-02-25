@@ -23,7 +23,7 @@ Python stack
 Building Python3
 --------------------------
 
-Create ``~\build_intel`` and then proceed with downloading and installing Python-3.3::
+Create ``~\build`` and then proceed with downloading and installing Python-3.3::
 
     cd ~/build_intel
     wget http://www.python.org/ftp/python/3.3.3/Python-3.3.3.tgz
@@ -50,28 +50,9 @@ automatically by downloading and unpacking this crude patch
 your ``Python-3.3.3`` directory.   Unpack it in ``Python-3.3.3``
 (``tar xvf python_intel_patch.tar`` line above) 
 and it will overwrite ``ffi64.c``.  If you forget to do this, you'll
-see a warning/error that ``_ctypes`` couldn't be built.  This is important.
+see a warning/error that ``_ctypes`` couldn't be built.  This is
+important.  This patch is identical to the patch on stampede.
 
-
-.. note::
-
-     With help from Yaakoub, we now build ``_ctypes`` successfully.
-     
-
-     Also, the mpicc build is much, much slower than icc.  Interesting.
-     And we crashed out.  Here's what we tried with mpicc::
-
-        ./configure --prefix=$BUILD_HOME \
-                         CC=mpicc CFLAGS="-mkl -O3 -xHost -fPIC -ipo" \
-                         CXX=mpicxx CPPFLAGS="-mkl -O3 -xHost -fPIC -ipo" \
-                         F90=mpif90 F90FLAGS="-mkl -O3 -xHost -fPIC -ipo" \
-                         --enable-shared LDFLAGS="-lpthread" \
-                         --with-cxx-main=mpicxx --with-system-ffi
-
-
-Here we are building everything in ``~/build_intel``; you can do it
-whereever, but adjust things appropriately in the above instructions.
-The build proceeeds quickly (few minutes).
 
 Installing FFTW3
 ------------------------------
@@ -173,36 +154,90 @@ Nose is useful for unit testing, especially in checking our numpy build::
 
 
 
-Installing virtualenv
--------------------------
-
-In order to test multiple numpys and scipys (and really, their
-underlying BLAS libraries), we will use ``virtualenv``::
-
-     pip3 install virtualenv
-
-Next, construct a virtualenv to hold all of your python modules. We
-suggest doing this in your home directory::
-
-     mkdir ~/venv
-
-
-
-
 Numpy and BLAS libraries
 ======================================
 
-Numpy will be built against a specific BLAS library.  Detailed
-instructions appear below for both MKL and OpenBlas.  
-Follow these and then return to this document.
+Numpy will be built against a specific BLAS library.  On Pleiades we
+will build against the Intel MKL libraries.  For now we'll do the
+build directly in ``$HOME_BUILD`` rather than using virtualenvs.
 
-MKL
---------------------------
 
-.. toctree::
-    :maxdepth: 1
+Building numpy against MKL
+----------------------------------
+
+Now, acquire ``numpy`` (1.8.0)::
+
+     cd ~/venv/mkl
+     wget http://sourceforge.net/projects/numpy/files/NumPy/1.8.0/numpy-1.8.0.tar.gz
+     tar -xvf numpy-1.8.0.tar.gz
+     cd numpy-1.8.0
+
+We'll now need to make sure that ``numpy`` is building against the MKL
+libraries.  Start by making a ``site.cfg`` file::
+
+     cp site.cfg.example site.cfg
+     emacs -nw site.cfg
+
+Edit ``site.cfg`` in the ``[mkl]`` section; modify the
+library directory so that it correctly point to NASA's
+``$MKLROOT/lib/intel64/``.  
+With the modules loaded above, this looks like::
+
+     [mkl]
+     library_dirs = /nasa/intel/Compiler/2013.5.192/composer_xe_2013.5.192/mkl/lib/intel64/
+     include_dirs = /nasa/intel/Compiler/2013.5.192/composer_xe_2013.5.192/mkl/include
+     mkl_libs = mkl_rt
+     lapack_libs =
+
+These are based on intels instructions for 
+`compiling numpy with ifort <http://software.intel.com/en-us/articles/numpyscipy-with-intel-mkl>`_
+and they seem to work so far.
+
+Further following those instructions, you'll need to hand edit two
+files in ``numpy/distutils``; these are ``intelccompiler.py`` and
+``fcompiler/intel.py``.  I've built a crude patch,
+:download:`numpy_intel_patch.tar<numpy_intel_patch.tar>` 
+which can be auto-deployed by within the ``numpy-1.8.0`` directory by
+doing::
     
-    stampede_intel_mkl
+      tar -xvf numpy_intel_patch.tar
+
+This will unpack and overwrite::
+
+      numpy/distutils/intelccompiler.py
+      numpy/distutils/fcompiler/intel.py
+
+Then proceed with::
+
+    python3 setup.py config --compiler=intelem build_clib --compiler=intelem build_ext --compiler=intelem install
+
+This will config, build and install numpy.
+
+
+Test numpy install
+------------------------------
+
+Test that things worked with this executable script
+:download:`numpy_test_full<numpy_test_full>`, 
+or do so manually by launching ``python3`` 
+and then doing::
+
+     import numpy as np
+     np.__config__.show()
+
+If you've installed ``nose`` (with ``pip3 install nose``), 
+we can further test our numpy build with::
+
+     np.test()
+     np.test('full')
+
+We fail ``np.test()`` with two failures, while ``np.test('full')`` has
+3 failures and 19 errors.  But we do successfully link against the
+fast BLAS libraries (look for ``FAST BLAS`` output, and fast dot
+product time).
+
+.. note::
+     We should check what impact these failed tests have on our results.
 
 
 
