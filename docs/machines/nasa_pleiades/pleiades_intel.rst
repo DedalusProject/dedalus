@@ -124,9 +124,12 @@ download and install setup tools::
 Then install ``pip``::
 
     wget https://raw.github.com/pypa/pip/master/contrib/get-pip.py
-    python3 get-pip.py
+    python3 get-pip.py --cert /etc/ssl/certs/ca-bundle.crt
 
-FRACK.  pip install is failing on a certificate problem.
+Now edit ``.pip/pip.conf``::
+
+     [global]
+     cert = /etc/ssl/certs/ca-bundle.crt
 
 You will now have ``pip3`` and ``pip`` installed in ``~/build/bin``.
 You might try doing ``pip -V`` to confirm that ``pip`` is built
@@ -162,12 +165,9 @@ Now, acquire ``numpy`` (1.8.0)::
      cd numpy-1.8.0
 
 We'll now need to make sure that ``numpy`` is building against the MKL
-libraries.  Start by making a ``site.cfg`` file::
+libraries.  
 
-     cp site.cfg.example site.cfg
-     emacs -nw site.cfg
-
-Edit ``site.cfg`` in the ``[mkl]`` section; modify the
+Create ``site.cfg`` with information for the MKL
 library directory so that it correctly point to NASA's
 ``$MKLROOT/lib/intel64/``.  
 With the modules loaded above, this looks like::
@@ -178,6 +178,10 @@ With the modules loaded above, this looks like::
      mkl_libs = mkl_rt
      lapack_libs =
 
+.. note:: 
+     we should roll a ``$MKLROOT`` into these and distribute this as
+     part of the patch.
+ 
 These are based on intels instructions for 
 `compiling numpy with ifort <http://software.intel.com/en-us/articles/numpyscipy-with-intel-mkl>`_
 and they seem to work so far.
