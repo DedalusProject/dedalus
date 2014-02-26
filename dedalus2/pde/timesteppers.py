@@ -20,22 +20,31 @@ class IMEXBase:
     domain : domain object
         Problem domain
 
+    Notes
+    -----
+    These timesteppers discretize the system
+        M.dt(X) + L.X = F
+    into the general form
+        ai M.X(n+1) + bi L.X(n+1) = aj M.X(n-j) + bj L.X(n-j) + cj F(n-j)
+    where j runs from 0 to {amax-1, bmax-1, cmax-1} in each sum, respectively.
+
     """
 
     def __init__(self, nfields, domain):
 
         # Create deque for storing recent timesteps
-        N = max(self.qmax, self.pmax)
+        N = max(self.amax, self.bmax, self.cmax)
         self.dt = deque([0.]*N)
 
         # Create systems for multistep history
         self.MX = MX = deque()
         self.LX = LX = deque()
         self.F = F = deque()
-        for q in range(self.qmax):
+        for j in range(self.amax):
             MX.append(CoeffSystem(nfields, domain))
+        for j in range(self.bmax):
             LX.append(CoeffSystem(nfields, domain))
-        for p in range(self.pmax):
+        for j in range(self.cmax):
             F.append(CoeffSystem(nfields, domain))
 
         # Attributes
@@ -54,7 +63,7 @@ class IMEXBase:
         self.dt[0] = dt
 
         # Compute IMEX coefficients
-        a, b, c, d = self.compute_coefficients(self._iteration)
+        ai, bi, a, b, c = self.compute_coefficients(self._iteration)
         self._iteration += 1
 
         # Update RHS components and LHS matrices
@@ -65,7 +74,6 @@ class IMEXBase:
         MX0 = MX[0]
         LX0 = LX[0]
         F0 = F[0]
-        d0, d1 = d
         for p in pencils:
             x = state.get_pencil(p)
             pFe = Fe.get_pencil(p)
@@ -75,57 +83,58 @@ class IMEXBase:
             LX0.set_pencil(p, p.L*x)
             F0.set_pencil(p, p.G_eq*pFe + p.G_bc*pFb)
 
-            np.copyto(p.LHS.data, d0*p.M.data + d1*p.L.data)
+            np.copyto(p.LHS.data, ai*p.M.data + bi*p.L.data)
 
         # Build RHS
         RHS.data.fill(0)
-        for q in range(self.qmax):
-            RHS.data += a[q] * MX[q].data
-            RHS.data += b[q] * LX[q].data
-        for p in range(self.pmax):
-            RHS.data += c[p] * F[p].data
+        for j in range(self.amax):
+            RHS.data += a[j] * MX[j].data
+        for j in range(self.bmax):
+            RHS.data += b[j] * LX[j].data
+        for j in range(self.cmax):
+            RHS.data += c[j] * F[j].data
 
 
 class Euler(IMEXBase):
     """Backward-Euler/Forward-Euler"""
 
-    qmax = 1
-    pmax = 1
+    amax = 1
+    bmax = 1
+    cmax = 1
 
     def compute_coefficients(self, iteration):
 
-        a = [0.] * self.qmax
-        b = [0.] * self.qmax
-        c = [0.] * self.pmax
-        d = [0.] * 2
+        a = [0.] * self.amax
+        b = [0.] * self.bmax
+        c = [0.] * self.cmax
 
         # References
         dt = self.dt[0]
 
         # LHS coefficients
-        d[0] = 1.
-        d[1] = dt
+        ai = 1.
+        bi = dt
 
         # RHS coefficients
         a[0] = 1.
         b[0] = 0.
         c[0] = dt
 
-        return a, b, c, d
+        return ai, bi, a, b, c
 
 
 class CNAB3(IMEXBase):
     """Third order Crank-Nicolson-Adams-Bashforth"""
 
-    qmax = 1
-    pmax = 3
+    amax = 1
+    bmax = 1
+    cmax = 3
 
     def compute_coefficients(self, iteration):
 
-        a = [0.] * self.qmax
-        b = [0.] * self.qmax
-        c = [0.] * self.pmax
-        d = [0.] * 2
+        a = [0.] * self.amax
+        b = [0.] * self.bmax
+        c = [0.] * self.cmax
 
         # References
         dt0 = self.dt[0]
@@ -133,8 +142,8 @@ class CNAB3(IMEXBase):
         dt2 = self.dt[2]
 
         # LHS coefficients
-        d[0] = 1.
-        d[1] = dt0 / 2.
+        ai = 1.
+        bi = dt0 / 2.
 
         # RHS coefficients
         a[0] = 1.
@@ -154,51 +163,45 @@ class CNAB3(IMEXBase):
         c[1] *= dt0
         c[2] *= dt0
 
-        return a, b, c, d
+        return ai, bi, a, b, c
 
 
 class MCNAB2(IMEXBase):
     """Second order Modified Crank-Nicolson-Adams-Bashforth with variable timestep size (VSIMEX)"""
 
-    qmax = 2   # 2nd order in implicit operator
-    pmax = 2   # 2nd order in explicit operator
+    amax = 1
+    bmax = 2
+    cmax = 2
 
     def compute_coefficients(self, iteration):
 
-        a = [0.] * self.qmax
-        b = [0.] * self.qmax
-        c = [0.] * self.pmax
-        d = [0.] * 2
+        a = [0.] * self.amax
+        b = [0.] * self.bmax
+        c = [0.] * self.cmax
 
         # References
         dt0 = self.dt[0]
         dt1 = self.dt[1]
 
         # LHS coefficients
-        d[0] = 1.
-        d[1] = dt0 * (1./16.)*(8. + (dt1/dt0))
+        ai = 1.
+        bi = dt0 * (1./16.)*(8. + (dt1/dt0))
 
         # RHS coefficients
-        a[0] = 1.    # u_n
-        a[1] = 0.    # no u_n-1
+        a[0] = 1.
 
-        # the c coefs are the "explicit" part
-        # same as in CNAB2
         if iteration == 0:
-            # do CNAB2 for first step
+            b[0] = -dt0 / 2.
             c[0] = 1.
-            c[1] = 0.
-            b[0] = -dt0/2.
-            b[1] = 0.
+
         else:
+            b[0] = -dt0 * (1./16.)*(7. - (dt1/dt0))
+            b[1] = -dt0 * (1./16.)
             c[1] = -1./2. * (dt0 / dt1)
             c[0] = 1. + 1./2. *(dt0 / dt1)
-            b[0] = -dt0 * (1./16.)*(7. - (dt1/dt0)) # This is L_{n}
-            b[1] = -dt0 * (1./16.)                  # This is L_{n-1}
-
 
         c[0] *= dt0
         c[1] *= dt0
 
-        return a, b, c, d
+        return ai, bi, a, b, c
 
