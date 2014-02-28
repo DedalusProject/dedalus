@@ -319,7 +319,7 @@ needs to be compiled with support for parallel (mpi) I/O::
 
 Next, install h5py.  If we just want HDF5 file access (in serial),
 then we can pip install, though we'll need to set env variables.  Here
-we build against the parallel HDF5:
+we build against the parallel HDF5::
 
      export CC=mpicc
      export HDF5_DIR=$BUILD_HOME
@@ -328,7 +328,7 @@ we build against the parallel HDF5:
 Alternatively, we may wish for full HDF5 parallel goodness, so we can
 do parallel file access during analysis as well.  This will require
 building directly from source (see 
-`Parallel HDF5 in h5py<http://docs.h5py.org/en/latest/mpi.html#parallel>`_
+`Parallel HDF5 in h5py <http://docs.h5py.org/en/latest/mpi.html#parallel>`_
 for further details).  Here we go::
 
      git clone https://github.com/h5py/h5py.git
@@ -338,8 +338,9 @@ for further details).  Here we go::
      python3 setup.py build --mpi   
      python3 setup.py install --mpi
 
-I'm having difficulty getting this h5py build to actually install to
-``site-packages``.  More later.
+After this install, ``h5py`` shows up as an ``.egg`` in
+``site-packages``, but it looks like we pass the ``suggested demo2.py``
+test from `Parallel HDF5 in h5py <http://docs.h5py.org/en/latest/mpi.html#parallel>`_.
 
 
 Dedalus2
@@ -350,6 +351,7 @@ With the modules set as above, set::
      export BUILD_HOME=$BUILD_HOME
      export FFTW_PATH=$BUILD_HOME
      export MPI_PATH=$MPICH_HOME
+     export HDF5_DIR=$BUILD_HOME
 
 Then change into your root dedalus directory and run::
 
