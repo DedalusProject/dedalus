@@ -1,0 +1,1 @@
+rsync -e ssh -avz _build/html/* bpbrown@lcd.colorado.edu:~/public_html/dedalus_documentation/.
