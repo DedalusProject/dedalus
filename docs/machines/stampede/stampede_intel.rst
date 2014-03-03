@@ -307,6 +307,11 @@ Installing cython
 
 This should just be pip installed::
 
+     pip3 install -v https://pypi.python.org/packages/source/C/Cython/Cython-0.20.tar.gz
+
+The Feb 11, 2014 update to cython (0.20.1) seems to have broken (at
+least with intel compilers).::
+
      pip3 install cython
 
 
