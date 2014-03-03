@@ -77,22 +77,6 @@ and it will overwrite ``ffi64.c``.  If you forget to do this, you'll
 see a warning/error that ``_ctypes`` couldn't be built.  This is important.
 
 
-.. note::
-
-     With help from Yaakoub, we now build ``_ctypes`` successfully.
-     
-
-     Also, the mpicc build is much, much slower than icc.  Interesting.
-     And we crashed out.  Here's what we tried with mpicc::
-
-        ./configure --prefix=$BUILD_HOME \
-                         CC=mpicc CFLAGS="-mkl -O3 -xHost -fPIC -ipo" \
-                         CXX=mpicxx CPPFLAGS="-mkl -O3 -xHost -fPIC -ipo" \
-                         F90=mpif90 F90FLAGS="-mkl -O3 -xHost -fPIC -ipo" \
-                         --enable-shared LDFLAGS="-lpthread" \
-                         --with-cxx-main=mpicxx --with-system-ffi
-
-
 Here we are building everything in ``~/build_intel``; you can do it
 whereever, but adjust things appropriately in the above instructions.
 The build proceeeds quickly (few minutes).
@@ -119,23 +103,6 @@ We need to build our own FFTW3, under intel 14 and mvapich2/2.0b::
 It's critical that you use ``mpicc`` as the C-compiler, etc.
 Otherwise the libmpich libraries are not being correctly linked into
 ``libfftw3_mpi.so`` and dedalus failes on fftw import.
-
-
-
-.. note::
-     Consider further cflag settings... e.g.::
-
-         ./configure --prefix=$BUILD_HOME \
-                         CC=icc CFLAGS="-mkl -O3 -xHost -fPIC -I$MPI_PATH/include" \
-                         CXX=icpc CPPFLAGS="-mkl -O3 -xHost -fPIC -I$MPI_PATH/include" \
-                         F77=ifort FFLAGS="-mkl -O3 -xHost -fPIC -I$MPI_PATH/include" \
-                         MPICC=mpicc MPICXX=mpicxx \
-                         LDFLAGS="-L$MPI_PATH/libs -lpthread" \
-                         --enable-shared \
-                         --enable-mpi
-     
-      These may be useful in time (but outdated): 
-     `Intel docs <http://software.intel.com/en-us/articles/performance-tools-for-software-developers-building-fftw-with-the-intel-compilers>`_
 
 
 Updating shell settings
@@ -202,41 +169,30 @@ Nose is useful for unit testing, especially in checking our numpy build::
     pip3 install nose
 
 
-
-Installing virtualenv
--------------------------
-
-In order to test multiple numpys and scipys (and really, their
-underlying BLAS libraries), we will use ``virtualenv``::
-
-     pip3 install virtualenv
-
-Next, construct a virtualenv to hold all of your python modules. We
-suggest doing this in your home directory::
-
-     mkdir ~/venv
-
-
-
-
 Numpy and BLAS libraries
 ======================================
 
 Building numpy against MKL
 ----------------------------------
 
-First, create an Intel MKL virtualenv instance::
-
-     cd ~/venv
-     virtualenv intel_mkl
-     source ~/venv/intel_mkl/bin/activate
-
 Now, acquire ``numpy`` (1.8.0)::
 
-     cd ~/venv/mkl
+     cd ~/build_intel
      wget http://sourceforge.net/projects/numpy/files/NumPy/1.8.0/numpy-1.8.0.tar.gz
      tar -xvf numpy-1.8.0.tar.gz
      cd numpy-1.8.0
+     wget http://lcd-www.colorado.edu/bpbrown/dedalus_documentation/_downloads/numpy_intel_patch.tar
+     tar xvf numpy_inte_patch.tar
+
+This last step saves you from needing to hand edit two
+files in ``numpy/distutils``; these are ``intelccompiler.py`` and
+``fcompiler/intel.py``.  I've built a crude patch, 
+:download:`numpy_intel_patch.tar<numpy_intel_patch.tar>` 
+which can be auto-deployed by within the ``numpy-1.8.0`` directory by
+the instructions above.  This will unpack and overwrite::
+
+      numpy/distutils/intelccompiler.py
+      numpy/distutils/fcompiler/intel.py
 
 We'll now need to make sure that ``numpy`` is building against the MKL
 libraries.  Start by making a ``site.cfg`` file::
@@ -250,8 +206,8 @@ library directory so that it correctly point to TACC's
 With the modules loaded above, this looks like::
 
      [mkl]
-     library_dirs = /opt/apps/intel/13/composer_xe_2013.2.146/mkl/lib/intel64
-     include_dirs = /opt/apps/intel/13/composer_xe_2013.2.146/mkl/include
+     library_dirs = /opt/apps/intel/13/composer_xe_2013_sp1.1.106/mkl/lib/intel64
+     include_dirs = /opt/apps/intel/13/composer_xe_2013_sp1.1.106/mkl/include
      mkl_libs = mkl_rt
      lapack_libs =
 
@@ -259,19 +215,6 @@ These are based on intels instructions for
 `compiling numpy with ifort <http://software.intel.com/en-us/articles/numpyscipy-with-intel-mkl>`_
 and they seem to work so far.
 
-Further following those instructions, you'll need to hand edit two
-files in ``numpy/distutils``; these are ``intelccompiler.py`` and
-``fcompiler/intel.py``.  I've built a crude patch,
-:download:`numpy_intel_patch.tar<numpy_intel_patch.tar>` 
-which can be auto-deployed by within the ``numpy-1.8.0`` directory by
-doing::
-    
-      tar -xvf numpy_intel_patch.tar
-
-This will unpack and overwrite::
-
-      numpy/distutils/intelccompiler.py
-      numpy/distutils/fcompiler/intel.py
 
 Then proceed with::
 
@@ -284,7 +227,13 @@ Test numpy install
 ------------------------------
 
 Test that things worked with this executable script
-:download:`numpy_test_full<numpy_test_full>`, 
+:download:`numpy_test_full<numpy_test_full>`.  You can do this
+full-auto by doing::
+
+     wget http://lcd-www.colorado.edu/bpbrown/dedalus_documentation/_downloads/numpy_test_full
+     chmod +x numpy_test_full
+     ./numpy_test_full
+
 or do so manually by launching ``python3`` 
 and then doing::
 
@@ -428,7 +377,7 @@ Dedalus2
 
 With the modules set as above, set::
 
-     export BUILD_HOME=$BUILD_HOME
+     export BUILD_HOME=$HOME/build_intel
      export FFTW_PATH=$BUILD_HOME
      export MPI_PATH=$MPICH_HOME
      export HDF5_DIR=$BUILD_HOME
@@ -555,3 +504,38 @@ Well, maybe :)  Let's give it a try, and lets grab the whole library::
      pretty fast and blew my matplotlib install due to quota limits :)
 
      
+
+
+Installing virtualenv (skipped)
+----------------------------------
+
+In order to test multiple numpys and scipys (and really, their
+underlying BLAS libraries), we will use ``virtualenv``::
+
+     pip3 install virtualenv
+
+Next, construct a virtualenv to hold all of your python modules. We
+suggest doing this in your home directory::
+
+     mkdir ~/venv
+
+
+
+
+Python3
+---------------------------------
+
+.. note::
+
+     With help from Yaakoub, we now build ``_ctypes`` successfully.
+     
+
+     Also, the mpicc build is much, much slower than icc.  Interesting.
+     And we crashed out.  Here's what we tried with mpicc::
+
+        ./configure --prefix=$BUILD_HOME \
+                         CC=mpicc CFLAGS="-mkl -O3 -xHost -fPIC -ipo" \
+                         CXX=mpicxx CPPFLAGS="-mkl -O3 -xHost -fPIC -ipo" \
+                         F90=mpif90 F90FLAGS="-mkl -O3 -xHost -fPIC -ipo" \
+                         --enable-shared LDFLAGS="-lpthread" \
+                         --with-cxx-main=mpicxx --with-system-ffi
