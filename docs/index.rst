@@ -14,12 +14,11 @@ Getting started
    installation
 
 
-Code documentation
+Preliminary auto-included code documentation
 
 .. toctree::
    :maxdepth: 1
 
-   transforms
    dedalus2
 
 Help
