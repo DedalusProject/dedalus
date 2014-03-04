@@ -1,12 +1,12 @@
-Building with gcc/mvapich2 stack
+Building with gcc/mvapich2 stack (deprecated; do not use on Stampede)
 ***************************************************************************
-(based on Jeff's notes for Trestles)
 
 .. note ::
 
-  GCC installation instructions appear at top; for now do GCC with openblas.  
-
-  Intel ifort instructions appear at bottom.  Do these with MKL.
+  These GCC installation instructions are deprecated, owing to a lack
+  of library support for new versions of mvapich2.  On stampede, use
+  the Intel build instructions.  We're retaining these instructions
+  for now as a basis for future gcc builds.
 
 
 Modules

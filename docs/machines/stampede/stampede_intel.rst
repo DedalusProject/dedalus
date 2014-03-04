@@ -1,7 +1,8 @@
 Building with intel compiler stack
 ***************************************************************************
 Install notes for building our python3 stack on TACC/Stampede, using the intel compiler suite.  
-Many thanks to Yaakoub El Khamra at TACC for help in sorting out the python3 build and numpy linking against a fast MKL BLAS.
+Many thanks to Yaakoub El Khamra at TACC for help in sorting out the
+python3 build and numpy linking against a fast MKL BLAS.
 
 
 Modules
@@ -358,17 +359,12 @@ needs to be compiled with support for parallel (mpi) I/O::
      make
      make install
 
-Next, install h5py.  If we just want HDF5 file access (in serial),
-then we can pip install, though we'll need to set env variables.  Here
-we build against the parallel HDF5::
+Installing h5py
+----------------------------------------------------
 
-     export CC=mpicc
-     export HDF5_DIR=$BUILD_HOME
-     pip3 install h5py
-
-Alternatively, we may wish for full HDF5 parallel goodness, so we can
-do parallel file access during analysis as well.  This will require
-building directly from source (see 
+Next, install h5py. We wish for full HDF5 parallel goodness, so we can
+do parallel file access during both simulations and post analysis as
+well.   This will require building directly from source (see 
 `Parallel HDF5 in h5py <http://docs.h5py.org/en/latest/mpi.html#parallel>`_
 for further details).  Here we go::
 
@@ -384,6 +380,44 @@ After this install, ``h5py`` shows up as an ``.egg`` in
 test from `Parallel HDF5 in h5py <http://docs.h5py.org/en/latest/mpi.html#parallel>`_.
 
 
+Installing h5py with collectives
+----------------------------------------------------
+We've been exploring the use of collectives for faster parallel file
+writing.  To build that version of the h5py library::
+
+     git clone https://github.com/andrewcollette/h5py.git
+     cd h5py
+     git checkout mpi_collective
+     export CC=mpicc
+     export HDF5_DIR=$BUILD_HOME
+     python3 setup.py build --mpi   
+     python3 setup.py install --mpi
+
+To enable collective outputs within dedalus, edit ``evaluator.py`` and
+replace::
+
+            # Assemble nonconstant subspace
+            subshape, subslices, subdata = self.get_subspace(out)
+            dset = task_group.create_dataset(name=name, shape=subshape, dtype=dtype)
+            dset[subslices] = subdata
+
+with ::
+
+            # Assemble nonconstant subspace
+            subshape, subslices, subdata = self.get_subspace(out)
+            dset = task_group.create_dataset(name=name, shape=subshape, dtype=dtype)
+            with dset.collective:
+                dset[subslices] = subdata
+
+Alternatively, you can see this same edit in some of the forks
+(Lecoanet, Brown).
+
+.. note:: 
+
+     There are some serious problems with this right now; in
+     particular, there seems to be an issue with empty arrays causing h5py
+     to hang.  Troubleshooting is ongoing.
+
 Dedalus2
 ========================================
 
@@ -393,6 +427,7 @@ With the modules set as above, set::
      export FFTW_PATH=$BUILD_HOME
      export MPI_PATH=$MPICH_HOME
      export HDF5_DIR=$BUILD_HOME
+     export CC=mpicc
 
 Then change into your root dedalus directory and run::
 
