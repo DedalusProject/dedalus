@@ -356,6 +356,7 @@ class FileHandler(Handler):
         constant = field.constant
         gshape = field.layout.global_shape
         lshape = field.layout.shape
+        local = field.layout.local
         start = field.layout.start
         slices = field.layout.slices
 
@@ -374,7 +375,7 @@ class FileHandler(Handler):
 
         subslices = tuple(subslices)
         subdata = field.data[tuple(datslices)]
-        if any(constant):
+        if any(constant & ~local):
             collectable = False
         else:
             collectable = True
