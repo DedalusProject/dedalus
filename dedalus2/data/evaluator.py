@@ -321,9 +321,14 @@ class FileHandler(Handler):
             dtype = out.layout.dtype
 
             # Assemble nonconstant subspace
-            subshape, subslices, subdata = self.get_subspace(out)
+            subshape, subslices, subdata, collectable = self.get_subspace(out)
             dset = task_group.create_dataset(name=name, shape=subshape, dtype=dtype)
-            dset[subslices] = subdata
+            if collectable:
+                with dset.collective:
+                    dset[subslices] = subdata
+            else:
+                if subdata.size:
+                    dset[subslices] = subdata
 
             # Metadata and scales
             dset.attrs['constant'] = out.constant
@@ -369,5 +374,9 @@ class FileHandler(Handler):
 
         subslices = tuple(subslices)
         subdata = field.data[tuple(datslices)]
+        if any(constant):
+            collectable = False
+        else:
+            collectable = True
 
-        return subshape, subslices, subdata
+        return subshape, subslices, subdata, collectable
