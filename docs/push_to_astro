@@ -1,1 +1,0 @@
-rsync -e ssh -avz _build/html/* bpbrown@astro.wisc.edu:/d/www/bpbrown/dedalus_documentation/.
