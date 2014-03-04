@@ -393,7 +393,7 @@ writing.  To build that version of the h5py library::
      python3 setup.py build --mpi   
      python3 setup.py install --mpi
 
-To enable collective outputs within dedalus, edit ``evaluator.py`` and
+To enable collective outputs within dedalus, edit ``dedalus2/data/evaluator.py`` and
 replace::
 
             # Assemble nonconstant subspace
