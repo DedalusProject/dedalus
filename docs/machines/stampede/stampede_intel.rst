@@ -332,6 +332,13 @@ This should just be pip installed::
       then stampede tries to pull version 1.1.1 of matplotlib.  Hence the
       explicit version pull above.
 
+Installing sympy
+-------------------------
+
+Do this with a regular pip install::
+  
+      pip3 install sympy
+
 
 Installing HDF5 with parallel support
 --------------------------------------------------
