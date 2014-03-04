@@ -27,7 +27,6 @@ Help
 .. toctree::
    :maxdepth: 1
 
-   using_sphinx
    using_mercurial
 
 Useful external references:
