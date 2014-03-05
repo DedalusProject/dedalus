@@ -111,8 +111,45 @@ class MultistepIMEX:
             RHS.data -= b[j] * LX[j-1].data
 
 
-class Euler(MultistepIMEX):
-    """First-order forward/backward Euler [Wang 2008 eqn 2.6]"""
+class CNAB1(MultistepIMEX):
+    """
+    1st-order Crank-Nicolson Adams-Bashforth scheme [Wang 2008 eqn 2.5.3]
+
+    Implicit: 2nd-order Crank-Nicolson
+    Explicit: 1st-order Adams-Bashforth (forward Euler)
+
+    """
+
+    amax = 1
+    bmax = 1
+    cmax = 1
+
+    @classmethod
+    def compute_coefficients(self, timesteps, iteration):
+
+        a = np.zeros(self.amax+1)
+        b = np.zeros(self.bmax+1)
+        c = np.zeros(self.cmax+1)
+
+        k0, *rest = timesteps
+
+        a[0] = 1 / k0
+        a[1] = -1 / k0
+        b[0] = 1 / 2
+        b[1] = 1 / 2
+        c[1] = 1
+
+        return a, b, c
+
+
+class SBDF1(MultistepIMEX):
+    """
+    1st-order semi-implicit BDF scheme [Wang 2008 eqn 2.6]
+
+    Implicit: 1st-order BDF (backward Euler)
+    Explicit: 1st-order extrapolation (forward Euler)
+
+    """
 
     amax = 1
     bmax = 1
@@ -135,8 +172,14 @@ class Euler(MultistepIMEX):
         return a, b, c
 
 
-class SBDF2(MultistepIMEX):
-    """Second-order semi-implicit BDF [Wang 2008 eqn 2.8]"""
+class CNAB2(MultistepIMEX):
+    """
+    2nd-order Crank-Nicolson Adams-Bashforth scheme [Wang 2008 eqn 2.9]
+
+    Implicit: 2nd-order Crank-Nicolson
+    Explicit: 2nd-order Adams-Bashforth
+
+    """
 
     amax = 2
     bmax = 2
@@ -146,37 +189,7 @@ class SBDF2(MultistepIMEX):
     def compute_coefficients(self, timesteps, iteration):
 
         if iteration < 1:
-            return Euler.compute_coefficients(timesteps, iteration)
-
-        a = np.zeros(self.amax+1)
-        b = np.zeros(self.bmax+1)
-        c = np.zeros(self.cmax+1)
-
-        k1, k0, *rest = timesteps
-        w1 = k1 / k0
-
-        a[0] = (1 + 2*w1) / (1 + w1) / k1
-        a[1] = -(1 + w1) / k1
-        a[2] = w1**2 / (1 + w1) / k1
-        b[0] = 1
-        c[1] = 1 + w1
-        c[2] = -w1
-
-        return a, b, c
-
-
-class CNAB(MultistepIMEX):
-    """Second-order Crank-Nicolson-Adams-Bashforth [Wang 2008 eqn 2.9]"""
-
-    amax = 2
-    bmax = 2
-    cmax = 2
-
-    @classmethod
-    def compute_coefficients(self, timesteps, iteration):
-
-        if iteration < 1:
-            return Euler.compute_coefficients(timesteps, iteration)
+            return CNAB1.compute_coefficients(timesteps, iteration)
 
         a = np.zeros(self.amax+1)
         b = np.zeros(self.bmax+1)
@@ -195,8 +208,14 @@ class CNAB(MultistepIMEX):
         return a, b, c
 
 
-class MCNAB(MultistepIMEX):
-    """Second-order modified Crank-Nicolson-Adams-Bashforth [Wang 2008 eqn 2.10]"""
+class MCNAB2(MultistepIMEX):
+    """
+    2nd-order modified Crank-Nicolson Adams-Bashforth scheme [Wang 2008 eqn 2.10]
+
+    Implicit: 2nd-order modified Crank-Nicolson
+    Explicit: 2nd-order Adams-Bashforth
+
+    """
 
     amax = 2
     bmax = 2
@@ -206,7 +225,7 @@ class MCNAB(MultistepIMEX):
     def compute_coefficients(self, timesteps, iteration):
 
         if iteration < 1:
-            return Euler.compute_coefficients(timesteps, iteration)
+            return CNAB1.compute_coefficients(timesteps, iteration)
 
         a = np.zeros(self.amax+1)
         b = np.zeros(self.bmax+1)
@@ -226,8 +245,14 @@ class MCNAB(MultistepIMEX):
         return a, b, c
 
 
-class CNLF(MultistepIMEX):
-    """Second-order Crank-Nicolson-Leap-Frog [Wang 2008 eqn 2.11]"""
+class SBDF2(MultistepIMEX):
+    """
+    2nd-order semi-implicit BDF scheme [Wang 2008 eqn 2.8]
+
+    Implicit: 2nd-order BDF
+    Explicit: 2nd-order extrapolation
+
+    """
 
     amax = 2
     bmax = 2
@@ -237,7 +262,43 @@ class CNLF(MultistepIMEX):
     def compute_coefficients(self, timesteps, iteration):
 
         if iteration < 1:
-            return Euler.compute_coefficients(timesteps, iteration)
+            return SBDF1.compute_coefficients(timesteps, iteration)
+
+        a = np.zeros(self.amax+1)
+        b = np.zeros(self.bmax+1)
+        c = np.zeros(self.cmax+1)
+
+        k1, k0, *rest = timesteps
+        w1 = k1 / k0
+
+        a[0] = (1 + 2*w1) / (1 + w1) / k1
+        a[1] = -(1 + w1) / k1
+        a[2] = w1**2 / (1 + w1) / k1
+        b[0] = 1
+        c[1] = 1 + w1
+        c[2] = -w1
+
+        return a, b, c
+
+
+class CNLF2(MultistepIMEX):
+    """
+    2nd-order Crank-Nicolson leap-frog scheme [Wang 2008 eqn 2.11]
+
+    Implicit: ?-order wide Crank-Nicolson
+    Explicit: 2nd-order leap-frog
+
+    """
+
+    amax = 2
+    bmax = 2
+    cmax = 2
+
+    @classmethod
+    def compute_coefficients(self, timesteps, iteration):
+
+        if iteration < 1:
+            return CNAB1.compute_coefficients(timesteps, iteration)
 
         a = np.zeros(self.amax+1)
         b = np.zeros(self.bmax+1)
@@ -258,7 +319,13 @@ class CNLF(MultistepIMEX):
 
 
 class SBDF3(MultistepIMEX):
-    """Third-order semi-implicit BDF [Wang 2008 eqn 2.14]"""
+    """
+    3rd-order semi-implicit BDF scheme [Wang 2008 eqn 2.14]
+
+    Implicit: 3rd-order BDF
+    Explicit: 3rd-order extrapolation
+
+    """
 
     amax = 3
     bmax = 3
@@ -291,7 +358,13 @@ class SBDF3(MultistepIMEX):
 
 
 class SBDF4(MultistepIMEX):
-    """Fourth-order semi-implicit BDF [Wang 2008 eqn 2.15]"""
+    """
+    4th-order semi-implicit BDF scheme [Wang 2008 eqn 2.15]
+
+    Implicit: 4th-order BDF
+    Explicit: 4th-order extrapolation
+
+    """
 
     amax = 4
     bmax = 4
