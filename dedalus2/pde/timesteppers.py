@@ -125,10 +125,10 @@ class Euler(MultistepIMEX):
         b = np.zeros(self.bmax+1)
         c = np.zeros(self.cmax+1)
 
-        k1, *rest = timesteps
+        k0, *rest = timesteps
 
-        a[0] = 1 / k1
-        a[1] = -1 / k1
+        a[0] = 1 / k0
+        a[1] = -1 / k0
         b[0] = 1
         c[1] = 1
 
@@ -152,8 +152,8 @@ class SBDF2(MultistepIMEX):
         b = np.zeros(self.bmax+1)
         c = np.zeros(self.cmax+1)
 
-        k1, k2, *rest = timesteps
-        w1 = k1 / k2
+        k1, k0, *rest = timesteps
+        w1 = k1 / k0
 
         a[0] = (1 + 2*w1) / (1 + w1) / k1
         a[1] = -(1 + w1) / k1
@@ -182,8 +182,8 @@ class CNAB(MultistepIMEX):
         b = np.zeros(self.bmax+1)
         c = np.zeros(self.cmax+1)
 
-        k1, k2, *rest = timesteps
-        w1 = k1 / k2
+        k1, k0, *rest = timesteps
+        w1 = k1 / k0
 
         a[0] = 1 / k1
         a[1] = -1 / k1
@@ -212,8 +212,8 @@ class MCNAB(MultistepIMEX):
         b = np.zeros(self.bmax+1)
         c = np.zeros(self.cmax+1)
 
-        k1, k2, *rest = timesteps
-        w1 = k1 / k2
+        k1, k0, *rest = timesteps
+        w1 = k1 / k0
 
         a[0] = 1 / k1
         a[1] = -1 / k1
@@ -243,8 +243,8 @@ class CNLF(MultistepIMEX):
         b = np.zeros(self.bmax+1)
         c = np.zeros(self.cmax+1)
 
-        k1, k2, *rest = timesteps
-        w1 = k1 / k2
+        k1, k0, *rest = timesteps
+        w1 = k1 / k0
 
         a[0] = 1 / (1 + w1) / k1
         a[1] = (w1 - 1) / k1
@@ -253,6 +253,79 @@ class CNLF(MultistepIMEX):
         b[1] = (1 - 1/w1) / 2
         b[2] = 1 / 2
         c[1] = 1
+
+        return a, b, c
+
+
+class SBDF3(MultistepIMEX):
+    """Third-order semi-implicit BDF [Wang 2008 eqn 2.14]"""
+
+    amax = 3
+    bmax = 3
+    cmax = 3
+
+    @classmethod
+    def compute_coefficients(self, timesteps, iteration):
+
+        if iteration < 2:
+            return SBDF2.compute_coefficients(timesteps, iteration)
+
+        a = np.zeros(self.amax+1)
+        b = np.zeros(self.bmax+1)
+        c = np.zeros(self.cmax+1)
+
+        k2, k1, k0, *rest = timesteps
+        w2 = k2 / k1
+        w1 = k1 / k0
+
+        a[0] = (1 + w2/(1 + w2) + w1*w2 / (1 + w1*(1 + w2))) / k2
+        a[1] = (-1 - w2 - w1*w2*(1 + w2) / (1 + w1)) / k2
+        a[2] = w2*w2*(w1 + 1/(1+w2)) / k2
+        a[3] = -(w1*w1*w2*w2*(1+w2)) / (1+w1) / (1+w1+w1*w2) / k2
+        b[0] = 1
+        c[1] = (1 + w2)*(1 + w1*(1 + w2)) / (1 + w1)
+        c[2] = -w2*(1 + w1*(1 + w2))
+        c[3] = w1*w1*w2*(1 + w2) / (1 + w1)
+
+        return a, b, c
+
+
+class SBDF4(MultistepIMEX):
+    """Fourth-order semi-implicit BDF [Wang 2008 eqn 2.15]"""
+
+    amax = 4
+    bmax = 4
+    cmax = 4
+
+    @classmethod
+    def compute_coefficients(self, timesteps, iteration):
+
+        if iteration < 3:
+            return SBDF3.compute_coefficients(timesteps, iteration)
+
+        a = np.zeros(self.amax+1)
+        b = np.zeros(self.bmax+1)
+        c = np.zeros(self.cmax+1)
+
+        k3, k2, k1, k0, *rest = timesteps
+        w3 = k3 / k2
+        w2 = k2 / k1
+        w1 = k1 / k0
+
+        A1 = 1 + w1*(1 + w2)
+        A2 = 1 + w2*(1 + w3)
+        A3 = 1 + w1*A2
+
+        a[0] = (1 + w3 / (1 + w3) + w2*w3 / A2 + w1*w2*w3 / A3) / k3
+        a[1] = (-1 - w3*(1 + w2*(1 + w3)*(1 + w1*A2/A1) / (1 + w2))) / k3
+        a[2] = w3*(w3 / (1 + w3) + w2*w3*(A3 + w1) / (1 + w1)) / k3
+        a[3] = -w2*w2*w2*w3*w3*(1 + w3)*A3 / (1 + w2) / A2 / k3
+        a[4] = (1 + w3) / (1 + w1) * A2 / A1 * w1**4 * w2**3 * w3**2 / A3 / k3
+        b[0] = 1
+        c[1] = w2 * (1 + w3) / (1 + w2) * ((1 + w3)*(A3 + w1) + (1 + w1)/w2) / A1
+        c[2] = -A2 * A3 * w3 / (1 + w1)
+        c[3] = w2**2 * w3 * (1 + w3) / (1 + w2) * A3
+        c[4] = -w1**3 * w2**2 * w3 * (1 + w3) / (1 + w1) * A2 / A1
 
         return a, b, c
 
