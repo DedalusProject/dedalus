@@ -65,6 +65,9 @@ class Operator:
         else:
             raise AttributeError("%r object has no attribute %r" %(self.__class__.__name__, attr))
 
+    def __abs__(self):
+        return Absolute(self)
+
     def __neg__(self):
         return Negate(self)
 
@@ -369,6 +372,29 @@ class UfuncWrapper(Operator):
         arg0.require_grid_space()
         out.layout = self._grid_layout
         self.ufunc(arg0.data, out=out.data)
+        np.copyto(out.constant, arg0.constant)
+
+
+class Absolute(Operator):
+
+    name = 'Abs'
+    arity = 1
+
+    def __init__(self, *args, **kw):
+        Operator.__init__(self, *args, **kw)
+        self._grid_layout = self.domain.distributor.grid_layout
+
+    def check_conditions(self):
+        # Must be in grid layout
+        return (self.args[0].layout is self._grid_layout)
+
+    def operate(self, out):
+        # References
+        arg0, = self.args
+        # Rectify in grid layout
+        arg0.require_grid_space()
+        out.layout = self._grid_layout
+        np.abs(arg0.data, out.data)
         np.copyto(out.constant, arg0.constant)
 
 
@@ -853,6 +879,7 @@ class Differentiate(Operator):
 # Collect operators to expose to parser
 parsable_ops = {'Integrate': Integrate,
                 'Interpolate': Interpolate,
+                'Absolute': Absolute,
                 'Negate': Negate,
                 'Add': Add,
                 'Subtract': Subtract,

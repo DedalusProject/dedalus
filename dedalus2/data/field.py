@@ -8,7 +8,7 @@ import numpy as np
 import weakref
 
 # Bottom-import to resolve cyclic dependencies:
-# from .operators import Integrate, Negate, Add, Subtract, Multiply, Divide, Power, UfuncWrapper
+# from .operators import Integrate, Absolute, Negate, Add, Subtract, Multiply, Divide, Power, UfuncWrapper
 
 
 class Field:
@@ -94,6 +94,9 @@ class Field:
             return partial(UfuncWrapper, ufunc, self)
         else:
             raise AttributeError("%r object has no attribute %r" %(self.__class__.__name__, attr))
+
+    def __abs__(self):
+        return Absolute(self)
 
     def __neg__(self):
         return Negate(self)
@@ -215,5 +218,5 @@ class Field:
 
 
 # Bottom-import to resolve cyclic dependencies:
-from .operators import Integrate, Negate, Add, Subtract, Multiply, Divide, Power, UfuncWrapper
+from .operators import Integrate, Absolute, Negate, Add, Subtract, Multiply, Divide, Power, UfuncWrapper
 
