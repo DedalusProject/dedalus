@@ -8,7 +8,7 @@ import numpy as np
 import weakref
 
 # Bottom-import to resolve cyclic dependencies:
-# from .operators import Negate, Add, Subtract, Multiply, Divide, Integrate, UfuncWrapper
+# from .operators import Integrate, Negate, Add, Subtract, Multiply, Divide, Power, UfuncWrapper
 
 
 class Field:
@@ -122,6 +122,9 @@ class Field:
     def __rtruediv__(self, other):
         return Divide(other, self)
 
+    def __pow__(self, other):
+        return Power(self, other)
+
     def __getitem__(self, layout):
         """Return data viewed in specified layout."""
 
@@ -212,5 +215,5 @@ class Field:
 
 
 # Bottom-import to resolve cyclic dependencies:
-from .operators import Negate, Add, Subtract, Multiply, Divide, Integrate, UfuncWrapper
+from .operators import Integrate, Negate, Add, Subtract, Multiply, Divide, Power, UfuncWrapper
 

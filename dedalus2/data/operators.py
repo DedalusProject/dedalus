@@ -92,6 +92,9 @@ class Operator:
     def __rtruediv__(self, other):
         return Divide(other, self)
 
+    def __pow__(self, other):
+        return Power(self, other)
+
     def reset(self):
         """Restore original arguments."""
 
@@ -768,6 +771,35 @@ class DivNumericField(Divide):
         out.constant = self._arg0_constant & arg1.constant
 
 
+class Power(Operator):
+
+    name = 'Power'
+
+    def __init__(self, arg0, power, out=None):
+
+        # Required Attributes
+        self.args = [arg0]
+        self.original_args = [arg0]
+        self.domain = arg0.domain
+        self.out = out
+        # Additional attributes
+        self.power = power
+        self._grid_layout = self.domain.distributor.grid_layout
+
+    def check_conditions(self):
+        # Must be in grid layout
+        return (self.args[0].layout is self._grid_layout)
+
+    def operate(self, out):
+        # References
+        arg0, = self.args
+        # Raise in grid layout
+        arg0.require_grid_space()
+        out.layout = self._grid_layout
+        np.power(arg0.data, self.power, out.data)
+        np.copyto(out.constant, arg0.constant)
+
+
 class MagSquared(Operator):
 
     name = 'MagSq'
@@ -826,6 +858,7 @@ parsable_ops = {'Integrate': Integrate,
                 'Subtract': Subtract,
                 'Multiply': Multiply,
                 'Divide': Divide,
+                'Power': Power,
                 'MagSquared': MagSquared}
 parsable_ops.update(UfuncWrapper.supported)
 
