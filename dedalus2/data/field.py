@@ -3,11 +3,12 @@ Class for data fields.
 
 """
 
+from functools import partial
 import numpy as np
 import weakref
 
 # Bottom-import to resolve cyclic dependencies:
-# from .operators import Negate, Add, Subtract, Multiply, Divide, Integrate
+# from .operators import Negate, Add, Subtract, Multiply, Divide, Integrate, UfuncWrapper
 
 
 class Field:
@@ -85,6 +86,14 @@ class Field:
             return self.name
         else:
             return self.__repr__()
+
+    def __getattr__(self, attr):
+        # Intercept numpy ufunc calls
+        if attr in UfuncWrapper.supported:
+            ufunc = UfuncWrapper.supported[attr]
+            return partial(UfuncWrapper, ufunc, self)
+        else:
+            raise AttributeError("%r object has no attribute %r" %(self.__class__.__name__, attr))
 
     def __neg__(self):
         return Negate(self)
@@ -203,5 +212,5 @@ class Field:
 
 
 # Bottom-import to resolve cyclic dependencies:
-from .operators import Negate, Add, Subtract, Multiply, Divide, Integrate
+from .operators import Negate, Add, Subtract, Multiply, Divide, Integrate, UfuncWrapper
 

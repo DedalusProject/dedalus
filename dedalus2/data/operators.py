@@ -3,7 +3,7 @@ Abstract and built-in classes defining deferred operations on fields.
 
 """
 
-from functools import reduce
+from functools import reduce, partial
 import numpy as np
 
 from ..tools.general import OrderedSet
@@ -56,6 +56,14 @@ class Operator:
     def __str__(self):
         str_args = map(str, self.args)
         return '%s(%s)' %(self.name, ', '.join(str_args))
+
+    def __getattr__(self, attr):
+        # Intercept numpy ufunc calls
+        if attr in UfuncWrapper.supported:
+            ufunc = UfuncWrapper.supported[attr]
+            return partial(UfuncWrapper, ufunc, self)
+        else:
+            raise AttributeError("%r object has no attribute %r" %(self.__class__.__name__, attr))
 
     def __neg__(self):
         return Negate(self)
@@ -326,6 +334,39 @@ class Interpolate(Operator):
         self.basis.interpolate(arg0.data, out.data, self.position, axis=axis)
         np.copyto(out.constant, arg0.constant)
         out.constant[axis] = True
+
+
+class UfuncWrapper(Operator):
+
+    supported = {ufunc.__name__: ufunc for ufunc in
+        (np.sign, np.conj, np.exp, np.exp2, np.log, np.log2, np.log10, np.sqrt,
+         np.square, np.sin, np.cos, np.tan, np.arcsin, np.arccos, np.arctan,
+         np.sinh, np.cosh, np.tanh, np.arcsinh, np.arccosh, np.arctanh)}
+
+    def __init__(self, ufunc, arg0, out=None):
+
+        # Required Attributes
+        self.args = [arg0]
+        self.original_args = [arg0]
+        self.domain = arg0.domain
+        self.out = out
+        # Additional attributes
+        self.ufunc = ufunc
+        self.name = ufunc.__name__
+        self._grid_layout = self.domain.distributor.grid_layout
+
+    def check_conditions(self):
+        # Must be in grid layout
+        return (self.args[0].layout is self._grid_layout)
+
+    def operate(self, out):
+        # References
+        arg0, = self.args
+        # Apply ufunc in grid layout
+        arg0.require_grid_space()
+        out.layout = self._grid_layout
+        self.ufunc(arg0.data, out=out.data)
+        np.copyto(out.constant, arg0.constant)
 
 
 class Negate(Operator):
@@ -786,6 +827,7 @@ parsable_ops = {'Integrate': Integrate,
                 'Multiply': Multiply,
                 'Divide': Divide,
                 'MagSquared': MagSquared}
+parsable_ops.update(UfuncWrapper.supported)
 
 
 # Type tests
