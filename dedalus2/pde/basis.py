@@ -86,7 +86,7 @@ class Basis:
 
         raise NotImplementedError()
 
-    def integrate(self, cdata, cint, position, axis):
+    def interpolate(self, cdata, cint, position, axis):
         """Interpolate in interval using coefficients."""
 
         raise NotImplementedError()
@@ -137,7 +137,7 @@ class ImplicitBasis(Basis):
         np.copyto(cint[axslice(axis, 0, 1)], integral)
 
     def interpolate(self, cdata, cint, position, axis):
-        """Integrate over interval using coefficients."""
+        """Interpolate in interval using coefficients."""
 
         # Contract coefficients with basis function evaluations
         dim = len(cdata.shape)
@@ -705,7 +705,7 @@ class Fourier(TransverseBasis, ImplicitBasis):
         return integ_vector
 
     def interpolate(self, cdata, cint, position, axis):
-        """Integrate over interval using coefficients."""
+        """Interpolate in interval using coefficients."""
 
         # Contract coefficients with basis function evaluations
         dim = len(cdata.shape)
