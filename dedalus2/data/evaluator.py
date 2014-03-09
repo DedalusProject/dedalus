@@ -4,10 +4,11 @@ Class for centralized evaluation of expression trees.
 """
 
 import os
+from collections import defaultdict
 import h5py
 import numpy as np
-from .system import FieldSystem
 
+from .system import FieldSystem
 from .operators import Operator, Cast
 from ..tools.array import reshape_vector
 from ..tools.general import OrderedSet
@@ -15,7 +16,7 @@ from ..tools.general import OrderedSet
 
 class Evaluator:
     """
-    Coordinated evaluation of operator trees through handlers.
+    Coordinates evaluation of operator trees through various handlers.
 
     Parameters
     ----------
@@ -31,63 +32,73 @@ class Evaluator:
         self.domain = domain
         self.vars = vars
         self.handlers = []
+        self.groups = defaultdict(list)
 
     def add_system_handler(self, **kw):
+        """Create a system handler and add to evaluator."""
 
         SH = SystemHandler(self.domain, self.vars, **kw)
-        self.handlers.append(SH)
-
-        return SH
+        return self.add_handler(SH)
 
     def add_file_handler(self, filename, **kw):
+        """Create a file handler and add to evaluator."""
 
         FH = FileHandler(filename, self.domain, self.vars, **kw)
-        self.handlers.append(FH)
+        return self.add_handler(FH)
 
-        return FH
+    def add_handler(self, handler):
+        """Add a handler to evaluator."""
 
-    # def add_snapshot_handler(self, filename):
+        self.handlers.append(handler)
+        # Register with group
+        if handler.group is not None:
+            self.groups[handler.group].append(handler)
+        return handler
 
-    #     SH = SystemHandler(system, self.vars)
-    #     self.handlers.append(SH)
+    def evaluate_group(self, group, wall_time, sim_time, iteration):
+        """Evaluate all handlers in a group."""
 
-    #     return SH
+        handlers = self.groups[group]
+        self.evaluate_handlers(handlers, wall_time, sim_time, iteration)
 
-    def evaluate(self, wall_time, sim_time, iteration, force=False):
-        """Evaluate scheduled handlers/tasks."""
+    def evaluate_scheduled(self, wall_time, sim_time, iteration):
+        """Evaluate all scheduled handlers."""
 
-        # Find scheduled tasks
-        current_handlers = []
-        tasks = []
+        scheduled_handlers = []
         for handler in self.handlers:
-
+            # Get cadence devisors
             wall_div = wall_time // handler.wall_dt
             sim_div  = sim_time  // handler.sim_dt
             iter_div = iteration // handler.iter
-
+            # Compare to divisor at last evaluation
             wall_up = (wall_div > handler.last_wall_div)
             sim_up  = (sim_div  > handler.last_sim_div)
             iter_up = (iter_div > handler.last_iter_div)
 
-            if force or any((wall_up, sim_up, iter_up)):
-                current_handlers.append(handler)
-                tasks.extend(handler.tasks)
+            if any((wall_up, sim_up, iter_up)):
+                scheduled_handlers.append(handler)
+                # Update all divisors
                 handler.last_wall_div = wall_div
                 handler.last_sim_div  = sim_div
                 handler.last_iter_div = iter_div
 
-        # Return if there are no scheduled handlers
-        if not current_handlers:
-            return None
+        self.evaluate_handlers(scheduled_handlers, wall_time, sim_time, iteration)
 
-        # Start from coefficient space
+    def evaluate_handlers(self, handlers, wall_time, sim_time, iteration):
+        """Evaluate a collection of handlers."""
+
+        # Attempt tasks in current layout
+        tasks = [t for t in h.tasks for h in handlers]
+        tasks = self.attempt_tasks(tasks)
+
+        # Move all to coefficient layout
         fields = self.get_fields(tasks)
         for f in fields:
             f.require_coeff_space()
-        L = 0
         tasks = self.attempt_tasks(tasks)
 
         # Oscillate through layouts until all tasks are evaluated
+        L = 0
         Lmax = self.domain.distributor.grid_layout.index
         while tasks:
             # Change direction at first and last layouts
@@ -106,17 +117,18 @@ class Evaluator:
             # Attempt evaluation
             tasks = self.attempt_tasks(tasks)
 
-        # Transform all outputs to coefficient space to dealias
-        for handler in current_handlers:
+        # Transform all outputs to coefficient layout to dealias
+        for handler in handlers:
             for task in handler.tasks:
                 task['out'].require_coeff_space()
 
         # Process
-        for handler in current_handlers:
+        for handler in handlers:
             handler.process(wall_time, sim_time, iteration)
 
     @staticmethod
     def get_fields(tasks):
+        """Get field set for a collection of tasks."""
 
         fields = OrderedSet()
         for task in tasks:
@@ -126,6 +138,7 @@ class Evaluator:
 
     @staticmethod
     def attempt_tasks(tasks):
+        """Attempt tasks and return the unfinished ones."""
 
         unfinished = []
         for task in tasks:
@@ -148,6 +161,8 @@ class Handler:
         Problem domain
     vars : dict
         Variables for parsing task expression strings
+    group : str, optional
+        Group name for forcing selected handelrs (default: None)
     wall_dt : float, optional
         Wall time cadence for evaluating tasks (default: infinite)
     sim_dt : float, optional
@@ -157,19 +172,21 @@ class Handler:
 
     """
 
-    def __init__(self, domain, vars, wall_dt=np.inf, sim_dt=np.inf, iter=np.inf):
+    def __init__(self, domain, vars, group=None, wall_dt=np.inf, sim_dt=np.inf, iter=np.inf):
 
         # Attributes
         self.domain = domain
         self.vars = vars
+        self.group = group
         self.wall_dt = wall_dt
         self.sim_dt = sim_dt
         self.iter = iter
 
         self.tasks = []
-        self.last_wall_div = 0.
-        self.last_sim_div = 0.
-        self.last_iter_div = 0.
+        # Set initial divisors to be scheduled for sim_time, iteration = 0
+        self.last_wall_div = -1
+        self.last_sim_div = -1
+        self.last_iter_div = -1
 
     def add_task(self, task, layout='g', name=None):
         """Add task to handler."""
@@ -201,7 +218,7 @@ class Handler:
             self.add_task(task, **kw)
 
     def add_system(self, system, **kw):
-        """Add fields from a field system."""
+        """Add fields from a FieldSystem."""
 
         self.add_tasks(system.fields, **kw)
 
