@@ -466,7 +466,7 @@ class RungeKuttaIMEX:
 
     References
     ----------
-    Ascher
+    U. M. Ascher, S. J. Ruuth, and R. J. Spiteri, Applied Numerical Mathematics (1997).
 
     """
 
