@@ -542,6 +542,20 @@ class RungeKuttaIMEX:
             solver.sim_time = sim_time_0 + k*c[i]
 
 
+class RK111(RungeKuttaIMEX):
+    """1st-order 1-stage DIRK+ERK scheme [Ascher 1997 sec 2.1]"""
+
+    stages = 1
+
+    c = np.array([0, 1])
+
+    A = np.array([[0, 0],
+                  [1, 0]])
+
+    H = np.array([[0, 0],
+                  [0, 1]])
+
+
 class RK222(RungeKuttaIMEX):
     """2nd-order 2-stage DIRK+ERK scheme [Ascher 1997 sec 2.6]"""
 
