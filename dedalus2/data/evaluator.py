@@ -88,7 +88,7 @@ class Evaluator:
         """Evaluate a collection of handlers."""
 
         # Attempt tasks in current layout
-        tasks = [t for t in h.tasks for h in handlers]
+        tasks = [t for h in handlers for t in h.tasks]
         tasks = self.attempt_tasks(tasks)
 
         # Move all to coefficient layout
