@@ -11,6 +11,7 @@ from ..data.operators import parsable_ops
 from ..data.evaluator import Evaluator
 from ..data.system import CoeffSystem, FieldSystem
 from ..data.pencil import build_pencils
+from ..data.field import Field
 from ..tools.logging import logger
 
 
@@ -103,9 +104,9 @@ class IVP:
         System containing current solution fields
     dt : float
         Timestep
-    sim_stop_time : float
+    stop_sim_time : float
         Simulation stop time, in simulation units
-    wall_stop_time : float
+    stop_wall_time : float
         Wall stop time, in seconds from instantiation
     stop_iteration : int
         Stop iteration
@@ -130,7 +131,6 @@ class IVP:
 
         # Build systems
         self.state = state = FieldSystem(problem.field_names, domain)
-        self.RHS = RHS = CoeffSystem(problem.nfields, domain)
 
         # Create F operator trees
         # IVP: available terms are parse ops, diff ops, axes, parameters, and state
@@ -141,9 +141,13 @@ class IVP:
         vars.update(problem.parameters)
         vars.update(state.field_dict)
 
+        self._sim_time_field = Field(domain, name='sim_time')
+        self._sim_time_field.constant[:] = True
+        vars['t'] = self._sim_time_field
+
         self.evaluator = Evaluator(domain, vars)
-        Fe_handler = self.evaluator.add_system_handler(iter=1)
-        Fb_handler = self.evaluator.add_system_handler(iter=1)
+        Fe_handler = self.evaluator.add_system_handler(iter=1, group='F')
+        Fb_handler = self.evaluator.add_system_handler(iter=1, group='F')
         Fe_handler.add_tasks(problem.eqn_set['F'])
         Fb_handler.add_tasks(problem.bc_set['F'])
         self.Fe = Fe_handler.build_system()
@@ -154,23 +158,32 @@ class IVP:
 
         # Attributes
         self.start_time = time.time()
-        self.time = 0.
+        self.sim_time = 0.
         self.iteration = 0
 
         # Default integration parameters
         self.dt = 1.
-        self.sim_stop_time = 10.
-        self.wall_stop_time = 10.
+        self.stop_sim_time = 10.
+        self.stop_wall_time = 10.
         self.stop_iteration = 10.
+
+    @property
+    def sim_time(self):
+        return self._sim_time
+
+    @sim_time.setter
+    def sim_time(self, t):
+        self._sim_time = t
+        self._sim_time_field['g'] = t
 
     @property
     def ok(self):
         """Check that current time and iteration pass stop conditions."""
 
-        if self.time >= self.sim_stop_time:
+        if self.sim_time >= self.stop_sim_time:
             logger.info('Simulation stop time reached.')
             return False
-        elif (time.time() - self.start_time) >= self.wall_stop_time:
+        elif (time.time() - self.start_time) >= self.stop_wall_time:
             logger.info('Wall stop time reached.')
             return False
         elif self.iteration >= self.stop_iteration:
@@ -183,45 +196,34 @@ class IVP:
         """Advance system by one iteration/timestep."""
 
         # References
-        pencils = self.pencils
         state = self.state
-        RHS = self.RHS
-        Fe = self.Fe
-        Fb = self.Fb
 
-        # Compute RHS
+        # (Safety gather)
         state.gather()
+
+        # Advance using timestepper
         wall_time = time.time() - self.start_time
-        self.evaluator.evaluate(wall_time, self.time, self.iteration)
+        self.timestepper.step(self, dt, wall_time)
 
-        # Update pencil matrices
-        self.timestepper.update_pencils(pencils, state, RHS, Fe, Fb, dt)
-
-        # Solve system for each pencil, updating state
-        for p in self.pencils:
-            A = p.LHS
-            b = RHS.get_pencil(p)
-            x = linalg.spsolve(A, b, use_umfpack=False, permc_spec='NATURAL')
-            state.set_pencil(p, x)
+        # (Safety scatter)
         state.scatter()
 
-        # Update solver statistics
-        self.time += dt
+        # Update iteration
         self.iteration += 1
 
     def evolve(self, timestep_function):
         """Advance system until stopping criterion is reached."""
 
         # Check for a stopping criterion
-        if np.isinf(self.sim_stop_time):
-            if np.isinf(self.wall_stop_time):
+        if np.isinf(self.stop_sim_time):
+            if np.isinf(self.stop_wall_time):
                 if np.isinf(self.stop_iteration):
                     raise ValueError("No stopping criterion specified.")
 
         # Evolve
         while self.ok:
             dt = timestep_function()
-            if self.time + dt > self.sim_stop_time:
-                dt = self.sim_stop_time - self.time
+            if self.sim_time + dt > self.stop_sim_time:
+                dt = self.stop_sim_time - self.sim_time
             self.step(dt)
 
