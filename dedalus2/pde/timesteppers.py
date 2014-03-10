@@ -514,7 +514,6 @@ class RungeKuttaIMEX:
         for i in range(1, self.stages+1):
 
             # Compute F(n,i-1), L.X(n,i-1)
-            solver.sim_time = sim_time_0 + k*c[i]
             state.scatter()
             if i == 1:
                 evaluator.evaluate_scheduled(wall_time, solver.sim_time, iteration)
@@ -540,6 +539,7 @@ class RungeKuttaIMEX:
                 b = RHS.get_pencil(p)
                 x = linalg.spsolve(A, b, use_umfpack=False, permc_spec='NATURAL')
                 state.set_pencil(p, x)
+            solver.sim_time = sim_time_0 + k*c[i]
 
 
 class RK222(RungeKuttaIMEX):
