@@ -276,6 +276,9 @@ class FileHandler(Handler):
         self.current_file = '.'
         self.write_num = 0
 
+        self._property_list = h5py.h5p.create(h5py.h5p.DATASET_XFER)
+        self._property_list.set_dxpl_mpio(h5py.h5fd.MPIO_COLLECTIVE)
+
     def get_file(self):
         """Return current HDF5 file, creating if necessary."""
 
@@ -338,14 +341,9 @@ class FileHandler(Handler):
             dtype = out.layout.dtype
 
             # Assemble nonconstant subspace
-            subshape, subslices, subdata, collectable = self.get_subspace(out)
+            subshape, memory_space, file_space = self.get_subspaces(out)
             dset = task_group.create_dataset(name=name, shape=subshape, dtype=dtype)
-            if collectable:
-                with dset.collective:
-                    dset[subslices] = subdata
-            else:
-                if subdata.size:
-                    dset[subslices] = subdata
+            dset.id.write(memory_space, file_space, out.data, dxpl=self._property_list)
 
             # Metadata and scales
             dset.attrs['constant'] = out.constant
@@ -366,35 +364,34 @@ class FileHandler(Handler):
         file.close()
 
     @staticmethod
-    def get_subspace(field):
-        """Return nonconstant subspace of a field, and the corresponding global parameters."""
+    def get_subspaces(field):
+        """Return HDF5 spaces for writing nonconstant subspace of a field."""
 
         # References
         constant = field.constant
         gshape = field.layout.global_shape
         lshape = field.layout.shape
-        local = field.layout.local
         start = field.layout.start
-        slices = field.layout.slices
+        first = (start == 0)
 
         # Build subshape from global shape
         subshape = gshape.copy()
         subshape[constant] = 1
 
-        # Build global and local slices
-        first = (start == 0)
-        subslices = np.array(slices)
-        datslices = np.array([slice(ls) for ls in lshape])
-        subslices[constant & first] = slice(1)
-        datslices[constant & first] = slice(1)
-        subslices[constant & ~first] = slice(0)
-        datslices[constant & ~first] = slice(0)
+        # Build counts based on `constant` and `first`
+        count = lshape.copy()
+        count[constant & first] = 1
+        count[constant & ~first] = 0
 
-        subslices = tuple(subslices)
-        subdata = field.data[tuple(datslices)]
-        if any(constant & ~local):
-            collectable = False
-        else:
-            collectable = True
+        # Build HDF5 spaces
+        file_start = start.copy()
+        file_start[constant & ~first] = 0
+        file_space = h5py.h5s.create_simple(tuple(subshape))
+        file_space.select_hyperslab(tuple(file_start), tuple(count))
 
-        return subshape, subslices, subdata, collectable
+        memory_start = 0 * start
+        memory_space = h5py.h5s.create_simple(tuple(lshape))
+        memory_space.select_hyperslab(tuple(memory_start), tuple(count))
+
+        return subshape, memory_space, file_space
+
