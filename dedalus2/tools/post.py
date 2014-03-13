@@ -5,7 +5,7 @@ Post-processing helpers.
 
 import sys
 import glob
-from collections import defaultdict
+from collections import OrderedDict
 
 import h5py
 from mpi4py import MPI
@@ -40,8 +40,10 @@ def get_local_write_path_dict(fileroot):
     """Build dictionary of write paths assigned to process."""
 
     local_write_paths = get_local_write_paths(fileroot)
-    local_write_path_dict = defaultdict(list)
+    local_write_path_dict = OrderedDict()
     for (filename, writename) in local_write_paths:
+        if filename not in local_write_path_dict:
+            local_write_path_dict[filename] = []
         local_write_path_dict[filename].append(writename)
 
     return local_write_path_dict
