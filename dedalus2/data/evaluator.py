@@ -307,6 +307,7 @@ class FileHandler(Handler):
         file = h5py.File(self.current_file, 'w', driver='mpio', comm=comm)
 
         # Metadeta
+        file.attrs['file_number'] = self.file_num
         file.create_group('tasks')
         scale_group = file.create_group('scales')
         const = scale_group.create_dataset(name='constant', shape=[1]*domain.dim, dtype=np.float64)
@@ -329,12 +330,13 @@ class FileHandler(Handler):
 
         # Create task group and write timestep attributes
         task_group = file.create_group('tasks/write_%06i' %self.write_num)
+        task_group.attrs['write_number'] = self.write_num
         task_group.attrs['wall_time'] = wall_time
         task_group.attrs['sim_time'] = sim_time
         task_group.attrs['iteration'] = iteration
 
         # Create task datasets
-        for task in self.tasks:
+        for task_num, task in enumerate(self.tasks):
             out = task['out']
             name = task['name']
             out.require_layout(task['layout'])
@@ -346,6 +348,7 @@ class FileHandler(Handler):
             dset.id.write(memory_space, file_space, out.data, dxpl=self._property_list)
 
             # Metadata and scales
+            dset.attrs['task_number'] = task_num
             dset.attrs['constant'] = out.constant
             dset.attrs['grid_space'] = out.layout.grid_space
             for axis, basis in enumerate(self.domain.bases):
