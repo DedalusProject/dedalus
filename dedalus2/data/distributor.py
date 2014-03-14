@@ -138,13 +138,21 @@ class Distributor:
         logger.debug('Local coeff shape: %s' %str(self.coeff_layout.shape))
 
         # Allow string references to coefficient and grid space layouts
-        self.string_layouts = {'c': self.coeff_layout,
-                               'g': self.grid_layout,
-                               'coeff': self.coeff_layout,
-                               'grid': self.grid_layout}
+        self.layout_references = {'c': self.coeff_layout,
+                                  'g': self.grid_layout,
+                                  'coeff': self.coeff_layout,
+                                  'grid': self.grid_layout}
 
         # Take maximum required buffer size (in doubles)
         self.alloc_doubles = max(i.alloc_doubles for i in (self.layouts+self.paths))
+
+    def get_layout_object(self, input):
+        """Dereference layout identifiers."""
+
+        if isinstance(input, Layout):
+            return input
+        else:
+            return self.layout_references[input]
 
     def create_buffer(self):
         """Allocate memory using FFTW for SIMD alignment."""

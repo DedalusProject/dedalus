@@ -94,19 +94,14 @@ class Field(Future):
     def __setitem__(self, layout, data):
         """Set data viewed in a specified layout."""
 
-        # Resolve layout strings to corresponding layout objects
-        if isinstance(layout, str):
-            layout = self.domain.distributor.string_layouts[layout]
-
+        layout = self.domain.distributor.get_layout_object(layout)
         self.layout = layout
         np.copyto(self.data, data)
 
     def require_layout(self, layout):
         """Change to specified layout."""
 
-        # Resolve layout strings to corresponding layout objects
-        if isinstance(layout, str):
-            layout = self.domain.distributor.string_layouts[layout]
+        layout = self.domain.distributor.get_layout_object(layout)
 
         # Transform to specified layout
         if self.layout.index < layout.index:
