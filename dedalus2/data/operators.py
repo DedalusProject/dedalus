@@ -308,6 +308,41 @@ class Interpolate(Operator):
         out.constant[axis] = True
 
 
+class GeneralFunction(Operator):
+
+    def __init__(self, domain, layout, func, args=[], kw={}, out=None,):
+
+        # Required attributes
+        self.args = list(args)
+        self.original_args = list(args)
+        self.domain = domain
+        self.out = out
+        # Additional attributes
+        self.layout = domain.distributor.get_layout_object(layout)
+        self.func = func
+        self.kw = kw
+        self._field_arg_indices = [i for (i,arg) in enumerate(self.args) if is_fieldlike(arg)]
+        try:
+            self.name = func.__name__
+        except AttributeError:
+            self.name = str(func)
+
+    def check_conditions(self):
+        # Fields must be in proper layout
+        for i in self._field_arg_indices:
+            if self.args[i].layout is not self.layout:
+                return False
+        return True
+
+    def operate(self, out):
+        # Apply func in proper layout
+        for i in self._field_arg_indices:
+            self.args[i].require_layout(self.layout)
+        out.layout = self.layout
+        np.copyto(out.data, self.func(*self.args, **self.kw))
+        np.copyto(out.constant, False)
+
+
 class UfuncWrapper(Operator):
 
     supported = {ufunc.__name__: ufunc for ufunc in
