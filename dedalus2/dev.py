@@ -3,6 +3,7 @@ Interface for accessing all submodules.
 
 """
 
+from .data import future
 from .data import distributor
 from .data import domain
 from .data import evaluator
@@ -23,4 +24,5 @@ from .tools import dispatch
 from .tools import general
 from .tools import logging
 from .tools import parallel
+from .tools import post
 

@@ -7,11 +7,10 @@ from functools import partial
 import numpy as np
 import weakref
 
-# Bottom-import to resolve cyclic dependencies:
-# from .operators import Integrate, Absolute, Negate, Add, Subtract, Multiply, Divide, Power, UfuncWrapper
+from .future import Future
 
 
-class Field:
+class Field(Future):
     """
     Scalar field over a domain.
 
@@ -30,8 +29,6 @@ class Field:
         View of internal buffer in current layout
 
     """
-
-    __array_priority__ = 100.
 
     def __init__(self, domain, name=None):
 
@@ -86,47 +83,6 @@ class Field:
             return self.name
         else:
             return self.__repr__()
-
-    def __getattr__(self, attr):
-        # Intercept numpy ufunc calls
-        if attr in UfuncWrapper.supported:
-            ufunc = UfuncWrapper.supported[attr]
-            return partial(UfuncWrapper, ufunc, self)
-        else:
-            raise AttributeError("%r object has no attribute %r" %(self.__class__.__name__, attr))
-
-    def __abs__(self):
-        return Absolute(self)
-
-    def __neg__(self):
-        return Negate(self)
-
-    def __add__(self, other):
-        return Add(self, other)
-
-    def __radd__(self, other):
-        return Add(other, self)
-
-    def __sub__(self, other):
-        return Subtract(self, other)
-
-    def __rsub__(self, other):
-        return Subtract(other, self)
-
-    def __mul__(self, other):
-        return Multiply(self, other)
-
-    def __rmul__(self, other):
-        return Multiply(other, self)
-
-    def __truediv__(self, other):
-        return Divide(self, other)
-
-    def __rtruediv__(self, other):
-        return Divide(other, self)
-
-    def __pow__(self, other):
-        return Power(self, other)
 
     def __getitem__(self, layout):
         """Return data viewed in specified layout."""
@@ -214,9 +170,6 @@ class Field:
         """Integrate field over bases."""
 
         # Use integration operator
+        from .operators import Integrate
         return Integrate(self, *bases, out=out).evaluate()
-
-
-# Bottom-import to resolve cyclic dependencies:
-from .operators import Integrate, Absolute, Negate, Add, Subtract, Multiply, Divide, Power, UfuncWrapper
 

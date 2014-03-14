@@ -6,13 +6,13 @@ Abstract and built-in classes defining deferred operations on fields.
 from functools import reduce, partial
 import numpy as np
 
+from .future import Future
+from .field import Field
 from ..tools.general import OrderedSet
 from ..tools.dispatch import MultiClass
-# Bottom-import to resolve cyclic dependencies:
-# from .field import Field
 
 
-class Operator:
+class Operator(Future):
     """
     Base class for deferred operations on fields.
 
@@ -34,7 +34,6 @@ class Operator:
 
     name = 'Op'
     arity = None
-    __array_priority__ = 100.
 
     def __init__(self, *args, out=None):
 
@@ -64,39 +63,6 @@ class Operator:
             return partial(UfuncWrapper, ufunc, self)
         else:
             raise AttributeError("%r object has no attribute %r" %(self.__class__.__name__, attr))
-
-    def __abs__(self):
-        return Absolute(self)
-
-    def __neg__(self):
-        return Negate(self)
-
-    def __add__(self, other):
-        return Add(self, other)
-
-    def __radd__(self, other):
-        return Add(other, self)
-
-    def __sub__(self, other):
-        return Subtract(self, other)
-
-    def __rsub__(self, other):
-        return Subtract(other, self)
-
-    def __mul__(self, other):
-        return Multiply(self, other)
-
-    def __rmul__(self, other):
-        return Multiply(other, self)
-
-    def __truediv__(self, other):
-        return Divide(self, other)
-
-    def __rtruediv__(self, other):
-        return Divide(other, self)
-
-    def __pow__(self, other):
-        return Power(self, other)
 
     def reset(self):
         """Restore original arguments."""
@@ -960,8 +926,4 @@ def unique_domain(*args):
         raise ValueError("Non-unique domains")
     else:
         return list(domain_set)[0]
-
-
-# Bottom-import to resolve cyclic dependencies:
-from .field import Field
 
