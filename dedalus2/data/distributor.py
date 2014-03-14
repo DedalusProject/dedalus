@@ -201,8 +201,8 @@ class Layout:
         self.dtype = dtype
 
         # Compute global shape
-        g_shape = np.copy(domain.coeff_shape)
-        g_shape[grid_space] = domain.grid_shape[grid_space]
+        g_shape = np.copy(domain.global_coeff_shape)
+        g_shape[grid_space] = domain.global_grid_shape[grid_space]
 
         # Distributed global shape: subset of global shape
         dg_shape = g_shape[~local]

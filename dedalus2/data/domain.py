@@ -48,10 +48,10 @@ class Domain:
             grid_dtype = b.set_transforms(grid_dtype)
 
         # Get global grid and coefficient shapes
-        self.grid_shape = np.array([b.grid_size for b in bases], dtype=int)
-        self.coeff_shape = np.array([b.coeff_size for b in bases], dtype=int)
-        logger.debug('Global grid shape: %s' %str(self.grid_shape))
-        logger.debug('Global coeff shape: %s' %str(self.coeff_shape))
+        self.global_grid_shape = np.array([b.grid_size for b in bases], dtype=int)
+        self.global_coeff_shape = np.array([b.coeff_size for b in bases], dtype=int)
+        logger.debug('Global grid shape: %s' %str(self.global_grid_shape))
+        logger.debug('Global coeff shape: %s' %str(self.global_coeff_shape))
 
         # Manage field allocation
         self._field_cache = list()
@@ -59,6 +59,8 @@ class Domain:
 
         # Create distributor
         self.distributor = Distributor(self, mesh)
+        self.local_grid_shape = self.distributor.grid_layout.shape
+        self.local_coeff_shape = self.distributor.coeff_layout.shape
 
         # Create differential operators
         self.diff_ops = [create_diff_operator(b,i) for (i,b) in enumerate(self.bases)]
