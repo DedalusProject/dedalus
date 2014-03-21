@@ -34,6 +34,12 @@ class Evaluator:
         self.handlers = []
         self.groups = defaultdict(list)
 
+    def add_dictionary_handler(self, **kw):
+        """Create a dictionary handler and add to evaluator."""
+
+        DH = DictionaryHandler(self.domain, self.vars, **kw)
+        return self.add_handler(DH)
+
     def add_system_handler(self, **kw):
         """Create a system handler and add to evaluator."""
 
@@ -221,6 +227,21 @@ class Handler:
         """Add fields from a FieldSystem."""
 
         self.add_tasks(system.fields, **kw)
+
+
+class DictionaryHandler(Handler):
+    """Handler that stores outputs in a dictionary."""
+
+    def __init__(self, *args, **kw):
+
+        Handler.__init__(self, *args, **kw)
+        self.fields = dict()
+
+    def process(self, wall_time, sim_time, iteration):
+        """Reference fields from dictionary."""
+
+        for task in self.tasks:
+            self.fields[task['name']] = task['out']
 
 
 class SystemHandler(Handler):
