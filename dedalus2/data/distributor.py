@@ -3,6 +3,7 @@ Classes for available data layouts and the paths between them.
 
 """
 
+from functools import partial
 import numpy as np
 from mpi4py import MPI
 
@@ -87,7 +88,7 @@ class Distributor:
         self.coords = np.array(self.comm_cart.coords, dtype=int)
         self._build_layouts(domain)
 
-    def _build_layouts(self, domain):
+    def _build_layouts(self, domain, dry_run=False):
         """Construct layout objects."""
 
         # References
@@ -117,19 +118,22 @@ class Distributor:
                         grid_space[d] = True
                         dtype = basis.grid_dtype
                         layout_i = Layout(domain, mesh, coords, local, grid_space, dtype)
-                        path_i = Transform(self.layouts[-1], layout_i, d, basis)
+                        if not dry_run:
+                            path_i = Transform(self.layouts[-1], layout_i, d, basis)
                         break
                     # Otherwise transpose
                     else:
                         local[d] = True
                         local[d+1] = False
                         layout_i = Layout(domain, mesh, coords, local, grid_space, dtype)
-                        path_i = Transpose(self.layouts[-1], layout_i, d, self.comm_cart)
+                        if not dry_run:
+                            path_i = Transpose(self.layouts[-1], layout_i, d, self.comm_cart)
                         break
 
             layout_i.index = i
             self.layouts.append(layout_i)
-            self.paths.append(path_i)
+            if not dry_run:
+                self.paths.append(path_i)
 
         # Directly reference coefficient and grid space layouts
         self.coeff_layout = self.layouts[0]
@@ -290,6 +294,16 @@ class Transform:
                                     dtype=pad_dtype,
                                     buffer=self.buffer)
 
+        # Set transform callables
+        USE_FFTW = True
+        if USE_FFTW:
+            self.fftw_plan = basis.fftw_plan(layout1.shape, axis)
+            self._backward_callable = self.fftw_plan.backward
+            self._forward_callable = self.fftw_plan.forward
+        else:
+            self._backward_callable = partial(basis.backward, axis=axis)
+            self._forward_callable = partial(basis.forward, axis=axis)
+
         # By using buffer, transforms/padding don't impact field allocations
         self.alloc_doubles = 0
 
@@ -313,7 +327,7 @@ class Transform:
 
         # Call basis padding and transform
         self.basis.pad_coeff(cdata, self.embed, axis=self.axis)
-        self.basis.backward(self.embed, gdata, axis=self.axis)
+        self._backward_callable(self.embed, gdata)
 
     def _forward(self, field):
         """Grid-to-coefficient transform and unpadding."""
@@ -324,7 +338,7 @@ class Transform:
         cdata = field.data
 
         # Call basis transform and unpadding
-        self.basis.forward(gdata, self.embed, axis=self.axis)
+        self._forward_callable(gdata, self.embed)
         self.basis.unpad_coeff(self.embed, cdata, axis=self.axis)
 
     def _no_op_backward(self, field):

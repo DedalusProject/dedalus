@@ -8,11 +8,18 @@ import numpy as np
 from scipy import sparse
 from scipy import fftpack
 
+
 from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
 from ..tools.array import interleaved_view
 from ..tools.array import reshape_vector
 from ..tools.array import axslice
+try:
+    from ..libraries.fftw import fftw_wrappers as fftw
+    fftw.fftw_mpi_init()
+except ImportError:
+    logger.error("Don't forget to buid using 'python3 setup.py build_ext --inplace'")
+    raise
 
 
 class Basis:
@@ -264,9 +271,11 @@ class Chebyshev(ImplicitBasis):
         if grid_dtype == np.float64:
             self.forward = self._forward_r2r
             self.backward = self._backward_r2r
+            self.fftw_plan = fftw.RealChebyshevTransform
         elif grid_dtype == np.complex128:
             self.forward = self._forward_c2c
             self.backward = self._backward_c2c
+            self.fftw_plan = fftw.ComplexChebyshevTransform
         else:
             raise ValueError("Unsupported grid_dtype.")
 
@@ -538,11 +547,13 @@ class Fourier(TransverseBasis, ImplicitBasis):
             self.backward = self._backward_c2r
             self.pad_coeff = self._pad_c2r
             self.unpad_coeff = self._unpad_r2c
+            self.fftw_plan = fftw.RealFourierTransform
         elif dtype == np.complex128:
             self.forward = self._forward_c2c
             self.backward = self._backward_c2c
             self.pad_coeff = self._pad_c2c
             self.unpad_coeff = self._unpad_c2c
+            self.fftw_plan = fftw.ComplexFourierTransform
         else:
             raise ValueError("Unsupported grid_dtype.")
 
