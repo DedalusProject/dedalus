@@ -241,6 +241,7 @@ class DictionaryHandler(Handler):
         """Reference fields from dictionary."""
 
         for task in self.tasks:
+            task['out'].require_layout(task['layout'])
             self.fields[task['name']] = task['out']
 
 
