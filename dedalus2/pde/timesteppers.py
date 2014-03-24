@@ -448,7 +448,7 @@ class RungeKuttaIMEX:
         M.dt(X) + L.X = F
     by constructing s stages
         M.X(n,i) - M.X(n,0) + k Hij L.X(n,j) = k Aij F(n,j)
-    where j runs from {0, 0} to {i, i-1}, and F is evaluated at time
+    where j runs from {0, 0} to {i, i-1}, and F(n,i) is evaluated at time
         t(n,i) = t(n,0) + k ci
 
     The s stages are solved as
@@ -476,11 +476,8 @@ class RungeKuttaIMEX:
 
         # Create coefficient systems for multistep history
         self.MX0 = CoeffSystem(nfields, domain)
-        self.LX = LX = deque()
-        self.F = F = deque()
-        for j in range(self.stages):
-            LX.append(CoeffSystem(nfields, domain))
-            F.append(CoeffSystem(nfields, domain))
+        self.LX = LX = [CoeffSystem(nfields, domain) for i in range(self.stages)]
+        self.F = F = [CoeffSystem(nfields, domain) for i in range(self.stages)]
 
     def step(self, solver, dt, wall_time):
         """Advance solver by one timestep."""
@@ -506,8 +503,8 @@ class RungeKuttaIMEX:
 
         # Compute M.X(n,0)
         for p in pencils:
-            x0 = state.get_pencil(p)
-            MX0.set_pencil(p, p.M*x0)
+            pX0 = state.get_pencil(p)
+            MX0.set_pencil(p, p.M*pX0)
 
         # Compute stages
         # (M + k Hii L).X(n,i) = M.X(n,0) + k Aij F(n,j) - k Hij L.X(n,j)
@@ -520,25 +517,25 @@ class RungeKuttaIMEX:
             else:
                 evaluator.evaluate_group('F', wall_time, solver.sim_time, iteration)
             for p in pencils:
-                x = state.get_pencil(p)
+                pX = state.get_pencil(p)
                 pFe = Fe.get_pencil(p)
                 pFb = Fb.get_pencil(p)
-                LX[i-1].set_pencil(p, p.L*x)
+                LX[i-1].set_pencil(p, p.L*pX)
                 F[i-1].set_pencil(p, p.G_eq*pFe + p.G_bc*pFb)
 
-            # Construct RHS(i)
+            # Construct RHS(n,i)
             np.copyto(RHS.data, MX0.data)
             for j in range(0, i):
                 RHS.data += k * A[i,j] * F[j].data
                 RHS.data -= k * H[i,j] * LX[j].data
 
-            # Solve for X(n,i)
             for p in pencils:
+                # Construct LHS(n,i)
                 np.copyto(p.LHS.data, p.M.data + (k*H[i,i])*p.L.data)
-                A = p.LHS
-                b = RHS.get_pencil(p)
-                x = linalg.spsolve(A, b, use_umfpack=False, permc_spec='NATURAL')
-                state.set_pencil(p, x)
+                # Solve for X(n,i)
+                pRHS = RHS.get_pencil(p)
+                pX = linalg.spsolve(p.LHS, pRHS, use_umfpack=False, permc_spec='NATURAL')
+                state.set_pencil(p, pX)
             solver.sim_time = sim_time_0 + k*c[i]
 
 
