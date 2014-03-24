@@ -89,13 +89,13 @@ class Evaluator:
 
         # Attempt tasks in current layout
         tasks = [t for h in handlers for t in h.tasks]
-        tasks = self.attempt_tasks(tasks)
+        tasks = self.attempt_tasks(tasks, id=sim_time)
 
         # Move all to coefficient layout
         fields = self.get_fields(tasks)
         for f in fields:
             f.require_coeff_space()
-        tasks = self.attempt_tasks(tasks)
+        tasks = self.attempt_tasks(tasks, id=sim_time)
 
         # Oscillate through layouts until all tasks are evaluated
         L = 0
@@ -115,7 +115,7 @@ class Evaluator:
                     f.towards_coeff_space()
             L += dL
             # Attempt evaluation
-            tasks = self.attempt_tasks(tasks)
+            tasks = self.attempt_tasks(tasks, id=sim_time)
 
         # Transform all outputs to coefficient layout to dealias
         for handler in handlers:
@@ -137,12 +137,12 @@ class Evaluator:
         return fields
 
     @staticmethod
-    def attempt_tasks(tasks):
+    def attempt_tasks(tasks, **kw):
         """Attempt tasks and return the unfinished ones."""
 
         unfinished = []
         for task in tasks:
-            output = task['operator'].attempt()
+            output = task['operator'].attempt(**kw)
             if output is None:
                 unfinished.append(task)
             else:
@@ -214,8 +214,10 @@ class Handler:
     def add_tasks(self, tasks, **kw):
         """Add multiple tasks."""
 
+        name = kw.pop('name', '')
         for task in tasks:
-            self.add_task(task, **kw)
+            tname = name + str(task)
+            self.add_task(task, name=tname, **kw)
 
     def add_system(self, system, **kw):
         """Add fields from a FieldSystem."""
@@ -224,7 +226,7 @@ class Handler:
 
 
 class SystemHandler(Handler):
-    """Handler that sets fields in a FieldSystem. """
+    """Handler that sets fields in a FieldSystem."""
 
     def build_system(self):
         """Build FieldSystem and set task outputs."""
