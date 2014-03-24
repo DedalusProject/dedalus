@@ -34,6 +34,7 @@ class Operator(Future):
 
     name = 'Op'
     arity = None
+    store_last = False
 
     def __init__(self, *args, out=None):
 
@@ -47,6 +48,7 @@ class Operator(Future):
         self.original_args = list(args)
         self.domain = unique_domain(out, *args)
         self.out = out
+        self.last_id = None
 
     def __repr__(self):
         repr_args = map(repr, self.args)
@@ -87,15 +89,24 @@ class Operator(Future):
 
         return fields
 
-    def evaluate(self, force=True):
+    def evaluate(self, id=None, force=True):
         """Recursively evaluate operation."""
+
+        # Check storage
+        if self.store_last and (id is not None):
+            if id == self.last_id:
+                return self.last_out
+            else:
+                # Clear cache to free output field
+                self.last_id = None
+                self.last_out = None
 
         # Recursively attempt evaluation of all operator arguments
         # Track evaluation success with flag
         all_eval = True
         for i, a in enumerate(self.args):
             if isinstance(a, Operator):
-                a_eval = a.evaluate(force=force)
+                a_eval = a.evaluate(id=id, force=force)
                 # If evaluation succeeds, substitute result
                 if a_eval is not None:
                     self.args[i] = a_eval
@@ -125,12 +136,17 @@ class Operator(Future):
         # Reset to free temporary field arguments
         self.reset()
 
+        # Update storage
+        if self.store_last and (id is not None):
+            self.last_id = id
+            self.last_out = out
+
         return out
 
-    def attempt(self):
+    def attempt(self, id=None):
         """Recursively attempt to evaluate operation."""
 
-        return self.evaluate(force=False)
+        return self.evaluate(id=id, force=False)
 
     def check_conditions(self):
         """Check that all argument fields are in proper layouts."""
@@ -173,6 +189,7 @@ class Cast(Operator, metaclass=MultiClass):
         self.original_args = [arg0]
         self.domain = domain
         self.out = out
+        self.last_id = None
 
 
 class CastField(Cast):
@@ -218,6 +235,8 @@ class CastNumeric(Cast):
 
 class Integrate(Operator):
 
+    store_last = True
+
     def __init__(self, arg0, *bases, out=None):
         # No bases: integrate over whole domain
         if len(bases) == 0:
@@ -230,6 +249,7 @@ class Integrate(Operator):
         self.original_args = [arg0]
         self.domain = arg0.domain
         self.out = out
+        self.last_id = None
         # Additional attributes
         self.basis = self.domain.get_basis_object(bases[-1])
         self.axis = arg0.domain.bases.index(self.basis)
@@ -266,6 +286,8 @@ class Integrate(Operator):
 
 class Interpolate(Operator):
 
+    store_last = True
+
     def __init__(self, arg0, basis, position, out=None):
 
         # Required attributes
@@ -273,6 +295,7 @@ class Interpolate(Operator):
         self.original_args = [arg0]
         self.domain = arg0.domain
         self.out = out
+        self.last_id = None
         # Additional attributes
         self.basis = self.domain.get_basis_object(basis)
         self.axis = arg0.domain.bases.index(self.basis)
@@ -317,6 +340,7 @@ class GeneralFunction(Operator):
         self.original_args = list(args)
         self.domain = domain
         self.out = out
+        self.last_id = None
         # Additional attributes
         self.layout = domain.distributor.get_layout_object(layout)
         self.func = func
@@ -357,6 +381,7 @@ class UfuncWrapper(Operator):
         self.original_args = [arg0]
         self.domain = arg0.domain
         self.out = out
+        self.last_id = None
         # Additional attributes
         self.ufunc = ufunc
         self.name = ufunc.__name__
@@ -809,6 +834,7 @@ class Power(Operator):
         self.original_args = [arg0]
         self.domain = arg0.domain
         self.out = out
+        self.last_id = None
         # Additional attributes
         self.power = power
         self._grid_layout = self.domain.distributor.grid_layout
