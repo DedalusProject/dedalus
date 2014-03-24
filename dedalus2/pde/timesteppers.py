@@ -8,6 +8,12 @@ import numpy as np
 from scipy.sparse import linalg
 
 from ..data.system import CoeffSystem, FieldSystem
+from ..tools.config import config
+
+
+# Load config options
+permc_spec = config['linear algebra']['permc_spec']
+use_umfpack = config['linear algebra'].getboolean('use_umfpack')
 
 
 class MultistepIMEX:
@@ -132,7 +138,7 @@ class MultistepIMEX:
         for p in pencils:
             A = p.LHS
             b = RHS.get_pencil(p)
-            x = linalg.spsolve(A, b, use_umfpack=False, permc_spec='NATURAL')
+            x = linalg.spsolve(A, b, use_umfpack=use_umfpack, permc_spec=permc_spec)
             state.set_pencil(p, x)
 
         # Update solver
@@ -534,7 +540,7 @@ class RungeKuttaIMEX:
                 np.copyto(p.LHS.data, p.M.data + (k*H[i,i])*p.L.data)
                 # Solve for X(n,i)
                 pRHS = RHS.get_pencil(p)
-                pX = linalg.spsolve(p.LHS, pRHS, use_umfpack=False, permc_spec='NATURAL')
+                pX = linalg.spsolve(p.LHS, pRHS, use_umfpack=use_umfpack, permc_spec=permc_spec)
                 state.set_pencil(p, pX)
             solver.sim_time = sim_time_0 + k*c[i]
 

@@ -7,6 +7,7 @@ from functools import partial
 import numpy as np
 from mpi4py import MPI
 
+from ..tools.config import config
 from ..tools.logging import logger
 from ..tools.general import rev_enumerate
 try:
@@ -15,6 +16,10 @@ try:
 except ImportError:
     logger.error("Don't forget to buid using 'python3 setup.py build_ext --inplace'")
     raise
+
+
+# Load config options
+use_fftw = config['transforms'].getboolean('use_fftw')
 
 
 class Distributor:
@@ -295,8 +300,7 @@ class Transform:
                                     buffer=self.buffer)
 
         # Set transform callables
-        USE_FFTW = True
-        if USE_FFTW:
+        if use_fftw:
             self.fftw_plan = basis.fftw_plan(layout1.shape, axis)
             self._backward_callable = self.fftw_plan.backward
             self._forward_callable = self.fftw_plan.forward
