@@ -54,6 +54,7 @@ class Field(Future):
         self.layout = self.domain.distributor.coeff_layout
         self.constant[:] = False
         self.data.fill(0.)
+        self.name = None
 
     @property
     def layout(self):
