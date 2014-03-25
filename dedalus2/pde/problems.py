@@ -67,7 +67,7 @@ class ParsedProblem:
         diff_names = ['d'+an for an in axis_names]
         trans_names = diff_names[:-1]
         trans_syms = [sy.Symbol(tn) for tn in trans_names]
-        trans_ops = [lambda A: ts*A for ts in trans_syms]
+        trans_ops = [(lambda ts: (lambda A: ts*A))(ts) for ts in trans_syms]
         dz = sy.Function(diff_names[-1])
         dt = sy.Function('dt')
 
