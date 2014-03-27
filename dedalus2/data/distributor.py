@@ -20,6 +20,7 @@ except ImportError:
 
 # Load config options
 use_fftw = config['transforms'].getboolean('use_fftw')
+path_barriers = config['parallelism'].getboolean('path_barriers')
 
 
 class Distributor:
@@ -174,12 +175,16 @@ class Distributor:
     def increment_layout(self, field):
         """Transform field to subsequent layout (towards grid space)."""
 
+        if path_barriers:
+            self.comm_cart.Barrier()
         index = field.layout.index
         self.paths[index].increment(field)
 
     def decrement_layout(self, field):
         """Transform field to preceding layout (towards coefficient space)."""
 
+        if path_barriers:
+            self.comm_cart.Barrier()
         index = field.layout.index
         self.paths[index-1].decrement(field)
 
