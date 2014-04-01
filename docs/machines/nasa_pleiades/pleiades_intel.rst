@@ -1,19 +1,22 @@
 Install notes for NASA/Pleiades
 ***************************************************************************
 
-Modules
-==========================================
+An initial Pleiades environment is pretty bare-bones.  There are no
+modules, and your shell is likely a csh varient.  To switch to bash::
 
-Here is my current build environment (from running ``module list``)
+    chsh -s /bin/bash
 
-Currently Loaded Modulefiles:
-  1) comp-intel/2013.5.192   
-  2) mpi-sgi/mpt.2.08r7
+Then add the following to your ``.profile``::
 
+  # Add your commands here to extend your PATH, etc.
 
-For ease in structuring the build, for now we'll define::
+  module load comp-intel/2013.5.192
+  module load mpi-sgi/mpt.2.08r7
 
-     setenv BUILD_HOME $HOME/build
+  PATH=$PATH:$HOME/bin:$HOME/build/bin	# Add private commands to PATH
+
+  export BUILD_HOME=$HOME/build
+  export LD_LIBRARY_PATH=$BUILD_HOME/lib:$LD_LIBRARY_PATH
 
 
 
@@ -23,9 +26,9 @@ Python stack
 Building Python3
 --------------------------
 
-Create ``~\build`` and then proceed with downloading and installing Python-3.3::
+Create ``$BUILD_HOME`` and then proceed with downloading and installing Python-3.3::
 
-    cd ~/build_intel
+    cd $BUILD_HOME
     wget http://www.python.org/ftp/python/3.3.3/Python-3.3.3.tgz
     tar -xzf Python-3.3.3.tgz
     cd Python-3.3.3
@@ -85,10 +88,10 @@ Otherwise the libmpich libraries are not being correctly linked into
 Updating shell settings
 ------------------------------
 
-At this point, ``python3`` is installed in ``~/build_intel/bin/``.  Add this
+At this point, ``python3`` is installed in ``$BUILD_HOME/bin/``.  Add this
 to your path and confirm (currently there is no ``python3`` in the
 default path, so doing a ``which python3`` will fail if you haven't
-added ``~/build_intel/bin``).  
+added ``$BUILD_HOME/bin``).  
 
 On Stampede, login shells (interactive connections via ssh) source
 only ``~/.bash_profile``, ``~/.bash_login`` or ``~/.profile``, in that
@@ -99,8 +102,8 @@ only launch ``~/.bashrc``
 In the bash shell, add the following to
 ``.bashrc``::
 
-     export PATH=~/build_intel/bin:$PATH
-     export LD_LIBRARY_PATH=~/build_intel/lib:$LD_LIBRARY_PATH
+     export PATH=$BUILD_HOME/bin:$PATH
+     export LD_LIBRARY_PATH=$BUILD_HOME/lib:$LD_LIBRARY_PATH
 
 and the following to ``.profile``::
 
@@ -117,7 +120,7 @@ Instructions on doing this are `available here <http://www.pip-installer.org/en/
 and summarized below.  First
 download and install setup tools::
 
-    cd ~/build
+    cd $BUILD_HOME
     wget https://bitbucket.org/pypa/setuptools/raw/bootstrap/ez_setup.py
     python3 ez_setup.py
 
@@ -131,7 +134,7 @@ Now edit ``.pip/pip.conf``::
      [global]
      cert = /etc/ssl/certs/ca-bundle.crt
 
-You will now have ``pip3`` and ``pip`` installed in ``~/build/bin``.
+You will now have ``pip3`` and ``pip`` installed in ``$BUILD_HOME/bin``.
 You might try doing ``pip -V`` to confirm that ``pip`` is built
 against python 3.3.  We will use ``pip3`` throughout this
 documentation to remain compatible with systems (e.g., Mac OS) where
@@ -399,7 +402,7 @@ Installing freetype2
 
 Freetype is necessary for matplotlib ::
 
-     cd ~/build
+     cd $BUILD_HOME
      wget http://sourceforge.net/projects/freetype/files/freetype2/2.5.2/freetype-2.5.2.tar.gz
      tar -xvf freetype-2.5.2.tar.gz 
      cd freetype-2.5.2
@@ -415,7 +418,7 @@ Installing libpng
 
 May need this for matplotlib?::
 
-     cd ~/build
+     cd $BUILD_HOME
      wget http://prdownloads.sourceforge.net/libpng/libpng-1.6.8.tar.gz
      ./configure --prefix=$HOME/build
      make
