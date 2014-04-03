@@ -265,26 +265,15 @@ Then run ::
                                             --compiler=intelem --fcompiler=intelem install
 
 
-Installing mpi4py
--------------------------
-
-This should just be pip installed::
-
-      pip3 install -v http://mpi4py.googlecode.com/files/mpi4py-1.3.1.tar.gz
-
-.. note::
-    
-      If we use use ::
-
-           pip3 install mpi4py
-           
-      then stampede tries to pull version 0.6.0 of mpi4py.  Hence the
-      explicit version pull above.
-
 Installing cython
 -------------------------
 
 This should just be pip installed::
+
+     pip3 install -v https://pypi.python.org/packages/source/C/Cython/Cython-0.20.tar.gz
+
+The Feb 11, 2014 update to cython (0.20.1) seems to have broken (at
+least with intel compilers).::
 
      pip3 install cython
 
@@ -294,18 +283,18 @@ Installing matplotlib
 
 This should just be pip installed::
 
+     pip3 install matplotlib
 
-     pip3 install -v https://downloads.sourceforge.net/project/matplotlib/matplotlib/matplotlib-1.3.1/matplotlib-1.3.1.tar.gz
+Installing mpi4py
+-------------------------
+
+This should be pip installed::
+
+    pip3 install mpi4py
 
 .. note::
 
-      If we use use ::
-
-           pip3 install matplotlib
-           
-      then stampede tries to pull version 1.1.1 of matplotlib.  Hence the
-      explicit version pull above.
-
+    This is failing to find mpi.h
 
 Installing HDF5 with parallel support
 --------------------------------------------------
