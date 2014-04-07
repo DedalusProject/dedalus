@@ -6,6 +6,7 @@ Classes for solving differential equations.
 import numpy as np
 import time
 from scipy.sparse import linalg
+from tqdm import tqdm
 
 from ..data.operators import parsable_ops
 from ..data.evaluator import Evaluator
@@ -13,6 +14,7 @@ from ..data.system import CoeffSystem, FieldSystem
 from ..data.pencil import build_pencils
 from ..data.field import Field
 from ..tools.logging import logger
+from ..tools.progressbar import progress
 
 
 class LinearBVP:
@@ -126,7 +128,8 @@ class IVP:
         # Build pencils and pencil matrices
         self.pencils = pencils = build_pencils(domain)
         primary_basis = domain.bases[-1]
-        for p in pencils:
+        write_progress = (domain.distributor.rank == 0)
+        for p in progress(pencils, desc='Building pencil matrices (rank 0):', write=write_progress, bar=False):
             p.build_matrices(problem, primary_basis)
 
         # Build systems
