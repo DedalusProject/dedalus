@@ -283,7 +283,7 @@ class FileHandler(Handler):
 
     """
 
-    def __init__(self, filename, *args, max_writes=np.inf, max_size=2**30, **kw):
+    def __init__(self, filename, *args, max_writes=np.inf, max_size=2**30, parallel=True, **kw):
 
         Handler.__init__(self, *args, **kw)
 
@@ -295,13 +295,15 @@ class FileHandler(Handler):
         self.filename_base = filename
         self.max_writes = max_writes
         self.max_size = max_size
+        self.parallel = parallel
 
         self.file_num = 0
         self.current_file = '.'
         self.write_num = 0
 
-        self._property_list = h5py.h5p.create(h5py.h5p.DATASET_XFER)
-        self._property_list.set_dxpl_mpio(h5py.h5fd.MPIO_COLLECTIVE)
+        if parallel:
+            self._property_list = h5py.h5p.create(h5py.h5p.DATASET_XFER)
+            self._property_list.set_dxpl_mpio(h5py.h5fd.MPIO_COLLECTIVE)
 
     def get_file(self):
         """Return current HDF5 file, creating if necessary."""
@@ -313,8 +315,11 @@ class FileHandler(Handler):
         if (write_limit or size_limit):
             file = self.new_file()
         else:
-            comm = self.domain.distributor.comm_cart
-            file = h5py.File(self.current_file, 'a', driver='mpio', comm=comm)
+            if self.parallel:
+                comm = self.domain.distributor.comm_cart
+                file = h5py.File(self.current_file, 'a', driver='mpio', comm=comm)
+            else:
+                file = h5py.File(self.current_file, 'a')
 
         return file
 
@@ -323,12 +328,18 @@ class FileHandler(Handler):
 
         # References
         domain = self.domain
-        comm = domain.distributor.comm_cart
 
         # Create next file
         self.file_num += 1
-        self.current_file = '%s_%06i.hdf5' %(self.filename_base, self.file_num)
-        file = h5py.File(self.current_file, 'w', driver='mpio', comm=comm)
+        if self.parallel:
+            self.current_file = '%s_%06i.hdf5' %(self.filename_base, self.file_num)
+            comm = domain.distributor.comm_cart
+            file = h5py.File(self.current_file, 'w', driver='mpio', comm=comm)
+        else:
+            self.current_file = '%s_%06i_p%i.hdf5' %(self.filename_base, self.file_num, domain.distributor.rank)
+            file = h5py.File(self.current_file, 'w')
+            file.attrs['mpi_rank'] = domain.distributor.rank
+            file.attrs['mpi_size'] = domain.distributor.size
 
         # Metadeta
         file.attrs['file_number'] = self.file_num
@@ -340,7 +351,7 @@ class FileHandler(Handler):
             elem = reshape_vector(basis.elements, domain.dim, axis)
             gdset = scale_group.create_dataset(name=basis.name, shape=grid.shape, dtype=grid.dtype)
             edset = scale_group.create_dataset(name=basis.element_label+basis.name, shape=elem.shape, dtype=elem.dtype)
-            if domain.distributor.rank == 0:
+            if (not self.parallel) or (domain.distributor.rank == 0):
                 gdset[:] = grid
                 edset[:] = elem
 
@@ -367,9 +378,16 @@ class FileHandler(Handler):
             dtype = out.layout.dtype
 
             # Assemble nonconstant subspace
-            subshape, memory_space, file_space = self.get_subspaces(out)
-            dset = task_group.create_dataset(name=name, shape=subshape, dtype=dtype)
-            dset.id.write(memory_space, file_space, out.data, dxpl=self._property_list)
+            if self.parallel:
+                memory_shape, memory_space, file_shape, file_space = self.get_spaces(out)
+                dset = task_group.create_dataset(name=name, shape=file_shape, dtype=dtype)
+                dset.id.write(memory_space, file_space, out.data, dxpl=self._property_list)
+            else:
+                dset = task_group.create_dataset(name=name, shape=out.layout.shape, dtype=dtype)
+                dset[:] = out.data
+                dset.attrs['global_shape'] = out.layout.global_shape
+                dset.attrs['local_shape'] = out.layout.shape
+                dset.attrs['start'] = out.layout.start
 
             # Metadata and scales
             dset.attrs['task_number'] = task_num
@@ -391,7 +409,7 @@ class FileHandler(Handler):
         file.close()
 
     @staticmethod
-    def get_subspaces(field):
+    def get_spaces(field):
         """Return HDF5 spaces for writing nonconstant subspace of a field."""
 
         # References
@@ -401,24 +419,25 @@ class FileHandler(Handler):
         start = field.layout.start
         first = (start == 0)
 
-        # Build subshape from global shape
-        subshape = gshape.copy()
-        subshape[constant] = 1
+        # Build shapes
+        memory_shape = lshape.copy()
+        file_shape = gshape.copy()
+        file_shape[constant] = 1
 
-        # Build counts based on `constant` and `first`
+        # Build counts, taking just the first entry along constant axes
         count = lshape.copy()
         count[constant & first] = 1
         count[constant & ~first] = 0
 
         # Build HDF5 spaces
-        file_start = start.copy()
-        file_start[constant & ~first] = 0
-        file_space = h5py.h5s.create_simple(tuple(subshape))
-        file_space.select_hyperslab(tuple(file_start), tuple(count))
-
         memory_start = 0 * start
-        memory_space = h5py.h5s.create_simple(tuple(lshape))
+        memory_space = h5py.h5s.create_simple(tuple(memory_shape))
         memory_space.select_hyperslab(tuple(memory_start), tuple(count))
 
-        return subshape, memory_space, file_space
+        file_start = start.copy()
+        file_start[constant & ~first] = 0
+        file_space = h5py.h5s.create_simple(tuple(file_shape))
+        file_space.select_hyperslab(tuple(file_start), tuple(count))
+
+        return memory_shape, memory_space, file_shape, file_space
 
