@@ -49,6 +49,7 @@ class Operator(Future):
         self.domain = unique_domain(out, *args)
         self.out = out
         self.last_id = None
+        self.build_metadata()
 
     def __repr__(self):
         repr_args = map(repr, self.args)
@@ -197,6 +198,7 @@ class Cast(Operator, metaclass=MultiClass):
         self.domain = domain
         self.out = out
         self.last_id = None
+        self.build_metadata()
 
 
 class CastField(Cast):
@@ -233,7 +235,7 @@ class CastNumeric(Cast):
         Cast.__init__(self, *args, **kw)
 
     def build_metadata(self):
-        self.constant = numeric_constant(args[0], self.domain)
+        self.constant = numeric_constant(self.args[0], self.domain)
 
     def check_conditions(self):
         return True
@@ -263,6 +265,7 @@ class Integrate(Operator):
         # Additional attributes
         self.basis = self.domain.get_basis_object(bases[-1])
         self.axis = arg0.domain.bases.index(self.basis)
+        self.build_metadata()
 
     def __repr__(self):
         return 'Integ(%r, %r)' %(self.args[0], self.basis)
@@ -312,6 +315,7 @@ class Interpolate(Operator):
         self.basis = self.domain.get_basis_object(basis)
         self.axis = arg0.domain.bases.index(self.basis)
         self.position = position
+        self.build_metadata()
 
     def __repr__(self):
         return 'Interp(%r, %r, %r)' %(self.args[0], self.basis, self.position)
@@ -364,6 +368,7 @@ class GeneralFunction(Operator):
             self.name = func.__name__
         except AttributeError:
             self.name = str(func)
+        self.build_metadata()
 
     def build_metadata(self):
         self.constant = np.array([False] * self.domain.dim)
@@ -402,6 +407,7 @@ class UfuncWrapper(Operator):
         self.ufunc = ufunc
         self.name = ufunc.__name__
         self._grid_layout = self.domain.distributor.grid_layout
+        self.build_metadata()
 
     def build_metadata(self):
         self.constant = np.copy(self.args[0].constant)
@@ -882,6 +888,7 @@ class Power(Operator):
         # Additional attributes
         self.power = power
         self._grid_layout = self.domain.distributor.grid_layout
+        self.build_metadata()
 
     def build_metadata(self):
         self.constant = np.copy(self.args[0].constant)
