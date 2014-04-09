@@ -19,15 +19,16 @@ class Sync:
 
     """
 
-    def __init__(self, enter=True, exit=True):
+    def __init__(self, comm=MPI.COMM_WORLD, enter=True, exit=True):
+        self.comm = comm
         self.enter = enter
         self.exit = exit
 
     def __enter__(self):
         if self.enter:
-            MPI.COMM_WORLD.barrier()
+            self.comm.Barrier()
 
     def __exit__(self, type, value, traceback):
         if self.exit:
-            MPI.COMM_WORLD.barrier()
+            self.comm.Barrier()
 
