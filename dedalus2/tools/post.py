@@ -60,6 +60,32 @@ def visit_writes(fileroot, function):
                 function(write)
 
 
+# def combine_outputs(fileroot):
+
+#     allfiles = natural_sort(glob.glob(fileroot))
+
+#     i = 0
+#     while True:
+#         # Get files with same file#
+#         i += 1
+#         ifiles = [f for f in allfiles if '_f%i_'%i in f]
+#         if not f_files:
+#             break
+#         # Create global file
+#         jointfile = h5py.File(fileroot + '_f%i.h5'%i, 'w')
+#         for f in ifiles:
+
+
+
+def natural_sort(l):
+
+    import re
+
+    convert = lambda text: int(text) if text.isdigit() else text.lower()
+    alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
+
+    return sorted(l, key=alphanum_key)
+
 if __name__ == "__main__":
 
     def default_function(group):

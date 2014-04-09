@@ -5,13 +5,16 @@ Class for centralized evaluation of expression trees.
 
 import os
 from collections import defaultdict
+import pathlib
 import h5py
 import numpy as np
+from mpi4py import MPI
 
 from .system import FieldSystem
 from .operators import Operator, Cast
 from ..tools.array import reshape_vector
 from ..tools.general import OrderedSet
+from ..tools.parallel import Sync
 
 
 class Evaluator:
@@ -212,7 +215,7 @@ class Handler:
         # Build task dictionary
         task = dict()
         task['operator'] = op
-        task['layout'] = layout
+        task['layout'] = self.domain.distributor.get_layout_object(layout)
         task['name'] = name
 
         self.tasks.append(task)
@@ -283,161 +286,256 @@ class FileHandler(Handler):
 
     """
 
-    def __init__(self, filename, *args, max_writes=np.inf, max_size=2**30, parallel=True, **kw):
+    def __init__(self, base_path, *args, max_writes=np.inf, max_size=2**30, parallel=True, **kw):
 
         Handler.__init__(self, *args, **kw)
 
-        # Check filename
-        if '.' in filename:
-            raise ValueError("Provide filename without an extension.")
+        # Check base_path
+        base_path = pathlib.Path(base_path).absolute()
+        if any(base_path.suffixes):
+            raise ValueError("base_path should indicate a folder for storing HDF5 files.")
+        if not base_path.exists():
+            with Sync(self.domain.distributor.comm_cart):
+                if self.domain.distributor.rank == 0:
+                    base_path.mkdir()
+
 
         # Attributes
-        self.filename_base = filename
+        self.base_path = base_path
         self.max_writes = max_writes
         self.max_size = max_size
         self.parallel = parallel
 
         self.file_num = 0
-        self.current_file = '.'
-        self.write_num = 0
+        self.current_path = None
+        self.total_write_num = 0
+        self.file_write_num = 0
 
         if parallel:
+            # Set HDF5 property list for collective writing
             self._property_list = h5py.h5p.create(h5py.h5p.DATASET_XFER)
             self._property_list.set_dxpl_mpio(h5py.h5fd.MPIO_COLLECTIVE)
 
+    def check_file_limits(self):
+        """Check if write or size limits have been reached."""
+
+        write_limit = ((self.total_write_num % self.max_writes) == 0)
+        if self.domain.distributor.rank == 0:
+            print(self.current_path.stat().st_size / 2**30)
+        size_limit = (self.current_path.stat().st_size >= self.max_size)
+        if not self.parallel:
+            # reduce(size_limit, or) across processes
+            sl_array = np.array([size_limit])
+            self.domain.distributor.comm_cart.Allreduce(MPI.IN_PLACE, sl_array, op=MPI.LOR)
+            size_limit = sl_array[0]
+
+        return (write_limit or size_limit)
+
     def get_file(self):
         """Return current HDF5 file, creating if necessary."""
-
-        # Check file limits
-        write_limit = ((self.write_num % self.max_writes) == 0)
-        size_limit = (os.path.getsize(self.current_file) >= self.max_size)
-
-        if (write_limit or size_limit):
-            file = self.new_file()
+        print('get file')
+        # Create file on first call
+        if not self.current_path:
+            print('first call')
+            return self.new_file()
+        # Create file at file limits
+        if self.check_file_limits():
+            print('new file')
+            return self.new_file()
+        # Otherwise open current file
+        if self.parallel:
+            comm = self.domain.distributor.comm_cart
+            return h5py.File(str(self.current_path), 'a', driver='mpio', comm=comm)
         else:
-            if self.parallel:
-                comm = self.domain.distributor.comm_cart
-                file = h5py.File(self.current_file, 'a', driver='mpio', comm=comm)
-            else:
-                file = h5py.File(self.current_file, 'a')
-
-        return file
+            return h5py.File(str(self.current_path), 'a')
 
     def new_file(self):
         """Generate new HDF5 file."""
 
-        # References
         domain = self.domain
 
         # Create next file
         self.file_num += 1
+        self.file_write_num = 0
+        comm = domain.distributor.comm_cart
         if self.parallel:
-            self.current_file = '%s_%06i.hdf5' %(self.filename_base, self.file_num)
-            comm = domain.distributor.comm_cart
-            file = h5py.File(self.current_file, 'w', driver='mpio', comm=comm)
+            # Save in base directory
+            file_name = '%s_f%i.hdf5' %(self.base_path.stem, self.file_num)
+            self.current_path = self.base_path.joinpath(file_name)
+            file = h5py.File(str(self.current_path), 'w', driver='mpio', comm=comm)
         else:
-            self.current_file = '%s_%06i_p%i.hdf5' %(self.filename_base, self.file_num, domain.distributor.rank)
-            file = h5py.File(self.current_file, 'w')
-            file.attrs['mpi_rank'] = domain.distributor.rank
-            file.attrs['mpi_size'] = domain.distributor.size
+            # Save in folders for each filenum in base directory
+            folder_name = '%s_f%i' %(self.base_path.stem, self.file_num)
+            folder_path = self.base_path.joinpath(folder_name)
+            if not folder_path.exists():
+                with Sync(domain.distributor.comm_cart):
+                    if domain.distributor.rank == 0:
+                        folder_path.mkdir()
+            file_name = '%s_f%i_p%i.h5' %(self.base_path.stem, self.file_num, comm.rank)
+            self.current_path = folder_path.joinpath(file_name)
+            file = h5py.File(str(self.current_path), 'w')
+
+        self.setup_file(file)
+
+        return file
+
+    def setup_file(self, file):
+
+        domain = self.domain
 
         # Metadeta
         file.attrs['file_number'] = self.file_num
-        file.create_group('tasks')
+        file.attrs['handler_name'] = self.base_path.stem
+        if not self.parallel:
+            file.attrs['mpi_rank'] = domain.distributor.comm_cart.rank
+            file.attrs['mpi_size'] = domain.distributor.comm_cart.size
+
+        # Scales
         scale_group = file.create_group('scales')
-        const = scale_group.create_dataset(name='constant', shape=[1]*domain.dim, dtype=np.float64)
+        scale_group.create_dataset(name='sim_time', shape=(0,), maxshape=(None,), dtype=np.float64)
+        scale_group.create_dataset(name='wall_time', shape=(0,), maxshape=(None,), dtype=np.float64)
+        scale_group.create_dataset(name='iteration', shape=(0,), maxshape=(None,), dtype=np.int)
+        scale_group.create_dataset(name='write_number', shape=(0,), maxshape=(None,), dtype=np.int)
+        const = scale_group.create_dataset(name='constant', shape=(1,), dtype=np.float64)
         for axis, basis in enumerate(domain.bases):
-            grid = reshape_vector(basis.grid, domain.dim, axis)
-            elem = reshape_vector(basis.elements, domain.dim, axis)
+            grid = basis.grid
+            elem = basis.elements
             gdset = scale_group.create_dataset(name=basis.name, shape=grid.shape, dtype=grid.dtype)
             edset = scale_group.create_dataset(name=basis.element_label+basis.name, shape=elem.shape, dtype=elem.dtype)
             if (not self.parallel) or (domain.distributor.rank == 0):
                 gdset[:] = grid
                 edset[:] = elem
 
-        return file
+        # Tasks
+        task_group =  file.create_group('tasks')
+        for task_num, task in enumerate(self.tasks):
+            layout = task['layout']
+            constant = task['operator'].constant
+            gnc_shape, gnc_start, write_shape, write_start, write_count = self.get_write_stats(layout, constant, index=0)
+            file_shape = (0,) + tuple(write_shape)
+            file_max = (None,) + tuple(write_shape)
+            dset = task_group.create_dataset(name=task['name'], shape=file_shape, maxshape=file_max, dtype=layout.dtype)
+            if not self.parallel:
+                dset.attrs['global_nc_shape'] = gnc_shape
+                dset.attrs['global_nc_start'] = gnc_start
+                dset.attrs['write_count'] = write_count
+
+            # Metadata and scales
+            dset.attrs['task_number'] = task_num
+            dset.attrs['constant'] = constant
+            dset.attrs['grid_space'] = layout.grid_space
+
+            # Time scales
+            dset.dims[0].label = 't'
+            for sn in ['sim_time', 'wall_time', 'iteration', 'write_number']:
+                scale = scale_group[sn]
+                dset.dims.create_scale(scale, sn)
+                dset.dims[0].attach_scale(scale)
+
+            # Spatial scales
+            for axis, basis in enumerate(domain.bases):
+                if constant[axis]:
+                    sn = 'constant'
+                else:
+                    if layout.grid_space[axis]:
+                        sn = basis.name
+                    else:
+                        sn = basis.element_label + basis.name
+                scale = scale_group[sn]
+                dset.dims.create_scale(scale, sn)
+                dset.dims[axis].label = sn
+                dset.dims[axis].attach_scale(scale)
 
     def process(self, wall_time, sim_time, iteration):
         """Save task outputs to HDF5 file."""
 
         file = self.get_file()
-        self.write_num += 1
+        self.total_write_num += 1
+        self.file_write_num += 1
+        index = self.file_write_num - 1
 
-        # Create task group and write timestep attributes
-        task_group = file.create_group('tasks/write_%06i' %self.write_num)
-        task_group.attrs['write_number'] = self.write_num
-        task_group.attrs['wall_time'] = wall_time
-        task_group.attrs['sim_time'] = sim_time
-        task_group.attrs['iteration'] = iteration
+        # Update time scales
+        sim_time_dset = file['scales/sim_time']
+        wall_time_dset = file['scales/wall_time']
+        iteration_dset = file['scales/iteration']
+        write_num_dset = file['scales/write_number']
+
+        sim_time_dset.resize(index+1, axis=0)
+        sim_time_dset[index] = sim_time
+        wall_time_dset.resize(index+1, axis=0)
+        wall_time_dset[index] = wall_time
+        iteration_dset.resize(index+1, axis=0)
+        iteration_dset[index] = iteration
+        write_num_dset.resize(index+1, axis=0)
+        write_num_dset[index] = self.total_write_num
 
         # Create task datasets
         for task_num, task in enumerate(self.tasks):
             out = task['out']
-            name = task['name']
             out.require_layout(task['layout'])
-            dtype = out.layout.dtype
 
-            # Assemble nonconstant subspace
+            dset = file['tasks'][task['name']]
+            dset.resize(index+1, axis=0)
+
+            memory_space, file_space = self.get_hdf5_spaces(out.layout, out.constant, index)
             if self.parallel:
-                memory_shape, memory_space, file_shape, file_space = self.get_spaces(out)
-                dset = task_group.create_dataset(name=name, shape=file_shape, dtype=dtype)
                 dset.id.write(memory_space, file_space, out.data, dxpl=self._property_list)
             else:
-                dset = task_group.create_dataset(name=name, shape=out.layout.shape, dtype=dtype)
-                dset[:] = out.data
-                dset.attrs['global_shape'] = out.layout.global_shape
-                dset.attrs['local_shape'] = out.layout.shape
-                dset.attrs['start'] = out.layout.start
-
-            # Metadata and scales
-            dset.attrs['task_number'] = task_num
-            dset.attrs['constant'] = out.constant
-            dset.attrs['grid_space'] = out.layout.grid_space
-            for axis, basis in enumerate(self.domain.bases):
-                if out.constant[axis]:
-                    sn = 'constant'
-                else:
-                    if out.layout.grid_space[axis]:
-                        sn = basis.name
-                    else:
-                        sn = basis.element_label + basis.name
-                scale = file['scales'][sn]
-                dset.dims.create_scale(scale, sn)
-                dset.dims[axis].label = sn
-                dset.dims[axis].attach_scale(scale)
+                dset.id.write(memory_space, file_space, out.data)
 
         file.close()
 
-    @staticmethod
-    def get_spaces(field):
-        """Return HDF5 spaces for writing nonconstant subspace of a field."""
+    def get_write_stats(self, layout, constant, index):
+        """Determine write parameters for nonconstant subspace of a field."""
 
         # References
-        constant = field.constant
-        gshape = field.layout.global_shape
-        lshape = field.layout.shape
-        start = field.layout.start
+        gshape = layout.global_shape
+        lshape = layout.shape
+        start = layout.start
         first = (start == 0)
 
-        # Build shapes
-        memory_shape = lshape.copy()
-        file_shape = gshape.copy()
-        file_shape[constant] = 1
-
         # Build counts, taking just the first entry along constant axes
-        count = lshape.copy()
-        count[constant & first] = 1
-        count[constant & ~first] = 0
+        write_count = lshape.copy()
+        write_count[constant & first] = 1
+        write_count[constant & ~first] = 0
+
+        # Collectively writing global data
+        global_nc_shape = gshape.copy()
+        global_nc_shape[constant] = 1
+        global_nc_start = start.copy()
+        global_nc_start[constant & ~first] = 1
+
+        if self.parallel:
+            # Collectively writing global data
+            write_shape = global_nc_shape
+            write_start = global_nc_start
+        else:
+            # Independently writing local data
+            write_shape = write_count
+            write_start = 0 * start
+
+        return global_nc_shape, global_nc_start, write_shape, write_start, write_count
+
+    def get_hdf5_spaces(self, layout, constant, index):
+        """Create HDF5 space objects for writing nonconstant subspace of a field."""
+
+        # References
+        lshape = layout.shape
+        start = layout.start
+        gnc_shape, gnc_start, write_shape, write_start, write_count = self.get_write_stats(layout, constant, index)
 
         # Build HDF5 spaces
-        memory_start = 0 * start
-        memory_space = h5py.h5s.create_simple(tuple(memory_shape))
-        memory_space.select_hyperslab(tuple(memory_start), tuple(count))
+        memory_shape = tuple(lshape)
+        memory_start = tuple(0 * start)
+        memory_count = tuple(write_count)
+        memory_space = h5py.h5s.create_simple(memory_shape)
+        memory_space.select_hyperslab(memory_start, memory_count)
 
-        file_start = start.copy()
-        file_start[constant & ~first] = 0
-        file_space = h5py.h5s.create_simple(tuple(file_shape))
-        file_space.select_hyperslab(tuple(file_start), tuple(count))
+        file_shape = (index+1,) + tuple(write_shape)
+        file_start = (index,) + tuple(write_start)
+        file_count = (1,) + tuple(write_count)
+        file_space = h5py.h5s.create_simple(file_shape)
+        file_space.select_hyperslab(file_start, file_count)
 
-        return memory_shape, memory_space, file_shape, file_space
+        return memory_space, file_space
 
