@@ -133,6 +133,9 @@ class Operator(Future):
         # Perform operation
         self.operate(out)
 
+        # Update metadata
+        np.copyto(out.constant, self.constant)
+
         # Reset to free temporary field arguments
         self.reset()
 
@@ -147,6 +150,10 @@ class Operator(Future):
         """Recursively attempt to evaluate operation."""
 
         return self.evaluate(id=id, force=False)
+
+    def build_metadata(self):
+
+        raise NotImplementedError()
 
     def check_conditions(self):
         """Check that all argument fields are in proper layouts."""
@@ -202,6 +209,9 @@ class CastField(Cast):
         # Initialize using field domain
         Cast.__init__(self, arg0, arg0.domain, out=out)
 
+    def build_metadata(self):
+        self.constant = np.copy(self.args[0].constant)
+
     def check_conditions(self):
         return True
 
@@ -211,7 +221,6 @@ class CastField(Cast):
         # Copy in current layout
         layout = arg0.layout
         out[layout] = arg0[layout]
-        np.copyto(out.constant, arg0.constant)
 
 
 class CastNumeric(Cast):
@@ -222,7 +231,9 @@ class CastNumeric(Cast):
 
     def __init__(self, *args, **kw):
         Cast.__init__(self, *args, **kw)
-        self._arg0_constant = numeric_constant(args[0], self.domain)
+
+    def build_metadata(self):
+        self.constant = numeric_constant(args[0], self.domain)
 
     def check_conditions(self):
         return True
@@ -230,7 +241,6 @@ class CastNumeric(Cast):
     def operate(self, out):
         # Copy in grid layout
         out['g'] = self.args[0]
-        np.copyto(out.constant, self._arg0_constant)
 
 
 class Integrate(Operator):
@@ -260,6 +270,10 @@ class Integrate(Operator):
     def __str__(self):
         return 'Integ(%s, %s)' %(self.args[0], self.basis)
 
+    def build_metadata(self):
+        self.constant = np.copy(self.args[0].constant)
+        self.constant[self.axis] = True
+
     def check_conditions(self):
         # References
         arg0, = self.args
@@ -280,8 +294,6 @@ class Integrate(Operator):
         out.layout = arg0.layout
         # Use basis integration method
         self.basis.integrate(arg0.data, out.data, axis=axis)
-        np.copyto(out.constant, arg0.constant)
-        out.constant[axis] = True
 
 
 class Interpolate(Operator):
@@ -307,6 +319,10 @@ class Interpolate(Operator):
     def __str__(self):
         return 'Interp(%s, %s, %s)' %(self.args[0], self.basis, self.position)
 
+    def build_metadata(self):
+        self.constant = np.copy(self.args[0].constant)
+        self.constant[self.axis] = True
+
     def check_conditions(self):
         # References
         arg0, = self.args
@@ -327,8 +343,6 @@ class Interpolate(Operator):
         out.layout = arg0.layout
         # Use basis integration method
         self.basis.interpolate(arg0.data, out.data, self.position, axis=axis)
-        np.copyto(out.constant, arg0.constant)
-        out.constant[axis] = True
 
 
 class GeneralFunction(Operator):
@@ -351,6 +365,9 @@ class GeneralFunction(Operator):
         except AttributeError:
             self.name = str(func)
 
+    def build_metadata(self):
+        self.constant = np.array([False] * self.domain.dim)
+
     def check_conditions(self):
         # Fields must be in proper layout
         for i in self._field_arg_indices:
@@ -364,7 +381,6 @@ class GeneralFunction(Operator):
             self.args[i].require_layout(self.layout)
         out.layout = self.layout
         np.copyto(out.data, self.func(*self.args, **self.kw))
-        np.copyto(out.constant, False)
 
 
 class UfuncWrapper(Operator):
@@ -387,6 +403,9 @@ class UfuncWrapper(Operator):
         self.name = ufunc.__name__
         self._grid_layout = self.domain.distributor.grid_layout
 
+    def build_metadata(self):
+        self.constant = np.copy(self.args[0].constant)
+
     def check_conditions(self):
         # Must be in grid layout
         return (self.args[0].layout is self._grid_layout)
@@ -398,7 +417,6 @@ class UfuncWrapper(Operator):
         arg0.require_grid_space()
         out.layout = self._grid_layout
         self.ufunc(arg0.data, out=out.data)
-        np.copyto(out.constant, arg0.constant)
 
 
 class Absolute(Operator):
@@ -409,6 +427,9 @@ class Absolute(Operator):
     def __init__(self, *args, **kw):
         Operator.__init__(self, *args, **kw)
         self._grid_layout = self.domain.distributor.grid_layout
+
+    def build_metadata(self):
+        self.constant = np.copy(self.args[0].constant)
 
     def check_conditions(self):
         # Must be in grid layout
@@ -421,7 +442,6 @@ class Absolute(Operator):
         arg0.require_grid_space()
         out.layout = self._grid_layout
         np.abs(arg0.data, out.data)
-        np.copyto(out.constant, arg0.constant)
 
 
 class Negate(Operator):
@@ -432,6 +452,9 @@ class Negate(Operator):
     def __str__(self):
         return '(-%s)' %self.args[0]
 
+    def build_metadata(self):
+        self.constant = np.copy(self.args[0].constant)
+
     def check_conditions(self):
         return True
 
@@ -441,7 +464,6 @@ class Negate(Operator):
         # Negate in current layout
         out.layout = arg0.layout
         np.negative(arg0.data, out.data)
-        np.copyto(out.constant, arg0.constant)
 
 
 class Arithmetic(Operator):
@@ -465,6 +487,9 @@ class AddFieldField(Add):
     def _check_args(*args, **kw):
         return (is_fieldlike(args[0]) and is_fieldlike(args[1]))
 
+    def build_metadata(self):
+        self.constant = self.args[0].constant & self.args[1].constant
+
     def check_conditions(self):
         # Layouts must match
         return (self.args[0].layout is self.args[1].layout)
@@ -476,7 +501,6 @@ class AddFieldField(Add):
         arg1.require_layout(arg0.layout)
         out.layout = arg0.layout
         np.add(arg0.data, arg1.data, out.data)
-        out.constant = arg0.constant & arg1.constant
 
 
 class AddFieldNumeric(Add):
@@ -487,8 +511,10 @@ class AddFieldNumeric(Add):
 
     def __init__(self, *args, **kw):
         Add.__init__(self, *args, **kw)
-        self._arg1_constant = numeric_constant(args[1], self.domain)
         self._grid_layout = self.domain.distributor.grid_layout
+
+    def build_metadata(self):
+        self.constant = self.args[0].constant & numeric_constant(self.args[1], self.domain)
 
     def check_conditions(self):
         # Must be in grid layout
@@ -501,7 +527,6 @@ class AddFieldNumeric(Add):
         arg0.require_grid_space()
         out.layout = self._grid_layout
         np.add(arg0.data, arg1, out.data)
-        out.constant = arg0.constant & self._arg1_constant
 
 
 class AddNumericField(Add):
@@ -512,8 +537,10 @@ class AddNumericField(Add):
 
     def __init__(self, *args, **kw):
         Add.__init__(self, *args, **kw)
-        self._arg0_constant = numeric_constant(args[0], self.domain)
         self._grid_layout = self.domain.distributor.grid_layout
+
+    def build_metadata(self):
+        self.constant = numeric_constant(self.args[0], self.domain) & self.args[1].constant
 
     def check_conditions(self):
         # Must be in grid layout
@@ -526,7 +553,6 @@ class AddNumericField(Add):
         arg1.require_grid_space()
         out.layout = self._grid_layout
         np.add(arg0, arg1.data, out.data)
-        out.constant = self._arg0_constant & arg1.constant
 
 
 class Subtract(Arithmetic, metaclass=MultiClass):
@@ -541,6 +567,9 @@ class SubFieldField(Subtract):
     def _check_args(*args, **kw):
         return (is_fieldlike(args[0]) and is_fieldlike(args[1]))
 
+    def build_metadata(self):
+        self.constant = self.args[0].constant & self.args[1].constant
+
     def check_conditions(self):
         # Layouts must match
         return (self.args[0].layout is self.args[1].layout)
@@ -552,7 +581,6 @@ class SubFieldField(Subtract):
         arg1.require_layout(arg0.layout)
         out.layout = arg0.layout
         np.subtract(arg0.data, arg1.data, out.data)
-        out.constant = arg0.constant & arg1.constant
 
 
 class SubFieldNumeric(Subtract):
@@ -563,8 +591,10 @@ class SubFieldNumeric(Subtract):
 
     def __init__(self, *args, **kw):
         Subtract.__init__(self, *args, **kw)
-        self._arg1_constant = numeric_constant(args[1], self.domain)
         self._grid_layout = self.domain.distributor.grid_layout
+
+    def build_metadata(self):
+        self.constant = self.args[0].constant & numeric_constant(self.args[1], self.domain)
 
     def check_conditions(self):
         # Must be in grid layout
@@ -577,7 +607,6 @@ class SubFieldNumeric(Subtract):
         arg0.require_grid_space()
         out.layout = self._grid_layout
         np.subtract(arg0.data, arg1, out.data)
-        out.constant = arg0.constant & self._arg1_constant
 
 
 class SubNumericField(Subtract):
@@ -588,8 +617,10 @@ class SubNumericField(Subtract):
 
     def __init__(self, *args, **kw):
         Subtract.__init__(self, *args, **kw)
-        self._arg0_constant = numeric_constant(args[0], self.domain)
         self._grid_layout = self.domain.distributor.grid_layout
+
+    def build_metadata(self):
+        self.constant = numeric_constant(self.args[0], self.domain) & self.args[1].constant
 
     def check_conditions(self):
         # Must be in grid layout
@@ -602,7 +633,6 @@ class SubNumericField(Subtract):
         arg1.require_grid_space()
         out.layout = self._grid_layout
         np.subtract(arg0, arg1.data, out.data)
-        out.constant = self._arg0_constant & arg1.constant
 
 
 class Multiply(Arithmetic, metaclass=MultiClass):
@@ -621,6 +651,9 @@ class MultFieldField(Multiply):
         Multiply.__init__(self, *args, **kw)
         self._grid_layout = self.domain.distributor.grid_layout
 
+    def build_metadata(self):
+        self.constant = self.args[0].constant & self.args[1].constant
+
     def check_conditions(self):
         # Must be in grid layout
         return ((self.args[0].layout is self._grid_layout) and
@@ -634,7 +667,6 @@ class MultFieldField(Multiply):
         arg1.require_grid_space()
         out.layout = self._grid_layout
         np.multiply(arg0.data, arg1.data, out.data)
-        out.constant = arg0.constant & arg1.constant
 
 
 class MultFieldScalar(Multiply):
@@ -642,6 +674,9 @@ class MultFieldScalar(Multiply):
     @staticmethod
     def _check_args(arg0, arg1):
         return (is_fieldlike(arg0) and is_scalar(arg1))
+
+    def build_metadata(self):
+        self.constant = np.copy(self.args[0].constant)
 
     def check_conditions(self):
         return True
@@ -652,7 +687,6 @@ class MultFieldScalar(Multiply):
         # Multiply in current layout
         out.layout = arg0.layout
         np.multiply(arg0.data, arg1, out.data)
-        np.copyto(out.constant, arg0.constant)
 
 
 class MultScalarField(Multiply):
@@ -660,6 +694,9 @@ class MultScalarField(Multiply):
     @staticmethod
     def _check_args(arg0, arg1):
         return (is_scalar(arg0) and is_fieldlike(arg1))
+
+    def build_metadata(self):
+        self.constant = np.copy(self.args[0].constant)
 
     def check_conditions(self):
         return True
@@ -670,7 +707,6 @@ class MultScalarField(Multiply):
         # Multiply in current layout
         out.layout = arg1.layout
         np.multiply(arg0, arg1.data, out.data)
-        np.copyto(out.constant, arg1.constant)
 
 
 class MultFieldArray(Multiply):
@@ -681,8 +717,10 @@ class MultFieldArray(Multiply):
 
     def __init__(self, *args, **kw):
         Multiply.__init__(self, *args, **kw)
-        self._arg1_constant = numeric_constant(args[1], self.domain)
         self._grid_layout = self.domain.distributor.grid_layout
+
+    def build_metadata(self):
+        self.constant = self.args[0].constant & numeric_constant(self.args[1], self.domain)
 
     def check_conditions(self):
         # Must be in grid layout
@@ -695,7 +733,6 @@ class MultFieldArray(Multiply):
         arg0.require_grid_space()
         out.layout = self._grid_layout
         np.multiply(arg0.data, arg1, out.data)
-        out.constant = arg0.constant & self._arg1_constant
 
 
 class MultArrayField(Multiply):
@@ -706,8 +743,10 @@ class MultArrayField(Multiply):
 
     def __init__(self, *args, **kw):
         Multiply.__init__(self, *args, **kw)
-        self._arg0_constant = numeric_constant(args[0], self.domain)
         self._grid_layout = self.domain.distributor.grid_layout
+
+    def build_metadata(self):
+        self.constant = numeric_constant(self.args[0], self.domain) & self.args[1].constant
 
     def check_conditions(self):
         # Must be in grid layout
@@ -720,7 +759,6 @@ class MultArrayField(Multiply):
         arg1.require_grid_space()
         out.layout = self._grid_layout
         np.multiply(arg0, arg1.data, out.data)
-        out.constant = self._arg0_constant & arg1.constant
 
 
 class Divide(Arithmetic, metaclass=MultiClass):
@@ -739,6 +777,9 @@ class DivFieldField(Divide):
         Divide.__init__(self, *args, **kw)
         self._grid_layout = self.domain.distributor.grid_layout
 
+    def build_metadata(self):
+        self.constant = self.args[0].constant & self.args[1].constant
+
     def check_conditions(self):
         # Must be in grid layout
         return ((self.args[0].layout is self._grid_layout) and
@@ -752,7 +793,6 @@ class DivFieldField(Divide):
         arg1.require_grid_space()
         out.layout = self._grid_layout
         np.divide(arg0.data, arg1.data, out.data)
-        out.constant = arg0.constant & arg1.constant
 
 
 class DivFieldScalar(Divide):
@@ -760,6 +800,9 @@ class DivFieldScalar(Divide):
     @staticmethod
     def _check_args(arg0, arg1):
         return (is_fieldlike(arg0) and is_scalar(arg1))
+
+    def build_metadata(self):
+        self.constant = np.copy(self.args[0].constant)
 
     def check_conditions(self):
         return True
@@ -770,7 +813,6 @@ class DivFieldScalar(Divide):
         # Divide in current layout
         out.layout = arg0.layout
         np.divide(arg0.data, arg1, out.data)
-        np.copyto(out.constant, arg0.constant)
 
 
 class DivFieldArray(Divide):
@@ -781,8 +823,10 @@ class DivFieldArray(Divide):
 
     def __init__(self, *args, **kw):
         Divide.__init__(self, *args, **kw)
-        self._arg1_constant = numeric_constant(args[1], self.domain)
         self._grid_layout = self.domain.distributor.grid_layout
+
+    def build_metadata(self):
+        self.constant = self.args[0].constant & numeric_constant(self.args[1], self.domain)
 
     def check_conditions(self):
         # Must be in grid layout
@@ -795,7 +839,6 @@ class DivFieldArray(Divide):
         arg0.require_grid_space()
         out.layout = self._grid_layout
         np.divide(arg0.data, arg1, out.data)
-        out.constant = arg0.constant & self._arg1_constant
 
 
 class DivNumericField(Divide):
@@ -806,8 +849,10 @@ class DivNumericField(Divide):
 
     def __init__(self, *args, **kw):
         Divide.__init__(self, *args, **kw)
-        self._arg0_constant = numeric_constant(args[0], self.domain)
         self._grid_layout = self.domain.distributor.grid_layout
+
+    def build_metadata(self):
+        self.constant = numeric_constant(self.args[0], self.domain) & self.args[1].constant
 
     def check_conditions(self):
         # Must be in grid layout
@@ -820,7 +865,6 @@ class DivNumericField(Divide):
         arg1.require_grid_space()
         out.layout = self._grid_layout
         np.divide(arg0, arg1.data, out.data)
-        out.constant = self._arg0_constant & arg1.constant
 
 
 class Power(Operator):
@@ -839,6 +883,9 @@ class Power(Operator):
         self.power = power
         self._grid_layout = self.domain.distributor.grid_layout
 
+    def build_metadata(self):
+        self.constant = np.copy(self.args[0].constant)
+
     def check_conditions(self):
         # Must be in grid layout
         return (self.args[0].layout is self._grid_layout)
@@ -850,7 +897,6 @@ class Power(Operator):
         arg0.require_grid_space()
         out.layout = self._grid_layout
         np.power(arg0.data, self.power, out.data)
-        np.copyto(out.constant, arg0.constant)
 
 
 class MagSquared(Operator):
@@ -861,6 +907,9 @@ class MagSquared(Operator):
     def __init__(self, *args, **kw):
         Operator.__init__(self, *args, **kw)
         self._grid_layout = self.domain.distributor.grid_layout
+
+    def build_metadata(self):
+        self.constant = np.copy(self.args[0].constant)
 
     def check_conditions(self):
         # Must be in grid layout
@@ -873,7 +922,6 @@ class MagSquared(Operator):
         arg0.require_grid_space()
         out.layout = self._grid_layout
         np.multiply(arg0.data, arg0.data.conj(), out.data)
-        np.copyto(out.constant, arg0.constant)
 
 
 class Differentiate(Operator):
@@ -890,6 +938,9 @@ class Differentiate(Operator):
 
         return (is_coeff and is_local)
 
+    def build_metadata(self):
+        self.constant = np.copy(self.args[0].constant)
+
     def operate(self, out):
         # References
         arg0, = self.args
@@ -900,7 +951,6 @@ class Differentiate(Operator):
         out.layout = arg0.layout
         # Use basis differentiation method
         self.basis.differentiate(arg0.data, out.data, axis=axis)
-        np.copyto(out.constant, arg0.constant)
 
 
 # Collect operators to expose to parser
