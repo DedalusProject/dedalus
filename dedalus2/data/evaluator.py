@@ -416,9 +416,9 @@ class FileHandler(Handler):
             file_max = (None,) + tuple(write_shape)
             dset = task_group.create_dataset(name=task['name'], shape=file_shape, maxshape=file_max, dtype=layout.dtype)
             if not self.parallel:
-                dset.attrs['global_nc_shape'] = gnc_shape
-                dset.attrs['global_nc_start'] = gnc_start
-                dset.attrs['write_count'] = write_count
+                dset.attrs['global_shape'] = gnc_shape
+                dset.attrs['start'] = gnc_start
+                dset.attrs['count'] = write_count
 
             # Metadata and scales
             dset.attrs['task_number'] = task_num
