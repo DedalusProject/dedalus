@@ -702,7 +702,7 @@ class MultScalarField(Multiply):
         return (is_scalar(arg0) and is_fieldlike(arg1))
 
     def build_metadata(self):
-        self.constant = np.copy(self.args[0].constant)
+        self.constant = np.copy(self.args[1].constant)
 
     def check_conditions(self):
         return True
