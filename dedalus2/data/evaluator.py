@@ -320,8 +320,6 @@ class FileHandler(Handler):
         """Check if write or size limits have been reached."""
 
         write_limit = ((self.total_write_num % self.max_writes) == 0)
-        if self.domain.distributor.rank == 0:
-            print(self.current_path.stat().st_size / 2**30)
         size_limit = (self.current_path.stat().st_size >= self.max_size)
         if not self.parallel:
             # reduce(size_limit, or) across processes
@@ -333,14 +331,11 @@ class FileHandler(Handler):
 
     def get_file(self):
         """Return current HDF5 file, creating if necessary."""
-        print('get file')
         # Create file on first call
         if not self.current_path:
-            print('first call')
             return self.new_file()
         # Create file at file limits
         if self.check_file_limits():
-            print('new file')
             return self.new_file()
         # Otherwise open current file
         if self.parallel:
