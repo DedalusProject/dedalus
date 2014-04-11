@@ -387,11 +387,12 @@ class FileHandler(Handler):
 
         # Scales
         scale_group = file.create_group('scales')
-        scale_group.create_dataset(name='sim_time', shape=(1,), maxshape=(None,), dtype=np.float64)
-        scale_group.create_dataset(name='wall_time', shape=(1,), maxshape=(None,), dtype=np.float64)
-        scale_group.create_dataset(name='iteration', shape=(1,), maxshape=(None,), dtype=np.int)
-        scale_group.create_dataset(name='write_number', shape=(1,), maxshape=(None,), dtype=np.int)
-        const = scale_group.create_dataset(name='constant', shape=(1,), dtype=np.float64)
+        # Start time scales with shape=(0,) to chunk across writes
+        scale_group.create_dataset(name='sim_time', shape=(0,), maxshape=(None,), dtype=np.float64)
+        scale_group.create_dataset(name='wall_time', shape=(0,), maxshape=(None,), dtype=np.float64)
+        scale_group.create_dataset(name='iteration', shape=(0,), maxshape=(None,), dtype=np.int)
+        scale_group.create_dataset(name='write_number', shape=(0,), maxshape=(None,), dtype=np.int)
+        const = scale_group.create_dataset(name='constant', data=np.array([0.], dtype=np.float64))
         for axis, basis in enumerate(domain.bases):
             grid = basis.grid
             elem = basis.elements
@@ -407,7 +408,12 @@ class FileHandler(Handler):
             layout = task['layout']
             constant = task['operator'].constant
             gnc_shape, gnc_start, write_shape, write_start, write_count = self.get_write_stats(layout, constant, index=0)
-            file_shape = (1,) + tuple(write_shape)
+            if np.prod(write_shape) <= 1:
+                # Start with shape[0] = 0 to chunk across writes for scalars
+                file_shape = (0,) + tuple(write_shape)
+            else:
+                # Start with shape[0] = 1 to chunk within writes
+                file_shape = (1,) + tuple(write_shape)
             file_max = (None,) + tuple(write_shape)
             dset = task_group.create_dataset(name=task['name'], shape=file_shape, maxshape=file_max, dtype=layout.dtype)
             if not self.parallel:
