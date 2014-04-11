@@ -3,6 +3,7 @@ Classes for solving differential equations.
 
 """
 
+from mpi4py import MPI
 import numpy as np
 import time
 from scipy.sparse import linalg
@@ -161,6 +162,7 @@ class IVP:
 
         # Attributes
         self.start_time = time.time()
+        self._wt_array = np.array([0.])
         self.sim_time = 0.
         self.iteration = 0
 
@@ -204,8 +206,13 @@ class IVP:
         # (Safety gather)
         state.gather()
 
+        # Get latest wall time
+        comm = self.evaluator.domain.distributor.comm_cart
+        self._wt_array[0] = time.time() - self.start_time
+        comm.Allreduce(MPI.IN_PLACE, self._wt_array, op=MPI.MAX)
+        wall_time = self._wt_array[0]
+
         # Advance using timestepper
-        wall_time = time.time() - self.start_time
         self.timestepper.step(self, dt, wall_time)
 
         # (Safety scatter)
