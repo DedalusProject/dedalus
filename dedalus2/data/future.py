@@ -3,6 +3,8 @@ Classes for future evaluation.
 
 """
 
+from functools import partial
+
 
 class Future:
     """
@@ -14,9 +16,9 @@ class Future:
 
     def __getattr__(self, attr):
         # Intercept numpy ufunc calls
-        if attr in UfuncWrapper.supported:
-            ufunc = UfuncWrapper.supported[attr]
-            return partial(UfuncWrapper, ufunc, self)
+        if attr in operators.UfuncWrapper.supported:
+            ufunc = operators.UfuncWrapper.supported[attr]
+            return partial(operators.UfuncWrapper, ufunc, self)
         else:
             raise AttributeError("%r object has no attribute %r" %(self.__class__.__name__, attr))
 
