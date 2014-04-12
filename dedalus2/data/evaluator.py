@@ -323,7 +323,7 @@ class FileHandler(Handler):
         size_limit = (self.current_path.stat().st_size >= self.max_size)
         if not self.parallel:
             # reduce(size_limit, or) across processes
-            sl_array = np.array([size_limit])
+            sl_array = np.array([size_limit],dtype='int')
             self.domain.distributor.comm_cart.Allreduce(MPI.IN_PLACE, sl_array, op=MPI.LOR)
             size_limit = sl_array[0]
 
