@@ -453,12 +453,12 @@ class MatrixProblem:
         self.axis_names = axis_names
         self.diff_names = ['d'+an for an in axis_names]
         self.field_names = field_names
-        self.nfields = problem.neqns = problen.nbcs = len(field_names)
+        self.nfields = self.neqns = self.nbcs = len(field_names)
         self.order = order
         self.parameters = dict()
 
         # Check for name conflicts
-        names = axis_names + diff_names + field_names
+        names = axis_names + self.diff_names + self.field_names
         for name in names:
             if names.count(name) > 1:
                 raise ValueError("Name conflict detected: multiple uses of '%s'" %name)
