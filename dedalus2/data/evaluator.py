@@ -299,12 +299,12 @@ class FileHandler(Handler):
                 if self.domain.distributor.rank == 0:
                     base_path.mkdir()
 
-
         # Attributes
         self.base_path = base_path
         self.max_writes = max_writes
         self.max_size = max_size
         self.parallel = parallel
+        self._sl_array = np.zeros(1, dtype=int)
 
         self.file_num = 0
         self.current_path = None
@@ -323,9 +323,10 @@ class FileHandler(Handler):
         size_limit = (self.current_path.stat().st_size >= self.max_size)
         if not self.parallel:
             # reduce(size_limit, or) across processes
-            sl_array = np.array([size_limit])
-            self.domain.distributor.comm_cart.Allreduce(MPI.IN_PLACE, sl_array, op=MPI.LOR)
-            size_limit = sl_array[0]
+            comm = self.domain.distributor.comm_cart
+            self._sl_array[0] = size_limit
+            comm.Allreduce(MPI.IN_PLACE, self._sl_array, op=MPI.LOR)
+            size_limit = self._sl_array[0]
 
         return (write_limit or size_limit)
 
