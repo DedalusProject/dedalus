@@ -59,6 +59,7 @@ class Domain:
 
         # Create distributor
         self.distributor = Distributor(self, mesh)
+        self.dist = self.distributor
         self.local_grid_shape = self.distributor.grid_layout.shape
         self.local_coeff_shape = self.distributor.coeff_layout.shape
 
