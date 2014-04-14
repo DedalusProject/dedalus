@@ -15,6 +15,7 @@ from ..data.system import CoeffSystem, FieldSystem
 from ..data.pencil import build_pencils
 from ..data.field import Field
 from ..tools.logging import logger
+from ..tools.parallel import Sync
 from ..tools.progressbar import progress
 
 
@@ -161,8 +162,11 @@ class IVP:
         self.timestepper = timestepper(problem.nfields, domain)
 
         # Attributes
-        self.start_time = time.time()
-        self._wt_array = np.array([0.])
+        self.problem = problem
+        self.domain = domain
+
+        with Sync(comm=domain.distributor.comm_cart, exit=False):
+            self.start_time = comm.bcast(time.time(), root=0)
         self.sim_time = 0.
         self.iteration = 0
 
@@ -185,10 +189,13 @@ class IVP:
     def ok(self):
         """Check that current time and iteration pass stop conditions."""
 
+        with Sync(comm=self.domain.dist.comm_cart, exit=False):
+            wall_time = comm.bcast(time.time()-self.start_time, root=0)
+
         if self.sim_time >= self.stop_sim_time:
             logger.info('Simulation stop time reached.')
             return False
-        elif (time.time() - self.start_time) >= self.stop_wall_time:
+        elif wall_time >= self.stop_wall_time:
             logger.info('Wall stop time reached.')
             return False
         elif self.iteration >= self.stop_iteration:
@@ -206,11 +213,9 @@ class IVP:
         # (Safety gather)
         state.gather()
 
-        # Get latest wall time
-        comm = self.evaluator.domain.distributor.comm_cart
-        self._wt_array[0] = time.time() - self.start_time
-        comm.Allreduce(MPI.IN_PLACE, self._wt_array, op=MPI.MAX)
-        wall_time = self._wt_array[0]
+        # Get wall time
+        with Sync(comm=self.domain.dist.comm_cart, exit=False):
+            wall_time = comm.bcast(time.time()-self.start_time, root=0)
 
         # Advance using timestepper
         self.timestepper.step(self, dt, wall_time)
