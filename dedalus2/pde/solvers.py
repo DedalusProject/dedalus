@@ -15,7 +15,6 @@ from ..data.system import CoeffSystem, FieldSystem
 from ..data.pencil import build_pencils
 from ..data.field import Field
 from ..tools.logging import logger
-from ..tools.parallel import Sync
 from ..tools.progressbar import progress
 
 
@@ -164,9 +163,8 @@ class IVP:
         # Attributes
         self.problem = problem
         self.domain = domain
-
-        with Sync(comm=domain.distributor.comm_cart, exit=False):
-            self.start_time = comm.bcast(time.time(), root=0)
+        self._wall_time_array = np.zeros(1, dtype=float)
+        self.start_time = self.get_wall_time()
         self.sim_time = 0.
         self.iteration = 0
 
@@ -185,17 +183,20 @@ class IVP:
         self._sim_time = t
         self._sim_time_field['g'] = t
 
+    def get_wall_time(self):
+        self._wall_time_array[0] = time.time()
+        comm = self.domain.dist.comm_cart
+        comm.Allreduce(MPI.IN_PLACE, self._wall_time_array, op=MPI.MAX)
+        return self._wall_time_array[0]
+
     @property
     def ok(self):
         """Check that current time and iteration pass stop conditions."""
 
-        with Sync(comm=self.domain.dist.comm_cart, exit=False):
-            wall_time = comm.bcast(time.time()-self.start_time, root=0)
-
         if self.sim_time >= self.stop_sim_time:
             logger.info('Simulation stop time reached.')
             return False
-        elif wall_time >= self.stop_wall_time:
+        elif (self.get_wall_time() - self.start_time) >= self.stop_wall_time:
             logger.info('Wall stop time reached.')
             return False
         elif self.iteration >= self.stop_iteration:
@@ -213,11 +214,8 @@ class IVP:
         # (Safety gather)
         state.gather()
 
-        # Get wall time
-        with Sync(comm=self.domain.dist.comm_cart, exit=False):
-            wall_time = comm.bcast(time.time()-self.start_time, root=0)
-
         # Advance using timestepper
+        wall_time = self.get_wall_time() - self.start_time
         self.timestepper.step(self, dt, wall_time)
 
         # (Safety scatter)
