@@ -4,6 +4,8 @@ Tools for caching computations.
 """
 
 import types
+from weakref import WeakValueDictionary
+import numpy as np
 
 
 class CachedAttribute:
@@ -71,7 +73,6 @@ class CachedFunction:
 
     def __init__(self, function):
 
-        # Parameters
         self.function = function
         self.__name__ = function.__name__
         self.__doc__ = function.__doc__
@@ -84,4 +85,45 @@ class CachedFunction:
             self.cache[args] = self.function(*args)
 
         return self.cache[args]
+
+
+class CachedClass(type):
+    """Metaclass for caching instantiation."""
+
+    def __init__(cls, *args, **kw):
+
+        # Perform regular class initialization from type
+        type.__init__(cls, *args, **kw)
+        # Cache instances using weakrefs
+        cls._cache = WeakValueDictionary()
+
+    def __call__(cls, *args, **kw):
+
+        # Serialize arguments and keywords
+        call = serialize_call(args, kw)
+        # Instantiate for new call
+        if call not in cls._cache:
+            # Bind to local variable so weakref persists until return
+            instance = type.__call__(cls, *args, **kw)
+            cls._cache[call] = instance
+
+        return cls._cache[call]
+
+
+def serialize_call(args, kw):
+    """Serialize call into standard form for cache key."""
+
+    s_args = tuple(serialize(arg) for arg in args)
+    s_kw = tuple((key, serialize(value)) for (key, value) in sorted(kw.items()))
+
+    return (s_args, s_kw)
+
+
+def serialize(arg):
+    """Catch numpy arrays and replace with object repr / id."""
+
+    if isinstance(arg, np.ndarray):
+        return object.__repr__(arg)
+    else:
+        return arg
 
