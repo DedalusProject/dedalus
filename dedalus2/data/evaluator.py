@@ -445,8 +445,8 @@ class FileHandler(Handler):
                         sn = basis.element_label + basis.name
                 scale = scale_group[sn]
                 dset.dims.create_scale(scale, sn)
-                dset.dims[axis].label = sn
-                dset.dims[axis].attach_scale(scale)
+                dset.dims[axis+1].label = sn
+                dset.dims[axis+1].attach_scale(scale)
 
     def process(self, wall_time, sim_time, iteration):
         """Save task outputs to HDF5 file."""
