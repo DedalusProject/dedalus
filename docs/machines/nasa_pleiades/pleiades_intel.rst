@@ -37,11 +37,11 @@ Create ``$BUILD_HOME`` and then proceed with downloading and installing Python-3
     tar xvf python_intel_patch.tar 
 
     ./configure --prefix=$BUILD_HOME \
-                         CC=icc CFLAGS="-mkl -O3 -xHost -fPIC -ipo" \
-                         CXX=icpc CPPFLAGS="-mkl -O3 -xHost -fPIC -ipo" \
-                         F90=ifort F90FLAGS="-mkl -O3 -xHost -fPIC -ipo" \
+                         CC=mpicc \
+                         CXX=mpicxx \
+                         F90=mpif90 \
                          --enable-shared LDFLAGS="-lpthread" \
-                         --with-cxx-main=icpc --with-system-ffi
+                         --with-cxx-main=mpicxx --with-system-ffi
 
     make
     make install
@@ -294,7 +294,8 @@ This should be pip installed::
 
 .. note::
 
-    This is failing to find mpi.h
+   This now works, if python3 is compiled with mpicc! 
+
 
 Installing HDF5 with parallel support
 --------------------------------------------------
