@@ -12,6 +12,8 @@ Then add the following to your ``.profile``::
 
   module load comp-intel/2013.5.192
   module load mpi-sgi/mpt.2.08r7
+  module load git
+  module load openssl/1.0.1g
 
   PATH=$PATH:$HOME/bin:$HOME/build/bin	# Add private commands to PATH
 
@@ -22,6 +24,13 @@ Then add the following to your ``.profile``::
 
 Python stack
 =========================
+
+Interesting update.  Pleiades now appears to have a python3 module.
+Fascinating.  It comes with matplotlib (1.3.1), scipy (0.12), numpy
+(1.8.0) and cython (0.20.1) and a few others.  Very interesting.  For
+now we'll proceed with our usual build-it-from-scratch approach, but
+this should be kept in mind for the future.  No clear mpi4py, and the
+``mpi4py`` install was a hangup below for some time.
 
 Building Python3
 --------------------------
@@ -315,29 +324,49 @@ needs to be compiled with support for parallel (mpi) I/O::
      make
      make install
 
-Next, install h5py.  If we just want HDF5 file access (in serial),
-then we can pip install, though we'll need to set env variables.  Here
-we build against the parallel HDF5:
+Next, install h5py.  
 
-     export CC=mpicc
-     export HDF5_DIR=$BUILD_HOME
-     pip3 install h5py
+Installing h5py with collectives
+----------------------------------------------------
+We've been exploring the use of collectives for faster parallel file
+writing.  
 
-Alternatively, we may wish for full HDF5 parallel goodness, so we can
-do parallel file access during analysis as well.  This will require
-building directly from source (see 
-`Parallel HDF5 in h5py<http://docs.h5py.org/en/latest/mpi.html#parallel>`_
-for further details).  Here we go::
+git is having some problems, especially with it's SSL version.  
+I suggest adding the following to ``~/.gitconfig``::
 
-     git clone https://github.com/h5py/h5py.git
+    [http]
+    sslCAinfo = /etc/ssl/certs/ca-bundle.crt
+
+
+This is still not working, owing (most likely) to git being built on
+an outdated SSL version.  Here's a short-term hack::
+
+    export GIT_SSL_NO_VERIFY=true
+
+To build that version of the h5py library::
+
+     git clone https://github.com/andrewcollette/h5py.git
      cd h5py
+     git checkout mpi_collective
      export CC=mpicc
      export HDF5_DIR=$BUILD_HOME
      python3 setup.py build --mpi   
      python3 setup.py install --mpi
 
-I'm having difficulty getting this h5py build to actually install to
-``site-packages``.  More later.
+
+Here's the original h5py repository::
+
+     git clone https://github.com/h5py/h5py.git
+
+
+Installing Mercurial
+----------------------------------------------------
+On NASA Pleiades, we need to install mercurial itself::
+
+     wget http://mercurial.selenic.com/release/mercurial-2.9.tar.gz
+     tar xvf mercurial-2.9.tar.gz 
+     cd mercurial-2.9
+     make install PREFIX=$BUILD_HOME
 
 
 Dedalus2
@@ -345,10 +374,8 @@ Dedalus2
 
 Preliminaries
 ----------------------------------------
-On NASA Pleiades, the first thing we need to install is mercurial
-itself::
 
-     wget http://mercurial.selenic.com/release/mercurial-2.9.tar.gz
+
 
 
 With the modules set as above, set::
