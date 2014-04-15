@@ -3,6 +3,8 @@ Tools for emulating multiple dispatch.
 
 """
 
+from .cache import CachedClass
+
 
 class MultiClass(type):
     """Metaclass for dispatching instantiation to subclasses."""
@@ -28,5 +30,10 @@ class MultiClass(type):
 
         # Otherwise create instance
         else:
-            return type.__call__(cls, *args, **kw)
+            return super().__call__(*args, **kw)
+
+
+class CachedMultiClass(MultiClass, CachedClass):
+    """Metaclass for dispatching and caching instantiantation to subclasses."""
+    pass
 

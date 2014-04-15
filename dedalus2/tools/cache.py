@@ -93,7 +93,7 @@ class CachedClass(type):
     def __init__(cls, *args, **kw):
 
         # Perform regular class initialization from type
-        type.__init__(cls, *args, **kw)
+        super().__init__(*args, **kw)
         # Cache instances using weakrefs
         cls._cache = WeakValueDictionary()
 
@@ -104,7 +104,7 @@ class CachedClass(type):
         # Instantiate for new call
         if call not in cls._cache:
             # Bind to local variable so weakref persists until return
-            instance = type.__call__(cls, *args, **kw)
+            instance = super().__call__(*args, **kw)
             cls._cache[call] = instance
 
         return cls._cache[call]
