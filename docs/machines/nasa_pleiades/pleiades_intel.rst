@@ -2,25 +2,38 @@ Install notes for NASA/Pleiades
 ***************************************************************************
 
 An initial Pleiades environment is pretty bare-bones.  There are no
-modules, and your shell is likely a csh varient.  To switch to bash::
+modules, and your shell is likely a csh varient.  To switch shells,
+send an e-mail to support@nas.nasa.gov; I'll be using ``bash``.
 
-    chsh -s /bin/bash
 
 Then add the following to your ``.profile``::
 
   # Add your commands here to extend your PATH, etc.
 
-  module load comp-intel/2013.5.192
-  module load mpi-sgi/mpt.2.08r7
+  module load comp-intel
+  module load mpi-sgi
+  module load hdf5
   module load git
-  module load openssl/1.0.1g
 
-  PATH=$PATH:$HOME/bin:$HOME/build/bin	# Add private commands to PATH
+
+  module load gcc
+  module load mpi-sgi
+  module load hdf5
+  module load git
+
 
   export BUILD_HOME=$HOME/build
+
+  export PATH=$BUILD_HOME/bin:$BUILD_HOME:/$PATH  # Add private commands to PATH                                                                                         
+
   export LD_LIBRARY_PATH=$BUILD_HOME/lib:$LD_LIBRARY_PATH
 
+  export CC=mpicc
 
+  #pathing for Dedalus2                                                                                                                                                  
+  export PYTHONPATH=$BUILD_HOME/dedalus2:$PYTHONPATH
+  export MPI_PATH=$MPI_ROOT
+  export FFTW_PATH=$BUILD_HOME
 
 Python stack
 =========================
@@ -38,8 +51,8 @@ Building Python3
 Create ``$BUILD_HOME`` and then proceed with downloading and installing Python-3.3::
 
     cd $BUILD_HOME
-    wget http://www.python.org/ftp/python/3.3.3/Python-3.3.3.tgz
-    tar -xzf Python-3.3.3.tgz
+    wget http://www.python.org/ftp/python/3.3.3/Python-3.3.3.tgz --no-check-certificate
+    tar xzf Python-3.3.3.tgz
     cd Python-3.3.3
 
     # make sure you have the python patch, put it in Python-3.3.3
@@ -121,6 +134,7 @@ and the following to ``.profile``::
 (from `bash reference manual <https://www.gnu.org/software/bash/manual/html_node/Bash-Startup-Files.html>`_) 
 to obtain the same behaviour in both shell types.
 
+
 Installing pip
 -------------------------
 
@@ -135,7 +149,7 @@ download and install setup tools::
 
 Then install ``pip``::
 
-    wget https://raw.github.com/pypa/pip/master/contrib/get-pip.py
+    wget https://raw.github.com/pypa/pip/master/contrib/get-pip.py  --no-check-certificate
     python3 get-pip.py --cert /etc/ssl/certs/ca-bundle.crt
 
 Now edit ``.pip/pip.conf``::
@@ -155,6 +169,7 @@ Installing nose
 Nose is useful for unit testing, especially in checking our numpy build::
 
     pip3 install nose
+
 
 
 
@@ -349,7 +364,7 @@ To build that version of the h5py library::
      cd h5py
      git checkout mpi_collective
      export CC=mpicc
-     export HDF5_DIR=$BUILD_HOME
+     mv bu     export HDF5_DIR=$HDF5
      python3 setup.py build --mpi   
      python3 setup.py install --mpi
 
@@ -375,9 +390,6 @@ Dedalus2
 Preliminaries
 ----------------------------------------
 
-
-
-
 With the modules set as above, set::
 
      export BUILD_HOME=$BUILD_HOME
@@ -388,121 +400,17 @@ Then change into your root dedalus directory and run::
 
      python setup.py build_ext --inplace
 
-Our new stack (``intel/14``, ``mvapich2/2.0b``) builds to completion
-and runs test problems successfully.  We have good scaling in limited
-early tests.
 
-
-Running Dedalus on Stampede
+Running Dedalus on Pleiades
 ========================================
 
-Source the appropriate virtualenv::
+Our scratch disk system on Pleiades is ``/nobackup/user-name``.  On
+this and other systems, I suggest soft-linking your scratch directory
+to a local working directory in home; I uniformly call mine ``workdir``::
 
-     source ~/venv/openblas/bin/activate
+      ln -s /nobackup/bpbrown workdir
 
-or::
-
-     source ~/venv/mkl/bin/activate
-
-
-grab an interactive dev node with ``idev``.  Play.
+Long-term mass storage is on LOU.
 
 
 
-
-
-Skipped libraries
-==============================
-
-Installing freetype2
---------------------------
-
-Freetype is necessary for matplotlib ::
-
-     cd $BUILD_HOME
-     wget http://sourceforge.net/projects/freetype/files/freetype2/2.5.2/freetype-2.5.2.tar.gz
-     tar -xvf freetype-2.5.2.tar.gz 
-     cd freetype-2.5.2
-     ./configure --prefix=$HOME/build
-     make
-     make install
-
-.. note::
-     Skipping for now
-
-Installing libpng
---------------------------
-
-May need this for matplotlib?::
-
-     cd $BUILD_HOME
-     wget http://prdownloads.sourceforge.net/libpng/libpng-1.6.8.tar.gz
-     ./configure --prefix=$HOME/build
-     make
-     make install
-
-.. note::
-     Skipping for now
-
-UMFPACK
--------
-
-We may wish to deploy UMFPACK for sparse matrix solves.  Keaton is
-starting to look at this now.  If we do, both numpy and scipy will
-require UMFPACK, so we should build it before proceeding with those builds.
-
-UMFPACK requires AMD (another package by the same group, not processor) and SuiteSparse_config, too.
-
-If we need UMFPACK, we
-can try installing it from ``suite-sparse`` as in the Mac install.
-Here are links to `UMFPACK docs <http://www.cise.ufl.edu/research/sparse/umfpack/>`_ 
-and `Suite-sparse <http://www.cise.ufl.edu/research/sparse/>`_
-
-.. note::
-     We'll check and update this later. (1/9/14)
-
-
-
-All I want for christmas is suitesparse
-----------------------------------------
-
-Well, maybe :)  Let's give it a try, and lets grab the whole library::
-
-     wget http://www.cise.ufl.edu/research/sparse/SuiteSparse/current/SuiteSparse.tar.gz
-     tar xvf SuiteSparse.tar.gz
-
-     <edit SuiteSparse_config/SuiteSparse_config.mk>
-     
-
-
-
-.. note::
-     
-     Notes from the original successful build process:
-   
-     Just got a direct call from Yaakoub.  Very, very helpful.  Here's
-     the quick rundown.
-
-     He got _ctypes to work by editing the following file:
-
-          vim /work/00364/tg456434/yye00/src/Python-3.3.3/Modules/_ctypes/libffi/src/x86/ffi64.c
-
-     Do build with intel 14
-     use mvapich2/2.0b
-     Will need to do our own build of fftw3
-
-     set mpicc as c compiler rather than icc, same for CXX, FC and
-     others, when configuring python.  should help with mpi4py.
-
-     in mpi4py, can edit mpi.cfg (non-pip install).
-
-     Keep Yaakoub updated with direct e-mail on progress.
-
-     Also, Yaakoub is spear-heading TACCs efforts in doing 
-     auto-offload to Xenon Phi.
-    
-
-     Beware of disk quotas if you're trying many builds; I hit 5GB
-     pretty fast and blew my matplotlib install due to quota limits :)
-
-     
