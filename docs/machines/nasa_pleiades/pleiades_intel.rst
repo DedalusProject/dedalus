@@ -30,10 +30,16 @@ Then add the following to your ``.profile``::
 
   export CC=mpicc
 
-  #pathing for Dedalus2                                                                                                                                                  
+  #pathing for Dedalus2        
+  export MPI_ROOT=$BUILD_HOME/openmpi-1.8                                                                                                                                          
   export PYTHONPATH=$BUILD_HOME/dedalus2:$PYTHONPATH
   export MPI_PATH=$MPI_ROOT
   export FFTW_PATH=$BUILD_HOME
+
+.. note::
+   We should roll to a python 3.4 build.  Also, it looks like
+   scipy-0.14 and numpy 1.9 are going to have happier sparse matrix performance.
+
 
 Python stack
 =========================
@@ -45,6 +51,29 @@ now we'll proceed with our usual build-it-from-scratch approach, but
 this should be kept in mind for the future.  No clear mpi4py, and the
 ``mpi4py`` install was a hangup below for some time.
 
+Building Openmpi
+--------------------------
+
+The suggested ``mpi-sgi/mpt`` MPI stack breaks with mpi4py; existing
+versions of openmpi on Pleiades are outdated and suffer from a
+previously identified bug (v1.6.5), so we'll roll our own.  This needs
+to be built on a compute node so that the right memory space is identified.::
+
+    # do this on a main node (where you can access the outside internet):
+    cd $BUILD_HOME
+    wget http://www.open-mpi.org/software/ompi/v1.8/downloads/openmpi-1.8.tar.gz
+    tar xvf openmpi-1.8.tar.gz
+
+    # get ivy-bridge compute node
+    qsub -I -q devel -l select=1:ncpus=20:mpiprocs=20:model=ivy -l walltime=02:00:00
+
+    # once node exists
+    cd $BUILD_HOME
+    cd openmpi-1.8
+    ./configure --prefix=$BUILD_HOME CC=gcc
+    make
+    make install
+
 Building Python3
 --------------------------
 
@@ -54,9 +83,6 @@ Create ``$BUILD_HOME`` and then proceed with downloading and installing Python-3
     wget http://www.python.org/ftp/python/3.3.3/Python-3.3.3.tgz --no-check-certificate
     tar xzf Python-3.3.3.tgz
     cd Python-3.3.3
-
-    # make sure you have the python patch, put it in Python-3.3.3
-    tar xvf python_intel_patch.tar 
 
     ./configure --prefix=$BUILD_HOME \
                          CC=mpicc \
@@ -68,44 +94,10 @@ Create ``$BUILD_HOME`` and then proceed with downloading and installing Python-3
     make
     make install
 
-To successfully build ``python3``, 
-the key is replacing the file ``ffi64.c``, which is done
-automatically by downloading and unpacking this crude patch
-:download:`python_intel_patch.tar<python_intel_patch.tar>` in
-your ``Python-3.3.3`` directory.   Unpack it in ``Python-3.3.3``
-(``tar xvf python_intel_patch.tar`` line above) 
-and it will overwrite ``ffi64.c``.  If you forget to do this, you'll
-see a warning/error that ``_ctypes`` couldn't be built.  This is
-important.  This patch is identical to the patch on stampede.
+All of the intel patches, etc. are unnecessary in the gcc stack.
 
 .. note::
      We're getting a problem on ``_curses_panel``; ignoring for now.
-
-Installing FFTW3
-------------------------------
-
-We need to build our own FFTW3, under intel 14 and mvapich2/2.0b::
-
-    wget http://www.fftw.org/fftw-3.3.3.tar.gz
-    tar -xzf fftw-3.3.3.tar.gz
-    cd fftw-3.3.3
-
-   ./configure --prefix=$BUILD_HOME \
-                         CC=mpicc \
-                         CXX=mpicxx \
-                         F77=mpif90 \
-                         MPICC=mpicc MPICXX=mpicxx \
-                         --enable-shared \
-                         --enable-mpi --enable-openmp --enable-threads
-    make
-    make install
-
-It's critical that you use ``mpicc`` as the C-compiler, etc.
-Otherwise the libmpich libraries are not being correctly linked into
-``libfftw3_mpi.so`` and dedalus failes on fftw import.
-
-
-
 
 Updating shell settings
 ------------------------------
@@ -163,6 +155,49 @@ against python 3.3.  We will use ``pip3`` throughout this
 documentation to remain compatible with systems (e.g., Mac OS) where
 multiple versions of python coexist.
 
+Installing mpi4py
+--------------------------
+
+This should be pip installed::
+
+    pip3 install mpi4py
+
+.. note::
+
+   Test that this works by doing a:
+
+   from mpi4py import MPI
+
+   This will segfault on sgi-mpi, but appears to work fine on openmpi-1.8.
+
+
+
+Installing FFTW3
+------------------------------
+
+We need to build our own FFTW3, under intel 14 and mvapich2/2.0b::
+
+    wget http://www.fftw.org/fftw-3.3.3.tar.gz
+    tar -xzf fftw-3.3.3.tar.gz
+    cd fftw-3.3.3
+
+   ./configure --prefix=$BUILD_HOME \
+                         CC=mpicc \
+                         CXX=mpicxx \
+                         F77=mpif90 \
+                         MPICC=mpicc MPICXX=mpicxx \
+                         --enable-shared \
+                         --enable-mpi --enable-openmp --enable-threads
+    make
+    make install
+
+It's critical that you use ``mpicc`` as the C-compiler, etc.
+Otherwise the libmpich libraries are not being correctly linked into
+``libfftw3_mpi.so`` and dedalus failes on fftw import.
+
+
+
+
 Installing nose
 -------------------------
 
@@ -171,65 +206,87 @@ Nose is useful for unit testing, especially in checking our numpy build::
     pip3 install nose
 
 
+Installing cython
+-------------------------
+
+This should just be pip installed::
+
+     pip3 install cython
+
+The Feb 11, 2014 update to cython (0.20.1) seems to work with gcc.
+
+
 
 
 Numpy and BLAS libraries
 ======================================
 
 Numpy will be built against a specific BLAS library.  On Pleiades we
-will build against the Intel MKL libraries.  For now we'll do the
-build directly in ``$HOME_BUILD`` rather than using virtualenvs.
+will build against the OpenBLAS libraries.  
+
+All of the intel patches, etc. are unnecessary in the gcc stack.
 
 
-Building numpy against MKL
+Building OpenBLAS
 ----------------------------------
 
-Now, acquire ``numpy`` (1.8.0)::
+From Stampede instructions::
 
-     cd ~/venv/mkl
-     wget http://sourceforge.net/projects/numpy/files/NumPy/1.8.0/numpy-1.8.0.tar.gz
-     tar -xvf numpy-1.8.0.tar.gz
-     cd numpy-1.8.0
+      # this needs to be done on a frontend
+      cd $BUILD_HOME
+      git clone git://github.com/xianyi/OpenBLAS
 
-We'll now need to make sure that ``numpy`` is building against the MKL
-libraries.  
+      # suggest doing this build on a compute node, so we get the
+      # right number of openmp threads and architecture
+      cd $BUILD_HOME
+      cd OpenBLAS
+      make
+      make PREFIX=$BUILD_HOME install
 
-Create ``site.cfg`` with information for the MKL
-library directory so that it correctly point to NASA's
-``$MKLROOT/lib/intel64/``.  
-With the modules loaded above, this looks like::
+Here's the build report before the ``make install``::
 
-     [mkl]
-     library_dirs = /nasa/intel/Compiler/2013.5.192/composer_xe_2013.5.192/mkl/lib/intel64/
-     include_dirs = /nasa/intel/Compiler/2013.5.192/composer_xe_2013.5.192/mkl/include
-     mkl_libs = mkl_rt
-     lapack_libs =
+  OpenBLAS build complete. (BLAS CBLAS LAPACK LAPACKE)
 
-.. note:: 
-     we should roll a ``$MKLROOT`` into these and distribute this as
-     part of the patch.
+  OS               ... Linux             
+  Architecture     ... x86_64               
+  BINARY           ... 64bit                 
+  C compiler       ... GCC  (command line : mpicc)
+  Fortran compiler ... GFORTRAN  (command line : gfortran)
+  Library Name     ... libopenblas_sandybridgep-r0.2.9.rc2.a (Multi threaded; Max num-threads is 40)
+
+
+
+Building numpy against OpenBLAS
+----------------------------------------
+
+Now, acquire ``numpy`` (1.8.1)::
+
+     wget http://sourceforge.net/projects/numpy/files/NumPy/1.8.1/numpy-1.8.1.tar.gz
+     tar xvf numpy-1.8.1.tar.gz
+     cd numpy-1.8.1
+
+
+Create ``site.cfg`` with information for the OpenBLAS
+library directory
+
+Next, make a site specific config file::
+
+      cp site.cfg.example site.cfg
+      emacs -nw site.cfg
+
+Edit ``site.cfg`` to uncomment the ``[openblas]`` section; modify the
+library and include directories so that they correctly point to your
+``~/build/lib`` and ``~/build/include`` (note, you may need to do fully expanded
+paths).  With my account settings, this looks like::
+
+     [openblas]
+     libraries = openblas
+     library_dirs = /u/bpbrown/build/lib
+     include_dirs = /u/bpbrown/build/include
+
+where ``$BUILD_HOME=/u/bpbrown/build``.  Now build::
  
-These are based on intels instructions for 
-`compiling numpy with ifort <http://software.intel.com/en-us/articles/numpyscipy-with-intel-mkl>`_
-and they seem to work so far.
-
-Further following those instructions, you'll need to hand edit two
-files in ``numpy/distutils``; these are ``intelccompiler.py`` and
-``fcompiler/intel.py``.  I've built a crude patch,
-:download:`numpy_intel_patch.tar<numpy_intel_patch.tar>` 
-which can be auto-deployed by within the ``numpy-1.8.0`` directory by
-doing::
-    
-      tar -xvf numpy_intel_patch.tar
-
-This will unpack and overwrite::
-
-      numpy/distutils/intelccompiler.py
-      numpy/distutils/fcompiler/intel.py
-
-Then proceed with::
-
-    python3 setup.py config --compiler=intelem build_clib --compiler=intelem build_ext --compiler=intelem install
+     python3 setup.py config build_clib build_ext install
 
 This will config, build and install numpy.
 
@@ -238,45 +295,28 @@ Test numpy install
 ------------------------------
 
 Test that things worked with this executable script
-:download:`numpy_test_full<numpy_test_full>`, 
-or do so manually by launching ``python3`` 
-and then doing::
+:download:`numpy_test_full<numpy_test_full>`.  You can do this
+full-auto by doing::
 
-     import numpy as np
-     np.__config__.show()
+     wget http://dedalus-project.readthedocs.org/en/latest/_downloads/numpy_test_full
+     chmod +x numpy_test_full
+     ./numpy_test_full
 
-If you've installed ``nose`` (with ``pip3 install nose``), 
-we can further test our numpy build with::
-
-     np.test()
-     np.test('full')
-
-We fail ``np.test()`` with two failures, while ``np.test('full')`` has
-3 failures and 19 errors.  But we do successfully link against the
-fast BLAS libraries (look for ``FAST BLAS`` output, and fast dot
-product time).
-
-.. note::
-     We should check what impact these failed tests have on our results.
-
+We succesfully link against fast BLAS and the test results look normal.
 
 
 
 Python library stack
 =====================
 
-After ``numpy`` has been built (see links above) 
+After ``numpy`` has been built
 we will proceed with the rest of our python stack.
-Right now, all of these need to be installed in each existing
-virtualenv instance (e.g., ``openblas``, ``mkl``, etc.).  
-
-For now, skip the venv process.
 
 Installing Scipy
 -------------------------
 
 Scipy is easier, because it just gets its config from numpy.  Download
-an install in your appropriate ``~/venv/INSTANCE`` directory::
+an install::
 
      wget http://sourceforge.net/projects/scipy/files/scipy/0.13.2/scipy-0.13.2.tar.gz
      tar -xvf scipy-0.13.2.tar.gz
@@ -284,22 +324,12 @@ an install in your appropriate ``~/venv/INSTANCE`` directory::
 
 Then run ::
 
-    python3 setup.py config --compiler=intelem --fcompiler=intelem build_clib \
-                                            --compiler=intelem --fcompiler=intelem build_ext \
-                                            --compiler=intelem --fcompiler=intelem install
+    python3 setup.py config build_clib build_ext install
 
+.. note::
 
-Installing cython
--------------------------
-
-This should just be pip installed::
-
-     pip3 install -v https://pypi.python.org/packages/source/C/Cython/Cython-0.20.tar.gz
-
-The Feb 11, 2014 update to cython (0.20.1) seems to have broken (at
-least with intel compilers).::
-
-     pip3 install cython
+   We do not have umfpack; we should address this moving forward, but
+   will defer that to a later day.
 
 
 Installing matplotlib
@@ -308,17 +338,6 @@ Installing matplotlib
 This should just be pip installed::
 
      pip3 install matplotlib
-
-Installing mpi4py
--------------------------
-
-This should be pip installed::
-
-    pip3 install mpi4py
-
-.. note::
-
-   This now works, if python3 is compiled with mpicc! 
 
 
 Installing HDF5 with parallel support
@@ -341,6 +360,9 @@ needs to be compiled with support for parallel (mpi) I/O::
 
 Next, install h5py.  
 
+
+
+
 Installing h5py with collectives
 ----------------------------------------------------
 We've been exploring the use of collectives for faster parallel file
@@ -360,18 +382,23 @@ an outdated SSL version.  Here's a short-term hack::
 
 To build that version of the h5py library::
 
-     git clone https://github.com/andrewcollette/h5py.git
+     git clone git://github.com/andrewcollette/h5py
      cd h5py
      git checkout mpi_collective
      export CC=mpicc
-     mv bu     export HDF5_DIR=$HDF5
+     export HDF5_DIR=$BUILD_HOME
      python3 setup.py build --mpi   
      python3 setup.py install --mpi
 
 
 Here's the original h5py repository::
 
-     git clone https://github.com/h5py/h5py.git
+     git clone git://github.com/h5py/h5py
+     cd h5py
+     export CC=mpicc
+     export HDF5_DIR=$BUILD_HOME
+     python3 setup.py build
+     python3 setup.py install
 
 
 Installing Mercurial
@@ -394,11 +421,16 @@ With the modules set as above, set::
 
      export BUILD_HOME=$BUILD_HOME
      export FFTW_PATH=$BUILD_HOME
-     export MPI_PATH=$MPICH_HOME
+     export MPI_PATH=$BUILD_HOME/openmpi-1.8
 
 Then change into your root dedalus directory and run::
 
      python setup.py build_ext --inplace
+
+further packages needed for Keaton's branch::
+
+     pip3 install tqdm
+     pip3 install pathlib
 
 
 Running Dedalus on Pleiades
