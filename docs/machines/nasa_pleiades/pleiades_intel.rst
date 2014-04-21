@@ -340,6 +340,14 @@ This should just be pip installed::
      pip3 install matplotlib
 
 
+Installing sympy
+-------------------------
+
+This should just be pip installed::
+
+     pip3 install sympy
+
+
 Installing HDF5 with parallel support
 --------------------------------------------------
 
@@ -397,9 +405,36 @@ Here's the original h5py repository::
      cd h5py
      export CC=mpicc
      export HDF5_DIR=$BUILD_HOME
-     python3 setup.py build
-     python3 setup.py install
+     python3 setup.py build --mpi
+     python3 setup.py install --mpi
 
+.. note::
+     This is ugly.  We're getting a "-R" error at link, triggered by
+     distutils not recognizing that mpicc is gcc or something like
+     that.  For now, I've hand-edited unixccompiler.py in 
+     ``lib/python3.3/distutils`` and changed this line:
+
+     else:
+                # No idea how --enable-new-dtags would be passed on to
+                # ld if this system was using GNU ld.  Don't know if a
+                # system like this even exists.
+                return "-R" + dir
+
+     to:
+
+     else:
+                # No idea how --enable-new-dtags would be passed on to
+                # ld if this system was using GNU ld.  Don't know if a
+                # system like this even exists.
+                return "-Wl,-R" + dir
+
+     Looks like we're failing 
+
+             if self._is_gcc(compiler)
+
+     ???
+
+     This is a hack, but it get's us running and alive!
 
 Installing Mercurial
 ----------------------------------------------------
