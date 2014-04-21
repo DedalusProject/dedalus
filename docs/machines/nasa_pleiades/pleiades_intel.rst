@@ -70,19 +70,36 @@ to be built on a compute node so that the right memory space is identified.::
     # once node exists
     cd $BUILD_HOME
     cd openmpi-1.8
-    ./configure --prefix=$BUILD_HOME CC=gcc
+    ./configure \
+	--prefix=$BUILD_HOME \
+	--enable-mpi-interface-warning \
+	--without-slurm \
+	--with-tm=/PBS \
+	--without-loadleveler \
+	--without-portals \
+	--enable-mpirun-prefix-by-default \
+        CC=gcc
+
     make
     make install
+
+These compilation options are based on ``/nasa/openmpi/1.6.5/NAS_config.sh``, 
+and are thanks to advice from Daniel Kokron at NAS.
+
+At this point, I suggest you do a hello world test on a large number
+of cores (>512) to make sure that everything with openmpi is working
+well.  One example is http://www.dartmouth.edu/~rc/classes/intro_mpi/hello_world_ex.html.
+
 
 Building Python3
 --------------------------
 
-Create ``$BUILD_HOME`` and then proceed with downloading and installing Python-3.3::
+Create ``$BUILD_HOME`` and then proceed with downloading and installing Python-3.4::
 
     cd $BUILD_HOME
-    wget http://www.python.org/ftp/python/3.3.3/Python-3.3.3.tgz --no-check-certificate
-    tar xzf Python-3.3.3.tgz
-    cd Python-3.3.3
+    wget https://www.python.org/ftp/python/3.4.0/Python-3.4.0.tgz --no-check-certificate
+    tar xzf Python-3.4.0.tgz
+    cd Python-3.4.0
 
     ./configure --prefix=$BUILD_HOME \
                          CC=mpicc \
