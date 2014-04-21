@@ -436,6 +436,17 @@ Here's the original h5py repository::
 
      This is a hack, but it get's us running and alive!
 
+.. note::
+     Ahh... I understand what's happening here.  We built with
+     ``mpicc``, and the test ``_is_gcc`` looks for whether gcc appears
+     anywhere in the compiler name.  It doesn't in ``mpicc``, so the
+     ``gcc`` checks get missed.  This is only ever used in the
+     ``runtime_library_dir_option()`` call.  So we'd need to either
+     rename the mpicc wrapper something like ``mpicc-gcc`` or do a
+     test on ``compiler --version`` or something.  Oh boy.  Serious
+     upstream problem for mpicc wrapped builds that cythonize and go
+     to link.  Hmm...
+
 Installing Mercurial
 ----------------------------------------------------
 On NASA Pleiades, we need to install mercurial itself::
