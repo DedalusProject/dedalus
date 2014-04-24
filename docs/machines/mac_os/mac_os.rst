@@ -2,7 +2,6 @@
 
 Install notes for Mac OS X (10.9)
 *******************************************
-**These notes should be cleaned up**
 
 To cut to the chase, look for the appropriate cookbook for your system
 in the table of contents. More detailed guides preceed each cookbook.
@@ -12,6 +11,49 @@ which will need ``python3`` and all scientific packages installed. These
 instructions are based off an excellent  `guide`_
 and are the result of extensive attempts to properly install ``numpy``
 and ``scipy`` in particular (including building directly from source).
+
+Mac OS X cookbook
+-----------------
+
+::
+
+    #!bash
+    ruby -e "$(curl -fsSL https://raw.github.com/Homebrew/homebrew/go/install)"
+    brew update
+    brew doctor
+    # check whether any errors arise with brew doctor before proceeding
+
+    brew install swig
+    brew install gfortran
+    brew install python3
+
+    # get UMFPACK libraries
+    brew tap homebrew/science
+    brew install suite-sparse
+
+    # now, on with the scientific python install
+    pip3 install nose
+    pip3 install numpy
+    pip3 install scipy
+    pip3 install sympy
+
+    brew install freetype
+    pip3 install matplotlib
+    pip3 install ipython
+
+
+    brew install hdf5
+    pip3 install h5py
+    brew install mpich2
+    brew install fftw
+    pip3 install cython
+    pip3 install mpi4py
+    pip3 install tqdm
+    pip3 install pathlib
+
+
+Detailed install notes for Mac OS X (10.9)
+*******************************************
 
 Preparing a Mac system
 ----------------------
@@ -28,7 +70,7 @@ the following:
 ::
 
     #!bash
-    ruby -e "$(curl -fsSL https://raw.github.com/mxcl/homebrew/go/install)"
+    ruby -e "$(curl -fsSL https://raw.github.com/Homebrew/homebrew/go/install)"
     brew update
     brew doctor
 
@@ -39,24 +81,22 @@ You'll need a gfortran compiler to complete the ``scipy`` install.
 .. _guide: http://www.lowindata.com/2013/installing-scientific-python-on-mac-os-x/
 .. _homebrew: http://brew.sh/
 
+.. _MesaSDK: http://www.astro.wisc.edu/~townsend/static.php?ref=mesasdk
+.. _MADSDK: http://www.astro.wisc.edu/~townsend/static.php?ref=madsdk
+
 If you don't have one, try downloading Rich Townsend's `MesaSDK`_ or
 `MADSDK`_ (if you want MPI capability) software development kits. There
 is excellent documentation on the `MesaSDK`_ page. You can also install
-one directly with [homebrew], which is the path we follow here:
+one directly with `homebrew`_, which is the path we follow here:
 
 ::
 
     #!bash
     brew install gfortran
+    brew install swig
 
 From building on my clean workstation, it looks like the ``scipy``
-install process depends on ``swig``:
-
-::
-
-    #!bash
-    pip3 install numpy
-    brew install swig
+install process depends on ``swig``.
 
 Install python3
 ---------------
@@ -67,6 +107,7 @@ Now, install python3
 
     #!bash
     brew install python3
+    
 
 Scientific packages for Python3
 -------------------------------
@@ -86,15 +127,17 @@ during the scipy install.
     brew tap homebrew/science
     brew install suite-sparse
 
-Now, use ``pip`` (installed with ``brew install python3`` above) to
+Now, use ``pip3`` (installed with ``brew install python3`` above) to
 install ``numpy`` and then ``scipy``, in that order; here we use
 ``pip3`` to force a ``python3`` install:
 
 ::
 
     #!bash
+    pip3 install nose
     pip3 install numpy
     pip3 install scipy
+    pip3 install sympy
 
 The ``scipy`` install can fail in a number of surprising ways. Be
 especially wary of custom settings to ``LDFLAGS``, ``CPPFLAGS``, etc.
@@ -102,7 +145,7 @@ within your shell; these may cause the ``gfortran`` compile step to fail
 spectacularly.
 
 Python plotting libraries
--------------------------
+-----------------------------
 
 ::
 
@@ -110,63 +153,35 @@ Python plotting libraries
     brew install freetype
     pip3 install matplotlib
     pip3 install ipython
+    pip3 install brewer2mpl
 
-Finally, install ``sympy`` for when we get around to handling symbolic
-math
 
-::
+Further Dedalus dependancies
+------------------------------
 
-    #!bash
-    pip3 install sympy
-
-.. _MesaSDK: http://www.astro.wisc.edu/~townsend/static.php?ref=mesasdk
-.. _MADSDK: http://www.astro.wisc.edu/~townsend/static.php?ref=madsdk
-
-Mac OS X cookbook
------------------
-
-::
-
-    #!bash
-    ruby -e "$(curl -fsSL https://raw.github.com/mxcl/homebrew/go/install)"
-    brew update
-    brew doctor
-    # check whether any errors arise with brew doctor before proceeding
-
-    brew install swig
-    brew install gfortran
-    brew install python3
-
-    # get UMFPACK libraries
-    brew tap homebrew/science
-    brew install suite-sparse
-
-    # now, on with the scientific python install
-    pip3 install numpy
-    pip3 install scipy
-
-    brew install freetype
-    pip3 install matplotlib
-    pip3 install ipython
-
-    pip3 install sympy
-
-    brew install mpich2
-    brew install fftw
-    pip3 install cython
-    pip3 install mpi4py
-
-Optional packages
------------------
-
-In the future, we may wish for access to ``hdf5`` file formats. To
-install the HDF5 libraries, first install the libraries with brew, then
-the python interface:
+Output is done via HDF5 files, for which we'll need both the hdf5
+libraries and h5py.  We also require mpi4py, cython, fftw3 (for
+parallel transposes and transforms) and an mpi implementation.  
+Here we use mpich2.  We also suggest tqdm and pathlib in case you're
+using the development branch.
 
 ::
 
     brew install hdf5
     pip3 install h5py
+    brew install mpich2
+    brew install fftw
+    pip3 install cython
+    pip3 install mpi4py
+    pip3 install tqdm
+    pip3 install pathlib
+
+
+
+
+
+Optional packages
+-----------------
 
 For those who use the VAPOR volume rendering package, you may have a
 conflict with Vapor's own install of szip. You can force usage of
