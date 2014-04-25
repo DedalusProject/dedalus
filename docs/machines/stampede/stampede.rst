@@ -1,4 +1,4 @@
-Building with intel compiler stack
+Install notes for TACC/Stampede
 ***************************************************************************
 Install notes for building our python3 stack on TACC/Stampede, using the intel compiler suite.  
 Many thanks to Yaakoub El Khamra at TACC for help in sorting out the
