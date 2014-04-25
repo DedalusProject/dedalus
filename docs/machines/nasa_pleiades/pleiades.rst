@@ -9,17 +9,9 @@ Then add the following to your ``.profile``::
 
   # Add your commands here to extend your PATH, etc.
 
-  module load comp-intel
-  module load mpi-sgi
-  module load hdf5
-  module load git
-
-
   module load gcc
-  module load mpi-sgi
-  module load hdf5
   module load git
-
+  module load openssl
 
   export BUILD_HOME=$HOME/build
 
@@ -430,6 +422,21 @@ On NASA Pleiades, we need to install mercurial itself::
      tar xvf mercurial-2.9.tar.gz 
      cd mercurial-2.9
      make install PREFIX=$BUILD_HOME
+
+I suggest you add the following to your ``~/.hgrc``::
+
+  [ui]
+  username = <your bitbucket username/e-mail address here>
+  editor = emacs
+
+  [web]
+  cacerts = /etc/ssl/certs/ca-bundle.crt
+
+  [extensions]
+  graphlog =
+  color =
+  convert =
+  mq =
 
 
 Dedalus2

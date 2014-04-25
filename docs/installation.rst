@@ -37,7 +37,7 @@ Supercomputers
    :maxdepth: 1
 
    machines/stampede/stampede
-   machines/nasa_pleiades/pleiades_intel
+   machines/nasa_pleiades/pleiades
    machines/trestles/trestles
 
 Development machines
