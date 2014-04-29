@@ -4,10 +4,19 @@ import dedalus2.public as d2
 
 class polytrope():
     def __init__(self, gamma, polytropic_index, z0):
-        self.polytropic_index = polytropic_index
         self.gamma = gamma
-        self.z0 = z0
         
+        self.polytropic_index = polytropic_index
+        self.polytropic_index_ad = 1/(self.gamma-1)
+        # shorthand versions
+        self.n = self.polytropic_index
+        self.n_ad = self.polytropic_index_ad
+
+        self.epsilon = self.polytropic_index - self.polytropic_index_ad
+        print("ε = ", self.epsilon)
+
+        self.z0 = z0
+                
     def set_grid(self, z):
         self.z = z
         
@@ -16,11 +25,24 @@ class polytrope():
 
     def grad_S(self):
         entropy_gradient_factor = ((self.polytropic_index+1)/self.gamma - self.polytropic_index)
+        print(entropy_gradient_factor)
+        print(self.epsilon/self.gamma)
         return -entropy_gradient_factor/(self.z0-self.z)
 
     def grad_ln_T(self):
         return -1/(self.z0-self.z)
 
+    def rho(self):
+        return (self.z0-self.z)**self.polytropic_index
+
+    def T(self):
+        return (self.z0-self.z)
+
+    def P(self):
+        return (self.z0-self.z)**(self.polytropic_index+1)
+
+    def S(self):
+        return 
     
 class dedalus_atmosphere():
     def __init__(self, z_basis, atmosphere, num_coeffs=20):
