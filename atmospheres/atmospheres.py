@@ -36,8 +36,7 @@ class DedalusAtmosphere():
     
     def check_spectrum(self, key, individual_plots=True):
         fig = plt.figure()
-        N_plots = 1
-        ax = fig.add_subplot(1,N_plots,1)
+        ax = fig.add_subplot(1,1,1)
         ax.loglog(np.abs(self.fields[key]['c']*np.conj(self.fields[key]['c'])))
 
         ax.axvline(x=self.num_coeffs,linestyle='dashed')
@@ -54,88 +53,25 @@ class DedalusAtmosphere():
     def check_atmosphere(self, key, individual_plots=True):
         fig = plt.figure()
         N_plots = 2
-        ax1 = fig.add_subplot(2,N_plots,1)
-        ax2 = fig.add_subplot(2,N_plots,2)
+        ax1 = fig.add_subplot(2,1,1)
+        ax2 = fig.add_subplot(2,1,2)
 
         ax1.plot(self.z, self.parameters[key]())
         ax1.plot(self.z, self.get_values(key))
 
-        ax1.set_title(self.titles[key])
+        ax1.set_ylabel(self.titles[key])
+        ax1.set_title("truncated atmosphere {:s}".format(self.titles[key]))
 
-        ax2.plot(self.z, np.abs(self.parameters[key]()/self.get_values(key)-1))
+        ax2.semilogy(self.z, np.abs(self.parameters[key]()/self.get_values(key)-1))
 
+        ax2.set_ylabel("relative error")
         ax2.set_xlabel(r"$z$")
 
-        atm_file = 'values_{:s}.png'
+        atm_file = 'values_{:s}.png'.format(key)
         fig.savefig(atm_file)
         plt.close(fig)
         print("Atmosphere comparison has been output to: {:s}".format(atm_file))
 
-
-
-    def check_spectrum_all(self, individual_plots=True):
-        fig = plt.figure()
-        if individual_plots:
-            N_plots = 1
-        else:
-            N_plots = self.N_parameters
-        
-        for i_ax, key in enumerate(self.keys):
-            if individual_plots:
-                ax = fig.add_subplot(1,N_plots,1)
-            else:
-                ax = fig.add_subplot(1,N_plots,i_ax+1)
-
-            ax.loglog(np.abs(self.fields[key]['c']*np.conj(self.fields[key]['c'])))
-            
-            ax.axvline(x=self.num_coeffs,linestyle='dashed')
-            ax.set_title(self.titles[key])
-            ax.set_xlabel(r"$T_n$")
-
-            if i_ax == 0 or individual_plots:
-                ax.set_ylabel("power spectrum")
-
-            if individual_plots:
-                fig.savefig("atmosphere_spectrum_{:s}.png".format(key))
-                plt.close(fig)
-
-        if not individual_plots:
-            fig.savefig("atmosphere_spectrum_all.png".format(key))
-            plt.close(fig)
-
-                
-    def check_atmosphere(self, individual_plots=True):
-        fig = plt.figure()
-        if individual_plots:
-            N_plots = 2
-        else:
-            N_plots = self.N_parameters
-        
-        for i_ax, key in enumerate(self.keys):
-            if individual_plots:
-                ax1 = fig.add_subplot(2,N_plots,1)
-                ax2 = fig.add_subplot(2,N_plots,2)
-            else:
-                ax1 = fig.add_subplot(2,N_plots,i_ax+1)
-                ax2 = fig.add_subplot(2,N_plots,i_ax+1+N_plots)
-
-
-            ax1.plot(self.z, self.parameters[key]())
-            ax1.plot(self.z, self.get_values(key))
-
-            ax1.set_title(self.titles[key])
-
-            ax2.plot(self.z, np.abs(self.parameters[key]()/self.get_values(key)-1))
-
-            ax2.set_xlabel(r"$z$")
-
-            if individual_plots:
-                fig.savefig('atmosphere_values_{:s}.png')
-                plt.close(fig)
-
-        if not individual_plots:
-            fig.savefig('atmosphere_values_all.png')
-            plt.close(fig)
 
                         
 class Polytrope(DedalusAtmosphere):
