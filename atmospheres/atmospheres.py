@@ -12,12 +12,14 @@ class DedalusAtmosphere():
         self.z = z_basis.grid
 
         self.fields = dict()
-        keys = sorted(self.parameters.keys())
-        for key in keys:
+        self.keys = sorted(self.parameters.keys())
+        for key in self.keys:
             print("setting {:s}".format(key))
             self.fields[key] = self.domain.new_field()
             self.fields[key]['g'] =  self.parameters[key]()
 
+        self.N_parameters = len(self.keys)
+        
         self.check_spectrum()
         print("Atmosphere spectrum has been output to: atmosphere_spectrum.png")
         
@@ -27,56 +29,51 @@ class DedalusAtmosphere():
         print("Atmosphere comparison has been output to: atmosphere.png")
                         
     def truncate_atmosphere(self):
-        self.grad_ln_rho_atmosphere['c'][self.num_coeffs:] = 0
-        self.grad_S_atmosphere['c'][self.num_coeffs:] = 0
+        for key in self.keys:
+            self.fields[key]['c'][self.num_coeffs:] = 0
 
-    def grad_ln_rho_coeffs(self):
-        return np.copy(self.grad_ln_rho_atmosphere['c'][:self.num_coeffs])
+    def get_coeffs(self, key):
+        return np.copy(self.fields[key]['c'][:self.num_coeffs])
     
-    def grad_S_coeffs(self):
-        return np.copy(self.grad_S_atmosphere['c'][:self.num_coeffs])
-
-    def grad_ln_rho(self):
-        return np.copy(self.grad_ln_rho_atmosphere['g'].real)
-    
-    def grad_S(self):
-        return np.copy(self.grad_S_atmosphere['g'].real)
-    
+    def get_values(self, key):
+        return np.copy(self.fields[key]['g'].real)
+        
     def check_spectrum(self):
         fig = plt.figure()
-        ax1 = fig.add_subplot(1,2,1)
-        ax1.loglog(np.abs(self.grad_ln_rho_atmosphere['c']*np.conj(self.grad_ln_rho_atmosphere['c'])))
-        ax1.axvline(x=self.num_coeffs,linestyle='dashed')
-        ax1.set_title(r"$\nabla \ln \rho_0$")
-        ax1.set_xlabel(r"$T_n$")
-        ax1.set_ylabel("power spectrum")
-        ax2 = fig.add_subplot(1,2,2)
-        ax2.loglog(np.abs(self.grad_S_atmosphere['c']*np.conj(self.grad_S_atmosphere['c'])))
-        ax2.axvline(x=self.num_coeffs, linestyle='dashed')
-        ax2.set_title(r"$\nabla S_0$")
-        ax2.set_xlabel(r"$T_n$")
+        N_plots = self.N_parameters
+        
+        for i_ax, key in enumerate(self.keys):
+            ax = fig.add_subplot(1,N_plots,i_ax+1)
+
+            ax.loglog(np.abs(self.fields[key]['c']*np.conj(self.fields[key]['c'])))
+            
+            ax.axvline(x=self.num_coeffs,linestyle='dashed')
+            ax.set_title(self.titles[key])
+            ax.set_xlabel(r"$T_n$")
+            if i_ax == 0:
+                ax.set_ylabel("power spectrum")
+
         fig.savefig("atmosphere_spectrum.png")
         plt.close(fig)
 
     def check_atmosphere(self):
         fig = plt.figure()
-        N_atm_q = 2
+        N_plots = self.N_parameters
+        
+        for i_ax, key in enumerate(self.keys):
+            ax1 = fig.add_subplot(2,N_plots,i_ax+1)
 
-        ax1 = fig.add_subplot(2,N_atm_q,1)
-        ax1.plot(self.z_atmosphere, self.grad_ln_rho())
-        ax1.plot(self.z_atmosphere, self.atmosphere.parameters['grad_ln_rho']())
-        ax1.set_title(r"$\nabla \ln \rho_0$")
-        ax3 = fig.add_subplot(2,N_atm_q,3)
-        ax3.plot(self.z_atmosphere, 
-                 np.abs(self.grad_ln_rho()/self.atmosphere.parameters['grad_ln_rho']()-1))
+            ax1.plot(self.z, self.parameters[key]())
+            ax1.plot(self.z, self.get_values(key))
 
-        ax2 = fig.add_subplot(2,N_atm_q,2)
-        ax2.plot(self.z_atmosphere, self.grad_S())
-        ax2.plot(self.z_atmosphere, self.atmosphere.parameters['grad_S']())
-        ax2.set_title(r"$\nabla S_0$")
-        ax4 = fig.add_subplot(2,N_atm_q,4)
-        ax4.plot(self.z_atmosphere, 
-                 np.abs(self.grad_S()/self.atmosphere.parameters['grad_S']()-1))
+            ax1.set_title(self.titles[key])
+            
+            ax2 = fig.add_subplot(2,N_plots,i_ax+1+N_plots)
+
+            ax2.plot(self.z, np.abs(self.parameters[key]()/self.get_values(key)-1))
+
+            ax2.set_xlabel(r"$z$")
+
         fig.savefig('atmosphere.png')
         plt.close(fig)
         
@@ -95,9 +92,14 @@ class Polytrope(DedalusAtmosphere):
         print("ε = ", self.epsilon)
 
         self.z0 = z0
+
         self.parameters = dict()
+        self.titles = dict()
+        
         self.parameters['grad_ln_rho'] = self.grad_ln_rho
+        self.titles['grad_ln_rho'] = r"$\nabla \ln \rho_0$"
         self.parameters['grad_S'] = self.grad_S
+        self.titles['grad_S'] = r"$\nabla S_0$"
 
         DedalusAtmosphere.__init__(self, z, **args)
                 
