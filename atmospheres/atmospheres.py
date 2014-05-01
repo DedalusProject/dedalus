@@ -83,9 +83,9 @@ class DedalusAtmosphere():
                         
 class Polytrope(DedalusAtmosphere):
     def __init__(self, gamma, polytropic_index, z0, z, **args):
-        
+        self.name = "polytrope"
+                
         self.gamma = gamma
-        
         self.polytropic_index = polytropic_index
         self.polytropic_index_ad = 1/(self.gamma-1)
         # shorthand versions
@@ -97,10 +97,11 @@ class Polytrope(DedalusAtmosphere):
         print("Nρ = ", self.polytropic_index*np.log(z0))
 
 
-        self.entropy_gradient_factor = ((self.polytropic_index+1)/self.gamma - self.polytropic_index)
-        print(entropy_gradient_factor)
-        print(self.epsilon/self.gamma)
-
+        #self.entropy_gradient_factor = ((self.polytropic_index+1)/self.gamma - self.polytropic_index)
+        #print(entropy_gradient_factor)
+        #print(self.epsilon/self.gamma)
+        self.entropy_gradient_factor = self.epsilon/self.gamma
+        
         self.z0 = z0
 
         self.base_atmosphere = dict()
@@ -148,7 +149,8 @@ class ScaledPolytrope(Polytrope):
     def __init__(self, gamma, polytropic_index, z0, z, **args):
         Polytrope.__init__(self, gamma, polytropic_index, z0, z, **args)
         self.scale_factor = (self.z0-self.z)
-                
+        self.name = "scaled polytrope"
+        
     def grad_ln_rho(self):
         return -self.polytropic_index*np.ones_like(self.z)
 
@@ -188,3 +190,4 @@ if __name__ == "__main__":
     num_coeffs = 20
 
     atm = ScaledPolytrope(gamma, poly_n, Lz+1, z_basis, num_coeffs=num_coeffs)
+    atm = Polytrope(gamma, poly_n, Lz+1, z_basis, num_coeffs=num_coeffs)
