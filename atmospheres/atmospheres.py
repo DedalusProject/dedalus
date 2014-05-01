@@ -2,8 +2,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import dedalus2.public as d2
 
-class polytrope():
-    def __init__(self, gamma, polytropic_index, z0):
+class polytrope():#dedalus_atmosphere):
+    def __init__(self, gamma, polytropic_index, z0, z):
+        #dedalus_atmosphere.__init__(**args)
         self.gamma = gamma
         
         self.polytropic_index = polytropic_index
@@ -16,7 +17,12 @@ class polytrope():
         print("ε = ", self.epsilon)
 
         self.z0 = z0
-                
+        self.parameters = dict()
+        self.parameters['grad_ln_rho'] = self.grad_ln_rho
+        self.parameters['grad_S'] = self.grad_S
+
+        self.set_grid(z.grid)
+        
     def set_grid(self, z):
         self.z = z
         
@@ -51,6 +57,7 @@ class dedalus_atmosphere():
         self.domain = d2.Domain([z_basis])
         
         self.z_atmosphere = z_basis.grid
+        self.z = z_basis.grid
 
         self.grad_ln_rho_atmosphere = self.domain.new_field()
         self.grad_S_atmosphere = self.domain.new_field()
@@ -68,8 +75,8 @@ class dedalus_atmosphere():
         print("Atmosphere comparison has been output to: atmosphere.png")
         
     def set_atmosphere(self):
-        self.grad_ln_rho_atmosphere['g'] = self.atmosphere.grad_ln_rho()
-        self.grad_S_atmosphere['g'] = self.atmosphere.grad_S()
+        self.grad_ln_rho_atmosphere['g'] = self.atmosphere.parameters['grad_ln_rho']()
+        self.grad_S_atmosphere['g'] = self.atmosphere.parameters['grad_S']()
                 
     def truncate_atmosphere(self):
         self.grad_ln_rho_atmosphere['c'][self.num_coeffs:] = 0
@@ -109,19 +116,19 @@ class dedalus_atmosphere():
 
         ax1 = fig.add_subplot(2,N_atm_q,1)
         ax1.plot(self.z_atmosphere, self.grad_ln_rho())
-        ax1.plot(self.z_atmosphere, self.atmosphere.grad_ln_rho())
+        ax1.plot(self.z_atmosphere, self.atmosphere.parameters['grad_ln_rho']())
         ax1.set_title(r"$\nabla \ln \rho_0$")
         ax3 = fig.add_subplot(2,N_atm_q,3)
         ax3.plot(self.z_atmosphere, 
-                 np.abs(self.grad_ln_rho()/self.atmosphere.grad_ln_rho()-1))
+                 np.abs(self.grad_ln_rho()/self.atmosphere.parameters['grad_ln_rho']()-1))
 
         ax2 = fig.add_subplot(2,N_atm_q,2)
         ax2.plot(self.z_atmosphere, self.grad_S())
-        ax2.plot(self.z_atmosphere, self.atmosphere.grad_S())
+        ax2.plot(self.z_atmosphere, self.atmosphere.parameters['grad_S']())
         ax2.set_title(r"$\nabla S_0$")
         ax4 = fig.add_subplot(2,N_atm_q,4)
         ax4.plot(self.z_atmosphere, 
-                 np.abs(self.grad_S()/self.atmosphere.grad_S()-1))
+                 np.abs(self.grad_S()/self.atmosphere.parameters['grad_S']()-1))
         fig.savefig('atmosphere.png')
         plt.close(fig)
 
@@ -140,6 +147,6 @@ if __name__ == "__main__":
     
     num_coeffs = 20
 
-    atm = polytrope(gamma, poly_n, Lz+1)
+    atm = polytrope(gamma, poly_n, Lz+1, z_basis)
 
     dedalus_atm = dedalus_atmosphere(z_basis, atm, num_coeffs=num_coeffs)
