@@ -95,7 +95,12 @@ class Polytrope(DedalusAtmosphere):
         self.epsilon = self.polytropic_index - self.polytropic_index_ad
         print("ε = ", self.epsilon)
         print("Nρ = ", self.polytropic_index*np.log(z0))
-              
+
+
+        self.entropy_gradient_factor = ((self.polytropic_index+1)/self.gamma - self.polytropic_index)
+        print(entropy_gradient_factor)
+        print(self.epsilon/self.gamma)
+
         self.z0 = z0
 
         self.base_atmosphere = dict()
@@ -121,10 +126,7 @@ class Polytrope(DedalusAtmosphere):
         return -self.polytropic_index/(self.z0-self.z)
 
     def grad_S(self):
-        entropy_gradient_factor = ((self.polytropic_index+1)/self.gamma - self.polytropic_index)
-        print(entropy_gradient_factor)
-        print(self.epsilon/self.gamma)
-        return -entropy_gradient_factor/(self.z0-self.z)
+        return -self.entropy_gradient_factor/(self.z0-self.z)
 
     def grad_ln_T(self):
         return -1/(self.z0-self.z)
@@ -151,10 +153,7 @@ class ScaledPolytrope(Polytrope):
         return -self.polytropic_index*np.ones_like(self.z)
 
     def grad_S(self):
-        entropy_gradient_factor = ((self.polytropic_index+1)/self.gamma - self.polytropic_index)
-        print(entropy_gradient_factor)
-        print(self.epsilon/self.gamma)
-        return -entropy_gradient_factor*np.ones_like(self.z)
+        return -self.entropy_gradient_factor*np.ones_like(self.z)
 
     def grad_ln_T(self):
         return -np.ones_like(self.z)
