@@ -14,15 +14,18 @@ class DedalusAtmosphere():
         self.keys = sorted(self.base_atmosphere.keys())
         self.N_parameters = len(self.keys)
 
+        self.work = self.domain.new_field()
+        
         for key in self.keys:
             print("setting {:s}".format(key))
             self.atmosphere[key] = self.domain.new_field()
-            self.atmosphere[key]['g'] =  self.base_atmosphere[key]()
+            self.atmosphere[key]['g'] =  self.base_atmosphere[key]
 
             self.check_spectrum(key)        
             self.truncate_atmosphere(key)
             self.check_atmosphere(key)
-                        
+
+        
     def truncate_atmosphere(self, key):
         self.atmosphere[key]['c'][self.num_coeffs:] = 0
 
@@ -36,7 +39,8 @@ class DedalusAtmosphere():
     def check_spectrum(self, key, individual_plots=True):
         fig = plt.figure()
         ax = fig.add_subplot(1,1,1)
-        power_spectrum = np.abs(self.atmosphere[key]['c']*np.conj(self.atmosphere[key]['c']))
+        
+        power_spectrum = np.sqrt(np.abs(self.atmosphere[key]['c']*np.conj(self.atmosphere[key]['c'])))
         ax.loglog(power_spectrum)
 
         ax.axvline(x=self.num_coeffs,linestyle='dashed')
@@ -50,7 +54,7 @@ class DedalusAtmosphere():
         ax.axhline(y=dp_bound,linestyle='dashed')
 
         
-        ax.set_ylabel("power spectrum")
+        ax.set_ylabel("amplitude from power spectrum")
 
         atm_file = "spectrum_{:s}.png".format(key)
         fig.savefig(atm_file)
@@ -63,13 +67,13 @@ class DedalusAtmosphere():
         ax1 = fig.add_subplot(2,1,1)
         ax2 = fig.add_subplot(2,1,2)
 
-        ax1.plot(self.z, self.base_atmosphere[key]())
+        ax1.plot(self.z, self.base_atmosphere[key])
         ax1.plot(self.z, self.get_values(key))
 
         ax1.set_ylabel(self.titles[key])
         ax1.set_title("truncated atmosphere {:s}".format(self.titles[key]))
 
-        ax2.semilogy(self.z, np.abs(self.base_atmosphere[key]()/self.get_values(key)-1))
+        ax2.semilogy(self.z, np.abs(self.base_atmosphere[key]/self.get_values(key)-1))
 
         ax2.set_ylabel("relative error")
         ax2.set_xlabel(r"$z$")
@@ -92,7 +96,7 @@ class Polytrope(DedalusAtmosphere):
         self.n = self.polytropic_index
         self.n_ad = self.polytropic_index_ad
 
-        self.epsilon = self.polytropic_index - self.polytropic_index_ad
+        self.epsilon = self.polytropic_index_ad - self.polytropic_index
         print("ε = ", self.epsilon)
         print("Nρ = ", self.polytropic_index*np.log(z0))
 
@@ -103,21 +107,22 @@ class Polytrope(DedalusAtmosphere):
         self.entropy_gradient_factor = self.epsilon/self.gamma
         
         self.z0 = z0
-
+        self.z = z.grid
+        
         self.base_atmosphere = dict()
         self.titles = dict()
         
-        self.base_atmosphere['grad_ln_rho'] = self.grad_ln_rho
+        self.base_atmosphere['grad_ln_rho'] = self.grad_ln_rho()
         self.titles['grad_ln_rho'] = r"$\nabla \ln \rho_0$"
-        self.base_atmosphere['grad_S'] = self.grad_S
+        self.base_atmosphere['grad_S'] = self.grad_S()
         self.titles['grad_S'] = r"$\nabla S_0$"
-        self.base_atmosphere['grad_ln_T'] = self.grad_ln_T
+        self.base_atmosphere['grad_ln_T'] = self.grad_ln_T()
         self.titles['grad_ln_T'] = r"$\nabla \ln T_0$"
-        self.base_atmosphere['rho'] = self.rho
+        self.base_atmosphere['rho'] = self.rho()
         self.titles['rho'] = r"$\rho_0$"
-        self.base_atmosphere['T'] = self.T
+        self.base_atmosphere['T'] = self.T()
         self.titles['T'] = r"$T_0$"
-        self.base_atmosphere['P'] = self.P
+        self.base_atmosphere['P'] = self.P()
         self.titles['P'] = r"$P_0$"
 
         
@@ -177,7 +182,7 @@ class ScaledPolytrope(Polytrope):
 if __name__ == "__main__":
 
     Lz = 10
-    Lz = 740
+    #Lz = 740
     nz = 1024*3/2
     
     z_basis = d2.Chebyshev(nz, interval=[0., Lz], dealias=2/3)
@@ -187,7 +192,7 @@ if __name__ == "__main__":
     poly_n = 1.5 - epsilon
 
     
-    num_coeffs = 20
+    num_coeffs = 50
 
-    atm = ScaledPolytrope(gamma, poly_n, Lz+1, z_basis, num_coeffs=num_coeffs)
+    #atm = ScaledPolytrope(gamma, poly_n, Lz+1, z_basis, num_coeffs=num_coeffs)
     atm = Polytrope(gamma, poly_n, Lz+1, z_basis, num_coeffs=num_coeffs)
