@@ -75,16 +75,9 @@ def visit_writes(fileroot, function):
 #         jointfile = h5py.File(fileroot + '_f%i.h5'%i, 'w')
 #         for f in ifiles:
 
+def merge_tasks(folder_path, timeslice=None, tasks=None):
+    pass
 
-
-def natural_sort(l):
-
-    import re
-
-    convert = lambda text: int(text) if text.isdigit() else text.lower()
-    alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
-
-    return sorted(l, key=alphanum_key)
 
 if __name__ == "__main__":
 
