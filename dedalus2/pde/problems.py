@@ -307,7 +307,7 @@ class ParsedProblem:
         nsubs = len(zbasis.subbases)
         pdata = np.zeros(zbasis.coeff_embed, dtype=zbasis.coeff_dtype)
         cdata = np.zeros(zbasis.coeff_size, dtype=zbasis.coeff_dtype)
-        Cij_exp = [sy.zeros(1, zbasis.coeff_size) for i in range(nsubs)]
+        Cij_exp = [sy.zeros(1, zbasis.subbases[i].coeff_size) for i in range(nsubs)]
 
         Cij = Cij.expand()
         terms = sy.Add.make_args(Cij)

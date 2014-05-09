@@ -240,6 +240,10 @@ class Chebyshev(ImplicitBasis):
 
         # Initial attributes
         self.subbases = (self,)
+        self.grid_start = np.array([0])
+        self.pad_start = np.array([0])
+        self.coeff_start = np.array([0])
+
         self.name = name
         self.grid_size = grid_size
         self.interval = tuple(interval)
@@ -514,6 +518,10 @@ class Fourier(TransverseBasis, ImplicitBasis):
 
         # Initial attributes
         self.subbases = (self,)
+        self.grid_start = np.array([0])
+        self.pad_start = np.array([0])
+        self.coeff_start = np.array([0])
+
         self.name = name
         self.grid_size = grid_size
         self.interval = tuple(interval)
