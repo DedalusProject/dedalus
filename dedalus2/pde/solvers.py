@@ -64,8 +64,8 @@ class LinearBVP:
         vars.update(problem.parameters)
 
         self.evaluator = Evaluator(domain, vars)
-        Fe_handler = self.evaluator.add_system_handler(iter=1)
-        Fb_handler = self.evaluator.add_system_handler(iter=1)
+        Fe_handler = self.evaluator.add_system_handler(iter=1, group='F')
+        Fb_handler = self.evaluator.add_system_handler(iter=1, group='F')
         Fe_handler.add_tasks(problem.eqn_set['F'])
         Fb_handler.add_tasks(problem.bc_set['F'])
         self.Fe = Fe_handler.build_system()
@@ -75,7 +75,7 @@ class LinearBVP:
         """Solve BVP."""
 
         # Compute RHS
-        self.evaluator.evaluate(0, 0, 0, force=True)
+        self.evaluator.evaluate_group('F', 0, 0, 0)
 
         # Solve system for each pencil, updating state
         for p in self.pencils:
@@ -169,7 +169,6 @@ class IVP:
         self.iteration = 0
 
         # Default integration parameters
-        self.dt = 1.
         self.stop_sim_time = 10.
         self.stop_wall_time = 10.
         self.stop_iteration = 10.
@@ -207,6 +206,9 @@ class IVP:
 
     def step(self, dt):
         """Advance system by one iteration/timestep."""
+
+        if not np.isfinite(dt):
+            raise ValueError("Invalid timestep")
 
         # References
         state = self.state
