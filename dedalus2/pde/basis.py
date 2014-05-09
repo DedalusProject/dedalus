@@ -240,9 +240,6 @@ class Chebyshev(ImplicitBasis):
 
         # Initial attributes
         self.subbases = (self,)
-        self.grid_start = np.array([0])
-        self.pad_start = np.array([0])
-        self.coeff_start = np.array([0])
 
         self.name = name
         self.grid_size = grid_size
@@ -287,6 +284,10 @@ class Chebyshev(ImplicitBasis):
         # Basis elements
         self.elements = np.arange(self.coeff_size)
         self.element_label = "T"
+
+        self.grid_start = np.array([0, self.grid_size])
+        self.pad_start = np.array([0, self.coeff_embed])
+        self.coeff_start = np.array([0, self.coeff_size])
 
         return self.coeff_dtype
 
@@ -518,9 +519,6 @@ class Fourier(TransverseBasis, ImplicitBasis):
 
         # Initial attributes
         self.subbases = (self,)
-        self.grid_start = np.array([0])
-        self.pad_start = np.array([0])
-        self.coeff_start = np.array([0])
 
         self.name = name
         self.grid_size = grid_size
@@ -584,6 +582,10 @@ class Fourier(TransverseBasis, ImplicitBasis):
         self.wavenumbers = wavenumbers / self._grid_stretch
         self.elements = self.wavenumbers
         self.element_label = 'k'
+
+        self.grid_start = np.array([0, self.grid_size])
+        self.pad_start = np.array([0, self.coeff_embed])
+        self.coeff_start = np.array([0, self.coeff_size])
 
         return self.coeff_dtype
 
