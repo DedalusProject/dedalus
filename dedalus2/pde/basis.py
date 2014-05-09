@@ -170,7 +170,7 @@ class ImplicitBasis(Basis):
         raise NotImplementedError()
 
     @CachedMethod
-    def Mult(self, p):
+    def Mult(self, p, subindex):
         """p-element multiplication matrix."""
 
         raise NotImplementedError()
@@ -239,6 +239,7 @@ class Chebyshev(ImplicitBasis):
     def __init__(self, grid_size, interval=(-1., 1.), dealias=1., name=None):
 
         # Initial attributes
+        self.subbases = (self,)
         self.name = name
         self.grid_size = grid_size
         self.interval = tuple(interval)
@@ -407,7 +408,7 @@ class Chebyshev(ImplicitBasis):
         return Diff.tocsr()
 
     @CachedMethod
-    def Mult(self, p):
+    def Mult(self, p, subindex):
         """
         p-element multiplication matrix
 
@@ -512,6 +513,7 @@ class Fourier(TransverseBasis, ImplicitBasis):
     def __init__(self, grid_size, interval=(0., 2.*np.pi), dealias=1., name=None):
 
         # Initial attributes
+        self.subbases = (self,)
         self.name = name
         self.grid_size = grid_size
         self.interval = tuple(interval)
@@ -682,7 +684,7 @@ class Fourier(TransverseBasis, ImplicitBasis):
         return Diff.tocsr()
 
     @CachedMethod
-    def Mult(self, p):
+    def Mult(self, p, subindex):
         """
         p-element multiplication matrix
 
@@ -763,6 +765,230 @@ class Fourier(TransverseBasis, ImplicitBasis):
         """Transverse differentation constant for i-th term."""
 
         return 1j * self.wavenumbers[i]
+
+
+class Compound(ImplicitBasis):
+    """Chebyshev polynomial basis on the extrema grid."""
+
+    def __init__(self, subbases, name=None):
+
+        # Initial attributes
+        self.subbases = subbases
+        self.name = name
+
+        # Check intervals
+        for i in range(len(subbases)-1):
+            if subbases[i].interval[1] != subbases[i+1].interval[0]:
+                raise ValueError("Subbases not adjascent.")
+
+        # Get cumulative sizes
+        grid_cu = np.cumsum([b.grid_size for b in subbases])
+        pad_cu = np.cumsum([b.coeff_embed for b in subbases])
+        coeff_cu = np.cumsum([b.coeff_size for b in subbases])
+
+        # Compute starting indices
+        self.grid_start = np.concatenate(([0,], grid_cu))
+        self.pad_start = np.concatenate(([0,], pad_cu))
+        self.coeff_start = np.concatenate(([0,], coeff_cu))
+
+        # Sizes
+        self.grid_size = grid_cu[-1]
+        self.coeff_embed = pad_cu[-1]
+        self.coeff_size = coeff_cu[-1]
+
+        self.interval = (subbases[0].interval[0], subbases[-1].interval[-1])
+        self.grid = np.concatenate([b.grid for b in subbases])
+
+    def set_transforms(self, grid_dtype):
+        """Set transforms based on grid data type."""
+
+        coeff_dtypes = [b.set_transforms(grid_dtype) for b in self.subbases]
+        if len(set(coeff_dtypes)) > 1:
+            raise ValueError("Bases returned different dtypes")
+
+        # Transform retains data type
+        self.grid_dtype = grid_dtype
+        self.coeff_dtype = coeff_dtypes[0]
+
+        self.fftw_plan = None
+
+        # Basis elements
+        self.elements = np.concatenate([b.elements for b in self.subbases])
+        self.element_label = "+".join([b.element_label for b in self.subbases])
+
+        return self.coeff_dtype
+
+    def grid_subdata(self, gdata, index, axis):
+        start = self.grid_start[index]
+        end = self.grid_start[index+1]
+        return gdata[axslice(axis, start, end)]
+
+    def pad_subdata(self, pdata, index, axis):
+        start = self.pad_start[index]
+        end = self.pad_start[index+1]
+        return pdata[axslice(axis, start, end)]
+
+    def coeff_subdata(self, cdata, index, axis):
+        start = self.coeff_start[index]
+        end = self.coeff_start[index+1]
+        return cdata[axslice(axis, start, end)]
+
+    def pad_coeff(self, cdata, pdata, axis):
+
+        for i,b in enumerate(self.subbases):
+            b_cdata = self.coeff_subdata(cdata, i, axis)
+            b_pdata = self.pad_subdata(pdata, i, axis)
+            b.pad_coeff(b_cdata, b_pdata, axis)
+
+    def unpad_coeff(self, pdata, cdata, axis):
+
+        for i,b in enumerate(self.subbases):
+            b_pdata = self.pad_subdata(pdata, i, axis)
+            b_cdata = self.coeff_subdata(cdata, i, axis)
+            b.unpad_coeff(b_pdata, b_cdata, axis)
+
+    def forward(self, gdata, pdata, axis):
+
+        for i,b in enumerate(self.subbases):
+            b_gdata = self.grid_subdata(gdata, i, axis)
+            b_pdata = self.pad_subdata(pdata, i, axis)
+
+            b_gdata_cont = np.copy(b_gdata)
+            b_pdata_cont = np.zeros_like(b_pdata)
+
+            b.forward(b_gdata_cont, b_pdata_cont, axis)
+            np.copyto(b_pdata, b_pdata_cont)
+
+    def backward(self, pdata, gdata, axis):
+
+        for i,b in enumerate(self.subbases):
+            b_pdata = self.pad_subdata(pdata, i, axis)
+            b_gdata = self.grid_subdata(gdata, i, axis)
+
+            b_pdata_cont = np.copy(b_pdata)
+            b_gdata_cont = np.zeros_like(b_gdata)
+
+            b.backward(b_pdata_cont, b_gdata_cont, axis)
+            np.copyto(b_gdata, b_gdata_cont)
+
+    def differentiate(self, cdata, cderiv, axis):
+
+        for i,b in enumerate(self.subbases):
+            b_cdata = self.coeff_subdata(cdata, i, axis)
+            b_cderiv = self.coeff_subdata(cderiv, i, axis)
+            b.differentiate(b_cdata, b_cderiv, axis)
+
+    @CachedAttribute
+    def Pre(self):
+
+        Pre = sparse.block_diag([b.Pre for b in self.subbases])
+        return Pre.tocsr()
+
+    @CachedAttribute
+    def Diff(self):
+
+        Diff = sparse.block_diag([b.Diff for b in self.subbases])
+        return Diff.tocsr()
+
+    @CachedMethod
+    def Mult(self, p, subindex):
+
+        size = self.coeff_size
+        Mult = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
+        start = self.coeff_start[subindex]
+        end = self.coeff_start[subindex+1]
+        subMult = self.subbases[subindex].Mult(p, 0)
+        Mult[start:end, start:end] = subMult
+
+        return Mult.tocsr()
+
+    @CachedAttribute
+    def left_vector(self):
+
+        # Construct dense column vector
+        left_vector = np.zeros(self.coeff_size, dtype=self.coeff_dtype)
+        # Use first basis for BC
+        start = self.coeff_start[0]
+        end = self.coeff_start[1]
+        left_vector[start:end] = self.subbases[0].left_vector
+
+        return left_vector
+
+    @CachedAttribute
+    def right_vector(self):
+
+        # Construct dense column vector
+        right_vector = np.zeros(self.coeff_size, dtype=self.coeff_dtype)
+        # Use last basis for BC
+        start = self.coeff_start[-2]
+        end = self.coeff_start[-1]
+        right_vector[start:] = self.subbases[-1].right_vector
+
+        return right_vector
+
+    @CachedAttribute
+    def integ_vector(self):
+
+        integ_vector = np.concatenate([b.integ_vector for b in self.subbases])
+        return integ_vector
+
+    @CachedMethod
+    def interp_vector(self, position):
+
+        # Construct dense row vector
+        interp_vector = np.zeros(self.coeff_size, dtype=self.coeff_dtype)
+        # Take first basis with position in interval
+        for i,b in enumerate(self.subbases):
+            if b.interval[0] <= position <= b.interval[1]:
+                start = self.coeff_start[i]
+                end = self.coeff_start[i+1]
+                interp_vector[start:end] = b.interp_vector
+                return interp_vector
+        raise ValueError("Position outside any subbasis interval.")
+
+    @CachedAttribute
+    def bc_vector(self):
+
+        # Construct dense column vector
+        bc_vector = np.zeros((self.coeff_size, 1), dtype=self.coeff_dtype)
+        # Use last basis spot for BC
+        start = self.coeff_start[-2]
+        end = self.coeff_start[-1]
+        bc_vector[start:end] = self.subbases[-1].bc_vector
+
+        return bc_vector
+
+    @CachedAttribute
+    def match_vector(self):
+
+        # Construct dense column vector
+        match_vector = np.zeros((self.coeff_size, 1), dtype=self.coeff_dtype)
+        # Use all but last basis spots for matching
+        for i,b in enumerate(self.subbases[:-1]):
+            start = self.coeff_start[i]
+            end = self.coeff_start[i+1]
+            match_vector[start:end] = b.bc_vector
+
+        return match_vector
+
+    @CachedAttribute
+    def Match(self):
+
+        size = self.coeff_size
+        Match = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
+        for i in range(len(self.subbases) - 1):
+            basis1 = self.subbases[i]
+            basis2 = self.subbases[i+1]
+            s1 = self.coeff_start[i]
+            e1 = self.coeff_start[i+1]
+            s2 = e1
+            e2 = self.coeff_start[i+2]
+
+            k1 = sparse.kron(basis1.bc_vector, basis1.right_vector)
+            Match[s1:e1, s1:e1] = sparse.kron(basis1.bc_vector, basis1.right_vector)
+            Match[s1:e1, s2:e2] = -sparse.kron(basis1.bc_vector, basis2.left_vector)
+
+        return Match.tocsr()
 
 
 class NoOp(Basis):

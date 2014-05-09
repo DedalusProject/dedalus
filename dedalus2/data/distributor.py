@@ -305,7 +305,7 @@ class Transform:
                                     buffer=self.buffer)
 
         # Set transform callables
-        if use_fftw:
+        if use_fftw and basis.fftw_plan:
             self.fftw_plan = basis.fftw_plan(layout1.shape, axis)
             self._backward_callable = self.fftw_plan.backward
             self._forward_callable = self.fftw_plan.forward
