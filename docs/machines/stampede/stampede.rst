@@ -64,7 +64,7 @@ Create ``~\build_intel`` and then proceed with downloading and installing Python
     cd Python-3.3.3
 
     # make sure you have the python patch, put it in Python-3.3.3
-    wget http://lcd-www.colorado.edu/bpbrown/dedalus_documentation/_downloads/python_intel_patch.tar
+    wget http://dedalus-project.readthedocs.org/en/latest/_downloads/python_intel_patch.tar
     tar xvf python_intel_patch.tar 
 
     ./configure --prefix=$BUILD_HOME \
