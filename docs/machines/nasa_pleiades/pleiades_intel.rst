@@ -163,9 +163,9 @@ We need to build our own FFTW3, under intel 14 and mvapich2/2.0b::
     cd fftw-3.3.4
 
    ./configure --prefix=$BUILD_HOME \
-                         CC=mpicc \
-                         CXX=mpicxx \
-                         F77=mpif90 \
+                         CC=mpicc        CFLAGS="-O3 -axAVX -xSSE4.1" \
+                         CXX=mpicxx CPPFLAGS="-O3 -axAVX -xSSE4.1" \
+                         F77=mpif90  F90FLAGS="-O3 -axAVX -xSSE4.1" \
                          MPICC=mpicc MPICXX=mpicxx \
                          --enable-shared \
                          --enable-mpi --enable-openmp --enable-threads
@@ -175,8 +175,6 @@ We need to build our own FFTW3, under intel 14 and mvapich2/2.0b::
 It's critical that you use ``mpicc`` as the C-compiler, etc.
 Otherwise the libmpich libraries are not being correctly linked into
 ``libfftw3_mpi.so`` and dedalus failes on fftw import.
-
-
 
 
 Installing nose
@@ -207,70 +205,62 @@ will build against the OpenBLAS libraries.
 
 All of the intel patches, etc. are unnecessary in the gcc stack.
 
-
-Building OpenBLAS
+Building numpy against MKL
 ----------------------------------
-
-From Stampede instructions::
-
-      # this needs to be done on a frontend
-      cd $BUILD_HOME
-      git clone git://github.com/xianyi/OpenBLAS
-
-      # suggest doing this build on a compute node, so we get the
-      # right number of openmp threads and architecture
-      cd $BUILD_HOME
-      cd OpenBLAS
-      make
-      make PREFIX=$BUILD_HOME install
-
-Here's the build report before the ``make install``::
-
-  OpenBLAS build complete. (BLAS CBLAS LAPACK LAPACKE)
-
-  OS               ... Linux             
-  Architecture     ... x86_64               
-  BINARY           ... 64bit                 
-  C compiler       ... GCC  (command line : mpicc)
-  Fortran compiler ... GFORTRAN  (command line : gfortran)
-  Library Name     ... libopenblas_sandybridgep-r0.2.9.rc2.a (Multi threaded; Max num-threads is 40)
-
-
-
-Building numpy against OpenBLAS
-----------------------------------------
 
 Now, acquire ``numpy`` (1.8.1)::
 
+     cd $BUILD_HOME
      wget http://sourceforge.net/projects/numpy/files/NumPy/1.8.1/numpy-1.8.1.tar.gz
-     tar xvf numpy-1.8.1.tar.gz
+     tar -xvf numpy-1.8.1.tar.gz
      cd numpy-1.8.1
+     wget http://lcd-www.colorado.edu/bpbrown/dedalus_documentation/_downloads/numpy_intel_patch.tar
+     tar xvf numpy_intel_patch.tar
+
+This last step saves you from needing to hand edit two
+files in ``numpy/distutils``; these are ``intelccompiler.py`` and
+``fcompiler/intel.py``.  I've built a crude patch, 
+:download:`numpy_intel_patch.tar<numpy_intel_patch.tar>` 
+which can be auto-deployed by within the ``numpy-1.8.1`` directory by
+the instructions above.  This will unpack and overwrite::
+
+      numpy/distutils/intelccompiler.py
+      numpy/distutils/fcompiler/intel.py
+
+Crap.  For now I'm hand editing these to replace "-xhost" with
+ "-axAVX -xSSE4.1".  Crap crap crap.
+
+We'll now need to make sure that ``numpy`` is building against the MKL
+libraries.  Start by making a ``site.cfg`` file::
+
+     cp site.cfg.example site.cfg
+     emacs -nw site.cfg
+
+Edit ``site.cfg`` in the ``[mkl]`` section; modify the
+library directory so that it correctly point to TACC's
+``$MKLROOT/lib/intel64/``.  
+With the modules loaded above, this looks like::
+
+     [mkl]
+     library_dirs = /nasa/intel/Compiler/2013.5.192/composer_xe_2013.5.192/mkl/lib/intel64
+     include_dirs = /nasa/intel/Compiler/2013.5.192/composer_xe_2013.5.192/mkl/include
+     mkl_libs = mkl_rt
+     lapack_libs =
+
+These are based on intels instructions for 
+`compiling numpy with ifort <http://software.intel.com/en-us/articles/numpyscipy-with-intel-mkl>`_
+and they seem to work so far.
 
 
-Create ``site.cfg`` with information for the OpenBLAS
-library directory
+Then proceed with::
 
-Next, make a site specific config file::
-
-      cp site.cfg.example site.cfg
-      emacs -nw site.cfg
-
-Edit ``site.cfg`` to uncomment the ``[openblas]`` section; modify the
-library and include directories so that they correctly point to your
-``~/build/lib`` and ``~/build/include`` (note, you may need to do fully expanded
-paths).  With my account settings, this looks like::
-
-     [openblas]
-     libraries = openblas
-     library_dirs = /u/bpbrown/build/lib
-     include_dirs = /u/bpbrown/build/include
-
-where ``$BUILD_HOME=/u/bpbrown/build``.  We may in time want to
-consider adding fftw as well.  Now build::
- 
-     python3 setup.py config build_clib build_ext install
+    python3 setup.py config --compiler=intelem build_clib --compiler=intelem build_ext --compiler=intelem install
 
 This will config, build and install numpy.
+
+
+
+
 
 
 
@@ -301,10 +291,12 @@ Installing Scipy
 Scipy is easier, because it just gets its config from numpy.  Dong a
 pip install fails, so we'll keep doing it the old fashioned way::
 
-    wget http://sourceforge.net/projects/scipy/files/scipy/0.13.3/scipy-0.13.3.tar.gz
-    tar -xvf scipy-0.13.3.tar.gz
-    cd scipy-0.13.3
-    python3 setup.py config build_clib build_ext install
+    wget http://sourceforge.net/projects/scipy/files/scipy/0.14.0/scipy-0.14.0.tar.gz
+    tar -xvf scipy-0.14.0.tar.gz
+    cd scipy-0.14.0
+    python3 setup.py config --compiler=intelem --fcompiler=intelem build_clib \
+                                            --compiler=intelem --fcompiler=intelem build_ext \
+                                            --compiler=intelem --fcompiler=intelem install
 
 .. note::
 
@@ -338,9 +330,9 @@ needs to be compiled with support for parallel (mpi) I/O::
      tar xvf hdf5-1.8.12.tar
      cd hdf5-1.8.12
      ./configure --prefix=$BUILD_HOME \
-                         CC=mpicc \
-                         CXX=mpicxx \
-                         F77=mpif90 \
+                         CC=mpicc         CFLAGS="-O3 -axAVX -xSSE4.1" \
+                         CXX=mpicxx CPPFLAGS="-O3 -axAVX -xSSE4.1" \
+                         F77=mpif90  F90FLAGS="-O3 -axAVX -xSSE4.1" \
                          MPICC=mpicc MPICXX=mpicxx \
                          --enable-shared --enable-parallel
      make
@@ -419,11 +411,14 @@ Here's the original h5py repository::
 
 Installing Mercurial
 ----------------------------------------------------
-On NASA Pleiades, we need to install mercurial itself::
+On NASA Pleiades, we need to install mercurial itself.  I can't get
+mercurial to build properly on intel compilers, so for now use gcc::
 
      wget http://mercurial.selenic.com/release/mercurial-2.9.tar.gz
      tar xvf mercurial-2.9.tar.gz 
      cd mercurial-2.9
+     module load gcc
+     export CC=gcc
      make install PREFIX=$BUILD_HOME
 
 I suggest you add the following to your ``~/.hgrc``::
