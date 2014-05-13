@@ -47,9 +47,9 @@ class DedalusAtmosphere():
         ax.set_title(self.titles[key])
         ax.set_xlabel(r"$T_n$")
 
-        sp_bound = (np.max(power_spectrum)*1e-8)
-        dp_bound = (np.max(power_spectrum)*1e-16)
-        
+        sp_bound = np.max(power_spectrum)*(1e-8)
+        dp_bound = np.max(power_spectrum)*(1e-16)
+      
         ax.axhline(y=sp_bound,linestyle='dashed')
         ax.axhline(y=dp_bound,linestyle='dashed')
 
@@ -182,7 +182,9 @@ class ScaledPolytrope(Polytrope):
 if __name__ == "__main__":
 
     Lz = 10
-    #Lz = 740
+    Lz = 106
+    Lz = 740
+
     nz = 1024*3/2
     
     z_basis = d2.Chebyshev(nz, interval=[0., Lz], dealias=2/3)
@@ -194,5 +196,5 @@ if __name__ == "__main__":
     
     num_coeffs = 50
 
-    #atm = ScaledPolytrope(gamma, poly_n, Lz+1, z_basis, num_coeffs=num_coeffs)
-    atm = Polytrope(gamma, poly_n, Lz+1, z_basis, num_coeffs=num_coeffs)
+    atm = ScaledPolytrope(gamma, poly_n, Lz+1, z_basis, num_coeffs=num_coeffs)
+    #atm = Polytrope(gamma, poly_n, Lz+1, z_basis, num_coeffs=num_coeffs)
