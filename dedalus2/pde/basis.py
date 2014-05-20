@@ -395,7 +395,7 @@ class Chebyshev(ImplicitBasis):
         """
         Differentiation matrix.
 
-        d_x(T_n) / n = 2 T_n + d_x(T_(n-2)) / (n-2)
+        d_x(T_n) / n = 2 T_(n-1) + d_x(T_(n-2)) / (n-2)
 
         """
 
@@ -952,7 +952,7 @@ class Compound(ImplicitBasis):
             if b.interval[0] <= position <= b.interval[1]:
                 start = self.coeff_start[i]
                 end = self.coeff_start[i+1]
-                interp_vector[start:end] = b.interp_vector
+                interp_vector[start:end] = b.interp_vector(position)
                 return interp_vector
         raise ValueError("Position outside any subbasis interval.")
 
