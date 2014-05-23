@@ -67,9 +67,12 @@ class cfl(global_flow_property):
         self.cfl_variables.add_task('w/grid_delta_z', name='f_w')
     
     def compute_dt(self, safety=1.):
+        
         if self.participate:
-            minut = 1./np.max(np.abs(self.cfl_variables.fields['f_u']['g']))
-            minwt = 1./np.max(np.abs(self.cfl_variables.fields['f_w']['g']))
+            freq = 0
+            for key, item in 
+            freq +=
+            max_freq = np.max(np.abs(self.cfl_variables.fields['f_u']['g']+self.cfl_variables.fields['f_w']['g']))
         else:
             # no data in these cores.
             minut = self.max_dt

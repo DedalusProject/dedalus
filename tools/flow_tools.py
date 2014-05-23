@@ -4,8 +4,8 @@ from dedalus2.tools.logging import logger
 # for CFL and Re estimation
 import mpi4py.MPI as MPI
 
-class global_flow_property():
-    def __init__(self, solver):
+class GlobalFlowProperty():
+    def __init__(self, solver, variable_dict, cadence):
         self.comm = solver.domain.distributor.comm_world
 
         self.cfl_model = 'mpi allreduce inplace'
@@ -18,6 +18,11 @@ class global_flow_property():
 
         self.comm_array = np.zeros(1, dtype=np.float64)
 
+        self.variables = solver.evaluator.add_dictionary_handler(iter = cadence)
+        for key in variable_dict.keys():
+            self.variables.add_task(variable_dict[key], name=key)
+
+        
     def global_reduce(self, value, mpi_reduce_op, default_value = 0):
         if not self.participate:
             value = default_value
@@ -56,36 +61,33 @@ class global_flow_property():
 
 
 
-class cfl(global_flow_property):
+class CFL(GlobalFlowProperty):
     """
-    Compute CFL limited timestep size for 2D flow.
+    Compute CFL limited timestep size given a dictionary of frequencies.
 
-    Assumes that x velocity is u and z velocity is w.
+    freq_dict contains a set of dictionary_handler values and keys.
+
+    All variables used in freq_dict (e.g., delta_x_grid) must be set prior to calling cfl.
     """
-    def __init__(self, solver, max_dt, cfl_cadence=1):
-        global_flow_property.__init__(self, solver)
+    def __init__(self, solver, freq_dict, max_dt, cfl_cadence=1):
+
+        GlobalFlowProperty.__init__(self, solver, freq_dict, cfl_cadence)
 
         self.max_dt = max_dt
         self.cfl_cadence = cfl_cadence
 
-        solver.evaluator.vars['grid_delta_x'] = solver.domain.grid_spacing(0)
-        solver.evaluator.vars['grid_delta_y'] = solver.domain.grid_spacing(1)
-        solver.evaluator.vars['grid_delta_z'] = solver.domain.grid_spacing(2)        
-
-        self.cfl_variables = solver.evaluator.add_dictionary_handler(iter = cfl_cadence)
-        self.cfl_variables.add_task('dy(p)/grid_delta_x', name='f_u')
-        self.cfl_variables.add_task('dx(p)/grid_delta_y', name='f_v')
-    
     def compute_dt(self, safety=1.):
         if self.participate:
-            minut = 1./np.max(np.abs(self.cfl_variables.fields['f_u']['g']))
-            minvt = 1./np.max(np.abs(self.cfl_variables.fields['f_v']['g']))
+            freq = 0
+            for key in self.variables.fields.keys():
+                freq += np.abs(self.variables.fields[key]['g'])
+
+            mint = 1/np.max(freq)
         else:
             # no data in these cores.
-            minut = self.max_dt
-            minvt = self.max_dt
+            mint = self.max_dt
 
-        dt = safety * min(minut, minvt)
+        dt = safety * mint
 
         if self.comm:
             dt = self.global_min(dt)
@@ -94,27 +96,66 @@ class cfl(global_flow_property):
         
         return dt
 
-class basic_flow_properties(global_flow_property):
+    
+class ReynoldsPeclet(GlobalFlowProperty):
     """
     Compute basic flow properties (Reynolds number, Peclet number) for a 2D flow.
 
     """
-    def __init__(self, solver, report_cadence=50):
-        global_flow_property.__init__(self, solver)
-
-        self.flow_properties = solver.evaluator.add_dictionary_handler(iter = report_cadence)
-        self.flow_properties.add_task('sqrt(dy(p)*dy(p)+dx(p)*dx(p))*Lx/σ',  name='rms Re')
-        self.flow_properties.add_task('sqrt(dy(p)*dy(p)+dx(p)*dx(p))*Lx',    name='rms Pe')
-
+    def __init__(self, solver, flow_dict, report_cadence):
+        
+        GlobalFlowProperty.__init__(self, solver, flow_dict, report_cadence)
 
     def compute_Re_Pe(self):
 
-        peak_Re = self.global_max(self.flow_properties.fields['rms Re']['g'])
+        peak_Re = self.global_max(self.variables.fields['rms Re']['g'])
 
-        rms_Re = self.global_mean(self.flow_properties.fields['rms Re']['g'])
+        rms_Re = self.global_mean(self.variables.fields['rms Re']['g'])
 
-        peak_Pe = self.global_max(self.flow_properties.fields['rms Re']['g'])
+        peak_Pe = self.global_max(self.variables.fields['rms Re']['g'])
 
-        rms_Pe = self.global_mean(self.flow_properties.fields['rms Re']['g'])
+        rms_Pe = self.global_mean(self.variables.fields['rms Re']['g'])
 
         return peak_Re, peak_Pe, rms_Re, rms_Pe
+
+
+
+
+class CFL_conv_2D(CFL):
+    """
+    Compute CFL limited timestep size for 2D flow.
+
+    Assumes that x velocity is u and z velocity is w.
+    """
+    def __init__(self, solver, max_dt, cfl_cadence=1):
+
+        solver.evaluator.vars['grid_delta_x'] = solver.domain.grid_spacing(0)
+        solver.evaluator.vars['grid_delta_z'] = solver.domain.grid_spacing(1)
+
+        freq_dict = {}
+        freq_dict['f_u'] = 'u/grid_delta_x'
+        freq_dict['f_w'] = 'w/grid_delta_z'
+        
+        CFL.__init__(self, solver, freq_dict, max_dt, cfl_cadence)
+
+class RePe_conv_2D(ReynoldsPeclet):
+    def __init__(self, solver, report_cadence=50):
+
+        flow_dict = {}        
+        flow_dict['rms Re']='sqrt(u*u+w*w)*Lz/nu'
+        flow_dict['rms Pe']='sqrt(u*u+w*w)*Lz/chi'
+
+        ReynoldsPeclet.__init__(self, solver, flow_dict, report_cadence)
+
+class CFL_KED_3D(CFL):
+    def __init__(self, solver, max_dt, cfl_cadence=1):
+
+        solver.evaluator.vars['grid_delta_x'] = solver.domain.grid_spacing(0)
+        solver.evaluator.vars['grid_delta_y'] = solver.domain.grid_spacing(1)
+        solver.evaluator.vars['grid_delta_z'] = solver.domain.grid_spacing(2)
+
+        freq_dict = {}
+        freq_dict['f_u'] = 'dy(p)/grid_delta_x'
+        freq_dict['f_v'] = 'dx(p)/grid_delta_y'
+
+        cfl.__init__(self, solver, freq_dict, max_dt, cfl_cadence)
