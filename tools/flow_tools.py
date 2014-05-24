@@ -159,3 +159,12 @@ class CFL_KED_3D(CFL):
         freq_dict['f_v'] = 'dx(p)/grid_delta_y'
 
         cfl.__init__(self, solver, freq_dict, max_dt, cfl_cadence)
+
+class RePe_KED_3D(ReynoldsPeclet):
+    def __init__(self, solver, report_cadence=50):
+
+        flow_dict = {}        
+        flow_dict['rms Re']='sqrt(dy(p)*dy(p)+dx(p)*dx(p))*Lx/σ'
+        flow_dict['rms Pe']='sqrt(dy(p)*dy(p)+dx(p)*dx(p))*Lx'
+
+        ReynoldsPeclet.__init__(self, solver, flow_dict, report_cadence)
