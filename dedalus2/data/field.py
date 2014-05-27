@@ -30,7 +30,7 @@ class Field(Future):
 
     """
 
-    def __init__(self, domain, name=None):
+    def __init__(self, domain, name=None, constant=None):
 
         # Initial attributes
         self.name = name
@@ -41,12 +41,16 @@ class Field(Future):
         # Increment domain field count
         domain._field_count += 1
 
-        # Allocate buffer
+        # Allocate data buffer
         self._buffer = domain.distributor.create_buffer()
 
         # Set initial layout (property hook sets data view)
         self.layout = self.domain.distributor.coeff_layout
-        self.constant = np.array([False] * domain.dim)
+
+        # Default to non-constant
+        if constant is None:
+            constant = np.array([False] * domain.dim)
+        self.constant = constant
 
     def clean(self):
         """Revert field to state at instantiation."""

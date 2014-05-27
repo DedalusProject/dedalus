@@ -131,15 +131,21 @@ class Domain:
         field.clean()
         self._field_cache.append(field)
 
-    def new_field(self):
+    def new_field(self, name=None, constant=None):
         """Return a free field."""
 
         # Return a previously allocated field, if available
         if self._field_cache:
-            return self._field_cache.pop()
+            field = self._field_cache.pop()
         # Otherwise instantiate a new field
         else:
-            return Field(self)
+            field = Field(self)
+
+        # Set attributes
+        field.name = name
+        field.constant[:] = constant
+
+        return field
 
 
 def min_nonzero(*args):
