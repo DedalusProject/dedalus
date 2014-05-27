@@ -6,12 +6,13 @@
 Dedalus
 ===================================
 
-Getting started
+To begin using Dedalus, visit the pages on:
 
 .. toctree::
    :maxdepth: 1
 
    installation
+   getting_started
 
 
 Preliminary auto-included code documentation
