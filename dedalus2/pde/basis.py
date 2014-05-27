@@ -258,8 +258,8 @@ class Chebyshev(ImplicitBasis):
         self._problem_coord = lambda x: center + (x * radius)
 
         i = np.arange(grid_size)
-        N = grid_size - 1
-        native_grid = np.cos(np.pi * i / N)
+        N = grid_size
+        native_grid = -np.cos(np.pi * (i + 1/2) / N)
         self.grid = self._problem_coord(native_grid)
 
     def set_transforms(self, grid_dtype):
@@ -312,22 +312,35 @@ class Chebyshev(ImplicitBasis):
         """Scipy-based DCT on real data."""
 
         # Scipy DCT
-        np.copyto(pdata, fftpack.dct(gdata, type=1, norm=None, axis=axis))
+        np.copyto(pdata, fftpack.dct(gdata, type=2, norm=None, axis=axis))
+        self.unscale_coeff(pdata, axis)
 
-        # Normalize as true mode amplitudes
-        pdata /= (self.grid_size - 1)
-        pdata[axslice(axis, 0, 1)] /= 2.
-        pdata[axslice(axis, -1, None)] /= 2.
+    def unscale_coeff(self, pdata, axis):
+        """Unscale coefficient data after DCT."""
+
+        # Scale as Chebyshev amplitudes
+        pdata *= 1 / pdata.shape[axis]
+        pdata[axslice(axis, 0, 1)] *= 0.5
+        # Negate odd modes for natural grid ordering
+        pdata[axslice(axis, 1, None, 2)] *= -1.
+
+    def scale_coeff(self, pdata, axis):
+        """Scale coefficient data before IDCT."""
+
+        # Negate odd modes for natural grid ordering
+        pdata[axslice(axis, 1, None, 2)] *= -1.
+        # Scale from Chebyshev amplitudes
+        pdata[axslice(axis, 1, None)] *= 0.5
 
     def _backward_r2r(self, pdata, gdata, axis):
         """Scipy-based IDCT on real data."""
 
         # Renormalize in output to avoid modifying input
         np.copyto(gdata, pdata)
-        gdata[axslice(axis, 1, -1)] /= 2.
+        self.scale_coeff(gdata)
 
         # Scipy DCT
-        np.copyto(gdata, fftpack.dct(gdata, type=1, norm=None, axis=axis))
+        np.copyto(gdata, fftpack.dct(gdata, type=3, norm=None, axis=axis))
 
     def _forward_c2c(self, gdata, pdata, axis):
         """Scipy-based DCT on complex data."""
