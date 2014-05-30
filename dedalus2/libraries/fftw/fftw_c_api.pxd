@@ -147,6 +147,8 @@ cdef enum:
     FFTW_PRESERVE_INPUT = (1 << 4)
 
     FFTW_REDFT00 = 3
+    FFTW_REDFT01 = 4
+    FFTW_REDFT10 = 5
 
     FFTW_MPI_TRANSPOSED_IN = (1 << 29)
     FFTW_MPI_TRANSPOSED_OUT = (1 << 30)
