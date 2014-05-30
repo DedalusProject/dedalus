@@ -47,7 +47,7 @@ class Domain:
         # Iteratively set basis data types
         # (Grid-to-coefficient transforms proceed in the listed order)
         for b in bases:
-            grid_dtype = b.set_transforms(grid_dtype)
+            grid_dtype = b.set_dtype(grid_dtype)
 
         # Get global grid and coefficient shapes
         self.global_grid_shape = np.array([b.grid_size for b in bases], dtype=int)
