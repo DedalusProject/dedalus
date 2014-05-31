@@ -176,7 +176,8 @@ class Field(Future):
 
     def antidifferentiate(self, basis, bc=None, parameters={}, out=None):
         """
-        Antidifferentiate field.
+        Antidifferentiate field using a LinearBVP solver, with parsed boundary
+        condition where "AD" is the name of the antiderivative field.
 
         Parameters
         ----------
@@ -197,12 +198,13 @@ class Field(Future):
         from ..pde.solvers import LinearBVP
         from ..pde.problems import ParsedProblem
 
-
+        # Setup axis names and parameters for problem
         basis = self.domain.get_basis_object(basis)
         axis = self.domain.bases.index(basis)
         axis_names = ["x%i"%i for i in range(self.domain.dim)]
         parameters['__RHS'] = self
 
+        # Solve simple problem for the antiderivative
         problem = ParsedProblem(axis_names=axis_names,
                                 field_names=['AD'],
                                 param_names=list(parameters.keys()))
