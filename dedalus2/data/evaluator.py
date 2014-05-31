@@ -286,7 +286,7 @@ class FileHandler(Handler):
 
     """
 
-    def __init__(self, base_path, *args, max_writes=np.inf, max_size=2**30, parallel=True, **kw):
+    def __init__(self, base_path, *args, max_writes=np.inf, max_size=2**30, parallel=False, **kw):
 
         Handler.__init__(self, *args, **kw)
 
