@@ -173,3 +173,50 @@ class Field(Future):
         from .operators import Integrate
         return Integrate(self, *bases, out=out).evaluate()
 
+
+    def antidifferentiate(self, basis, bc=None, parameters={}, out=None):
+        """
+        Antidifferentiate field.
+
+        Parameters
+        ----------
+        basis : basis-like
+            Basis to antidifferentiate along
+        bc : tuple of str, optional
+            Boundary conditions as (bc_str, functional) tuple.
+            e.g. ("AD = 10", "int")
+        parameters : dict, optional
+            Any parameters needed for BC
+            e.g. fields for inhomogeneous BCs
+        out : field, optional
+            Output field
+
+        """
+
+        # Import in method to avoid circular dependencies
+        from ..pde.solvers import LinearBVP
+        from ..pde.problems import ParsedProblem
+
+
+        basis = self.domain.get_basis_object(basis)
+        axis = self.domain.bases.index(basis)
+        axis_names = ["x%i"%i for i in range(self.domain.dim)]
+        parameters['__RHS'] = self
+
+        problem = ParsedProblem(axis_names=axis_names,
+                                field_names=['AD'],
+                                param_names=list(parameters.keys()))
+        problem.add_equation("dx%s(AD) = __RHS" %axis)
+        if bc:
+            problem.add_bc(*bc)
+        problem.parameters.update(parameters)
+        problem.expand(self.domain)
+
+        solver = LinearBVP(problem, self.domain)
+        solver.solve()
+
+        if not out:
+            out = self.domain.new_field()
+        out['c'] = solver.state['AD']['c']
+
+        return out
