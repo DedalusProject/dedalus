@@ -1,6 +1,7 @@
 cython
 numpy
-scipy
+scipy >= 0.13.0
 sympy
 mpi4py
 h5py
+pathlib
