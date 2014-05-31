@@ -996,7 +996,7 @@ def create_diff_operator(basis_, axis_):
     """Create differentiation operator for a basis+axis."""
 
     if basis_.name is not None:
-        name_ = 'd' + basis.name
+        name_ = 'd' + basis_.name
     else:
         name_ = 'd' + str(axis_)
 
