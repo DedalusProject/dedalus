@@ -5,6 +5,8 @@ Class for data fields.
 
 from functools import partial
 import numpy as np
+from scipy import sparse
+from scipy.sparse import linalg as splinalg
 import weakref
 
 from .future import Future
@@ -220,5 +222,59 @@ class Field(Future):
         if not out:
             out = self.domain.new_field()
         out['c'] = solver.state['AD']['c']
+
+        return out
+
+    def antidifferentiate2(self, basis, bc, out=None):
+        """
+        Antidifferentiate field using a LinearBVP solver, with parsed boundary
+        condition where "AD" is the name of the antiderivative field.
+
+        Parameters
+        ----------
+        basis : basis-like
+            Basis to antidifferentiate along
+        bc : tuple of str
+            Boundary conditions as (functional, value) tuple.
+            `functional` is a string, e.g. "Left", "Right", "Int"
+            `value` is a field or scalar
+        out : field, optional
+            Output field
+
+        """
+
+        # References
+        basis = self.domain.get_basis_object(basis)
+        domain = self.domain
+        bc_type, bc_val = bc
+
+        # Only solve along last basis
+        if basis is not domain.bases[-1]:
+            raise NotImplementedError()
+
+        # Convert BC value to field
+        if np.isscalar(bc_val):
+            bc_val = domain.new_field()
+            bc_val['g'] = bc[1]
+        elif not isinstance(bc_val, Field):
+            raise TypeError("bc_val must be field or scalar")
+
+        # Build LHS matrix
+        Pre = basis.Pre
+        Diff = basis.Diff
+        F = sparse.eye(basis.coeff_size) - sparse.diags(basis.bc_vector.flatten(), 0)
+        G = F*Pre
+        BC = getattr(basis, bc_type.capitalize())
+        LHS = Pre*Diff + BC
+
+        if not out:
+            out = self.domain.new_field()
+        out_c = out['c']
+        f_c = self['c']
+        bc_c = bc_val['c']
+
+        for p in np.ndindex(out_c.shape[:-1]):
+            rhs = G*f_c[p] + BC*bc_c[p]
+            out_c[p] = splinalg.spsolve(LHS, b=rhs)
 
         return out
