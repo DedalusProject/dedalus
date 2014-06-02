@@ -65,80 +65,20 @@ class Basis:
         else:
             return self.__repr__()
 
-    def set_transforms(self, grid_dtype):
+    def set_dtype(self, grid_dtype):
         """Set transforms based on grid data type."""
 
         raise NotImplementedError()
 
-    def pad_coeff(self, cdata, pdata, axis):
-        """Pad coefficient data before backward transform."""
-
-        raise NotImplementedError()
-
-    def unpad_coeff(self, pdata, cdata, axis):
-        """Unpad coefficient data after forward transfrom."""
-
-    def forward(self, gdata, pdata, axis):
+    def forward(self, gdata, cdata, axis):
         """Grid-to-coefficient transform."""
 
         raise NotImplementedError()
 
-    def backward(self, pdata, gdata, axis):
+    def backward(self, cdata, gdata, axis):
         """Coefficient-to-grid transform."""
 
         raise NotImplementedError()
-
-    def forward(self, gdata, pdata, cdata, axis):
-        """
-        Perform forward transform from grid to coefficients.
-
-        Parameters
-        ----------
-        gdata : ndarray
-            Grid data
-        rdata : ndarray
-            Array for intermediate resized coefficients
-        cdata : ndarray
-            Array for computed coefficient data
-        axis : int
-            Transform axis
-
-        Notes
-        -----
-        `rdata.shape[axis]` defines the transform size.  The grid data in
-        `gdata` will be transformed into coefficients in `rdata`, which will be
-        truncated or padded with zeros in the `axis` direction to fit into `cdata`.
-
-        """
-
-        self._forward_transform(gdata, pdata, axis)
-        self._resize_coeffs(pdata, cdata, axis)
-
-    def backward(self, cdata, pdata, gdata, axis):
-        """
-        Perform backward transform from coefficients to grid.
-
-        Parameters
-        ----------
-        cdata : ndarray
-            Coefficient data
-        rdata : ndarray
-            Array for intermediate resized coefficients
-        gdata : ndarray
-            Array for computed grid data
-        axis : int
-            Transform axis
-
-        Notes
-        -----
-        `rdata.shape[axis]` defines the transform size.  The coefficients in
-        `cdata` will be truncated or padded with zeros in the `axis` direction
-        to fit in `pdata`, which is then transformed into `gdata`.
-
-        """
-
-        self._resize_coeffs(cdata, pdata, axis)
-        self._backward_transform(pdata, gdata, axis)
 
     def differentiate(self, cdata, cderiv, axis):
         """Differentiate using coefficients."""
@@ -161,8 +101,8 @@ class Basis:
 
     @library.setter
     def library(self, value):
-        self._forward_transform = getattr(self, '_forward_transform_%s' %value.lower())
-        self._backward_transform = getattr(self, '_backward_transform_%s' %value.lower())
+        self.forward = getattr(self, '_forward_%s' %value.lower())
+        self.backward = getattr(self, '_backward_%s' %value.lower())
         self._library = value.lower()
 
 
@@ -338,7 +278,7 @@ class Chebyshev(ImplicitBasis):
         self.grid_dtype = np.dtype(grid_dtype)
         self.coeff_dtype = self.grid_dtype
         # Same number of modes and grid points
-        self.coeff_size = grid_size
+        self.coeff_size = self.grid_size
         self.elements = np.arange(self.coeff_size)
 
         return self.coeff_dtype
@@ -379,56 +319,65 @@ class Chebyshev(ImplicitBasis):
         # Scale from Chebyshev amplitudes
         pdata[axslice(axis, 1, None)] *= 0.5
 
-    @staticmethod
-    def _forward_transform_scipy(gdata, pdata, axis):
-        """Scipy DCT."""
+    def _forward_scipy(self, gdata, cdata, axis):
+        """Forward tranform using scipy DCT."""
 
         # View complex data as interleaved real data
         if gdata.dtype == np.complex128:
             gdata = interleaved_view(gdata)
-            pdata = interleaved_view(pdata)
-        # Scipy DCT
-        np.copyto(pdata, fftpack.dct(gdata, type=2, axis=axis))
+            cdata = interleaved_view(cdata)
+        # Scipy out-of-place DCT to preserve gdata
+        pdata = fftpack.dct(gdata, type=2, axis=axis, overwrite_x=False)
         # Scale DCT output to Chebyshev coefficients
         self._forward_scaling(pdata, axis)
+        # Pad / truncate coefficients
+        self._resize_coeffs(pdata, cdata, axis)
 
-    @staticmethod
-    def _backward_transform_scipy(pdata, gdata, axis):
-        """Scipy IDCT."""
+    def _backward_scipy(self, cdata, gdata, axis):
+        """Backward transform using scipy IDCT."""
 
+        # Pad / truncate coefficients
+        # Store in gdata for memory efficiency (same shape/dtype as pdata)
+        self._resize_coeffs(cdata, gdata, axis)
         # Scale Chebyshev coefficients to IDCT input
-        self._backward_scaling(pdata, axis)
+        self._backward_scaling(gdata, axis)
         # View complex data as interleaved real data
         if gdata.dtype == np.complex128:
             gdata = interleaved_view(gdata)
-            pdata = interleaved_view(pdata)
-        # Scipy IDCT
-        np.copyto(gdata, fftpack.dct(pdata, type=3, axis=axis))
+        # Scipy in-place IDCT
+        fftpack.dct(gdata, type=3, axis=axis, overwrite_x=True)
 
     @CachedMethod
-    def _fftw_plan(self, dtype, gshape, axis):
-        """Build FFTW plans."""
-        # Note: regular method used to cache plans through basis instance
+    def _fftw_setup(self, dtype, gshape, axis):
+        """Build FFTW plans and temporary arrays."""
+        # Note: regular method used to cache through basis instance
 
         flags = ['FFTW_'+FFTW_RIGOR.upper()]
-        return fftw.DiscreteCosineTransform(dtype, gshape, axis, flags=flags)
+        plan = fftw.DiscreteCosineTransform(dtype, gshape, axis, flags=flags)
+        pdata = fftw.create_array(gshape, dtype)
 
-    def _forward_transform_fftw(self, gdata, pdata, axis):
-        """FFTW DCT."""
+        return plan, pdata
 
+    def _forward_fftw(self, gdata, cdata, axis):
+        """Forward transform using FFTW DCT."""
+
+        plan, pdata = self._fftw_setup(gdata.dtype, gdata.shape, axis)
         # Execute FFTW plan
-        plan = self._fftw_plan(gdata.dtype, gdata.shape, axis)
         plan.forward(gdata, pdata)
         # Scale DCT output to Chebyshev coefficients
         self._forward_scaling(pdata, axis)
+        # Pad / truncate coefficients
+        self._resize_coeffs(pdata, cdata, axis)
 
-    def _backward_transform_fftw(self, pdata, gdata, axis):
-        """FFTW IDCT."""
+    def _backward_fftw(self, cdata, gdata, axis):
+        """Backward transform using FFTW IDCT."""
 
+        plan, pdata = self._fftw_setup(gdata.dtype, gdata.shape, axis)
+        # Pad / truncate coefficients
+        self._resize_coeffs(cdata, pdata, axis)
         # Scale Chebyshev coefficients to IDCT input
         self._backward_scaling(pdata, axis)
         # Execute FFTW plan
-        plan = self._fftw_plan(gdata.dtype, gdata.shape, axis)
         plan.backward(pdata, gdata)
 
     def differentiate(self, cdata, cderiv, axis):
