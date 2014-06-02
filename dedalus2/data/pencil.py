@@ -92,13 +92,15 @@ class Pencil:
         Le = sparse.csr_matrix((size, size), dtype=dtype)
 
         # Add terms to PDE matrices
-        for p in range(problem.order):
-            PM  = basis.Pre * basis.Mult(p)
-            PMD = basis.Pre * basis.Mult(p) * basis.Diff
-            Me = Me + kron(PM,  Se*M0e[p])
-            Me = Me + kron(PMD, Se*M1e[p])
-            Le = Le + kron(PM,  Se*L0e[p])
-            Le = Le + kron(PMD, Se*L1e[p])
+        nsubs = len(basis.subbases)
+        for isub in range(nsubs):
+            for p in range(problem.order):
+                PM  = basis.Pre * basis.Mult(p, isub)
+                PMD = basis.Pre * basis.Mult(p, isub) * basis.Diff
+                Me = Me + kron(PM,  Se*M0e[isub][p])
+                Me = Me + kron(PMD, Se*M1e[isub][p])
+                Le = Le + kron(PM,  Se*L0e[isub][p])
+                Le = Le + kron(PMD, Se*L1e[isub][p])
 
         # Allocate BC matrices
         Mb = sparse.csr_matrix((size, size), dtype=dtype)
@@ -106,42 +108,53 @@ class Pencil:
 
         # Add terms to BC matrices
         if Sl.any():
-            for p in range(problem.order):
-                LM  = basis.Left * basis.Mult(p)
-                LMD = basis.Left * basis.Mult(p) * basis.Diff
-                Mb = Mb + kron(LM,  Sl*M0b[p])
-                Mb = Mb + kron(LMD, Sl*M1b[p])
-                Lb = Lb + kron(LM,  Sl*L0b[p])
-                Lb = Lb + kron(LMD, Sl*L1b[p])
+            for isub in range(nsubs):
+                for p in range(problem.order):
+                    LM  = basis.Left * basis.Mult(p, isub)
+                    LMD = basis.Left * basis.Mult(p, isub) * basis.Diff
+                    Mb = Mb + kron(LM,  Sl*M0b[isub][p])
+                    Mb = Mb + kron(LMD, Sl*M1b[isub][p])
+                    Lb = Lb + kron(LM,  Sl*L0b[isub][p])
+                    Lb = Lb + kron(LMD, Sl*L1b[isub][p])
         if Sr.any():
-            for p in range(problem.order):
-                RM  = basis.Right * basis.Mult(p)
-                RMD = basis.Right * basis.Mult(p) * basis.Diff
-                Mb = Mb + kron(RM,  Sr*M0b[p])
-                Mb = Mb + kron(RMD, Sr*M1b[p])
-                Lb = Lb + kron(RM,  Sr*L0b[p])
-                Lb = Lb + kron(RMD, Sr*L1b[p])
+            for isub in range(nsubs):
+                for p in range(problem.order):
+                    RM  = basis.Right * basis.Mult(p, isub)
+                    RMD = basis.Right * basis.Mult(p, isub) * basis.Diff
+                    Mb = Mb + kron(RM,  Sr*M0b[isub][p])
+                    Mb = Mb + kron(RMD, Sr*M1b[isub][p])
+                    Lb = Lb + kron(RM,  Sr*L0b[isub][p])
+                    Lb = Lb + kron(RMD, Sr*L1b[isub][p])
         if Si.any():
-            for p in range(problem.order):
-                IM  = basis.Int * basis.Mult(p)
-                IMD = basis.Int * basis.Mult(p) * basis.Diff
-                Mb = Mb + kron(IM,  Si*M0b[p])
-                Mb = Mb + kron(IMD, Si*M1b[p])
-                Lb = Lb + kron(IM,  Si*L0b[p])
-                Lb = Lb + kron(IMD, Si*L1b[p])
+            for isub in range(nsubs):
+                for p in range(problem.order):
+                    IM  = basis.Int * basis.Mult(p, isub)
+                    IMD = basis.Int * basis.Mult(p, isub) * basis.Diff
+                    Mb = Mb + kron(IM,  Si*M0b[isub][p])
+                    Mb = Mb + kron(IMD, Si*M1b[isub][p])
+                    Lb = Lb + kron(IM,  Si*L0b[isub][p])
+                    Lb = Lb + kron(IMD, Si*L1b[isub][p])
+
+        # Build match matrices for combined basis
+        I = sparse.identity(problem.nfields, dtype=dtype, format='csr')
+        try:
+            Lm = kron(basis.Match, I)
+        except AttributeError:
+            Lm = sparse.csr_matrix((size, size), dtype=dtype)
 
         # Build filter matrix to eliminate boundary condition rows
         Mb_rows = Mb.nonzero()[0]
         Lb_rows = Lb.nonzero()[0]
-        bc_rows = set(Mb_rows).union(set(Lb_rows))
-        F = sparse.eye(size, dtype=dtype, format='dok')
-        for i in bc_rows:
+        Lm_rows = Lm.nonzero()[0]
+        rows = set().union(Mb_rows, Lb_rows, Lm_rows)
+        F = sparse.identity(size, dtype=dtype, format='dok')
+        for i in rows:
             F[i, i] = 0
         F = F.tocsr()
 
         # Combine filtered PDE matrices with BC matrices
         M = F*Me + Mb
-        L = F*Le + Lb
+        L = F*Le + Lb + Lm
 
         # Store with expanded sparsity for fast combination during timestepping
         self.LHS = zeros_with_pattern(M, L).tocsr()

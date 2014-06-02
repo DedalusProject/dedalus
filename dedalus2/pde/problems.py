@@ -252,7 +252,10 @@ class ParsedProblem:
         """Merge and expand symbolic expressions."""
 
         # Collect rows from each expression
-        M0, M1, L0, L1 = zip(*(exp['LHS'] for exp in expressions))
+        if expressions:
+            M0, M1, L0, L1 = zip(*(exp['LHS'] for exp in expressions))
+        else:
+            M0, M1, L0, L1 = [], [], [], []
 
         # Cast as matrices and substitute constant parameters
         M0 = sy.Matrix(M0).subs(c_params)
@@ -268,11 +271,12 @@ class ParsedProblem:
 
         # Lambdify for fast evaluation
         # (Should only depend on trans diff consts)
+        nsubs = len(zbasis.subbases)
         exp_set = dict()
-        exp_set['M0'] = [sy.lambdify(self.trans_syms, Cp) for Cp in M0]
-        exp_set['M1'] = [sy.lambdify(self.trans_syms, Cp) for Cp in M1]
-        exp_set['L0'] = [sy.lambdify(self.trans_syms, Cp) for Cp in L0]
-        exp_set['L1'] = [sy.lambdify(self.trans_syms, Cp) for Cp in L1]
+        exp_set['M0'] = [[sy.lambdify(self.trans_syms, Cp) for Cp in M0[isub]] for isub in range(nsubs)]
+        exp_set['M1'] = [[sy.lambdify(self.trans_syms, Cp) for Cp in M1[isub]] for isub in range(nsubs)]
+        exp_set['L0'] = [[sy.lambdify(self.trans_syms, Cp) for Cp in L0[isub]] for isub in range(nsubs)]
+        exp_set['L1'] = [[sy.lambdify(self.trans_syms, Cp) for Cp in L1[isub]] for isub in range(nsubs)]
         exp_set['F'] = [exp['RHS'] for exp in expressions]
 
         return exp_set
@@ -281,8 +285,9 @@ class ParsedProblem:
         """Expand symbolic coefficient matrix."""
 
         # Allocate matrices for expansion
+        nsubs = len(zbasis.subbases)
         shape = C.shape
-        C_exp = [sy.zeros(shape) for p in range(order)]
+        C_exp = [[sy.zeros(shape) for p in range(order)] for i in range(nsubs)]
 
         # Expand term by term and substitute
         for i in range(shape[0]):
@@ -290,7 +295,8 @@ class ParsedProblem:
                 if C[i,j]:
                     Cij_exp = self._expand_entry(C[i,j], nc_params, zbasis, order)
                     for p in range(order):
-                        C_exp[p][i,j] = Cij_exp[p]
+                        for isub in range(nsubs):
+                            C_exp[isub][p][i,j] = Cij_exp[isub][p]
 
         return C_exp
 
@@ -298,9 +304,10 @@ class ParsedProblem:
         """Expand symbolic matrix entry."""
 
         # Allocate data to use in transforms
+        nsubs = len(zbasis.subbases)
         pdata = np.zeros(zbasis.coeff_embed, dtype=zbasis.coeff_dtype)
         cdata = np.zeros(zbasis.coeff_size, dtype=zbasis.coeff_dtype)
-        Cij_exp = sy.zeros(1, zbasis.coeff_size)
+        Cij_exp = [sy.zeros(1, zbasis.subbases[i].coeff_size) for i in range(nsubs)]
 
         Cij = Cij.expand()
         terms = sy.Add.make_args(Cij)
@@ -312,9 +319,13 @@ class ParsedProblem:
                 gdata = eval(str(nonconst), nc_params).astype(zbasis.grid_dtype)
                 zbasis.forward(gdata, pdata, 0)
                 zbasis.unpad_coeff(pdata, cdata, 0)
-                Cij_exp += const*cdata
+                for isub in range(nsubs):
+                    start = zbasis.coeff_start[isub]
+                    end = zbasis.coeff_start[isub+1]
+                    Cij_exp[isub] += const*cdata[start:end]
             else:
-                Cij_exp[0] += term
+                for isub in range(nsubs):
+                    Cij_exp[isub][0] += term
 
         return Cij_exp
 
@@ -327,16 +338,17 @@ class ParsedProblem:
         nbc = self.nbc
         eqn_set = self.eqn_set
         bc_set = self.bc_set
+        nsubs = len(eqn_set['M0'])
 
         # Evaluate matrices using trans diff consts
-        eqn_M0 = np.array([Cp(*trans) for Cp in eqn_set['M0']])
-        eqn_M1 = np.array([Cp(*trans) for Cp in eqn_set['M1']])
-        eqn_L0 = np.array([Cp(*trans) for Cp in eqn_set['L0']])
-        eqn_L1 = np.array([Cp(*trans) for Cp in eqn_set['L1']])
-        bc_M0 = np.array([Cp(*trans) for Cp in bc_set['M0']])
-        bc_M1 = np.array([Cp(*trans) for Cp in bc_set['M1']])
-        bc_L0 = np.array([Cp(*trans) for Cp in bc_set['L0']])
-        bc_L1 = np.array([Cp(*trans) for Cp in bc_set['L1']])
+        eqn_M0 = np.array([[Cp(*trans) for Cp in eqn_set['M0'][isub]] for isub in range(nsubs)])
+        eqn_M1 = np.array([[Cp(*trans) for Cp in eqn_set['M1'][isub]] for isub in range(nsubs)])
+        eqn_L0 = np.array([[Cp(*trans) for Cp in eqn_set['L0'][isub]] for isub in range(nsubs)])
+        eqn_L1 = np.array([[Cp(*trans) for Cp in eqn_set['L1'][isub]] for isub in range(nsubs)])
+        bc_M0 = np.array([[Cp(*trans) for Cp in bc_set['M0'][isub]] for isub in range(nsubs)])
+        bc_M1 = np.array([[Cp(*trans) for Cp in bc_set['M1'][isub]] for isub in range(nsubs)])
+        bc_L0 = np.array([[Cp(*trans) for Cp in bc_set['L0'][isub]] for isub in range(nsubs)])
+        bc_L1 = np.array([[Cp(*trans) for Cp in bc_set['L1'][isub]] for isub in range(nsubs)])
 
         # Check there are as many selected equations as fields
         trans_dict = dict(zip(self.trans_names, trans))
@@ -355,7 +367,7 @@ class ParsedProblem:
         diff_eqn = []
         for i, j in enumerate(eqn_select):
             Se[i,j] = 1
-            if (eqn_M1[:,j].any() or eqn_L1[:,j].any()):
+            if (eqn_M1[:,:,j].any() or eqn_L1[:,:,j].any()):
                 diff_eqn.append(i)
 
         # Check that there aren't more selected bcs than diff eqns

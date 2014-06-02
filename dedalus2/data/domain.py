@@ -111,7 +111,7 @@ class Domain:
         spacing = np.zeros_like(grid)
         spacing[0] = diff[0]
         for i in range(1, grid.size-1):
-            spacing[i] = min(diff[i], diff[i-1])
+            spacing[i] = min_nonzero(diff[i], diff[i-1])
         spacing[-1] = diff[-1]
 
         # Get local part of basis spacing
@@ -140,4 +140,9 @@ class Domain:
         # Otherwise instantiate a new field
         else:
             return Field(self)
+
+
+def min_nonzero(*args):
+    nonzero = lambda x: x != 0
+    return min(filter(nonzero, args))
 
