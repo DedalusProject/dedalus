@@ -10,6 +10,11 @@ from scipy.sparse import linalg as splinalg
 import weakref
 
 from .future import Future
+from ..tools.config import config
+
+# Load config options
+permc_spec = config['linear algebra']['permc_spec']
+use_umfpack = config['linear algebra'].getboolean('use_umfpack')
 
 
 class Field(Future):
@@ -275,6 +280,6 @@ class Field(Future):
 
         for p in np.ndindex(out_c.shape[:-1]):
             rhs = G*f_c[p] + BC*bc_c[p]
-            out_c[p] = splinalg.spsolve(LHS, b=rhs)
+            out_c[p] = splinalg.spsolve(LHS, rhs, use_umfpack=use_umfpack, permc_spec=permc_spec)
 
         return out
