@@ -17,6 +17,76 @@ from ..tools.logging import logger
 from ..tools.progressbar import progress
 
 
+class LinearEigenvalue:
+    """
+    Solves linear eigenvalue problems for oscillation frequency omega, (d_t -> -i omega).
+    First converts to dense matrices, then solves the eigenvalue problem for a given pencil,
+    and stored the eigenvalues and eigenvectors.  The set_state method can be used to set
+    the state to the ith eigenvector.
+
+    Parameters
+    ----------
+    problem : problem object
+        Problem describing system of differential equations and constraints
+    domain : domain object
+        Problem domain
+
+    Attributes
+    ----------
+    state : system object
+        System containing solution fields (after solve method is called)
+    eigenvalues : numpy array
+        Contains a list of eigenvalues omega
+    eigenvectors : numpy array
+        Contains a list of eigenvectors.  The eigenvector corresponding to the ith
+        eigenvalue is in eigenvectors[..., i]
+    eigenvalue_pencil : pencil
+        The pencil for which the eigenvalue problem has been solved.
+
+    """
+
+    def __init__(self, problem, domain):
+
+        # Assign axis names to bases
+        for i, b in enumerate(domain.bases):
+            b.name = problem.axis_names[i]
+
+        # Build pencils and pencil matrices
+        self.pencils = build_pencils(domain)
+        primary_basis = domain.bases[-1]
+        for pencil in self.pencils:
+            pencil.build_matrices(problem, primary_basis)
+
+        # Build systems
+        self.state = FieldSystem(problem.field_names, domain)
+
+        vars = dict()
+        vars.update(parsable_ops)
+        vars.update(zip(problem.diff_names, domain.diff_ops))
+        vars.update(zip(problem.axis_names, domain.grids()))
+        vars.update(problem.parameters)
+        vars.update(self.state.field_dict)
+
+        self.evaluator = Evaluator(domain, vars)
+
+    def solve(self, pencil):
+        """Solve BVP."""
+
+        self.eigenvalue_pencil = pencil
+
+        L = pencil.L.todense()
+        M = pencil.M.todense()
+        self.eigenvalues, self.eigenvectors = eig(-1j*L,b=M)
+
+    def set_state(self, num):
+      for p in self.pencils:
+        if p == self.eigenvalue_pencil:
+          self.state.set_pencil(p, self.eigenvectors[:,num])
+        else:
+          self.state.set_pencil(p, 0.*self.eigenvectors[:,num])
+      self.state.scatter()
+
+
 class LinearBVP:
     """
     Linear boundary value problem solver.
