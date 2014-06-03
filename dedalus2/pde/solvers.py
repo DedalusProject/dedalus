@@ -7,6 +7,7 @@ from mpi4py import MPI
 import numpy as np
 import time
 from scipy.sparse import linalg
+from scipy.linalg import eig
 
 from ..data.operators import parsable_ops
 from ..data.evaluator import Evaluator
