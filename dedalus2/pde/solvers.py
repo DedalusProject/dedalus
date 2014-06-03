@@ -70,6 +70,9 @@ class LinearBVP:
         self.Fe = Fe_handler.build_system()
         self.Fb = Fb_handler.build_system()
 
+        # Allow users to access state variables for analysis, but not for the RHS of the BVP.
+        vars.update(state.field_dict)
+
     def solve(self):
         """Solve BVP."""
 
