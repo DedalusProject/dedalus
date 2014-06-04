@@ -48,15 +48,16 @@ class LinearEigenvalue:
 
     def __init__(self, problem, domain):
 
+        # Store references to problem & domain
+        self.problem = problem
+        self.domain = domain
+
         # Assign axis names to bases
         for i, b in enumerate(domain.bases):
             b.name = problem.axis_names[i]
 
-        # Build pencils and pencil matrices
+        # Build pencils
         self.pencils = build_pencils(domain)
-        primary_basis = domain.bases[-1]
-        for pencil in self.pencils:
-            pencil.build_matrices(problem, primary_basis)
 
         # Build systems
         self.state = FieldSystem(problem.field_names, domain)
@@ -75,17 +76,23 @@ class LinearEigenvalue:
 
         self.eigenvalue_pencil = pencil
 
+        # Build matrices
+        primary_basis = self.domain.bases[-1]
+        pencil.build_matrices(self.problem, primary_basis)
+
         L = pencil.L.todense()
         M = pencil.M.todense()
         self.eigenvalues, self.eigenvectors = eig(-1j*L,b=M)
 
     def set_state(self, num):
-      for p in self.pencils:
-        if p == self.eigenvalue_pencil:
-          self.state.set_pencil(p, self.eigenvectors[:,num])
-        else:
-          self.state.set_pencil(p, 0.*self.eigenvectors[:,num])
-      self.state.scatter()
+        """Set state vector to the num-th eigenvector"""
+
+        for p in self.pencils:
+            if p == self.eigenvalue_pencil:
+                self.state.set_pencil(p, self.eigenvectors[:,num])
+            else:
+                self.state.set_pencil(p, 0.*self.eigenvectors[:,num])
+        self.state.scatter()
 
 
 class LinearBVP:
