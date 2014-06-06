@@ -200,6 +200,7 @@ cdef class FourierTransform:
 
     """
 
+    cdef readonly cshape
     cdef readonly forward
     cdef readonly backward
     cdef cfftw.fftw_plan forward_plan
@@ -225,6 +226,7 @@ cdef class FourierTransform:
             coeff_shape = list(grid_shape)
         gshape = np.array(grid_shape, dtype=int)
         cshape = np.array(coeff_shape, dtype=int)
+        self.cshape = cshape
 
         # Build FFTW guru transform structure
         cdef int trans_rank = 1
