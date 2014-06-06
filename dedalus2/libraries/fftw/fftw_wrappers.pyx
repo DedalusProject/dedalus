@@ -25,20 +25,6 @@ def fftw_mpi_init():
     cfftw.fftw_mpi_init()
 
 
-def create_array(shape, dtype):
-    """Create array using FFTW-aligned buffer."""
-
-    if dtype == np.float64:
-        alloc_doubles = np.prod(shape)
-    elif dtype == np.complex128:
-        alloc_doubles = 2 * np.prod(shape)
-    else:
-        raise ValueError("Unsupported dtype: %s" %str(dtype))
-
-    buffer = create_buffer(alloc_doubles)
-    return np.ndarray(shape=shape, dtype=dtype, buffer=buffer)
-
-
 def create_buffer(size_t alloc_doubles):
     """Allocate memory using FFTW for SIMD alignment."""
 
@@ -55,6 +41,28 @@ def create_buffer(size_t alloc_doubles):
     np_data.fill(0.)
 
     return np_data
+
+
+def create_array(shape, dtype):
+    """Create array using FFTW-aligned buffer."""
+
+    if dtype == np.float64:
+        alloc_doubles = np.prod(shape)
+    elif dtype == np.complex128:
+        alloc_doubles = 2 * np.prod(shape)
+    else:
+        raise ValueError("Unsupported dtype: %s" %str(dtype))
+
+    buffer = create_buffer(alloc_doubles)
+    return np.ndarray(shape=shape, dtype=dtype, buffer=buffer)
+
+
+def create_copy(array):
+    """Create copy using FFTW-aligned array."""
+
+    copy = create_array(array.shape, array.dtype)
+    np.copyto(copy, array)
+    return copy
 
 
 cdef class Transpose:
