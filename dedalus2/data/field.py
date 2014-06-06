@@ -265,12 +265,22 @@ class Field(Future):
             raise TypeError("bc_val must be field or scalar")
 
         # Build LHS matrix
+        size = basis.coeff_size
+        dtype = basis.coeff_dtype
         Pre = basis.Pre
         Diff = basis.Diff
-        F = sparse.eye(basis.coeff_size) - sparse.diags(basis.bc_vector.flatten(), 0)
-        G = F*Pre
         BC = getattr(basis, bc_type.capitalize())
-        LHS = Pre*Diff + BC
+        try:
+            Lm = basis.Match
+        except AttributeError:
+            Lm = sparse.csr_matrix((size, size), dtype=dtype)
+        BC_rows = BC.nonzero()[0]
+        Lm_rows = Lm.nonzero()[0]
+        F = sparse.identity(basis.coeff_size, dtype=basis.coeff_dtype, format='dok')
+        for i in set().union(BC_rows, Lm_rows):
+            F[i, i] = 0
+        G = F*Pre
+        LHS = G*Diff + BC + Lm
 
         if not out:
             out = self.domain.new_field()
