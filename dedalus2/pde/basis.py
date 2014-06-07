@@ -9,7 +9,6 @@ from numpy import pi
 from scipy import sparse
 from scipy import fftpack
 
-
 from ..tools.config import config
 from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
@@ -69,16 +68,19 @@ class Basis:
         """Set transforms based on grid data type."""
 
         raise NotImplementedError()
+        return coeff_dtype
 
-    def forward(self, gdata, cdata, axis):
+    def forward(self, gdata, *, axis, cdata=None):
         """Grid-to-coefficient transform."""
 
         raise NotImplementedError()
+        return cdata
 
-    def backward(self, cdata, gdata, axis):
+    def backward(self, cdata, *, axis, gdata=None, scale=1.):
         """Coefficient-to-grid transform."""
 
         raise NotImplementedError()
+        return gdata
 
     def differentiate(self, cdata, cderiv, axis):
         """Differentiate using coefficients."""
@@ -107,6 +109,7 @@ class Basis:
 
     def scaled_grid_size(self, scale):
         """Compute scaled grid size."""
+
         gsize = float(scale) * self.grid_size
         if not gsize.is_integer():
             raise ValueError("Scaled grid_size is not an integer")
