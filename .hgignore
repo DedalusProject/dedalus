@@ -1,0 +1,10 @@
+# Use glob syntax
+syntax: glob
+
+*.pyc
+*.DS_Store
+*.png
+*.db
+*.c
+*.so
+*.o
