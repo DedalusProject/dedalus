@@ -180,66 +180,15 @@ class Field(Future):
         from .operators import Integrate
         return Integrate(self, *bases, out=out).evaluate()
 
-
-    def antidifferentiate(self, basis, bc=None, parameters={}, out=None):
+    def antidifferentiate(self, basis, bc, out=None):
         """
-        Antidifferentiate field using a LinearBVP solver, with parsed boundary
-        condition where "AD" is the name of the antiderivative field.
+        Antidifferentiate field by setting up a simple linear BVP.
 
         Parameters
         ----------
         basis : basis-like
             Basis to antidifferentiate along
-        bc : tuple of str, optional
-            Boundary conditions as (bc_str, functional) tuple.
-            e.g. ("AD = 10", "int")
-        parameters : dict, optional
-            Any parameters needed for BC
-            e.g. fields for inhomogeneous BCs
-        out : field, optional
-            Output field
-
-        """
-
-        # Import in method to avoid circular dependencies
-        from ..pde.solvers import LinearBVP
-        from ..pde.problems import ParsedProblem
-
-        # Setup axis names and parameters for problem
-        basis = self.domain.get_basis_object(basis)
-        axis = self.domain.bases.index(basis)
-        axis_names = ["x%i"%i for i in range(self.domain.dim)]
-        parameters['__RHS'] = self
-
-        # Solve simple problem for the antiderivative
-        problem = ParsedProblem(axis_names=axis_names,
-                                field_names=['AD'],
-                                param_names=list(parameters.keys()))
-        problem.add_equation("dx%s(AD) = __RHS" %axis)
-        if bc:
-            problem.add_bc(*bc)
-        problem.parameters.update(parameters)
-        problem.expand(self.domain)
-
-        solver = LinearBVP(problem, self.domain)
-        solver.solve()
-
-        if not out:
-            out = self.domain.new_field()
-        out['c'] = solver.state['AD']['c']
-
-        return out
-
-    def antidifferentiate2(self, basis, bc, out=None):
-        """
-        Antidifferentiate field using a LinearBVP solver, with parsed boundary
-        condition where "AD" is the name of the antiderivative field.
-
-        Parameters
-        ----------
-        basis : basis-like
-            Basis to antidifferentiate along
-        bc : tuple of str
+        bc : (str, object) tuple
             Boundary conditions as (functional, value) tuple.
             `functional` is a string, e.g. "Left", "Right", "Int"
             `value` is a field or scalar
@@ -274,6 +223,8 @@ class Field(Future):
             Lm = basis.Match
         except AttributeError:
             Lm = sparse.csr_matrix((size, size), dtype=dtype)
+
+        # Find rows to replace
         BC_rows = BC.nonzero()[0]
         Lm_rows = Lm.nonzero()[0]
         F = sparse.identity(basis.coeff_size, dtype=basis.coeff_dtype, format='dok')
@@ -288,6 +239,7 @@ class Field(Future):
         f_c = self['c']
         bc_c = bc_val['c']
 
+        # Solve for each pencil
         for p in np.ndindex(out_c.shape[:-1]):
             rhs = G*f_c[p] + BC*bc_c[p]
             out_c[p] = splinalg.spsolve(LHS, rhs, use_umfpack=use_umfpack, permc_spec=permc_spec)
