@@ -38,7 +38,7 @@ def natural_sort(iterable, reverse=False):
     """
 
     convert = lambda sub: int(sub) if sub.isdigit() else sub.lower()
-    key = lambda string: [convert(sub) for sub in re.split('([0-9]+)', string)]
+    key = lambda item: [convert(sub) for sub in re.split('([0-9]+)', str(item))]
 
     return sorted(iterable, key=key, reverse=reverse)
 
