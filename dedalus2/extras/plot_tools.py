@@ -321,15 +321,15 @@ def get_plane(dset, xaxis, yaxis, slices, **kw):
     """
 
     # Build quad meshes from sorted grids
-    xgrid = dset.dims[xaxis][0][indices[xaxis]]
-    ygrid = dset.dims[yaxis][0][indices[yaxis]]
+    xgrid = dset.dims[xaxis][0][slices[xaxis]]
+    ygrid = dset.dims[yaxis][0][slices[yaxis]]
     xorder = np.argsort(xgrid)
     yorder = np.argsort(ygrid)
     xmesh, ymesh = quad_mesh(xgrid[xorder], ygrid[yorder], **kw)
 
     # Select and arrange data
     data = dset[slices]
-    if xi < yi:
+    if xaxis < yaxis:
         data = data.T
     data = data[yorder]
     data = data[:, xorder]
