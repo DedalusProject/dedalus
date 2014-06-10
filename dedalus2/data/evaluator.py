@@ -382,6 +382,7 @@ class FileHandler(Handler):
         # Metadeta
         file.attrs['file_number'] = self.file_num
         file.attrs['handler_name'] = self.base_path.stem
+        file.attrs['writes'] = self.file_write_num
         if not self.parallel:
             file.attrs['mpi_rank'] = domain.distributor.comm_cart.rank
             file.attrs['mpi_size'] = domain.distributor.comm_cart.size
@@ -454,6 +455,7 @@ class FileHandler(Handler):
         file = self.get_file()
         self.total_write_num += 1
         self.file_write_num += 1
+        file.attrs['writes'] = self.file_write_num
         index = self.file_write_num - 1
 
         # Update time scales
