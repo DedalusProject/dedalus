@@ -1,13 +1,14 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import dedalus2.public as d2
+from .. import public as d2
+
 
 class DedalusAtmosphere():
     def __init__(self, z_basis, num_coeffs=20):
 
         self.num_coeffs = num_coeffs
-        
-        self.domain = d2.Domain([z_basis])        
+
+        self.domain = d2.Domain([z_basis])
         self.z = z_basis.grid
 
         self.atmosphere = dict()
@@ -15,31 +16,31 @@ class DedalusAtmosphere():
         self.N_parameters = len(self.keys)
 
         self.work = self.domain.new_field()
-        
+
         for key in self.keys:
             print("setting {:s}".format(key))
             self.atmosphere[key] = self.domain.new_field()
             self.atmosphere[key]['g'] =  self.base_atmosphere[key]
 
-            self.check_spectrum(key)        
+            self.check_spectrum(key)
             self.truncate_atmosphere(key)
             self.check_atmosphere(key)
 
-        
+
     def truncate_atmosphere(self, key):
         self.atmosphere[key]['c'][self.num_coeffs:] = 0
 
     def get_coeffs(self, key):
         return np.copy(self.atmosphere[key]['c'][:self.num_coeffs])
-    
+
     def get_values(self, key):
         return np.copy(self.atmosphere[key]['g'].real)
 
-    
+
     def check_spectrum(self, key, individual_plots=True):
         fig = plt.figure()
         ax = fig.add_subplot(1,1,1)
-        
+
         power_spectrum = np.sqrt(np.abs(self.atmosphere[key]['c']*np.conj(self.atmosphere[key]['c'])))
         ax.loglog(power_spectrum)
 
@@ -49,18 +50,18 @@ class DedalusAtmosphere():
 
         sp_bound = np.max(power_spectrum)*(1e-8)
         dp_bound = np.max(power_spectrum)*(1e-16)
-      
+
         ax.axhline(y=sp_bound,linestyle='dashed')
         ax.axhline(y=dp_bound,linestyle='dashed')
 
-        
+
         ax.set_ylabel("amplitude from power spectrum")
 
         atm_file = "spectrum_{:s}.png".format(key)
         fig.savefig(atm_file)
         plt.close(fig)
         print("Atmosphere spectrum has been output to: {:s}".format(atm_file))
-                
+
     def check_atmosphere(self, key, individual_plots=True):
         fig = plt.figure()
         N_plots = 2
@@ -84,11 +85,11 @@ class DedalusAtmosphere():
         print("Atmosphere comparison has been output to: {:s}".format(atm_file))
 
 
-                        
+
 class Polytrope(DedalusAtmosphere):
     def __init__(self, gamma, polytropic_index, z0, z, **args):
         self.name = "polytrope"
-                
+
         self.gamma = gamma
         self.polytropic_index = polytropic_index
         self.polytropic_index_ad = 1/(self.gamma-1)
@@ -105,13 +106,13 @@ class Polytrope(DedalusAtmosphere):
         #print(entropy_gradient_factor)
         #print(self.epsilon/self.gamma)
         self.entropy_gradient_factor = self.epsilon/self.gamma
-        
+
         self.z0 = z0
         self.z = z.grid
-        
+
         self.base_atmosphere = dict()
         self.titles = dict()
-        
+
         self.base_atmosphere['grad_ln_rho'] = self.grad_ln_rho()
         self.titles['grad_ln_rho'] = r"$\nabla \ln \rho_0$"
         self.base_atmosphere['grad_S'] = self.grad_S()
@@ -125,9 +126,9 @@ class Polytrope(DedalusAtmosphere):
         self.base_atmosphere['P'] = self.P()
         self.titles['P'] = r"$P_0$"
 
-        
+
         DedalusAtmosphere.__init__(self, z, **args)
-                
+
     def grad_ln_rho(self):
         return -self.polytropic_index/(self.z0-self.z)
 
@@ -147,7 +148,7 @@ class Polytrope(DedalusAtmosphere):
         return (self.z0-self.z)**(self.polytropic_index+1)
 
     def S(self):
-        return 
+        return
 
 
 class ScaledPolytrope(Polytrope):
@@ -155,7 +156,7 @@ class ScaledPolytrope(Polytrope):
         Polytrope.__init__(self, gamma, polytropic_index, z0, z, **args)
         self.scale_factor = (self.z0-self.z)
         self.name = "scaled polytrope"
-        
+
     def grad_ln_rho(self):
         return -self.polytropic_index*np.ones_like(self.z)
 
@@ -175,7 +176,7 @@ class ScaledPolytrope(Polytrope):
         return (self.z0-self.z)**(self.polytropic_index)
 
     def S(self):
-        return 
+        return
 
 
 
@@ -186,14 +187,14 @@ if __name__ == "__main__":
     Lz = 740
 
     nz = 1024*3/2
-    
+
     z_basis = d2.Chebyshev(nz, interval=[0., Lz], dealias=2/3)
 
     gamma = 5/3
     epsilon = 1e-4
     poly_n = 1.5 - epsilon
 
-    
+
     num_coeffs = 50
 
     atm = ScaledPolytrope(gamma, poly_n, Lz+1, z_basis, num_coeffs=num_coeffs)

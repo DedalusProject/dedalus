@@ -1,5 +1,5 @@
 import numpy as np
-from dedalus2.tools.logging import logger
+from ..tools.logging import logger
 
 # for CFL and Re estimation
 import mpi4py.MPI as MPI
@@ -22,7 +22,7 @@ class GlobalFlowProperty():
         for key in variable_dict.keys():
             self.variables.add_task(variable_dict[key], name=key)
 
-        
+
     def global_reduce(self, value, mpi_reduce_op, default_value = 0):
         if not self.participate:
             value = default_value
@@ -93,17 +93,17 @@ class CFL(GlobalFlowProperty):
             dt = self.global_min(dt)
 
         dt = min(dt, self.max_dt)
-        
+
         return dt
 
-    
+
 class ReynoldsPeclet(GlobalFlowProperty):
     """
     Compute basic flow properties (Reynolds number, Peclet number) for a 2D flow.
 
     """
     def __init__(self, solver, flow_dict, report_cadence):
-        
+
         GlobalFlowProperty.__init__(self, solver, flow_dict, report_cadence)
 
     def compute_Re_Pe(self):
@@ -135,13 +135,13 @@ class CFL_conv_2D(CFL):
         freq_dict = {}
         freq_dict['f_u'] = 'u/grid_delta_x'
         freq_dict['f_w'] = 'w/grid_delta_z'
-        
+
         CFL.__init__(self, solver, freq_dict, max_dt, cfl_cadence)
 
 class RePe_conv_2D(ReynoldsPeclet):
     def __init__(self, solver, report_cadence=50):
 
-        flow_dict = {}        
+        flow_dict = {}
         flow_dict['rms Re']='sqrt(u*u+w*w)*Lz/nu'
         flow_dict['rms Pe']='sqrt(u*u+w*w)*Lz/chi'
 
@@ -163,7 +163,7 @@ class CFL_KED_3D(CFL):
 class RePe_KED_3D(ReynoldsPeclet):
     def __init__(self, solver, report_cadence=50):
 
-        flow_dict = {}        
+        flow_dict = {}
         flow_dict['rms Re']='sqrt(dy(p)*dy(p)+dx(p)*dx(p))*Lx/σ'
         flow_dict['rms Pe']='sqrt(dy(p)*dy(p)+dx(p)*dx(p))*Lx'
 

@@ -3,7 +3,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from dedalus2.tools.array import reshape_vector
+from ..tools.array import reshape_vector
 
 
 class MultiFigure:
