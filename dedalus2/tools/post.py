@@ -8,9 +8,12 @@ import glob
 import h5py
 import numpy as np
 from mpi4py import MPI
+import logging
 
 from ..tools.general import natural_sort
-from ..tools.logging import logger
+#from ..tools.logging import logger
+
+logger = logging.getLogger(__name__)
 
 MPI_RANK = MPI.COMM_WORLD.rank
 MPI_SIZE = MPI.COMM_WORLD.size
@@ -162,8 +165,10 @@ def merge_setup(joint_file, proc_path):
         # File metadata
         joint_file.attrs['file_number'] = proc_file.attrs['file_number']
         joint_file.attrs['handler_name'] = proc_file.attrs['handler_name']
-        #joint_file.attrs['writes'] = writes = proc_file.attrs['writes']
-        joint_file.attrs['writes'] = writes = len(proc_file['scales']['write_number'])
+        try:
+            joint_file.attrs['writes'] = writes = proc_file.attrs['writes']
+        except KeyError:
+            joint_file.attrs['writes'] = writes = len(proc_file['scales']['write_number'])
         # Copy scales (distributed files all have global scales)
         proc_file.copy('scales', joint_file)
         # Tasks
