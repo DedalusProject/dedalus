@@ -94,6 +94,7 @@ def get_all_writes(pattern):
 def merge_analysis(base_path):
     """
     Merge distributed output files from a FileHandler.
+    MPI parallelized up to number of distributed output files.
 
     Parameters
     ----------
@@ -109,7 +110,7 @@ def merge_analysis(base_path):
     folder_paths = base_path.glob("%s_f*" %base_stem)
     folder_paths = filter(lambda path: path.is_dir(), folder_paths)
     folder_paths = natural_sort(folder_paths)
-    for folder_path in folder_paths:
+    for folder_path in folder_paths[MPI_RANK::MPI_SIZE]:
         merge_folder(folder_path)
 
 
