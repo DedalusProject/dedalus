@@ -103,7 +103,7 @@ def merge_analysis(base_path):
 
     """
 
-    base_path = pathlib.Path(base_path).absolute()
+    base_path = pathlib.Path(base_path)
     logger.info("Merging files from %s" %base_path)
 
     base_stem = base_path.stem
@@ -125,7 +125,7 @@ def merge_folder(folder_path):
 
     """
 
-    folder_path = pathlib.Path(folder_path).absolute()
+    folder_path = pathlib.Path(folder_path)
     logger.info("Merging folder %s" %folder_path)
 
     folder_stem = folder_path.stem
@@ -155,7 +155,7 @@ def merge_setup(joint_file, proc_path):
 
     """
 
-    proc_path = pathlib.Path(proc_path).absolute()
+    proc_path = pathlib.Path(proc_path)
     logger.info("Merging setup from %s" %proc_path)
 
     with h5py.File(str(proc_path), mode='r') as proc_file:
@@ -204,7 +204,7 @@ def merge_data(joint_file, proc_path):
 
     """
 
-    proc_path = pathlib.Path(proc_path).absolute()
+    proc_path = pathlib.Path(proc_path)
     logger.info("Merging data from %s" %proc_path)
 
     with h5py.File(str(proc_path), mode='r') as proc_file:
