@@ -14,8 +14,10 @@ from ..data.evaluator import Evaluator
 from ..data.system import CoeffSystem, FieldSystem
 from ..data.pencil import build_pencils
 from ..data.field import Field
-from ..tools.logging import logger
 from ..tools.progress import log_progress
+
+import logging
+logger = logging.getLogger(__name__.split('.')[-1])
 
 
 class LinearEigenvalue:
@@ -202,6 +204,8 @@ class IVP:
 
     def __init__(self, problem, domain, timestepper):
 
+        logger.debug('Beginning IVP instantiation')
+
         # Assign axis names to bases
         for i, b in enumerate(domain.bases):
             b.name = problem.axis_names[i]
@@ -251,6 +255,8 @@ class IVP:
         self.stop_sim_time = 10.
         self.stop_wall_time = 10.
         self.stop_iteration = 10.
+
+        logger.debug('Finished IVP instantiation')
 
     @property
     def sim_time(self):

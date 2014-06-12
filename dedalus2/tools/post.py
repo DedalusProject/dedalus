@@ -8,12 +8,11 @@ import glob
 import h5py
 import numpy as np
 from mpi4py import MPI
-import logging
 
 from ..tools.general import natural_sort
-#from ..tools.logging import logger
 
-logger = logging.getLogger(__name__)
+import logging
+logger = logging.getLogger(__name__.split('.')[-1])
 
 MPI_RANK = MPI.COMM_WORLD.rank
 MPI_SIZE = MPI.COMM_WORLD.size

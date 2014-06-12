@@ -6,7 +6,8 @@ Classes for representing systems of equations.
 import numpy as np
 import sympy as sy
 
-from ..tools.logging import logger
+import logging
+logger = logging.getLogger(__name__.split('.')[-1])
 
 
 class ParsedProblem:
