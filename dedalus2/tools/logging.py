@@ -3,6 +3,7 @@ Logging setup.
 
 """
 
+import pathlib
 import logging
 from mpi4py import MPI
 import os
@@ -40,10 +41,10 @@ if stdout_level.lower() != 'none':
 
 # File handler
 if file_level.lower() != 'none':
-    filename = '%s_p%i.log' %(filename, MPI_RANK)
-    if os.path.exists(filename):
-        os.remove(filename)
-    file_handler = logging.FileHandler(filename)
+    file_path = pathlib.Path('%s_p%i.log' %(filename, MPI_RANK))
+    if not file_path.parent.exists():
+        file_path.parent.mkdir(parents=True)
+    file_handler = logging.FileHandler(str(file_path), mode='w')
     file_handler.setLevel(getattr(logging, file_level.upper()))
     file_handler.setFormatter(formatter)
     rootlogger.addHandler(file_handler)
