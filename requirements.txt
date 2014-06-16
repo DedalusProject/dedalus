@@ -1,7 +1,8 @@
 cython
+h5py
+hgapi
+mpi4py
 numpy
+pathlib
 scipy >= 0.13.0
 sympy
-mpi4py
-h5py
-pathlib
