@@ -11,6 +11,6 @@ from .data.domain import Domain
 from .data import operators
 from .pde.basis import Chebyshev, Fourier, Compound
 from .pde import solvers
-from .pde.problems import ParsedProblem, MatrixProblem
+from .pde.problems import ParsedProblem
 from .pde import timesteppers
 
