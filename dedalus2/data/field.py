@@ -5,9 +5,16 @@ Class for data fields.
 
 from functools import partial
 import numpy as np
+from scipy import sparse
+from scipy.sparse import linalg as splinalg
 import weakref
 
 from .future import Future
+from ..tools.config import config
+
+# Load config options
+permc_spec = config['linear algebra']['permc_spec']
+use_umfpack = config['linear algebra'].getboolean('use_umfpack')
 
 
 class Field(Future):
@@ -173,3 +180,68 @@ class Field(Future):
         from .operators import Integrate
         return Integrate(self, *bases, out=out).evaluate()
 
+    def antidifferentiate(self, basis, bc, out=None):
+        """
+        Antidifferentiate field by setting up a simple linear BVP.
+
+        Parameters
+        ----------
+        basis : basis-like
+            Basis to antidifferentiate along
+        bc : (str, object) tuple
+            Boundary conditions as (functional, value) tuple.
+            `functional` is a string, e.g. "Left", "Right", "Int"
+            `value` is a field or scalar
+        out : field, optional
+            Output field
+
+        """
+
+        # References
+        basis = self.domain.get_basis_object(basis)
+        domain = self.domain
+        bc_type, bc_val = bc
+
+        # Only solve along last basis
+        if basis is not domain.bases[-1]:
+            raise NotImplementedError()
+
+        # Convert BC value to field
+        if np.isscalar(bc_val):
+            bc_val = domain.new_field()
+            bc_val['g'] = bc[1]
+        elif not isinstance(bc_val, Field):
+            raise TypeError("bc_val must be field or scalar")
+
+        # Build LHS matrix
+        size = basis.coeff_size
+        dtype = basis.coeff_dtype
+        Pre = basis.Pre
+        Diff = basis.Diff
+        BC = getattr(basis, bc_type.capitalize())
+        try:
+            Lm = basis.Match
+        except AttributeError:
+            Lm = sparse.csr_matrix((size, size), dtype=dtype)
+
+        # Find rows to replace
+        BC_rows = BC.nonzero()[0]
+        Lm_rows = Lm.nonzero()[0]
+        F = sparse.identity(basis.coeff_size, dtype=basis.coeff_dtype, format='dok')
+        for i in set().union(BC_rows, Lm_rows):
+            F[i, i] = 0
+        G = F*Pre
+        LHS = G*Diff + BC + Lm
+
+        if not out:
+            out = self.domain.new_field()
+        out_c = out['c']
+        f_c = self['c']
+        bc_c = bc_val['c']
+
+        # Solve for each pencil
+        for p in np.ndindex(out_c.shape[:-1]):
+            rhs = G*f_c[p] + BC*bc_c[p]
+            out_c[p] = splinalg.spsolve(LHS, rhs, use_umfpack=use_umfpack, permc_spec=permc_spec)
+
+        return out
