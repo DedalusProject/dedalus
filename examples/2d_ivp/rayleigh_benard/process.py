@@ -1,6 +1,15 @@
+"""
+Plot planes from joint analysis files.
 
+Usage:
+    plot.py join <base_path>
+    plot.py plot <files>... [--output=<dir>]
 
-import pathlib
+Options:
+    --output=<dir>  Output directory [default: ./frames]
+
+"""
+
 import h5py
 import numpy as np
 import matplotlib
@@ -8,14 +17,19 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 
+from mpi4py import MPI
+MPI_RANK = MPI.COMM_WORLD.rank
+
 from dedalus2.extras import plot_tools
 
+
+even_scale = True
 
 def main(filename, start, count, output):
 
     # Layout
-    nrows, ncols = 2, 2
-    image = plot_tools.Box(1, 1.1)
+    nrows, ncols = 4, 1
+    image = plot_tools.Box(4, 1.1)
     pad = plot_tools.Frame(0.2, 0.1, 0.1, 0.1)
     margin = plot_tools.Frame(0.2, 0.1, 0.1, 0.1)
     scale = 3.
@@ -26,7 +40,7 @@ def main(filename, start, count, output):
 
     with h5py.File(filename, mode='r') as file:
         for index in range(start, start+count):
-            print(filename, index, start, count)
+            print(MPI_RANK, filename, start, index, start+count)
             # Plot datasets
             #taskkey = lambda taskname: write[taskname].attrs['task_number']
             #for k, taskname in enumerate(sorted(write, key=taskkey)):
@@ -60,8 +74,8 @@ def pcolormesh(mfig, k, taskname, dset, index):
 
     # Create axes
     i, j = divmod(k, mfig.ncols)
-    paxes = mfig.add_axes(i, j, [0., 0., 1., 0.93])
-    caxes = mfig.add_axes(i, j, [0., 0.95, 1., 0.05])
+    paxes = mfig.add_axes(i, j, [0., 0., 1., 0.91])
+    caxes = mfig.add_axes(i, j, [0., 0.93, 1., 0.05])
 
     # Get vertices
     xmesh, ymesh, data = plot_tools.get_plane(dset, xi, yi, datslices)
@@ -74,6 +88,9 @@ def pcolormesh(mfig, k, taskname, dset, index):
     plot = paxes.pcolormesh(xmesh, ymesh, data, cmap=cmap, zorder=1)
     paxes.axis(plot_tools.pad_limits(xmesh, ymesh, ypad=0.0, square=False))
     paxes.tick_params(length=0, width=0)
+    if even_scale:
+        lim = max(abs(data.min()), abs(data.max()))
+        plot.set_clim(-lim, lim)
 
     # Colorbar
     cbar = mfig.figure.colorbar(plot, cax=caxes, orientation='horizontal',
@@ -88,29 +105,24 @@ def pcolormesh(mfig, k, taskname, dset, index):
     paxes.set_xlabel(dset.dims[xi].label)
 
 
-#     if not static_scale:
-#         if even_scale:
-#             lim = np.max(np.abs([data.min(), data.max()]))
-#             lim = min(lim, 5.)
-#             im.set_clim(-lim, lim)
-#         else:
-#             im.set_clim(data.min(), data.max())
-
-
 if __name__ == "__main__":
 
-    import argparse
-    from dedalus2.tools import post
+    import pathlib
+    from docopt import docopt
+    from dedalus2_burns.tools import logging
+    from dedalus2_burns.tools import post
+    from dedalus2_burns.tools.parallel import Sync
 
-    parser = argparse.ArgumentParser(description="Plot planes from joint analysis files.")
-    parser.add_argument('pattern', help="Glob pattern for joint analysis files (use quotes around patterns with wildcards)")
-    parser.add_argument('--output', default='frames', help="Output directory (default: ./frames/)")
-    args = parser.parse_args()
+    args = docopt(__doc__)
 
-    # Create output directory if needed
-    output_path = pathlib.Path(args.output).absolute()
-    if not output_path.exists():
-        output_path.mkdir()
-
-    post.visit(args.pattern, main, output=output_path)
+    if args['join']:
+        post.merge_analysis(args['<base_path>'])
+    elif args['plot']:
+        output_path = pathlib.Path(args['--output']).absolute()
+        # Create output directory if needed
+        with Sync() as sync:
+            if sync.comm.rank == 0:
+                if not output_path.exists():
+                    output_path.mkdir()
+        post.visit(args['<files>'], main, output=output_path)
 
