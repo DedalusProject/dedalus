@@ -1,6 +1,8 @@
 cython
-h5py
+docopt
+h5py == 2.2.1
 hgapi
+matplotlib
 mpi4py
 numpy
 pathlib
