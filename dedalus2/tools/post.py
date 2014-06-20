@@ -4,7 +4,6 @@ Post-processing helpers.
 """
 
 import pathlib
-import glob
 import h5py
 import numpy as np
 from mpi4py import MPI
@@ -18,17 +17,17 @@ MPI_RANK = MPI.COMM_WORLD.rank
 MPI_SIZE = MPI.COMM_WORLD.size
 
 
-def default_function(filename, start, count):
-    print('Rank %i: Filename=%s, start=%i, count=%i' %(MPI_RANK, filename, start, count))
+def default_function(file_path, start, count):
+    print('Rank %i: file path = %s, start = %i, count = %i' %(MPI_RANK, filename, start, count))
 
 
-def visit(pattern, function=default_function, **kw):
+def visit(file_paths, function=default_function, **kw):
     """Apply function to files/writes assigned to MPI process.
 
     Parameters
     ----------
-    pattern : str
-        Glob pattern for files
+    file_paths : list of str or pathlib.Paths
+        List of file paths
     function : function(file, start, count, **kw)
         A function on an HDF5 file, start index, and count.
 
@@ -36,25 +35,27 @@ def visit(pattern, function=default_function, **kw):
 
     """
 
-    function_calls = zip(*get_assigned_writes(pattern))
-    for filename, start, count in function_calls:
+    file_paths = natural_sort(str(fp) for fp in file_paths)
+    function_calls = zip(file_paths, *get_assigned_writes(file_paths))
+    for file_path, start, count in function_calls:
         if count:
-            function(filename, start, count, **kw)
+            function(file_path, start, count, **kw)
 
 
-def get_assigned_writes(pattern):
+def get_assigned_writes(file_paths):
     """
     Distribute files/writes matching a pattern between MPI processes.
 
     Parameters
     ----------
-    pattern : str
-        Glob pattern for files
+    file_paths : list of str or pathlib.Path
+        List of file paths
 
     """
 
+    file_paths = natural_sort(str(fp) for fp in file_paths)
     # Distribute all writes in blocks
-    filenames, writes = get_all_writes(pattern)
+    writes = get_all_writes(file_paths)
     block = int(np.ceil(sum(writes) / MPI_SIZE))
     proc_start = MPI_RANK * block
     # Find file start/end indices
@@ -65,32 +66,28 @@ def get_assigned_writes(pattern):
     starts = np.clip(proc_start, a_min=file_starts, a_max=file_ends)
     counts = np.clip(proc_start+block, a_min=file_starts, a_max=file_ends) - starts
 
-    return filenames, starts-file_starts, counts
+    return starts-file_starts, counts
 
 
-def get_all_writes(pattern):
+def get_all_writes(file_paths):
     """
     Find all files/writes matching a pattern.
 
     Parameters
     ----------
-    pattern : str
-        Glob pattern for files
+    file_paths : list of str or pathlib.Path
+        List of file paths
 
     """
 
-    # Find matching files
-    filenames = natural_sort(glob.glob(pattern))
-    if not filenames:
-        raise ValueError("No files match pattern %s" %pattern)
+    file_paths = natural_sort(str(fp) for fp in file_paths)
     # Get write numbers
     writes = list()
-    for filename in filenames:
-        logger.info("Found matching file %s" %filename)
-        with h5py.File(filename, mode='r') as file:
+    for file_path in file_paths:
+        with h5py.File(str(file_path), mode='r') as file:
             writes.append(file.attrs['writes'])
 
-    return filenames, writes
+    return writes
 
 
 def merge_analysis(base_path):
