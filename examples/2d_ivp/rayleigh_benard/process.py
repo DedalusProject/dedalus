@@ -109,9 +109,9 @@ if __name__ == "__main__":
 
     import pathlib
     from docopt import docopt
-    from dedalus2_burns.tools import logging
-    from dedalus2_burns.tools import post
-    from dedalus2_burns.tools.parallel import Sync
+    from dedalus2.tools import logging
+    from dedalus2.tools import post
+    from dedalus2.tools.parallel import Sync
 
     args = docopt(__doc__)
 
