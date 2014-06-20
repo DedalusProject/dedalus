@@ -2,11 +2,16 @@
 Simulation script for 2D Rayleigh-Benard convection.
 
 This script can be ran serially or in parallel, and uses the built-in analysis
-framework to save data snapshots in HDF5 files.  The `join.py` and `plot.py`
-scripts in this folder can be used to merge scripts from parallel runs and plot
-the snapshots, respectively.
+framework to save data snapshots in HDF5 files.  The `process.py` script in this
+folder can be used to merge distributed save files from parallel runs and plot
+the snapshots from the command line.
 
-On a single processor, this should take a couple minutes to run.
+To run, join, and plot using 4 processes, for instance, you could use:
+$ mpiexec -n 4 python3 rayleigh_benard.py
+$ mpiexec -n 4 python3 process.py join snapshots
+$ mpiexec -n 4 python3 process.py plot snapshots/*.h5
+
+On a single process, this should take ~15 minutes to run.
 
 """
 
@@ -23,59 +28,61 @@ logger = logging.getLogger(__name__)
 
 # 2D Boussinesq hydrodynamics
 problem = de.ParsedProblem(axis_names=['x','z'],
-                           field_names=['p','r','u','w','rz','uz','wz'],
+                           field_names=['p','b','u','w','bz','uz','wz'],
                            param_names=['R','P','F'])
 problem.add_equation("dx(u) + wz = 0")
-problem.add_equation("dt(r) - P*(dx(dx(r)) + dz(rz))               = - u*dx(r) - w*rz")
-problem.add_equation("dt(u) - R*(dx(dx(u)) + dz(uz)) + dx(p)       = - u*dx(u) - w*uz")
-problem.add_equation("dt(w) - R*(dx(dx(w)) + dz(wz)) + dz(p) + F*r = - u*dx(w) - w*wz")
-problem.add_equation("rz - dz(r) = 0")
+problem.add_equation("dt(b) - P*(dx(dx(b)) + dz(bz))             = - u*dx(b) - w*bz")
+problem.add_equation("dt(u) - R*(dx(dx(u)) + dz(uz)) + dx(p)     = - u*dx(u) - w*uz")
+problem.add_equation("dt(w) - R*(dx(dx(w)) + dz(wz)) + dz(p) - b = - u*dx(w) - w*wz")
+problem.add_equation("bz - dz(b) = 0")
 problem.add_equation("uz - dz(u) = 0")
 problem.add_equation("wz - dz(w) = 0")
-problem.add_left_bc("r = -1")
+problem.add_left_bc("b = -F*z")
 problem.add_left_bc("u = 0")
 problem.add_left_bc("w = 0")
-problem.add_right_bc("r = 0")
+problem.add_right_bc("b = -F*z")
 problem.add_right_bc("u = 0")
 problem.add_right_bc("w = 0", condition="(dx != 0)")
 problem.add_int_bc("p = 0", condition="(dx == 0)")
 
 # Parameters
-Lx, Lz = (3., 1.)
+Lx, Lz = (4., 1.)
 Prandtl = 1.
 Rayleigh = 1e6
 
 # Create bases and domain
-x_basis = de.Fourier(1024, interval=(0, Lx), dealias=2/3)
-z_basis = de.Chebyshev(64, interval=(0, Lz), dealias=2/3)
+x_basis = de.Fourier(512, interval=(0, Lx), dealias=2/3)
+z_basis = de.Chebyshev(129, interval=(-Lz/2, Lz/2), dealias=2/3)
 domain = de.Domain([x_basis, z_basis], grid_dtype=np.float64)
 
 # Finalize problem
-problem.parameters['P'] = 1.
-problem.parameters['R'] = Prandtl
-problem.parameters['F'] = Prandtl * Rayleigh
+problem.parameters['P'] = (Rayleigh * Prandtl)**(-1/2)
+problem.parameters['R'] = (Rayleigh / Prandtl)**(-1/2)
+problem.parameters['F'] = F = 1
 problem.expand(domain)
 
 # Build solver
 ts = de.timesteppers.SBDF3
 solver = de.solvers.IVP(problem, domain, ts)
-logger.info('Solver built.')
+logger.info('Solver built')
 
 # Initial conditions
 x = domain.grid(0)
 z = domain.grid(1)
-r = solver.state['r']
-rz = solver.state['rz']
+b = solver.state['b']
+bz = solver.state['bz']
 
-δ =  1e-3 * np.random.standard_normal(domain.local_grid_shape) * np.sin(np.pi*z/Lz)
-r['g'] = z/Lz - 1 - δ
-r.differentiate('z', out=rz)
+# Linear background + perturbations damped at walls
+zb, zt = z_basis.interval
+pert =  1e-3 * np.random.standard_normal(domain.local_grid_shape) * (zt - z) * (z - zb)
+b['g'] = -F*(z - pert)
+b.differentiate('z', out=bz)
 
 # Integration parameters
-dt = 1e-5
-solver.stop_sim_time = np.inf
-solver.stop_wall_time = 5 * 60.
-solver.stop_iteration = 2000.
+dt = 1e-2
+solver.stop_sim_time = 30
+solver.stop_wall_time = 30 * 60.
+solver.stop_iteration = np.inf
 
 # CFL routines
 evaluator = solver.evaluator
@@ -103,7 +110,7 @@ def cfl_dt():
 safety = 0.3
 dt_array = np.zeros(1, dtype=np.float64)
 def update_dt(dt):
-    new_dt = max(0.5*dt, min(safety*cfl_dt(), 1.05*dt))
+    new_dt = max(0.5*dt, min(safety*cfl_dt(), 1.1*dt))
     if domain.distributor.size > 1:
         dt_array[0] = new_dt
         domain.distributor.comm_cart.Allreduce(MPI.IN_PLACE, dt_array, op=MPI.MIN)
@@ -111,9 +118,9 @@ def update_dt(dt):
     return new_dt
 
 # Analysis
-snapshots = evaluator.add_file_handler('snapshots', sim_dt=5e-4, max_writes=20)
+snapshots = evaluator.add_file_handler('snapshots', sim_dt=0.1, max_writes=50)
 snapshots.add_task("p")
-snapshots.add_task("r")
+snapshots.add_task("b")
 snapshots.add_task("u")
 snapshots.add_task("w")
 
