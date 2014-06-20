@@ -21,7 +21,7 @@ Mac OS X cookbook
     ruby -e "$(curl -fsSL https://raw.github.com/Homebrew/homebrew/go/install)"
     brew update
     brew doctor
-    # Fix any errors raised by brew doctor before proceeding
+    # ** Fix any errors raised by brew doctor before proceeding **
 
     # Prep system
     brew install gcc
@@ -48,10 +48,14 @@ Mac OS X cookbook
     brew install fftw --enable-mpi
 
     # HDF5
+    cd /usr/local/Library/taps/homebrew/homebrew-science
+    git checkout 3115d85
     brew install hdf5
-    pip3 install h5py
+    git checkout master
+    pip3 install h5py==2.2.1
 
     # Dedalus
+    # ** Change to the directory where you want to keep the Dedalus repository **
     brew install hg
     hg clone https://bitbucket.org/dedalus-project/dedalus2
     cd dedalus2
@@ -169,14 +173,17 @@ can be installed using Homebrew:
     #!bash
     brew install fftw --enable-mpi
 
-Dedalus uses HDF5 for data storage.  The HDF5 library and wrappers can be
-installed using Homebrew and pip:
+Dedalus uses HDF5 for data storage.  Verified working versions of the HDF5
+library and wrappers can be installed using Homebrew and pip:
 
 ::
 
     #!bash
+    cd /usr/local/Library/taps/homebrew/homebrew-science
+    git checkout 3115d85
     brew install hdf5
-    pip3 install h5py
+    git checkout master
+    pip3 install h5py==2.2.1
 
 Installing the Dedalus package
 ------------------------------
@@ -184,7 +191,8 @@ Installing the Dedalus package
 Dedalus is managed using the Mercurial distributed version control system, and
 hosted online though Bitbucket.  Mercurial (referred to as ``hg``) can be
 installed using homebrew, and can then be used to download the latest copy of
-Dedalus:
+Dedalus (note: you should change to the directory where you want the put the
+Dedalus repository):
 
 ::
 
