@@ -15,6 +15,10 @@ from ..tools.cache import CachedMethod
 from ..tools.array import interleaved_view
 from ..tools.array import reshape_vector
 from ..tools.array import axslice
+
+import logging
+logger = logging.getLogger(__name__.split('.')[-1])
+
 try:
     from ..libraries.fftw import fftw_wrappers as fftw
     fftw.fftw_mpi_init()
@@ -395,7 +399,8 @@ class Chebyshev(ImplicitBasis):
         if gdata.dtype == np.complex128:
             gdata = interleaved_view(gdata)
         # Scipy IDCT
-        np.copyto(gdata, fftpack.dct(gdata, type=3, axis=axis))
+        temp = fftpack.dct(gdata, dtype=3, axis=axis)
+        np.copyto(gdata, temp)
 
         return gdata
 
@@ -404,6 +409,7 @@ class Chebyshev(ImplicitBasis):
         """Build FFTW plans and temporary arrays."""
         # Note: regular method used to cache through basis instance
 
+        logger.debug("Building FFTW DCT plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, gshape, axis))
         flags = ['FFTW_'+FFTW_RIGOR.upper()]
         plan = fftw.DiscreteCosineTransform(dtype, gshape, axis, flags=flags)
         temp = fftw.create_array(gshape, dtype)
@@ -739,6 +745,7 @@ class Fourier(TransverseBasis, ImplicitBasis):
         """Build FFTW plans and temporary arrays."""
         # Note: regular method used to cache through basis instance
 
+        logger.debug("Building FFTW FFT plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, gshape, axis))
         flags = ['FFTW_'+FFTW_RIGOR.upper()]
         plan = fftw.FourierTransform(dtype, gshape, axis, flags=flags)
         temp = fftw.create_array(plan.cshape, np.complex128)
