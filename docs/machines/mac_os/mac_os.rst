@@ -141,11 +141,12 @@ within your shell; these may cause the ``gfortran`` compile step to fail
 spectacularly.
 
 Also install ``matplotlib``, the main Python plotting library, along with its
-``freetype`` dependency, using Homebrew and pip:
+dependencies, using Homebrew and pip:
 
 ::
 
     #!bash
+    brew install libpng
     brew install freetype
     pip3 install matplotlib
 
