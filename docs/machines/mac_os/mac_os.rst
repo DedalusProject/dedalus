@@ -37,6 +37,7 @@ Mac OS X cookbook
     pip3 install numpy
     pip3 install scipy
     pip3 install sympy
+    brew install libpng
     brew install freetype
     pip3 install matplotlib
 
