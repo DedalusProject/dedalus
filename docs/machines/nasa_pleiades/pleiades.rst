@@ -7,4 +7,5 @@ Best performance is coming from our newly developed Pleaides/Intel/MKL stack; we
 .. toctree::
    :maxdepth: 1
 
-   .
+   pleiades_intel
+   pleiades_gcc
