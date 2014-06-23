@@ -1,4 +1,4 @@
-Install notes for NASA/Pleiades
+Install notes for NASA/Pleiades: Intel stack
 ***************************************************************************
 
 An initial Pleiades environment is pretty bare-bones.  There are no
