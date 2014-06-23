@@ -39,7 +39,7 @@ class Basis:
 
     Parameters
     ----------
-    grid_size : int
+    base_grid_size : int
         Number of grid points
     interval : tuple of floats
         Spatial domain of basis
@@ -111,13 +111,13 @@ class Basis:
         self.backward = getattr(self, '_backward_%s' %value.lower())
         self._library = value.lower()
 
-    def scaled_grid_size(self, scale):
+    def grid_size(self, scale):
         """Compute scaled grid size."""
 
-        gsize = float(scale) * self.grid_size
-        if not gsize.is_integer():
-            raise ValueError("Scaled grid_size is not an integer")
-        return gsize
+        grid_size = float(scale) * self.base_grid_size
+        if not grid_size.is_integer():
+            raise ValueError("Scaled grid size is not an integer")
+        return int(grid_size)
 
     def check_arrays(self, cdata, gdata, axis, scale=None):
         """
@@ -139,16 +139,16 @@ class Basis:
                 raise ValueError("cdata does not match coeff_dtype")
 
         if scale:
-            gsize = self.scaled_grid_size(scale)
+            grid_size = self.grid_size(scale)
 
         if gdata is None:
             # Build gdata
             gshape = list(cdata.shape)
-            gshape[axis] = int(gsize)
+            gshape[axis] = grid_size
             gdata = fftw.create_array(gshape, self.grid_dtype)
         else:
             # Check gdata
-            if scale and (gdata.shape[axis] != int(gsize)):
+            if scale and (gdata.shape[axis] != grid_size):
                 raise ValueError("gdata does not match scaled grid_size")
             if gdata.dtype != self.grid_dtype:
                 raise ValueError("gdata does not match grid_dtype")
@@ -295,7 +295,7 @@ class Chebyshev(ImplicitBasis):
 
     element_label = 'T'
 
-    def __init__(self, grid_size, interval=(-1,1), dealias=1, name=None):
+    def __init__(self, base_grid_size, interval=(-1,1), dealias=1, name=None):
 
         # Coordinate transformation
         # Native interval: (-1, 1)
@@ -306,16 +306,17 @@ class Chebyshev(ImplicitBasis):
         self._problem_coord = lambda xn: center + (xn * radius)
 
         # Attributes
-        self.grid_size = grid_size
+        self.base_grid_size = base_grid_size
         self.interval = tuple(interval)
         self.dealias = dealias
         self.name = name
         self.library = DEFAULT_LIBRARY
 
     @CachedMethod
-    def grid(self, grid_size):
+    def grid(self, scale=1.):
         """Build Chebyshev roots grid."""
 
+        grid_size = self.grid_size(scale)
         i = np.arange(grid_size)
         theta = pi * (i + 1/2) / grid_size
         native_grid = -np.cos(theta)
@@ -328,7 +329,7 @@ class Chebyshev(ImplicitBasis):
         self.grid_dtype = np.dtype(grid_dtype)
         self.coeff_dtype = self.grid_dtype
         # Same number of modes and grid points
-        self.coeff_size = self.grid_size
+        self.coeff_size = self.base_grid_size
         self.elements = np.arange(self.coeff_size)
 
         return self.coeff_dtype
@@ -616,7 +617,7 @@ class Fourier(TransverseBasis, ImplicitBasis):
 
     element_label = 'k'
 
-    def __init__(self, grid_size, interval=(0,2*pi), dealias=1, name=None):
+    def __init__(self, base_grid_size, interval=(0,2*pi), dealias=1, name=None):
 
         # Coordinate transformation
         # Native interval: (0, 2π)
@@ -627,16 +628,17 @@ class Fourier(TransverseBasis, ImplicitBasis):
         self._problem_coord = lambda xn: start + (xn / (2*pi) * length)
 
         # Attributes
-        self.grid_size = grid_size
+        self.base_grid_size = base_grid_size
         self.interval = tuple(interval)
         self.dealias = dealias
         self.name = name
         self.library = DEFAULT_LIBRARY
 
     @CachedMethod
-    def grid(self, grid_size):
+    def grid(self, scale=1.):
         """Build evenly spaced Fourier grid."""
 
+        grid_size = self.grid_size(scale)
         native_grid = np.linspace(0, 2*pi, grid_size, endpoint=False)
         return self._problem_coord(native_grid)
 
@@ -647,7 +649,7 @@ class Fourier(TransverseBasis, ImplicitBasis):
         self.grid_dtype = np.dtype(grid_dtype)
         self.coeff_dtype = np.dtype(np.complex128)
         # Build native wavenumbers, discarding any Nyquist mode
-        kmax = (self.grid_size - 1) // 2
+        kmax = (self.base_grid_size - 1) // 2
         if self.grid_dtype == np.float64:
             native_wavenumbers = np.arange(0, kmax+1)
         elif self.grid_dtype == np.complex128:
@@ -904,7 +906,7 @@ class Compound(ImplicitBasis):
         # Atributes
         self.subbases = subbases
         self.element_label = "(%s)" %",".join([basis.element_label for basis in self.subbases])
-        self.grid_size = sum(basis.grid_size for basis in subbases)
+        self.base_grid_size = sum(basis.base_grid_size for basis in subbases)
         self.interval = (subbases[0].interval[0], subbases[-1].interval[-1])
         self.name = name
 
@@ -918,10 +920,10 @@ class Compound(ImplicitBasis):
             basis.library = value
 
     @CachedMethod
-    def grid(self, grid_size):
+    def grid(self, scale=1.):
         """Build compound grid."""
 
-        return np.concatenate([basis.grid(grid_size) for basis in self.subbases])
+        return np.concatenate([basis.grid(scale) for basis in self.subbases])
 
     def set_dtype(self, grid_dtype):
         """Determine coefficient properties from grid dtype."""
@@ -942,24 +944,30 @@ class Compound(ImplicitBasis):
         return sum(b.coeff_size for b in self.subbases[:index])
 
     def grid_start(self, index, scale):
-        return sum(b.scaled_grid_size(scale) for b in self.subbases[:index])
+        return sum(b.grid_size(scale) for b in self.subbases[:index])
 
     def sub_gdata(self, gdata, index, axis):
-        scale = gdata.shape[axis] / self.grid_size
+        """Retreive gdata corresponding to one subbasis."""
+
+        # Infer scale from gdata size
+        scale = gdata.shape[axis] / self.base_grid_size
         start = self.grid_start(index, scale)
         end = self.grid_start(index+1, scale)
         return gdata[axslice(axis, start, end)]
 
     def sub_cdata(self, cdata, index, axis):
+        """Retrieve cdata corresponding to one subbasis."""
+
         start = self.coeff_start(index)
         end = self.coeff_start(index+1)
         return cdata[axslice(axis, start, end)]
 
     def forward(self, gdata, *, axis, cdata=None):
+        """Forward transforms."""
 
         cdata, gdata = self.check_arrays(cdata, gdata, axis)
         for index, basis in enumerate(self.subbases):
-            # Transform continuous copy of gdata
+            # Transform continuous copy of subbasis gdata
             # (Transforms generally require continuous data)
             temp = fftw.create_copy(self.sub_gdata(gdata, index, axis))
             temp = basis.forward(temp, axis=axis)
@@ -968,10 +976,11 @@ class Compound(ImplicitBasis):
         return cdata
 
     def backward(self, cdata, *, axis, gdata=None, scale=1.):
+        """Backward transforms."""
 
         cdata, gdata = self.check_arrays(cdata, gdata, axis, scale)
         for index, basis in enumerate(self.subbases):
-            # Transform continuous copy of cdata
+            # Transform continuous copy of subbasis cdata
             # (Transforms generally require continuous data)
             temp = fftw.create_copy(self.sub_cdata(cdata, index, axis))
             temp = basis.backward(temp, axis=axis, scale=scale)
