@@ -193,8 +193,8 @@ class Distributor:
 
 class Layout:
     """
-    Specifications for the local part of a given data layout, specified by the
-    transform and distribution states
+    Specifications for the local part of a given data layout, i.e. a particular
+    transform / distribution state.
 
     Attributes
     ----------
@@ -204,73 +204,81 @@ class Layout:
         Grid space flags for each dimension
     dtype : numeric type
         Numeric type of data
-    blocks : arrays of ints
-        Distributed block sizes
-    start : array of ints
-        Local data start indices
-    shape : array of ints
-        Local data shape
+
+    All methods require a tuple of the current transform scalings.
 
     """
 
     def __init__(self, domain, mesh, coords, local, grid_space, dtype):
 
-        # Freeze local and grid_space lists by creating boolean arrays
-        local = np.array(local)
-        grid_space = np.array(grid_space)
-
-        # Initial attributes
-        self.local = local
-        self.grid_space = grid_space
+        self.domain = domain
+        # Freeze local and grid_space lists into boolean arrays
+        self.local = np.array(local)
+        self.grid_space = np.array(grid_space)
         self.dtype = dtype
 
-        # Compute global shape
-        g_shape = np.copy(domain.global_coeff_shape)
-        g_shape[grid_space] = domain.global_grid_shape[grid_space]
+        # Extend mesh and coordinates to domain dimension
+        self.ext_mesh = np.ones(domain.dim, dtype=int)
+        self.ext_mesh[~self.local] = mesh
+        self.ext_coords = np.zeros(domain.dim, dtype=int)
+        self.ext_coords[~self.local] = coords
 
-        # Distributed global shape: subset of global shape
-        dg_shape = g_shape[~local]
+    def global_shape(self, scales):
+        """Compute global data shape."""
 
-        # Block sizes: FFTW standard
-        blocks = np.ceil(dg_shape / mesh).astype(int)
+        global_coeff_shape = self.domain.global_coeff_shape
+        global_grid_shape = self.domain.global_grid_shape(scales)
 
-        # Cutoff coordinates: coordinates of first empty/partial blocks
-        cuts = np.floor(dg_shape / blocks).astype(int)
+        global_shape = global_coeff_shape.copy()
+        global_shape[self.grid_space] = global_grid_shape[self.grid_space]
+        return global_shape
 
-        # Distributed local start
-        dl_start = coords * blocks
+    def blocks(self, scales):
+        """Compute block sizes for data distribution."""
 
-        # Distributed local shape
-        dl_shape = np.zeros(mesh.size, dtype=int)
-        dl_shape[coords < cuts] = blocks[coords < cuts]
-        dl_shape[coords == cuts] = (dg_shape - cuts*blocks)[coords == cuts]
+        global_shape = self.global_shape(scales)
+        # FFTW standard block sizes
+        return np.ceil(global_shape / self.ext_mesh).astype(int)
 
-        # Local start
-        start = np.zeros(domain.dim, dtype=int)
-        start[~local] = dl_start
+    def start(self, scales):
+        """Compute starting coordinates for local data."""
 
-        # Local shape
-        shape = g_shape.copy()
-        shape[~local] = dl_shape
+        blocks = self.blocks(scales)
+        return self.ext_coords * blocks
 
-        # Slices
-        slices = tuple(slice(start, start+size) for (start, size) in zip(start, shape))
+    def local_shape(self, scales):
+        """Compute local data shape."""
 
-        # Required buffer size (in doubles)
-        nbytes = np.prod(shape) * np.dtype(dtype).itemsize
+        global_shape = self.global_shape(scales)
+        blocks = self.blocks(scales)
+        ext_coords = self.ext_coords
 
-        # Attributes
-        self.global_shape = g_shape
-        self.blocks = blocks
-        self.start = start
-        self.shape = shape
-        self.slices = slices
-        self.alloc_doubles = nbytes // 8
+        # Cutoff coordinates: first empty/partial blocks
+        cuts = np.floor(global_shape / blocks).astype(int)
 
-    def view_data(self, buffer):
+        local_shape = blocks.copy()
+        local_shape[ext_coords == cuts] = (global_shape - cuts*blocks)[ext_coords == cuts]
+        local_shape[ext_coords > cuts] = 0
+        return local_shape
+
+    def slices(self, scales):
+        """Compute slices for selecting local portion of global data."""
+
+        start = self.start(scales)
+        local_shape = self.local_shape(scales)
+        return tuple(slice(s, s+l) for (s, l) in zip(start, local_shape))
+
+    def alloc_doubles(self, scales):
+        """Compute necessary allocation size."""
+
+        local_shape = self.local_shape(scales)
+        nbytes = np.prod(local_shape) * self.dtype.itemsize
+        return nbytes // 8
+
+    def view_data(self, buffer, scales):
         """View buffer in this layout."""
 
-        return np.ndarray(shape=self.shape,
+        return np.ndarray(shape=self.local_shape(scales),
                           dtype=self.dtype,
                           buffer=buffer)
 
