@@ -23,6 +23,7 @@ cdef extern from "fftw3.h":
     # Using plans (4.2)
     # Use opaque pointer as plan type
     ctypedef void *fftw_plan
+    void fftw_execute(fftw_plan plan)
     void fftw_destroy_plan(fftw_plan plan)
 
     # Advanced complex DFTs (4.4.1)

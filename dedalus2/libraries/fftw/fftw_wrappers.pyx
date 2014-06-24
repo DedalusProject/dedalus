@@ -105,6 +105,8 @@ cdef class Transpose:
     cdef readonly p_t start1
     cdef cfftw.fftw_plan gather_plan
     cdef cfftw.fftw_plan scatter_plan
+    cdef cnp.ndarray buffer0
+    cdef cnp.ndarray buffer1
 
     def __init__(self, p_t n0, p_t n1, p_t howmany, p_t block0, p_t block1,
                  dtype, py_comm_t pycomm, flags=['FFTW_MEASURE']):
@@ -141,16 +143,15 @@ cdef class Transpose:
                                                                        &self.local1,
                                                                        &self.start1)
 
-        # Create plans using a temporary memory allocation
-        cdef double *data
-        data = cfftw.fftw_alloc_real(self.alloc_doubles)
+        # Create in-place plans using a single buffer
+        self.buffer0 = self.buffer1 = create_buffer(self.alloc_doubles)
         self.scatter_plan = cfftw.fftw_mpi_plan_many_transpose(n1,
                                                                n0,
                                                                howmany*itemsize,
                                                                block1,
                                                                block0,
-                                                               data,
-                                                               data,
+                                                               <double *> cnp.PyArray_DATA(self.buffer1),
+                                                               <double *> cnp.PyArray_DATA(self.buffer0),
                                                                comm,
                                                                intflags | cfftw.FFTW_MPI_TRANSPOSED_IN)
         self.gather_plan = cfftw.fftw_mpi_plan_many_transpose(n0,
@@ -158,11 +159,10 @@ cdef class Transpose:
                                                               howmany*itemsize,
                                                               block0,
                                                               block1,
-                                                              data,
-                                                              data,
+                                                              <double *> cnp.PyArray_DATA(self.buffer0),
+                                                              <double *> cnp.PyArray_DATA(self.buffer1),
                                                               comm,
                                                               intflags | cfftw.FFTW_MPI_TRANSPOSED_OUT)
-        cfftw.fftw_free(data)
 
         # Check that plan creation succeeded
         if (self.gather_plan == NULL) or (self.scatter_plan == NULL):
@@ -177,18 +177,14 @@ cdef class Transpose:
     def gather(self, cnp.ndarray data):
         """Gather along first axis (0), scattering from second axis (1)."""
 
-        # Execute plan using new-array interface
-        cfftw.fftw_mpi_execute_r2r(self.gather_plan,
-                                   <double *> data.data,
-                                   <double *> data.data)
+        # Execute plan
+        cfftw.fftw_execute(self.gather_plan)
 
     def scatter(self, cnp.ndarray data):
         """Scatter from first axis (0), gathering along second axis (1)."""
 
-        # Execute plan using new-array interface
-        cfftw.fftw_mpi_execute_r2r(self.scatter_plan,
-                                   <double *> data.data,
-                                   <double *> data.data)
+        # Execute plan
+        cfftw.fftw_execute(self.scatter_plan)
 
 
 cdef class FourierTransform:
