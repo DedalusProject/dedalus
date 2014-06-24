@@ -193,17 +193,17 @@ class Distributor:
 
 class Layout:
     """
-    Specifications for the local part of a given data layout, i.e. a particular
-    transform / distribution state.
+    Object describing the data distribution for a given transform and
+    distribution state.
 
     Attributes
     ----------
     local : array of bools
-        Locality flags for each dimension
+        Axis locality flags (True/False for local/distributed)
     grid_space : array of bools
-        Grid space flags for each dimension
+        Axis grid-space flags (True/False for grid/coeff space)
     dtype : numeric type
-        Numeric type of data
+        Data type
 
     All methods require a tuple of the current transform scalings.
 
@@ -284,220 +284,116 @@ class Layout:
 
 
 class Transform:
-    """
-    Directs transforms between two layouts.
+    """Directs transforms between two layouts."""
 
-    Notes
-    -----
-    A local buffer is used to pad coefficients according to the basis
-    parameters, and out-of-place transforms between this buffer and the
-    field's buffer are performed.
-
-    """
+    # To Do: Group transforms for multiple fields (group)
 
     def __init__(self, layout0, layout1, axis, basis):
 
-        # Initial attributes
         self.layout0 = layout0
         self.layout1 = layout1
         self.axis = axis
         self.basis = basis
 
-        # Construct buffer for padded coefficients
-        if np.prod(layout0.shape):
-            pad_shape = np.copy(layout0.shape)
-            pad_shape[axis] = basis.coeff_embed
-            pad_dtype = layout0.dtype
-            pad_doubles = np.prod(pad_shape) * np.dtype(pad_dtype).itemsize // 8
-            self.buffer = fftw.create_buffer(pad_doubles)
-            self.embed = np.ndarray(shape=pad_shape,
-                                    dtype=pad_dtype,
-                                    buffer=self.buffer)
+    def increment(self, field):
+        """Backward transform."""
 
-        # Set transform callables
-        if use_fftw and basis.fftw_plan:
-            self.fftw_plan = basis.fftw_plan(layout1.shape, axis)
-            self._backward_callable = self.fftw_plan.backward
-            self._forward_callable = self.fftw_plan.forward
-        else:
-            self._backward_callable = partial(basis.backward, axis=axis)
-            self._forward_callable = partial(basis.forward, axis=axis)
-
-        # By using buffer, transforms/padding don't impact field allocations
-        self.alloc_doubles = 0
-
-        # Dispatch based on local distribution
-        if np.prod(layout0.shape):
-            # Increment layout <==> towards grid space
-            self.increment = self._backward
-            self.decrement = self._forward
-        else:
-            # No-op if there's no local data
-            self.increment = self._no_op_backward
-            self.decrement = self._no_op_forward
-
-    def _backward(self, field):
-        """Coefficient-to-grid padding and transform."""
-
-        # Get coefficient and grid space views
+        # Reference views from both layouts
         cdata = field.data
         field.layout = self.layout1
         gdata = field.data
+        # Transform if there's local data
+        if np.prod(cdata.shape):
+            scale = field.meta[self.axis]['scale']
+            self.basis.backward(cdata, axis=self.axis, gdata=gdata, scale=scale)
 
-        # Call basis padding and transform
-        self.basis.pad_coeff(cdata, self.embed, axis=self.axis)
-        self._backward_callable(self.embed, gdata)
+    def decrement(self, field):
+        """Forward transform."""
 
-    def _forward(self, field):
-        """Grid-to-coefficient transform and unpadding."""
-
-        # Get coefficient and grid space views
+        # Reference views from both layouts
         gdata = field.data
         field.layout = self.layout0
         cdata = field.data
-
-        # Call basis transform and unpadding
-        self._forward_callable(gdata, self.embed)
-        self.basis.unpad_coeff(self.embed, cdata, axis=self.axis)
-
-    def _no_op_backward(self, field):
-        """Update layout, no data handling."""
-
-        field.layout = self.layout1
-
-    def _no_op_forward(self, field):
-        """Update layout, no data handling."""
-
-        field.layout = self.layout0
+        # Transform if there's local data
+        if np.prod(gdata.shape):
+            self.basis.forward(gdata, axis=self.axis, cdata=cdata)
 
 
 class Transpose:
-    """
-    Directs transposes between two layouts.
+    """Directs transposes between two layouts."""
 
-    Notes
-    -----
-    If the transpose is not between the first two dimensions, then local
-    transposes to an internal buffer are called before and after the global
-    MPI transpose to achieve such an ordering.
-
-    """
+    # To Do: Determine how to query plans
+    # To Do: Skip transpose for empty arrays (no-op)
+    # To Do: Group transposes for multiple fields (group)
 
     def __init__(self, layout0, layout1, axis, comm_cart):
 
-        # Initial attributes
         self.layout0 = layout0
         self.layout1 = layout1
         self.axis = axis
-
-        # Create subgrid communicator along the mesh axis that switches dimension
+        # Create subgrid communicator along the moving mesh axis
         remain_dims = [0] * comm_cart.dim
         remain_dims[axis] = 1
         self.comm_sub = comm_cart.Sub(remain_dims)
 
-        # FFTW transpose parameters
-        n0 = layout1.shape[axis]
-        n1 = layout0.shape[axis+1]
-        howmany = np.prod(layout0.shape[:axis]) * np.prod(layout0.shape[axis+2:])
-        block0 = layout0.blocks[axis]
-        block1 = layout1.blocks[axis]
-        dtype = layout0.dtype
+    @CachedMethod
+    def _fftw_setup(self, scales):
+        """Build FFTW plans."""
 
-        # Dispatch based on local distribution
-        if howmany:
-            # Create FFTW transpose plans
-            self.fftw_plans = fftw.Transpose(n0, n1, howmany, block0, block1,
-                                             dtype, self.comm_sub, flags=['FFTW_MEASURE'])
+        axis = self.axis
+        shape0 = self.layout0.local_shape(scales)
+        shape1 = self.layout1.local_shape(scales)
+        blocks0 = self.layout0.blocks(scales)
+        blocks1 = self.layout1.blocks(scales)
+        logger.debug("Building FFTW transpose plan for (nfields, scales, axis) = (%s, %s, %s)" %(nfields, scales, axis))
+        # Build FFTW transpose plans
+        n0 = shape1[axis]
+        n1 = shape0[axis+1]
+        howmany = np.prod(shape0[:axis]) * np.prod(shape0[axis+2:])
+        block0 = blocks0[axis]
+        block1 = blocks1[axis+1]
+        dtype = self.layout0.dtype
+        flags = ['FFTW_'+FFTW_RIGOR.upper()]
+        plan = fftw.Transpose(n0, n1, howmany, block0, block1, dtype, self.comm_sub, flags=flags)
+        # Create temporary arrays with transposed data ordering
+        tr_shape0 = np.roll(shape0, -axis)
+        tr_shape1 = np.roll(shape1, -axis)
+        tr_temp0 = np.ndarray(shape=tr_shape0, dtype=dtype, buffer=plan.buffer0)
+        tr_temp1 = np.ndarray(shape=tr_shape1, dtype=dtype, buffer=plan.buffer1)
+        # Create anti-transposed views of temporary arrays
+        # For direct copying to and from field data
+        dim = self.layout0.domain.dim
+        temp0 = np.transpose(tr_temp0, np.roll(np.arange(dim), axis))
+        temp1 = np.transpose(tr_temp1, np.roll(np.arange(dim), axis))
 
-            # Required buffer size (in doubles)
-            self.alloc_doubles = self.fftw_plans.alloc_doubles
+        return plan, temp0, temp1
 
-            # Dispatch based on transpose axis
-            # Increment layout <==> gather specified axis
-            if axis == 0:
-                self.increment = self._gather_d
-                self.decrement = self._scatter_d
-            else:
-                # Create buffer for intermediate local transposes
-                self._buffer = fftw.create_buffer(self.alloc_doubles)
-                self._rolled_axes = np.roll(np.arange(layout0.shape.size), -axis)
-                self.increment = self._gather_ldl
-                self.decrement = self._scatter_ldl
-        else:
-            # No-op if there's no local data
-            self.alloc_doubles = 0
-            self.increment = self._no_op_gather
-            self.decrement = self._no_op_scatter
+    def increment(self, field):
+        """Gather along specified axis."""
 
-    def _gather_d(self, field):
-        """FFTW transpose to gather axis == 0."""
-
-        # Call FFTW plan on data view
-        self.fftw_plans.gather(field.data)
-
-        # Update layout
-        field.layout = self.layout1
-
-    def _scatter_d(self, field):
-        """FFTW transpose to scatter axis == 0."""
-
-        # Call FFTW plan on data view
-        self.fftw_plans.scatter(field.data)
-
-        # Update layout
-        field.layout = self.layout0
-
-    def _gather_ldl(self, field):
-        """FFTW and local transposes to gather axis > 0."""
-
-        # Local transpose from field to internal buffer
-        view0 = field.data
-        tr_view0 = np.transpose(view0, self._rolled_axes)
-        temp = np.ndarray(shape=tr_view0.shape, dtype=tr_view0.dtype, buffer=self._buffer)
-        np.copyto(temp, tr_view0)
-
-        # Global transpose
-        self.fftw_plans.gather(temp)
-
+        scales = tuple(axmeta['scale'] for axmeta in field.meta)
+        plan, temp0, temp1 = self._fftw_setup(scales)
+        # Copy layout0 view of data to plan buffer
+        for i, field in enumerate(fields):
+            np.copyto(temp0, field.data)
+        # Globally transpose between temp buffers
+        self.fftw_plans.gather()
         # Update field layout
+        # Copy plan buffer to layout1 view of data
         field.layout = self.layout1
+        np.copyto(field.data, temp1)
 
-        # Local transpose from internal buffer to field
-        view1 = field.data
-        tr_view1 = np.transpose(view1, self._rolled_axes)
-        temp = np.ndarray(shape=tr_view1.shape, dtype=tr_view1.dtype, buffer=self._buffer)
-        # temp.resize(tr_view1.shape)
-        np.copyto(tr_view1, temp)
+    def decrement(self, fields):
+        """Scatter along specified axis."""
 
-    def _scatter_ldl(self, field):
-        """FFTW and local transposes to scatter axis > 0."""
-
-        # Local transpose from field to internal buffer
-        view1 = field.data
-        tr_view1 = np.transpose(view1, self._rolled_axes)
-        temp = np.ndarray(shape=tr_view1.shape, dtype=tr_view1.dtype, buffer=self._buffer)
-        np.copyto(temp, tr_view1)
-
-        # Global transpose
-        self.fftw_plans.scatter(temp)
-
+        scales = tuple(axmeta['scale'] for axmeta in field.meta)
+        plan, temp0, temp1 = self._fftw_setup(scales)
+        # Copy layout1 view of data to plan buffer
+        np.copyto(temp1, field.data)
+        # Globally transpose between temp buffers
+        self.fftw_plans.scatter()
         # Update field layout
+        # Copy plan buffer to layout0 view of data
         field.layout = self.layout0
-
-        # Local transpose from internal buffer to field
-        view0 = field.data
-        tr_view0 = np.transpose(view0, self._rolled_axes)
-        temp = np.ndarray(shape=tr_view0.shape, dtype=tr_view0.dtype, buffer=self._buffer)
-        # temp.resize(tr_view0.shape)
-        np.copyto(tr_view0, temp)
-
-    def _no_op_gather(self, field):
-        """Update layout, no data handling."""
-
-        field.layout = self.layout1
-
-    def _no_op_scatter(self, field):
-        """Update layout, no data handling."""
-
-        field.layout = self.layout0
+        np.copyto(field.data, temp0)
 
