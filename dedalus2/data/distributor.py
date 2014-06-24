@@ -374,8 +374,7 @@ class Transpose:
         scales = tuple(axmeta['scale'] for axmeta in field.meta)
         plan, temp0, temp1 = self._fftw_setup(scales)
         # Copy layout0 view of data to plan buffer
-        for i, field in enumerate(fields):
-            np.copyto(temp0, field.data)
+        np.copyto(temp0, field.data)
         # Globally transpose between temp buffers
         self.fftw_plans.gather()
         # Update field layout
