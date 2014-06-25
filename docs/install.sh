@@ -27,8 +27,10 @@ MAKE_PROCS="-j4" # change this to set the number of cores you use to build packa
 # Packages
 
 INST_OPENMPI=0 # by default, don't build OpenMPI. If you're on linux, use your package manager.
-INST_ATLAS=0 # by default, we will not build our own ATLAS. If you're on OSX, we'll turn this off, since you'll use accelerate
+INST_HDF5=0 # by default, don't build HDF5.
+INST_ATLAS=0 # by default, we will not build our own ATLAS. If you're on OSX, you'll want to use accelerate anyway.
 INST_SCIPY=1
+
 
 if [ ${REINST_DEDALUS} ] && [ ${REINST_DEDALUS} -eq 1 ] && [ -n ${DEDALUS_DEST} ]
 then
@@ -223,6 +225,7 @@ function host_specific
         echo "You need to have these packages installed:"
         echo
         echo "  * libatlas-base"
+        echo "  * mercurial"
         echo "  * libatlas-dev"                                   
         echo "  * libatlas3-base"
         echo "  * libopenmpi-dev"       
@@ -234,10 +237,11 @@ function host_specific
         echo "  * uuid-dev"
         echo "  * libfreetype6-dev"
         echo "  * tk-dev"
+        echo "  * libhdf5-dev"
         echo
         echo "You can accomplish this by executing:"
         echo
-        echo "$ sudo apt-get install libatlas-base libatlas-dev libatlas3-base libopenmpi-dev libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-devinstall"
+        echo "$ sudo apt-get install libatlas-base libatlas-dev libatlas3-base libopenmpi-dev libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-devinstall libhdf5-dev mercurial"
         echo
         echo
         BLAS="/usr/lib/libatlas.so"
@@ -294,7 +298,7 @@ function do_setup_py
     cd ..
 }
 
-
+ORIG_PWD=`pwd`
 echo "+++++++++"
 echo "Greetings, human. Welcome to the Dedalus Install Script"
 echo
@@ -374,7 +378,6 @@ then
 
     ( make ${MAKE_PROCS} 2>&1 ) 1>> ${LOG_FILE} || do_exit
     ( make install 2>&1 ) 1>> ${LOG_FILE} || do_exit
-    ( ln -sf ${DEST_DIR}/bin/python2.7 ${DEST_DIR}/bin/pyyt 2>&1 ) 1>> ${LOG_FILE}
     ( make clean 2>&1) 1>> ${LOG_FILE} || do_exit
     touch done
     cd ..
@@ -404,6 +407,8 @@ then
     ( make clean 2>&1) 1>> ${LOG_FILE} || do_exit
     touch done
     cd ..
+
+    export FFTW_PATH=${DEST_DIR}/${FFTW}
 fi
 
 # if !OSX ATLAS/OpenBLAS
@@ -419,19 +424,78 @@ then
     do_setup_py $NUMPY ${NUMPY_ARGS}
     do_setup_py $SCIPY ${NUMPY_ARGS}
 fi
-# pip
 
 # via pip:
 
 # nose
+echo "pip installing nose."
+( ${DEST_DIR}/bin/pip3 install nose 2>&1 ) 1>> ${LOG_FILE} || do_exit
+
+# mpi4py
+echo "pip installing mpi4py."
+( ${DEST_DIR}/bin/pip3 install mpi4py 2>&1 ) 1>> ${LOG_FILE} || do_exit
+
+# h5py
+echo "pip installing h5py."
+( ${DEST_DIR}/bin/pip3 install h5py 2>&1 ) 1>> ${LOG_FILE} || do_exit
+
+# cython
+echo "pip installing cython."
+( ${DEST_DIR}/bin/pip3 install cython 2>&1 ) 1>> ${LOG_FILE} || do_exit
+
+# matplotlib
+echo "pip installing matplotlib."
+( ${DEST_DIR}/bin/pip3 install -v https://downloads.sourceforge.net/project/matplotlib/matplotlib/matplotlib-1.3.1/matplotlib-1.3.1.tar.gz 2>&1 ) 1>> ${LOG_FILE} || do_exit
+
+# sympy
+echo "pip installing sympy."
+( ${DEST_DIR}/bin/pip3 install sympy 2>&1 ) 1>> ${LOG_FILE} || do_exit
+
+# We assume that hg can be found in the path.
+if type -P hg &>/dev/null
+then
+    export HG_EXEC=hg
+else
+    echo "Cannot find mercurial.  Please make sure it is installed."
+    do_exit
+fi
+
+if [ -z "$DEDALUS_DIR" ]
+then
+    if [ ! -e dedalus2 ]
+    then
+        DEDALUS_DIR="$PWD/dedalus2/"
+        ( ${HG_EXEC} --debug clone https://bitbucket.org/dedalus-project/dedalus2/ dedalus2 2>&1 ) 1>> ${LOG_FILE}
+        # Now we update to the branch we're interested in.
+        ( ${HG_EXEC} -R ${DEDALUS_DIR} up -C ${BRANCH} 2>&1 ) 1>> ${LOG_FILE}
+    fi
+    echo Setting DEDALUS_DIR=${DEDALUS_DIR}
+fi
 
 
 ## afterwards
 # Add the environment scripts
-( cp ${DEDALUS_DIR}/doc/activate ${DEST_DIR}/bin/activate 2>&1 ) 1>> ${LOG_FILE}
+( cp ${DEDALUS_DIR}/docs/activate ${DEST_DIR}/bin/activate 2>&1 ) 1>> ${LOG_FILE}
 sed -i.bak -e "s,__DEDALUS_DIR__,${DEST_DIR}," ${DEST_DIR}/bin/activate
-( cp ${DEDALUS_DIR}/doc/activate.csh ${DEST_DIR}/bin/activate.csh 2>&1 ) 1>> ${LOG_FILE}
+( cp ${DEDALUS_DIR}/docs/activate.csh ${DEST_DIR}/bin/activate.csh 2>&1 ) 1>> ${LOG_FILE}
 sed -i.bak -e "s,__DEDALUS_DIR__,${DEST_DIR}," ${DEST_DIR}/bin/activate.csh
+
+echo "Doing yt update, wiping local changes and updating to branch ${BRANCH}"
+MY_PWD=`pwd`
+cd $DEDALUS_DIR
+( ${HG_EXEC} pull 2>1 && ${HG_EXEC} up -C 2>1 ${BRANCH} 2>&1 ) 1>> ${LOG_FILE}
+
+echo "Installing Dedalus"
+( export PATH=$DEST_DIR/bin:$PATH ; ${DEST_DIR}/bin/python3 setup.py build_ext --inplace 2>&1 ) 1>> ${LOG_FILE} || do_exit
+touch done
+cd $MY_PWD
+
+if !( ( ${DEST_DIR}/bin/python3 -c "import readline" 2>&1 )>> ${LOG_FILE})
+then
+    echo "Installing pure-python readline"
+    ( ${DEST_DIR}/bin/pip install readline 2>&1 ) 1>> ${LOG_FILE}
+fi
+
 
 function print_afterword
 {
@@ -450,19 +514,18 @@ function print_afterword
     echo "LD_LIBRARY_PATH to match your new yt install.  If you use csh, just"
     echo "append .csh to the above."
     echo
-    echo "The source for yt is located at:"
+    echo "The source for dedalus is located at:"
     echo "    $DEDALUS_DIR"
     echo
     echo "For support, see the website and join the mailing list:"
     echo
     echo "    http://dedalus-project.org/"
-    echo "    http://dedalus-project.org/doc/       (Docs)"
+    echo "    http://dedalus-project.readthedocs.org/       (Docs)"
     echo
     echo "    https://groups.google.com/forum/#!forum/dedalus-users"
     echo
     echo "========================================================================"
     echo
-    echo "Oh, look at me, still talking when there's science to do!"
     echo "Good luck, and email the user list if you run into any problems."
 }
 

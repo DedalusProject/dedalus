@@ -25,7 +25,6 @@ deactivate () {
         export LD_LIBRARY_PATH
         unset _OLD_VIRTUAL_LD_LIBRARY_PATH
     fi
-    ### End extra yt vars
 
     # This should detect bash and zsh, which have a hash command that must
     # be called to get it to forget past commands.  Without forgetting
