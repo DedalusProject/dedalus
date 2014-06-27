@@ -224,9 +224,8 @@ function host_specific
         echo
         echo "You need to have these packages installed:"
         echo
-        echo "  * libatlas-base"
+        echo "  * libatlas-base-dev"
         echo "  * mercurial"
-        echo "  * libatlas-dev"                                   
         echo "  * libatlas3-base"
         echo "  * libopenmpi-dev"       
         echo "  * libssl-dev"
@@ -241,11 +240,11 @@ function host_specific
         echo
         echo "You can accomplish this by executing:"
         echo
-        echo "$ sudo apt-get install libatlas-base libatlas-dev libatlas3-base libopenmpi-dev libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-devinstall libhdf5-dev mercurial"
+        echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-devinstall libhdf5-dev mercurial"
         echo
         echo
-        BLAS="/usr/lib/libatlas.so"
-        LAPACK="/usr/lib/liblapack_atlas.so"
+        BLAS="/usr/lib/"
+        LAPACK="/usr/lib/"
     fi
     if [ $INST_SCIPY -eq 1 ]
     then
@@ -408,8 +407,8 @@ then
     touch done
     cd ..
 
-    export FFTW_PATH=${DEST_DIR}/${FFTW}
 fi
+export FFTW_PATH=${DEST_DIR}/
 
 # if !OSX ATLAS/OpenBLAS
 
