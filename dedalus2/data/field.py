@@ -190,7 +190,7 @@ class Field(Future):
             Basis to antidifferentiate along
         bc : (str, object) tuple
             Boundary conditions as (functional, value) tuple.
-            `functional` is a string, e.g. "Left", "Right", "Int"
+            `functional` is a string, e.g. "left", "right", "int"
             `value` is a field or scalar
         out : field, optional
             Output field
