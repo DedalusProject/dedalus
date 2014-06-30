@@ -3,10 +3,10 @@ Classes for available data layouts and the paths between them.
 
 """
 
-from functools import partial
 import numpy as np
 from mpi4py import MPI
 
+from ..tools.cache import CachedMethod
 from ..tools.config import config
 from ..tools.general import rev_enumerate
 try:
@@ -19,10 +19,10 @@ except ImportError:
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
 
-
 # Load config options
-use_fftw = config['transforms'].getboolean('use_fftw')
-path_barriers = config['parallelism'].getboolean('path_barriers')
+DEFAULT_LIBRARY = config['transforms'].get('DEFAULT_LIBRARY')
+FFTW_RIGOR = config['transforms'].get('FFTW_RIGOR')
+PATH_BARRIERS = config['parallelism'].getboolean('path_barriers')
 
 
 class Distributor:
@@ -146,17 +146,12 @@ class Distributor:
         # Directly reference coefficient and grid space layouts
         self.coeff_layout = self.layouts[0]
         self.grid_layout = self.layouts[-1]
-        logger.debug('Local grid shape: %s' %str(self.grid_layout.shape))
-        logger.debug('Local coeff shape: %s' %str(self.coeff_layout.shape))
 
         # Allow string references to coefficient and grid space layouts
         self.layout_references = {'c': self.coeff_layout,
                                   'g': self.grid_layout,
                                   'coeff': self.coeff_layout,
                                   'grid': self.grid_layout}
-
-        # Take maximum required buffer size (in doubles)
-        self.alloc_doubles = max(i.alloc_doubles for i in (self.layouts+self.paths))
 
     def get_layout_object(self, input):
         """Dereference layout identifiers."""
@@ -166,29 +161,27 @@ class Distributor:
         else:
             return self.layout_references[input]
 
-    def create_buffer(self):
-        """Allocate memory using FFTW for SIMD alignment."""
-
-        if self.alloc_doubles:
-            return fftw.create_buffer(self.alloc_doubles)
-        else:
-            return np.ndarray(shape=(0,), dtype=np.float64)
-
     def increment_layout(self, field):
-        """Transform field to subsequent layout (towards grid space)."""
+        """Change field to subsequent layout."""
 
-        if path_barriers:
+        if PATH_BARRIERS:
             self.comm_cart.Barrier()
         index = field.layout.index
         self.paths[index].increment(field)
 
     def decrement_layout(self, field):
-        """Transform field to preceding layout (towards coefficient space)."""
+        """Change field to preceding layout."""
 
-        if path_barriers:
+        if PATH_BARRIERS:
             self.comm_cart.Barrier()
         index = field.layout.index
         self.paths[index-1].decrement(field)
+
+    @CachedMethod
+    def buffer_size(self, scales):
+        """Compute necessary buffer size (bytes) for all layouts."""
+
+        return max(layout.buffer_size(scales) for layout in self.layouts)
 
 
 class Layout:
@@ -205,7 +198,7 @@ class Layout:
     dtype : numeric type
         Data type
 
-    All methods require a tuple of the current transform scalings.
+    All methods require a tuple of the current transform scales.
 
     """
 
@@ -223,6 +216,7 @@ class Layout:
         self.ext_coords = np.zeros(domain.dim, dtype=int)
         self.ext_coords[~self.local] = coords
 
+    @CachedMethod
     def global_shape(self, scales):
         """Compute global data shape."""
 
@@ -233,6 +227,7 @@ class Layout:
         global_shape[self.grid_space] = global_grid_shape[self.grid_space]
         return global_shape
 
+    @CachedMethod
     def blocks(self, scales):
         """Compute block sizes for data distribution."""
 
@@ -240,12 +235,14 @@ class Layout:
         # FFTW standard block sizes
         return np.ceil(global_shape / self.ext_mesh).astype(int)
 
+    @CachedMethod
     def start(self, scales):
         """Compute starting coordinates for local data."""
 
         blocks = self.blocks(scales)
         return self.ext_coords * blocks
 
+    @CachedMethod
     def local_shape(self, scales):
         """Compute local data shape."""
 
@@ -261,6 +258,7 @@ class Layout:
         local_shape[ext_coords > cuts] = 0
         return local_shape
 
+    @CachedMethod
     def slices(self, scales):
         """Compute slices for selecting local portion of global data."""
 
@@ -268,25 +266,17 @@ class Layout:
         local_shape = self.local_shape(scales)
         return tuple(slice(s, s+l) for (s, l) in zip(start, local_shape))
 
-    def alloc_doubles(self, scales):
-        """Compute necessary allocation size."""
+    @CachedMethod
+    def buffer_size(self, scales):
+        """Compute necessary buffer size (bytes)."""
 
         local_shape = self.local_shape(scales)
-        nbytes = np.prod(local_shape) * self.dtype.itemsize
-        return nbytes // 8
-
-    def view_data(self, buffer, scales):
-        """View buffer in this layout."""
-
-        return np.ndarray(shape=self.local_shape(scales),
-                          dtype=self.dtype,
-                          buffer=buffer)
+        return np.prod(local_shape) * self.dtype.itemsize
 
 
 class Transform:
     """Directs transforms between two layouts."""
-
-    # To Do: Group transforms for multiple fields (group)
+    # To Do: group transforms for multiple fields (group)
 
     def __init__(self, layout0, layout1, axis, basis):
 
@@ -294,6 +284,16 @@ class Transform:
         self.layout1 = layout1
         self.axis = axis
         self.basis = basis
+
+    def increment_group(self, fields):
+
+        for field in fields:
+            self.increment(field)
+
+    def decrement_group(self, fields):
+
+        for field in fields:
+            self.decrement(field)
 
     def increment(self, field):
         """Backward transform."""
@@ -321,10 +321,8 @@ class Transform:
 
 class Transpose:
     """Directs transposes between two layouts."""
-
-    # To Do: Determine how to query plans
-    # To Do: Skip transpose for empty arrays (no-op)
-    # To Do: Group transposes for multiple fields (group)
+    # To Do: group transposes for multiple fields (group)
+    # To Do: test IP vs OOP FFTW speed
 
     def __init__(self, layout0, layout1, axis, comm_cart):
 
@@ -345,16 +343,19 @@ class Transpose:
         shape1 = self.layout1.local_shape(scales)
         blocks0 = self.layout0.blocks(scales)
         blocks1 = self.layout1.blocks(scales)
-        logger.debug("Building FFTW transpose plan for (nfields, scales, axis) = (%s, %s, %s)" %(nfields, scales, axis))
+        logger.debug("Building FFTW transpose plan for (scales, axis) = (%s, %s)" %(scales, axis))
         # Build FFTW transpose plans
         n0 = shape1[axis]
         n1 = shape0[axis+1]
         howmany = np.prod(shape0[:axis]) * np.prod(shape0[axis+2:])
         block0 = blocks0[axis]
         block1 = blocks1[axis+1]
-        dtype = self.layout0.dtype
+        dtype = self.layout0.dtype  # Same as layout1.dtype
+        pycomm = self.comm_sub
         flags = ['FFTW_'+FFTW_RIGOR.upper()]
-        plan = fftw.Transpose(n0, n1, howmany, block0, block1, dtype, self.comm_sub, flags=flags)
+        if howmany == 0:
+            return None, None, None
+        plan = fftw.Transpose(n0, n1, howmany, block0, block1, dtype, pycomm, flags=flags)
         # Create temporary arrays with transposed data ordering
         tr_shape0 = np.roll(shape0, -axis)
         tr_shape1 = np.roll(shape1, -axis)
@@ -368,31 +369,49 @@ class Transpose:
 
         return plan, temp0, temp1
 
+    def increment_group(self, fields):
+
+        for field in fields:
+            self.increment(field)
+
+    def decrement_group(self, fields):
+
+        for field in fields:
+            self.decrement(field)
+
     def increment(self, field):
         """Gather along specified axis."""
 
         scales = tuple(axmeta['scale'] for axmeta in field.meta)
         plan, temp0, temp1 = self._fftw_setup(scales)
-        # Copy layout0 view of data to plan buffer
-        np.copyto(temp0, field.data)
-        # Globally transpose between temp buffers
-        self.fftw_plans.gather()
-        # Update field layout
-        # Copy plan buffer to layout1 view of data
-        field.layout = self.layout1
-        np.copyto(field.data, temp1)
+        if plan:
+            # Copy layout0 view of data to plan buffer
+            np.copyto(temp0, field.data)
+            # Globally transpose between temp buffers
+            plan.gather()
+            # Update field layout
+            # Copy plan buffer to layout1 view of data
+            field.layout = self.layout1
+            np.copyto(field.data, temp1)
+        else:
+            # No data: just update field layout
+            field.layout = self.layout1
 
-    def decrement(self, fields):
+    def decrement(self, field):
         """Scatter along specified axis."""
 
         scales = tuple(axmeta['scale'] for axmeta in field.meta)
         plan, temp0, temp1 = self._fftw_setup(scales)
-        # Copy layout1 view of data to plan buffer
-        np.copyto(temp1, field.data)
-        # Globally transpose between temp buffers
-        self.fftw_plans.scatter()
-        # Update field layout
-        # Copy plan buffer to layout0 view of data
-        field.layout = self.layout0
-        np.copyto(field.data, temp0)
+        if plan:
+            # Copy layout1 view of data to plan buffer
+            np.copyto(temp1, field.data)
+            # Globally transpose between temp buffers
+            plan.scatter()
+            # Update field layout
+            # Copy plan buffer to layout0 view of data
+            field.layout = self.layout0
+            np.copyto(field.data, temp0)
+        else:
+            # No data: just update field layout
+            field.layout = self.layout0
 
