@@ -306,8 +306,6 @@ class ParsedProblem:
 
         # Allocate data to use in transforms
         nsubs = len(zbasis.subbases)
-        pdata = np.zeros(zbasis.coeff_embed, dtype=zbasis.coeff_dtype)
-        cdata = np.zeros(zbasis.coeff_size, dtype=zbasis.coeff_dtype)
         Cij_exp = [sy.zeros(1, zbasis.subbases[i].coeff_size) for i in range(nsubs)]
 
         Cij = Cij.expand()
@@ -318,8 +316,7 @@ class ParsedProblem:
                 # This allows us to retain {dx} terms and still transform NCCs
                 const, nonconst = term.as_independent(*nc_params)
                 gdata = eval(str(nonconst), nc_params).astype(zbasis.grid_dtype)
-                zbasis.forward(gdata, pdata, 0)
-                zbasis.unpad_coeff(pdata, cdata, 0)
+                cdata = zbasis.forward(gdata, axis=0)
                 for isub in range(nsubs):
                     start = zbasis.coeff_start[isub]
                     end = zbasis.coeff_start[isub+1]

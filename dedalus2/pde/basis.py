@@ -3,12 +3,14 @@ Abstract and built-in classes for spectral bases.
 
 """
 
+import logging
 import math
 import numpy as np
 from numpy import pi
 from scipy import sparse
 from scipy import fftpack
 
+from ..libraries.fftw import fftw_wrappers as fftw
 from ..tools.config import config
 from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
@@ -16,16 +18,8 @@ from ..tools.array import interleaved_view
 from ..tools.array import reshape_vector
 from ..tools.array import axslice
 
-import logging
+
 logger = logging.getLogger(__name__.split('.')[-1])
-
-try:
-    from ..libraries.fftw import fftw_wrappers as fftw
-    fftw.fftw_mpi_init()
-except ImportError:
-    logger.error("Don't forget to buid using 'python3 setup.py build_ext --inplace'")
-    raise
-
 DEFAULT_LIBRARY = config['transforms'].get('DEFAULT_LIBRARY')
 FFTW_RIGOR = config['transforms'].get('FFTW_RIGOR')
 
@@ -116,7 +110,7 @@ class Basis:
 
         grid_size = float(scale) * self.base_grid_size
         if not grid_size.is_integer():
-            raise ValueError("Scaled grid size is not an integer")
+            raise ValueError("Scaled grid size is not an integer: %f" %grid_size)
         return int(grid_size)
 
     def check_arrays(self, cdata, gdata, axis, scale=None):
@@ -297,6 +291,8 @@ class Chebyshev(ImplicitBasis):
 
     def __init__(self, base_grid_size, interval=(-1,1), dealias=1, name=None):
 
+        self.subbases = [self]
+
         # Coordinate transformation
         # Native interval: (-1, 1)
         radius = (interval[1] - interval[0]) / 2
@@ -400,7 +396,7 @@ class Chebyshev(ImplicitBasis):
         if gdata.dtype == np.complex128:
             gdata = interleaved_view(gdata)
         # Scipy IDCT
-        temp = fftpack.dct(gdata, dtype=3, axis=axis)
+        temp = fftpack.dct(gdata, type=3, axis=axis)
         np.copyto(gdata, temp)
 
         return gdata
@@ -618,6 +614,8 @@ class Fourier(TransverseBasis, ImplicitBasis):
     element_label = 'k'
 
     def __init__(self, base_grid_size, interval=(0,2*pi), dealias=1, name=None):
+
+        self.subbases = [self]
 
         # Coordinate transformation
         # Native interval: (0, 2π)
