@@ -105,8 +105,8 @@ cdef class Transpose:
     cdef readonly p_t start1
     cdef cfftw.fftw_plan gather_plan
     cdef cfftw.fftw_plan scatter_plan
-    cdef cnp.ndarray buffer0
-    cdef cnp.ndarray buffer1
+    cdef public cnp.ndarray buffer0
+    cdef public cnp.ndarray buffer1
 
     def __init__(self, p_t n0, p_t n1, p_t howmany, p_t block0, p_t block1,
                  dtype, py_comm_t pycomm, flags=['FFTW_MEASURE']):
@@ -144,7 +144,9 @@ cdef class Transpose:
                                                                        &self.start1)
 
         # Create in-place plans using a single buffer
-        self.buffer0 = self.buffer1 = create_buffer(self.alloc_doubles)
+        cdef cnp.ndarray in_place_buffer = create_buffer(self.alloc_doubles)
+        self.buffer0 = in_place_buffer
+        self.buffer1 = in_place_buffer
         self.scatter_plan = cfftw.fftw_mpi_plan_many_transpose(n1,
                                                                n0,
                                                                howmany*itemsize,
@@ -174,13 +176,13 @@ cdef class Transpose:
         cfftw.fftw_destroy_plan(self.gather_plan)
         cfftw.fftw_destroy_plan(self.scatter_plan)
 
-    def gather(self, cnp.ndarray data):
+    def gather(self):
         """Gather along first axis (0), scattering from second axis (1)."""
 
         # Execute plan
         cfftw.fftw_execute(self.gather_plan)
 
-    def scatter(self, cnp.ndarray data):
+    def scatter(self):
         """Scatter from first axis (0), gathering along second axis (1)."""
 
         # Execute plan
@@ -281,6 +283,8 @@ cdef class FourierTransform:
                                                               cc_temp,
                                                               rg_temp,
                                                               intflags | cfftw.FFTW_DESTROY_INPUT)
+            cfftw.fftw_free(rg_temp)
+            cfftw.fftw_free(cc_temp)
         elif grid_dtype == np.complex128:
             cg_temp = cfftw.fftw_alloc_complex(np.prod(gshape))
             cc_temp = cfftw.fftw_alloc_complex(np.prod(cshape))
@@ -300,9 +304,8 @@ cdef class FourierTransform:
                                                           cg_temp,
                                                           cfftw.FFTW_BACKWARD,
                                                           intflags | cfftw.FFTW_DESTROY_INPUT)
-        cfftw.fftw_free(rg_temp)
-        cfftw.fftw_free(cg_temp)
-        cfftw.fftw_free(cc_temp)
+            cfftw.fftw_free(cg_temp)
+            cfftw.fftw_free(cc_temp)
 
         # Check that plan creation succeeded
         if (self.forward_plan == NULL) or (self.backward_plan == NULL):
