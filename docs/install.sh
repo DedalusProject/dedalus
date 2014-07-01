@@ -227,7 +227,8 @@ function host_specific
         echo "  * libatlas-base-dev"
         echo "  * mercurial"
         echo "  * libatlas3-base"
-        echo "  * libopenmpi-dev"       
+        echo "  * libopenmpi-dev"
+        echo "  * openmpi-bin"       
         echo "  * libssl-dev"
         echo "  * build-essential"
         echo "  * libncurses5"
@@ -240,7 +241,7 @@ function host_specific
         echo
         echo "You can accomplish this by executing:"
         echo
-        echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-devinstall libhdf5-dev mercurial"
+        echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev mercurial"
         echo
         echo
         BLAS="/usr/lib/"
