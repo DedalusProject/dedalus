@@ -28,21 +28,14 @@ def build_pencils(domain):
     """
 
     # Get transverse indeces in fastest sequence
-    index_list = []
-    if domain.dim == 1:
-        index_list.append([])
-    else:
-        trans_shape = domain.distributor.coeff_layout.shape[:-1]
-        div = np.arange(np.prod(trans_shape))
-        for s in reversed(trans_shape):
-            div, mod = divmod(div, s)
-            index_list.append(mod)
-        index_list = list(zip(*reversed(index_list)))
+    trans_shape = domain.local_coeff_shape[:-1]
+    indices = np.ndindex(*trans_shape)
 
     # Construct corresponding trans diff consts and build pencils
     pencils = []
-    start = domain.distributor.coeff_layout.start
-    for index in index_list:
+    scales = domain.remedy_scales(1)
+    start = domain.distributor.coeff_layout.start(scales)
+    for index in indices:
         trans = []
         for i, b in enumerate(domain.bases[:-1]):
             trans.append(b.trans_diff(start[i]+index[i]))
