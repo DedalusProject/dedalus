@@ -3,13 +3,17 @@ Class for data fields.
 
 """
 
+import weakref
 from functools import partial
 import numpy as np
+from mpi4py import mpi
 from scipy import sparse
 from scipy.sparse import linalg as splinalg
 import weakref
 
 from .future import Future
+from ..libraries.fftw import fftw_wrappers as fftw
+from ..tools.general import rev_enumerate
 from ..tools.config import config
 
 # Load config options
@@ -37,35 +41,38 @@ class Field(Future):
 
     """
 
-    def __init__(self, domain, name=None, constant=None):
+    # To Do: cache deallocation
 
-        # Initial attributes
-        self.name = name
+    def __init__(self, domain, name=None):
 
         # Weak-reference domain to allow cyclic garbage collection
         self._domain_weak_ref = weakref.ref(domain)
-
-        # Increment domain field count
         domain._field_count += 1
 
-        # Allocate data buffer
-        self._buffer = domain.distributor.create_buffer()
+        # Metadata
+        self.constant = np.array([False]*domain.dim, dtype=bool)
+        self.meta = [{'scale': None} for i in range(domain.dim)]
 
-        # Set initial layout (property hook sets data view)
-        self.layout = self.domain.distributor.coeff_layout
+        # Set layout and scales to build buffer and data
+        self._layout = domain.dist.coeff_layout
+        self.set_scales([1]*domain.dim, keep_data=False)
 
-        # Default to non-constant
-        if constant is None:
-            constant = np.array([False] * domain.dim)
-        self.constant = constant
+        self.name = name
 
     def clean(self):
         """Revert field to state at instantiation."""
 
-        self.layout = self.domain.distributor.coeff_layout
+        # Set dealias scales (cached fields will likely be claimed by operators)
+        self._layout = self.domain.distributor.coeff_layout
+        self.set_scales(self.domain.dealias, keep_data=False)
+        # Clear metadata
+        self.name = None
         self.constant[:] = False
         self.data.fill(0.)
-        self.name = None
+
+    @property
+    def domain(self):
+        return self._domain_weak_ref()
 
     @property
     def layout(self):
@@ -74,17 +81,18 @@ class Field(Future):
     @layout.setter
     def layout(self, layout):
         self._layout = layout
-        self.data = layout.view_data(self._buffer)
-
-    @property
-    def domain(self):
-        return self._domain_weak_ref()
+        # Update data view
+        scales = tuple(axmeta['scale'] for axmeta in self.meta)
+        self.data = np.ndarray(shape=layout.local_shape(scales),
+                               dtype=layout.dtype,
+                               buffer=self.buffer)
 
     def __del__(self):
         """Intercept deallocation to cache unused fields in domain."""
 
         # Check that domain is still instantiated
         if self.domain:
+            self.clean()
             self.domain._collect_field(self)
 
     def __repr__(self):
@@ -100,15 +108,56 @@ class Field(Future):
         """Return data viewed in specified layout."""
 
         self.require_layout(layout)
-
         return self.data
 
     def __setitem__(self, layout, data):
         """Set data viewed in a specified layout."""
 
-        layout = self.domain.distributor.get_layout_object(layout)
-        self.layout = layout
+        self.layout = self.domain.distributor.get_layout_object(layout)
         np.copyto(self.data, data)
+
+    @staticmethod
+    def _create_buffer(buffer_size):
+        """Create buffer for Field data."""
+
+        if buffer_size == 0:
+            # FFTW doesn't like allocating size-0 arrays
+            return np.zeros((0,), dtype=np.float64)
+        else:
+            # Use FFTW SIMD aligned allocation
+            alloc_doubles = buffer_size // 8
+            return fftw.create_buffer(alloc_doubles)
+
+    def set_scales(self, scales, *, keep_data):
+        """Set new transform scales."""
+
+        new_scales = self.domain.remedy_scales(scales)
+        old_scales = tuple(axmeta['scale'] for axmeta in self.meta)
+        if new_scales == old_scales:
+            return
+
+        if keep_data:
+            # Forward transform until remaining scales match
+            for axis in reversed(range(self.domain.dim)):
+                if not self.layout.grid_space[axis]:
+                    break
+                if old_scales[axis] != new_scales[axis]:
+                    self.require_coeff_space(axis)
+                    break
+            # Reference data
+            old_data = self.data
+
+        # Set metadata
+        for axis, axmeta in enumerate(self.meta):
+            axmeta['scale'] = new_scales[axis]
+        # Build new buffer
+        buffer_size = self.domain.distributor.buffer_size(new_scales)
+        self.buffer = self._create_buffer(buffer_size)
+        # Reset layout to build new data view
+        self.layout = self.layout
+
+        if keep_data:
+            np.copyto(self.data, old_data)
 
     def require_layout(self, layout):
         """Change to specified layout."""
@@ -118,9 +167,11 @@ class Field(Future):
         # Transform to specified layout
         if self.layout.index < layout.index:
             while self.layout.index < layout.index:
+                #self.domain.distributor.increment_layout(self)
                 self.towards_grid_space()
         elif self.layout.index > layout.index:
             while self.layout.index > layout.index:
+                #self.domain.distributor.decrement_layout(self)
                 self.towards_coeff_space()
 
     def towards_grid_space(self):
