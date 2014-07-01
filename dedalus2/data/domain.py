@@ -128,15 +128,19 @@ class Domain:
 
         self._field_cache.append(field)
 
-    def new_field(self):
+    def new_field(self, **kw):
         """Return a free field."""
 
         # Return a previously allocated field, if available
         if self._field_cache:
-            return self._field_cache.pop()
+            field = self._field_cache.pop()
         # Otherwise instantiate a new field
         else:
-            return Field(self)
+            field = Field(self)
+        # Set provided attributes
+        for key, value in kw.items():
+            setattr(field, key, value)
+        return field
 
     def remedy_scales(self, scales):
 

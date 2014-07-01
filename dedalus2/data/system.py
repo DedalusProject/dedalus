@@ -30,22 +30,20 @@ class CoeffSystem:
 
     def __init__(self, nfields, domain):
 
-        # Allocate data with extended coeff data shape
-        coeff_layout = domain.distributor.coeff_layout
-        shape = np.copy(coeff_layout.shape)
+        # Allocate data for joined coefficients
+        # Extend along last axis
+        shape = domain.local_coeff_shape.copy()
         shape[-1] *= nfields
-        self.data = np.zeros(shape, dtype=coeff_layout.dtype)
+        dtype = domain.dist.coeff_layout.dtype
+        self.data = np.zeros(shape, dtype=dtype)
 
-    @CachedMethod
     def get_pencil(self, pencil):
-        """Return pencil from system buffer."""
-
+        """Return pencil view from system buffer."""
         return self.data[pencil.index]
 
     def set_pencil(self, pencil, data):
-        """Set pencil in system buffer."""
-
-        np.copyto(self.get_pencil(pencil), data)
+        """Set pencil data in system buffer."""
+        np.copyto(self.data[pencil.index], data)
 
 
 class FieldSystem(CoeffSystem):
@@ -76,34 +74,25 @@ class FieldSystem(CoeffSystem):
     def __init__(self, field_names, domain):
 
         # Build fields
-        fields = [domain.new_field() for fn in field_names]
-        for i, f in enumerate(fields):
-            f.name = field_names[i]
-        field_dict = dict(zip(field_names, fields))
-        nfields = len(field_names)
+        fields = [domain.new_field(name=fn) for fn in field_names]
+        nfields = len(fields)
 
-        # Allocate data with extended coeff data shape
-        coeff_layout = domain.distributor.coeff_layout
-        shape = np.copy(coeff_layout.shape)
-        shape[-1] *= nfields
-        self.data = np.zeros(shape, dtype=coeff_layout.dtype)
+        # Allocate data for joined coefficients
+        super().__init__(nfields, domain)
 
-        # References
+        # Attributes
         self.domain = domain
         self.field_names = field_names
         self.fields = fields
         self.nfields = nfields
-        self.field_dict = field_dict
-        self._coeff_layout = coeff_layout
+        self.field_dict = dict(zip(field_names, fields))
 
     def __getitem__(self, name):
         """Return field corresponding to specified name."""
-
         return self.field_dict[name]
 
     def gather(self):
         """Copy fields into system buffer."""
-
         stride = self.nfields
         for start, field in enumerate(self.fields):
             field.require_coeff_space()
@@ -111,9 +100,9 @@ class FieldSystem(CoeffSystem):
 
     def scatter(self):
         """Extract fields from system buffer."""
-
         stride = self.nfields
+        coeff_layout = self.domain.dist.coeff_layout
         for start, field in enumerate(self.fields):
-            field.layout = self._coeff_layout
+            field.layout = coeff_layout
             np.copyto(field.data, self.data[..., start::stride])
 
