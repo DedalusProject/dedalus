@@ -3,24 +3,16 @@ Classes for available data layouts and the paths between them.
 
 """
 
-import numpy as np
+import logging
 from mpi4py import MPI
+import numpy as np
 
+from ..libraries.fftw import fftw_wrappers as fftw
 from ..tools.cache import CachedMethod
 from ..tools.config import config
 from ..tools.general import rev_enumerate
-try:
-    from ..libraries.fftw import fftw_wrappers as fftw
-    fftw.fftw_mpi_init()
-except ImportError:
-    logger.error("Don't forget to buid using 'python3 setup.py build_ext --inplace'")
-    raise
 
-import logging
 logger = logging.getLogger(__name__.split('.')[-1])
-
-# Load config options
-DEFAULT_LIBRARY = config['transforms'].get('DEFAULT_LIBRARY')
 FFTW_RIGOR = config['transforms'].get('FFTW_RIGOR')
 PATH_BARRIERS = config['parallelism'].getboolean('path_barriers')
 
@@ -276,7 +268,7 @@ class Layout:
 
 class Transform:
     """Directs transforms between two layouts."""
-    # To Do: group transforms for multiple fields (group)
+    # To Do: group transforms for multiple fields
 
     def __init__(self, layout0, layout1, axis, basis):
 
@@ -321,7 +313,7 @@ class Transform:
 
 class Transpose:
     """Directs transposes between two layouts."""
-    # To Do: group transposes for multiple fields (group)
+    # To Do: group transposes for multiple fields
     # To Do: test IP vs OOP FFTW speed
 
     def __init__(self, layout0, layout1, axis, comm_cart):
