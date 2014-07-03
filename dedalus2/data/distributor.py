@@ -273,15 +273,41 @@ class Transform:
         self.axis = axis
         self.basis = basis
 
+    @CachedMethod
+    def group_data(self, nfields, scales):
+
+        local_shape0 = self.layout0.local_shape(scales)
+        local_shape1 = self.layout1.local_shape(scales)
+        group_shape0 = [nfields] + list(local_shape0)
+        group_shape1 = [nfields] + list(local_shape1)
+        group_cdata = fftw.create_array(group_shape0, self.layout0.dtype)
+        group_gdata = fftw.create_array(group_shape1, self.layout1.dtype)
+
+        return group_cdata, group_gdata
+
     def increment_group(self, fields):
 
-        for field in fields:
-            self.increment(field)
+        fields = list(fields)
+        scales = tuple(axmeta['scale'] for axmeta in fields[0].meta)
+        cdata, gdata = self.group_data(len(fields), scales)
+        for i, field in enumerate(fields):
+            np.copyto(cdata[i], field.data)
+        self.basis.backward(cdata, axis=self.axis+1, gdata=gdata, scale=scales[self.axis])
+        for i, field in enumerate(fields):
+            field.layout = self.layout1
+            np.copyto(field.data, gdata[i])
 
     def decrement_group(self, fields):
 
-        for field in fields:
-            self.decrement(field)
+        fields = list(fields)
+        scales = tuple(axmeta['scale'] for axmeta in fields[0].meta)
+        cdata, gdata = self.group_data(len(fields), scales)
+        for i, field in enumerate(fields):
+            np.copyto(gdata[i], field.data)
+        self.basis.forward(gdata, axis=self.axis+1, cdata=cdata)
+        for i, field in enumerate(fields):
+            field.layout = self.layout0
+            np.copyto(field.data, cdata[i])
 
     def increment(self, field):
         """Backward transform."""
@@ -322,6 +348,41 @@ class Transpose:
         self.comm_sub = comm_cart.Sub(remain_dims)
 
     @CachedMethod
+    def _group_fftw_setup(self, nfields, scales):
+        """Build FFTW plans."""
+
+        axis = self.axis
+        shape0 = self.layout0.local_shape(scales)
+        shape1 = self.layout1.local_shape(scales)
+        blocks0 = self.layout0.blocks(scales)
+        blocks1 = self.layout1.blocks(scales)
+        logger.debug("Building FFTW transpose plan for (nfields, scales, axis) = (%s, %s, %s)" %(nfields, scales, axis))
+        # Build FFTW transpose plans
+        n0 = shape1[axis]
+        n1 = shape0[axis+1]
+        howmany = nfields * np.prod(shape0[:axis]) * np.prod(shape0[axis+2:])
+        block0 = blocks0[axis]
+        block1 = blocks1[axis+1]
+        dtype = self.layout0.dtype  # Same as layout1.dtype
+        pycomm = self.comm_sub
+        flags = ['FFTW_'+FFTW_RIGOR.upper()]
+        if howmany == 0:
+            return None, None, None
+        plan = fftw.Transpose(n0, n1, howmany, block0, block1, dtype, pycomm, flags=flags)
+        # Create temporary arrays with transposed data ordering
+        tr_shape0 = np.roll([nfields]+list(shape0), -(axis+1))
+        tr_shape1 = np.roll([nfields]+list(shape1), -(axis+1))
+        tr_temp0 = np.ndarray(shape=tr_shape0, dtype=dtype, buffer=plan.buffer0)
+        tr_temp1 = np.ndarray(shape=tr_shape1, dtype=dtype, buffer=plan.buffer1)
+        # Create anti-transposed views of temporary arrays
+        # For direct copying to and from field data
+        dim = self.layout0.domain.dim
+        temp0 = np.transpose(tr_temp0, np.roll(np.arange(dim+1), (axis+1)))
+        temp1 = np.transpose(tr_temp1, np.roll(np.arange(dim+1), (axis+1)))
+
+        return plan, temp0, temp1
+
+    @CachedMethod
     def _fftw_setup(self, scales):
         """Build FFTW plans."""
 
@@ -358,13 +419,43 @@ class Transpose:
 
     def increment_group(self, fields):
 
-        for field in fields:
-            self.increment(field)
+        fields = list(fields)
+        scales = tuple(axmeta['scale'] for axmeta in fields[0].meta)
+        plan, temp0, temp1 = self._group_fftw_setup(len(fields), scales)
+        if plan:
+            # Copy layout0 views of data to plan buffer
+            for i, field in enumerate(fields):
+                np.copyto(temp0[i], field.data)
+            # Globally transpose between temp buffers
+            plan.gather()
+            # Update field layouts
+            # Copy plan buffer to layout1 views of data
+            for i, field in enumerate(fields):
+                field.layout = self.layout1
+                np.copyto(field.data, temp1[i])
+        else:
+            # No data: just update field layout
+            field.layout = self.layout1
 
     def decrement_group(self, fields):
 
-        for field in fields:
-            self.decrement(field)
+        fields = list(fields)
+        scales = tuple(axmeta['scale'] for axmeta in fields[0].meta)
+        plan, temp0, temp1 = self._group_fftw_setup(len(fields), scales)
+        if plan:
+            # Copy layout1 views of data to plan buffer
+            for i, field in enumerate(fields):
+                np.copyto(temp1[i], field.data)
+            # Globally transpose between temp buffers
+            plan.scatter()
+            # Update field layouts
+            # Copy plan buffer to layout0 views of data
+            for i, field in enumerate(fields):
+                field.layout = self.layout0
+                np.copyto(field.data, temp0[i])
+        else:
+            # No data: just update field layout
+            field.layout = self.layout0
 
     def increment(self, field):
         """Gather along specified axis."""
