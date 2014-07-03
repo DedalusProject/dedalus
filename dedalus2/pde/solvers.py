@@ -67,7 +67,7 @@ class LinearEigenvalue:
         vars = dict()
         vars.update(parsable_ops)
         vars.update(zip(problem.diff_names, domain.diff_ops))
-        vars.update(zip(problem.axis_names, domain.grids()))
+        vars.update(zip(problem.axis_names, domain.grids(domain.dealias)))
         vars.update(problem.parameters)
         vars.update(self.state.field_dict)
 
@@ -224,7 +224,7 @@ class IVP:
         vars = dict()
         vars.update(parsable_ops)
         vars.update(zip(problem.diff_names, domain.diff_ops))
-        vars.update(zip(problem.axis_names, domain.grids()))
+        vars.update(zip(problem.axis_names, domain.grids(domain.dealias)))
         vars.update(problem.parameters)
         vars.update(state.field_dict)
 
