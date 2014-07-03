@@ -183,6 +183,7 @@ def merge_setup(joint_file, proc_path):
             joint_dset.attrs['task_number'] = proc_dset.attrs['task_number']
             joint_dset.attrs['constant'] = proc_dset.attrs['constant']
             joint_dset.attrs['grid_space'] = proc_dset.attrs['grid_space']
+            joint_dset.attrs['scales'] = proc_dset.attrs['scales']
             # Dimension scales
             for i, proc_dim in enumerate(proc_dset.dims):
                 joint_dset.dims[i].label = proc_dim.label
