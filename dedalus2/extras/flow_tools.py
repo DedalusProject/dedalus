@@ -1,102 +1,119 @@
+
+
 import numpy as np
-import logging
+from mpi4py import MPI
 
-# for CFL and Re estimation
-import mpi4py.MPI as MPI
+from ..tools.logging import logger
 
-class GlobalFlowProperty():
-    def __init__(self, solver, variable_dict, cadence):
-        self.comm = solver.domain.distributor.comm_world
 
-        self.cfl_model = 'mpi allreduce inplace'
+class GlobalFlowProperty:
 
-        # hacked solution for some processors coming in with zero z size.
-        if solver.domain.grid(solver.domain.dim-1).size > 0:
-            self.participate = True
-        else:
-            self.participate = False
+    def __init__(self, solver):
 
+        self.solver = solver
+        self.comm = solver.domain.dist.comm_cart
         self.comm_array = np.zeros(1, dtype=np.float64)
 
-        self.variables = solver.evaluator.add_dictionary_handler(iter = cadence)
-        for key in variable_dict.keys():
-            self.variables.add_task(variable_dict[key], name=key)
+    def global_reduce(self, local_value, mpi_reduce_op):
+        """Compute global reduction of a scalar from each process."""
+        self.comm_array[0] = local_value
+        self.comm.Allreduce(MPI.IN_PLACE, self.comm_array, op=mpi_reduce_op)
+        return self.comm_array[0]
 
-        self.logger = logging.getLogger(__name__)
-
-
-    def global_reduce(self, value, mpi_reduce_op, default_value = 0):
-        if not self.participate:
-            value = default_value
-
-        if self.cfl_model == 'mpi allreduce inplace':
-            self.comm_array[0] = value
-            self.comm.Allreduce(MPI.IN_PLACE, self.comm_array, op=mpi_reduce_op)
-            value = self.comm_array[0]
+    def global_min(self, gdata, empty=0):
+        """Compute global min of all local grid data."""
+        if gdata.size:
+            local_min = np.min(gdata)
         else:
-            self.logger.info('Invalid cfl_model chosen for CFL communication; terminating ({:s}).'.format(cfl_model))
-            value = np.nan
+            local_min = empty
+        return self.global_reduce(local_min, MPI.MIN)
 
-        return value
+    def global_max(self, gdata, empty=0):
+        """Compute global max of all local grid data."""
+        if gdata.size:
+            local_max = np.max(gdata)
+        else:
+            local_max = empty
+        return self.global_reduce(local_max, MPI.MAX)
 
-    def global_min(self, value, default_value = np.inf):
-        if not self.participate:
-            value = default_value
-
-        value = self.global_reduce(np.min(value), MPI.MIN, default_value = default_value)
-        return value
-
-    def global_max(self, value, default_value=0):
-        if not self.participate:
-            value = default_value
-
-        value = self.global_reduce(np.max(value), MPI.MAX, default_value = default_value)
-        return value
-
-    def global_mean(self, value, default_value=0):
-        if not self.participate:
-            value = default_value
-
-        value = self.global_reduce(np.mean(value), MPI.SUM, default_value=default_value)/self.comm.size
-        # note, if there are non-participating cores, this will skew the mean slightly
-        return value
-
+    def global_mean(self, gdata):
+        """Compute global mean of all local grid data."""
+        local_sum = np.sum(gdata)
+        local_size = gdata.size
+        global_sum = self.global_reduce(local_sum, MPI.SUM)
+        global_size = self.global_reduce(local_size, MPI.SUM)
+        return global_sum / global_size
 
 
 class CFL(GlobalFlowProperty):
     """
-    Compute CFL limited timestep size given a dictionary of frequencies.
+    Compute CFL-limited timestep from a set of velocities/frequencies.
 
-    freq_dict contains a set of dictionary_handler values and keys.
+    Parameters
+    ----------
+    solver : solver object
+        Problem solver
+    first_dt : float
+        Initial timestep
+    cadence : int, optional
+        Iteration cadence for computing new timestep (default: 1)
+    safety : float, optional
+        Safety factor for scaling computed timestep (default: 1.)
+    max_dt : float, optional
+        Maximum allowable timestep (default: inf)
+    min_dt : float, optional
+        Minimum allowable timestep (default: 0.)
+    max_change : float, optional
+        Maximum fractional change between timesteps (default: inf)
+    min_change : float, optional
+        Minimum fractional change between timesteps (default: 0.)
 
-    All variables used in freq_dict (e.g., delta_x_grid) must be set prior to calling cfl.
     """
-    def __init__(self, solver, freq_dict, max_dt, cfl_cadence=1):
 
-        GlobalFlowProperty.__init__(self, solver, freq_dict, cfl_cadence)
+    def __init__(self, solver, first_dt, cadence=1, safety=1., max_dt=np.inf,
+                 min_dt=0., max_change=np.inf, min_change=0.):
 
+        self.solver = solver
+        self.stored_dt = first_dt
+        self.cadence = cadence
+        self.safety = safety
         self.max_dt = max_dt
-        self.cfl_cadence = cfl_cadence
+        self.max_change = max_change
+        self.min_change = min_change
+        self.grid_spacings = [basis.grid_spacing(basis.dealias) for basis in solver.domain.bases]
 
-    def compute_dt(self, safety=1.):
-        if self.participate:
-            freq = 0
-            for key in self.variables.fields.keys():
-                freq += np.abs(self.variables.fields[key]['g'])
+    def compute_dt(self):
+        """Compute new timestep."""
+        # Compute new timestep when cadence divides previous iteration
+        # This is when the frequency dictionary handler is freshly updated
+        if (self.solver.iteration-1) % self.cadence == 0:
+            # Sum across frequencies for each local grid point
+            local_freqs = np.sum(np.abs(field['g']) for field in self.frequencies.values())
+            # Take maximum frequency across all grid points
+            max_global_freq = self.global_max(local_freqs, empty=0)
+            # Compute new timestep
+            if max_global_freq == 0:
+                dt = np.inf
+            else:
+                dt = self.safety / max_global_freq
+            dt = min(dt, self.max_dt, self.max_change*self.stored_dt)
+            dt = max(dt, self.min_dt, self.min_change*self.stored_dt)
+            # Store new timestep
+            self.stored_dt = dt
 
-            mint = 1/np.max(freq)
-        else:
-            # no data in these cores.
-            mint = self.max_dt
+        return self.stored_dt
 
-        dt = safety * mint
+    def add_velocity(self, components):
+        """Add grid-crossing frequencies from a set of velocity components."""
+        if len(components) != self.solver.domain.dim:
+            raise ValueError("Wrong number of components for domain.")
+        for axis, component in enumerate(components):
+            freq = Operator(component) / self.grid_spacings[axis]
+            self.add_frequency(freq)
 
-        if self.comm:
-            dt = self.global_min(dt)
-
-        dt = min(dt, self.max_dt)
-
-        return dt
+    def add_frequency(self, freq):
+        """Add an on-grid frequency."""
+        self.frequencies.add_task(freq, layout='g')
 
 
 class ReynoldsPeclet(GlobalFlowProperty):
@@ -111,16 +128,11 @@ class ReynoldsPeclet(GlobalFlowProperty):
     def compute_Re_Pe(self):
 
         peak_Re = self.global_max(self.variables.fields['rms Re']['g'])
-
         rms_Re = self.global_mean(self.variables.fields['rms Re']['g'])
-
-        peak_Pe = self.global_max(self.variables.fields['rms Pe']['g'])
-
-        rms_Pe = self.global_mean(self.variables.fields['rms Pe']['g'])
+        peak_Pe = self.global_max(self.variables.fields['rms Re']['g'])
+        rms_Pe = self.global_mean(self.variables.fields['rms Re']['g'])
 
         return peak_Re, peak_Pe, rms_Re, rms_Pe
-
-
 
 
 class CFL_conv_2D(CFL):
