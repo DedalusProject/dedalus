@@ -55,7 +55,7 @@ class Field(Future):
 
         # Set layout and scales to build buffer and data
         self._layout = domain.dist.coeff_layout
-        self.set_scales([1]*domain.dim, keep_data=False)
+        self.set_scales(1, keep_data=False)
 
         self.name = name
 

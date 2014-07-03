@@ -130,6 +130,7 @@ class Operator(Future):
             out = self.out
         else:
             out = self.domain.new_field()
+        out.set_scales(self.domain.dealias, keep_data=False)
 
         # Perform operation
         self.operate(out)
