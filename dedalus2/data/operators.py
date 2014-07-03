@@ -1020,7 +1020,7 @@ def numeric_constant(arg0, domain):
     elif is_array(arg0):
         # Determine local constant array by comparing to grid shape
         comm = domain.distributor.comm_cart
-        local_constant = np.less(arg0.shape, domain.distributor.grid_layout.shape)
+        local_constant = np.less(arg0.shape, domain.distributor.grid_layout.local_shape(domain.dealias))
         # Communicate to eliminate edge cases where grid_layout.shape[i] == 1
         gathered_constant = comm.gather(local_constant, root=0)
         if domain.distributor.rank == 0:
