@@ -68,16 +68,23 @@ class CFL(GlobalFlowProperty):
     min_change : float, optional
         Minimum fractional change between timesteps (default: 0.)
 
+    Notes
+    -----
+    The new timestep is computed by summing across the provided frequencies
+    for each grid point, and then reciprocating the maximum "total" frequency
+    from the entire grid.
+
     """
 
-    def __init__(self, solver, first_dt, cadence=1, safety=1., max_dt=np.inf,
+    def __init__(self, solver, initial_dt, cadence=1, safety=1., max_dt=np.inf,
                  min_dt=0., max_change=np.inf, min_change=0.):
 
         self.solver = solver
-        self.stored_dt = first_dt
+        self.stored_dt = initial_dt
         self.cadence = cadence
         self.safety = safety
         self.max_dt = max_dt
+        self.min_dt = min_dt
         self.max_change = max_change
         self.min_change = min_change
         self.grid_spacings = [basis.grid_spacing(basis.dealias) for basis in solver.domain.bases]
@@ -89,16 +96,14 @@ class CFL(GlobalFlowProperty):
         if (self.solver.iteration-1) % self.cadence == 0:
             # Sum across frequencies for each local grid point
             local_freqs = np.sum(np.abs(field['g']) for field in self.frequencies.values())
-            # Take maximum frequency across all grid points
+            # Compute new timestep from max frequency across all grid points
             max_global_freq = self.global_max(local_freqs, empty=0)
-            # Compute new timestep
             if max_global_freq == 0:
                 dt = np.inf
             else:
                 dt = self.safety / max_global_freq
             dt = min(dt, self.max_dt, self.max_change*self.stored_dt)
             dt = max(dt, self.min_dt, self.min_change*self.stored_dt)
-            # Store new timestep
             self.stored_dt = dt
 
         return self.stored_dt
