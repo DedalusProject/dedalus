@@ -1,51 +1,102 @@
 
 
+import logging
 import numpy as np
 from mpi4py import MPI
 
-from ..tools.logging import logger
+from ..data.operators import Operator
+
+logger = logging.getLogger(__name__.split('.')[-1])
 
 
-class GlobalFlowProperty:
+class GlobalArrayReducer:
+    """Directs parallelized reduction of distributed array data."""
 
-    def __init__(self, solver):
+    def __init__(self, comm, dtype=np.float64):
 
-        self.solver = solver
-        self.comm = solver.domain.dist.comm_cart
-        self.comm_array = np.zeros(1, dtype=np.float64)
+        self.comm = comm
+        self._scalar_buffer = np.zeros(1, dtype=dtype)
 
-    def global_reduce(self, local_value, mpi_reduce_op):
+    def reduce_scalar(self, local_scalar, mpi_reduce_op):
         """Compute global reduction of a scalar from each process."""
-        self.comm_array[0] = local_value
-        self.comm.Allreduce(MPI.IN_PLACE, self.comm_array, op=mpi_reduce_op)
-        return self.comm_array[0]
+        self._scalar_buffer[0] = local_scalar
+        self.comm.Allreduce(MPI.IN_PLACE, self._scalar_buffer, op=mpi_reduce_op)
+        return self._scalar_buffer[0]
 
-    def global_min(self, gdata, empty=0):
-        """Compute global min of all local grid data."""
-        if gdata.size:
-            local_min = np.min(gdata)
+    def global_min(self, data, empty=0):
+        """Compute global min of all array data."""
+        if data.size:
+            local_min = np.min(data)
         else:
             local_min = empty
-        return self.global_reduce(local_min, MPI.MIN)
+        return self.reduce_scalar(local_min, MPI.MIN)
 
-    def global_max(self, gdata, empty=0):
-        """Compute global max of all local grid data."""
-        if gdata.size:
-            local_max = np.max(gdata)
+    def global_max(self, data, empty=0):
+        """Compute global max of all array data."""
+        if data.size:
+            local_max = np.max(data)
         else:
             local_max = empty
-        return self.global_reduce(local_max, MPI.MAX)
+        return self.reduce_scalar(local_max, MPI.MAX)
 
-    def global_mean(self, gdata):
-        """Compute global mean of all local grid data."""
-        local_sum = np.sum(gdata)
-        local_size = gdata.size
-        global_sum = self.global_reduce(local_sum, MPI.SUM)
-        global_size = self.global_reduce(local_size, MPI.SUM)
+    def global_mean(self, data):
+        """Compute global mean of all array data."""
+        local_sum = np.sum(data)
+        local_size = data.size
+        global_sum = self.reduce_scalar(local_sum, MPI.SUM)
+        global_size = self.reduce_scalar(local_size, MPI.SUM)
         return global_sum / global_size
 
 
-class CFL(GlobalFlowProperty):
+class GlobalFlowProperty:
+    """
+    Directs parallelized determination of a global flow property on the grid.
+
+    Parameters
+    ----------
+    solver : solver object
+        Problem solver
+    cadence : int, optional
+        Iteration cadence for property evaluation (default: 1)
+
+    Examples
+    --------
+    >>> flow = GlobalFlowProperty(solver)
+    >>> flow.add_task('sqrt(u*u + w*w) * Lz / nu', name='Re')
+    ...
+    >>> flow.max('Re')
+    1024.5
+
+    """
+
+    def __init__(self, solver, cadence=1):
+
+        self.solver = solver
+        self.cadence = cadence
+        self.reducer = GlobalArrayReducer(solver.domain.dist.comm_cart)
+        self.dicthandler = solver.evaluator.add_dictionary_handler(iter=cadence)
+
+    def add_property(self, property, name):
+        """Add a property."""
+        self.dicthandler.add_task(property, layout='g', name=name)
+
+    def min(self, name):
+        """Compute global min of a property on the grid."""
+        gdata = self.dicthandler.fields[name]['g']
+        return self.reducer.global_min(gdata)
+
+    def max(self, name):
+        """Compute global max of a property on the grid."""
+        gdata = self.dicthandler.fields[name]['g']
+        return self.reducer.global_max(gdata)
+
+    def mean(self, name):
+        """Compute global mean of a property on the grid."""
+        gdata = self.dicthandler.fields[name]['g']
+        return self.reducer.global_mean(gdata)
+
+
+class CFL:
     """
     Compute CFL-limited timestep from a set of velocities/frequencies.
 
@@ -87,7 +138,11 @@ class CFL(GlobalFlowProperty):
         self.min_dt = min_dt
         self.max_change = max_change
         self.min_change = min_change
-        self.grid_spacings = [basis.grid_spacing(basis.dealias) for basis in solver.domain.bases]
+
+        domain = solver.domain
+        self.grid_spacings = [domain.grid_spacing(axis, domain.dealias) for axis in range(domain.dim)]
+        self.reducer = GlobalArrayReducer(solver.domain.dist.comm_cart)
+        self.dicthandler = solver.evaluator.add_dictionary_handler(iter=cadence)
 
     def compute_dt(self):
         """Compute new timestep."""
@@ -95,9 +150,9 @@ class CFL(GlobalFlowProperty):
         # This is when the frequency dictionary handler is freshly updated
         if (self.solver.iteration-1) % self.cadence == 0:
             # Sum across frequencies for each local grid point
-            local_freqs = np.sum(np.abs(field['g']) for field in self.frequencies.values())
+            local_freqs = np.sum(np.abs(field['g']) for field in self.dicthandler.fields.values())
             # Compute new timestep from max frequency across all grid points
-            max_global_freq = self.global_max(local_freqs, empty=0)
+            max_global_freq = self.reducer.global_max(local_freqs, empty=0)
             if max_global_freq == 0:
                 dt = np.inf
             else:
@@ -113,12 +168,16 @@ class CFL(GlobalFlowProperty):
         if len(components) != self.solver.domain.dim:
             raise ValueError("Wrong number of components for domain.")
         for axis, component in enumerate(components):
-            freq = Operator(component) / self.grid_spacings[axis]
+            comp_op = Operator.from_string(component, self.solver.evaluator.vars, self.solver.domain)
+            freq = comp_op / self.grid_spacings[axis]
             self.add_frequency(freq)
 
     def add_frequency(self, freq):
         """Add an on-grid frequency."""
-        self.frequencies.add_task(freq, layout='g')
+        self.dicthandler.add_task(freq, layout='g')
+
+
+
 
 
 class ReynoldsPeclet(GlobalFlowProperty):
