@@ -338,6 +338,10 @@ printf -v SPFILE "%s.tar.gz.sha512" $SCIPY
 printf -v SPSHA "ad1278740c1dc44c5e1b15335d61c4552b66c0439325ed6eeebc5872a1c0ba3fce1dd8509116b318d01e2d41da2ee49ec168da330a7fafd22511138b29f7235d  %s" ${SPFILE%.sha512}
 echo "$SPSHA" > $SPFILE
 
+printf -v MPIFILE "%s.tar.gz.sha512" $OPENMPI
+printf -v MPISHA "3fe661bef30654c62bbb94bc8a2e132194131906913f2576bda56ec85c2b83e0dd7e864664dca1a8ec62fc6f8308edd18d8d1296c7d778a69ecb28be789bf499  %s" ${MPIFILE%.sha512}
+echo "$MPISHA" > $MPIFILE
+
 # get the files
 get_dedalusproject $PYTHON.tgz
 get_dedalusproject $FFTW.tar.gz
