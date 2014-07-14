@@ -1,4 +1,7 @@
+"""
+Extra tools that are useful in hydrodynamical problems.
 
+"""
 
 import logging
 import numpy as np
@@ -152,7 +155,7 @@ class CFL:
             # Sum across frequencies for each local grid point
             local_freqs = np.sum(np.abs(field['g']) for field in self.dicthandler.fields.values())
             # Compute new timestep from max frequency across all grid points
-            max_global_freq = self.reducer.global_max(local_freqs, empty=0)
+            max_global_freq = self.reducer.global_max(local_freqs)
             if max_global_freq == 0:
                 dt = np.inf
             else:
