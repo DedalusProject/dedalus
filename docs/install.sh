@@ -30,7 +30,7 @@ INST_OPENMPI=0 # by default, don't build OpenMPI. If you're on linux, use your p
 INST_HDF5=0 # by default, don't build HDF5.
 INST_ATLAS=0 # by default, we will not build our own ATLAS. If you're on OSX, you'll want to use accelerate anyway.
 INST_SCIPY=1
-
+INST_IPYTHON=0 # by default, don't build ipython
 
 if [ ${REINST_DEDALUS} ] && [ ${REINST_DEDALUS} -eq 1 ] && [ -n ${DEDALUS_DEST} ]
 then
@@ -238,10 +238,12 @@ function host_specific
         echo "  * libfreetype6-dev"
         echo "  * tk-dev"
         echo "  * libhdf5-dev"
+        echo "  * libzmq-dev"
+        echo "  * libsqlite3-dev"
         echo
         echo "You can accomplish this by executing:"
         echo
-        echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev mercurial"
+        echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev mercurial libzmq-dev libsqlite3-dev"
         echo
         echo
         BLAS="/usr/lib/"
@@ -455,6 +457,15 @@ echo "pip installing matplotlib."
 echo "pip installing sympy."
 ( ${DEST_DIR}/bin/pip3 install sympy 2>&1 ) 1>> ${LOG_FILE} || do_exit
 
+# ipython
+if [ $INST_IPYTHON -eq 1 ]
+then
+    echo "pip installing ipython."
+    ( ${DEST_DIR}/bin/pip3 install ipython 2>&1 ) 1>> ${LOG_FILE} || do_exit
+    ( ${DEST_DIR}/bin/pip3 install pyzmq 2>&1 ) 1>> ${LOG_FILE} || do_exit
+    ( ${DEST_DIR}/bin/pip3 install jinja2 2>&1 ) 1>> ${LOG_FILE} || do_exit
+
+fi
 # We assume that hg can be found in the path.
 if type -P hg &>/dev/null
 then
@@ -497,7 +508,7 @@ cd $MY_PWD
 if !( ( ${DEST_DIR}/bin/python3 -c "import readline" 2>&1 )>> ${LOG_FILE})
 then
     echo "Installing pure-python readline"
-    ( ${DEST_DIR}/bin/pip install readline 2>&1 ) 1>> ${LOG_FILE}
+    ( ${DEST_DIR}/bin/pip3 install readline 2>&1 ) 1>> ${LOG_FILE}
 fi
 
 
