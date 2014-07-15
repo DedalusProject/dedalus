@@ -2,7 +2,7 @@ Install notes for BRC HPC SAVIO cluster
 ***************************************************************************
 
 Installing on the SAVIO cluster is pretty straightforward, as many things
-can be loaded via modules.  First, load the following modules.:
+can be loaded via modules.  First, load the following modules.
 
   module purge
   module load intel
