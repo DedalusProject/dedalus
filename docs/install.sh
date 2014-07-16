@@ -122,8 +122,9 @@ function host_specific
         echo "Looks like you're running on Mac OSX."
         echo
         echo "NOTE: you must have the Xcode command line tools installed."
+	echo "You also need install mercurial (http://mercurial.selenic.com/downloads), and gfortran (https://gcc.gnu.org/wiki/GFortranBinaries#MacOS)"
         echo
-	echo "The instructions for obtaining these tools varies according"
+	echo "The instructions for obtaining the Xcode tools varies according"
 	echo "to your exact OS version.  On older versions of OS X, you"
 	echo "must register for an account on the apple developer tools"
 	echo "website: https://developer.apple.com/downloads to obtain the"
@@ -139,17 +140,6 @@ function host_specific
 	echo "menu bar.  We're assuming that you've installed all operating"
 	echo "system updates; if you have an older version, we suggest"
 	echo "running software update and installing all available updates."
-	echo
-        echo "OS X 10.5.8: search for and download Xcode 3.1.4 from the"
-	echo "Apple developer tools website."
-        echo
-        echo "OS X 10.6.8: search for and download Xcode 3.2 from the Apple"
-	echo "developer tools website.  You can either download the"
-	echo "Xcode 3.2.2 Developer Tools package (744 MB) and then use"
-	echo "Software Update to update to XCode 3.2.6 or"
-	echo "alternatively, you can download the Xcode 3.2.6/iOS SDK"
-	echo "bundle (4.1 GB)."
-        echo
         echo "OS X 10.7.5: download Xcode 4.2 from the mac app store"
 	echo "(search for Xcode)."
         echo "Alternatively, download the Xcode command line tools from"
@@ -168,6 +158,8 @@ function host_specific
     echo "with the following command:"
     echo "    xcode-select --install"
     echo
+    echo "Once you have installed Xcode and the command line tools, install gfortran from https://gcc.gnu.org/wiki/GFortranBinaries#MacOS."
+
     OSX_VERSION=`sw_vers -productVersion`
     if [ "${OSX_VERSION##10.8}" != "${OSX_VERSION}" ]
         then
@@ -176,6 +168,8 @@ function host_specific
         fi
     INST_OPENMPI=1
     INST_ATLAS=0
+    INST_HDF5=1
+    INST_FTYPE=1
     fi
 
     if [ -f /etc/redhat-release ]
@@ -322,6 +316,8 @@ FFTW='fftw-3.3.4'
 NUMPY='numpy-1.8.1'
 SCIPY='scipy-0.14.0'
 OPENMPI='openmpi-1.6.5'
+HDF5='hdf5-1.8.13'
+FTYPE='freetype-2.5.3'
 
 # dump sha512 to files
 printf -v PYFILE "%s.tgz.sha512" $PYTHON
@@ -344,13 +340,22 @@ printf -v MPIFILE "%s.tar.gz.sha512" $OPENMPI
 printf -v MPISHA "3fe661bef30654c62bbb94bc8a2e132194131906913f2576bda56ec85c2b83e0dd7e864664dca1a8ec62fc6f8308edd18d8d1296c7d778a69ecb28be789bf499  %s" ${MPIFILE%.sha512}
 echo "$MPISHA" > $MPIFILE
 
+printf -v HDF5FILE "%s.tar.gz.sha512" $HDF5
+printf -v HDF5SHA "cd647ddf8cc6787cf57f3f84fd08b367158dc80f27669601a8c2fe573e14758c3c9d8787022a1c936d401c6676c1b4358b087825f46254342b0a35e06a2668be  %s" ${HDF5FILE%.sha512}
+echo "$HDF5SHA" > $HDF5FILE
+
+printf -v FTFILE "%s.tar.gz.sha512" $FTYPE
+printf -v FTSHA "9ab7b77c5c09b1eb5baee7eb16da8a5f6fa7168cfa886bfed392b2fe80a985bcedecfbb8ed562c822ec9e48b061fb5fcdd9eea69eb44f970c2d1c55581f31d25  %s" ${FTFILE%.sha512}
+echo "$FTSHA" > $FTFILE
+
 # get the files
 get_dedalusproject $PYTHON.tgz
 get_dedalusproject $FFTW.tar.gz
 get_dedalusproject $NUMPY.tar.gz
 get_dedalusproject $SCIPY.tar.gz
 [ $INST_OPENMPI -eq 1 ] && get_dedalusproject $OPENMPI.tar.gz
-
+[ $INST_HDF5 -eq 1 ] && get_dedalusproject $HDF5.tar.gz
+[ $INST_FTYPE -eq 1 ] && get_dedalusproject $FTYPE.tar.gz
 
 # first, OpenMPI, if we're doing that
 if [ $INST_OPENMPI -eq 1 ]
@@ -370,6 +375,7 @@ then
     export LDFLAGS="${LDFLAGS} -L${OPENMPI_DIR}/lib/ -L${OPENMPI_DIR}/lib64/"
     LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${OPENMPI_DIR}/lib/"
     PATH="${OPENMPI_DIR}/bin:${PATH}"
+    export MPI_PATH=${OPENMPI_DIR}
 fi
 
 
@@ -403,7 +409,7 @@ then
                    F77=mpif90 \
                    MPICC=mpicc MPICXX=mpicxx \
                    --enable-shared \
-                   --enable-mpi --enable-openmp --enable-threads"
+                   --enable-mpi --enable-threads"
 
     ( ./configure --prefix=${DEST_DIR}/ ${FFTWCONF_ARGS} 2>&1 ) 1>> ${LOG_FILE} || do_exit
 
@@ -417,6 +423,44 @@ then
 fi
 export FFTW_PATH=${DEST_DIR}/
 
+# HDF5, if we're doing that.
+if [ $INST_HDF5 -eq 1 ]
+then
+    if [ ! -e $HDF5/done ]
+    then
+        [ ! -e $HDF5 ] && tar xfz $HDF5.tar.gz
+        echo "Installing HDF5"
+        cd $HDF5
+        ( ./configure --prefix=${DEST_DIR}/ 2>&1 ) 1>> ${LOG_FILE} || do_exit
+        ( make install 2>&1 ) 1>> ${LOG_FILE} || do_exit
+        ( make clean 2>&1) 1>> ${LOG_FILE} || do_exit
+        touch done
+        cd ..
+    fi
+    export HDF5_DIR=${DEST_DIR}
+
+fi
+
+# freetype
+if [ $INST_FTYPE -eq 1 ]
+then
+    if [ ! -e $FTYPE/done ]
+    then
+        [ ! -e $FTYPE ] && tar xfz $FTYPE.tar.gz
+        echo "Installing FreeType2"
+        cd $FTYPE
+        ( ./configure CFLAGS=-I${DEST_DIR}/include --prefix=${DEST_DIR}/ 2>&1 ) 1>> ${LOG_FILE} || do_exit
+        ( make 2>&1 ) 1>> ${LOG_FILE} || do_exit
+	( make install 2>&1 ) 1>> ${LOG_FILE} || do_exit
+        ( make clean 2>&1) 1>> ${LOG_FILE} || do_exit
+        touch done
+        cd ..
+    fi
+    FTYPE_DIR=${DEST_DIR}
+    export LDFLAGS="${LDFLAGS} -L${FTYPE_DIR}/lib/ -L${FTYPE_DIR}/lib64/"
+    LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${FTYPE_DIR}/lib/"
+fi
+
 # if !OSX ATLAS/OpenBLAS
 
 # numpy
@@ -427,6 +471,9 @@ then
     # do some magic here...
     export BLAS=$BLAS
     export LAPACK=$LAPACK
+    export LDFLAGS="-bundle -undefined dynamic_lookup $LDFLAGS"
+    export FFLAGS="$FFLAGS -fPIC"
+    export FCFLAGS="$FCFLAGS -fPIC"
     do_setup_py $NUMPY ${NUMPY_ARGS}
     do_setup_py $SCIPY ${NUMPY_ARGS}
 fi
@@ -477,9 +524,9 @@ fi
 
 if [ -z "$DEDALUS_DIR" ]
 then
+    DEDALUS_DIR="$PWD/dedalus2/"
     if [ ! -e dedalus2 ]
     then
-        DEDALUS_DIR="$PWD/dedalus2/"
         ( ${HG_EXEC} --debug clone https://bitbucket.org/jsoishi/dedalus2-jsoishi/ dedalus2 2>&1 ) 1>> ${LOG_FILE}
         # Now we update to the branch we're interested in.
         ( ${HG_EXEC} -R ${DEDALUS_DIR} up -C ${BRANCH} 2>&1 ) 1>> ${LOG_FILE}
