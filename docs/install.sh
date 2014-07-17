@@ -527,7 +527,14 @@ then
     DEDALUS_DIR="$PWD/dedalus2/"
     if [ ! -e dedalus2 ]
     then
-        ( ${HG_EXEC} --debug clone https://bitbucket.org/jsoishi/dedalus2-jsoishi/ dedalus2 2>&1 ) 1>> ${LOG_FILE}
+        ( ${HG_EXEC} --debug clone https://bitbucket.org/dedalus-project/dedalus2/ dedalus2 2>&1 ) 1>> ${LOG_FILE}
+
+        # this step will be deleted once the install script is pulled into the main repository
+        MY_PWD=`pwd`
+        cd $DEDALUS_DIR
+        ( ${HG_EXEC} pull https://bitbucket.org/dedalus-jsoishi/dedalus2/ 2>&1 ) 1>> ${LOG_FILE}
+        cd $MY_PWD
+        
         # Now we update to the branch we're interested in.
         ( ${HG_EXEC} -R ${DEDALUS_DIR} up -C ${BRANCH} 2>&1 ) 1>> ${LOG_FILE}
     fi
