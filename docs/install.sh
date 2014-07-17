@@ -31,6 +31,7 @@ INST_HDF5=0 # by default, don't build HDF5.
 INST_ATLAS=0 # by default, we will not build our own ATLAS. If you're on OSX, you'll want to use accelerate anyway.
 INST_SCIPY=1
 INST_IPYTHON=0 # by default, don't build ipython
+INST_FTYPE=0 # by default, don't install freetype
 
 if [ ${REINST_DEDALUS} ] && [ ${REINST_DEDALUS} -eq 1 ] && [ -n ${DEDALUS_DEST} ]
 then
@@ -114,6 +115,7 @@ function do_exit
 
 function host_specific
 {
+    IS_OSX=0              # not OSX by default
     MYHOST=`hostname -s`  # just give the short one, not FQDN
     MYHOSTLONG=`hostname` # FQDN, for Ranger
     MYOS=`uname -s`       # A guess at the OS
@@ -170,6 +172,7 @@ function host_specific
     INST_ATLAS=0
     INST_HDF5=1
     INST_FTYPE=1
+    IS_OSX=1
     fi
 
     if [ -f /etc/redhat-release ]
@@ -471,9 +474,12 @@ then
     # do some magic here...
     export BLAS=$BLAS
     export LAPACK=$LAPACK
-    export LDFLAGS="-bundle -undefined dynamic_lookup $LDFLAGS"
-    export FFLAGS="$FFLAGS -fPIC"
-    export FCFLAGS="$FCFLAGS -fPIC"
+    if [ $IS_OSX -eq 1 ]
+    then
+        export LDFLAGS="-bundle -undefined dynamic_lookup $LDFLAGS"
+        export FFLAGS="$FFLAGS -fPIC"
+        export FCFLAGS="$FCFLAGS -fPIC"
+    fi
     do_setup_py $NUMPY ${NUMPY_ARGS}
     do_setup_py $SCIPY ${NUMPY_ARGS}
 fi
@@ -532,7 +538,7 @@ then
         # this step will be deleted once the install script is pulled into the main repository
         MY_PWD=`pwd`
         cd $DEDALUS_DIR
-        ( ${HG_EXEC} pull https://bitbucket.org/dedalus-jsoishi/dedalus2/ 2>&1 ) 1>> ${LOG_FILE}
+        ( ${HG_EXEC} pull https://bitbucket.org/jsoishi/dedalus2-jsoishi/ 2>&1 ) 1>> ${LOG_FILE}
         cd $MY_PWD
         
         # Now we update to the branch we're interested in.
