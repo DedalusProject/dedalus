@@ -586,7 +586,7 @@ function print_afterword
     echo "    $ source $DEST_DIR/bin/activate"
     echo
     echo "This modifies the environment variables DEDALUS_DEST, PATH, PYTHONPATH, and"
-    echo "LD_LIBRARY_PATH to match your new yt install.  If you use csh, just"
+    echo "LD_LIBRARY_PATH to activate dedalus.  If you use csh, just"
     echo "append .csh to the above."
     echo
     echo "The source for dedalus is located at:"
