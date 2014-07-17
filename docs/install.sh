@@ -549,7 +549,7 @@ sed -i.bak -e "s,__DEDALUS_DIR__,${DEST_DIR}," ${DEST_DIR}/bin/activate
 ( cp ${DEDALUS_DIR}/docs/activate.csh ${DEST_DIR}/bin/activate.csh 2>&1 ) 1>> ${LOG_FILE}
 sed -i.bak -e "s,__DEDALUS_DIR__,${DEST_DIR}," ${DEST_DIR}/bin/activate.csh
 
-echo "Doing yt update, wiping local changes and updating to branch ${BRANCH}"
+echo "Doing Dedalus update, wiping local changes and updating to branch ${BRANCH}"
 MY_PWD=`pwd`
 cd $DEDALUS_DIR
 ( ${HG_EXEC} pull 2>1 && ${HG_EXEC} up -C 2>1 ${BRANCH} 2>&1 ) 1>> ${LOG_FILE}
