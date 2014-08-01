@@ -6,36 +6,43 @@
 Dedalus
 ===================================
 
-To begin using Dedalus, visit the pages on:
+Dedalus is a framework for solving partial differential equations
+(PDEs), including eigenvalue problems, boundary value problems, and
+initial value problems (i.e. simulations) for nearly arbitrary sets of
+equations. It features text-based equation entry, 
+
+Installing Dedalus 
+==========
+
+There are several ways to install Dedalus
 
 .. toctree::
    :maxdepth: 1
 
    installation
-   getting_started
 
+Getting Started
+==========
 
-Preliminary auto-included code documentation
+We have a series of ipython notebooks giving an overview of the code.
+
+.. toctree::
+   :maxdepth: 1
+
+   getting_started 
+
+Examples 
+=========
+
+Link to the examples repository.
+
+API Documentation
+======
 
 .. toctree::
    :maxdepth: 1
 
    dedalus2
-
-Help
-====
-
-.. toctree::
-   :maxdepth: 1
-
-   using_mercurial
-
-Useful external references:
-
-* `Sphinx documentation <http://sphinx-doc.org/contents.html>`_
-* `Using restructed text (reST) with sphinx <http://sphinx-doc.org/rest.html>`_
-* `Full reStructuredText documentation <http://docutils.sourceforge.net/rst.html>`_
-* `Tutorial on Python documentation with sphinx <http://pythonhosted.org/an_example_pypi_project/sphinx.html>`_
 
 Indices and tables
 ==================
