@@ -34,7 +34,11 @@ We have a series of ipython notebooks giving an overview of the code.
 Examples 
 =========
 
-Link to the examples repository.
+We provide a number of examples_. These are sample scripts that run
+typical physical problems, including Rayleigh-Benard convection in 2D
+and the KdV equation in 1D.
+
+.. _examples: https://bitbucket.org/dedalus-project/dedalus-examples
 
 API Documentation
 ======
