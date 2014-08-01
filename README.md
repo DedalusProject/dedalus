@@ -6,7 +6,7 @@ See our website, http://dedalus-project.org/, for more info.
 
 ### Contact info ###
 
-See https://bitbucket.org/dedalus-project/ or email
+The project team currently consists of 
 
 * Keaton Burns <keaton.burns@gmail.com>
 * Ben Brown <bpbrown@gmail.com>
