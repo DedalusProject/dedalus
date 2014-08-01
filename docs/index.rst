@@ -9,7 +9,18 @@ Dedalus
 Dedalus is a framework for solving partial differential equations
 (PDEs), including eigenvalue problems, boundary value problems, and
 initial value problems (i.e. simulations) for nearly arbitrary sets of
-equations. It features text-based equation entry, 
+equations. Simply enter the equations in an easy-to-learn text format,
+choose the type of basis functions (currently Fourier and Chebyshev
+bases are available) and a timestepper, and run! 
+
+The code is `community developed`_ using the mercurial_ (hg)
+distributed version control system (DVCS). The `development team`_ are
+astrophysicists and applied mathematicians, working on a wide variety
+of astrophysical and geophysical fluid dynamics problems. 
+
+.. _`community developed`: https://bitbucket.org/dedalus-project
+.. _mercurial: http://mercurial.selenic.com/
+.. _`development team`: http://dedalus-project.org/community.html#developers
 
 Installing Dedalus 
 ==========
