@@ -52,114 +52,63 @@ class Pencil:
     ----------
     index : tuple of ints
         Transverse indeces for retrieving pencil from system data
-    trans :  tuple of floats
-        Transverse differentiation constants
 
     """
 
-    def __init__(self, index, trans):
-
-        # Initial attributes
-        # Save index as tuple for proper array indexing behavior
+    def __init__(self, index):
         self.index = tuple(index)
-        self.trans = trans
 
     def build_matrices(self, problem, basis):
         """Construct pencil matrices from problem and basis matrices."""
 
-        # References
-        size = problem.nfields * basis.coeff_size
-        dtype = basis.coeff_dtype
-
-        # Get and unpack problem matrices
-        eqn_mat, bc_mat, S_mat = problem.build_matrices(self.trans)
-        M0e, M1e, L0e, L1e = eqn_mat
-        M0b, M1b, L0b, L1b = bc_mat
-        Se, Sl, Sr, Si = S_mat
-
+        # Problem operators
+        M_eqn, L_eqn, M_bc, L_bc = problem.operator_coeffs()
+        # Selection matrices
+        Se, Sb, A, D = problem.selection(index)
+        # Basis matrices
+        P = basis.Preconditioner
+        F = basis.TauFilter
+        B = basis.Boundary
+        # Precompute some dot products
+        A_Se = A * Se
+        D_Se = D * Se
+        P_F = P * F
         # Use scipy sparse kronecker product with CSR output
         kron = partial(sparse.kron, format='csr')
 
-        # Allocate PDE matrices
-        Me = sparse.csr_matrix((size, size), dtype=dtype)
-        Le = sparse.csr_matrix((size, size), dtype=dtype)
-
-        # Add terms to PDE matrices
-        nsubs = len(basis.subbases)
-        for isub in range(nsubs):
-            for p in range(problem.order):
-                PM  = basis.Pre * basis.Mult(p, isub)
-                PMD = basis.Pre * basis.Mult(p, isub) * basis.Diff
-                Me = Me + kron(PM,  Se*M0e[isub][p])
-                Me = Me + kron(PMD, Se*M1e[isub][p])
-                Le = Le + kron(PM,  Se*L0e[isub][p])
-                Le = Le + kron(PMD, Se*L1e[isub][p])
-
-        # Allocate BC matrices
-        Mb = sparse.csr_matrix((size, size), dtype=dtype)
-        Lb = sparse.csr_matrix((size, size), dtype=dtype)
-
-        # Add terms to BC matrices
-        if Sl.any():
-            for isub in range(nsubs):
-                for p in range(problem.order):
-                    LM  = basis.Left * basis.Mult(p, isub)
-                    LMD = basis.Left * basis.Mult(p, isub) * basis.Diff
-                    Mb = Mb + kron(LM,  Sl*M0b[isub][p])
-                    Mb = Mb + kron(LMD, Sl*M1b[isub][p])
-                    Lb = Lb + kron(LM,  Sl*L0b[isub][p])
-                    Lb = Lb + kron(LMD, Sl*L1b[isub][p])
-        if Sr.any():
-            for isub in range(nsubs):
-                for p in range(problem.order):
-                    RM  = basis.Right * basis.Mult(p, isub)
-                    RMD = basis.Right * basis.Mult(p, isub) * basis.Diff
-                    Mb = Mb + kron(RM,  Sr*M0b[isub][p])
-                    Mb = Mb + kron(RMD, Sr*M1b[isub][p])
-                    Lb = Lb + kron(RM,  Sr*L0b[isub][p])
-                    Lb = Lb + kron(RMD, Sr*L1b[isub][p])
-        if Si.any():
-            for isub in range(nsubs):
-                for p in range(problem.order):
-                    IM  = basis.Int * basis.Mult(p, isub)
-                    IMD = basis.Int * basis.Mult(p, isub) * basis.Diff
-                    Mb = Mb + kron(IM,  Si*M0b[isub][p])
-                    Mb = Mb + kron(IMD, Si*M1b[isub][p])
-                    Lb = Lb + kron(IM,  Si*L0b[isub][p])
-                    Lb = Lb + kron(IMD, Si*L1b[isub][p])
-
-        # Build match matrices for combined basis
-        I = sparse.identity(problem.nfields, dtype=dtype, format='csr')
-        try:
-            Lm = kron(basis.Match, I)
-        except AttributeError:
-            Lm = sparse.csr_matrix((size, size), dtype=dtype)
-
-        # Build filter matrix to eliminate boundary condition rows
-        Mb_rows = Mb.nonzero()[0]
-        Lb_rows = Lb.nonzero()[0]
-        Lm_rows = Lm.nonzero()[0]
-        rows = set().union(Mb_rows, Lb_rows, Lm_rows)
-        F = sparse.identity(size, dtype=dtype, format='dok')
-        for i in rows:
-            F[i, i] = 0
-        F = F.tocsr()
-
-        # Combine filtered PDE matrices with BC matrices
-        M = F*Me + Mb
-        L = F*Le + Lb + Lm
+        # Allocate matrices
+        size = problem.nfields * basis.coeff_size
+        dtype = basis.coeff_dtype
+        M = sparse.csr_matrix((size, size), dtype=dtype)
+        L = sparse.csr_matrix((size, size), dtype=dtype)
+        # Add equation terms to matrices
+        for C, C_eqn in ((M, M_eqn), (L, L_eqn)):
+            for Qi in C_eqn:
+                Ci = C_eqn[Qi](index) # FIX
+                A_Se_Ci = A_Se * Ci
+                if A_Se_Ci.any():
+                    C = C + kron(Qi, A_Se_Ci)
+                D_Se_Ci = D_Se * Ci
+                if D_Se_Ci.any():
+                    C = C + kron(P_F*Qi, D_Se_Ci)
+        # Add boundary condition terms to matrices
+        for C, C_bc in ((M, M_bc), (L, L_bc)):
+            for Qi in C_bc:
+                Ci = C_bc[Qi].subs(index) # FIX
+                Sb_Ci = Sb * Ci
+                if Sb_Ci.any():
+                    C = C + kron(Qi, Sb_Ci)
+        # Add match terms to matrices
+        if isinstance(basis, Compound):
+            L = L + kron(basis.Match, D)
 
         # Store with expanded sparsity for fast combination during timestepping
         self.LHS = zeros_with_pattern(M, L).tocsr()
         self.M = expand_pattern(M, self.LHS).tocsr()
         self.L = expand_pattern(L, self.LHS).tocsr()
 
-        # Store selection/restriction matrices for RHS
-        # Start G_bc with integral term, since the Int matrix is always defined
-        self.G_eq = F * kron(basis.Pre, Se)
-        self.G_bc = kron(basis.Int, Si)
-        if Sl.any():
-            self.G_bc = self.G_bc + kron(basis.Left, Sl)
-        if Sr.any():
-            self.G_bc = self.G_bc + kron(basis.Right, Sr)
+        # Store operators for RHS
+        In = sparse.identity(basis.coeff_size, dtype=basis.coeff_dtype)
+        self.Ge = kron(In, A_Se) + kron(P_F, D_Se)
+        self.Gb = kron(B, Sb)
 
