@@ -1,4 +1,3 @@
-
 Install notes for Mac OS X (10.9)
 *******************************************
 
@@ -170,7 +169,7 @@ can be installed using Homebrew:
 ::
 
     #!bash
-    brew install fftw --enable-mpi
+    brew install fftw --with-mpi
 
 Dedalus uses HDF5 for data storage.  The HDF5 library and Python wrappers can be
 installed using Homebrew and pip:
