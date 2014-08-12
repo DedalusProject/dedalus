@@ -27,6 +27,7 @@ class Sync:
     def __enter__(self):
         if self.enter:
             self.comm.Barrier()
+        return self
 
     def __exit__(self, type, value, traceback):
         if self.exit:

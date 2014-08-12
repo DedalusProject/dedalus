@@ -3,6 +3,7 @@ Logging setup.
 
 """
 
+import pathlib
 import logging
 from mpi4py import MPI
 import os
@@ -11,54 +12,40 @@ import sys
 from ..tools.config import config
 from ..tools.parallel import Sync
 
+MPI_RANK = MPI.COMM_WORLD.rank
+MPI_SIZE = MPI.COMM_WORLD.size
+
 
 # Load config options
-stdout_level_str = config['logging']['stdout_level']
-file_level_str = config['logging']['file_level']
-nonroot_level_str = config['logging']['nonroot_level']
+stdout_level = config['logging']['stdout_level']
+file_level = config['logging']['file_level']
+nonroot_level = config['logging']['nonroot_level']
 filename = config['logging']['filename']
 
-# Lookup levels
-stdout_level = getattr(logging, stdout_level_str.upper())
-file_level = getattr(logging, file_level_str.upper())
-nonroot_level = getattr(logging, nonroot_level_str.upper())
-
-# Determine base levels
-if MPI.COMM_WORLD.rank == 0:
-    base_level = min(stdout_level, file_level)
-else:
-    base_level = max(nonroot_level, min(stdout_level, file_level))
-
-# Base logger
-baselogger = logging.getLogger('Dedalus2')
-baselogger.setLevel(base_level)
+# Root logger config
+rootlogger = logging.root
+rootlogger.setLevel(0)
+if nonroot_level.lower() != 'none':
+    if MPI_RANK > 0:
+        rootlogger.setLevel(getattr(logging, nonroot_level.upper()))
 
 # Formatter
-formatter = logging.Formatter('%(asctime)s %(name)s %(rank)s/%(size)s %(levelname)-7s : %(message)s')
+formatter = logging.Formatter('%(asctime)s %(name)s {}/{} %(levelname)s :: %(message)s'.format(MPI_RANK, MPI_SIZE))
 
 # Stream handler
-stdout_handler = logging.StreamHandler(sys.stdout)
-stdout_handler.setLevel(stdout_level)
-stdout_handler.setFormatter(formatter)
-baselogger.addHandler(stdout_handler)
+if stdout_level.lower() != 'none':
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setLevel(getattr(logging, stdout_level.upper()))
+    stdout_handler.setFormatter(formatter)
+    rootlogger.addHandler(stdout_handler)
 
 # File handler
-if filename.lower() != 'none':
-
-    # Delete previous log file from rank 0
-    with Sync():
-        if MPI.COMM_WORLD.rank == 0:
-            if os.path.exists(filename):
-                os.remove(filename)
-
-    file_handler = logging.FileHandler(filename)
-    file_handler.setLevel(file_level)
+if file_level.lower() != 'none':
+    file_path = pathlib.Path('%s_p%i.log' %(filename, MPI_RANK))
+    if not file_path.parent.exists():
+        file_path.parent.mkdir(parents=True)
+    file_handler = logging.FileHandler(str(file_path), mode='w')
+    file_handler.setLevel(getattr(logging, file_level.upper()))
     file_handler.setFormatter(formatter)
-    baselogger.addHandler(file_handler)
-
-# Adapter with MPI information
-sizestr = str(MPI.COMM_WORLD.size)
-rankstr = str(MPI.COMM_WORLD.rank).rjust(len(sizestr))
-mpi_extras = {'rank': rankstr, 'size': sizestr}
-logger = logging.LoggerAdapter(baselogger, mpi_extras)
+    rootlogger.addHandler(file_handler)
 

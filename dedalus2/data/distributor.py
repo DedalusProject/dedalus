@@ -8,7 +8,6 @@ import numpy as np
 from mpi4py import MPI
 
 from ..tools.config import config
-from ..tools.logging import logger
 from ..tools.general import rev_enumerate
 try:
     from ..libraries.fftw import fftw_wrappers as fftw
@@ -16,6 +15,9 @@ try:
 except ImportError:
     logger.error("Don't forget to buid using 'python3 setup.py build_ext --inplace'")
     raise
+
+import logging
+logger = logging.getLogger(__name__.split('.')[-1])
 
 
 # Load config options

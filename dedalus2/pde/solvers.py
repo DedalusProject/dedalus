@@ -14,8 +14,10 @@ from ..data.evaluator import Evaluator
 from ..data.system import CoeffSystem, FieldSystem
 from ..data.pencil import build_pencils
 from ..data.field import Field
-from ..tools.logging import logger
-from ..tools.progressbar import progress
+from ..tools.progress import log_progress
+
+import logging
+logger = logging.getLogger(__name__.split('.')[-1])
 
 
 class LinearEigenvalue:
@@ -124,9 +126,9 @@ class LinearBVP:
             b.name = problem.axis_names[i]
 
         # Build pencils and pencil matrices
-        self.pencils = build_pencils(domain)
+        self.pencils = pencils = build_pencils(domain)
         primary_basis = domain.bases[-1]
-        for pencil in self.pencils:
+        for pencil in log_progress(pencils, logger, 'info', desc='Building pencil matrix', iter=np.inf, frac=0.1, dt=10):
             pencil.build_matrices(problem, primary_basis)
 
         # Build systems
@@ -202,6 +204,8 @@ class IVP:
 
     def __init__(self, problem, domain, timestepper):
 
+        logger.debug('Beginning IVP instantiation')
+
         # Assign axis names to bases
         for i, b in enumerate(domain.bases):
             b.name = problem.axis_names[i]
@@ -209,8 +213,7 @@ class IVP:
         # Build pencils and pencil matrices
         self.pencils = pencils = build_pencils(domain)
         primary_basis = domain.bases[-1]
-        write_progress = (domain.distributor.rank == 0)
-        for p in progress(pencils, desc='Building pencil matrices (rank 0):', write=write_progress, bar=False):
+        for p in log_progress(pencils, logger, 'info', desc='Building pencil matrix', iter=np.inf, frac=0.1, dt=10):
             p.build_matrices(problem, primary_basis)
 
         # Build systems
@@ -252,6 +255,8 @@ class IVP:
         self.stop_sim_time = 10.
         self.stop_wall_time = 10.
         self.stop_iteration = 10.
+
+        logger.debug('Finished IVP instantiation')
 
     @property
     def sim_time(self):
