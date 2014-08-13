@@ -36,10 +36,7 @@ def build_pencils(domain):
     scales = domain.remedy_scales(1)
     start = domain.distributor.coeff_layout.start(scales)
     for index in indices:
-        trans = []
-        for i, b in enumerate(domain.bases[:-1]):
-            trans.append(b.trans_diff(start[i]+index[i]))
-        pencils.append(Pencil(index, trans))
+        pencils.append(Pencil(domain, index, start+index))
 
     return pencils
 
@@ -55,16 +52,25 @@ class Pencil:
 
     """
 
-    def __init__(self, index):
-        self.index = tuple(index)
+    def __init__(self, domain, local_index, global_index):
+        self.domain = domain
+        self.local_index = tuple(local_index)
+        self.global_index = tuple(global_index)
 
-    def build_matrices(self, problem, basis):
+    def build_matrices(self, problem):
         """Construct pencil matrices from problem and basis matrices."""
 
+        # Separable operator values
+        args = []
+        for op_root in problem.op_roots:
+            for axis in range(len(problem.axis_names)-1):
+                op_name = operators.root_dict(op_root).__name__
+                op = getattr(self.domain.bases[axis], op_name)
+                args.append(op.scalar_form(self.global_index[axis]))
         # Problem operators
-        M_eqn, L_eqn, M_bc, L_bc = problem.operator_coeffs()
+        M_eqn, L_eqn, M_bc, L_bc = problem.num_M_eqn, problem.num_L_eqn, problem.num_M_bc, problem.num_L_bc
         # Selection matrices
-        Se, Sb, A, D = problem.selection(index)
+        Se, Sb, A, D = problem.selection(args)
         # Basis matrices
         P = basis.Preconditioner
         F = basis.TauFilter
@@ -83,8 +89,8 @@ class Pencil:
         L = sparse.csr_matrix((size, size), dtype=dtype)
         # Add equation terms to matrices
         for C, C_eqn in ((M, M_eqn), (L, L_eqn)):
-            for Qi in C_eqn:
-                Ci = C_eqn[Qi](index) # FIX
+            for Qi, Ci in C_eqn:
+                Ci = Ci(*args)
                 A_Se_Ci = A_Se * Ci
                 if A_Se_Ci.any():
                     C = C + kron(Qi, A_Se_Ci)
@@ -93,8 +99,8 @@ class Pencil:
                     C = C + kron(P_F*Qi, D_Se_Ci)
         # Add boundary condition terms to matrices
         for C, C_bc in ((M, M_bc), (L, L_bc)):
-            for Qi in C_bc:
-                Ci = C_bc[Qi].subs(index) # FIX
+            for Qi, Ci in C_bc:
+                Ci = Ci(*args)
                 Sb_Ci = Sb * Ci
                 if Sb_Ci.any():
                     C = C + kron(Qi, Sb_Ci)
