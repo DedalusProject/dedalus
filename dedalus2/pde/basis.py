@@ -10,6 +10,7 @@ from numpy import pi
 from scipy import sparse
 from scipy import fftpack
 
+from ..data import operators
 from ..libraries.fftw import fftw_wrappers as fftw
 from ..tools.config import config
 from ..tools.cache import CachedAttribute
@@ -183,28 +184,6 @@ class ImplicitBasis(Basis):
 
     """
 
-    def integrate(self, cdata, cint, axis):
-        """Integrate over interval using coefficients."""
-
-        # Contract coefficients with basis function integrals
-        dim = len(cdata.shape)
-        weights = reshape_vector(self.integ_vector, dim=dim, axis=axis)
-        integral = np.sum(cdata * weights, axis=axis, keepdims=True)
-
-        cint.fill(0)
-        np.copyto(cint[axslice(axis, 0, 1)], integral)
-
-    def interpolate(self, cdata, cint, position, axis):
-        """Interpolate in interval using coefficients."""
-
-        # Contract coefficients with basis function evaluations
-        dim = len(cdata.shape)
-        weights = reshape_vector(self.interp_vector(position), dim=dim, axis=axis)
-        interpolation = np.sum(cdata * weights, axis=axis, keepdims=True)
-
-        cint.fill(0)
-        np.copyto(cint[axslice(axis, 0, 1)], interpolation)
-
     @CachedAttribute
     def Pre(self):
         """Preconditioning matrix."""
@@ -214,66 +193,9 @@ class ImplicitBasis(Basis):
 
         return Pre.tocsr()
 
-    @CachedAttribute
-    def Diff(self):
-        """Differentiation matrix."""
-
-        raise NotImplementedError()
-
     @CachedMethod
     def Mult(self, p, subindex):
         """p-element multiplication matrix."""
-
-        raise NotImplementedError()
-
-    @CachedAttribute
-    def Left(self):
-        """Left-endpoint matrix."""
-
-        # Outer product of boundary-row and left-endpoint vectors
-        Left = sparse.kron(self.bc_vector, self.left_vector)
-
-        return Left
-
-    @CachedAttribute
-    def Right(self):
-        """Right-endpoint matrix."""
-
-        # Outer product of boundary-row and right-endpoint vectors
-        Right = sparse.kron(self.bc_vector, self.right_vector)
-
-        return Right
-
-    @CachedAttribute
-    def Int(self):
-        """Integral matrix."""
-
-        # Outer product of boundary-row and integral vectors
-        Int = sparse.kron(self.bc_vector, self.integ_vector)
-
-        return Int
-
-    @CachedAttribute
-    def left_vector(self):
-        """Left-endpoint row vector."""
-
-        raise NotImplementedError()
-
-    @CachedAttribute
-    def right_vector(self):
-        """Right-endpoint row vector."""
-
-        raise NotImplementedError()
-
-    @CachedAttribute
-    def integ_vector(self):
-        """Integral row vector."""
-
-        raise NotImplementedError()
-
-    @CachedMethod
-    def interp_vector(self, position):
-        """Interpolation row vector."""
 
         raise NotImplementedError()
 
@@ -288,6 +210,7 @@ class Chebyshev(ImplicitBasis):
     """Chebyshev polynomial basis on the roots grid."""
 
     element_label = 'T'
+    tau_row = -1
 
     def __init__(self, base_grid_size, interval=(-1,1), dealias=1, name=None):
 
@@ -307,6 +230,10 @@ class Chebyshev(ImplicitBasis):
         self.dealias = dealias
         self.name = name
         self.library = DEFAULT_LIBRARY
+
+    def default_meta(self):
+        return {'constant': False,
+                'scale': None}
 
     @CachedMethod
     def grid(self, scale=1.):
@@ -441,28 +368,97 @@ class Chebyshev(ImplicitBasis):
 
         return gdata
 
-    def differentiate(self, cdata, cderiv, axis):
-        """Differentiation by recursion on coefficients."""
+    @CachedAttribute
+    def Integrate(self):
+        """Build integration class."""
 
-        # Currently setup just for last axis
-        if axis != -1:
-            if axis != (len(cdata.shape) - 1):
-                raise NotImplementedError()
+        class IntegrateChebyshev(operators.Integrate, operators.Coupled):
+            basis = self
 
-        # Referencess
-        a = cdata
-        b = cderiv
-        N = self.coeff_size - 1
+            @classmethod
+            def matrix_form(cls):
+                """Chebyshev integration: int(T_n) = (1 + (-1)^n) / (1 - n^2)"""
+                size = cls.basis.coeff_size
+                matrix = sparse.lil_matrix((size, size), dtype=cls.basis.coeff_dtype)
+                matrix[0,:] = cls._integ_vector()
+                return matrix.tocsr()
 
-        # Apply recursive differentiation
-        b[..., N] = 0.
-        b[..., N-1] = 2. * N * a[..., N]
-        for i in range(N-2, 0, -1):
-            b[..., i] = 2 * (i+1) * a[..., i+1] + b[..., i+2]
-        b[..., 0] = a[..., 1] + b[..., 2] / 2.
+            @classmethod
+            def _integ_vector(cls):
+                """Chebyshev integration: int(T_n) = (1 + (-1)^n) / (1 - n^2)"""
+                vector = np.zeros(cls.basis.coeff_size, dtype=cls.basis.coeff_dtype)
+                for n in range(0, cls.basis.coeff_size, 2):
+                    vector[n] = 2. / (1. - n*n)
+                vector *= cls.basis._grid_stretch
+                return vector
 
-        # Scale for interval
-        cderiv /= self._grid_stretch
+        return IntegrateChebyshev
+
+    @CachedAttribute
+    def Interpolate(self):
+        """Buld interpolation class."""
+
+        class InterpolateChebyshev(operators.Interpolate, operators.Coupled):
+            basis = self
+
+            def matrix_form(self):
+                """Chebyshev interpolation: Tn(xn) = cos(n * acos(xn))"""
+                size = self.basis.coeff_size
+                matrix = sparse.lil_matrix((size, size), dtype=self.basis.coeff_dtype)
+                matrix[0,:] = self._interp_vector()
+                return matrix.tocsr()
+
+            def _interp_vector(self):
+                """Chebyshev interpolation: Tn(xn) = cos(n * acos(xn))"""
+                xn = self.basis._native_coord(self.args[1])
+                theta = np.arccos(xn)
+                return np.cos(self.elements * theta)
+
+        return InterpolateChebyshev
+
+    @CachedAttribute
+    def Differentiate(self):
+        """Build differentiation class."""
+
+        class DifferentiateChebyshev(operators.Differentiate, operators.Coupled):
+            name = 'd' + self.name
+            basis = self
+
+            @classmethod
+            def matrix_form(cls):
+                """Chebyshev differentiation: d_x(T_n) / n = 2 T_(n-1) + d_x(T_(n-2)) / (n-2)"""
+                size = cls.basis.coeff_size
+                dtype = cls.basis.coeff_dtype
+                stretch = cls.basis._grid_stretch
+                matrix = sparse.lil_matrix((size, size), dtype=dtype)
+                for i in range(size-1):
+                    for j in range(i+1, size, 2):
+                        if i == 0:
+                            matrix[i, j] = j / stretch
+                        else:
+                            matrix[i, j] = 2. * j / stretch
+                return matrix.tocsr()
+
+            def explicit_form(self, input, output, axis):
+                """Differentiation by recursion on coefficients."""
+                # Currently setup just for last axis
+                if axis != -1:
+                    if axis != (len(cdata.shape) - 1):
+                        raise NotImplementedError()
+                # Referencess
+                a = cdata
+                b = cderiv
+                N = self.basis.coeff_size - 1
+                # Apply recursive differentiation
+                b[..., N] = 0.
+                b[..., N-1] = 2. * N * a[..., N]
+                for i in range(N-2, 0, -1):
+                    b[..., i] = 2 * (i+1) * a[..., i+1] + b[..., i+2]
+                b[..., 0] = a[..., 1] + b[..., 2] / 2.
+                # Scale for interval
+                cderiv /= self.basis._grid_stretch
+
+        return DifferentiateChebyshev
 
     @CachedAttribute
     def Pre(self):
@@ -486,29 +482,6 @@ class Chebyshev(ImplicitBasis):
 
         return Pre.tocsr()
 
-    @CachedAttribute
-    def Diff(self):
-        """
-        Differentiation matrix.
-
-        d_x(T_n) / n = 2 T_(n-1) + d_x(T_(n-2)) / (n-2)
-
-        """
-
-        size = self.coeff_size
-
-        # Construct sparse matrix
-        Diff = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
-        for i in range(size-1):
-            for j in range(i+1, size, 2):
-                if i == 0:
-                    Diff[i, j] = j / self._grid_stretch
-                else:
-                    Diff[i, j] = 2. * j / self._grid_stretch
-
-        return Diff.tocsr()
-
-    @CachedMethod
     def Mult(self, p, subindex):
         """
         p-element multiplication matrix
@@ -532,86 +505,18 @@ class Chebyshev(ImplicitBasis):
 
         return Mult.tocsr()
 
-    @CachedAttribute
-    def left_vector(self):
-        """
-        Left-endpoint row vector.
-
-        T_n(-1) = (-1)**n
-
-        """
-
-        # Construct dense row vector
-        left_vector = np.ones(self.coeff_size, dtype=self.coeff_dtype)
-        left_vector[1::2] = -1.
-
-        return left_vector
-
-    @CachedAttribute
-    def right_vector(self):
-        """
-        Right-endpoint row vector.
-
-        T_n(1) = 1
-
-        """
-
-        # Construct dense row vector
-        right_vector = np.ones(self.coeff_size, dtype=self.coeff_dtype)
-
-        return right_vector
-
-    @CachedAttribute
-    def integ_vector(self):
-        """
-        Integral row vector.
-
-        int(T_n) = (1 + (-1)^n) / (1 - n^2)
-
-        """
-
-        # Construct dense row vector
-        integ_vector = np.zeros(self.coeff_size, dtype=self.coeff_dtype)
-        for n in range(0, self.coeff_size, 2):
-            integ_vector[n] = 2. / (1. - n*n)
-        integ_vector *= self._grid_stretch
-
-        return integ_vector
-
-    @CachedMethod
-    def interp_vector(self, position):
-        """
-        Interpolation row vector.
-
-        T_n(x) = cos(n * acos(x))
-
-        """
-
-        # Construct dense row vector
-        theta = np.arccos(self._basis_coord(position))
-        interp_vector = np.cos(self.elements * theta)
-
-        return interp_vector
-
-    @CachedAttribute
-    def bc_vector(self):
-        """
-        Last-row column vector for boundary conditions. This sets the tau term
-        proportional to the highest-order-retained polynomial.
-
-        """
-
-        # Construct dense column vector
-        bc_vector = np.zeros((self.coeff_size, 1), dtype=self.coeff_dtype)
-        bc_vector[-1, 0] = 1.
-
-        return bc_vector
+    def build_mult(self, coeffs, order):
+        matrix = 0
+        for p in range(order):
+            matrix += coeffs[p] * self.Mult(p, 0)
+        return matrix
 
 
 class Fourier(TransverseBasis, ImplicitBasis):
     """Fourier complex exponential basis."""
 
     element_label = 'k'
+    tau_row = 0
 
     def __init__(self, base_grid_size, interval=(0,2*pi), dealias=1, name=None):
 
@@ -631,6 +536,10 @@ class Fourier(TransverseBasis, ImplicitBasis):
         self.dealias = dealias
         self.name = name
         self.library = DEFAULT_LIBRARY
+
+    def default_meta(self):
+        return {'constant': False,
+                'scale': None}
 
     @CachedMethod
     def grid(self, scale=1.):
@@ -782,6 +691,246 @@ class Fourier(TransverseBasis, ImplicitBasis):
 
         return gdata
 
+    @CachedAttribute
+    def Integrate(self):
+        """Build integration class."""
+
+        class IntegrateFourier(operators.Integrate, operators.Separable):
+            basis = self
+
+            def scalar_form(self, index):
+                """Fourier integration: int(Fn) = 2 π δ(n,0)"""
+                if index == 0:
+                    return 2 * π * self.basis._grid_stretch
+                else:
+                    return 0
+
+            def vector_form(self):
+                """Fourier integration: int(Fn) = 2 π δ(n,0)"""
+                vector = np.zeros(self.basis.coeff_size, dtype=self.basis.coeff_dtype)
+                vector[0] = 2 * π * self.basis._grid_stretch
+                return vector
+
+        return IntegrateFourier
+
+    @CachedAttribute
+    def Interpolate(self):
+        """Build interpolation class."""
+
+        class InterpolateFourier(operators.Interpolate, operators.Coupled):
+            basis = self
+
+            def explicit_form(self, input, output, axis):
+                dim = self.domain.dim
+                weights = reshape_vector(self._interp_vector(), dim=dim, axis=axis)
+                if self.grid_dtype == np.float64:
+                    # Halve mean-mode weight (will be added twice)
+                    weights.flat[0] /= 2
+                    pos_interp = np.sum(input * weights, axis=axis, keepdims=True)
+                    interp = pos_interp + pos_interp.conj()
+                elif self.grid_dtype == np.complex128:
+                    interp = np.sum(input * weights, axis=axis, keepdims=True)
+                np.copyto(output[axslice(axis, 0, 1)], interp)
+                np.copyto(output[axslice(axis, 1, None)], 0)
+
+            def matrix_form(self):
+                """Fourier interpolation: Fn(x) = exp(i kn x)"""
+                if self.basis.coeff_dtype == np.float64:
+                    raise NotImplementedError("Interpolating an R2C Fourier series cannot be done via a matrix multiplication.")
+                else:
+                    size = self.basis.coeff_size
+                    matrix = sparse.lil_matrix((size, size), dtype=self.basis.coeff_dtype)
+                    matrix[0,:] = self._interp_vector()
+                    return matrix.tocsr()
+
+            def _interp_vector(self):
+                """Fourier interpolation: Fn(x) = exp(i kn x)"""
+                x = self.args[1] - self.basis.interval[0]
+                return np.exp(1j * self.basis.wavenumbers * x)
+
+        return InterpolateFourier
+
+    @CachedAttribute
+    def Differentiate(self):
+        """Build differentiation class."""
+
+        class DifferentiateFourier(operators.Differentiate, operators.Separable):
+            name = 'd' + self.name
+            basis = self
+
+            def scalar_form(self, index):
+                """Fourier differentiation: dx(Fn) = i kn Fn"""
+                return 1j * self.basis.wavenumbers[index]
+
+            def vector_form(self):
+                """Fourier differentiation: dx(Fn) = i kn Fn"""
+                return 1j * self.basis.wavenumbers
+
+        return DifferentiateFourier
+
+    @CachedAttribute
+    def HilbertTransform(self):
+        """Build Hilbert transform class."""
+
+        class HilbertTransformFourier(operators.HilbertTransform, operators.Separable):
+            name = 'H' + self.name
+            basis = self
+
+            def scalar_form(self, index):
+                """Hilbert transform: Hx(Fn) = -i sgn(kn) Fn"""
+                return -1j * np.sign(self.basis.wavenumbers[index])
+
+            def vector_form(self):
+                """Hilbert transform: Hx(Fn) = -i sgn(kn) Fn"""
+                k = self.basis.wavenumbers[index]
+                return -1j * np.sign(self.basis.wavenumbers)
+
+        return HilbertTransformFourier
+
+
+
+
+class SinCos(TransverseBasis):
+    """Sin/Cos series basis."""
+
+    element_label = 'k'
+
+    def __init__(self, base_grid_size, interval=(0,pi), dealias=1, name=None):
+
+        self.subbases = [self]
+
+        # Coordinate transformation
+        # Native interval: (0, π)
+        start = interval[0]
+        length = interval[1] - interval[0]
+        self._grid_stretch = length / (pi)
+        self._native_coord = lambda xp: (pi) * (xp - start) / length
+        self._problem_coord = lambda xn: start + (xn / (pi) * length)
+
+        # Attributes
+        self.base_grid_size = base_grid_size
+        self.interval = tuple(interval)
+        self.dealias = dealias
+        self.name = name
+        #self.library = DEFAULT_LIBRARY
+        self.library = 'scipy'
+
+    @CachedMethod
+    def grid(self, scale=1.):
+        """Build evenly spaced Fourier grid."""
+
+        N = self.grid_size(scale)
+        native_grid = pi * (np.arange(N) + 1/2) / N
+        return self._problem_coord(native_grid)
+
+    def set_dtype(self, grid_dtype):
+        """Determine coefficient properties from grid dtype."""
+
+        # Tranform produces complex coefficients
+        self.grid_dtype = np.dtype(grid_dtype)
+        self.coeff_dtype = self.grid_dtype
+        # Build native wavenumbers
+        native_wavenumbers = np.arange(self.base_grid_size)
+        # Scale native wavenumbers
+        self.elements = self.wavenumbers = native_wavenumbers / self._grid_stretch
+        self.coeff_size = self.elements.size
+
+        return self.coeff_dtype
+
+    @staticmethod
+    def _resize_coeffs(cdata_in, cdata_out, axis):
+        """Resize coefficient data by padding/truncation."""
+
+        size_in = cdata_in.shape[axis]
+        size_out = cdata_out.shape[axis]
+
+        if size_in < size_out:
+            # Pad with higher order polynomials at end of data
+            np.copyto(cdata_out[axslice(axis, 0, size_in)], cdata_in)
+            np.copyto(cdata_out[axslice(axis, size_in, None)], 0)
+        elif size_in > size_out:
+            # Truncate higher order polynomials at end of data
+            np.copyto(cdata_out, cdata_in[axslice(axis, 0, size_out)])
+        else:
+            np.copyto(cdata_out, cdata_in)
+
+    def _forward_scipy(self, gdata, *, axis, cdata=None):
+        """Forward transform using scipy DCT."""
+
+        cdata, gdata = self.check_arrays(cdata, gdata, axis)
+        # View complex data as interleaved real data
+        if gdata.dtype == np.complex128:
+            gdata = interleaved_view(gdata)
+            cdata = interleaved_view(cdata)
+        # Scipy DCT
+        temp = fftpack.dct(gdata, type=2, axis=axis)
+        # Scale DCT output to Chebyshev coefficients
+        self._forward_scaling(temp, axis)
+        # Pad / truncate coefficients
+        self._resize_coeffs(temp, cdata, axis)
+
+        return cdata
+
+    def _backward_scipy(self, cdata, *, axis, gdata=None, scale=1.):
+        """Backward transform using scipy IDCT."""
+
+        cdata, gdata = self.check_arrays(cdata, gdata, axis, scale)
+        # Pad / truncate coefficients
+        # Store in gdata for memory efficiency (transform preserves shape/dtype)
+        self._resize_coeffs(cdata, gdata, axis)
+        # Scale Chebyshev coefficients to IDCT input
+        self._backward_scaling(gdata, axis)
+        # View complex data as interleaved real data
+        if gdata.dtype == np.complex128:
+            gdata = interleaved_view(gdata)
+        # Scipy IDCT
+        temp = fftpack.dct(gdata, type=3, axis=axis)
+        np.copyto(gdata, temp)
+
+        return gdata
+
+    @CachedMethod
+    def _fftw_setup(self, dtype, gshape, axis):
+        """Build FFTW plans and temporary arrays."""
+        # Note: regular method used to cache through basis instance
+
+        logger.debug("Building FFTW FFT plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, gshape, axis))
+        flags = ['FFTW_'+FFTW_RIGOR.upper()]
+        plan = fftw.FourierTransform(dtype, gshape, axis, flags=flags)
+        temp = fftw.create_array(plan.cshape, np.complex128)
+        if dtype == np.float64:
+            resize_coeffs = self._resize_real_coeffs
+        elif dtype == np.complex128:
+            resize_coeffs = self._resize_complex_coeffs
+
+        return plan, temp, resize_coeffs
+
+    def _forward_fftw(self, gdata, *, axis, cdata=None):
+        """Forward transform using FFTW FFT."""
+
+        cdata, gdata = self.check_arrays(cdata, gdata, axis)
+        plan, temp, resize_coeffs = self._fftw_setup(gdata.dtype, gdata.shape, axis)
+        # Execute FFTW plan
+        plan.forward(gdata, temp)
+        # Scale FFT output to mode amplitudes
+        temp *= 1 / gdata.shape[axis]
+        # Pad / truncate coefficients
+        resize_coeffs(temp, cdata, axis, gdata.shape[axis])
+
+        return cdata
+
+    def _backward_fftw(self, cdata, *, axis, gdata=None, scale=1.):
+        """Backward transform using FFTW IFFT."""
+
+        cdata, gdata = self.check_arrays(cdata, gdata, axis, scale)
+        plan, temp, resize_coeffs = self._fftw_setup(gdata.dtype, gdata.shape, axis)
+        # Pad / truncate coefficients
+        resize_coeffs(cdata, temp, axis, gdata.shape[axis])
+        # Execute FFTW plan
+        plan.backward(temp, gdata)
+
+        return gdata
+
     def differentiate(self, cdata, cderiv, axis):
         """Differentiation by wavenumber multiplication."""
 
@@ -789,40 +938,23 @@ class Fourier(TransverseBasis, ImplicitBasis):
         ik = 1j * reshape_vector(self.wavenumbers, dim=dim, axis=axis)
         np.multiply(cdata, ik, out=cderiv)
 
-    @CachedAttribute
-    def Diff(self):
-        """
-        Differentiation matrix.
+    def differentiate(self, cdata, cderiv, axis, meta):
 
-        d_x(F_n) = i k_n F_n
-
-        """
-
-        size = self.coeff_size
-
-        # Construct sparse matrix
-        Diff = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
-        for i in range(size):
-            Diff[i, i] = 1j * self.wavenumbers[i]
-
-        return Diff.tocsr()
-
-    @CachedMethod
-    def Mult(self, p, subindex):
-        """
-        p-element multiplication matrix
-
-        F_0 * F_n = F_n
-
-        """
-
-        if p == 0:
-            # Identity matrix
-            Mult = sparse.identity(self.coeff_size, dtype=self.coeff_dtype)
-
-            return Mult.tocsr()
+        outmeta = inmeta.copy()
+        if inmeta['parity'] == 1:
+            np.multiply(cdata[1:], -k[1:], out=cderiv)
+            out
+            out_parity = -1
         else:
-            raise NotImplementedError()
+            cderiv[axslice(axis, 0, 1)] = 0
+            nonconst = axslice(axis, 1, None)
+            np.multiply(cdata, k[nonconst], out=cderiv[nonconst])
+            out_parity = 1
+
+        outmeta = meta.copy()
+        outmeta['parity'] = -1 * meta['parity']
+        return outmeta
+
 
     @CachedAttribute
     def integ_vector(self):
@@ -872,18 +1004,6 @@ class Fourier(TransverseBasis, ImplicitBasis):
             interp_vector[0] /= 2
 
         return interp_vector
-
-    @CachedAttribute
-    def bc_vector(self):
-        """
-        First-row column vector for boundary conditions. This allows the
-        constant term to be varied to satisfy integral conditions."""
-
-        # Construct dense column vector
-        bc_vector = np.zeros((self.coeff_size, 1), dtype=self.coeff_dtype)
-        bc_vector[0, :] = 1.
-
-        return bc_vector
 
     def trans_diff(self, i):
         """Transverse differentation constant for i-th term."""
