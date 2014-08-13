@@ -9,7 +9,8 @@ import time
 from scipy.sparse import linalg
 from scipy.linalg import eig
 
-from ..data.operators import parsable_ops
+#from ..data.operators import parsable_ops
+from ..data import operators
 from ..data.evaluator import Evaluator
 from ..data.system import CoeffSystem, FieldSystem
 from ..data.pencil import build_pencils
@@ -207,14 +208,13 @@ class IVP:
         logger.debug('Beginning IVP instantiation')
 
         # Assign axis names to bases
-        for i, b in enumerate(domain.bases):
-            b.name = problem.axis_names[i]
+        # for i, b in enumerate(domain.bases):
+        #     b.name = problem.axis_names[i]
 
         # Build pencils and pencil matrices
         self.pencils = pencils = build_pencils(domain)
-        primary_basis = domain.bases[-1]
         for p in log_progress(pencils, logger, 'info', desc='Building pencil matrix', iter=np.inf, frac=0.1, dt=10):
-            p.build_matrices(problem, primary_basis)
+            p.build_matrices(problem)
 
         # Build systems
         self.state = state = FieldSystem(problem.field_names, domain)
@@ -222,11 +222,15 @@ class IVP:
         # Create F operator trees
         # IVP: available terms are parse ops, diff ops, axes, parameters, and state
         vars = dict()
-        vars.update(parsable_ops)
-        vars.update(zip(problem.diff_names, domain.diff_ops))
+        vars.update(operators.op_dict)
         vars.update(zip(problem.axis_names, domain.grids(domain.dealias)))
-        vars.update(problem.parameters)
         vars.update(state.field_dict)
+        vars.update(problem.parameters)
+        for op_root in problem.op_roots:
+            op_name = operators.root_dict[op_root]
+            for axis in range(domain.dim):
+                op = getattr(domain.bases[axis], op_name)
+                vars[op_root+domain.bases[axis].name] = op
 
         self._sim_time_field = Field(domain, name='sim_time')
         self._sim_time_field.constant[:] = True

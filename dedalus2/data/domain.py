@@ -8,7 +8,7 @@ import numpy as np
 
 from .distributor import Distributor
 from .field import Field
-from .operators import create_diff_operator
+#from .operators import create_diff_operator
 from ..tools.cache import CachedMethod
 from ..tools.array import reshape_vector
 
@@ -59,7 +59,7 @@ class Domain:
         self.local_coeff_shape = self.dist.coeff_layout.local_shape(self.remedy_scales(None))
 
         # Create differential operators
-        self.diff_ops = [create_diff_operator(b,i) for (i,b) in enumerate(self.bases)]
+        #self.diff_ops = [create_diff_operator(b,i) for (i,b) in enumerate(self.bases)]
 
     def global_grid_shape(self, scales=None):
 

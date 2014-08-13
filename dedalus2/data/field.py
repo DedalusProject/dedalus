@@ -53,13 +53,11 @@ class Field(Future):
         domain._field_count += 1
 
         # Metadata
-        self.constant = np.array([False]*domain.dim, dtype=bool)
-        self.meta = [{'scale': None} for i in range(domain.dim)]
+        self.meta = [basis.default_meta() for basis in domain.bases]
 
         # Set layout and scales to build buffer and data
         self._layout = domain.dist.coeff_layout
         self.set_scales(1, keep_data=False)
-
         self.name = name
 
     def clean(self):
@@ -70,7 +68,7 @@ class Field(Future):
         self.set_scales(self.domain.dealias, keep_data=False)
         # Clear metadata
         self.name = None
-        self.constant[:] = False
+        self.meta = [basis.default_meta() for basis in self.domain.bases]
         self.data.fill(0.)
 
     @property
