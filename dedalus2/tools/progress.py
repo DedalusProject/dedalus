@@ -7,6 +7,7 @@ import sys
 import time
 import logging
 import numpy as np
+import math
 
 
 def log_progress(iterable, logger, level, **kw):
@@ -32,7 +33,7 @@ def track(iterable, write, desc='Iteration', iter=1, frac=1., dt=np.inf):
     """Track an iterator attaching messages at set cadences."""
 
     length = len(iterable)
-    iter = min(iter, round(frac*length))
+    iter = min(iter, math.ceil(frac*length))
 
     start_time = time.time()
     last_iter_div = -1
