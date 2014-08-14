@@ -45,7 +45,7 @@ Mac OS X cookbook
     pip3 install mpi4py
 
     # FFTW
-    brew install fftw --enable-mpi
+    brew install fftw --with-mpi
 
     # HDF5
     brew install hdf5
