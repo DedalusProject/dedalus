@@ -166,14 +166,18 @@ class CFL:
 
         return self.stored_dt
 
-    def add_velocity(self, components):
-        """Add grid-crossing frequencies from a set of velocity components."""
+    def add_velocity(self, velocity, axis):
+        """Add grid-crossing frequency from a velocity along one axis."""
+        vel = operator.from_string(velocity, self.solver.evaluator.vars, self.solver.domain)
+        freq = vel / self.grid_spacings[axis]
+        self.add_frequency(freq)
+
+    def add_velocities(self, components):
+        """Add grid-crossing frequencies from a tuple of velocity components."""
         if len(components) != self.solver.domain.dim:
             raise ValueError("Wrong number of components for domain.")
         for axis, component in enumerate(components):
-            comp_op = Operator.from_string(component, self.solver.evaluator.vars, self.solver.domain)
-            freq = comp_op / self.grid_spacings[axis]
-            self.add_frequency(freq)
+            self.add_velocity(component, axis)
 
     def add_frequency(self, freq):
         """Add an on-grid frequency."""
