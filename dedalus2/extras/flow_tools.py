@@ -7,7 +7,7 @@ import logging
 import numpy as np
 from mpi4py import MPI
 
-from ..data.operators import Operator
+from ..data import operators
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
@@ -77,15 +77,15 @@ class GlobalFlowProperty:
         self.solver = solver
         self.cadence = cadence
         self.reducer = GlobalArrayReducer(solver.domain.dist.comm_cart)
-        self.dicthandler = solver.evaluator.add_dictionary_handler(iter=cadence)
+        self.properties = solver.evaluator.add_dictionary_handler(iter=cadence)
 
     def add_property(self, property, name):
         """Add a property."""
-        self.dicthandler.add_task(property, layout='g', name=name)
+        self.properties.add_task(property, layout='g', name=name)
 
     def min(self, name):
         """Compute global min of a property on the grid."""
-        gdata = self.dicthandler.fields[name]['g']
+        gdata = self.properties[name]['g']
         return self.reducer.global_min(gdata)
 
     def max(self, name):
@@ -93,10 +93,20 @@ class GlobalFlowProperty:
         gdata = self.dicthandler.fields[name]['g']
         return self.reducer.global_max(gdata)
 
-    def mean(self, name):
+    def grid_average(self, name):
         """Compute global mean of a property on the grid."""
         gdata = self.dicthandler.fields[name]['g']
         return self.reducer.global_mean(gdata)
+
+    def volume_average(self, name):
+        """Compute volume average of a property."""
+        field = self.properties[name]
+        integral_op = operators.Integrate(field)
+        integral_field = integral_op.operate()
+        integral_value = self.reducer.global_mean(integral_field['g'])
+        average_value = integral_value / self.domain.hypervolume
+        return average_value
+
 
 
 class CFL:
@@ -168,7 +178,7 @@ class CFL:
 
     def add_velocity(self, velocity, axis):
         """Add grid-crossing frequency from a velocity along one axis."""
-        vel = operator.from_string(velocity, self.solver.evaluator.vars, self.solver.domain)
+        vel = operators.Operator.from_string(velocity, self.solver.evaluator.vars, self.solver.domain)
         freq = vel / self.grid_spacings[axis]
         self.add_frequency(freq)
 
