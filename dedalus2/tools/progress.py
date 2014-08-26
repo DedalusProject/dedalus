@@ -14,7 +14,10 @@ def log_progress(iterable, logger, level, **kw):
     """Log iteration progress."""
 
     if isinstance(level, str):
-        level = logging.getLevelName(level.upper())
+        try:  # Python 3.4
+            level = logging._nameToLevel[level.upper()]
+        except AttributeError:  # Python < 3.4
+            level = logging.getLevelName(level.upper())
     def write(message):
         logger.log(level, message)
     yield from track(iterable, write, **kw)
