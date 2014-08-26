@@ -328,7 +328,7 @@ This should just be pip installed::
 
 Hmmm... version 1.4.0 of matplotlib has just dropped, but seems to
 have a higher freetype versioning requirement (2.4).  Here's a
-build script for freetype 2.5.3 (or use matplotlib 1.3.1)::
+build script for freetype 2.5.3::
 
     wget http://sourceforge.net/projects/freetype/files/freetype2/2.5.3/freetype-2.5.3.tar.gz/download
     tar xvf freetype-2.5.3.tar.gz
@@ -337,8 +337,11 @@ build script for freetype 2.5.3 (or use matplotlib 1.3.1)::
     make
     make install
 
-Well... that works, but then we fail on a qhull compile later on.
-Let's fall back to 1.3.1.
+Well... that works, but then we fail on a qhull compile during 
+``pip3 install matplotlib`` later on.
+Let's fall back to 1.3.1::
+
+     pip3 install matplotlib==1.3.1
 
 
 
@@ -492,7 +495,6 @@ With the modules set as above, set::
 Then change into your root dedalus directory and run::
 
      python setup.py build_ext --inplace
-
 
 
 Running Dedalus on Pleiades
