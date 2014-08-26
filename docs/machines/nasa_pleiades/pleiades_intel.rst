@@ -26,6 +26,7 @@ Then add the following to your ``.profile``::
   export LOCAL_MPI_VERSION=openmpi-1.8.2
   export LOCAL_MPI_SHORT=v1.8
   export LOCAL_PYTHON_VERSION=3.4.1
+  export LOCAL_NUMPY_VERSION=1.8.2
   export MPI_ROOT=$BUILD_HOME/$LOCAL_MPI_VERSION
   export PYTHONPATH=$BUILD_HOME/dedalus2:$PYTHONPATH
   export MPI_PATH=$MPI_ROOT
@@ -165,7 +166,8 @@ This should be pip installed::
 Installing FFTW3
 ------------------------------
 
-We need to build our own FFTW3, under intel 14 and mvapich2/2.0b::
+We need to build our own FFTW3, under intel 14 and mvapich2/2.0b, or
+under openmpi::
 
     wget http://www.fftw.org/fftw-3.3.4.tar.gz
     tar -xzf fftw-3.3.4.tar.gz
@@ -217,27 +219,26 @@ All of the intel patches, etc. are unnecessary in the gcc stack.
 Building numpy against MKL
 ----------------------------------
 
-Now, acquire ``numpy`` (1.8.1)::
+Now, acquire ``numpy`` (1.8.2)::
 
      cd $BUILD_HOME
-     wget http://sourceforge.net/projects/numpy/files/NumPy/1.8.1/numpy-1.8.1.tar.gz
-     tar -xvf numpy-1.8.1.tar.gz
-     cd numpy-1.8.1
-     wget http://lcd-www.colorado.edu/bpbrown/dedalus_documentation/_downloads/numpy_intel_patch.tar
-     tar xvf numpy_intel_patch.tar
+     wget http://sourceforge.net/projects/numpy/files/NumPy/$LOCAL_NUMPY_VERSION/numpy-$LOCAL_NUMPY_VERSION.tar.gz
+     tar -xvf numpy-$LOCAL_NUMPY_VERSION.tar.gz
+     cd numpy-$LOCAL_NUMPY_VERSION
+     wget http://dedalus-project.readthedocs.org/en/latest/_downloads/numpy_pleiades_intel_patch.tar
+     tar xvf numpy_pleiades_intel_patch.tar
 
 This last step saves you from needing to hand edit two
 files in ``numpy/distutils``; these are ``intelccompiler.py`` and
-``fcompiler/intel.py``.  I've built a crude patch, 
-:download:`numpy_intel_patch.tar<numpy_intel_patch.tar>` 
-which can be auto-deployed by within the ``numpy-1.8.1`` directory by
+``fcompiler/intel.py``.  I've built a crude patch, :download:`numpy_pleiades_intel_patch.tar<numpy_pleiades_intel_patch.tar>` 
+which is auto-deployed within the ``numpy-$LOCAL_NUMPY_VERSION`` directory by
 the instructions above.  This will unpack and overwrite::
 
       numpy/distutils/intelccompiler.py
       numpy/distutils/fcompiler/intel.py
 
-Crap.  For now I'm hand editing these to replace "-xhost" with
- "-axAVX -xSSE4.1".  Crap crap crap.
+This differs from prior versions in that "-xhost" is replaced with
+ "-axAVX -xSSE4.1". 
 
 We'll now need to make sure that ``numpy`` is building against the MKL
 libraries.  Start by making a ``site.cfg`` file::
