@@ -22,11 +22,15 @@ Then add the following to your ``.profile``::
 
   export CC=mpicc
 
-  #pathing for Dedalus2        
-  export MPI_ROOT=$BUILD_HOME/openmpi-1.7.3
+  #pathing for Dedalus2
+  export LOCAL_MPI_VERSION=openmpi-1.8.2
+  export LOCAL_MPI_SHORT=v1.8
+  export LOCAL_PYTHON_VERSION=3.4.1
+  export MPI_ROOT=$BUILD_HOME/$LOCAL_MPI_VERSION
   export PYTHONPATH=$BUILD_HOME/dedalus2:$PYTHONPATH
   export MPI_PATH=$MPI_ROOT
   export FFTW_PATH=$BUILD_HOME
+  export HDF5_DIR=$BUILD_HOME
 
 .. note::
    We are moving here to a python 3.4 build.  Also, it looks like
@@ -58,15 +62,15 @@ to be built on a compute node so that the right memory space is identified.::
 
     # do this on a main node (where you can access the outside internet):
     cd $BUILD_HOME
-    wget http://www.open-mpi.org/software/ompi/v1.7/downloads/openmpi-1.7.3.tar.gz
-    tar xvf openmpi-1.7.3.tar.gz
+    wget http://www.open-mpi.org/software/ompi/$LOCAL_MPI_SHORT/downloads/$LOCAL_MPI_VERSION.tar.gz
+    tar xvf $LOCAL_MPI_VERSION.tar.gz
 
     # get ivy-bridge compute node
     qsub -I -q devel -l select=1:ncpus=20:mpiprocs=20:model=ivy -l walltime=02:00:00
 
     # once node exists
     cd $BUILD_HOME
-    cd openmpi-1.7.3
+    cd $LOCAL_MPI_VERSION
     ./configure \
 	--prefix=$BUILD_HOME \
 	--enable-mpi-interface-warning \
@@ -81,14 +85,19 @@ to be built on a compute node so that the right memory space is identified.::
     make install
 
 These compilation options are based on ``/nasa/openmpi/1.6.5/NAS_config.sh``, 
-and are thanks to advice from Daniel Kokron at NAS.
+and are thanks to advice from Daniel Kokron at NAS.  Compiling takes
+about one hour.
 
-We're using openmpi 1.7.3 here because something substantial changes
-in 1.7.4 and from that point onwards instances of mpirun hang on
-Pleiades, when used on more than 1 node worth of cores.  I've tested
-this extensively with a simple hello world program
-(http://www.dartmouth.edu/~rc/classes/intro_mpi/hello_world_ex.html)
-and for now suggest we move forward until this is resolved.
+.. note::
+   Version 1.8.2 appears to have fixed the mpirun hang problem previously
+   seen in versions >= 1.7.4.
+
+   prior note: we're using openmpi 1.7.3 here because something substantial changes
+   in 1.7.4 and from that point onwards instances of mpirun hang on
+   Pleiades, when used on more than 1 node worth of cores.  I've tested
+   this extensively with a simple hello world program
+   (http://www.dartmouth.edu/~rc/classes/intro_mpi/hello_world_ex.html)
+   and for now suggest we move forward until this is resolved.
 
 
 Building Python3
@@ -97,9 +106,9 @@ Building Python3
 Create ``$BUILD_HOME`` and then proceed with downloading and installing Python-3.4::
 
     cd $BUILD_HOME
-    wget https://www.python.org/ftp/python/3.4.0/Python-3.4.0.tgz --no-check-certificate
-    tar xzf Python-3.4.0.tgz
-    cd Python-3.4.0
+    wget https://www.python.org/ftp/python/$LOCAL_PYTHON_VERSION/Python-$LOCAL_PYTHON_VERSION.tgz --no-check-certificate
+    tar xzf Python-$LOCAL_PYTHON_VERSION.tgz
+    cd Python-$LOCAL_PYTHON_VERSION
     wget http://dedalus-project.readthedocs.org/en/latest/_downloads/python_intel_patch.tar
     tar xvf python_intel_patch.tar 
 
@@ -113,7 +122,7 @@ Create ``$BUILD_HOME`` and then proceed with downloading and installing Python-3
     make
     make install
 
-All of the intel patches, etc. are unnecessary in the gcc stack.
+The intel patch above fixes a problem with ctypes for intel compilers.
 
 .. note::
      We're getting a problem on ``_curses_panel`` and on ``_sqlite3``; ignoring for now.
@@ -326,9 +335,9 @@ Installing HDF5 with parallel support
 The new analysis package brings HDF5 file writing capbaility.  This
 needs to be compiled with support for parallel (mpi) I/O::
 
-     wget http://www.hdfgroup.org/ftp/HDF5/current/src/hdf5-1.8.12.tar
-     tar xvf hdf5-1.8.12.tar
-     cd hdf5-1.8.12
+     wget http://www.hdfgroup.org/ftp/HDF5/current/src/hdf5-1.8.13.tar
+     tar xvf hdf5-1.8.13.tar
+     cd hdf5-1.8.13
      ./configure --prefix=$BUILD_HOME \
                          CC=mpicc         CFLAGS="-O3 -axAVX -xSSE4.1" \
                          CXX=mpicxx CPPFLAGS="-O3 -axAVX -xSSE4.1" \
@@ -338,9 +347,20 @@ needs to be compiled with support for parallel (mpi) I/O::
      make
      make install
 
-Next, install h5py.  For reasons that are currently unclear to me, 
-this cannot be done via pip install.
 
+
+Installing h5py
+----------------------------------------------------
+
+Next, install h5py.  For reasons that are currently unclear to me, 
+this cannot be done via pip install (fails).
+
+git clone git://github.com/h5py/h5py
+cd h5py
+export CC=mpicc
+export HDF5_DIR=$BUILD_HOME
+python3 setup.py build
+python3 setup.py install
 
 
 
