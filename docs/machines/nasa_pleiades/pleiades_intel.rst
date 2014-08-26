@@ -27,11 +27,16 @@ Then add the following to your ``.profile``::
   export LOCAL_MPI_SHORT=v1.8
   export LOCAL_PYTHON_VERSION=3.4.1
   export LOCAL_NUMPY_VERSION=1.8.2
+  export LOCAL_SCIPY_VERSION=0.14.0
+
   export MPI_ROOT=$BUILD_HOME/$LOCAL_MPI_VERSION
   export PYTHONPATH=$BUILD_HOME/dedalus2:$PYTHONPATH
   export MPI_PATH=$MPI_ROOT
   export FFTW_PATH=$BUILD_HOME
   export HDF5_DIR=$BUILD_HOME
+
+  # Pleaides workaround for QP errors 8/25/14 from NAS                                                                                             
+  export MPI_USE_UD=true
 
 .. note::
    We are moving here to a python 3.4 build.  Also, it looks like
@@ -137,7 +142,7 @@ Python 3.4 now automatically includes pip.
 On Pleiades, you'll need to edit ``.pip/pip.conf``::
 
      [global]
-     cert = /etc/ssl/certs/ca-bundle.crt
+     cert = /etc/ssl/certs/ca-bundle.trust.crt
 
 You will now have ``pip3`` installed in ``$BUILD_HOME/bin``.
 You might try doing ``pip3 -V`` to confirm that ``pip3`` is built
@@ -301,9 +306,9 @@ Installing Scipy
 Scipy is easier, because it just gets its config from numpy.  Dong a
 pip install fails, so we'll keep doing it the old fashioned way::
 
-    wget http://sourceforge.net/projects/scipy/files/scipy/0.14.0/scipy-0.14.0.tar.gz
-    tar -xvf scipy-0.14.0.tar.gz
-    cd scipy-0.14.0
+    wget http://sourceforge.net/projects/scipy/files/scipy/$LOCAL_SCIPY_VERSION/scipy-$LOCAL_SCIPY_VERSION.tar.gz
+    tar -xvf scipy-$LOCAL_SCIPY_VERSION.tar.gz
+    cd scipy-$LOCAL_SCIPY_VERSION
     python3 setup.py config --compiler=intelem --fcompiler=intelem build_clib \
                                             --compiler=intelem --fcompiler=intelem build_ext \
                                             --compiler=intelem --fcompiler=intelem install
@@ -320,6 +325,21 @@ Installing matplotlib
 This should just be pip installed::
 
      pip3 install matplotlib
+
+Hmmm... version 1.4.0 of matplotlib has just dropped, but seems to
+have a higher freetype versioning requirement (2.4).  Here's a
+build script for freetype 2.5.3 (or use matplotlib 1.3.1)::
+
+    wget http://sourceforge.net/projects/freetype/files/freetype2/2.5.3/freetype-2.5.3.tar.gz/download
+    tar xvf freetype-2.5.3.tar.gz
+    cd freetype-2.5.3
+    ./configure --prefix=$BUILD_HOME
+    make
+    make install
+
+Well... that works, but then we fail on a qhull compile later on.
+Let's fall back to 1.3.1.
+
 
 
 Installing sympy
@@ -350,23 +370,22 @@ needs to be compiled with support for parallel (mpi) I/O::
 
 
 
-Installing h5py
+Installing h5py (working)
 ----------------------------------------------------
 
 Next, install h5py.  For reasons that are currently unclear to me, 
-this cannot be done via pip install (fails).
+this cannot be done via pip install (fails)::
 
-git clone git://github.com/h5py/h5py
-cd h5py
-export CC=mpicc
-export HDF5_DIR=$BUILD_HOME
-python3 setup.py build
-python3 setup.py install
+     git clone https://github.com/h5py/h5py.git
+     cd h5py
+     python3 setup.py build
+     python3 setup.py install
+
+This will install ``h5py==2.4.0a0``, and it appears to work (!).
 
 
-
-Installing h5py with collectives
-----------------------------------------------------
+Installing h5py with collectives (not currently working)
+------------------------------------------------------------------------
 We've been exploring the use of collectives for faster parallel file
 writing.  
 
@@ -468,16 +487,12 @@ With the modules set as above, set::
 
      export BUILD_HOME=$BUILD_HOME
      export FFTW_PATH=$BUILD_HOME
-     export MPI_PATH=$BUILD_HOME/openmpi-1.8
+     export MPI_PATH=$BUILD_HOME/$LOCAL_MPI_VERSION
 
 Then change into your root dedalus directory and run::
 
      python setup.py build_ext --inplace
 
-further packages needed for Keaton's branch::
-
-     pip3 install tqdm
-     pip3 install pathlib
 
 
 Running Dedalus on Pleiades
