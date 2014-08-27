@@ -457,9 +457,9 @@ Installing Mercurial
 On NASA Pleiades, we need to install mercurial itself.  I can't get
 mercurial to build properly on intel compilers, so for now use gcc::
 
-     wget http://mercurial.selenic.com/release/mercurial-2.9.tar.gz
-     tar xvf mercurial-2.9.tar.gz 
-     cd mercurial-2.9
+     wget http://mercurial.selenic.com/release/mercurial-3.1.tar.gz
+     tar xvf mercurial-3.1.tar.gz 
+     cd mercurial-3.1
      module load gcc
      export CC=gcc
      make install PREFIX=$BUILD_HOME
