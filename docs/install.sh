@@ -11,7 +11,7 @@
 # check the current directory and one up.
 #
 
-DEST_SUFFIX="dedalus-`uname -m`"
+DEST_SUFFIX="dedalus"
 DEST_DIR="`pwd`/${DEST_SUFFIX/ /}"   # Installation location
 BRANCH="tip" # This is the branch to which we will forcibly update.
 
