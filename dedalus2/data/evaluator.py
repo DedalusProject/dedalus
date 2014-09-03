@@ -242,6 +242,9 @@ class DictionaryHandler(Handler):
         Handler.__init__(self, *args, **kw)
         self.fields = dict()
 
+    def __getitem__(self, item):
+        return self.fields[item]
+
     def process(self, wall_time, sim_time, iteration):
         """Reference fields from dictionary."""
 

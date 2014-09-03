@@ -3,17 +3,27 @@ Extra tools that are useful in hydrodynamical problems.
 
 """
 
-import logging
 import numpy as np
 from mpi4py import MPI
 
 from ..data import operators
 
+import logging
 logger = logging.getLogger(__name__.split('.')[-1])
 
 
 class GlobalArrayReducer:
-    """Directs parallelized reduction of distributed array data."""
+    """
+    Directs parallelized reduction of distributed array data.
+
+    Parameters
+    ----------
+    comm : MPI communicator
+        MPI communicator
+    dtype : data type, optional
+        Array data type (default: np.float64)
+
+    """
 
     def __init__(self, comm, dtype=np.float64):
 
@@ -26,7 +36,7 @@ class GlobalArrayReducer:
         self.comm.Allreduce(MPI.IN_PLACE, self._scalar_buffer, op=mpi_reduce_op)
         return self._scalar_buffer[0]
 
-    def global_min(self, data, empty=0):
+    def global_min(self, data, empty=np.inf):
         """Compute global min of all array data."""
         if data.size:
             local_min = np.min(data)
@@ -34,7 +44,7 @@ class GlobalArrayReducer:
             local_min = empty
         return self.reduce_scalar(local_min, MPI.MIN)
 
-    def global_max(self, data, empty=0):
+    def global_max(self, data, empty=-np.inf):
         """Compute global max of all array data."""
         if data.size:
             local_max = np.max(data)
@@ -65,7 +75,7 @@ class GlobalFlowProperty:
     Examples
     --------
     >>> flow = GlobalFlowProperty(solver)
-    >>> flow.add_task('sqrt(u*u + w*w) * Lz / nu', name='Re')
+    >>> flow.add_property('sqrt(u*u + w*w) * Lz / nu', name='Re')
     ...
     >>> flow.max('Re')
     1024.5
@@ -90,34 +100,35 @@ class GlobalFlowProperty:
 
     def max(self, name):
         """Compute global max of a property on the grid."""
-        gdata = self.dicthandler.fields[name]['g']
+        gdata = self.properties[name]['g']
         return self.reducer.global_max(gdata)
 
     def grid_average(self, name):
         """Compute global mean of a property on the grid."""
-        gdata = self.dicthandler.fields[name]['g']
+        gdata = self.properties[name]['g']
         return self.reducer.global_mean(gdata)
 
     def volume_average(self, name):
         """Compute volume average of a property."""
+        # Compute volume integral
         field = self.properties[name]
         integral_op = operators.Integrate(field)
         integral_field = integral_op.operate()
-        integral_value = self.reducer.global_mean(integral_field['g'])
+        # Communicate integral value to all processes
+        integral_value = self.reducer.global_max(integral_field['g'])
         average_value = integral_value / self.domain.hypervolume
         return average_value
 
 
-
 class CFL:
     """
-    Compute CFL-limited timestep from a set of velocities/frequencies.
+    Computes CFL-limited timestep from a set of frequencies/velocities.
 
     Parameters
     ----------
     solver : solver object
         Problem solver
-    first_dt : float
+    initial_dt : float
         Initial timestep
     cadence : int, optional
         Iteration cadence for computing new timestep (default: 1)
@@ -155,26 +166,35 @@ class CFL:
         domain = solver.domain
         self.grid_spacings = [domain.grid_spacing(axis, domain.dealias) for axis in range(domain.dim)]
         self.reducer = GlobalArrayReducer(solver.domain.dist.comm_cart)
-        self.dicthandler = solver.evaluator.add_dictionary_handler(iter=cadence)
+        self.frequencies = solver.evaluator.add_dictionary_handler(iter=cadence)
 
     def compute_dt(self):
-        """Compute new timestep."""
-        # Compute new timestep when cadence divides previous iteration
-        # This is when the frequency dictionary handler is freshly updated
-        if (self.solver.iteration-1) % self.cadence == 0:
+        """Compute CFL-limited timestep."""
+        iteration = self.solver.iteration
+        # Return initial dt on first iteration
+        if iteration == 0:
+            return self.stored_dt
+        # Otherwise compute new timestep when cadence divides previous iteration
+        # (this is when the frequency dicthandler is freshly updated)
+        if (iteration-1) % self.cadence == 0:
             # Sum across frequencies for each local grid point
-            local_freqs = np.sum(np.abs(field['g']) for field in self.dicthandler.fields.values())
+            local_freqs = np.sum(np.abs(field['g']) for field in self.frequencies.fields.values())
             # Compute new timestep from max frequency across all grid points
             max_global_freq = self.reducer.global_max(local_freqs)
-            if max_global_freq == 0:
+            try:
+                dt = 1 / max_global_freq
+            except ZeroDivisionError:
                 dt = np.inf
-            else:
-                dt = self.safety / max_global_freq
+            # Apply restrictions
+            dt *= self.safety
             dt = min(dt, self.max_dt, self.max_change*self.stored_dt)
             dt = max(dt, self.min_dt, self.min_change*self.stored_dt)
             self.stored_dt = dt
-
         return self.stored_dt
+
+    def add_frequency(self, freq):
+        """Add an on-grid frequency."""
+        self.frequencies.add_task(freq, layout='g')
 
     def add_velocity(self, velocity, axis):
         """Add grid-crossing frequency from a velocity along one axis."""
@@ -188,8 +208,4 @@ class CFL:
             raise ValueError("Wrong number of components for domain.")
         for axis, component in enumerate(components):
             self.add_velocity(component, axis)
-
-    def add_frequency(self, freq):
-        """Add an on-grid frequency."""
-        self.dicthandler.add_task(freq, layout='g')
 
