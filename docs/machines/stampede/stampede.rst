@@ -381,8 +381,9 @@ for further details).  Here we go::
      cd h5py
      export CC=mpicc
      export HDF5_DIR=$BUILD_HOME
-     python3 setup.py build --mpi   
-     python3 setup.py install --mpi
+     python3 setup.py configure --mpi
+     python3 setup.py build
+     python3 setup.py install
 
 After this install, ``h5py`` shows up as an ``.egg`` in
 ``site-packages``, but it looks like we pass the ``suggested demo2.py``
