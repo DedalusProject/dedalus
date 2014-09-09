@@ -1,5 +1,5 @@
 import numpy as np
-from ..tools.logging import logger
+import logging
 
 # for CFL and Re estimation
 import mpi4py.MPI as MPI
@@ -22,6 +22,8 @@ class GlobalFlowProperty():
         for key in variable_dict.keys():
             self.variables.add_task(variable_dict[key], name=key)
 
+        self.logger = logging.getLogger(__name__)
+
 
     def global_reduce(self, value, mpi_reduce_op, default_value = 0):
         if not self.participate:
@@ -32,7 +34,7 @@ class GlobalFlowProperty():
             self.comm.Allreduce(MPI.IN_PLACE, self.comm_array, op=mpi_reduce_op)
             value = self.comm_array[0]
         else:
-            logger.info('Invalid cfl_model chosen for CFL communication; terminating ({:s}).'.format(cfl_model))
+            self.logger.info('Invalid cfl_model chosen for CFL communication; terminating ({:s}).'.format(cfl_model))
             value = np.nan
 
         return value
