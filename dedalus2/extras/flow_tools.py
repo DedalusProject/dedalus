@@ -114,9 +114,9 @@ class ReynoldsPeclet(GlobalFlowProperty):
 
         rms_Re = self.global_mean(self.variables.fields['rms Re']['g'])
 
-        peak_Pe = self.global_max(self.variables.fields['rms Re']['g'])
+        peak_Pe = self.global_max(self.variables.fields['rms Pe']['g'])
 
-        rms_Pe = self.global_mean(self.variables.fields['rms Re']['g'])
+        rms_Pe = self.global_mean(self.variables.fields['rms Pe']['g'])
 
         return peak_Re, peak_Pe, rms_Re, rms_Pe
 
