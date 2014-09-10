@@ -91,6 +91,27 @@ else
     sleep 60
 fi
 
+function help_needed
+{
+    [ -e $1 ] && return
+    echo
+    echo "WE NEED YOUR HELP!" 
+    echo
+    echo "We do not have testing facilities on $1 yet. While we're confident "
+    echo "that Dedalus will work on $1, to get it working, "
+    echo "we need to know the list of packages from $1 Dedalus requires."
+    echo
+    echo "If you are familiar with $1, please look over the package list for Ubuntu"
+    echo "in this install script and help us translate it into $1 packages."
+    echo
+    echo "If you'd like to help, please don't hesitate to email the dev list,"
+    echo "dedalus-dev@googlegroups.com"
+    echo
+    echo "   --the Dedalus team"
+    echo
+    echo
+}
+
 function get_dedalusproject
 {
     [ -e $1 ] && return
@@ -179,41 +200,43 @@ function host_specific
     then
         echo "Looks like you're on an Redhat-compatible machine."
         echo
-        echo "You need to have these packages installed:"
-        echo
-        echo "  * openssl-devel"
-        echo "  * uuid-devel"
-        echo "  * readline-devel"
-        echo "  * ncurses-devel"
-        echo "  * zip"
-        echo "  * gcc-{,c++,gfortran}"
-        echo "  * make"
-        echo "  * patch"
-        echo 
-        echo "You can accomplish this by executing:"
-        echo "$ sudo yum install gcc gcc-g++ gcc-gfortran make patch zip"
-        echo "$ sudo yum install ncurses-devel uuid-devel openssl-devel readline-devel"
+        help_needed "RedHat"
+        # echo "You need to have these packages installed:"
+        # echo
+        # echo "  * openssl-devel"
+        # echo "  * uuid-devel"
+        # echo "  * readline-devel"
+        # echo "  * ncurses-devel"
+        # echo "  * zip"
+        # echo "  * gcc-{,c++,gfortran}"
+        # echo "  * make"
+        # echo "  * patch"
+        # echo 
+        # echo "You can accomplish this by executing:"
+        # echo "$ sudo yum install gcc gcc-g++ gcc-gfortran make patch zip"
+        # echo "$ sudo yum install ncurses-devel uuid-devel openssl-devel readline-devel"
     fi
     if [ -f /etc/SuSE-release ] && [ `grep --count SUSE /etc/SuSE-release` -gt 0 ]
     then
         echo "Looks like you're on an OpenSUSE-compatible machine."
         echo
-        echo "You need to have these packages installed:"
-        echo
-        echo "  * devel_C_C++"
-        echo "  * libopenssl-devel"
-        echo "  * libuuid-devel"
-        echo "  * zip"
-        echo "  * gcc-c++"
-        echo
-        echo "You can accomplish this by executing:"
-        echo
-        echo "$ sudo zypper install -t pattern devel_C_C++"
-        echo "$ sudo zypper install gcc-c++ libopenssl-devel libuuid-devel zip"
-        echo
-        echo "I am also setting special configure arguments to Python to"
-        echo "specify control lib/lib64 issues."
-        PYCONF_ARGS="--libdir=${DEST_DIR}/lib"
+        help_needed "OpenSUSE"
+        # echo "You need to have these packages installed:"
+        # echo
+        # echo "  * devel_C_C++"
+        # echo "  * libopenssl-devel"
+        # echo "  * libuuid-devel"
+        # echo "  * zip"
+        # echo "  * gcc-c++"
+        # echo
+        # echo "You can accomplish this by executing:"
+        # echo
+        # echo "$ sudo zypper install -t pattern devel_C_C++"
+        # echo "$ sudo zypper install gcc-c++ libopenssl-devel libuuid-devel zip"
+        # echo
+        # echo "I am also setting special configure arguments to Python to"
+        # echo "specify control lib/lib64 issues."
+        # PYCONF_ARGS="--libdir=${DEST_DIR}/lib"
     fi
     if [ -f /etc/lsb-release ] && [ `grep --count buntu /etc/lsb-release` -gt 0 ]
     then
