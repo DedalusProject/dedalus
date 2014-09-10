@@ -164,7 +164,7 @@ class CFL:
         self.min_change = min_change
 
         domain = solver.domain
-        self.grid_spacings = [domain.grid_spacing(axis, domain.dealias) for axis in range(domain.dim)]
+        self.grid_spacings = [domain.grid_spacing(axis) for axis in range(domain.dim)]
         self.reducer = GlobalArrayReducer(solver.domain.dist.comm_cart)
         self.frequencies = solver.evaluator.add_dictionary_handler(iter=cadence)
 
@@ -181,10 +181,10 @@ class CFL:
             local_freqs = np.sum(np.abs(field['g']) for field in self.frequencies.fields.values())
             # Compute new timestep from max frequency across all grid points
             max_global_freq = self.reducer.global_max(local_freqs)
-            try:
-                dt = 1 / max_global_freq
-            except ZeroDivisionError:
+            if max_global_freq == 0.:
                 dt = np.inf
+            else:
+                dt = 1 / max_global_freq
             # Apply restrictions
             dt *= self.safety
             dt = min(dt, self.max_dt, self.max_change*self.stored_dt)
