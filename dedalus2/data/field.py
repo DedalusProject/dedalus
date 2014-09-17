@@ -45,6 +45,9 @@ class Field(Future):
 
     def __init__(self, domain, name=None):
 
+        # Initial attributes
+        self.name = name
+
         # Weak-reference domain to allow cyclic garbage collection
         self._domain_weak_ref = weakref.ref(domain)
         domain._field_count += 1
