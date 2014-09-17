@@ -52,8 +52,8 @@ Prandtl = 1.
 Rayleigh = 1e6
 
 # Create bases and domain
-x_basis = de.Fourier(512, interval=(0, Lx), dealias=2/3)
-z_basis = de.Chebyshev(129, interval=(-Lz/2, Lz/2), dealias=2/3)
+x_basis = de.Fourier(256, interval=(0, Lx), dealias=3/2)
+z_basis = de.Chebyshev(64, interval=(-Lz/2, Lz/2), dealias=3/2)
 domain = de.Domain([x_basis, z_basis], grid_dtype=np.float64)
 
 # Finalize problem
@@ -75,7 +75,8 @@ bz = solver.state['bz']
 
 # Linear background + perturbations damped at walls
 zb, zt = z_basis.interval
-pert =  1e-3 * np.random.standard_normal(domain.local_grid_shape) * (zt - z) * (z - zb)
+shape = domain.local_grid_shape(scales=1)
+pert =  1e-3 * np.random.standard_normal(shape) * (zt - z) * (z - zb)
 b['g'] = -F*(z - pert)
 b.differentiate('z', out=bz)
 

@@ -23,7 +23,7 @@ problem.parameters['a'] = 2e-4
 problem.parameters['b'] = 1e-4
 
 # Build domain
-x_basis = Fourier(1024, interval=(-2, 8), dealias=2/3)
+x_basis = Fourier(1024, interval=(-2, 8), dealias=3/2)
 domain = Domain([x_basis], np.float64)
 problem.expand(domain)
 
@@ -52,6 +52,7 @@ dt = 2e-3
 while solver.ok:
     solver.step(dt)
     if solver.iteration % 20 == 0:
+        u.set_scales(1, keep_data=True)
         u_list.append(np.copy(u['g']))
         t_list.append(solver.sim_time)
 
