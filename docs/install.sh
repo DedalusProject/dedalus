@@ -568,7 +568,7 @@ then
         [ ! -e $PKGCFG ] && tar xfz $PKGCFG.tar.gz
         echo "Installing pkg-config"
         cd $PKGCFG
-        ( ./configure CFLAGS=-I${DEST_DIR}/include --prefix=${DEST_DIR}/ 2>&1 ) 1>> ${LOG_FILE} || do_exit
+        ( ./configure --with-internal-glib CFLAGS=-I${DEST_DIR}/include --prefix=${DEST_DIR}/ 2>&1 ) 1>> ${LOG_FILE} || do_exit
         ( make 2>&1 ) 1>> ${LOG_FILE} || do_exit
 	( make install CFLAGS=-std=gnu89 2>&1 ) 1>> ${LOG_FILE} || do_exit
         ( make clean 2>&1) 1>> ${LOG_FILE} || do_exit
