@@ -32,6 +32,7 @@ INST_ATLAS=0 # by default, we will not build our own ATLAS. If you're on OSX, yo
 INST_SCIPY=1
 INST_IPYTHON=0 # by default, don't build ipython
 INST_FTYPE=0 # by default, don't install freetype
+INST_PNG=0 # by default, don't install libpng
 
 if [ ${REINST_DEDALUS} ] && [ ${REINST_DEDALUS} -eq 1 ] && [ -n ${DEDALUS_DEST} ]
 then
@@ -120,6 +121,26 @@ function get_dedalusproject
     ( ${SHASUM} -c $1.sha512 2>&1 ) 1>> ${LOG_FILE} || do_exit
 }
 
+function do_setup_py
+{
+    [ -e $1/done ] && return
+    LIB=$1
+    shift
+    if [ -z "$@" ]
+    then
+        echo "Installing $LIB"
+    else
+        echo "Installing $LIB (arguments: '$@')"
+    fi
+    [ ! -e $LIB/extracted ] && tar xfz $LIB.tar.gz
+    touch $LIB/extracted
+    cd $LIB
+    ( ${DEST_DIR}/bin/python3 setup.py build ${BUILD_ARGS} $* 2>&1 ) 1>> ${LOG_FILE} || do_exit
+    ( ${DEST_DIR}/bin/python3 setup.py install    2>&1 ) 1>> ${LOG_FILE} || do_exit
+    touch done
+    cd ..
+}
+
 function do_exit
 {
     echo "********************************************"
@@ -189,17 +210,25 @@ function host_specific
             MPL_SUPP_CFLAGS="${MPL_SUPP_CFLAGS} -mmacosx-version-min=10.7"
             MPL_SUPP_CXXFLAGS="${MPL_SUPP_CXXFLAGS} -mmacosx-version-min=10.7"
         fi
+    if [ "${OSX_VERSION##10.9}" != "${OSX_VERSION}" ]
+    then
+	echo
+	echo "Appending include path for 10.9."
+	PY_CFLAGS="-I$(xcrun --show-sdk-path)/usr/include"
+	echo "include path is: $PY_CFLAGS"
+	echo
+    fi
+
     INST_OPENMPI=1
     INST_ATLAS=0
     INST_HDF5=1
     INST_FTYPE=1
+    INST_PNG=1
     IS_OSX=1
     fi
 
     if [ -f /etc/redhat-release ]
     then
-        echo "Looks like you're on an Redhat-compatible machine."
-        echo
         help_needed "RedHat"
         # echo "You need to have these packages installed:"
         # echo
@@ -344,6 +373,8 @@ SCIPY='scipy-0.14.0'
 OPENMPI='openmpi-1.6.5'
 HDF5='hdf5-1.8.13'
 FTYPE='freetype-2.5.3'
+MATPLOTLIB='matplotlib-1.3.1'
+PNG='libpng-1.6.12'
 
 # dump sha512 to files
 printf -v PYFILE "%s.tgz.sha512" $PYTHON
@@ -374,6 +405,15 @@ printf -v FTFILE "%s.tar.gz.sha512" $FTYPE
 printf -v FTSHA "9ab7b77c5c09b1eb5baee7eb16da8a5f6fa7168cfa886bfed392b2fe80a985bcedecfbb8ed562c822ec9e48b061fb5fcdd9eea69eb44f970c2d1c55581f31d25  %s" ${FTFILE%.sha512}
 echo "$FTSHA" > $FTFILE
 
+printf -v MPLFILE "%s.tar.gz.sha512" $MATPLOTLIB
+printf -v MPLSHA "04877aa15b6d52a6f813e8377098d13c432f66ae2522c544575440180944c9b73a2164ae63edd3a0eff807883bf7b39cd55f28454ccee8c76146567ff4a6fd40  %s" ${MPLFILE%.sha512}
+echo "$MPLSHA" > $MPLFILE
+
+printf -v PNGFILE "%s.tar.gz.sha512" $PNG
+printf -v PNGSHA "97959a245f23775a97d63394302da518ea1225a88023bf0906c24fcf8b1765856df36d2705a847d7f822c3b4e6f5da67526bb17fe04d00d523e8a18ea5037f4f  %s" ${PNGFILE%.sha512}
+echo "$PNGSHA" > $PNGFILE
+
+
 # get the files
 get_dedalusproject $PYTHON.tgz
 get_dedalusproject $FFTW.tar.gz
@@ -382,6 +422,9 @@ get_dedalusproject $SCIPY.tar.gz
 [ $INST_OPENMPI -eq 1 ] && get_dedalusproject $OPENMPI.tar.gz
 [ $INST_HDF5 -eq 1 ] && get_dedalusproject $HDF5.tar.gz
 [ $INST_FTYPE -eq 1 ] && get_dedalusproject $FTYPE.tar.gz
+
+# if we're installing freetype, we need to manually install matplotlib
+[ $INST_FTYPE -eq 1 ] && get_dedalusproject $MATPLOTLIB.tar.gz
 
 # first, OpenMPI, if we're doing that
 if [ $INST_OPENMPI -eq 1 ]
@@ -412,7 +455,8 @@ then
     echo "Installing Python."
     [ ! -e $PYTHON ] && tar xfz $PYTHON.tgz
     cd $PYTHON
-    ( ./configure --prefix=${DEST_DIR}/ ${PYCONF_ARGS} 2>&1 ) 1>> ${LOG_FILE} || do_exit
+    echo "PY_CFLAGS = $PY_CFLAGS"
+    ( ./configure --prefix=${DEST_DIR}/ ${PYCONF_ARGS} CFLAGS=${PY_CFLAGS} 2>&1 ) 1>> ${LOG_FILE} || do_exit
 
     ( make ${MAKE_PROCS} 2>&1 ) 1>> ${LOG_FILE} || do_exit
     ( make install 2>&1 ) 1>> ${LOG_FILE} || do_exit
@@ -485,8 +529,30 @@ then
     FTYPE_DIR=${DEST_DIR}
     export LDFLAGS="${LDFLAGS} -L${FTYPE_DIR}/lib/ -L${FTYPE_DIR}/lib64/"
     LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${FTYPE_DIR}/lib/"
+    export FTYPE_INST="$LDFLAGS"
 fi
 
+
+if [ $INST_LIBPNG -eq 1 ]
+then
+    if [ ! -e $PNG/done ]
+    then
+        [ ! -e $PNG ] && tar xfz $PNG.tar.gz
+        echo "Installing libpng"
+        cd $PNG
+        ( ./configure CFLAGS=-I${DEST_DIR}/include --prefix=${DEST_DIR}/ 2>&1 ) 1>> ${LOG_FILE} || do_exit
+        ( make 2>&1 ) 1>> ${LOG_FILE} || do_exit
+	( make install 2>&1 ) 1>> ${LOG_FILE} || do_exit
+        ( make clean 2>&1) 1>> ${LOG_FILE} || do_exit
+        touch done
+        cd ..
+    fi
+    PNG_DIR=${DEST_DIR}
+    export LDFLAGS="${LDFLAGS} -L${PNG_DIR}/lib/ -L${PNG_DIR}/lib64/"
+    LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${PNG_DIR}/lib/"
+    export PNG_INST="$LDFLAGS"
+fi
+ 
 # if !OSX ATLAS/OpenBLAS
 
 # numpy
@@ -526,9 +592,26 @@ echo "pip installing cython."
 ( ${DEST_DIR}/bin/pip3 install cython 2>&1 ) 1>> ${LOG_FILE} || do_exit
 
 # matplotlib
-echo "pip installing matplotlib."
-( ${DEST_DIR}/bin/pip3 install -v https://downloads.sourceforge.net/project/matplotlib/matplotlib/matplotlib-1.3.1/matplotlib-1.3.1.tar.gz 2>&1 ) 1>> ${LOG_FILE} || do_exit
+PATH=$DEST_DIR/bin/:$PATH
+if [ $INST_FTYPE -eq 1 ]
+then
+    echo "manually installing matplotlib."
+# Now we set up the basedir for matplotlib:
+    mkdir -p ${DEST_DIR}/src/$MATPLOTLIB
+    echo "[directories]" >> ${DEST_DIR}/src/$MATPLOTLIB/setup.cfg
+    echo "basedirlist = ${DEST_DIR}" >> ${DEST_DIR}/src/$MATPLOTLIB/setup.cfg
+    if [ `uname` = "Darwin" ]
+    then
+	echo "[gui_support]" >> ${DEST_DIR}/src/$MATPLOTLIB/setup.cfg
+	echo "macosx = False" >> ${DEST_DIR}/src/$MATPLOTLIB/setup.cfg
+    fi
+    do_setup_py $MATPLOTLIB
+    
+else
+    echo "pip installing matplotlib."
 
+    ( ${DEST_DIR}/bin/pip3 install -v https://downloads.sourceforge.net/project/matplotlib/matplotlib/matplotlib-1.3.1/matplotlib-1.3.1.tar.gz 2>&1 ) 1>> ${LOG_FILE} || do_exit
+fi
 # sympy
 echo "pip installing sympy."
 ( ${DEST_DIR}/bin/pip3 install sympy 2>&1 ) 1>> ${LOG_FILE} || do_exit
