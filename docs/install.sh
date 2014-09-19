@@ -566,8 +566,8 @@ then
     if [ ! -e $PKGCFG/done ]
     then
         [ ! -e $PKGCFG ] && tar xfz $PKGCFG.tar.gz
-        echo "Installing libpng"
-        cd $PNG
+        echo "Installing pkg-config"
+        cd $PKGCFG
         ( ./configure CFLAGS=-I${DEST_DIR}/include --prefix=${DEST_DIR}/ 2>&1 ) 1>> ${LOG_FILE} || do_exit
         ( make 2>&1 ) 1>> ${LOG_FILE} || do_exit
 	( make install CFLAGS=-std=gnu89 2>&1 ) 1>> ${LOG_FILE} || do_exit
