@@ -377,7 +377,7 @@ HDF5='hdf5-1.8.13'
 FTYPE='freetype-2.5.3'
 MATPLOTLIB='matplotlib-1.3.1'
 PNG='libpng-1.6.12'
-PKGCFG='pkgconfig-0.28'
+PKGCFG='pkg-config-0.28'
 
 # dump sha512 to files
 printf -v PYFILE "%s.tgz.sha512" $PYTHON
@@ -419,7 +419,6 @@ echo "$PNGSHA" > $PNGFILE
 printf -v PKGCFGFILE "%s.tar.gz.sha512" $PKGCFG
 printf -v PKGCFGSHA "6eafa5ca77c5d44cd15f48457a5e96fcea2555b66d8e35ada5ab59864a0aa03d441e15f54ab9c6343693867b3b490f392c75b7d9312f024c9b7ec6a0194d8320  %s" ${PKGCFGFILE%.sha512}
 echo "$PKGCFGSHA" > $PKGCFGFILE
-
 
 # get the files
 get_dedalusproject $PYTHON.tgz
