@@ -39,6 +39,7 @@ Supercomputers
    machines/stampede/stampede
    machines/nasa_pleiades/pleiades
    machines/trestles/trestles
+   machines/janus/janus
    machines/savio/savio
 
 Development machines
