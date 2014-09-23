@@ -246,8 +246,8 @@ This should just be pip installed::
 
      pip3 install matplotlib
 
-Hmmm... version 1.4.0 of matplotlib has just dropped, but seems to
-have a higher freetype versioning requirement (2.4).  Here's a
+As with Pleiades, version 1.4.0 has a 
+higher freetype versioning requirement (2.4).  Here's a
 build script for freetype 2.5.3::
 
     wget http://sourceforge.net/projects/freetype/files/freetype2/2.5.3/freetype-2.5.3.tar.gz/download
@@ -257,7 +257,7 @@ build script for freetype 2.5.3::
     make
     make install
 
-Well... that works, but then we fail on a qhull compile during 
+And... as with Pleiades, that works, but then we fail on a qhull compile during 
 ``pip3 install matplotlib`` later on.
 Let's fall back to 1.3.1::
 
@@ -297,90 +297,28 @@ Installing h5py (working)
 ----------------------------------------------------
 
 Next, install h5py.  For reasons that are currently unclear to me, 
-this cannot be done via pip install (fails)::
+this cannot be done via pip install (fails), as on Pleiades::
 
      git clone https://github.com/h5py/h5py.git
      cd h5py
      python3 setup.py build
      python3 setup.py install
 
-This will install ``h5py==2.4.0a0``, and it appears to work (!).
+This is failing on a unicode error.  Arg.
 
-
-Installing h5py with collectives (not currently working)
-------------------------------------------------------------------------
-We've been exploring the use of collectives for faster parallel file
-writing.  
-
-git is having some problems, especially with it's SSL version.  
-I suggest adding the following to ``~/.gitconfig``::
-
-    [http]
-    sslCAinfo = /etc/ssl/certs/ca-bundle.crt
-
-
-This is still not working, owing (most likely) to git being built on
-an outdated SSL version.  Here's a short-term hack::
-
-    export GIT_SSL_NO_VERIFY=true
-
-To build that version of the h5py library::
-
-     git clone git://github.com/andrewcollette/h5py
-     cd h5py
-     git checkout mpi_collective
-     export CC=mpicc
-     export HDF5_DIR=$BUILD_HOME
-     python3 setup.py build --mpi   
-     python3 setup.py install --mpi
-
-
-Here's the original h5py repository::
-
-     git clone git://github.com/h5py/h5py
-     cd h5py
-     export CC=mpicc
-     export HDF5_DIR=$BUILD_HOME
-     python3 setup.py build --mpi
-     python3 setup.py install --mpi
-
-.. note::
-     This is ugly.  We're getting a "-R" error at link, triggered by
-     distutils not recognizing that mpicc is gcc or something like
-     that.   Looks like we're failing ``if self._is_gcc(compiler)``
-     For now, I've hand-edited unixccompiler.py in 
-     ``lib/python3.3/distutils`` and changed this line:
-
-           def _is_gcc(self, compiler_name):
-                return "gcc" in compiler_name or "g++" in compiler_name
-
-        to:
-
-           def _is_gcc(self, compiler_name):
-       	        return "gcc" in compiler_name or "g++" in compiler_name or "mpicc" in compiler_name
-
-     This is a hack, but it get's us running and alive!
-
-.. note::
-     Ahh... I understand what's happening here.  We built with
-     ``mpicc``, and the test ``_is_gcc`` looks for whether gcc appears
-     anywhere in the compiler name.  It doesn't in ``mpicc``, so the
-     ``gcc`` checks get missed.  This is only ever used in the
-     ``runtime_library_dir_option()`` call.  So we'd need to either
-     rename the mpicc wrapper something like ``mpicc-gcc`` or do a
-     test on ``compiler --version`` or something.  Oh boy.  Serious
-     upstream problem for mpicc wrapped builds that cythonize and go
-     to link.  Hmm...
 
 Installing Mercurial
 ----------------------------------------------------
-On NASA Pleiades, we need to install mercurial itself.  I can't get
-mercurial to build properly on intel compilers, so for now use gcc::
-
+On Janus, we need to install mercurial itself.  I can't get
+mercurial to build properly on intel compilers, so for now use gcc.
+Ah, and we also need python2 for the mercurial build (only)::
+  
+     module unload openmpi intel
+     module load gcc/gcc-4.9.1
+     module load python/anaconda-2.0.0
      wget http://mercurial.selenic.com/release/mercurial-3.1.tar.gz
      tar xvf mercurial-3.1.tar.gz 
      cd mercurial-3.1
-     module load gcc
      export CC=gcc
      make install PREFIX=$BUILD_HOME
 
@@ -389,9 +327,6 @@ I suggest you add the following to your ``~/.hgrc``::
   [ui]
   username = <your bitbucket username/e-mail address here>
   editor = emacs
-
-  [web]
-  cacerts = /etc/ssl/certs/ca-bundle.crt
 
   [extensions]
   graphlog =
