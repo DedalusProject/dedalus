@@ -41,6 +41,34 @@ you can download and compile on-node.  For now we're using stock
 Pleiades compile flags and patch files.
 
 
+Building Openmpi
+--------------------------
+Tim Dunn has pointed out that we may (may) be able to get some speed
+improvements by building our own openmpi.  Why not give it a try!
+Compiling on the janus-compile nodes seems to do a fine job, and
+unlike Pleiades we can grab software from the internet on the compile
+nodes too.   This streamlines the process.::
+
+    cd $BUILD_HOME
+    wget http://www.open-mpi.org/software/ompi/$LOCAL_MPI_SHORT/downloads/$LOCAL_MPI_VERSION.tar.gz
+    tar xvf $LOCAL_MPI_VERSION.tar.gz
+    cd $LOCAL_MPI_VERSION
+    ./configure \
+        --prefix=$BUILD_HOME \
+        --with-slurm \
+        --with-threads=posix \
+        --enable-mpi-thread-multiple \
+        CC=icc    CFLAGS="-O3 -axAVX -xSSE4.1" \
+        CXX=icc CPPFLAGS="-O3 -axAVX -xSSE4.1" \
+        F77=ifort F90=ifort  F90FLAGS="-O3 -axAVX -xSSE4.1" 
+
+    make -j
+    make install
+
+Config flags thanks to Tim Dunn; the CFLAGS etc are from Pleiades and
+should be general.
+
+
 Building Python3
 --------------------------
 
