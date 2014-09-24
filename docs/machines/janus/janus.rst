@@ -75,7 +75,7 @@ Building Python3
 Create ``$BUILD_HOME`` and then proceed with downloading and installing Python-3.4::
 
     cd $BUILD_HOME
-    wget https://www.python.org/ftp/python/$LOCAL_PYTHON_VERSION/Python-$LOCAL_PYTHON_VERSION.tgz --no-check-certificate
+    wget https://www.python.org/ftp/python/$LOCAL_PYTHON_VERSION/Python-$LOCAL_PYTHON_VERSION.tgz
     tar xzf Python-$LOCAL_PYTHON_VERSION.tgz
     cd Python-$LOCAL_PYTHON_VERSION
     wget http://dedalus-project.readthedocs.org/en/latest/_downloads/python_intel_patch.tar
