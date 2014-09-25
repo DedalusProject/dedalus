@@ -8,9 +8,11 @@ import numpy as np
 from .distributor import Distributor
 from .field import Field
 from .operators import create_diff_operator
-from ..tools.logging import logger
 from ..tools.cache import CachedMethod
 from ..tools.array import reshape_vector
+
+import logging
+logger = logging.getLogger(__name__.split('.')[-1])
 
 
 class Domain:

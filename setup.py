@@ -1,123 +1,105 @@
+
+
 from distutils.core import setup
 from distutils.extension import Extension
-from distutils.command.build_py import build_py
+from distutils.command.build_ext import build_ext
 from Cython.Build import cythonize
+import pathlib
+import hgapi
 import numpy as np
 import mpi4py
 import os
-# import distribute_setup
-# distribute_setup.use_setuptools()
-# import setuptools
+import glob
 
-def find_path(name):
-    """looks for <name> in <NAME>_PATH, then searches a few other likely
-    places.
+
+def get_prefix(name):
+    """
+    Get prefix path for libraries containing string <name>.
+
+    First checks environment variables for <NAME>_PATH, then searches a few
+    other likely places.
 
     """
-    import glob
-    import os
-    try:
-        pn = '%s_PATH' % name.upper()
-        path = os.environ[pn]
-        return path
-    except KeyError:
-        # for MPI under Ubuntu
-        path = "/usr/lib/openmpi/lib"
-        glob_string = "*%s*" % name
-        l = glob.glob(os.path.join(path, glob_string))
-        if len(l) != 0:
-            return os.path.split(path)[0]
 
-        path = "/usr/lib"
-        glob_string = "*%s*" % name
-        l = glob.glob(os.path.join(path, glob_string))
-        if len(l) != 0:
-            return os.path.split(path)[0]
+    print("Looking for %s prefix" %name)
 
-        path = "/usr/local/lib"
-        glob_string = "*%s*" % name
-        l = glob.glob(os.path.join(path, glob_string))
-        if len(l) != 0:
-            return os.path.split(path)[0]
+    # Check for environment variable
+    patterns = ['%s_PATH',
+                '%s_PREFIX']
+    for pattern in patterns:
+        env_var = pattern %name.upper()
+        if env_var in os.environ:
+            path = os.environ[env_var]
+            print("  Found env var %s = %s" %(env_var, path))
+            return path
 
-        path = os.path.expanduser("~/build/lib")
-        l = glob.glob(os.path.join(path,glob_string))
-        if len(l) != 0:
-            return os.path.split(path)[0]
+    # Check likely places
+    places = ['/usr/lib/openmpi', # MPI under Ubuntu
+              '/usr',
+              '/usr/local',
+              os.path.expanduser('~/build')]
+    for place in places:
+        placelib = os.path.join(place, 'lib')
+        guess = os.path.join(placelib, '*%s*' %name)
+        matches = glob.glob(guess)
+        if matches:
+            print("  Found matching library in %s" %placelib)
+            return place
 
-        print("%s is not set, and we can't find %s in any of the standard places. If %s isn't in your LD_LIBRARY_PATH, compilation will likely fail." % (pn, name, name))
+    print("  Cannot find env var %s_NAME or libraries matching %s." %(name.upper(), name))
+    print("  If %s isn't in your LD_LIBRARY_PATH, compilation will likely fail." %name)
 
-def fftw_get_include():
-    base = find_path('fftw')
-    return os.path.join(base,"include")
+def get_include(name):
+    prefix = get_prefix(name)
+    return os.path.join(prefix, 'include')
 
-def fftw_get_lib():
-    base = find_path('fftw')
-    return os.path.join(base,"lib")
+def get_lib(name):
+    prefix = get_prefix(name)
+    return os.path.join(prefix, 'lib')
 
-def mpi_get_include():
-    base = find_path('mpi')
-    print(base)
-    return os.path.join(base,"include")
+def hg_info(path):
+    # Resolve symoblic paths
+    path = pathlib.Path(path).resolve()
+    # Get mercurial repository
+    repo = hgapi.Repo(str(path))
+    return repo.hg_id(), repo.hg_diff()
 
-def mpi_get_lib():
-    base = find_path('mpi')
-    return os.path.join(base,"lib")
-
-def get_mercurial_changeset_id(targetDir):
-    """adapted from a script by Jason F. Harris, published at
-
-    http://jasonfharris.com/blog/2010/05/versioning-your-application-with-the-mercurial-changeset-hash/
-
-    """
-    import subprocess
-    import re
-    getChangeset = subprocess.Popen('hg parent --template "{node|short}" --cwd ' + targetDir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-
-    if (getChangeset.stderr.read() != ""):
-        print("Error in obtaining current changeset of the Mercurial repository")
-        changeset = None
-
-    changeset = getChangeset.stdout.read()
-    if (not re.search("^[0-9a-f]{12}$", changeset)):
-        print("Current changeset of the Mercurial repository is malformed")
-        changeset = None
-
-    return changeset
-
-class my_build_py(build_py):
+class custom_build_ext(build_ext):
     def run(self):
         # honor the --dry-run flag
         if not self.dry_run:
             target_dir = os.path.join(self.build_lib,'dedalus2')
             src_dir =  os.getcwd()
-            changeset = get_mercurial_changeset_id(src_dir)
+            id, diff = hg_info(src_dir)
             self.mkpath(target_dir)
             with open(os.path.join(target_dir, '__hg_version__.py'), 'w') as fobj:
-                fobj.write("hg_version = '%s'\n" % changeset)
-
-            build_py.run(self)
+                fobj.write("hg_version = '%s'\n" %id)
+                fobj.write("diff = %s\n" %diff)
+            build_ext.run(self)
 
 fftw_ext = Extension(
     name='dedalus2.libraries.fftw.fftw_wrappers',
     sources=['dedalus2/libraries/fftw/fftw_wrappers.pyx'],
-    include_dirs=["dedalus2/libraries/fftw", mpi4py.get_include(), fftw_get_include(), mpi_get_include()],
+    include_dirs=['dedalus2/libraries/fftw/',
+                  np.get_include(),
+                  mpi4py.get_include(),
+                  get_include('fftw'),
+                  get_include('mpi')],
     libraries=['fftw3_mpi', 'fftw3', 'm'],
-    library_dirs=[fftw_get_lib()]
+    library_dirs=[get_lib('fftw')]
     )
 
 setup(
     name='Dedalus',
-    version='2.1',
+    version='2',
     author='Keaton J. Burns',
     author_email='keaton.burns@gmail.com',
     license='GPL3',
-    packages = ['dedalus',
-                'dedalus.data',
-                'dedalus.pde',
-                'dedalus.libraries',
-                'dedalus.libraries.fftw'],
-    cmdclass = {'build_py': my_build_py},
-    include_dirs = [np.get_include()],
-    ext_modules = cythonize([fftw_ext], include_path=[mpi4py.get_include()])
+    packages = ['dedalus2',
+                'dedalus2.data',
+                'dedalus2.pde',
+                'dedalus2.libraries',
+                'dedalus2.libraries.fftw'],
+    cmdclass = {'build_ext': custom_build_ext},
+    ext_modules = cythonize([fftw_ext])
     )

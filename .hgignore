@@ -8,3 +8,4 @@ syntax: glob
 *.c
 *.so
 *.o
+*.h5
