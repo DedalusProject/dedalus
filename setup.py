@@ -5,12 +5,17 @@ from distutils.extension import Extension
 from distutils.command.build_ext import build_ext
 from Cython.Build import cythonize
 import pathlib
-import hgapi
 import numpy as np
 import mpi4py
 import os
 import glob
 
+
+# Look for Mercurial tools
+try:
+    import hgapi
+except ImportError:
+    hgapi = None
 
 def get_prefix(name):
     """
@@ -64,18 +69,25 @@ def hg_info(path):
     repo = hgapi.Repo(str(path))
     return repo.hg_id(), repo.hg_diff()
 
-class custom_build_ext(build_ext):
-    def run(self):
-        # honor the --dry-run flag
-        if not self.dry_run:
-            target_dir = os.path.join(self.build_lib,'dedalus2')
-            src_dir =  os.getcwd()
-            id, diff = hg_info(src_dir)
-            self.mkpath(target_dir)
-            with open(os.path.join(target_dir, '__hg_version__.py'), 'w') as fobj:
-                fobj.write("hg_version = '%s'\n" %id)
-                fobj.write("diff = %s\n" %diff)
-            build_ext.run(self)
+# Modify build_ext to record hg repository info, if possible
+if hgapi:
+    try:
+        class custom_build_ext(build_ext):
+            def run(self):
+                # honor the --dry-run flag
+                if not self.dry_run:
+                    target_dir = os.path.join(self.build_lib,'dedalus2')
+                    src_dir =  os.getcwd()
+                    id, diff = hg_info(src_dir)
+                    self.mkpath(target_dir)
+                    with open(os.path.join(target_dir, '__hg_version__.py'), 'w') as fobj:
+                        fobj.write("hg_version = '%s'\n" %id)
+                        fobj.write("diff = %s\n" %diff)
+                    build_ext.run(self)
+    except hgapi.HgException:
+        custom_build_ext = build_ext
+else:
+    custom_build_ext = build_ext
 
 fftw_ext = Extension(
     name='dedalus2.libraries.fftw.fftw_wrappers',
