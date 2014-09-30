@@ -58,8 +58,8 @@ nodes too.   This streamlines the process.::
         --with-slurm \
         --with-threads=posix \
         --enable-mpi-thread-multiple \
-        CC=icc    CFLAGS="-O3 -axAVX -xSSE4.1" \
-        CXX=icc CPPFLAGS="-O3 -axAVX -xSSE4.1" \
+        CC=icc     CFLAGS="-O3 -axAVX -xSSE4.1" \
+        CXX=icpc CPPFLAGS="-O3 -axAVX -xSSE4.1" \
         F77=ifort F90=ifort  F90FLAGS="-O3 -axAVX -xSSE4.1" 
 
     make -j
@@ -88,13 +88,11 @@ Create ``$BUILD_HOME`` and then proceed with downloading and installing Python-3
                          --enable-shared LDFLAGS="-lpthread" \
                          --with-cxx-main=mpicxx --with-system-ffi
 
-    make
+    make -j
     make install
 
 The intel patch above fixes a problem with ctypes for intel compilers.
 
-.. note::
-     We're getting a problem on various unicode items.
 
 
 Installing pip
@@ -133,7 +131,8 @@ under openmpi::
                          MPICC=mpicc MPICXX=mpicxx \
                          --enable-shared \
                          --enable-mpi --enable-openmp --enable-threads
-    make
+
+    make -j
     make install
 
 It's critical that you use ``mpicc`` as the C-compiler, etc.
@@ -316,7 +315,8 @@ needs to be compiled with support for parallel (mpi) I/O::
                          F77=mpif90  F90FLAGS="-O3 -axAVX -xSSE4.1" \
                          MPICC=mpicc MPICXX=mpicxx \
                          --enable-shared --enable-parallel
-     make
+
+     make -j
      make install
 
 
@@ -332,7 +332,8 @@ this cannot be done via pip install (fails), as on Pleiades::
      python3 setup.py build
      python3 setup.py install
 
-This is failing on a unicode error.  Arg.
+The unicode error that pops up is a red herring; pip3 reports that the
+correct h5py is installed.
 
 
 Installing Mercurial
