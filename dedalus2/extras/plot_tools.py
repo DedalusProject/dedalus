@@ -1,9 +1,162 @@
 
 
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 
 from ..tools.array import reshape_vector
+
+
+def plot_bot(field, image_axes, data_slices, clim=None, cmap='RdBu_r', figkw={}):
+    """
+    Plot a 2d slice of the grid data of a field.
+
+    Parameters
+    ----------
+    field : field object
+        Field to plot
+    image_axes: tuple of ints (xi, yi)
+        Data axes to use for image x and y axes
+    data_slices: tuple of slices, ints
+        Slices selecting image data from global data
+    clim : tuple of floats, optional
+        Colorbar limits (default: (data min, data max))
+    cmap : str, optional
+        Colormap name (default: 'RdBu_r')
+    figkw : dict, optional
+        Keyword arguments to pass to plt.figure (default: {})
+
+    """
+
+    # Unpack image axes
+    xaxis, yaxis = image_axes
+
+    # Select grids and data
+    xgrid = field.domain.bases[xaxis].grid[data_slices[xaxis]]
+    ygrid = field.domain.bases[yaxis].grid[data_slices[yaxis]]
+    data = field['g'][data_slices]
+
+    # Create well-ordered meshes
+    xorder = np.argsort(xgrid)
+    yorder = np.argsort(ygrid)
+    xmesh, ymesh = quad_mesh(xgrid[xorder], ygrid[yorder])
+
+    # Arrange data to match sorted meshes
+    if xaxis < yaxis:
+        data = data.T
+    data = data[yorder]
+    data = data[:, xorder]
+
+    # Setup figure
+    fig = plt.figure(**figkw)
+    paxes = fig.add_axes([0.1, 0.1, 0.8, 0.75])
+    caxes = fig.add_axes([0.1, 0.86, 0.8, 0.04])
+
+    # Colormap options
+    cmap = matplotlib.cm.get_cmap(cmap)
+    cmap.set_bad('0.7')
+
+    # Plot
+    plot = paxes.pcolormesh(xmesh, ymesh, data, cmap=cmap, zorder=1)
+    paxes.axis(pad_limits(xmesh, ymesh))
+    paxes.tick_params(length=0, width=0)
+    if clim is None:
+        clim = (data.min(), data.max())
+    plot.set_clim(*clim)
+
+    # Colorbar
+    cbar = fig.colorbar(plot, cax=caxes, orientation='horizontal',
+        ticks=ticker.MaxNLocator(nbins=5))
+    cbar.outline.set_visible(False)
+    caxes.xaxis.set_ticks_position('top')
+
+    # Labels
+    caxes.set_xlabel(field.name)
+    caxes.xaxis.set_label_position('top')
+    paxes.set_ylabel(field.domain.bases[yaxis].name)
+    paxes.set_xlabel(field.domain.bases[xaxis].name)
+
+    return fig
+
+
+def plot_bot_2d(field, transpose=False, **kw):
+    """
+    Plot the grid data of a 2d field.
+
+    Parameters
+    ----------
+    field : field object
+        Field to plot
+    transpose : bool, optional
+        Flag for transposing plot (default: False)
+    clim : tuple of floats, optional
+        Colorbar limits (default: (data min, data max))
+    cmap : str, optional
+        Colormap name (default: 'RdBu_r')
+    figkw : dict, optional
+        Keyword arguments to pass to plt.figure (default: {})
+
+    """
+
+    # Check dimension
+    if field.domain.dim != 2:
+        raise ValueError("This function is for plotting 2d fields only.")
+
+    # Call general plotting function
+    image_axes = (0, 1)
+    if transpose:
+        image_axes = image_axes[::-1]
+    data_slices = (slice(None), slice(None))
+
+    return plot_bot(field, image_axes, data_slices, **kw)
+
+
+def plot_bot_3d(field, normal_axis, normal_index, transpose=False, **kw):
+    """
+    Plot a 2d slice of the grid data of a 3d field.
+
+    Parameters
+    ----------
+    field : field object
+        Field to plot
+    normal_axis: int or str
+        Index or name of normal axis
+    normal_index: int
+        Index along normal direction to plot
+    transpose : bool, optional
+        Flag for transposing plot (default: False)
+    clim : tuple of floats, optional
+        Colorbar limits (default: (data min, data max))
+    cmap : str, optional
+        Colormap name (default: 'RdBu_r')
+    figkw : dict, optional
+        Keyword arguments to pass to plt.figure (default: {})
+
+    """
+
+    # Check dimension
+    if field.domain.dim != 3:
+        raise ValueError("This function is for plotting 3d fields only.")
+
+    # Resolve axis name to axis index
+    if isinstance(normal_axis, str):
+        for a, b in enumerate(field.domain.bases):
+            if normal_axis == b.name:
+                normal_axis = a
+                break
+        else:
+            raise ValueError("Axis name not found.")
+
+    # Call general plotting function
+    axes = (0, 1, 2)
+    image_axes = axes[:normal_axis] + axes[normal_axis+1:]
+    if transpose:
+        image_axes = image_axes[::-1]
+    data_slices = [slice(None), slice(None), slice(None)]
+    data_slices[normal_axis] = normal_index
+
+    return plot_bot(field, image_axes, tuple(data_slices), **kw)
 
 
 class MultiFigure:
