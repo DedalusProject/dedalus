@@ -373,8 +373,9 @@ To build that version of the h5py library::
      git checkout mpi_collective
      export CC=mpicc
      export HDF5_DIR=$BUILD_HOME
-     python3 setup.py build --mpi   
-     python3 setup.py install --mpi
+     python3 setup.py configure --mpi
+     python3 setup.py build
+     python3 setup.py install 
 
 
 Here's the original h5py repository::
@@ -383,8 +384,9 @@ Here's the original h5py repository::
      cd h5py
      export CC=mpicc
      export HDF5_DIR=$BUILD_HOME
-     python3 setup.py build --mpi
-     python3 setup.py install --mpi
+     python3 setup.py configure --mpi
+     python3 setup.py build
+     python3 setup.py install 
 
 .. note::
      This is ugly.  We're getting a "-R" error at link, triggered by

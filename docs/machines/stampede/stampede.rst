@@ -400,8 +400,9 @@ writing.  To build that version of the h5py library::
      git checkout mpi_collective
      export CC=mpicc
      export HDF5_DIR=$BUILD_HOME
-     python3 setup.py build --mpi   
-     python3 setup.py install --mpi
+     python3 setup.py configure --mpi
+     python3 setup.py build
+     python3 setup.py install 
 
 To enable collective outputs within dedalus, edit ``dedalus2/data/evaluator.py`` and
 replace::

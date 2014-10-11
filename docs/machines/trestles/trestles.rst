@@ -1,6 +1,9 @@
 Install notes for Trestles
 ==========================
 
+.. note::
+   These are a very old set of installation instructions.  They likely no longer work.
+
 Make sure to do 
 
 `$ module purge` 

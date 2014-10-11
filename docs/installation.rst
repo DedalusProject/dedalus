@@ -38,6 +38,7 @@ Supercomputers
 
    machines/stampede/stampede
    machines/nasa_pleiades/pleiades
+   machines/nasa_discover/discover
    machines/trestles/trestles
    machines/janus/janus
    machines/savio/savio
