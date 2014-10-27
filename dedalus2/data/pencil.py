@@ -88,7 +88,7 @@ class Pencil:
             Fb = basis.FilterBoundaryRow
             Cb = basis.ConstantToBoundary
         if compound:
-            Fm = basis.FilterMatch
+            Fm = basis.FilterMatchRows
             M = basis.Match
 
         # Pencil matrices
