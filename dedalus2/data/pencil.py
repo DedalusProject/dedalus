@@ -56,65 +56,120 @@ class Pencil:
         self.domain = domain
         self.local_index = tuple(local_index)
         self.global_index = tuple(global_index)
+        if domain.bases[-1].coupled:
+            self.build_matrices = self._build_coupled_matrices
+        else:
+            self.build_matrices = self._build_uncoupled_matrices
 
-    def build_matrices(self, problem):
-        """Construct pencil matrices from problem and basis matrices."""
+    def _build_uncoupled_matrices(self, problem, names):
+        raise NotImplementedError()
 
-        # Separable operator values
-        args = []
-        for op_root in problem.op_roots:
-            for axis in range(len(problem.axis_names)-1):
-                op_name = operators.root_dict(op_root).__name__
-                op = getattr(self.domain.bases[axis], op_name)
-                args.append(op.scalar_form(self.global_index[axis]))
-        # Problem operators
-        M_eqn, L_eqn, M_bc, L_bc = problem.num_M_eqn, problem.num_L_eqn, problem.num_M_bc, problem.num_L_bc
-        # Selection matrices
-        Se, Sb, A, D = problem.selection(args)
+    def _build_coupled_matrices(self, problem, names):
+
+        index = self.global_index
+        # Find applicable equations
+        selected_eqs = [eq for eq in problem.eqs if eq['condition'](*index)]
+        selected_bcs = [bc for bc in problem.bcs if bc['condition'](*index)]
+        ndiff = sum(eq['differential'] for eq in selected_eqs)
+        # Check selections
+        nvars = problem.nvars
+        neqs = len(selected_eqs)
+        nbcs = len(selected_bcs)
+        if neqs != nvars:
+            raise ValueError("Pencil {} has {} equations for {} variables.".format(indices, neqs, nvars))
+        if nbcs != ndiff:
+            raise ValueError("Pencil {} has {} boudnary conditions for {} differential equations.".format(indices, nbcs, ndiff))
+
         # Basis matrices
-        P = basis.Preconditioner
-        F = basis.TauFilter
-        B = basis.Boundary
-        # Precompute some dot products
-        A_Se = A * Se
-        D_Se = D * Se
-        P_F = P * F
+        I = sparse.identity(basis.coeff_size, dtype=basis.coeff_dtype)
+        R = basis.Rearrange
+        if ndiff:
+            P = basis.Precondition
+            Fb = basis.FilterBoundaryRow
+            Cb = basis.ConstantToBoundary
+        if compound:
+            Fm = basis.FilterMatch
+            M = basis.Match
+
+        # Pencil matrices
+        G_eq = sparse.csr_matrix((coeffs*nvars, coeffs*Neqs), dtype=basis.dtype)
+        G_bc = sparse.csr_matrix((coeffs*nvars, coeffs*Nbcs), dtype=basis.dtype)
+        C = lambda : sparse.csr_matrix((coeffs*nvars, coeffs*nvars), dtype=basis.dtype)
+        LHS_matrices = {name: C() for name in names}
+
+        # Kronecker stencils
+        δG_eq = np.zeros([nvars, len(problem.eqs)])
+        δG_bc = np.zeros([nvars, len(problem.bcs)])
+        δC = np.zeros([nvars, nvars])
+
         # Use scipy sparse kronecker product with CSR output
         kron = partial(sparse.kron, format='csr')
 
-        # Allocate matrices
-        size = problem.nfields * basis.coeff_size
-        dtype = basis.coeff_dtype
-        M = sparse.csr_matrix((size, size), dtype=dtype)
-        L = sparse.csr_matrix((size, size), dtype=dtype)
-        # Add equation terms to matrices
-        for C, C_eqn in ((M, M_eqn), (L, L_eqn)):
-            for Qi, Ci in C_eqn:
-                Ci = Ci(*args)
-                A_Se_Ci = A_Se * Ci
-                if A_Se_Ci.any():
-                    C = C + kron(Qi, A_Se_Ci)
-                D_Se_Ci = D_Se * Ci
-                if D_Se_Ci.any():
-                    C = C + kron(P_F*Qi, D_Se_Ci)
-        # Add boundary condition terms to matrices
-        for C, C_bc in ((M, M_bc), (L, L_bc)):
-            for Qi, Ci in C_bc:
-                Ci = Ci(*args)
-                Sb_Ci = Sb * Ci
-                if Sb_Ci.any():
-                    C = C + kron(Qi, Sb_Ci)
-        # Add match terms to matrices
-        if isinstance(basis, Compound):
-            L = L + kron(basis.Match, D)
+        # Build matrices
+        bc_iter = iter(seleted_bcs)
+        for i, eq in enumerate(selected_eqs):
+
+            differential = eq['differential']
+            if differential:
+                bc = next(bc_iter)
+
+            eq_atoms = [namespace[atom] for atom in eq['atoms']]
+            if differential:
+                bc_atoms = [namespace[atom] for atom in bc['atoms']]
+
+            # Build RHS equation process matrix
+            if (not differential) and (not compound):
+                Gi_eq = R
+            elif (not differential) and compound:
+                Gi_eq = R*Fm
+            elif differential and (not compound):
+                Gi_eq = R*Fb*P
+            elif differential and compound:
+                Gi_eq = R*Fm*Fb*P
+            # Kronecker into system matrix
+            Gi_eq.eliminate_zeros()
+            δG_eq.fill(0); δG_eq[i, problem.eqs.index(eq)] = 1
+            G_eq = G_eq + kron(Gi_eq, δG_eq)
+
+            if differential:
+                # Build RHS BC process matrix
+                Gi_bc = R*Cb
+                # Kronecker into system matrix
+                Gi_bc.eliminate_zeros()
+                δG_bc.fill(0); δG_bc[i, problem.bcs.index(bc)] = 1
+                G_bc = G_bc + kron(Gi_bc, δG_bc)
+
+            # Build LHS matrices
+            for name, C in LHS.items():
+                for j in range(nvars):
+                    # Add equation terms
+                    Eij = eq[name][j](*eq_atoms)
+                    Cij = Gi_eq*Eij
+                    if differential:
+                        # Add BC terms
+                        Bij = bc[name][j](*bc_atoms)
+                        Cij = Cij + Gi_bc*Bij
+                    # Kronecker into system matrix
+                    Cij.eliminate_zeros()
+                    if Cij.nnz:
+                        δC.fill(0); δC[i, j] = 1
+                        C = C + kron(Cij, δC)
+
+        if compound:
+            # Add match terms
+            L = LHS_matrices['L']
+            δM = np.identity(nvars)
+            L = L + kron(R*M, δM)
 
         # Store with expanded sparsity for fast combination during timestepping
-        self.LHS = zeros_with_pattern(M, L).tocsr()
-        self.M = expand_pattern(M, self.LHS).tocsr()
-        self.L = expand_pattern(L, self.LHS).tocsr()
+        for C in LHS.values():
+            C.eliminate_zeros()
+        self.LHS = zeros_with_pattern(*LHS.values()).tocsr()
+        for name, C in LHS.items():
+            setattr(self, name, expand_pattern(C, self.LHS).tocsr())
 
         # Store operators for RHS
-        In = sparse.identity(basis.coeff_size, dtype=basis.coeff_dtype)
-        self.Ge = kron(In, A_Se) + kron(P_F, D_Se)
-        self.Gb = kron(B, Sb)
-
+        G_eq.eliminate_zeros()
+        self.G_eq = G_eq
+        G_bc.eliminate_zeros()
+        self.G_bc = G_bc
