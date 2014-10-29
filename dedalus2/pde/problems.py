@@ -3,14 +3,16 @@ Classes for representing systems of equations.
 
 """
 
-from collections import defaultdict
-from functools import reduce
-import operator
+import re
+from collections import OrderedDict
 import numpy as np
 import sympy as sy
-from sympy.simplify.simplify import bottom_up
 
+from ..data.metadata import MultiDict, Metadata
+from ..data import field
+from ..data import future
 from ..data import operators
+from ..tools.cache import CachedAttribute
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -19,12 +21,35 @@ logger = logging.getLogger(__name__.split('.')[-1])
 class SymbolicParsingError(Exception):
     pass
 
-
 class UnsupportedEquationError(Exception):
     pass
 
 
-class Problem:
+class Namespace(OrderedDict):
+
+    def allow_overwrites(self):
+        self._allow_overwrites = True
+
+    def disallow_overwrites(self):
+        self._allow_overwrites = False
+
+    def __setitem__(self, key, value):
+        if key in self:
+            if not self._allow_overwrites:
+                raise SymbolicParsingError("Name '{}' is used multiple times.".format(key))
+        else:
+            if not key.isidentifier():
+                raise SymbolicParsingError("Name '{}' is not a valid identifier.".format(key))
+        super().__setitem__(key, value)
+
+    def copy(self):
+        copy = Namespace()
+        copy.update(self)
+        copy._allow_overwrites = self._allow_overwrites
+        return copy
+
+
+class ProblemBase:
     """
     PDE definitions using string representations.
 
@@ -72,390 +97,384 @@ class Problem:
     """
 
 
-    default_ops = ['L', 'R']
-    op_roots = ['d', 'H']
+    def __init__(self, domain, variables):
 
-    def __init__(self, axis_names, field_names, param_names=[]):
+        self.domain = domain
+        self.variables = variables
+        self.nvars = len(variables)
 
-        # Attributes
-        self.dim = len(axis_names)
-        self.nfields = len(field_names)
-        self.parameters = dict()
-        self.equations = []
-        self.boundary_conditions = []
-        self.neqns = 0
+        self.meta = MultiDict({var: Metadata(domain) for var in variables})
 
-        eqn_factory = lambda: sy.zeros(len(self.equations)+1, self.nfields)
-        self.M_eqn = defaultdict(eqn_factory)
-        self.L_eqn = defaultdict(eqn_factory)
+        self.equations = self.eqs = []
+        self.boundary_conditions = self.bcs = []
 
-        bc_factory = lambda: sy.zeros(len(self.boundary_conditions)+1, self.nfields)
-        self.M_bc = defaultdict(bc_factory)
-        self.L_bc = defaultdict(bc_factory)
+        self.parameters = OrderedDict()
+        self.substitutions = OrderedDict()
 
-        namespace = self.namespace = {}
-        namespace['t'] = sy.Symbol('t')
-        namespace['dt'] = sy.Symbol('dt')
-        reserved_names = tuple(namespace.keys())
+    @CachedAttribute
+    def namespace(self):
 
-        def split_func(string):
-            head, sep, tail = string.partition('(')
-            if tail:
-                args = tail.strip(')').split(',')
+        namespace = Namespace()
+        namespace.disallow_overwrites()
+        # Basis-specific items
+        for axis, basis in enumerate(self.domain.bases):
+            # Grids
+            grid = field.Array(self.domain, name=basis.name)
+            grid.from_global_vector(basis.grid(1), axis)
+            namespace[basis.name] = grid
+            # Basis operators
+            for op in basis.operators:
+                namespace[op.name] = op
+        # Fields
+        for var in self.variables:
+            namespace[var] = self.domain.new_field(name=var, allocate=False)
+            namespace[var].meta = self.meta[var]
+        # Parameters
+        namespace.update(self.parameters)
+        # Built-in functions
+        namespace['Identity'] = 1
+        namespace.update(operators.parseables)
+        # Substitutions
+        for call, result in self.substitutions.items():
+            # Convert function calls to lambda expressions
+            call, result = self._convert_functions(call, result)
+            # Evaluate in current namespace
+            namespace[call] = eval(result, namespace)
+
+        return namespace
+
+    def _build_basic_dictionary(self, equation, condition):
+        LHS, RHS = self._split_sides(equation)
+        dct = dict()
+        dct['raw_equation'] = equation
+        dct['raw_condition'] = condition
+        dct['raw_LHS'] = LHS
+        dct['raw_RHS'] = RHS
+        logger.debug("  Condition: {}".format(condition))
+        logger.debug("  LHS string form: {}".format(LHS))
+        logger.debug("  RHS string form: {}".format(RHS))
+        dct['condition'] = self._lambdify_condition(dct['raw_condition'])
+        return dct
+
+    @staticmethod
+    def _split_sides(equation):
+        """Split equation string into LHS and RHS strings."""
+        # Track parenthetical level to only capture top-level equals signs,
+        # which avoids capturing equals signs in keyword assigments
+        parentheses = 0
+        top_level_equals = []
+        for i, character in enumerate(equation):
+            if character == '(':
+                parentheses += 1
+            elif character == ')':
+                parentheses -= 1
+            elif parentheses == 0:
+                if character == '=':
+                    top_level_equals.append(i)
+        if len(top_level_equals) == 0:
+            raise SymbolicParsingError("Equation contains no top-level equals signs.")
+        elif len(top_level_equals) > 1:
+            raise SymbolicParsingError("Equation contains multiple top-level equals signs.")
+        else:
+            i, = top_level_equals
+            return equation[:i], equation[i+1:]
+
+    def _lambdify_condition(self, condition):
+        """Lambdify condition test for fast evaluation."""
+        # Write call signiture for function of separable indices
+        index_names = ['n{}'.format(basis.name) for basis in self.domain.bases if basis.separable]
+        call = 'c({})'.format(','.join(index_names))
+        # Convert to lambda definition
+        call, result = self._convert_functions(call, condition)
+        # Evaluate to lambda expression
+        return eval(result, {})
+
+    @staticmethod
+    def _convert_functions(call, result):
+        """Convert math-style function definitions into Python lambda expressions."""
+        # Use regular expressions to see if name matches a function call
+        match = re.match('(.+)\((.*)\)', call)
+        if match:
+            # Build lambda expression
+            func, args = match.groups()
+            lambda_def = 'lambda {}: {}'.format(args, result)
+            return func, lambda_def
+        else:
+            # Return original rule
+            return call, result
+
+    def _build_object_forms(self, dct):
+        LHS = future.FutureField.parse(dct['raw_LHS'], self.namespace, self.domain)
+        RHS = future.FutureField.parse(dct['raw_RHS'], self.namespace, self.domain)
+        logger.debug("  LHS object form: {}".format(LHS))
+        logger.debug("  RHS object form: {}".format(RHS))
+        return LHS, RHS
+
+    def _check_object_conditions(self, LHS, RHS, BC):
+        # Compare metadata
+        self._check_meta_consistency(LHS, RHS)
+        if BC:
+            # Check constant along last axis
+            self._check_boundary_form(LHS, RHS)
+
+    def _check_meta_consistency(self, LHS, RHS):
+        """Check LHS and RHS metadata for compatability."""
+        default_meta = Metadata(self.domain)
+        for axis in range(self.domain.dim):
+            for key in default_meta[axis]:
+                check = getattr(self, '_check_meta_%s' %key)
+                check(LHS.meta[axis][key], RHS.meta[axis][key], axis)
+
+    def _check_meta_scale(self, LHS_scale, RHS_scale, axis):
+        # Solve occurs in coefficient space, so disregard scale
+        pass
+
+    def _check_meta_constant(self, LHS_constant, RHS_constant, axis):
+        # RHS must be constant if LHS is constant
+        if LHS_constant:
+            if not RHS_constant:
+                raise SymbolicParsingError("LHS is constant but RHS is nonconstant along {} axis.".format(self.domain.bases[axis].name))
+
+    def _check_meta_parity(self, LHS_parity, RHS_parity, axis):
+        # Parities must match
+        if LHS_parity != RHS_parity:
+            raise SymbolicParsingError("LHS and RHS parities along {} axis do not match.".format(self.domain.bases[axis].name))
+
+    def _check_boundary_form(self, LHS, RHS):
+        # Check that boundary expressions are constant along coupled axes
+        for ax, basis in enumerate(self.domain.bases):
+            if not basis.separable:
+                if (not LHS.meta[ax]['constant']) or (not RHS.meta[ax]['constant']):
+                    raise SymbolicParsingError("Boundary condition must be constant along '{}'.".format(basis.name))
+
+    def _build_operator_form(self, LHS):
+        """Convert operator tree to linear operator form on variables."""
+        var_dummies = [self.namespace[var] for var in self.variables]
+        LHS = LHS.distribute_over(var_dummies)
+        linear, op_form = LHS.as_symbolic_operator(var_dummies)
+        LHS = (op_form).simplify().expand()
+        logger.debug("  LHS operator form: {}".format(LHS))
+        if not linear:
+            raise UnsupportedEquationError("LHS must contain terms that are linear in fields.")
+        return LHS
+
+    def _split_linear(self, expr, x):
+        """Split expression into independent and linear parts in x."""
+        indep, linear, nonlinear = self._separate_linear(expr, x)
+        linear = (linear/x).simplify().expand()
+        if nonlinear:
+            raise UnsupportedEquationError("Equations must be first-order in '{}'.".format(x))
+        return indep, linear
+
+    @staticmethod
+    def _separate_linear(expr, *syms):
+        """Separate terms into independent, linear, and nonlinear parts."""
+        indep, linear, nonlinear = 0, 0, 0
+        for term in sy.Add.make_args(expr):
+            powers = term.expand().as_powers_dict()
+            total = sum(powers[sym] for sym in syms)
+            if total == 0:
+                indep += term
+            elif total == 1:
+                linear += term
             else:
-                args = []
-            return head, args
+                nonlinear += term
 
-        def checkname(name):
-            if not name.isidentifier():
-                raise SymbolicParsingError("Name '%s' is an invalid identifier." %name)
-            if name in reserved_names:
-                raise SymbolicParsingError("Name '%s' is reserved." %name)
-            if name in namespace:
-                raise SymbolicParsingError("Name '%s' is used multiple times." %name)
+        return indep, linear, nonlinear
 
-        const_params = []
-        nonconst_params = []
-        separable_ops = []
-        coupled_ops = []
+    def lambdify_variable_coefficients(self, expr):
+        # Extract symbolic variable coefficients
+        vars = [sy.Symbol(var, commutative=False) for var in self.variables]
+        coeffs = self._extract_left_coefficients(expr, vars)
+        # Multiply through by identity
+        I = sy.Symbol('Identity')
+        coeffs = [I*c for c in coeffs]
+        # Find atoms (operators and NCC expressions) needed to build rows
+        atoms = self._reduce_atoms(coeffs, sy.Symbol)
+        atom_objects = [eval(str(atom), self.namespace) for atom in atoms]
+        # Impose NCC constraints
+        self._require_independent(atom_objects, self.namespace[self.time])
+        self._require_separable(atom_objects)
 
-        self.axis_names = axis_names
-        self.field_names = field_names
-        self.const_params = [param for param in param_names if not bool(split_func(param)[1])]
-        self.nonconst_params = [param for param in param_names if bool(split_func(param)[1])]
-        self.separable_ops = [op+ax for op in self.op_roots for ax in axis_names[:-1]]
-        self.coupled_ops = [op+axis_names[-1] for op in self.op_roots] + self.default_ops
+        atom_names = [atom.name for atom in atoms]
+        lambdified_coeffs = self._lambdify_row(atoms, coeffs)
+        return atom_names, lambdified_coeffs
 
-        # Axes: noncommutative symbols
-        for axis in axis_names:
-            checkname(axis)
-            namespace[axis] = sy.Symbol(axis, commutative=False)
-        # Fields: noncommutative symbols
-        for field in field_names:
-            checkname(field)
-            namespace[field] = sy.Symbol(field, commutative=False)
-        # Constant parameters: commutative symbols
-        for param in self.const_params:
-            checkname(param)
-            namespace[param] = sy.Symbol(param)
-        # Nonconstant parameters: functions
-        for param in self.nonconst_params:
-            head, args = split_func(param)
-            checkname(head)
-            namespace[head] = sy.Function(head)(*[namespace[arg] for arg in args])
-        # Operators: function symbols
-        # Separable operators: commutative symbols
-        for op in self.separable_ops:
-            checkname(op)
-            namespace[op] = sy.Symbol(op)
-        # Coupled operators: noncommutative symbols
-        for op in self.coupled_ops:
-            checkname(op)
-            namespace[op] = sy.Symbol(op, commutative=False)
+    @staticmethod
+    def _extract_left_coefficients(expr, symbols):
+        """Extract left coefficients from a linear expression."""
+        expr = sy.sympify(expr)
+        # Extract coefficients
+        coeffs = [0] * len(symbols)
+        for i, sym in enumerate(symbols):
+            expr = expr.simplify().expand()
+            for term in sy.Add.make_args(expr):
+                factors = sy.Mul.make_args(term)
+                if factors[-1] is sym:
+                    coeffs[i] += sy.Mul(*factors[:-1])
+            expr = expr - coeffs[i]*sym
+        # Check for completion
+        if expr.simplify().expand() != 0:
+            raise ValueError("Leftover: {}".format(remaining))
 
-        # NOTES
-        # Replacing dt function with commutative symbol requires no time dependence outside of fields
-        # Requires no time dependence outside of fields
-        # (to replace dt function on fields with commutative symbol)
-        # Requires no transverse dependence outside of fields
-        # (to replace separable operators acting on fields with commutative symbols)
-        # Replace coupled operators acting on fields with non-commutative symbols
+        return coeffs
 
-    def add_equation(self, eqn_str, condition="True"):
+    @staticmethod
+    def _reduce_atoms(exprs, *args, **kw):
+        """Extract symbolic atoms across a list of expressions."""
+        atoms = set()
+        for expr in exprs:
+            expr = sy.sympify(expr)
+            atoms.update(expr.atoms(*args, **kw))
+        atoms = sorted(list(atoms), key=sy.default_sort_key)
+        return atoms
+
+    def _require_independent(self, atoms, dep):
+        """Require NCCs to be independent of some atom."""
+        for atom in atoms:
+            # Impose condition on NCCs, skipping raw operator classes
+            if isinstance(atom, field.Operand):
+                if atom.has(dep):
+                    raise UnsupportedEquationError("LHS coefficient '{}' is not independent of '{}'.".format(atom, dep))
+
+    def _require_separable(self, atoms):
+        """Require NCCs to be constant along separable directions."""
+        for atom in atoms:
+            #print(atom)
+            # Impose condition on NCCs, skipping raw operator classes
+            if isinstance(atom, field.Operand):
+                for axis, basis in enumerate(self.domain.bases):
+                    if basis.separable:
+                        if not atom.meta[axis]['constant']:
+                            raise UnsupportedEquationError("LHS coefficient '{}' is non-constant along separable direction '{}'.".format(atom, basis.name))
+            elif isinstance(atom, type):
+                if issubclass(atom, operators.Coupled):
+                    if atom.basis.separable:
+                        raise UnsupportedEquationError("LHS coefficient '{}' is coupled along direction '{}'.".format(atom.name, atom.basis.name))
+
+    @staticmethod
+    def _lambdify_row(atoms, row):
+
+        def dummy_lambdify(atoms, dummies, expr):
+            expr = sy.sympify(expr)
+            # Substitute dummies
+            expr = expr.subs(zip(atoms, dummies))
+            # Collect atoms to try to minimize dot products
+            expr = expr.collect(dummies).simplify()
+            # Lambdify over dummies
+            return sy.lambdify(dummies, expr, modules='numpy')
+
+        # Replace atoms with dummies
+        # (NCC expressions might not be valid identifiers)
+        dummies = [sy.Dummy(**atom.assumptions0) for atom in atoms]
+        return [dummy_lambdify(atoms, dummies, coeff) for coeff in row]
+
+    def _coupled_differential_order(self, expr):
+        """Find coupled differential order of an expression, and require to be first order."""
+        # Find coupled derivative operators
+        first_order = [basis.Differentiate for basis in self.domain.bases if not basis.separable]
+        first_order = [sy.Symbol(op.name, commutative=False) for op in first_order]
+        # Separate terms based on dependence
+        _, linear, nonlinear = self._separate_linear(expr, *first_order)
+        if nonlinear:
+            raise UnsupportedEquationError("Equations must be first-order in coupled derivatives.")
+        return bool(linear)
+
+    # def num_coeffs(self, sym_coeffs, domain, order):
+    #     def op_matrix(op, domain):
+    #         if op == 1:
+    #             return 1
+    #         if op.name in self.coupled_ops:
+    #             # Lookup through domain
+    #             dummy = domain.new_field()
+    #             return coupled_ops[op.name](dummy).matrix_form()
+    #         else:
+    #             # Evaluate NCCs as operator trees
+    #             print(op)
+    #             operator = operators.Operator.from_string(op, self.parameters, domain)
+    #             field = operator.evaluate()
+    #             field.require_coeff_space()
+    #             # Scatter const coeffs from root
+    #             if domain.dist.rank == 0:
+    #                 select = (0,) * (domain.dim - 1)
+    #                 coeffs = field['c'][select]
+    #             else:
+    #                 coeffs = None
+    #             coeffs = domain.dist.comm_cart.scatter(coeffs, root=0)
+    #             return domain.bases[-1].build_mult(coeffs, order)
+
+
+class Problem(ProblemBase):
+
+    def __init__(self, domain, variables, time='t'):
+
+        super().__init__(domain, variables)
+        self.time = time
+
+    @CachedAttribute
+    def namespace(self):
+
+        # Build time derivative operator
+        class dt(future.FutureScalar):
+            name = 'd' + self.time
+            def as_symbolic_operator(self, fields):
+                arg_linear, arg_op = self.args[0].as_symbolic_operator(fields)
+                if arg_linear:
+                    op = sy.Symbol(self.name) * arg_op
+                    return True, op
+                else:
+                    raise ValueError("Cannot take time derivative of non-field")
+            def meta_constant(self, axis):
+                # Preserves constancy
+                return self.args[0].meta[axis]['constant']
+            def meta_parity(self, axis):
+                # Preserves parity
+                return self.args[0].meta[axis]['parity']
+
+        # Add time derivative operator and scalar to base namespace
+        namespace = super().namespace
+        namespace[self.time] = field.Scalar(name=self.time)
+        namespace[dt.name] = dt
+
+        return namespace
+
+    def add_equation(self, equation, condition="True"):
         """Add equation to problem."""
 
-        LHS_str, RHS_str = eqn_str.split("=")
-        # Parse LHS to symbolic operators
-        expr = self.parse_linear(LHS_str)
-        # Build equation dictionary
-        eqn = dict()
-        eqn['LHS_str'] = LHS_str
-        eqn['RHS_str'] = RHS_str
-        eqn['condition'] = condition
-        dz = self.namespace['d'+self.axis_names[-1]]
-        eqn['differential'] = expr.has(dz)
-        # Split operator terms
-        # split_terms = self.split_operator_terms(expr)
-        # Check equation conditions
-        # self.check_equation_operators(split_terms)
-        # Add equation to system
-        split_terms = expr
-        self.extract_coefficients(split_terms, self.M_eqn, self.L_eqn)
-        self.equations.append(eqn)
+        logger.debug("Parsing Eqn {}".format(len(self.boundary_conditions)))
+        dct = self._build_basic_dictionary(equation, condition)
 
-    def add_bc(self, bc_str, condition="True"):
-        """Add boundary condition to problem."""
+        LHS, RHS = self._build_object_forms(dct)
+        self._check_object_conditions(LHS, RHS, BC=False)
 
-        LHS_str, RHS_str = bc_str.split("=")
-        # Parse LHS to symbolic operators
-        expr = self.parse_linear(LHS_str)
-        # Build boundary condition dictionary
-        bc = dict()
-        bc['LHS_str'] = LHS_str
-        bc['RHS_str'] = RHS_str
-        bc['condition'] = condition
-        # Split operator terms
-        # split_terms = self.split_operator_terms(expr)
-        # Check bc conditions
-        # self.check_bc_operators(split_terms)
-        # Add bc to system
-        split_terms = expr
-        self.extract_coefficients(split_terms, self.M_bc, self.L_bc)
-        self.boundary_conditions.append(bc)
+        LHS = self._build_operator_form(LHS)
+        #self._check_operator_conditions(dct, LHS)
+        dct['differential'] = self._coupled_differential_order(LHS)
 
-    def parse_linear(self, expr):
-        """Parse expression string into new LHS row."""
+        L, M = self._split_linear(LHS, sy.Symbol('d'+self.time))
+        dct['L_atoms'], dct['L'] = self.lambdify_variable_coefficients(L)
+        dct['M_atoms'], dct['M'] = self.lambdify_variable_coefficients(M)
 
-        def split_func(string):
-            head, sep, tail = string.partition('(')
-            if tail:
-                args = tail.strip(')').split(',')
-            else:
-                args = []
-            return head, args
+        self.equations.append(dct)
 
-        # References
-        namespace = self.namespace
-        axes = [namespace[axis] for axis in self.axis_names]
-        fields = [namespace[field] for field in self.field_names]
+    def add_bc(self, equation, condition="True"):
+        """Add equation to problem."""
 
-        linear_op_names = ['dt'] + self.separable_ops + self.coupled_ops
-        linear_operators = [sy.Function(op)for op in linear_op_names]
-        coupled_operators = [namespace[op] for op in self.coupled_ops]
-        ncc = [namespace[split_func(param)[0]] for param in self.nonconst_params]
+        logger.debug("Parsing BC {}".format(len(self.boundary_conditions)))
+        dct = self._build_basic_dictionary(equation, condition)
 
-        ## Parse string to symbolic expression
-        expr = eval(expr, namespace).simplify().expand()
-        # Temporarily swap axes with commutative symbols to float NCCs left in multiplications
-        dummies = [sy.Dummy() for axis in axes]
-        expr = expr.subs(zip(axes, dummies))
-        expr = expr.subs(zip(dummies, axes))
-        # Enforce unary input for linear operators
-        def enforce_unary(subexpr):
-            if type(subexpr) in linear_operators:
-                if len(subexpr.args) > 1:
-                    raise SymbolicParsingError("Linear operators only accept one argument: %s" %subexpr)
-            return subexpr
-        expr = bottom_up(expr, enforce_unary)
-        # Distribute linear operators
-        def distribute_subexpression(subexpr):
-            if type(subexpr) in linear_operators:
-                terms = sy.Add.make_args(subexpr.args[0])
-                subexpr = sum(subexpr.func(term) for term in terms)
-            return subexpr
-        expr = bottom_up(expr, distribute_subexpression)
+        LHS, RHS = self._build_object_forms(dct)
+        self._check_object_conditions(LHS, RHS, BC=True)
 
-        logging.debug("Parsing result: %s" %expr)
+        LHS = self._build_operator_form(LHS)
+        #self._check_operator_conditions(dct, LHS)
+        dct['differential'] = self._coupled_differential_order(LHS)
 
-        ## Convert to operator form
-        # Require no transverse dependence in coefficients, so transverse modes
-        # are separable and transverse operators are scalar/commutative
-        if expr.has(*axes[:-1]):
-            raise UnsupportedEquationError("LHS coefficients must be independent of transverse axes.")
-        # Require no time dependence in coefficients, so dt is commutative
-        if expr.has(namespace['t']):
-            raise UnsupportedEquationError("LHS coefficients must be time-independent.")
-        # Convert linear operators acting on fields to operator form
-        def convert_subexpression(subexpr):
-            if type(subexpr) in linear_operators:
-                if subexpr.has(*fields):
-                    symbol = namespace[subexpr.func.__name__]
-                    subexpr = symbol * subexpr.args[0]
-            return subexpr
-        expr = bottom_up(expr, convert_subexpression)
-        # Require linearity in fields
-        for term in sy.Add.make_args(expr):
-            factors = sy.Mul.make_args(term)
-            if factors[-1] not in fields:
-                raise UnsupportedEquationError("Last non-commutative term is not a field: %s" %term)
-            if sy.Mul(*factors[:-1]).has(*fields):
-                raise UnsupportedEquationError("Term is non-linear: %s" %term)
+        L, M = self._split_linear(LHS, sy.Symbol('d'+self.time))
+        dct['L_atoms'], dct['L'] = self.lambdify_variable_coefficients(L)
+        dct['M_atoms'], dct['M'] = self.lambdify_variable_coefficients(M)
 
-        logging.debug("Operator form: %s" %expr)
-        return expr
+        self.boundary_conditions.append(dct)
 
-    def check_equation_operators(self, split_terms):
 
-        #dz =
-        # Require no higher-than-first-order dz dependence
-        for coeff, op, field in split_terms:
-            powers = op.as_powers_dict()
-            if powers[dz] > 1:
-                raise UnsupportedEquationError("Equations must be first-order in vertical derivatives.")
-
-    def check_bc_operators(self, split_terms):
-
-        # First order dz?
-        # Require functional form
-        for coeff, op, field in split_terms:
-            factors = sy.Mul.make_args(op)
-            if factors[0] not in linear_functionals:
-                raise SymbolicParsingError("Boundary conditions terms must have a linear functional as the final operator: %s" %term)
-
-    def extract_coefficients(self, expr, M_coeffs, L_coeffs):
-
-        namespace = self.namespace
-        fields = [namespace[field] for field in self.field_names]
-        matrices = [namespace[name] for name in self.coupled_ops+self.nonconst_params]
-
-        ## Extract coefficients
-        # Split into form dt*M + L, requiring no higher-order dt dependence
-        dt = namespace['dt']
-        L, M = expr.as_independent(dt, as_Add=True)
-        M = (M/dt).simplify().expand()
-        if M.has(dt):
-            raise UnsupportedEquationError("Equations must be first-order in time derivatives.")
-        # Add row to existing operator coefficient matrices
-        # (New matrices will be expanded via factory closure)
-        new_row = sy.zeros(1, self.nfields)
-        for coeffs in (M_coeffs, L_coeffs):
-            for op in coeffs:
-                coeffs[op] = coeffs[op].col_join(new_row)
-        # Add expressions to operator coefficient matrices
-        for expr, coeffs in ((M, M_coeffs), (L, L_coeffs)):
-            if expr != 0:
-                for term in sy.Add.make_args(expr):
-                    # Split into (scalar coeff)*(compound op)*(field)
-                    field = sy.Mul.make_args(term)[-1]
-                    coeff, compound_op = (term/field).as_independent(*matrices)
-                    # Add coeff to operator coefficient matrix
-                    f = fields.index(field)
-                    coeffs[compound_op][-1, f] += coeff
-
-    def expand(self, domain, order=1):
-        """
-        Expand equations and BCs into z-basis coefficient matrices.
-
-        Parameters
-        ----------
-        domain : domain object
-            Problem domain
-        order : int, optional
-            Number of terms to retain in the spectral expansion of LHS
-            nonconstant coefficients (default: 1)
-
-        """
-
-        # Check dimension compatibility
-        if domain.dim != self.dim:
-            raise ValueError("Dimension mismatch between problem and domain")
-        for i in range(domain.dim):
-            domain.bases[i].name = self.axis_names[i]
-
-        # Check parameters types
-        for param in self.const_params:
-            if not np.isscalar(self.parameters[param]):
-                raise ValueError("%s parameter must be a scalar." %param)
-        for param in self.nonconst_params:
-            if not isinstance(self.parameters[param], Field):
-                raise ValueError("%s parameter must be a field." %param)
-
-        # Convert M_eqn, L_eqn, M_bc, L_bc, F_eqn, F_bc
-        self.num_M_eqn = self.num_coeffs(self.M_eqn, domain, order)
-        self.num_L_eqn = self.num_coeffs(self.L_eqn, domain, order)
-        self.num_M_bc = self.num_coeffs(self.M_bc, domain, order)
-        self.num_L_bc = self.num_coeffs(self.L_bc, domain, order)
-
-    def num_coeffs(self, sym_coeffs, domain, order):
-
-        coupled_ops = {}
-        for op_root in self.op_roots:
-            op_name = operators.root_dict[op_root].__name__
-            op = getattr(domain.bases[-1], op_name, None)
-            if op is not None:
-                coupled_ops[op_root + domain.bases[-1].name] = op
-        for op in self.default_ops:
-            coupled_ops[op] = operators.op_dict[op]
-
-        def op_matrix(op, domain):
-            if op == 1:
-                return 1
-            if op.name in self.coupled_ops:
-                # Lookup through domain
-                dummy = domain.new_field()
-                return coupled_ops[op.name](dummy).matrix_form()
-            else:
-                # Evaluate NCCs as operator trees
-                print(op)
-                operator = operators.Operator.from_string(op, self.parameters, domain)
-                field = operator.evaluate()
-                field.require_coeff_space()
-                # Scatter const coeffs from root
-                if domain.dist.rank == 0:
-                    select = (0,) * (domain.dim - 1)
-                    coeffs = field['c'][select]
-                else:
-                    coeffs = None
-                coeffs = domain.dist.comm_cart.scatter(coeffs, root=0)
-                return domain.bases[-1].build_mult(coeffs, order)
-
-        def compound_op_matrix(compound_op, domain):
-            factors = sy.Mul.make_args(compound_op)
-            matrices = (op_matrix(factor, domain) for factor in factors)
-            return reduce(operator.mul, matrices, 1)
-
-        num_coeffs = []
-        for sym_op, sym_coeff in sym_coeffs.items():
-            # Fix parameters
-            const_params = {pn: self.parameters[pn] for pn in self.const_params}
-            # Build operator matrices using NCCs
-            num_op = compound_op_matrix(sym_op, domain)
-            # Build coefficient matrices using CCs (still depend on separable ops)
-            expr = sym_coeff.subs(const_params)
-            args = [self.namespace[op] for op in self.separable_ops]
-            num_coeffs.append((num_op, sy.lambdify(args, expr, modules='math')))
-
-        return num_coeffs
-
-    def system_selection(self, args):
-        """Build selection matrices for given pencil index."""
-
-        # References
-        nfields = self.nfields
-        neqns = self.neqns
-        nbcs = self.nbcs
-        namespace = dict(zip(self.separable_ops, args))
-
-        # Select equations
-        eqn_select = []
-        for e, eqn in enumerate(self.equations):
-            if eval(eqn['condition'], namespace):
-                eqn_select.append(e)
-        # Count differential equations
-        diff_eqn = []
-        for se, e in enumerate(eqn_select):
-            if self.equations[e]['differential']:
-                diff_eqn.append(se)
-        # Select boundary conditions
-        bc_select = []
-        for b, bc in enumerate(self.boundary_conditions):
-            if eval(bc['condition'], namespace):
-                bc_select.append(b)
-
-        # Check selections
-        # Need as many equations as fields
-        if len(eqn_select) != nfields:
-            raise ValueError("%i equations for %i fields for pencil index: %s" %index)
-        # Need no more boundary conditions than differential eqns
-        # For polynomial bases, should be the same, but this is a hack for fully Fourier
-        if len(bc_select) > len(diff_eqn):
-            raise ValueError("Too many boundary conditions for pencil index: %s" %index)
-
-        # Build equation selection array
-        Se = np.zeros((nfields, neqns), dtype=int)
-        for se, e in enumerate(eqn_select):
-            Se[se, e] = 1
-        # Build differential and algebraic filter arrays
-        D = np.zeros((nfields, nfields), dtype=int)
-        for se in diff_eqn:
-            D[se, se] = 1
-        A = np.identity(nfields) - D
-        # Build boundary condition selection array
-        Sb = np.zeros((nfields, nbcs), dtype=int)
-        for bs, b in enumerate(bc_select):
-            se = diff_eqn[bs]
-            sb[se, b] = 1
-
-        # Cast arrays as matrices for easy linear algebra
-        return np.matrix(Se), np.matrix(Sb), np.matrix(A), np.matrix(D)
 
