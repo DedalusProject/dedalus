@@ -6,22 +6,200 @@ Class for data fields.
 import weakref
 from functools import partial
 import numpy as np
-from mpi4py import mpi
+from mpi4py import MPI
+import sympy as sy
 from scipy import sparse
 from scipy.sparse import linalg as splinalg
 import weakref
 
-from .future import Future
+from .metadata import Metadata
 from ..libraries.fftw import fftw_wrappers as fftw
-from ..tools.general import rev_enumerate
 from ..tools.config import config
+from ..tools.array import reshape_vector
 
 # Load config options
 permc_spec = config['linear algebra']['permc_spec']
 use_umfpack = config['linear algebra'].getboolean('use_umfpack')
 
 
-class Field(Future):
+class Operand:
+
+    def __getattr__(self, attr):
+        # Intercept numpy ufunc calls
+        from .operators import UnaryGridFunction
+        try:
+            ufunc = UnaryGridFunction.supported[attr]
+            return partial(UnaryGridFunction, ufunc, self)
+        except KeyError:
+            raise AttributeError("%r object has no attribute %r" %(self.__class__.__name__, attr))
+
+    ## Idea for alternate ufunc implementation based on changes coming in numpy 1.10
+    # def __numpy_ufunc__(self, ufunc, method, i, inputs, **kw):
+    #     from .operators import UnaryGridFunction
+    #     if ufunc in UnaryGridFunction.supported:
+    #         return UnaryGridFunction(ufunc, self, **kw)
+    #     else:
+    #         return NotImplemented
+
+    def __abs__(self):
+        # Call: abs(self)
+        from .operators import UnaryGridFunction
+        return UnaryGridFunction(np.absolute, self)
+
+    def __neg__(self):
+        # Call: -self
+        return ((-1) * self)
+
+    def __add__(self, other):
+        # Call: self + other
+        from .operators import Add
+        return Add(self, other)
+
+    def __radd__(self, other):
+        # Call: other + self
+        from .operators import Add
+        return Add(other, self)
+
+    def __sub__(self, other):
+        # Call: self - other
+        return (self + (-other))
+
+    def __rsub__(self, other):
+        # Call: other - self
+        return (other + (-self))
+
+    def __mul__(self, other):
+        # Call: self * other
+        from .operators import Multiply
+        return Multiply(self, other)
+
+    def __rmul__(self, other):
+        # Call: other * self
+        from .operators import Multiply
+        return Multiply(other, self)
+
+    def __truediv__(self, other):
+        # Call: self / other
+        return (self * other**(-1))
+
+    def __rtruediv__(self, other):
+        # Call: other / self
+        return (other * self**(-1))
+
+    def __pow__(self, other):
+        # Call: self ** other
+        from .operators import Power
+        return Power(self, other)
+
+    def __rpow__(self, other):
+        # Call: other ** self
+        from .operators import Power
+        return Power(other, self)
+
+    @staticmethod
+    def cast(x, domain=None):
+        x = Operand.raw_cast(x)
+        if domain:
+            # Replace empty domains
+            if x.domain.dim == 0:
+                x.domain = domain
+            elif x.domain != domain:
+                    raise ValueError("Cannot cast operand to different domain.")
+        return x
+
+    @staticmethod
+    def raw_cast(x):
+        if isinstance(x, Operand):
+            return x
+        elif np.isscalar(x):
+            return Scalar(value=x)
+        else:
+            raise ValueError("Cannot cast type: {}".format(type(x)))
+
+
+class Data(Operand):
+
+    __array_priority__ = 100.
+
+    def __repr__(self):
+        return '<{} {}>'.format(self.__class__.__name__, id(self))
+
+    def __str__(self):
+        if self.name:
+            return self.name
+        else:
+            return self.__repr__()
+
+    def atoms(self, *types, **kw):
+        if isinstance(self, types) or (not types):
+            return (self,)
+        else:
+            return ()
+
+    def has(self, *atoms):
+        return (self in atoms)
+
+    def distribute_over(self, atoms):
+        return self
+
+
+class Scalar(Data):
+
+    class ScalarMeta:
+        """Shortcut class to return scalar metadata for any axis."""
+        def __getitem__(self, axis):
+            return {'constant': True, 'parity': 1}
+
+    def __init__(self, value=None, name=None):
+        from .domain import EmptyDomain
+        self.value = value
+        self.name = name
+        self.meta = self.ScalarMeta()
+        self.domain = EmptyDomain()
+
+    def __str__(self):
+        if self.name:
+            return self.name
+        else:
+            return str(self.value)
+
+    def as_symbolic_operator(self, fields):
+        if self.name:
+            return False, sy.Symbol(self.name)
+        else:
+            return False, self.value
+
+
+class Array(Data):
+
+    def __init__(self, domain, name=None):
+        self.domain = domain
+        self.name = name
+        self.meta = Metadata(domain)
+
+    def from_global_vector(self, data, axis):
+        # Infer scale from global size
+        scale = data.size / self.domain.bases[axis].base_grid_size
+        # Set metadata
+        for i in range(self.domain.dim):
+            axmeta = self.meta[i]
+            axmeta['constant'] = False if (i == axis) else True
+            axmeta['scale'] = scale if (i == axis) else None
+            if 'parity' in axmeta:
+                axmeta['parity'] = False if (i == axis) else True
+        # Save local slice
+        local_slice =  self.domain.dist.grid_layout.slices(scale)[axis]
+        local_data = data[local_slice]
+        self.data = reshape_vector(local_data, dim=self.domain.dim, axis=axis)
+
+    def as_symbolic_operator(self, fields):
+        if self.name:
+            return (self in fields), sy.Symbol(self.name, commutative=False)
+        else:
+            raise ValueError("Can't represent unnamed Array symbolically")
+
+
+class Field(Data):
     """
     Scalar field over a domain.
 
@@ -43,7 +221,7 @@ class Field(Future):
 
     # To Do: cache deallocation
 
-    def __init__(self, domain, name=None):
+    def __init__(self, domain, name=None, allocate=True):
 
         # Initial attributes
         self.name = name
@@ -53,11 +231,12 @@ class Field(Future):
         domain._field_count += 1
 
         # Metadata
-        self.meta = [basis.default_meta() for basis in domain.bases]
+        self.meta = Metadata(domain)
 
         # Set layout and scales to build buffer and data
         self._layout = domain.dist.coeff_layout
-        self.set_scales(1, keep_data=False)
+        if allocate:
+            self.set_scales(1, keep_data=False)
         self.name = name
 
     def clean(self):
@@ -68,7 +247,7 @@ class Field(Future):
         self.set_scales(self.domain.dealias, keep_data=False)
         # Clear metadata
         self.name = None
-        self.meta = [basis.default_meta() for basis in self.domain.bases]
+        self.meta = Metadata(self.domain)
         self.data.fill(0.)
 
     @property
@@ -95,15 +274,6 @@ class Field(Future):
         if self.domain:
             self.clean()
             self.domain._collect_field(self)
-
-    def __repr__(self):
-        return '<Field %i>' %id(self)
-
-    def __str__(self):
-        if self.name:
-            return self.name
-        else:
-            return self.__repr__()
 
     def __getitem__(self, layout):
         """Return data viewed in specified layout."""
@@ -297,3 +467,20 @@ class Field(Future):
             out_c[p] = splinalg.spsolve(LHS, rhs, use_umfpack=use_umfpack, permc_spec=permc_spec)
 
         return out
+
+    def as_symbolic_operator(self, fields):
+        return (self in fields), sy.Symbol(self.name, commutative=False)
+
+    @staticmethod
+    def cast(input, domain):
+        from .operators import FieldCopy
+        from .future import FutureField
+        # Cast to operand and check domain
+        input = Operand.cast(input, domain=domain)
+        if isinstance(input, (Field, FutureField)):
+            return input
+        else:
+            # Cast to FutureField
+            return FieldCopy(input, domain)
+
+

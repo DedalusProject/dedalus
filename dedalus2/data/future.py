@@ -168,6 +168,8 @@ class Future(Operand):
         # field without modifying the data of the arguments.
         raise NotImplementedError()
 
+    def distribute_over(self, vars):
+        return self
 
 class FutureScalar(Future):
     """Class for deferred operations producing a Scalar."""
