@@ -11,7 +11,8 @@ import numpy as np
 from mpi4py import MPI
 
 from .system import FieldSystem
-from .operators import Operator, Cast
+#from .operators import Operator, Cast
+from .future import Future, FutureField
 from ..tools.array import reshape_vector
 from ..tools.general import OrderedSet
 from ..tools.general import oscillate
@@ -201,12 +202,13 @@ class Handler:
             name = str(task)
 
         # Create operator
-        if isinstance(task, Operator):
-            op = task
-        elif isinstance(task, str):
-            op = Operator.from_string(task, self.vars, self.domain)
+        # if isinstance(task, Operator):
+        #     op = task
+        if isinstance(task, str):
+            op = Future.from_string(task, self.vars, self.domain)
         else:
-            op = Cast(task)
+            op = FutureField.cast(task)
+            # op = Cast(task)
 
         # Build task dictionary
         task = dict()

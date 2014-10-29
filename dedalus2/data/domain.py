@@ -6,6 +6,7 @@ Class for problem domain.
 import logging
 import numpy as np
 
+from .metadata import Metadata
 from .distributor import Distributor
 from .field import Field
 #from .operators import create_diff_operator
@@ -74,18 +75,20 @@ class Domain:
     def get_basis_object(self, basis_like):
         """Return basis from a related object."""
 
+        # Objects
         if basis_like in self.bases:
             return basis_like
-        if basis_like in self.diff_ops:
-            axis = self.diff_ops.index(basis_like)
-            return self.bases[axis]
-        if isinstance(basis_like, str):
-            for b in self.bases:
-                if basis_like == b.name:
-                    return b
-            raise ValueError("No matching basis name.")
-        else:
+        # Indices
+        elif isinstance(basis_like, int):
             return self.bases[basis_like]
+        # Names
+        if isinstance(basis_like, str):
+            for basis in self.bases:
+                if basis_like == basis.name:
+                    return basis
+        # Otherwise
+        else:
+            return None
 
     def grids(self, scales=None):
         """Return list of local grids along each axis."""
@@ -154,3 +157,30 @@ class Domain:
         else:
             return tuple(scales)
 
+
+class EmptyDomain:
+
+    def __init__(self, grid_dtype=np.complex128):
+
+        self.bases = []
+        self.dim = 0
+
+    def get_basis_object(self, basis_like):
+        """Return basis from a related object."""
+
+        return None
+
+
+def combine_domains(*domains):
+    # Drop Nones
+    domains = [domain for domain in domains if domain]
+    # Drop Emptys
+    domains = [domain for domain in domains if not isinstance(domain, EmptyDomain)]
+    # Get set
+    domain_set = set(domains)
+    if len(domain_set) == 0:
+        return EmptyDomain()
+    if len(domain_set) > 1:
+        raise ValueError("Non-unique domains")
+    else:
+        return list(domain_set)[0]
