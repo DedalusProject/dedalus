@@ -3,240 +3,54 @@ Abstract and built-in classes defining deferred operations on fields.
 
 """
 
-from functools import reduce, partial
+from functools import partial
 import numpy as np
+import sympy as sy
 
-from .future import Future
-from .field import Field
+from .field import Operand, Data, Scalar, Array, Field
+from .future import Future, FutureScalar, FutureArray, FutureField
 from ..tools.array import reshape_vector
-from ..tools.general import OrderedSet
 from ..tools.dispatch import MultiClass
 
 
-class Operator(Future):
-    """
-    Base class for deferred operations on fields.
+# Use simple decorator to track parseable operators
+parseables = {}
+def parseable(cls):
+    parseables[cls.name] = cls
+    return cls
 
-    Parameters
-    ----------
-    *args : fields, operators, and numeric types
-        Operands. Number must match class attribute `arity`, if present.
-    out : field, optional
-        Output field.  If not specified, a new field will be used.
-
-    Notes
-    -----
-    Operators are stacked (i.e. provided as arguments to other operators) to
-    construct trees that represent compound expressions.  Nodes are evaluated
-    by first recursively evaluating their subtrees, and then calling the
-    `operate` method.
-
-    """
-
-    name = 'Op'
-    arity = None
-    store_last = False
-
-    def __init__(self, *args, domain=None, out=None):
-
-        # Check arity
-        if self.arity is not None:
-            if len(args) != self.arity:
-                raise ValueError("Wrong number of arguments.")
-        # Infer domain from arguments
-        if domain is None:
-            domain = unique_domain(out, *args)
-        # Required attributes
-        self.args = list(args)
-        self.original_args = list(args)
-        self.domain = domain
-        self.out = out
-        self.last_id = None
-
-    def __repr__(self):
-        repr_args = map(repr, self.args)
-        return '%s(%s)' %(self.name, ', '.join(repr_args))
-
-    def __str__(self):
-        str_args = map(str, self.args)
-        return '%s(%s)' %(self.name, ', '.join(str_args))
-
-    # def __getattr__(self, attr):
-    #     # Intercept numpy ufunc calls
-    #     if attr in UfuncWrapper.supported:
-    #         ufunc = UfuncWrapper.supported[attr]
-    #         return partial(UfuncWrapper, ufunc, self)
-    #     else:
-    #         raise AttributeError("%r object has no attribute %r" %(self.__class__.__name__, attr))
-
-    def reset(self):
-        """Restore original arguments."""
-
-        self.args = list(self.original_args)
-
-    def field_set(self, include_out=False):
-        """Get set of field leaves."""
-
-        # Recursively collect field arguments
-        fields = OrderedSet()
-        for a in self.args:
-            if isinstance(a, Field):
-                fields.add(a)
-            elif isinstance(a, Operator):
-                fields.update(a.field_set(include_out=include_out))
-
-        # Add output field as directed
-        if include_out:
-            if self.out:
-                fields.add(self.out)
-
-        return fields
-
-    def evaluate(self, id=None, force=True):
-        """Recursively evaluate operation."""
-
-        # Check storage
-        if self.store_last and (id is not None):
-            if id == self.last_id:
-                return self.last_out
-            else:
-                # Clear cache to free output field
-                self.last_id = None
-                self.last_out = None
-
-        # Recursively attempt evaluation of all operator arguments
-        # Track evaluation success with flag
-        all_eval = True
-        for i, a in enumerate(self.args):
-            if isinstance(a, Field):
-                a.set_scales(self.domain.dealias, keep_data=True)
-            if isinstance(a, Operator):
-                a_eval = a.evaluate(id=id, force=force)
-                # If evaluation succeeds, substitute result
-                if a_eval is not None:
-                    self.args[i] = a_eval
-                # Otherwise change flag
-                else:
-                    all_eval = False
-
-        # Return None if any arguments are not evaluable
-        if not all_eval:
-            return None
-
-        # Check conditions unless forcing evaluation
-        if not force:
-            # Return None if operator conditions are not satisfied
-            if not self.check_conditions():
-                return None
-
-        # Allocate output field if necessary
-        if self.out:
-            out = self.out
-        else:
-            out = self.domain.new_field()
-
-        # Copy metadata
-        out.meta = self.meta
-
-        # for axis in range(self.domain.dim):
-        #     out.meta[axis].update(self.meta[axis])
-        # out.set_scales(self.domain.dealias, keep_data=False)
-
-        # Perform operation
-        self.operate(out)
-
-        # Update metadata
-        #out.meta
-        #np.copyto(out.constant, self.constant)
-
-        # Reset to free temporary field arguments
-        self.reset()
-
-        # Update storage
-        if self.store_last and (id is not None):
-            self.last_id = id
-            self.last_out = out
-
-        return out
-
-    def attempt(self, id=None):
-        """Recursively attempt to evaluate operation."""
-
-        return self.evaluate(id=id, force=False)
-
-    @property
-    def meta(self):
-        meta = [basis.default_meta() for basis in self.domain.bases]
-        for axis in range(self.domain.dim):
-            for key in meta[axis]:
-                meta[axis][key] = getattr(self, 'meta_%s' %key)(axis)
-        return meta
-
-    def meta_scale(self, axis):
-        return self.domain.bases[axis].dealias
-
-    def check_conditions(self):
-        """Check that all argument fields are in proper layouts."""
-
-        # This method must be implemented in derived classes and should return
-        # a boolean indicating whether the operation can be computed without
-        # changing the layout of any of the field arguments.
-
-        raise NotImplementedError()
-
-    def operate(self, out):
-        """Perform operation."""
-
-        # This method must be implemented in derived classes, take an output
-        # field as its only argument, and evaluate the operation into this
-        # field without modifying the data of the arguments.
-
-        raise NotImplementedError()
-
-    @staticmethod
-    def from_string(string, vars, domain):
-        """Build operator tree from string expression."""
-
-        expression = eval(string, vars)
-        if isinstance(expression, Operator):
-            return expression
-        elif isinstance(expression, Field):
-            return Cast(expression)
-        else:
-            return Cast(expression, domain)
+# Other helpers
+def is_integer(x):
+    if isinstance(x, int):
+        return True
+    else:
+        return x.is_integer()
 
 
-class UnaryOperator(Operator):
-    arity = 1
-    def __init__(self, *args, **kw):
-        if not is_fieldlike(args[0]):
-            raise ValueError()
-        super().__init__(*args, **kw)
+class UndefinedParityError(Exception):
+    pass
 
-    def meta_scale(self, value):
-        return value
-
-class BinaryOperator(Operator):
-    arity = 2
-    def meta_scale(self, axis, value1, value2):
-        if value1 != value2:
-            raise ValueError("Scales do not match")
-        return
+class NonlinearOperatorError(Exception):
+    pass
 
 
-class Cast(Operator, metaclass=MultiClass):
+class FieldCopy(FutureField, metaclass=MultiClass):
+    """Operator making a new field copy of data."""
 
-    name = 'Cast'
+    name = 'FieldCopy'
+
+    @classmethod
+    def _preprocess_args(cls, arg, domain, **kw):
+        arg = Operand.cast(arg, domain=domain)
+        return (arg,), kw
+
+    @classmethod
+    def _check_args(cls, *args, **kw):
+        match = (isinstance(args[i], types) for i,types in cls.argtypes.items())
+        return all(match)
 
     def check_conditions(self):
         return True
-
-
-class CastField(Cast):
-
-    @staticmethod
-    def _check_args(*args, **kw):
-        return is_field(args[0])
 
     def meta_constant(self, axis):
         # Preserve constancy
@@ -246,6 +60,34 @@ class CastField(Cast):
         # Preserve parity
         return self.args[0].meta[axis]['parity']
 
+    def as_symbolic_operator(self, fields):
+        return self.args[0].as_symbolic_operator(fields)
+
+
+class FieldCopyScalar(FieldCopy):
+
+    argtypes = {0: (Scalar, FutureScalar)}
+
+    def operate(self, out):
+        # Copy in grid layout
+        out.layout = self._grid_layout
+        np.copyto(out.data, self.args[0].data)
+
+
+class FieldCopyArray(FieldCopy):
+
+    argtypes = {0: (Array, FutureArray)}
+
+    def operate(self, out):
+        # Copy in grid layout
+        out.layout = self._grid_layout
+        np.copyto(out.data, self.args[0].data)
+
+
+class FieldCopyField(FieldCopy):
+
+    argtypes = {0: (Field, FutureField)}
+
     def operate(self, out):
         arg0, = self.args
         # Copy in current layout
@@ -253,206 +95,133 @@ class CastField(Cast):
         np.copyto(out.data, arg0.data)
 
 
-class CastArray(Cast):
+class GeneralFunction(FutureField):
 
-    @staticmethod
-    def _check_args(*args, **kw):
-        return is_array(args[0])
+    def __init__(self, domain, layout, func, args=[], kw={}, out=None,):
 
-    def meta_constant(self, axis):
-        # Assume arrays are nonconstant
-        return False
+        # Required attributes
+        self.args = list(args)
+        self.original_args = list(args)
+        self.domain = domain
+        self.out = out
+        self.last_id = None
+        # Additional attributes
+        self.layout = domain.distributor.get_layout_object(layout)
+        self.func = func
+        self.kw = kw
+        self._field_arg_indices = [i for (i,arg) in enumerate(self.args) if is_fieldlike(arg)]
+        try:
+            self.name = func.__name__
+        except AttributeError:
+            self.name = str(func)
+        self.build_metadata()
 
-    def operate(self, out):
-        # Copy in grid layout
-        out['g'] = self.args[0]
+    def build_metadata(self):
+        self.constant = np.array([False] * self.domain.dim)
 
-
-class CastScalar(Cast):
-
-    @staticmethod
-    def _check_args(*args, **kw):
-        return is_scalar(args[0])
-
-    def meta_constant(self, axis):
-        # Scalar is constant
+    def check_conditions(self):
+        # Fields must be in proper layout
+        for i in self._field_arg_indices:
+            if self.args[i].layout is not self.layout:
+                return False
         return True
 
-    def meta_parity(self, axis):
-        # Scalar has even parity
-        return 1
-
     def operate(self, out):
-        # Copy in grid layout
-        out['g'] = self.args[0]
+        # Apply func in proper layout
+        for i in self._field_arg_indices:
+            self.args[i].require_layout(self.layout)
+        out.layout = self.layout
+        np.copyto(out.data, self.func(*self.args, **self.kw))
 
 
-# class GeneralFunction(Operator):
-
-#     def __init__(self, domain, layout, func, args=[], kw={}, out=None,):
-
-#         # Required attributes
-#         self.args = list(args)
-#         self.original_args = list(args)
-#         self.domain = domain
-#         self.out = out
-#         self.last_id = None
-#         # Additional attributes
-#         self.layout = domain.distributor.get_layout_object(layout)
-#         self.func = func
-#         self.kw = kw
-#         self._field_arg_indices = [i for (i,arg) in enumerate(self.args) if is_fieldlike(arg)]
-#         try:
-#             self.name = func.__name__
-#         except AttributeError:
-#             self.name = str(func)
-#         self.build_metadata()
-
-#     def build_metadata(self):
-#         self.constant = np.array([False] * self.domain.dim)
-
-#     def check_conditions(self):
-#         # Fields must be in proper layout
-#         for i in self._field_arg_indices:
-#             if self.args[i].layout is not self.layout:
-#                 return False
-#         return True
-
-#     def operate(self, out):
-#         # Apply func in proper layout
-#         for i in self._field_arg_indices:
-#             self.args[i].require_layout(self.layout)
-#         out.layout = self.layout
-#         np.copyto(out.data, self.func(*self.args, **self.kw))
-
-
-# class UfuncWrapper(Operator):
-
-#     supported = {ufunc.__name__: ufunc for ufunc in
-#         (np.sign, np.conj, np.exp, np.exp2, np.log, np.log2, np.log10, np.sqrt,
-#          np.square, np.sin, np.cos, np.tan, np.arcsin, np.arccos, np.arctan,
-#          np.sinh, np.cosh, np.tanh, np.arcsinh, np.arccosh, np.arctanh)}
-
-#     def __init__(self, ufunc, arg0, out=None):
-
-#         super().__init__(arg0, out=out)
-
-
-#         # Required Attributes
-#         self.args = [arg0]
-#         self.original_args = [arg0]
-#         self.domain = arg0.domain
-#         self.out = out
-#         self.last_id = None
-#         # Additional attributes
-#         self.ufunc = ufunc
-#         self.name = ufunc.__name__
-#         self._grid_layout = self.domain.distributor.grid_layout
-#         self.build_metadata()
-
-#     def build_metadata(self):
-#         self.constant = np.copy(self.args[0].constant)
-
-#     def check_conditions(self):
-#         # Must be in grid layout
-#         return (self.args[0].layout is self._grid_layout)
-
-#     def operate(self, out):
-#         # References
-#         arg0, = self.args
-#         # Apply ufunc in grid layout
-#         arg0.require_grid_space()
-#         out.layout = self._grid_layout
-#         self.ufunc(arg0.data, out=out.data)
-
-# class Sine(operator):
-#     name = 'sin'
-#     ufunc = np.sin
-
-# class Cosine(operator):
-#     name = 'cos'
-#     ufunc = np.cos
-
-# class Tangent(operator):
-#     name = 'tan'
-#     ufunc = np.tan
-
-
-class UnaryGridFunction(Operator):
+class UnaryGridFunction(Future, metaclass=MultiClass):
 
     arity = 1
+    supported = {ufunc.__name__: ufunc for ufunc in
+        (np.absolute, np.sign, np.conj, np.exp, np.exp2, np.log, np.log2,
+         np.log10, np.sqrt, np.square, np.sin, np.cos, np.tan, np.arcsin,
+         np.arccos, np.arctan, np.sinh, np.cosh, np.tanh, np.arcsinh,
+         np.arccosh, np.arctanh)}
+    aliased = {'abs':np.absolute, 'conj':np.conjugate}
+    # Add ufuncs and shortcuts to parseables
+    parseables.update(supported)
+    parseables.update(aliased)
 
-    def __init__(self, *args, **kw):
-        super().__init__(*args, **kw)
-        self._grid_layout = self.domain.distributor.grid_layout
+    @classmethod
+    def _preprocess_args(self, func, arg, **kw):
+        arg = Operand.cast(arg)
+        return (func, arg), kw
+
+    @classmethod
+    def _check_args(cls, *args, **kw):
+        match = (isinstance(args[i], types) for i,types in cls.argtypes.items())
+        return all(match)
+
+    def __init__(self, func, arg, **kw):
+        arg = Operand.cast(arg)
+        super().__init__(arg, **kw)
+        self.func = func
+        self.name = func.__name__
 
     def meta_constant(self, axis):
         # Preserves constancy
         return self.args[0].meta[axis]['constant']
 
+    def meta_parity(self, axis):
+        # Preserving constancy -> even parity
+        if self.args[0].meta[axis]['constant']:
+            return 1
+        else:
+            raise UndefinedParityError("Unknown action of {} on parity.".format(self.name))
+
+    def as_symbolic_operator(self, fields):
+        arg_linear, arg_op = self.args[0].as_symbolic_operator(fields)
+        if arg_linear:
+            raise ValueError("Nonlinear")
+        else:
+            return False, sy.Symbol(str(self), commutative=False)
+
+
+class UnaryGridFunctionScalar(UnaryGridFunction, FutureScalar):
+
+    argtypes = {1: (Scalar, FutureScalar)}
+
     def check_conditions(self):
-        # Must be in grid layout
+        return True
+
+    def operate(self, out):
+        return self.func(self.args[0].data, out=out.data)
+
+
+class UnaryGridFunctionArray(UnaryGridFunction, FutureArray):
+
+    argtypes = {1: (Array, FutureArray)}
+
+    def check_conditions(self):
+        return True
+
+    def operate(self, out):
+        return self.func(self.args[0].data, out=out.data)
+
+
+class UnaryGridFunctionField(UnaryGridFunction, FutureField):
+
+    argtypes = {1: (Field, FutureField)}
+
+    def check_conditions(self):
+        # Field must be in grid layout
         return (self.args[0].layout is self._grid_layout)
 
     def operate(self, out):
         # References
         arg0, = self.args
-        # Rectify in grid layout
+        # Evaluate in grid layout
         arg0.require_grid_space()
         out.layout = self._grid_layout
         self.func(arg0.data, out=out.data)
 
 
-class AbsoluteValue(UnaryGridFunction):
-
-    name = 'Abs'
-    func = np.absolute
-
-    def meta_parity(self, axis):
-        # Absolute value has even parity
-        return 1
-
-
-class MagnitudeSquared(UnaryGridFunction):
-
-    name = 'MagSq'
-
-    @staticmethod
-    def func(x, out):
-        np.multiply(x, x.conj(), out=out)
-
-    def meta_parity(self, axis):
-        # Magnitude has even parity
-        return 1
-
-
-class Negative(Operator):
-
-    name = 'Neg'
-    arity = 1
-
-    def __str__(self):
-        return '(-%s)' %self.args[0]
-
-    def meta_constant(self, axis):
-        # Preserves constancy
-        return self.args[0].meta[axis]['constant']
-
-    def meta_parity(self, axis):
-        # Preserves parity
-        return self.args[0].meta[axis]['parity']
-
-    def check_conditions(self):
-        return True
-
-    def operate(self, out):
-        arg0, = self.args
-        # Negate in current layout
-        out.layout = arg0.layout
-        np.negative(arg0.data, out.data)
-
-
-class Arithmetic(Operator):
+class Arithmetic(Future):
 
     arity = 2
 
@@ -466,12 +235,15 @@ class Add(Arithmetic, metaclass=MultiClass):
     name = 'Add'
     str_op = ' + '
 
+    @classmethod
+    def _preprocess_args(cls, *args, **kw):
+        args = tuple(Operand.cast(arg) for arg in args)
+        return args, kw
 
-class AddFieldField(Add):
-
-    @staticmethod
-    def _check_args(*args, **kw):
-        return (is_fieldlike(args[0]) and is_fieldlike(args[1]))
+    @classmethod
+    def _check_args(cls, *args, **kw):
+        match = (isinstance(args[i], types) for i,types in cls.argtypes.items())
+        return all(match)
 
     def meta_constant(self, axis):
         # Logical 'and' of constancies
@@ -488,6 +260,49 @@ class AddFieldField(Add):
         else:
             return parity0
 
+    def as_symbolic_operator(self, fields):
+        arg0_linear, arg0_op = self.args[0].as_symbolic_operator(fields)
+        arg1_linear, arg1_op = self.args[1].as_symbolic_operator(fields)
+        if (arg0_linear != arg1_linear):
+            raise NonlinearOperatorError("Cannot add linear and nonlinear terms.")
+        return (arg0_linear and arg1_linear), arg0_op + arg1_op
+
+    def distribute_over(self, fields):
+        # Put arguments into linear form
+        return Add(*[arg.distribute_over(fields) for arg in self.args])
+
+
+class AddScalarScalar(Add, FutureScalar):
+
+    argtypes = {0: (Scalar, FutureScalar),
+                1: (Scalar, FutureScalar)}
+
+    def check_conditions(self):
+        return True
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        np.add(arg0.data, arg1.data, out.data)
+
+
+class AddArrayArray(Add, FutureArray):
+
+    argtypes = {0: (Array, FutureArray),
+                1: (Array, FutureArray)}
+
+    def check_conditions(self):
+        return True
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        np.add(arg0.data, arg1.data, out.data)
+
+
+class AddFieldField(Add, FutureField):
+
+    argtypes = {0: (Field, FutureField),
+                1: (Field, FutureField)}
+
     def check_conditions(self):
         # Layouts must match
         return (self.args[0].layout is self.args[1].layout)
@@ -500,26 +315,56 @@ class AddFieldField(Add):
         np.add(arg0.data, arg1.data, out.data)
 
 
-class AddFieldArray(Add):
+class AddScalarArray(Add, FutureArray):
 
-    @staticmethod
-    def _check_args(arg0, arg1):
-        return (is_fieldlike(arg0) and is_array(arg1))
-
-    def __init__(self, *args, **kw):
-        Add.__init__(self, *args, **kw)
-        self._grid_layout = self.domain.distributor.grid_layout
-
-    def meta_constant(self, axis):
-        # Assume arrays are nonconstant
-        return False
-
-    def meta_parity(self, axis):
-        # Assume arrays have undefined parity
-        raise UndefinedParityError("Arrays have undefined parity.")
+    argtypes = {0: (Scalar, FutureScalar),
+                1: (Array, FutureArray)}
 
     def check_conditions(self):
-        # Must be in grid layout
+        return True
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        np.add(arg0.data, arg1.data, out.data)
+
+
+class AddArrayScalar(Add, FutureArray):
+
+    argtypes = {0: (Array, FutureArray),
+                1: (Scalar, FutureScalar)}
+
+    def check_conditions(self):
+        return True
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        np.add(arg0.data, arg1.data, out.data)
+
+
+class AddScalarField(Add, FutureField):
+
+    argtypes = {0: (Scalar, FutureScalar),
+                1: (Field, FutureField)}
+
+    def check_conditions(self):
+        # Field must be in grid layout
+        return (self.args[1].layout is self._grid_layout)
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        # Add in grid layout
+        arg1.require_grid_space()
+        out.layout = self._grid_layout
+        np.add(arg0.data, arg1.data, out.data)
+
+
+class AddFieldScalar(Add, FutureField):
+
+    argtypes = {0: (Field, FutureField),
+                1: (Scalar, FutureScalar)}
+
+    def check_conditions(self):
+        # Field must be in grid layout
         return (self.args[0].layout is self._grid_layout)
 
     def operate(self, out):
@@ -527,33 +372,33 @@ class AddFieldArray(Add):
         # Add in grid layout
         arg0.require_grid_space()
         out.layout = self._grid_layout
-        np.add(arg0.data, arg1, out.data)
+        np.add(arg0.data, arg1.data, out.data)
 
 
-class AddFieldScalar(Add):
+class AddArrayField(Add, FutureField):
 
-    @staticmethod
-    def _check_args(arg0, arg1):
-        return (is_fieldlike(arg0) and is_scalar(arg1))
-
-    def __init__(self, *args, **kw):
-        Add.__init__(self, *args, **kw)
-        self._grid_layout = self.domain.distributor.grid_layout
-
-    def meta_constant(self, axis):
-        # Preserve constancy
-        return self.args[0].meta[axis]['constant']
-
-    def meta_parity(self, axis):
-        # Only add scalar to even parity
-        parity0 = self.args[0].meta[axis]['parity']
-        if parity0 == 1:
-            return 1
-        else:
-            raise UndefinedParityError("Cannot add a constant to an odd field.")
+    argtypes = {0: (Array, FutureArray),
+                1: (Field, FutureField)}
 
     def check_conditions(self):
-        # Must be in grid layout
+        # Field must be in grid layout
+        return (self.args[1].layout is self._grid_layout)
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        # Add in grid layout
+        arg1.require_grid_space()
+        out.layout = self._grid_layout
+        np.add(arg0.data, arg1.data, out.data)
+
+
+class AddFieldArray(Add, FutureField):
+
+    argtypes = {0: (Field, FutureField),
+                1: (Array, FutureArray)}
+
+    def check_conditions(self):
+        # Field must be in grid layout
         return (self.args[0].layout is self._grid_layout)
 
     def operate(self, out):
@@ -561,130 +406,23 @@ class AddFieldScalar(Add):
         # Add in grid layout
         arg0.require_grid_space()
         out.layout = self._grid_layout
-        np.add(arg0.data, arg1, out.data)
-
-
-# class AddNumericField(Add):
-
-#     @staticmethod
-#     def _check_args(*args, **kw):
-#         return (is_numeric(args[0]) and is_fieldlike(args[1]))
-
-#     def __init__(self, *args, **kw):
-#         Add.__init__(self, *args, **kw)
-#         self._grid_layout = self.domain.distributor.grid_layout
-
-#     def build_metadata(self):
-#         self.constant = numeric_constant(self.args[0], self.domain) & self.args[1].constant
-
-#     def check_conditions(self):
-#         # Must be in grid layout
-#         return (self.args[1].layout is self._grid_layout)
-
-#     def operate(self, out):
-#         # References
-#         arg0, arg1 = self.args
-#         # Add in grid layout
-#         arg1.require_grid_space()
-#         out.layout = self._grid_layout
-#         np.add(arg0, arg1.data, out.data)
-
-
-# class Subtract(Arithmetic, metaclass=MultiClass):
-
-#     name = 'Sub'
-#     str_op = ' - '
-
-
-# class SubFieldField(Subtract):
-
-#     @staticmethod
-#     def _check_args(*args, **kw):
-#         return (is_fieldlike(args[0]) and is_fieldlike(args[1]))
-
-#     def build_metadata(self):
-#         self.constant = self.args[0].constant & self.args[1].constant
-
-#     def check_conditions(self):
-#         # Layouts must match
-#         return (self.args[0].layout is self.args[1].layout)
-
-#     def operate(self, out):
-#         # References
-#         arg0, arg1 = self.args
-#         # Subtract in arg0 layout (arbitrary choice)
-#         arg1.require_layout(arg0.layout)
-#         out.layout = arg0.layout
-#         np.subtract(arg0.data, arg1.data, out.data)
-
-
-# class SubFieldNumeric(Subtract):
-
-#     @staticmethod
-#     def _check_args(arg0, arg1):
-#         return (is_fieldlike(arg0) and is_numeric(arg1))
-
-#     def __init__(self, *args, **kw):
-#         Subtract.__init__(self, *args, **kw)
-#         self._grid_layout = self.domain.distributor.grid_layout
-
-#     def build_metadata(self):
-#         self.constant = self.args[0].constant & numeric_constant(self.args[1], self.domain)
-
-#     def check_conditions(self):
-#         # Must be in grid layout
-#         return (self.args[0].layout is self._grid_layout)
-
-#     def operate(self, out):
-#         # References
-#         arg0, arg1 = self.args
-#         # Subtract in grid layout
-#         arg0.require_grid_space()
-#         out.layout = self._grid_layout
-#         np.subtract(arg0.data, arg1, out.data)
-
-
-# class SubNumericField(Subtract):
-
-#     @staticmethod
-#     def _check_args(*args, **kw):
-#         return (is_numeric(args[0]) and is_fieldlike(args[1]))
-
-#     def __init__(self, *args, **kw):
-#         Subtract.__init__(self, *args, **kw)
-#         self._grid_layout = self.domain.distributor.grid_layout
-
-#     def build_metadata(self):
-#         self.constant = numeric_constant(self.args[0], self.domain) & self.args[1].constant
-
-#     def check_conditions(self):
-#         # Must be in grid layout
-#         return (self.args[1].layout is self._grid_layout)
-
-#     def operate(self, out):
-#         # References
-#         arg0, arg1 = self.args
-#         # Subtract in grid layout
-#         arg1.require_grid_space()
-#         out.layout = self._grid_layout
-#         np.subtract(arg0, arg1.data, out.data)
+        np.add(arg0.data, arg1.data, out.data)
 
 
 class Multiply(Arithmetic, metaclass=MultiClass):
 
     name = 'Mul'
-    str_op = ' * '
+    str_op = '*'
 
+    @classmethod
+    def _preprocess_args(cls, *args, **kw):
+        args = tuple(Operand.cast(arg) for arg in args)
+        return args, kw
 
-class MultiplyFieldField(Multiply):
-
-    @staticmethod
-    def _check_args(*args, **kw):
-        return (is_fieldlike(args[0]) and is_fieldlike(args[1]))
-
-    def __init__(self, *args, **kw):
-        Multiply.__init__(self, *args, **kw)
-        self._grid_layout = self.domain.distributor.grid_layout
+    @classmethod
+    def _check_args(cls, *args, **kw):
+        match = (isinstance(args[i], types) for i,types in cls.argtypes.items())
+        return all(match)
 
     def meta_constant(self, axis):
         # Logical 'and' of constancies
@@ -698,8 +436,77 @@ class MultiplyFieldField(Multiply):
         parity1 = self.args[1].meta[axis]['parity']
         return parity0 * parity1
 
+    def as_symbolic_operator(self, fields):
+        arg0_linear, arg0_op = self.args[0].as_symbolic_operator(fields)
+        arg1_linear, arg1_op = self.args[1].as_symbolic_operator(fields)
+        if (arg0_linear and arg1_linear):
+            raise NonlinearOperatorError("Cannot multiply two linear terms.")
+        elif arg0_linear:
+            return True, arg1_op * arg0_op
+        elif arg1_linear:
+            return True, arg0_op * arg1_op
+        else:
+            return False, arg0_op * arg1_op
+
+    def distribute_over(self, fields):
+        # Distribute arguments
+        out = Multiply(*[arg.distribute_over(fields) for arg in self.args])
+        # Distribute over addition
+        if out.args[0].has(*fields) and isinstance(out.args[0], Add):
+            return out.left_distribute().distribute_over(fields)
+        elif out.args[1].has(*fields) and isinstance(out.args[1], Add):
+            return out.right_distribute().distribute_over(fields)
+        else:
+            return out
+
+    def left_distribute(self):
+        arg0, arg1 = self.args
+        if not isinstance(arg0, Add):
+            raise ValueError("Can only distribute over a sum.")
+        a, b = arg0.args
+        return a*arg1 + b*arg1
+
+    def right_distribute(self):
+        arg0, arg1 = self.args
+        if not isinstance(arg1, Add):
+            raise ValueError("Can only distribute over a sum.")
+        a, b = arg1.args
+        return arg0*a + arg0*b
+
+
+class MultiplyScalarScalar(Multiply, FutureScalar):
+
+    argtypes = {0: (Scalar, FutureScalar),
+                1: (Scalar, FutureScalar)}
+
     def check_conditions(self):
-        # Must be in grid layout
+        return True
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        np.multiply(arg0.data, arg1.data, out.data)
+
+
+class MultiplyArrayArray(Multiply, FutureArray):
+
+    argtypes = {0: (Array, FutureArray),
+                1: (Array, FutureArray)}
+
+    def check_conditions(self):
+        return True
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        np.multiply(arg0.data, arg1.data, out.data)
+
+
+class MultiplyFieldField(Multiply, FutureField):
+
+    argtypes = {0: (Field, FutureField),
+                1: (Field, FutureField)}
+
+    def check_conditions(self):
+        # Fields must be in grid layout
         return ((self.args[0].layout is self._grid_layout) and
                 (self.args[1].layout is self._grid_layout))
 
@@ -711,50 +518,61 @@ class MultiplyFieldField(Multiply):
         out.layout = self._grid_layout
         np.multiply(arg0.data, arg1.data, out.data)
 
+    ## Ideas for separating condition enforcement from operation to potentially
+    ## trim down the boilerplate for the dispatching subclasses
+    # def enforce_conditions(self):
+    #     self.args[0].require_grid_space()
+    #     self.args[1].require_grid_space()
+    #     out.layout = self._grid_layout
+    # def _operate(self):
+    #     np.multiply(self.args[0].data, self.args[1].data, out.data)
 
-class MultiplyFieldArray(Multiply):
 
-    @staticmethod
-    def _check_args(arg0, arg1):
-        return (is_fieldlike(arg0) and is_array(arg1))
+class MultiplyScalarArray(Multiply, FutureArray):
 
-    def __init__(self, *args, **kw):
-        Multiply.__init__(self, *args, **kw)
-        self._grid_layout = self.domain.distributor.grid_layout
-
-    def meta_constant(self, axis):
-        # Assume arrays are nonconstant
-        return False
-
-    def meta_parity(self, axis):
-        # Assume arrays have undefined parity
-        raise UndefinedParityError("Arrays have undefined parity.")
+    argtypes = {0: (Scalar, FutureScalar),
+                1: (Array, FutureArray)}
 
     def check_conditions(self):
-        # Must be in grid layout
-        return (self.args[0].layout is self._grid_layout)
+        return True
 
     def operate(self, out):
         arg0, arg1 = self.args
-        # Multiply in grid layout
-        arg0.require_grid_space()
-        out.layout = self._grid_layout
-        np.multiply(arg0.data, arg1, out.data)
+        np.multiply(arg0.data, arg1.data, out.data)
 
 
-class MultiplyFieldScalar(Multiply):
+class MultiplyArrayScalar(Multiply, FutureArray):
 
-    @staticmethod
-    def _check_args(arg0, arg1):
-        return (is_fieldlike(arg0) and is_scalar(arg1))
+    argtypes = {0: (Array, FutureArray),
+                1: (Scalar, FutureScalar)}
 
-    def meta_constant(self, axis):
-        # Preserve constancy
-        return self.args[0].meta[axis]['constant']
+    def check_conditions(self):
+        return True
 
-    def meta_parity(self, axis):
-        # Preserve parity
-        return self.args[0].meta[axis]['parity']
+    def operate(self, out):
+        arg0, arg1 = self.args
+        np.multiply(arg0.data, arg1.data, out.data)
+
+
+class MultiplyScalarField(Multiply, FutureField):
+
+    argtypes = {0: (Scalar, FutureScalar),
+                1: (Field, FutureField)}
+
+    def check_conditions(self):
+        return True
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        # Multiply in current layout
+        out.layout = arg1.layout
+        np.multiply(arg0.data, arg1.data, out.data)
+
+
+class MultiplyFieldScalar(Multiply, FutureField):
+
+    argtypes = {0: (Field, FutureField),
+                1: (Scalar, FutureScalar)}
 
     def check_conditions(self):
         return True
@@ -763,159 +581,41 @@ class MultiplyFieldScalar(Multiply):
         arg0, arg1 = self.args
         # Multiply in current layout
         out.layout = arg0.layout
-        np.multiply(arg0.data, arg1, out.data)
+        np.multiply(arg0.data, arg1.data, out.data)
 
 
-# class MultScalarField(Multiply):
+class MultiplyArrayField(Multiply, FutureField):
 
-#     @staticmethod
-#     def _check_args(arg0, arg1):
-#         return (is_scalar(arg0) and is_fieldlike(arg1))
+    argtypes = {0: (Array, FutureArray),
+                1: (Field, FutureField)}
 
-#     def build_metadata(self):
-#         self.constant = np.copy(self.args[1].constant)
+    def check_conditions(self):
+        # Field must be in grid layout
+        return (self.args[1].layout is self._grid_layout)
 
-#     def check_conditions(self):
-#         return True
-
-#     def operate(self, out):
-#         # References
-#         arg0, arg1 = self.args
-#         # Multiply in current layout
-#         out.layout = arg1.layout
-#         np.multiply(arg0, arg1.data, out.data)
+    def operate(self, out):
+        arg0, arg1 = self.args
+        # Multiply in grid layout
+        arg1.require_grid_space()
+        out.layout = self._grid_layout
+        np.multiply(arg0.data, arg1.data, out.data)
 
 
-# class MultArrayField(Multiply):
+class MultiplyFieldArray(Multiply, FutureField):
 
-#     @staticmethod
-#     def _check_args(arg0, arg1):
-#         return (is_array(arg0) and is_fieldlike(arg1))
+    argtypes = {0: (Field, FutureField),
+                1: (Array, FutureArray)}
 
-#     def __init__(self, *args, **kw):
-#         Multiply.__init__(self, *args, **kw)
-#         self._grid_layout = self.domain.distributor.grid_layout
+    def check_conditions(self):
+        # Field must be in grid layout
+        return (self.args[0].layout is self._grid_layout)
 
-#     def build_metadata(self):
-#         self.constant = numeric_constant(self.args[0], self.domain) & self.args[1].constant
-
-#     def check_conditions(self):
-#         # Must be in grid layout
-#         return (self.args[1].layout is self._grid_layout)
-
-#     def operate(self, out):
-#         # References
-#         arg0, arg1 = self.args
-#         # Multiply in grid layout
-#         arg1.require_grid_space()
-#         out.layout = self._grid_layout
-#         np.multiply(arg0, arg1.data, out.data)
-
-
-# class Divide(Arithmetic, metaclass=MultiClass):
-
-#     name = 'Div'
-#     str_op = ' / '
-
-
-# class DivFieldField(Divide):
-
-#     @staticmethod
-#     def _check_args(*args, **kw):
-#         return (is_fieldlike(args[0]) and is_fieldlike(args[1]))
-
-#     def __init__(self, *args, **kw):
-#         Divide.__init__(self, *args, **kw)
-#         self._grid_layout = self.domain.distributor.grid_layout
-
-#     def build_metadata(self):
-#         self.constant = self.args[0].constant & self.args[1].constant
-
-#     def check_conditions(self):
-#         # Must be in grid layout
-#         return ((self.args[0].layout is self._grid_layout) and
-#                 (self.args[1].layout is self._grid_layout))
-
-#     def operate(self, out):
-#         # References
-#         arg0, arg1 = self.args
-#         # Divide in grid layout
-#         arg0.require_grid_space()
-#         arg1.require_grid_space()
-#         out.layout = self._grid_layout
-#         np.divide(arg0.data, arg1.data, out.data)
-
-
-# class DivFieldScalar(Divide):
-
-#     @staticmethod
-#     def _check_args(arg0, arg1):
-#         return (is_fieldlike(arg0) and is_scalar(arg1))
-
-#     def build_metadata(self):
-#         self.constant = np.copy(self.args[0].constant)
-
-#     def check_conditions(self):
-#         return True
-
-#     def operate(self, out):
-#         # References
-#         arg0, arg1 = self.args
-#         # Divide in current layout
-#         out.layout = arg0.layout
-#         np.divide(arg0.data, arg1, out.data)
-
-
-# class DivFieldArray(Divide):
-
-#     @staticmethod
-#     def _check_args(arg0, arg1):
-#         return (is_fieldlike(arg0) and is_array(arg1))
-
-#     def __init__(self, *args, **kw):
-#         Divide.__init__(self, *args, **kw)
-#         self._grid_layout = self.domain.distributor.grid_layout
-
-#     def build_metadata(self):
-#         self.constant = self.args[0].constant & numeric_constant(self.args[1], self.domain)
-
-#     def check_conditions(self):
-#         # Must be in grid layout
-#         return (self.args[0].layout is self._grid_layout)
-
-#     def operate(self, out):
-#         # References
-#         arg0, arg1 = self.args
-#         # Divide in grid layout
-#         arg0.require_grid_space()
-#         out.layout = self._grid_layout
-#         np.divide(arg0.data, arg1, out.data)
-
-
-# class DivNumericField(Divide):
-
-#     @staticmethod
-#     def _check_args(arg0, arg1):
-#         return (is_numeric(arg0) and is_fieldlike(arg1))
-
-#     def __init__(self, *args, **kw):
-#         Divide.__init__(self, *args, **kw)
-#         self._grid_layout = self.domain.distributor.grid_layout
-
-#     def build_metadata(self):
-#         self.constant = numeric_constant(self.args[0], self.domain) & self.args[1].constant
-
-#     def check_conditions(self):
-#         # Must be in grid layout
-#         return (self.args[1].layout is self._grid_layout)
-
-#     def operate(self, out):
-#         # References
-#         arg0, arg1 = self.args
-#         # Divide in grid layout
-#         arg1.require_grid_space()
-#         out.layout = self._grid_layout
-#         np.divide(arg0, arg1.data, out.data)
+    def operate(self, out):
+        arg0, arg1 = self.args
+        # Multiply in grid layout
+        arg0.require_grid_space()
+        out.layout = self._grid_layout
+        np.multiply(arg0.data, arg1.data, out.data)
 
 
 class Power(Arithmetic, metaclass=MultiClass):
@@ -923,31 +623,84 @@ class Power(Arithmetic, metaclass=MultiClass):
     name = 'Pow'
     str_op = '**'
 
+    @classmethod
+    def _preprocess_args(cls, *args, **kw):
+        args = tuple(Operand.cast(arg) for arg in args)
+        return args, kw
 
-class PowerFieldScalar(Power):
+    @classmethod
+    def _check_args(cls, *args, **kw):
+        match = (isinstance(args[i], types) for i,types in cls.argtypes.items())
+        return all(match)
 
-    @staticmethod
-    def _check_args(arg0, arg1):
-        return (is_fieldlike(arg0) and is_scalar(arg1))
 
-    def __init__(self, *args, **kw):
-        Power.__init__(self, *args, **kw)
-        self._grid_layout = self.domain.distributor.grid_layout
+class PowerDataScalar(Power):
+
+    argtypes = {0: (Data, Future),
+                1: (Scalar, FutureScalar)}
 
     def meta_constant(self, axis):
-        # Preserve constancy
+        # Preserves constancy
         return self.args[0].meta[axis]['constant']
 
     def meta_parity(self, axis):
-        # Exponentiate parity
-        power = self.args[1]
+        # Constant data keeps even parity
+        constant = self.args[0].meta[axis]['constant']
+        if constant:
+            return 1
+        # Integer exponents maintain valid parity
+        parity = self.args[0].meta[axis]['parity']
+        power = self.args[1].value
         if is_integer(power):
-            return value**int(power)
+            return parity**int(power)
+        # Otherwise invalid
+        raise UndefinedParityError("Non-integer power of nonconstant data has undefined parity.")
+
+    def as_symbolic_operator(self, fields):
+        arg_linear, arg_op = self.args[0].as_symbolic_operator(fields)
+        power = self.args[1].value
+        if arg_linear:
+            if power == 1:
+                return True, arg_op
+            else:
+                raise ValueError("Nonlinear")
         else:
-            raise UndefinedParityError("Non-integer power of a field has undefined parity.")
+            return False, sy.Symbol(str(self), commutative=False)
+
+
+class PowerScalarScalar(PowerDataScalar, FutureScalar):
+
+    argtypes = {0: (Scalar, FutureScalar),
+                1: (Scalar, FutureScalar)}
 
     def check_conditions(self):
-        # Must be in grid layout
+        return True
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        np.power(arg0.data, arg1.data, out.data)
+
+
+class PowerArrayScalar(PowerDataScalar, FutureArray):
+
+    argtypes = {0: (Array, FutureArray),
+                1: (Scalar, FutureScalar)}
+
+    def check_conditions(self):
+        return True
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        np.power(arg0.data, arg1.data, out.data)
+
+
+class PowerFieldScalar(PowerDataScalar, FutureField):
+
+    argtypes = {0: (Field, FutureField),
+                1: (Scalar, FutureScalar)}
+
+    def check_conditions(self):
+        # Field must be in grid layout
         return (self.args[0].layout is self._grid_layout)
 
     def operate(self, out):
@@ -955,20 +708,46 @@ class PowerFieldScalar(Power):
         # Raise in grid layout
         arg0.require_grid_space()
         out.layout = self._grid_layout
-        np.power(arg0.data, arg1, out.data)
+        np.power(arg0.data, arg1.data, out.data)
 
 
-class LinearOperator(Operator):
-    pass
+class LinearOperator(Future):
+
+    kw = {}
+
+    def as_symbolic_operator(self, fields):
+        arg_linear, arg_op = self.args[0].as_symbolic_operator(fields)
+        if arg_linear:
+            op = sy.Symbol(self.name, commutative=False) * arg_op
+        else:
+            op = sy.Symbol(str(self), commutative=False)
+        return arg_linear, op
+
+    def distribute_over(self, atoms):
+        # Distribute arguments
+        out = type(self)(*[arg.distribute_over(atoms) for arg in self.args], **self.kw)
+        # Distribute over addition
+        if out.args[0].has(*atoms) and isinstance(out.args[0], Add):
+            return out.left_distribute().distribute_over(atoms)
+        else:
+            return out
+
+    def distribute(self):
+        arg0, = self.args
+        if not isinstance(arg0, Add):
+            raise ValueError("Can only apply distributive rule to a sum.")
+        a, b = arg0.args
+        op = type(self)
+        return op(a) + op(b)
 
 
-class Separable(Operator):
+class Separable(LinearOperator, FutureField):
 
     def check_conditions(self):
         arg0, = self.args
         axis = self.axis
         # Must be in coeff layout
-        is_coeff = not arg0.layout.grid_spcae[axis]
+        is_coeff = not arg0.layout.grid_space[axis]
         return is_coeff
 
     def operate(self, out):
@@ -1000,7 +779,7 @@ class Separable(Operator):
         raise NotImplementedError()
 
 
-class Coupled(Operator):
+class Coupled(LinearOperator, FutureField):
 
     def check_conditions(self):
         arg0, = self.args
@@ -1039,30 +818,49 @@ class Coupled(Operator):
         raise NotImplementedError()
 
 
+@parseable
 class Integrate(LinearOperator, metaclass=MultiClass):
 
-    name = 'Integ'
-    store_last = True
+    name = 'integ'
 
     @classmethod
-    def _check_args(cls, arg0, basis, out=None):
+    def _preprocess_args(cls, arg0, *bases, **kw):
+        # Cast to operand
+        arg0 = Operand.cast(arg0)
+        # No bases: integrate over whole domain
+        if len(bases) == 0:
+            bases = arg0.domain.bases
+        # Multiple bases: apply recursively
+        if len(bases) > 1:
+            arg0 = Integrate(arg0, *bases[:-1])
+        # Call with single basis
+        basis = arg0.domain.get_basis_object(bases[-1])
+        return (arg0, basis), kw
+
+    @classmethod
+    def _check_args(cls, arg0, basis, **kw):
         return (basis == cls.basis)
 
-    def __init__(self, arg0, basis, out=None):
-        # # No bases: integrate over whole domain
-        # if len(bases) == 0:
-        #     bases = list(arg0.domain.bases)
-        # # Multiple bases: recursively integrate
-        # if len(bases) > 1:
-        #     arg0 = Integrate(arg0, *bases[:-1])
-        super().__init__(arg0, out=out)
+    @classmethod
+    def _postprocess_args(cls, arg0, basis, **kw):
+        # Drop basis
+        return (arg0,), kw
+
+    def __new__(cls, arg0, **kw):
+        # Cast to operand
+        arg0 = Operand.cast(arg0)
+        # Instantiate if operand depends on basis
+        if cls.basis in arg0.domain.bases:
+            return object.__new__(cls)
+        # Otherwise route through dispatch
+        else:
+            return Differentiate(arg0, cls, **kw)
+
+    def __init__(self, arg0, **kw):
+        # Cast argument to field
+        arg0 = Field.cast(arg0, arg0.domain)
+        super().__init__(arg0, **kw)
         self.axis = self.domain.bases.index(self.basis)
-
-    def __repr__(self):
-        return 'Integ(%r, %r)' %(self.args[0], self.basis)
-
-    def __str__(self):
-        return 'Integ(%s, %s)' %(self.args[0], self.basis)
 
     def meta_constant(self, axis):
         if axis == self.axis:
@@ -1081,28 +879,47 @@ class Integrate(LinearOperator, metaclass=MultiClass):
             return self.args[0].meta[axis]['parity']
 
 
+@parseable
 class Interpolate(LinearOperator, metaclass=MultiClass):
 
-    name = 'Interp'
+    name = 'interp'
     store_last = True
+
+    @classmethod
+    def _preprocess_args(cls, arg0, basis, position, **kw):
+        # Cast to operand
+        arg0 = Operand.cast(arg0)
+        basis = arg0.domain.get_basis_object(basis)
+        return (arg0, basis, position), kw
 
     @classmethod
     def _check_args(cls, arg0, basis, position, out=None):
         return (basis == cls.basis)
 
-    def __init__(self, arg0, basis, position, out=None):
-        super().__init__(arg0, position, out=out)
+    @classmethod
+    def _postprocess_args(cls, arg0, basis, position, **kw):
+        # Drop basis
+        return (arg0, position), kw
+
+    def __init__(self, arg0, position, out=None):
+        super().__init__(arg0, out=out)
+        self.kw = {'position': position}
+        self.position = position
         self.axis = self.domain.bases.index(self.basis)
 
     def __repr__(self):
-        return 'Interp(%r, %r, %r)' %(self.args[0], self.basis, self.args[1])
+        return 'interp(%r, %r, %r)' %(self.args[0], self.basis, self.position)
 
     def __str__(self):
-        return 'Interp(%s, %s, %s)' %(self.args[0], self.basis, self.args[1])
+        return "interp({},'{}',{})".format(self.args[0], self.basis, self.position)
+
+    @classmethod
+    def at(cls, position):
+        return cls
 
     def meta_constant(self, axis):
         if axis == self.axis:
-            # Integral is constant
+            # Interpolant is constant
             return True
         else:
             # Preserve constancy
@@ -1116,64 +933,32 @@ class Interpolate(LinearOperator, metaclass=MultiClass):
             # Preserve parity
             return self.args[0].meta[axis]['parity']
 
+    def as_symbolic_operator(self, fields):
+        arg_linear, arg_op = self.args[0].as_symbolic_operator(fields)
+        if arg_linear:
+            symname = '{}.at({})'.format(self.name, self.position)
+            op = sy.Symbol(symname, commutative=False) * arg_op
+        else:
+            op = sy.Symbol(str(self), commutative=False)
+        return arg_linear, op
 
-class Differentiate(LinearOperator, metaclass=MultiClass):
 
-    name = 'Diff'
-    root = 'd'
+class InterpolateScalar(Interpolate, FutureScalar):
+
+    basis = None
 
     @classmethod
-    def _check_args(cls, arg0, basis, out=None):
-        return (basis == cls.basis)
+    def _check_args(cls, arg0, basis, position, **kw):
+        return (basis is None)
 
-    def __init__(self, arg0, basis=None, out=None):
-        super().__init__(arg0, out=out)
-        self.axis = self.domain.bases.index(self.basis)
-
-    def meta_constant(self, axis):
-        # Preserve constancy
-        return self.args[0].meta[axis]['constant']
-
-    def meta_parity(self, axis):
-        parity0 = self.args[0].meta[axis]['parity']
-        if axis == self.axis:
-            # Flip parity
-            return (-1) * parity0
-        else:
-            # Preserve parity
-            return parity0
+    def __new__(cls, arg0, position, **kw):
+        return arg0
 
 
-class HilbertTransform(LinearOperator, metaclass=MultiClass):
-
-    name = 'Hilbert'
-    root = 'H'
-
-    @classmethod
-    def _check_args(cls, arg0, basis, out=None):
-        return (basis == cls.basis)
-
-    def __init__(self, arg0, basis=None, out=None):
-        super().__init__(arg0, out=out)
-        self.axis = self.domain.bases.index(self.basis)
-
-    def meta_constant(self, axis):
-        # Preserve constancy
-        return self.args[0].meta[axis]['constant']
-
-    def meta_parity(self, axis):
-        parity0 = self.args[0].meta[axis]['parity']
-        if axis == self.axis:
-            # Flip parity
-            return (-1) * parity0
-        else:
-            # Preserve parity
-            return parity0
-
-
+@parseable
 class Left:
 
-    name = 'L'
+    name = 'left'
 
     def __new__(cls, arg0, out=None):
         basis = arg0.domain.bases[-1]
@@ -1181,9 +966,10 @@ class Left:
         return Interpolate(arg0, basis, position, out=out)
 
 
+@parseable
 class Right:
 
-    name = 'R'
+    name = 'right'
 
     def __new__(cls, arg0, out=None):
         basis = arg0.domain.bases[-1]
@@ -1191,68 +977,170 @@ class Right:
         return Interpolate(arg0, basis, position, out=out)
 
 
+@parseable
+class Differentiate(LinearOperator, metaclass=MultiClass):
 
-# Collect operators to expose to parser
-op_list = [AbsoluteValue,
-           MagnitudeSquared,
-           Negative,
-           Add,
-           Multiply,
-           Power,
-           Integrate,
-           Interpolate,
-           Left,
-           Right]
-op_dict = {op.name: op for op in op_list}
-root_list = [Differentiate,
-             HilbertTransform]
-root_dict = {op.root: op for op in root_list}
+    name = 'd'
 
-# Type tests
-def is_scalar(arg):
-    return np.isscalar(arg)
+    @classmethod
+    def _preprocess_args(cls, arg0, *bases, out=None, **basis_kw):
+        # Cast to operand
+        arg0 = Operand.cast(arg0)
+        # Parse keyword bases
+        for basis, order in basis_kw.items():
+            bases += (basis,) * order
+        # Require at least one basis
+        if len(bases) == 0:
+            raise ValueError("No basis specified.")
+        # Multiple bases: apply recursively
+        if len(bases) > 1:
+            arg0 = Differentiate(arg0, *bases[:-1])
+        # Call with single basis
+        basis = arg0.domain.get_basis_object(bases[-1])
+        return (arg0, basis), {'out': out}
 
-def is_array(arg):
-    return isinstance(arg, np.ndarray)
+    @classmethod
+    def _check_args(cls, arg0, basis, **kw):
+        return (basis == cls.basis)
 
-def is_numeric(arg):
-    return (is_scalar(arg) or is_array(arg))
+    @classmethod
+    def _postprocess_args(cls, arg0, basis, **kw):
+        # Drop basis
+        return (arg0,), kw
 
-def is_field(arg):
-    return isinstance(arg, Field)
+    def __new__(cls, arg0, **kw):
+        # Cast to operand
+        arg0 = Operand.cast(arg0)
+        # Instantiate if operand depends on basis
+        if cls.basis in arg0.domain.bases:
+            return object.__new__(cls)
+        # Otherwise route through dispatch
+        else:
+            return Differentiate(arg0, cls, **kw)
 
-def is_fieldlike(arg):
-    return isinstance(arg, (Field, Operator))
+    def __init__(self, arg0, **kw):
+        # Cast argument to field
+        arg0 = Field.cast(arg0, arg0.domain)
+        super().__init__(arg0, **kw)
+        self.axis = self.domain.bases.index(self.basis)
+
+    def meta_constant(self, axis):
+        # Preserve constancy
+        return self.args[0].meta[axis]['constant']
+
+    def meta_parity(self, axis):
+        parity0 = self.args[0].meta[axis]['parity']
+        if axis == self.axis:
+            # Flip parity
+            return (-1) * parity0
+        else:
+            # Preserve parity
+            return parity0
+
+    def distribute_over(self, atoms):
+        linear, _ = self.as_symbolic_operator(atoms)
+        if not linear:
+            return self
+        else:
+            args = [arg.distribute_over(atoms) for arg in self.args]
+            arg0, = args
+            if isinstance(arg0, Multiply):
+                return self.apply_product_rule().distribute_over(atoms)
+            elif isinstance(arg0, Add):
+                return self.distribute().distribute_over(atoms)
+            else:
+                return self
+
+    def apply_product_rule(self):
+        arg0, = self.args
+        if not isinstance(arg0, Multiply):
+            raise ValueError("Can only apply product rule to the derivative of a product.")
+        a, b = arg0.args
+        d = type(self)
+        return d(a)*b + a*d(b)
 
 
-# Convenience functions
-# def create_diff_operator(basis_, axis_):
-#     """Create differentiation operator for a basis+axis."""
+class DifferentiateIndependent(Differentiate, FutureScalar):
 
-#     if basis_.name is not None:
-#         name_ = 'd' + basis_.name
-#     else:
-#         name_ = 'd' + str(axis_)
+    basis = None
 
-#     class d_(Differentiate):
-#         name = name_
-#         basis = basis_
-#         axis = axis_
+    @classmethod
+    def _check_args(cls, arg0, basis, **kw):
+        return (basis is None)
 
-#     return d_
+    def __new__(cls, arg0, **kw):
+        return Scalar(value=0)
 
-def unique_domain(*args):
-    """Return unique domain from a set of fields."""
 
-    # Get set of domains
-    domains = []
-    for arg in args:
-        if is_fieldlike(arg):
-            domains.append(arg.domain)
-    domain_set = set(domains)
+@parseable
+class HilbertTransform(LinearOperator, metaclass=MultiClass):
 
-    if len(domain_set) > 1:
-        raise ValueError("Non-unique domains")
-    else:
-        return list(domain_set)[0]
+    name = 'Hilbert'
+
+    @classmethod
+    def _preprocess_args(cls, arg0, *bases, out=None, **basis_kw):
+        # Cast to operand
+        arg0 = Operand.cast(arg0)
+        # Parse keyword bases
+        for basis, order in basis_kw.items():
+            bases += (basis,) * order
+        # Require at least one basis
+        if len(bases) == 0:
+            raise ValueError("No basis specified.")
+        # Multiple bases: apply recursively
+        if len(bases) > 1:
+            arg0 = HilbertTransform(arg0, *bases[:-1])
+        # Call with single basis
+        basis = arg0.domain.get_basis_object(bases[-1])
+        return (arg0, basis), {'out': out}
+
+    @classmethod
+    def _check_args(cls, arg0, basis, **kw):
+        return (basis == cls.basis)
+
+    @classmethod
+    def _postprocess_args(cls, arg0, basis, **kw):
+        # Drop basis
+        return (arg0,), kw
+
+    def __new__(cls, arg0, **kw):
+        # Cast to operand
+        arg0 = Operand.cast(arg0)
+        # Instantiate if operand depends on basis
+        if cls.basis in arg0.domain.bases:
+            return object.__new__(cls)
+        # Otherwise route through dispatch
+        else:
+            return HilbertTransform(arg0, cls, **kw)
+
+    def __init__(self, arg0, **kw):
+        # Cast argument to field
+        arg0 = Field.cast(arg0, arg0.domain)
+        super().__init__(arg0, **kw)
+        self.axis = self.domain.bases.index(self.basis)
+
+    def meta_constant(self, axis):
+        # Preserve constancy
+        return self.args[0].meta[axis]['constant']
+
+    def meta_parity(self, axis):
+        parity0 = self.args[0].meta[axis]['parity']
+        if axis == self.axis:
+            # Flip parity
+            return (-1) * parity0
+        else:
+            # Preserve parity
+            return parity0
+
+
+class HilbertTransformIndependent(HilbertTransform, FutureScalar):
+
+    basis = None
+
+    @classmethod
+    def _check_args(cls, arg0, basis, **kw):
+        return (basis is None)
+
+    def __new__(cls, arg0, **kw):
+        return Scalar(value=0)
 
