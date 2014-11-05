@@ -111,6 +111,8 @@ class ProblemBase:
         self.parameters = OrderedDict()
         self.substitutions = OrderedDict()
 
+        self.ncc_manager = NCCManager(self)
+
     @CachedAttribute
     def namespace(self):
 
@@ -120,7 +122,7 @@ class ProblemBase:
         for axis, basis in enumerate(self.domain.bases):
             # Grids
             grid = field.Array(self.domain, name=basis.name)
-            grid.from_global_vector(basis.grid(1), axis)
+            grid.from_global_vector(basis.grid(basis.dealias), axis)
             namespace[basis.name] = grid
             # Basis operators
             for op in basis.operators:
@@ -141,6 +143,25 @@ class ProblemBase:
             # Evaluate in current namespace
             namespace[call] = eval(result, namespace)
 
+        return namespace
+
+    @CachedAttribute
+    def coefficient_namespace(self):
+
+        namespace = Namespace()
+        namespace.disallow_overwrites()
+        # NCC
+        self.ncc_manager.build_coefficients()
+        namespace['NCC'] = self.ncc_manager
+        # Coupled basis operators
+        for basis in self.domain.bases:
+            if not basis.separable:
+                for op in basis.operators:
+                    namespace[op.name] = op
+        # Parameters
+        namespace.update(self.parameters)
+
+        namespace.allow_overwrites()
         return namespace
 
     def _build_basic_dictionary(self, equation, condition):
@@ -251,12 +272,11 @@ class ProblemBase:
         """Convert operator tree to linear operator form on variables."""
         var_dummies = [self.namespace[var] for var in self.variables]
         LHS = LHS.distribute_over(var_dummies)
-        linear, op_form = LHS.as_symbolic_operator(var_dummies)
-        LHS = (op_form).simplify().expand()
-        logger.debug("  LHS operator form: {}".format(LHS))
-        if not linear:
+        op_form = LHS.as_symbolic_operator(var_dummies)
+        logger.debug("  LHS operator form: {}".format(op_form))
+        if op_form is None:
             raise UnsupportedEquationError("LHS must contain terms that are linear in fields.")
-        return LHS
+        return (op_form).simplify().expand()
 
     def _split_linear(self, expr, x):
         """Split expression into independent and linear parts in x."""
@@ -286,19 +306,28 @@ class ProblemBase:
         # Extract symbolic variable coefficients
         vars = [sy.Symbol(var, commutative=False) for var in self.variables]
         coeffs = self._extract_left_coefficients(expr, vars)
-        # Multiply through by identity
-        I = sy.Symbol('Identity')
-        coeffs = [I*c for c in coeffs]
-        # Find atoms (operators and NCC expressions) needed to build rows
-        atoms = self._reduce_atoms(coeffs, sy.Symbol)
-        atom_objects = [eval(str(atom), self.namespace) for atom in atoms]
-        # Impose NCC constraints
-        self._require_independent(atom_objects, self.namespace[self.time])
-        self._require_separable(atom_objects)
+        # Stringify coefficients
+        stringforms = []
+        for coeff in coeffs:
+            terms = []
+            coeff = sy.sympify(coeff)
+            for term in sy.Add.make_args(coeff):
+                term *= sy.numbers.One()
+                factors = sy.Mul.make_args(term)
+                factors = partition(self.categorize, factors)
+                factors = [self.category_to_string(*f) for f in factors]
+                stringform = '*'.join(factors)
+                # Multiply scalar terms by identity
+                if term.is_commutative:
+                    stringform += '*Identity'
+                terms.append(stringform)
+            stringform = ' + '.join(terms)
+            stringforms.append(stringform)
 
-        atom_names = [atom.name for atom in atoms]
-        lambdified_coeffs = self._lambdify_row(atoms, coeffs)
-        return atom_names, lambdified_coeffs
+        return stringforms
+
+        # Impose NCC constraints
+        #self._require_independent(atom_objects, self.namespace[self.time])
 
     @staticmethod
     def _extract_left_coefficients(expr, symbols):
@@ -319,16 +348,6 @@ class ProblemBase:
 
         return coeffs
 
-    @staticmethod
-    def _reduce_atoms(exprs, *args, **kw):
-        """Extract symbolic atoms across a list of expressions."""
-        atoms = set()
-        for expr in exprs:
-            expr = sy.sympify(expr)
-            atoms.update(expr.atoms(*args, **kw))
-        atoms = sorted(list(atoms), key=sy.default_sort_key)
-        return atoms
-
     def _require_independent(self, atoms, dep):
         """Require NCCs to be independent of some atom."""
         for atom in atoms:
@@ -336,38 +355,6 @@ class ProblemBase:
             if isinstance(atom, field.Operand):
                 if atom.has(dep):
                     raise UnsupportedEquationError("LHS coefficient '{}' is not independent of '{}'.".format(atom, dep))
-
-    def _require_separable(self, atoms):
-        """Require NCCs to be constant along separable directions."""
-        for atom in atoms:
-            #print(atom)
-            # Impose condition on NCCs, skipping raw operator classes
-            if isinstance(atom, field.Operand):
-                for axis, basis in enumerate(self.domain.bases):
-                    if basis.separable:
-                        if not atom.meta[axis]['constant']:
-                            raise UnsupportedEquationError("LHS coefficient '{}' is non-constant along separable direction '{}'.".format(atom, basis.name))
-            elif isinstance(atom, type):
-                if issubclass(atom, operators.Coupled):
-                    if atom.basis.separable:
-                        raise UnsupportedEquationError("LHS coefficient '{}' is coupled along direction '{}'.".format(atom.name, atom.basis.name))
-
-    @staticmethod
-    def _lambdify_row(atoms, row):
-
-        def dummy_lambdify(atoms, dummies, expr):
-            expr = sy.sympify(expr)
-            # Substitute dummies
-            expr = expr.subs(zip(atoms, dummies))
-            # Collect atoms to try to minimize dot products
-            expr = expr.collect(dummies).simplify()
-            # Lambdify over dummies
-            return sy.lambdify(dummies, expr, modules='numpy')
-
-        # Replace atoms with dummies
-        # (NCC expressions might not be valid identifiers)
-        dummies = [sy.Dummy(**atom.assumptions0) for atom in atoms]
-        return [dummy_lambdify(atoms, dummies, coeff) for coeff in row]
 
     def _coupled_differential_order(self, expr):
         """Find coupled differential order of an expression, and require to be first order."""
@@ -379,29 +366,6 @@ class ProblemBase:
         if nonlinear:
             raise UnsupportedEquationError("Equations must be first-order in coupled derivatives.")
         return bool(linear)
-
-    # def num_coeffs(self, sym_coeffs, domain, order):
-    #     def op_matrix(op, domain):
-    #         if op == 1:
-    #             return 1
-    #         if op.name in self.coupled_ops:
-    #             # Lookup through domain
-    #             dummy = domain.new_field()
-    #             return coupled_ops[op.name](dummy).matrix_form()
-    #         else:
-    #             # Evaluate NCCs as operator trees
-    #             print(op)
-    #             operator = operators.Operator.from_string(op, self.parameters, domain)
-    #             field = operator.evaluate()
-    #             field.require_coeff_space()
-    #             # Scatter const coeffs from root
-    #             if domain.dist.rank == 0:
-    #                 select = (0,) * (domain.dim - 1)
-    #                 coeffs = field['c'][select]
-    #             else:
-    #                 coeffs = None
-    #             coeffs = domain.dist.comm_cart.scatter(coeffs, root=0)
-    #             return domain.bases[-1].build_mult(coeffs, order)
 
 
 class Problem(ProblemBase):
@@ -415,15 +379,14 @@ class Problem(ProblemBase):
     def namespace(self):
 
         # Build time derivative operator
-        class dt(future.FutureScalar):
+        class dt(operators.Separable):
             name = 'd' + self.time
-            def as_symbolic_operator(self, fields):
-                arg_linear, arg_op = self.args[0].as_symbolic_operator(fields)
-                if arg_linear:
-                    op = sy.Symbol(self.name) * arg_op
-                    return True, op
+
+            def as_symbolic_operator(self, vars):
+                if not self.args[0].has(*vars):
+                    raise ValueError("Cannot take time derivative of non-variable.")
                 else:
-                    raise ValueError("Cannot take time derivative of non-field")
+                    return super().as_symbolic_operator(vars)
             def meta_constant(self, axis):
                 # Preserves constancy
                 return self.args[0].meta[axis]['constant']
@@ -441,7 +404,7 @@ class Problem(ProblemBase):
     def add_equation(self, equation, condition="True"):
         """Add equation to problem."""
 
-        logger.debug("Parsing Eqn {}".format(len(self.boundary_conditions)))
+        logger.debug("Parsing Eqn {}".format(len(self.eqs)))
         dct = self._build_basic_dictionary(equation, condition)
 
         LHS, RHS = self._build_object_forms(dct)
@@ -452,15 +415,15 @@ class Problem(ProblemBase):
         dct['differential'] = self._coupled_differential_order(LHS)
 
         L, M = self._split_linear(LHS, sy.Symbol('d'+self.time))
-        dct['L_atoms'], dct['L'] = self.lambdify_variable_coefficients(L)
-        dct['M_atoms'], dct['M'] = self.lambdify_variable_coefficients(M)
+        dct['L'] = self.lambdify_variable_coefficients(L)
+        dct['M'] = self.lambdify_variable_coefficients(M)
 
         self.equations.append(dct)
 
     def add_bc(self, equation, condition="True"):
         """Add equation to problem."""
 
-        logger.debug("Parsing BC {}".format(len(self.boundary_conditions)))
+        logger.debug("Parsing BC {}".format(len(self.bcs)))
         dct = self._build_basic_dictionary(equation, condition)
 
         LHS, RHS = self._build_object_forms(dct)
@@ -471,10 +434,88 @@ class Problem(ProblemBase):
         dct['differential'] = self._coupled_differential_order(LHS)
 
         L, M = self._split_linear(LHS, sy.Symbol('d'+self.time))
-        dct['L_atoms'], dct['L'] = self.lambdify_variable_coefficients(L)
-        dct['M_atoms'], dct['M'] = self.lambdify_variable_coefficients(M)
+        dct['L'] = self.lambdify_variable_coefficients(L)
+        dct['M'] = self.lambdify_variable_coefficients(M)
 
         self.boundary_conditions.append(dct)
 
+    def _check_object_conditions(self, LHS, RHS, BC=False):
+        super()._check_object_conditions(LHS, RHS, BC=BC)
 
+    def categorize(self, factor):
+        if factor.is_commutative:
+            return 'scalar'
+        else:
+            expr = eval(str(factor), self.namespace)
+            if isinstance(expr, type):
+                return 'operator'
+            else:
+                return 'ncc'
+
+    def category_to_string(self, category, itemlist):
+        if category == 'scalar':
+            out = [repr(item) for item in itemlist]
+        elif category == 'operator':
+            out = ['{}.matrix_form()'.format(item.name) for item in itemlist]
+        elif category == 'ncc':
+            # Multiply items into one NCC
+            ncc_str = repr(sy.Mul(*itemlist))
+            # Register NCC string
+            self.ncc_manager.register(ncc_str)
+            out = ["NCC('{}', terms=5)".format(ncc_str)]
+        return '*'.join(out)
+
+
+class NCCManager:
+
+    def __init__(self, problem):
+        self.problem = problem
+        self.domain = problem.domain
+        self.basis = problem.domain.bases[-1]
+        self.ncc_strings = []
+        self.ncc_coeffs = {}
+
+    def register(self, ncc_str):
+        self.ncc_strings.append(ncc_str)
+
+    def build_coefficients(self):
+        namespace = self.problem.namespace
+        domain = self.domain
+        # Sort NCC strings for proper parallel evaluation order
+        self.ncc_strings.sort()
+        # Compute NCC coefficients
+        for ncc in self.ncc_strings:
+            # Evaluate NCC as field
+            ncc = future.FutureField.parse(ncc, namespace, domain)
+            ncc = ncc.evaluate()
+            ncc.require_coeff_space()
+            # Scatter transverse-constant coefficients
+            if domain.dist.rank == 0:
+                select = (0,) * (domain.dim - 1)
+                coeffs = ncc['c'][select]
+            else:
+                coeffs = None
+            coeffs = domain.dist.comm_cart.scatter(coeffs, root=0)
+            self.ncc_coeffs[ncc_str] = coeffs
+
+    def __call__(self, ncc_str, terms):
+        coeffs = self.ncc_coeffs[ncc_str]
+        return self.basis.NCC(coeffs, terms)
+
+
+def partition(categorize, items):
+
+    current_category = None
+    partitions = []
+
+    for item in items:
+        category = categorize(item)
+        if category == current_category:
+            current_list.append(item)
+        else:
+            current_category = category
+            current_list = [item]
+            partitions.append((current_category, current_list))
+
+    return partitions
 

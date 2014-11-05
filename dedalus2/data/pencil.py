@@ -34,7 +34,7 @@ def build_pencils(domain):
     # Construct corresponding trans diff consts and build pencils
     pencils = []
     scales = domain.remedy_scales(1)
-    start = domain.distributor.coeff_layout.start(scales)
+    start = domain.distributor.coeff_layout.start(scales)[:-1]
     for index in indices:
         pencils.append(Pencil(domain, index, start+index))
 
@@ -76,54 +76,71 @@ class Pencil:
         neqs = len(selected_eqs)
         nbcs = len(selected_bcs)
         if neqs != nvars:
-            raise ValueError("Pencil {} has {} equations for {} variables.".format(indices, neqs, nvars))
+            raise ValueError("Pencil {} has {} equations for {} variables.".format(index, neqs, nvars))
         if nbcs != ndiff:
-            raise ValueError("Pencil {} has {} boudnary conditions for {} differential equations.".format(indices, nbcs, ndiff))
+            raise ValueError("Pencil {} has {} boudnary conditions for {} differential equations.".format(index, nbcs, ndiff))
+        Neqs = len(problem.eqs)
+        Nbcs = len(problem.bcs)
+
+        zbasis = self.domain.bases[-1]
+        zsize = zbasis.coeff_size
+        zdtype = zbasis.coeff_dtype
+        compound = hasattr(zbasis, 'subbases')
+
+        # Copy problem namespace
+        namespace = problem.coefficient_namespace.copy()
+        # Separable basis operators
+        for axis, basis in enumerate(problem.domain.bases):
+            if basis.separable:
+                for op in basis.operators:
+                    try:
+                        namespace[op.name] = op.scalar_form(index[axis])
+                    except AttributeError:
+                        pass
+        # Identity
+        namespace['Identity'] = sparse.identity(zsize, dtype=zdtype).tocsr()
 
         # Basis matrices
-        I = sparse.identity(basis.coeff_size, dtype=basis.coeff_dtype)
-        R = basis.Rearrange
+        R = namespace['Identity'] #basis.Rearrange
         if ndiff:
             P = basis.Precondition
             Fb = basis.FilterBoundaryRow
             Cb = basis.ConstantToBoundary
+            R_Fb_P = R*Fb*P
+            R_Cb = R*Cb
         if compound:
             Fm = basis.FilterMatchRows
             M = basis.Match
 
         # Pencil matrices
-        G_eq = sparse.csr_matrix((coeffs*nvars, coeffs*Neqs), dtype=basis.dtype)
-        G_bc = sparse.csr_matrix((coeffs*nvars, coeffs*Nbcs), dtype=basis.dtype)
-        C = lambda : sparse.csr_matrix((coeffs*nvars, coeffs*nvars), dtype=basis.dtype)
-        LHS_matrices = {name: C() for name in names}
+        G_eq = sparse.csr_matrix((zsize*nvars, zsize*Neqs), dtype=zdtype)
+        G_bc = sparse.csr_matrix((zsize*nvars, zsize*Nbcs), dtype=zdtype)
+        C = lambda : sparse.csr_matrix((zsize*nvars, zsize*nvars), dtype=zdtype)
+        LHS = {name: C() for name in names}
 
         # Kronecker stencils
-        δG_eq = np.zeros([nvars, len(problem.eqs)])
-        δG_bc = np.zeros([nvars, len(problem.bcs)])
+        δG_eq = np.zeros([nvars, Neqs])
+        δG_bc = np.zeros([nvars, Nbcs])
         δC = np.zeros([nvars, nvars])
 
         # Use scipy sparse kronecker product with CSR output
         kron = partial(sparse.kron, format='csr')
 
         # Build matrices
-        bc_iter = iter(seleted_bcs)
+        bc_iter = iter(selected_bcs)
         for i, eq in enumerate(selected_eqs):
 
             differential = eq['differential']
             if differential:
                 bc = next(bc_iter)
 
-            eq_atoms = [namespace[atom] for atom in eq['atoms']]
-            if differential:
-                bc_atoms = [namespace[atom] for atom in bc['atoms']]
-
             # Build RHS equation process matrix
             if (not differential) and (not compound):
                 Gi_eq = R
             elif (not differential) and compound:
-                Gi_eq = R*Fm
+                Gi_eq = R_Fm
             elif differential and (not compound):
-                Gi_eq = R*Fb*P
+                Gi_eq = R_Fb_P
             elif differential and compound:
                 Gi_eq = R*Fm*Fb*P
             # Kronecker into system matrix
@@ -133,31 +150,33 @@ class Pencil:
 
             if differential:
                 # Build RHS BC process matrix
-                Gi_bc = R*Cb
+                Gi_bc = R_Cb
                 # Kronecker into system matrix
                 Gi_bc.eliminate_zeros()
                 δG_bc.fill(0); δG_bc[i, problem.bcs.index(bc)] = 1
                 G_bc = G_bc + kron(Gi_bc, δG_bc)
 
             # Build LHS matrices
-            for name, C in LHS.items():
+            for name in LHS:
+                C = LHS[name]
                 for j in range(nvars):
                     # Add equation terms
-                    Eij = eq[name][j](*eq_atoms)
+                    Eij = eval(eq[name][j], namespace)
                     Cij = Gi_eq*Eij
                     if differential:
                         # Add BC terms
-                        Bij = bc[name][j](*bc_atoms)
+                        Bij = eval(bc[name][j], namespace)
                         Cij = Cij + Gi_bc*Bij
                     # Kronecker into system matrix
                     Cij.eliminate_zeros()
                     if Cij.nnz:
                         δC.fill(0); δC[i, j] = 1
                         C = C + kron(Cij, δC)
+                LHS[name] = C
 
         if compound:
             # Add match terms
-            L = LHS_matrices['L']
+            L = LHS['L']
             δM = np.identity(nvars)
             L = L + kron(R*M, δM)
 
@@ -166,7 +185,8 @@ class Pencil:
             C.eliminate_zeros()
         self.LHS = zeros_with_pattern(*LHS.values()).tocsr()
         for name, C in LHS.items():
-            setattr(self, name, expand_pattern(C, self.LHS).tocsr())
+            C = expand_pattern(C, self.LHS).tocsr()
+            setattr(self, name, C)
 
         # Store operators for RHS
         G_eq.eliminate_zeros()
