@@ -13,6 +13,7 @@ from mpi4py import MPI
 from .system import FieldSystem
 #from .operators import Operator, Cast
 from .future import Future, FutureField
+from .field import Field
 from ..tools.array import reshape_vector
 from ..tools.general import OrderedSet
 from ..tools.general import oscillate
@@ -100,6 +101,9 @@ class Evaluator:
 
         tasks = [t for h in handlers for t in h.tasks]
 
+        # Attempt initial evaluation
+        tasks = self.attempt_tasks(tasks, id=sim_time)
+
         # Move all fields to coefficient layout
         fields = self.get_fields(tasks)
         for f in fields:
@@ -138,7 +142,7 @@ class Evaluator:
 
         fields = OrderedSet()
         for task in tasks:
-            fields.update(task['operator'].field_set())
+            fields.update(task['operator'].atoms(Field))
 
         return fields
 
@@ -205,7 +209,7 @@ class Handler:
         # if isinstance(task, Operator):
         #     op = task
         if isinstance(task, str):
-            op = Future.from_string(task, self.vars, self.domain)
+            op = FutureField.parse(task, self.vars, self.domain)
         else:
             op = FutureField.cast(task)
             # op = Cast(task)
@@ -408,7 +412,7 @@ class FileHandler(Handler):
         task_group =  file.create_group('tasks')
         for task_num, task in enumerate(self.tasks):
             layout = task['layout']
-            constant = task['operator'].constant
+            constant = task['operator'].meta[:]['constant']
             scales = task['scales']
             gnc_shape, gnc_start, write_shape, write_start, write_count = self.get_write_stats(layout, scales, constant, index=0)
             if np.prod(write_shape) <= 1:
@@ -488,7 +492,7 @@ class FileHandler(Handler):
             dset = file['tasks'][task['name']]
             dset.resize(index+1, axis=0)
 
-            memory_space, file_space = self.get_hdf5_spaces(out.layout, task['scales'], out.constant, index)
+            memory_space, file_space = self.get_hdf5_spaces(out.layout, task['scales'], out.meta[:]['constant'], index)
             if self.parallel:
                 dset.id.write(memory_space, file_space, out.data, dxpl=self._property_list)
             else:
@@ -499,6 +503,7 @@ class FileHandler(Handler):
     def get_write_stats(self, layout, scales, constant, index):
         """Determine write parameters for nonconstant subspace of a field."""
 
+        constant = np.array(constant)
         # References
         gshape = layout.global_shape(scales)
         lshape = layout.local_shape(scales)
@@ -530,6 +535,7 @@ class FileHandler(Handler):
     def get_hdf5_spaces(self, layout, scales, constant, index):
         """Create HDF5 space objects for writing nonconstant subspace of a field."""
 
+        constant = np.array(constant)
         # References
         lshape = layout.local_shape(scales)
         start = layout.start(scales)
