@@ -1,6 +1,21 @@
 
 
-class MultiDict(dict):
+from collections import OrderedDict
+
+
+class AliasDict(OrderedDict):
+
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self.aliases = {}
+
+    def __getitem__(self, key):
+        if key not in self:
+            key = self.aliases[key]
+        return super().__getitem__(key)
+
+
+class MultiDict(AliasDict):
 
     def __repr__(self):
         return 'MultiDict({})'.format(super().__repr__())
@@ -9,6 +24,8 @@ class MultiDict(dict):
         return 'MultiDict({})'.format(super().__str__())
 
     def __getitem__(self, key):
+        if key == slice(None):
+            key = tuple(i for i in self)
         if isinstance(key, tuple):
             return DictGroup(*(self[item] for item in key))
         else:
@@ -51,12 +68,13 @@ class Metadata(MultiDict):
         super().__init__()
         self.domain = domain
         for axis, basis in enumerate(domain.bases):
-            self[axis] = basis.default_meta()
-            self[basis.name] = self[axis]
+            self[basis.name] = basis.default_meta()
+            #self[basis.name] = self[axis]
+            self.aliases[axis] = basis.name
 
-    def __iter__(self):
-        for basis in self.domain.bases:
-            yield self[basis.name]
+    # def __iter__(self):
+    #     for basis in self.domain.bases:
+    #         yield self[basis.name]
 
 
 # class MetaCollection:

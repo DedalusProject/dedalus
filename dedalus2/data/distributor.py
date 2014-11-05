@@ -374,7 +374,7 @@ class Transpose:
     def increment(self, field):
         """Gather along specified axis."""
 
-        scales = tuple(axmeta['scale'] for axmeta in field.meta)
+        scales = field.meta[:]['scale']
         plan, temp0, temp1 = self._fftw_setup(scales)
         if plan:
             # Copy layout0 view of data to plan buffer
@@ -392,7 +392,7 @@ class Transpose:
     def decrement(self, field):
         """Scatter along specified axis."""
 
-        scales = tuple(axmeta['scale'] for axmeta in field.meta)
+        scales = field.meta[:]['scale']
         plan, temp0, temp1 = self._fftw_setup(scales)
         if plan:
             # Copy layout1 view of data to plan buffer
