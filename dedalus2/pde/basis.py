@@ -122,6 +122,7 @@ class Basis:
         else:
             # Check cdata
             if cdata.shape[axis] != self.coeff_size:
+                print(cdata.shape[axis], self.coeff_size)
                 raise ValueError("cdata does not match coeff_size")
             if cdata.dtype != self.coeff_dtype:
                 raise ValueError("cdata does not match coeff_dtype")
@@ -174,7 +175,7 @@ class ImplicitBasis(Basis):
 
 
     @CachedMethod
-    def Mult(self, p, subindex):
+    def Multiply(self, p):
         """p-element multiplication matrix."""
         raise NotImplementedError()
 
@@ -202,6 +203,15 @@ class ImplicitBasis(Basis):
         Cb[self.boundary_row, 0] = 1
         return Cb.tocsr()
 
+    @CachedMethod
+    def NCC(self, coeffs, terms):
+        """Build NCC multiplication matrix."""
+        matrix = 0
+        for p in range(terms):
+            if subcoeffs[p] != 0:
+                matrix = matrix + coeffs[p]*self.Multiply(p)
+        return matrix
+
 
 class Chebyshev(ImplicitBasis):
     """Chebyshev polynomial basis on the roots grid."""
@@ -209,10 +219,9 @@ class Chebyshev(ImplicitBasis):
     element_label = 'T'
     boundary_row = -1
     separable = False
+    coupled = True
 
     def __init__(self, name, base_grid_size, interval=(-1,1), dealias=1):
-
-        self.subbases = [self]
 
         # Coordinate transformation
         # Native interval: (-1, 1)
@@ -381,6 +390,7 @@ class Chebyshev(ImplicitBasis):
             basis = self
 
             @classmethod
+            @CachedMethod
             def matrix_form(cls):
                 """Chebyshev integration: int(T_n) = (1 + (-1)^n) / (1 - n^2)"""
                 size = cls.basis.coeff_size
@@ -407,18 +417,27 @@ class Chebyshev(ImplicitBasis):
             name = 'interp_{}'.format(self.name)
             basis = self
 
-            def matrix_form(self):
+            @classmethod
+            def matrix_form(cls, position=None):
                 """Chebyshev interpolation: Tn(xn) = cos(n * acos(xn))"""
-                size = self.basis.coeff_size
-                matrix = sparse.lil_matrix((size, size), dtype=self.basis.coeff_dtype)
-                matrix[0,:] = self._interp_vector()
+                if position is None:
+                    position = cls._position
+                return cls._interp_matrix(position)
+
+            @classmethod
+            @CachedMethod
+            def _interp_matrix(cls, position):
+                size = cls.basis.coeff_size
+                matrix = sparse.lil_matrix((size, size), dtype=cls.basis.coeff_dtype)
+                matrix[0,:] = cls._interp_vector(position)
                 return matrix.tocsr()
 
-            def _interp_vector(self):
+            @classmethod
+            def _interp_vector(cls, position):
                 """Chebyshev interpolation: Tn(xn) = cos(n * acos(xn))"""
-                xn = self.basis._native_coord(self.position)
+                xn = cls.basis._native_coord(position)
                 theta = np.arccos(xn)
-                return np.cos(self.elements * theta)
+                return np.cos(cls.basis.elements * theta)
 
         return InterpolateChebyshev
 
@@ -431,6 +450,7 @@ class Chebyshev(ImplicitBasis):
             basis = self
 
             @classmethod
+            @CachedMethod
             def matrix_form(cls):
                 """Chebyshev differentiation: d_x(T_n) / n = 2 T_(n-1) + d_x(T_(n-2)) / (n-2)"""
                 size = cls.basis.coeff_size
@@ -449,11 +469,11 @@ class Chebyshev(ImplicitBasis):
                 """Differentiation by recursion on coefficients."""
                 # Currently setup just for last axis
                 if axis != -1:
-                    if axis != (len(cdata.shape) - 1):
+                    if axis != (len(input.shape) - 1):
                         raise NotImplementedError()
                 # Referencess
-                a = cdata
-                b = cderiv
+                a = input
+                b = output
                 N = self.basis.coeff_size - 1
                 # Apply recursive differentiation
                 b[..., N] = 0.
@@ -462,7 +482,7 @@ class Chebyshev(ImplicitBasis):
                     b[..., i] = 2 * (i+1) * a[..., i+1] + b[..., i+2]
                 b[..., 0] = a[..., 1] + b[..., 2] / 2.
                 # Scale for interval
-                cderiv /= self.basis._grid_stretch
+                output /= self.basis._grid_stretch
 
         return DifferentiateChebyshev
 
@@ -517,10 +537,9 @@ class Fourier(TransverseBasis):
 
     element_label = 'k'
     separable = True
+    coupled = False
 
     def __init__(self, name, base_grid_size, interval=(0,2*pi), dealias=1):
-
-        self.subbases = [self]
 
         # Coordinate transformation
         # Native interval: (0, 2π)
@@ -704,17 +723,19 @@ class Fourier(TransverseBasis):
             name = 'integ_{}'.format(self.name)
             basis = self
 
-            def scalar_form(self, index):
+            @classmethod
+            def scalar_form(cls, index):
                 """Fourier integration: int(Fn) = 2 π δ(n,0)"""
                 if index == 0:
-                    return 2 * π * self.basis._grid_stretch
+                    return 2 * np.pi * cls.basis._grid_stretch
                 else:
                     return 0
 
-            def vector_form(self):
+            @classmethod
+            def vector_form(cls):
                 """Fourier integration: int(Fn) = 2 π δ(n,0)"""
-                vector = np.zeros(self.basis.coeff_size, dtype=self.basis.coeff_dtype)
-                vector[0] = 2 * π * self.basis._grid_stretch
+                vector = np.zeros(cls.basis.coeff_size, dtype=cls.basis.coeff_dtype)
+                vector[0] = 2 * np.pi * cls.basis._grid_stretch
                 return vector
 
         return IntegrateFourier
@@ -740,14 +761,18 @@ class Fourier(TransverseBasis):
                 np.copyto(output[axslice(axis, 0, 1)], interp)
                 np.copyto(output[axslice(axis, 1, None)], 0)
 
-            def matrix_form(self):
+            @classmethod
+            @CachedMethod
+            def matrix_form(cls, position=None):
                 """Fourier interpolation: Fn(x) = exp(i kn x)"""
-                if self.basis.coeff_dtype == np.float64:
+                if position is None:
+                    position = cls._position
+                if cls.basis.coeff_dtype == np.float64:
                     raise NotImplementedError("Interpolating an R2C Fourier series cannot be done via a matrix multiplication.")
                 else:
-                    size = self.basis.coeff_size
-                    matrix = sparse.lil_matrix((size, size), dtype=self.basis.coeff_dtype)
-                    matrix[0,:] = self._interp_vector(self.position)
+                    size = cls.basis.coeff_size
+                    matrix = sparse.lil_matrix((size, size), dtype=cls.basis.coeff_dtype)
+                    matrix[0,:] = self._interp_vector(position)
                     return matrix.tocsr()
 
             @classmethod
@@ -766,13 +791,15 @@ class Fourier(TransverseBasis):
             name = 'd' + self.name
             basis = self
 
-            def scalar_form(self, index):
+            @classmethod
+            def scalar_form(cls, index):
                 """Fourier differentiation: dx(Fn) = i kn Fn"""
-                return 1j * self.basis.wavenumbers[index]
+                return 1j * cls.basis.wavenumbers[index]
 
-            def vector_form(self):
+            @classmethod
+            def vector_form(cls):
                 """Fourier differentiation: dx(Fn) = i kn Fn"""
-                return 1j * self.basis.wavenumbers
+                return 1j * cls.basis.wavenumbers
 
         return DifferentiateFourier
 
@@ -784,14 +811,15 @@ class Fourier(TransverseBasis):
             name = 'H' + self.name
             basis = self
 
-            def scalar_form(self, index):
+            @classmethod
+            def scalar_form(cls, index):
                 """Hilbert transform: Hx(Fn) = -i sgn(kn) Fn"""
-                return -1j * np.sign(self.basis.wavenumbers[index])
+                return -1j * np.sign(cls.basis.wavenumbers[index])
 
-            def vector_form(self):
+            @classmethod
+            def vector_form(cls):
                 """Hilbert transform: Hx(Fn) = -i sgn(kn) Fn"""
-                k = self.basis.wavenumbers[index]
-                return -1j * np.sign(self.basis.wavenumbers)
+                return -1j * np.sign(cls.basis.wavenumbers)
 
         return HilbertTransformFourier
 
@@ -841,6 +869,10 @@ class SinCos(TransverseBasis):
 
 class Compound(ImplicitBasis):
     """Compound basis joining adjascent subbases."""
+
+    separable = False
+    coupled = True
+
     def __init__(self, name, subbases, dealias=1):
 
         # Check intervals
@@ -955,6 +987,7 @@ class Compound(ImplicitBasis):
             basis = self
 
             @classmethod
+            @CachedMethod
             def matrix_form(cls):
                 size = cls.basis.coeff_size
                 matrix = sparse.lil_matrix((size, size), dtype=cls.basis.coeff_dtype)
@@ -982,8 +1015,16 @@ class Compound(ImplicitBasis):
             name = 'interp_{}'.format(self.name)
             basis = self
 
-            def matrix_form(self):
+            @classmethod
+            def matrix_form(cls, position=None):
                 """Compound interpolation matrix"""
+                if position is None:
+                    position = cls._position
+                return cls._interp_matrix(position)
+
+            @classmethod
+            @CachedMethod
+            def _interp_matrix(cls, position):
                 size = self.basis.coeff_size
                 matrix = sparse.lil_matrix((size, size), dtype=self.basis.coeff_dtype)
                 interp_vector = self._interp_vector(self.position)
@@ -1018,6 +1059,7 @@ class Compound(ImplicitBasis):
             basis = self
 
             @classmethod
+            @CachedMethod
             def matrix_form(cls):
                 """Compound differentiation matrix."""
                 sub_blocks = [sb.Differentiate.matrix_form() for sb in cls.basis.subbases]
@@ -1047,6 +1089,17 @@ class Compound(ImplicitBasis):
         subMult = self.subbases[subindex].Mult(p)
         Mult[start:end, start:end] = subMult
         return Mult.tocsr()
+
+    @CachedMethod
+    def NCC(self, coeffs, terms):
+        """Build NCC multiplication matrix."""
+        matrix = 0
+        for index, basis in enumerate(self.subbases):
+            subcoeffs = self.sub_cdata(coeffs, index, axis=0)
+            for p in range(terms):
+                if subcoeffs[p] != 0:
+                    matrix = matrix + subcoeffs[p]*self.Multiply(p, index)
+        return matrix
 
     @CachedAttribute
     def FilterMatchRow(self):
