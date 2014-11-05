@@ -4,6 +4,7 @@ Classes for future evaluation.
 """
 
 from functools import partial
+import sympy as sy
 
 from .field import Operand, Data, Scalar, Array, Field
 from .metadata import Metadata
@@ -46,6 +47,7 @@ class Future(Operand):
         self.args = list(args)
         self.original_args = list(args)
         self.domain = domain
+        self._grid_layout = domain.dist.grid_layout
         self.out = out
         self.last_id = None
 
@@ -122,8 +124,8 @@ class Future(Operand):
             out = self.domain.new_data(self.future_type)
 
         # Copy metadata
-        out.meta = self.meta
         out.set_scales(self.domain.dealias, keep_data=False)
+        out.meta = self.meta
 
         # Perform operation
         self.operate(out)
@@ -171,23 +173,14 @@ class Future(Operand):
     def distribute_over(self, vars):
         return self
 
+    def as_symbol(self):
+        return sy.Symbol(str(self), commutative=False)
+
+
 class FutureScalar(Future):
     """Class for deferred operations producing a Scalar."""
     future_type = Scalar
     meta = Scalar.ScalarMeta()
-
-    def __init__(self, *args, domain=None, out=None):
-
-        # Check arity
-        if self.arity is not None:
-            if len(args) != self.arity:
-                raise ValueError("Wrong number of arguments.")
-        # Required attributes
-        self.args = list(args)
-        self.original_args = list(args)
-        self.domain = domain
-        self.out = out
-        self.last_id = None
 
 
 class FutureArray(Future):

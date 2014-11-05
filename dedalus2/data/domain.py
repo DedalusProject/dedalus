@@ -145,6 +145,9 @@ class Domain:
             setattr(field, key, value)
         return field
 
+    def new_data(self, type):
+        return type(self)
+
     def remedy_scales(self, scales):
 
         # Default to 1.

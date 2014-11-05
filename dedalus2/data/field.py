@@ -116,6 +116,20 @@ class Operand:
         else:
             raise ValueError("Cannot cast type: {}".format(type(x)))
 
+    def as_symbolic_operator(self, vars):
+        if self in vars:
+            return self.as_symbol()
+        else:
+            return self.as_ncc_symbol()
+
+    def as_ncc_symbol(self):
+        # Require constant along separable axes
+        for basis in self.domain.bases:
+            if basis.separable:
+                if not self.meta[basis.name]['constant']:
+                    raise ValueError("{} is non-constant along separable direction '{}'.".format(self, basis.name))
+        return self.as_symbol()
+
 
 class Data(Operand):
 
@@ -150,12 +164,21 @@ class Scalar(Data):
         def __getitem__(self, axis):
             return {'constant': True, 'parity': 1}
 
-    def __init__(self, value=None, name=None):
+    def __init__(self, value=None, name=None, domain=None):
         from .domain import EmptyDomain
-        self.value = value
         self.name = name
         self.meta = self.ScalarMeta()
         self.domain = EmptyDomain()
+        self.data = np.zeros(1, dtype=np.float64)
+        self.value = value
+
+    @property
+    def value(self):
+        return self.data[0]
+
+    @value.setter
+    def value(self, x):
+        self.data[0] = x
 
     def __str__(self):
         if self.name:
@@ -163,11 +186,11 @@ class Scalar(Data):
         else:
             return str(self.value)
 
-    def as_symbolic_operator(self, fields):
+    def as_symbol(self):
         if self.name:
-            return False, sy.Symbol(self.name)
+            return sy.Symbol(str(self), commutative=True)
         else:
-            return False, self.value
+            return self.value
 
 
 class Array(Data):
@@ -177,26 +200,39 @@ class Array(Data):
         self.name = name
         self.meta = Metadata(domain)
 
+        layout = domain.dist.grid_layout
+        scales = domain.dealias
+
+        self.data = np.zeros(shape=layout.local_shape(scales),
+                             dtype=layout.dtype)
+
+        for i in range(domain.dim):
+            self.meta[i]['scale'] = scales[i]
+
+    def set_scales(self, scales, *, keep_data):
+        """Set new transform scales."""
+
+        pass
+
     def from_global_vector(self, data, axis):
-        # Infer scale from global size
-        scale = data.size / self.domain.bases[axis].base_grid_size
         # Set metadata
         for i in range(self.domain.dim):
             axmeta = self.meta[i]
             axmeta['constant'] = False if (i == axis) else True
-            axmeta['scale'] = scale if (i == axis) else None
             if 'parity' in axmeta:
                 axmeta['parity'] = False if (i == axis) else True
         # Save local slice
-        local_slice =  self.domain.dist.grid_layout.slices(scale)[axis]
+        scales = self.meta[:]['scale']
+        local_slice =  self.domain.dist.grid_layout.slices(scales)[axis]
         local_data = data[local_slice]
-        self.data = reshape_vector(local_data, dim=self.domain.dim, axis=axis)
+        local_data = reshape_vector(data[local_slice], dim=self.domain.dim, axis=axis)
+        np.copyto(self.data, local_data)
 
-    def as_symbolic_operator(self, fields):
+    def as_symbol(self):
         if self.name:
-            return (self in fields), sy.Symbol(self.name, commutative=False)
+            return sy.Symbol(str(self), commutative=False)
         else:
-            raise ValueError("Can't represent unnamed Array symbolically")
+            raise ValueError("Can't represent unnamed Array symbolically.")
 
 
 class Field(Data):
@@ -239,6 +275,9 @@ class Field(Data):
             self.set_scales(1, keep_data=False)
         self.name = name
 
+    def as_symbol(self):
+        return sy.Symbol(str(self), commutative=False)
+
     def clean(self):
         """Revert field to state at instantiation."""
 
@@ -262,7 +301,7 @@ class Field(Data):
     def layout(self, layout):
         self._layout = layout
         # Update data view
-        scales = tuple(axmeta['scale'] for axmeta in self.meta)
+        scales = self.meta[:]['scale']
         self.data = np.ndarray(shape=layout.local_shape(scales),
                                dtype=layout.dtype,
                                buffer=self.buffer)
@@ -303,7 +342,7 @@ class Field(Data):
         """Set new transform scales."""
 
         new_scales = self.domain.remedy_scales(scales)
-        old_scales = tuple(axmeta['scale'] for axmeta in self.meta)
+        old_scales = self.meta[:]['scale']
         if new_scales == old_scales:
             return
 
@@ -319,8 +358,8 @@ class Field(Data):
             old_data = self.data
 
         # Set metadata
-        for axis, axmeta in enumerate(self.meta):
-            axmeta['scale'] = new_scales[axis]
+        for axis, scale in enumerate(new_scales):
+            self.meta[axis]['scale'] = scale
         # Build new buffer
         buffer_size = self.domain.distributor.buffer_size(new_scales)
         self.buffer = self._create_buffer(buffer_size)
@@ -392,7 +431,7 @@ class Field(Data):
         # Use differentiation operator
         basis = self.domain.get_basis_object(basis)
         axis = self.domain.bases.index(basis)
-        diff_op = self.domain.diff_ops[axis]
+        diff_op = basis.Differentiate
         return diff_op(self, out=out).evaluate()
 
     def integrate(self, *bases, out=None):
@@ -467,9 +506,6 @@ class Field(Data):
             out_c[p] = splinalg.spsolve(LHS, rhs, use_umfpack=use_umfpack, permc_spec=permc_spec)
 
         return out
-
-    def as_symbolic_operator(self, fields):
-        return (self in fields), sy.Symbol(self.name, commutative=False)
 
     @staticmethod
     def cast(input, domain):

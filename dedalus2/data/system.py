@@ -39,11 +39,11 @@ class CoeffSystem:
 
     def get_pencil(self, pencil):
         """Return pencil view from system buffer."""
-        return self.data[pencil.index]
+        return self.data[pencil.local_index]
 
     def set_pencil(self, pencil, data):
         """Set pencil data in system buffer."""
-        np.copyto(self.data[pencil.index], data)
+        np.copyto(self.data[pencil.local_index], data)
 
 
 class FieldSystem(CoeffSystem):

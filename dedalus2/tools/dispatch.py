@@ -28,7 +28,7 @@ class MultiClass(type):
         if len(passlist) == 0:
             return NotImplemented
         elif len(passlist) > 1:
-            raise ValueError("Degenerate subclasses found for the supplied arguments: {}, {}".format(args, kw))
+            raise ValueError("Degenerate subclasses of {} found for the supplied arguments: {}, {}".format(cls, args, kw))
         else:
             subclass, = passlist
 
