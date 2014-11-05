@@ -9,7 +9,7 @@ import sympy as sy
 
 from .field import Operand, Data, Scalar, Array, Field
 from .future import Future, FutureScalar, FutureArray, FutureField
-from ..tools.array import reshape_vector
+from ..tools.array import reshape_vector, apply_matrix
 from ..tools.dispatch import MultiClass
 
 
@@ -174,12 +174,23 @@ class UnaryGridFunction(Future, metaclass=MultiClass):
         else:
             raise UndefinedParityError("Unknown action of {} on parity.".format(self.name))
 
-    def as_symbolic_operator(self, fields):
-        arg_linear, arg_op = self.args[0].as_symbolic_operator(fields)
-        if arg_linear:
+    def as_symbolic_operator(self, vars):
+        arg0_op = self.args[0].as_symbolic_operator(vars)
+        if arg0_op:
             raise ValueError("Nonlinear")
         else:
-            return False, sy.Symbol(str(self), commutative=False)
+            return None
+
+    def as_symbolic_operator(self, vars):
+
+        arg0, = self.args
+        arg0_has_vars = arg0.has(*vars)
+        arg0_op = arg0.as_symbolic_operator(vars)
+
+        if arg0_has_vars:
+            raise NonlinearOperatorError("Cannot linearize {}.".format(self.name))
+        else:
+            return self.as_ncc_symbol()
 
 
 class UnaryGridFunctionScalar(UnaryGridFunction, FutureScalar):
@@ -260,16 +271,22 @@ class Add(Arithmetic, metaclass=MultiClass):
         else:
             return parity0
 
-    def as_symbolic_operator(self, fields):
-        arg0_linear, arg0_op = self.args[0].as_symbolic_operator(fields)
-        arg1_linear, arg1_op = self.args[1].as_symbolic_operator(fields)
-        if (arg0_linear != arg1_linear):
-            raise NonlinearOperatorError("Cannot add linear and nonlinear terms.")
-        return (arg0_linear and arg1_linear), arg0_op + arg1_op
+    def as_symbolic_operator(self, vars):
 
-    def distribute_over(self, fields):
-        # Put arguments into linear form
-        return Add(*[arg.distribute_over(fields) for arg in self.args])
+        arg0, arg1 = self.args
+        arg0_has_vars = arg0.has(*vars)
+        arg1_has_vars = arg1.has(*vars)
+        arg0_op = arg0.as_symbolic_operator(vars)
+        arg1_op = arg1.as_symbolic_operator(vars)
+
+        if (arg0_has_vars != arg1_has_vars):
+            raise NonlinearOperatorError("Cannot add linear and nonlinear terms.")
+        else:
+            return arg0_op + arg1_op
+
+    def distribute_over(self, vars):
+        # Distribute arguments
+        return Add(*[arg.distribute_over(vars) for arg in self.args])
 
 
 class AddScalarScalar(Add, FutureScalar):
@@ -436,26 +453,30 @@ class Multiply(Arithmetic, metaclass=MultiClass):
         parity1 = self.args[1].meta[axis]['parity']
         return parity0 * parity1
 
-    def as_symbolic_operator(self, fields):
-        arg0_linear, arg0_op = self.args[0].as_symbolic_operator(fields)
-        arg1_linear, arg1_op = self.args[1].as_symbolic_operator(fields)
-        if (arg0_linear and arg1_linear):
-            raise NonlinearOperatorError("Cannot multiply two linear terms.")
-        elif arg0_linear:
-            return True, arg1_op * arg0_op
-        elif arg1_linear:
-            return True, arg0_op * arg1_op
-        else:
-            return False, arg0_op * arg1_op
+    def as_symbolic_operator(self, vars):
+        """Change to left-multiplication on vars."""
 
-    def distribute_over(self, fields):
+        arg0, arg1 = self.args
+        arg0_has_vars = arg0.has(*vars)
+        arg1_has_vars = arg1.has(*vars)
+        arg0_op = arg0.as_symbolic_operator(vars)
+        arg1_op = arg1.as_symbolic_operator(vars)
+
+        if arg0_has_vars and arg1_has_vars:
+            raise NonlinearOperatorError("Cannot multiply two linear terms.")
+        elif arg0_has_vars:
+            return arg1_op * arg0_op
+        else:
+            return arg0_op * arg1_op
+
+    def distribute_over(self, vars):
         # Distribute arguments
-        out = Multiply(*[arg.distribute_over(fields) for arg in self.args])
+        out = Multiply(*[arg.distribute_over(vars) for arg in self.args])
         # Distribute over addition
-        if out.args[0].has(*fields) and isinstance(out.args[0], Add):
-            return out.left_distribute().distribute_over(fields)
-        elif out.args[1].has(*fields) and isinstance(out.args[1], Add):
-            return out.right_distribute().distribute_over(fields)
+        if out.args[0].has(*vars) and isinstance(out.args[0], Add):
+            return out.left_distribute().distribute_over(vars)
+        elif out.args[1].has(*vars) and isinstance(out.args[1], Add):
+            return out.right_distribute().distribute_over(vars)
         else:
             return out
 
@@ -656,16 +677,16 @@ class PowerDataScalar(Power):
         # Otherwise invalid
         raise UndefinedParityError("Non-integer power of nonconstant data has undefined parity.")
 
-    def as_symbolic_operator(self, fields):
-        arg_linear, arg_op = self.args[0].as_symbolic_operator(fields)
-        power = self.args[1].value
-        if arg_linear:
-            if power == 1:
-                return True, arg_op
-            else:
-                raise ValueError("Nonlinear")
+    def as_symbolic_operator(self, vars):
+
+        arg0, = self.args
+        arg0_has_vars = arg0.has(*vars)
+        arg0_op = arg0.as_symbolic_operator(vars)
+
+        if arg0_has_vars:
+            raise NonlinearOperatorError("Power is nonlinear.")
         else:
-            return False, sy.Symbol(str(self), commutative=False)
+            return self.as_ncc_symbol()
 
 
 class PowerScalarScalar(PowerDataScalar, FutureScalar):
@@ -715,20 +736,21 @@ class LinearOperator(Future):
 
     kw = {}
 
-    def as_symbolic_operator(self, fields):
-        arg_linear, arg_op = self.args[0].as_symbolic_operator(fields)
-        if arg_linear:
-            op = sy.Symbol(self.name, commutative=False) * arg_op
+    def as_symbolic_operator(self, vars):
+        arg0, = self.args
+        arg0_has_vars = arg0.has(*vars)
+        arg0_op = arg0.as_symbolic_operator(vars)
+        if arg0_has_vars:
+            return self.op_symbol() * arg0_op
         else:
-            op = sy.Symbol(str(self), commutative=False)
-        return arg_linear, op
+            return self.as_ncc_symbol()
 
-    def distribute_over(self, atoms):
+    def distribute_over(self, vars):
         # Distribute arguments
-        out = type(self)(*[arg.distribute_over(atoms) for arg in self.args], **self.kw)
+        out = type(self)(*[arg.distribute_over(vars) for arg in self.args], **self.kw)
         # Distribute over addition
-        if out.args[0].has(*atoms) and isinstance(out.args[0], Add):
-            return out.left_distribute().distribute_over(atoms)
+        if out.args[0].has(*vars) and isinstance(out.args[0], Add):
+            return out.distribute().distribute_over(vars)
         else:
             return out
 
@@ -742,6 +764,10 @@ class LinearOperator(Future):
 
 
 class Separable(LinearOperator, FutureField):
+
+    @classmethod
+    def op_symbol(cls):
+        return sy.Symbol(cls.name, commutative=True)
 
     def check_conditions(self):
         arg0, = self.args
@@ -781,11 +807,17 @@ class Separable(LinearOperator, FutureField):
 
 class Coupled(LinearOperator, FutureField):
 
+    @classmethod
+    def op_symbol(cls):
+        if cls.basis.separable:
+            raise ValueError("LHS operator {} is coupled along direction {}.".format(cls.name, cls.basis.name))
+        return sy.Symbol(cls.name, commutative=False)
+
     def check_conditions(self):
         arg0, = self.args
         axis = self.axis
         # Must be in coeff+local layout
-        is_coeff = not arg0.layout.grid_spcae[axis]
+        is_coeff = not arg0.layout.grid_space[axis]
         is_local = arg0.layout.local[axis]
         return (is_coeff and is_local)
 
@@ -807,9 +839,7 @@ class Coupled(LinearOperator, FutureField):
         axis = self.axis
         dim = arg0.domain.dim
         matrix = self.matrix_form()
-        for i in range(matrix.shape(0)):
-            weights = reshape_vector(matrix[i,:], dim=dim, axis=axis)
-            out.data[axslice(axis, i, i+1)] = np.sum(arg0.data*weights, axis=axis, keepdims=True)
+        apply_matrix(matrix, arg0.data, axis, out=out.data)
 
     def explicit_form(self, input, output, axis):
         raise NotImplementedError()
@@ -902,6 +932,8 @@ class Interpolate(LinearOperator, metaclass=MultiClass):
         return (arg0, position), kw
 
     def __init__(self, arg0, position, out=None):
+        # Cast argument to field
+        arg0 = Field.cast(arg0, arg0.domain)
         super().__init__(arg0, out=out)
         self.kw = {'position': position}
         self.position = position
@@ -915,6 +947,7 @@ class Interpolate(LinearOperator, metaclass=MultiClass):
 
     @classmethod
     def at(cls, position):
+        cls._position = position
         return cls
 
     def meta_constant(self, axis):
@@ -933,14 +966,10 @@ class Interpolate(LinearOperator, metaclass=MultiClass):
             # Preserve parity
             return self.args[0].meta[axis]['parity']
 
-    def as_symbolic_operator(self, fields):
-        arg_linear, arg_op = self.args[0].as_symbolic_operator(fields)
-        if arg_linear:
-            symname = '{}.at({})'.format(self.name, self.position)
-            op = sy.Symbol(symname, commutative=False) * arg_op
-        else:
-            op = sy.Symbol(str(self), commutative=False)
-        return arg_linear, op
+    def op_symbol(self):
+        super().op_symbol()
+        symname = '{}.at({})'.format(self.name, repr(self.position))
+        return sy.Symbol(symname, commutative=False)
 
 
 class InterpolateScalar(Interpolate, FutureScalar):
@@ -1037,19 +1066,17 @@ class Differentiate(LinearOperator, metaclass=MultiClass):
             # Preserve parity
             return parity0
 
-    def distribute_over(self, atoms):
-        linear, _ = self.as_symbolic_operator(atoms)
-        if not linear:
-            return self
-        else:
-            args = [arg.distribute_over(atoms) for arg in self.args]
-            arg0, = args
-            if isinstance(arg0, Multiply):
-                return self.apply_product_rule().distribute_over(atoms)
-            elif isinstance(arg0, Add):
-                return self.distribute().distribute_over(atoms)
+    def distribute_over(self, vars):
+        if self.args[0].has(*vars):
+            out = type(self)(*[arg.distribute_over(vars) for arg in self.args], **self.kw)
+            if isinstance(out.args[0], Multiply):
+                return out.apply_product_rule().distribute_over(vars)
+            elif isinstance(out.args[0], Add):
+                return out.distribute().distribute_over(vars)
             else:
-                return self
+                return out
+        else:
+            return self
 
     def apply_product_rule(self):
         arg0, = self.args
