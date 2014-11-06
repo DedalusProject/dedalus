@@ -132,6 +132,10 @@ class ImplicitBasis(Basis):
 
     """
 
+    def set_constant(self, cdata, data, axis):
+        cdata.fill(0)
+        np.copyto(cdata[axslice(axis, 0, 1)], data)
+
     def integrate(self, cdata, cint, axis):
         """Integrate over interval using coefficients."""
 
@@ -139,9 +143,7 @@ class ImplicitBasis(Basis):
         dim = len(cdata.shape)
         weights = reshape_vector(self.integ_vector, dim=dim, axis=axis)
         integral = np.sum(cdata * weights, axis=axis, keepdims=True)
-
-        cint.fill(0)
-        np.copyto(cint[axslice(axis, 0, 1)], integral)
+        self.set_constant(cint, integral, axis)
 
     def interpolate(self, cdata, cint, position, axis):
         """Interpolate in interval using coefficients."""
@@ -150,9 +152,7 @@ class ImplicitBasis(Basis):
         dim = len(cdata.shape)
         weights = reshape_vector(self.interp_vector(position), dim=dim, axis=axis)
         interpolation = np.sum(cdata * weights, axis=axis, keepdims=True)
-
-        cint.fill(0)
-        np.copyto(cint[axslice(axis, 0, 1)], interpolation)
+        self.set_constant(cint, interpolation, axis)
 
     @CachedAttribute
     def Pre(self):
@@ -887,6 +887,12 @@ class Compound(ImplicitBasis):
             b_cdata = self.coeff_subdata(cdata, i, axis)
             b_cderiv = self.coeff_subdata(cderiv, i, axis)
             b.differentiate(b_cdata, b_cderiv, axis)
+
+    def set_constant(self, cdata, data, axis):
+        cdata.fill(0)
+        for i in range(len(self.subbases)):
+            s = self.grid_start[i]
+            np.copyto(cdata[axslice(axis, s, s+1)], data)
 
     @CachedAttribute
     def Pre(self):
