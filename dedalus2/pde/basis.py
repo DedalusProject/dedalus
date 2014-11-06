@@ -891,7 +891,7 @@ class Compound(ImplicitBasis):
     def set_constant(self, cdata, data, axis):
         cdata.fill(0)
         for i in range(len(self.subbases)):
-            s = self.grid_start[i]
+            s = self.coeff_start[i]
             np.copyto(cdata[axslice(axis, s, s+1)], data)
 
     @CachedAttribute
