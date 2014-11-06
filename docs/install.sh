@@ -213,10 +213,8 @@ function host_specific
         fi
     if [ "${OSX_VERSION##10.9}" != "${OSX_VERSION}" ]
     then
-	echo
-	echo "Appending include path for 10.9."
-	PY_CFLAGS="-I$(xcrun --show-sdk-path)/usr/include"
-	echo "include path is: $PY_CFLAGS"
+        echo "Setting SDKROOT to address Xcode 6 issue in OSX 10.9."
+        SDKROOT="/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk"
 	echo
     fi
 
