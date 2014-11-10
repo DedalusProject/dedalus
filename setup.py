@@ -42,7 +42,7 @@ def get_prefix(name):
     for pattern in patterns:
         env_var = pattern %name.upper()
         path = check_env_var(env_var)
-        if path
+        if path:
             return path
 
     # Check likely places
