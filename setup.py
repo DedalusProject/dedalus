@@ -41,7 +41,7 @@ def get_prefix(name):
                 '%s_PREFIX']
     for pattern in patterns:
         env_var = pattern %name.upper()
-        path = check_env_var(env_var):
+        path = check_env_var(env_var)
         if path
             return path
 
