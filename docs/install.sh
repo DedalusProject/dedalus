@@ -228,23 +228,52 @@ function host_specific
     IS_OSX=1
     fi
 
+    
+
     if [ -f /etc/redhat-release ]
     then
-        help_needed "RedHat"
-        # echo "You need to have these packages installed:"
-        # echo
-        # echo "  * openssl-devel"
-        # echo "  * uuid-devel"
-        # echo "  * readline-devel"
-        # echo "  * ncurses-devel"
-        # echo "  * zip"
-        # echo "  * gcc-{,c++,gfortran}"
-        # echo "  * make"
-        # echo "  * patch"
-        # echo 
-        # echo "You can accomplish this by executing:"
-        # echo "$ sudo yum install gcc gcc-g++ gcc-gfortran make patch zip"
-        # echo "$ sudo yum install ncurses-devel uuid-devel openssl-devel readline-devel"
+            echo "Looks like you're on a RedHat-compatible machine."
+            echo
+            echo "You need to have these packages installed:"
+            echo
+            echo "  * atlas"
+            echo "  * atlas-devel"
+            echo "  * mercurial"
+            echo "  * openmpi"      
+            echo "  * openssl-devel"
+            echo "  * ncurses"
+            echo "  * ncurses-devel"
+            echo "  * zip"
+            echo "  * uuid"
+            echo "  * uuid-devel"
+            echo "  * freetype"
+            echo "  * freetype-devel"
+            echo "  * tk"
+            echo "  * tk-devel"
+            echo "  * hdf5"
+            echo "  * hdf5-devel"
+            #echo "  * zeromq"
+            #echo "  * zeromq-devel"
+	    echo "  * libpng-devel"
+            echo "  * sqlite"
+            echo "  * sqlite-devel"
+            echo "  * gcc-gfortran"
+            echo "  * gcc-c++"
+            echo
+            echo "You can accomplish this by executing:"
+            echo
+            echo "$ sudo yum install atlas atlas-devel openmpi openmpi-devel openssl openssl-devel ncurses ncurses-devel zip uuid uuid-devel freetype freetype-devel tk tk-devel hdf5 hdf5-devel libpng-devel mercurial sqlite sqlite-devel gcc-gfortran gcc-c++"
+            echo
+	    echo "Some of these packages may require access to EPEL (extra packages for enterprise linux), and you'll need optional packages enabled."
+	    echo
+	    echo " You will also need to add either /usr/lib/openmpi/bin or /usr/lib64/openmpi/bin to your PATH to access mpicc compilers."
+	    echo
+	    echo " $ setenv PATH /usr/lib64/openmpi/bin:$PATH"
+	    echo " or "
+	    echo " $ setenv PATH /usr/lib/openmpi/bin:$PATH"
+            echo
+            BLAS="/usr/lib/"
+            LAPACK="/usr/lib/"
     fi
     if [ -f /etc/SuSE-release ] && [ `grep --count SUSE /etc/SuSE-release` -gt 0 ]
     then
@@ -455,6 +484,10 @@ then
     export MPI_PATH=${OPENMPI_DIR}
 fi
 
+if [ -f /etc/redhat-release ]
+then
+    export MPI_PATH=/usr/lib64/openmpi
+fi
 
 # python3 
 
@@ -632,8 +665,7 @@ then
     
 else
     echo "pip installing matplotlib."
-
-    ( ${DEST_DIR}/bin/pip3 install -v https://downloads.sourceforge.net/project/matplotlib/matplotlib/matplotlib-1.3.1/matplotlib-1.3.1.tar.gz 2>&1 ) 1>> ${LOG_FILE} || do_exit
+    ( ${DEST_DIR}/bin/pip3 install matplotlib==1.3.1 2>&1 ) 1>> ${LOG_FILE} || do_exit
 fi
 # sympy
 echo "pip installing sympy."
