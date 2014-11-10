@@ -62,7 +62,7 @@ def get_prefix(name):
     print("  If %s isn't in your LD_LIBRARY_PATH, compilation will likely fail." %name)
 
 def get_include(name):
-    env_var = "%s_INCLUDE_PATH" % name
+    env_var = "%s_INCLUDE_PATH" % name.upper()
     path = check_env_var(env_var)
     if path:
         return path
@@ -71,7 +71,7 @@ def get_include(name):
     return os.path.join(prefix, 'include')
 
 def get_lib(name):
-    env_var = "%s_LIBRARY_PATH" % name
+    env_var = "%s_LIBRARY_PATH" % name.upper()
     path = check_env_var(env_var)
     if path:
         return path
