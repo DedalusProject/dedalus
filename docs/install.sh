@@ -274,12 +274,8 @@ function host_specific
             echo
             BLAS="/usr/lib/"
             LAPACK="/usr/lib/"
-            MPI_INCLUDE_PATH="/usr/lib64/openmpi-x86_64/include"
-            MPI_LIBRARY_PATH="/usr/lib64/openmpi-x86_64/include"
-    fi
-    if [ -f /etc/SuSE-release ] && [ `grep --count SUSE /etc/SuSE-release` -gt 0 ]
-    then
-        echo "Looks like you're on an OpenSUSE-compatible machine."
+            MPI_INCLUDE_PATH="/usr/lib64/openmpi-x86_64/lib/"
+            MPI_LIBRARY_PATH="/usr/include/openmpi-x86_64/"
         echo
         help_needed "OpenSUSE"
         # echo "You need to have these packages installed:"
