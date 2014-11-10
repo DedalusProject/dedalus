@@ -17,6 +17,14 @@ try:
 except ImportError:
     hgapi = None
 
+def check_env_var(env_var):
+    path = None 
+    if env_var in os.environ:
+        path = os.environ[env_var]
+        print("  Found env var %s = %s" %(env_var, path))
+
+    return path
+
 def get_prefix(name):
     """
     Get prefix path for libraries containing string <name>.
@@ -33,9 +41,8 @@ def get_prefix(name):
                 '%s_PREFIX']
     for pattern in patterns:
         env_var = pattern %name.upper()
-        if env_var in os.environ:
-            path = os.environ[env_var]
-            print("  Found env var %s = %s" %(env_var, path))
+        path = check_env_var(env_var):
+        if path
             return path
 
     # Check likely places
@@ -55,10 +62,20 @@ def get_prefix(name):
     print("  If %s isn't in your LD_LIBRARY_PATH, compilation will likely fail." %name)
 
 def get_include(name):
+    env_var = "%s_INCLUDE_PATH" % name
+    path = check_env_var(env_var)
+    if path:
+        return path
+        
     prefix = get_prefix(name)
     return os.path.join(prefix, 'include')
 
 def get_lib(name):
+    env_var = "%s_LIBRARY_PATH" % name
+    path = check_env_var(env_var)
+    if path:
+        return path
+
     prefix = get_prefix(name)
     return os.path.join(prefix, 'lib')
 

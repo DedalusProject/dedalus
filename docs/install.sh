@@ -274,6 +274,8 @@ function host_specific
             echo
             BLAS="/usr/lib/"
             LAPACK="/usr/lib/"
+            MPI_INCLUDE_PATH="/usr/lib64/openmpi-x86_64/include"
+            MPI_LIBRARY_PATH="/usr/lib64/openmpi-x86_64/include"
     fi
     if [ -f /etc/SuSE-release ] && [ `grep --count SUSE /etc/SuSE-release` -gt 0 ]
     then
