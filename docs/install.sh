@@ -274,8 +274,8 @@ function host_specific
             echo
             BLAS="/usr/lib/"
             LAPACK="/usr/lib/"
-            MPI_INCLUDE_PATH="/usr/lib64/openmpi-x86_64/lib/"
-            MPI_LIBRARY_PATH="/usr/include/openmpi-x86_64/"
+            export MPI_INCLUDE_PATH="/usr/include/openmpi-x86_64/"
+            export MPI_LIBRARY_PATH="/usr/lib64/openmpi/lib/"
         echo
         help_needed "OpenSUSE"
         # echo "You need to have these packages installed:"
@@ -480,11 +480,6 @@ then
     LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${OPENMPI_DIR}/lib/"
     PATH="${OPENMPI_DIR}/bin:${PATH}"
     export MPI_PATH=${OPENMPI_DIR}
-fi
-
-if [ -f /etc/redhat-release ]
-then
-    export MPI_PATH=/usr/lib64/openmpi
 fi
 
 # python3 
