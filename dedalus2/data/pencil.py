@@ -111,6 +111,9 @@ class Pencil:
         if compound:
             Fm = basis.FilterMatchRows
             M = basis.Match
+            R_Fm = R*Fm
+        if ndiff and compound:
+            R_Fm_Fb_P = R*Fm*Fb*P
 
         # Pencil matrices
         G_eq = sparse.csr_matrix((zsize*nvars, zsize*Neqs), dtype=zdtype)
@@ -142,7 +145,7 @@ class Pencil:
             elif differential and (not compound):
                 Gi_eq = R_Fb_P
             elif differential and compound:
-                Gi_eq = R*Fm*Fb*P
+                Gi_eq = R_Fm_Fb_P
             # Kronecker into system matrix
             Gi_eq.eliminate_zeros()
             δG_eq.fill(0); δG_eq[i, problem.eqs.index(eq)] = 1
@@ -179,6 +182,7 @@ class Pencil:
             L = LHS['L']
             δM = np.identity(nvars)
             L = L + kron(R*M, δM)
+            LHS['L'] = L
 
         # Store with expanded sparsity for fast combination during timestepping
         for C in LHS.values():
