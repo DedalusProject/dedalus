@@ -281,12 +281,12 @@ class Field(Data):
     def clean(self):
         """Revert field to state at instantiation."""
 
-        # Set dealias scales (cached fields will likely be claimed by operators)
-        self._layout = self.domain.distributor.coeff_layout
-        self.set_scales(self.domain.dealias, keep_data=False)
         # Clear metadata
         self.name = None
         self.meta = Metadata(self.domain)
+        # Set dealias scales (cached fields will likely be claimed by operators)
+        self._layout = self.domain.distributor.coeff_layout
+        self.set_scales(self.domain.dealias, keep_data=False)
         self.data.fill(0.)
 
     @property

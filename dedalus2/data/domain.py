@@ -137,16 +137,20 @@ class Domain:
         # Return a previously allocated field, if available
         if self._field_cache:
             field = self._field_cache.pop()
+            # Set provided attributes
+            for key, value in kw.items():
+                setattr(field, key, value)
         # Otherwise instantiate a new field
         else:
-            field = Field(self)
-        # Set provided attributes
-        for key, value in kw.items():
-            setattr(field, key, value)
+            field = Field(self, **kw)
+
         return field
 
     def new_data(self, type):
-        return type(self)
+        if type is Field:
+            return self.new_field()
+        else:
+            return type(self)
 
     def remedy_scales(self, scales):
 
