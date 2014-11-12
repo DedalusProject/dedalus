@@ -679,7 +679,7 @@ class PowerDataScalar(Power):
 
     def as_symbolic_operator(self, vars):
 
-        arg0, = self.args
+        arg0, arg1 = self.args
         arg0_has_vars = arg0.has(*vars)
         arg0_op = arg0.as_symbolic_operator(vars)
 
@@ -991,8 +991,7 @@ class Left:
 
     def __new__(cls, arg0, out=None):
         basis = arg0.domain.bases[-1]
-        position = basis.interval[0]
-        return Interpolate(arg0, basis, position, out=out)
+        return Interpolate(arg0, basis, 'left', out=out)
 
 
 @parseable
@@ -1002,8 +1001,7 @@ class Right:
 
     def __new__(cls, arg0, out=None):
         basis = arg0.domain.bases[-1]
-        position = basis.interval[-1]
-        return Interpolate(arg0, basis, position, out=out)
+        return Interpolate(arg0, basis, 'right', out=out)
 
 
 @parseable

@@ -122,7 +122,6 @@ class Basis:
         else:
             # Check cdata
             if cdata.shape[axis] != self.coeff_size:
-                print(cdata.shape[axis], self.coeff_size)
                 raise ValueError("cdata does not match coeff_size")
             if cdata.dtype != self.coeff_dtype:
                 raise ValueError("cdata does not match coeff_dtype")
@@ -435,8 +434,13 @@ class Chebyshev(ImplicitBasis):
             @classmethod
             def _interp_vector(cls, position):
                 """Chebyshev interpolation: Tn(xn) = cos(n * acos(xn))"""
-                xn = cls.basis._native_coord(position)
-                theta = np.arccos(xn)
+                if position == 'left':
+                    theta = np.pi
+                elif position == 'right':
+                    theta = 0
+                else:
+                    xn = cls.basis._native_coord(position)
+                    theta = np.arccos(xn)
                 return np.cos(cls.basis.elements * theta)
 
         return InterpolateChebyshev
@@ -891,6 +895,10 @@ class Compound(ImplicitBasis):
         for sb in subbases:
             sb.dealias = dealias
 
+        self.operators = (self.Integrate,
+                          self.Interpolate,
+                          self.Differentiate)
+
     def default_meta(self):
         return {'constant': False,
                 'scale': None}
@@ -994,7 +1002,7 @@ class Compound(ImplicitBasis):
                 integ_vector = cls._integ_vector()
                 # Copy vector to each subbasis constant row
                 for sb in self.bases.subbases:
-                    sb0 = self.basis.coeff_start[i]
+                    sb0 = self.basis.coeff_start(i)
                     matrix[sb0,:] = integ_vector
                 return matrix.tocsr()
 
@@ -1025,12 +1033,12 @@ class Compound(ImplicitBasis):
             @classmethod
             @CachedMethod
             def _interp_matrix(cls, position):
-                size = self.basis.coeff_size
-                matrix = sparse.lil_matrix((size, size), dtype=self.basis.coeff_dtype)
-                interp_vector = self._interp_vector(self.position)
+                size = cls.basis.coeff_size
+                matrix = sparse.lil_matrix((size, size), dtype=cls.basis.coeff_dtype)
+                interp_vector = cls._interp_vector(position)
                 # Copy vector to each subbases constant row
-                for sb in self.bases.subbases:
-                    sb0 = self.basis.coeff_start[i]
+                for i,sb in enumerate(cls.basis.subbases):
+                    sb0 = cls.basis.coeff_start(i)
                     matrix[sb0,:] = interp_vector
                 return matrix.tocsr()
 
@@ -1039,14 +1047,23 @@ class Compound(ImplicitBasis):
                 """Chebyshev interpolation: Tn(xn) = cos(n * acos(xn))"""
                 # Construct dense row vector
                 interp_vector = np.zeros(cls.basis.coeff_size, dtype=cls.basis.coeff_dtype)
-                # Take first basis with position in interval
-                for i,b in enumerate(cls.basis.subbases):
-                    if b.interval[0] <= position <= b.interval[1]:
-                        start = cls.basis.coeff_start[i]
-                        end = cls.basis.coeff_start[i+1]
-                        interp_vector[start:end] = b.Interpolate._interp_vector(position)
-                        return interp_vector
-                raise ValueError("Position outside any subbasis interval.")
+                # Find containing subbasis
+                if position == 'left':
+                    index = 0
+                elif position == 'right':
+                    index = len(cls.basis.subbases) - 1
+                else:
+                    for index, sb in enumerate(cls.basis.subbases):
+                        if sb.interval[0] <= position <= sb.interval[1]:
+                            break
+                    else:
+                        raise ValueError("Position outside any subbasis interval.")
+                # Use subbasis interpolation
+                sb = cls.basis.subbases[index]
+                start = cls.basis.coeff_start(index)
+                end = cls.basis.coeff_start(index+1)
+                interp_vector[start:end] = sb.Interpolate._interp_vector(position)
+                return interp_vector
 
         return InterpolateCompound
 
@@ -1068,25 +1085,25 @@ class Compound(ImplicitBasis):
 
             def explicit_form(self, input, output, axis):
                 """Explicit differentiation."""
-                for i,b in enumerate(self.subbases):
-                    b_cdata = self.coeff_subdata(cdata, i, axis)
-                    b_cderiv = self.coeff_subdata(cderiv, i, axis)
+                for i,b in enumerate(self.basis.subbases):
+                    b_cdata = self.basis.sub_cdata(input, i, axis)
+                    b_cderiv = self.basis.sub_cdata(output, i, axis)
                     b.differentiate(b_cdata, b_cderiv, axis)
 
         return DifferentiateCompound
 
     @CachedAttribute
     def Precondition(self):
-        Pre = sparse.block_diag([b.Pre for b in self.subbases])
+        Pre = sparse.block_diag([b.Precondition for b in self.subbases])
         return Pre.tocsr()
 
     @CachedMethod
     def Multiply(self, p, subindex):
         size = self.coeff_size
         Mult = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
-        start = self.coeff_start[subindex]
-        end = self.coeff_start[subindex+1]
-        subMult = self.subbases[subindex].Mult(p)
+        start = self.coeff_start(subindex)
+        end = self.coeff_start(subindex+1)
+        subMult = self.subbases[subindex].Multiply(p)
         Mult[start:end, start:end] = subMult
         return Mult.tocsr()
 
@@ -1102,15 +1119,15 @@ class Compound(ImplicitBasis):
         return matrix
 
     @CachedAttribute
-    def FilterMatchRow(self):
+    def FilterMatchRows(self):
         """Matrix filtering match rows."""
         Fm = sparse.identity(self.coeff_size, dtype=self.coeff_dtype, format='lil')
         for i in range(len(self.subbases) - 1):
             basis1 = self.subbases[i]
-            s1 = self.coeff_start[i]
+            s1 = self.coeff_start(i)
             r = s1 + basis1.boundary_row
             Fm[r, r] = 0
-        return Fb.tocsr()
+        return Fm.tocsr()
 
     @CachedAttribute
     def Match(self):
@@ -1120,12 +1137,12 @@ class Compound(ImplicitBasis):
         for i in range(len(self.subbases) - 1):
             basis1 = self.subbases[i]
             basis2 = self.subbases[i+1]
-            s1 = self.coeff_start[i]
-            e1 = s2 = self.coeff_start[i+1]
-            e2 = self.coeff_start[i+2]
+            s1 = self.coeff_start(i)
+            e1 = s2 = self.coeff_start(i+1)
+            e2 = self.coeff_start(i+2)
             r = s1 + basis1.boundary_row
             x = basis1.interval[-1]
-            Match[r, s1:e1] = basis1.Interpolate.interp_vector(x)
-            Match[r, s2:e2] = -basis2.Interpolate.interp_vector(x)
+            Match[r, s1:e1] = basis1.Interpolate._interp_vector('right')
+            Match[r, s2:e2] = -basis2.Interpolate._interp_vector('left')
         return Match.tocsr()
 
