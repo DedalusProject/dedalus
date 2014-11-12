@@ -7,6 +7,7 @@ import re
 from collections import OrderedDict
 import numpy as np
 import sympy as sy
+from mpi4py import MPI
 
 from ..data.metadata import MultiDict, Metadata
 from ..data import field
@@ -484,9 +485,9 @@ class NCCManager:
         # Sort NCC strings for proper parallel evaluation order
         self.ncc_strings.sort()
         # Compute NCC coefficients
-        for ncc in self.ncc_strings:
+        for ncc_str in self.ncc_strings:
             # Evaluate NCC as field
-            ncc = future.FutureField.parse(ncc, namespace, domain)
+            ncc = future.FutureField.parse(ncc_str, namespace, domain)
             ncc = ncc.evaluate()
             ncc.require_coeff_space()
             # Scatter transverse-constant coefficients
@@ -494,9 +495,9 @@ class NCCManager:
                 select = (0,) * (domain.dim - 1)
                 coeffs = ncc['c'][select]
             else:
-                coeffs = None
-            coeffs = domain.dist.comm_cart.scatter(coeffs, root=0)
-            self.ncc_coeffs[ncc_str] = coeffs
+                coeffs = np.zeros(domain.bases[-1].coeff_size, dtype=domain.bases[-1].coeff_dtype)
+            domain.dist.comm_cart.Bcast(coeffs, root=0)
+            self.ncc_coeffs[ncc_str] = coeffs.copy()
 
     def __call__(self, ncc_str, terms):
         coeffs = self.ncc_coeffs[ncc_str]
