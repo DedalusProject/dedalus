@@ -277,23 +277,6 @@ function host_specific
             export MPI_INCLUDE_PATH="/usr/include/openmpi-x86_64/"
             export MPI_LIBRARY_PATH="/usr/lib64/openmpi/lib/"
         echo
-        help_needed "OpenSUSE"
-        # echo "You need to have these packages installed:"
-        # echo
-        # echo "  * devel_C_C++"
-        # echo "  * libopenssl-devel"
-        # echo "  * libuuid-devel"
-        # echo "  * zip"
-        # echo "  * gcc-c++"
-        # echo
-        # echo "You can accomplish this by executing:"
-        # echo
-        # echo "$ sudo zypper install -t pattern devel_C_C++"
-        # echo "$ sudo zypper install gcc-c++ libopenssl-devel libuuid-devel zip"
-        # echo
-        # echo "I am also setting special configure arguments to Python to"
-        # echo "specify control lib/lib64 issues."
-        # PYCONF_ARGS="--libdir=${DEST_DIR}/lib"
     fi
     if [ -f /etc/lsb-release ] && [ `grep --count buntu /etc/lsb-release` -gt 0 ]
     then
