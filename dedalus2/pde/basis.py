@@ -203,14 +203,14 @@ class ImplicitBasis(Basis):
         return Cb.tocsr()
 
     @CachedMethod
-    def NCC(self, coeffs, terms):
+    def NCC(self, coeffs, cutoff, max_terms):
         """Build NCC multiplication matrix."""
         matrix = 0
-        for p in range(terms):
-            if subcoeffs[p] != 0:
+        for p in range(max_terms):
+            if abs(coeffs[p]) >= cutoff:
                 matrix = matrix + coeffs[p]*self.Multiply(p)
-        return matrix
-
+                n_terms = p
+        return n_terms, matrix
 
 class Chebyshev(ImplicitBasis):
     """Chebyshev polynomial basis on the roots grid."""
@@ -1108,15 +1108,16 @@ class Compound(ImplicitBasis):
         return Mult.tocsr()
 
     @CachedMethod
-    def NCC(self, coeffs, terms):
+    def NCC(self, coeffs, cutoff, max_terms):
         """Build NCC multiplication matrix."""
-        matrix = 0
+        matrix, n_terms = 0, 0
         for index, basis in enumerate(self.subbases):
             subcoeffs = self.sub_cdata(coeffs, index, axis=0)
-            for p in range(terms):
-                if subcoeffs[p] != 0:
+            for p in range(max_terms):
+                if abs(subcoeffs[p]) >= cutoff:
                     matrix = matrix + subcoeffs[p]*self.Multiply(p, index)
-        return matrix
+                    n_terms = max(p, n_terms)
+        return n_terms, matrix
 
     @CachedAttribute
     def FilterMatchRows(self):

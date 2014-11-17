@@ -369,11 +369,11 @@ class ProblemBase:
         return bool(linear)
 
 
-class Problem(ProblemBase):
+class IVP(ProblemBase):
 
-    def __init__(self, domain, variables, time='t'):
+    def __init__(self, domain, variables, time='t', **kw):
 
-        super().__init__(domain, variables)
+        super().__init__(domain, variables, **kw)
         self.time = time
 
     @CachedAttribute
@@ -463,18 +463,23 @@ class Problem(ProblemBase):
             ncc_str = repr(sy.Mul(*itemlist))
             # Register NCC string
             self.ncc_manager.register(ncc_str)
-            out = ["NCC('{}', terms=5)".format(ncc_str)]
+            out = ["NCC('{}')".format(ncc_str)]
         return '*'.join(out)
 
 
 class NCCManager:
 
-    def __init__(self, problem):
+    def __init__(self, problem, cutoff=1e-10, max_terms=None):
         self.problem = problem
         self.domain = problem.domain
         self.basis = problem.domain.bases[-1]
         self.ncc_strings = []
         self.ncc_coeffs = {}
+
+        self.cutoff = cutoff
+        if max_terms is None:
+            max_terms = self.basis.coeff_size
+        self.max_terms = max_terms
 
     def register(self, ncc_str):
         self.ncc_strings.append(ncc_str)
@@ -499,9 +504,11 @@ class NCCManager:
             domain.dist.comm_cart.Bcast(coeffs, root=0)
             self.ncc_coeffs[ncc_str] = coeffs.copy()
 
-    def __call__(self, ncc_str, terms):
+    def __call__(self, ncc_str):
         coeffs = self.ncc_coeffs[ncc_str]
-        return self.basis.NCC(coeffs, terms)
+        n_terms, matrix = self.basis.NCC(coeffs, cutoff=self.cutoff, max_terms=self.max_terms)
+        logger.debug("Constructed NCC '{}' with {} terms.".format(ncc_str, n_terms))
+        return matrix
 
 
 def partition(categorize, items):
