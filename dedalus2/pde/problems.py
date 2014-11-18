@@ -13,17 +13,13 @@ from ..data.metadata import MultiDict, Metadata
 from ..data import field
 from ..data import future
 from ..data import operators
+from ..tools import parsing
 from ..tools.cache import CachedAttribute
+from ..tools.exceptions import SymbolicParsingError
+from ..tools.exceptions import UnsupportedEquationError
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
-
-
-class SymbolicParsingError(Exception):
-    pass
-
-class UnsupportedEquationError(Exception):
-    pass
 
 
 class Namespace(OrderedDict):
@@ -140,9 +136,9 @@ class ProblemBase:
         # Substitutions
         for call, result in self.substitutions.items():
             # Convert function calls to lambda expressions
-            call, result = self._convert_functions(call, result)
+            head, func = parsing.lambdify_functions(call, result)
             # Evaluate in current namespace
-            namespace[call] = eval(result, namespace)
+            namespace[head] = eval(func, namespace)
 
         return namespace
 
@@ -166,7 +162,7 @@ class ProblemBase:
         return namespace
 
     def _build_basic_dictionary(self, equation, condition):
-        LHS, RHS = self._split_sides(equation)
+        LHS, RHS = parsing.split_equation(equation)
         dct = dict()
         dct['raw_equation'] = equation
         dct['raw_condition'] = condition
@@ -178,52 +174,15 @@ class ProblemBase:
         dct['condition'] = self._lambdify_condition(dct['raw_condition'])
         return dct
 
-    @staticmethod
-    def _split_sides(equation):
-        """Split equation string into LHS and RHS strings."""
-        # Track parenthetical level to only capture top-level equals signs,
-        # which avoids capturing equals signs in keyword assigments
-        parentheses = 0
-        top_level_equals = []
-        for i, character in enumerate(equation):
-            if character == '(':
-                parentheses += 1
-            elif character == ')':
-                parentheses -= 1
-            elif parentheses == 0:
-                if character == '=':
-                    top_level_equals.append(i)
-        if len(top_level_equals) == 0:
-            raise SymbolicParsingError("Equation contains no top-level equals signs.")
-        elif len(top_level_equals) > 1:
-            raise SymbolicParsingError("Equation contains multiple top-level equals signs.")
-        else:
-            i, = top_level_equals
-            return equation[:i], equation[i+1:]
-
     def _lambdify_condition(self, condition):
         """Lambdify condition test for fast evaluation."""
         # Write call signiture for function of separable indices
         index_names = ['n{}'.format(basis.name) for basis in self.domain.bases if basis.separable]
         call = 'c({})'.format(','.join(index_names))
         # Convert to lambda definition
-        call, result = self._convert_functions(call, condition)
+        head, func = parsing.lambdify_functions(call, condition)
         # Evaluate to lambda expression
-        return eval(result, {})
-
-    @staticmethod
-    def _convert_functions(call, result):
-        """Convert math-style function definitions into Python lambda expressions."""
-        # Use regular expressions to see if name matches a function call
-        match = re.match('(.+)\((.*)\)', call)
-        if match:
-            # Build lambda expression
-            func, args = match.groups()
-            lambda_def = 'lambda {}: {}'.format(args, result)
-            return func, lambda_def
-        else:
-            # Return original rule
-            return call, result
+        return eval(func, {})
 
     def _build_object_forms(self, dct):
         LHS = future.FutureField.parse(dct['raw_LHS'], self.namespace, self.domain)
