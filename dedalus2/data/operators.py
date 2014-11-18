@@ -49,6 +49,9 @@ class FieldCopy(FutureField, metaclass=MultiClass):
         match = (isinstance(args[i], types) for i,types in cls.argtypes.items())
         return all(match)
 
+    def __str__(self):
+        return str(self.args[0])
+
     def check_conditions(self):
         return True
 
@@ -237,8 +240,13 @@ class Arithmetic(Future):
     arity = 2
 
     def __str__(self):
-        str_args = map(str, self.args)
-        return '(%s)' %self.str_op.join(str_args)
+        def substring(arg):
+            if isinstance(arg, Arithmetic):
+                return '({})'.format(arg)
+            else:
+                return str(arg)
+        str_args = map(substring, self.args)
+        return '%s' %self.str_op.join(str_args)
 
 
 class Add(Arithmetic, metaclass=MultiClass):
