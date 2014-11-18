@@ -8,6 +8,7 @@ import sympy as sy
 
 from .field import Operand, Data, Scalar, Array, Field
 from .metadata import Metadata
+from ..tools.general import OrderedSet
 
 
 class Future(Operand):
@@ -65,7 +66,7 @@ class Future(Operand):
 
     def atoms(self, *types, include_out=True):
         """"""
-        atoms = set()
+        atoms = OrderedSet()
         # Recursively collect atoms
         for arg in self.args:
             if isinstance(arg, (Data, Future)):
