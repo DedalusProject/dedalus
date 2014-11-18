@@ -100,6 +100,8 @@ class Evaluator:
         """Evaluate a collection of handlers."""
 
         tasks = [t for h in handlers for t in h.tasks]
+        for task in tasks:
+            task['out'] = None
 
         # Attempt initial evaluation
         tasks = self.attempt_tasks(tasks, id=sim_time)
