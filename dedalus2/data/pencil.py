@@ -66,10 +66,15 @@ class Pencil:
 
     def _build_coupled_matrices(self, problem, names):
 
+        index_dict = {}
+        for axis, basis in enumerate(self.domain.bases):
+            if basis.separable:
+                index_dict['n'+basis.name] = self.global_index[axis]
+
         index = self.global_index
         # Find applicable equations
-        selected_eqs = [eq for eq in problem.eqs if eq['condition'](*index)]
-        selected_bcs = [bc for bc in problem.bcs if bc['condition'](*index)]
+        selected_eqs = [eq for eq in problem.eqs if eval(eq['raw_condition'], index_dict)]
+        selected_bcs = [bc for bc in problem.bcs if eval(bc['raw_condition'], index_dict)]
         ndiff = sum(eq['differential'] for eq in selected_eqs)
         # Check selections
         nvars = problem.nvars
