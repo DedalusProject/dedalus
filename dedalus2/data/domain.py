@@ -51,10 +51,6 @@ class Domain:
         self.global_coeff_shape = np.array([b.coeff_size for b in bases], dtype=int)
         logger.debug('Global coeff shape: %s' %str(self.global_coeff_shape))
 
-        # Manage field allocation
-        self._field_cache = list()
-        self._field_count = 0
-
         # Create distributor
         self.distributor = self.dist = Distributor(self, mesh)
         self.local_coeff_shape = self.dist.coeff_layout.local_shape(self.remedy_scales(None))
@@ -126,31 +122,11 @@ class Domain:
 
         return spacing
 
-    def _collect_field(self, field):
-        """Cache free field."""
-
-        self._field_cache.append(field)
+    def new_data(self, type, **kw):
+        return type(self, **kw)
 
     def new_field(self, **kw):
-        """Return a free field."""
-
-        # Return a previously allocated field, if available
-        if self._field_cache:
-            field = self._field_cache.pop()
-            # Set provided attributes
-            for key, value in kw.items():
-                setattr(field, key, value)
-        # Otherwise instantiate a new field
-        else:
-            field = Field(self, **kw)
-
-        return field
-
-    def new_data(self, type):
-        if type is Field:
-            return self.new_field()
-        else:
-            return type(self)
+        return Field(self, **kw)
 
     def remedy_scales(self, scales):
 

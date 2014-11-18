@@ -260,11 +260,8 @@ class Field(Data):
     def __init__(self, domain, name=None, allocate=True):
 
         # Initial attributes
+        self.domain = domain
         self.name = name
-
-        # Weak-reference domain to allow cyclic garbage collection
-        self._domain_weak_ref = weakref.ref(domain)
-        domain._field_count += 1
 
         # Metadata
         self.meta = Metadata(domain)
@@ -278,21 +275,6 @@ class Field(Data):
     def as_symbol(self):
         return sy.Symbol(str(self), commutative=False)
 
-    def clean(self):
-        """Revert field to state at instantiation."""
-
-        # Clear metadata
-        self.name = None
-        self.meta = Metadata(self.domain)
-        # Set dealias scales (cached fields will likely be claimed by operators)
-        self._layout = self.domain.distributor.coeff_layout
-        self.set_scales(self.domain.dealias, keep_data=False)
-        self.data.fill(0.)
-
-    @property
-    def domain(self):
-        return self._domain_weak_ref()
-
     @property
     def layout(self):
         return self._layout
@@ -305,14 +287,6 @@ class Field(Data):
         self.data = np.ndarray(shape=layout.local_shape(scales),
                                dtype=layout.dtype,
                                buffer=self.buffer)
-
-    def __del__(self):
-        """Intercept deallocation to cache unused fields in domain."""
-
-        # Check that domain is still instantiated
-        if self.domain:
-            self.clean()
-            self.domain._collect_field(self)
 
     def __getitem__(self, layout):
         """Return data viewed in specified layout."""
