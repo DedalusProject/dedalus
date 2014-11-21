@@ -288,7 +288,7 @@ class ParsedProblem:
         # Allocate matrices for expansion
         nsubs = len(zbasis.subbases)
         shape = C.shape
-        C_exp = [[sy.zeros(shape) for p in range(order)] for i in range(nsubs)]
+        C_exp = [[sy.zeros(*shape) for p in range(order)] for i in range(nsubs)]
 
         # Expand term by term and substitute
         for i in range(shape[0]):
