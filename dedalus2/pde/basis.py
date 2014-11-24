@@ -68,12 +68,12 @@ class Basis:
         raise NotImplementedError()
         return coeff_dtype
 
-    def forward(self, gdata, *, axis, cdata=None):
+    def forward(self, gdata, cdata, axis, meta):
         """Grid-to-coefficient transform."""
         raise NotImplementedError()
         return cdata
 
-    def backward(self, cdata, *, axis, gdata=None, scale=1.):
+    def backward(self, cdata, gdata, axis, meta):
         """Coefficient-to-grid transform."""
         raise NotImplementedError()
         return gdata
@@ -107,12 +107,17 @@ class Basis:
             raise ValueError("Scaled grid size is not an integer: %f" %grid_size)
         return int(grid_size)
 
-    def check_arrays(self, cdata, gdata, axis, scale=None):
+    def check_arrays(self, cdata, gdata, axis, meta=None):
         """
         Verify provided arrays sizes and dtypes are correct.
         Build compliant arrays if not provided.
 
         """
+
+        if meta:
+            scale = meta['scale']
+        else:
+            scale = None
 
         if cdata is None:
             # Build cdata
@@ -305,7 +310,7 @@ class Chebyshev(ImplicitBasis):
         # Scale from Chebyshev amplitudes
         pdata[axslice(axis, 1, None)] *= 0.5
 
-    def _forward_scipy(self, gdata, *, axis, cdata=None):
+    def _forward_scipy(self, gdata, cdata, axis, meta):
         """Forward transform using scipy DCT."""
 
         cdata, gdata = self.check_arrays(cdata, gdata, axis)
@@ -322,10 +327,10 @@ class Chebyshev(ImplicitBasis):
 
         return cdata
 
-    def _backward_scipy(self, cdata, *, axis, gdata=None, scale=1.):
+    def _backward_scipy(self, cdata, gdata, axis, meta):
         """Backward transform using scipy IDCT."""
 
-        cdata, gdata = self.check_arrays(cdata, gdata, axis, scale)
+        cdata, gdata = self.check_arrays(cdata, gdata, axis, meta)
         # Pad / truncate coefficients
         # Store in gdata for memory efficiency (transform preserves shape/dtype)
         self._resize_coeffs(cdata, gdata, axis)
@@ -352,7 +357,7 @@ class Chebyshev(ImplicitBasis):
 
         return plan, temp
 
-    def _forward_fftw(self, gdata, *, axis, cdata=None):
+    def _forward_fftw(self, gdata, cdata, axis, meta):
         """Forward transform using FFTW DCT."""
 
         cdata, gdata = self.check_arrays(cdata, gdata, axis)
@@ -366,10 +371,10 @@ class Chebyshev(ImplicitBasis):
 
         return cdata
 
-    def _backward_fftw(self, cdata, *, axis, gdata=None, scale=1.):
+    def _backward_fftw(self, cdata, gdata, axis, meta):
         """Backward transform using FFTW IDCT."""
 
-        cdata, gdata = self.check_arrays(cdata, gdata, axis, scale)
+        cdata, gdata = self.check_arrays(cdata, gdata, axis, meta)
         plan, temp = self._fftw_setup(gdata.dtype, gdata.shape, axis)
         # Pad / truncate coefficients
         self._resize_coeffs(cdata, temp, axis)
@@ -564,7 +569,6 @@ class Fourier(TransverseBasis):
                           self.Differentiate,
                           self.HilbertTransform)
 
-
     def default_meta(self):
         return {'constant': False,
                 'scale': None}
@@ -633,7 +637,7 @@ class Fourier(TransverseBasis):
         np.copyto(cdata_out[badfreq], 0)
         np.copyto(cdata_out[negfreq], cdata_in[negfreq])
 
-    def _forward_scipy(self, gdata, *, axis, cdata=None):
+    def _forward_scipy(self, gdata, cdata, axis, meta):
         """Forward transform using numpy RFFT / scipy FFT."""
 
         cdata, gdata = self.check_arrays(cdata, gdata, axis)
@@ -653,10 +657,10 @@ class Fourier(TransverseBasis):
 
         return cdata
 
-    def _backward_scipy(self, cdata, *, axis, gdata=None, scale=1.):
+    def _backward_scipy(self, cdata, gdata, axis, meta):
         """Backward transform using numpy IRFFT / scipy IFFT."""
 
-        cdata, gdata = self.check_arrays(cdata, gdata, axis, scale)
+        cdata, gdata = self.check_arrays(cdata, gdata, axis, meta)
         grid_size = gdata.shape[axis]
         if gdata.dtype == np.float64:
             # Pad / truncate coefficients
@@ -693,7 +697,7 @@ class Fourier(TransverseBasis):
 
         return plan, temp, resize_coeffs
 
-    def _forward_fftw(self, gdata, *, axis, cdata=None):
+    def _forward_fftw(self, gdata, cdata, axis, meta):
         """Forward transform using FFTW FFT."""
 
         cdata, gdata = self.check_arrays(cdata, gdata, axis)
@@ -707,10 +711,10 @@ class Fourier(TransverseBasis):
 
         return cdata
 
-    def _backward_fftw(self, cdata, *, axis, gdata=None, scale=1.):
+    def _backward_fftw(self, cdata, gdata, axis, meta):
         """Backward transform using FFTW IFFT."""
 
-        cdata, gdata = self.check_arrays(cdata, gdata, axis, scale)
+        cdata, gdata = self.check_arrays(cdata, gdata, axis, meta)
         plan, temp, resize_coeffs = self._fftw_setup(gdata.dtype, gdata.shape, axis)
         # Pad / truncate coefficients
         resize_coeffs(cdata, temp, axis, gdata.shape[axis])
@@ -831,27 +835,6 @@ class Fourier(TransverseBasis):
 class SinCos(TransverseBasis):
     """Sin/Cos series basis."""
 
-    # @CachedMethod
-    # def grid(self, scale=1.):
-    #     """Build evenly spaced Fourier grid."""
-
-    #     N = self.grid_size(scale)
-    #     native_grid = pi * (np.arange(N) + 1/2) / N
-    #     return self._problem_coord(native_grid)
-
-    # def set_dtype(self, grid_dtype):
-    #     """Determine coefficient properties from grid dtype."""
-
-    #     # Tranform produces complex coefficients
-    #     self.grid_dtype = np.dtype(grid_dtype)
-    #     self.coeff_dtype = self.grid_dtype
-    #     # Build native wavenumbers
-    #     native_wavenumbers = np.arange(self.base_grid_size)
-    #     # Scale native wavenumbers
-    #     self.elements = self.wavenumbers = native_wavenumbers / self._grid_stretch
-    #     self.coeff_size = self.elements.size
-
-    #     return self.coeff_dtype
 
     # def differentiate(self, cdata, cderiv, axis, meta):
 
@@ -960,7 +943,7 @@ class Compound(ImplicitBasis):
         end = self.coeff_start(index+1)
         return cdata[axslice(axis, start, end)]
 
-    def forward(self, gdata, *, axis, cdata=None):
+    def forward(self, gdata, cdata, axis, meta):
         """Forward transforms."""
 
         cdata, gdata = self.check_arrays(cdata, gdata, axis)
@@ -968,20 +951,20 @@ class Compound(ImplicitBasis):
             # Transform continuous copy of subbasis gdata
             # (Transforms generally require continuous data)
             temp = fftw.create_copy(self.sub_gdata(gdata, index, axis))
-            temp = basis.forward(temp, axis=axis)
+            temp = basis.forward(temp, None, axis, meta)
             np.copyto(self.sub_cdata(cdata, index, axis), temp)
 
         return cdata
 
-    def backward(self, cdata, *, axis, gdata=None, scale=1.):
+    def backward(self, cdata, gdata, axis, meta):
         """Backward transforms."""
 
-        cdata, gdata = self.check_arrays(cdata, gdata, axis, scale)
+        cdata, gdata = self.check_arrays(cdata, gdata, axis, meta)
         for index, basis in enumerate(self.subbases):
             # Transform continuous copy of subbasis cdata
             # (Transforms generally require continuous data)
             temp = fftw.create_copy(self.sub_cdata(cdata, index, axis))
-            temp = basis.backward(temp, axis=axis, scale=scale)
+            temp = basis.backward(temp, None, axis, meta)
             np.copyto(self.sub_gdata(gdata, index, axis), temp)
 
         return gdata

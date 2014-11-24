@@ -296,8 +296,7 @@ class Transform:
         gdata = field.data
         # Transform if there's local data
         if np.prod(cdata.shape):
-            scale = field.meta[self.axis]['scale']
-            self.basis.backward(cdata, axis=self.axis, gdata=gdata, scale=scale)
+            self.basis.backward(cdata, gdata, self.axis, field.meta[self.axis])
 
     def decrement(self, field):
         """Forward transform."""
@@ -308,7 +307,7 @@ class Transform:
         cdata = field.data
         # Transform if there's local data
         if np.prod(gdata.shape):
-            self.basis.forward(gdata, axis=self.axis, cdata=cdata)
+            self.basis.forward(gdata, cdata, self.axis, field.meta[self.axis])
 
 
 class Transpose:
