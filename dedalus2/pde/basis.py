@@ -854,6 +854,158 @@ class SinCos(TransverseBasis):
     #     return outmeta
 
 
+    element_label = 'k'
+    separable = True
+    coupled = False
+
+    def __init__(self, name, base_grid_size, interval=(0,pi), dealias=1):
+
+        # Coordinate transformation
+        # Native interval: (0, π)
+        start = interval[0]
+        length = interval[1] - interval[0]
+        self._grid_stretch = length / pi
+        self._native_coord = lambda xp: pi * (xp - start) / length
+        self._problem_coord = lambda xn: start + (xn / pi * length)
+
+        # Attributes
+        self.base_grid_size = base_grid_size
+        self.interval = tuple(interval)
+        self.dealias = dealias
+        self.name = name
+        self.library = 'scipy'
+        #self.library = DEFAULT_LIBRARY
+        # self.operators = (self.Integrate,
+        #                   self.Interpolate,
+        #                   self.Differentiate,
+        #                   self.HilbertTransform)
+
+    def default_meta(self):
+        return {'constant': False,
+                'scale': None,
+                'parity': None}
+
+    @CachedMethod
+    def grid(self, scale=1.):
+        """Evenly spaced interior grid: cos(Nx) = 0"""
+        N = self.grid_size(scale)
+        native_grid = pi * (np.arange(N) + 1/2) / N
+        return self._problem_coord(native_grid)
+
+    def set_dtype(self, grid_dtype):
+        """Determine coefficient properties from grid dtype."""
+
+        # Tranform retains data type
+        self.grid_dtype = np.dtype(grid_dtype)
+        self.coeff_dtype = self.grid_dtype
+        # Build native wavenumbers
+        native_wavenumbers = np.arange(self.base_grid_size)
+        # Scale native wavenumbers
+        self.elements = self.wavenumbers = native_wavenumbers / self._grid_stretch
+        self.coeff_size = self.elements.size
+
+        return self.coeff_dtype
+
+    @staticmethod
+    def _resize_coeffs(cdata_in, cdata_out, axis):
+        """Resize coefficient data by padding/truncation."""
+
+        size_in = cdata_in.shape[axis]
+        size_out = cdata_out.shape[axis]
+
+        if size_in < size_out:
+            # Pad with higher order modes at end of data
+            np.copyto(cdata_out[axslice(axis, 0, size_in)], cdata_in)
+            np.copyto(cdata_out[axslice(axis, size_in, None)], 0)
+        elif size_in > size_out:
+            # Truncate higher order modes at end of data
+            np.copyto(cdata_out, cdata_in[axslice(axis, 0, size_out)])
+        else:
+            np.copyto(cdata_out, cdata_in)
+
+    @staticmethod
+    def _forward_dct_scaling(pdata, axis):
+        """Scale DCT output to sinusoid coefficients."""
+        # Scale as sinusoid amplitudes
+        pdata *= 1 / pdata.shape[axis]
+        pdata[axslice(axis, 0, 1)] *= 0.5
+
+    @staticmethod
+    def _forward_dst_scaling(pdata, axis):
+        """Scale DST output to sinusoid coefficients."""
+        # Shift data, adding zero mode and dropping Nyquist
+        N = pdata.shape[axis]
+        start = pdata[axslice(axis, 0, N-1)]
+        shift = pdata[axslice(axis, 1, N)]
+        np.copyto(shift, start)
+        pdata[axslice(axis, 0, 1)] = 0
+        # Scale as sinusoid amplitudes
+        pdata *= 1 / N
+
+    @staticmethod
+    def _backward_dct_scaling(pdata, axis):
+        """Scale sinusoid coefficients to IDCT input."""
+        # Scale from sinusoid amplitudes
+        pdata[axslice(axis, 1, None)] *= 0.5
+
+    @staticmethod
+    def _backward_dst_scaling(pdata, axis):
+        """Scale sinusoid coefficients to IDST input."""
+        # Scale from sinusoid amplitudes
+        pdata *= 0.5
+        # Unshift data, adding Nyquist mode and dropping zero
+        N = pdata.shape[axis]
+        start = pdata[axslice(axis, 0, N-1)]
+        shift = pdata[axslice(axis, 1, N)]
+        np.copyto(start, shift)
+        pdata[axslice(axis, N-1, N)] = 0
+
+    def _forward_scipy(self, gdata, cdata, axis, meta):
+        """Forward transform using scipy DCT/DST."""
+
+        cdata, gdata = self.check_arrays(cdata, gdata, axis)
+        # View complex data as interleaved real data
+        if gdata.dtype == np.complex128:
+            gdata = interleaved_view(gdata)
+            cdata = interleaved_view(cdata)
+        # Scipy transforms and scalings
+        if meta['parity'] == 1:
+            temp = fftpack.dct(gdata, type=2, axis=axis)
+            self._forward_dct_scaling(temp, axis)
+        elif meta['parity'] == -1:
+            temp = fftpack.dst(gdata, type=2, axis=axis)
+            self._forward_dst_scaling(temp, axis)
+        else:
+            raise UndefinedParityError()
+        # Pad / truncate coefficients
+        self._resize_coeffs(temp, cdata, axis)
+
+        return cdata
+
+    def _backward_scipy(self, cdata, gdata, axis, meta):
+        """Backward transform using scipy IDCT/IDST."""
+
+        cdata, gdata = self.check_arrays(cdata, gdata, axis, meta)
+        # Pad / truncate coefficients
+        # Store in gdata for memory efficiency (transform preserves shape/dtype)
+        self._resize_coeffs(cdata, gdata, axis)
+        # View complex data as interleaved real data
+        if gdata.dtype == np.complex128:
+            gdata = interleaved_view(gdata)
+        # Scipy transforms and scalings
+        if meta['parity'] == 1:
+            self._backward_dct_scaling(gdata, axis)
+            temp = fftpack.dct(gdata, type=3, axis=axis)
+        elif meta['parity'] == -1:
+            self._backward_dst_scaling(gdata, axis)
+            temp = fftpack.dst(gdata, type=3, axis=axis)
+        else:
+            raise UndefinedParityError()
+        np.copyto(gdata, temp)
+
+        return gdata
+
+
 class Compound(ImplicitBasis):
     """Compound basis joining adjascent subbases."""
 
