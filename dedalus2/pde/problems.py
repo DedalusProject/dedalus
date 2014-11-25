@@ -126,7 +126,11 @@ class ProblemBase:
             namespace[var] = self.domain.new_field(name=var, allocate=False)
             namespace[var].meta = self.meta[var]
         # Parameters
-        namespace.update(self.parameters)
+        for name, param in self.parameters.items():
+            # Cast parameters to operands
+            casted_param = field.Operand.cast(param)
+            casted_param.name = name
+            namespace[name] = casted_param
         # Built-in functions
         namespace['Identity'] = 1
         namespace.update(operators.parseables)
@@ -144,6 +148,8 @@ class ProblemBase:
 
         namespace = Namespace()
         namespace.disallow_overwrites()
+        # Imaginary number
+        namespace['I'] = 1j
         # NCC
         self.ncc_manager.build_coefficients()
         namespace['NCC'] = self.ncc_manager
@@ -155,7 +161,7 @@ class ProblemBase:
         # Parameters
         namespace.update(self.parameters)
 
-        namespace.allow_overwrites()
+        #namespace.allow_overwrites()
         return namespace
 
     def _build_basic_dictionary(self, equation, condition):
@@ -206,9 +212,10 @@ class ProblemBase:
                 raise SymbolicParsingError("LHS is constant but RHS is nonconstant along {} axis.".format(self.domain.bases[axis].name))
 
     def _check_meta_parity(self, LHS_parity, RHS_parity, axis):
-        # Parities must match
-        if LHS_parity != RHS_parity:
-            raise SymbolicParsingError("LHS and RHS parities along {} axis do not match.".format(self.domain.bases[axis].name))
+        if RHS_parity:
+            # Parities must match
+            if LHS_parity != RHS_parity:
+                raise SymbolicParsingError("LHS and RHS parities along {} axis do not match.".format(self.domain.bases[axis].name))
 
     def _check_boundary_form(self, LHS, RHS):
         # Check that boundary expressions are constant along coupled axes
