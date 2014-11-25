@@ -11,3 +11,6 @@ class SymbolicParsingError(Exception):
 class UnsupportedEquationError(Exception):
     """Exceptions for valid but unsupported equations."""
     pass
+
+class UndefinedParityError(Exception):
+    """Exceptions for data/operations with undefined parity."""

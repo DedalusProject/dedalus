@@ -99,7 +99,7 @@ class Pencil:
             if basis.separable:
                 for op in basis.operators:
                     try:
-                        namespace[op.name] = op.scalar_form(index[axis])
+                        namespace.update(op.scalar_form(index[axis]))
                     except AttributeError:
                         pass
         # Identity

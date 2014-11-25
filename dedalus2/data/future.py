@@ -64,7 +64,7 @@ class Future(Operand):
         str_args = map(str, self.args)
         return '{}({})'.format(self.name, ', '.join(str_args))
 
-    def atoms(self, *types, include_out=True):
+    def atoms(self, *types, include_out=False):
         """"""
         atoms = OrderedSet()
         # Recursively collect atoms

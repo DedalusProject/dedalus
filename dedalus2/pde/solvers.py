@@ -220,6 +220,9 @@ class IVP:
 
         # Build systems
         self.state = state = FieldSystem(problem.variables, domain)
+        for var in problem.variables:
+            self.state[var].meta = problem.meta[var]
+            self.state[var].set_scales(1, keep_data=False)
 
         # Create F operator trees
         # IVP: available terms are parse ops, diff ops, axes, parameters, and state

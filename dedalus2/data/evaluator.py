@@ -266,7 +266,7 @@ class SystemHandler(Handler):
         """Build FieldSystem and set task outputs."""
 
         nfields = len(self.tasks)
-        names = [str(i) for i in range(nfields)]
+        names = ['sys'+str(i) for i in range(nfields)]
         self.system = FieldSystem(names, self.domain)
 
         for i, task in enumerate(self.tasks):
