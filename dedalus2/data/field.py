@@ -161,30 +161,29 @@ class Scalar(Data):
 
     class ScalarMeta:
         """Shortcut class to return scalar metadata for any axis."""
+        def __init__(self, scalar=None):
+            self.scalar = scalar
+
         def __getitem__(self, axis):
-            return {'constant': True, 'parity': 1}
+            if self.scalar and (self.scalar.value == 0):
+                parity = 0
+            else:
+                parity = 1
+            return {'constant': True, 'parity': parity}
+
 
     def __init__(self, value=None, name=None, domain=None):
         from .domain import EmptyDomain
         self.name = name
-        self.meta = self.ScalarMeta()
+        self.meta = self.ScalarMeta(self)
         self.domain = EmptyDomain()
-        self.data = np.zeros(1, dtype=np.float64)
         self.value = value
-
-    @property
-    def value(self):
-        return self.data[0]
-
-    @value.setter
-    def value(self, x):
-        self.data[0] = x
 
     def __str__(self):
         if self.name:
             return self.name
         else:
-            return str(self.value)
+            return repr(self.value)
 
     def as_symbol(self):
         if self.name:

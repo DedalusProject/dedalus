@@ -74,7 +74,7 @@ class FieldCopyScalar(FieldCopy):
     def operate(self, out):
         # Copy in grid layout
         out.layout = self._grid_layout
-        np.copyto(out.data, self.args[0].data)
+        np.copyto(out.data, self.args[0].value)
 
 
 class FieldCopyArray(FieldCopy):
@@ -204,7 +204,7 @@ class UnaryGridFunctionScalar(UnaryGridFunction, FutureScalar):
         return True
 
     def operate(self, out):
-        return self.func(self.args[0].data, out=out.data)
+        return self.func(self.args[0].value, out=out.data)
 
 
 class UnaryGridFunctionArray(UnaryGridFunction, FutureArray):
@@ -307,7 +307,7 @@ class AddScalarScalar(Add, FutureScalar):
 
     def operate(self, out):
         arg0, arg1 = self.args
-        np.add(arg0.data, arg1.data, out.data)
+        out.value = arg0.value + arg1.value
 
 
 class AddArrayArray(Add, FutureArray):
@@ -350,7 +350,7 @@ class AddScalarArray(Add, FutureArray):
 
     def operate(self, out):
         arg0, arg1 = self.args
-        np.add(arg0.data, arg1.data, out.data)
+        np.add(arg0.value, arg1.data, out.data)
 
 
 class AddArrayScalar(Add, FutureArray):
@@ -363,7 +363,7 @@ class AddArrayScalar(Add, FutureArray):
 
     def operate(self, out):
         arg0, arg1 = self.args
-        np.add(arg0.data, arg1.data, out.data)
+        np.add(arg0.data, arg1.value, out.data)
 
 
 class AddScalarField(Add, FutureField):
@@ -380,7 +380,7 @@ class AddScalarField(Add, FutureField):
         # Add in grid layout
         arg1.require_grid_space()
         out.layout = self._grid_layout
-        np.add(arg0.data, arg1.data, out.data)
+        np.add(arg0.value, arg1.data, out.data)
 
 
 class AddFieldScalar(Add, FutureField):
@@ -397,7 +397,7 @@ class AddFieldScalar(Add, FutureField):
         # Add in grid layout
         arg0.require_grid_space()
         out.layout = self._grid_layout
-        np.add(arg0.data, arg1.data, out.data)
+        np.add(arg0.data, arg1.value, out.data)
 
 
 class AddArrayField(Add, FutureField):
@@ -513,7 +513,7 @@ class MultiplyScalarScalar(Multiply, FutureScalar):
 
     def operate(self, out):
         arg0, arg1 = self.args
-        np.multiply(arg0.data, arg1.data, out.data)
+        out.value = arg0.value * arg1.value
 
 
 class MultiplyArrayArray(Multiply, FutureArray):
@@ -567,7 +567,7 @@ class MultiplyScalarArray(Multiply, FutureArray):
 
     def operate(self, out):
         arg0, arg1 = self.args
-        np.multiply(arg0.data, arg1.data, out.data)
+        np.multiply(arg0.value, arg1.data, out.data)
 
 
 class MultiplyArrayScalar(Multiply, FutureArray):
@@ -580,7 +580,7 @@ class MultiplyArrayScalar(Multiply, FutureArray):
 
     def operate(self, out):
         arg0, arg1 = self.args
-        np.multiply(arg0.data, arg1.data, out.data)
+        np.multiply(arg0.data, arg1.value, out.data)
 
 
 class MultiplyScalarField(Multiply, FutureField):
@@ -595,7 +595,7 @@ class MultiplyScalarField(Multiply, FutureField):
         arg0, arg1 = self.args
         # Multiply in current layout
         out.layout = arg1.layout
-        np.multiply(arg0.data, arg1.data, out.data)
+        np.multiply(arg0.value, arg1.data, out.data)
 
 
 class MultiplyFieldScalar(Multiply, FutureField):
@@ -610,7 +610,7 @@ class MultiplyFieldScalar(Multiply, FutureField):
         arg0, arg1 = self.args
         # Multiply in current layout
         out.layout = arg0.layout
-        np.multiply(arg0.data, arg1.data, out.data)
+        np.multiply(arg0.data, arg1.value, out.data)
 
 
 class MultiplyArrayField(Multiply, FutureField):
@@ -707,7 +707,7 @@ class PowerScalarScalar(PowerDataScalar, FutureScalar):
 
     def operate(self, out):
         arg0, arg1 = self.args
-        np.power(arg0.data, arg1.data, out.data)
+        out.value = arg0.value ** arg1.value
 
 
 class PowerArrayScalar(PowerDataScalar, FutureArray):
@@ -720,7 +720,7 @@ class PowerArrayScalar(PowerDataScalar, FutureArray):
 
     def operate(self, out):
         arg0, arg1 = self.args
-        np.power(arg0.data, arg1.data, out.data)
+        np.power(arg0.data, arg1.value, out.data)
 
 
 class PowerFieldScalar(PowerDataScalar, FutureField):
@@ -737,7 +737,7 @@ class PowerFieldScalar(PowerDataScalar, FutureField):
         # Raise in grid layout
         arg0.require_grid_space()
         out.layout = self._grid_layout
-        np.power(arg0.data, arg1.data, out.data)
+        np.power(arg0.data, arg1.value, out.data)
 
 
 class LinearOperator(Future):
@@ -746,10 +746,8 @@ class LinearOperator(Future):
 
     def as_symbolic_operator(self, vars):
         arg0, = self.args
-        arg0_has_vars = arg0.has(*vars)
-        arg0_op = arg0.as_symbolic_operator(vars)
-        if arg0_has_vars:
-            return self.op_symbol() * arg0_op
+        if arg0.has(*vars):
+            return self.op_symbol() * arg0.as_symbolic_operator(vars)
         else:
             return self.as_ncc_symbol()
 
@@ -773,9 +771,14 @@ class LinearOperator(Future):
 
 class Separable(LinearOperator, FutureField):
 
+    def op_symbol(self):
+        """Operator symbol."""
+        return sy.Symbol(self.name, commutative=True)
+
     @classmethod
-    def op_symbol(cls):
-        return sy.Symbol(cls.name, commutative=True)
+    def scalar_form(cls, index):
+        """Scalar values of operator symbols."""
+        raise NotImplementedError()
 
     def check_conditions(self):
         arg0, = self.args
@@ -815,11 +818,10 @@ class Separable(LinearOperator, FutureField):
 
 class Coupled(LinearOperator, FutureField):
 
-    @classmethod
-    def op_symbol(cls):
-        if cls.basis.separable:
-            raise ValueError("LHS operator {} is coupled along direction {}.".format(cls.name, cls.basis.name))
-        return sy.Symbol(cls.name, commutative=False)
+    def op_symbol(self):
+        if self.basis.separable:
+            raise ValueError("LHS operator {} is coupled along direction {}.".format(self.name, self.basis.name))
+        return sy.Symbol(self.name, commutative=False)
 
     def check_conditions(self):
         arg0, = self.args
