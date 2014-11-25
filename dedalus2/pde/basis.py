@@ -9,6 +9,7 @@ import numpy as np
 from numpy import pi
 from scipy import sparse
 from scipy import fftpack
+import sympy as sy
 
 from ..data import operators
 from ..libraries.fftw import fftw_wrappers as fftw
@@ -18,7 +19,7 @@ from ..tools.cache import CachedMethod
 from ..tools.array import interleaved_view
 from ..tools.array import reshape_vector
 from ..tools.array import axslice
-
+from ..tools.exceptions import UndefinedParityError
 
 logger = logging.getLogger(__name__.split('.')[-1])
 DEFAULT_LIBRARY = config['transforms'].get('DEFAULT_LIBRARY')
@@ -544,9 +545,9 @@ class Chebyshev(ImplicitBasis):
 class Fourier(TransverseBasis):
     """Fourier complex exponential basis."""
 
-    element_label = 'k'
     separable = True
     coupled = False
+    element_label= 'k'
 
     def __init__(self, name, base_grid_size, interval=(0,2*pi), dealias=1):
 
@@ -559,10 +560,11 @@ class Fourier(TransverseBasis):
         self._problem_coord = lambda xn: start + (xn / (2*pi) * length)
 
         # Attributes
+        self.name = name
+        self.element_name = 'k' + name
         self.base_grid_size = base_grid_size
         self.interval = tuple(interval)
         self.dealias = dealias
-        self.name = name
         self.library = DEFAULT_LIBRARY
         self.operators = (self.Integrate,
                           self.Interpolate,
@@ -735,9 +737,9 @@ class Fourier(TransverseBasis):
             def scalar_form(cls, index):
                 """Fourier integration: int(Fn) = 2 π δ(n,0)"""
                 if index == 0:
-                    return 2 * np.pi * cls.basis._grid_stretch
+                    return {cls.name: 2*np.pi*cls.basis._grid_stretch}
                 else:
-                    return 0
+                    return {cls.name: 0}
 
             @classmethod
             def vector_form(cls):
@@ -799,10 +801,15 @@ class Fourier(TransverseBasis):
             name = 'd' + self.name
             basis = self
 
+            def op_symbol(self):
+                """Fourier differentiation: dx(Fn) = i kn Fn"""
+                k = sy.Symbol(self.basis.element_name, commutative=True)
+                return sy.I*k
+
             @classmethod
             def scalar_form(cls, index):
-                """Fourier differentiation: dx(Fn) = i kn Fn"""
-                return 1j * cls.basis.wavenumbers[index]
+                """Fourier wavenumber."""
+                return {cls.basis.element_name: cls.basis.wavenumbers[index]}
 
             @classmethod
             def vector_form(cls):
@@ -819,10 +826,15 @@ class Fourier(TransverseBasis):
             name = 'H' + self.name
             basis = self
 
+            def op_symbol(self):
+                """Hilbert transform: Hx(Fn) = -i sgn(kn) Fn"""
+                H = sy.Symbol(self.name, commutative=True)
+                return -sy.I * H
+
             @classmethod
             def scalar_form(cls, index):
-                """Hilbert transform: Hx(Fn) = -i sgn(kn) Fn"""
-                return -1j * np.sign(cls.basis.wavenumbers[index])
+                """Wavenumber sign."""
+                return {cls.name: np.sign(cls.basis.wavenumbers[index])}
 
             @classmethod
             def vector_form(cls):
@@ -834,25 +846,6 @@ class Fourier(TransverseBasis):
 
 class SinCos(TransverseBasis):
     """Sin/Cos series basis."""
-
-
-    # def differentiate(self, cdata, cderiv, axis, meta):
-
-    #     outmeta = inmeta.copy()
-    #     if inmeta['parity'] == 1:
-    #         np.multiply(cdata[1:], -k[1:], out=cderiv)
-    #         out
-    #         out_parity = -1
-    #     else:
-    #         cderiv[axslice(axis, 0, 1)] = 0
-    #         nonconst = axslice(axis, 1, None)
-    #         np.multiply(cdata, k[nonconst], out=cderiv[nonconst])
-    #         out_parity = 1
-
-    #     outmeta = meta.copy()
-    #     outmeta['parity'] = -1 * meta['parity']
-    #     return outmeta
-
 
     element_label = 'k'
     separable = True
@@ -869,16 +862,17 @@ class SinCos(TransverseBasis):
         self._problem_coord = lambda xn: start + (xn / pi * length)
 
         # Attributes
+        self.name = name
+        self.element_name = 'k' + name
         self.base_grid_size = base_grid_size
         self.interval = tuple(interval)
         self.dealias = dealias
         self.name = name
-        self.library = 'scipy'
-        #self.library = DEFAULT_LIBRARY
-        # self.operators = (self.Integrate,
-        #                   self.Interpolate,
-        #                   self.Differentiate,
-        #                   self.HilbertTransform)
+        self.library = DEFAULT_LIBRARY
+        self.operators = (self.Integrate,
+                          self.Interpolate,
+                          self.Differentiate,
+                          self.HilbertTransform)
 
     def default_meta(self):
         return {'constant': False,
@@ -969,7 +963,9 @@ class SinCos(TransverseBasis):
             gdata = interleaved_view(gdata)
             cdata = interleaved_view(cdata)
         # Scipy transforms and scalings
-        if meta['parity'] == 1:
+        if meta['parity'] == 0:
+            temp = np.zeros_like(gdata)
+        elif meta['parity'] == 1:
             temp = fftpack.dct(gdata, type=2, axis=axis)
             self._forward_dct_scaling(temp, axis)
         elif meta['parity'] == -1:
@@ -993,7 +989,9 @@ class SinCos(TransverseBasis):
         if gdata.dtype == np.complex128:
             gdata = interleaved_view(gdata)
         # Scipy transforms and scalings
-        if meta['parity'] == 1:
+        if meta['parity'] == 0:
+            temp = np.zeros_like(gdata)
+        elif meta['parity'] == 1:
             self._backward_dct_scaling(gdata, axis)
             temp = fftpack.dct(gdata, type=3, axis=axis)
         elif meta['parity'] == -1:
@@ -1004,6 +1002,184 @@ class SinCos(TransverseBasis):
         np.copyto(gdata, temp)
 
         return gdata
+
+    @CachedMethod
+    def _fftw_dct_setup(self, dtype, gshape, axis):
+        """Build FFTW DCT plan and temporary array."""
+        flags = ['FFTW_'+FFTW_RIGOR.upper()]
+        logger.debug("Building FFTW DCT plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, gshape, axis))
+        plan = fftw.DiscreteCosineTransform(dtype, gshape, axis, flags=flags)
+        temp = fftw.create_array(gshape, dtype)
+
+        return plan, temp
+
+    @CachedMethod
+    def _fftw_dst_setup(self, dtype, gshape, axis):
+        """Build FFTW DST plan and temporary array."""
+        flags = ['FFTW_'+FFTW_RIGOR.upper()]
+        logger.debug("Building FFTW DST plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, gshape, axis))
+        plan = fftw.DiscreteSineTransform(dtype, gshape, axis, flags=flags)
+        temp = fftw.create_array(gshape, dtype)
+
+        return plan, temp
+
+    def _forward_fftw(self, gdata, cdata, axis, meta):
+        """Forward transform using FFTW DCT."""
+
+        cdata, gdata = self.check_arrays(cdata, gdata, axis)
+        if meta['parity'] == 0:
+            cdata.fill(0)
+        elif meta['parity'] == 1:
+            plan, temp = self._fftw_dct_setup(gdata.dtype, gdata.shape, axis)
+            plan.forward(gdata, temp)
+            self._forward_dct_scaling(temp, axis)
+            self._resize_coeffs(temp, cdata, axis)
+        elif meta['parity'] == -1:
+            plan, temp = self._fftw_dst_setup(gdata.dtype, gdata.shape, axis)
+            plan.forward(gdata, temp)
+            self._forward_dst_scaling(temp, axis)
+            self._resize_coeffs(temp, cdata, axis)
+        else:
+            raise UndefinedParityError()
+
+        return cdata
+
+    def _backward_fftw(self, cdata, gdata, axis, meta):
+        """Backward transform using FFTW IDCT."""
+
+        cdata, gdata = self.check_arrays(cdata, gdata, axis, meta)
+        if meta['parity'] == 0:
+            gdata.fill(0)
+        elif meta['parity'] == 1:
+            plan, temp = self._fftw_dct_setup(gdata.dtype, gdata.shape, axis)
+            self._resize_coeffs(cdata, temp, axis)
+            self._backward_dct_scaling(temp, axis)
+            plan.backward(temp, gdata)
+        elif meta['parity'] == -1:
+            plan, temp = self._fftw_dst_setup(gdata.dtype, gdata.shape, axis)
+            self._resize_coeffs(cdata, temp, axis)
+            self._backward_dst_scaling(temp, axis)
+            plan.backward(temp, gdata)
+        else:
+            raise UndefinedParityError()
+
+        return gdata
+
+    @CachedAttribute
+    def Integrate(self):
+        """Build integration class."""
+
+        class IntegrateSinCos(operators.Interpolate, operators.Coupled):
+            name = 'integ_{}'.format(self.name)
+            basis = self
+
+            def explicit_form(self, input, output, axis):
+                dim = self.domain.dim
+                weights = reshape_vector(self._integ_vector(), dim=dim, axis=axis)
+                interp = np.sum(input * weights, axis=axis, keepdims=True)
+                np.copyto(output[axslice(axis, 0, 1)], interp)
+                np.copyto(output[axslice(axis, 1, None)], 0)
+
+            def _integ_vector(self):
+                """Fourier interpolation: Fn(x) = exp(i kn x)"""
+                parity = self.meta[self.axis]['parity']
+                integ = np.zeros(self.basis.coeff_size)
+                if parity == 1:
+                    integ[0] = np.pi * self.basis._grid_stretch
+                    return integ
+                elif parity == -1:
+                    integ[1::2] = 2 / np.arange(1, integ.size, 2)
+                    return integ
+                else:
+                    raise UndefinedParityError()
+
+        return IntegrateSinCos
+
+
+    @CachedAttribute
+    def Interpolate(self):
+        """Build interpolation class."""
+
+        class InterpolateSinCos(operators.Interpolate, operators.Coupled):
+            name = 'interp_{}'.format(self.name)
+            basis = self
+
+            def explicit_form(self, input, output, axis):
+                dim = self.domain.dim
+                weights = reshape_vector(self._interp_vector(self.position), dim=dim, axis=axis)
+                interp = np.sum(input * weights, axis=axis, keepdims=True)
+                np.copyto(output[axslice(axis, 0, 1)], interp)
+                np.copyto(output[axslice(axis, 1, None)], 0)
+
+            def _interp_vector(self, position):
+                """Fourier interpolation: Fn(x) = exp(i kn x)"""
+                x = position - cls.basis.interval[0]
+                parity = self.meta[self.axis]['parity']
+                if parity == 1:
+                    return np.cos(self.basis.wavenumbers * x)
+                elif parity == -1:
+                    return np.sin(self.basis.wavenumbers * x)
+                else:
+                    raise UndefinedParityError()
+
+        return InterpolateSinCos
+
+    @CachedAttribute
+    def Differentiate(self):
+        """Build differentiation class."""
+
+        class DifferentiateSinCos(operators.Differentiate, operators.Separable):
+            name = 'd' + self.name
+            basis = self
+
+            def op_symbol(self):
+                """Sinusoid differentiation."""
+                # op parity ==  1: dx(sin(kx)) =  k cos(kx)
+                # op parity == -1: dx(cos(kx)) = -k sin(kx)
+                parity = self.meta[self.axis]['parity']
+                k = sy.Symbol(self.basis.element_name, commutative=True)
+                return parity * k
+
+            @classmethod
+            def scalar_form(cls, index):
+                """Sinusoid wavenumber."""
+                k_name = cls.basis.element_name
+                k_value = cls.basis.wavenumbers[index]
+                return {k_name: k_value}
+
+            @classmethod
+            def vector_form(cls):
+                """Fourier differentiation: dx(Fn) = i kn Fn"""
+                return cls.basis.wavenumbers
+
+        return DifferentiateSinCos
+
+    @CachedAttribute
+    def HilbertTransform(self):
+        """Build Hilbert transform class."""
+
+        class HilbertTransformFourier(operators.HilbertTransform, operators.Separable):
+            name = 'H' + self.name
+            basis = self
+
+            def op_symbol(self):
+                # op parity ==  1:  Hx(sin(kx)) = -sgn(k) cos(kx)
+                # op parity == -1:  Hx(cos(kx)) =  sgn(k) sin(kx)
+                parity = self.meta[self.axis]['parity']
+                H = sy.Symbol(self.name, commutative=True)
+                return (-parity) * H
+
+            @classmethod
+            def scalar_form(cls, index):
+                """Wavenumber sign."""
+                return {cls.name: np.sign(cls.basis.wavenumbers[index])}
+
+            @classmethod
+            def vector_form(cls):
+                """Hilbert transform: Hx(Fn) = -i sgn(kn) Fn"""
+                return -1j * np.sign(cls.basis.wavenumbers)
+
+        return HilbertTransformFourier
 
 
 class Compound(ImplicitBasis):

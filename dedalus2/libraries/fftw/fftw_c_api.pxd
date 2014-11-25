@@ -151,5 +151,9 @@ cdef enum:
     FFTW_REDFT01 = 4
     FFTW_REDFT10 = 5
 
+    FFTW_RODFT00 = 7
+    FFTW_RODFT01 = 8
+    FFTW_RODFT10 = 9
+
     FFTW_MPI_TRANSPOSED_IN = (1 << 29)
     FFTW_MPI_TRANSPOSED_OUT = (1 << 30)

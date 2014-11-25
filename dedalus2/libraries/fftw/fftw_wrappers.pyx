@@ -465,3 +465,119 @@ cdef class DiscreteCosineTransform:
                                <double *> cnp.PyArray_DATA(cdata),
                                <double *> cnp.PyArray_DATA(gdata))
 
+
+cdef class DiscreteSineTransform:
+    """
+    FFTW-based discrete sine transform along one axis of an N-dimensional array.
+
+    Parameters
+    ----------
+    grid_dtype : dtype
+        Grid space data type
+    grid_shape : tuple of ints, array of ints
+        Array shape in grid space
+    axis : int
+        Axis over which to compute the DFT
+    flags : list of str, optional
+        List of wrapped FFTW flags
+
+    """
+
+    cdef cfftw.fftw_plan forward_plan
+    cdef cfftw.fftw_plan backward_plan
+
+    def __init__(self, grid_dtype, grid_shape, int axis, flags=[]):
+
+        # Compute data shapes based on dtype
+        if np.dtype(grid_dtype) == np.float64:
+            real_shape = list(grid_shape)
+        elif np.dtype(grid_dtype) == np.complex128:
+            # Treat as interleaved real data
+            real_shape = list(grid_shape) + [2]
+        else:
+            raise ValueError("Unsupported dtype: %s" %str(grid_dtype))
+        gshape = np.array(real_shape, dtype=int)
+        cshape = np.array(real_shape, dtype=int)
+
+        # Build FFTW guru transform structure
+        cdef int trans_rank = 1
+        cdef cfftw.fftw_iodim trans
+        # Transform along `axis`
+        trans.n = gshape[axis]
+        trans.in_stride  = np.prod(gshape[axis+1:])
+        trans.out_stride = np.prod(cshape[axis+1:])
+        cdef cfftw.fftw_iodim *trans_struct = [trans]
+
+        # Build FFTW guru vector structures
+        cdef int vec_rank = 2
+        cdef cfftw.fftw_iodim vec0, vec1f, vec1b
+        # Loop over higher axes
+        vec0.n = np.prod(gshape[axis+1:])
+        vec0.in_stride = 1
+        vec0.out_stride = 1
+        # Loop over lower axes
+        vec1f.n = vec1b.n = np.prod(gshape[:axis])
+        vec1f.in_stride  = vec1b.out_stride = np.prod(gshape[axis:])
+        vec1f.out_stride = vec1b.in_stride  = np.prod(cshape[axis:])
+        cdef cfftw.fftw_iodim *vec_struct_f = [vec0, vec1f]
+        cdef cfftw.fftw_iodim *vec_struct_b = [vec0, vec1b]
+
+        # Build flags
+        cdef unsigned intflags = 0
+        for f in flags:
+            intflags = intflags | fftw_flags[f]
+
+        # Select DCT types
+        cdef int *kind_f = [cfftw.FFTW_REDFT10]
+        cdef int *kind_b = [cfftw.FFTW_REDFT01]
+
+        # Create out-of-place plans using temporary memory allocations
+        cdef double *gdata
+        cdef double *cdata
+        gdata = cfftw.fftw_alloc_real(np.prod(gshape))
+        cdata = cfftw.fftw_alloc_real(np.prod(cshape))
+        self.forward_plan = cfftw.fftw_plan_guru_r2r(trans_rank,
+                                                     trans_struct,
+                                                     vec_rank,
+                                                     vec_struct_f,
+                                                     gdata,
+                                                     cdata,
+                                                     kind_f,
+                                                     intflags | cfftw.FFTW_DESTROY_INPUT)
+        self.backward_plan = cfftw.fftw_plan_guru_r2r(trans_rank,
+                                                      trans_struct,
+                                                      vec_rank,
+                                                      vec_struct_b,
+                                                      cdata,
+                                                      gdata,
+                                                      kind_b,
+                                                      intflags | cfftw.FFTW_DESTROY_INPUT)
+        cfftw.fftw_free(gdata)
+        cfftw.fftw_free(cdata)
+
+        # Check that plan creation succeeded
+        if (self.forward_plan == NULL) or (self.backward_plan == NULL):
+            raise RuntimeError("FFTW could not create plans.")
+
+    def __dealloc__(self):
+        """Destroy plans on deallocation."""
+
+        cfftw.fftw_destroy_plan(self.forward_plan)
+        cfftw.fftw_destroy_plan(self.backward_plan)
+
+    def forward(self, cnp.ndarray gdata, cnp.ndarray cdata):
+        """Grid-to-coefficient transform."""
+
+        # Execute plan using new-array interface
+        cfftw.fftw_execute_r2r(self.forward_plan,
+                               <double *> cnp.PyArray_DATA(gdata),
+                               <double *> cnp.PyArray_DATA(cdata))
+
+    def backward(self, cnp.ndarray cdata, cnp.ndarray gdata):
+        """Coefficient-to-grid transform."""
+
+        # Execute plan using new-array interface
+        cfftw.fftw_execute_r2r(self.backward_plan,
+                               <double *> cnp.PyArray_DATA(cdata),
+                               <double *> cnp.PyArray_DATA(gdata))
+
