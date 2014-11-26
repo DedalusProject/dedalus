@@ -528,8 +528,8 @@ cdef class DiscreteSineTransform:
             intflags = intflags | fftw_flags[f]
 
         # Select DCT types
-        cdef int *kind_f = [cfftw.FFTW_REDFT10]
-        cdef int *kind_b = [cfftw.FFTW_REDFT01]
+        cdef int *kind_f = [cfftw.FFTW_RODFT10]
+        cdef int *kind_b = [cfftw.FFTW_RODFT01]
 
         # Create out-of-place plans using temporary memory allocations
         cdef double *gdata
