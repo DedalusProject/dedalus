@@ -19,6 +19,7 @@ from ..tools.cache import CachedMethod
 from ..tools.array import interleaved_view
 from ..tools.array import reshape_vector
 from ..tools.array import axslice
+from ..tools.array import apply_matrix
 from ..tools.exceptions import UndefinedParityError
 
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -428,6 +429,13 @@ class Chebyshev(ImplicitBasis):
                 if position is None:
                     position = cls._position
                 return cls._interp_matrix(position)
+
+            def apply_matrix_form(self, out):
+                arg0, = self.args
+                axis = self.axis
+                dim = arg0.domain.dim
+                matrix = self.matrix_form(self.position)
+                apply_matrix(matrix, arg0.data, axis, out=out.data)
 
             @classmethod
             @CachedMethod
@@ -1069,7 +1077,7 @@ class SinCos(TransverseBasis):
     def Integrate(self):
         """Build integration class."""
 
-        class IntegrateSinCos(operators.Interpolate, operators.Coupled):
+        class IntegrateSinCos(operators.Integrate, operators.Coupled):
             name = 'integ_{}'.format(self.name)
             basis = self
 
@@ -1147,10 +1155,10 @@ class SinCos(TransverseBasis):
                 k_value = cls.basis.wavenumbers[index]
                 return {k_name: k_value}
 
-            @classmethod
-            def vector_form(cls):
-                """Fourier differentiation: dx(Fn) = i kn Fn"""
-                return cls.basis.wavenumbers
+            def vector_form(self):
+                """Sinusoid differentiation."""
+                parity = self.meta[self.axis]['parity']
+                return parity * self.basis.wavenumbers
 
         return DifferentiateSinCos
 
