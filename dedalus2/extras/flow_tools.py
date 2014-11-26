@@ -7,6 +7,8 @@ import numpy as np
 from mpi4py import MPI
 
 from ..data import operators
+from ..data.field import Array
+from ..data.future import FutureField
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -164,7 +166,11 @@ class CFL:
         self.min_change = min_change
 
         domain = solver.domain
-        self.grid_spacings = [domain.grid_spacing(axis) for axis in range(domain.dim)]
+        self.grid_spacings = []
+        for axis in range(domain.dim):
+            dx_array = Array(domain)
+            dx_array.from_local_vector(domain.grid_spacing(axis, domain.dealias), axis)
+            self.grid_spacings.append(dx_array)
         self.reducer = GlobalArrayReducer(solver.domain.dist.comm_cart)
         self.frequencies = solver.evaluator.add_dictionary_handler(iter=cadence)
 
@@ -198,7 +204,7 @@ class CFL:
 
     def add_velocity(self, velocity, axis):
         """Add grid-crossing frequency from a velocity along one axis."""
-        vel = operators.Operator.from_string(velocity, self.solver.evaluator.vars, self.solver.domain)
+        vel = FutureField.parse(velocity, self.solver.evaluator.vars, self.solver.domain)
         freq = vel / self.grid_spacings[axis]
         self.add_frequency(freq)
 
