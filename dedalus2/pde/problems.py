@@ -274,7 +274,11 @@ class ProblemBase:
                 factors = [self.category_to_string(*f) for f in factors]
                 stringform = '*'.join(factors)
                 # Multiply scalar terms by identity
-                if term.is_commutative:
+                if term == 0:
+                    stringform = 'Zero'
+                elif term == 1:
+                    stringofrm = 'Identity'
+                elif term.is_commutative:
                     stringform += '*Identity'
                 terms.append(stringform)
             stringform = ' + '.join(terms)

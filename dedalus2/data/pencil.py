@@ -104,6 +104,7 @@ class Pencil:
                         pass
         # Identity
         namespace['Identity'] = sparse.identity(zsize, dtype=zdtype).tocsr()
+        namespace['Zero'] = sparse.csr_matrix((zsize, zsize), dtype=zdtype)
 
         # Basis matrices
         R = namespace['Identity'] #basis.Rearrange
@@ -176,7 +177,6 @@ class Pencil:
                         Bij = eval(bc[name][j], namespace)
                         Cij = Cij + Gi_bc*Bij
                     # Kronecker into system matrix
-                    Cij.eliminate_zeros()
                     if Cij.nnz:
                         δC.fill(0); δC[i, j] = 1
                         C = C + kron(Cij, δC)
