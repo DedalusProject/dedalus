@@ -16,6 +16,7 @@ from .metadata import Metadata
 from ..libraries.fftw import fftw_wrappers as fftw
 from ..tools.config import config
 from ..tools.array import reshape_vector
+from ..tools.exceptions import UndefinedParityError
 
 # Load config options
 permc_spec = config['linear algebra']['permc_spec']
@@ -217,15 +218,31 @@ class Array(Data):
         # Set metadata
         for i in range(self.domain.dim):
             axmeta = self.meta[i]
-            axmeta['constant'] = False if (i == axis) else True
+            if i == axis:
+                axmeta['constant'] = False
+            else:
+                axmeta['constant'] = True
             if 'parity' in axmeta:
-                axmeta['parity'] = False if (i == axis) else True
+                axmeta['parity'] = 1
         # Save local slice
         scales = self.meta[:]['scale']
         local_slice =  self.domain.dist.grid_layout.slices(scales)[axis]
         local_data = data[local_slice]
         local_data = reshape_vector(data[local_slice], dim=self.domain.dim, axis=axis)
         np.copyto(self.data, local_data)
+
+    def from_local_vector(self, data, axis):
+        # Set metadata
+        for i in range(self.domain.dim):
+            axmeta = self.meta[i]
+            if i == axis:
+                axmeta['constant'] = False
+            else:
+                axmeta['constant'] = True
+            if 'parity' in axmeta:
+                axmeta['parity'] = 1
+        # Save data
+        np.copyto(self.data, data)
 
     def as_symbol(self):
         if self.name:

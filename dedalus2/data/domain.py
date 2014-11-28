@@ -8,7 +8,7 @@ import numpy as np
 
 from .metadata import Metadata
 from .distributor import Distributor
-from .field import Field
+from .field import Scalar, Field
 #from .operators import create_diff_operator
 from ..tools.cache import CachedMethod
 from ..tools.array import reshape_vector
@@ -152,6 +152,11 @@ class EmptyDomain:
         """Return basis from a related object."""
 
         return None
+
+    def new_data(self, type, **kw):
+        if type != Scalar:
+            raise ValueError()
+        return type(self, **kw)
 
 
 def combine_domains(*domains):

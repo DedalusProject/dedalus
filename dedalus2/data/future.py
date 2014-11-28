@@ -9,6 +9,7 @@ import sympy as sy
 from .field import Operand, Data, Scalar, Array, Field
 from .metadata import Metadata
 from ..tools.general import OrderedSet
+from ..tools.cache import CachedAttribute
 
 
 class Future(Operand):
@@ -48,7 +49,10 @@ class Future(Operand):
         self.args = list(args)
         self.original_args = list(args)
         self.domain = domain
-        self._grid_layout = domain.dist.grid_layout
+        try:
+            self._grid_layout = domain.dist.grid_layout
+        except AttributeError:
+            pass
         self.out = out
         self.last_id = None
 
@@ -125,8 +129,12 @@ class Future(Operand):
             out = self.domain.new_data(self.future_type)
 
         # Copy metadata
-        out.set_scales(self.domain.dealias, keep_data=False)
-        out.meta = self.meta
+        try:
+            out.meta = self.meta
+            out.meta[:]['scale'] = None
+            out.set_scales(self.domain.dealias, keep_data=False)
+        except AttributeError:
+            pass
 
         # Perform operation
         self.operate(out)
@@ -145,7 +153,7 @@ class Future(Operand):
         """Recursively attempt to evaluate operation."""
         return self.evaluate(id=id, force=False)
 
-    @property
+    @CachedAttribute
     def meta(self):
         meta = Metadata(self.domain)
         for axis in range(self.domain.dim):
