@@ -174,8 +174,10 @@ class UnaryGridFunction(Future, metaclass=MultiClass):
         # Preserving constancy -> even parity
         if self.args[0].meta[axis]['constant']:
             return 1
+        elif self.args[0].meta[axis]['parity'] == 1:
+            return 1
         else:
-            raise UndefinedParityError("Unknown action of {} on parity.".format(self.name))
+            raise UndefinedParityError("Unknown action of {} on odd parity.".format(self.name))
 
     def as_symbolic_operator(self, vars):
         arg0_op = self.args[0].as_symbolic_operator(vars)
