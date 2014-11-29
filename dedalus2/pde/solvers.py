@@ -209,9 +209,10 @@ class IVP:
 
         logger.debug('Beginning IVP instantiation')
 
-        # Assign axis names to bases
-        # for i, b in enumerate(domain.bases):
-        #     b.name = problem.axis_names[i]
+        self.problem = problem
+        self.domain = domain
+        self._wall_time_array = np.zeros(1, dtype=float)
+        self.start_time = self.get_wall_time()
 
         # Build pencils and pencil matrices
         self.pencils = pencils = build_pencils(domain)
@@ -246,10 +247,6 @@ class IVP:
         self.timestepper = timestepper(problem.nvars, domain)
 
         # Attributes
-        self.problem = problem
-        self.domain = domain
-        self._wall_time_array = np.zeros(1, dtype=float)
-        self.start_time = self.get_wall_time()
         self.sim_time = 0.
         self.iteration = 0
 
