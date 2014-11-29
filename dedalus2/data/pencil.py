@@ -119,7 +119,7 @@ class Pencil:
             M = basis.Match
             R_Fm = R*Fm
         if ndiff and compound:
-            R_Fm_Fb_P = R*Fm*Fb*P
+            R_Fm_Fb_P = R_Fm*Fb*P
 
         # Pencil matrices
         G_eq = sparse.csr_matrix((zsize*nvars, zsize*Neqs), dtype=zdtype)
@@ -152,34 +152,58 @@ class Pencil:
                 Gi_eq = R_Fb_P
             elif differential and compound:
                 Gi_eq = R_Fm_Fb_P
+
             # Kronecker into system matrix
-            Gi_eq.eliminate_zeros()
-            δG_eq.fill(0); δG_eq[i, problem.eqs.index(eq)] = 1
+            e = problem.eqs.index(eq)
+            δG_eq[i,e] = 1
             G_eq = G_eq + kron(Gi_eq, δG_eq)
+            δG_eq[i,e] = 0
 
             if differential:
                 # Build RHS BC process matrix
                 Gi_bc = R_Cb
                 # Kronecker into system matrix
-                Gi_bc.eliminate_zeros()
-                δG_bc.fill(0); δG_bc[i, problem.bcs.index(bc)] = 1
+                b = problem.bcs.index(bc)
+                δG_bc[i,b] = 1
                 G_bc = G_bc + kron(Gi_bc, δG_bc)
+                δG_bc[i,b] = 0
 
             # Build LHS matrices
             for name in LHS:
                 C = LHS[name]
                 for j in range(nvars):
-                    # Add equation terms
+                    # Build equation terms
                     Eij = eval(eq[name][j], namespace)
-                    Cij = Gi_eq*Eij
+                    if Eij is 0:
+                        Eij = None
+                    elif Eij is 1:
+                        Eij = Gi_eq
+                    else:
+                        Eij = Gi_eq*Eij
+                    # Build BC terms
                     if differential:
-                        # Add BC terms
                         Bij = eval(bc[name][j], namespace)
-                        Cij = Cij + Gi_bc*Bij
-                    # Kronecker into system matrix
-                    if Cij.nnz:
-                        δC.fill(0); δC[i, j] = 1
-                        C = C + kron(Cij, δC)
+                        if Bij is 0:
+                            Bij = None
+                        elif Bij is 1:
+                            Bij = Gi_bc
+                        else:
+                            Bij = Gi_bc*Bij
+                    else:
+                        Bij = None
+                    # Combine equation and BC
+                    if (Eij is None) and (Bij is None):
+                        continue
+                    elif Eij is None:
+                        Cij = Bij
+                    elif Bij is None:
+                        Cij = Eij
+                    else:
+                        Cij = Eij + Bij
+                    # Kronecker into system
+                    δC[i,j] = 1
+                    C = C + kron(Cij, δC)
+                    δC[i,j] = 0
                 LHS[name] = C
 
         if compound:

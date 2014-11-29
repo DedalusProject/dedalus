@@ -267,21 +267,24 @@ class ProblemBase:
         for coeff in coeffs:
             terms = []
             coeff = sy.sympify(coeff)
-            for term in sy.Add.make_args(coeff):
-                term *= sy.numbers.One()
-                factors = sy.Mul.make_args(term)
-                factors = partition(self.categorize, factors)
-                factors = [self.category_to_string(*f) for f in factors]
-                stringform = '*'.join(factors)
-                # Multiply scalar terms by identity
-                if term == 0:
-                    stringform = 'Zero'
-                elif term == 1:
-                    stringofrm = 'Identity'
-                elif term.is_commutative:
-                    stringform += '*Identity'
-                terms.append(stringform)
-            stringform = ' + '.join(terms)
+            if coeff == 0:
+                stringform = '0'
+            elif coeff == 1:
+                stringform = '1'
+            else:
+                for term in sy.Add.make_args(coeff):
+                    term *= sy.numbers.One()
+                    factors = sy.Mul.make_args(term)
+                    factors = partition(self.categorize, factors)
+                    factors = [self.category_to_string(*f) for f in factors]
+                    stringform = '*'.join(factors)
+                    # Multiply scalar terms by identity
+                    if term == 1:
+                        stringform = 'Identity'
+                    elif term.is_commutative:
+                        stringform += '*Identity'
+                    terms.append(stringform)
+                stringform = ' + '.join(terms)
             stringforms.append(stringform)
 
         return stringforms
