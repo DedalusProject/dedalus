@@ -957,6 +957,13 @@ class Interpolate(LinearOperator, metaclass=MultiClass):
     def __str__(self):
         return "interp({},'{}',{})".format(self.args[0], self.basis, self.position)
 
+    def apply_matrix_form(self, out):
+        arg0, = self.args
+        axis = self.axis
+        dim = arg0.domain.dim
+        matrix = self.matrix_form(self.position)
+        apply_matrix(matrix, arg0.data, axis, out=out.data)
+
     @classmethod
     def at(cls, position):
         cls._position = position

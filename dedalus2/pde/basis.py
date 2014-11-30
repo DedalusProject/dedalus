@@ -155,6 +155,7 @@ class TransverseBasis(Basis):
     """Base class for bases supporting transverse differentiation."""
     pass
 
+
 class ImplicitBasis(Basis):
     """
     Base class for bases supporting implicit methods.
@@ -430,13 +431,6 @@ class Chebyshev(ImplicitBasis):
                     position = cls._position
                 return cls._interp_matrix(position)
 
-            def apply_matrix_form(self, out):
-                arg0, = self.args
-                axis = self.axis
-                dim = arg0.domain.dim
-                matrix = self.matrix_form(self.position)
-                apply_matrix(matrix, arg0.data, axis, out=out.data)
-
             @classmethod
             @CachedMethod
             def _interp_matrix(cls, position):
@@ -452,6 +446,8 @@ class Chebyshev(ImplicitBasis):
                     theta = np.pi
                 elif position == 'right':
                     theta = 0
+                elif position == 'center':
+                    theta = np.pi / 2
                 else:
                     xn = cls.basis._native_coord(position)
                     theta = np.arccos(xn)
@@ -768,35 +764,28 @@ class Fourier(TransverseBasis):
 
             def explicit_form(self, input, output, axis):
                 dim = self.domain.dim
-                weights = reshape_vector(self._interp_vector(), dim=dim, axis=axis)
-                if self.grid_dtype == np.float64:
+                weights = reshape_vector(self._interp_vector(self.position), dim=dim, axis=axis)
+                if self.basis.grid_dtype == np.float64:
                     # Halve mean-mode weight (will be added twice)
                     weights.flat[0] /= 2
                     pos_interp = np.sum(input * weights, axis=axis, keepdims=True)
                     interp = pos_interp + pos_interp.conj()
-                elif self.grid_dtype == np.complex128:
+                elif self.basis.grid_dtype == np.complex128:
                     interp = np.sum(input * weights, axis=axis, keepdims=True)
                 np.copyto(output[axslice(axis, 0, 1)], interp)
                 np.copyto(output[axslice(axis, 1, None)], 0)
 
             @classmethod
-            @CachedMethod
-            def matrix_form(cls, position=None):
-                """Fourier interpolation: Fn(x) = exp(i kn x)"""
-                if position is None:
-                    position = cls._position
-                if cls.basis.coeff_dtype == np.float64:
-                    raise NotImplementedError("Interpolating an R2C Fourier series cannot be done via a matrix multiplication.")
-                else:
-                    size = cls.basis.coeff_size
-                    matrix = sparse.lil_matrix((size, size), dtype=cls.basis.coeff_dtype)
-                    matrix[0,:] = self._interp_vector(position)
-                    return matrix.tocsr()
-
-            @classmethod
             def _interp_vector(cls, position):
                 """Fourier interpolation: Fn(x) = exp(i kn x)"""
-                x = position - cls.basis.interval[0]
+                if position == 'left':
+                    x = cls.basis.interval[0]
+                elif position == 'right':
+                    x = cls.basis.interval[1]
+                elif position == 'center':
+                    x = (cls.basis.interval[0] + cls.basis.interval[1]) / 2
+                else:
+                    x = position - cls.basis.interval[0]
                 return np.exp(1j * cls.basis.wavenumbers * x)
 
         return InterpolateFourier
@@ -1121,7 +1110,15 @@ class SinCos(TransverseBasis):
 
             def _interp_vector(self, position):
                 """Fourier interpolation: Fn(x) = exp(i kn x)"""
-                x = position - cls.basis.interval[0]
+                if position == 'left':
+                    x = self.basis.interval[0]
+                elif position == 'right':
+                    x = self.basis.interval[1]
+                elif position == 'center':
+                    x = (self.basis.interval[0] + self.basis.interval[1]) / 2
+                else:
+                    x = position - self.basis.interval[0]
+
                 parity = self.meta[self.axis]['parity']
                 if parity == 1:
                     return np.cos(self.basis.wavenumbers * x)
@@ -1366,17 +1363,20 @@ class Compound(ImplicitBasis):
                 """Chebyshev interpolation: Tn(xn) = cos(n * acos(xn))"""
                 # Construct dense row vector
                 interp_vector = np.zeros(cls.basis.coeff_size, dtype=cls.basis.coeff_dtype)
-                # Find containing subbasis
                 if position == 'left':
-                    index = 0
+                    x = cls.basis.interval[0]
                 elif position == 'right':
-                    index = len(cls.basis.subbases) - 1
+                    x = cls.basis.interval[1]
+                elif position == 'center':
+                    x = (cls.basis.interval[0] + cls.basis.interval[1]) / 2
                 else:
-                    for index, sb in enumerate(cls.basis.subbases):
-                        if sb.interval[0] <= position <= sb.interval[1]:
-                            break
-                    else:
-                        raise ValueError("Position outside any subbasis interval.")
+                    x = position
+                # Find containing subbasis
+                for index, sb in enumerate(cls.basis.subbases):
+                    if sb.interval[0] <= x <= sb.interval[1]:
+                        break
+                else:
+                    raise ValueError("Position outside any subbasis interval.")
                 # Use subbasis interpolation
                 sb = cls.basis.subbases[index]
                 start = cls.basis.coeff_start(index)
