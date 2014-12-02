@@ -951,6 +951,14 @@ class Interpolate(LinearOperator, metaclass=MultiClass):
         self.position = position
         self.axis = self.domain.bases.index(self.basis)
 
+    def distribute(self):
+        arg0, = self.args
+        if not isinstance(arg0, Add):
+            raise ValueError("Can only apply distributive rule to a sum.")
+        a, b = arg0.args
+        op = type(self)
+        return op(a, self.position) + op(b, self.position)
+
     def __repr__(self):
         return 'interp(%r, %r, %r)' %(self.args[0], self.basis, self.position)
 
