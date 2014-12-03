@@ -317,8 +317,10 @@ class Chebyshev(ImplicitBasis):
         """Forward transform using scipy DCT."""
 
         cdata, gdata = self.check_arrays(cdata, gdata, axis)
+        complex = (gdata.dtype == np.complex128)
         # View complex data as interleaved real data
-        if gdata.dtype == np.complex128:
+        if complex:
+            cdata_complex = cdata
             gdata = interleaved_view(gdata)
             cdata = interleaved_view(cdata)
         # Scipy DCT
@@ -328,24 +330,30 @@ class Chebyshev(ImplicitBasis):
         # Pad / truncate coefficients
         self._resize_coeffs(temp, cdata, axis)
 
+        if complex:
+            cdata = cdata_complex
         return cdata
 
     def _backward_scipy(self, cdata, gdata, axis, meta):
         """Backward transform using scipy IDCT."""
 
         cdata, gdata = self.check_arrays(cdata, gdata, axis, meta)
+        complex = (gdata.dtype == np.complex128)
         # Pad / truncate coefficients
         # Store in gdata for memory efficiency (transform preserves shape/dtype)
         self._resize_coeffs(cdata, gdata, axis)
         # Scale Chebyshev coefficients to IDCT input
         self._backward_scaling(gdata, axis)
         # View complex data as interleaved real data
-        if gdata.dtype == np.complex128:
+        if complex:
+            gdata_complex = gdata
             gdata = interleaved_view(gdata)
         # Scipy IDCT
         temp = fftpack.dct(gdata, type=3, axis=axis)
         np.copyto(gdata, temp)
 
+        if complex:
+            gdata = gdata_complex
         return gdata
 
     @CachedMethod
@@ -779,13 +787,12 @@ class Fourier(TransverseBasis):
             def _interp_vector(cls, position):
                 """Fourier interpolation: Fn(x) = exp(i kn x)"""
                 if position == 'left':
-                    x = cls.basis.interval[0]
+                    position = cls.basis.interval[0]
                 elif position == 'right':
-                    x = cls.basis.interval[1]
+                    position = cls.basis.interval[1]
                 elif position == 'center':
-                    x = (cls.basis.interval[0] + cls.basis.interval[1]) / 2
-                else:
-                    x = position - cls.basis.interval[0]
+                    position = (cls.basis.interval[0] + cls.basis.interval[1]) / 2
+                x = position - cls.basis.interval[0]
                 return np.exp(1j * cls.basis.wavenumbers * x)
 
         return InterpolateFourier
@@ -955,8 +962,10 @@ class SinCos(TransverseBasis):
         """Forward transform using scipy DCT/DST."""
 
         cdata, gdata = self.check_arrays(cdata, gdata, axis)
+        complex = (gdata.dtype == np.complex128)
         # View complex data as interleaved real data
-        if gdata.dtype == np.complex128:
+        if complex:
+            cdata_complex = cdata
             gdata = interleaved_view(gdata)
             cdata = interleaved_view(cdata)
         # Scipy transforms and scalings
@@ -973,17 +982,21 @@ class SinCos(TransverseBasis):
         # Pad / truncate coefficients
         self._resize_coeffs(temp, cdata, axis)
 
+        if complex:
+            cdata = cdata_complex
         return cdata
 
     def _backward_scipy(self, cdata, gdata, axis, meta):
         """Backward transform using scipy IDCT/IDST."""
 
         cdata, gdata = self.check_arrays(cdata, gdata, axis, meta)
+        complex = (gdata.dtype == np.complex128)
         # Pad / truncate coefficients
         # Store in gdata for memory efficiency (transform preserves shape/dtype)
         self._resize_coeffs(cdata, gdata, axis)
         # View complex data as interleaved real data
-        if gdata.dtype == np.complex128:
+        if complex:
+            gdata_complex = gdata
             gdata = interleaved_view(gdata)
         # Scipy transforms and scalings
         if meta['parity'] == 0:
@@ -998,6 +1011,8 @@ class SinCos(TransverseBasis):
             raise UndefinedParityError()
         np.copyto(gdata, temp)
 
+        if complex:
+            gdata = gdata_complex
         return gdata
 
     @CachedMethod
@@ -1079,12 +1094,12 @@ class SinCos(TransverseBasis):
 
             def _integ_vector(self):
                 """Fourier interpolation: Fn(x) = exp(i kn x)"""
-                parity = self.meta[self.axis]['parity']
+                arg_parity = self.args[0].meta[self.axis]['parity']
                 integ = np.zeros(self.basis.coeff_size)
-                if parity == 1:
+                if arg_parity == 1:
                     integ[0] = np.pi * self.basis._grid_stretch
                     return integ
-                elif parity == -1:
+                elif arg_parity == -1:
                     integ[1::2] = 2 / np.arange(1, integ.size, 2)
                     return integ
                 else:
@@ -1111,18 +1126,17 @@ class SinCos(TransverseBasis):
             def _interp_vector(self, position):
                 """Fourier interpolation: Fn(x) = exp(i kn x)"""
                 if position == 'left':
-                    x = self.basis.interval[0]
+                    position = self.basis.interval[0]
                 elif position == 'right':
-                    x = self.basis.interval[1]
+                    position = self.basis.interval[1]
                 elif position == 'center':
-                    x = (self.basis.interval[0] + self.basis.interval[1]) / 2
-                else:
-                    x = position - self.basis.interval[0]
+                    position = (self.basis.interval[0] + self.basis.interval[1]) / 2
+                x = position - self.basis.interval[0]
 
-                parity = self.meta[self.axis]['parity']
-                if parity == 1:
+                arg_parity = self.args[0].meta[self.axis]['parity']
+                if arg_parity == 1:
                     return np.cos(self.basis.wavenumbers * x)
-                elif parity == -1:
+                elif arg_parity == -1:
                     return np.sin(self.basis.wavenumbers * x)
                 else:
                     raise UndefinedParityError()
@@ -1139,11 +1153,11 @@ class SinCos(TransverseBasis):
 
             def op_symbol(self):
                 """Sinusoid differentiation."""
-                # op parity ==  1: dx(sin(kx)) =  k cos(kx)
-                # op parity == -1: dx(cos(kx)) = -k sin(kx)
-                parity = self.meta[self.axis]['parity']
+                # arg parity == -1: dx(sin(kx)) =  k cos(kx)
+                # arg parity ==  1: dx(cos(kx)) = -k sin(kx)
+                arg_parity = self.args[0].meta[self.axis]['parity']
                 k = sy.Symbol(self.basis.element_name, commutative=True)
-                return parity * k
+                return -arg_parity * k
 
             @classmethod
             def scalar_form(cls, index):
@@ -1154,8 +1168,8 @@ class SinCos(TransverseBasis):
 
             def vector_form(self):
                 """Sinusoid differentiation."""
-                parity = self.meta[self.axis]['parity']
-                return parity * self.basis.wavenumbers
+                arg_parity = self.args[0].meta[self.axis]['parity']
+                return -arg_parity * self.basis.wavenumbers
 
         return DifferentiateSinCos
 
@@ -1168,11 +1182,11 @@ class SinCos(TransverseBasis):
             basis = self
 
             def op_symbol(self):
-                # op parity ==  1:  Hx(sin(kx)) = -sgn(k) cos(kx)
-                # op parity == -1:  Hx(cos(kx)) =  sgn(k) sin(kx)
-                parity = self.meta[self.axis]['parity']
+                # arg parity == -1:  Hx(sin(kx)) = -sgn(k) cos(kx)
+                # arg parity ==  1:  Hx(cos(kx)) =  sgn(k) sin(kx)
+                arg_parity = self.args[0].meta[self.axis]['parity']
                 H = sy.Symbol(self.name, commutative=True)
-                return (-parity) * H
+                return arg_parity * H
 
             @classmethod
             def scalar_form(cls, index):
@@ -1181,8 +1195,8 @@ class SinCos(TransverseBasis):
 
             @classmethod
             def vector_form(cls):
-                """Hilbert transform: Hx(Fn) = -i sgn(kn) Fn"""
-                return -1j * np.sign(cls.basis.wavenumbers)
+                arg_parity = self.args[0].meta[self.axis]['parity']
+                return arg_parity * np.sign(cls.basis.wavenumbers)
 
         return HilbertTransformFourier
 
@@ -1280,6 +1294,7 @@ class Compound(ImplicitBasis):
         """Forward transforms."""
 
         cdata, gdata = self.check_arrays(cdata, gdata, axis)
+        gdata = gdata.copy()
         for index, basis in enumerate(self.subbases):
             # Transform continuous copy of subbasis gdata
             # (Transforms generally require continuous data)
@@ -1293,6 +1308,8 @@ class Compound(ImplicitBasis):
         """Backward transforms."""
 
         cdata, gdata = self.check_arrays(cdata, gdata, axis, meta)
+        # Copy cdata so we can write into gdata without overwriting subsequent coefficients
+        cdata = cdata.copy()
         for index, basis in enumerate(self.subbases):
             # Transform continuous copy of subbasis cdata
             # (Transforms generally require continuous data)
@@ -1364,16 +1381,14 @@ class Compound(ImplicitBasis):
                 # Construct dense row vector
                 interp_vector = np.zeros(cls.basis.coeff_size, dtype=cls.basis.coeff_dtype)
                 if position == 'left':
-                    x = cls.basis.interval[0]
+                    position = cls.basis.interval[0]
                 elif position == 'right':
-                    x = cls.basis.interval[1]
+                    position = cls.basis.interval[1]
                 elif position == 'center':
-                    x = (cls.basis.interval[0] + cls.basis.interval[1]) / 2
-                else:
-                    x = position
+                    position = (cls.basis.interval[0] + cls.basis.interval[1]) / 2
                 # Find containing subbasis
                 for index, sb in enumerate(cls.basis.subbases):
-                    if sb.interval[0] <= x <= sb.interval[1]:
+                    if sb.interval[0] <= position <= sb.interval[1]:
                         break
                 else:
                     raise ValueError("Position outside any subbasis interval.")
