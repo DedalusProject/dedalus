@@ -446,7 +446,7 @@ class FileHandler(Handler):
             # Spatial scales
             for axis, basis in enumerate(domain.bases):
                 if constant[axis]:
-                    sn = 'constant'
+                    sn = lookup = 'constant'
                 else:
                     if layout.grid_space[axis]:
                         sn = basis.name
