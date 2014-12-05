@@ -21,6 +21,7 @@ from mpi4py import MPI
 import time
 
 from dedalus2 import public as de
+from dedalus2.extras import flow_tools
 
 import logging
 logger = logging.getLogger(__name__)
@@ -79,67 +80,42 @@ b['g'] = -F*(z - pert)
 b.differentiate('z', out=bz)
 
 # Integration parameters
-dt = 1e-2
 solver.stop_sim_time = 30
 solver.stop_wall_time = 30 * 60.
 solver.stop_iteration = np.inf
 
-# CFL routines
-evaluator = solver.evaluator
-evaluator.vars['grid_delta_x'] = domain.grid_spacing(0)
-evaluator.vars['grid_delta_z'] = domain.grid_spacing(1)
-
-cfl_cadence = 10
-cfl_variables = evaluator.add_dictionary_handler(iter=cfl_cadence)
-cfl_variables.add_task('u/grid_delta_x', name='f_u')
-cfl_variables.add_task('w/grid_delta_z', name='f_w')
-
-def cfl_dt():
-    if z.size > 0:
-        max_f_u = np.max(np.abs(cfl_variables.fields['f_u']['g']))
-        max_f_w = np.max(np.abs(cfl_variables.fields['f_w']['g']))
-    else:
-        max_f_u = max_f_w = 0
-    max_f = max(max_f_u, max_f_w)
-    if max_f > 0:
-        min_t = 1 / max_f
-    else:
-        min_t = np.inf
-    return min_t
-
-safety = 0.3
-dt_array = np.zeros(1, dtype=np.float64)
-def update_dt(dt):
-    new_dt = max(0.5*dt, min(safety*cfl_dt(), 1.1*dt))
-    if domain.distributor.size > 1:
-        dt_array[0] = new_dt
-        domain.distributor.comm_cart.Allreduce(MPI.IN_PLACE, dt_array, op=MPI.MIN)
-        new_dt = dt_array[0]
-    return new_dt
-
 # Analysis
-snapshots = evaluator.add_file_handler('snapshots', sim_dt=0.1, max_writes=50)
+snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=0.1, max_writes=50)
 snapshots.add_task("p")
 snapshots.add_task("b")
 snapshots.add_task("u")
 snapshots.add_task("w")
+
+# CFL
+CFL = flow_tools.CFL(solver, initial_dt=1e-3, cadence=5, safety=0.3,
+                     max_change=1.5, min_change=0.5)
+CFL.add_velocities(('u', 'w'))
+
+# Flow properties
+flow = flow_tools.GlobalFlowProperty(solver, cadence=10)
+flow.add_property("sqrt(u*u + w*w) / R", name='Re')
 
 # Main loop
 try:
     logger.info('Starting loop')
     start_time = time.time()
     while solver.ok:
+        dt = CFL.compute_dt()
         solver.step(dt)
-        if (solver.iteration - 1) % cfl_cadence == 0:
-            dt = update_dt(dt)
+        if (solver.iteration-1) % 10 == 0:
             logger.info('Iteration: %i, Time: %e, dt: %e' %(solver.iteration, solver.sim_time, dt))
+            logger.info('Max Re = %f' %flow.max('Re'))
 except:
     logger.error('Exception raised, triggering end of main loop.')
     raise
 finally:
     end_time = time.time()
-
-    # Print statistics
-    logger.info('Run time: %f' %(end_time-start_time))
     logger.info('Iterations: %i' %solver.iteration)
+    logger.info('Sim end time: %f' %solver.sim_time)
+    logger.info('Run time: %f' %(end_time-start_time))
 
