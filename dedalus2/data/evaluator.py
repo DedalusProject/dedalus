@@ -197,6 +197,16 @@ class Handler:
         self.last_sim_div = -1
         self.last_iter_div = -1
 
+    def _cast_task(self, task):
+        """Cast task to operator."""
+
+        if isinstance(task, Operator):
+            return task
+        elif isinstance(task, str):
+            return Operator.from_string(task, self.vars, self.domain)
+        else:
+            return Cast(task)
+
     def add_task(self, task, layout='g', name=None):
         """Add task to handler."""
 
@@ -204,15 +214,8 @@ class Handler:
         if name is None:
             name = str(task)
 
-        # Create operator
-        if isinstance(task, Operator):
-            op = task
-        elif isinstance(task, str):
-            op = Operator.from_string(task, self.vars, self.domain)
-        else:
-            op = Cast(task)
-
         # Build task dictionary
+        op = self._cast_task(task)
         task = dict()
         task['operator'] = op
         task['layout'] = self.domain.distributor.get_layout_object(layout)

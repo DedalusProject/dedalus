@@ -89,9 +89,15 @@ class GlobalFlowProperty:
         self.reducer = GlobalArrayReducer(solver.domain.dist.comm_cart)
         self.properties = solver.evaluator.add_dictionary_handler(iter=cadence)
 
-    def add_property(self, property, name):
+    def add_property(self, property, name, precompute_integral=False):
         """Add a property."""
         self.properties.add_task(property, layout='g', name=name)
+        if precompute_integral:
+            # Add integral under slightly obscured name
+            task = self.properties._cast_task(property)
+            integral_task = operators.Integrate(task)
+            integral_name = '_{}_integral'.format(name)
+            self.properties.add_task(integral_task, layout='g', name=integral_name)
 
     def min(self, name):
         """Compute global min of a property on the grid."""
@@ -110,13 +116,18 @@ class GlobalFlowProperty:
 
     def volume_average(self, name):
         """Compute volume average of a property."""
-        # Compute volume integral
-        field = self.properties[name]
-        integral_op = operators.Integrate(field)
-        integral_field = integral_op.operate()
+        # Check for precomputed integral
+        try:
+            integral_name = '_{}_integral'.format(name)
+            integral_field = self.properties[integral_name]
+        except KeyError:
+            # Compute volume integral
+            field = self.properties[name]
+            integral_op = operators.Integrate(field)
+            integral_field = integral_op.evaluate()
         # Communicate integral value to all processes
         integral_value = self.reducer.global_max(integral_field['g'])
-        average_value = integral_value / self.domain.hypervolume
+        average_value = integral_value / self.solver.domain.hypervolume
         return average_value
 
 

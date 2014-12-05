@@ -43,6 +43,7 @@ class Domain:
         self.bases = bases
         self.dim = len(bases)
         self.grid_dtype = grid_dtype
+        self.hypervolume = np.prod([(basis.interval[1]-basis.interval[0]) for basis in bases])
 
         # Iteratively set basis data types
         # (Grid-to-coefficient transforms proceed in the listed order)
