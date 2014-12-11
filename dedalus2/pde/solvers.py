@@ -230,6 +230,7 @@ class IVP:
         namespace = problem.namespace.copy()
         namespace.allow_overwrites()
         namespace.update(state.field_dict)
+        namespace.add_substitutions(problem.substitutions)
 
         self._sim_time = namespace[problem.time]
 

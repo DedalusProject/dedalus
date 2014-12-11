@@ -46,6 +46,13 @@ class Namespace(OrderedDict):
         copy._allow_overwrites = self._allow_overwrites
         return copy
 
+    def add_substitutions(self, substitutions):
+        for call, result in substitutions.items():
+            # Convert function calls to lambda expressions
+            head, func = parsing.lambdify_functions(call, result)
+            # Evaluate in current namespace
+            self[head] = eval(func, self)
+
 
 class ProblemBase:
     """
@@ -135,11 +142,7 @@ class ProblemBase:
         namespace['Identity'] = 1
         namespace.update(operators.parseables)
         # Substitutions
-        for call, result in self.substitutions.items():
-            # Convert function calls to lambda expressions
-            head, func = parsing.lambdify_functions(call, result)
-            # Evaluate in current namespace
-            namespace[head] = eval(func, namespace)
+        namespace.add_substitutions(self.substitutions)
 
         return namespace
 
