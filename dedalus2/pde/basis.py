@@ -1177,7 +1177,7 @@ class SinCos(TransverseBasis):
     def HilbertTransform(self):
         """Build Hilbert transform class."""
 
-        class HilbertTransformFourier(operators.HilbertTransform, operators.Separable):
+        class HilbertTransformSinCos(operators.HilbertTransform, operators.Separable):
             name = 'H' + self.name
             basis = self
 
@@ -1193,12 +1193,11 @@ class SinCos(TransverseBasis):
                 """Wavenumber sign."""
                 return {cls.name: np.sign(cls.basis.wavenumbers[index])}
 
-            @classmethod
-            def vector_form(cls):
+            def vector_form(self):
                 arg_parity = self.args[0].meta[self.axis]['parity']
-                return arg_parity * np.sign(cls.basis.wavenumbers)
+                return arg_parity * np.sign(self.basis.wavenumbers)
 
-        return HilbertTransformFourier
+        return HilbertTransformSinCos
 
 
 class Compound(ImplicitBasis):
