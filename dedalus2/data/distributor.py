@@ -13,8 +13,8 @@ from ..tools.config import config
 from ..tools.general import rev_enumerate
 
 logger = logging.getLogger(__name__.split('.')[-1])
-FFTW_RIGOR = config['transforms'].get('FFTW_RIGOR')
-PATH_BARRIERS = config['parallelism'].getboolean('path_barriers')
+FFTW_RIGOR = config['parallelism'].get('FFTW_RIGOR')
+SYNC_TRANSPOSE = config['parallelism'].getboolean('SYNC_TRANSPOSE')
 
 
 class Distributor:
@@ -156,16 +156,12 @@ class Distributor:
     def increment_layout(self, field):
         """Change field to subsequent layout."""
 
-        if PATH_BARRIERS:
-            self.comm_cart.Barrier()
         index = field.layout.index
         self.paths[index].increment(field)
 
     def decrement_layout(self, field):
         """Change field to preceding layout."""
 
-        if PATH_BARRIERS:
-            self.comm_cart.Barrier()
         index = field.layout.index
         self.paths[index-1].decrement(field)
 
@@ -373,6 +369,9 @@ class Transpose:
     def increment(self, field):
         """Gather along specified axis."""
 
+        if SYNC_TRANSPOSE:
+            self.comm_cart.Barrier()
+
         scales = field.meta[:]['scale']
         plan, temp0, temp1 = self._fftw_setup(scales)
         if plan:
@@ -390,6 +389,9 @@ class Transpose:
 
     def decrement(self, field):
         """Scatter along specified axis."""
+
+        if SYNC_TRANSPOSE:
+            self.comm_cart.Barrier()
 
         scales = field.meta[:]['scale']
         plan, temp0, temp1 = self._fftw_setup(scales)
