@@ -239,10 +239,11 @@ class Chebyshev(ImplicitBasis):
         self._problem_coord = lambda xn: center + (xn * radius)
 
         # Attributes
+        self.name = name
+        self.element_name = 'T' + name
         self.base_grid_size = base_grid_size
         self.interval = tuple(interval)
         self.dealias = dealias
-        self.name = name
         self.library = DEFAULT_LIBRARY
         self.operators = (self.Integrate,
                           self.Interpolate,
