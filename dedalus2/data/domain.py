@@ -48,7 +48,7 @@ class Domain:
         self.bases = bases
         self.dim = len(bases)
         self.dealias = tuple(basis.dealias for basis in bases)
-		self.hypervolume = np.prod([(basis.interval[1]-basis.interval[0]) for basis in bases])
+        self.hypervolume = np.prod([(basis.interval[1]-basis.interval[0]) for basis in bases])
         self.global_coeff_shape = np.array([b.coeff_size for b in bases], dtype=int)
         logger.debug('Global coeff shape: %s' %str(self.global_coeff_shape))
 
