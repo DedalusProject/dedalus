@@ -307,7 +307,7 @@ class ProblemBase:
             expr = expr - coeffs[i]*sym
         # Check for completion
         if expr.simplify().expand() != 0:
-            raise ValueError("Leftover: {}".format(remaining))
+            raise ValueError("Leftover: {}".format(expr))
 
         return coeffs
 
