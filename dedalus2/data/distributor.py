@@ -330,12 +330,12 @@ class Transform:
     def decrement(self, fields):
         """Forward transform."""
         if len(fields) == 1:
-            self.increment_single(*fields)
+            self.decrement_single(*fields)
         elif GROUP_TRANSFORMS:
-            self.increment_group(fields)
+            self.decrement_group(fields)
         else:
             for field in fields:
-                self.increment_single(field)
+                self.decrement_single(field)
 
 
 class Transpose:
@@ -512,9 +512,9 @@ class Transpose:
         if SYNC_TRANSPOSES:
             self.comm_cart.Barrier()
         if len(fields) == 1:
-            self.increment_single(*fields)
+            self.decrement_single(*fields)
         elif GROUP_TRANSPOSES:
-            self.increment_group(fields)
+            self.decrement_group(fields)
         else:
             for field in fields:
-                self.increment_single(field)
+                self.decrement_single(field)
