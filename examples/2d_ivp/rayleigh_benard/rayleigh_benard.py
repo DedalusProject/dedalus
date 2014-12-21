@@ -114,6 +114,7 @@ except:
     raise
 finally:
     end_time = time.time()
-    logger.info('Run time: %f' %(end_time-start_time))
     logger.info('Iterations: %i' %solver.iteration)
+    logger.info('Sim end time: %f' %solver.sim_time)
+    logger.info('Run time: %f' %(end_time-start_time))
 

@@ -1,0 +1,24 @@
+#!/usr/bin/env python3
+#http://stackoverflow.com/questions/11443302/compiling-numpy-with-openblas-integration
+import numpy
+import sys
+import timeit
+
+try:
+    import numpy.core._dotblas
+    print('FAST BLAS')
+except ImportError:
+    print('slow blas')
+
+print("version:", numpy.__version__)
+print()
+
+setup = "import numpy; x = numpy.random.random((1000,1000))"
+count = 5
+
+t = timeit.Timer("numpy.dot(x, x.T)", setup=setup)
+print("dot:", t.timeit(count)/count, "sec")
+
+print(numpy.__config__.show())
+numpy.test()
+numpy.test('full')
