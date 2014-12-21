@@ -27,40 +27,38 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-# 2D Boussinesq hydrodynamics
-problem = de.ParsedProblem(axis_names=['x','z'],
-                           field_names=['p','b','u','w','bz','uz','wz'],
-                           param_names=['R','P','F'])
-problem.add_equation("dx(u) + wz = 0")
-problem.add_equation("dt(b) - P*(dx(dx(b)) + dz(bz))             = - u*dx(b) - w*bz")
-problem.add_equation("dt(u) - R*(dx(dx(u)) + dz(uz)) + dx(p)     = - u*dx(u) - w*uz")
-problem.add_equation("dt(w) - R*(dx(dx(w)) + dz(wz)) + dz(p) - b = - u*dx(w) - w*wz")
-problem.add_equation("bz - dz(b) = 0")
-problem.add_equation("uz - dz(u) = 0")
-problem.add_equation("wz - dz(w) = 0")
-problem.add_left_bc("b = -F*z")
-problem.add_left_bc("u = 0")
-problem.add_left_bc("w = 0")
-problem.add_right_bc("b = -F*z")
-problem.add_right_bc("u = 0")
-problem.add_right_bc("w = 0", condition="(dx != 0)")
-problem.add_int_bc("p = 0", condition="(dx == 0)")
-
 # Parameters
 Lx, Lz = (4., 1.)
 Prandtl = 1.
 Rayleigh = 1e6
 
 # Create bases and domain
-x_basis = de.Fourier(256, interval=(0, Lx), dealias=3/2)
-z_basis = de.Chebyshev(64, interval=(-Lz/2, Lz/2), dealias=3/2)
+x_basis = de.Fourier('x', 256, interval=(0, Lx), dealias=3/2)
+z_basis = de.Chebyshev('z', 32, interval=(-Lz/2, 0), dealias=3/2)
 domain = de.Domain([x_basis, z_basis], grid_dtype=np.float64)
 
-# Finalize problem
+# 2D Boussinesq hydrodynamics
+problem = de.IVP(domain, variables=['p','b','u','w','bz','uz','wz'], cutoff=1e-8)
+problem.parameters['c'] = c = domain.new_field()
+c.meta['x']['constant'] = True
+c['g'] = np.tanh(domain.grid(1) * 10)
 problem.parameters['P'] = (Rayleigh * Prandtl)**(-1/2)
 problem.parameters['R'] = (Rayleigh / Prandtl)**(-1/2)
 problem.parameters['F'] = F = 1
-problem.expand(domain)
+problem.add_equation("dx(u) + wz = 0")
+problem.add_equation("dt(b) - P*(dx(dx(b)) + dz(bz))       + c*u = - u*dx(b) - w*bz")
+problem.add_equation("dt(u) - R*(dx(dx(u)) + dz(uz)) + dx(p)     = - u*dx(u) - w*uz")
+problem.add_equation("dt(w) - R*(dx(dx(w)) + dz(wz)) + dz(p) - b = - u*dx(w) - w*wz")
+problem.add_equation("bz - dz(b) = 0")
+problem.add_equation("uz - dz(u) = 0")
+problem.add_equation("wz - dz(w) = 0")
+problem.add_bc("left(b) = left(-F*z)")
+problem.add_bc("left(u) = 0")
+problem.add_bc("left(w) = 0")
+problem.add_bc("right(b) = right(-F*z)")
+problem.add_bc("right(u) = 0")
+problem.add_bc("right(w) = 0", condition="(nx != 0)")
+problem.add_bc("integ(p, 'z') = 0", condition="(nx == 0)")
 
 # Build solver
 ts = de.timesteppers.SBDF3
