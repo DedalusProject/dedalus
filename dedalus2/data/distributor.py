@@ -14,7 +14,9 @@ from ..tools.general import rev_enumerate
 
 logger = logging.getLogger(__name__.split('.')[-1])
 FFTW_RIGOR = config['parallelism'].get('FFTW_RIGOR')
-SYNC_TRANSPOSE = config['parallelism'].getboolean('SYNC_TRANSPOSE')
+GROUP_TRANSFORMS = config['transforms'].get('GROUP_TRANSFORMS')
+GROUP_TRANSPOSES = config['parallelism'].get('GROUP_TRANSPOSES')
+SYNC_TRANSPOSES = config['parallelism'].getboolean('SYNC_TRANSPOSES')
 
 
 class Distributor:
@@ -153,18 +155,6 @@ class Distributor:
         else:
             return self.layout_references[input]
 
-    def increment_layout(self, field):
-        """Change field to subsequent layout."""
-
-        index = field.layout.index
-        self.paths[index].increment(field)
-
-    def decrement_layout(self, field):
-        """Change field to preceding layout."""
-
-        index = field.layout.index
-        self.paths[index-1].decrement(field)
-
     @CachedMethod
     def buffer_size(self, scales):
         """Compute necessary buffer size (bytes) for all layouts."""
@@ -286,7 +276,6 @@ class Transform:
         return group_cdata, group_gdata
 
     def increment_group(self, fields):
-
         fields = list(fields)
         scales = tuple(axmeta['scale'] for axmeta in fields[0].meta)
         cdata, gdata = self.group_data(len(fields), scales)
@@ -298,7 +287,6 @@ class Transform:
             np.copyto(field.data, gdata[i])
 
     def decrement_group(self, fields):
-
         fields = list(fields)
         scales = tuple(axmeta['scale'] for axmeta in fields[0].meta)
         cdata, gdata = self.group_data(len(fields), scales)
@@ -309,9 +297,8 @@ class Transform:
             field.layout = self.layout0
             np.copyto(field.data, cdata[i])
 
-    def increment(self, field):
+    def increment_single(self, field):
         """Backward transform."""
-
         # Reference views from both layouts
         cdata = field.data
         field.layout = self.layout1
@@ -320,9 +307,8 @@ class Transform:
         if np.prod(cdata.shape):
             self.basis.backward(cdata, gdata, self.axis, field.meta[self.axis])
 
-    def decrement(self, field):
+    def decrement_single(self, field):
         """Forward transform."""
-
         # Reference views from both layouts
         gdata = field.data
         field.layout = self.layout0
@@ -330,6 +316,26 @@ class Transform:
         # Transform if there's local data
         if np.prod(gdata.shape):
             self.basis.forward(gdata, cdata, self.axis, field.meta[self.axis])
+
+    def increment(self, fields):
+        """Backward transform."""
+        if len(fields) == 1:
+            self.increment_single(*fields)
+        elif GROUP_TRANSFORMS:
+            self.increment_group(fields)
+        else:
+            for field in fields:
+                self.increment_single(field)
+
+    def decrement(self, fields):
+        """Forward transform."""
+        if len(fields) == 1:
+            self.increment_single(*fields)
+        elif GROUP_TRANSFORMS:
+            self.increment_group(fields)
+        else:
+            for field in fields:
+                self.increment_single(field)
 
 
 class Transpose:
@@ -418,7 +424,6 @@ class Transpose:
         return plan, temp0, temp1
 
     def increment_group(self, fields):
-
         fields = list(fields)
         scales = tuple(axmeta['scale'] for axmeta in fields[0].meta)
         plan, temp0, temp1 = self._group_fftw_setup(len(fields), scales)
@@ -438,7 +443,6 @@ class Transpose:
             field.layout = self.layout1
 
     def decrement_group(self, fields):
-
         fields = list(fields)
         scales = tuple(axmeta['scale'] for axmeta in fields[0].meta)
         plan, temp0, temp1 = self._group_fftw_setup(len(fields), scales)
@@ -457,12 +461,8 @@ class Transpose:
             # No data: just update field layout
             field.layout = self.layout0
 
-    def increment(self, field):
+    def increment_single(self, field):
         """Gather along specified axis."""
-
-        if SYNC_TRANSPOSE:
-            self.comm_cart.Barrier()
-
         scales = field.meta[:]['scale']
         plan, temp0, temp1 = self._fftw_setup(scales)
         if plan:
@@ -478,12 +478,8 @@ class Transpose:
             # No data: just update field layout
             field.layout = self.layout1
 
-    def decrement(self, field):
+    def decrement_single(self, field):
         """Scatter along specified axis."""
-
-        if SYNC_TRANSPOSE:
-            self.comm_cart.Barrier()
-
         scales = field.meta[:]['scale']
         plan, temp0, temp1 = self._fftw_setup(scales)
         if plan:
@@ -499,3 +495,26 @@ class Transpose:
             # No data: just update field layout
             field.layout = self.layout0
 
+    def increment(self, fields):
+        """Gather along specified axis."""
+        if SYNC_TRANSPOSES:
+            self.comm_cart.Barrier()
+        if len(fields) == 1:
+            self.increment_single(*fields)
+        elif GROUP_TRANSPOSES:
+            self.increment_group(fields)
+        else:
+            for field in fields:
+                self.increment_single(field)
+
+    def decrement(self, fields):
+        """Scatter along specified axis."""
+        if SYNC_TRANSPOSES:
+            self.comm_cart.Barrier()
+        if len(fields) == 1:
+            self.increment_single(*fields)
+        elif GROUP_TRANSPOSES:
+            self.increment_group(fields)
+        else:
+            for field in fields:
+                self.increment_single(field)

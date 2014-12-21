@@ -122,9 +122,9 @@ class Evaluator:
             # Transform fields
             fields = self.get_fields(tasks)
             if current_index < next_index:
-                self.domain.dist.paths[current_index].increment_group(fields)
+                self.domain.dist.paths[current_index].increment(fields)
             else:
-                self.domain.dist.paths[next_index].decrement_group(fields)
+                self.domain.dist.paths[next_index].decrement(fields)
             current_index = next_index
             # Attempt evaluation
             tasks = self.attempt_tasks(tasks, id=sim_time)

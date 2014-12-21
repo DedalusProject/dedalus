@@ -376,13 +376,13 @@ class Field(Data):
 
     def towards_grid_space(self):
         """Change to next layout towards grid space."""
-
-        self.domain.distributor.increment_layout(self)
+        index = self.layout.index
+        self.domain.dist.paths[index].increment(self)
 
     def towards_coeff_space(self):
         """Change to next layout towards coefficient space."""
-
-        self.domain.distributor.decrement_layout(self)
+        index = self.layout.index
+        self.domain.dist.paths[index-1].decrement(self)
 
     def require_grid_space(self, axis=None):
         """Require one axis (default: all axes) to be in grid space."""
