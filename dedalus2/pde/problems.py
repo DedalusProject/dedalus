@@ -98,7 +98,7 @@ class ProblemBase:
     """
 
 
-    def __init__(self, domain, variables):
+    def __init__(self, domain, variables, **kw):
 
         self.domain = domain
         self.variables = variables
@@ -112,7 +112,7 @@ class ProblemBase:
         self.parameters = OrderedDict()
         self.substitutions = OrderedDict()
 
-        self.ncc_manager = NCCManager(self)
+        self.ncc_manager = NCCManager(self, **kw)
 
     @CachedAttribute
     def namespace(self):
