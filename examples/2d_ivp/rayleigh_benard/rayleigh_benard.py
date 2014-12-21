@@ -34,19 +34,16 @@ Rayleigh = 1e6
 
 # Create bases and domain
 x_basis = de.Fourier('x', 256, interval=(0, Lx), dealias=3/2)
-z_basis = de.Chebyshev('z', 32, interval=(-Lz/2, 0), dealias=3/2)
+z_basis = de.Chebyshev('z', 64, interval=(-Lz/2, Lz/2), dealias=3/2)
 domain = de.Domain([x_basis, z_basis], grid_dtype=np.float64)
 
 # 2D Boussinesq hydrodynamics
-problem = de.IVP(domain, variables=['p','b','u','w','bz','uz','wz'], cutoff=1e-8)
-problem.parameters['c'] = c = domain.new_field()
-c.meta['x']['constant'] = True
-c['g'] = np.tanh(domain.grid(1) * 10)
+problem = de.IVP(domain, variables=['p','b','u','w','bz','uz','wz'])
 problem.parameters['P'] = (Rayleigh * Prandtl)**(-1/2)
 problem.parameters['R'] = (Rayleigh / Prandtl)**(-1/2)
 problem.parameters['F'] = F = 1
 problem.add_equation("dx(u) + wz = 0")
-problem.add_equation("dt(b) - P*(dx(dx(b)) + dz(bz))       + c*u = - u*dx(b) - w*bz")
+problem.add_equation("dt(b) - P*(dx(dx(b)) + dz(bz))             = - u*dx(b) - w*bz")
 problem.add_equation("dt(u) - R*(dx(dx(u)) + dz(uz)) + dx(p)     = - u*dx(u) - w*uz")
 problem.add_equation("dt(w) - R*(dx(dx(w)) + dz(wz)) + dz(p) - b = - u*dx(w) - w*wz")
 problem.add_equation("bz - dz(b) = 0")

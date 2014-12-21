@@ -14,8 +14,8 @@ from ..tools.general import rev_enumerate
 
 logger = logging.getLogger(__name__.split('.')[-1])
 FFTW_RIGOR = config['parallelism'].get('FFTW_RIGOR')
-GROUP_TRANSFORMS = config['transforms'].get('GROUP_TRANSFORMS')
-GROUP_TRANSPOSES = config['parallelism'].get('GROUP_TRANSPOSES')
+GROUP_TRANSFORMS = config['transforms'].getboolean('GROUP_TRANSFORMS')
+GROUP_TRANSPOSES = config['parallelism'].getboolean('GROUP_TRANSPOSES')
 SYNC_TRANSPOSES = config['parallelism'].getboolean('SYNC_TRANSPOSES')
 
 
@@ -277,22 +277,22 @@ class Transform:
 
     def increment_group(self, fields):
         fields = list(fields)
-        scales = tuple(axmeta['scale'] for axmeta in fields[0].meta)
+        scales = fields[0].meta[:]['scale']
         cdata, gdata = self.group_data(len(fields), scales)
         for i, field in enumerate(fields):
             np.copyto(cdata[i], field.data)
-        self.basis.backward(cdata, axis=self.axis+1, gdata=gdata, scale=scales[self.axis])
+        self.basis.backward(cdata, gdata, self.axis+1, fields[0].meta[self.axis])
         for i, field in enumerate(fields):
             field.layout = self.layout1
             np.copyto(field.data, gdata[i])
 
     def decrement_group(self, fields):
         fields = list(fields)
-        scales = tuple(axmeta['scale'] for axmeta in fields[0].meta)
+        scales = fields[0].meta[:]['scale']
         cdata, gdata = self.group_data(len(fields), scales)
         for i, field in enumerate(fields):
             np.copyto(gdata[i], field.data)
-        self.basis.forward(gdata, axis=self.axis+1, cdata=cdata)
+        self.basis.forward(gdata, cdata, self.axis+1, fields[0].meta[self.axis])
         for i, field in enumerate(fields):
             field.layout = self.layout0
             np.copyto(field.data, cdata[i])
@@ -425,7 +425,7 @@ class Transpose:
 
     def increment_group(self, fields):
         fields = list(fields)
-        scales = tuple(axmeta['scale'] for axmeta in fields[0].meta)
+        scales = fields[0].meta[:]['scale']
         plan, temp0, temp1 = self._group_fftw_setup(len(fields), scales)
         if plan:
             # Copy layout0 views of data to plan buffer
@@ -444,7 +444,7 @@ class Transpose:
 
     def decrement_group(self, fields):
         fields = list(fields)
-        scales = tuple(axmeta['scale'] for axmeta in fields[0].meta)
+        scales = fields[0].meta[:]['scale']
         plan, temp0, temp1 = self._group_fftw_setup(len(fields), scales)
         if plan:
             # Copy layout1 views of data to plan buffer
