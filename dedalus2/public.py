@@ -10,7 +10,7 @@ from .data import future as _future
 from .data.domain import Domain
 from .data import operators
 from .pde.basis import Chebyshev, Fourier, Compound
-from .pde import solvers
-from .pde.problems import BVP, IVP
+from .pde.problems import InitialValueProblem, BoundaryValueProblem, EigenvalueProblem
+from .pde.problems import IVP, BVP, EVP
 from .pde import timesteppers
 

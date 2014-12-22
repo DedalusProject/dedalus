@@ -21,7 +21,7 @@ import logging
 logger = logging.getLogger(__name__.split('.')[-1])
 
 
-class LinearEigenvalue:
+class EigenvalueSolver:
     """
     Solves linear eigenvalue problems for oscillation frequency omega, (d_t -> -i omega).
     First converts to dense matrices, then solves the eigenvalue problem for a given pencil,
@@ -32,8 +32,6 @@ class LinearEigenvalue:
     ----------
     problem : problem object
         Problem describing system of differential equations and constraints
-    domain : domain object
-        Problem domain
 
     Attributes
     ----------
@@ -49,43 +47,41 @@ class LinearEigenvalue:
 
     """
 
-    def __init__(self, problem, domain):
+    def __init__(self, problem):
 
-        # Store references to problem & domain
+        logger.debug('Beginning EVP instantiation')
+
         self.problem = problem
-        self.domain = domain
+        self.domain = domain = problem.domain
 
-        # Assign axis names to bases
-        for i, b in enumerate(domain.bases):
-            b.name = problem.axis_names[i]
-
-        # Build pencils
-        self.pencils = build_pencils(domain)
+        # Build pencils and pencil matrices
+        self.pencils = pencils = build_pencils(domain)
+        # for p in log_progress(pencils, logger, 'info', desc='Building pencil matrix', iter=np.inf, frac=0.1, dt=10):
+        #     p.build_matrices(problem, ['M', 'L'])
 
         # Build systems
-        self.state = FieldSystem(problem.variables, domain)
+        self.state = state = FieldSystem(problem.variables, domain)
+        for var in problem.variables:
+            self.state[var].meta = problem.meta[var]
+            self.state[var].set_scales(1, keep_data=False)
 
-        vars = dict()
-        vars.update(parsable_ops)
-        vars.update(zip(problem.diff_names, domain.diff_ops))
-        vars.update(zip(problem.axis_names, domain.grids(domain.dealias)))
-        vars.update(problem.parameters)
-        vars.update(self.state.field_dict)
+        # Create F operator trees
+        namespace = problem.namespace.copy()
+        namespace.allow_overwrites()
+        namespace.update(state.field_dict)
+        namespace.add_substitutions(problem.substitutions)
 
-        self.evaluator = Evaluator(domain, vars)
+        self.evaluator = Evaluator(domain, namespace)
+
+        logger.debug('Finished EVP instantiation')
 
     def solve(self, pencil):
-        """Solve BVP."""
-
+        """Solve EVP."""
         self.eigenvalue_pencil = pencil
-
-        # Build matrices
-        primary_basis = self.domain.bases[-1]
-        pencil.build_matrices(self.problem, primary_basis)
-
+        pencil.build_matrices(self.problem, ['M', 'L'])
         L = pencil.L.todense()
         M = pencil.M.todense()
-        self.eigenvalues, self.eigenvectors = eig(-1j*L,b=M)
+        self.eigenvalues, self.eigenvectors = eig(L, b=-M)
 
     def set_state(self, num):
         """Set state vector to the num-th eigenvector"""
@@ -98,7 +94,7 @@ class LinearEigenvalue:
         self.state.scatter()
 
 
-class LinearBVP:
+class BoundaryValueSolver:
     """
     Linear boundary value problem solver.
 
@@ -106,8 +102,6 @@ class LinearBVP:
     ----------
     problem : problem object
         Problem describing system of differential equations and constraints
-    domain : domain object
-        Problem domain
 
     Attributes
     ----------
@@ -173,7 +167,7 @@ class LinearBVP:
         self.state.scatter()
 
 
-class IVP:
+class InitialValueSolver:
     """
     Initial value problem solver.
 
@@ -181,8 +175,6 @@ class IVP:
     ----------
     problem : problem object
         Problem describing system of differential equations and constraints
-    domain : domain object
-        Problem domain
     timestepper : timestepper class
         Timestepper to use in evolving initial conditions
 

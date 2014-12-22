@@ -13,6 +13,7 @@ from ..data.metadata import MultiDict, Metadata
 from ..data import field
 from ..data import future
 from ..data import operators
+from . import solvers
 from ..tools import parsing
 from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
@@ -351,8 +352,13 @@ class ProblemBase:
             out = ["NCC('{}')".format(ncc_str)]
         return '*'.join(out)
 
+    def build_solver(self, *args, **kw):
+        return self.solver_class(self, *args, **kw)
 
-class IVP(ProblemBase):
+
+class InitialValueProblem(ProblemBase):
+
+    solver_class = solvers.InitialValueSolver
 
     def __init__(self, domain, variables, time='t', **kw):
 
@@ -430,12 +436,9 @@ class IVP(ProblemBase):
         self.boundary_conditions.append(dct)
 
 
-class BVP(ProblemBase):
+class BoundaryValueProblem(ProblemBase):
 
-    def __init__(self, domain, variables, time='t', **kw):
-
-        super().__init__(domain, variables, **kw)
-        self.time = time
+    solver_class = solvers.BoundaryValueSolver
 
     def add_equation(self, equation, condition="True"):
         """Add equation to problem."""
@@ -466,6 +469,57 @@ class BVP(ProblemBase):
         dct['differential'] = self._coupled_differential_order(LHS)
 
         dct['L'] = self.stringify_variable_coefficients(LHS)
+
+        self.boundary_conditions.append(dct)
+
+
+class EigenvalueProblem(ProblemBase):
+
+    solver_class = solvers.EigenvalueSolver
+
+    def __init__(self, domain, variables, eigenvalue, **kw):
+        super().__init__(domain, variables, **kw)
+        self.eigenvalue = eigenvalue
+
+    @CachedAttribute
+    def namespace(self):
+        namespace = super().namespace
+        namespace[self.eigenvalue] = field.Scalar(name=self.eigenvalue)
+        return namespace
+
+    def add_equation(self, equation, condition="True"):
+        """Add equation to problem."""
+
+        logger.debug("Parsing Eqn {}".format(len(self.eqs)))
+        dct = self._build_basic_dictionary(equation, condition)
+
+        LHS, RHS = self._build_object_forms(dct)
+        self._check_eqn_conditions(LHS, RHS)
+
+        LHS = self._build_operator_form(LHS)
+        dct['differential'] = self._coupled_differential_order(LHS)
+
+        L, M = self._split_linear(LHS, sy.Symbol(self.eigenvalue))
+        dct['L'] = self.stringify_variable_coefficients(L)
+        dct['M'] = self.stringify_variable_coefficients(M)
+
+        self.equations.append(dct)
+
+    def add_bc(self, equation, condition="True"):
+        """Add equation to problem."""
+
+        logger.debug("Parsing BC {}".format(len(self.bcs)))
+        dct = self._build_basic_dictionary(equation, condition)
+
+        LHS, RHS = self._build_object_forms(dct)
+        self._check_bc_conditions(LHS, RHS)
+
+        LHS = self._build_operator_form(LHS)
+        dct['differential'] = self._coupled_differential_order(LHS)
+
+        L, M = self._split_linear(LHS, sy.Symbol(self.eigenvalue))
+        dct['L'] = self.stringify_variable_coefficients(L)
+        dct['M'] = self.stringify_variable_coefficients(M)
 
         self.boundary_conditions.append(dct)
 
@@ -529,4 +583,10 @@ def partition(categorize, items):
             partitions.append((current_category, current_list))
 
     return partitions
+
+
+# Aliases
+IVP = InitialValueProblem
+BVP = BoundaryValueProblem
+EVP = EigenvalueProblem
 
