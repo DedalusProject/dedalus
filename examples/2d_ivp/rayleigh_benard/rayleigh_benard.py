@@ -59,7 +59,7 @@ problem.add_bc("integ(p, 'z') = 0", condition="(nx == 0)")
 
 # Build solver
 ts = de.timesteppers.SBDF3
-solver = de.solvers.IVP(problem, domain, ts)
+solver = de.solvers.IVP(problem, ts)
 logger.info('Solver built')
 
 # Initial conditions

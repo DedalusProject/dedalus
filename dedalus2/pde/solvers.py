@@ -120,30 +120,31 @@ class LinearBVP:
 
     """
 
-    def __init__(self, problem, domain):
+    def __init__(self, problem):
 
-        # Assign axis names to bases
-        for i, b in enumerate(domain.bases):
-            b.name = problem.axis_names[i]
+        logger.debug('Beginning BVP instantiation')
+
+        self.problem = problem
+        self.domain = domain = problem.domain
 
         # Build pencils and pencil matrices
         self.pencils = pencils = build_pencils(domain)
-        primary_basis = domain.bases[-1]
-        for pencil in log_progress(pencils, logger, 'info', desc='Building pencil matrix', iter=np.inf, frac=0.1, dt=10):
-            pencil.build_matrices(problem, primary_basis)
+        for p in log_progress(pencils, logger, 'info', desc='Building pencil matrix', iter=np.inf, frac=0.1, dt=10):
+            p.build_matrices(problem, ['L'])
 
         # Build systems
-        self.state = FieldSystem(problem.variables, domain)
+        self.state = state = FieldSystem(problem.variables, domain)
+        for var in problem.variables:
+            self.state[var].meta = problem.meta[var]
+            self.state[var].set_scales(1, keep_data=False)
 
         # Create F operator trees
-        # Linear BVP: available terms are parse ops, diff ops, axes, and parameters
-        vars = dict()
-        vars.update(parsable_ops)
-        vars.update(zip(problem.diff_names, domain.diff_ops))
-        vars.update(zip(problem.axis_names, domain.grids()))
-        vars.update(problem.parameters)
+        namespace = problem.namespace.copy()
+        namespace.allow_overwrites()
+        namespace.update(state.field_dict)
+        namespace.add_substitutions(problem.substitutions)
 
-        self.evaluator = Evaluator(domain, vars)
+        self.evaluator = Evaluator(domain, namespace)
         Fe_handler = self.evaluator.add_system_handler(iter=1, group='F')
         Fb_handler = self.evaluator.add_system_handler(iter=1, group='F')
         for eqn in problem.eqs:
@@ -153,8 +154,7 @@ class LinearBVP:
         self.Fe = Fe_handler.build_system()
         self.Fb = Fb_handler.build_system()
 
-        # Allow users to access state variables for analysis, but not for the RHS of the BVP.
-        vars.update(self.state.field_dict)
+        logger.debug('Finished BVP instantiation')
 
     def solve(self):
         """Solve BVP."""
@@ -205,12 +205,12 @@ class IVP:
 
     """
 
-    def __init__(self, problem, domain, timestepper):
+    def __init__(self, problem, timestepper):
 
         logger.debug('Beginning IVP instantiation')
 
         self.problem = problem
-        self.domain = domain
+        self.domain = problem.domain
         self._wall_time_array = np.zeros(1, dtype=float)
         self.start_time = self.get_wall_time()
 
@@ -226,7 +226,6 @@ class IVP:
             self.state[var].set_scales(1, keep_data=False)
 
         # Create F operator trees
-        # IVP: available terms are parse ops, diff ops, axes, parameters, and state
         namespace = problem.namespace.copy()
         namespace.allow_overwrites()
         namespace.update(state.field_dict)
@@ -325,4 +324,5 @@ class IVP:
             if self.sim_time + dt > self.stop_sim_time:
                 dt = self.stop_sim_time - self.sim_time
             self.step(dt)
+
 
