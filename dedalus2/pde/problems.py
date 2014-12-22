@@ -430,6 +430,46 @@ class IVP(ProblemBase):
         self.boundary_conditions.append(dct)
 
 
+class BVP(ProblemBase):
+
+    def __init__(self, domain, variables, time='t', **kw):
+
+        super().__init__(domain, variables, **kw)
+        self.time = time
+
+    def add_equation(self, equation, condition="True"):
+        """Add equation to problem."""
+
+        logger.debug("Parsing Eqn {}".format(len(self.eqs)))
+        dct = self._build_basic_dictionary(equation, condition)
+
+        LHS, RHS = self._build_object_forms(dct)
+        self._check_eqn_conditions(LHS, RHS)
+
+        LHS = self._build_operator_form(LHS)
+        dct['differential'] = self._coupled_differential_order(LHS)
+
+        dct['L'] = self.stringify_variable_coefficients(LHS)
+
+        self.equations.append(dct)
+
+    def add_bc(self, equation, condition="True"):
+        """Add equation to problem."""
+
+        logger.debug("Parsing BC {}".format(len(self.bcs)))
+        dct = self._build_basic_dictionary(equation, condition)
+
+        LHS, RHS = self._build_object_forms(dct)
+        self._check_bc_conditions(LHS, RHS)
+
+        LHS = self._build_operator_form(LHS)
+        dct['differential'] = self._coupled_differential_order(LHS)
+
+        dct['L'] = self.stringify_variable_coefficients(LHS)
+
+        self.boundary_conditions.append(dct)
+
+
 class NCCManager:
 
     def __init__(self, problem, cutoff=1e-10, max_terms=None):
