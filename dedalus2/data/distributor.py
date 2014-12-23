@@ -439,8 +439,9 @@ class Transpose:
                 field.layout = self.layout1
                 np.copyto(field.data, temp1[i])
         else:
-            # No data: just update field layout
-            field.layout = self.layout1
+            # No data: just update field layouts
+            for field in fields:
+                field.layout = self.layout1
 
     def decrement_group(self, fields):
         fields = list(fields)
@@ -459,7 +460,8 @@ class Transpose:
                 np.copyto(field.data, temp0[i])
         else:
             # No data: just update field layout
-            field.layout = self.layout0
+            for field in fields:
+                field.layout = self.layout0
 
     def increment_single(self, field):
         """Gather along specified axis."""
