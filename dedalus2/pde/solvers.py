@@ -202,7 +202,7 @@ class InitialValueSolver:
         logger.debug('Beginning IVP instantiation')
 
         self.problem = problem
-        self.domain = problem.domain
+        self.domain = domain = problem.domain
         self._wall_time_array = np.zeros(1, dtype=float)
         self.start_time = self.get_wall_time()
 
