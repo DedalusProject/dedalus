@@ -350,6 +350,33 @@ class Interpolate(Operator):
 
 
 class GeneralFunction(Operator):
+    """
+    Operator wrapping a general python function.
+
+    Parameters
+    ----------
+    domain : domain object
+        Domain
+    layout : layout object or identifier
+        Layout of function output
+    func : function
+        Function producing field data
+    args : list
+        Arguments to pass to func
+    kw : dict
+        Keywords to pass to func
+    out : field, optional
+        Output field (default: new field)
+
+    Notes
+    -----
+    On evaluation, this wrapper evaluates the provided funciton with the given
+    arguments and keywords, and takes the output to be data in the specified
+    layout, i.e.
+
+        out[layout] = func(*args, **kw)
+
+    """
 
     def __init__(self, domain, layout, func, args=[], kw={}, out=None,):
 
