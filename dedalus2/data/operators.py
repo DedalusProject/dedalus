@@ -5,7 +5,6 @@ Abstract and built-in classes defining deferred operations on fields.
 
 from functools import partial
 import numpy as np
-import sympy as sy
 
 from .field import Operand, Data, Scalar, Array, Field
 from .future import Future, FutureScalar, FutureArray, FutureField
@@ -63,8 +62,11 @@ class FieldCopy(FutureField, metaclass=MultiClass):
         # Preserve parity
         return self.args[0].meta[axis]['parity']
 
-    def as_symbolic_operator(self, fields):
-        return self.args[0].as_symbolic_operator(fields)
+    def canonical_linear_form(self, vars):
+        return self.args[0].canonical_linear_form(vars)
+
+    def operator_form(self, vars):
+        return self.args[0].operator_form(vars)
 
 
 class FieldCopyScalar(FieldCopy):
@@ -179,23 +181,11 @@ class UnaryGridFunction(Future, metaclass=MultiClass):
         else:
             raise UndefinedParityError("Unknown action of {} on odd parity.".format(self.name))
 
-    def as_symbolic_operator(self, vars):
-        arg0_op = self.args[0].as_symbolic_operator(vars)
-        if arg0_op:
-            raise ValueError("Nonlinear")
-        else:
-            return None
-
-    def as_symbolic_operator(self, vars):
-
-        arg0, = self.args
-        arg0_has_vars = arg0.has(*vars)
-        arg0_op = arg0.as_symbolic_operator(vars)
-
-        if arg0_has_vars:
+    def canonical_linear_form(vars):
+        if self.args[0].has(*vars):
             raise NonlinearOperatorError("Cannot linearize {}.".format(self.name))
         else:
-            return self.as_ncc_symbol()
+            return self
 
 
 class UnaryGridFunctionScalar(UnaryGridFunction, FutureScalar):
@@ -281,22 +271,34 @@ class Add(Arithmetic, metaclass=MultiClass):
         else:
             return parity0
 
-    def as_symbolic_operator(self, vars):
-
+    def canonical_linear_form(self, vars):
         arg0, arg1 = self.args
-        arg0_has_vars = arg0.has(*vars)
-        arg1_has_vars = arg1.has(*vars)
-        arg0_op = arg0.as_symbolic_operator(vars)
-        arg1_op = arg1.as_symbolic_operator(vars)
-
-        if (arg0_has_vars != arg1_has_vars):
+        if arg0.has(*vars) and arg1.has(*vars):
+            return arg0.canonical_linear_form(vars) + arg1.canonical_linear_form(vars)
+        elif arg0.has(*vars) or arg1.has(*vars):
             raise NonlinearOperatorError("Cannot add linear and nonlinear terms.")
         else:
-            return arg0_op + arg1_op
+            return self
 
-    def distribute_over(self, vars):
-        # Distribute arguments
-        return Add(*[arg.distribute_over(vars) for arg in self.args])
+    def operator_form(self, vars):
+        if self.has(*vars):
+            out = {}
+            op0 = self.args[0].operator_form(vars)
+            op1 = self.args[1].operator_form(vars)
+            for mat in set().union(op0, op1):
+                out[mat] = {}
+                mat0 = op0.get(mat, {})
+                mat1 = op1.get(mat, {})
+                for var in set().union(mat0, mat1):
+                    if (var in mat0) and (var in mat1):
+                        out[mat][var] = mat0[var] + mat1[var]
+                    elif (var in mat0):
+                        out[mat][var] = mat0[var]
+                    else:
+                        out[mat][var] = mat1[var]
+            return out
+        else:
+            return self.as_ncc_operator()
 
 
 class AddScalarScalar(Add, FutureScalar):
@@ -463,46 +465,47 @@ class Multiply(Arithmetic, metaclass=MultiClass):
         parity1 = self.args[1].meta[axis]['parity']
         return parity0 * parity1
 
-    def as_symbolic_operator(self, vars):
-        """Change to left-multiplication on vars."""
-
-        arg0, arg1 = self.args
-        arg0_has_vars = arg0.has(*vars)
-        arg1_has_vars = arg1.has(*vars)
-        arg0_op = arg0.as_symbolic_operator(vars)
-        arg1_op = arg1.as_symbolic_operator(vars)
-
-        if arg0_has_vars and arg1_has_vars:
+    def canonical_linear_form(self, vars):
+        """Canonical multiply form: ( ) * var"""
+        # Make canonical form of args
+        arg0 = self.args[0].canonical_linear_form(vars)
+        arg1 = self.args[1].canonical_linear_form(vars)
+        # Rearrange to canonical form
+        if arg0.has(*vars) and arg1.has(*vars):
             raise NonlinearOperatorError("Cannot multiply two linear terms.")
-        elif arg0_has_vars:
-            return arg1_op * arg0_op
+        elif arg0.has(*vars):
+            if isinstance(arg0, Multiply):
+                arg0a, arg0b = arg0.args
+                return (arg0a * arg1) * arg0b
+            elif isinstance(arg0, Add):
+                arg0a, arg0b = arg0.args
+                return (arg1*arg0a + arg1*arg0b).canonical_linear_form(vars)
+            else:
+                return arg1 * arg0
+        elif arg1.has(*vars):
+            if isinstance(arg1, Multiply):
+                arg1a, arg1b = arg1.args
+                return (arg0 * arg1a) * arg1b
+            elif isinstance(arg1, Add):
+                arg1a, arg1b = arg1.args
+                return (arg0*arg1a + arg0*arg1b).canonical_linear_form(vars)
+            else:
+                return arg0 * arg1
         else:
-            return arg0_op * arg1_op
+            return self
 
-    def distribute_over(self, vars):
-        # Distribute arguments
-        out = Multiply(*[arg.distribute_over(vars) for arg in self.args])
-        # Distribute over addition
-        if out.args[0].has(*vars) and isinstance(out.args[0], Add):
-            return out.left_distribute().distribute_over(vars)
-        elif out.args[1].has(*vars) and isinstance(out.args[1], Add):
-            return out.right_distribute().distribute_over(vars)
-        else:
+    def operator_form(self, vars):
+        if self.has(*vars):
+            out = {}
+            op0 = self.args[0].operator_form(vars)
+            op1 = self.args[1].operator_form(vars)
+            for mat in op1:
+                out[mat] = {}
+                for var in op1[mat]:
+                    out[mat][var] = op0 * op1[mat][var]
             return out
-
-    def left_distribute(self):
-        arg0, arg1 = self.args
-        if not isinstance(arg0, Add):
-            raise ValueError("Can only distribute over a sum.")
-        a, b = arg0.args
-        return a*arg1 + b*arg1
-
-    def right_distribute(self):
-        arg0, arg1 = self.args
-        if not isinstance(arg1, Add):
-            raise ValueError("Can only distribute over a sum.")
-        a, b = arg1.args
-        return arg0*a + arg0*b
+        else:
+            return self.as_ncc_operator()
 
 
 class MultiplyScalarScalar(Multiply, FutureScalar):
@@ -687,16 +690,14 @@ class PowerDataScalar(Power):
         # Otherwise invalid
         raise UndefinedParityError("Non-integer power of nonconstant data has undefined parity.")
 
-    def as_symbolic_operator(self, vars):
-
-        arg0, arg1 = self.args
-        arg0_has_vars = arg0.has(*vars)
-        arg0_op = arg0.as_symbolic_operator(vars)
-
-        if arg0_has_vars:
+    def canonical_linear_form(self, vars):
+        if self.args[0].has(*vars):
             raise NonlinearOperatorError("Power is nonlinear.")
         else:
-            return self.as_ncc_symbol()
+            return self
+
+    def operator_form(self, vars):
+        return self.as_ncc_operator()
 
 
 class PowerScalarScalar(PowerDataScalar, FutureScalar):
@@ -746,36 +747,34 @@ class LinearOperator(Future):
 
     kw = {}
 
-    def as_symbolic_operator(self, vars):
-        arg0, = self.args
-        if arg0.has(*vars):
-            return self.op_symbol() * arg0.as_symbolic_operator(vars)
+    def canonical_linear_form(self, vars):
+        if self.args[0].has(*vars):
+            op = type(self)
+            arg0 = arg0.canonical_linear_form(vars)
+            if isinstance(arg0, Add):
+                # Distribute
+                arg0a, arg0b = arg0.args
+                return (op(arg0a) + op(arg0b)).canonical_linear_form(vars)
+            else:
+                return op(arg0)
         else:
-            return self.as_ncc_symbol()
+            return self
 
-    def distribute_over(self, vars):
-        # Distribute arguments
-        out = type(self)(*[arg.distribute_over(vars) for arg in self.args], **self.kw)
-        # Distribute over addition
-        if out.args[0].has(*vars) and isinstance(out.args[0], Add):
-            return out.distribute().distribute_over(vars)
-        else:
+    def operator_form(self, vars):
+        if self.has(*vars):
+            out = {}
+            op0 = self.args[0].operator_form(vars)
+            self_op = self.matrix_form()
+            for mat in op0:
+                out[mat] = {}
+                for var in op0[mat]:
+                    out[mat][var] = self_op * op0[mat][var]
             return out
-
-    def distribute(self):
-        arg0, = self.args
-        if not isinstance(arg0, Add):
-            raise ValueError("Can only apply distributive rule to a sum.")
-        a, b = arg0.args
-        op = type(self)
-        return op(a) + op(b)
+        else:
+            return self.as_ncc_operator()
 
 
 class Separable(LinearOperator, FutureField):
-
-    def op_symbol(self):
-        """Operator symbol."""
-        return sy.Symbol(self.name, commutative=True)
 
     @classmethod
     def scalar_form(cls, index):
@@ -820,11 +819,6 @@ class Separable(LinearOperator, FutureField):
 
 class Coupled(LinearOperator, FutureField):
 
-    def op_symbol(self):
-        if self.basis.separable:
-            raise ValueError("LHS operator {} is coupled along direction {}.".format(self.name, self.basis.name))
-        return sy.Symbol(self.name, commutative=False)
-
     def check_conditions(self):
         arg0, = self.args
         axis = self.axis
@@ -858,6 +852,12 @@ class Coupled(LinearOperator, FutureField):
 
     def matrix_form(self):
         raise NotImplementedError()
+
+    def operator_form(self, vars):
+        if self.basis.separable:
+            raise ValueError("LHS operator {} is coupled along direction {}.".format(self.name, self.basis.name))
+        else:
+            return super().operator_form(vars)
 
 
 @parseable
@@ -972,11 +972,6 @@ class Interpolate(LinearOperator, metaclass=MultiClass):
         matrix = self.matrix_form(self.position)
         apply_matrix(matrix, arg0.data, axis, out=out.data)
 
-    @classmethod
-    def at(cls, position):
-        cls._position = position
-        return cls
-
     def meta_constant(self, axis):
         if axis == self.axis:
             # Interpolant is constant
@@ -992,11 +987,6 @@ class Interpolate(LinearOperator, metaclass=MultiClass):
         else:
             # Preserve parity
             return self.args[0].meta[axis]['parity']
-
-    def op_symbol(self):
-        super().op_symbol()
-        symname = '{}.at({})'.format(self.name, repr(self.position))
-        return sy.Symbol(symname, commutative=False)
 
 
 class InterpolateScalar(Interpolate, FutureScalar):
@@ -1091,25 +1081,22 @@ class Differentiate(LinearOperator, metaclass=MultiClass):
             # Preserve parity
             return parity0
 
-    def distribute_over(self, vars):
+    def canonical_linear_form(self, vars):
         if self.args[0].has(*vars):
-            out = type(self)(*[arg.distribute_over(vars) for arg in self.args], **self.kw)
-            if isinstance(out.args[0], Multiply):
-                return out.apply_product_rule().distribute_over(vars)
-            elif isinstance(out.args[0], Add):
-                return out.distribute().distribute_over(vars)
+            d = type(self)
+            arg0 = self.args[0].canonical_linear_form(vars)
+            if isinstance(arg0, Multiply):
+                # Apply product rule
+                arg0a, arg0b = arg0.args
+                return (d(arg0a)*arg0b + arg0a*d(arg0b)).canonical_linear_form(vars)
+            elif isinstance(arg0, Add):
+                # Distribute
+                arg0a, arg0b = arg0.args
+                return (d(arg0a) + d(arg0b)).canonical_linear_form(vars)
             else:
-                return out
+                return d(arg0)
         else:
             return self
-
-    def apply_product_rule(self):
-        arg0, = self.args
-        if not isinstance(arg0, Multiply):
-            raise ValueError("Can only apply product rule to the derivative of a product.")
-        a, b = arg0.args
-        d = type(self)
-        return d(a)*b + a*d(b)
 
 
 class DifferentiateIndependent(Differentiate, FutureScalar):
