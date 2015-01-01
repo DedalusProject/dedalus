@@ -91,3 +91,19 @@ def apply_matrix(matrix, array, axis, **kw):
     if sparse.isspmatrix(matrix):
         matrix = matrix.todense()
     return np.einsum(matrix, mat_sig, array, arr_sig, out_sig, **kw)
+
+
+def add_sparse(A, B):
+    """Add sparse matrices, promoting scalars to multiples of the identity."""
+    A_is_scalar = np.isscalar(A)
+    B_is_scalar = np.isscalar(B)
+    if A_is_scalar and B_is_scalar:
+        return A + B
+    elif A_is_scalar:
+        I = sparse.eye(*B.shape, dtype=B.dtype, format=B.format)
+        return A*I + B
+    elif B_is_scalar:
+        I = sparse.eye(*A.shape, dtype=A.dtype, format=A.format)
+        return A + B*I
+    else:
+        return A + B

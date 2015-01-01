@@ -8,7 +8,7 @@ import numpy as np
 
 from .field import Operand, Data, Scalar, Array, Field
 from .future import Future, FutureScalar, FutureArray, FutureField
-from ..tools.array import reshape_vector, apply_matrix
+from ..tools.array import reshape_vector, apply_matrix, add_sparse
 from ..tools.dispatch import MultiClass
 
 
@@ -291,7 +291,7 @@ class Add(Arithmetic, metaclass=MultiClass):
                 mat1 = op1.get(mat, {})
                 for var in set().union(mat0, mat1):
                     if (var in mat0) and (var in mat1):
-                        out[mat][var] = mat0[var] + mat1[var]
+                        out[mat][var] = add_sparse(mat0[var], mat1[var])
                     elif (var in mat0):
                         out[mat][var] = mat0[var]
                     else:
