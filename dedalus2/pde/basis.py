@@ -213,11 +213,14 @@ class ImplicitBasis(Basis):
     @CachedMethod
     def NCC(self, coeffs, cutoff, max_terms):
         """Build NCC multiplication matrix."""
+        if max_terms is None:
+            max_terms = self.coeff_size
+        n_terms = 0
         matrix = 0
         for p in range(max_terms):
             if abs(coeffs[p]) >= cutoff:
                 matrix = matrix + coeffs[p]*self.Multiply(p)
-                n_terms = p
+                n_terms += 1
         return n_terms, matrix
 
 class Chebyshev(ImplicitBasis):
@@ -433,15 +436,12 @@ class Chebyshev(ImplicitBasis):
             name = 'interp_{}'.format(self.name)
             basis = self
 
-            @classmethod
-            def matrix_form(cls, position=None):
+            @CachedMethod
+            def matrix_form(self):
                 """Chebyshev interpolation: Tn(xn) = cos(n * acos(xn))"""
-                if position is None:
-                    position = cls._position
-                return cls._interp_matrix(position)
+                return self._interp_matrix(self.position)
 
             @classmethod
-            @CachedMethod
             def _interp_matrix(cls, position):
                 size = cls.basis.coeff_size
                 matrix = sparse.lil_matrix((size, size), dtype=cls.basis.coeff_dtype)
@@ -747,14 +747,7 @@ class Fourier(TransverseBasis):
             basis = self
 
             @classmethod
-            def scalar_form(cls, index):
-                """Fourier integration: int(Fn) = 2 π δ(n,0)"""
-                if index == 0:
-                    return {cls.name: 2*np.pi*cls.basis._grid_stretch}
-                else:
-                    return {cls.name: 0}
-
-            @classmethod
+            @CachedMethod
             def vector_form(cls):
                 """Fourier integration: int(Fn) = 2 π δ(n,0)"""
                 vector = np.zeros(cls.basis.coeff_size, dtype=cls.basis.coeff_dtype)
@@ -806,17 +799,8 @@ class Fourier(TransverseBasis):
             name = 'd' + self.name
             basis = self
 
-            def op_symbol(self):
-                """Fourier differentiation: dx(Fn) = i kn Fn"""
-                k = sy.Symbol(self.basis.element_name, commutative=True)
-                return sy.I*k
-
             @classmethod
-            def scalar_form(cls, index):
-                """Fourier wavenumber."""
-                return {cls.basis.element_name: cls.basis.wavenumbers[index]}
-
-            @classmethod
+            @CachedMethod
             def vector_form(cls):
                 """Fourier differentiation: dx(Fn) = i kn Fn"""
                 return 1j * cls.basis.wavenumbers
@@ -831,17 +815,8 @@ class Fourier(TransverseBasis):
             name = 'H' + self.name
             basis = self
 
-            def op_symbol(self):
-                """Hilbert transform: Hx(Fn) = -i sgn(kn) Fn"""
-                H = sy.Symbol(self.name, commutative=True)
-                return -sy.I * H
-
             @classmethod
-            def scalar_form(cls, index):
-                """Wavenumber sign."""
-                return {cls.name: np.sign(cls.basis.wavenumbers[index])}
-
-            @classmethod
+            @CachedMethod
             def vector_form(cls):
                 """Hilbert transform: Hx(Fn) = -i sgn(kn) Fn"""
                 return -1j * np.sign(cls.basis.wavenumbers)
@@ -1152,23 +1127,11 @@ class SinCos(TransverseBasis):
             name = 'd' + self.name
             basis = self
 
-            def op_symbol(self):
+            @CachedMethod
+            def vector_form(self):
                 """Sinusoid differentiation."""
                 # arg parity == -1: dx(sin(kx)) =  k cos(kx)
                 # arg parity ==  1: dx(cos(kx)) = -k sin(kx)
-                arg_parity = self.args[0].meta[self.axis]['parity']
-                k = sy.Symbol(self.basis.element_name, commutative=True)
-                return -arg_parity * k
-
-            @classmethod
-            def scalar_form(cls, index):
-                """Sinusoid wavenumber."""
-                k_name = cls.basis.element_name
-                k_value = cls.basis.wavenumbers[index]
-                return {k_name: k_value}
-
-            def vector_form(self):
-                """Sinusoid differentiation."""
                 arg_parity = self.args[0].meta[self.axis]['parity']
                 return -arg_parity * self.basis.wavenumbers
 
@@ -1182,19 +1145,10 @@ class SinCos(TransverseBasis):
             name = 'H' + self.name
             basis = self
 
-            def op_symbol(self):
+            @CachedMethod
+            def vector_form(self):
                 # arg parity == -1:  Hx(sin(kx)) = -sgn(k) cos(kx)
                 # arg parity ==  1:  Hx(cos(kx)) =  sgn(k) sin(kx)
-                arg_parity = self.args[0].meta[self.axis]['parity']
-                H = sy.Symbol(self.name, commutative=True)
-                return arg_parity * H
-
-            @classmethod
-            def scalar_form(cls, index):
-                """Wavenumber sign."""
-                return {cls.name: np.sign(cls.basis.wavenumbers[index])}
-
-            def vector_form(self):
                 arg_parity = self.args[0].meta[self.axis]['parity']
                 return arg_parity * np.sign(self.basis.wavenumbers)
 
@@ -1356,15 +1310,12 @@ class Compound(ImplicitBasis):
             name = 'interp_{}'.format(self.name)
             basis = self
 
-            @classmethod
-            def matrix_form(cls, position=None):
+            @CachedMethod
+            def matrix_form(self):
                 """Compound interpolation matrix"""
-                if position is None:
-                    position = cls._position
-                return cls._interp_matrix(position)
+                return self._interp_matrix(self.position)
 
             @classmethod
-            @CachedMethod
             def _interp_matrix(cls, position):
                 size = cls.basis.coeff_size
                 matrix = sparse.lil_matrix((size, size), dtype=cls.basis.coeff_dtype)
@@ -1444,13 +1395,18 @@ class Compound(ImplicitBasis):
     @CachedMethod
     def NCC(self, coeffs, cutoff, max_terms):
         """Build NCC multiplication matrix."""
-        matrix, n_terms = 0, 0
+        if max_terms is None:
+            max_terms = self.coeff_size
+        n_terms = 0
+        matrix = 0
         for index, basis in enumerate(self.subbases):
+            n_terms_i = 0
             subcoeffs = self.sub_cdata(coeffs, index, axis=0)
             for p in range(max_terms):
                 if abs(subcoeffs[p]) >= cutoff:
                     matrix = matrix + subcoeffs[p]*self.Multiply(p, index)
-                    n_terms = max(p, n_terms)
+                    n_terms_i += p
+            n_terms = max(n_terms, n_terms_i)
         return n_terms, matrix
 
     @CachedAttribute

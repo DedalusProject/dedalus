@@ -874,12 +874,7 @@ class LinearOperator(Future):
 class Separable(LinearOperator, FutureField):
 
     def operator_form(self, index):
-        return self.scalar_form(index)
-
-    @classmethod
-    def scalar_form(cls, index):
-        """Scalar values of operator symbols."""
-        raise NotImplementedError()
+        return self.vector_form()[index[self.axis]]
 
     def check_conditions(self):
         arg0, = self.args
@@ -918,6 +913,9 @@ class Separable(LinearOperator, FutureField):
 
 
 class Coupled(LinearOperator, FutureField):
+
+    def operator_form(self, index):
+        return self.matrix_form()
 
     def check_conditions(self):
         arg0, = self.args
