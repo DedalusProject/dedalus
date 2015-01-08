@@ -3,6 +3,7 @@ Abstract and built-in classes defining deferred operations on fields.
 
 """
 
+from collections import defaultdict
 from functools import partial
 import numpy as np
 
@@ -10,6 +11,9 @@ from .field import Operand, Data, Scalar, Array, Field
 from .future import Future, FutureScalar, FutureArray, FutureField
 from ..tools.array import reshape_vector, apply_matrix, add_sparse
 from ..tools.dispatch import MultiClass
+from ..tools.exceptions import NonlinearOperatorError
+from ..tools.exceptions import SymbolicParsingError
+from ..tools.exceptions import UndefinedParityError
 
 
 # Use simple decorator to track parseable operators
@@ -24,13 +28,6 @@ def is_integer(x):
         return True
     else:
         return x.is_integer()
-
-
-class UndefinedParityError(Exception):
-    pass
-
-class NonlinearOperatorError(Exception):
-    pass
 
 
 class FieldCopy(FutureField, metaclass=MultiClass):
@@ -65,9 +62,6 @@ class FieldCopy(FutureField, metaclass=MultiClass):
     def canonical_linear_form(self, vars):
         return self.args[0].canonical_linear_form(vars)
 
-    def operator_form(self, vars):
-        return self.args[0].operator_form(vars)
-
 
 class FieldCopyScalar(FieldCopy):
 
@@ -100,7 +94,28 @@ class FieldCopyField(FieldCopy):
         np.copyto(out.data, arg0.data)
 
 
-class GeneralFunction(FutureField):
+class NonlinearOperator:
+
+    def expand(self, *vars):
+        """Return self."""
+        return self
+
+    def canonical_linear_form(self, *vars):
+        """Raise if arguments contain specified variables (default: None)"""
+        if self.has(*vars):
+            raise NonlinearOperatorError("{} is a non-linear function of the specified variables.".format(str(self)))
+        else:
+            return self
+
+    def factor(self, *vars):
+        """Produce operator-factor dictionary over specified variables."""
+        if self.has(*vars):
+            return defaultdict(int, {self: 1})
+        else:
+            return defaultdict(int, {1: self})
+
+
+class GeneralFunction(NonlinearOperator, FutureField):
 
     def __init__(self, domain, layout, func, args=[], kw={}, out=None,):
 
@@ -139,7 +154,7 @@ class GeneralFunction(FutureField):
         np.copyto(out.data, self.func(*self.args, **self.kw))
 
 
-class UnaryGridFunction(Future, metaclass=MultiClass):
+class UnaryGridFunction(NonlinearOperator, Future, metaclass=MultiClass):
 
     arity = 1
     supported = {ufunc.__name__: ufunc for ufunc in
@@ -180,12 +195,6 @@ class UnaryGridFunction(Future, metaclass=MultiClass):
             return 1
         else:
             raise UndefinedParityError("Unknown action of {} on odd parity.".format(self.name))
-
-    def canonical_linear_form(vars):
-        if self.args[0].has(*vars):
-            raise NonlinearOperatorError("Cannot linearize {}.".format(self.name))
-        else:
-            return self
 
 
 class UnaryGridFunctionScalar(UnaryGridFunction, FutureScalar):
@@ -271,40 +280,69 @@ class Add(Arithmetic, metaclass=MultiClass):
         else:
             return parity0
 
-    def canonical_linear_form(self, vars):
+    def expand(self, *vars):
+        """Expand arguments containing specified variables (default: all)."""
         arg0, arg1 = self.args
-        if arg0.has(*vars) and arg1.has(*vars):
-            return arg0.canonical_linear_form(vars) + arg1.canonical_linear_form(vars)
-        elif arg0.has(*vars) or arg1.has(*vars):
-            raise NonlinearOperatorError("Cannot add linear and nonlinear terms.")
+        if (not vars) or arg0.has(*vars):
+            arg0 = arg0.expand(*vars)
+        if (not vars) or arg1.has(*vars):
+            arg1 = arg1.expand(*vars)
+        if (not vars) or arg0.has(*vars) or arg1.has(*vars):
+            return arg0 + arg1
         else:
             return self
 
-    def operator_form(self, vars):
-        if self.has(*vars):
-            out = {}
-            op0 = self.args[0].operator_form(vars)
-            op1 = self.args[1].operator_form(vars)
-            for mat in set().union(op0, op1):
-                out[mat] = {}
-                mat0 = op0.get(mat, {})
-                mat1 = op1.get(mat, {})
-                for var in set().union(mat0, mat1):
-                    if (var in mat0) and (var in mat1):
-                        out[mat][var] = add_sparse(mat0[var], mat1[var])
-                    elif (var in mat0):
-                        out[mat][var] = mat0[var]
-                    else:
-                        out[mat][var] = mat1[var]
-            return out
+    def canonical_linear_form(self, *vars):
+        """Ensure arguments have same dependency on specified variables."""
+        arg0, arg1 = self.args
+        if arg0.has(*vars) and arg1.has(*vars):
+            arg0 = arg0.canonical_linear_form(*vars)
+            arg1 = arg1.canonical_linear_form(*vars)
+            return arg0 + arg1
+        elif arg0.has(*vars) or arg1.has(*vars):
+            raise NonlinearOperatorError("Cannot add dependent and independent terms.")
         else:
-            return self.as_ncc_operator()
+            return self
+
+    def factor(self, *vars):
+        """Produce operator-factor dictionary over specified variables."""
+        out = defaultdict(int)
+        F0 = self.args[0].factor(*vars)
+        F1 = self.args[1].factor(*vars)
+        for f in set().union(F0, F1):
+            out[f] = F0[f] + F1[f]
+        return out
+
+    def operator_dict(self, index, vars, **kw):
+        """Produce matrix-operator dictionary over specified variables."""
+        out = {}
+        op0 = self.args[0].operator_dict(index, vars, **kw)
+        op1 = self.args[1].operator_dict(index, vars, **kw)
+        for mat in set().union(op0, op1):
+            out[mat] = {}
+            mat0 = op0.get(mat, {})
+            mat1 = op1.get(mat, {})
+            for var in set().union(mat0, mat1):
+                if (var in mat0) and (var in mat1):
+                    out[mat][var] = add_sparse(mat0[var], mat1[var])
+                elif (var in mat0):
+                    out[mat][var] = mat0[var]
+                else:
+                    out[mat][var] = mat1[var]
+        return out
 
 
 class AddScalarScalar(Add, FutureScalar):
 
     argtypes = {0: (Scalar, FutureScalar),
                 1: (Scalar, FutureScalar)}
+
+    def __new__(cls, arg0, arg1, *args, **kw):
+        if (not arg0.named) and (not arg1.named):
+            value = arg0.value + arg1.value
+            return Scalar(value=value)
+        else:
+            return object.__new__(cls)
 
     def check_conditions(self):
         return True
@@ -375,6 +413,12 @@ class AddScalarField(Add, FutureField):
     argtypes = {0: (Scalar, FutureScalar),
                 1: (Field, FutureField)}
 
+    def __new__(cls, arg0, arg1, *args, **kw):
+        if (not arg0.named) and (arg0 == 0):
+            return arg1
+        else:
+            return object.__new__(cls)
+
     def check_conditions(self):
         # Field must be in grid layout
         return (self.args[1].layout is self._grid_layout)
@@ -391,6 +435,12 @@ class AddFieldScalar(Add, FutureField):
 
     argtypes = {0: (Field, FutureField),
                 1: (Scalar, FutureScalar)}
+
+    def __new__(cls, arg0, arg1, *args, **kw):
+        if (not arg1.named) and (arg1 == 0):
+            return arg0
+        else:
+            return object.__new__(cls)
 
     def check_conditions(self):
         # Field must be in grid layout
@@ -465,53 +515,76 @@ class Multiply(Arithmetic, metaclass=MultiClass):
         parity1 = self.args[1].meta[axis]['parity']
         return parity0 * parity1
 
-    def canonical_linear_form(self, vars):
-        """Canonical multiply form: ( ) * var"""
-        # Make canonical form of args
-        arg0 = self.args[0].canonical_linear_form(vars)
-        arg1 = self.args[1].canonical_linear_form(vars)
-        # Rearrange to canonical form
+    def expand(self, *vars):
+        """Distribute over sums containing specified variables (default: all)."""
+        arg0, arg1 = self.args
+        if (not vars) or arg0.has(*vars):
+            arg0 = self.args[0].expand(*vars)
+            if isinstance(arg0, Add):
+                arg0a, arg0b = arg0.args
+                return (arg0a*arg1 + arg0b*arg1).expand(*vars)
+        if (not vars) or arg1.has(*vars):
+            arg1 = self.args[1].expand(*vars)
+            if isinstance(arg1, Add):
+                arg1a, arg1b = arg1.args
+                return (arg0*arg1a + arg0*arg1b).expand(*vars)
+        return self
+
+    def canonical_linear_form(self, *vars):
+        """Eliminate nonlinear multiplications and float specified variables right."""
+        arg0, arg1 = self.args
         if arg0.has(*vars) and arg1.has(*vars):
             raise NonlinearOperatorError("Cannot multiply two linear terms.")
         elif arg0.has(*vars):
+            arg0 = arg0.canonical_linear_form(*vars)
             if isinstance(arg0, Multiply):
                 arg0a, arg0b = arg0.args
                 return (arg0a * arg1) * arg0b
-            elif isinstance(arg0, Add):
-                arg0a, arg0b = arg0.args
-                return (arg1*arg0a + arg1*arg0b).canonical_linear_form(vars)
             else:
                 return arg1 * arg0
         elif arg1.has(*vars):
+            arg1 = arg1.canonical_linear_form(*vars)
             if isinstance(arg1, Multiply):
                 arg1a, arg1b = arg1.args
                 return (arg0 * arg1a) * arg1b
-            elif isinstance(arg1, Add):
-                arg1a, arg1b = arg1.args
-                return (arg0*arg1a + arg0*arg1b).canonical_linear_form(vars)
             else:
                 return arg0 * arg1
         else:
             return self
 
-    def operator_form(self, vars):
-        if self.has(*vars):
-            out = {}
-            op0 = self.args[0].operator_form(vars)
-            op1 = self.args[1].operator_form(vars)
-            for mat in op1:
-                out[mat] = {}
-                for var in op1[mat]:
-                    out[mat][var] = op0 * op1[mat][var]
-            return out
-        else:
-            return self.as_ncc_operator()
+    def factor(self, *vars):
+        """Produce operator-factor dictionary over specified variables."""
+        out = defaultdict(int)
+        F0 = self.args[0].factor(*vars)
+        F1 = self.args[1].factor(*vars)
+        for f0 in F0:
+            for f1 in F1:
+                out[f0*f1] += F0[f0] * F1[f1]
+        return out
+
+    def operator_dict(self, index, vars, **kw):
+        """Produce matrix-operator dictionary over specified variables."""
+        out = {}
+        op0 = self.args[0].as_ncc_operator(**kw)
+        op1 = self.args[1].operator_dict(index, vars, **kw)
+        for mat in op1:
+            out[mat] = {}
+            for var in op1[mat]:
+                out[mat][var] = op0 * op1[mat][var]
+        return out
 
 
 class MultiplyScalarScalar(Multiply, FutureScalar):
 
     argtypes = {0: (Scalar, FutureScalar),
                 1: (Scalar, FutureScalar)}
+
+    def __new__(cls, arg0, arg1, *args, **kw):
+        if (not arg0.named) and (not arg1.named):
+            value = arg0.value * arg1.value
+            return Scalar(value=value)
+        else:
+            return object.__new__(cls)
 
     def check_conditions(self):
         return True
@@ -593,6 +666,14 @@ class MultiplyScalarField(Multiply, FutureField):
     argtypes = {0: (Scalar, FutureScalar),
                 1: (Field, FutureField)}
 
+    def __new__(cls, arg0, arg1, *args, **kw):
+        if (not arg0.named) and (arg0 == 0):
+            return 0
+        elif (not arg0.named) and (arg0 == 1):
+            return arg1
+        else:
+            return object.__new__(cls)
+
     def check_conditions(self):
         return True
 
@@ -607,6 +688,15 @@ class MultiplyFieldScalar(Multiply, FutureField):
 
     argtypes = {0: (Field, FutureField),
                 1: (Scalar, FutureScalar)}
+
+
+    def __new__(cls, arg0, arg1, *args, **kw):
+        if (not arg1.named) and (arg1 == 0):
+            return 0
+        elif (not arg1.named) and (arg1 == 1):
+            return arg0
+        else:
+            return object.__new__(cls)
 
     def check_conditions(self):
         return True
@@ -652,7 +742,7 @@ class MultiplyFieldArray(Multiply, FutureField):
         np.multiply(arg0.data, arg1.data, out.data)
 
 
-class Power(Arithmetic, metaclass=MultiClass):
+class Power(NonlinearOperator, Arithmetic, metaclass=MultiClass):
 
     name = 'Pow'
     str_op = '**'
@@ -689,15 +779,6 @@ class PowerDataScalar(Power):
             return parity**int(power)
         # Otherwise invalid
         raise UndefinedParityError("Non-integer power of nonconstant data has undefined parity.")
-
-    def canonical_linear_form(self, vars):
-        if self.args[0].has(*vars):
-            raise NonlinearOperatorError("Power is nonlinear.")
-        else:
-            return self
-
-    def operator_form(self, vars):
-        return self.as_ncc_operator()
 
 
 class PowerScalarScalar(PowerDataScalar, FutureScalar):
@@ -747,34 +828,53 @@ class LinearOperator(Future):
 
     kw = {}
 
-    def canonical_linear_form(self, vars):
-        if self.args[0].has(*vars):
-            op = type(self)
-            arg0 = arg0.canonical_linear_form(vars)
+    def expand(self, *vars):
+        """Distribute over sums containing specified variables (default: all)."""
+        arg0 = self.args[0]
+        if (not vars) or arg0.has(*vars):
+            arg0 = arg0.expand(*vars)
             if isinstance(arg0, Add):
-                # Distribute
+                op = type(self)
                 arg0a, arg0b = arg0.args
-                return (op(arg0a) + op(arg0b)).canonical_linear_form(vars)
-            else:
-                return op(arg0)
+                return (op(arg0a) + op(arg0b)).expand(*vars)
+        return self
+
+    def canonical_linear_form(self, *vars):
+        """Change argument to canonical linear form."""
+        arg0 = self.args[0]
+        if arg0.has(*vars):
+            op = type(self)
+            arg0 = arg0.canonical_linear_form(*vars)
+            return op(arg0)
         else:
             return self
 
-    def operator_form(self, vars):
+    def factor(self, *vars):
+        """Produce operator-factor dictionary over specified variables."""
         if self.has(*vars):
-            out = {}
-            op0 = self.args[0].operator_form(vars)
-            self_op = self.matrix_form()
-            for mat in op0:
-                out[mat] = {}
-                for var in op0[mat]:
-                    out[mat][var] = self_op * op0[mat][var]
-            return out
+            return defaultdict(int, {self: 1})
         else:
-            return self.as_ncc_operator()
+            return defaultdict(int, {1: self})
+
+    def operator_dict(self, index, vars, **kw):
+        """Produce matrix-operator dictionary over specified variables."""
+        out = {}
+        ops = self.operator_form(index)
+        op0 = self.args[0].operator_dict(index, vars, **kw)
+        for mat in op0:
+            out[mat] = {}
+            for var in op0[mat]:
+                out[mat][var] = ops * op0[mat][var]
+        return out
+
+    def operator_form(self, index):
+        raise NotImplementedError()
 
 
 class Separable(LinearOperator, FutureField):
+
+    def operator_form(self, index):
+        return self.scalar_form(index)
 
     @classmethod
     def scalar_form(cls, index):
@@ -853,11 +953,12 @@ class Coupled(LinearOperator, FutureField):
     def matrix_form(self):
         raise NotImplementedError()
 
-    def operator_form(self, vars):
+    def operator_dict(self, index, vars, **kw):
+        """Produce matrix-operator dictionary over specified variables."""
         if self.basis.separable:
             raise ValueError("LHS operator {} is coupled along direction {}.".format(self.name, self.basis.name))
         else:
-            return super().operator_form(vars)
+            return super().operator_dict(index, vars, **kw)
 
 
 @parseable
@@ -1081,22 +1182,20 @@ class Differentiate(LinearOperator, metaclass=MultiClass):
             # Preserve parity
             return parity0
 
-    def canonical_linear_form(self, vars):
-        if self.args[0].has(*vars):
-            d = type(self)
-            arg0 = self.args[0].canonical_linear_form(vars)
+    def expand(self, *vars):
+        """Distribute over sums and apply the product rule to arguments
+        containing specified variables (default: all)."""
+        arg0 = self.args[0]
+        if (not vars) or arg0.has(*vars):
+            op = type(self)
+            arg0 = arg0.expand(*vars)
+            if isinstance(arg0, Add):
+                arg0a, arg0b = arg0.args
+                return (op(arg0a) + op(arg0b)).expand(*vars)
             if isinstance(arg0, Multiply):
-                # Apply product rule
                 arg0a, arg0b = arg0.args
-                return (d(arg0a)*arg0b + arg0a*d(arg0b)).canonical_linear_form(vars)
-            elif isinstance(arg0, Add):
-                # Distribute
-                arg0a, arg0b = arg0.args
-                return (d(arg0a) + d(arg0b)).canonical_linear_form(vars)
-            else:
-                return d(arg0)
-        else:
-            return self
+                return (op(arg0a)*arg0b + arg0a*op(arg0b)).expand(*vars)
+        return self
 
 
 class DifferentiateIndependent(Differentiate, FutureScalar):
