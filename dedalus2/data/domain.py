@@ -124,10 +124,10 @@ class Domain:
         return spacing
 
     def new_data(self, type, **kw):
-        return type(self, **kw)
+        return type(domain=self, **kw)
 
     def new_field(self, **kw):
-        return Field(self, **kw)
+        return Field(domain=self, **kw)
 
     def remedy_scales(self, scales):
 
