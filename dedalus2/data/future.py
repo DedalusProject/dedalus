@@ -4,12 +4,11 @@ Classes for future evaluation.
 """
 
 from functools import partial
-import sympy as sy
 
 from .field import Operand, Data, Scalar, Array, Field
 from .metadata import Metadata
 from ..tools.general import OrderedSet
-from ..tools.cache import CachedAttribute
+from ..tools.cache import CachedAttribute, CachedMethod
 
 
 class Future(Operand):
@@ -179,11 +178,10 @@ class Future(Operand):
         # field without modifying the data of the arguments.
         raise NotImplementedError()
 
-    def distribute_over(self, vars):
-        return self
-
-    def as_symbol(self):
-        return sy.Symbol(str(self), commutative=False)
+    @CachedMethod
+    def as_ncc_operator(self, **kw):
+        ncc = self.evaluate()
+        return ncc.as_ncc_operator(name=str(self), **kw)
 
 
 class FutureScalar(Future):

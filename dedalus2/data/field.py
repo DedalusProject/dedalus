@@ -5,18 +5,22 @@ Class for data fields.
 
 import weakref
 from functools import partial
+from collections import defaultdict
 import numpy as np
 from mpi4py import MPI
-import sympy as sy
 from scipy import sparse
 from scipy.sparse import linalg as splinalg
-import weakref
+import logging
 
 from .metadata import Metadata
 from ..libraries.fftw import fftw_wrappers as fftw
 from ..tools.config import config
 from ..tools.array import reshape_vector
+from ..tools.cache import CachedMethod
 from ..tools.exceptions import UndefinedParityError
+from ..tools.exceptions import SymbolicParsingError
+
+logger = logging.getLogger(__name__.split('.')[-1])
 
 # Load config options
 permc_spec = config['linear algebra']['permc_spec']
@@ -117,20 +121,6 @@ class Operand:
         else:
             raise ValueError("Cannot cast type: {}".format(type(x)))
 
-    def as_symbolic_operator(self, vars):
-        if self in vars:
-            return self.as_symbol()
-        else:
-            return self.as_ncc_symbol()
-
-    def as_ncc_symbol(self):
-        # Require constant along separable axes
-        for basis in self.domain.bases:
-            if basis.separable:
-                if not self.meta[basis.name]['constant']:
-                    raise ValueError("{} is non-constant along separable direction '{}'.".format(self, basis.name))
-        return self.as_symbol()
-
 
 class Data(Operand):
 
@@ -154,8 +144,19 @@ class Data(Operand):
     def has(self, *atoms):
         return (self in atoms)
 
-    def distribute_over(self, atoms):
+    def expand(self, *vars):
+        """Return self."""
         return self
+
+    def canonical_linear_form(self, *vars):
+        """Return self."""
+        return self
+
+    def factor(self, *vars):
+        if self in vars:
+            return defaultdict(int, {self: 1})
+        else:
+            return defaultdict(int, {1: self})
 
 
 class Scalar(Data):
@@ -172,25 +173,35 @@ class Scalar(Data):
                 parity = 1
             return {'constant': True, 'parity': parity}
 
-
-    def __init__(self, value=None, name=None, domain=None):
+    def __init__(self, value=0, name=None, domain=None):
         from .domain import EmptyDomain
         self.name = name
         self.meta = self.ScalarMeta(self)
         self.domain = EmptyDomain()
         self.value = value
 
+    def __eq__(self, other):
+        if self.name is None:
+            return (self.value == other)
+        else:
+            raise ValueError("Cannot compare named scalars.")
+
+    def __hash__(self):
+        return hash((self.name, self.value))
+
+    @property
+    def named(self):
+        return (self.name is not None)
+
+    def as_ncc_operator(self, **kw):
+        """Return self.value."""
+        return self.value
+
     def __str__(self):
         if self.name:
             return self.name
         else:
             return repr(self.value)
-
-    def as_symbol(self):
-        if self.name:
-            return sy.Symbol(str(self), commutative=True)
-        else:
-            return self.value
 
 
 class Array(Data):
@@ -211,7 +222,6 @@ class Array(Data):
 
     def set_scales(self, scales, *, keep_data):
         """Set new transform scales."""
-
         pass
 
     def from_global_vector(self, data, axis):
@@ -244,11 +254,13 @@ class Array(Data):
         # Save data
         np.copyto(self.data, data)
 
-    def as_symbol(self):
-        if self.name:
-            return sy.Symbol(str(self), commutative=False)
-        else:
-            raise ValueError("Can't represent unnamed Array symbolically.")
+    @CachedMethod
+    def as_ncc_operator(self, **kw):
+        """Cast to field and convert to NCC operator."""
+        from .future import FutureField
+        ncc = FutureField.cast(self)
+        ncc = ncc.evaluate()
+        return ncc.as_ncc_operator(name=str(self), **kw)
 
 
 class Field(Data):
@@ -288,8 +300,11 @@ class Field(Data):
             self.set_scales(1, keep_data=False)
         self.name = name
 
-    def as_symbol(self):
-        return sy.Symbol(str(self), commutative=False)
+    def operator_dict(self, index, vars, **kw):
+        if self in vars:
+            return {'L': {self: 1}}
+        else:
+            raise SymbolicParsingError('{} is not one of the specified variables.'.format(str(self)))
 
     @property
     def layout(self):
@@ -509,4 +524,25 @@ class Field(Data):
             # Cast to FutureField
             return FieldCopy(input, domain)
 
-
+    @CachedMethod
+    def as_ncc_operator(self, name=None, cutoff=1e-10, max_terms=None):
+        """Convert to operator form representing multiplication as a NCC."""
+        if name is None:
+            name = str(self)
+        domain = self.domain
+        for basis in domain.bases:
+            if basis.separable:
+                if not self.meta[basis.name]['constant']:
+                    raise ValueError("{} is non-constant along separable direction '{}'.".format(name, basis.name))
+        basis = domain.bases[-1]
+        coeffs = np.zeros(basis.coeff_size, dtype=basis.coeff_dtype)
+        # Scatter transverse-constant coefficients
+        self.require_coeff_space()
+        if domain.dist.rank == 0:
+            select = (0,) * (domain.dim - 1)
+            np.copyto(coeffs, self.data[select])
+        domain.dist.comm_cart.Bcast(coeffs, root=0)
+        # Build matrix
+        n_terms, matrix = basis.NCC(coeffs, cutoff, max_terms)
+        logger.info("Constructed NCC '{}' with {} terms.".format(name, n_terms))
+        return matrix
