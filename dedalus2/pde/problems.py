@@ -369,20 +369,29 @@ class InitialValueProblem(ProblemBase):
     def namespace(self):
 
         # Build time derivative operator
-        class dt(operators.Separable):
+        class dt(operators.LinearOperator):
             name = 'd' + self.time
 
-            def as_symbolic_operator(self, vars):
-                if not self.args[0].has(*vars):
-                    raise ValueError("Cannot take time derivative of non-variable.")
-                else:
-                    return super().as_symbolic_operator(vars)
             def meta_constant(self, axis):
                 # Preserves constancy
                 return self.args[0].meta[axis]['constant']
+
             def meta_parity(self, axis):
                 # Preserves parity
                 return self.args[0].meta[axis]['parity']
+
+            def operator_dict(self, index, vars, **kw):
+                """Produce matrix-operator dictionary over specified variables."""
+                op0 = self.args[0].operator_dict(index, vars, **kw)
+                if 'M' in op0:
+                    raise ValueError("Second-order time derivative not allowed.")
+                return {'M': op0['L']}
+
+            def operator_form(self, index):
+                raise ValueError("Operator form not available for time derivative.")
+
+            def operate(self, out):
+                raise ValueError("Cannot evaluate time derivative operator.")
 
         # Add time derivative operator and scalar to base namespace
         namespace = super().namespace
