@@ -4,13 +4,14 @@ Classes for representing systems of equations.
 """
 
 import re
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 import numpy as np
 import sympy as sy
 from mpi4py import MPI
 
 from ..data.metadata import MultiDict, Metadata
 from ..data import field
+from ..data.field import Operand
 from ..data import future
 from ..data import operators
 from . import solvers
@@ -100,24 +101,18 @@ class ProblemBase:
 
 
     def __init__(self, domain, variables, **kw):
-
         self.domain = domain
         self.variables = variables
         self.nvars = len(variables)
-
         self.meta = MultiDict({var: Metadata(domain) for var in variables})
-
         self.equations = self.eqs = []
         self.boundary_conditions = self.bcs = []
-
         self.parameters = OrderedDict()
         self.substitutions = OrderedDict()
-
-        self.ncc_manager = NCCManager(self, **kw)
+        self.kw = kw
 
     @CachedAttribute
     def namespace(self):
-
         namespace = Namespace()
         namespace.disallow_overwrites()
         # Basis-specific items
@@ -140,62 +135,47 @@ class ProblemBase:
             casted_param.name = name
             namespace[name] = casted_param
         # Built-in functions
-        namespace['Identity'] = 1
         namespace.update(operators.parseables)
         # Substitutions
         namespace.add_substitutions(self.substitutions)
 
         return namespace
 
-    @CachedAttribute
-    def coefficient_namespace(self):
-
-        namespace = Namespace()
-        namespace.disallow_overwrites()
-        # Imaginary number
-        namespace['I'] = 1j
-        # NCC
-        self.ncc_manager.build_coefficients()
-        namespace['NCC'] = self.ncc_manager
-        # Coupled basis operators
-        for basis in self.domain.bases:
-            if not basis.separable:
-                for op in basis.operators:
-                    namespace[op.name] = op
-        # Parameters
-        namespace.update(self.parameters)
-
-        #namespace.allow_overwrites()
-        return namespace
-
-    def _build_basic_dictionary(self, equation, condition):
-        LHS, RHS = parsing.split_equation(equation)
-        dct = dict()
-        dct['raw_equation'] = equation
-        dct['raw_condition'] = condition
-        dct['raw_LHS'] = LHS
-        dct['raw_RHS'] = RHS
+    def _build_basic_dictionary(self, temp, equation, condition):
+        """Split and store equation and condition strings."""
+        temp['raw_equation'] = equation
+        temp['raw_condition'] = condition
+        temp['raw_LHS'], temp['raw_RHS'] = parsing.split_equation(equation)
         logger.debug("  Condition: {}".format(condition))
-        logger.debug("  LHS string form: {}".format(LHS))
-        logger.debug("  RHS string form: {}".format(RHS))
-        return dct
+        logger.debug("  LHS string form: {}".format(temp['raw_LHS']))
+        logger.debug("  RHS string form: {}".format(temp['raw_RHS']))
 
-    def _build_object_forms(self, dct):
+    def _build_object_forms(self, temp):
         """Parse raw LHS/RHS strings to object forms."""
-        LHS = future.FutureField.parse(dct['raw_LHS'], self.namespace, self.domain)
-        RHS = future.FutureField.parse(dct['raw_RHS'], self.namespace, self.domain)
-        logger.debug("  LHS object form: {}".format(LHS))
-        logger.debug("  RHS object form: {}".format(RHS))
-        return LHS, RHS
+        temp['LHS'] = future.FutureField.parse(temp['raw_LHS'], self.namespace, self.domain)
+        temp['RHS'] = future.FutureField.parse(temp['raw_RHS'], self.namespace, self.domain)
+        logger.debug("  LHS object form: {}".format(temp['LHS']))
+        logger.debug("  RHS object form: {}".format(temp['RHS']))
 
-    def _check_eqn_conditions(self, LHS, RHS):
+    def _check_eqn_conditions(self, temp):
         """Check object-form equation conditions."""
-        self._check_meta_consistency(LHS, RHS)
+        self._check_conditions(temp)
+        self._check_meta_consistency(temp['LHS'], temp['RHS'])
 
-    def _check_bc_conditions(self, LHS, RHS):
+    def _check_bc_conditions(self, temp):
         """Check object-form BC conditions."""
-        self._check_meta_consistency(LHS, RHS)
-        self._check_boundary_form(LHS, RHS)
+        self._check_conditions(temp)
+        self._check_meta_consistency(temp['LHS'], temp['RHS'])
+        self._check_boundary_form(temp['LHS'], temp['RHS'])
+
+    def _check_conditions(self, temp):
+        self._check_differential_order(temp)
+
+    def _check_differential_order(self, temp):
+        """Find coupled differential order of an expression, and require to be first order."""
+        coupled_diffs = [basis.Differentiate for basis in self.domain.bases if not basis.separable]
+        order = self._require_first_order(temp['LHS'], coupled_diffs)
+        temp['differential'] = bool(order)
 
     def _check_meta_consistency(self, LHS, RHS):
         """Check LHS and RHS metadata for compatability."""
@@ -228,261 +208,128 @@ class ProblemBase:
                 if (not LHS.meta[ax]['constant']) or (not RHS.meta[ax]['constant']):
                     raise SymbolicParsingError("Boundary condition must be constant along '{}'.".format(basis.name))
 
-    def _build_operator_form(self, LHS):
-        """Convert operator tree to linear operator form on variables."""
+    def _require_independent(self, expr, vars):
+        """Require expression to be independent of some variables."""
+        if expr.has(*vars):
+            names = [var.name for var in vars]
+            raise UnsupportedEquationError("LHS must be independent of {}.".format(names))
+
+    def _require_first_order(self, expr, vars):
+        """Require expression to be zeroth or first order in some variables."""
+        order = expr.order(*vars)
+        if order > 1:
+            names = [var.name for var in vars]
+            raise UnsupportedEquationError("LHS must be first-order in {}.".format(names))
+        return order
+
+    def _split_factors(self, temp, x):
+        LHS = temp['LHS']
+        # Split into independent and linear factors
+        LHS = LHS.expand(x)
+        factors = LHS.factor(x)
+        try:
+            x = x._scalar
+        except:
+            pass
+        extra = set(factors).difference(set((1,x)))
+        if extra:
+            raise SymbolicParsingError('Other factors: {}'.format(','.join(map(str, extra))))
+
+        self._check_linear_form(temp, factors[x], 'M')
+        self._check_linear_form(temp, factors[1], 'L')
+
+    def _check_linear_form(self, temp, expr, name):
         vars = [self.namespace[var] for var in self.variables]
-        LHS = LHS.distribute_over(vars)
-        op_form = LHS.as_symbolic_operator(vars)
-        logger.debug("  LHS operator form: {}".format(op_form))
-        if op_form is None:
-            raise UnsupportedEquationError("LHS must contain terms that are linear in fields.")
-        return op_form.simplify().expand()
-
-    def _split_linear(self, expr, x):
-        """Split expression into independent and linear parts in x."""
-        indep, linear, nonlinear = self._separate_linear(expr, x)
-        linear = (linear/x).simplify().expand()
-        if nonlinear:
-            raise UnsupportedEquationError("Equations must be first-order in '{}'.".format(x))
-        return indep, linear
-
-    @staticmethod
-    def _separate_linear(expr, *syms):
-        """Separate terms into independent, linear, and nonlinear parts."""
-        indep, linear, nonlinear = 0, 0, 0
-        for term in sy.Add.make_args(expr):
-            powers = term.expand().as_powers_dict()
-            total = sum(powers[sym] for sym in syms)
-            if total == 0:
-                indep += term
-            elif total == 1:
-                linear += term
-            else:
-                nonlinear += term
-
-        return indep, linear, nonlinear
-
-    def stringify_variable_coefficients(self, expr):
-        # Extract symbolic variable coefficients
-        vars = [sy.Symbol(var, commutative=False) for var in self.variables]
-        coeffs = self._extract_left_coefficients(expr, vars)
-        # Stringify coefficients
-        stringforms = []
-        for coeff in coeffs:
-            terms = []
-            coeff = sy.sympify(coeff)
-            if coeff == 0:
-                stringform = '0'
-            elif coeff == 1:
-                stringform = '1'
-            else:
-                for term in sy.Add.make_args(coeff):
-                    term *= sy.numbers.One()
-                    factors = sy.Mul.make_args(term)
-                    factors = partition(self.categorize, factors)
-                    factors = [self.category_to_string(*f) for f in factors]
-                    stringform = '*'.join(factors)
-                    # Multiply scalar terms by identity
-                    if term == 1:
-                        stringform = 'Identity'
-                    elif term.is_commutative:
-                        stringform += '*Identity'
-                    terms.append(stringform)
-                stringform = ' + '.join(terms)
-            stringforms.append(stringform)
-
-        return stringforms
-
-    @staticmethod
-    def _extract_left_coefficients(expr, symbols):
-        """Extract left coefficients from a linear expression."""
-        expr = sy.sympify(expr)
-        # Extract coefficients
-        coeffs = [0] * len(symbols)
-        for i, sym in enumerate(symbols):
-            expr = expr.simplify().expand()
-            for term in sy.Add.make_args(expr):
-                factors = sy.Mul.make_args(term)
-                if factors[-1] is sym:
-                    coeffs[i] += sy.Mul(*factors[:-1])
-            expr = expr - coeffs[i]*sym
-        # Check for completion
-        if expr.simplify().expand() != 0:
-            raise ValueError("Leftover: {}".format(expr))
-
-        return coeffs
-
-    def _require_independent(self, operand, dep):
-        """Require NCCs to be independent of some atom."""
-        if isinstance(operand, field.Operand):
-            if operand.has(dep):
-                raise UnsupportedEquationError("'{}' is not independent of '{}'.".format(operand, dep))
-
-    def _coupled_differential_order(self, expr):
-        """Find coupled differential order of an expression, and require to be first order."""
-        # Find coupled derivative operators
-        first_order = [basis.Differentiate for basis in self.domain.bases if not basis.separable]
-        first_order = [sy.Symbol(op.name, commutative=False) for op in first_order]
-        # Separate terms based on dependence
-        _, linear, nonlinear = self._separate_linear(expr, *first_order)
-        if nonlinear:
-            raise UnsupportedEquationError("Equations must be first-order in coupled derivatives.")
-        return bool(linear)
-
-    def categorize(self, factor):
-        if factor.is_commutative:
-            return 'scalar'
-        else:
-            expr = eval(str(factor), self.namespace)
-            if isinstance(expr, type):
-                return 'operator'
-            else:
-                return 'ncc'
-
-    def category_to_string(self, category, itemlist):
-        if category == 'scalar':
-            out = [repr(item) for item in itemlist]
-        elif category == 'operator':
-            out = ['{}.matrix_form()'.format(item.name) for item in itemlist]
-        elif category == 'ncc':
-            # Multiply items into one NCC
-            ncc_str = repr(sy.Mul(*itemlist))
-            # Register NCC string
-            self.ncc_manager.register(ncc_str)
-            out = ["NCC('{}')".format(ncc_str)]
-        return '*'.join(out)
+        expr = Operand.cast(expr)
+        expr = expr.expand(*vars)
+        expr = expr.canonical_linear_form(*vars)
+        logger.debug('  {} linear form: {}'.format(name, str(expr)))
+        temp[name] = expr
 
     def build_solver(self, *args, **kw):
         return self.solver_class(self, *args, **kw)
 
 
 class InitialValueProblem(ProblemBase):
+    """Class for non-linear initial value problems."""
 
     solver_class = solvers.InitialValueSolver
 
     def __init__(self, domain, variables, time='t', **kw):
-
         super().__init__(domain, variables, **kw)
         self.time = time
 
     @CachedAttribute
     def namespace(self):
-
-        # Build time derivative operator
-        class dt(operators.LinearOperator):
+        """Add time and time derivative to default namespace."""
+        class dt(operators.TimeDerivative):
             name = 'd' + self.time
-
-            def meta_constant(self, axis):
-                # Preserves constancy
-                return self.args[0].meta[axis]['constant']
-
-            def meta_parity(self, axis):
-                # Preserves parity
-                return self.args[0].meta[axis]['parity']
-
-            def operator_dict(self, index, vars, **kw):
-                """Produce matrix-operator dictionary over specified variables."""
-                op0 = self.args[0].operator_dict(index, vars, **kw)
-                if 'M' in op0:
-                    raise ValueError("Second-order time derivative not allowed.")
-                return {'M': op0['L']}
-
-            def operator_form(self, index):
-                raise ValueError("Operator form not available for time derivative.")
-
-            def operate(self, out):
-                raise ValueError("Cannot evaluate time derivative operator.")
-
-        # Add time derivative operator and scalar to base namespace
+            _scalar = field.Scalar(name=name)
         namespace = super().namespace
-        namespace[self.time] = field.Scalar(name=self.time)
-        namespace[dt.name] = dt
-
+        namespace[self.time] = self._t = field.Scalar(name=self.time)
+        namespace[dt.name] = self._dt = dt
         return namespace
 
-    def _check_eqn_conditions(self, LHS, RHS):
-        super()._check_eqn_conditions(LHS, RHS)
-        self._require_independent(LHS, self.namespace[self.time])
-
-    def _check_bc_conditions(self, LHS, RHS):
-        super()._check_bc_conditions(LHS, RHS)
-        self._require_independent(LHS, self.namespace[self.time])
+    def _check_conditions(self, temp):
+        """Check object-form conditions."""
+        super()._check_conditions(temp)
+        self._require_independent(temp['LHS'], [self._t])
+        self._require_first_order(temp['LHS'], [self._dt])
 
     def add_equation(self, equation, condition="True"):
         """Add equation to problem."""
-
         logger.debug("Parsing Eqn {}".format(len(self.eqs)))
-        dct = self._build_basic_dictionary(equation, condition)
-
-        LHS, RHS = self._build_object_forms(dct)
-        self._check_eqn_conditions(LHS, RHS)
-
-        LHS = self._build_operator_form(LHS)
-        dct['differential'] = self._coupled_differential_order(LHS)
-
-        L, M = self._split_linear(LHS, sy.Symbol('d'+self.time))
-        dct['L'] = self.stringify_variable_coefficients(L)
-        dct['M'] = self.stringify_variable_coefficients(M)
-
-        self.equations.append(dct)
+        temp = {}
+        self._build_basic_dictionary(temp, equation, condition)
+        self._build_object_forms(temp)
+        self._check_eqn_conditions(temp)
+        self._split_factors(temp, self._dt)
+        self.eqs.append(temp)
 
     def add_bc(self, equation, condition="True"):
-        """Add equation to problem."""
-
+        """Add boundary condition to problem."""
         logger.debug("Parsing BC {}".format(len(self.bcs)))
-        dct = self._build_basic_dictionary(equation, condition)
-
-        LHS, RHS = self._build_object_forms(dct)
-        self._check_bc_conditions(LHS, RHS)
-
-        LHS = self._build_operator_form(LHS)
-        dct['differential'] = self._coupled_differential_order(LHS)
-
-        L, M = self._split_linear(LHS, sy.Symbol('d'+self.time))
-        dct['L'] = self.stringify_variable_coefficients(L)
-        dct['M'] = self.stringify_variable_coefficients(M)
-
-        self.boundary_conditions.append(dct)
+        temp = {}
+        self._build_basic_dictionary(temp, equation, condition)
+        self._build_object_forms(temp)
+        self._check_bc_conditions(temp)
+        self._split_factors(temp, self._dt)
+        self.bcs.append(temp)
 
 
 class BoundaryValueProblem(ProblemBase):
+    """Class for inhomogeneous, linear boundary value problems."""
 
     solver_class = solvers.BoundaryValueSolver
 
+    def _check_conditions(self, temp):
+        """Check object-form conditions."""
+        super()._check_conditions(temp)
+        self._require_independent(temp['RHS'], vars)
+
     def add_equation(self, equation, condition="True"):
         """Add equation to problem."""
-
         logger.debug("Parsing Eqn {}".format(len(self.eqs)))
-        dct = self._build_basic_dictionary(equation, condition)
-
-        LHS, RHS = self._build_object_forms(dct)
-        self._check_eqn_conditions(LHS, RHS)
-
-        LHS = self._build_operator_form(LHS)
-        dct['differential'] = self._coupled_differential_order(LHS)
-
-        dct['L'] = self.stringify_variable_coefficients(LHS)
-
-        self.equations.append(dct)
+        temp = {}
+        self._build_basic_dictionary(temp, equation, condition)
+        self._build_object_forms(temp)
+        self._check_eqn_conditions(temp)
+        self._check_linear_form(temp, temp['LHS'], 'L')
+        self.eqs.append(temp)
 
     def add_bc(self, equation, condition="True"):
-        """Add equation to problem."""
-
+        """Add boundary condition to problem."""
         logger.debug("Parsing BC {}".format(len(self.bcs)))
-        dct = self._build_basic_dictionary(equation, condition)
-
-        LHS, RHS = self._build_object_forms(dct)
-        self._check_bc_conditions(LHS, RHS)
-
-        LHS = self._build_operator_form(LHS)
-        dct['differential'] = self._coupled_differential_order(LHS)
-
-        dct['L'] = self.stringify_variable_coefficients(LHS)
-
-        self.boundary_conditions.append(dct)
+        temp = {}
+        self._build_basic_dictionary(temp, equation, condition)
+        self._build_object_forms(temp)
+        self._check_bc_conditions(temp)
+        self._check_linear_form(temp, temp['LHS'], 'L')
+        self.bcs.append(temp)
 
 
 class EigenvalueProblem(ProblemBase):
+    """Class for linear eigenvalue problems."""
 
     solver_class = solvers.EigenvalueSolver
 
@@ -492,106 +339,36 @@ class EigenvalueProblem(ProblemBase):
 
     @CachedAttribute
     def namespace(self):
+        """Add eigenvalue to default namespace."""
         namespace = super().namespace
-        namespace[self.eigenvalue] = field.Scalar(name=self.eigenvalue)
+        namespace[self.eigenvalue] = self._ev = field.Scalar(name=self.eigenvalue)
         return namespace
+
+    def _check_conditions(self, temp):
+        """Check object-form conditions."""
+        super()._check_conditions(temp)
+        self._require_first_order(temp['LHS'], [self._ev])
+        self._require_zero(temp['RHS'])
 
     def add_equation(self, equation, condition="True"):
         """Add equation to problem."""
-
         logger.debug("Parsing Eqn {}".format(len(self.eqs)))
-        dct = self._build_basic_dictionary(equation, condition)
-
-        LHS, RHS = self._build_object_forms(dct)
-        self._check_eqn_conditions(LHS, RHS)
-
-        LHS = self._build_operator_form(LHS)
-        dct['differential'] = self._coupled_differential_order(LHS)
-
-        L, M = self._split_linear(LHS, sy.Symbol(self.eigenvalue))
-        dct['L'] = self.stringify_variable_coefficients(L)
-        dct['M'] = self.stringify_variable_coefficients(M)
-
-        self.equations.append(dct)
+        temp = {}
+        self._build_basic_dictionary(temp, equation, condition)
+        self._build_object_forms(temp)
+        self._check_eqn_conditions(temp)
+        self._split_factors(temp, self._ev)
+        self.eqs.append(temp)
 
     def add_bc(self, equation, condition="True"):
-        """Add equation to problem."""
-
+        """Add boundary condition to problem."""
         logger.debug("Parsing BC {}".format(len(self.bcs)))
-        dct = self._build_basic_dictionary(equation, condition)
-
-        LHS, RHS = self._build_object_forms(dct)
-        self._check_bc_conditions(LHS, RHS)
-
-        LHS = self._build_operator_form(LHS)
-        dct['differential'] = self._coupled_differential_order(LHS)
-
-        L, M = self._split_linear(LHS, sy.Symbol(self.eigenvalue))
-        dct['L'] = self.stringify_variable_coefficients(L)
-        dct['M'] = self.stringify_variable_coefficients(M)
-
-        self.boundary_conditions.append(dct)
-
-
-class NCCManager:
-
-    def __init__(self, problem, cutoff=1e-10, max_terms=None):
-        self.problem = problem
-        self.domain = problem.domain
-        self.basis = problem.domain.bases[-1]
-        self.ncc_strings = set()
-        self.ncc_coeffs = {}
-        self.ncc_matrices = {}
-
-        self.cutoff = cutoff
-        if max_terms is None:
-            max_terms = self.basis.coeff_size
-        self.max_terms = max_terms
-
-    def register(self, ncc_str):
-        self.ncc_strings.add(ncc_str)
-
-    def build_coefficients(self):
-        namespace = self.problem.namespace
-        domain = self.domain
-        # Compute NCC coefficients in sorted order for proper parallel evaluation
-        for ncc_str in sorted(self.ncc_strings):
-            # Evaluate NCC as field
-            ncc = future.FutureField.parse(ncc_str, namespace, domain)
-            ncc = ncc.evaluate()
-            ncc.require_coeff_space()
-            # Scatter transverse-constant coefficients
-            if domain.dist.rank == 0:
-                select = (0,) * (domain.dim - 1)
-                coeffs = ncc['c'][select]
-            else:
-                coeffs = np.zeros(domain.bases[-1].coeff_size, dtype=domain.bases[-1].coeff_dtype)
-            domain.dist.comm_cart.Bcast(coeffs, root=0)
-            self.ncc_coeffs[ncc_str] = coeffs.copy()
-            # Build matrix
-            n_terms, matrix = self.basis.NCC(coeffs, cutoff=self.cutoff, max_terms=self.max_terms)
-            self.ncc_matrices[ncc_str] = matrix
-            logger.info("Constructed NCC '{}' with {} terms.".format(ncc_str, n_terms))
-
-    def __call__(self, ncc_str):
-        return self.ncc_matrices[ncc_str]
-
-
-def partition(categorize, items):
-
-    current_category = None
-    partitions = []
-
-    for item in items:
-        category = categorize(item)
-        if category == current_category:
-            current_list.append(item)
-        else:
-            current_category = category
-            current_list = [item]
-            partitions.append((current_category, current_list))
-
-    return partitions
+        temp = {}
+        self._build_basic_dictionary(temp, equation, condition)
+        self._build_object_forms(temp)
+        self._check_bc_conditions(temp)
+        self._split_factors(temp, self._ev)
+        self.bcs.append(temp)
 
 
 # Aliases
