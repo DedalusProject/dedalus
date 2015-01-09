@@ -6,7 +6,6 @@ Classes for representing systems of equations.
 import re
 from collections import OrderedDict, defaultdict
 import numpy as np
-import sympy as sy
 from mpi4py import MPI
 
 from ..data.metadata import MultiDict, Metadata

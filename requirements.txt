@@ -7,4 +7,3 @@ mpi4py
 numpy
 pathlib
 scipy >= 0.13.0
-sympy

@@ -9,7 +9,6 @@ import numpy as np
 from numpy import pi
 from scipy import sparse
 from scipy import fftpack
-import sympy as sy
 
 from ..data import operators
 from ..libraries.fftw import fftw_wrappers as fftw
