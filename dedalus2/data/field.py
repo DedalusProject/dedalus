@@ -158,6 +158,9 @@ class Data(Operand):
         else:
             return defaultdict(int, {1: self})
 
+    def order(self, *ops):
+        return 0
+
 
 class Scalar(Data):
 
@@ -181,6 +184,8 @@ class Scalar(Data):
         self.value = value
 
     def __eq__(self, other):
+        if not (isinstance(other, Scalar) or np.isscalar(other)):
+            return NotImplemented
         if self.name is None:
             return (self.value == other)
         else:
@@ -188,10 +193,6 @@ class Scalar(Data):
 
     def __hash__(self):
         return hash((self.name, self.value))
-
-    @property
-    def named(self):
-        return (self.name is not None)
 
     def as_ncc_operator(self, **kw):
         """Return self.value."""

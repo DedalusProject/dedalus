@@ -94,7 +94,15 @@ class FieldCopyField(FieldCopy):
         np.copyto(out.data, arg0.data)
 
 
-class NonlinearOperator:
+class Operator(Future):
+
+    def order(self, *ops):
+        order = max(arg.order(*ops) for arg in self.args)
+        if type(self) in ops:
+            order += 1
+        return order
+
+class NonlinearOperator(Operator):
 
     def expand(self, *vars):
         """Return self."""
@@ -249,6 +257,9 @@ class Arithmetic(Future):
         str_args = map(substring, self.args)
         return '%s' %self.str_op.join(str_args)
 
+    def order(self, *ops):
+        return max(arg.order(*ops) for arg in self.args)
+
 
 class Add(Arithmetic, metaclass=MultiClass):
 
@@ -338,7 +349,7 @@ class AddScalarScalar(Add, FutureScalar):
                 1: (Scalar, FutureScalar)}
 
     def __new__(cls, arg0, arg1, *args, **kw):
-        if (not arg0.named) and (not arg1.named):
+        if (arg0.name is None) and (arg1.name is None):
             value = arg0.value + arg1.value
             return Scalar(value=value)
         else:
@@ -414,7 +425,7 @@ class AddScalarField(Add, FutureField):
                 1: (Field, FutureField)}
 
     def __new__(cls, arg0, arg1, *args, **kw):
-        if (not arg0.named) and (arg0 == 0):
+        if (arg0.name is None) and (arg0.value == 0):
             return arg1
         else:
             return object.__new__(cls)
@@ -437,7 +448,7 @@ class AddFieldScalar(Add, FutureField):
                 1: (Scalar, FutureScalar)}
 
     def __new__(cls, arg0, arg1, *args, **kw):
-        if (not arg1.named) and (arg1 == 0):
+        if (arg1.name is None) and (arg1.value == 0):
             return arg0
         else:
             return object.__new__(cls)
@@ -580,9 +591,17 @@ class MultiplyScalarScalar(Multiply, FutureScalar):
                 1: (Scalar, FutureScalar)}
 
     def __new__(cls, arg0, arg1, *args, **kw):
-        if (not arg0.named) and (not arg1.named):
+        if (arg0.name is None) and (arg1.name is None):
             value = arg0.value * arg1.value
             return Scalar(value=value)
+        elif (arg0.name is None) and (arg0.value == 0):
+            return 0
+        elif (arg0.name is None) and (arg0.value == 1):
+            return arg1
+        elif (arg1.name is None) and (arg1.value == 0):
+            return 0
+        elif (arg1.name is None) and (arg1.value == 1):
+            return arg0
         else:
             return object.__new__(cls)
 
@@ -667,9 +686,9 @@ class MultiplyScalarField(Multiply, FutureField):
                 1: (Field, FutureField)}
 
     def __new__(cls, arg0, arg1, *args, **kw):
-        if (not arg0.named) and (arg0 == 0):
+        if (arg0.name is None) and (arg0.value == 0):
             return 0
-        elif (not arg0.named) and (arg0 == 1):
+        elif (arg0.name is None) and (arg0.value == 1):
             return arg1
         else:
             return object.__new__(cls)
@@ -691,9 +710,9 @@ class MultiplyFieldScalar(Multiply, FutureField):
 
 
     def __new__(cls, arg0, arg1, *args, **kw):
-        if (not arg1.named) and (arg1 == 0):
+        if (arg1.name is None) and (arg1.value == 0):
             return 0
-        elif (not arg1.named) and (arg1 == 1):
+        elif (arg1.name is None) and (arg1.value == 1):
             return arg0
         else:
             return object.__new__(cls)
@@ -824,7 +843,7 @@ class PowerFieldScalar(PowerDataScalar, FutureField):
         np.power(arg0.data, arg1.value, out.data)
 
 
-class LinearOperator(Future):
+class LinearOperator(Operator):
 
     kw = {}
 
@@ -836,7 +855,7 @@ class LinearOperator(Future):
             if isinstance(arg0, Add):
                 op = type(self)
                 arg0a, arg0b = arg0.args
-                return (op(arg0a) + op(arg0b)).expand(*vars)
+                return (op(arg0a, **self.kw) + op(arg0b, **self.kw)).expand(*vars)
         return self
 
     def canonical_linear_form(self, *vars):
@@ -845,7 +864,7 @@ class LinearOperator(Future):
         if arg0.has(*vars):
             op = type(self)
             arg0 = arg0.canonical_linear_form(*vars)
-            return op(arg0)
+            return op(arg0, **self.kw)
         else:
             return self
 
@@ -869,6 +888,34 @@ class LinearOperator(Future):
 
     def operator_form(self, index):
         raise NotImplementedError()
+
+
+class TimeDerivative(LinearOperator, FutureField):
+
+    def meta_constant(self, axis):
+        # Preserves constancy
+        return self.args[0].meta[axis]['constant']
+
+    def meta_parity(self, axis):
+        # Preserves parity
+        return self.args[0].meta[axis]['parity']
+
+    def factor(self, *vars):
+        """Produce operator-factor dictionary over specified variables."""
+        if type(self) in vars:
+            out = defaultdict(int)
+            F0 = self.args[0].factor(*vars)
+            for f in F0:
+                out[f*self._scalar] = F0[f]
+            return out
+        else:
+            return defaultdict(int, {1: self})
+
+    def operator_form(self, index):
+        raise ValueError("Operator form not available for time derivative.")
+
+    def operate(self, out):
+        raise ValueError("Cannot evaluate time derivative operator.")
 
 
 class Separable(LinearOperator, FutureField):

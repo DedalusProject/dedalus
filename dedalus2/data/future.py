@@ -82,7 +82,9 @@ class Future(Operand):
         return atoms
 
     def has(self, *atoms):
-        return any((a in self.atoms() for a in atoms))
+        hasself = type(self) in atoms
+        hasargs = any((a in self.atoms() for a in atoms))
+        return hasself or hasargs
 
     def evaluate(self, id=None, force=True):
         """Recursively evaluate operation."""
