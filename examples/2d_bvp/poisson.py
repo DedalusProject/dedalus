@@ -17,24 +17,23 @@ from dedalus2.extras import plot_tools
 
 
 # Create bases and domain
-x_basis = de.Fourier(256, interval=(0, 2*np.pi))
-y_basis = de.Chebyshev(129, interval=(0, 1))
+x_basis = de.Fourier('x', 256, interval=(0, 2*np.pi))
+y_basis = de.Chebyshev('y', 128, interval=(0, 1))
 domain = de.Domain([x_basis, y_basis], grid_dtype=np.float64)
 
 # 2D Boussinesq hydrodynamics
-problem = de.ParsedProblem(axis_names=['x', 'y'],
-                           field_names=['u', 'uy'])
+problem = de.BVP(domain, variables=['u','uy'])
 problem.add_equation("dx(dx(u)) + dy(uy) = -10 * sin(x/2)**2 * (y - y**2)")
 problem.add_equation("uy - dy(u) = 0")
-problem.add_left_bc("u = sin(8*x)")
-problem.add_right_bc("uy = 0")
-problem.expand(domain)
+problem.add_bc("left(u) = left(sin(8*x))")
+problem.add_bc("right(uy) = 0")
 
 # Build solver
-solver = de.solvers.LinearBVP(problem, domain)
+solver = problem.build_solver()
 solver.solve()
 
 # Plot solution
 u = solver.state['u']
+u.require_grid_space()
 fig = plot_tools.plot_bot_2d(u)
 fig.savefig('poisson.png')
