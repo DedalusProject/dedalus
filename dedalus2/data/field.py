@@ -303,7 +303,7 @@ class Field(Data):
 
     def operator_dict(self, index, vars, **kw):
         if self in vars:
-            return {'L': {self: 1}}
+            return defaultdict(int, {self: 1})
         else:
             raise SymbolicParsingError('{} is not one of the specified variables.'.format(str(self)))
 

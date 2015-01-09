@@ -4,6 +4,7 @@ Classes for manipulating pencils.
 """
 
 from functools import partial
+from collections import defaultdict
 import numpy as np
 from scipy import sparse
 
@@ -92,22 +93,12 @@ class Pencil:
         zdtype = zbasis.coeff_dtype
         compound = hasattr(zbasis, 'subbases')
 
-        # Copy problem namespace
-        namespace = problem.coefficient_namespace.copy()
-        # Separable basis operators
-        for axis, basis in enumerate(problem.domain.bases):
-            if basis.separable:
-                for op in basis.operators:
-                    try:
-                        namespace.update(op.scalar_form(index[axis]))
-                    except AttributeError:
-                        pass
         # Identity
-        namespace['Identity'] = sparse.identity(zsize, dtype=zdtype).tocsr()
-        namespace['Zero'] = sparse.csr_matrix((zsize, zsize), dtype=zdtype)
+        Identity = sparse.identity(zsize, dtype=zdtype).tocsr()
+        Zero = sparse.csr_matrix((zsize, zsize), dtype=zdtype)
 
         # Basis matrices
-        R = namespace['Identity'] #basis.Rearrange
+        R = Identity #basis.Rearrange
         if ndiff:
             P = basis.Precondition
             Fb = basis.FilterBoundaryRow
@@ -134,6 +125,8 @@ class Pencil:
 
         # Use scipy sparse kronecker product with CSR output
         kron = partial(sparse.kron, format='csr')
+
+        vars = [problem.namespace[var] for var in problem.variables]
 
         # Build matrices
         bc_iter = iter(selected_bcs)
@@ -171,9 +164,18 @@ class Pencil:
             # Build LHS matrices
             for name in LHS:
                 C = LHS[name]
+                if eq[name] != 0:
+                    Ei = eq[name].operator_dict(self.global_index, vars)
+                else:
+                    Ei = defaultdict(int)
+                if differential:
+                    if bc[name] != 0:
+                        Bi = bc[name].operator_dict(self.global_index, vars)
+                    else:
+                        Bi = defaultdict(int)
                 for j in range(nvars):
                     # Build equation terms
-                    Eij = eval(eq[name][j], namespace)
+                    Eij = Ei[vars[j]]
                     if Eij is 0:
                         Eij = None
                     elif Eij is 1:
@@ -182,7 +184,7 @@ class Pencil:
                         Eij = Gi_eq*Eij
                     # Build BC terms
                     if differential:
-                        Bij = eval(bc[name][j], namespace)
+                        Bij = Bi[vars[j]]
                         if Bij is 0:
                             Bij = None
                         elif Bij is 1:

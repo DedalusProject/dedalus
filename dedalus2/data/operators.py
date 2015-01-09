@@ -326,20 +326,16 @@ class Add(Arithmetic, metaclass=MultiClass):
 
     def operator_dict(self, index, vars, **kw):
         """Produce matrix-operator dictionary over specified variables."""
-        out = {}
+        out = defaultdict(int)
         op0 = self.args[0].operator_dict(index, vars, **kw)
         op1 = self.args[1].operator_dict(index, vars, **kw)
-        for mat in set().union(op0, op1):
-            out[mat] = {}
-            mat0 = op0.get(mat, {})
-            mat1 = op1.get(mat, {})
-            for var in set().union(mat0, mat1):
-                if (var in mat0) and (var in mat1):
-                    out[mat][var] = add_sparse(mat0[var], mat1[var])
-                elif (var in mat0):
-                    out[mat][var] = mat0[var]
-                else:
-                    out[mat][var] = mat1[var]
+        for var in set().union(op0, op1):
+            if (var in op0) and (var in op1):
+                out[var] = add_sparse(op0[var], op1[var])
+            elif (var in op0):
+                out[var] = op0[var]
+            else:
+                out[var] = op1[var]
         return out
 
 
@@ -575,13 +571,11 @@ class Multiply(Arithmetic, metaclass=MultiClass):
 
     def operator_dict(self, index, vars, **kw):
         """Produce matrix-operator dictionary over specified variables."""
-        out = {}
+        out = defaultdict(int)
         op0 = self.args[0].as_ncc_operator(**kw)
         op1 = self.args[1].operator_dict(index, vars, **kw)
-        for mat in op1:
-            out[mat] = {}
-            for var in op1[mat]:
-                out[mat][var] = op0 * op1[mat][var]
+        for var in op1:
+            out[var] = op0 * op1[var]
         return out
 
 
@@ -877,13 +871,11 @@ class LinearOperator(Operator):
 
     def operator_dict(self, index, vars, **kw):
         """Produce matrix-operator dictionary over specified variables."""
-        out = {}
+        out = defaultdict(int)
         ops = self.operator_form(index)
         op0 = self.args[0].operator_dict(index, vars, **kw)
-        for mat in op0:
-            out[mat] = {}
-            for var in op0[mat]:
-                out[mat][var] = ops * op0[mat][var]
+        for var in op0:
+            out[var] = ops * op0[var]
         return out
 
     def operator_form(self, index):
@@ -1110,13 +1102,6 @@ class Interpolate(LinearOperator, metaclass=MultiClass):
 
     def __str__(self):
         return "interp({},'{}',{})".format(self.args[0], self.basis, self.position)
-
-    def apply_matrix_form(self, out):
-        arg0, = self.args
-        axis = self.axis
-        dim = arg0.domain.dim
-        matrix = self.matrix_form(self.position)
-        apply_matrix(matrix, arg0.data, axis, out=out.data)
 
     def meta_constant(self, axis):
         if axis == self.axis:
