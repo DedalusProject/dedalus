@@ -259,9 +259,11 @@ class Array(Data):
     def as_ncc_operator(self, **kw):
         """Cast to field and convert to NCC operator."""
         from .future import FutureField
-        ncc = FutureField.cast(self)
+        ncc = FutureField.cast(self, self.domain)
         ncc = ncc.evaluate()
-        return ncc.as_ncc_operator(name=str(self), **kw)
+        if 'name' not in kw:
+            kw['name'] = str(self)
+        return ncc.as_ncc_operator(**kw)
 
 
 class Field(Data):

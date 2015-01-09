@@ -304,6 +304,7 @@ class BoundaryValueProblem(ProblemBase):
     def _check_conditions(self, temp):
         """Check object-form conditions."""
         super()._check_conditions(temp)
+        vars = [self.namespace[var] for var in self.variables]
         self._require_independent(temp['RHS'], vars)
 
     def add_equation(self, equation, condition="True"):
