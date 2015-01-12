@@ -68,9 +68,14 @@ class FieldCopyScalar(FieldCopy):
     argtypes = {0: (Scalar, FutureScalar)}
 
     def operate(self, out):
-        # Copy in grid layout
-        out.layout = self._grid_layout
-        np.copyto(out.data, self.args[0].value)
+        if self.args[0].value == 0:
+            # Copy in coeff layout
+            out.layout = self._coeff_layout
+            out.data.fill(0)
+        else:
+            # Copy in grid layout
+            out.layout = self._grid_layout
+            np.copyto(out.data, self.args[0].value)
 
 
 class FieldCopyArray(FieldCopy):

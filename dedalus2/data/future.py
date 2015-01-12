@@ -50,6 +50,7 @@ class Future(Operand):
         self.domain = domain
         try:
             self._grid_layout = domain.dist.grid_layout
+            self._coeff_layout = domain.dist.coeff_layout
         except AttributeError:
             pass
         self.out = out
