@@ -3,8 +3,7 @@ Classes for representing systems of equations.
 
 """
 
-import re
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict
 import numpy as np
 from mpi4py import MPI
 
@@ -16,7 +15,6 @@ from ..data import operators
 from . import solvers
 from ..tools import parsing
 from ..tools.cache import CachedAttribute
-from ..tools.cache import CachedMethod
 from ..tools.exceptions import SymbolicParsingError
 from ..tools.exceptions import UnsupportedEquationError
 
@@ -67,12 +65,10 @@ class ProblemBase:
 
     Parameters
     ----------
-    axis_names : list of strs
-        Names of coordinate axes
-    field_names : list of strs
-        Names of required field variables
-    param_names : list of strs, optional
-        Names of other parameters
+    domain : domain object
+        Problem domain
+    variables : list of str
+        List of variable names, e.g. ['u', 'v', 'w']
 
     Attributes
     ----------
@@ -109,6 +105,26 @@ class ProblemBase:
         self.parameters = OrderedDict()
         self.substitutions = OrderedDict()
         self.kw = kw
+
+    def add_equation(self, equation, condition="True"):
+        """Add equation to problem."""
+        logger.debug("Parsing Eqn {}".format(len(self.eqs)))
+        temp = {}
+        self._build_basic_dictionary(temp, equation, condition)
+        self._build_object_forms(temp)
+        self._check_eqn_conditions(temp)
+        self._set_matrix_expressions(temp)
+        self.eqs.append(temp)
+
+    def add_bc(self, equation, condition="True"):
+        """Add boundary condition to problem."""
+        logger.debug("Parsing BC {}".format(len(self.bcs)))
+        temp = {}
+        self._build_basic_dictionary(temp, equation, condition)
+        self._build_object_forms(temp)
+        self._check_bc_conditions(temp)
+        self._set_matrix_expressions(temp)
+        self.bcs.append(temp)
 
     @CachedAttribute
     def namespace(self):
@@ -173,7 +189,7 @@ class ProblemBase:
     def _check_differential_order(self, temp):
         """Find coupled differential order of an expression, and require to be first order."""
         coupled_diffs = [basis.Differentiate for basis in self.domain.bases if not basis.separable]
-        order = self._require_first_order(temp['LHS'], coupled_diffs)
+        order = self._require_first_order(temp, 'LHS', coupled_diffs)
         temp['differential'] = bool(order)
 
     def _check_meta_consistency(self, LHS, RHS):
@@ -207,25 +223,29 @@ class ProblemBase:
                 if (not LHS.meta[ax]['constant']) or (not RHS.meta[ax]['constant']):
                     raise SymbolicParsingError("Boundary condition must be constant along '{}'.".format(basis.name))
 
-    def _require_independent(self, expr, vars):
-        """Require expression to be independent of some variables."""
-        if expr.has(*vars):
-            names = [var.name for var in vars]
-            raise UnsupportedEquationError("LHS must be independent of {}.".format(names))
+    def _require_zero(self, temp, key):
+        """Require expression to be equal to zero."""
+        if temp[key] != 0:
+            raise UnsupportedEquationError("{} must be zero.".format(key))
 
-    def _require_first_order(self, expr, vars):
+    def _require_independent(self, temp, key, vars):
+        """Require expression to be independent of some variables."""
+        if temp[key].has(*vars):
+            names = [var.name for var in vars]
+            raise UnsupportedEquationError("{} must be independent of {}.".format(key, names))
+
+    def _require_first_order(self, temp, key, vars):
         """Require expression to be zeroth or first order in some variables."""
-        order = expr.order(*vars)
+        order = temp[key].order(*vars)
         if order > 1:
             names = [var.name for var in vars]
-            raise UnsupportedEquationError("LHS must be first-order in {}.".format(names))
+            raise UnsupportedEquationError("{} must be first-order in {}.".format(key, names))
         return order
 
-    def _split_factors(self, temp, x):
-        LHS = temp['LHS']
+    def _factor_first_order(self, expr, x):
         # Split into independent and linear factors
-        LHS = LHS.expand(x)
-        factors = LHS.factor(x)
+        expr = expr.expand(x)
+        factors = expr.factor(x)
         try:
             x = x._scalar
         except:
@@ -233,11 +253,10 @@ class ProblemBase:
         extra = set(factors).difference(set((1,x)))
         if extra:
             raise SymbolicParsingError('Other factors: {}'.format(','.join(map(str, extra))))
+        return factors[1], factors[x]
 
-        self._check_linear_form(temp, factors[x], 'M')
-        self._check_linear_form(temp, factors[1], 'L')
-
-    def _check_linear_form(self, temp, expr, name):
+    def _set_linear_form(self, temp, expr, name):
+        """"""
         vars = [self.namespace[var] for var in self.variables]
         expr = Operand.cast(expr)
         expr = expr.expand(*vars)
@@ -250,7 +269,25 @@ class ProblemBase:
 
 
 class InitialValueProblem(ProblemBase):
-    """Class for non-linear initial value problems."""
+    """
+    Class for non-linear initial value problems.
+
+    Parameters
+    ----------
+    domain : domain object
+        Problem domain
+    variables : list of str
+        List of variable names, e.g. ['u', 'v', 'w']
+    time : str, optional
+        Time label, default: 't'
+
+    Notes
+    -----
+    This class supports non-linear initial value problems.  The LHS
+    terms must be linear in the specified variables, first-order in time
+    derivatives, and contain no explicit time dependence.
+
+    """
 
     solver_class = solvers.InitialValueSolver
 
@@ -272,32 +309,34 @@ class InitialValueProblem(ProblemBase):
     def _check_conditions(self, temp):
         """Check object-form conditions."""
         super()._check_conditions(temp)
-        self._require_independent(temp['LHS'], [self._t])
-        self._require_first_order(temp['LHS'], [self._dt])
+        self._require_independent(temp, 'LHS', [self._t])
+        self._require_first_order(temp, 'LHS', [self._dt])
 
-    def add_equation(self, equation, condition="True"):
-        """Add equation to problem."""
-        logger.debug("Parsing Eqn {}".format(len(self.eqs)))
-        temp = {}
-        self._build_basic_dictionary(temp, equation, condition)
-        self._build_object_forms(temp)
-        self._check_eqn_conditions(temp)
-        self._split_factors(temp, self._dt)
-        self.eqs.append(temp)
-
-    def add_bc(self, equation, condition="True"):
-        """Add boundary condition to problem."""
-        logger.debug("Parsing BC {}".format(len(self.bcs)))
-        temp = {}
-        self._build_basic_dictionary(temp, equation, condition)
-        self._build_object_forms(temp)
-        self._check_bc_conditions(temp)
-        self._split_factors(temp, self._dt)
-        self.bcs.append(temp)
+    def _set_matrix_expressions(self, temp):
+        """Set expressions for building LHS matrices."""
+        L, M = self._factor_first_order(temp['LHS'], self._dt)
+        self._set_linear_form(temp, L, 'L')
+        self._set_linear_form(temp, M, 'M')
 
 
 class BoundaryValueProblem(ProblemBase):
-    """Class for inhomogeneous, linear boundary value problems."""
+    """
+    Class for inhomogeneous, linear boundary value problems.
+
+    Parameters
+    ----------
+    domain : domain object
+        Problem domain
+    variables : list of str
+        List of variable names, e.g. ['u', 'v', 'w']
+
+    Notes
+    -----
+    This class supports inhomogeneous, linear boundary value problems.  The LHS
+    terms must be linear in the specified variables, and the RHS must be
+    independent of the specified variables.
+
+    """
 
     solver_class = solvers.BoundaryValueSolver
 
@@ -305,31 +344,33 @@ class BoundaryValueProblem(ProblemBase):
         """Check object-form conditions."""
         super()._check_conditions(temp)
         vars = [self.namespace[var] for var in self.variables]
-        self._require_independent(temp['RHS'], vars)
+        self._require_independent(temp, 'RHS', vars)
 
-    def add_equation(self, equation, condition="True"):
-        """Add equation to problem."""
-        logger.debug("Parsing Eqn {}".format(len(self.eqs)))
-        temp = {}
-        self._build_basic_dictionary(temp, equation, condition)
-        self._build_object_forms(temp)
-        self._check_eqn_conditions(temp)
-        self._check_linear_form(temp, temp['LHS'], 'L')
-        self.eqs.append(temp)
-
-    def add_bc(self, equation, condition="True"):
-        """Add boundary condition to problem."""
-        logger.debug("Parsing BC {}".format(len(self.bcs)))
-        temp = {}
-        self._build_basic_dictionary(temp, equation, condition)
-        self._build_object_forms(temp)
-        self._check_bc_conditions(temp)
-        self._check_linear_form(temp, temp['LHS'], 'L')
-        self.bcs.append(temp)
+    def _set_matrix_expressions(self, temp):
+        """Set expressions for building LHS matrices."""
+        self._set_linear_form(temp, temp['LHS'], 'L')
 
 
 class EigenvalueProblem(ProblemBase):
-    """Class for linear eigenvalue problems."""
+    """
+    Class for linear eigenvalue problems.
+
+    Parameters
+    ----------
+    domain : domain object
+        Problem domain
+    variables : list of str
+        List of variable names, e.g. ['u', 'v', 'w']
+    eigenvalue : str
+        Eigenvalue label, e.g. 'lambda'
+
+    Notes
+    -----
+    This class supports linear eigenvalue problems.  The LHS terms must be
+    linear in the specified variables, and linear or independent of the
+    specified eigenvalue.  The RHS must be zero.
+
+    """
 
     solver_class = solvers.EigenvalueSolver
 
@@ -347,28 +388,14 @@ class EigenvalueProblem(ProblemBase):
     def _check_conditions(self, temp):
         """Check object-form conditions."""
         super()._check_conditions(temp)
-        self._require_first_order(temp['LHS'], [self._ev])
-        self._require_zero(temp['RHS'])
+        self._require_first_order(temp, 'LHS', [self._ev])
+        self._require_zero(temp, 'RHS')
 
-    def add_equation(self, equation, condition="True"):
-        """Add equation to problem."""
-        logger.debug("Parsing Eqn {}".format(len(self.eqs)))
-        temp = {}
-        self._build_basic_dictionary(temp, equation, condition)
-        self._build_object_forms(temp)
-        self._check_eqn_conditions(temp)
-        self._split_factors(temp, self._ev)
-        self.eqs.append(temp)
-
-    def add_bc(self, equation, condition="True"):
-        """Add boundary condition to problem."""
-        logger.debug("Parsing BC {}".format(len(self.bcs)))
-        temp = {}
-        self._build_basic_dictionary(temp, equation, condition)
-        self._build_object_forms(temp)
-        self._check_bc_conditions(temp)
-        self._split_factors(temp, self._ev)
-        self.bcs.append(temp)
+    def _set_matrix_expressions(self, temp):
+        """Set expressions for building LHS matrices."""
+        L, M = self._factor_first_order(temp['LHS'], self._ev)
+        self._set_linear_form(temp, L, 'L')
+        self._set_linear_form(temp, M, 'M')
 
 
 # Aliases
