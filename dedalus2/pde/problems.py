@@ -23,16 +23,19 @@ logger = logging.getLogger(__name__.split('.')[-1])
 
 
 class Namespace(OrderedDict):
+    """
+    Class ensuring a conflict-free namespace for parsing.  This class just wraps
+    an OrderedDict, making sure that keys are valid python identifiers, and
+    disallowing overwrites of previously-supplied keys.
 
-    def allow_overwrites(self):
-        self._allow_overwrites = True
+    """
 
-    def disallow_overwrites(self):
-        self._allow_overwrites = False
+    def __init__(self):
+        self.allow_overwrites = False
 
     def __setitem__(self, key, value):
         if key in self:
-            if not self._allow_overwrites:
+            if not self.allow_overwrites:
                 raise SymbolicParsingError("Name '{}' is used multiple times.".format(key))
         else:
             if not key.isidentifier():
@@ -40,12 +43,14 @@ class Namespace(OrderedDict):
         super().__setitem__(key, value)
 
     def copy(self):
+        """Copy entire namespace."""
         copy = Namespace()
         copy.update(self)
-        copy._allow_overwrites = self._allow_overwrites
+        copy.allow_overwrites = self.allow_overwrites
         return copy
 
     def add_substitutions(self, substitutions):
+        """Parse substitutions in current namespace before adding to self."""
         for call, result in substitutions.items():
             # Convert function calls to lambda expressions
             head, func = parsing.lambdify_functions(call, result)
@@ -55,13 +60,8 @@ class Namespace(OrderedDict):
 
 class ProblemBase:
     """
-    PDE definitions using string representations.
-
-    Equations are assumed to take the form ('LHS = RHS'), where the left-hand
-    side contains terms that are linear in the dependent variables (and will be
-    represented by coefficient matrices), and the right-hand side contains terms
-    that are non-linear (and will be represented by operator trees).  For
-    simplicity, the last axis is referred to as the "z" direction.
+    Base class for problems consisting of a system of PDEs, constraints, and
+    boundary conditions.
 
     Parameters
     ----------
@@ -72,28 +72,20 @@ class ProblemBase:
 
     Attributes
     ----------
-    parameters : dict
-        Parameters used to construct equations and boundary conditions
+    parameters : OrderedDict
+        External parameters used in the equations, and held constant during integration.
+    substitutions : OrderedDict
+        String-substitutions to be used in parsing.
 
     Notes
     -----
-    The linear terms are separated into several matrices depending on the
-    presence of temporal derivatives and spatial derivatives along the z axis,
-    i.e. the last/pencil/implict axis.  Other axes must be represented by
-    TransverseBasis objects, and hence their differential operators reduce to
-    multiplicative constants for each pencil.
-
-    When adding equations and boundary conditions, the provided axis, field,
-    and parameter names will be recognized.  Derivative operators of the form
-    'd_' are recognized, where '_' is 't' or an axis name for temporal and
-    spatial derivatives, respectively.
-
-    Currently, nonconstant coefficients must be written as functions of 'z', or
-    be arrays of the shape of zbasis.grid, i.e. defined on the global z grid on
-    each process.
+    Equations are entered as strings of the form 'LHS = RHS', where the
+    left-hand side contains terms that are linear in the dependent variables
+    (and will be parsed into a sparse matrix system), and the right-hand side
+    contains terms that are non-linear (and will be parsed into operator trees).
+    The LHS terms must be first-order in coupled derivatives.
 
     """
-
 
     def __init__(self, domain, variables, **kw):
         self.domain = domain
@@ -126,10 +118,26 @@ class ProblemBase:
         self._set_matrix_expressions(temp)
         self.bcs.append(temp)
 
+    def _build_basic_dictionary(self, temp, equation, condition):
+        """Split and store equation and condition strings."""
+        temp['raw_equation'] = equation
+        temp['raw_condition'] = condition
+        temp['raw_LHS'], temp['raw_RHS'] = parsing.split_equation(equation)
+        logger.debug("  Condition: {}".format(condition))
+        logger.debug("  LHS string form: {}".format(temp['raw_LHS']))
+        logger.debug("  RHS string form: {}".format(temp['raw_RHS']))
+
+    def _build_object_forms(self, temp):
+        """Parse raw LHS/RHS strings to object forms."""
+        temp['LHS'] = future.FutureField.parse(temp['raw_LHS'], self.namespace, self.domain)
+        temp['RHS'] = future.FutureField.parse(temp['raw_RHS'], self.namespace, self.domain)
+        logger.debug("  LHS object form: {}".format(temp['LHS']))
+        logger.debug("  RHS object form: {}".format(temp['RHS']))
+
     @CachedAttribute
     def namespace(self):
+        """Build namespace for problem parsing."""
         namespace = Namespace()
-        namespace.disallow_overwrites()
         # Basis-specific items
         for axis, basis in enumerate(self.domain.bases):
             # Grids
@@ -156,35 +164,18 @@ class ProblemBase:
 
         return namespace
 
-    def _build_basic_dictionary(self, temp, equation, condition):
-        """Split and store equation and condition strings."""
-        temp['raw_equation'] = equation
-        temp['raw_condition'] = condition
-        temp['raw_LHS'], temp['raw_RHS'] = parsing.split_equation(equation)
-        logger.debug("  Condition: {}".format(condition))
-        logger.debug("  LHS string form: {}".format(temp['raw_LHS']))
-        logger.debug("  RHS string form: {}".format(temp['raw_RHS']))
-
-    def _build_object_forms(self, temp):
-        """Parse raw LHS/RHS strings to object forms."""
-        temp['LHS'] = future.FutureField.parse(temp['raw_LHS'], self.namespace, self.domain)
-        temp['RHS'] = future.FutureField.parse(temp['raw_RHS'], self.namespace, self.domain)
-        logger.debug("  LHS object form: {}".format(temp['LHS']))
-        logger.debug("  RHS object form: {}".format(temp['RHS']))
-
     def _check_eqn_conditions(self, temp):
         """Check object-form equation conditions."""
         self._check_conditions(temp)
+        self._check_differential_order(temp)
         self._check_meta_consistency(temp['LHS'], temp['RHS'])
 
     def _check_bc_conditions(self, temp):
         """Check object-form BC conditions."""
         self._check_conditions(temp)
+        self._check_differential_order(temp)
         self._check_meta_consistency(temp['LHS'], temp['RHS'])
         self._check_boundary_form(temp['LHS'], temp['RHS'])
-
-    def _check_conditions(self, temp):
-        self._check_differential_order(temp)
 
     def _check_differential_order(self, temp):
         """Find coupled differential order of an expression, and require to be first order."""
@@ -205,19 +196,19 @@ class ProblemBase:
         pass
 
     def _check_meta_constant(self, LHS_constant, RHS_constant, axis):
-        # RHS must be constant if LHS is constant
+        """Check that RHS is constant if LHS is consant."""
         if LHS_constant:
             if not RHS_constant:
                 raise SymbolicParsingError("LHS is constant but RHS is nonconstant along {} axis.".format(self.domain.bases[axis].name))
 
     def _check_meta_parity(self, LHS_parity, RHS_parity, axis):
+        """Check that LHS parity matches RHS parity, if RHS parity is nonzero."""
         if RHS_parity:
-            # Parities must match
             if LHS_parity != RHS_parity:
                 raise SymbolicParsingError("LHS and RHS parities along {} axis do not match.".format(self.domain.bases[axis].name))
 
     def _check_boundary_form(self, LHS, RHS):
-        # Check that boundary expressions are constant along coupled axes
+        """Check that boundary expressions are constant along coupled axes."""
         for ax, basis in enumerate(self.domain.bases):
             if not basis.separable:
                 if (not LHS.meta[ax]['constant']) or (not RHS.meta[ax]['constant']):
@@ -243,7 +234,7 @@ class ProblemBase:
         return order
 
     def _factor_first_order(self, expr, x):
-        # Split into independent and linear factors
+        """Factor an expression into independent and linear parts wrt some variable."""
         expr = expr.expand(x)
         factors = expr.factor(x)
         try:
@@ -256,7 +247,7 @@ class ProblemBase:
         return factors[1], factors[x]
 
     def _set_linear_form(self, temp, expr, name):
-        """"""
+        """Convert an expression into suitable form for LHS operator conversion."""
         vars = [self.namespace[var] for var in self.variables]
         expr = Operand.cast(expr)
         expr = expr.expand(*vars)
@@ -265,6 +256,7 @@ class ProblemBase:
         temp[name] = expr
 
     def build_solver(self, *args, **kw):
+        """Build corresponding solver class."""
         return self.solver_class(self, *args, **kw)
 
 
@@ -297,7 +289,7 @@ class InitialValueProblem(ProblemBase):
 
     @CachedAttribute
     def namespace(self):
-        """Add time and time derivative to default namespace."""
+        """Build namespace for problem parsing."""
         class dt(operators.TimeDerivative):
             name = 'd' + self.time
             _scalar = field.Scalar(name=name)
@@ -308,7 +300,6 @@ class InitialValueProblem(ProblemBase):
 
     def _check_conditions(self, temp):
         """Check object-form conditions."""
-        super()._check_conditions(temp)
         self._require_independent(temp, 'LHS', [self._t])
         self._require_first_order(temp, 'LHS', [self._dt])
 
@@ -342,7 +333,6 @@ class BoundaryValueProblem(ProblemBase):
 
     def _check_conditions(self, temp):
         """Check object-form conditions."""
-        super()._check_conditions(temp)
         vars = [self.namespace[var] for var in self.variables]
         self._require_independent(temp, 'RHS', vars)
 
@@ -380,14 +370,13 @@ class EigenvalueProblem(ProblemBase):
 
     @CachedAttribute
     def namespace(self):
-        """Add eigenvalue to default namespace."""
+        """Build namespace for problem parsing."""
         namespace = super().namespace
         namespace[self.eigenvalue] = self._ev = field.Scalar(name=self.eigenvalue)
         return namespace
 
     def _check_conditions(self, temp):
         """Check object-form conditions."""
-        super()._check_conditions(temp)
         self._require_first_order(temp, 'LHS', [self._ev])
         self._require_zero(temp, 'RHS')
 
