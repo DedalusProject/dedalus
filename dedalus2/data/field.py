@@ -184,12 +184,10 @@ class Scalar(Data):
         self.value = value
 
     def __eq__(self, other):
-        if not (isinstance(other, Scalar) or np.isscalar(other)):
-            return NotImplemented
         if self.name is None:
             return (self.value == other)
         else:
-            raise ValueError("Cannot compare named scalars.")
+            super().__eq__(other)
 
     def __hash__(self):
         return hash((self.name, self.value))
