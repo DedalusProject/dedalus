@@ -30,8 +30,11 @@ class Namespace(OrderedDict):
 
     """
 
+    __slots__ = 'allow_overwrites'
+
     def __init__(self):
-        self.allow_overwrites = False
+        super().__init__()
+        self.allow_overwrites = True
 
     def __setitem__(self, key, value):
         if key in self:

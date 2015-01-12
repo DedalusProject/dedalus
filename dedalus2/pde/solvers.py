@@ -67,7 +67,7 @@ class EigenvalueSolver:
 
         # Create F operator trees
         namespace = problem.namespace.copy()
-        namespace.allow_overwrites()
+        namespace.allow_overwrites = True
         namespace.update(state.field_dict)
         namespace.add_substitutions(problem.substitutions)
 
@@ -134,7 +134,7 @@ class BoundaryValueSolver:
 
         # Create F operator trees
         namespace = problem.namespace.copy()
-        namespace.allow_overwrites()
+        namespace.allow_overwrites = True
         namespace.update(state.field_dict)
         namespace.add_substitutions(problem.substitutions)
 
@@ -219,7 +219,7 @@ class InitialValueSolver:
 
         # Create F operator trees
         namespace = problem.namespace.copy()
-        namespace.allow_overwrites()
+        namespace.allow_overwrites = True
         namespace.update(state.field_dict)
         namespace.add_substitutions(problem.substitutions)
 
