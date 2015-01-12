@@ -77,6 +77,9 @@ class FieldCopyScalar(FieldCopy):
             out.layout = self._grid_layout
             np.copyto(out.data, self.args[0].value)
 
+    def __eq__(self, other):
+        return self.args[0].__eq__(other)
+
 
 class FieldCopyArray(FieldCopy):
 
@@ -353,6 +356,10 @@ class AddScalarScalar(Add, FutureScalar):
         if (arg0.name is None) and (arg1.name is None):
             value = arg0.value + arg1.value
             return Scalar(value=value)
+        elif (arg0.name is None) and (arg0.value == 0):
+            return arg1
+        elif (arg1.name is None) and (arg1.value == 0):
+            return arg0
         else:
             return object.__new__(cls)
 
@@ -399,6 +406,12 @@ class AddScalarArray(Add, FutureArray):
     argtypes = {0: (Scalar, FutureScalar),
                 1: (Array, FutureArray)}
 
+    def __new__(cls, arg0, arg1, *args, **kw):
+        if (arg0.name is None) and (arg0.value == 0):
+            return arg1
+        else:
+            return object.__new__(cls)
+
     def check_conditions(self):
         return True
 
@@ -411,6 +424,12 @@ class AddArrayScalar(Add, FutureArray):
 
     argtypes = {0: (Array, FutureArray),
                 1: (Scalar, FutureScalar)}
+
+    def __new__(cls, arg0, arg1, *args, **kw):
+        if (arg1.name is None) and (arg1.value == 0):
+            return arg0
+        else:
+            return object.__new__(cls)
 
     def check_conditions(self):
         return True
@@ -658,6 +677,14 @@ class MultiplyScalarArray(Multiply, FutureArray):
     argtypes = {0: (Scalar, FutureScalar),
                 1: (Array, FutureArray)}
 
+    def __new__(cls, arg0, arg1, *args, **kw):
+        if (arg0.name is None) and (arg0.value == 0):
+            return 0
+        elif (arg0.name is None) and (arg0.value == 1):
+            return arg1
+        else:
+            return object.__new__(cls)
+
     def check_conditions(self):
         return True
 
@@ -670,6 +697,14 @@ class MultiplyArrayScalar(Multiply, FutureArray):
 
     argtypes = {0: (Array, FutureArray),
                 1: (Scalar, FutureScalar)}
+
+    def __new__(cls, arg0, arg1, *args, **kw):
+        if (arg1.name is None) and (arg1.value == 0):
+            return 0
+        elif (arg1.name is None) and (arg1.value == 1):
+            return arg0
+        else:
+            return object.__new__(cls)
 
     def check_conditions(self):
         return True
@@ -706,7 +741,6 @@ class MultiplyFieldScalar(Multiply, FutureField):
 
     argtypes = {0: (Field, FutureField),
                 1: (Scalar, FutureScalar)}
-
 
     def __new__(cls, arg0, arg1, *args, **kw):
         if (arg1.name is None) and (arg1.value == 0):
