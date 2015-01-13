@@ -82,11 +82,18 @@ class ProblemBase:
 
     Notes
     -----
-    Equations are entered as strings of the form 'LHS = RHS', where the
+    Equations are entered as strings of the form "LHS = RHS", where the
     left-hand side contains terms that are linear in the dependent variables
     (and will be parsed into a sparse matrix system), and the right-hand side
     contains terms that are non-linear (and will be parsed into operator trees).
-    The LHS terms must be first-order in coupled derivatives.
+
+    The specified axes (from domain), variables, parameters, and substitutions
+    are recognized by the parser, along with the built-in operators, which
+    include spatial derivatives (of the form "dx()" for an axis named "x") and
+    basic mathematical operators (trigonometric and logarithmic).
+
+    The LHS terms must be linear in the specified variables and first-order in
+    coupled derivatives.
 
     """
 
@@ -279,8 +286,9 @@ class InitialValueProblem(ProblemBase):
     Notes
     -----
     This class supports non-linear initial value problems.  The LHS
-    terms must be linear in the specified variables, first-order in time
-    derivatives, and contain no explicit time dependence.
+    terms must be linear in the specified variables, first-order in coupled
+    derivatives, first-order in time derivatives, and contain no explicit
+    time dependence.
 
     """
 
@@ -327,8 +335,8 @@ class BoundaryValueProblem(ProblemBase):
     Notes
     -----
     This class supports inhomogeneous, linear boundary value problems.  The LHS
-    terms must be linear in the specified variables, and the RHS must be
-    independent of the specified variables.
+    terms must be linear in the specified variables and first-order in coupled
+    derivatives, and the RHS must be independent of the specified variables.
 
     """
 
@@ -360,8 +368,8 @@ class EigenvalueProblem(ProblemBase):
     Notes
     -----
     This class supports linear eigenvalue problems.  The LHS terms must be
-    linear in the specified variables, and linear or independent of the
-    specified eigenvalue.  The RHS must be zero.
+    linear in the specified variables, first-order in coupled derivatives,
+    and linear or independent of the specified eigenvalue.  The RHS must be zero.
 
     """
 
