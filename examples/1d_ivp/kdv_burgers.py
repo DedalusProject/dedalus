@@ -8,27 +8,28 @@ plot of the computed solution.
 
 import numpy as np
 import matplotlib.pyplot as plt
-from dedalus2.public import *
+
+from dedalus2 import public as de
 from dedalus2.extras.plot_tools import quad_mesh, pad_limits
 
+import logging
+logger = logging.getLogger(__name__)
 
-# Setup equation
-problem = ParsedProblem(axis_names=['x'],
-                        field_names=['u', 'ux', 'uxx'],
-                        param_names=['a', 'b'])
+
+# Bases and domain
+x_basis = de.Fourier('x', 1024, interval=(-2, 8), dealias=3/2)
+domain = de.Domain([x_basis], np.float64)
+
+# Problem
+problem = de.IVP(domain, variables=['u', 'ux', 'uxx'])
+problem.parameters['a'] = 2e-4
+problem.parameters['b'] = 1e-4
 problem.add_equation("dt(u) - a*dx(ux) - b*dx(uxx) = -u*ux")
 problem.add_equation("ux - dx(u) = 0")
 problem.add_equation("uxx - dx(ux) = 0")
-problem.parameters['a'] = 2e-4
-problem.parameters['b'] = 1e-4
-
-# Build domain
-x_basis = Fourier(1024, interval=(-2, 8), dealias=3/2)
-domain = Domain([x_basis], np.float64)
-problem.expand(domain)
 
 # Build solver
-solver = solvers.IVP(problem, domain, timesteppers.SBDF2)
+solver = problem.build_solver(de.timesteppers.SBDF2)
 solver.stop_wall_time = 60
 solver.stop_iteration = 5000
 
@@ -44,6 +45,7 @@ u.differentiate(0, out=ux)
 ux.differentiate(0, out=uxx)
 
 # Store data for final plot
+u.set_scales(1, keep_data=True)
 u_list = [np.copy(u['g'])]
 t_list = [solver.sim_time]
 
@@ -55,6 +57,8 @@ while solver.ok:
         u.set_scales(1, keep_data=True)
         u_list.append(np.copy(u['g']))
         t_list.append(solver.sim_time)
+    if solver.iteration % 100 == 0:
+        logger.info('Iteration: %i, Time: %e, dt: %e' %(solver.iteration, solver.sim_time, dt))
 
 # Create space-time plot
 u_array = np.array(u_list)
