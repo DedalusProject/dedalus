@@ -3,7 +3,8 @@
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
+from matplotlib import ticker
+from matplotlib import transforms
 
 from ..data.field import Field
 from ..tools.array import reshape_vector
@@ -48,7 +49,7 @@ class DimWrapper:
             return self.basis.elements
 
 
-def plot_bot(dset, image_axes, data_slices, clim=None, cmap='RdBu_r', figkw={}, title=None, func=None):
+def plot_bot(dset, image_axes, data_slices, clim=None, even_scale=False, cmap='RdBu_r', axes=None, figkw={}, title=None, func=None):
     """
     Plot a 2d slice of the grid data of a dset/field.
 
@@ -62,8 +63,12 @@ def plot_bot(dset, image_axes, data_slices, clim=None, cmap='RdBu_r', figkw={}, 
         Slices selecting image data from global data
     clim : tuple of floats, optional
         Colorbar limits (default: (data min, data max))
+    even_scale : bool, optional
+        Expand colorbar limits to be symmetric around 0 (default: False)
     cmap : str, optional
         Colormap name (default: 'RdBu_r')
+    axes : matplotlib.Axes object, optional
+        Axes to overplot.  If None (default), a new figure and axes will be created.
     figkw : dict, optional
         Keyword arguments to pass to plt.figure (default: {})
     title : str, optional
@@ -86,9 +91,22 @@ def plot_bot(dset, image_axes, data_slices, clim=None, cmap='RdBu_r', figkw={}, 
         data = func(data)
 
     # Setup figure
-    fig = plt.figure(**figkw)
-    paxes = fig.add_axes([0.1, 0.1, 0.8, 0.75])
-    caxes = fig.add_axes([0.1, 0.86, 0.8, 0.04])
+    if axes is None:
+        fig = plt.figure(**figkw)
+        axes = fig.add_subplot(1, 1, 1)
+
+    # Setup axes
+    # Bounds (left, bottom, width, height) relative-to-axes
+    pbbox = transforms.Bbox.from_bounds(0, 0, 1, 0.94)
+    cbbox = transforms.Bbox.from_bounds(0, 0.96, 1, 0.04)
+    # Convert to relative-to-figure
+    to_axes_bbox = transforms.BboxTransformTo(axes.get_position())
+    pbbox = pbbox.transformed(to_axes_bbox)
+    cbbox = cbbox.transformed(to_axes_bbox)
+    # Create new axes and suppress base axes
+    paxes = axes.figure.add_axes(pbbox)
+    caxes = axes.figure.add_axes(cbbox)
+    axes.axis('off')
 
     # Colormap options
     cmap = matplotlib.cm.get_cmap(cmap)
@@ -99,11 +117,15 @@ def plot_bot(dset, image_axes, data_slices, clim=None, cmap='RdBu_r', figkw={}, 
     paxes.axis(pad_limits(xmesh, ymesh))
     paxes.tick_params(length=0, width=0)
     if clim is None:
-        clim = (data.min(), data.max())
+        if even_scale:
+            lim = max(abs(data.min()), abs(data.max()))
+            clim = (-lim, lim)
+        else:
+            clim = (data.min(), data.max())
     plot.set_clim(*clim)
 
     # Colorbar
-    cbar = fig.colorbar(plot, cax=caxes, orientation='horizontal',
+    cbar = plt.colorbar(plot, cax=caxes, orientation='horizontal',
         ticks=ticker.MaxNLocator(nbins=5))
     cbar.outline.set_visible(False)
     caxes.xaxis.set_ticks_position('top')
@@ -119,8 +141,6 @@ def plot_bot(dset, image_axes, data_slices, clim=None, cmap='RdBu_r', figkw={}, 
     paxes.set_ylabel(dset.dims[yaxis].label)
     paxes.set_xlabel(dset.dims[xaxis].label)
 
-    return fig
-
 
 def plot_bot_2d(dset, transpose=False, **kw):
     """
@@ -132,12 +152,8 @@ def plot_bot_2d(dset, transpose=False, **kw):
         Field to plot
     transpose : bool, optional
         Flag for transposing plot (default: False)
-    clim : tuple of floats, optional
-        Colorbar limits (default: (data min, data max))
-    cmap : str, optional
-        Colormap name (default: 'RdBu_r')
-    figkw : dict, optional
-        Keyword arguments to pass to plt.figure (default: {})
+
+    Other keyword arguments are passed on to plot_bot.
 
     """
 
@@ -172,12 +188,8 @@ def plot_bot_3d(dset, normal_axis, normal_index, transpose=False, **kw):
         Index along normal direction to plot
     transpose : bool, optional
         Flag for transposing plot (default: False)
-    clim : tuple of floats, optional
-        Colorbar limits (default: (data min, data max))
-    cmap : str, optional
-        Colormap name (default: 'RdBu_r')
-    figkw : dict, optional
-        Keyword arguments to pass to plt.figure (default: {})
+
+    Other keyword arguments are passed on to plot_bot.
 
     """
 
