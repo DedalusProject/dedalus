@@ -121,10 +121,10 @@ class MultistepIMEX:
 
             MX0.set_pencil(p, p.M*x)
             LX0.set_pencil(p, p.L*x)
-            if p.G_bc:
-                F0.set_pencil(p, p.G_eq*pFe + p.G_bc*pFb)
-            else:
+            if p.G_bc is None:
                 F0.set_pencil(p, p.G_eq*pFe)
+            else:
+                F0.set_pencil(p, p.G_eq*pFe + p.G_bc*pFb)
 
             np.copyto(p.LHS.data, a0*p.M.data + b0*p.L.data)
 

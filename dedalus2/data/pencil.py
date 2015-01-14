@@ -145,7 +145,7 @@ class Pencil:
         if neqs != nvars:
             raise ValueError("Pencil {} has {} equations for {} variables.".format(index, neqs, nvars))
         if nbcs != ndiff:
-            raise ValueError("Pencil {} has {} boudnary conditions for {} differential equations.".format(index, nbcs, ndiff))
+            raise ValueError("Pencil {} has {} boundary conditions for {} differential equations.".format(index, nbcs, ndiff))
         Neqs = len(problem.eqs)
         Nbcs = len(problem.bcs)
 
