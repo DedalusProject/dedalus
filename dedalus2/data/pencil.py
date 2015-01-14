@@ -63,7 +63,68 @@ class Pencil:
             self.build_matrices = self._build_uncoupled_matrices
 
     def _build_uncoupled_matrices(self, problem, names):
-        raise NotImplementedError()
+
+        if problem.bcs:
+            raise SymbolicParsingError("Fully periodic domain doesn't support boundary conditions.")
+
+        matrices = {name: [] for name in (names+['select'])}
+
+        zbasis = self.domain.bases[-1]
+        dtype = zbasis.coeff_dtype
+        for last_index in range(zbasis.coeff_size):
+            submatrices = self._build_uncoupled_submatrices(problem, names, last_index)
+            for name in matrices:
+                matrices[name].append(submatrices[name])
+
+        for name in matrices:
+            blocks = matrices[name]
+            matrix = sparse.block_diag(blocks, format='csr', dtype=dtype)
+            matrix.eliminate_zeros()
+            matrices[name] = matrix
+
+        # Store problem matrices with expanded sparsity for fast combination during timestepping
+        self.LHS = zeros_with_pattern(*matrices.values()).tocsr()
+        for name in names:
+            matrix = matrices[name]
+            matrix = expand_pattern(matrix, self.LHS).tocsr()
+            setattr(self, name, matrix)
+
+        # Store operators for RHS
+        self.G_eq = matrices['select']
+        self.G_bc = None
+
+    def _build_uncoupled_submatrices(self, problem, names, last_index):
+
+        index = list(self.global_index) + [last_index]
+        index_dict = {}
+        for axis, basis in enumerate(self.domain.bases):
+            index_dict['n'+basis.name] = index[axis]
+
+        # Find applicable equations
+        selected_eqs = [eq for eq in problem.eqs if eval(eq['raw_condition'], index_dict)]
+        # Check selections
+        nvars = problem.nvars
+        neqs = len(selected_eqs)
+        Neqs = len(problem.eqs)
+        if neqs != nvars:
+            raise ValueError("Pencil {} has {} equations for {} variables.".format(index, neqs, nvars))
+
+        # Build matrices
+        dtype = self.domain.bases[-1].coeff_dtype
+        matrices = {name: np.zeros((nvars, nvars), dtype=dtype) for name in names}
+        matrices['select'] = np.zeros((nvars, Neqs))
+        vars = [problem.namespace[var] for var in problem.variables]
+        for i, eq in enumerate(selected_eqs):
+            j = problem.eqs.index(eq)
+            matrices['select'][i,j] = 1
+            for name in names:
+                if eq[name] != 0:
+                    op_dict = eq[name].operator_dict(index, vars)
+                    matrix = matrices[name]
+                    for j in range(nvars):
+                        matrix[i,j] = op_dict[vars[j]]
+
+        return matrices
 
     def _build_coupled_matrices(self, problem, names):
 
