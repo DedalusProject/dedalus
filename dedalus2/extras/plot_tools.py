@@ -97,8 +97,8 @@ def plot_bot(dset, image_axes, data_slices, clim=None, even_scale=False, cmap='R
 
     # Setup axes
     # Bounds (left, bottom, width, height) relative-to-axes
-    pbbox = transforms.Bbox.from_bounds(0, 0, 1, 0.94)
-    cbbox = transforms.Bbox.from_bounds(0, 0.96, 1, 0.04)
+    pbbox = transforms.Bbox.from_bounds(0.03, 0, 0.94, 0.94)
+    cbbox = transforms.Bbox.from_bounds(0.03, 0.95, 0.94, 0.05)
     # Convert to relative-to-figure
     to_axes_bbox = transforms.BboxTransformTo(axes.get_position())
     pbbox = pbbox.transformed(to_axes_bbox)
