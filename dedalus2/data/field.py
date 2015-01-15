@@ -544,6 +544,6 @@ class Field(Data):
             np.copyto(coeffs, self.data[select])
         domain.dist.comm_cart.Bcast(coeffs, root=0)
         # Build matrix
-        n_terms, matrix = basis.NCC(coeffs, cutoff, max_terms)
-        logger.info("Constructed NCC '{}' with {} terms.".format(name, n_terms))
+        n_terms, max_term, matrix = basis.NCC(coeffs, cutoff, max_terms)
+        logger.info("Constructed NCC '{}' to mode {} with {} terms.".format(name, max_term, n_terms))
         return matrix
