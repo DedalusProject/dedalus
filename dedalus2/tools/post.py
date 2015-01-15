@@ -17,120 +17,143 @@ MPI_RANK = MPI.COMM_WORLD.rank
 MPI_SIZE = MPI.COMM_WORLD.size
 
 
-def default_function(file_path, start, count):
-    print('Rank %i: file path = %s, start = %i, count = %i' %(MPI_RANK, filename, start, count))
-
-
-def visit(file_paths, function=default_function, **kw):
-    """Apply function to files/writes assigned to MPI process.
+def visit_writes(set_paths, function, **kw):
+    """
+    Apply function to writes from a list of analysis sets.
 
     Parameters
     ----------
-    file_paths : list of str or pathlib.Paths
-        List of file paths
-    function : function(file, start, count, **kw)
+    set_paths : list of str or pathlib.Path
+        List of set paths
+    function : function(set_path, start, count, **kw)
         A function on an HDF5 file, start index, and count.
 
-    Other keyword arguments passed on to `function`
+    Other keyword arguments are passed on to `function`
+
+    Notes
+    -----
+    This function is parallelized over writes, and so can be effectively
+    parallelized up to the number of writes from all specified sets.
 
     """
-
-    file_paths = natural_sort(str(fp) for fp in file_paths)
-    function_calls = zip(file_paths, *get_assigned_writes(file_paths))
-    for file_path, start, count in function_calls:
+    set_paths = natural_sort(str(sp) for sp in set_paths)
+    arg_list = zip(set_paths, *get_assigned_writes(set_paths))
+    for set_path, start, count in arg_list:
         if count:
-            function(file_path, start, count, **kw)
+            logger.info("Visiting set {} (start: {}, end: {})".format(set_path, start, start+count))
+            function(set_path, start, count, **kw)
 
 
-def get_assigned_writes(file_paths):
+def get_assigned_writes(set_paths):
     """
-    Distribute files/writes matching a pattern between MPI processes.
+    Divide writes from a list of analysis sets between MPI processes.
 
     Parameters
     ----------
-    file_paths : list of str or pathlib.Path
-        List of file paths
+    set_paths : list of str or pathlib.Path
+        List of set paths
 
     """
-
-    file_paths = natural_sort(str(fp) for fp in file_paths)
+    set_paths = natural_sort(str(sp) for sp in set_paths)
     # Distribute all writes in blocks
-    writes = get_all_writes(file_paths)
+    writes = get_all_writes(set_paths)
     block = int(np.ceil(sum(writes) / MPI_SIZE))
     proc_start = MPI_RANK * block
-    # Find file start/end indices
+    # Find set start/end indices
     writes = np.array(writes)
-    file_ends = np.cumsum(writes)
-    file_starts = file_ends - writes
-    # Find proc start indices and counts for each file
-    starts = np.clip(proc_start, a_min=file_starts, a_max=file_ends)
-    counts = np.clip(proc_start+block, a_min=file_starts, a_max=file_ends) - starts
+    set_ends = np.cumsum(writes)
+    set_starts = set_ends - writes
+    # Find proc start indices and counts for each set
+    starts = np.clip(proc_start, a_min=set_starts, a_max=set_ends)
+    counts = np.clip(proc_start+block, a_min=set_starts, a_max=set_ends) - starts
+    return starts-set_starts, counts
 
-    return starts-file_starts, counts
 
-
-def get_all_writes(file_paths):
+def get_all_writes(set_paths):
     """
-    Find all files/writes matching a pattern.
+    Get write numbers from a list of analysis sets.
 
     Parameters
     ----------
-    file_paths : list of str or pathlib.Path
-        List of file paths
+    set_paths : list of str or pathlib.Path
+        List of set paths
 
     """
-
-    file_paths = natural_sort(str(fp) for fp in file_paths)
-    # Get write numbers
-    writes = list()
-    for file_path in file_paths:
-        with h5py.File(str(file_path), mode='r') as file:
+    set_paths = natural_sort(str(sp) for sp in set_paths)
+    writes = []
+    for set_path in set_paths:
+        with h5py.File(str(set_path), mode='r') as file:
             writes.append(file.attrs['writes'])
-
     return writes
 
 
-def merge_analysis(base_path):
+def get_assigned_sets(base_path, distributed=False):
     """
-    Merge distributed output files from a FileHandler.
-    MPI parallelized up to number of distributed output files.
+    Divide analysis sets from a FileHandler between MPI processes.
 
     Parameters
     ----------
     base_path : str or pathlib.Path
         Base path of FileHandler output
+    distributed : bool, optional
+        Divide distributed sets instead of merged sets (default: False)
 
     """
-
     base_path = pathlib.Path(base_path)
-    logger.info("Merging files from %s" %base_path)
-
     base_stem = base_path.stem
-    folder_paths = base_path.glob("%s_f*" %base_stem)
-    folder_paths = filter(lambda path: path.is_dir(), folder_paths)
-    folder_paths = natural_sort(folder_paths)
-    for folder_path in folder_paths[MPI_RANK::MPI_SIZE]:
-        merge_folder(folder_path)
+    if distributed:
+        set_paths = base_path.glob("{}_*".format(base_stem))
+        set_paths = filter(lambda path: path.is_dir(), set_paths)
+    else:
+        set_paths = base_path.glob("{}_*.h5".format(base_stem))
+    set_paths = natural_sort(set_paths)
+    return set_paths[MPI_RANK::MPI_SIZE]
 
 
-def merge_folder(folder_path):
+def merge_analysis(base_path, cleanup=False):
     """
-    Merge folder containing a distributed output file.
+    Merge distributed analysis sets from a FileHandler.
 
     Parameters
     ----------
-    folder_path : str of pathlib.Path
-        Path to folder containing a distributed output file
+    base_path : str or pathlib.Path
+        Base path of FileHandler output
+    cleanup : bool, optional
+        Delete distributed files after merging (default: False)
+
+    Notes
+    -----
+    This function is parallelized over sets, and so can be effectively
+    parallelized up to the number of distributed sets.
 
     """
+    set_path = pathlib.Path(base_path)
+    logger.info("Merging files from {}".format(base_path))
 
-    folder_path = pathlib.Path(folder_path)
-    logger.info("Merging folder %s" %folder_path)
+    set_paths = get_assigned_sets(base_path, distributed=True)
+    for set_path in set_paths:
+        merge_distributed_set(set_path, cleanup=cleanup)
 
-    folder_stem = folder_path.stem
-    proc_paths = folder_path.glob("%s_p*.h5" %folder_stem)
+
+def merge_distributed_set(set_path, cleanup=False):
+    """
+    Merge a distributed analysis set from a FileHandler.
+
+    Parameters
+    ----------
+    set_path : str of pathlib.Path
+        Path to distributed analysis set folder
+    cleanup : bool, optional
+        Delete distributed files after merging (default: False)
+
+    """
+    set_path = pathlib.Path(set_path)
+    logger.info("Merging set {}".format(set_path))
+
+    set_stem = set_path.stem
+    proc_paths = set_path.glob("{}_p*.h5".format(set_stem))
     proc_paths = natural_sort(proc_paths)
-    joint_path = folder_path.parent.joinpath("%s.h5" %folder_stem)
+    joint_path = set_path.parent.joinpath("{}.h5".format(set_stem))
 
     # Create joint file, overwriting if it already exists
     with h5py.File(str(joint_path), mode='w') as joint_file:
@@ -139,27 +162,34 @@ def merge_folder(folder_path):
         # Merge data from all process files
         for proc_path in proc_paths:
             merge_data(joint_file, proc_path)
+    # Cleanup after completed merge, if directed
+    if cleanup:
+        for proc_path in proc_paths:
+            proc_path.unlink()
+        set_path.rmdir()
 
 
 def merge_setup(joint_file, proc_path):
     """
-    Merge HDF5 setup from part of a distributed output file into a joint file.
+    Merge HDF5 setup from part of a distributed analysis set into a joint file.
 
     Parameters
     ----------
     joint_file : HDF5 file
         Joint file
     proc_path : str or pathlib.Path
-        Path to part of a distributed output file
+        Path to part of a distributed analysis set
 
     """
-
     proc_path = pathlib.Path(proc_path)
-    logger.info("Merging setup from %s" %proc_path)
+    logger.info("Merging setup from {}".format(proc_path))
 
     with h5py.File(str(proc_path), mode='r') as proc_file:
         # File metadata
-        joint_file.attrs['file_number'] = proc_file.attrs['file_number']
+        try:
+            joint_file.attrs['set_number'] = proc_file.attrs['set_number']
+        except KeyError:
+            joint_file.attrs['set_number'] = proc_file.attrs['file_number']
         joint_file.attrs['handler_name'] = proc_file.attrs['handler_name']
         try:
             joint_file.attrs['writes'] = writes = proc_file.attrs['writes']
@@ -195,19 +225,18 @@ def merge_setup(joint_file, proc_path):
 
 def merge_data(joint_file, proc_path):
     """
-    Merge data from part of a distributed output file into a joint file.
+    Merge data from part of a distributed analysis set into a joint file.
 
     Parameters
     ----------
     joint_file : HDF5 file
         Joint file
     proc_path : str or pathlib.Path
-        Path to part of a distributed output file
+        Path to part of a distributed analysis set
 
     """
-
     proc_path = pathlib.Path(proc_path)
-    logger.info("Merging data from %s" %proc_path)
+    logger.info("Merging data from {}".format(proc_path))
 
     with h5py.File(str(proc_path), mode='r') as proc_file:
         for taskname in proc_file['tasks']:

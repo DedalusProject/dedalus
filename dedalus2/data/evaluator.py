@@ -289,7 +289,7 @@ class FileHandler(Handler):
     filename : str
         Base of filename, without an extension
     max_writes : int, optional
-        Maximum number of writes to a single file (default: infinite)
+        Maximum number of writes per set (default: infinite)
     max_size : int, optional
         Maximum file size to write to, in bytes (default: 2**30 = 1 GB).
         (Note: files may be larger after final write.)
@@ -316,7 +316,7 @@ class FileHandler(Handler):
         self.parallel = parallel
         self._sl_array = np.zeros(1, dtype=int)
 
-        self.file_num = 0
+        self.set_num = 0
         self.current_path = None
         self.total_write_num = 0
         self.file_write_num = 0
@@ -361,23 +361,23 @@ class FileHandler(Handler):
         domain = self.domain
 
         # Create next file
-        self.file_num += 1
+        self.set_num += 1
         self.file_write_num = 0
         comm = domain.distributor.comm_cart
         if self.parallel:
             # Save in base directory
-            file_name = '%s_f%i.hdf5' %(self.base_path.stem, self.file_num)
+            file_name = '%s_s%i.hdf5' %(self.base_path.stem, self.set_num)
             self.current_path = self.base_path.joinpath(file_name)
             file = h5py.File(str(self.current_path), 'w', driver='mpio', comm=comm)
         else:
             # Save in folders for each filenum in base directory
-            folder_name = '%s_f%i' %(self.base_path.stem, self.file_num)
+            folder_name = '%s_s%i' %(self.base_path.stem, self.set_num)
             folder_path = self.base_path.joinpath(folder_name)
             if not folder_path.exists():
                 with Sync(domain.distributor.comm_cart):
                     if domain.distributor.rank == 0:
                         folder_path.mkdir()
-            file_name = '%s_f%i_p%i.h5' %(self.base_path.stem, self.file_num, comm.rank)
+            file_name = '%s_s%i_p%i.h5' %(self.base_path.stem, self.set_num, comm.rank)
             self.current_path = folder_path.joinpath(file_name)
             file = h5py.File(str(self.current_path), 'w')
 
@@ -390,7 +390,7 @@ class FileHandler(Handler):
         domain = self.domain
 
         # Metadeta
-        file.attrs['file_number'] = self.file_num
+        file.attrs['set_number'] = self.set_num
         file.attrs['handler_name'] = self.base_path.stem
         file.attrs['writes'] = self.file_write_num
         if not self.parallel:
