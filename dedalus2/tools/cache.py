@@ -108,24 +108,15 @@ class CachedClass(type):
 
 
 def serialize_call(args, kw, argnames, defaults):
-    """Serialize args/kw into cache key, hashing numpy arrays by id."""
+    """Serialize args/kw into cache key."""
 
-    call = list(serialize(arg) for arg in args)
+    call = list(args)
     for name in argnames[len(args):]:
         try:
             arg = kw[name]
         except KeyError:
             arg = defaults[name]
-        call.append(serialize(arg))
+        call.append(arg)
 
     return tuple(call)
-
-
-def serialize(arg):
-    """Catch numpy arrays and replace with object repr / id."""
-
-    if isinstance(arg, np.ndarray):
-        return object.__repr__(arg)
-    else:
-        return arg
 
