@@ -2,16 +2,17 @@
 Simulation script for 2D Rayleigh-Benard convection.
 
 This script can be ran serially or in parallel, and uses the built-in analysis
-framework to save data snapshots in HDF5 files.  The `process.py` script in this
-folder can be used to merge distributed save files from parallel runs and plot
-the snapshots from the command line.
+framework to save data snapshots in HDF5 files.  The `merge.py` script in this
+folder can be used to merge distributed analysis sets from parallel runs,
+and the `plot_2d_series.py` script can be used to plot the snapshots.
 
-To run, join, and plot using 4 processes, for instance, you could use:
-$ mpiexec -n 4 python3 rayleigh_benard.py
-$ mpiexec -n 4 python3 process.py join snapshots
-$ mpiexec -n 4 python3 process.py plot snapshots/*.h5
+To run, merge, and plot using 4 processes, for instance, you could use:
 
-On a single process, this should take ~15 minutes to run.
+    $ mpiexec -n 4 python3 rayleigh_benard.py
+    $ mpiexec -n 4 python3 merge.py snapshots
+    $ mpiexec -n 4 python3 plot_2d_series.py snapshots/*.h5
+
+The simulation should take roughly 15 process-minutes to run.
 
 """
 
@@ -88,7 +89,7 @@ snapshots.add_task("w")
 
 # CFL
 CFL = flow_tools.CFL(solver, initial_dt=1e-3, cadence=5, safety=0.3,
-                     max_change=1.5, min_change=0.5)
+                     max_change=1.5, min_change=0.5, max_dt=0.05)
 CFL.add_velocities(('u', 'w'))
 
 # Flow properties
