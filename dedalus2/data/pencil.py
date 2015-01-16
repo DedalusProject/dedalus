@@ -119,7 +119,7 @@ class Pencil:
             matrices['select'][i,j] = 1
             for name in names:
                 if eq[name] != 0:
-                    op_dict = eq[name].operator_dict(index, vars)
+                    op_dict = eq[name].operator_dict(index, vars, **problem.ncc_kw)
                     matrix = matrices[name]
                     for j in range(nvars):
                         matrix[i,j] = op_dict[vars[j]]
@@ -226,12 +226,12 @@ class Pencil:
             for name in LHS:
                 C = LHS[name]
                 if eq[name] != 0:
-                    Ei = eq[name].operator_dict(self.global_index, vars)
+                    Ei = eq[name].operator_dict(self.global_index, vars, **problem.ncc_kw)
                 else:
                     Ei = defaultdict(int)
                 if differential:
                     if bc[name] != 0:
-                        Bi = bc[name].operator_dict(self.global_index, vars)
+                        Bi = bc[name].operator_dict(self.global_index, vars, **problem.ncc_kw)
                     else:
                         Bi = defaultdict(int)
                 for j in range(nvars):

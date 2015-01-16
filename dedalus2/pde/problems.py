@@ -23,12 +23,7 @@ logger = logging.getLogger(__name__.split('.')[-1])
 
 
 class Namespace(OrderedDict):
-    """
-    Class ensuring a conflict-free namespace for parsing.  This class just wraps
-    an OrderedDict, making sure that keys are valid python identifiers, and
-    disallowing overwrites of previously-supplied keys.
-
-    """
+    """Class ensuring a conflict-free namespace for parsing."""
 
     __slots__ = 'allow_overwrites'
 
@@ -72,6 +67,10 @@ class ProblemBase:
         Problem domain
     variables : list of str
         List of variable names, e.g. ['u', 'v', 'w']
+    ncc_cutoff : float, optional
+        Mode amplitude cutoff for LHS NCC expansions (default: 1e-10)
+    max_ncc_terms : int, optional
+        Maximum terms to include in LHS NCC expansions (default: None (no limit))
 
     Attributes
     ----------
@@ -97,7 +96,7 @@ class ProblemBase:
 
     """
 
-    def __init__(self, domain, variables, **kw):
+    def __init__(self, domain, variables, ncc_cutoff=1e-10, max_ncc_terms=None):
         self.domain = domain
         self.variables = variables
         self.nvars = len(variables)
@@ -106,7 +105,7 @@ class ProblemBase:
         self.boundary_conditions = self.bcs = []
         self.parameters = OrderedDict()
         self.substitutions = OrderedDict()
-        self.kw = kw
+        self.ncc_kw = {'cutoff': ncc_cutoff, 'max_terms': max_ncc_terms}
 
     def add_equation(self, equation, condition="True"):
         """Add equation to problem."""

@@ -526,7 +526,7 @@ class Field(Data):
             return FieldCopy(input, domain)
 
     @CachedMethod
-    def as_ncc_operator(self, name=None, cutoff=1e-10, max_terms=None):
+    def as_ncc_operator(self, cutoff, max_terms, name=None):
         """Convert to operator form representing multiplication as a NCC."""
         if name is None:
             name = str(self)
@@ -545,5 +545,5 @@ class Field(Data):
         domain.dist.comm_cart.Bcast(coeffs, root=0)
         # Build matrix
         n_terms, max_term, matrix = basis.NCC(coeffs, cutoff, max_terms)
-        logger.info("Constructed NCC '{}' to mode {} with {} terms.".format(name, max_term, n_terms))
+        logger.info("Expanded NCC '{}' to mode {} with {} terms.".format(name, max_term, n_terms))
         return matrix
