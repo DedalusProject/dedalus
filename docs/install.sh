@@ -615,13 +615,13 @@ echo "pip installing nose."
 echo "pip installing mpi4py."
 ( ${DEST_DIR}/bin/pip3 install mpi4py 2>&1 ) 1>> ${LOG_FILE} || do_exit
 
-# h5py
-echo "pip installing h5py."
-( ${DEST_DIR}/bin/pip3 install h5py 2>&1 ) 1>> ${LOG_FILE} || do_exit
-
 # cython
 echo "pip installing cython."
 ( ${DEST_DIR}/bin/pip3 install cython 2>&1 ) 1>> ${LOG_FILE} || do_exit
+
+# h5py
+echo "pip installing h5py."
+( ${DEST_DIR}/bin/pip3 install h5py 2>&1 ) 1>> ${LOG_FILE} || do_exit
 
 # matplotlib
 PATH=$DEST_DIR/bin/:$PATH
