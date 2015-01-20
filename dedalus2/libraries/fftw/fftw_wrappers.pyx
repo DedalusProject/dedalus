@@ -109,7 +109,7 @@ cdef class Transpose:
     cdef public cnp.ndarray buffer1
 
     def __init__(self, p_t n0, p_t n1, p_t howmany, p_t block0, p_t block1,
-                 dtype, py_comm_t pycomm, flags=['FFTW_MEASURE']):
+                 dtype, py_comm_t pycomm, in_place, flags=['FFTW_MEASURE']):
 
         # Shape array
         cdef p_t *shape = [n0, n1]
@@ -143,10 +143,15 @@ cdef class Transpose:
                                                                        &self.local1,
                                                                        &self.start1)
 
-        # Create in-place plans using a single buffer
-        cdef cnp.ndarray in_place_buffer = create_buffer(self.alloc_doubles)
-        self.buffer0 = in_place_buffer
-        self.buffer1 = in_place_buffer
+        cdef cnp.ndarray buffer0 = create_buffer(self.alloc_doubles)
+        cdef cnp.ndarray buffer1 = create_buffer(self.alloc_doubles)
+        if in_place:
+            self.buffer0 = buffer0
+            self.buffer1 = buffer0
+        else:
+            self.buffer0 = buffer0
+            self.buffer1 = buffer1
+
         self.scatter_plan = cfftw.fftw_mpi_plan_many_transpose(n1,
                                                                n0,
                                                                howmany*itemsize,
@@ -172,20 +177,15 @@ cdef class Transpose:
 
     def __dealloc__(self):
         """Destroy plans on deallocation."""
-
         cfftw.fftw_destroy_plan(self.gather_plan)
         cfftw.fftw_destroy_plan(self.scatter_plan)
 
     def gather(self):
         """Gather along first axis (0), scattering from second axis (1)."""
-
-        # Execute plan
         cfftw.fftw_execute(self.gather_plan)
 
     def scatter(self):
         """Scatter from first axis (0), gathering along second axis (1)."""
-
-        # Execute plan
         cfftw.fftw_execute(self.scatter_plan)
 
 

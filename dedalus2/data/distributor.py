@@ -13,6 +13,7 @@ from ..tools.config import config
 from ..tools.general import rev_enumerate
 
 logger = logging.getLogger(__name__.split('.')[-1])
+IN_PLACE = config['parallelism'].getboolean('IN_PLACE')
 FFTW_RIGOR = config['parallelism'].get('FFTW_RIGOR')
 GROUP_TRANSFORMS = config['transforms'].getboolean('GROUP_TRANSFORMS')
 GROUP_TRANSPOSES = config['parallelism'].getboolean('GROUP_TRANSPOSES')
@@ -362,7 +363,7 @@ class Transpose:
         shape1 = self.layout1.local_shape(scales)
         blocks0 = self.layout0.blocks(scales)
         blocks1 = self.layout1.blocks(scales)
-        logger.debug("Building FFTW transpose plan for (nfields, scales, axis) = (%s, %s, %s)" %(nfields, scales, axis))
+        logger.debug("Building FFTW transpose plan for (nfields, scales, axis, in_place) = (%s, %s, %s, %s)" %(nfields, scales, axis, IN_PLACE))
         # Build FFTW transpose plans
         n0 = shape1[axis]
         n1 = shape0[axis+1]
@@ -374,7 +375,7 @@ class Transpose:
         flags = ['FFTW_'+FFTW_RIGOR.upper()]
         if howmany == 0:
             return None, None, None
-        plan = fftw.Transpose(n0, n1, howmany, block0, block1, dtype, pycomm, flags=flags)
+        plan = fftw.Transpose(n0, n1, howmany, block0, block1, dtype, pycomm, IN_PLACE, flags=flags)
         # Create temporary arrays with transposed data ordering
         tr_shape0 = np.roll([nfields]+list(shape0), -(axis+1))
         tr_shape1 = np.roll([nfields]+list(shape1), -(axis+1))
@@ -397,7 +398,7 @@ class Transpose:
         shape1 = self.layout1.local_shape(scales)
         blocks0 = self.layout0.blocks(scales)
         blocks1 = self.layout1.blocks(scales)
-        logger.debug("Building FFTW transpose plan for (scales, axis) = (%s, %s)" %(scales, axis))
+        logger.debug("Building FFTW transpose plan for (scales, axis, in_place) = (%s, %s, %s)" %(scales, axis, IN_PLACE))
         # Build FFTW transpose plans
         n0 = shape1[axis]
         n1 = shape0[axis+1]
@@ -409,7 +410,7 @@ class Transpose:
         flags = ['FFTW_'+FFTW_RIGOR.upper()]
         if howmany == 0:
             return None, None, None
-        plan = fftw.Transpose(n0, n1, howmany, block0, block1, dtype, pycomm, flags=flags)
+        plan = fftw.Transpose(n0, n1, howmany, block0, block1, dtype, pycomm, IN_PLACE, flags=flags)
         # Create temporary arrays with transposed data ordering
         tr_shape0 = np.roll(shape0, -axis)
         tr_shape1 = np.roll(shape1, -axis)
