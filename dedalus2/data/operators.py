@@ -59,9 +59,6 @@ class FieldCopy(FutureField, metaclass=MultiClass):
         # Preserve parity
         return self.args[0].meta[axis]['parity']
 
-    def canonical_linear_form(self, vars):
-        return self.args[0].canonical_linear_form(vars)
-
 
 class FieldCopyScalar(FieldCopy):
 
@@ -109,6 +106,7 @@ class Operator(Future):
         if type(self) in ops:
             order += 1
         return order
+
 
 class NonlinearOperator(Operator):
 

@@ -138,7 +138,7 @@ class ProblemBase:
 
     def _build_object_forms(self, temp):
         """Parse raw LHS/RHS strings to object forms."""
-        temp['LHS'] = future.FutureField.parse(temp['raw_LHS'], self.namespace, self.domain)
+        temp['LHS'] = field.Operand.parse(temp['raw_LHS'], self.namespace, self.domain)
         temp['RHS'] = future.FutureField.parse(temp['raw_RHS'], self.namespace, self.domain)
         logger.debug("  LHS object form: {}".format(temp['LHS']))
         logger.debug("  RHS object form: {}".format(temp['RHS']))

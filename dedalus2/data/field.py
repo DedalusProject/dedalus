@@ -102,6 +102,12 @@ class Operand:
         return Power(other, self)
 
     @staticmethod
+    def parse(string, namespace, domain):
+        """Build operand from a string expression."""
+        expression = eval(string, namespace)
+        return Operand.cast(expression, domain)
+
+    @staticmethod
     def cast(x, domain=None):
         x = Operand.raw_cast(x)
         if domain:
@@ -161,6 +167,12 @@ class Data(Operand):
     def order(self, *ops):
         return 0
 
+    def operator_dict(self, index, vars, **kw):
+        if self in vars:
+            return defaultdict(int, {self: 1})
+        else:
+            raise SymbolicParsingError('{} is not one of the specified variables.'.format(str(self)))
+
 
 class Scalar(Data):
 
@@ -174,7 +186,7 @@ class Scalar(Data):
                 parity = 0
             else:
                 parity = 1
-            return {'constant': True, 'parity': parity}
+            return {'constant': True, 'parity': parity, 'scale': None}
 
     def __init__(self, value=0, name=None, domain=None):
         from .domain import EmptyDomain
@@ -300,12 +312,6 @@ class Field(Data):
         if allocate:
             self.set_scales(1, keep_data=False)
         self.name = name
-
-    def operator_dict(self, index, vars, **kw):
-        if self in vars:
-            return defaultdict(int, {self: 1})
-        else:
-            raise SymbolicParsingError('{} is not one of the specified variables.'.format(str(self)))
 
     @property
     def layout(self):
