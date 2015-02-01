@@ -10,6 +10,9 @@ from .metadata import Metadata
 from ..tools.general import OrderedSet
 from ..tools.cache import CachedAttribute, CachedMethod
 
+import logging
+logger = logging.getLogger(__name__.split('.')[-1])
+
 
 class Future(Operand):
     """

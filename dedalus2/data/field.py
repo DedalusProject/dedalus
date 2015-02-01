@@ -10,7 +10,6 @@ import numpy as np
 from mpi4py import MPI
 from scipy import sparse
 from scipy.sparse import linalg as splinalg
-import logging
 
 from .metadata import Metadata
 from ..libraries.fftw import fftw_wrappers as fftw
@@ -20,6 +19,7 @@ from ..tools.cache import CachedMethod
 from ..tools.exceptions import UndefinedParityError
 from ..tools.exceptions import SymbolicParsingError
 
+import logging
 logger = logging.getLogger(__name__.split('.')[-1])
 
 # Load config options

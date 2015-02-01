@@ -263,6 +263,10 @@ class ProblemBase:
         expr = expr.canonical_linear_form(*vars)
         logger.debug('  {} linear form: {}'.format(name, str(expr)))
         temp[name] = expr
+        # Build operator dict for base index to construct all NCCs simultaneously
+        if expr != 0:
+            test_index = [0] * self.domain.dim
+            expr.operator_dict(test_index, vars, **self.ncc_kw)
 
     def build_solver(self, *args, **kw):
         """Build corresponding solver class."""
