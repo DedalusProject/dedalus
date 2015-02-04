@@ -7,9 +7,13 @@ from functools import partial
 from collections import defaultdict
 import numpy as np
 from scipy import sparse
+from mpi4py import MPI
 
 from ..tools.array import zeros_with_pattern
 from ..tools.array import expand_pattern
+
+import logging
+logger = logging.getLogger(__name__.split('.')[-1])
 
 
 def build_pencils(domain):
@@ -223,7 +227,7 @@ class Pencil:
                 δG_bc[i,b] = 0
 
             # Build LHS matrices
-            for name in LHS:
+            for name in names:
                 C = LHS[name]
                 if eq[name] != 0:
                     Ei = eq[name].operator_dict(self.global_index, vars, **problem.ncc_kw)
