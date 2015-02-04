@@ -136,6 +136,8 @@ class Domain:
             return tuple([1.] * self.dim)
         # Repeat scalars
         elif np.isscalar(scales):
+            if scales == 0:
+                raise ValueError("Cannot request zero scales.")
             return tuple([scales] * self.dim)
         # Cast others as tuple
         else:
