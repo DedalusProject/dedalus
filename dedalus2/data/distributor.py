@@ -501,7 +501,7 @@ class Transpose:
     def increment(self, fields):
         """Gather along specified axis."""
         if SYNC_TRANSPOSES:
-            self.comm_cart.Barrier()
+            self.comm_sub.Barrier()
         if len(fields) == 1:
             self.increment_single(*fields)
         elif GROUP_TRANSPOSES:
@@ -513,7 +513,7 @@ class Transpose:
     def decrement(self, fields):
         """Scatter along specified axis."""
         if SYNC_TRANSPOSES:
-            self.comm_cart.Barrier()
+            self.comm_sub.Barrier()
         if len(fields) == 1:
             self.decrement_single(*fields)
         elif GROUP_TRANSPOSES:
