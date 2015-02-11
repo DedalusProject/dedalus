@@ -87,7 +87,7 @@ class Pencil:
             matrices[name] = matrix
 
         # Store problem matrices with expanded sparsity for fast combination during timestepping
-        self.LHS = zeros_with_pattern(*matrices.values()).tocsr()
+        self.LHS = zeros_with_pattern(*[matrices[name] for name in names]).tocsr()
         for name in names:
             matrix = matrices[name]
             matrix = expand_pattern(matrix, self.LHS).tocsr()
