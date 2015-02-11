@@ -304,9 +304,15 @@ class InitialValueProblem(ProblemBase):
     @CachedAttribute
     def namespace(self):
         """Build namespace for problem parsing."""
+
         class dt(operators.TimeDerivative):
             name = 'd' + self.time
             _scalar = field.Scalar(name=name)
+
+            @property
+            def base(self):
+                return dt
+
         namespace = super().namespace
         namespace[self.time] = self._t = field.Scalar(name=self.time)
         namespace[dt.name] = self._dt = dt
@@ -319,7 +325,8 @@ class InitialValueProblem(ProblemBase):
 
     def _set_matrix_expressions(self, temp):
         """Set expressions for building LHS matrices."""
-        L, M = self._factor_first_order(temp['LHS'], self._dt)
+        M, L = temp['LHS'].split(self._dt)
+        M = M.replace(self._dt, lambda x: x)
         self._set_linear_form(temp, L, 'L')
         self._set_linear_form(temp, M, 'M')
 
@@ -396,7 +403,8 @@ class EigenvalueProblem(ProblemBase):
 
     def _set_matrix_expressions(self, temp):
         """Set expressions for building LHS matrices."""
-        L, M = self._factor_first_order(temp['LHS'], self._ev)
+        M, L = temp['LHS'].split(self._ev)
+        M = M.replace(self._ev, 1)
         self._set_linear_form(temp, L, 'L')
         self._set_linear_form(temp, M, 'M')
 

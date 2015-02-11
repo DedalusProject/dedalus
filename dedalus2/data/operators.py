@@ -101,6 +101,10 @@ class FieldCopyField(FieldCopy):
 
 class Operator(Future):
 
+    @property
+    def base(self):
+        return type(self)
+
     def order(self, *ops):
         order = max(arg.order(*ops) for arg in self.args)
         if type(self) in ops:
@@ -127,6 +131,12 @@ class NonlinearOperator(Operator):
             return defaultdict(int, {self: 1})
         else:
             return defaultdict(int, {1: self})
+
+    def split(self, *vars):
+        if self.has(*vars):
+            return [self, 0]
+        else:
+            return [0, self]
 
 
 class GeneralFunction(NonlinearOperator, FutureField):
@@ -282,6 +292,10 @@ class Add(Arithmetic, metaclass=MultiClass):
         match = (isinstance(args[i], types) for i,types in cls.argtypes.items())
         return all(match)
 
+    @property
+    def base(self):
+        return Add
+
     def meta_constant(self, axis):
         # Logical 'and' of constancies
         constant0 = self.args[0].meta[axis]['constant']
@@ -329,6 +343,11 @@ class Add(Arithmetic, metaclass=MultiClass):
         for f in set().union(F0, F1):
             out[f] = F0[f] + F1[f]
         return out
+
+    def split(self, *vars):
+        S0 = self.args[0].split(*vars)
+        S1 = self.args[1].split(*vars)
+        return [S0[0]+S1[0], S0[1]+S1[1]]
 
     def operator_dict(self, index, vars, **kw):
         """Produce matrix-operator dictionary over specified variables."""
@@ -532,6 +551,10 @@ class Multiply(Arithmetic, metaclass=MultiClass):
         match = (isinstance(args[i], types) for i,types in cls.argtypes.items())
         return all(match)
 
+    @property
+    def base(self):
+        return Multiply
+
     def meta_constant(self, axis):
         # Logical 'and' of constancies
         constant0 = self.args[0].meta[axis]['constant']
@@ -590,6 +613,11 @@ class Multiply(Arithmetic, metaclass=MultiClass):
             for f1 in F1:
                 out[f0*f1] += F0[f0] * F1[f1]
         return out
+
+    def split(self, *vars):
+        S0 = self.args[0].split(*vars)
+        S1 = self.args[1].split(*vars)
+        return [S0[0]*S1[0] + S0[0]*S1[1] + S0[1]*S1[0], S0[1]*S1[1]]
 
     def operator_dict(self, index, vars, **kw):
         """Produce matrix-operator dictionary over specified variables."""
@@ -807,6 +835,10 @@ class Power(NonlinearOperator, Arithmetic, metaclass=MultiClass):
         match = (isinstance(args[i], types) for i,types in cls.argtypes.items())
         return all(match)
 
+    @property
+    def base(self):
+        return Power
+
 
 class PowerDataScalar(Power):
 
@@ -906,6 +938,13 @@ class LinearOperator(Operator):
         else:
             return defaultdict(int, {1: self})
 
+    def split(self, *vars):
+        if self.base in vars:
+            return [self, 0]
+        else:
+            S0 = self.args[0].split(*vars)
+            return [self.base(S0[0], **self.kw), self.base(S0[1], **self.kw)]
+
     def operator_dict(self, index, vars, **kw):
         """Produce matrix-operator dictionary over specified variables."""
         out = defaultdict(int)
@@ -920,6 +959,12 @@ class LinearOperator(Operator):
 
 
 class TimeDerivative(LinearOperator, FutureField):
+
+    name = 'dt'
+
+    @property
+    def base(self):
+        return TimeDerivative
 
     def meta_constant(self, axis):
         # Preserves constancy
@@ -1118,6 +1163,16 @@ class Interpolate(LinearOperator, metaclass=MultiClass):
         # Drop basis
         return (arg0, position), kw
 
+    def __new__(cls, arg0, position, **kw):
+        # Cast to operand
+        arg0 = Operand.cast(arg0)
+        # Instantiate if operand depends on basis
+        if cls.basis in arg0.domain.bases:
+            return object.__new__(cls)
+        # Otherwise route through dispatch
+        else:
+            return Interpolate(arg0, cls.basis, position, **kw)
+
     def __init__(self, arg0, position, out=None):
         # Cast argument to field
         arg0 = Field.cast(arg0, arg0.domain)
@@ -1160,6 +1215,10 @@ class Interpolate(LinearOperator, metaclass=MultiClass):
 class InterpolateScalar(Interpolate, FutureScalar):
 
     basis = None
+
+    @property
+    def base(self):
+        return Interpolate
 
     @classmethod
     def _check_args(cls, arg0, basis, position, **kw):
@@ -1228,7 +1287,7 @@ class Differentiate(LinearOperator, metaclass=MultiClass):
             return object.__new__(cls)
         # Otherwise route through dispatch
         else:
-            return Differentiate(arg0, cls, **kw)
+            return Differentiate(arg0, cls.basis, **kw)
 
     def __init__(self, arg0, **kw):
         # Cast argument to field

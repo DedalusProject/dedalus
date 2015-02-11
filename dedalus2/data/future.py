@@ -57,6 +57,7 @@ class Future(Operand):
         except AttributeError:
             pass
         self.out = out
+        self.kw = {}
         self.last_id = None
 
     def reset(self):
@@ -89,6 +90,17 @@ class Future(Operand):
         hasself = type(self) in atoms
         hasargs = any((a in self.atoms() for a in atoms))
         return hasself or hasargs
+
+    def replace(self, old, new):
+        """Replace an object in the expression tree."""
+        if self == old:
+            return new
+        elif self.base == old:
+            args = [arg.replace(old, new) for arg in self.args]
+            return new(*args, **self.kw)
+        else:
+            args = [arg.replace(old, new) for arg in self.args]
+            return self.base(*args, **self.kw)
 
     def evaluate(self, id=None, force=True):
         """Recursively evaluate operation."""

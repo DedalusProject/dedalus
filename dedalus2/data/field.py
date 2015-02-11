@@ -164,6 +164,19 @@ class Data(Operand):
         else:
             return defaultdict(int, {1: self})
 
+    def split(self, *vars):
+        if self in vars:
+            return [self, 0]
+        else:
+            return [0, self]
+
+    def replace(self, old, new):
+        """Replace an object in the expression tree."""
+        if self == old:
+            return new
+        else:
+            return self
+
     def order(self, *ops):
         return 0
 
@@ -199,7 +212,7 @@ class Scalar(Data):
         if self.name is None:
             return (self.value == other)
         else:
-            super().__eq__(other)
+            return super().__eq__(other)
 
     def __hash__(self):
         return hash((self.name, self.value))
