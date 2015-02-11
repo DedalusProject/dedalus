@@ -1398,10 +1398,10 @@ class Compound(ImplicitBasis):
         for index, basis in enumerate(self.subbases):
             n_terms_i = max_term_i = 0
             subcoeffs = self.sub_cdata(coeffs, index, axis=0)
-            for p in range(max_terms):
+            for p in range(min(max_terms, subcoeffs.size)):
                 if abs(subcoeffs[p]) >= cutoff:
                     matrix = matrix + subcoeffs[p]*self.Multiply(p, index)
-                    n_terms_i += p
+                    n_terms_i += 1
                     max_term_i = p
             n_terms = max(n_terms, n_terms_i)
             max_term = max(max_term, max_term_i)
