@@ -126,8 +126,8 @@ extensions = [
         libraries=libraries,
         library_dirs=library_dirs),
     Extension(
-        name='dedalus2.data.transposes',
-        sources=['dedalus2/data/transposes.pyx'],
+        name='dedalus2.core.transposes',
+        sources=['dedalus2/core/transposes.pyx'],
         include_dirs=include_dirs,
         libraries=libraries,
         library_dirs=library_dirs)]
@@ -139,8 +139,7 @@ setup(
     author_email='keaton.burns@gmail.com',
     license='GPL3',
     packages = ['dedalus2',
-                'dedalus2.data',
-                'dedalus2.pde',
+                'dedalus2.core',
                 'dedalus2.libraries',
                 'dedalus2.libraries.fftw'],
     cmdclass = {'build_ext': custom_build_ext},
