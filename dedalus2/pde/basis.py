@@ -23,7 +23,7 @@ from ..tools.exceptions import UndefinedParityError
 
 logger = logging.getLogger(__name__.split('.')[-1])
 DEFAULT_LIBRARY = config['transforms'].get('DEFAULT_LIBRARY')
-FFTW_RIGOR = config['transforms'].get('FFTW_RIGOR')
+FFTW_RIGOR = config['transforms-fftw'].get('PLANNING_RIGOR')
 
 
 class Basis:
