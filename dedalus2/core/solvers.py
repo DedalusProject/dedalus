@@ -10,11 +10,11 @@ from scipy.sparse import linalg
 from scipy.linalg import eig
 
 #from ..data.operators import parsable_ops
-from ..data import operators
-from ..data.evaluator import Evaluator
-from ..data.system import CoeffSystem, FieldSystem
-from ..data.pencil import build_pencils
-from ..data.field import Scalar, Field
+from . import operators
+from .evaluator import Evaluator
+from .system import CoeffSystem, FieldSystem
+from .pencil import build_pencils
+from .field import Scalar, Field
 from ..tools.progress import log_progress
 
 import logging

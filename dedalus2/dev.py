@@ -3,19 +3,18 @@ Interface for accessing all submodules.
 
 """
 
-from .data import field
-from .data import future
-from .data import distributor
-from .data import domain
-from .data import evaluator
-from .data import operators
-from .data import pencil
-from .data import system
-
-from .pde import basis
-from .pde import problems
-from .pde import solvers
-from .pde import timesteppers
+from .core import field
+from .core import future
+from .core import distributor
+from .core import domain
+from .core import evaluator
+from .core import operators
+from .core import pencil
+from .core import system
+from .core import basis
+from .core import problems
+from .core import solvers
+from .core import timesteppers
 
 from .tools import array
 from .tools import cache

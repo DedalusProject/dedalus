@@ -6,9 +6,9 @@ Extra tools that are useful in hydrodynamical problems.
 import numpy as np
 from mpi4py import MPI
 
-from ..data import operators
-from ..data.field import Array
-from ..data.future import FutureField
+from ..core import operators
+from ..core.field import Array
+from ..core.future import FutureField
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])

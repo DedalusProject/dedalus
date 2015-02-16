@@ -7,7 +7,7 @@ from collections import deque
 import numpy as np
 from scipy.sparse import linalg
 
-from ..data.system import CoeffSystem, FieldSystem
+from .system import CoeffSystem, FieldSystem
 from ..tools.config import config
 
 

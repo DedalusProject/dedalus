@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from matplotlib import ticker
 from matplotlib import transforms
 
-from ..data.field import Field
+from ..core.field import Field
 from ..tools.array import reshape_vector
 
 

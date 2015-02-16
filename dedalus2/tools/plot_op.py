@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from collections import defaultdict
 
-from ..data.operators import Operator
+from ..core.operators import Operator
 
 
 class Node:

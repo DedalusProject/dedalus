@@ -10,7 +10,7 @@ from numpy import pi
 from scipy import sparse
 from scipy import fftpack
 
-from ..data import operators
+from . import operators
 from ..libraries.fftw import fftw_wrappers as fftw
 from ..tools.config import config
 from ..tools.cache import CachedAttribute

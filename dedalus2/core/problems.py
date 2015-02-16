@@ -7,11 +7,11 @@ from collections import OrderedDict
 import numpy as np
 from mpi4py import MPI
 
-from ..data.metadata import MultiDict, Metadata
-from ..data import field
-from ..data.field import Operand
-from ..data import future
-from ..data import operators
+from .metadata import MultiDict, Metadata
+from . import field
+from .field import Operand
+from . import future
+from . import operators
 from . import solvers
 from ..tools import parsing
 from ..tools.cache import CachedAttribute
