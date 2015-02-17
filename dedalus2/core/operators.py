@@ -220,6 +220,32 @@ class UnaryGridFunction(NonlinearOperator, Future, metaclass=MultiClass):
         else:
             raise UndefinedParityError("Unknown action of {} on odd parity.".format(self.name))
 
+    def sym_diff(self, var):
+        """Symbolically differentiate with respect to var."""
+        diffmap = {np.absolute: lambda x: np.sign(x),
+                   np.sign: lambda x: 0,
+                   np.exp: lambda x: np.exp(x),
+                   np.exp2: lambda x: np.exp2(x) * np.log(2),
+                   np.log: lambda x: x**(-1),
+                   np.log2: lambda x: (x * np.log(2))**(-1),
+                   np.log10: lambda x: (x * np.log(10))**(-1),
+                   np.sqrt: lambda x: (1/2) * x**(-1/2),
+                   np.square: lambda x: 2*x,
+                   np.sin: lambda x: np.cos(x),
+                   np.cos: lambda x: -np.sin(x),
+                   np.tan: lambda x: np.cos(x)**(-2),
+                   np.arcsin: lambda x: (1 - x**2)**(-1/2),
+                   np.arccos: lambda x: -(1 - x**2)**(-1/2),
+                   np.arctan: lambda x: (1 + x**2)**(-1),
+                   np.sinh: lambda x: np.cosh(x),
+                   np.cosh: lambda x: np.sinh(x),
+                   np.tanh: lambda x: np.cosh(x)**(-2),
+                   np.arcsinh: lambda x: (x**2 + 1)**(-1/2),
+                   np.arccosh: lambda x: (x**2 - 1)**(-1/2),
+                   np.arctanh: lambda x: (1 - x**2)**(-1)}
+        arg0 = self.args[0]
+        diff0 = arg0.sym_diff(var)
+        return diffmap[self.func](arg0) * diff0
 
 class UnaryGridFunctionScalar(UnaryGridFunction, FutureScalar):
 
@@ -362,6 +388,13 @@ class Add(Arithmetic, metaclass=MultiClass):
             else:
                 out[var] = op1[var]
         return out
+
+    def sym_diff(self, var):
+        """Symbolically differentiate with respect to var."""
+        arg0, arg1 = self.args
+        diff0 = arg0.sym_diff(var)
+        diff1 = arg1.sym_diff(var)
+        return diff0 + diff1
 
 
 class AddScalarScalar(Add, FutureScalar):
@@ -628,6 +661,13 @@ class Multiply(Arithmetic, metaclass=MultiClass):
             out[var] = op0 * op1[var]
         return out
 
+    def sym_diff(self, var):
+        """Symbolically differentiate with respect to var."""
+        arg0, arg1 = self.args
+        diff0 = arg0.sym_diff(var)
+        diff1 = arg1.sym_diff(var)
+        return diff0*arg1 + arg0*diff1
+
 
 class MultiplyScalarScalar(Multiply, FutureScalar):
 
@@ -845,6 +885,14 @@ class PowerDataScalar(Power):
     argtypes = {0: (Data, Future),
                 1: (Scalar, FutureScalar)}
 
+    def __new__(cls, arg0, arg1, *args, **kw):
+        if (arg1.name is None) and (arg1.value == 0):
+            return 1
+        elif (arg1.name is None) and (arg1.value == 1):
+            return arg0
+        else:
+            return object.__new__(cls)
+
     def meta_constant(self, axis):
         # Preserves constancy
         return self.args[0].meta[axis]['constant']
@@ -861,6 +909,12 @@ class PowerDataScalar(Power):
             return parity**int(power)
         # Otherwise invalid
         raise UndefinedParityError("Non-integer power of nonconstant data has undefined parity.")
+
+    def sym_diff(self, var):
+        """Symbolically differentiate with respect to var."""
+        arg0, arg1 = self.args
+        diff0 = arg0.sym_diff(var)
+        return arg1 * arg0**(arg1-1) * diff0
 
 
 class PowerScalarScalar(PowerDataScalar, FutureScalar):
@@ -956,6 +1010,11 @@ class LinearOperator(Operator):
 
     def operator_form(self, index):
         raise NotImplementedError()
+
+    def sym_diff(self, var):
+        """Symbolically differentiate with respect to var."""
+        diff0 = self.args[0].diff(var)
+        self.base(diff0, **self.kw)
 
 
 class TimeDerivative(LinearOperator, FutureField):

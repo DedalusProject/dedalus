@@ -186,6 +186,13 @@ class Data(Operand):
         else:
             raise SymbolicParsingError('{} is not one of the specified variables.'.format(str(self)))
 
+    def sym_diff(self, var):
+        """Symbolically differentiate with respect to var."""
+        if self == var:
+            return 1
+        else:
+            return 0
+
 
 class Scalar(Data):
 
