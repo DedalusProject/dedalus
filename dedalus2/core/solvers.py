@@ -60,17 +60,11 @@ class EigenvalueSolver:
         #     p.build_matrices(problem, ['M', 'L'])
 
         # Build systems
-        self.state = state = FieldSystem(problem.variables, domain)
-        for var in problem.variables:
-            self.state[var].meta = problem.meta[var]
-            self.state[var].set_scales(1, keep_data=False)
+        namespace = problem.namespace
+        vars = [namespace[var] for var in problem.variables]
+        self.state = FieldSystem.from_fields(vars)
 
         # Create F operator trees
-        namespace = problem.namespace.copy()
-        namespace.allow_overwrites = True
-        namespace.update(state.field_dict)
-        namespace.add_substitutions(problem.substitutions)
-
         self.evaluator = Evaluator(domain, namespace)
 
         logger.debug('Finished EVP instantiation')
@@ -127,24 +121,19 @@ class BoundaryValueSolver:
             p.build_matrices(problem, ['L'])
 
         # Build systems
-        self.state = state = FieldSystem(problem.variables, domain)
-        for var in problem.variables:
-            self.state[var].meta = problem.meta[var]
-            self.state[var].set_scales(1, keep_data=False)
+        namespace = problem.namespace
+        vars = [namespace[var] for var in problem.variables]
+        self.state = FieldSystem.from_fields(vars)
+        #self.state = state = FieldSystem(problem.variables, domain)
 
         # Create F operator trees
-        namespace = problem.namespace.copy()
-        namespace.allow_overwrites = True
-        namespace.update(state.field_dict)
-        namespace.add_substitutions(problem.substitutions)
-
         self.evaluator = Evaluator(domain, namespace)
         Fe_handler = self.evaluator.add_system_handler(iter=1, group='F')
         Fb_handler = self.evaluator.add_system_handler(iter=1, group='F')
         for eqn in problem.eqs:
-            Fe_handler.add_task(eqn['raw_RHS'])
+            Fe_handler.add_task(eqn['F'])
         for bc in problem.bcs:
-            Fb_handler.add_task(bc['raw_RHS'])
+            Fb_handler.add_task(bc['F'])
         self.Fe = Fe_handler.build_system()
         self.Fb = Fb_handler.build_system()
 
@@ -212,26 +201,19 @@ class InitialValueSolver:
             p.build_matrices(problem, ['M', 'L'])
 
         # Build systems
-        self.state = state = FieldSystem(problem.variables, domain)
-        for var in problem.variables:
-            self.state[var].meta = problem.meta[var]
-            self.state[var].set_scales(1, keep_data=False)
-
-        # Create F operator trees
-        namespace = problem.namespace.copy()
-        namespace.allow_overwrites = True
-        namespace.update(state.field_dict)
-        namespace.add_substitutions(problem.substitutions)
-
+        namespace = problem.namespace
+        vars = [namespace[var] for var in problem.variables]
+        self.state = FieldSystem.from_fields(vars)
         self._sim_time = namespace[problem.time]
 
+        # Create F operator trees
         self.evaluator = Evaluator(domain, namespace)
         Fe_handler = self.evaluator.add_system_handler(iter=1, group='F')
         Fb_handler = self.evaluator.add_system_handler(iter=1, group='F')
         for eqn in problem.eqs:
-            Fe_handler.add_task(eqn['raw_RHS'])
+            Fe_handler.add_task(eqn['F'])
         for bc in problem.bcs:
-            Fb_handler.add_task(bc['raw_RHS'])
+            Fb_handler.add_task(bc['F'])
         self.Fe = Fe_handler.build_system()
         self.Fb = Fb_handler.build_system()
 

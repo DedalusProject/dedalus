@@ -6,6 +6,7 @@ Classes for systems of coefficients/fields.
 import numpy as np
 
 from ..tools.cache import CachedMethod
+from ..tools.general import unify
 
 
 class CoeffSystem:
@@ -90,6 +91,15 @@ class FieldSystem(CoeffSystem):
     def __getitem__(self, name):
         """Return field corresponding to specified name."""
         return self.field_dict[name]
+
+    @classmethod
+    def from_fields(cls, fields):
+        names = [field.name for field in fields]
+        domain = unify(field.domain for field in fields)
+        sys = FieldSystem(names, domain)
+        sys.fields = fields
+        sys.field_dict = dict(zip(names, fields))
+        return sys
 
     def gather(self):
         """Copy fields into system buffer."""

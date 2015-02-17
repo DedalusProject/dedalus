@@ -454,7 +454,7 @@ class Transpose:
 
     def increment_group(self, *fields):
         """Transpose group from layout0 to layout1."""
-        scales = unify(*[field.meta[:]['scale'] for field in fields])
+        scales = unify(field.meta[:]['scale'] for field in fields)
         plan, buffer0, buffer1 = self._group_plan(len(fields), scales)
         if plan:
             # Copy fields to group buffer
@@ -473,7 +473,7 @@ class Transpose:
 
     def decrement_group(self, *fields):
         """Transpose group from layout1 to layout0."""
-        scales = unify([field.meta[:]['scale'] for field in fields])
+        scales = unify(field.meta[:]['scale'] for field in fields)
         plan, buffer0, buffer1 = self._group_plan(len(fields), scales)
         if plan:
             # Copy fields to group buffer
@@ -489,11 +489,4 @@ class Transpose:
             # No data: just update field layouts
             for field in fields:
                 field.layout = self.layout0
-
-
-def unify(*objects):
-    for object in objects[1:]:
-        if object != objects[0]:
-            raise ValueError("Not equal.")
-    return objects[0]
 

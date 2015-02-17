@@ -51,3 +51,17 @@ def oscillate(iterable):
     while True:
         yield from forward
         yield from backward
+
+
+def unify(objects):
+    """
+    Check if all objects in a collection are equal.
+    If so, return one of them.  If not, raise.
+    """
+    for i, object in enumerate(objects):
+        if i == 0:
+            OBJECT = object
+        else:
+            if object != OBJECT:
+                raise ValueError("Objects are not all equal.")
+    return OBJECT

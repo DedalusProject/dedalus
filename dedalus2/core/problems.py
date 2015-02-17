@@ -158,8 +158,9 @@ class ProblemBase:
                 namespace[op.name] = op
         # Fields
         for var in self.variables:
-            namespace[var] = self.domain.new_field(name=var, allocate=False)
+            namespace[var] = self.domain.new_field(name=var)
             namespace[var].meta = self.meta[var]
+            namespace[var].set_scales(1, keep_data=False)
         # Parameters
         for name, param in self.parameters.items():
             # Cast parameters to operands
@@ -187,7 +188,7 @@ class ProblemBase:
         self._check_boundary_form(temp['LHS'], temp['RHS'])
 
     def _check_differential_order(self, temp):
-        """Find coupled differential order of an expression, and require to be first order."""
+        """Require LHS To be first order in coupled derivatives."""
         coupled_diffs = [basis.Differentiate for basis in self.domain.bases if not basis.separable]
         order = self._require_first_order(temp, 'LHS', coupled_diffs)
         temp['differential'] = bool(order)
@@ -255,18 +256,17 @@ class ProblemBase:
             raise SymbolicParsingError('Other factors: {}'.format(','.join(map(str, extra))))
         return factors[1], factors[x]
 
-    def _set_linear_form(self, temp, expr, name):
+    def _prepare_linear_form(self, expr, vars, name=''):
         """Convert an expression into suitable form for LHS operator conversion."""
-        vars = [self.namespace[var] for var in self.variables]
         expr = Operand.cast(expr)
         expr = expr.expand(*vars)
         expr = expr.canonical_linear_form(*vars)
         logger.debug('  {} linear form: {}'.format(name, str(expr)))
-        temp[name] = expr
         # Build operator dict for base index to construct all NCCs simultaneously
         if expr != 0:
             test_index = [0] * self.domain.dim
             expr.operator_dict(test_index, vars, **self.ncc_kw)
+        return expr
 
     def build_solver(self, *args, **kw):
         """Build corresponding solver class."""
@@ -324,11 +324,13 @@ class InitialValueProblem(ProblemBase):
         self._require_first_order(temp, 'LHS', [self._dt])
 
     def _set_matrix_expressions(self, temp):
-        """Set expressions for building LHS matrices."""
+        """Set expressions for building solver."""
         M, L = temp['LHS'].split(self._dt)
         M = M.replace(self._dt, lambda x: x)
-        self._set_linear_form(temp, L, 'L')
-        self._set_linear_form(temp, M, 'M')
+        vars = [self.namespace[var] for var in self.variables]
+        temp['M'] = self._prepare_linear_form(M, vars, name='M')
+        temp['L'] = self._prepare_linear_form(L, vars, name='L')
+        temp['F'] = temp['RHS']
 
 
 class BoundaryValueProblem(ProblemBase):
@@ -358,8 +360,10 @@ class BoundaryValueProblem(ProblemBase):
         self._require_independent(temp, 'RHS', vars)
 
     def _set_matrix_expressions(self, temp):
-        """Set expressions for building LHS matrices."""
-        self._set_linear_form(temp, temp['LHS'], 'L')
+        """Set expressions for building solver."""
+        vars = [self.namespace[var] for var in self.variables]
+        temp['L'] = self._prepare_linear_form(temp['LHS'], vars, name='L')
+        temp['F'] = temp['RHS']
 
 
 class EigenvalueProblem(ProblemBase):
@@ -402,11 +406,12 @@ class EigenvalueProblem(ProblemBase):
         self._require_zero(temp, 'RHS')
 
     def _set_matrix_expressions(self, temp):
-        """Set expressions for building LHS matrices."""
+        """Set expressions for building solver."""
         M, L = temp['LHS'].split(self._ev)
         M = M.replace(self._ev, 1)
-        self._set_linear_form(temp, L, 'L')
-        self._set_linear_form(temp, M, 'M')
+        vars = [self.namespace[var] for var in self.variables]
+        temp['M'] = self._prepare_linear_form(M, vars, name='M')
+        temp['L'] = self._prepare_linear_form(L, vars, name='L')
 
 
 # Aliases
