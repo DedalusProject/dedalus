@@ -124,13 +124,15 @@ extensions = [
         sources=['dedalus2/libraries/fftw/fftw_wrappers.pyx'],
         include_dirs=include_dirs,
         libraries=libraries,
-        library_dirs=library_dirs),
+        library_dirs=library_dirs,
+        extra_compile_args=["-Wno-error=declaration-after-statement"]),
     Extension(
         name='dedalus2.core.transposes',
         sources=['dedalus2/core/transposes.pyx'],
         include_dirs=include_dirs,
         libraries=libraries,
-        library_dirs=library_dirs)]
+        library_dirs=library_dirs,
+        extra_compile_args=["-Wno-error=declaration-after-statement"])]
 
 setup(
     name='Dedalus',
