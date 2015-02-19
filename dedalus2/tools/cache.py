@@ -6,7 +6,8 @@ Tools for caching computations.
 import inspect
 import types
 from weakref import WeakValueDictionary
-import numpy as np
+from collections import OrderedDict
+from functools import partial
 
 
 class CachedAttribute:
@@ -24,6 +25,7 @@ class CachedAttribute:
         if instance is None:
             return self
         # Set method output as instance attribute
+        # (overrides reference to descriptor from instance)
         attribute = self.method(instance)
         setattr(instance, self.__name__, attribute)
 
@@ -31,16 +33,25 @@ class CachedAttribute:
 
 
 class CachedFunction:
-    """Decorator for caching function outputs, hashing numpy arrays by id."""
+    """Decorator for caching function outputs."""
 
-    def __init__(self, function):
+    def __new__(cls, function=None, max_size=None):
+        # Intercept calls without function assignment
+        if function is None:
+            # Return decorator with max_size partially applied
+            return partial(cls, max_size=max_size)
+        else:
+            return object.__new__(cls)
 
+    def __init__(self, function, max_size=None):
+        # Function info
         self.function = function
         self.__name__ = function.__name__
         self.__doc__ = function.__doc__
-        self.cache = dict()
-
-        # Retrieve argument names and defaults
+        # Caching attributes
+        self.cache = OrderedDict()
+        self.max_size = max_size
+        # Retrieve arg names and default kw
         argnames, _, _, defaults = inspect.getargspec(function)
         self.argnames = argnames
         if defaults:
@@ -49,36 +60,39 @@ class CachedFunction:
             self.defaults = dict()
 
     def __call__(self, *args, **kw):
-
         # Serialize call from provided/default args/kw
         call = serialize_call(args, kw, self.argnames, self.defaults)
-        # Evaluate function for new call
-        if call not in self.cache:
-            self.cache[call] = self.function(*args, **kw)
-
-        return self.cache[call]
+        # Check cache for call
+        if call in self.cache:
+            return self.cache[call]
+        else:
+            if len(self.cache) == self.max_size:
+                self.cache.popitem(last=False)
+            self.cache[call] = result = self.function(*args, **kw)
+            return result
 
 
 class CachedMethod(CachedFunction):
-    """Descriptor for caching method outputs, hashing numpy arrays by id."""
+    """Descriptor for caching method outputs."""
+    # To do: find way remove instance self from args/call
 
     def __get__(self, instance, owner):
-
         # Return self when accessed from class
         if instance is None:
             return self
         # Build new cached method and bind to instance
-        # This allows the cache to be deallocated with the instance
-        new_cached_method = CachedMethod(self.function)
+        # (allows the cache to be deallocated with the instance)
+        new_cached_method = CachedMethod(self.function, self.max_size)
         bound_method = types.MethodType(new_cached_method, instance)
-        # Override reference to self (class descriptor) from instance
+        # Set bound method as instance attribute
+        # (overrides reference to descriptor from instance)
         setattr(instance, self.__name__, bound_method)
 
         return bound_method
 
 
 class CachedClass(type):
-    """Metaclass for caching instantiation, hashing numpy arrays by id."""
+    """Metaclass for caching instantiation."""
 
     def __init__(cls, *args, **kw):
 
