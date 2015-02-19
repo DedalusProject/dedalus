@@ -45,6 +45,10 @@ class FieldCopy(FutureField, metaclass=MultiClass):
         match = (isinstance(args[i], types) for i,types in cls.argtypes.items())
         return all(match)
 
+    def __init__(self, arg, **kw):
+        super().__init__(arg, **kw)
+        self.kw = {'domain': arg.domain}
+
     def __str__(self):
         return str(self.args[0])
 
@@ -58,6 +62,14 @@ class FieldCopy(FutureField, metaclass=MultiClass):
     def meta_parity(self, axis):
         # Preserve parity
         return self.args[0].meta[axis]['parity']
+
+    @property
+    def base(self):
+        return FieldCopy
+
+    def sym_diff(self, var):
+        """Symbolically differentiate with respect to var."""
+        return self.args[0].sym_diff(var)
 
 
 class FieldCopyScalar(FieldCopy):
@@ -1013,8 +1025,8 @@ class LinearOperator(Operator):
 
     def sym_diff(self, var):
         """Symbolically differentiate with respect to var."""
-        diff0 = self.args[0].diff(var)
-        self.base(diff0, **self.kw)
+        diff0 = self.args[0].sym_diff(var)
+        return self.base(diff0, **self.kw)
 
 
 class TimeDerivative(LinearOperator, FutureField):
@@ -1204,7 +1216,6 @@ class Integrate(LinearOperator, metaclass=MultiClass):
 class Interpolate(LinearOperator, metaclass=MultiClass):
 
     name = 'interp'
-    store_last = True
 
     @classmethod
     def _preprocess_args(cls, arg0, basis, position, **kw):

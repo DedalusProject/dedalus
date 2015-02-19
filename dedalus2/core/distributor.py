@@ -24,7 +24,6 @@ elif TRANSPOSE_LIBRARY.upper() == 'MPI':
     from .transposes import AlltoallvTranspose as TransposePlanner
 
 
-
 class Distributor:
     """
     Directs parallelized distribution and transformation of fields over a domain.
