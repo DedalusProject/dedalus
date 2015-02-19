@@ -86,7 +86,7 @@ class EigenvalueSolver:
         self.state.scatter()
 
 
-class BoundaryValueSolver:
+class LinearBoundaryValueSolver:
     """
     Linear boundary value problem solver.
 
@@ -146,6 +146,76 @@ class BoundaryValueSolver:
             x = linalg.spsolve(A, b, use_umfpack=False, permc_spec='NATURAL')
             self.state.set_pencil(p, x)
         self.state.scatter()
+
+
+class NonlinearBoundaryValueSolver:
+    """
+    Nonlinear boundary value problem solver.
+
+    Parameters
+    ----------
+    problem : problem object
+        Problem describing system of differential equations and constraints
+
+    Attributes
+    ----------
+    state : system object
+        System containing solution fields (after solve method is called)
+
+    """
+
+    def __init__(self, problem):
+
+        logger.debug('Beginning NLBVP instantiation')
+
+        self.problem = problem
+        self.domain = domain = problem.domain
+        self.iteration = 0
+
+        # Build pencils and pencil matrices
+        self.pencils = pencil.build_pencils(domain)
+        pencil.build_matrices(self.pencils, problem, ['L', 'dF'])
+
+        # Build systems
+        namespace = problem.namespace
+        vars = [namespace[var] for var in problem.variables]
+        perts = [namespace['δ'+var] for var in problem.variables]
+        self.state = FieldSystem.from_fields(vars)
+        self.perturbations = FieldSystem.from_fields(perts)
+
+        # Create F operator trees
+        self.evaluator = Evaluator(domain, namespace)
+        Fe_handler = self.evaluator.add_system_handler(iter=1, group='F')
+        Fb_handler = self.evaluator.add_system_handler(iter=1, group='F')
+        for eqn in problem.eqs:
+            Fe_handler.add_task(eqn['F-L'])
+        for bc in problem.bcs:
+            Fb_handler.add_task(bc['F-L'])
+        self.Fe = Fe_handler.build_system()
+        self.Fb = Fb_handler.build_system()
+
+        logger.debug('Finished NLBVP instantiation')
+
+    def newton_iteration(self):
+        """Update solution with a Newton iteration."""
+        # Compute RHS
+        self.evaluator.evaluate_group('F', 0, 0, 0)
+        # Recompute Jacobian
+        pencil.build_matrices(self.pencils, self.problem, ['dF'])
+        # Solve system for each pencil, updating perturbations
+        for p in self.pencils:
+            pFe = self.Fe.get_pencil(p)
+            pFb = self.Fb.get_pencil(p)
+            A = p.L - p.dF
+            b = p.G_eq * pFe + p.G_bc * pFb
+            x = linalg.spsolve(A, b, use_umfpack=False, permc_spec='NATURAL')
+            self.perturbations.set_pencil(p, x)
+        self.perturbations.scatter()
+        # Update state
+        self.state.gather()
+        self.state.data += self.perturbations.data
+        self.state.scatter()
+        self.iteration += 1
 
 
 class InitialValueSolver:

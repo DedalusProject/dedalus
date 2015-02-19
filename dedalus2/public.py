@@ -10,7 +10,9 @@ from .core import future as _future
 from .core.domain import Domain
 from .core import operators
 from .core.basis import Chebyshev, Fourier, Compound
-from .core.problems import InitialValueProblem, BoundaryValueProblem, EigenvalueProblem
-from .core.problems import IVP, BVP, EVP
+from .core.problems import InitialValueProblem, IVP
+from .core.problems import LinearBoundaryValueProblem, LBVP
+from .core.problems import NonlinearBoundaryValueProblem, NLBVP
+from .core.problems import EigenvalueProblem, EVP
 from .core import timesteppers
 

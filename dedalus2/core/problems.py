@@ -318,7 +318,7 @@ class InitialValueProblem(ProblemBase):
         temp['F'] = temp['RHS']
 
 
-class BoundaryValueProblem(ProblemBase):
+class LinearBoundaryValueProblem(ProblemBase):
     """
     Class for inhomogeneous, linear boundary value problems.
 
@@ -339,7 +339,7 @@ class BoundaryValueProblem(ProblemBase):
 
     """
 
-    solver_class = solvers.BoundaryValueSolver
+    solver_class = solvers.LinearBoundaryValueSolver
 
     def _check_conditions(self, temp):
         """Check object-form conditions."""
@@ -351,6 +351,74 @@ class BoundaryValueProblem(ProblemBase):
         vars = [self.namespace[var] for var in self.variables]
         temp['L'] = self._prep_linear_form(temp['LHS'], vars, name='L')
         temp['F'] = temp['RHS']
+
+
+class NonlinearBoundaryValueProblem(ProblemBase):
+    """
+    Class for nonlinear boundary value problems.
+
+    Parameters
+    ----------
+    domain : domain object
+        Problem domain
+    variables : list of str
+        List of variable names, e.g. ['u', 'v', 'w']
+
+    Notes
+    -----
+    This class supports nonlinear boundary value problems.  The LHS terms must
+    be linear in the specified variables and first-order in coupled derivatives.
+
+        L.X = F(X)
+
+    The problem is reduced into a linear BVP for an update to the solution
+    using the Newton-Kantorovich method and symbolically-computed Frechet
+    derivatives of the RHS.
+
+        L.(X0 + X1) = F(X0) + dF(X0).X1
+        L.X1 - dF(X0).X1 = F(X0) - L.X0
+
+    """
+
+    solver_class = solvers.NonlinearBoundaryValueSolver
+
+    @CachedAttribute
+    def namespace(self):
+        """Build namespace for problem parsing."""
+        namespace = super().namespace
+        # Add variable perturbations
+        for var in self.variables:
+            pert = 'δ' + var
+            namespace[pert] = self.domain.new_field(name=pert)
+            namespace[pert].meta = self.meta[var]
+            namespace[pert].set_scales(1, keep_data=False)
+        return namespace
+
+    def _check_conditions(self, temp):
+        """Check object-form conditions."""
+        pass
+
+    def _set_matrix_expressions(self, temp):
+        """Set expressions for building solver."""
+        ep = field.Scalar(name='__epsilon__')
+        vars = [self.namespace[var] for var in self.variables]
+        perts = [self.namespace['δ'+var] for var in self.variables]
+        # Build LHS operating on perturbations
+        L = temp['LHS']
+        for var, pert in zip(vars, perts):
+            L = L.replace(var, pert)
+        # Build Frechet derivative of RHS
+        F = temp['RHS']
+        dF = 0
+        for var, pert in zip(vars, perts):
+            dFi = F.replace(var, var + ep*pert)
+            dFi = field.Operand.cast(dFi.sym_diff(ep))
+            dFi = dFi.replace(ep, 0)
+            dF += dFi
+        # Set expressions
+        temp['L'] = self._prep_linear_form(L, perts, name='L')
+        temp['dF'] = self._prep_linear_form(dF, perts, name='dF')
+        temp['F-L'] = temp['RHS'] - temp['LHS']
 
 
 class EigenvalueProblem(ProblemBase):
