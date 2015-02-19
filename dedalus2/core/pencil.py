@@ -8,9 +8,11 @@ from collections import defaultdict
 import numpy as np
 from scipy import sparse
 from mpi4py import MPI
+import uuid
 
 from ..tools.array import zeros_with_pattern
 from ..tools.array import expand_pattern
+from ..tools.progress import log_progress
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -44,6 +46,22 @@ def build_pencils(domain):
         pencils.append(Pencil(domain, index, start+index))
 
     return pencils
+
+
+def build_matrices(pencils, problem, matrices):
+    """Build pencil matrices."""
+    # Build new cachid for NCC expansions
+    cacheid = uuid.uuid4()
+    # Build test operator dicts to synchronously expand all NCCs
+    for eq in problem.eqs+problem.bcs:
+        for matrix in matrices:
+            expr, vars = eq[matrix]
+            if expr != 0:
+                test_index = [0] * problem.domain.dim
+                expr.operator_dict(test_index, vars, cacheid=cacheid, **problem.ncc_kw)
+    # Build matrices
+    for pencil in log_progress(pencils, logger, 'info', desc='Building pencil matrix', iter=np.inf, frac=0.1, dt=10):
+        pencil.build_matrices(problem, matrices)
 
 
 class Pencil:
@@ -117,13 +135,13 @@ class Pencil:
         dtype = self.domain.bases[-1].coeff_dtype
         matrices = {name: np.zeros((nvars, nvars), dtype=dtype) for name in names}
         matrices['select'] = np.zeros((nvars, Neqs))
-        vars = [problem.namespace[var] for var in problem.variables]
         for i, eq in enumerate(selected_eqs):
             j = problem.eqs.index(eq)
             matrices['select'][i,j] = 1
             for name in names:
-                if eq[name] != 0:
-                    op_dict = eq[name].operator_dict(index, vars, **problem.ncc_kw)
+                expr, vars = eq[name]
+                if expr != 0:
+                    op_dict = expr.operator_dict(index, vars, **problem.ncc_kw)
                     matrix = matrices[name]
                     for j in range(nvars):
                         matrix[i,j] = op_dict[vars[j]]
@@ -191,8 +209,6 @@ class Pencil:
         # Use scipy sparse kronecker product with CSR output
         kron = partial(sparse.kron, format='csr')
 
-        vars = [problem.namespace[var] for var in problem.variables]
-
         # Build matrices
         bc_iter = iter(selected_bcs)
         for i, eq in enumerate(selected_eqs):
@@ -229,18 +245,20 @@ class Pencil:
             # Build LHS matrices
             for name in names:
                 C = LHS[name]
-                if eq[name] != 0:
-                    Ei = eq[name].operator_dict(self.global_index, vars, **problem.ncc_kw)
+                eq_expr, eq_vars = eq[name]
+                if eq_expr != 0:
+                    Ei = eq_expr.operator_dict(self.global_index, eq_vars, **problem.ncc_kw)
                 else:
                     Ei = defaultdict(int)
                 if differential:
-                    if bc[name] != 0:
-                        Bi = bc[name].operator_dict(self.global_index, vars, **problem.ncc_kw)
+                    bc_expr, bc_vars = bc[name]
+                    if bc_expr != 0:
+                        Bi = bc_expr.operator_dict(self.global_index, bc_vars, **problem.ncc_kw)
                     else:
                         Bi = defaultdict(int)
                 for j in range(nvars):
                     # Build equation terms
-                    Eij = Ei[vars[j]]
+                    Eij = Ei[eq_vars[j]]
                     if Eij is 0:
                         Eij = None
                     elif Eij is 1:
@@ -249,7 +267,7 @@ class Pencil:
                         Eij = Gi_eq*Eij
                     # Build BC terms
                     if differential:
-                        Bij = Bi[vars[j]]
+                        Bij = Bi[bc_vars[j]]
                         if Bij is 0:
                             Bij = None
                         elif Bij is 1:

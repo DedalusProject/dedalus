@@ -285,8 +285,8 @@ class Array(Data):
         # Save data
         np.copyto(self.data, data)
 
-    @CachedMethod
-    def as_ncc_operator(self, **kw):
+    @CachedMethod(max_size=1)
+    def as_ncc_operator(self, cacheid=None, **kw):
         """Cast to field and convert to NCC operator."""
         from .future import FutureField
         ncc = FutureField.cast(self, self.domain)
@@ -550,8 +550,8 @@ class Field(Data):
             # Cast to FutureField
             return FieldCopy(input, domain)
 
-    @CachedMethod
-    def as_ncc_operator(self, cutoff, max_terms, name=None):
+    @CachedMethod(max_size=1)
+    def as_ncc_operator(self, cutoff, max_terms, name=None, cacheid=None):
         """Convert to operator form representing multiplication as a NCC."""
         if name is None:
             name = str(self)

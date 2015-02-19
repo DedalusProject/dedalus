@@ -11,9 +11,9 @@ from scipy.linalg import eig
 
 #from ..data.operators import parsable_ops
 from . import operators
+from . import pencil
 from .evaluator import Evaluator
 from .system import CoeffSystem, FieldSystem
-from .pencil import build_pencils
 from .field import Scalar, Field
 from ..tools.progress import log_progress
 
@@ -55,9 +55,7 @@ class EigenvalueSolver:
         self.domain = domain = problem.domain
 
         # Build pencils and pencil matrices
-        self.pencils = pencils = build_pencils(domain)
-        # for p in log_progress(pencils, logger, 'info', desc='Building pencil matrix', iter=np.inf, frac=0.1, dt=10):
-        #     p.build_matrices(problem, ['M', 'L'])
+        self.pencils = build_pencils(domain)
 
         # Build systems
         namespace = problem.namespace
@@ -102,29 +100,23 @@ class BoundaryValueSolver:
     state : system object
         System containing solution fields (after solve method is called)
 
-    Notes
-    -----
-    Any problem terms with time derivatives will be dropped.
-
     """
 
     def __init__(self, problem):
 
-        logger.debug('Beginning BVP instantiation')
+        logger.debug('Beginning LBVP instantiation')
 
         self.problem = problem
         self.domain = domain = problem.domain
 
         # Build pencils and pencil matrices
-        self.pencils = pencils = build_pencils(domain)
-        for p in log_progress(pencils, logger, 'info', desc='Building pencil matrix', iter=np.inf, frac=0.1, dt=10):
-            p.build_matrices(problem, ['L'])
+        self.pencils = pencil.build_pencils(domain)
+        pencil.build_matrices(self.pencils, problem, ['L'])
 
         # Build systems
         namespace = problem.namespace
         vars = [namespace[var] for var in problem.variables]
         self.state = FieldSystem.from_fields(vars)
-        #self.state = state = FieldSystem(problem.variables, domain)
 
         # Create F operator trees
         self.evaluator = Evaluator(domain, namespace)
@@ -137,7 +129,7 @@ class BoundaryValueSolver:
         self.Fe = Fe_handler.build_system()
         self.Fb = Fb_handler.build_system()
 
-        logger.debug('Finished BVP instantiation')
+        logger.debug('Finished LBVP instantiation')
 
     def solve(self):
         """Solve BVP."""
@@ -196,9 +188,8 @@ class InitialValueSolver:
         self.start_time = self.get_wall_time()
 
         # Build pencils and pencil matrices
-        self.pencils = pencils = build_pencils(domain)
-        for p in log_progress(pencils, logger, 'info', desc='Building pencil matrix', iter=np.inf, frac=0.1, dt=10):
-            p.build_matrices(problem, ['M', 'L'])
+        self.pencils = pencil.build_pencils(domain)
+        pencil.build_matrices(self.pencils, problem, ['M', 'L'])
 
         # Build systems
         namespace = problem.namespace

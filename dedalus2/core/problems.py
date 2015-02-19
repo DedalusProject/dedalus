@@ -243,30 +243,13 @@ class ProblemBase:
             raise UnsupportedEquationError("{} must be first-order in {}.".format(key, names))
         return order
 
-    def _factor_first_order(self, expr, x):
-        """Factor an expression into independent and linear parts wrt some variable."""
-        expr = expr.expand(x)
-        factors = expr.factor(x)
-        try:
-            x = x._scalar
-        except:
-            pass
-        extra = set(factors).difference(set((1,x)))
-        if extra:
-            raise SymbolicParsingError('Other factors: {}'.format(','.join(map(str, extra))))
-        return factors[1], factors[x]
-
-    def _prepare_linear_form(self, expr, vars, name=''):
+    def _prep_linear_form(self, expr, vars, name=''):
         """Convert an expression into suitable form for LHS operator conversion."""
         expr = Operand.cast(expr)
         expr = expr.expand(*vars)
         expr = expr.canonical_linear_form(*vars)
         logger.debug('  {} linear form: {}'.format(name, str(expr)))
-        # Build operator dict for base index to construct all NCCs simultaneously
-        if expr != 0:
-            test_index = [0] * self.domain.dim
-            expr.operator_dict(test_index, vars, **self.ncc_kw)
-        return expr
+        return (expr, vars)
 
     def build_solver(self, *args, **kw):
         """Build corresponding solver class."""
@@ -292,6 +275,8 @@ class InitialValueProblem(ProblemBase):
     terms must be linear in the specified variables, first-order in coupled
     derivatives, first-order in time derivatives, and contain no explicit
     time dependence.
+
+        M.dt(X) + L.X = F(X, t)
 
     """
 
@@ -328,8 +313,8 @@ class InitialValueProblem(ProblemBase):
         M, L = temp['LHS'].split(self._dt)
         M = M.replace(self._dt, lambda x: x)
         vars = [self.namespace[var] for var in self.variables]
-        temp['M'] = self._prepare_linear_form(M, vars, name='M')
-        temp['L'] = self._prepare_linear_form(L, vars, name='L')
+        temp['M'] = self._prep_linear_form(M, vars, name='M')
+        temp['L'] = self._prep_linear_form(L, vars, name='L')
         temp['F'] = temp['RHS']
 
 
@@ -350,6 +335,8 @@ class BoundaryValueProblem(ProblemBase):
     terms must be linear in the specified variables and first-order in coupled
     derivatives, and the RHS must be independent of the specified variables.
 
+        L.X = F
+
     """
 
     solver_class = solvers.BoundaryValueSolver
@@ -362,7 +349,7 @@ class BoundaryValueProblem(ProblemBase):
     def _set_matrix_expressions(self, temp):
         """Set expressions for building solver."""
         vars = [self.namespace[var] for var in self.variables]
-        temp['L'] = self._prepare_linear_form(temp['LHS'], vars, name='L')
+        temp['L'] = self._prep_linear_form(temp['LHS'], vars, name='L')
         temp['F'] = temp['RHS']
 
 
@@ -384,6 +371,8 @@ class EigenvalueProblem(ProblemBase):
     This class supports linear eigenvalue problems.  The LHS terms must be
     linear in the specified variables, first-order in coupled derivatives,
     and linear or independent of the specified eigenvalue.  The RHS must be zero.
+
+        λM.X + L.X = 0
 
     """
 
@@ -410,12 +399,13 @@ class EigenvalueProblem(ProblemBase):
         M, L = temp['LHS'].split(self._ev)
         M = M.replace(self._ev, 1)
         vars = [self.namespace[var] for var in self.variables]
-        temp['M'] = self._prepare_linear_form(M, vars, name='M')
-        temp['L'] = self._prepare_linear_form(L, vars, name='L')
+        temp['M'] = self._prep_linear_form(M, vars, name='M')
+        temp['L'] = self._prep_linear_form(L, vars, name='L')
 
 
 # Aliases
 IVP = InitialValueProblem
-BVP = BoundaryValueProblem
+LBVP = LinearBoundaryValueProblem
+NLBVP = NonlinearBoundaryValueProblem
 EVP = EigenvalueProblem
 

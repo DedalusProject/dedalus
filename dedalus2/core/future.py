@@ -196,8 +196,8 @@ class Future(Operand):
         # field without modifying the data of the arguments.
         raise NotImplementedError()
 
-    @CachedMethod
-    def as_ncc_operator(self, **kw):
+    @CachedMethod(max_size=1)
+    def as_ncc_operator(self, cacheid=None, **kw):
         ncc = self.evaluate()
         return ncc.as_ncc_operator(name=str(self), **kw)
 
