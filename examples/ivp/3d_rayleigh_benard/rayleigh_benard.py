@@ -16,7 +16,8 @@ To run, merge, and plot using 4 processes, for instance, you could use:
     $ mpiexec -n 4 python3 merge.py snapshots
     $ mpiexec -n 4 python3 plot_2d_series.py plot snapshots/*.h5
 
-The simulation should take roughly 400 process-minutes to run.
+The simulation should take roughly 400 process-minutes to run, but will
+automatically stop after an hour.
 
 """
 
@@ -95,8 +96,8 @@ b['g'] = -F*(z - pert)
 b.differentiate('z', out=bz)
 
 # Integration parameters
-solver.stop_sim_time = np.inf
-solver.stop_wall_time = 10 * 60.
+solver.stop_sim_time = 100
+solver.stop_wall_time = 60 * 60.
 solver.stop_iteration = np.inf
 
 # Analysis
