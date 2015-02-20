@@ -152,8 +152,6 @@ class NonlinearOperator(Operator):
 
 
 class GeneralFunction(NonlinearOperator, FutureField):
-
-class GeneralFunction(Operator):
     """
     Operator wrapping a general python function.
 
