@@ -23,11 +23,14 @@ Add the following to your ``.my.bash_profile``::
   export CC=mpicc
 
   #pathing for Dedalus2
-  export LOCAL_MPI_VERSION=openmpi-1.8.2
+  export LOCAL_MPI_VERSION=openmpi-1.8.4
   export LOCAL_MPI_SHORT=v1.8
-  export LOCAL_PYTHON_VERSION=3.4.1
-  export LOCAL_NUMPY_VERSION=1.9.0
+  export LOCAL_PYTHON_VERSION=3.4.2
+  export LOCAL_NUMPY_VERSION=1.9.1
   export LOCAL_SCIPY_VERSION=0.14.0
+  export LOCAL_HDF5_VERSION=1.8.14
+  export LOCAL_CYTHON_VERSION=0.21.1
+
 
   export MPI_ROOT=$BUILD_HOME/$LOCAL_MPI_VERSION
   export PYTHONPATH=$BUILD_HOME/dedalus2:$PYTHONPATH
@@ -58,9 +61,7 @@ nodes too.   This streamlines the process.::
         --with-slurm \
         --with-threads=posix \
         --enable-mpi-thread-multiple \
-        CC=icc     CFLAGS="-O3 -axAVX -xSSE4.1" \
-        CXX=icpc CPPFLAGS="-O3 -axAVX -xSSE4.1" \
-        F77=ifort F90=ifort  F90FLAGS="-O3 -axAVX -xSSE4.1" 
+        CC=icc CXX=icpc FC=ifort 
 
     make -j
     make install
@@ -78,8 +79,6 @@ Create ``$BUILD_HOME`` and then proceed with downloading and installing Python-3
     wget https://www.python.org/ftp/python/$LOCAL_PYTHON_VERSION/Python-$LOCAL_PYTHON_VERSION.tgz
     tar xzf Python-$LOCAL_PYTHON_VERSION.tgz
     cd Python-$LOCAL_PYTHON_VERSION
-    wget http://dedalus-project.readthedocs.org/en/latest/_downloads/python_intel_patch.tar
-    tar xvf python_intel_patch.tar 
 
     ./configure --prefix=$BUILD_HOME \
                          CC=mpicc         CFLAGS="-mkl -O3 -axAVX -xSSE4.1 -fPIC -ipo" \
@@ -91,9 +90,7 @@ Create ``$BUILD_HOME`` and then proceed with downloading and installing Python-3
     make -j
     make install
 
-The intel patch above fixes a problem with ctypes for intel compilers.
-
-
+The former patch for Intel compilers to handle ctypes is no longer necessary.
 
 Installing pip
 -------------------------
@@ -120,8 +117,9 @@ Installing FFTW3
 We need to build our own FFTW3, under intel 14 and mvapich2/2.0b, or
 under openmpi::
 
+    cd $BUILD_HOME
     wget http://www.fftw.org/fftw-3.3.4.tar.gz
-    tar -xzf fftw-3.3.4.tar.gz
+    tar xvzf fftw-3.3.4.tar.gz
     cd fftw-3.3.4
 
    ./configure --prefix=$BUILD_HOME \
@@ -153,12 +151,10 @@ Installing cython
 
 This should just be pip installed::
 
-     pip3 install cython==0.20.1
+     pip3 install cython==0.20
 
-.. note::
-     We're failing with a unicode error right now when we build the
-     default (0.21).  Arg.  For now we'll revert to 0.20.1, which
-     seems to work fine.
+Only version 0.20 is working reliably on Janus (especially with
+h5py).  Higher versions are hitting the unicode errors.
 
 Numpy and BLAS libraries
 ======================================
@@ -306,9 +302,10 @@ Installing HDF5 with parallel support
 The new analysis package brings HDF5 file writing capbaility.  This
 needs to be compiled with support for parallel (mpi) I/O::
 
-     wget http://www.hdfgroup.org/ftp/HDF5/current/src/hdf5-1.8.13.tar
-     tar xvf hdf5-1.8.13.tar
-     cd hdf5-1.8.13
+     wget http://www.hdfgroup.org/ftp/HDF5/current/src/hdf5-$LOCAL_HDF5_VERSION.tar.gz
+
+     tar xvzf hdf5-$LOCAL_HDF5_VERSION.tar.gz
+     cd hdf5-$LOCAL_HDF5_VERSION
      ./configure --prefix=$BUILD_HOME \
                          CC=mpicc         CFLAGS="-O3 -axAVX -xSSE4.1" \
                          CXX=mpicxx CPPFLAGS="-O3 -axAVX -xSSE4.1" \
@@ -321,7 +318,7 @@ needs to be compiled with support for parallel (mpi) I/O::
 
 
 
-Installing h5py (working)
+Installing h5py (working [with cython==0.20])
 ----------------------------------------------------
 
 Next, install h5py.  For reasons that are currently unclear to me, 
@@ -378,6 +375,7 @@ With the modules set as above, set::
 
 Then change into your root dedalus directory and run::
 
+     pip3 install -r requirements.txt 
      python setup.py build_ext --inplace
 
 

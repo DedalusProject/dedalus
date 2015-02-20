@@ -19,15 +19,18 @@ Then add the following to your ``.profile``::
   export PATH=$BUILD_HOME/bin:$BUILD_HOME:/$PATH  # Add private commands to PATH                                                                                         
 
   export LD_LIBRARY_PATH=$BUILD_HOME/lib:$LD_LIBRARY_PATH
+  export LD_LIBRARY_PATH=/nasa/openssl/1.0.1h/lib/:$LD_LIBRARY_PATH
 
   export CC=mpicc
 
   #pathing for Dedalus2
-  export LOCAL_MPI_VERSION=openmpi-1.8.2
+  export LOCAL_MPI_VERSION=openmpi-1.8.4
   export LOCAL_MPI_SHORT=v1.8
-  export LOCAL_PYTHON_VERSION=3.4.1
-  export LOCAL_NUMPY_VERSION=1.8.2
+  export LOCAL_PYTHON_VERSION=3.4.2
+  export LOCAL_NUMPY_VERSION=1.9.1
   export LOCAL_SCIPY_VERSION=0.14.0
+  #export LOCAL_HDF5_VERSION=1.8.14 # build failure
+  export LOCAL_HDF5_VERSION=1.8.13
 
   export MPI_ROOT=$BUILD_HOME/$LOCAL_MPI_VERSION
   export PYTHONPATH=$BUILD_HOME/dedalus2:$PYTHONPATH
@@ -38,14 +41,12 @@ Then add the following to your ``.profile``::
   # Pleaides workaround for QP errors 8/25/14 from NAS                                                                                             
   export MPI_USE_UD=true
 
-.. note::
-   We are moving here to a python 3.4 build.  Also, it looks like
-   scipy-0.14 and numpy 1.9 are going to have happier sparse matrix performance.
+
 
 Doing the entire build took about 1 hour.  This was with several (4) 
 open ssh connections to Pleaides to do poor-mans-parallel building 
 (of openBLAS, hdf5, fftw, etc.), and one was on a dev node for the
-openmpi and openblas compile.
+openmpi compile.
 
 
 Python stack
@@ -85,25 +86,14 @@ to be built on a compute node so that the right memory space is identified.::
 	--without-loadleveler \
 	--without-portals \
 	--enable-mpirun-prefix-by-default \
-        CC=icc CXX=icc FC=ifort F77=ifort
+        CC=icc CXX=icc FC=ifort
 
-    make
+    make -j
     make install
 
 These compilation options are based on ``/nasa/openmpi/1.6.5/NAS_config.sh``, 
 and are thanks to advice from Daniel Kokron at NAS.  Compiling takes
 about one hour.
-
-.. note::
-   Version 1.8.2 appears to have fixed the mpirun hang problem previously
-   seen in versions >= 1.7.4.
-
-   prior note: we're using openmpi 1.7.3 here because something substantial changes
-   in 1.7.4 and from that point onwards instances of mpirun hang on
-   Pleiades, when used on more than 1 node worth of cores.  I've tested
-   this extensively with a simple hello world program
-   (http://www.dartmouth.edu/~rc/classes/intro_mpi/hello_world_ex.html)
-   and for now suggest we move forward until this is resolved.
 
 
 Building Python3
@@ -115,23 +105,18 @@ Create ``$BUILD_HOME`` and then proceed with downloading and installing Python-3
     wget https://www.python.org/ftp/python/$LOCAL_PYTHON_VERSION/Python-$LOCAL_PYTHON_VERSION.tgz --no-check-certificate
     tar xzf Python-$LOCAL_PYTHON_VERSION.tgz
     cd Python-$LOCAL_PYTHON_VERSION
-    wget http://dedalus-project.readthedocs.org/en/latest/_downloads/python_intel_patch.tar
-    tar xvf python_intel_patch.tar 
 
     ./configure --prefix=$BUILD_HOME \
-                         CC=mpicc         CFLAGS="-mkl -O3 -axAVX -xSSE4.1 -fPIC -ipo" \
-                         CXX=mpicxx CPPFLAGS="-mkl -O3 -axAVX -xSSE4.1 -fPIC -ipo" \
-                         F90=mpif90  F90FLAGS="-mkl -O3 -axAVX -xSSE4.1 -fPIC -ipo" \
+                         CC=mpicc         CFLAGS="-mkl -O3 -axCORE-AVX2 -xSSE4.2 -fPIC -ipo" \
+                         CXX=mpicxx CPPFLAGS="-mkl -O3 -axCORE-AVX2 -xSSE4.2 -fPIC -ipo" \
+                         F90=mpif90  F90FLAGS="-mkl -O3 -axCORE-AVX2 -xSSE4.2 -fPIC -ipo" \
                          --enable-shared LDFLAGS="-lpthread" \
                          --with-cxx-main=mpicxx --with-system-ffi
 
     make
     make install
 
-The intel patch above fixes a problem with ctypes for intel compilers.
-
-.. note::
-     We're getting a problem on ``_curses_panel`` and on ``_sqlite3``; ignoring for now.
+The previous intel patch is no longer required.
 
 
 Installing pip
@@ -157,16 +142,6 @@ This should be pip installed::
 
     pip3 install mpi4py
 
-.. note::
-
-   Test that this works by doing a:
-
-   from mpi4py import MPI
-
-   This will segfault on sgi-mpi, but appears to work fine on
-   openmpi-1.8, 1.7.3, etc.
-
-
 
 Installing FFTW3
 ------------------------------
@@ -179,13 +154,13 @@ under openmpi::
     cd fftw-3.3.4
 
    ./configure --prefix=$BUILD_HOME \
-                         CC=mpicc        CFLAGS="-O3 -axAVX -xSSE4.1" \
-                         CXX=mpicxx CPPFLAGS="-O3 -axAVX -xSSE4.1" \
-                         F77=mpif90  F90FLAGS="-O3 -axAVX -xSSE4.1" \
+                         CC=mpicc        CFLAGS="-O3 -axCORE-AVX2 -xSSE4.2" \
+                         CXX=mpicxx CPPFLAGS="-O3 -axCORE-AVX2 -xSSE4.2" \
+                         F77=mpif90  F90FLAGS="-O3 -axCORE-AVX2 -xSSE4.2" \
                          MPICC=mpicc MPICXX=mpicxx \
                          --enable-shared \
                          --enable-mpi --enable-openmp --enable-threads
-    make
+    make -j
     make install
 
 It's critical that you use ``mpicc`` as the C-compiler, etc.
@@ -230,20 +205,7 @@ Now, acquire ``numpy`` (1.8.2)::
      wget http://sourceforge.net/projects/numpy/files/NumPy/$LOCAL_NUMPY_VERSION/numpy-$LOCAL_NUMPY_VERSION.tar.gz
      tar -xvf numpy-$LOCAL_NUMPY_VERSION.tar.gz
      cd numpy-$LOCAL_NUMPY_VERSION
-     wget http://dedalus-project.readthedocs.org/en/latest/_downloads/numpy_pleiades_intel_patch.tar
-     tar xvf numpy_pleiades_intel_patch.tar
 
-This last step saves you from needing to hand edit two
-files in ``numpy/distutils``; these are ``intelccompiler.py`` and
-``fcompiler/intel.py``.  I've built a crude patch, :download:`numpy_pleiades_intel_patch.tar<numpy_pleiades_intel_patch.tar>` 
-which is auto-deployed within the ``numpy-$LOCAL_NUMPY_VERSION`` directory by
-the instructions above.  This will unpack and overwrite::
-
-      numpy/distutils/intelccompiler.py
-      numpy/distutils/fcompiler/intel.py
-
-This differs from prior versions in that "-xhost" is replaced with
- "-axAVX -xSSE4.1". 
 
 We'll now need to make sure that ``numpy`` is building against the MKL
 libraries.  Start by making a ``site.cfg`` file::
@@ -257,8 +219,8 @@ library directory so that it correctly point to TACC's
 With the modules loaded above, this looks like::
 
      [mkl]
-     library_dirs = /nasa/intel/Compiler/2013.5.192/composer_xe_2013.5.192/mkl/lib/intel64
-     include_dirs = /nasa/intel/Compiler/2013.5.192/composer_xe_2013.5.192/mkl/include
+     library_dirs = /nasa/intel/Compiler/2015.0.090/composer_xe_2015.0.090/mkl/lib/intel64
+     include_dirs = /nasa/intel/Compiler/2015.0.090/composer_xe_2015.0.090/mkl/include
      mkl_libs = mkl_rt
      lapack_libs =
 
@@ -359,19 +321,26 @@ Installing HDF5 with parallel support
 The new analysis package brings HDF5 file writing capbaility.  This
 needs to be compiled with support for parallel (mpi) I/O::
 
-     wget http://www.hdfgroup.org/ftp/HDF5/current/src/hdf5-1.8.13.tar
-     tar xvf hdf5-1.8.13.tar
-     cd hdf5-1.8.13
+
+     wget http://www.hdfgroup.org/ftp/HDF5/releases/hdf5-$LOCAL_HDF5_VERSION/src/hdf5-$LOCAL_HDF5_VERSION.tar.gz
+     tar xzvf hdf5-$LOCAL_HDF5_VERSION.tar.gz
+     cd hdf5-$LOCAL_HDF5_VERSION
      ./configure --prefix=$BUILD_HOME \
-                         CC=mpicc         CFLAGS="-O3 -axAVX -xSSE4.1" \
-                         CXX=mpicxx CPPFLAGS="-O3 -axAVX -xSSE4.1" \
-                         F77=mpif90  F90FLAGS="-O3 -axAVX -xSSE4.1" \
+                         CC=mpicc         CFLAGS="-O3 -axCORE-AVX2 -xSSE4.2" \
+                         CXX=mpicxx CPPFLAGS="-O3 -axCORE-AVX2 -xSSE4.2" \
+                         F77=mpif90  F90FLAGS="-O3 -axCORE-AVX2 -xSSE4.2" \
                          MPICC=mpicc MPICXX=mpicxx \
                          --enable-shared --enable-parallel
      make
      make install
 
 
+H5PY via pip
+-----------------------
+
+This works (Dec 21, 2014)::
+
+     pip3 install h5py==2.4.0b1
 
 Installing h5py (working)
 ----------------------------------------------------
@@ -497,6 +466,7 @@ With the modules set as above, set::
 
 Then change into your root dedalus directory and run::
 
+     pip3 install -r requirements.txt 
      python setup.py build_ext --inplace
 
 

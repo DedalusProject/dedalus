@@ -9,7 +9,7 @@ can be loaded via modules.  First, load the following modules.
   module purge
   module load intel
   module load openmpi
-  module load fftw/3.3.3-intel
+  module load fftw/3.3.4-intel
   module load python/3.2.3
   module load nose
   module load numpy/1.8.1
@@ -18,7 +18,7 @@ can be loaded via modules.  First, load the following modules.
   module load pip
   module load virtualenv/1.7.2 
   module load mercurial/2.0.2 
-  module load hdf5/1.8.12-intel-p
+  module load hdf5/1.8.13-intel-p
 
 We next need to make a virtual environment in which to build the rest of
 the Dedalus depencencies.
@@ -58,7 +58,7 @@ To build Dedalus, you must specify the locations of FFTW and MPI.
 
 ::
 
-  export FFTW_PATH=/global/software/sl-6.x86_64/modules/intel/2013_sp1.2.144/fftw/3.3.3-intel
+  export FFTW_PATH=/global/software/sl-6.x86_64/modules/intel/2013_sp1.4.211/fftw/3.3.4-intel
   export MPI_PATH=/global/software/sl-6.x86_64/modules/intel/2013_sp1.2.144/openmpi/1.6.5-intel
   python3 setup.py build_ext --inplace
 
@@ -71,13 +71,13 @@ To use Dedalus, put the following in your ``~/.bashrc`` file::
   module purge
   module load intel
   module load openmpi
-  module load fftw/3.3.3-intel
+  module load fftw/3.3.4-intel
   module load python/3.2.3
   module load numpy/1.8.1
   module load scipy/0.14.0
   module load mpi4py
   module load mercurial/2.0.2
-  module load hdf5/1.8.12-intel-p
+  module load hdf5/1.8.13-intel-p
   source python_build/bin/activate
   export PYTHONPATH=$PYTHONPATH:~/dedalus2
 
