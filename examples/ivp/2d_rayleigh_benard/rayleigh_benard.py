@@ -1,13 +1,15 @@
 """
 Dedalus script for 2D Rayleigh-Benard convection.
 
+This script uses a Fourier basis in the x direction with periodic boundary
+conditions.  The equations are scaled in units of the buoyancy time (Fr = 1).
+
 This script can be ran serially or in parallel, and uses the built-in analysis
 framework to save data snapshots in HDF5 files.  The `merge.py` script in this
 folder can be used to merge distributed analysis sets from parallel runs,
 and the `plot_2d_series.py` script can be used to plot the snapshots.
 
 To run, merge, and plot using 4 processes, for instance, you could use:
-
     $ mpiexec -n 4 python3 rayleigh_benard.py
     $ mpiexec -n 4 python3 merge.py snapshots
     $ mpiexec -n 4 python3 plot_2d_series.py snapshots/*.h5
@@ -16,7 +18,6 @@ The simulation should take roughly 15 process-minutes to run.
 
 """
 
-import os
 import numpy as np
 from mpi4py import MPI
 import time

@@ -5,6 +5,9 @@ cimport numpy as cnp
 import numpy as np
 import math
 
+import logging
+logger = logging.getLogger(__name__.split('.')[-1])
+
 from mpi4py import MPI
 from mpi4py.MPI cimport Comm as py_comm_t
 from mpi4py.mpi_c cimport MPI_Comm as mpi_comm_t
@@ -55,6 +58,7 @@ cdef class FFTWTranspose:
     cdef cfftw.fftw_plan RL_to_CL_plan
 
     def __init__(self, global_shape, dtype, axis, pycomm):
+        logger.debug("Building FFTW transpose plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, global_shape, axis))
         # Attributes
         self.global_shape = global_shape = global_shape.astype(np.int32)
         self.datasize = {np.float64: 1, np.complex128: 2}[np.dtype(dtype).type]
@@ -248,6 +252,7 @@ cdef class AlltoallvTranspose:
     cdef readonly double[::1] RL_buffer
 
     def __init__(self, global_shape, dtype, axis, pycomm):
+        logger.debug("Building MPI transpose plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, global_shape, axis))
         # Attributes
         self.global_shape = global_shape = global_shape.astype(np.int32)
         self.datasize = {np.float64: 1, np.complex128: 2}[np.dtype(dtype).type]

@@ -10,7 +10,7 @@ import numpy as np
 from ..libraries.fftw import fftw_wrappers as fftw
 from ..tools.cache import CachedMethod
 from ..tools.config import config
-from ..tools.general import rev_enumerate
+from ..tools.general import rev_enumerate, unify
 
 logger = logging.getLogger(__name__.split('.')[-1])
 GROUP_TRANSFORMS = config['transforms'].getboolean('GROUP_TRANSFORMS')

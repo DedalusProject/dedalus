@@ -535,6 +535,9 @@ def get_plane(dset, xaxis, yaxis, slices, **kw):
 
     """
 
+    # Make sure slices are in tuple
+    slices = tuple(slices)
+
     # Build quad meshes from sorted grids
     xgrid = dset.dims[xaxis][0][slices[xaxis]]
     ygrid = dset.dims[yaxis][0][slices[yaxis]]
