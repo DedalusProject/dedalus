@@ -15,7 +15,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-from dedalus2.extras import plot_tools
+from dedalus.extras import plot_tools
 
 
 def main(filename, start, count, output):
@@ -62,9 +62,9 @@ if __name__ == "__main__":
 
     import pathlib
     from docopt import docopt
-    from dedalus2.tools import logging
-    from dedalus2.tools import post
-    from dedalus2.tools.parallel import Sync
+    from dedalus.tools import logging
+    from dedalus.tools import post
+    from dedalus.tools.parallel import Sync
 
     args = docopt(__doc__)
 

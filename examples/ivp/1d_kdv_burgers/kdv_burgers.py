@@ -9,8 +9,8 @@ plot of the computed solution.
 import numpy as np
 import matplotlib.pyplot as plt
 
-from dedalus2 import public as de
-from dedalus2.extras.plot_tools import quad_mesh, pad_limits
+from dedalus import public as de
+from dedalus.extras.plot_tools import quad_mesh, pad_limits
 
 import logging
 logger = logging.getLogger(__name__)

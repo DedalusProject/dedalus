@@ -93,7 +93,7 @@ if hgapi:
             def run(self):
                 # honor the --dry-run flag
                 if not self.dry_run:
-                    target_dir = os.path.join(self.build_lib,'dedalus2')
+                    target_dir = os.path.join(self.build_lib,'dedalus')
                     src_dir =  os.getcwd()
                     id, diff = hg_info(src_dir)
                     self.mkpath(target_dir)
@@ -106,7 +106,7 @@ if hgapi:
 else:
     custom_build_ext = build_ext
 
-include_dirs = ['dedalus2/libraries/fftw/',
+include_dirs = ['dedalus/libraries/fftw/',
                 np.get_include(),
                 mpi4py.get_include(),
                 get_include('fftw'),
@@ -120,15 +120,15 @@ library_dirs = [get_lib('fftw')]
 
 extensions = [
     Extension(
-        name='dedalus2.libraries.fftw.fftw_wrappers',
-        sources=['dedalus2/libraries/fftw/fftw_wrappers.pyx'],
+        name='dedalus.libraries.fftw.fftw_wrappers',
+        sources=['dedalus/libraries/fftw/fftw_wrappers.pyx'],
         include_dirs=include_dirs,
         libraries=libraries,
         library_dirs=library_dirs,
         extra_compile_args=["-Wno-error=declaration-after-statement"]),
     Extension(
-        name='dedalus2.core.transposes',
-        sources=['dedalus2/core/transposes.pyx'],
+        name='dedalus.core.transposes',
+        sources=['dedalus/core/transposes.pyx'],
         include_dirs=include_dirs,
         libraries=libraries,
         library_dirs=library_dirs,
@@ -140,9 +140,9 @@ setup(
     author='Keaton J. Burns',
     author_email='keaton.burns@gmail.com',
     license='GPL3',
-    packages = ['dedalus2',
-                'dedalus2.core',
-                'dedalus2.libraries',
-                'dedalus2.libraries.fftw'],
+    packages = ['dedalus',
+                'dedalus.core',
+                'dedalus.libraries',
+                'dedalus.libraries.fftw'],
     cmdclass = {'build_ext': custom_build_ext},
     ext_modules = cythonize(extensions))

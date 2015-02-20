@@ -12,8 +12,8 @@ On a single process, this should take just a few seconds to run.
 import os
 import numpy as np
 
-from dedalus2 import public as de
-from dedalus2.extras import plot_tools
+from dedalus import public as de
+from dedalus.extras import plot_tools
 
 
 # Create bases and domain

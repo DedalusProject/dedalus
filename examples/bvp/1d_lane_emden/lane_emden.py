@@ -33,7 +33,7 @@ References:
 import numpy as np
 import matplotlib.pyplot as plt
 
-from dedalus2 import public as de
+from dedalus import public as de
 
 import logging
 logger = logging.getLogger(__name__)
