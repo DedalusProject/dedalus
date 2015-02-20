@@ -33,7 +33,7 @@ References:
 import numpy as np
 import matplotlib.pyplot as plt
 
-from dedalus2_burns import dev
+from dedalus2 import public as de
 
 import logging
 logger = logging.getLogger(__name__)
@@ -43,11 +43,11 @@ logger = logging.getLogger(__name__)
 n = 3.25
 
 # Build domain
-x_basis = dev.basis.Chebyshev('x', 128, interval=(0, 1), dealias=2)
-domain = dev.domain.Domain([x_basis], np.float64)
+x_basis = de.Chebyshev('x', 128, interval=(0, 1), dealias=2)
+domain = de.Domain([x_basis], np.float64)
 
 # Setup problem
-problem = dev.problems.NLBVP(domain, variables=['f', 'fx', 'R'])
+problem = de.NLBVP(domain, variables=['f', 'fx', 'R'])
 problem.parameters['n'] = n
 problem.add_equation("x*dx(fx) + 2*fx = -x*(R**2)*(f**n)")
 problem.add_equation("fx - dx(f) = 0")

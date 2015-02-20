@@ -1,5 +1,5 @@
 """
-Simulation script for 2D Rayleigh-Benard convection.
+Dedalus script for 2D Rayleigh-Benard convection.
 
 This script can be ran serially or in parallel, and uses the built-in analysis
 framework to save data snapshots in HDF5 files.  The `merge.py` script in this
