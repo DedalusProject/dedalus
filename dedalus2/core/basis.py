@@ -221,6 +221,7 @@ class ImplicitBasis(Basis):
                 max_term = p
         return n_terms, max_term, matrix
 
+
 class Chebyshev(ImplicitBasis):
     """Chebyshev polynomial basis on the roots grid."""
 
@@ -1080,7 +1081,6 @@ class SinCos(TransverseBasis):
                     raise UndefinedParityError()
 
         return IntegrateSinCos
-
 
     @CachedAttribute
     def Interpolate(self):
