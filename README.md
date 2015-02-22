@@ -1,8 +1,18 @@
 # README #
 
-Dedalus is a pseudospectral framework for solving partial differential equations (PDEs). 
+Dedalus is a flexible framework for solving partial differential equations
+using spectral methods.  It's open-source, written primarily in Python, and
+MPI-parallelized.
 
-See our website, http://dedalus-project.org/, for more info.
+### Links ###
+
+Learn more about Dedalus by visiting the
+
+* Project homepage: <http://dedalus-project.org>
+* Code repository: <http://bitbucket.org/dedalus-project/dedalus2>
+* Documentation: <http://dedalus-project.readthedocs.org>
+* User list: <https://groups.google.com/forum/#!forum/dedalus-users>
+* Dev list: <https://groups.google.com/forum/#!forum/dedalus-dev>
 
 ### Contact info ###
 
