@@ -311,6 +311,7 @@ class InitialValueProblem(ProblemBase):
     def _set_matrix_expressions(self, temp):
         """Set expressions for building solver."""
         M, L = temp['LHS'].split(self._dt)
+        M = Operand.cast(M)
         M = M.replace(self._dt, lambda x: x)
         vars = [self.namespace[var] for var in self.variables]
         temp['M'] = self._prep_linear_form(M, vars, name='M')
@@ -465,6 +466,7 @@ class EigenvalueProblem(ProblemBase):
     def _set_matrix_expressions(self, temp):
         """Set expressions for building solver."""
         M, L = temp['LHS'].split(self._ev)
+        M = Operand.cast(M)
         M = M.replace(self._ev, 1)
         vars = [self.namespace[var] for var in self.variables]
         temp['M'] = self._prep_linear_form(M, vars, name='M')

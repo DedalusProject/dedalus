@@ -102,11 +102,11 @@ solver.stop_iteration = np.inf
 
 # Analysis
 snap = solver.evaluator.add_file_handler('snapshots', sim_dt=0.2, max_writes=10)
-snap.add_task("interp(p, 'z', 0)", scales=1, name='p midplane')
-snap.add_task("interp(b, 'z', 0)", scales=1, name='b midplane')
-snap.add_task("interp(u, 'z', 0)", scales=1, name='u midplane')
-snap.add_task("interp(v, 'z', 0)", scales=1, name='v midplane')
-snap.add_task("interp(w, 'z', 0)", scales=1, name='w midplane')
+snap.add_task("interp(p, z=0)", scales=1, name='p midplane')
+snap.add_task("interp(b, z=0)", scales=1, name='b midplane')
+snap.add_task("interp(u, z=0)", scales=1, name='u midplane')
+snap.add_task("interp(v, z=0)", scales=1, name='v midplane')
+snap.add_task("interp(w, z=0)", scales=1, name='w midplane')
 snap.add_task("integ(b, 'z')", name='b integral x4', scales=4)
 
 # CFL
@@ -137,5 +137,6 @@ finally:
     end_run_time = time.time()
     logger.info('Iterations: %i' %solver.iteration)
     logger.info('Sim end time: %f' %solver.sim_time)
-    logger.info('Run time: %f' %(end_run_time-start_run_time))
+    logger.info('Run time: %.2f sec' %(end_run_time-start_run_time))
+    logger.info('Run time: %f cpu-hr' %((end_run_time-start_run_time)/60/60*domain.dist.comm_world.size))
 

@@ -18,9 +18,17 @@ from ..tools.exceptions import UndefinedParityError
 
 # Use simple decorator to track parseable operators
 parseables = {}
-def parseable(cls):
-    parseables[cls.name] = cls
-    return cls
+
+def parseable(op):
+    parseables[op.name] = op
+    return op
+
+def addname(name):
+    def decorator(func):
+        func.name = name
+        return func
+    return decorator
+
 
 # Other helpers
 def is_integer(x):
@@ -1179,42 +1187,21 @@ class Coupled(LinearOperator, FutureField):
 
 
 @parseable
-class Integrate(LinearOperator, metaclass=MultiClass):
+class Integrate(LinearOperator):
 
     name = 'integ'
 
-    @classmethod
-    def _preprocess_args(cls, arg0, *bases, **kw):
+    def __new__(cls, arg0, out=None):
         # Cast to operand
         arg0 = Operand.cast(arg0)
-        # No bases: integrate over whole domain
-        if len(bases) == 0:
-            bases = arg0.domain.bases
-        # Multiple bases: apply recursively
-        if len(bases) > 1:
-            arg0 = Integrate(arg0, *bases[:-1])
-        # Call with single basis
-        basis = arg0.domain.get_basis_object(bases[-1])
-        return (arg0, basis), kw
-
-    @classmethod
-    def _check_args(cls, arg0, basis, **kw):
-        return (basis == cls.basis)
-
-    @classmethod
-    def _postprocess_args(cls, arg0, basis, **kw):
-        # Drop basis
-        return (arg0,), kw
-
-    def __new__(cls, arg0, **kw):
-        # Cast to operand
-        arg0 = Operand.cast(arg0)
-        # Instantiate if operand depends on basis
-        if cls.basis in arg0.domain.bases:
-            return object.__new__(cls)
-        # Otherwise route through dispatch
+        # Check if operand depends on basis
+        if (cls.basis not in arg0.domain.bases) or (arg0.meta[cls.basis.name]['constant']):
+            length = cls.basis.interval[1] - cls.basis.interval[0]
+            integral = arg0*length
+            integral.out = out
+            return integral
         else:
-            return Differentiate(arg0, cls, **kw)
+            return object.__new__(cls)
 
     def __init__(self, arg0, **kw):
         # Cast argument to field
@@ -1240,35 +1227,36 @@ class Integrate(LinearOperator, metaclass=MultiClass):
 
 
 @parseable
-class Interpolate(LinearOperator, metaclass=MultiClass):
+@addname('integ')
+def integrate(arg0, *bases, out=None):
+    # Cast to operand
+    arg0 = Operand.cast(arg0)
+    # No bases: integrate over whole domain
+    if len(bases) == 0:
+        bases = arg0.domain.bases
+    # Multiple bases: apply recursively
+    if len(bases) > 1:
+        arg0 = integrate(arg0, *bases[:-1])
+    # Call with single basis
+    basis = arg0.domain.get_basis_object(bases[-1])
+    return basis.Integrate(arg0, out=out)
+
+
+@parseable
+class Interpolate(LinearOperator):
 
     name = 'interp'
 
-    @classmethod
-    def _preprocess_args(cls, arg0, basis, position, **kw):
+    def __new__(cls, arg0, position, out=None):
         # Cast to operand
         arg0 = Operand.cast(arg0)
-        basis = arg0.domain.get_basis_object(basis)
-        return (arg0, basis, position), kw
-
-    @classmethod
-    def _check_args(cls, arg0, basis, position, out=None):
-        return (basis == cls.basis)
-
-    @classmethod
-    def _postprocess_args(cls, arg0, basis, position, **kw):
-        # Drop basis
-        return (arg0, position), kw
-
-    def __new__(cls, arg0, position, **kw):
-        # Cast to operand
-        arg0 = Operand.cast(arg0)
-        # Instantiate if operand depends on basis
-        if cls.basis in arg0.domain.bases:
-            return object.__new__(cls)
-        # Otherwise route through dispatch
+        # Check if operand depends on basis
+        if (cls.basis not in arg0.domain.bases):
+            return arg0
+        elif (arg0.meta[cls.basis.name]['constant']):
+            return arg0
         else:
-            return Interpolate(arg0, cls.basis, position, **kw)
+            return object.__new__(cls)
 
     def __init__(self, arg0, position, out=None):
         # Cast argument to field
@@ -1309,82 +1297,57 @@ class Interpolate(LinearOperator, metaclass=MultiClass):
             return self.args[0].meta[axis]['parity']
 
 
-class InterpolateScalar(Interpolate, FutureScalar):
-
-    basis = None
-
-    @property
-    def base(self):
-        return Interpolate
-
-    @classmethod
-    def _check_args(cls, arg0, basis, position, **kw):
-        return (basis is None)
-
-    def __new__(cls, arg0, position, **kw):
+@parseable
+@addname('interp')
+def interpolate(arg0, out=None, **basis_kw):
+    # Cast to operand
+    arg0 = Operand.cast(arg0)
+    if isinstance(arg0, (Scalar, FutureScalar)):
         return arg0
+    # Require at least one basis
+    if len(basis_kw) == 0:
+        raise ValueError("No basis specified.")
+    # Unpack bases
+    bases = list(basis_kw.items())
+    # Multiple bases: apply recursively
+    if len(bases) > 1:
+        arg0 = interpolate(arg0, **dict(bases[:-1]))
+    # Call with single basis
+    basis, position = bases[-1]
+    basis = arg0.domain.get_basis_object(basis)
+    return basis.Interpolate(arg0, position, out=out)
 
 
 @parseable
-class Left:
-
-    name = 'left'
-
-    def __new__(cls, arg0, out=None):
-        basis = arg0.domain.bases[-1]
-        return Interpolate(arg0, basis, 'left', out=out)
+@addname('left')
+def left(arg0, out=None):
+    """Shortcut for left interpolation along last axis."""
+    basis = arg0.domain.bases[-1]
+    return basis.Interpolate(arg0, 'left', out=out)
 
 
 @parseable
-class Right:
-
-    name = 'right'
-
-    def __new__(cls, arg0, out=None):
-        basis = arg0.domain.bases[-1]
-        return Interpolate(arg0, basis, 'right', out=out)
+@addname('right')
+def right(arg0, out=None):
+    """Shortcut for right interpolation along last axis."""
+    basis = arg0.domain.bases[-1]
+    return basis.Interpolate(arg0, 'right', out=out)
 
 
-@parseable
-class Differentiate(LinearOperator, metaclass=MultiClass):
+class Differentiate(LinearOperator):
 
     name = 'd'
-
-    @classmethod
-    def _preprocess_args(cls, arg0, *bases, out=None, **basis_kw):
-        # Cast to operand
-        arg0 = Operand.cast(arg0)
-        # Parse keyword bases
-        for basis, order in basis_kw.items():
-            bases += (basis,) * order
-        # Require at least one basis
-        if len(bases) == 0:
-            raise ValueError("No basis specified.")
-        # Multiple bases: apply recursively
-        if len(bases) > 1:
-            arg0 = Differentiate(arg0, *bases[:-1])
-        # Call with single basis
-        basis = arg0.domain.get_basis_object(bases[-1])
-        return (arg0, basis), {'out': out}
-
-    @classmethod
-    def _check_args(cls, arg0, basis, **kw):
-        return (basis == cls.basis)
-
-    @classmethod
-    def _postprocess_args(cls, arg0, basis, **kw):
-        # Drop basis
-        return (arg0,), kw
 
     def __new__(cls, arg0, **kw):
         # Cast to operand
         arg0 = Operand.cast(arg0)
-        # Instantiate if operand depends on basis
-        if cls.basis in arg0.domain.bases:
-            return object.__new__(cls)
-        # Otherwise route through dispatch
+        # Check if operand depends on basis
+        if cls.basis not in arg0.domain.bases:
+            return 0
+        elif arg0.meta[cls.basis.name]['constant']:
+            return 0
         else:
-            return Differentiate(arg0, cls.basis, **kw)
+            return object.__new__(cls)
 
     def __init__(self, arg0, **kw):
         # Cast argument to field
@@ -1421,58 +1384,42 @@ class Differentiate(LinearOperator, metaclass=MultiClass):
         return self
 
 
-class DifferentiateIndependent(Differentiate, FutureScalar):
-
-    basis = None
-
-    @classmethod
-    def _check_args(cls, arg0, basis, **kw):
-        return (basis is None)
-
-    def __new__(cls, arg0, **kw):
-        return Scalar(value=0)
+@parseable
+@addname('d')
+def differentiate(arg0, *bases, out=None, **basis_kw):
+    # Cast to operand
+    arg0 = Operand.cast(arg0)
+    if isinstance(arg0, (Scalar, FutureScalar)):
+        return 0
+    # Parse keyword bases
+    for basis, order in basis_kw.items():
+        bases += (basis,) * order
+    # Require at least one basis
+    if len(bases) == 0:
+        raise ValueError("No basis specified.")
+    # Multiple bases: apply recursively
+    if len(bases) > 1:
+        arg0 = differentiate(arg0, *bases[:-1])
+    # Call with single basis
+    basis = arg0.domain.get_basis_object(bases[-1])
+    return basis.Differentiate(arg0, out=out)
 
 
 @parseable
-class HilbertTransform(LinearOperator, metaclass=MultiClass):
+class HilbertTransform(LinearOperator):
 
     name = 'Hilbert'
-
-    @classmethod
-    def _preprocess_args(cls, arg0, *bases, out=None, **basis_kw):
-        # Cast to operand
-        arg0 = Operand.cast(arg0)
-        # Parse keyword bases
-        for basis, order in basis_kw.items():
-            bases += (basis,) * order
-        # Require at least one basis
-        if len(bases) == 0:
-            raise ValueError("No basis specified.")
-        # Multiple bases: apply recursively
-        if len(bases) > 1:
-            arg0 = HilbertTransform(arg0, *bases[:-1])
-        # Call with single basis
-        basis = arg0.domain.get_basis_object(bases[-1])
-        return (arg0, basis), {'out': out}
-
-    @classmethod
-    def _check_args(cls, arg0, basis, **kw):
-        return (basis == cls.basis)
-
-    @classmethod
-    def _postprocess_args(cls, arg0, basis, **kw):
-        # Drop basis
-        return (arg0,), kw
 
     def __new__(cls, arg0, **kw):
         # Cast to operand
         arg0 = Operand.cast(arg0)
-        # Instantiate if operand depends on basis
-        if cls.basis in arg0.domain.bases:
-            return object.__new__(cls)
-        # Otherwise route through dispatch
+        # Check if operand depends on basis
+        if cls.basis not in arg0.domain.bases:
+            return 0
+        elif arg0.meta[cls.basis.name]['constant']:
+            return 0
         else:
-            return HilbertTransform(arg0, cls, **kw)
+            return object.__new__(cls)
 
     def __init__(self, arg0, **kw):
         # Cast argument to field
@@ -1494,14 +1441,23 @@ class HilbertTransform(LinearOperator, metaclass=MultiClass):
             return parity0
 
 
-class HilbertTransformIndependent(HilbertTransform, FutureScalar):
-
-    basis = None
-
-    @classmethod
-    def _check_args(cls, arg0, basis, **kw):
-        return (basis is None)
-
-    def __new__(cls, arg0, **kw):
-        return Scalar(value=0)
+@parseable
+@addname('H')
+def hilberttransform(arg0, *bases, out=None, **basis_kw):
+    # Cast to operand
+    arg0 = Operand.cast(arg0)
+    if isinstance(arg0, (Scalar, FutureScalar)):
+        return 0
+    # Parse keyword bases
+    for basis, order in basis_kw.items():
+        bases += (basis,) * order
+    # Require at least one basis
+    if len(bases) == 0:
+        raise ValueError("No basis specified.")
+    # Multiple bases: apply recursively
+    if len(bases) > 1:
+        arg0 = hilberttransform(arg0, *bases[:-1])
+    # Call with single basis
+    basis = arg0.domain.get_basis_object(bases[-1])
+    return basis.HilbertTransform(arg0, out=out)
 
