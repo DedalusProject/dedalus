@@ -570,5 +570,5 @@ class Field(Data):
         domain.dist.comm_cart.Bcast(coeffs, root=0)
         # Build matrix
         n_terms, max_term, matrix = basis.NCC(coeffs, cutoff, max_terms)
-        logger.info("Expanded NCC '{}' to mode {} with {} terms.".format(name, max_term, n_terms))
+        logger.debug("Expanded NCC '{}' to mode {} with {} terms.".format(name, max_term, n_terms))
         return matrix
