@@ -10,7 +10,7 @@ f(+1) = D
 import numpy as np
 from scipy import special
 
-from ...public import *
+from ... import public as de
 
 
 default_params = {}
@@ -23,8 +23,8 @@ default_params['N'] = 128
 
 def dedalus_domain(N):
     """Construct Dedalus domain for solving the Airy equation."""
-    x_basis = Chebyshev('x', N, interval=(-1., 1.))
-    domain = Domain([x_basis], grid_dtype=np.float64)
+    x_basis = de.Chebyshev('x', N, interval=(-1., 1.))
+    domain = de.Domain([x_basis], grid_dtype=np.float64)
     return domain
 
 
@@ -33,7 +33,7 @@ def dedalus_solution(A, B, C, D, N):
     # Domain
     domain = dedalus_domain(N)
     # Problem
-    problem = BVP(domain, variables=['f', 'fx'])
+    problem = de.LBVP(domain, variables=['f', 'fx'])
     problem.parameters['A'] = A
     problem.parameters['B'] = B
     problem.parameters['C'] = C
@@ -65,4 +65,11 @@ def exact_solution(A, B, C, D, N):
     c1, c2 = np.linalg.solve(L, R)
     y_exact = c1*Ai + c2*Bi
     return y_exact
+
+
+def test_airy(params=default_params):
+    """Compare Dedalus and exact results."""
+    dedalus = dedalus_solution(**params)
+    exact = exact_solution(**params)
+    assert np.allclose(dedalus, exact)
 
