@@ -34,11 +34,11 @@ logger = logging.getLogger(__name__)
 
 # Parameters
 Lx, Ly, Lz = (25., 25., 1.)
-ε = 0.8
+epsilon = 0.8
 Pr = 1.0
 
 Ra_crit = 1707.762  # No-slip top & bottom
-Ra = Ra_crit * (1 + ε)
+Ra = Ra_crit * (1 + epsilon)
 
 # Create bases and domain
 start_init_time = time.time()
@@ -87,11 +87,15 @@ z = domain.grid(2)
 b = solver.state['b']
 bz = solver.state['bz']
 
+# Random perturbations, initialized globally for same results in parallel
+gshape = domain.dist.grid_layout.global_shape(scales=1)
+slices = domain.dist.grid_layout.slices(scales=1)
+rand = np.random.RandomState(seed=23)
+noise = rand.standard_normal(gshape)[slices]
+
 # Linear background + perturbations damped at walls
 zb, zt = z_basis.interval
-shape = domain.local_grid_shape(scales=1)
-rand = np.random.RandomState()
-pert =  1e-3 * rand.standard_normal(shape) * (zt - z) * (z - zb)
+pert =  1e-3 * noise * (zt - z) * (z - zb)
 b['g'] = -F*(z - pert)
 b.differentiate('z', out=bz)
 

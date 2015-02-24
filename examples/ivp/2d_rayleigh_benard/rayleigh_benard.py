@@ -69,10 +69,15 @@ z = domain.grid(1)
 b = solver.state['b']
 bz = solver.state['bz']
 
+# Random perturbations, initialized globally for same results in parallel
+gshape = domain.dist.grid_layout.global_shape(scales=1)
+slices = domain.dist.grid_layout.slices(scales=1)
+rand = np.random.RandomState(seed=42)
+noise = rand.standard_normal(gshape)[slices]
+
 # Linear background + perturbations damped at walls
 zb, zt = z_basis.interval
-shape = domain.local_grid_shape(scales=1)
-pert =  1e-3 * np.random.standard_normal(shape) * (zt - z) * (z - zb)
+pert =  1e-3 * noise * (zt - z) * (z - zb)
 b['g'] = -F*(z - pert)
 b.differentiate('z', out=bz)
 
