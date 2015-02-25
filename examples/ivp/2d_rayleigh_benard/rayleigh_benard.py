@@ -60,7 +60,7 @@ problem.add_bc("right(w) = 0", condition="(nx != 0)")
 problem.add_bc("integ(p, 'z') = 0", condition="(nx == 0)")
 
 # Build solver
-solver = problem.build_solver(de.timesteppers.SBDF3)
+solver = problem.build_solver(de.timesteppers.SBDF2)
 logger.info('Solver built')
 
 # Initial conditions
