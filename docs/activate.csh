@@ -19,7 +19,7 @@ if ($?PYTHONPATH == 0) then
     setenv PYTHONPATH
 endif
 set _OLD_VIRTUAL_PYTHONPATH="$PYTHONPATH"
-setenv PYTHONPATH "${VIRTUAL_ENV}/lib/python3.4/site-packages:${VIRTUAL_ENV}/src/dedalus2:${PYTHONPATH}"
+setenv PYTHONPATH "${VIRTUAL_ENV}/lib/python3.4/site-packages:${VIRTUAL_ENV}/src/dedalus:${PYTHONPATH}"
 
 if ($?LD_LIBRARY_PATH == 0) then
     setenv LD_LIBRARY_PATH
