@@ -467,10 +467,9 @@ class Field(Data):
 
     def integrate(self, *bases, out=None):
         """Integrate field over bases."""
-
-        # Use integration operator
-        from .operators import Integrate
-        return Integrate(self, *bases, out=out).evaluate()
+        # Use integration factory
+        from .operators import integrate
+        return integrate(self, *bases, out=out).evaluate()
 
     def antidifferentiate(self, basis, bc, out=None):
         """
