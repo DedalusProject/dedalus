@@ -643,9 +643,6 @@ else
     echo "pip installing matplotlib."
     ( ${DEST_DIR}/bin/pip3 install matplotlib==1.3.1 2>&1 ) 1>> ${LOG_FILE} || do_exit
 fi
-# sympy
-echo "pip installing sympy."
-( ${DEST_DIR}/bin/pip3 install sympy 2>&1 ) 1>> ${LOG_FILE} || do_exit
 
 # ipython
 if [ $INST_IPYTHON -eq 1 ]
@@ -667,10 +664,10 @@ fi
 
 if [ -z "$DEDALUS_DIR" ]
 then
-    DEDALUS_DIR="$PWD/dedalus2/"
-    if [ ! -e dedalus2 ]
+    DEDALUS_DIR="$PWD/dedalus/"
+    if [ ! -e dedalus ]
     then
-        ( ${HG_EXEC} --debug clone https://bitbucket.org/dedalus-project/dedalus2/ dedalus2 2>&1 ) 1>> ${LOG_FILE}
+        ( ${HG_EXEC} --debug clone https://bitbucket.org/dedalus-project/dedalus/ dedalus 2>&1 ) 1>> ${LOG_FILE}
 
         # Now we update to the branch we're interested in.
         ( ${HG_EXEC} -R ${DEDALUS_DIR} up -C ${BRANCH} 2>&1 ) 1>> ${LOG_FILE}
