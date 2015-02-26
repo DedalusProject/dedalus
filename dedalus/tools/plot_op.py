@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from collections import defaultdict
 
-from ..core.operators import Operator
+from ..core.future import Future
 
 
 class Node:
@@ -53,7 +53,7 @@ class Tree:
     def build(self, arg, level):
 
         # Recursively construct nodes and add branches
-        if isinstance(arg, Operator):
+        if isinstance(arg, Future):
             node = Node(arg.name, level)
             for a in arg.args:
                 self.branches[node].append(self.build(a, level+1))
