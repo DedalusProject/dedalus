@@ -294,6 +294,7 @@ class UnaryGridFunction(NonlinearOperator, Future, metaclass=MultiClass):
         diff0 = arg0.sym_diff(var)
         return diffmap[self.func](arg0) * diff0
 
+
 class UnaryGridFunctionScalar(UnaryGridFunction, FutureScalar):
 
     argtypes = {1: (Scalar, FutureScalar)}
@@ -302,7 +303,7 @@ class UnaryGridFunctionScalar(UnaryGridFunction, FutureScalar):
         return True
 
     def operate(self, out):
-        return self.func(self.args[0].value, out=out.data)
+        out.value = self.func(self.args[0].value)
 
 
 class UnaryGridFunctionArray(UnaryGridFunction, FutureArray):
@@ -313,7 +314,7 @@ class UnaryGridFunctionArray(UnaryGridFunction, FutureArray):
         return True
 
     def operate(self, out):
-        return self.func(self.args[0].data, out=out.data)
+        self.func(self.args[0].data, out=out.data)
 
 
 class UnaryGridFunctionField(UnaryGridFunction, FutureField):
