@@ -67,13 +67,13 @@ class Evaluator:
             self.groups[handler.group].append(handler)
         return handler
 
-    def evaluate_group(self, group, wall_time, sim_time, iteration):
+    def evaluate_group(self, group, wall_time, sim_time, timestep, iteration):
         """Evaluate all handlers in a group."""
 
         handlers = self.groups[group]
-        self.evaluate_handlers(handlers, wall_time, sim_time, iteration)
+        self.evaluate_handlers(handlers, wall_time, sim_time, timestep, iteration)
 
-    def evaluate_scheduled(self, wall_time, sim_time, iteration):
+    def evaluate_scheduled(self, wall_time, sim_time, timestep, iteration):
         """Evaluate all scheduled handlers."""
 
         scheduled_handlers = []
@@ -94,9 +94,9 @@ class Evaluator:
                 handler.last_sim_div  = sim_div
                 handler.last_iter_div = iter_div
 
-        self.evaluate_handlers(scheduled_handlers, wall_time, sim_time, iteration)
+        self.evaluate_handlers(scheduled_handlers, wall_time, sim_time, timestep, iteration)
 
-    def evaluate_handlers(self, handlers, wall_time, sim_time, iteration):
+    def evaluate_handlers(self, handlers, wall_time, sim_time, timestep, iteration):
         """Evaluate a collection of handlers."""
 
         tasks = [t for h in handlers for t in h.tasks]
@@ -136,7 +136,7 @@ class Evaluator:
 
         # Process
         for handler in handlers:
-            handler.process(wall_time, sim_time, iteration)
+            handler.process(wall_time, sim_time, timestep, iteration)
 
     @staticmethod
     def get_fields(tasks):
@@ -250,7 +250,7 @@ class DictionaryHandler(Handler):
     def __getitem__(self, item):
         return self.fields[item]
 
-    def process(self, wall_time, sim_time, iteration):
+    def process(self, wall_time, sim_time, timestep, iteration):
         """Reference fields from dictionary."""
 
         for task in self.tasks:
@@ -274,7 +274,7 @@ class SystemHandler(Handler):
 
         return self.system
 
-    def process(self, wall_time, sim_time, iteration):
+    def process(self, wall_time, sim_time, timestep, iteration):
         """Gather fields into system."""
 
         self.system.gather()
@@ -401,6 +401,7 @@ class FileHandler(Handler):
         scale_group = file.create_group('scales')
         # Start time scales with shape=(0,) to chunk across writes
         scale_group.create_dataset(name='sim_time', shape=(0,), maxshape=(None,), dtype=np.float64)
+        scale_group.create_dataset(name='timestep', shape=(0,), maxshape=(None,), dtype=np.float64)
         scale_group.create_dataset(name='wall_time', shape=(0,), maxshape=(None,), dtype=np.float64)
         scale_group.create_dataset(name='iteration', shape=(0,), maxshape=(None,), dtype=np.int)
         scale_group.create_dataset(name='write_number', shape=(0,), maxshape=(None,), dtype=np.int)
@@ -438,7 +439,7 @@ class FileHandler(Handler):
 
             # Time scales
             dset.dims[0].label = 't'
-            for sn in ['sim_time', 'wall_time', 'iteration', 'write_number']:
+            for sn in ['sim_time', 'wall_time', 'timestep', 'iteration', 'write_number']:
                 scale = scale_group[sn]
                 dset.dims.create_scale(scale, sn)
                 dset.dims[0].attach_scale(scale)
@@ -461,7 +462,7 @@ class FileHandler(Handler):
                 dset.dims[axis+1].label = sn
                 dset.dims[axis+1].attach_scale(scale)
 
-    def process(self, wall_time, sim_time, iteration):
+    def process(self, wall_time, sim_time, timestep, iteration):
         """Save task outputs to HDF5 file."""
 
         file = self.get_file()
@@ -473,6 +474,7 @@ class FileHandler(Handler):
         # Update time scales
         sim_time_dset = file['scales/sim_time']
         wall_time_dset = file['scales/wall_time']
+        timestep_dset = file['scales/timestep']
         iteration_dset = file['scales/iteration']
         write_num_dset = file['scales/write_number']
 
@@ -480,6 +482,8 @@ class FileHandler(Handler):
         sim_time_dset[index] = sim_time
         wall_time_dset.resize(index+1, axis=0)
         wall_time_dset[index] = wall_time
+        timestep_dset.resize(index+1, axis=0)
+        timestep_dset[index] = timestep
         iteration_dset.resize(index+1, axis=0)
         iteration_dset[index] = iteration
         write_num_dset.resize(index+1, axis=0)

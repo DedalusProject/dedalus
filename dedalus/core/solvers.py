@@ -140,7 +140,7 @@ class LinearBoundaryValueSolver:
         """Solve BVP."""
 
         # Compute RHS
-        self.evaluator.evaluate_group('F', 0, 0, 0)
+        self.evaluator.evaluate_group('F', 0, 0, 0, 0)
 
         # Solve system for each pencil, updating state
         for p in self.pencils:
@@ -204,7 +204,7 @@ class NonlinearBoundaryValueSolver:
     def newton_iteration(self):
         """Update solution with a Newton iteration."""
         # Compute RHS
-        self.evaluator.evaluate_group('F', 0, 0, 0)
+        self.evaluator.evaluate_group('F', 0, 0, 0, 0)
         # Recompute Jacobian
         pencil.build_matrices(self.pencils, self.problem, ['dF'])
         # Solve system for each pencil, updating perturbations

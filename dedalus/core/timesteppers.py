@@ -103,7 +103,7 @@ class MultistepIMEX:
 
         # Run evaluator
         state.scatter()
-        evaluator.evaluate_scheduled(wall_time, sim_time, iteration)
+        evaluator.evaluate_scheduled(wall_time, sim_time, dt, iteration)
 
         # Update RHS components and LHS matrices
         MX.rotate()
@@ -545,9 +545,9 @@ class RungeKuttaIMEX:
             # Compute F(n,i-1), L.X(n,i-1)
             state.scatter()
             if i == 1:
-                evaluator.evaluate_scheduled(wall_time, solver.sim_time, iteration)
+                evaluator.evaluate_scheduled(wall_time, solver.sim_time, dt, iteration)
             else:
-                evaluator.evaluate_group('F', wall_time, solver.sim_time, iteration)
+                evaluator.evaluate_group('F', wall_time, solver.sim_time, dt, iteration)
             for p in pencils:
                 pX = state.get_pencil(p)
                 pFe = Fe.get_pencil(p)
