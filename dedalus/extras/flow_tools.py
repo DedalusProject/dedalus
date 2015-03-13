@@ -96,10 +96,10 @@ class GlobalFlowProperty:
         self.properties.add_task(property, layout='g', name=name)
         if precompute_integral:
             # Add integral under slightly obscured name
-            task = self.properties._cast_task(property)
-            integral_task = operators.Integrate(task)
+            task_op = self.properties.tasks[-1]['operator']
+            integral_op = operators.integrate(task_op)
             integral_name = '_{}_integral'.format(name)
-            self.properties.add_task(integral_task, layout='g', name=integral_name)
+            self.properties.add_task(integral_op, layout='g', name=integral_name)
 
     def min(self, name):
         """Compute global min of a property on the grid."""
@@ -125,7 +125,7 @@ class GlobalFlowProperty:
         except KeyError:
             # Compute volume integral
             field = self.properties[name]
-            integral_op = operators.Integrate(field)
+            integral_op = operators.integrate(field)
             integral_field = integral_op.evaluate()
         # Communicate integral value to all processes
         integral_value = self.reducer.global_max(integral_field['g'])
