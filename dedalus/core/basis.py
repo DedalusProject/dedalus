@@ -1286,8 +1286,8 @@ class Compound(ImplicitBasis):
                 matrix = sparse.lil_matrix((size, size), dtype=cls.basis.coeff_dtype)
                 integ_vector = cls._integ_vector()
                 # Copy vector to each subbasis constant row
-                for sb in self.bases.subbases:
-                    sb0 = self.basis.coeff_start(i)
+                for i,sb in enumerate(cls.basis.subbases):
+                    sb0 = cls.basis.coeff_start(i)
                     matrix[sb0,:] = integ_vector
                 return matrix.tocsr()
 
@@ -1295,7 +1295,7 @@ class Compound(ImplicitBasis):
             def _integ_vector(cls):
                 """Compound integration vector."""
                 # Concatenate subbases vectors
-                integ_vector = np.concatenate([b.integ_vector for b in cls.basis.subbases])
+                integ_vector = np.concatenate([b.Integrate._integ_vector() for b in cls.basis.subbases])
                 return integ_vector
 
         return IntegrateCompound
