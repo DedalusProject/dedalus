@@ -530,7 +530,10 @@ class RungeKuttaIMEX:
                 pFe = Fe.get_pencil(p)
                 pFb = Fb.get_pencil(p)
                 LX[i-1].set_pencil(p, p.L*pX)
-                F[i-1].set_pencil(p, p.G_eq*pFe + p.G_bc*pFb)
+                if p.G_bc is None:
+                    F[i-1].set_pencil(p, p.G_eq*pFe)
+                else:
+                    F[i-1].set_pencil(p, p.G_eq*pFe + p.G_bc*pFb)
 
             # Construct RHS(n,i)
             np.copyto(RHS.data, MX0.data)
