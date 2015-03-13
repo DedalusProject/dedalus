@@ -122,6 +122,8 @@ class Operand:
     def raw_cast(x):
         if isinstance(x, Operand):
             return x
+        elif isinstance(x, str):
+            raise ValueError("Cannot directly cast string expressions, only fields/operators/scalars.")
         elif np.isscalar(x):
             return Scalar(value=x)
         else:
