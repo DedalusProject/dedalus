@@ -36,9 +36,12 @@ solver = problem.build_solver()
 
 solver.solve(solver.pencils[0])
 
-analytic_solution = np.pi**2/4. * (1 + np.arange(len(solver.eigenvalues)))**2 
+evalue_number = 1 + np.arange(len(solver.eigenvalues))
+analytic_solution = np.pi**2/4. * (evalue_number)**2 
 
 solver.eigenvalues.sort()
-print(solver.eigenvalues)
-plt.semilogy((np.abs(solver.eigenvalues - analytic_solution))/analytic_solution)
-plt.savefig('evals.png')
+
+plt.semilogy(evalue_number,(np.abs(solver.eigenvalues - analytic_solution))/analytic_solution)
+plt.xlabel("eigenvalue number")
+plt.ylabel(r"$|\lambda - \lambda_{analytic}|/\lambda_{analytic}$")
+plt.savefig('eval_error.png')
