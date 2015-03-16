@@ -55,7 +55,7 @@ class EigenvalueSolver:
         self.domain = domain = problem.domain
 
         # Build pencils and pencil matrices
-        self.pencils = build_pencils(domain)
+        self.pencils = pencil.build_pencils(domain)
 
         # Build systems
         namespace = problem.namespace
