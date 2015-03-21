@@ -73,8 +73,8 @@ def plot_bot(dset, image_axes, data_slices, clim=None, even_scale=False, cmap='R
         Keyword arguments to pass to plt.figure (default: {})
     title : str, optional
         Title for plot (default: dataset name)
-    func : function, optional
-        Function to apply to selected data before plotting (default: None)
+    func : function(xmesh, ymesh, data), optional
+        Function to apply to selected meshes and data before plotting (default: None)
 
     """
 
@@ -88,7 +88,7 @@ def plot_bot(dset, image_axes, data_slices, clim=None, even_scale=False, cmap='R
     # Get meshes and data
     xmesh, ymesh, data = get_plane(dset, xaxis, yaxis, data_slices)
     if func is not None:
-        data = func(data)
+        xmesh, ymesh, data = func(xmesh, ymesh, data)
 
     # Setup figure
     if axes is None:
