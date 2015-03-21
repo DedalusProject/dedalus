@@ -169,6 +169,8 @@ class ProblemBase:
             namespace[name] = casted_param
         # Built-in functions
         namespace.update(operators.parseables)
+        # Additions from derived classes
+        namespace.update(self.namespace_additions)
         # Substitutions
         namespace.add_substitutions(self.substitutions)
 
@@ -287,7 +289,7 @@ class InitialValueProblem(ProblemBase):
         self.time = time
 
     @CachedAttribute
-    def namespace(self):
+    def namespace_additions(self):
         """Build namespace for problem parsing."""
 
         class dt(operators.TimeDerivative):
@@ -298,10 +300,10 @@ class InitialValueProblem(ProblemBase):
             def base(self):
                 return dt
 
-        namespace = super().namespace
-        namespace[self.time] = self._t = field.Scalar(name=self.time)
-        namespace[dt.name] = self._dt = dt
-        return namespace
+        additions = {}
+        additions[self.time] = self._t = field.Scalar(name=self.time)
+        additions[dt.name] = self._dt = dt
+        return additions
 
     def _check_conditions(self, temp):
         """Check object-form conditions."""
@@ -341,6 +343,10 @@ class LinearBoundaryValueProblem(ProblemBase):
     """
 
     solver_class = solvers.LinearBoundaryValueSolver
+
+    @CachedAttribute
+    def namespace_additions(self):
+        return {}
 
     def _check_conditions(self, temp):
         """Check object-form conditions."""
@@ -384,16 +390,16 @@ class NonlinearBoundaryValueProblem(ProblemBase):
     solver_class = solvers.NonlinearBoundaryValueSolver
 
     @CachedAttribute
-    def namespace(self):
+    def namespace_additions(self):
         """Build namespace for problem parsing."""
-        namespace = super().namespace
+        additions = {}
         # Add variable perturbations
         for var in self.variables:
             pert = 'δ' + var
-            namespace[pert] = self.domain.new_field(name=pert)
-            namespace[pert].meta = self.meta[var]
-            namespace[pert].set_scales(1, keep_data=False)
-        return namespace
+            additions[pert] = self.domain.new_field(name=pert)
+            additions[pert].meta = self.meta[var]
+            additions[pert].set_scales(1, keep_data=False)
+        return additions
 
     def _check_conditions(self, temp):
         """Check object-form conditions."""
@@ -452,11 +458,11 @@ class EigenvalueProblem(ProblemBase):
         self.eigenvalue = eigenvalue
 
     @CachedAttribute
-    def namespace(self):
+    def namespace_additions(self):
         """Build namespace for problem parsing."""
-        namespace = super().namespace
-        namespace[self.eigenvalue] = self._ev = field.Scalar(name=self.eigenvalue)
-        return namespace
+        additions = {}
+        additions[self.eigenvalue] = self._ev = field.Scalar(name=self.eigenvalue)
+        return additions
 
     def _check_conditions(self, temp):
         """Check object-form conditions."""
