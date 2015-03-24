@@ -1,8 +1,12 @@
-# README #
+### About Dedalus ###
 
-Dedalus is a flexible framework for solving partial differential equations
-using spectral methods.  It's open-source, written primarily in Python, and
-MPI-parallelized.
+Dedalus is a flexible framework for solving partial differential equations using spectral methods.
+
+The code is open-source and developed by [a team](http://dedalus-project.org/community.html#developers) of physicists and applied mathematicians working on a wide variety of problems in astrophysical and geophysical fluid dynamics.
+
+It is written primarily in Python and features an easy-to-use interface, including text-based equation entry.
+
+The numerical algorithm produces highly sparse systems for a wide variety of equations over spectrally-discretized domains, and these systems are efficiently solved using compiled libraries and multidimensional parallelization though MPI.
 
 ### Links ###
 
