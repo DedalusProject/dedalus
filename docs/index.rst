@@ -11,17 +11,6 @@ The code is written primarily in Python and features an easy-to-use interface, i
 Our numerical algorithm produces highly sparse systems for a wide variety of equations on spectrally-discretized domains.
 These systems are efficiently solved using compiled libraries and multidimensional parallelization though MPI.
 
-Links
-=====
-
-Learn more about Dedalus by visiting the
-
-* Project homepage: http://dedalus-project.org
-* Code repository: http://bitbucket.org/dedalus-project/dedalus
-* Documentation: http://dedalus-project.readthedocs.org
-* User list: https://groups.google.com/forum/#!forum/dedalus-users
-* Dev list: https://groups.google.com/forum/#!forum/dedalus-dev
-
 Doc Contents
 ============
 
@@ -31,3 +20,13 @@ Doc Contents
     installation
     getting_started
 
+Other Links
+===========
+
+Learn more about Dedalus by visiting the
+
+* Project homepage: http://dedalus-project.org
+* Code repository: http://bitbucket.org/dedalus-project/dedalus
+* Documentation: http://dedalus-project.readthedocs.org
+* User list: https://groups.google.com/forum/#!forum/dedalus-users
+* Dev list: https://groups.google.com/forum/#!forum/dedalus-dev
