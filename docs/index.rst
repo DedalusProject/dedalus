@@ -29,7 +29,6 @@ Doc Contents
 .. toctree::
     :maxdepth: 1
 
-    index
     installation
     getting_started
     dedalus2
