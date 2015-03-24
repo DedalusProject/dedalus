@@ -17,7 +17,7 @@ Links
 Learn more about Dedalus by visiting the
 
 * Project homepage: http://dedalus-project.org
-* Code repository: http://bitbucket.org/dedalus-project/dedalus2
+* Code repository: http://bitbucket.org/dedalus-project/dedalus
 * Documentation: http://dedalus-project.readthedocs.org
 * User list: https://groups.google.com/forum/#!forum/dedalus-users
 * Dev list: https://groups.google.com/forum/#!forum/dedalus-dev
