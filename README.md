@@ -16,7 +16,7 @@ Learn more about Dedalus by visiting the
 
 ### Contact info ###
 
-The project team currently consists of 
+The development team currently consists of 
 
 * Keaton Burns <keaton.burns@gmail.com>
 * Ben Brown <bpbrown@gmail.com>
