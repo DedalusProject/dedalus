@@ -458,20 +458,23 @@ class Field(Data):
             while not self.layout.local[axis]:
                 self.towards_grid_space()
 
-    def differentiate(self, basis, out=None):
-        """Differentiate field along one basis."""
+    def differentiate(self, *args, **kw):
+        """Differentiate field."""
+        from .operators import differentiate
+        diff_op = differentiate(self, *args, **kw)
+        return diff_op.evaluate()
 
-        # Use differentiation operator
-        basis = self.domain.get_basis_object(basis)
-        axis = self.domain.bases.index(basis)
-        diff_op = basis.Differentiate
-        return diff_op(self, out=out).evaluate()
-
-    def integrate(self, *bases, out=None):
-        """Integrate field over bases."""
-        # Use integration factory
+    def integrate(self, *args, **kw):
+        """Integrate field."""
         from .operators import integrate
-        return integrate(self, *bases, out=out).evaluate()
+        integ_op = integrate(self, *args, **kw)
+        return integ_op.evaluate()
+
+    def interpolate(self, *args, **kw):
+        """Interpolate field."""
+        from .operators import interpolate
+        interp_op = interpolate(self, *args, **kw)
+        return interp_op.evaluate()
 
     def antidifferentiate(self, basis, bc, out=None):
         """
