@@ -1,67 +1,74 @@
 Installing Dedalus
-**************************
+******************
 
-Preliminaries
-====================
+Installation Script
+===================
 
-Dedalus relies on Python3 and is distributed via a mercurial distributed
-version control system. To install dedalus, first install `mercurial`_.
-Then, at the command line and in an appropriate code development
-directory, clone the repository. The clone command can be copied from
-the ``clone`` button on the main repository page, and is also included
-here::
+Dedalus provides an all-in-one installation script that will build an isolated stack containing an isolated Python installation and other dependencies needed to run Dedalus.
+In most cases, the script can be modified to link with system installations of FFTW, MPI, and linear algebra libraries.
+It is available at the link below:
 
-    hg clone https://bitbucket.org/dedalus-project/dedalus2
+You can get the installation script from `this link <https://bitbucket.org/dedalus-project/dedalus/raw/tip/docs/install.sh>`_, or download it using::
 
-Example problems are included in a separate repository ``examples2``
-and can be cloned using::
+    wget https://bitbucket.org/dedalus-project/dedalus/raw/tip/docs/install.sh
 
-    hg clone https://bitbucket.org/dedalus-project/examples2
+and execute it using::
 
+    bash install.sh
 
-(note: the ``clone`` button on the wiki pages will clone the dedalus
-wiki rather than dedalus itself; they are maintained as seperate
-repositories within the bitbucket system).
+The installation script has been tested on a number of Linux distributions and OS X.
+If you run into trouble using the script, please get in touch on the `user list <https://groups.google.com/forum/#!forum/dedalus-users>`_.
 
-.. _mercurial: http://mercurial.selenic.com
+Manual Installation
+===================
 
+Dependencies
+------------
 
-Python 3 stack
-====================
-Here are detailed instructions on installing the 
-full python3 software stack on a variety of machines.
-
-Supercomputers
+Dedalus primarily relies on the basic components of a scientific Python stack using Python 3.
+Below are instructions for building the dependency stack on a variety of machines and operating systems:
 
 .. toctree::
-   :maxdepth: 1
+    :maxdepth: 1
 
-   machines/stampede/stampede
-   machines/nasa_pleiades/pleiades
-   machines/nasa_discover/discover
-   machines/trestles/trestles
-   machines/janus/janus
-   machines/savio/savio
+    machines/mac_os/mac_os
+    machines/stampede/stampede
+    machines/nasa_pleiades/pleiades
+    machines/nasa_discover/discover
+    machines/trestles/trestles
+    machines/janus/janus
+    machines/savio/savio
 
-Development machines
+Dedalus Package
+---------------
 
-.. toctree::
-   :maxdepth: 1
+Dedalus is distribution using the mercurial version control system, and hosted on Bitbucket.
+To install Dedalus itself, first install `mercurial <http://mercurial.selenic.com>`_, and then clone the main repository using::
 
-   machines/mac_os/mac_os
+    hg clone https://bitbucket.org/dedalus-project/dedalus
 
+Move into the newly cloned repository, and use pip to install any remaining Python dependencies with the command::
 
-Final steps
-====================
+    pip3 install -r requirements.txt
 
-After you've successfully built your full software stack, it's time to
-build dedalus2 (likely in your virtualenv).
+To help Dedalus find the proper libraries, it may be necessary to set ``FFTW_PATH`` and ``MPI_PATH`` environment variables (see system specific documentation).
+Dedalus's C-extensions can then be built in-place using::
 
-First, set your ``FFTW_PATH`` and ``MPI_PATH`` environment variables
-(see system specific documentation). 
-Then change into your root dedalus directory and run::
+    python3 setup.py build_ext --inplace
 
-     pip3 install -r requirements.txt 
-     python3 setup.py build_ext --inplace
+Finally, add the repository directory to your ``PYTHONPATH`` environment variable to ensure that the ``dedalus`` package within can be found by the Python interpreter.
 
-Dedalus2 is now ready to run
+Updating Dedalus
+================
+
+To update your installation of Dedalus, move into the repository directory (located at `src/dedalus` within the installation script's build, or where you manually cloned it) and issue the mercurial update commands::
+
+    hg pull
+    hg update
+
+Then rerun the pip requirements installation and python build, in case the dependencies or C-extensions have changes::
+
+    pip3 install -r requirements.txt
+    python3 setup.py build_ext --inplace
+
+Dedalus should be updated.
