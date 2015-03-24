@@ -60,7 +60,7 @@ Mac OS X cookbook
     python3 setup.py build_ext --inplace
 
 Detailed install notes for Mac OS X (10.9)
-******************************************
+==========================================
 
 Preparing a Mac system
 ----------------------
