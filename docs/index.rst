@@ -27,8 +27,8 @@ Doc Contents
 ============
 
 .. toctree::
-    :maxdepth: 1
+    :maxdepth: 2
 
     installation
     getting_started
-    dedalus2
+    api/modules
