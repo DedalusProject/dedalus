@@ -31,4 +31,4 @@ Doc Contents
 
     installation
     getting_started
-    api/modules
+
