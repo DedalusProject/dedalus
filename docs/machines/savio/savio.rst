@@ -43,15 +43,14 @@ Now we can use pip to install most of the remaining dependencies.
 
   pip-3.2 install cython
   pip-3.2 install h5py
-  pip-3.2 install matplotlib
-  pip-3.2 install sympy
+  pip-3.2 install matplotlib==1.3.1
 
 Dedalus itself can be pulled down from Bitbucket.
 
 ::
 
-  hg clone https://bitbucket.org/lecoanet/dedalus2
-  cd dedalus2
+  hg clone https://bitbucket.org/dedalus-project/dedalus
+  cd dedalus
   pip-3.2 install -r requirements.txt
 
 To build Dedalus, you must specify the locations of FFTW and MPI.
@@ -79,6 +78,6 @@ To use Dedalus, put the following in your ``~/.bashrc`` file::
   module load mercurial/2.0.2
   module load hdf5/1.8.13-intel-p
   source python_build/bin/activate
-  export PYTHONPATH=$PYTHONPATH:~/dedalus2
+  export PYTHONPATH=$PYTHONPATH:~/dedalus
 
 
