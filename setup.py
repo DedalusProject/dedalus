@@ -58,7 +58,7 @@ def get_prefix(name):
             print("  Found matching library in %s" %placelib)
             return place
 
-    print("  Cannot find env var %s_NAME or libraries matching %s." %(name.upper(), name))
+    print("  Cannot find env var %s_PATH or libraries matching %s." %(name.upper(), name))
     print("  If %s isn't in your LD_LIBRARY_PATH, compilation will likely fail." %name)
 
 def get_include(name):
