@@ -22,14 +22,13 @@ Add the following to your ``.my.bash_profile``::
 
   export CC=mpicc
 
-  #pathing for Dedalus2
-  export LOCAL_MPI_VERSION=openmpi-1.8.4
+  #pathing for Dedalus
+  export LOCAL_MPI_VERSION=openmpi-1.8.5
   export LOCAL_MPI_SHORT=v1.8
-  export LOCAL_PYTHON_VERSION=3.4.2
-  export LOCAL_NUMPY_VERSION=1.9.1
-  export LOCAL_SCIPY_VERSION=0.14.0
+  export LOCAL_PYTHON_VERSION=3.4.3
+  export LOCAL_NUMPY_VERSION=1.9.2
+  export LOCAL_SCIPY_VERSION=0.15.1
   export LOCAL_HDF5_VERSION=1.8.14
-  export LOCAL_CYTHON_VERSION=0.21.1
 
 
   export MPI_ROOT=$BUILD_HOME/$LOCAL_MPI_VERSION
@@ -151,10 +150,9 @@ Installing cython
 
 This should just be pip installed::
 
-     pip3 install cython==0.20
+     pip3 install cython
 
-Only version 0.20 is working reliably on Janus (especially with
-h5py).  Higher versions are hitting the unicode errors.
+Cython is now working (intel 15.0/openmpi-1.8.5).
 
 Numpy and BLAS libraries
 ======================================
@@ -200,8 +198,8 @@ library directory so that it correctly point to TACC's
 With the modules loaded above, this looks like::
 
      [mkl]
-     library_dirs = /curc/tools/x_86_64/rh6/intel/13.0.0/composer_xe_2013.0.079/mkl/lib/intel64
-     include_dirs = /curc/tools/x_86_64/rh6/intel/13.0.0/composer_xe_2013.0.079/mkl/include
+     library_dirs = /curc/tools/x_86_64/rh6/intel/15.0.1/composer_xe_2015.1.133/mkl/lib/intel64
+     include_dirs = /curc/tools/x_86_64/rh6/intel/15.0.1/composer_xe_2015.1.133/mkl/include
      mkl_libs = mkl_rt
      lapack_libs =
 
@@ -216,7 +214,7 @@ Then proceed with::
 
 This will config, build and install numpy.
 
-
+NOTE: PATCH DOWNLOAD FILE ISN'T THERE.
 
 
 
