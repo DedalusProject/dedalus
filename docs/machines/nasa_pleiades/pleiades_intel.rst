@@ -205,7 +205,20 @@ Now, acquire ``numpy`` (1.8.2)::
      wget http://sourceforge.net/projects/numpy/files/NumPy/$LOCAL_NUMPY_VERSION/numpy-$LOCAL_NUMPY_VERSION.tar.gz
      tar -xvf numpy-$LOCAL_NUMPY_VERSION.tar.gz
      cd numpy-$LOCAL_NUMPY_VERSION
+     wget http://dedalus-project.readthedocs.org/en/latest/_downloads/numpy_pleiades_intel_patch.tar
+     tar xvf numpy_pleiades_intel_patch.tar
 
+This last step saves you from needing to hand edit two
+files in ``numpy/distutils``; these are ``intelccompiler.py`` and
+``fcompiler/intel.py``.  I've built a crude patch, :download:`numpy_pleiades_intel_patch.tar<numpy_pleiades_intel_patch.tar>` 
+which is auto-deployed within the ``numpy-$LOCAL_NUMPY_VERSION`` directory by
+the instructions above.  This will unpack and overwrite::
+
+      numpy/distutils/intelccompiler.py
+      numpy/distutils/fcompiler/intel.py
+
+This differs from prior versions in that "-xhost" is replaced with
+ "-axAVX -xSSE4.1".   NOTE: this needs to be updated for Haswell.
 
 We'll now need to make sure that ``numpy`` is building against the MKL
 libraries.  Start by making a ``site.cfg`` file::
