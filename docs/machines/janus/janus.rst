@@ -171,12 +171,12 @@ Now, acquire ``numpy`` (1.9.0)::
      wget http://sourceforge.net/projects/numpy/files/NumPy/$LOCAL_NUMPY_VERSION/numpy-$LOCAL_NUMPY_VERSION.tar.gz
      tar -xvf numpy-$LOCAL_NUMPY_VERSION.tar.gz
      cd numpy-$LOCAL_NUMPY_VERSION
-     wget http://dedalus-project.readthedocs.org/en/latest/_downloads/numpy_pleiades_intel_patch.tar
-     tar xvf numpy_pleiades_intel_patch.tar
+     wget http://dedalus-project.readthedocs.org/en/latest/_downloads/numpy_janus_intel_patch.tar
+     tar xvf numpy_janus_intel_patch.tar
 
 This last step saves you from needing to hand edit two
 files in ``numpy/distutils``; these are ``intelccompiler.py`` and
-``fcompiler/intel.py``.  I've built a crude patch, :download:`numpy_pleiades_intel_patch.tar<numpy_pleiades_intel_patch.tar>` 
+``fcompiler/intel.py``.  I've built a crude patch, :download:`numpy_janus_intel_patch.tar<numpy_janus_intel_patch.tar>` 
 which is auto-deployed within the ``numpy-$LOCAL_NUMPY_VERSION`` directory by
 the instructions above.  This will unpack and overwrite::
 
