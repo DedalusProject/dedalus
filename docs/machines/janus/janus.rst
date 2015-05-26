@@ -32,7 +32,7 @@ Add the following to your ``.my.bash_profile``::
 
 
   export MPI_ROOT=$BUILD_HOME/$LOCAL_MPI_VERSION
-  export PYTHONPATH=$BUILD_HOME/dedalus2:$PYTHONPATH
+  export PYTHONPATH=$BUILD_HOME/dedalus:$PYTHONPATH
   export MPI_PATH=$MPI_ROOT
   export FFTW_PATH=$BUILD_HOME
   export HDF5_DIR=$BUILD_HOME
@@ -214,9 +214,6 @@ Then proceed with::
 
 This will config, build and install numpy.
 
-NOTE: PATCH DOWNLOAD FILE ISN'T THERE.
-
-
 
 
 
@@ -263,35 +260,13 @@ pip install fails, so we'll keep doing it the old fashioned way::
 Installing matplotlib
 -------------------------
 
-This should just be pip installed::
-
-     pip3 install matplotlib
-
-As with Pleiades, version 1.4.0 has a 
-higher freetype versioning requirement (2.4).  Here's a
-build script for freetype 2.5.3::
-
-    wget http://sourceforge.net/projects/freetype/files/freetype2/2.5.3/freetype-2.5.3.tar.gz/download
-    tar xvf freetype-2.5.3.tar.gz
-    cd freetype-2.5.3
-    ./configure --prefix=$BUILD_HOME
-    make
-    make install
-
-And... as with Pleiades, that works, but then we fail on a qhull compile during 
-``pip3 install matplotlib`` later on.
-Let's fall back to 1.3.1::
+This should just be pip installed.
+As with Pleiades, version 1.4.x is failing on qhull.  
+For now we fall back to 1.3.1::
 
      pip3 install matplotlib==1.3.1
 
 
-
-Installing sympy
--------------------------
-
-This should just be pip installed::
-
-     pip3 install sympy
 
 
 Installing HDF5 with parallel support
@@ -316,19 +291,12 @@ needs to be compiled with support for parallel (mpi) I/O::
 
 
 
-Installing h5py (working [with cython==0.20])
+Installing h5py
 ----------------------------------------------------
 
-Next, install h5py.  For reasons that are currently unclear to me, 
-this cannot be done via pip install (fails), as on Pleiades::
+This now can be pip installed::
 
-     git clone https://github.com/h5py/h5py.git
-     cd h5py
-     python3 setup.py build
-     python3 setup.py install
-
-The unicode error that pops up is a red herring; pip3 reports that the
-correct h5py is installed.
+     pip3 install hypy
 
 
 Installing Mercurial
@@ -340,9 +308,9 @@ Ah, and we also need python2 for the mercurial build (only)::
      module unload openmpi intel
      module load gcc/gcc-4.9.1
      module load python/anaconda-2.0.0
-     wget http://mercurial.selenic.com/release/mercurial-3.1.tar.gz
-     tar xvf mercurial-3.1.tar.gz 
-     cd mercurial-3.1
+     wget http://mercurial.selenic.com/release/mercurial-3.4.tar.gz
+     tar xvf mercurial-3.4.tar.gz 
+     cd mercurial-3.4
      export CC=gcc
      make install PREFIX=$BUILD_HOME
 
@@ -359,7 +327,7 @@ I suggest you add the following to your ``~/.hgrc``::
   mq =
 
 
-Dedalus2
+Dedalus
 ========================================
 
 Preliminaries
@@ -371,22 +339,29 @@ With the modules set as above, set::
      export FFTW_PATH=$BUILD_HOME
      export MPI_PATH=$BUILD_HOME/$LOCAL_MPI_VERSION
 
+Pull the dedalus repository:::
+
+     hg clone https://bitbucket.org/dedalus-project/dedalus
+
 Then change into your root dedalus directory and run::
 
      pip3 install -r requirements.txt 
-     python setup.py build_ext --inplace
+     python3 setup.py build_ext --inplace
 
 
-Running Dedalus on Pleiades
+Running Dedalus on Janus
 ========================================
 
-Our scratch disk system on Pleiades is ``/nobackup/user-name``.  On
+Our scratch disk system on Pleiades is ``/lustre/janus_scratch/user-name``.  On
 this and other systems, I suggest soft-linking your scratch directory
 to a local working directory in home; I uniformly call mine ``workdir``::
 
-      ln -s /nobackup/bpbrown workdir
+      ln -s /lustre/janus_scratch/bpbrown workdir
 
-Long-term mass storage is on LOU.
+I also suggest you move your stack to the ``projects`` directory,
+``/projects/user-name``.  There, I bring back a symbolic link:
 
+     ln -s /projects/bpbrown projects
+     ln -s projects/build build
 
 
