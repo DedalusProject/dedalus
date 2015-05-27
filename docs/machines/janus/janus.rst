@@ -11,8 +11,7 @@ Add the following to your ``.my.bash_profile``::
 
   # Add your commands here to extend your PATH, etc.
 
-  module load openmpi/openmpi-1.8.2_intel-13.0.0
-  module load intel/intel-13.0.0
+  module load intel
 
   export BUILD_HOME=$HOME/build
 
@@ -28,7 +27,7 @@ Add the following to your ``.my.bash_profile``::
   export LOCAL_PYTHON_VERSION=3.4.3
   export LOCAL_NUMPY_VERSION=1.9.2
   export LOCAL_SCIPY_VERSION=0.15.1
-  export LOCAL_HDF5_VERSION=1.8.14
+  export LOCAL_HDF5_VERSION=1.8.15
 
 
   export MPI_ROOT=$BUILD_HOME/$LOCAL_MPI_VERSION
@@ -40,7 +39,8 @@ Add the following to your ``.my.bash_profile``::
 Do your builds on the janus compile nodes (see MOTD).  As a positive
 note, Janus compile nodes have access to the internet (e.g., wget), so
 you can download and compile on-node.  For now we're using stock
-Pleiades compile flags and patch files.
+Pleiades compile flags and patch files.  With intel 15.0.1 the cython
+install is now working well, as does h5py.
 
 
 Building Openmpi
