@@ -14,7 +14,7 @@ To run, merge, and plot using 4 processes, for instance, you could use:
     $ mpiexec -n 4 python3 merge.py snapshots
     $ mpiexec -n 4 python3 plot_2d_series.py snapshots/*.h5
 
-The simulation should take roughly 15 process-minutes to run.
+The simulation should take roughly 5 process-minutes to run.
 
 """
 
@@ -60,7 +60,7 @@ problem.add_bc("right(w) = 0", condition="(nx != 0)")
 problem.add_bc("integ(p, 'z') = 0", condition="(nx == 0)")
 
 # Build solver
-solver = problem.build_solver(de.timesteppers.SBDF2)
+solver = problem.build_solver(de.timesteppers.RK222)
 logger.info('Solver built')
 
 # Initial conditions
@@ -94,8 +94,8 @@ snapshots.add_task("u")
 snapshots.add_task("w")
 
 # CFL
-CFL = flow_tools.CFL(solver, initial_dt=1e-3, cadence=5, safety=0.3,
-                     max_change=1.5, min_change=0.5, max_dt=0.05)
+CFL = flow_tools.CFL(solver, initial_dt=0.1, cadence=10, safety=1,
+                     max_change=1.5, min_change=0.5, max_dt=0.1)
 CFL.add_velocities(('u', 'w'))
 
 # Flow properties
