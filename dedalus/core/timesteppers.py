@@ -72,6 +72,7 @@ class MultistepIMEX:
 
         # Attributes
         self._iteration = 0
+        self._LHS_params = None
 
     def step(self, solver, dt, wall_time):
         """Advance solver by one timestep."""
@@ -114,19 +115,24 @@ class MultistepIMEX:
         a0 = a[0]
         b0 = b[0]
 
+        update_LHS = ((a0, b0) != self._LHS_params)
+        self._LHS_params = (a0, b0)
+
         for p in pencils:
             x = state.get_pencil(p)
             pFe = Fe.get_pencil(p)
             pFb = Fb.get_pencil(p)
 
-            MX0.set_pencil(p, p.M*x)
-            LX0.set_pencil(p, p.L*x)
+            MX0.set_pencil(p, p.M_csr*x)
+            LX0.set_pencil(p, p.L_csr*x)
             if p.G_bc is None:
                 F0.set_pencil(p, p.G_eq*pFe)
             else:
                 F0.set_pencil(p, p.G_eq*pFe + p.G_bc*pFb)
 
-            np.copyto(p.LHS.data, a0*p.M.data + b0*p.L.data)
+            if update_LHS:
+                np.copyto(p.LHS_csc.data, a0*p.M_csc.data + b0*p.L_csc.data)
+                p.LHS_LU = linalg.splu(p.LHS_csc, permc_spec=permc_spec)
 
         # Build RHS
         RHS.data.fill(0)
@@ -139,9 +145,9 @@ class MultistepIMEX:
 
         # Solve
         for p in pencils:
-            A = p.LHS
+            A = p.LHS_LU
             b = RHS.get_pencil(p)
-            x = linalg.spsolve(A, b, use_umfpack=use_umfpack, permc_spec=permc_spec)
+            x = A.solve(b)
             state.set_pencil(p, x)
 
         # Update solver
@@ -488,6 +494,8 @@ class RungeKuttaIMEX:
         self.LX = LX = [CoeffSystem(nfields, domain) for i in range(self.stages)]
         self.F = F = [CoeffSystem(nfields, domain) for i in range(self.stages)]
 
+        self._LHS_params = None
+
     def step(self, solver, dt, wall_time):
         """Advance solver by one timestep."""
 
@@ -510,10 +518,15 @@ class RungeKuttaIMEX:
         c = self.c
         k = dt
 
+        update_LHS = (k != self._LHS_params)
+        self._LHS_params = k
+
         # Compute M.X(n,0)
         for p in pencils:
             pX0 = state.get_pencil(p)
-            MX0.set_pencil(p, p.M*pX0)
+            MX0.set_pencil(p, p.M_csr*pX0)
+            if update_LHS:
+                p._LHS_LU = [None] * (self.stages+1)
 
         # Compute stages
         # (M + k Hii L).X(n,i) = M.X(n,0) + k Aij F(n,j) - k Hij L.X(n,j)
@@ -529,7 +542,7 @@ class RungeKuttaIMEX:
                 pX = state.get_pencil(p)
                 pFe = Fe.get_pencil(p)
                 pFb = Fb.get_pencil(p)
-                LX[i-1].set_pencil(p, p.L*pX)
+                LX[i-1].set_pencil(p, p.L_csr*pX)
                 if p.G_bc is None:
                     F[i-1].set_pencil(p, p.G_eq*pFe)
                 else:
@@ -543,10 +556,13 @@ class RungeKuttaIMEX:
 
             for p in pencils:
                 # Construct LHS(n,i)
-                np.copyto(p.LHS.data, p.M.data + (k*H[i,i])*p.L.data)
+                if update_LHS:
+                    np.copyto(p.LHS_csc.data, p.M_csc.data + (k*H[i,i])*p.L_csc.data)
+                    p._LHS_LU[i] = linalg.splu(p.LHS_csc, permc_spec=permc_spec)
                 # Solve for X(n,i)
+                pLHS = p._LHS_LU[i]
                 pRHS = RHS.get_pencil(p)
-                pX = linalg.spsolve(p.LHS, pRHS, use_umfpack=use_umfpack, permc_spec=permc_spec)
+                pX = pLHS.solve(pRHS)
                 state.set_pencil(p, pX)
             solver.sim_time = sim_time_0 + k*c[i]
 

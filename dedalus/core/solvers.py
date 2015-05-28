@@ -71,8 +71,8 @@ class EigenvalueSolver:
         """Solve EVP."""
         self.eigenvalue_pencil = pencil
         pencil.build_matrices(self.problem, ['M', 'L'])
-        L = pencil.L.todense()
-        M = pencil.M.todense()
+        L = pencil.L_csr.todense()
+        M = pencil.M_csr.todense()
         self.eigenvalues, self.eigenvectors = eig(L, b=-M)
 
     def set_state(self, num):
@@ -141,7 +141,7 @@ class LinearBoundaryValueSolver:
         for p in self.pencils:
             pFe = self.Fe.get_pencil(p)
             pFb = self.Fb.get_pencil(p)
-            A = p.L
+            A = p.L_csr
             b = p.G_eq * pFe + p.G_bc * pFb
             x = linalg.spsolve(A, b, use_umfpack=False, permc_spec='NATURAL')
             self.state.set_pencil(p, x)
@@ -206,7 +206,7 @@ class NonlinearBoundaryValueSolver:
         for p in self.pencils:
             pFe = self.Fe.get_pencil(p)
             pFb = self.Fb.get_pencil(p)
-            A = p.L - p.dF
+            A = p.L_csr - p.dF_csr
             b = p.G_eq * pFe + p.G_bc * pFb
             x = linalg.spsolve(A, b, use_umfpack=False, permc_spec='NATURAL')
             self.perturbations.set_pencil(p, x)

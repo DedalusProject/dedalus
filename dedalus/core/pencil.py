@@ -104,12 +104,17 @@ class Pencil:
             matrix.eliminate_zeros()
             matrices[name] = matrix
 
-        # Store problem matrices with expanded sparsity for fast combination during timestepping
-        self.LHS = zeros_with_pattern(*[matrices[name] for name in names]).tocsr()
-        for name in names:
-            matrix = matrices[name]
-            matrix = expand_pattern(matrix, self.LHS).tocsr()
-            setattr(self, name, matrix)
+        # Store CSR matrices for fast dot products
+        for name, matrix in matrices.items():
+            matrix.eliminate_zeros()
+            setattr(self, name+'_csr', matrix.tocsr())
+
+        # Store CSC matrices with expanded sparsity for fast combination
+        self.LHS_csc = zeros_with_pattern(*matrices.values()).tocsc()
+        for name, matrix in matrices.items():
+            matrix = expand_pattern(matrix, self.LHS_csc)
+            setattr(self, name+'_csc', matrix.tocsc())
+
 
         # Store operators for RHS
         self.G_eq = matrices['select']
@@ -298,13 +303,16 @@ class Pencil:
             L = L + kron(R*M, δM)
             LHS['L'] = L
 
-        # Store with expanded sparsity for fast combination during timestepping
-        for C in LHS.values():
-            C.eliminate_zeros()
-        self.LHS = zeros_with_pattern(*LHS.values()).tocsr()
-        for name, C in LHS.items():
-            C = expand_pattern(C, self.LHS).tocsr()
-            setattr(self, name, C)
+        # Store CSR matrices for fast dot products
+        for name, matrix in LHS.items():
+            matrix.eliminate_zeros()
+            setattr(self, name+'_csr', matrix.tocsr())
+
+        # Store CSC matrices with expanded sparsity for fast combination
+        self.LHS_csc = zeros_with_pattern(*LHS.values()).tocsc()
+        for name, matrix in LHS.items():
+            matrix = expand_pattern(matrix, self.LHS_csc)
+            setattr(self, name+'_csc', matrix.tocsc())
 
         # Store operators for RHS
         G_eq.eliminate_zeros()
