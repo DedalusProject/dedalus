@@ -502,43 +502,22 @@ class Field(Data):
         if basis is not domain.bases[-1]:
             raise NotImplementedError()
 
-        # Convert BC value to field
-        if np.isscalar(bc_val):
-            bc_val = domain.new_field()
-            bc_val['g'] = bc[1]
-        elif not isinstance(bc_val, Field):
-            raise TypeError("bc_val must be field or scalar")
+        from .problems import LBVP
+        basis_name = basis.name
+        problem = LBVP(domain, variables=['out'])
+        problem.parameters['f'] = self
+        problem.parameters['bc'] = bc_val
+        problem.add_equation('d'+basis_name+'(out) = f')
+        problem.add_bc(bc_type+'(out) = bc')
 
-        # Build LHS matrix
-        size = basis.coeff_size
-        dtype = basis.coeff_dtype
-        Pre = basis.Pre
-        Diff = basis.Diff
-        BC = getattr(basis, bc_type.capitalize())
-        try:
-            Lm = basis.Match
-        except AttributeError:
-            Lm = sparse.csr_matrix((size, size), dtype=dtype)
-
-        # Find rows to replace
-        BC_rows = BC.nonzero()[0]
-        Lm_rows = Lm.nonzero()[0]
-        F = sparse.identity(basis.coeff_size, dtype=basis.coeff_dtype, format='dok')
-        for i in set().union(BC_rows, Lm_rows):
-            F[i, i] = 0
-        G = F*Pre
-        LHS = G*Diff + BC + Lm
+        solver = problem.build_solver()
+        solver.solve()
 
         if not out:
             out = self.domain.new_field()
-        out_c = out['c']
-        f_c = self['c']
-        bc_c = bc_val['c']
 
-        # Solve for each pencil
-        for p in np.ndindex(out_c.shape[:-1]):
-            rhs = G*f_c[p] + BC*bc_c[p]
-            out_c[p] = splinalg.spsolve(LHS, rhs, use_umfpack=use_umfpack, permc_spec=permc_spec)
+        out.set_scales(domain.dealias, keep_data=False)
+        out['c'] = np.copy(solver.state['out']['c'])
 
         return out
 
