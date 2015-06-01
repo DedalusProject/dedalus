@@ -105,16 +105,17 @@ class Pencil:
             matrices[name] = matrix
 
         # Store CSR matrices for fast dot products
-        for name, matrix in matrices.items():
+        for name in names:
+            matrix = matrices[name]
             matrix.eliminate_zeros()
             setattr(self, name+'_csr', matrix.tocsr())
 
         # Store CSC matrices with expanded sparsity for fast combination
-        self.LHS_csc = zeros_with_pattern(*matrices.values()).tocsc()
-        for name, matrix in matrices.items():
+        self.LHS_csc = zeros_with_pattern(*[matrices[name] for name in names]).tocsc()
+        for name in names:
+            matrix = matrices[name]
             matrix = expand_pattern(matrix, self.LHS_csc)
             setattr(self, name+'_csc', matrix.tocsc())
-
 
         # Store operators for RHS
         self.G_eq = matrices['select']
