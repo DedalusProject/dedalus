@@ -108,7 +108,7 @@ class Pencil:
         for name in names:
             matrix = matrices[name]
             matrix.eliminate_zeros()
-            setattr(self, name+'_csr', matrix.tocsr())
+            setattr(self, name, matrix.tocsr())
 
         # Store expanded CSR matrices for fast combination
         self.LHS = zeros_with_pattern(*[matrices[name] for name in names]).tocsr()
