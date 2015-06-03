@@ -14,7 +14,7 @@ To run, merge, and plot using 4 processes, for instance, you could use:
     $ mpiexec -n 4 python3 merge.py snapshots
     $ mpiexec -n 4 python3 plot_2d_series.py snapshots/*.h5
 
-The simulation should take roughly 5 process-minutes to run.
+The simulation should take roughly 8 process-minutes to run.
 
 """
 

@@ -104,18 +104,18 @@ class Pencil:
             matrix.eliminate_zeros()
             matrices[name] = matrix
 
-        # Store CSR matrices for fast dot products
+        # Store minimal CSR matrices for fast dot products
         for name in names:
             matrix = matrices[name]
             matrix.eliminate_zeros()
             setattr(self, name+'_csr', matrix.tocsr())
 
-        # Store CSC matrices with expanded sparsity for fast combination
-        self.LHS_csc = zeros_with_pattern(*[matrices[name] for name in names]).tocsc()
+        # Store expanded CSR matrices for fast combination
+        self.LHS = zeros_with_pattern(*[matrices[name] for name in names]).tocsr()
         for name in names:
             matrix = matrices[name]
-            matrix = expand_pattern(matrix, self.LHS_csc)
-            setattr(self, name+'_csc', matrix.tocsc())
+            matrix = expand_pattern(matrix, self.LHS)
+            setattr(self, name+'_exp', matrix.tocsr())
 
         # Store operators for RHS
         self.G_eq = matrices['select']
@@ -304,16 +304,16 @@ class Pencil:
             L = L + kron(R*M, δM)
             LHS['L'] = L
 
-        # Store CSR matrices for fast dot products
+        # Store minimum CSR matrices for fast dot products
         for name, matrix in LHS.items():
             matrix.eliminate_zeros()
-            setattr(self, name+'_csr', matrix.tocsr())
+            setattr(self, name, matrix.tocsr())
 
-        # Store CSC matrices with expanded sparsity for fast combination
-        self.LHS_csc = zeros_with_pattern(*LHS.values()).tocsc()
+        # Store expanded CSR matrices for fast combination
+        self.LHS = zeros_with_pattern(*LHS.values()).tocsr()
         for name, matrix in LHS.items():
-            matrix = expand_pattern(matrix, self.LHS_csc)
-            setattr(self, name+'_csc', matrix.tocsc())
+            matrix = expand_pattern(matrix, self.LHS)
+            setattr(self, name+'_exp', matrix.tocsr())
 
         # Store operators for RHS
         G_eq.eliminate_zeros()

@@ -12,8 +12,9 @@ from ..tools.config import config
 
 
 # Load config options
-permc_spec = config['linear algebra']['permc_spec']
-use_umfpack = config['linear algebra'].getboolean('use_umfpack')
+STORE_LU = config['linear algebra'].getboolean('store_LU')
+PERMC_SPEC = config['linear algebra']['permc_spec']
+USE_UMFPACK = config['linear algebra'].getboolean('use_umfpack')
 
 
 class MultistepIMEX:
@@ -115,24 +116,21 @@ class MultistepIMEX:
         a0 = a[0]
         b0 = b[0]
 
-        update_LHS = ((a0, b0) != self._LHS_params)
-        self._LHS_params = (a0, b0)
+        if STORE_LU:
+            update_LHS = ((a0, b0) != self._LHS_params)
+            self._LHS_params = (a0, b0)
 
         for p in pencils:
             x = state.get_pencil(p)
             pFe = Fe.get_pencil(p)
             pFb = Fb.get_pencil(p)
 
-            MX0.set_pencil(p, p.M_csr*x)
-            LX0.set_pencil(p, p.L_csr*x)
+            MX0.set_pencil(p, p.M*x)
+            LX0.set_pencil(p, p.L*x)
             if p.G_bc is None:
                 F0.set_pencil(p, p.G_eq*pFe)
             else:
                 F0.set_pencil(p, p.G_eq*pFe + p.G_bc*pFb)
-
-            if update_LHS:
-                np.copyto(p.LHS_csc.data, a0*p.M_csc.data + b0*p.L_csc.data)
-                p.LHS_LU = linalg.splu(p.LHS_csc, permc_spec=permc_spec)
 
         # Build RHS
         RHS.data.fill(0)
@@ -145,10 +143,17 @@ class MultistepIMEX:
 
         # Solve
         for p in pencils:
-            A = p.LHS_LU
-            b = RHS.get_pencil(p)
-            x = A.solve(b)
-            state.set_pencil(p, x)
+            pRHS = RHS.get_pencil(p)
+            if STORE_LU:
+                if update_LHS:
+                    np.copyto(p.LHS.data, a0*p.M_exp.data + b0*p.L_exp.data)
+                    p.LHS_LU = linalg.splu(p.LHS.tocsc(), permc_spec=PERMC_SPEC)
+                pLHS = p.LHS_LU
+                pX = pLHS.solve(pRHS)
+            else:
+                np.copyto(p.LHS.data, a0*p.M_exp.data + b0*p.L_exp.data)
+                pX = linalg.spsolve(p.LHS, pRHS, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
+            state.set_pencil(p, pX)
 
         # Update solver
         solver.sim_time += dt
@@ -518,15 +523,16 @@ class RungeKuttaIMEX:
         c = self.c
         k = dt
 
-        update_LHS = (k != self._LHS_params)
-        self._LHS_params = k
+        if STORE_LU:
+            update_LHS = (k != self._LHS_params)
+            self._LHS_params = k
 
         # Compute M.X(n,0)
         for p in pencils:
             pX0 = state.get_pencil(p)
-            MX0.set_pencil(p, p.M_csr*pX0)
-            if update_LHS:
-                p._LHS_LU = [None] * (self.stages+1)
+            MX0.set_pencil(p, p.M*pX0)
+            if STORE_LU and update_LHS:
+                p.LHS_LU = [None] * (self.stages+1)
 
         # Compute stages
         # (M + k Hii L).X(n,i) = M.X(n,0) + k Aij F(n,j) - k Hij L.X(n,j)
@@ -542,7 +548,7 @@ class RungeKuttaIMEX:
                 pX = state.get_pencil(p)
                 pFe = Fe.get_pencil(p)
                 pFb = Fb.get_pencil(p)
-                LX[i-1].set_pencil(p, p.L_csr*pX)
+                LX[i-1].set_pencil(p, p.L*pX)
                 if p.G_bc is None:
                     F[i-1].set_pencil(p, p.G_eq*pFe)
                 else:
@@ -555,14 +561,17 @@ class RungeKuttaIMEX:
                 RHS.data -= k * H[i,j] * LX[j].data
 
             for p in pencils:
-                # Construct LHS(n,i)
-                if update_LHS:
-                    np.copyto(p.LHS_csc.data, p.M_csc.data + (k*H[i,i])*p.L_csc.data)
-                    p._LHS_LU[i] = linalg.splu(p.LHS_csc, permc_spec=permc_spec)
-                # Solve for X(n,i)
-                pLHS = p._LHS_LU[i]
                 pRHS = RHS.get_pencil(p)
-                pX = pLHS.solve(pRHS)
+                # Construct LHS(n,i)
+                if STORE_LU:
+                    if update_LHS:
+                        np.copyto(p.LHS.data, p.M_exp.data + (k*H[i,i])*p.L_exp.data)
+                        p.LHS_LU[i] = linalg.splu(p.LHS.tocsc(), permc_spec=PERMC_SPEC)
+                    pLHS = p.LHS_LU[i]
+                    pX = pLHS.solve(pRHS)
+                else:
+                    np.copyto(p.LHS.data, p.M_exp.data + (k*H[i,i])*p.L_exp.data)
+                    pX = linalg.spsolve(p.LHS, pRHS, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
                 state.set_pencil(p, pX)
             solver.sim_time = sim_time_0 + k*c[i]
 
