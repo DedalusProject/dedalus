@@ -17,6 +17,10 @@ from .system import CoeffSystem, FieldSystem
 from .field import Scalar, Field
 from ..tools.progress import log_progress
 
+from ..tools.config import config
+PERMC_SPEC = config['linear algebra']['permc_spec']
+USE_UMFPACK = config['linear algebra'].getboolean('use_umfpack')
+
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
 
@@ -71,8 +75,8 @@ class EigenvalueSolver:
         """Solve EVP."""
         self.eigenvalue_pencil = pencil
         pencil.build_matrices(self.problem, ['M', 'L'])
-        L = pencil.L_csr.todense()
-        M = pencil.M_csr.todense()
+        L = pencil.L.todense()
+        M = pencil.M.todense()
         self.eigenvalues, self.eigenvectors = eig(L, b=-M)
 
     def set_state(self, num):
@@ -141,9 +145,9 @@ class LinearBoundaryValueSolver:
         for p in self.pencils:
             pFe = self.Fe.get_pencil(p)
             pFb = self.Fb.get_pencil(p)
-            A = p.L_csr
+            A = p.L
             b = p.G_eq * pFe + p.G_bc * pFb
-            x = linalg.spsolve(A, b, use_umfpack=False, permc_spec='NATURAL')
+            x = linalg.spsolve(A, b, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
             self.state.set_pencil(p, x)
         self.state.scatter()
 
@@ -206,9 +210,9 @@ class NonlinearBoundaryValueSolver:
         for p in self.pencils:
             pFe = self.Fe.get_pencil(p)
             pFb = self.Fb.get_pencil(p)
-            A = p.L_csr - p.dF_csr
+            A = p.L - p.dF
             b = p.G_eq * pFe + p.G_bc * pFb
-            x = linalg.spsolve(A, b, use_umfpack=False, permc_spec='NATURAL')
+            x = linalg.spsolve(A, b, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
             self.perturbations.set_pencil(p, x)
         self.perturbations.scatter()
         # Update state
