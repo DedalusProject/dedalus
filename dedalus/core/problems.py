@@ -6,10 +6,10 @@ Classes for representing systems of equations.
 from collections import OrderedDict
 import numpy as np
 from mpi4py import MPI
+from functools import reduce
 
-from .metadata import MultiDict, Metadata
 from . import field
-from .field import Operand
+from .field import Operand, Field
 from . import future
 from . import operators
 from . import solvers
@@ -96,16 +96,18 @@ class ProblemBase:
 
     """
 
-    def __init__(self, domain, variables, ncc_cutoff=1e-10, max_ncc_terms=None):
+    def __init__(self, domain, ncc_cutoff=1e-10, max_ncc_terms=None):
         self.domain = domain
-        self.variables = variables
-        self.nvars = len(variables)
-        self.meta = MultiDict({var: Metadata(domain) for var in variables})
+        self.variables = []
         self.equations = self.eqs = []
-        self.boundary_conditions = self.bcs = []
         self.parameters = OrderedDict()
         self.substitutions = OrderedDict()
-        self.ncc_kw = {'cutoff': ncc_cutoff, 'max_terms': max_ncc_terms}
+        self.ncc_kw = {'cutoff': ncc_cutoff}
+
+    def add_variable(self, var, bases=None):
+        if isinstance(var, str):
+            var = Field(name=var, bases=bases)
+        self.variables.append(var)
 
     def add_equation(self, equation, condition="True"):
         """Add equation to problem."""
@@ -116,16 +118,6 @@ class ProblemBase:
         self._check_eqn_conditions(temp)
         self._set_matrix_expressions(temp)
         self.eqs.append(temp)
-
-    def add_bc(self, equation, condition="True"):
-        """Add boundary condition to problem."""
-        logger.debug("Parsing BC {}".format(len(self.bcs)))
-        temp = {}
-        self._build_basic_dictionary(temp, equation, condition)
-        self._build_object_forms(temp)
-        self._check_bc_conditions(temp)
-        self._set_matrix_expressions(temp)
-        self.bcs.append(temp)
 
     def _build_basic_dictionary(self, temp, equation, condition):
         """Split and store equation and condition strings."""
@@ -138,8 +130,16 @@ class ProblemBase:
 
     def _build_object_forms(self, temp):
         """Parse raw LHS/RHS strings to object forms."""
-        temp['LHS'] = field.Operand.parse(temp['raw_LHS'], self.namespace, self.domain)
-        temp['RHS'] = future.FutureField.parse(temp['raw_RHS'], self.namespace, self.domain)
+        LHS = field.Operand.parse(temp['raw_LHS'], self.namespace, self.domain)
+        RHS = field.Operand.parse(temp['raw_RHS'], self.namespace, self.domain)
+        # Add together to require trigger proper conversions
+        print(RHS, type(RHS))
+        if RHS != 0:
+            sum = LHS + RHS
+            LHS, RHS = sum.args
+        temp['LHS'] = LHS
+        temp['RHS'] = RHS
+        temp['bases'] = LHS.bases
         logger.debug("  LHS object form: {}".format(temp['LHS']))
         logger.debug("  RHS object form: {}".format(temp['RHS']))
 
@@ -147,26 +147,23 @@ class ProblemBase:
     def namespace(self):
         """Build namespace for problem parsing."""
         namespace = Namespace()
-        # Basis-specific items
-        for axis, basis in enumerate(self.domain.bases):
-            # Grids
-            grid = field.Array(self.domain, name=basis.name)
-            grid.from_global_vector(basis.grid(basis.dealias), axis)
-            namespace[basis.name] = grid
-            # Basis operators
-            for op in basis.operators:
-                namespace[op.name] = op
-        # Fields
+        # Space-specific items
+        for spaceset in self.domain.spaces:
+            for space in spaceset:
+                # Grid
+                namespace[space.name] = space.grid_array(scales=None)
+                # Operators
+                namespace.update(space.operators)
+        # Variables
         for var in self.variables:
-            namespace[var] = self.domain.new_field(name=var)
-            namespace[var].meta = self.meta[var]
-            namespace[var].set_scales(1, keep_data=False)
+            namespace[var.name] = var
         # Parameters
-        for name, param in self.parameters.items():
-            # Cast parameters to operands
-            casted_param = field.Operand.cast(param)
-            casted_param.name = name
-            namespace[name] = casted_param
+        # for name, param in self.parameters.items():
+        #     # Cast parameters to operands
+        #     casted_param = field.Operand.cast(param, self.domain)
+        #     casted_param.name = name
+        #     namespace[name] = casted_param
+        namespace.update(self.parameters)
         # Built-in functions
         namespace.update(operators.parseables)
         # Additions from derived classes
@@ -179,52 +176,12 @@ class ProblemBase:
     def _check_eqn_conditions(self, temp):
         """Check object-form equation conditions."""
         self._check_conditions(temp)
-        self._check_differential_order(temp)
-        self._check_meta_consistency(temp['LHS'], temp['RHS'])
+        self._check_basis_consistency(temp['LHS'], temp['RHS'])
 
-    def _check_bc_conditions(self, temp):
-        """Check object-form BC conditions."""
-        self._check_conditions(temp)
-        self._check_differential_order(temp)
-        self._check_meta_consistency(temp['LHS'], temp['RHS'])
-        self._check_boundary_form(temp['LHS'], temp['RHS'])
-
-    def _check_differential_order(self, temp):
-        """Require LHS To be first order in coupled derivatives."""
-        coupled_diffs = [basis.Differentiate for basis in self.domain.bases if not basis.separable]
-        order = self._require_first_order(temp, 'LHS', coupled_diffs)
-        temp['differential'] = bool(order)
-
-    def _check_meta_consistency(self, LHS, RHS):
-        """Check LHS and RHS metadata for compatability."""
-        default_meta = Metadata(self.domain)
-        for axis in range(self.domain.dim):
-            for key in default_meta[axis]:
-                check = getattr(self, '_check_meta_%s' %key)
-                check(LHS.meta[axis][key], RHS.meta[axis][key], axis)
-
-    def _check_meta_scale(self, LHS_scale, RHS_scale, axis):
-        # Solve occurs in coefficient space, so disregard scale
-        pass
-
-    def _check_meta_constant(self, LHS_constant, RHS_constant, axis):
-        """Check that RHS is constant if LHS is consant."""
-        if LHS_constant:
-            if not RHS_constant:
-                raise SymbolicParsingError("LHS is constant but RHS is nonconstant along {} axis.".format(self.domain.bases[axis].name))
-
-    def _check_meta_parity(self, LHS_parity, RHS_parity, axis):
-        """Check that LHS parity matches RHS parity, if RHS parity is nonzero."""
-        if RHS_parity:
-            if LHS_parity != RHS_parity:
-                raise SymbolicParsingError("LHS and RHS parities along {} axis do not match.".format(self.domain.bases[axis].name))
-
-    def _check_boundary_form(self, LHS, RHS):
-        """Check that boundary expressions are constant along coupled axes."""
-        for ax, basis in enumerate(self.domain.bases):
-            if not basis.separable:
-                if (not LHS.meta[ax]['constant']) or (not RHS.meta[ax]['constant']):
-                    raise SymbolicParsingError("Boundary condition must be constant along '{}'.".format(basis.name))
+    def _check_basis_consistency(self, LHS, RHS):
+        """Check LHS and RHS for basis consistency."""
+        if not RHS.subdomain in LHS.subdomain:
+            raise ValueError("RHS subdomain must be in LHS subdomain.")
 
     def _require_zero(self, temp, key):
         """Require expression to be equal to zero."""
@@ -247,15 +204,20 @@ class ProblemBase:
 
     def _prep_linear_form(self, expr, vars, name=''):
         """Convert an expression into suitable form for LHS operator conversion."""
-        expr = Operand.cast(expr)
-        expr = expr.expand(*vars)
-        expr = expr.canonical_linear_form(*vars)
-        logger.debug('  {} linear form: {}'.format(name, str(expr)))
+        if expr:
+            expr = Operand.cast(expr, self.domain)
+            expr = expr.expand(*vars)
+            expr = expr.canonical_linear_form(*vars)
+            logger.debug('  {} linear form: {}'.format(name, str(expr)))
         return (expr, vars)
 
     def build_solver(self, *args, **kw):
         """Build corresponding solver class."""
         return self.solver_class(self, *args, **kw)
+
+    def separability(self):
+        separabilities = [eq['separability'] for eq in self.eqs]
+        return reduce(np.logical_and, separabilities)
 
 
 class InitialValueProblem(ProblemBase):
@@ -284,8 +246,8 @@ class InitialValueProblem(ProblemBase):
 
     solver_class = solvers.InitialValueSolver
 
-    def __init__(self, domain, variables, time='t', **kw):
-        super().__init__(domain, variables, **kw)
+    def __init__(self, domain, time='t', **kw):
+        super().__init__(domain, **kw)
         self.time = time
 
     @CachedAttribute
@@ -294,14 +256,13 @@ class InitialValueProblem(ProblemBase):
 
         class dt(operators.TimeDerivative):
             name = 'd' + self.time
-            _scalar = field.Scalar(name=name)
+            _scalar = field.Field(name=name, bases=self.domain)
 
-            @property
             def base(self):
                 return dt
 
         additions = {}
-        additions[self.time] = self._t = field.Scalar(name=self.time)
+        additions[self.time] = self._t = field.Field(name=self.time, bases=self.domain)
         additions[dt.name] = self._dt = dt
         return additions
 
@@ -313,13 +274,21 @@ class InitialValueProblem(ProblemBase):
     def _set_matrix_expressions(self, temp):
         """Set expressions for building solver."""
         M, L = temp['LHS'].split(self._dt)
-        M = Operand.cast(M)
-        M = M.replace(self._dt, lambda x: x)
-        vars = [self.namespace[var] for var in self.variables]
+        if M:
+            M = Operand.cast(M, self.domain)
+            M = M.replace(self._dt, lambda x: x)
+        #vars = [self.namespace[var] for var in self.variables]
+        vars = self.variables
         temp['M'] = self._prep_linear_form(M, vars, name='M')
         temp['L'] = self._prep_linear_form(L, vars, name='L')
         temp['F'] = temp['RHS']
-
+        if M and L:
+            temp['separability'] = (temp['M'][0].separability(vars) &
+                                    temp['L'][0].separability(vars))
+        elif M:
+            temp['separability'] = temp['M'][0].separability(vars)
+        else:
+            temp['separability'] = temp['L'][0].separability(vars)
 
 class LinearBoundaryValueProblem(ProblemBase):
     """
@@ -350,14 +319,17 @@ class LinearBoundaryValueProblem(ProblemBase):
 
     def _check_conditions(self, temp):
         """Check object-form conditions."""
-        vars = [self.namespace[var] for var in self.variables]
+        #vars = [self.namespace[var] for var in self.variables]
+        vars = self.variables
         self._require_independent(temp, 'RHS', vars)
 
     def _set_matrix_expressions(self, temp):
         """Set expressions for building solver."""
-        vars = [self.namespace[var] for var in self.variables]
+        #vars = [self.namespace[var] for var in self.variables]
+        vars = self.variables
         temp['L'] = self._prep_linear_form(temp['LHS'], vars, name='L')
         temp['F'] = temp['RHS']
+        temp['separability'] = temp['L'][0].separability(vars)
 
 
 class NonlinearBoundaryValueProblem(ProblemBase):
@@ -395,9 +367,8 @@ class NonlinearBoundaryValueProblem(ProblemBase):
         additions = {}
         # Add variable perturbations
         for var in self.variables:
-            pert = 'δ' + var
+            pert = 'δ' + var.name
             additions[pert] = self.domain.new_field(name=pert)
-            additions[pert].meta = self.meta[var]
             additions[pert].set_scales(1, keep_data=False)
         return additions
 
@@ -408,8 +379,9 @@ class NonlinearBoundaryValueProblem(ProblemBase):
     def _set_matrix_expressions(self, temp):
         """Set expressions for building solver."""
         ep = field.Scalar(name='__epsilon__')
-        vars = [self.namespace[var] for var in self.variables]
-        perts = [self.namespace['δ'+var] for var in self.variables]
+        #vars = [self.namespace[var] for var in self.variables]
+        vars = self.variables
+        perts = [self.namespace['δ'+var.name] for var in self.variables]
         # Build LHS operating on perturbations
         L = temp['LHS']
         for var, pert in zip(vars, perts):
@@ -419,13 +391,15 @@ class NonlinearBoundaryValueProblem(ProblemBase):
         dF = 0
         for var, pert in zip(vars, perts):
             dFi = F.replace(var, var + ep*pert)
-            dFi = field.Operand.cast(dFi.sym_diff(ep))
+            dFi = field.Operand.cast(dFi.sym_diff(ep), self.domain)
             dFi = dFi.replace(ep, 0)
             dF += dFi
         # Set expressions
         temp['L'] = self._prep_linear_form(L, perts, name='L')
         temp['dF'] = self._prep_linear_form(dF, perts, name='dF')
         temp['F-L'] = temp['RHS'] - temp['LHS']
+        temp['separability'] = (temp['L'][0].separability(perts) &
+                                temp['dF'][0].separability(perts))
 
 
 class EigenvalueProblem(ProblemBase):
@@ -472,11 +446,14 @@ class EigenvalueProblem(ProblemBase):
     def _set_matrix_expressions(self, temp):
         """Set expressions for building solver."""
         M, L = temp['LHS'].split(self._ev)
-        M = Operand.cast(M)
+        M = Operand.cast(M, self.domain)
         M = M.replace(self._ev, 1)
-        vars = [self.namespace[var] for var in self.variables]
+        #vars = [self.namespace[var] for var in self.variables]
+        vars = self.variables
         temp['M'] = self._prep_linear_form(M, vars, name='M')
         temp['L'] = self._prep_linear_form(L, vars, name='L')
+        temp['separability'] = (temp['M'][0].separability(vars) &
+                                temp['L'][0].separability(Vars))
 
 
 # Aliases

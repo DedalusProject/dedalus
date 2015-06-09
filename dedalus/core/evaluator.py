@@ -110,7 +110,7 @@ class Evaluator:
         fields = self.get_fields(tasks)
         for f in fields:
             f.require_coeff_space()
-            f.set_scales(self.domain.dealias, keep_data=True)
+            f.require_scales(f.subdomain.dealias)
         tasks = self.attempt_tasks(tasks, id=sim_time)
 
         # Oscillate through layouts until all tasks are evaluated
@@ -254,7 +254,7 @@ class DictionaryHandler(Handler):
         """Reference fields from dictionary."""
 
         for task in self.tasks:
-            task['out'].set_scales(task['scales'], keep_data=True)
+            task['out'].require_scales(task['scales'])
             task['out'].require_layout(task['layout'])
             self.fields[task['name']] = task['out']
 
@@ -265,19 +265,28 @@ class SystemHandler(Handler):
     def build_system(self):
         """Build FieldSystem and set task outputs."""
 
-        nfields = len(self.tasks)
-        names = ['sys'+str(i) for i in range(nfields)]
-        self.system = FieldSystem(names, self.domain)
+        # nfields = len(self.tasks)
+        # names = ['sys'+str(i) for i in range(nfields)]
+        # self.system = FieldSystem(names, self.domain)
 
+        self.fields = []
         for i, task in enumerate(self.tasks):
-            task['operator'].out = self.system.fields[i]
+            op = task['operator']
+            if all(basis is None for basis in op.bases):
+                field = Field(self.domain)
+            else:
+                field = Field(op.bases)
+            op.out = field
+            self.fields.append(field)
+            # field = Field(task['operator'].bases)
+            # task['operator'].out = self.system.fields[i]
 
-        return self.system
+        #return self.system
 
     def process(self, wall_time, sim_time, iteration):
         """Gather fields into system."""
-
-        self.system.gather()
+        pass
+        #self.system.gather()
 
 
 class FileHandler(Handler):
@@ -405,7 +414,7 @@ class FileHandler(Handler):
         scale_group.create_dataset(name='iteration', shape=(0,), maxshape=(None,), dtype=np.int)
         scale_group.create_dataset(name='write_number', shape=(0,), maxshape=(None,), dtype=np.int)
         const = scale_group.create_dataset(name='constant', data=np.array([0.], dtype=np.float64))
-        for axis, basis in enumerate(domain.bases):
+        for basis in domain.bases:
             coeff_name = basis.element_label + basis.name
             scale_group.create_dataset(name=coeff_name, data=basis.elements)
             scale_group.create_group(basis.name)
@@ -444,8 +453,9 @@ class FileHandler(Handler):
                 dset.dims[0].attach_scale(scale)
 
             # Spatial scales
-            for axis, basis in enumerate(domain.bases):
-                if constant[axis]:
+            for axis in enumerate(domain.dim):
+                basis = task['operator'].bases[axis]
+                if basis is None:
                     sn = lookup = 'constant'
                 else:
                     if layout.grid_space[axis]:
@@ -488,7 +498,7 @@ class FileHandler(Handler):
         # Create task datasets
         for task_num, task in enumerate(self.tasks):
             out = task['out']
-            out.set_scales(task['scales'], keep_data=True)
+            out.require_scales(task['scales'])
             out.require_layout(task['layout'])
 
             dset = file['tasks'][task['name']]

@@ -11,10 +11,10 @@ from scipy.linalg import eig
 
 #from ..data.operators import parsable_ops
 from . import operators
-from . import pencil
+from . import subsystems
 from .evaluator import Evaluator
 from .system import CoeffSystem, FieldSystem
-from .field import Scalar, Field
+from .field import Field
 from ..tools.progress import log_progress
 
 from ..tools.config import config
@@ -113,25 +113,23 @@ class LinearBoundaryValueSolver:
         self.problem = problem
         self.domain = domain = problem.domain
 
-        # Build pencils and pencil matrices
-        self.pencils = pencil.build_pencils(domain)
-        pencil.build_matrices(self.pencils, problem, ['L'])
+        # Build subsystems and subsystem matrices
+        self.subsystems = subsystems.build_local_subsystems(problem)
+        subsystems.build_matrices(self.subsystems, problem, ['L'])
 
         # Build systems
         namespace = problem.namespace
-        vars = [namespace[var] for var in problem.variables]
-        self.state = FieldSystem.from_fields(vars)
+        #vars = [namespace[var] for var in problem.variables]
+        #self.state = FieldSystem.from_fields(problem.variables)
+        self.state = problem.variables
 
         # Create F operator trees
         self.evaluator = Evaluator(domain, namespace)
-        Fe_handler = self.evaluator.add_system_handler(iter=1, group='F')
-        Fb_handler = self.evaluator.add_system_handler(iter=1, group='F')
-        for eqn in problem.eqs:
-            Fe_handler.add_task(eqn['F'])
-        for bc in problem.bcs:
-            Fb_handler.add_task(bc['F'])
-        self.Fe = Fe_handler.build_system()
-        self.Fb = Fb_handler.build_system()
+        F_handler = self.evaluator.add_system_handler(iter=1, group='F')
+        for eq in problem.eqs:
+            F_handler.add_task(eq['F'])
+        F_handler.build_system()
+        self.F = F_handler.fields
 
         logger.debug('Finished LBVP instantiation')
 
@@ -140,16 +138,13 @@ class LinearBoundaryValueSolver:
 
         # Compute RHS
         self.evaluator.evaluate_group('F', 0, 0, 0)
-
-        # Solve system for each pencil, updating state
-        for p in self.pencils:
-            pFe = self.Fe.get_pencil(p)
-            pFb = self.Fb.get_pencil(p)
-            A = p.L
-            b = p.G_eq * pFe + p.G_bc * pFb
-            x = linalg.spsolve(A, b, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
-            self.state.set_pencil(p, x)
-        self.state.scatter()
+        # Solve system for each subsystem, updating state
+        for ss in self.subsystems:
+            LHS = ss.L
+            RHS = ss.RHC_C * ss.get_vector(self.F)
+            X = linalg.spsolve(LHS, RHS, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
+            ss.set_vector(self.state, X)
+        #self.state.scatter()
 
 
 class NonlinearBoundaryValueSolver:
@@ -261,29 +256,28 @@ class InitialValueSolver:
         self._wall_time_array = np.zeros(1, dtype=float)
         self.start_time = self.get_wall_time()
 
-        # Build pencils and pencil matrices
-        self.pencils = pencil.build_pencils(domain)
-        pencil.build_matrices(self.pencils, problem, ['M', 'L'])
+        # Build subsystems and subsystem matrices
+        self.subsystems = subsystems.build_local_subsystems(problem)
+        subsystems.build_matrices(self.subsystems, problem, ['M', 'L'])
 
         # Build systems
         namespace = problem.namespace
-        vars = [namespace[var] for var in problem.variables]
-        self.state = FieldSystem.from_fields(vars)
+        #vars = [namespace[var] for var in problem.variables]
+        #self.state = FieldSystem.from_fields(vars)
+        self.state = problem.variables
         self._sim_time = namespace[problem.time]
 
         # Create F operator trees
         self.evaluator = Evaluator(domain, namespace)
-        Fe_handler = self.evaluator.add_system_handler(iter=1, group='F')
-        Fb_handler = self.evaluator.add_system_handler(iter=1, group='F')
-        for eqn in problem.eqs:
-            Fe_handler.add_task(eqn['F'])
-        for bc in problem.bcs:
-            Fb_handler.add_task(bc['F'])
-        self.Fe = Fe_handler.build_system()
-        self.Fb = Fb_handler.build_system()
+        F_handler = self.evaluator.add_system_handler(iter=1, group='F')
+        for eq in problem.eqs:
+            F_handler.add_task(eq['F'])
+        F_handler.build_system()
+        self.F = F_handler.fields
 
         # Initialize timestepper
-        self.timestepper = timestepper(problem.nvars, domain)
+        basis_sets = [eq['bases'] for eq in problem.eqs]
+        self.timestepper = timestepper(basis_sets, self.subsystems)
 
         # Attributes
         self.sim_time = 0.
@@ -326,25 +320,37 @@ class InitialValueSolver:
         else:
             return True
 
+    def euler_step(self, dt):
+        """
+        M.dt(X) + L.X = F
+        M.X1 - M.X0 + h L.X1 = h F
+        (M + h L).X1 = M.X0 + h F
+        """
+        # Compute RHS
+        self.evaluator.evaluate_group('F', 0, 0, 0)
+        # Solve system for each subsystem, updating state
+        for ss in self.subsystems:
+            X0 = ss.get_vector(self.state)
+            F0 = ss.get_vector(self.F)
+            RHS = ss.M_csr*X0 + dt*ss.RHS_C_csr*F0
+            LHS = ss.M_csc + dt*ss.L_csc
+            X1 = linalg.spsolve(LHS, RHS, permc_spec=PERMC_SPEC)
+            ss.set_vector(self.state, X1)
+        self.iteration += 1
+
     def step(self, dt):
         """Advance system by one iteration/timestep."""
-
         if not np.isfinite(dt):
             raise ValueError("Invalid timestep")
-
         # References
-        state = self.state
-
+        #state = self.state
         # (Safety gather)
-        state.gather()
-
+        #state.gather()
         # Advance using timestepper
         wall_time = self.get_wall_time() - self.start_time
         self.timestepper.step(self, dt, wall_time)
-
         # (Safety scatter)
-        state.scatter()
-
+        #state.scatter()
         # Update iteration
         self.iteration += 1
 

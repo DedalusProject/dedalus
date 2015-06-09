@@ -7,6 +7,7 @@ from .core import field
 from .core import future
 from .core import distributor
 from .core import domain
+from .core import spaces
 from .core import evaluator
 from .core import operators
 from .core import pencil

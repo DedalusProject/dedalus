@@ -29,22 +29,28 @@ class CoeffSystem:
 
     """
 
-    def __init__(self, nfields, domain):
+    def __init__(self, basis_sets, subsystems):
+        self.subsystems = subsystems
+        self.sizes = sizes = []
+        for ss in subsystems:
+            ss_size = 0
+            for bases in basis_sets:
+                ss_size += ss.size(bases)
+            sizes.append(ss_size)
+        self.starts = [sum(sizes[:i]) for i in range(len(sizes))]
+        self.data = np.zeros(sum(self.sizes), dtype=subsystems[0].domain.dtype)
 
-        # Allocate data for joined coefficients
-        # Extend along last axis
-        shape = domain.local_coeff_shape.copy()
-        shape[-1] *= nfields
-        dtype = domain.dist.coeff_layout.dtype
-        self.data = np.zeros(shape, dtype=dtype)
+    def get_subdata(self, subsystem):
+        i = self.subsystems.index(subsystem)
+        start = self.starts[i]
+        size = self.sizes[i]
+        return self.data[start:start+size]
 
-    def get_pencil(self, pencil):
-        """Return pencil view from system buffer."""
-        return self.data[pencil.local_index]
-
-    def set_pencil(self, pencil, data):
-        """Set pencil data in system buffer."""
-        np.copyto(self.data[pencil.local_index], data)
+    def set_subdata(self, subsystem, data):
+        i = self.subsystems.index(subsystem)
+        start = self.starts[i]
+        size = self.sizes[i]
+        self.data[start:start+size] = data
 
 
 class FieldSystem(CoeffSystem):
@@ -113,6 +119,6 @@ class FieldSystem(CoeffSystem):
         stride = self.nfields
         coeff_layout = self.domain.dist.coeff_layout
         for start, field in enumerate(self.fields):
-            field.layout = coeff_layout
+            field.set_layout(coeff_layout)
             np.copyto(field.data, self.data[..., start::stride])
 

@@ -65,3 +65,15 @@ def unify(objects):
             if object != OBJECT:
                 raise ValueError("Objects are not all equal.")
     return OBJECT
+
+
+def unify_attributes(objects, attr, require=True):
+    """Unify object attributes."""
+    attrs = []
+    for object in objects:
+        try:
+            attrs.append(getattr(object, attr))
+        except AttributeError:
+            if require:
+                raise
+    return unify(attrs)

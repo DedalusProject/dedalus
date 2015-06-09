@@ -22,6 +22,7 @@ if TRANSPOSE_LIBRARY.upper() == 'FFTW':
     from .transposes import FFTWTranspose as TransposePlanner
 elif TRANSPOSE_LIBRARY.upper() == 'MPI':
     from .transposes import AlltoallvTranspose as TransposePlanner
+    from .transposes import RowDistributor, ColDistributor
 
 
 class Distributor:
@@ -103,12 +104,10 @@ class Distributor:
         coords = self.coords
         D = domain.dim
         R = mesh.size
-
         # First layout: full coefficient space
         local = [False] * R + [True] * (D-R)
         grid_space = [False] * D
-        dtype = domain.bases[-1].coeff_dtype
-        layout_0 = Layout(domain, mesh, coords, local, grid_space, dtype)
+        layout_0 = Layout(domain, mesh, coords, local, grid_space)
         layout_0.index = 0
 
         # Layout and path lists
@@ -118,21 +117,20 @@ class Distributor:
         # Subsequent layouts
         for i in range(1, R+D+1):
             # Iterate backwards over bases to last coefficient space basis
-            for d, basis in rev_enumerate(domain.bases):
+            for d in reversed(range(domain.dim)):
                 if not grid_space[d]:
                     # Transform if local
                     if local[d]:
                         grid_space[d] = True
-                        dtype = basis.grid_dtype
-                        layout_i = Layout(domain, mesh, coords, local, grid_space, dtype)
+                        layout_i = Layout(domain, mesh, coords, local, grid_space)
                         if not dry_run:
-                            path_i = Transform(self.layouts[-1], layout_i, d, basis)
+                            path_i = Transform(self.layouts[-1], layout_i, d)
                         break
                     # Otherwise transpose
                     else:
                         local[d] = True
                         local[d+1] = False
-                        layout_i = Layout(domain, mesh, coords, local, grid_space, dtype)
+                        layout_i = Layout(domain, mesh, coords, local, grid_space)
                         if not dry_run:
                             path_i = Transpose(self.layouts[-1], layout_i, d, self.comm_cart)
                         break
@@ -161,10 +159,9 @@ class Distributor:
             return self.layout_references[input]
 
     @CachedMethod
-    def buffer_size(self, scales):
+    def buffer_size(self, bases, scales):
         """Compute necessary buffer size (bytes) for all layouts."""
-
-        return max(layout.buffer_size(scales) for layout in self.layouts)
+        return max(layout.buffer_size(bases, scales) for layout in self.layouts)
 
 
 class Layout:
@@ -185,13 +182,12 @@ class Layout:
 
     """
 
-    def __init__(self, domain, mesh, coords, local, grid_space, dtype):
+    def __init__(self, domain, mesh, coords, local, grid_space):
 
         self.domain = domain
         # Freeze local and grid_space lists into boolean arrays
         self.local = np.array(local)
         self.grid_space = np.array(grid_space)
-        self.dtype = dtype
 
         # Extend mesh and coordinates to domain dimension
         self.ext_mesh = np.ones(domain.dim, dtype=int)
@@ -200,127 +196,138 @@ class Layout:
         self.ext_coords[~self.local] = coords
 
     @CachedMethod
-    def global_shape(self, scales):
+    def global_shape(self, subdomain, scales):
         """Compute global data shape."""
-
-        global_coeff_shape = self.domain.global_coeff_shape
-        global_grid_shape = self.domain.global_grid_shape(scales)
-
-        global_shape = global_coeff_shape.copy()
-        global_shape[self.grid_space] = global_grid_shape[self.grid_space]
+        scales = self.domain.remedy_scales(scales)
+        grid_space = self.grid_space
+        global_shape = np.zeros(self.domain.dim, dtype=int)
+        global_shape[grid_space] = subdomain.global_grid_shape(scales)[grid_space]
+        global_shape[~grid_space] = subdomain.global_coeff_shape[~grid_space]
         return global_shape
 
     @CachedMethod
-    def blocks(self, scales):
+    def groups(self, subdomain, scales):
+        """Comptue group sizes."""
+        groups = []
+        for axis, space in enumerate(subdomain.spaces):
+            if space is None:
+                groups.append(1)
+            elif self.grid_space[axis]:
+                groups.append(1)
+            else:
+                groups.append(space.group_size)
+        return np.array(groups, dtype=int)
+
+    @CachedMethod
+    def blocks(self, subdomain, scales):
         """Compute block sizes for data distribution."""
-
-        global_shape = self.global_shape(scales)
-        # FFTW standard block sizes
-        return np.ceil(global_shape / self.ext_mesh).astype(int)
+        global_shape = self.global_shape(subdomain, scales)
+        groups = self.groups(subdomain, scales)
+        return groups * np.ceil(global_shape / groups / self.ext_mesh).astype(int)
 
     @CachedMethod
-    def start(self, scales):
+    def start(self, subdomain, scales):
         """Compute starting coordinates for local data."""
-
-        blocks = self.blocks(scales)
-        return self.ext_coords * blocks
+        blocks = self.blocks(subdomain, scales)
+        start = self.ext_coords * blocks
+        start[subdomain.constant] = 0
+        return start
 
     @CachedMethod
-    def local_shape(self, scales):
+    def local_shape(self, subdomain, scales):
         """Compute local data shape."""
-
-        global_shape = self.global_shape(scales)
-        blocks = self.blocks(scales)
-        ext_coords = self.ext_coords
-
-        # Cutoff coordinates: first empty/partial blocks
-        cuts = np.floor(global_shape / blocks).astype(int)
-
-        local_shape = blocks.copy()
-        local_shape[ext_coords == cuts] = (global_shape - cuts*blocks)[ext_coords == cuts]
-        local_shape[ext_coords > cuts] = 0
+        global_shape = self.global_shape(subdomain, scales)
+        blocks = self.blocks(subdomain, scales)
+        start = self.start(subdomain, scales)
+        local_shape = np.minimum(blocks, global_shape-start)
+        local_shape = np.maximum(0, local_shape)
         return local_shape
 
     @CachedMethod
-    def slices(self, scales):
+    def slices(self, subdomain, scales):
         """Compute slices for selecting local portion of global data."""
-
-        start = self.start(scales)
-        local_shape = self.local_shape(scales)
+        start = self.start(subdomain, scales)
+        local_shape = self.local_shape(subdomain, scales)
         return tuple(slice(s, s+l) for (s, l) in zip(start, local_shape))
 
     @CachedMethod
-    def buffer_size(self, scales):
-        """Compute necessary buffer size (bytes)."""
+    def global_indices(self, subdomain, scales):
+        start = self.start(subdomain, scales)
+        local_shape = self.local_shape(subdomain, scales)
 
-        local_shape = self.local_shape(scales)
-        return np.prod(local_shape) * self.dtype.itemsize
+    @CachedMethod
+    def buffer_size(self, subdomain, scales):
+        """Compute necessary buffer size (bytes)."""
+        local_shape = self.local_shape(subdomain, scales)
+        return np.prod(local_shape) * self.domain.dtype.itemsize
 
 
 class Transform:
     """Directs transforms between two layouts."""
-    # To Do: group transforms for multiple fields
 
-    def __init__(self, layout0, layout1, axis, basis):
-
+    def __init__(self, layout0, layout1, axis):
+        self.domain = layout0.domain
         self.layout0 = layout0
         self.layout1 = layout1
         self.axis = axis
-        self.basis = basis
 
-    @CachedMethod
-    def group_data(self, nfields, scales):
+    # @CachedMethod
+    # def group_data(self, nfields, scales):
 
-        local_shape0 = self.layout0.local_shape(scales)
-        local_shape1 = self.layout1.local_shape(scales)
-        group_shape0 = [nfields] + list(local_shape0)
-        group_shape1 = [nfields] + list(local_shape1)
-        group_cdata = fftw.create_array(group_shape0, self.layout0.dtype)
-        group_gdata = fftw.create_array(group_shape1, self.layout1.dtype)
+    #     local_shape0 = self.layout0.local_shape(scales)
+    #     local_shape1 = self.layout1.local_shape(scales)
+    #     group_shape0 = [nfields] + list(local_shape0)
+    #     group_shape1 = [nfields] + list(local_shape1)
+    #     group_cdata = fftw.create_array(group_shape0, self.layout0.dtype)
+    #     group_gdata = fftw.create_array(group_shape1, self.layout1.dtype)
 
-        return group_cdata, group_gdata
+    #     return group_cdata, group_gdata
 
-    def increment_group(self, fields):
-        fields = list(fields)
-        scales = fields[0].meta[:]['scale']
-        cdata, gdata = self.group_data(len(fields), scales)
-        for i, field in enumerate(fields):
-            np.copyto(cdata[i], field.data)
-        self.basis.backward(cdata, gdata, self.axis+1, fields[0].meta[self.axis])
-        for i, field in enumerate(fields):
-            field.layout = self.layout1
-            np.copyto(field.data, gdata[i])
+    # def increment_group(self, fields):
+    #     fields = list(fields)
+    #     scales = fields[0].meta[:]['scale']
+    #     cdata, gdata = self.group_data(len(fields), scales)
+    #     for i, field in enumerate(fields):
+    #         np.copyto(cdata[i], field.data)
+    #     self.basis.backward(cdata, gdata, self.axis+1, fields[0].meta[self.axis])
+    #     for i, field in enumerate(fields):
+    #         field.layout = self.layout1
+    #         np.copyto(field.data, gdata[i])
 
-    def decrement_group(self, fields):
-        fields = list(fields)
-        scales = fields[0].meta[:]['scale']
-        cdata, gdata = self.group_data(len(fields), scales)
-        for i, field in enumerate(fields):
-            np.copyto(gdata[i], field.data)
-        self.basis.forward(gdata, cdata, self.axis+1, fields[0].meta[self.axis])
-        for i, field in enumerate(fields):
-            field.layout = self.layout0
-            np.copyto(field.data, cdata[i])
+    # def decrement_group(self, fields):
+    #     fields = list(fields)
+    #     scales = fields[0].meta[:]['scale']
+    #     cdata, gdata = self.group_data(len(fields), scales)
+    #     for i, field in enumerate(fields):
+    #         np.copyto(gdata[i], field.data)
+    #     self.basis.forward(gdata, cdata, self.axis+1, fields[0].meta[self.axis])
+    #     for i, field in enumerate(fields):
+    #         field.layout = self.layout0
+    #         np.copyto(field.data, cdata[i])
 
     def increment_single(self, field):
         """Backward transform."""
+        basis = field.bases[self.axis]
         # Reference views from both layouts
         cdata = field.data
-        field.layout = self.layout1
+        field.set_layout(self.layout1)
         gdata = field.data
         # Transform if there's local data
-        if np.prod(cdata.shape):
-            self.basis.backward(cdata, gdata, self.axis, field.meta[self.axis])
+        if (basis is not None) and np.prod(cdata.shape):
+            plan = basis.transform_plan(cdata.shape, self.domain.dtype, self.axis, field.scales[self.axis])
+            plan.backward(cdata, gdata)
 
     def decrement_single(self, field):
         """Forward transform."""
+        basis = field.bases[self.axis]
         # Reference views from both layouts
         gdata = field.data
-        field.layout = self.layout0
+        field.set_layout(self.layout0)
         cdata = field.data
         # Transform if there's local data
-        if np.prod(gdata.shape):
-            self.basis.forward(gdata, cdata, self.axis, field.meta[self.axis])
+        if (basis is not None) and np.prod(gdata.shape):
+            plan = basis.transform_plan(cdata.shape, self.domain.dtype, self.axis, field.scales[self.axis])
+            plan.forward(gdata, cdata)
 
     def increment(self, fields):
         """Backward transform."""
@@ -354,15 +361,15 @@ class Transpose:
         # Attributes
         self.layout0 = layout0
         self.layout1 = layout1
-        self.dtype = layout0.dtype  # same as layout1.dtype
+        self.dtype = layout0.domain.dtype  # same as layout1.dtype
         self.axis = axis
         self.comm_cart = comm_cart
         self.comm_sub = comm_sub
 
-    def _sub_shape(self, scales):
+    def _sub_shape(self, subdomain, scales):
         """Build global shape of data assigned to sub-communicator."""
-        local_shape = self.layout0.local_shape(scales)
-        global_shape = self.layout0.global_shape(scales)
+        local_shape = self.layout0.local_shape(subdomain, scales)
+        global_shape = self.layout0.global_shape(subdomain, scales)
         # Global shape along transposing axes, local shape along others
         sub_shape = local_shape.copy()
         sub_shape[self.axis] = global_shape[self.axis]
@@ -370,16 +377,24 @@ class Transpose:
         return sub_shape
 
     @CachedMethod
-    def _single_plan(self, scales):
+    def _single_plan(self, subdomain, scales):
         """Build single transpose plan."""
-        sub_shape = self._sub_shape(scales)
+        sub_shape = self._sub_shape(subdomain, scales)
+        dtype = self.layout0.domain.dtype
+        axis = self.axis
         if np.prod(sub_shape) == 0:
             return None  # no data
+        elif (subdomain.spaces[axis] is None) and (subdomain.spaces[axis+1] is None):
+            return None  # no change
+        elif (subdomain.spaces[axis] is None):
+            return RowDistributor(sub_shape, dtype, axis, self.comm_sub)
+        elif (subdomain.spaces[axis+1] is None):
+            return ColDistributor(sub_shape, dtype, axis, self.comm_sub)
         else:
-            return TransposePlanner(sub_shape, self.dtype, self.axis, self.comm_sub)
+            return TransposePlanner(sub_shape, dtype, axis, self.comm_sub)
 
     @CachedMethod
-    def _group_plan(self, nfields, scales):
+    def _group_plan(self, nfields, scales, dtype):
         """Build group transpose plan."""
         sub_shape = self._sub_shape(scales)
         group_shape = np.hstack([nfields, sub_shape])
@@ -390,11 +405,11 @@ class Transpose:
             buffer0_shape = np.hstack([nfields, self.layout0.local_shape(scales)])
             buffer1_shape = np.hstack([nfields, self.layout1.local_shape(scales)])
             size = max(np.prod(buffer0_shape), np.prod(buffer1_shape))
-            buffer = fftw.create_array(shape=[size], dtype=self.dtype)
-            buffer0 = np.ndarray(shape=buffer0_shape, dtype=self.dtype, buffer=buffer)
-            buffer1 = np.ndarray(shape=buffer1_shape, dtype=self.dtype, buffer=buffer)
+            buffer = fftw.create_array(shape=[size], dtype=dtype)
+            buffer0 = np.ndarray(shape=buffer0_shape, dtype=dtype, buffer=buffer)
+            buffer1 = np.ndarray(shape=buffer1_shape, dtype=dtype, buffer=buffer)
             # Creat plan on subsequent axis of group shape
-            plan = TransposePlanner(group_shape, self.dtype, self.axis+1, self.comm_sub)
+            plan = TransposePlanner(group_shape, dtype, self.axis+1, self.comm_sub)
             return plan, buffer0, buffer1
 
     def increment(self, fields):
@@ -423,37 +438,37 @@ class Transpose:
 
     def increment_single(self, field):
         """Transpose field from layout0 to layout1."""
-        scales = field.meta[:]['scale']
-        plan = self._single_plan(scales)
+        scales = field.scales
+        plan = self._single_plan(field.subdomain, scales)
         if plan:
             # Setup views of data in each layout
             data0 = field.data
-            field.layout = self.layout1
+            field.set_layout(self.layout1)
             data1 = field.data
             # Transpose between data views
             plan.localize_columns(data0, data1)
         else:
             # No data: just update field layout
-            field.layout = self.layout1
+            field.set_layout(self.layout1)
 
     def decrement_single(self, field):
         """Transpose field from layout1 to layout0."""
-        scales = field.meta[:]['scale']
-        plan = self._single_plan(scales)
+        scales = field.scales
+        plan = self._single_plan(field.subdomain, scales)
         if plan:
             # Setup views of data in each layout
             data1 = field.data
-            field.layout = self.layout0
+            field.set_layout(self.layout0)
             data0 = field.data
             # Transpose between data views
             plan.localize_rows(data1, data0)
         else:
             # No data: just update field layout
-            field.layout = self.layout0
+            field.set_layout(self.layout0)
 
     def increment_group(self, *fields):
         """Transpose group from layout0 to layout1."""
-        scales = unify(field.meta[:]['scale'] for field in fields)
+        scales = unify(field.scales for field in fields)
         plan, buffer0, buffer1 = self._group_plan(len(fields), scales)
         if plan:
             # Copy fields to group buffer
@@ -463,16 +478,16 @@ class Transpose:
             plan.localize_columns(buffer0, buffer1)
             # Copy from group buffer to fields in new layout
             for i, field in enumerate(fields):
-                field.layout = self.layout1
+                field.set_layout(self.layout1)
                 np.copyto(field.data, buffer1[i])
         else:
             # No data: just update field layouts
             for field in fields:
-                field.layout = self.layout1
+                field.set_layout(self.layout1)
 
     def decrement_group(self, *fields):
         """Transpose group from layout1 to layout0."""
-        scales = unify(field.meta[:]['scale'] for field in fields)
+        scales = unify(field.scales for field in fields)
         plan, buffer0, buffer1 = self._group_plan(len(fields), scales)
         if plan:
             # Copy fields to group buffer
@@ -482,10 +497,10 @@ class Transpose:
             plan.localize_rows(buffer1, buffer0)
             # Copy from group buffer to fields in new layout
             for i, field in enumerate(fields):
-                field.layout = self.layout0
+                field.set_layout(self.layout0)
                 np.copyto(field.data, buffer0[i])
         else:
             # No data: just update field layouts
             for field in fields:
-                field.layout = self.layout0
+                field.set_layout(self.layout0)
 

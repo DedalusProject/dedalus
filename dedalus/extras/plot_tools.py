@@ -32,7 +32,7 @@ class DimWrapper:
     def __init__(self, field, axis):
         self.field = field
         self.axis = axis
-        self.basis = field.domain.bases[axis]
+        self.basis = field.bases[axis]
 
     @property
     def label(self):
@@ -43,8 +43,8 @@ class DimWrapper:
 
     def __getitem__(self, item):
         if self.field.layout.grid_space[self.axis]:
-            scale = self.field.meta[self.axis]['scale']
-            return self.basis.grid(scale)
+            scale = self.field.scales[self.axis]
+            return self.basis.space.grid(scale)
         else:
             return self.basis.elements
 
@@ -140,6 +140,8 @@ def plot_bot(dset, image_axes, data_slices, clim=None, even_scale=False, cmap='R
     caxes.xaxis.set_label_position('top')
     paxes.set_ylabel(dset.dims[yaxis].label)
     paxes.set_xlabel(dset.dims[xaxis].label)
+
+    return plot, cbar
 
 
 def plot_bot_2d(dset, transpose=False, **kw):

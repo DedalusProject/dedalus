@@ -33,3 +33,26 @@ class Sync:
         if self.exit:
             self.comm.Barrier()
 
+
+class RotateProcesses:
+    """
+    Context manager for rotating execution between MPI processes.
+
+    Parameters
+    ----------
+    comm : MPI communicator, optional
+
+    """
+
+    def __init__(self, comm=MPI.COMM_WORLD):
+        self.comm = comm
+        self.size = comm.size
+        self.rank = comm.rank
+
+    def __enter__(self):
+        for i in range(self.rank):
+            self.comm.Barrier()
+
+    def __exit__(self, type, value, traceback):
+        for i in range(self.size-self.rank):
+            self.comm.Barrier()

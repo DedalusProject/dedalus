@@ -5,7 +5,8 @@ Classes for future evaluation.
 
 from functools import partial
 
-from .field import Operand, Data, Scalar, Array, Field
+from .field import Operand, Data, Array, Field
+from .domain import Subdomain
 from .metadata import Metadata
 from ..tools.general import OrderedSet
 from ..tools.cache import CachedAttribute, CachedMethod
@@ -38,24 +39,19 @@ class Future(Operand):
     __array_priority__ = 100.
     store_last = False
 
-    def __init__(self, *args, domain=None, out=None):
+    def __init__(self, *args, out=None):
 
         # Check arity
         if self.arity is not None:
             if len(args) != self.arity:
                 raise ValueError("Wrong number of arguments.")
-        # Infer domain from arguments
-        if domain is None:
-            domain = unique_domain(out, *args)
         # Required attributes
         self.args = list(args)
         self.original_args = list(args)
-        self.domain = domain
-        try:
-            self._grid_layout = domain.dist.grid_layout
-            self._coeff_layout = domain.dist.coeff_layout
-        except AttributeError:
-            pass
+        self.subdomain, self.bases = Subdomain.from_bases(self._build_bases(*args))
+        self.domain = self.subdomain.domain
+        self._grid_layout = self.domain.dist.grid_layout
+        self._coeff_layout = self.domain.dist.coeff_layout
         self.out = out
         self.kw = {}
         self.last_id = None
@@ -95,12 +91,12 @@ class Future(Operand):
         """Replace an object in the expression tree."""
         if self == old:
             return new
-        elif self.base == old:
+        elif self.base() == old:
             args = [arg.replace(old, new) for arg in self.args]
             return new(*args, **self.kw)
         else:
             args = [arg.replace(old, new) for arg in self.args]
-            return self.base(*args, **self.kw)
+            return self.base()(*args, **self.kw)
 
     def evaluate(self, id=None, force=True):
         """Recursively evaluate operation."""
@@ -119,7 +115,7 @@ class Future(Operand):
         all_eval = True
         for i, a in enumerate(self.args):
             if isinstance(a, Field):
-                a.set_scales(self.domain.dealias, keep_data=True)
+                a.require_scales(self.subdomain.dealias)
             if isinstance(a, Future):
                 a_eval = a.evaluate(id=id, force=force)
                 # If evaluation succeeds, substitute result
@@ -128,13 +124,14 @@ class Future(Operand):
                 # Otherwise change flag
                 else:
                     all_eval = False
-
         # Return None if any arguments are not evaluable
         if not all_eval:
             return None
 
         # Check conditions unless forcing evaluation
-        if not force:
+        if force:
+            self.enforce_conditions()
+        else:
             # Return None if operator conditions are not satisfied
             if not self.check_conditions():
                 return None
@@ -143,15 +140,15 @@ class Future(Operand):
         if self.out:
             out = self.out
         else:
-            out = self.domain.new_data(self.future_type)
+            bases = self.bases
+            if all(basis is None for basis in bases):
+                bases = self.domain
+            out = self.future_type(bases=bases)
+            #out = self.domain.new_data(self.future_type)
+            #out = Field(name=str(self), bases=self.bases)
 
         # Copy metadata
-        try:
-            out.meta = self.meta
-            out.meta[:]['scale'] = None
-            out.set_scales(self.domain.dealias, keep_data=False)
-        except AttributeError:
-            pass
+        out.set_scales(self.subdomain.dealias)
 
         # Perform operation
         self.operate(out)
@@ -170,18 +167,6 @@ class Future(Operand):
         """Recursively attempt to evaluate operation."""
         return self.evaluate(id=id, force=False)
 
-    @CachedAttribute
-    def meta(self):
-        meta = Metadata(self.domain)
-        for axis in range(self.domain.dim):
-            for key in meta[axis]:
-                meta[axis][key] = getattr(self, 'meta_%s' %key)(axis)
-        return meta
-
-    def meta_scale(self, axis):
-        # Perform all operations at the dealias scale
-        return self.domain.bases[axis].dealias
-
     def check_conditions(self):
         """Check that all argument fields are in proper layouts."""
         # This method must be implemented in derived classes and should return
@@ -197,15 +182,9 @@ class Future(Operand):
         raise NotImplementedError()
 
     @CachedMethod(max_size=1)
-    def as_ncc_operator(self, cacheid=None, **kw):
+    def as_ncc_operator(self,*args, **kw):
         ncc = self.evaluate()
-        return ncc.as_ncc_operator(name=str(self), **kw)
-
-
-class FutureScalar(Future):
-    """Class for deferred operations producing a Scalar."""
-    future_type = Scalar
-    meta = Scalar.ScalarMeta()
+        return ncc.as_ncc_operator(*args, name=str(self), **kw)
 
 
 class FutureArray(Future):
@@ -228,7 +207,7 @@ class FutureField(Future):
         """Cast an object to a FutureField."""
         from .operators import FieldCopy
         # Cast to operand
-        input = Operand.cast(input, domain=domain)
+        input = Operand.cast(input, domain)
         # Cast to FutureField
         if isinstance(input, FutureField):
             return input
