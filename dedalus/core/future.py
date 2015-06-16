@@ -7,7 +7,6 @@ from functools import partial
 
 from .field import Operand, Data, Array, Field
 from .domain import Subdomain
-from .metadata import Metadata
 from ..tools.general import OrderedSet
 from ..tools.cache import CachedAttribute, CachedMethod
 

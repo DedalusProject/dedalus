@@ -6,7 +6,6 @@ Class for problem domain.
 import logging
 import numpy as np
 
-from .metadata import Metadata
 from .distributor import Distributor
 from .field import Field
 #from .operators import create_diff_operator
@@ -46,7 +45,7 @@ class Domain:
         self.distributor = self.dist = Distributor(self, mesh)
 
     def add_space(self, space, axis):
-        if space.domain is not None:
+        if hasattr(space, 'domain'):
             raise ValueError("Space already assigned to a domain.")
         space.domain = self
         space.axis = axis

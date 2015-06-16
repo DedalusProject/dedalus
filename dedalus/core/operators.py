@@ -7,6 +7,7 @@ from collections import defaultdict
 from functools import partial, reduce
 import numpy as np
 from scipy import sparse
+from numbers import Number
 
 from .domain import Subdomain
 from .field import Operand, Data, Array, Field
@@ -126,6 +127,7 @@ class FieldCopyField(FieldCopy):
 
 class Operator(Future):
 
+    @property
     def base(self):
         return type(self)
 
@@ -148,13 +150,6 @@ class NonlinearOperator(Operator):
             raise NonlinearOperatorError("{} is a non-linear function of the specified variables.".format(str(self)))
         else:
             return self
-
-    def factor(self, *vars):
-        """Produce operator-factor dictionary over specified variables."""
-        if self.has(*vars):
-            return defaultdict(int, {self: 1})
-        else:
-            return defaultdict(int, {1: self})
 
     def split(self, *vars):
         if self.has(*vars):
@@ -305,6 +300,28 @@ class UnaryGridFunction(NonlinearOperator, Future, metaclass=MultiClass):
         return diffmap[self.func](arg0) * diff0
 
 
+class UnaryGridFunctionScalar(UnaryGridFunction, FutureScalar):
+
+    argtypes = {1: (Scalar, FutureScalar)}
+
+    def check_conditions(self):
+        return True
+
+    def operate(self, out):
+        out.value = self.func(self.args[0].value)
+
+
+class UnaryGridFunctionArray(UnaryGridFunction, FutureArray):
+
+    argtypes = {1: (Array, FutureArray)}
+
+    def check_conditions(self):
+        return True
+
+    def operate(self, out):
+        self.func(self.args[0].data, out=out.data)
+
+
 class UnaryGridFunctionField(UnaryGridFunction, FutureField):
 
     argtypes = {1: (Field, FutureField)}
@@ -345,14 +362,13 @@ class Add(Arithmetic, metaclass=MultiClass):
     str_op = ' + '
 
     def __init__(self, arg0, arg1, out=None):
-        typecheck((arg0, Field), (arg1, Field))
-
         bases = self._build_bases(arg0, arg1)
         self.subdomain, self.bases = Subdomain.from_bases(bases)
         self.domain = self.subdomain.domain
         arg0 = convert(arg0, self.bases)
         arg1 = convert(arg1, self.bases)
         super().__init__(arg0, arg1, out=out)
+
         #self.args = [arg0, arg1]
         #self.out = out
 
@@ -411,15 +427,6 @@ class Add(Arithmetic, metaclass=MultiClass):
         sep1 = arg1.separability(vars)
         return (sep0 & sep1)
 
-    def factor(self, *vars):
-        """Produce operator-factor dictionary over specified variables."""
-        out = defaultdict(int)
-        F0 = self.args[0].factor(*vars)
-        F1 = self.args[1].factor(*vars)
-        for f in set().union(F0, F1):
-            out[f] = F0[f] + F1[f]
-        return out
-
     def split(self, *vars):
         S0 = self.args[0].split(*vars)
         S1 = self.args[1].split(*vars)
@@ -476,6 +483,28 @@ class Add(Arithmetic, metaclass=MultiClass):
         np.add(arg_data, out_data, out=out_data)
 
 
+
+
+class AddArrayArray(Add, FutureArray):
+
+    argtypes = {0: (Array, FutureArray),
+                1: (Array, FutureArray)}
+
+    def check_conditions(self):
+        return True
+
+    def enforce_conditions(self):
+        pass
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        if out.data.size:
+            out.data.fill(0)
+            self.add_subdata(arg0, out)
+            self.add_subdata(arg1, out)
+
+
+
 class AddFieldField(Add, FutureField):
 
     argtypes = {0: (Field, FutureField),
@@ -497,6 +526,116 @@ class AddFieldField(Add, FutureField):
             out.data.fill(0)
             self.add_subdata(arg0, out)
             self.add_subdata(arg1, out)
+
+
+class AddScalarArray(Add, FutureArray):
+
+    argtypes = {0: (Scalar, FutureScalar),
+                1: (Array, FutureArray)}
+
+    def check_conditions(self):
+        return True
+
+    def enforce_conditions(self):
+        pass
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        np.add(arg0.value, arg1.data, out.data)
+
+
+class AddArrayScalar(Add, FutureArray):
+
+    argtypes = {0: (Array, FutureArray),
+                1: (Scalar, FutureScalar)}
+
+    def check_conditions(self):
+        return True
+
+    def enforce_conditions(self):
+        pass
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        np.add(arg0.data, arg1.value, out.data)
+
+
+class AddScalarField(Add, FutureField):
+
+    argtypes = {0: (Scalar, FutureScalar),
+                1: (Field, FutureField)}
+
+    def check_conditions(self):
+        # Field must be in grid layout
+        return (self.args[1].layout is self._grid_layout)
+
+    def enforce_conditions(self):
+        self.args[1].require_layout(self._grid_layout)
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        # Add in grid layout
+        arg1.require_grid_space()
+        out.set_layout(self._grid_layout)
+        np.add(arg0.value, arg1.data, out.data)
+
+
+class AddFieldScalar(Add, FutureField):
+
+    argtypes = {0: (Field, FutureField),
+                1: (Scalar, FutureScalar)}
+
+    def check_conditions(self):
+        # Field must be in grid layout
+        return (self.args[0].layout is self._grid_layout)
+
+    def enforce_conditions(self):
+        self.args[0].require_layout(self._grid_layout)
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        # Add in grid layout
+        arg0.require_grid_space()
+        out.set_layout(self._grid_layout)
+        np.add(arg0.data, arg1.value, out.data)
+
+
+class AddArrayField(Add, FutureField):
+
+    argtypes = {0: (Array, FutureArray),
+                1: (Field, FutureField)}
+
+    def check_conditions(self):
+        # Field must be in grid layout
+        return (self.args[1].layout is self._grid_layout)
+
+    def enforce_conditions(self):
+        self.args[1].require_layout(self._grid_layout)
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        # Add in grid layout
+        out.set_layout(self._grid_layout)
+        np.add(arg0.data, arg1.data, out.data)
+
+
+class AddFieldArray(Add, FutureField):
+
+    argtypes = {0: (Field, FutureField),
+                1: (Array, FutureArray)}
+
+    def check_conditions(self):
+        # Field must be in grid layout
+        return (self.args[0].layout is self._grid_layout)
+
+    def enforce_conditions(self):
+        self.args[0].require_layout(self._grid_layout)
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        # Add in grid layout
+        out.set_layout(self._grid_layout)
+        np.add(arg0.data, arg1.data, out.data)
 
 
 class Multiply(Arithmetic, metaclass=MultiClass):
@@ -572,16 +711,6 @@ class Multiply(Arithmetic, metaclass=MultiClass):
         else:
             return self
 
-    def factor(self, *vars):
-        """Produce operator-factor dictionary over specified variables."""
-        out = defaultdict(int)
-        F0 = self.args[0].factor(*vars)
-        F1 = self.args[1].factor(*vars)
-        for f0 in F0:
-            for f1 in F1:
-                out[f0*f1] += F0[f0] * F1[f1]
-        return out
-
     def split(self, *vars):
         S0 = self.args[0].split(*vars)
         S1 = self.args[1].split(*vars)
@@ -620,7 +749,7 @@ class Multiply(Arithmetic, metaclass=MultiClass):
         arg0, arg1 = self.args
         diff0 = arg0.sym_diff(var)
         diff1 = arg1.sym_diff(var)
-        return (diff0*arg1 + arg0*diff1)
+        return diff0*arg1 + arg0*diff1
 
     # def simplify(self, retain):
     #     arg0 = self.args[0].simplify(retain)
@@ -637,6 +766,30 @@ class Multiply(Arithmetic, metaclass=MultiClass):
     #         elif arg1 == 1:
     #             return arg0
     #     return (arg0 * arg1)
+
+
+
+
+class MultiplyArrayArray(Multiply, FutureArray):
+
+    argtypes = {0: (Array, FutureArray),
+                1: (Array, FutureArray)}
+
+    def check_conditions(self):
+        return True
+
+    def enforce_conditions(self):
+        pass
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        np.multiply(arg0.data, arg1.data, out.data)
+
+
+class MultiplyFieldField(Multiply, FutureField):
+
+    argtypes = {0: (Field, FutureField),
+                1: (Field, FutureField)}
 
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
@@ -660,11 +813,6 @@ class Multiply(Arithmetic, metaclass=MultiClass):
 
     def enforce_conditions(self):
         arg0, arg1 = self.args
-        layout = self.determine_layout()
-        arg0.require_layout(layout)
-        arg1.require_layout(layout)
-
-
         if self.require_grid_axis:
             axis = self.require_grid_axis
             arg0.require_grid_space(axis=axis)
@@ -672,6 +820,7 @@ class Multiply(Arithmetic, metaclass=MultiClass):
 
     def operate(self, out):
         arg0, arg1 = self.args
+        # Multiply in grid layout
         out.set_layout(arg0.layout)
         if out.data.size:
             np.multiply(arg0.data, arg1.data, out.data)
@@ -687,16 +836,142 @@ class Multiply(Arithmetic, metaclass=MultiClass):
     #     np.multiply(self.args[0].data, self.args[1].data, out.data)
 
 
+class MultiplyScalarArray(Multiply, FutureArray):
 
-class Power(NonlinearOperator, Arithmetic):
+    argtypes = {0: Number,
+                1: (Array, FutureArray)}
+
+    def check_conditions(self):
+        return True
+
+    def enforce_conditions(self):
+        pass
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        np.multiply(arg0, arg1.data, out.data)
+
+
+class MultiplyArrayScalar(Multiply, FutureArray):
+
+    argtypes = {0: (Array, FutureArray),
+                1: Number}
+
+    def check_conditions(self):
+        return True
+
+    def enforce_conditions(self):
+        pass
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        np.multiply(arg0.data, arg1, out.data)
+
+
+class MultiplyScalarField(Multiply, FutureField):
+
+    argtypes = {0: (Scalar, FutureScalar),
+                1: (Field, FutureField)}
+
+    def check_conditions(self):
+        return True
+
+    def enforce_conditions(self):
+        pass
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        # Multiply in current layout
+        out.set_layout(arg1.layout)
+        np.multiply(arg0.value, arg1.data, out.data)
+
+
+class MultiplyFieldScalar(Multiply, FutureField):
+
+    argtypes = {0: (Field, FutureField),
+                1: (Scalar, FutureScalar)}
+
+    def check_conditions(self):
+        return True
+
+    def enforce_conditions(self):
+        pass
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        # Multiply in current layout
+        out.set_layout(arg0.layout)
+        np.multiply(arg0.data, arg1.value, out.data)
+
+
+class MultiplyArrayField(Multiply, FutureField):
+
+    argtypes = {0: (Array, FutureArray),
+                1: (Field, FutureField)}
+
+    def check_conditions(self):
+        # Field must be in grid layout
+        return (self.args[1].layout is self._grid_layout)
+
+    def enforce_conditions(self):
+        self.args[1].require_layout(self._grid_layout)
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        # Multiply in grid layout
+        arg1.require_grid_space()
+        out.set_layout(self._grid_layout)
+        np.multiply(arg0.data, arg1.data, out.data)
+
+
+class MultiplyFieldArray(Multiply, FutureField):
+
+    argtypes = {0: (Field, FutureField),
+                1: (Array, FutureArray)}
+
+    def check_conditions(self):
+        # Field must be in grid layout
+        return (self.args[0].layout is self._grid_layout)
+
+    def enforce_conditions(self):
+        self.args[0].require_layout(self._grid_layout)
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        # Multiply in grid layout
+        arg0.require_grid_space()
+        out.set_layout(self._grid_layout)
+        np.multiply(arg0.data, arg1.data, out.data)
+
+
+class Power(NonlinearOperator, Arithmetic, metaclass=MultiClass):
 
     name = 'Pow'
     str_op = '**'
 
-    def __new__(cls, arg0, arg1, out=None):
-        if arg1 == 0:
+    @classmethod
+    def _preprocess_args(cls, *args, **kw):
+        args = tuple(Operand.cast(arg) for arg in args)
+        return args, kw
+
+    @classmethod
+    def _check_args(cls, *args, **kw):
+        match = (isinstance(args[i], types) for i,types in cls.argtypes.items())
+        return all(match)
+
+    def base(self):
+        return Power
+
+
+class PowerDataScalar(Power):
+
+    argtypes = {0: (Data, Future),
+                1: Number}
+
+    def __new__(cls, arg0, arg1, *args, **kw):
+        if (arg1.name is None) and (arg1.value == 0):
             return 1
-        elif arg1 == 1:
+        elif (arg1.name is None) and (arg1.value == 1):
             return arg0
         else:
             return object.__new__(cls)
@@ -707,8 +982,24 @@ class Power(NonlinearOperator, Arithmetic):
         diff0 = arg0.sym_diff(var)
         return arg1 * arg0**(arg1-1) * diff0
 
-    def base(self):
-        return Power
+
+class PowerArrayScalar(PowerDataScalar, FutureArray):
+
+    argtypes = {0: (Array, FutureArray),
+                1: Number}
+
+    def check_conditions(self):
+        return True
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        np.power(arg0.data, arg1.value, out.data)
+
+
+class PowerFieldScalar(PowerDataScalar, FutureField):
+
+    argtypes = {0: (Field, FutureField),
+                1: Number}
 
     def check_conditions(self):
         # Field must be in grid layout
@@ -727,15 +1018,24 @@ class LinearOperator(Operator, FutureField):
     kw = {}
     entry_scaling = 1
 
+    @property
+    def axis(self):
+        return self.input_basis.space.axis
+
+    def _build_bases(self, arg):
+        bases = [basis for basis in arg.bases]
+        bases[self.axis] = self.output_basis
+        return bases
+
     def expand(self, *vars):
         """Distribute over sums containing specified variables (default: all)."""
-        arg0 = self.args[0]
+        arg = self.args[0]
         if (not vars) or arg0.has(*vars):
-            arg0 = arg0.expand(*vars)
-            if isinstance(arg0, Add):
-                op = type(self)
-                arg0a, arg0b = arg0.args
-                return (op(arg0a, **self.kw) + op(arg0b, **self.kw)).expand(*vars)
+            arg = arg.expand(*vars)
+            if isinstance(arg, Add):
+                base = self.base
+                arg_a, arg_b = arg.args
+                return (base(arg_a, **self.kw) + base(arg_b, **self.kw)).expand(*vars)
         return self
 
     def canonical_linear_form(self, *vars):
@@ -748,19 +1048,12 @@ class LinearOperator(Operator, FutureField):
         else:
             return self
 
-    def factor(self, *vars):
-        """Produce operator-factor dictionary over specified variables."""
-        if self.has(*vars):
-            return defaultdict(int, {self: 1})
-        else:
-            return defaultdict(int, {1: self})
-
     def split(self, *vars):
-        if self.base() in vars:
+        if self.base in vars:
             return [self, 0]
         else:
             S0 = self.args[0].split(*vars)
-            return [self.base()(S0[0], **self.kw), self.base()(S0[1], **self.kw)]
+            return [self.base(S0[0], **self.kw), self.base(S0[1], **self.kw)]
 
     def operator_dict(self, subsystem, vars, **kw):
         op_dict = defaultdict(int)
@@ -787,14 +1080,9 @@ class LinearOperator(Operator, FutureField):
     def sym_diff(self, var):
         """Symbolically differentiate with respect to var."""
         diff0 = self.args[0].sym_diff(var)
-        return self.base()(diff0, **self.kw)
+        return self.base(diff0, **self.kw)
 
-    def _build_bases(self, arg0):
-        bases = [b for b in arg0.bases]
-        bases[self.input_basis.space.axis] = self.output_basis
-        if all(basis is None for basis in bases):
-            bases = arg0.domain
-        return bases
+
 
     # @classmethod
     # def mode_matrix(cls):
@@ -889,12 +1177,6 @@ class LinearFunctional(LinearOperator):
     def memory_matrix(self):
         return self.matrix_form()
 
-    def explicit_form(self, input, output, axis):
-        dim = self.domain.dim
-        weights = reshape_vector(self.matrix_form(), dim=dim, axis=axis)
-        interp = np.sum(input * weights, axis=axis, keepdims=True)
-        np.copyto(output[axslice(axis, 0, 1)], interp)
-        np.copyto(output[axslice(axis, 1, None)], 0)
 
 
 class TimeDerivative(LinearOperator, FutureField):
@@ -904,6 +1186,7 @@ class TimeDerivative(LinearOperator, FutureField):
     def _build_bases(self, arg0):
         return arg0.bases
 
+    @property
     def base(self):
         return TimeDerivative
 
@@ -1097,10 +1380,13 @@ class Differentiate(LinearOperator):
 
     name = 'd'
 
-    def __new__(cls, arg, out=None):
+    def __new__(cls, arg, space, out=None):
         # Cast to data and check bases
-        arg = Data.cast(arg, cls.domain)
+        #arg = Data.cast(arg, cls.domain)
         arg_basis = arg.bases[cls.axis]
+        print(arg)
+        if arg == 0:
+            return 0
         if arg_basis is None:
             return 0
         elif arg_basis is cls.input_basis:
@@ -1108,9 +1394,9 @@ class Differentiate(LinearOperator):
         else:
             raise ValueError("Basis mismatch.")
 
-    def __init__(self, arg, out=None):
+    def __init__(self, arg, space, out=None):
         # Cast arg to field
-        arg = Field.cast(arg, self.domain)
+        #arg = Field.cast(arg, self.domain)
         super().__init__(arg, out=out)
 
     @property

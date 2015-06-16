@@ -8,7 +8,6 @@ import numpy as np
 from scipy import sparse
 
 from . import operators
-from ..libraries.fftw import fftw_wrappers as fftw
 from ..tools.array import axslice
 from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
@@ -26,6 +25,7 @@ class Basis:
     def __init__(self, space):
         self.space = space
         self.domain = space.domain
+        self.library = DEFAULT_LIBRARY
 
     def __repr__(self):
         return '<%s %i>' %(self.__class__.__name__, id(self))
@@ -41,8 +41,8 @@ class Basis:
 
     def __getitem__(self, mode):
         """Return field populated by one mode."""
-        if not self.compute_mode(mode):
-            raise ValueError("Basis does not contain specified mode.")
+        # if not self.compute_mode(mode):
+        #     raise ValueError("Basis does not contain specified mode.")
         from .field import Field
         axis = self.space.axis
         out = Field(bases=[self], layout='c')
@@ -69,18 +69,33 @@ class Basis:
         return transform_class(coeff_shape, dtype, axis, scale)
 
     @CachedAttribute
-    def memory_map(self):
-        I = self.space.coeff_size
-        J = len(self.modes)
-        map = sparse.lil_matrix((I, J), dtype=int)
-        for j, i in enumerate(self.modes):
-            map[i, j] = 1
-        return map.tocsr()
+    def inclusion_flags(self):
+        return np.array([self.include_mode(i) for i in range(self.space.coeff_size)])
 
     @CachedAttribute
-    def compute_identity(self):
-        compute = np.array([self.compute_mode(i) for i in range(self.space.coeff_size)])
-        return sparse.diags(compute.astype(int), 0, format='csr')
+    def inclusion_matrix(self):
+        diag = self.inclusion_flags.astype(float)
+        return sparse.diags(diag, 0, format='csr')
+
+    @CachedAttribute
+    def modes(self):
+        return np.arange(self.space.coeff_size)[self.inclusion_flags]
+
+    @CachedAttribute
+    def n_modes(self):
+        return self.modes.size
+
+    def mode_map(self, group):
+        flags = self.inclusion_flags
+        matrix = self.inclusion_matrix
+        # Restrict to group elements
+        if group is not None:
+            n0 = group * self.space.group_size
+            n1 = n0 + self.space.group_size
+            matrix = matrix[n0:n1, n0:n1]
+            flags = flags[n0:n1]
+        # Discard empty rows
+        return matrix[flags, :]
 
 
 class ChebyshevT(Basis):
@@ -90,11 +105,16 @@ class ChebyshevT(Basis):
 
     def __init__(self, space):
         super().__init__(space)
-        self.modes = np.arange(self.space.coeff_size)
-        self.library = DEFAULT_LIBRARY
+        #self.modes = np.arange(self.space.coeff_size)
 
-    def compute_mode(self, mode):
+    def include_mode(self, mode):
         return (0 <= mode < self.space.coeff_size)
+
+    # def group_size(self, group):
+    #     if (0 <= group < self.space.coeff_size):
+    #         return 1
+    #     else:
+    #         return 0
 
     def __add__(self, other):
         space = self.space
@@ -244,11 +264,16 @@ class ChebyshevU(Basis):
 
     def __init__(self, space):
         super().__init__(space)
-        self.modes = np.arange(self.space.coeff_size)
-        self.library = DEFAULT_LIBRARY
+        #self.modes = np.arange(self.space.coeff_size)
 
-    def compute_mode(self, mode):
+    def include_mode(self, mode):
         return (0 <= mode < self.space.coeff_size)
+
+    # def group_size(self, group):
+    #     if (0 <= group < self.space.coeff_size):
+    #         return 1
+    #     else:
+    #         return 0
 
     def __add__(self, other):
         space = self.space
@@ -355,15 +380,7 @@ class Fourier(Basis):
 
     def __init__(self, space):
         super().__init__(space)
-        self.modes = np.concatenate(([0], np.arange(2, self.space.coeff_size)))
-        self.library = DEFAULT_LIBRARY
-
-    def compute_mode(self, mode):
-        if mode == 1:
-            return False
-        else:
-            k = mode // 2
-            return (0 <= k <= self.space.kmax)
+        #self.modes = np.concatenate(([0], np.arange(2, self.space.coeff_size)))
 
     def __add__(self, other):
         space = self.space
@@ -385,6 +402,21 @@ class Fourier(Basis):
 
     def __pow__(self, other):
         return self.space.Fourier
+
+    def include_mode(self, mode):
+        if mode == 1:
+            return False
+        else:
+            k = mode // 2
+            return (0 <= k <= self.space.kmax)
+
+    # def group_size(self, group):
+    #     if group == 0:
+    #         return 1
+    #     if 0 < group < self.space.kmax:
+    #         return 2
+    #     else:
+    #         return 0
 
     @CachedAttribute
     def Integrate(self):
@@ -491,12 +523,18 @@ class Sine(Basis):
 
     def __init__(self, space):
         super().__init__(space)
-        self.modes = np.arange(1, self.space.coeff_size)
-        self.library = DEFAULT_LIBRARY
+        #self.modes = np.arange(1, self.space.coeff_size)
+        #self.library = DEFAULT_LIBRARY
 
-    def compute_mode(self, mode):
+    def include_mode(self, mode):
         k = mode
         return (1 <= k <= self.space.kmax)
+
+    # def group_size(self, group):
+    #     if 1 <= group < self.space.kmax:
+    #         return 2
+    #     else:
+    #         return 0
 
     def __add__(self, other):
         space = self.space
@@ -612,12 +650,18 @@ class Cosine(Basis):
 
     def __init__(self, space):
         super().__init__(space)
-        self.modes = np.arange(self.space.coeff_size)
-        self.library = DEFAULT_LIBRARY
+        #self.modes = np.arange(self.space.coeff_size)
+        #self.library = DEFAULT_LIBRARY
 
-    def compute_mode(self, mode):
+    def include_mode(self, mode):
         k = mode
         return (0 <= k <= self.space.kmax)
+
+    # def group_size(self, group):
+    #     if 0 <= group < self.space.kmax:
+    #         return 2
+    #     else:
+    #         return 0
 
     def __add__(self, other):
         space = self.space

@@ -10,7 +10,6 @@ from .core import domain
 from .core import spaces
 from .core import evaluator
 from .core import operators
-from .core import pencil
 from .core import system
 from .core import basis
 from .core import problems

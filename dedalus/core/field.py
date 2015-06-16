@@ -335,21 +335,20 @@ class Field(Data):
 
     """
 
-    def __init__(self, bases, name=None):
+    def __init__(self, bases, name=None, layout='c', scales=1):
         from .domain import Subdomain
         self.subdomain, self.bases = Subdomain.from_bases(bases)
         self.domain = self.subdomain.domain
         self.name = name
         # Set initial scales and layout
         self.scales = None
-        self.layout = self.domain.dist.coeff_layout
+        self.layout = self.domain.dist.get_layout_object(layout)
         # Change scales to build buffer and data
-        self.set_scales(1)
+        self.set_scales(scales)
 
-    def __getitem__(self, layout, global_selection=None):
+    def __getitem__(self, layout):
         """Return data viewed in specified layout."""
         self.require_layout(layout)
-        if global_index is not None:
         return self.data
 
     def __setitem__(self, layout, data):
@@ -357,6 +356,21 @@ class Field(Data):
         layout = self.domain.distributor.get_layout_object(layout)
         self.set_layout(layout)
         np.copyto(self.data, data)
+
+    @property
+    def global_shape(self):
+        return self.layout.global_shape(self.subdomain, self.scales)
+
+    @property
+    def dtype(self):
+        return self.domain.dtype
+
+    def set_global_data(self, global_data):
+        slices = self.layout.slices(self.subdomain, self.scales)
+        self.set_local_data(global_data[slices])
+
+    def set_local_data(self, local_data):
+        np.copyto(self.data, local_data)
 
     def require_scales(self, scales):
         """Change data to specified scales."""
