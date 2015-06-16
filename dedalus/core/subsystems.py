@@ -12,6 +12,7 @@ import uuid
 
 from ..tools.array import zeros_with_pattern
 from ..tools.array import expand_pattern
+from ..tools.cache import CachedAttribute
 from ..tools.progress import log_progress
 
 import logging
@@ -81,32 +82,32 @@ class Subsystem:
                     group_dict['n'+space.name] = group
         return group_dict
 
-    def group_shape(self, bases):
-        """Computable-coefficient shape for group."""
+    def group_shape(self, subdomain):
+        """Coefficient shape for group."""
         group_shape = []
-        for group, basis in zip(self.group, bases):
-            if basis is None:
+        for group, space in zip(self.group, subdomain.spaces):
+            if space is None:
                 if group in [0, None]:
                     group_shape.append(1)
                 else:
                     group_shape.append(0)
             else:
                 if group is None:
-                    group_shape.append(basis.n_modes)
+                    group_shape.append(space.coeff_size)
                 else:
-                    group_shape.append(basis.group_size(group))
+                    group_shape.append(space.group_size)
         return tuple(group_shape)
 
-    def group_size(self, bases):
-        """Number of computable coefficients for group."""
-        group_shape = self.group_shape(bases)
+    def group_size(self, subdomain):
+        """Coefficient size for group."""
+        group_shape = self.group_shape(subdomain)
         return np.prod(group_shape)
 
-    def global_start(self, bases):
+    def global_start(self, subdomain):
         """Global starting index of group."""
         global_start = []
-        for group, basis in zip(self.group, bases):
-            if basis is None:
+        for group, space in zip(self.group, subdomain.spaces):
+            if space is None:
                 if group in [0, None]:
                     global_start.append(0)
                 else:
@@ -115,14 +116,14 @@ class Subsystem:
                 if group is None:
                     global_start.append(0)
                 else:
-                    global_start.append(group * basis.space.group_spacing)
+                    global_start.append(group * space.group_size)
         return tuple(global_start)
 
-    def local_start(self, bases):
+    def local_start(self, subdomain):
         """Local starting index of group."""
         local_start = []
-        for group, basis in zip(self.local_group, bases):
-            if basis is None:
+        for group, space in zip(self.local_group, subdomain.spaces):
+            if space is None:
                 if group in [0, None]:
                     local_start.append(0)
                 else:
@@ -131,22 +132,22 @@ class Subsystem:
                 if group is None:
                     local_start.append(0)
                 else:
-                    local_start.append(group * basis.space.group_spacing)
+                    local_start.append(group * space.group_size)
         return local_start
 
-    def global_slices(self, bases):
+    def global_slices(self, subdomain):
         """Global slices for computable coefficients."""
-        global_start = self.global_start(bases)
-        group_shape = self.group_shape(bases)
+        global_start = self.global_start(subdomain)
+        group_shape = self.group_shape(subdomain)
         global_slices = []
         for start, shape in zip(global_start, group_shape):
             global_slices.append(slice(start, start+shape))
         return tuple(global_slices)
 
-    def local_slices(self, bases):
+    def local_slices(self, subdomain):
         """Global slices for computable coefficients."""
-        local_start = self.local_start(bases)
-        group_shape = self.group_shape(bases)
+        local_start = self.local_start(subdomain)
+        group_shape = self.group_shape(subdomain)
         local_slices = []
         for start, shape in zip(local_start, group_shape):
             local_slices.append(slice(start, start+shape))
@@ -156,8 +157,8 @@ class Subsystem:
         """Retrieve and concatenate group data from variables."""
         vec = []
         for var in vars:
-            if self.group_size(var):
-                slices = self.local_slices(var.bases)
+            if self.group_size(var.subdomain):
+                slices = self.local_slices(var.subdomain)
                 var_data = var['c'][slices]
                 vec.append(var_data.ravel())
         return np.concatenate(vec)
@@ -166,51 +167,59 @@ class Subsystem:
         """Assign vectorized group data to variables."""
         i0 = 0
         for var in vars:
-            group_size = self.group_size(var):
+            group_size = self.group_size(var.subdomain)
             if group_size:
                 i1 = i0 + group_size
-                slices = self.local_slices(var.bases)
+                slices = self.local_slices(var.subdomain)
                 var_data = var['c'][slices]
                 vec_data = data[i0:i1].reshape(var_data.shape)
                 np.copyto(var_data, vec_data)
                 i0 = i1
 
-    def compute_identities(self, bases):
-        cid = []
-        global_slices = self.global_slices(bases)
-        for gs, basis in zip(global_slices, bases):
+    def inclusion_matrices(self, var):
+        matrices = []
+        global_slices = self.global_slices(var.subdomain)
+        for gs, basis in zip(global_slices, var.bases):
             if basis is None:
-                cid.append(np.array([[1]])[gs, gs])
+                matrices.append(np.array([[1]])[gs, gs])
             else:
-                cid.append(basis.compute_identity[gs, gs])
-        return cid
+                matrices.append(basis.inclusion_matrix[gs, gs])
+        return include
 
     def compute_conversion(self, inbases, outbases):
-        axmats = self.compute_identities(outbases)
+        axmats = self.include_matrices(outbases)
         for axis, (inbasis, outbasis) in enumerate(zip(inbases, outbases)):
             if (inbasis is None) and (outbasis is not None):
                 axmats[axis] = axmats[axis][:, 0:1]
         return reduce(sparse.kron, axmats, 1).tocsr()
+
+    def mode_map(self, basis_sets):
+        var_mats = []
+        for basis_set in basis_sets:
+            ax_mats = []
+            for group, basis in zip(self.group, basis_set):
+                if basis is None:
+                    ax_mats.append(np.array([[1]]))
+                else:
+                    ax_mats.append(basis.mode_map(group))
+            var_mats.append(reduce(sparse.kron, ax_mats, 1).tocsr())
+        return sparse.block_diag(var_mats).tocsr()
 
     def build_matrices(self, problem, names):
         """Build problem matrices."""
 
         # Filter equations by condition and group
         eqs = [eq for eq in problem.eqs if eval(eq['raw_condition'], self.group_dict)]
-        eqs = [eq for eq in eqs if self.size(eq['bases'])]
-        eq_sizes = [self.size(eq['bases']) for eq in eqs]
+        eqs = [eq for eq in eqs if self.size(eq['subdomain'])]
+        eq_sizes = [self.size(eq['subdomain']) for eq in eqs]
+        I = sum(eq_sizes)
 
         # Filter variables by group
-        vars = [var for var in problem.variables if self.size(var.bases)]
-        var_sizes = [self.size(var.bases) for var in vars]
-
-        # Require squareness
-        I = sum(eq_sizes)
+        vars = [var for var in problem.variables if self.size(var.subdomain)]
+        var_sizes = [self.size(var.subdomain) for var in vars]
         J = sum(var_sizes)
-        if I != J:
-            raise ValueError("Non-square system.")
 
-        # Construct subsystem matrices
+        # Construct full subsystem matrices
         matrices = {}
         for name in names:
             # Collect subblocks
@@ -234,6 +243,22 @@ class Subsystem:
             rows = np.concatenate(rows)
             cols = np.concatenate(cols)
             matrices[name] = sparse.coo_matrix((data, (rows, cols)), shape=(I,J)).tocsr()
+
+        # # Construct permutation matrix
+        # RP = build_permutation([eq['bases'] for eq in eqs])
+        # CP = build_permutation([var.bases for var in vars])
+
+        #  F = L.X
+        #  RP.F = RP.L.CP*.CP.X
+        # (RP.F) = (RP.L.CP*) . (CP.X)
+
+        # Store and apply mode maps to matrices
+        self.row_map = row_map = self.mode_map([eq['bases'] for eq in eqs])
+        self.col_map = col_map = self.mode_map([var.bases for var in vars])
+        if row_map.shape[0] != col_map.shape[0]:
+            raise ValueError("Non-square system")
+        for name in matrices:
+            matrices[name] = row_map * matrices[name] * col_map.T
 
         # Store minimal CSR matrices for fast dot products
         for name, matrix in matrices.items():
