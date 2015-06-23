@@ -17,7 +17,7 @@ Mac OS X cookbook
     #!bash
 
     # Homebrew
-    ruby -e "$(curl -fsSL https://raw.github.com/Homebrew/homebrew/go/install)"
+    ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
     brew update
     brew doctor
     # ** Fix any errors raised by brew doctor before proceeding **
