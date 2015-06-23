@@ -54,8 +54,8 @@ Mac OS X cookbook
     # Dedalus
     # ** Change to the directory where you want to keep the Dedalus repository **
     brew install hg
-    hg clone https://bitbucket.org/dedalus-project/dedalus2
-    cd dedalus2
+    hg clone https://bitbucket.org/dedalus-project/dedalus
+    cd dedalus
     pip3 install -r requirements.txt
     python3 setup.py build_ext --inplace
 
@@ -79,7 +79,7 @@ following from the Terminal:
 ::
 
     #!bash
-    ruby -e "$(curl -fsSL https://raw.github.com/Homebrew/homebrew/go/install)"
+    ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
     brew update
     brew doctor
 
@@ -193,8 +193,8 @@ Dedalus repository):
 
     #!bash
     brew install hg
-    hg clone https://bitbucket.org/dedalus-project/dedalus2
-    cd dedalus2
+    hg clone https://bitbucket.org/dedalus-project/dedalus
+    cd dedalus
 
 A few other Python packages needed by Dedalus are listed in the
 ``requirements.txt`` file in the Dedalus repository, and can be installed using
@@ -216,7 +216,7 @@ Cython extensions are modified).
     python3 setup.py build_ext --inplace
 
 Finally, you need to add the Dedalus repository to the Python search path so
-that the ``dedalus2`` package can be imported.  To do this, add the following
+that the ``dedalus`` package can be imported.  To do this, add the following
 to your ``~/.bash_profile``, substituting in the path to the Dedalus repository
 you cloned using Mercurial:
 
