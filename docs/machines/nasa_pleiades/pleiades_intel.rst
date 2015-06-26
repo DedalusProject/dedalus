@@ -26,11 +26,11 @@ Then add the following to your ``.profile``::
   #pathing for Dedalus
   export LOCAL_MPI_VERSION=openmpi-1.8.6
   export LOCAL_MPI_SHORT=v1.8
-  export LOCAL_PYTHON_VERSION=3.4.2
-  export LOCAL_NUMPY_VERSION=1.9.1
-  export LOCAL_SCIPY_VERSION=0.14.0
-  #export LOCAL_HDF5_VERSION=1.8.14 # build failure
-  export LOCAL_HDF5_VERSION=1.8.13
+  export LOCAL_PYTHON_VERSION=3.4.3
+  export LOCAL_NUMPY_VERSION=1.9.2
+  export LOCAL_SCIPY_VERSION=0.15.1
+  export LOCAL_HDF5_VERSION=1.8.14
+  export LOCAL_MERCURIAL_VERSION=3.4.1
 
   export MPI_ROOT=$BUILD_HOME/$LOCAL_MPI_VERSION
   export PYTHONPATH=$BUILD_HOME/dedalus:$PYTHONPATH
@@ -46,10 +46,12 @@ Then add the following to your ``.profile``::
 
 
 
-Doing the entire build took about 1 hour.  This was with several (4) 
+Doing the entire build took about 2 hours.  This was with several (4) 
 open ssh connections to Pleaides to do poor-mans-parallel building 
-(of openBLAS, hdf5, fftw, etc.), and one was on a dev node for the
-openmpi compile.
+(of python, hdf5, fftw, etc.), and one was on a dev node for the
+openmpi compile.  The openmpi compile is time intensive and mus be
+done first.  The fftw and hdf5 libraries take a while to build.
+Building scipy remains the most significant time cost.
 
 
 Python stack
@@ -96,7 +98,7 @@ to be built on a compute node so that the right memory space is identified.::
 
 These compilation options are based on ``/nasa/openmpi/1.6.5/NAS_config.sh``, 
 and are thanks to advice from Daniel Kokron at NAS.  Compiling takes
-about one hour.
+about 10-15 minutes with make -j.
 
 
 Building Python3
@@ -168,7 +170,7 @@ under openmpi::
                          MPICC=mpicc MPICXX=mpicxx \
                          --enable-shared \
                          --enable-mpi --enable-openmp --enable-threads
-    make -j
+    make
     make install
 
 It's critical that you use ``mpicc`` as the C-compiler, etc.
@@ -306,35 +308,11 @@ pip install fails, so we'll keep doing it the old fashioned way::
 Installing matplotlib
 -------------------------
 
-This should just be pip installed::
-
-     pip3 install matplotlib
-
-Hmmm... version 1.4.0 of matplotlib has just dropped, but seems to
-have a higher freetype versioning requirement (2.4).  Here's a
-build script for freetype 2.5.3::
-
-    wget http://sourceforge.net/projects/freetype/files/freetype2/2.5.3/freetype-2.5.3.tar.gz/download
-    tar xvf freetype-2.5.3.tar.gz
-    cd freetype-2.5.3
-    ./configure --prefix=$BUILD_HOME
-    make
-    make install
-
-Well... that works, but then we fail on a qhull compile during 
-``pip3 install matplotlib`` later on.
-Let's fall back to 1.3.1::
+This should just be pip installed.  However, we're hitting errors with
+qhull compilation in every part of the 1.4.x branch, so we fall back
+to 1.3.1::
 
      pip3 install matplotlib==1.3.1
-
-
-
-Installing sympy
--------------------------
-
-This should just be pip installed::
-
-     pip3 install sympy
 
 
 Installing HDF5 with parallel support
@@ -360,100 +338,22 @@ needs to be compiled with support for parallel (mpi) I/O::
 H5PY via pip
 -----------------------
 
-This works (Dec 21, 2014)::
+This can now just be pip installed (>=2.5.0)::
 
-     pip3 install h5py==2.4.0b1
+     pip3 install h5py
 
-Installing h5py (working)
-----------------------------------------------------
-
-Next, install h5py.  For reasons that are currently unclear to me, 
-this cannot be done via pip install (fails)::
-
-     git clone https://github.com/h5py/h5py.git
-     cd h5py
-     python3 setup.py configure --mpi
-     python3 setup.py build
-     python3 setup.py install 
-
-This will install ``h5py==2.4.0a0``, and it appears to work (!).
-
-
-Installing h5py with collectives (not currently working)
-------------------------------------------------------------------------
-We've been exploring the use of collectives for faster parallel file
-writing.  
-
-git is having some problems, especially with it's SSL version.  
-I suggest adding the following to ``~/.gitconfig``::
-
-    [http]
-    sslCAinfo = /etc/ssl/certs/ca-bundle.crt
-
-
-This is still not working, owing (most likely) to git being built on
-an outdated SSL version.  Here's a short-term hack::
-
-    export GIT_SSL_NO_VERIFY=true
-
-To build that version of the h5py library::
-
-     git clone git://github.com/andrewcollette/h5py
-     cd h5py
-     git checkout mpi_collective
-     export CC=mpicc
-     export HDF5_DIR=$BUILD_HOME
-     python3 setup.py configure --mpi
-     python3 setup.py build
-     python3 setup.py install 
-
-
-Here's the original h5py repository::
-
-     git clone git://github.com/h5py/h5py
-     cd h5py
-     export CC=mpicc
-     export HDF5_DIR=$BUILD_HOME
-     python3 setup.py configure --mpi
-     python3 setup.py build
-     python3 setup.py install 
-
-.. note::
-     This is ugly.  We're getting a "-R" error at link, triggered by
-     distutils not recognizing that mpicc is gcc or something like
-     that.   Looks like we're failing ``if self._is_gcc(compiler)``
-     For now, I've hand-edited unixccompiler.py in 
-     ``lib/python3.3/distutils`` and changed this line:
-
-           def _is_gcc(self, compiler_name):
-                return "gcc" in compiler_name or "g++" in compiler_name
-
-        to:
-
-           def _is_gcc(self, compiler_name):
-       	        return "gcc" in compiler_name or "g++" in compiler_name or "mpicc" in compiler_name
-
-     This is a hack, but it get's us running and alive!
-
-.. note::
-     Ahh... I understand what's happening here.  We built with
-     ``mpicc``, and the test ``_is_gcc`` looks for whether gcc appears
-     anywhere in the compiler name.  It doesn't in ``mpicc``, so the
-     ``gcc`` checks get missed.  This is only ever used in the
-     ``runtime_library_dir_option()`` call.  So we'd need to either
-     rename the mpicc wrapper something like ``mpicc-gcc`` or do a
-     test on ``compiler --version`` or something.  Oh boy.  Serious
-     upstream problem for mpicc wrapped builds that cythonize and go
-     to link.  Hmm...
+For now we drop our former instructions on attempting to install
+parallel h5py with collectives.  See the repo history for those notes.
 
 Installing Mercurial
 ----------------------------------------------------
 On NASA Pleiades, we need to install mercurial itself.  I can't get
 mercurial to build properly on intel compilers, so for now use gcc::
 
-     wget http://mercurial.selenic.com/release/mercurial-3.1.tar.gz
-     tar xvf mercurial-3.1.tar.gz 
-     cd mercurial-3.1
+     cd $BUILD_HOME
+     wget http://mercurial.selenic.com/release/mercurial-$LOCAL_MERCURIAL_VERSION.tar.gz
+     tar xvf mercurial-$LOCAL_MERCURIAL_VERSION.tar.gz
+     cd mercurial-$LOCAL_MERCURIAL_VERSION
      module load gcc
      export CC=gcc
      make install PREFIX=$BUILD_HOME
@@ -474,22 +374,19 @@ I suggest you add the following to your ``~/.hgrc``::
   mq =
 
 
-Dedalus2
+Dedalus
 ========================================
 
 Preliminaries
 ----------------------------------------
 
-With the modules set as above, set::
+Then do the following::
 
-     export BUILD_HOME=$BUILD_HOME
-     export FFTW_PATH=$BUILD_HOME
-     export MPI_PATH=$BUILD_HOME/$LOCAL_MPI_VERSION
-
-Then change into your root dedalus directory and run::
-
+     cd $BUILD_HOME
+     hg clone https://bitbucket.org/dedalus-project/dedalus
+     cd dedalus
      pip3 install -r requirements.txt 
-     python setup.py build_ext --inplace
+     python3 setup.py build_ext --inplace
 
 
 Running Dedalus on Pleiades
