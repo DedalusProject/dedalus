@@ -1,6 +1,7 @@
-Install notes for NASA/Pleiades: Intel stack
+Install notes for NASA/Pleiades: Intel stack with MPI-SGI
 ***************************************************************************
 
+Here we build using the recommended MPI-SGI environment, with Intel compilers.
 An initial Pleiades environment is pretty bare-bones.  There are no
 modules, and your shell is likely a csh varient.  To switch shells,
 send an e-mail to support@nas.nasa.gov; I'll be using ``bash``.
@@ -9,6 +10,7 @@ Then add the following to your ``.profile``::
 
   # Add your commands here to extend your PATH, etc.
 
+  module load mpi-sgi/mpt
   module load comp-intel
   module load git
   module load openssl
@@ -21,83 +23,38 @@ Then add the following to your ``.profile``::
   export LD_LIBRARY_PATH=$BUILD_HOME/lib:$LD_LIBRARY_PATH
   export LD_LIBRARY_PATH=/nasa/openssl/1.0.1h/lib/:$LD_LIBRARY_PATH
 
+  # proper wrappers for using Intel rather than GNU compilers,
+  # Thanks to Daniel Kokron at NASA.
+  export MPICC_CC=icc
+  export MPICXX_CXX=icpc
+
   export CC=mpicc
 
   #pathing for Dedalus
-  export LOCAL_MPI_VERSION=openmpi-1.8.6
-  export LOCAL_MPI_SHORT=v1.8
-  export LOCAL_PYTHON_VERSION=3.4.2
-  export LOCAL_NUMPY_VERSION=1.9.1
-  export LOCAL_SCIPY_VERSION=0.14.0
-  #export LOCAL_HDF5_VERSION=1.8.14 # build failure
-  export LOCAL_HDF5_VERSION=1.8.13
+  export LOCAL_PYTHON_VERSION=3.4.3
+  export LOCAL_NUMPY_VERSION=1.9.2
+  export LOCAL_SCIPY_VERSION=0.15.1
+  export LOCAL_HDF5_VERSION=1.8.14
 
-  export MPI_ROOT=$BUILD_HOME/$LOCAL_MPI_VERSION
   export PYTHONPATH=$BUILD_HOME/dedalus:$PYTHONPATH
   export MPI_PATH=$MPI_ROOT
   export FFTW_PATH=$BUILD_HOME
   export HDF5_DIR=$BUILD_HOME
 
-  # Openmpi forks:
-  export OMPI_MCA_mpi_warn_on_fork=0
-
-  # don't mess up Pleiades for everyone else
-  export OMPI_MCA_btl_openib_if_include=mlx4_0:1
-
-
-
-Doing the entire build took about 1 hour.  This was with several (4) 
-open ssh connections to Pleaides to do poor-mans-parallel building 
-(of openBLAS, hdf5, fftw, etc.), and one was on a dev node for the
-openmpi compile.
+  # Pleaides workaround for QP errors 8/25/14 from NAS (only for MPI-SGI)                                                                                         
+  export MPI_USE_UD=true
 
 
 Python stack
 =========================
+Here we use the recommended MPI-SGI compilers, rather than our own
+openmpi.
 
-Interesting update.  Pleiades now appears to have a python3 module.
-Fascinating.  It comes with matplotlib (1.3.1), scipy (0.12), numpy
-(1.8.0) and cython (0.20.1) and a few others.  Very interesting.  For
-now we'll proceed with our usual build-it-from-scratch approach, but
-this should be kept in mind for the future.  No clear mpi4py, and the
-``mpi4py`` install was a hangup below for some time.
-
-Building Openmpi
---------------------------
-
-The suggested ``mpi-sgi/mpt`` MPI stack breaks with mpi4py; existing
-versions of openmpi on Pleiades are outdated and suffer from a
-previously identified bug (v1.6.5), so we'll roll our own.  This needs
-to be built on a compute node so that the right memory space is identified.::
-
-    # do this on a main node (where you can access the outside internet):
-    cd $BUILD_HOME
-    wget http://www.open-mpi.org/software/ompi/$LOCAL_MPI_SHORT/downloads/$LOCAL_MPI_VERSION.tar.gz
-    tar xvf $LOCAL_MPI_VERSION.tar.gz
-
-    # get ivy-bridge compute node
-    qsub -I -q devel -l select=1:ncpus=24:mpiprocs=24:model=has -l walltime=02:00:00
-
-    # once node exists
-    cd $BUILD_HOME
-    cd $LOCAL_MPI_VERSION
-    ./configure \
-	--prefix=$BUILD_HOME \
-	--enable-mpi-interface-warning \
-	--without-slurm \
-	--with-tm=/PBS \
-	--without-loadleveler \
-	--without-portals \
-	--enable-mpirun-prefix-by-default \
-        CC=icc CXX=icc FC=ifort
-
-    make -j
-    make install
-
-These compilation options are based on ``/nasa/openmpi/1.6.5/NAS_config.sh``, 
-and are thanks to advice from Daniel Kokron at NAS.  Compiling takes
-about one hour.
-
+.. note::
+      Right now, mpi4py is building, but when we do a "from mpi4py
+      import MPI", we core dump.  This happens on all tested
+      architectures at present.  This stack is stuck until this
+      problem is fixed.
 
 Building Python3
 --------------------------
@@ -108,29 +65,27 @@ Create ``$BUILD_HOME`` and then proceed with downloading and installing Python-3
     wget https://www.python.org/ftp/python/$LOCAL_PYTHON_VERSION/Python-$LOCAL_PYTHON_VERSION.tgz --no-check-certificate
     tar xzf Python-$LOCAL_PYTHON_VERSION.tgz
     cd Python-$LOCAL_PYTHON_VERSION
-
     ./configure --prefix=$BUILD_HOME \
-                         OPT="-mkl -O3 -axCORE-AVX2 -xSSE4.2 -fPIC -ipo -w -vec-report0 -opt-report0" \
-                         FOPT="-mkl -O3 -axCORE-AVX2 -xSSE4.2 -fPIC -ipo -w -vec-report0 -opt-report0" \
-                         CC=mpicc CXX=mpicxx F90=mpif90 \
+                         OPT="-w -vec-report0 -opt-report0" \
+                         FOPT="-w -vec-report0 -opt-report0" \
+                         CFLAGS="-mkl -O3 -ipo -axCORE-AVX2 -xSSE4.2 -fPIC" \
+                         CPPFLAGS="-mkl -O3 -ipo -axCORE-AVX2 -xSSE4.2 -fPIC" \
+                         F90FLAGS="-mkl -O3 -ipo -axCORE-AVX2 -xSSE4.2 -fPIC" \
+                         CC=mpicc  CXX=mpicxx F90=mpif90  \
+                         --with-cxx-main=mpicxx --with-gcc=mpicc \
                          LDFLAGS="-lpthread" \
-                         --enable-shared --with-system-ffi \
-                         --with-cxx-main=mpicxx --with-gcc=mpicc 
+                        --enable-shared --with-system-ffi
 
     make
     make install
- 
+
 The previous intel patch is no longer required.
 
 
 Installing pip
 -------------------------
 
-Python 3.4 now automatically includes pip.  We suggest you do the
-following immediately to suppress version warning messages::
-
-     pip3 install --upgrade pip
-
+Python 3.4 now automatically includes pip.
 
 On Pleiades, you'll need to edit ``.pip/pip.conf``::
 
@@ -143,29 +98,34 @@ against python 3.4.  We will use ``pip3`` throughout this
 documentation to remain compatible with systems (e.g., Mac OS) where
 multiple versions of python coexist.
 
+We suggest doing the following immediately to suppress version warning
+messages::
+
+     pip3 install --upgrade pip
+
 Installing mpi4py
 --------------------------
 
 This should be pip installed::
 
-    pip3 install mpi4py
+   pip3 install mpi4py
 
 
 Installing FFTW3
 ------------------------------
 
-We need to build our own FFTW3, under intel 14 and mvapich2/2.0b, or
-under openmpi::
+We build our own FFTW3::
 
     wget http://www.fftw.org/fftw-3.3.4.tar.gz
     tar -xzf fftw-3.3.4.tar.gz
     cd fftw-3.3.4
 
    ./configure --prefix=$BUILD_HOME \
-                         CC=mpicc        CFLAGS="-O3 -axCORE-AVX2 -xSSE4.2" \
-                         CXX=mpicxx CPPFLAGS="-O3 -axCORE-AVX2 -xSSE4.2" \
-                         F77=mpif90  F90FLAGS="-O3 -axCORE-AVX2 -xSSE4.2" \
-                         MPICC=mpicc MPICXX=mpicxx \
+                         CC=icc        CFLAGS="-O3 -axCORE-AVX2 -xSSE4.2" \
+                         CXX=icpc CPPFLAGS="-O3 -axCORE-AVX2 -xSSE4.2" \
+                         F77=ifort  F90FLAGS="-O3 -axCORE-AVX2 -xSSE4.2" \
+                         MPICC=icc MPICXX=icpc \
+                         LDFLAGS="-lmpi" \
                          --enable-shared \
                          --enable-mpi --enable-openmp --enable-threads
     make -j
@@ -197,12 +157,14 @@ Numpy and BLAS libraries
 ======================================
 
 Numpy will be built against a specific BLAS library.  On Pleiades we
-will build against the Intel MKL BLAS.
+will build against the OpenBLAS libraries.  
+
+All of the intel patches, etc. are unnecessary in the gcc stack.
 
 Building numpy against MKL
 ----------------------------------
 
-Now, acquire ``numpy`` (1.9.2)::
+Now, acquire ``numpy`` (1.8.2)::
 
      cd $BUILD_HOME
      wget http://sourceforge.net/projects/numpy/files/NumPy/$LOCAL_NUMPY_VERSION/numpy-$LOCAL_NUMPY_VERSION.tar.gz
@@ -221,7 +183,7 @@ the instructions above.  This will unpack and overwrite::
       numpy/distutils/fcompiler/intel.py
 
 This differs from prior versions in that "-xhost" is replaced with
- "-axCORE-AVX2 -xSSE4.2".   NOTE: this is now updated for Haswell.
+ "-axAVX -xSSE4.1".   NOTE: this needs to be updated for Haswell.
 
 We'll now need to make sure that ``numpy`` is building against the MKL
 libraries.  Start by making a ``site.cfg`` file::
@@ -229,20 +191,14 @@ libraries.  Start by making a ``site.cfg`` file::
      cp site.cfg.example site.cfg
      emacs -nw site.cfg
 
-.. note::
-    If you're doing many different builds, it may be helpful to have
-    the numpy site.cfg shared between builds.  If so, you can edit 
-    ~/.numpy-site.cfg instead of site.cfg.  This is per site.cfg.example.
-
-
 Edit ``site.cfg`` in the ``[mkl]`` section; modify the
 library directory so that it correctly point to TACC's
 ``$MKLROOT/lib/intel64/``.  
 With the modules loaded above, this looks like::
 
      [mkl]
-     library_dirs = /nasa/intel/Compiler/2015.3.187/composer_xe_2015.3.187/mkl/lib/intel64/
-     include_dirs = /nasa/intel/Compiler/2015.3.187/composer_xe_2015.3.187/mkl/include
+     library_dirs = /nasa/intel/Compiler/2015.0.090/composer_xe_2015.0.090/mkl/lib/intel64
+     include_dirs = /nasa/intel/Compiler/2015.0.090/composer_xe_2015.0.090/mkl/include
      mkl_libs = mkl_rt
      lapack_libs =
 
@@ -329,14 +285,6 @@ Let's fall back to 1.3.1::
 
 
 
-Installing sympy
--------------------------
-
-This should just be pip installed::
-
-     pip3 install sympy
-
-
 Installing HDF5 with parallel support
 --------------------------------------------------
 
@@ -348,10 +296,11 @@ needs to be compiled with support for parallel (mpi) I/O::
      tar xzvf hdf5-$LOCAL_HDF5_VERSION.tar.gz
      cd hdf5-$LOCAL_HDF5_VERSION
      ./configure --prefix=$BUILD_HOME \
-                         CC=mpicc         CFLAGS="-O3 -axCORE-AVX2 -xSSE4.2" \
-                         CXX=mpicxx CPPFLAGS="-O3 -axCORE-AVX2 -xSSE4.2" \
-                         F77=mpif90  F90FLAGS="-O3 -axCORE-AVX2 -xSSE4.2" \
-                         MPICC=mpicc MPICXX=mpicxx \
+                         CC=icc         CFLAGS="-O3 -axCORE-AVX2 -xSSE4.2" \
+                         CXX=icpc CPPFLAGS="-O3 -axCORE-AVX2 -xSSE4.2" \
+                         F77=ifort  F90FLAGS="-O3 -axCORE-AVX2 -xSSE4.2" \
+                         MPICC=icc MPICXX=icpc \
+                         LDFLAGS="-lmpi" \
                          --enable-shared --enable-parallel
      make
      make install
