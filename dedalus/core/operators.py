@@ -254,6 +254,10 @@ class UnaryGridFunction(NonlinearOperator, Future, metaclass=MultiClass):
         self.func = func
         self.name = func.__name__
 
+    @property
+    def base(self):
+        return partial(type(self), self.func)
+
     def meta_constant(self, axis):
         # Preserves constancy
         return self.args[0].meta[axis]['constant']

@@ -22,7 +22,7 @@ x_basis = de.Fourier('x', 256, interval=(0, 2*np.pi))
 y_basis = de.Chebyshev('y', 128, interval=(0, 1))
 domain = de.Domain([x_basis, y_basis], grid_dtype=np.float64)
 
-# 2D Boussinesq hydrodynamics
+# Poisson equation
 problem = de.LBVP(domain, variables=['u','uy'])
 problem.add_equation("dx(dx(u)) + dy(uy) = -10 * sin(x/2)**2 * (y - y**2)")
 problem.add_equation("uy - dy(u) = 0")

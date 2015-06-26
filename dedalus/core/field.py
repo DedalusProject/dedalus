@@ -204,7 +204,7 @@ class Scalar(Data):
             self.scalar = scalar
 
         def __getitem__(self, axis):
-            if self.scalar and (self.scalar.value == 0):
+            if self.scalar and (self.scalar.name is None) and (self.scalar.value == 0):
                 parity = 0
             else:
                 parity = 1
