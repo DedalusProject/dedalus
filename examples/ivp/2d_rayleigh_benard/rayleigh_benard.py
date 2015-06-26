@@ -45,16 +45,16 @@ problem.parameters['P'] = (Rayleigh * Prandtl)**(-1/2)
 problem.parameters['R'] = (Rayleigh / Prandtl)**(-1/2)
 problem.parameters['F'] = F = 1
 problem.add_equation("dx(u) + wz = 0")
-problem.add_equation("dt(b) - P*(dx(dx(b)) + dz(bz))             = -(u*dx(b) + w*bz)")
+problem.add_equation("dt(b) - P*(dx(dx(b)) + dz(bz)) - F*w       = -(u*dx(b) + w*bz)")
 problem.add_equation("dt(u) - R*(dx(dx(u)) + dz(uz)) + dx(p)     = -(u*dx(u) + w*uz)")
 problem.add_equation("dt(w) - R*(dx(dx(w)) + dz(wz)) + dz(p) - b = -(u*dx(w) + w*wz)")
 problem.add_equation("bz - dz(b) = 0")
 problem.add_equation("uz - dz(u) = 0")
 problem.add_equation("wz - dz(w) = 0")
-problem.add_bc("left(b) = left(-F*z)")
+problem.add_bc("left(b) = 0")
 problem.add_bc("left(u) = 0")
 problem.add_bc("left(w) = 0")
-problem.add_bc("right(b) = right(-F*z)")
+problem.add_bc("right(b) = 0")
 problem.add_bc("right(u) = 0")
 problem.add_bc("right(w) = 0", condition="(nx != 0)")
 problem.add_bc("integ(p, 'z') = 0", condition="(nx == 0)")
@@ -78,7 +78,7 @@ noise = rand.standard_normal(gshape)[slices]
 # Linear background + perturbations damped at walls
 zb, zt = z_basis.interval
 pert =  1e-3 * noise * (zt - z) * (z - zb)
-b['g'] = -F*(z - pert)
+b['g'] = F * pert
 b.differentiate('z', out=bz)
 
 # Integration parameters
