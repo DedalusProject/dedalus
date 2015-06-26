@@ -226,10 +226,13 @@ class ProblemBase:
                 if (not LHS.meta[ax]['constant']) or (not RHS.meta[ax]['constant']):
                     raise SymbolicParsingError("Boundary condition must be constant along '{}'.".format(basis.name))
 
-    def _require_zero(self, temp, key):
-        """Require expression to be equal to zero."""
-        if temp[key] != 0:
-            raise UnsupportedEquationError("{} must be zero.".format(key))
+    def _require_homogeneous(self, temp, key, vars):
+        """Require expression to be homogeneous with some variables set to zero."""
+        expr = temp[key]
+        for var in vars:
+            expr = expr.replace(var, 0)
+        if expr != 0:
+            raise UnsupportedEquationError("{} must be homogeneous.".format(key))
 
     def _require_independent(self, temp, key, vars):
         """Require expression to be independent of some variables."""
@@ -309,6 +312,7 @@ class InitialValueProblem(ProblemBase):
         """Check object-form conditions."""
         self._require_independent(temp, 'LHS', [self._t])
         self._require_first_order(temp, 'LHS', [self._dt])
+        self._require_independent(temp, 'RHS', [self._dt])
 
     def _set_matrix_expressions(self, temp):
         """Set expressions for building solver."""
@@ -466,12 +470,24 @@ class EigenvalueProblem(ProblemBase):
 
     def _check_conditions(self, temp):
         """Check object-form conditions."""
+        vars = [self.namespace[var] for var in self.variables]
+        self._require_homogeneous(temp, 'RHS', vars)
         self._require_first_order(temp, 'LHS', [self._ev])
-        self._require_zero(temp, 'RHS')
+        self._require_first_order(temp, 'RHS', [self._ev])
 
     def _set_matrix_expressions(self, temp):
         """Set expressions for building solver."""
-        M, L = temp['LHS'].split(self._ev)
+        # Add RHS linearization to LHS
+        ep = field.Scalar(name='__epsilon__')
+        vars = [self.namespace[var] for var in self.variables]
+        dF = temp['RHS']
+        for var in vars:
+            dF = dF.replace(var, ep*var)
+        dF = field.Operand.cast(dF.sym_diff(ep))
+        dF = dF.replace(ep, 0)
+        temp['linearization'] = temp['LHS'] - dF
+        # Build matrices from linearization
+        M, L = temp['linearization'].split(self._ev)
         M = Operand.cast(M)
         M = M.replace(self._ev, 1)
         vars = [self.namespace[var] for var in self.variables]

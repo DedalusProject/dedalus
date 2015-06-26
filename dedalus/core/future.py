@@ -88,7 +88,7 @@ class Future(Operand):
 
     def has(self, *atoms):
         hasself = type(self) in atoms
-        hasargs = any((a in self.atoms() for a in atoms))
+        hasargs = any(arg.has(*atoms) for arg in self.args)
         return hasself or hasargs
 
     def replace(self, old, new):

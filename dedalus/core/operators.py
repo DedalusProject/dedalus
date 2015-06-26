@@ -38,7 +38,20 @@ def is_integer(x):
         return x.is_integer()
 
 
-class FieldCopy(FutureField, metaclass=MultiClass):
+class Operator(Future):
+
+    @property
+    def base(self):
+        return type(self)
+
+    def order(self, *ops):
+        order = max(arg.order(*ops) for arg in self.args)
+        if type(self) in ops:
+            order += 1
+        return order
+
+
+class FieldCopy(Operator, FutureField, metaclass=MultiClass):
     """Operator making a new field copy of data."""
 
     name = 'FieldCopy'
@@ -117,19 +130,6 @@ class FieldCopyField(FieldCopy):
         # Copy in current layout
         out.layout = arg0.layout
         np.copyto(out.data, arg0.data)
-
-
-class Operator(Future):
-
-    @property
-    def base(self):
-        return type(self)
-
-    def order(self, *ops):
-        order = max(arg.order(*ops) for arg in self.args)
-        if type(self) in ops:
-            order += 1
-        return order
 
 
 class NonlinearOperator(Operator):
