@@ -230,7 +230,8 @@ class ProblemBase:
         """Require expression to be homogeneous with some variables set to zero."""
         expr = temp[key]
         for var in vars:
-            expr = expr.replace(var, 0)
+            if expr != 0:
+                expr = expr.replace(var, 0)
         if expr != 0:
             raise UnsupportedEquationError("{} must be homogeneous.".format(key))
 
