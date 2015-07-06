@@ -942,8 +942,6 @@ class PowerDataScalar(Power):
             return 1
         elif (arg1.name is None) and (arg1.value == 1):
             return arg0
-        elif (arg0.name is None) and (arg0.value == 0):
-            return 0
         else:
             return object.__new__(cls)
 
@@ -975,6 +973,12 @@ class PowerScalarScalar(PowerDataScalar, FutureScalar):
 
     argtypes = {0: (Scalar, FutureScalar),
                 1: (Scalar, FutureScalar)}
+
+    def __new__(cls, arg0, arg1, *args, **kw):
+        if (arg0.name is None) and (arg0.value == 0):
+            return 0
+        else:
+            return super().__new__(cls, arg0, arg1, *args, **kw)
 
     def check_conditions(self):
         return True
