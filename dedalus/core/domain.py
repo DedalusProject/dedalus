@@ -38,7 +38,7 @@ class Domain:
 
     """
 
-    def __init__(self, bases, grid_dtype=np.complex128, mesh=None):
+    def __init__(self, bases, grid_dtype=np.complex128, comm=None, mesh=None):
 
         # Iteratively set basis data types
         # (Grid-to-coefficient transforms proceed in the listed order)
@@ -53,7 +53,7 @@ class Domain:
         logger.debug('Global coeff shape: %s' %str(self.global_coeff_shape))
 
         # Create distributor
-        self.distributor = self.dist = Distributor(self, mesh)
+        self.distributor = self.dist = Distributor(self, comm, mesh)
         self.local_coeff_shape = self.dist.coeff_layout.local_shape(self.remedy_scales(None))
 
         # Create differential operators

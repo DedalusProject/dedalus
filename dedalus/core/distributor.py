@@ -30,7 +30,7 @@ class Distributor:
 
     Attributes
     ----------
-    comm_world : MPI communicator
+    comm : MPI communicator
         Global MPI communicator
     rank : int
         Internal MPI process number
@@ -67,12 +67,14 @@ class Distributor:
 
     """
 
-    def __init__(self, domain, mesh=None):
+    def __init__(self, domain, comm=None, mesh=None):
 
         # MPI communicator and statistics
-        self.comm_world = MPI.COMM_WORLD
-        self.rank = self.comm_world.rank
-        self.size = self.comm_world.size
+        if comm is None:
+            comm = MPI.COMM_WORLD
+        self.comm = comm
+        self.rank = self.comm.rank
+        self.size = self.comm.size
 
         # Default to 1-D mesh of available processes
         if mesh is None:
@@ -89,7 +91,7 @@ class Distributor:
             raise ValueError("Wrong number of processes (%i) for specified mesh (%s)" %(self.size, self.mesh))
 
         # Create cartesian communicator for parallel runs
-        self.comm_cart = self.comm_world.Create_cart(self.mesh)
+        self.comm_cart = self.comm.Create_cart(self.mesh)
 
         # Get cartesian coordinates
         self.coords = np.array(self.comm_cart.coords, dtype=int)
