@@ -106,6 +106,7 @@ class ProblemBase:
         self.parameters = OrderedDict()
         self.substitutions = OrderedDict()
         self.ncc_kw = {'cutoff': ncc_cutoff, 'max_terms': max_ncc_terms}
+        self.coupled = domain.bases[-1].coupled
 
     def add_equation(self, equation, condition="True"):
         """Add equation to problem."""
@@ -119,6 +120,8 @@ class ProblemBase:
 
     def add_bc(self, equation, condition="True"):
         """Add boundary condition to problem."""
+        if not self.coupled:
+            raise SymbolicParsingError("Fully periodic domain doesn't support boundary conditions.")
         logger.debug("Parsing BC {}".format(len(self.bcs)))
         temp = {}
         self._build_basic_dictionary(temp, equation, condition)

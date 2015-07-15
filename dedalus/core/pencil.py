@@ -86,9 +86,6 @@ class Pencil:
 
     def _build_uncoupled_matrices(self, problem, names):
 
-        if problem.bcs:
-            raise SymbolicParsingError("Fully periodic domain doesn't support boundary conditions.")
-
         matrices = {name: [] for name in (names+['select'])}
 
         zbasis = self.domain.bases[-1]
