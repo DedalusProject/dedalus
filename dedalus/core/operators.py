@@ -1453,7 +1453,7 @@ class HilbertTransform(LinearOperator):
 
 
 @parseable
-@addname('H')
+@addname('Hilbert')
 def hilberttransform(arg0, *bases, out=None, **basis_kw):
     # Cast to operand
     arg0 = Operand.cast(arg0)

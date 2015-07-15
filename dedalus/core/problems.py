@@ -29,7 +29,7 @@ class Namespace(OrderedDict):
 
     def __init__(self):
         super().__init__()
-        self.allow_overwrites = True
+        self.allow_overwrites = False
 
     def __setitem__(self, key, value):
         if key in self:
