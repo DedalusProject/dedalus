@@ -120,4 +120,4 @@ finally:
     logger.info('Iterations: %i' %solver.iteration)
     logger.info('Sim end time: %f' %solver.sim_time)
     logger.info('Run time: %.2f sec' %(end_time-start_time))
-    logger.info('Run time: %f cpu-hr' %((end_time-start_time)/60/60*domain.dist.comm_world.size))
+    logger.info('Run time: %f cpu-hr' %((end_time-start_time)/60/60*domain.dist.comm_cart.size))
