@@ -4,9 +4,8 @@ Installing Dedalus
 Installation Script
 ===================
 
-Dedalus provides an all-in-one installation script that will build an isolated stack containing an isolated Python installation and other dependencies needed to run Dedalus.
+Dedalus provides an all-in-one installation script that will build an isolated stack containing a Python installation and the other dependencies needed to run Dedalus.
 In most cases, the script can be modified to link with system installations of FFTW, MPI, and linear algebra libraries.
-It is available at the link below:
 
 You can get the installation script from `this link <https://bitbucket.org/dedalus-project/dedalus/raw/tip/docs/install.sh>`_, or download it using::
 
@@ -42,7 +41,7 @@ Below are instructions for building the dependency stack on a variety of machine
 Dedalus Package
 ---------------
 
-Dedalus is distribution using the mercurial version control system, and hosted on Bitbucket.
+Dedalus is distributed using the mercurial version control system, and hosted on Bitbucket.
 To install Dedalus itself, first install `mercurial <http://mercurial.selenic.com>`_, and then clone the main repository using::
 
     hg clone https://bitbucket.org/dedalus-project/dedalus
@@ -51,7 +50,7 @@ Move into the newly cloned repository, and use pip to install any remaining Pyth
 
     pip3 install -r requirements.txt
 
-To help Dedalus find the proper libraries, it may be necessary to set ``FFTW_PATH`` and ``MPI_PATH`` environment variables (see system specific documentation).
+To help Dedalus find the proper libraries, it may be necessary to set the ``FFTW_PATH`` and ``MPI_PATH`` environment variables (see system-specific documentation).
 Dedalus's C-extensions can then be built in-place using::
 
     python3 setup.py build_ext --inplace
@@ -61,7 +60,7 @@ Finally, add the repository directory to your ``PYTHONPATH`` environment variabl
 Updating Dedalus
 ================
 
-To update your installation of Dedalus, move into the repository directory (located at `src/dedalus` within the installation script's build, or where you manually cloned it) and issue the mercurial update commands::
+To update your installation of Dedalus, move into the repository directory (located at ``src/dedalus`` within the installation script's build, or where you manually cloned it) and issue the mercurial update commands::
 
     hg pull
     hg update
