@@ -56,6 +56,34 @@ class Namespace(OrderedDict):
             self[head] = eval(func, self)
 
 
+
+# class Equation:
+
+#     def __init__(self, eq_string, condition):
+#         self.eq_string = eq_string
+#         self.condition = condition
+
+#         self.LHS_string
+#         self.RHS_string
+#         self.LHS_object
+#         self.RHS_object
+
+
+#     def check_condition(self, group_dict):
+#         pass
+
+#     @CachedAttribute
+#     def separability(self):
+#         pass
+
+#     @CachedAttribute
+#     def bases(self):
+
+#     @CachedAttribute
+#     def LHS_object(self):
+
+
+
 class ProblemBase:
     """
     Base class for problems consisting of a system of PDEs, constraints, and
@@ -102,11 +130,11 @@ class ProblemBase:
         self.equations = self.eqs = []
         self.parameters = OrderedDict()
         self.substitutions = OrderedDict()
-        self.ncc_kw = {'cutoff': ncc_cutoff}
+        self.op_kw = {'cutoff': ncc_cutoff}
 
-    def add_variable(self, var, bases=None):
+    def add_variable(self, var, **kw):
         if isinstance(var, str):
-            var = Field(name=var, bases=bases)
+            var = Field(name=var, **kw)
         self.variables.append(var)
 
     def add_equation(self, equation, condition="True"):
@@ -117,6 +145,7 @@ class ProblemBase:
         self._build_object_forms(temp)
         self._check_eqn_conditions(temp)
         self._set_matrix_expressions(temp)
+        self._build_local_matrices(temp)
         self.eqs.append(temp)
 
     def _build_basic_dictionary(self, temp, equation, condition):
@@ -133,13 +162,13 @@ class ProblemBase:
         LHS = field.Operand.parse(temp['raw_LHS'], self.namespace, self.domain)
         RHS = field.Operand.parse(temp['raw_RHS'], self.namespace, self.domain)
         # Add together to require trigger proper conversions
-        print(RHS, type(RHS))
         if RHS != 0:
             sum = LHS + RHS
             LHS, RHS = sum.args
         temp['LHS'] = LHS
         temp['RHS'] = RHS
         temp['bases'] = LHS.bases
+        temp['subdomain'] = LHS.subdomain
         logger.debug("  LHS object form: {}".format(temp['LHS']))
         logger.debug("  RHS object form: {}".format(temp['RHS']))
 
@@ -209,7 +238,8 @@ class ProblemBase:
             expr = expr.expand(*vars)
             expr = expr.canonical_linear_form(*vars)
             logger.debug('  {} linear form: {}'.format(name, str(expr)))
-        return (expr, vars)
+        return expr
+        #return (expr, vars)
 
     def build_solver(self, *args, **kw):
         """Build corresponding solver class."""
@@ -219,6 +249,13 @@ class ProblemBase:
         separabilities = [eq['separability'] for eq in self.eqs]
         return reduce(np.logical_and, separabilities)
 
+    @property
+    def separable(self):
+        return self.separability()
+
+    @property
+    def coupled(self):
+        return np.invert(self.separable)
 
 class InitialValueProblem(ProblemBase):
     """
@@ -256,13 +293,9 @@ class InitialValueProblem(ProblemBase):
 
         class dt(operators.TimeDerivative):
             name = 'd' + self.time
-            _scalar = field.Field(name=name, bases=self.domain)
-
-            def base(self):
-                return dt
 
         additions = {}
-        additions[self.time] = self._t = field.Field(name=self.time, bases=self.domain)
+        additions[self.time] = self._t = field.Field(name=self.time, domain=self.domain)
         additions[dt.name] = self._dt = dt
         return additions
 
@@ -282,13 +315,19 @@ class InitialValueProblem(ProblemBase):
         temp['M'] = self._prep_linear_form(M, vars, name='M')
         temp['L'] = self._prep_linear_form(L, vars, name='L')
         temp['F'] = temp['RHS']
-        if M and L:
-            temp['separability'] = (temp['M'][0].separability(vars) &
-                                    temp['L'][0].separability(vars))
-        elif M:
-            temp['separability'] = temp['M'][0].separability(vars)
+        temp['separability'] = temp['LHS'].separability(vars)
+
+    def _build_local_matrices(self, temp):
+        vars = self.variables
+        if temp['M'] != 0:
+            temp['M_op'] = temp['M'].operator_dict(vars, **self.op_kw)
         else:
-            temp['separability'] = temp['L'][0].separability(vars)
+            temp['M_op'] = {}
+        if temp['L'] != 0:
+            temp['L_op'] = temp['L'].operator_dict(vars, **self.op_kw)
+        else:
+            temp['L_op'] = {}
+
 
 class LinearBoundaryValueProblem(ProblemBase):
     """
@@ -329,7 +368,11 @@ class LinearBoundaryValueProblem(ProblemBase):
         vars = self.variables
         temp['L'] = self._prep_linear_form(temp['LHS'], vars, name='L')
         temp['F'] = temp['RHS']
-        temp['separability'] = temp['L'][0].separability(vars)
+        temp['separability'] = temp['LHS'].separability(vars)
+
+    def _build_local_matrices(self, temp):
+        vars = self.variables
+        temp['L_op'] = temp['L'].operator_dict(vars, **self.op_kw)
 
 
 class NonlinearBoundaryValueProblem(ProblemBase):

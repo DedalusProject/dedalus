@@ -4,15 +4,17 @@ Classes for manipulating pencils.
 """
 
 from functools import partial, reduce
+from itertools import product
 from collections import defaultdict
 import numpy as np
 from scipy import sparse
 from mpi4py import MPI
 import uuid
 
-from ..tools.array import zeros_with_pattern
-from ..tools.array import expand_pattern
-from ..tools.cache import CachedAttribute
+from .domain import Subdomain
+from ..tools.array import zeros_with_pattern, expand_pattern, sparse_block_diag
+from ..tools.cache import CachedAttribute, CachedMethod
+from ..tools.general import replace
 from ..tools.progress import log_progress
 
 import logging
@@ -28,49 +30,50 @@ logger = logging.getLogger(__name__.split('.')[-1])
 #             trans_shape.append(basis.)
 #     else:
 
-
-# def _check_seperability(self, expr, vars):
-#     sep = expr.seperability(vars)
-#     distributed_dims = len(self.domain.mesh)
-#     if not all(sep[:distributed_dims]):
-#         raise ValueError("")
-
-
-def build_local_subsystems(problem):
-    """Build the set of local subsystems for a problem."""
+def build_local_subproblems(problem):
+    """Build local subproblem objects."""
+    domain = problem.domain
     # Check that distributed dimensions are separable
-    for axis in range(len(problem.domain.dist.mesh)):
+    for axis in range(len(domain.dist.mesh)):
         if not problem.separable[axis]:
-            raise ValueError("Problem not separable along distributed dimension %i" %axis)
+            raise ValueError("Problem is not separable along distributed dimension %i" %axis)
+    # Build subproblems on local groups of separable subdomain
+    subdomain = domain.subdomain(problem.separability())
+    coeff_layout = domain.dist.coeff_layout
+    local_groups = coeff_layout.local_groups(subdomain, scales=1)
+    local_groups = list(replace(local_groups, problem.coupled, [0]))
+    return [Subproblem(problem, group, index) for index, group in enumerate_product(*local_groups)]
 
-    separable_subspace = problem.domain.subspace(problem.separability())
-    local_groups = separable_subspace.local_groups()
-    return [Subsystem(separable_subspace, group) for group in local_groups]
+def build_matrices(subproblems, matrices):
+    """Build subproblem matrices with progress logger."""
+    for subproblem in log_progress(subproblems, logger, 'info', desc='Building subproblem matrices', iter=np.inf, frac=0.1, dt=10):
+        subproblem.build_matrices(matrices)
 
 
-def build_matrices(subsystems, problem, matrices):
-    """Build local subsystem matrices with progress logger."""
-    for subsystem in log_progress(subsystems, logger, 'info', desc='Building subsystem matrix', iter=np.inf, frac=0.1, dt=10):
-        subsystem.build_matrices(problem, matrices)
+def enumerate_product(*iterables):
+    indices = (range(len(iter)) for iter in iterables)
+    return zip(product(*indices), product(*iterables))
 
 
-class Subsystem:
+class Subproblem:
     """
     Object representing one coupled subsystem of a problem.
 
-    Subsystems are identified by their group multi-index, which identifies
-    the corresponding subgroup of each separable dimension of the problem.
+    Subproblems are identified by their group multi-index, which identifies
+    the corresponding group of each separable dimension of the problem.
 
-    This is the generalization of the pencils in a problem with exactly one
+    This is the generalization of 'pencils' from a problem with exactly one
     coupled dimension.
     """
 
-    def __init__(self, subdomain, group):
-        self.subdomain = subdomain
-        self.domain = subdomain.domain
-        self.group = group
-        local_start = group - self.domain.dist.coeff_layout.start(subdomain, scales=1)
-        self.local_group = group - local_start
+    def __init__(self, problem, group, index):
+        # Remove coupled indices
+        group = tuple(replace(group, problem.coupled, None))
+        index = tuple(replace(index, problem.coupled, None))
+        self.problem = problem
+        self.domain = problem.domain
+        self.global_index = self.group = group
+        self.local_index = index
 
     @CachedAttribute
     def group_dict(self):
@@ -82,8 +85,9 @@ class Subsystem:
                     group_dict['n'+space.name] = group
         return group_dict
 
+    @CachedMethod
     def group_shape(self, subdomain):
-        """Coefficient shape for group."""
+        """Shape of group coefficients."""
         group_shape = []
         for group, space in zip(self.group, subdomain.spaces):
             if space is None:
@@ -98,63 +102,58 @@ class Subsystem:
                     group_shape.append(space.group_size)
         return tuple(group_shape)
 
+    @CachedMethod
     def group_size(self, subdomain):
-        """Coefficient size for group."""
+        """Size of group coefficients."""
+        return np.prod(self.group_shape(subdomain))
+
+    @CachedMethod
+    def _start(self, subdomain, group_index):
+        """Starting index of group coefficients."""
+        start = []
+        for group, index, space in zip(self.group, group_index, subdomain.spaces):
+            if space is None:
+                if group in [0, None]:
+                    start.append(0)
+                else:
+                    start.append(1)
+            else:
+                if group is None:
+                    start.append(0)
+                else:
+                    start.append(index * space.group_size)
+        return start
+
+    @CachedMethod
+    def _slices(self, subdomain, group_index):
+        """Slices for group coefficients."""
+        group_start = self._start(subdomain, group_index)
         group_shape = self.group_shape(subdomain)
-        return np.prod(group_shape)
+        slices = []
+        for start, shape in zip(group_start, group_shape):
+            slices.append(slice(start, start+shape))
+        return tuple(slices)
 
-    def global_start(self, subdomain):
-        """Global starting index of group."""
-        global_start = []
-        for group, space in zip(self.group, subdomain.spaces):
-            if space is None:
-                if group in [0, None]:
-                    global_start.append(0)
-                else:
-                    global_start.append(1)
-            else:
-                if group is None:
-                    global_start.append(0)
-                else:
-                    global_start.append(group * space.group_size)
-        return tuple(global_start)
+    # def global_start(self, subdomain):
+    #     """Global starting index of group coefficients."""
+    #     return self._start(subdomain, self.global_index)
 
-    def local_start(self, subdomain):
-        """Local starting index of group."""
-        local_start = []
-        for group, space in zip(self.local_group, subdomain.spaces):
-            if space is None:
-                if group in [0, None]:
-                    local_start.append(0)
-                else:
-                    local_start.append(1)
-            else:
-                if group is None:
-                    local_start.append(0)
-                else:
-                    local_start.append(group * space.group_size)
-        return local_start
+    # def local_start(self, subdomain, group_index):
+    #     """Local starting index of group coefficients."""
+    #     return self._start(subdomian, self.local_index)
 
+    @CachedMethod
     def global_slices(self, subdomain):
-        """Global slices for computable coefficients."""
-        global_start = self.global_start(subdomain)
-        group_shape = self.group_shape(subdomain)
-        global_slices = []
-        for start, shape in zip(global_start, group_shape):
-            global_slices.append(slice(start, start+shape))
-        return tuple(global_slices)
+        """Global slices for group coefficients."""
+        return self._slices(subdomain, self.global_index)
 
+    @CachedMethod
     def local_slices(self, subdomain):
-        """Global slices for computable coefficients."""
-        local_start = self.local_start(subdomain)
-        group_shape = self.group_shape(subdomain)
-        local_slices = []
-        for start, shape in zip(local_start, group_shape):
-            local_slices.append(slice(start, start+shape))
-        return tuple(local_slices)
+        """Local slices for group coefficients."""
+        return self._slices(subdomain, self.local_index)
 
     def get_vector(self, vars):
-        """Retrieve and concatenate group data from variables."""
+        """Retrieve and concatenate group coefficients from variables."""
         vec = []
         for var in vars:
             if self.group_size(var.subdomain):
@@ -164,7 +163,7 @@ class Subsystem:
         return np.concatenate(vec)
 
     def set_vector(self, vars, data):
-        """Assign vectorized group data to variables."""
+        """Assign vectorized group coefficients to variables."""
         i0 = 0
         for var in vars:
             group_size = self.group_size(var.subdomain)
@@ -176,47 +175,90 @@ class Subsystem:
                 np.copyto(var_data, vec_data)
                 i0 = i1
 
-    def inclusion_matrices(self, var):
+    # def inclusion_matrices(self, bases):
+    #     """List of inclusion matrices."""
+    #     matrices = []
+    #     if any(bases):
+    #         subdomain = Subdomain.from_bases(bases)
+    #     else:
+    #         subdomain = Subdomain.from_domain(self.domain)
+    #     global_slices = self.global_slices(subdomain)
+    #     for gs, basis in zip(global_slices, bases):
+    #         if basis is None:
+    #             matrices.append(np.array([[1]])[gs, gs])
+    #         else:
+    #             matrices.append(basis.inclusion_matrix[gs, gs])
+    #     return matrices
+
+    @CachedMethod
+    def expansion_matrix(self, input_subdomain, output_subdomain):
         matrices = []
-        global_slices = self.global_slices(var.subdomain)
-        for gs, basis in zip(global_slices, var.bases):
+        dtype = self.domain.dtype
+        layout = self.domain.dist.coeff_layout
+        arg_shape = layout.global_array_shape(input_subdomain, scales=1)
+        out_shape = layout.global_array_shape(output_subdomain, scales=1)
+        arg_elements = self.global_slices(input_subdomain)
+        out_elements = self.global_slices(output_subdomain)
+        for axis, (I, J, i, j) in enumerate(zip(out_shape, arg_shape, out_elements, arg_elements)):
+            matrix = sparse.eye(I, J, dtype=dtype, format='csr')
+            matrices.append(matrix[i, j])
+        return reduce(sparse.kron, matrices, 1)
+
+    # def expansion_matrix(self, inbases, outbases):
+    #     axmats = self.inclusion_matrices(outbases)
+    #     for axis, (inbasis, outbasis) in enumerate(zip(inbases, outbases)):
+    #         if (inbasis is None) and (outbasis is not None):
+    #             axmats[axis] = axmats[axis][:, 0:1]
+    #     return reduce(sparse.kron, axmats, 1).tocsr()
+
+    @CachedMethod
+    def group_to_modes(self, bases):
+        """Matrix restricting group data to nonzero modes."""
+        matrices = []
+        for group, basis in zip(self.group, bases):
             if basis is None:
-                matrices.append(np.array([[1]])[gs, gs])
+                matrices.append(np.array([[1]]))
             else:
-                matrices.append(basis.inclusion_matrix[gs, gs])
-        return include
+                matrices.append(basis.mode_map(group))
+        return reduce(sparse.kron, matrices, 1).tocsr()
 
-    def compute_conversion(self, inbases, outbases):
-        axmats = self.include_matrices(outbases)
-        for axis, (inbasis, outbasis) in enumerate(zip(inbases, outbases)):
-            if (inbasis is None) and (outbasis is not None):
-                axmats[axis] = axmats[axis][:, 0:1]
-        return reduce(sparse.kron, axmats, 1).tocsr()
+    # def mode_map(self, basis_sets):
+    #     """Restrict group data to nonzero modes."""
+    #     var_mats = []
+    #     for basis_set in basis_sets:
+    #         ax_mats = []
+    #         for group, basis in zip(self.group, basis_set):
+    #             if basis is None:
+    #                 ax_mats.append(np.array([[1]]))
+    #             else:
+    #                 ax_mats.append(basis.mode_map(group))
+    #         var_mat = reduce(sparse.kron, ax_mats, 1).tocsr()
+    #         var_mats.append(reduce(sparse.kron, ax_mats, 1).tocsr())
+    #     return sparse_block_diag(var_mats).tocsr()
 
-    def mode_map(self, basis_sets):
-        var_mats = []
-        for basis_set in basis_sets:
-            ax_mats = []
-            for group, basis in zip(self.group, basis_set):
-                if basis is None:
-                    ax_mats.append(np.array([[1]]))
-                else:
-                    ax_mats.append(basis.mode_map(group))
-            var_mats.append(reduce(sparse.kron, ax_mats, 1).tocsr())
-        return sparse.block_diag(var_mats).tocsr()
+    def local_to_group(self, subdomain):
+        """Matrix restricting local data to group data."""
+        shape = self.domain.dist.coeff_layout.local_array_shape(subdomain, scales=1)
+        slices = self.local_slices(subdomain)
+        matrices = []
+        for axis in range(self.domain.dim):
+            matrix = sparse.identity(shape[axis], format='csr')[slices[axis], :]
+            matrices.append(matrix)
+        return reduce(sparse.kron, matrices, 1)
 
-    def build_matrices(self, problem, names):
+    def build_matrices(self, names):
         """Build problem matrices."""
-
         # Filter equations by condition and group
-        eqs = [eq for eq in problem.eqs if eval(eq['raw_condition'], self.group_dict)]
-        eqs = [eq for eq in eqs if self.size(eq['subdomain'])]
-        eq_sizes = [self.size(eq['subdomain']) for eq in eqs]
+        #eqs = [eq for eq in self.problem.eqs if eval(eq['raw_condition'], self.group_dict)]
+        eqs = [eq for eq in self.problem.eqs if self.group_size(eq['subdomain'])]
+        eq_sizes = [self.group_size(eq['subdomain']) for eq in eqs]
+        eq_filters = [self.local_to_group(eq['subdomain']) for eq in eqs]
         I = sum(eq_sizes)
 
         # Filter variables by group
-        vars = [var for var in problem.variables if self.size(var.subdomain)]
-        var_sizes = [self.size(var.subdomain) for var in vars]
+        vars = [var for var in self.problem.variables if self.group_size(var.subdomain)]
+        var_sizes = [self.group_size(var.subdomain) for var in vars]
+        var_filters = [self.local_to_group(var.subdomain) for var in vars]
         J = sum(var_sizes)
 
         # Construct full subsystem matrices
@@ -225,18 +267,16 @@ class Subsystem:
             # Collect subblocks
             data, rows, cols = [], [], []
             i0 = 0
-            for eq, eq_size in zip(eqs, eq_sizes):
-                expr = eq[name][0]
-                if expr != 0:
-                    op_dict = expr.operator_dict(self, vars, **problem.ncc_kw)
-                    j0 = 0
-                    for var, var_size in zip(vars, var_sizes):
-                        if var in op_dict:
-                            varmat = op_dict[var].tocoo()
-                            data.append(varmat.data)
-                            rows.append(varmat.row + i0)
-                            cols.append(varmat.col + j0)
-                        j0 += var_size
+            for eq, eq_size, eq_filter in zip(eqs, eq_sizes, eq_filters):
+                op_dict = eq[name+'_op']
+                j0 = 0
+                for var, var_size, var_filter in zip(vars, var_sizes, var_filters):
+                    if var in op_dict:
+                        varmat = (eq_filter * op_dict[var] * var_filter.T).tocoo()
+                        data.append(varmat.data)
+                        rows.append(varmat.row + i0)
+                        cols.append(varmat.col + j0)
+                    j0 += var_size
                 i0 += eq_size
             # Build full matrix
             data = np.concatenate(data)
@@ -252,11 +292,19 @@ class Subsystem:
         #  RP.F = RP.L.CP*.CP.X
         # (RP.F) = (RP.L.CP*) . (CP.X)
 
+        # Restrict to nonzero modes
+        eq_modes = [self.group_to_modes(eq['bases']) for eq in eqs]
+        var_modes = [self.group_to_modes(var.bases) for var in vars]
+        # Drop equations that fail condition test
+        for n, eq in enumerate(eqs):
+            if not eval(eq['raw_condition'], self.group_dict):
+                eq_modes[n] = eq_modes[n][0:0, :]
+
         # Store and apply mode maps to matrices
-        self.row_map = row_map = self.mode_map([eq['bases'] for eq in eqs])
-        self.col_map = col_map = self.mode_map([var.bases for var in vars])
+        self.row_map = row_map = sparse_block_diag(eq_modes).tocsr()
+        self.col_map = col_map = sparse_block_diag(var_modes).tocsr()
         if row_map.shape[0] != col_map.shape[0]:
-            raise ValueError("Non-square system")
+            raise ValueError("Non-square system: group={}, I={}, J={}".format(self.group, row_map.shape[0], col_map.shape[0]))
         for name in matrices:
             matrices[name] = row_map * matrices[name] * col_map.T
 
@@ -272,6 +320,6 @@ class Subsystem:
             setattr(self, name+'_exp', matrix.tocsr())
 
         # Store RHS conversion matrix
-        F_conv = [self.compute_conversion(eq['F'].bases, eq['bases']) for eq in eqs]
-        self.RHS_C = sparse.block_diag(F_conv).tocsr()
+        F_conv = [self.expansion_matrix(eq['F'].subdomain, eq['subdomain']) for eq in eqs]
+        self.rhs_map = row_map * sparse_block_diag(F_conv).tocsr()
 

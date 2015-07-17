@@ -1,6 +1,7 @@
 
 
 import numpy as np
+from functools import partial
 
 from . import basis
 from . import transforms
@@ -52,7 +53,16 @@ class AffineCOV:
 
 
 class Space:
-    pass
+
+    def __repr__(self):
+        return '<{} {}>'.format(self.__class__.__name__, id(self))
+
+    def __str__(self):
+        if self.name:
+            return self.name
+        else:
+            return self.__repr__()
+
 
 class Interval(Space):
     """Base class for 1-dimensional spaces."""
@@ -66,7 +76,16 @@ class Interval(Space):
         self.dealias = dealias
         self.COV = AffineCOV(self.native_bounds, bounds)
 
-        self.operators = {'d'+name: self.differentiate}
+    def __str__(self):
+        return self.name
+
+    def __repr__(self):
+        return self.name
+
+    @CachedAttribute
+    def operators(self):
+        from .operators import prefixes
+        return {prefix+self.name: partial(op, **{self.name:1}) for prefix, op in prefixes.items()}
 
     def grid_size(self, scale):
         """Compute scaled grid size."""
@@ -78,7 +97,7 @@ class Interval(Space):
     @CachedAttribute
     def subdomain(self):
         from .domain import Subdomain
-        return Subdomain([self])
+        return Subdomain.from_spaces([self])
 
     @CachedMethod
     def local_grid(self, scales=None):
@@ -86,11 +105,11 @@ class Interval(Space):
         scales = self.domain.remedy_scales(scales)
         axis = self.axis
         # Get local part of global basis grid
-        slices = self.domain.dist.grid_layout.slices(self.subdomain, scales)
+        elements = np.ix_(*self.domain.dist.grid_layout.local_elements(self.subdomain, scales))
         grid = self.grid(scales[axis])
-        local_grid = grid[slices[axis]]
+        local_grid = grid[elements[axis]]
         # Reshape as multidimensional vector
-        local_grid = reshape_vector(local_grid, self.domain.dim, axis)
+        #local_grid = reshape_vector(local_grid, self.domain.dim, axis)
 
         return local_grid
 
@@ -102,24 +121,6 @@ class Interval(Space):
         grid.set_scales(scales)
         grid.set_local_data(self.local_grid(scales))
         return grid
-
-    def differentiate(self, arg, **kw):
-        if self in arg.subdomain.spaces:
-            return arg.bases[self.axis].Differentiate(arg, **kw)
-        else:
-            return 0
-
-    def integrate(self, arg, **kw):
-        if self in arg.subdomain.spaces:
-            return arg.bases[self.axis].integrate(arg, **kw)
-        else:
-            return operators.Multiply(self.COV.problem_length, arg, **kw)
-
-    def interpolate(self, arg, position, **kw):
-        return arg.bases[self.axis].Interpolate(arg, position, **kw)
-
-    def filter(self, arg, func, **kw):
-        return arg.bases[self.axis].Filter(arg, func, **kw)
 
 
 class PeriodicInterval(Interval):

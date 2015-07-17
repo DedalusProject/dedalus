@@ -273,9 +273,9 @@ class SystemHandler(Handler):
         for i, task in enumerate(self.tasks):
             op = task['operator']
             if all(basis is None for basis in op.bases):
-                field = Field(self.domain)
+                field = Field(domain=self.domain)
             else:
-                field = Field(op.bases)
+                field = Field(bases=op.bases)
             op.out = field
             self.fields.append(field)
             # field = Field(task['operator'].bases)

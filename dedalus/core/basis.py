@@ -11,6 +11,7 @@ from . import operators
 from ..tools.array import axslice
 from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
+from ..tools.cache import CachedClass
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -22,10 +23,10 @@ DEFAULT_LIBRARY = config['transforms'].get('DEFAULT_LIBRARY')
 class Basis:
     """Base class for spectral bases."""
 
-    def __init__(self, space):
+    def __init__(self, space, library=DEFAULT_LIBRARY):
         self.space = space
         self.domain = space.domain
-        self.library = DEFAULT_LIBRARY
+        self.library = library
 
     def __repr__(self):
         return '<%s %i>' %(self.__class__.__name__, id(self))
@@ -47,6 +48,8 @@ class Basis:
         axis = self.space.axis
         out = Field(bases=[self], layout='c')
         data = np.zeros(out.global_shape, dtype=out.dtype)
+        if mode < 0:
+            mode += self.space.coeff_size
         data[axslice(axis, mode, mode+1)] = 1
         out.set_global_data(data)
         return out
@@ -65,7 +68,7 @@ class Basis:
     @CachedMethod
     def transform_plan(self, coeff_shape, dtype, axis, scale):
         """Build and cache transform plan."""
-        transform_class = self.transforms[self._library]
+        transform_class = self.transforms[self.library]
         return transform_class(coeff_shape, dtype, axis, scale)
 
     @CachedAttribute
@@ -98,23 +101,13 @@ class Basis:
         return matrix[flags, :]
 
 
-class ChebyshevT(Basis):
-    """Chebyshev polynomial basis on the roots grid."""
+class ChebyshevT(Basis, metaclass=CachedClass):
+    """Chebyshev-T polynomial basis."""
 
     element_label = 'T'
 
-    def __init__(self, space):
-        super().__init__(space)
-        #self.modes = np.arange(self.space.coeff_size)
-
     def include_mode(self, mode):
         return (0 <= mode < self.space.coeff_size)
-
-    # def group_size(self, group):
-    #     if (0 <= group < self.space.coeff_size):
-    #         return 1
-    #     else:
-    #         return 0
 
     def __add__(self, other):
         space = self.space
@@ -141,139 +134,36 @@ class ChebyshevT(Basis):
     def __pow__(self, other):
         return self.space.ChebyshevT
 
-    @CachedAttribute
-    def Integrate(self):
-        """Build integration class."""
-
-        class IntegrateChebyshevT(operators.Integrate):
-            name = 'integ_{}'.format(self.space.name)
-            input_basis = self
-
-            @classmethod
-            def entry(cls, mode):
-                """Integral(T_n(x), -1, 1) = (1 + (-1)**n) / (1 - n**2)"""
-                n = mode
-                if (n % 2):
-                    return 0
-                else:
-                    return 2 / (1 - n**2)
-
-        return IntegrateChebyshevT
-
-    @CachedAttribute
-    def Interpolate(self):
-        """Buld interpolation class."""
-
-        class InterpolateChebyshev(operators.Interpolate):
-            name = 'interp_{}'.format(self.space.name)
-            input_basis = self
-
-            @classmethod
-            def entry(cls, mode, position):
-                """Tn(x) = cos(n*acos(x))"""
-                n = mode
-                x = cls.input_basis.space.COV.native_coord(position)
-                theta = math.acos(x)
-                return math.cos(n*theta)
-
-        return InterpolateChebyshev
-
-    @CachedAttribute
-    def Differentiate(self):
-        """Build differentiation class."""
-
-        class DifferentiateChebyshev(operators.Differentiate):
-            name = 'd' + self.space.name
-            input_basis = self
-            output_basis = self.space.ChebyshevU
-            axis = self.space.axis
-            bands = [0, 1, 2]
-            separable = False
-
-            @classmethod
-            def entry(cls, mode_out, mode_in):
-                """dx(T_n) = n * U_{n-1}"""
-                n = mode_in
-                if mode_out == (mode_in - 1):
-                    return n
-                else:
-                    return 0
-
-        return DifferentiateChebyshev
-
-    @CachedAttribute
-    def Convert(self):
-        """Build conversion class."""
-
-        class ConvertChebyshevT(operators.Convert):
-            input_basis = self
-            output_basis = self.space.ChebyshevU
-            axis = self.space.axis
-            bands = [0, 2]
-            separable = False
-
-            @classmethod
-            def entry(cls, mode_out, mode_in):
-                """
-                T_n = (U_n - U_(n-2)) / 2
-                U_(-n) = -U_(n-2)
-                """
-                if mode_in == mode_out:
-                    if mode_in == 0:
-                        return 1
-                    else:
-                        return 0.5
-                elif mode_out == (mode_in - 2):
-                    return -0.5
-
-        return ConvertChebyshevT
-
-    @CachedAttribute
-    def Filter(self):
-
-        class FilterChebyshevT(operators.Filter):
-            input_basis = self
-
-        return FilterChebyshevT
-
-    def Multiply(self, p):
-        """
-        p-element multiplication matrix
-
-        T_p * T_n = (T_(n+p) + T_(n-p)) / 2
-        T_(-n) = T_n
-
-        """
+    def Multiply(self, p, basis):
+        """p-element multiplication matrix"""
         size = self.space.coeff_size
         # Construct sparse matrix
-        Mult = sparse.lil_matrix((size, size), dtype=self.space.domain.dtype)
-        for n in range(size):
-            upper = n + p
-            if upper < size:
-                Mult[upper, n] += 0.5
-            lower = abs(n - p)
-            if lower < size:
-                Mult[lower, n] += 0.5
+        if basis is None:
+            Mult = sparse.lil_matrix((size, 1), dtype=self.space.domain.dtype)
+            Mult[p, 0] = 1
+        elif basis is self.space.ChebyshevT:
+            # T[p] * T[n] = (T[n+p] + T[n-p]) / 2
+            # T[-n] = T[n]
+            Mult = sparse.lil_matrix((size, size), dtype=self.space.domain.dtype)
+            for n in range(size):
+                if (p+n) < size:
+                    Mult[p+n, n] += 0.5
+                if (p-n) < 0:
+                    Mult[n-p, n] -= 0.5
+                else:
+                    Mult[p-n, n] += 0.5
+        else:
+            raise TypeError()
         return Mult.tocsr()
 
 
-class ChebyshevU(Basis):
-    """Chebyshev polynomial basis on the roots grid."""
+class ChebyshevU(Basis, metaclass=CachedClass):
+    """Chebyshev-U polynomial basis."""
 
     element_label = 'U'
 
-    def __init__(self, space):
-        super().__init__(space)
-        #self.modes = np.arange(self.space.coeff_size)
-
     def include_mode(self, mode):
         return (0 <= mode < self.space.coeff_size)
-
-    # def group_size(self, group):
-    #     if (0 <= group < self.space.coeff_size):
-    #         return 1
-    #     else:
-    #         return 0
 
     def __add__(self, other):
         space = self.space
@@ -291,96 +181,142 @@ class ChebyshevU(Basis):
         if other is None:
             return space.ChebyshevU
         elif other is space.ChebyshevU:
-            return space.ChebyshevU
-        elif other is space.ChebyshevT:
             return space.ChebyshevT
+        elif other is space.ChebyshevT:
+            return space.ChebyshevU
         else:
             return NotImplemented
 
     def __pow__(self, other):
-        return self.space.ChebyshevU
+        return self.space.ChebyshevT
 
-    @CachedAttribute
-    def Integrate(self):
-        """Build integration class."""
-
-        class IntegrateChebyshevU(operators.Integrate):
-            name = 'integ_{}'.format(self.space.name)
-            input_basis = self
-
-            @classmethod
-            def entry(cls, mode):
-                """Integral(U_n(x), -1, 1) = (1 + (-1)**n) / (1 + n)"""
-                n = mode
-                if (n % 2):
-                    return 0
-                else:
-                    return 2 / (1 + n)
-
-        return IntegrateChebyshevU
-
-    @CachedAttribute
-    def Interpolate(self):
-        """Buld interpolation class."""
-
-        class InterpolateChebyshev(operators.Interpolate):
-            name = 'interp_{}'.format(self.space.name)
-            input_basis = self
-
-            @classmethod
-            def entry(cls, mode, position):
-                """Un(x) = sin((n+1)*acos(x)) / sin(acos(x))"""
-                n = mode
-                x = cls.input_basis.space.COV.native_coord(position)
-                theta = math.acos(x)
-                if theta == 0:
-                    return (n + 1)
-                elif theta == np.pi:
-                    return (n + 1) * (-1)**n
-                else:
-                    return math.sin((n+1)*theta) / math.sin(theta)
-
-        return InterpolateChebyshev
-
-    @CachedAttribute
-    def Filter(self):
-
-        class FilterChebyshevU(operators.Filter):
-            input_basis = self
-
-        return FilterChebyshevU
-
-    def Multiply(self, p):
-        """
-        p-element multiplication matrix
-
-        U_p * T_n = (U_(p+n) + U_(p-n)) / 2
-        U_(-n) = -U_(n-2)
-
-        """
+    def Multiply(self, p, basis):
+        """p-element multiplication matrix"""
         size = self.space.coeff_size
         # Construct sparse matrix
-        Mult = sparse.lil_matrix((size, size), dtype=self.space.domain.dtype)
-        for n in range(size):
-            upper = p + n
-            if upper < size:
-                Mult[upper, n] += 0.5
-            lower = p - n
-            if lower >= 0:
-                Mult[lower, n] += 0.5
-            elif lower < -1:
-                Mult[-lower-2, n] += 0.5
+        if basis is None:
+            Mult = sparse.lil_matrix((size, 1), dtype=self.space.domain.dtype)
+            Mult[p, 0] = 1
+        elif basis is self.space.ChebyshevT:
+            # U[p] * T[n] = (U[p+n] + U[p-n]) / 2
+            # U[-n] = -U[n-2]
+            Mult = sparse.lil_matrix((size, size), dtype=self.space.domain.dtype)
+            for n in range(size):
+                if (p+n) < size:
+                    Mult[p+n, n] += 0.5
+                if (p-n) < 0:
+                    Mult[n-p-2, n] -= 0.5
+                else:
+                    Mult[p-n, n] += 0.5
+        else:
+            raise TypeError()
         return Mult.tocsr()
 
 
-class Fourier(Basis):
+class InterpolateChebyshevT(operators.Interpolate):
+
+    input_basis_type = ChebyshevT
+
+    @classmethod
+    def entry(cls, j, space, position):
+        """Tn(x) = cos(n*acos(x))"""
+        x = space.COV.native_coord(position)
+        theta = math.acos(x)
+        return math.cos(j*theta)
+
+
+class InterpolateChebyshevU(operators.Interpolate):
+
+    input_basis_type = ChebyshevU
+
+    @classmethod
+    def entry(cls, j, space, position):
+        """Un(x) = sin((n+1)*acos(x)) / sin(acos(x))"""
+        x = space.COV.native_coord(position)
+        theta = math.acos(x)
+        if theta == 0:
+            return (j + 1)
+        elif theta == np.pi:
+            return (j + 1) * (-1)**j
+        else:
+            return math.sin((j+1)*theta) / math.sin(theta)
+
+
+class IntegrateChebyshevT(operators.Integrate):
+
+    input_basis_type = ChebyshevT
+
+    @classmethod
+    def entry(cls, j, space):
+        """Integral(T_n(x), -1, 1) = (1 + (-1)**n) / (1 - n**2)"""
+        if (j % 2):
+            return 0
+        else:
+            return 2 / (1 - j**2) * space.COV.stretch
+
+
+class IntegrateChebyshevU(operators.Integrate):
+
+    input_basis_type = ChebyshevU
+
+    @classmethod
+    def entry(cls, j, space):
+        """Integral(U_n(x), -1, 1) = (1 + (-1)**n) / (1 + n)"""
+        if (j % 2):
+            return 0
+        else:
+            return 2 / (1 + j) * space.COV.stretch
+
+
+class DifferentiateChebyshevT(operators.Differentiate):
+
+    input_basis_type = ChebyshevT
+    output_basis_type = ChebyshevU
+    bands = [0, 1, 2]
+    separable = False
+
+    @classmethod
+    def entry(cls, i, j, space):
+        """dx(T_n) = n * U_{n-1}"""
+        if i == (j - 1):
+            return j / space.COV.stretch
+        else:
+            return 0
+
+
+class ConvertChebyshevTChebyshevU(operators.Convert):
+
+    input_basis_type = ChebyshevT
+    output_basis_type = ChebyshevU
+    bands = [0, 2]
+    separable = False
+
+    @classmethod
+    def entry(cls, i, j, space, basis):
+        """
+        T_n = (U_n - U_(n-2)) / 2
+        U_(-n) = -U_(n-2)
+        """
+        if i == j:
+            if j == 0:
+                return 1
+            else:
+                return 0.5
+        elif i == (j - 2):
+            return -0.5
+
+
+class Fourier(Basis, metaclass=CachedClass):
     """Fourier sine/cosine series basis."""
 
     element_label= 'k'
 
-    def __init__(self, space):
-        super().__init__(space)
-        #self.modes = np.concatenate(([0], np.arange(2, self.space.coeff_size)))
+    def include_mode(self, mode):
+        if mode == 1:
+            return False
+        else:
+            k = mode // 2
+            return (0 <= k <= self.space.kmax)
 
     def __add__(self, other):
         space = self.space
@@ -403,138 +339,109 @@ class Fourier(Basis):
     def __pow__(self, other):
         return self.space.Fourier
 
-    def include_mode(self, mode):
-        if mode == 1:
-            return False
+
+class InterpolateFourier(operators.Interpolate):
+
+    input_basis_type = Fourier
+
+    @classmethod
+    def entry(cls, j, space, position):
+        """
+        cos(n*x)
+        sin(n*x)
+        """
+        n = j // 2
+        x = space.COV.native_coord(position)
+        if (j % 2) == 0:
+            return math.cos(n*x)
         else:
-            k = mode // 2
-            return (0 <= k <= self.space.kmax)
-
-    # def group_size(self, group):
-    #     if group == 0:
-    #         return 1
-    #     if 0 < group < self.space.kmax:
-    #         return 2
-    #     else:
-    #         return 0
-
-    @CachedAttribute
-    def Integrate(self):
-        """Build integration class."""
-
-        class IntegrateFourier(operators.Integrate, operators.Separable):
-            name = 'integ_{}'.format(self.space.name)
-            input_basis = self
-
-            @classmethod
-            def entry(cls, mode):
-                if mode == 0:
-                    return 2*np.pi
-                else:
-                    return 0
-
-        return IntegrateFourier
-
-    @CachedAttribute
-    def Interpolate(self):
-        """Build interpolation class."""
-
-        class InterpolateFourier(operators.Interpolate, operators.Coupled):
-            name = 'interp_{}'.format(self.space.name)
-            input_basis = self
-
-            @classmethod
-            def entry(cls, mode, position):
-                n = mode // 2
-                x = cls.input_basis.space.COV.native_coord(position)
-                if (mode % 2) == 0:
-                    return math.cos(n*x)
-                else:
-                    return math.sin(n*x)
-
-        return InterpolateFourier
-
-    @CachedAttribute
-    def Differentiate(self):
-        """Build differentiation class."""
-
-        class DifferentiateFourier(operators.Differentiate):
-            name = 'd' + self.space.name
-            input_basis = self
-            output_basis = self
-            bands = [-1, 1]
-            separable = True
-
-            @classmethod
-            def entry(cls, mode_out, mode_in):
-                n = mode_in // 2
-                if mode_in == 0:
-                    return 0
-                elif (mode_in % 2) == 0:
-                    # dx(cos(n*x)) = -n*sin(n*x)
-                    if mode_out == (mode_in + 1):
-                        return (-n)
-                    else:
-                        return 0
-                else:
-                    # dx(sin(n*x)) = n*cos(n*x)
-                    if mode_out == (mode_in - 1):
-                        return n
-                    else:
-                        return 0
-
-        return DifferentiateFourier
-
-    @CachedAttribute
-    def HilbertTransform(self):
-        """Build Hilbert transform class."""
-
-        class HilbertTransformFourier(operators.HilbertTransform):
-            name = 'H' + self.space.name
-            input_basis = self
-            output_basis = self
-            bands = [-1, 1]
-            separable = True
-
-            @classmethod
-            def entry(cls, mode_out, mode_in):
-                if mode_in == 0:
-                    return 0
-                elif (mode_in % 2) == 0:
-                    # Hx(cos(n*x)) = sin(n*x)
-                    if mode_out == (mode_in + 1):
-                        return 1
-                    else:
-                        return 0
-                else:
-                    # Hx(sin(n*x)) = -cos(n*x)
-                    if mode_out == (mode_in - 1):
-                        return (-1)
-                    else:
-                        return 0
-
-        return HilbertTransformFourier
+            return math.sin(n*x)
 
 
-class Sine(Basis):
+class IntegrateFourier(operators.Integrate):
+
+    input_basis_type = Fourier
+
+    @classmethod
+    def entry(cls, j, space):
+        """
+        Integral(cos(n*x), 0, 2*pi) = 2 * pi * δ(n, 0)
+        Integral(sin(n*x), 0, 2*pi) = 0
+        """
+        if j == 0:
+            return 2 * np.pi * space.COV.stretch
+        else:
+            return 0
+
+
+class DifferentiateFourier(operators.Differentiate):
+
+    input_basis_type = Fourier
+    output_basis_type = Fourier
+    bands = [-1, 1]
+    separable = True
+
+    @classmethod
+    def entry(cls, i, j, space):
+        """
+        dx(cos(n*x)) = -n*sin(n*x)
+        dx(sin(n*x)) = n*cos(n*x)
+        """
+        n = j // 2
+        if n == 0:
+            return 0
+        elif (j % 2) == 0:
+            # dx(cos(n*x)) = -n*sin(n*x)
+            if i == (j + 1):
+                return (-n) / space.COV.stretch
+            else:
+                return 0
+        else:
+            # dx(sin(n*x)) = n*cos(n*x)
+            if i == (j - 1):
+                return n / space.COV.stretch
+            else:
+                return 0
+
+
+class HilbertTransformFourier(operators.HilbertTransform):
+
+    input_basis_type = Fourier
+    output_basis_type = Fourier
+    bands = [-1, 1]
+    separable = True
+
+    @classmethod
+    def entry(cls, i, j, space):
+        """
+        Hx(cos(n*x)) = sin(n*x)
+        Hx(sin(n*x)) = -cos(n*x)
+        """
+        n = j // 2
+        if n == 0:
+            return 0
+        elif (j % 2) == 0:
+            # dx(cos(n*x)) = -n*sin(n*x)
+            if i == (j + 1):
+                return 1
+            else:
+                return 0
+        else:
+            # dx(sin(n*x)) = n*cos(n*x)
+            if i == (j - 1):
+                return (-1)
+            else:
+                return 0
+
+
+class Sine(Basis, metaclass=CachedClass):
     """Sine series basis."""
 
     element_label = 'k'
 
-    def __init__(self, space):
-        super().__init__(space)
-        #self.modes = np.arange(1, self.space.coeff_size)
-        #self.library = DEFAULT_LIBRARY
-
     def include_mode(self, mode):
         k = mode
         return (1 <= k <= self.space.kmax)
-
-    # def group_size(self, group):
-    #     if 1 <= group < self.space.kmax:
-    #         return 2
-    #     else:
-    #         return 0
 
     def __add__(self, other):
         space = self.space
@@ -563,105 +470,15 @@ class Sine(Basis):
         else:
             return NotImplemented
 
-    @CachedAttribute
-    def Integrate(self):
-        """Build integration class."""
 
-        class IntegrateSine(operators.Integrate):
-            name = 'integ_{}'.format(self.space.name)
-            input_basis = self
-
-            @classmethod
-            def entry(cls, mode):
-                """Integral(sin(n*x), 0, pi) = (2 / n) * (n % 2)"""
-                n = mode
-                if (n % 2):
-                    return 0
-                else:
-                    return (2 / n)
-
-        return IntegrateSine
-
-    @CachedAttribute
-    def Interpolate(self):
-        """Build interpolation class."""
-
-        class InterpolateSine(operators.Interpolate):
-            name = 'interp_{}'.format(self.space.name)
-            input_basis = self
-
-            @classmethod
-            def entry(self, mode, position):
-                """sin(n*x)"""
-                n = mode
-                x = cls.input_basis.space.COV.native_coord(position)
-                return math.sin(n*x)
-
-        return InterpolateSine
-
-    @CachedAttribute
-    def Differentiate(self):
-        """Build differentiation class."""
-
-        class DifferentiateSine(operators.Differentiate):
-            name = 'd' + self.space.name
-            input_basis = self
-            output_basis = self.space.Cosine
-            bands = [0]
-            separable = True
-
-            @classmethod
-            def entry(cls, mode_out, mode_in):
-                """dx(sin(n*x)) = n*cos(n*x)"""
-                n = mode_in
-                if mode_out == mode_in:
-                    return n
-                else:
-                    return 0
-
-        return DifferentiateSine
-
-    @CachedAttribute
-    def HilbertTransform(self):
-        """Build Hilbert transform class."""
-
-        class HilbertTransformSine(operators.HilbertTransform):
-            name = 'H' + self.space.name
-            input_basis = self
-            output_basis = self.space.Cosine
-            bands = [0]
-            separable = True
-
-            @classmethod
-            def entry(cls, mode_out, mode_in):
-                """Hx(sin(n*x)) = -cos(n*x)"""
-                if mode_out == mode_in:
-                    return (-1)
-                else:
-                    return 0
-
-        return HilbertTransformSine
-
-
-class Cosine(Basis):
+class Cosine(Basis, metaclass=CachedClass):
     """Cosine series basis."""
 
     element_label = 'k'
 
-    def __init__(self, space):
-        super().__init__(space)
-        #self.modes = np.arange(self.space.coeff_size)
-        #self.library = DEFAULT_LIBRARY
-
     def include_mode(self, mode):
         k = mode
         return (0 <= k <= self.space.kmax)
-
-    # def group_size(self, group):
-    #     if 0 <= group < self.space.kmax:
-    #         return 2
-    #     else:
-    #         return 0
 
     def __add__(self, other):
         space = self.space
@@ -686,82 +503,115 @@ class Cosine(Basis):
     def __pow__(self, other):
         return self.space.Cosine
 
-    @CachedAttribute
-    def Integrate(self):
-        """Build integration class."""
 
-        class IntegrateCosine(operators.Integrate):
-            name = 'integ_{}'.format(self.space.name)
-            input_basis = self
+class InterpolateSine(operators.Interpolate):
 
-            @classmethod
-            def entry(cls, mode):
-                """Integral(cos(n*x), 0, pi) = pi * δ(n, 0)"""
-                n = mode
-                if n == 0:
-                    return np.pi
-                else:
-                    return 0
+    input_basis_type = Sine
 
-        return IntegrateCosine
+    @classmethod
+    def entry(self, j, space, position):
+        """sin(n*x)"""
+        x = space.COV.native_coord(position)
+        return math.sin(j*x)
 
-    @CachedAttribute
-    def Interpolate(self):
-        """Build interpolation class."""
 
-        class InterpolateCosine(operators.Interpolate):
-            name = 'interp_{}'.format(self.space.name)
-            input_basis = self
+class InterpolateCosine(operators.Interpolate):
 
-            @classmethod
-            def entry(cls, mode, position):
-                """cos(n*x)"""
-                n = mode
-                x = cls.input_basis.space.COV.native_coord(position)
-                return math.cos(n*x)
+    input_basis_type = Cosine
 
-        return InterpolateCosine
+    @classmethod
+    def entry(cls, j, space, position):
+        """cos(n*x)"""
+        x = space.COV.native_coord(position)
+        return math.cos(j*x)
 
-    @CachedAttribute
-    def Differentiate(self):
-        """Build differentiation class."""
 
-        class DifferentiateCosine(operators.Differentiate):
-            name = 'd' + self.space.name
-            input_basis = self
-            output_basis = self.space.Sine
-            bands = [0]
-            separable = True
+class IntegrateSine(operators.Integrate):
 
-            @classmethod
-            def entry(cls, mode_out, mode_in):
-                """dx(cos(n*x)) = -n*sin(n*x)"""
-                n = mode_in
-                if mode_out == mode_in:
-                    return (-n)
-                else:
-                    return 0
+    input_basis_type = Sine
 
-        return DifferentiateCosine
+    @classmethod
+    def entry(cls, j, space):
+        """Integral(sin(n*x), 0, pi) = (2 / n) * (n % 2)"""
+        if (j % 2):
+            return 0
+        else:
+            return (2 / j) * space.COV.stretch
 
-    @CachedAttribute
-    def HilbertTransform(self):
-        """Build Hilbert transform class."""
 
-        class HilbertTransformCosine(operators.HilbertTransform):
-            name = 'H' + self.space.name
-            input_basis = self
-            output_basis = self.space.Sine
-            bands = [0]
-            separate = True
+class IntegrateCosine(operators.Integrate):
 
-            @classmethod
-            def entry(cls, mode_out, mode_in):
-                """Hx(cos(n*x)) = sin(n*x)"""
-                if mode_out == mode_in:
-                    return 1
-                else:
-                    return 0
+    input_basis_type = Cosine
 
-        return HilbertTransformCosine
+    @classmethod
+    def entry(cls, j, space):
+        """Integral(cos(n*x), 0, pi) = pi * δ(n, 0)"""
+        if j == 0:
+            return np.pi * space.COV.stretch
+        else:
+            return 0
+
+
+class DifferentiateSine(operators.Differentiate):
+
+    input_basis_type = Sine
+    output_basis_type = Cosine
+    bands = [0]
+    separable = True
+
+    @classmethod
+    def entry(cls, i, j, space):
+        """dx(sin(n*x)) = n*cos(n*x)"""
+        if i == j:
+            return j / space.COV.stretch
+        else:
+            return 0
+
+
+class DifferentiateCosine(operators.Differentiate):
+
+    input_basis_type = Cosine
+    output_basis_type = Sine
+    bands = [0]
+    separable = True
+
+    @classmethod
+    def entry(cls, i, j, space):
+        """dx(cos(n*x)) = -n*sin(n*x)"""
+        if i == j:
+            return (-j) / space.COV.stretch
+        else:
+            return 0
+
+
+class HilbertTransformSine(operators.HilbertTransform):
+
+    input_basis_type = Sine
+    output_basis_type = Cosine
+    bands = [0]
+    separable = True
+
+    @classmethod
+    def entry(cls, i, j, space):
+        """Hx(sin(n*x)) = -cos(n*x)"""
+        if i == j:
+            return (-1)
+        else:
+            return 0
+
+
+class HilbertTransformCosine(operators.HilbertTransform):
+
+    input_basis_type = Cosine
+    output_basis_type = Sine
+    bands = [0]
+    separate = True
+
+    @classmethod
+    def entry(cls, i, j, space):
+        """Hx(cos(n*x)) = sin(n*x)"""
+        if i == j:
+            return 1
+        else:
+            return 0
 

@@ -7,7 +7,7 @@ from functools import partial
 
 from .field import Operand, Data, Array, Field
 from .domain import Subdomain
-from ..tools.general import OrderedSet
+from ..tools.general import OrderedSet, unify_attributes
 from ..tools.cache import CachedAttribute, CachedMethod
 
 import logging
@@ -47,13 +47,19 @@ class Future(Operand):
         # Required attributes
         self.args = list(args)
         self.original_args = list(args)
-        self.subdomain, self.bases = Subdomain.from_bases(self._build_bases(*args))
+        self.bases = self._build_bases(*args)
+        if any(self.bases):
+            self.subdomain = Subdomain.from_bases(self.bases)
+        else:
+            domain = unify_attributes(args, 'domain', require=False)
+            self.subdomain = Subdomain.from_domain(domain)
         self.domain = self.subdomain.domain
         self._grid_layout = self.domain.dist.grid_layout
         self._coeff_layout = self.domain.dist.coeff_layout
         self.out = out
         self.kw = {}
         self.last_id = None
+        self.scales = self.subdomain.dealias
 
     def reset(self):
         """Restore original arguments."""
@@ -90,12 +96,12 @@ class Future(Operand):
         """Replace an object in the expression tree."""
         if self == old:
             return new
-        elif self.base() == old:
+        elif self.base == old:
             args = [arg.replace(old, new) for arg in self.args]
             return new(*args, **self.kw)
         else:
             args = [arg.replace(old, new) for arg in self.args]
-            return self.base()(*args, **self.kw)
+            return self.base(*args, **self.kw)
 
     def evaluate(self, id=None, force=True):
         """Recursively evaluate operation."""
@@ -140,9 +146,10 @@ class Future(Operand):
             out = self.out
         else:
             bases = self.bases
-            if all(basis is None for basis in bases):
-                bases = self.domain
-            out = self.future_type(bases=bases)
+            if any(bases):
+                out = self.future_type(bases=bases)
+            else:
+                out = self.future_type(domain=self.domain)
             #out = self.domain.new_data(self.future_type)
             #out = Field(name=str(self), bases=self.bases)
 
@@ -212,11 +219,4 @@ class FutureField(Future):
             return input
         else:
             return FieldCopy(input, domain)
-
-
-def unique_domain(*args):
-    """Return unique domain from a set of fields."""
-    from .domain import combine_domains
-    domains = [getattr(arg, 'domain', None) for arg in args]
-    return combine_domains(*domains)
 

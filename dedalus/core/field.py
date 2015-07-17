@@ -138,9 +138,16 @@ class Operand:
             else:
                 return x
         elif isinstance(x, Number):
-            out = Field(name=str(x), bases=domain)
+            out = Field(name=str(x), domain=domain)
             out['c'] = x
             return out
+
+    def get_basis(self, space):
+        space = self.domain.get_space_object(space)
+        if self.subdomain.spaces[space.axis] in [space, None]:
+            return self.bases[space.axis]
+        else:
+            raise ValueError()
 
     #     x = Operand.raw_cast(x)
     #     if domain:
@@ -214,22 +221,29 @@ class Data(Operand):
     def order(self, *ops):
         return 0
 
-    def operator_dict(self, subsystem, vars, **kw):
+    def operator_dict(self, vars, **kw):
         if self in vars:
-            if subsystem.size(self.bases) == 0:
-                return {}
-            else:
-                return {self: self.subsystem_matrix(subsystem)}
+            return {self: self.local_data_matrix()}
         else:
             raise SymbolicParsingError('{} is not one of the specified variables.'.format(str(self)))
 
-    def subsystem_matrix(self, subsystem):
-        axmats = subsystem.compute_identities(self.bases)
-        return reduce(sparse.kron, axmats, 1).tocsr()
+    def local_data_matrix(self):
+        CL = self.domain.dist.coeff_layout
+        size = np.prod(CL.local_array_shape(self.subdomain, scales=1))
+        if size == 0:
+            return 0
+        else:
+            return sparse.identity(size, dtype=self.domain.dtype)
+
+    # def subproblem_matrix(self, subproblem):
+    #     axmats = subproblem.inclusion_matrices(self.bases)
+    #     return reduce(sparse.kron, axmats, 1).tocsr()
 
     def separability(self, vars):
-        return np.array([True for basis in self.bases])
-
+        if self in vars:
+            return np.array([True for basis in self.bases])
+        else:
+            return np.array([(basis is None) for basis in self.bases])
 
     def sym_diff(self, var):
         """Symbolically differentiate with respect to var."""
@@ -267,19 +281,20 @@ class Data(Operand):
         """Interpret buffer as data in specified layout."""
         layout = self.domain.dist.get_layout_object(layout)
         self.layout = layout
-        local_shape = layout.local_shape(self.subdomain, self.scales)
+        local_shape = layout.local_array_shape(self.subdomain, self.scales)
         self.data = np.ndarray(shape=local_shape,
                                dtype=self.domain.dtype,
                                buffer=self.buffer)
-        self.global_start = layout.start(self.subdomain, self.scales)
+        #self.global_start = layout.start(self.subdomain, self.scales)
 
 
 class Array(Data):
 
     def __init__(self, bases, name=None):
         from .domain import Subdomain
-        self.subdomain, self.bases = Subdomain.from_bases(bases)
+        self.subdomain = Subdomain.from_bases(bases)
         self.domain = self.subdomain.domain
+        self.bases = self.subdomain.expand_bases(bases)
         self.name = name
         # Set initial scales and layout
         self.scales = None
@@ -335,10 +350,20 @@ class Field(Data):
 
     """
 
-    def __init__(self, bases, name=None, layout='c', scales=1):
-        from .domain import Subdomain
-        self.subdomain, self.bases = Subdomain.from_bases(bases)
-        self.domain = self.subdomain.domain
+    def __init__(self, bases=None, domain=None, name=None, layout='c', scales=1):
+        from .domain import Domain, Subdomain
+
+        if (bases is None) and (domain is None):
+            raise ValueError()
+        elif (bases is None):
+            self.subdomain = Subdomain.from_domain(domain)
+            self.domain = domain
+            self.bases = (None,) * domain.dim
+        else:
+            self.subdomain = Subdomain.from_bases(bases)
+            self.domain = self.subdomain.domain
+            self.bases = self.subdomain.expand_bases(bases)
+
         self.name = name
         # Set initial scales and layout
         self.scales = None
@@ -366,8 +391,8 @@ class Field(Data):
         return self.domain.dtype
 
     def set_global_data(self, global_data):
-        slices = self.layout.slices(self.subdomain, self.scales)
-        self.set_local_data(global_data[slices])
+        elements = self.layout.local_elements(self.subdomain, self.scales)
+        self.set_local_data(global_data[np.ix_(*elements)])
 
     def set_local_data(self, local_data):
         np.copyto(self.data, local_data)
@@ -531,8 +556,8 @@ class Field(Data):
     def is_scalar(self):
         return all(basis is None for basis in self.bases)
 
-    @CachedMethod(max_size=1)
-    def as_ncc_operator(self, subsystem, bases, name=None, cacheid=None, cutoff=1e-10):
+    #@CachedMethod(max_size=2)
+    def as_ncc_operator(self, arg, name=None, cacheid=None, cutoff=1e-10):
         """Convert to operator form representing multiplication as a NCC."""
         if name is None:
             name = str(self)
@@ -540,13 +565,17 @@ class Field(Data):
             return self.data.ravel()[0]
         L = n_terms = 0
         self.require_coeff_space()
-        axmats = subsystem.compute_identities(bases)
+
+        matrices = []
+        layout = self.domain.dist.coeff_layout
+        local_shape = layout.local_array_shape(arg.subdomain, self.scales)
+        matrices = [sparse.identity(size, format='csr') for size in local_shape]
         for index, coeff in np.ndenumerate(self.data):
             if abs(coeff) >= cutoff:
-                for axis, basis in enumerate(self.bases):
-                    if basis is not None:
-                        axmats[axis] = basis.Multiply(index[axis])
-                L = L + coeff * reduce(sparse.kron, axmats, 1).tocsr()
+                for axis in range(self.domain.dim):
+                    if self.bases[axis] is not None:
+                        matrices[axis] = self.bases[axis].Multiply(index[axis], arg.bases[axis])
+                L = L + coeff * reduce(sparse.kron, matrices, 1).tocsr()
                 n_terms += 1
         logger.debug("Expanded NCC '{}' with {} terms.".format(name, n_terms))
         return L

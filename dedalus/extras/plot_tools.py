@@ -37,7 +37,7 @@ class DimWrapper:
     @property
     def label(self):
         if self.field.layout.grid_space[self.axis]:
-            return self.basis.name
+            return self.basis.space.name
         else:
             return self.basis.element_name
 

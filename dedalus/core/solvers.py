@@ -113,9 +113,9 @@ class LinearBoundaryValueSolver:
         self.problem = problem
         self.domain = domain = problem.domain
 
-        # Build subsystems and subsystem matrices
-        self.subsystems = subsystems.build_local_subsystems(problem)
-        subsystems.build_matrices(self.subsystems, problem, ['L'])
+        # Build subproblems and subproblem matrices
+        self.subproblems = subsystems.build_local_subproblems(problem)
+        subsystems.build_matrices(self.subproblems, ['L'])
 
         # Build systems
         namespace = problem.namespace
@@ -138,12 +138,12 @@ class LinearBoundaryValueSolver:
 
         # Compute RHS
         self.evaluator.evaluate_group('F', 0, 0, 0)
-        # Solve system for each subsystem, updating state
-        for ss in self.subsystems:
+        # Solve system for each subproblem, updating state
+        for ss in self.subproblems:
             LHS = ss.L
-            RHS = ss.RHC_C * ss.get_vector(self.F)
+            RHS = ss.rhs_map * ss.get_vector(self.F)
             X = linalg.spsolve(LHS, RHS, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
-            ss.set_vector(self.state, X)
+            ss.set_vector(self.state, ss.col_map.T*X)
         #self.state.scatter()
 
 
@@ -173,7 +173,7 @@ class NonlinearBoundaryValueSolver:
 
         # Build pencils and pencil matrices
         self.pencils = pencil.build_pencils(domain)
-        pencil.build_matrices(self.pencils, problem, ['L', 'dF'])
+        pencil.build_matrices(self.pencils, ['L', 'dF'])
 
         # Build systems
         namespace = problem.namespace
@@ -200,7 +200,7 @@ class NonlinearBoundaryValueSolver:
         # Compute RHS
         self.evaluator.evaluate_group('F', 0, 0, 0)
         # Recompute Jacobian
-        pencil.build_matrices(self.pencils, self.problem, ['dF'])
+        pencil.build_matrices(self.pencils, ['dF'])
         # Solve system for each pencil, updating perturbations
         for p in self.pencils:
             pFe = self.Fe.get_pencil(p)
@@ -256,9 +256,9 @@ class InitialValueSolver:
         self._wall_time_array = np.zeros(1, dtype=float)
         self.start_time = self.get_wall_time()
 
-        # Build subsystems and subsystem matrices
-        self.subsystems = subsystems.build_local_subsystems(problem)
-        subsystems.build_matrices(self.subsystems, problem, ['M', 'L'])
+        # Build subproblems and subproblem matrices
+        self.subproblems = subsystems.build_local_subproblems(problem)
+        subsystems.build_matrices(self.subproblems, ['M', 'L'])
 
         # Build systems
         namespace = problem.namespace
@@ -276,8 +276,8 @@ class InitialValueSolver:
         self.F = F_handler.fields
 
         # Initialize timestepper
-        basis_sets = [eq['bases'] for eq in problem.eqs]
-        self.timestepper = timestepper(basis_sets, self.subsystems)
+        subdomains = [eq['subdomain'] for eq in problem.eqs]
+        self.timestepper = timestepper(subdomains, self.subproblems)
 
         # Attributes
         self.sim_time = 0.
@@ -328,8 +328,8 @@ class InitialValueSolver:
         """
         # Compute RHS
         self.evaluator.evaluate_group('F', 0, 0, 0)
-        # Solve system for each subsystem, updating state
-        for ss in self.subsystems:
+        # Solve system for each subproblem, updating state
+        for ss in self.subproblems:
             X0 = ss.get_vector(self.state)
             F0 = ss.get_vector(self.F)
             RHS = ss.M_csr*X0 + dt*ss.RHS_C_csr*F0

@@ -52,12 +52,12 @@ class MultistepIMEX:
 
     """
 
-    def __init__(self, basis_sets, subsystems):
+    def __init__(self, subdomains, subsystems):
 
-        self.basis_sets = basis_sets
+        self.subdomains = subdomains
         self.subsystems = subsystems
 
-        self.RHS = CoeffSystem(basis_sets, subsystems)
+        self.RHS = CoeffSystem(subdomains, subsystems)
 
         # Create deque for storing recent timesteps
         N = max(self.amax, self.bmax, self.cmax)
@@ -68,11 +68,11 @@ class MultistepIMEX:
         self.LX = LX = deque()
         self.F = F = deque()
         for j in range(self.amax):
-            MX.append(CoeffSystem(basis_sets, subsystems))
+            MX.append(CoeffSystem(subdomains, subsystems))
         for j in range(self.bmax):
-            LX.append(CoeffSystem(basis_sets, subsystems))
+            LX.append(CoeffSystem(subdomains, subsystems))
         for j in range(self.cmax):
-            F.append(CoeffSystem(basis_sets, subsystems))
+            F.append(CoeffSystem(subdomains, subsystems))
 
         # Attributes
         self._iteration = 0
@@ -487,15 +487,15 @@ class RungeKuttaIMEX:
 
     """
 
-    def __init__(self, basis_sets, subsystems):
+    def __init__(self, subdomains, subsystems):
 
         self.subsystems = subsystems
-        self.RHS = CoeffSystem(basis_sets, subsystems)
+        self.RHS = CoeffSystem(subsystems)
 
         # Create coefficient systems for multistep history
-        self.MX0 = CoeffSystem(basis_sets, subsystems)
-        self.LX = LX = [CoeffSystem(basis_sets, subsystems) for i in range(self.stages)]
-        self.F = F = [CoeffSystem(basis_sets, subsystems) for i in range(self.stages)]
+        self.MX0 = CoeffSystem(subsystems)
+        self.LX = LX = [CoeffSystem(subsystems) for i in range(self.stages)]
+        self.F = F = [CoeffSystem(subsystems) for i in range(self.stages)]
 
         self._LHS_params = None
 
@@ -526,7 +526,7 @@ class RungeKuttaIMEX:
 
         # Compute M.X(n,0)
         for ss in subsystems:
-            pX0 = ss.get_vector(state_fields)
+            pX0 = ss.col_map * ss.get_vector(state_fields)
             MX0.set_subdata(ss, ss.M*pX0)
             if STORE_LU and update_LHS:
                 ss.LHS_LU = [None] * (self.stages+1)
@@ -542,10 +542,10 @@ class RungeKuttaIMEX:
             else:
                 evaluator.evaluate_group('F', wall_time, solver.sim_time, iteration)
             for ss in subsystems:
-                pX = ss.get_vector(state_fields)
-                pFe = ss.get_vector(F_fields)
+                pX = ss.col_map * ss.get_vector(state_fields)
+                pFe = ss.rhs_map * ss.get_vector(F_fields)
                 LX[i-1].set_subdata(ss, ss.L*pX)
-                F[i-1].set_subdata(ss, ss.RHS_C*pFe)
+                F[i-1].set_subdata(ss, pFe)
 
             # Construct RHS(n,i)
             np.copyto(RHS.data, MX0.data)
@@ -565,7 +565,7 @@ class RungeKuttaIMEX:
                 else:
                     np.copyto(ss.LHS.data, ss.M_exp.data + (k*H[i,i])*ss.L_exp.data)
                     ssX = linalg.spsolve(ss.LHS, ssRHS, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
-                ss.set_vector(state_fields, ssX)
+                ss.set_vector(state_fields, ss.col_map.T*ssX)
             solver.sim_time = sim_time_0 + k*c[i]
 
 

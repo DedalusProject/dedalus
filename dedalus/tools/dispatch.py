@@ -14,7 +14,11 @@ class MultiClass(type):
 
         # Create instance if no subclasses
         if not cls.__subclasses__():
-            return super().__call__(*args, **kw)
+            # Check arguments
+            if cls._check_args(*args, **kw):
+                return super().__call__(*args, **kw)
+            else:
+                raise TypeError("Provided types do not pass dispatch check.")
 
         # Preprocess arguments and keywords
         args, kw = cls._preprocess_args(*args, **kw)
@@ -26,7 +30,7 @@ class MultiClass(type):
                 passlist.append(subclass)
 
         if len(passlist) == 0:
-            return NotImplemented
+            raise NotImplementedError("No subclasses of {} found for the supplied arguments: {}, {}".format(cls, args, kw))
         elif len(passlist) > 1:
             raise ValueError("Degenerate subclasses of {} found for the supplied arguments: {}, {}".format(cls, args, kw))
         else:

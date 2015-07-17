@@ -182,13 +182,13 @@ class Layout:
 
     """
 
-    def __init__(self, domain, mesh, coords, local, grid_space):
+    distribution = 'block'
 
+    def __init__(self, domain, mesh, coords, local, grid_space):
         self.domain = domain
         # Freeze local and grid_space lists into boolean arrays
         self.local = np.array(local)
         self.grid_space = np.array(grid_space)
-
         # Extend mesh and coordinates to domain dimension
         self.ext_mesh = np.ones(domain.dim, dtype=int)
         self.ext_mesh[~self.local] = mesh
@@ -205,61 +205,153 @@ class Layout:
         global_shape[~grid_space] = subdomain.global_coeff_shape[~grid_space]
         return global_shape
 
-    @CachedMethod
-    def groups(self, subdomain, scales):
-        """Comptue group sizes."""
+    def global_groups(self, subdomain, scales):
+        """Global group indices by axis."""
+        scales = self.domain.remedy_scales(scales)
         groups = []
         for axis, space in enumerate(subdomain.spaces):
             if space is None:
-                groups.append(1)
+                n_groups = 1
             elif self.grid_space[axis]:
-                groups.append(1)
+                n_groups = space.grid_size(scales[axis])
             else:
-                groups.append(space.group_size)
-        return np.array(groups, dtype=int)
+                n_groups = space.coeff_size // space.group_size
+            groups.append(np.arange(n_groups))
+        return groups
 
-    @CachedMethod
-    def blocks(self, subdomain, scales):
-        """Compute block sizes for data distribution."""
-        global_shape = self.global_shape(subdomain, scales)
-        groups = self.groups(subdomain, scales)
-        return groups * np.ceil(global_shape / groups / self.ext_mesh).astype(int)
+    def local_groups(self, subdomain, scales):
+        """Local group indices by axis."""
+        global_groups = self.global_groups(subdomain, scales)
+        groups = []
+        for axis, space in enumerate(subdomain.spaces):
+            if self.local[axis] or (space is None):
+                groups.append(global_groups[axis])
+            else:
+                mesh = self.ext_mesh[axis]
+                coord = self.ext_coords[axis]
+                if self.distribution == 'block':
+                    block = len(global_groups[axis]) // mesh
+                    start = coord * block
+                    groups.append(global_groups[axis][start:start+block])
+                elif self.distribution == 'cyclic':
+                    groups.append(global_groups[axis][coord::mesh])
+        return groups
 
-    @CachedMethod
-    def start(self, subdomain, scales):
-        """Compute starting coordinates for local data."""
-        blocks = self.blocks(subdomain, scales)
-        start = self.ext_coords * blocks
-        start[subdomain.constant] = 0
-        return start
+    def local_elements(self, subdomain, scales):
+        """Local element indices by axis."""
+        local_groups = self.local_groups(subdomain, scales)
+        indices = []
+        for axis, space in enumerate(subdomain.spaces):
+            if space is None:
+                indices.append(np.arange(1))
+            else:
+                if self.grid_space[axis]:
+                    GS = 1
+                else:
+                    GS = space.group_size
+                ind = [GS*G+i for i in range(GS) for G in local_groups[axis]]
+                indices.append(np.array(ind))
+        return indices
+        #return np.ix_(*indices)
 
-    @CachedMethod
-    def local_shape(self, subdomain, scales):
-        """Compute local data shape."""
-        global_shape = self.global_shape(subdomain, scales)
-        blocks = self.blocks(subdomain, scales)
-        start = self.start(subdomain, scales)
-        local_shape = np.minimum(blocks, global_shape-start)
-        local_shape = np.maximum(0, local_shape)
-        return local_shape
-
-    @CachedMethod
     def slices(self, subdomain, scales):
-        """Compute slices for selecting local portion of global data."""
-        start = self.start(subdomain, scales)
-        local_shape = self.local_shape(subdomain, scales)
-        return tuple(slice(s, s+l) for (s, l) in zip(start, local_shape))
+        return np.ix_(*self.local_elements(subdomain, scales))
 
-    @CachedMethod
-    def global_indices(self, subdomain, scales):
-        start = self.start(subdomain, scales)
-        local_shape = self.local_shape(subdomain, scales)
+    def global_array_shape(self, subdomain, scales):
+        """Global array shape."""
+        scales = self.domain.remedy_scales(scales)
+        shape = []
+        for axis, space in enumerate(subdomain.spaces):
+            if space is None:
+                shape.append(1)
+            elif self.grid_space[axis]:
+                shape.append(space.grid_size(scales[axis]))
+            else:
+                shape.append(space.coeff_size)
+        return tuple(shape)
 
-    @CachedMethod
+    def local_array_shape(self, subdomain, scales):
+        """Local array shape."""
+        local_elements = self.local_elements(subdomain, scales)
+        return [LE.size for LE in local_elements]
+
+    def local_group_index(self, group, subdomain, scales):
+        """Index of a group within local groups."""
+        index = []
+        for grp, local_grps in zip(group, self.local_groups(subdomain, scales)):
+            if grp is None:
+                index.append(None)
+            else:
+                index.append(local_grps.index(grp))
+        return index
+
+    #@CachedMethod
     def buffer_size(self, subdomain, scales):
         """Compute necessary buffer size (bytes)."""
-        local_shape = self.local_shape(subdomain, scales)
+        local_shape = self.local_array_shape(subdomain, scales)
         return np.prod(local_shape) * self.domain.dtype.itemsize
+
+
+
+        # if distribution == 'block':
+        #     index[~local] = (group - start)[~local]
+        # elif distribution == 'cyclic':
+        #     index[~local] = np.mod(group, mesh)[~local]
+
+    # def group(self, local_index):
+    #     pass
+    #     # if distribution == 'block':
+    #     #     group = start + index
+    #     # elif distribution == 'cyclic':
+    #     #     group = mesh *
+
+
+
+    # @CachedMethod
+    # def groups(self, subdomain, scales):
+    #     """Comptue group sizes."""
+    #     groups = []
+    #     for axis, space in enumerate(subdomain.spaces):
+    #         if space is None:
+    #             groups.append(1)
+    #         elif self.grid_space[axis]:
+    #             groups.append(1)
+    #         else:
+    #             groups.append(space.group_size)
+    #     return np.array(groups, dtype=int)
+
+    # @CachedMethod
+    # def blocks(self, subdomain, scales):
+    #     """Compute block sizes for data distribution."""
+    #     global_shape = self.global_shape(subdomain, scales)
+    #     groups = self.groups(subdomain, scales)
+    #     return groups * np.ceil(global_shape / groups / self.ext_mesh).astype(int)
+
+    # @CachedMethod
+    # def start(self, subdomain, scales):
+    #     """Compute starting coordinates for local data."""
+    #     blocks = self.blocks(subdomain, scales)
+    #     start = self.ext_coords * blocks
+    #     start[subdomain.constant] = 0
+    #     return start
+
+    # @CachedMethod
+    # def local_shape(self, subdomain, scales):
+    #     """Compute local data shape."""
+    #     global_shape = self.global_shape(subdomain, scales)
+    #     blocks = self.blocks(subdomain, scales)
+    #     start = self.start(subdomain, scales)
+    #     local_shape = np.minimum(blocks, global_shape-start)
+    #     local_shape = np.maximum(0, local_shape)
+    #     return local_shape
+
+    # @CachedMethod
+    # def slices(self, subdomain, scales):
+    #     """Compute slices for selecting local portion of global data."""
+    #     start = self.start(subdomain, scales)
+    #     local_shape = self.local_shape(subdomain, scales)
+    #     return tuple(slice(s, s+l) for (s, l) in zip(start, local_shape))
+
 
 
 class Transform:

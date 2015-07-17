@@ -13,6 +13,7 @@ from .domain import Subdomain
 from .field import Operand, Data, Array, Field
 from .future import Future, FutureArray, FutureField
 from ..tools.array import reshape_vector, apply_matrix, add_sparse
+from ..tools.cache import CachedAttribute
 from ..tools.dispatch import MultiClass
 from ..tools.exceptions import NonlinearOperatorError
 from ..tools.exceptions import SymbolicParsingError
@@ -27,16 +28,21 @@ Scalar = FutureScalar = Rand
 
 # Use simple decorator to track parseable operators
 parseables = {}
+prefixes = {}
 
-def parseable(op):
-    parseables[op.name] = op
-    return op
+def parseable(*names):
+    def register_op(op):
+        for name in names:
+            parseables[name] = op
+        return op
+    return register_op
 
-def addname(name):
-    def decorator(func):
-        func.name = name
-        return func
-    return decorator
+def prefix(*names):
+    def register_op(op):
+        for name in names:
+            prefixes[name] = op
+        return op
+    return register_op
 
 
 # Other helpers
@@ -67,10 +73,7 @@ class FieldCopy(FutureField, metaclass=MultiClass):
         self.kw = {'domain': arg.domain}
 
     def _build_bases(self, arg0):
-        if all(basis is None for basis in arg0.bases):
-            return arg0.domain
-        else:
-            return arg0.bases
+        return arg0.bases
 
     def __str__(self):
         return str(self.args[0])
@@ -339,6 +342,9 @@ class UnaryGridFunctionField(UnaryGridFunction, FutureField):
         self.func(arg0.data, out=out.data)
 
 
+
+
+
 class Arithmetic(Future):
 
     arity = 2
@@ -363,14 +369,9 @@ class Add(Arithmetic, metaclass=MultiClass):
 
     def __init__(self, arg0, arg1, out=None):
         bases = self._build_bases(arg0, arg1)
-        self.subdomain, self.bases = Subdomain.from_bases(bases)
-        self.domain = self.subdomain.domain
-        arg0 = convert(arg0, self.bases)
-        arg1 = convert(arg1, self.bases)
+        arg0 = convert(arg0, bases)
+        arg1 = convert(arg1, bases)
         super().__init__(arg0, arg1, out=out)
-
-        #self.args = [arg0, arg1]
-        #self.out = out
 
     def _build_bases(self, arg0, arg1):
         bases = []
@@ -379,9 +380,7 @@ class Add(Arithmetic, metaclass=MultiClass):
                 bases.append(None)
             else:
                 bases.append(b0 + b1)
-        if all(basis is None for basis in bases):
-            bases = arg0.domain
-        return bases
+        return tuple(bases)
 
     @classmethod
     def _preprocess_args(cls, *args, **kw):
@@ -432,20 +431,47 @@ class Add(Arithmetic, metaclass=MultiClass):
         S1 = self.args[1].split(*vars)
         return [S0[0]+S1[0], S0[1]+S1[1]]
 
-    def operator_dict(self, subsystem, vars, **kw):
+    def operator_dict(self, vars, **kw):
         """Produce matrix-operator dictionary over specified variables."""
+        arg0, arg1 = self.args
         # May need to convert None bases up to self bases
         # Vars will only appear in op dicts if subsystem has None groups
         out = defaultdict(int)
-        op0 = self.args[0].operator_dict(subsystem, vars, **kw)
-        op1 = self.args[1].operator_dict(subsystem, vars, **kw)
-        convert0 = subsystem.compute_conversion(self.args[0].bases, self.bases)
-        convert1 = subsystem.compute_conversion(self.args[1].bases, self.bases)
+        op0 = arg0.operator_dict(vars, **kw)
+        op1 = arg1.operator_dict(vars, **kw)
+        exp0 = self.expansion_matrix(arg0, self.domain.dist.coeff_layout)
+        exp1 = self.expansion_matrix(arg1, self.domain.dist.coeff_layout)
+        # exp0 = subsystem.expansion_matrix(self.args[0].bases, self.bases)
+        # exp1 = subsystem.expansion_matrix(self.args[1].bases, self.bases)
         for var in op0:
-            out[var] += convert0 * op0[var]
+            out[var] = out[var] + exp0 * op0[var]
         for var in op1:
-            out[var] += convert1 * op1[var]
+            out[var] = out[var] + exp1 * op1[var]
         return out
+
+    def expansion_matrix(self, arg, layout):
+        matrices = []
+        dtype = self.domain.dtype
+        arg_shape = layout.global_array_shape(arg.subdomain, arg.scales)
+        out_shape = layout.global_array_shape(self.subdomain, self.scales)
+        arg_elements = layout.local_elements(arg.subdomain, arg.scales)
+        out_elements = layout.local_elements(self.subdomain, self.scales)
+        for axis, (I, J, i, j) in enumerate(zip(out_shape, arg_shape, out_elements, arg_elements)):
+            if (arg.bases[axis] is None) and layout.grid_space[axis]:
+                matrix = sparse.csr_matrix(np.ones((I, J), dtype=dtype))
+            else:
+                matrix = sparse.eye(I, J, dtype=dtype, format='csr')
+            # Avoid bug on (1,1) advanced indexing of sparse matrices
+            if i.size == 1:
+                i = [[i[0]]]
+            else:
+                i = i[:,None]
+            if j.size == 1:
+                j = [[j[0]]]
+            else:
+                j = j[None,:]
+            matrices.append(matrix[i, j])
+        return reduce(sparse.kron, matrices, 1)
 
     def sym_diff(self, var):
         """Symbolically differentiate with respect to var."""
@@ -656,9 +682,7 @@ class Multiply(Arithmetic, metaclass=MultiClass):
                 bases.append(None)
             else:
                 bases.append(b0 * b1)
-        if all(basis is None for basis in bases):
-            bases = arg0.domain
-        return bases
+        return tuple(bases)
 
     @classmethod
     def _preprocess_args(cls, *args, **kw):
@@ -716,31 +740,23 @@ class Multiply(Arithmetic, metaclass=MultiClass):
         S1 = self.args[1].split(*vars)
         return [S0[0]*S1[0] + S0[0]*S1[1] + S0[1]*S1[0], S0[1]*S1[1]]
 
-    def operator_dict(self, subsystem, vars, **kw):
+    def operator_dict(self, vars, **kw):
         """Produce matrix-operator dictionary over specified variables."""
         arg0, arg1 = self.args
         out = defaultdict(int)
-        op0 = arg0.as_ncc_operator(subsystem, self.bases, **kw)
-        op1 = arg1.operator_dict(subsystem, vars, **kw)
-        #convert0 = self.subsystem_conversion(subsystem, arg0)
-        convert1 = self.subsystem_conversion(subsystem, arg1)
+        op0 = arg0.as_ncc_operator(arg1, **kw)
+        op1 = arg1.operator_dict(vars, **kw)
+        #convert1 = subsystem.compute_conversion(self.args[1].bases, self.bases)
         for var in op1:
-            out[var] = op0 * convert1 * op1[var]
+            out[var] = op0 * op1[var]
         return out
-
-    def subsystem_conversion(self, subsystem, arg):
-        axmats = subsystem.compute_identities(self.bases)
-        for axis, (inbasis, outbasis) in enumerate(zip(arg.bases, self.bases)):
-            if (inbasis is None) and (outbasis is not None):
-                axmats[axis] = axmats[axis][:, 0:1]
-        return reduce(sparse.kron, axmats, 1).tocsr()
 
     def separability(self, vars):
         """Determine separability as linear operator over specified variables."""
         # Assume canonical linear form: arg1 linearly depends on vars
         arg0, arg1 = self.args
         # NCC multiplication is separable on constant axes
-        sep0 = [basis is None for basis in arg0.bases]
+        sep0 = arg0.separability(vars)
         sep1 = arg1.separability(vars)
         return (sep0 & sep1)
 
@@ -1015,145 +1031,165 @@ class PowerFieldScalar(PowerDataScalar, FutureField):
 
 class LinearOperator(Operator, FutureField):
 
-    kw = {}
-    entry_scaling = 1
+    def __init__(self, arg, **kw):
 
-    @property
-    def axis(self):
-        return self.input_basis.space.axis
+        self.arg = arg
+        self.args = [arg]
+        self.original_args = [arg]
+        self.kw = kw
 
-    def _build_bases(self, arg):
-        bases = [basis for basis in arg.bases]
-        bases[self.axis] = self.output_basis
-        return bases
+        self.bases = self.build_bases(arg, **kw)
+        if any(self.bases):
+            self.subdomain = Subdomain.from_bases(self.bases)
+        else:
+            self.subdomain = Subdomain.from_domain(arg.domain)
+        self.domain = self.subdomain.domain
+
+        self._grid_layout = self.domain.dist.grid_layout
+        self._coeff_layout = self.domain.dist.coeff_layout
+        self.last_id = None
+        self.scales = self.subdomain.dealias
+        self.out = None
+
+    def __repr__(self):
+        return '{!r}({!r}, {!r})'.format(self.__name__, self.arg, self.kw)
+
+    def __str__(self):
+        return '{!s}({!s}, {!s})'.format(self.base.__name__, self.arg, self.kw)
+
+    def new_arg(self, arg):
+        return self.base(arg, **self.kw)
 
     def expand(self, *vars):
         """Distribute over sums containing specified variables (default: all)."""
-        arg = self.args[0]
-        if (not vars) or arg0.has(*vars):
-            arg = arg.expand(*vars)
+        if (not vars) or self.arg.has(*vars):
+            arg = self.arg.expand(*vars)
             if isinstance(arg, Add):
-                base = self.base
                 arg_a, arg_b = arg.args
-                return (base(arg_a, **self.kw) + base(arg_b, **self.kw)).expand(*vars)
+                return (self.new_arg(arg_a) + self.new_arg(arg_b)).expand(*vars)
         return self
 
     def canonical_linear_form(self, *vars):
         """Change argument to canonical linear form."""
-        arg0 = self.args[0]
-        if arg0.has(*vars):
-            op = type(self)
-            arg0 = arg0.canonical_linear_form(*vars)
-            return op(arg0, **self.kw)
+        if self.arg.has(*vars):
+            return self.new_arg(self.arg.canonical_linear_form(*vars))
         else:
             return self
 
     def split(self, *vars):
-        if self.base in vars:
+        if any([issubclass(self.base, var) for var in vars]):
             return [self, 0]
         else:
-            S0 = self.args[0].split(*vars)
-            return [self.base(S0[0], **self.kw), self.base(S0[1], **self.kw)]
+            return [self.new_arg(arg) for arg in self.arg.split(*vars)]
 
-    def operator_dict(self, subsystem, vars, **kw):
-        op_dict = defaultdict(int)
-        arg_dict = self.args[0].operator_dict(subsystem, vars, **kw)
-        submat = self.subsystem_matrix(subsystem)
-        for var in arg_dict:
-            op_dict[var] = submat * arg_dict[var]
-        return op_dict
+    def operator_dict(self, vars, **kw):
+        arg_dict = self.arg.operator_dict(vars, **kw)
+        sub_mat = self.local_matrix(self.domain.dist.coeff_layout)
+        return {var: sub_mat * arg_dict[var] for var in arg_dict}
 
-    def subsystem_matrix(self, subsystem):
-        axis = self.input_basis.space.axis
-        inslice = subsystem.global_slices(self.args[0].bases)[axis]
-        outslice = subsystem.global_slices(self.bases)[axis]
-        axmats = subsystem.compute_identities(self.bases)
-        axmats[axis] = self.memory_matrix()[outslice, inslice]
-        return reduce(sparse.kron, axmats, 1).tocsr()
+
+class LinearSubspaceOperator(LinearOperator, FutureField):
+
+    def build_bases(self, arg, **kw):
+        bases = [b for b in arg.bases]
+        if self.output_basis_type is None:
+            bases[self.space.axis] = None
+        else:
+            bases[self.space.axis] = self.output_basis_type(self.space)
+        return tuple(bases)
+
+    @CachedAttribute
+    def space(self):
+        return self.arg.domain.get_space_object(self.kw['space'])
+
+    @CachedAttribute
+    def axis(self):
+        return self.space.axis
 
     def separability(self, vars):
-        sep = self.args[0].separability(vars).copy()
+        """Determine dimensional separability with respect to vars."""
+        separability = self.arg.separability(vars).copy()
         if not self.separable:
-            sep[self.axis] = False
-        return sep
+            separability[self.axis] = False
+        return separability
 
     def sym_diff(self, var):
         """Symbolically differentiate with respect to var."""
-        diff0 = self.args[0].sym_diff(var)
-        return self.base(diff0, **self.kw)
-
-
-
-    # @classmethod
-    # def mode_matrix(cls):
-    #     I = len(cls.output_basis.modes)
-    #     J = len(cls.input_basis.modes)
-    #     dtype = cls.input_basis.domain.dtype
-    #     M = sparse.lil_matrix((I, J), dtype=dtype)
-    #     for i, mode_i in enumerate(cls.output_basis.modes):
-    #         for j, mode_j in enumerate(cls.input_basis.modes):
-    #             Mij = cls.entry(mode_i, mode_j)
-    #             if Mij:
-    #                 M[i, j] = Mij
-    #     return M.tocsr()
-
-    # @classmethod
-    # def memory_matrix(cls):
-    #     input_map = cls.input_basis.memory_map
-    #     output_map = cls.output_basis.memory_map
-    #     return (output_map * cls.mode_matrix() * input_map.T)
-
-    def memory_matrix(self):
-        entry_scaling = self.entry_scaling
-        I = self.output_basis.space.coeff_size
-        J = self.input_basis.space.coeff_size
-        dtype = self.input_basis.domain.dtype
-        M = sparse.lil_matrix((I, J), dtype=dtype)
-        for i in range(I):
-            for j in range(J):
-                Mij = self.entry(i, j)
-                if Mij:
-                    M[i, j] = entry_scaling * Mij
-        return M.tocsr()
+        return self.new_arg(self.arg.sym_diff(var))
 
     @classmethod
-    def local_matrix(cls):
-        global_matrix = self.memory_matrix()
-        islice = cls.input_basis.local_coeff_slice
-        oslice = cls.output_basis.local_coeff_slice
-        return global_matrix[oslice, islice]
+    def _build_subspace_matrix(cls, space, **kw):
+        dtype = space.domain.dtype
+        N = space.coeff_size
+        M = sparse.lil_matrix((N, N), dtype=dtype)
+        for i in range(N):
+            for b in cls.bands:
+                j = i + b
+                if (0 <= j < N):
+                    Mij = cls.entry(i, j, space, **kw)
+                    if Mij:
+                        M[i,j] = Mij
+        return M.tocsr()
+
+    def subspace_matrix(self):
+        kw = self.kw.copy()
+        space = kw.pop('space', self.space)
+        return self._build_subspace_matrix(space, **kw)
+
+    def local_matrix(self, layout):
+        matrices = []
+        dtype = self.domain.dtype
+        arg_shape = layout.global_array_shape(self.arg.subdomain, self.arg.scales)
+        out_shape = layout.global_array_shape(self.subdomain, self.scales)
+        arg_elements = layout.local_elements(self.arg.subdomain, self.arg.scales)
+        out_elements = layout.local_elements(self.subdomain, self.scales)
+        for axis, (I, J, i, j) in enumerate(zip(out_shape, arg_shape, out_elements, arg_elements)):
+            if axis == self.axis:
+                matrix = self.subspace_matrix()
+            else:
+                matrix = sparse.eye(I, J, dtype=dtype, format='csr')
+            # Avoid bug on (1,1) advanced indexing of sparse matrices
+            if i.size == 1:
+                i = [[i[0]]]
+            else:
+                i = i[:,None]
+            if j.size == 1:
+                j = [[j[0]]]
+            else:
+                j = j[None,:]
+            matrices.append(matrix[i, j])
+        return reduce(sparse.kron, matrices, 1).tocsr()
 
     def check_conditions(self):
         layout = self.args[0].layout
-        is_coeff = not layout.grid_space[self.axis]
-        is_local = layout.local[self.axis]
+        is_coeff = not layout.grid_space[self.space.axis]
+        is_local = layout.local[self.space.axis]
         if self.separable:
             return is_coeff
         else:
             return (is_coeff and is_local)
 
     def enforce_conditions(self):
-        self.args[0].require_coeff_space(self.axis)
+        self.args[0].require_coeff_space(self.space.axis)
         if not self.separable:
-            self.args[0].require_local(self.axis)
+            self.args[0].require_local(self.space.axis)
 
     def operate(self, out):
         arg0, = self.args
-        axis = self.axis
+        axis = self.space.axis
         # Apply matrix form
         out.set_layout(arg0.layout)
-        matrix = self.memory_matrix()
+        matrix = self.subspace_matrix()
         if self.separable:
-            local_slice = arg0.layout.slices(arg0.subdomain, arg0.scales)[self.axis]
-            matrix = matrix[local_slice, local_slice]
+            elements = arg0.layout.local_elements(arg0.subdomain, arg0.scales)[axis]
+            matrix = matrix[elements[:,None], elements[None,:]]
         apply_matrix(matrix, arg0.data, axis, out=out.data)
 
 
-class LinearFunctional(LinearOperator):
+class LinearSubspaceFunctional(LinearSubspaceOperator):
 
-    output_basis = None
+    output_basis_type = None
     separable = False
-    entry_scaling = 1
 
     def check_conditions(self):
         layout = self.args[0].layout
@@ -1165,247 +1201,210 @@ class LinearFunctional(LinearOperator):
         self.args[0].require_coeff_space(self.axis)
         self.args[0].require_local(self.axis)
 
-    def matrix_form(self):
-        # Dense vector
-        entry_scaling = self.entry_scaling
-        J = self.input_basis.space.coeff_size
-        M = np.zeros((1,J), dtype=self.domain.dtype)
-        for j in range(J):
-            M[0,j] = entry_scaling * self.entry(j, **self.kw)
-        return M
-
-    def memory_matrix(self):
-        return self.matrix_form()
-
+    @classmethod
+    def _build_subspace_matrix(cls, space, **kw):
+        dtype = space.domain.dtype
+        N = space.coeff_size
+        M = sparse.lil_matrix((1, N), dtype=dtype)
+        for j in range(N):
+            Mij = cls.entry(j, space, **kw)
+            if Mij:
+                M[0,j] = Mij
+        return M.tocsr()
+        # M = np.zeros((1,J), dtype=self.domain.dtype)
+        # for j in range(J):
+        #     M[0,j] = entry_scaling * self.entry(j, **self.kw)
+        # return M
 
 
 class TimeDerivative(LinearOperator, FutureField):
 
     name = 'dt'
 
-    def _build_bases(self, arg0):
-        return arg0.bases
-
-    @property
-    def base(self):
-        return TimeDerivative
-
-    def factor(self, *vars):
-        """Produce operator-factor dictionary over specified variables."""
-        if type(self) in vars:
-            out = defaultdict(int)
-            F0 = self.args[0].factor(*vars)
-            for f in F0:
-                out[f*self._scalar] = F0[f]
-            return out
-        else:
-            return defaultdict(int, {1: self})
-
-    def operator_form(self, index):
-        raise ValueError("Operator form not available for time derivative.")
-
-    def operate(self, out):
-        raise ValueError("Cannot evaluate time derivative operator.")
-
-
-@parseable
-class Integrate(LinearFunctional):
-
-    name = 'integ'
-
-    def __new__(cls, arg0, out=None):
-        # Cast to operand
-        arg0 = Operand.cast(arg0)
-        # Check if operand depends on basis
-        if (cls.basis not in arg0.domain.bases) or (arg0.meta[cls.basis.name]['constant']):
-            length = cls.basis.interval[1] - cls.basis.interval[0]
-            integral = arg0*length
-            integral.out = out
-            return integral
-        else:
-            return object.__new__(cls)
-
-    def __init__(self, arg0, **kw):
-        # Cast argument to field
-        arg0 = Field.cast(arg0, arg0.domain)
-        super().__init__(arg0, **kw)
-        self.axis = self.domain.bases.index(self.basis)
-
-    @property
-    def entry_scaling(self):
-        return self.input_basis.space.COV.stretch
-
-
-@parseable
-@addname('integ')
-def integrate(arg0, *bases, out=None):
-    # Cast to operand
-    arg0 = Operand.cast(arg0)
-    # No bases: integrate over whole domain
-    if len(bases) == 0:
-        bases = arg0.domain.bases
-    # Multiple bases: apply recursively
-    if len(bases) > 1:
-        arg0 = integrate(arg0, *bases[:-1])
-    # Call with single basis
-    basis = arg0.domain.get_basis_object(bases[-1])
-    return basis.Integrate(arg0, out=out)
-
-
-@parseable
-class Interpolate(LinearFunctional):
-
-    name = 'interp'
-
-    def __new__(cls, arg0, position, out=None):
-        # Cast to operand
-        #arg0 = Operand.cast(arg0)
-        # Check if operand depends on basis
-        if arg0 == 0:
+    def __new__(cls, arg):
+        if isinstance(arg, Number):
             return 0
-        elif (cls.input_basis not in arg0.bases):
-            return arg0
         else:
             return object.__new__(cls)
 
-    def __init__(self, arg0, position, out=None):
-        # Cast argument to field
-        arg0 = Field.cast(arg0, arg0.domain)
-        super().__init__(arg0, out=out)
-        self.kw = {'position': position}
-        self.position = position
-        self.axis = self.input_basis.space.axis
+    def build_bases(self, arg, **kw):
+        return arg.bases
 
-    def distribute(self):
-        arg0, = self.args
-        if not isinstance(arg0, Add):
-            raise ValueError("Can only apply distributive rule to a sum.")
-        a, b = arg0.args
-        op = type(self)
-        return op(a, self.position) + op(b, self.position)
-
-    def __repr__(self):
-        return 'interp(%r, %r, %r)' %(self.args[0], self.input_basis, self.position)
-
-    def __str__(self):
-        return "interp({},'{}',{})".format(self.args[0], self.input_basis, self.position)
+    def separability(self, vars):
+        """Determine dimensional separability with respect to vars."""
+        return self.arg.separability(vars).copy()
 
 
-@parseable
-@addname('interp')
-def interpolate(arg0, out=None, **basis_kw):
-    # Cast to operand
-    #arg0 = Operand.cast(arg0)
-    if isinstance(arg0, (Scalar, FutureScalar)):
-        return arg0
-    # Require at least one basis
-    if len(basis_kw) == 0:
-        raise ValueError("No basis specified.")
-    # Unpack bases
-    bases = list(basis_kw.items())
-    # Multiple bases: apply recursively
-    if len(bases) > 1:
-        arg0 = interpolate(arg0, **dict(bases[:-1]))
-    # Call with single basis
-    basis, position = bases[-1]
-    basis = arg0.domain.get_space_object(basis)
-    return basis.interpolate(arg0, position, out=out)
+@parseable('interpolate', 'interp')
+def interpolate(arg, **positions):
+    # Identify domain
+    domain = unify_attributes((arg,)+tuple(positions), 'domain', require=False)
+    # Apply iteratively
+    for space, position in positions.items():
+        space = domain.get_space_object(space)
+        arg = Interpolate(arg, space, position)
+    return arg
 
 
-@parseable
-class Filter(LinearFunctional):
-
-    name = 'filter'
-
-    def __new__(cls, arg0, func, out=None):
-        # Cast to operand
-        #arg0 = Operand.cast(arg0)
-        # Check if operand depends on basis
-        if arg0 == 0:
-            return 0
-        elif (cls.input_basis not in arg0.bases):
-            return arg0
-        else:
-            return object.__new__(cls)
-
-    def __init__(self, arg0, func, out=None):
-        # Cast argument to field
-        arg0 = Field.cast(arg0, arg0.domain)
-        super().__init__(arg0, out=out)
-        self.kw = {'func': func}
-        self.func = func
-        self.axis = self.input_basis.space.axis
-
-    def distribute(self):
-        arg0, = self.args
-        if not isinstance(arg0, Add):
-            raise ValueError("Can only apply distributive rule to a sum.")
-        a, b = arg0.args
-        op = type(self)
-        return op(a, self.position) + op(b, self.position)
-
-    def __repr__(self):
-        return 'interp(%r, %r, %r)' %(self.args[0], self.input_basis, self.func)
-
-    def __str__(self):
-        return "interp({},'{}',{})".format(self.args[0], self.input_basis, self.func)
+class Interpolate(LinearSubspaceFunctional, metaclass=MultiClass):
 
     @classmethod
-    def entry(cls, mode, func):
-        return func(mode)
+    def _check_args(cls, arg, space, position):
+        # Dispatch by argument basis
+        if isinstance(arg, (Field, FutureField)):
+            if space in arg.subdomain:
+                if type(arg.get_basis(space)) is cls.input_basis_type:
+                    return True
+        return False
 
-@parseable
-@addname('filter')
-def filter(arg0, out=None, **basis_kw):
-    # Cast to operand
-    #arg0 = Operand.cast(arg0)
-    if isinstance(arg0, (Scalar, FutureScalar)):
-        return arg0
-    # Require at least one basis
-    if len(basis_kw) == 0:
-        raise ValueError("No basis specified.")
-    # Unpack bases
-    bases = list(basis_kw.items())
-    # Multiple bases: apply recursively
-    if len(bases) > 1:
-        arg0 = filter(arg0, **dict(bases[:-1]))
-    # Call with single basis
-    basis, func = bases[-1]
-    basis = arg0.domain.get_space_object(basis)
-    return basis.filter(arg0, func, out=out)
-
-
-
-class Differentiate(LinearOperator):
-
-    name = 'd'
-
-    def __new__(cls, arg, space, out=None):
-        # Cast to data and check bases
-        #arg = Data.cast(arg, cls.domain)
-        arg_basis = arg.bases[cls.axis]
-        print(arg)
-        if arg == 0:
-            return 0
-        if arg_basis is None:
-            return 0
-        elif arg_basis is cls.input_basis:
-            return object.__new__(cls)
-        else:
-            raise ValueError("Basis mismatch.")
-
-    def __init__(self, arg, space, out=None):
-        # Cast arg to field
-        #arg = Field.cast(arg, self.domain)
-        super().__init__(arg, out=out)
+    def __init__(self, arg, space, position):
+        # Wrap initialization to define keywords
+        super().__init__(arg, space=space, position=position)
 
     @property
     def base(self):
-        return self.input_basis.space.differentiate
+        return Interpolate
+
+
+class InterpolateConstant(Interpolate):
+
+    @classmethod
+    def _check_args(cls, arg, space, position):
+        if isinstance(arg, Number):
+            return True
+        elif isinstance(arg, (Field, FutureField)):
+            if arg.get_basis(space) is None:
+                return True
+        return False
+
+    def __new__(cls, arg, space, position):
+        return arg
+
+
+@parseable('integrate', 'integ')
+def integrate(arg, *spaces):
+    # Identify domain
+    domain = unify_attributes((arg,)+spaces, 'domain', require=False)
+    # Apply iteratively
+    for space in spaces:
+        space = domain.get_space_object(space)
+        arg = Integrate(arg, space)
+    return arg
+
+
+class Integrate(LinearSubspaceFunctional, metaclass=MultiClass):
+
+    @classmethod
+    def _check_args(cls, arg, space):
+        # Dispatch by argument basis
+        if isinstance(arg, (Field, FutureField)):
+            if space in arg.subdomain:
+                if type(arg.get_basis(space)) is cls.input_basis_type:
+                    return True
+        return False
+
+    def __init__(self, arg, space):
+        # Wrap initialization to define keywords
+        super().__init__(arg, space=space)
 
     @property
-    def entry_scaling(self):
-        return (1 / self.input_basis.space.COV.stretch)
+    def base(self):
+        return Integrate
+
+
+class IntegrateConstant(Integrate):
+
+    @classmethod
+    def _check_args(cls, arg, space):
+        if isinstance(arg, Number):
+            return True
+        elif isinstance(arg, (Field, FutureField)):
+            if arg.get_basis(space) is None:
+                return True
+        return False
+
+    def __new__(cls, arg, space):
+        return (space.COV.problem_length * arg)
+
+
+@parseable('filter', 'f')
+def filter(arg, **modes):
+    # Identify domain
+    domain = unify_attributes((arg,)+tuple(modes), 'domain', require=False)
+    # Apply iteratively
+    for space, mode in modes.items():
+        space = domain.get_space_object(space)
+        arg = Filter(arg, space, mode)
+    return arg
+
+
+class Filter(LinearSubspaceFunctional):
+
+    def __new__(cls, arg, space, mode):
+        if isinstance(arg, Number) or (arg.get_basis(space) is None):
+            if mode == 0:
+                return arg
+            else:
+                return 0
+        elif space not in arg.subdomain:
+            raise ValueError("Invalid space.")
+        else:
+            return object.__new__(cls)
+
+    def __init__(self, arg, space, mode):
+        # Wrap initialization to define keywords
+        super().__init__(arg, space=space, mode=mode)
+
+    @property
+    def base(self):
+        return Filter
+
+    @classmethod
+    def entry(cls, j, space, mode):
+        """F(j,m) = δ(j,m)"""
+        if j == mode:
+            return 1
+        else:
+            return 0
+
+
+@prefix('d')
+@parseable('differentiate', 'diff', 'd')
+def differentiate(arg, *spaces, **space_kw):
+    # Parse space/order keywords into space list
+    for space, order in space_kw.items():
+        spaces += (space,) * order
+    # Identify domain
+    domain = unify_attributes((arg,)+spaces, 'domain', require=False)
+    # Apply iteratively
+    for space in spaces:
+        space = domain.get_space_object(space)
+        arg = Differentiate(arg, space)
+    return arg
+
+
+class Differentiate(LinearSubspaceOperator, metaclass=MultiClass):
+    """Differentiation along one dimension."""
+
+    def __str__(self):
+        return 'd{!s}({!s})'.format(self.space.name, self.arg)
+
+    @classmethod
+    def _check_args(cls, arg, space):
+        # Dispatch by argument basis
+        if isinstance(arg, (Field, FutureField)):
+            if space in arg.subdomain:
+                if type(arg.get_basis(space)) is cls.input_basis_type:
+                    return True
+        return False
+
+    def __init__(self, arg, space):
+        # Wrap initialization to define keywords
+        super().__init__(arg, space=space)
+
+    @property
+    def base(self):
+        return Differentiate
 
     def expand(self, *vars):
         """Distribute over sums and apply the product rule to arguments
@@ -1425,118 +1424,138 @@ class Differentiate(LinearOperator):
         return self
 
 
-@parseable
-@addname('d')
-def differentiate(arg, *spaces, out=None, **space_kw):
-    """Differentiation factory."""
-    # Parse keyword spaces
+class DifferentiateConstant(Differentiate):
+
+    @classmethod
+    def _check_args(cls, arg, space):
+        if isinstance(arg, Number):
+            return True
+        elif isinstance(arg, (Field, FutureField)):
+            if arg.get_basis(space) is None:
+                return True
+        return False
+
+    def __new__(cls, arg, space):
+        return 0
+
+
+@prefix('H')
+@parseable('hilbert_transform', 'hilbert', 'H')
+def hilbert_transform(arg, *spaces, **space_kw):
+    # Parse space/order keywords into space list
     for space, order in space_kw.items():
         spaces += (space,) * order
-    # Require at least one space
-    if len(spaces) == 0:
-        raise ValueError("No spaces specified.")
-    # Multiple spaces: apply recursively
-    if len(spaces) > 1:
-        arg = differentiate(arg, *spaces[:-1])
-    # Single space: call space method
-    space = arg.domain.get_space_object(spaces[-1])
-    return space.differentiate(arg, out=out)
+    # Identify domain
+    domain = unify_attributes((arg,)+spaces, 'domain', require=False)
+    # Apply iteratively
+    for space in spaces:
+        space = domain.get_space_object(space)
+        arg = HilbertTransform(arg, space)
+    return arg
 
 
-class Convert(LinearOperator):
+class HilbertTransform(LinearSubspaceOperator):
 
-    name = 'conv'
+    @classmethod
+    def _check_args(cls, arg, space):
+        # Dispatch by argument basis
+        if isinstance(arg, (Field, FutureField)):
+            if space in arg.subdomain:
+                if type(arg.get_basis(space)) is cls.input_basis_type:
+                    return True
+        return False
 
-    def __new__(cls, arg0, **kw):
-        # Cast to operand
-        #arg0 = Operand.cast(arg0)
-        # Check if operand depends on basis
-        if arg0 == 0:
-            return 0
-        elif cls.input_basis not in arg0.bases:
-            raise ValueError("arg does not depend on basis")
-        else:
-            return object.__new__(cls)
+    def __init__(self, arg, space):
+        # Wrap initialization to define keywords
+        super().__init__(arg, space=space)
 
-    def __init__(self, arg0, **kw):
-        # Cast argument to field
-        arg0 = Field.cast(arg0, arg0.domain)
-        super().__init__(arg0, **kw)
-
-    def expand(self, *vars):
-        """Distribute over sums and apply the product rule to arguments
-        containing specified variables (default: all)."""
-        arg0 = self.args[0]
-        if (not vars) or arg0.has(*vars):
-            op = type(self)
-            arg0 = arg0.expand(*vars)
-            if isinstance(arg0, Add):
-                arg0a, arg0b = arg0.args
-                return (op(arg0a) + op(arg0b)).expand(*vars)
-        return self
+    @property
+    def base(self):
+        return HilbertTransform
 
 
-def convert(arg0, bases, out=None):
-    # Cast to operand
-    #arg0 = Operand.cast(arg0)
-    # Return scalars
-    if isinstance(arg0, Scalar):
-        return arg0
-    # Require at least one basis
-    if len(bases) != arg0.domain.dim:
-        raise ValueError("Full bases not specified.")
-    # Convert iteratively
-    for axis, out_basis in enumerate(bases):
-        in_basis = arg0.bases[axis]
-        if in_basis in [None, out_basis]:
-            continue
-        elif out_basis is None:
-            raise ValueError("Cannot convert down to None")
-        else:
-            arg0 = in_basis.Convert(arg0)#, out_basis)
-    return arg0
+class HilbertTransformConstant(HilbertTransform):
 
+    @classmethod
+    def _check_args(cls, arg, space):
+        if isinstance(arg, Number):
+            return True
+        elif isinstance(arg, (Field, FutureField)):
+            if arg.get_basis(space) is None:
+                return True
+        return False
 
-@parseable
-class HilbertTransform(LinearOperator):
-
-    name = 'Hilbert'
-
-    def __new__(cls, arg0, **kw):
-        # Cast to operand
-        arg0 = Operand.cast(arg0)
-        # Check if operand depends on basis
-        if cls.basis not in arg0.domain.bases:
-            return 0
-        elif arg0.meta[cls.basis.name]['constant']:
-            return 0
-        else:
-            return object.__new__(cls)
-
-    def __init__(self, arg0, **kw):
-        # Cast argument to field
-        arg0 = Field.cast(arg0, arg0.domain)
-        super().__init__(arg0, **kw)
-        self.axis = self.domain.bases.index(self.basis)
-
-
-@parseable
-@addname('H')
-def hilberttransform(arg0, *bases, out=None, **basis_kw):
-    # Cast to operand
-    arg0 = Operand.cast(arg0)
-    if isinstance(arg0, (Scalar, FutureScalar)):
+    def __new__(cls, arg, space):
         return 0
-    # Parse keyword bases
-    for basis, order in basis_kw.items():
-        bases += (basis,) * order
-    # Require at least one basis
-    if len(bases) == 0:
-        raise ValueError("No basis specified.")
-    # Multiple bases: apply recursively
-    if len(bases) > 1:
-        arg0 = hilberttransform(arg0, *bases[:-1])
-    # Call with single basis
-    basis = arg0.domain.get_basis_object(bases[-1])
-    return basis.HilbertTransform(arg0, out=out)
 
+
+def convert(arg, bases):
+    # Drop Nones
+    bases = [basis for basis in bases if basis is not None]
+    if not bases:
+        return arg
+    # Cast to operand
+    domain = unify_attributes(bases, 'domain', require=False)
+    arg = Field.cast(arg, domain=domain)
+    # # Check basis length
+    # if len(bases) != domain.dim:
+    #     raise ValueError("Not all bases specified.")
+    # # Apply iteratively
+    # for axis, basis in enumerate(bases):
+    #     print('Try convert', arg.bases[axis], basis)
+    for basis in bases:
+        arg = Convert(arg, basis)
+    return arg
+
+
+class Convert(LinearSubspaceOperator, metaclass=MultiClass):
+
+    def __str__(self):
+        return 'C{!s}({!s})'.format(self.space.name, self.arg)
+
+    @classmethod
+    def _check_args(cls, arg, basis):
+        # Dispatch by argument and target bases
+        if isinstance(arg, (Field, FutureField)):
+            if basis.space in arg.subdomain:
+                input_basis = arg.get_basis(basis.space)
+                if type(input_basis) is not cls.input_basis_type:
+                    return False
+                if type(basis) is not cls.output_basis_type:
+                    return False
+                return True
+        return False
+
+    def __init__(self, arg, basis):
+        # Wrap initialization to define keywords
+        super().__init__(arg, basis=basis)
+
+    @property
+    def base(self):
+        return Convert
+
+    @CachedAttribute
+    def space(self):
+        return self.kw['basis'].space
+
+
+class ConvertConstant(Convert):
+
+    @classmethod
+    def _check_args(cls, arg, basis):
+        if isinstance(arg, Number):
+            return True
+        elif isinstance(arg, (Field, FutureField)):
+            input_basis = arg.get_basis(basis.space)
+            if input_basis is None:
+                return True
+            if type(input_basis) is type(basis):
+                return True
+            # if arg.get_basis(basis.space) is None:
+            #     return True
+            # if arg.get_basis(basis.space) is basis:
+            #     return True
+        return False
+
+    def __new__(cls, arg, basis):
+        return arg

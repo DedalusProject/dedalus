@@ -9,9 +9,9 @@ import numpy as np
 from .distributor import Distributor
 from .field import Field
 #from .operators import create_diff_operator
-from ..tools.cache import CachedMethod
+from ..tools.cache import CachedMethod, CachedClass
 from ..tools.array import reshape_vector
-from ..tools.general import unify
+from ..tools.general import unify, unify_attributes
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
@@ -55,23 +55,24 @@ class Domain:
 
     def get_space_object(self, basis_like):
         """Return basis from a related object."""
-        if basis_like in self.space_dict.items():
+        if basis_like in self.space_dict.values():
             return basis_like
         elif basis_like in self.space_dict:
             return self.space_dict[basis_like]
         else:
             raise ValueError()
 
-    def subspace(self, axis_flags):
+    def subdomain(self, axis_flags):
         spaces = []
         for axis in range(self.dim):
             if axis_flags[axis]:
                 spaces.append(self.spaces[axis][0])
             else:
                 spaces.append(None)
-        if all(space is None for space in spaces):
-            spaces = self
-        return Subdomain(spaces)
+        if any(spaces):
+            return Subdomain.from_spaces(spaces)
+        else:
+            return Subdomain.from_domain(self)
 
         # # Objects
         # if basis_like in self.bases:
@@ -128,52 +129,53 @@ class Domain:
         return tuple(scales)
 
 
-class Subdomain:
+class Subdomain(metaclass=CachedClass):
 
-    def __init__(self, spaces):
-        if isinstance(spaces, Domain):
-            self.domain = spaces
-            self.spaces = [None] * self.domain.dim
-        else:
-
-            spaces = [space for space in spaces if (space is not None)]
-            self.domain = unify(space.domain for space in spaces)
-            self.spaces = [None] * self.domain.dim
-            for space in spaces:
-                for subaxis in range(space.dim):
-                    if self.spaces[space.axis+subaxis] is not None:
-                        raise ValueError("Multiple spaces specified for axis {}".format(space.axis+subaxis))
-                    self.spaces[space.axis+subaxis] = space
-        self.spaces = tuple(self.spaces)
-
-    def __contains__(self, item):
-        for axis in range(self.domain.dim):
-            if item.spaces[axis] not in {None, self.spaces[axis]}:
-                return False
-        return True
+    def __init__(self, domain, spaces):
+        self.domain = domain
+        self.spaces = spaces
 
     @classmethod
     def from_spaces(cls, spaces):
-        # Filter Nones
         spaces = [s for s in spaces if (s is not None)]
-        domain = unify(space.domain for space in spaces)
-        subdomain = Subdomain(domain)
+        domain = unify_attributes(spaces, 'domain')
+        full_spaces = [None] * domain.dim
+        for space in spaces:
+            for subaxis in range(space.dim):
+                if full_spaces[space.axis+subaxis] is not None:
+                    raise ValueError("Multiple spaces specified for axis {}".format(space.axis+subaxis))
+                full_spaces[space.axis+subaxis] = space
+        return Subdomain(domain, tuple(full_spaces))
+
+    @classmethod
+    def from_domain(cls, domain):
+        spaces = (None,) * domain.dim
+        return Subdomain(domain, spaces)
 
     @classmethod
     def from_bases(cls, bases):
-        if isinstance(bases, Domain):
-            subdomain = Subdomain(bases)
-            new_bases = [None] * subdomain.domain.dim
+        bases = [b for b in bases if (b is not None)]
+        spaces = [b.space for b in bases]
+        return cls.from_spaces(spaces)
+
+    def expand_bases(self, bases):
+        exp_bases = [None] * self.domain.dim
+        for basis in bases:
+            if basis is not None:
+                if exp_bases[basis.space.axis] is not None:
+                    raise ValueError("Degenerate bases.")
+                exp_bases[basis.space.axis] = basis
+        return tuple(exp_bases)
+
+    def __contains__(self, item):
+        if isinstance(item, Subdomain):
+            for axis in range(self.domain.dim):
+                if item.spaces[axis] not in {None, self.spaces[axis]}:
+                    return False
+            return True
         else:
-            bases = [basis for basis in bases if (basis is not None)]
-            if len(bases) == 0:
-                raise ValueError("No bases")
-            spaces = [basis.space for basis in bases]
-            subdomain = Subdomain(spaces)
-            new_bases = [None] * subdomain.domain.dim
-            for basis in bases:
-                new_bases[basis.space.axis] = basis
-        return subdomain, tuple(new_bases)
+            space = self.domain.get_space_object(item)
+            return (space in self.spaces)
 
     @property
     def constant(self):
@@ -209,18 +211,5 @@ class Subdomain:
                 shape[axis] = space.grid_size(scales[axis])
         return shape
 
-    def local_groups(self):
-        coeff_layout = self.domain.dist.coeff_layout
-        blocks = coeff_layout.blocks(self, scales=1)
-        group_start = coeff_layout.start(self, scales=1) / blocks
-        group_count = coeff_layout.local_shape(self, scales=1) / blocks
-        for group_offset in np.ndindex(*group_count.astype(int)):
-            group = []
-            for axis, space in enumerate(self.spaces):
-                if space is None:
-                    group.append(None)
-                else:
-                    group.append(group_start[axis] + group_offset[axis])
-            yield group
 
 

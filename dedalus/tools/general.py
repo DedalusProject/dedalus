@@ -77,3 +77,10 @@ def unify_attributes(objects, attr, require=True):
             if require:
                 raise
     return unify(attrs)
+
+
+def replace(data, selectors, replacement):
+    """Make an iterator that replaces elements from data with replacement
+    when the corresponding element in selectors evaluates to True."""
+    return (replacement if s else d for (d, s) in zip(data, selectors))
+

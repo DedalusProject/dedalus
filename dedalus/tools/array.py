@@ -107,3 +107,23 @@ def add_sparse(A, B):
         return A + B*I
     else:
         return A + B
+
+
+def sparse_block_diag(blocks):
+    """Build a block diagonal sparse matrix allowing size 0 matrices."""
+    # Collect subblocks
+    data, rows, cols = [], [], []
+    i0, j0 = 0, 0
+    for block in blocks:
+        block = sparse.coo_matrix(block)
+        if block.nnz > 0:
+            data.append(block.data)
+            rows.append(block.row + i0)
+            cols.append(block.col + j0)
+        i0 += block.shape[0]
+        j0 += block.shape[1]
+    # Build full matrix
+    data = np.concatenate(data)
+    rows = np.concatenate(rows)
+    cols = np.concatenate(cols)
+    return sparse.coo_matrix((data, (rows, cols)), shape=(i0,j0))
