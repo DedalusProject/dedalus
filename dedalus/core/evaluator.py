@@ -304,9 +304,9 @@ class FileHandler(Handler):
         base_path = pathlib.Path(base_path).absolute()
         if any(base_path.suffixes):
             raise ValueError("base_path should indicate a folder for storing HDF5 files.")
-        if not base_path.exists():
-            with Sync(self.domain.distributor.comm_cart):
-                if self.domain.distributor.rank == 0:
+        with Sync(self.domain.distributor.comm_cart):
+            if self.domain.distributor.rank == 0:
+                if not base_path.exists():
                     base_path.mkdir()
 
         # Attributes
@@ -373,9 +373,9 @@ class FileHandler(Handler):
             # Save in folders for each filenum in base directory
             folder_name = '%s_s%i' %(self.base_path.stem, self.set_num)
             folder_path = self.base_path.joinpath(folder_name)
-            if not folder_path.exists():
-                with Sync(domain.distributor.comm_cart):
-                    if domain.distributor.rank == 0:
+            with Sync(domain.distributor.comm_cart):
+                if domain.distributor.rank == 0:
+                    if not folder_path.exists():
                         folder_path.mkdir()
             file_name = '%s_s%i_p%i.h5' %(self.base_path.stem, self.set_num, comm.rank)
             self.current_path = folder_path.joinpath(file_name)
