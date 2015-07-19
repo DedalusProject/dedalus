@@ -330,6 +330,7 @@ class Field(Data):
         self.meta = Metadata(domain)
 
         # Set layout and scales to build buffer and data
+        self.buffer = np.zeros((0,), dtype=np.float64)
         self._layout = domain.dist.coeff_layout
         self.set_scales(1, keep_data=False)
         self.name = name
@@ -359,17 +360,20 @@ class Field(Data):
         self.layout = self.domain.distributor.get_layout_object(layout)
         np.copyto(self.data, data)
 
-    @staticmethod
-    def _create_buffer(buffer_size):
+    def create_buffer(self, scales):
         """Create buffer for Field data."""
-
-        if buffer_size == 0:
-            # FFTW doesn't like allocating size-0 arrays
-            return np.zeros((0,), dtype=np.float64)
-        else:
-            # Use FFTW SIMD aligned allocation
-            alloc_doubles = buffer_size // 8
-            return fftw.create_buffer(alloc_doubles)
+        # Get buffer size, with dealias size as lower limit
+        buffer_size = self.domain.dist.buffer_size(scales)
+        buffer_size = max(buffer_size, self.domain.dealias_buffer_size)
+        # Allocate if size has changed
+        if buffer_size != (8 * self.buffer.size):
+            if buffer_size == 0:
+                # FFTW doesn't like allocating size-0 arrays
+                self.buffer = np.zeros((0,), dtype=np.float64)
+            else:
+                # Use FFTW SIMD aligned allocation
+                alloc_doubles = buffer_size // 8
+                self.buffer = fftw.create_buffer(alloc_doubles)
 
     def set_scales(self, scales, *, keep_data):
         """Set new transform scales."""
@@ -394,8 +398,7 @@ class Field(Data):
         for axis, scale in enumerate(new_scales):
             self.meta[axis]['scale'] = scale
         # Build new buffer
-        buffer_size = self.domain.distributor.buffer_size(new_scales)
-        self.buffer = self._create_buffer(buffer_size)
+        self.create_buffer(new_scales)
         # Reset layout to build new data view
         self.layout = self.layout
 

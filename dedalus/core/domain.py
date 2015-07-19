@@ -55,6 +55,7 @@ class Domain:
         # Create distributor
         self.distributor = self.dist = Distributor(self, comm, mesh)
         self.local_coeff_shape = self.dist.coeff_layout.local_shape(self.remedy_scales(None))
+        self.dealias_buffer_size = self.dist.buffer_size(self.dealias)
 
         # Create differential operators
         #self.diff_ops = [create_diff_operator(b,i) for (i,b) in enumerate(self.bases)]
