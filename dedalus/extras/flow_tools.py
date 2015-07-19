@@ -155,6 +155,8 @@ class CFL:
         Maximum fractional change between timesteps (default: inf)
     min_change : float, optional
         Minimum fractional change between timesteps (default: 0.)
+    threshold : float, optional
+        Fractional change threshold for changing timestep (default: 0.)
 
     Notes
     -----
@@ -165,7 +167,7 @@ class CFL:
     """
 
     def __init__(self, solver, initial_dt, cadence=1, safety=1., max_dt=np.inf,
-                 min_dt=0., max_change=np.inf, min_change=0.):
+                 min_dt=0., max_change=np.inf, min_change=0., threshold=0.):
 
         self.solver = solver
         self.stored_dt = initial_dt
@@ -175,6 +177,7 @@ class CFL:
         self.min_dt = min_dt
         self.max_change = max_change
         self.min_change = min_change
+        self.threshold = threshold
 
         domain = solver.domain
         self.grid_spacings = []
@@ -206,7 +209,8 @@ class CFL:
             dt *= self.safety
             dt = min(dt, self.max_dt, self.max_change*self.stored_dt)
             dt = max(dt, self.min_dt, self.min_change*self.stored_dt)
-            self.stored_dt = dt
+            if abs(dt - self.stored_dt) > self.threshold * self.stored_dt:
+                self.stored_dt = dt
         return self.stored_dt
 
     def add_frequency(self, freq):

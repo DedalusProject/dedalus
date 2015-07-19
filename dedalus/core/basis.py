@@ -209,6 +209,15 @@ class ImplicitBasis(Basis):
         Cb[self.boundary_row, 0] = 1
         return Cb.tocsr()
 
+    @CachedAttribute
+    def PrefixBoundary(self):
+        """Matrix moving boundary row to first row."""
+        cols = np.roll(np.arange(self.coeff_size), -self.boundary_row)
+        rows = np.arange(self.coeff_size)
+        data = np.ones(self.coeff_size)
+        Pb = sparse.coo_matrix((data, (rows, cols)), dtype=self.coeff_dtype)
+        return Pb.tocsr()
+
     def NCC(self, coeffs, cutoff, max_terms):
         """Build NCC multiplication matrix."""
         if max_terms is None:
@@ -253,7 +262,8 @@ class Chebyshev(ImplicitBasis):
 
     def default_meta(self):
         return {'constant': False,
-                'scale': None}
+                'scale': None,
+                'dirichlet': False}
 
     @CachedMethod
     def grid(self, scale=1.):
@@ -526,6 +536,27 @@ class Chebyshev(ImplicitBasis):
             Pre[n, n] = 0.5
             Pre[n-2, n] = -0.5
         return Pre.tocsr()
+
+    @CachedAttribute
+    def Dirichlet(self):
+        """
+        Dirichlet recombination matrix.
+
+        D[0] = T[0]
+        D[1] = T[1]
+        D[n] = T[n] - T[n-2]
+
+        <T[i]|D[j]> = <T[i]|T[j]> - <T[i]|T[j-2]>
+                    = δ(i,j) - δ(i,j-2)
+        """
+        size = self.coeff_size
+        # Construct sparse matrix
+        Dir = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
+        for n in range(size):
+            Dir[n, n] = 1
+            if n > 1:
+                Dir[n-2, n] = -1
+        return Dir.tocsr()
 
     def Multiply(self, p):
         """

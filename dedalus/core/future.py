@@ -182,6 +182,10 @@ class Future(Operand):
         # Perform all operations at the dealias scale
         return self.domain.bases[axis].dealias
 
+    def meta_dirichlet(self, axis):
+        # No propogation of Dirichlet preconditioning
+        return False
+
     def check_conditions(self):
         """Check that all argument fields are in proper layouts."""
         # This method must be implemented in derived classes and should return

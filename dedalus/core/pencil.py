@@ -178,25 +178,28 @@ class Pencil:
         zsize = zbasis.coeff_size
         zdtype = zbasis.coeff_dtype
         compound = hasattr(zbasis, 'subbases')
+        self.dirichlet = dirichlet = any(problem.meta[:][zbasis.name]['dirichlet'])
 
         # Identity
         Identity = sparse.identity(zsize, dtype=zdtype).tocsr()
         Zero = sparse.csr_matrix((zsize, zsize), dtype=zdtype)
 
         # Basis matrices
-        R = Identity #basis.Rearrange
+        Ra = Rd = Identity
+        if dirichlet:
+            Rd = basis.PrefixBoundary
         if ndiff:
             P = basis.Precondition
             Fb = basis.FilterBoundaryRow
             Cb = basis.ConstantToBoundary
-            R_Fb_P = R*Fb*P
-            R_Cb = R*Cb
+            Rd_Fb_P = Rd*Fb*P
+            Rd_Cb = Rd*Cb
         if compound:
             Fm = basis.FilterMatchRows
             M = basis.Match
-            R_Fm = R*Fm
+            Ra_Fm = Ra*Fm
         if ndiff and compound:
-            R_Fm_Fb_P = R_Fm*Fb*P
+            Rd_Fm_Fb_P = Rd*Fm*Fb*P
 
         # Pencil matrices
         G_eq = sparse.csr_matrix((zsize*nvars, zsize*Neqs), dtype=zdtype)
@@ -222,13 +225,13 @@ class Pencil:
 
             # Build RHS equation process matrix
             if (not differential) and (not compound):
-                Gi_eq = R
+                Gi_eq = Ra
             elif (not differential) and compound:
-                Gi_eq = R_Fm
+                Gi_eq = Ra_Fm
             elif differential and (not compound):
-                Gi_eq = R_Fb_P
+                Gi_eq = Rd_Fb_P
             elif differential and compound:
-                Gi_eq = R_Fm_Fb_P
+                Gi_eq = Rd_Fm_Fb_P
 
             # Kronecker into system matrix
             e = problem.eqs.index(eq)
@@ -238,7 +241,7 @@ class Pencil:
 
             if differential:
                 # Build RHS BC process matrix
-                Gi_bc = R_Cb
+                Gi_bc = Rd_Cb
                 # Kronecker into system matrix
                 b = problem.bcs.index(bc)
                 δG_bc[i,b] = 1
@@ -301,10 +304,30 @@ class Pencil:
             L = L + kron(R*M, δM)
             LHS['L'] = L
 
+        if dirichlet:
+            # Build right-preconditioner for system
+            δD = np.zeros([nvars, nvars])
+            D = 0
+            for i, var in enumerate(problem.variables):
+                if problem.meta[var][zbasis.name]['dirichlet']:
+                    Dii = zbasis.Dirichlet
+                else:
+                    Dii = Identity
+                δD[i,i] = 1
+                D = D + kron(Dii, δD)
+                δD[i,i] = 0
+            self.JD = D.tocsr()
+            self.JD.eliminate_zeros()
+
         # Store minimum CSR matrices for fast dot products
         for name, matrix in LHS.items():
             matrix.eliminate_zeros()
             setattr(self, name, matrix.tocsr())
+
+        # Apply Dirichlet recombination if applicable
+        if dirichlet:
+            for name in names:
+                LHS[name] = LHS[name] * self.JD
 
         # Store expanded CSR matrices for fast combination
         self.LHS = zeros_with_pattern(*LHS.values()).tocsr()

@@ -92,6 +92,9 @@ class FieldCopy(Operator, FutureField, metaclass=MultiClass):
         """Symbolically differentiate with respect to var."""
         return self.args[0].sym_diff(var)
 
+    def split(self, *vars):
+        return self.args[0].split(*vars)
+
 
 class FieldCopyScalar(FieldCopy):
 

@@ -210,6 +210,10 @@ class ProblemBase:
         # Solve occurs in coefficient space, so disregard scale
         pass
 
+    def _check_meta_dirichlet(self, LHS_dirichlet, RHS_dirichlet, axis):
+        # Propogation of dirichlet meta has no effect
+        pass
+
     def _check_meta_constant(self, LHS_constant, RHS_constant, axis):
         """Check that RHS is constant if LHS is consant."""
         if LHS_constant:

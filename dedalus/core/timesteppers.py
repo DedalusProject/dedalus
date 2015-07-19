@@ -150,9 +150,13 @@ class MultistepIMEX:
                     p.LHS_LU = linalg.splu(p.LHS.tocsc(), permc_spec=PERMC_SPEC)
                 pLHS = p.LHS_LU
                 pX = pLHS.solve(pRHS)
+                if p.dirichlet:
+                    pX = p.JD * pX
             else:
                 np.copyto(p.LHS.data, a0*p.M_exp.data + b0*p.L_exp.data)
                 pX = linalg.spsolve(p.LHS, pRHS, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
+                if p.dirichlet:
+                    pX = p.JD * pX
             state.set_pencil(p, pX)
 
         # Update solver
@@ -569,9 +573,13 @@ class RungeKuttaIMEX:
                         p.LHS_LU[i] = linalg.splu(p.LHS.tocsc(), permc_spec=PERMC_SPEC)
                     pLHS = p.LHS_LU[i]
                     pX = pLHS.solve(pRHS)
+                    if p.dirichlet:
+                        pX = p.JD * pX
                 else:
                     np.copyto(p.LHS.data, p.M_exp.data + (k*H[i,i])*p.L_exp.data)
                     pX = linalg.spsolve(p.LHS, pRHS, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
+                    if p.dirichlet:
+                        pX = p.JD * pX
                 state.set_pencil(p, pX)
             solver.sim_time = sim_time_0 + k*c[i]
 

@@ -31,7 +31,7 @@ def max_growth_rate(Nz, Prandtl, Rayleigh, kx):
     # Create bases and domain
     # Use COMM_SELF so keep calculations independent between processes
     z_basis = de.Chebyshev('z', Nz, interval=(-1/2, 1/2))
-    domain = de.Domain([z_basis], grid_dtype=np.float64, comm=MPI.COMM_SELF)
+    domain = de.Domain([z_basis], grid_dtype=np.complex128, comm=MPI.COMM_SELF)
 
     # 2D Boussinesq hydrodynamics, with no-slip boundary conditions
     # Use substitutions for x and t derivatives
