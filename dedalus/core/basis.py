@@ -1330,21 +1330,22 @@ class Compound(ImplicitBasis):
                 # Construct dense row vector
                 interp_vector = np.zeros(cls.basis.coeff_size, dtype=cls.basis.coeff_dtype)
                 if position == 'left':
-                    position = cls.basis.interval[0]
+                    sb_index = 0
                 elif position == 'right':
-                    position = cls.basis.interval[1]
-                elif position == 'center':
-                    position = (cls.basis.interval[0] + cls.basis.interval[1]) / 2
-                # Find containing subbasis
-                for index, sb in enumerate(cls.basis.subbases):
-                    if sb.interval[0] <= position <= sb.interval[1]:
-                        break
+                    sb_index = len(cls.basis.subbases) - 1
                 else:
-                    raise ValueError("Position outside any subbasis interval.")
+                    if position == 'center':
+                        position = (cls.basis.interval[0] + cls.basis.interval[1]) / 2
+                    # Find containing subbasis
+                    for sb_index, sb in enumerate(cls.basis.subbases):
+                        if sb.interval[0] <= position <= sb.interval[1]:
+                            break
+                    else:
+                        raise ValueError("Position outside any subbasis interval.")
                 # Use subbasis interpolation
-                sb = cls.basis.subbases[index]
-                start = cls.basis.coeff_start(index)
-                end = cls.basis.coeff_start(index+1)
+                sb = cls.basis.subbases[sb_index]
+                start = cls.basis.coeff_start(sb_index)
+                end = cls.basis.coeff_start(sb_index+1)
                 interp_vector[start:end] = sb.Interpolate._interp_vector(position)
                 return interp_vector
 
