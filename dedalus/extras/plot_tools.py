@@ -141,6 +141,8 @@ def plot_bot(dset, image_axes, data_slices, clim=None, even_scale=False, cmap='R
     paxes.set_ylabel(dset.dims[yaxis].label)
     paxes.set_xlabel(dset.dims[xaxis].label)
 
+    return paxes, caxes
+
 
 def plot_bot_2d(dset, transpose=False, **kw):
     """
