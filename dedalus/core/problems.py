@@ -447,7 +447,9 @@ class EigenvalueProblem(ProblemBase):
     variables : list of str
         List of variable names, e.g. ['u', 'v', 'w']
     eigenvalue : str
-        Eigenvalue label, e.g. 'lambda'
+        Eigenvalue label, e.g. 'sigma' WARNING: 'lambda' is a python reserved word.
+        You *cannot* use it as your eigenvalue. Also, note that unicode symbols 
+        don't work on all machines.
 
     Notes
     -----
@@ -455,7 +457,7 @@ class EigenvalueProblem(ProblemBase):
     linear in the specified variables, first-order in coupled derivatives,
     and linear or independent of the specified eigenvalue.  The RHS must be zero.
 
-        λM.X + L.X = 0
+        σM.X + L.X = 0
 
     """
 
