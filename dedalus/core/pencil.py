@@ -301,7 +301,7 @@ class Pencil:
             # Add match terms
             L = LHS['L']
             δM = np.identity(nvars)
-            L = L + kron(R*M, δM)
+            L = L + kron(Ra*M, δM)
             LHS['L'] = L
 
         if dirichlet:

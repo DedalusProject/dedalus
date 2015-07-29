@@ -1214,7 +1214,8 @@ class Compound(ImplicitBasis):
 
     def default_meta(self):
         return {'constant': False,
-                'scale': None}
+                'scale': None,
+                'dirichlet': False}
 
     @property
     def library(self):
@@ -1412,6 +1413,11 @@ class Compound(ImplicitBasis):
         Pre = sparse.block_diag([b.Precondition for b in self.subbases])
         return Pre.tocsr()
 
+    @CachedAttribute
+    def Dirichlet(self):
+        Dir = sparse.block_diag([b.Dirichlet for b in self.subbases])
+        return Dir.tocsr()
+
     @CachedMethod
     def Multiply(self, p, subindex):
         size = self.coeff_size
@@ -1467,3 +1473,6 @@ class Compound(ImplicitBasis):
             Match[r, s2:e2] = -basis2.Interpolate._interp_vector('left')
         return Match.tocsr()
 
+    @CachedAttribute
+    def PrefixBoundary(self):
+        return sparse.identity(self.coeff_size, dtype=self.coeff_dtype).tocsr()
