@@ -15,6 +15,7 @@ from . import pencil
 from .evaluator import Evaluator
 from .system import CoeffSystem, FieldSystem
 from .field import Scalar, Field
+from ..tools.cache import CachedAttribute
 from ..tools.progress import log_progress
 
 from ..tools.config import config
@@ -326,27 +327,36 @@ class InitialValueSolver:
         else:
             return True
 
-    def step(self, dt):
-        """Advance system by one iteration/timestep."""
+    @CachedAttribute
+    def sim_dt_cadences(self):
+        """Build array of finite handler sim_dt cadences."""
+        cadences = [h.sim_dt for h in self.evaluator.handlers]
+        cadences = list(filter(np.isfinite, cadences))
+        return np.array(cadences)
 
+    def step(self, dt, trim=False):
+        """Advance system by one iteration/timestep."""
+        # Assert finite timestep
         if not np.isfinite(dt):
             raise ValueError("Invalid timestep")
-
-        # References
-        state = self.state
-
+        # Trim timestep to hit handler sim_dt cadences
+        if trim:
+            t = self.sim_time
+            cadences = self.sim_dt_cadences
+            # Compute next scheduled evaluation
+            schedule = min(cadences * (t//cadences + 1))
+            # Modify timestep if necessary
+            dt = min(dt, schedule - t)
         # (Safety gather)
-        state.gather()
-
+        self.state.gather()
         # Advance using timestepper
         wall_time = self.get_wall_time() - self.start_time
         self.timestepper.step(self, dt, wall_time)
-
         # (Safety scatter)
-        state.scatter()
-
+        self.state.scatter()
         # Update iteration
         self.iteration += 1
+        return dt
 
     def evolve(self, timestep_function):
         """Advance system until stopping criterion is reached."""
