@@ -83,20 +83,17 @@ b['g'] = F * pert
 b.differentiate('z', out=bz)
 
 # Integration parameters
-solver.stop_sim_time = 30
+solver.stop_sim_time = 50
 solver.stop_wall_time = 30 * 60.
 solver.stop_iteration = np.inf
 
 # Analysis
-snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=0.1, max_writes=50)
-snapshots.add_task("p")
-snapshots.add_task("b")
-snapshots.add_task("u")
-snapshots.add_task("w")
+snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=0.5, max_writes=50)
+snapshots.add_system(solver.state)
 
 # CFL
-CFL = flow_tools.CFL(solver, initial_dt=0.1, cadence=10, safety=1,
-                     max_change=1.5, min_change=0.5, max_dt=0.1, threshold=0.05)
+CFL = flow_tools.CFL(solver, initial_dt=2**-3, cadence=10, safety=1,
+                     max_change=1.5, min_change=0.5, max_dt=2**-3, threshold=0.05)
 CFL.add_velocities(('u', 'w'))
 
 # Flow properties
@@ -109,7 +106,7 @@ try:
     start_time = time.time()
     while solver.ok:
         dt = CFL.compute_dt()
-        solver.step(dt)
+        dt = solver.step(dt, trim=True)
         if (solver.iteration-1) % 10 == 0:
             logger.info('Iteration: %i, Time: %e, dt: %e' %(solver.iteration, solver.sim_time, dt))
             logger.info('Max Re = %f' %flow.max('Re'))
