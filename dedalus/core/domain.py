@@ -148,13 +148,12 @@ class Domain:
 class EmptyDomain:
 
     def __init__(self, grid_dtype=np.complex128):
-
         self.bases = []
         self.dim = 0
+        self.dealias = (1,)
 
     def get_basis_object(self, basis_like):
         """Return basis from a related object."""
-
         return None
 
     def new_data(self, type, **kw):

@@ -143,6 +143,10 @@ class Data(Operand):
         else:
             return self.__repr__()
 
+    def set_scales(self, scales, *, keep_data):
+        """Set new transform scales."""
+        pass
+
     def atoms(self, *types, **kw):
         if isinstance(self, types) or (not types):
             return (self,)
@@ -252,10 +256,6 @@ class Array(Data):
 
         for i in range(domain.dim):
             self.meta[i]['scale'] = scales[i]
-
-    def set_scales(self, scales, *, keep_data):
-        """Set new transform scales."""
-        pass
 
     def from_global_vector(self, data, axis):
         # Set metadata

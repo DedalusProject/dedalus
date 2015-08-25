@@ -13,6 +13,9 @@ from ..tools.cache import CachedAttribute, CachedMethod
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
 
+from ..tools.config import config
+PREALLOCATE_OUTPUTS = config['memory'].getboolean('PREALLOCATE_OUTPUTS')
+
 
 class Future(Operand):
     """
@@ -56,6 +59,11 @@ class Future(Operand):
             self._coeff_layout = domain.dist.coeff_layout
         except AttributeError:
             pass
+        if (out is not None):
+            if not isinstance(out, self.future_type):
+                raise ValueError("Assigned output of wrong type.")
+        elif PREALLOCATE_OUTPUTS:
+            out = self.domain.new_data(self.future_type)
         self.out = out
         self.kw = {}
         self.last_id = None
@@ -146,12 +154,9 @@ class Future(Operand):
             out = self.domain.new_data(self.future_type)
 
         # Copy metadata
-        try:
-            out.meta = self.meta
-            out.meta[:]['scale'] = None
-            out.set_scales(self.domain.dealias, keep_data=False)
-        except AttributeError:
-            pass
+        out.meta = self.meta
+        out.meta[:]['scale'] = None
+        out.set_scales(self.domain.dealias, keep_data=False)
 
         # Perform operation
         self.operate(out)
