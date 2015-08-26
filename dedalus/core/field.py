@@ -365,15 +365,10 @@ class Field(Data):
         # Get buffer size, with dealias size as lower limit
         buffer_size = self.domain.dist.buffer_size(scales)
         buffer_size = max(buffer_size, self.domain.dealias_buffer_size)
+        alloc_doubles = buffer_size // 8
         # Allocate if size has changed
-        if buffer_size != (8 * self.buffer.size):
-            if buffer_size == 0:
-                # FFTW doesn't like allocating size-0 arrays
-                self.buffer = np.zeros((0,), dtype=np.float64)
-            else:
-                # Use FFTW SIMD aligned allocation
-                alloc_doubles = buffer_size // 8
-                self.buffer = fftw.create_buffer(alloc_doubles)
+        if alloc_doubles != self.buffer.size:
+            self.buffer = fftw.create_buffer(alloc_doubles)
 
     def set_scales(self, scales, *, keep_data):
         """Set new transform scales."""

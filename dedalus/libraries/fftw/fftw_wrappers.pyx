@@ -28,6 +28,10 @@ def fftw_mpi_init():
 def create_buffer(size_t alloc_doubles):
     """Allocate memory using FFTW for SIMD alignment."""
 
+    # Return numpy-allocated array for zero size (cython casting fails)
+    if alloc_doubles == 0:
+        return np.zeros((0,), dtype=np.float)
+
     # Allocate using FFTW
     cdef double *c_data
     c_data = cfftw.fftw_alloc_real(alloc_doubles)
@@ -46,6 +50,7 @@ def create_buffer(size_t alloc_doubles):
 def create_array(shape, dtype):
     """Create array using FFTW-aligned buffer."""
 
+    # Get buffer size in doubles
     if dtype == np.float64:
         alloc_doubles = np.prod(shape)
     elif dtype == np.complex128:
@@ -53,6 +58,7 @@ def create_array(shape, dtype):
     else:
         raise ValueError("Unsupported dtype: %s" %str(dtype))
 
+    # Build buffer and numpy array
     buffer = create_buffer(alloc_doubles)
     return np.ndarray(shape=shape, dtype=dtype, buffer=buffer)
 
