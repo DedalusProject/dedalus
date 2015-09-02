@@ -175,20 +175,20 @@ class Subproblem:
                 np.copyto(var_data, vec_data)
                 i0 = i1
 
-    # def inclusion_matrices(self, bases):
-    #     """List of inclusion matrices."""
-    #     matrices = []
-    #     if any(bases):
-    #         subdomain = Subdomain.from_bases(bases)
-    #     else:
-    #         subdomain = Subdomain.from_domain(self.domain)
-    #     global_slices = self.global_slices(subdomain)
-    #     for gs, basis in zip(global_slices, bases):
-    #         if basis is None:
-    #             matrices.append(np.array([[1]])[gs, gs])
-    #         else:
-    #             matrices.append(basis.inclusion_matrix[gs, gs])
-    #     return matrices
+    def inclusion_matrices(self, bases):
+        """List of inclusion matrices."""
+        matrices = []
+        if any(bases):
+            subdomain = Subdomain.from_bases(bases)
+        else:
+            subdomain = Subdomain.from_domain(self.domain)
+        global_slices = self.global_slices(subdomain)
+        for gs, basis in zip(global_slices, bases):
+            if basis is None:
+                matrices.append(np.array([[1]])[gs, gs])
+            else:
+                matrices.append(basis.inclusion_matrix[gs, gs])
+        return matrices
 
     @CachedMethod
     def expansion_matrix(self, input_subdomain, output_subdomain):
@@ -204,12 +204,46 @@ class Subproblem:
             matrices.append(matrix[i, j])
         return reduce(sparse.kron, matrices, 1)
 
+    # def expansion_matrix(self, arg, layout):
+    #     matrices = []
+    #     dtype = self.domain.dtype
+    #     arg_shape = layout.global_array_shape(arg.subdomain, arg.scales)
+    #     out_shape = layout.global_array_shape(self.subdomain, self.scales)
+    #     arg_elements = layout.local_elements(arg.subdomain, arg.scales)
+    #     out_elements = layout.local_elements(self.subdomain, self.scales)
+    #     for axis, (I, J, i, j) in enumerate(zip(out_shape, arg_shape, out_elements, arg_elements)):
+    #         if (arg.bases[axis] is None) and layout.grid_space[axis]:
+    #             matrix = sparse.csr_matrix(np.ones((I, J), dtype=dtype))
+    #         else:
+    #             matrix = sparse.eye(I, J, dtype=dtype, format='csr')
+    #         # Avoid bug on (1,1) advanced indexing of sparse matrices
+    #         if i.size == 1:
+    #             i = [[i[0]]]
+    #         else:
+    #             i = i[:,None]
+    #         if j.size == 1:
+    #             j = [[j[0]]]
+    #         else:
+    #             j = j[None,:]
+    #         matrices.append(matrix[i, j])
+    #     return reduce(sparse.kron, matrices, 1)
+
     # def expansion_matrix(self, inbases, outbases):
     #     axmats = self.inclusion_matrices(outbases)
     #     for axis, (inbasis, outbasis) in enumerate(zip(inbases, outbases)):
     #         if (inbasis is None) and (outbasis is not None):
     #             axmats[axis] = axmats[axis][:, 0:1]
     #     return reduce(sparse.kron, axmats, 1).tocsr()
+
+    def local_to_group(self, subdomain):
+        """Matrix restricting local data to group data."""
+        shape = self.domain.dist.coeff_layout.local_array_shape(subdomain, scales=1)
+        slices = self.local_slices(subdomain)
+        matrices = []
+        for axis in range(self.domain.dim):
+            matrix = sparse.identity(shape[axis], format='csr')[slices[axis], :]
+            matrices.append(matrix)
+        return reduce(sparse.kron, matrices, 1)
 
     @CachedMethod
     def group_to_modes(self, bases):
@@ -236,81 +270,65 @@ class Subproblem:
     #         var_mats.append(reduce(sparse.kron, ax_mats, 1).tocsr())
     #     return sparse_block_diag(var_mats).tocsr()
 
-    def local_to_group(self, subdomain):
-        """Matrix restricting local data to group data."""
-        shape = self.domain.dist.coeff_layout.local_array_shape(subdomain, scales=1)
-        slices = self.local_slices(subdomain)
-        matrices = []
-        for axis in range(self.domain.dim):
-            matrix = sparse.identity(shape[axis], format='csr')[slices[axis], :]
-            matrices.append(matrix)
-        return reduce(sparse.kron, matrices, 1)
+
 
     def build_matrices(self, names):
         """Build problem matrices."""
-        # Filter equations by condition and group
-        #eqs = [eq for eq in self.problem.eqs if eval(eq['raw_condition'], self.group_dict)]
-        eqs = [eq for eq in self.problem.eqs if self.group_size(eq['subdomain'])]
-        eq_sizes = [self.group_size(eq['subdomain']) for eq in eqs]
-        eq_filters = [self.local_to_group(eq['subdomain']) for eq in eqs]
-        I = sum(eq_sizes)
 
-        # Filter variables by group
-        vars = [var for var in self.problem.variables if self.group_size(var.subdomain)]
+        eqns = self.problem.equations
+        vars = self.problem.variables
+        eqn_sizes = [self.group_size(eqn['LHS'].subdomain) for eqn in eqns]
         var_sizes = [self.group_size(var.subdomain) for var in vars]
-        var_filters = [self.local_to_group(var.subdomain) for var in vars]
+        I = sum(eqn_sizes)
         J = sum(var_sizes)
 
-        # Construct full subsystem matrices
+        # Construct subsystem matrices
+        # Include all equations and group entries
         matrices = {}
         for name in names:
-            # Collect subblocks
+            # Collect entries
             data, rows, cols = [], [], []
             i0 = 0
-            for eq, eq_size, eq_filter in zip(eqs, eq_sizes, eq_filters):
-                op_dict = eq[name+'_op']
-                j0 = 0
-                for var, var_size, var_filter in zip(vars, var_sizes, var_filters):
-                    if var in op_dict:
-                        varmat = (eq_filter * op_dict[var] * var_filter.T).tocoo()
-                        data.append(varmat.data)
-                        rows.append(varmat.row + i0)
-                        cols.append(varmat.col + j0)
-                    j0 += var_size
-                i0 += eq_size
-            # Build full matrix
+            for eqn, eqn_size in zip(eqns, eqn_sizes):
+                if eqn_size and eval(eqn['raw_condition'], self.group_dict):
+                    expr = eqn[name]
+                    if expr != 0:
+                        eqn_blocks = eqn[name].subproblem_matrices(self, vars)
+                        j0 = 0
+                        for var, var_size in zip(vars, var_sizes):
+                            if var_size and (var in eqn_blocks):
+                                block = eqn_blocks[var].tocoo()
+                                data.append(block.data)
+                                rows.append(i0 + block.row)
+                                cols.append(j0 + block.col)
+                            j0 += var_size
+                i0 += eqn_size
+            # Build sparse matrix
             data = np.concatenate(data)
             rows = np.concatenate(rows)
             cols = np.concatenate(cols)
-            matrices[name] = sparse.coo_matrix((data, (rows, cols)), shape=(I,J)).tocsr()
+            matrices[name] = sparse.coo_matrix((data, (rows, cols)), shape=(I, J)).tocsr()
 
-        # # Construct permutation matrix
-        # RP = build_permutation([eq['bases'] for eq in eqs])
-        # CP = build_permutation([var.bases for var in vars])
-
-        #  F = L.X
-        #  RP.F = RP.L.CP*.CP.X
-        # (RP.F) = (RP.L.CP*) . (CP.X)
-
-        # Restrict to nonzero modes
-        eq_modes = [self.group_to_modes(eq['bases']) for eq in eqs]
+        # Create maps restricting group data to included modes
+        eqn_modes = [self.group_to_modes(eqn['LHS'].bases) for eqn in eqns]
         var_modes = [self.group_to_modes(var.bases) for var in vars]
         # Drop equations that fail condition test
-        for n, eq in enumerate(eqs):
-            if not eval(eq['raw_condition'], self.group_dict):
-                eq_modes[n] = eq_modes[n][0:0, :]
-
-        # Store and apply mode maps to matrices
-        self.row_map = row_map = sparse_block_diag(eq_modes).tocsr()
+        for n, eqn in enumerate(eqns):
+            if not eval(eqn['raw_condition'], self.group_dict):
+                eqn_modes[n] = eqn_modes[n][0:0, :]
+        self.row_map = row_map = sparse_block_diag(eqn_modes).tocsr()
         self.col_map = col_map = sparse_block_diag(var_modes).tocsr()
+
+        # Check squareness of restriction to modes
         if row_map.shape[0] != col_map.shape[0]:
             raise ValueError("Non-square system: group={}, I={}, J={}".format(self.group, row_map.shape[0], col_map.shape[0]))
+
+        # Restrict matrices to included modes
         for name in matrices:
             matrices[name] = row_map * matrices[name] * col_map.T
 
         # Store minimal CSR matrices for fast dot products
         for name, matrix in matrices.items():
-            matrix.eliminate_zeros()
             setattr(self, name, matrix.tocsr())
 
         # Store expanded CSR matrices for fast combination
@@ -321,5 +339,8 @@ class Subproblem:
 
         # Store RHS conversion matrix
         F_conv = [self.expansion_matrix(eq['F'].subdomain, eq['subdomain']) for eq in eqs]
+        for n, eqn in enumerate(eqns):
+            if not eval(eqn['raw_condition'], self.group_dict):
+                F_conv[n] = F_conv[n][0:0, :]
         self.rhs_map = row_map * sparse_block_diag(F_conv).tocsr()
 

@@ -221,24 +221,6 @@ class Data(Operand):
     def order(self, *ops):
         return 0
 
-    def operator_dict(self, vars, **kw):
-        if self in vars:
-            return {self: self.local_data_matrix()}
-        else:
-            raise SymbolicParsingError('{} is not one of the specified variables.'.format(str(self)))
-
-    def local_data_matrix(self):
-        CL = self.domain.dist.coeff_layout
-        size = np.prod(CL.local_array_shape(self.subdomain, scales=1))
-        if size == 0:
-            return 0
-        else:
-            return sparse.identity(size, dtype=self.domain.dtype)
-
-    # def subproblem_matrix(self, subproblem):
-    #     axmats = subproblem.inclusion_matrices(self.bases)
-    #     return reduce(sparse.kron, axmats, 1).tocsr()
-
     def separability(self, vars):
         if self in vars:
             return np.array([True for basis in self.bases])
@@ -557,7 +539,8 @@ class Field(Data):
         return all(basis is None for basis in self.bases)
 
     #@CachedMethod(max_size=2)
-    def as_ncc_operator(self, arg, name=None, cacheid=None, cutoff=1e-10):
+    def as_ncc_matrix(self, arg, name=None, cacheid=None, cutoff=1e-10):
+        """Build operator matrix acting on subproblem group data."""
         """Convert to operator form representing multiplication as a NCC."""
         if name is None:
             name = str(self)
@@ -580,3 +563,17 @@ class Field(Data):
         logger.debug("Expanded NCC '{}' with {} terms.".format(name, n_terms))
         return L
 
+    def subproblem_matrices(self, subproblem, vars, **kw):
+        """Build expression matrices acting on subproblem group data."""
+        if self in vars:
+            return {self: self.subproblem_matrix(subproblem)}
+        else:
+            raise SymbolicParsingError('{} is not a linear operator over the specified variables.'.format(str(self)))
+
+    def subproblem_matrix(self, subproblem):
+        """Build inclusion matrix acting on subproblem group data."""
+        axmats = subproblem.inclusion_matrices(self.bases)
+        return reduce(sparse.kron, axmats, 1).tocsr()
+
+    def local_elements(self):
+        return self.layout.local_elements(self.subdomain, self.scales)

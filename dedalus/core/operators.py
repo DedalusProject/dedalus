@@ -12,7 +12,7 @@ from numbers import Number
 from .domain import Subdomain
 from .field import Operand, Data, Array, Field
 from .future import Future, FutureArray, FutureField
-from ..tools.array import reshape_vector, apply_matrix, add_sparse
+from ..tools.array import reshape_vector, apply_matrix, add_sparse, axslice
 from ..tools.cache import CachedAttribute
 from ..tools.dispatch import MultiClass
 from ..tools.exceptions import NonlinearOperatorError
@@ -427,51 +427,24 @@ class Add(Arithmetic, metaclass=MultiClass):
         return (sep0 & sep1)
 
     def split(self, *vars):
+        """Split expression based on presence of variables."""
         S0 = self.args[0].split(*vars)
         S1 = self.args[1].split(*vars)
         return [S0[0]+S1[0], S0[1]+S1[1]]
 
-    def operator_dict(self, vars, **kw):
-        """Produce matrix-operator dictionary over specified variables."""
+    def subproblem_matrices(self, subproblem, vars, **kw):
+        """Build expression matrices acting on subproblem group data."""
         arg0, arg1 = self.args
-        # May need to convert None bases up to self bases
-        # Vars will only appear in op dicts if subsystem has None groups
+        # Build argument matrices
+        mat0 = arg0.subproblem_matrices(subproblem, vars, **kw)
+        mat1 = arg1.subproblem_matrices(subproblem, vars, **kw)
+        # Add matrices from each argument
         out = defaultdict(int)
-        op0 = arg0.operator_dict(vars, **kw)
-        op1 = arg1.operator_dict(vars, **kw)
-        exp0 = self.expansion_matrix(arg0, self.domain.dist.coeff_layout)
-        exp1 = self.expansion_matrix(arg1, self.domain.dist.coeff_layout)
-        # exp0 = subsystem.expansion_matrix(self.args[0].bases, self.bases)
-        # exp1 = subsystem.expansion_matrix(self.args[1].bases, self.bases)
-        for var in op0:
-            out[var] = out[var] + exp0 * op0[var]
+        for var in mat0:
+            out[var] = out[var] + mat0[var]
         for var in op1:
-            out[var] = out[var] + exp1 * op1[var]
+            out[var] = out[var] + mat1[var]
         return out
-
-    def expansion_matrix(self, arg, layout):
-        matrices = []
-        dtype = self.domain.dtype
-        arg_shape = layout.global_array_shape(arg.subdomain, arg.scales)
-        out_shape = layout.global_array_shape(self.subdomain, self.scales)
-        arg_elements = layout.local_elements(arg.subdomain, arg.scales)
-        out_elements = layout.local_elements(self.subdomain, self.scales)
-        for axis, (I, J, i, j) in enumerate(zip(out_shape, arg_shape, out_elements, arg_elements)):
-            if (arg.bases[axis] is None) and layout.grid_space[axis]:
-                matrix = sparse.csr_matrix(np.ones((I, J), dtype=dtype))
-            else:
-                matrix = sparse.eye(I, J, dtype=dtype, format='csr')
-            # Avoid bug on (1,1) advanced indexing of sparse matrices
-            if i.size == 1:
-                i = [[i[0]]]
-            else:
-                i = i[:,None]
-            if j.size == 1:
-                j = [[j[0]]]
-            else:
-                j = j[None,:]
-            matrices.append(matrix[i, j])
-        return reduce(sparse.kron, matrices, 1)
 
     def sym_diff(self, var):
         """Symbolically differentiate with respect to var."""
@@ -480,35 +453,33 @@ class Add(Arithmetic, metaclass=MultiClass):
         diff1 = arg1.sym_diff(var)
         return diff0 + diff1
 
-    def add_subdata(self, arg, out):
-        # (Only called if out.data.size != 0)
-        arg_slices, out_slices = [], []
-        for axis in range(self.domain.dim):
-            if arg.bases[axis] is out.bases[axis]:
-                # (Both None or both not None)
-                # Directly add all data
-                arg_slices.append(slice(None))
-                out_slices.append(slice(None))
-            else:
-                # (arg basis is None)
-                if out.layout.grid_space[axis]:
-                    # Broadcast addition
-                    arg_slices.append(slice(None))
-                    out_slices.append(slice(None))
-                else:
-                    # Select constant mode
-                    #const_slice = arg.layout.select_global(0, axis=axis)
-                    if out.global_start[axis] == 0:
-                        const_slice = slice(1)
-                    else:
-                        const_slice = slice(0)
-                    arg_slices.append(const_slice)
-                    out_slices.append(const_slice)
-        arg_data = arg.data[tuple(arg_slices)]
-        out_data = out.data[tuple(out_slices)]
-        np.add(arg_data, out_data, out=out_data)
-
-
+    # def add_subdata(self, arg, out):
+    #     # (Only called if out.data.size != 0)
+    #     arg_slices, out_slices = [], []
+    #     for axis in range(self.domain.dim):
+    #         if arg.bases[axis] is out.bases[axis]:
+    #             # (Both None or both not None)
+    #             # Directly add all data
+    #             arg_slices.append(slice(None))
+    #             out_slices.append(slice(None))
+    #         else:
+    #             # (arg basis is None)
+    #             if out.layout.grid_space[axis]:
+    #                 # Broadcast addition
+    #                 arg_slices.append(slice(None))
+    #                 out_slices.append(slice(None))
+    #             else:
+    #                 # Select constant mode
+    #                 #const_slice = arg.layout.select_global(0, axis=axis)
+    #                 if out.global_start[axis] == 0:
+    #                     const_slice = slice(1)
+    #                 else:
+    #                     const_slice = slice(0)
+    #                 arg_slices.append(const_slice)
+    #                 out_slices.append(const_slice)
+    #     arg_data = arg.data[tuple(arg_slices)]
+    #     out_data = out.data[tuple(out_slices)]
+    #     np.add(arg_data, out_data, out=out_data)
 
 
 class AddArrayArray(Add, FutureArray):
@@ -530,7 +501,6 @@ class AddArrayArray(Add, FutureArray):
             self.add_subdata(arg1, out)
 
 
-
 class AddFieldField(Add, FutureField):
 
     argtypes = {0: (Field, FutureField),
@@ -542,16 +512,19 @@ class AddFieldField(Add, FutureField):
 
     def enforce_conditions(self):
         arg0, arg1 = self.args
-        # Add in arg0 layout (arbitrary choice)
-        arg1.require_layout(arg0.layout)
+        layout = self.choose_layout()
+        arg0.require_layout(layout)
+        arg1.require_layout(layout)
+
+    def choose_layout(self):
+        arg0, arg1 = self.args
+        # Pick arg0 layout (arbitrary choice)
+        return arg0.layout
 
     def operate(self, out):
         arg0, arg1 = self.args
         out.set_layout(arg0.layout)
-        if out.data.size:
-            out.data.fill(0)
-            self.add_subdata(arg0, out)
-            self.add_subdata(arg1, out)
+        np.add(arg0.data, arg1.data, out.data)
 
 
 class AddScalarArray(Add, FutureArray):
@@ -740,16 +713,12 @@ class Multiply(Arithmetic, metaclass=MultiClass):
         S1 = self.args[1].split(*vars)
         return [S0[0]*S1[0] + S0[0]*S1[1] + S0[1]*S1[0], S0[1]*S1[1]]
 
-    def operator_dict(self, vars, **kw):
-        """Produce matrix-operator dictionary over specified variables."""
+    def subproblem_matrices(self, subproblem, vars, **kw):
+        """Build expression matrices acting on subproblem group data."""
         arg0, arg1 = self.args
-        out = defaultdict(int)
-        op0 = arg0.as_ncc_operator(arg1, **kw)
-        op1 = arg1.operator_dict(vars, **kw)
-        #convert1 = subsystem.compute_conversion(self.args[1].bases, self.bases)
-        for var in op1:
-            out[var] = op0 * op1[var]
-        return out
+        mat0 = arg0.as_ncc_matrix(arg1, **kw)
+        mat1 = arg1.subproblem_matrices(subproblem, vars, **kw)
+        return {var: mat0*mat1[var] for var in mat1}
 
     def separability(self, vars):
         """Determine separability as linear operator over specified variables."""
@@ -1052,7 +1021,7 @@ class LinearOperator(Operator, FutureField):
         self.out = None
 
     def __repr__(self):
-        return '{!r}({!r}, {!r})'.format(self.__name__, self.arg, self.kw)
+        return '{!s}({!r}, {!r})'.format(self.base.__name__, self.arg, self.kw)
 
     def __str__(self):
         return '{!s}({!s}, {!s})'.format(self.base.__name__, self.arg, self.kw)
@@ -1082,10 +1051,11 @@ class LinearOperator(Operator, FutureField):
         else:
             return [self.new_arg(arg) for arg in self.arg.split(*vars)]
 
-    def operator_dict(self, vars, **kw):
-        arg_dict = self.arg.operator_dict(vars, **kw)
-        sub_mat = self.local_matrix(self.domain.dist.coeff_layout)
-        return {var: sub_mat * arg_dict[var] for var in arg_dict}
+    def subproblem_matrices(self, subproblem, vars, **kw):
+        """Build expression matrices acting on subproblem group data."""
+        mat0 = self.subproblem_matrix(subproblem)
+        mat1 = self.arg.subproblem_matrices(subproblem, vars, **kw)
+        return {var: mat0*mat1[var] for var in mat1}
 
 
 class LinearSubspaceOperator(LinearOperator, FutureField):
@@ -1132,33 +1102,19 @@ class LinearSubspaceOperator(LinearOperator, FutureField):
         return M.tocsr()
 
     def subspace_matrix(self):
+        """Build matrix operating on subspace data."""
         kw = self.kw.copy()
         space = kw.pop('space', self.space)
         return self._build_subspace_matrix(space, **kw)
 
-    def local_matrix(self, layout):
-        matrices = []
-        dtype = self.domain.dtype
-        arg_shape = layout.global_array_shape(self.arg.subdomain, self.arg.scales)
-        out_shape = layout.global_array_shape(self.subdomain, self.scales)
-        arg_elements = layout.local_elements(self.arg.subdomain, self.arg.scales)
-        out_elements = layout.local_elements(self.subdomain, self.scales)
-        for axis, (I, J, i, j) in enumerate(zip(out_shape, arg_shape, out_elements, arg_elements)):
-            if axis == self.axis:
-                matrix = self.subspace_matrix()
-            else:
-                matrix = sparse.eye(I, J, dtype=dtype, format='csr')
-            # Avoid bug on (1,1) advanced indexing of sparse matrices
-            if i.size == 1:
-                i = [[i[0]]]
-            else:
-                i = i[:,None]
-            if j.size == 1:
-                j = [[j[0]]]
-            else:
-                j = j[None,:]
-            matrices.append(matrix[i, j])
-        return reduce(sparse.kron, matrices, 1).tocsr()
+    def subproblem_matrix(self, subproblem):
+        """Build operator matrix acting on subproblem group data."""
+        shape = subproblem.group_shape(self.subdomain)
+        argslice = subproblem.global_slices(self.arg.subdomain)[self.axis]
+        outslice = subproblem.global_slices(self.subdomain)[self.axis]
+        ax_mats = [sparse.identity(n, format='csr') for n in shape]
+        ax_mats[self.axis] = self.subspace_matrix()[outslice, argslice]
+        return reduce(sparse.kron, ax_mats, 1).tocsr()
 
     def check_conditions(self):
         layout = self.args[0].layout
@@ -1491,18 +1447,13 @@ class HilbertTransformConstant(HilbertTransform):
 
 def convert(arg, bases):
     # Drop Nones
-    bases = [basis for basis in bases if basis is not None]
-    if not bases:
-        return arg
-    # Cast to operand
-    domain = unify_attributes(bases, 'domain', require=False)
-    arg = Field.cast(arg, domain=domain)
-    # # Check basis length
-    # if len(bases) != domain.dim:
-    #     raise ValueError("Not all bases specified.")
-    # # Apply iteratively
-    # for axis, basis in enumerate(bases):
-    #     print('Try convert', arg.bases[axis], basis)
+    bases = [b for b in bases if b is not None]
+    # if not bases:
+    #     return arg
+    # # Cast to operand
+    # domain = unify_attributes(bases, 'domain', require=False)
+    # arg = Field.cast(arg, domain=domain)
+    # Apply iteratively
     for basis in bases:
         arg = Convert(arg, basis)
     return arg
@@ -1511,7 +1462,8 @@ def convert(arg, bases):
 class Convert(LinearSubspaceOperator, metaclass=MultiClass):
 
     def __str__(self):
-        return 'C{!s}({!s})'.format(self.space.name, self.arg)
+        return str(self.arg)
+        #return 'C{!s}({!s})'.format(self.space.name, self.arg)
 
     @classmethod
     def _check_args(cls, arg, basis):
@@ -1528,6 +1480,7 @@ class Convert(LinearSubspaceOperator, metaclass=MultiClass):
 
     def __init__(self, arg, basis):
         # Wrap initialization to define keywords
+        arg = Field.cast(arg, domain=basis.domain)
         super().__init__(arg, basis=basis)
 
     @property
@@ -1539,23 +1492,73 @@ class Convert(LinearSubspaceOperator, metaclass=MultiClass):
         return self.kw['basis'].space
 
 
-class ConvertConstant(Convert):
+class ConvertSame(Convert):
+    """Trivial conversion to same basis."""
 
     @classmethod
     def _check_args(cls, arg, basis):
-        if isinstance(arg, Number):
-            return True
-        elif isinstance(arg, (Field, FutureField)):
-            input_basis = arg.get_basis(basis.space)
-            if input_basis is None:
+        if isinstance(arg, (Field, FutureField)):
+            if basis in arg.bases:
                 return True
-            if type(input_basis) is type(basis):
-                return True
-            # if arg.get_basis(basis.space) is None:
-            #     return True
-            # if arg.get_basis(basis.space) is basis:
-            #     return True
         return False
 
     def __new__(cls, arg, basis):
         return arg
+
+
+class ConvertConstant(Convert):
+    """Conversion up from a constant."""
+
+    separable = True
+    bands = [0]
+
+    @classmethod
+    def _check_args(cls, arg, basis):
+        if 0 in basis.modes:
+            if isinstance(arg, Number):
+                return True
+            elif isinstance(arg, (Field, FutureField)):
+                input_basis = arg.get_basis(basis.space)
+                if input_basis is None:
+                    return True
+        return False
+
+    def __init__(self, arg, basis):
+        arg = Operand.cast(arg, basis.domain)
+        super().__init__(arg, basis)
+
+    def build_bases(self, arg, **kw):
+        bases = [b for b in arg.bases]
+        bases[self.space.axis] = self.kw['basis']
+        return tuple(bases)
+
+    @classmethod
+    def entry(cls, i, j, space, basis):
+        if i == j == 0:
+            return 1
+        else:
+            return 0
+
+    def check_conditions(self):
+        return True
+
+    def enforce_conditions(self):
+        pass
+
+    def operate(self, out):
+        arg = self.args[0]
+        axis = self.space.axis
+        out.set_layout(arg.layout)
+        if arg.layout.grid_space[axis]:
+            # Broadcast addition
+            np.copyto(out.data, arg.data)
+        else:
+            # Set constant mode
+            out.data.fill(0)
+            if 0 in out.local_elements()[axis]:
+                np.copyto(out.data[axslice(axis, 0, 1)], arg.data)
+
+
+
+
+

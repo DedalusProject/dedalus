@@ -56,7 +56,6 @@ class Namespace(OrderedDict):
             self[head] = eval(func, self)
 
 
-
 # class Equation:
 
 #     def __init__(self, eq_string, condition):
@@ -69,18 +68,20 @@ class Namespace(OrderedDict):
 #         self.RHS_object
 
 
-#     def check_condition(self, group_dict):
-#         pass
+    @property
+    def bases(self):
+        return self.LHS.bases
 
-#     @CachedAttribute
-#     def separability(self):
-#         pass
+    @property
+    def subdomain(self):
+        return self.LHS.subdomain
 
-#     @CachedAttribute
-#     def bases(self):
+    @property
+    def separability(self):
+        return self.LHS.separability
 
-#     @CachedAttribute
-#     def LHS_object(self):
+    def check_condition(self, group_dict):
+        pass
 
 
 
@@ -145,7 +146,7 @@ class ProblemBase:
         self._build_object_forms(temp)
         self._check_eqn_conditions(temp)
         self._set_matrix_expressions(temp)
-        self._build_local_matrices(temp)
+        #self._build_local_matrices(temp)
         self.eqs.append(temp)
 
     def _build_basic_dictionary(self, temp, equation, condition):
@@ -317,16 +318,16 @@ class InitialValueProblem(ProblemBase):
         temp['F'] = temp['RHS']
         temp['separability'] = temp['LHS'].separability(vars)
 
-    def _build_local_matrices(self, temp):
-        vars = self.variables
-        if temp['M'] != 0:
-            temp['M_op'] = temp['M'].operator_dict(vars, **self.op_kw)
-        else:
-            temp['M_op'] = {}
-        if temp['L'] != 0:
-            temp['L_op'] = temp['L'].operator_dict(vars, **self.op_kw)
-        else:
-            temp['L_op'] = {}
+    # def _build_local_matrices(self, temp):
+    #     vars = self.variables
+    #     if temp['M'] != 0:
+    #         temp['M_op'] = temp['M'].operator_dict(vars, **self.op_kw)
+    #     else:
+    #         temp['M_op'] = {}
+    #     if temp['L'] != 0:
+    #         temp['L_op'] = temp['L'].operator_dict(vars, **self.op_kw)
+    #     else:
+    #         temp['L_op'] = {}
 
 
 class LinearBoundaryValueProblem(ProblemBase):
@@ -370,9 +371,9 @@ class LinearBoundaryValueProblem(ProblemBase):
         temp['F'] = temp['RHS']
         temp['separability'] = temp['LHS'].separability(vars)
 
-    def _build_local_matrices(self, temp):
-        vars = self.variables
-        temp['L_op'] = temp['L'].operator_dict(vars, **self.op_kw)
+    # def _build_local_matrices(self, temp):
+    #     vars = self.variables
+    #     temp['L_op'] = temp['L'].operator_dict(vars, **self.op_kw)
 
 
 class NonlinearBoundaryValueProblem(ProblemBase):

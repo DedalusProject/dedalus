@@ -22,7 +22,7 @@ if TRANSPOSE_LIBRARY.upper() == 'FFTW':
     from .transposes import FFTWTranspose as TransposePlanner
 elif TRANSPOSE_LIBRARY.upper() == 'MPI':
     from .transposes import AlltoallvTranspose as TransposePlanner
-    from .transposes import RowDistributor, ColDistributor
+from .transposes import RowDistributor, ColDistributor
 
 
 class Distributor:
@@ -460,10 +460,10 @@ class Transpose:
 
     def _sub_shape(self, subdomain, scales):
         """Build global shape of data assigned to sub-communicator."""
-        local_shape = self.layout0.local_shape(subdomain, scales)
-        global_shape = self.layout0.global_shape(subdomain, scales)
+        local_shape = self.layout0.local_array_shape(subdomain, scales)
+        global_shape = self.layout0.global_array_shape(subdomain, scales)
         # Global shape along transposing axes, local shape along others
-        sub_shape = local_shape.copy()
+        sub_shape = np.array(local_shape)
         sub_shape[self.axis] = global_shape[self.axis]
         sub_shape[self.axis+1] = global_shape[self.axis+1]
         return sub_shape
@@ -494,8 +494,8 @@ class Transpose:
             return None, None, None  # no data
         else:
             # Create group buffer to hold group data contiguously
-            buffer0_shape = np.hstack([nfields, self.layout0.local_shape(scales)])
-            buffer1_shape = np.hstack([nfields, self.layout1.local_shape(scales)])
+            buffer0_shape = np.hstack([nfields, self.layout0.local_array_shape(scales)])
+            buffer1_shape = np.hstack([nfields, self.layout1.local_array_shape(scales)])
             size = max(np.prod(buffer0_shape), np.prod(buffer1_shape))
             buffer = fftw.create_array(shape=[size], dtype=dtype)
             buffer0 = np.ndarray(shape=buffer0_shape, dtype=dtype, buffer=buffer)
