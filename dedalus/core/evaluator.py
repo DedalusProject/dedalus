@@ -296,7 +296,7 @@ class FileHandler(Handler):
 
     """
 
-    def __init__(self, base_path, *args, max_writes=np.inf, max_size=2**30, parallel=False, **kw):
+    def __init__(self, base_path, *args, max_writes=np.inf, max_size=2**30, parallel=False, write_num=1, set_num=1, **kw):
 
         Handler.__init__(self, *args, **kw)
 
@@ -316,9 +316,9 @@ class FileHandler(Handler):
         self.parallel = parallel
         self._sl_array = np.zeros(1, dtype=int)
 
-        self.set_num = 0
+        self.set_num = set_num - 1
         self.current_path = None
-        self.total_write_num = 0
+        self.total_write_num = write_num - 1
         self.file_write_num = 0
 
         if parallel:
@@ -329,7 +329,7 @@ class FileHandler(Handler):
     def check_file_limits(self):
         """Check if write or size limits have been reached."""
 
-        write_limit = ((self.total_write_num % self.max_writes) == 0)
+        write_limit = (self.file_write_num == self.max_writes)
         size_limit = (self.current_path.stat().st_size >= self.max_size)
         if not self.parallel:
             # reduce(size_limit, or) across processes
