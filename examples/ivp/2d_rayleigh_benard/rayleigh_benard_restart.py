@@ -1,18 +1,13 @@
 """
-Dedalus script for 2D Rayleigh-Benard convection.
+Dedalus script for restarting the 2D Rayleigh-Benard example.
 
-This script uses a Fourier basis in the x direction with periodic boundary
-conditions.  The equations are scaled in units of the buoyancy time (Fr = 1).
+This script initializes from the last save of the original example, and
+requires that the parallel output files from the original example are merged.
 
-This script can be ran serially or in parallel, and uses the built-in analysis
-framework to save data snapshots in HDF5 files.  The `merge.py` script in this
-folder can be used to merge distributed analysis sets from parallel runs,
-and the `plot_2d_series.py` script can be used to plot the snapshots.
-
-To run, merge, and plot using 4 processes, for instance, you could use:
+To run the original example and the restart, you could use:
     $ mpiexec -n 4 python3 rayleigh_benard.py
     $ mpiexec -n 4 python3 merge.py snapshots
-    $ mpiexec -n 4 python3 plot_2d_series.py snapshots/*.h5
+    $ mpiexec -n 4 python3 rayleigh_benard_restart.py
 
 The simulation should take a few process-minutes to run.
 
@@ -64,34 +59,16 @@ problem.add_bc("right(p) = 0", condition="(nx == 0)")
 solver = problem.build_solver(de.timesteppers.RK222)
 logger.info('Solver built')
 
-# Initial conditions
-x = domain.grid(0)
-z = domain.grid(1)
-b = solver.state['b']
-bz = solver.state['bz']
-
-# Random perturbations, initialized globally for same results in parallel
-gshape = domain.dist.grid_layout.global_shape(scales=1)
-slices = domain.dist.grid_layout.slices(scales=1)
-rand = np.random.RandomState(seed=42)
-noise = rand.standard_normal(gshape)[slices]
-
-# Linear background + perturbations damped at walls
-zb, zt = z_basis.interval
-pert =  1e-3 * noise * (zt - z) * (z - zb)
-b['g'] = F * pert
-b.differentiate('z', out=bz)
-
-# Initial timestep
-dt = 0.125
+# Load restart
+write, dt = solver.load_state('snapshots/snapshots_s2.h5', -1)
 
 # Integration parameters
-solver.stop_sim_time = 25
+solver.stop_sim_time = 40
 solver.stop_wall_time = 30 * 60.
 solver.stop_iteration = np.inf
 
 # Analysis
-snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=0.25, max_writes=50)
+snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=0.25, max_writes=50, write_num=write, set_num=3)
 snapshots.add_system(solver.state)
 
 # CFL
