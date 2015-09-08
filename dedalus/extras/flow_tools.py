@@ -192,7 +192,7 @@ class CFL:
         """Compute CFL-limited timestep."""
         iteration = self.solver.iteration
         # Return initial dt on first iteration
-        if iteration == 0:
+        if iteration == self.solver.initial_iteration:
             return self.stored_dt
         # Otherwise compute new timestep when cadence divides previous iteration
         # (this is when the frequency dicthandler is freshly updated)

@@ -6,6 +6,8 @@ Classes for solving differential equations.
 from mpi4py import MPI
 import numpy as np
 import time
+import pathlib
+import h5py
 from scipy.sparse import linalg
 from scipy.linalg import eig
 
@@ -287,8 +289,8 @@ class InitialValueSolver:
         self.timestepper = timestepper(problem.nvars, domain)
 
         # Attributes
-        self.sim_time = 0.
-        self.iteration = 0
+        self.sim_time = self.initial_sim_time = 0.
+        self.iteration = self.initial_iteration = 0
 
         # Default integration parameters
         self.stop_sim_time = 10.
@@ -310,6 +312,62 @@ class InitialValueSolver:
         comm = self.domain.dist.comm_cart
         comm.Allreduce(MPI.IN_PLACE, self._wall_time_array, op=MPI.MAX)
         return self._wall_time_array[0]
+
+    def load_state(self, path, index=-1):
+        """
+        Load state from HDF5 file.
+
+        Parameters
+        ----------
+        path : str or pathlib.Path
+            Path to Dedalus HDF5 savefile
+        index : int, optional
+            Local write index (within file) to load (default: -1)
+
+        Returns
+        -------
+        write : int
+            Global write number of loaded write
+        dt : float
+            Timestep at loaded write
+        """
+        path = pathlib.Path(path)
+        logger.info("Loading solver state from: {}".format(path))
+        with h5py.File(str(path), mode='r') as file:
+            # Load solver attributes
+            write = file['scales']['write_number'][index]
+            try:
+                dt = file['scales']['timestep'][index]
+            except KeyError:
+                dt = None
+            self.iteration = self.initial_iteration = file['scales']['iteration'][index]
+            self.sim_time = self.initial_sim_time = file['scales']['sim_time'][index]
+            # Log restart info
+            logger.info("Loading iteration: {}".format(self.iteration))
+            logger.info("Loading write: {}".format(write))
+            logger.info("Loading sim time: {}".format(self.sim_time))
+            logger.info("Loading timestep: {}".format(dt))
+            # Load fields
+            for field in self.state.fields:
+                dset = file['tasks'][field.name]
+                # Find matching layout
+                for layout in self.domain.dist.layouts:
+                    if np.allclose(layout.grid_space, dset.attrs['grid_space']):
+                        break
+                else:
+                    raise ValueError("No matching layout")
+                # Set scales to match saved data
+                scales = dset.shape[1:] / layout.global_shape(scales=1)
+                scales[~layout.grid_space] = 1
+                # Extract local data from global dset
+                dset_slices = (index,) + layout.slices(tuple(scales))
+                local_dset = dset[dset_slices]
+                # Copy to field
+                field_slices = tuple(slice(n) for n in local_dset.shape)
+                field.set_scales(scales, keep_data=False)
+                field[layout][field_slices] = local_dset
+                field.set_scales(self.domain.dealias, keep_data=True)
+        return write, dt
 
     @property
     def ok(self):
