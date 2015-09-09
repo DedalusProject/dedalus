@@ -122,9 +122,7 @@ class Evaluator:
 
         # Move all fields to coefficient layout
         fields = self.get_fields(tasks)
-        for f in fields:
-            f.require_coeff_space()
-            f.set_scales(self.domain.dealias, keep_data=True)
+        self.require_coeff_space(fields)
         tasks = self.attempt_tasks(tasks, id=id)
 
         # Oscillate through layouts until all tasks are evaluated
@@ -144,13 +142,25 @@ class Evaluator:
             tasks = self.attempt_tasks(tasks, id=id)
 
         # Transform all outputs to coefficient layout to dealias
-        for handler in handlers:
-            for task in handler.tasks:
-                task['out'].require_coeff_space()
+        outputs = [t['out'] for h in handlers for t in h.tasks]
+        self.require_coeff_space(outputs)
 
         # Process
         for handler in handlers:
             handler.process(**kw)
+
+    def require_coeff_space(self, fields):
+        """Move all fields to coefficient layout."""
+        # Build dictionary of starting layout indices
+        layouts = defaultdict(list, {0:[]})
+        for f in fields:
+            layouts[f.layout.index].append(f)
+        # Decrement all fields down to layout 0
+        max_index = max(layouts.keys())
+        current_fields = []
+        for index in range(max_index, 0, -1):
+            current_fields.extend(layouts[index])
+            self.domain.dist.paths[index-1].decrement(current_fields)
 
     @staticmethod
     def get_fields(tasks):
