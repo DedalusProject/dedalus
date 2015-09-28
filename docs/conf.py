@@ -18,6 +18,18 @@ import sys, os
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #sys.path.insert(0, os.path.abspath('.'))
 
+# K. Burns add 2015/09/28
+# Mock modules as per RTF FAQ to avoid hard C dependencies
+from unittest.mock import MagicMock
+
+class Mock(MagicMock):
+    @classmethod
+    def __getattr__(cls, name):
+            return Mock()
+
+MOCK_MODULES = ['numpy', 'scipy', 'mpi4py', 'h5py']
+sys.modules.update((mod_name, Mock()) for mod_name in MOCK_MODULES)
+
 # -- General configuration -----------------------------------------------------
 
 # If your documentation needs a minimal Sphinx version, state it here.
