@@ -2,12 +2,7 @@ Install notes for Mac OS X (10.9)
 *******************************************
 
 These instructions assume you're starting with a clean Mac OS X system,
-which will need ``python3`` and all scientific packages installed. These
-instructions are based off an excellent  `guide`_
-and are the result of extensive attempts to properly install ``numpy``
-and ``scipy`` in particular (including building directly from source).
-
-.. _guide: http://www.lowindata.com/2013/installing-scientific-python-on-mac-os-x/
+which will need ``python3`` and all scientific packages installed.
 
 Mac OS X cookbook
 -----------------
@@ -35,7 +30,6 @@ Mac OS X cookbook
     pip3 install nose
     pip3 install numpy
     pip3 install scipy
-    pip3 install sympy
     brew install libpng
     brew install freetype
     pip3 install matplotlib
@@ -124,7 +118,7 @@ during the scipy install.
     brew install suite-sparse
 
 Now use pip, the (the standard Python package management system, installed with
-Python via Homebrew) to install ``nose``, ``numpy``, ``scipy``, and ``sympy``,
+Python via Homebrew) to install ``nose``, ``numpy``, and ``scipy``
 in order:
 
 ::
@@ -133,7 +127,6 @@ in order:
     pip3 install nose
     pip3 install numpy
     pip3 install scipy
-    pip3 install sympy
 
 The ``scipy`` install can fail in a number of surprising ways. Be
 especially wary of custom settings to ``LDFLAGS``, ``CPPFLAGS``, etc.
