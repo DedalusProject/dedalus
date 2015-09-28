@@ -39,8 +39,8 @@ sys.modules.update((mod_name, Mock()) for mod_name in MOCK_MODULES)
 # coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
 extensions = [
     'sphinx.ext.pngmath',
-    'sphinx.ext.mathjax',
-    'sphinx.ext.autodoc']#,
+    'sphinx.ext.mathjax']#,
+    #'sphinx.ext.autodoc']#,
     #'sphinx.ext.napoleon']
 
 # Add any paths that contain templates here, relative to this directory.
