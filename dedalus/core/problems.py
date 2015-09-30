@@ -198,6 +198,34 @@ class ProblemBase:
         order = self._require_first_order(temp, 'LHS', coupled_diffs)
         temp['differential'] = bool(order)
 
+    def _check_if_zero(self, expr):
+        ''' Checks if the expression is equal to zero, within a tolerance '''
+        if expr == 0: #If exactly zero, don't bother with anything else
+            return True
+
+        #Evaluate the expression and pick out the absolute max value.
+        # Compare this value with the absolute max of the NCCs that went into the calculation.
+        # IF max_evaluated / max_parameters < tol, then it's homogeneous.
+        evaluated_expr = expr.evaluate()
+        max_val = np.max(np.abs(evaluated_expr['g']))
+        max_param = self._find_max_param(params = expr.atoms())
+       
+        #Compare the max value across ALL processors to make sure that everyone agrees.
+        global_max = self.domain.dist.comm.allreduce(max_val, op=MPI.MAX)
+        homogeneous = (global_max <= max_param*self.tol)
+        global_homogeneous = self.domain.dist.comm.allreduce(homogeneous, op=MPI.LAND)
+
+        if not global_homogeneous:
+            logger.info(str(expr) + ' is not homogeneous; '+\
+                        'max_val = {:.3e} (above tolerance ({:.1e}) range of max parameter value {:.3e}).'.format(max_val, self.tol, max_param))
+            logger.info('You may need to adjust your resolution or re-examine your equations.')
+            return False
+        else:
+            if max_val != 0:
+                logger.info('WARNING: ' + str(expr) + ' will be considered homogeneous '+\
+                            '(Max value: {:.3e}; below tolerance ({:.1e}) of max param: {:.3e}). '.format(max_val, self.tol, max_param))
+            return True
+
     def _check_meta_consistency(self, LHS, RHS):
         """Check LHS and RHS metadata for compatability."""
         default_meta = Metadata(self.domain)
@@ -233,13 +261,24 @@ class ProblemBase:
                 if (not LHS.meta[ax]['constant']) or (not RHS.meta[ax]['constant']):
                     raise SymbolicParsingError("Boundary condition must be constant along '{}'.".format(basis.name))
 
+    def _find_max_param(self, params):
+        """Finds the maximum value of the specified parameters"""
+        max_val = 0
+        for param in params:
+            if type(param) == field.Scalar:
+                if np.abs(param.value) > max_val:
+                    max_val = np.abs(param.value)
+            elif np.max(np.abs(param['g'])) > max_val:
+                max_val = np.max(np.abs(param['g']))
+        return max_val
+
     def _require_homogeneous(self, temp, key, vars):
         """Require expression to be homogeneous with some variables set to zero."""
         expr = temp[key]
         for var in vars:
             if expr != 0:
                 expr = expr.replace(var, 0)
-        if expr != 0:
+        if not self._check_if_zero(expr):
             raise UnsupportedEquationError("{} must be homogeneous.".format(key))
 
     def _require_independent(self, temp, key, vars):
@@ -454,6 +493,11 @@ class EigenvalueProblem(ProblemBase):
         Eigenvalue label, e.g. 'sigma' WARNING: 'lambda' is a python reserved word.
         You *cannot* use it as your eigenvalue. Also, note that unicode symbols 
         don't work on all machines.
+    tolerance : float
+        A floating point number (>= 0) which helps 'define' zero for the RHS of the equation.
+        If the RHS has nonzero NCCs which add to zero, dedalus will check to make sure that
+        the max of the expression on the RHS normalized by the max of all NCCs going in that expression
+        is smaller than this tolerance (see ProblemBase._check_if_zero() )
 
     Notes
     -----
@@ -467,9 +511,11 @@ class EigenvalueProblem(ProblemBase):
 
     solver_class = solvers.EigenvalueSolver
 
-    def __init__(self, domain, variables, eigenvalue, **kw):
+    def __init__(self, domain, variables, eigenvalue, tolerance=1e-10, **kw):
         super().__init__(domain, variables, **kw)
         self.eigenvalue = eigenvalue
+        self.tol=tolerance
+        logger.info('Solving EVP with homogeneity tolerance of {:.3e}'.format(self.tol))
 
     @CachedAttribute
     def namespace_additions(self):
