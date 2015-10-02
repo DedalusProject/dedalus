@@ -118,6 +118,9 @@ class Pencil:
         self.G_eq = matrices['select']
         self.G_bc = None
 
+        # no Dirichlet
+        self.dirichlet = None
+
     def _build_uncoupled_submatrices(self, problem, names, last_index):
 
         index = list(self.global_index) + [last_index]
