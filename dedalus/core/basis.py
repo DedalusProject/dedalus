@@ -145,7 +145,7 @@ class Basis:
             if scale and (gdata.shape[axis] != grid_size):
                 raise ValueError("gdata does not match scaled grid_size")
             if gdata.dtype != self.grid_dtype:
-                raise ValueError("gdata does not match grid_dtype")
+                raise ValueError("gdata does not match grid_dtype: gdata = {}; grid_dtype = {}".format(gdata.dtype, self.grid_dtype))
 
         return cdata, gdata
 
