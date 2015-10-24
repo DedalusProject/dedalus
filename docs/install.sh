@@ -613,7 +613,7 @@ echo "pip installing nose."
 
 # mpi4py
 echo "pip installing mpi4py."
-( ${DEST_DIR}/bin/pip3 install mpi4py 2>&1 ) 1>> ${LOG_FILE} || do_exit
+( ${DEST_DIR}/bin/pip3 install mpi4py==1.3.1 2>&1 ) 1>> ${LOG_FILE} || do_exit
 
 # cython
 echo "pip installing cython."
