@@ -42,8 +42,10 @@ if stdout_level.lower() != 'none':
 # File handler
 if file_level.lower() != 'none':
     file_path = pathlib.Path('%s_p%i.log' %(filename, MPI_RANK))
-    if not file_path.parent.exists():
-        file_path.parent.mkdir(parents=True)
+    with Sync(MPI.COMM_WORLD):
+        if MPI_RANK == 0:
+            if not file_path.parent.exists():
+                file_path.parent.mkdir(parents=True)
     file_handler = logging.FileHandler(str(file_path), mode='w')
     file_handler.setLevel(getattr(logging, file_level.upper()))
     file_handler.setFormatter(formatter)
