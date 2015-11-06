@@ -31,10 +31,10 @@ Then add the following to your ``.profile``::
   export CC=mpicc
 
   #pathing for Dedalus
-  export LOCAL_PYTHON_VERSION=3.4.3
-  export LOCAL_NUMPY_VERSION=1.9.2
+  export LOCAL_PYTHON_VERSION=3.5.0
+  export LOCAL_NUMPY_VERSION=1.10.1
   export LOCAL_SCIPY_VERSION=0.15.1
-  export LOCAL_HDF5_VERSION=1.8.14
+  export LOCAL_HDF5_VERSION=1.8.15-patch1
 
   export PYTHONPATH=$BUILD_HOME/dedalus:$PYTHONPATH
   export MPI_PATH=$MPI_ROOT
@@ -54,7 +54,7 @@ openmpi.
       Right now, mpi4py is building, but when we do a "from mpi4py
       import MPI", we core dump.  This happens on all tested
       architectures at present.  This stack is stuck until this
-      problem is fixed.
+      problem is fixed.  This problem is solved for mpi4py>=2.0.0.
 
 Building Python3
 --------------------------
@@ -110,6 +110,7 @@ This should be pip installed::
 
    pip3 install mpi4py
 
+version >=2.0.0 seem to play well with mpi-sgi.
 
 Installing FFTW3
 ------------------------------
@@ -164,7 +165,7 @@ All of the intel patches, etc. are unnecessary in the gcc stack.
 Building numpy against MKL
 ----------------------------------
 
-Now, acquire ``numpy`` (1.8.2)::
+Now, acquire ``numpy`` (1.10.1)::
 
      cd $BUILD_HOME
      wget http://sourceforge.net/projects/numpy/files/NumPy/$LOCAL_NUMPY_VERSION/numpy-$LOCAL_NUMPY_VERSION.tar.gz
@@ -183,7 +184,8 @@ the instructions above.  This will unpack and overwrite::
       numpy/distutils/fcompiler/intel.py
 
 This differs from prior versions in that "-xhost" is replaced with
- "-axAVX -xSSE4.1".   NOTE: this needs to be updated for Haswell.
+ "-axCORE-AVX2 -xSSE4.2".  I think this could be handled more
+ gracefully using a extra_compile_flag option in the site.cfg.
 
 We'll now need to make sure that ``numpy`` is building against the MKL
 libraries.  Start by making a ``site.cfg`` file::
@@ -197,10 +199,11 @@ library directory so that it correctly point to TACC's
 With the modules loaded above, this looks like::
 
      [mkl]
-     library_dirs = /nasa/intel/Compiler/2015.0.090/composer_xe_2015.0.090/mkl/lib/intel64
-     include_dirs = /nasa/intel/Compiler/2015.0.090/composer_xe_2015.0.090/mkl/include
+     library_dirs = /nasa/intel/Compiler/2015.3.187/composer_xe_2015.3.187/mkl/lib/intel64/
+     include_dirs = /nasa/intel/Compiler/2015.3.187/composer_xe_2015.3.187/mkl/include
      mkl_libs = mkl_rt
      lapack_libs =
+
 
 These are based on intels instructions for 
 `compiling numpy with ifort <http://software.intel.com/en-us/articles/numpyscipy-with-intel-mkl>`_
@@ -262,45 +265,28 @@ pip install fails, so we'll keep doing it the old fashioned way::
 Installing matplotlib
 -------------------------
 
-This should just be pip installed::
+This should just be pip installed.  In versions of matplotlib>1.3.1,
+Qhull has a compile error if the C compiler is used rather than C++,
+so we force the C complier to be icpc ::
 
+     export CC=icpc
      pip3 install matplotlib
-
-Hmmm... version 1.4.0 of matplotlib has just dropped, but seems to
-have a higher freetype versioning requirement (2.4).  Here's a
-build script for freetype 2.5.3::
-
-    wget http://sourceforge.net/projects/freetype/files/freetype2/2.5.3/freetype-2.5.3.tar.gz/download
-    tar xvf freetype-2.5.3.tar.gz
-    cd freetype-2.5.3
-    ./configure --prefix=$BUILD_HOME
-    make
-    make install
-
-Well... that works, but then we fail on a qhull compile during 
-``pip3 install matplotlib`` later on.
-Let's fall back to 1.3.1::
-
-     pip3 install matplotlib==1.3.1
-
 
 
 Installing HDF5 with parallel support
 --------------------------------------------------
 
 The new analysis package brings HDF5 file writing capbaility.  This
-needs to be compiled with support for parallel (mpi) I/O::
+needs to be compiled with support for parallel (mpi) I/O.  Intel
+compilers are failing on this when done with mpi-sgi, and on NASA's
+recommendation we're falling back to gcc for this library::
 
-
+     export MPICC_CC=
+     export MPICXX_CXX=
      wget http://www.hdfgroup.org/ftp/HDF5/releases/hdf5-$LOCAL_HDF5_VERSION/src/hdf5-$LOCAL_HDF5_VERSION.tar.gz
      tar xzvf hdf5-$LOCAL_HDF5_VERSION.tar.gz
      cd hdf5-$LOCAL_HDF5_VERSION
-     ./configure --prefix=$BUILD_HOME \
-                         CC=icc         CFLAGS="-O3 -axCORE-AVX2 -xSSE4.2" \
-                         CXX=icpc CPPFLAGS="-O3 -axCORE-AVX2 -xSSE4.2" \
-                         F77=ifort  F90FLAGS="-O3 -axCORE-AVX2 -xSSE4.2" \
-                         MPICC=icc MPICXX=icpc \
-                         LDFLAGS="-lmpi" \
+     ./configure --prefix=$BUILD_HOME CC=mpicc CXX=mpicxx F77=mpif90 \
                          --enable-shared --enable-parallel
      make
      make install
@@ -309,100 +295,21 @@ needs to be compiled with support for parallel (mpi) I/O::
 H5PY via pip
 -----------------------
 
-This works (Dec 21, 2014)::
+This can now just be pip installed (>=2.5.0):
 
-     pip3 install h5py==2.4.0b1
+     pip3 install h5py
 
-Installing h5py (working)
-----------------------------------------------------
-
-Next, install h5py.  For reasons that are currently unclear to me, 
-this cannot be done via pip install (fails)::
-
-     git clone https://github.com/h5py/h5py.git
-     cd h5py
-     python3 setup.py configure --mpi
-     python3 setup.py build
-     python3 setup.py install 
-
-This will install ``h5py==2.4.0a0``, and it appears to work (!).
-
-
-Installing h5py with collectives (not currently working)
-------------------------------------------------------------------------
-We've been exploring the use of collectives for faster parallel file
-writing.  
-
-git is having some problems, especially with it's SSL version.  
-I suggest adding the following to ``~/.gitconfig``::
-
-    [http]
-    sslCAinfo = /etc/ssl/certs/ca-bundle.crt
-
-
-This is still not working, owing (most likely) to git being built on
-an outdated SSL version.  Here's a short-term hack::
-
-    export GIT_SSL_NO_VERIFY=true
-
-To build that version of the h5py library::
-
-     git clone git://github.com/andrewcollette/h5py
-     cd h5py
-     git checkout mpi_collective
-     export CC=mpicc
-     export HDF5_DIR=$BUILD_HOME
-     python3 setup.py configure --mpi
-     python3 setup.py build
-     python3 setup.py install 
-
-
-Here's the original h5py repository::
-
-     git clone git://github.com/h5py/h5py
-     cd h5py
-     export CC=mpicc
-     export HDF5_DIR=$BUILD_HOME
-     python3 setup.py configure --mpi
-     python3 setup.py build
-     python3 setup.py install 
-
-.. note::
-     This is ugly.  We're getting a "-R" error at link, triggered by
-     distutils not recognizing that mpicc is gcc or something like
-     that.   Looks like we're failing ``if self._is_gcc(compiler)``
-     For now, I've hand-edited unixccompiler.py in 
-     ``lib/python3.3/distutils`` and changed this line:
-
-           def _is_gcc(self, compiler_name):
-                return "gcc" in compiler_name or "g++" in compiler_name
-
-        to:
-
-           def _is_gcc(self, compiler_name):
-       	        return "gcc" in compiler_name or "g++" in compiler_name or "mpicc" in compiler_name
-
-     This is a hack, but it get's us running and alive!
-
-.. note::
-     Ahh... I understand what's happening here.  We built with
-     ``mpicc``, and the test ``_is_gcc`` looks for whether gcc appears
-     anywhere in the compiler name.  It doesn't in ``mpicc``, so the
-     ``gcc`` checks get missed.  This is only ever used in the
-     ``runtime_library_dir_option()`` call.  So we'd need to either
-     rename the mpicc wrapper something like ``mpicc-gcc`` or do a
-     test on ``compiler --version`` or something.  Oh boy.  Serious
-     upstream problem for mpicc wrapped builds that cythonize and go
-     to link.  Hmm...
-
+For now we drop our former instructions on attempting to install parallel h5py with collectives. See the repo history for those notes.
+     
 Installing Mercurial
 ----------------------------------------------------
 On NASA Pleiades, we need to install mercurial itself.  I can't get
 mercurial to build properly on intel compilers, so for now use gcc::
 
-     wget http://mercurial.selenic.com/release/mercurial-3.1.tar.gz
-     tar xvf mercurial-3.1.tar.gz 
-     cd mercurial-3.1
+     cd $BUILD_HOME
+     wget http://mercurial.selenic.com/release/mercurial-$LOCAL_MERCURIAL_VERSION.tar.gz
+     tar xvf mercurial-$LOCAL_MERCURIAL_VERSION.tar.gz
+     cd mercurial-$LOCAL_MERCURIAL_VERSION
      module load gcc
      export CC=gcc
      make install PREFIX=$BUILD_HOME
@@ -423,22 +330,20 @@ I suggest you add the following to your ``~/.hgrc``::
   mq =
 
 
-Dedalus2
+Dedalus
 ========================================
 
 Preliminaries
 ----------------------------------------
 
-With the modules set as above, set::
-
-     export BUILD_HOME=$BUILD_HOME
-     export FFTW_PATH=$BUILD_HOME
-     export MPI_PATH=$BUILD_HOME/$LOCAL_MPI_VERSION
-
-Then change into your root dedalus directory and run::
-
+Then do the following::
+  
+     cd $BUILD_HOME
+     hg clone https://bitbucket.org/dedalus-project/dedalus
+     cd dedalus
      pip3 install -r requirements.txt 
-     python setup.py build_ext --inplace
+     python3 setup.py build_ext --inplace
+     
 
 
 Running Dedalus on Pleiades

@@ -260,11 +260,12 @@ pip install fails, so we'll keep doing it the old fashioned way::
 Installing matplotlib
 -------------------------
 
-This should just be pip installed.
-As with Pleiades, version 1.4.x is failing on qhull.  
-For now we fall back to 1.3.1::
+This should just be pip installed.  In versions of matplotlib>1.3.1,
+Qhull has a compile error if the C compiler is used rather than C++,
+so we force the C complier to be icpc ::
 
-     pip3 install matplotlib==1.3.1
+     export CC=icpc
+     pip3 install matplotlib
 
 
 
@@ -275,7 +276,7 @@ Installing HDF5 with parallel support
 The new analysis package brings HDF5 file writing capbaility.  This
 needs to be compiled with support for parallel (mpi) I/O::
 
-     wget http://www.hdfgroup.org/ftp/HDF5/current/src/hdf5-$LOCAL_HDF5_VERSION.tar.gz
+     wget http://www.hdfgroup.org/ftp/HDF5/releases/hdf5-$LOCAL_HDF5_VERSION/src/hdf5-$LOCAL_HDF5_VERSION.tar.gz
 
      tar xvzf hdf5-$LOCAL_HDF5_VERSION.tar.gz
      cd hdf5-$LOCAL_HDF5_VERSION

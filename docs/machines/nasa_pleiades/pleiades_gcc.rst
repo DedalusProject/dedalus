@@ -1,6 +1,16 @@
 Install notes for NASA/Pleiades: gcc stack
 ***************************************************************************
 
+.. note::
+    Warning.  These instructions for a gcc stack are quite outdated and
+    have not been tested in well over a year.  A lot has shifted in the
+    stack since then (e.g., h5py, matplotlib) and using these is at your
+    own risk.  We have been using the intel compilers exclusively on
+    Pleiades, so please see those instructions.  These gcc
+    instructions are kept for posterity and future use.
+
+Old instructions
+********************************
 An initial Pleiades environment is pretty bare-bones.  There are no
 modules, and your shell is likely a csh varient.  To switch shells,
 send an e-mail to support@nas.nasa.gov; I'll be using ``bash``.
