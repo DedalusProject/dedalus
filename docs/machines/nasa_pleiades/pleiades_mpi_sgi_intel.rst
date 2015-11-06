@@ -33,9 +33,10 @@ Then add the following to your ``.profile``::
   #pathing for Dedalus
   export LOCAL_PYTHON_VERSION=3.5.0
   export LOCAL_NUMPY_VERSION=1.10.1
-  export LOCAL_SCIPY_VERSION=0.15.1
+  export LOCAL_SCIPY_VERSION=0.16.1
   export LOCAL_HDF5_VERSION=1.8.15-patch1
-
+  export LOCAL_MERCURIAL_VERSION=3.6
+  
   export PYTHONPATH=$BUILD_HOME/dedalus:$PYTHONPATH
   export MPI_PATH=$MPI_ROOT
   export FFTW_PATH=$BUILD_HOME

@@ -24,13 +24,19 @@ Then add the following to your ``.profile``::
   export CC=mpicc
 
   #pathing for Dedalus
+  export LOCAL_MPI_VERSION=openmpi-1.10.1
+  export LOCAL_MPI_SHORT=v1.10
+
+  # falling back to 1.8 until we resolve tcp wireup errors
+  # (probably at runtime with MCA parameters)
   export LOCAL_MPI_VERSION=openmpi-1.8.6
   export LOCAL_MPI_SHORT=v1.8
-  export LOCAL_PYTHON_VERSION=3.4.3
-  export LOCAL_NUMPY_VERSION=1.9.2
-  export LOCAL_SCIPY_VERSION=0.15.1
-  export LOCAL_HDF5_VERSION=1.8.14
-  export LOCAL_MERCURIAL_VERSION=3.4.1
+
+  export LOCAL_PYTHON_VERSION=3.5.0
+  export LOCAL_NUMPY_VERSION=1.10.1
+  export LOCAL_SCIPY_VERSION=0.16.1
+  export LOCAL_HDF5_VERSION=1.8.15-patch1
+  export LOCAL_MERCURIAL_VERSION=3.6
 
   export MPI_ROOT=$BUILD_HOME/$LOCAL_MPI_VERSION
   export PYTHONPATH=$BUILD_HOME/dedalus:$PYTHONPATH
