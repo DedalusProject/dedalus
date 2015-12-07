@@ -14,14 +14,18 @@ from ..tools.general import rev_enumerate, unify
 
 logger = logging.getLogger(__name__.split('.')[-1])
 GROUP_TRANSFORMS = config['transforms'].getboolean('GROUP_TRANSFORMS')
-TRANSPOSE_LIBRARY = config['parallelism'].get('TRANSPOSE_LIBRARY')
+TRANSPOSE_LIBRARY = config['parallelism'].get('TRANSPOSE_LIBRARY').upper()
 GROUP_TRANSPOSES = config['parallelism'].getboolean('GROUP_TRANSPOSES')
 SYNC_TRANSPOSES = config['parallelism'].getboolean('SYNC_TRANSPOSES')
+ALLTOALLV = config['parallelism-mpi'].getboolean('ALLTOALLV')
 
-if TRANSPOSE_LIBRARY.upper() == 'FFTW':
+if TRANSPOSE_LIBRARY == 'FFTW':
     from .transposes import FFTWTranspose as TransposePlanner
-elif TRANSPOSE_LIBRARY.upper() == 'MPI':
-    from .transposes import AlltoallvTranspose as TransposePlanner
+elif TRANSPOSE_LIBRARY == 'MPI':
+    if ALLTOALLV:
+        from .transposes import AlltoallvTranspose as TransposePlanner
+    else:
+        from .transposes import AlltoallTranspose as TransposePlanner
 
 
 class Distributor:

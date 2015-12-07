@@ -234,7 +234,7 @@ cdef class AlltoallvTranspose:
 
     cdef readonly py_comm_t pycomm
     cdef readonly int datasize, axis
-    cdef readonly int N0, N1, N2, N3
+    cdef readonly int N0, N1, N2, N3, B1, B2
     cdef readonly int[::1] global_shape
     cdef readonly int[::1] col_starts
     cdef readonly int[::1] row_starts
@@ -264,8 +264,8 @@ cdef class AlltoallvTranspose:
         self.N2 = N2 = global_shape[axis+1]
         self.N3 = N3 = np.prod(global_shape[axis+2:]) * self.datasize
         # Blocks
-        B1 = math.ceil(global_shape[axis] / pycomm.size)
-        B2 = math.ceil(global_shape[axis+1] / pycomm.size)
+        self.B1 = B1 = math.ceil(global_shape[axis] / pycomm.size)
+        self.B2 = B2 = math.ceil(global_shape[axis+1] / pycomm.size)
         # Starting indices
         ranks = np.arange(pycomm.size, dtype=np.int32)
         self.col_starts = col_starts = np.minimum(B2*ranks, global_shape[axis+1])
@@ -332,11 +332,12 @@ cdef class AlltoallvTranspose:
         # Allocate loop variables
         cdef unsigned int proc, row_start, row_end
         cdef unsigned int n0, n1, n2, n3
-        cdef unsigned int i = 0
+        cdef unsigned int i
         # Copy contiguously into buffer
         for proc in range(self.pycomm.size):
             row_start = self.row_starts[proc]
             row_end = self.row_ends[proc]
+            i = self.CL_displs[proc]
             for n0 in range(N0):
                 for n1 in range(row_start, row_end):
                     for n2 in range(col_count):
@@ -354,11 +355,12 @@ cdef class AlltoallvTranspose:
         # Allocate loop variables
         cdef unsigned int proc, row_start, row_end
         cdef unsigned int n0, n1, n2, n3
-        cdef unsigned int i = 0
+        cdef unsigned int i
         # Copy contiguously from buffer
         for proc in range(self.pycomm.size):
             row_start = self.row_starts[proc]
             row_end = self.row_ends[proc]
+            i = self.CL_displs[proc]
             for n0 in range(N0):
                 for n1 in range(row_start, row_end):
                     for n2 in range(col_count):
@@ -376,11 +378,12 @@ cdef class AlltoallvTranspose:
         # Allocate loop variables
         cdef unsigned int proc, col_start, col_end
         cdef unsigned int n0, n1, n2, n3
-        cdef unsigned int i = 0
+        cdef unsigned int i
         # Copy contiguously into buffer
         for proc in range(self.pycomm.size):
             col_start = self.col_starts[proc]
             col_end = self.col_ends[proc]
+            i = self.RL_displs[proc]
             for n0 in range(N0):
                 for n1 in range(row_count):
                     for n2 in range(col_start, col_end):
@@ -398,11 +401,12 @@ cdef class AlltoallvTranspose:
         # Allocate loop variables
         cdef unsigned int proc, col_start, col_end
         cdef unsigned int n0, n1, n2, n3
-        cdef unsigned int i = 0
+        cdef unsigned int i
         # Copy contiguously from buffer
         for proc in range(self.pycomm.size):
             col_start = self.col_starts[proc]
             col_end = self.col_ends[proc]
+            i = self.RL_displs[proc]
             for n0 in range(N0):
                 for n1 in range(row_count):
                     for n2 in range(col_start, col_end):
@@ -410,3 +414,69 @@ cdef class AlltoallvTranspose:
                             A[n0, n1, n2, n3] = B[i]
                             i = i + 1
 
+cdef class AlltoallTranspose(AlltoallvTranspose):
+    """
+    MPI Alltoallv-based distributed array transpose, for redistributing
+    a block-distributed multidimensional array across adjacent axes.
+
+    Parameters
+    ----------
+    global_shape : ndarray of np.int32
+        Global array shape
+    dtype : data type
+        Data type
+    axis : int
+        Column axis of transposition plan (row axis is the next axis)
+    pycomm : mpi4py communicator
+        Communicator
+
+    """
+
+    cdef readonly int CL_count
+    cdef readonly int RL_count
+
+    def __init__(self, global_shape, dtype, axis, pycomm):
+        super().__init__(global_shape, dtype, axis, pycomm)
+        logger.debug("Building MPI transpose plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, global_shape, axis))
+        # Alltoall displacements
+        ranks = np.arange(pycomm.size, dtype=np.int32)
+        self.CL_displs = (self.N0 * self.B1 * self.B2 * self.N3) * ranks
+        self.RL_displs = (self.N0 * self.B1 * self.B2 * self.N3) * ranks
+        # Alltoall counts
+        self.CL_count = self.N0 * self.B1 * self.B2 * self.N3
+        self.RL_count = self.N0 * self.B1 * self.B2 * self.N3
+        # Buffers
+        CL_size = self.CL_count * pycomm.size
+        RL_size = self.RL_count * pycomm.size
+        self.CL_buffer = np.zeros(CL_size, dtype=np.float64)
+        self.RL_buffer = np.zeros(RL_size, dtype=np.float64)
+
+    def localize_rows(self, CL, RL):
+        """Transpsoe from column-local to row-local data distribution."""
+        # Create reduced views of data arrays
+        CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=np.float64, buffer=CL)
+        RL_reduced = np.ndarray(shape=self.RL_reduced_shape, dtype=np.float64, buffer=RL)
+        # Rearrange from input array to buffer
+        if self.col_counts[self.pycomm.rank] > 0:
+            self.split_rows(CL_reduced, self.CL_buffer)
+        # Communicate between buffers
+        self.pycomm.Alltoall([self.CL_buffer, self.CL_count, MPI.DOUBLE],
+                             [self.RL_buffer, self.RL_count, MPI.DOUBLE])
+        # Rearrange from buffer to output array
+        if self.row_counts[self.pycomm.rank] > 0:
+            self.combine_columns(self.RL_buffer, RL_reduced)
+
+    def localize_columns(self, RL, CL):
+        """Transpose from row-local to column-local data distribution."""
+        # Create reduced views of data arrays
+        CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=np.float64, buffer=CL)
+        RL_reduced = np.ndarray(shape=self.RL_reduced_shape, dtype=np.float64, buffer=RL)
+        # Rearrange from input array to buffer
+        if self.row_counts[self.pycomm.rank] > 0:
+            self.split_columns(RL_reduced, self.RL_buffer)
+        # Communicate between buffers
+        self.pycomm.Alltoall([self.RL_buffer, self.RL_count, MPI.DOUBLE],
+                             [self.CL_buffer, self.CL_count, MPI.DOUBLE])
+        # Rearrange from buffer to output array
+        if self.col_counts[self.pycomm.rank] > 0:
+            self.combine_rows(self.CL_buffer, CL_reduced)
