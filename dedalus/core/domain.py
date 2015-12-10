@@ -130,6 +130,9 @@ class Domain:
     def new_field(self, **kw):
         return Field(domain=self, **kw)
 
+    def new_fields(self, nfields, **kw):
+        return [self.new_field(**kw) for n in range(nfields)]
+
     def remedy_scales(self, scales):
 
         # Default to 1.

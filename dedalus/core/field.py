@@ -143,7 +143,7 @@ class Data(Operand):
         else:
             return self.__repr__()
 
-    def set_scales(self, scales, *, keep_data):
+    def set_scales(self, scales, keep_data=True):
         """Set new transform scales."""
         pass
 
@@ -320,7 +320,7 @@ class Field(Data):
 
     # To Do: cache deallocation
 
-    def __init__(self, domain, name=None):
+    def __init__(self, domain, name=None, scales=None):
 
         # Initial attributes
         self.domain = domain
@@ -332,8 +332,7 @@ class Field(Data):
         # Set layout and scales to build buffer and data
         self.buffer = np.zeros((0,), dtype=np.float64)
         self._layout = domain.dist.coeff_layout
-        self.set_scales(1, keep_data=False)
-        self.name = name
+        self.set_scales(scales, keep_data=False)
 
     @property
     def layout(self):
@@ -370,7 +369,7 @@ class Field(Data):
         if alloc_doubles != self.buffer.size:
             self.buffer = fftw.create_buffer(alloc_doubles)
 
-    def set_scales(self, scales, *, keep_data):
+    def set_scales(self, scales, keep_data=True):
         """Set new transform scales."""
 
         new_scales = self.domain.remedy_scales(scales)
