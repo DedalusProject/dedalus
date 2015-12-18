@@ -203,15 +203,16 @@ class GeneralFunction(NonlinearOperator, FutureField):
         self.layout = domain.distributor.get_layout_object(layout)
         self.func = func
         self.kw = kw
-        self._field_arg_indices = [i for (i,arg) in enumerate(self.args) if is_fieldlike(arg)]
+        self._field_arg_indices = [i for (i,arg) in enumerate(self.args) if isinstance(arg, Operand)]
         try:
             self.name = func.__name__
         except AttributeError:
             self.name = str(func)
         self.build_metadata()
 
-    def build_metadata(self):
-        self.constant = np.array([False] * self.domain.dim)
+    def meta_constant(self, axis):
+        # Assume no constancy
+        return False
 
     def check_conditions(self):
         # Fields must be in proper layout
