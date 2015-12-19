@@ -208,7 +208,6 @@ class GeneralFunction(NonlinearOperator, FutureField):
             self.name = func.__name__
         except AttributeError:
             self.name = str(func)
-        self.build_metadata()
 
     def meta_constant(self, axis):
         # Assume no constancy
