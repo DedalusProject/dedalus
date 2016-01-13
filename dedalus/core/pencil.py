@@ -61,7 +61,7 @@ def build_matrices(pencils, problem, matrices):
                 expr.operator_dict(test_index, vars, cacheid=cacheid, **problem.ncc_kw)
     # Build matrices
     for pencil in log_progress(pencils, logger, 'info', desc='Building pencil matrix', iter=np.inf, frac=0.1, dt=10):
-        pencil.build_matrices(problem, matrices)
+        pencil.build_matrices(problem, matrices, cacheid=cacheid)
 
 
 class Pencil:
@@ -84,14 +84,14 @@ class Pencil:
         else:
             self.build_matrices = self._build_uncoupled_matrices
 
-    def _build_uncoupled_matrices(self, problem, names):
+    def _build_uncoupled_matrices(self, problem, names, cacheid=None):
 
         matrices = {name: [] for name in (names+['select'])}
 
         zbasis = self.domain.bases[-1]
         dtype = zbasis.coeff_dtype
         for last_index in range(zbasis.coeff_size):
-            submatrices = self._build_uncoupled_submatrices(problem, names, last_index)
+            submatrices = self._build_uncoupled_submatrices(problem, names, last_index, cacheid=cacheid)
             for name in matrices:
                 matrices[name].append(submatrices[name])
 
@@ -121,7 +121,7 @@ class Pencil:
         # no Dirichlet
         self.dirichlet = None
 
-    def _build_uncoupled_submatrices(self, problem, names, last_index):
+    def _build_uncoupled_submatrices(self, problem, names, last_index, cacheid=None):
 
         index = list(self.global_index) + [last_index]
         index_dict = {}
@@ -147,14 +147,14 @@ class Pencil:
             for name in names:
                 expr, vars = eq[name]
                 if expr != 0:
-                    op_dict = expr.operator_dict(index, vars, **problem.ncc_kw)
+                    op_dict = expr.operator_dict(index, vars, cacheid=cacheid, **problem.ncc_kw)
                     matrix = matrices[name]
                     for j in range(nvars):
                         matrix[i,j] = op_dict[vars[j]]
 
         return matrices
 
-    def _build_coupled_matrices(self, problem, names):
+    def _build_coupled_matrices(self, problem, names, cacheid=None):
 
         index_dict = {}
         for axis, basis in enumerate(self.domain.bases):
@@ -256,13 +256,13 @@ class Pencil:
                 C = LHS[name]
                 eq_expr, eq_vars = eq[name]
                 if eq_expr != 0:
-                    Ei = eq_expr.operator_dict(self.global_index, eq_vars, **problem.ncc_kw)
+                    Ei = eq_expr.operator_dict(self.global_index, eq_vars, cacheid=cacheid, **problem.ncc_kw)
                 else:
                     Ei = defaultdict(int)
                 if differential:
                     bc_expr, bc_vars = bc[name]
                     if bc_expr != 0:
-                        Bi = bc_expr.operator_dict(self.global_index, bc_vars, **problem.ncc_kw)
+                        Bi = bc_expr.operator_dict(self.global_index, bc_vars, cacheid=cacheid, **problem.ncc_kw)
                     else:
                         Bi = defaultdict(int)
                 for j in range(nvars):

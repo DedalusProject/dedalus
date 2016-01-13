@@ -8,6 +8,7 @@ import numpy as np
 import time
 import pathlib
 import h5py
+import uuid
 from scipy.sparse import linalg
 from scipy.linalg import eig
 
@@ -74,13 +75,30 @@ class EigenvalueSolver:
 
         logger.debug('Finished EVP instantiation')
 
-    def solve(self, pencil):
-        """Solve EVP."""
-        self.eigenvalue_pencil = pencil
-        pencil.build_matrices(self.problem, ['M', 'L'])
+    def solve(self, pencil, rebuild_coeffs=False):
+        """
+        Solve EVP for selected pencil.
+
+        Parameters
+        ----------
+        pencil : pencil object
+            Pencil for which to solve the EVP
+        rebuild_coeffs : bool, optional
+            Flag to rebuild cached coefficient matrices (default: False)
+
+        """
+        # Build matrices
+        if rebuild_coeffs:
+            # Generate unique cache
+            cacheid = uuid.uuid4()
+        else:
+            cacheid = None
+        pencil.build_matrices(self.problem, ['M', 'L'], cacheid=cacheid)
+        # Solve as dense general eigenvalue problem
         L = pencil.L.todense()
         M = pencil.M.todense()
         self.eigenvalues, self.eigenvectors = eig(L, b=-M)
+        self.eigenvalue_pencil = pencil
 
     def set_state(self, num):
         """Set state vector to the num-th eigenvector"""
