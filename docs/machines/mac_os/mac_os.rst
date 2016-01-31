@@ -36,7 +36,7 @@ Mac OS X cookbook
 
     # MPI
     brew install openmpi
-    pip3 install mpi4py
+    pip3 install mpi4py==1.3.1
 
     # FFTW
     brew install fftw --with-mpi
@@ -154,7 +154,7 @@ Homebrew and pip:
 
     #!bash
     brew install openmpi
-    pip3 install mpi4py
+    pip3 install mpi4py==1.3.1
 
 Dedalus uses the FFTW library for transforms and parallelized transposes, and
 can be installed using Homebrew:
