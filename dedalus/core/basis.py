@@ -794,6 +794,42 @@ class Fourier(TransverseBasis):
             name = 'interp_{}'.format(self.name)
             basis = self
 
+            def check_conditions(self):
+                arg0, = self.args
+                axis = self.axis
+                if self.basis.grid_dtype == np.float64:
+                    # Must be in coeff+local layout
+                    is_coeff = not arg0.layout.grid_space[axis]
+                    is_local = arg0.layout.local[axis]
+                    # Subsequent basis must be in grid space for proper interpolation symmetry
+                    if axis == (self.domain.dim - 1):
+                        subs_grid = True
+                    else:
+                        subs_grid = arg0.layout.grid_space[axis+1]
+                    return (is_coeff and is_local and subs_grid)
+                elif self.basis.grid_dtype == np.complex128:
+                    # Must be in coeff+local layout
+                    is_coeff = not arg0.layout.grid_space[axis]
+                    is_local = arg0.layout.local[axis]
+                    return (is_coeff and is_local)
+
+            def operate(self, out):
+                arg0, = self.args
+                axis = self.axis
+                if self.basis.grid_dtype == np.float64:
+                    # Subsequent basis must be in grid space for proper interpolation symmetry
+                    if axis != (self.domain.dim - 1):
+                        arg0.require_grid_space(axis+1)
+                # Require coeff+local layout
+                arg0.require_coeff_space(axis)
+                arg0.require_local(axis)
+                out.layout = arg0.layout
+                # Attempt forms
+                try:
+                    self.explicit_form(arg0.data, out.data, axis)
+                except NotImplementedError:
+                    self.apply_matrix_form(out)
+
             def explicit_form(self, input, output, axis):
                 dim = self.domain.dim
                 weights = reshape_vector(self._interp_vector(self.position), dim=dim, axis=axis)
