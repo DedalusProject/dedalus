@@ -32,6 +32,7 @@ INST_ATLAS=0 # by default, we will not build our own ATLAS. If you're on OSX, yo
 INST_SCIPY=1
 INST_IPYTHON=0 # by default, don't build ipython
 INST_FTYPE=0 # by default, don't install freetype
+INST_ZLIB=0 # by default, don't install zlib
 INST_PNG=0 # by default, don't install libpng
 INST_PKGCFG=0 # by default, don't install pkg-config
 
@@ -224,6 +225,7 @@ function host_specific
     INST_HDF5=1
     INST_FTYPE=1
     INST_PNG=1
+    INST_ZLIB=1
     INST_PKGCFG=1
     IS_OSX=1
     fi
@@ -386,8 +388,9 @@ OPENMPI='openmpi-1.6.5'
 HDF5='hdf5-1.8.13'
 FTYPE='freetype-2.5.3'
 MATPLOTLIB='matplotlib-1.3.1'
-PNG='libpng-1.6.12'
+PNG='libpng-1.6.17'
 PKGCFG='pkg-config-0.28'
+ZLIB='zlib-1.2.8'
 
 # dump sha512 to files
 printf -v PYFILE "%s.tgz.sha512" $PYTHON
@@ -423,13 +426,16 @@ printf -v MPLSHA "04877aa15b6d52a6f813e8377098d13c432f66ae2522c544575440180944c9
 echo "$MPLSHA" > $MPLFILE
 
 printf -v PNGFILE "%s.tar.gz.sha512" $PNG
-printf -v PNGSHA "97959a245f23775a97d63394302da518ea1225a88023bf0906c24fcf8b1765856df36d2705a847d7f822c3b4e6f5da67526bb17fe04d00d523e8a18ea5037f4f  %s" ${PNGFILE%.sha512}
+printf -v PNGSHA "445cf5cace57eb89f2f52be96e9f0e956717a4d4474bd6f5d0545a8b30b45ff45df94325c2504b044d014880cbb3e696475cd6fa7936993dee7ffee93756e384  %s" ${PNGFILE%.sha512}
 echo "$PNGSHA" > $PNGFILE
 
 printf -v PKGCFGFILE "%s.tar.gz.sha512" $PKGCFG
 printf -v PKGCFGSHA "6eafa5ca77c5d44cd15f48457a5e96fcea2555b66d8e35ada5ab59864a0aa03d441e15f54ab9c6343693867b3b490f392c75b7d9312f024c9b7ec6a0194d8320  %s" ${PKGCFGFILE%.sha512}
 echo "$PKGCFGSHA" > $PKGCFGFILE
 
+printf -v ZLIBFILE "%s.tar.gz.sha512" $ZLIB
+printf -v ZLIBSHA "ece209d4c7ec0cb58ede791444dc754e0d10811cbbdebe3df61c0fd9f9f9867c1c3ccd5f1827f847c005e24eef34fb5bf87b5d3f894d75da04f1797538290e4a  %s" ${ZLIBFILE%.sha512}
+echo "$ZLIBSHA" > $ZLIBFILE
 # get the files
 get_dedalusproject $PYTHON.tgz
 get_dedalusproject $FFTW.tar.gz
@@ -440,11 +446,31 @@ get_dedalusproject $SCIPY.tar.gz
 [ $INST_FTYPE -eq 1 ] && get_dedalusproject $FTYPE.tar.gz
 [ $INST_PNG -eq 1 ]  && get_dedalusproject $PNG.tar.gz
 [ $INST_PKGCFG -eq 1 ]  && get_dedalusproject $PKGCFG.tar.gz
-
+[ $INST_ZLIB -eq 1 ] && get_dedalusproject $ZLIB.tar.gz
 # if we're installing freetype, we need to manually install matplotlib
 [ $INST_FTYPE -eq 1 ] && get_dedalusproject $MATPLOTLIB.tar.gz
 
-# first, OpenMPI, if we're doing that
+# first zlib
+if [ $INST_ZLIB -eq 1 ]
+then
+    if [ ! -e $ZLIB/done ]
+    then
+        [ ! -e $ZLIB ] && tar xfz $ZLIB.tar.gz
+        echo "Installing ZLIB"
+        cd $ZLIB
+        ( ./configure --shared --prefix=${DEST_DIR}/ 2>&1 ) 1>> ${LOG_FILE} || do_exit
+        ( make install 2>&1 ) 1>> ${LOG_FILE} || do_exit
+        ( make clean 2>&1) 1>> ${LOG_FILE} || do_exit
+        touch done
+        cd ..
+    fi
+    ZLIB_DIR=${DEST_DIR}
+    export LDFLAGS="${LDFLAGS} -L${ZLIB_DIR}/lib/ -L${ZLIB_DIR}/lib64/"
+    LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${ZLIB_DIR}/lib/"
+fi
+
+
+# next, OpenMPI, if we're doing that
 if [ $INST_OPENMPI -eq 1 ]
 then
     if [ ! -e $OPENMPI/done ]
@@ -549,7 +575,6 @@ then
     export FTYPE_INST="$LDFLAGS"
 fi
 
-
 if [ $INST_PNG -eq 1 ]
 then
     if [ ! -e $PNG/done ]
@@ -557,7 +582,7 @@ then
         [ ! -e $PNG ] && tar xfz $PNG.tar.gz
         echo "Installing libpng"
         cd $PNG
-        ( ./configure CFLAGS=-I${DEST_DIR}/include --prefix=${DEST_DIR}/ 2>&1 ) 1>> ${LOG_FILE} || do_exit
+        ( ./configure CPPFLAGS=-I${DEST_DIR}/include --prefix=${DEST_DIR}/ 2>&1 ) 1>> ${LOG_FILE} || do_exit
         ( make 2>&1 ) 1>> ${LOG_FILE} || do_exit
 	( make install 2>&1 ) 1>> ${LOG_FILE} || do_exit
         ( make clean 2>&1) 1>> ${LOG_FILE} || do_exit
@@ -613,7 +638,7 @@ echo "pip installing nose."
 
 # mpi4py
 echo "pip installing mpi4py."
-( ${DEST_DIR}/bin/pip3 install mpi4py==1.3.1 2>&1 ) 1>> ${LOG_FILE} || do_exit
+( ${DEST_DIR}/bin/pip3 install mpi4py 2>&1 ) 1>> ${LOG_FILE} || do_exit
 
 # cython
 echo "pip installing cython."
