@@ -32,9 +32,10 @@ INST_ATLAS=0 # by default, we will not build our own ATLAS. If you're on OSX, yo
 INST_SCIPY=1
 INST_IPYTHON=0 # by default, don't build ipython
 INST_FTYPE=0 # by default, don't install freetype
-INST_ZLIB=0 # by default, don't install zlib
 INST_PNG=0 # by default, don't install libpng
 INST_PKGCFG=0 # by default, don't install pkg-config
+INST_OPENSSL=0 #by default, don't install openssl
+INST_ZLIB=0 # by default, don't install zlib
 
 if [ ${REINST_DEDALUS} ] && [ ${REINST_DEDALUS} -eq 1 ] && [ -n ${DEDALUS_DEST} ]
 then
@@ -219,13 +220,16 @@ function host_specific
         SDKROOT="/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk"
 	echo
     fi
-
+    if [ "${OSX_VERSION##10.11}" != "${OSX_VERSION}" ]
+    then
+        INST_OPENSSL=1
+	INST_ZLIB=1
+    fi
     INST_OPENMPI=1
     INST_ATLAS=0
     INST_HDF5=1
     INST_FTYPE=1
     INST_PNG=1
-    INST_ZLIB=1
     INST_PKGCFG=1
     IS_OSX=1
     fi
@@ -387,9 +391,10 @@ SCIPY='scipy-0.14.0'
 OPENMPI='openmpi-1.6.5'
 HDF5='hdf5-1.8.13'
 FTYPE='freetype-2.5.3'
-MATPLOTLIB='matplotlib-1.3.1'
+MATPLOTLIB='matplotlib-1.4.3'
 PNG='libpng-1.6.17'
 PKGCFG='pkg-config-0.28'
+OPENSSL='openssl-1.0.1p'
 ZLIB='zlib-1.2.8'
 
 # dump sha512 to files
@@ -422,7 +427,7 @@ printf -v FTSHA "9ab7b77c5c09b1eb5baee7eb16da8a5f6fa7168cfa886bfed392b2fe80a985b
 echo "$FTSHA" > $FTFILE
 
 printf -v MPLFILE "%s.tar.gz.sha512" $MATPLOTLIB
-printf -v MPLSHA "04877aa15b6d52a6f813e8377098d13c432f66ae2522c544575440180944c9b73a2164ae63edd3a0eff807883bf7b39cd55f28454ccee8c76146567ff4a6fd40  %s" ${MPLFILE%.sha512}
+printf -v MPLSHA "51b0f58b2618b47b653e17e4f6b6a1215d3a3b0f1331ce3555cc7435e365d9c75693f289ce12fe3bf8f69fd57b663e545f0f1c2c94e81eaa661cac0689e125f5  %s" ${MPLFILE%.sha512}
 echo "$MPLSHA" > $MPLFILE
 
 printf -v PNGFILE "%s.tar.gz.sha512" $PNG
@@ -433,9 +438,13 @@ printf -v PKGCFGFILE "%s.tar.gz.sha512" $PKGCFG
 printf -v PKGCFGSHA "6eafa5ca77c5d44cd15f48457a5e96fcea2555b66d8e35ada5ab59864a0aa03d441e15f54ab9c6343693867b3b490f392c75b7d9312f024c9b7ec6a0194d8320  %s" ${PKGCFGFILE%.sha512}
 echo "$PKGCFGSHA" > $PKGCFGFILE
 
+printf -v SSLFILE "%s.tar.gz.sha512" $OPENSSL
+printf -v SSLSHA "64e475c53a85b78de7c5aa71a22d4bb3a456142842373ebf8f22e9857cb0352b646e591b21af866933baecdbdb5ac4a22aeb64914440c53a0f30cd25914029e5  %s" ${SSLFILE%.sha512}
+echo "$SSLSHA" > $SSLFILE
+
 printf -v ZLIBFILE "%s.tar.gz.sha512" $ZLIB
-printf -v ZLIBSHA "ece209d4c7ec0cb58ede791444dc754e0d10811cbbdebe3df61c0fd9f9f9867c1c3ccd5f1827f847c005e24eef34fb5bf87b5d3f894d75da04f1797538290e4a  %s" ${ZLIBFILE%.sha512}
-echo "$ZLIBSHA" > $ZLIBFILE
+printf -v ZLIBSHA "ece209d4c7ec0cb58ede791444dc754e0d10811cbbdebe3df61c0fd9f9f9867c1c3ccd5f1827f847c005e24eef34fb5bf87b5d3f894d75da04f1797538290e4a  %s" ${ZLIBFILE%.sha512} 
+
 # get the files
 get_dedalusproject $PYTHON.tgz
 get_dedalusproject $FFTW.tar.gz
@@ -446,31 +455,13 @@ get_dedalusproject $SCIPY.tar.gz
 [ $INST_FTYPE -eq 1 ] && get_dedalusproject $FTYPE.tar.gz
 [ $INST_PNG -eq 1 ]  && get_dedalusproject $PNG.tar.gz
 [ $INST_PKGCFG -eq 1 ]  && get_dedalusproject $PKGCFG.tar.gz
+[ $INST_OPENSSL -eq 1 ] && get_dedalusproject $OPENSSL.tar.gz
 [ $INST_ZLIB -eq 1 ] && get_dedalusproject $ZLIB.tar.gz
+
 # if we're installing freetype, we need to manually install matplotlib
 [ $INST_FTYPE -eq 1 ] && get_dedalusproject $MATPLOTLIB.tar.gz
 
-# first zlib
-if [ $INST_ZLIB -eq 1 ]
-then
-    if [ ! -e $ZLIB/done ]
-    then
-        [ ! -e $ZLIB ] && tar xfz $ZLIB.tar.gz
-        echo "Installing ZLIB"
-        cd $ZLIB
-        ( ./configure --shared --prefix=${DEST_DIR}/ 2>&1 ) 1>> ${LOG_FILE} || do_exit
-        ( make install 2>&1 ) 1>> ${LOG_FILE} || do_exit
-        ( make clean 2>&1) 1>> ${LOG_FILE} || do_exit
-        touch done
-        cd ..
-    fi
-    ZLIB_DIR=${DEST_DIR}
-    export LDFLAGS="${LDFLAGS} -L${ZLIB_DIR}/lib/ -L${ZLIB_DIR}/lib64/"
-    LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${ZLIB_DIR}/lib/"
-fi
-
-
-# next, OpenMPI, if we're doing that
+# first, OpenMPI, if we're doing that
 if [ $INST_OPENMPI -eq 1 ]
 then
     if [ ! -e $OPENMPI/done ]
@@ -491,6 +482,47 @@ then
     export MPI_PATH=${OPENMPI_DIR}
 fi
 
+# next, OpenSSL if we need it
+if [ $INST_OPENSSL -eq 1 ]
+then
+    if [ ! -e $OPENSSL/done ]
+    then
+        [ ! -e $OPENSSL ] && tar xfz $OPENSSL.tar.gz
+        echo "Installing OPENSSL"
+        cd $OPENSSL
+        ( ./Configure darwin64-x86_64-cc enable-ec_nistp_64_gcc_128 no-ssl2 no-ssl3 no-comp --prefix=${DEST_DIR}/ 2>&1 ) 1>> ${LOG_FILE} || do_exit
+        ( make install 2>&1 ) 1>> ${LOG_FILE} || do_exit
+        ( make clean 2>&1) 1>> ${LOG_FILE} || do_exit
+        touch done
+        cd ..
+    fi
+    OPENSSL_DIR=${DEST_DIR}
+    export LDFLAGS="${LDFLAGS} -L${OPENSSL_DIR}/lib/ -L${OPENSSL_DIR}/lib64/"
+    LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${OPENSSL_DIR}/lib/"
+    PATH="${OPENSSL_DIR}/bin:${PATH}"
+    export MPI_PATH=${OPENSSL_DIR}
+fi
+
+# next, zlib, if necessary
+if [ $INST_ZLIB -eq 1 ]
+then
+    if [ ! -e $ZLIB/done ]
+    then
+        [ ! -e $ZLIB ] && tar xfz $ZLIB.tar.gz
+        echo "Installing ZLIB"
+        cd $ZLIB
+        ( ./configure --prefix=${DEST_DIR}/ 2>&1 ) 1>> ${LOG_FILE} || do_exit
+        ( make install 2>&1 ) 1>> ${LOG_FILE} || do_exit
+        ( make clean 2>&1) 1>> ${LOG_FILE} || do_exit
+        touch done
+        cd ..
+    fi
+    ZLIB_DIR=${DEST_DIR}
+    export LDFLAGS="${LDFLAGS} -L${ZLIB_DIR}/lib/ -L${ZLIB_DIR}/lib64/"
+    LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${ZLIB_DIR}/lib/"
+    PATH="${ZLIB_DIR}/bin:${PATH}"
+fi
+
 # python3 
 
 if [ ! -e $PYTHON/done ]
@@ -498,6 +530,11 @@ then
     echo "Installing Python."
     [ ! -e $PYTHON ] && tar xfz $PYTHON.tgz
     cd $PYTHON
+    if [ $INST_OPENSSL -eq 1 ]
+    then
+       export PY_CFLAGS="-I${DEST_DIR}/include"
+    fi
+       
     echo "PY_CFLAGS = $PY_CFLAGS"
     ( ./configure --prefix=${DEST_DIR}/ ${PYCONF_ARGS} CFLAGS=${PY_CFLAGS} 2>&1 ) 1>> ${LOG_FILE} || do_exit
 
@@ -575,6 +612,7 @@ then
     export FTYPE_INST="$LDFLAGS"
 fi
 
+
 if [ $INST_PNG -eq 1 ]
 then
     if [ ! -e $PNG/done ]
@@ -582,7 +620,7 @@ then
         [ ! -e $PNG ] && tar xfz $PNG.tar.gz
         echo "Installing libpng"
         cd $PNG
-        ( ./configure CPPFLAGS=-I${DEST_DIR}/include --prefix=${DEST_DIR}/ 2>&1 ) 1>> ${LOG_FILE} || do_exit
+        ( ./configure CFLAGS=-I${DEST_DIR}/include --prefix=${DEST_DIR}/ 2>&1 ) 1>> ${LOG_FILE} || do_exit
         ( make 2>&1 ) 1>> ${LOG_FILE} || do_exit
 	( make install 2>&1 ) 1>> ${LOG_FILE} || do_exit
         ( make clean 2>&1) 1>> ${LOG_FILE} || do_exit
@@ -638,7 +676,7 @@ echo "pip installing nose."
 
 # mpi4py
 echo "pip installing mpi4py."
-( ${DEST_DIR}/bin/pip3 install mpi4py 2>&1 ) 1>> ${LOG_FILE} || do_exit
+( ${DEST_DIR}/bin/pip3 install mpi4py==1.3.1 2>&1 ) 1>> ${LOG_FILE} || do_exit
 
 # cython
 echo "pip installing cython."
@@ -662,6 +700,17 @@ then
 	echo "[gui_support]" >> ${DEST_DIR}/src/$MATPLOTLIB/setup.cfg
 	echo "macosx = False" >> ${DEST_DIR}/src/$MATPLOTLIB/setup.cfg
     fi
+    
+    [ ! -e $MATPLOTLIB/extracted ] && tar xfz $MATPLOTLIB.tar.gz
+    touch $MATPLOTLIB/extracted
+    cd $MATPLOTLIB
+    patch -b setupext.py <<EOF
+960c960
+<             'freetype2', 'ft2build.h',
+---
+>             'freetype2', 'freetype2/ft2build.h',
+EOF
+    cd ..
     do_setup_py $MATPLOTLIB
     
 else
