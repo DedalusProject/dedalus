@@ -90,7 +90,8 @@ def apply_matrix(matrix, array, axis, **kw):
     # Handle sparse matrices
     if sparse.isspmatrix(matrix):
         matrix = matrix.todense()
-    return np.einsum(matrix, mat_sig, array, arr_sig, out_sig, **kw)
+    out = np.einsum(matrix, mat_sig, array, arr_sig, out_sig, **kw)
+    return out
 
 
 def add_sparse(A, B):

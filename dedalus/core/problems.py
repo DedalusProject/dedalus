@@ -181,7 +181,7 @@ class ProblemBase:
         for spaceset in self.domain.spaces:
             for space in spaceset:
                 # Grid
-                namespace[space.name] = space.grid_array(scales=None)
+                namespace[space.name] = space.grid_field(scales=None)
                 # Operators
                 namespace.update(space.operators)
         # Variables

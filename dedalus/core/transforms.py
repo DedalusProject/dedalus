@@ -4,6 +4,9 @@ import numpy as np
 from scipy import fftpack
 
 from . import basis
+from ..tools import jacobi
+from ..tools.array import apply_matrix
+from ..tools.cache import CachedAttribute
 
 
 def register_transform(basis, name):
@@ -22,14 +25,16 @@ class Transform:
 
 class PolynomialTransform(Transform):
 
-    def __init__(self, coeff_shape, dtype, axis, scale):
+    def __init__(self, basis, coeff_shape, axis, scale):
 
+        self.basis = basis
+        self.dtype = basis.domain.dtype
         self.coeff_shape = coeff_shape
-        self.dtype = dtype
         self.axis = axis
         self.scale = scale
 
-        if dtype == np.complex128:
+        # Treat complex arrays as higher dimensional real arrays
+        if self.dtype == np.complex128:
             coeff_shape = list(coeff_shape) + [2]
 
         self.N0 = N0 = np.prod(coeff_shape[:axis])
@@ -104,6 +109,54 @@ class PolynomialTransform(Transform):
         self.gdata_reduced.data = gdata
         # Transform reduced arrays
         self.backward_reduced()
+
+
+class MatrixTransform(PolynomialTransform):
+
+    def forward_reduced(self):
+        matrix = self.forward_matrix
+        input = self.gdata_reduced
+        output = self.cdata_reduced
+        result = np.matmul(matrix, input)
+        np.copyto(output, result)
+
+    def backward_reduced(self):
+        matrix = self.backward_matrix
+        input = self.cdata_reduced
+        output = self.gdata_reduced
+        result = np.matmul(matrix, input)
+        np.copyto(output, result)
+
+
+@register_transform(basis.Jacobi, 'matrix')
+class JacobiMatrixTransform(MatrixTransform):
+
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self.M = self.basis.space.coeff_size
+        self.a = self.basis.a
+        self.b = self.basis.b
+        self.build_matrices()
+
+    def build_matrices(self):
+        space = self.basis.space
+        M = self.M
+        a0, b0 = space.a, space.b
+        a1, b1 = self.a, self.b
+        problem_grid = space.grid(self.scale)
+        # Forward transform: Gauss quadrature, spectral conversion
+        native_grid = space.COV.native_coord(problem_grid)
+        base_polynomials = jacobi.build_polynomials(M, a0, b0, native_grid)
+        base_weights = space.weights(self.scale)
+        base_quadrature = (base_polynomials * base_weights)
+        if (a0 == a1) and (b0 == b1):
+            self.forward_matrix = base_quadrature
+        else:
+            conversion = jacobi.conversion_matrix(M, a0, b0, a1, b1)
+            self.forward_matrix = conversion.dot(base_quadrature)
+        # Backward transform: polynomial recursion to grid
+        polynomials = jacobi.build_polynomials(M, a1, b1, native_grid)
+        self.backward_matrix = polynomials.T.copy()  # copy forces memory transpose
 
 
 class ScipyDST(PolynomialTransform):

@@ -19,7 +19,7 @@ from ..tools.array import reshape_vector
 from ..tools.cache import CachedMethod
 from ..tools.exceptions import UndefinedParityError
 from ..tools.exceptions import SymbolicParsingError
-from ..tools.general import unify
+from ..tools.general import unify, unify_attributes, DeferredTuple
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -66,14 +66,14 @@ class Operand:
         # Call: self + other
         if other == 0:
             return self
-        from .operators import Add
+        from .arithmetic import Add
         return Add(self, other)
 
     def __radd__(self, other):
         if other == 0:
             return self
         # Call: other + self
-        from .operators import Add
+        from .arithmetic import Add
         return Add(other, self)
 
     def __sub__(self, other):
@@ -90,7 +90,7 @@ class Operand:
             return 0
         if other == 1:
             return self
-        from .operators import Multiply
+        from .arithmetic import Multiply
         return Multiply(self, other)
 
     def __rmul__(self, other):
@@ -99,7 +99,7 @@ class Operand:
             return 0
         if other == 1:
             return self
-        from .operators import Multiply
+        from .arithmetic import Multiply
         return Multiply(other, self)
 
     def __truediv__(self, other):
@@ -116,12 +116,12 @@ class Operand:
             return 1
         if other == 1:
             return self
-        from .operators import Power
+        from .arithmetic import Power
         return Power(self, other)
 
     def __rpow__(self, other):
         # Call: other ** self
-        from .operators import Power
+        from .arithmetic import Power
         return Power(other, self)
 
     @staticmethod
@@ -335,18 +335,29 @@ class Field(Data):
     def __init__(self, bases=None, domain=None, name=None, layout='c', scales=1):
         from .domain import Domain, Subdomain
 
-        if (bases is None) and (domain is None):
-            raise ValueError()
-        elif (bases is None):
-            self.subdomain = Subdomain.from_domain(domain)
-            self.domain = domain
-            self.bases = (None,) * domain.dim
-        else:
-            self.subdomain = Subdomain.from_bases(bases)
-            self.domain = self.subdomain.domain
-            self.bases = self.subdomain.expand_bases(bases)
+        # Allow instantiation by basis list and/or domain
+        if not (bases or domain):
+            raise ValueError("Must specify bases or domain.")
+        if bases is None:
+            bases = ()
+        if domain is None:
+            domain = unify_attributes(bases, 'domain')
 
+        self.domain = domain
         self.name = name
+        # Build subdomain
+        spaces = tuple(basis.space for basis in bases)
+        self.subdomain = Subdomain(domain, spaces)
+        # Build full basis list
+        full_bases = [None for i in range(domain.dim)]
+        for basis in bases:
+            for axis in basis.axes:
+                if full_bases[axis] is not None:
+                    raise ValueError("Overlapping bases specified.")
+                else:
+                    full_bases[axis] = basis
+        self.bases = tuple(full_bases)
+
         # Set initial scales and layout
         self.scales = None
         self.layout = self.domain.dist.get_layout_object(layout)
@@ -363,6 +374,9 @@ class Field(Data):
         layout = self.domain.distributor.get_layout_object(layout)
         self.set_layout(layout)
         np.copyto(self.data, data)
+
+    def get_basis(self, space):
+        return self.bases[space.axis]
 
     @property
     def global_shape(self):
@@ -539,29 +553,60 @@ class Field(Data):
         return all(basis is None for basis in self.bases)
 
     #@CachedMethod(max_size=2)
-    def as_ncc_matrix(self, arg, name=None, cacheid=None, cutoff=1e-10):
-        """Build operator matrix acting on subproblem group data."""
+    def as_ncc_matrix(self, arg, subproblem, name=None, cacheid=None, cutoff=1e-10):
         """Convert to operator form representing multiplication as a NCC."""
-        if name is None:
-            name = str(self)
-        if self.is_scalar:
-            return self.data.ravel()[0]
-        L = n_terms = 0
-        self.require_coeff_space()
+        # if name is None:
+        #     name = str(self)
+        # if self.is_scalar:
+        #     return self.data.ravel()[0]
+        # L = n_terms = 0
+        # self.require_coeff_space()
 
-        matrices = []
-        layout = self.domain.dist.coeff_layout
-        local_shape = layout.local_array_shape(arg.subdomain, self.scales)
-        matrices = [sparse.identity(size, format='csr') for size in local_shape]
-        for index, coeff in np.ndenumerate(self.data):
-            if abs(coeff) >= cutoff:
-                for axis in range(self.domain.dim):
-                    if self.bases[axis] is not None:
-                        matrices[axis] = self.bases[axis].Multiply(index[axis], arg.bases[axis])
-                L = L + coeff * reduce(sparse.kron, matrices, 1).tocsr()
-                n_terms += 1
-        logger.debug("Expanded NCC '{}' with {} terms.".format(name, n_terms))
-        return L
+        # matrices = []
+        # layout = self.domain.dist.coeff_layout
+        # local_shape = layout.local_array_shape(arg.subdomain, self.scales)
+        # matrices = [sparse.identity(size, format='csr') for size in local_shape]
+        # for index, coeff in np.ndenumerate(self.data):
+        #     if abs(coeff) >= cutoff:
+        #         for axis in range(self.domain.dim):
+        #             if self.bases[axis] is not None:
+        #                 matrices[axis] = self.bases[axis].Multiply(index[axis], arg.bases[axis])
+        #         L = L + coeff * reduce(sparse.kron, matrices, 1).tocsr()
+        #         n_terms += 1
+
+        # Verify all bases are coupled
+        caxis = sum(subproblem.problem.separable)
+        for i in range(caxis):
+            if self.basis[axis] is not None:
+                raise ValueError("Cannot produce product matrix over uncoupled axis.")
+        # Build matrix over coupled bases
+        self.require_coeff_space()
+        data = self.data[(0,)*caxis]
+        mul_bases = self.bases[caxis:]
+        arg_bases = arg.bases[caxis:]
+        matrix = Field._multidim_ncc_matrix(data, mul_bases, arg_bases)
+        #logger.debug("Expanded NCC '{}' with {} terms.".format(name, n_terms))
+        return matrix
+
+    @staticmethod
+    def _multidim_ncc_matrix(data, mul_bases, arg_bases):
+        """Recursively build multidimensional NCC matrix."""
+        def build_coefficient(i):
+            if len(data.shape) == 1:
+                return data[i]
+            else:
+                return Field._multidim_ncc_matrix(data[i], mul_bases[1:], arg_bases[1:])
+        coeffs = DeferredTuple(build_coefficient, data.shape[0])
+        mul_basis = mul_bases[0]
+        arg_basis = arg_bases[0]
+        if mul_basis is None:
+            if arg_basis is None:
+                return coeffs[0]
+            else:
+                I = sparse.identity(arg_basis.space.coeff_size)
+                return sparse.kron(I, coeffs[0])
+        else:
+            return mul_basis.ncc_matrix(arg_basis, coeffs)
 
     def subproblem_matrices(self, subproblem, vars, **kw):
         """Build expression matrices acting on subproblem group data."""
@@ -577,3 +622,4 @@ class Field(Data):
 
     def local_elements(self):
         return self.layout.local_elements(self.subdomain, self.scales)
+

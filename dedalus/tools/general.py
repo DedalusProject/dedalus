@@ -84,3 +84,22 @@ def replace(data, selectors, replacement):
     when the corresponding element in selectors evaluates to True."""
     return (replacement if s else d for (d, s) in zip(data, selectors))
 
+
+class DeferredTuple:
+
+    def __init__(self, entry_function, size):
+        self.entry_function = entry_function
+        self.size = size
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            if key < 0:
+                key += len(self)
+            if key >= len(self):
+                raise IndexError("The index (%d) is out of range." %key)
+            return self.entry_function(key)
+        else:
+            raise TypeError("Invalid argument type.")
+
+    def __len__(self):
+        return self.size

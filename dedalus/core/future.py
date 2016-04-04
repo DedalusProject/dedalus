@@ -48,12 +48,8 @@ class Future(Operand):
         self.args = list(args)
         self.original_args = list(args)
         self.bases = self._build_bases(*args)
-        if any(self.bases):
-            self.subdomain = Subdomain.from_bases(self.bases)
-        else:
-            domain = unify_attributes(args, 'domain', require=False)
-            self.subdomain = Subdomain.from_domain(domain)
-        self.domain = self.subdomain.domain
+        self.domain = unify_attributes(args, 'domain', require=False)
+        self.subdomain = Subdomain.from_bases(self.domain, self.bases)
         self._grid_layout = self.domain.dist.grid_layout
         self._coeff_layout = self.domain.dist.coeff_layout
         self.out = out
@@ -188,9 +184,9 @@ class Future(Operand):
         raise NotImplementedError()
 
     @CachedMethod(max_size=1)
-    def as_ncc_operator(self,*args, **kw):
+    def as_ncc_matrix(self,*args, **kw):
         ncc = self.evaluate()
-        return ncc.as_ncc_operator(*args, name=str(self), **kw)
+        return ncc.as_ncc_matrix(*args, name=str(self), **kw)
 
 
 class FutureArray(Future):

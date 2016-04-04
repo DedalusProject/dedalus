@@ -140,7 +140,7 @@ class LinearBoundaryValueSolver:
         self.evaluator.evaluate_group('F', 0, 0, 0)
         # Solve system for each subproblem, updating state
         for ss in self.subproblems:
-            LHS = ss.L
+            LHS = ss.L_exp
             RHS = ss.rhs_map * ss.get_vector(self.F)
             X = linalg.spsolve(LHS, RHS, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
             ss.set_vector(self.state, ss.col_map.T*X)

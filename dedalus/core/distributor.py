@@ -406,7 +406,7 @@ class Transform:
         gdata = field.data
         # Transform if there's local data
         if (basis is not None) and np.prod(cdata.shape):
-            plan = basis.transform_plan(cdata.shape, self.domain.dtype, self.axis, field.scales[self.axis])
+            plan = basis.transform_plan(cdata.shape, self.axis, field.scales[self.axis])
             plan.backward(cdata, gdata)
 
     def decrement_single(self, field):
@@ -418,7 +418,7 @@ class Transform:
         cdata = field.data
         # Transform if there's local data
         if (basis is not None) and np.prod(gdata.shape):
-            plan = basis.transform_plan(cdata.shape, self.domain.dtype, self.axis, field.scales[self.axis])
+            plan = basis.transform_plan(cdata.shape, self.axis, field.scales[self.axis])
             plan.forward(gdata, cdata)
 
     def increment(self, fields):

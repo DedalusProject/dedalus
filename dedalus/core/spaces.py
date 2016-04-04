@@ -5,6 +5,7 @@ from functools import partial
 
 from . import basis
 from . import transforms
+from ..tools import jacobi
 from ..tools.array import reshape_vector
 from ..tools.general import unify
 from ..tools.cache import CachedMethod, CachedAttribute
@@ -27,23 +28,25 @@ class AffineCOV:
         self.stretch = self.problem_length / self.native_length
 
     def problem_coord(self, native_coord):
-        if native_coord == 'left':
-            return self.problem_left
-        elif native_coord == 'right':
-            return self.problem_right
-        elif native_coord == 'center':
-            return self.problem_center
+        if isinstance(native_coord, str):
+            if native_coord == 'left':
+                return self.problem_left
+            elif native_coord == 'right':
+                return self.problem_right
+            elif native_coord == 'center':
+                return self.problem_center
         else:
             neutral_coord = (native_coord - self.native_left) / self.native_length
             return self.problem_left + neutral_coord * self.problem_length
 
     def native_coord(self, problem_coord):
-        if problem_coord == 'left':
-            return self.native_left
-        elif problem_coord == 'right':
-            return self.native_right
-        elif problem_coord == 'center':
-            return self.native_center
+        if isinstance(problem_coord, str):
+            if problem_coord == 'left':
+                return self.native_left
+            elif problem_coord == 'right':
+                return self.native_right
+            elif problem_coord == 'center':
+                return self.native_center
         else:
             neutral_coord = (problem_coord - self.problem_left) / self.problem_length
             return self.native_left + neutral_coord * self.native_length
@@ -69,18 +72,19 @@ class Interval(Space):
 
     dim = 1
 
-    def __init__(self, name, base_grid_size, bounds, dealias=1):
+    def __init__(self, name, base_grid_size, bounds, domain, axis, dealias=1):
         self.name = name
         self.base_grid_size = base_grid_size
         self.bounds = bounds
+        self.domain = domain
+        self.axis = axis
+        self.axes = np.arange(axis, axis+self.dim)
         self.dealias = dealias
         self.COV = AffineCOV(self.native_bounds, bounds)
 
-    def __str__(self):
-        return self.name
-
-    def __repr__(self):
-        return self.name
+        for index in range(self.dim):
+            domain.spaces[axis+index].append(self)
+        domain.space_dict[name] = self
 
     @CachedAttribute
     def operators(self):
@@ -97,7 +101,7 @@ class Interval(Space):
     @CachedAttribute
     def subdomain(self):
         from .domain import Subdomain
-        return Subdomain.from_spaces([self])
+        return Subdomain(self.domain, [self])
 
     @CachedMethod
     def local_grid(self, scales=None):
@@ -114,12 +118,12 @@ class Interval(Space):
         return local_grid
 
     @CachedMethod
-    def grid_array(self, scales=None):
-        """Return Array object representing grid."""
-        from .field import Array
-        grid = Array([self.grid_basis], name=self.name)
+    def grid_field(self, scales=None):
+        """Return field object representing grid."""
+        from .field import Field
+        grid = Field(name=self.name, domain=self.domain, bases=[self.grid_basis])
         grid.set_scales(scales)
-        grid.set_local_data(self.local_grid(scales))
+        grid['g'] = self.local_grid(scales)
         return grid
 
 
@@ -182,34 +186,119 @@ class ParityInterval(Interval):
 
 
 class FiniteInterval(Interval):
+    """
+    Affine transformation of the interval [-1, 1], under the weight:
+        w(x) = (1-x)^a (1+x)^b
+    """
 
     native_bounds = (-1, 1)
     group_size = 1
 
-    def __init__(self, *args, **kw):
+    def __init__(self, a, b, *args, **kw):
         super().__init__(*args, **kw)
         self.coeff_size = self.base_grid_size
+        self.a = float(a)
+        self.b = float(b)
 
     @CachedMethod
     def grid(self, scale=1):
-        """Chebyshev interior roots grid: cos(N*acos(x)) = 0"""
+        """Gauss-Jacobi grid."""
         N = self.grid_size(scale)
-        theta = np.pi * (np.arange(N) + 1/2) / N
-        native_grid = -np.cos(theta)
+        native_grid = jacobi.build_grid(N, self.a, self.b)
         return self.COV.problem_coord(native_grid)
 
-    @CachedAttribute
-    def ChebyshevT(self):
-        return basis.ChebyshevT(self)
+    @CachedMethod
+    def weights(self, scale=1):
+        """Gauss-Jacobi weights."""
+        N = self.grid_size(scale)
+        return jacobi.build_weights(N, self.a, self.b)
 
-    @CachedAttribute
-    def ChebyshevU(self):
-        return basis.ChebyshevU(self)
+    def Jacobi(self, *args, **kw):
+        return basis.Jacobi(self, *args, **kw)
+
+    def Legendre(self, **kw):
+        if (self.a != 0) or (self.b != 0):
+            raise ValueError("Must use a0 = b0 = 0 for Legendre polynomials.")
+        return self.Jacobi(da=0, db=0, **kw)
+
+    def Ultraspherical(self, d, **kw):
+        if (self.a != -1/2) or (self.b != -1/2):
+            raise ValueError("Must use a0 = b0 = -1/2 for Ultraspherical polynomials.")
+        return self.Jacobi(da=d, db=d, **kw)
+
+    def ChebyshevT(self, **kw):
+        return self.Ultraspherical(d=0, **kw)
+
+    def ChebyshevU(self, **kw):
+        return self.Ultraspherical(d=1, **kw)
+
+    def ChebyshevV(self, **kw):
+        return self.Ultraspherical(d=2, **kw)
+
+    def ChebyshevW(self, **kw):
+        return self.Ultraspherical(d=3, **kw)
 
     @CachedAttribute
     def grid_basis(self):
-        return self.ChebyshevT
+        return self.Jacobi(da=0, db=0, library='matrix')
 
+
+class Sheet(Space):
+    """Base class for 1-dimensional spaces."""
+
+    dim = 1
+
+    def __init__(self, names, shape, bounds, domain, axis, dealias=1):
+        self.name = name
+        self.base_grid_size = base_grid_size
+        self.domain = domain
+        self.axis = axis
+        self.axes = np.arange(axis, axis+self.dim)
+        self.dealias = dealias
+
+        for index in range(self.dim):
+            domain.spaces[axis+index].append(self)
+        domain.space_dict[name] = self
+
+    def grid_size(self, scale):
+        """Compute scaled grid size."""
+        grid_size = float(scale) * self.base_grid_size
+        if not grid_size.is_integer():
+            raise ValueError("Scaled grid size is not an integer: %f" %grid_size)
+        return int(grid_size)
+
+    @CachedAttribute
+    def subdomain(self):
+        from .domain import Subdomain
+        return Subdomain.from_spaces([self])
+
+    @CachedMethod
+    def local_grid(self, scales=None):
+        """Return local grid along one axis."""
+        scales = self.domain.remedy_scales(scales)
+        axis = self.axis
+        # Get local part of global basis grid
+        elements = np.ix_(*self.domain.dist.grid_layout.local_elements(self.subdomain, scales))
+        grid = self.grid(scales[axis])
+        local_grid = grid[elements[axis]]
+        # Reshape as multidimensional vector
+        #local_grid = reshape_vector(local_grid, self.domain.dim, axis)
+
+        return local_grid
+
+    @CachedMethod
+    def grid_field(self, scales=None):
+        """Return field object representing grid."""
+        from .field import Field
+        grid = Field(name=self.name, domain=self.domain, bases=[self.grid_basis])
+        grid.set_scales(scales)
+        grid.set_local_data(self.local_grid(scales))
+        return grid
+
+class Sphere:
+
+    def __init__(self, name, Lmax, Mmax, domain, axis, dealias=1):
+        pass
 
 # class FiniteInterval(Interval):
 #     a = b = -1/2  # default Chebyshev

@@ -12,6 +12,8 @@ from ..tools.array import axslice
 from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
 from ..tools.cache import CachedClass
+from ..tools import jacobi
+from ..tools import clenshaw
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -26,6 +28,7 @@ class Basis:
     def __init__(self, space, library=DEFAULT_LIBRARY):
         self.space = space
         self.domain = space.domain
+        self.axes = space.axes
         self.library = library
 
     def __repr__(self):
@@ -66,10 +69,10 @@ class Basis:
         self.transform_plan.cache.clear()
 
     @CachedMethod
-    def transform_plan(self, coeff_shape, dtype, axis, scale):
+    def transform_plan(self, coeff_shape, axis, scale):
         """Build and cache transform plan."""
         transform_class = self.transforms[self.library]
-        return transform_class(coeff_shape, dtype, axis, scale)
+        return transform_class(self, coeff_shape, axis, scale)
 
     @CachedAttribute
     def inclusion_flags(self):
@@ -99,6 +102,143 @@ class Basis:
             flags = flags[n0:n1]
         # Discard empty rows
         return matrix[flags, :]
+
+    def ncc_matrix(self, arg_basis, coeffs):
+        """Build NCC matrix via direct summation."""
+        print('in Basis.ncc_matrix')
+        N = len(coeffs)
+        cutoff = 1e-6
+        total = 0
+        for i in range(N):
+            coeff = coeffs[i]
+            if abs(coeff) > cutoff:
+                matrix = self.product_matrix(arg_basis, i)
+                total = total + sparse.kron(matrix, coeff)
+                print('add term', i)
+        return total
+
+    def product_matrix(self, arg_basis, i):
+        if arg_basis is None:
+            N = self.space.coeff_size
+            return sparse.coo_matrix(([1],([i],[0])), shape=(N,1)).tocsr()
+        else:
+            raise NotImplementedError()
+
+
+class Jacobi(Basis, metaclass=CachedClass):
+    """Jacobi polynomial basis."""
+
+    def __init__(self, space, da, db, library='matrix'):
+        super().__init__(space, library=library)
+        self.da = da
+        self.db = db
+        self.a = space.a + da
+        self.b = space.b + db
+        self.const = 1 / np.sqrt(jacobi.mass(self.a, self.b))
+
+    def include_mode(self, mode):
+        return (0 <= mode < self.space.coeff_size)
+
+    def __str__(self):
+        space = self.space
+        cls = self.__class__
+        return '%s.%s(%s,%s)' %(space.name, cls.__name__, self.a, self.b)
+
+    def __add__(self, other_basis):
+        if other_basis is None:
+            return self
+        elif self.space == other_basis.space:
+            # Add in highest {a,b} basis
+            da = max(self.da, other_basis.da)
+            db = max(self.db, other_basis.db)
+            return Jacobi(self.space, da, db)
+        else:
+            return NotImplemented
+
+    def __mul__(self, other_basis):
+        if other_basis is None:
+            return self
+        elif self.space == other_basis.space:
+            # Put product in highest {a,b} basis
+            da = max(self.da, other_basis.da)
+            db = max(self.db, other_basis.db)
+            return Jacobi(self.space, da, db)
+        else:
+            return NotImplemented
+
+    def ncc_matrix(self, arg_basis, coeffs):
+        """Build NCC matrix via Clenshaw algorithm."""
+        CUTOFF = 1e-6
+        if arg_basis is None:
+            return super().ncc_matrix(arg_basis, coeffs)
+        # Kronecker Clenshaw on argument Jacobi matrix
+        N = self.space.coeff_size
+        J = jacobi.jacobi_matrix(N, arg_basis.a, arg_basis.b)
+        A, B = clenshaw.jacobi_recursion(N, self.a, self.b, J)
+        f0 = self.const * sparse.identity(N)
+        total = clenshaw.kronecker_clenshaw(coeffs, A, B, f0, cutoff=CUTOFF)
+        # Conversion matrix
+        input_basis = arg_basis
+        output_basis = (self * arg_basis)
+        conversion = ConvertJacobiJacobi._build_subspace_matrix(self.space, input_basis, output_basis)
+        return (conversion @ total)
+
+
+class ConvertJacobiJacobi(operators.Convert):
+
+    input_basis_type = Jacobi
+    output_basis_type = Jacobi
+    separable = False
+
+    @staticmethod
+    def _build_subspace_matrix(space, input_basis, output_basis):
+        N = space.coeff_size
+        a0, b0 = input_basis.a, input_basis.b
+        a1, b1 = output_basis.a, output_basis.b
+        matrix = jacobi.conversion_matrix(N, a0, b0, a1, b1)
+        return matrix.tocsr()
+
+
+class DifferentiateJacobi(operators.Differentiate):
+
+    input_basis_type = Jacobi
+    separable = False
+
+    @staticmethod
+    def output_basis(space, input_basis):
+        da, db = input_basis.da, input_basis.db
+        return Jacobi(space, da+1, db+1)
+
+    @staticmethod
+    def _build_subspace_matrix(space, input_basis):
+        N = space.coeff_size
+        a, b = input_basis.a, input_basis.b
+        matrix = jacobi.differentiation_matrix(N, a, b)
+        return (matrix.tocsr() / space.COV.stretch)
+
+
+class InterpolateJacobi(operators.Interpolate):
+
+    input_basis_type = Jacobi
+
+    @staticmethod
+    def _build_subspace_matrix(space, input_basis, position):
+        N = space.coeff_size
+        a, b = input_basis.a, input_basis.b
+        x = space.COV.native_coord(position)
+        return jacobi.interpolation_vector(N, a, b, x)
+
+
+class IntegrateJacobi(operators.Integrate):
+
+    input_basis_type = Jacobi
+
+    @staticmethod
+    def _build_subspace_matrix(space, input_basis):
+        N = space.coeff_size
+        a, b = input_basis.a, input_basis.b
+        vector = jacobi.integration_vector(N, a, b)
+        return (vector * space.COV.stretch)
 
 
 class ChebyshevT(Basis, metaclass=CachedClass):

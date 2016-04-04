@@ -74,6 +74,7 @@ class Subproblem:
         self.domain = problem.domain
         self.global_index = self.group = group
         self.local_index = index
+        self.first_coupled_axis = np.sum(problem.separable)
 
     @CachedAttribute
     def group_dict(self):
@@ -178,10 +179,11 @@ class Subproblem:
     def inclusion_matrices(self, bases):
         """List of inclusion matrices."""
         matrices = []
-        if any(bases):
-            subdomain = Subdomain.from_bases(bases)
-        else:
-            subdomain = Subdomain.from_domain(self.domain)
+        subdomain = Subdomain.from_bases(self.domain, bases)
+        # if any(bases):
+        #     subdomain = Subdomain.from_bases(bases)
+        # else:
+        #     subdomain = Subdomain.from_domain(self.domain)
         global_slices = self.global_slices(subdomain)
         for gs, basis in zip(global_slices, bases):
             if basis is None:
@@ -245,7 +247,6 @@ class Subproblem:
             matrices.append(matrix)
         return reduce(sparse.kron, matrices, 1)
 
-    @CachedMethod
     def group_to_modes(self, bases):
         """Matrix restricting group data to nonzero modes."""
         matrices = []
@@ -329,16 +330,16 @@ class Subproblem:
 
         # Store minimal CSR matrices for fast dot products
         for name, matrix in matrices.items():
-            setattr(self, name, matrix.tocsr())
+            setattr(self, '{:}_min'.format(name), matrix.tocsr())
 
         # Store expanded CSR matrices for fast combination
         self.LHS = zeros_with_pattern(*matrices.values()).tocsr()
         for name, matrix in matrices.items():
-            matrix = expand_pattern(matrix, self.LHS)
-            setattr(self, name+'_exp', matrix.tocsr())
+            expanded = expand_pattern(matrix, self.LHS)
+            setattr(self, '{:}_exp'.format(name), expanded.tocsr())
 
         # Store RHS conversion matrix
-        F_conv = [self.expansion_matrix(eq['F'].subdomain, eq['subdomain']) for eq in eqs]
+        F_conv = [self.expansion_matrix(eq['F'].subdomain, eq['subdomain']) for eq in eqns]
         for n, eqn in enumerate(eqns):
             if not eval(eqn['raw_condition'], self.group_dict):
                 F_conv[n] = F_conv[n][0:0, :]

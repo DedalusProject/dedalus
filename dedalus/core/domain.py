@@ -44,21 +44,13 @@ class Domain:
         self.spaces = [[] for i in range(dim)]
         self.distributor = self.dist = Distributor(self, mesh)
 
-    def add_space(self, space, axis):
-        if hasattr(space, 'domain'):
-            raise ValueError("Space already assigned to a domain.")
-        space.domain = self
-        space.axis = axis
-        for subaxis in range(space.dim):
-            self.spaces[axis+subaxis].append(space)
-        self.space_dict[space.name] = space
 
-    def get_space_object(self, basis_like):
-        """Return basis from a related object."""
-        if basis_like in self.space_dict.values():
-            return basis_like
-        elif basis_like in self.space_dict:
-            return self.space_dict[basis_like]
+    def get_space_object(self, space_ref):
+        """Return space object from a reference (object or name)."""
+        if space_ref in self.space_dict:
+            return self.space_dict[space_ref]
+        elif space_ref in self.space_dict.values():
+            return space_ref
         else:
             raise ValueError()
 
@@ -69,10 +61,12 @@ class Domain:
                 spaces.append(self.spaces[axis][0])
             else:
                 spaces.append(None)
-        if any(spaces):
-            return Subdomain.from_spaces(spaces)
-        else:
-            return Subdomain.from_domain(self)
+        return Subdomain(self, spaces)
+
+        # if any(spaces):
+        #     return Subdomain.from_spaces(spaces)
+        # else:
+        #     return Subdomain.from_domain(self)
 
         # # Objects
         # if basis_like in self.bases:
@@ -88,9 +82,6 @@ class Domain:
         # # Otherwise
         # else:
         #     return None
-
-
-
 
     # def grids(self, scales=None):
     #     """Return list of local grids along each axis."""
@@ -129,43 +120,46 @@ class Domain:
         return tuple(scales)
 
 
-class Subdomain(metaclass=CachedClass):
+class Subdomain():
+    """Object representing the direct product of a set of spaces."""
 
     def __init__(self, domain, spaces):
-        self.domain = domain
-        self.spaces = spaces
-
-    @classmethod
-    def from_spaces(cls, spaces):
-        spaces = [s for s in spaces if (s is not None)]
-        domain = unify_attributes(spaces, 'domain')
-        full_spaces = [None] * domain.dim
+        # Drop Nones
+        spaces = [s for s in spaces if s is not None]
+        # Verify same domain
         for space in spaces:
-            for subaxis in range(space.dim):
-                if full_spaces[space.axis+subaxis] is not None:
-                    raise ValueError("Multiple spaces specified for axis {}".format(space.axis+subaxis))
-                full_spaces[space.axis+subaxis] = space
-        return Subdomain(domain, tuple(full_spaces))
+            if space.domain is not domain:
+                raise ValueError("Space does not match provided domain." %space)
+        self.domain = domain
+        # Build full space list
+        full_spaces = [None for i in range(domain.dim)]
+        for space in spaces:
+            for axis in space.axes:
+                if full_spaces[axis] is not None:
+                    raise ValueError("Overlapping spaces specified.")
+                else:
+                    full_spaces[axis] = space
+        self.spaces = tuple(full_spaces)
+
+    # @classmethod
+    # def from_domain(cls, domain):
+    #     spaces = (None,) * domain.dim
+    #     return Subdomain(domain, spaces)
 
     @classmethod
-    def from_domain(cls, domain):
-        spaces = (None,) * domain.dim
-        return Subdomain(domain, spaces)
-
-    @classmethod
-    def from_bases(cls, bases):
+    def from_bases(cls, domain, bases):
         bases = [b for b in bases if (b is not None)]
         spaces = [b.space for b in bases]
-        return cls.from_spaces(spaces)
+        return cls(domain, spaces)
 
-    def expand_bases(self, bases):
-        exp_bases = [None] * self.domain.dim
-        for basis in bases:
-            if basis is not None:
-                if exp_bases[basis.space.axis] is not None:
-                    raise ValueError("Degenerate bases.")
-                exp_bases[basis.space.axis] = basis
-        return tuple(exp_bases)
+    # def expand_bases(self, bases):
+    #     exp_bases = [None] * self.domain.dim
+    #     for basis in bases:
+    #         if basis is not None:
+    #             if exp_bases[basis.space.axis] is not None:
+    #                 raise ValueError("Degenerate bases.")
+    #             exp_bases[basis.space.axis] = basis
+    #     return tuple(exp_bases)
 
     def __contains__(self, item):
         if isinstance(item, Subdomain):
@@ -177,9 +171,9 @@ class Subdomain(metaclass=CachedClass):
             space = self.domain.get_space_object(item)
             return (space in self.spaces)
 
-    @property
-    def constant(self):
-        return np.array([space is None for space in self.spaces])
+    # @property
+    # def constant(self):
+    #     return np.array([space is None for space in self.spaces])
 
     @property
     def dealias(self):
