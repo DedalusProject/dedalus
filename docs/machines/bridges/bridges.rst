@@ -6,7 +6,7 @@ with python 3.4 at present, but for now we'll maintain a boutique
 build to keep access to python >=3.5 and to tune numpy performance by
 hand (though the value proposition of this should be tested).
 
-Then add the following to your ``.profile``::
+Then add the following to your ``.bash_profile``::
 
   # Add your commands here to extend your PATH, etc.
 
@@ -254,7 +254,7 @@ recommendation we're falling back to gcc for this library::
 H5PY via pip
 -----------------------
 
-This can now just be pip installed (>=2.5.0):
+This can now just be pip installed (>=2.5.0)::
 
      pip3 install h5py
 
@@ -305,16 +305,17 @@ Then do the following::
      
 
 
-Running Dedalus on Pleiades
+Running Dedalus on Bridges
 ========================================
 
-Our scratch disk system on Pleiades is ``/nobackup/user-name``.  On
+Our scratch disk system on Bridges is ``/pylon1/group-name/user-name``.  On
 this and other systems, I suggest soft-linking your scratch directory
 to a local working directory in home; I uniformly call mine ``workdir``::
 
-      ln -s /nobackup/bpbrown workdir
+      ln -s /pylon1/group-name/user-name workdir
 
-Long-term mass storage is on LOU.
+Long-term spinning storage is on ``/pylon2`` and is provided by
+allocation request.
 
 
 
