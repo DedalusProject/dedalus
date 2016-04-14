@@ -34,6 +34,7 @@ Below are instructions for building the dependency stack on a variety of machine
     machines/stampede/stampede
     machines/nasa_pleiades/pleiades
     machines/nasa_discover/discover
+    machines/bridges/bridges
     machines/trestles/trestles
     machines/janus/janus
     machines/savio/savio
