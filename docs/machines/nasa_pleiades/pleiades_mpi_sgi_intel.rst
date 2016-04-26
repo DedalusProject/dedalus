@@ -18,7 +18,7 @@ Then add the following to your ``.profile``::
 
   export BUILD_HOME=$HOME/build
 
-  export PATH=$BUILD_HOME/bin:$BUILD_HOME:/$PATH  # Add private commands to PATH                                                                                         
+  export PATH=$BUILD_HOME/bin:$BUILD_HOME:/$PATH  # Add private commands to PATH
 
   export LD_LIBRARY_PATH=$BUILD_HOME/lib:$LD_LIBRARY_PATH
   export LD_LIBRARY_PATH=/nasa/openssl/1.0.1h/lib/:$LD_LIBRARY_PATH
@@ -36,13 +36,13 @@ Then add the following to your ``.profile``::
   export LOCAL_SCIPY_VERSION=0.16.1
   export LOCAL_HDF5_VERSION=1.8.15-patch1
   export LOCAL_MERCURIAL_VERSION=3.6
-  
+
   export PYTHONPATH=$BUILD_HOME/dedalus:$PYTHONPATH
   export MPI_PATH=$MPI_ROOT
   export FFTW_PATH=$BUILD_HOME
   export HDF5_DIR=$BUILD_HOME
 
-  # Pleaides workaround for QP errors 8/25/14 from NAS (only for MPI-SGI)                                                                                         
+  # Pleaides workaround for QP errors 8/25/14 from NAS (only for MPI-SGI)
   export MPI_USE_UD=true
 
 
@@ -50,12 +50,6 @@ Python stack
 =========================
 Here we use the recommended MPI-SGI compilers, rather than our own
 openmpi.
-
-.. note::
-      Right now, mpi4py is building, but when we do a "from mpi4py
-      import MPI", we core dump.  This happens on all tested
-      architectures at present.  This stack is stuck until this
-      problem is fixed.  This problem is solved for mpi4py>=2.0.0.
 
 Building Python3
 --------------------------
@@ -159,7 +153,7 @@ Numpy and BLAS libraries
 ======================================
 
 Numpy will be built against a specific BLAS library.  On Pleiades we
-will build against the OpenBLAS libraries.  
+will build against the OpenBLAS libraries.
 
 All of the intel patches, etc. are unnecessary in the gcc stack.
 
@@ -177,7 +171,7 @@ Now, acquire ``numpy`` (1.10.1)::
 
 This last step saves you from needing to hand edit two
 files in ``numpy/distutils``; these are ``intelccompiler.py`` and
-``fcompiler/intel.py``.  I've built a crude patch, :download:`numpy_pleiades_intel_patch.tar<numpy_pleiades_intel_patch.tar>` 
+``fcompiler/intel.py``.  I've built a crude patch, :download:`numpy_pleiades_intel_patch.tar<numpy_pleiades_intel_patch.tar>`
 which is auto-deployed within the ``numpy-$LOCAL_NUMPY_VERSION`` directory by
 the instructions above.  This will unpack and overwrite::
 
@@ -196,7 +190,7 @@ libraries.  Start by making a ``site.cfg`` file::
 
 Edit ``site.cfg`` in the ``[mkl]`` section; modify the
 library directory so that it correctly point to TACC's
-``$MKLROOT/lib/intel64/``.  
+``$MKLROOT/lib/intel64/``.
 With the modules loaded above, this looks like::
 
      [mkl]
@@ -206,7 +200,7 @@ With the modules loaded above, this looks like::
      lapack_libs =
 
 
-These are based on intels instructions for 
+These are based on intels instructions for
 `compiling numpy with ifort <http://software.intel.com/en-us/articles/numpyscipy-with-intel-mkl>`_
 and they seem to work so far.
 
@@ -296,12 +290,12 @@ recommendation we're falling back to gcc for this library::
 H5PY via pip
 -----------------------
 
-This can now just be pip installed (>=2.5.0):
+This can now just be pip installed (>=2.6.0):
 
      pip3 install h5py
 
 For now we drop our former instructions on attempting to install parallel h5py with collectives. See the repo history for those notes.
-     
+
 Installing Mercurial
 ----------------------------------------------------
 On NASA Pleiades, we need to install mercurial itself.  I can't get
@@ -338,13 +332,13 @@ Preliminaries
 ----------------------------------------
 
 Then do the following::
-  
+
      cd $BUILD_HOME
      hg clone https://bitbucket.org/dedalus-project/dedalus
      cd dedalus
-     pip3 install -r requirements.txt 
+     pip3 install -r requirements.txt
      python3 setup.py build_ext --inplace
-     
+
 
 
 Running Dedalus on Pleiades

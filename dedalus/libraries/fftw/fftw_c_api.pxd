@@ -4,7 +4,7 @@ FFTW3 documentation.
 
 """
 
-from mpi4py.mpi_c cimport MPI_Comm as mpi_comm_t
+from mpi4py.libmpi cimport MPI_Comm as mpi_comm_t
 from libc.stddef cimport ptrdiff_t
 
 

@@ -99,7 +99,7 @@ function help_needed
 {
     [ -e $1 ] && return
     echo
-    echo "WE NEED YOUR HELP!" 
+    echo "WE NEED YOUR HELP!"
     echo
     echo "We do not have testing facilities on $1 yet. While we're confident "
     echo "that Dedalus will work on $1, to get it working, "
@@ -234,7 +234,7 @@ function host_specific
     IS_OSX=1
     fi
 
-    
+
 
     if [ -f /etc/redhat-release ]
     then
@@ -245,7 +245,7 @@ function host_specific
             echo "  * atlas"
             echo "  * atlas-devel"
             echo "  * mercurial"
-            echo "  * openmpi"      
+            echo "  * openmpi"
             echo "  * openssl-devel"
             echo "  * ncurses"
             echo "  * ncurses-devel"
@@ -294,7 +294,7 @@ function host_specific
         echo "  * mercurial"
         echo "  * libatlas3-base"
         echo "  * libopenmpi-dev"
-        echo "  * openmpi-bin"       
+        echo "  * openmpi-bin"
         echo "  * libssl-dev"
         echo "  * build-essential"
         echo "  * libncurses5"
@@ -443,7 +443,7 @@ printf -v SSLSHA "64e475c53a85b78de7c5aa71a22d4bb3a456142842373ebf8f22e9857cb035
 echo "$SSLSHA" > $SSLFILE
 
 printf -v ZLIBFILE "%s.tar.gz.sha512" $ZLIB
-printf -v ZLIBSHA "ece209d4c7ec0cb58ede791444dc754e0d10811cbbdebe3df61c0fd9f9f9867c1c3ccd5f1827f847c005e24eef34fb5bf87b5d3f894d75da04f1797538290e4a  %s" ${ZLIBFILE%.sha512} 
+printf -v ZLIBSHA "ece209d4c7ec0cb58ede791444dc754e0d10811cbbdebe3df61c0fd9f9f9867c1c3ccd5f1827f847c005e24eef34fb5bf87b5d3f894d75da04f1797538290e4a  %s" ${ZLIBFILE%.sha512}
 
 # get the files
 get_dedalusproject $PYTHON.tgz
@@ -523,7 +523,7 @@ then
     PATH="${ZLIB_DIR}/bin:${PATH}"
 fi
 
-# python3 
+# python3
 
 if [ ! -e $PYTHON/done ]
 then
@@ -534,7 +534,7 @@ then
     then
        export PY_CFLAGS="-I${DEST_DIR}/include"
     fi
-       
+
     echo "PY_CFLAGS = $PY_CFLAGS"
     ( ./configure --prefix=${DEST_DIR}/ ${PYCONF_ARGS} CFLAGS=${PY_CFLAGS} 2>&1 ) 1>> ${LOG_FILE} || do_exit
 
@@ -676,7 +676,7 @@ echo "pip installing nose."
 
 # mpi4py
 echo "pip installing mpi4py."
-( ${DEST_DIR}/bin/pip3 install mpi4py==1.3.1 2>&1 ) 1>> ${LOG_FILE} || do_exit
+( ${DEST_DIR}/bin/pip3 install mpi4py 2>&1 ) 1>> ${LOG_FILE} || do_exit
 
 # cython
 echo "pip installing cython."
@@ -700,7 +700,7 @@ then
 	echo "[gui_support]" >> ${DEST_DIR}/src/$MATPLOTLIB/setup.cfg
 	echo "macosx = False" >> ${DEST_DIR}/src/$MATPLOTLIB/setup.cfg
     fi
-    
+
     [ ! -e $MATPLOTLIB/extracted ] && tar xfz $MATPLOTLIB.tar.gz
     touch $MATPLOTLIB/extracted
     cd $MATPLOTLIB
@@ -712,7 +712,7 @@ then
 EOF
     cd ..
     do_setup_py $MATPLOTLIB
-    
+
 else
     echo "pip installing matplotlib."
     ( ${DEST_DIR}/bin/pip3 install matplotlib==1.3.1 2>&1 ) 1>> ${LOG_FILE} || do_exit

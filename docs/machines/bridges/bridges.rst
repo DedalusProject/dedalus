@@ -12,7 +12,7 @@ Then add the following to your ``.bash_profile``::
 
   export BUILD_HOME=$HOME/build
 
-  export PATH=$BUILD_HOME/bin:$BUILD_HOME:/$PATH  # Add private commands to PATH                                                                                         
+  export PATH=$BUILD_HOME/bin:$BUILD_HOME:/$PATH  # Add private commands to PATH
   export LD_LIBRARY_PATH=$BUILD_HOME/lib:$LD_LIBRARY_PATH
 
   export CC=mpiicc
@@ -25,7 +25,7 @@ Then add the following to your ``.bash_profile``::
   export LOCAL_SCIPY_VERSION=0.17.0
   export LOCAL_HDF5_VERSION=1.8.16
   export LOCAL_MERCURIAL_VERSION=3.7.3
-  
+
   export PYTHONPATH=$BUILD_HOME/dedalus:$PYTHONPATH
   export MPI_PATH=$MPI_ROOT
   export FFTW_PATH=$BUILD_HOME
@@ -53,7 +53,7 @@ Create ``$BUILD_HOME`` and then proceed with downloading and installing Python-3
                          CPPFLAGS="-mkl -O3 -ipo -xCORE-AVX2 -fPIC" \
                          F90FLAGS="-mkl -O3 -ipo -xCORE-AVX2 -fPIC" \
                          CC=mpiicc  CXX=mpiicpc F90=mpiifort  \
-                         LDFLAGS="-lpthread" 
+                         LDFLAGS="-lpthread"
     make -j
     make install
 
@@ -153,7 +153,7 @@ Here's an automated way to do this, using :download:`numpy_intel.patch<numpy_int
      tar -xvf numpy-$LOCAL_NUMPY_VERSION.tar.gz
      cd numpy-$LOCAL_NUMPY_VERSION
      wget http://dedalus-project.readthedocs.org/en/latest/_downloads/numpy_intel.patch
-     patch -p1 < numpy_intel.patch 
+     patch -p1 < numpy_intel.patch
 
 We'll now need to make sure that ``numpy`` is building against the MKL
 libraries.  Start by making a ``site.cfg`` file::
@@ -165,7 +165,7 @@ libraries.  Start by making a ``site.cfg`` file::
      mkl_libs = mkl_rt
      lapack_libs =
      EOF
-  
+
 Then proceed with::
 
     python3 setup.py config --compiler=intelem build_clib --compiler=intelem build_ext --compiler=intelem install
@@ -254,13 +254,13 @@ recommendation we're falling back to gcc for this library::
 H5PY via pip
 -----------------------
 
-This can now just be pip installed (>=2.5.0)::
+This can now just be pip installed (>=2.6.0)::
 
      pip3 install h5py
 
 For now we drop our former instructions on attempting to install
 parallel h5py with collectives. See the NASA/Pleiades repo history for those notes.
-     
+
 Installing Mercurial
 ----------------------------------------------------
 Here we install mercurial itself.  Following NASA/Pleiades approaches,
@@ -295,14 +295,14 @@ Preliminaries
 ----------------------------------------
 
 Then do the following::
-  
+
      cd $BUILD_HOME
      hg clone https://bitbucket.org/dedalus-project/dedalus
      cd dedalus
      # this has some issues with mpi4py versioning --v
      pip3 install -r requirements.txt
      python3 setup.py build_ext --inplace
-     
+
 
 
 Running Dedalus on Bridges

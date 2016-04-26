@@ -16,7 +16,7 @@ Then add the following to your ``.profile``::
 
   export BUILD_HOME=$HOME/build
 
-  export PATH=$BUILD_HOME/bin:$BUILD_HOME:/$PATH  # Add private commands to PATH                                                                                         
+  export PATH=$BUILD_HOME/bin:$BUILD_HOME:/$PATH  # Add private commands to PATH
 
   export LD_LIBRARY_PATH=$BUILD_HOME/lib:$LD_LIBRARY_PATH
   export LD_LIBRARY_PATH=/nasa/openssl/1.0.1h/lib/:$LD_LIBRARY_PATH
@@ -52,8 +52,8 @@ Then add the following to your ``.profile``::
 
 
 
-Doing the entire build took about 2 hours.  This was with several (4) 
-open ssh connections to Pleaides to do poor-mans-parallel building 
+Doing the entire build took about 2 hours.  This was with several (4)
+open ssh connections to Pleaides to do poor-mans-parallel building
 (of python, hdf5, fftw, etc.), and one was on a dev node for the
 openmpi compile.  The openmpi compile is time intensive and mus be
 done first.  The fftw and hdf5 libraries take a while to build.
@@ -102,7 +102,7 @@ to be built on a compute node so that the right memory space is identified.::
     make -j
     make install
 
-These compilation options are based on ``/nasa/openmpi/1.6.5/NAS_config.sh``, 
+These compilation options are based on ``/nasa/openmpi/1.6.5/NAS_config.sh``,
 and are thanks to advice from Daniel Kokron at NAS.  Compiling takes
 about 10-15 minutes with make -j.
 
@@ -123,11 +123,11 @@ Create ``$BUILD_HOME`` and then proceed with downloading and installing Python-3
                          CC=mpicc CXX=mpicxx F90=mpif90 \
                          LDFLAGS="-lpthread" \
                          --enable-shared --with-system-ffi \
-                         --with-cxx-main=mpicxx --with-gcc=mpicc 
+                         --with-cxx-main=mpicxx --with-gcc=mpicc
 
     make
     make install
- 
+
 The previous intel patch is no longer required.
 
 
@@ -221,7 +221,7 @@ Now, acquire ``numpy`` (1.9.2)::
 
 This last step saves you from needing to hand edit two
 files in ``numpy/distutils``; these are ``intelccompiler.py`` and
-``fcompiler/intel.py``.  I've built a crude patch, :download:`numpy_pleiades_intel_patch.tar<numpy_pleiades_intel_patch.tar>` 
+``fcompiler/intel.py``.  I've built a crude patch, :download:`numpy_pleiades_intel_patch.tar<numpy_pleiades_intel_patch.tar>`
 which is auto-deployed within the ``numpy-$LOCAL_NUMPY_VERSION`` directory by
 the instructions above.  This will unpack and overwrite::
 
@@ -239,13 +239,13 @@ libraries.  Start by making a ``site.cfg`` file::
 
 .. note::
     If you're doing many different builds, it may be helpful to have
-    the numpy site.cfg shared between builds.  If so, you can edit 
+    the numpy site.cfg shared between builds.  If so, you can edit
     ~/.numpy-site.cfg instead of site.cfg.  This is per site.cfg.example.
 
 
 Edit ``site.cfg`` in the ``[mkl]`` section; modify the
 library directory so that it correctly point to TACC's
-``$MKLROOT/lib/intel64/``.  
+``$MKLROOT/lib/intel64/``.
 With the modules loaded above, this looks like::
 
      [mkl]
@@ -254,7 +254,7 @@ With the modules loaded above, this looks like::
      mkl_libs = mkl_rt
      lapack_libs =
 
-These are based on intels instructions for 
+These are based on intels instructions for
 `compiling numpy with ifort <http://software.intel.com/en-us/articles/numpyscipy-with-intel-mkl>`_
 and they seem to work so far.
 
@@ -344,7 +344,7 @@ needs to be compiled with support for parallel (mpi) I/O::
 H5PY via pip
 -----------------------
 
-This can now just be pip installed (>=2.5.0)::
+This can now just be pip installed (>=2.6.0)::
 
      pip3 install h5py
 
@@ -391,7 +391,7 @@ Then do the following::
      cd $BUILD_HOME
      hg clone https://bitbucket.org/dedalus-project/dedalus
      cd dedalus
-     pip3 install -r requirements.txt 
+     pip3 install -r requirements.txt
      python3 setup.py build_ext --inplace
 
 
