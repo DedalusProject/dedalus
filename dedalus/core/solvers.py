@@ -166,9 +166,14 @@ class LinearBoundaryValueSolver:
         for p in self.pencils:
             pFe = self.Fe.get_pencil(p)
             pFb = self.Fb.get_pencil(p)
-            A = p.L
-            b = p.G_eq * pFe + p.G_bc * pFb
+            A = p.L_exp
+            if p.G_bc is None:
+                b = p.G_eq * pFe
+            else:
+                b = p.G_eq * pFe + p.G_bc * pFb
             x = linalg.spsolve(A, b, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
+            if p.dirichlet:
+                x = p.JD * x
             self.state.set_pencil(p, x)
         self.state.scatter()
 
