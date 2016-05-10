@@ -14,6 +14,8 @@ The notebooks cover the basics of setting up and interacting with the primary fa
 
 * `Tutorial 3: Problems and Solvers <http://nbviewer.ipython.org/urls/bitbucket.org/dedalus-project/dedalus/raw/tip/docs/notebooks/dedalus_tutorial_problems_solvers.ipynb>`_
 
+* `Tutorial 4: Analysis and Post-processing <http://nbviewer.ipython.org/urls/bitbucket.org/dedalus-project/dedalus/raw/tip/docs/notebooks/dedalus_tutorial_analysis_postprocessing.ipynb>`_
+
 Example Notebooks
 =================
 
