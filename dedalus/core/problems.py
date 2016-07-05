@@ -51,9 +51,13 @@ class Namespace(OrderedDict):
         """Parse substitutions in current namespace before adding to self."""
         for call, result in substitutions.items():
             # Convert function calls to lambda expressions
-            head, func = parsing.lambdify_functions(call, result)
+            head, sub_str = parsing.lambdify_functions(call, result)
             # Evaluate in current namespace
-            self[head] = eval(func, self)
+            self[head] = sub = eval(sub_str, self)
+            # Enable output caching for expression substitutions
+            # Avoids some deadlocking issues when evaluating redundant subtrees
+            if isinstance(sub, future.FutureField):
+                sub.store_last = True
 
 
 class ProblemBase:
@@ -209,7 +213,7 @@ class ProblemBase:
         evaluated_expr = expr.evaluate()
         max_val = np.max(np.abs(evaluated_expr['g']))
         max_param = self._find_max_param(params = expr.atoms())
-       
+
         #Compare the max value across ALL processors to make sure that everyone agrees.
         global_max = self.domain.dist.comm.allreduce(max_val, op=MPI.MAX)
         homogeneous = (global_max <= max_param*self.tol)
@@ -491,7 +495,7 @@ class EigenvalueProblem(ProblemBase):
         List of variable names, e.g. ['u', 'v', 'w']
     eigenvalue : str
         Eigenvalue label, e.g. 'sigma' WARNING: 'lambda' is a python reserved word.
-        You *cannot* use it as your eigenvalue. Also, note that unicode symbols 
+        You *cannot* use it as your eigenvalue. Also, note that unicode symbols
         don't work on all machines.
     tolerance : float
         A floating point number (>= 0) which helps 'define' zero for the RHS of the equation.
