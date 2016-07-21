@@ -284,8 +284,41 @@ function host_specific
             export MPI_LIBRARY_PATH="/usr/lib64/openmpi/lib/"
         echo
     fi
+    if [ -f /etc/debian_version ]
+    then
+        echo "Looks like you're on a Debian-compatible machine."
+        echo
+        echo "You need to have these packages installed:"
+        echo
+        echo "  * libatlas-base-dev"
+        echo "  * mercurial"
+        echo "  * libatlas3-base"
+        echo "  * libopenmpi-dev"
+        echo "  * openmpi-bin"
+        echo "  * libssl-dev"
+        echo "  * build-essential"
+        echo "  * libncurses5"
+        echo "  * libncurses5-dev"
+        echo "  * zip"
+        echo "  * uuid-dev"
+        echo "  * libfreetype6-dev"
+        echo "  * tk-dev"
+        echo "  * libhdf5-dev"
+        echo "  * libzmq-dev"
+        echo "  * libsqlite3-dev"
+        echo "  * gfortran"
+        echo
+        echo "You can accomplish this by executing:"
+        echo
+        echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev mercurial libzmq-dev libsqlite3-dev gfortran"
+        echo
+        echo
+        echo "Currently, all versions of Debian need a newer version OpenMPI. We'll build our own."
+        INST_OPENMPI=1
+    fi
     if [ -f /etc/lsb-release ] && [ `grep --count buntu /etc/lsb-release` -gt 0 ]
     then
+        UBUNTU_VERSION=`lsb_release -r | cut -f 2 | sed -s 's/\([0-9]\+\)\.\([0-9]\+\)/\1/'`
         echo "Looks like you're on an Ubuntu-compatible machine."
         echo
         echo "You need to have these packages installed:"
@@ -313,6 +346,10 @@ function host_specific
         echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev mercurial libzmq-dev libsqlite3-dev gfortran"
         echo
         echo
+        if [ $UBUNTU_VERSION -lt 16 ] then
+           echo "Your version of Ubuntu needs a newer version OpenMPI. We'll build our own."
+           INST_OPENMPI=1
+        fi
         BLAS="/usr/lib/"
         LAPACK="/usr/lib/"
     fi
@@ -384,11 +421,11 @@ mkdir -p ${DEST_DIR}/src
 cd ${DEST_DIR}/src
 
 ## Packages to install from source
-PYTHON='Python-3.4.1'
+PYTHON='Python-3.5.1'
 FFTW='fftw-3.3.4'
-NUMPY='numpy-1.8.1'
+NUMPY='numpy-1.11.0'
 SCIPY='scipy-0.14.0'
-OPENMPI='openmpi-1.6.5'
+OPENMPI='openmpi-1.10.1'
 HDF5='hdf5-1.8.13'
 FTYPE='freetype-2.5.3'
 MATPLOTLIB='matplotlib-1.4.3'
@@ -399,7 +436,7 @@ ZLIB='zlib-1.2.8'
 
 # dump sha512 to files
 printf -v PYFILE "%s.tgz.sha512" $PYTHON
-printf -v PYSHA "43adbef25e1b7a7a0be86231d4aa131d5aa3efd5608f572b3b0878520cd27054cc7993726f7ba4b5c878e0c4247fb443f367e0a786dec9fbfa7a25d67427f107  %s" ${PYFILE%.sha512}
+printf -v PYSHA "73f1477f3d3f5bd978c4ea1d1b679467b45e9fd2f443287b88c5c107a9ced580c56e0e8f33acea84e06b11a252e2a4e733120b721a9b6e1bb3d34493a3353bfb  %s" ${PYFILE%.sha512}
 echo "$PYSHA" > $PYFILE
 
 printf -v FFTFILE "%s.tar.gz.sha512" $FFTW
@@ -407,7 +444,7 @@ printf -v FFTSHA "1ee2c7bec3657f6846e63c6dfa71410563830d2b951966bf0123bd8f4f2f5d
 echo "$FFTSHA" > $FFTFILE
 
 printf -v NPFILE "%s.tar.gz.sha512" $NUMPY
-printf -v NPSHA "39ef9e13f8681a2c2ba3d74ab96fd28c5669e653308fd1549f262921814fa7c276ce6d9fb65ef135006584c608bdf3db198d43f66c9286fc7b3c79803dbc1f57  %s" ${NPFILE%.sha512}
+printf -v NPSHA "e3358b7b432bda76dedaad633319b2e242b187f91b3357574dbde2c4f5f8684a840e274e505b098ffd324f0dafa386939ef30b50fa89d6d901bf8e830fa47733  %s" ${NPFILE%.sha512}
 echo "$NPSHA" > $NPFILE
 
 printf -v SPFILE "%s.tar.gz.sha512" $SCIPY
@@ -415,7 +452,7 @@ printf -v SPSHA "ad1278740c1dc44c5e1b15335d61c4552b66c0439325ed6eeebc5872a1c0ba3
 echo "$SPSHA" > $SPFILE
 
 printf -v MPIFILE "%s.tar.gz.sha512" $OPENMPI
-printf -v MPISHA "3fe661bef30654c62bbb94bc8a2e132194131906913f2576bda56ec85c2b83e0dd7e864664dca1a8ec62fc6f8308edd18d8d1296c7d778a69ecb28be789bf499  %s" ${MPIFILE%.sha512}
+printf -v MPISHA "9bac61e8cd2ddcca02d7053b7177d0d494eed43e1040d1532ab47eefb9bd14cdf7863a6460ccb859d98ab38458c03c240864084c41508a4743a986d2e95fb059  %s" ${MPIFILE%.sha512}
 echo "$MPISHA" > $MPIFILE
 
 printf -v HDF5FILE "%s.tar.gz.sha512" $HDF5
@@ -476,7 +513,6 @@ then
         cd ..
     fi
     OPENMPI_DIR=${DEST_DIR}
-    export LDFLAGS="${LDFLAGS} -L${OPENMPI_DIR}/lib/ -L${OPENMPI_DIR}/lib64/"
     LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${OPENMPI_DIR}/lib/"
     PATH="${OPENMPI_DIR}/bin:${PATH}"
     export MPI_PATH=${OPENMPI_DIR}
@@ -650,6 +686,10 @@ then
 fi
 # if !OSX ATLAS/OpenBLAS
 
+# cython
+echo "pip installing cython."
+( ${DEST_DIR}/bin/pip3 install cython 2>&1 ) 1>> ${LOG_FILE} || do_exit
+
 # numpy
 # scipy
 if [ ! -e $SCIPY/done ]
@@ -677,10 +717,6 @@ echo "pip installing nose."
 # mpi4py
 echo "pip installing mpi4py."
 ( ${DEST_DIR}/bin/pip3 install mpi4py 2>&1 ) 1>> ${LOG_FILE} || do_exit
-
-# cython
-echo "pip installing cython."
-( ${DEST_DIR}/bin/pip3 install cython 2>&1 ) 1>> ${LOG_FILE} || do_exit
 
 # h5py
 echo "pip installing h5py."
@@ -715,7 +751,7 @@ EOF
 
 else
     echo "pip installing matplotlib."
-    ( ${DEST_DIR}/bin/pip3 install matplotlib==1.3.1 2>&1 ) 1>> ${LOG_FILE} || do_exit
+    ( ${DEST_DIR}/bin/pip3 install matplotlib 2>&1 ) 1>> ${LOG_FILE} || do_exit
 fi
 
 # ipython
