@@ -346,7 +346,8 @@ function host_specific
         echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev mercurial libzmq-dev libsqlite3-dev gfortran"
         echo
         echo
-        if [ $UBUNTU_VERSION -lt 16 ] then
+        if [ $UBUNTU_VERSION -lt 16 ] 
+        then
            echo "Your version of Ubuntu needs a newer version OpenMPI. We'll build our own."
            INST_OPENMPI=1
         fi
