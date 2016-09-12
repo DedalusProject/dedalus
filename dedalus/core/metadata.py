@@ -10,8 +10,7 @@ class AliasDict(OrderedDict):
         self.aliases = {}
 
     def __getitem__(self, key):
-        if key not in self:
-            key = self.aliases[key]
+        key = self.aliases.get(key, key)
         return super().__getitem__(key)
 
 
@@ -25,9 +24,10 @@ class MultiDict(AliasDict):
 
     def __getitem__(self, key):
         if key == slice(None):
-            key = tuple(i for i in self)
+            key = tuple(self.keys())
         if isinstance(key, tuple):
-            return DictGroup(*(self[item] for item in key))
+            sup = super()
+            return DictGroup(*[sup.__getitem__(item) for item in key])
         else:
             return super().__getitem__(key)
 
@@ -53,9 +53,9 @@ class DictGroup:
 
     def __getitem__(self, key):
         if isinstance(key, tuple):
-            return DictGroup(*(dct[item] for dct in self.dicts for item in key))
+            return DictGroup(*[dct[item] for dct in self.dicts for item in key])
         else:
-            return DictGroup(*(dct[key] for dct in self.dicts))
+            return DictGroup(*[dct[key] for dct in self.dicts])
 
     def __setitem__(self, key, value):
         for dct in self.dicts:
