@@ -109,7 +109,7 @@ try:
     start_time = time.time()
     while solver.ok:
         dt = CFL.compute_dt()
-        dt = solver.step(dt, trim=True)
+        dt = solver.step(dt)
         if (solver.iteration-1) % 10 == 0:
             logger.info('Iteration: %i, Time: %e, dt: %e' %(solver.iteration, solver.sim_time, dt))
             logger.info('Max Re = %f' %flow.max('Re'))
