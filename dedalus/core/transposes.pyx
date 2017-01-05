@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__.split('.')[-1])
 
 from mpi4py import MPI
 from mpi4py.MPI cimport Comm as py_comm_t
-from mpi4py.mpi_c cimport MPI_Comm as mpi_comm_t
+from mpi4py.libmpi cimport MPI_Comm as mpi_comm_t
 from libc.stddef cimport ptrdiff_t as p_t
 
 from ..libraries.fftw import fftw_wrappers as fftw

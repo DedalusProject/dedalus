@@ -4,6 +4,7 @@ Tools for emulating multiple dispatch.
 """
 
 from .cache import CachedClass
+from .exceptions import SkipDispatchException
 
 
 class MultiClass(type):
@@ -21,7 +22,10 @@ class MultiClass(type):
                 raise TypeError("Provided types do not pass dispatch check.")
 
         # Preprocess arguments and keywords
-        args, kw = cls._preprocess_args(*args, **kw)
+        try:
+            args, kw = cls._preprocess_args(*args, **kw)
+        except SkipDispatchException as exception:
+            return exception.output
 
         # Find applicable subclasses
         passlist = []

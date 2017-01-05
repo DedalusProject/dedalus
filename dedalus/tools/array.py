@@ -35,16 +35,17 @@ def reshape_vector(data, dim=2, axis=-1):
     return data.reshape(shape)
 
 
-def axslice(axis, start, stop, step=None):
-    """Slice array along a specified axis."""
-
+def axindex(axis, index):
+    """Index array along specified axis."""
     if axis < 0:
         raise ValueError("`axis` must be positive")
+    # Add empty slices for leading axes
+    return (slice(None),)*axis + (index,)
 
-    slicelist = [slice(None)] * axis
-    slicelist.append(slice(start, stop, step))
 
-    return slicelist
+def axslice(axis, start, stop, step=None):
+    """Slice array along a specified axis."""
+    return axindex(axis, slice(start, stop, step))
 
 
 def zeros_with_pattern(*args):

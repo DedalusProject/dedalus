@@ -5,7 +5,7 @@ Classes for future evaluation.
 
 from functools import partial
 
-from .field import Operand, Data, Array, Field
+from .field import Operand, Array, Field
 from .domain import Subdomain
 from ..tools.general import OrderedSet, unify_attributes
 from ..tools.cache import CachedAttribute, CachedMethod
@@ -34,32 +34,24 @@ class Future(Operand):
 
     """
 
-    arity = None
-    __array_priority__ = 100.
     store_last = False
 
     def __init__(self, *args, out=None):
-
-        # Check arity
-        if self.arity is not None:
-            if len(args) != self.arity:
-                raise ValueError("Wrong number of arguments.")
-        # Required attributes
+        # Check output consistency
+        if out is not None:
+            if out.bases != self.bases:
+                raise ValueError("Output field has wrong bases.")
+        # Attributes
         self.args = list(args)
-        self.original_args = list(args)
+        self.original_args = tuple(args)
+        self.out = out
         self.bases = self._build_bases(*args)
         self.domain = unify_attributes(args, 'domain', require=False)
         self.subdomain = Subdomain.from_bases(self.domain, self.bases)
         self._grid_layout = self.domain.dist.grid_layout
         self._coeff_layout = self.domain.dist.coeff_layout
-        self.out = out
-        self.kw = {}
         self.last_id = None
         self.scales = self.subdomain.dealias
-
-    def reset(self):
-        """Restore original arguments."""
-        self.args = list(self.original_args)
 
     def __repr__(self):
         repr_args = map(repr, self.args)
@@ -69,35 +61,76 @@ class Future(Operand):
         str_args = map(str, self.args)
         return '{}({})'.format(self.name, ', '.join(str_args))
 
-    def atoms(self, *types, include_out=False):
-        """"""
+    def __eq__(self, other):
+        # Require same class and arguments
+        if type(other) is type(self):
+            return self.args == other.args
+        else:
+            return NotImplemented
+
+    def __ne__(self, other):
+        # Negate equality test
+        if type(other) is type(self):
+            return not self.__eq__(other)
+        else:
+            return NotImplemented
+
+    def _build_bases(self, *args):
+        """Build output bases."""
+        raise NotImplementedError()
+
+    @property
+    def name(self):
+        return self.base.__name__
+
+    def reset(self):
+        """Restore original arguments."""
+        self.args = list(self.original_args)
+
+    def atoms(self, *types):
+        """Gather all leaf-operands of specified types."""
         atoms = OrderedSet()
         # Recursively collect atoms
         for arg in self.args:
-            if isinstance(arg, (Data, Future)):
-                atoms.update(arg.atoms(*types, include_out=include_out))
-        # Include output as directed
-        if include_out:
-            if isinstance(self.out, types):
-                atoms.add(self.out)
-
+            if isinstance(arg, Operand):
+                atoms.update(arg.atoms(*types))
         return atoms
 
-    def has(self, *atoms):
-        hasself = type(self) in atoms
-        hasargs = any((a in self.atoms() for a in atoms))
-        return hasself or hasargs
+    def has(self, *vars):
+        """Determine if tree contains any specified operands/operators."""
+        # Check for matching operator
+        if self.base in vars:
+            return True
+        # Check arguments
+        else:
+            return any(arg.has(*vars) for arg in self.args if isinstance(arg, Operand))
 
     def replace(self, old, new):
-        """Replace an object in the expression tree."""
+        """Replace specified operand/operator."""
+        # Check for entire expression match
         if self == old:
             return new
+        # Check base and call with replaced arguments
         elif self.base == old:
-            args = [arg.replace(old, new) for arg in self.args]
-            return new(*args, **self.kw)
+            args = [arg.replace(old, new) if isinstance(arg, Operand) else arg for arg in self.args]
+            return new(*args)
+        # Call with replaced arguments
         else:
-            args = [arg.replace(old, new) for arg in self.args]
-            return self.base(*args, **self.kw)
+            args = [arg.replace(old, new) if isinstance(arg, Operand) else arg for arg in self.args]
+            return self.base(*args)
+
+    # def simplify(self, *vars):
+    #     """Simplify expression, except subtrees containing specified variables."""
+    #     # Simplify arguments if variables are present
+    #     if self.has(*vars):
+    #         args = [arg.simplify(*vars) if isinstance(arg, Operand) else arg for arg in self.args]
+    #         return self.base(*args)
+    #     # Otherwise evaluate expression
+    #     else:
+    #         return self.evaluate()
+
+
+
 
     def evaluate(self, id=None, force=True):
         """Recursively evaluate operation."""
@@ -170,10 +203,14 @@ class Future(Operand):
         return self.evaluate(id=id, force=False)
 
     def check_conditions(self):
-        """Check that all argument fields are in proper layouts."""
+        """Check that arguments are in a proper layout."""
         # This method must be implemented in derived classes and should return
         # a boolean indicating whether the operation can be computed without
         # changing the layout of any of the field arguments.
+        raise NotImplementedError()
+
+    def enforce_conditions(self):
+        """Require arguments to be in a proper layout."""
         raise NotImplementedError()
 
     def operate(self, out):
@@ -183,10 +220,13 @@ class Future(Operand):
         # field without modifying the data of the arguments.
         raise NotImplementedError()
 
-    @CachedMethod(max_size=1)
-    def as_ncc_matrix(self,*args, **kw):
-        ncc = self.evaluate()
-        return ncc.as_ncc_matrix(*args, name=str(self), **kw)
+    # def order(self, *ops):
+    #     order = max(arg.order(*ops) for arg in self.args)
+    #     if type(self) in ops:
+    #         order += 1
+    #     return order
+
+
 
 
 class FutureArray(Future):

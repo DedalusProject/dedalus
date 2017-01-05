@@ -272,18 +272,18 @@ class ScipyDCT(PolynomialTransform):
         np.copyto(self.gdata_reduced, temp)
 
 
-@register_transform(basis.ChebyshevT, 'scipy')
-class ScipyChebyshevTTransform(ScipyDCT):
+# @register_transform(basis.ChebyshevT, 'scipy')
+# class ScipyChebyshevTTransform(ScipyDCT):
 
-    def forward_reduced(self):
-        super().forward_reduced()
-        # Negate odd modes for natural grid ordering
-        self.cdata_reduced[:, 1::2, :] *= -1
+#     def forward_reduced(self):
+#         super().forward_reduced()
+#         # Negate odd modes for natural grid ordering
+#         self.cdata_reduced[:, 1::2, :] *= -1
 
-    def backward_reduced(self):
-        # Negate odd modes for natural grid ordering
-        self.cdata_reduced[:, 1::2, :] *= -1
-        super().backward_reduced()
+#     def backward_reduced(self):
+#         # Negate odd modes for natural grid ordering
+#         self.cdata_reduced[:, 1::2, :] *= -1
+#         super().backward_reduced()
 
 
 # class FFTWCosine:
@@ -322,10 +322,10 @@ class ScipyRFFT(PolynomialTransform):
         # RFFT
         temp = fftpack.rfft(self.gdata_reduced, axis=1)
         # Rescale as sinusoid amplitudes
-        scaling = np.ones([1, self.N1G, 1]) / self.N1G
+        scaling = np.ones(self.N1G) / self.N1G
         scaling[1:-1] *= 2
         scaling[2::2] *= -1
-        temp *= scaling
+        temp *= scaling[None, :, None]
         # Resize
         self.resize_reduced(temp, self.cdata_reduced)
 
@@ -333,10 +333,10 @@ class ScipyRFFT(PolynomialTransform):
         # Resize into gdata for memory efficiency
         self.resize_reduced(self.cdata_reduced, self.gdata_reduced)
         # Rescale from sinusoid amplitudes
-        scaling = np.ones([1, self.N1G, 1]) / self.N1G
+        scaling = np.ones(self.N1G) / self.N1G
         scaling[1:-1] *= 2
         scaling[2::2] *= -1
-        self.gdata_reduced *= 1 / scaling
+        self.gdata_reduced *= 1 / scaling[None, :, None]
         # IRFFT
         temp = fftpack.irfft(self.gdata_reduced, axis=1)
         np.copyto(self.gdata_reduced, temp)

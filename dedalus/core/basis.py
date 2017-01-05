@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__.split('.')[-1])
 from ..tools.config import config
 DEFAULT_LIBRARY = config['transforms'].get('DEFAULT_LIBRARY')
 
+DEFAULT_LIBRARY = 'scipy'
 
 class Basis:
     """Base class for spectral bases."""
@@ -87,9 +88,9 @@ class Basis:
     def modes(self):
         return np.arange(self.space.coeff_size)[self.inclusion_flags]
 
-    @CachedAttribute
-    def n_modes(self):
-        return self.modes.size
+    # @CachedAttribute
+    # def n_modes(self):
+    #     return self.modes.size
 
     def mode_map(self, group):
         flags = self.inclusion_flags
@@ -136,35 +137,35 @@ class Jacobi(Basis, metaclass=CachedClass):
         self.b = space.b + db
         self.const = 1 / np.sqrt(jacobi.mass(self.a, self.b))
 
-    def include_mode(self, mode):
-        return (0 <= mode < self.space.coeff_size)
-
     def __str__(self):
         space = self.space
         cls = self.__class__
         return '%s.%s(%s,%s)' %(space.name, cls.__name__, self.a, self.b)
 
-    def __add__(self, other_basis):
-        if other_basis is None:
+    def __add__(self, other):
+        if other is None:
             return self
-        elif self.space == other_basis.space:
+        elif self.space is other.space:
             # Add in highest {a,b} basis
-            da = max(self.da, other_basis.da)
-            db = max(self.db, other_basis.db)
+            da = max(self.da, other.da)
+            db = max(self.db, other.db)
             return Jacobi(self.space, da, db)
         else:
             return NotImplemented
 
-    def __mul__(self, other_basis):
-        if other_basis is None:
+    def __mul__(self, other):
+        if other is None:
             return self
-        elif self.space == other_basis.space:
+        elif self.space is other.space:
             # Put product in highest {a,b} basis
-            da = max(self.da, other_basis.da)
-            db = max(self.db, other_basis.db)
+            da = max(self.da, other.da)
+            db = max(self.db, other.db)
             return Jacobi(self.space, da, db)
         else:
             return NotImplemented
+
+    def include_mode(self, mode):
+        return (0 <= mode < self.space.coeff_size)
 
     def ncc_matrix(self, arg_basis, coeffs):
         """Build NCC matrix via Clenshaw algorithm."""
@@ -180,18 +181,19 @@ class Jacobi(Basis, metaclass=CachedClass):
         # Conversion matrix
         input_basis = arg_basis
         output_basis = (self * arg_basis)
-        conversion = ConvertJacobiJacobi._build_subspace_matrix(self.space, input_basis, output_basis)
+        conversion = ConvertJacobiJacobi._subspace_matrix(self.space, input_basis, output_basis)
         return (conversion @ total)
 
 
 class ConvertJacobiJacobi(operators.Convert):
+    """Jacobi polynomial conversion."""
 
     input_basis_type = Jacobi
     output_basis_type = Jacobi
     separable = False
 
     @staticmethod
-    def _build_subspace_matrix(space, input_basis, output_basis):
+    def _subspace_matrix(space, input_basis, output_basis):
         N = space.coeff_size
         a0, b0 = input_basis.a, input_basis.b
         a1, b1 = output_basis.a, output_basis.b
@@ -200,6 +202,7 @@ class ConvertJacobiJacobi(operators.Convert):
 
 
 class DifferentiateJacobi(operators.Differentiate):
+    """Jacobi polynomial differentiation."""
 
     input_basis_type = Jacobi
     separable = False
@@ -210,7 +213,7 @@ class DifferentiateJacobi(operators.Differentiate):
         return Jacobi(space, da+1, db+1)
 
     @staticmethod
-    def _build_subspace_matrix(space, input_basis):
+    def _subspace_matrix(space, input_basis):
         N = space.coeff_size
         a, b = input_basis.a, input_basis.b
         matrix = jacobi.differentiation_matrix(N, a, b)
@@ -218,11 +221,12 @@ class DifferentiateJacobi(operators.Differentiate):
 
 
 class InterpolateJacobi(operators.Interpolate):
+    """Jacobi polynomial interpolation."""
 
     input_basis_type = Jacobi
 
     @staticmethod
-    def _build_subspace_matrix(space, input_basis, position):
+    def _subspace_matrix(space, input_basis, position):
         N = space.coeff_size
         a, b = input_basis.a, input_basis.b
         x = space.COV.native_coord(position)
@@ -230,233 +234,22 @@ class InterpolateJacobi(operators.Interpolate):
 
 
 class IntegrateJacobi(operators.Integrate):
+    """Jacobi polynomial integration."""
 
     input_basis_type = Jacobi
 
     @staticmethod
-    def _build_subspace_matrix(space, input_basis):
+    def _subspace_matrix(space, input_basis):
         N = space.coeff_size
         a, b = input_basis.a, input_basis.b
         vector = jacobi.integration_vector(N, a, b)
         return (vector * space.COV.stretch)
 
 
-class ChebyshevT(Basis, metaclass=CachedClass):
-    """Chebyshev-T polynomial basis."""
-
-    element_label = 'T'
-
-    def include_mode(self, mode):
-        return (0 <= mode < self.space.coeff_size)
-
-    def __add__(self, other):
-        space = self.space
-        if other is None:
-            return space.ChebyshevT
-        elif other is space.ChebyshevT:
-            return space.ChebyshevT
-        elif other is space.ChebyshevU:
-            return space.ChebyshevU
-        else:
-            return NotImplemented
-
-    def __mul__(self, other):
-        space = self.space
-        if other is None:
-            return space.ChebyshevT
-        elif other is space.ChebyshevT:
-            return space.ChebyshevT
-        elif other is space.ChebyshevU:
-            return space.ChebyshevT
-        else:
-            return NotImplemented
-
-    def __pow__(self, other):
-        return self.space.ChebyshevT
-
-    def Multiply(self, p, basis):
-        """p-element multiplication matrix"""
-        size = self.space.coeff_size
-        # Construct sparse matrix
-        if basis is None:
-            Mult = sparse.lil_matrix((size, 1), dtype=self.space.domain.dtype)
-            Mult[p, 0] = 1
-        elif basis is self.space.ChebyshevT:
-            # T[p] * T[n] = (T[n+p] + T[n-p]) / 2
-            # T[-n] = T[n]
-            Mult = sparse.lil_matrix((size, size), dtype=self.space.domain.dtype)
-            for n in range(size):
-                if (p+n) < size:
-                    Mult[p+n, n] += 0.5
-                if (p-n) < 0:
-                    Mult[n-p, n] -= 0.5
-                else:
-                    Mult[p-n, n] += 0.5
-        else:
-            raise TypeError()
-        return Mult.tocsr()
-
-
-class ChebyshevU(Basis, metaclass=CachedClass):
-    """Chebyshev-U polynomial basis."""
-
-    element_label = 'U'
-
-    def include_mode(self, mode):
-        return (0 <= mode < self.space.coeff_size)
-
-    def __add__(self, other):
-        space = self.space
-        if other is None:
-            return space.ChebyshevU
-        elif other is space.ChebyshevU:
-            return space.ChebyshevU
-        elif other is space.ChebyshevT:
-            return space.ChebyshevU
-        else:
-            return NotImplemented
-
-    def __mul__(self, other):
-        space = self.space
-        if other is None:
-            return space.ChebyshevU
-        elif other is space.ChebyshevU:
-            return space.ChebyshevT
-        elif other is space.ChebyshevT:
-            return space.ChebyshevU
-        else:
-            return NotImplemented
-
-    def __pow__(self, other):
-        return self.space.ChebyshevT
-
-    def Multiply(self, p, basis):
-        """p-element multiplication matrix"""
-        size = self.space.coeff_size
-        # Construct sparse matrix
-        if basis is None:
-            Mult = sparse.lil_matrix((size, 1), dtype=self.space.domain.dtype)
-            Mult[p, 0] = 1
-        elif basis is self.space.ChebyshevT:
-            # U[p] * T[n] = (U[p+n] + U[p-n]) / 2
-            # U[-n] = -U[n-2]
-            Mult = sparse.lil_matrix((size, size), dtype=self.space.domain.dtype)
-            for n in range(size):
-                if (p+n) < size:
-                    Mult[p+n, n] += 0.5
-                if (p-n) < 0:
-                    Mult[n-p-2, n] -= 0.5
-                else:
-                    Mult[p-n, n] += 0.5
-        else:
-            raise TypeError()
-        return Mult.tocsr()
-
-
-class InterpolateChebyshevT(operators.Interpolate):
-
-    input_basis_type = ChebyshevT
-
-    @classmethod
-    def entry(cls, j, space, position):
-        """Tn(x) = cos(n*acos(x))"""
-        x = space.COV.native_coord(position)
-        theta = math.acos(x)
-        return math.cos(j*theta)
-
-
-class InterpolateChebyshevU(operators.Interpolate):
-
-    input_basis_type = ChebyshevU
-
-    @classmethod
-    def entry(cls, j, space, position):
-        """Un(x) = sin((n+1)*acos(x)) / sin(acos(x))"""
-        x = space.COV.native_coord(position)
-        theta = math.acos(x)
-        if theta == 0:
-            return (j + 1)
-        elif theta == np.pi:
-            return (j + 1) * (-1)**j
-        else:
-            return math.sin((j+1)*theta) / math.sin(theta)
-
-
-class IntegrateChebyshevT(operators.Integrate):
-
-    input_basis_type = ChebyshevT
-
-    @classmethod
-    def entry(cls, j, space):
-        """Integral(T_n(x), -1, 1) = (1 + (-1)**n) / (1 - n**2)"""
-        if (j % 2):
-            return 0
-        else:
-            return 2 / (1 - j**2) * space.COV.stretch
-
-
-class IntegrateChebyshevU(operators.Integrate):
-
-    input_basis_type = ChebyshevU
-
-    @classmethod
-    def entry(cls, j, space):
-        """Integral(U_n(x), -1, 1) = (1 + (-1)**n) / (1 + n)"""
-        if (j % 2):
-            return 0
-        else:
-            return 2 / (1 + j) * space.COV.stretch
-
-
-class DifferentiateChebyshevT(operators.Differentiate):
-
-    input_basis_type = ChebyshevT
-    output_basis_type = ChebyshevU
-    bands = [0, 1, 2]
-    separable = False
-
-    @classmethod
-    def entry(cls, i, j, space):
-        """dx(T_n) = n * U_{n-1}"""
-        if i == (j - 1):
-            return j / space.COV.stretch
-        else:
-            return 0
-
-
-class ConvertChebyshevTChebyshevU(operators.Convert):
-
-    input_basis_type = ChebyshevT
-    output_basis_type = ChebyshevU
-    bands = [0, 2]
-    separable = False
-
-    @classmethod
-    def entry(cls, i, j, space, basis):
-        """
-        T_n = (U_n - U_(n-2)) / 2
-        U_(-n) = -U_(n-2)
-        """
-        if i == j:
-            if j == 0:
-                return 1
-            else:
-                return 0.5
-        elif i == (j - 2):
-            return -0.5
-
-
 class Fourier(Basis, metaclass=CachedClass):
-    """Fourier sine/cosine series basis."""
+    """Fourier cosine/sine series basis."""
 
-    element_label= 'k'
-
-    def include_mode(self, mode):
-        if mode == 1:
-            return False
-        else:
-            k = mode // 2
-            return (0 <= k <= self.space.kmax)
+    const = 1
 
     def __add__(self, other):
         space = self.space
@@ -479,17 +272,25 @@ class Fourier(Basis, metaclass=CachedClass):
     def __pow__(self, other):
         return self.space.Fourier
 
+    def include_mode(self, mode):
+        k = mode // 2
+        if (mode % 2) == 0:
+            # Cosine modes: drop Nyquist mode
+            return (0 <= k <= self.space.kmax)
+        else:
+            # Sine modes: drop k=0 and Nyquist mode
+            return (1 <= k <= self.space.kmax)
+
 
 class InterpolateFourier(operators.Interpolate):
+    """Fourier series interpolation."""
 
     input_basis_type = Fourier
 
-    @classmethod
-    def entry(cls, j, space, position):
-        """
-        cos(n*x)
-        sin(n*x)
-        """
+    @staticmethod
+    def _build_subspace_entry(j, space, input_basis, position):
+        # cos(n*x)
+        # sin(n*x)
         n = j // 2
         x = space.COV.native_coord(position)
         if (j % 2) == 0:
@@ -499,15 +300,14 @@ class InterpolateFourier(operators.Interpolate):
 
 
 class IntegrateFourier(operators.Integrate):
+    """Fourier series integration."""
 
     input_basis_type = Fourier
 
-    @classmethod
-    def entry(cls, j, space):
-        """
-        Integral(cos(n*x), 0, 2*pi) = 2 * pi * δ(n, 0)
-        Integral(sin(n*x), 0, 2*pi) = 0
-        """
+    @staticmethod
+    def _build_subspace_entry(j, space, input_basis):
+        # integral(cos(n*x), 0, 2*pi) = 2 * pi * δ(n, 0)
+        # integral(sin(n*x), 0, 2*pi) = 0
         if j == 0:
             return 2 * np.pi * space.COV.stretch
         else:
@@ -515,18 +315,20 @@ class IntegrateFourier(operators.Integrate):
 
 
 class DifferentiateFourier(operators.Differentiate):
+    """Fourier series differentiation."""
 
     input_basis_type = Fourier
-    output_basis_type = Fourier
     bands = [-1, 1]
     separable = True
 
-    @classmethod
-    def entry(cls, i, j, space):
-        """
-        dx(cos(n*x)) = -n*sin(n*x)
-        dx(sin(n*x)) = n*cos(n*x)
-        """
+    @staticmethod
+    def output_basis(space, input_basis):
+        return space.Fourier
+
+    @staticmethod
+    def _build_subspace_entry(i, j, space, input_basis):
+        # dx(cos(n*x)) = -n*sin(n*x)
+        # dx(sin(n*x)) = n*cos(n*x)
         n = j // 2
         if n == 0:
             return 0
@@ -545,29 +347,31 @@ class DifferentiateFourier(operators.Differentiate):
 
 
 class HilbertTransformFourier(operators.HilbertTransform):
+    """Fourier series Hilbert transform."""
 
     input_basis_type = Fourier
-    output_basis_type = Fourier
     bands = [-1, 1]
     separable = True
 
-    @classmethod
-    def entry(cls, i, j, space):
-        """
-        Hx(cos(n*x)) = sin(n*x)
-        Hx(sin(n*x)) = -cos(n*x)
-        """
+    @staticmethod
+    def output_basis(space, input_basis):
+        return space.Fourier
+
+    @staticmethod
+    def _build_subspace_entry(i, j, space, input_basis):
+        # Hx(cos(n*x)) = sin(n*x)
+        # Hx(sin(n*x)) = -cos(n*x)
         n = j // 2
         if n == 0:
             return 0
         elif (j % 2) == 0:
-            # dx(cos(n*x)) = -n*sin(n*x)
+            # Hx(cos(n*x)) = sin(n*x)
             if i == (j + 1):
                 return 1
             else:
                 return 0
         else:
-            # dx(sin(n*x)) = n*cos(n*x)
+            # Hx(sin(n*x)) = -cos(n*x)
             if i == (j - 1):
                 return (-1)
             else:
@@ -577,11 +381,7 @@ class HilbertTransformFourier(operators.HilbertTransform):
 class Sine(Basis, metaclass=CachedClass):
     """Sine series basis."""
 
-    element_label = 'k'
-
-    def include_mode(self, mode):
-        k = mode
-        return (1 <= k <= self.space.kmax)
+    const = None
 
     def __add__(self, other):
         space = self.space
@@ -610,15 +410,16 @@ class Sine(Basis, metaclass=CachedClass):
         else:
             return NotImplemented
 
+    def include_mode(self, mode):
+        # Drop k=0 and Nyquist mode
+        k = mode
+        return (1 <= k <= self.space.kmax)
+
 
 class Cosine(Basis, metaclass=CachedClass):
     """Cosine series basis."""
 
-    element_label = 'k'
-
-    def include_mode(self, mode):
-        k = mode
-        return (0 <= k <= self.space.kmax)
+    const = 1
 
     def __add__(self, other):
         space = self.space
@@ -643,36 +444,44 @@ class Cosine(Basis, metaclass=CachedClass):
     def __pow__(self, other):
         return self.space.Cosine
 
+    def include_mode(self, mode):
+        # Drop Nyquist mode
+        k = mode
+        return (0 <= k <= self.space.kmax)
+
 
 class InterpolateSine(operators.Interpolate):
+    """Sine series interpolation."""
 
     input_basis_type = Sine
 
-    @classmethod
-    def entry(self, j, space, position):
-        """sin(n*x)"""
+    @staticmethod
+    def _build_subspace_entry(j, space, input_basis, position):
+        # sin(n*x)
         x = space.COV.native_coord(position)
         return math.sin(j*x)
 
 
 class InterpolateCosine(operators.Interpolate):
+    """Cosine series interpolation."""
 
     input_basis_type = Cosine
 
-    @classmethod
-    def entry(cls, j, space, position):
-        """cos(n*x)"""
+    @staticmethod
+    def _build_subspace_entry(j, space, input_basis, position):
+        # cos(n*x)
         x = space.COV.native_coord(position)
         return math.cos(j*x)
 
 
 class IntegrateSine(operators.Integrate):
+    """Sine series integration."""
 
     input_basis_type = Sine
 
-    @classmethod
-    def entry(cls, j, space):
-        """Integral(sin(n*x), 0, pi) = (2 / n) * (n % 2)"""
+    @staticmethod
+    def _build_subspace_entry(j, space, input_basis):
+        # integral(sin(n*x), 0, pi) = (2 / n) * (n % 2)
         if (j % 2):
             return 0
         else:
@@ -680,12 +489,13 @@ class IntegrateSine(operators.Integrate):
 
 
 class IntegrateCosine(operators.Integrate):
+    """Cosine series integration."""
 
     input_basis_type = Cosine
 
-    @classmethod
-    def entry(cls, j, space):
-        """Integral(cos(n*x), 0, pi) = pi * δ(n, 0)"""
+    @staticmethod
+    def _build_subspace_entry(j, space, input_basis):
+        # integral(cos(n*x), 0, pi) = pi * δ(n, 0)
         if j == 0:
             return np.pi * space.COV.stretch
         else:
@@ -693,15 +503,19 @@ class IntegrateCosine(operators.Integrate):
 
 
 class DifferentiateSine(operators.Differentiate):
+    """Sine series differentiation."""
 
     input_basis_type = Sine
-    output_basis_type = Cosine
     bands = [0]
     separable = True
 
-    @classmethod
-    def entry(cls, i, j, space):
-        """dx(sin(n*x)) = n*cos(n*x)"""
+    @staticmethod
+    def output_basis(space, input_basis):
+        return space.Cosine
+
+    @staticmethod
+    def _build_subspace_entry(i, j, space, input_basis):
+        # dx(sin(n*x)) = n*cos(n*x)
         if i == j:
             return j / space.COV.stretch
         else:
@@ -709,15 +523,19 @@ class DifferentiateSine(operators.Differentiate):
 
 
 class DifferentiateCosine(operators.Differentiate):
+    """Cosine series differentiation."""
 
     input_basis_type = Cosine
-    output_basis_type = Sine
     bands = [0]
     separable = True
 
-    @classmethod
-    def entry(cls, i, j, space):
-        """dx(cos(n*x)) = -n*sin(n*x)"""
+    @staticmethod
+    def output_basis(space, input_basis):
+        return space.Sine
+
+    @staticmethod
+    def _build_subspace_entry(i, j, space, input_basis):
+        # dx(cos(n*x)) = -n*sin(n*x)
         if i == j:
             return (-j) / space.COV.stretch
         else:
@@ -725,15 +543,19 @@ class DifferentiateCosine(operators.Differentiate):
 
 
 class HilbertTransformSine(operators.HilbertTransform):
+    """Sine series Hilbert transform."""
 
     input_basis_type = Sine
-    output_basis_type = Cosine
     bands = [0]
     separable = True
 
-    @classmethod
-    def entry(cls, i, j, space):
-        """Hx(sin(n*x)) = -cos(n*x)"""
+    @staticmethod
+    def output_basis(space, input_basis):
+        return space.Cosine
+
+    @staticmethod
+    def _build_subspace_entry(i, j, space, input_basis):
+        # Hx(sin(n*x)) = -cos(n*x)
         if i == j:
             return (-1)
         else:
@@ -741,15 +563,19 @@ class HilbertTransformSine(operators.HilbertTransform):
 
 
 class HilbertTransformCosine(operators.HilbertTransform):
+    """Cosine series Hilbert transform."""
 
     input_basis_type = Cosine
-    output_basis_type = Sine
     bands = [0]
-    separate = True
+    separable = True
 
-    @classmethod
-    def entry(cls, i, j, space):
-        """Hx(cos(n*x)) = sin(n*x)"""
+    @staticmethod
+    def output_basis(space, input_basis):
+        return space.Sine
+
+    @staticmethod
+    def _build_subspace_entry(i, j, space, input_basis):
+        # Hx(cos(n*x)) = sin(n*x)
         if i == j:
             return 1
         else:

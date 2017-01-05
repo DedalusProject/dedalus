@@ -11,6 +11,7 @@ from functools import reduce
 from . import field
 from .field import Operand, Field
 from . import future
+from . import arithmetic
 from . import operators
 from . import solvers
 from ..tools import parsing
@@ -134,6 +135,8 @@ class ProblemBase:
         self.op_kw = {'cutoff': ncc_cutoff}
 
     def add_variable(self, var, **kw):
+        """Add variable to problem."""
+        # Build fields if name is specified
         if isinstance(var, str):
             var = Field(name=var, **kw)
         self.variables.append(var)
@@ -141,37 +144,51 @@ class ProblemBase:
     def add_equation(self, equation, condition="True"):
         """Add equation to problem."""
         logger.debug("Parsing Eqn {}".format(len(self.eqs)))
-        temp = {}
-        self._build_basic_dictionary(temp, equation, condition)
-        self._build_object_forms(temp)
-        self._check_eqn_conditions(temp)
-        self._set_matrix_expressions(temp)
-        #self._build_local_matrices(temp)
-        self.eqs.append(temp)
+        # Build equation dictionary
+        eqn = {}
+        self._store_string_forms(eqn, equation, condition)
+        self._build_object_forms(eqn)
+        self._build_matrix_expressions(eqn)
+        # Store equation dictionary
+        self.equations.append(eqn)
 
-    def _build_basic_dictionary(self, temp, equation, condition):
+    def _store_string_forms(self, eqn, equation, condition):
         """Split and store equation and condition strings."""
-        temp['raw_equation'] = equation
-        temp['raw_condition'] = condition
-        temp['raw_LHS'], temp['raw_RHS'] = parsing.split_equation(equation)
+        eqn['equation_str'] = equation
+        eqn['condition_str'] = condition
+        eqn['LHS_str'], eqn['RHS_str'] = parsing.split_equation(equation)
+        # Debug logging
         logger.debug("  Condition: {}".format(condition))
-        logger.debug("  LHS string form: {}".format(temp['raw_LHS']))
-        logger.debug("  RHS string form: {}".format(temp['raw_RHS']))
+        logger.debug("  LHS string form: {}".format(eqn['LHS_str']))
+        logger.debug("  RHS string form: {}".format(eqn['RHS_str']))
 
-    def _build_object_forms(self, temp):
-        """Parse raw LHS/RHS strings to object forms."""
-        LHS = field.Operand.parse(temp['raw_LHS'], self.namespace, self.domain)
-        RHS = field.Operand.parse(temp['raw_RHS'], self.namespace, self.domain)
-        # Add together to require trigger proper conversions
-        if RHS != 0:
-            sum = LHS + RHS
-            LHS, RHS = sum.args
-        temp['LHS'] = LHS
-        temp['RHS'] = RHS
-        temp['bases'] = LHS.bases
-        temp['subdomain'] = LHS.subdomain
-        logger.debug("  LHS object form: {}".format(temp['LHS']))
-        logger.debug("  RHS object form: {}".format(temp['RHS']))
+    def _build_object_forms(self, eqn):
+        """Parse LHS/RHS strings to object forms."""
+        # Parse LHS/RHS strings to object expressions
+        eqn['LHS'] = self._parse(eqn['LHS_str'])
+        eqn['RHS'] = self._parse(eqn['RHS_str'])
+        # Determine equation bases using addition operator
+        combo = eqn['LHS'] - eqn['RHS']
+        eqn['bases'] = combo.bases
+        eqn['subdomain'] = combo.subdomain
+        # Debug logging
+        logger.debug("  LHS object form: {}".format(eqn['LHS']))
+        logger.debug("  RHS object form: {}".format(eqn['RHS']))
+
+    def _parse(self, expr_str):
+        """Parse expression using problem namespace."""
+        # ENHANCEMENT: Better security / sanitization?
+        expr = eval(expr_str, self.namespace)
+        return operators.Cast(expr, self.domain)
+
+    def _build_matrix_expressions(self, eqn):
+        """Build LHS matrix expressions and check equation conditions."""
+        raise NotImplementedError()
+
+
+
+
+
 
     @CachedAttribute
     def namespace(self):
@@ -185,14 +202,8 @@ class ProblemBase:
                 # Operators
                 namespace.update(space.operators)
         # Variables
-        for var in self.variables:
-            namespace[var.name] = var
+        namespace.update({var.name: var for var in self.variables})
         # Parameters
-        # for name, param in self.parameters.items():
-        #     # Cast parameters to operands
-        #     casted_param = field.Operand.cast(param, self.domain)
-        #     casted_param.name = name
-        #     namespace[name] = casted_param
         namespace.update(self.parameters)
         # Built-in functions
         namespace.update(operators.parseables)
@@ -200,55 +211,56 @@ class ProblemBase:
         namespace.update(self.namespace_additions)
         # Substitutions
         namespace.add_substitutions(self.substitutions)
-
         return namespace
 
-    def _check_eqn_conditions(self, temp):
-        """Check object-form equation conditions."""
-        self._check_conditions(temp)
-        self._check_basis_consistency(temp['LHS'], temp['RHS'])
+    @CachedAttribute
+    def namespace_additions(self):
+        return {}
 
-    def _check_basis_consistency(self, LHS, RHS):
-        """Check LHS and RHS for basis consistency."""
-        if not RHS.subdomain in LHS.subdomain:
-            raise ValueError("RHS subdomain must be in LHS subdomain.")
+    @staticmethod
+    def _check_basis_containment(eqn, superkey, subkey):
+        """Require one subdomain contain another."""
+        if not eqn[subkey].subdomain in eqn[superkey].subdomain:
+            raise UnsupportedEquationError("{} subdomain must be in {} subdomain.".format(subkey, superkey))
 
-    def _require_zero(self, temp, key):
+    @staticmethod
+    def _require_zero(eqn, key):
         """Require expression to be equal to zero."""
-        if temp[key] != 0:
+        if eqn[key] != 0:
             raise UnsupportedEquationError("{} must be zero.".format(key))
 
-    def _require_independent(self, temp, key, vars):
+    @staticmethod
+    def _require_independent(eqn, key, vars):
         """Require expression to be independent of some variables."""
-        if temp[key].has(*vars):
+        if eqn[key].has(*vars):
             names = [var.name for var in vars]
             raise UnsupportedEquationError("{} must be independent of {}.".format(key, names))
 
-    def _require_first_order(self, temp, key, vars):
-        """Require expression to be zeroth or first order in some variables."""
-        order = temp[key].order(*vars)
-        if order > 1:
-            names = [var.name for var in vars]
-            raise UnsupportedEquationError("{} must be first-order in {}.".format(key, names))
-        return order
+    # def _require_first_order(self, temp, key, vars):
+    #     """Require expression to be zeroth or first order in some variables."""
+    #     order = temp[key].order(*vars)
+    #     if order > 1:
+    #         names = [var.name for var in vars]
+    #         raise UnsupportedEquationError("{} must be first-order in {}.".format(key, names))
+    #     return order
 
-    def _prep_linear_form(self, expr, vars, name=''):
-        """Convert an expression into suitable form for LHS operator conversion."""
-        if expr:
-            expr = Operand.cast(expr, self.domain)
-            expr = expr.expand(*vars)
-            expr = expr.canonical_linear_form(*vars)
-            logger.debug('  {} linear form: {}'.format(name, str(expr)))
-        return expr
-        #return (expr, vars)
+    # def _prep_linear_form(self, expr, vars, name=''):
+    #     """Convert an expression into suitable form for LHS operator conversion."""
+    #     if expr:
+    #         expr = Operand.cast(expr, self.domain)
+    #         expr = expr.expand(*vars)
+    #         expr = expr.canonical_linear_form(*vars)
+    #         logger.debug('  {} linear form: {}'.format(name, str(expr)))
+    #     return expr
+    #     #return (expr, vars)
 
     def build_solver(self, *args, **kw):
         """Build corresponding solver class."""
         return self.solver_class(self, *args, **kw)
 
     def separability(self):
-        separabilities = [eq['separability'] for eq in self.eqs]
-        return reduce(np.logical_and, separabilities)
+        seps = [eqn['separability'] for eqn in self.equations]
+        return reduce(np.logical_and, seps)
 
     @property
     def separable(self):
@@ -258,6 +270,113 @@ class ProblemBase:
     def coupled(self):
         return np.invert(self.separable)
 
+
+class LinearBoundaryValueProblem(ProblemBase):
+    """
+    Class for linear boundary value problems.
+
+    Parameters
+    ----------
+    domain : domain object
+        Problem domain
+
+    Notes
+    -----
+    This class supports linear boundary value problems.  The LHS terms must be
+    linear in the problem variables, and the RHS can be inhomogeneous but must
+    be independent of the problem variables.
+
+        L.X = F
+        Solve for X
+
+    """
+
+    solver_class = solvers.LinearBoundaryValueSolver
+
+    def _build_matrix_expressions(self, eqn):
+        """Build LHS matrix expressions and check equation conditions."""
+        vars = self.variables
+        # Equation conditions
+        self._check_basis_containment(eqn, 'LHS', 'RHS')
+        eqn['LHS'].require_linearity(*vars, name='LHS')
+        eqn['RHS'].require_independent(*vars, name='RHS')
+        # Matrix expressions
+        eqn['L'] = operators.convert(eqn['LHS'].expand(*vars), eqn['bases'])
+        eqn['F'] = operators.convert(eqn['RHS'], eqn['bases'])
+        eqn['separability'] = eqn['L'].separability(*vars)
+        # Debug logging
+        logger.debug('  {} linear form: {}'.format('L', eqn['L']))
+
+
+
+class NonlinearBoundaryValueProblem(ProblemBase):
+    """
+    Class for nonlinear boundary value problems.
+
+    Parameters
+    ----------
+    domain : domain object
+        Problem domain
+
+    Notes
+    -----
+    This class supports nonlinear boundary value problems.  The LHS and RHS
+    terms are recombined to form a root-finding problem:
+
+        F(X) = G(X)  -->  H(X) = F(X) - G(X) = 0
+
+    The problem is reduced into a linear BVP for an update to the solution
+    using the Newton-Kantorovich method and symbolically-computed Frechet
+    derivatives of the equation.
+
+        H(X0 + X1) = 0
+        H(X0) + dH(X0).X1 = 0
+        dH(X0).X1 = -H(X0)
+        Solve for X1
+
+    """
+
+    solver_class = solvers.NonlinearBoundaryValueSolver
+
+    @CachedAttribute
+    def namespace_additions(self):
+        """Build namespace for problem parsing."""
+        # Variable perturbations
+        self.perturbations = [Field(bases=var.bases, name='δ'+var.name) for var in self.variables]
+        return {pert.name: pert for pert in self.perturbations}
+
+    def _set_matrix_expressions(self, temp):
+        """Set expressions for building solver."""
+        ep = Field(domain=self.domain, name='ep')
+        vars = self.variables
+        perts = self.perturbations
+        # Combine LHS and RHS into single expression
+        H = eqn['LHS'] - eqn['RHS']
+        # Build Frechet derivative
+        dH = 0
+        for var, pert in zip(vars, perts):
+            dHi = H.replace(var, var + ep*pert)
+            dHi = Cast(dHi.sym_diff(ep), self.domain)
+            dHi = dHi.replace(ep, 0)
+            dH += dHi
+        # Matrix expressions
+        eqn['dH'] = convert(dH.expand(*perts), eqn['bases'])
+        eqn['-H'] = convert(-H, eqn['bases'])
+        eqn['separability'] = eqn['dH'].separability(*perts)
+        # Debug logging
+        logger.debug('  {} linear form: {}'.format('dH', eqn['dH']))
+
+
+
+
+
+
+
+
+
+
+
+
 class InitialValueProblem(ProblemBase):
     """
     Class for non-linear initial value problems.
@@ -266,8 +385,6 @@ class InitialValueProblem(ProblemBase):
     ----------
     domain : domain object
         Problem domain
-    variables : list of str
-        List of variable names, e.g. ['u', 'v', 'w']
     time : str, optional
         Time label, default: 't'
 
@@ -330,120 +447,6 @@ class InitialValueProblem(ProblemBase):
     #         temp['L_op'] = {}
 
 
-class LinearBoundaryValueProblem(ProblemBase):
-    """
-    Class for inhomogeneous, linear boundary value problems.
-
-    Parameters
-    ----------
-    domain : domain object
-        Problem domain
-    variables : list of str
-        List of variable names, e.g. ['u', 'v', 'w']
-
-    Notes
-    -----
-    This class supports inhomogeneous, linear boundary value problems.  The LHS
-    terms must be linear in the specified variables and first-order in coupled
-    derivatives, and the RHS must be independent of the specified variables.
-
-        L.X = F
-
-    """
-
-    solver_class = solvers.LinearBoundaryValueSolver
-
-    @CachedAttribute
-    def namespace_additions(self):
-        return {}
-
-    def _check_conditions(self, temp):
-        """Check object-form conditions."""
-        #vars = [self.namespace[var] for var in self.variables]
-        vars = self.variables
-        self._require_independent(temp, 'RHS', vars)
-
-    def _set_matrix_expressions(self, temp):
-        """Set expressions for building solver."""
-        #vars = [self.namespace[var] for var in self.variables]
-        vars = self.variables
-        temp['L'] = self._prep_linear_form(temp['LHS'], vars, name='L')
-        temp['F'] = temp['RHS']
-        temp['separability'] = temp['LHS'].separability(vars)
-
-    # def _build_local_matrices(self, temp):
-    #     vars = self.variables
-    #     temp['L_op'] = temp['L'].operator_dict(vars, **self.op_kw)
-
-
-class NonlinearBoundaryValueProblem(ProblemBase):
-    """
-    Class for nonlinear boundary value problems.
-
-    Parameters
-    ----------
-    domain : domain object
-        Problem domain
-    variables : list of str
-        List of variable names, e.g. ['u', 'v', 'w']
-
-    Notes
-    -----
-    This class supports nonlinear boundary value problems.  The LHS terms must
-    be linear in the specified variables and first-order in coupled derivatives.
-
-        L.X = F(X)
-
-    The problem is reduced into a linear BVP for an update to the solution
-    using the Newton-Kantorovich method and symbolically-computed Frechet
-    derivatives of the RHS.
-
-        L.(X0 + X1) = F(X0) + dF(X0).X1
-        L.X1 - dF(X0).X1 = F(X0) - L.X0
-
-    """
-
-    solver_class = solvers.NonlinearBoundaryValueSolver
-
-    @CachedAttribute
-    def namespace_additions(self):
-        """Build namespace for problem parsing."""
-        additions = {}
-        # Add variable perturbations
-        for var in self.variables:
-            pert = 'δ' + var.name
-            additions[pert] = self.domain.new_field(name=pert)
-            additions[pert].set_scales(1, keep_data=False)
-        return additions
-
-    def _check_conditions(self, temp):
-        """Check object-form conditions."""
-        pass
-
-    def _set_matrix_expressions(self, temp):
-        """Set expressions for building solver."""
-        ep = field.Scalar(name='__epsilon__')
-        #vars = [self.namespace[var] for var in self.variables]
-        vars = self.variables
-        perts = [self.namespace['δ'+var.name] for var in self.variables]
-        # Build LHS operating on perturbations
-        L = temp['LHS']
-        for var, pert in zip(vars, perts):
-            L = L.replace(var, pert)
-        # Build Frechet derivative of RHS
-        F = temp['RHS']
-        dF = 0
-        for var, pert in zip(vars, perts):
-            dFi = F.replace(var, var + ep*pert)
-            dFi = field.Operand.cast(dFi.sym_diff(ep), self.domain)
-            dFi = dFi.replace(ep, 0)
-            dF += dFi
-        # Set expressions
-        temp['L'] = self._prep_linear_form(L, perts, name='L')
-        temp['dF'] = self._prep_linear_form(dF, perts, name='dF')
-        temp['F-L'] = temp['RHS'] - temp['LHS']
-        temp['separability'] = (temp['L'][0].separability(perts) &
-                                temp['dF'][0].separability(perts))
 
 
 class EigenvalueProblem(ProblemBase):
@@ -471,34 +474,33 @@ class EigenvalueProblem(ProblemBase):
 
     solver_class = solvers.EigenvalueSolver
 
-    def __init__(self, domain, variables, eigenvalue, **kw):
-        super().__init__(domain, variables, **kw)
+    def __init__(self, domain, eigenvalue, **kw):
+        super().__init__(domain, **kw)
         self.eigenvalue = eigenvalue
 
     @CachedAttribute
     def namespace_additions(self):
         """Build namespace for problem parsing."""
         additions = {}
-        additions[self.eigenvalue] = self._ev = field.Scalar(name=self.eigenvalue)
+        additions[self.eigenvalue] = self._ev = field.Field(name=self.eigenvalue, domain=self.domain)
         return additions
 
     def _check_conditions(self, temp):
         """Check object-form conditions."""
         self._require_first_order(temp, 'LHS', [self._ev])
-        self._require_zero(temp, 'RHS')
+        #self._require_zero(temp, 'RHS')
 
     def _set_matrix_expressions(self, temp):
         """Set expressions for building solver."""
         M, L = temp['LHS'].split(self._ev)
-        M = Operand.cast(M, self.domain)
-        M = M.replace(self._ev, 1)
+        if M:
+            M = Operand.cast(M, self.domain)
+            M = M.replace(self._ev, 1)
         #vars = [self.namespace[var] for var in self.variables]
         vars = self.variables
         temp['M'] = self._prep_linear_form(M, vars, name='M')
         temp['L'] = self._prep_linear_form(L, vars, name='L')
-        temp['separability'] = (temp['M'][0].separability(vars) &
-                                temp['L'][0].separability(Vars))
-
+        temp['separability'] = temp['LHS'].separability(vars)
 
 # Aliases
 IVP = InitialValueProblem

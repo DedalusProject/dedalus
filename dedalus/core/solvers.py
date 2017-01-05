@@ -58,25 +58,26 @@ class EigenvalueSolver:
         self.problem = problem
         self.domain = domain = problem.domain
 
-        # Build pencils and pencil matrices
-        self.pencils = pencil.build_pencils(domain)
+        # Build subproblems and subproblem matrices
+        self.subproblems = subsystems.build_local_subproblems(problem)
 
         # Build systems
         namespace = problem.namespace
-        vars = [namespace[var] for var in problem.variables]
-        self.state = FieldSystem.from_fields(vars)
+        #vars = [namespace[var] for var in problem.variables]
+        #self.state = FieldSystem.from_fields(vars)
+        self.state = problem.variables
 
         # Create F operator trees
         self.evaluator = Evaluator(domain, namespace)
 
         logger.debug('Finished EVP instantiation')
 
-    def solve(self, pencil):
+    def solve(self, subproblem):
         """Solve EVP."""
-        self.eigenvalue_pencil = pencil
-        pencil.build_matrices(self.problem, ['M', 'L'])
-        L = pencil.L.todense()
-        M = pencil.M.todense()
+        self.eigenvalue_subproblem = subproblem
+        subsystems.build_matrices([subproblem], ['L','M'])
+        L = subproblem.L_min.todense()
+        M = subproblem.M_min.todense()
         self.eigenvalues, self.eigenvectors = eig(L, b=-M)
 
     def set_state(self, num):
@@ -143,7 +144,7 @@ class LinearBoundaryValueSolver:
             LHS = ss.L_exp
             RHS = ss.rhs_map * ss.get_vector(self.F)
             X = linalg.spsolve(LHS, RHS, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
-            ss.set_vector(self.state, ss.col_map.T*X)
+            ss.set_vector(self.state, ss.drop_var.T*X)
         #self.state.scatter()
 
 

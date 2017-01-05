@@ -19,7 +19,9 @@ from ..tools.array import reshape_vector
 from ..tools.cache import CachedMethod
 from ..tools.exceptions import UndefinedParityError
 from ..tools.exceptions import SymbolicParsingError
-from ..tools.general import unify, unify_attributes, DeferredTuple
+from ..tools.exceptions import NonlinearOperatorError
+from ..tools.exceptions import DependentOperatorError
+from ..tools.general import unify, unify_attributes, DeferredTuple, OrderedSet
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -30,6 +32,9 @@ use_umfpack = config['linear algebra'].getboolean('use_umfpack')
 
 
 class Operand:
+    """Base class for operand classes."""
+
+    __array_priority__ = 100.
 
     def __getattr__(self, attr):
         # Intercept numpy ufunc calls
@@ -40,7 +45,7 @@ class Operand:
         except KeyError:
             raise AttributeError("%r object has no attribute %r" %(self.__class__.__name__, attr))
 
-    ## Idea for alternate ufunc implementation based on changes coming in numpy 1.10
+    ## Idea for alternate ufunc implementation based on changes eventually (?) coming in numpy
     # def __numpy_ufunc__(self, ufunc, method, i, inputs, **kw):
     #     from .operators import UnaryGridFunction
     #     if ufunc in UnaryGridFunction.supported:
@@ -64,14 +69,10 @@ class Operand:
 
     def __add__(self, other):
         # Call: self + other
-        if other == 0:
-            return self
         from .arithmetic import Add
         return Add(self, other)
 
     def __radd__(self, other):
-        if other == 0:
-            return self
         # Call: other + self
         from .arithmetic import Add
         return Add(other, self)
@@ -86,19 +87,11 @@ class Operand:
 
     def __mul__(self, other):
         # Call: self * other
-        if other == 0:
-            return 0
-        if other == 1:
-            return self
         from .arithmetic import Multiply
         return Multiply(self, other)
 
     def __rmul__(self, other):
         # Call: other * self
-        if other == 0:
-            return 0
-        if other == 1:
-            return self
         from .arithmetic import Multiply
         return Multiply(other, self)
 
@@ -125,12 +118,6 @@ class Operand:
         return Power(other, self)
 
     @staticmethod
-    def parse(string, namespace, domain):
-        """Build operand from a string expression."""
-        expression = eval(string, namespace)
-        return Operand.cast(expression, domain)
-
-    @staticmethod
     def cast(x, domain):
         if isinstance(x, Operand):
             if x.domain is not domain:
@@ -148,6 +135,9 @@ class Operand:
             return self.bases[space.axis]
         else:
             raise ValueError()
+
+
+
 
     #     x = Operand.raw_cast(x)
     #     if domain:
@@ -169,9 +159,63 @@ class Operand:
     #         raise ValueError("Cannot cast type: {}".format(type(x)))
 
 
-class Data(Operand):
+    def atoms(self, *types):
+        """Gather all leaf-operands by type."""
+        raise NotImplementedError()
 
-    __array_priority__ = 100.
+    def has(self, *vars):
+        """Determine if tree contains any specified operands/operators."""
+        raise NotImplementedError()
+
+    def split(self, *vars):
+        """Split into expressions containing and not containing specified operands/operators."""
+        raise NotImplementedError()
+
+    def replace(self, old, new):
+        """Replace specified operand/operator."""
+        raise NotImplementedError()
+
+    def sym_diff(self, var):
+        """Symbolically differentiate with respect to specified operand."""
+        raise NotImplementedError()
+
+    def expand(self, *vars):
+        """Expand expression over specified variables."""
+        raise NotImplementedError()
+
+    # def simplify(self, *vars):
+    #     """Simplify expression, except subtrees containing specified variables."""
+    #     raise NotImplementedError()
+
+    def require_linearity(self, *vars, name=None):
+        """Require expression to be linear in specified operands/operators."""
+        raise NotImplementedError()
+
+    def require_independent(self, *vars, name=None):
+        """Require expression to be independent of specified operands/operators."""
+        if self.has(*vars):
+            raise DependentOperatorError("{} is not independent of the specified variables.".format(name if name else str(self)))
+
+    def separability(self, *vars):
+        """Determine separable dimensions of expression as a linear operator on specified variables."""
+        raise NotImplementedError()
+
+    # def operator_order(self, operator):
+    #     """Determine maximum application order of an operator in the expression."""
+    #     raise NotImplementedError()
+
+    def build_ncc_matrices(self, separability, vars, **kw):
+        """Precompute non-constant coefficients and build multiplication matrices."""
+        raise NotImplementedError()
+
+    def expression_matrices(self, subproblem, vars):
+        """Build expression matrices for a specific subproblem and variables."""
+        raise NotImplementedError()
+
+
+
+
+class Current(Operand):
 
     def __repr__(self):
         return '<{} {}>'.format(self.__class__.__name__, id(self))
@@ -182,57 +226,94 @@ class Data(Operand):
         else:
             return self.__repr__()
 
-    def atoms(self, *types, **kw):
-        if isinstance(self, types) or (not types):
-            return (self,)
-        else:
-            return ()
+    def atoms(self, *types):
+        """Gather all leaf-operands of specified types."""
+        atoms = OrderedSet()
+        if (not types) or isinstance(self, types):
+            atoms.add(self)
+        return atoms
 
-    def has(self, *atoms):
-        return (self in atoms)
-
-    def expand(self, *vars):
-        """Return self."""
-        return self
-
-    def canonical_linear_form(self, *vars):
-        """Return self."""
-        return self
-
-    def factor(self, *vars):
-        if self in vars:
-            return defaultdict(int, {self: 1})
-        else:
-            return defaultdict(int, {1: self})
+    def has(self, *vars):
+        """Determine if tree contains any specified operands/operators."""
+        # Check for empty set or matching operand
+        return (not vars) or (self in vars)
 
     def split(self, *vars):
+        """Split into expressions containing and not containing specified operands/operators."""
         if self in vars:
-            return [self, 0]
+            return (self, 0)
         else:
-            return [0, self]
+            return (0, self)
 
     def replace(self, old, new):
-        """Replace an object in the expression tree."""
+        """Replace specified operand/operator."""
         if self == old:
             return new
         else:
             return self
 
-    def order(self, *ops):
-        return 0
-
-    def separability(self, vars):
-        if self in vars:
-            return np.array([True for basis in self.bases])
-        else:
-            return np.array([(basis is None) for basis in self.bases])
-
     def sym_diff(self, var):
-        """Symbolically differentiate with respect to var."""
+        """Symbolically differentiate with respect to specified operand."""
         if self == var:
             return 1
         else:
             return 0
+
+    def expand(self, *vars):
+        """Expand expression over specified variables."""
+        return self
+
+    # def simplify(self, *vars):
+    #     """Simplify expression, except subtrees containing specified variables."""
+    #     return self
+
+    def require_linearity(self, *vars, name=None):
+        """Require expression to be linear in specified variables."""
+        if self not in vars:
+            raise NonlinearOperatorError("{} is not linear the specified variables.".format(name if name else str(self)))
+
+    def separability(self, *vars):
+        """Determine separable dimensions of expression as a linear operator on specified variables."""
+        self.require_linearity(*vars)
+        return np.array([True for basis in self.bases])
+
+    # def operator_order(self, operator):
+    #     """Determine maximum application order of an operator in the expression."""
+    #     return 0
+
+    def build_ncc_matrices(self, separability, vars, **kw):
+        """Precompute non-constant coefficients and build multiplication matrices."""
+        self.require_linearity(*vars)
+
+    def expression_matrices(self, subproblem, vars):
+        """Build expression matrices for a specific subproblem and variables."""
+        self.require_linearity(*vars)
+        # Build identity matrices over subproblem data
+        group_shape = subproblem.group_shape(self.subdomain)
+        factors = (sparse.identity(n, format='csr') for n in group_shape)
+        matrix = reduce(sparse.kron, factors, 1).tocsr()
+        return {self: matrix}
+
+    # def setup_operator_matrix(self, separability, vars, **kw):
+    #     """Setup operator matrix components."""
+    #     self.require_linearity(*vars)
+    #     # axmats = []
+    #     # for seperable, basis in zip(separability, self.bases):
+    #     #     # Size 1 for constant dimensions
+    #     #     if basis is None:
+    #     #         axmats.append(sparse.identity(1).tocsr())
+    #     #     # Group size for separable dimensions
+    #     #     elif separable:
+    #     #         axmats.append(sparse.identity(basis.space.group_size).tocsr())
+    #     #     # Coeff size for coupled dimensions
+    #     #     else:
+    #     #         axmats.append(sparse.identity(basis.space.coeff_size).tocsr())
+    #     # # Store Kronecker product
+    #     # self.operator_matrix = reduce(sparse.kron, axmats, 1).tocsr()
+
+
+
+
 
     @staticmethod
     def _create_buffer(buffer_size):
@@ -270,7 +351,7 @@ class Data(Operand):
         #self.global_start = layout.start(self.subdomain, self.scales)
 
 
-class Array(Data):
+class Array(Current):
 
     def __init__(self, bases, name=None):
         from .domain import Subdomain
@@ -312,7 +393,7 @@ class Array(Data):
         return ncc.as_ncc_operator(*args, **kw)
 
 
-class Field(Data):
+class Field(Current):
     """
     Scalar field over a domain.
 
@@ -552,74 +633,10 @@ class Field(Data):
     def is_scalar(self):
         return all(basis is None for basis in self.bases)
 
-    #@CachedMethod(max_size=2)
-    def as_ncc_matrix(self, arg, subproblem, name=None, cacheid=None, cutoff=1e-10):
-        """Convert to operator form representing multiplication as a NCC."""
-        # if name is None:
-        #     name = str(self)
-        # if self.is_scalar:
-        #     return self.data.ravel()[0]
-        # L = n_terms = 0
-        # self.require_coeff_space()
-
-        # matrices = []
-        # layout = self.domain.dist.coeff_layout
-        # local_shape = layout.local_array_shape(arg.subdomain, self.scales)
-        # matrices = [sparse.identity(size, format='csr') for size in local_shape]
-        # for index, coeff in np.ndenumerate(self.data):
-        #     if abs(coeff) >= cutoff:
-        #         for axis in range(self.domain.dim):
-        #             if self.bases[axis] is not None:
-        #                 matrices[axis] = self.bases[axis].Multiply(index[axis], arg.bases[axis])
-        #         L = L + coeff * reduce(sparse.kron, matrices, 1).tocsr()
-        #         n_terms += 1
-
-        # Verify all bases are coupled
-        caxis = sum(subproblem.problem.separable)
-        for i in range(caxis):
-            if self.basis[axis] is not None:
-                raise ValueError("Cannot produce product matrix over uncoupled axis.")
-        # Build matrix over coupled bases
-        self.require_coeff_space()
-        data = self.data[(0,)*caxis]
-        mul_bases = self.bases[caxis:]
-        arg_bases = arg.bases[caxis:]
-        matrix = Field._multidim_ncc_matrix(data, mul_bases, arg_bases)
-        #logger.debug("Expanded NCC '{}' with {} terms.".format(name, n_terms))
-        return matrix
-
-    @staticmethod
-    def _multidim_ncc_matrix(data, mul_bases, arg_bases):
-        """Recursively build multidimensional NCC matrix."""
-        def build_coefficient(i):
-            if len(data.shape) == 1:
-                return data[i]
-            else:
-                return Field._multidim_ncc_matrix(data[i], mul_bases[1:], arg_bases[1:])
-        coeffs = DeferredTuple(build_coefficient, data.shape[0])
-        mul_basis = mul_bases[0]
-        arg_basis = arg_bases[0]
-        if mul_basis is None:
-            if arg_basis is None:
-                return coeffs[0]
-            else:
-                I = sparse.identity(arg_basis.space.coeff_size)
-                return sparse.kron(I, coeffs[0])
-        else:
-            return mul_basis.ncc_matrix(arg_basis, coeffs)
-
-    def subproblem_matrices(self, subproblem, vars, **kw):
-        """Build expression matrices acting on subproblem group data."""
-        if self in vars:
-            return {self: self.subproblem_matrix(subproblem)}
-        else:
-            raise SymbolicParsingError('{} is not a linear operator over the specified variables.'.format(str(self)))
-
-    def subproblem_matrix(self, subproblem):
-        """Build inclusion matrix acting on subproblem group data."""
-        axmats = subproblem.inclusion_matrices(self.bases)
-        return reduce(sparse.kron, axmats, 1).tocsr()
-
     def local_elements(self):
         return self.layout.local_elements(self.subdomain, self.scales)
+
+    # @CachedAttribute
+    # def mode_mask(self):
+    #     return reduce()
 

@@ -72,9 +72,13 @@ class Interval(Space):
 
     dim = 1
 
-    def __init__(self, name, base_grid_size, bounds, domain, axis, dealias=1):
+    def __init__(self, name, coeff_size, bounds, domain, axis, dealias=1):
+
+        if (coeff_size % self.group_size) != 0:
+            raise ValueError("Space size must be multiple of group size.")
+
         self.name = name
-        self.base_grid_size = base_grid_size
+        self.coeff_size = coeff_size
         self.bounds = bounds
         self.domain = domain
         self.axis = axis
@@ -93,7 +97,7 @@ class Interval(Space):
 
     def grid_size(self, scale):
         """Compute scaled grid size."""
-        grid_size = float(scale) * self.base_grid_size
+        grid_size = float(scale) * self.coeff_size
         if not grid_size.is_integer():
             raise ValueError("Scaled grid size is not an integer: %f" %grid_size)
         return int(grid_size)
@@ -134,16 +138,14 @@ class PeriodicInterval(Interval):
 
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
-        if (self.base_grid_size % 2) != 0:
-            raise ValueError("Periodic interval base grid size must be even.")
-        self.kmax = (self.base_grid_size - 1) // 2
-        self.coeff_size = 2 * (self.kmax + 1)
+        # Maximum native k, dispensing Nyquist mode
+        self.kmax = (self.coeff_size - 1) // 2
 
     @CachedMethod
     def grid(self, scale=1):
         """Evenly spaced endpoint grid: sin(N*x/2) = 0"""
-        grid_size = self.grid_size(scale)
-        native_grid = np.linspace(0, 2*np.pi, grid_size, endpoint=False)
+        N = self.grid_size(scale)
+        native_grid = 2 * np.pi * np.arange(N) / N
         return self.COV.problem_coord(native_grid)
 
     @CachedAttribute
@@ -162,8 +164,7 @@ class ParityInterval(Interval):
 
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
-        self.kmax = self.base_grid_size - 1
-        self.coeff_size = self.base_grid_size
+        self.kmax = self.coeff_size - 1
 
     @CachedMethod
     def grid(self, scale=1):
@@ -196,7 +197,6 @@ class FiniteInterval(Interval):
 
     def __init__(self, a, b, *args, **kw):
         super().__init__(*args, **kw)
-        self.coeff_size = self.base_grid_size
         self.a = float(a)
         self.b = float(b)
 
@@ -243,62 +243,62 @@ class FiniteInterval(Interval):
         return self.Jacobi(da=0, db=0, library='matrix')
 
 
-class Sheet(Space):
-    """Base class for 1-dimensional spaces."""
+# class Sheet(Space):
+#     """Base class for 1-dimensional spaces."""
 
-    dim = 1
+#     dim = 1
 
-    def __init__(self, names, shape, bounds, domain, axis, dealias=1):
-        self.name = name
-        self.base_grid_size = base_grid_size
-        self.domain = domain
-        self.axis = axis
-        self.axes = np.arange(axis, axis+self.dim)
-        self.dealias = dealias
+#     def __init__(self, names, shape, bounds, domain, axis, dealias=1):
+#         self.name = name
+#         self.base_grid_size = base_grid_size
+#         self.domain = domain
+#         self.axis = axis
+#         self.axes = np.arange(axis, axis+self.dim)
+#         self.dealias = dealias
 
-        for index in range(self.dim):
-            domain.spaces[axis+index].append(self)
-        domain.space_dict[name] = self
+#         for index in range(self.dim):
+#             domain.spaces[axis+index].append(self)
+#         domain.space_dict[name] = self
 
-    def grid_size(self, scale):
-        """Compute scaled grid size."""
-        grid_size = float(scale) * self.base_grid_size
-        if not grid_size.is_integer():
-            raise ValueError("Scaled grid size is not an integer: %f" %grid_size)
-        return int(grid_size)
+#     def grid_size(self, scale):
+#         """Compute scaled grid size."""
+#         grid_size = float(scale) * self.base_grid_size
+#         if not grid_size.is_integer():
+#             raise ValueError("Scaled grid size is not an integer: %f" %grid_size)
+#         return int(grid_size)
 
-    @CachedAttribute
-    def subdomain(self):
-        from .domain import Subdomain
-        return Subdomain.from_spaces([self])
+#     @CachedAttribute
+#     def subdomain(self):
+#         from .domain import Subdomain
+#         return Subdomain.from_spaces([self])
 
-    @CachedMethod
-    def local_grid(self, scales=None):
-        """Return local grid along one axis."""
-        scales = self.domain.remedy_scales(scales)
-        axis = self.axis
-        # Get local part of global basis grid
-        elements = np.ix_(*self.domain.dist.grid_layout.local_elements(self.subdomain, scales))
-        grid = self.grid(scales[axis])
-        local_grid = grid[elements[axis]]
-        # Reshape as multidimensional vector
-        #local_grid = reshape_vector(local_grid, self.domain.dim, axis)
+#     @CachedMethod
+#     def local_grid(self, scales=None):
+#         """Return local grid along one axis."""
+#         scales = self.domain.remedy_scales(scales)
+#         axis = self.axis
+#         # Get local part of global basis grid
+#         elements = np.ix_(*self.domain.dist.grid_layout.local_elements(self.subdomain, scales))
+#         grid = self.grid(scales[axis])
+#         local_grid = grid[elements[axis]]
+#         # Reshape as multidimensional vector
+#         #local_grid = reshape_vector(local_grid, self.domain.dim, axis)
 
-        return local_grid
+#         return local_grid
 
-    @CachedMethod
-    def grid_field(self, scales=None):
-        """Return field object representing grid."""
-        from .field import Field
-        grid = Field(name=self.name, domain=self.domain, bases=[self.grid_basis])
-        grid.set_scales(scales)
-        grid.set_local_data(self.local_grid(scales))
-        return grid
+#     @CachedMethod
+#     def grid_field(self, scales=None):
+#         """Return field object representing grid."""
+#         from .field import Field
+#         grid = Field(name=self.name, domain=self.domain, bases=[self.grid_basis])
+#         grid.set_scales(scales)
+#         grid.set_local_data(self.local_grid(scales))
+#         return grid
 
-class Sphere:
+# class Sphere:
 
-    def __init__(self, name, Lmax, Mmax, domain, axis, dealias=1):
-        pass
+#     def __init__(self, name, Lmax, Mmax, domain, axis, dealias=1):
+#         pass
 
 # class FiniteInterval(Interval):
 #     a = b = -1/2  # default Chebyshev
