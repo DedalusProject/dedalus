@@ -213,6 +213,10 @@ class NonlinearBoundaryValueSolver:
         self.state = FieldSystem.from_fields(vars)
         self.perturbations = FieldSystem.from_fields(perts)
 
+        # Set variable scales back to 1 for initialization
+        for field in self.state.fields + self.perturbations.fields:
+            field.set_scales(1)
+
         # Create F operator trees
         self.evaluator = Evaluator(domain, namespace)
         Fe_handler = self.evaluator.add_system_handler(iter=1, group='F')

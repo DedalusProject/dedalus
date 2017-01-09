@@ -58,7 +58,7 @@ problem.add_bc("right(f) = 0")
 
 # Setup initial guess
 solver = problem.build_solver()
-x = domain.grid(0, scales=domain.dealias)
+x = domain.grid(0)
 f = solver.state['f']
 fx = solver.state['fx']
 R = solver.state['R']
