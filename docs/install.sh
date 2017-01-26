@@ -169,7 +169,7 @@ function host_specific
         echo "Looks like you're running on Mac OSX."
         echo
         echo "NOTE: you must have the Xcode command line tools installed."
-	echo "You also need install mercurial (http://mercurial.selenic.com/downloads), and gfortran (https://gcc.gnu.org/wiki/GFortranBinaries#MacOS)"
+	echo "You also need install mercurial (https://www.mercurial-scm.org/downloads), and gfortran (https://gcc.gnu.org/wiki/GFortranBinaries#MacOS)"
         echo
 	echo "The instructions for obtaining the Xcode tools varies according"
 	echo "to your exact OS version.  On older versions of OS X, you"
