@@ -4,6 +4,7 @@ Class for centralized evaluation of expression trees.
 """
 
 import os
+import re
 from collections import defaultdict
 import pathlib
 import h5py
@@ -330,22 +331,26 @@ class FileHandler(Handler):
             self.total_write_num = 1
         elif mode == "append":
             set_nums = []
-            for s in sets:
-                m = re.match("{}_s(\d+)$".format(base_path.stem),s.stem)
-                if m:
-                    set_nums.append(int(m.groups()[0]))
-            max_set = max(set_nums)
-            joined_file = base_path.join("{}_s{}.h5".format(base_path.stem,max_set))
-            p0_file = base_path.join("{0}_s{1}/{0}_s{1}_p0.h5".format(base_path.stem,max_set))
-            if os.path.exists(joined_file):
-                with h5py.File(joined_file,'r') as testfile:
-                    last_write_num = testfile['/scales/write_number'][-1]
-            elif os.path.exists(p0_file):
-                with h5py.File(p0_file,'r') as testfile:
-                    last_write_num = testfile['/scales/write_number'][-1]
+            if sets:
+                for s in sets:
+                    m = re.match("{}_s(\d+)$".format(base_path.stem),s.stem)
+                    if m:
+                        set_nums.append(int(m.groups()[0]))
+                max_set = max(set_nums)
+                joined_file = base_path.joinpath("{}_s{}.h5".format(base_path.stem,max_set))
+                p0_file = base_path.joinpath("{0}_s{1}/{0}_s{1}_p0.h5".format(base_path.stem,max_set))
+                if os.path.exists(str(joined_file)):
+                    with h5py.File(joined_file,'r') as testfile:
+                        last_write_num = testfile['/scales/write_number'][-1]
+                elif os.path.exists(str(p0_file)):
+                    with h5py.File(p0_file,'r') as testfile:
+                        last_write_num = testfile['/scales/write_number'][-1]
+                else:
+                    last_write_num = 0
+                    logger.warn("Cannot determine write num from files. Restarting count.")
             else:
+                max_set = 0
                 last_write_num = 0
-                logger.warn("Cannot determine write num from files. Restarting count.")            
             self.set_num = max_set + 1
             self.total_write_num = last_write_num + 1
         else:
@@ -374,7 +379,7 @@ class FileHandler(Handler):
         """Return current HDF5 file, creating if necessary."""
 
         # create new file if necessary
-        if os.path.exists(self.current_path):
+        if os.path.exists(str(self.current_path)):
             if self.check_file_limits():
                 self.set_num += 1
                 self.create_current_file()
@@ -399,7 +404,7 @@ class FileHandler(Handler):
         if self.parallel:
             # Save in base directory
             file_name = '%s_s%i.hdf5' %(self.base_path.stem, set_num)
-            self.current_path = self.base_path.joinpath(file_name)
+            return self.base_path.joinpath(file_name)
         else:
             # Save in folders for each filenum in base directory
             folder_name = '%s_s%i' %(self.base_path.stem, set_num)
@@ -409,7 +414,7 @@ class FileHandler(Handler):
                     if not folder_path.exists():
                         folder_path.mkdir()
             file_name = '%s_s%i_p%i.h5' %(self.base_path.stem, set_num, comm.rank)
-            self.current_path = folder_path.joinpath(file_name)
+            return folder_path.joinpath(file_name)
 
     def create_current_file(self):
         """Generate new HDF5 file in current_path."""
