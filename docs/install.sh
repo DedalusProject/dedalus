@@ -582,7 +582,7 @@ then
     cd ..
 fi
 
-export PYTHONPATH=${DEST_DIR}/lib/python3.4/site-packages/
+export PYTHONPATH=${DEST_DIR}/lib/python3.5/site-packages/
 
 # FFTW3
 if [ ! -e $FFTW/done ]
