@@ -340,10 +340,10 @@ class FileHandler(Handler):
                 joined_file = base_path.joinpath("{}_s{}.h5".format(base_path.stem,max_set))
                 p0_file = base_path.joinpath("{0}_s{1}/{0}_s{1}_p0.h5".format(base_path.stem,max_set))
                 if os.path.exists(str(joined_file)):
-                    with h5py.File(joined_file,'r') as testfile:
+                    with h5py.File(str(joined_file),'r') as testfile:
                         last_write_num = testfile['/scales/write_number'][-1]
                 elif os.path.exists(str(p0_file)):
-                    with h5py.File(p0_file,'r') as testfile:
+                    with h5py.File(str(p0_file),'r') as testfile:
                         last_write_num = testfile['/scales/write_number'][-1]
                 else:
                     last_write_num = 0
