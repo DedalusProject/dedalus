@@ -8,6 +8,7 @@ import re
 from collections import defaultdict
 import pathlib
 import h5py
+import shutil
 import numpy as np
 from mpi4py import MPI
 
@@ -289,13 +290,19 @@ class FileHandler(Handler):
 
     Parameters
     ----------
-    filename : str
-        Base of filename, without an extension
+    base_path : str
+        Base path for analyis output folder
     max_writes : int, optional
         Maximum number of writes per set (default: infinite)
     max_size : int, optional
         Maximum file size to write to, in bytes (default: 2**30 = 1 GB).
         (Note: files may be larger after final write.)
+    parallel : bool, optional
+        Perform parallel writes from each process to single file (True), or
+        separately write to individual process files (False, default)
+    mode : str, optional
+        'overwrite' to delete any present analysis output with the same base path.
+        'append' to begin with set number incremented past any present analysis output.
 
     """
 
@@ -318,7 +325,7 @@ class FileHandler(Handler):
         self.max_size = max_size
         self.parallel = parallel
         self._sl_array = np.zeros(1, dtype=int)
-        
+
         setpattern_name = '%s_s*' % (self.base_path.stem)
         sets = list(self.base_path.glob(setpattern_name))
         if mode == "overwrite":
@@ -355,7 +362,7 @@ class FileHandler(Handler):
             self.total_write_num = last_write_num + 1
         else:
             raise ValueError("Write mode {} not defined.".format(mode))
-        
+
         if parallel:
             # Set HDF5 property list for collective writing
             self._property_list = h5py.h5p.create(h5py.h5p.DATASET_XFER)
@@ -363,7 +370,6 @@ class FileHandler(Handler):
 
     def check_file_limits(self):
         """Check if write or size limits have been reached."""
-        
         write_limit = (self.file_write_num >= self.max_writes)
         size_limit = (self.current_path.stat().st_size >= self.max_size)
         if not self.parallel:
@@ -372,30 +378,26 @@ class FileHandler(Handler):
             self._sl_array[0] = size_limit
             comm.Allreduce(MPI.IN_PLACE, self._sl_array, op=MPI.LOR)
             size_limit = self._sl_array[0]
-        
         return (write_limit or size_limit)
 
     def get_file(self):
         """Return current HDF5 file, creating if necessary."""
-
-        # create new file if necessary
+        # Create new file if necessary
         if os.path.exists(str(self.current_path)):
             if self.check_file_limits():
                 self.set_num += 1
                 self.create_current_file()
         else:
             self.create_current_file()
-        
-        # open current file
+        # Open current file
         if self.parallel:
             comm = self.domain.distributor.comm_cart
             h5file = h5py.File(str(self.current_path), 'a', driver='mpio', comm=comm)
         else:
             h5file = h5py.File(str(self.current_path), 'a')
-            
         self.file_write_num = h5file['/scales/write_number'].shape[0]
         return h5file
-    
+
     @property
     def current_path(self):
         domain = self.domain
@@ -418,18 +420,13 @@ class FileHandler(Handler):
 
     def create_current_file(self):
         """Generate new HDF5 file in current_path."""
-        domain = self.domain
-        # Create next file
         self.file_write_num = 0
-        comm = domain.distributor.comm_cart
-        
+        comm = self.domain.distributor.comm_cart
         if self.parallel:
             file = h5py.File(str(self.current_path), 'w-', driver='mpio', comm=comm)
         else:
             file = h5py.File(str(self.current_path), 'w-')
-        
         self.setup_file(file)
-        
         return file
 
     def setup_file(self, file):
