@@ -213,8 +213,9 @@ class Handler:
         if isinstance(task, str):
             op = FutureField.parse(task, self.vars, self.domain)
         else:
-            op = FutureField.cast(task, self.domain)
+            # op = FutureField.cast(task, self.domain)
             # op = Cast(task)
+            op = task
 
         # Build task dictionary
         task = dict()

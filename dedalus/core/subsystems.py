@@ -46,6 +46,11 @@ def build_local_subproblems(problem):
 
 def build_matrices(subproblems, matrices):
     """Build subproblem matrices with progress logger."""
+    problem = subproblems[0].problem
+    for eq in problem.eqs:
+        for matrix in matrices:
+            expr = eq[matrix]
+            expr.build_ncc_matrices(problem.separability(), problem.variables)
     for subproblem in log_progress(subproblems, logger, 'info', desc='Building subproblem matrices', iter=np.inf, frac=0.1, dt=10):
         subproblem.build_matrices(matrices)
 
@@ -316,7 +321,7 @@ class Subproblem:
         drop_var = [self.group_to_modes(var.bases) for var in vars]
         # Drop equations that fail condition test
         for n, eqn in enumerate(eqns):
-            if not eval(eqn['raw_condition'], self.group_dict):
+            if not eval(eqn['condition_str'], self.group_dict):
                 drop_eqn[n] = drop_eqn[n][0:0, :]
         self.drop_eqn = drop_eqn = sparse_block_diag(drop_eqn).tocsr()
         self.drop_var = drop_var = sparse_block_diag(drop_var).tocsr()

@@ -69,20 +69,20 @@ class Namespace(OrderedDict):
 #         self.RHS_object
 
 
-    @property
-    def bases(self):
-        return self.LHS.bases
+    # @property
+    # def bases(self):
+    #     return self.LHS.bases
 
-    @property
-    def subdomain(self):
-        return self.LHS.subdomain
+    # @property
+    # def subdomain(self):
+    #     return self.LHS.subdomain
 
-    @property
-    def separability(self):
-        return self.LHS.separability
+    # @property
+    # def separability(self):
+    #     return self.LHS.separability
 
-    def check_condition(self, group_dict):
-        pass
+    # def check_condition(self, group_dict):
+    #     pass
 
 
 
@@ -422,18 +422,18 @@ class InitialValueProblem(ProblemBase):
         self._require_independent(temp, 'LHS', [self._t])
         self._require_first_order(temp, 'LHS', [self._dt])
 
-    def _set_matrix_expressions(self, temp):
-        """Set expressions for building solver."""
-        M, L = temp['LHS'].split(self._dt)
-        if M:
-            M = Operand.cast(M, self.domain)
-            M = M.replace(self._dt, lambda x: x)
-        #vars = [self.namespace[var] for var in self.variables]
-        vars = self.variables
-        temp['M'] = self._prep_linear_form(M, vars, name='M')
-        temp['L'] = self._prep_linear_form(L, vars, name='L')
-        temp['F'] = temp['RHS']
-        temp['separability'] = temp['LHS'].separability(vars)
+    # def _set_matrix_expressions(self, temp):
+    #     """Set expressions for building solver."""
+    #     M, L = temp['LHS'].split(self._dt)
+    #     if M:
+    #         M = operators.cast(M, self.domain)
+    #         M = M.replace(self._dt, lambda x: x)
+    #     #vars = [self.namespace[var] for var in self.variables]
+    #     vars = self.variables
+    #     temp['M'] = self._prep_linear_form(M, vars, name='M')
+    #     temp['L'] = self._prep_linear_form(L, vars, name='L')
+    #     temp['F'] = temp['RHS']
+    #     temp['separability'] = temp['LHS'].separability(vars)
 
     # def _build_local_matrices(self, temp):
     #     vars = self.variables
@@ -446,6 +446,34 @@ class InitialValueProblem(ProblemBase):
     #     else:
     #         temp['L_op'] = {}
 
+    def _build_matrix_expressions(self, eqn):
+        """Build LHS matrix expressions and check equation conditions."""
+        # NEW CHECK!! boulder
+        vars = self.variables
+        # Equation conditions
+        self._check_basis_containment(eqn, 'LHS', 'RHS')
+        eqn['LHS'].require_linearity(*vars, name='LHS')
+        #eqn['LHS'].require_linearity(self._dt, name='LHS')
+        #eqn['LHS'].require_independent(self._t, name='LHS')
+        # Matrix expressions
+        M, L = eqn['LHS'].split(self._dt)
+        print(M)
+        print(L)
+        print('-'*20)
+        M = operators.Cast(M, self.domain)
+        M = M.replace(self._dt, lambda x:x)
+        M = operators.Cast(M, self.domain)
+        M = M.expand(*vars)
+        M = operators.Cast(M, self.domain)
+        L = operators.Cast(L, self.domain)
+        L = L.expand(*vars)
+        L = operators.Cast(L, self.domain)
+        eqn['M'] = operators.convert(M, eqn['bases'])
+        eqn['L'] = operators.convert(L, eqn['bases'])
+        eqn['F'] = operators.convert(eqn['RHS'], eqn['bases'])
+        eqn['separability'] = eqn['LHS'].separability(*vars)
+        # Debug logging
+        logger.debug('  {} linear form: {}'.format('L', eqn['L']))
 
 
 
@@ -501,6 +529,8 @@ class EigenvalueProblem(ProblemBase):
         temp['M'] = self._prep_linear_form(M, vars, name='M')
         temp['L'] = self._prep_linear_form(L, vars, name='L')
         temp['separability'] = temp['LHS'].separability(vars)
+
+
 
 # Aliases
 IVP = InitialValueProblem

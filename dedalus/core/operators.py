@@ -454,7 +454,14 @@ class UnaryGridFunction(NonlinearOperator, metaclass=MultiClass):
         #arg = Operand.cast(arg)
         super().__init__(arg, **kw)
         self.func = func
-        self.name = func.__name__
+
+    @property
+    def name(self):
+        return self.func.__name__
+
+    @property
+    def base(self):
+        return UnaryGridFunction
 
     def _build_bases(self, arg0):
         bases = arg0.bases
@@ -473,7 +480,7 @@ class UnaryGridFunction(NonlinearOperator, metaclass=MultiClass):
         elif self.args[0].meta[axis]['parity'] == 1:
             return 1
         else:
-            raise UndefinedParityError("Unknown action of {} on odd parity.".format(self.name))
+            raise UndefinedParityError("Unknown action of {} on odd parity.".format(self._name))
 
     def sym_diff(self, var):
         """Symbolically differentiate with respect to specified operand."""
@@ -679,13 +686,13 @@ class LinearSubspaceOperator(LinearOperator):
         group_shape = subproblem.group_shape(self.subdomain)
         factors = [sparse.identity(n, format='csr') for n in group_shape]
         # Substitute group portion of subspace matrix
-        if self.seperable:
+        if self.separable:
             argslice = subproblem.global_slices(self.arg.subdomain)[self.axis]
             outslice = subproblem.global_slices(self.subdomain)[self.axis]
             factors[self.axis] = self.subspace_matrix[outslice, argslice]
         else:
             factors[self.axis] = self.subspace_matrix
-        return reduce(sparse.kron, ax_mats, 1).tocsr()
+        return reduce(sparse.kron, factors, 1).tocsr()
 
     @CachedAttribute
     def subspace_matrix(self):
@@ -933,45 +940,46 @@ class IntegrateConstant(Integrate):
         return (space.COV.problem_length * operand)
 
 
-# @parseable('filter', 'f')
-# def filter(arg, **modes):
-#     # Identify domain
-#     domain = unify_attributes((arg,)+tuple(modes), 'domain', require=False)
-#     # Apply iteratively
-#     for space, mode in modes.items():
-#         space = domain.get_space_object(space)
-#         arg = Filter(arg, space, mode)
-#     return arg
+# CHECK NEW
+@parseable('filter', 'f')
+def filter(arg, **modes):
+    # Identify domain
+    domain = unify_attributes((arg,)+tuple(modes), 'domain', require=False)
+    # Apply iteratively
+    for space, mode in modes.items():
+        space = domain.get_space_object(space)
+        arg = Filter(arg, space, mode)
+    return arg
 
 
-# class Filter(LinearSubspaceFunctional):
+class Filter(LinearSubspaceFunctional):
 
-#     def __new__(cls, arg, space, mode):
-#         if isinstance(arg, Number) or (arg.get_basis(space) is None):
-#             if mode == 0:
-#                 return arg
-#             else:
-#                 return 0
-#         elif space not in arg.subdomain:
-#             raise ValueError("Invalid space.")
-#         else:
-#             return object.__new__(cls)
+    def __new__(cls, arg, space, mode):
+        if isinstance(arg, Number) or (arg.get_basis(space) is None):
+            if mode == 0:
+                return arg
+            else:
+                return 0
+        elif space not in arg.subdomain:
+            raise ValueError("Invalid space.")
+        else:
+            return object.__new__(cls)
 
-#     def __init__(self, arg, space, mode):
-#         # Wrap initialization to define keywords
-#         super().__init__(arg, space=space, mode=mode)
+    def __init__(self, arg, space, mode):
+        # Wrap initialization to define keywords
+        super().__init__(arg, space, mode)
 
-#     @property
-#     def base(self):
-#         return Filter
+    @property
+    def base(self):
+        return Filter
 
-#     @classmethod
-#     def entry(cls, j, space, mode):
-#         """F(j,m) = δ(j,m)"""
-#         if j == mode:
-#             return 1
-#         else:
-#             return 0
+    @classmethod
+    def entry(cls, j, space, mode):
+        """F(j,m) = δ(j,m)"""
+        if j == mode:
+            return 1
+        else:
+            return 0
 
 
 @prefix('d')

@@ -104,11 +104,10 @@ class Basis:
         # Discard empty rows
         return matrix[flags, :]
 
-    def ncc_matrix(self, arg_basis, coeffs):
+    def ncc_matrix(self, arg_basis, coeffs, cutoff=1e-6):
         """Build NCC matrix via direct summation."""
         print('in Basis.ncc_matrix')
         N = len(coeffs)
-        cutoff = 1e-6
         total = 0
         for i in range(N):
             coeff = coeffs[i]
@@ -167,9 +166,8 @@ class Jacobi(Basis, metaclass=CachedClass):
     def include_mode(self, mode):
         return (0 <= mode < self.space.coeff_size)
 
-    def ncc_matrix(self, arg_basis, coeffs):
+    def ncc_matrix(self, arg_basis, coeffs, cutoff=1e-6):
         """Build NCC matrix via Clenshaw algorithm."""
-        CUTOFF = 1e-6
         if arg_basis is None:
             return super().ncc_matrix(arg_basis, coeffs)
         # Kronecker Clenshaw on argument Jacobi matrix
@@ -177,7 +175,7 @@ class Jacobi(Basis, metaclass=CachedClass):
         J = jacobi.jacobi_matrix(N, arg_basis.a, arg_basis.b)
         A, B = clenshaw.jacobi_recursion(N, self.a, self.b, J)
         f0 = self.const * sparse.identity(N)
-        total = clenshaw.kronecker_clenshaw(coeffs, A, B, f0, cutoff=CUTOFF)
+        total = clenshaw.kronecker_clenshaw(coeffs, A, B, f0, cutoff=cutoff)
         # Conversion matrix
         input_basis = arg_basis
         output_basis = (self * arg_basis)

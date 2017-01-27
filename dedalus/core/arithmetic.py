@@ -15,7 +15,7 @@ from ..tools.dispatch import MultiClass
 from ..tools.exceptions import NonlinearOperatorError
 from ..tools.exceptions import SymbolicParsingError
 from ..tools.exceptions import SkipDispatchException
-from ..tools.general import unify_attributes
+from ..tools.general import unify_attributes, DeferredTuple
 
 
 class Add(Future, metaclass=MultiClass):
@@ -86,7 +86,9 @@ class Add(Future, metaclass=MultiClass):
         """Split into expressions containing and not containing specified operands/operators."""
         # Sum over argument splittings
         split_args = zip(*(arg.split(*vars) for arg in self.args))
-        return tuple(sum(args) for args in split_args)
+        split = tuple(sum(args) for args in split_args)
+        print(self, split)
+        return split
 
     def sym_diff(self, var):
         """Symbolically differentiate with respect to specified operand."""
@@ -319,13 +321,15 @@ class Multiply(Future, metaclass=MultiClass):
     #     # Take maximum order from arguments
     #     return max(arg.operator_order(operator) for arg in self.args)
 
-    def build_ncc_matrices(self, separability, vars, cutoff=1e-10):
+    def build_ncc_matrices(self, separability, vars, **kw):
         """Precompute non-constant coefficients and build multiplication matrices."""
         nccs, operand = self.require_linearity(*vars)
         # Continue NCC matrix construction
-        operand.build_ncc_matrices(separability, vars, cutoff=cutoff)
+        operand.build_ncc_matrices(separability, vars, **kw)
         # Evaluate NCC
-        ncc = np.prod(nccs).evaluate()
+        ncc = np.prod(nccs)
+        if isinstance(ncc, Future):
+            ncc = ncc.evaluate()
         # Store NCC matrix, assuming constant-group along operand's constant axes
         # This generalization enables subproblem-agnostic pre-construction
         self._ncc_matrix = self._ncc_matrix_recursion(ncc.data, ncc.bases, operand.bases, separability, **kw)
@@ -373,7 +377,7 @@ class Multiply(Future, metaclass=MultiClass):
             raise SymbolicParsingError("Must build NCC matrices before expression matrices.")
         if vars != self._ncc_vars:
             raise SymbolicParsingError("Must build NCC matrices with same variables.")
-        if subproblem.problem.separability != self._ncc_separability:
+        if subproblem.problem.separability() != self._ncc_separability:
             raise SymbolicParsingError("Must build NCC matrices with same separability.")
         # Build operand matrices
         operand = self._ncc_operand
@@ -382,7 +386,7 @@ class Multiply(Future, metaclass=MultiClass):
         # Build projection matrix dropping constant-groups as necessary
         group_shape = subproblem.group_shape(self.subdomain)
         const_shape = np.maximum(group_shape, 1)
-        factors = (sparse.eye(shape, format='csr') for shape in zip(group_shape, const_shape))
+        factors = (sparse.eye(*shape, format='csr') for shape in zip(group_shape, const_shape))
         projection = reduce(sparse.kron, factors, 1).tocsr()
         ncc_mat = projection @ self._ncc_matrix
         # Apply NCC matrix

@@ -201,10 +201,15 @@ class FiniteInterval(Interval):
         self.b = float(b)
 
     @CachedMethod
-    def grid(self, scale=1):
+    def _native_grid(self, scale=1):
         """Gauss-Jacobi grid."""
         N = self.grid_size(scale)
-        native_grid = jacobi.build_grid(N, self.a, self.b)
+        return jacobi.build_grid(N, self.a, self.b)
+
+    @CachedMethod
+    def grid(self, scale=1):
+        """Gauss-Jacobi grid."""
+        native_grid = self._native_grid(scale=scale)
         return self.COV.problem_coord(native_grid)
 
     @CachedMethod
