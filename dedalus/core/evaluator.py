@@ -314,10 +314,6 @@ class FileHandler(Handler):
         base_path = pathlib.Path(base_path).absolute()
         if any(base_path.suffixes):
             raise ValueError("base_path should indicate a folder for storing HDF5 files.")
-        with Sync(self.domain.distributor.comm_cart):
-            if self.domain.distributor.rank == 0:
-                if not base_path.exists():
-                    base_path.mkdir()
 
         # Attributes
         self.base_path = base_path
@@ -326,42 +322,55 @@ class FileHandler(Handler):
         self.parallel = parallel
         self._sl_array = np.zeros(1, dtype=int)
 
-        setpattern_name = '%s_s*' % (self.base_path.stem)
-        sets = list(self.base_path.glob(setpattern_name))
-        if mode == "overwrite":
-            for s in sets:
-                if s.is_dir():
-                    shutil.rmtree(str(s))
+        comm = self.domain.dist.comm_cart
+        if comm.rank == 0:
+            set_pattern = '%s_s*' % (self.base_path.stem)
+            sets = list(self.base_path.glob(set_pattern))
+            if mode == "overwrite":
+                for set in sets:
+                    if set.is_dir():
+                        shutil.rmtree(str(set))
+                    else:
+                        set.unlink()
+                set_num = 1
+                total_write_num = 1
+            elif mode == "append":
+                set_nums = []
+                if sets:
+                    for set in sets:
+                        m = re.match("{}_s(\d+)$".format(base_path.stem), set.stem)
+                        if m:
+                            set_nums.append(int(m.groups()[0]))
+                    max_set = max(set_nums)
+                    joined_file = base_path.joinpath("{}_s{}.h5".format(base_path.stem,max_set))
+                    p0_file = base_path.joinpath("{0}_s{1}/{0}_s{1}_p0.h5".format(base_path.stem,max_set))
+                    if os.path.exists(str(joined_file)):
+                        with h5py.File(str(joined_file),'r') as testfile:
+                            last_write_num = testfile['/scales/write_number'][-1]
+                    elif os.path.exists(str(p0_file)):
+                        with h5py.File(str(p0_file),'r') as testfile:
+                            last_write_num = testfile['/scales/write_number'][-1]
+                    else:
+                        last_write_num = 0
+                        logger.warn("Cannot determine write num from files. Restarting count.")
                 else:
-                    s.unlink()
-            self.set_num = 1
-            self.total_write_num = 1
-        elif mode == "append":
-            set_nums = []
-            if sets:
-                for s in sets:
-                    m = re.match("{}_s(\d+)$".format(base_path.stem),s.stem)
-                    if m:
-                        set_nums.append(int(m.groups()[0]))
-                max_set = max(set_nums)
-                joined_file = base_path.joinpath("{}_s{}.h5".format(base_path.stem,max_set))
-                p0_file = base_path.joinpath("{0}_s{1}/{0}_s{1}_p0.h5".format(base_path.stem,max_set))
-                if os.path.exists(str(joined_file)):
-                    with h5py.File(str(joined_file),'r') as testfile:
-                        last_write_num = testfile['/scales/write_number'][-1]
-                elif os.path.exists(str(p0_file)):
-                    with h5py.File(str(p0_file),'r') as testfile:
-                        last_write_num = testfile['/scales/write_number'][-1]
-                else:
+                    max_set = 0
                     last_write_num = 0
-                    logger.warn("Cannot determine write num from files. Restarting count.")
+                set_num = max_set + 1
+                total_write_num = last_write_num + 1
             else:
-                max_set = 0
-                last_write_num = 0
-            self.set_num = max_set + 1
-            self.total_write_num = last_write_num + 1
+                raise ValueError("Write mode {} not defined.".format(mode))
         else:
-            raise ValueError("Write mode {} not defined.".format(mode))
+            set_num = None
+            total_write_num = None
+        # Communicate set and write numbers
+        self.set_num = comm.bcast(set_num, root=0)
+        self.total_write_num = comm.bcast(total_write_num, root=0)
+
+        # Create output folder
+        with Sync(comm):
+            if comm.rank == 0:
+                base_path.mkdir(exist_ok=True)
 
         if parallel:
             # Set HDF5 property list for collective writing
@@ -411,10 +420,6 @@ class FileHandler(Handler):
             # Save in folders for each filenum in base directory
             folder_name = '%s_s%i' %(self.base_path.stem, set_num)
             folder_path = self.base_path.joinpath(folder_name)
-            with Sync(domain.distributor.comm_cart):
-                if domain.distributor.rank == 0:
-                    if not folder_path.exists():
-                        folder_path.mkdir()
             file_name = '%s_s%i_p%i.h5' %(self.base_path.stem, set_num, comm.rank)
             return folder_path.joinpath(file_name)
 
@@ -425,9 +430,12 @@ class FileHandler(Handler):
         if self.parallel:
             file = h5py.File(str(self.current_path), 'w-', driver='mpio', comm=comm)
         else:
+            # Create set folder
+            with Sync(comm):
+                if comm.rank == 0:
+                    self.current_path.parent.mkdir()
             file = h5py.File(str(self.current_path), 'w-')
         self.setup_file(file)
-        return file
 
     def setup_file(self, file):
 
