@@ -132,6 +132,13 @@ extensions = [
         include_dirs=include_dirs,
         libraries=libraries,
         library_dirs=library_dirs,
+        extra_compile_args=["-Wno-error=declaration-after-statement"]),
+    Extension(
+        name='dedalus.core.polynomials',
+        sources=['dedalus/core/polynomials.pyx'],
+        include_dirs=include_dirs,
+        libraries=libraries,
+        library_dirs=library_dirs,
         extra_compile_args=["-Wno-error=declaration-after-statement"])]
 
 setup(

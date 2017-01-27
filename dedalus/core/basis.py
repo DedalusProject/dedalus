@@ -11,6 +11,7 @@ from scipy import sparse
 from scipy import fftpack
 
 from . import operators
+from .polynomials import chebyshev_derivative_2d
 from ..libraries.fftw import fftw_wrappers as fftw
 from ..tools.config import config
 from ..tools.cache import CachedAttribute
@@ -499,20 +500,17 @@ class Chebyshev(ImplicitBasis):
 
             def explicit_form(self, input, output, axis):
                 """Differentiation by recursion on coefficients."""
+                shape = input.shape
                 # Currently setup just for last axis
                 if axis != -1:
-                    if axis != (len(input.shape) - 1):
-                        raise NotImplementedError()
-                # Referencess
-                a = input
-                b = output
-                N = self.basis.coeff_size - 1
-                # Apply recursive differentiation
-                b[..., N] = 0.
-                b[..., N-1] = 2. * N * a[..., N]
-                for i in range(N-2, 0, -1):
-                    b[..., i] = 2 * (i+1) * a[..., i+1] + b[..., i+2]
-                b[..., 0] = a[..., 1] + b[..., 2] / 2.
+                    if axis != (len(shape) - 1):
+                        raise NotImplementedError("Chebyshev derivative only implemented for last axis.")
+                # Create 2D views of arrays
+                reduced_shape = (int(np.prod(shape[:-1])), shape[-1])
+                input_view = input.reshape(reduced_shape)
+                output_view = output.reshape(reduced_shape)
+                # Call cythonized derivative
+                chebyshev_derivative_2d(input_view, output_view)
                 # Scale for interval
                 output /= self.basis._grid_stretch
 
