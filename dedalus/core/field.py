@@ -458,20 +458,29 @@ class Field(Data):
     def differentiate(self, *args, **kw):
         """Differentiate field."""
         from .operators import differentiate
-        diff_op = differentiate(self, *args, **kw)
-        return diff_op.evaluate()
+        from .future import Future
+        diff = differentiate(self, *args, **kw)
+        if isinstance(diff, Future):
+            diff = diff.evaluate()
+        return diff
 
     def integrate(self, *args, **kw):
         """Integrate field."""
         from .operators import integrate
-        integ_op = integrate(self, *args, **kw)
-        return integ_op.evaluate()
+        from .future import Future
+        integ = integrate(self, *args, **kw)
+        if isinstance(integ, Future):
+            integ = integ.evaluate()
+        return integ
 
     def interpolate(self, *args, **kw):
         """Interpolate field."""
         from .operators import interpolate
-        interp_op = interpolate(self, *args, **kw)
-        return interp_op.evaluate()
+        from .future import Future
+        interp = interpolate(self, *args, **kw)
+        if isinstance(interp, Future):
+            interp = interp.evaluate()
+        return interp
 
     def antidifferentiate(self, basis, bc, out=None):
         """
