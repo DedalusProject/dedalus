@@ -482,6 +482,7 @@ echo "$SSLSHA" > $SSLFILE
 
 printf -v ZLIBFILE "%s.tar.gz.sha512" $ZLIB
 printf -v ZLIBSHA "ece209d4c7ec0cb58ede791444dc754e0d10811cbbdebe3df61c0fd9f9f9867c1c3ccd5f1827f847c005e24eef34fb5bf87b5d3f894d75da04f1797538290e4a  %s" ${ZLIBFILE%.sha512}
+echo "$ZLIBSHA" > $ZLIBFILE
 
 # get the files
 get_dedalusproject $PYTHON.tgz
