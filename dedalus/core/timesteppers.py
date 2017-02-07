@@ -75,7 +75,7 @@ class MultistepIMEX:
         self._iteration = 0
         self._LHS_params = None
 
-    def step(self, solver, dt, wall_time):
+    def step(self, solver, dt):
         """Advance solver by one timestep."""
 
         # Solver references
@@ -84,6 +84,7 @@ class MultistepIMEX:
         state = solver.state
         Fe = solver.Fe
         Fb = solver.Fb
+        wall_time = solver.get_wall_time() - solver.start_time
         sim_time = solver.sim_time
         iteration = solver.iteration
 
@@ -103,7 +104,7 @@ class MultistepIMEX:
 
         # Run evaluator
         state.scatter()
-        evaluator.evaluate_scheduled(wall_time, sim_time, dt, iteration)
+        evaluator.evaluate_scheduled(wall_time=wall_time, sim_time=sim_time, timestep=dt, iteration=iteration)
 
         # Update RHS components and LHS matrices
         MX.rotate()
@@ -505,7 +506,7 @@ class RungeKuttaIMEX:
 
         self._LHS_params = None
 
-    def step(self, solver, dt, wall_time):
+    def step(self, solver, dt):
         """Advance solver by one timestep."""
 
         # Solver references
@@ -514,6 +515,7 @@ class RungeKuttaIMEX:
         state = solver.state
         Fe = solver.Fe
         Fb = solver.Fb
+        wall_time = solver.get_wall_time() - solver.start_time
         sim_time_0 = solver.sim_time
         iteration = solver.iteration
 
@@ -545,9 +547,9 @@ class RungeKuttaIMEX:
             # Compute F(n,i-1), L.X(n,i-1)
             state.scatter()
             if i == 1:
-                evaluator.evaluate_scheduled(wall_time, solver.sim_time, dt, iteration)
+                evaluator.evaluate_scheduled(wall_time=wall_time, sim_time=solver.sim_time, timestep=dt, iteration=iteration)
             else:
-                evaluator.evaluate_group('F', wall_time, solver.sim_time, dt, iteration)
+                evaluator.evaluate_group('F', wall_time=wall_time, sim_time=solver.sim_time, timestep=dt, iteration=iteration)
             for p in pencils:
                 pX = state.get_pencil(p)
                 pFe = Fe.get_pencil(p)

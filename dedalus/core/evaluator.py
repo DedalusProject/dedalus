@@ -71,13 +71,12 @@ class Evaluator:
             self.groups[handler.group].append(handler)
         return handler
 
-    def evaluate_group(self, group, wall_time, sim_time, timestep, iteration):
+    def evaluate_group(self, group, **kw):
         """Evaluate all handlers in a group."""
-
         handlers = self.groups[group]
-        self.evaluate_handlers(handlers, wall_time, sim_time, timestep, iteration)
+        self.evaluate_handlers(handlers, **kw)
 
-    def evaluate_scheduled(self, wall_time, sim_time, timestep, iteration):
+    def evaluate_scheduled(self, wall_time, sim_time, iteration, **kw):
         """Evaluate all scheduled handlers."""
 
         scheduled_handlers = []
@@ -98,9 +97,9 @@ class Evaluator:
                 handler.last_sim_div  = sim_div
                 handler.last_iter_div = iter_div
 
-        self.evaluate_handlers(scheduled_handlers, wall_time, sim_time, timestep, iteration)
+        self.evaluate_handlers(scheduled_handlers, wall_time=wall_time, sim_time=sim_time, iteration=iteration, **kw)
 
-    def evaluate_handlers(self, handlers, wall_time, sim_time, timestep, iteration):
+    def evaluate_handlers(self, handlers, sim_time, **kw):
         """Evaluate a collection of handlers."""
 
         tasks = [t for h in handlers for t in h.tasks]
@@ -140,7 +139,7 @@ class Evaluator:
 
         # Process
         for handler in handlers:
-            handler.process(wall_time, sim_time, timestep, iteration)
+            handler.process(sim_time=sim_time, **kw)
 
     @staticmethod
     def get_fields(tasks):
@@ -247,16 +246,14 @@ class DictionaryHandler(Handler):
     """Handler that stores outputs in a dictionary."""
 
     def __init__(self, *args, **kw):
-
         Handler.__init__(self, *args, **kw)
         self.fields = dict()
 
     def __getitem__(self, item):
         return self.fields[item]
 
-    def process(self, wall_time, sim_time, timestep, iteration):
+    def process(self, **kw):
         """Reference fields from dictionary."""
-
         for task in self.tasks:
             task['out'].set_scales(task['scales'], keep_data=True)
             task['out'].require_layout(task['layout'])
@@ -278,9 +275,8 @@ class SystemHandler(Handler):
 
         return self.system
 
-    def process(self, wall_time, sim_time, timestep, iteration):
+    def process(self, **kw):
         """Gather fields into system."""
-
         self.system.gather()
 
 
@@ -514,7 +510,7 @@ class FileHandler(Handler):
                 dset.dims[axis+1].label = sn
                 dset.dims[axis+1].attach_scale(scale)
 
-    def process(self, wall_time, sim_time, timestep, iteration):
+    def process(self, wall_time, sim_time, timestep, iteration, **kw):
         """Save task outputs to HDF5 file."""
 
         file = self.get_file()

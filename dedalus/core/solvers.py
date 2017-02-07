@@ -160,7 +160,7 @@ class LinearBoundaryValueSolver:
         """Solve BVP."""
 
         # Compute RHS
-        self.evaluator.evaluate_group('F', 0, 0, 0, 0)
+        self.evaluator.evaluate_group('F', sim_time=0)
 
         # Solve system for each pencil, updating state
         for p in self.pencils:
@@ -229,7 +229,7 @@ class NonlinearBoundaryValueSolver:
     def newton_iteration(self):
         """Update solution with a Newton iteration."""
         # Compute RHS
-        self.evaluator.evaluate_group('F', 0, 0, 0, 0)
+        self.evaluator.evaluate_group('F', sim_time=0)
         # Recompute Jacobian
         pencil.build_matrices(self.pencils, self.problem, ['dF'])
         # Solve system for each pencil, updating perturbations
@@ -431,8 +431,7 @@ class InitialValueSolver:
         # (Safety gather)
         self.state.gather()
         # Advance using timestepper
-        wall_time = self.get_wall_time() - self.start_time
-        self.timestepper.step(self, dt, wall_time)
+        self.timestepper.step(self, dt)
         # (Safety scatter)
         self.state.scatter()
         # Update iteration
