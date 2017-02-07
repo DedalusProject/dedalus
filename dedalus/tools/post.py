@@ -299,7 +299,7 @@ def merge_sets(joint_path, set_paths, cleanup=False):
             # Copy scales
             set_file.copy('scales', joint_file)
             # Expand time scales
-            for scale_name in ['sim_time', 'wall_time', 'iteration', 'write_number']:
+            for scale_name in ['sim_time', 'world_time', 'wall_time', 'iteration', 'write_number']:
                 joint_dset = joint_file['scales'][scale_name]
                 joint_dset.resize(writes, axis=0)
                 joint_dset[:] = 0
@@ -342,7 +342,7 @@ def merge_sets(joint_path, set_paths, cleanup=False):
             i1 += length
             with h5py.File(str(set_path), mode='r') as set_file:
                 # Copy scales
-                for scale_name in ['sim_time', 'wall_time', 'iteration']:
+                for scale_name in ['sim_time', 'world_time', 'wall_time', 'iteration']:
                     set_dset = set_file['scales'][scale_name]
                     joint_dset = joint_file['scales'][scale_name]
                     joint_dset[i0:i1] = set_dset[:length]

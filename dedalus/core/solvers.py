@@ -284,8 +284,8 @@ class InitialValueSolver:
 
         self.problem = problem
         self.domain = domain = problem.domain
-        self._wall_time_array = np.zeros(1, dtype=float)
-        self.start_time = self.get_wall_time()
+        self._float_array = np.zeros(1, dtype=float)
+        self.start_time = self.get_world_time()
 
         # Build pencils and pencil matrices
         self.pencils = pencil.build_pencils(domain)
@@ -330,11 +330,11 @@ class InitialValueSolver:
     def sim_time(self, t):
         self._sim_time.value = t
 
-    def get_wall_time(self):
-        self._wall_time_array[0] = time.time()
+    def get_world_time(self):
+        self._float_array[0] = time.time()
         comm = self.domain.dist.comm_cart
-        comm.Allreduce(MPI.IN_PLACE, self._wall_time_array, op=MPI.MAX)
-        return self._wall_time_array[0]
+        comm.Allreduce(MPI.IN_PLACE, self._float_array, op=MPI.MAX)
+        return self._float_array[0]
 
     def load_state(self, path, index=-1):
         """
@@ -399,7 +399,7 @@ class InitialValueSolver:
         if self.sim_time >= self.stop_sim_time:
             logger.info('Simulation stop time reached.')
             return False
-        elif (self.get_wall_time() - self.start_time) >= self.stop_wall_time:
+        elif (self.get_world_time() - self.start_time) >= self.stop_wall_time:
             logger.info('Wall stop time reached.')
             return False
         elif self.iteration >= self.stop_iteration:

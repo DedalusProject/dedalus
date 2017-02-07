@@ -84,9 +84,13 @@ class MultistepIMEX:
         state = solver.state
         Fe = solver.Fe
         Fb = solver.Fb
-        wall_time = solver.get_wall_time() - solver.start_time
-        sim_time = solver.sim_time
-        iteration = solver.iteration
+
+        evaluator_kw = {}
+        evaluator_kw['world_time'] = world_time = solver.get_world_time()
+        evaluator_kw['wall_time'] = world_time - solver.start_time
+        evaluator_kw['sim_time'] = solver.sim_time
+        evaluator_kw['timestep'] = dt
+        evaluator_kw['iteration'] = solver.iteration
 
         # References
         MX = self.MX
@@ -104,7 +108,7 @@ class MultistepIMEX:
 
         # Run evaluator
         state.scatter()
-        evaluator.evaluate_scheduled(wall_time=wall_time, sim_time=sim_time, timestep=dt, iteration=iteration)
+        evaluator.evaluate_scheduled(**evaluator_kw)
 
         # Update RHS components and LHS matrices
         MX.rotate()
@@ -515,9 +519,13 @@ class RungeKuttaIMEX:
         state = solver.state
         Fe = solver.Fe
         Fb = solver.Fb
-        wall_time = solver.get_wall_time() - solver.start_time
-        sim_time_0 = solver.sim_time
-        iteration = solver.iteration
+
+        evaluator_kw = {}
+        evaluator_kw['world_time'] = world_time = solver.get_world_time()
+        evaluator_kw['wall_time'] = world_time - solver.start_time
+        evaluator_kw['sim_time'] = sim_time_0 = solver.sim_time
+        evaluator_kw['timestep'] = dt
+        evaluator_kw['iteration'] = solver.iteration
 
         # Other references
         RHS = self.RHS
@@ -546,10 +554,11 @@ class RungeKuttaIMEX:
 
             # Compute F(n,i-1), L.X(n,i-1)
             state.scatter()
+            evaluator_kw['sim_time'] = solver.sim_time
             if i == 1:
-                evaluator.evaluate_scheduled(wall_time=wall_time, sim_time=solver.sim_time, timestep=dt, iteration=iteration)
+                evaluator.evaluate_scheduled(**evaluator_kw)
             else:
-                evaluator.evaluate_group('F', wall_time=wall_time, sim_time=solver.sim_time, timestep=dt, iteration=iteration)
+                evaluator.evaluate_group('F', **evaluator_kw)
             for p in pencils:
                 pX = state.get_pencil(p)
                 pFe = Fe.get_pencil(p)

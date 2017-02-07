@@ -450,6 +450,7 @@ class FileHandler(Handler):
         # Start time scales with shape=(0,) to chunk across writes
         scale_group.create_dataset(name='sim_time', shape=(0,), maxshape=(None,), dtype=np.float64)
         scale_group.create_dataset(name='timestep', shape=(0,), maxshape=(None,), dtype=np.float64)
+        scale_group.create_dataset(name='world_time', shape=(0,), maxshape=(None,), dtype=np.float64)
         scale_group.create_dataset(name='wall_time', shape=(0,), maxshape=(None,), dtype=np.float64)
         scale_group.create_dataset(name='iteration', shape=(0,), maxshape=(None,), dtype=np.int)
         scale_group.create_dataset(name='write_number', shape=(0,), maxshape=(None,), dtype=np.int)
@@ -487,7 +488,7 @@ class FileHandler(Handler):
 
             # Time scales
             dset.dims[0].label = 't'
-            for sn in ['sim_time', 'wall_time', 'timestep', 'iteration', 'write_number']:
+            for sn in ['sim_time', 'world_time', 'wall_time', 'timestep', 'iteration', 'write_number']:
                 scale = scale_group[sn]
                 dset.dims.create_scale(scale, sn)
                 dset.dims[0].attach_scale(scale)
@@ -510,7 +511,7 @@ class FileHandler(Handler):
                 dset.dims[axis+1].label = sn
                 dset.dims[axis+1].attach_scale(scale)
 
-    def process(self, wall_time, sim_time, timestep, iteration, **kw):
+    def process(self, world_time, wall_time, sim_time, timestep, iteration, **kw):
         """Save task outputs to HDF5 file."""
 
         file = self.get_file()
@@ -521,6 +522,7 @@ class FileHandler(Handler):
 
         # Update time scales
         sim_time_dset = file['scales/sim_time']
+        world_time_dset = file['scales/world_time']
         wall_time_dset = file['scales/wall_time']
         timestep_dset = file['scales/timestep']
         iteration_dset = file['scales/iteration']
@@ -528,6 +530,8 @@ class FileHandler(Handler):
 
         sim_time_dset.resize(index+1, axis=0)
         sim_time_dset[index] = sim_time
+        world_time_dset.resize(index+1, axis=0)
+        world_time_dset[index] = world_time
         wall_time_dset.resize(index+1, axis=0)
         wall_time_dset[index] = wall_time
         timestep_dset.resize(index+1, axis=0)
