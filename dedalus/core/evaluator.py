@@ -21,8 +21,13 @@ from ..tools.general import OrderedSet
 from ..tools.general import oscillate
 from ..tools.parallel import Sync
 
+from ..tools.config import config
+FILEHANDLER_MODE_DEFAULT = config['analysis'].get('FILEHANDLER_MODE_DEFAULT')
+FILEHANDLER_PARALLEL_DEFAULT = config['analysis'].getboolean('FILEHANDLER_PARALLEL_DEFAULT')
+
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
+
 
 class Evaluator:
     """
@@ -295,16 +300,24 @@ class FileHandler(Handler):
         (Note: files may be larger after final write.)
     parallel : bool, optional
         Perform parallel writes from each process to single file (True), or
-        separately write to individual process files (False, default)
+        separately write to individual process files (False).
+        Default behavior set by config option.
     mode : str, optional
         'overwrite' to delete any present analysis output with the same base path.
         'append' to begin with set number incremented past any present analysis output.
+        Default behavior set by config option.
 
     """
 
-    def __init__(self, base_path, *args, max_writes=np.inf, max_size=2**30, parallel=False, mode="append", **kw):
+    def __init__(self, base_path, *args, max_writes=np.inf, max_size=2**30, parallel=None, mode=None, **kw):
 
         Handler.__init__(self, *args, **kw)
+
+        # Resolve defaults from config
+        if parallel is None:
+            parallel = FILEHANDLER_PARALLEL_DEFAULT
+        if mode is None:
+            mode = FILEHANDLER_MODE_DEFAULT
 
         # Check base_path
         base_path = pathlib.Path(base_path).absolute()
@@ -317,6 +330,11 @@ class FileHandler(Handler):
         self.max_size = max_size
         self.parallel = parallel
         self._sl_array = np.zeros(1, dtype=int)
+
+        # Resolve mode
+        mode = mode.lower()
+        if mode not in ['overwrite', 'append']:
+            raise ValueError("Write mode {} not defined.".format(mode))
 
         comm = self.domain.dist.comm_cart
         if comm.rank == 0:
@@ -354,8 +372,6 @@ class FileHandler(Handler):
                     last_write_num = 0
                 set_num = max_set + 1
                 total_write_num = last_write_num + 1
-            else:
-                raise ValueError("Write mode {} not defined.".format(mode))
         else:
             set_num = None
             total_write_num = None
