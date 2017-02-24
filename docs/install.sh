@@ -11,6 +11,18 @@
 # check the current directory and one up.
 #
 
+if [ $1 == "-y" ]; then
+    INTERACTIVE=0
+else
+    INTERACTIVE=1
+fi
+
+if [ $INTERACTIVE == 0 ]; then
+    CLEANUP=1
+else
+    CLEANUP=0
+fi
+
 DEST_SUFFIX="dedalus"
 DEST_DIR="`pwd`/${DEST_SUFFIX/ /}"   # Installation location
 BRANCH="tip" # This is the branch to which we will forcibly update.
@@ -162,7 +174,6 @@ function host_specific
 {
     IS_OSX=0              # not OSX by default
     MYHOST=`hostname -s`  # just give the short one, not FQDN
-    MYHOSTLONG=`hostname` # FQDN, for Ranger
     MYOS=`uname -s`       # A guess at the OS
     if [ "${MYOS##Darwin}" != "${MYOS}" ]
     then
@@ -232,11 +243,7 @@ function host_specific
     INST_PNG=1
     INST_PKGCFG=1
     IS_OSX=1
-    fi
-
-
-
-    if [ -f /etc/redhat-release ]
+    elif [ -f /etc/redhat-release ]
     then
             echo "Looks like you're on a RedHat-compatible machine."
             echo
@@ -283,40 +290,7 @@ function host_specific
             export MPI_INCLUDE_PATH="/usr/include/openmpi-x86_64/"
             export MPI_LIBRARY_PATH="/usr/lib64/openmpi/lib/"
         echo
-    fi
-    if [ -f /etc/debian_version ]
-    then
-        echo "Looks like you're on a Debian-compatible machine."
-        echo
-        echo "You need to have these packages installed:"
-        echo
-        echo "  * libatlas-base-dev"
-        echo "  * mercurial"
-        echo "  * libatlas3-base"
-        echo "  * libopenmpi-dev"
-        echo "  * openmpi-bin"
-        echo "  * libssl-dev"
-        echo "  * build-essential"
-        echo "  * libncurses5"
-        echo "  * libncurses5-dev"
-        echo "  * zip"
-        echo "  * uuid-dev"
-        echo "  * libfreetype6-dev"
-        echo "  * tk-dev"
-        echo "  * libhdf5-dev"
-        echo "  * libzmq-dev"
-        echo "  * libsqlite3-dev"
-        echo "  * gfortran"
-        echo
-        echo "You can accomplish this by executing:"
-        echo
-        echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev mercurial libzmq-dev libsqlite3-dev gfortran"
-        echo
-        echo
-        echo "Currently, all versions of Debian need a newer version OpenMPI. We'll build our own."
-        INST_OPENMPI=1
-    fi
-    if [ -f /etc/lsb-release ] && [ `grep --count buntu /etc/lsb-release` -gt 0 ]
+    elif [ -f /etc/lsb-release ] && [ `grep --count buntu /etc/lsb-release` -gt 0 ]
     then
         UBUNTU_VERSION=`lsb_release -r | cut -f 2 | sed -s 's/\([0-9]\+\)\.\([0-9]\+\)/\1/'`
         echo "Looks like you're on an Ubuntu-compatible machine."
@@ -353,7 +327,40 @@ function host_specific
         fi
         BLAS="/usr/lib/"
         LAPACK="/usr/lib/"
+    elif [ -f /etc/debian_version ]
+    then
+        echo "Looks like you're on a Debian-compatible machine."
+        echo
+        echo "You need to have these packages installed:"
+        echo
+        echo "  * libatlas-base-dev"
+        echo "  * mercurial"
+        echo "  * libatlas3-base"
+        echo "  * libopenmpi-dev"
+        echo "  * openmpi-bin"
+        echo "  * libssl-dev"
+        echo "  * build-essential"
+        echo "  * libncurses5"
+        echo "  * libncurses5-dev"
+        echo "  * zip"
+        echo "  * uuid-dev"
+        echo "  * libfreetype6-dev"
+        echo "  * tk-dev"
+        echo "  * libhdf5-dev"
+        echo "  * libzmq-dev"
+        echo "  * libsqlite3-dev"
+        echo "  * gfortran"
+        echo
+        echo "You can accomplish this by executing:"
+        echo
+        echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev mercurial libzmq-dev libsqlite3-dev gfortran"
+        echo
+        echo
+        echo "Currently, all versions of Debian need a newer version OpenMPI. We'll build our own."
+        INST_OPENMPI=1
     fi
+
+    # package installs
     if [ $INST_SCIPY -eq 1 ]
     then
 	echo
@@ -406,15 +413,19 @@ function do_setup_py
 }
 
 ORIG_PWD=`pwd`
-echo "+++++++++"
-echo "Greetings, human. Welcome to the Dedalus Install Script"
-echo
+if [ $INTERACTIVE == 1 ]; then
+   echo "+++++++++"
+   echo "Greetings, human. Welcome to the Dedalus Install Script"
+   echo
+fi
 host_specific
-echo
-echo
-read -p "[hit enter] "
-echo
-echo
+if [ $INTERACTIVE == 1 ]; then
+   echo
+   echo
+   read -p "[hit enter] "
+   echo
+   echo
+fi
 
 LOG_FILE="${DEST_DIR}/dedalus_install.log"
 
@@ -811,6 +822,24 @@ then
     ( ${DEST_DIR}/bin/pip3 install readline 2>&1 ) 1>> ${LOG_FILE}
 fi
 
+# clean up
+if [ $CLEANUP == 1 ]; then
+    rm ${DEST_DIR}/src/$PYTHON.tgz
+    rm -rf ${DEST_DIR}/src/$PYTHON
+    rm ${DEST_DIR}/src/$FFTW.tar.gz
+    rm -rf ${DEST_DIR}/src/$FFTW
+    rm ${DEST_DIR}/src/$NUMPY.tar.gz
+    rm -rf ${DEST_DIR}/src/$NUMPY
+    rm ${DEST_DIR}/src/$SCIPY.tar.gz
+    rm -rf ${DEST_DIR}/src/$SCIPY
+    [ $INST_OPENMPI -eq 1 ] && rm ${DEST_DIR}/src/$OPENMPI.tar.gz && rm -rf ${DEST_DIR}/src/$OPENMPI
+    [ $INST_HDF5 -eq 1 ]    && rm ${DEST_DIR}/src/$HDF5.tar.gz    && rm -rf ${DEST_DIR}/src/$HDF5
+    [ $INST_FTYPE -eq 1 ]   && rm ${DEST_DIR}/src/$FTYPE.tar.gz   && rm -rf ${DEST_DIR}/src/$FTYPE
+    [ $INST_PNG -eq 1 ]     && rm ${DEST_DIR}/src/$PNG.tar.gz     && rm -rf ${DEST_DIR}/src/$PNG
+    [ $INST_PKGCFG -eq 1 ]  && rm ${DEST_DIR}/src/$PKGCFG.tar.gz  && rm -rf ${DEST_DIR}/src/$PKGCFG
+    [ $INST_OPENSSL -eq 1 ] && rm ${DEST_DIR}/src/$OPENSSL.tar.gz && rm -rf ${DEST_DIR}/src/$OPENSSL
+    [ $INST_ZLIB -eq 1 ]    && rm ${DEST_DIR}/src/$ZLIB.tar.gz    && rm -rf ${DEST_DIR}/src/$ZLIB
+fi
 
 function print_afterword
 {
