@@ -317,8 +317,13 @@ class FileHandler(Handler):
         self._sl_array = np.zeros(1, dtype=int)
 
         self.set_num = set_num - 1
-        self.current_path = None
         self.total_write_num = write_num - 1
+
+        if write_num == 1:
+            self.current_path = None
+        else:
+            self.set_current_path()
+
         self.file_write_num = 0
 
         if parallel:
@@ -351,34 +356,49 @@ class FileHandler(Handler):
         # Otherwise open current file
         if self.parallel:
             comm = self.domain.distributor.comm_cart
-            return h5py.File(str(self.current_path), 'a', driver='mpio', comm=comm)
+            h5file = h5py.File(str(self.current_path), 'a', driver='mpio', comm=comm)
         else:
-            return h5py.File(str(self.current_path), 'a')
+            h5file = h5py.File(str(self.current_path), 'a')
 
-    def new_file(self):
-        """Generate new HDF5 file."""
+        self.file_write_num = h5file['/scales/write_number'][-1] % self.max_writes
+        return h5file
 
+    def set_current_path(self):
         domain = self.domain
-
-        # Create next file
-        self.set_num += 1
-        self.file_write_num = 0
         comm = domain.distributor.comm_cart
+        if self.set_num == 0:
+            set_num = self.set_num + 1
+        else:
+            set_num = self.set_num
         if self.parallel:
             # Save in base directory
-            file_name = '%s_s%i.hdf5' %(self.base_path.stem, self.set_num)
+            file_name = '%s_s%i.hdf5' %(self.base_path.stem, set_num)
             self.current_path = self.base_path.joinpath(file_name)
-            file = h5py.File(str(self.current_path), 'w', driver='mpio', comm=comm)
+
         else:
             # Save in folders for each filenum in base directory
-            folder_name = '%s_s%i' %(self.base_path.stem, self.set_num)
+            folder_name = '%s_s%i' %(self.base_path.stem, set_num)
             folder_path = self.base_path.joinpath(folder_name)
             with Sync(domain.distributor.comm_cart):
                 if domain.distributor.rank == 0:
                     if not folder_path.exists():
                         folder_path.mkdir()
-            file_name = '%s_s%i_p%i.h5' %(self.base_path.stem, self.set_num, comm.rank)
-            self.current_path = folder_path.joinpath(file_name)
+            file_name = '%s_s%i_p%i.h5' %(self.base_path.stem, set_num, comm.rank)
+
+        self.current_path = folder_path.joinpath(file_name)
+
+    def new_file(self):
+        """Generate new HDF5 file."""
+
+        domain = self.domain
+        # Create next file
+        self.set_num += 1
+        self.file_write_num = 0
+        comm = domain.distributor.comm_cart
+        self.set_current_path()
+        if self.parallel:
+            file = h5py.File(str(self.current_path), 'w', driver='mpio', comm=comm)
+        else:
             file = h5py.File(str(self.current_path), 'w')
 
         self.setup_file(file)
