@@ -240,9 +240,11 @@ class NonlinearBoundaryValueSolver:
         for p in self.pencils:
             pFe = self.Fe.get_pencil(p)
             pFb = self.Fb.get_pencil(p)
-            A = p.L - p.dF
+            A = p.L_exp - p.dF_exp
             b = p.G_eq * pFe + p.G_bc * pFb
             x = linalg.spsolve(A, b, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
+            if p.dirichlet:
+                x = p.JD * x
             self.perturbations.set_pencil(p, x)
         self.perturbations.scatter()
         # Update state
