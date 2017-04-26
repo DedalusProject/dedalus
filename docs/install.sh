@@ -11,13 +11,13 @@
 # check the current directory and one up.
 #
 
-if [ $1 == "-y" ]; then
+if [[ $1 == "-y" ]]; then
     INTERACTIVE=0
 else
     INTERACTIVE=1
 fi
 
-if [ $INTERACTIVE == 0 ]; then
+if [[ $INTERACTIVE == 0 ]]; then
     CLEANUP=1
 else
     CLEANUP=0
