@@ -106,15 +106,13 @@ class Basis:
 
     def ncc_matrix(self, arg_basis, coeffs, cutoff=1e-6):
         """Build NCC matrix via direct summation."""
-        print('in Basis.ncc_matrix')
         N = len(coeffs)
         total = 0
         for i in range(N):
             coeff = coeffs[i]
-            if abs(coeff) > cutoff:
+            if len(coeff.shape) or (abs(coeff) > cutoff):
                 matrix = self.product_matrix(arg_basis, i)
                 total = total + sparse.kron(matrix, coeff)
-                print('add term', i)
         return total
 
     def product_matrix(self, arg_basis, i):
@@ -180,6 +178,10 @@ class Jacobi(Basis, metaclass=CachedClass):
         input_basis = arg_basis
         output_basis = (self * arg_basis)
         conversion = ConvertJacobiJacobi._subspace_matrix(self.space, input_basis, output_basis)
+        # Kronecker with identity for matrix coefficients
+        coeff_size = total.shape[0] // conversion.shape[0]
+        if coeff_size > 1:
+            conversion = sparse.kron(conversion, sparse.identity(coeff_size))
         return (conversion @ total)
 
 

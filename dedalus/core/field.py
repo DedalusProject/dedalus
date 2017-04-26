@@ -421,6 +421,8 @@ class Field(Current):
             raise ValueError("Must specify bases or domain.")
         if bases is None:
             bases = ()
+        else:
+            bases = tuple(b for b in bases if b is not None)
         if domain is None:
             domain = unify_attributes(bases, 'domain')
 
@@ -466,6 +468,12 @@ class Field(Current):
     @property
     def dtype(self):
         return self.domain.dtype
+
+    def copy(self):
+        copy = Field(bases=self.bases, domain=self.domain)
+        copy.set_scales(self.scales)
+        copy[self.layout] = self.data
+        return copy
 
     def set_global_data(self, global_data):
         elements = self.layout.local_elements(self.subdomain, self.scales)

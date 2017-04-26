@@ -687,7 +687,7 @@ class LinearSubspaceOperator(LinearOperator):
         factors = [sparse.identity(n, format='csr') for n in group_shape]
         # Substitute group portion of subspace matrix
         if self.separable:
-            argslice = subproblem.global_slices(self.arg.subdomain)[self.axis]
+            argslice = subproblem.global_slices(self.operand.subdomain)[self.axis]
             outslice = subproblem.global_slices(self.subdomain)[self.axis]
             factors[self.axis] = self.subspace_matrix[outslice, argslice]
         else:
@@ -764,7 +764,7 @@ class LinearSubspaceFunctional(LinearSubspaceOperator):
         return None
 
     @classmethod
-    def _build_subspace_matrix(cls, space, basis, *args):
+    def _subspace_matrix(cls, space, basis, *args):
         dtype = space.domain.dtype
         N = space.coeff_size
         # Build row entry by entry
@@ -973,8 +973,8 @@ class Filter(LinearSubspaceFunctional):
     def base(self):
         return Filter
 
-    @classmethod
-    def entry(cls, j, space, mode):
+    @staticmethod
+    def _subspace_entry(j, space, basis, mode):
         """F(j,m) = δ(j,m)"""
         if j == mode:
             return 1
@@ -1248,7 +1248,7 @@ class ConvertConstant(Convert):
         out.set_layout(operand.layout)
         # Broadcast constant in grid space
         if operand.layout.grid_space[axis]:
-            np.copyto(out.data, arg.data)
+            np.copyto(out.data, operand.data)
         # Set constant mode in coefficient space
         else:
             out.data.fill(0)

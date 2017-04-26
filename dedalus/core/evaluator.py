@@ -154,7 +154,15 @@ class Evaluator:
 
         unfinished = []
         for task in tasks:
-            output = task['operator'].attempt(**kw)
+            task_op = task['operator']
+            if isinstance(task_op, Field):
+                # Hack: out is always assigned to task
+                # Grab it here and copy field over
+                output = task_op.out
+                output.set_scales(task_op.scales)
+                output[task_op.layout] = task_op.data
+            else:
+                output = task['operator'].attempt(**kw)
             if output is None:
                 unfinished.append(task)
             else:

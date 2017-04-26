@@ -330,6 +330,7 @@ class Multiply(Future, metaclass=MultiClass):
         ncc = np.prod(nccs)
         if isinstance(ncc, Future):
             ncc = ncc.evaluate()
+        ncc.require_coeff_space()
         # Store NCC matrix, assuming constant-group along operand's constant axes
         # This generalization enables subproblem-agnostic pre-construction
         self._ncc_matrix = self._ncc_matrix_recursion(ncc.data, ncc.bases, operand.bases, separability, **kw)
@@ -348,24 +349,33 @@ class Multiply(Future, metaclass=MultiClass):
             # Otherwise recursively build matrix-valued coefficients
             else:
                 args = (data[i], ncc_bases[1:], arg_bases[1:], separability[1:])
-                return Multiply.build_ncc_matrix(*args, **kw)
+                return Multiply._ncc_matrix_recursion(*args, **kw)
         # Build top-level matrix using deferred coeffs
         coeffs = DeferredTuple(build_lower_coeffs, size=data.shape[0])
         ncc_basis = ncc_bases[0]
         arg_basis = arg_bases[0]
         # Kronecker with identities for constant NCC bases
         if ncc_basis is None:
+            const = coeffs[0]
             # Trivial Kronecker with [[1]] for constant arg bases
             # This generalization enables problem-agnostic pre-construction
             if arg_basis is None:
-                return coeffs[0]
+                return const
             # Group-size identity for separable dimensions
-            if seperable[0]:
-                I = sparse.identity(arg_basis.group_size)
+            if separability[0]:
+                I = sparse.identity(arg_basis.space.group_size)
             # Coeff-size identity for non-separable dimensions
             else:
                 I = sparse.identity(arg_basis.space.coeff_size)
-            return sparse.kron(I, coeffs[0])
+            # Apply cutoff to scalar coeffs
+            if len(const.shape) == 0:
+                cutoff = kw.get('cutoff', 1e-6)
+                if abs(const) > cutoff:
+                    return I * const
+                else:
+                    return I * 0
+            else:
+                return sparse.kron(I, const)
         # Call basis method for constructing NCC matrix
         else:
             return ncc_basis.ncc_matrix(arg_basis, coeffs, **kw)
@@ -377,7 +387,7 @@ class Multiply(Future, metaclass=MultiClass):
             raise SymbolicParsingError("Must build NCC matrices before expression matrices.")
         if vars != self._ncc_vars:
             raise SymbolicParsingError("Must build NCC matrices with same variables.")
-        if subproblem.problem.separability() != self._ncc_separability:
+        if tuple(subproblem.problem.separability()) != tuple(self._ncc_separability):
             raise SymbolicParsingError("Must build NCC matrices with same separability.")
         # Build operand matrices
         operand = self._ncc_operand
@@ -452,5 +462,5 @@ class MultiplyFields(Multiply, FutureField):
         # Multiply all argument data
         args_data = [arg.data for arg in args]
         # OPTIMIZE: less intermediate arrays?
-        np.copyto(out.data, np.prod(args_data, axis=0))
+        np.copyto(out.data, reduce(np.multiply, args_data))
 

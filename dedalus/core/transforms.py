@@ -37,10 +37,10 @@ class PolynomialTransform(Transform):
         if self.dtype == np.complex128:
             coeff_shape = list(coeff_shape) + [2]
 
-        self.N0 = N0 = np.prod(coeff_shape[:axis])
+        self.N0 = N0 = np.prod(coeff_shape[:axis], dtype=int)
         self.N1C = N1C = coeff_shape[axis]
         self.N1G = N1G = int(self.N1C * scale)
-        self.N2 = N2 = np.prod(coeff_shape[axis+1:])
+        self.N2 = N2 = np.prod(coeff_shape[axis+1:], dtype=int)
 
         self.gdata_reduced = np.zeros(shape=[N0, N1G, N2], dtype=np.float64)
         self.cdata_reduced = np.zeros(shape=[N0, N1C, N2], dtype=np.float64)
