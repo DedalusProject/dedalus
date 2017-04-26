@@ -132,7 +132,7 @@ function get_dedalusproject
 {
     [ -e $1 ] && return
     echo "Downloading $1 from dedalus-project.org"
-    ${GETFILE} "http://dedalus-project.org/dependencies/$1" || do_exit
+    ${GETFILE} "http://data.dedalus-project.org/dependencies/$1" || do_exit
     ( ${SHASUM} -c $1.sha512 2>&1 ) 1>> ${LOG_FILE} || do_exit
 }
 
