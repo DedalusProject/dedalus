@@ -311,19 +311,33 @@ function host_specific
         echo "  * libfreetype6-dev"
         echo "  * tk-dev"
         echo "  * libhdf5-dev"
-        echo "  * libzmq-dev"
+        if [ $UBUNTU_VERSION -lt 17 ]
+        then
+           echo "  * libzmq-dev"
+        fi
         echo "  * libsqlite3-dev"
         echo "  * gfortran"
         echo
         echo "You can accomplish this by executing:"
         echo
-        echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev mercurial libzmq-dev libsqlite3-dev gfortran"
+        if [ $UBUNTU_VERSION -lt 17 ]
+        then
+            echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev mercurial libzmq-dev libsqlite3-dev gfortran"
+        else
+            echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev mercurial libsqlite3-dev gfortran"
+        fi
         echo
         echo
         if [ $UBUNTU_VERSION -lt 16 ] 
         then
            echo "Your version of Ubuntu needs a newer version OpenMPI. We'll build our own."
            INST_OPENMPI=1
+        fi
+        if [ $UBUNTU_VERSION -ge 17 ]
+        then
+            echo "You are using Ubuntu 17 or higher, where the MPI headers have moved. Correcting header paths."
+            export MPI_INCLUDE_PATH="/usr/lib/x86_64-linux-gnu/openmpi/include"
+            export MPI_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/openmpi/lib"
         fi
         BLAS="/usr/lib/"
         LAPACK="/usr/lib/"
