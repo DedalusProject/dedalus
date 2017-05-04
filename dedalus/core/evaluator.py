@@ -9,6 +9,7 @@ from collections import defaultdict
 import pathlib
 import h5py
 import shutil
+import uuid
 import numpy as np
 from mpi4py import MPI
 
@@ -103,23 +104,27 @@ class Evaluator:
                 handler.last_iter_div = iter_div
 
         self.evaluate_handlers(scheduled_handlers, wall_time=wall_time, sim_time=sim_time, iteration=iteration, **kw)
-
-    def evaluate_handlers(self, handlers, sim_time, **kw):
+        
+    def evaluate_handlers(self, handlers, id=None, **kw):
         """Evaluate a collection of handlers."""
+
+        # Default to uuid to cache within evaluation, but not across evaluations
+        if id is None:
+            id = uuid.uuid4()
 
         tasks = [t for h in handlers for t in h.tasks]
         for task in tasks:
             task['out'] = None
 
         # Attempt initial evaluation
-        tasks = self.attempt_tasks(tasks, id=sim_time)
+        tasks = self.attempt_tasks(tasks, id=id)
 
         # Move all fields to coefficient layout
         fields = self.get_fields(tasks)
         for f in fields:
             f.require_coeff_space()
             f.set_scales(self.domain.dealias, keep_data=True)
-        tasks = self.attempt_tasks(tasks, id=sim_time)
+        tasks = self.attempt_tasks(tasks, id=id)
 
         # Oscillate through layouts until all tasks are evaluated
         n_layouts = len(self.domain.dist.layouts)
@@ -135,7 +140,7 @@ class Evaluator:
                 self.domain.dist.paths[next_index].decrement(fields)
             current_index = next_index
             # Attempt evaluation
-            tasks = self.attempt_tasks(tasks, id=sim_time)
+            tasks = self.attempt_tasks(tasks, id=id)
 
         # Transform all outputs to coefficient layout to dealias
         for handler in handlers:
@@ -144,7 +149,7 @@ class Evaluator:
 
         # Process
         for handler in handlers:
-            handler.process(sim_time=sim_time, **kw)
+            handler.process(**kw)
 
     @staticmethod
     def get_fields(tasks):

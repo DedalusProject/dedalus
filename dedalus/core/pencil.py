@@ -104,6 +104,7 @@ class Pencil:
         # Store minimal CSR matrices for fast dot products
         for name in names:
             matrix = matrices[name]
+            matrix.data[np.abs(matrix.data) < problem.entry_cutoff] = 0
             matrix.eliminate_zeros()
             setattr(self, name, matrix.tocsr())
 
@@ -324,6 +325,7 @@ class Pencil:
 
         # Store minimum CSR matrices for fast dot products
         for name, matrix in LHS.items():
+            matrix.data[np.abs(matrix.data) < problem.entry_cutoff] = 0
             matrix.eliminate_zeros()
             setattr(self, name, matrix.tocsr())
 

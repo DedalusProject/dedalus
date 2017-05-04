@@ -100,7 +100,7 @@ class ProblemBase:
 
     """
 
-    def __init__(self, domain, variables, ncc_cutoff=1e-10, max_ncc_terms=None):
+    def __init__(self, domain, variables, ncc_cutoff=1e-10, max_ncc_terms=None, entry_cutoff=0):
         self.domain = domain
         self.variables = variables
         self.nvars = len(variables)
@@ -110,6 +110,7 @@ class ProblemBase:
         self.parameters = OrderedDict()
         self.substitutions = OrderedDict()
         self.ncc_kw = {'cutoff': ncc_cutoff, 'max_terms': max_ncc_terms}
+        self.entry_cutoff = entry_cutoff
         self.coupled = domain.bases[-1].coupled
 
     def add_equation(self, equation, condition="True"):

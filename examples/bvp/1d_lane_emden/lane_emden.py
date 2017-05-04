@@ -41,13 +41,16 @@ logger = logging.getLogger(__name__)
 
 # Parameters
 n = 3.25
+ncc_cutoff = 1e-10
+tolerance = 1e-10
 
 # Build domain
 x_basis = de.Chebyshev('x', 128, interval=(0, 1), dealias=2)
 domain = de.Domain([x_basis], np.float64)
 
 # Setup problem
-problem = de.NLBVP(domain, variables=['f', 'fx', 'R'])
+problem = de.NLBVP(domain, variables=['f', 'fx', 'R'], ncc_cutoff=ncc_cutoff)
+problem.meta[:]['x']['dirichlet'] = True
 problem.parameters['n'] = n
 problem.add_equation("x*dx(fx) + 2*fx = -x*(R**2)*(f**n)")
 problem.add_equation("fx - dx(f) = 0")
@@ -58,7 +61,7 @@ problem.add_bc("right(f) = 0")
 
 # Setup initial guess
 solver = problem.build_solver()
-x = domain.grid(0, scales=domain.dealias)
+x = domain.grid(0)
 f = solver.state['f']
 fx = solver.state['fx']
 R = solver.state['R']
@@ -67,7 +70,6 @@ f.differentiate('x', out=fx)
 R['g'] = 3
 
 # Iterations
-tolerance = 1e-10
 pert = solver.perturbations.data
 pert.fill(1+tolerance)
 while np.sum(np.abs(pert)) > tolerance:

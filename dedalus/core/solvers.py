@@ -160,7 +160,7 @@ class LinearBoundaryValueSolver:
         """Solve BVP."""
 
         # Compute RHS
-        self.evaluator.evaluate_group('F', sim_time=0)
+        self.evaluator.evaluate_group('F')
 
         # Solve system for each pencil, updating state
         for p in self.pencils:
@@ -204,7 +204,7 @@ class NonlinearBoundaryValueSolver:
 
         # Build pencils and pencil matrices
         self.pencils = pencil.build_pencils(domain)
-        pencil.build_matrices(self.pencils, problem, ['L', 'dF'])
+        pencil.build_matrices(self.pencils, problem, ['L'])
 
         # Build systems
         namespace = problem.namespace
@@ -212,6 +212,10 @@ class NonlinearBoundaryValueSolver:
         perts = [namespace['δ'+var] for var in problem.variables]
         self.state = FieldSystem.from_fields(vars)
         self.perturbations = FieldSystem.from_fields(perts)
+
+        # Set variable scales back to 1 for initialization
+        for field in self.state.fields + self.perturbations.fields:
+            field.set_scales(1)
 
         # Create F operator trees
         self.evaluator = Evaluator(domain, namespace)
@@ -229,16 +233,18 @@ class NonlinearBoundaryValueSolver:
     def newton_iteration(self):
         """Update solution with a Newton iteration."""
         # Compute RHS
-        self.evaluator.evaluate_group('F', sim_time=0)
+        self.evaluator.evaluate_group('F', iteration=self.iteration)
         # Recompute Jacobian
         pencil.build_matrices(self.pencils, self.problem, ['dF'])
         # Solve system for each pencil, updating perturbations
         for p in self.pencils:
             pFe = self.Fe.get_pencil(p)
             pFb = self.Fb.get_pencil(p)
-            A = p.L - p.dF
+            A = p.L_exp - p.dF_exp
             b = p.G_eq * pFe + p.G_bc * pFb
             x = linalg.spsolve(A, b, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
+            if p.dirichlet:
+                x = p.JD * x
             self.perturbations.set_pencil(p, x)
         self.perturbations.scatter()
         # Update state

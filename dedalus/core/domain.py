@@ -96,7 +96,6 @@ class Domain:
     @CachedMethod
     def grid(self, axis, scales=None):
         """Return local grid along one axis."""
-
         scales = self.remedy_scales(scales)
         # Get local part of global basis grid
         slices = self.distributor.grid_layout.slices(scales)
@@ -104,8 +103,19 @@ class Domain:
         grid = grid[slices[axis]]
         # Reshape as multidimensional vector
         grid = reshape_vector(grid, self.dim, axis)
-
         return grid
+
+    @CachedMethod
+    def elements(self, axis):
+        """Return local elements along one axis."""
+        scales = self.remedy_scales(None)
+        # Get local part of global basis elements
+        slices = self.distributor.coeff_layout.slices(scales)
+        elements = self.bases[axis].elements
+        elements = elements[slices[axis]]
+        # Reshape as multidimensional vector
+        elements = reshape_vector(elements, self.dim, axis)
+        return elements
 
     @CachedMethod
     def grid_spacing(self, axis, scales=None):
