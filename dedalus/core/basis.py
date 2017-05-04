@@ -107,9 +107,13 @@ class Basis:
     def ncc_matrix(self, arg_basis, coeffs, cutoff=1e-6):
         """Build NCC matrix via direct summation."""
         N = len(coeffs)
-        total = 0
         for i in range(N):
             coeff = coeffs[i]
+            # Build initial matrix
+            if i == 0:
+                matrix = self.product_matrix(arg_basis, i)
+                total = 0 * sparse.kron(matrix, coeff)
+                total.eliminate_zeros()
             if len(coeff.shape) or (abs(coeff) > cutoff):
                 matrix = self.product_matrix(arg_basis, i)
                 total = total + sparse.kron(matrix, coeff)
