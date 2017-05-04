@@ -7,6 +7,7 @@ import os
 from collections import defaultdict
 import pathlib
 import h5py
+import uuid
 import numpy as np
 from mpi4py import MPI
 
@@ -67,13 +68,13 @@ class Evaluator:
             self.groups[handler.group].append(handler)
         return handler
 
-    def evaluate_group(self, group, wall_time, sim_time, timestep, iteration):
+    def evaluate_group(self, group, wall_time, sim_time, timestep, iteration, id=None):
         """Evaluate all handlers in a group."""
 
         handlers = self.groups[group]
-        self.evaluate_handlers(handlers, wall_time, sim_time, timestep, iteration)
+        self.evaluate_handlers(handlers, wall_time, sim_time, timestep, iteration, id=id)
 
-    def evaluate_scheduled(self, wall_time, sim_time, timestep, iteration):
+    def evaluate_scheduled(self, wall_time, sim_time, timestep, iteration, id=None):
         """Evaluate all scheduled handlers."""
 
         scheduled_handlers = []
@@ -94,24 +95,28 @@ class Evaluator:
                 handler.last_sim_div  = sim_div
                 handler.last_iter_div = iter_div
 
-        self.evaluate_handlers(scheduled_handlers, wall_time, sim_time, timestep, iteration)
+        self.evaluate_handlers(scheduled_handlers, wall_time, sim_time, timestep, iteration, id=id)
 
-    def evaluate_handlers(self, handlers, wall_time, sim_time, timestep, iteration):
+    def evaluate_handlers(self, handlers, wall_time, sim_time, timestep, iteration, id=None):
         """Evaluate a collection of handlers."""
+
+        # Default to uuid to cache within evaluation, but not across evaluations
+        if id is None:
+            id = uuid.uuid4()
 
         tasks = [t for h in handlers for t in h.tasks]
         for task in tasks:
             task['out'] = None
 
         # Attempt initial evaluation
-        tasks = self.attempt_tasks(tasks, id=sim_time)
+        tasks = self.attempt_tasks(tasks, id=id)
 
         # Move all fields to coefficient layout
         fields = self.get_fields(tasks)
         for f in fields:
             f.require_coeff_space()
             f.set_scales(self.domain.dealias, keep_data=True)
-        tasks = self.attempt_tasks(tasks, id=sim_time)
+        tasks = self.attempt_tasks(tasks, id=id)
 
         # Oscillate through layouts until all tasks are evaluated
         n_layouts = len(self.domain.dist.layouts)
@@ -127,7 +132,7 @@ class Evaluator:
                 self.domain.dist.paths[next_index].decrement(fields)
             current_index = next_index
             # Attempt evaluation
-            tasks = self.attempt_tasks(tasks, id=sim_time)
+            tasks = self.attempt_tasks(tasks, id=id)
 
         # Transform all outputs to coefficient layout to dealias
         for handler in handlers:

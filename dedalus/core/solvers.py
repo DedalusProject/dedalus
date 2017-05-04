@@ -204,7 +204,7 @@ class NonlinearBoundaryValueSolver:
 
         # Build pencils and pencil matrices
         self.pencils = pencil.build_pencils(domain)
-        pencil.build_matrices(self.pencils, problem, ['L', 'dF'])
+        pencil.build_matrices(self.pencils, problem, ['L'])
 
         # Build systems
         namespace = problem.namespace
@@ -233,7 +233,7 @@ class NonlinearBoundaryValueSolver:
     def newton_iteration(self):
         """Update solution with a Newton iteration."""
         # Compute RHS
-        self.evaluator.evaluate_group('F', 0, 0, 0, 0)
+        self.evaluator.evaluate_group('F', 0, 0, 0, self.iteration)
         # Recompute Jacobian
         pencil.build_matrices(self.pencils, self.problem, ['dF'])
         # Solve system for each pencil, updating perturbations
