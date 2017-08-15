@@ -3,11 +3,9 @@
 import numpy as np
 from functools import partial
 
-from . import basis
-from . import transforms
+#from . import basis
 from ..tools import jacobi
 from ..tools.array import reshape_vector
-from ..tools.general import unify
 from ..tools.cache import CachedMethod, CachedAttribute
 
 
@@ -56,9 +54,10 @@ class AffineCOV:
 
 
 class Space:
+    """Base class for spaces."""
 
     def __repr__(self):
-        return '<{} {}>'.format(self.__class__.__name__, id(self))
+        return '<{} {} {}>'.format(self.__class__.__name__, self.axes, id(self))
 
     def __str__(self):
         if self.name:
@@ -66,124 +65,145 @@ class Space:
         else:
             return self.__repr__()
 
+    @CachedAttribute
+    def domain(self):
+        from .domain import Domain
+        return Domain([self])
+
+    @classmethod
+    def check_shape(cls, space_shape):
+        """Check compatibility between space shape and group shape."""
+        for ss, gs in zip(space_shape, cls.group_shape):
+            if (ss % gs) != 0:
+                raise ValueError("Space shape must be multiple of group shape.")
+
+    def grid_shape(self, scales):
+        """Scaled grid shape."""
+        scales = self.dist.remedy_scales(scales)
+        subscales = scales[self.axis:self.axis+self.dim]
+        return tuple(int(s*n) for s,n in zip(subscales, self.shape))
+
+    def grids(self, scales):
+        """Flat global grids by axis."""
+        raise NotImplementedError()
+
+    def local_grids(self, scales):
+        """Local grid vectors by axis."""
+        scales = self.dist.remedy_scales(scales)
+        # Get grid slices for relevant axes
+        slices = self.dist.grid_layout.slices(self.domain, scales)
+        subslices = slices[self.axis:self.axis+self.dim]
+        # Select local portion of global grids
+        grids = self.grids(scales)
+        local_grids = tuple(g[s] for g,s in zip(grids, subslices))
+        # Reshape as vectors
+        return tuple(reshape_vector(g, self.dist.dim, i) for g,i in zip(local_grids, self.axes))
+
+    # @CachedMethod
+    # def grid_field(self, scales=None):
+    #     """Return field object representing grid."""
+    #     from .field import Field
+    #     grid = Field(name=self.name, dist=self.dist, bases=[self.grid_basis])
+    #     grid.set_scales(scales)
+    #     grid['g'] = self.local_grid(scales)
+    #     return grid
+
+    # @CachedAttribute
+    # def operators(self):
+    #     from .operators import prefixes
+    #     return {prefix+self.name: partial(op, **{self.name:1}) for prefix, op in prefixes.items()}
+
+
+class Constant(Space):
+    """Constant spaces."""
+
+    constant = True
+    dim = 1
+    group_shape = (1,)
+    shape = (1,)
+    dealias = 1
+
+    def __init__(self, dist, axis):
+        self.dist = dist
+        self.axes = (axis,)
+        self.grid_basis = self.Constant
+
+    def grid_shape(self, scale):
+        """Compute scaled grid size."""
+        # No scaling for constant spaces
+        return self.shape
+
+    def grids(self, scales):
+        # No scaling for constant spaces
+        return (np.array([0.]),)
+
+    def Constant(self):
+        return basis.Constant(self)
+
 
 class Interval(Space):
-    """Base class for 1-dimensional spaces."""
+    """Base class for 1D intervals."""
 
+    constant = False
     dim = 1
 
-    def __init__(self, name, coeff_size, bounds, domain, axis, dealias=1):
-
-        if (coeff_size % self.group_size) != 0:
-            raise ValueError("Space size must be multiple of group size.")
-
+    def __init__(self, name, size, bounds, dist, axis, dealias=1):
         self.name = name
-        self.coeff_size = coeff_size
+        self.size = size
+        self.shape = (size,)
+        self.check_shape(self.shape)
         self.bounds = bounds
-        self.domain = domain
+        self.dist = dist
         self.axis = axis
-        self.axes = np.arange(axis, axis+self.dim)
+        self.axes = (axis,)
         self.dealias = dealias
         self.COV = AffineCOV(self.native_bounds, bounds)
 
-        for index in range(self.dim):
-            domain.spaces[axis+index].append(self)
-        domain.space_dict[name] = self
-
-    @CachedAttribute
-    def operators(self):
-        from .operators import prefixes
-        return {prefix+self.name: partial(op, **{self.name:1}) for prefix, op in prefixes.items()}
-
-    def grid_size(self, scale):
-        """Compute scaled grid size."""
-        grid_size = float(scale) * self.coeff_size
-        if not grid_size.is_integer():
-            raise ValueError("Scaled grid size is not an integer: %f" %grid_size)
-        return int(grid_size)
-
-    @CachedAttribute
-    def subdomain(self):
-        from .domain import Subdomain
-        return Subdomain(self.domain, [self])
-
-    @CachedMethod
-    def local_grid(self, scales=None):
-        """Return local grid along one axis."""
-        scales = self.domain.remedy_scales(scales)
-        axis = self.axis
-        # Get local part of global basis grid
-        elements = np.ix_(*self.domain.dist.grid_layout.local_elements(self.subdomain, scales))
-        grid = self.grid(scales[axis])
-        local_grid = grid[elements[axis]]
-        # Reshape as multidimensional vector
-        #local_grid = reshape_vector(local_grid, self.domain.dim, axis)
-
-        return local_grid
-
-    @CachedMethod
-    def grid_field(self, scales=None):
-        """Return field object representing grid."""
-        from .field import Field
-        grid = Field(name=self.name, domain=self.domain, bases=[self.grid_basis])
-        grid.set_scales(scales)
-        grid['g'] = self.local_grid(scales)
-        return grid
-
 
 class PeriodicInterval(Interval):
+    """Periodic interval for Fourier series."""
 
     native_bounds = (0, 2*np.pi)
-    group_size = 2
+    group_shape = (2,)
 
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
         # Maximum native k, dispensing Nyquist mode
-        self.kmax = (self.coeff_size - 1) // 2
+        self.kmax = (self.size - 1) // 2
+        self.grid_basis = self.Fourier
 
-    @CachedMethod
-    def grid(self, scale=1):
+    def grids(self, scales):
         """Evenly spaced endpoint grid: sin(N*x/2) = 0"""
-        N = self.grid_size(scale)
+        N = self.grid_shape(scales)[0]
         native_grid = 2 * np.pi * np.arange(N) / N
-        return self.COV.problem_coord(native_grid)
+        return (self.COV.problem_coord(native_grid),)
 
-    @CachedAttribute
     def Fourier(self):
         return basis.Fourier(self)
 
-    @CachedAttribute
-    def grid_basis(self):
-        return self.Fourier
-
 
 class ParityInterval(Interval):
+    """Definite-parity periodic interval for Sine and Cosine series."""
 
     native_bounds = (0, np.pi)
-    group_size = 1
+    group_shape = (1,)
 
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
-        self.kmax = self.coeff_size - 1
+        self.kmax = self.size - 1
+        self.grid_basis = self.Cosine
 
-    @CachedMethod
-    def grid(self, scale=1):
+    def grids(self, scales):
         """Evenly spaced interior grid: cos(N*x) = 0"""
-        N = self.grid_size(scale)
+        N = self.grid_shape(scales)[0]
         native_grid = np.pi * (np.arange(N) + 1/2) / N
-        return self.COV.problem_coord(native_grid)
+        return (self.COV.problem_coord(native_grid),)
 
-    @CachedAttribute
     def Sine(self):
         return basis.Sine(self)
 
-    @CachedAttribute
     def Cosine(self):
         return basis.Cosine(self)
-
-    @CachedAttribute
-    def grid_basis(self):
-        return self.Cosine
 
 
 class FiniteInterval(Interval):
@@ -193,7 +213,7 @@ class FiniteInterval(Interval):
     """
 
     native_bounds = (-1, 1)
-    group_size = 1
+    group_shape = (1,)
 
     def __init__(self, a, b, *args, **kw):
         super().__init__(*args, **kw)
@@ -201,25 +221,23 @@ class FiniteInterval(Interval):
         self.b = float(b)
 
     @CachedMethod
-    def _native_grid(self, scale=1):
+    def grids(self, scales):
         """Gauss-Jacobi grid."""
-        N = self.grid_size(scale)
-        return jacobi.build_grid(N, self.a, self.b)
-
-    @CachedMethod
-    def grid(self, scale=1):
-        """Gauss-Jacobi grid."""
-        native_grid = self._native_grid(scale=scale)
+        N = self.grid_shape(scales)[0]
+        native_grid = jacobi.build_grid(N, self.a, self.b)
         return self.COV.problem_coord(native_grid)
 
     @CachedMethod
-    def weights(self, scale=1):
+    def weights(self, scales):
         """Gauss-Jacobi weights."""
-        N = self.grid_size(scale)
+        N = self.grid_shape(scales)[0]
         return jacobi.build_weights(N, self.a, self.b)
 
     def Jacobi(self, *args, **kw):
         return basis.Jacobi(self, *args, **kw)
+
+    def grid_basis(self, *args, **kw):
+        return self.Jacobi(da=0, db=0, *args, **kw)
 
     def Legendre(self, **kw):
         if (self.a != 0) or (self.b != 0):
@@ -242,10 +260,6 @@ class FiniteInterval(Interval):
 
     def ChebyshevW(self, **kw):
         return self.Ultraspherical(d=3, **kw)
-
-    @CachedAttribute
-    def grid_basis(self):
-        return self.Jacobi(da=0, db=0, library='matrix')
 
 
 # class Sheet(Space):

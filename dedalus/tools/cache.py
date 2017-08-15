@@ -95,35 +95,33 @@ class CachedClass(type):
     """Metaclass for caching instantiation."""
 
     def __init__(cls, *args, **kw):
-
         # Perform regular class initialization from type
         super().__init__(*args, **kw)
         # Cache instances using weakrefs
-        cls._cache = WeakValueDictionary()
-
-        # Retrieve argument names and defaults, dropping 'self'
-        (_, *argnames), _, _, defaults = inspect.getargspec(cls.__init__)
-        cls._argnames = argnames
-        if defaults:
-            cls._defaults = dict(zip(reversed(argnames), reversed(defaults)))
-        else:
-            cls._defaults = dict()
+        cls._instance_cache = WeakValueDictionary()
+        # Store class signature
+        cls._signature = inspect.signature(cls.__init__)
 
     def __call__(cls, *args, **kw):
-
-        # Serialize call from provided/default args/kw
-        call = serialize_call(args, kw, cls._argnames, cls._defaults)
+        # Preprocess arguments and keywords
+        args, kw = cls._preprocess_args(*args, **kw)
+        # Build call from class signature
+        call = cls._signature.bind(None, *args, **kw)
+        call.apply_defaults()
+        key = tuple(call.arguments.items())
         # Instantiate for new call
-        if call not in cls._cache:
+        if key not in cls._instance_cache:
             # Bind to local variable so weakref persists until return
-            cls._cache[call] = instance = super().__call__(*args, **kw)
+            cls._instance_cache[key] = instance = super().__call__(*args, **kw)
+        return cls._instance_cache[key]
 
-        return cls._cache[call]
+    def _preprocess_args(cls, *args, **kw):
+        """Process arguments and keywords prior to checking cache."""
+        return args, kw
 
 
 def serialize_call(args, kw, argnames, defaults):
     """Serialize args/kw into cache key."""
-
     call = list(args)
     for name in argnames[len(args):]:
         try:
@@ -131,6 +129,5 @@ def serialize_call(args, kw, argnames, defaults):
         except KeyError:
             arg = defaults[name]
         call.append(arg)
-
     return tuple(call)
 

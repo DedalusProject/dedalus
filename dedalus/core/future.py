@@ -6,7 +6,7 @@ Classes for future evaluation.
 from functools import partial
 
 from .field import Operand, Array, Field
-from .domain import Subdomain
+from .domain import Domain
 from ..tools.general import OrderedSet, unify_attributes
 from ..tools.cache import CachedAttribute, CachedMethod
 

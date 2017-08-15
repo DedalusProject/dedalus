@@ -11,8 +11,8 @@ logger = logging.getLogger(__name__)
 def general_test(a, b, Nx, bounds):
 
     # Domain
-    domain = dev.domain.Domain(dim=1, dtype=np.float64)
-    xs = dev.spaces.FiniteInterval(a=a, b=b, name='x', coeff_size=Nx, bounds=bounds, domain=domain, axis=0, dealias=3/2)
+    dist = dev.distributor.Distributor(dim=1, comm=comm)
+    xs = dev.spaces.FiniteInterval(a=a, b=b, name='x', coeff_size=Nx, bounds=bounds, dist=dist, axis=0, dealias=3/2)
     xb0 = xs.Jacobi(da=0, db=0)
 
     # Build simple field

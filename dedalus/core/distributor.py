@@ -1,16 +1,13 @@
 """
-Classes for available data layouts and the paths between them.
-
+Distributor, Layout, Transform, and Transpose class definitions.
 """
 
 import logging
 from mpi4py import MPI
 import numpy as np
 
-from ..libraries.fftw import fftw_wrappers as fftw
 from ..tools.cache import CachedMethod
 from ..tools.config import config
-from ..tools.general import rev_enumerate, unify
 
 logger = logging.getLogger(__name__.split('.')[-1])
 GROUP_TRANSFORMS = config['transforms'].getboolean('GROUP_TRANSFORMS')
@@ -27,26 +24,25 @@ from .transposes import RowDistributor, ColDistributor
 
 class Distributor:
     """
-    Directs parallelized distribution and transformation of fields over a domain.
+    Directs parallelized distribution and transformation of fields.
+
+    Parameters
+    ----------
+    dim : int
+        Dimension
+    comm : MPI communicator, optional
+        MPI communicator (default: comm world)
+    mesh : tuple of ints, optional
+        Process mesh for parallelization (default: 1-D mesh of available processes)
 
     Attributes
     ----------
-    comm_world : MPI communicator
-        Global MPI communicator
-    rank : int
-        Internal MPI process number
-    size : int
-        Number of MPI processes
-    mesh : tuple of ints, optional
-        Process mesh for parallelization (default: 1-D mesh of available processes)
     comm_cart : MPI communicator
         Cartesian MPI communicator over mesh
     coords : array of ints
-        Coordinates in cartesian communicator (None if outside mesh)
+        Coordinates in cartesian communicator
     layouts : list of layout objects
-        Available layouts for domain
-    paths : list of path objects
-        Transforms and transposes between layouts
+        Available layouts
 
     Notes
     -----
@@ -62,52 +58,45 @@ class Distributor:
     dimensional is local, followed by R dimensions distributed over the mesh,
     and the last (D-R-1) dimensions local.
 
-    The distributor object for a given domain constructs layout objects
+    The distributor object for a given dimension constructs layout objects
     describing each of the (D+R+1) layouts (sets of transform/distribution
     states) and the paths between them (D transforms and R transposes).
-
     """
 
-    def __init__(self, domain, mesh=None):
-
-        # MPI communicator and statistics
-        self.comm_world = MPI.COMM_WORLD
-        self.rank = self.comm_world.rank
-        self.size = self.comm_world.size
-
-        # Default to 1-D mesh of available processes
+    def __init__(self, dim, comm=None, mesh=None):
+        # Defaults
+        if comm is None:
+            comm = MPI.COMM_WORLD
         if mesh is None:
-            mesh = np.array([self.size], dtype=int)
-
+            mesh = np.array([comm.size], dtype=int)
+        self.dim = dim
+        self.comm = comm
         # Squeeze out local/bad (size <= 1) dimensions
-        self.mesh = np.array([i for i in mesh if (i>1)], dtype=int)
-
+        self.mesh = mesh = np.array([i for i in mesh if (i>1)], dtype=int)
         # Check mesh compatibility
-        logger.debug('Mesh: %s' %str(self.mesh))
-        if self.mesh.size >= domain.dim:
-            raise ValueError("Mesh must have lower dimension than domain.")
-        if np.prod(self.mesh) != self.size:
-            raise ValueError("Wrong number of processes (%i) for specified mesh (%s)" %(self.size, self.mesh))
-
-        # Create cartesian communicator for parallel runs
-        self.comm_cart = self.comm_world.Create_cart(self.mesh)
-
-        # Get cartesian coordinates
+        logger.debug('Mesh: %s' %str(mesh))
+        if mesh.size >= dim:
+            raise ValueError("Mesh (%s) must have lower dimension than distributor (%i)" %(mesh, dim))
+        if np.prod(mesh) != comm.size:
+            raise ValueError("Wrong number of processes (%i) for specified mesh (%s)" %(comm.size, mesh))
+        # Create cartesian communicator
+        self.comm_cart = comm.Create_cart(mesh)
         self.coords = np.array(self.comm_cart.coords, dtype=int)
-        self._build_layouts(domain)
+        # Build layout objects
+        self._build_layouts()
+        # Build constant spaces
+        self._build_constant_spaces()
 
-    def _build_layouts(self, domain, dry_run=False):
+    def _build_layouts(self, dry_run=False):
         """Construct layout objects."""
 
         # References
-        mesh = self.mesh
-        coords = self.coords
-        D = domain.dim
-        R = mesh.size
+        D = self.dim
+        R = self.mesh.size
         # First layout: full coefficient space
         local = [False] * R + [True] * (D-R)
         grid_space = [False] * D
-        layout_0 = Layout(domain, mesh, coords, local, grid_space)
+        layout_0 = Layout(self, local, grid_space)
         layout_0.index = 0
 
         # Layout and path lists
@@ -117,12 +106,12 @@ class Distributor:
         # Subsequent layouts
         for i in range(1, R+D+1):
             # Iterate backwards over bases to last coefficient space basis
-            for d in reversed(range(domain.dim)):
+            for d in reversed(range(D)):
                 if not grid_space[d]:
                     # Transform if local
                     if local[d]:
                         grid_space[d] = True
-                        layout_i = Layout(domain, mesh, coords, local, grid_space)
+                        layout_i = Layout(self, local, grid_space)
                         if not dry_run:
                             path_i = Transform(self.layouts[-1], layout_i, d)
                         break
@@ -130,7 +119,7 @@ class Distributor:
                     else:
                         local[d] = True
                         local[d+1] = False
-                        layout_i = Layout(domain, mesh, coords, local, grid_space)
+                        layout_i = Layout(self, local, grid_space)
                         if not dry_run:
                             path_i = Transpose(self.layouts[-1], layout_i, d, self.comm_cart)
                         break
@@ -146,22 +135,33 @@ class Distributor:
 
         # Allow string references to coefficient and grid space layouts
         self.layout_references = {'c': self.coeff_layout,
-                                  'g': self.grid_layout,
-                                  'coeff': self.coeff_layout,
-                                  'grid': self.grid_layout}
+                                  'g': self.grid_layout}
+
+    def _build_constant_spaces(self):
+        """Construct constant spaces."""
+        from .spaces import Constant
+        self.constant_spaces = [Constant(dist=self, axis=axis) for axis in range(self.dim)]
 
     def get_layout_object(self, input):
         """Dereference layout identifiers."""
-
         if isinstance(input, Layout):
             return input
         else:
             return self.layout_references[input]
 
-    @CachedMethod
-    def buffer_size(self, bases, scales):
+    def buffer_size(self, domain, scales, dtype):
         """Compute necessary buffer size (bytes) for all layouts."""
-        return max(layout.buffer_size(bases, scales) for layout in self.layouts)
+        return max(layout.buffer_size(domain, scales, dtype) for layout in self.layouts)
+
+    def remedy_scales(self, scales):
+        """Remedy different scale inputs."""
+        if scales is None:
+            scales = 1
+        if np.isscalar(scales):
+            scales = [scales] * self.dim
+        if 0 in scales:
+            raise ValueError("Scales must be nonzero.")
+        return tuple(scales)
 
 
 class Layout:
@@ -175,123 +175,89 @@ class Layout:
         Axis locality flags (True/False for local/distributed)
     grid_space : array of bools
         Axis grid-space flags (True/False for grid/coeff space)
-    dtype : numeric type
-        Data type
-
-    All methods require a tuple of the current transform scales.
 
     """
 
-    distribution = 'block'
-
-    def __init__(self, domain, mesh, coords, local, grid_space):
-        self.domain = domain
+    def __init__(self, dist, local, grid_space):
+        self.dist = dist
         # Freeze local and grid_space lists into boolean arrays
         self.local = np.array(local)
         self.grid_space = np.array(grid_space)
-        # Extend mesh and coordinates to domain dimension
-        self.ext_mesh = np.ones(domain.dim, dtype=int)
-        self.ext_mesh[~self.local] = mesh
-        self.ext_coords = np.zeros(domain.dim, dtype=int)
-        self.ext_coords[~self.local] = coords
+        # Extend mesh and coordinates to distributor dimension
+        self.ext_mesh = np.ones(dist.dim, dtype=int)
+        self.ext_mesh[~self.local] = dist.mesh
+        self.ext_coords = np.zeros(dist.dim, dtype=int)
+        self.ext_coords[~self.local] = dist.coords
 
-    @CachedMethod
-    def global_shape(self, subdomain, scales):
-        """Compute global data shape."""
-        scales = self.domain.remedy_scales(scales)
-        grid_space = self.grid_space
-        global_shape = np.zeros(self.domain.dim, dtype=int)
-        global_shape[grid_space] = subdomain.global_grid_shape(scales)[grid_space]
-        global_shape[~grid_space] = subdomain.global_coeff_shape[~grid_space]
-        return global_shape
+    def global_shape(self, domain, scales):
+        """Global data shape."""
+        scales = self.dist.remedy_scales(scales)
+        global_shape = np.array(domain.global_coeff_shape).copy()
+        global_shape[self.grid_space] = np.array(domain.global_grid_shape(scales))[self.grid_space]
+        return tuple(global_shape)
 
-    def global_groups(self, subdomain, scales):
-        """Global group indices by axis."""
-        scales = self.domain.remedy_scales(scales)
-        groups = []
-        for axis, space in enumerate(subdomain.spaces):
-            if space is None:
-                n_groups = 1
-            elif self.grid_space[axis]:
-                n_groups = space.grid_size(scales[axis])
-            else:
-                n_groups = space.coeff_size // space.group_size
-            groups.append(np.arange(n_groups))
-        return groups
+    def group_shape(self, domain, scales):
+        """Group shape."""
+        scales = self.dist.remedy_scales(scales)
+        group_shape = np.array(domain.group_shape).copy()
+        group_shape[self.grid_space] = 1
+        return tuple(group_shape)
 
-    def local_groups(self, subdomain, scales):
+    def local_groups(self, domain, scales):
         """Local group indices by axis."""
-        global_groups = self.global_groups(subdomain, scales)
-        groups = []
-        for axis, space in enumerate(subdomain.spaces):
-            if self.local[axis] or (space is None):
-                groups.append(global_groups[axis])
+        global_shape = self.global_shape(domain, scales)
+        group_shape = self.group_shape(domain, scales)
+        group_nums = global_shape // group_shape
+        local_groups = []
+        for axis, space in enumerate(domain.spaces):
+            if self.local[axis]:
+                # All groups for lcoal dimensions
+                local_groups.append(np.arange(group_nums[axis]))
+            elif space.constant:
+                # Copy across constant dimensions
+                local_groups.append(np.arange(group_nums[axis]))
             else:
+                # Block distribution
                 mesh = self.ext_mesh[axis]
                 coord = self.ext_coords[axis]
-                if self.distribution == 'block':
-                    block = len(global_groups[axis]) // mesh
-                    start = coord * block
-                    groups.append(global_groups[axis][start:start+block])
-                elif self.distribution == 'cyclic':
-                    groups.append(global_groups[axis][coord::mesh])
-        return groups
+                block = -(-group_nums[axis] // mesh)
+                start = min(group_nums[axis], block*coord)
+                end = min(group_nums[axis], block*(coord+1))
+                local_groups.append(np.arange(start, end))
+        return tuple(local_groups)
 
-    def local_elements(self, subdomain, scales):
+    def local_elements(self, domain, scales):
         """Local element indices by axis."""
-        local_groups = self.local_groups(subdomain, scales)
+        group_shape = self.group_shape(domain, scales)
+        local_groups = self.local_groups(domain, scales)
         indices = []
-        for axis, space in enumerate(subdomain.spaces):
-            if space is None:
-                indices.append(np.arange(1))
-            else:
-                if self.grid_space[axis]:
-                    GS = 1
-                else:
-                    GS = space.group_size
-                ind = [GS*G+i for i in range(GS) for G in local_groups[axis]]
-                indices.append(np.array(ind))
+        for GS, LG in zip(group_shape, local_groups):
+            indices.append(np.array([GS*G+i for G in LG for i in range(GS)]))
         return indices
-        #return np.ix_(*indices)
 
-    def slices(self, subdomain, scales):
-        return np.ix_(*self.local_elements(subdomain, scales))
+    def slices(self, domain, scales):
+        """Local element slices by axis."""
+        return np.ix_(*self.local_elements(domain, scales))
 
-    def global_array_shape(self, subdomain, scales):
-        """Global array shape."""
-        scales = self.domain.remedy_scales(scales)
-        shape = []
-        for axis, space in enumerate(subdomain.spaces):
-            if space is None:
-                shape.append(1)
-            elif self.grid_space[axis]:
-                shape.append(space.grid_size(scales[axis]))
-            else:
-                shape.append(space.coeff_size)
-        return tuple(shape)
+    def local_shape(self, domain, scales):
+        """Local data shape."""
+        local_elements = self.local_elements(domain, scales)
+        return np.array([LE.size for LE in local_elements], dtype=int)
 
-    def local_array_shape(self, subdomain, scales):
-        """Local array shape."""
-        local_elements = self.local_elements(subdomain, scales)
-        return [LE.size for LE in local_elements]
+    def buffer_size(self, domain, scales, dtype):
+        """Local buffer size (bytes)."""
+        local_shape = self.local_shape(domain, scales)
+        return np.prod(local_shape) * dtype.itemsize
 
-    def local_group_index(self, group, subdomain, scales):
-        """Index of a group within local groups."""
-        index = []
-        for grp, local_grps in zip(group, self.local_groups(subdomain, scales)):
-            if grp is None:
-                index.append(None)
-            else:
-                index.append(local_grps.index(grp))
-        return index
-
-    #@CachedMethod
-    def buffer_size(self, subdomain, scales):
-        """Compute necessary buffer size (bytes)."""
-        local_shape = self.local_array_shape(subdomain, scales)
-        return np.prod(local_shape) * self.domain.dtype.itemsize
-
-
+    # def local_group_index(self, group, domain, scales):
+    #     """Index of a group within local groups."""
+    #     index = []
+    #     for grp, local_grps in zip(group, self.local_groups(domain, scales)):
+    #         if grp is None:
+    #             index.append(None)
+    #         else:
+    #             index.append(local_grps.index(grp))
+    #     return index
 
         # if distribution == 'block':
         #     index[~local] = (group - start)[~local]
@@ -305,13 +271,11 @@ class Layout:
     #     # elif distribution == 'cyclic':
     #     #     group = mesh *
 
-
-
     # @CachedMethod
-    # def groups(self, subdomain, scales):
+    # def groups(self, domain, scales):
     #     """Comptue group sizes."""
     #     groups = []
-    #     for axis, space in enumerate(subdomain.spaces):
+    #     for axis, space in enumerate(domain.spaces):
     #         if space is None:
     #             groups.append(1)
     #         elif self.grid_space[axis]:
@@ -321,58 +285,116 @@ class Layout:
     #     return np.array(groups, dtype=int)
 
     # @CachedMethod
-    # def blocks(self, subdomain, scales):
+    # def blocks(self, domain, scales):
     #     """Compute block sizes for data distribution."""
-    #     global_shape = self.global_shape(subdomain, scales)
-    #     groups = self.groups(subdomain, scales)
+    #     global_shape = self.global_shape(domain, scales)
+    #     groups = self.groups(domain, scales)
     #     return groups * np.ceil(global_shape / groups / self.ext_mesh).astype(int)
 
     # @CachedMethod
-    # def start(self, subdomain, scales):
+    # def start(self, domain, scales):
     #     """Compute starting coordinates for local data."""
-    #     blocks = self.blocks(subdomain, scales)
+    #     blocks = self.blocks(domain, scales)
     #     start = self.ext_coords * blocks
-    #     start[subdomain.constant] = 0
+    #     start[domain.constant] = 0
     #     return start
 
     # @CachedMethod
-    # def local_shape(self, subdomain, scales):
+    # def local_shape(self, domain, scales):
     #     """Compute local data shape."""
-    #     global_shape = self.global_shape(subdomain, scales)
-    #     blocks = self.blocks(subdomain, scales)
-    #     start = self.start(subdomain, scales)
+    #     global_shape = self.global_shape(domain, scales)
+    #     blocks = self.blocks(domain, scales)
+    #     start = self.start(domain, scales)
     #     local_shape = np.minimum(blocks, global_shape-start)
     #     local_shape = np.maximum(0, local_shape)
     #     return local_shape
 
     # @CachedMethod
-    # def slices(self, subdomain, scales):
+    # def slices(self, domain, scales):
     #     """Compute slices for selecting local portion of global data."""
-    #     start = self.start(subdomain, scales)
-    #     local_shape = self.local_shape(subdomain, scales)
+    #     start = self.start(domain, scales)
+    #     local_shape = self.local_shape(domain, scales)
     #     return tuple(slice(s, s+l) for (s, l) in zip(start, local_shape))
 
 
 
 class Transform:
-    """Directs transforms between two layouts."""
+    """
+    Directs spectral transforms between two layouts.
+
+    TODO:
+        - Implement grouped transforms
+    """
 
     def __init__(self, layout0, layout1, axis):
-        self.domain = layout0.domain
         self.layout0 = layout0
         self.layout1 = layout1
         self.axis = axis
 
+    def increment(self, fields):
+        """Backward transform a list of fields."""
+        if len(fields) == 1:
+            self.increment_single(*fields)
+        elif GROUP_TRANSFORMS:
+            self.increment_group(fields)
+        else:
+            for field in fields:
+                self.increment_single(field)
+
+    def decrement(self, fields):
+        """Forward transform a list of fields."""
+        if len(fields) == 1:
+            self.decrement_single(*fields)
+        elif GROUP_TRANSFORMS:
+            self.decrement_group(fields)
+        else:
+            for field in fields:
+                self.decrement_single(field)
+
+    def increment_single(self, field):
+        """Backward transform a field."""
+        basis = field.bases[self.axis]
+        # Reference views from both layouts
+        cdata = field.data
+        field.set_layout(self.layout1)
+        gdata = field.data
+        # Transform non-constant bases with local data
+        if (not basis.constant) and np.prod(cdata.shape):
+            plan = basis.transform_plan(cdata.shape, self.axis, field.scales[self.axis], field.dtype)
+            plan.backward(cdata, gdata)
+
+    def decrement_single(self, field):
+        """Forward transform a field."""
+        basis = field.bases[self.axis]
+        # Reference views from both layouts
+        gdata = field.data
+        field.set_layout(self.layout0)
+        cdata = field.data
+        # Transform non-constant bases with local data
+        if (not basis.constant) and np.prod(gdata.shape):
+            plan = basis.transform_plan(cdata.shape, self.axis, field.scales[self.axis], field.dtype)
+            plan.forward(gdata, cdata)
+
+    def increment_group(self, fields):
+        """Backward transform multiple fields simultaneously."""
+        logger.warning("Group transforms not implemented.")
+        for field in fields:
+            self.increment_single(field)
+
+    def decrement_group(self, fields):
+        """Forward transform multiple fields simultaneously."""
+        logger.warning("Group transforms not implemented.")
+        for field in fields:
+            self.decrement_single(field)
+
     # @CachedMethod
     # def group_data(self, nfields, scales):
-
     #     local_shape0 = self.layout0.local_shape(scales)
     #     local_shape1 = self.layout1.local_shape(scales)
     #     group_shape0 = [nfields] + list(local_shape0)
     #     group_shape1 = [nfields] + list(local_shape1)
     #     group_cdata = fftw.create_array(group_shape0, self.layout0.dtype)
     #     group_gdata = fftw.create_array(group_shape1, self.layout1.dtype)
-
     #     return group_cdata, group_gdata
 
     # def increment_group(self, fields):
@@ -397,202 +419,169 @@ class Transform:
     #         field.layout = self.layout0
     #         np.copyto(field.data, cdata[i])
 
-    def increment_single(self, field):
-        """Backward transform."""
-        basis = field.bases[self.axis]
-        # Reference views from both layouts
-        cdata = field.data
-        field.set_layout(self.layout1)
-        gdata = field.data
-        # Transform if there's local data
-        if (basis is not None) and np.prod(cdata.shape):
-            plan = basis.transform_plan(cdata.shape, self.axis, field.scales[self.axis])
-            plan.backward(cdata, gdata)
 
-    def decrement_single(self, field):
-        """Forward transform."""
-        basis = field.bases[self.axis]
-        # Reference views from both layouts
-        gdata = field.data
-        field.set_layout(self.layout0)
-        cdata = field.data
-        # Transform if there's local data
-        if (basis is not None) and np.prod(gdata.shape):
-            plan = basis.transform_plan(cdata.shape, self.axis, field.scales[self.axis])
-            plan.forward(gdata, cdata)
+class Transpose:
+    """
+    Directs distributed transposes between two layouts.
+
+    TODO:
+        - Implement grouped transposes
+    """
+
+    def __init__(self, layout0, layout1, axis, comm_cart):
+        self.layout0 = layout0
+        self.layout1 = layout1
+        self.axis = axis
+        self.comm_cart = comm_cart
+        # Create subgrid communicator along the moving mesh axis
+        remain_dims = [0] * comm_cart.dim
+        remain_dims[axis] = 1
+        self.comm_sub = comm_cart.Sub(remain_dims)
+
+    def _sub_shape(self, domain, scales):
+        """Build global shape of data assigned to sub-communicator."""
+        local_shape = self.layout0.local_shape(domain, scales)
+        global_shape = self.layout0.global_shape(domain, scales)
+        # Global shape along transposing axes, local shape along others
+        sub_shape = local_shape.copy()
+        sub_shape[self.axis] = global_shape[self.axis]
+        sub_shape[self.axis+1] = global_shape[self.axis+1]
+        return sub_shape
+
+    @CachedMethod
+    def _single_plan(self, domain, scales, dtype):
+        """Build single transpose plan."""
+        sub_shape = self._sub_shape(domain, scales)
+        axis = self.axis
+        if np.prod(sub_shape) == 0:
+            return None  # no data
+        elif domain.constant[axis] and domain.constant[axis+1]:
+            return None  # no change
+        elif domain.constant[axis]:
+            return RowDistributor(sub_shape, dtype, axis, self.comm_sub)
+        elif domain.constant[axis+1]:
+            return ColDistributor(sub_shape, dtype, axis, self.comm_sub)
+        else:
+            return TransposePlanner(sub_shape, dtype, axis, self.comm_sub)
+
+    # @CachedMethod
+    # def _group_plan(self, nfields, scales, dtype):
+    #     """Build group transpose plan."""
+    #     sub_shape = self._sub_shape(scales)
+    #     group_shape = np.hstack([nfields, sub_shape])
+    #     if np.prod(group_shape) == 0:
+    #         return None, None, None  # no data
+    #     else:
+    #         # Create group buffer to hold group data contiguously
+    #         buffer0_shape = np.hstack([nfields, self.layout0.local_array_shape(scales)])
+    #         buffer1_shape = np.hstack([nfields, self.layout1.local_array_shape(scales)])
+    #         size = max(np.prod(buffer0_shape), np.prod(buffer1_shape))
+    #         buffer = fftw.create_array(shape=[size], dtype=dtype)
+    #         buffer0 = np.ndarray(shape=buffer0_shape, dtype=dtype, buffer=buffer)
+    #         buffer1 = np.ndarray(shape=buffer1_shape, dtype=dtype, buffer=buffer)
+    #         # Creat plan on subsequent axis of group shape
+    #         plan = TransposePlanner(group_shape, dtype, self.axis+1, self.comm_sub)
+    #         return plan, buffer0, buffer1
 
     def increment(self, fields):
-        """Backward transform."""
+        """Backward transpose a list of fields."""
+        if SYNC_TRANSPOSES:
+            self.comm_sub.Barrier()
         if len(fields) == 1:
             self.increment_single(*fields)
-        elif GROUP_TRANSFORMS:
+        elif GROUP_TRANSPOSES:
             self.increment_group(fields)
         else:
             for field in fields:
                 self.increment_single(field)
 
     def decrement(self, fields):
-        """Forward transform."""
+        """Forward transpose a list of fields."""
+        if SYNC_TRANSPOSES:
+            self.comm_sub.Barrier()
         if len(fields) == 1:
             self.decrement_single(*fields)
-        elif GROUP_TRANSFORMS:
+        elif GROUP_TRANSPOSES:
             self.decrement_group(fields)
         else:
             for field in fields:
                 self.decrement_single(field)
 
-
-class Transpose:
-    """Directs transposes between two layouts."""
-
-    def __init__(self, layout0, layout1, axis, comm_cart):
-        # Create subgrid communicator along the moving mesh axis
-        remain_dims = [0] * comm_cart.dim
-        remain_dims[axis] = 1
-        comm_sub = comm_cart.Sub(remain_dims)
-        # Attributes
-        self.layout0 = layout0
-        self.layout1 = layout1
-        self.dtype = layout0.domain.dtype  # same as layout1.dtype
-        self.axis = axis
-        self.comm_cart = comm_cart
-        self.comm_sub = comm_sub
-
-    def _sub_shape(self, subdomain, scales):
-        """Build global shape of data assigned to sub-communicator."""
-        local_shape = self.layout0.local_array_shape(subdomain, scales)
-        global_shape = self.layout0.global_array_shape(subdomain, scales)
-        # Global shape along transposing axes, local shape along others
-        sub_shape = np.array(local_shape)
-        sub_shape[self.axis] = global_shape[self.axis]
-        sub_shape[self.axis+1] = global_shape[self.axis+1]
-        return sub_shape
-
-    @CachedMethod
-    def _single_plan(self, subdomain, scales):
-        """Build single transpose plan."""
-        sub_shape = self._sub_shape(subdomain, scales)
-        dtype = self.layout0.domain.dtype
-        axis = self.axis
-        if np.prod(sub_shape) == 0:
-            return None  # no data
-        elif (subdomain.spaces[axis] is None) and (subdomain.spaces[axis+1] is None):
-            return None  # no change
-        elif (subdomain.spaces[axis] is None):
-            return RowDistributor(sub_shape, dtype, axis, self.comm_sub)
-        elif (subdomain.spaces[axis+1] is None):
-            return ColDistributor(sub_shape, dtype, axis, self.comm_sub)
-        else:
-            return TransposePlanner(sub_shape, dtype, axis, self.comm_sub)
-
-    @CachedMethod
-    def _group_plan(self, nfields, scales, dtype):
-        """Build group transpose plan."""
-        sub_shape = self._sub_shape(scales)
-        group_shape = np.hstack([nfields, sub_shape])
-        if np.prod(group_shape) == 0:
-            return None, None, None  # no data
-        else:
-            # Create group buffer to hold group data contiguously
-            buffer0_shape = np.hstack([nfields, self.layout0.local_array_shape(scales)])
-            buffer1_shape = np.hstack([nfields, self.layout1.local_array_shape(scales)])
-            size = max(np.prod(buffer0_shape), np.prod(buffer1_shape))
-            buffer = fftw.create_array(shape=[size], dtype=dtype)
-            buffer0 = np.ndarray(shape=buffer0_shape, dtype=dtype, buffer=buffer)
-            buffer1 = np.ndarray(shape=buffer1_shape, dtype=dtype, buffer=buffer)
-            # Creat plan on subsequent axis of group shape
-            plan = TransposePlanner(group_shape, dtype, self.axis+1, self.comm_sub)
-            return plan, buffer0, buffer1
-
-    def increment(self, fields):
-        """Transpose from layout0 to layout1."""
-        if SYNC_TRANSPOSES:
-            self.comm_sub.Barrier()
-        if len(fields) == 1:
-            self.increment_single(*fields)
-        elif GROUP_TRANSPOSES:
-            self.increment_group(*fields)
-        else:
-            for field in fields:
-                self.increment_single(field)
-
-    def decrement(self, fields):
-        """Transpose from layout1 to layout0."""
-        if SYNC_TRANSPOSES:
-            self.comm_sub.Barrier()
-        if len(fields) == 1:
-            self.decrement_single(*fields)
-        elif GROUP_TRANSPOSES:
-            self.decrement_group(*fields)
-        else:
-            for field in fields:
-                self.decrement_single(field)
-
     def increment_single(self, field):
-        """Transpose field from layout0 to layout1."""
-        scales = field.scales
-        plan = self._single_plan(field.subdomain, scales)
+        """Backward transpose a field."""
+        plan = self._single_plan(field.domain, field.scales, field.dtype)
         if plan:
-            # Setup views of data in each layout
+            # Reference views from both layouts
             data0 = field.data
             field.set_layout(self.layout1)
             data1 = field.data
             # Transpose between data views
             plan.localize_columns(data0, data1)
         else:
-            # No data: just update field layout
+            # No communication: just update field layout
             field.set_layout(self.layout1)
 
     def decrement_single(self, field):
-        """Transpose field from layout1 to layout0."""
-        scales = field.scales
-        plan = self._single_plan(field.subdomain, scales)
+        """Forward transpose a field."""
+        plan = self._single_plan(field.domain, field.scales, field.dtype)
         if plan:
-            # Setup views of data in each layout
+            # Reference views from both layouts
             data1 = field.data
             field.set_layout(self.layout0)
             data0 = field.data
             # Transpose between data views
             plan.localize_rows(data1, data0)
         else:
-            # No data: just update field layout
+            # No communication: just update field layout
             field.set_layout(self.layout0)
 
-    def increment_group(self, *fields):
-        """Transpose group from layout0 to layout1."""
-        scales = unify(field.scales for field in fields)
-        plan, buffer0, buffer1 = self._group_plan(len(fields), scales)
-        if plan:
-            # Copy fields to group buffer
-            for i, field in enumerate(fields):
-                np.copyto(buffer0[i], field.data)
-            # Transpose between group buffer views
-            plan.localize_columns(buffer0, buffer1)
-            # Copy from group buffer to fields in new layout
-            for i, field in enumerate(fields):
-                field.set_layout(self.layout1)
-                np.copyto(field.data, buffer1[i])
-        else:
-            # No data: just update field layouts
-            for field in fields:
-                field.set_layout(self.layout1)
+    def increment_group(self, fields):
+        """Backward transpose multiple fields simultaneously."""
+        logger.warning("Group transposes not implemented.")
+        for field in fields:
+            self.increment_single(field)
 
-    def decrement_group(self, *fields):
-        """Transpose group from layout1 to layout0."""
-        scales = unify(field.scales for field in fields)
-        plan, buffer0, buffer1 = self._group_plan(len(fields), scales)
-        if plan:
-            # Copy fields to group buffer
-            for i, field in enumerate(fields):
-                np.copyto(buffer1[i], field.data)
-            # Transpose between group buffer views
-            plan.localize_rows(buffer1, buffer0)
-            # Copy from group buffer to fields in new layout
-            for i, field in enumerate(fields):
-                field.set_layout(self.layout0)
-                np.copyto(field.data, buffer0[i])
-        else:
-            # No data: just update field layouts
-            for field in fields:
-                field.set_layout(self.layout0)
+    def decrement_group(self, fields):
+        """Forward transpose multiple fields simultaneously."""
+        logger.warning("Group transposes not implemented.")
+        for field in fields:
+            self.decrement_single(field)
+
+    # def increment_group(self, *fields):
+    #     """Transpose group from layout0 to layout1."""
+    #     scales = unify(field.scales for field in fields)
+    #     plan, buffer0, buffer1 = self._group_plan(len(fields), scales)
+    #     if plan:
+    #         # Copy fields to group buffer
+    #         for i, field in enumerate(fields):
+    #             np.copyto(buffer0[i], field.data)
+    #         # Transpose between group buffer views
+    #         plan.localize_columns(buffer0, buffer1)
+    #         # Copy from group buffer to fields in new layout
+    #         for i, field in enumerate(fields):
+    #             field.set_layout(self.layout1)
+    #             np.copyto(field.data, buffer1[i])
+    #     else:
+    #         # No data: just update field layouts
+    #         for field in fields:
+    #             field.set_layout(self.layout1)
+
+    # def decrement_group(self, *fields):
+    #     """Transpose group from layout1 to layout0."""
+    #     scales = unify(field.scales for field in fields)
+    #     plan, buffer0, buffer1 = self._group_plan(len(fields), scales)
+    #     if plan:
+    #         # Copy fields to group buffer
+    #         for i, field in enumerate(fields):
+    #             np.copyto(buffer1[i], field.data)
+    #         # Transpose between group buffer views
+    #         plan.localize_rows(buffer1, buffer0)
+    #         # Copy from group buffer to fields in new layout
+    #         for i, field in enumerate(fields):
+    #             field.set_layout(self.layout0)
+    #             np.copyto(field.data, buffer0[i])
+    #     else:
+    #         # No data: just update field layouts
+    #         for field in fields:
+    #             field.set_layout(self.layout0)
 

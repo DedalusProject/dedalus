@@ -10,7 +10,7 @@ from scipy import sparse
 from numbers import Number
 from inspect import isclass
 
-from .domain import Subdomain
+from .domain import Domain
 from .field import Operand, Array, Field
 from .future import Future, FutureArray, FutureField
 from ..tools.array import reshape_vector, apply_matrix, add_sparse, axindex, axslice

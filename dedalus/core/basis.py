@@ -28,7 +28,7 @@ class Basis:
 
     def __init__(self, space, library=DEFAULT_LIBRARY):
         self.space = space
-        self.domain = space.domain
+        self.dist = space.dist
         self.axes = space.axes
         self.library = library
 
@@ -125,6 +125,22 @@ class Basis:
             return sparse.coo_matrix(([1],([i],[0])), shape=(N,1)).tocsr()
         else:
             raise NotImplementedError()
+
+
+class Constant(Basis, metaclass=CachedClass):
+    """Constant basis."""
+
+    def __add__(self, other):
+        if other is self:
+            return self
+        else:
+            return NotImplemented
+
+    def __mul__(self, other):
+        if other is self:
+            return self
+        else:
+            return NotImplemented
 
 
 class Jacobi(Basis, metaclass=CachedClass):
@@ -251,7 +267,43 @@ class IntegrateJacobi(operators.Integrate):
 
 
 class Fourier(Basis, metaclass=CachedClass):
-    """Fourier cosine/sine series basis."""
+    """Fourier cosine/sine basis."""
+
+    const = 1
+
+    def __add__(self, other):
+        space = self.space
+        if other is None:
+            return space.Fourier
+        elif other is space.Fourier:
+            return space.Fourier
+        else:
+            return NotImplemented
+
+    def __mul__(self, other):
+        space = self.space
+        if other is None:
+            return space.Fourier
+        elif other is space.Fourier:
+            return space.Fourier
+        else:
+            return NotImplemented
+
+    def __pow__(self, other):
+        return self.space.Fourier
+
+    def include_mode(self, mode):
+        k = mode // 2
+        if (mode % 2) == 0:
+            # Cosine modes: drop Nyquist mode
+            return (0 <= k <= self.space.kmax)
+        else:
+            # Sine modes: drop k=0 and Nyquist mode
+            return (1 <= k <= self.space.kmax)
+
+
+class ComplexFourier(Basis, metaclass=CachedClass):
+    """Fourier complex exponential basis."""
 
     const = 1
 
@@ -386,6 +438,7 @@ class Sine(Basis, metaclass=CachedClass):
     """Sine series basis."""
 
     const = None
+    supported_dtypes = {np.float64, np.complex128}
 
     def __add__(self, other):
         space = self.space
