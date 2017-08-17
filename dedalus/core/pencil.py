@@ -104,16 +104,21 @@ class Pencil:
         # Store minimal CSR matrices for fast dot products
         for name in names:
             matrix = matrices[name]
+            # Store full matrix
+            matrix.eliminate_zeros()
+            setattr(self, name+'_full', matrix.tocsr().copy())
+            # Store truncated matrix
             matrix.data[np.abs(matrix.data) < problem.entry_cutoff] = 0
             matrix.eliminate_zeros()
-            setattr(self, name, matrix.tocsr())
+            setattr(self, name, matrix.tocsr().copy())
+
 
         # Store expanded CSR matrices for fast combination
         self.LHS = zeros_with_pattern(*[matrices[name] for name in names]).tocsr()
         for name in names:
             matrix = matrices[name]
             matrix = expand_pattern(matrix, self.LHS)
-            setattr(self, name+'_exp', matrix.tocsr())
+            setattr(self, name+'_exp', matrix.tocsr().copy())
 
         # Store operators for RHS
         self.G_eq = matrices['select']
@@ -325,9 +330,13 @@ class Pencil:
 
         # Store minimum CSR matrices for fast dot products
         for name, matrix in LHS.items():
+            # Store full matrix
+            matrix.eliminate_zeros()
+            setattr(self, name+'_full', matrix.tocsr().copy())
+            # Store truncated matrix
             matrix.data[np.abs(matrix.data) < problem.entry_cutoff] = 0
             matrix.eliminate_zeros()
-            setattr(self, name, matrix.tocsr())
+            setattr(self, name, matrix.tocsr().copy())
 
         # Apply Dirichlet recombination if applicable
         if dirichlet:
@@ -338,7 +347,7 @@ class Pencil:
         self.LHS = zeros_with_pattern(*LHS.values()).tocsr()
         for name, matrix in LHS.items():
             matrix = expand_pattern(matrix, self.LHS)
-            setattr(self, name+'_exp', matrix.tocsr())
+            setattr(self, name+'_exp', matrix.tocsr().copy())
 
         # Store operators for RHS
         G_eq.eliminate_zeros()
