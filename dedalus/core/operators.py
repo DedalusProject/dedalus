@@ -183,7 +183,7 @@ class GeneralFunction(NonlinearOperator, FutureField):
 
     Notes
     -----
-    On evaluation, this wrapper evaluates the provided funciton with the given
+    On evaluation, this wrapper evaluates the provided function with the given
     arguments and keywords, and takes the output to be data in the specified
     layout, i.e.
 
@@ -203,7 +203,7 @@ class GeneralFunction(NonlinearOperator, FutureField):
         self.layout = domain.distributor.get_layout_object(layout)
         self.func = func
         self.kw = kw
-        self._field_arg_indices = [i for (i,arg) in enumerate(self.args) if isinstance(arg, Operand)]
+        self._field_arg_indices = [i for (i,arg) in enumerate(self.args) if isinstance(arg, (Field, FutureField))]
         try:
             self.name = func.__name__
         except AttributeError:
