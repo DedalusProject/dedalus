@@ -18,6 +18,7 @@ import dedalus.public as de
 import numpy as np
 import matplotlib.pyplot as plt
 import logging
+import time
 logger = logging.getLogger(__name__)
 
 
@@ -36,7 +37,10 @@ problem.add_bc("right(u) = 0")
 
 # Solver
 solver = problem.build_solver()
-solver.solve(solver.pencils[0])
+t1 = time.time()
+solver.solve_dense(solver.pencils[0])
+t2 = time.time()
+logger.info('Elapsed solve time: %f' %(t2-t1))
 
 # Filter infinite/nan eigenmodes
 finite = np.isfinite(solver.eigenvalues)

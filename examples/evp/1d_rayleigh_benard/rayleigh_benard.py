@@ -21,10 +21,10 @@ logger = logging.getLogger(__name__)
 
 
 # Global parameters
-Nz = 32
+Nz = 64
 Prandtl = 1
 Rayleigh = 1710
-kx_global = np.linspace(3.0, 3.25, 20)
+kx_global = np.linspace(3.0, 3.25, 50)
 
 # Create bases and domain
 # Use COMM_SELF so keep calculations independent between processes
@@ -53,7 +53,7 @@ problem.add_bc("left(u) = 0")
 problem.add_bc("left(w) = 0")
 problem.add_bc("right(b) = 0")
 problem.add_bc("right(u) = 0")
-problem.add_bc("integ(p, 'z') = 0")
+problem.add_bc("right(w) = 0")
 solver = problem.build_solver()
 
 # Create function to compute max growth rate for given kx
@@ -61,16 +61,17 @@ def max_growth_rate(kx):
     logger.info('Computing max growth rate for kx = %f' %kx)
     # Change kx parameter
     problem.namespace['kx'].value = kx
-    # Solve for eigenvalues, rebuilding NCCs
-    solver.solve(solver.pencils[0], rebuild_coeffs=True)
-    # Return largest finite imaginary part
-    ev = solver.eigenvalues
-    ev = ev[np.isfinite(ev)]
-    return np.max(ev.imag)
+    # Solve for eigenvalues with sparse search near zero, rebuilding NCCs
+    solver.solve_sparse(solver.pencils[0], N=10, target=0, rebuild_coeffs=True)
+    # Return largest imaginary part
+    return np.max(solver.eigenvalues.imag)
 
 # Compute growth rate over local wavenumbers
 kx_local = kx_global[CW.rank::CW.size]
+t1 = time.time()
 growth_local = np.array([max_growth_rate(kx) for kx in kx_local])
+t2 = time.time()
+logger.info('Elapsed solve time: %f' %(t2-t1))
 
 # Reduce growth rates to root process
 growth_global = np.zeros_like(kx_global)

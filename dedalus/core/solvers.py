@@ -20,6 +20,7 @@ from .system import CoeffSystem, FieldSystem
 from .field import Scalar, Field
 from ..tools.cache import CachedAttribute
 from ..tools.progress import log_progress
+from ..tools.sparse import scipy_sparse_eigs
 
 from ..tools.config import config
 PERMC_SPEC = config['linear algebra']['permc_spec']
@@ -31,10 +32,9 @@ logger = logging.getLogger(__name__.split('.')[-1])
 
 class EigenvalueSolver:
     """
-    Solves linear eigenvalue problems for oscillation frequency omega, (d_t -> -i omega).
-    First converts to dense matrices, then solves the eigenvalue problem for a given pencil,
-    and stored the eigenvalues and eigenvectors.  The set_state method can be used to set
-    the state to the ith eigenvector.
+    Solves linear eigenvalue problems for oscillation frequency omega, (d_t -> -i omega)
+    for a given pencil, and stores the eigenvalues and eigenvectors. The set_state method
+    can be used to set solver.state to the specified eigenmode.
 
     Parameters
     ----------
@@ -49,33 +49,27 @@ class EigenvalueSolver:
         Contains a list of eigenvalues omega
     eigenvectors : numpy array
         Contains a list of eigenvectors.  The eigenvector corresponding to the ith
-        eigenvalue is in eigenvectors[..., i]
+        eigenvalue is in eigenvectors[:,i]
     eigenvalue_pencil : pencil
         The pencil for which the eigenvalue problem has been solved.
 
     """
 
     def __init__(self, problem):
-
         logger.debug('Beginning EVP instantiation')
-
         self.problem = problem
         self.domain = domain = problem.domain
-
         # Build pencils and pencil matrices
         self.pencils = pencil.build_pencils(domain)
-
         # Build systems
         namespace = problem.namespace
         vars = [namespace[var] for var in problem.variables]
         self.state = FieldSystem.from_fields(vars)
-
         # Create F operator trees
         self.evaluator = Evaluator(domain, namespace)
-
         logger.debug('Finished EVP instantiation')
 
-    def solve(self, pencil, rebuild_coeffs=False):
+    def solve_dense(self, pencil, rebuild_coeffs=False):
         """
         Solve EVP for selected pencil.
 
@@ -95,20 +89,58 @@ class EigenvalueSolver:
             cacheid = None
         pencil.build_matrices(self.problem, ['M', 'L'], cacheid=cacheid)
         # Solve as dense general eigenvalue problem
-        L = pencil.L.todense()
-        M = pencil.M.todense()
-        self.eigenvalues, self.eigenvectors = eig(L, b=-M)
+        self.eigenvalues, self.eigenvectors = eig(pencil.L.A, b=-pencil.M.A)
         self.eigenvalue_pencil = pencil
 
-    def set_state(self, num):
-        """Set state vector to the num-th eigenvector"""
+    def solve_sparse(self, pencil, N, target, rebuild_coeffs=False, **kw):
+        """
+        Perform targeted sparse eigenvalue search for selected pencil.
 
-        for p in self.pencils:
-            if p == self.eigenvalue_pencil:
-                self.state.set_pencil(p, self.eigenvectors[:,num])
-            else:
-                self.state.set_pencil(p, 0.*self.eigenvectors[:,num])
+        Parameters
+        ----------
+        pencil : pencil object
+            Pencil for which to solve the EVP
+        N : int
+            Number of eigenmodes to solver for.  Note: the dense method may
+            be more efficient for finding large numbers of eigenmodes.
+        target : complex
+            Target eigenvalue for search.
+        rebuild_coeffs : bool, optional
+            Flag to rebuild cached coefficient matrices (default: False)
+
+        Other keyword options passed to scipy.sparse.linalg.eigs.
+
+        """
+        # Build matrices
+        if rebuild_coeffs:
+            # Generate unique cache
+            cacheid = uuid.uuid4()
+        else:
+            cacheid = None
+        pencil.build_matrices(self.problem, ['M', 'L'], cacheid=cacheid)
+        # Solve as sparse general eigenvalue problem
+        self.eigenvalues, self.eigenvectors = scipy_sparse_eigs(A=pencil.L_exp, B=-pencil.M_exp, N=N, target=target, **kw)
+        if pencil.dirichlet:
+            self.eigenvectors = pencil.JD * self.eigenvectors
+        self.eigenvalue_pencil = pencil
+
+    def set_state(self, index):
+        """
+        Set state vector to the specified eigenmode.
+
+        Parameters
+        ----------
+        index : int
+            Index of desired eigenmode
+        """
+        self.state.data[:] = 0
+        self.state.set_pencil(self.eigenvalue_pencil, self.eigenvectors[:,index])
         self.state.scatter()
+
+    def solve(self, *args, **kw):
+        """Deprecated.  Use solve_dense instead."""
+        logger.warning("The 'EigenvalueSolver.solve' method is being deprecated. Use 'EigenvalueSolver.solve_dense' instead.")
+        return self.solve_dense(*args, **kw)
 
 
 class LinearBoundaryValueSolver:
