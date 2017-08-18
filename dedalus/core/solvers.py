@@ -230,7 +230,7 @@ class NonlinearBoundaryValueSolver:
 
         logger.debug('Finished NLBVP instantiation')
 
-    def newton_iteration(self):
+    def newton_iteration(self, damping=1):
         """Update solution with a Newton iteration."""
         # Compute RHS
         self.evaluator.evaluate_group('F', iteration=self.iteration)
@@ -249,7 +249,7 @@ class NonlinearBoundaryValueSolver:
         self.perturbations.scatter()
         # Update state
         self.state.gather()
-        self.state.data += self.perturbations.data
+        self.state.data += damping*self.perturbations.data
         self.state.scatter()
         self.iteration += 1
 
