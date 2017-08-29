@@ -84,13 +84,9 @@ class Distributor:
         self.coords = np.array(self.comm_cart.coords, dtype=int)
         # Build layout objects
         self._build_layouts()
-        # Build constant spaces
-        self._build_constant_spaces()
 
     def _build_layouts(self, dry_run=False):
         """Construct layout objects."""
-
-        # References
         D = self.dim
         R = self.mesh.size
         # First layout: full coefficient space
@@ -98,11 +94,9 @@ class Distributor:
         grid_space = [False] * D
         layout_0 = Layout(self, local, grid_space)
         layout_0.index = 0
-
         # Layout and path lists
         self.layouts = [layout_0]
         self.paths = []
-
         # Subsequent layouts
         for i in range(1, R+D+1):
             # Iterate backwards over bases to last coefficient space basis
@@ -123,24 +117,16 @@ class Distributor:
                         if not dry_run:
                             path_i = Transpose(self.layouts[-1], layout_i, d, self.comm_cart)
                         break
-
             layout_i.index = i
             self.layouts.append(layout_i)
             if not dry_run:
                 self.paths.append(path_i)
-
         # Directly reference coefficient and grid space layouts
         self.coeff_layout = self.layouts[0]
         self.grid_layout = self.layouts[-1]
-
         # Allow string references to coefficient and grid space layouts
         self.layout_references = {'c': self.coeff_layout,
                                   'g': self.grid_layout}
-
-    def _build_constant_spaces(self):
-        """Construct constant spaces."""
-        from .spaces import Constant
-        self.constant_spaces = [Constant(dist=self, axis=axis) for axis in range(self.dim)]
 
     def get_layout_object(self, input):
         """Dereference layout identifiers."""
@@ -192,8 +178,8 @@ class Layout:
     def global_shape(self, domain, scales):
         """Global data shape."""
         scales = self.dist.remedy_scales(scales)
-        global_shape = np.array(domain.global_coeff_shape).copy()
-        global_shape[self.grid_space] = np.array(domain.global_grid_shape(scales))[self.grid_space]
+        global_shape = np.array(domain.coeff_shape).copy()
+        global_shape[self.grid_space] = np.array(domain.grid_shape(scales))[self.grid_space]
         return tuple(global_shape)
 
     def group_shape(self, domain, scales):
@@ -211,13 +197,13 @@ class Layout:
         local_groups = []
         for axis, space in enumerate(domain.spaces):
             if self.local[axis]:
-                # All groups for lcoal dimensions
+                # All groups for local dimensions
                 local_groups.append(np.arange(group_nums[axis]))
             elif space.constant:
                 # Copy across constant dimensions
                 local_groups.append(np.arange(group_nums[axis]))
             else:
-                # Block distribution
+                # Block distribution otherwise
                 mesh = self.ext_mesh[axis]
                 coord = self.ext_coords[axis]
                 block = -(-group_nums[axis] // mesh)

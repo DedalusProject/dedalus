@@ -11,6 +11,12 @@ from ..tools.general import unify_attributes
 logger = logging.getLogger(__name__.split('.')[-1])
 
 
+def constant_spaces(dist):
+    """Construct constant spaces for each axis of a distributor."""
+    from .spaces import Constant
+    return [Constant(dist=dist, axis=axis) for axis in range(dist.dim)]
+
+
 def expand_spaces(spaces):
     """Expand list of spaces to tuple including constant spaces."""
     # Verify same distributor
@@ -21,7 +27,7 @@ def expand_spaces(spaces):
         if set.intersection(*axes_sets):
             raise ValueError("Overlapping spaces specified.")
     # Build full space tuple
-    full_spaces = dist.constant_spaces.copy()
+    full_spaces = constant_spaces(dist)
     for space in spaces:
         for axis in space.axes:
             full_spaces[axis] = space
@@ -45,18 +51,22 @@ class Domain(metaclass=CachedClass):
 
     @classmethod
     def from_dist(cls, dist):
-        return cls(dist.constant_spaces)
+        """Build constant domain from distributor."""
+        return cls(constant_spaces(dist))
 
     @classmethod
     def from_bases(cls, bases):
+        """Build domain from bases."""
         return cls([basis.space for basis in bases])
 
     @CachedAttribute
     def dealias(self):
+        """Tuple of dealias flags."""
         return tuple(space.dealias for space in self.spaces)
 
     @CachedAttribute
     def constant(self):
+        """Tuple of constant flags."""
         return tuple(space.constant for space in self.spaces)
 
     @CachedAttribute
@@ -69,22 +79,23 @@ class Domain(metaclass=CachedClass):
         return tuple(shape)
 
     @CachedAttribute
-    def global_coeff_shape(self):
-        """Compute global coefficient shape."""
+    def coeff_shape(self):
+        """Compute coefficient shape."""
         shape = np.zeros(self.dist.dim, dtype=int)
         for axis, space in enumerate(self.spaces):
             subaxis = axis - space.axes[0]
             shape[axis] = space.shape[subaxis]
         return tuple(shape)
 
-    def global_grid_shape(self, scales):
-        """Compute global grid shape."""
+    def grid_shape(self, scales):
+        """Compute grid shape."""
         # Remedy scales before calling cached method
         scales = self.dist.remedy_scales(scales)
-        return self._global_grid_shape(scales)
+        return self._grid_shape(scales)
 
     @CachedMethod
-    def _global_grid_shape(self, scales):
+    def _grid_shape(self, scales):
+        """Cached grid shape computation."""
         shape = np.zeros(self.dist.dim, dtype=int)
         for axis, space in enumerate(self.spaces):
             subaxis = axis - space.axes[0]

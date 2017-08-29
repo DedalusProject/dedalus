@@ -1,56 +1,66 @@
-
+"""
+Space class definitions.
+"""
 
 import numpy as np
-from functools import partial
 
-#from . import basis
 from ..tools import jacobi
 from ..tools.array import reshape_vector
 from ..tools.cache import CachedMethod, CachedAttribute
 
 
 class AffineCOV:
+    """
+    Class for affine change-of-variables for remapping space bounds.
+
+    Parameters
+    ----------
+    native_bounds : tuple of floats
+        Native bounds given as (lower, upper)
+    problem_bounds : tuple of floats
+        New bounds given as (lower, upper)
+    """
 
     def __init__(self, native_bounds, problem_bounds):
         self.native_bounds = native_bounds
         self.problem_bounds = problem_bounds
         self.native_left, self.native_right = native_bounds
         self.native_length = self.native_right - self.native_left
+        self.native_center = (self.native_left + self.native_right) / 2
         self.problem_left, self.problem_right = problem_bounds
         self.problem_length = self.problem_right - self.problem_left
-
-        self.jacobian = self.native_length / self.problem_length
-
         self.problem_center = (self.problem_left + self.problem_right) / 2
-        self.native_center = (self.native_left + self.native_right) / 2
         self.stretch = self.problem_length / self.native_length
 
     def problem_coord(self, native_coord):
+        """Convert native coordinates to problem coordinates."""
         if isinstance(native_coord, str):
-            if native_coord == 'left':
+            if native_coord in ('left', 'lower'):
                 return self.problem_left
-            elif native_coord == 'right':
+            elif native_coord in ('right', 'upper'):
                 return self.problem_right
-            elif native_coord == 'center':
+            elif native_coord in ('center', 'middle'):
                 return self.problem_center
+            else:
+                raise ValueError("String coordinate '%s' not recognized." %native_coord)
         else:
             neutral_coord = (native_coord - self.native_left) / self.native_length
             return self.problem_left + neutral_coord * self.problem_length
 
     def native_coord(self, problem_coord):
+        """Convert problem coordinates to native coordinates."""
         if isinstance(problem_coord, str):
-            if problem_coord == 'left':
+            if problem_coord in ('left', 'lower'):
                 return self.native_left
-            elif problem_coord == 'right':
+            elif problem_coord in ('right', 'upper'):
                 return self.native_right
-            elif problem_coord == 'center':
+            elif problem_coord in ('center', 'middle'):
                 return self.native_center
+            else:
+                raise ValueError("String coordinate '%s' not recognized." %problem_coord)
         else:
             neutral_coord = (problem_coord - self.problem_left) / self.problem_length
             return self.native_left + neutral_coord * self.native_length
-
-    def native_jacobian(self, problem_coord):
-        return (self.native_length / self.problem_length)
 
 
 class Space:
