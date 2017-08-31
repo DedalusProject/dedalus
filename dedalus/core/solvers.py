@@ -188,7 +188,7 @@ class LinearBoundaryValueSolver:
 
         logger.debug('Finished LBVP instantiation')
 
-    def solve(self):
+    def solve(self,rebuild_coeffs=False):
         """Solve BVP."""
 
         # Compute RHS
@@ -196,6 +196,11 @@ class LinearBoundaryValueSolver:
 
         # Solve system for each pencil, updating state
         for p in self.pencils:
+            if rebuild_coeffs:
+                # Generate unique cache
+                cacheid = uuid.uuid4()
+                p.build_matrices(self.problem, ['L'], cacheid=cacheid)
+
             pFe = self.Fe.get_pencil(p)
             pFb = self.Fb.get_pencil(p)
             A = p.L_exp
