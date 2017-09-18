@@ -25,7 +25,7 @@ from unittest.mock import MagicMock
 class Mock(MagicMock):
     @classmethod
     def __getattr__(cls, name):
-            return Mock()
+            return MagicMock()
 
 MOCK_MODULES = ['numpy', 'scipy', 'mpi4py', 'h5py']
 sys.modules.update((mod_name, Mock()) for mod_name in MOCK_MODULES)
@@ -57,7 +57,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'Dedalus Project'
-copyright = u'2014, Keaton Burns, Jeffrey S. Oishi, Geoff Vasil, Ben Brown, Daniel Lecoanet'
+copyright = u'2014-2017, Keaton Burns, Jeffrey S. Oishi, Geoff Vasil, Ben Brown, Daniel Lecoanet'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
