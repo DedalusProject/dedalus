@@ -37,9 +37,7 @@ sys.modules.update((mod_name, Mock()) for mod_name in MOCK_MODULES)
 
 # Add any Sphinx extension module names here, as strings. They can be extensions
 # coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
-extensions = [
-    'sphinx.ext.imgmath',
-    'sphinx.ext.mathjax']#,
+extensions = ['sphinx.ext.mathjax']#,
     #'sphinx.ext.autodoc']#,
     #'sphinx.ext.napoleon']
 
