@@ -38,6 +38,7 @@ Below are instructions for building the dependency stack on a variety of machine
     machines/trestles/trestles
     machines/janus/janus
     machines/savio/savio
+    machines/engaging/engaging
 
 Dedalus Package
 ---------------
