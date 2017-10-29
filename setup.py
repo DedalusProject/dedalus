@@ -148,8 +148,11 @@ setup(
     author_email='keaton.burns@gmail.com',
     license='GPL3',
     packages = ['dedalus',
+                'dedalus.tools',
+                'dedalus.extras',
                 'dedalus.core',
                 'dedalus.libraries',
                 'dedalus.libraries.fftw'],
     cmdclass = {'build_ext': custom_build_ext},
+    package_data = {'dedalus': ['dedalus.cfg']},
     ext_modules = cythonize(extensions))
