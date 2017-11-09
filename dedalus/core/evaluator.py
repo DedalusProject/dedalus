@@ -456,6 +456,8 @@ class FileHandler(Handler):
                 tmpfile = self.base_path.joinpath('tmpfile_p%i' %(comm.rank))
                 tmpfile.touch()
             file = h5py.File(str(self.current_path), 'w-')
+            if FILEHANDLER_NFS_BUG_HACK:
+                tmpfile.unlink()
         self.setup_file(file)
 
     def setup_file(self, file):
