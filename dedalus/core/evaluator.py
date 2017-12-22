@@ -25,6 +25,7 @@ from ..tools.parallel import Sync
 from ..tools.config import config
 FILEHANDLER_MODE_DEFAULT = config['analysis'].get('FILEHANDLER_MODE_DEFAULT')
 FILEHANDLER_PARALLEL_DEFAULT = config['analysis'].getboolean('FILEHANDLER_PARALLEL_DEFAULT')
+FILEHANDLER_TOUCH_TMPFILE = config['analysis'].getboolean('FILEHANDLER_TOUCH_TMPFILE')
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -451,7 +452,12 @@ class FileHandler(Handler):
             with Sync(comm):
                 if comm.rank == 0:
                     self.current_path.parent.mkdir()
+            if FILEHANDLER_TOUCH_TMPFILE:
+                tmpfile = self.base_path.joinpath('tmpfile_p%i' %(comm.rank))
+                tmpfile.touch()
             file = h5py.File(str(self.current_path), 'w-')
+            if FILEHANDLER_TOUCH_TMPFILE:
+                tmpfile.unlink()
         self.setup_file(file)
 
     def setup_file(self, file):
