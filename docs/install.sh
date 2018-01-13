@@ -362,13 +362,12 @@ function host_specific
         echo "  * libfreetype6-dev"
         echo "  * tk-dev"
         echo "  * libhdf5-dev"
-        echo "  * libzmq-dev"
         echo "  * libsqlite3-dev"
         echo "  * gfortran"
         echo
         echo "You can accomplish this by executing:"
         echo
-        echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev mercurial libzmq-dev libsqlite3-dev gfortran"
+        echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev mercurial libsqlite3-dev gfortran"
         echo
         echo
 	echo "You're running Debian $DEBIAN_VERSION"
