@@ -343,6 +343,7 @@ function host_specific
         LAPACK="/usr/lib/"
     elif [ -f /etc/debian_version ]
     then
+	DEBIAN_VERSION=`cat /etc/debian_version`
         echo "Looks like you're on a Debian-compatible machine."
         echo
         echo "You need to have these packages installed:"
@@ -370,8 +371,15 @@ function host_specific
         echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev mercurial libzmq-dev libsqlite3-dev gfortran"
         echo
         echo
-        echo "Currently, all versions of Debian need a newer version OpenMPI. We'll build our own."
-        INST_OPENMPI=1
+	echo "You're running Debian $DEBIAN_VERSION"
+	if [ $(echo $DEBIAN_VERSION'<'9 | bc -l) -eq 1 ];
+	then
+            echo "Currently, Debian versions lower than 9 (Stretch) need a newer version OpenMPI. We'll build our own."
+            INST_OPENMPI=1
+	else
+	    echo "You're running Debian >= 9; we can use the package provided OpenMPI."
+	    export MPI_PATH=/usr/lib/x86_64-linux-gnu/openmpi
+	fi
     fi
 
     # package installs
@@ -447,7 +455,7 @@ mkdir -p ${DEST_DIR}/src
 cd ${DEST_DIR}/src
 
 ## Packages to install from source
-PYTHON='Python-3.5.1'
+PYTHON='Python-3.6.3'
 FFTW='fftw-3.3.4'
 NUMPY='numpy-1.11.0'
 SCIPY='scipy-0.14.0'
@@ -463,6 +471,8 @@ ZLIB='zlib-1.2.8'
 # dump sha512 to files
 printf -v PYFILE "%s.tgz.sha512" $PYTHON
 printf -v PYSHA "73f1477f3d3f5bd978c4ea1d1b679467b45e9fd2f443287b88c5c107a9ced580c56e0e8f33acea84e06b11a252e2a4e733120b721a9b6e1bb3d34493a3353bfb  %s" ${PYFILE%.sha512}
+
+printf -v PYSHA "2cb33a20b77150ecbfc51f08195ec6d2f7a6f9c22a653544e657fb67be46dc8d6129c00a8bc51823476217dd09d290f1395acb63f1f07da50924553c8760a645  %s" ${PYFILE%.sha512}
 echo "$PYSHA" > $PYFILE
 
 printf -v FFTFILE "%s.tar.gz.sha512" $FFTW
