@@ -306,7 +306,7 @@ class Pencil:
                     δC[i,j] = 0
                 LHS[name] = C
 
-        if compound:
+        if compound and 'L' in names:
             # Add match terms
             L = LHS['L']
             δM = np.identity(nvars)
