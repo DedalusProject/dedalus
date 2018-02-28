@@ -9,6 +9,7 @@ import numpy as np
 from mpi4py import MPI
 
 from ..tools.general import natural_sort
+from ..tools.parallel import sync_glob
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -87,7 +88,7 @@ def get_all_writes(set_paths):
     return writes
 
 
-def get_assigned_sets(base_path, distributed=False):
+def get_assigned_sets(base_path, distributed=False, comm=MPI.COMM_WORLD):
     """
     Divide analysis sets from a FileHandler between MPI processes.
 
@@ -97,20 +98,24 @@ def get_assigned_sets(base_path, distributed=False):
         Base path of FileHandler output
     distributed : bool, optional
         Divide distributed sets instead of merged sets (default: False)
+    comm : mpi4py.MPI.Intracomm, optional
+        MPI communicator (default: COMM_WORLD)
 
     """
     base_path = pathlib.Path(base_path)
     base_stem = base_path.stem
     if distributed:
-        set_paths = base_path.glob("{}_*".format(base_stem))
+        pattern = "{}_*".format(base_stem)
+        set_paths = sync_glob(base_path, pattern, comm)
         set_paths = filter(lambda path: path.is_dir(), set_paths)
     else:
-        set_paths = base_path.glob("{}_*.h5".format(base_stem))
+        pattern = "{}_*.h5".format(base_stem)
+        set_paths = sync_glob(base_path, pattern, comm)
     set_paths = natural_sort(set_paths)
     return set_paths[MPI_RANK::MPI_SIZE]
 
 
-def merge_process_files(base_path, cleanup=False):
+def merge_process_files(base_path, cleanup=False, comm=MPI.COMM_WORLD):
     """
     Merge process files from all distributed analysis sets in a folder.
 
@@ -120,6 +125,8 @@ def merge_process_files(base_path, cleanup=False):
         Base path of FileHandler output
     cleanup : bool, optional
         Delete distributed files after merging (default: False)
+    comm : mpi4py.MPI.Intracomm, optional
+        MPI communicator (default: COMM_WORLD)
 
     Notes
     -----
@@ -130,7 +137,7 @@ def merge_process_files(base_path, cleanup=False):
     set_path = pathlib.Path(base_path)
     logger.info("Merging files from {}".format(base_path))
 
-    set_paths = get_assigned_sets(base_path, distributed=True)
+    set_paths = get_assigned_sets(base_path, distributed=True, comm=comm)
     for set_path in set_paths:
         merge_process_files_single_set(set_path, cleanup=cleanup)
 
@@ -148,7 +155,7 @@ def merge_process_files_single_set(set_path, cleanup=False):
 
     """
     set_path = pathlib.Path(set_path)
-    logger.info("Merging set {}".format(set_path))
+    logger.debug("Merging set {}".format(set_path))
 
     set_stem = set_path.stem
     proc_paths = set_path.glob("{}_p*.h5".format(set_stem))
@@ -182,7 +189,7 @@ def merge_setup(joint_file, proc_path):
 
     """
     proc_path = pathlib.Path(proc_path)
-    logger.info("Merging setup from {}".format(proc_path))
+    logger.debug("Merging setup from {}".format(proc_path))
 
     with h5py.File(str(proc_path), mode='r') as proc_file:
         # File metadata
@@ -236,7 +243,7 @@ def merge_data(joint_file, proc_path):
 
     """
     proc_path = pathlib.Path(proc_path)
-    logger.info("Merging data from {}".format(proc_path))
+    logger.debug("Merging data from {}".format(proc_path))
 
     with h5py.File(str(proc_path), mode='r') as proc_file:
         for taskname in proc_file['tasks']:
@@ -291,7 +298,7 @@ def merge_sets(joint_path, set_paths, cleanup=False):
     logger.info("Creating joint file {}".format(joint_path))
     with h5py.File(str(joint_path), mode='w') as joint_file:
         # Setup file
-        logger.info("Merging setup from {}".format(set_paths[0]))
+        logger.debug("Merging setup from {}".format(set_paths[0]))
         with h5py.File(str(set_paths[0]), mode='r') as set_file:
             # File metadata
             joint_file.attrs['handler_name'] = set_file.attrs['handler_name']
@@ -337,7 +344,7 @@ def merge_sets(joint_path, set_paths, cleanup=False):
         # Merge sets
         i0 = i1 = 0
         for n, set_path in enumerate(set_paths):
-            logger.info("Merging data from {}".format(set_path))
+            logger.debug("Merging data from {}".format(set_path))
             length = set_lengths[n]
             i1 += length
             with h5py.File(str(set_path), mode='r') as set_file:
