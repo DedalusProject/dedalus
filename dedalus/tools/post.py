@@ -14,11 +14,8 @@ from ..tools.parallel import sync_glob
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
 
-MPI_RANK = MPI.COMM_WORLD.rank
-MPI_SIZE = MPI.COMM_WORLD.size
 
-
-def visit_writes(set_paths, function, **kw):
+def visit_writes(set_paths, function, comm=MPI.COMM_WORLD, **kw):
     """
     Apply function to writes from a list of analysis sets.
 
@@ -28,6 +25,8 @@ def visit_writes(set_paths, function, **kw):
         List of set paths
     function : function(set_path, start, count, **kw)
         A function on an HDF5 file, start index, and count.
+    comm : mpi4py.MPI.Intracomm, optional
+        MPI communicator (default: COMM_WORLD)
 
     Other keyword arguments are passed on to `function`
 
@@ -38,14 +37,14 @@ def visit_writes(set_paths, function, **kw):
 
     """
     set_paths = natural_sort(str(sp) for sp in set_paths)
-    arg_list = zip(set_paths, *get_assigned_writes(set_paths))
+    arg_list = zip(set_paths, *get_assigned_writes(set_paths, comm=comm))
     for set_path, start, count in arg_list:
         if count:
             logger.info("Visiting set {} (start: {}, end: {})".format(set_path, start, start+count))
             function(set_path, start, count, **kw)
 
 
-def get_assigned_writes(set_paths):
+def get_assigned_writes(set_paths, comm=MPI.COMM_WORLD):
     """
     Divide writes from a list of analysis sets between MPI processes.
 
@@ -53,13 +52,15 @@ def get_assigned_writes(set_paths):
     ----------
     set_paths : list of str or pathlib.Path
         List of set paths
+    comm : mpi4py.MPI.Intracomm, optional
+        MPI communicator (default: COMM_WORLD)
 
     """
     set_paths = natural_sort(str(sp) for sp in set_paths)
     # Distribute all writes in blocks
     writes = get_all_writes(set_paths)
-    block = int(np.ceil(sum(writes) / MPI_SIZE))
-    proc_start = MPI_RANK * block
+    block = int(np.ceil(sum(writes) / comm.size))
+    proc_start = comm.rank * block
     # Find set start/end indices
     writes = np.array(writes)
     set_ends = np.cumsum(writes)
@@ -112,7 +113,7 @@ def get_assigned_sets(base_path, distributed=False, comm=MPI.COMM_WORLD):
         pattern = "{}_*.h5".format(base_stem)
         set_paths = sync_glob(base_path, pattern, comm)
     set_paths = natural_sort(set_paths)
-    return set_paths[MPI_RANK::MPI_SIZE]
+    return set_paths[comm.rank::comm.size]
 
 
 def merge_process_files(base_path, cleanup=False, comm=MPI.COMM_WORLD):
@@ -258,7 +259,7 @@ def merge_data(joint_file, proc_path):
             joint_dset[slices] = proc_dset[:]
 
 
-def merge_sets(joint_path, set_paths, cleanup=False):
+def merge_sets(joint_path, set_paths, cleanup=False, comm=MPI.COMM_WORLD):
 
     """
     Merge analysis sets.
@@ -271,8 +272,14 @@ def merge_sets(joint_path, set_paths, cleanup=False):
         Paths of all sets to be merged
     cleanup : bool, optional
         Delete set files after merging (default: False)
+    comm : mpi4py.MPI.Intracomm, optional
+        MPI communicator (default: COMM_WORLD)
 
     """
+
+    # No parallelization
+    if comm.rank > 0:
+        return
 
     joint_path = pathlib.Path(joint_path)
     set_paths = [pathlib.Path(sp) for sp in set_paths]
