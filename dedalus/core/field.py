@@ -164,12 +164,6 @@ class Data(Operand):
         """Return self."""
         return self
 
-    def factor(self, *vars):
-        if self in vars:
-            return defaultdict(int, {self: 1})
-        else:
-            return defaultdict(int, {1: self})
-
     def split(self, *vars):
         if self in vars:
             return [self, 0]

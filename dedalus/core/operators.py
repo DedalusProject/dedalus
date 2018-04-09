@@ -148,13 +148,6 @@ class NonlinearOperator(Operator):
         else:
             return self
 
-    def factor(self, *vars):
-        """Produce operator-factor dictionary over specified variables."""
-        if self.has(*vars):
-            return defaultdict(int, {self: 1})
-        else:
-            return defaultdict(int, {1: self})
-
     def split(self, *vars):
         if self.has(*vars):
             return [self, 0]
@@ -415,15 +408,6 @@ class Add(Arithmetic, metaclass=MultiClass):
             raise NonlinearOperatorError("Cannot add dependent and independent terms.")
         else:
             return self
-
-    def factor(self, *vars):
-        """Produce operator-factor dictionary over specified variables."""
-        out = defaultdict(int)
-        F0 = self.args[0].factor(*vars)
-        F1 = self.args[1].factor(*vars)
-        for f in set().union(F0, F1):
-            out[f] = F0[f] + F1[f]
-        return out
 
     def split(self, *vars):
         S0 = self.args[0].split(*vars)
@@ -691,16 +675,6 @@ class Multiply(Arithmetic, metaclass=MultiClass):
                 return arg0 * arg1
         else:
             return self
-
-    def factor(self, *vars):
-        """Produce operator-factor dictionary over specified variables."""
-        out = defaultdict(int)
-        F0 = self.args[0].factor(*vars)
-        F1 = self.args[1].factor(*vars)
-        for f0 in F0:
-            for f1 in F1:
-                out[f0*f1] += F0[f0] * F1[f1]
-        return out
 
     def split(self, *vars):
         S0 = self.args[0].split(*vars)
@@ -1046,13 +1020,6 @@ class LinearOperator(Operator):
         else:
             return self
 
-    def factor(self, *vars):
-        """Produce operator-factor dictionary over specified variables."""
-        if self.has(*vars):
-            return defaultdict(int, {self: 1})
-        else:
-            return defaultdict(int, {1: self})
-
     def split(self, *vars):
         if self.base in vars:
             return [self, 0]
@@ -1093,17 +1060,6 @@ class TimeDerivative(LinearOperator, FutureField):
     def meta_parity(self, axis):
         # Preserves parity
         return self.args[0].meta[axis]['parity']
-
-    def factor(self, *vars):
-        """Produce operator-factor dictionary over specified variables."""
-        if type(self) in vars:
-            out = defaultdict(int)
-            F0 = self.args[0].factor(*vars)
-            for f in F0:
-                out[f*self._scalar] = F0[f]
-            return out
-        else:
-            return defaultdict(int, {1: self})
 
     def operator_form(self, index):
         raise ValueError("Operator form not available for time derivative.")
