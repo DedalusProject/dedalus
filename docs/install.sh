@@ -236,6 +236,16 @@ function host_specific
         INST_OPENSSL=1
 	INST_ZLIB=1
     fi
+    if [ "${OSX_VERSION##10.12}" != "${OSX_VERSION}" ]
+    then
+        INST_OPENSSL=1
+    INST_ZLIB=1
+    fi
+    if [ "${OSX_VERSION##10.13}" != "${OSX_VERSION}" ]
+    then
+        INST_OPENSSL=1
+    INST_ZLIB=1
+    fi
     INST_OPENMPI=1
     INST_ATLAS=0
     INST_HDF5=1
