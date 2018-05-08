@@ -323,8 +323,9 @@ function host_specific
         echo "  * libhdf5-dev"
         if [ $UBUNTU_VERSION -lt 17 ]
         then
-           echo "  * libzmq-dev"
+            echo "  * libzmq-dev"
         fi
+        echo "  * libbz2-dev"
         echo "  * libsqlite3-dev"
         echo "  * gfortran"
         echo
@@ -332,9 +333,9 @@ function host_specific
         echo
         if [ $UBUNTU_VERSION -lt 17 ]
         then
-            echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev mercurial libzmq-dev libsqlite3-dev gfortran"
+            echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev mercurial libzmq-dev libsqlite3-dev gfortran libbz2-dev"
         else
-            echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev mercurial libsqlite3-dev gfortran"
+            echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev mercurial libsqlite3-dev gfortran libbz2-dev"
         fi
         echo
         echo
@@ -466,8 +467,8 @@ cd ${DEST_DIR}/src
 ## Packages to install from source
 PYTHON='Python-3.6.3'
 FFTW='fftw-3.3.4'
-NUMPY='numpy-1.11.0'
-SCIPY='scipy-0.14.0'
+NUMPY='numpy-1.14.3'
+SCIPY='scipy-1.1.0'
 OPENMPI='openmpi-1.10.1'
 HDF5='hdf5-1.8.13'
 FTYPE='freetype-2.5.3'
@@ -489,11 +490,11 @@ printf -v FFTSHA "1ee2c7bec3657f6846e63c6dfa71410563830d2b951966bf0123bd8f4f2f5d
 echo "$FFTSHA" > $FFTFILE
 
 printf -v NPFILE "%s.tar.gz.sha512" $NUMPY
-printf -v NPSHA "e3358b7b432bda76dedaad633319b2e242b187f91b3357574dbde2c4f5f8684a840e274e505b098ffd324f0dafa386939ef30b50fa89d6d901bf8e830fa47733  %s" ${NPFILE%.sha512}
+printf -v NPSHA "0ed8606bb04225d1126ca8c20a9b83ceae82dc0bdac077dfc0c236ee7aea1a6029e140e2f30d36241fa80d56a8259f5ae6a7bcbba454f5059ec0a9bf35540238  %s" ${NPFILE%.sha512}
 echo "$NPSHA" > $NPFILE
 
 printf -v SPFILE "%s.tar.gz.sha512" $SCIPY
-printf -v SPSHA "ad1278740c1dc44c5e1b15335d61c4552b66c0439325ed6eeebc5872a1c0ba3fce1dd8509116b318d01e2d41da2ee49ec168da330a7fafd22511138b29f7235d  %s" ${SPFILE%.sha512}
+printf -v SPSHA "76ac0661f3248d03a4fab43615955e108be542adc8603b02fc8db00c93a7000bf244f3ad4a3b33f5ff3409b093ae142dc9e816f2a67d6fcddfe98b5a2f595773  %s" ${SPFILE%.sha512}
 echo "$SPSHA" > $SPFILE
 
 printf -v MPIFILE "%s.tar.gz.sha512" $OPENMPI
