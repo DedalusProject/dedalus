@@ -68,7 +68,7 @@ solver.stop_wall_time = 30 * 60.
 solver.stop_iteration = np.inf
 
 # Analysis
-snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=0.25, max_writes=50, write_num=write, set_num=3)
+snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=0.25, max_writes=50)
 snapshots.add_system(solver.state)
 
 # CFL
