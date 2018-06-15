@@ -1266,7 +1266,6 @@ class Interpolate(LinearOperator):
             # Preserve parity
             return self.args[0].meta[axis]['parity']
 
-
 @parseable
 @addname('interp')
 def interpolate(arg0, out=None, **basis_kw):
@@ -1278,7 +1277,7 @@ def interpolate(arg0, out=None, **basis_kw):
     if len(basis_kw) == 0:
         raise ValueError("No basis specified.")
     # Unpack bases
-    bases = list(basis_kw.items())
+    bases = sorted(list(basis_kw.items()))
     # Multiple bases: apply recursively
     if len(bases) > 1:
         arg0 = interpolate(arg0, **dict(bases[:-1]))
