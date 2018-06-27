@@ -359,6 +359,7 @@ function host_specific
         echo
         echo "You need to have these packages installed:"
         echo
+        echo "  * libbz2-dev"
         echo "  * libatlas-base-dev"
         echo "  * mercurial"
         echo "  * libatlas3-base"
@@ -378,7 +379,7 @@ function host_specific
         echo
         echo "You can accomplish this by executing:"
         echo
-        echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev mercurial libsqlite3-dev gfortran"
+        echo "$ sudo apt-get install libbz2-dev libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev mercurial libsqlite3-dev gfortran"
         echo
         echo
 	echo "You're running Debian $DEBIAN_VERSION"
