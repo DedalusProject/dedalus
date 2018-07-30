@@ -503,12 +503,17 @@ class InitialValueSolver:
                 dt = self.stop_sim_time - self.sim_time
             self.step(dt)
 
-    def evaluate_handlers_now(self, handlers, dt):
+    def evaluate_handlers_now(self, dt, handlers=None):
         """Evaluate all handlers right now. Useful for writing final outputs.
+        
+        by default, all handlers are evaluated; if a list is given
+        only those will be evaluated.
 
         """
         end_world_time = self.get_world_time()
         end_wall_time = end_world_time - self.start_time
+        if handlers is None:
+            handlers = self.evaluator.handlers
         
         self.evaluator.evaluate_handlers(handlers, timestep=dt, sim_time=self.sim_time, world_time=end_world_time, wall_time=end_wall_time, iteration=self.iteration)
 
