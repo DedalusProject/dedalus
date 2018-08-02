@@ -45,7 +45,7 @@ def main(filename, start, count, output):
                 axes = mfig.add_axes(i, j, [0, 0, 1, 1])
                 # Call 3D plotting helper, slicing in time
                 dset = file['tasks'][task]
-                image_axes = (1, 1)
+                image_axes = (1, 2)
                 data_slices = [index, slice(None), slice(None)]
                 plot_tools.plot_bot(dset, image_axes, data_slices, axes=axes, title=task, even_scale=True)
             # Add time title
