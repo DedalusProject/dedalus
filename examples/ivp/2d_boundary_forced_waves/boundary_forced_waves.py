@@ -31,8 +31,8 @@ nx = 100
 ny = 100
 c = 1.
 
-x = de.Fourier('x',nx,interval=[-np.pi,np.pi])
-y = de.Chebyshev('y',ny,interval=[-np.pi,np.pi])
+x = de.Fourier('x',nx,interval=[0.,2*np.pi])
+y = de.Chebyshev('y',ny,interval=[0.,2*np.pi])
 domain = de.Domain([x,y],grid_dtype='float')
 
 def BoundaryForcing(*args):
@@ -46,7 +46,7 @@ def BoundaryForcing(*args):
 
     return ampl*cos_bump(x)*np.cos(t*freq)
 
-def cos_bump(x, Lx=1, n=10):
+def cos_bump(x, Lx=2*np.pi, n=10):
     """a simple, smooth bump function.
 
     """
