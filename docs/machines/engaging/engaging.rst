@@ -2,6 +2,7 @@ Install notes for MIT Engaging Cluster
 **************************************
 
 This installation uses the Python, BLAS, and MPI modules available on Engaging, while manually building HDF5 and FFTW.
+Be sure to login to Engaging through the ``eofe7`` head-node.
 
 Modules and paths
 -----------------
