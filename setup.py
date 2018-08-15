@@ -10,6 +10,7 @@ import mpi4py
 import os
 import glob
 
+FFTW_STATIC='FFTW_STATIC'
 
 # Look for Mercurial tools
 try:
@@ -118,21 +119,39 @@ libraries = ['fftw3_mpi',
 
 library_dirs = [get_lib('fftw')]
 
+if FFTW_STATIC in os.environ:
+    fftw_static=True
+else:
+    fftw_static=False
+
+if fftw_static:
+    fftw_lib_path = get_lib('fftw')
+    extra_link_args = ["-Xlinker", 
+                         "-Bsymbolic",
+                         "-Wl,--whole-archive", 
+                         "{}/libfftw3.a".format(fftw_lib_path), 
+                         "{}/libfftw3_mpi.a".format(fftw_lib_path),
+                       "-Wl,--no-whole-archive"]
+else:
+    extra_link_args = []
+
 extensions = [
-    Extension(
-        name='dedalus.libraries.fftw.fftw_wrappers',
-        sources=['dedalus/libraries/fftw/fftw_wrappers.pyx'],
-        include_dirs=include_dirs,
-        libraries=libraries,
-        library_dirs=library_dirs,
-        extra_compile_args=["-Wno-error=declaration-after-statement"]),
+    Extension( 
+        name='dedalus.libraries.fftw.fftw_wrappers', 
+        sources=['dedalus/libraries/fftw/fftw_wrappers.pyx'], 
+        include_dirs=include_dirs, 
+        libraries=libraries, 
+        library_dirs=library_dirs, 
+        extra_compile_args=["-Wno-error=declaration-after-statement"], 
+        extra_link_args=extra_link_args), 
     Extension(
         name='dedalus.core.transposes',
         sources=['dedalus/core/transposes.pyx'],
         include_dirs=include_dirs,
         libraries=libraries,
         library_dirs=library_dirs,
-        extra_compile_args=["-Wno-error=declaration-after-statement"]),
+        extra_compile_args=["-Wno-error=declaration-after-statement"],
+        extra_link_args=extra_link_args),
     Extension(
         name='dedalus.core.polynomials',
         sources=['dedalus/core/polynomials.pyx'],
