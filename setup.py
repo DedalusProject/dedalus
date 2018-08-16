@@ -1,5 +1,5 @@
 
-
+from distutils.util import strtobool
 from distutils.core import setup
 from distutils.extension import Extension
 from distutils.command.build_ext import build_ext
@@ -119,12 +119,14 @@ libraries = ['fftw3_mpi',
 
 library_dirs = [get_lib('fftw')]
 
-if FFTW_STATIC in os.environ:
-    fftw_static=True
+fs = os.getenv(FFTW_STATIC)
+if fs:
+    fftw_static=bool(strtobool(fs))
 else:
     fftw_static=False
 
 if fftw_static:
+    print("Statically linking FFTW to allow Dedalus to work with Intel MKL.")
     fftw_lib_path = get_lib('fftw')
     extra_link_args = ["-Xlinker", 
                          "-Bsymbolic",
