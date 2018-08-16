@@ -1,8 +1,7 @@
 
-from distutils.util import strtobool
-from distutils.core import setup
-from distutils.extension import Extension
-from distutils.command.build_ext import build_ext
+import setuptools
+from setuptools import setup
+from setuptools import Extension
 from Cython.Build import cythonize
 import pathlib
 import numpy as np
@@ -120,16 +119,11 @@ extensions = [
         extra_compile_args=["-Wno-error=declaration-after-statement"])]
 
 setup(
-    name='Dedalus',
+    name='dedalus',
     version='2',
     author='Keaton J. Burns',
     author_email='keaton.burns@gmail.com',
     license='GPL3',
-    packages = ['dedalus',
-                'dedalus.tools',
-                'dedalus.extras',
-                'dedalus.core',
-                'dedalus.libraries',
-                'dedalus.libraries.fftw'],
+    packages = setuptools.find_packages(),
     package_data = {'dedalus': ['dedalus.cfg']},
     ext_modules = cythonize(extensions))
