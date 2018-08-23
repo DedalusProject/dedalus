@@ -1,6 +1,52 @@
 Installing Dedalus
 ******************
 
+Installing the Dedalus Package
+==============================
+
+Dedalus is a Python 3 package that includes custom C-extensions (compiled with Cython) and that relies on MPI, FFTW (linked to MPI), HDF5, and a basic scientific-Python stack (numpy, scipy, mpi4py, and h5py).
+
+If you have the necessary C dependencies (MPI, FFTW+MPI, and HDF5), as well as Python 3, you should be able to install Dedalus from PyPI or build it from source.
+Otherwise, see one of the alternate sections below for instructions for building the dependency stack.
+
+We currently only provide Dedalus on PyPI as a source distribution so that the cython extensions are properly linked to your MPI and FFTW libraries at build-time.
+To install Dedalus from PyPI, set the ``FFTW_PATH`` and ``MPI_PATH`` environment variables to the prefix paths for those libraries, and install Dedalus with pip::
+
+    export FFTW_PATH=/path/to/your/fftw_prefix
+    export MPI_PATH=/path/to/your/mpi_prefix
+    python3 -m pip install --pre --extra-index-url https://testpypi.python.org/pypi dedalus
+
+Alternately, to build the lastest version of Dedalus from source, clone the repository from `<https://bitbucket.org/dedalus-project/dedalus>`_, set the path variables, install the build requirements, and run setup.py::
+
+    export FFTW_PATH=/path/to/your/fftw_prefix
+    export MPI_PATH=/path/to/your/mpi_prefix
+    python3 -m pip install -r requirements.txt
+    python3 setup.py install
+
+Dedalus can then be uninstalled simply using::
+
+    python3 -m pip uninstall dedalus
+
+Conda Installation
+==================
+
+We preliminarily support installation through conda if you do not require linking against custom FFTW/MPI/HDF5 libraries, and are happy with builds of those packages that are available through conda.
+
+First, install conda/miniconda for your system if you don't already have it, following the `instructions from conda <https://conda.io/docs/user-guide/install/index.html>`_.
+Then download the Dedalus conda-environment file from `this link <https://raw.githubusercontent.com/DedalusProject/conda_dedalus/master/env-dedalus.yaml>`_ or using::
+
+    wget https://raw.githubusercontent.com/DedalusProject/conda_dedalus/master/env-dedalus.yaml
+
+Create a new conda environment from this file using::
+
+    conda env create -n dedalus -f env-dedalus.yaml
+
+Once you activate the environment, you should have all the necessary requirements to build Dedalus from source.
+Full conda recipes for Dedalus are still in-progress, but for now you should be able to install Dedalus from PyPI using pip inside your environment::
+
+    conda activate dedalus
+    python3 -m pip install --pre --extra-index-url https://testpypi.python.org/pypi dedalus
+
 Installation Script
 ===================
 
