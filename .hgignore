@@ -14,4 +14,4 @@ syntax: glob
 build
 dist
 dedalus.egg-info
-
+docs/_build
