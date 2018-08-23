@@ -9,5 +9,9 @@ syntax: glob
 *.so
 *.o
 *.h5
+*.orig
 .ipynb_checkpoints
+build
+dist
+dedalus.egg-info
 
