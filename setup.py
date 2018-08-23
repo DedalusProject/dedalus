@@ -42,8 +42,9 @@ def check_env_var(env_var):
 
 def get_prefix(name):
     """
-    Get prefix path for libraries containing string <name>. First checks environment
-    variables for <NAME>_PATH, then searches a few other likely places.
+    Get prefix path for libraries containing string "name".
+    First checks environment variables for <NAME>_PATH and NAME_PREFIX.
+    Then searches a few other likely places.
     """
     print("Looking for %s prefix" %name)
     # Check for environment variable
@@ -55,7 +56,8 @@ def get_prefix(name):
         if path:
             return path
     # Check likely places
-    places = ['/usr/lib/openmpi', # MPI under Ubuntu
+    places = [os.environ.get('CONDA_PREFIX', ''),
+              '/usr/lib/openmpi', # MPI under Ubuntu
               '/usr',
               '/usr/local',
               os.path.expanduser('~/build')]
