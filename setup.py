@@ -7,6 +7,7 @@ from distutils.util import strtobool
 import numpy as np
 import mpi4py
 import os
+import sys
 import glob
 
 
@@ -73,23 +74,23 @@ libraries = ['fftw3_mpi', 'fftw3', 'm']
 library_dirs = [get_lib('fftw')]
 
 # Optionally set static linking for FFTW
-FFTW_STATIC='FFTW_STATIC'
-fs = os.getenv(FFTW_STATIC)
-if fs:
-    fftw_static=bool(strtobool(fs))
-else:
-    fftw_static=False
-if fftw_static:
+extra_link_args = []
+if bool(strtobool(os.getenv('FFTW_STATIC', '0'))):
     print("Statically linking FFTW to allow Dedalus to work with Intel MKL.")
     fftw_lib_path = get_lib('fftw')
-    extra_link_args = ["-Xlinker",
-                       "-Bsymbolic",
-                       "-Wl,--whole-archive",
-                       "{}/libfftw3.a".format(fftw_lib_path),
-                       "{}/libfftw3_mpi.a".format(fftw_lib_path),
-                       "-Wl,--no-whole-archive"]
-else:
-    extra_link_args = []
+    if sys.platform == "darwin":
+        # Mac/clang flags
+        extra_link_args = ["-Wl,-force_load",
+                           "{}/libfftw3.a".format(fftw_lib_path),
+                           "{}/libfftw3_mpi.a".format(fftw_lib_path),
+                           "-Wl,-noall_load"]
+    else:
+        # Linux/GCC flags
+        extra_link_args = ["-Xlinker", "-Bsymbolic",
+                           "-Wl,--whole-archive",
+                           "{}/libfftw3.a".format(fftw_lib_path),
+                           "{}/libfftw3_mpi.a".format(fftw_lib_path),
+                           "-Wl,--no-whole-archive"]
 
 # Extension objects for cython
 extensions = [
