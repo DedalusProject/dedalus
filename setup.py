@@ -76,21 +76,35 @@ library_dirs = [get_lib('fftw')]
 # Optionally set static linking for FFTW
 extra_link_args = []
 if bool(strtobool(os.getenv('FFTW_STATIC', '0'))):
-    print("Statically linking FFTW to allow Dedalus to work with Intel MKL.")
+    print("Statically linking FFTW")
     fftw_lib_path = get_lib('fftw')
-    if sys.platform == "darwin":
-        # Mac/clang flags
-        extra_link_args = ["-Wl,-force_load",
-                           "{}/libfftw3.a".format(fftw_lib_path),
-                           "{}/libfftw3_mpi.a".format(fftw_lib_path),
-                           "-Wl,-noall_load"]
-    else:
-        # Linux/GCC flags
-        extra_link_args = ["-Xlinker", "-Bsymbolic",
+    clang_extra_link_args = ["-Wl,-force_load",
+                             "{}/libfftw3.a".format(fftw_lib_path),
+                             "{}/libfftw3_mpi.a".format(fftw_lib_path),
+                             "-Wl,-noall_load"]
+    gcc_extra_link_args = ["-Xlinker", "-Bsymbolic",
                            "-Wl,--whole-archive",
                            "{}/libfftw3.a".format(fftw_lib_path),
                            "{}/libfftw3_mpi.a".format(fftw_lib_path),
                            "-Wl,--no-whole-archive"]
+    # Choose linker flags based on CC
+    CC = os.getenv('CC')
+    if CC == "clang":
+        print("CC set to clang; using clang linker flags")
+        extra_link_args = clang_extra_link_args
+    elif CC:
+        print("CC set to {}; using gcc linker flags".format(CC))
+        extra_link_args = gcc_extra_link_args
+    elif sys.platform == "darwin":
+        print("CC not set; defaulting to clang linker flags")
+        extra_link_args = clang_extra_link_args
+    else:
+        print("CC not set; defaulting to gcc linker flags")
+        extra_link_args = gcc_extra_link_args
+
+# Provide rpath for mac linker
+if sys.platform == "darwin":
+    extra_link_args.append('-Wl,-rpath,'+library_dirs[0])
 
 # Extension objects for cython
 extensions = [
@@ -100,6 +114,7 @@ extensions = [
         include_dirs=include_dirs,
         libraries=libraries,
         library_dirs=library_dirs,
+        runtime_library_dirs=library_dirs,
         extra_compile_args=["-Wno-error=declaration-after-statement"],
         extra_link_args=extra_link_args),
     Extension(
@@ -108,6 +123,7 @@ extensions = [
         include_dirs=include_dirs,
         libraries=libraries,
         library_dirs=library_dirs,
+        runtime_library_dirs=library_dirs,
         extra_compile_args=["-Wno-error=declaration-after-statement"],
         extra_link_args=extra_link_args),
     Extension(
@@ -116,6 +132,7 @@ extensions = [
         include_dirs=include_dirs,
         libraries=libraries,
         library_dirs=library_dirs,
+        runtime_library_dirs=library_dirs,
         extra_compile_args=["-Wno-error=declaration-after-statement"])]
 
 # Runtime requirements
