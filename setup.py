@@ -1,3 +1,17 @@
+"""
+Setup script for Dedalus.
+The following environment variables may be set:
+
+FFTW_PATH
+    Path to FFTW installation prefix
+MPI_PATH=/path/to/mpi/prefix
+    Path to MPI installation prefix
+FFTW_STATIC
+    Binary flag to statically link FFTW, 0 by default
+CYTHON_PROFILE
+    Binary flag to enable profiling within cython modules, 0 by default
+
+"""
 
 import setuptools
 from setuptools import setup
@@ -11,7 +25,14 @@ import sys
 import glob
 
 
-# Helper functions for finding C-dependency paths
+# Helper functions
+def bool_env(name, unset=False):
+    env_var = os.getenv(name)
+    if env_var is None:
+        return unset
+    else:
+        return bool(strtobool(env_var))
+
 def check_env_var(env_var):
     path = None
     if env_var in os.environ:
@@ -75,7 +96,7 @@ library_dirs = [get_lib('fftw')]
 
 # Optionally set static linking for FFTW
 extra_link_args = []
-if bool(strtobool(os.getenv('FFTW_STATIC', '0'))):
+if bool_env('FFTW_STATIC', unset=False):
     print("Statically linking FFTW")
     fftw_lib_path = get_lib('fftw')
     clang_extra_link_args = ["-Wl,-force_load",
@@ -148,6 +169,11 @@ install_requires = [
 with open('README.md') as f:
     long_description = f.read()
 
+# Cython directives
+compiler_directives = {}
+if bool_env('CYTHON_PROFILE', unset=False):
+    compiler_directives['profile'] = True
+
 setup(
     name='dedalus',
     version='2.1808a2',
@@ -162,4 +188,4 @@ setup(
     license='GPL3',
     packages=setuptools.find_packages(),
     package_data={'': ['dedalus.cfg']},
-    ext_modules=cythonize(extensions))
+    ext_modules=cythonize(extensions, compiler_directives=compiler_directives))
