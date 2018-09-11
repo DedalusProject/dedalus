@@ -74,13 +74,14 @@ cdef extern from "fftw3.h":
                                      unsigned flags)
 
     # Guru real-to-real transforms (4.5.5)
+    ctypedef int fftw_r2r_kind
     fftw_plan fftw_plan_guru_r2r(int rank,
                                  fftw_iodim *dims,
                                  int howmany_rank,
                                  fftw_iodim *howmany_dims,
                                  double *in_,
                                  double *out,
-                                 int *kind,
+                                 fftw_r2r_kind *kind,
                                  unsigned flags)
 
     # New-array execute functions (4.6)
@@ -96,6 +97,22 @@ cdef extern from "fftw3.h":
     void fftw_execute_r2r(fftw_plan plan,
                           double *in_,
                           double *out)
+
+    # Flags and constants
+    int FFTW_BACKWARD
+    int FFTW_FORWARD
+    int FFTW_ESTIMATE
+    int FFTW_EXHAUSTIVE
+    int FFTW_MEASURE
+    int FFTW_PATIENT
+    int FFTW_DESTROY_INPUT
+    int FFTW_PRESERVE_INPUT
+    fftw_r2r_kind FFTW_REDFT00
+    fftw_r2r_kind FFTW_REDFT01
+    fftw_r2r_kind FFTW_REDFT10
+    fftw_r2r_kind FFTW_RODFT00
+    fftw_r2r_kind FFTW_RODFT01
+    fftw_r2r_kind FFTW_RODFT10
 
 
 cdef extern from "fftw3-mpi.h":
@@ -132,28 +149,6 @@ cdef extern from "fftw3-mpi.h":
                                            mpi_comm_t comm,
                                            unsigned flags)
 
-
-cdef enum:
-
-    # FFTW flags, defined in FFTW headers
-    FFTW_BACKWARD = 1
-    FFTW_FORWARD = -1
-
-    FFTW_ESTIMATE = (1 << 6)
-    FFTW_EXHAUSTIVE = (1 << 3)
-    FFTW_MEASURE = 0
-    FFTW_PATIENT = (1 << 5)
-
-    FFTW_DESTROY_INPUT = (1 << 0)
-    FFTW_PRESERVE_INPUT = (1 << 4)
-
-    FFTW_REDFT00 = 3
-    FFTW_REDFT01 = 4
-    FFTW_REDFT10 = 5
-
-    FFTW_RODFT00 = 7
-    FFTW_RODFT01 = 8
-    FFTW_RODFT10 = 9
-
-    FFTW_MPI_TRANSPOSED_IN = (1 << 29)
-    FFTW_MPI_TRANSPOSED_OUT = (1 << 30)
+    # Flags and constants
+    int FFTW_MPI_TRANSPOSED_IN
+    int FFTW_MPI_TRANSPOSED_OUT

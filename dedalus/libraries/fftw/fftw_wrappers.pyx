@@ -294,8 +294,8 @@ cdef class DiscreteCosineTransform:
             intflags = intflags | fftw_flags[f]
 
         # Select DCT types
-        cdef int *kind_f = [cfftw.FFTW_REDFT10]
-        cdef int *kind_b = [cfftw.FFTW_REDFT01]
+        cdef cfftw.fftw_r2r_kind *kind_f = [cfftw.FFTW_REDFT10]
+        cdef cfftw.fftw_r2r_kind *kind_b = [cfftw.FFTW_REDFT01]
 
         # Create out-of-place plans using temporary memory allocations
         cdef double *gdata
@@ -410,8 +410,8 @@ cdef class DiscreteSineTransform:
             intflags = intflags | fftw_flags[f]
 
         # Select DCT types
-        cdef int *kind_f = [cfftw.FFTW_RODFT10]
-        cdef int *kind_b = [cfftw.FFTW_RODFT01]
+        cdef cfftw.fftw_r2r_kind *kind_f = [cfftw.FFTW_RODFT10]
+        cdef cfftw.fftw_r2r_kind *kind_b = [cfftw.FFTW_RODFT01]
 
         # Create out-of-place plans using temporary memory allocations
         cdef double *gdata
