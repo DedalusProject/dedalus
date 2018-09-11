@@ -89,10 +89,12 @@ def get_lib(name):
 include_dirs = ['dedalus/libraries/fftw/',
                 np.get_include(),
                 mpi4py.get_include(),
-                get_include('fftw'),
-                get_include('mpi')]
+                get_include('fftw')]
 libraries = ['fftw3_mpi', 'fftw3', 'm']
 library_dirs = [get_lib('fftw')]
+
+# Warning supression
+extra_compile_args = ["-Wno-error=declaration-after-statement"]
 
 # Optionally set static linking for FFTW
 extra_link_args = []
@@ -136,7 +138,7 @@ extensions = [
         libraries=libraries,
         library_dirs=library_dirs,
         runtime_library_dirs=library_dirs,
-        extra_compile_args=["-Wno-error=declaration-after-statement"],
+        extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args),
     Extension(
         name='dedalus.core.transposes',
@@ -145,7 +147,7 @@ extensions = [
         libraries=libraries,
         library_dirs=library_dirs,
         runtime_library_dirs=library_dirs,
-        extra_compile_args=["-Wno-error=declaration-after-statement"],
+        extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args),
     Extension(
         name='dedalus.core.polynomials',
@@ -154,7 +156,7 @@ extensions = [
         libraries=libraries,
         library_dirs=library_dirs,
         runtime_library_dirs=library_dirs,
-        extra_compile_args=["-Wno-error=declaration-after-statement"])]
+        extra_compile_args=extra_compile_args)]
 
 # Runtime requirements
 install_requires = [
