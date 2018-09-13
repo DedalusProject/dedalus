@@ -20,13 +20,13 @@
 # -- Project information -----------------------------------------------------
 
 project = 'Dedalus Project'
-copyright = '2018, Dedalus Collaboration'
+copyright = '2018 Dedalus Collaboration'
 author = 'Dedalus Collaboration'
 
 # The short X.Y version
 version = ''
 # The full version, including alpha/beta/rc tags
-release = '2.1809'
+release = ''
 
 
 # -- General configuration ---------------------------------------------------

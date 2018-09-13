@@ -1,4 +1,4 @@
-# Dedalus
+# Dedalus Project
 
 ## About Dedalus
 
