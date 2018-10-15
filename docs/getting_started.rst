@@ -8,22 +8,24 @@ This tutorial on using Dedalus consists of three short IPython notebooks, which 
 
 The notebooks cover the basics of setting up and interacting with the primary facets of the code, culminating in the setup and simulation of the 1D KdV-Burgers equation.
 
-* `Tutorial 1: Bases and Domains <http://nbviewer.ipython.org/urls/bitbucket.org/dedalus-project/dedalus/raw/tip/docs/notebooks/dedalus_tutorial_bases_domains.ipynb>`_
+.. toctree::
+   :maxdepth: 1
 
-* `Tutorial 2: Fields and Operators <http://nbviewer.ipython.org/urls/bitbucket.org/dedalus-project/dedalus/raw/tip/docs/notebooks/dedalus_tutorial_fields_operators.ipynb>`_
-
-* `Tutorial 3: Problems and Solvers <http://nbviewer.ipython.org/urls/bitbucket.org/dedalus-project/dedalus/raw/tip/docs/notebooks/dedalus_tutorial_problems_solvers.ipynb>`_
-
-* `Tutorial 4: Analysis and Post-processing <http://nbviewer.ipython.org/urls/bitbucket.org/dedalus-project/dedalus/raw/tip/docs/notebooks/dedalus_tutorial_analysis_postprocessing.ipynb>`_
+   Tutorial 1: Bases and Domains <notebooks/dedalus_tutorial_bases_domains.ipynb>
+   Tutorial 2: Fields and Operators <notebooks/dedalus_tutorial_fields_operators.ipynb>
+   Tutorial 3: Problems and Solvers <notebooks/dedalus_tutorial_problems_solvers.ipynb>
+   Tutorial 4: Analysis and Post-processing <notebooks/dedalus_tutorial_analysis_postprocessing.ipynb>
 
 Example Notebooks
 =================
 
 Below are several notebooks that walk through the setup and execution of more complicated multidimensional example problems.
 
-* `Example 1: Kelvin Helmholtz Instability <http://nbviewer.ipython.org/urls/bitbucket.org/dedalus-project/dedalus/raw/tip/docs/notebooks/Kelvin Helmholtz Instability.ipynb>`_
+.. toctree::
+   :maxdepth: 1
 
-* `Example 2: Taylor-Couette Flow <http://nbviewer.ipython.org/urls/bitbucket.org/dedalus-project/dedalus/raw/tip/docs/notebooks/Taylor Couette Flow.ipynb>`_
+   Example 1: Kelvin-Helmholtz Instability <notebooks/KelvinHelmholtzInstability.ipynb>
+   Example 2: Taylor-Couette Flow <notebooks/TaylorCouetteFlow.ipynb>
 
 Example Scripts
 ===============
