@@ -19,11 +19,10 @@ Doc Contents
 
     installation
     getting_started
+    Dedalus API reference <autoapi/dedalus/index>
 
 Other Links
 ===========
-
-Learn more about Dedalus by visiting the
 
 * Project homepage: http://dedalus-project.org
 * Code repository: http://bitbucket.org/dedalus-project/dedalus

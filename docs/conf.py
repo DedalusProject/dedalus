@@ -39,6 +39,23 @@ release = ''
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = []
+extensions += ['sphinx.ext.mathjax']
+extensions += ['autoapi.extension']
+extensions += ['sphinx.ext.viewcode']
+extensions += ['sphinx.ext.napoleon']
+extensions += ['nbsphinx']
+
+add_module_names = False
+autoapi_type = 'python'
+autoapi_dirs = ['../dedalus']
+autoapi_file_patterns = ['*.py', '*.pyx']
+autoapi_options = ['members', 'undoc-members', 'special-members']
+autoapi_python_class_content = 'both'
+autoapi_add_toctree_entry = False
+
+napoleon_use_param = False
+napoleon_use_keyword = False
+napoleon_use_ivar = True
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
