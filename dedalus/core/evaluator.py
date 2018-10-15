@@ -105,7 +105,7 @@ class Evaluator:
                 handler.last_iter_div = iter_div
 
         self.evaluate_handlers(scheduled_handlers, wall_time=wall_time, sim_time=sim_time, iteration=iteration, **kw)
-        
+
     def evaluate_handlers(self, handlers, id=None, **kw):
         """Evaluate a collection of handlers."""
 
@@ -429,9 +429,9 @@ class FileHandler(Handler):
         # Open current file
         if self.parallel:
             comm = self.domain.distributor.comm_cart
-            h5file = h5py.File(str(self.current_path), 'a', driver='mpio', comm=comm)
+            h5file = h5py.File(str(self.current_path), 'r+', driver='mpio', comm=comm)
         else:
-            h5file = h5py.File(str(self.current_path), 'a')
+            h5file = h5py.File(str(self.current_path), 'r+')
         self.file_write_num = h5file['/scales/write_number'].shape[0]
         return h5file
 
@@ -469,6 +469,7 @@ class FileHandler(Handler):
             if FILEHANDLER_TOUCH_TMPFILE:
                 tmpfile.unlink()
         self.setup_file(file)
+        file.close()
 
     def setup_file(self, file):
 
