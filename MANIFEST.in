@@ -6,3 +6,4 @@ include requirements.txt
 include setup.py
 global-include *.pyx
 global-include *.pxd
+global-exclude *.c
