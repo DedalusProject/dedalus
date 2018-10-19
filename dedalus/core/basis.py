@@ -1249,7 +1249,7 @@ class Compound(ImplicitBasis):
     def default_meta(self):
         return {'constant': False,
                 'scale': None,
-                'dirichlet': False}
+                'dirichlet': True}
 
     @property
     def library(self):
