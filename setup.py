@@ -4,8 +4,6 @@ The following environment variables may be set:
 
 FFTW_PATH
     Path to FFTW installation prefix
-MPI_PATH=/path/to/mpi/prefix
-    Path to MPI installation prefix
 FFTW_STATIC
     Binary flag to statically link FFTW, 0 by default
 CYTHON_PROFILE
@@ -180,7 +178,7 @@ if bool_env('CYTHON_PROFILE', unset=False):
 
 setup(
     name='dedalus',
-    version='2.1808a2',
+    version='2.1810a1',
     author='Keaton J. Burns',
     author_email='keaton.burns@gmail.com',
     description="A flexible framework for solving differential equations using spectral methods.",
