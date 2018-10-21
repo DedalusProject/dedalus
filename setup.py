@@ -89,9 +89,10 @@ def get_lib(name):
 include_dirs = ['dedalus/libraries/fftw/',
                 np.get_include(),
                 mpi4py.get_include(),
+                get_include('mpi'),
                 get_include('fftw')]
 libraries = ['fftw3_mpi', 'fftw3', 'm']
-library_dirs = [get_lib('fftw')]
+library_dirs = [get_lib('fftw'), get_lib('mpi')]
 
 # Warning supression
 extra_compile_args = ["-Wno-error=declaration-after-statement"]
