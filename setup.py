@@ -70,20 +70,26 @@ def get_prefix(name):
     print("  If %s isn't in your LD_LIBRARY_PATH, compilation will likely fail." %name)
 
 def get_include(name):
+    print("Looking for %s include path" %name)
     env_var = "%s_INCLUDE_PATH" % name.upper()
     path = check_env_var(env_var)
     if path:
         return path
+    print("  Cannot find env var %s" %env_var)
     prefix = get_prefix(name)
-    return os.path.join(prefix, 'include')
+    if prefix:
+        return os.path.join(prefix, 'include')
 
 def get_lib(name):
+    print("Looking for %s library path" %name)
     env_var = "%s_LIBRARY_PATH" % name.upper()
     path = check_env_var(env_var)
     if path:
         return path
+    print("  Cannot find env var %s" %env_var)
     prefix = get_prefix(name)
-    return os.path.join(prefix, 'lib')
+    if prefix:
+        return os.path.join(prefix, 'lib')
 
 # C-dependency paths for extension compilation and linking
 include_dirs = ['dedalus/libraries/fftw/',
@@ -125,10 +131,6 @@ if bool_env('FFTW_STATIC', unset=False):
     else:
         print("CC not set; defaulting to gcc linker flags")
         extra_link_args = gcc_extra_link_args
-
-# Provide rpath for mac linker
-if sys.platform == "darwin":
-    extra_link_args.append('-Wl,-rpath,'+library_dirs[0])
 
 # Extension objects for cython
 extensions = [
