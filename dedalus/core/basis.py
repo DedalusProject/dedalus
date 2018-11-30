@@ -269,12 +269,20 @@ class Chebyshev(ImplicitBasis):
     @CachedMethod
     def grid(self, scale=1.):
         """Build Chebyshev roots grid."""
-
-        grid_size = self.grid_size(scale)
-        i = np.arange(grid_size)
-        theta = pi * (i + 1/2) / grid_size
+        N = self.grid_size(scale)
+        i = np.arange(N)
+        theta = pi * (i + 1/2) / N
         native_grid = -np.cos(theta)
         return self._problem_coord(native_grid)
+
+    @CachedMethod
+    def grid_spacing(self, scale=1.):
+        """Build Chebyshev roots grid spacing."""
+        N = self.grid_size(scale)
+        i = np.arange(N)
+        theta = pi * (i + 1/2) / N
+        native_spacing = np.sin(theta) * pi / N
+        return native_spacing * self._grid_stretch
 
     def set_dtype(self, grid_dtype):
         """Determine coefficient properties from grid dtype."""
@@ -619,10 +627,16 @@ class Fourier(TransverseBasis):
     @CachedMethod
     def grid(self, scale=1.):
         """Build evenly spaced Fourier grid."""
-
-        grid_size = self.grid_size(scale)
-        native_grid = np.linspace(0, 2*pi, grid_size, endpoint=False)
+        N = self.grid_size(scale)
+        native_grid = np.linspace(0, 2*pi, N, endpoint=False)
         return self._problem_coord(native_grid)
+
+    @CachedMethod
+    def grid_spacing(self, scale=1.):
+        """Build Fourier grid spacing."""
+        N = self.grid_size(scale)
+        native_spacing = 2 * pi / N * np.ones(N)
+        return native_spacing * self._grid_stretch
 
     def set_dtype(self, grid_dtype):
         """Determine coefficient properties from grid dtype."""
@@ -929,6 +943,13 @@ class SinCos(TransverseBasis):
         N = self.grid_size(scale)
         native_grid = pi * (np.arange(N) + 1/2) / N
         return self._problem_coord(native_grid)
+
+    @CachedMethod
+    def grid_spacing(self, scale=1.):
+        """Build cosine grid spacing."""
+        N = self.grid_size(scale)
+        native_spacing = pi / N * np.ones(N)
+        return native_spacing * self._grid_stretch
 
     def set_dtype(self, grid_dtype):
         """Determine coefficient properties from grid dtype."""
@@ -1263,8 +1284,12 @@ class Compound(ImplicitBasis):
     @CachedMethod
     def grid(self, scale=1.):
         """Build compound grid."""
-
         return np.concatenate([basis.grid(scale) for basis in self.subbases])
+
+    @CachedMethod
+    def grid_spacing(self, scale=1.):
+        """Build compound grid spacing."""
+        return np.concatenate([basis.grid_spacing(scale) for basis in self.subbases])
 
     def set_dtype(self, grid_dtype):
         """Determine coefficient properties from grid dtype."""
