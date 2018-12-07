@@ -176,6 +176,7 @@ with open('README.md') as f:
 
 # Cython directives
 compiler_directives = {}
+compiler_directives['language_level'] = 3
 if bool_env('CYTHON_PROFILE', unset=False):
     compiler_directives['profile'] = True
 
