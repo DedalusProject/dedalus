@@ -66,20 +66,6 @@ class AffineCOV:
 class Space:
     """Base class for spaces."""
 
-    def __repr__(self):
-        return '<{} {} {}>'.format(self.__class__.__name__, self.axes, id(self))
-
-    def __str__(self):
-        if self.name:
-            return self.name
-        else:
-            return self.__repr__()
-
-    @CachedAttribute
-    def domain(self):
-        from .domain import Domain
-        return Domain([self])
-
     @classmethod
     def check_shape(cls, space_shape):
         """Check compatibility between space shape and group shape."""
@@ -94,7 +80,7 @@ class Space:
         return tuple(int(s*n) for s,n in zip(subscales, self.shape))
 
     def grids(self, scales):
-        """Flat global grids by axis."""
+        """Flat global grids."""
         raise NotImplementedError()
 
     def local_grids(self, scales):
@@ -154,66 +140,69 @@ class Constant(Space):
 class Interval(Space):
     """Base class for 1D intervals."""
 
-    constant = False
+    coord_type = Coordinate
     dim = 1
 
-    def __init__(self, name, size, bounds, dist, axis, dealias=1):
-        self.name = name
+    def __init__(self, coord, size, bounds, dealias=1):
+        self.coord = coord
+        self.coords = (coord,)
         self.size = size
         self.shape = (size,)
-        self.check_shape(self.shape)
         self.bounds = bounds
-        self.dist = dist
-        self.axis = axis
-        self.axes = (axis,)
         self.dealias = dealias
         self.COV = AffineCOV(self.native_bounds, bounds)
+
+    def grids(self, scales):
+        """Flat global grids."""
+        native_grid = self.native_grid(scales)
+        problem_grid = self.COV.problem_coord(native_grid)
+        return (problem_grid,)
 
 
 class PeriodicInterval(Interval):
     """Periodic interval for Fourier series."""
 
     native_bounds = (0, 2*np.pi)
-    group_shape = (2,)
 
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
         # Maximum native k, dispensing Nyquist mode
         self.kmax = (self.size - 1) // 2
-        self.grid_basis = self.Fourier
 
-    def grids(self, scales):
+    def native_grid(self, scales):
         """Evenly spaced endpoint grid: sin(N*x/2) = 0"""
         N = self.grid_shape(scales)[0]
-        native_grid = 2 * np.pi * np.arange(N) / N
-        return (self.COV.problem_coord(native_grid),)
+        return (2 * np.pi / N) * np.arange(N)
 
     def Fourier(self):
         return basis.Fourier(self)
+
+    def grid_basis(self):
+        return self.Fourier()
 
 
 class ParityInterval(Interval):
     """Definite-parity periodic interval for Sine and Cosine series."""
 
     native_bounds = (0, np.pi)
-    group_shape = (1,)
 
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
         self.kmax = self.size - 1
-        self.grid_basis = self.Cosine
 
-    def grids(self, scales):
+    def native_grid(self, scales):
         """Evenly spaced interior grid: cos(N*x) = 0"""
         N = self.grid_shape(scales)[0]
-        native_grid = np.pi * (np.arange(N) + 1/2) / N
-        return (self.COV.problem_coord(native_grid),)
+        return (np.pi / N) * (np.arange(N) + 1/2)
 
     def Sine(self):
         return basis.Sine(self)
 
     def Cosine(self):
         return basis.Cosine(self)
+
+    def grid_basis(self,):
+        return self.Cosine()
 
 
 class FiniteInterval(Interval):
@@ -223,21 +212,17 @@ class FiniteInterval(Interval):
     """
 
     native_bounds = (-1, 1)
-    group_shape = (1,)
 
     def __init__(self, a, b, *args, **kw):
         super().__init__(*args, **kw)
         self.a = float(a)
         self.b = float(b)
 
-    @CachedMethod
-    def grids(self, scales):
+    def native_grid(self, scales):
         """Gauss-Jacobi grid."""
         N = self.grid_shape(scales)[0]
-        native_grid = jacobi.build_grid(N, self.a, self.b)
-        return self.COV.problem_coord(native_grid)
+        return jacobi.build_grid(N, self.a, self.b)
 
-    @CachedMethod
     def weights(self, scales):
         """Gauss-Jacobi weights."""
         N = self.grid_shape(scales)[0]
@@ -270,6 +255,81 @@ class FiniteInterval(Interval):
 
     def ChebyshevW(self, **kw):
         return self.Ultraspherical(d=3, **kw)
+
+class Disk(Domain):
+
+    coord_type = PolarCoords
+    dim = 2
+
+    def __init__(self, coords, radius):
+        self.coords = coords
+        self.radius = radius
+        if radius <= 0:
+            raise ValueError("Radius must be positive.")
+        self._check_coords()
+
+
+class Annulus(Domain):
+
+    coord_type = PolarCoords
+    dim = 2
+
+    def __init__(self, coords, radial_interval):
+        self.coords = coords
+        self.radial_interval = radial_interval
+        self.r0, self.r1 = radial_interval
+        if self.r0 <= 0:
+            raise ValueError("Inner radius must be positive.")
+        if self.r1 <= self.r0:
+            raise ValueError("Outer radius must be larger than inner radius.")
+        self._check_coords()
+
+
+class Sphere(Domain):
+    coord_type = (SphericalCoords2D, SphericalCoords3D)
+
+    def __init__(self, coords, radius):
+        self.coords = coords
+        self.radius = radius
+        if radius <= 0:
+            raise ValueError("Radius must be positive.")
+        self._check_coords()
+
+
+class Ball(Domain):
+
+    coord_type = SphericalCoords3D
+    dim = 3
+
+    def __init__(self, coords, radius):
+        self.coords = coords
+        self.radius = radius
+        if radius <= 0:
+            raise ValueError("Radius must be positive.")
+        self._check_coords()
+
+
+class SphericalShell(Domain):
+
+    coord_type = SphericalCoords3D
+    dim = 3
+
+    def __init__(self, coords, radial_interval):
+        self.coords = coords
+        self.radial_interval = radial_interval
+        self.r0, self.r1 = radial_interval
+        if self.r0 <= 0:
+            raise ValueError("Inner radius must be positive.")
+        if self.r1 <= self.r0:
+            raise ValueError("Outer radius must be larger than inner radius.")
+        self._check_coords()
+
+
+
+
+
+
+
 
 
 # class Sheet(Space):
@@ -333,17 +393,22 @@ class FiniteInterval(Interval):
 #     a = b = -1/2  # default Chebyshev
 #     def Jacobi(self, a, b):
 #         return basis.JacobiFactory(a, b)(self)
+
 # class SemiInfiniteInterval(Interval):
 #     def Laguerre(self, a):
 #         return basis.LaguerreFactory(a)(self)
+
 # class InfiniteInterval(Interval):
 #     @property
 #     def Hermite(self):
 #         return basis.Hermite(self)
+
 # class RadialInterval(Interval):
+
 #     pass
 # class ShearingSheet:
 #     dim = 2
+
 # class Sphere:
 #     dim = 2
 #     def SWSH(self, s):
