@@ -30,6 +30,7 @@ References:
 
 """
 
+import time
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -40,12 +41,13 @@ logger = logging.getLogger(__name__)
 
 
 # Parameters
+Nx = 128
 n = 3.25
 ncc_cutoff = 1e-10
 tolerance = 1e-10
 
 # Build domain
-x_basis = de.Chebyshev('x', 128, interval=(0, 1), dealias=2)
+x_basis = de.Chebyshev('x', Nx, interval=(0, 1), dealias=2)
 domain = de.Domain([x_basis], np.float64)
 
 # Setup problem
@@ -72,10 +74,12 @@ R['g'] = 3
 # Iterations
 pert = solver.perturbations.data
 pert.fill(1+tolerance)
+start_time = time.time()
 while np.sum(np.abs(pert)) > tolerance:
     solver.newton_iteration()
     logger.info('Perturbation norm: {}'.format(np.sum(np.abs(pert))))
     logger.info('R iterate: {}'.format(R['g'][0]))
+end_time = time.time()
 
 # Compare to reference solutions from Boyd
 R_ref = {0.0: np.sqrt(6),
@@ -91,6 +95,7 @@ R_ref = {0.0: np.sqrt(6),
          4.5: 31.836463244694285264}
 logger.info('-'*20)
 logger.info('Iterations: {}'.format(solver.iteration))
+logger.info('Run time: %.2f sec' %(end_time-start_time))
 logger.info('Final R iteration: {}'.format(R['g'][0]))
 if n in R_ref:
     logger.info('Error vs reference: {}'.format(R['g'][0]-R_ref[n]))
