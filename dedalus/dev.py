@@ -3,6 +3,7 @@ Interface for accessing all submodules.
 
 """
 
+from .core import coordinates
 from .core import field
 from .core import future
 from .core import distributor

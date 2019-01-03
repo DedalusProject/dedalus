@@ -7,6 +7,7 @@ import numpy as np
 from ..tools import jacobi
 from ..tools.array import reshape_vector
 from ..tools.cache import CachedMethod, CachedAttribute
+from .coordinates import Coordinate, PolarCoords, SphericalCoords2D, SphericalCoords3D
 
 
 class AffineCOV:
@@ -66,34 +67,41 @@ class AffineCOV:
 class Space:
     """Base class for spaces."""
 
-    @classmethod
-    def check_shape(cls, space_shape):
-        """Check compatibility between space shape and group shape."""
-        for ss, gs in zip(space_shape, cls.group_shape):
-            if (ss % gs) != 0:
-                raise ValueError("Space shape must be multiple of group shape.")
+    # @classmethod
+    # def check_shape(cls, space_shape):
+    #     """Check compatibility between space shape and group shape."""
+    #     for ss, gs in zip(space_shape, cls.group_shape):
+    #         if (ss % gs) != 0:
+    #             raise ValueError("Space shape must be multiple of group shape.")
 
-    def grid_shape(self, scales):
-        """Scaled grid shape."""
-        scales = self.dist.remedy_scales(scales)
-        subscales = scales[self.axis:self.axis+self.dim]
-        return tuple(int(s*n) for s,n in zip(subscales, self.shape))
+    # def grid_shape(self, scales):
+    #     """Scaled grid shape."""
+    #     scales = self.dist.remedy_scales(scales)
+    #     subscales = scales[self.axis:self.axis+self.dim]
+    #     return tuple(int(s*n) for s,n in zip(subscales, self.shape))
 
-    def grids(self, scales):
+    def _check_coords(self):
+        if not isinstance(self.coords, self.coord_type):
+            raise ValueError("Invalid coordinate type.")
+
+    def grid_shape(self, scale):
+        return tuple(int(np.ceil(s*n)) for n in self.shape)
+
+    def grids(self, scale):
         """Flat global grids."""
         raise NotImplementedError()
 
-    def local_grids(self, scales):
-        """Local grid vectors by axis."""
-        scales = self.dist.remedy_scales(scales)
-        # Get grid slices for relevant axes
-        slices = self.dist.grid_layout.slices(self.domain, scales)
-        subslices = slices[self.axis:self.axis+self.dim]
-        # Select local portion of global grids
-        grids = self.grids(scales)
-        local_grids = tuple(g[s] for g,s in zip(grids, subslices))
-        # Reshape as vectors
-        return tuple(reshape_vector(g, self.dist.dim, i) for g,i in zip(local_grids, self.axes))
+    # def local_grids(self, scales):
+    #     """Local grid vectors by axis."""
+    #     scales = self.dist.remedy_scales(scales)
+    #     # Get grid slices for relevant axes
+    #     slices = self.dist.grid_layout.slices(self.domain, scales)
+    #     subslices = slices[self.axis:self.axis+self.dim]
+    #     # Select local portion of global grids
+    #     grids = self.grids(scales)
+    #     local_grids = tuple(g[s] for g,s in zip(grids, subslices))
+    #     # Reshape as vectors
+    #     return tuple(reshape_vector(g, self.dist.dim, i) for g,i in zip(local_grids, self.axes))
 
     # @CachedMethod
     # def grid_field(self, scales=None):
@@ -110,31 +118,31 @@ class Space:
     #     return {prefix+self.name: partial(op, **{self.name:1}) for prefix, op in prefixes.items()}
 
 
-class Constant(Space):
-    """Constant spaces."""
+# class Constant(Space):
+#     """Constant spaces."""
 
-    constant = True
-    dim = 1
-    group_shape = (1,)
-    shape = (1,)
-    dealias = 1
+#     constant = True
+#     dim = 1
+#     group_shape = (1,)
+#     shape = (1,)
+#     dealias = 1
 
-    def __init__(self, dist, axis):
-        self.dist = dist
-        self.axes = (axis,)
-        self.grid_basis = self.Constant
+#     def __init__(self, dist, axis):
+#         self.dist = dist
+#         self.axes = (axis,)
+#         self.grid_basis = self.Constant
 
-    def grid_shape(self, scale):
-        """Compute scaled grid size."""
-        # No scaling for constant spaces
-        return self.shape
+#     def grid_shape(self, scale):
+#         """Compute scaled grid size."""
+#         # No scaling for constant spaces
+#         return self.shape
 
-    def grids(self, scales):
-        # No scaling for constant spaces
-        return (np.array([0.]),)
+#     def grids(self, scales):
+#         # No scaling for constant spaces
+#         return (np.array([0.]),)
 
-    def Constant(self):
-        return basis.Constant(self)
+#     def Constant(self):
+#         return basis.Constant(self)
 
 
 class Interval(Space):
@@ -143,14 +151,14 @@ class Interval(Space):
     coord_type = Coordinate
     dim = 1
 
-    def __init__(self, coord, size, bounds, dealias=1):
-        self.coord = coord
-        self.coords = (coord,)
+    def __init__(self, coords, size, bounds, dealias=1):
+        self.coords = coords
         self.size = size
         self.shape = (size,)
         self.bounds = bounds
         self.dealias = dealias
         self.COV = AffineCOV(self.native_bounds, bounds)
+        self._check_coords()
 
     def grids(self, scales):
         """Flat global grids."""
@@ -171,7 +179,7 @@ class PeriodicInterval(Interval):
 
     def native_grid(self, scales):
         """Evenly spaced endpoint grid: sin(N*x/2) = 0"""
-        N = self.grid_shape(scales)[0]
+        N, = self.grid_shape(scales)
         return (2 * np.pi / N) * np.arange(N)
 
     def Fourier(self):
@@ -192,7 +200,7 @@ class ParityInterval(Interval):
 
     def native_grid(self, scales):
         """Evenly spaced interior grid: cos(N*x) = 0"""
-        N = self.grid_shape(scales)[0]
+        N, = self.grid_shape(scales)
         return (np.pi / N) * (np.arange(N) + 1/2)
 
     def Sine(self):
@@ -213,14 +221,14 @@ class FiniteInterval(Interval):
 
     native_bounds = (-1, 1)
 
-    def __init__(self, a, b, *args, **kw):
+    def __init__(self, *args, a=-1/2, b=-1/2, **kw):
         super().__init__(*args, **kw)
         self.a = float(a)
         self.b = float(b)
 
     def native_grid(self, scales):
         """Gauss-Jacobi grid."""
-        N = self.grid_shape(scales)[0]
+        N, = self.grid_shape(scales)
         return jacobi.build_grid(N, self.a, self.b)
 
     def weights(self, scales):
@@ -256,7 +264,7 @@ class FiniteInterval(Interval):
     def ChebyshevW(self, **kw):
         return self.Ultraspherical(d=3, **kw)
 
-class Disk(Domain):
+class Disk(Space):
 
     coord_type = PolarCoords
     dim = 2
@@ -269,7 +277,7 @@ class Disk(Domain):
         self._check_coords()
 
 
-class Annulus(Domain):
+class Annulus(Space):
 
     coord_type = PolarCoords
     dim = 2
@@ -285,7 +293,7 @@ class Annulus(Domain):
         self._check_coords()
 
 
-class Sphere(Domain):
+class Sphere(Space):
     coord_type = (SphericalCoords2D, SphericalCoords3D)
 
     def __init__(self, coords, radius):
@@ -296,7 +304,7 @@ class Sphere(Domain):
         self._check_coords()
 
 
-class Ball(Domain):
+class Ball(Space):
 
     coord_type = SphericalCoords3D
     dim = 3
@@ -309,7 +317,7 @@ class Ball(Domain):
         self._check_coords()
 
 
-class SphericalShell(Domain):
+class SphericalShell(Space):
 
     coord_type = SphericalCoords3D
     dim = 3

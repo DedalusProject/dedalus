@@ -28,9 +28,8 @@ class Basis:
 
     def __init__(self, space, library=DEFAULT_LIBRARY):
         self.space = space
-        self.dist = space.dist
-        self.axes = space.axes
         self.library = library
+        self._check_space()
 
     def __repr__(self):
         return '<%s %i>' %(self.__class__.__name__, id(self))
@@ -57,6 +56,10 @@ class Basis:
         data[axslice(axis, mode, mode+1)] = 1
         out.set_global_data(data)
         return out
+
+    def _check_space(self):
+        if not isinstance(self.space, self.space_type):
+            raise ValueError("Invalid space type.")
 
     @property
     def library(self):
@@ -145,6 +148,7 @@ class Constant(Basis, metaclass=CachedClass):
 
 class Jacobi(Basis, metaclass=CachedClass):
     """Jacobi polynomial basis."""
+    space_type = FiniteInterval
 
     def __init__(self, space, da, db, library='matrix'):
         super().__init__(space, library=library)
@@ -268,7 +272,7 @@ class IntegrateJacobi(operators.Integrate):
 
 class Fourier(Basis, metaclass=CachedClass):
     """Fourier cosine/sine basis."""
-
+    space_type = PeriodicInterval
     const = 1
 
     def __add__(self, other):
@@ -304,7 +308,7 @@ class Fourier(Basis, metaclass=CachedClass):
 
 class ComplexFourier(Basis, metaclass=CachedClass):
     """Fourier complex exponential basis."""
-
+    space_type = PeriodicInterval
     const = 1
 
     def __add__(self, other):
@@ -436,7 +440,7 @@ class HilbertTransformFourier(operators.HilbertTransform):
 
 class Sine(Basis, metaclass=CachedClass):
     """Sine series basis."""
-
+    space_type = ParityInterval
     const = None
     supported_dtypes = {np.float64, np.complex128}
 
@@ -475,7 +479,7 @@ class Sine(Basis, metaclass=CachedClass):
 
 class Cosine(Basis, metaclass=CachedClass):
     """Cosine series basis."""
-
+    space_type = ParityInterval
     const = 1
 
     def __add__(self, other):
@@ -637,4 +641,45 @@ class HilbertTransformCosine(operators.HilbertTransform):
             return 1
         else:
             return 0
+
+
+class SpinWeightedSphericalHarmonics(Basis):
+
+    space_type = Sphere
+    dim = 2
+
+    def forward_transform(self, basis_axis, *args):
+        transforms = [self.forward_transform_azimuth,
+                      self.forward_transform_colatitude]
+        return transforms[basis_axis](*args)
+
+    def forward_transform_azimuth(self, field, scale):
+        # Azimuthal FFT is the same for all components
+        axis = field.tensor_order + field.get_basis_axis(self)
+        transforms.forward_FFT(field.data, field.data, axis=axis, scale=scale)
+
+    def backward_transform_azimuth(self, field, scale):
+        # Azimuthal FFT is the same for all components
+        axis = field.tensor_order + field.get_basis_axis(self)
+        transforms.backward_FFT(field.data, field.data, axis=axis, scale=scale)
+
+    def forward_transform_colatitude(self, field):
+        # Setup unitary spin recombination
+        # [az, colat] -> [-, +]
+        Us = np.array([[2, 0], [0, 2]]) / 2
+        Ss = np.array([-1, 1])
+        # Perform unitary spin recombination along relevant tensor indeces and count spin
+        S = np.zeros(field.tensor_shape)
+        for i, vectorspace in enumberate(field.tensor_sig):
+            if self.space in vectorspace:
+                vs_ax = vectorspace.get_axis(basis.space)
+                Ui = np.indentity(vectorspace.dim)
+                Ui[vs_ax:vs_ax+self.dim, vs_ax:vs_ax+self.dim] = Us
+                apply_matrix(Ui, field.data, axis=i, out=field.data)
+                S[axslice(i, vs_ax, vs_ax+self.dim)] += Ss
+        # Perform SWSH transforms
+        for tensor_index, s in np.ndenumerate(S):
+            comp_data = field.data[tensor_index]
+            transforms.forward_SWSH(comp_data, comp_data, axis=axis, scale=scale,
+                local_m=local_m, s=s)
 

@@ -362,6 +362,9 @@ class ScipyFourierTransform(ScipyRFFT):
         super().backward_reduced()
 
 
+def forward_FFT(gdata, cdata, axis, scale)
+
+
 # class FFTWFourierTransform:
 
 #     @CachedMethod
@@ -405,4 +408,65 @@ class ScipyFourierTransform(ScipyRFFT):
 #         plan.backward(temp, gdata)
 
 #         return gdata
+
+
+class NonSeparableTransform(Transform):
+    pass
+
+    def _check_basis(self):
+        basis, basis_axis = self.field.bases[self.axis]
+        if not isinstance(basis, self.basis_type):
+            raise ValueError("Unsupported basis type.")
+        if basis_axis != self.basis_axis:
+            raise ValueError("Unsupported basis axis.")
+
+
+class SWSHColatitudeTransform(NonSeparableTransform):
+    """
+    Data layout:
+        N0, N_az, N_colat, N1
+
+    """
+
+    basis_type = SpinWeightedSphericalHarmonics
+    basis_axis = 1
+
+    def __init__(self, )
+    def __init__(self, components, axis):
+    def __init__(self, basis, coeff_shape, axis, scale):
+
+        self.basis = basis
+        self.dtype = basis.domain.dtype
+        self.coeff_shape = coeff_shape
+        self.axis = axis
+        self.scale = scale
+        self.components = components
+        self.field = field
+        self.axis = axis
+        self._check_basis()
+
+    def forward(self):
+
+
+
+
+
+def SWSH_forward_colatitude_transform(gdata, cdata, axis, scale, s, local_m):
+    """Apply forward colatitude transform to data with fixed s and varying m."""
+    # Build reduced shape
+    shape = gdata.shape
+    N0 = np.prod(shape[:axis-1])
+    N1 = shape[axis-1]
+    N2 = shape[axis]
+    N3 = np.prod(shape[axis:])
+    gdata_reduced = gdata.reshape((N0, N1, N2, N3))
+    cdata_reduced = cdata.reshape((N0, N1, N2, N3))
+    if N1 != len(local_m):
+        raise ValueError("Local m must match axis-1 size.")
+    # Apply transform for each m
+    for dm, m in enumerate(local_m):
+        m_matrix = SWSH.forward_matrix_padded(N2, m, s, scale)
+        grm = gdata_reduced[:, dm, :, :]
+        crm = cdata_reduced[:, dm, :, :]
+        apply_matrix(m_matrix, grm, axis=1, out=crm)
 
