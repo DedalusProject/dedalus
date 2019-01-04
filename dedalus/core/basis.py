@@ -654,14 +654,14 @@ class SpinWeightedSphericalHarmonics(Basis):
         return transforms[basis_axis](*args)
 
     def forward_transform_azimuth(self, field, scale):
-        # Azimuthal FFT is the same for all components
+        # Azimuthal DFT is the same for all components
         axis = field.tensor_order + field.get_basis_axis(self)
-        transforms.forward_FFT(field.data, field.data, axis=axis, scale=scale)
+        transforms.forward_DFT(field.data, field.data, axis=axis, scale=scale)
 
     def backward_transform_azimuth(self, field, scale):
-        # Azimuthal FFT is the same for all components
+        # Azimuthal DFT is the same for all components
         axis = field.tensor_order + field.get_basis_axis(self)
-        transforms.backward_FFT(field.data, field.data, axis=axis, scale=scale)
+        transforms.backward_DFT(field.data, field.data, axis=axis, scale=scale)
 
     def forward_transform_colatitude(self, field):
         # Setup unitary spin recombination
@@ -670,7 +670,7 @@ class SpinWeightedSphericalHarmonics(Basis):
         Ss = np.array([-1, 1])
         # Perform unitary spin recombination along relevant tensor indeces and count spin
         S = np.zeros(field.tensor_shape)
-        for i, vectorspace in enumberate(field.tensor_sig):
+        for i, vectorspace in enumerate(field.tensor_sig):
             if self.space in vectorspace:
                 vs_ax = vectorspace.get_axis(basis.space)
                 Ui = np.indentity(vectorspace.dim)
