@@ -81,11 +81,11 @@ class Space:
     #     return tuple(int(s*n) for s,n in zip(subscales, self.shape))
 
     def _check_coords(self):
-        if not isinstance(self.coords, self.coord_type):
-            raise ValueError("Invalid coordinate type.")
+        if not len(self.coords) == self.dim:
+            raise ValueError("Wrong number of coordinates.")
 
     def grid_shape(self, scale):
-        return tuple(int(np.ceil(s*n)) for n in self.shape)
+        return tuple(int(np.ceil(scale*n)) for n in self.shape)
 
     def grids(self, scale):
         """Flat global grids."""
@@ -148,14 +148,16 @@ class Space:
 class Interval(Space):
     """Base class for 1D intervals."""
 
-    coord_type = Coordinate
     dim = 1
 
-    def __init__(self, coords, size, bounds, dealias=1):
-        self.coords = coords
+    def __init__(self, coord, size, bounds, dist, axis, dealias=1):
+        self.coord = coord
+        self.coords = (coord,)
         self.size = size
         self.shape = (size,)
         self.bounds = bounds
+        self.dist = dist
+        self.axis = axis
         self.dealias = dealias
         self.COV = AffineCOV(self.native_bounds, bounds)
         self._check_coords()
@@ -266,12 +268,13 @@ class FiniteInterval(Interval):
 
 class Disk(Space):
 
-    coord_type = PolarCoords
     dim = 2
 
-    def __init__(self, coords, radius):
+    def __init__(self, coords, radius, dist, axis):
         self.coords = coords
         self.radius = radius
+        self.dist = dist
+        self.axis = axis
         if radius <= 0:
             raise ValueError("Radius must be positive.")
         self._check_coords()
@@ -279,13 +282,14 @@ class Disk(Space):
 
 class Annulus(Space):
 
-    coord_type = PolarCoords
     dim = 2
 
     def __init__(self, coords, radial_interval):
         self.coords = coords
         self.radial_interval = radial_interval
         self.r0, self.r1 = radial_interval
+        self.dist = dist
+        self.axis = axis
         if self.r0 <= 0:
             raise ValueError("Inner radius must be positive.")
         if self.r1 <= self.r0:
@@ -294,43 +298,88 @@ class Annulus(Space):
 
 
 class Sphere(Space):
-    coord_type = (SphericalCoords2D, SphericalCoords3D)
 
-    def __init__(self, coords, radius):
-        self.coords = coords
-        self.radius = radius
+    dim = 2
+    group_shape = (1, 1)
+
+    def __init__(self, coords, Lmax, radius, dist, axis, dealias=1):
         if radius <= 0:
             raise ValueError("Radius must be positive.")
+        self.coords = coords
+        self.Lmax = Lmax
+        self.shape = (2*Lmax+1, Lmax+1)
+        self.radius = radius
+        self.dist = dist
+        self.axis = axis
+        self.dealias = dealias
         self._check_coords()
+        self.azimuth_space = PeriodicInterval(coords[0], size=self.shape[0],
+            bounds=(0, 2*np.pi), dist=dist, axis=axis, dealias=dealias)
+
+    def grids(self, scale):
+        N0, N1 = self.grid_shape(scale)
+        azimuth_grid, = self.azimuth_space.grids(scale)
+        colatitude_grid = None
+        raise
+        return (azimuth_grid, colatitude_grid)
 
 
 class Ball(Space):
 
-    coord_type = SphericalCoords3D
     dim = 3
 
-    def __init__(self, coords, radius):
-        self.coords = coords
-        self.radius = radius
+    def __init__(self, coords, Lmax, Nmax, radius, dist, axis, dealias=1):
         if radius <= 0:
             raise ValueError("Radius must be positive.")
+        self.coords = coords
+        self.Lmax = Lmax
+        self.Nmax = Nmax
+        self.shape = (2*Lmax+1, Lmax+1, Nmax+1)
+        self.radius = radius
+        self.dist = dist
+        self.axis = axis
+        self.dealias = dealias
         self._check_coords()
+        self.outer_sphere_space = Sphere(coords[:2], Lmax, radius, dist, axis, dealias=dealias)
+        self.radial_COV = AffineCOV((0, 1), (0, radius))
+
+    def grids(self, scale):
+        N0, N1, N2 = self.grid_shape(scale)
+        azimuth_grid, colatitude_grid = self.outer_sphere_space.grids(scale)
+        radial_grid = self.radial_COV.problem_coord(native_radial_grid)
+        raise
+        return (azimuth_grid, colatitude_grid, radial_grid)
 
 
 class SphericalShell(Space):
 
-    coord_type = SphericalCoords3D
     dim = 3
 
-    def __init__(self, coords, radial_interval):
-        self.coords = coords
-        self.radial_interval = radial_interval
-        self.r0, self.r1 = radial_interval
-        if self.r0 <= 0:
+    def __init__(self, coords, Lmax, Nmax, radial_bounds, dist, axis, dealias=1):
+        r0, r1 = radial_bounds
+        if r0 <= 0:
             raise ValueError("Inner radius must be positive.")
-        if self.r1 <= self.r0:
+        if r1 <= r0:
             raise ValueError("Outer radius must be larger than inner radius.")
+        self.coords = coords
+        self.Lmax = Lmax
+        self.Nmax = Nmax
+        self.shape = (2*Lmax+1, Lmax+1, Nmax+1)
+        self.radial_bounds = radial_bounds
+        self.r0, self.r1 = r0, r1
+        self.dealias = dealias
+        self.dist = dist
+        self.axis = axis
         self._check_coords()
+        self.inner_sphere_space = Sphere(coords[:2], Lmax, r0, dist, axis, dealias=dealias)
+        self.outer_sphere_space = Sphere(coords[:2], Lmax, r1, dist, axis, dealias=dealias)
+        self.radial_space = FiniteInterval(coords[2], size=shape[2], bounds=radial_bounds, dealias=dealias)
+
+    def grids(self, scale):
+        N0, N1, N2 = self.grid_shape(scale)
+        azimuth_grid, colatitude_grid = self.inner_sphere_space.grids(scale)
+        radial_grid, = self.radial_space.grids(scale)
+        return (azimuth_grid, colatitude_grid, radial_grid)
 
 
 

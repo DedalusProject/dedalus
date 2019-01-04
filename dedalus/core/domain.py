@@ -34,57 +34,75 @@ def expand_spaces(spaces):
     return tuple(full_spaces)
 
 
-class Domain(metaclass=CachedClass):
+class Subdomain:
     """Object representing the direct product of a set of spaces."""
 
-    @classmethod
-    def _preprocess_args(cls, *args, **kw):
-        # Expand spaces for proper caching
-        args = list(args)
-        args[0] = expand_spaces(args[0])
-        return tuple(args), kw
+    # @classmethod
+    # def _preprocess_args(cls, *args, **kw):
+    #     # Expand spaces for proper caching
+    #     args = list(args)
+    #     args[0] = expand_spaces(args[0])
+    #     return tuple(args), kw
 
-    def __init__(self, spaces):
-        # Spaces checked and expanded during preprocessing
-        self.dist = spaces[0].dist
-        self.spaces = spaces
+    def __init__(self, dist, spaces):
+        # Check spaces
+        spaces = (s for s in spaces if s is not None)
+        spaces = sorted(spaces, key=lambda s: s.axis)
+        self.dist = dist
+        self.spaces = self._check_spaces(spaces)
+        self.ax_spaces = [None for i in range(dist.dim)]
+        for space in spaces:
+            for subaxis in range(space.dim):
+                self.ax_spaces[space.axis+subaxis] = space
+
+    def _check_spaces(self, spaces):
+        # Drop None
+        spaces = (s for s in spaces if s is not None)
+        # Sort by axis
+        key = lambda s: s.axis
+        spaces = sorted(spaces, key=key)
+        # Check for overlap
+        axes = [s.axis+i for s in spaces for i in range(s.dim)]
+        if len(set(axes)) != len(axes):
+            raise ValueError("Overlapping spaces specified.")
+        return spaces
+
+    # @classmethod
+    # def from_dist(cls, dist):
+    #     """Build constant domain from distributor."""
+    #     return cls(constant_spaces(dist))
 
     @classmethod
-    def from_dist(cls, dist):
-        """Build constant domain from distributor."""
-        return cls(constant_spaces(dist))
-
-    @classmethod
-    def from_bases(cls, bases):
+    def from_bases(cls, dist, bases):
         """Build domain from bases."""
-        return cls([basis.space for basis in bases])
+        return cls(dist, [basis.space for basis in bases])
 
-    @CachedAttribute
-    def dealias(self):
-        """Tuple of dealias flags."""
-        return tuple(space.dealias for space in self.spaces)
+    # @CachedAttribute
+    # def dealias(self):
+    #     """Tuple of dealias flags."""
+    #     return tuple(space.dealias for space in self.spaces)
 
-    @CachedAttribute
-    def constant(self):
-        """Tuple of constant flags."""
-        return tuple(space.constant for space in self.spaces)
+    # @CachedAttribute
+    # def constant(self):
+    #     """Tuple of constant flags."""
+    #     return tuple(space.constant for space in self.spaces)
 
     @CachedAttribute
     def group_shape(self):
         """Compute group shape."""
-        shape = np.zeros(self.dist.dim, dtype=int)
-        for axis, space in enumerate(self.spaces):
-            subaxis = axis - space.axes[0]
-            shape[axis] = space.group_shape[subaxis]
+        shape = np.ones(self.dist.dim, dtype=int)
+        for space in self.spaces:
+            for subaxis in range(space.dim):
+                shape[space.axis+subaxis] = space.group_shape[subaxis]
         return tuple(shape)
 
     @CachedAttribute
     def coeff_shape(self):
         """Compute coefficient shape."""
-        shape = np.zeros(self.dist.dim, dtype=int)
-        for axis, space in enumerate(self.spaces):
-            subaxis = axis - space.axes[0]
-            shape[axis] = space.shape[subaxis]
+        shape = np.ones(self.dist.dim, dtype=int)
+        for space in self.spaces:
+            for subaxis in range(space.dim):
+                shape[space.axis+subaxis] = space.shape[subaxis]
         return tuple(shape)
 
     def grid_shape(self, scales):
@@ -98,7 +116,7 @@ class Domain(metaclass=CachedClass):
         """Cached grid shape computation."""
         shape = np.zeros(self.dist.dim, dtype=int)
         for axis, space in enumerate(self.spaces):
-            subaxis = axis - space.axes[0]
+            subaxis = axis - space.axis
             shape[axis] = space.grid_shape(scales[axis])[subaxis]
         return tuple(shape)
 

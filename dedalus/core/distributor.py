@@ -193,7 +193,7 @@ class Layout:
         """Local group indices by axis."""
         global_shape = self.global_shape(domain, scales)
         group_shape = self.group_shape(domain, scales)
-        group_nums = global_shape // group_shape
+        group_nums = np.array(global_shape) // np.array(group_shape)
         local_groups = []
         for axis, space in enumerate(domain.spaces):
             if self.local[axis]:
@@ -233,7 +233,7 @@ class Layout:
     def buffer_size(self, domain, scales, dtype):
         """Local buffer size (bytes)."""
         local_shape = self.local_shape(domain, scales)
-        return np.prod(local_shape) * dtype.itemsize
+        return np.prod(local_shape) * np.dtype(dtype).itemsize
 
     # def local_group_index(self, group, domain, scales):
     #     """Index of a group within local groups."""

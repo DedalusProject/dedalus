@@ -328,25 +328,25 @@ class Current(Operand):
 
     def set_scales(self, scales, keep_data=True):
         """Set new transform scales."""
-        new_scales = self.domain.remedy_scales(scales)
+        new_scales = self.dist.remedy_scales(scales)
         old_scales = self.scales
         if new_scales == old_scales:
             return
         # Set metadata
         self.scales = new_scales
         # Build new buffer
-        buffer_size = self.domain.distributor.buffer_size(self.subdomain, new_scales)
+        buffer_size = self.dist.buffer_size(self.subdomain, new_scales, dtype=self.dtype)
         self.buffer = self._create_buffer(buffer_size)
         # Reset layout to build new data view
         self.set_layout(self.layout)
 
     def set_layout(self, layout):
         """Interpret buffer as data in specified layout."""
-        layout = self.domain.dist.get_layout_object(layout)
+        layout = self.dist.get_layout_object(layout)
         self.layout = layout
-        local_shape = layout.local_array_shape(self.subdomain, self.scales)
+        local_shape = layout.local_shape(self.subdomain, self.scales)
         self.data = np.ndarray(shape=local_shape,
-                               dtype=self.domain.dtype,
+                               dtype=self.dtype,
                                buffer=self.buffer)
         #self.global_start = layout.start(self.subdomain, self.scales)
 
@@ -361,7 +361,7 @@ class Array(Current):
         self.name = name
         # Set initial scales and layout
         self.scales = None
-        self.layout = self.domain.dist.grid_layout
+        self.layout = self.dist.grid_layout
         # Change scales to build buffer and data
         self.set_scales(self.subdomain.dealias)
 
@@ -373,7 +373,7 @@ class Array(Current):
         np.copyto(self.data, local_data)
 
     def require_scales(self, scales):
-        scales = self.domain.remedy_scales(scales)
+        scales = self.dist.remedy_scales(scales)
         if scales != self.scales:
             raise ValueError("Cannot change array scales.")
 
@@ -413,39 +413,33 @@ class Field(Current):
 
     """
 
-    def __init__(self, bases=None, domain=None, name=None, layout='c', scales=1):
-        from .domain import Domain, Subdomain
-
-        # Allow instantiation by basis list and/or domain
-        if not (bases or domain):
-            raise ValueError("Must specify bases or domain.")
+    def __init__(self, dist, bases=None, name=None, tens=None, dtype=np.float64):
         if bases is None:
-            bases = ()
-        else:
-            bases = tuple(b for b in bases if b is not None)
-        if domain is None:
-            domain = unify_attributes(bases, 'domain')
-
-        self.domain = domain
+            bases = tuple()
+        from .domain import Subdomain
+        self.dist = dist
         self.name = name
+        self.tens = tens
+        self.dtype = dtype
         # Build subdomain
-        spaces = tuple(basis.space for basis in bases)
-        self.subdomain = Subdomain(domain, spaces)
+        self.bases = bases
+        self.subdomain = Subdomain.from_bases(dist, bases)
         # Build full basis list
-        full_bases = [None for i in range(domain.dim)]
-        for basis in bases:
-            for axis in basis.axes:
-                if full_bases[axis] is not None:
-                    raise ValueError("Overlapping bases specified.")
-                else:
-                    full_bases[axis] = basis
-        self.bases = tuple(full_bases)
+        # self.ax_bases = dist.ax_bases(bases)
+        # full_bases = [None for i in range(domain.dim)]
+        # for basis in bases:
+        #     for axis in basis.axes:
+        #         if full_bases[axis] is not None:
+        #             raise ValueError("Overlapping bases specified.")
+        #         else:
+        #             full_bases[axis] = basis
+        # self.bases = tuple(full_bases)
 
         # Set initial scales and layout
         self.scales = None
-        self.layout = self.domain.dist.get_layout_object(layout)
+        self.layout = self.dist.get_layout_object('c')
         # Change scales to build buffer and data
-        self.set_scales(scales)
+        self.set_scales(1)
 
     def __getitem__(self, layout):
         """Return data viewed in specified layout."""
@@ -454,7 +448,7 @@ class Field(Current):
 
     def __setitem__(self, layout, data):
         """Set data viewed in a specified layout."""
-        layout = self.domain.distributor.get_layout_object(layout)
+        layout = self.dist.get_layout_object(layout)
         self.set_layout(layout)
         np.copyto(self.data, data)
 
@@ -465,12 +459,8 @@ class Field(Current):
     def global_shape(self):
         return self.layout.global_shape(self.subdomain, self.scales)
 
-    @property
-    def dtype(self):
-        return self.domain.dtype
-
     def copy(self):
-        copy = Field(bases=self.bases, domain=self.domain)
+        copy = Field(self.dist, bases=self.bases)
         copy.set_scales(self.scales)
         copy[self.layout] = self.data
         return copy
@@ -485,13 +475,13 @@ class Field(Current):
     def require_scales(self, scales):
         """Change data to specified scales."""
         # Remedy scales
-        new_scales = self.domain.remedy_scales(scales)
+        new_scales = self.dist.remedy_scales(scales)
         old_scales = self.scales
         # Quit if new scales aren't new
         if new_scales == old_scales:
             return
         # Forward transform until remaining scales match
-        for axis in reversed(range(self.domain.dim)):
+        for axis in reversed(range(self.dist.dim)):
             if not self.layout.grid_space[axis]:
                 break
             if old_scales[axis] != new_scales[axis]:
@@ -504,7 +494,7 @@ class Field(Current):
 
     def require_layout(self, layout):
         """Change data to specified layout."""
-        layout = self.domain.distributor.get_layout_object(layout)
+        layout = self.dist.get_layout_object(layout)
         # Transform to specified layout
         if self.layout.index < layout.index:
             while self.layout.index < layout.index:
@@ -518,12 +508,12 @@ class Field(Current):
     def towards_grid_space(self):
         """Change to next layout towards grid space."""
         index = self.layout.index
-        self.domain.dist.paths[index].increment([self])
+        self.dist.paths[index].increment([self])
 
     def towards_coeff_space(self):
         """Change to next layout towards coefficient space."""
         index = self.layout.index
-        self.domain.dist.paths[index-1].decrement([self])
+        self.dist.paths[index-1].decrement([self])
 
     def require_grid_space(self, axis=None):
         """Require one axis (default: all axes) to be in grid space."""

@@ -362,7 +362,10 @@ class ScipyFourierTransform(ScipyRFFT):
         super().backward_reduced()
 
 
-def forward_FFT(gdata, cdata, axis, scale)
+def forward_FFT(gdata, cdata, axis, scale):
+    plan = FFT_plan(cdata.shape, axis, scale)
+    plan.forward(gdata, cdata)
+
 
 
 # class FFTWFourierTransform:
