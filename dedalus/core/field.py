@@ -131,7 +131,7 @@ class Operand:
 
     def get_basis(self, space):
         space = self.domain.get_space_object(space)
-        if self.subdomain.spaces[space.axis] in [space, None]:
+        if self.domain.spaces[space.axis] in [space, None]:
             return self.bases[space.axis]
         else:
             raise ValueError()
@@ -289,7 +289,7 @@ class Current(Operand):
         """Build expression matrices for a specific subproblem and variables."""
         self.require_linearity(*vars)
         # Build identity matrices over subproblem data
-        group_shape = subproblem.group_shape(self.subdomain)
+        group_shape = subproblem.group_shape(self.domain)
         factors = (sparse.identity(n, format='csr') for n in group_shape)
         matrix = reduce(sparse.kron, factors, 1).tocsr()
         return {self: matrix}
@@ -335,7 +335,7 @@ class Current(Operand):
         # Set metadata
         self.scales = new_scales
         # Build new buffer
-        buffer_size = self.dist.buffer_size(self.subdomain, new_scales, dtype=self.dtype)
+        buffer_size = self.dist.buffer_size(self.domain, new_scales, dtype=self.dtype)
         self.buffer = self._create_buffer(buffer_size)
         # Reset layout to build new data view
         self.set_layout(self.layout)
@@ -344,30 +344,29 @@ class Current(Operand):
         """Interpret buffer as data in specified layout."""
         layout = self.dist.get_layout_object(layout)
         self.layout = layout
-        local_shape = layout.local_shape(self.subdomain, self.scales)
-        print(local_shape)
+        local_shape = layout.local_shape(self.domain, self.scales)
         self.data = np.ndarray(shape=local_shape,
                                dtype=self.dtype,
                                buffer=self.buffer)
-        #self.global_start = layout.start(self.subdomain, self.scales)
+        #self.global_start = layout.start(self.domain, self.scales)
 
 
 class Array(Current):
 
     def __init__(self, bases, name=None):
-        from .domain import Subdomain
-        self.subdomain = Subdomain.from_bases(bases)
-        self.domain = self.subdomain.domain
-        self.bases = self.subdomain.expand_bases(bases)
+        from .domain import Domain
+        self.domain = domain.from_bases(bases)
+        self.domain = self.domain.domain
+        self.bases = self.domain.expand_bases(bases)
         self.name = name
         # Set initial scales and layout
         self.scales = None
         self.layout = self.dist.grid_layout
         # Change scales to build buffer and data
-        self.set_scales(self.subdomain.dealias)
+        self.set_scales(self.domain.dealias)
 
     def set_global_data(self, global_data):
-        slices = self.layout.slices(self.subdomain, self.scales)
+        slices = self.layout.slices(self.domain, self.scales)
         self.set_local_data(global_data[slices])
 
     def set_local_data(self, local_data):
@@ -414,33 +413,42 @@ class Field(Current):
 
     """
 
-    def __init__(self, dist, bases=None, name=None, tens=None, dtype=np.float64):
+    def __init__(self, dist, bases=None, name=None, tensorsig=None, dtype=np.float64):
         if bases is None:
             bases = tuple()
-        from .domain import Subdomain
+        if tensorsig is None:
+            tensorsig = tuple()
+        from .domain import Domain
         self.dist = dist
         self.name = name
-        self.tens = tens
+        self.tensorsig = tensorsig
         self.dtype = dtype
-        # Build subdomain
-        self.bases = bases
-        self.subdomain = Subdomain.from_bases(dist, bases)
-        # Build full basis list
-        # self.ax_bases = dist.ax_bases(bases)
-        # full_bases = [None for i in range(domain.dim)]
-        # for basis in bases:
-        #     for axis in basis.axes:
-        #         if full_bases[axis] is not None:
-        #             raise ValueError("Overlapping bases specified.")
-        #         else:
-        #             full_bases[axis] = basis
-        # self.bases = tuple(full_bases)
+        # Build domain
+        self.bases, self.full_bases = self._check_bases(bases)
+        self.domain = Domain.from_bases(dist, self.bases)
 
         # Set initial scales and layout
         self.scales = None
         self.layout = self.dist.get_layout_object('c')
         # Change scales to build buffer and data
         self.set_scales(1)
+
+    def _check_bases(self, bases):
+        # Drop duplicates
+        bases = list(set(bases))
+        # Sort by axis
+        key = lambda s: s.axis
+        bases = sorted(bases, key=key)
+        # Check for overlap
+        full_bases = [None for i in range(self.dist.dim)]
+        for basis in bases:
+            for subaxis in range(basis.dim):
+                axis = basis.axis + subaxis
+                if full_bases[axis] is not None:
+                    raise ValueError("Overlapping bases specified.")
+                else:
+                    full_bases[axis] = basis
+        return bases, full_bases
 
     def __getitem__(self, layout):
         """Return data viewed in specified layout."""
@@ -458,7 +466,7 @@ class Field(Current):
 
     @property
     def global_shape(self):
-        return self.layout.global_shape(self.subdomain, self.scales)
+        return self.layout.global_shape(self.domain, self.scales)
 
     def copy(self):
         copy = Field(self.dist, bases=self.bases)
@@ -467,7 +475,7 @@ class Field(Current):
         return copy
 
     def set_global_data(self, global_data):
-        elements = self.layout.local_elements(self.subdomain, self.scales)
+        elements = self.layout.local_elements(self.domain, self.scales)
         self.set_local_data(global_data[np.ix_(*elements)])
 
     def set_local_data(self, local_data):
@@ -633,7 +641,7 @@ class Field(Current):
         return all(basis is None for basis in self.bases)
 
     def local_elements(self):
-        return self.layout.local_elements(self.subdomain, self.scales)
+        return self.layout.local_elements(self.domain, self.scales)
 
     # @CachedAttribute
     # def mode_mask(self):

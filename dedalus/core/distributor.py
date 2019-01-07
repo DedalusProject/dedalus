@@ -185,7 +185,7 @@ class Layout:
     def group_shape(self, domain, scales):
         """Group shape."""
         scales = self.dist.remedy_scales(scales)
-        group_shape = np.array(domain.group_shape).copy()
+        group_shape = np.array(domain.coeff_group_shape).copy()
         group_shape[self.grid_space] = 1
         return tuple(group_shape)
 
@@ -195,12 +195,11 @@ class Layout:
         group_shape = self.group_shape(domain, scales)
         group_nums = np.array(global_shape) // np.array(group_shape)
         local_groups = []
-        raise # make work for subax
-        for axis, space in enumerate(domain.spaces):
+        for axis, space in enumerate(domain.full_spaces):
             if self.local[axis]:
                 # All groups for local dimensions
                 local_groups.append(np.arange(group_nums[axis]))
-            elif space.constant:
+            elif space is None:
                 # Copy across constant dimensions
                 local_groups.append(np.arange(group_nums[axis]))
             else:
@@ -340,27 +339,31 @@ class Transform:
 
     def increment_single(self, field):
         """Backward transform a field."""
-        basis = field.bases[self.axis]
+        axis = self.axis
+        basis = field.full_bases[axis]
         # Reference views from both layouts
         cdata = field.data
         field.set_layout(self.layout1)
         gdata = field.data
         # Transform non-constant bases with local data
-        if (not basis.constant) and np.prod(cdata.shape):
-            plan = basis.transform_plan(cdata.shape, self.axis, field.scales[self.axis], field.dtype)
-            plan.backward(cdata, gdata)
+        if (basis is not None) and np.prod(cdata.shape):
+            basis.backward_transform(cdata, gdata, axis, field.scales[axis], field.tensorsig)
+            #plan = basis.transform_plan(cdata.shape, self.axis, field.scales[self.axis], field.dtype)
+            #plan.backward(cdata, gdata)
 
     def decrement_single(self, field):
         """Forward transform a field."""
-        basis = field.bases[self.axis]
+        axis = self.axis
+        basis = field.full_bases[axis]
         # Reference views from both layouts
         gdata = field.data
         field.set_layout(self.layout0)
         cdata = field.data
         # Transform non-constant bases with local data
-        if (not basis.constant) and np.prod(gdata.shape):
-            plan = basis.transform_plan(cdata.shape, self.axis, field.scales[self.axis], field.dtype)
-            plan.forward(gdata, cdata)
+        if (basis is not None) and np.prod(gdata.shape):
+            basis.forward_transform(gdata, cdata, axis, field.scales[axis], field.tensorsig)
+            #plan = basis.transform_plan(cdata.shape, self.axis, field.scales[self.axis], field.dtype)
+            #plan.forward(gdata, cdata)
 
     def increment_group(self, fields):
         """Backward transform multiple fields simultaneously."""

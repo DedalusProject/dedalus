@@ -34,7 +34,7 @@ def expand_spaces(spaces):
     return tuple(full_spaces)
 
 
-class Subdomain:
+class Domain:
     """Object representing the direct product of a set of spaces."""
 
     # @classmethod
@@ -45,27 +45,25 @@ class Subdomain:
     #     return tuple(args), kw
 
     def __init__(self, dist, spaces):
-        # Check spaces
-        spaces = (s for s in spaces if s is not None)
-        spaces = sorted(spaces, key=lambda s: s.axis)
         self.dist = dist
-        self.spaces = self._check_spaces(spaces)
-        self.ax_spaces = [None for i in range(dist.dim)]
-        for space in spaces:
-            for subaxis in range(space.dim):
-                self.ax_spaces[space.axis+subaxis] = space
+        self.spaces, self.full_spaces = self._check_spaces(spaces)
 
     def _check_spaces(self, spaces):
-        # Drop None
-        spaces = (s for s in spaces if s is not None)
+        # Drop duplicates
+        spaces = list(set(spaces))
         # Sort by axis
         key = lambda s: s.axis
         spaces = sorted(spaces, key=key)
         # Check for overlap
-        axes = [s.axis+i for s in spaces for i in range(s.dim)]
-        if len(set(axes)) != len(axes):
-            raise ValueError("Overlapping spaces specified.")
-        return spaces
+        full_spaces = [None for i in range(self.dist.dim)]
+        for space in spaces:
+            for subaxis in range(space.dim):
+                axis = space.axis + subaxis
+                if full_spaces[axis] is not None:
+                    raise ValueError("Overlapping spaces specified.")
+                else:
+                    full_spaces[axis] = space
+        return spaces, full_spaces
 
     # @classmethod
     # def from_dist(cls, dist):
@@ -88,7 +86,7 @@ class Subdomain:
     #     return tuple(space.constant for space in self.spaces)
 
     @CachedAttribute
-    def group_shape(self):
+    def coeff_group_shape(self):
         """Compute group shape."""
         shape = np.ones(self.dist.dim, dtype=int)
         for space in self.spaces:
@@ -114,10 +112,12 @@ class Subdomain:
     @CachedMethod
     def _grid_shape(self, scales):
         """Cached grid shape computation."""
-        shape = np.zeros(self.dist.dim, dtype=int)
-        for axis, space in enumerate(self.spaces):
-            subaxis = axis - space.axis
-            shape[axis] = space.grid_shape(scales[axis])[subaxis]
+        shape = np.ones(self.dist.dim, dtype=int)
+        for space in self.spaces:
+            print(space)
+            for subaxis in range(space.dim):
+                axis = space.axis + subaxis
+                shape[axis] = space.grid_shape(scales[axis])[subaxis]
         return tuple(shape)
 
     # def expand_bases(self, bases):

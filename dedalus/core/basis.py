@@ -652,16 +652,27 @@ class SpinWeightedSphericalHarmonics(Basis):
 
     def __init__(self, space):
         self.space = space
+        self.axis = space.axis
         self.azimuth_basis = Fourier(self.space.azimuth_space)
         #self.forward_transform_azimuth = self.azimuth_basis.forward_transform
         #self.backward_transform_azimuth = self.azimuth_basis.backward_transform
         self._check_space()
 
-    def forward_transform(self, basis_axis, field, scale):
-        if basis_axis == 0:
-            return self.forward_transform_azimuth(field, scale)
-        elif basis_axis == 1:
-            return self.forward_transform_colatitude(field, scale)
+    def forward_transform(self, gdata, cdata, axis, scale, tensorsig):
+        subaxis = axis - self.axis
+        if subaxis == 0:
+            return self.forward_transform_azimuth(gdata, cdata, axis, scale, tensorsig)
+        elif subaxis == 1:
+            return self.forward_transform_colatitude(gdata, cdata, axis, scale, tensorsig)
+        else:
+            raise ValueError("Invalid basis axis.")
+
+    def backward_transform(self, cdata, gdata, axis, scale, tensorsig):
+        subaxis = axis - self.axis
+        if subaxis == 0:
+            self.backward_transform_azimuth(cdata, gdata, axis, scale, tensorsig)
+        elif subaxis == 1:
+            self.backward_transform_colatitude(cdata, gdata, axis, scale, tensorsig)
         else:
             raise ValueError("Invalid basis axis.")
 
@@ -672,8 +683,13 @@ class SpinWeightedSphericalHarmonics(Basis):
 
     def forward_transform_azimuth(self, gtensor, ctensor, axis, scale, tensorsig):
         # Azimuthal DFT is the same for all components
-        tens_axis = len(tensorsig) + axis
-        transforms.forward_DFT(gtensor, ctensor, axis=tens_axis, scale=scale)
+        data_axis = len(tensorsig) + axis
+        transforms.forward_DFT(gtensor, ctensor, axis=data_axis, scale=scale)
+
+    def backward_transform_azimuth(self, gtensor, ctensor, axis, scale, tensorsig):
+        # Azimuthal DFT is the same for all components
+        data_axis = len(tensorsig) + axis
+        transforms.backward_DFT(ctensor, dtensor, axis=data_axis, scale=scale)
 
     # def backward_transform_azimuth(self, field, scale):
     #     # Azimuthal DFT is the same for all components
