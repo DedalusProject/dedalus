@@ -9,3 +9,5 @@ syntax: glob
 *.so
 *.o
 *.h5
+*build
+*.egg*
