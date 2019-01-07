@@ -19,19 +19,13 @@ class VectorSpace:
     def get_index(self, space):
         return self.indeces[space]
 
-# class TensorField:
 
-#     def __init__(self, dist, tens=None, bases=None):
-#         if tens is None:
-#             tens = []
-#         if bases is None:
-#             bases = []
-#         self.dist = dist
-#         self.tens = tens
-#         self.bases = bases
-#         self.order = len(tens)
-#         self.domains = [b.domain for b in bases]
+class TensorSignature:
 
-#         self.tens_shape = tuple(t.dim for t in tens)
-#         self.data_shape = np.concatenate(b.shape for b in bases)
-#         self.n_components = np.prod(self.tens_shape)
+    def __init__(self, vector_spaces):
+        self.vector_spaces = vector_spaces
+        self.tensor_order = len(vector_spaces)
+        self.tensor_shape = tuple(vs.dim for vs in vector_spaces)
+        self.n_components = int(np.prod(self.tensor_shape))
+
+

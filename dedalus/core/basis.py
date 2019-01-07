@@ -16,7 +16,7 @@ from ..tools.cache import CachedClass
 from ..tools import jacobi
 from ..tools import clenshaw
 
-from .spaces import FiniteInterval, PeriodicInterval, ParityInterval, Sphere
+from .spaces import FiniteInterval, PeriodicInterval, ParityInterval, Sphere, Ball
 from . import transforms
 
 import logging
@@ -31,9 +31,9 @@ class Basis:
     """Base class for spectral bases."""
 
     def __init__(self, space, library=DEFAULT_LIBRARY):
+        self._check_space(space)
         self.space = space
         self.library = library
-        self._check_space()
 
     # def __repr__(self):
     #     return '<%s %i>' %(self.__class__.__name__, id(self))
@@ -61,8 +61,9 @@ class Basis:
         out.set_global_data(data)
         return out
 
-    def _check_space(self):
-        if not isinstance(self.space, self.space_type):
+    @classmethod
+    def _check_space(cls, space):
+        if not isinstance(space, cls.space_type):
             raise ValueError("Invalid space type.")
 
     @property
@@ -652,18 +653,33 @@ class HilbertTransformCosine(operators.HilbertTransform):
             return 0
 
 
-class SpinWeightedSphericalHarmonics(Basis):
+class MultidimensionalBasis(Basis):
+
+    def forward_transform(self, field, axis, gdata, cdata):
+        subaxis = axis - self.axis
+        return self.forward_transforms[subaxis](field, axis, gdata, cdata)
+
+    def backward_transform(self, field, axis, cdata, gdata):
+        subaxis = axis - self.axis
+        return self.backward_transforms[subaxis](field, axis, cdata, gdata)
+
+
+class SpinWeightedSphericalHarmonics(MultidimensionalBasis):
 
     space_type = Sphere
     dim = 2
 
     def __init__(self, space):
+        self._check_space(space)
         self.space = space
         self.axis = space.axis
         self.azimuth_basis = Fourier(self.space.azimuth_space)
+        self.forward_transforms = [self.forward_transform_azimuth,
+                                   self.forward_transform_colatitude]
+        self.backward_transforms = [self.backward_transform_azimuth,
+                                    self.backward_transform_colatitude]
         #self.forward_transform_azimuth = self.azimuth_basis.forward_transform
         #self.backward_transform_azimuth = self.azimuth_basis.backward_transform
-        self._check_space()
 
     @CachedAttribute
     def local_m(self):
@@ -671,24 +687,6 @@ class SpinWeightedSphericalHarmonics(Basis):
         layout = self.space.dist.coeff_layout
         local_m_elements = layout.local_elements(domain, scales=1)[self.axis]
         return self.azimuth_basis.wavenumbers[local_m_elements]
-
-    def forward_transform(self, field, axis, gdata, cdata):
-        subaxis = axis - self.axis
-        if subaxis == 0:
-            return self.forward_transform_azimuth(field, axis, gdata, cdata)
-        elif subaxis == 1:
-            return self.forward_transform_colatitude(field, axis, gdata, cdata)
-        else:
-            raise ValueError("Invalid basis axis.")
-
-    def backward_transform(self, field, axis, cdata, gdata):
-        subaxis = axis - self.axis
-        if subaxis == 0:
-            self.backward_transform_azimuth(field, axis, cdata, gdata)
-        elif subaxis == 1:
-            self.backward_transform_colatitude(field, axis, cdata, gdata)
-        else:
-            raise ValueError("Invalid basis axis.")
 
     def forward_transform_azimuth(self, field, axis, gdata, cdata):
         # Azimuthal DFT is the same for all components
@@ -710,7 +708,7 @@ class SpinWeightedSphericalHarmonics(Basis):
 
     def spin_recombination(self, tensorsig):
         # Setup unitary spin recombination
-        # [az, colat] -> [-, +]
+        # [azimuth, colatitude] -> [-, +]
         Us = np.array([[-1j, 1], [1j, 1]]) / np.sqrt(2)
         # Perform unitary spin recombination along relevant tensor indeces
         U = []
@@ -748,4 +746,57 @@ class SpinWeightedSphericalHarmonics(Basis):
 
 
 SWSH = SpinWeightedSphericalHarmonics
+
+
+class BallBasis(MultidimensionalBasis):
+
+    space_type = Ball
+    dim = 2
+
+    def __init__(self, space):
+        self._check_space(space)
+        self.space = space
+        self.axis = space.axis
+        self.outer_shere_basis = SWSH(self.space.outer_sphere_space)
+        self.forward_transforms = [self.forward_transform_azimuth,
+                                   self.forward_transform_colatitude,
+                                   self.forward_transform_radius]
+        self.backward_transforms = [self.backward_transform_azimuth,
+                                    self.backward_transform_colatitude,
+                                    self.backward_transform_radius]
+        #self.forward_transform_azimuth = self.azimuth_basis.forward_transform
+        #self.backward_transform_azimuth = self.azimuth_basis.backward_transform
+
+    @CachedAttribute
+    def local_l(self):
+        domain = self.space.domain
+        layout = self.space.dist.coeff_layout
+        return layout.local_elements(domain, scales=1)[self.axis+1]
+
+    def forward_transform_azimuth(self, *args):
+        return self.outer_shere_basis.forward_transform_azimuth(*args)
+
+    def backward_transform_azimuth(self, *args):
+        return self.outer_shere_basis.backward_transform_azimuth(*args)
+
+    def forward_transform_colatitude(self, *args):
+        return self.outer_shere_basis.forward_transform_colatitude(*args)
+
+    def backward_transform_colatitude(self, *args):
+        return self.outer_shere_basis.backward_transform_colatitude(*args)
+
+    def forward_transform_radius(self, field, axis, gdata, cdata):
+        # # Apply spin recombination
+        # U = self.spin_recombination(field.tensorsig)
+        # for i, Ui in enumerate(U):
+        #     if Ui is not None:
+        #         apply_matrix(Ui, gdata, axis=i, out=gdata)
+        # # Perform SWSH transforms component-by-component
+        # S = self.spin_weights(field.tensorsig)
+        # for i, s in np.ndenumerate(S):
+        #     transforms.forward_SWSH(gdata[i], cdata[i], axis=axis, local_m=self.local_m, s=s)
+        pass
+
+    def backward_transform_radius(self, field, axis, cdata, gdata):
+        pass
 

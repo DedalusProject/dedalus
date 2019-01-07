@@ -324,16 +324,21 @@ class Sphere(Space):
     def grids(self, scale):
         N0, N1 = self.grid_shape(scale)
         azimuth_grid, = self.azimuth_space.grids(scale)
-        colatitude_grid = None
-        raise
+        colatitude_grid = self._colatitude_grid(N1)
         return (azimuth_grid, colatitude_grid)
+
+    def _colatitude_grid(self, Ng):
+        import dedalus_sphere
+        cos_grid, weights = dedalus_sphere.sphere128.quadrature(Ng-1, niter=3)
+        return np.arccos(cos_grid).astype(np.float64)
 
 
 class Ball(Space):
 
     dim = 3
+    group_shape = (1, 1, 1)
 
-    def __init__(self, coords, Lmax, Nmax, radius, dist, axis, dealias=1):
+    def __init__(self, coords, Lmax, Nmax, radius, dist, axis, alpha=0, dealias=1):
         if radius <= 0:
             raise ValueError("Radius must be positive.")
         self.coords = coords
@@ -343,6 +348,7 @@ class Ball(Space):
         self.radius = radius
         self.dist = dist
         self.axis = axis
+        self.alpha = alpha
         self.dealias = dealias
         self._check_coords()
         self.outer_sphere_space = Sphere(coords[:2], Lmax, radius, dist, axis, dealias=dealias)
@@ -351,9 +357,14 @@ class Ball(Space):
     def grids(self, scale):
         N0, N1, N2 = self.grid_shape(scale)
         azimuth_grid, colatitude_grid = self.outer_sphere_space.grids(scale)
-        radial_grid = self.radial_COV.problem_coord(native_radial_grid)
-        raise
+        radial_grid = self.radial_COV.problem_coord(self._native_radial_grid(N2))
         return (azimuth_grid, colatitude_grid, radial_grid)
+
+    def _native_radial_grid(self, Ng):
+        import dedalus_sphere
+        z_grid, weights = dedalus_sphere.ball128.quadrature(Ng-1, niter=3, a=self.alpha)
+        return np.sqrt((z_grid+1)/2).astype(np.float64)
+
 
 
 class SphericalShell(Space):
