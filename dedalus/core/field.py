@@ -345,6 +345,7 @@ class Current(Operand):
         layout = self.dist.get_layout_object(layout)
         self.layout = layout
         local_shape = layout.local_shape(self.subdomain, self.scales)
+        print(local_shape)
         self.data = np.ndarray(shape=local_shape,
                                dtype=self.dtype,
                                buffer=self.buffer)

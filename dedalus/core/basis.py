@@ -665,20 +665,26 @@ class SpinWeightedSphericalHarmonics(Basis):
         else:
             raise ValueError("Invalid basis axis.")
 
-    def forward_transform_azimuth(self, field, scale):
-        # Azimuthal DFT is the same for all components
-        axis = field.tensor_order + field.get_basis_axis(self)
-        transforms.forward_DFT(field.data, field.data, axis=axis, scale=scale)
+    # def forward_transform_azimuth(self, field, scale):
+    #     # Azimuthal DFT is the same for all components
+    #     axis = field.tensor_order + field.get_basis_axis(self)
+    #     transforms.forward_DFT(field.data, field.data, axis=axis, scale=scale)
 
-    def backward_transform_azimuth(self, field, scale):
+    def forward_transform_azimuth(self, gtensor, ctensor, axis, scale, tensorsig):
         # Azimuthal DFT is the same for all components
-        axis = field.tensor_order + field.get_basis_axis(self)
-        transforms.backward_DFT(field.data, field.data, axis=axis, scale=scale)
+        tens_axis = len(tensorsig) + axis
+        transforms.forward_DFT(gtensor, ctensor, axis=tens_axis, scale=scale)
+
+    # def backward_transform_azimuth(self, field, scale):
+    #     # Azimuthal DFT is the same for all components
+    #     axis = field.tensor_order + field.get_basis_axis(self)
+    #     transforms.backward_DFT(field.data, field.data, axis=axis, scale=scale)
 
     def spin_weights(self, tensorsig):
         Ss = np.array([-1, 1])
+        S = np.zeros([vs.dim for vs in tensorsig])
         S = np.zeros(tensorsig.shape)
-        for vector_space in tensorsig.vector_spaces:
+        for vector_space in tensorsig:
             vs_ax = vector_Space.get_axis(self.space)
             S[axslice(i, vs_ax, vs_ax+self.dim)] += Ss
         return S
@@ -690,7 +696,7 @@ class SpinWeightedSphericalHarmonics(Basis):
         raise
         # Perform unitary spin recombination along relevant tensor indeces
         U = []
-        for i, vector_space in enumerate(tensorsig.vector_spaces):
+        for i, vector_space in enumerate(tensorsig):
             if self.space in vector_space:
                 vs_ax = vectorspace.get_axis(self.space)
                 Ui = np.indentity(vectorspace.dim)
@@ -700,29 +706,42 @@ class SpinWeightedSphericalHarmonics(Basis):
                 U.append(None)
         return U
 
-    def forward_transform_colatitude(self, field, scale):
-        components = field.data
+    # def forward_transform_colatitude(self, field, scale):
+    #     components = field.data
+    #     # Apply spin recombination
+    #     U = self.spin_recombination(field.tensorsig)
+    #     for i, Ui in enumerate(U):
+    #         if Ui is not None:
+    #             apply_matrix(Ui, components, axis=i, out=components)
+    #     # Perform SWSH transforms
+    #     axis = None
+    #     raise
+    #     self.space.axis + 1
+    #     local_m = self.space.local_elements(0)
+
+    #     axis = field.subdomain.get_axis(self) + 1
+    #     local_m = field.subdomain.local_elements(axis-1)
+    #     S = self.spin_weights(field.tensorsig)
+    #     for tensor_index, s in np.ndenumerate(S):
+    #         comp_data = components[tensor_index]
+    #         transforms.forward_SWSH(comp_data, comp_data, axis=axis, scale=scale,
+    #             local_m=local_m, s=s)
+
+    def forward_transform_colatitude(self, gtensor, ctensor, axis, scale, tensorsig):
         # Apply spin recombination
-        U = self.spin_recombination(field.tensorsig)
+        U = self.spin_recombination(tensorsig)
         for i, Ui in enumerate(U):
             if Ui is not None:
-                apply_matrix(Ui, components, axis=i, out=components)
+                apply_matrix(Ui, gtensor, axis=i, out=gtensor)
         # Perform SWSH transforms
-        axis = None
-        raise
-        self.space.axis + 1
-        local_m = self.space.local_elements(0)
+        local_m = self.space.local_elements(self.axis)
+        S = self.spin_weights(tensorsig)
+        for i, s in np.ndenumerate(S):
+            transforms.forward_SWSH(gtensor[i], ctensor[i], axis=axis, scale=scale, local_m=local_m, s=s)
 
-        axis = field.subdomain.get_axis(self) + 1
-        local_m = field.subdomain.local_elements(axis-1)
-        S = self.spin_weights(field.tensorsig)
-        for tensor_index, s in np.ndenumerate(S):
-            comp_data = components[tensor_index]
-            transforms.forward_SWSH(comp_data, comp_data, axis=axis, scale=scale,
-                local_m=local_m, s=s)
-
-    def backward_transform_colatitude(self, gtensor, ctensor, axis, scale, tensorsig):
+    def backward_transform_colatitude(self, ctensor, gtensor, axis, scale, tensorsig):
         # Perform SWSH transforms
+        local_m = self.space.local_elements(self.axis)
         S = self.spin_weights(tensorsig)
         for i, s in np.ndenumerate(S):
             transforms.backward_SWSH(ctensor[i], gtensor[i], axis=axis, scale=scale, local_m=local_m, s=s)

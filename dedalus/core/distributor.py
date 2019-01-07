@@ -195,6 +195,7 @@ class Layout:
         group_shape = self.group_shape(domain, scales)
         group_nums = np.array(global_shape) // np.array(group_shape)
         local_groups = []
+        raise # make work for subax
         for axis, space in enumerate(domain.spaces):
             if self.local[axis]:
                 # All groups for local dimensions
