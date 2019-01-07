@@ -347,7 +347,8 @@ class Transform:
         gdata = field.data
         # Transform non-constant bases with local data
         if (basis is not None) and np.prod(cdata.shape):
-            basis.backward_transform(cdata, gdata, axis, field.scales[axis], field.tensorsig)
+            basis.backward_transform(field, axis, cdata, gdata)
+            #basis.backward_transform(cdata, gdata, axis, field.scales[axis], field.tensorsig)
             #plan = basis.transform_plan(cdata.shape, self.axis, field.scales[self.axis], field.dtype)
             #plan.backward(cdata, gdata)
 
@@ -361,7 +362,8 @@ class Transform:
         cdata = field.data
         # Transform non-constant bases with local data
         if (basis is not None) and np.prod(gdata.shape):
-            basis.forward_transform(gdata, cdata, axis, field.scales[axis], field.tensorsig)
+            basis.forward_transform(field, axis, gdata, cdata)
+            #basis.forward_transform(gdata, cdata, axis, field.scales[axis], field.tensorsig)
             #plan = basis.transform_plan(cdata.shape, self.axis, field.scales[self.axis], field.dtype)
             #plan.forward(gdata, cdata)
 

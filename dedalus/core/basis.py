@@ -16,6 +16,7 @@ from ..tools import jacobi
 from ..tools import clenshaw
 
 from .spaces import FiniteInterval, PeriodicInterval, ParityInterval, Sphere
+from . import transforms
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -297,6 +298,11 @@ class Fourier(Basis, metaclass=CachedClass):
 
     def __pow__(self, other):
         return self.space.Fourier
+
+    @CachedAttribute
+    def wavenumbers(self):
+        kmax = self.space.kmax
+        return np.concatenate((np.arange(0, kmax+1), np.arange(-kmax, 0)))
 
     def include_mode(self, mode):
         k = mode // 2
@@ -658,21 +664,28 @@ class SpinWeightedSphericalHarmonics(Basis):
         #self.backward_transform_azimuth = self.azimuth_basis.backward_transform
         self._check_space()
 
-    def forward_transform(self, gdata, cdata, axis, scale, tensorsig):
+    @CachedAttribute
+    def local_m(self):
+        domain = self.space.domain
+        layout = self.space.dist.coeff_layout
+        local_m_elements = layout.local_elements(domain, scales=1)[self.axis]
+        return self.azimuth_basis.wavenumbers[local_m_elements]
+
+    def forward_transform(self, field, axis, gdata, cdata):
         subaxis = axis - self.axis
         if subaxis == 0:
-            return self.forward_transform_azimuth(gdata, cdata, axis, scale, tensorsig)
+            return self.forward_transform_azimuth(field, axis, gdata, cdata)
         elif subaxis == 1:
-            return self.forward_transform_colatitude(gdata, cdata, axis, scale, tensorsig)
+            return self.forward_transform_colatitude(field, axis, gdata, cdata)
         else:
             raise ValueError("Invalid basis axis.")
 
-    def backward_transform(self, cdata, gdata, axis, scale, tensorsig):
+    def backward_transform(self, field, axis, cdata, gdata):
         subaxis = axis - self.axis
         if subaxis == 0:
-            self.backward_transform_azimuth(cdata, gdata, axis, scale, tensorsig)
+            self.backward_transform_azimuth(field, axis, cdata, gdata)
         elif subaxis == 1:
-            self.backward_transform_colatitude(cdata, gdata, axis, scale, tensorsig)
+            self.backward_transform_colatitude(field, axis, cdata, gdata)
         else:
             raise ValueError("Invalid basis axis.")
 
@@ -681,15 +694,15 @@ class SpinWeightedSphericalHarmonics(Basis):
     #     axis = field.tensor_order + field.get_basis_axis(self)
     #     transforms.forward_DFT(field.data, field.data, axis=axis, scale=scale)
 
-    def forward_transform_azimuth(self, gtensor, ctensor, axis, scale, tensorsig):
+    def forward_transform_azimuth(self, field, axis, gdata, cdata):
         # Azimuthal DFT is the same for all components
-        data_axis = len(tensorsig) + axis
-        transforms.forward_DFT(gtensor, ctensor, axis=data_axis, scale=scale)
+        data_axis = len(field.tensorsig) + axis
+        transforms.forward_DFT(gdata, cdata, axis=data_axis)
 
-    def backward_transform_azimuth(self, gtensor, ctensor, axis, scale, tensorsig):
+    def backward_transform_azimuth(self, field, axis, cdata, gdata):
         # Azimuthal DFT is the same for all components
-        data_axis = len(tensorsig) + axis
-        transforms.backward_DFT(ctensor, dtensor, axis=data_axis, scale=scale)
+        data_axis = len(field.tensorsig) + axis
+        transforms.backward_DFT(cdata, gdata, axis=data_axis)
 
     # def backward_transform_azimuth(self, field, scale):
     #     # Azimuthal DFT is the same for all components
@@ -697,19 +710,17 @@ class SpinWeightedSphericalHarmonics(Basis):
     #     transforms.backward_DFT(field.data, field.data, axis=axis, scale=scale)
 
     def spin_weights(self, tensorsig):
-        Ss = np.array([-1, 1])
-        S = np.zeros([vs.dim for vs in tensorsig])
-        S = np.zeros(tensorsig.shape)
-        for vector_space in tensorsig:
-            vs_ax = vector_Space.get_axis(self.space)
+        Ss = np.array([-1, 1], dtype=int)
+        S = np.zeros([vs.dim for vs in tensorsig], dtype=int)
+        for vs in tensorsig:
+            vs_ax = vs.get_axis(self.space)
             S[axslice(i, vs_ax, vs_ax+self.dim)] += Ss
         return S
 
     def spin_recombination(self, tensorsig):
         # Setup unitary spin recombination
         # [az, colat] -> [-, +]
-        Us = np.array([[2, 0], [0, 2]]) / 2
-        raise
+        Us = np.array([[-1j, 1], [1j, 1]]) / np.sqrt(2)
         # Perform unitary spin recombination along relevant tensor indeces
         U = []
         for i, vector_space in enumerate(tensorsig):
@@ -743,29 +754,28 @@ class SpinWeightedSphericalHarmonics(Basis):
     #         transforms.forward_SWSH(comp_data, comp_data, axis=axis, scale=scale,
     #             local_m=local_m, s=s)
 
-    def forward_transform_colatitude(self, gtensor, ctensor, axis, scale, tensorsig):
+    def forward_transform_colatitude(self, field, axis, gdata, cdata):
         # Apply spin recombination
-        U = self.spin_recombination(tensorsig)
+        U = self.spin_recombination(field.tensorsig)
         for i, Ui in enumerate(U):
             if Ui is not None:
-                apply_matrix(Ui, gtensor, axis=i, out=gtensor)
-        # Perform SWSH transforms
-        local_m = self.space.local_elements(self.axis)
-        S = self.spin_weights(tensorsig)
+                apply_matrix(Ui, gdata, axis=i, out=gdata)
+        # Perform SWSH transforms component-by-component
+        S = self.spin_weights(field.tensorsig)
         for i, s in np.ndenumerate(S):
-            transforms.forward_SWSH(gtensor[i], ctensor[i], axis=axis, scale=scale, local_m=local_m, s=s)
+            transforms.forward_SWSH(gdata[i], cdata[i], axis=axis, local_m=self.local_m, s=s)
 
-    def backward_transform_colatitude(self, ctensor, gtensor, axis, scale, tensorsig):
-        # Perform SWSH transforms
-        local_m = self.space.local_elements(self.axis)
-        S = self.spin_weights(tensorsig)
+    def backward_transform_colatitude(self, field, axis, cdata, gdata):
+        # Perform SWSH transforms component-by-component
+        S = self.spin_weights(field.tensorsig)
         for i, s in np.ndenumerate(S):
-            transforms.backward_SWSH(ctensor[i], gtensor[i], axis=axis, scale=scale, local_m=local_m, s=s)
+            transforms.backward_SWSH(cdata[i], gdata[i], axis=axis, local_m=self.local_m, s=s)
         # Apply spin recombination
-        U = self.spin_recombination(tensorsig)
+        U = self.spin_recombination(field.tensorsig)
         for i, Ui in enumerate(U):
             if Ui is not None:
-                apply_matrix(Ui.H, gtensor, axis=i, out=gtensor)
+                apply_matrix(Ui.H, gdata, axis=i, out=gdata)
+
 
 
 SWSH = SpinWeightedSphericalHarmonics

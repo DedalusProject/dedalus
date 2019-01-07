@@ -114,7 +114,6 @@ class Domain:
         """Cached grid shape computation."""
         shape = np.ones(self.dist.dim, dtype=int)
         for space in self.spaces:
-            print(space)
             for subaxis in range(space.dim):
                 axis = space.axis + subaxis
                 shape[axis] = space.grid_shape(scales[axis])[subaxis]

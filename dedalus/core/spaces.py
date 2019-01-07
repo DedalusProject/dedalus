@@ -91,6 +91,11 @@ class Space:
         """Flat global grids."""
         raise NotImplementedError()
 
+    @CachedAttribute
+    def domain(self):
+        from .domain import Domain
+        return Domain(self.dist, [self])
+
     # def local_grids(self, scales):
     #     """Local grid vectors by axis."""
     #     scales = self.dist.remedy_scales(scales)
@@ -413,10 +418,7 @@ class SphericalShell(Space):
 #             raise ValueError("Scaled grid size is not an integer: %f" %grid_size)
 #         return int(grid_size)
 
-#     @CachedAttribute
-#     def subdomain(self):
-#         from .domain import Subdomain
-#         return Subdomain.from_spaces([self])
+
 
 #     @CachedMethod
 #     def local_grid(self, scales=None):
