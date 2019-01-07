@@ -1,57 +1,23 @@
-"""Classes representing coordinate spaces."""
-
-
-class Coordinate:
-    """Single coordinate."""
-    dim = 1
-
-    def __init__(self, name):
-        self.name = name
-        self.names = [name]
-
-
-class CoordinateSet:
-    """Base class for coordinate sets."""
-
-    def __init__(self, *names):
-        self.names = names
-        self.coords = tuple(Coordinate(n) for n in names)
-        self._check_dim()
-
-    def _check_dim(self):
-        if len(self.coords) != self.dim:
-            raise ValueError("Number of coordinates must match fixed dimension: %i" %self.dim)
-
-
-class PolarCoords(CoordinateSet):
-    """2D polar coordinates (azimuth, radius)."""
-    dim = 2
-
-
-class SphericalCoords2D(CoordinateSet):
-    """2D spherical coordinates (azimuth, colatitude)."""
-    dim = 2
-
-
-class SphericalCoords3D(CoordinateSet):
-    """3D spherical coordinates (azimuth, colatitute, radius)."""
-    dim = 3
 
 
 
+import numpy as np
 
 
+class VectorSpace:
+    """Collection of coordinates forming a vector space."""
 
+    def __init__(self, spaces):
+        from .domain import Domain
+        self.domain = Domain(spaces[0].dist, spaces)
+        self.spaces = self.domain.spaces
+        space_dims = [space.dim for space in self.spaces]
+        space_indeces = np.cumsum(space_dims) - space_dims[0]
+        self.indeces = dict(zip(self.spaces, space_indeces))
+        self.dim = sum(space_dims)
 
-
-# class VectorSpace:
-#     """Collection of coordinates forming a vector space."""
-
-#     def __init__(self, coords):
-#         self.coords = coords
-#         self.dim = sum(c.dim for c in coords)
-
-
+    def get_index(self, space):
+        return self.indeces[space]
 
 # class TensorField:
 

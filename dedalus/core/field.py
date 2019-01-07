@@ -336,7 +336,8 @@ class Current(Operand):
         self.scales = new_scales
         # Build new buffer
         buffer_size = self.dist.buffer_size(self.domain, new_scales, dtype=self.dtype)
-        self.buffer = self._create_buffer(buffer_size)
+        ncomp = int(np.prod([vs.dim for vs in self.tensorsig]))
+        self.buffer = self._create_buffer(buffer_size*ncomp)
         # Reset layout to build new data view
         self.set_layout(self.layout)
 
@@ -344,8 +345,10 @@ class Current(Operand):
         """Interpret buffer as data in specified layout."""
         layout = self.dist.get_layout_object(layout)
         self.layout = layout
+        tens_shape = [vs.dim for vs in self.tensorsig]
         local_shape = layout.local_shape(self.domain, self.scales)
-        self.data = np.ndarray(shape=local_shape,
+        total_shape = tuple(tens_shape) + tuple(local_shape)
+        self.data = np.ndarray(shape=total_shape,
                                dtype=self.dtype,
                                buffer=self.buffer)
         #self.global_start = layout.start(self.domain, self.scales)

@@ -7,7 +7,7 @@ import numpy as np
 from ..tools import jacobi
 from ..tools.array import reshape_vector
 from ..tools.cache import CachedMethod, CachedAttribute
-from .coordinates import Coordinate, PolarCoords, SphericalCoords2D, SphericalCoords3D
+#from .coordinates import Coordinate, PolarCoords, SphericalCoords2D, SphericalCoords3D
 
 
 class AffineCOV:

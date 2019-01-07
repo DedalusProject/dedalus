@@ -47,6 +47,7 @@ class Domain:
     def __init__(self, dist, spaces):
         self.dist = dist
         self.spaces, self.full_spaces = self._check_spaces(spaces)
+        self.dim = sum(space.dim for space in self.spaces)
 
     def _check_spaces(self, spaces):
         # Drop duplicates
