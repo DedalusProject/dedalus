@@ -795,6 +795,7 @@ class BallBasis(MultidimensionalBasis):
                 if space is not self.space:
                     raise ValueError("Only supports tensors over ball.")
         order = len(tensorsig)
+        logger.warning("Q orders not fixed")
         return [dedalus_sphere.ball128.Q(l, order) for l in self.local_l]
 
     def regularity_classes(self, tensorsig):
@@ -820,17 +821,17 @@ class BallBasis(MultidimensionalBasis):
             for l_index, Q_l in enumerate(Q):
                 # Here the l axis is 'axis' instead of 'axis-1' since we have one tensor axis prepended
                 l_view = temp[axslice(axis, l_index, l_index+1)]
-                apply_matrix(Q_l, l_view, axis=0, out=l_view)
+                apply_matrix(Q_l.T, l_view, axis=0, out=l_view)
         # Perform radial transforms component-by-component
         R = self.regularity_classes(field.tensorsig)
         for i, r in np.ndenumerate(R):
-           transforms.forward_GSZP(gdata[i], cdata[i], axis=axis, local_l=self.local_l, r=r)
+           transforms.forward_GSZP(gdata[i], cdata[i], axis=axis, local_l=self.local_l, r=r, alpha=self.space.alpha)
 
     def backward_transform_radius(self, field, axis, cdata, gdata):
         # Perform radial transforms component-by-component
         R = self.regularity_classes(field.tensorsig)
         for i, r in np.ndenumerate(R):
-           transforms.backward_GSZP(cdata[i], gdata[i], axis=axis, local_l=self.local_l, r=r)
+           transforms.backward_GSZP(cdata[i], gdata[i], axis=axis, local_l=self.local_l, r=r, alpha=self.space.alpha)
         # Apply radial recombinations
         order = len(field.tensorsig)
         if order > 0:

@@ -12,7 +12,6 @@ X = vectorspaces.VectorSpace([s])
 u = field.Field(d, bases=[b], name='u', tensorsig=[X,X], dtype=np.complex128)
 
 print(s.grids(1))
-print(u.data.shape)
 u['c']
 print('Coeff')
 u['g']
