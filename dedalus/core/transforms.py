@@ -495,6 +495,17 @@ def forward_SWSH(gdata, cdata, axis, s, local_m):
         crm = cdata_reduced[:, dm, :, :]
         apply_matrix(m_matrix, grm, axis=1, out=crm)
 
+def _forward_SWSH_matrix(Nc, Ng, m, s):
+    import dedalus_sphere
+    # Get functions from sphere library
+    Lmax = Nc - 1
+    cos_grid, weights = dedalus_sphere.sphere128.quadrature(Lmax, niter=3)
+    Y = dedalus_sphere.sphere128.Y(Lmax, m, s, cos_grid).astype(np.float64)  # shape (Nc-Lmin, Ng)
+    # Pad to square transform
+    Lmin = max(np.abs(m), np.abs(s))
+    Yfull = np.zeros((Ng, Nc))
+    Yfull[Lmin:, :] = (Y*weights).astype(np.float64)
+    return Yfull
 
 def backward_SWSH(cdata, gdata, axis, s, local_m):
     """Apply forward colatitude transform to data with fixed s and varying m."""
@@ -529,14 +540,44 @@ def _backward_SWSH_matrix(Ng, Nc, m, s):
     return Yfull
 
 
-def _forward_SWSH_matrix(Nc, Ng, m, s):
-    import dedalus_sphere
-    # Get functions from sphere library
-    Lmax = Nc - 1
-    cos_grid, weights = dedalus_sphere.sphere128.quadrature(Lmax, niter=3)
-    Y = dedalus_sphere.sphere128.Y(Lmax, m, s, cos_grid).astype(np.float64)  # shape (Nc-Lmin, Ng)
-    # Pad to square transform
-    Lmin = Nc - Y.shape[0]
-    Yfull = np.zeros((Ng, Nc))
-    Yfull[Lmin:, :] = (Y*weights).astype(np.float64)
-    return Yfull
+
+def forward_GSZP(gdata, cdata, axis, r, local_l):
+    """Apply forward radial transform to data with fixed r and varying l."""
+    print(r, local_l)
+    np.copyto(cdata, gdata)
+    # # Build reduced shape
+    # N0 = int(np.prod(gdata.shape[:axis-1]))
+    # N1 = gdata.shape[axis-1]
+    # N2g = gdata.shape[axis]
+    # N2c = cdata.shape[axis]
+    # N3 = int(np.prod(gdata.shape[axis+1:]))
+    # gdata_reduced = gdata.reshape((N0, N1, N2g, N3))
+    # cdata_reduced = cdata.reshape((N0, N1, N2c, N3))
+    # if N1 != len(local_m):
+    #     raise ValueError("Local m must match axis-1 size.")
+    # # Apply transform for each m
+    # for dm, m in enumerate(local_m):
+    #     m_matrix = _forward_SWSH_matrix(N2g, N2c, m, s)
+    #     grm = gdata_reduced[:, dm, :, :]
+    #     crm = cdata_reduced[:, dm, :, :]
+    #     apply_matrix(m_matrix, grm, axis=1, out=crm)
+
+def backward_GSZP(cdata, gdata, axis, r, local_l):
+    """Apply forward radial transform to data with fixed r and varying l."""
+    np.copyto(gdata, cdata)
+    # # Build reduced shape
+    # N0 = int(np.prod(gdata.shape[:axis-1]))
+    # N1 = gdata.shape[axis-1]
+    # N2g = gdata.shape[axis]
+    # N2c = cdata.shape[axis]
+    # N3 = int(np.prod(gdata.shape[axis+1:]))
+    # gdata_reduced = gdata.reshape((N0, N1, N2g, N3))
+    # cdata_reduced = cdata.reshape((N0, N1, N2c, N3))
+    # if N1 != len(local_m):
+    #     raise ValueError("Local m must match axis-1 size.")
+    # # Apply transform for each m
+    # for dm, m in enumerate(local_m):
+    #     m_matrix = _backward_SWSH_matrix(N2c, N2g, m, s)
+    #     grm = gdata_reduced[:, dm, :, :]
+    #     crm = cdata_reduced[:, dm, :, :]
+    #     apply_matrix(m_matrix, crm, axis=1, out=grm)

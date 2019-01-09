@@ -699,11 +699,13 @@ class SpinWeightedSphericalHarmonics(MultidimensionalBasis):
         transforms.backward_DFT(cdata, gdata, axis=data_axis)
 
     def spin_weights(self, tensorsig):
+        # Spin-component ordering: [-, +]
         Ss = np.array([-1, 1], dtype=int)
         S = np.zeros([vs.dim for vs in tensorsig], dtype=int)
         for i, vs in enumerate(tensorsig):
-            n = vs.get_index(self.space)
-            S[axslice(i, n, n+self.dim)] += Ss
+            if self.space in vs.spaces:
+                n = vs.get_index(self.space)
+                S[axslice(i, n, n+self.dim)] += Ss
         return S
 
     def spin_recombination(self, tensorsig):
@@ -751,7 +753,7 @@ SWSH = SpinWeightedSphericalHarmonics
 class BallBasis(MultidimensionalBasis):
 
     space_type = Ball
-    dim = 2
+    dim = 3
 
     def __init__(self, space):
         self._check_space(space)
@@ -785,18 +787,62 @@ class BallBasis(MultidimensionalBasis):
     def backward_transform_colatitude(self, *args):
         return self.outer_shere_basis.backward_transform_colatitude(*args)
 
+    def radial_recombinations(self, tensorsig):
+        import dedalus_sphere
+        # For now only implement recombinations for Ball-only tensors
+        for vs in tensorsig:
+            for space in vs.spaces:
+                if space is not self.space:
+                    raise ValueError("Only supports tensors over ball.")
+        order = len(tensorsig)
+        return [dedalus_sphere.ball128.Q(l, order) for l in self.local_l]
+
+    def regularity_classes(self, tensorsig):
+        # Regularity-component ordering: [-, +, 0]
+        Rb = np.array([-1, 1, 0], dtype=int)
+        R = np.zeros([vs.dim for vs in tensorsig], dtype=int)
+        for i, vs in enumerate(tensorsig):
+            if self.space in vs.spaces:
+                n = vs.get_index(self.space)
+                R[axslice(i, n, n+self.dim)] += Rb
+        return R
+
     def forward_transform_radius(self, field, axis, gdata, cdata):
-        # # Apply spin recombination
-        # U = self.spin_recombination(field.tensorsig)
-        # for i, Ui in enumerate(U):
-        #     if Ui is not None:
-        #         apply_matrix(Ui, gdata, axis=i, out=gdata)
-        # # Perform SWSH transforms component-by-component
-        # S = self.spin_weights(field.tensorsig)
-        # for i, s in np.ndenumerate(S):
-        #     transforms.forward_SWSH(gdata[i], cdata[i], axis=axis, local_m=self.local_m, s=s)
-        pass
+        # Apply radial recombinations
+        order = len(field.tensorsig)
+        if order > 0:
+            Q = self.radial_recombinations(field.tensorsig)
+            # Flatten tensor axes
+            shape = gdata.shape
+            order = len(field.tensorsig)
+            temp = gdata.reshape((-1,)+shape[order:])
+            # Apply Q transformations for each l to flattened tensor data
+            for l_index, Q_l in enumerate(Q):
+                # Here the l axis is 'axis' instead of 'axis-1' since we have one tensor axis prepended
+                l_view = temp[axslice(axis, l_index, l_index+1)]
+                apply_matrix(Q_l, l_view, axis=0, out=l_view)
+        # Perform radial transforms component-by-component
+        R = self.regularity_classes(field.tensorsig)
+        for i, r in np.ndenumerate(R):
+           transforms.forward_GSZP(gdata[i], cdata[i], axis=axis, local_l=self.local_l, r=r)
 
     def backward_transform_radius(self, field, axis, cdata, gdata):
-        pass
+        # Perform radial transforms component-by-component
+        R = self.regularity_classes(field.tensorsig)
+        for i, r in np.ndenumerate(R):
+           transforms.backward_GSZP(cdata[i], gdata[i], axis=axis, local_l=self.local_l, r=r)
+        # Apply radial recombinations
+        order = len(field.tensorsig)
+        if order > 0:
+            Q = self.radial_recombinations(field.tensorsig)
+            # Flatten tensor axes
+            shape = gdata.shape
+            order = len(field.tensorsig)
+            temp = gdata.reshape((-1,)+shape[order:])
+            # Apply Q transformations for each l to flattened tensor data
+            for l_index, Q_l in enumerate(Q):
+                # Here the l axis is 'axis' instead of 'axis-1' since we have one tensor axis prepended
+                l_view = temp[axslice(axis, l_index, l_index+1)]
+                apply_matrix(Q_l, l_view, axis=0, out=l_view)
+
 

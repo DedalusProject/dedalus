@@ -4,6 +4,13 @@
 import numpy as np
 
 
+"""
+Idea: just make VS based on string coordinates?
+Eliminates issues with 2sphere basis with 3sphere vectors?
+
+"""
+
+
 class VectorSpace:
     """Collection of coordinates forming a vector space."""
 
