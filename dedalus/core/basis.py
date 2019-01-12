@@ -24,8 +24,8 @@ logger = logging.getLogger(__name__.split('.')[-1])
 
 from ..tools.config import config
 DEFAULT_LIBRARY = config['transforms'].get('DEFAULT_LIBRARY')
-
 DEFAULT_LIBRARY = 'scipy'
+
 
 class Basis:
     """Base class for spectral bases."""
@@ -664,22 +664,9 @@ class MultidimensionalBasis(Basis):
         return self.backward_transforms[subaxis](field, axis, cdata, gdata)
 
 
-class SpinWeightedSphericalHarmonics(MultidimensionalBasis):
+class SpinBasis(MultidimensionalBasis):
 
-    space_type = Sphere
     dim = 2
-
-    def __init__(self, space):
-        self._check_space(space)
-        self.space = space
-        self.axis = space.axis
-        self.azimuth_basis = Fourier(self.space.azimuth_space)
-        self.forward_transforms = [self.forward_transform_azimuth,
-                                   self.forward_transform_colatitude]
-        self.backward_transforms = [self.backward_transform_azimuth,
-                                    self.backward_transform_colatitude]
-        #self.forward_transform_azimuth = self.azimuth_basis.forward_transform
-        #self.backward_transform_azimuth = self.azimuth_basis.backward_transform
 
     @CachedAttribute
     def local_m(self):
@@ -723,6 +710,64 @@ class SpinWeightedSphericalHarmonics(MultidimensionalBasis):
             else:
                 U.append(None)
         return U
+
+
+class DiskBasis(SpinBasis):
+
+    space_type = Disk
+    dim = 2
+
+    def __init__(self, space):
+        self._check_space(space)
+        self.space = space
+        self.axis = space.axis
+        self.azimuth_basis = Fourier(self.space.azimuth_space)
+        self.forward_transforms = [self.forward_transform_azimuth,
+                                   self.forward_transform_radius]
+        self.backward_transforms = [self.backward_transform_azimuth,
+                                    self.backward_transform_radius]
+        #self.forward_transform_azimuth = self.azimuth_basis.forward_transform
+        #self.backward_transform_azimuth = self.azimuth_basis.backward_transform
+
+    def forward_transform_radius(self, field, axis, gdata, cdata):
+        # Apply spin recombination
+        U = self.spin_recombination(field.tensorsig)
+        for i, Ui in enumerate(U):
+            if Ui is not None:
+                apply_matrix(Ui, gdata, axis=i, out=gdata)
+        # Perform transforms component-by-component
+        S = self.spin_weights(field.tensorsig)
+        for i, s in np.ndenumerate(S):
+            transforms.forward_disk(gdata[i], cdata[i], axis=axis, local_m=self.local_m, s=s)
+
+    def backward_transform_radius(self, field, axis, cdata, gdata):
+        # Perform transforms component-by-component
+        S = self.spin_weights(field.tensorsig)
+        for i, s in np.ndenumerate(S):
+            transforms.backward_disk(cdata[i], gdata[i], axis=axis, local_m=self.local_m, s=s)
+        # Apply spin recombination
+        U = self.spin_recombination(field.tensorsig)
+        for i, Ui in enumerate(U):
+            if Ui is not None:
+                apply_matrix(Ui.T.conj(), gdata, axis=i, out=gdata)
+
+
+class SpinWeightedSphericalHarmonics(SpinBasis):
+
+    space_type = Sphere
+    dim = 2
+
+    def __init__(self, space):
+        self._check_space(space)
+        self.space = space
+        self.axis = space.axis
+        self.azimuth_basis = Fourier(self.space.azimuth_space)
+        self.forward_transforms = [self.forward_transform_azimuth,
+                                   self.forward_transform_colatitude]
+        self.backward_transforms = [self.backward_transform_azimuth,
+                                    self.backward_transform_colatitude]
+        #self.forward_transform_azimuth = self.azimuth_basis.forward_transform
+        #self.backward_transform_azimuth = self.azimuth_basis.backward_transform
 
     def forward_transform_colatitude(self, field, axis, gdata, cdata):
         # Apply spin recombination

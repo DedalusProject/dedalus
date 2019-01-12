@@ -476,6 +476,8 @@ class NonSeparableTransform(Transform):
 
 
 
+## Sphere transforms
+
 def forward_SWSH(gdata, cdata, axis, s, local_m):
     """Apply forward colatitude transform to data with fixed s and varying m."""
     # Build reduced shape
@@ -526,7 +528,6 @@ def backward_SWSH(cdata, gdata, axis, s, local_m):
         crm = cdata_reduced[:, dm, :, :]
         apply_matrix(m_matrix, crm, axis=1, out=grm)
 
-
 def _backward_SWSH_matrix(Nc, Ng, m, s):
     import dedalus_sphere
     # Get functions from sphere library
@@ -540,6 +541,7 @@ def _backward_SWSH_matrix(Nc, Ng, m, s):
     return Yfull
 
 
+## Ball transforms
 
 def forward_GSZP(gdata, cdata, axis, r, local_l, alpha):
     """Apply forward radial transform to data with fixed r and varying l."""
