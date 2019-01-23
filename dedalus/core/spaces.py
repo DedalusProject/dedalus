@@ -240,12 +240,12 @@ class FiniteInterval(Interval):
     def _native_grid(self, scales):
         """Gauss-Jacobi grid."""
         N, = self.grid_shape(scales)
-        return jacobi.build_grid(N, self.a, self.b)
+        return jacobi.build_grid(N, a=self.a, b=self.b)
 
     def weights(self, scales):
         """Gauss-Jacobi weights."""
         N = self.grid_shape(scales)[0]
-        return jacobi.build_weights(N, self.a, self.b)
+        return jacobi.build_weights(N, a=self.a, b=self.b)
 
     def Jacobi(self, *args, **kw):
         return basis.Jacobi(self, *args, **kw)

@@ -982,6 +982,11 @@ class Filter(LinearSubspaceFunctional):
             return 0
 
 
+class Gradient(LinearOperator):
+
+    pass
+
+
 @prefix('d')
 @parseable('differentiate', 'diff', 'd')
 def differentiate(arg, *spaces, **space_kw):
