@@ -474,7 +474,13 @@ class NonSeparableTransform(Transform):
 
 
 
+## Jacobi transforms
 
+def forward_jacobi(gdata, cdata, axis, a0, b0, a, b):
+    pass
+
+def backward_jacobi(cdata, gdata, axis, a0, b0, a, b):
+    pass
 
 ## Sphere transforms
 

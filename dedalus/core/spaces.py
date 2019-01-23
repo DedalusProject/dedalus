@@ -153,6 +153,7 @@ class Interval(Space):
     """Base class for 1D intervals."""
 
     dim = 1
+    group_shape = (1,)
 
     def __init__(self, coord, size, bounds, dist, axis, dealias=1):
         self.coord = coord

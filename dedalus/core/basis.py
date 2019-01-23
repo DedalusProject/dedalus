@@ -16,7 +16,7 @@ from ..tools.cache import CachedClass
 from ..tools import jacobi
 from ..tools import clenshaw
 
-from .spaces import FiniteInterval, PeriodicInterval, ParityInterval, Sphere, Ball
+from .spaces import FiniteInterval, PeriodicInterval, ParityInterval, Sphere, Ball, Disk
 from . import transforms
 
 import logging
@@ -153,7 +153,9 @@ class Constant(Basis, metaclass=CachedClass):
 
 class Jacobi(Basis, metaclass=CachedClass):
     """Jacobi polynomial basis."""
+
     space_type = FiniteInterval
+    dim = 1
 
     def __init__(self, space, da, db, library='matrix'):
         super().__init__(space, library=library)
@@ -162,6 +164,7 @@ class Jacobi(Basis, metaclass=CachedClass):
         self.a = space.a + da
         self.b = space.b + db
         self.const = 1 / np.sqrt(jacobi.mass(self.a, self.b))
+        self.axis = self.space.axis
 
     def __str__(self):
         space = self.space
@@ -212,6 +215,16 @@ class Jacobi(Basis, metaclass=CachedClass):
         if coeff_size > 1:
             conversion = sparse.kron(conversion, sparse.identity(coeff_size))
         return (conversion @ total)
+
+    def forward_transform(self, field, axis, gdata, cdata):
+        # Transform is the same for all components
+        data_axis = len(field.tensorsig) + axis
+        transforms.forward_jacobi(gdata, cdata, axis=data_axis, a0=self.space.a, b0=self.space.b, a=self.a, b=self.b)
+
+    def backward_transform(self, field, axis, cdata, gdata):
+        # Transform is the same for all components
+        data_axis = len(field.tensorsig) + axis
+        transforms.backward_jacobi(cdata, gdata, axis=data_axis, a0=self.space.a, b0=self.space.b, a=self.a, b=self.b)
 
 
 class ConvertJacobiJacobi(operators.Convert):
@@ -673,6 +686,8 @@ class SpinBasis(MultidimensionalBasis):
         domain = self.space.domain
         layout = self.space.dist.coeff_layout
         local_m_elements = layout.local_elements(domain, scales=1)[self.axis]
+        print(self.azimuth_basis.wavenumbers)
+        print(local_m_elements)
         return self.azimuth_basis.wavenumbers[local_m_elements]
 
     def forward_transform_azimuth(self, field, axis, gdata, cdata):
