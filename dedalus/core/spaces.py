@@ -282,7 +282,7 @@ class Disk(Space):
     dim = 2
     group_shape = (1, 1)
 
-    def __init__(self, coords, shape, radius, dist, axis, dealias=1):
+    def __init__(self, coords, shape, radius, dist, axis, dealias=1, k0=0):
         if radius <= 0:
             raise ValueError("Radius must be positive.")
         self.coords = coords
@@ -291,6 +291,7 @@ class Disk(Space):
         self.dist = dist
         self.axis = axis
         self.dealias = dealias
+        self.k0 = k0
         self._check_coords()
         self.azimuth_space = PeriodicInterval(coords[0], size=self.shape[0],
             bounds=(0, 2*np.pi), dist=dist, axis=axis, dealias=dealias)
@@ -304,9 +305,9 @@ class Disk(Space):
 
     def _radial_grid(self, Ng):
         import dedalus_sphere
-        cos_grid, weights = dedalus_sphere.sphere128.quadrature(Ng-1, niter=3)
-        logger.warn("Need to update radial grid")
-        return np.arccos(cos_grid).astype(np.float64)
+        z_grid, weights = dedalus_sphere.disk128.quadrature(Ng-1, k=k0, niter=3)
+        # z = 2*r**2 - 1
+        return np.sqrt((z_grid + 1)/2).astype(np.float64)
 
 
 class Annulus(Space):

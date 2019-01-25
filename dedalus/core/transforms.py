@@ -482,19 +482,97 @@ def forward_jacobi(gdata, cdata, axis, a0, b0, a, b):
 def backward_jacobi(cdata, gdata, axis, a0, b0, a, b):
     pass
 
+
+def reduced_view_4(data, axis):
+    shape = data.shape
+    N0 = int(np.prod(shape[:axis]))
+    N1 = shape[axis]
+    N2 = shape[axis+1]
+    N3 = int(np.prod(shape[axis+2:]))
+    return data.reshape((N0, N1, N2, N3))
+
+
+## Disk transforms
+
+def forward_disk(gdata, cdata, axis, k0, k, s, local_m):
+    """Apply forward radial transform to data with fixed s and varying m."""
+    # Build reduced views
+    gdata_reduced = reduced_view_4(gdata, axis-1)
+    cdata_reduced = reduced_view_4(cdata, axis-1)
+    if gdata_reduced.shape[1] != len(local_m):
+        raise ValueError("Local m must match axis-1 size.")
+    # Apply transform for each m
+    Ng = gdata.shape[axis]
+    Nc = cdata.shape[axis]
+    for dm, m in enumerate(local_m):
+        m_matrix = _forward_disk_matrix(Ng, Nc, k0, k, m+s)
+        grm = gdata_reduced[:, dm, :, :]
+        crm = cdata_reduced[:, dm, :, :]
+        apply_matrix(m_matrix, grm, axis=1, out=crm)
+
+def _forward_disk_matrix(Ng, Nc, k0, k, m):
+    """Build forward transform matrix for Q[k,m,n](r[k0])."""
+    import dedalus_sphere
+    # Get base grid and weights
+    z_grid, weights = dedalus_sphere.disk128.quadrature(Ng-1, k=k0, niter=3)
+    # Get functions
+    Nc_max = Nc
+    logger.warn("No truncation")
+    Q = dedalus_sphere.disk128.polynomials(Nc_max-1, k=k, m=m, z=z_grid)
+    # Pad to square transform
+    Qfull = np.zeros((Nc, Ng))
+    Qfull[:Nc, :] = Q.astype(np.float64)
+    return Qfull
+
+def backward_disk(cdata, gdata, axis, k, s, local_m):
+    """Apply bakward radial transform to data with fixed s and varying m."""
+    # Build reduced views
+    gdata_reduced = reduced_view_4(gdata, axis-1)
+    cdata_reduced = reduced_view_4(cdata, axis-1)
+    if gdata_reduced.shape[1] != len(local_m):
+        raise ValueError("Local m must match axis-1 size.")
+    # Apply transform for each m
+    for dm, m in enumerate(local_m):
+        m_matrix = _backward_SWSH_matrix(N2c, N2g, k, m+s)
+        grm = gdata_reduced[:, dm, :, :]
+        crm = cdata_reduced[:, dm, :, :]
+        apply_matrix(m_matrix, crm, axis=1, out=grm)
+
+def _backward_disk_matrix(Nc, Ng, k0, k, m):
+    """Build backward transform matrix for Q[k,m,n](r[k0])."""
+    import dedalus_sphere
+    # Get base grid and weights
+    z_grid, weights = dedalus_sphere.disk128.quadrature(Ng-1, k=k0, niter=3)
+    # Get functions
+    Nc_max = Nc
+    logger.warn("No truncation")
+    Q = dedalus_sphere.disk128.polynomials(Nc_max-1, k=k, m=m, z=z_grid)
+    # Pad to square transform
+    Qfull = np.zeros((Nc, Ng))
+    Qfull[:Nc, :] = Q.astype(np.float64)
+    return Qfull
+
+
+
+    # Get functions from sphere library
+    Lmax = Nc - 1
+    cos_grid, weights = dedalus_sphere.sphere128.quadrature(Lmax, niter=3)
+    Y = dedalus_sphere.sphere128.Y(Lmax, m, s, cos_grid) # shape (Nc-Lmin, Ng)
+    # Pad to square transform and keep l aligned
+    Lmin = Nc - Y.shape[0]
+    Yfull = np.zeros((Ng, Nc))
+    Yfull[:, Lmin:] = Y.T.astype(np.float64)
+    return Yfull
+
+
 ## Sphere transforms
 
 def forward_SWSH(gdata, cdata, axis, s, local_m):
     """Apply forward colatitude transform to data with fixed s and varying m."""
-    # Build reduced shape
-    N0 = int(np.prod(gdata.shape[:axis-1]))
-    N1 = gdata.shape[axis-1]
-    N2g = gdata.shape[axis]
-    N2c = cdata.shape[axis]
-    N3 = int(np.prod(gdata.shape[axis+1:]))
-    gdata_reduced = gdata.reshape((N0, N1, N2g, N3))
-    cdata_reduced = cdata.reshape((N0, N1, N2c, N3))
-    if N1 != len(local_m):
+    # Build reduced views
+    gdata_reduced = reduced_view_4(gdata, axis-1)
+    cdata_reduced = reduced_view_4(cdata, axis-1)
+    if gdata_reduced.shape[1] != len(local_m):
         raise ValueError("Local m must match axis-1 size.")
     # Apply transform for each m
     for dm, m in enumerate(local_m):
@@ -504,6 +582,7 @@ def forward_SWSH(gdata, cdata, axis, s, local_m):
         apply_matrix(m_matrix, grm, axis=1, out=crm)
 
 def _forward_SWSH_matrix(Ng, Nc, m, s):
+    """Build transform matrix for single m and s."""
     import dedalus_sphere
     # Get functions from sphere library
     Lmax = Nc - 1
@@ -516,16 +595,11 @@ def _forward_SWSH_matrix(Ng, Nc, m, s):
     return Yfull
 
 def backward_SWSH(cdata, gdata, axis, s, local_m):
-    """Apply forward colatitude transform to data with fixed s and varying m."""
-    # Build reduced shape
-    N0 = int(np.prod(gdata.shape[:axis-1]))
-    N1 = gdata.shape[axis-1]
-    N2g = gdata.shape[axis]
-    N2c = cdata.shape[axis]
-    N3 = int(np.prod(gdata.shape[axis+1:]))
-    gdata_reduced = gdata.reshape((N0, N1, N2g, N3))
-    cdata_reduced = cdata.reshape((N0, N1, N2c, N3))
-    if N1 != len(local_m):
+    """Apply backward colatitude transform to data with fixed s and varying m."""
+    # Build reduced views
+    gdata_reduced = reduced_view_4(gdata, axis-1)
+    cdata_reduced = reduced_view_4(cdata, axis-1)
+    if gdata_reduced.shape[1] != len(local_m):
         raise ValueError("Local m must match axis-1 size.")
     # Apply transform for each m
     for dm, m in enumerate(local_m):
@@ -535,6 +609,7 @@ def backward_SWSH(cdata, gdata, axis, s, local_m):
         apply_matrix(m_matrix, crm, axis=1, out=grm)
 
 def _backward_SWSH_matrix(Nc, Ng, m, s):
+    """Build transform matrix for single m and s."""
     import dedalus_sphere
     # Get functions from sphere library
     Lmax = Nc - 1
@@ -551,15 +626,10 @@ def _backward_SWSH_matrix(Nc, Ng, m, s):
 
 def forward_GSZP(gdata, cdata, axis, r, local_l, alpha):
     """Apply forward radial transform to data with fixed r and varying l."""
-    # Build reduced shape
-    N0 = int(np.prod(gdata.shape[:axis-1]))
-    N1 = gdata.shape[axis-1]
-    N2g = gdata.shape[axis]
-    N2c = cdata.shape[axis]
-    N3 = int(np.prod(gdata.shape[axis+1:]))
-    gdata_reduced = gdata.reshape((N0, N1, N2g, N3))
-    cdata_reduced = cdata.reshape((N0, N1, N2c, N3))
-    if N1 != len(local_l):
+    # Build reduced views
+    gdata_reduced = reduced_view_4(gdata, axis-1)
+    cdata_reduced = reduced_view_4(cdata, axis-1)
+    if gdata_reduced.shape[1] != len(local_m):
         raise ValueError("Local l must match axis-1 size.")
     # Apply transform for each l
     for dl, l in enumerate(local_l):
@@ -569,6 +639,7 @@ def forward_GSZP(gdata, cdata, axis, r, local_l, alpha):
         apply_matrix(l_matrix, grl, axis=1, out=crl)
 
 def _forward_GSZP_matrix(Ng, Nc, l, r, alpha):
+    """Build transform matrix for single l and r."""
     import dedalus_sphere
     # Get functions from sphere library
     Nmin = 0
@@ -581,16 +652,11 @@ def _forward_GSZP_matrix(Ng, Nc, l, r, alpha):
     return Wfull
 
 def backward_GSZP(cdata, gdata, axis, r, local_l, alpha):
-    """Apply forward radial transform to data with fixed r and varying l."""
-    # Build reduced shape
-    N0 = int(np.prod(gdata.shape[:axis-1]))
-    N1 = gdata.shape[axis-1]
-    N2g = gdata.shape[axis]
-    N2c = cdata.shape[axis]
-    N3 = int(np.prod(gdata.shape[axis+1:]))
-    gdata_reduced = gdata.reshape((N0, N1, N2g, N3))
-    cdata_reduced = cdata.reshape((N0, N1, N2c, N3))
-    if N1 != len(local_l):
+    """Apply backward radial transform to data with fixed r and varying l."""
+    # Build reduced views
+    gdata_reduced = reduced_view_4(gdata, axis-1)
+    cdata_reduced = reduced_view_4(cdata, axis-1)
+    if gdata_reduced.shape[1] != len(local_m):
         raise ValueError("Local l must match axis-1 size.")
     # Apply transform for each l
     for dl, l in enumerate(local_l):
@@ -600,6 +666,7 @@ def backward_GSZP(cdata, gdata, axis, r, local_l, alpha):
         apply_matrix(l_matrix, crl, axis=1, out=grl)
 
 def _backward_GSZP_matrix(Nc, Ng, l, r, alpha):
+    """Build transform matrix for single l and r."""
     import dedalus_sphere
     # Get functions from sphere library
     Nmin = 0

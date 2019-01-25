@@ -711,6 +711,7 @@ class SpinBasis(MultidimensionalBasis):
         return S
 
     def spin_recombination(self, tensorsig):
+        """Build matrices for appling spin recombination to each tensor rank."""
         # Setup unitary spin recombination
         # [azimuth, colatitude] -> [-, +]
         Us = np.array([[-1j, 1], [1j, 1]]) / np.sqrt(2)
@@ -726,15 +727,33 @@ class SpinBasis(MultidimensionalBasis):
                 U.append(None)
         return U
 
+    def forward_spin_recombination(self, tensorsig, gdata):
+        """Apply component-to-spin recombination in place."""
+        U = self.spin_recombination_matrices(tensorsig)
+        for i, Ui in enumerate(U):
+            if Ui is not None:
+                # Directly apply U
+                apply_matrix(Ui, gdata, axis=i, out=gdata)
+
+    def backward_spin_recombination(self, tensorsig, gdata):
+        """Apply spin-to-component recombination in place."""
+        U = self.spin_recombination_matrices(tensorsig)
+        for i, Ui in enumerate(U):
+            if Ui is not None:
+                # Apply U^H (inverse of U)
+                apply_matrix(Ui.T.conj(), gdata, axis=i, out=gdata)
+
 
 class DiskBasis(SpinBasis):
 
     space_type = Disk
     dim = 2
 
-    def __init__(self, space):
+    def __init__(self, space, dk=0):
         self._check_space(space)
         self.space = space
+        self.dk = dk
+        self.k = space.k0 + dk
         self.axis = space.axis
         self.azimuth_basis = Fourier(self.space.azimuth_space)
         self.forward_transforms = [self.forward_transform_azimuth,
@@ -746,25 +765,23 @@ class DiskBasis(SpinBasis):
 
     def forward_transform_radius(self, field, axis, gdata, cdata):
         # Apply spin recombination
-        U = self.spin_recombination(field.tensorsig)
-        for i, Ui in enumerate(U):
-            if Ui is not None:
-                apply_matrix(Ui, gdata, axis=i, out=gdata)
+        self.forward_spin_recombination(field.tensorsig, gdata)
         # Perform transforms component-by-component
         S = self.spin_weights(field.tensorsig)
+        k0, k = self.k0, self.k
+        local_m = self.local_m
         for i, s in np.ndenumerate(S):
-            transforms.forward_disk(gdata[i], cdata[i], axis=axis, local_m=self.local_m, s=s)
+            transforms.forward_disk(gdata[i], cdata[i], axis=axis, k0=k0, k=k, s=s, local_m=local_m)
 
     def backward_transform_radius(self, field, axis, cdata, gdata):
         # Perform transforms component-by-component
         S = self.spin_weights(field.tensorsig)
+        k0, k = self.k0, self.k
+        local_m = self.local_m
         for i, s in np.ndenumerate(S):
-            transforms.backward_disk(cdata[i], gdata[i], axis=axis, local_m=self.local_m, s=s)
+            transforms.backward_disk(cdata[i], gdata[i], axis=axis, k0=k0, k=k, s=s, local_m=local_m)
         # Apply spin recombination
-        U = self.spin_recombination(field.tensorsig)
-        for i, Ui in enumerate(U):
-            if Ui is not None:
-                apply_matrix(Ui.T.conj(), gdata, axis=i, out=gdata)
+        self.backward_spin_recombination(field.tensorsig, gdata)
 
 
 class SpinWeightedSphericalHarmonics(SpinBasis):
@@ -784,27 +801,21 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         #self.forward_transform_azimuth = self.azimuth_basis.forward_transform
         #self.backward_transform_azimuth = self.azimuth_basis.backward_transform
 
-    def forward_transform_colatitude(self, field, axis, gdata, cdata):
+    def forward_transform_radius(self, field, axis, gdata, cdata):
         # Apply spin recombination
-        U = self.spin_recombination(field.tensorsig)
-        for i, Ui in enumerate(U):
-            if Ui is not None:
-                apply_matrix(Ui, gdata, axis=i, out=gdata)
-        # Perform SWSH transforms component-by-component
+        self.forward_spin_recombination(field.tensorsig, gdata)
+        # Perform transforms component-by-component
         S = self.spin_weights(field.tensorsig)
         for i, s in np.ndenumerate(S):
-            transforms.forward_SWSH(gdata[i], cdata[i], axis=axis, local_m=self.local_m, s=s)
+            transforms.forward_disk(gdata[i], cdata[i], axis=axis, local_m=self.local_m, s=s)
 
-    def backward_transform_colatitude(self, field, axis, cdata, gdata):
-        # Perform SWSH transforms component-by-component
+    def backward_transform_radius(self, field, axis, cdata, gdata):
+        # Perform transforms component-by-component
         S = self.spin_weights(field.tensorsig)
         for i, s in np.ndenumerate(S):
-            transforms.backward_SWSH(cdata[i], gdata[i], axis=axis, local_m=self.local_m, s=s)
+            transforms.backward_disk(cdata[i], gdata[i], axis=axis, local_m=self.local_m, s=s)
         # Apply spin recombination
-        U = self.spin_recombination(field.tensorsig)
-        for i, Ui in enumerate(U):
-            if Ui is not None:
-                apply_matrix(Ui.T.conj(), gdata, axis=i, out=gdata)
+        self.backward_spin_recombination(field.tensorsig, gdata)
 
 
 SWSH = SpinWeightedSphericalHarmonics
