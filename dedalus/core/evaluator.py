@@ -336,7 +336,7 @@ class FileHandler(Handler):
             mode = FILEHANDLER_MODE_DEFAULT
 
         # Check base_path
-        base_path = pathlib.Path(base_path).absolute()
+        base_path = pathlib.Path(base_path).resolve()
         if any(base_path.suffixes):
             raise ValueError("base_path should indicate a folder for storing HDF5 files.")
 
