@@ -11,14 +11,14 @@ spherically symmetric, polytropic fluid [1].
 It is usually written as:
     dr(dr(f)) + (2/r)*dr(f) + f**n = 0
     f(r=0) = 1
-    dr(f)(r=0) = 0
 where n is the polytropic index, and the equation is solved over the interval
-r=[0,R], where R is the n-dependent first zero of f(r).
+r=[0,R], where R is the n-dependent first zero of f(r). Although the equation
+is second order, it is singular at r=0, and therefore onyl requires a single
+outer boundary condition.
 
 Following [2], we rescale the equation by defining r=R*x:
     dx(dx(f)) + (2/x)*dx(f) + (R**2)*(f**n) = 0
     f(x=0) = 1
-    dx(f)(x=0) = 0
     f(x=1) = 0
 This is a nonlinear eigenvalue problem over the interval x=[0,1], with the
 additional boundary condition fixing the eigenvalue R.
@@ -54,11 +54,10 @@ domain = de.Domain([x_basis], np.float64)
 problem = de.NLBVP(domain, variables=['f', 'fx', 'R'], ncc_cutoff=ncc_cutoff)
 problem.meta[:]['x']['dirichlet'] = True
 problem.parameters['n'] = n
-problem.add_equation("x*dx(fx) + 2*fx = -x*(R**2)*(f**n)")
+problem.add_equation("x*dx(fx) + 2*fx = -x*(R**2)*(f**n)", tau=False)
 problem.add_equation("fx - dx(f) = 0")
 problem.add_equation("dx(R) = 0")
 problem.add_bc("left(f) = 1")
-problem.add_bc("left(fx) = 0")
 problem.add_bc("right(f) = 0")
 
 # Setup initial guess
