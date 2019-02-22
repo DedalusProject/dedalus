@@ -171,15 +171,15 @@ class Pencil:
         # Find applicable equations
         selected_eqs = [eq for eq in problem.eqs if eval(eq['raw_condition'], index_dict)]
         selected_bcs = [bc for bc in problem.bcs if eval(bc['raw_condition'], index_dict)]
-        ndiff = sum(eq['differential'] for eq in selected_eqs)
+        ntau = sum(eq['tau'] for eq in selected_eqs)
         # Check selections
         nvars = problem.nvars
         neqs = len(selected_eqs)
         nbcs = len(selected_bcs)
         if neqs != nvars:
             raise ValueError("Pencil {} has {} equations for {} variables.".format(index, neqs, nvars))
-        if nbcs != ndiff:
-            raise ValueError("Pencil {} has {} boundary conditions for {} differential equations.".format(index, nbcs, ndiff))
+        if nbcs != ntau:
+            raise ValueError("Pencil {} has {} boundary conditions for {} differential equations.".format(index, nbcs, ntau))
         Neqs = len(problem.eqs)
         Nbcs = len(problem.bcs)
 
@@ -197,18 +197,20 @@ class Pencil:
         Ra = Rd = Identity
         if dirichlet:
             Rd = basis.PrefixBoundary
-        if ndiff:
+        if ntau:
             P = basis.Precondition
             Fb = basis.FilterBoundaryRow
             Cb = basis.ConstantToBoundary
+            Rd_P = Rd*P
             Rd_Fb_P = Rd*Fb*P
             Rd_Cb = Rd*Cb
         if compound:
             Fm = basis.FilterMatchRows
             M = basis.Match
             Ra_Fm = Ra*Fm
-        if ndiff and compound:
+        if ntau and compound:
             Rd_Fm_Fb_P = Rd*Fm*Fb*P
+            Rd_Fm_P = Rd*Fm*P
 
         # Pencil matrices
         G_eq = sparse.csr_matrix((zsize*nvars, zsize*Neqs), dtype=zdtype)
@@ -229,7 +231,8 @@ class Pencil:
         for i, eq in enumerate(selected_eqs):
 
             differential = eq['differential']
-            if differential:
+            tau = eq['tau']
+            if tau:
                 bc = next(bc_iter)
 
             # Build RHS equation process matrix
@@ -238,9 +241,15 @@ class Pencil:
             elif (not differential) and compound:
                 Gi_eq = Ra_Fm
             elif differential and (not compound):
-                Gi_eq = Rd_Fb_P
+                if tau:
+                    Gi_eq = Rd_Fb_P
+                else:
+                    Gi_eq = Rd_P
             elif differential and compound:
-                Gi_eq = Rd_Fm_Fb_P
+                if tau:
+                    Gi_eq = Rd_Fm_Fb_P
+                else:
+                    Gi_eq = Rd_Fm_P
 
             # Kronecker into system matrix
             e = problem.eqs.index(eq)
@@ -248,7 +257,7 @@ class Pencil:
             G_eq = G_eq + kron(Gi_eq, δG_eq)
             δG_eq[i,e] = 0
 
-            if differential:
+            if tau:
                 # Build RHS BC process matrix
                 Gi_bc = Rd_Cb
                 # Kronecker into system matrix
@@ -265,7 +274,7 @@ class Pencil:
                     Ei = eq_expr.operator_dict(self.global_index, eq_vars, cacheid=cacheid, **problem.ncc_kw)
                 else:
                     Ei = defaultdict(int)
-                if differential:
+                if tau:
                     bc_expr, bc_vars = bc[name]
                     if bc_expr != 0:
                         Bi = bc_expr.operator_dict(self.global_index, bc_vars, cacheid=cacheid, **problem.ncc_kw)
@@ -281,7 +290,7 @@ class Pencil:
                     else:
                         Eij = Gi_eq*Eij
                     # Build BC terms
-                    if differential:
+                    if tau:
                         Bij = Bi[bc_vars[j]]
                         if Bij is 0:
                             Bij = None

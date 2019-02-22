@@ -113,10 +113,11 @@ class ProblemBase:
         self.entry_cutoff = entry_cutoff
         self.coupled = domain.bases[-1].coupled
 
-    def add_equation(self, equation, condition="True"):
+    def add_equation(self, equation, condition="True", tau=None):
         """Add equation to problem."""
         logger.debug("Parsing Eqn {}".format(len(self.eqs)))
         temp = {}
+        temp['tau'] = tau
         self._build_basic_dictionary(temp, equation, condition)
         self._build_object_forms(temp)
         self._check_eqn_conditions(temp)
@@ -129,6 +130,7 @@ class ProblemBase:
             raise SymbolicParsingError("Fully periodic domain doesn't support boundary conditions.")
         logger.debug("Parsing BC {}".format(len(self.bcs)))
         temp = {}
+        temp['tau'] = False
         self._build_basic_dictionary(temp, equation, condition)
         self._build_object_forms(temp)
         self._check_bc_conditions(temp)
@@ -202,6 +204,8 @@ class ProblemBase:
         coupled_diffs = [basis.Differentiate for basis in self.domain.bases if not basis.separable]
         order = self._require_first_order(temp, 'LHS', coupled_diffs)
         temp['differential'] = bool(order)
+        if temp['tau'] is None:
+            temp['tau'] = temp['differential']
 
     def _check_if_zero(self, expr):
         ''' Checks if the expression is equal to zero, within a tolerance '''
