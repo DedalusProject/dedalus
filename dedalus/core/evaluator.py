@@ -14,7 +14,7 @@ import numpy as np
 from mpi4py import MPI
 
 from .system import FieldSystem
-#from .operators import Operator, Cast
+from .operators import FieldCopy
 from .future import Future, FutureField
 from .field import Field
 from ..tools.array import reshape_vector
@@ -231,14 +231,16 @@ class Handler:
         if name is None:
             name = str(task)
 
-        # Create operator
-        # if isinstance(task, Operator):
-        #     op = task
+        # Create futurefield operator
         if isinstance(task, str):
             op = FutureField.parse(task, self.vars, self.domain)
         else:
             op = FutureField.cast(task, self.domain)
-            # op = Cast(task)
+
+        # Copy if operator appears in previous tasks
+        for prev_task in self.tasks:
+            if op is prev_task['operator']:
+                op = FieldCopy(op, op.domain)
 
         # Build task dictionary
         task = dict()
