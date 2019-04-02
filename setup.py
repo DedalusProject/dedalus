@@ -101,7 +101,8 @@ libraries = ['fftw3_mpi', 'fftw3', 'm']
 library_dirs = [get_lib('fftw'), get_lib('mpi')]
 
 # Warning supression
-extra_compile_args = ["-Wno-error=declaration-after-statement"]
+extra_compile_args = ["-DNPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION",
+                      "-Wno-unused-function"]
 
 # Optionally set static linking for FFTW
 extra_link_args = []

@@ -10,7 +10,7 @@ from mpi4py.libmpi cimport MPI_Comm as mpi_comm_t
 from libc.stddef cimport ptrdiff_t as p_t
 from cython.view cimport array as cy_array
 
-cimport fftw_c_api as cfftw
+from . cimport fftw_c_api as cfftw
 from ...tools.array import axslice
 
 fftw_flags = {'FFTW_ESTIMATE': cfftw.FFTW_ESTIMATE,
