@@ -9,8 +9,9 @@ def test_sphere_2vec():
     dist = Distributor(dim=2)
     phi, theta = SphericalCoords(['phi', 'theta'], dist, axis=0)
     m1 = Sphere((phi, theta), radius=1)
-    # b1 = SWSH(m1, shape=(32,32))
-    # f1 = Field(b1, tensor=[c1])
+    b1 = SWSH(m1, shape=(32,32))
+    f1 = Field(b1)
+    f2 = Field(b1, tensor=[[phi, theta], [phi, theta], [phi, theta]])
 
 def test_sphere_3vec():
     """3-vectors on sphere"""
