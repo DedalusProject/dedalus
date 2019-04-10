@@ -52,7 +52,7 @@ class CachedFunction:
         self.cache = OrderedDict()
         self.max_size = max_size
         # Retrieve arg names and default kw
-        argnames, _, _, defaults = inspect.getargspec(function)
+        argnames, _, _, defaults, _, _, _ = inspect.getfullargspec(function)
         self.argnames = argnames
         if defaults:
             self.defaults = dict(zip(reversed(argnames), reversed(defaults)))
@@ -102,7 +102,7 @@ class CachedClass(type):
         cls._cache = WeakValueDictionary()
 
         # Retrieve argument names and defaults, dropping 'self'
-        (_, *argnames), _, _, defaults = inspect.getargspec(cls.__init__)
+        (_, *argnames), _, _, defaults, _, _, _ = inspect.getfullargspec(cls.__init__)
         cls._argnames = argnames
         if defaults:
             cls._defaults = dict(zip(reversed(argnames), reversed(defaults)))
