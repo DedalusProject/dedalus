@@ -74,7 +74,7 @@ def apply_matrix(matrix, array, axis, **kw):
     out_sig[axis] = dim
     # Handle sparse matrices
     if sparse.isspmatrix(matrix):
-        matrix = matrix.todense()
+        matrix = matrix.toarray()
     return np.einsum(matrix, mat_sig, array, arr_sig, out_sig, **kw)
 
 
