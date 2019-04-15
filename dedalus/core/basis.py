@@ -264,7 +264,7 @@ class Chebyshev(ImplicitBasis):
     def default_meta(self):
         return {'constant': False,
                 'scale': None,
-                'dirichlet': False}
+                'dirichlet': True}
 
     @CachedMethod
     def grid(self, scale=1.):
