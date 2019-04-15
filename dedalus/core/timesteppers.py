@@ -3,7 +3,7 @@ ODE solvers for timestepping.
 
 """
 
-from collections import deque
+from collections import deque, OrderedDict
 import numpy as np
 from scipy.sparse import linalg
 
@@ -15,6 +15,13 @@ from ..tools.config import config
 STORE_LU = config['linear algebra'].getboolean('store_LU')
 PERMC_SPEC = config['linear algebra']['permc_spec']
 USE_UMFPACK = config['linear algebra'].getboolean('use_umfpack')
+
+
+# Track implemented schemes
+schemes = OrderedDict()
+def add_scheme(scheme):
+    schemes[scheme.__name__] = scheme
+    return scheme
 
 
 class MultistepIMEX:
@@ -168,6 +175,7 @@ class MultistepIMEX:
         solver.sim_time += dt
 
 
+@add_scheme
 class CNAB1(MultistepIMEX):
     """
     1st-order Crank-Nicolson Adams-Bashforth scheme [Wang 2008 eqn 2.5.3]
@@ -199,6 +207,7 @@ class CNAB1(MultistepIMEX):
         return a, b, c
 
 
+@add_scheme
 class SBDF1(MultistepIMEX):
     """
     1st-order semi-implicit BDF scheme [Wang 2008 eqn 2.6]
@@ -229,6 +238,7 @@ class SBDF1(MultistepIMEX):
         return a, b, c
 
 
+@add_scheme
 class CNAB2(MultistepIMEX):
     """
     2nd-order Crank-Nicolson Adams-Bashforth scheme [Wang 2008 eqn 2.9]
@@ -265,6 +275,7 @@ class CNAB2(MultistepIMEX):
         return a, b, c
 
 
+@add_scheme
 class MCNAB2(MultistepIMEX):
     """
     2nd-order modified Crank-Nicolson Adams-Bashforth scheme [Wang 2008 eqn 2.10]
@@ -302,6 +313,7 @@ class MCNAB2(MultistepIMEX):
         return a, b, c
 
 
+@add_scheme
 class SBDF2(MultistepIMEX):
     """
     2nd-order semi-implicit BDF scheme [Wang 2008 eqn 2.8]
@@ -338,6 +350,7 @@ class SBDF2(MultistepIMEX):
         return a, b, c
 
 
+@add_scheme
 class CNLF2(MultistepIMEX):
     """
     2nd-order Crank-Nicolson leap-frog scheme [Wang 2008 eqn 2.11]
@@ -375,6 +388,7 @@ class CNLF2(MultistepIMEX):
         return a, b, c
 
 
+@add_scheme
 class SBDF3(MultistepIMEX):
     """
     3rd-order semi-implicit BDF scheme [Wang 2008 eqn 2.14]
@@ -414,6 +428,7 @@ class SBDF3(MultistepIMEX):
         return a, b, c
 
 
+@add_scheme
 class SBDF4(MultistepIMEX):
     """
     4th-order semi-implicit BDF scheme [Wang 2008 eqn 2.15]
@@ -595,6 +610,7 @@ class RungeKuttaIMEX:
             solver.sim_time = sim_time_0 + k*c[i]
 
 
+@add_scheme
 class RK111(RungeKuttaIMEX):
     """1st-order 1-stage DIRK+ERK scheme [Ascher 1997 sec 2.1]"""
 
@@ -609,6 +625,7 @@ class RK111(RungeKuttaIMEX):
                   [0, 1]])
 
 
+@add_scheme
 class RK222(RungeKuttaIMEX):
     """2nd-order 2-stage DIRK+ERK scheme [Ascher 1997 sec 2.6]"""
 
@@ -628,6 +645,7 @@ class RK222(RungeKuttaIMEX):
                   [0, 1-γ, γ]])
 
 
+@add_scheme
 class RK443(RungeKuttaIMEX):
     """3rd-order 4-stage DIRK+ERK scheme [Ascher 1997 sec 2.8]"""
 
@@ -648,6 +666,7 @@ class RK443(RungeKuttaIMEX):
                   [0,  3/2, -3/2, 1/2, 1/2]])
 
 
+@add_scheme
 class RKSMR(RungeKuttaIMEX):
     """(3-ε)-order 3rd-stage DIRK+ERK scheme [Spalart 1991 Appendix]"""
 
