@@ -92,12 +92,14 @@ class EigenvalueSolver:
             cacheid = None
         pencil.build_matrices(self.problem, ['M', 'L'], cacheid=cacheid)
         # Solve as dense general eigenvalue problem
-        eig_output = eig(pencil.L.A, b=-pencil.M.A, **kw)
+        eig_output = eig(pencil.L_exp.A, b=-pencil.M_exp.A, **kw)
         # Unpack output
         if len(eig_output) == 2:
             self.eigenvalues, self.eigenvectors = eig_output
         elif len(eig_output) == 3:
             self.eigenvalues, self.left_eigenvectors, self.eigenvectors = eig_output
+        if pencil.dirichlet:
+            self.eigenvectors = pencil.JD * self.eigenvectors
         self.eigenvalue_pencil = pencil
 
     def solve_sparse(self, pencil, N, target, rebuild_coeffs=False, **kw):

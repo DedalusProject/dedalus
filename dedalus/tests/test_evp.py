@@ -1,5 +1,5 @@
 """
-Test 1D EVP with various dtypes.
+Test 1D EVP.
 """
 
 import pytest
@@ -17,8 +17,8 @@ def bench_wrapper(test):
     return wrapper
 
 
-@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-@pytest.mark.parametrize('Nx', [64])
+@pytest.mark.parametrize('dtype', [np.complex128])
+@pytest.mark.parametrize('Nx', [32])
 @pytest.mark.parametrize('x_basis_class', [de.Chebyshev])
 @bench_wrapper
 def test_wave_dense_evp(benchmark, x_basis_class, Nx, dtype):
@@ -49,7 +49,7 @@ def test_wave_dense_evp(benchmark, x_basis_class, Nx, dtype):
     assert np.allclose(solver.eigenvalues[:n_comp], exact_eigenvalues)
 
 
-@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('dtype', [np.complex128])
 @pytest.mark.parametrize('Nx', [128])
 @pytest.mark.parametrize('x_basis_class', [de.Chebyshev])
 @bench_wrapper
