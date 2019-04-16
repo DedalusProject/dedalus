@@ -15,6 +15,7 @@ from scipy.linalg import eig
 #from ..data.operators import parsable_ops
 from . import operators
 from . import pencil
+from . import timesteppers
 from .evaluator import Evaluator
 from .system import CoeffSystem, FieldSystem
 from .field import Scalar, Field
@@ -305,7 +306,7 @@ class InitialValueSolver:
     ----------
     problem : problem object
         Problem describing system of differential equations and constraints
-    timestepper : timestepper class
+    timestepper : timestepper class or name str
         Timestepper to use in evolving initial conditions
 
     Attributes
@@ -358,6 +359,9 @@ class InitialValueSolver:
         self.Fb = Fb_handler.build_system()
 
         # Initialize timestepper
+        # Dereference strings
+        if isinstance(timestepper, str):
+            timestepper = timesteppers.schemes[timestepper]
         self.timestepper = timestepper(problem.nvars, domain)
 
         # Attributes
@@ -505,7 +509,7 @@ class InitialValueSolver:
 
     def evaluate_handlers_now(self, dt, handlers=None):
         """Evaluate all handlers right now. Useful for writing final outputs.
-        
+
         by default, all handlers are evaluated; if a list is given
         only those will be evaluated.
 
@@ -514,7 +518,7 @@ class InitialValueSolver:
         end_wall_time = end_world_time - self.start_time
         if handlers is None:
             handlers = self.evaluator.handlers
-        
+
         self.evaluator.evaluate_handlers(handlers, timestep=dt, sim_time=self.sim_time, world_time=end_world_time, wall_time=end_wall_time, iteration=self.iteration)
 
 

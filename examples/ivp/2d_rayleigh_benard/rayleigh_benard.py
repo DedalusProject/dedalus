@@ -61,7 +61,7 @@ problem.add_bc("right(w) = 0", condition="(nx != 0)")
 problem.add_bc("right(p) = 0", condition="(nx == 0)")
 
 # Build solver
-solver = problem.build_solver(de.timesteppers.RK222)
+solver = problem.build_solver("RK222")
 logger.info('Solver built')
 
 # Initial conditions
