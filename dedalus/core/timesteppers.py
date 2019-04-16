@@ -8,13 +8,6 @@ import numpy as np
 from scipy.sparse import linalg
 
 from .system import CoeffSystem, FieldSystem
-from ..tools.config import config
-
-
-# Load config options
-STORE_LU = config['linear algebra'].getboolean('store_LU')
-PERMC_SPEC = config['linear algebra']['permc_spec']
-USE_UMFPACK = config['linear algebra'].getboolean('use_umfpack')
 
 
 # Track implemented schemes
@@ -128,9 +121,9 @@ class MultistepIMEX:
         a0 = a[0]
         b0 = b[0]
 
-        if STORE_LU:
-            update_LHS = ((a0, b0) != self._LHS_params)
-            self._LHS_params = (a0, b0)
+        # Check on updating LHS
+        update_LHS = ((a0, b0) != self._LHS_params)
+        self._LHS_params = (a0, b0)
 
         for p in pencils:
             x = state.get_pencil(p)
@@ -156,19 +149,12 @@ class MultistepIMEX:
         # Solve
         for p in pencils:
             pRHS = RHS.get_pencil(p)
-            if STORE_LU:
-                if update_LHS:
-                    np.copyto(p.LHS.data, a0*p.M_exp.data + b0*p.L_exp.data)
-                    p.LHS_LU = linalg.splu(p.LHS.tocsc(), permc_spec=PERMC_SPEC)
-                pLHS = p.LHS_LU
-                pX = pLHS.solve(pRHS)
-                if p.dirichlet:
-                    pX = p.JD * pX
-            else:
+            if update_LHS:
                 np.copyto(p.LHS.data, a0*p.M_exp.data + b0*p.L_exp.data)
-                pX = linalg.spsolve(p.LHS, pRHS, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
-                if p.dirichlet:
-                    pX = p.JD * pX
+                p.LHS_solver = solver.matsolver(p.LHS, solver)
+            pX = p.LHS_solver.solve(pRHS)
+            if p.dirichlet:
+                pX = p.JD * pX
             state.set_pencil(p, pX)
 
         # Update solver
@@ -552,16 +538,16 @@ class RungeKuttaIMEX:
         c = self.c
         k = dt
 
-        if STORE_LU:
-            update_LHS = (k != self._LHS_params)
-            self._LHS_params = k
+        # Check on updating LHS
+        update_LHS = (k != self._LHS_params)
+        self._LHS_params = k
 
         # Compute M.X(n,0)
         for p in pencils:
             pX0 = state.get_pencil(p)
             MX0.set_pencil(p, p.M*pX0)
-            if STORE_LU and update_LHS:
-                p.LHS_LU = [None] * (self.stages+1)
+            if update_LHS:
+                p.LHS_solvers = [None] * (self.stages+1)
 
         # Compute stages
         # (M + k Hii L).X(n,i) = M.X(n,0) + k Aij F(n,j) - k Hij L.X(n,j)
@@ -593,19 +579,12 @@ class RungeKuttaIMEX:
             for p in pencils:
                 pRHS = RHS.get_pencil(p)
                 # Construct LHS(n,i)
-                if STORE_LU:
-                    if update_LHS:
-                        np.copyto(p.LHS.data, p.M_exp.data + (k*H[i,i])*p.L_exp.data)
-                        p.LHS_LU[i] = linalg.splu(p.LHS.tocsc(), permc_spec=PERMC_SPEC)
-                    pLHS = p.LHS_LU[i]
-                    pX = pLHS.solve(pRHS)
-                    if p.dirichlet:
-                        pX = p.JD * pX
-                else:
+                if update_LHS:
                     np.copyto(p.LHS.data, p.M_exp.data + (k*H[i,i])*p.L_exp.data)
-                    pX = linalg.spsolve(p.LHS, pRHS, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
-                    if p.dirichlet:
-                        pX = p.JD * pX
+                    p.LHS_solvers[i] = solver.matsolver(p.LHS, solver)
+                pX = p.LHS_solvers[i].solve(pRHS)
+                if p.dirichlet:
+                    pX = p.JD * pX
                 state.set_pencil(p, pX)
             solver.sim_time = sim_time_0 + k*c[i]
 

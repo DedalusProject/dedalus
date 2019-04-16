@@ -19,13 +19,11 @@ from . import timesteppers
 from .evaluator import Evaluator
 from .system import CoeffSystem, FieldSystem
 from .field import Scalar, Field
+from ..libraries.matsolvers import matsolvers
 from ..tools.cache import CachedAttribute
 from ..tools.progress import log_progress
 from ..tools.sparse import scipy_sparse_eigs
-
 from ..tools.config import config
-PERMC_SPEC = config['linear algebra']['permc_spec']
-USE_UMFPACK = config['linear algebra'].getboolean('use_umfpack')
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -175,10 +173,13 @@ class LinearBoundaryValueSolver:
 
         self.problem = problem
         self.domain = domain = problem.domain
+        self.matsolver = matsolvers[config['linear algebra']['MATRIX_SOLVER'].lower()]
 
         # Build pencils and pencil matrices
         self.pencils = pencil.build_pencils(domain)
         pencil.build_matrices(self.pencils, problem, ['L'])
+        for p in self.pencils:
+            p.L_exp_solver = self.matsolver(p.L_exp, self)
 
         # Build systems
         namespace = problem.namespace
@@ -207,17 +208,18 @@ class LinearBoundaryValueSolver:
         # Rebuild matrices
         if rebuild_coeffs:
             pencil.build_matrices(self.pencils, self.problem, ['L'])
+            for p in self.pencils:
+                p.L_exp_solver = self.matsolver(p.L_exp, self)
 
         # Solve system for each pencil, updating state
         for p in self.pencils:
             pFe = self.Fe.get_pencil(p)
             pFb = self.Fb.get_pencil(p)
-            A = p.L_exp
             if p.G_bc is None:
                 b = p.G_eq * pFe
             else:
                 b = p.G_eq * pFe + p.G_bc * pFb
-            x = linalg.spsolve(A, b, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
+            x = p.L_exp_solver.solve(b)
             if p.dirichlet:
                 x = p.JD * x
             self.state.set_pencil(p, x)
@@ -246,6 +248,7 @@ class NonlinearBoundaryValueSolver:
 
         self.problem = problem
         self.domain = domain = problem.domain
+        self.matsolver = matsolvers[config['linear algebra']['MATRIX_SOLVER'].lower()]
         self.iteration = 0
 
         # Build pencils and pencil matrices
@@ -288,7 +291,7 @@ class NonlinearBoundaryValueSolver:
             pFb = self.Fb.get_pencil(p)
             A = p.L_exp - p.dF_exp
             b = p.G_eq * pFe + p.G_bc * pFb
-            x = linalg.spsolve(A, b, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
+            x = self.matsolver(A, self).solve(b)
             if p.dirichlet:
                 x = p.JD * x
             self.perturbations.set_pencil(p, x)
@@ -336,6 +339,7 @@ class InitialValueSolver:
 
         self.problem = problem
         self.domain = domain = problem.domain
+        self.matsolver = matsolvers[config['linear algebra']['MATRIX_FACTORIZER'].lower()]
         self._float_array = np.zeros(1, dtype=float)
         self.start_time = self.get_world_time()
 
