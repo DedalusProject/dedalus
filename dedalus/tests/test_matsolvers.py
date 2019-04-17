@@ -45,10 +45,12 @@ def block_solver(Nx, Ny, dtype):
     x, y = domain.grids()
     F['g'] = -2 * np.sin(x) * np.sin(y)
     # Problem
-    problem = de.LBVP(domain, variables=['u','uy'])
+    problem = de.LBVP(domain, variables=['u','ux','uy','Lu'])
     problem.parameters['F'] = F
+    problem.add_equation("ux - dx(u) = 0")
     problem.add_equation("uy - dy(u) = 0")
-    problem.add_equation("dx(dx(u)) + dy(uy) = F", condition="(nx != 0) or (ny != 0)")
+    problem.add_equation("Lu - dx(ux) - dy(uy) = 0")
+    problem.add_equation("Lu = F", condition="(nx != 0) or (ny != 0)")
     problem.add_equation("u = 0", condition="(nx == 0) and (ny == 0)")
     # Solver
     solver = problem.build_solver()
@@ -65,10 +67,12 @@ def coupled_solver(Nx, Ny, dtype):
     x, y = domain.grids()
     F['g'] = -2 * np.sin(x) * np.sin(y)
     # Problem
-    problem = de.LBVP(domain, variables=['u','uy'])
+    problem = de.LBVP(domain, variables=['u','ux','uy','Lu'])
     problem.parameters['F'] = F
+    problem.add_equation("ux - dx(u) = 0")
     problem.add_equation("uy - dy(u) = 0")
-    problem.add_equation("dx(dx(u)) + dy(uy) = F")
+    problem.add_equation("Lu - dx(ux) - dy(uy) = 0")
+    problem.add_equation("Lu = F")
     problem.add_bc("left(u) - right(u) = 0")
     problem.add_bc("left(uy) - right(uy) = 0", condition="nx != 0")
     problem.add_bc("left(u) = 0", condition="nx == 0")
@@ -77,7 +81,7 @@ def coupled_solver(Nx, Ny, dtype):
     return solver
 
 
-solvers = {'diagonal': diagonal_solver(8, 256, np.float64),
+solvers = {'diagonal': diagonal_solver(8, 512, np.float64),
            'block': block_solver(8, 128, np.float64),
            'coupled': coupled_solver(8, 128, np.float64)}
 
@@ -96,7 +100,10 @@ def test_matsolver_setup_bench(benchmark, solver, matsolver):
             pytest.skip("Matsolver requirements not present.")
         except ValueError:
             pytest.xfail("Invalid input for matsolver.")
-    benchmark.pedantic(setup, rounds=2, iterations=2)
+    if matsolver in [de.matsolvers.SparseInverse, de.matsolvers.DenseInverse]:
+        benchmark.pedantic(setup, rounds=1, iterations=1)
+    else:
+        benchmark.pedantic(setup, rounds=10, iterations=10)
 
 
 @pytest.mark.parametrize('matsolver', de.matsolvers.matsolvers.values())
