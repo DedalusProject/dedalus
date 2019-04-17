@@ -184,6 +184,7 @@ class BlockInverse(BandedSolver):
     """Block inversion solve."""
 
     def __init__(self, matrix, solver):
+        from dedalus.tools.sparse import same_dense_block_diag
         # Check separability
         if solver.domain.bases[-1].coupled:
             raise ValueError("Block solver requires uncoupled problems.")
@@ -197,8 +198,8 @@ class BlockInverse(BandedSolver):
             # Covert to BSR to extract blocks
             bsr_matrix = matrix.tobsr(blocksize=(b, b))
             # Compute block inverses
-            inv_blocks = [sla.inv(block) for block in bsr_matrix.data]
-            self.matrix_inverse = sp.block_diag(inv_blocks, format='csr')
+            inv_blocks = np.linalg.inv(bsr_matrix.data)
+            self.matrix_inverse = same_dense_block_diag(list(inv_blocks), format='csr')
             self.solve = self._solve_block
 
     def _solve_block(self, vector):
@@ -206,5 +207,4 @@ class BlockInverse(BandedSolver):
 
     def _solve_diag(self, vector):
         return self.matrix_inv_diagonal * vector
-
 
