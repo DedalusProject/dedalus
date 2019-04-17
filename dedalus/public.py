@@ -15,4 +15,5 @@ from .core.problems import LinearBoundaryValueProblem, LBVP
 from .core.problems import NonlinearBoundaryValueProblem, NLBVP
 from .core.problems import EigenvalueProblem, EVP
 from .core import timesteppers
+from .libraries import matsolvers
 

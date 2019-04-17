@@ -158,28 +158,31 @@ class LinearBoundaryValueSolver:
     Parameters
     ----------
     problem : problem object
-        Problem describing system of differential equations and constraints
+        Problem describing system of differential equations and constraints.
+    matsolver : matsolver class or name, optional
+        Matrix solver routine (default set by config file).
 
     Attributes
     ----------
     state : system object
-        System containing solution fields (after solve method is called)
+        System containing solution fields (after solve method is called).
 
     """
 
-    def __init__(self, problem):
+    def __init__(self, problem, matsolver=None):
 
         logger.debug('Beginning LBVP instantiation')
 
+        if matsolver is None:
+            matsolver = matsolvers[config['linear algebra']['MATRIX_SOLVER'].lower()]
         self.problem = problem
         self.domain = domain = problem.domain
-        self.matsolver = matsolvers[config['linear algebra']['MATRIX_SOLVER'].lower()]
+        self.matsolver = matsolver
 
         # Build pencils and pencil matrices
         self.pencils = pencil.build_pencils(domain)
         pencil.build_matrices(self.pencils, problem, ['L'])
-        for p in self.pencils:
-            p.L_exp_solver = self.matsolver(p.L_exp, self)
+        self._setup_pencil_matsolvers()
 
         # Build systems
         namespace = problem.namespace
@@ -199,6 +202,12 @@ class LinearBoundaryValueSolver:
 
         logger.debug('Finished LBVP instantiation')
 
+    def _setup_pencil_matsolvers(self):
+        """Setup matsolvers for each pencil LHS."""
+        self.pencil_matsolvers = {}
+        for p in self.pencils:
+            self.pencil_matsolvers[p] = self.matsolver(p.L_exp, self)
+
     def solve(self, rebuild_coeffs=False):
         """Solve BVP."""
 
@@ -208,18 +217,19 @@ class LinearBoundaryValueSolver:
         # Rebuild matrices
         if rebuild_coeffs:
             pencil.build_matrices(self.pencils, self.problem, ['L'])
-            for p in self.pencils:
-                p.L_exp_solver = self.matsolver(p.L_exp, self)
+            self._setup_pencil_matsolvers()
 
         # Solve system for each pencil, updating state
         for p in self.pencils:
+            # Build RHS
             pFe = self.Fe.get_pencil(p)
             pFb = self.Fb.get_pencil(p)
             if p.G_bc is None:
                 b = p.G_eq * pFe
             else:
                 b = p.G_eq * pFe + p.G_bc * pFb
-            x = p.L_exp_solver.solve(b)
+            # Solve LHS
+            x = self.pencil_matsolvers[p].solve(b)
             if p.dirichlet:
                 x = p.JD * x
             self.state.set_pencil(p, x)
@@ -234,6 +244,8 @@ class NonlinearBoundaryValueSolver:
     ----------
     problem : problem object
         Problem describing system of differential equations and constraints
+    matsolver : matsolver class or name, optional
+        Matrix solver routine (default set by config file).
 
     Attributes
     ----------
@@ -242,13 +254,15 @@ class NonlinearBoundaryValueSolver:
 
     """
 
-    def __init__(self, problem):
+    def __init__(self, problem, matsolver=None):
 
         logger.debug('Beginning NLBVP instantiation')
 
+        if matsolver is None:
+            matsolver = matsolvers[config['linear algebra']['MATRIX_SOLVER'].lower()]
         self.problem = problem
         self.domain = domain = problem.domain
-        self.matsolver = matsolvers[config['linear algebra']['MATRIX_SOLVER'].lower()]
+        self.matsolver = matsolver
         self.iteration = 0
 
         # Build pencils and pencil matrices
@@ -311,8 +325,10 @@ class InitialValueSolver:
     ----------
     problem : problem object
         Problem describing system of differential equations and constraints
-    timestepper : timestepper class or name str
+    timestepper : timestepper class or name
         Timestepper to use in evolving initial conditions
+    matsolver : matsolver class or name, optional
+        Matrix solver routine (default set by config file).
 
     Attributes
     ----------
@@ -333,13 +349,15 @@ class InitialValueSolver:
 
     """
 
-    def __init__(self, problem, timestepper):
+    def __init__(self, problem, timestepper, matsolver=None):
 
         logger.debug('Beginning IVP instantiation')
 
+        if matsolver is None:
+            matsolver = matsolvers[config['linear algebra']['MATRIX_FACTORIZER'].lower()]
         self.problem = problem
         self.domain = domain = problem.domain
-        self.matsolver = matsolvers[config['linear algebra']['MATRIX_FACTORIZER'].lower()]
+        self.matsolver = matsolver
         self._float_array = np.zeros(1, dtype=float)
         self.start_time = self.get_world_time()
 
