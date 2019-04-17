@@ -15,3 +15,6 @@ def bench():
     """Run benchmarks."""
     pytest.main(['--benchmark-only', str(root)])
 
+def cov():
+    """Print test coverage."""
+    pytest.main(['--cov=dedalus.core', '--benchmark-disable', str(root)])
