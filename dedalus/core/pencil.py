@@ -13,6 +13,7 @@ import uuid
 from ..tools.array import zeros_with_pattern
 from ..tools.array import expand_pattern
 from ..tools.progress import log_progress
+from ..tools.sparse import same_dense_block_diag
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -97,7 +98,7 @@ class Pencil:
 
         for name in matrices:
             blocks = matrices[name]
-            matrix = sparse.block_diag(blocks, format='csr', dtype=dtype)
+            matrix = same_dense_block_diag(blocks, format='csr', dtype=dtype)
             matrix.eliminate_zeros()
             matrices[name] = matrix
 
