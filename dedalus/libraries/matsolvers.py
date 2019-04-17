@@ -58,6 +58,7 @@ class UmfpackSpsolve(SparseSolver):
     """UMFPACK spsolve."""
 
     def __init__(self, matrix, solver=None):
+        from scikits import umfpack
         self.matrix = matrix.copy()
 
     def solve(self, vector):
@@ -91,7 +92,8 @@ class UmfpackFactorized(SparseSolver):
     """UMFPACK LU factorized solve."""
 
     def __init__(self, matrix, solver=None):
-        self.LU = spla.factorized(matrix)
+        from scikits import umfpack
+        self.LU = spla.factorized(matrix.tocsc())
 
     def solve(self, vector):
         return self.LU(vector)
@@ -160,7 +162,7 @@ class SparseInverse(SparseSolver):
     """Sparse inversion solve."""
 
     def __init__(self, matrix, solver=None):
-        self.matrix_inverse = spla.inv(matrix)
+        self.matrix_inverse = spla.inv(matrix.tocsc())
 
     def solve(self, vector):
         return self.matrix_inverse @ vector
@@ -186,14 +188,23 @@ class BlockInverse(BandedSolver):
         if solver.domain.bases[-1].coupled:
             raise ValueError("Block solver requires uncoupled problems.")
         block_size = b = len(solver.problem.variables)
-        n_blocks = matrix.shape[0] // block_size
-        # Covert to BSR to extract blocks
-        bsr_matrix = matrix.tobsr(blocksize=(b, b))
-        # Compute block inverses
-        inv_blocks = [sla.inv(block) for block in bsr_matrix.data]
-        self.matrix_inverse = sp.block_diag(inv_blocks, format='csr')
+        # Produce inverse
+        if block_size == 1:
+            # Special-case diagonal matrices
+            self.matrix_inv_diagonal = 1 / matrix.todia().data[0]
+            self.solve = self._solve_diag
+        else:
+            # Covert to BSR to extract blocks
+            bsr_matrix = matrix.tobsr(blocksize=(b, b))
+            # Compute block inverses
+            inv_blocks = [sla.inv(block) for block in bsr_matrix.data]
+            self.matrix_inverse = sp.block_diag(inv_blocks, format='csr')
+            self.solve = self._solve_block
 
-    def solve(self, vector):
+    def _solve_block(self, vector):
         return self.matrix_inverse @ vector
+
+    def _solve_diag(self, vector):
+        return self.matrix_inv_diagonal * vector
 
 
