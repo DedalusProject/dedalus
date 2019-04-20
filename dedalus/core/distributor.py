@@ -8,6 +8,7 @@ from mpi4py import MPI
 import numpy as np
 
 from ..libraries.fftw import fftw_wrappers as fftw
+from ..tools.array import axslice
 from ..tools.cache import CachedMethod
 from ..tools.config import config
 from ..tools.general import rev_enumerate, unify
@@ -288,22 +289,34 @@ class Transform:
 
     def increment_group(self, fields):
         fields = list(fields)
+        # Shortcut constant transforms
+        const_fields = [f for f in fields if f.meta[self.axis]['constant']]
+        for field in const_fields:
+            self.increment_single(field)
+        # Simultaneously transform nonconstant fields
+        fields = [f for f in fields if not f.meta[self.axis]['constant']]
         scales = fields[0].scales
         cdata, gdata = self.group_data(len(fields), scales)
         for i, field in enumerate(fields):
             np.copyto(cdata[i], field.data)
-        self.basis.backward(cdata, gdata, self.axis+1, fields[0].meta[self.axis], fields[0].scales[self.axis])
+        self.basis.backward(cdata, gdata, self.axis+1, fields[0].meta[self.axis], scales[self.axis])
         for i, field in enumerate(fields):
             field.layout = self.layout1
             np.copyto(field.data, gdata[i])
 
     def decrement_group(self, fields):
         fields = list(fields)
+        # Shortcut constant transforms
+        const_fields = [f for f in fields if f.meta[self.axis]['constant']]
+        for field in const_fields:
+            self.decrement_single(field)
+        # Simultaneously transform nonconstant fields
+        fields = [f for f in fields if not f.meta[self.axis]['constant']]
         scales = fields[0].scales
         cdata, gdata = self.group_data(len(fields), scales)
         for i, field in enumerate(fields):
             np.copyto(gdata[i], field.data)
-        self.basis.forward(gdata, cdata, self.axis+1, fields[0].meta[self.axis], fields[0].scales[self.axis])
+        self.basis.forward(gdata, cdata, self.axis+1, fields[0].meta[self.axis], scales[self.axis])
         for i, field in enumerate(fields):
             field.layout = self.layout0
             np.copyto(field.data, cdata[i])
@@ -316,7 +329,11 @@ class Transform:
         gdata = field.data
         # Transform if there's local data
         if np.prod(cdata.shape):
-            self.basis.backward(cdata, gdata, self.axis, field.meta[self.axis], field.scales[self.axis])
+            # Shortcut constant transforms
+            if field.meta[self.axis]['constant']:
+                gdata[:] = cdata[axslice(self.axis, 0, 1)]
+            else:
+                self.basis.backward(cdata, gdata, self.axis, field.meta[self.axis], field.scales[self.axis])
 
     def decrement_single(self, field):
         """Forward transform."""
@@ -326,7 +343,12 @@ class Transform:
         cdata = field.data
         # Transform if there's local data
         if np.prod(gdata.shape):
-            self.basis.forward(gdata, cdata, self.axis, field.meta[self.axis], field.scales[self.axis])
+            # Shortcut constant transforms
+            if field.meta[self.axis]['constant']:
+                cdata[axslice(self.axis, 0, 1)] = gdata[axslice(self.axis, 0, 1)]
+                cdata[axslice(self.axis, 1, None)] = 0
+            else:
+                self.basis.forward(gdata, cdata, self.axis, field.meta[self.axis], field.scales[self.axis])
 
     def increment(self, fields):
         """Backward transform."""
