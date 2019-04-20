@@ -198,20 +198,23 @@ class Pencil:
         Ra = Rd = Identity
         if dirichlet:
             Rd = basis.PrefixBoundary
+        P = basis.Precondition
+        Rd_P = Rd*P
         if ntau:
-            P = basis.Precondition
-            Fb = basis.FilterBoundaryRow
             Cb = basis.ConstantToBoundary
-            Rd_P = Rd*P
-            Rd_Fb_P = Rd*Fb*P
             Rd_Cb = Rd*Cb
+        if ntau and not compound:
+            PFT = basis.PreconditionFilterTau
+            Rd_Fb_P = Rd*PFT
         if compound:
-            Fm = basis.FilterMatchRows
+            FM = basis.FilterMatch
             M = basis.Match
-            Ra_Fm = Ra*Fm
+            Ra_Fm = Ra*FM
         if ntau and compound:
-            Rd_Fm_Fb_P = Rd*Fm*Fb*P
-            Rd_Fm_P = Rd*Fm*P
+            PFMT = basis.PreconditionFilterMatchTau
+            PFM = basis.PreconditionFilterMatch
+            Rd_Fm_Fb_P = Rd*PFMT
+            Rd_Fm_P = Rd*PFM
 
         # Pencil matrices
         G_eq = sparse.csr_matrix((zsize*nvars, zsize*Neqs), dtype=zdtype)

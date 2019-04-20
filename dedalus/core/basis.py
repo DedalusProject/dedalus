@@ -204,6 +204,14 @@ class ImplicitBasis(Basis):
         return Cb.tocsr()
 
     @CachedAttribute
+    def PreconditionFilterTau(self):
+        """Precondition and filter tau row."""
+        if self.tau_after_pre:
+            return self.FilterBoundaryRow * self.Precondition
+        else:
+            return self.Precondition * self.FilterBoundaryRow
+
+    @CachedAttribute
     def PrefixBoundary(self):
         """Matrix moving boundary row to first row."""
         cols = np.roll(np.arange(self.coeff_size), -self.boundary_row)
@@ -233,7 +241,7 @@ class Chebyshev(ImplicitBasis):
     separable = False
     coupled = True
 
-    def __init__(self, name, base_grid_size, interval=(-1,1), dealias=1):
+    def __init__(self, name, base_grid_size, interval=(-1,1), dealias=1, tau_after_pre=True):
 
         # Coordinate transformation
         # Native interval: (-1, 1)
@@ -249,6 +257,7 @@ class Chebyshev(ImplicitBasis):
         self.base_grid_size = base_grid_size
         self.interval = tuple(interval)
         self.dealias = dealias
+        self.tau_after_pre = tau_after_pre
         self.library = DEFAULT_LIBRARY
         self.operators = (self.Integrate,
                           self.Interpolate,
@@ -1494,15 +1503,29 @@ class Compound(ImplicitBasis):
         return n_terms, max_term, matrix
 
     @CachedAttribute
-    def FilterMatchRows(self):
+    def FilterMatch(self):
         """Matrix filtering match rows."""
-        Fm = sparse.identity(self.coeff_size, dtype=self.coeff_dtype, format='lil')
-        for i in range(len(self.subbases) - 1):
-            basis1 = self.subbases[i]
-            s1 = self.coeff_start(i)
-            r = s1 + basis1.boundary_row
-            Fm[r, r] = 0
-        return Fm.tocsr()
+        # Don't filter tau on last subbasis
+        blocks = [b.FilterBoundaryRow for b in self.subbases]
+        blocks[-1] = sparse.identity(blocks[-1].shape[0])
+        FM = sparse.block_diag(blocks)
+        return FM.tocsr()
+
+    @CachedAttribute
+    def PreconditionFilterMatchTau(self):
+        """Precondition and filter match and tau rows."""
+        blocks = [b.PreconditionFilterTau for b in self.subbases]
+        PFMT = sparse.block_diag(blocks)
+        return PFMT.tocsr()
+
+    @CachedAttribute
+    def PreconditionFilterMatch(self):
+        """Precondition and filter match rows."""
+        # Don't filter tau on last subbasis
+        blocks = [b.PreconditionFilterTau for b in self.subbases]
+        blocks[-1] = self.subbases[-1].Precondition
+        PFM = sparse.block_diag(blocks)
+        return PFM.tocsr()
 
     @CachedAttribute
     def Match(self):
@@ -1524,3 +1547,4 @@ class Compound(ImplicitBasis):
     @CachedAttribute
     def PrefixBoundary(self):
         return sparse.identity(self.coeff_size, dtype=self.coeff_dtype).tocsr()
+
