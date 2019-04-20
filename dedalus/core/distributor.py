@@ -288,22 +288,22 @@ class Transform:
 
     def increment_group(self, fields):
         fields = list(fields)
-        scales = fields[0].meta[:]['scale']
+        scales = fields[0].scales
         cdata, gdata = self.group_data(len(fields), scales)
         for i, field in enumerate(fields):
             np.copyto(cdata[i], field.data)
-        self.basis.backward(cdata, gdata, self.axis+1, fields[0].meta[self.axis])
+        self.basis.backward(cdata, gdata, self.axis+1, fields[0].meta[self.axis], fields[0].scales[self.axis])
         for i, field in enumerate(fields):
             field.layout = self.layout1
             np.copyto(field.data, gdata[i])
 
     def decrement_group(self, fields):
         fields = list(fields)
-        scales = fields[0].meta[:]['scale']
+        scales = fields[0].scales
         cdata, gdata = self.group_data(len(fields), scales)
         for i, field in enumerate(fields):
             np.copyto(gdata[i], field.data)
-        self.basis.forward(gdata, cdata, self.axis+1, fields[0].meta[self.axis])
+        self.basis.forward(gdata, cdata, self.axis+1, fields[0].meta[self.axis], fields[0].scales[self.axis])
         for i, field in enumerate(fields):
             field.layout = self.layout0
             np.copyto(field.data, cdata[i])
@@ -316,7 +316,7 @@ class Transform:
         gdata = field.data
         # Transform if there's local data
         if np.prod(cdata.shape):
-            self.basis.backward(cdata, gdata, self.axis, field.meta[self.axis])
+            self.basis.backward(cdata, gdata, self.axis, field.meta[self.axis], field.scales[self.axis])
 
     def decrement_single(self, field):
         """Forward transform."""
@@ -326,7 +326,7 @@ class Transform:
         cdata = field.data
         # Transform if there's local data
         if np.prod(gdata.shape):
-            self.basis.forward(gdata, cdata, self.axis, field.meta[self.axis])
+            self.basis.forward(gdata, cdata, self.axis, field.meta[self.axis], field.scales[self.axis])
 
     def increment(self, fields):
         """Backward transform."""
@@ -429,7 +429,7 @@ class Transpose:
 
     def increment_single(self, field):
         """Transpose field from layout0 to layout1."""
-        scales = field.meta[:]['scale']
+        scales = field.scales
         plan = self._single_plan(scales)
         if plan:
             # Setup views of data in each layout
@@ -444,7 +444,7 @@ class Transpose:
 
     def decrement_single(self, field):
         """Transpose field from layout1 to layout0."""
-        scales = field.meta[:]['scale']
+        scales = field.scales
         plan = self._single_plan(scales)
         if plan:
             # Setup views of data in each layout
@@ -459,7 +459,7 @@ class Transpose:
 
     def increment_group(self, *fields):
         """Transpose group from layout0 to layout1."""
-        scales = unify(field.meta[:]['scale'] for field in fields)
+        scales = unify(field.scales for field in fields)
         plan, buffer0, buffer1 = self._group_plan(len(fields), scales)
         if plan:
             # Copy fields to group buffer
@@ -478,7 +478,7 @@ class Transpose:
 
     def decrement_group(self, *fields):
         """Transpose group from layout1 to layout0."""
-        scales = unify(field.meta[:]['scale'] for field in fields)
+        scales = unify(field.scales for field in fields)
         plan, buffer0, buffer1 = self._group_plan(len(fields), scales)
         if plan:
             # Copy fields to group buffer

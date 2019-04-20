@@ -155,7 +155,7 @@ class Future(Operand):
 
         # Copy metadata
         out.meta = self.meta
-        out.meta[:]['scale'] = None
+        out._scales = (None,) * self.domain.dim
         out.set_scales(self.domain.dealias, keep_data=False)
 
         # Perform operation

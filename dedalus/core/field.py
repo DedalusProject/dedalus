@@ -206,7 +206,7 @@ class Scalar(Data):
                 parity = 0
             else:
                 parity = 1
-            return {'constant': True, 'parity': parity, 'scale': None}
+            return {'constant': True, 'parity': parity}
 
     def __init__(self, value=0, name=None, domain=None):
         from .domain import EmptyDomain
@@ -247,9 +247,11 @@ class Array(Data):
 
         self.data = np.zeros(shape=layout.local_shape(scales),
                              dtype=layout.dtype)
+        self._scales = scales
 
-        for i in range(domain.dim):
-            self.meta[i]['scale'] = scales[i]
+    @property
+    def scales(self):
+        return self._scales
 
     def from_global_vector(self, data, axis):
         # Set metadata
@@ -262,7 +264,7 @@ class Array(Data):
             if 'parity' in axmeta:
                 axmeta['parity'] = 1
         # Save local slice
-        scales = self.meta[:]['scale']
+        scales = self.scales
         local_slice =  self.domain.dist.grid_layout.slices(scales)[axis]
         local_data = data[local_slice]
         local_data = reshape_vector(data[local_slice], dim=self.domain.dim, axis=axis)
@@ -326,6 +328,7 @@ class Field(Data):
         # Set layout and scales to build buffer and data
         self.buffer = np.zeros((0,), dtype=np.float64)
         self._layout = domain.dist.coeff_layout
+        self._scales = (None,) * domain.dim
         self.set_scales(scales, keep_data=False)
 
     @property
@@ -336,10 +339,13 @@ class Field(Data):
     def layout(self, layout):
         self._layout = layout
         # Update data view
-        scales = self.meta[:]['scale']
-        self.data = np.ndarray(shape=layout.local_shape(scales),
+        self.data = np.ndarray(shape=layout.local_shape(self.scales),
                                dtype=layout.dtype,
                                buffer=self.buffer)
+
+    @property
+    def scales(self):
+        return self._scales
 
     def __getitem__(self, layout):
         """Return data viewed in specified layout."""
@@ -367,7 +373,7 @@ class Field(Data):
         """Set new transform scales."""
 
         new_scales = self.domain.remedy_scales(scales)
-        old_scales = self.meta[:]['scale']
+        old_scales = self.scales
         if new_scales == old_scales:
             return
 
@@ -376,15 +382,18 @@ class Field(Data):
             for axis in reversed(range(self.domain.dim)):
                 if not self.layout.grid_space[axis]:
                     break
-                if old_scales[axis] != new_scales[axis]:
-                    self.require_coeff_space(axis)
-                    break
+                try:
+                    if (old_scales[axis] != new_scales[axis]):
+                        self.require_coeff_space(axis)
+                        break
+                except:
+                    print(old_scales)
+                    raise
             # Reference data
             old_data = self.data
 
         # Set metadata
-        for axis, scale in enumerate(new_scales):
-            self.meta[axis]['scale'] = scale
+        self._scales = new_scales
         # Build new buffer
         self.create_buffer(new_scales)
         # Reset layout to build new data view
