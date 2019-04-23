@@ -1145,6 +1145,14 @@ class SinCos(TransverseBasis):
             name = 'integ_{}'.format(self.name)
             basis = self
 
+            def meta_parity(self, axis):
+                if axis == self.axis:
+                    # Integral is a scalar (even parity)
+                    return 1
+                else:
+                    # Preserve parity
+                    return self.args[0].meta[axis]['parity']
+
             def explicit_form(self, input, output, axis):
                 dim = self.domain.dim
                 weights = reshape_vector(self._integ_vector(), dim=dim, axis=axis)
@@ -1174,6 +1182,14 @@ class SinCos(TransverseBasis):
         class InterpolateSinCos(operators.Interpolate, operators.Coupled):
             name = 'interp_{}'.format(self.name)
             basis = self
+
+            def meta_parity(self, axis):
+                if axis == self.axis:
+                    # Interpolation is a scalar (even parity)
+                    return 1
+                else:
+                    # Preserve parity
+                    return self.args[0].meta[axis]['parity']
 
             def explicit_form(self, input, output, axis):
                 dim = self.domain.dim
@@ -1210,6 +1226,15 @@ class SinCos(TransverseBasis):
             name = 'd' + self.name
             basis = self
 
+            def meta_parity(self, axis):
+                parity0 = self.args[0].meta[axis]['parity']
+                if axis == self.axis:
+                    # Flip parity
+                    return (-1) * parity0
+                else:
+                    # Preserve parity
+                    return parity0
+
             @CachedMethod
             def vector_form(self):
                 """Sinusoid differentiation."""
@@ -1227,6 +1252,15 @@ class SinCos(TransverseBasis):
         class HilbertTransformSinCos(operators.HilbertTransform, operators.Separable):
             name = 'H' + self.name
             basis = self
+
+            def meta_parity(self, axis):
+                parity0 = self.args[0].meta[axis]['parity']
+                if axis == self.axis:
+                    # Flip parity
+                    return (-1) * parity0
+                else:
+                    # Preserve parity
+                    return parity0
 
             @CachedMethod
             def vector_form(self):

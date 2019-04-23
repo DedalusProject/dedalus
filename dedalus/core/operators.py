@@ -9,7 +9,9 @@ import numpy as np
 
 from .field import Operand, Data, Scalar, Array, Field
 from .future import Future, FutureScalar, FutureArray, FutureField
+from .metadata import Metadata
 from ..tools.array import reshape_vector, apply_matrix, add_sparse
+from ..tools.cache import CachedAttribute
 from ..tools.dispatch import MultiClass
 from ..tools.exceptions import NonlinearOperatorError
 from ..tools.exceptions import SymbolicParsingError
@@ -1068,7 +1070,24 @@ class TimeDerivative(LinearOperator, FutureField):
         raise ValueError("Cannot evaluate time derivative operator.")
 
 
-class Separable(LinearOperator, FutureField):
+class LinearBasisOperator(LinearOperator):
+
+    @CachedAttribute
+    def meta(self):
+        meta = Metadata(self.domain)
+        for axis in range(self.domain.dim):
+            if axis == self.axis:
+                # Call operator method
+                for key in meta[axis]:
+                    meta[axis][key] = getattr(self, 'meta_%s' %key)(axis)
+            else:
+                # Copy argument metadata
+                for key in meta[axis]:
+                    meta[axis][key] = self.args[0].meta[axis][key]
+        return meta
+
+
+class Separable(LinearBasisOperator, FutureField):
 
     def operator_form(self, index):
         return self.vector_form()[index[self.axis]]
@@ -1109,7 +1128,7 @@ class Separable(LinearOperator, FutureField):
         raise NotImplementedError()
 
 
-class Coupled(LinearOperator, FutureField):
+class Coupled(LinearBasisOperator, FutureField):
 
     def operator_form(self, index):
         return self.matrix_form()
@@ -1157,7 +1176,7 @@ class Coupled(LinearOperator, FutureField):
 
 
 @parseable
-class Integrate(LinearOperator):
+class Integrate(LinearBasisOperator):
 
     name = 'integ'
 
@@ -1187,14 +1206,6 @@ class Integrate(LinearOperator):
             # Preserve constancy
             return self.args[0].meta[axis]['constant']
 
-    def meta_parity(self, axis):
-        if axis == self.axis:
-            # Integral is a scalar (even parity)
-            return 1
-        else:
-            # Preserve parity
-            return self.args[0].meta[axis]['parity']
-
 
 @parseable
 @addname('integ')
@@ -1213,7 +1224,7 @@ def integrate(arg0, *bases, out=None):
 
 
 @parseable
-class Interpolate(LinearOperator):
+class Interpolate(LinearBasisOperator):
 
     name = 'interp'
 
@@ -1258,13 +1269,6 @@ class Interpolate(LinearOperator):
             # Preserve constancy
             return self.args[0].meta[axis]['constant']
 
-    def meta_parity(self, axis):
-        if axis == self.axis:
-            # Interpolation is a scalar (even parity)
-            return 1
-        else:
-            # Preserve parity
-            return self.args[0].meta[axis]['parity']
 
 @parseable
 @addname('interp')
@@ -1303,7 +1307,7 @@ def right(arg0, out=None):
     return basis.Interpolate(arg0, 'right', out=out)
 
 
-class Differentiate(LinearOperator):
+class Differentiate(LinearBasisOperator):
 
     name = 'd'
 
@@ -1327,15 +1331,6 @@ class Differentiate(LinearOperator):
     def meta_constant(self, axis):
         # Preserve constancy
         return self.args[0].meta[axis]['constant']
-
-    def meta_parity(self, axis):
-        parity0 = self.args[0].meta[axis]['parity']
-        if axis == self.axis:
-            # Flip parity
-            return (-1) * parity0
-        else:
-            # Preserve parity
-            return parity0
 
     def expand(self, *vars):
         """Distribute over sums and apply the product rule to arguments
@@ -1375,7 +1370,7 @@ def differentiate(arg0, *bases, out=None, **basis_kw):
 
 
 @parseable
-class HilbertTransform(LinearOperator):
+class HilbertTransform(LinearBasisOperator):
 
     name = 'Hilbert'
 
@@ -1399,15 +1394,6 @@ class HilbertTransform(LinearOperator):
     def meta_constant(self, axis):
         # Preserve constancy
         return self.args[0].meta[axis]['constant']
-
-    def meta_parity(self, axis):
-        parity0 = self.args[0].meta[axis]['parity']
-        if axis == self.axis:
-            # Flip parity
-            return (-1) * parity0
-        else:
-            # Preserve parity
-            return parity0
 
 
 @parseable
