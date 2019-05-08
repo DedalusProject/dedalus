@@ -371,9 +371,9 @@ class InitialValueSolver:
         self.iteration = self.initial_iteration = 0
 
         # Default integration parameters
-        self.stop_sim_time = 10.
-        self.stop_wall_time = 10.
-        self.stop_iteration = 10.
+        self.stop_sim_time = np.inf
+        self.stop_wall_time = np.inf
+        self.stop_iteration = np.inf
 
         logger.debug('Finished IVP instantiation')
 
