@@ -225,6 +225,11 @@ class FutureField(Future):
     """Class for deferred operations producing a Field."""
     future_type = Field
 
+    def __getitem__(self, layout):
+        """Evaluate and return data viewed in specified layout."""
+        self_eval = self.evaluate()
+        return self_eval[layout]
+
     @staticmethod
     def parse(string, namespace, domain):
         """Build FutureField from a string expression."""
