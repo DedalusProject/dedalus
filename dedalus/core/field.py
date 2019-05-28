@@ -206,7 +206,7 @@ class Scalar(Data):
                 parity = 0
             else:
                 parity = 1
-            return {'constant': True, 'parity': parity}
+            return {'constant': True, 'parity': parity, 'envelope': False}
 
     def __init__(self, value=0, name=None, domain=None):
         from .domain import EmptyDomain
@@ -224,7 +224,7 @@ class Scalar(Data):
     def __hash__(self):
         return hash((self.name, self.value))
 
-    def as_ncc_operator(self, **kw):
+    def as_ncc_operator(self, arg, **kw):
         """Return self.value."""
         return self.value
 
@@ -284,14 +284,14 @@ class Array(Data):
         np.copyto(self.data, data)
 
     @CachedMethod(max_size=1)
-    def as_ncc_operator(self, cacheid=None, **kw):
+    def as_ncc_operator(self, arg, cacheid=None, **kw):
         """Cast to field and convert to NCC operator."""
         from .future import FutureField
         ncc = FutureField.cast(self, self.domain)
         ncc = ncc.evaluate()
         if 'name' not in kw:
             kw['name'] = str(self)
-        return ncc.as_ncc_operator(**kw)
+        return ncc.as_ncc_operator(arg, **kw)
 
 
 class Field(Data):
@@ -543,11 +543,12 @@ class Field(Data):
             return FieldCopy(input, domain)
 
     @CachedMethod(max_size=1)
-    def as_ncc_operator(self, cutoff, max_terms, name=None, cacheid=None):
+    def as_ncc_operator(self, arg, cutoff, max_terms, name=None, cacheid=None):
         """Convert to operator form representing multiplication as a NCC."""
         if name is None:
             name = str(self)
         domain = self.domain
+        # Only allow NCCs that are non-constant along coupled bases
         for basis in domain.bases:
             if basis.separable:
                 if not self.meta[basis.name]['constant']:
@@ -561,6 +562,6 @@ class Field(Data):
             np.copyto(coeffs, self.data[select])
         domain.dist.comm_cart.Bcast(coeffs, root=0)
         # Build matrix
-        n_terms, max_term, matrix = basis.NCC(coeffs, cutoff, max_terms)
+        n_terms, max_term, matrix = basis.NCC(self.meta, arg.meta, coeffs, cutoff, max_terms)
         logger.debug("Expanded NCC '{}' to mode {} with {} terms.".format(name, max_term, n_terms))
         return matrix

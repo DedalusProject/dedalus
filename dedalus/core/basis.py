@@ -9,6 +9,7 @@ import numpy as np
 from numpy import pi
 from scipy import sparse
 from scipy import fftpack
+from scipy import special
 
 from . import operators
 from .polynomials import chebyshev_derivative_2d
@@ -108,6 +109,21 @@ class Basis:
         if not grid_size.is_integer():
             raise ValueError("Scaled grid size is not an integer: %f" %grid_size)
         return int(grid_size)
+
+    @CachedMethod
+    def grid_spacing(self, scale=1.):
+        """Compute grid spacings."""
+        scales = self.remedy_scales(scales)
+        grid = self.grid(scales[axis])
+        return np.gradient(grid)
+
+    @CachedMethod
+    def grid_array_object(self, domain, axis):
+        """Grid array object."""
+        from .field import Array
+        grid = Array(domain, name=self.name)
+        grid.from_global_vector(self.grid(self.dealias), axis)
+        return grid
 
     def check_arrays(self, cdata, gdata, axis, scale):
         """
@@ -220,14 +236,14 @@ class ImplicitBasis(Basis):
         Pb = sparse.coo_matrix((data, (rows, cols)), dtype=self.coeff_dtype)
         return Pb.tocsr()
 
-    def NCC(self, coeffs, cutoff, max_terms):
+    def NCC(self, ncc_meta, arg_meta, coeffs, cutoff, max_terms):
         """Build NCC multiplication matrix."""
         if max_terms is None:
             max_terms = self.coeff_size
         n_terms = max_term = matrix = 0
         for p in range(max_terms):
             if abs(coeffs[p]) >= cutoff:
-                matrix = matrix + coeffs[p]*self.Multiply(p)
+                matrix = matrix + coeffs[p]*self.Multiply(p, ncc_meta, arg_meta)
                 n_terms += 1
                 max_term = p
         return n_terms, max_term, matrix
@@ -287,17 +303,14 @@ class Chebyshev(ImplicitBasis):
 
     def set_dtype(self, grid_dtype):
         """Determine coefficient properties from grid dtype."""
-
         # Transform retains data type
         self.grid_dtype = np.dtype(grid_dtype)
         self.coeff_dtype = self.grid_dtype
         # Same number of modes and grid points
         self.coeff_size = self.base_grid_size
         self.elements = np.arange(self.coeff_size)
-
         # Update boundary row to absolute index
         self.boundary_row += self.coeff_size
-
         return self.coeff_dtype
 
     @staticmethod
@@ -565,12 +578,16 @@ class Chebyshev(ImplicitBasis):
                 Dir[n-2, n] = -1
         return Dir.tocsr()
 
-    def Multiply(self, p):
-        """
-        p-element multiplication matrix
+    def Multiply(self, p, ncc_meta, arg_meta):
+        # No meta dependency -- just cache on p
+        return self._Multiply_T_T(p)
 
-        T_p * T_n = (T_(n+p) + T_(n-p)) / 2
-        T_(-n) = T_n
+    @CachedMethod
+    def _Multiply_T_T(self, p):
+        """
+        Multiplication matrix:
+            T_p * T_n = (T_(n+p) + T_(n-p)) / 2
+            T_(-n) = T_n
 
         """
         size = self.coeff_size
@@ -585,11 +602,706 @@ class Chebyshev(ImplicitBasis):
                 Mult[lower, n] += 0.5
         return Mult.tocsr()
 
-    def build_mult(self, coeffs, order):
-        matrix = 0
-        for p in range(order):
-            matrix += coeffs[p] * self.Mult(p, 0)
-        return matrix
+
+class Hermite(ImplicitBasis):
+    """
+    Hermite function/polynomial basis.
+
+    Interval:
+        The functions live on (-inf, inf) but are centered and scaled by the
+        affine transformation from (-1, 1) to the specified interval.
+
+    Hermite functions (with envelope, default):
+        hf[n](xp) = exp(-xn^2/2) H[n](xn) / N[n]
+        N[n]**2 = π^(1/2) 2^n n!
+        integ hf[n] hf[m] dxn = δ[n,m]
+
+    Hermite polynomials (without envelope):
+        hp[n](xp) = H[n](xn)
+        integ hp[n] hp[m] exp(-xn**2) dx = δ[n,m] N[n]**2
+
+    """
+
+    element_label = 'h'
+    boundary_row = None
+    separable = False
+    coupled = True
+
+    def __init__(self, name, base_grid_size, interval=(-1,1), dealias=1):
+
+        # Coordinate transformation
+        # Native interval: (-1, 1)
+        radius = (interval[1] - interval[0]) / 2
+        center = (interval[1] + interval[0]) / 2
+        self._grid_stretch = radius / 1
+        self._native_coord = lambda xp: (xp - center) / radius
+        self._problem_coord = lambda xn: center + (xn * radius)
+
+        # Attributes
+        self.name = name
+        self.element_name = 'h' + name
+        self.base_grid_size = base_grid_size
+        self.interval = tuple(interval)
+        self.dealias = dealias
+        self.library = 'MMT'
+        self.operators = (self.Integrate,
+                          self.Interpolate,
+                          self.Differentiate)
+
+    def default_meta(self):
+        return {'constant': False,
+                'scale': None,
+                'dirichlet': False,
+                'envelope': True}
+
+    @CachedMethod
+    def grid(self, scale=1.):
+        """Build Hermite polynomial roots grid."""
+        N = self.grid_size(scale)
+        native_grid, _ = special.roots_hermite(N)
+        return self._problem_coord(native_grid)
+
+    @CachedMethod
+    def grid_array_object(self, domain, axis):
+        """Grid array object."""
+        grid = super().grid_array_object(domain, axis)
+        grid.meta[axis]['envelope'] = False
+        return grid
+
+    def set_dtype(self, grid_dtype):
+        """Determine coefficient properties from grid dtype."""
+        # Transform retains data type
+        self.grid_dtype = np.dtype(grid_dtype)
+        self.coeff_dtype = self.grid_dtype
+        # Same number of modes and grid points
+        self.coeff_size = self.base_grid_size
+        self.elements = np.arange(self.coeff_size)
+        return self.coeff_dtype
+
+    def _evaluate_basis_functions(self, N, xn, envelope):
+        """Evaluate basis functions on a specified native grid."""
+        # Implement recursion relation from Boyd A.6
+        # Run in higher precision
+        x = xn.astype(np.float128)
+        h = np.zeros((N, x.size), dtype=x.dtype)
+        if envelope:
+            h[0] = np.pi**(-1/4) * np.exp(-0.5*x**2)
+            h[1] = np.sqrt(2) * x * h[0]
+            for n in range(1, N-1):
+                h[n+1] = np.sqrt(2/(n+1)) * x * h[n] - np.sqrt(n/(n+1)) * h[n-1]
+        else:
+            h[0] = 1
+            h[1] = 2 * x
+            for n in range(1, N-1):
+                h[n+1] = 2 * x * h[n] - 2 * n * h[n-1]
+        return h.astype(xn.dtype)
+
+    @CachedMethod
+    def _mmt_setup(self, gsize, csize, envelope):
+        """Build FFTW plans and temporary arrays."""
+        logger.debug("Building Hermite MMT matrices for (gsize, csize, env) = (%s, %s, %s)" %(gsize, csize, envelope))
+        # Get grid and weights
+        native_grid, weights = special.roots_hermite(gsize)
+        # Evaluate polynomials on grid
+        functions = self._evaluate_basis_functions(csize, native_grid, envelope)
+        backward_mat = functions.T.copy()
+        # Forward transform:
+        # sum w H[n] H[m] = int H[n] H[m] exp(-x^2) dx
+        #                 = δ[m,n] N[n]^2
+        # sum w hp[n] hp[m] = δ[m,n] N[n]^2
+        # sum w exp(x^2) hf[n] hf[m] = δ[m,n]
+        forward_mat = weights * functions
+        if envelope:
+            forward_mat *= np.exp(native_grid**2)
+        else:
+            n = np.arange(csize)[:, None]
+            N2 = np.sqrt(np.pi) * 2**n * special.factorial(n)
+            forward_mat /= N2
+        forward_mat[csize:] = 0
+        return forward_mat, backward_mat
+
+    def _forward_mmt(self, gdata, cdata, axis, meta, scale):
+        """Forward transform using matrix transform."""
+        cdata, gdata = self.check_arrays(cdata, gdata, axis, scale)
+        # Apply transform matrices
+        forward_mat, _ = self._mmt_setup(gdata.shape[axis], cdata.shape[axis], meta['envelope'])
+        apply_matrix(forward_mat, gdata, axis, out=cdata)
+        return cdata
+
+    def _backward_mmt(self, cdata, gdata, axis, meta, scale):
+        """Forward transform using inverse matrix transform."""
+        cdata, gdata = self.check_arrays(cdata, gdata, axis, scale)
+        # Apply transform matrices
+        _, backward_mat = self._mmt_setup(gdata.shape[axis], cdata.shape[axis], meta['envelope'])
+        apply_matrix(backward_mat, cdata, axis, out=gdata)
+        return gdata
+
+    @CachedAttribute
+    def Integrate(self):
+        """Build integration class."""
+
+        class IntegrateHermite(operators.Integrate, operators.Coupled):
+            name = 'integ_{}'.format(self.name)
+            basis = self
+
+            def meta_envelope(self, axis):
+                if axis == self.axis:
+                    # Check current envelope
+                    if self.args[0].meta[axis]['envelope']:
+                        # Integral is a constant
+                        return False
+                    else:
+                        raise ValueError("Hermite polynomials are non-integrable.")
+                else:
+                    # Preserve envelope
+                    return self.args[0].meta[axis]['envelope']
+
+            @classmethod
+            @CachedMethod
+            def matrix_form(cls):
+                """Hermite integration."""
+                size = cls.basis.coeff_size
+                matrix = sparse.lil_matrix((size, size), dtype=cls.basis.coeff_dtype)
+                matrix[0,:] = cls._integ_vector()
+                return matrix.tocsr()
+
+            @classmethod
+            def _integ_vector(cls):
+                """
+                Hermite integration:
+                    dx(hf[n]) = sqrt(n/2) hf[n-1] - sqrt((n+1)/2) hf[n+1]
+                    int(hf[n]) = sqrt((n-1)/n) int(hf[n-2])
+                    int(hf[0]) = sqrt(2) pi^(1/4)
+                """
+                vector = np.zeros(cls.basis.coeff_size, dtype=cls.basis.coeff_dtype)
+                vector[0] = (4*np.pi)**(1/4)
+                for n in range(2, cls.basis.coeff_size, 2):
+                    vector[n] = np.sqrt((n-1)/n) * vector[n-2]
+                vector *= cls.basis._grid_stretch
+                return vector
+
+        return IntegrateHermite
+
+    @CachedAttribute
+    def Interpolate(self):
+        """Buld interpolation class."""
+
+        class InterpolateHermite(operators.Interpolate, operators.Coupled):
+            name = 'interp_{}'.format(self.name)
+            basis = self
+
+            def meta_envelope(self, axis):
+                if axis == self.axis:
+                    # Interpolation is a constant
+                    return False
+                else:
+                    # Preserve envelope
+                    return self.args[0].meta[axis]['envelope']
+
+            @CachedMethod
+            def matrix_form(self):
+                """Hermite interpolation."""
+                return self._interp_matrix(self.position)
+
+            def _interp_matrix(self, position):
+                size = self.basis.coeff_size
+                matrix = sparse.lil_matrix((size, size), dtype=self.basis.coeff_dtype)
+                matrix[0,:] = self._interp_vector(position)
+                return matrix.tocsr()
+
+            def _interp_vector(self, position):
+                """Hermite interpolation."""
+                envelope = self.args[0].meta[self.axis]['envelope']
+                if position == 'left':
+                    # Corresponds to xn = -inf
+                    if envelope:
+                        return np.zeros(self.basis.coeff_size)
+                    else:
+                        raise ValueError("Hermite polynomials blow up at infinity.")
+                elif position == 'right':
+                    # Corresponds to xn = inf
+                    if envelope:
+                        return np.zeros(self.basis.coeff_size)
+                    else:
+                        raise ValueError("Hermite polynomials blow up at infinity.")
+                elif position == 'center':
+                    xn = 0
+                else:
+                    xn = self.basis._native_coord(position)
+                xn = np.array([xn])
+                functions = self.basis._evaluate_basis_functions(self.basis.coeff_size, xn, envelope)
+                return functions[:, 0]
+
+        return InterpolateHermite
+
+    @CachedAttribute
+    def Differentiate(self):
+        """Build differentiation class."""
+
+        class DifferentiateHermite(operators.Differentiate, operators.Coupled):
+            name = 'd' + self.name
+            basis = self
+
+            def meta_envelope(self, axis):
+                # Preserve envelope
+                return self.args[0].meta[axis]['envelope']
+
+            @ CachedMethod
+            def matrix_form(self):
+                # Called cached class method
+                envelope = self.args[0].meta[self.axis]['envelope']
+                return self._matrix_form(envelope)
+
+            @classmethod
+            @CachedMethod
+            def _matrix_form(cls, envelope):
+                """
+                Hermite differentiation:
+                    dx(hf[n]) = sqrt(n/2) hf[n-1] - sqrt((n+1)/2) hf[n+1]
+                    dx(hp[n]) = dx(H[n]) = 2 n H[n-1] = 2 n hp[n-1]
+                """
+                size = cls.basis.coeff_size
+                dtype = cls.basis.coeff_dtype
+                stretch = cls.basis._grid_stretch
+                matrix = sparse.lil_matrix((size, size), dtype=dtype)
+                if envelope:
+                    for n in range(size):
+                        if n > 0:
+                            matrix[n-1, n] = np.sqrt(n/2) / stretch
+                        if n < (size-1):
+                            matrix[n+1, n] = -np.sqrt((n+1)/2) / stretch
+                else:
+                    for n in range(size):
+                        if n > 0:
+                            matrix[n-1, n] = 2 * n / stretch
+                return matrix.tocsr()
+
+        return DifferentiateHermite
+
+    @CachedAttribute
+    def Precondition(self):
+        """Preconditioning matrix."""
+        size = self.coeff_size
+        return sparse.identity(size, format='csr')
+
+    @CachedAttribute
+    def Dirichlet(self):
+        """Dirichlet recombination matrix."""
+        size = self.coeff_size
+        return sparse.identity(size, format='csr')
+
+    def Multiply(self, p, ncc_meta, arg_meta):
+        """Hermite multiplication matrix."""
+        # Only multiply by polynomials
+        if ncc_meta[-1]['envelope']:
+            raise ValueError("Cannot use enveloped functions for NCCs.")
+        # Dispatch based on arg envelope
+        if arg_meta[-1]['envelope']:
+            return self._Multiply_poly_func(p)
+        else:
+            return self._Multiply_poly_poly(p)
+
+    @CachedMethod
+    def _Multiply_poly_poly(self, i):
+        """
+        Multiplication matrix:
+            hp[i] hp[j] = Mpp[i][k,j] hp[k]
+
+        Mpp constructed from linearization recursion 3.9 in
+            Chaggara & Koepf 2011, https://doi.org/10.1016/j.cam.2011.03.010
+        """
+        size = self.coeff_size
+        # Construct sparse matrix
+        Mult = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
+        for j in range(size):
+            # Compute linearization recursion
+            w = min(i, j) + 2
+            S = np.zeros(w)
+            S[-1] = 0
+            S[0] = 1
+            if w > 2:
+                for k in range(-1, w - 3):
+                    C0 = - 4 * (j - k) * (i - k) * (i + j - 2*k - 1)
+                    C1 = - 6*k**2 + 4*i*k + 4*j*k - 2*j*i + 4*i + 4*j - 10*k - 4
+                    C2 = - (k + 2)
+                    S[k+2] = (C0*S[k] + C1*S[k+1]) / C2
+            # Set elements
+            for k in range(w - 1):
+                if (i + j - 2*k) < size:
+                    Mult[i+j-2*k, j] = S[k]
+        return Mult.tocsr()
+
+    def _Multiply_poly_func(self, p):
+        """
+        Multiplication matrix:
+            hp[p] hf[n] = Mpf[p][k,n] hf[k]
+                        = exp(-x^2/2) / N[n] hp[p] hp[n]
+                        = exp(-x^2/2) / N[n] Mpp[p][k,n] hp[k]
+                        = N[k] / N[n] Mpp[p][k,n] hf[k]
+            Mpf[p][k,n] = N[k] / N[n] Mpp[p][k,n]
+        """
+        # Reweight poly-poly matrix
+        n = np.arange(self.coeff_size)
+        N = np.sqrt(np.sqrt(np.pi) * 2**n * special.factorial(n))
+        Narr = sparse.diags(N)
+        Ninv = sparse.diags(1 / N)
+        return Narr @ self._Multiply_poly_poly(p) @ Ninv
+
+
+class Laguerre(ImplicitBasis):
+    """
+    Laguerre function/polynomial basis.
+
+    Interval:
+        The functions live on (0, inf) but are centered and scaled by the
+        affine transformation from (0, 1) to the specified interval.
+
+    Laguerre functions (with envelope, default):
+        gn[n](xp) = exp(-x/2) L[n](xn)
+        integ gn[n] gn[m] dxn = δ[n,m]
+
+    Laguerre polynomials (without envelope):
+        gp[n](xp) = L[n](xn)
+        integ gp[n] gp[m] exp(-xn) dx = δ[n,m]
+
+    """
+
+    element_label = 'g'
+    boundary_row = -1
+    separable = False
+    coupled = True
+
+    def __init__(self, name, base_grid_size, interval=(0,1), dealias=1, tau_after_pre=False):
+
+        # Coordinate transformation
+        # Native interval: (0, 1)
+        start = interval[0]
+        stretch = interval[1]
+        self._grid_stretch = stretch
+        self._native_coord = lambda xp: (xp - start) / stretch
+        self._problem_coord = lambda xn: start + stretch * xn
+
+        # Attributes
+        self.name = name
+        self.element_name = 'g' + name
+        self.base_grid_size = base_grid_size
+        self.interval = tuple(interval)
+        self.dealias = dealias
+        self.tau_after_pre = tau_after_pre
+        self.library = 'MMT'
+        self.operators = (self.Integrate,
+                          self.Interpolate,
+                          self.Differentiate)
+
+    def default_meta(self):
+        return {'constant': False,
+                'scale': None,
+                'dirichlet': True,
+                'envelope': True}
+
+    @CachedMethod
+    def grid(self, scale=1.):
+        """Build Legendre polynomial roots grid."""
+        N = self.grid_size(scale)
+        native_grid, _ = special.roots_laguerre(N)
+        return self._problem_coord(native_grid)
+
+    @CachedMethod
+    def grid_array_object(self, domain, axis):
+        """Grid array object."""
+        grid = super().grid_array_object(domain, axis)
+        grid.meta[axis]['envelope'] = False
+        return grid
+
+    def set_dtype(self, grid_dtype):
+        """Determine coefficient properties from grid dtype."""
+        # Transform retains data type
+        self.grid_dtype = np.dtype(grid_dtype)
+        self.coeff_dtype = self.grid_dtype
+        # Same number of modes and grid points
+        self.coeff_size = self.base_grid_size
+        self.elements = np.arange(self.coeff_size)
+        # Update boundary row to absolute index
+        self.boundary_row += self.coeff_size
+        return self.coeff_dtype
+
+    def _evaluate_basis_functions(self, N, xn, envelope):
+        """Evaluate basis functions on a specified native grid."""
+        # Implement recursion relation from Boyd A.8
+        # Run in higher precision
+        x = xn.astype(np.float128)
+        g = np.zeros((N, x.size), dtype=x.dtype)
+        if envelope:
+            g[0] = np.exp(-x / 2)
+        else:
+            g[0] = 1
+        g[1] = (1 - x) * g[0]
+        for n in range(1, N-1):
+            g[n+1] = (2*n + 1 - x) / (n + 1) * g[n] - n / (n + 1) * g[n-1]
+        return g.astype(xn.dtype)
+
+    @CachedMethod
+    def _mmt_setup(self, gsize, csize, envelope):
+        """Build FFTW plans and temporary arrays."""
+        logger.debug("Building Laguerre MMT matrices for (gsize, csize, env) = (%s, %s, %s)" %(gsize, csize, envelope))
+        # Get grid and weights
+        native_grid, weights = special.roots_laguerre(gsize)
+        # Evaluate polynomials on grid
+        functions = self._evaluate_basis_functions(csize, native_grid, envelope)
+        backward_mat = functions.T.copy()
+        # Forward transform:
+        # sum w L[n] L[m] = int L[n] L[m] exp(-x) dx
+        #                 = δ[m,n]
+        # sum w gp[n] gp[m] = δ[m,n]
+        # sum w exp(x) gf[n] gf[m] = δ[m,n]
+        forward_mat = weights * functions
+        if envelope:
+            forward_mat *= np.exp(native_grid)
+        forward_mat[csize:] = 0
+        return forward_mat, backward_mat
+
+    def _forward_mmt(self, gdata, cdata, axis, meta, scale):
+        """Forward transform using matrix transform."""
+        cdata, gdata = self.check_arrays(cdata, gdata, axis, scale)
+        # Apply transform matrices
+        forward_mat, _ = self._mmt_setup(gdata.shape[axis], cdata.shape[axis], meta['envelope'])
+        apply_matrix(forward_mat, gdata, axis, out=cdata)
+        return cdata
+
+    def _backward_mmt(self, cdata, gdata, axis, meta, scale):
+        """Forward transform using inverse matrix transform."""
+        cdata, gdata = self.check_arrays(cdata, gdata, axis, scale)
+        # Apply transform matrices
+        _, backward_mat = self._mmt_setup(gdata.shape[axis], cdata.shape[axis], meta['envelope'])
+        apply_matrix(backward_mat, cdata, axis, out=gdata)
+        return gdata
+
+    @CachedAttribute
+    def Integrate(self):
+        """Build integration class."""
+
+        class IntegrateLaguerre(operators.Integrate, operators.Coupled):
+            name = 'integ_{}'.format(self.name)
+            basis = self
+
+            def meta_envelope(self, axis):
+                if axis == self.axis:
+                    # Check current envelope
+                    if self.args[0].meta[axis]['envelope']:
+                        # Integral is a constant
+                        return False
+                    else:
+                        raise ValueError("Laguerre polynomials are non-integrable.")
+                else:
+                    # Preserve envelope
+                    return self.args[0].meta[axis]['envelope']
+
+            @classmethod
+            @CachedMethod
+            def matrix_form(cls):
+                """Laguerre integration."""
+                size = cls.basis.coeff_size
+                matrix = sparse.lil_matrix((size, size), dtype=cls.basis.coeff_dtype)
+                matrix[0,:] = cls._integ_vector()
+                return matrix.tocsr()
+
+            @classmethod
+            def _integ_vector(cls):
+                """
+                Laguerre integration:
+                    dx(g[n]) = -(1/2) g[n] - sum_{i=0}^{n-1} g[i]
+                    dx(g[n+1]) - dx(g[n]) = -(1/2) g[n+1] - (1/2) g[n]
+                    integ(g[n+1]) = - integ(g[n])
+                    integ(g[0]) = 2
+                """
+                vector = np.zeros(cls.basis.coeff_size, dtype=cls.basis.coeff_dtype)
+                vector[0::2] = 2
+                vector[1::2] = -2
+                vector *= cls.basis._grid_stretch
+                return vector
+
+        return IntegrateLaguerre
+
+    @CachedAttribute
+    def Interpolate(self):
+        """Buld interpolation class."""
+
+        class InterpolateLaguerre(operators.Interpolate, operators.Coupled):
+            name = 'interp_{}'.format(self.name)
+            basis = self
+
+            def meta_envelope(self, axis):
+                if axis == self.axis:
+                    # Interpolation is a constant
+                    return False
+                else:
+                    # Preserve envelope
+                    return self.args[0].meta[axis]['envelope']
+
+            @CachedMethod
+            def matrix_form(self):
+                """Laguerre interpolation."""
+                return self._interp_matrix(self.position)
+
+            def _interp_matrix(self, position):
+                size = self.basis.coeff_size
+                matrix = sparse.lil_matrix((size, size), dtype=self.basis.coeff_dtype)
+                matrix[0,:] = self._interp_vector(position)
+                return matrix.tocsr()
+
+            def _interp_vector(self, position):
+                """Laguerre interpolation."""
+                envelope = self.args[0].meta[self.axis]['envelope']
+                if position == 'left':
+                    xn = 0
+                elif position == 'right':
+                    # Corresponds to xn = inf
+                    if envelope:
+                        return np.zeros(self.basis.coeff_size)
+                    else:
+                        raise ValueError("Laguerre polynomials blow up at infinity.")
+                elif position == 'center':
+                    raise ValueError("No center in semi-infinite interval.")
+                else:
+                    xn = self.basis._native_coord(position)
+                xn = np.array([float(xn)])
+                functions = self.basis._evaluate_basis_functions(self.basis.coeff_size, xn, envelope)
+                return functions[:, 0]
+
+        return InterpolateLaguerre
+
+    @CachedAttribute
+    def Differentiate(self):
+        """Build differentiation class."""
+
+        class DifferentiateLaguerre(operators.Differentiate, operators.Coupled):
+            name = 'd' + self.name
+            basis = self
+
+            def meta_envelope(self, axis):
+                # Preserve envelope
+                return self.args[0].meta[axis]['envelope']
+
+            @ CachedMethod
+            def matrix_form(self):
+                # Called cached class method
+                envelope = self.args[0].meta[self.axis]['envelope']
+                return self._matrix_form(envelope)
+
+            @classmethod
+            @CachedMethod
+            def _matrix_form(cls, envelope):
+                """
+                Laguerre differentiation:
+                    dx(gf[n]) = -(1/2) gf[n] + exp(-x/2) dx(L[n])
+                              = -(1/2) gf[n] - sum_{i=0}^{n-1} gf[i]
+                    dx(gp[n]) = - sum_{i=0}^{n-1} gp[i]
+                """
+                size = cls.basis.coeff_size
+                dtype = cls.basis.coeff_dtype
+                stretch = cls.basis._grid_stretch
+                matrix = sparse.lil_matrix((size, size), dtype=dtype)
+                if envelope:
+                    for n in range(size):
+                        if n > 0:
+                            matrix[0:n, n] = -1 / stretch
+                        matrix[n, n] = -0.5 / stretch
+                else:
+                    for n in range(size):
+                        if n > 0:
+                            matrix[0:n, n] = -1 / stretch
+                return matrix.tocsr()
+
+        return DifferentiateLaguerre
+
+    @CachedAttribute
+    def Precondition(self):
+        """
+        Preconditioning matrix.
+            L[n;1] = sum_{i=0}^{n} L[n;0]
+            L[n;0] = L[n;1] - L[n-1;1]
+        """
+        size = self.coeff_size
+        # Construct sparse matrix
+        Pre = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
+        for n in range(size):
+            Pre[n, n] = 1
+            if n > 0:
+                Pre[n-1, n] = -1
+        return Pre.tocsr()
+
+    @CachedAttribute
+    def Dirichlet(self):
+        """
+        Dirichlet recombination matrix.
+
+        G[0] = g[0]
+        G[n] = g[n] - g[n-1]
+
+        <g[i]|G[j]> = <g[i]|g[j]> - <g[i]|g[j-1]>
+                    = δ(i,j) - δ(i,j-1)
+        """
+        size = self.coeff_size
+        # Construct sparse matrix
+        Dir = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
+        for n in range(size):
+            Dir[n, n] = 1
+            if n > 0:
+                Dir[n-1, n] = -1
+        return Dir.tocsr()
+
+    def Multiply(self, p, ncc_meta, arg_meta):
+        """Laguerre multiplication matrix."""
+        # Only multiply by polynomials
+        if ncc_meta[-1]['envelope']:
+            raise ValueError("Cannot use enveloped functions for NCCs.")
+        # Dispatch based on arg envelope
+        if arg_meta[-1]['envelope']:
+            return self._Multiply_poly_func(p)
+        else:
+            return self._Multiply_poly_poly(p)
+
+    @CachedMethod
+    def _Multiply_poly_poly(self, i):
+        """
+        Multiplication matrix:
+            gp[i] gp[j] = Mpp[i][k,j] gp[k]
+
+        Mpp constructed from linearization recursion 3.16 in
+            Chaggara & Koepf 2011, https://doi.org/10.1016/j.cam.2011.03.010
+        """
+        size = self.coeff_size
+        # Construct sparse matrix
+        Mult = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
+        for j in range(size):
+            # Compute linearization recursion
+            w = 2*min(i, j) + 2
+            S = np.zeros(w)
+            S[-1] = 0
+            S[0] = special.comb(i+j, i)
+            if w > 2:
+                for k in range(-1, w - 3):
+                    C0 = (2*j - k) * (2*i - k) * (i + j - k)
+                    C1 = - (4*j*i - 4*k*i - 4*i - 4*k*j - 4*j + 3*k*k + 5*k + 2) * (i + j - k)
+                    C2 = 2 * (k + 2) * (i + j - k) * (i + j - k - 1)
+                    S[k+2] = (C0*S[k] + C1*S[k+1]) / C2
+            # Set elements
+            for k in range(w - 1):
+                if (i + j - k) < size:
+                    Mult[i+j-k, j] = S[k]
+        return Mult.tocsr()
+
+    def _Multiply_poly_func(self, p):
+        """
+        Multiplication matrix:
+            gp[p] gf[n] = Mpf[p][k,n] gf[k]
+                        = exp(-x/2) gp[p] gp[n]
+                        = exp(-x/2) Mpp[p][k,n] gp[k]
+                        = Mpp[p][k,n] gf[k]
+            Mpf[p][k,n] = Mpp[p][k,n]
+        """
+        # Same as poly-poly matrix
+        return self._Multiply_poly_poly(p)
 
 
 class Fourier(TransverseBasis):
@@ -949,6 +1661,13 @@ class SinCos(TransverseBasis):
         N = self.grid_size(scale)
         native_spacing = pi / N * np.ones(N)
         return native_spacing * self._grid_stretch
+
+    @CachedMethod
+    def grid_array_object(self, domain, axis):
+        """Grid array object."""
+        grid = super().grid_array_object(domain, axis)
+        grid.meta[axis]['parity'] = 1
+        return grid
 
     def set_dtype(self, grid_dtype):
         """Determine coefficient properties from grid dtype."""
@@ -1519,7 +2238,7 @@ class Compound(ImplicitBasis):
         Mult[start:end, start:end] = subMult
         return Mult.tocsr()
 
-    def NCC(self, coeffs, cutoff, max_terms):
+    def NCC(self, ncc_meta, arg_meta, coeffs, cutoff, max_terms):
         """Build NCC multiplication matrix."""
         if max_terms is None:
             max_terms = self.coeff_size

@@ -160,9 +160,7 @@ class ProblemBase:
         # Basis-specific items
         for axis, basis in enumerate(self.domain.bases):
             # Grids
-            grid = field.Array(self.domain, name=basis.name)
-            grid.from_global_vector(basis.grid(basis.dealias), axis)
-            namespace[basis.name] = grid
+            namespace[basis.name] = basis.grid_array_object(self.domain, axis)
             # Basis operators
             for op in basis.operators:
                 namespace[op.name] = op
@@ -237,31 +235,36 @@ class ProblemBase:
 
     def _check_meta_consistency(self, LHS, RHS):
         """Check LHS and RHS metadata for compatability."""
-        default_meta = Metadata(self.domain)
-        for axis in range(self.domain.dim):
-            for key in default_meta[axis]:
-                check = getattr(self, '_check_meta_%s' %key)
-                check(LHS.meta[axis][key], RHS.meta[axis][key], axis)
+        self._check_meta_constant(LHS, RHS)
+        self._check_meta_parity(LHS, RHS)
+        self._check_meta_envelope(LHS, RHS)
 
-    def _check_meta_scale(self, LHS_scale, RHS_scale, axis):
-        # Solve occurs in coefficient space, so disregard scale
-        pass
-
-    def _check_meta_dirichlet(self, LHS_dirichlet, RHS_dirichlet, axis):
-        # Propogation of dirichlet meta has no effect
-        pass
-
-    def _check_meta_constant(self, LHS_constant, RHS_constant, axis):
+    def _check_meta_constant(self, LHS, RHS):
         """Check that RHS is constant if LHS is consant."""
-        if LHS_constant:
-            if not RHS_constant:
-                raise SymbolicParsingError("LHS is constant but RHS is nonconstant along {} axis.".format(self.domain.bases[axis].name))
+        for axis in range(self.domain.dim):
+            if LHS.meta[axis]['constant']:
+                if not RHS.meta[axis]['constant']:
+                    raise SymbolicParsingError("LHS is constant but RHS is nonconstant along axis {}.".format(axis))
 
-    def _check_meta_parity(self, LHS_parity, RHS_parity, axis):
-        """Check that LHS parity matches RHS parity, if RHS parity is nonzero."""
-        if RHS_parity:
-            if LHS_parity != RHS_parity:
-                raise SymbolicParsingError("LHS and RHS parities along {} axis do not match.".format(self.domain.bases[axis].name))
+    def _check_meta_parity(self, LHS, RHS):
+        """Check that LHS parity matches RHS parity if RHS is nonzero."""
+        for axis in range(self.domain.dim):
+            # Skip if not a parity axis
+            if "parity" not in LHS.meta[axis]:
+                continue
+            if RHS != 0:
+                if LHS.meta[axis]['parity'] != RHS.meta[axis]['parity']:
+                    raise SymbolicParsingError("LHS and RHS parities along axis {} do not match.".format(axis))
+
+    def _check_meta_envelope(self, LHS, RHS):
+        """Check that LHS envelope matches RHS envelope if RHS is nonzero."""
+        for axis in range(self.domain.dim):
+            # Skip if not an envelope axis
+            if "envelope" not in LHS.meta[axis]:
+                continue
+            if RHS != 0:
+                if LHS.meta[axis]['envelope'] != RHS.meta[axis]['envelope']:
+                    raise SymbolicParsingError("LHS and RHS envelopes along axis {} do not match.".format(axis))
 
     def _check_boundary_form(self, LHS, RHS):
         """Check that boundary expressions are constant along coupled axes."""

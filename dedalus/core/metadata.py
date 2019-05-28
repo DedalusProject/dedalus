@@ -67,10 +67,13 @@ class Metadata(MultiDict):
     def __init__(self, domain):
         super().__init__()
         self.domain = domain
+        # Axis aliases
         for axis, basis in enumerate(domain.bases):
             self[basis.name] = basis.default_meta()
             #self[basis.name] = self[axis]
             self.aliases[axis] = basis.name
+        # Last axis alias
+        self.aliases[-1] = basis.name
 
     # def __iter__(self):
     #     for basis in self.domain.bases:

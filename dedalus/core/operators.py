@@ -86,6 +86,10 @@ class FieldCopy(Operator, FutureField, metaclass=MultiClass):
         # Preserve parity
         return self.args[0].meta[axis]['parity']
 
+    def meta_envelope(self, axis):
+        # Preserve envelope
+        return self.args[0].meta[axis]['envelope']
+
     @property
     def base(self):
         return FieldCopy
@@ -269,6 +273,10 @@ class UnaryGridFunction(NonlinearOperator, Future, metaclass=MultiClass):
         else:
             raise UndefinedParityError("Unknown action of {} on odd parity.".format(self.name))
 
+    def meta_envelope(self, axis):
+        # Preserve envelope
+        return self.args[0].meta[axis]['envelope']
+
     def sym_diff(self, var):
         """Symbolically differentiate with respect to var."""
         diffmap = {np.absolute: lambda x: np.sign(x),
@@ -386,6 +394,15 @@ class Add(Arithmetic, metaclass=MultiClass):
             raise UndefinedParityError("Cannot add fields of different parities.")
         else:
             return parity0
+
+    def meta_envelope(self, axis):
+        # Envelopes must match
+        env0 = self.args[0].meta[axis]['envelope']
+        env1 = self.args[1].meta[axis]['envelope']
+        if env0 != env1:
+            raise UndefinedParityError("Cannot add fields with different envelopes.")
+        else:
+            return env0
 
     def expand(self, *vars):
         """Expand arguments containing specified variables (default: all)."""
@@ -641,6 +658,12 @@ class Multiply(Arithmetic, metaclass=MultiClass):
         parity1 = self.args[1].meta[axis]['parity']
         return parity0 * parity1
 
+    def meta_envelope(self, axis):
+        # Logical-or of envelopes
+        env0 = self.args[0].meta[axis]['envelope']
+        env1 = self.args[1].meta[axis]['envelope']
+        return env0 or env1
+
     def expand(self, *vars):
         """Distribute over sums containing specified variables (default: all)."""
         arg0, arg1 = self.args
@@ -686,7 +709,7 @@ class Multiply(Arithmetic, metaclass=MultiClass):
     def operator_dict(self, index, vars, **kw):
         """Produce matrix-operator dictionary over specified variables."""
         out = defaultdict(int)
-        op0 = self.args[0].as_ncc_operator(**kw)
+        op0 = self.args[0].as_ncc_operator(self.args[1], **kw)
         op1 = self.args[1].operator_dict(index, vars, **kw)
         for var in op1:
             out[var] = op0 * op1[var]
@@ -941,6 +964,10 @@ class PowerDataScalar(Power):
         # Otherwise invalid
         raise UndefinedParityError("Non-integer power of nonconstant data has undefined parity.")
 
+    def meta_envelope(self, axis):
+        # Preserves envelope
+        return self.args[0].meta[axis]['envelope']
+
     def sym_diff(self, var):
         """Symbolically differentiate with respect to var."""
         arg0, arg1 = self.args
@@ -1062,6 +1089,10 @@ class TimeDerivative(LinearOperator, FutureField):
     def meta_parity(self, axis):
         # Preserves parity
         return self.args[0].meta[axis]['parity']
+
+    def meta_envelope(self, axis):
+        # Preserves envelope
+        return self.args[0].meta[axis]['envelope']
 
     def operator_form(self, index):
         raise ValueError("Operator form not available for time derivative.")

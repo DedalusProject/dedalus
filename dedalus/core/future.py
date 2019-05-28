@@ -205,9 +205,9 @@ class Future(Operand):
         raise NotImplementedError()
 
     @CachedMethod(max_size=1)
-    def as_ncc_operator(self, cacheid=None, **kw):
+    def as_ncc_operator(self, arg, cacheid=None, **kw):
         ncc = self.evaluate()
-        return ncc.as_ncc_operator(name=str(self), **kw)
+        return ncc.as_ncc_operator(arg, name=str(self), **kw)
 
 
 class FutureScalar(Future):
