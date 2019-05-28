@@ -976,7 +976,7 @@ class Laguerre(ImplicitBasis):
         # Coordinate transformation
         # Native interval: (0, 1)
         start = interval[0]
-        stretch = interval[1]
+        stretch = interval[1] - interval[0]
         self._grid_stretch = stretch
         self._native_coord = lambda xp: (xp - start) / stretch
         self._problem_coord = lambda xn: start + stretch * xn
