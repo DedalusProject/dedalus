@@ -107,7 +107,7 @@ flow.add_property("sqrt(u*u + w*w) / R", name='Re')
 try:
     logger.info('Starting loop')
     start_time = time.time()
-    while solver.ok:
+    while solver.proceed:
         dt = CFL.compute_dt()
         dt = solver.step(dt)
         if (solver.iteration-1) % 10 == 0:

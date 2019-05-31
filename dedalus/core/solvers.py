@@ -470,9 +470,8 @@ class InitialValueSolver:
         return write, dt
 
     @property
-    def ok(self):
+    def proceed(self):
         """Check that current time and iteration pass stop conditions."""
-
         if self.sim_time >= self.stop_sim_time:
             logger.info('Simulation stop time reached.')
             return False
@@ -484,6 +483,11 @@ class InitialValueSolver:
             return False
         else:
             return True
+
+    @property
+    def ok(self):
+        """Deprecated. Use 'solver.proceed'."""
+        return self.proceed
 
     @CachedAttribute
     def sim_dt_cadences(self):
