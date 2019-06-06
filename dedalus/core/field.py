@@ -22,11 +22,6 @@ from ..tools.exceptions import SymbolicParsingError
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
 
-# Load config options
-permc_spec = config['linear algebra']['permc_spec']
-use_umfpack = config['linear algebra'].getboolean('use_umfpack')
-
-
 class Operand:
 
     def __getattr__(self, attr):
