@@ -7,18 +7,26 @@ import collections
 import re
 
 
-class OrderedSet(collections.OrderedDict):
+class OrderedSet:
     """Ordered set based on uniqueness of dictionary keys."""
 
-    def update(self, *args):
+    def __init__(self, *args):
+        self._odict = collections.OrderedDict()
+        self.update(*args)
 
+    def __iter__(self):
+        yield from self._odict
+
+    def __len__(self):
+        return len(self._odict)
+
+    def update(self, *args):
         for arg in args:
             for item in arg:
                 self.add(item)
 
     def add(self, item):
-
-        self[item] = None
+        self._odict[item] = None
 
 
 def rev_enumerate(sequence):
