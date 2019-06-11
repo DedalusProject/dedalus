@@ -525,6 +525,10 @@ class Field(Data):
 
         return out
 
+    def copy(self):
+        from .operators import FieldCopy
+        return FieldCopy(self, self.domain).evaluate()
+
     @staticmethod
     def cast(input, domain):
         from .operators import FieldCopy

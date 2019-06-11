@@ -142,8 +142,17 @@ class Evaluator:
             tasks = self.attempt_tasks(tasks, id=id)
 
         # Transform all outputs to coefficient layout to dealias
-        outputs = [t['out'] for h in handlers for t in h.tasks]
+        outputs = OrderedSet([t['out'] for h in handlers for t in h.tasks])
         self.require_coeff_space(outputs)
+
+        # Copy redundant outputs so processing is independent
+        outputs = set()
+        for handler in handlers:
+            for task in handler.tasks:
+                if task['out'] in outputs:
+                    task['out'] = task['out'].copy()
+                else:
+                    outputs.add(task['out'])
 
         # Process
         for handler in handlers:
@@ -165,17 +174,14 @@ class Evaluator:
     @staticmethod
     def get_fields(tasks):
         """Get field set for a collection of tasks."""
-
         fields = OrderedSet()
         for task in tasks:
             fields.update(task['operator'].atoms(Field))
-
         return fields
 
     @staticmethod
     def attempt_tasks(tasks, **kw):
         """Attempt tasks and return the unfinished ones."""
-
         unfinished = []
         for task in tasks:
             output = task['operator'].attempt(**kw)
@@ -183,7 +189,6 @@ class Evaluator:
                 unfinished.append(task)
             else:
                 task['out'] = output
-
         return unfinished
 
 
@@ -236,11 +241,6 @@ class Handler:
             op = FutureField.parse(task, self.vars, self.domain)
         else:
             op = FutureField.cast(task, self.domain)
-
-        # Copy if operator appears in previous tasks
-        for prev_task in self.tasks:
-            if op is prev_task['operator']:
-                op = FieldCopy(op, op.domain)
 
         # Build task dictionary
         task = dict()
