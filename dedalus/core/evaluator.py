@@ -365,7 +365,7 @@ class FileHandler(Handler):
                     else:
                         set.unlink()
                 set_num = 1
-                total_write_num = 1
+                total_write_num = 0
             elif mode == "append":
                 set_nums = []
                 if sets:
@@ -389,7 +389,7 @@ class FileHandler(Handler):
                     max_set = 0
                     last_write_num = 0
                 set_num = max_set + 1
-                total_write_num = last_write_num + 1
+                total_write_num = last_write_num
         else:
             set_num = None
             total_write_num = None
