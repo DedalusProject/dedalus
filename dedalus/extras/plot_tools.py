@@ -43,7 +43,7 @@ class DimWrapper:
 
     def __getitem__(self, item):
         if self.field.layout.grid_space[self.axis]:
-            scale = self.field.meta[self.axis]['scale']
+            scale = self.field.scales[self.axis]
             return self.basis.grid(scale)
         else:
             return self.basis.elements

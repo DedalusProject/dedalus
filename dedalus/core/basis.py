@@ -650,7 +650,6 @@ class Hermite(ImplicitBasis):
 
     def default_meta(self):
         return {'constant': False,
-                'scale': None,
                 'dirichlet': False,
                 'envelope': True}
 
@@ -995,7 +994,6 @@ class Laguerre(ImplicitBasis):
 
     def default_meta(self):
         return {'constant': False,
-                'scale': None,
                 'dirichlet': True,
                 'envelope': True}
 
