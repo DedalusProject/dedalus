@@ -190,8 +190,7 @@ class ImplicitBasis(Basis):
     """
 
 
-    @CachedMethod
-    def Multiply(self, p):
+    def Multiply(self, p, ncc_basis_meta, arg_basis_meta):
         """p-element multiplication matrix."""
         raise NotImplementedError()
 
@@ -236,14 +235,14 @@ class ImplicitBasis(Basis):
         Pb = sparse.coo_matrix((data, (rows, cols)), dtype=self.coeff_dtype)
         return Pb.tocsr()
 
-    def NCC(self, ncc_meta, arg_meta, coeffs, cutoff, max_terms):
+    def NCC(self, ncc_basis_meta, arg_basis_meta, coeffs, cutoff, max_terms):
         """Build NCC multiplication matrix."""
         if max_terms is None:
             max_terms = self.coeff_size
         n_terms = max_term = matrix = 0
         for p in range(max_terms):
             if abs(coeffs[p]) >= cutoff:
-                matrix = matrix + coeffs[p]*self.Multiply(p, ncc_meta, arg_meta)
+                matrix = matrix + coeffs[p]*self.Multiply(p, ncc_basis_meta, arg_basis_meta)
                 n_terms += 1
                 max_term = p
         return n_terms, max_term, matrix
@@ -578,7 +577,7 @@ class Chebyshev(ImplicitBasis):
                 Dir[n-2, n] = -1
         return Dir.tocsr()
 
-    def Multiply(self, p, ncc_meta, arg_meta):
+    def Multiply(self, p, ncc_basis_meta, arg_basis_meta):
         # No meta dependency -- just cache on p
         return self._Multiply_T_T(p)
 
@@ -889,13 +888,13 @@ class Hermite(ImplicitBasis):
         size = self.coeff_size
         return sparse.identity(size, format='csr')
 
-    def Multiply(self, p, ncc_meta, arg_meta):
+    def Multiply(self, p, ncc_basis_meta, arg_basis_meta):
         """Hermite multiplication matrix."""
         # Only multiply by polynomials
-        if ncc_meta[-1]['envelope']:
+        if ncc_basis_meta['envelope']:
             raise ValueError("Cannot use enveloped functions for NCCs.")
         # Dispatch based on arg envelope
-        if arg_meta[-1]['envelope']:
+        if arg_basis_meta['envelope']:
             return self._Multiply_poly_func(p)
         else:
             return self._Multiply_poly_poly(p)
@@ -930,6 +929,7 @@ class Hermite(ImplicitBasis):
                     Mult[i+j-2*k, j] = S[k]
         return Mult.tocsr()
 
+    @CachedMethod
     def _Multiply_poly_func(self, p):
         """
         Multiplication matrix:
@@ -1248,13 +1248,13 @@ class Laguerre(ImplicitBasis):
                 Dir[n-1, n] = -1
         return Dir.tocsr()
 
-    def Multiply(self, p, ncc_meta, arg_meta):
+    def Multiply(self, p, ncc_basis_meta, arg_basis_meta):
         """Laguerre multiplication matrix."""
         # Only multiply by polynomials
-        if ncc_meta[-1]['envelope']:
+        if ncc_basis_meta['envelope']:
             raise ValueError("Cannot use enveloped functions for NCCs.")
         # Dispatch based on arg envelope
-        if arg_meta[-1]['envelope']:
+        if arg_basis_meta['envelope']:
             return self._Multiply_poly_func(p)
         else:
             return self._Multiply_poly_poly(p)
@@ -1289,6 +1289,7 @@ class Laguerre(ImplicitBasis):
                     Mult[i+j-k, j] = S[k]
         return Mult.tocsr()
 
+    @CachedMethod
     def _Multiply_poly_func(self, p):
         """
         Multiplication matrix:
@@ -2226,17 +2227,16 @@ class Compound(ImplicitBasis):
         Dir = sparse.block_diag([b.Dirichlet for b in self.subbases])
         return Dir.tocsr()
 
-    @CachedMethod
-    def Multiply(self, p, subindex):
+    def Multiply(self, subindex, p, ncc_basis_meta, arg_basis_meta):
         size = self.coeff_size
         Mult = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
         start = self.coeff_start(subindex)
         end = self.coeff_start(subindex+1)
-        subMult = self.subbases[subindex].Multiply(p)
+        subMult = self.subbases[subindex].Multiply(p, ncc_basis_meta, arg_basis_meta)
         Mult[start:end, start:end] = subMult
         return Mult.tocsr()
 
-    def NCC(self, ncc_meta, arg_meta, coeffs, cutoff, max_terms):
+    def NCC(self, ncc_basis_meta, arg_basis_meta, coeffs, cutoff, max_terms):
         """Build NCC multiplication matrix."""
         if max_terms is None:
             max_terms = self.coeff_size
@@ -2246,7 +2246,7 @@ class Compound(ImplicitBasis):
             subcoeffs = self.sub_cdata(coeffs, index, axis=0)
             for p in range(min(max_terms, subcoeffs.size)):
                 if abs(subcoeffs[p]) >= cutoff:
-                    matrix = matrix + subcoeffs[p]*self.Multiply(p, index)
+                    matrix = matrix + subcoeffs[p]*self.Multiply(index, p, ncc_basis_meta, arg_basis_meta)
                     n_terms_i += 1
                     max_term_i = p
             n_terms = max(n_terms, n_terms_i)

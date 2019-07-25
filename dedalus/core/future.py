@@ -187,8 +187,8 @@ class Future(Operand):
         return self.domain.bases[axis].dealias
 
     def meta_dirichlet(self, axis):
-        # No propogation of Dirichlet preconditioning
-        return False
+        # Set to True to minimize cache problems in NCCs
+        return True
 
     def check_conditions(self):
         """Check that all argument fields are in proper layouts."""
@@ -204,10 +204,13 @@ class Future(Operand):
         # field without modifying the data of the arguments.
         raise NotImplementedError()
 
-    @CachedMethod(max_size=1)
-    def as_ncc_operator(self, arg, cacheid=None, **kw):
+    @CachedMethod
+    def as_ncc_operator(self, frozen_arg_meta, cutoff, max_terms, cacheid=None):
         ncc = self.evaluate()
-        return ncc.as_ncc_operator(arg, name=str(self), **kw)
+        ncc.name = str(self)
+        # Don't worry about cache here because field is deallocated
+        return ncc.as_ncc_operator(frozen_arg_meta, cutoff, max_terms, cacheid=None)
+
 
 
 class FutureScalar(Future):

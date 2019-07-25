@@ -168,3 +168,11 @@ class Metadata(MultiDict):
 #     name = 'parity'
 #     default = 1
 
+def freeze_dict(dict):
+    """Freeze dict as tuple of items."""
+    return tuple(sorted(dict.items()))
+
+def freeze_meta(meta):
+    """Freeze metadata as tuple of frozen dicts."""
+    dim = len(meta)
+    return tuple(freeze_dict(meta[i]) for i in range(dim))

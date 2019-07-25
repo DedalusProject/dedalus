@@ -9,7 +9,7 @@ import numpy as np
 
 from .field import Operand, Data, Scalar, Array, Field
 from .future import Future, FutureScalar, FutureArray, FutureField
-from .metadata import Metadata
+from .metadata import Metadata, freeze_meta
 from ..tools.array import reshape_vector, apply_matrix, add_sparse
 from ..tools.cache import CachedAttribute
 from ..tools.dispatch import MultiClass
@@ -709,7 +709,9 @@ class Multiply(Arithmetic, metaclass=MultiClass):
     def operator_dict(self, index, vars, **kw):
         """Produce matrix-operator dictionary over specified variables."""
         out = defaultdict(int)
-        op0 = self.args[0].as_ncc_operator(self.args[1], **kw)
+        # Freeze arg1 metadata for caching ncc matrices
+        frozen_arg1_meta = freeze_meta(self.args[1].meta)
+        op0 = self.args[0].as_ncc_operator(frozen_arg1_meta, **kw)
         op1 = self.args[1].operator_dict(index, vars, **kw)
         for var in op1:
             out[var] = op0 * op1[var]
