@@ -219,7 +219,7 @@ class Scalar(Data):
     def __hash__(self):
         return hash((self.name, self.value))
 
-    def as_ncc_operator(self, frozen_arg_meta, cutoff, max_terms, cacheid=None):
+    def as_ncc_operator(self, frozen_arg_basis_meta, cutoff, max_terms, cacheid=None):
         """Return self.value."""
         return self.value
 
@@ -279,14 +279,14 @@ class Array(Data):
         np.copyto(self.data, data)
 
     @CachedMethod
-    def as_ncc_operator(self, frozen_arg_meta, cutoff, max_terms, cacheid=None):
+    def as_ncc_operator(self, frozen_arg_basis_meta, cutoff, max_terms, cacheid=None):
         """Cast to field and convert to NCC operator."""
         from .future import FutureField
         ncc = FutureField.cast(self, self.domain)
         ncc = ncc.evaluate()
         ncc.name = str(self)
         # Don't worry about cache here because field is deallocated
-        return ncc.as_ncc_operator(frozen_arg_meta, cutoff, max_terms, cacheid=None)
+        return ncc.as_ncc_operator(frozen_arg_basis_meta, cutoff, max_terms, cacheid=None)
 
 
 class Field(Data):
@@ -542,7 +542,7 @@ class Field(Data):
             return FieldCopy(input, domain)
 
     @CachedMethod
-    def as_ncc_operator(self, frozen_arg_meta, cutoff, max_terms, cacheid=None):
+    def as_ncc_operator(self, frozen_arg_basis_meta, cutoff, max_terms, cacheid=None):
         """Convert to operator form representing multiplication as a NCC."""
         domain = self.domain
         # Only allow NCCs that are non-constant along coupled bases
@@ -560,7 +560,7 @@ class Field(Data):
         domain.dist.comm_cart.Bcast(coeffs, root=0)
         # Build matrix
         ncc_basis_meta = self.meta[-1]
-        arg_basis_meta = dict(frozen_arg_meta[-1])
+        arg_basis_meta = dict(frozen_arg_basis_meta)
         n_terms, max_term, matrix = basis.NCC(ncc_basis_meta, arg_basis_meta, coeffs, cutoff, max_terms)
         logger.debug("Expanded NCC '{}' to mode {} with {} terms.".format(self, max_term, n_terms))
         return matrix

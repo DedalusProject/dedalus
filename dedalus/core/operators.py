@@ -710,8 +710,8 @@ class Multiply(Arithmetic, metaclass=MultiClass):
         """Produce matrix-operator dictionary over specified variables."""
         out = defaultdict(int)
         # Freeze arg1 metadata for caching ncc matrices
-        frozen_arg1_meta = freeze_meta(self.args[1].meta)
-        op0 = self.args[0].as_ncc_operator(frozen_arg1_meta, **kw)
+        frozen_arg1_basis_meta = freeze_meta(self.args[1].meta)[-1]
+        op0 = self.args[0].as_ncc_operator(frozen_arg1_basis_meta, **kw)
         op1 = self.args[1].operator_dict(index, vars, **kw)
         for var in op1:
             out[var] = op0 * op1[var]
