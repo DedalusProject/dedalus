@@ -54,10 +54,14 @@ class EigenvalueSolver:
 
     """
 
-    def __init__(self, problem):
+    def __init__(self, problem, matsolver=None):
         logger.debug('Beginning EVP instantiation')
+        if matsolver is None:
+            # Default to factorizer to speed up solves within the Arnoldi iteration
+            matsolver = matsolvers[config['linear algebra']['MATRIX_FACTORIZER'].lower()]
         self.problem = problem
         self.domain = domain = problem.domain
+        self.matsolver = matsolver
         # Build pencils and pencil matrices
         self.pencils = pencil.build_pencils(domain)
         # Build systems
@@ -127,7 +131,7 @@ class EigenvalueSolver:
             cacheid = None
         pencil.build_matrices(self.problem, ['M', 'L'], cacheid=cacheid)
         # Solve as sparse general eigenvalue problem
-        self.eigenvalues, self.eigenvectors = scipy_sparse_eigs(A=pencil.L_exp, B=-pencil.M_exp, N=N, target=target, **kw)
+        self.eigenvalues, self.eigenvectors = scipy_sparse_eigs(A=pencil.L_exp, B=-pencil.M_exp, N=N, target=target, matsolver=self.matsolver, **kw)
         if pencil.dirichlet:
             self.eigenvectors = pencil.JD * self.eigenvectors
         self.eigenvalue_pencil = pencil
@@ -174,7 +178,8 @@ class LinearBoundaryValueSolver:
         logger.debug('Beginning LBVP instantiation')
 
         if matsolver is None:
-            matsolver = matsolvers[config['linear algebra']['MATRIX_SOLVER'].lower()]
+            # Default to factorizer to speed up repeated solves
+            matsolver = matsolvers[config['linear algebra']['MATRIX_FACTORIZER'].lower()]
         self.problem = problem
         self.domain = domain = problem.domain
         self.matsolver = matsolver
@@ -182,7 +187,7 @@ class LinearBoundaryValueSolver:
         # Build pencils and pencil matrices
         self.pencils = pencil.build_pencils(domain)
         pencil.build_matrices(self.pencils, problem, ['L'])
-        self._setup_pencil_matsolvers()
+        self._build_pencil_matsolvers()
 
         # Build systems
         namespace = problem.namespace
@@ -202,8 +207,8 @@ class LinearBoundaryValueSolver:
 
         logger.debug('Finished LBVP instantiation')
 
-    def _setup_pencil_matsolvers(self):
-        """Setup matsolvers for each pencil LHS."""
+    def _build_pencil_matsolvers(self):
+        """Build matsolvers for each pencil LHS."""
         self.pencil_matsolvers = {}
         for p in self.pencils:
             self.pencil_matsolvers[p] = self.matsolver(p.L_exp, self)
@@ -217,7 +222,7 @@ class LinearBoundaryValueSolver:
         # Rebuild matrices
         if rebuild_coeffs:
             pencil.build_matrices(self.pencils, self.problem, ['L'])
-            self._setup_pencil_matsolvers()
+            self._build_pencil_matsolvers()
 
         # Solve system for each pencil, updating state
         for p in self.pencils:
@@ -259,6 +264,7 @@ class NonlinearBoundaryValueSolver:
         logger.debug('Beginning NLBVP instantiation')
 
         if matsolver is None:
+            # Default to solver since every iteration sees a new matrix
             matsolver = matsolvers[config['linear algebra']['MATRIX_SOLVER'].lower()]
         self.problem = problem
         self.domain = domain = problem.domain
@@ -354,6 +360,7 @@ class InitialValueSolver:
         logger.debug('Beginning IVP instantiation')
 
         if matsolver is None:
+            # Default to factorizer to speed up repeated solves
             matsolver = matsolvers[config['linear algebra']['MATRIX_FACTORIZER'].lower()]
         self.problem = problem
         self.domain = domain = problem.domain

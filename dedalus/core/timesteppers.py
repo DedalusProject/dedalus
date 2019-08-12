@@ -151,6 +151,8 @@ class MultistepIMEX:
             pRHS = RHS.get_pencil(p)
             if update_LHS:
                 np.copyto(p.LHS.data, a0*p.M_exp.data + b0*p.L_exp.data)
+                # Remove old solver reference before building new solver
+                p.LHS_solver = None
                 p.LHS_solver = solver.matsolver(p.LHS, solver)
             pX = p.LHS_solver.solve(pRHS)
             if p.dirichlet:
@@ -581,6 +583,8 @@ class RungeKuttaIMEX:
                 # Construct LHS(n,i)
                 if update_LHS:
                     np.copyto(p.LHS.data, p.M_exp.data + (k*H[i,i])*p.L_exp.data)
+                    # Remove old solver reference before building new solver
+                    p.LHS_solvers[i] = None
                     p.LHS_solvers[i] = solver.matsolver(p.LHS, solver)
                 pX = p.LHS_solvers[i].solve(pRHS)
                 if p.dirichlet:

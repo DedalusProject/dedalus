@@ -6,10 +6,8 @@ import numpy as np
 from scipy import sparse
 from scipy.sparse import linalg as spla
 
-from .config import config
-from ..libraries.matsolvers import matsolvers
 
-def scipy_sparse_eigs(A, B, N, target, **kw):
+def scipy_sparse_eigs(A, B, N, target, matsolver, **kw):
     """
     Perform targeted eigenmode search using the scipy/ARPACK sparse solver
     for the reformulated generalized eigenvalue problem
@@ -26,11 +24,11 @@ def scipy_sparse_eigs(A, B, N, target, **kw):
         Number of eigenmodes to return
     target : complex
         Target σ for eigenvalue search
+    matsolver : matrix solver class
+        Class implementing solve method for solving sparse systems.
 
     Other keyword options passed to scipy.sparse.linalg.eigs.
     """
-    matsolver = matsolvers[config['linear algebra']['MATRIX_SOLVER'].lower()]
-
     # Build sparse linear operator representing (A - σB)^I B = C^I B = D
     C = A - target * B
     solver = matsolver(C)

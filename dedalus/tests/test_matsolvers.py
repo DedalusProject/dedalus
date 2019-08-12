@@ -95,7 +95,7 @@ def test_matsolver_setup_bench(benchmark, solver, matsolver):
     # Benchmark matsolver setup
     def setup():
         try:
-            solver._setup_pencil_matsolvers()
+            solver._build_pencil_matsolvers()
         except ModuleNotFoundError:
             pytest.skip("Matsolver requirements not present.")
         except ValueError:
@@ -113,7 +113,7 @@ def test_matsolver_solve_bench(benchmark, solver, matsolver):
     solver.matsolver = matsolver
     # Setup pencil matsolvers
     try:
-        solver._setup_pencil_matsolvers()
+        solver._build_pencil_matsolvers()
     except ModuleNotFoundError:
         pytest.skip("Matsolver requirements not present.")
     except ValueError:
