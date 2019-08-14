@@ -1,20 +1,20 @@
 """
 Dedalus script for 3D Rayleigh-Benard convection.
 
-This script uses parity-bases in the x and y directions to mimick no-slip,
+This script uses parity-bases in the x and y directions to mimick stress-free,
 insulating sidewalls.  The equations are scaled in units of the thermal
 diffusion time (Pe = 1).
 
 This script should be ran in parallel, and would be most efficient using a
 2D process mesh.  It uses the built-in analysis framework to save 2D data slices
-in HDF5 files.  The `merge.py` script in this folder can be used to merge
-distributed analysis sets from parallel runs, and the `plot_2d_series.py` script
-can be used to plot the slices.
+in HDF5 files.  The `merge_procs` command can be used to merge distributed analysis
+sets from parallel runs, and the `plot_slices.py` script can be used to plot
+the slices.
 
 To run, merge, and plot using 4 processes, for instance, you could use:
     $ mpiexec -n 4 python3 rayleigh_benard.py
-    $ mpiexec -n 4 python3 merge.py snapshots
-    $ mpiexec -n 4 python3 plot_2d_series.py snapshots/*.h5
+    $ mpiexec -n 4 python3 -m dedalus merge_procs snapshots
+    $ mpiexec -n 4 python3 plot_slices.py snapshots/*.h5
 
 The simulation should take roughly 400 process-minutes to run, but will
 automatically stop after an hour.

@@ -34,7 +34,6 @@ domain = de.Domain([z_basis], grid_dtype=np.complex128, comm=MPI.COMM_SELF)
 # 2D Boussinesq hydrodynamics, with no-slip boundary conditions
 # Use substitutions for x and t derivatives
 problem = de.EVP(domain, variables=['p','b','u','w','bz','uz','wz'], eigenvalue='omega')
-problem.meta[:]['z']['dirichlet'] = True
 problem.parameters['P'] = (Rayleigh * Prandtl)**(-1/2)
 problem.parameters['R'] = (Rayleigh / Prandtl)**(-1/2)
 problem.parameters['F'] = F = 1

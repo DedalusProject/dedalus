@@ -45,7 +45,7 @@ u.differentiate(0, out=ux)
 ux.differentiate(0, out=uxx)
 
 # Store data for final plot
-u.set_scales(1, keep_data=True)
+u.set_scales(1)
 u_list = [np.copy(u['g'])]
 t_list = [solver.sim_time]
 
@@ -54,7 +54,7 @@ dt = 2e-3
 while solver.ok:
     solver.step(dt)
     if solver.iteration % 20 == 0:
-        u.set_scales(1, keep_data=True)
+        u.set_scales(1)
         u_list.append(np.copy(u['g']))
         t_list.append(solver.sim_time)
     if solver.iteration % 100 == 0:

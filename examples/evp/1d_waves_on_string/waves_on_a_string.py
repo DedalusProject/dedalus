@@ -29,7 +29,6 @@ domain = de.Domain([x_basis], np.float64)
 
 # Problem
 problem = de.EVP(domain, variables=['u', 'u_x'],eigenvalue='l')
-problem.meta[:]['x']['dirichlet'] = True
 problem.add_equation("l*u + dx(u_x) = 0")
 problem.add_equation("u_x - dx(u) = 0")
 problem.add_bc("left(u) = 0")

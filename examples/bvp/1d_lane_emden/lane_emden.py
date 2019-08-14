@@ -52,7 +52,6 @@ domain = de.Domain([x_basis], np.float64)
 
 # Setup problem
 problem = de.NLBVP(domain, variables=['f', 'fx', 'R'], ncc_cutoff=ncc_cutoff)
-problem.meta[:]['x']['dirichlet'] = True
 problem.parameters['n'] = n
 problem.add_equation("x*dx(fx) + 2*fx = -x*(R**2)*(f**n)", tau=False)
 problem.add_equation("fx - dx(f) = 0")

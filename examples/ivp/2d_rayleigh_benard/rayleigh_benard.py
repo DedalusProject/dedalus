@@ -5,22 +5,34 @@ This script uses a Fourier basis in the x direction with periodic boundary
 conditions.  The equations are scaled in units of the buoyancy time (Fr = 1).
 
 This script can be ran serially or in parallel, and uses the built-in analysis
-framework to save data snapshots in HDF5 files.  The `merge.py` script in this
-folder can be used to merge distributed analysis sets from parallel runs,
-and the `plot_2d_series.py` script can be used to plot the snapshots.
+framework to save data snapshots in HDF5 files.  The `merge_procs` command can
+be used to merge distributed analysis sets from parallel runs, and the
+`plot_slices.py` script can be used to plot the snapshots.
 
 To run, merge, and plot using 4 processes, for instance, you could use:
     $ mpiexec -n 4 python3 rayleigh_benard.py
-    $ mpiexec -n 4 python3 merge.py snapshots
-    $ mpiexec -n 4 python3 plot_2d_series.py snapshots/*.h5
+    $ mpiexec -n 4 python3 -m dedalus merge_procs snapshots
+    $ mpiexec -n 4 python3 plot_slices.py snapshots/*.h5
 
-The simulation should take a few process-minutes to run.
+This script can restart the simulation from the last save of the original
+output to extend the integration.  This requires that the output files from
+the original simulation are merged, and the last is symlinked or copied to
+`restart.h5`.
+
+To run the original example and the restart, you could use:
+    $ mpiexec -n 4 python3 rayleigh_benard.py
+    $ mpiexec -n 4 python3 -m dedalus merge_procs snapshots
+    $ ln -s snapshots/snapshots_s2.h5 restart.h5
+    $ mpiexec -n 4 python3 rayleigh_benard.py
+
+The simulations should take a few process-minutes to run.
 
 """
 
 import numpy as np
 from mpi4py import MPI
 import time
+import pathlib
 
 from dedalus import public as de
 from dedalus.extras import flow_tools
@@ -64,34 +76,46 @@ problem.add_bc("right(p) = 0", condition="(nx == 0)")
 solver = problem.build_solver(de.timesteppers.RK222)
 logger.info('Solver built')
 
-# Initial conditions
-x = domain.grid(0)
-z = domain.grid(1)
-b = solver.state['b']
-bz = solver.state['bz']
+# Initial conditions or restart
+if not pathlib.Path('restart.h5').exists():
 
-# Random perturbations, initialized globally for same results in parallel
-gshape = domain.dist.grid_layout.global_shape(scales=1)
-slices = domain.dist.grid_layout.slices(scales=1)
-rand = np.random.RandomState(seed=42)
-noise = rand.standard_normal(gshape)[slices]
+    # Initial conditions
+    x = domain.grid(0)
+    z = domain.grid(1)
+    b = solver.state['b']
+    bz = solver.state['bz']
 
-# Linear background + perturbations damped at walls
-zb, zt = z_basis.interval
-pert =  1e-3 * noise * (zt - z) * (z - zb)
-b['g'] = F * pert
-b.differentiate('z', out=bz)
+    # Random perturbations, initialized globally for same results in parallel
+    gshape = domain.dist.grid_layout.global_shape(scales=1)
+    slices = domain.dist.grid_layout.slices(scales=1)
+    rand = np.random.RandomState(seed=42)
+    noise = rand.standard_normal(gshape)[slices]
 
-# Initial timestep
-dt = 0.125
+    # Linear background + perturbations damped at walls
+    zb, zt = z_basis.interval
+    pert =  1e-3 * noise * (zt - z) * (z - zb)
+    b['g'] = F * pert
+    b.differentiate('z', out=bz)
+
+    # Timestepping and output
+    dt = 0.125
+    stop_sim_time = 25
+    fh_mode = 'overwrite'
+
+else:
+    # Restart
+    write, last_dt = solver.load_state('restart.h5', -1)
+
+    # Timestepping and output
+    dt = last_dt
+    stop_sim_time = 50
+    fh_mode = 'append'
 
 # Integration parameters
-solver.stop_sim_time = 25
-solver.stop_wall_time = 30 * 60.
-solver.stop_iteration = np.inf
+solver.stop_sim_time = stop_sim_time
 
 # Analysis
-snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=0.25, max_writes=50)
+snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=0.25, max_writes=50, mode=fh_mode)
 snapshots.add_system(solver.state)
 
 # CFL
