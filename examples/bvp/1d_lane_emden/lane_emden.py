@@ -13,7 +13,7 @@ It is usually written as:
     f(r=0) = 1
 where n is the polytropic index, and the equation is solved over the interval
 r=[0,R], where R is the n-dependent first zero of f(r). Although the equation
-is second order, it is singular at r=0, and therefore onyl requires a single
+is second order, it is singular at r=0, and therefore only requires a single
 outer boundary condition.
 
 Following [2], we rescale the equation by defining r=R*x:
@@ -52,10 +52,10 @@ domain = de.Domain([x_basis], np.float64)
 
 # Setup problem
 problem = de.NLBVP(domain, variables=['f', 'fx', 'R'], ncc_cutoff=ncc_cutoff)
+problem.meta['R']['x']['constant'] = True
 problem.parameters['n'] = n
 problem.add_equation("x*dx(fx) + 2*fx = -x*(R**2)*(f**n)", tau=False)
 problem.add_equation("fx - dx(f) = 0")
-problem.add_equation("dx(R) = 0")
 problem.add_bc("left(f) = 1")
 problem.add_bc("right(f) = 0")
 

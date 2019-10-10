@@ -54,7 +54,7 @@ def build_matrices(pencils, problem, matrices):
     # Build new cachid for NCC expansions
     cacheid = uuid.uuid4()
     # Build test operator dicts to synchronously expand all NCCs
-    for eq in problem.eqs+problem.bcs:
+    for eq in problem.eqs:
         for matrix in matrices:
             expr, vars = eq[matrix]
             if expr != 0:
@@ -113,7 +113,6 @@ class Pencil:
             matrix.eliminate_zeros()
             setattr(self, name, matrix.tocsr().copy())
 
-
         # Store expanded CSR matrices for fast combination
         self.LHS = zeros_with_pattern(*[matrices[name] for name in names]).tocsr()
         for name in names:
@@ -122,11 +121,9 @@ class Pencil:
             setattr(self, name+'_exp', matrix.tocsr().copy())
 
         # Store operators for RHS
-        self.G_eq = matrices['select']
-        self.G_bc = None
-
-        # no Dirichlet
-        self.dirichlet = None
+        Nz = zbasis.coeff_size
+        self.pre_left = matrices['select'] @ simple_reorder(len(problem.equations), Nz)
+        self.pre_right = simple_reorder(Nz, len(problem.variables))
 
     def _build_uncoupled_submatrices(self, problem, names, last_index, cacheid=None):
 
@@ -163,207 +160,277 @@ class Pencil:
 
     def _build_coupled_matrices(self, problem, names, cacheid=None):
 
+        zbasis = self.domain.bases[-1]
+        zname = zbasis.name
+        zsize = zbasis.coeff_size
+        zdtype = zbasis.coeff_dtype
+        compound = len(zbasis.subbases) > 1
+
+        # Find applicable equations
+        global_index = self.global_index
         index_dict = {}
         for axis, basis in enumerate(self.domain.bases):
             if basis.separable:
-                index_dict['n'+basis.name] = self.global_index[axis]
+                index_dict['n'+basis.name] = global_index[axis]
+        pencil_eqs = [eq for eq in problem.eqs if eval(eq['raw_condition'], index_dict)]
 
-        index = self.global_index
-        # Find applicable equations
-        selected_eqs = [eq for eq in problem.eqs if eval(eq['raw_condition'], index_dict)]
-        selected_bcs = [bc for bc in problem.bcs if eval(bc['raw_condition'], index_dict)]
-        ntau = sum(eq['tau'] for eq in selected_eqs)
-        # Check selections
-        nvars = problem.nvars
-        neqs = len(selected_eqs)
-        nbcs = len(selected_bcs)
-        if neqs != nvars:
-            raise ValueError("Pencil {} has {} equations for {} variables.".format(index, neqs, nvars))
-        if nbcs != ntau:
-            raise ValueError("Pencil {} has {} boundary conditions for {} differential equations.".format(index, nbcs, ntau))
-        Neqs = len(problem.eqs)
-        Nbcs = len(problem.bcs)
+        # Check basic solvability conditions
+        n_vars = problem.nvars
+        n_const_vars = sum(problem.meta[var][zname]['constant'] for var in problem.variables)
+        n_nonconst_vars = n_vars - n_const_vars
+        n_eqs = len(pencil_eqs)
+        n_const_eqs = sum(eq['constant'] for eq in pencil_eqs)
+        n_nonconst_eqs = n_eqs - n_const_eqs
+        n_tau = sum(eq['tau'] for eq in pencil_eqs)
+        if n_nonconst_eqs != n_nonconst_vars:
+            raise ValueError("Pencil {} has {} non-constant equations for {} non-constant variables.".format(global_index, n_nonconst_eqs, n_nonconst_vars))
+        if n_const_eqs != n_const_vars + n_tau:
+            raise ValueError("Pencil {} has {} constant equations for {} constant variables plus {} differential (tau modified) equations.".format(global_index, n_const_eqs, n_const_vars, n_tau))
 
-        zbasis = self.domain.bases[-1]
-        zsize = zbasis.coeff_size
-        zdtype = zbasis.coeff_dtype
-        compound = hasattr(zbasis, 'subbases')
-        self.dirichlet = dirichlet = any(problem.meta[:][zbasis.name]['dirichlet'])
+        # Local references
+        Zero_Nz = sparse.csr_matrix((zsize, zsize), dtype=zdtype)
+        Identity_1 = sparse.identity(1, dtype=zdtype, format='csr')
+        Identity_Nz = sparse.identity(zsize, dtype=zdtype, format='csr')
+        Drop_Nz = sparse.eye(0, zsize, dtype=zdtype, format='csr')
 
-        # Identity
-        Identity = sparse.identity(zsize, dtype=zdtype).tocsr()
-        Zero = sparse.csr_matrix((zsize, zsize), dtype=zdtype)
-
-        # Basis matrices
-        Ra = Rd = Identity
-        if dirichlet:
-            Rd = basis.PrefixBoundary
-        P = basis.Precondition
-        Rd_P = Rd*P
-        if ntau:
-            Cb = basis.ConstantToBoundary
-            Rd_Cb = Rd*Cb
-        if ntau and not compound:
-            PFT = basis.PreconditionFilterTau
-            Rd_Fb_P = Rd*PFT
-        if compound:
-            FM = basis.FilterMatch
-            M = basis.Match
-            Ra_Fm = Ra*FM
-        if ntau and compound:
-            PFMT = basis.PreconditionFilterMatchTau
-            PFM = basis.PreconditionFilterMatch
-            Rd_Fm_Fb_P = Rd*PFMT
-            Rd_Fm_P = Rd*PFM
-
-        # Pencil matrices
-        G_eq = sparse.csr_matrix((zsize*nvars, zsize*Neqs), dtype=zdtype)
-        G_bc = sparse.csr_matrix((zsize*nvars, zsize*Nbcs), dtype=zdtype)
-        C = lambda : sparse.csr_matrix((zsize*nvars, zsize*nvars), dtype=zdtype)
-        LHS = {name: C() for name in names}
-
-        # Kronecker stencils
-        δG_eq = np.zeros([nvars, Neqs])
-        δG_bc = np.zeros([nvars, Nbcs])
-        δC = np.zeros([nvars, nvars])
-
-        # Use scipy sparse kronecker product with CSR output
-        kron = partial(sparse.kron, format='csr')
+        # Build right preconditioner blocks
+        pre_right_diags = []
+        for var in problem.variables:
+            if problem.meta[var][zbasis.name]['constant']:
+                PR = zbasis.DropNonconstantRows.T
+            elif problem.meta[var][zbasis.name].get('dirichlet'):
+                PR = zbasis.Dirichlet
+            else:
+                PR = Identity_Nz
+            pre_right_diags.append(PR)
 
         # Build matrices
-        bc_iter = iter(selected_bcs)
-        for i, eq in enumerate(selected_eqs):
+        LHS_blocks = {name: [] for name in names}
+        pre_left_diags = []
 
-            differential = eq['differential']
-            tau = eq['tau']
-            if tau:
-                bc = next(bc_iter)
-
-            # Build RHS equation process matrix
-            if (not differential) and (not compound):
-                Gi_eq = Ra
-            elif (not differential) and compound:
-                Gi_eq = Ra_Fm
-            elif differential and (not compound):
-                if tau:
-                    Gi_eq = Rd_Fb_P
-                else:
-                    Gi_eq = Rd_P
-            elif differential and compound:
-                if tau:
-                    Gi_eq = Rd_Fm_Fb_P
-                else:
-                    Gi_eq = Rd_Fm_P
-
-            # Kronecker into system matrix
-            e = problem.eqs.index(eq)
-            δG_eq[i,e] = 1
-            G_eq = G_eq + kron(Gi_eq, δG_eq)
-            δG_eq[i,e] = 0
-
-            if tau:
-                # Build RHS BC process matrix
-                Gi_bc = Rd_Cb
-                # Kronecker into system matrix
-                b = problem.bcs.index(bc)
-                δG_bc[i,b] = 1
-                G_bc = G_bc + kron(Gi_bc, δG_bc)
-                δG_bc[i,b] = 0
-
-            # Build LHS matrices
+        # Start with match terms
+        if compound:
+            # Add empty match rows for all matrices
+            Match = zbasis.MatchRows.tocoo()
+            ZeroMatch = (0 * zbasis.MatchRows).tocoo()
+            eq_blocks = [ZeroMatch] * n_vars
             for name in names:
-                C = LHS[name]
+                for i in range(n_vars):
+                    LHS_blocks[name].append(eq_blocks.copy())
+            # Add match matrices to L for all variables
+            if 'L' in names:
+                for i in range(n_vars):
+                    LHS_blocks['L'][i][i] = Match
+            # Add columns to left preconditioner to produce empty RHS rows
+            nmatch = n_vars * (len(zbasis.subbases) - 1)
+            pre_left_diags.append(sparse.coo_matrix((nmatch, 0), zdtype))
+
+        # Loop over equations
+        for eq in problem.eqs:
+
+            # Drop non-selected equations
+            if eq not in pencil_eqs:
+                pre_left_diags.append(Drop_Nz)
+                continue
+
+            # Build left preconditioner block
+            if eq['LHS'].meta[zbasis.name]['constant']:
+                PL = zbasis.DropNonfirst
+            elif eq['tau'] and eq['differential']:
+                PL = zbasis.PreconditionDropTau
+            elif eq['tau']:
+                PL = zbasis.DropTau
+            elif eq['differential']:
+                PL = zbasis.PreconditionDropMatch
+            else:
+                PL = zbasis.DropMatch
+            pre_left_diags.append(PL)
+
+            # Build left-preconditioned LHS matrix blocks
+            PL_Zero = sparse.csr_matrix(PL.shape, dtype=zdtype)
+            PL_Zero_coo = sparse.coo_matrix(PL.shape, dtype=zdtype)
+            PL_coo = PL.tocoo()
+            for name in names:
                 eq_expr, eq_vars = eq[name]
                 if eq_expr != 0:
-                    Ei = eq_expr.operator_dict(self.global_index, eq_vars, cacheid=cacheid, **problem.ncc_kw)
+                    Ei = eq_expr.operator_dict(global_index, eq_vars, cacheid=cacheid, **problem.ncc_kw)
                 else:
                     Ei = defaultdict(int)
-                if tau:
-                    bc_expr, bc_vars = bc[name]
-                    if bc_expr != 0:
-                        Bi = bc_expr.operator_dict(self.global_index, bc_vars, cacheid=cacheid, **problem.ncc_kw)
-                    else:
-                        Bi = defaultdict(int)
-                for j in range(nvars):
+                eq_blocks = []
+                for j in range(n_vars):
                     # Build equation terms
                     Eij = Ei[eq_vars[j]]
-                    if Eij is 0:
-                        Eij = None
-                    elif Eij is 1:
-                        Eij = Gi_eq
-                    else:
-                        Eij = Gi_eq*Eij
-                    # Build BC terms
-                    if tau:
-                        Bij = Bi[bc_vars[j]]
-                        if Bij is 0:
-                            Bij = None
-                        elif Bij is 1:
-                            Bij = Gi_bc
+                    if np.isscalar(Eij):
+                        if Eij == 0:
+                            Eij = PL_Zero_coo
+                        elif Eij == 1:
+                            Eij = PL_coo
                         else:
-                            Bij = Gi_bc*Bij
+                            Eij = PL_coo * Eij
+                    elif PL is Identity_Nz:
+                        Eij = Eij.tocoo()
                     else:
-                        Bij = None
-                    # Combine equation and BC
-                    if (Eij is None) and (Bij is None):
-                        continue
-                    elif Eij is None:
-                        Cij = Bij
-                    elif Bij is None:
-                        Cij = Eij
-                    else:
-                        Cij = Eij + Bij
-                    # Kronecker into system
-                    δC[i,j] = 1
-                    C = C + kron(Cij, δC)
-                    δC[i,j] = 0
-                LHS[name] = C
+                        Eij = (PL @ Eij).tocoo()
+                    eq_blocks.append(Eij)
+                LHS_blocks[name].append(eq_blocks)
 
-        if compound and 'L' in names:
-            # Add match terms
-            L = LHS['L']
-            δM = np.identity(nvars)
-            L = L + kron(Ra*M, δM)
-            LHS['L'] = L
+        # Combine blocks
+        left_perm = left_permutation(zbasis, n_vars, pencil_eqs)
+        right_perm = right_permutation(zbasis, problem)
+        self.pre_left = left_perm @ sparse.block_diag(pre_left_diags, format='csr', dtype=zdtype)
+        self.pre_right = sparse.block_diag(pre_right_diags, format='csr', dtype=zdtype) @ right_perm
+        LHS_matrices = {name: left_perm @ fast_bmat(LHS_blocks[name]).tocsr() for name in names}
 
-        if dirichlet:
-            # Build right-preconditioner for system
-            δD = np.zeros([nvars, nvars])
-            D = 0
-            for i, var in enumerate(problem.variables):
-                if problem.meta[var][zbasis.name]['dirichlet']:
-                    Dii = zbasis.Dirichlet
-                else:
-                    Dii = Identity
-                δD[i,i] = 1
-                D = D + kron(Dii, δD)
-                δD[i,i] = 0
-            self.JD = D.tocsr()
-            self.JD.eliminate_zeros()
-
-        # Store minimum CSR matrices for fast dot products
-        for name, matrix in LHS.items():
+        # Store minimal-entry matrices for fast dot products
+        for name, matrix in LHS_matrices.items():
             # Store full matrix
             matrix.eliminate_zeros()
             setattr(self, name+'_full', matrix.tocsr().copy())
-            # Store truncated matrix
+            # Truncate entries
             matrix.data[np.abs(matrix.data) < problem.entry_cutoff] = 0
             matrix.eliminate_zeros()
+            # Store truncated matrix
             setattr(self, name, matrix.tocsr().copy())
 
-        # Apply Dirichlet recombination if applicable
-        if dirichlet:
+        # Store expanded right-preconditioned matrices
+        # Apply right preconditioning
+        if self.pre_right is not None:
             for name in names:
-                LHS[name] = LHS[name] * self.JD
-
-        # Store expanded CSR matrices for fast combination
-        self.LHS = zeros_with_pattern(*LHS.values()).tocsr()
-        for name, matrix in LHS.items():
+                LHS_matrices[name] = LHS_matrices[name] @ self.pre_right
+        # Build expanded LHS matrix to store matrix combinations
+        self.LHS = zeros_with_pattern(*LHS_matrices.values()).tocsr()
+        # Store expanded matrices for fast combination
+        for name, matrix in LHS_matrices.items():
             matrix = expand_pattern(matrix, self.LHS)
             setattr(self, name+'_exp', matrix.tocsr().copy())
 
-        # Store operators for RHS
-        G_eq.eliminate_zeros()
-        self.G_eq = G_eq
-        G_bc.eliminate_zeros()
-        self.G_bc = G_bc
+
+def fast_bmat(blocks):
+    """Build sparse matrix from sparse COO blocks."""
+    # Get data size
+    nnz = 0
+    for blockrow in blocks:
+        for block in blockrow:
+            nnz += block.nnz
+    # Allocate COO arrays
+    data = np.zeros(nnz, dtype=blocks[0][0].dtype)
+    row = np.zeros(nnz, dtype=int)
+    col = np.zeros(nnz, dtype=int)
+    # Insert data from blocks
+    n0 = 0
+    i0 = 0
+    for blockrow in blocks:
+        j0 = 0
+        for block in blockrow:
+            n1 = n0 + block.nnz
+            np.copyto(data[n0:n1], block.data)
+            np.add(block.row, i0, out=row[n0:n1])
+            np.add(block.col, j0, out=col[n0:n1])
+            j0 += block.shape[1]
+            n0 = n1
+        i0 += block.shape[0]
+    return sparse.coo_matrix((data, (row, col)), shape=(i0, j0))
+
+
+def sparse_perm(perm, M):
+    """Build sparse permutation matrix from permutation vector."""
+    N = len(perm)
+    data = np.ones(N)
+    row = np.array(perm)
+    col = np.arange(N)
+    return sparse.coo_matrix((data, (row, col)), shape=(M, N)).tocsr()
+
+
+def simple_reorder(N0, N1):
+    # Simple permutation
+    indeces = np.arange(N0 * N1)
+    n0, n1 = np.divmod(indeces, N1)
+    perm_indeces = n1*N0 + n0
+    return sparse_perm(perm_indeces, len(perm_indeces))
+
+
+def left_permutation(zbasis, n_vars, eqs):
+    """
+    Left permutation keeping match rows first, and inverting equation nesting:
+        Input: Equations > Subbases > modes
+        Output: Modes > Subbases > Equations
+    """
+    nmatch = n_vars * (len(zbasis.subbases) - 1)
+    # Compute list heirarchy of indeces
+    i = i0 = nmatch
+    L0 = []
+    for eq in eqs:
+        L1 = []
+        for subbasis in zbasis.subbases:
+            L2 = []
+            # Determine number of coefficients
+            if eq['LHS'].meta[zbasis.name]['constant']:
+                if (subbasis is zbasis.subbases[0]):
+                    coeff_size = 1
+                else:
+                    coeff_size = 0
+            elif (subbasis is zbasis.subbases[-1]) and (not eq['tau']):
+                coeff_size = subbasis.coeff_size
+            else:
+                coeff_size = subbasis.coeff_size - 1
+            # Record indeces
+            for coeff in range(coeff_size):
+                L2.append(i)
+                i += 1
+            L1.append(L2)
+        L0.append(L1)
+    # Reverse list hierarchy
+    indeces = []
+    for i in range(i0):
+        indeces.append(i)
+    n1max = len(L0)
+    n2max = max(len(L1) for L1 in L0)
+    n3max = max(len(L2) for L1 in L0 for L2 in L1)
+    for n3 in range(n3max):
+        for n2 in range(n2max):
+            for n1 in range(n1max):
+                try:
+                    indeces.append(L0[n1][n2][n3])
+                except IndexError:
+                    continue
+    return sparse_perm(indeces, len(indeces)).T
+
+
+def right_permutation(zbasis, problem):
+    """
+    Right permutation inverting variable nesting:
+        Input: Variables > Subbases > modes
+        Output: Modes > Subbases > Variables
+    """
+    # Compute list heirarchy of indeces
+    i = 0
+    L0 = []
+    for var in problem.variables:
+        L1 = []
+        for subbasis in zbasis.subbases:
+            L2 = []
+            # Determine number of coefficients
+            if problem.meta[var][zbasis.name]['constant']:
+                coeff_size = 1
+            else:
+                coeff_size = subbasis.coeff_size
+            # Record indeces
+            for coeff in range(coeff_size):
+                L2.append(i)
+                i += 1
+            L1.append(L2)
+        L0.append(L1)
+    # Reverse list hierarchy
+    indeces = []
+    L1max = len(L0)
+    L2max = max(len(L1) for L1 in L0)
+    L3max = max(len(L2) for L1 in L0 for L2 in L1)
+    for n3 in range(L3max):
+        for n2 in range(L2max):
+            for n1 in range(L1max):
+                try:
+                    indeces.append(L0[n1][n2][n3])
+                except IndexError:
+                    continue
+    return sparse_perm(indeces, len(indeces))
+

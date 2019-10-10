@@ -183,20 +183,10 @@ class ImplicitBasis(Basis):
         integ_vector  : integration over interval
         interp_vector : interpolation in interval
 
-    Additionally, they define a column vector `bc_vector` indicating which
-    coefficient's Galerkin constraint is to be replaced by the boundary
-    condition on a differential equation (i.e. the order of the tau term).
-
     """
-
 
     def Multiply(self, p, ncc_basis_meta, arg_basis_meta):
         """p-element multiplication matrix."""
-        raise NotImplementedError()
-
-    @CachedAttribute
-    def bc_vector(self):
-        """Boundary-row column vector."""
         raise NotImplementedError()
 
     @CachedAttribute
@@ -205,35 +195,42 @@ class ImplicitBasis(Basis):
         raise NotImplementedError()
 
     @CachedAttribute
-    def FilterBoundaryRow(self):
-        """Matrix filtering boundary row."""
-        Fb = sparse.identity(self.coeff_size, dtype=self.coeff_dtype, format='lil')
-        Fb[self.boundary_row, self.boundary_row] = 0
-        return Fb.tocsr()
+    def DropTau(self):
+        """Matrix dropping tau+match rows."""
+        N = self.coeff_size
+        DLR = sparse.eye(N-1, N, dtype=self.coeff_dtype, format='csr')
+        return DLR
 
     @CachedAttribute
-    def ConstantToBoundary(self):
-        """Matrix moving constant coefficient to boundary row."""
-        Cb = sparse.lil_matrix((self.coeff_size, self.coeff_size), dtype=self.coeff_dtype)
-        Cb[self.boundary_row, 0] = 1
-        return Cb.tocsr()
+    def DropNonfirst(self):
+        """Matrix dropping non-first rows."""
+        N = self.coeff_size
+        DNR = sparse.eye(1, N, dtype=self.coeff_dtype, format='csr')
+        return DNR
 
     @CachedAttribute
-    def PreconditionFilterTau(self):
-        """Precondition and filter tau row."""
+    def DropNonconstant(self):
+        """Matrix dropping non-constant rows."""
+        return self.DropNonfirst
+
+    @CachedAttribute
+    def DropMatch(self):
+        """Matrix dropping match rows."""
+        N = self.coeff_size
+        return sparse.eye(N, N, dtype=self.coeff_dtype, format='csr')
+
+    @CachedAttribute
+    def PreconditionDropTau(self):
+        """Preconditioning with tau+match filtering."""
         if self.tau_after_pre:
-            return self.FilterBoundaryRow * self.Precondition
+            return self.DropTau @ self.Precondition
         else:
-            return self.Precondition * self.FilterBoundaryRow
+            return self.Precondition[:-1,:-1] @ self.DropTau
 
     @CachedAttribute
-    def PrefixBoundary(self):
-        """Matrix moving boundary row to first row."""
-        cols = np.roll(np.arange(self.coeff_size), -self.boundary_row)
-        rows = np.arange(self.coeff_size)
-        data = np.ones(self.coeff_size)
-        Pb = sparse.coo_matrix((data, (rows, cols)), dtype=self.coeff_dtype)
-        return Pb.tocsr()
+    def PreconditionDropMatch(self):
+        """Preconditioning with match filtering."""
+        return self.Precondition
 
     def NCC(self, ncc_basis_meta, arg_basis_meta, coeffs, cutoff, max_terms):
         """Build NCC multiplication matrix."""
@@ -267,6 +264,7 @@ class Chebyshev(ImplicitBasis):
         self._problem_coord = lambda xn: center + (xn * radius)
 
         # Attributes
+        self.subbases = [self]
         self.name = name
         self.element_name = 'T' + name
         self.base_grid_size = base_grid_size
@@ -637,6 +635,7 @@ class Hermite(ImplicitBasis):
         self._problem_coord = lambda xn: center + (xn * radius)
 
         # Attributes
+        self.subbases = [self]
         self.name = name
         self.element_name = 'h' + name
         self.base_grid_size = base_grid_size
@@ -981,6 +980,7 @@ class Laguerre(ImplicitBasis):
         self._problem_coord = lambda xn: start + stretch * xn
 
         # Attributes
+        self.subbases = [self]
         self.name = name
         self.element_name = 'g' + name
         self.base_grid_size = base_grid_size
@@ -2254,48 +2254,55 @@ class Compound(ImplicitBasis):
         return n_terms, max_term, matrix
 
     @CachedAttribute
-    def FilterMatch(self):
-        """Matrix filtering match rows."""
-        # Don't filter tau on last subbasis
-        blocks = [b.FilterBoundaryRow for b in self.subbases]
-        blocks[-1] = sparse.identity(blocks[-1].shape[0])
-        FM = sparse.block_diag(blocks)
-        return FM.tocsr()
+    def DropTau(self):
+        """Matrix dropping tau+match rows."""
+        blocks = [subbasis.DropTau for subbasis in self.subbases]
+        return sparse.block_diag(blocks, format='csr')
 
     @CachedAttribute
-    def PreconditionFilterMatchTau(self):
-        """Precondition and filter match and tau rows."""
-        blocks = [b.PreconditionFilterTau for b in self.subbases]
-        PFMT = sparse.block_diag(blocks)
-        return PFMT.tocsr()
+    def DropNonfirst(self):
+        """Matrix dropping non-first rows."""
+        N = self.coeff_size
+        return sparse.eye(1, N, dtype=self.coeff_dtype, format='csr')
 
     @CachedAttribute
-    def PreconditionFilterMatch(self):
-        """Precondition and filter match rows."""
-        # Don't filter tau on last subbasis
-        blocks = [b.PreconditionFilterTau for b in self.subbases]
-        blocks[-1] = self.subbases[-1].Precondition
-        PFM = sparse.block_diag(blocks)
-        return PFM.tocsr()
+    def DropNonconstant(self):
+        """Matrix dropping non-constant rows."""
+        blocks = [subbasis.DropNonconstant for subbasis in self.subbases]
+        return sparse.block_diag(blocks, format='csr')
 
     @CachedAttribute
-    def Match(self):
+    def DropMatch(self):
+        """Matrix dropping last row from each subbasis except the last."""
+        blocks = [subbasis.DropTau for subbasis in self.subbases]
+        blocks[-1] = self.subbases[-1].DropMatch
+        return sparse.block_diag(blocks, format='csr')
+
+    @CachedAttribute
+    def PreconditionDropTau(self):
+        """Preconditioning and tau+match filtering."""
+        blocks = [subbasis.PreconditionDropTau for subbasis in self.subbases]
+        return sparse.block_diag(blocks, format='csr')
+
+    @CachedAttribute
+    def PreconditionDropMatch(self):
+        """Preconditioning and match filtering."""
+        blocks = [subbasis.PreconditionDropTau for subbasis in self.subbases]
+        blocks[-1] = self.subbases[-1].PreconditionDropMatch
+        return sparse.block_diag(blocks, format='csr')
+
+    @CachedAttribute
+    def MatchRows(self):
         """Matrix matching subbases."""
+        nsub = len(self.subbases)
         size = self.coeff_size
-        Match = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
+        Match = sparse.lil_matrix((nsub-1, size), dtype=self.coeff_dtype)
         for i in range(len(self.subbases) - 1):
             basis1 = self.subbases[i]
             basis2 = self.subbases[i+1]
             s1 = self.coeff_start(i)
             e1 = s2 = self.coeff_start(i+1)
             e2 = self.coeff_start(i+2)
-            r = s1 + basis1.boundary_row
-            x = basis1.interval[-1]
-            Match[r, s1:e1] = basis1.Interpolate._interp_vector('right')
-            Match[r, s2:e2] = -basis2.Interpolate._interp_vector('left')
+            Match[i, s1:e1] = basis1.Interpolate._interp_vector('right')
+            Match[i, s2:e2] = -basis2.Interpolate._interp_vector('left')
         return Match.tocsr()
-
-    @CachedAttribute
-    def PrefixBoundary(self):
-        return sparse.identity(self.coeff_size, dtype=self.coeff_dtype).tocsr()
-

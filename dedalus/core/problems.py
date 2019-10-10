@@ -106,7 +106,6 @@ class ProblemBase:
         self.nvars = len(variables)
         self.meta = MultiDict({var: Metadata(domain) for var in variables})
         self.equations = self.eqs = []
-        self.boundary_conditions = self.bcs = []
         self.parameters = OrderedDict()
         self.substitutions = OrderedDict()
         self.ncc_kw = {'cutoff': ncc_cutoff, 'max_terms': max_ncc_terms}
@@ -124,18 +123,10 @@ class ProblemBase:
         self._set_matrix_expressions(temp)
         self.eqs.append(temp)
 
-    def add_bc(self, equation, condition="True"):
+    def add_bc(self, *args, **kw):
         """Add boundary condition to problem."""
-        if not self.coupled:
-            raise SymbolicParsingError("Fully periodic domain doesn't support boundary conditions.")
-        logger.debug("Parsing BC {}".format(len(self.bcs)))
-        temp = {}
-        temp['tau'] = False
-        self._build_basic_dictionary(temp, equation, condition)
-        self._build_object_forms(temp)
-        self._check_bc_conditions(temp)
-        self._set_matrix_expressions(temp)
-        self.bcs.append(temp)
+        # Deprecated. Pass to add_equation.
+        return self.add_equation(*args, **kw)
 
     def _build_basic_dictionary(self, temp, equation, condition):
         """Split and store equation and condition strings."""
@@ -150,6 +141,7 @@ class ProblemBase:
         """Parse raw LHS/RHS strings to object forms."""
         temp['LHS'] = field.Operand.parse(temp['raw_LHS'], self.namespace, self.domain)
         temp['RHS'] = future.FutureField.parse(temp['raw_RHS'], self.namespace, self.domain)
+        temp['constant'] = temp['LHS'].meta[-1]['constant']
         logger.debug("  LHS object form: {}".format(temp['LHS']))
         logger.debug("  RHS object form: {}".format(temp['RHS']))
 
@@ -189,13 +181,6 @@ class ProblemBase:
         self._check_conditions(temp)
         self._check_differential_order(temp)
         self._check_meta_consistency(temp['LHS'], temp['RHS'])
-
-    def _check_bc_conditions(self, temp):
-        """Check object-form BC conditions."""
-        self._check_conditions(temp)
-        self._check_differential_order(temp)
-        self._check_meta_consistency(temp['LHS'], temp['RHS'])
-        self._check_boundary_form(temp['LHS'], temp['RHS'])
 
     def _check_differential_order(self, temp):
         """Require LHS To be first order in coupled derivatives."""
@@ -265,13 +250,6 @@ class ProblemBase:
             if RHS != 0:
                 if LHS.meta[axis]['envelope'] != RHS.meta[axis]['envelope']:
                     raise SymbolicParsingError("LHS and RHS envelopes along axis {} do not match.".format(axis))
-
-    def _check_boundary_form(self, LHS, RHS):
-        """Check that boundary expressions are constant along coupled axes."""
-        for ax, basis in enumerate(self.domain.bases):
-            if not basis.separable:
-                if (not LHS.meta[ax]['constant']) or (not RHS.meta[ax]['constant']):
-                    raise SymbolicParsingError("Boundary condition must be constant along '{}'.".format(basis.name))
 
     def _find_max_param(self, params):
         """Finds the maximum value of the specified parameters"""

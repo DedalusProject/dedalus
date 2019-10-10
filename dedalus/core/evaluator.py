@@ -291,7 +291,8 @@ class SystemHandler(Handler):
 
         nfields = len(self.tasks)
         names = ['sys'+str(i) for i in range(nfields)]
-        self.system = FieldSystem(names, self.domain)
+        fields = [self.domain.new_field(name=name) for name in names]
+        self.system = FieldSystem(fields)
 
         for i, task in enumerate(self.tasks):
             task['operator'].out = self.system.fields[i]

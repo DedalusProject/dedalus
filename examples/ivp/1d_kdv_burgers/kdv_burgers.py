@@ -7,6 +7,7 @@ plot of the computed solution.
 """
 
 import numpy as np
+import time
 import matplotlib.pyplot as plt
 
 from dedalus import public as de
@@ -51,14 +52,26 @@ t_list = [solver.sim_time]
 
 # Main loop
 dt = 2e-3
-while solver.ok:
-    solver.step(dt)
-    if solver.iteration % 20 == 0:
-        u.set_scales(1)
-        u_list.append(np.copy(u['g']))
-        t_list.append(solver.sim_time)
-    if solver.iteration % 100 == 0:
-        logger.info('Iteration: %i, Time: %e, dt: %e' %(solver.iteration, solver.sim_time, dt))
+try:
+    logger.info('Starting loop')
+    start_time = time.time()
+    while solver.proceed:
+        solver.step(dt)
+        if solver.iteration % 20 == 0:
+            u.set_scales(1)
+            u_list.append(np.copy(u['g']))
+            t_list.append(solver.sim_time)
+        if solver.iteration % 100 == 0:
+            logger.info('Iteration: %i, Time: %e, dt: %e' %(solver.iteration, solver.sim_time, dt))
+except:
+    logger.error('Exception raised, triggering end of main loop.')
+    raise
+finally:
+    end_time = time.time()
+    logger.info('Iterations: %i' %solver.iteration)
+    logger.info('Sim end time: %f' %solver.sim_time)
+    logger.info('Run time: %.2f sec' %(end_time-start_time))
+    logger.info('Run time: %f cpu-hr' %((end_time-start_time)/60/60*domain.dist.comm_cart.size))
 
 # Create space-time plot
 u_array = np.array(u_list)

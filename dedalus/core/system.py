@@ -5,20 +5,19 @@ Classes for systems of coefficients/fields.
 
 import numpy as np
 
-from ..tools.cache import CachedMethod
 from ..tools.general import unify
 
 
 class CoeffSystem:
     """
     Representation of a collection of fields that don't need to be transformed,
-    and are therefore stored as a contigous set of coefficient data for
-    efficient pencil and group manipulation.
+    and are therefore stored as a contigous set of coefficient data, joined
+    along the last axis, for efficient pencil and group manipulation.
 
     Parameters
     ----------
-    nfields : int
-        Number of fields to represent
+    pencil_length : int
+        Number of coefficients in a single pencil
     domain : domain object
         Problem domain
 
@@ -29,12 +28,12 @@ class CoeffSystem:
 
     """
 
-    def __init__(self, nfields, domain):
-
+    def __init__(self, pencil_length, domain):
+        self.pencil_length = pencil_length
+        self.domain = domain
         # Allocate data for joined coefficients
-        # Extend along last axis
         shape = domain.local_coeff_shape.copy()
-        shape[-1] *= nfields
+        shape[-1] = pencil_length
         dtype = domain.dist.coeff_layout.dtype
         self.data = np.zeros(shape, dtype=dtype)
 
@@ -54,10 +53,8 @@ class FieldSystem(CoeffSystem):
 
     Parameters
     ----------
-    field_names : list of strings
-        Names of fields to build
-    domain : domain object
-        Problem domain
+    fields : list of field objets
+        Fields to join into system
 
     Attributes
     ----------
@@ -69,50 +66,45 @@ class FieldSystem(CoeffSystem):
         Number of fields in system
     field_dict : dict
         Dictionary of fields
+    slices : dict
+        Dictionary of last-axis slice objects connecting field and system data
 
     """
 
-    def __init__(self, field_names, domain):
-
-        # Build fields
-        fields = [domain.new_field(name=fn) for fn in field_names]
-        nfields = len(fields)
-
+    def __init__(self, fields):
+        domain = unify(field.domain for field in fields)
+        zbasis = domain.bases[-1]
         # Allocate data for joined coefficients
-        super().__init__(nfields, domain)
-
+        pencil_length = len(fields) * zbasis.coeff_size
+        super().__init__(pencil_length, domain)
+        # Create views for each field's data
+        self.views = {}
+        stride = zbasis.coeff_size
+        for i, f in enumerate(fields):
+            self.views[f] = self.data[..., i*stride:(i+1)*stride]
         # Attributes
         self.domain = domain
-        self.field_names = field_names
         self.fields = fields
-        self.nfields = nfields
-        self.field_dict = dict(zip(field_names, fields))
+        self.field_names = [f.name for f in self.fields]
+        self.nfields = len(self.fields)
+        self.field_dict = dict(zip(self.field_names, self.fields))
 
     def __getitem__(self, name):
         """Return field corresponding to specified name."""
         return self.field_dict[name]
 
-    @classmethod
-    def from_fields(cls, fields):
-        names = [field.name for field in fields]
-        domain = unify(field.domain for field in fields)
-        sys = FieldSystem(names, domain)
-        sys.fields = fields
-        sys.field_dict = dict(zip(names, fields))
-        return sys
-
     def gather(self):
         """Copy fields into system buffer."""
-        stride = self.nfields
-        for start, field in enumerate(self.fields):
+        views = self.views
+        for field in self.fields:
             field.require_coeff_space()
-            np.copyto(self.data[..., start::stride], field.data)
+            np.copyto(views[field], field.data)
 
     def scatter(self):
         """Extract fields from system buffer."""
-        stride = self.nfields
+        views = self.views
         coeff_layout = self.domain.dist.coeff_layout
-        for start, field in enumerate(self.fields):
+        for field in self.fields:
             field.layout = coeff_layout
-            np.copyto(field.data, self.data[..., start::stride])
+            np.copyto(field.data, views[field])
 

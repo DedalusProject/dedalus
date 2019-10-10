@@ -48,6 +48,45 @@ def test_poisson_2d_periodic(benchmark, x_basis_class, y_basis_class, Nx, Ny, dt
     assert np.allclose(u['g'], u_true)
 
 
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('Ny', [64])
+@pytest.mark.parametrize('Nx', [8])
+@pytest.mark.parametrize('y_basis_class', [de.Fourier, de.SinCos])
+@pytest.mark.parametrize('x_basis_class', [de.Fourier, de.SinCos])
+@bench_wrapper
+def test_poisson_2d_periodic_firstorder(benchmark, x_basis_class, y_basis_class, Nx, Ny, dtype):
+    # Bases and domain
+    x_basis = x_basis_class('x', Nx, interval=(0, 2*np.pi))
+    y_basis = y_basis_class('y', Ny, interval=(0, 2*np.pi))
+    domain = de.Domain([x_basis, y_basis], grid_dtype=dtype)
+    # Forcing
+    F = domain.new_field(name='F')
+    F.meta['x']['parity'] = -1
+    F.meta['y']['parity'] = -1
+    x, y = domain.grids()
+    F['g'] = -2 * np.sin(x) * np.sin(y)
+    # Problem
+    problem = de.LBVP(domain, variables=['u','ux','uy'])
+    problem.meta['u']['x']['parity'] = -1
+    problem.meta['u']['y']['parity'] = -1
+    problem.meta['ux']['x']['parity'] = 1
+    problem.meta['ux']['y']['parity'] = -1
+    problem.meta['uy']['x']['parity'] = -1
+    problem.meta['uy']['y']['parity'] = 1
+    problem.parameters['F'] = F
+    problem.add_equation("ux - dx(u) = 0")
+    problem.add_equation("uy - dy(u) = 0")
+    problem.add_equation("dx(ux) + dy(uy) = F", condition="(nx != 0) or (ny != 0)")
+    problem.add_equation("u = 0", condition="(nx == 0) and (ny == 0)")
+    # Solver
+    solver = problem.build_solver()
+    solver.solve()
+    # Check solution
+    u_true = np.sin(x) * np.sin(y)
+    u = solver.state['u']
+    assert np.allclose(u['g'], u_true)
+
+
 def DoubleChebyshev(name, N, interval=(-1,1), dealias=1):
     N0 = int(N // 2)
     N1 = N - N0
