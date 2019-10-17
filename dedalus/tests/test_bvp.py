@@ -133,25 +133,60 @@ def test_poisson_2d_nonperiodic(benchmark, x_basis_class, y_basis_class, Nx, Ny,
     assert np.allclose(u['g'], u_true)
 
 
-def DoubleLaguerre(name, N, interval=(-1,1), dealias=1):
-    N0 = int(N // 2)
-    N1 = N - N0
-    L = interval[1] - interval[0]
-    C = (interval[0] + interval[1]) / 2
-    int0 = (C, C + L/2)
-    int1 = (C, C - L/2)
-    b0 = de.Chebyshev('b0', N0, interval=int0, dealias=dealias)
-    b1 = de.Chebyshev('b1', N1, interval=int1, dealias=dealias)
+def DoubleLaguerre(name, N, center=0.0, stretch=1.0, dealias=1):
+    b0 = de.Laguerre('b0', int(N//2), edge=center, stretch=-stretch, dealias=dealias)
+    b1 = de.Laguerre('b1', int(N//2), edge=center, stretch=stretch, dealias=dealias)
     return de.Compound(name, (b0, b1), dealias=dealias)
 
 
+def LCCL(name, N, center=0.0, stretch=1.0, cwidth=1.0, dealias=1):
+    b1 = de.Laguerre('b1', int(N//4), edge=center-cwidth, stretch=-stretch, dealias=dealias)
+    b2 = de.Chebyshev('b2', int(N//4), interval=(center-cwidth, center), dealias=dealias)
+    b3 = de.Chebyshev('b3', int(N//4), interval=(center, center+cwidth), dealias=dealias)
+    b4 = de.Laguerre('b4', int(N//4), edge=center+cwidth, stretch=stretch, dealias=dealias)
+    return de.Compound(name, (b1, b2, b3, b4), dealias=dealias)
+
+
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-@pytest.mark.parametrize('Nx', [64])
-@pytest.mark.parametrize('x_basis_class', [de.Hermite])
+@pytest.mark.parametrize('Nx', [128])
+@pytest.mark.parametrize('x_basis_class', [de.Hermite, DoubleLaguerre, LCCL])
 @bench_wrapper
-def test_gaussian(benchmark, x_basis_class, Nx, dtype):
+def test_gaussian_free(benchmark, x_basis_class, Nx, dtype):
+    # Stretch Laguerres
+    if x_basis_class is de.Hermite:
+        stretch = 1.0
+    else:
+        stretch = 0.1
     # Bases and domain
-    x_basis = x_basis_class('x', Nx, interval=(-1, 1))
+    x_basis = x_basis_class('x', Nx, center=0, stretch=stretch)
+    domain = de.Domain([x_basis], grid_dtype=dtype)
+    # Problem
+    problem = de.LBVP(domain, variables=['u'])
+    problem.parameters['pi'] = np.pi
+    problem.add_equation("dx(u) + 2*x*u = 0", tau=True)
+    problem.add_bc("integ(u) = sqrt(pi)")
+    # Solver
+    solver = problem.build_solver()
+    solver.solve()
+    # Check solution
+    x = domain.grid(0)
+    u_true = np.exp(-x**2)
+    u = solver.state['u']
+    assert np.allclose(u['g'], u_true)
+
+
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('Nx', [128])
+@pytest.mark.parametrize('x_basis_class', [de.Hermite, DoubleLaguerre, LCCL])
+@bench_wrapper
+def test_gaussian_forced(benchmark, x_basis_class, Nx, dtype):
+    # Stretch Laguerres
+    if x_basis_class is de.Hermite:
+        stretch = 1.0
+    else:
+        stretch = 0.1
+    # Bases and domain
+    x_basis = x_basis_class('x', Nx, center=0, stretch=stretch)
     domain = de.Domain([x_basis], grid_dtype=dtype)
     # Forcing
     F = domain.new_field(name='F')
@@ -170,13 +205,19 @@ def test_gaussian(benchmark, x_basis_class, Nx, dtype):
     assert np.allclose(u['g'], u_true)
 
 
+def ChebLag(name, N, edge=0.0, stretch=1.0, cwidth=1.0, dealias=1):
+    b1 = de.Chebyshev('b1', int(N//2), interval=(edge, edge+cwidth), dealias=dealias)
+    b2 = de.Laguerre('b2', int(N//2), edge=edge+cwidth, stretch=stretch, dealias=dealias)
+    return de.Compound(name, (b1, b2), dealias=dealias)
+
+
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 @pytest.mark.parametrize('Nx', [64])
-@pytest.mark.parametrize('x_basis_class', [de.Laguerre])
+@pytest.mark.parametrize('x_basis_class', [de.Laguerre, ChebLag])
 @bench_wrapper
-def test_exponential(benchmark, x_basis_class, Nx, dtype):
+def test_exponential_free(benchmark, x_basis_class, Nx, dtype):
     # Bases and domain
-    x_basis = x_basis_class('x', Nx, interval=(0, 1))
+    x_basis = x_basis_class('x', Nx, edge=0)
     domain = de.Domain([x_basis], grid_dtype=dtype)
     # Problem
     problem = de.LBVP(domain, variables=['u'])
@@ -188,6 +229,85 @@ def test_exponential(benchmark, x_basis_class, Nx, dtype):
     # Check solution
     x = domain.grid(0)
     u_true = np.exp(-x)
+    u = solver.state['u']
+    assert np.allclose(u['g'], u_true)
+
+
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('Nx', [64])
+@pytest.mark.parametrize('x_basis_class', [de.Laguerre, ChebLag])
+@bench_wrapper
+def test_exponential_forced(benchmark, x_basis_class, Nx, dtype):
+    # Bases and domain
+    x_basis = x_basis_class('x', Nx, edge=0)
+    domain = de.Domain([x_basis], grid_dtype=dtype)
+    # Forcing
+    F = domain.new_field(name='F')
+    x = domain.grid(0)
+    F['g'] = - np.exp(-x)
+    # Problem
+    problem = de.LBVP(domain, variables=['u'])
+    problem.parameters['F'] = F
+    problem.add_equation("dx(u) = F")
+    problem.add_bc("left(u) = 1")
+    # Solver
+    solver = problem.build_solver()
+    solver.solve()
+    # Check solution
+    x = domain.grid(0)
+    u_true = np.exp(-x)
+    u = solver.state['u']
+    assert np.allclose(u['g'], u_true)
+
+
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('Nx', [128])
+@pytest.mark.parametrize('x_basis_class', [DoubleLaguerre, LCCL])
+@bench_wrapper
+def test_double_exponential_free(benchmark, x_basis_class, Nx, dtype):
+    # Bases and domain
+    x_basis = x_basis_class('x', Nx, center=0)
+    domain = de.Domain([x_basis], grid_dtype=dtype)
+    # NCC
+    x = domain.grid(0)
+    sign_x = domain.new_field()
+    sign_x.meta['x']['envelope'] = False
+    sign_x['g'] = np.sign(x)
+    # Problem
+    problem = de.LBVP(domain, variables=['u'])
+    problem.parameters['sign_x'] = sign_x
+    problem.add_equation("dx(u) + sign_x*u = 0", tau=True)
+    problem.add_equation("integ(u) = 2")
+    # Solver
+    solver = problem.build_solver()
+    solver.solve()
+    # Check solution
+    u_true = np.exp(-np.sign(x)*x)
+    u = solver.state['u']
+    assert np.allclose(u['g'], u_true)
+
+
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('Nx', [128])
+@pytest.mark.parametrize('x_basis_class', [DoubleLaguerre, LCCL])
+@bench_wrapper
+def test_double_exponential_forced(benchmark, x_basis_class, Nx, dtype):
+    # Bases and domain
+    x_basis = x_basis_class('x', Nx, center=0)
+    domain = de.Domain([x_basis], grid_dtype=dtype)
+    # Forcing
+    F = domain.new_field(name='F')
+    x = domain.grid(0)
+    F['g'] = -np.sign(x)*np.exp(-np.sign(x)*x)
+    # Problem
+    problem = de.LBVP(domain, variables=['u'])
+    problem.parameters['F'] = F
+    problem.add_equation("dx(u) = F", tau=False)
+    # Solver
+    solver = problem.build_solver()
+    solver.solve()
+    # Check solution
+    u_true = np.exp(-np.sign(x)*x)
     u = solver.state['u']
     assert np.allclose(u['g'], u_true)
 
