@@ -197,7 +197,7 @@ class Pencil:
         pre_right_diags = []
         for var in problem.variables:
             if problem.meta[var][zbasis.name]['constant']:
-                PR = zbasis.DropNonconstantRows.T
+                PR = zbasis.DropNonconstant.T
             elif problem.meta[var][zbasis.name].get('dirichlet'):
                 PR = zbasis.Dirichlet
             else:
