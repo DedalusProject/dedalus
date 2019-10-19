@@ -28,9 +28,20 @@ def DoubleChebyshev(name, N, interval=(-1,1), dealias=1):
     return de.Compound(name, (b0, b1), dealias=dealias)
 
 
+def DoubleLegendre(name, N, interval=(-1,1), dealias=1):
+    N0 = int(N // 2)
+    N1 = N - N0
+    L = interval[1] - interval[0]
+    int0 = (interval[0], interval[0] + L/2)
+    int1 = (interval[0] + L/2, interval[1])
+    b0 = de.Legendre('b0', N0, interval=int0, dealias=dealias)
+    b1 = de.Legendre('b1', N1, interval=int1, dealias=dealias)
+    return de.Compound(name, (b0, b1), dealias=dealias)
+
+
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 @pytest.mark.parametrize('Nx', [32])
-@pytest.mark.parametrize('x_basis_class', [de.Chebyshev, DoubleChebyshev])
+@pytest.mark.parametrize('x_basis_class', [de.Chebyshev, de.Legendre, DoubleChebyshev, DoubleLegendre])
 @bench_wrapper
 def test_sin_nlbvp(benchmark, x_basis_class, Nx, dtype):
     # Parameters
