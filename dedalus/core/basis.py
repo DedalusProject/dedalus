@@ -684,11 +684,23 @@ class Legendre(ImplicitBasis):
             Y[n+1] = (2*n + 1) / (n + 1) * X * Y[n] - n / (n + 1) * Y[n-1]
         return Y
 
-    @staticmethod
-    def _evaluate_basis_functions(N, xn):
+    @classmethod
+    @CachedMethod
+    def _Jacobi_matrix(cls, N):
+        # X * Y[n] = (n + 1) / (2*n + 1) * Y[n+1] + n / (2*n + 1) * Y[n-1]
+        J = sparse.lil_matrix((N, N))
+        J[1, 0] = 1
+        for n in range(1, N):
+            J[n-1, n] = n / (2*n + 1)
+            if n < N - 1:
+                J[n+1, n] = (n + 1) / (2*n + 1)
+        return J.tocsr()
+
+    @classmethod
+    def _evaluate_basis_functions(cls, N, xn):
         """Evaluate basis functions on a specified native grid."""
         # Run recursion in higher precision
-        g = Legendre._recursion(N, xn.astype(np.float64))
+        g = cls._recursion(N, xn.astype(np.float128))
         return np.array(g).astype(xn.dtype)
 
     @CachedMethod
@@ -888,17 +900,6 @@ class Legendre(ImplicitBasis):
         # No meta dependency -- just cache on p
         return self._Multiply(p)
 
-    @staticmethod
-    def _Jacobi_matrix(N):
-        # X * Y[n] = (n + 1) / (2*n + 1) * Y[n+1] + n / (2*n + 1) * Y[n-1]
-        J = sparse.lil_matrix((N, N))
-        J[1, 0] = 1
-        for n in range(1, N):
-            J[n-1, n] = n / (2*n + 1)
-            if n < N - 1:
-                J[n+1, n] = (n + 1) / (2*n + 1)
-        return J.tocsr()
-
     @CachedMethod
     def _Multiply(self, n):
         # Return slice of extended matrix
@@ -997,23 +998,42 @@ class Hermite(ImplicitBasis):
         self.elements = np.arange(self.coeff_size)
         return self.coeff_dtype
 
-    def _evaluate_basis_functions(self, N, xn, envelope):
-        """Evaluate basis functions on a specified native grid."""
+    @staticmethod
+    def _recursion(N, X, envelope):
         # Implement recursion relation from Boyd A.6
-        # Run in higher precision
-        x = xn.astype(np.float128)
-        h = np.zeros((N, x.size), dtype=x.dtype)
+        # Preallocate list for outputs
+        Y = [None] * N
+        # Use powers to get identity element of X type and copy X
         if envelope:
-            h[0] = np.pi**(-1/4) * np.exp(-0.5*x**2)
-            h[1] = np.sqrt(2) * x * h[0]
+            Y[0] = np.pi**(-1/4) * np.exp(-0.5*X**2)
+            Y[1] = np.sqrt(2) * X * Y[0]
             for n in range(1, N-1):
-                h[n+1] = np.sqrt(2/(n+1)) * x * h[n] - np.sqrt(n/(n+1)) * h[n-1]
+                Y[n+1] = np.sqrt(2/(n+1)) * X * Y[n] - np.sqrt(n/(n+1)) * Y[n-1]
         else:
-            h[0] = 1
-            h[1] = 2 * x
+            Y[0] = X**0
+            Y[1] = 2 * X
             for n in range(1, N-1):
-                h[n+1] = 2 * x * h[n] - 2 * n * h[n-1]
-        return h.astype(xn.dtype)
+                Y[n+1] = 2 * X * Y[n] - 2 * n * Y[n-1]
+        return Y
+
+    @classmethod
+    @CachedMethod
+    def _Jacobi_matrix(cls, N):
+        # X * Y[n] = 1 / 2 * Y[n+1] + n * Y[n-1]
+        J = sparse.lil_matrix((N, N))
+        for n in range(N):
+            if n > 0:
+                J[n-1, n] = n
+            if n < N - 1:
+                J[n+1, n] = 0.5
+        return J.tocsr()
+
+    @classmethod
+    def _evaluate_basis_functions(cls, N, xn, envelope):
+        """Evaluate basis functions on a specified native grid."""
+        # Run recursion in higher precision
+        h = cls._recursion(N, xn.astype(np.float128), envelope)
+        return np.array(h).astype(xn.dtype)
 
     @CachedMethod
     def _mmt_setup(self, gsize, csize, envelope):
@@ -1253,34 +1273,32 @@ class Hermite(ImplicitBasis):
             return self._Multiply_poly_poly(p)
 
     @CachedMethod
-    def _Multiply_poly_poly(self, i):
+    def _Multiply_poly_poly(self, n):
+        # Return slice of extended matrix
+        N = self.coeff_size
+        return self._Multiply_poly_poly_ext(n)[:N, :N]
+
+    @CachedMethod
+    def _Multiply_poly_poly_ext(self, n):
         """
         Multiplication matrix:
             hp[i] hp[j] = Mpp[i][k,j] hp[k]
 
-        Mpp constructed from linearization recursion 3.9 in
-            Chaggara & Koepf 2011, https://doi.org/10.1016/j.cam.2011.03.010
+        Mpp constructed from recursion on Jacobi matrix.
         """
-        size = self.coeff_size
-        # Construct sparse matrix
-        Mult = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
-        for j in range(size):
-            # Compute linearization recursion
-            w = min(i, j) + 2
-            S = np.zeros(w)
-            S[-1] = 0
-            S[0] = 1
-            if w > 2:
-                for k in range(-1, w - 3):
-                    C0 = - 4 * (j - k) * (i - k) * (i + j - 2*k - 1)
-                    C1 = - 6*k**2 + 4*i*k + 4*j*k - 2*j*i + 4*i + 4*j - 10*k - 4
-                    C2 = - (k + 2)
-                    S[k+2] = (C0*S[k] + C1*S[k+1]) / C2
-            # Set elements
-            for k in range(w - 1):
-                if (i + j - 2*k) < size:
-                    Mult[i+j-2*k, j] = S[k]
-        return Mult.tocsr()
+        # H[n] = 2 * x * H[n-1] - 2 * (n - 1) * H[n-2]
+        # Recurse on Jacobi matrix
+        # Use size 2*N to avoid truncation issues
+        N = self.coeff_size
+        J = self._Jacobi_matrix(2*N)
+        if n == 0:
+            return (J**0).tocsr()
+        elif n == 1:
+            return 2 * J
+        else:
+            L1 = self._Multiply_poly_poly_ext(n - 1)
+            L2 = self._Multiply_poly_poly_ext(n - 2)
+            return 2 * J * L1 - 2 * (n - 1) * L2
 
     @CachedMethod
     def _Multiply_poly_func(self, p):
@@ -1378,20 +1396,39 @@ class Laguerre(ImplicitBasis):
         return self.coeff_dtype
 
     @staticmethod
-    def _evaluate_basis_functions(N, xn, envelope):
-        """Evaluate basis functions on a specified native grid."""
+    def _recursion(N, X, envelope):
         # Implement recursion relation from Boyd A.8
-        # Run in higher precision
-        x = xn.astype(np.float128)
-        g = np.zeros((N, x.size), dtype=x.dtype)
+        # Preallocate list for outputs
+        Y = [None] * N
+        # Use powers to get identity element of X type and copy X
         if envelope:
-            g[0] = np.exp(-x / 2)
+            Y[0] = np.exp(-X / 2)
         else:
-            g[0] = 1
-        g[1] = (1 - x) * g[0]
+            Y[0] = X**0
+        Y[1] = (X**0 - X) * Y[0]
         for n in range(1, N-1):
-            g[n+1] = (2*n + 1 - x) / (n + 1) * g[n] - n / (n + 1) * g[n-1]
-        return g.astype(xn.dtype)
+            Y[n+1] = ((2*n + 1)*X**0 - X) / (n + 1) * Y[n] - n / (n + 1) * Y[n-1]
+        return Y
+
+    @classmethod
+    @CachedMethod
+    def _Jacobi_matrix(cls, N):
+        # X * Y[n] = (2*n + 1) * Y[n] - (n + 1) Y[n+1] - n Y[n-1]
+        J = sparse.lil_matrix((N, N))
+        for n in range(N):
+            if n > 0:
+                J[n-1, n] = - n
+            J[n, n] = 2*n + 1
+            if n < N - 1:
+                J[n+1, n] = - (n + 1)
+        return J.tocsr()
+
+    @classmethod
+    def _evaluate_basis_functions(cls, N, xn, envelope):
+        """Evaluate basis functions on a specified native grid."""
+        # Run recursion in higher precision
+        g = cls._recursion(N, xn.astype(np.float128), envelope)
+        return np.array(g).astype(xn.dtype)
 
     @CachedMethod
     def _mmt_setup(self, gsize, csize, envelope):
@@ -1648,37 +1685,6 @@ class Laguerre(ImplicitBasis):
         else:
             return self._Multiply_poly_poly(p)
 
-    @CachedMethod
-    def _Multiply_poly_poly(self, i):
-        """
-        Multiplication matrix:
-            gp[i] gp[j] = Mpp[i][k,j] gp[k]
-
-        Mpp constructed from linearization recursion 3.16 in
-            Chaggara & Koepf 2011, https://doi.org/10.1016/j.cam.2011.03.010
-        """
-        size = self.coeff_size
-        # Construct sparse matrix
-        Mult = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
-        for j in range(size):
-            # Compute linearization recursion
-            w = 2*min(i, j) + 2
-            S = np.zeros(w)
-            S[-1] = 0
-            S[0] = special.comb(i+j, i)
-            if w > 2:
-                for k in range(-1, w - 3):
-                    C0 = (2*j - k) * (2*i - k) * (i + j - k)
-                    C1 = - (4*j*i - 4*k*i - 4*i - 4*k*j - 4*j + 3*k*k + 5*k + 2) * (i + j - k)
-                    C2 = 2 * (k + 2) * (i + j - k) * (i + j - k - 1)
-                    S[k+2] = (C0*S[k] + C1*S[k+1]) / C2
-            # Set elements
-            for k in range(w - 1):
-                if (i + j - k) < size:
-                    Mult[i+j-k, j] = S[k]
-        return Mult.tocsr()
-
-    @CachedMethod
     def _Multiply_poly_func(self, p):
         """
         Multiplication matrix:
@@ -1690,6 +1696,34 @@ class Laguerre(ImplicitBasis):
         """
         # Same as poly-poly matrix
         return self._Multiply_poly_poly(p)
+
+    @CachedMethod
+    def _Multiply_poly_poly(self, n):
+        # Return slice of extended matrix
+        N = self.coeff_size
+        return self._Multiply_poly_poly_ext(n)[:N, :N]
+
+    @CachedMethod
+    def _Multiply_poly_poly_ext(self, n):
+        """
+        Multiplication matrix:
+            gp[i] gp[j] = Mpp[i][k,j] gp[k]
+
+        Mpp constructed from recursion on Jacobi matrix.
+        """
+        # L[n] = ((2*n - 1) - x) / n * L[n-1] - (n - 1) / n * L[n-2]
+        # Recurse on Jacobi matrix
+        # Use size 2*N to avoid truncation issues
+        N = self.coeff_size
+        J = self._Jacobi_matrix(2*N)
+        if n == 0:
+            return (J**0).tocsr()
+        elif n == 1:
+            return J**0 - J
+        else:
+            L1 = self._Multiply_poly_poly_ext(n - 1)
+            L2 = self._Multiply_poly_poly_ext(n - 2)
+            return ((2*n - 1)*J**0 - J) / n * L1 - (n - 1) / n * L2
 
 
 class Fourier(TransverseBasis):
