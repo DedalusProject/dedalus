@@ -852,16 +852,15 @@ class Legendre(ImplicitBasis):
     def Precondition(self):
         """
         Preconditioning matrix.
-            P[n] = (R[n] - R[n-2]) / (2*n + 1)
+            2 * (2*n + 1) * P[n] = (n + 2) * J11[n] - n * J11[n-2]
         """
         size = self.coeff_size
         # Construct sparse matrix
         Pre = sparse.lil_matrix((size, size), dtype=self.coeff_dtype)
-        Pre[0, 0] = 1.
-        Pre[1, 1] = 1 / 3
-        for n in range(2, size):
-            Pre[n, n] = 1 / (2*n + 1)
-            Pre[n-2, n] = - 1 / (2*n + 1)
+        for n in range(size):
+            Pre[n, n] = (n + 2) / 2 / (2*n + 1)
+            if n >= 2:
+                Pre[n-2, n] = - n / 2 / (2*n + 1)
         return Pre.tocsr()
 
     @CachedAttribute
@@ -909,7 +908,8 @@ class Legendre(ImplicitBasis):
     @CachedMethod
     def _Multiply_ext(self, n):
         # P[n] = (2*n - 1) / n * x * P[n-1] - (n-1) / n * P[n-2]
-        # # Recurse on Jacobi matrix
+        # Recurse on Jacobi matrix
+        # Use size 2*N to avoid truncation issues
         N = self.coeff_size
         J = self._Jacobi_matrix(2*N)
         if n == 0:
