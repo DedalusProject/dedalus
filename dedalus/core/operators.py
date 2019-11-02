@@ -1080,6 +1080,12 @@ class TimeDerivative(LinearOperator, FutureField):
 
     name = 'dt'
 
+    def __new__(cls, arg0, **kw):
+        if not isinstance(arg0, Operand):
+            return 0
+        else:
+            return object.__new__(cls)
+
     @property
     def base(self):
         return TimeDerivative

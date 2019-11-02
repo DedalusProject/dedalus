@@ -550,14 +550,17 @@ class Field(Data):
             if basis.separable:
                 if not self.meta[basis.name]['constant']:
                     raise ValueError("{} is non-constant along separable direction '{}'.".format(self, basis.name))
+        # Scatter transverse-constant coefficients
         basis = domain.bases[-1]
         coeffs = np.zeros(basis.coeff_size, dtype=basis.coeff_dtype)
-        # Scatter transverse-constant coefficients
         self.require_coeff_space()
         if domain.dist.rank == 0:
             select = (0,) * (domain.dim - 1)
             np.copyto(coeffs, self.data[select])
         domain.dist.comm_cart.Bcast(coeffs, root=0)
+        # Revert to scalar behavior for constants
+        if self.meta[-1]['constant']:
+            return coeffs[0]
         # Build matrix
         ncc_basis_meta = self.meta[-1]
         arg_basis_meta = dict(frozen_arg_basis_meta)

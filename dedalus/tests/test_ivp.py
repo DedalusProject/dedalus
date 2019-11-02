@@ -30,10 +30,11 @@ def test_heat_1d_periodic(benchmark, x_basis_class, Nx, timestepper, dtype):
     x = domain.grid(0)
     F['g'] = -np.sin(x)
     # Problem
-    problem = de.IVP(domain, variables=['u'])
+    problem = de.IVP(domain, variables=['u','ux'])
     problem.meta['u']['x']['parity'] = -1
     problem.parameters['F'] = F
-    problem.add_equation("-dt(u) + dx(dx(u)) = F")
+    problem.add_equation("-dt(u) + dx(ux) = F")
+    problem.add_equation("ux - dx(u) = 0")
     # Solver
     solver = problem.build_solver(timestepper)
     dt = 1e-5
