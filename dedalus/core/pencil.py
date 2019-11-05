@@ -88,23 +88,31 @@ class Pencil:
     def _build_uncoupled_matrices(self, problem, names, cacheid=None):
 
         matrices = {name: [] for name in (names+['select'])}
-
         zbasis = self.domain.bases[-1]
         dtype = zbasis.coeff_dtype
+
+        # Build submatrices
         for last_index in range(zbasis.coeff_size):
             submatrices = self._build_uncoupled_submatrices(problem, names, last_index, cacheid=cacheid)
             for name in matrices:
                 matrices[name].append(submatrices[name])
 
+        # Build block matrices
         for name in matrices:
             blocks = matrices[name]
             matrix = same_dense_block_diag(blocks, format='csr', dtype=dtype)
             matrix.eliminate_zeros()
             matrices[name] = matrix
 
+        # Store operators for RHS
+        Nz = zbasis.coeff_size
+        self.pre_left = matrices['select'] @ simple_reorder(len(problem.equations), Nz)
+        self.pre_right = simple_reorder(Nz, len(problem.variables))
+
         # Store minimal CSR matrices for fast dot products
         for name in names:
-            matrix = matrices[name]
+            # Act on non-right-preconditioned vectors
+            matrix = matrices[name] @ self.pre_right.T
             # Store full matrix
             matrix.eliminate_zeros()
             setattr(self, name+'_full', matrix.tocsr().copy())
@@ -119,11 +127,6 @@ class Pencil:
             matrix = matrices[name]
             matrix = expand_pattern(matrix, self.LHS)
             setattr(self, name+'_exp', matrix.tocsr().copy())
-
-        # Store operators for RHS
-        Nz = zbasis.coeff_size
-        self.pre_left = matrices['select'] @ simple_reorder(len(problem.equations), Nz)
-        self.pre_right = simple_reorder(Nz, len(problem.variables))
 
     def _build_uncoupled_submatrices(self, problem, names, last_index, cacheid=None):
 
