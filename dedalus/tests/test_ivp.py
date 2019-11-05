@@ -80,3 +80,39 @@ def test_heat_1d_nonperiodic(benchmark, x_basis_class, Nx, timestepper, dtype):
     u = solver.state['u']
     assert np.allclose(u['g'], u_true)
 
+
+@pytest.mark.parametrize('dtype', [np.float64])
+@pytest.mark.parametrize('timestepper', de.timesteppers.schemes.values())
+@pytest.mark.parametrize('Nx', [32])
+@pytest.mark.parametrize('x_basis_class', [de.Chebyshev])
+@bench_wrapper
+def test_heat_ode_1d_nonperiodic(benchmark, x_basis_class, Nx, timestepper, dtype):
+    # Bases and domain
+    x_basis = x_basis_class('x', Nx, interval=(0, 2*np.pi))
+    domain = de.Domain([x_basis], grid_dtype=dtype)
+    # Forcing
+    F = domain.new_field(name='F')
+    x = domain.grid(0)
+    F['g'] = -np.sin(x)
+    # Problem
+    problem = de.IVP(domain, variables=['u','ux','a'])
+    problem.meta['a']['x']['constant'] = True
+    problem.parameters['F'] = F
+    problem.add_equation("dt(a) + a = 1")
+    problem.add_equation("ux - dx(u) = 0")
+    problem.add_equation("-dt(u) + dx(ux) = F")
+    problem.add_bc("left(u) - right(u) = 0")
+    problem.add_bc("left(ux) - right(ux) = 0")
+    # Solver
+    solver = problem.build_solver(timestepper)
+    dt = 1e-5
+    iter = 10
+    for i in range(iter):
+        solver.step(dt)
+    # Check solution
+    amp = 1 - np.exp(-solver.sim_time)
+    u_true = amp * np.sin(x)
+    u_match = np.allclose(solver.state['u']['g'], u_true)
+    a_match = np.allclose(solver.state['a']['g'], amp)
+    assert (u_match and a_match)
+

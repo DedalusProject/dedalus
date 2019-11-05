@@ -374,7 +374,7 @@ class InitialValueSolver:
         # Dereference strings
         if isinstance(timestepper, str):
             timestepper = timesteppers.schemes[timestepper]
-        pencil_length = problem.nvars * domain.local_coeff_shape[-1]
+        pencil_length = problem.nvars_nonconst * domain.local_coeff_shape[-1] + problem.nvars_const
         self.timestepper = timestepper(pencil_length, domain)
 
         # Attributes

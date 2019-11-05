@@ -112,6 +112,14 @@ class ProblemBase:
         self.entry_cutoff = entry_cutoff
         self.coupled = domain.bases[-1].coupled
 
+    @property
+    def nvars_const(self):
+        return len([var for var in self.variables if self.meta[var][-1]['constant']])
+
+    @property
+    def nvars_nonconst(self):
+        return self.nvars - self.nvars_const
+
     def add_equation(self, equation, condition="True", tau=None):
         """Add equation to problem."""
         logger.debug("Parsing Eqn {}".format(len(self.eqs)))
