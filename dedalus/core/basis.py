@@ -424,7 +424,7 @@ class Chebyshev(ImplicitBasis):
 
             def matrix_form(self):
                 # Call class method with arg metadata
-                return self._cls_matrix_form(self.args[0].meta[self.axis], self.position)
+                return self._cls_matrix_form(self.args[0].meta[self.axis])
 
             @classmethod
             def _cls_matrix_form(cls, arg_basis_meta):
@@ -747,7 +747,7 @@ class Legendre(ImplicitBasis):
 
             def matrix_form(self):
                 # Call class method with arg metadata
-                return self._cls_matrix_form(self.args[0].meta[self.axis], self.position)
+                return self._cls_matrix_form(self.args[0].meta[self.axis])
 
             @classmethod
             def _cls_matrix_form(cls, arg_basis_meta):
