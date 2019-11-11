@@ -195,7 +195,9 @@ class ProblemBase:
         coupled_diffs = [basis.Differentiate for basis in self.domain.bases if not basis.separable]
         order = self._require_first_order(temp, 'LHS', coupled_diffs)
         temp['differential'] = bool(order)
-        if temp['tau'] is None:
+        if temp['constant']:
+            temp['tau'] = False
+        elif temp['tau'] is None:
             temp['tau'] = temp['differential']
 
     def _check_if_zero(self, expr):
