@@ -12,7 +12,7 @@ from scipy import fftpack
 from scipy import special
 
 from . import operators
-from .polynomials import chebyshev_derivative_2d
+from . import polynomials
 from ..libraries.fftw import fftw_wrappers as fftw
 from ..tools.config import config
 from ..tools.cache import CachedAttribute
@@ -549,7 +549,7 @@ class Chebyshev(ImplicitBasis):
                 input_view = input.reshape(reduced_shape)
                 output_view = output.reshape(reduced_shape)
                 # Call cythonized derivative
-                chebyshev_derivative_2d(input_view, output_view)
+                polynomials.chebyshev_derivative_2d(input_view, output_view)
                 # Scale for interval
                 output /= self.basis._grid_stretch
 
@@ -716,6 +716,7 @@ class Legendre(ImplicitBasis):
         # sum w P[n] P[m] = int P[n] P[m] dx
         #                 = δ[m,n] N[n]^2
         forward_mat = weights * functions
+        forward_mat[gsize:] = 0
         n = np.arange(csize)[:, None]
         N2 = 2 / (2*n + 1)
         forward_mat /= N2
@@ -857,6 +858,22 @@ class Legendre(ImplicitBasis):
                     for i in range(j-3, -1, -2):
                         matrix[i, j] = matrix[i, j-2]
                 return matrix.tocsr()
+
+            def explicit_form(self, input, output, axis):
+                """Differentiation by recursion on coefficients."""
+                shape = input.shape
+                # Currently setup just for last axis
+                if axis != -1:
+                    if axis != (len(shape) - 1):
+                        raise NotImplementedError("Legendre derivative only implemented for last axis.")
+                # Create 2D views of arrays
+                reduced_shape = (int(np.prod(shape[:-1])), shape[-1])
+                input_view = input.reshape(reduced_shape)
+                output_view = output.reshape(reduced_shape)
+                # Call cythonized derivative
+                polynomials.legendre_derivative_2d(input_view, output_view)
+                # Scale for interval
+                output /= self.basis._grid_stretch
 
         return DifferentiateLegendre
 
@@ -1050,6 +1067,7 @@ class Hermite(ImplicitBasis):
         # sum w hp[n] hp[m] = δ[m,n] N[n]^2
         # sum w exp(x^2) hf[n] hf[m] = δ[m,n]
         forward_mat = weights * functions
+        forward_mat[gsize:] = 0
         if envelope:
             forward_mat *= np.exp(native_grid**2)
         else:
@@ -1448,6 +1466,7 @@ class Laguerre(ImplicitBasis):
         # sum w gp[n] gp[m] = δ[m,n]
         # sum w exp(x) gf[n] gf[m] = δ[m,n]
         forward_mat = weights * functions
+        forward_mat[gsize:] = 0
         if envelope:
             forward_mat *= np.exp(native_grid)
         return forward_mat, backward_mat
