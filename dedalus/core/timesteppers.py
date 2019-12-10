@@ -7,7 +7,7 @@ from collections import deque, OrderedDict
 import numpy as np
 from scipy.sparse import linalg
 
-from .system import CoeffSystem, FieldSystem
+from .system import CoeffSystem
 
 
 # Track implemented schemes
@@ -23,8 +23,8 @@ class MultistepIMEX:
 
     Parameters
     ----------
-    nfields : int
-        Number of fields in problem
+    pencil_length : int
+        Number of coefficients in a single pencil
     domain : domain object
         Problem domain
 
@@ -52,9 +52,9 @@ class MultistepIMEX:
 
     """
 
-    def __init__(self, nfields, domain):
+    def __init__(self, pencil_length, domain):
 
-        self.RHS = CoeffSystem(nfields, domain)
+        self.RHS = CoeffSystem(pencil_length, domain)
 
         # Create deque for storing recent timesteps
         N = max(self.amax, self.bmax, self.cmax)
@@ -65,11 +65,11 @@ class MultistepIMEX:
         self.LX = LX = deque()
         self.F = F = deque()
         for j in range(self.amax):
-            MX.append(CoeffSystem(nfields, domain))
+            MX.append(CoeffSystem(pencil_length, domain))
         for j in range(self.bmax):
-            LX.append(CoeffSystem(nfields, domain))
+            LX.append(CoeffSystem(pencil_length, domain))
         for j in range(self.cmax):
-            F.append(CoeffSystem(nfields, domain))
+            F.append(CoeffSystem(pencil_length, domain))
 
         # Attributes
         self._iteration = 0
@@ -82,8 +82,6 @@ class MultistepIMEX:
         pencils = solver.pencils
         evaluator = solver.evaluator
         state = solver.state
-        Fe = solver.Fe
-        Fb = solver.Fb
 
         evaluator_kw = {}
         evaluator_kw['world_time'] = world_time = solver.get_world_time()
@@ -127,15 +125,9 @@ class MultistepIMEX:
 
         for p in pencils:
             x = state.get_pencil(p)
-            pFe = Fe.get_pencil(p)
-            pFb = Fb.get_pencil(p)
-
             MX0.set_pencil(p, p.M*x)
             LX0.set_pencil(p, p.L*x)
-            if p.G_bc is None:
-                F0.set_pencil(p, p.G_eq*pFe)
-            else:
-                F0.set_pencil(p, p.G_eq*pFe + p.G_bc*pFb)
+            F0.set_pencil(p, p.pre_left*solver.F.get_pencil(p))
 
         # Build RHS
         RHS.data.fill(0)
@@ -155,8 +147,8 @@ class MultistepIMEX:
                 p.LHS_solver = None
                 p.LHS_solver = solver.matsolver(p.LHS, solver)
             pX = p.LHS_solver.solve(pRHS)
-            if p.dirichlet:
-                pX = p.JD * pX
+            if p.pre_right is not None:
+                pX = p.pre_right @ pX
             state.set_pencil(p, pX)
 
         # Update solver
@@ -469,7 +461,7 @@ class RungeKuttaIMEX:
 
     Parameters
     ----------
-    nfields : int
+    pencil_length : int
         Number of fields in problem
     domain : domain object
         Problem domain
@@ -502,14 +494,14 @@ class RungeKuttaIMEX:
 
     """
 
-    def __init__(self, nfields, domain):
+    def __init__(self, pencil_length, domain):
 
-        self.RHS = CoeffSystem(nfields, domain)
+        self.RHS = CoeffSystem(pencil_length, domain)
 
         # Create coefficient systems for multistep history
-        self.MX0 = CoeffSystem(nfields, domain)
-        self.LX = LX = [CoeffSystem(nfields, domain) for i in range(self.stages)]
-        self.F = F = [CoeffSystem(nfields, domain) for i in range(self.stages)]
+        self.MX0 = CoeffSystem(pencil_length, domain)
+        self.LX = LX = [CoeffSystem(pencil_length, domain) for i in range(self.stages)]
+        self.F = F = [CoeffSystem(pencil_length, domain) for i in range(self.stages)]
 
         self._LHS_params = None
 
@@ -520,8 +512,6 @@ class RungeKuttaIMEX:
         pencils = solver.pencils
         evaluator = solver.evaluator
         state = solver.state
-        Fe = solver.Fe
-        Fb = solver.Fb
 
         evaluator_kw = {}
         evaluator_kw['world_time'] = world_time = solver.get_world_time()
@@ -564,13 +554,8 @@ class RungeKuttaIMEX:
                 evaluator.evaluate_group('F', **evaluator_kw)
             for p in pencils:
                 pX = state.get_pencil(p)
-                pFe = Fe.get_pencil(p)
-                pFb = Fb.get_pencil(p)
                 LX[i-1].set_pencil(p, p.L*pX)
-                if p.G_bc is None:
-                    F[i-1].set_pencil(p, p.G_eq*pFe)
-                else:
-                    F[i-1].set_pencil(p, p.G_eq*pFe + p.G_bc*pFb)
+                F[i-1].set_pencil(p, p.pre_left*solver.F.get_pencil(p))
 
             # Construct RHS(n,i)
             np.copyto(RHS.data, MX0.data)
@@ -587,8 +572,8 @@ class RungeKuttaIMEX:
                     p.LHS_solvers[i] = None
                     p.LHS_solvers[i] = solver.matsolver(p.LHS, solver)
                 pX = p.LHS_solvers[i].solve(pRHS)
-                if p.dirichlet:
-                    pX = p.JD * pX
+                if p.pre_right is not None:
+                    pX = p.pre_right @ pX
                 state.set_pencil(p, pX)
             solver.sim_time = sim_time_0 + k*c[i]
 

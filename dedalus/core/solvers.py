@@ -17,7 +17,7 @@ from . import operators
 from . import pencil
 from . import timesteppers
 from .evaluator import Evaluator
-from .system import CoeffSystem, FieldSystem
+from .system import FieldSystem
 from .field import Scalar, Field
 from ..libraries.matsolvers import matsolvers
 from ..tools.cache import CachedAttribute
@@ -67,7 +67,7 @@ class EigenvalueSolver:
         # Build systems
         namespace = problem.namespace
         vars = [namespace[var] for var in problem.variables]
-        self.state = FieldSystem.from_fields(vars)
+        self.state = FieldSystem(vars)
         # Create F operator trees
         self.evaluator = Evaluator(domain, namespace)
         logger.debug('Finished EVP instantiation')
@@ -100,8 +100,8 @@ class EigenvalueSolver:
             self.eigenvalues, self.eigenvectors = eig_output
         elif len(eig_output) == 3:
             self.eigenvalues, self.left_eigenvectors, self.eigenvectors = eig_output
-        if pencil.dirichlet:
-            self.eigenvectors = pencil.JD * self.eigenvectors
+        if pencil.pre_right is not None:
+            self.eigenvectors = pencil.pre_right * self.eigenvectors
         self.eigenvalue_pencil = pencil
 
     def solve_sparse(self, pencil, N, target, rebuild_coeffs=False, **kw):
@@ -131,9 +131,11 @@ class EigenvalueSolver:
             cacheid = None
         pencil.build_matrices(self.problem, ['M', 'L'], cacheid=cacheid)
         # Solve as sparse general eigenvalue problem
-        self.eigenvalues, self.eigenvectors = scipy_sparse_eigs(A=pencil.L_exp, B=-pencil.M_exp, N=N, target=target, matsolver=self.matsolver, **kw)
-        if pencil.dirichlet:
-            self.eigenvectors = pencil.JD * self.eigenvectors
+        A = pencil.L_exp
+        B = -pencil.M_exp
+        self.eigenvalues, self.eigenvectors = scipy_sparse_eigs(A=A, B=B, N=N, target=target, matsolver=self.matsolver, **kw)
+        if pencil.pre_right is not None:
+            self.eigenvectors = pencil.pre_right @ self.eigenvectors
         self.eigenvalue_pencil = pencil
 
     def set_state(self, index):
@@ -192,18 +194,14 @@ class LinearBoundaryValueSolver:
         # Build systems
         namespace = problem.namespace
         vars = [namespace[var] for var in problem.variables]
-        self.state = FieldSystem.from_fields(vars)
+        self.state = FieldSystem(vars)
 
         # Create F operator trees
         self.evaluator = Evaluator(domain, namespace)
-        Fe_handler = self.evaluator.add_system_handler(iter=1, group='F')
-        Fb_handler = self.evaluator.add_system_handler(iter=1, group='F')
+        F_handler = self.evaluator.add_system_handler(iter=1, group='F')
         for eqn in problem.eqs:
-            Fe_handler.add_task(eqn['F'])
-        for bc in problem.bcs:
-            Fb_handler.add_task(bc['F'])
-        self.Fe = Fe_handler.build_system()
-        self.Fb = Fb_handler.build_system()
+            F_handler.add_task(eqn['F'])
+        self.F = F_handler.build_system()
 
         logger.debug('Finished LBVP instantiation')
 
@@ -226,17 +224,10 @@ class LinearBoundaryValueSolver:
 
         # Solve system for each pencil, updating state
         for p in self.pencils:
-            # Build RHS
-            pFe = self.Fe.get_pencil(p)
-            pFb = self.Fb.get_pencil(p)
-            if p.G_bc is None:
-                b = p.G_eq * pFe
-            else:
-                b = p.G_eq * pFe + p.G_bc * pFb
-            # Solve LHS
+            b = p.pre_left @ self.F.get_pencil(p)
             x = self.pencil_matsolvers[p].solve(b)
-            if p.dirichlet:
-                x = p.JD * x
+            if p.pre_right is not None:
+                x = p.pre_right @ x
             self.state.set_pencil(p, x)
         self.state.scatter()
 
@@ -279,8 +270,8 @@ class NonlinearBoundaryValueSolver:
         namespace = problem.namespace
         vars = [namespace[var] for var in problem.variables]
         perts = [namespace['δ'+var] for var in problem.variables]
-        self.state = FieldSystem.from_fields(vars)
-        self.perturbations = FieldSystem.from_fields(perts)
+        self.state = FieldSystem(vars)
+        self.perturbations = FieldSystem(perts)
 
         # Set variable scales back to 1 for initialization
         for field in self.state.fields + self.perturbations.fields:
@@ -288,14 +279,10 @@ class NonlinearBoundaryValueSolver:
 
         # Create F operator trees
         self.evaluator = Evaluator(domain, namespace)
-        Fe_handler = self.evaluator.add_system_handler(iter=1, group='F')
-        Fb_handler = self.evaluator.add_system_handler(iter=1, group='F')
+        F_handler = self.evaluator.add_system_handler(iter=1, group='F')
         for eqn in problem.eqs:
-            Fe_handler.add_task(eqn['F-L'])
-        for bc in problem.bcs:
-            Fb_handler.add_task(bc['F-L'])
-        self.Fe = Fe_handler.build_system()
-        self.Fb = Fb_handler.build_system()
+            F_handler.add_task(eqn['F-L'])
+        self.F = F_handler.build_system()
 
         logger.debug('Finished NLBVP instantiation')
 
@@ -307,13 +294,11 @@ class NonlinearBoundaryValueSolver:
         pencil.build_matrices(self.pencils, self.problem, ['dF'])
         # Solve system for each pencil, updating perturbations
         for p in self.pencils:
-            pFe = self.Fe.get_pencil(p)
-            pFb = self.Fb.get_pencil(p)
             A = p.L_exp - p.dF_exp
-            b = p.G_eq * pFe + p.G_bc * pFb
+            b = p.pre_left @ self.F.get_pencil(p)
             x = self.matsolver(A, self).solve(b)
-            if p.dirichlet:
-                x = p.JD * x
+            if p.pre_right is not None:
+                x = p.pre_right @ x
             self.perturbations.set_pencil(p, x)
         self.perturbations.scatter()
         # Update state
@@ -375,25 +360,22 @@ class InitialValueSolver:
         # Build systems
         namespace = problem.namespace
         vars = [namespace[var] for var in problem.variables]
-        self.state = FieldSystem.from_fields(vars)
+        self.state = FieldSystem(vars)
         self._sim_time = namespace[problem.time]
 
         # Create F operator trees
         self.evaluator = Evaluator(domain, namespace)
-        Fe_handler = self.evaluator.add_system_handler(iter=1, group='F')
-        Fb_handler = self.evaluator.add_system_handler(iter=1, group='F')
+        F_handler = self.evaluator.add_system_handler(iter=1, group='F')
         for eqn in problem.eqs:
-            Fe_handler.add_task(eqn['F'])
-        for bc in problem.bcs:
-            Fb_handler.add_task(bc['F'])
-        self.Fe = Fe_handler.build_system()
-        self.Fb = Fb_handler.build_system()
+            F_handler.add_task(eqn['F'])
+        self.F = F_handler.build_system()
 
         # Initialize timestepper
         # Dereference strings
         if isinstance(timestepper, str):
             timestepper = timesteppers.schemes[timestepper]
-        self.timestepper = timestepper(problem.nvars, domain)
+        pencil_length = problem.nvars_nonconst * domain.local_coeff_shape[-1] + problem.nvars_const
+        self.timestepper = timestepper(pencil_length, domain)
 
         # Attributes
         self.sim_time = self.initial_sim_time = 0.

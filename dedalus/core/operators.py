@@ -190,7 +190,7 @@ class GeneralFunction(NonlinearOperator, FutureField):
 
     """
 
-    def __init__(self, domain, layout, func, args=[], kw={}, out=None,):
+    def __init__(self, domain, layout, func, args=[], kw={}, out=None):
 
         # Required attributes
         self.args = list(args)

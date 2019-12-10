@@ -182,10 +182,6 @@ class Future(Operand):
                 meta[axis][key] = getattr(self, 'meta_%s' %key)(axis)
         return meta
 
-    def meta_scale(self, axis):
-        # Perform all operations at the dealias scale
-        return self.domain.bases[axis].dealias
-
     def meta_dirichlet(self, axis):
         # Set to True to minimize cache problems in NCCs
         return True
