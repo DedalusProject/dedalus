@@ -230,3 +230,34 @@ class CFL:
         for axis, component in enumerate(components):
             self.add_velocity(component, axis)
 
+    def add_nonconservative_diffusivity(self, diffusivity):
+        """
+        Add grid-crossing frequencies from a diffusivity along all axes.
+        This method treats the non-conservative form, e.g.
+            dt(C) = diff*di(di(C)) + ...
+        The corresponding timescale for the i-th axis is therefore
+            freq_i = diff / spacing_i**2
+        """
+        diff = FutureField.parse(diffusivity, self.solver.evaluator.vars, self.solver.domain)
+        for axis in range(self.solver.domain.dim):
+            freq = diff * self.grid_spacings[axis]**(-2)
+            self.add_frequency(freq)
+
+    def add_conservative_diffusivity(self, diffusivity):
+        """
+        Add grid-crossing frequencies from a diffusivity along all axes.
+        This method treats the conservative form, e.g.
+            dt(C) = di(diff*di(C)) + ...
+        Expanding the divergence gives advective terms and diffusive terms
+            di(diff*di(C)) = di(diff)*di(C) + diff*di(di(C))
+        This results in advective and diffusive frequencies
+            freq_adv_i = di(diff) / spacing_i
+            freq_diff_i = diff / spacing_i**2
+        """
+        # Diffusive portion
+        self.add_nonconservative_diffusivity(diffusivity)
+        # Advective portion
+        diff = FutureField.parse(diffusivity, self.solver.evaluator.vars, self.solver.domain)
+        for axis in range(self.solver.domain.dim):
+            freq = self.solver.domain.bases[axis].Differentiate(diff) / self.grid_spacings[axis]
+            self.add_frequency(freq)
