@@ -79,7 +79,7 @@ problem.add_bc("right(w) = 0", condition="(nx != 0) or (ny != 0)")
 problem.add_bc("integ_z(p) = 0", condition="(nx == 0) and (ny == 0)")
 
 # Build solver
-solver = problem.build_solver(de.timesteppers.MCNAB2)
+solver = problem.build_solver(de.timesteppers.SBDF2)
 logger.info('Solver built')
 
 # Initial conditions
@@ -114,7 +114,7 @@ snap.add_task("interp(w, z=0)", scales=1, name='w midplane')
 snap.add_task("integ(b, 'z')", name='b integral x4', scales=4)
 
 # CFL
-CFL = flow_tools.CFL(solver, initial_dt=1e-4, cadence=5, safety=1.5,
+CFL = flow_tools.CFL(solver, initial_dt=1e-4, cadence=5, safety=0.5,
                      max_change=1.5, min_change=0.5, max_dt=0.05)
 CFL.add_velocities(('u', 'v', 'w'))
 

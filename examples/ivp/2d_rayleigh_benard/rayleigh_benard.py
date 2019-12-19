@@ -119,7 +119,7 @@ snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=0.25, max_writ
 snapshots.add_system(solver.state)
 
 # CFL
-CFL = flow_tools.CFL(solver, initial_dt=dt, cadence=10, safety=1,
+CFL = flow_tools.CFL(solver, initial_dt=dt, cadence=10, safety=0.5,
                      max_change=1.5, min_change=0.5, max_dt=0.125, threshold=0.05)
 CFL.add_velocities(('u', 'w'))
 
