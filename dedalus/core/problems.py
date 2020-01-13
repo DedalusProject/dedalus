@@ -161,6 +161,7 @@ class ProblemBase:
         for axis, basis in enumerate(self.domain.bases):
             # Grids
             namespace[basis.name] = basis.grid_array_object(self.domain, axis)
+            namespace[f's{basis.name}'] = basis.grid_spacing_object(self.domain, axis)
             # Basis operators
             for op in basis.operators:
                 namespace[op.name] = op

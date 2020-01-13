@@ -114,8 +114,7 @@ class Basis:
     @CachedMethod
     def grid_spacing(self, scale=1.):
         """Compute grid spacings."""
-        scales = self.remedy_scales(scales)
-        grid = self.grid(scales[axis])
+        grid = self.grid(scale)
         return np.gradient(grid)
 
     @CachedMethod
@@ -125,6 +124,13 @@ class Basis:
         grid = Array(domain, name=self.name)
         grid.from_global_vector(self.grid(self.dealias), axis)
         return grid
+
+    @CachedMethod
+    def grid_spacing_object(self, domain, axis):
+        from .field import Array
+        spacing = Array(domain, name='s'+self.name)
+        spacing.from_global_vector(self.grid_spacing(self.dealias), axis)
+        return spacing
 
     def check_arrays(self, cdata, gdata, axis, scale):
         """
