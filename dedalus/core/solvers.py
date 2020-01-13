@@ -101,7 +101,7 @@ class EigenvalueSolver:
         elif len(eig_output) == 3:
             self.eigenvalues, self.left_eigenvectors, self.eigenvectors = eig_output
         if pencil.pre_right is not None:
-            self.eigenvectors = pencil.pre_right * self.eigenvectors
+            self.eigenvectors = pencil.pre_right @ self.eigenvectors
         self.eigenvalue_pencil = pencil
 
     def solve_sparse(self, pencil, N, target, rebuild_coeffs=False, **kw):
@@ -303,7 +303,7 @@ class NonlinearBoundaryValueSolver:
         self.perturbations.scatter()
         # Update state
         self.state.gather()
-        self.state.data += damping*self.perturbations.data
+        self.state.data += damping * self.perturbations.data
         self.state.scatter()
         self.iteration += 1
 

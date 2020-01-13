@@ -8,6 +8,7 @@ import numpy as np
 from scipy.sparse import linalg
 
 from .system import CoeffSystem
+from ..tools.sparse import fast_csr_matvec
 
 
 # Track implemented schemes
@@ -123,11 +124,15 @@ class MultistepIMEX:
         update_LHS = ((a0, b0) != self._LHS_params)
         self._LHS_params = (a0, b0)
 
+        # Update MX0, LX0, F0
+        MX0.data.fill(0)
+        LX0.data.fill(0)
+        F0.data.fill(0)
         for p in pencils:
             x = state.get_pencil(p)
-            MX0.set_pencil(p, p.M*x)
-            LX0.set_pencil(p, p.L*x)
-            F0.set_pencil(p, p.pre_left*solver.F.get_pencil(p))
+            fast_csr_matvec(p.M, x, MX0.get_pencil(p))
+            fast_csr_matvec(p.L, x, LX0.get_pencil(p))
+            fast_csr_matvec(p.pre_left, solver.F.get_pencil(p), F0.get_pencil(p))
 
         # Build RHS
         RHS.data.fill(0)
@@ -139,6 +144,7 @@ class MultistepIMEX:
             RHS.data -= b[j] * LX[j-1].data
 
         # Solve
+        state.data.fill(0)
         for p in pencils:
             pRHS = RHS.get_pencil(p)
             if update_LHS:
@@ -147,9 +153,10 @@ class MultistepIMEX:
                 p.LHS_solver = None
                 p.LHS_solver = solver.matsolver(p.LHS, solver)
             pX = p.LHS_solver.solve(pRHS)
-            if p.pre_right is not None:
-                pX = p.pre_right @ pX
-            state.set_pencil(p, pX)
+            if p.pre_right is None:
+                state.set_pencil(p, pX)
+            else:
+                fast_csr_matvec(p.pre_right, pX, state.get_pencil(p))
 
         # Update solver
         solver.sim_time += dt
@@ -535,9 +542,9 @@ class RungeKuttaIMEX:
         self._LHS_params = k
 
         # Compute M.X(n,0)
+        MX0.data.fill(0)
         for p in pencils:
-            pX0 = state.get_pencil(p)
-            MX0.set_pencil(p, p.M*pX0)
+            fast_csr_matvec(p.M, state.get_pencil(p), MX0.get_pencil(p))
             if update_LHS:
                 p.LHS_solvers = [None] * (self.stages+1)
 
@@ -552,17 +559,19 @@ class RungeKuttaIMEX:
                 evaluator.evaluate_scheduled(**evaluator_kw)
             else:
                 evaluator.evaluate_group('F', **evaluator_kw)
+            LX[i-1].data.fill(0)
+            F[i-1].data.fill(0)
             for p in pencils:
-                pX = state.get_pencil(p)
-                LX[i-1].set_pencil(p, p.L*pX)
-                F[i-1].set_pencil(p, p.pre_left*solver.F.get_pencil(p))
+                fast_csr_matvec(p.L, state.get_pencil(p), LX[i-1].get_pencil(p))
+                fast_csr_matvec(p.pre_left, solver.F.get_pencil(p), F[i-1].get_pencil(p))
 
             # Construct RHS(n,i)
             np.copyto(RHS.data, MX0.data)
             for j in range(0, i):
-                RHS.data += k * A[i,j] * F[j].data
-                RHS.data -= k * H[i,j] * LX[j].data
+                RHS.data += (k * A[i,j]) * F[j].data
+                RHS.data -= (k * H[i,j]) * LX[j].data
 
+            state.data.fill(0)
             for p in pencils:
                 pRHS = RHS.get_pencil(p)
                 # Construct LHS(n,i)
@@ -572,9 +581,10 @@ class RungeKuttaIMEX:
                     p.LHS_solvers[i] = None
                     p.LHS_solvers[i] = solver.matsolver(p.LHS, solver)
                 pX = p.LHS_solvers[i].solve(pRHS)
-                if p.pre_right is not None:
-                    pX = p.pre_right @ pX
-                state.set_pencil(p, pX)
+                if p.pre_right is None:
+                    state.set_pencil(p, pX)
+                else:
+                    fast_csr_matvec(p.pre_right, pX, state.get_pencil(p))
             solver.sim_time = sim_time_0 + k*c[i]
 
 

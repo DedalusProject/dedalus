@@ -5,6 +5,7 @@ Tools for working with sparse matrices.
 import numpy as np
 from scipy import sparse
 from scipy.sparse import linalg as spla
+from scipy.sparse import _sparsetools
 
 
 def scipy_sparse_eigs(A, B, N, target, matsolver, **kw):
@@ -75,4 +76,17 @@ def same_dense_block_diag(blocks, format=None, dtype=None):
     res = sparse.coo_matrix((data, (rows, cols)), shape=(N*I, N*J), dtype=dtype).asformat(format)
     res.eliminate_zeros()
     return res
+
+
+def fast_csr_matvec(A_csr, x_vec, out_vec):
+    """
+    Fast CSR matvec skipping type and shape checks. The result is added to the specificed output array,
+    so the output should be manually zeroed prior to calling this routine, if necessary.
+    """
+    # Check format for don't convert
+    if A_csr.format != "csr":
+        raise ValueError("Matrix must be in CSR format.")
+    M, N = A_csr._shape
+    _sparsetools.csr_matvec(M, N, A_csr.indptr, A_csr.indices, A_csr.data, x_vec, out_vec)
+    return out_vec
 

@@ -341,7 +341,7 @@ def sparse_perm(perm, M):
     data = np.ones(N)
     row = np.array(perm)
     col = np.arange(N)
-    return sparse.coo_matrix((data, (row, col)), shape=(M, N)).tocsr()
+    return sparse.coo_matrix((data, (row, col)), shape=(M, N))
 
 
 def simple_reorder(N0, N1):
@@ -349,7 +349,7 @@ def simple_reorder(N0, N1):
     indeces = np.arange(N0 * N1)
     n0, n1 = np.divmod(indeces, N1)
     perm_indeces = n1*N0 + n0
-    return sparse_perm(perm_indeces, len(perm_indeces))
+    return sparse_perm(perm_indeces, len(perm_indeces)).tocsr()
 
 
 def left_permutation(zbasis, n_vars, eqs):
@@ -396,7 +396,7 @@ def left_permutation(zbasis, n_vars, eqs):
                     indeces.append(L0[n1][n2][n3])
                 except IndexError:
                     continue
-    return sparse_perm(indeces, len(indeces)).T
+    return sparse_perm(indeces, len(indeces)).T.tocsr()
 
 
 def right_permutation(zbasis, problem):
@@ -435,5 +435,5 @@ def right_permutation(zbasis, problem):
                     indeces.append(L0[n1][n2][n3])
                 except IndexError:
                     continue
-    return sparse_perm(indeces, len(indeces))
+    return sparse_perm(indeces, len(indeces)).tocsr()
 
