@@ -30,7 +30,7 @@ def test_poisson_2d_periodic(benchmark, x_basis_class, y_basis_class, Nx, Ny, dt
     F = domain.new_field(name='F')
     F.meta['x']['parity'] = -1
     F.meta['y']['parity'] = -1
-    x, y = domain.grids()
+    x, y = domain.all_grids()
     F['g'] = -2 * np.sin(x) * np.sin(y)
     # Problem
     problem = de.LBVP(domain, variables=['u'])
@@ -63,7 +63,7 @@ def test_poisson_2d_periodic_firstorder(benchmark, x_basis_class, y_basis_class,
     F = domain.new_field(name='F')
     F.meta['x']['parity'] = -1
     F.meta['y']['parity'] = -1
-    x, y = domain.grids()
+    x, y = domain.all_grids()
     F['g'] = -2 * np.sin(x) * np.sin(y)
     # Problem
     problem = de.LBVP(domain, variables=['u','ux','uy'])
@@ -123,7 +123,7 @@ def test_poisson_2d_nonperiodic(benchmark, x_basis_class, y_basis_class, Nx, Ny,
     # Forcing
     F = domain.new_field(name='F')
     F.meta['x']['parity'] = -1
-    x, y = domain.grids()
+    x, y = domain.all_grids()
     F['g'] = -2 * np.sin(x) * np.sin(y)
     # Problem
     problem = de.LBVP(domain, variables=['u','uy'])

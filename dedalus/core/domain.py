@@ -5,6 +5,7 @@ Class for problem domain.
 
 import logging
 import numpy as np
+import warnings
 
 from .metadata import Metadata
 from .distributor import Distributor
@@ -89,9 +90,8 @@ class Domain:
             return None
 
     def grids(self, scales=None):
-        """Return list of local grids along each axis."""
-
-        return [self.grid(i, scales) for i in range(self.dim)]
+        warnings.warn("domain.grids is deprecated, use domain.all_grids instead", DeprecationWarning)
+        return self.all_grids(scales=scales)
 
     @CachedMethod
     def grid(self, axis, scales=None):
@@ -105,6 +105,10 @@ class Domain:
         grid = reshape_vector(grid, self.dim, axis)
         return grid
 
+    def all_grids(self, scales=None):
+        """Return list of local grids along each axis."""
+        return [self.grid(i, scales) for i in range(self.dim)]
+
     @CachedMethod
     def elements(self, axis):
         """Return local elements along one axis."""
@@ -116,6 +120,10 @@ class Domain:
         # Reshape as multidimensional vector
         elements = reshape_vector(elements, self.dim, axis)
         return elements
+
+    def all_elements(self):
+        """Return list of local elements along each axis."""
+        return [self.elements(i) for i in range(self.dim)]
 
     @CachedMethod
     def grid_spacing(self, axis, scales=None):
@@ -129,6 +137,10 @@ class Domain:
         spacing = reshape_vector(spacing, self.dim, axis)
         return spacing
 
+    def all_grid_spacings(self, scales=None):
+        """Return list of local grid spacings along each axis."""
+        return [self.grid_spacing(i, scales) for i in range(self.dim)]
+
     def new_data(self, type, **kw):
         return type(domain=self, **kw)
 
@@ -139,18 +151,19 @@ class Domain:
         return [self.new_field(**kw) for n in range(nfields)]
 
     def remedy_scales(self, scales):
-
-        # Default to 1.
-        if scales is None:
-            return tuple([1.] * self.dim)
-        # Repeat scalars
-        elif np.isscalar(scales):
-            if scales == 0:
-                raise ValueError("Cannot request zero scales.")
-            return tuple([scales] * self.dim)
-        # Cast others as tuple
-        else:
+        # Try casting to tuple
+        try:
             return tuple(scales)
+        # Handle scalars
+        except TypeError:
+            # Default to 1.
+            if scales is None:
+                return tuple([1.0] * self.dim)
+            # Repeat scalars
+            elif scales == 0:
+                raise ValueError("Cannot request zero scales.")
+            else:
+                return tuple([scales] * self.dim)
 
 
 class EmptyDomain:

@@ -80,8 +80,7 @@ logger.info('Solver built')
 if not pathlib.Path('restart.h5').exists():
 
     # Initial conditions
-    x = domain.grid(0)
-    z = domain.grid(1)
+    x, z = domain.all_grids()
     b = solver.state['b']
     bz = solver.state['bz']
 

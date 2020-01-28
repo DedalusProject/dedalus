@@ -328,7 +328,7 @@ class Transform:
         field.layout = self.layout1
         gdata = field.data
         # Transform if there's local data
-        if np.prod(cdata.shape):
+        if cdata.size:
             # Shortcut constant transforms
             if field.meta[self.axis]['constant']:
                 gdata[:] = cdata[axslice(self.axis, 0, 1)]
@@ -342,7 +342,7 @@ class Transform:
         field.layout = self.layout0
         cdata = field.data
         # Transform if there's local data
-        if np.prod(gdata.shape):
+        if gdata.size:
             # Shortcut constant transforms
             if field.meta[self.axis]['constant']:
                 cdata[axslice(self.axis, 0, 1)] = gdata[axslice(self.axis, 0, 1)]

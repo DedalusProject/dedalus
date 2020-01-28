@@ -23,7 +23,7 @@ def diagonal_solver(Nx, Ny, dtype):
     domain = de.Domain([x_basis, y_basis], grid_dtype=dtype)
     # Forcing
     F = domain.new_field(name='F')
-    x, y = domain.grids()
+    x, y = domain.all_grids()
     F['g'] = -2 * np.sin(x) * np.sin(y)
     # Problem
     problem = de.LBVP(domain, variables=['u'])
@@ -42,7 +42,7 @@ def block_solver(Nx, Ny, dtype):
     domain = de.Domain([x_basis, y_basis], grid_dtype=dtype)
     # Forcing
     F = domain.new_field(name='F')
-    x, y = domain.grids()
+    x, y = domain.all_grids()
     F['g'] = -2 * np.sin(x) * np.sin(y)
     # Problem
     problem = de.LBVP(domain, variables=['u','ux','uy','Lu'])
@@ -64,7 +64,7 @@ def coupled_solver(Nx, Ny, dtype):
     domain = de.Domain([x_basis, y_basis], grid_dtype=dtype)
     # Forcing
     F = domain.new_field(name='F')
-    x, y = domain.grids()
+    x, y = domain.all_grids()
     F['g'] = -2 * np.sin(x) * np.sin(y)
     # Problem
     problem = de.LBVP(domain, variables=['u','ux','uy','Lu'])
@@ -121,7 +121,7 @@ def test_matsolver_solve_bench(benchmark, solver, matsolver):
     # Benchmark solve
     benchmark.pedantic(solver.solve, rounds=10, iterations=10)
     # Check solution
-    x, y = solver.domain.grids()
+    x, y = solver.domain.all_grids()
     u_true = np.sin(x) * np.sin(y)
     u = solver.state['u']
     assert np.allclose(u['g'], u_true)
