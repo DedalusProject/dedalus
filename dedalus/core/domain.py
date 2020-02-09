@@ -44,10 +44,11 @@ class Domain:
     #     args[0] = expand_spaces(args[0])
     #     return tuple(args), kw
 
-    def __init__(self, dist, spaces):
+    def __init__(self, dist, bases):
         self.dist = dist
-        self.spaces, self.full_spaces = self._check_spaces(spaces)
-        self.dim = sum(space.dim for space in self.spaces)
+        self.bases = bases
+        self.spaces, self.full_spaces = self._check_spaces(bases)
+        # self.dim = sum(space.dim for space in self.spaces)
 
     def _check_spaces(self, spaces):
         # Drop duplicates
@@ -71,10 +72,10 @@ class Domain:
     #     """Build constant domain from distributor."""
     #     return cls(constant_spaces(dist))
 
-    @classmethod
-    def from_bases(cls, dist, bases):
-        """Build domain from bases."""
-        return cls(dist, [basis.space for basis in bases])
+    # @classmethod
+    # def from_bases(cls, dist, bases):
+    #     """Build domain from bases."""
+    #     return cls(dist, [basis.space for basis in bases])
 
     # @CachedAttribute
     # def dealias(self):

@@ -17,7 +17,8 @@ from ..tools import jacobi
 from ..tools import clenshaw
 
 from .spaces import FiniteInterval, PeriodicInterval, ParityInterval, Sphere, Ball, Disk
-from . import transforms
+from .coords import Coordinate
+#from . import transforms
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -30,9 +31,11 @@ DEFAULT_LIBRARY = 'scipy'
 class Basis:
     """Base class for spectral bases."""
 
-    def __init__(self, space, library=DEFAULT_LIBRARY):
-        self._check_space(space)
-        self.space = space
+    def __init__(self, coord, library=DEFAULT_LIBRARY):
+        #self._check_coord(coord)
+        self.coord = coord
+        self.axis = coord.dist.coords.index(coord)
+        self.coords = (coord,)
         self.library = library
 
     # def __repr__(self):
@@ -47,24 +50,27 @@ class Basis:
     def __rmul__(self, other):
         return self.__mul__(other)
 
-    def __getitem__(self, mode):
-        """Return field populated by one mode."""
-        # if not self.compute_mode(mode):
-        #     raise ValueError("Basis does not contain specified mode.")
-        from .field import Field
-        axis = self.space.axis
-        out = Field(bases=[self], layout='c')
-        data = np.zeros(out.global_shape, dtype=out.dtype)
-        if mode < 0:
-            mode += self.space.coeff_size
-        data[axslice(axis, mode, mode+1)] = 1
-        out.set_global_data(data)
-        return out
+    def grid_shape(self, scale):
+        return tuple(int(np.ceil(scale*n)) for n in self.shape)
+
+    # def __getitem__(self, mode):
+    #     """Return field populated by one mode."""
+    #     # if not self.compute_mode(mode):
+    #     #     raise ValueError("Basis does not contain specified mode.")
+    #     from .field import Field
+    #     axis = self.space.axis
+    #     out = Field(bases=[self], layout='c')
+    #     data = np.zeros(out.global_shape, dtype=out.dtype)
+    #     if mode < 0:
+    #         mode += self.space.coeff_size
+    #     data[axslice(axis, mode, mode+1)] = 1
+    #     out.set_global_data(data)
+    #     return out
 
     @classmethod
-    def _check_space(cls, space):
-        if not isinstance(space, cls.space_type):
-            raise ValueError("Invalid space type.")
+    def _check_coord(cls, coord):
+        if not isinstance(coord, cls.coord_type):
+            raise ValueError("Invalid coord type.")
 
     @property
     def library(self):
@@ -78,39 +84,39 @@ class Basis:
         self.transform_plan.cache.clear()
 
     @CachedMethod
-    def transform_plan(self, coeff_shape, axis, scale):
+    def transform_plan(self, coeff_shape, dtype, axis, scale):
         """Build and cache transform plan."""
         transform_class = self.transforms[self.library]
-        return transform_class(self, coeff_shape, axis, scale)
+        return transform_class(self, coeff_shape, dtype, axis, scale)
 
-    @CachedAttribute
-    def inclusion_flags(self):
-        return np.array([self.include_mode(i) for i in range(self.space.coeff_size)])
+    # @CachedAttribute
+    # def inclusion_flags(self):
+    #     return np.array([self.include_mode(i) for i in range(self.space.coeff_size)])
 
-    @CachedAttribute
-    def inclusion_matrix(self):
-        diag = self.inclusion_flags.astype(float)
-        return sparse.diags(diag, 0, format='csr')
+    # @CachedAttribute
+    # def inclusion_matrix(self):
+    #     diag = self.inclusion_flags.astype(float)
+    #     return sparse.diags(diag, 0, format='csr')
 
-    @CachedAttribute
-    def modes(self):
-        return np.arange(self.space.coeff_size)[self.inclusion_flags]
+    # @CachedAttribute
+    # def modes(self):
+    #     return np.arange(self.space.coeff_size)[self.inclusion_flags]
 
     # @CachedAttribute
     # def n_modes(self):
     #     return self.modes.size
 
-    def mode_map(self, group):
-        flags = self.inclusion_flags
-        matrix = self.inclusion_matrix
-        # Restrict to group elements
-        if group is not None:
-            n0 = group * self.space.group_size
-            n1 = n0 + self.space.group_size
-            matrix = matrix[n0:n1, n0:n1]
-            flags = flags[n0:n1]
-        # Discard empty rows
-        return matrix[flags, :]
+    # def mode_map(self, group):
+    #     flags = self.inclusion_flags
+    #     matrix = self.inclusion_matrix
+    #     # Restrict to group elements
+    #     if group is not None:
+    #         n0 = group * self.space.group_size
+    #         n1 = n0 + self.space.group_size
+    #         matrix = matrix[n0:n1, n0:n1]
+    #         flags = flags[n0:n1]
+    #     # Discard empty rows
+    #     return matrix[flags, :]
 
     def ncc_matrix(self, arg_basis, coeffs, cutoff=1e-6):
         """Build NCC matrix via direct summation."""
@@ -151,20 +157,52 @@ class Constant(Basis, metaclass=CachedClass):
             return NotImplemented
 
 
+
+class IntervalBasis(Basis):
+
+    def __init__(self, coord, size, bounds, dealias=1):
+        self.coord = coord
+        self.coords = (coord,)
+        self.size = size
+        self.shape = (size,)
+        self.bounds = bounds
+        # self.dist = dist
+        # self.axis = axis
+        self.dealias = dealias
+        # self.COV = AffineCOV(self.native_bounds, bounds)
+        # self._check_coords()
+
+    def grid(self, scales):
+        """Flat global grid."""
+        native_grid = self._native_grid(scales)
+        problem_grid = self.COV.problem_coord(native_grid)
+        return problem_grid
+
+    def grids(self, scales):
+        """Flat global grids."""
+        return (self.grid(scales),)
+
+
+
 class Jacobi(Basis, metaclass=CachedClass):
     """Jacobi polynomial basis."""
 
-    space_type = FiniteInterval
+    coord_type = Coordinate
     dim = 1
+    group_shape = (1,)
+    transforms = {}
 
-    def __init__(self, space, da, db, library='matrix'):
-        super().__init__(space, library=library)
-        self.da = da
-        self.db = db
-        self.a = space.a + da
-        self.b = space.b + db
-        self.const = 1 / np.sqrt(jacobi.mass(self.a, self.b))
-        self.axis = self.space.axis
+    def __init__(self, coord, size, bounds, a, b, library='matrix', a0=-1/2, b0=-1/2):
+        super().__init__(coord, library=library)
+        self.size = size
+        self.shape = (size,)
+        self.a = a
+        self.b = b
+        self.a0 = a0
+        self.b0 = b0
+        #self.const = 1 / np.sqrt(jacobi.mass(self.a, self.b))
+        self.bounds = bounds
+        #self.axis = self.space.axis
 
     def __str__(self):
         space = self.space
@@ -219,12 +257,18 @@ class Jacobi(Basis, metaclass=CachedClass):
     def forward_transform(self, field, axis, gdata, cdata):
         # Transform is the same for all components
         data_axis = len(field.tensorsig) + axis
-        transforms.forward_jacobi(gdata, cdata, axis=data_axis, a0=self.space.a, b0=self.space.b, a=self.a, b=self.b)
+        scale = gdata.shape[axis] // cdata.shape[axis]
+        plan = self.transform_plan(cdata.shape, gdata.dtype, axis, scale)
+        plan.forward(gdata, cdata)
+        # transforms.forward_jacobi(gdata, cdata, axis=data_axis, a0=self.a, b0=self.b, a=self.a, b=self.b)
 
     def backward_transform(self, field, axis, cdata, gdata):
         # Transform is the same for all components
         data_axis = len(field.tensorsig) + axis
-        transforms.backward_jacobi(cdata, gdata, axis=data_axis, a0=self.space.a, b0=self.space.b, a=self.a, b=self.b)
+        scale = gdata.shape[axis] // cdata.shape[axis]
+        plan = self.transform_plan(cdata.shape, gdata.dtype, axis, scale)
+        plan.backward(cdata, gdata)
+        # transforms.backward_jacobi(cdata, gdata, axis=data_axis, a0=self.a, b0=self.b, a=self.a, b=self.b)
 
 
 class ConvertJacobiJacobi(operators.Convert):
@@ -951,3 +995,7 @@ class BallBasis(RegularityBasis):
         # Apply regularity recombinations
         self.backward_regularity_recombination(field, axis, gdata)
 
+
+
+
+from . import transforms
