@@ -426,9 +426,11 @@ class Field(Current):
         self.name = name
         self.tensorsig = tensorsig
         self.dtype = dtype
+        self.bases = bases
         # Build domain
         self.bases, self.full_bases = self._check_bases(bases)
-        self.domain = Domain.from_bases(dist, self.bases)
+        self.domain = Domain(dist, self.bases)
+        #self.bases = dist.check_bases(bases)
 
         # Set initial scales and layout
         self.scales = None
@@ -649,4 +651,3 @@ class Field(Current):
     # @CachedAttribute
     # def mode_mask(self):
     #     return reduce()
-

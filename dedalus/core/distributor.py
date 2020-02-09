@@ -63,13 +63,16 @@ class Distributor:
     states) and the paths between them (D transforms and R transposes).
     """
 
-    def __init__(self, dim, comm=None, mesh=None):
+    def __init__(self, coords, comm=None, mesh=None):
+        self.coords = coords
+        for coord in coords:
+            coord.dist = self
         # Defaults
         if comm is None:
             comm = MPI.COMM_WORLD
         if mesh is None:
             mesh = np.array([comm.size], dtype=int)
-        self.dim = dim
+        self.dim = dim = sum(coord.dim for coord in coords)
         self.comm = comm
         # Squeeze out local/bad (size <= 1) dimensions
         self.mesh = mesh = np.array([i for i in mesh if (i>1)], dtype=int)
@@ -81,7 +84,7 @@ class Distributor:
             raise ValueError("Wrong number of processes (%i) for specified mesh (%s)" %(comm.size, mesh))
         # Create cartesian communicator
         self.comm_cart = comm.Create_cart(mesh)
-        self.coords = np.array(self.comm_cart.coords, dtype=int)
+        self.comm_coords = np.array(self.comm_cart.coords, dtype=int)
         # Build layout objects
         self._build_layouts()
 
@@ -173,7 +176,7 @@ class Layout:
         self.ext_mesh = np.ones(dist.dim, dtype=int)
         self.ext_mesh[~self.local] = dist.mesh
         self.ext_coords = np.zeros(dist.dim, dtype=int)
-        self.ext_coords[~self.local] = dist.coords
+        self.ext_coords[~self.local] = dist.comm_coords
 
     def global_shape(self, domain, scales):
         """Global data shape."""
@@ -230,9 +233,9 @@ class Layout:
         local_elements = self.local_elements(domain, scales)
         return np.array([LE.size for LE in local_elements], dtype=int)
 
-    def buffer_size(self, domain, scales, dtype):
+    def buffer_size(self, bases, scales, dtype):
         """Local buffer size (bytes)."""
-        local_shape = self.local_shape(domain, scales)
+        local_shape = self.local_shape(bases, scales)
         return np.prod(local_shape) * np.dtype(dtype).itemsize
 
     # def local_group_index(self, group, domain, scales):
