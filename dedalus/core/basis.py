@@ -700,6 +700,7 @@ class SpinBasis(MultidimensionalBasis):
         data_axis = len(field.tensorsig) + axis
         transforms.backward_DFT(cdata, gdata, axis=data_axis)
 
+    @CachedMethod
     def spin_weights(self, tensorsig):
         # Spin-component ordering: [-, +]
         Ss = np.array([-1, 1], dtype=int)
@@ -710,6 +711,7 @@ class SpinBasis(MultidimensionalBasis):
                 S[axslice(i, n, n+self.dim)] += Ss
         return S
 
+    @CachedMethod
     def spin_recombination(self, tensorsig):
         """Build matrices for appling spin recombination to each tensor rank."""
         # Setup unitary spin recombination
@@ -743,6 +745,69 @@ class SpinBasis(MultidimensionalBasis):
                 # Apply U^H (inverse of U)
                 apply_matrix(Ui.T.conj(), gdata, axis=i, out=gdata)
 
+
+class RegularityBasis(MultidimensionalBasis):
+
+    dim = 3
+
+    @CachedAttribute
+    def local_l(self):
+        domain = self.space.domain
+        layout = self.space.dist.coeff_layout
+        return layout.local_elements(domain, scales=1)[self.axis+1]
+
+    @CachedMethod
+    def radial_recombinations(self, tensorsig):
+        import dedalus_sphere
+        # For now only implement recombinations for Ball-only tensors
+        for vs in tensorsig:
+            for space in vs.spaces:
+                if space is not self.space:
+                    raise ValueError("Only supports tensors over ball.")
+        order = len(tensorsig)
+        logger.warning("Q orders not fixed")
+        return [dedalus_sphere.ball128.Q(l, order) for l in self.local_l]
+
+    @CachedMethod
+    def regularity_classes(self, tensorsig):
+        # Regularity-component ordering: [-, 0, +]
+        Rb = np.array([-1, 0, 1], dtype=int)
+        R = np.zeros([vs.dim for vs in tensorsig], dtype=int)
+        for i, vs in enumerate(tensorsig):
+            if self.space in vs.spaces:
+                n = vs.get_index(self.space)
+                R[axslice(i, n, n+self.dim)] += Rb
+        return R
+
+    def forward_regularity_recombination(self, field, axis, gdata):
+        # Apply radial recombinations
+        order = len(field.tensorsig)
+        if order > 0:
+            Q = self.radial_recombinations(field.tensorsig)
+            # Flatten tensor axes
+            shape = gdata.shape
+            order = len(field.tensorsig)
+            temp = gdata.reshape((-1,)+shape[order:])
+            # Apply Q transformations for each l to flattened tensor data
+            for l_index, Q_l in enumerate(Q):
+                # Here the l axis is 'axis' instead of 'axis-1' since we have one tensor axis prepended
+                l_view = temp[axslice(axis, l_index, l_index+1)]
+                apply_matrix(Q_l.T, l_view, axis=0, out=l_view)
+
+    def backward_regularity_recombination(self, field, axis, gdata):
+        # Apply radial recombinations
+        order = len(field.tensorsig)
+        if order > 0:
+            Q = self.radial_recombinations(field.tensorsig)
+            # Flatten tensor axes
+            shape = gdata.shape
+            order = len(field.tensorsig)
+            temp = gdata.reshape((-1,)+shape[order:])
+            # Apply Q transformations for each l to flattened tensor data
+            for l_index, Q_l in enumerate(Q):
+                # Here the l axis is 'axis' instead of 'axis-1' since we have one tensor axis prepended
+                l_view = temp[axslice(axis, l_index, l_index+1)]
+                apply_matrix(Q_l, l_view, axis=0, out=l_view)
 
 class DiskBasis(SpinBasis):
 
@@ -801,7 +866,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         #self.forward_transform_azimuth = self.azimuth_basis.forward_transform
         #self.backward_transform_azimuth = self.azimuth_basis.backward_transform
 
-    def forward_transform_radius(self, field, axis, gdata, cdata):
+    def forward_transform_colatitute(self, field, axis, gdata, cdata):
         # Apply spin recombination
         self.forward_spin_recombination(field.tensorsig, gdata)
         # Perform transforms component-by-component
@@ -809,7 +874,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         for i, s in np.ndenumerate(S):
             transforms.forward_disk(gdata[i], cdata[i], axis=axis, local_m=self.local_m, s=s)
 
-    def backward_transform_radius(self, field, axis, cdata, gdata):
+    def backward_transform_colatitute(self, field, axis, cdata, gdata):
         # Perform transforms component-by-component
         S = self.spin_weights(field.tensorsig)
         for i, s in np.ndenumerate(S):
@@ -820,8 +885,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
 
 SWSH = SpinWeightedSphericalHarmonics
 
-
-class BallBasis(MultidimensionalBasis):
+class BallBasis(RegularityBasis):
 
     space_type = Ball
     dim = 3
@@ -837,14 +901,6 @@ class BallBasis(MultidimensionalBasis):
         self.backward_transforms = [self.backward_transform_azimuth,
                                     self.backward_transform_colatitude,
                                     self.backward_transform_radius]
-        #self.forward_transform_azimuth = self.azimuth_basis.forward_transform
-        #self.backward_transform_azimuth = self.azimuth_basis.backward_transform
-
-    @CachedAttribute
-    def local_l(self):
-        domain = self.space.domain
-        layout = self.space.dist.coeff_layout
-        return layout.local_elements(domain, scales=1)[self.axis+1]
 
     def forward_transform_azimuth(self, *args):
         return self.outer_shere_basis.forward_transform_azimuth(*args)
@@ -880,19 +936,8 @@ class BallBasis(MultidimensionalBasis):
         return R
 
     def forward_transform_radius(self, field, axis, gdata, cdata):
-        # Apply radial recombinations
-        order = len(field.tensorsig)
-        if order > 0:
-            Q = self.radial_recombinations(field.tensorsig)
-            # Flatten tensor axes
-            shape = gdata.shape
-            order = len(field.tensorsig)
-            temp = gdata.reshape((-1,)+shape[order:])
-            # Apply Q transformations for each l to flattened tensor data
-            for l_index, Q_l in enumerate(Q):
-                # Here the l axis is 'axis' instead of 'axis-1' since we have one tensor axis prepended
-                l_view = temp[axslice(axis, l_index, l_index+1)]
-                apply_matrix(Q_l.T, l_view, axis=0, out=l_view)
+        # Apply regularity recombination
+        self.forward_regularity_recombination(field, axis, gdata)
         # Perform radial transforms component-by-component
         R = self.regularity_classes(field.tensorsig)
         for i, r in np.ndenumerate(R):
@@ -903,18 +948,6 @@ class BallBasis(MultidimensionalBasis):
         R = self.regularity_classes(field.tensorsig)
         for i, r in np.ndenumerate(R):
            transforms.backward_GSZP(cdata[i], gdata[i], axis=axis, local_l=self.local_l, r=r, alpha=self.space.alpha)
-        # Apply radial recombinations
-        order = len(field.tensorsig)
-        if order > 0:
-            Q = self.radial_recombinations(field.tensorsig)
-            # Flatten tensor axes
-            shape = gdata.shape
-            order = len(field.tensorsig)
-            temp = gdata.reshape((-1,)+shape[order:])
-            # Apply Q transformations for each l to flattened tensor data
-            for l_index, Q_l in enumerate(Q):
-                # Here the l axis is 'axis' instead of 'axis-1' since we have one tensor axis prepended
-                l_view = temp[axslice(axis, l_index, l_index+1)]
-                apply_matrix(Q_l, l_view, axis=0, out=l_view)
-
+        # Apply regularity recombinations
+        self.backward_regularity_recombination(field, axis, gdata)
 
