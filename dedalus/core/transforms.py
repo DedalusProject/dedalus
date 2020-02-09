@@ -112,43 +112,36 @@ class PolynomialTransform(Transform):
 
 class MatrixTransform(PolynomialTransform):
 
-    def forward_reduced(self):
-        matrix = self.forward_matrix
-        input = self.gdata_reduced
-        output = self.cdata_reduced
-        result = np.matmul(matrix, input)
-        np.copyto(output, result)
+    def forward(self, gdata, cdata, axis):
+        apply_matrix(self.forward_matrix, gdata, axis=axis, out=cdata)
 
-    def backward_reduced(self):
-        matrix = self.backward_matrix
-        input = self.cdata_reduced
-        output = self.gdata_reduced
-        result = np.matmul(matrix, input)
-        np.copyto(output, result)
+    def backward(self, cdata, gdata, axis):
+        apply_matrix(self.backward_matrix, cdata, axis=axis, out=gdata)
 
 
 @register_transform(basis.Jacobi, 'matrix')
 class JacobiMatrixTransform(MatrixTransform):
 
-    def __init__(self, *args, **kw):
-        super().__init__(*args, **kw)
-        self.M = self.basis.size
-        self.a = self.basis.a
-        self.b = self.basis.b
-        self.a0 = self.basis.a0
-        self.b0 = self.basis.b0
-        self.build_matrices()
+    def __init__(self, grid_size, coeff_size, a, b, a0, b0):
+        self.grid_size = grid_size
+        self.coeff_size = coeff_size
+        self.a = a
+        self.b = b
+        self.a0 = a0
+        self.b0 = b0
 
     @CachedAttribute
     def forward_matrix(self):
-        M = self.M
-        a, b = self.a, self.b
-        a0, b0 = self.a0, self.b0
-        # Gauss quadrature
-        native_grid = self.basis._native_grid(self.scale)
-        base_polynomials = jacobi.build_polynomials(M, a0, b0, native_grid)
-        base_weights = space.weights(self.scale)
+        N = self.grid_size
+        M = self.coeff_size
+        a, a0 = self.a, self.a0
+        b, b0 = self.b, self.b0
+        # Gauss quadrature with base polynomials
+        base_grid = jacobi.build_grid(N, a=a0, b=b0)
+        base_polynomials = jacobi.build_polynomials(M, a0, b0, base_grid)
+        base_weights = jacobi.build_weights(N, a=a0, b=b0)
         base_quadrature = (base_polynomials * base_weights)
+        base_quadrature[N:, :] = 0
         # Spectral conversion
         if (a == a0) and (b == b0):
             forward_matrix = base_quadrature
@@ -159,18 +152,14 @@ class JacobiMatrixTransform(MatrixTransform):
 
     @CachedAttribute
     def backward_matrix(self):
-        # Polynomial recursion to grid
-        native_grid = self.basis._native_grid(self.scale)
-        polynomials = jacobi.build_polynomials(self.M, self.a, self.b, native_grid)
+        N = self.grid_size
+        M = self.coeff_size
+        a, a0 = self.a, self.a0
+        b, b0 = self.b, self.b0
+        # Polynomial recursion using base grid
+        base_grid = jacobi.build_grid(N, a=a0, b=b0)
+        polynomials = jacobi.build_polynomials(M, a, b, base_grid)
         return polynomials.T.copy()  # copy forces memory transpose
-
-
-    def build_matrices(self):
-        M = self.M
-        a0, b0 = self.a0, self.b0
-        a1, b1 = self.a, self.b
-        problem_grid = self.basis.grid(self.scale)
-
 
 
 class ScipyDST(PolynomialTransform):

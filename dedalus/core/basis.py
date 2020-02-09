@@ -324,21 +324,27 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
             conversion = sparse.kron(conversion, sparse.identity(coeff_size))
         return (conversion @ total)
 
+    @CachedMethod
+    def transform_plan(self, grid_size):
+        """Build transform plan."""
+        return self.transforms['matrix'](grid_size, self.size, self.a, self.b, self.a0, self.b0)
+
     def forward_transform(self, field, axis, gdata, cdata):
+        """Forward transform field data."""
         # Transform is the same for all components
         data_axis = len(field.tensorsig) + axis
-        scale = gdata.shape[axis] // cdata.shape[axis]
-        plan = self.transform_plan(cdata.shape, gdata.dtype, axis, scale)
-        plan.forward(gdata, cdata)
-        # transforms.forward_jacobi(gdata, cdata, axis=data_axis, a0=self.a, b0=self.b, a=self.a, b=self.b)
+        grid_size = gdata.shape[data_axis]
+        plan = self.transform_plan(grid_size)
+        plan.forward(gdata, cdata, data_axis)
 
     def backward_transform(self, field, axis, cdata, gdata):
+        """Backward transform field data."""
         # Transform is the same for all components
         data_axis = len(field.tensorsig) + axis
-        scale = gdata.shape[axis] // cdata.shape[axis]
-        plan = self.transform_plan(cdata.shape, gdata.dtype, axis, scale)
-        plan.backward(cdata, gdata)
-        # transforms.backward_jacobi(cdata, gdata, axis=data_axis, a0=self.a, b0=self.b, a=self.a, b=self.b)
+        grid_size = gdata.shape[data_axis]
+        plan = self.transform_plan(grid_size)
+        plan.backward(cdata, gdata, data_axis)
+
 
 
 class ConvertJacobiJacobi(operators.Convert):
