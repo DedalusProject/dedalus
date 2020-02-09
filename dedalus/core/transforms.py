@@ -461,9 +461,6 @@ class NonSeparableTransform(Transform):
         basis, basis_axis = self.field.bases[self.axis]
         if not isinstance(basis, self.basis_type):
             raise ValueError("Basis type of axis %i must be %s" %(self.axis, self.basis_type) )
-        previous_basis, previous_basis_axis = self.field.bases[self.axis-1]
-        if not isinstance(previous_basis, self.previous_basis_type):
-            raise ValueError("Basis type of axis %i must be %s" %(self.axis-1, self.previous_basis_type) )
 
     def forward(self, gdata, cdata, **kw):
         # Make reduced view into input arrays
@@ -482,126 +479,160 @@ class NonSeparableTransform(Transform):
 
 class SWSHColatitudeTransform(NonSeparableTransform):
 
-    previous_basis_type = Fourier
     basis_type = SpinWeightedSphericalHarmonics
 
-    def forward_reduced(self, s=s, local_m=local_m):
+    def __init__(self, basis, coeff_shape, axis, scale, local_m, s):
 
+        super().__init__(basis, coeff_shape, axis, scale)
+
+        self.local_m = local_m
+        self.s = s
+
+    def forward_reduced(self):
+
+        local_m = self.local_m
         if self.gdata_reduced.shape[1] != len(local_m):
             raise ValueError("Local m must match size of %i axis." %(self.axis-1) )
 
+        m_matrices = self._forward_SWSH_matrices
         for dm, m in enumerate(local_m):
-            m_matrix = self._forward_SWSH_matrix(m, s)
             grm = gdata_reduced[:, dm, :, :]
             crm = cdata_reduced[:, dm, :, :]
-            apply_matrix(m_matrix, grm, axis=1, out=crm)
+            apply_matrix(m_matrices[dm], grm, axis=1, out=crm)
 
-    def backward_reduced(self, s=s, local_m=local_m):
+    def backward_reduced(self):
 
+        local_m = self.local_m
         if self.gdata_reduced.shape[1] != len(local_m):
             raise ValueError("Local m must match size of %i axis." %(self.axis-1) )
 
+        m_matrices = self._backward_SWSH_matrices
         for dm, m in enumerate(local_m):
-            m_matrix = self._backward_SWSH_matrix(m, s)
             grm = gdata_reduced[:, dm, :, :]
             crm = cdata_reduced[:, dm, :, :]
-            apply_matrix(m_matrix, crm, axis=1, out=grm)
+            apply_matrix(m_matrices[dm], crm, axis=1, out=grm)
 
-    @CachedMethod
-    def _quadrature(self, Lmax):
+    @CachedAttribute
+    def _quadrature(self):
         # get grid and weights from sphere library
+        Lmax = self.N2g - 1
         import dedalus_sphere
         return dedalus_sphere.sphere.quadrature(Lmax, niter=3)
 
-    @CachedMethod
-    def _forward_SWSH_matrix(self, m, s):
+    @CachedAttribute
+    def _forward_SWSH_matrices(self):
         """Build transform matrix for single m and s."""
         import dedalus_sphere
         # Get functions from sphere library
+        cos_grid, weights = self._quadrature
         Lmax = self.N2c - 1
-        cos_grid, weights = self._quadrature(Lmax)
-        Y = dedalus_sphere.sphere.Y(Lmax, m, s, cos_grid).astype(np.float64)  # shape (Nc-Lmin, Ng)
-        # Pad to square transform and keep l aligned
-        Lmin = max(np.abs(m), np.abs(s))
-        Yfull = np.zeros((self.N2c, self.N2g))
-        Yfull[Lmin:, :] = (Y*weights).astype(np.float64)
-        return Yfull
+        m_matrices = []
+        for m in self.local_m:
+            Y = dedalus_sphere.sphere.Y(Lmax, m, self.s, cos_grid).astype(np.float64)  # shape (Nc-Lmin, Ng)
+            # Pad to square transform and keep l aligned
+            Lmin = max(np.abs(m), np.abs(self.s))
+            Yfull = np.zeros((self.N2c, self.N2g))
+            Yfull[Lmin:, :] = (Y*weights).astype(np.float64)
+            m_matrices.append(Yfull)
+        return m_matrices
 
-    @CachedMethod
-    def _backward_SWSH_matrix(self, m, s):
+    @CachedAttribute
+    def _backward_SWSH_matrices(self):
         """Build transform matrix for single m and s."""
         import dedalus_sphere
         # Get functions from sphere library
+        cos_grid, weights = self._quadrature
         Lmax = self.N2c - 1
-        cos_grid, weights = self._quadrature(Lmax)
-        Y = dedalus_sphere.sphere.Y(Lmax, m, s, cos_grid) # shape (Nc-Lmin, Ng)
-        # Pad to square transform and keep l aligned
-        Lmin = self.N2c - Y.shape[0]
-        Yfull = np.zeros((self.N2g, self.N2c))
-        Yfull[:, Lmin:] = Y.T.astype(np.float64)
-        return Yfull
+        m_matrices = []
+        for m in self.local_m:
+            Y = dedalus_sphere.sphere.Y(Lmax, m, self.s, cos_grid) # shape (Nc-Lmin, Ng)
+            # Pad to square transform and keep l aligned
+            Lmin = self.N2c - Y.shape[0]
+            Yfull = np.zeros((self.N2g, self.N2c))
+            Yfull[:, Lmin:] = Y.T.astype(np.float64)
+            m_matrices.append(Yfull)
+        return m_matrices
 
 
 class BallRadialTransform(NonSeparableTransform):
 
-    previous_basis_type = SpinWeightedSphericalHarmonics
-    basis_type = RadialZernicke
+    basis_type = BallBasis
 
-    def forward_reduced(self, deg=deg, alpha=alpha, local_l=local_l):
+    def __init__(self, basis, coeff_shape, axis, scale, local_l, deg, alpha):
 
+        super().__init__(basis, coeff_shape, axis, scale)
+
+        self.local_l = local_l
+        self.deg = deg
+        self.alpha = alpha
+
+    def forward_reduced(self):
+
+        local_l = self.local_l
         if self.gdata_reduced.shape[1] != len(local_l):
             raise ValueError("Local l must match size of %i axis." %(self.axis-1) )
+
         # Apply transform for each l
+        l_matrices = self._forward_GSZP_matrices
         for dl, l in enumerate(local_l):
-            l_matrix = self._forward_GSZP_matrix(l, deg, alpha)
             grl = gdata_reduced[:, dl, :, :]
             crl = cdata_reduced[:, dl, :, :]
-            apply_matrix(l_matrix, grl, axis=1, out=crl)
+            apply_matrix(l_matrices[dl], grl, axis=1, out=crl)
 
-    def backward_reduced(self, deg=deg, alpha=alpha, local_l=local_l):
+    def backward_reduced(self):
 
+        local_l = self.local_l
         if self.gdata_reduced.shape[1] != len(local_l):
             raise ValueError("Local l must match size of %i axis." %(self.axis-1) )
+
         # Apply transform for each l
+        l_matrices = self._backward_GSZP_matrix
         for dl, l in enumerate(local_l):
-            l_matrix = self._forward_GSZP_matrix(l, deg, alpha)
             grl = gdata_reduced[:, dl, :, :]
             crl = cdata_reduced[:, dl, :, :]
             apply_matrix(l_matrix, crl, axis=1, out=grl)
 
-    @CachedMethod
-    def _quadrature(self, Nmax, alpha):
+    @CachedAttribute
+    def _quadrature(self):
+        Nmax = self.N2g - 1
+        alpha = self.alpha
         # get grid and weights from sphere library
         import dedalus_sphere
         return dedalus_sphere.ball.quadrature(3, Nmax, niter=3, alpha=alpha)
 
-    @CachedMethod
-    def _forward_GSZP_matrix(self, l, r, alpha):
+    @CachedAttribute
+    def _forward_GSZP_matrix(self):
         """Build transform matrix for single l and r."""
         import dedalus_sphere
         # Get functions from sphere library
         Nmin = 0
-        Nmax = self.N2c - 1 - l//2
-        z_grid, weights = self._quadrature(self.N2g-1, alpha)
-        W = dedalus_sphere.ball.trial_functions(3, Nmax-Nmin, l, r, z_grid, alpha=alpha) # shape (Nmax-Nmin, Ng)
-        # Pad to square transform and keep n aligned
-        Wfull = np.zeros((self.N2c, self.N2g))
-        Wfull[Nmin:Nmax+1, :] = (W*weights).astype(np.float64)
-        return Wfull
+        z_grid, weights = self._quadrature
+        l_matrices = []
+        for l in local_l:
+            Nmax = self.N2c - 1 - l//2
+            W = dedalus_sphere.ball.trial_functions(3, Nmax-Nmin, l, self.deg, z_grid, alpha=self.alpha) # shape (Nmax-Nmin, Ng)
+            # Pad to square transform and keep n aligned
+            Wfull = np.zeros((self.N2c, self.N2g))
+            Wfull[Nmin:Nmax+1, :] = (W*weights).astype(np.float64)
+            l_matrices.append(Wfull)
+        return l_matrices
 
-    @CachedMethod
-    def _backward_GSZP_matrix(self, l, r, alpha):
+    @CachedAttribute
+    def _backward_GSZP_matrix(self):
         """Build transform matrix for single l and r."""
         import dedalus_sphere
         # Get functions from sphere library
         Nmin = 0
-        Nmax = self.N2c - 1 - l//2
-        z_grid, weights = self._quadrature(self.N2g-1, alpha)
-        W = dedalus_sphere.ball.polynomial(3, Nmax-Nmin, l, r, z_grid, alpha=alpha) # shape (Nmax-Nmin, Ng)
-        # Pad to square transform and keep n aligned
-        Wfull = np.zeros((self.N2g, self.N2c))
-        Wfull[:, Nmin:Nmax+1] = W.T.astype(np.float64)
-        return Wfull
+        z_grid, weights = self._quadrature
+        l_matrices = []
+        for l in local_l:
+            Nmax = self.N2c - 1 - l//2
+            W = dedalus_sphere.ball.polynomial(3, Nmax-Nmin, l, self.deg, z_grid, alpha=self.alpha) # shape (Nmax-Nmin, Ng)
+            # Pad to square transform and keep n aligned
+            Wfull = np.zeros((self.N2g, self.N2c))
+            Wfull[:, Nmin:Nmax+1] = W.T.astype(np.float64)
+            l_matrices.append(Wfull)
+        return l_matrices
 
 
 
