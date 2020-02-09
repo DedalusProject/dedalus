@@ -981,18 +981,24 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         #self.backward_transform_azimuth = self.azimuth_basis.backward_transform
 
     def forward_transform_colatitute(self, field, axis, gdata, cdata):
+        data_axis = len(field.tensorsig) + axis
+        scale = gdata.shape[axis] / cdata.shape[axis]
         # Apply spin recombination
         self.forward_spin_recombination(field.tensorsig, gdata)
         # Perform transforms component-by-component
         S = self.spin_weights(field.tensorsig)
         for i, s in np.ndenumerate(S):
-            transforms.forward_disk(gdata[i], cdata[i], axis=axis, local_m=self.local_m, s=s)
+            plan = self.transform_plan(cdata.shape, gdata.dtype, data_axis, scale, self.local_m, s)
+            plan.forward(gdata[i], cdata[i])
 
     def backward_transform_colatitute(self, field, axis, cdata, gdata):
+        data_axis = len(field.tensorsig) + axis
+        scale = gdata.shape[axis] / cdata.shape[axis]
         # Perform transforms component-by-component
         S = self.spin_weights(field.tensorsig)
         for i, s in np.ndenumerate(S):
-            transforms.backward_disk(cdata[i], gdata[i], axis=axis, local_m=self.local_m, s=s)
+            plan = self.transform_plan(cdata.shape, gdata.dtype, data_axis, scale, self.local_m, s)
+            plan.backward(cdata[i], gdata[i])
         # Apply spin recombination
         self.backward_spin_recombination(field.tensorsig, gdata)
 

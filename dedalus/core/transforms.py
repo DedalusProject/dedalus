@@ -451,73 +451,46 @@ def backward_DFT(cdata, gdata, axis):
 
 class NonSeparableTransform(Transform):
 
-    def __init__(self, basis, coeff_shape, axis, scale):
-
-        self.basis = basis
-        self.dtype = basis.domain.dtype
-        self.coeff_shape = coeff_shape
-        self.axis = axis
-        self.scale = scale
-
-        #self.field = field # where do we get the field from?
-        #self._check_basis()
-
-        self.N0 = N0 = np.prod(coeff_shape[:axis-1], dtype=int)
-        self.N1 = N1 = coeff_shape[axis-1]
-        self.N2C = N2C = coeff_shape[axis]
-        self.N2G = N2G = int(self.N2C * scale)
-        self.N3 = N3 = np.prod(coeff_shape[axis+1:], dtype=int)
-
-        self.gdata_reduced = np.zeros(shape=[N0, N1, N2G, N3], dtype=self.dtype)
-        self.cdata_reduced = np.zeros(shape=[N0, N1, N2C, N3], dtype=self.dtype)
-
-    def _check_basis(self):
-        basis, basis_axis = self.field.bases[self.axis]
-        if not isinstance(basis, self.basis_type):
-            raise ValueError("Basis type of axis %i must be %s" %(self.axis, self.basis_type) )
-
-    def forward(self, gdata, cdata, **kw):
+    def forward(self, gdata, cdata, axis):
         # Make reduced view into input arrays
-        self.gdata_reduced.data = gdata
-        self.cdata_reduced.data = cdata
+        gdata = reduced_view_4(gdata, axis)
+        cdata = reduced_view_4(cdata, axis)
         # Transform reduced arrays
-        self.forward_reduced(**kw)
+        self.forward_reduced(gdata, cdata)
 
-    def backward(self, cdata, gdata, **kw):
+    def backward(self, cdata, gdata, axis):
         # Make reduced view into input arrays
-        self.cdata_reduced.data = cdata
-        self.gdata_reduced.data = gdata
+        cdata = reduced_view_4(cdata, axis)
+        gdata = reduced_view_4(gdata, axis)
         # Transform reduced arrays
-        self.backward_reduced(**kw)
+        self.backward_reduced(cdata, gdata)
 
 
 class SWSHColatitudeTransform(NonSeparableTransform):
 
-    #basis_type = SpinWeightedSphericalHarmonics
+    def __init__(self, grid_size, coeff_size, local_m, s):
 
-    def __init__(self, basis, coeff_shape, axis, scale, local_m, s):
-
-        super().__init__(basis, coeff_shape, axis, scale)
-
+        self.N2g = grid_size
+        self.N2c = coeff_size
         self.local_m = local_m
         self.s = s
 
-    def forward_reduced(self):
+    def forward_reduced(self, gdata, cdata):
 
         local_m = self.local_m
-        if self.gdata_reduced.shape[1] != len(local_m):
+        if gdata.shape[1] != len(local_m): # do we want to do this check???
             raise ValueError("Local m must match size of %i axis." %(self.axis-1) )
 
         m_matrices = self._forward_SWSH_matrices
         for dm, m in enumerate(local_m):
-            grm = self.gdata_reduced[:, dm, :, :]
-            crm = self.cdata_reduced[:, dm, :, :]
+            grm = gdata[:, dm, :, :]
+            crm = cdata[:, dm, :, :]
             apply_matrix(m_matrices[dm], grm, axis=1, out=crm)
 
-    def backward_reduced(self):
+    def backward_reduced(self, cdata, gdata):
 
         local_m = self.local_m
-        if self.gdata_reduced.shape[1] != len(local_m):
+        if gdata.shape[1] != len(local_m): # do we want to do this check???
             raise ValueError("Local m must match size of %i axis." %(self.axis-1) )
 
         m_matrices = self._backward_SWSH_matrices
@@ -570,40 +543,38 @@ class SWSHColatitudeTransform(NonSeparableTransform):
 
 class BallRadialTransform(NonSeparableTransform):
 
-    #basis_type = BallBasis
+    def __init__(self, grid_size, coeff_size, local_l, deg, alpha):
 
-    def __init__(self, basis, coeff_shape, axis, scale, local_l, deg, alpha):
-
-        super().__init__(basis, coeff_shape, axis, scale)
-
+        self.N2g = grid_size
+        self.N2c = coeff_size
         self.local_l = local_l
         self.deg = deg
         self.alpha = alpha
 
-    def forward_reduced(self):
+    def forward_reduced(self, gdata, cdata):
 
         local_l = self.local_l
-        if self.gdata_reduced.shape[1] != len(local_l):
+        if gdata.shape[1] != len(local_l): # do we want to do this check???
             raise ValueError("Local l must match size of %i axis." %(self.axis-1) )
 
         # Apply transform for each l
         l_matrices = self._forward_GSZP_matrices
         for dl, l in enumerate(local_l):
-            grl = self.gdata_reduced[:, dl, :, :]
-            crl = self.cdata_reduced[:, dl, :, :]
+            grl = gdata[:, dl, :, :]
+            crl = cdata[:, dl, :, :]
             apply_matrix(l_matrices[dl], grl, axis=1, out=crl)
 
-    def backward_reduced(self):
+    def backward_reduced(self, cdata, gdata):
 
         local_l = self.local_l
-        if self.gdata_reduced.shape[1] != len(local_l):
+        if gdata.shape[1] != len(local_l): # do we want to do this check???
             raise ValueError("Local l must match size of %i axis." %(self.axis-1) )
 
         # Apply transform for each l
         l_matrices = self._backward_GSZP_matrix
         for dl, l in enumerate(local_l):
-            grl = self.gdata_reduced[:, dl, :, :]
-            crl = self.cdata_reduced[:, dl, :, :]
+            grl = gdata[:, dl, :, :]
+            crl = cdata[:, dl, :, :]
             apply_matrix(l_matrix, crl, axis=1, out=grl)
 
     @CachedAttribute
@@ -650,13 +621,13 @@ class BallRadialTransform(NonSeparableTransform):
 
 
 
-#def reduced_view_4(data, axis):
-#    shape = data.shape
-#    N0 = int(np.prod(shape[:axis]))
-#    N1 = shape[axis]
-#    N2 = shape[axis+1]
-#    N3 = int(np.prod(shape[axis+2:]))
-#    return data.reshape((N0, N1, N2, N3))
+def reduced_view_4(data, axis):
+    shape = data.shape
+    N0 = int(np.prod(shape[:axis]))
+    N1 = shape[axis]
+    N2 = shape[axis+1]
+    N3 = int(np.prod(shape[axis+2:]))
+    return data.reshape((N0, N1, N2, N3))
 
 
 ## Disk transforms
