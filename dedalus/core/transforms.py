@@ -496,8 +496,8 @@ class SWSHColatitudeTransform(NonSeparableTransform):
 
         m_matrices = self._forward_SWSH_matrices
         for dm, m in enumerate(local_m):
-            grm = gdata_reduced[:, dm, :, :]
-            crm = cdata_reduced[:, dm, :, :]
+            grm = self.gdata_reduced[:, dm, :, :]
+            crm = self.cdata_reduced[:, dm, :, :]
             apply_matrix(m_matrices[dm], grm, axis=1, out=crm)
 
     def backward_reduced(self):
@@ -508,8 +508,8 @@ class SWSHColatitudeTransform(NonSeparableTransform):
 
         m_matrices = self._backward_SWSH_matrices
         for dm, m in enumerate(local_m):
-            grm = gdata_reduced[:, dm, :, :]
-            crm = cdata_reduced[:, dm, :, :]
+            grm = self.gdata_reduced[:, dm, :, :]
+            crm = self.cdata_reduced[:, dm, :, :]
             apply_matrix(m_matrices[dm], crm, axis=1, out=grm)
 
     @CachedAttribute
@@ -575,8 +575,8 @@ class BallRadialTransform(NonSeparableTransform):
         # Apply transform for each l
         l_matrices = self._forward_GSZP_matrices
         for dl, l in enumerate(local_l):
-            grl = gdata_reduced[:, dl, :, :]
-            crl = cdata_reduced[:, dl, :, :]
+            grl = self.gdata_reduced[:, dl, :, :]
+            crl = self.cdata_reduced[:, dl, :, :]
             apply_matrix(l_matrices[dl], grl, axis=1, out=crl)
 
     def backward_reduced(self):
@@ -588,8 +588,8 @@ class BallRadialTransform(NonSeparableTransform):
         # Apply transform for each l
         l_matrices = self._backward_GSZP_matrix
         for dl, l in enumerate(local_l):
-            grl = gdata_reduced[:, dl, :, :]
-            crl = cdata_reduced[:, dl, :, :]
+            grl = self.gdata_reduced[:, dl, :, :]
+            crl = self.cdata_reduced[:, dl, :, :]
             apply_matrix(l_matrix, crl, axis=1, out=grl)
 
     @CachedAttribute
