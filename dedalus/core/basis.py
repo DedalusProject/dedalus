@@ -808,7 +808,7 @@ class SpinBasis(MultidimensionalBasis):
         local_m_elements = layout.local_elements(domain, scales=1)[self.axis]
         print(self.azimuth_basis.wavenumbers)
         print(local_m_elements)
-        return self.azimuth_basis.wavenumbers[local_m_elements]
+        return tuple(self.azimuth_basis.wavenumbers[local_m_elements])
 
     def forward_transform_azimuth(self, field, axis, gdata, cdata):
         # Azimuthal DFT is the same for all components
@@ -874,7 +874,7 @@ class RegularityBasis(MultidimensionalBasis):
     def local_l(self):
         domain = self.space.domain
         layout = self.space.dist.coeff_layout
-        return layout.local_elements(domain, scales=1)[self.axis+1]
+        return tuple(layout.local_elements(domain, scales=1)[self.axis+1])
 
     @CachedMethod
     def radial_recombinations(self, tensorsig):
