@@ -9,69 +9,12 @@ from ..tools.array import reshape_vector
 from ..tools.cache import CachedMethod, CachedAttribute
 
 
-class AffineCOV:
-    """
-    Class for affine change-of-variables for remapping space bounds.
-
-    Parameters
-    ----------
-    native_bounds : tuple of floats
-        Native bounds given as (lower, upper)
-    problem_bounds : tuple of floats
-        New bounds given as (lower, upper)
-    """
-
-    def __init__(self, native_bounds, problem_bounds):
-        self.native_bounds = native_bounds
-        self.problem_bounds = problem_bounds
-        self.native_left, self.native_right = native_bounds
-        self.native_length = self.native_right - self.native_left
-        self.native_center = (self.native_left + self.native_right) / 2
-        self.problem_left, self.problem_right = problem_bounds
-        self.problem_length = self.problem_right - self.problem_left
-        self.problem_center = (self.problem_left + self.problem_right) / 2
-        self.stretch = self.problem_length / self.native_length
-
-    def problem_coord(self, native_coord):
-        """Convert native coordinates to problem coordinates."""
-        if isinstance(native_coord, str):
-            if native_coord in ('left', 'lower'):
-                return self.problem_left
-            elif native_coord in ('right', 'upper'):
-                return self.problem_right
-            elif native_coord in ('center', 'middle'):
-                return self.problem_center
-            else:
-                raise ValueError("String coordinate '%s' not recognized." %native_coord)
-        else:
-            neutral_coord = (native_coord - self.native_left) / self.native_length
-            return self.problem_left + neutral_coord * self.problem_length
-
-    def native_coord(self, problem_coord):
-        """Convert problem coordinates to native coordinates."""
-        if isinstance(problem_coord, str):
-            if problem_coord in ('left', 'lower'):
-                return self.native_left
-            elif problem_coord in ('right', 'upper'):
-                return self.native_right
-            elif problem_coord in ('center', 'middle'):
-                return self.native_center
-            else:
-                raise ValueError("String coordinate '%s' not recognized." %problem_coord)
-        else:
-            neutral_coord = (problem_coord - self.problem_left) / self.problem_length
-            return self.native_left + neutral_coord * self.native_length
-
-
 class Space:
     """Base class for spaces."""
 
     def _check_coords(self):
         if not len(self.coords) == self.dim:
             raise ValueError("Wrong number of coordinates.")
-
-    def grid_shape(self, scale):
-        return tuple(int(np.ceil(scale*n)) for n in self.shape)
 
     def grids(self, scale):
         """Flat global grids."""
@@ -167,16 +110,6 @@ class Interval(Space):
         self.COV = AffineCOV(self.native_bounds, bounds)
         self._check_coords()
 
-    def grid(self, scales):
-        """Flat global grid."""
-        native_grid = self._native_grid(scales)
-        problem_grid = self.COV.problem_coord(native_grid)
-        return problem_grid
-
-    def grids(self, scales):
-        """Flat global grids."""
-        return (self.grid(scales),)
-
 
 class PeriodicInterval(Interval):
     """Periodic interval for Fourier series."""
@@ -237,15 +170,7 @@ class FiniteInterval(Interval):
         self.a = float(a)
         self.b = float(b)
 
-    def _native_grid(self, scales):
-        """Gauss-Jacobi grid."""
-        N, = self.grid_shape(scales)
-        return jacobi.build_grid(N, a=self.a, b=self.b)
 
-    def weights(self, scales):
-        """Gauss-Jacobi weights."""
-        N = self.grid_shape(scales)[0]
-        return jacobi.build_weights(N, a=self.a, b=self.b)
 
     def Jacobi(self, *args, **kw):
         return basis.Jacobi(self, *args, **kw)

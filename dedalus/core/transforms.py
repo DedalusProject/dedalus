@@ -145,23 +145,22 @@ class JacobiMatrixTransform(MatrixTransform):
         a, b = self.a, self.b
         a0, b0 = self.a0, self.b0
         # Gauss quadrature
-        #native_grid = space.COV.native_coord(problem_grid)
-        #TODO: COV
-        native_grid = self.basis.grid(self.scale)
+        native_grid = self.basis._native_grid(self.scale)
         base_polynomials = jacobi.build_polynomials(M, a0, b0, native_grid)
         base_weights = space.weights(self.scale)
         base_quadrature = (base_polynomials * base_weights)
         # Spectral conversion
         if (a == a0) and (b == b0):
-            self.forward_matrix = base_quadrature
+            forward_matrix = base_quadrature
         else:
             conversion = jacobi.conversion_matrix(M, a0, b0, a, b)
-            self.forward_matrix = conversion @ base_quadrature
+            forward_matrix = conversion @ base_quadrature
+        return forward_matrix
 
     @CachedAttribute
     def backward_matrix(self):
         # Polynomial recursion to grid
-        native_grid = self.basis.grid(self.scale)
+        native_grid = self.basis._native_grid(self.scale)
         polynomials = jacobi.build_polynomials(self.M, self.a, self.b, native_grid)
         return polynomials.T.copy()  # copy forces memory transpose
 
@@ -494,7 +493,7 @@ class NonSeparableTransform(Transform):
 
 class SWSHColatitudeTransform(NonSeparableTransform):
 
-    basis_type = SpinWeightedSphericalHarmonics
+    #basis_type = SpinWeightedSphericalHarmonics
 
     def __init__(self, basis, coeff_shape, axis, scale, local_m, s):
 
@@ -571,7 +570,7 @@ class SWSHColatitudeTransform(NonSeparableTransform):
 
 class BallRadialTransform(NonSeparableTransform):
 
-    basis_type = BallBasis
+    #basis_type = BallBasis
 
     def __init__(self, basis, coeff_shape, axis, scale, local_l, deg, alpha):
 

@@ -15,8 +15,9 @@ from ..tools.cache import CachedMethod
 from ..tools.cache import CachedClass
 from ..tools import jacobi
 from ..tools import clenshaw
+from ..tools.array import reshape_vector
 
-from .spaces import FiniteInterval, PeriodicInterval, ParityInterval, Sphere, Ball, Disk
+from .spaces import PeriodicInterval, ParityInterval, Sphere, Ball, Disk
 from .coords import Coordinate
 #from . import transforms
 
@@ -26,6 +27,60 @@ logger = logging.getLogger(__name__.split('.')[-1])
 from ..tools.config import config
 DEFAULT_LIBRARY = config['transforms'].get('DEFAULT_LIBRARY')
 DEFAULT_LIBRARY = 'scipy'
+
+
+class AffineCOV:
+    """
+    Class for affine change-of-variables for remapping space bounds.
+
+    Parameters
+    ----------
+    native_bounds : tuple of floats
+        Native bounds given as (lower, upper)
+    problem_bounds : tuple of floats
+        New bounds given as (lower, upper)
+    """
+
+    def __init__(self, native_bounds, problem_bounds):
+        self.native_bounds = native_bounds
+        self.problem_bounds = problem_bounds
+        self.native_left, self.native_right = native_bounds
+        self.native_length = self.native_right - self.native_left
+        self.native_center = (self.native_left + self.native_right) / 2
+        self.problem_left, self.problem_right = problem_bounds
+        self.problem_length = self.problem_right - self.problem_left
+        self.problem_center = (self.problem_left + self.problem_right) / 2
+        self.stretch = self.problem_length / self.native_length
+
+    def problem_coord(self, native_coord):
+        """Convert native coordinates to problem coordinates."""
+        if isinstance(native_coord, str):
+            if native_coord in ('left', 'lower'):
+                return self.problem_left
+            elif native_coord in ('right', 'upper'):
+                return self.problem_right
+            elif native_coord in ('center', 'middle'):
+                return self.problem_center
+            else:
+                raise ValueError("String coordinate '%s' not recognized." %native_coord)
+        else:
+            neutral_coord = (native_coord - self.native_left) / self.native_length
+            return self.problem_left + neutral_coord * self.problem_length
+
+    def native_coord(self, problem_coord):
+        """Convert problem coordinates to native coordinates."""
+        if isinstance(problem_coord, str):
+            if problem_coord in ('left', 'lower'):
+                return self.native_left
+            elif problem_coord in ('right', 'upper'):
+                return self.native_right
+            elif problem_coord in ('center', 'middle'):
+                return self.native_center
+            else:
+                raise ValueError("String coordinate '%s' not recognized." %problem_coord)
+        else:
+            neutral_coord = (problem_coord - self.problem_left) / self.problem_length
+            return self.native_left + neutral_coord * self.native_length
 
 
 class Basis:
@@ -160,7 +215,8 @@ class Constant(Basis, metaclass=CachedClass):
 
 class IntervalBasis(Basis):
 
-    def __init__(self, coord, size, bounds, dealias=1):
+    def __init__(self, coord, size, bounds, library=None):
+        super().__init__(coord, library=library)
         self.coord = coord
         self.coords = (coord,)
         self.size = size
@@ -168,8 +224,7 @@ class IntervalBasis(Basis):
         self.bounds = bounds
         # self.dist = dist
         # self.axis = axis
-        self.dealias = dealias
-        # self.COV = AffineCOV(self.native_bounds, bounds)
+        self.COV = AffineCOV(self.native_bounds, bounds)
         # self._check_coords()
 
     def grid(self, scales):
@@ -182,18 +237,23 @@ class IntervalBasis(Basis):
         """Flat global grids."""
         return (self.grid(scales),)
 
+    def grid_shape(self, scale):
+        return tuple(int(np.ceil(scale*n)) for n in self.shape)
 
 
-class Jacobi(Basis, metaclass=CachedClass):
+
+
+class Jacobi(IntervalBasis, metaclass=CachedClass):
     """Jacobi polynomial basis."""
 
     coord_type = Coordinate
     dim = 1
     group_shape = (1,)
     transforms = {}
+    native_bounds = (-1, 1)
 
     def __init__(self, coord, size, bounds, a, b, library='matrix', a0=-1/2, b0=-1/2):
-        super().__init__(coord, library=library)
+        super().__init__(coord, size, bounds, library=library)
         self.size = size
         self.shape = (size,)
         self.a = a
@@ -203,6 +263,16 @@ class Jacobi(Basis, metaclass=CachedClass):
         #self.const = 1 / np.sqrt(jacobi.mass(self.a, self.b))
         self.bounds = bounds
         #self.axis = self.space.axis
+
+    def _native_grid(self, scales):
+        """Gauss-Jacobi grid."""
+        N, = self.grid_shape(scales)
+        return jacobi.build_grid(N, a=self.a, b=self.b)
+
+    def weights(self, scales):
+        """Gauss-Jacobi weights."""
+        N = self.grid_shape(scales)[0]
+        return jacobi.build_weights(N, a=self.a, b=self.b)
 
     def __str__(self):
         space = self.space
