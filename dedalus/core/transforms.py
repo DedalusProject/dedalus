@@ -542,7 +542,7 @@ class SWSHColatitudeTransform(NonSeparableTransform):
         return Yfull
 
 
-class GSZPRadialTransform(NonSeparableTransform):
+class BallRadialTransform(NonSeparableTransform):
 
     previous_basis_type = SpinWeightedSphericalHarmonics
     basis_type = RadialZernicke
