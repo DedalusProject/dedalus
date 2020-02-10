@@ -484,6 +484,7 @@ class ComplexFourier(IntervalBasis):
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
         self.kmax = kmax = (self.size - 1) // 2
+        # Include Nyquist mode
         self.wavenumbers = np.concatenate((np.arange(0, kmax+2), np.arange(-kmax, 0)))
 
     def _native_grid(self, scales):
@@ -826,7 +827,7 @@ class SpinBasis(MultidimensionalBasis):
     def local_m(self):
         layout = self.dist.coeff_layout
         local_m_elements = layout.local_elements(self.domain, scales=1)[self.axis]
-        print(local_m_elements)
+        print(local_m_elements, self.azimuth_basis.wavenumbers)
         return tuple(self.azimuth_basis.wavenumbers[local_m_elements])
 
     def forward_transform_azimuth(self, field, axis, gdata, cdata):
