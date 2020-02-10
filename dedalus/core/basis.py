@@ -86,11 +86,13 @@ class AffineCOV:
 class Basis:
     """Base class for spectral bases."""
 
-    def __init__(self, coord, library=DEFAULT_LIBRARY):
+    def __init__(self, coord, library=None):
         #self._check_coord(coord)
         self.coord = coord
-        self.axis = coord.dist.coords.index(coord)
         self.coords = (coord,)
+        self.axis = coord.dist.coords.index(coord)
+        if library is None:
+            library = self.default_library
         self.library = library
 
     # def __repr__(self):
@@ -260,13 +262,14 @@ class IntervalBasis(Basis):
 class Jacobi(IntervalBasis, metaclass=CachedClass):
     """Jacobi polynomial basis."""
 
-    coord_type = Coordinate
     dim = 1
+    coord_type = Coordinate
     group_shape = (1,)
     transforms = {}
     native_bounds = (-1, 1)
+    default_library = "matrix"
 
-    def __init__(self, coord, size, bounds, a, b, a0, b0, library='matrix'):
+    def __init__(self, coord, size, bounds, a, b, a0, b0, library=None):
         super().__init__(coord, size, bounds, library=library)
         self.a = a
         self.b = b
@@ -447,16 +450,12 @@ class Fourier(Basis, metaclass=CachedClass):
 class ComplexFourier(IntervalBasis, metaclass=CachedClass):
     """Fourier complex exponential basis."""
 
-    #const = 1
-
-    coord_type = Coordinate
     dim = 1
+    coord_type = Coordinate
     group_shape = (1,)
-    transforms = {}
     native_bounds = (0, 2*np.pi)
-
-    def __init__(self, coord, size, bounds, library='matrix'):
-        super().__init__(coord, size, bounds, library=library)
+    transforms = {}
+    default_library = "matrix"
 
     # def __add__(self, other):
     #     space = self.space
@@ -990,14 +989,17 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
 
     coord_type = S2Coordinates
     dim = 2
+    group_shape = (1, 1)
     transforms = {}
 
     def __init__(self, coordsystem, Lmax, radius, fourier_library='fftw'):
 #        Basis.__init__(coord, library='matrix')
         self.coordsystem = coordsystem
         self.coords = coordsystem.coords
+        self.axis = self.coords[0].dist.coords.index(self.coords[0])
         self.Lmax = Lmax
         self.radius = radius
+        self.shape = (2*(Lmax+1), Lmax+1)
 
         self.azimuth_basis = ComplexFourier(self.coords[0], 2*(Lmax+1), (0,2*np.pi), library=fourier_library)
         self.forward_transforms = [self.forward_transform_azimuth,
