@@ -845,8 +845,10 @@ class SpinBasis(MultidimensionalBasis):
         Ss = np.array([-1, 1], dtype=int)
         S = np.zeros([vs.dim for vs in tensorsig], dtype=int)
         for i, vs in enumerate(tensorsig):
-            if self.space in vs.spaces:
-                n = vs.get_index(self.space)
+            if self.coordsystem is vs: # kludge before we decide how compound coordinate systems work
+                S[axslice(i, 0, self.dim)] += Ss
+            elif self.coordsystem in vs:
+                n = vs.get_index(self.coordsystem)
                 S[axslice(i, n, n+self.dim)] += Ss
         return S
 
@@ -858,10 +860,14 @@ class SpinBasis(MultidimensionalBasis):
         Us = np.array([[-1j, 1], [1j, 1]]) / np.sqrt(2)
         # Perform unitary spin recombination along relevant tensor indeces
         U = []
-        for i, vector_space in enumerate(tensorsig):
-            if self.space in vector_space.spaces:
+        for i, vs in enumerate(tensorsig):
+            if self.coordsystem is vs: # kludge before we decide how compound coordinate systems work
+                Ui = np.identity(vs.dim, dtype=np.complex128)
+                Ui[:self.dim, :self.dim] = Us
+                U.append(Ui)
+            elif self.coordsystem in vs.spaces:
                 n = vector_space.get_index(self.space)
-                Ui = np.identity(vector_space.dim)
+                Ui = np.identity(vector_space.dim, dtype=np.complex128)
                 Ui[n:n+self.dim, n:n+self.dim] = Us
                 U.append(Ui)
             else:
@@ -1037,7 +1043,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         S = self.spin_weights(field.tensorsig)
         for i, s in np.ndenumerate(S):
             plan = self.transform_plan(grid_size, s)
-            plan.forward(gdata[i], cdata[i], data_axis)
+            plan.forward(gdata[i], cdata[i], axis)
 
     def backward_transform_colatitude(self, field, axis, cdata, gdata):
         data_axis = len(field.tensorsig) + axis
@@ -1046,7 +1052,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         S = self.spin_weights(field.tensorsig)
         for i, s in np.ndenumerate(S):
             plan = self.transform_plan(grid_size, s)
-            plan.backward(cdata[i], gdata[i], data_axis)
+            plan.backward(cdata[i], gdata[i], axis)
         # Apply spin recombination
         self.backward_spin_recombination(field.tensorsig, gdata)
 

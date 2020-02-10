@@ -1,5 +1,8 @@
 
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+
 from dedalus.core import coords, distributor, basis, field
 
 c = coords.CartesianCoordinates('x', 'y')
@@ -23,14 +26,21 @@ sb = basis.SpinWeightedSphericalHarmonics(c, 7, 1, fourier_library='matrix')
 phi, theta = sb.grids((1, 1))
 
 v = field.Field(dist=d, bases=(sb,), dtype=np.complex128)
-v['c'][-2, 2] = 1.
 vg = np.sin(theta)**2 * np.exp(-2j*phi)
-vc0 = v['c'].copy()
+v['g'] = vg
+v['c']
+print('SWSH scalar transform check:')
+print(np.allclose(v['g'], vg))
 
-print(v['g'])
-print('SWSH value check:')
-print(v['g'] / vg)
-print('SWSH transform check:')
-print(np.allclose(v['c'], vc0))
+w = field.Field(dist=d, bases=(sb,), tensorsig=(c,), dtype=np.complex128)
+
+print(w['c'].shape)
+
+w['c'][0,2,3] = 1.
+wc0 = w['c'].copy()
+wg = -1j*np.sqrt(35/512)/2*(np.sin(theta) - 4*np.sin(2*theta) - 3*np.sin(3*theta)) * np.exp(2j*phi)
+print('SWSH vector transform check:')
+print(np.allclose(w['g'][0], wg))
+
 
 
