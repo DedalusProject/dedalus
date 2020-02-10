@@ -82,10 +82,10 @@ class Domain:
     #     """Tuple of dealias flags."""
     #     return tuple(space.dealias for space in self.spaces)
 
-    # @CachedAttribute
-    # def constant(self):
-    #     """Tuple of constant flags."""
-    #     return tuple(space.constant for space in self.spaces)
+    @CachedAttribute
+    def constant(self):
+        """Tuple of constant flags."""
+        return tuple(space.constant for space in self.spaces)
 
     @CachedAttribute
     def coeff_group_shape(self):
@@ -116,9 +116,9 @@ class Domain:
         """Cached grid shape computation."""
         shape = np.ones(self.dist.dim, dtype=int)
         for space in self.spaces:
-            for subaxis in range(space.dim):
-                axis = space.axis + subaxis
-                shape[axis] = space.grid_shape(scales[axis])[subaxis]
+            subscales = scales[space.axis:space.axis+space.dim]
+            subshape = space.grid_shape(subscales)
+            shape[space.axis:space.axis+space.dim] = subshape
         return tuple(shape)
 
     # def expand_bases(self, bases):

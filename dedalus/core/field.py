@@ -436,7 +436,7 @@ class Field(Current):
         self.scales = None
         self.layout = self.dist.get_layout_object('c')
         # Change scales to build buffer and data
-        self.set_scales(1)
+        self.set_scales((1,) * self.dist.dim)
 
     def _check_bases(self, bases):
         # Drop duplicates

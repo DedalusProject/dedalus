@@ -452,10 +452,10 @@ class Transpose:
             return None  # no data
         elif domain.constant[axis] and domain.constant[axis+1]:
             return None  # no change
-        elif domain.constant[axis]:
-            return RowDistributor(sub_shape, dtype, axis, self.comm_sub)
-        elif domain.constant[axis+1]:
-            return ColDistributor(sub_shape, dtype, axis, self.comm_sub)
+        # elif domain.constant[axis]:
+        #     return RowDistributor(sub_shape, dtype, axis, self.comm_sub)
+        # elif domain.constant[axis+1]:
+        #     return ColDistributor(sub_shape, dtype, axis, self.comm_sub)
         else:
             return TransposePlanner(sub_shape, dtype, axis, self.comm_sub)
 
