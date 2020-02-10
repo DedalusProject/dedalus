@@ -20,4 +20,7 @@ d = distributor.Distributor(c.coords)
 sb = basis.SpinWeightedSphericalHarmonics(c, 15, 1, fourier_library='matrix')
 
 v = field.Field(dist=d, bases=(sb,), dtype=np.complex128)
+v['c'][0,0] = 1.
+vc0 = v['c'].copy()
+v['g']
 

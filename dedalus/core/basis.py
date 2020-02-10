@@ -819,10 +819,9 @@ class SpinBasis(MultidimensionalBasis):
 
     @CachedAttribute
     def local_m(self):
-        domain = self.space.domain
-        layout = self.space.dist.coeff_layout
-        local_m_elements = layout.local_elements(domain, scales=1)[self.axis]
+        layout = self.coords[0].dist.coeff_layout
         print(self.azimuth_basis.wavenumbers)
+        local_m_elements = layout.local_elements(domain, scales=1)[self.axis]
         print(local_m_elements)
         return tuple(self.azimuth_basis.wavenumbers[local_m_elements])
 
@@ -1010,7 +1009,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
     @CachedMethod
     def transform_plan(self, grid_size, s):
         """Build transform plan."""
-        return self.transforms['matrix'](grid_size, self.L_max+1, self.local_m, s)
+        return self.transforms['matrix'](grid_size, self.Lmax+1, self.local_m, s)
 
     def forward_transform_colatitude(self, field, axis, gdata, cdata):
         data_axis = len(field.tensorsig) + axis
