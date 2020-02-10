@@ -34,13 +34,19 @@ print(np.allclose(v['g'], vg))
 
 w = field.Field(dist=d, bases=(sb,), tensorsig=(c,), dtype=np.complex128)
 
-print(w['c'].shape)
-
 w['c'][0,2,3] = 1.
 wc0 = w['c'].copy()
 wg = -1j*np.sqrt(35/512)/2*(np.sin(theta) - 4*np.sin(2*theta) - 3*np.sin(3*theta)) * np.exp(2j*phi)
 print('SWSH vector transform check:')
 print(np.allclose(w['g'][0], wg))
+
+T = field.Field(dist=d, bases=(sb,), tensorsig=(c,c), dtype=np.complex128)
+
+T['c'][0,0,2,3] = 1.
+Tc0 = T['c'].copy()
+Tg = -0.5*np.sqrt(7/2)*(np.cos(theta/2)**4 * ( -2 + 3*np.cos(theta) ) ) * np.exp(2j*phi)
+print('SWSH tensor transform check:')
+print(np.allclose(T['g'][0,0], Tg))
 
 
 
