@@ -455,6 +455,7 @@ class NonSeparableTransform(Transform):
         self.backward_reduced(cdata, gdata)
 
 
+@register_transform(basis.SpinWeightedSphericalHarmonics, 'matrix')
 class SWSHColatitudeTransform(NonSeparableTransform):
 
     def __init__(self, grid_size, coeff_size, local_m, s):
