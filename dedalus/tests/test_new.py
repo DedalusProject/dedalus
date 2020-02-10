@@ -20,10 +20,16 @@ c = coords.S2Coordinates('phi','theta')
 d = distributor.Distributor(c.coords)
 sb = basis.SpinWeightedSphericalHarmonics(c, 7, 1, fourier_library='matrix')
 
+phi, theta = sb.grids((1, 1))
+
 v = field.Field(dist=d, bases=(sb,), dtype=np.complex128)
-v['c'][1, 1] = 1.
+v['c'][-2, 2] = 1.
+vg = np.sin(theta)**2 * np.exp(-2j*phi)
 vc0 = v['c'].copy()
+
 print(v['g'])
+print('SWSH value check:')
+print(v['g'] / vg)
 print('SWSH transform check:')
 print(np.allclose(v['c'], vc0))
 

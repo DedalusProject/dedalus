@@ -17,9 +17,10 @@ from ..tools import jacobi
 from ..tools import clenshaw
 from ..tools.array import reshape_vector
 
-from .spaces import PeriodicInterval, ParityInterval, Sphere, Ball, Disk
+from .spaces import ParityInterval, Sphere, Ball, Disk
 from .coords import Coordinate, S2Coordinates
 from .domain import Domain
+import dedalus_sphere
 #from . import transforms
 
 import logging
@@ -411,7 +412,7 @@ class IntegrateJacobi(operators.Integrate):
 
 class Fourier(Basis, metaclass=CachedClass):
     """Fourier cosine/sine basis."""
-    space_type = PeriodicInterval
+    #space_type = PeriodicInterval
     const = 1
 
     def __add__(self, other):
@@ -484,8 +485,7 @@ class ComplexFourier(IntervalBasis):
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
         self.kmax = kmax = (self.size - 1) // 2
-        # Include Nyquist mode
-        self.wavenumbers = np.concatenate((np.arange(0, kmax+2), np.arange(-kmax, 0)))
+        self.wavenumbers = np.concatenate((np.arange(0, kmax+2), np.arange(-kmax, 0)))  # Includes Nyquist mode
 
     def _native_grid(self, scales):
         """Evenly spaced endpoint grid: sin(N*x/2) = 0"""
@@ -1011,6 +1011,17 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
                                    self.forward_transform_colatitude]
         self.backward_transforms = [self.backward_transform_azimuth,
                                     self.backward_transform_colatitude]
+
+    def grid_azimuth(self, scale):
+        return self.azimuth_basis.grid(scale)[:, None]
+
+    def grid_colatitude(self, scale):
+        N = int(np.ceil(scale * self.shape[1]))
+        cos_theta, weights = dedalus_sphere.sphere.quadrature(Lmax=N-1)
+        return np.arccos(cos_theta).astype(np.float64)[None, :]
+
+    def grids(self, scales):
+        return (self.grid_azimuth(scales[0]), self.grid_colatitude(scales[1]))
 
     @CachedMethod
     def transform_plan(self, grid_size, s):

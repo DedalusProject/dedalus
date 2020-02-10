@@ -111,22 +111,6 @@ class Interval(Space):
         self._check_coords()
 
 
-class PeriodicInterval(Interval):
-    """Periodic interval for Fourier series."""
-
-    native_bounds = (0, 2*np.pi)
-
-    def __init__(self, *args, **kw):
-        super().__init__(*args, **kw)
-        # Maximum native k, dispensing Nyquist mode
-        self.kmax = (self.size - 1) // 2
-
-    def Fourier(self):
-        return basis.Fourier(self)
-
-    def grid_basis(self):
-        return self.Fourier()
-
 
 class ParityInterval(Interval):
     """Definite-parity periodic interval for Sine and Cosine series."""
