@@ -545,6 +545,7 @@ class NonSeparableTransform(Transform):
         self.backward_reduced(cdata, gdata)
 
 
+@register_transform(basis.SpinWeightedSphericalHarmonics, 'matrix')
 class SWSHColatitudeTransform(NonSeparableTransform):
 
     def __init__(self, grid_size, coeff_size, local_m, s):
@@ -678,6 +679,7 @@ class BallRadialTransform(NonSeparableTransform):
             # Pad to square transform and keep n aligned
             Wfull = np.zeros((self.N2c, self.N2g))
             Wfull[Nmin:Nmax+1, :] = (W*weights).astype(np.float64)
+            Wfull[self.Ng-1:, :] = 0
             l_matrices.append(Wfull)
         return l_matrices
 

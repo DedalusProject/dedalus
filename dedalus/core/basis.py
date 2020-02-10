@@ -825,7 +825,7 @@ class SpinBasis(MultidimensionalBasis):
         local_m_elements = layout.local_elements(domain, scales=1)[self.axis]
         print(self.azimuth_basis.wavenumbers)
         print(local_m_elements)
-        return self.azimuth_basis.wavenumbers[local_m_elements]
+        return tuple(self.azimuth_basis.wavenumbers[local_m_elements])
 
     def forward_transform_azimuth(self, field, axis, gdata, cdata):
         # Azimuthal DFT is the same for all components
@@ -891,7 +891,7 @@ class RegularityBasis(MultidimensionalBasis):
     def local_l(self):
         domain = self.space.domain
         layout = self.space.dist.coeff_layout
-        return layout.local_elements(domain, scales=1)[self.axis+1]
+        return tuple(layout.local_elements(domain, scales=1)[self.axis+1])
 
     @CachedMethod
     def radial_recombinations(self, tensorsig):
@@ -991,36 +991,39 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
     space_type = Sphere
     dim = 2
 
-    def __init__(self, space):
-        self._check_space(space)
-        self.space = space
-        self.axis = space.axis
-        self.azimuth_basis = Fourier(self.space.azimuth_space)
+    def __init__(self, coord, Lmax, fourier_library='fftw'):
+        Basis.__init__(coord, library='matrix')
+        self.Lmax = Lmax
+
+        self.azimuth_basis = Fourier(self.coord, 2*(Lmax+1), fourier_library)
         self.forward_transforms = [self.forward_transform_azimuth,
                                    self.forward_transform_colatitude]
         self.backward_transforms = [self.backward_transform_azimuth,
                                     self.backward_transform_colatitude]
-        #self.forward_transform_azimuth = self.azimuth_basis.forward_transform
-        #self.backward_transform_azimuth = self.azimuth_basis.backward_transform
+
+    @CachedMethod
+    def transform_plan(self, grid_size, s):
+        """Build transform plan."""
+        return self.transforms['matrix'](grid_size, self.L_max+1, self.local_m, s)
 
     def forward_transform_colatitute(self, field, axis, gdata, cdata):
         data_axis = len(field.tensorsig) + axis
-        scale = gdata.shape[axis] / cdata.shape[axis]
+        grid_size = gdata.shape[data_axis]
         # Apply spin recombination
         self.forward_spin_recombination(field.tensorsig, gdata)
         # Perform transforms component-by-component
         S = self.spin_weights(field.tensorsig)
         for i, s in np.ndenumerate(S):
-            plan = self.transform_plan(cdata.shape, gdata.dtype, data_axis, scale, self.local_m, s)
+            plan = self.transform_plan(grid_size, s)
             plan.forward(gdata[i], cdata[i])
 
     def backward_transform_colatitute(self, field, axis, cdata, gdata):
         data_axis = len(field.tensorsig) + axis
-        scale = gdata.shape[axis] / cdata.shape[axis]
+        grid_size = gdata.shape[data_axis]
         # Perform transforms component-by-component
         S = self.spin_weights(field.tensorsig)
         for i, s in np.ndenumerate(S):
-            plan = self.transform_plan(cdata.shape, gdata.dtype, data_axis, scale, self.local_m, s)
+            plan = self.transform_plan(grid_size, s)
             plan.backward(cdata[i], gdata[i])
         # Apply spin recombination
         self.backward_spin_recombination(field.tensorsig, gdata)
