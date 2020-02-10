@@ -563,9 +563,10 @@ class SWSHColatitudeTransform(NonSeparableTransform):
 
         m_matrices = self._forward_SWSH_matrices
         for dm, m in enumerate(local_m):
-            grm = gdata[:, dm, :, :]
-            crm = cdata[:, dm, :, :]
-            apply_matrix(m_matrices[dm], grm, axis=1, out=crm)
+            if m <= self.N2c - 1:
+                grm = gdata[:, dm, :, :]
+                crm = cdata[:, dm, :, :]
+                apply_matrix(m_matrices[dm], grm, axis=1, out=crm)
 
     def backward_reduced(self, cdata, gdata):
 
@@ -575,9 +576,10 @@ class SWSHColatitudeTransform(NonSeparableTransform):
 
         m_matrices = self._backward_SWSH_matrices
         for dm, m in enumerate(local_m):
-            grm = self.gdata_reduced[:, dm, :, :]
-            crm = self.cdata_reduced[:, dm, :, :]
-            apply_matrix(m_matrices[dm], crm, axis=1, out=grm)
+            if m <= self.N2c - 1:
+                grm = gdata[:, dm, :, :]
+                crm = cdata[:, dm, :, :]
+                apply_matrix(m_matrices[dm], crm, axis=1, out=grm)
 
     @CachedAttribute
     def _quadrature(self):
@@ -595,12 +597,15 @@ class SWSHColatitudeTransform(NonSeparableTransform):
         Lmax = self.N2c - 1
         m_matrices = []
         for m in self.local_m:
-            Y = dedalus_sphere.sphere.Y(Lmax, m, self.s, cos_grid).astype(np.float64)  # shape (Nc-Lmin, Ng)
-            # Pad to square transform and keep l aligned
-            Lmin = max(np.abs(m), np.abs(self.s))
-            Yfull = np.zeros((self.N2c, self.N2g))
-            Yfull[Lmin:, :] = (Y*weights).astype(np.float64)
+            if m <= Lmax: # make sure we don't try to make a matrix for the Nyquist mode
+                Y = dedalus_sphere.sphere.Y(Lmax, m, self.s, cos_grid).astype(np.float64)  # shape (Nc-Lmin, Ng)
+                # Pad to square transform and keep l aligned
+                Lmin = max(np.abs(m), np.abs(self.s))
+                Yfull = np.zeros((self.N2c, self.N2g))
+                Yfull[Lmin:, :] = (Y*weights).astype(np.float64)
+            else: Yfull = None
             m_matrices.append(Yfull)
+
         return m_matrices
 
     @CachedAttribute
@@ -612,11 +617,14 @@ class SWSHColatitudeTransform(NonSeparableTransform):
         Lmax = self.N2c - 1
         m_matrices = []
         for m in self.local_m:
-            Y = dedalus_sphere.sphere.Y(Lmax, m, self.s, cos_grid) # shape (Nc-Lmin, Ng)
-            # Pad to square transform and keep l aligned
-            Lmin = self.N2c - Y.shape[0]
-            Yfull = np.zeros((self.N2g, self.N2c))
-            Yfull[:, Lmin:] = Y.T.astype(np.float64)
+            if m <= Lmax: # make sure we don't try to make a matrix for the Nyquist mode
+                # print(Lmax,m,self.s,cos_grid.shape)
+                Y = dedalus_sphere.sphere.Y(Lmax, m, self.s, cos_grid) # shape (Nc-Lmin, Ng)
+                # Pad to square transform and keep l aligned
+                Lmin = self.N2c - Y.shape[0]
+                Yfull = np.zeros((self.N2g, self.N2c))
+                Yfull[:, Lmin:] = Y.T.astype(np.float64)
+            else: Yfull = None
             m_matrices.append(Yfull)
         return m_matrices
 

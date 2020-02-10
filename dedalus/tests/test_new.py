@@ -13,14 +13,18 @@ u.set_scales(0.5)
 u['c'][1, 1] = 1
 uc0 = u['c'].copy()
 u['g']
+print('Complex Fourier transform check:')
 print(np.allclose(u['c'], uc0))
 
 c = coords.S2Coordinates('phi','theta')
 d = distributor.Distributor(c.coords)
-sb = basis.SpinWeightedSphericalHarmonics(c, 15, 1, fourier_library='matrix')
+sb = basis.SpinWeightedSphericalHarmonics(c, 7, 1, fourier_library='matrix')
 
 v = field.Field(dist=d, bases=(sb,), dtype=np.complex128)
-v['c'][0,0] = 1.
+v['c'][1, 1] = 1.
 vc0 = v['c'].copy()
-v['g']
+print(v['g'])
+print('SWSH transform check:')
+print(np.allclose(v['c'], vc0))
+
 

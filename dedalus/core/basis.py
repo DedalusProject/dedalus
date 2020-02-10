@@ -826,7 +826,6 @@ class SpinBasis(MultidimensionalBasis):
     def local_m(self):
         layout = self.dist.coeff_layout
         local_m_elements = layout.local_elements(self.domain, scales=1)[self.axis]
-        print(local_m_elements)
         return tuple(self.azimuth_basis.wavenumbers[local_m_elements])
 
     def forward_transform_azimuth(self, field, axis, gdata, cdata):
@@ -851,7 +850,7 @@ class SpinBasis(MultidimensionalBasis):
         return S
 
     @CachedMethod
-    def spin_recombination(self, tensorsig):
+    def spin_recombination_matrices(self, tensorsig):
         """Build matrices for appling spin recombination to each tensor rank."""
         # Setup unitary spin recombination
         # [azimuth, colatitude] -> [-, +]
@@ -1030,7 +1029,6 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
 
     def backward_transform_colatitude(self, field, axis, cdata, gdata):
         data_axis = len(field.tensorsig) + axis
-        print(data_axis, gdata.shape)
         grid_size = gdata.shape[data_axis]
         # Perform transforms component-by-component
         S = self.spin_weights(field.tensorsig)
