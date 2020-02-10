@@ -484,6 +484,7 @@ class ComplexFourier(IntervalBasis):
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
         self.kmax = kmax = (self.size - 1) // 2
+        # Include Nyquist mode
         self.wavenumbers = np.concatenate((np.arange(0, kmax+2), np.arange(-kmax, 0)))
 
     def _native_grid(self, scales):

@@ -207,7 +207,9 @@ class FourierTransform(SeparableTransform):
 
     Backward transform:
         f(x) = \sum_{k=-K}^{K} F(k) \exp(2 \pi i k x / N)
-        K = M // 2 + 1
+        K = (M - 1) // 2
+
+    Note: Nyquist mode is dropped.
 
     """
 
@@ -233,8 +235,8 @@ class FourierMatrixTransform(FourierTransform, MatrixTransform):
         X = np.arange(self.N)[None, :]
         dX = self.N / 2 / np.pi
         quadrature = np.exp(-1j*K*X/dX) / self.N
-        # Zero higher modes for transforms with grid_size < coeff_size
-        KN = (self.N + 1) // 2
+        # Zero Nyquist mode / higher modes for transforms with grid_size < coeff_size
+        KN = (min(self.M, self.N) + 1) // 2
         quadrature *= (np.abs(K) < KN)
         return quadrature
 
@@ -244,8 +246,8 @@ class FourierMatrixTransform(FourierTransform, MatrixTransform):
         X = np.arange(self.N)[:, None]
         dX = self.N / 2 / np.pi
         functions = np.exp(1j*K*X/dX)
-        # Zero higher modes for transforms with grid_size < coeff_size
-        KN = (self.N + 1) // 2
+        # Zero Nyquist mode / higher modes for transforms with grid_size < coeff_size
+        KN = (min(self.M, self.N) + 1) // 2
         functions *= (np.abs(K) < KN)
         return functions
 
