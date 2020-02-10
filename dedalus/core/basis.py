@@ -240,7 +240,21 @@ class IntervalBasis(Basis):
     def grid_shape(self, scale):
         return tuple(int(np.ceil(scale*n)) for n in self.shape)
 
+    def forward_transform(self, field, axis, gdata, cdata):
+        """Forward transform field data."""
+        # Transform is the same for all components
+        data_axis = len(field.tensorsig) + axis
+        grid_size = gdata.shape[data_axis]
+        plan = self.transform_plan(grid_size)
+        plan.forward(gdata, cdata, data_axis)
 
+    def backward_transform(self, field, axis, cdata, gdata):
+        """Backward transform field data."""
+        # Transform is the same for all components
+        data_axis = len(field.tensorsig) + axis
+        grid_size = gdata.shape[data_axis]
+        plan = self.transform_plan(grid_size)
+        plan.backward(cdata, gdata, data_axis)
 
 
 class Jacobi(IntervalBasis, metaclass=CachedClass):
@@ -252,16 +266,13 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
     transforms = {}
     native_bounds = (-1, 1)
 
-    def __init__(self, coord, size, bounds, a, b, library='matrix', a0=-1/2, b0=-1/2):
+    def __init__(self, coord, size, bounds, a, b, a0, b0, library='matrix'):
         super().__init__(coord, size, bounds, library=library)
-        self.size = size
-        self.shape = (size,)
         self.a = a
         self.b = b
         self.a0 = a0
         self.b0 = b0
         #self.const = 1 / np.sqrt(jacobi.mass(self.a, self.b))
-        self.bounds = bounds
         #self.axis = self.space.axis
 
     def _native_grid(self, scales):
@@ -328,22 +339,6 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
     def transform_plan(self, grid_size):
         """Build transform plan."""
         return self.transforms['matrix'](grid_size, self.size, self.a, self.b, self.a0, self.b0)
-
-    def forward_transform(self, field, axis, gdata, cdata):
-        """Forward transform field data."""
-        # Transform is the same for all components
-        data_axis = len(field.tensorsig) + axis
-        grid_size = gdata.shape[data_axis]
-        plan = self.transform_plan(grid_size)
-        plan.forward(gdata, cdata, data_axis)
-
-    def backward_transform(self, field, axis, cdata, gdata):
-        """Backward transform field data."""
-        # Transform is the same for all components
-        data_axis = len(field.tensorsig) + axis
-        grid_size = gdata.shape[data_axis]
-        plan = self.transform_plan(grid_size)
-        plan.backward(cdata, gdata, data_axis)
 
 
 
@@ -449,40 +444,62 @@ class Fourier(Basis, metaclass=CachedClass):
             return (1 <= k <= self.space.kmax)
 
 
-class ComplexFourier(Basis, metaclass=CachedClass):
+class ComplexFourier(IntervalBasis, metaclass=CachedClass):
     """Fourier complex exponential basis."""
-    space_type = PeriodicInterval
-    const = 1
 
-    def __add__(self, other):
-        space = self.space
-        if other is None:
-            return space.Fourier
-        elif other is space.Fourier:
-            return space.Fourier
-        else:
-            return NotImplemented
+    #const = 1
 
-    def __mul__(self, other):
-        space = self.space
-        if other is None:
-            return space.Fourier
-        elif other is space.Fourier:
-            return space.Fourier
-        else:
-            return NotImplemented
+    coord_type = Coordinate
+    dim = 1
+    group_shape = (1,)
+    transforms = {}
+    native_bounds = (0, 2*np.pi)
 
-    def __pow__(self, other):
-        return self.space.Fourier
+    def __init__(self, coord, size, bounds, library='matrix'):
+        super().__init__(coord, size, bounds, library=library)
 
-    def include_mode(self, mode):
-        k = mode // 2
-        if (mode % 2) == 0:
-            # Cosine modes: drop Nyquist mode
-            return (0 <= k <= self.space.kmax)
-        else:
-            # Sine modes: drop k=0 and Nyquist mode
-            return (1 <= k <= self.space.kmax)
+    # def __add__(self, other):
+    #     space = self.space
+    #     if other is None:
+    #         return space.Fourier
+    #     elif other is space.Fourier:
+    #         return space.Fourier
+    #     else:
+    #         return NotImplemented
+
+    # def __mul__(self, other):
+    #     space = self.space
+    #     if other is None:
+    #         return space.Fourier
+    #     elif other is space.Fourier:
+    #         return space.Fourier
+    #     else:
+    #         return NotImplemented
+
+    # def __pow__(self, other):
+    #     return self.space.Fourier
+
+    def _native_grid(self, scales):
+        """Evenly spaced endpoint grid: sin(N*x/2) = 0"""
+        N, = self.grid_shape(scales)
+        return (2 * np.pi / N) * np.arange(N)
+
+    @CachedMethod
+    def transform_plan(self, grid_size):
+        """Build transform plan."""
+        return self.transforms['matrix'](grid_size, self.size)
+
+
+
+
+    # def include_mode(self, mode):
+    #     k = mode // 2
+    #     if (mode % 2) == 0:
+    #         # Cosine modes: drop Nyquist mode
+    #         return (0 <= k <= self.space.kmax)
+    #     else:
+    #         # Sine modes: drop k=0 and Nyquist mode
+    #         return (1 <= k <= self.space.kmax)
 
 
 class InterpolateFourier(operators.Interpolate):

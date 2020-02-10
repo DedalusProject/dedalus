@@ -121,11 +121,6 @@ class PeriodicInterval(Interval):
         # Maximum native k, dispensing Nyquist mode
         self.kmax = (self.size - 1) // 2
 
-    def _native_grid(self, scales):
-        """Evenly spaced endpoint grid: sin(N*x/2) = 0"""
-        N, = self.grid_shape(scales)
-        return (2 * np.pi / N) * np.arange(N)
-
     def Fourier(self):
         return basis.Fourier(self)
 

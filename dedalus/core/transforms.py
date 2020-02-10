@@ -110,17 +110,50 @@ class PolynomialTransform(Transform):
         self.backward_reduced()
 
 
-class MatrixTransform(PolynomialTransform):
+class SeparableTransform(Transform):
+    """Abstract base class for transforms that only apply to one dimension, independent of all others."""
 
     def forward(self, gdata, cdata, axis):
+        """Apply forward transform along specified axis."""
+        # Subclasses must implement
+        raise NotImplementedError
+
+    def backward(self, gdata, cdata, axis):
+        """Apply backward transform along specified axis."""
+        # Subclasses must implement
+        raise NotImplementedError
+
+
+class MatrixTransform(SeparableTransform):
+    """Separable matrix-multiplication transforms."""
+
+    def forward(self, gdata, cdata, axis):
+        """Apply forward transform along specified axis."""
         apply_matrix(self.forward_matrix, gdata, axis=axis, out=cdata)
 
     def backward(self, cdata, gdata, axis):
+        """Apply backward transform along specified axis."""
         apply_matrix(self.backward_matrix, cdata, axis=axis, out=gdata)
+
+    @CachedAttribute
+    def forward_matrix(self):
+        # Subclasses must implement
+        raise NotImplementedError
+
+    @CachedAttribute
+    def backward_matrix(self):
+        # Subclasses must implement
+        raise NotImplementedError
+
+
+class FastTransform(SeparableTransform):
+    """Separable fast transforms."""
+    pass
 
 
 @register_transform(basis.Jacobi, 'matrix')
 class JacobiMatrixTransform(MatrixTransform):
+    """Jacobi polynomial transforms."""
 
     def __init__(self, grid_size, coeff_size, a, b, a0, b0):
         self.grid_size = grid_size
@@ -141,6 +174,7 @@ class JacobiMatrixTransform(MatrixTransform):
         base_polynomials = jacobi.build_polynomials(M, a0, b0, base_grid)
         base_weights = jacobi.build_weights(N, a=a0, b=b0)
         base_quadrature = (base_polynomials * base_weights)
+        # Zero higher coefficients for transforms with grid_size < coeff_size
         base_quadrature[N:, :] = 0
         # Spectral conversion
         if (a == a0) and (b == b0):
@@ -159,7 +193,63 @@ class JacobiMatrixTransform(MatrixTransform):
         # Polynomial recursion using base grid
         base_grid = jacobi.build_grid(N, a=a0, b=b0)
         polynomials = jacobi.build_polynomials(M, a, b, base_grid)
+        # Zero higher polynomials for transforms with grid_size < coeff_size
+        polynomials[N:, :] = 0
         return polynomials.T.copy()  # copy forces memory transpose
+
+
+class FourierTransform(SeparableTransform):
+    """
+    Complex Fourier transform with unit-amplitude normalization:
+
+    Forward transform:
+        F(k) = (1/N) \sum_{x=0}^{N-1} f(x) \exp(-2 \pi i k x / N)
+
+    Backward transform:
+        f(x) = \sum_{k=-K}^{K} F(k) \exp(2 \pi i k x / N)
+        K = M // 2 + 1
+
+    """
+
+@register_transform(basis.ComplexFourier, 'matrix')
+class FourierMatrixTransform(FourierTransform, MatrixTransform):
+    """Complex Fourier matrix transform."""
+
+    def __init__(self, grid_size, coeff_size):
+        self.N = grid_size
+        self.M = coeff_size
+
+    @property
+    def wavenumbers(self):
+        M = self.M
+        K = np.arange(M)
+        # Wrap around Nyquist mode
+        KN = (M + 1) // 2
+        return (K + KN - 1) % M - KN + 1
+
+    @CachedAttribute
+    def forward_matrix(self):
+        K = self.wavenumbers[:, None]
+        X = np.arange(self.N)[None, :]
+        dX = self.N / 2 / np.pi
+        quadrature = np.exp(-1j*K*X/dX) / self.N
+        # Zero higher modes for transforms with grid_size < coeff_size
+        KN = (self.N + 1) // 2
+        quadrature *= (np.abs(K) < KN)
+        return quadrature
+
+    @CachedAttribute
+    def backward_matrix(self):
+        K = self.wavenumbers[None, :]
+        X = np.arange(self.N)[:, None]
+        dX = self.N / 2 / np.pi
+        functions = np.exp(1j*K*X/dX)
+        # Zero higher modes for transforms with grid_size < coeff_size
+        KN = (self.N + 1) // 2
+        functions *= (np.abs(K) < KN)
+        return functions
+
+
 
 
 class ScipyDST(PolynomialTransform):
