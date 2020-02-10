@@ -14,4 +14,9 @@ uc0 = u['c'].copy()
 u['g']
 print(np.allclose(u['c'], uc0))
 
+c = coords.S2Coordinates('phi','theta')
+d = distributor.Distributor(c.coords)
+sb = basis.SpinWeightedSphericalHarmonics(c, 15, 1, fourier_library='matrix')
+
+v = field.Field(dist=d, bases=(sb,), dtype=np.complex128)
 

@@ -18,7 +18,7 @@ from ..tools import clenshaw
 from ..tools.array import reshape_vector
 
 from .spaces import PeriodicInterval, ParityInterval, Sphere, Ball, Disk
-from .coords import Coordinate
+from .coords import Coordinate, S2Coordinates
 #from . import transforms
 
 import logging
@@ -988,14 +988,18 @@ class DiskBasis(SpinBasis):
 
 class SpinWeightedSphericalHarmonics(SpinBasis):
 
-    space_type = Sphere
+    coord_type = S2Coordinates
     dim = 2
+    transforms = {}
 
-    def __init__(self, coord, Lmax, fourier_library='fftw'):
-        Basis.__init__(coord, library='matrix')
+    def __init__(self, coordsystem, Lmax, radius, fourier_library='fftw'):
+#        Basis.__init__(coord, library='matrix')
+        self.coordsystem = coordsystem
+        self.coords = coordsystem.coords
         self.Lmax = Lmax
+        self.radius = radius
 
-        self.azimuth_basis = Fourier(self.coord, 2*(Lmax+1), fourier_library)
+        self.azimuth_basis = ComplexFourier(self.coords[0], 2*(Lmax+1), (0,2*np.pi), library=fourier_library)
         self.forward_transforms = [self.forward_transform_azimuth,
                                    self.forward_transform_colatitude]
         self.backward_transforms = [self.backward_transform_azimuth,
@@ -1006,7 +1010,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         """Build transform plan."""
         return self.transforms['matrix'](grid_size, self.L_max+1, self.local_m, s)
 
-    def forward_transform_colatitute(self, field, axis, gdata, cdata):
+    def forward_transform_colatitude(self, field, axis, gdata, cdata):
         data_axis = len(field.tensorsig) + axis
         grid_size = gdata.shape[data_axis]
         # Apply spin recombination
@@ -1017,7 +1021,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             plan = self.transform_plan(grid_size, s)
             plan.forward(gdata[i], cdata[i])
 
-    def backward_transform_colatitute(self, field, axis, cdata, gdata):
+    def backward_transform_colatitude(self, field, axis, cdata, gdata):
         data_axis = len(field.tensorsig) + axis
         grid_size = gdata.shape[data_axis]
         # Perform transforms component-by-component

@@ -29,7 +29,7 @@ class S2Coordinates(CoordinateSystem):
     def __init__(self, azimuth, colatitude):
         self.azimuth = Coordinate(azimuth)
         self.colatitude = Coordinate(colatitude)
-
+        self.coords = (self.azimuth, self.colatitude)
 
 class SphericalCoordinates(CoordinateSystem):
     dim = 3
@@ -38,5 +38,6 @@ class SphericalCoordinates(CoordinateSystem):
         self.azimuth = Coordinate(azimuth)
         self.colatitude = Coordinate(colatitude)
         self.radius = Coordinate(radius)
+        self.coords = (self.azimuth, self.colatitude, self.radius)
 
 
