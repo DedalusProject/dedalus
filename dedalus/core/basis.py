@@ -19,6 +19,7 @@ from ..tools.array import reshape_vector
 
 from .spaces import PeriodicInterval, ParityInterval, Sphere, Ball, Disk
 from .coords import Coordinate, S2Coordinates
+from .domain import Domain
 #from . import transforms
 
 import logging
@@ -90,7 +91,9 @@ class Basis:
         #self._check_coord(coord)
         self.coord = coord
         self.coords = (coord,)
-        self.axis = coord.dist.coords.index(coord)
+        self.dist = coord.dist
+        self.axis = self.dist.coords.index(coord)
+        self.domain = Domain(self.dist, bases=(self,))
         if library is None:
             library = self.default_library
         self.library = library
@@ -447,7 +450,7 @@ class Fourier(Basis, metaclass=CachedClass):
             return (1 <= k <= self.space.kmax)
 
 
-class ComplexFourier(IntervalBasis, metaclass=CachedClass):
+class ComplexFourier(IntervalBasis):
     """Fourier complex exponential basis."""
 
     dim = 1
@@ -478,6 +481,11 @@ class ComplexFourier(IntervalBasis, metaclass=CachedClass):
     # def __pow__(self, other):
     #     return self.space.Fourier
 
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self.kmax = kmax = (self.size - 1) // 2
+        self.wavenumbers = np.concatenate((np.arange(0, kmax+2), np.arange(-kmax, 0)))
+
     def _native_grid(self, scales):
         """Evenly spaced endpoint grid: sin(N*x/2) = 0"""
         N, = self.grid_shape(scales)
@@ -487,9 +495,6 @@ class ComplexFourier(IntervalBasis, metaclass=CachedClass):
     def transform_plan(self, grid_size):
         """Build transform plan."""
         return self.transforms['matrix'](grid_size, self.size)
-
-
-
 
     # def include_mode(self, mode):
     #     k = mode // 2
@@ -819,9 +824,8 @@ class SpinBasis(MultidimensionalBasis):
 
     @CachedAttribute
     def local_m(self):
-        layout = self.coords[0].dist.coeff_layout
-        print(self.azimuth_basis.wavenumbers)
-        local_m_elements = layout.local_elements(domain, scales=1)[self.axis]
+        layout = self.dist.coeff_layout
+        local_m_elements = layout.local_elements(self.domain, scales=1)[self.axis]
         print(local_m_elements)
         return tuple(self.azimuth_basis.wavenumbers[local_m_elements])
 
@@ -995,7 +999,9 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
 #        Basis.__init__(coord, library='matrix')
         self.coordsystem = coordsystem
         self.coords = coordsystem.coords
-        self.axis = self.coords[0].dist.coords.index(self.coords[0])
+        self.dist = self.coords[0].dist
+        self.axis = self.dist.coords.index(self.coords[0])
+        self.domain = Domain(self.dist, bases=(self,))
         self.Lmax = Lmax
         self.radius = radius
         self.shape = (2*(Lmax+1), Lmax+1)
@@ -1020,16 +1026,17 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         S = self.spin_weights(field.tensorsig)
         for i, s in np.ndenumerate(S):
             plan = self.transform_plan(grid_size, s)
-            plan.forward(gdata[i], cdata[i])
+            plan.forward(gdata[i], cdata[i], data_axis)
 
     def backward_transform_colatitude(self, field, axis, cdata, gdata):
         data_axis = len(field.tensorsig) + axis
+        print(data_axis, gdata.shape)
         grid_size = gdata.shape[data_axis]
         # Perform transforms component-by-component
         S = self.spin_weights(field.tensorsig)
         for i, s in np.ndenumerate(S):
             plan = self.transform_plan(grid_size, s)
-            plan.backward(cdata[i], gdata[i])
+            plan.backward(cdata[i], gdata[i], data_axis)
         # Apply spin recombination
         self.backward_spin_recombination(field.tensorsig, gdata)
 

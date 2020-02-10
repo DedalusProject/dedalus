@@ -532,15 +532,15 @@ class NonSeparableTransform(Transform):
 
     def forward(self, gdata, cdata, axis):
         # Make reduced view into input arrays
-        gdata = reduced_view_4(gdata, axis)
-        cdata = reduced_view_4(cdata, axis)
+        gdata = reduced_view_4(gdata, axis-1)
+        cdata = reduced_view_4(cdata, axis-1)
         # Transform reduced arrays
         self.forward_reduced(gdata, cdata)
 
     def backward(self, cdata, gdata, axis):
         # Make reduced view into input arrays
-        cdata = reduced_view_4(cdata, axis)
-        gdata = reduced_view_4(gdata, axis)
+        cdata = reduced_view_4(cdata, axis-1)
+        gdata = reduced_view_4(gdata, axis-1)
         # Transform reduced arrays
         self.backward_reduced(cdata, gdata)
 
