@@ -90,7 +90,7 @@ class Basis:
 
     constant = False
 
-    def __init__(self, coords, library=None):
+    def __init__(self, coords, library=None, dealias=None):
         self.coords = coords
         self.dist = coords[0].dist
         self.axis = self.dist.coords.index(coords[0])
@@ -98,6 +98,7 @@ class Basis:
         if library is None:
             library = self.default_library
         self.library = library
+        self.dealias = dealias
 
     # def __repr__(self):
     #     return '<%s %i>' %(self.__class__.__name__, id(self))
@@ -1062,20 +1063,21 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
     group_shape = (1, 1)
     transforms = {}
 
-    def __init__(self, coordsystem, Lmax, radius, fourier_library='fftw'):
+    def __init__(self, coordsystem, shape, radius, fourier_library='fftw'):
 #        Basis.__init__(coord, library='matrix')
         self.coordsystem = coordsystem
         self.coords = coordsystem.coords
         self.dist = self.coords[0].dist
         self.axis = self.dist.coords.index(self.coords[0])
         self.domain = Domain(self.dist, bases=(self,))
-        self.Lmax = Lmax
+        self.shape = shape
         self.radius = radius
-        self.shape = (2*(Lmax+1), Lmax+1)
-
-        self.degrees = np.arange(0, Lmax+1)
-
-        self.azimuth_basis = ComplexFourier(self.coords[0], 2*(Lmax+1), (0,2*np.pi), library=fourier_library)
+        self.mmax = (shape[0] - 1) // 2
+        self.Lmax = shape[1] - 1
+        if self.mmax > self.Lmax:
+            raise ValueError("mmax > Lmax: shape[0] cannot be more than twice shape[1].")
+        self.degrees = np.arange(shape[1])
+        self.azimuth_basis = ComplexFourier(self.coords[0], shape[0], bounds=(0, 2*np.pi), library=fourier_library)
         self.forward_transforms = [self.forward_transform_azimuth,
                                    self.forward_transform_colatitude]
         self.backward_transforms = [self.backward_transform_azimuth,
