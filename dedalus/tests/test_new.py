@@ -61,15 +61,15 @@ results.append(result)
 print(len(results), ':', result)
 
 ## S2
-c = coords.S2Coordinates('phi','theta')
+c = coords.S2Coordinates('phi', 'theta')
 d = distributor.Distributor(c.coords)
 sb = basis.SpinWeightedSphericalHarmonics(c, (32,16), radius=1)
 phi, theta = sb.local_grids((1, 1))
 # Scalar transforms
-u = field.Field(dist=d, bases=(sb,), dtype=np.complex128)
-u['c'][-2, 2] = 1
-ug = np.sqrt(15) / 4 * np.sin(theta)**2 * np.exp(-2j*phi)
-result = np.allclose(u['g'], ug)
+f = field.Field(dist=d, bases=(sb,), dtype=np.complex128)
+f['c'][-2,2] = 1
+fg = np.sqrt(15) / 4 * np.sin(theta)**2 * np.exp(-2j*phi)
+result = np.allclose(f['g'], fg)
 results.append(result)
 print(len(results), ':', result)
 # Vector transforms
@@ -87,17 +87,27 @@ result = np.allclose(T['g'][0,0], Tg00)
 results.append(result)
 print(len(results), ':', result)
 
-raise
-
+## Ball
 c = coords.SphericalCoordinates('phi', 'theta', 'r')
 d = distributor.Distributor(c.coords)
-b = basis.BallBasis(c, 7, 7, 1, fourier_library='matrix')
-
+b = basis.BallBasis(c, (16,16,16), radius=1)
+phi, theta, r = b.local_grids((1, 1, 1))
+x = r * np.sin(theta) * np.cos(phi)
+y = r * np.sin(theta) * np.sin(phi)
+z = r * np.cos(theta)
+# Scalar transforms
 f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
-
-f['c'][2,4,5] = 1.
-fc0 = f['c'].copy()
-f['g']
-print('Ball scalar transform check:')
-print(np.allclose(f['c'],fc0))
+f['g'] = fg = 3*x**2 + 2*y*z
+f['c']
+result = np.allclose(f['g'], fg)
+results.append(result)
+print(len(results), ':', result)
+# Vector transforms
+u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
+print(u['g'].shape)
+u['g'] = ug = [3*x**2, 2*y*z, z**2 + 4]
+u['c']
+result = np.allclose(u['g'], ug)
+results.append(result)
+print(len(results), ':', result)
 

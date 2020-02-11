@@ -1075,7 +1075,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         self.mmax = (shape[0] - 1) // 2
         self.Lmax = shape[1] - 1
         if self.mmax > self.Lmax:
-            raise ValueError("mmax > Lmax: shape[0] cannot be more than twice shape[1].")
+            raise ValueError("shape[0] cannot be more than twice shape[1].")
         self.degrees = np.arange(shape[1])
         self.azimuth_basis = ComplexFourier(self.coords[0], shape[0], bounds=(0, 2*np.pi), library=fourier_library)
         self.forward_transforms = [self.forward_transform_azimuth,
@@ -1147,51 +1147,67 @@ class BallBasis(RegularityBasis):
     group_shape = (1, 1, 1)
     transforms = {}
 
-    def __init__(self, coordsystem, Nmax, Lmax, radius, alpha=0., fourier_library='fftw'):
+    def __init__(self, coordsystem, shape, radius, alpha=0, fourier_library='fftw'):
         self.coordsystem = coordsystem
         self.coords = coordsystem.coords
         self.dist = self.coords[0].dist
         self.axis = self.dist.coords.index(self.coords[0])
         self.domain = Domain(self.dist, bases=(self,))
-        self.Nmax = Nmax
-        self.Lmax = Lmax
+        self.shape = shape
         self.radius = radius
         self.alpha = alpha
-        self.shape = (2*(Lmax+1), Lmax+1, Nmax+1)
 
-        self.outer_sphere_basis = SWSH(coordsystem, Lmax, radius, fourier_library=fourier_library)
-        self.forward_transforms = [self.forward_transform_azimuth,
-                                   self.forward_transform_colatitude,
+        self.outer_sphere_basis = SWSH(coordsystem, shape[:2], radius, fourier_library=fourier_library)
+        self.azimuth_basis = self.outer_sphere_basis.azimuth_basis
+        self.mmax = self.outer_sphere_basis.mmax
+        self.Lmax = self.outer_sphere_basis.Lmax
+        self.Nmax = shape[2] - 1
+        if self.Lmax + 1 > 2 * (self.Nmax + 1):
+            raise ValueError("shape[1] cannot be more than twice shape[2]")
+
+        self.forward_transforms = [self.outer_sphere_basis.forward_transform_azimuth,
+                                   self.outer_sphere_basis.forward_transform_colatitude,
                                    self.forward_transform_radius]
-        self.backward_transforms = [self.backward_transform_azimuth,
-                                    self.backward_transform_colatitude,
+        self.backward_transforms = [self.outer_sphere_basis.backward_transform_azimuth,
+                                    self.outer_sphere_basis.backward_transform_colatitude,
                                     self.backward_transform_radius]
 
-    def forward_transform_azimuth(self, *args):
-        return self.outer_sphere_basis.forward_transform_azimuth(*args)
+    def global_grids(self, scales):
+        return (self.global_grid_azimuth(scales[0]),
+                self.global_grid_colatitude(scales[1]),
+                self.global_grid_radius(scales[2]))
 
-    def backward_transform_azimuth(self, *args):
-        return self.outer_sphere_basis.backward_transform_azimuth(*args)
+    def local_grids(self, scales):
+        return (self.local_grid_azimuth(scales[0]),
+                self.local_grid_colatitude(scales[1]),
+                self.local_grid_radius(scales[2]))
 
-    def forward_transform_colatitude(self, *args):
-        return self.outer_sphere_basis.forward_transform_colatitude(*args)
+    def global_grid_azimuth(self, scale):
+        return self.outer_sphere_basis.global_grid_azimuth(scale)
 
-    def backward_transform_colatitude(self, *args):
-        return self.outer_sphere_basis.backward_transform_colatitude(*args)
+    def global_grid_colatitude(self, scale):
+        return self.outer_sphere_basis.global_grid_colatitude(scale)
 
-    def grid_azimuth(self, scale):
-        return self.outer_sphere_basis.grid_azimuth(scale)[:, None, None]
+    def global_grid_radius(self, scale):
+        radius = self._native_radius_grid(scale)[local_elements]
+        return reshape_vector(radius, dim=self.dist.dim, axis=self.axis+2)
 
-    def grid_colatitude(self, scale):
-        return self.outer_sphere_basis.grid_colatitude(scale)[None, :, None]
+    def local_grid_azimuth(self, scale):
+        return self.outer_sphere_basis.local_grid_azimuth(scale)
 
-    def grid_radius(self, scale):
+    def local_grid_colatitude(self, scale):
+        return self.outer_sphere_basis.local_grid_colatitude(scale)
+
+    def local_grid_radius(self, scale):
+        local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis+2]
+        radius = self._native_radius_grid(scale)[local_elements]
+        return reshape_vector(radius, dim=self.dist.dim, axis=self.axis+2)
+
+    def _native_radius_grid(self, scale):
         N = int(np.ceil(scale * self.shape[2]))
-        z, weights = dedalus_sphere.ball.quadrature(Lmax=N-1)
-        return np.sqrt( (z+1)/2 ).astype(np.float64)[None, None, :]
-
-    def grids(self, scales):
-        return (self.grid_azimuth(scales[0]), self.grid_colatitude(scales[1]), self.grid_radius(scales[2]) )
+        z, weights = dedalus_sphere.ball.quadrature(3, N-1, niter=3, alpha=self.alpha)
+        r = np.sqrt((z + 1) / 2)
+        return r.astype(np.float64)
 
     @CachedMethod
     def transform_plan(self, grid_size, deg, alpha):
