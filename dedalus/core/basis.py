@@ -90,15 +90,11 @@ class Basis:
 
     constant = False
 
-    def __init__(self, coords, library=None, dealias=None):
+    def __init__(self, coords):
         self.coords = coords
         self.dist = coords[0].dist
         self.axis = self.dist.coords.index(coords[0])
         self.domain = Domain(self.dist, bases=(self,))
-        if library is None:
-            library = self.default_library
-        self.library = library
-        self.dealias = dealias
 
     # def __repr__(self):
     #     return '<%s %i>' %(self.__class__.__name__, id(self))
@@ -114,23 +110,6 @@ class Basis:
 
     def grid_shape(self, scales):
         return tuple(int(np.ceil(s*n)) for s, n in zip(scales, self.shape))
-
-    @property
-    def library(self):
-        """Current transform library."""
-        return self._library
-
-    @library.setter
-    def library(self, value):
-        """Clear transform cache and set new library."""
-        self._library = value.lower()
-        self.transform_plan.cache.clear()
-
-    @CachedMethod
-    def transform_plan(self, coeff_shape, dtype, axis, scale):
-        """Build and cache transform plan."""
-        transform_class = self.transforms[self.library]
-        return transform_class(self, coeff_shape, dtype, axis, scale)
 
     def global_grids(self, scales):
         """Global grids."""
@@ -248,8 +227,8 @@ class IntervalBasis(Basis):
 
     dim = 1
 
-    def __init__(self, coord, size, bounds, library=None, dealias=1):
-        super().__init__((coord,), library=library, dealias=dealias)
+    def __init__(self, coord, size, bounds):
+        super().__init__((coord,))
         self.coord = coord
         self.size = size
         self.shape = (size,)
@@ -262,7 +241,7 @@ class IntervalBasis(Basis):
 
     def global_grid(self, scale):
         """Global grid."""
-        native_grid = self._native_global_grid(scale)
+        native_grid = self._native_grid(scale)
         problem_grid = self.COV.problem_coord(native_grid)
         return reshape_vector(problem_grid, dim=self.dist.dim, axis=self.axis)
 
@@ -273,11 +252,11 @@ class IntervalBasis(Basis):
     def local_grid(self, scale):
         """Local grid."""
         local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis]
-        native_grid = self._native_global_grid(scale)[local_elements]
+        native_grid = self._native_grid(scale)[local_elements]
         problem_grid = self.COV.problem_coord(native_grid)
         return reshape_vector(problem_grid, dim=self.dist.dim, axis=self.axis)
 
-    def _native_global_grid(self, scale):
+    def _native_grid(self, scale):
         """Native flat global grid."""
         # Subclasses must implement
         raise NotImplementedError
@@ -306,11 +285,10 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
 
     group_shape = (1,)
     native_bounds = (-1, 1)
-    default_library = "matrix"
     transforms = {}
 
-    def __init__(self, coord, size, bounds, a, b, a0=None, b0=None, library=None, dealias=1):
-        super().__init__(coord, size, bounds, library=library, dealias=dealias)
+    def __init__(self, coord, size, bounds, a, b, a0=None, b0=None, dealias=1, library='matrix'):
+        super().__init__(coord, size, bounds)
         # Default grid parameters
         if a0 is None:
             a0 = a
@@ -320,12 +298,19 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         self.b = float(b)
         self.a0 = float(a0)
         self.b0 = float(b0)
+        self.dealias = dealias
+        self.library = library
         #self.const = 1 / np.sqrt(jacobi.mass(self.a, self.b))
 
-    def _native_global_grid(self, scale):
-        """Native flat Gauss-Jacobi grid."""
+    def _native_grid(self, scale):
+        """Native flat global grid."""
         N, = self.grid_shape((scale,))
         return jacobi.build_grid(N, a=self.a, b=self.b)
+
+    @CachedMethod
+    def transform_plan(self, grid_size):
+        """Build transform plan."""
+        return self.transforms[self.library](grid_size, self.size, self.a, self.b, self.a0, self.b0)
 
     # def weights(self, scales):
     #     """Gauss-Jacobi weights."""
@@ -381,11 +366,6 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
     #     if coeff_size > 1:
     #         conversion = sparse.kron(conversion, sparse.identity(coeff_size))
     #     return (conversion @ total)
-
-    @CachedMethod
-    def transform_plan(self, grid_size):
-        """Build transform plan."""
-        return self.transforms['matrix'](grid_size, self.size, self.a, self.b, self.a0, self.b0)
 
 
 def Legendre(*args, **kw):
@@ -514,12 +494,9 @@ def ChebyshevU(*args, **kw):
 class ComplexFourier(IntervalBasis):
     """Fourier complex exponential basis."""
 
-    dim = 1
-    coord_type = Coordinate
     group_shape = (1,)
     native_bounds = (0, 2*np.pi)
     transforms = {}
-    default_library = "matrix"
 
     # def __add__(self, other):
     #     space = self.space
@@ -542,20 +519,22 @@ class ComplexFourier(IntervalBasis):
     # def __pow__(self, other):
     #     return self.space.Fourier
 
-    def __init__(self, coord, size, bounds, library=None):
-        super().__init__(coord, size, bounds, library=library)
+    def __init__(self, coord, size, bounds, dealias=1, library='matrix'):
+        super().__init__(coord, size, bounds)
+        self.dealias = dealias
+        self.library = library
         self.kmax = kmax = (size - 1) // 2
         self.wavenumbers = np.concatenate((np.arange(0, kmax+2), np.arange(-kmax, 0)))  # Includes Nyquist mode
 
-    def _native_global_grid(self, scale):
-        """Native flat equispaced grid."""
+    def _native_grid(self, scale):
+        """Native flat global grid."""
         N, = self.grid_shape((scale,))
         return (2 * np.pi / N) * np.arange(N)
 
     @CachedMethod
     def transform_plan(self, grid_size):
         """Build transform plan."""
-        return self.transforms['matrix'](grid_size, self.size)
+        return self.transforms[self.library](grid_size, self.size)
 
     # def include_mode(self, mode):
     #     k = mode // 2
@@ -881,23 +860,23 @@ class MultidimensionalBasis(Basis):
 
 class SpinBasis(MultidimensionalBasis):
 
-    dim = 2
+    def __init__(self, coordsystem, shape, azimuth_library='matrix'):
+        super().__init__(coordsystem.coords)
+        self.coordsystem = coordsystem
+        self.shape = shape
+        self.azimuth_library = azimuth_library
+        self.mmax = (shape[0] - 1) // 2
+        self.azimuth_basis = ComplexFourier(self.coords[0], shape[0], bounds=(0, 2*np.pi), library=azimuth_library)
+        self.global_grid_azimuth = self.azimuth_basis.global_grid
+        self.local_grid_azimuth = self.azimuth_basis.local_grid
+        self.forward_transform_azimuth = self.azimuth_basis.forward_transform
+        self.backward_transform_azimuth = self.azimuth_basis.backward_transform
 
     @CachedAttribute
     def local_m(self):
         layout = self.dist.coeff_layout
         local_m_elements = layout.local_elements(self.domain, scales=1)[self.axis]
         return tuple(self.azimuth_basis.wavenumbers[local_m_elements])
-
-    def forward_transform_azimuth(self, field, axis, gdata, cdata):
-        # Azimuthal DFT is the same for all components
-        data_axis = len(field.tensorsig) + axis
-        transforms.forward_DFT(gdata, cdata, axis=data_axis)
-
-    def backward_transform_azimuth(self, field, axis, cdata, gdata):
-        # Azimuthal DFT is the same for all components
-        data_axis = len(field.tensorsig) + axis
-        transforms.backward_DFT(cdata, gdata, axis=data_axis)
 
     @CachedMethod
     def spin_weights(self, tensorsig):
@@ -953,13 +932,29 @@ class SpinBasis(MultidimensionalBasis):
 
 class RegularityBasis(MultidimensionalBasis):
 
-    dim = 3
+    def __init__(self, coordsystem, shape, azimuth_library='matrix', colatitude_library='matrix'):
+        super().__init__(coordsystem.coords)
+        self.coordsystem = coordsystem
+        self.shape = shape
+        self.azimuth_library = azimuth_library
+        self.colatitude_library = colatitude_library
+        self.sphere_basis = SWSH(coordsystem, shape[:2], azimuth_library=azimuth_library, colatitude_library=colatitude_library)
+        self.mmax = self.sphere_basis.mmax
+        self.Lmax = self.sphere_basis.Lmax
+        self.global_grid_azimuth = self.sphere_basis.global_grid_azimuth
+        self.global_grid_colatitude = self.sphere_basis.global_grid_colatitude
+        self.local_grid_azimuth = self.sphere_basis.local_grid_azimuth
+        self.local_grid_colatitude = self.sphere_basis.local_grid_colatitude
+        self.forward_transform_azimuth = self.sphere_basis.forward_transform_azimuth
+        self.forward_transform_colatitude = self.sphere_basis.forward_transform_colatitude
+        self.backward_transform_azimuth = self.sphere_basis.backward_transform_azimuth
+        self.backward_transform_colatitude = self.sphere_basis.backward_transform_colatitude
 
     @CachedAttribute
     def local_l(self):
         layout = self.dist.coeff_layout
         local_l_elements = layout.local_elements(self.domain, scales=1)[self.axis+1]
-        return tuple(self.outer_sphere_basis.degrees[local_l_elements])
+        return tuple(self.sphere_basis.degrees[local_l_elements])
 
     @CachedMethod
     def radial_recombinations(self, tensorsig):
@@ -1058,51 +1053,39 @@ class DiskBasis(SpinBasis):
 
 class SpinWeightedSphericalHarmonics(SpinBasis):
 
-    coord_type = S2Coordinates
     dim = 2
     group_shape = (1, 1)
     transforms = {}
 
-    def __init__(self, coordsystem, shape, radius, fourier_library='fftw'):
-#        Basis.__init__(coord, library='matrix')
-        self.coordsystem = coordsystem
-        self.coords = coordsystem.coords
-        self.dist = self.coords[0].dist
-        self.axis = self.dist.coords.index(self.coords[0])
-        self.domain = Domain(self.dist, bases=(self,))
-        self.shape = shape
+    def __init__(self, coordsystem, shape, radius=1, colatitude_library='matrix', **kw):
+        super().__init__(coordsystem, shape, **kw)
         self.radius = radius
-        self.mmax = (shape[0] - 1) // 2
+        self.colatitude_library = colatitude_library
         self.Lmax = shape[1] - 1
         if self.mmax > self.Lmax:
             raise ValueError("shape[0] cannot be more than twice shape[1].")
         self.degrees = np.arange(shape[1])
-        self.azimuth_basis = ComplexFourier(self.coords[0], shape[0], bounds=(0, 2*np.pi), library=fourier_library)
         self.forward_transforms = [self.forward_transform_azimuth,
                                    self.forward_transform_colatitude]
         self.backward_transforms = [self.backward_transform_azimuth,
                                     self.backward_transform_colatitude]
 
-    def global_grid_azimuth(self, scale):
-        return self.azimuth_basis.global_grid(scale)
+    def global_grids(self, scales):
+        return (self.global_grid_azimuth(scales[0]),
+                self.global_grid_colatitude(scales[1]))
 
     def global_grid_colatitude(self, scale):
         theta = self._native_colatitude_grid(scale)
         return reshape_vector(theta, dim=self.dist.dim, axis=self.axis+1)
 
-    def global_grids(self, scales):
-        return (self.global_grid_azimuth(scales[0]), self.global_grid_colatitude(scales[1]))
-
-    def local_grid_azimuth(self, scale):
-        return self.azimuth_basis.local_grid(scale)
+    def local_grids(self, scales):
+        return (self.local_grid_azimuth(scales[0]),
+                self.local_grid_colatitude(scales[1]))
 
     def local_grid_colatitude(self, scale):
         local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis+1]
         theta = self._native_colatitude_grid(scale)[local_elements]
         return reshape_vector(theta, dim=self.dist.dim, axis=self.axis+1)
-
-    def local_grids(self, scales):
-        return (self.local_grid_azimuth(scales[0]), self.local_grid_colatitude(scales[1]))
 
     def _native_colatitude_grid(self, scale):
         N = int(np.ceil(scale * self.shape[1]))
@@ -1113,7 +1096,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
     @CachedMethod
     def transform_plan(self, grid_size, s):
         """Build transform plan."""
-        return self.transforms['matrix'](grid_size, self.Lmax+1, self.local_m, s)
+        return self.transforms[self.colatitude_library](grid_size, self.Lmax+1, self.local_m, s)
 
     def forward_transform_colatitude(self, field, axis, gdata, cdata):
         data_axis = len(field.tensorsig) + axis
@@ -1140,36 +1123,25 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
 
 SWSH = SpinWeightedSphericalHarmonics
 
+
 class BallBasis(RegularityBasis):
 
-    coord_type = SphericalCoordinates
     dim = 3
     group_shape = (1, 1, 1)
     transforms = {}
 
-    def __init__(self, coordsystem, shape, radius, alpha=0, fourier_library='fftw'):
-        self.coordsystem = coordsystem
-        self.coords = coordsystem.coords
-        self.dist = self.coords[0].dist
-        self.axis = self.dist.coords.index(self.coords[0])
-        self.domain = Domain(self.dist, bases=(self,))
-        self.shape = shape
+    def __init__(self, coordsystem, shape, radius=1, alpha=0, azimuth_library='matrix', colatitude_library='matrix', radius_library='matrix'):
+        super().__init__(coordsystem, shape, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
         self.radius = radius
         self.alpha = alpha
-
-        self.outer_sphere_basis = SWSH(coordsystem, shape[:2], radius, fourier_library=fourier_library)
-        self.azimuth_basis = self.outer_sphere_basis.azimuth_basis
-        self.mmax = self.outer_sphere_basis.mmax
-        self.Lmax = self.outer_sphere_basis.Lmax
         self.Nmax = shape[2] - 1
         if self.Lmax + 1 > 2 * (self.Nmax + 1):
             raise ValueError("shape[1] cannot be more than twice shape[2]")
-
-        self.forward_transforms = [self.outer_sphere_basis.forward_transform_azimuth,
-                                   self.outer_sphere_basis.forward_transform_colatitude,
+        self.forward_transforms = [self.forward_transform_azimuth,
+                                   self.forward_transform_colatitude,
                                    self.forward_transform_radius]
-        self.backward_transforms = [self.outer_sphere_basis.backward_transform_azimuth,
-                                    self.outer_sphere_basis.backward_transform_colatitude,
+        self.backward_transforms = [self.backward_transform_azimuth,
+                                    self.backward_transform_colatitude,
                                     self.backward_transform_radius]
 
     def global_grids(self, scales):
@@ -1182,21 +1154,9 @@ class BallBasis(RegularityBasis):
                 self.local_grid_colatitude(scales[1]),
                 self.local_grid_radius(scales[2]))
 
-    def global_grid_azimuth(self, scale):
-        return self.outer_sphere_basis.global_grid_azimuth(scale)
-
-    def global_grid_colatitude(self, scale):
-        return self.outer_sphere_basis.global_grid_colatitude(scale)
-
     def global_grid_radius(self, scale):
         radius = self._native_radius_grid(scale)[local_elements]
         return reshape_vector(radius, dim=self.dist.dim, axis=self.axis+2)
-
-    def local_grid_azimuth(self, scale):
-        return self.outer_sphere_basis.local_grid_azimuth(scale)
-
-    def local_grid_colatitude(self, scale):
-        return self.outer_sphere_basis.local_grid_colatitude(scale)
 
     def local_grid_radius(self, scale):
         local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis+2]
@@ -1235,8 +1195,5 @@ class BallBasis(RegularityBasis):
            plan.backward(cdata[i], gdata[i], axis)
         # Apply regularity recombinations
         self.backward_regularity_recombination(field, axis, gdata)
-
-
-
 
 from . import transforms
