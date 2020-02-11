@@ -94,22 +94,7 @@ class Space:
 
 class Interval(Space):
     """Base class for 1D intervals."""
-
-    dim = 1
-    group_shape = (1,)
-
-    def __init__(self, coord, size, bounds, dist, axis, dealias=1):
-        self.coord = coord
-        self.coords = (coord,)
-        self.size = size
-        self.shape = (size,)
-        self.bounds = bounds
-        self.dist = dist
-        self.axis = axis
-        self.dealias = dealias
-        self.COV = AffineCOV(self.native_bounds, bounds)
-        self._check_coords()
-
+    pass
 
 
 class ParityInterval(Interval):
@@ -135,49 +120,6 @@ class ParityInterval(Interval):
     def grid_basis(self,):
         return self.Cosine()
 
-
-class FiniteInterval(Interval):
-    """
-    Affine transformation of the interval [-1, 1], under the weight:
-        w(x) = (1-x)^a (1+x)^b
-    """
-
-    native_bounds = (-1, 1)
-
-    def __init__(self, *args, a=-1/2, b=-1/2, **kw):
-        super().__init__(*args, **kw)
-        self.a = float(a)
-        self.b = float(b)
-
-
-
-    def Jacobi(self, *args, **kw):
-        return basis.Jacobi(self, *args, **kw)
-
-    def grid_basis(self, *args, **kw):
-        return self.Jacobi(da=0, db=0, *args, **kw)
-
-    def Legendre(self, **kw):
-        if (self.a != 0) or (self.b != 0):
-            raise ValueError("Must use a0 = b0 = 0 for Legendre polynomials.")
-        return self.Jacobi(da=0, db=0, **kw)
-
-    def Ultraspherical(self, d, **kw):
-        if (self.a != -1/2) or (self.b != -1/2):
-            raise ValueError("Must use a0 = b0 = -1/2 for Ultraspherical polynomials.")
-        return self.Jacobi(da=d, db=d, **kw)
-
-    def ChebyshevT(self, **kw):
-        return self.Ultraspherical(d=0, **kw)
-
-    def ChebyshevU(self, **kw):
-        return self.Ultraspherical(d=1, **kw)
-
-    def ChebyshevV(self, **kw):
-        return self.Ultraspherical(d=2, **kw)
-
-    def ChebyshevW(self, **kw):
-        return self.Ultraspherical(d=3, **kw)
 
 
 class Disk(Space):

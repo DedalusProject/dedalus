@@ -245,8 +245,10 @@ class Basis:
 
 class IntervalBasis(Basis):
 
-    def __init__(self, coord, size, bounds, library=None):
-        super().__init__((coord,), library=library)
+    dim = 1
+
+    def __init__(self, coord, size, bounds, library=None, dealias=1):
+        super().__init__((coord,), library=library, dealias=dealias)
         self.coord = coord
         self.size = size
         self.shape = (size,)
@@ -270,8 +272,9 @@ class IntervalBasis(Basis):
     def local_grid(self, scale):
         """Local grid."""
         local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis]
-        local_grid = self.global_grid(scale).ravel()[local_elements]
-        return reshape_vector(local_grid, dim=self.dist.dim, axis=self.axis)
+        native_grid = self._native_global_grid(scale)[local_elements]
+        problem_grid = self.COV.problem_coord(native_grid)
+        return reshape_vector(problem_grid, dim=self.dist.dim, axis=self.axis)
 
     def _native_global_grid(self, scale):
         """Native flat global grid."""
@@ -300,19 +303,22 @@ class IntervalBasis(Basis):
 class Jacobi(IntervalBasis, metaclass=CachedClass):
     """Jacobi polynomial basis."""
 
-    dim = 1
-    coord_type = Coordinate
     group_shape = (1,)
-    transforms = {}
     native_bounds = (-1, 1)
     default_library = "matrix"
+    transforms = {}
 
-    def __init__(self, coord, size, bounds, a, b, a0, b0, library=None):
-        super().__init__(coord, size, bounds, library=library)
-        self.a = a
-        self.b = b
-        self.a0 = a0
-        self.b0 = b0
+    def __init__(self, coord, size, bounds, a, b, a0=None, b0=None, library=None, dealias=1):
+        super().__init__(coord, size, bounds, library=library, dealias=dealias)
+        # Default grid parameters
+        if a0 is None:
+            a0 = a
+        if b0 is None:
+            b0 = b
+        self.a = float(a)
+        self.b = float(b)
+        self.a0 = float(a0)
+        self.b0 = float(b0)
         #self.const = 1 / np.sqrt(jacobi.mass(self.a, self.b))
 
     def _native_global_grid(self, scale):
@@ -380,6 +386,26 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         """Build transform plan."""
         return self.transforms['matrix'](grid_size, self.size, self.a, self.b, self.a0, self.b0)
 
+
+def Legendre(*args, **kw):
+    return Jacobi(*args, a=0, b=0, **kw)
+
+
+def Ultraspherical(*args, alpha, alpha0=None, **kw):
+    # Default grid parameter
+    if alpha0 is None:
+        alpha0 = alpha
+    a = b = alpha - 1/2
+    a0 = b0 = alpha0 - 1/2
+    return Jacobi(*args, a=a, b=b, a0=a0, b0=b0, **kw)
+
+
+def ChebyshevT(*args, **kw):
+    return Ultraspherical(*args, alpha=0, **kw)
+
+
+def ChebyshevU(*args, **kw):
+    return Ultraphserical(*args, alpha=1, **kw)
 
 
 # class ConvertJacobiJacobi(operators.Convert):
@@ -1059,9 +1085,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         return self.azimuth_basis.global_grid(scale)
 
     def global_grid_colatitude(self, scale):
-        N = int(np.ceil(scale * self.shape[1]))
-        cos_theta, weights = dedalus_sphere.sphere.quadrature(Lmax=N-1)
-        theta = np.arccos(cos_theta).astype(np.float64)
+        theta = self._native_colatitude_grid(scale)
         return reshape_vector(theta, dim=self.dist.dim, axis=self.axis+1)
 
     def global_grids(self, scales):
@@ -1072,11 +1096,17 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
 
     def local_grid_colatitude(self, scale):
         local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis+1]
-        local_grid = self.global_grid_colatitude(scale).ravel()[local_elements]
-        return reshape_vector(local_grid, dim=self.dist.dim, axis=self.axis+1)
+        theta = self._native_colatitude_grid(scale)[local_elements]
+        return reshape_vector(theta, dim=self.dist.dim, axis=self.axis+1)
 
     def local_grids(self, scales):
         return (self.local_grid_azimuth(scales[0]), self.local_grid_colatitude(scales[1]))
+
+    def _native_colatitude_grid(self, scale):
+        N = int(np.ceil(scale * self.shape[1]))
+        cos_theta, weights = dedalus_sphere.sphere.quadrature(Lmax=N-1)
+        theta = np.arccos(cos_theta).astype(np.float64)
+        return theta
 
     @CachedMethod
     def transform_plan(self, grid_size, s):
