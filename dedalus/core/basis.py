@@ -1069,11 +1069,14 @@ class DiskBasis(SpinBasis):
 class SpinWeightedSphericalHarmonics(SpinBasis):
 
     dim = 2
+    dims = ['azimuth', 'colatitude']
     group_shape = (1, 1)
     transforms = {}
 
     def __init__(self, coordsystem, shape, radius=1, colatitude_library='matrix', **kw):
         super().__init__(coordsystem, shape, **kw)
+        if radius <= 0:
+            raise ValueError("Radius must be positive.")
         self.radius = radius
         self.colatitude_library = colatitude_library
         self.Lmax = shape[1] - 1
@@ -1142,13 +1145,17 @@ SWSH = SpinWeightedSphericalHarmonics
 class BallBasis(RegularityBasis):
 
     dim = 3
+    dims = ['azimuth', 'colatitude', 'radius']
     group_shape = (1, 1, 1)
     transforms = {}
 
     def __init__(self, coordsystem, shape, radius=1, alpha=0, azimuth_library='matrix', colatitude_library='matrix', radius_library='matrix'):
         super().__init__(coordsystem, shape, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
+        if radius <= 0:
+            raise ValueError("Radius must be positive.")
         self.radius = radius
         self.alpha = alpha
+        self.radial_COV = AffineCOV((0, 1), (0, radius))
         self.Nmax = shape[2] - 1
         if self.Lmax + 1 > 2 * (self.Nmax + 1):
             raise ValueError("shape[1] cannot be more than twice shape[2]")
@@ -1170,13 +1177,15 @@ class BallBasis(RegularityBasis):
                 self.local_grid_radius(scales[2]))
 
     def global_grid_radius(self, scale):
-        radius = self._native_radius_grid(scale)[local_elements]
-        return reshape_vector(radius, dim=self.dist.dim, axis=self.axis+2)
+        native_grid = self._native_radius_grid(scale)[local_elements]
+        problem_grid = self.radial_COV.problem_coord(native_grid)
+        return reshape_vector(problem_grid, dim=self.dist.dim, axis=self.axis+2)
 
     def local_grid_radius(self, scale):
         local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis+2]
-        radius = self._native_radius_grid(scale)[local_elements]
-        return reshape_vector(radius, dim=self.dist.dim, axis=self.axis+2)
+        native_grid = self._native_radius_grid(scale)[local_elements]
+        problem_grid = self.radial_COV.problem_coord(native_grid)
+        return reshape_vector(problem_grid, dim=self.dist.dim, axis=self.axis+2)
 
     def _native_radius_grid(self, scale):
         N = int(np.ceil(scale * self.shape[2]))
