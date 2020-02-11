@@ -47,5 +47,39 @@ Tg = -0.5*np.sqrt(7/2)*(np.cos(theta/2)**4 * ( -2 + 3*np.cos(theta) ) ) * np.exp
 print('SWSH tensor transform check:')
 print(np.allclose(T['g'][0,0], Tg))
 
+c = coords.SphericalCoordinates('phi', 'theta', 'r')
+d = distributor.Distributor(c.coords)
+b = basis.BallBasis(c, 7, 7, 1, fourier_library='matrix')
 
+f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+
+f['c'][0,0,0] = 1.
+f['g']
+f.towards_coeff_space()
+f.towards_coeff_space()
+f.towards_coeff_space()
+print(f.data)
+#fc0 = f['c'].copy()
+#f['g']
+#print(np.max(np.abs(f['c'])))
+#print(np.allclose(f['c'],fc0))
+#print(np.max(np.abs(f['c']-fc0)))
+
+import dedalus_sphere
+
+Nmax = 7
+alpha = 0.
+
+z_grid, weights = dedalus_sphere.ball.quadrature(3, Nmax, niter=3, alpha=alpha)
+
+l = 0
+deg = 0
+W = dedalus_sphere.ball.trial_functions(3, Nmax, l, deg, z_grid, alpha=alpha)
+Nmin = (l + deg)//2
+
+forward = (weights*W).astype(np.float64)
+backward = W.T.astype(np.float64)
+
+print(backward @ forward)
+#print(forward @ backward)
 

@@ -620,7 +620,6 @@ class SWSHColatitudeTransform(NonSeparableTransform):
         m_matrices = []
         for m in self.local_m:
             if m <= Lmax: # make sure we don't try to make a matrix for the Nyquist mode
-                # print(Lmax,m,self.s,cos_grid.shape)
                 Y = dedalus_sphere.sphere.Y(Lmax, m, self.s, cos_grid) # shape (Nc-Lmin, Ng)
                 # Pad to square transform and keep l aligned
                 Lmin = self.N2c - Y.shape[0]
@@ -631,6 +630,7 @@ class SWSHColatitudeTransform(NonSeparableTransform):
         return m_matrices
 
 
+@register_transform(basis.BallBasis, 'matrix')
 class BallRadialTransform(NonSeparableTransform):
 
     def __init__(self, grid_size, coeff_size, local_l, deg, alpha):
@@ -648,7 +648,7 @@ class BallRadialTransform(NonSeparableTransform):
             raise ValueError("Local l must match size of %i axis." %(self.axis-1) )
 
         # Apply transform for each l
-        l_matrices = self._forward_GSZP_matrices
+        l_matrices = self._forward_GSZP_matrix
         for dl, l in enumerate(local_l):
             grl = gdata[:, dl, :, :]
             crl = cdata[:, dl, :, :]
@@ -665,7 +665,7 @@ class BallRadialTransform(NonSeparableTransform):
         for dl, l in enumerate(local_l):
             grl = gdata[:, dl, :, :]
             crl = cdata[:, dl, :, :]
-            apply_matrix(l_matrix, crl, axis=1, out=grl)
+            apply_matrix(l_matrices[dl], crl, axis=1, out=grl)
 
     @CachedAttribute
     def _quadrature(self):
@@ -680,16 +680,16 @@ class BallRadialTransform(NonSeparableTransform):
         """Build transform matrix for single l and r."""
         import dedalus_sphere
         # Get functions from sphere library
-        Nmin = 0
         z_grid, weights = self._quadrature
         l_matrices = []
-        for l in local_l:
-            Nmax = self.N2c - 1 - l//2
-            W = dedalus_sphere.ball.trial_functions(3, Nmax-Nmin, l, self.deg, z_grid, alpha=self.alpha) # shape (Nmax-Nmin, Ng)
+        for l in self.local_l:
+            Nmax = self.N2c - 1
+            Nmin = (l + self.deg)//2
+            W = dedalus_sphere.ball.trial_functions(3, Nmax, l, self.deg, z_grid, alpha=self.alpha) # shape (Nmax+1-Nmin, Ng)
             # Pad to square transform and keep n aligned
             Wfull = np.zeros((self.N2c, self.N2g))
             Wfull[Nmin:Nmax+1, :] = (W*weights).astype(np.float64)
-            Wfull[self.Ng-1:, :] = 0
+#            Wfull[self.N2g-1:, :] = 0
             l_matrices.append(Wfull)
         return l_matrices
 
@@ -701,9 +701,10 @@ class BallRadialTransform(NonSeparableTransform):
         Nmin = 0
         z_grid, weights = self._quadrature
         l_matrices = []
-        for l in local_l:
-            Nmax = self.N2c - 1 - l//2
-            W = dedalus_sphere.ball.polynomial(3, Nmax-Nmin, l, self.deg, z_grid, alpha=self.alpha) # shape (Nmax-Nmin, Ng)
+        for l in self.local_l:
+            Nmax = self.N2c - 1
+            Nmin = (l + self.deg)//2
+            W = dedalus_sphere.ball.trial_functions(3, Nmax, l, self.deg, z_grid, alpha=self.alpha) # shape (Ng, Nmax+1-Nmin)
             # Pad to square transform and keep n aligned
             Wfull = np.zeros((self.N2g, self.N2c))
             Wfull[:, Nmin:Nmax+1] = W.T.astype(np.float64)

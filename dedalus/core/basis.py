@@ -18,7 +18,7 @@ from ..tools import clenshaw
 from ..tools.array import reshape_vector
 
 from .spaces import ParityInterval, Sphere, Ball, Disk
-from .coords import Coordinate, S2Coordinates
+from .coords import Coordinate, S2Coordinates, SphericalCoordinates
 from .domain import Domain
 import dedalus_sphere
 #from . import transforms
@@ -930,9 +930,9 @@ class RegularityBasis(MultidimensionalBasis):
 
     @CachedAttribute
     def local_l(self):
-        domain = self.space.domain
-        layout = self.space.dist.coeff_layout
-        return tuple(layout.local_elements(domain, scales=1)[self.axis+1])
+        layout = self.dist.coeff_layout
+        local_l_elements = layout.local_elements(self.domain, scales=1)[self.axis+1]
+        return tuple(self.outer_sphere_basis.degrees[local_l_elements])
 
     @CachedMethod
     def radial_recombinations(self, tensorsig):
@@ -944,7 +944,7 @@ class RegularityBasis(MultidimensionalBasis):
                     raise ValueError("Only supports tensors over ball.")
         order = len(tensorsig)
         logger.warning("Q orders not fixed")
-        return [dedalus_sphere.ball128.Q(l, order) for l in self.local_l]
+        return [dedalus_sphere.ball.Q(l, order) for l in self.local_l]
 
     @CachedMethod
     def regularity_classes(self, tensorsig):
@@ -952,7 +952,9 @@ class RegularityBasis(MultidimensionalBasis):
         Rb = np.array([-1, 0, 1], dtype=int)
         R = np.zeros([vs.dim for vs in tensorsig], dtype=int)
         for i, vs in enumerate(tensorsig):
-            if self.space in vs.spaces:
+            if self.coordsystem is vs: # kludge before we decide how compound coordinate systems work
+                R[axslice(i, 0, self.dim)] += Rb
+            elif self.space in vs.spaces:
                 n = vs.get_index(self.space)
                 R[axslice(i, n, n+self.dim)] += Rb
         return R
@@ -1045,6 +1047,8 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         self.radius = radius
         self.shape = (2*(Lmax+1), Lmax+1)
 
+        self.degrees = np.arange(0, Lmax+1)
+
         self.azimuth_basis = ComplexFourier(self.coords[0], 2*(Lmax+1), (0,2*np.pi), library=fourier_library)
         self.forward_transforms = [self.forward_transform_azimuth,
                                    self.forward_transform_colatitude]
@@ -1106,14 +1110,24 @@ SWSH = SpinWeightedSphericalHarmonics
 
 class BallBasis(RegularityBasis):
 
-    space_type = Ball
+    coord_type = SphericalCoordinates
     dim = 3
+    group_shape = (1, 1, 1)
+    transforms = {}
 
-    def __init__(self, space):
-        self._check_space(space)
-        self.space = space
-        self.axis = space.axis
-        self.outer_shere_basis = SWSH(self.space.outer_sphere_space)
+    def __init__(self, coordsystem, Nmax, Lmax, radius, alpha=0., fourier_library='fftw'):
+        self.coordsystem = coordsystem
+        self.coords = coordsystem.coords
+        self.dist = self.coords[0].dist
+        self.axis = self.dist.coords.index(self.coords[0])
+        self.domain = Domain(self.dist, bases=(self,))
+        self.Nmax = Nmax
+        self.Lmax = Lmax
+        self.radius = radius
+        self.alpha = alpha
+        self.shape = (2*(Lmax+1), Lmax+1, Nmax+1)
+
+        self.outer_sphere_basis = SWSH(coordsystem, Lmax, radius, fourier_library=fourier_library)
         self.forward_transforms = [self.forward_transform_azimuth,
                                    self.forward_transform_colatitude,
                                    self.forward_transform_radius]
@@ -1122,51 +1136,55 @@ class BallBasis(RegularityBasis):
                                     self.backward_transform_radius]
 
     def forward_transform_azimuth(self, *args):
-        return self.outer_shere_basis.forward_transform_azimuth(*args)
+        return self.outer_sphere_basis.forward_transform_azimuth(*args)
 
     def backward_transform_azimuth(self, *args):
-        return self.outer_shere_basis.backward_transform_azimuth(*args)
+        return self.outer_sphere_basis.backward_transform_azimuth(*args)
 
     def forward_transform_colatitude(self, *args):
-        return self.outer_shere_basis.forward_transform_colatitude(*args)
+        return self.outer_sphere_basis.forward_transform_colatitude(*args)
 
     def backward_transform_colatitude(self, *args):
-        return self.outer_shere_basis.backward_transform_colatitude(*args)
+        return self.outer_sphere_basis.backward_transform_colatitude(*args)
 
-    def radial_recombinations(self, tensorsig):
-        import dedalus_sphere
-        # For now only implement recombinations for Ball-only tensors
-        for vs in tensorsig:
-            for space in vs.spaces:
-                if space is not self.space:
-                    raise ValueError("Only supports tensors over ball.")
-        order = len(tensorsig)
-        logger.warning("Q orders not fixed")
-        return [dedalus_sphere.ball128.Q(l, order) for l in self.local_l]
+    def grid_azimuth(self, scale):
+        return self.outer_sphere_basis.grid_azimuth(scale)[:, None, None]
 
-    def regularity_classes(self, tensorsig):
-        # Regularity-component ordering: [-, +, 0]
-        Rb = np.array([-1, 1, 0], dtype=int)
-        R = np.zeros([vs.dim for vs in tensorsig], dtype=int)
-        for i, vs in enumerate(tensorsig):
-            if self.space in vs.spaces:
-                n = vs.get_index(self.space)
-                R[axslice(i, n, n+self.dim)] += Rb
-        return R
+    def grid_colatitude(self, scale):
+        return self.outer_sphere_basis.grid_colatitude(scale)[None, :, None]
+
+    def grid_radius(self, scale):
+        N = int(np.ceil(scale * self.shape[2]))
+        z, weights = dedalus_sphere.ball.quadrature(Lmax=N-1)
+        return np.sqrt( (z+1)/2 ).astype(np.float64)[None, None, :]
+
+    def grids(self, scales):
+        return (self.grid_azimuth(scales[0]), self.grid_colatitude(scales[1]), self.grid_radius(scales[2]) )
+
+    @CachedMethod
+    def transform_plan(self, grid_size, deg, alpha):
+        """Build transform plan."""
+        return self.transforms['matrix'](grid_size, self.Lmax+1, self.local_l, deg, alpha)
 
     def forward_transform_radius(self, field, axis, gdata, cdata):
+        data_axis = len(field.tensorsig) + axis
+        grid_size = gdata.shape[data_axis]
         # Apply regularity recombination
         self.forward_regularity_recombination(field, axis, gdata)
         # Perform radial transforms component-by-component
         R = self.regularity_classes(field.tensorsig)
         for i, r in np.ndenumerate(R):
-           transforms.forward_GSZP(gdata[i], cdata[i], axis=axis, local_l=self.local_l, r=r, alpha=self.space.alpha)
+           plan = self.transform_plan(grid_size, r, self.alpha)
+           plan.forward(gdata[i], cdata[i], axis)
 
     def backward_transform_radius(self, field, axis, cdata, gdata):
+        data_axis = len(field.tensorsig) + axis
+        grid_size = gdata.shape[data_axis]
         # Perform radial transforms component-by-component
         R = self.regularity_classes(field.tensorsig)
         for i, r in np.ndenumerate(R):
-           transforms.backward_GSZP(cdata[i], gdata[i], axis=axis, local_l=self.local_l, r=r, alpha=self.space.alpha)
+           plan = self.transform_plan(grid_size, r, self.alpha)
+           plan.backward(cdata[i], gdata[i], axis)
         # Apply regularity recombinations
         self.backward_regularity_recombination(field, axis, gdata)
 
