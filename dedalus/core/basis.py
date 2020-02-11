@@ -961,17 +961,33 @@ class RegularityBasis(MultidimensionalBasis):
         import dedalus_sphere
         # For now only implement recombinations for Ball-only tensors
         for vs in tensorsig:
-            for space in vs.spaces:
-                if space is not self.space:
-                    raise ValueError("Only supports tensors over ball.")
+            if self.coordsystem is not vs:
+                raise ValueError("Only supports tensors over ball.")
         order = len(tensorsig)
         logger.warning("Q orders not fixed")
-        return [dedalus_sphere.ball.Q(l, order) for l in self.local_l]
+        # Q matrices were defined with ordering [-, 0, +]
+        # we want to switch to [-, +, 0]
+        if order > 0:
+            permutation_matrix = np.array([[1,0,0],[0,0,1],[0,1,0]])
+            P = np.copy(permutation_matrix)
+            for r in range(order-1):
+                P = np.kron(P,permutation_matrix)
+
+        Q_matrices = []
+        for l in self.local_l:
+            Q = np.array([[1]])
+            if order == 0: Q_matrices.append(Q)
+            else:
+                for r in range(1,order+1):
+                    Q = dedalus_sphere.ball.recurseQ(Q,l,r)
+                Q_matrices.append((P.T) @ Q @ P)
+
+        return Q_matrices
 
     @CachedMethod
     def regularity_classes(self, tensorsig):
-        # Regularity-component ordering: [-, 0, +]
-        Rb = np.array([-1, 0, 1], dtype=int)
+        # Regularity-component ordering: [-, +, 0]
+        Rb = np.array([-1, 1, 0], dtype=int)
         R = np.zeros([vs.dim for vs in tensorsig], dtype=int)
         for i, vs in enumerate(tensorsig):
             if self.coordsystem is vs: # kludge before we decide how compound coordinate systems work

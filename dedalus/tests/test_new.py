@@ -104,9 +104,28 @@ results.append(result)
 print(len(results), ':', result)
 # Vector transforms
 u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
-print(u['g'].shape)
-u['g'] = ug = [3*x**2, 2*y*z, z**2 + 4]
+ug = np.copy(u['g'])
+
+ug[0] =  4*r**3*np.cos(theta)**2
+ug[1] = -2*r**3*np.cos(theta)*np.sin(theta)
+
+u['g'] = ug
 u['c']
+print(u['c'].shape)
+print(u['c'][0,0,2])
+print(u['c'][1,0,2])
+print(u['c'][2,0,1])
+u['g']
+print(u['c'][0,0,2])
+print(u['c'][1,0,2])
+print(u['c'][2,0,1])
+print(np.max(np.abs(u['c'][0][0])))
+print(np.max(np.abs(u['c'][1][0])))
+print(np.max(np.abs(u['c'][2][0])))
+print(np.allclose(u['g'][0], ug[0]))
+print(np.allclose(u['g'][1], ug[1]))
+print(np.allclose(u['g'][2], ug[2]))
+
 result = np.allclose(u['g'], ug)
 results.append(result)
 print(len(results), ':', result)
