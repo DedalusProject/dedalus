@@ -105,28 +105,23 @@ print(len(results), ':', result)
 # Vector transforms
 u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
 ug = np.copy(u['g'])
-
-ug[0] =  4*r**3*np.cos(theta)**2
+# component order is phi, theta, r
+ug[2] =  4*r**3*np.cos(theta)**2
 ug[1] = -2*r**3*np.cos(theta)*np.sin(theta)
-
 u['g'] = ug
 u['c']
-print(u['c'].shape)
-print(u['c'][0,0,2])
-print(u['c'][1,0,2])
-print(u['c'][2,0,1])
-u['g']
-print(u['c'][0,0,2])
-print(u['c'][1,0,2])
-print(u['c'][2,0,1])
-print(np.max(np.abs(u['c'][0][0])))
-print(np.max(np.abs(u['c'][1][0])))
-print(np.max(np.abs(u['c'][2][0])))
-print(np.allclose(u['g'][0], ug[0]))
-print(np.allclose(u['g'][1], ug[1]))
-print(np.allclose(u['g'][2], ug[2]))
-
 result = np.allclose(u['g'], ug)
 results.append(result)
 print(len(results), ':', result)
+# phi-dependent function
+# note: both these test functions are the gradient of a scalar
+ug[2] =  4*r**3*np.sin(theta)*np.cos(theta)*np.exp(1j*phi) 
+ug[1] =    r**3*np.cos(2*theta)*np.exp(1j*phi)
+ug[0] = 1j*r**3*np.cos(theta)*np.exp(1j*phi)
+u['g'] = ug
+u['c']
+result = np.allclose(u['g'], ug)
+results.append(result)
+print(len(results), ':', result)
+
 

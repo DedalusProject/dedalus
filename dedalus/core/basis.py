@@ -964,7 +964,6 @@ class RegularityBasis(MultidimensionalBasis):
             if self.coordsystem is not vs:
                 raise ValueError("Only supports tensors over ball.")
         order = len(tensorsig)
-        logger.warning("Q orders not fixed")
         # Q matrices were defined with ordering [-, 0, +]
         # we want to switch to [-, +, 0]
         if order > 0:
