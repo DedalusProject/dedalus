@@ -1339,7 +1339,7 @@ class S2Gradient(Gradient):
         """Check that operands are in a proper layout."""
         # Require colatitude to be in coefficient space
         layout = self.args[0].layout
-        return layout.grid_space[self.colatitude_axis]
+        return not layout.grid_space[self.colatitude_axis]
 
     def enforce_conditions(self):
         """Require operands to be in a proper layout."""
