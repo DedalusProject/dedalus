@@ -35,8 +35,8 @@ class Add(Future, metaclass=MultiClass):
             raise SkipDispatchException(output=args[0])
         # Cast all args to Field, if any present
         elif any(isinstance(arg, (Field, FutureField)) for arg in args):
-            domain = unify_attributes(args, 'domain', require=False)
-            args = [Cast(arg, domain) for arg in args]
+            dist = unify_attributes(args, 'dist', require=False)
+            #args = [Cast(arg, domain) for arg in args]
             return args, kw
         # Cast all args to Array, if any present
         elif any(isinstance(arg, (Array, FutureArray)) for arg in args):
@@ -57,6 +57,7 @@ class Add(Future, metaclass=MultiClass):
         bases = self._build_bases(*args)
         args = [convert(arg, bases) for arg in args]
         super().__init__(*args, out=out)
+        self.bases = bases
 
     def __str__(self):
         str_args = map(str, self.args)
@@ -211,8 +212,8 @@ class Multiply(Future, metaclass=MultiClass):
             raise SkipDispatchException(output=0)
         # Cast all args to Field, if any present
         elif any(isinstance(arg, (Field, FutureField)) for arg in args):
-            domain = unify_attributes(args, 'domain', require=False)
-            args = [Cast(arg, domain) for arg in args]
+            dist = unify_attributes(args, 'dist', require=False)
+            #args = [Cast(arg, domain) for arg in args]
             return args, kw
         # Cast all args to Array, if any present
         elif any(isinstance(arg, (Array, FutureArray)) for arg in args):

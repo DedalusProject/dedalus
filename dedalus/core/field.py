@@ -129,12 +129,13 @@ class Operand:
             out['c'] = x
             return out
 
-    def get_basis(self, space):
-        space = self.domain.get_space_object(space)
-        if self.domain.spaces[space.axis] in [space, None]:
-            return self.bases[space.axis]
-        else:
-            raise ValueError()
+    def get_basis(self, coord):
+        return self.domain.get_basis(coord)
+        # space = self.domain.get_basis(coord)
+        # if self.domain.spaces[space.axis] in [space, None]:
+        #     return self.bases[space.axis]
+        # else:
+        #     raise ValueError()
 
 
 

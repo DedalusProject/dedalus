@@ -40,7 +40,7 @@ x = xb.local_grid(1)
 y = yb.local_grid(1)
 # Scalar transforms
 f = field.Field(dist=d, bases=[xb,yb], dtype=np.complex128)
-f['g'] = fg = np.sin(x) * y**2
+f['g'] = fg = np.sin(x) * y**5
 f['c']
 result = np.allclose(f['g'], fg)
 results.append(result)
@@ -61,7 +61,7 @@ results.append(result)
 print(len(results), ':', result)
 # Gradient operator
 u = operators.Gradient(f, c).evaluate()
-ug = [np.cos(x) * y**2, np.sin(x) * 2 * y]
+ug = [np.cos(x) * y**5, np.sin(x) * 5 * y**4]
 result = np.allclose(u['g'], ug)
 results.append(result)
 print(len(results), ':', result)

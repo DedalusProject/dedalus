@@ -9,9 +9,10 @@ import numpy as np
 from scipy import sparse
 from numbers import Number
 from inspect import isclass
+from operator import add
 
 #from .domain import Domain
-from .coords import CartesianCoordinates
+from . import coords
 from .field import Operand, Array, Field
 from .future import Future, FutureArray, FutureField
 from ..tools.array import reshape_vector, apply_matrix, add_sparse, axindex, axslice
@@ -649,31 +650,30 @@ class LinearOperator(FutureField):
         raise NotImplementedError()
 
 
-class LinearSubspaceOperator(LinearOperator):
+class LinearOperator1D(LinearOperator):
     """
-    Base class for linear operators acting within a single space.
-    The second argument is expected to be the relevant space.
+    Base class for linear operators acting on a single coordinate.
+    Arguments: operand, coordinate, others...
     """
 
     def __init__(self, *args, **kw):
-        self.space = args[1]
-        self.axis = self.space.axis
-        self.basis = args[0].bases[self.axis]
+        self.coord = args[1]
+        self.axis = self.coord.axis
+        self.input_basis = args[0].bases[self.axis]
         self.tensorsig = args[0].tensorsig
         self.dtype = args[0].dtype
         super().__init__(*args, **kw)
 
-    def _build_bases(self, operand, space, *args):
-        """Build output bases."""
-        input_basis = operand.bases[space.axis]
-        # Replace operand basis for relevant space
-        bases = list(operand.bases)
-        bases[space.axis] = self.output_basis(space, input_basis)
-        return tuple(bases)
-
-    def output_basis(self, space, input_basis):
-        """Determine output basis."""
+    @staticmethod
+    def output_basis(input_basis):
+        # Subclasses must implement
         raise NotImplementedError()
+
+    @CachedAttribute
+    def bases(self):
+        output_bases = list(self.operand.bases)  # copy input bases
+        output_bases[self.axis] = self.output_basis(self.input_basis)
+        return tuple(output_bases)
 
     def separability(self, *vars):
         """Determine separable dimensions of expression as a linear operator on specified variables."""
@@ -700,10 +700,10 @@ class LinearSubspaceOperator(LinearOperator):
     @CachedAttribute
     def subspace_matrix(self):
         """Build matrix operating on global subspace data."""
-        return self._subspace_matrix(self.space, self.basis, *self.args[2:])
+        return self._subspace_matrix(self.input_basis, *self.args[2:])
 
     @classmethod
-    def _subspace_matrix(cls, space, basis, *args):
+    def _subspace_matrix(cls, basis, *args):
         dtype = np.complex128
         N = basis.size
         # Build matrix entry by entry over nonzero bands
@@ -712,13 +712,13 @@ class LinearSubspaceOperator(LinearOperator):
             for b in cls.bands:
                 j = i + b
                 if (0 <= j < N):
-                    Mij = cls._subspace_entry(i, j, space, basis, *args)
+                    Mij = cls._subspace_entry(i, j, basis, *args)
                     if Mij:
                         M[i,j] = Mij
         return M.tocsr()
 
     @staticmethod
-    def _subspace_entry(i, j, space, basis, *args):
+    def _subspace_entry(i, j, basis, *args):
         raise NotImplementedError()
 
     def check_conditions(self):
@@ -757,7 +757,7 @@ class LinearSubspaceOperator(LinearOperator):
         apply_matrix(matrix, operand.data, axis, out=out.data)
 
 
-class LinearSubspaceFunctional(LinearSubspaceOperator):
+class LinearSubspaceFunctional(LinearOperator1D):
     """Base class for linear functionals acting within a single space."""
 
     separable = False
@@ -1000,7 +1000,7 @@ def differentiate(arg, *spaces, **space_kw):
     return arg
 
 
-class Differentiate(LinearSubspaceOperator, metaclass=MultiClass):
+class Differentiate(LinearOperator1D, metaclass=MultiClass):
     """
     Differentiation along one dimension.
 
@@ -1012,7 +1012,7 @@ class Differentiate(LinearSubspaceOperator, metaclass=MultiClass):
     """
 
     def __str__(self):
-        return 'd{!s}({!s})'.format(self.space.name, self.operand)
+        return 'd{!s}({!s})'.format(self.coord.name, self.operand)
 
     @classmethod
     def _check_args(cls, operand, space, out=None):
@@ -1067,7 +1067,7 @@ def hilbert_transform(arg, *spaces, **space_kw):
     return arg
 
 
-class HilbertTransform(LinearSubspaceOperator, metaclass=MultiClass):
+class HilbertTransform(LinearOperator1D, metaclass=MultiClass):
     """
     Hilbert transform along one dimension.
 
@@ -1119,11 +1119,11 @@ def convert(arg, bases):
 
     # Apply iteratively
     for basis in bases:
-        arg = Convert(arg, basis.space, basis)
+        arg = Convert1D(arg, basis.coord, basis)
     return arg
 
 
-class Convert(LinearSubspaceOperator, metaclass=MultiClass):
+class Convert1D(LinearOperator1D, metaclass=MultiClass):
     """
     Convert bases along one dimension.
 
@@ -1140,11 +1140,11 @@ class Convert(LinearSubspaceOperator, metaclass=MultiClass):
     #     return (operand, space, output_basis), {'out': out}
 
     @classmethod
-    def _check_args(cls, operand, space, output_basis, out=None):
+    def _check_args(cls, operand, coord, output_basis, out=None):
         # Dispatch by operand and output basis
         # Require same space, different bases, and correct types
         if isinstance(operand, Operand):
-            input_basis = operand.get_basis(space)
+            input_basis = operand.get_basis(coord)
             if input_basis == output_basis:
                 return False
             if not isinstance(input_basis, cls.input_basis_type):
@@ -1159,9 +1159,9 @@ class Convert(LinearSubspaceOperator, metaclass=MultiClass):
 
     @property
     def base(self):
-        return Convert
+        return Convert1D
 
-    def output_basis(self, space, input_basis):
+    def output_basis(self, input_basis):
         """Determine output basis."""
         return self.args[2]
 
@@ -1191,83 +1191,83 @@ class Convert(LinearSubspaceOperator, metaclass=MultiClass):
     #     return self.operand.simplify(*vars)
 
 
-class ConvertSame(Convert):
+class Convert1DSame(Convert1D):
     """Identity conversion."""
 
     @classmethod
-    def _check_args(cls, operand, space, output_basis, out=None):
-        output_space = output_basis.space
+    def _check_args(cls, operand, coord, output_basis, out=None):
         # Dispatch by operand and output basis
         if isinstance(operand, Operand):
             if output_basis in operand.bases:
                 return True
         return False
 
-    def __new__(cls, operand, space, output_basis, out=None):
+    def __new__(cls, operand, coord, output_basis, out=None):
         return operand
 
 
-class ConvertConstant(Convert):
-    """Constant conversion."""
+# class Convert1DConstant(Convert1D):
+#     """Constant conversion."""
 
-    separable = True
-    bands = [0]
+#     separable = True
+#     bands = [0]
 
-    @classmethod
-    def _check_args(cls, operand, space, output_basis, out=None):
-        if output_basis.const is not None:
-            if isinstance(operand, Number):
-                return True
-            if isinstance(operand, Operand):
-                input_basis = operand.get_basis(space)
-                if input_basis is None:
-                    return True
-        return False
+#     @classmethod
+#     def _check_args(cls, operand, space, output_basis, out=None):
+#         if output_basis.const is not None:
+#             if isinstance(operand, Number):
+#                 return True
+#             if isinstance(operand, Operand):
+#                 input_basis = operand.get_basis(space)
+#                 if input_basis is None:
+#                     return True
+#         return False
 
-    @staticmethod
-    def _subspace_matrix(space, input_basis, output_basis):
-        dtype = space.domain.dtype
-        N = space.coeff_size
-        # Reweight by constant-mode amplitude
-        M = sparse.lil_matrix((N, 1), dtype=dtype)
-        M[0,0] = 1 / output_basis.const
-        return M.tocsr()
+#     @staticmethod
+#     def _subspace_matrix(space, input_basis, output_basis):
+#         dtype = space.domain.dtype
+#         N = space.coeff_size
+#         # Reweight by constant-mode amplitude
+#         M = sparse.lil_matrix((N, 1), dtype=dtype)
+#         M[0,0] = 1 / output_basis.const
+#         return M.tocsr()
 
-    def check_conditions(self):
-        """Check that arguments are in a proper layout."""
-        # No conditions
-        return True
+#     def check_conditions(self):
+#         """Check that arguments are in a proper layout."""
+#         # No conditions
+#         return True
 
-    def enforce_conditions(self):
-        """Require arguments to be in a proper layout."""
-        # No conditions
-        pass
+#     def enforce_conditions(self):
+#         """Require arguments to be in a proper layout."""
+#         # No conditions
+#         pass
 
-    def operate(self, out):
-        """Perform operation."""
-        operand = self.operand
-        axis = self.axis
-        output_basis = self.args[2]
-        # Set output layout
-        out.set_layout(operand.layout)
-        # Broadcast constant in grid space
-        if operand.layout.grid_space[axis]:
-            np.copyto(out.data, operand.data)
-        # Set constant mode in coefficient space
-        else:
-            out.data.fill(0)
-            mask = out.local_elements()[axis] == 0
-            out.data[axindex(axis, mask)] = operand.data / output_basis.const
+#     def operate(self, out):
+#         """Perform operation."""
+#         operand = self.operand
+#         axis = self.axis
+#         output_basis = self.args[2]
+#         # Set output layout
+#         out.set_layout(operand.layout)
+#         # Broadcast constant in grid space
+#         if operand.layout.grid_space[axis]:
+#             np.copyto(out.data, operand.data)
+#         # Set constant mode in coefficient space
+#         else:
+#             out.data.fill(0)
+#             mask = out.local_elements()[axis] == 0
+#             out.data[axindex(axis, mask)] = operand.data / output_basis.const
 
 
 class Gradient(LinearOperator, metaclass=MultiClass):
 
     def __init__(self, operand, cs, out=None):
         super().__init__(operand, cs, out=out)
+        self._operand = operand
         self.cs = cs
         self.bases = operand.bases
         self.tensorsig = tuple([cs,] + list(operand.tensorsig))
-        self.out = out
+        self.dtype = operand.dtype
 
     @classmethod
     def _check_args(cls, operand, cs, out=None):
@@ -1282,21 +1282,24 @@ class Gradient(LinearOperator, metaclass=MultiClass):
         return Gradient
 
 
-
 class CartesianGradient(Gradient):
 
-    cs_type = CartesianCoordinates
+    cs_type = coords.CartesianCoordinates
 
-    def __init__(self, arg, cs, out=None):
-        args = [Differentiate(arg, c) for c in cs.coords]
+    def __init__(self, operand, cs, out=None):
+        args = [Differentiate(operand, c) for c in cs.coords]
+        bases = self._build_bases(*args)
+        args = [convert(arg, bases) for arg in args]
         LinearOperator.__init__(self, *args, out=out)
+        self._operand = operand
         self.cs = cs
-        self.bases = arg.bases
-        self.tensorsig = tuple([cs,] + list(arg.tensorsig))
-        self.dtype = arg.dtype
+        self.bases = bases
+        self.tensorsig = tuple([cs,] + list(operand.tensorsig))
+        self.dtype = operand.dtype
 
     def _build_bases(self, *args):
-        return args[0].bases
+        sum = reduce(add, args)
+        return reduce(add, args).bases
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""
@@ -1308,8 +1311,8 @@ class CartesianGradient(Gradient):
     def enforce_conditions(self):
         """Require operands to be in a proper layout."""
         # Require operands to be in same layout
-        # Take first operand layout arbitrarily
-        layout = self.args[0].layout
+        # Take coeff layout arbitrarily
+        layout = self.dist.coeff_layout
         for operand in self.args[1:]:
             operand.require_layout(layout)
 
@@ -1322,6 +1325,42 @@ class CartesianGradient(Gradient):
         # Copy operand data to output components
         for i, comp in enumerate(operands):
             out.data[i] = comp.data
+
+
+class S2Gradient(Gradient):
+
+    cs_type = coords.S2Coordinates
+
+    def __init__(self, operand, cs, out=None):
+        super().__init__(operand, cs, out=out)
+        self.colatitude_axis = cs.axis + 1
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Require colatitude to be in coefficient space
+        layout = self.args[0].layout
+        return layout.grid_space[self.colatitude_axis]
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Require colatitude to be in coefficient space
+        self.args[0].require_coeff_space(self.colatitude_axis)
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        # Set output layout
+        out.set_layout(layout)
+        # Apply operator
+
+
+
+class SphericalGradient(Gradient):
+
+    cs_type = coords.SphericalCoordinates
+
+
+
 
 """
 Field has no bases built on cs:

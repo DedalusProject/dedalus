@@ -51,6 +51,9 @@ class Domain:
         # self.dim = sum(space.dim for space in self.spaces)
         self.dealias = 1
 
+    def get_basis(self, coord):
+        return self.full_spaces[coord.axis]
+
     def _check_spaces(self, spaces):
         # Drop duplicates
         spaces = list(set(spaces))

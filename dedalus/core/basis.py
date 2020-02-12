@@ -300,6 +300,7 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         self.b0 = float(b0)
         self.dealias = dealias
         self.library = library
+        self.grid_params = (coord, bounds, a0, b0)
         #self.const = 1 / np.sqrt(jacobi.mass(self.a, self.b))
 
     def _new_a_b(self, a, b):
@@ -325,16 +326,17 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
     #     cls = self.__class__
     #     return '%s.%s(%s,%s)' %(space.name, cls.__name__, self.a, self.b)
 
-    # def __add__(self, other):
-    #     if other is None:
-    #         return self
-    #     elif self.space is other.space:
-    #         # Add in highest {a,b} basis
-    #         da = max(self.da, other.da)
-    #         db = max(self.db, other.db)
-    #         return Jacobi(self.space, da, db)
-    #     else:
-    #         return NotImplemented
+    def __add__(self, other):
+        if other is None:
+            return self
+        if isinstance(other, Jacobi):
+            if self.grid_params == other.grid_params:
+                size = max(self.size, other.size)
+                a = max(self.a, other.a)
+                b = max(self.b, other.b)
+                dealias = max(self.dealias, other.dealias)
+                return Jacobi(self.coord, size, self.bounds, a, b, a0=self.a0, b0=self.b0, dealias=dealias, library=self.library)
+        return NotImplemented
 
     # def __mul__(self, other):
     #     if other is None:
@@ -392,20 +394,20 @@ def ChebyshevU(*args, **kw):
     return Ultraphserical(*args, alpha=1, **kw)
 
 
-# class ConvertJacobiJacobi(operators.Convert):
-#     """Jacobi polynomial conversion."""
+class ConvertJacobiJacobi(operators.Convert1D):
+    """Jacobi polynomial conversion."""
 
-#     input_basis_type = Jacobi
-#     output_basis_type = Jacobi
-#     separable = False
+    input_basis_type = Jacobi
+    output_basis_type = Jacobi
+    separable = False
 
-#     @staticmethod
-#     def _subspace_matrix(space, input_basis, output_basis):
-#         N = space.coeff_size
-#         a0, b0 = input_basis.a, input_basis.b
-#         a1, b1 = output_basis.a, output_basis.b
-#         matrix = jacobi.conversion_matrix(N, a0, b0, a1, b1)
-#         return matrix.tocsr()
+    @staticmethod
+    def _subspace_matrix(input_basis, output_basis):
+        N = input_basis.size
+        a0, b0 = input_basis.a, input_basis.b
+        a1, b1 = output_basis.a, output_basis.b
+        matrix = jacobi.conversion_matrix(N, a0, b0, a1, b1)
+        return matrix.tocsr()
 
 
 class DifferentiateJacobi(operators.Differentiate):
@@ -415,11 +417,13 @@ class DifferentiateJacobi(operators.Differentiate):
     separable = False
 
     @staticmethod
-    def output_basis(space, input_basis):
-        return input_basis._new_a_b(input_basis.a+1, input_basis.b + 1)
+    def output_basis(input_basis):
+        a = input_basis.a + 1
+        b = input_basis.b + 1
+        return input_basis._new_a_b(a, b)
 
     @staticmethod
-    def _subspace_matrix(space, input_basis):
+    def _subspace_matrix(input_basis):
         N = input_basis.size
         a, b = input_basis.a, input_basis.b
         matrix = jacobi.differentiation_matrix(N, a, b)
@@ -500,14 +504,13 @@ class ComplexFourier(IntervalBasis):
     native_bounds = (0, 2*np.pi)
     transforms = {}
 
-    # def __add__(self, other):
-    #     space = self.space
-    #     if other is None:
-    #         return space.Fourier
-    #     elif other is space.Fourier:
-    #         return space.Fourier
-    #     else:
-    #         return NotImplemented
+    def __add__(self, other):
+        if other is None:
+            return self
+        elif other is self:
+            return self
+        else:
+            return NotImplemented
 
     # def __mul__(self, other):
     #     space = self.space
@@ -557,11 +560,11 @@ class DifferentiateComplexFourier(operators.Differentiate):
     separable = True
 
     @staticmethod
-    def output_basis(space, input_basis):
+    def output_basis(input_basis):
         return input_basis
 
     @staticmethod
-    def _subspace_entry(i, j, space, input_basis, *args):
+    def _subspace_entry(i, j, input_basis, *args):
         # dx(cos(n*x)) = -n*sin(n*x)
         # dx(sin(n*x)) = n*cos(n*x)
         if i == j:

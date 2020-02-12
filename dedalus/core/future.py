@@ -47,13 +47,16 @@ class Future(Operand):
         self.args = list(args)
         self.original_args = tuple(args)
         self.out = out
-        self.bases = self._build_bases(*args)
         self.dist = unify_attributes(args, 'dist', require=False)
-        self.domain = Domain(self.dist, self.bases)
+        #self.domain = Domain(self.dist, self.bases)
         self._grid_layout = self.dist.grid_layout
         self._coeff_layout = self.dist.coeff_layout
         self.last_id = None
         self.scales = 1 # self.domain.dealias
+
+    @CachedAttribute
+    def domain(self):
+        return Domain(self.dist, self.bases)
 
     def __repr__(self):
         repr_args = map(repr, self.args)
@@ -77,8 +80,9 @@ class Future(Operand):
         else:
             return NotImplemented
 
-    def _build_bases(self, *args):
-        """Build output bases."""
+    @CachedAttribute
+    def bases(self):
+        # Subclasses must implement
         raise NotImplementedError()
 
     @property
