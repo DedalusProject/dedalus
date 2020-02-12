@@ -1,6 +1,6 @@
 
 import numpy as np
-from dedalus.core import coords, distributor, basis, field
+from dedalus.core import coords, distributor, basis, field, operators
 
 results = []
 
@@ -39,10 +39,10 @@ yb = basis.ChebyshevT(c.coords[1], size=16, bounds=(0, 1))
 x = xb.local_grid(1)
 y = yb.local_grid(1)
 # Scalar transforms
-u = field.Field(dist=d, bases=[xb,yb], dtype=np.complex128)
-u['g'] = ug = 2*y**3 + np.cos(x)
-u['c']
-result = np.allclose(u['g'], ug)
+f = field.Field(dist=d, bases=[xb,yb], dtype=np.complex128)
+f['g'] = fg = np.sin(x) * y**2
+f['c']
+result = np.allclose(f['g'], fg)
 results.append(result)
 print(len(results), ':', result)
 # Vector transforms
@@ -53,9 +53,15 @@ result = np.allclose(u['g'], ug)
 results.append(result)
 print(len(results), ':', result)
 # Vector transforms 1D
-u = field.Field(dist=d, bases=[xb], tensorsig=[c], dtype=np.complex128)
-u['g'] = ug = [np.cos(x) * 2, np.sin(x) + 1]
-u['c']
+v = field.Field(dist=d, bases=[xb], tensorsig=[c], dtype=np.complex128)
+v['g'] = vg = [np.cos(x) * 2, np.sin(x) + 1]
+v['c']
+result = np.allclose(v['g'], vg)
+results.append(result)
+print(len(results), ':', result)
+# Gradient operator
+u = operators.Gradient(f, c).evaluate()
+ug = [np.cos(x) * y**2, np.sin(x) * 2 * y]
 result = np.allclose(u['g'], ug)
 results.append(result)
 print(len(results), ':', result)
@@ -115,7 +121,7 @@ results.append(result)
 print(len(results), ':', result)
 # phi-dependent function
 # note: both these test functions are the gradient of a scalar
-ug[2] =  4*r**3*np.sin(theta)*np.cos(theta)*np.exp(1j*phi) 
+ug[2] =  4*r**3*np.sin(theta)*np.cos(theta)*np.exp(1j*phi)
 ug[1] =    r**3*np.cos(2*theta)*np.exp(1j*phi)
 ug[0] = 1j*r**3*np.cos(theta)*np.exp(1j*phi)
 u['g'] = ug

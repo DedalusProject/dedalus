@@ -49,6 +49,7 @@ class Domain:
         self.bases = bases
         self.spaces, self.full_spaces = self._check_spaces(bases)
         # self.dim = sum(space.dim for space in self.spaces)
+        self.dealias = 1
 
     def _check_spaces(self, spaces):
         # Drop duplicates

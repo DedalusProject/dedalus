@@ -17,7 +17,7 @@ from ..tools import jacobi
 from ..tools import clenshaw
 from ..tools.array import reshape_vector
 
-from .spaces import ParityInterval, Sphere, Ball, Disk
+from .spaces import ParityInterval, Disk
 from .coords import Coordinate, S2Coordinates, SphericalCoordinates
 from .domain import Domain
 import dedalus_sphere
@@ -302,6 +302,9 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         self.library = library
         #self.const = 1 / np.sqrt(jacobi.mass(self.a, self.b))
 
+    def _new_a_b(self, a, b):
+        return Jacobi(self.coord, self.size, self.bounds, a, b, a0=self.a0, b0=self.b0, dealias=self.dealias, library=self.library)
+
     def _native_grid(self, scale):
         """Native flat global grid."""
         N, = self.grid_shape((scale,))
@@ -405,23 +408,22 @@ def ChebyshevU(*args, **kw):
 #         return matrix.tocsr()
 
 
-# class DifferentiateJacobi(operators.Differentiate):
-#     """Jacobi polynomial differentiation."""
+class DifferentiateJacobi(operators.Differentiate):
+    """Jacobi polynomial differentiation."""
 
-#     input_basis_type = Jacobi
-#     separable = False
+    input_basis_type = Jacobi
+    separable = False
 
-#     @staticmethod
-#     def output_basis(space, input_basis):
-#         da, db = input_basis.da, input_basis.db
-#         return Jacobi(space, da+1, db+1)
+    @staticmethod
+    def output_basis(space, input_basis):
+        return input_basis._new_a_b(input_basis.a+1, input_basis.b + 1)
 
-#     @staticmethod
-#     def _subspace_matrix(space, input_basis):
-#         N = space.coeff_size
-#         a, b = input_basis.a, input_basis.b
-#         matrix = jacobi.differentiation_matrix(N, a, b)
-#         return (matrix.tocsr() / space.COV.stretch)
+    @staticmethod
+    def _subspace_matrix(space, input_basis):
+        N = input_basis.size
+        a, b = input_basis.a, input_basis.b
+        matrix = jacobi.differentiation_matrix(N, a, b)
+        return (matrix.tocsr() / input_basis.COV.stretch)
 
 
 # class InterpolateJacobi(operators.Interpolate):
@@ -544,6 +546,29 @@ class ComplexFourier(IntervalBasis):
     #     else:
     #         # Sine modes: drop k=0 and Nyquist mode
     #         return (1 <= k <= self.space.kmax)
+
+
+
+class DifferentiateComplexFourier(operators.Differentiate):
+    """Complex Fourier differentiation."""
+
+    input_basis_type = ComplexFourier
+    bands = [0]
+    separable = True
+
+    @staticmethod
+    def output_basis(space, input_basis):
+        return input_basis
+
+    @staticmethod
+    def _subspace_entry(i, j, space, input_basis, *args):
+        # dx(cos(n*x)) = -n*sin(n*x)
+        # dx(sin(n*x)) = n*cos(n*x)
+        if i == j:
+            k = input_basis.wavenumbers[i]
+            return 1j*k / input_basis.COV.stretch
+        else:
+            raise
 
 
 # class InterpolateFourier(operators.Interpolate):

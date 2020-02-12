@@ -11,6 +11,7 @@ from numbers import Number
 from inspect import isclass
 
 #from .domain import Domain
+from .coords import CartesianCoordinates
 from .field import Operand, Array, Field
 from .future import Future, FutureArray, FutureField
 from ..tools.array import reshape_vector, apply_matrix, add_sparse, axindex, axslice
@@ -658,6 +659,8 @@ class LinearSubspaceOperator(LinearOperator):
         self.space = args[1]
         self.axis = self.space.axis
         self.basis = args[0].bases[self.axis]
+        self.tensorsig = args[0].tensorsig
+        self.dtype = args[0].dtype
         super().__init__(*args, **kw)
 
     def _build_bases(self, operand, space, *args):
@@ -701,8 +704,8 @@ class LinearSubspaceOperator(LinearOperator):
 
     @classmethod
     def _subspace_matrix(cls, space, basis, *args):
-        dtype = space.domain.dtype
-        N = space.coeff_size
+        dtype = np.complex128
+        N = basis.size
         # Build matrix entry by entry over nonzero bands
         M = sparse.lil_matrix((N, N), dtype=dtype)
         for i in range(N):
@@ -982,11 +985,6 @@ class Filter(LinearSubspaceFunctional):
             return 0
 
 
-class Gradient(LinearOperator):
-
-    pass
-
-
 @prefix('d')
 @parseable('differentiate', 'diff', 'd')
 def differentiate(arg, *spaces, **space_kw):
@@ -1020,7 +1018,8 @@ class Differentiate(LinearSubspaceOperator, metaclass=MultiClass):
     def _check_args(cls, operand, space, out=None):
         # Dispatch by operand basis
         if isinstance(operand, Operand):
-            if isinstance(operand.get_basis(space), cls.input_basis_type):
+            basis = operand.get_basis(space)
+            if isinstance(basis, cls.input_basis_type):
                 return True
         return False
 
@@ -1259,4 +1258,99 @@ class ConvertConstant(Convert):
             out.data.fill(0)
             mask = out.local_elements()[axis] == 0
             out.data[axindex(axis, mask)] = operand.data / output_basis.const
+
+
+class Gradient(LinearOperator, metaclass=MultiClass):
+
+    def __init__(self, operand, cs, out=None):
+        super().__init__(operand, cs, out=out)
+        self.cs = cs
+        self.bases = operand.bases
+        self.tensorsig = tuple([cs,] + list(operand.tensorsig))
+        self.out = out
+
+    @classmethod
+    def _check_args(cls, operand, cs, out=None):
+        # Dispatch by coordinate system
+        if isinstance(operand, Operand):
+            if isinstance(cs, cls.cs_type):
+                return True
+        return False
+
+    @property
+    def base(self):
+        return Gradient
+
+
+
+class CartesianGradient(Gradient):
+
+    cs_type = CartesianCoordinates
+
+    def __init__(self, arg, cs, out=None):
+        args = [Differentiate(arg, c) for c in cs.coords]
+        LinearOperator.__init__(self, *args, out=out)
+        self.cs = cs
+        self.bases = arg.bases
+        self.tensorsig = tuple([cs,] + list(arg.tensorsig))
+        self.dtype = arg.dtype
+
+    def _build_bases(self, *args):
+        return args[0].bases
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Require operands to be in same layout
+        layouts = [operand.layout for operand in self.args]
+        all_layouts_equal = (len(set(layouts)) == 1)
+        return all_layouts_equal
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Require operands to be in same layout
+        # Take first operand layout arbitrarily
+        layout = self.args[0].layout
+        for operand in self.args[1:]:
+            operand.require_layout(layout)
+
+    def operate(self, out):
+        """Perform operation."""
+        operands = self.args
+        layout = operands[0].layout
+        # Set output layout
+        out.set_layout(layout)
+        # Copy operand data to output components
+        for i, comp in enumerate(operands):
+            out.data[i] = comp.data
+
+"""
+Field has no bases built on cs:
+    return zero
+
+Field has basis in cs:
+    grad_b f(s2)
+    still want full vector field on b
+
+Field has basis in cs and others:
+    grad_b f(x, s2)
+    same as above, with extra bases
+
+Field has basis on full cs:
+    grad_b f(b)
+    makes sense
+
+Field has basis on full cs and others:
+    grad_b f(x, b)
+    same as above, with extra bases
+
+
+
+f(Fourer, Chebyshev, Chebyshev)
+
+k(I*I), (D*I), (I*D)
+
+
+"""
+
+
 

@@ -14,6 +14,10 @@ class Coordinate(CoordinateSystem):
     def __print__(self):
         return self.name
 
+    @property
+    def axis(self):
+        return self.dist.coords.index(self)
+
 
 class CartesianCoordinates(CoordinateSystem):
 

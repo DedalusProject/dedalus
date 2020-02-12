@@ -3,9 +3,11 @@ Classes for future evaluation.
 
 """
 
+import numpy as np
 from functools import partial
 
 from .field import Operand, Array, Field
+from .domain import Domain
 #from .domain import Domain
 from ..tools.general import OrderedSet, unify_attributes
 from ..tools.cache import CachedAttribute, CachedMethod
@@ -46,12 +48,12 @@ class Future(Operand):
         self.original_args = tuple(args)
         self.out = out
         self.bases = self._build_bases(*args)
-        self.domain = unify_attributes(args, 'domain', require=False)
-        self.subdomain = Subdomain.from_bases(self.domain, self.bases)
-        self._grid_layout = self.domain.dist.grid_layout
-        self._coeff_layout = self.domain.dist.coeff_layout
+        self.dist = unify_attributes(args, 'dist', require=False)
+        self.domain = Domain(self.dist, self.bases)
+        self._grid_layout = self.dist.grid_layout
+        self._coeff_layout = self.dist.coeff_layout
         self.last_id = None
-        self.scales = self.subdomain.dealias
+        self.scales = 1 # self.domain.dealias
 
     def __repr__(self):
         repr_args = map(repr, self.args)
@@ -149,7 +151,7 @@ class Future(Operand):
         all_eval = True
         for i, a in enumerate(self.args):
             if isinstance(a, Field):
-                a.require_scales(self.subdomain.dealias)
+                a.require_scales(self.domain.dealias)
             if isinstance(a, Future):
                 a_eval = a.evaluate(id=id, force=force)
                 # If evaluation succeeds, substitute result
@@ -176,14 +178,14 @@ class Future(Operand):
         else:
             bases = self.bases
             if any(bases):
-                out = self.future_type(bases=bases)
+                out = self.future_type(dist=self.dist, bases=bases, tensorsig=self.tensorsig, dtype=self.dtype)
             else:
                 out = self.future_type(domain=self.domain)
             #out = self.domain.new_data(self.future_type)
             #out = Field(name=str(self), bases=self.bases)
 
         # Copy metadata
-        out.set_scales(self.subdomain.dealias)
+        out.set_scales(self.domain.dealias)
 
         # Perform operation
         self.operate(out)
