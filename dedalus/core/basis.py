@@ -989,23 +989,14 @@ class RegularityBasis(MultidimensionalBasis):
             if self.coordsystem is not vs:
                 raise ValueError("Only supports tensors over ball.")
         order = len(tensorsig)
-        # Q matrices were defined with ordering [-, 0, +]
-        # we want to switch to [-, +, 0]
-        if order > 0:
-            permutation_matrix = np.array([[1,0,0],[0,0,1],[0,1,0]])
-            P = np.copy(permutation_matrix)
-            for r in range(order-1):
-                P = np.kron(P,permutation_matrix)
 
-        Q_matrices = []
-        for l in self.local_l:
-            Q = np.array([[1]])
-            if order == 0: Q_matrices.append(Q)
-            else:
-                for r in range(1,order+1):
-                    Q = dedalus_sphere.ball.recurseQ(Q,l,r)
-                Q_matrices.append((P.T) @ Q @ P)
-
+        Q_matrices = np.zeros((len(self.local_l),3**order,3**order))
+        for i, l in enumerate(self.local_l):
+            for j in range(3**order):
+                for k in range(3**order):
+                    s = dedalus_sphere.intertwiner.index2tuple(j,order,indexing=(-1,+1,0))
+                    r = dedalus_sphere.intertwiner.index2tuple(k,order,indexing=(-1,+1,0))
+                    Q_matrices[i,j,k] = dedalus_sphere.intertwiner.regularity2spinMap(l,s,r)
         return Q_matrices
 
     @CachedMethod
