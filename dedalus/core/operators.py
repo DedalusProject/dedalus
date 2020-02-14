@@ -1395,6 +1395,10 @@ class SphericalGradient(Gradient):
         super().__init__(operand, cs, out=out)
         self.radius_axis = cs.coords[2].axis
 
+    @CachedAttribute
+    def bases(self):
+        return [self.output_basis(self.operand.bases[0])]
+
     def check_conditions(self):
         """Check that operands are in a proper layout."""
         # Require colatitude to be in coefficient space
