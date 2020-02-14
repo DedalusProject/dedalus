@@ -913,10 +913,10 @@ class SpinBasis(MultidimensionalBasis):
         S = np.zeros([vs.dim for vs in tensorsig], dtype=int)
         for i, vs in enumerate(tensorsig):
             if self.coordsystem is vs: # kludge before we decide how compound coordinate systems work
-                S[axslice(i, 0, self.dim)] += Ss
+                S[axslice(i, 0, self.dim)] += reshape_vector(Ss, dim=len(tensorsig), axis=i)
             elif self.coordsystem in vs:
                 n = vs.get_index(self.coordsystem)
-                S[axslice(i, n, n+self.dim)] += Ss
+                S[axslice(i, n, n+self.dim)] += reshape_vector(Ss, dim=len(tensorsig), axis=i)
         return S
 
     @CachedMethod
