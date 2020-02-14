@@ -470,14 +470,16 @@ class Field(Current):
     def get_basis(self, space):
         from .basis import Basis
         from .coords import Coordinate
-        if isinstance(space, Basis):
-            if space in self.bases:
-                return space
-        elif isinstance(space, Coordinate):
-            for basis in self.bases:
-                if space is basis.coord:
-                    return basis
-        return None
+        return self.domain.full_spaces[space.axis]
+        # if isinstance(space, Basis):
+        #     if space in self.bases:
+        #         return space
+
+        # elif isinstance(space, Coordinate):
+        #     for basis in self.bases:
+        #         if space is basis.coord:
+        #             return basis
+        # return None
 
     @property
     def global_shape(self):

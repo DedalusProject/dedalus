@@ -47,24 +47,39 @@ results.append(result)
 print(len(results), ':', result)
 # Vector transforms
 u = field.Field(dist=d, bases=[xb,yb], tensorsig=[c], dtype=np.complex128)
-u['g'] = ug = [np.cos(x) * 2 * y**2, np.sin(x) * y + y]
+u['g'] = ug = np.array([np.cos(x) * 2 * y**2, np.sin(x) * y + y])
 u['c']
 result = np.allclose(u['g'], ug)
 results.append(result)
 print(len(results), ':', result)
 # Vector transforms 1D
 v = field.Field(dist=d, bases=[xb], tensorsig=[c], dtype=np.complex128)
-v['g'] = vg = [np.cos(x) * 2, np.sin(x) + 1]
+v['g'] = vg = np.array([np.cos(x) * 2, np.sin(x) + 1])
 v['c']
 result = np.allclose(v['g'], vg)
 results.append(result)
 print(len(results), ':', result)
 # Gradient operator
-u = operators.Gradient(f, c).evaluate()
-ug = [np.cos(x) * y**5, np.sin(x) * 5 * y**4]
-result = np.allclose(u['g'], ug)
+w = operators.Gradient(f, c).evaluate()
+wg = np.array([np.cos(x) * y**5, np.sin(x) * 5 * y**4])
+result = np.allclose(w['g'], wg)
 results.append(result)
 print(len(results), ':', result)
+# Vector addition 2D+2D
+uw = u + w
+uw = uw.evaluate()
+result = np.allclose(uw['g'], ug+wg)
+results.append(result)
+print(len(results), ':', result)
+# Vector addition 1D+2D
+# u.domain + v.domain
+# uv = u + v
+# print(uv.bases, uv.tensorsig)
+# uv = uv.evaluate()
+# result = np.allclose(uv['g'], ug+vg)
+# results.append(result)
+# print(len(results), ':', result)
+# raise
 
 ## S2
 c = coords.S2Coordinates('phi', 'theta')

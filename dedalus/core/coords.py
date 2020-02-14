@@ -44,4 +44,8 @@ class SphericalCoordinates(CoordinateSystem):
         self.radius = Coordinate(radius)
         self.coords = (self.azimuth, self.colatitude, self.radius)
 
+    @property
+    def axis(self):
+        return self.azimuth.axis
+
 

@@ -11,6 +11,7 @@ import itertools
 from .field import Operand, Array, Field
 from .future import Future, FutureArray, FutureField
 from .operators import convert, Cast
+from ..tools.cache import CachedAttribute
 from ..tools.dispatch import MultiClass
 from ..tools.exceptions import NonlinearOperatorError
 from ..tools.exceptions import SymbolicParsingError
@@ -160,6 +161,14 @@ class AddFields(Add, FutureField):
     """Addition operator for fields."""
 
     argtypes = (Field, FutureField)
+
+    @CachedAttribute
+    def tensorsig(self):
+        return unify_attributes(self.args, 'tensorsig')
+
+    @CachedAttribute
+    def dtype(self):
+        return np.result_type(*[arg.dtype for arg in self.args])
 
     def check_conditions(self):
         """Check that arguments are in a proper layout."""

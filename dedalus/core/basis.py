@@ -329,6 +329,8 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
     def __add__(self, other):
         if other is None:
             return self
+        if other is self:
+            return self
         if isinstance(other, Jacobi):
             if self.grid_params == other.grid_params:
                 size = max(self.size, other.size)
@@ -338,16 +340,19 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
                 return Jacobi(self.coord, size, self.bounds, a, b, a0=self.a0, b0=self.b0, dealias=dealias, library=self.library)
         return NotImplemented
 
-    # def __mul__(self, other):
-    #     if other is None:
-    #         return self
-    #     elif self.space is other.space:
-    #         # Put product in highest {a,b} basis
-    #         da = max(self.da, other.da)
-    #         db = max(self.db, other.db)
-    #         return Jacobi(self.space, da, db)
-    #     else:
-    #         return NotImplemented
+    def __mul__(self, other):
+        if other is None:
+            return self
+        if other is self:
+            return self
+        if isinstance(other, Jacobi):
+            if self.grid_params == other.grid_params:
+                size = max(self.size, other.size)
+                a = self.a0
+                b = self.b0
+                dealias = max(self.dealias, other.dealias)
+                return Jacobi(self.coord, size, self.bounds, a, b, a0=self.a0, b0=self.b0, dealias=dealias, library=self.library)
+        return NotImplemented
 
     # def include_mode(self, mode):
     #     return (0 <= mode < self.space.coeff_size)
@@ -512,14 +517,13 @@ class ComplexFourier(IntervalBasis):
         else:
             return NotImplemented
 
-    # def __mul__(self, other):
-    #     space = self.space
-    #     if other is None:
-    #         return space.Fourier
-    #     elif other is space.Fourier:
-    #         return space.Fourier
-    #     else:
-    #         return NotImplemented
+    def __mul__(self, other):
+        if other is None:
+            return self
+        elif other is self:
+            return self
+        else:
+            return NotImplemented
 
     # def __pow__(self, other):
     #     return self.space.Fourier
@@ -1270,6 +1274,15 @@ class GradientBall(operators.SphericalGradient):
 
     input_basis_type = BallBasis
     separable = False
+
+    @classmethod
+    def _check_args(cls, operand, cs, out=None):
+        # Dispatch by operand basis
+        #if isinstance(operand, Operand):
+        basis = operand.get_basis(cs)
+        if isinstance(basis, cls.input_basis_type):
+            return True
+        return False
 
     @staticmethod
     def output_basis(input_basis):

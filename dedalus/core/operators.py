@@ -754,7 +754,8 @@ class LinearOperator1D(LinearOperator):
             out_elements = out.local_elements()[axis]
             matrix = matrix[arg_elements[:,None], out_elements[None,:]]
         # Apply matrix
-        apply_matrix(matrix, operand.data, axis, out=out.data)
+        data_axis = self.axis + len(operand.tensorsig)
+        apply_matrix(matrix, operand.data, data_axis, out=out.data)
 
 
 class LinearSubspaceFunctional(LinearOperator1D):
@@ -1294,7 +1295,7 @@ class CartesianGradient(Gradient):
         self._operand = operand
         self.cs = cs
         self.bases = bases
-        self.tensorsig = tuple([cs,] + list(operand.tensorsig))
+        self.tensorsig = [cs,] + list(operand.tensorsig)
         self.dtype = operand.dtype
 
     def _build_bases(self, *args):
@@ -1433,7 +1434,7 @@ class SphericalGradient(Gradient):
                 Dp = basis.xi(+1,l)*basis.operator_matrix('D+',l,r)
                 Nmin_out = max( (l + r + 1)//2, 0)
                 apply_matrix(Dp, operand_spin[:,dl,Nmin_in:,:], axis=1, out=out_p[:,dl,Nmin_out:,:])
- 
+
 
 
 """

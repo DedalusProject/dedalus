@@ -685,7 +685,7 @@ class BallRadialTransform(NonSeparableTransform):
         for l in self.local_l:
             Nmax = self.N2c - 1
             Nmin = max(0, (l + self.deg)//2)
-            W = dedalus_sphere.ball.trial_functions(3, Nmax, l, self.deg, z_grid, alpha=self.alpha, k=self.k) # shape (Nmax+1-Nmin, Ng)
+            W = dedalus_sphere.ball.trial_functions(3, Nmax, l, self.deg, z_grid, alpha=self.alpha+self.k) # shape (Nmax+1-Nmin, Ng)
             # Pad to square transform and keep n aligned
             Wfull = np.zeros((self.N2c, self.N2g))
             Wfull[Nmin:Nmax+1, :] = (W*weights).astype(np.float64)
@@ -704,7 +704,7 @@ class BallRadialTransform(NonSeparableTransform):
         for l in self.local_l:
             Nmax = self.N2c - 1
             Nmin = max(0, (l + self.deg)//2)
-            W = dedalus_sphere.ball.trial_functions(3, Nmax, l, self.deg, z_grid, alpha=self.alpha, k=self.k) # shape (Ng, Nmax+1-Nmin)
+            W = dedalus_sphere.ball.trial_functions(3, Nmax, l, self.deg, z_grid, alpha=self.alpha+self.k) # shape (Ng, Nmax+1-Nmin)
             # Pad to square transform and keep n aligned
             Wfull = np.zeros((self.N2g, self.N2c))
             Wfull[:, Nmin:Nmax+1] = W.T.astype(np.float64)

@@ -6,7 +6,7 @@ import logging
 import numpy as np
 
 from ..tools.cache import CachedMethod, CachedClass, CachedAttribute
-from ..tools.general import unify_attributes
+from ..tools.general import unify_attributes, unify
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
@@ -50,6 +50,15 @@ class Domain:
         self.spaces, self.full_spaces = self._check_spaces(bases)
         # self.dim = sum(space.dim for space in self.spaces)
         self.dealias = 1
+
+    def __add__(self, other):
+        dist = unify_attributes([self, other], 'dist')
+        full_bases = [b1+b2 for b1, b2 in zip(self.full_spaces, other.full_spaces)]
+        print(full_bases)
+        raise
+
+    # def reduce_bases(self, bases):
+
 
     def get_basis(self, coord):
         return self.full_spaces[coord.axis]
