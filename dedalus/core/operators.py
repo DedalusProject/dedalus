@@ -1333,7 +1333,7 @@ class S2Gradient(Gradient):
 
     def __init__(self, operand, cs, out=None):
         super().__init__(operand, cs, out=out)
-        self.colatitude_axis = cs.axis + 1
+        self.colatitude_axis = cs.coords[1].axis
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""
@@ -1349,11 +1349,54 @@ class S2Gradient(Gradient):
     def operate(self, out):
         """Perform operation."""
         operand = self.args[0]
+        basis = operand.domain.get_basis(self.cs.coords[1])
+        azimuthal_axis = self.colatitude_axis - 1
+        layout = operand.layout
         # Set output layout
         out.set_layout(layout)
+        # slicing local ell's
+        local_l_elements = layout.local_elements(basis.domain, scales=1)[1]
+        local_l = tuple(basis.degrees[local_l_elements])
+
         # Apply operator
+        S = basis.spin_weights(operand.tensorsig)
+        for i, s in np.ndenumerate(S):
 
+            operand_spin = reduced_view(operand.data[i],azimuthal_axis)
+            multiindex = (0,)+i
+            out_m = reduced_view(out.data[multiindex],azimuthal_axis)
+            multiindex = (1,)+i
+            out_p = reduced_view(out.data[multiindex],azimuthal_axis)
+            for dm, m in enumerate(basis.local_m):
+                vector = basis.k_vector(-1,m,s,local_l)
+                vector = reshape_vector(vector,dim=3,axis=1)
+                out_m[:,dm,:,:] = vector * operand_spin[:,dm,:,:]
 
+                vector = basis.k_vector(+1,m,s,local_l)
+                vector = reshape_vector(vector,dim=3,axis=1)
+                out_p[:,dm,:,:] = vector * operand_spin[:,dm,:,:]
+
+        operand.data = np.squeeze(operand.data)
+        out.data = np.squeeze(out.data)
+
+def reduced_view(data,axis):
+    shape = data.shape
+    N0 = int(np.prod(shape[:axis]))
+    if N0 == 0: N0 = 1
+    N1 = shape[axis]
+    N2 = shape[axis+1]
+    N3 = int(np.prod(shape[axis+2:]))
+    return data.reshape((N0,N1,N2,N3))
+
+def reduced_view_multiindex_3(data, tensorsig, axis):
+    axis += len(tensorsig)
+    shape = data.shape
+    N0 = int(np.prod(shape[len(tensorsig):axis]))
+    N1 = shape[axis]
+    N2 = int(np.prod(shape[axis+1:]))
+    if N0 == 0: N0 = 1
+    if len(tensorsig) == 0: return data.reshape((N0,N1,N2))
+    return data.reshape((-1,N0,N1,N2))
 
 class SphericalGradient(Gradient):
 

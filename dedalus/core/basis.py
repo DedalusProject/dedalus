@@ -1157,6 +1157,30 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         # Apply spin recombination
         self.backward_spin_recombination(field.tensorsig, gdata)
 
+    @CachedMethod
+    def operator_matrix(self,op,m,s):
+        import dedalus_sphere
+        return dedalus_sphere.sphere.operator(op,self.Lmax,m,s,radius=self.radius)
+
+    @CachedMethod
+    def operator_vector(self,op,m,s,local_l_elements=None):
+        # returns a vector containing the diagonal of the matrix
+        # if the operator matrix is not diagonal, this might not be very useful!!
+        matrix = self.operator_matrix(op,m,s)
+        print(m,s,local_l_elements)
+        local_l_elements = local_l_elements[local_l_elements>=max(abs(m),abs(s))]
+        if local_l_elements == None: return matrix.diagonal()
+        else: return matrix.diagonal()[local_l_elements]
+
+    @CachedMethod
+    def k_vector(self,mu,m,s,local_l):
+        import dedalus_sphere
+        vector = np.zeros(len(local_l))
+        Lmin = max(abs(m),abs(s),abs(s+mu))
+        for i,l in enumerate(local_l):
+            if l < Lmin: vector[i] = 0
+            else: vector[i] = dedalus_sphere.sphere.k_element(mu,l,s,self.radius)
+        return vector
 
 SWSH = SpinWeightedSphericalHarmonics
 

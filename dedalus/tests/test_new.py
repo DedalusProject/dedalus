@@ -92,6 +92,13 @@ Tg00 = - 0.5 * np.sqrt(7/2) * (np.cos(theta/2)**4 * (-2 + 3*np.cos(theta))) * np
 result = np.allclose(T['g'][0,0], Tg00)
 results.append(result)
 print(len(results), ':', result)
+# Gradient of a scalar
+f['g'] = 1/2*np.sin(theta)**2*np.exp(-2j*phi)
+u = operators.Gradient(f, c).evaluate()
+ug = [-1j * np.sin(theta)*np.exp(-2j*phi), np.cos(theta)*np.sin(theta)*np.exp(-2j*phi)]
+result = np.allclose(u['g'], ug)
+results.append(result)
+print(len(results), ':', result)
 
 ## Ball
 c = coords.SphericalCoordinates('phi', 'theta', 'r')
