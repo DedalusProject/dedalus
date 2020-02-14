@@ -994,6 +994,13 @@ class RegularityBasis(MultidimensionalBasis):
         return dedalus_sphere.intertwiner.xi(mu,l)
 
     @CachedMethod
+    def regularity_allowed(self,l,regularity):
+        import dedalus_sphere
+        Rb = np.array([-1, 1, 0], dtype=int)
+        if regularity == (): return True
+        return not dedalus_sphere.intertwiner.forbidden_regularity(l,Rb[np.array(regularity)])
+
+    @CachedMethod
     def radial_recombinations(self, tensorsig):
         import dedalus_sphere
         # For now only implement recombinations for Ball-only tensors
@@ -1206,7 +1213,7 @@ class BallBasis(RegularityBasis):
                                     self.backward_transform_radius]
 
     def _new_k(self, k):
-        return BallBasis(self.coords, self.shape, radius = self.radius, k=k, alpha=self.alpha,
+        return BallBasis(self.coordsystem, self.shape, radius = self.radius, k=k, alpha=self.alpha,
                          azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
                          radius_library=self.radius_library)
 
@@ -1238,9 +1245,9 @@ class BallBasis(RegularityBasis):
         return r.astype(np.float64)
 
     @CachedMethod
-    def transform_plan(self, grid_size, deg, k, alpha):
+    def transform_plan(self, grid_size, regularity, deg, k, alpha):
         """Build transform plan."""
-        return self.transforms[self.radius_library](grid_size, self.Lmax+1, self.local_l, deg, k, alpha)
+        return self.transforms[self.radius_library](grid_size, self.Lmax+1, self.local_l, regularity, deg, k, alpha)
 
     def forward_transform_radius(self, field, axis, gdata, cdata):
         data_axis = len(field.tensorsig) + axis
@@ -1250,7 +1257,7 @@ class BallBasis(RegularityBasis):
         # Perform radial transforms component-by-component
         R = self.regularity_classes(field.tensorsig)
         for i, r in np.ndenumerate(R):
-           plan = self.transform_plan(grid_size, r, self.k, self.alpha)
+           plan = self.transform_plan(grid_size, i, r, self.k, self.alpha)
            plan.forward(gdata[i], cdata[i], axis)
 
     def backward_transform_radius(self, field, axis, cdata, gdata):
@@ -1259,7 +1266,7 @@ class BallBasis(RegularityBasis):
         # Perform radial transforms component-by-component
         R = self.regularity_classes(field.tensorsig)
         for i, r in np.ndenumerate(R):
-           plan = self.transform_plan(grid_size, r, self.k, self.alpha)
+           plan = self.transform_plan(grid_size, i, r, self.k, self.alpha)
            plan.backward(cdata[i], gdata[i], axis)
         # Apply regularity recombinations
         self.backward_regularity_recombination(field, axis, gdata)
@@ -1286,7 +1293,8 @@ class GradientBall(operators.SphericalGradient):
 
     @staticmethod
     def output_basis(input_basis):
-        return input_basis._new_alpha(input_basis.alpha + 1)
+        out = input_basis._new_k(input_basis.k + 1)
+        return out
 
 
 

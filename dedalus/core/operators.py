@@ -1266,7 +1266,7 @@ class Gradient(LinearOperator, metaclass=MultiClass):
         super().__init__(operand, cs, out=out)
         self._operand = operand
         self.cs = cs
-        self.bases = operand.bases
+#        self.bases = operand.bases
         self.tensorsig = tuple([cs,] + list(operand.tensorsig))
         self.dtype = operand.dtype
 
@@ -1335,6 +1335,7 @@ class S2Gradient(Gradient):
     def __init__(self, operand, cs, out=None):
         super().__init__(operand, cs, out=out)
         self.colatitude_axis = cs.coords[1].axis
+        self.bases = operand.bases
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""
@@ -1413,6 +1414,8 @@ class SphericalGradient(Gradient):
 
     def operate(self, out):
         """Perform operation."""
+        import dedalus_sphere
+        Rb = np.array([-1, 1, 0], dtype=int)
         operand = self.args[0]
         basis = operand.domain.get_basis(self.cs.coords[2])
         colatitude_axis = self.radius_axis - 1
@@ -1425,19 +1428,30 @@ class SphericalGradient(Gradient):
         for i, r in np.ndenumerate(R):
 
             operand_spin = reduced_view_4(operand.data[i],colatitude_axis)
-            multiindex = (0,)+i
-            out_m = reduced_view_4(out.data[multiindex],colatitude_axis)
             multiindex = (1,)+i
             out_p = reduced_view_4(out.data[multiindex],colatitude_axis)
+            multiindex = (0,)+i
+            out_m = reduced_view_4(out.data[multiindex],colatitude_axis)
             for dl, l in enumerate(basis.local_l):
-                Dm = basis.xi(-1,l)*basis.operator_matrix('D-',l,r)
                 Nmin_in = max( (l + r)//2, 0)
-                Nmin_out = max( (l + r - 1)//2, 0)
-                apply_matrix(Dm, operand_spin[:,dl,Nmin_in:,:], axis=1, out=out_m[:,dl,Nmin_out:,:])
-
-                Dp = basis.xi(+1,l)*basis.operator_matrix('D+',l,r)
-                Nmin_out = max( (l + r + 1)//2, 0)
-                apply_matrix(Dp, operand_spin[:,dl,Nmin_in:,:], axis=1, out=out_p[:,dl,Nmin_out:,:])
+                if basis.regularity_allowed(l,multiindex):
+                    Dm = basis.xi(-1,l)*basis.operator_matrix('D-',l,r)
+#                    if l==2 and r==-1:
+#                        print(basis.xi(-1,l))
+#                        print(basis.operator_matrix('D-',l,r))
+#                        print(Dm)
+#                        print(operand_spin[:,dl,Nmin_in:,:].shape)
+#                        print(operand_spin[:,dl,Nmin_in:,:])
+                    Nmin_out = max( (l + r - 1)//2, 0)
+                    apply_matrix(Dm, operand_spin[:,dl,Nmin_in:,:], axis=1, out=out_m[:,dl,Nmin_out:,:])
+                else:
+                    out_m[:,dl,:,:] = 0
+                if basis.regularity_allowed(l,i):
+                    Dp = basis.xi(+1,l)*basis.operator_matrix('D+',l,r)
+                    Nmin_out = max( (l + r + 1)//2, 0)
+                    apply_matrix(Dp, operand_spin[:,dl,Nmin_in:,:], axis=1, out=out_p[:,dl,Nmin_out:,:])
+                else:
+                    out_p[:,dl,:,:] = 0
 
 
 

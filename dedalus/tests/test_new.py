@@ -166,5 +166,23 @@ ug[0] = 2*x*(-3*y+z)/(r*np.sin(theta))
 result = np.allclose(u['g'], ug)
 results.append(result)
 print(len(results), ':', result)
+u['c']
+result = np.allclose(u['g'], ug)
+results.append(result)
+print(len(results), ':', result)
+# gradient of a vector
+T = operators.Gradient(u, c).evaluate()
 
+Tg0 = np.copy(T['g'])
+
+Tg0[2,2] = (6*x**2+4*y*z)/r**2
+Tg0[2,1] = Tg0[1,2] = -2*(y**3+x**2*(y-3*z)-y*z**2)/(r**3*np.sin(theta))
+Tg0[2,0] = Tg0[0,2] = 2*x*(z-3*y)/(r**2*np.sin(theta))
+Tg0[1,1] = 6*x**2/(r**2*np.sin(theta)**2) - (6*x**2+4*y*z)/r**2
+Tg0[1,0] = Tg0[0,1] = -2*x*(x**2+y**2+3*y*z)/(r**3*np.sin(theta)**2)
+Tg0[0,0] = 6*y**2/(x**2+y**2)
+
+result = np.allclose(u['g'], ug)
+results.append(result)
+print(len(results), ':', result)
 
