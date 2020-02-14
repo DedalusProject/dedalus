@@ -99,6 +99,13 @@ ug = [-1j * np.sin(theta)*np.exp(-2j*phi), np.cos(theta)*np.sin(theta)*np.exp(-2
 result = np.allclose(u['g'], ug)
 results.append(result)
 print(len(results), ':', result)
+# Gradient of a vector
+T = operators.Gradient(u, c).evaluate()
+Tg = np.array([[(-2+np.cos(theta)**2)*np.exp(-2j*phi),-1j*np.cos(theta)*np.exp(-2j*phi)],
+               [-1j*np.cos(theta)    *np.exp(-2j*phi),np.cos(2*theta)  *np.exp(-2j*phi)]])
+result = np.allclose(T['g'], Tg)
+results.append(result)
+print(len(results), ':', result)
 
 ## Ball
 c = coords.SphericalCoordinates('phi', 'theta', 'r')
