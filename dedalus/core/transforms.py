@@ -633,12 +633,13 @@ class SWSHColatitudeTransform(NonSeparableTransform):
 @register_transform(basis.BallBasis, 'matrix')
 class BallRadialTransform(NonSeparableTransform):
 
-    def __init__(self, grid_size, coeff_size, local_l, deg, alpha):
+    def __init__(self, grid_size, coeff_size, local_l, deg, k, alpha):
 
         self.N2g = grid_size
         self.N2c = coeff_size
         self.local_l = local_l
         self.deg = deg
+        self.k = k
         self.alpha = alpha
 
     def forward_reduced(self, gdata, cdata):
@@ -670,10 +671,9 @@ class BallRadialTransform(NonSeparableTransform):
     @CachedAttribute
     def _quadrature(self):
         Nmax = self.N2g - 1
-        alpha = self.alpha
         # get grid and weights from sphere library
         import dedalus_sphere
-        return dedalus_sphere.ball.quadrature(3, Nmax, niter=3, alpha=alpha)
+        return dedalus_sphere.ball.quadrature(3, Nmax, niter=3, alpha=self.alpha)
 
     @CachedAttribute
     def _forward_GSZP_matrix(self):
@@ -685,7 +685,7 @@ class BallRadialTransform(NonSeparableTransform):
         for l in self.local_l:
             Nmax = self.N2c - 1
             Nmin = max(0, (l + self.deg)//2)
-            W = dedalus_sphere.ball.trial_functions(3, Nmax, l, self.deg, z_grid, alpha=self.alpha) # shape (Nmax+1-Nmin, Ng)
+            W = dedalus_sphere.ball.trial_functions(3, Nmax, l, self.deg, z_grid, alpha=self.alpha, k=self.k) # shape (Nmax+1-Nmin, Ng)
             # Pad to square transform and keep n aligned
             Wfull = np.zeros((self.N2c, self.N2g))
             Wfull[Nmin:Nmax+1, :] = (W*weights).astype(np.float64)
@@ -704,7 +704,7 @@ class BallRadialTransform(NonSeparableTransform):
         for l in self.local_l:
             Nmax = self.N2c - 1
             Nmin = max(0, (l + self.deg)//2)
-            W = dedalus_sphere.ball.trial_functions(3, Nmax, l, self.deg, z_grid, alpha=self.alpha) # shape (Ng, Nmax+1-Nmin)
+            W = dedalus_sphere.ball.trial_functions(3, Nmax, l, self.deg, z_grid, alpha=self.alpha, k=self.k) # shape (Ng, Nmax+1-Nmin)
             # Pad to square transform and keep n aligned
             Wfull = np.zeros((self.N2g, self.N2c))
             Wfull[:, Nmin:Nmax+1] = W.T.astype(np.float64)

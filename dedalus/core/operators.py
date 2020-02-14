@@ -1362,11 +1362,11 @@ class S2Gradient(Gradient):
         S = basis.spin_weights(operand.tensorsig)
         for i, s in np.ndenumerate(S):
 
-            operand_spin = reduced_view(operand.data[i],azimuthal_axis)
+            operand_spin = reduced_view_4(operand.data[i],azimuthal_axis)
             multiindex = (0,)+i
-            out_m = reduced_view(out.data[multiindex],azimuthal_axis)
+            out_m = reduced_view_4(out.data[multiindex],azimuthal_axis)
             multiindex = (1,)+i
-            out_p = reduced_view(out.data[multiindex],azimuthal_axis)
+            out_p = reduced_view_4(out.data[multiindex],azimuthal_axis)
             for dm, m in enumerate(basis.local_m):
                 vector = basis.k_vector(-1,m,s,local_l)
                 vector = reshape_vector(vector,dim=3,axis=1)
@@ -1376,33 +1376,64 @@ class S2Gradient(Gradient):
                 vector = reshape_vector(vector,dim=3,axis=1)
                 out_p[:,dm,:,:] = vector * operand_spin[:,dm,:,:]
 
-        operand.data = np.squeeze(operand.data)
-        out.data = np.squeeze(out.data)
 
-def reduced_view(data,axis):
+def reduced_view_4(data, axis):
     shape = data.shape
     N0 = int(np.prod(shape[:axis]))
-    if N0 == 0: N0 = 1
     N1 = shape[axis]
     N2 = shape[axis+1]
     N3 = int(np.prod(shape[axis+2:]))
-    return data.reshape((N0,N1,N2,N3))
+    return data.reshape((N0, N1, N2, N3))
 
-def reduced_view_multiindex_3(data, tensorsig, axis):
-    axis += len(tensorsig)
-    shape = data.shape
-    N0 = int(np.prod(shape[len(tensorsig):axis]))
-    N1 = shape[axis]
-    N2 = int(np.prod(shape[axis+1:]))
-    if N0 == 0: N0 = 1
-    if len(tensorsig) == 0: return data.reshape((N0,N1,N2))
-    return data.reshape((-1,N0,N1,N2))
 
 class SphericalGradient(Gradient):
 
     cs_type = coords.SphericalCoordinates
 
+    def __init__(self, operand, cs, out=None):
+        super().__init__(operand, cs, out=out)
+        self.radius_axis = cs.coords[2].axis
 
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Require colatitude to be in coefficient space
+        layout = self.args[0].layout
+        return (not layout.grid_space[self.radius_axis]) and (layout.local[self.radius_axis])
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Require colatitude to be in coefficient space
+        self.args[0].require_coeff_space(self.radius_axis)
+        self.args[0].require_local(self.radius_axis)
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        basis = operand.domain.get_basis(self.cs.coords[2])
+        colatitude_axis = self.radius_axis - 1
+        layout = operand.layout
+        # Set output layout
+        out.set_layout(layout)
+
+        # Apply operator
+        R = basis.regularity_classes(operand.tensorsig)
+        for i, r in np.ndenumerate(R):
+
+            operand_spin = reduced_view_4(operand.data[i],colatitude_axis)
+            multiindex = (0,)+i
+            out_m = reduced_view_4(out.data[multiindex],colatitude_axis)
+            multiindex = (1,)+i
+            out_p = reduced_view_4(out.data[multiindex],colatitude_axis)
+            for dl, l in enumerate(basis.local_l):
+                Dm = basis.xi(-1,l)*basis.operator_matrix('D-',l,r)
+                Nmin_in = max( (l + r)//2, 0)
+                Nmin_out = max( (l + r - 1)//2, 0)
+                apply_matrix(Dm, operand_spin[:,dl,Nmin_in:,:], axis=1, out=out_m[:,dl,Nmin_out:,:])
+
+                Dp = basis.xi(+1,l)*basis.operator_matrix('D+',l,r)
+                Nmin_out = max( (l + r + 1)//2, 0)
+                apply_matrix(Dp, operand_spin[:,dl,Nmin_in:,:], axis=1, out=out_p[:,dl,Nmin_out:,:])
+ 
 
 
 """

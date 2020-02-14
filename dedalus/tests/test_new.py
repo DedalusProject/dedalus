@@ -143,5 +143,13 @@ u['c']
 result = np.allclose(u['g'], ug)
 results.append(result)
 print(len(results), ':', result)
+# gradient of a scalar
+u = operators.Gradient(f, c).evaluate()
+ug[2] = (6*x**2+4*y*z)/r
+ug[1] = -2*(y**3+x**2*(y-3*z)-y*z**2)/(r**2*np.sin(theta))
+ug[0] = 2*x*(-3*y+z)/(r*np.sin(theta))
+result = np.allclose(u['g'], ug)
+results.append(result)
+print(len(results), ':', result)
 
 

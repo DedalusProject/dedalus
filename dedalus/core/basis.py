@@ -985,6 +985,11 @@ class RegularityBasis(MultidimensionalBasis):
         return tuple(self.sphere_basis.degrees[local_l_elements])
 
     @CachedMethod
+    def xi(self,mu,l):
+        import dedalus_sphere
+        return dedalus_sphere.intertwiner.xi(mu,l)
+
+    @CachedMethod
     def radial_recombinations(self, tensorsig):
         import dedalus_sphere
         # For now only implement recombinations for Ball-only tensors
@@ -1009,10 +1014,10 @@ class RegularityBasis(MultidimensionalBasis):
         R = np.zeros([vs.dim for vs in tensorsig], dtype=int)
         for i, vs in enumerate(tensorsig):
             if self.coordsystem is vs: # kludge before we decide how compound coordinate systems work
-                R[axslice(i, 0, self.dim)] += Rb
+                R[axslice(i, 0, self.dim)] += reshape_vector(Rb, dim=len(tensorsig), axis=i)
             elif self.space in vs.spaces:
                 n = vs.get_index(self.space)
-                R[axslice(i, n, n+self.dim)] += Rb
+                R[axslice(i, n, n+self.dim)] += reshape_vector(Rb, dim=len(tensorsig), axis=i)
         return R
 
     def forward_regularity_recombination(self, field, axis, gdata):
@@ -1158,21 +1163,6 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         self.backward_spin_recombination(field.tensorsig, gdata)
 
     @CachedMethod
-    def operator_matrix(self,op,m,s):
-        import dedalus_sphere
-        return dedalus_sphere.sphere.operator(op,self.Lmax,m,s,radius=self.radius)
-
-    @CachedMethod
-    def operator_vector(self,op,m,s,local_l_elements=None):
-        # returns a vector containing the diagonal of the matrix
-        # if the operator matrix is not diagonal, this might not be very useful!!
-        matrix = self.operator_matrix(op,m,s)
-        print(m,s,local_l_elements)
-        local_l_elements = local_l_elements[local_l_elements>=max(abs(m),abs(s))]
-        if local_l_elements == None: return matrix.diagonal()
-        else: return matrix.diagonal()[local_l_elements]
-
-    @CachedMethod
     def k_vector(self,mu,m,s,local_l):
         import dedalus_sphere
         vector = np.zeros(len(local_l))
@@ -1192,12 +1182,14 @@ class BallBasis(RegularityBasis):
     group_shape = (1, 1, 1)
     transforms = {}
 
-    def __init__(self, coordsystem, shape, radius=1, alpha=0, azimuth_library='matrix', colatitude_library='matrix', radius_library='matrix'):
+    def __init__(self, coordsystem, shape, radius=1, k=0, alpha=0, azimuth_library='matrix', colatitude_library='matrix', radius_library='matrix'):
         super().__init__(coordsystem, shape, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
         if radius <= 0:
             raise ValueError("Radius must be positive.")
         self.radius = radius
         self.alpha = alpha
+        self.k = k
+        self.radius_library = radius_library
         self.radial_COV = AffineCOV((0, 1), (0, radius))
         self.Nmax = shape[2] - 1
         if self.Lmax + 1 > 2 * (self.Nmax + 1):
@@ -1208,6 +1200,11 @@ class BallBasis(RegularityBasis):
         self.backward_transforms = [self.backward_transform_azimuth,
                                     self.backward_transform_colatitude,
                                     self.backward_transform_radius]
+
+    def _new_k(self, k):
+        return BallBasis(self.coords, self.shape, radius = self.radius, k=k, alpha=self.alpha,
+                         azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
+                         radius_library=self.radius_library)
 
     def global_grids(self, scales):
         return (self.global_grid_azimuth(scales[0]),
@@ -1237,9 +1234,9 @@ class BallBasis(RegularityBasis):
         return r.astype(np.float64)
 
     @CachedMethod
-    def transform_plan(self, grid_size, deg, alpha):
+    def transform_plan(self, grid_size, deg, k, alpha):
         """Build transform plan."""
-        return self.transforms['matrix'](grid_size, self.Lmax+1, self.local_l, deg, alpha)
+        return self.transforms[self.radius_library](grid_size, self.Lmax+1, self.local_l, deg, k, alpha)
 
     def forward_transform_radius(self, field, axis, gdata, cdata):
         data_axis = len(field.tensorsig) + axis
@@ -1249,7 +1246,7 @@ class BallBasis(RegularityBasis):
         # Perform radial transforms component-by-component
         R = self.regularity_classes(field.tensorsig)
         for i, r in np.ndenumerate(R):
-           plan = self.transform_plan(grid_size, r, self.alpha)
+           plan = self.transform_plan(grid_size, r, self.k, self.alpha)
            plan.forward(gdata[i], cdata[i], axis)
 
     def backward_transform_radius(self, field, axis, cdata, gdata):
@@ -1258,9 +1255,26 @@ class BallBasis(RegularityBasis):
         # Perform radial transforms component-by-component
         R = self.regularity_classes(field.tensorsig)
         for i, r in np.ndenumerate(R):
-           plan = self.transform_plan(grid_size, r, self.alpha)
+           plan = self.transform_plan(grid_size, r, self.k, self.alpha)
            plan.backward(cdata[i], gdata[i], axis)
         # Apply regularity recombinations
         self.backward_regularity_recombination(field, axis, gdata)
+
+    @CachedMethod
+    def operator_matrix(self,op,l,deg):
+        import dedalus_sphere
+        return dedalus_sphere.ball.operator(3,op,self.Nmax,self.k,l,deg,radius=self.radius,alpha=self.alpha).astype(np.float64)
+
+class GradientBall(operators.SphericalGradient):
+    """Gradient operator on the ball."""
+
+    input_basis_type = BallBasis
+    separable = False
+
+    @staticmethod
+    def output_basis(input_basis):
+        return input_basis._new_alpha(input_basis.alpha + 1)
+
+
 
 from . import transforms
