@@ -1314,7 +1314,7 @@ class CartesianGradient(Gradient):
         # Require operands to be in same layout
         # Take coeff layout arbitrarily
         layout = self.dist.coeff_layout
-        for operand in self.args[1:]:
+        for operand in self.args:
             operand.require_layout(layout)
 
     def operate(self, out):

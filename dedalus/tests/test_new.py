@@ -1,35 +1,40 @@
 
 import numpy as np
 from dedalus.core import coords, distributor, basis, field, operators
+from mpi4py import MPI
+
+comm = MPI.COMM_WORLD
 
 results = []
 
 ## 1D complex Fourier
-c = coords.Coordinate('x')
-d = distributor.Distributor([c])
-xb = basis.ComplexFourier(c, size=16, bounds=(0, 1))
-x = xb.local_grid(1)
-# Scalar transforms
-u = field.Field(dist=d, bases=[xb], dtype=np.complex128)
-ug = np.exp(2*np.pi*1j*x)
-u['g'] = ug
-u['c']
-result = np.allclose(u['g'], ug)
-results.append(result)
-print(len(results), ':', result)
+if comm.size == 1:
+    c = coords.Coordinate('x')
+    d = distributor.Distributor([c])
+    xb = basis.ComplexFourier(c, size=16, bounds=(0, 1))
+    x = xb.local_grid(1)
+    # Scalar transforms
+    u = field.Field(dist=d, bases=[xb], dtype=np.complex128)
+    ug = np.exp(2*np.pi*1j*x)
+    u['g'] = ug
+    u['c']
+    result = np.allclose(u['g'], ug)
+    results.append(result)
+    print(len(results), ':', result)
 
 ## 1D Chebyshev
-c = coords.Coordinate('x')
-d = distributor.Distributor([c])
-xb = basis.ChebyshevT(c, size=16, bounds=(0, 1))
-x = xb.local_grid(1)
-# Scalar transforms
-u = field.Field(dist=d, bases=[xb], dtype=np.complex128)
-u['g'] = ug = 2*x**2 - 1
-u['c']
-result = np.allclose(u['g'], ug)
-results.append(result)
-print(len(results), ':', result)
+if comm.size == 1:
+    c = coords.Coordinate('x')
+    d = distributor.Distributor([c])
+    xb = basis.ChebyshevT(c, size=16, bounds=(0, 1))
+    x = xb.local_grid(1)
+    # Scalar transforms
+    u = field.Field(dist=d, bases=[xb], dtype=np.complex128)
+    u['g'] = ug = 2*x**2 - 1
+    u['c']
+    result = np.allclose(u['g'], ug)
+    results.append(result)
+    print(len(results), ':', result)
 
 ## 2D Fourier * Chebyshev
 c = coords.CartesianCoordinates('x', 'y')
@@ -53,12 +58,14 @@ result = np.allclose(u['g'], ug)
 results.append(result)
 print(len(results), ':', result)
 # Vector transforms 1D
-v = field.Field(dist=d, bases=[xb], tensorsig=[c], dtype=np.complex128)
-v['g'] = vg = np.array([np.cos(x) * 2, np.sin(x) + 1])
-v['c']
-result = np.allclose(v['g'], vg)
-results.append(result)
-print(len(results), ':', result)
+if comm.size == 1:
+    v = field.Field(dist=d, bases=[xb], tensorsig=[c], dtype=np.complex128)
+    v['g'] = vg = np.array([np.cos(x) * 2, np.sin(x) + 1])
+    print(v['g'].shape)
+    v['c']
+    result = np.allclose(v['g'], vg)
+    results.append(result)
+    print(len(results), ':', result)
 # Gradient operator
 w = operators.Gradient(f, c).evaluate()
 wg = np.array([np.cos(x) * y**5, np.sin(x) * 5 * y**4])

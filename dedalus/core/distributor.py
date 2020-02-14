@@ -511,7 +511,9 @@ class Transpose:
             field.set_layout(self.layout1)
             data1 = field.data
             # Transpose between data views
-            plan.localize_columns(data0, data1)
+            tensorshape = data0.shape[:len(field.tensorsig)]
+            for i in np.ndindex(tensorshape):
+                plan.localize_columns(data0[i], data1[i])
         else:
             # No communication: just update field layout
             field.set_layout(self.layout1)
@@ -525,7 +527,9 @@ class Transpose:
             field.set_layout(self.layout0)
             data0 = field.data
             # Transpose between data views
-            plan.localize_rows(data1, data0)
+            tensorshape = data0.shape[:len(field.tensorsig)]
+            for i in np.ndindex(tensorshape):
+                plan.localize_rows(data1[i], data0[i])
         else:
             # No communication: just update field layout
             field.set_layout(self.layout0)
