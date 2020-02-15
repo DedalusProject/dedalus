@@ -1276,6 +1276,26 @@ class BallBasis(RegularityBasis):
         import dedalus_sphere
         return dedalus_sphere.ball.operator(3,op,self.Nmax,self.k,l,deg,radius=self.radius,alpha=self.alpha).astype(np.float64)
 
+    def regtotal(self, regindex):
+        regorder = np.array([-1, 1, 0])
+        regsig = regorder[np.array(regindex)]
+        return regsig.sum()
+
+    def n_limits(self, regindex, ell):
+        if not self.regularity_allowed(ell, regindex):
+            return None
+        regtotal = self.regtotal(regindex)
+        nmin = dedalus_sphere.ball.Nmin(ell, regtotal)
+        return (nmin, self.Nmax)
+
+    def n_slice(self, regindex, ell):
+        if not self.regularity_allowed(ell, regindex):
+            return None
+        nmin, nmax = self.n_limits(regindex, ell)
+        return slice(nmin, nmax+1)
+
+
+
 class GradientBall(operators.SphericalGradient):
     """Gradient operator on the ball."""
 
