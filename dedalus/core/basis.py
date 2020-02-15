@@ -1288,6 +1288,12 @@ class BallBasis(RegularityBasis):
         nmin = dedalus_sphere.ball.Nmin(ell, regtotal)
         return (nmin, self.Nmax)
 
+    def n_size(self, regindex, ell):
+        if not self.regularity_allowed(ell, regindex):
+            return 0
+        nmin, nmax = self.n_limits(regindex, ell)
+        return nmax - nmin
+
     def n_slice(self, regindex, ell):
         if not self.regularity_allowed(ell, regindex):
             return None
