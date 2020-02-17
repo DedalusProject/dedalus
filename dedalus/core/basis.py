@@ -973,10 +973,12 @@ class RegularityBasis(MultidimensionalBasis):
         self.sphere_basis = SWSH(coordsystem, shape[:2], azimuth_library=azimuth_library, colatitude_library=colatitude_library)
         self.mmax = self.sphere_basis.mmax
         self.Lmax = self.sphere_basis.Lmax
+        self.local_m = self.sphere_basis.local_m
         self.global_grid_azimuth = self.sphere_basis.global_grid_azimuth
         self.global_grid_colatitude = self.sphere_basis.global_grid_colatitude
         self.local_grid_azimuth = self.sphere_basis.local_grid_azimuth
         self.local_grid_colatitude = self.sphere_basis.local_grid_colatitude
+        self.colatitude_weights = self.sphere_basis.colatitude_weights
         self.forward_transform_azimuth = self.sphere_basis.forward_transform_azimuth
         self.forward_transform_colatitude = self.sphere_basis.forward_transform_colatitude
         self.backward_transform_azimuth = self.sphere_basis.backward_transform_azimuth
@@ -1146,6 +1148,11 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         theta = np.arccos(cos_theta).astype(np.float64)
         return theta
 
+    def colatitude_weights(self, scale):
+        N = int(np.ceil(scale * self.shape[1]))
+        cos_theta, weights = dedalus_sphere.sphere.quadrature(Lmax=N-1)
+        return reshape_vector(weights.astype(np.float64), dim=self.dist.dim, axis=self.axis+1)
+
     @CachedMethod
     def transform_plan(self, grid_size, s):
         """Build transform plan."""
@@ -1244,6 +1251,11 @@ class BallBasis(RegularityBasis):
         r = np.sqrt((z + 1) / 2)
         return r.astype(np.float64)
 
+    def radius_weights(self, scale):
+        N = int(np.ceil(scale * self.shape[1]))
+        z, weights = dedalus_sphere.ball.quadrature(3, N-1, niter=3, alpha=self.alpha)
+        return reshape_vector(weights.astype(np.float64), dim=self.dist.dim, axis=self.axis+2)
+
     @CachedMethod
     def transform_plan(self, grid_size, regularity, deg, k, alpha):
         """Build transform plan."""
@@ -1278,6 +1290,7 @@ class BallBasis(RegularityBasis):
 
     def regtotal(self, regindex):
         regorder = np.array([-1, 1, 0])
+        if regindex == (): return 0
         regsig = regorder[np.array(regindex)]
         return regsig.sum()
 
