@@ -1435,7 +1435,7 @@ class SphericalGradient(Gradient):
             for dl, l in enumerate(basis.local_l):
                 Nmin_in = max( (l + r)//2, 0)
                 if basis.regularity_allowed(l,multiindex):
-                    Dm = basis.xi(-1,l)*basis.operator_matrix('D-',l,r)
+                    Dm = basis.xi(-1,l+r)*basis.operator_matrix('D-',l,r)
 #                    if l==2 and r==-1:
 #                        print(basis.xi(-1,l))
 #                        print(basis.operator_matrix('D-',l,r))
@@ -1447,7 +1447,7 @@ class SphericalGradient(Gradient):
                 else:
                     out_m[:,dl,:,:] = 0
                 if basis.regularity_allowed(l,i):
-                    Dp = basis.xi(+1,l)*basis.operator_matrix('D+',l,r)
+                    Dp = basis.xi(+1,l+r)*basis.operator_matrix('D+',l,r)
                     Nmin_out = max( (l + r + 1)//2, 0)
                     apply_matrix(Dp, operand_spin[:,dl,Nmin_in:,:], axis=1, out=out_p[:,dl,Nmin_out:,:])
                 else:

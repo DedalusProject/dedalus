@@ -1294,23 +1294,26 @@ class BallBasis(RegularityBasis):
         regsig = regorder[np.array(regindex)]
         return regsig.sum()
 
-    def n_limits(self, regindex, ell):
+    def n_limits(self, regindex, ell, Nmax=None):
+        if Nmax == None: Nmax = self.Nmax
         if not self.regularity_allowed(ell, regindex):
             return None
         regtotal = self.regtotal(regindex)
         nmin = dedalus_sphere.ball.Nmin(ell, regtotal)
-        return (nmin, self.Nmax)
+        return (nmin, Nmax)
 
-    def n_size(self, regindex, ell):
+    def n_size(self, regindex, ell, Nmax=None):
+        if Nmax == None: Nmax = self.Nmax
         if not self.regularity_allowed(ell, regindex):
             return 0
-        nmin, nmax = self.n_limits(regindex, ell)
+        nmin, nmax = self.n_limits(regindex, ell, Nmax=Nmax)
         return nmax - nmin + 1
 
-    def n_slice(self, regindex, ell):
+    def n_slice(self, regindex, ell, Nmax=None):
+        if Nmax == None: Nmax = self.Nmax
         if not self.regularity_allowed(ell, regindex):
             return None
-        nmin, nmax = self.n_limits(regindex, ell)
+        nmin, nmax = self.n_limits(regindex, ell, Nmax=Nmax)
         return slice(nmin, nmax+1)
 
 
