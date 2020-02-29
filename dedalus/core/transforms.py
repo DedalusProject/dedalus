@@ -566,9 +566,10 @@ class SWSHColatitudeTransform(NonSeparableTransform):
         m_matrices = self._forward_SWSH_matrices
         for dm, m in enumerate(local_m):
             if m <= self.N2c - 1:
+                Lmin = max(np.abs(m), np.abs(self.s))
                 grm = gdata[:, dm, :, :]
-                crm = cdata[:, dm, :, :]
-                apply_matrix(m_matrices[dm], grm, axis=1, out=crm)
+                crm = cdata[:, dm, Lmin:, :]
+                apply_matrix(m_matrices[dm][Lmin:], grm, axis=1, out=crm)
 
     def backward_reduced(self, cdata, gdata):
 
@@ -579,9 +580,10 @@ class SWSHColatitudeTransform(NonSeparableTransform):
         m_matrices = self._backward_SWSH_matrices
         for dm, m in enumerate(local_m):
             if m <= self.N2c - 1:
+                Lmin = max(np.abs(m), np.abs(self.s))
                 grm = gdata[:, dm, :, :]
-                crm = cdata[:, dm, :, :]
-                apply_matrix(m_matrices[dm], crm, axis=1, out=grm)
+                crm = cdata[:, dm, Lmin:, :]
+                apply_matrix(m_matrices[dm][:,Lmin:], crm, axis=1, out=grm)
 
     @CachedAttribute
     def _quadrature(self):
