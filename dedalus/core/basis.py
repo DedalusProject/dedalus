@@ -978,7 +978,8 @@ class RegularityBasis(MultidimensionalBasis):
         self.global_grid_colatitude = self.sphere_basis.global_grid_colatitude
         self.local_grid_azimuth = self.sphere_basis.local_grid_azimuth
         self.local_grid_colatitude = self.sphere_basis.local_grid_colatitude
-        self.colatitude_weights = self.sphere_basis.colatitude_weights
+        self.global_colatitude_weights = self.sphere_basis.global_colatitude_weights
+        self.local_colatitude_weights = self.sphere_basis.local_colatitude_weights
         self.forward_transform_azimuth = self.sphere_basis.forward_transform_azimuth
         self.forward_transform_colatitude = self.sphere_basis.forward_transform_colatitude
         self.backward_transform_azimuth = self.sphere_basis.backward_transform_azimuth
@@ -1148,10 +1149,16 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         theta = np.arccos(cos_theta).astype(np.float64)
         return theta
 
-    def colatitude_weights(self, scale):
+    def global_colatitude_weights(self, scale):
         N = int(np.ceil(scale * self.shape[1]))
         cos_theta, weights = dedalus_sphere.sphere.quadrature(Lmax=N-1)
         return reshape_vector(weights.astype(np.float64), dim=self.dist.dim, axis=self.axis+1)
+
+    def local_colatitude_weights(self,scale):
+        local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis+1]
+        N = int(np.ceil(scale * self.shape[1]))
+        cos_theta, weights = dedalus_sphere.sphere.quadrature(Lmax=N-1)
+        return reshape_vector(weights.astype(np.float64)[local_elements], dim=self.dist.dim, axis=self.axis+1)
 
     @CachedMethod
     def transform_plan(self, grid_size, s):
@@ -1251,10 +1258,16 @@ class BallBasis(RegularityBasis):
         r = np.sqrt((z + 1) / 2)
         return r.astype(np.float64)
 
-    def radius_weights(self, scale):
+    def global_radius_weights(self, scale):
         N = int(np.ceil(scale * self.shape[1]))
         z, weights = dedalus_sphere.ball.quadrature(3, N-1, niter=3, alpha=self.alpha)
         return reshape_vector(weights.astype(np.float64), dim=self.dist.dim, axis=self.axis+2)
+
+    def local_radius_weights(self, scale):
+        local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis+2]
+        N = int(np.ceil(scale * self.shape[1]))
+        z, weights = dedalus_sphere.ball.quadrature(3, N-1, niter=3, alpha=self.alpha)
+        return reshape_vector(weights.astype(np.float64)[local_elements], dim=self.dist.dim, axis=self.axis+2)
 
     @CachedMethod
     def transform_plan(self, grid_size, regularity, deg, k, alpha):
