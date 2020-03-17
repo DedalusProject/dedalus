@@ -193,3 +193,16 @@ result = np.allclose(T['g'], Tg0)
 results.append(result)
 print(len(results), ':', result)
 
+# Cross product
+f['g'] = z
+ez = operators.Gradient(f, c).evaluate()
+ez['g']
+u['g']
+h = operators.CrossProduct(ez,u).evaluate()
+
+hg[0] = - ez['g'][1]*u['g'][2] + ez['g'][2]*u['g'][1]
+hg[1] = - ez['g'][2]*u['g'][0] + ez['g'][0]*u['g'][2]
+hg[2] = - ez['g'][0]*u['g'][1] + ez['g'][1]*u['g'][0]
+
+results = np.allclose(h['g'],hg)
+

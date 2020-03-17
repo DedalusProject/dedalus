@@ -1387,6 +1387,27 @@ def reduced_view_4(data, axis):
     N3 = int(np.prod(shape[axis+2:]))
     return data.reshape((N0, N1, N2, N3))
 
+def reduced_view_first_c(data, axis):
+    shape = data.shape
+    N0 = shape[0]
+    N1 = int(np.prod(shape[1:axis]))
+    N2 = int(np.prod(shape[axis+1:]))
+    return data.reshape((N0, N1, N2))
+
+def reduced_view_last_c(data, axis):
+    shape = data.shape
+    N0 = int(np.prod(shape[:axis-1]))
+    N1 = shape[axis]
+    N2 = int(np.prod(shape[axis+1:]))
+    return data.reshape((N0, N1, N2))
+
+def reduced_view_int_c(data, axis_int, axis_c):
+    shape = data.shape
+    N0 = int(np.prod(shape[:axis_int-1]))
+    N1 = shape[axis_int]
+    N2 = int(np.prod(shape[axis_int+1:axis_c]))
+    N3 = int(np.prod(shape[axis_c:]))
+    return data.reshape((N0, N1, N2, N3))
 
 class SphericalGradient(Gradient):
 
@@ -1402,13 +1423,13 @@ class SphericalGradient(Gradient):
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""
-        # Require colatitude to be in coefficient space
+        # Require radius to be in coefficient space
         layout = self.args[0].layout
         return (not layout.grid_space[self.radius_axis]) and (layout.local[self.radius_axis])
 
     def enforce_conditions(self):
         """Require operands to be in a proper layout."""
-        # Require colatitude to be in coefficient space
+        # Require radius to be in coefficient space
         self.args[0].require_coeff_space(self.radius_axis)
         self.args[0].require_local(self.radius_axis)
 
@@ -1436,12 +1457,6 @@ class SphericalGradient(Gradient):
                 Nmin_in = max( (l + r)//2, 0)
                 if basis.regularity_allowed(l,multiindex):
                     Dm = basis.xi(-1,l+r)*basis.operator_matrix('D-',l,r)
-#                    if l==2 and r==-1:
-#                        print(basis.xi(-1,l))
-#                        print(basis.operator_matrix('D-',l,r))
-#                        print(Dm)
-#                        print(operand_spin[:,dl,Nmin_in:,:].shape)
-#                        print(operand_spin[:,dl,Nmin_in:,:])
                     Nmin_out = max( (l + r - 1)//2, 0)
                     apply_matrix(Dm, operand_spin[:,dl,Nmin_in:,:], axis=1, out=out_m[:,dl,Nmin_out:,:])
                 else:
@@ -1453,6 +1468,82 @@ class SphericalGradient(Gradient):
                 else:
                     out_p[:,dl,:,:] = 0
 
+
+class CrossProduct(NonlinearOperator, metaclass=MultiClass):
+
+# Should make sure arg0 and arg1 are rank 1
+# and that the cs are the same for arg0 and arg1
+
+    def __init__(self, arg0, arg1, out=None):
+        super().__init__(arg0, arg1, out=out)
+#        self.cs = cs
+        self.tensorsig = arg0.tensorsig
+# this is incorrect... should depend on the dtype of both arguments in some way...
+        self.dtype = arg0.dtype
+# I don't really know what this logic means, I copied it from power
+        for axis, b0 in enumerate(arg0.bases):
+            if b0 is not None:
+                self.require_grid_axis = axis
+                break
+        else:
+            self.require_grid_axis = None
+
+    def check_conditions(self):
+        layout0 = self.args[0].layout
+        layout1 = self.args[1].layout
+        # Fields must be in grid layout
+# Don't really know what this means either....
+        if self.require_grid_axis is not None:
+            axis = self.require_grid_axis
+            return (layout0.grid_space[axis] and (layout0 is layout1))
+        else:
+            return (layout0 is layout1)
+
+    def enforce_conditions(self):
+        arg0, arg1 = self.args
+        if self.require_grid_axis is not None:
+            axis = self.require_grid_axis
+            arg0.require_grid_space(axis=axis)
+        arg1.require_layout(arg0.layout)
+
+# What does _check_args do??
+    @classmethod
+    def _check_args(cls, arg0, arg1, out=None):
+        # Dispatch by coordinate system
+# Don't know what the operand check is, so I'm ignoring that for now
+#        if isinstance(operand, Operand):
+#            if isinstance(arg0.tensorsig[0], cls.cs_type):
+#                return True
+        if isinstance(arg0.tensorsig[0], cls.cs_type):
+            return True
+        return False
+
+    @property
+    def base(self):
+        return CrossProduct
+
+
+class CartesianCrossProduct(CrossProduct):
+
+    cs_type = coords.CartesianCoordinates
+
+    def operate(self, out):
+        out.set_layout(arg0.layout)
+        out.data[0] = arg0.data[1]*arg1.data[2] - arg0.data[2]*arg1.data[1]
+        out.data[1] = arg0.data[2]*arg1.data[0] - arg0.data[0]*arg1.data[2]
+        out.data[2] = arg0.data[0]*arg1.data[1] - arg0.data[1]*arg1.data[0]
+
+
+class SphericalCrossProduct(CrossProduct):
+
+    cs_type = coords.SphericalCoordinates
+
+    def operate(self, out):
+        out.set_layout(arg0.layout)
+        # "left-handed" order of unit vectors: phi, theta, r
+        out.data[0] = - arg0.data[1]*arg1.data[2] + arg0.data[2]*arg1.data[1]
+        out.data[1] = - arg0.data[2]*arg1.data[0] + arg0.data[0]*arg1.data[2]
+        out.data[2] = - arg0.data[0]*arg1.data[1] + arg0.data[1]*arg1.data[0]
 
 
 """
