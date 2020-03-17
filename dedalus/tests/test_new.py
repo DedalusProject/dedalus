@@ -196,14 +196,34 @@ print(len(results), ':', result)
 # Cross product
 f['g'] = z
 ez = operators.Gradient(f, c).evaluate()
-ez['g']
-u['g']
 h = operators.CrossProduct(ez,u).evaluate()
-
 hg = np.zeros(h['g'].shape, dtype=h['g'].dtype)
 hg[0] = - ez['g'][1]*u['g'][2] + ez['g'][2]*u['g'][1]
 hg[1] = - ez['g'][2]*u['g'][0] + ez['g'][0]*u['g'][2]
 hg[2] = - ez['g'][0]*u['g'][1] + ez['g'][1]*u['g'][0]
+result = np.allclose(h['g'],hg)
+results.append(result)
+print(len(results), ':', result)
 
-results = np.allclose(h['g'],hg)
+# Dot product, vector-vector
+h = operators.DotProduct(ez,u).evaluate()
+hg = np.sum(ez['g']*u['g'],axis=0)
+result = np.allclose(h['g'],hg)
+results.append(result)
+print(len(results), ':', result)
+
+# Dot product, tensor-vector
+h = operators.DotProduct(T,u).evaluate()
+hg = np.sum(T['g']*u['g'][None,:,:,:,:],axis=1)
+result = np.allclose(h['g'],hg)
+results.append(result)
+print(len(results), ':', result)
+
+# Dot product, tensor-vector, using indices
+h = operators.DotProduct(T,u,indices=(0,0)).evaluate()
+hg = np.sum(T['g']*u['g'][:,None,:,:,:],axis=0)
+result = np.allclose(h['g'],hg)
+results.append(result)
+print(len(results), ':', result)
+
 
