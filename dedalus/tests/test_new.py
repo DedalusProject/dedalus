@@ -220,8 +220,9 @@ results.append(result)
 print(len(results), ':', result)
 
 # Dot product, tensor-vector, using indices
-h = operators.DotProduct(T,u,indices=(0,0)).evaluate()
-hg = np.sum(T['g']*u['g'][:,None,:,:,:],axis=0)
+op = u + operators.DotProduct(T,u,indices=(0,0))
+h = op.evaluate()
+hg = u['g'] + np.sum(T['g']*u['g'][:,None,:,:,:],axis=0)
 result = np.allclose(h['g'],hg)
 results.append(result)
 print(len(results), ':', result)
