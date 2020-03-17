@@ -1225,6 +1225,31 @@ class BallBasis(RegularityBasis):
         self.backward_transforms = [self.backward_transform_azimuth,
                                     self.backward_transform_colatitude,
                                     self.backward_transform_radius]
+        self.grid_params = (coordsystem, radius, alpha)
+
+    def __add__(self, other):
+        if other is None:
+            return self
+        if other is self:
+            return self
+        if isinstance(other, BallBasis):
+            if self.grid_params == other.grid_params:
+                shape = np.maximum(self.shape, other.shape)
+                k = max(self.k, other.k)
+                return BallBasis(self.coordsystem, shape, radius=self.radius, k=k, alpha=self.alpha)
+        return NotImplemented
+
+    def __mul__(self, other):
+        if other is None:
+            return self
+        if other is self:
+            return self
+        if isinstance(other, BallBasis):
+            if self.grid_params == other.grid_params:
+                shape = np.maximum(self.shape, other.shape)
+                k = 0
+                return BallBasis(self.coordsystem, shape, radius=self.radius, k=k, alpha=self.alpha)
+        return NotImplemented
 
     def _new_k(self, k):
         return BallBasis(self.coordsystem, self.shape, radius = self.radius, k=k, alpha=self.alpha,

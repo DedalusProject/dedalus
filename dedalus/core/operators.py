@@ -1469,51 +1469,55 @@ class SphericalGradient(Gradient):
                     out_p[:,dl,:,:] = 0
 
 
-class CrossProduct(NonlinearOperator, metaclass=MultiClass):
+class CrossProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
 
-# Should make sure arg0 and arg1 are rank 1
-# and that the cs are the same for arg0 and arg1
+    # Should make sure arg0 and arg1 are rank 1
+    # and that the cs are the same for arg0 and arg1
 
     def __init__(self, arg0, arg1, out=None):
         super().__init__(arg0, arg1, out=out)
-#        self.cs = cs
+        #self.cs = cs
         self.tensorsig = arg0.tensorsig
-# this is incorrect... should depend on the dtype of both arguments in some way...
+        # this is incorrect... should depend on the dtype of both arguments in some way...
         self.dtype = arg0.dtype
-# I don't really know what this logic means, I copied it from power
-        for axis, b0 in enumerate(arg0.bases):
-            if b0 is not None:
-                self.require_grid_axis = axis
-                break
-        else:
-            self.require_grid_axis = None
+        # I don't really know what this logic means, I copied it from power
+        # for axis, b0 in enumerate(arg0.bases):
+        #     if b0 is not None:
+        #         self.require_grid_axis = axis
+        #         break
+        # else:
+        #     self.require_grid_axis = None
 
     def check_conditions(self):
         layout0 = self.args[0].layout
         layout1 = self.args[1].layout
         # Fields must be in grid layout
-# Don't really know what this means either....
-        if self.require_grid_axis is not None:
-            axis = self.require_grid_axis
-            return (layout0.grid_space[axis] and (layout0 is layout1))
-        else:
-            return (layout0 is layout1)
+        # Don't really know what this means either....
+        # if self.require_grid_axis is not None:
+        #     axis = self.require_grid_axis
+        #     return (layout0.grid_space[axis] and (layout0 is layout1))
+        # else:
+        #     return (layout0 is layout1)
+        # Just do full grid space for now
+        return all(layout0.grid_space) and (layout0 is layout1)
 
     def enforce_conditions(self):
         arg0, arg1 = self.args
-        if self.require_grid_axis is not None:
-            axis = self.require_grid_axis
-            arg0.require_grid_space(axis=axis)
-        arg1.require_layout(arg0.layout)
+        # if self.require_grid_axis is not None:
+        #     axis = self.require_grid_axis
+        #     arg0.require_grid_space(axis=axis)
+        # arg1.require_layout(arg0.layout)
+        arg0.require_grid_space()
+        arg1.require_grid_space()
 
-# What does _check_args do??
+    # What does _check_args do??
     @classmethod
     def _check_args(cls, arg0, arg1, out=None):
         # Dispatch by coordinate system
-# Don't know what the operand check is, so I'm ignoring that for now
-#        if isinstance(operand, Operand):
-#            if isinstance(arg0.tensorsig[0], cls.cs_type):
-#                return True
+        # Don't know what the operand check is, so I'm ignoring that for now
+        # if isinstance(operand, Operand):
+        #     if isinstance(arg0.tensorsig[0], cls.cs_type):
+        #         return True
         if isinstance(arg0.tensorsig[0], cls.cs_type):
             return True
         return False
@@ -1522,12 +1526,20 @@ class CrossProduct(NonlinearOperator, metaclass=MultiClass):
     def base(self):
         return CrossProduct
 
+    @CachedAttribute
+    def bases(self):
+        # Need to fix this to do real multiplication
+        arg0, arg1 = self.args
+        return tuple(b0*b1 for b0, b1 in zip(arg0.bases, arg1.bases))
+
+
 
 class CartesianCrossProduct(CrossProduct):
 
     cs_type = coords.CartesianCoordinates
 
     def operate(self, out):
+        arg0, arg1 = self.args
         out.set_layout(arg0.layout)
         out.data[0] = arg0.data[1]*arg1.data[2] - arg0.data[2]*arg1.data[1]
         out.data[1] = arg0.data[2]*arg1.data[0] - arg0.data[0]*arg1.data[2]
@@ -1539,6 +1551,7 @@ class SphericalCrossProduct(CrossProduct):
     cs_type = coords.SphericalCoordinates
 
     def operate(self, out):
+        arg0, arg1 = self.args
         out.set_layout(arg0.layout)
         # "left-handed" order of unit vectors: phi, theta, r
         out.data[0] = - arg0.data[1]*arg1.data[2] + arg0.data[2]*arg1.data[1]
