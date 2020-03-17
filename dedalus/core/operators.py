@@ -1476,28 +1476,14 @@ class CrossProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
 
     def __init__(self, arg0, arg1, out=None):
         super().__init__(arg0, arg1, out=out)
-        #self.cs = cs
         self.tensorsig = arg0.tensorsig
         # this is incorrect... should depend on the dtype of both arguments in some way...
         self.dtype = arg0.dtype
-        # I don't really know what this logic means, I copied it from power
-        # for axis, b0 in enumerate(arg0.bases):
-        #     if b0 is not None:
-        #         self.require_grid_axis = axis
-        #         break
-        # else:
-        #     self.require_grid_axis = None
 
     def check_conditions(self):
         layout0 = self.args[0].layout
         layout1 = self.args[1].layout
         # Fields must be in grid layout
-        # Don't really know what this means either....
-        # if self.require_grid_axis is not None:
-        #     axis = self.require_grid_axis
-        #     return (layout0.grid_space[axis] and (layout0 is layout1))
-        # else:
-        #     return (layout0 is layout1)
         # Just do full grid space for now
         return all(layout0.grid_space) and (layout0 is layout1)
 
@@ -1510,11 +1496,9 @@ class CrossProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
         arg0.require_grid_space()
         arg1.require_grid_space()
 
-    # What does _check_args do??
     @classmethod
     def _check_args(cls, arg0, arg1, out=None):
-        # Dispatch by coordinate system
-        # Don't know what the operand check is, so I'm ignoring that for now
+        # might want to check if args are fields
         # if isinstance(operand, Operand):
         #     if isinstance(arg0.tensorsig[0], cls.cs_type):
         #         return True
@@ -1531,7 +1515,6 @@ class CrossProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
         # Need to fix this to do real multiplication
         arg0, arg1 = self.args
         return tuple(b0*b1 for b0, b1 in zip(arg0.bases, arg1.bases))
-
 
 
 class CartesianCrossProduct(CrossProduct):
