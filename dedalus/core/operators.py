@@ -1573,6 +1573,81 @@ class SphericalDivergence(Divergence, SphericalEllOperator):
             raise ValueError("This should never happen")
 
 
+class Curl(LinearOperator, metaclass=MultiClass):
+
+    def __init__(self, operand, coords, out=None):
+        super().__init__(operand, coords, out=out)
+        self._operand = operand
+        self.cs = operand.tensorsig[0]
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
+
+    @classmethod
+    def _check_args(cls, operand, coords, out=None):
+        # Dispatch by coordinate system
+        if isinstance(operand, Operand):
+            if isinstance(operand.tensorsig[0], cls.cs_type):
+                return True
+        return False
+
+    @property
+    def base(self):
+        return Curl
+
+
+class SphericalCurl(Curl, SphericalEllOperator):
+
+    cs_type = coords.SphericalCoordinates
+
+    def __init__(self, operand, coords, out=None):
+        super().__init__(operand, coords, out=out)
+        self.radius_axis = self.cs.coords[2].axis
+
+    @CachedAttribute
+    def bases(self):
+        return [self.output_basis(self.operand.bases[0])]
+
+    @staticmethod
+    def output_basis(input_basis):
+        out = input_basis._new_k(input_basis.k + 1)
+        return out
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Require radius to be in coefficient space
+        layout = self.args[0].layout
+        return (not layout.grid_space[self.radius_axis]) and (layout.local[self.radius_axis])
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Require radius to be in coefficient space
+        self.args[0].require_coeff_space(self.radius_axis)
+        self.args[0].require_local(self.radius_axis)
+
+    def regindex_out(self, regindex_in):
+        # Regorder: -, +, 0
+        # - and + map to 0
+        if regindex_in[0] in (0, 1):
+            return ((2,) + regindex_in[1:],)
+        # 0 maps to - and +
+        else:
+            return ((0,) + regindex_in[1:], (1,) + regindex_in[1:])
+
+    def radial_matrix(self, regindex_in, regindex_out, ell):
+        basis = self.input_basis
+        regtotal = basis.regtotal(regindex_in)
+        if regindex_in[0] == 0 and regindex_out[0] == 2:
+            return -1j * basis.xi(+1, ell+regtotal+1) * basis.operator_matrix('D+', ell, regtotal)
+        elif regindex_in[0] == 1 and regindex_out[0] == 2:
+            return 1j * basis.xi(-1, ell+regtotal-1) * basis.operator_matrix('D-', ell, regtotal)
+        elif regindex_in[0] == 2 and regindex_out[0] == 0:
+            return -1j * basis.xi(+1, ell+regtotal) * basis.operator_matrix('D-', ell, regtotal)
+        elif regindex_in[0] == 2 and regindex_out[0] == 1:
+            return 1j * basis.xi(-1, ell+regtotal) * basis.operator_matrix('D+', ell, regtotal)
+        else:
+            raise ValueError("This should never happen")
+
+
 class CrossProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
 
     # Should make sure arg0 and arg1 are rank 1

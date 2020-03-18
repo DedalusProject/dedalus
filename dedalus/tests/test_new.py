@@ -237,3 +237,15 @@ result = np.allclose(h['g'],hg)
 results.append(result)
 print(len(results), ':', result)
 
+# Curl
+f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+f['g'] = x**2 + y**2 + z**2   # f = r^2
+g = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+g['g'] = z   # f = r^2
+u = operators.Gradient(f, c).evaluate()  # u = 2 r e_r
+v = operators.Gradient(g, c).evaluate()  # v = e_z
+w = operators.CrossProduct(v, u).evaluate()  # w = u x v
+q = operators.Curl(w, c).evaluate()
+result = np.allclose(q['g'], 4*v['g'])
+results.append(result)
+print(len(results), ':', result)
