@@ -1424,7 +1424,38 @@ def reduced_view_int_c(data, axis_int, axis_c):
     N3 = int(np.prod(shape[axis_c:]))
     return data.reshape((N0, N1, N2, N3))
 
-class SphericalGradient(Gradient):
+
+class SphericalEllOperator(LinearOperator, metaclass=MultiClass):
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        basis = self.input_basis
+        # Set output layout
+        out.set_layout(operand.layout)
+        out.data[:] = 0
+        # Apply operator
+        R_in = basis.regularity_classes(operand.tensorsig)
+        for regindex_in, regtotal_in in np.ndenumerate(R_in):
+            for regindex_out in self.regindex_out(regindex_in):
+                comp_in = operand.data[regindex_in]
+                comp_out = out.data[regindex_out]
+                for m in basis.local_m:
+                    for ell in basis.local_l:
+                        vec3_in = basis.radial_vector_3(comp_in, m, ell, regindex_in)
+                        vec3_out = basis.radial_vector_3(comp_out, m, ell, regindex_out)
+                        if (vec3_in is not None) and (vec3_out is not None):
+                            A = self.radial_matrix(regindex_in, regindex_out, ell)
+                            apply_matrix(A, vec3_in, axis=1, out=vec3_out)
+
+    def regindex_out(self, regindex_in):
+        raise NotImplementedError()
+
+    def radial_matrix(regindex_in, regindex_out, ell):
+        raise NotImplementedError()
+
+
+class SphericalGradient(Gradient, SphericalEllOperator):
 
     cs_type = coords.SphericalCoordinates
 
@@ -1448,69 +1479,20 @@ class SphericalGradient(Gradient):
         self.args[0].require_coeff_space(self.radius_axis)
         self.args[0].require_local(self.radius_axis)
 
-    def operate(self, out):
-        """Perform operation."""
-        import dedalus_sphere
-        operand = self.args[0]
-        basis = operand.domain.get_basis(self.cs.coords[2])
-        colatitude_axis = self.radius_axis - 1
-        layout = operand.layout
-        # Set output layout
-        out.set_layout(layout)
-
-        # Apply operator
-        R = basis.regularity_classes(operand.tensorsig)
-        for i, r in np.ndenumerate(R):
-
-            operand_spin = reduced_view_4(operand.data[i],colatitude_axis)
-            multiindex = (1,)+i
-            out_p = reduced_view_4(out.data[multiindex],colatitude_axis)
-            multiindex = (0,)+i
-            out_m = reduced_view_4(out.data[multiindex],colatitude_axis)
-            for dl, l in enumerate(basis.local_l):
-                Nmin_in = max( (l + r)//2, 0)
-                if basis.regularity_allowed(l,multiindex):
-                    Dm = basis.xi(-1,l+r)*basis.operator_matrix('D-',l,r)
-                    Nmin_out = max( (l + r - 1)//2, 0)
-                    apply_matrix(Dm, operand_spin[:,dl,Nmin_in:,:], axis=1, out=out_m[:,dl,Nmin_out:,:])
-                else:
-                    out_m[:,dl,:,:] = 0
-                if basis.regularity_allowed(l,i):
-                    Dp = basis.xi(+1,l+r)*basis.operator_matrix('D+',l,r)
-                    Nmin_out = max( (l + r + 1)//2, 0)
-                    apply_matrix(Dp, operand_spin[:,dl,Nmin_in:,:], axis=1, out=out_p[:,dl,Nmin_out:,:])
-                else:
-                    out_p[:,dl,:,:] = 0
-
-class SphericalEllOperator(LinearOperator, metaclass=MultiClass):
-
-    def operate(self, out):
-        """Perform operation."""
-        operand = self.args[0]
-        basis = self.input_basis
-        # Set output layout
-        out.set_layout(operand.layout)
-        out.data[:] = 0
-        # Apply operator
-        R_in = basis.regularity_classes(operand.tensorsig)
-        for regindex_in, regtotal_in in np.ndenumerate(R_in):
-            for regindex_out in self.regindex_out(regindex_in):
-                comp_in = operand.data[regindex_in]
-                comp_out = out.data[regindex_out]
-                for m in basis.local_m:
-                    for ell in basis.local_l:
-                        vec3_in = basis.radial_vector_3(comp_in, m, ell, regindex_in)
-                        vec3_out = basis.radial_vector_3(comp_out, m, ell, regindex_out)
-                        if (vec3_in is not None) and (vec3_out is not None):
-                            A = self.radial_matrix(regtotal_in, ell)
-                            apply_matrix(A, vec3_in, axis=1, out=vec3_out)
-
     def regindex_out(self, regindex_in):
-        raise NotImplementedError()
+        # Regorder: -, +, 0
+        # Gradients hits - and +
+        return ((0,) + regindex_in, (1,) + regindex_in)
 
-    def radial_matrix(regtotal, ell):
-        raise NotImplementedError()
-
+    def radial_matrix(self, regindex_in, regindex_out, ell):
+        basis = self.input_basis
+        regtotal = basis.regtotal(regindex_in)
+        if regindex_out[0] == 0:
+            return basis.xi(-1, ell+regtotal)*basis.operator_matrix('D-', ell, regtotal)
+        elif regindex_out[0] == 1:
+            return basis.xi(+1, ell+regtotal)*basis.operator_matrix('D+', ell, regtotal)
+        else:
+            raise ValueError("This should never happen")
 
 
 class Divergence(LinearOperator, metaclass=MultiClass):

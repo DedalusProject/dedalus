@@ -1411,9 +1411,11 @@ class ConvertBall(operators.Convert, operators.SphericalEllOperator):
         # Doesn't couple components
         return (regindex_in,)
 
-    def radial_matrix(self, regtotal, ell):
-        dk = self.bases[0].k - self.input_basis.k
-        return self.input_basis.conversion_matrix(ell, regtotal, dk)
+    def radial_matrix(self, regindex_in, regindex_out, ell):
+        basis = self.input_basis
+        regtotal = basis.regtotal(regindex_in)
+        dk = self.bases[0].k - basis.k
+        return basis.conversion_matrix(ell, regtotal, dk)
 
 
 class GradientBall(operators.SphericalGradient):
