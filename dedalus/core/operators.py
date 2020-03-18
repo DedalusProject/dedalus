@@ -1451,7 +1451,6 @@ class SphericalGradient(Gradient):
     def operate(self, out):
         """Perform operation."""
         import dedalus_sphere
-        Rb = np.array([-1, 1, 0], dtype=int)
         operand = self.args[0]
         basis = operand.domain.get_basis(self.cs.coords[2])
         colatitude_axis = self.radius_axis - 1
@@ -1482,6 +1481,105 @@ class SphericalGradient(Gradient):
                     apply_matrix(Dp, operand_spin[:,dl,Nmin_in:,:], axis=1, out=out_p[:,dl,Nmin_out:,:])
                 else:
                     out_p[:,dl,:,:] = 0
+
+
+class Divergence(LinearOperator, metaclass=MultiClass):
+
+    # should check that we're not taking div of a scalar
+
+    def __init__(self, operand, out=None):
+        super().__init__(operand, out=out)
+        self._operand = operand
+        self.cs = operand.tensorsig[0]
+#        self.bases = operand.bases
+        self.tensorsig = tuple(list(operand.tensorsig)[1:])
+        self.dtype = operand.dtype
+
+    @classmethod
+    def _check_args(cls, operand, out=None):
+        # Dispatch by coordinate system
+        if isinstance(operand, Operand):
+            if isinstance(operand.tensorsig[0], cls.cs_type):
+                return True
+        return False
+
+    @property
+    def base(self):
+        return Divergence
+
+
+class SphericalDivergence(Gradient):
+
+    cs_type = coords.SphericalCoordinates
+
+    def __init__(self, operand, out=None):
+        super().__init__(operand, out=out)
+        self.radius_axis = self.cs.coords[2].axis
+
+    # Is this correct? Not sure....
+    @CachedAttribute
+    def bases(self):
+        return [self.output_basis(self.operand.bases[0])]
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Require radius to be in coefficient space
+        layout = self.args[0].layout
+        return (not layout.grid_space[self.radius_axis]) and (layout.local[self.radius_axis])
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Require radius to be in coefficient space
+        self.args[0].require_coeff_space(self.radius_axis)
+        self.args[0].require_local(self.radius_axis)
+
+    def operate(self, out):
+        """Perform operation."""
+        import dedalus_sphere
+        operand = self.args[0]
+        basis = operand.domain.get_basis(self.cs.coords[2])
+        colatitude_axis = self.radius_axis - 1
+        layout = operand.layout
+        # Set output layout
+        out.set_layout(layout)
+
+        # Apply operator
+        R = basis.regularity_classes(operand.tensorsig)
+        for multiindex, r in np.ndenumerate(R):
+
+            if multiindex[0] == 0: # - component
+                operand_comp = reduced_view_4(operand.data[multiindex],colatitude_axis)
+                multiindex_out = multiindex[1:]
+                out_comp = reduced_view_4(operand.data[multiindex_out],colatitude_axis)
+
+                for dl, l in enumerate(basis.local_l):
+                    Nmin_in = max( (l + r)//2, 0)
+                    if basis.regularity_allowed(l,multiindex):
+                        Dp = basis.xi(-1, l + r + 1) * basis.operator_matrix('D+', l, r)
+                        Nmin_out = max( (l + r + 1)//2, 0)
+                        apply_matrix(Dp, operand_comp[:,dl,Nmin_in:,:], axis=1, out=out_comp[:,dl,Nmin_out:,:])
+                    else:
+                        out_comp[:,dl,:,:] = 0
+
+            if multiindex[0] == 1: # + component
+                operand_comp = reduced_view_4(operand.data[multiindex],colatitude_axis)
+                multiindex_out = multiindex[1:]
+                out_comp = reduced_view_4(operand.data[multiindex_out],colatitude_axis)
+
+                # right now I'm just copying the output from Dp acting on the - component...
+                # hopefully there's a better way to do this in-place. The issues is that we need to
+                # sum: Dp um + Dm up
+                out_comp_copy = np.copy(out_comp)
+                for dl, l in enumerate(basis.local_l):
+                    Nmin_in = max( (l + r)//2, 0)
+                    if basis.regularity_allowed(l,multiindex_out):
+                        Dm = basis.xi(+1, l + r - 1) * basis.operator_matrix('D-', l, r)
+                        Nmin_out = max( (l + r - 1)//2, 0)
+                        out_comp_copy = np.copy(out_comp)
+                        apply_matrix(Dm, operand_comp[:,dl,Nmin_in:,:], axis=1, out=out_comp[:,dl,Nmin_out:,:])
+                    else:
+                        out_comp[:,dl,:,:] = 0
+                out_comp += out_comp_copy
 
 
 class CrossProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
