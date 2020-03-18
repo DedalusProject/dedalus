@@ -1384,6 +1384,21 @@ class BallBasis(RegularityBasis):
         li = self.local_l.index(ell)
         return (mi, li, self.n_slice(regindex, ell))
 
+    def radial_vector_3(self, comp, m, ell, regindex):
+        slices = self.radial_vector_slices(m, ell, regindex)
+        if slices is None:
+            return None
+        comp5 = reduced_view(comp, axis=self.axis, dim=self.dim)
+        return comp5[(slice(None),) + slices + (slice(None),)]
+
+
+def reduced_view(data, axis, dim):
+    shape = data.shape
+    Na = (int(np.prod(shape[:axis])),)
+    Nb = shape[axis:axis+dim]
+    Nc = (int(np.prod(shape[axis+dim:])),)
+    return data.reshape(Na+Nb+Nc)
+
 
 class ConvertBall(operators.Convert, operators.SphericalEllOperator):
     """Jacobi polynomial conversion."""
@@ -1391,6 +1406,10 @@ class ConvertBall(operators.Convert, operators.SphericalEllOperator):
     input_basis_type = BallBasis
     output_basis_type = BallBasis
     separable = False
+
+    def regindex_out(self, regindex_in):
+        # Doesn't couple components
+        return (regindex_in,)
 
     def radial_matrix(self, regtotal, ell):
         dk = self.bases[0].k - self.input_basis.k

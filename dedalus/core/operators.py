@@ -1488,27 +1488,28 @@ class SphericalEllOperator(LinearOperator, metaclass=MultiClass):
         """Perform operation."""
         operand = self.args[0]
         basis = self.input_basis
-        layout = operand.layout
         # Set output layout
-        out.set_layout(layout)
+        out.set_layout(operand.layout)
         out.data[:] = 0
         # Apply operator
-        R = basis.regularity_classes(operand.tensorsig)
-        for regindex, regtotal in np.ndenumerate(R):
-            # Need reduced view 5 here...
-            reduced_input = operand.data[regindex]
-            reduced_output = out.data[regindex]
-            for m in basis.local_m:
-                for ell in basis.local_l:
-                    radial_vector_slices = basis.radial_vector_slices(m, ell, regindex)
-                    if radial_vector_slices:
-                        A = self.radial_matrix(regtotal, ell)
-                        x = reduced_input[radial_vector_slices]
-                        y = reduced_output[radial_vector_slices]
-                        apply_matrix(A, x, axis=0, out=y)
+        R_in = basis.regularity_classes(operand.tensorsig)
+        for regindex_in, regtotal_in in np.ndenumerate(R_in):
+            for regindex_out in self.regindex_out(regindex_in):
+                comp_in = operand.data[regindex_in]
+                comp_out = out.data[regindex_out]
+                for m in basis.local_m:
+                    for ell in basis.local_l:
+                        vec3_in = basis.radial_vector_3(comp_in, m, ell, regindex_in)
+                        vec3_out = basis.radial_vector_3(comp_out, m, ell, regindex_out)
+                        if (vec3_in is not None) and (vec3_out is not None):
+                            A = self.radial_matrix(regtotal_in, ell)
+                            apply_matrix(A, vec3_in, axis=1, out=vec3_out)
 
-def radial_matrix(regtotal, ell):
-    raise NotImplementedError()
+    def regindex_out(self, regindex_in):
+        raise NotImplementedError()
+
+    def radial_matrix(regtotal, ell):
+        raise NotImplementedError()
 
 
 
