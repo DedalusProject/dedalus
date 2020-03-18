@@ -1120,7 +1120,10 @@ def convert(arg, bases):
 
     # Apply iteratively
     for basis in bases:
-        arg = Convert1D(arg, basis.coord, basis)
+        if issubclass(basis, MultidimensionalBasis):
+            arg = ConvertMultiD(arg, basis)
+        else:
+            arg = Convert1D(arg, basis.coord, basis)
     return arg
 
 
@@ -1258,6 +1261,18 @@ class Convert1DSame(Convert1D):
 #             out.data.fill(0)
 #             mask = out.local_elements()[axis] == 0
 #             out.data[axindex(axis, mask)] = operand.data / output_basis.const
+
+
+class ConvertMultiD(LinearOperator, metaclass=MultiClass):
+    """
+    Convert bases for a MultidimensionalBasis.
+
+    Parameters
+    ----------
+    operand : Operand object
+    output_basis : MultidimensionalBasis object
+
+    """
 
 
 class Gradient(LinearOperator, metaclass=MultiClass):
