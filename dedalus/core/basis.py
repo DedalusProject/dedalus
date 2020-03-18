@@ -399,7 +399,7 @@ def ChebyshevU(*args, **kw):
     return Ultraphserical(*args, alpha=1, **kw)
 
 
-class ConvertJacobiJacobi(operators.Convert1D):
+class ConvertJacobiJacobi(operators.Convert, operators.LinearOperator1D):
     """Jacobi polynomial conversion."""
 
     input_basis_type = Jacobi
@@ -991,21 +991,24 @@ class RegularityBasis(MultidimensionalBasis):
         local_l_elements = layout.local_elements(self.domain, scales=1)[self.axis+1]
         return tuple(self.sphere_basis.degrees[local_l_elements])
 
+    @CachedAttribute
+    def local_m(self):
+        layout = self.dist.coeff_layout
+        local_m_elements = layout.local_elements(self.domain, scales=1)[self.axis]
+        return tuple(self.sphere_basis.azimuth_basis.wavenumbers[local_m_elements])
+
     @CachedMethod
     def xi(self,mu,l):
-        import dedalus_sphere
         return dedalus_sphere.intertwiner.xi(mu,l)
 
     @CachedMethod
     def regularity_allowed(self,l,regularity):
-        import dedalus_sphere
         Rb = np.array([-1, 1, 0], dtype=int)
         if regularity == (): return True
         return not dedalus_sphere.intertwiner.forbidden_regularity(l,Rb[np.array(regularity)])
 
     @CachedMethod
     def radial_recombinations(self, tensorsig):
-        import dedalus_sphere
         # For now only implement recombinations for Ball-only tensors
         for vs in tensorsig:
             if self.coordsystem is not vs:
@@ -1189,7 +1192,6 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
 
     @CachedMethod
     def k_vector(self,mu,m,s,local_l):
-        import dedalus_sphere
         vector = np.zeros(len(local_l))
         Lmin = max(abs(m),abs(s),abs(s+mu))
         for i,l in enumerate(local_l):
@@ -1226,6 +1228,17 @@ class BallBasis(RegularityBasis):
                                     self.backward_transform_colatitude,
                                     self.backward_transform_radius]
         self.grid_params = (coordsystem, radius, alpha)
+
+    def __eq__(self, other):
+        if isinstance(other, BallBasis):
+            if self.coordsystem == other.coordsystem:
+                if self.grid_params == other.grid_params:
+                    if self.k == other.k:
+                        return True
+        return False
+
+    def __hash__(self):
+        return id(self)
 
     def __add__(self, other):
         if other is None:
@@ -1323,7 +1336,6 @@ class BallBasis(RegularityBasis):
 
     @CachedMethod
     def operator_matrix(self,op,l,deg):
-        import dedalus_sphere
         return dedalus_sphere.ball.operator(3,op,self.Nmax,self.k,l,deg,radius=self.radius,alpha=self.alpha).astype(np.float64)
 
     def regtotal(self, regindex):
@@ -1354,6 +1366,25 @@ class BallBasis(RegularityBasis):
         nmin, nmax = self.n_limits(regindex, ell, Nmax=Nmax)
         return slice(nmin, nmax+1)
 
+    def radial_vector_slices(self, m, ell, regindex):
+        if m > ell:
+            return None
+        if not self.regularity_allowed(ell, regindex):
+            return None
+        mi = self.local_m.index(m)
+        li = self.local_l.index(ell)
+        return (mi, li, self.n_slice(regindex, ell))
+
+
+class ConvertBall(operators.Convert, operators.SphericalEllOperator):
+    """Jacobi polynomial conversion."""
+
+    input_basis_type = BallBasis
+    output_basis_type = BallBasis
+    separable = False
+
+    def radial_matrix(self, regtotal, ell):
+        return self.input_basis.operator_matrix('E', ell, regtotal)
 
 
 class GradientBall(operators.SphericalGradient):

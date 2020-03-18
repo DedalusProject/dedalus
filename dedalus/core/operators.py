@@ -563,6 +563,44 @@ class LinearOperator(FutureField):
     First argument is expected to be the operand.
     """
 
+    def __init__(self, *args, **kw):
+        self.coord = args[1]
+        try:
+            self.axis = self.coord.axis
+        except AttributeError:
+            self.axis = self.coord.coords[0].axis
+        self.input_basis = args[0].bases[self.axis]
+        self.tensorsig = args[0].tensorsig
+        self.dtype = args[0].dtype
+        super().__init__(*args, **kw)
+
+    @CachedAttribute
+    def bases(self):
+        output_bases = list(self.operand.bases)  # copy input bases
+        output_bases[self.axis] = self.output_basis(self.input_basis)
+        return tuple(output_bases)
+
+    def check_conditions(self):
+        """Check that arguments are in a proper layout."""
+        last_axis = self.axis + self.input_basis.dim - 1
+        is_coeff = not self.operand.layout.grid_space[last_axis]
+        is_local = self.operand.layout.local[last_axis]
+        # Require coefficient space along operator axis
+        # Require locality along operator axis if non-separable
+        if self.separable:
+            return is_coeff
+        else:
+            return (is_coeff and is_local)
+
+    def enforce_conditions(self):
+        """Require arguments to be in a proper layout."""
+        last_axis = self.axis + self.input_basis.dim - 1
+        # Require coefficient space along operator axis
+        self.operand.require_coeff_space(last_axis)
+        # Require locality along operator axis if non-separable
+        if not self.separable:
+            self.operand.require_local(last_axis)
+
     @property
     def operand(self):
         # Set as a property rather than an attribute so it correctly updates during evaluation
@@ -669,12 +707,6 @@ class LinearOperator1D(LinearOperator):
         # Subclasses must implement
         raise NotImplementedError()
 
-    @CachedAttribute
-    def bases(self):
-        output_bases = list(self.operand.bases)  # copy input bases
-        output_bases[self.axis] = self.output_basis(self.input_basis)
-        return tuple(output_bases)
-
     def separability(self, *vars):
         """Determine separable dimensions of expression as a linear operator on specified variables."""
         # Start from operand separability
@@ -720,25 +752,6 @@ class LinearOperator1D(LinearOperator):
     @staticmethod
     def _subspace_entry(i, j, basis, *args):
         raise NotImplementedError()
-
-    def check_conditions(self):
-        """Check that arguments are in a proper layout."""
-        is_coeff = not self.operand.layout.grid_space[self.axis]
-        is_local = self.operand.layout.local[self.axis]
-        # Require coefficient space along operator axis
-        # Require locality along operator axis if non-separable
-        if self.separable:
-            return is_coeff
-        else:
-            return (is_coeff and is_local)
-
-    def enforce_conditions(self):
-        """Require arguments to be in a proper layout."""
-        # Require coefficient space along operator axis
-        self.operand.require_coeff_space(self.axis)
-        # Require locality along operator axis if non-separable
-        if not self.separable:
-            self.operand.require_local(self.axis)
 
     def operate(self, out):
         """Perform operation."""
@@ -1120,14 +1133,11 @@ def convert(arg, bases):
 
     # Apply iteratively
     for basis in bases:
-        if issubclass(basis, MultidimensionalBasis):
-            arg = ConvertMultiD(arg, basis)
-        else:
-            arg = Convert1D(arg, basis.coord, basis)
+        arg = Convert(arg, basis.coords[0], basis)
     return arg
 
 
-class Convert1D(LinearOperator1D, metaclass=MultiClass):
+class Convert(LinearOperator, metaclass=MultiClass):
     """
     Convert bases along one dimension.
 
@@ -1163,7 +1173,7 @@ class Convert1D(LinearOperator1D, metaclass=MultiClass):
 
     @property
     def base(self):
-        return Convert1D
+        return Convert
 
     def output_basis(self, input_basis):
         """Determine output basis."""
@@ -1195,15 +1205,16 @@ class Convert1D(LinearOperator1D, metaclass=MultiClass):
     #     return self.operand.simplify(*vars)
 
 
-class Convert1DSame(Convert1D):
+class ConvertSame(Convert):
     """Identity conversion."""
 
     @classmethod
     def _check_args(cls, operand, coord, output_basis, out=None):
         # Dispatch by operand and output basis
         if isinstance(operand, Operand):
-            if output_basis in operand.bases:
-                return True
+            for basis in operand.bases:
+                if output_basis == basis:
+                    return True
         return False
 
     def __new__(cls, operand, coord, output_basis, out=None):
@@ -1262,17 +1273,6 @@ class Convert1DSame(Convert1D):
 #             mask = out.local_elements()[axis] == 0
 #             out.data[axindex(axis, mask)] = operand.data / output_basis.const
 
-
-class ConvertMultiD(LinearOperator, metaclass=MultiClass):
-    """
-    Convert bases for a MultidimensionalBasis.
-
-    Parameters
-    ----------
-    operand : Operand object
-    output_basis : MultidimensionalBasis object
-
-    """
 
 
 class Gradient(LinearOperator, metaclass=MultiClass):
@@ -1482,6 +1482,35 @@ class SphericalGradient(Gradient):
                 else:
                     out_p[:,dl,:,:] = 0
 
+class SphericalEllOperator(LinearOperator, metaclass=MultiClass):
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        basis = self.input_basis
+        layout = operand.layout
+        # Set output layout
+        out.set_layout(layout)
+        out.data[:] = 0
+        # Apply operator
+        R = basis.regularity_classes(operand.tensorsig)
+        for regindex, regtotal in np.ndenumerate(R):
+            # Need reduced view 5 here...
+            reduced_input = operand.data[regindex]
+            reduced_output = out.data[regindex]
+            for m in basis.local_m:
+                for ell in basis.local_l:
+                    radial_vector_slices = basis.radial_vector_slices(m, ell, regindex)
+                    if radial_vector_slices:
+                        A = self.radial_matrix(regtotal, ell)
+                        x = reduced_input[radial_vector_slices]
+                        y = reduced_output[radial_vector_slices]
+                        apply_matrix(A, x, axis=0, out=y)
+
+def radial_matrix(regtotal, ell):
+    raise NotImplementedError()
+
+
 
 class Divergence(LinearOperator, metaclass=MultiClass):
 
@@ -1508,7 +1537,7 @@ class Divergence(LinearOperator, metaclass=MultiClass):
         return Divergence
 
 
-class SphericalDivergence(Gradient):
+class SphericalDivergence(Divergence):
 
     cs_type = coords.SphericalCoordinates
 
