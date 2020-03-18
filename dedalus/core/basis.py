@@ -1418,26 +1418,5 @@ class ConvertBall(operators.Convert, operators.SphericalEllOperator):
         return basis.conversion_matrix(ell, regtotal, dk)
 
 
-class GradientBall(operators.SphericalGradient):
-    """Gradient operator on the ball."""
-
-    input_basis_type = BallBasis
-    separable = False
-
-    @classmethod
-    def _check_args(cls, operand, cs, out=None):
-        # Dispatch by operand basis
-        #if isinstance(operand, Operand):
-        basis = operand.get_basis(cs)
-        if isinstance(basis, cls.input_basis_type):
-            return True
-        return False
-
-    @staticmethod
-    def output_basis(input_basis):
-        out = input_basis._new_k(input_basis.k + 1)
-        return out
-
-
 
 from . import transforms

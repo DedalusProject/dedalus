@@ -227,4 +227,13 @@ result = np.allclose(h['g'],hg)
 results.append(result)
 print(len(results), ':', result)
 
+# Divergence
+f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+f['g'] = x**3 + 2*y**3 + 3*z**3
+u = operators.Gradient(f, c)
+h = operators.Divergence(u,c).evaluate()
+hg = 6*x + 12*y + 18*z
+result = np.allclose(h['g'],hg)
+results.append(result)
+print(len(results), ':', result)
 
