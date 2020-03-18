@@ -1338,6 +1338,15 @@ class BallBasis(RegularityBasis):
     def operator_matrix(self,op,l,deg):
         return dedalus_sphere.ball.operator(3,op,self.Nmax,self.k,l,deg,radius=self.radius,alpha=self.alpha).astype(np.float64)
 
+    def conversion_matrix(self, ell, regtotal, dk):
+        for dki in range(dk):
+            Ek = dedalus_sphere.ball.operator(3, 'E', self.Nmax, self.k+dki, ell, regtotal, radius=self.radius, alpha=self.alpha)
+            if dki == 0:
+                E = Ek
+            else:
+                E = Ek @ E
+        return E.astype(np.float64)
+
     def regtotal(self, regindex):
         regorder = np.array([-1, 1, 0])
         if regindex == (): return 0
@@ -1384,7 +1393,8 @@ class ConvertBall(operators.Convert, operators.SphericalEllOperator):
     separable = False
 
     def radial_matrix(self, regtotal, ell):
-        return self.input_basis.operator_matrix('E', ell, regtotal)
+        dk = self.bases[0].k - self.input_basis.k
+        return self.input_basis.conversion_matrix(ell, regtotal, dk)
 
 
 class GradientBall(operators.SphericalGradient):
