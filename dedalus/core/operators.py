@@ -1446,7 +1446,7 @@ class SphericalEllOperator(LinearOperator, metaclass=MultiClass):
                         vec3_out = basis.radial_vector_3(comp_out, m, ell, regindex_out)
                         if (vec3_in is not None) and (vec3_out is not None):
                             A = self.radial_matrix(regindex_in, regindex_out, ell)
-                            apply_matrix(A, vec3_in, axis=1, out=vec3_out)
+                            vec3_out += apply_matrix(A, vec3_in, axis=1)
 
     def regindex_out(self, regindex_in):
         raise NotImplementedError()
@@ -1493,9 +1493,9 @@ class SphericalGradient(Gradient, SphericalEllOperator):
         basis = self.input_basis
         regtotal = basis.regtotal(regindex_in)
         if regindex_out[0] == 0:
-            return basis.xi(-1, ell+regtotal)*basis.operator_matrix('D-', ell, regtotal)
+            return basis.xi(-1, ell+regtotal) * basis.operator_matrix('D-', ell, regtotal)
         elif regindex_out[0] == 1:
-            return basis.xi(+1, ell+regtotal)*basis.operator_matrix('D+', ell, regtotal)
+            return basis.xi(+1, ell+regtotal) * basis.operator_matrix('D+', ell, regtotal)
         else:
             raise ValueError("This should never happen")
 
@@ -1525,7 +1525,7 @@ class Divergence(LinearOperator, metaclass=MultiClass):
         return Divergence
 
 
-class SphericalDivergence(Divergence):
+class SphericalDivergence(Divergence, SphericalEllOperator):
 
     cs_type = coords.SphericalCoordinates
 
@@ -1554,51 +1554,23 @@ class SphericalDivergence(Divergence):
         self.args[0].require_coeff_space(self.radius_axis)
         self.args[0].require_local(self.radius_axis)
 
-    def operate(self, out):
-        """Perform operation."""
-        import dedalus_sphere
-        operand = self.args[0]
-        basis = operand.domain.get_basis(self.cs.coords[2])
-        colatitude_axis = self.radius_axis - 1
-        layout = operand.layout
-        # Set output layout
-        out.set_layout(layout)
-        out.data[:] = 0
-        # Apply operator
-        R = basis.regularity_classes(operand.tensorsig)
-        for multiindex, r in np.ndenumerate(R):
+    def regindex_out(self, regindex_in):
+        # Regorder: -, +, 0
+        # Divergence feels - and +
+        if regindex_in[0] in (0, 1):
+            return (regindex_in[1:],)
+        else:
+            return tuple()
 
-            if multiindex[0] == 0: # - component
-                operand_comp = reduced_view_4(operand.data[multiindex],colatitude_axis)
-                multiindex_out = multiindex[1:]
-                out_comp = reduced_view_4(out.data[multiindex_out],colatitude_axis)
-
-                for dl, l in enumerate(basis.local_l):
-                    Nmin_in = max( (l + r)//2, 0)
-                    if basis.regularity_allowed(l,multiindex):
-                        Dp = basis.xi(-1, l + r + 1) * basis.operator_matrix('D+', l, r)
-                        Nmin_out = max( (l + r + 1)//2, 0)
-                        x = operand_comp[:,dl,Nmin_in:,:]
-                        y = out_comp[:,dl,Nmin_out:,:]
-                        apply_matrix(Dp, x, axis=1, out=y)
-
-            if multiindex[0] == 1: # + component
-                operand_comp = reduced_view_4(operand.data[multiindex],colatitude_axis)
-                multiindex_out = multiindex[1:]
-                out_comp = reduced_view_4(out.data[multiindex_out],colatitude_axis)
-
-                # right now I'm just copying the output from Dp acting on the - component...
-                # hopefully there's a better way to do this in-place. The issues is that we need to
-                # sum: Dp um + Dm up
-                out_comp_copy = np.copy(out_comp)
-                for dl, l in enumerate(basis.local_l):
-                    Nmin_in = max( (l + r)//2, 0)
-                    if basis.regularity_allowed(l,multiindex_out):
-                        Dm = basis.xi(+1, l + r - 1) * basis.operator_matrix('D-', l, r)
-                        Nmin_out = max( (l + r - 1)//2, 0)
-                        x = operand_comp[:,dl,Nmin_in:,:]
-                        y = out_comp[:,dl,Nmin_out:,:]
-                        y += apply_matrix(Dm, x, axis=1)
+    def radial_matrix(self, regindex_in, regindex_out, ell):
+        basis = self.input_basis
+        regtotal = basis.regtotal(regindex_in)
+        if regindex_in[0] == 0:
+            return basis.xi(-1, ell+regtotal+1) * basis.operator_matrix('D+', ell, regtotal)
+        elif regindex_in[0] == 1:
+            return basis.xi(+1, ell+regtotal-1) * basis.operator_matrix('D-', ell, regtotal)
+        else:
+            raise ValueError("This should never happen")
 
 
 class CrossProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
