@@ -273,3 +273,12 @@ result = np.allclose(v['g'],v0)
 results.append(result)
 print(len(results), ':', result)
 
+# 2nd order Convert test
+u['g']
+v['g']
+op = u + v
+w = op.evaluate()
+result = np.allclose(w['g'],u['g']+v['g'])
+results.append(result)
+print(len(results), ':', result)
+
