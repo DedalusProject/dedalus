@@ -1335,8 +1335,8 @@ class BallBasis(RegularityBasis):
         self.backward_regularity_recombination(field, axis, gdata)
 
     @CachedMethod
-    def operator_matrix(self,op,l,deg):
-        return dedalus_sphere.ball.operator(3,op,self.Nmax,self.k,l,deg,radius=self.radius,alpha=self.alpha).astype(np.float64)
+    def operator_matrix(self,op,l,deg,dk=0):
+        return dedalus_sphere.ball.operator(3,op,self.Nmax,self.k+dk,l,deg,radius=self.radius,alpha=self.alpha).astype(np.float64)
 
     def conversion_matrix(self, ell, regtotal, dk):
         for dki in range(dk):

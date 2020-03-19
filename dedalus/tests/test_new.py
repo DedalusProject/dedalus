@@ -231,21 +231,39 @@ print(len(results), ':', result)
 f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
 f['g'] = x**3 + 2*y**3 + 3*z**3
 u = operators.Gradient(f, c)
-h = operators.Divergence(u,c).evaluate()
+h = operators.Divergence(u).evaluate()
 hg = 6*x + 12*y + 18*z
 result = np.allclose(h['g'],hg)
 results.append(result)
 print(len(results), ':', result)
 
 # Curl
-f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
-f['g'] = x**2 + y**2 + z**2   # f = r^2
-g = field.Field(dist=d, bases=(b,), dtype=np.complex128)
-g['g'] = z   # f = r^2
-u = operators.Gradient(f, c).evaluate()  # u = 2 r e_r
-v = operators.Gradient(g, c).evaluate()  # v = e_z
-w = operators.CrossProduct(v, u).evaluate()  # w = u x v
-q = operators.Curl(w, c).evaluate()
-result = np.allclose(q['g'], 4*v['g'])
+u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
+ct = np.cos(theta)
+st = np.sin(theta)
+cp = np.cos(phi)
+sp = np.sin(phi)
+u['g'][2] = r**2*st*(2*ct**2*cp-r*ct**3*sp+r**3*cp**3*st**5*sp**3+r*ct*st**2*(cp**3+sp**3))
+u['g'][1] = r**2*(2*ct**3*cp-r*cp**3*st**4+r**3*ct*cp**3*st**5*sp**3-1/16*r*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
+u['g'][0] = r**2*sp*(-2*ct**2+r*ct*cp*st**2*sp-r**3*cp**2*st**5*sp**3)
+v = operators.Curl(u).evaluate()
+v0 = 0*u['g']
+v0[2] = -r*st*(r*ct**2*cp+r*cp*st**2*sp*(3*cp+sp)+ct*sp*(-4+3*r**3*cp**2*st**3*sp))
+v0[1] = r*(-r*ct**3*cp+4*ct**2*sp+3*r**3*cp**2*st**5*sp**2-r*ct*cp*st**2*sp*(3*cp+sp))
+v0[0] = r*(4*ct*cp+r*ct**2*sp+r*st**2*(-3*cp**3+sp**3))
+result = np.allclose(v['g'],v0)
 results.append(result)
 print(len(results), ':', result)
+
+# Laplacian scalar
+f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+f['g'] = x**3 + 2*y**3 + 3*z**3
+h = operators.Laplacian(f, c).evaluate()
+result = np.allclose(h['g'],6*x+12*y+18*z)
+results.append(result)
+print(len(results), ':', result)
+
+# Laplacian vector
+
+
+

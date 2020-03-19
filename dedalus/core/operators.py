@@ -1504,16 +1504,16 @@ class Divergence(LinearOperator, metaclass=MultiClass):
 
     # should check that we're not taking div of a scalar
 
-    def __init__(self, operand, coords, out=None):
-        super().__init__(operand, coords, out=out)
-        self._operand = operand
+    def __init__(self, operand, out=None):
         self.cs = operand.tensorsig[0]
+        super().__init__(operand, self.cs, out=out)
+        self._operand = operand
 #        self.bases = operand.bases
         self.tensorsig = tuple(list(operand.tensorsig)[1:])
         self.dtype = operand.dtype
 
     @classmethod
-    def _check_args(cls, operand, coords, out=None):
+    def _check_args(cls, operand, out=None):
         # Dispatch by coordinate system
         if isinstance(operand, Operand):
             if isinstance(operand.tensorsig[0], cls.cs_type):
@@ -1529,8 +1529,8 @@ class SphericalDivergence(Divergence, SphericalEllOperator):
 
     cs_type = coords.SphericalCoordinates
 
-    def __init__(self, operand, coords, out=None):
-        super().__init__(operand, coords, out=out)
+    def __init__(self, operand, out=None):
+        super().__init__(operand, out=out)
         self.radius_axis = self.cs.coords[2].axis
 
     @CachedAttribute
@@ -1575,15 +1575,15 @@ class SphericalDivergence(Divergence, SphericalEllOperator):
 
 class Curl(LinearOperator, metaclass=MultiClass):
 
-    def __init__(self, operand, coords, out=None):
-        super().__init__(operand, coords, out=out)
-        self._operand = operand
+    def __init__(self, operand, out=None):
         self.cs = operand.tensorsig[0]
+        super().__init__(operand, self.cs, out=out)
+        self._operand = operand
         self.tensorsig = operand.tensorsig
         self.dtype = operand.dtype
 
     @classmethod
-    def _check_args(cls, operand, coords, out=None):
+    def _check_args(cls, operand, out=None):
         # Dispatch by coordinate system
         if isinstance(operand, Operand):
             if isinstance(operand.tensorsig[0], cls.cs_type):
@@ -1599,8 +1599,8 @@ class SphericalCurl(Curl, SphericalEllOperator):
 
     cs_type = coords.SphericalCoordinates
 
-    def __init__(self, operand, coords, out=None):
-        super().__init__(operand, coords, out=out)
+    def __init__(self, operand, out=None):
+        super().__init__(operand, out=out)
         self.radius_axis = self.cs.coords[2].axis
 
     @CachedAttribute
@@ -1646,6 +1646,66 @@ class SphericalCurl(Curl, SphericalEllOperator):
             return 1j * basis.xi(-1, ell+regtotal) * basis.operator_matrix('D+', ell, regtotal)
         else:
             raise ValueError("This should never happen")
+
+
+class Laplacian(LinearOperator, metaclass=MultiClass):
+
+    def __init__(self, operand, coords, out=None):
+        super().__init__(operand, coords, out=out)
+        self._operand = operand
+        self.cs = coords
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
+
+    @classmethod
+    def _check_args(cls, operand, coords, out=None):
+        # Dispatch by coordinate system
+        if isinstance(operand, Operand):
+            if isinstance(coords, cls.cs_type):
+                return True
+        return False
+
+    @property
+    def base(self):
+        return Laplacian
+
+
+class SphericalLaplacian(Laplacian, SphericalEllOperator):
+
+    cs_type = coords.SphericalCoordinates
+
+    def __init__(self, operand, coords, out=None):
+        super().__init__(operand, coords, out=out)
+        self.radius_axis = self.cs.coords[2].axis
+
+    @CachedAttribute
+    def bases(self):
+        return [self.output_basis(self.operand.bases[0])]
+
+    @staticmethod
+    def output_basis(input_basis):
+        out = input_basis._new_k(input_basis.k + 2)
+        return out
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Require radius to be in coefficient space
+        layout = self.args[0].layout
+        return (not layout.grid_space[self.radius_axis]) and (layout.local[self.radius_axis])
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Require radius to be in coefficient space
+        self.args[0].require_coeff_space(self.radius_axis)
+        self.args[0].require_local(self.radius_axis)
+
+    def regindex_out(self, regindex_in):
+        return (regindex_in,)
+
+    def radial_matrix(self, regindex_in, regindex_out, ell):
+        basis = self.input_basis
+        regtotal = basis.regtotal(regindex_in)
+        return basis.operator_matrix('D-', ell+1, regtotal, dk=1) @ basis.operator_matrix('D+', ell, regtotal)
 
 
 class CrossProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
