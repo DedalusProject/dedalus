@@ -7,6 +7,7 @@ from functools import reduce
 import numpy as np
 from scipy import sparse
 import itertools
+import operator
 
 from .field import Operand, Array, Field
 from .future import Future, FutureArray, FutureField
@@ -436,9 +437,18 @@ class MultiplyFields(Multiply, FutureField):
         super().__init__(*args, **kw)
         # Find required grid axes
         # Require grid space if more than one argument has nonconstant basis
-        ax_bases = zip(*(arg.bases for arg in self.args))
+        ax_bases = tuple(zip(*(arg.bases for arg in self.args)))
         nonconst_ax_bases = [[b for b in bases if b is not None] for bases in ax_bases]
         self.required_grid_axes = [len(bases) > 1 for bases in nonconst_ax_bases]
+        self.bases = tuple(reduce(operator.mul, bases) for bases in ax_bases)
+
+    @CachedAttribute
+    def tensorsig(self):
+        return sum((arg.tensorsig for arg in self.args), tuple())
+
+    @CachedAttribute
+    def dtype(self):
+        return np.result_type(*[arg.dtype for arg in self.args])
 
     def check_conditions(self):
         """Check that arguments are in a proper layout."""
@@ -467,10 +477,19 @@ class MultiplyFields(Multiply, FutureField):
     def operate(self, out):
         """Perform operation."""
         args = self.args
+        out_order = len(self.tensorsig)
         # Set output layout
         out.set_layout(args[0].layout)
-        # Multiply all argument data
-        args_data = [arg.data for arg in args]
+        # Multiply all argument data, reshaped by tensorsig
+        args_data = []
+        start_index = 0
+        for arg in args:
+            arg_order = len(arg.tensorsig)
+            arg_shape = arg.data.shape
+            shape = [1,] * out_order + list(arg_shape[arg_order:])
+            shape[start_index: start_index + arg_order] = arg_shape[:arg_order]
+            args_data.append(arg.data.reshape(shape))
+            start_index += arg_order
         # OPTIMIZE: less intermediate arrays?
         np.copyto(out.data, reduce(np.multiply, args_data))
 

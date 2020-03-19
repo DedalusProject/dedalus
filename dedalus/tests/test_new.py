@@ -282,3 +282,54 @@ result = np.allclose(w['g'],u['g']+v['g'])
 results.append(result)
 print(len(results), ':', result)
 
+# ScalarField - ScalarField multiplication
+f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+f['g'] = x**3 + 2*y**3 + 3*z**3
+g = (f * f).evaluate()
+result = np.allclose(g['g'], f['g']**2)
+results.append(result)
+print(len(results), ':', result)
+
+# ScalarField - VectorField multiplication
+u = operators.Gradient(f, c).evaluate()
+v = (f * u).evaluate()
+result = np.allclose(v['g'], f['g'][None,...]*u['g'])
+results.append(result)
+print(len(results), ':', result)
+v = (u * f).evaluate()
+result = np.allclose(v['g'], u['g']*f['g'][None,...])
+results.append(result)
+print(len(results), ':', result)
+
+# VectorField - VectorField multiplication
+v = (u * u).evaluate()
+result = np.allclose(v['g'], u['g'][:,None,...]*u['g'][None,:,...])
+results.append(result)
+print(len(results), ':', result)
+
+# VectorField - TensorField multiplication
+T = operators.Gradient(u, c).evaluate()
+Q = (u * T).evaluate()
+result = np.allclose(Q['g'], u['g'][:,None,None,...]*T['g'][None,:,:,...])
+results.append(result)
+print(len(results), ':', result)
+Q = (T * u).evaluate()
+result = np.allclose(Q['g'], T['g'][:,:,None,...]*u['g'][None,None,:,...])
+results.append(result)
+print(len(results), ':', result)
+
+# TensorField - TensorField multiplication
+Q = (T * T).evaluate()
+result = np.allclose(Q['g'], T['g'][:,:,None,None,...]*T['g'][None,None,:,:,...])
+results.append(result)
+print(len(results), ':', result)
+
+# Scalar - ScalarField multiplication
+# g = (2 * f).evaluate()
+# result = np.allclose(g['g'], 2*f['g'])
+# results.append(result)
+# print(len(results), ':', result)
+# g = (f * 2).evaluate()
+# result = np.allclose(g['g'], f['g']*2)
+# results.append(result)
+# print(len(results), ':', result)
