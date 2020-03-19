@@ -264,6 +264,12 @@ results.append(result)
 print(len(results), ':', result)
 
 # Laplacian vector
-
-
+v = operators.Laplacian(u, c).evaluate()
+v0 = 0*u['g']
+v0[2] = 2*(2+3*r*ct)*cp*st+1/2*r**3*st**4*(4*np.sin(2*phi)+np.sin(4*phi))
+v0[1] = 2*r*(-3*cp*st**2+sp)+1/2*ct*(8*cp+r**3*st**3*(4*np.sin(2*phi)+np.sin(4*phi)))
+v0[0] = 2*r*ct*cp+2*sp*(-2-r**3*(2+np.cos(2*phi))*st**3*sp)
+result = np.allclose(v['g'],v0)
+results.append(result)
+print(len(results), ':', result)
 
