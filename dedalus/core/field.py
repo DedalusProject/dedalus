@@ -454,7 +454,7 @@ class Field(Current):
                     raise ValueError("Overlapping bases specified.")
                 else:
                     full_bases[axis] = basis
-        return bases, full_bases
+        return tuple(bases), tuple(full_bases)
 
     def __getitem__(self, layout):
         """Return data viewed in specified layout."""

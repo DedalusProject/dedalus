@@ -1500,7 +1500,7 @@ class SphericalGradient(Gradient, SphericalEllOperator):
 
     @CachedAttribute
     def bases(self):
-        return [self.output_basis(self.operand.bases[0])]
+        return (self.output_basis(self.operand.bases[0]),)
 
     @staticmethod
     def output_basis(input_basis):
@@ -1576,7 +1576,7 @@ class SphericalDivergence(Divergence, SphericalEllOperator):
 
     @CachedAttribute
     def bases(self):
-        return [self.output_basis(self.operand.bases[0])]
+        return (self.output_basis(self.operand.bases[0]),)
 
     @staticmethod
     def output_basis(input_basis):
@@ -1652,7 +1652,7 @@ class SphericalCurl(Curl, SphericalEllOperator):
 
     @CachedAttribute
     def bases(self):
-        return [self.output_basis(self.operand.bases[0])]
+        return (self.output_basis(self.operand.bases[0]),)
 
     @staticmethod
     def output_basis(input_basis):
@@ -1733,7 +1733,7 @@ class SphericalLaplacian(Laplacian, SphericalEllOperator):
 
     @CachedAttribute
     def bases(self):
-        return [self.output_basis(self.operand.bases[0])]
+        return (self.output_basis(self.operand.bases[0]),)
 
     @staticmethod
     def output_basis(input_basis):

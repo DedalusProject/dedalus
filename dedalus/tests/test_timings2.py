@@ -4,6 +4,10 @@ from dedalus.core import coords, distributor, basis, field, operators
 from mpi4py import MPI
 import time
 
+import dedalus.tools.logging
+import logging
+logger = logging.getLogger(__name__)
+
 comm = MPI.COMM_WORLD
 
 c = coords.SphericalCoordinates('phi', 'theta', 'r')

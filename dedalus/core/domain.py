@@ -34,7 +34,7 @@ def expand_spaces(spaces):
     return tuple(full_spaces)
 
 
-class Domain:
+class Domain(metaclass=CachedClass):
     """Object representing the direct product of a set of spaces."""
 
     # @classmethod
