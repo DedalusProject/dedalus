@@ -16,7 +16,7 @@ from . import coords
 from .field import Operand, Array, Field
 from .future import Future, FutureArray, FutureField
 from ..tools.array import reshape_vector, apply_matrix, add_sparse, axindex, axslice
-from ..tools.cache import CachedAttribute
+from ..tools.cache import CachedAttribute, CachedMethod
 from ..tools.dispatch import MultiClass
 from ..tools.exceptions import NonlinearOperatorError
 from ..tools.exceptions import SymbolicParsingError
@@ -1171,6 +1171,29 @@ class Convert(LinearOperator, metaclass=MultiClass):
     def __str__(self):
         return str(self.operand)
 
+    def check_conditions(self):
+        """Check that arguments are in a proper layout."""
+        last_axis = self.axis + self.input_basis.dim - 1
+        is_coeff = not self.operand.layout.grid_space[last_axis]
+        is_local = self.operand.layout.local[last_axis]
+        # Allow conversion in grid space
+        if not is_coeff:
+            return True
+        # In coeff space, require locality if non-separable
+        if self.separable:
+            return True
+        else:
+            return is_local
+
+    def enforce_conditions(self):
+        """Require arguments to be in a proper layout."""
+        last_axis = self.axis + self.input_basis.dim - 1
+        is_coeff = not self.operand.layout.grid_space[last_axis]
+        is_local = self.operand.layout.local[last_axis]
+        # Require locality if non-separable and in coeff space
+        if is_coeff and not self.separable:
+            self.operand.require_local(last_axis)
+
     @property
     def base(self):
         return Convert
@@ -1203,6 +1226,18 @@ class Convert(LinearOperator, metaclass=MultiClass):
     #     """Simplify expression, except subtrees containing specified variables."""
     #     # Simplify operand, skipping conversion
     #     return self.operand.simplify(*vars)
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.operand
+        layout = operand.layout
+        last_axis = self.axis + self.input_basis.dim - 1
+        # Revert to matrix application for coeff space
+        if not layout.grid_space[last_axis]:
+            super().operate(out)
+        # Copy for grid space
+        out.set_layout(layout)
+        np.copyto(out.data, operand.data)
 
 
 class ConvertSame(Convert):
@@ -1492,9 +1527,15 @@ class SphericalGradient(Gradient, SphericalEllOperator):
     def radial_matrix(self, regindex_in, regindex_out, ell):
         basis = self.input_basis
         regtotal = basis.regtotal(regindex_in)
-        if regindex_out[0] == 0:
+        # Cache based on actual arguments
+        return self._radial_matrix(basis, regindex_out[0], regtotal, ell)
+
+    @staticmethod
+    @CachedMethod
+    def _radial_matrix(basis, regindex_out0, regtotal, ell):
+        if regindex_out0 == 0:
             return basis.xi(-1, ell+regtotal) * basis.operator_matrix('D-', ell, regtotal)
-        elif regindex_out[0] == 1:
+        elif regindex_out0 == 1:
             return basis.xi(+1, ell+regtotal) * basis.operator_matrix('D+', ell, regtotal)
         else:
             raise ValueError("This should never happen")
@@ -1502,7 +1543,7 @@ class SphericalGradient(Gradient, SphericalEllOperator):
 
 class Divergence(LinearOperator, metaclass=MultiClass):
 
-    # should check that we're not taking div of a scalar
+    # should check that we're not taking div of a scalar'
 
     def __init__(self, operand, out=None):
         self.cs = operand.tensorsig[0]
@@ -1565,9 +1606,15 @@ class SphericalDivergence(Divergence, SphericalEllOperator):
     def radial_matrix(self, regindex_in, regindex_out, ell):
         basis = self.input_basis
         regtotal = basis.regtotal(regindex_in)
-        if regindex_in[0] == 0:
+        # Cache based on actual arguments
+        return self._radial_matrix(basis, regindex_in[0], regtotal, ell)
+
+    @staticmethod
+    @CachedMethod
+    def _radial_matrix(basis, regindex_in0, regtotal, ell):
+        if regindex_in0 == 0:
             return basis.xi(-1, ell+regtotal+1) * basis.operator_matrix('D+', ell, regtotal)
-        elif regindex_in[0] == 1:
+        elif regindex_in0 == 1:
             return basis.xi(+1, ell+regtotal-1) * basis.operator_matrix('D-', ell, regtotal)
         else:
             raise ValueError("This should never happen")
@@ -1636,13 +1683,19 @@ class SphericalCurl(Curl, SphericalEllOperator):
     def radial_matrix(self, regindex_in, regindex_out, ell):
         basis = self.input_basis
         regtotal = basis.regtotal(regindex_in)
-        if regindex_in[0] == 0 and regindex_out[0] == 2:
+        # Cache based on actual arguments
+        return self._radial_matrix(basis, regindex_in[0], regindex_out[0], regtotal, ell)
+
+    @staticmethod
+    @CachedMethod
+    def _radial_matrix(basis, regindex_in0, regindex_out0, regtotal, ell):
+        if regindex_in0 == 0 and regindex_out0 == 2:
             return -1j * basis.xi(+1, ell+regtotal+1) * basis.operator_matrix('D+', ell, regtotal)
-        elif regindex_in[0] == 1 and regindex_out[0] == 2:
+        elif regindex_in0 == 1 and regindex_out0 == 2:
             return 1j * basis.xi(-1, ell+regtotal-1) * basis.operator_matrix('D-', ell, regtotal)
-        elif regindex_in[0] == 2 and regindex_out[0] == 0:
+        elif regindex_in0 == 2 and regindex_out0 == 0:
             return -1j * basis.xi(+1, ell+regtotal) * basis.operator_matrix('D-', ell, regtotal)
-        elif regindex_in[0] == 2 and regindex_out[0] == 1:
+        elif regindex_in0 == 2 and regindex_out0 == 1:
             return 1j * basis.xi(-1, ell+regtotal) * basis.operator_matrix('D+', ell, regtotal)
         else:
             raise ValueError("This should never happen")
@@ -1705,6 +1758,12 @@ class SphericalLaplacian(Laplacian, SphericalEllOperator):
     def radial_matrix(self, regindex_in, regindex_out, ell):
         basis = self.input_basis
         regtotal = basis.regtotal(regindex_in)
+        # Cache based on actual arguments
+        return self._radial_matrix(basis, regtotal, ell)
+
+    @staticmethod
+    @CachedMethod
+    def _radial_matrix(basis, regtotal, ell):
         return basis.operator_matrix('D-', ell+1, regtotal, dk=1) @ basis.operator_matrix('D+', ell, regtotal)
 
 
