@@ -6,6 +6,8 @@ Abstract and built-in classes for spectral bases.
 import math
 import numpy as np
 from scipy import sparse
+from functools import reduce
+import operator
 
 from . import operators
 from ..tools.array import axslice
@@ -1349,10 +1351,9 @@ class BallBasis(RegularityBasis):
         return E.astype(np.float64)
 
     def regtotal(self, regindex):
-        regorder = np.array([-1, 1, 0])
-        if regindex == (): return 0
-        regsig = regorder[np.array(regindex)]
-        return regsig.sum()
+        regorder = [-1, 1, 0]
+        reg = lambda index: regorder[index]
+        return sum(reg(index) for index in regindex)
 
     def n_limits(self, regindex, ell, Nmax=None):
         if Nmax == None: Nmax = self.Nmax
@@ -1376,6 +1377,7 @@ class BallBasis(RegularityBasis):
         nmin, nmax = self.n_limits(regindex, ell, Nmax=Nmax)
         return slice(nmin, nmax+1)
 
+    @CachedMethod
     def radial_vector_slices(self, m, ell, regindex):
         if m > ell:
             return None
@@ -1393,11 +1395,18 @@ class BallBasis(RegularityBasis):
         return comp5[(slice(None),) + slices + (slice(None),)]
 
 
+def prod(arg):
+    if arg:
+        return reduce(operator.mul, arg)
+    else:
+        return 1
+
+
 def reduced_view(data, axis, dim):
     shape = data.shape
-    Na = (int(np.prod(shape[:axis])),)
+    Na = (int(prod(shape[:axis])),)
     Nb = shape[axis:axis+dim]
-    Nc = (int(np.prod(shape[axis+dim:])),)
+    Nc = (int(prod(shape[axis+dim:])),)
     return data.reshape(Na+Nb+Nc)
 
 
