@@ -1341,6 +1341,10 @@ class BallBasis(RegularityBasis):
         return dedalus_sphere.ball.operator(3,op,self.Nmax,self.k+dk,l,deg,radius=self.radius,alpha=self.alpha).astype(np.float64)
 
     @CachedMethod
+    def zeros_matrix(self,l,deg_in,deg_out):
+        return dedalus_sphere.ball.zeros(self.Nmax,l,deg_out,deg_in)
+
+    @CachedMethod
     def conversion_matrix(self, ell, regtotal, dk):
         for dki in range(dk):
             Ek = dedalus_sphere.ball.operator(3, 'E', self.Nmax, self.k+dki, ell, regtotal, radius=self.radius, alpha=self.alpha)

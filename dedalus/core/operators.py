@@ -683,7 +683,7 @@ class LinearOperator(FutureField):
         operator_mat = self.subproblem_matrix(subproblem)
         return {var: operator_mat @ operand_mats[var] for var in operand_mats}
 
-    def subproblem_matrix(subproblem):
+    def subproblem_matrix(self, subproblem):
         """Build operator matrix for a specific subproblem."""
         raise NotImplementedError()
 
@@ -1483,6 +1483,24 @@ class SphericalEllOperator(LinearOperator, metaclass=MultiClass):
                             A = self.radial_matrix(regindex_in, regindex_out, ell)
                             vec3_out += apply_matrix(A, vec3_in, axis=1)
 
+    def subproblem_matrix(self, subproblem):
+        operand = self.args[0]
+        R_in = self.input_basis.regularity_classes(operand.tensorsig)
+        R_out = self.input_basis.regularity_classes(self.tensorsig)
+
+        # need to get ell from subproblem -- don't know how to do this
+        ell = subproblem.ell
+
+        submatrices = []
+        for regindex_out, regtotal_out in np.ndenumerate(R_out):
+            submatrix_row = []
+            for regindex_in, regtotal_in in np.ndenumerate(R_in):
+                submatrix_row.append(self.radial_matrix(regindex_in, regindex_out, ell))
+            submatrices.append(submatrix_row)
+        matrix = sparse.bmat(submatrices)
+        matrix.tocsr()
+        return matrix
+
     def regindex_out(self, regindex_in):
         raise NotImplementedError()
 
@@ -1524,21 +1542,16 @@ class SphericalGradient(Gradient, SphericalEllOperator):
         # Gradients hits - and +
         return ((0,) + regindex_in, (1,) + regindex_in)
 
+    # Could probably cache this?
     def radial_matrix(self, regindex_in, regindex_out, ell):
         basis = self.input_basis
         regtotal = basis.regtotal(regindex_in)
-        # Cache based on actual arguments
-        return self._radial_matrix(basis, regindex_out[0], regtotal, ell)
-
-    @staticmethod
-    @CachedMethod
-    def _radial_matrix(basis, regindex_out0, regtotal, ell):
-        if regindex_out0 == 0:
+        if regindex_out[0] == 0 and regindex_in == regindex_out[1:]:
             return basis.xi(-1, ell+regtotal) * basis.operator_matrix('D-', ell, regtotal)
-        elif regindex_out0 == 1:
+        elif regindex_out[0] == 1 and regindex_in == regindex_out[1:]:
             return basis.xi(+1, ell+regtotal) * basis.operator_matrix('D+', ell, regtotal)
         else:
-            raise ValueError("This should never happen")
+            return basis.zeros_matrix(ell, basis.regtotal(regindex_in), basis.regtotal(regindex_out))
 
 
 class Divergence(LinearOperator, metaclass=MultiClass):
@@ -1603,21 +1616,16 @@ class SphericalDivergence(Divergence, SphericalEllOperator):
         else:
             return tuple()
 
+    # Could probably cache this?
     def radial_matrix(self, regindex_in, regindex_out, ell):
         basis = self.input_basis
         regtotal = basis.regtotal(regindex_in)
-        # Cache based on actual arguments
-        return self._radial_matrix(basis, regindex_in[0], regtotal, ell)
-
-    @staticmethod
-    @CachedMethod
-    def _radial_matrix(basis, regindex_in0, regtotal, ell):
-        if regindex_in0 == 0:
+        if regindex_in[0] == 0 and regindex_in[1:] == regindex_out:
             return basis.xi(-1, ell+regtotal+1) * basis.operator_matrix('D+', ell, regtotal)
-        elif regindex_in0 == 1:
+        elif regindex_in[0] == 1 and regindex_in[1:] == regindex_out:
             return basis.xi(+1, ell+regtotal-1) * basis.operator_matrix('D-', ell, regtotal)
         else:
-            raise ValueError("This should never happen")
+            return basis.zeros_matrix(ell, basis.regtotal(regindex_in), basis.regtotal(regindex_out))
 
 
 class Curl(LinearOperator, metaclass=MultiClass):
@@ -1680,25 +1688,20 @@ class SphericalCurl(Curl, SphericalEllOperator):
         else:
             return ((0,) + regindex_in[1:], (1,) + regindex_in[1:])
 
+    # Could probably cache thing?
     def radial_matrix(self, regindex_in, regindex_out, ell):
         basis = self.input_basis
         regtotal = basis.regtotal(regindex_in)
-        # Cache based on actual arguments
-        return self._radial_matrix(basis, regindex_in[0], regindex_out[0], regtotal, ell)
-
-    @staticmethod
-    @CachedMethod
-    def _radial_matrix(basis, regindex_in0, regindex_out0, regtotal, ell):
-        if regindex_in0 == 0 and regindex_out0 == 2:
+        if regindex_in[0] == 0 and regindex_out[0] == 2 and regindex_in[1:] == regindex_out[1:]:
             return -1j * basis.xi(+1, ell+regtotal+1) * basis.operator_matrix('D+', ell, regtotal)
-        elif regindex_in0 == 1 and regindex_out0 == 2:
+        elif regindex_in[0] == 1 and regindex_out[0] == 2 and regindex_in[1:] == regindex_out[1:]:
             return 1j * basis.xi(-1, ell+regtotal-1) * basis.operator_matrix('D-', ell, regtotal)
-        elif regindex_in0 == 2 and regindex_out0 == 0:
+        elif regindex_in[0] == 2 and regindex_out[0] == 0 and regindex_in[1:] == regindex_out[1:]:
             return -1j * basis.xi(+1, ell+regtotal) * basis.operator_matrix('D-', ell, regtotal)
-        elif regindex_in0 == 2 and regindex_out0 == 1:
+        elif regindex_in[0] == 2 and regindex_out[0] == 1 and regindex_in[1:] == regindex_out[1:]:
             return 1j * basis.xi(-1, ell+regtotal) * basis.operator_matrix('D+', ell, regtotal)
         else:
-            raise ValueError("This should never happen")
+            return basis.zeros_matrix(ell, basis.regtotal(regindex_in), basis.regtotal(regindex_out))
 
 
 class Laplacian(LinearOperator, metaclass=MultiClass):
@@ -1755,16 +1758,14 @@ class SphericalLaplacian(Laplacian, SphericalEllOperator):
     def regindex_out(self, regindex_in):
         return (regindex_in,)
 
+    # Could probably cache this?
     def radial_matrix(self, regindex_in, regindex_out, ell):
         basis = self.input_basis
         regtotal = basis.regtotal(regindex_in)
-        # Cache based on actual arguments
-        return self._radial_matrix(basis, regtotal, ell)
-
-    @staticmethod
-    @CachedMethod
-    def _radial_matrix(basis, regtotal, ell):
-        return basis.operator_matrix('D-', ell+1, regtotal, dk=1) @ basis.operator_matrix('D+', ell, regtotal)
+        if regindex_in == regindex_out:
+            return basis.operator_matrix('D-', ell+1, regtotal, dk=1) @ basis.operator_matrix('D+', ell, regtotal)
+        else:
+            return basis.zeros_matrix(ell, basis.regtotal(regindex_in), basis.regtotal(regindex_out))
 
 
 class CrossProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
