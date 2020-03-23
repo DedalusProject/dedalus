@@ -1398,6 +1398,13 @@ class BallBasis(RegularityBasis):
         comp5 = reduced_view(comp, axis=self.axis, dim=self.dim)
         return comp5[(slice(None),) + slices + (slice(None),)]
 
+    def field_radial_size(self, field, ell):
+        comp_sizes = []
+        R = self.regularity_classes(field.tensorsig)
+        for regindex, regtotal in np.ndenumerate(R):
+            comp_sizes.append(self.n_size(regindex, ell))
+        return sum(comp_sizes)
+
 
 def prod(arg):
     if arg:

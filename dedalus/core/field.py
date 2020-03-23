@@ -290,9 +290,11 @@ class Current(Operand):
         """Build expression matrices for a specific subproblem and variables."""
         self.require_linearity(*vars)
         # Build identity matrices over subproblem data
-        group_shape = subproblem.group_shape(self.domain)
-        factors = (sparse.identity(n, format='csr') for n in group_shape)
-        matrix = reduce(sparse.kron, factors, 1).tocsr()
+        # group_shape = subproblem.group_shape(self.domain)
+        # factors = (sparse.identity(n, format='csr') for n in group_shape)
+        # matrix = reduce(sparse.kron, factors, 1).tocsr()
+        size = self.bases[0].field_radial_size(self, subproblem.ell)
+        matrix = sparse.identity(size, format='csr')
         return {self: matrix}
 
     # def setup_operator_matrix(self, separability, vars, **kw):
