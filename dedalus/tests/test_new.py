@@ -324,12 +324,12 @@ result = np.allclose(Q['g'], T['g'][:,:,None,None,...]*T['g'][None,None,:,:,...]
 results.append(result)
 print(len(results), ':', result)
 
-# Scalar - ScalarField multiplication
-# g = (2 * f).evaluate()
-# result = np.allclose(g['g'], 2*f['g'])
-# results.append(result)
-# print(len(results), ':', result)
-# g = (f * 2).evaluate()
-# result = np.allclose(g['g'], f['g']*2)
-# results.append(result)
-# print(len(results), ':', result)
+# Number - ScalarField multiplication
+g = (2 * f).evaluate()
+result = np.allclose(g['g'], 2*f['g'])
+results.append(result)
+print(len(results), ':', result)
+g = (f * 2).evaluate()
+result = np.allclose(g['g'], f['g']*2)
+results.append(result)
+print(len(results), ':', result)

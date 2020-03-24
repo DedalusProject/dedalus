@@ -25,10 +25,8 @@ u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
 f['g'] = x**4*y**2*z + 5*x**2*z**6 - 2*y**4*z**5
 u['g'] = operators.Gradient(f,c).evaluate()['g']
 
-neg = field.Field(dist=d, bases=(b,), dtype=np.complex128)
-neg['g'] = -1
-negOm = field.Field(dist=d, bases=(b,), dtype=np.complex128)
-negOm['g'] = -20
+neg = -1
+negOm = -20
 ez = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
 ez['g'][1] = -np.sin(theta)
 ez['g'][2] =  np.cos(theta)

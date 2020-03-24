@@ -8,6 +8,7 @@ import numpy as np
 from scipy import sparse
 import itertools
 import operator
+import numbers
 
 from .field import Operand, Array, Field
 from .future import Future, FutureArray, FutureField
@@ -212,8 +213,8 @@ class Multiply(Future, metaclass=MultiClass):
         # Drop ones
         args = [arg for arg in args if arg != 1]
         # Flatten multiplications
-        arg_sets = [arg.args if isinstance(arg, Multiply) else [arg] for arg in args]
-        args = [arg for arg_set in arg_sets for arg in arg_set]
+        #arg_sets = [arg.args if isinstance(arg, Multiply) else [arg] for arg in args]
+        #args = [arg for arg_set in arg_sets for arg in arg_set]
         # Return single argument
         if len(args) == 1:
             raise SkipDispatchException(output=args[0])
@@ -492,4 +493,51 @@ class MultiplyFields(Multiply, FutureField):
             start_index += arg_order
         # OPTIMIZE: less intermediate arrays?
         np.copyto(out.data, reduce(np.multiply, args_data))
+
+
+class MultiplyNumberField(Multiply, FutureField):
+    """Multiplication operator for fields."""
+
+    argtypes = ((numbers.Number, (Field, FutureField)),
+                ((Field, FutureField), numbers.Number))
+
+    def __init__(self, arg0, arg1, **kw):
+        if isinstance(arg1, numbers.Number):
+            arg0, arg1 = arg1, arg0
+        super().__init__(arg0, arg1, **kw)
+        self.bases = arg1.bases
+        self.tensorsig = arg1.tensorsig
+        self.dtype = np.result_type(type(arg0), arg1.dtype)
+
+    @classmethod
+    def _check_args(cls, *args, **kw):
+        def check_types(args, types):
+            return all(isinstance(arg, type) for arg, type in zip(args, types))
+        return any(check_types(args, types) for types in cls.argtypes)
+
+    def check_conditions(self):
+        """Check that arguments are in a proper layout."""
+        # Any layout
+        return True
+
+    def enforce_conditions(self):
+        """Require arguments to be in a proper layout."""
+        # Any layout
+        pass
+
+    def operate(self, out):
+        """Perform operation."""
+        arg0, arg1 = self.args
+        # Set output layout
+        out.set_layout(arg1.layout)
+        # Multiply all argument data, reshaped by tensorsig
+        np.multiply(arg0, arg1.data, out=out.data)
+
+    def expression_matrices(self, subproblem, vars):
+        """Build expression matrices for a specific subproblem and variables."""
+        arg0, arg1 = self.args
+        # Build field matrices
+        arg1_mats = arg1.expression_matrices(subproblem, vars)
+        # Multiply field matrices
+        return {var: arg0 * arg1_mats[var] for var in arg1_mats}
 
