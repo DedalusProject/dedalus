@@ -118,3 +118,27 @@ result = np.allclose(L5.todense(),L5_old.todense())
 results.append(result)
 print(len(results), ':', result)
 
+# Composition
+
+op = operators.convert(operators.Gradient(f, c) + operators.Laplacian(u, c), (bk2,))
+op_matrices = op.expression_matrices(sp, (f,u,))
+L6 = op_matrices[f]
+
+L03 = xim*E(sp,+1,-1)@D(sp,-1,0,0)
+L13 = xip*E(sp,+1,+1)@D(sp,+1,0,0)
+L23 = Z(sp,0,0)
+L6_old = sparse.bmat([[L03],
+                      [L13],
+                      [L23]])
+
+result = np.allclose(L6.todense(),L6_old.todense())
+results.append(result)
+print(len(results), ':', result)
+
+L7 = op_matrices[u]
+L7_old = L2_old
+
+result = np.allclose(L7.todense(),L7_old.todense())
+results.append(result)
+print(len(results), ':', result)
+
