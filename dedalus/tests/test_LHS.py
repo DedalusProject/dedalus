@@ -142,3 +142,18 @@ result = np.allclose(L7.todense(),L7_old.todense())
 results.append(result)
 print(len(results), ':', result)
 
+# Zeros
+
+Z20 = Z(sp, 0,-1)
+Z21 = Z(sp, 0,+1)
+L22 = D(sp,-1,1,+1).dot(D(sp,+1, 0, 0))
+
+L8_old=0*sparse.bmat([[Z20, Z21, L22]])
+
+zero = operators.Zero(u, c, ())
+L8 = zero.subproblem_matrix(sp)
+
+result = np.allclose(L8.todense(),L8_old.todense())
+results.append(result)
+print(len(results), ':', result)
+

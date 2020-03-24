@@ -1437,28 +1437,6 @@ def reduced_view_4(data, axis):
     N3 = int(np.prod(shape[axis+2:]))
     return data.reshape((N0, N1, N2, N3))
 
-def reduced_view_first_c(data, axis):
-    shape = data.shape
-    N0 = shape[0]
-    N1 = int(np.prod(shape[1:axis]))
-    N2 = int(np.prod(shape[axis+1:]))
-    return data.reshape((N0, N1, N2))
-
-def reduced_view_last_c(data, axis):
-    shape = data.shape
-    N0 = int(np.prod(shape[:axis-1]))
-    N1 = shape[axis]
-    N2 = int(np.prod(shape[axis+1:]))
-    return data.reshape((N0, N1, N2))
-
-def reduced_view_int_c(data, axis_int, axis_c):
-    shape = data.shape
-    N0 = int(np.prod(shape[:axis_int-1]))
-    N1 = shape[axis_int]
-    N2 = int(np.prod(shape[axis_int+1:axis_c]))
-    N3 = int(np.prod(shape[axis_c:]))
-    return data.reshape((N0, N1, N2, N3))
-
 
 class SphericalEllOperator(LinearOperator, metaclass=MultiClass):
 
@@ -1793,6 +1771,79 @@ class SphericalLaplacian(Laplacian, SphericalEllOperator):
     @CachedMethod
     def _radial_matrix(basis, regtotal, ell):
         return basis.operator_matrix('D-', ell+1, regtotal, dk=1) @ basis.operator_matrix('D+', ell, regtotal)
+
+
+# Don't know if we really need this, but I'm making it anyway...
+class Zero(LinearOperator, metaclass=MultiClass):
+
+    def __init__(self, operand, coords, out_tensorsig, out=None):
+        super().__init__(operand, coords, out=out)
+        self._operand = operand
+        self.cs = coords
+        self.tensorsig = out_tensorsig
+        self.dtype = operand.dtype
+
+    @classmethod
+    def _check_args(cls, operand, coords, out=None):
+        # Dispatch by coordinate system
+        if isinstance(operand, Operand):
+            if isinstance(coords, cls.cs_type):
+                return True
+        return False
+
+    @property
+    def base(self):
+        return Zero
+
+
+class SphericalZero(Zero):
+
+    cs_type = coords.SphericalCoordinates
+
+    def __init__(self, operand, coords, out_tensorsig, out=None):
+        super().__init__(operand, coords, out_tensorsig, out=out)
+        self.radius_axis = self.cs.coords[2].axis
+
+    @CachedAttribute
+    def bases(self):
+        return (self.output_basis(self.operand.bases[0]),)
+
+    @staticmethod
+    def output_basis(input_basis):
+        return input_basis
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        return True
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        pass
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        # Set output layout
+        out.set_layout(operand.layout)
+        out.data[:] = 0
+
+    def subproblem_matrix(self, subproblem):
+        operand = self.args[0]
+        basis = self.input_basis
+        R_in = basis.regularity_classes(operand.tensorsig)
+        R_out = basis.regularity_classes(self.tensorsig)
+
+        # need to get ell from subproblem -- don't know how to do this
+        ell = subproblem.ell
+
+        n_out = 0
+        n_in = 0
+        for regindex_out, regtotal_out in np.ndenumerate(R_out):
+            n_out += basis.n_size(regindex_out, ell)
+        for regindex_in, regtotal_in in np.ndenumerate(R_in):
+            n_in  += basis.n_size(regindex_in,  ell)
+        matrix = sparse.csr_matrix((n_out,n_in))
+        return matrix
 
 
 class CrossProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
