@@ -14,6 +14,7 @@ results = []
 c = coords.SphericalCoordinates('phi', 'theta', 'r')
 d = distributor.Distributor(c.coords)
 b = basis.BallBasis(c, (16,16,16), radius=1)
+bk2 = basis.BallBasis(c, (16,16,16), radius=1, k=2)
 
 f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
 u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
@@ -100,5 +101,20 @@ result = np.allclose(L4.todense(),L4_old.todense())
 results.append(result)
 print(len(results), ':', result)
 
+# Conversion
 
+convertu = operators.convert(u, (bk2,)) 
+L5 = convertu.subproblem_matrix(sp)
+
+M00 = E(sp,1,-1).dot(E(sp, 0,-1))
+M11 = E(sp,1,+1).dot(E(sp, 0,+1))
+M22 = E(sp,1, 0).dot(E(sp, 0, 0))
+
+L5_old=sparse.bmat([[M00, Z01, Z02],
+                    [Z10, M11, Z12],
+                    [Z20, Z21, M22]])
+
+result = np.allclose(L5.todense(),L5_old.todense())
+results.append(result)
+print(len(results), ':', result)
 

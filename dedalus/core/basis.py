@@ -1436,7 +1436,10 @@ class ConvertBall(operators.Convert, operators.SphericalEllOperator):
         basis = self.input_basis
         regtotal = basis.regtotal(regindex_in)
         dk = self.bases[0].k - basis.k
-        return basis.conversion_matrix(ell, regtotal, dk)
+        if regindex_in == regindex_out:
+            return basis.conversion_matrix(ell, regtotal, dk)
+        else:
+            return basis.zeros_matrix(ell, basis.regtotal(regindex_in), basis.regtotal(regindex_out))
 
 
 

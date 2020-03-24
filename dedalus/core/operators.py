@@ -1542,16 +1542,23 @@ class SphericalGradient(Gradient, SphericalEllOperator):
         # Gradients hits - and +
         return ((0,) + regindex_in, (1,) + regindex_in)
 
-    # Could probably cache this?
     def radial_matrix(self, regindex_in, regindex_out, ell):
         basis = self.input_basis
         regtotal = basis.regtotal(regindex_in)
-        if regindex_out[0] == 0 and regindex_in == regindex_out[1:]:
-            return basis.xi(-1, ell+regtotal) * basis.operator_matrix('D-', ell, regtotal)
-        elif regindex_out[0] == 1 and regindex_in == regindex_out[1:]:
-            return basis.xi(+1, ell+regtotal) * basis.operator_matrix('D+', ell, regtotal)
+        if regindex_out[0] != 2 and regindex_in == regindex_out[1:]:
+            return self._radial_matrix(basis, regindex_out[0], regtotal, ell)
         else:
             return basis.zeros_matrix(ell, basis.regtotal(regindex_in), basis.regtotal(regindex_out))
+
+    @staticmethod
+    @CachedMethod
+    def _radial_matrix(basis, regindex_out0, regtotal, ell):
+        if regindex_out0 == 0:
+            return basis.xi(-1, ell+regtotal) * basis.operator_matrix('D-', ell, regtotal)
+        elif regindex_out0 == 1:
+            return basis.xi(+1, ell+regtotal) * basis.operator_matrix('D+', ell, regtotal)
+        else:
+            raise ValueError("This should never happen")
 
 
 class Divergence(LinearOperator, metaclass=MultiClass):
@@ -1616,16 +1623,23 @@ class SphericalDivergence(Divergence, SphericalEllOperator):
         else:
             return tuple()
 
-    # Could probably cache this?
     def radial_matrix(self, regindex_in, regindex_out, ell):
         basis = self.input_basis
         regtotal = basis.regtotal(regindex_in)
-        if regindex_in[0] == 0 and regindex_in[1:] == regindex_out:
-            return basis.xi(-1, ell+regtotal+1) * basis.operator_matrix('D+', ell, regtotal)
-        elif regindex_in[0] == 1 and regindex_in[1:] == regindex_out:
-            return basis.xi(+1, ell+regtotal-1) * basis.operator_matrix('D-', ell, regtotal)
+        if regindex_in[0] != 2 and regindex_in[1:] == regindex_out:
+            return self._radial_matrix(basis, regindex_in[0], regtotal, ell)
         else:
             return basis.zeros_matrix(ell, basis.regtotal(regindex_in), basis.regtotal(regindex_out))
+
+    @staticmethod
+    @CachedMethod
+    def _radial_matrix(basis, regindex_in0, regtotal, ell):
+        if regindex_in0 == 0:
+            return basis.xi(-1, ell+regtotal+1) * basis.operator_matrix('D+', ell, regtotal)
+        elif regindex_in0 == 1:
+            return basis.xi(+1, ell+regtotal-1) * basis.operator_matrix('D-', ell, regtotal)
+        else:
+            raise ValueError("This should never happen")
 
 
 class Curl(LinearOperator, metaclass=MultiClass):
@@ -1688,20 +1702,28 @@ class SphericalCurl(Curl, SphericalEllOperator):
         else:
             return ((0,) + regindex_in[1:], (1,) + regindex_in[1:])
 
-    # Could probably cache thing?
     def radial_matrix(self, regindex_in, regindex_out, ell):
         basis = self.input_basis
-        regtotal = basis.regtotal(regindex_in)
-        if regindex_in[0] == 0 and regindex_out[0] == 2 and regindex_in[1:] == regindex_out[1:]:
-            return -1j * basis.xi(+1, ell+regtotal+1) * basis.operator_matrix('D+', ell, regtotal)
-        elif regindex_in[0] == 1 and regindex_out[0] == 2 and regindex_in[1:] == regindex_out[1:]:
-            return 1j * basis.xi(-1, ell+regtotal-1) * basis.operator_matrix('D-', ell, regtotal)
-        elif regindex_in[0] == 2 and regindex_out[0] == 0 and regindex_in[1:] == regindex_out[1:]:
-            return -1j * basis.xi(+1, ell+regtotal) * basis.operator_matrix('D-', ell, regtotal)
-        elif regindex_in[0] == 2 and regindex_out[0] == 1 and regindex_in[1:] == regindex_out[1:]:
-            return 1j * basis.xi(-1, ell+regtotal) * basis.operator_matrix('D+', ell, regtotal)
+        regtotal_in = basis.regtotal(regindex_in)
+        regtotal_out = basis.regtotal(regindex_out)
+        if regindex_in[1:] == regindex_out[1:]:
+            return self._radial_matrix(basis, regindex_in[0], regindex_out[0], regtotal_in, regtotal_out, ell)
         else:
-            return basis.zeros_matrix(ell, basis.regtotal(regindex_in), basis.regtotal(regindex_out))
+            return basis.zeros_matrix(ell, regtotal_in, regtotal_out)
+
+    @staticmethod
+    @CachedMethod
+    def _radial_matrix(basis, regindex_in0, regindex_out0, regtotal_in, regtotal_out, ell):
+        if regindex_in0 == 0 and regindex_out0 == 2:
+            return -1j * basis.xi(+1, ell+regtotal_in+1) * basis.operator_matrix('D+', ell, regtotal_in)
+        elif regindex_in0 == 1 and regindex_out0 == 2:
+            return 1j * basis.xi(-1, ell+regtotal_in-1) * basis.operator_matrix('D-', ell, regtotal_in)
+        elif regindex_in0 == 2 and regindex_out0 == 0:
+            return -1j * basis.xi(+1, ell+regtotal_in) * basis.operator_matrix('D-', ell, regtotal_in)
+        elif regindex_in0 == 2 and regindex_out0 == 1:
+            return 1j * basis.xi(-1, ell+regtotal_in) * basis.operator_matrix('D+', ell, regtotal_in)
+        else:
+            return basis.zeros_matrix(ell, regtotal_in, regtotal_out)
 
 
 class Laplacian(LinearOperator, metaclass=MultiClass):
@@ -1763,9 +1785,14 @@ class SphericalLaplacian(Laplacian, SphericalEllOperator):
         basis = self.input_basis
         regtotal = basis.regtotal(regindex_in)
         if regindex_in == regindex_out:
-            return basis.operator_matrix('D-', ell+1, regtotal, dk=1) @ basis.operator_matrix('D+', ell, regtotal)
+            return self._radial_matrix(basis, regtotal, ell)
         else:
             return basis.zeros_matrix(ell, basis.regtotal(regindex_in), basis.regtotal(regindex_out))
+
+    @staticmethod
+    @CachedMethod
+    def _radial_matrix(basis, regtotal, ell):
+        return basis.operator_matrix('D-', ell+1, regtotal, dk=1) @ basis.operator_matrix('D+', ell, regtotal)
 
 
 class CrossProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
