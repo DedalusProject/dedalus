@@ -401,7 +401,7 @@ def ChebyshevU(*args, **kw):
     return Ultraphserical(*args, alpha=1, **kw)
 
 
-class ConvertJacobiJacobi(operators.Convert, operators.LinearOperator1D):
+class ConvertJacobi(operators.Convert, operators.LinearOperator1D):
     """Jacobi polynomial conversion."""
 
     input_basis_type = Jacobi

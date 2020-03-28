@@ -11,7 +11,7 @@ class Coordinate(CoordinateSystem):
     def __init__(self, name):
         self.name = name
 
-    def __print__(self):
+    def __str__(self):
         return self.name
 
     @property
@@ -25,6 +25,9 @@ class CartesianCoordinates(CoordinateSystem):
         self.names = names
         self.dim = len(names)
         self.coords = tuple(Coordinate(name) for name in names)
+
+    def __str__(self):
+        return '{' + ','.join([c.name for c in self.coords]) + '}'
 
 
 class S2Coordinates(CoordinateSystem):

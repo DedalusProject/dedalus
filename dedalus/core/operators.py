@@ -1541,6 +1541,7 @@ class SphericalGradient(Gradient, SphericalEllOperator):
 
 class Divergence(LinearOperator, metaclass=MultiClass):
 
+    name = 'Div'
     # should check that we're not taking div of a scalar'
 
     def __init__(self, operand, out=None):
@@ -1562,6 +1563,85 @@ class Divergence(LinearOperator, metaclass=MultiClass):
     @property
     def base(self):
         return Divergence
+
+
+class Component(LinearOperator, metaclass=MultiClass):
+
+    name = 'Comp'
+
+    def __init__(self, operand, index, coord, out=None):
+        args = [operand]
+        super().__init__(*args, coord, out=out)
+        #self.operand = operand
+        self.index = index
+        self.coord = coord
+        self.bases = operand.bases
+        self.tensorsig = operand.tensorsig[:index] + operand.tensorsig[index+1:]
+        self.dtype = operand.dtype
+
+    @classmethod
+    def _check_args(cls, operand, index, coord, out=None):
+        # Dispatch by coordinate system
+        return isinstance(operand.tensorsig[index], cls.cs_type)
+
+
+class CartesianComponent(Component, LinearOperator1D):
+
+    cs_type = coords.CartesianCoordinates
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Any layout
+        return True
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Any layout
+        pass
+
+    def operate(self, out):
+        """Perform operation."""
+        arg0 = self.args[0]
+        # Set output layout
+        out.set_layout(arg0.layout)
+        # Copy specified comonent
+        take_comp = tuple([None] * self.index + [self.coord.axis])
+        print(take_comp)
+        out.data[:] = arg0.data[take_comp]
+
+
+class CartesianDivergence(Divergence):
+
+    cs_type = coords.CartesianCoordinates
+
+    def __init__(self, operand, cs, out=None):
+        comps = [CartesianComponent(operand, index=0, coord=c) for c in cs.coords]
+        comps = [Differentiate(comp, c) for comp, c in zip(comps, cs.coords)]
+        arg = sum(comps)
+        LinearOperator.__init__(self, arg, cs, out=out)
+        #self.operand = operand
+        self.cs = cs
+        self.bases = arg.bases
+        self.tensorsig = arg.tensorsig
+        self.dtype = arg.dtype
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Any layout (addition is done)
+        return True
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Any layout (addition is done)
+        pass
+
+    def operate(self, out):
+        """Perform operation."""
+        # OPTIMIZE: this has an extra copy
+        arg0 = self.args[0]
+        # Set output layout
+        out.set_layout(arg0.layout)
+        np.copyto(out.data, arg0.data)
 
 
 class SphericalDivergence(Divergence, SphericalEllOperator):
