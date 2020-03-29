@@ -7,6 +7,7 @@ import numpy as np
 
 from ..tools.cache import CachedMethod, CachedClass, CachedAttribute
 from ..tools.general import unify_attributes, unify
+from .coords import Coordinate
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
@@ -46,39 +47,49 @@ class Domain(metaclass=CachedClass):
 
     def __init__(self, dist, bases):
         self.dist = dist
-        self.bases = bases
-        self.spaces, self.full_spaces = self._check_spaces(bases)
+        self.bases, self.full_bases = self._check_bases(bases)
         # self.dim = sum(space.dim for space in self.spaces)
         self.dealias = 1
 
     def __add__(self, other):
         dist = unify_attributes([self, other], 'dist')
-        full_bases = [b1+b2 for b1, b2 in zip(self.full_spaces, other.full_spaces)]
-        print(full_bases)
+        full_bases = [b1+b2 for b1, b2 in zip(self.full_bases, other.full_bases)]
         raise
 
     # def reduce_bases(self, bases):
 
-
     def get_basis(self, coord):
-        return self.full_spaces[coord.axis]
+        return self.full_bases[coord.axis]
 
-    def _check_spaces(self, spaces):
+    def get_basis_subaxis(self, coord):
+        axis = coord.axis
+        for basis in self.bases:
+            if (axis >= basis.axis) and (axis <= basis.axis + basis.dim):
+                return axis - basis.axis
+
+    def get_coord(self, name):
+        for basis in self.bases:
+            for basis_coord in basis.coords:
+                if name == basis_coord.name:
+                    return basis_coord
+        raise ValueError("Coordinate name not in domain")
+
+    def _check_bases(self, bases):
         # Drop duplicates
-        spaces = list(set(spaces))
+        bases = list(set(bases))
         # Sort by axis
-        key = lambda s: s.axis
-        spaces = sorted(spaces, key=key)
+        key = lambda b: b.axis
+        bases = sorted(bases, key=key)
         # Check for overlap
-        full_spaces = [None for i in range(self.dist.dim)]
-        for space in spaces:
-            for subaxis in range(space.dim):
-                axis = space.axis + subaxis
-                if full_spaces[axis] is not None:
-                    raise ValueError("Overlapping spaces specified.")
+        full_bases = [None for i in range(self.dist.dim)]
+        for basis in bases:
+            for subaxis in range(basis.dim):
+                axis = basis.axis + subaxis
+                if full_bases[axis] is not None:
+                    raise ValueError("Overlapping bases specified.")
                 else:
-                    full_spaces[axis] = space
-        return spaces, full_spaces
+                    full_bases[axis] = basis
+        return tuple(bases), tuple(full_bases)
 
     # @classmethod
     # def from_dist(cls, dist):
@@ -98,24 +109,24 @@ class Domain(metaclass=CachedClass):
     @CachedAttribute
     def constant(self):
         """Tuple of constant flags."""
-        return tuple(space.constant for space in self.spaces)
+        return tuple(basis.constant for basis in self.bases)
 
     @CachedAttribute
     def coeff_group_shape(self):
         """Compute group shape."""
         shape = np.ones(self.dist.dim, dtype=int)
-        for space in self.spaces:
-            for subaxis in range(space.dim):
-                shape[space.axis+subaxis] = space.group_shape[subaxis]
+        for basis in self.bases:
+            for subaxis in range(basis.dim):
+                shape[basis.axis+subaxis] = basis.group_shape[subaxis]
         return tuple(shape)
 
     @CachedAttribute
     def coeff_shape(self):
         """Compute coefficient shape."""
         shape = np.ones(self.dist.dim, dtype=int)
-        for space in self.spaces:
-            for subaxis in range(space.dim):
-                shape[space.axis+subaxis] = space.shape[subaxis]
+        for basis in self.bases:
+            for subaxis in range(basis.dim):
+                shape[basis.axis+subaxis] = basis.shape[subaxis]
         return tuple(shape)
 
     def grid_shape(self, scales):
@@ -128,10 +139,10 @@ class Domain(metaclass=CachedClass):
     def _grid_shape(self, scales):
         """Cached grid shape computation."""
         shape = np.ones(self.dist.dim, dtype=int)
-        for space in self.spaces:
-            subscales = scales[space.axis:space.axis+space.dim]
-            subshape = space.grid_shape(subscales)
-            shape[space.axis:space.axis+space.dim] = subshape
+        for basis in self.bases:
+            subscales = scales[basis.axis:basis.axis+basis.dim]
+            subshape = basis.grid_shape(subscales)
+            shape[basis.axis:basis.axis+basis.dim] = subshape
         return tuple(shape)
 
     # def expand_bases(self, bases):

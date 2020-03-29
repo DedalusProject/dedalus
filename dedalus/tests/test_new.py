@@ -14,7 +14,7 @@ if comm.size == 1:
     xb = basis.ComplexFourier(c, size=16, bounds=(0, 1))
     x = xb.local_grid(1)
     # Scalar transforms
-    u = field.Field(dist=d, bases=[xb], dtype=np.complex128)
+    u = field.Field(dist=d, bases=(xb,), dtype=np.complex128)
     ug = np.exp(2*np.pi*1j*x)
     u['g'] = ug
     u['c']
@@ -29,7 +29,7 @@ if comm.size == 1:
     xb = basis.ChebyshevT(c, size=16, bounds=(0, 1))
     x = xb.local_grid(1)
     # Scalar transforms
-    u = field.Field(dist=d, bases=[xb], dtype=np.complex128)
+    u = field.Field(dist=d, bases=(xb,), dtype=np.complex128)
     u['g'] = ug = 2*x**2 - 1
     u['c']
     result = np.allclose(u['g'], ug)
@@ -44,14 +44,14 @@ yb = basis.ChebyshevT(c.coords[1], size=16, bounds=(0, 1))
 x = xb.local_grid(1)
 y = yb.local_grid(1)
 # Scalar transforms
-f = field.Field(dist=d, bases=[xb,yb], dtype=np.complex128)
+f = field.Field(dist=d, bases=(xb,yb,), dtype=np.complex128)
 f['g'] = fg = np.sin(x) * y**5
 f['c']
 result = np.allclose(f['g'], fg)
 results.append(result)
 print(len(results), ':', result)
 # Vector transforms
-u = field.Field(dist=d, bases=[xb,yb], tensorsig=[c], dtype=np.complex128)
+u = field.Field(dist=d, bases=(xb,yb,), tensorsig=(c,), dtype=np.complex128)
 u['g'] = ug = np.array([np.cos(x) * 2 * y**2, np.sin(x) * y + y])
 u['c']
 result = np.allclose(u['g'], ug)
@@ -59,7 +59,7 @@ results.append(result)
 print(len(results), ':', result)
 # Vector transforms 1D
 if comm.size == 1:
-    v = field.Field(dist=d, bases=[xb], tensorsig=[c], dtype=np.complex128)
+    v = field.Field(dist=d, bases=(xb,), tensorsig=(c,), dtype=np.complex128)
     v['g'] = vg = np.array([np.cos(x) * 2, np.sin(x) + 1])
     print(v['g'].shape)
     v['c']
@@ -126,6 +126,21 @@ T = operators.Gradient(u, c).evaluate()
 Tg = np.array([[(-2+np.cos(theta)**2)*np.exp(-2j*phi),-1j*np.cos(theta)*np.exp(-2j*phi)],
                [-1j*np.cos(theta)    *np.exp(-2j*phi),np.cos(2*theta)  *np.exp(-2j*phi)]])
 result = np.allclose(T['g'], Tg)
+results.append(result)
+print(len(results), ':', result)
+
+## S2, 3D vectors
+c = coords.SphericalCoordinates('phi', 'theta', 'r')
+d = distributor.Distributor( (c,) )
+c_S2 = c.S2cs
+sb = basis.SpinWeightedSphericalHarmonics(c_S2, (32,16), radius=1)
+
+u = field.Field(dist=d, bases=(sb,), tensorsig=(c,), dtype=np.complex128)
+u['c'][0,2,3] = 1
+u['c'][2,-2,2] = 1
+ug0 = - 1j * np.sqrt(35/512) / 2 * (np.sin(theta) - 4*np.sin(2*theta) - 3*np.sin(3*theta)) * np.exp(2j*phi)
+ug2 =   np.sqrt(15) / 4 * np.sin(theta)**2 * np.exp(-2j*phi)
+result = np.allclose(u['g'][0,:,:,0],ug0) and np.allclose(u['g'][2,:,:,0],ug2)
 results.append(result)
 print(len(results), ':', result)
 
@@ -257,9 +272,9 @@ print(len(results), ':', result)
 
 # Laplacian scalar
 f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
-f['g'] = x**3 + 2*y**3 + 3*z**3
+f['g'] = x**4 + 2*y**4 + 3*z**4
 h = operators.Laplacian(f, c).evaluate()
-result = np.allclose(h['g'],6*x+12*y+18*z)
+result = np.allclose(h['g'],12*x**2+24*y**2+36*z**2)
 results.append(result)
 print(len(results), ':', result)
 
@@ -279,6 +294,43 @@ v['g']
 op = u + v
 w = op.evaluate()
 result = np.allclose(w['g'],u['g']+v['g'])
+results.append(result)
+print(len(results), ':', result)
+
+# Scalar Interpolation
+f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+f['g'] = x**4 + 2*y**4 + 3*z**4
+h = operators.interpolate(f,r=1).evaluate()
+h0 = 3*np.cos(theta)**4 + np.cos(phi)**4*np.sin(theta)**4 + 2*np.sin(theta)**4*np.sin(phi)**4
+result = np.allclose(h['g'],h0)
+results.append(result)
+print(len(results), ':', result)
+
+# Vector Interpolation
+u['g'][2] = r**2*st*(2*ct**2*cp-r*ct**3*sp+r**3*cp**3*st**5*sp**3+r*ct*st**2*(cp**3+sp**3))
+u['g'][1] = r**2*(2*ct**3*cp-r*cp**3*st**4+r**3*ct*cp**3*st**5*sp**3-1/16*r*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
+u['g'][0] = r**2*sp*(-2*ct**2+r*ct*cp*st**2*sp-r**3*cp**2*st**5*sp**3)
+v = operators.interpolate(u,r=1).evaluate()
+v0 = 0*u['g']
+v0[0] = sp*(-2*ct**2+ct*cp*st**2*sp-cp**2*st**5*sp**3)
+v0[1] = (2*ct**3*cp-cp**3*st**4+ct*cp**3*st**5*sp**3-1/16*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
+v0[2] = st*(2*ct**2*cp-ct**3*sp+cp**3*st**5*sp**3+ct*st**2*(cp**3+sp**3))
+result = np.allclose(v['g'],v0)
+results.append(result)
+print(len(results), ':', result)
+
+# Tensor Interpolation
+A = operators.interpolate(T,r=1).evaluate()
+Ag0 = 0*A['g']
+Ag0[2,2] = 2*np.sin(theta)*(3*np.cos(phi)**2*np.sin(theta)+2*np.cos(theta)*np.sin(phi)) 
+Ag0[2,1] = Ag0[1,2] = 6*np.cos(theta)*np.cos(phi)**2*np.sin(theta) + 2*np.cos(2*theta)*np.sin(phi)
+Ag0[2,0] = Ag0[0,2] = 2*np.cos(phi)*(np.cos(theta) - 3*np.sin(theta)*np.sin(phi))
+Ag0[1,1] = 2*np.cos(theta)*(3*np.cos(theta)*np.cos(phi)**2 - 2*np.sin(theta)*np.sin(phi))
+Ag0[1,0] = Ag0[0,1] = -2*np.cos(phi)*(np.sin(theta) + 3*np.cos(theta)*np.sin(phi))
+Ag0[0,0] = 6*np.sin(phi)**2
+#print(A['g'][0,0,:,0,0])
+#print(Ag0[0,0,:,0,0])
+result = np.allclose(A['g'][0,0],Ag0[0,0])
 results.append(result)
 print(len(results), ':', result)
 

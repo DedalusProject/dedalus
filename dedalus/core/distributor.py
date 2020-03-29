@@ -63,16 +63,17 @@ class Distributor:
     states) and the paths between them (D transforms and R transposes).
     """
 
-    def __init__(self, coords, comm=None, mesh=None):
-        self.coords = coords
-        for coord in coords:
-            coord.dist = self
+    def __init__(self, coordsystems, comm=None, mesh=None):
+        self.coords = tuple([coord for coordsystem in coordsystems for coord in coordsystem.coords])
+        for coordsystem in coordsystems:
+            coordsystem.set_distributor(self)
         # Defaults
         if comm is None:
             comm = MPI.COMM_WORLD
         if mesh is None:
             mesh = np.array([comm.size], dtype=int)
-        self.dim = dim = sum(coord.dim for coord in coords)
+        self.dim = dim = len(self.coords)
+#        self.dim = dim = sum(coordsystem.dim for coordsystem in coordsystems)
         self.comm = comm
         # Squeeze out local/bad (size <= 1) dimensions
         self.mesh = mesh = np.array([i for i in mesh if (i>1)], dtype=int)
@@ -198,11 +199,11 @@ class Layout:
         group_shape = self.group_shape(domain, scales)
         group_nums = np.array(global_shape) // np.array(group_shape)
         local_groups = []
-        for axis, space in enumerate(domain.full_spaces):
+        for axis, basis in enumerate(domain.full_bases):
             if self.local[axis]:
                 # All groups for local dimensions
                 local_groups.append(np.arange(group_nums[axis]))
-            elif space is None:
+            elif basis is None:
                 # Copy across constant dimensions
                 local_groups.append(np.arange(group_nums[axis]))
             else:

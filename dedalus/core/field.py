@@ -431,8 +431,8 @@ class Field(Current):
         self.dtype = dtype
         self.bases = bases
         # Build domain
-        self.bases, self.full_bases = self._check_bases(bases)
         self.domain = Domain(dist, self.bases)
+        self.bases, self.full_bases = self.domain.bases, self.domain.full_bases
         #self.bases = dist.check_bases(bases)
 
         # Set initial scales and layout
@@ -440,23 +440,6 @@ class Field(Current):
         self.layout = self.dist.get_layout_object('c')
         # Change scales to build buffer and data
         self.set_scales((1,) * self.dist.dim)
-
-    def _check_bases(self, bases):
-        # Drop duplicates
-        bases = list(set(bases))
-        # Sort by axis
-        key = lambda s: s.axis
-        bases = sorted(bases, key=key)
-        # Check for overlap
-        full_bases = [None for i in range(self.dist.dim)]
-        for basis in bases:
-            for subaxis in range(basis.dim):
-                axis = basis.axis + subaxis
-                if full_bases[axis] is not None:
-                    raise ValueError("Overlapping bases specified.")
-                else:
-                    full_bases[axis] = basis
-        return tuple(bases), tuple(full_bases)
 
     def __getitem__(self, layout):
         """Return data viewed in specified layout."""
@@ -469,10 +452,11 @@ class Field(Current):
         self.set_layout(layout)
         np.copyto(self.data, data)
 
-    def get_basis(self, space):
-        from .basis import Basis
-        from .coords import Coordinate
-        return self.domain.full_spaces[space.axis]
+    def get_basis(self, coord):
+        return self.domain.get_basis(coord)
+        #from .basis import Basis
+        #from .coords import Coordinate
+        #return self.domain.full_spaces[space.axis]
         # if isinstance(space, Basis):
         #     if space in self.bases:
         #         return space

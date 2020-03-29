@@ -18,10 +18,12 @@ from ..tools.cache import CachedClass
 from ..tools import jacobi
 from ..tools import clenshaw
 from ..tools.array import reshape_vector
+from ..tools.dispatch import MultiClass
 
 from .spaces import ParityInterval, Disk
 from .coords import Coordinate, S2Coordinates, SphericalCoordinates
 from .domain import Domain
+from .field  import Operand
 import dedalus_sphere
 #from . import transforms
 
@@ -892,6 +894,7 @@ class MultidimensionalBasis(Basis):
         return self.backward_transforms[subaxis](field, axis, cdata, gdata)
 
 
+# These are common for S2 and D2
 class SpinBasis(MultidimensionalBasis):
 
     def __init__(self, coordsystem, shape, azimuth_library='matrix'):
@@ -914,15 +917,17 @@ class SpinBasis(MultidimensionalBasis):
 
     @CachedMethod
     def spin_weights(self, tensorsig):
-        # Spin-component ordering: [-, +]
-        Ss = np.array([-1, 1], dtype=int)
-        S = np.zeros([vs.dim for vs in tensorsig], dtype=int)
-        for i, vs in enumerate(tensorsig):
-            if self.coordsystem is vs: # kludge before we decide how compound coordinate systems work
-                S[axslice(i, 0, self.dim)] += reshape_vector(Ss, dim=len(tensorsig), axis=i)
-            elif self.coordsystem in vs:
-                n = vs.get_index(self.coordsystem)
-                S[axslice(i, n, n+self.dim)] += reshape_vector(Ss, dim=len(tensorsig), axis=i)
+        # Spin-component ordering: [-, +, 0]
+        Ss = {2:np.array([-1, 1], dtype=int), 3:np.array([-1, 1, 0], dtype=int)}
+        S = np.zeros([cs.dim for cs in tensorsig], dtype=int)
+        for i, cs in enumerate(tensorsig):
+            if self.coordsystem == cs or (type(cs) is SphericalCoordinates and cs.S2cs == self.coordsystem):
+                S[axslice(i, 0, cs.dim)] += reshape_vector(Ss[cs.dim], dim=len(tensorsig), axis=i)
+            #if self.coordsystem is vs: # kludge before we decide how compound coordinate systems work
+            #    S[axslice(i, 0, self.dim)] += reshape_vector(Ss, dim=len(tensorsig), axis=i)
+            #elif self.coordsystem in vs:
+            #    n = vs.get_index(self.coordsystem)
+            #    S[axslice(i, n, n+self.dim)] += reshape_vector(Ss, dim=len(tensorsig), axis=i)
         return S
 
     @CachedMethod
@@ -930,19 +935,22 @@ class SpinBasis(MultidimensionalBasis):
         """Build matrices for appling spin recombination to each tensor rank."""
         # Setup unitary spin recombination
         # [azimuth, colatitude] -> [-, +]
-        Us = np.array([[-1j, 1], [1j, 1]]) / np.sqrt(2)
+        Us = {2:np.array([[-1j, 1], [1j, 1]]) / np.sqrt(2),
+              3:np.array([[-1j, 1, 0], [1j, 1, 0], [0, 0, np.sqrt(2)]]) / np.sqrt(2)}
         # Perform unitary spin recombination along relevant tensor indeces
         U = []
-        for i, vs in enumerate(tensorsig):
-            if self.coordsystem is vs: # kludge before we decide how compound coordinate systems work
-                Ui = np.identity(vs.dim, dtype=np.complex128)
-                Ui[:self.dim, :self.dim] = Us
-                U.append(Ui)
-            elif self.coordsystem in vs.spaces:
-                n = vector_space.get_index(self.space)
-                Ui = np.identity(vector_space.dim, dtype=np.complex128)
-                Ui[n:n+self.dim, n:n+self.dim] = Us
-                U.append(Ui)
+        for i, cs in enumerate(tensorsig):
+            if self.coordsystem == cs or (type(cs) is SphericalCoordinates and cs.S2cs == self.coordsystem):
+                U.append(Us[cs.dim])
+            #if self.coordsystem is vs: # kludge before we decide how compound coordinate systems work
+            #    Ui = np.identity(vs.dim, dtype=np.complex128)
+            #    Ui[:self.dim, :self.dim] = Us
+            #    U.append(Ui)
+            #elif self.coordsystem in vs.spaces:
+            #    n = vector_space.get_index(self.space)
+            #    Ui = np.identity(vector_space.dim, dtype=np.complex128)
+            #    Ui[n:n+self.dim, n:n+self.dim] = Us
+            #    U.append(Ui)
             else:
                 U.append(None)
         return U
@@ -964,6 +972,7 @@ class SpinBasis(MultidimensionalBasis):
                 apply_matrix(Ui.T.conj(), gdata, axis=i, out=gdata)
 
 
+# These are common for S2 and B3
 class RegularityBasis(MultidimensionalBasis):
 
     def __init__(self, coordsystem, shape, azimuth_library='matrix', colatitude_library='matrix'):
@@ -987,17 +996,17 @@ class RegularityBasis(MultidimensionalBasis):
         self.backward_transform_azimuth = self.sphere_basis.backward_transform_azimuth
         self.backward_transform_colatitude = self.sphere_basis.backward_transform_colatitude
 
+    def S2_basis(self,radius=1):
+        return SWSH(self.coordsystem, self.shape[:2], radius=radius,
+                    azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library)
+
     @CachedAttribute
     def local_l(self):
-        layout = self.dist.coeff_layout
-        local_l_elements = layout.local_elements(self.domain, scales=1)[self.axis+1]
-        return tuple(self.sphere_basis.degrees[local_l_elements])
+        return self.sphere_basis.local_l
 
     @CachedAttribute
     def local_m(self):
-        layout = self.dist.coeff_layout
-        local_m_elements = layout.local_elements(self.domain, scales=1)[self.axis]
-        return tuple(self.sphere_basis.azimuth_basis.wavenumbers[local_m_elements])
+        return self.sphere_basis.local_m
 
     @CachedMethod
     def xi(self,mu,l):
@@ -1030,39 +1039,37 @@ class RegularityBasis(MultidimensionalBasis):
     def regularity_classes(self, tensorsig):
         # Regularity-component ordering: [-, +, 0]
         Rb = np.array([-1, 1, 0], dtype=int)
-        R = np.zeros([vs.dim for vs in tensorsig], dtype=int)
-        for i, vs in enumerate(tensorsig):
-            if self.coordsystem is vs: # kludge before we decide how compound coordinate systems work
+        R = np.zeros([cs.dim for cs in tensorsig], dtype=int)
+        for i, cs in enumerate(tensorsig):
+            if self.coordsystem is cs: # kludge before we decide how compound coordinate systems work
                 R[axslice(i, 0, self.dim)] += reshape_vector(Rb, dim=len(tensorsig), axis=i)
-            elif self.space in vs.spaces:
-                n = vs.get_index(self.space)
-                R[axslice(i, n, n+self.dim)] += reshape_vector(Rb, dim=len(tensorsig), axis=i)
+            #elif self.space in vs.spaces:
+            #    n = vs.get_index(self.space)
+            #    R[axslice(i, n, n+self.dim)] += reshape_vector(Rb, dim=len(tensorsig), axis=i)
         return R
 
-    def forward_regularity_recombination(self, field, axis, gdata):
+    def forward_regularity_recombination(self, tensorsig, axis, gdata):
+        rank = len(tensorsig)
         # Apply radial recombinations
-        order = len(field.tensorsig)
-        if order > 0:
-            Q = self.radial_recombinations(field.tensorsig)
+        if rank > 0:
+            Q = self.radial_recombinations(tensorsig)
             # Flatten tensor axes
             shape = gdata.shape
-            order = len(field.tensorsig)
-            temp = gdata.reshape((-1,)+shape[order:])
+            temp = gdata.reshape((-1,)+shape[rank:])
             # Apply Q transformations for each l to flattened tensor data
             for l_index, Q_l in enumerate(Q):
                 # Here the l axis is 'axis' instead of 'axis-1' since we have one tensor axis prepended
                 l_view = temp[axslice(axis, l_index, l_index+1)]
                 apply_matrix(Q_l.T, l_view, axis=0, out=l_view)
 
-    def backward_regularity_recombination(self, field, axis, gdata):
+    def backward_regularity_recombination(self, tensorsig, axis, gdata):
+        rank = len(tensorsig)
         # Apply radial recombinations
-        order = len(field.tensorsig)
-        if order > 0:
-            Q = self.radial_recombinations(field.tensorsig)
+        if rank > 0:
+            Q = self.radial_recombinations(tensorsig)
             # Flatten tensor axes
             shape = gdata.shape
-            order = len(field.tensorsig)
-            temp = gdata.reshape((-1,)+shape[order:])
+            temp = gdata.reshape((-1,)+shape[rank:])
             # Apply Q transformations for each l to flattened tensor data
             for l_index, Q_l in enumerate(Q):
                 # Here the l axis is 'axis' instead of 'axis-1' since we have one tensor axis prepended
@@ -1130,6 +1137,12 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
                                    self.forward_transform_colatitude]
         self.backward_transforms = [self.backward_transform_azimuth,
                                     self.backward_transform_colatitude]
+
+    @CachedAttribute
+    def local_l(self):
+        layout = self.dist.coeff_layout
+        local_l_elements = layout.local_elements(self.domain, scales=1)[self.axis+1]
+        return tuple(self.degrees[local_l_elements])
 
     def global_grids(self, scales):
         return (self.global_grid_azimuth(scales[0]),
@@ -1200,6 +1213,22 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             if l < Lmin: vector[i] = 0
             else: vector[i] = dedalus_sphere.sphere.k_element(mu,l,s,self.radius)
         return vector
+
+    @CachedMethod
+    def vector_slice(self, m, ell):
+        if m > ell:
+            return None
+        mi = self.local_m.index(m)
+        li = self.local_l.index(ell)
+        return (mi, li)
+
+    def vector_3(self, comp, m, ell):
+        slices = self.vector_slice(m, ell)
+        if slices is None:
+            return None
+        comp5 = reduced_view(comp, axis=self.axis, dim=self.dist.dim)
+        return comp5[(slice(None),) + slices + (slice(None),)]
+
 
 SWSH = SpinWeightedSphericalHarmonics
 
@@ -1318,7 +1347,7 @@ class BallBasis(RegularityBasis):
         data_axis = len(field.tensorsig) + axis
         grid_size = gdata.shape[data_axis]
         # Apply regularity recombination
-        self.forward_regularity_recombination(field, axis, gdata)
+        self.forward_regularity_recombination(field.tensorsig, axis, gdata)
         # Perform radial transforms component-by-component
         R = self.regularity_classes(field.tensorsig)
         for i, r in np.ndenumerate(R):
@@ -1334,7 +1363,7 @@ class BallBasis(RegularityBasis):
            plan = self.transform_plan(grid_size, i, r, self.k, self.alpha)
            plan.backward(cdata[i], gdata[i], axis)
         # Apply regularity recombinations
-        self.backward_regularity_recombination(field, axis, gdata)
+        self.backward_regularity_recombination(field.tensorsig, axis, gdata)
 
     @CachedMethod
     def operator_matrix(self,op,l,deg,dk=0):
@@ -1441,6 +1470,73 @@ class ConvertBall(operators.Convert, operators.SphericalEllOperator):
         else:
             return basis.zeros_matrix(ell, basis.regtotal(regindex_in), basis.regtotal(regindex_out))
 
+
+# I wanted this _check_args for all Interpolation operators on the Ball... but doesn't seem to work
+#class BallInterpolate(operators.Interpolate, metaclass=MultiClass):
+#
+#    basis_type = BallBasis
+#
+#    @classmethod
+#    def _check_args(cls, operand, coord, position, out=None):
+#        # Dispatch by operand basis
+#        if isinstance(operand, Operand):
+#            if isinstance(operand.get_basis(coord), cls.basis_type):
+#                if operand.domain.get_basis_subaxis(coord) == cls.basis_subaxis:
+#                    return True
+#        return False
+
+
+class BallRadialInterpolate(operators.Interpolate):
+
+    basis_type = BallBasis
+    basis_subaxis = 2
+    separable = False
+
+    @classmethod
+    def _check_args(cls, operand, coord, position, out=None):
+        # Dispatch by operand basis
+        if isinstance(operand, Operand):
+            if isinstance(operand.get_basis(coord), cls.basis_type):
+                if operand.domain.get_basis_subaxis(coord) == cls.basis_subaxis:
+                    return True
+        return False
+
+    def output_basis(self, input_basis):
+        return input_basis.S2_basis(radius=self.position)
+
+    def subproblem_matrix(self, subproblem):
+        pass
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.operand
+        basis_in = self.input_basis
+        basis_out = out.bases[0] # We're assuming here only one basis...
+        # Set output layout
+        out.set_layout(operand.layout)
+        # Apply operator
+        R = basis_in.regularity_classes(operand.tensorsig)
+        for regindex, regtotal in np.ndenumerate(R):
+           comp_in = operand.data[regindex]
+           comp_out = out.data[regindex]
+           for m in basis_in.local_m:
+               for ell in basis_in.local_l:
+                   vec3_in = basis_in.radial_vector_3(comp_in, m, ell, regindex)
+                   vec3_out = basis_out.vector_3(comp_out, m, ell)
+                   if (vec3_in is not None) and (vec3_out is not None):
+                       A = self.radial_vector(ell, regtotal, self.position)
+                       apply_matrix(A, vec3_in, axis=1, out=vec3_out)
+        # Q matrix
+        basis_in.backward_regularity_recombination(operand.tensorsig, self.basis_subaxis, out.data)
+
+    def radial_vector(self, ell, regtotal, position):
+        basis = self.input_basis
+        return self._radial_vector(basis, 'r=R', ell, regtotal)
+
+    @staticmethod
+    @CachedMethod
+    def _radial_vector(basis, op, ell, regtotal):
+        return reshape_vector(basis.operator_matrix(op, ell, regtotal), dim=2, axis=1)
 
 
 from . import transforms

@@ -569,7 +569,8 @@ class LinearOperator(FutureField):
             self.axis = self.coord.axis
         except AttributeError:
             self.axis = self.coord.coords[0].axis
-        self.input_basis = args[0].bases[self.axis]
+        self.input_basis = args[0].domain.full_bases[self.axis]
+        self.basis_axis = self.input_basis.axis
         self.tensorsig = args[0].tensorsig
         self.dtype = args[0].dtype
         super().__init__(*args, **kw)
@@ -577,12 +578,12 @@ class LinearOperator(FutureField):
     @CachedAttribute
     def bases(self):
         output_bases = list(self.operand.bases)  # copy input bases
-        output_bases[self.axis] = self.output_basis(self.input_basis)
+        output_bases[self.basis_axis] = self.output_basis(self.input_basis)
         return tuple(output_bases)
 
     def check_conditions(self):
         """Check that arguments are in a proper layout."""
-        last_axis = self.axis + self.input_basis.dim - 1
+        last_axis = self.basis_axis + self.input_basis.dim - 1
         is_coeff = not self.operand.layout.grid_space[last_axis]
         is_local = self.operand.layout.local[last_axis]
         # Require coefficient space along operator axis
@@ -594,7 +595,7 @@ class LinearOperator(FutureField):
 
     def enforce_conditions(self):
         """Require arguments to be in a proper layout."""
-        last_axis = self.axis + self.input_basis.dim - 1
+        last_axis = self.basis_axis + self.input_basis.dim - 1
         # Require coefficient space along operator axis
         self.operand.require_coeff_space(last_axis)
         # Require locality along operator axis if non-separable
@@ -839,22 +840,16 @@ class TimeDerivative(LinearOperator):
         return self.operand.separability(*vars).copy()
 
 
-
-
-
-
 @parseable('interpolate', 'interp')
 def interpolate(arg, **positions):
     # Identify domain
     domain = unify_attributes((arg,)+tuple(positions), 'domain', require=False)
     # Apply iteratively
-    for space, position in positions.items():
-        space = domain.get_space_object(space)
-        arg = Interpolate(arg, space, position)
+    for coord, position in positions.items():
+        arg = Interpolate(arg, coord, position)
     return arg
 
-
-class Interpolate(LinearSubspaceFunctional, metaclass=MultiClass):
+class Interpolate(LinearOperator, metaclass=MultiClass):
     """
     Interpolation along one dimension.
 
@@ -867,42 +862,95 @@ class Interpolate(LinearSubspaceFunctional, metaclass=MultiClass):
     """
 
     @classmethod
-    def _check_args(cls, operand, space, position, out=None):
-        # Dispatch by operand basis
-        if isinstance(operand, Operand):
-            if isinstance(operand.get_basis(space), cls.input_basis_type):
-                return True
-        return False
+    def _preprocess_args(cls, operand, coord, position, out=None):
+        if isinstance(coord, coords.Coordinate):
+            pass
+        elif isinstance(coord, str):
+            coord = operand.domain.get_coord(coord)
+        else:
+            raise ValueError("coord must be Coordinate or str")
+        return (operand, coord, position), {'out': out}
 
-    def __init__(self, operand, space, position, out=None):
+#    @classmethod
+#    def _check_args(cls, operand, coord, position, out=None):
+#        # Dispatch by operand basis
+#        if isinstance(operand, Operand):
+#            if isinstance(operand.get_basis(coord), cls.basis_type):
+#                return True
+#        return False
+
+    def __init__(self, operand, coord, position, out=None):
         self.position = position
-        super().__init__(operand, space, position, out=out)
+        super().__init__(operand, coord, position, out=out)
 
     def _expand_multiply(self, operand, vars):
         """Expand over multiplication."""
         # Apply to each factor
         return np.prod([self.new_operand(arg) for arg in operand.args])
 
+    def separability(self, *vars):
+        """Determine separable dimensions of expression as a linear operator on specified variables."""
+        # Start from operand separability
+        separability = self.operand.separability(*vars).copy()
+        if not self.separable:
+            separability[self.axis] = False
+        return separability
+
     @property
     def base(self):
         return Interpolate
 
 
-class InterpolateConstant(Interpolate):
-    """Constant interpolation."""
-
-    @classmethod
-    def _check_args(cls, operand, space, position, out=None):
-        # Dispatch for numbers or constant bases
-        if isinstance(operand, Number):
-            return True
-        if isinstance(operand, Operand):
-            if operand.get_basis(space) is None:
-                return True
-        return False
-
-    def __new__(cls, operand, space, position, out=None):
-        return operand
+#class Interpolate(LinearSubspaceFunctional, metaclass=MultiClass):
+#    """
+#    Interpolation along one dimension.
+#
+#    Parameters
+#    ----------
+#    operand : number or Operand object
+#    space : Space object
+#    position : 'left', 'center', 'right', or float
+#
+#    """
+#
+#    @classmethod
+#    def _check_args(cls, operand, coord, position, out=None):
+#        # Dispatch by operand basis
+#        if isinstance(operand, Operand):
+#            if isinstance(operand.get_basis(coord), cls.input_basis_type):
+#                if operand.domain.get_basis_subaxis(coord) == cls.input_basis_subaxis:
+#                    return True
+#        return False
+#
+#    def __init__(self, operand, coord, position, out=None):
+#        self.position = position
+#        super().__init__(operand, coord, position, out=out)
+#
+#    def _expand_multiply(self, operand, vars):
+#        """Expand over multiplication."""
+#        # Apply to each factor
+#        return np.prod([self.new_operand(arg) for arg in operand.args])
+#
+#    @property
+#    def base(self):
+#        return Interpolate
+#
+#
+#class InterpolateConstant(Interpolate):
+#    """Constant interpolation."""
+#
+#    @classmethod
+#    def _check_args(cls, operand, coord, position, out=None):
+#        # Dispatch for numbers or constant bases
+#        if isinstance(operand, Number):
+#            return True
+#        if isinstance(operand, Operand):
+#            if operand.get_basis(coord) is None:
+#                return True
+#        return False
+#
+#    def __new__(cls, operand, coord, position, out=None):
+#        return operand
 
 
 @parseable('integrate', 'integ')
@@ -1309,7 +1357,6 @@ class ConvertSame(Convert):
 #             out.data[axindex(axis, mask)] = operand.data / output_basis.const
 
 
-
 class Gradient(LinearOperator, metaclass=MultiClass):
 
     def __init__(self, operand, cs, out=None):
@@ -1345,7 +1392,7 @@ class CartesianGradient(Gradient):
         self._operand = operand
         self.cs = cs
         self.bases = bases
-        self.tensorsig = [cs,] + list(operand.tensorsig)
+        self.tensorsig = tuple([cs,] + list(operand.tensorsig))
         self.dtype = operand.dtype
 
     def _build_bases(self, *args):
