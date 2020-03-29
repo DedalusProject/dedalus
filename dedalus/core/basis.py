@@ -1339,9 +1339,9 @@ class BallBasis(RegularityBasis):
         return reshape_vector(weights.astype(np.float64)[local_elements], dim=self.dist.dim, axis=self.axis+2)
 
     @CachedMethod
-    def transform_plan(self, grid_size, regularity, deg, k, alpha):
+    def transform_plan(self, grid_size, regindex, regtotal, k, alpha):
         """Build transform plan."""
-        return self.transforms[self.radius_library](grid_size, self.Lmax+1, self.local_l, regularity, deg, k, alpha)
+        return self.transforms[self.radius_library](grid_size, self.Nmax+1, self.local_l, regindex, regtotal, k, alpha)
 
     def forward_transform_radius(self, field, axis, gdata, cdata):
         data_axis = len(field.tensorsig) + axis
@@ -1350,9 +1350,9 @@ class BallBasis(RegularityBasis):
         self.forward_regularity_recombination(field.tensorsig, axis, gdata)
         # Perform radial transforms component-by-component
         R = self.regularity_classes(field.tensorsig)
-        for i, r in np.ndenumerate(R):
-           plan = self.transform_plan(grid_size, i, r, self.k, self.alpha)
-           plan.forward(gdata[i], cdata[i], axis)
+        for regindex, regtotal in np.ndenumerate(R):
+           plan = self.transform_plan(grid_size, regindex, regtotal, self.k, self.alpha)
+           plan.forward(gdata[regindex], cdata[regindex], axis)
 
     def backward_transform_radius(self, field, axis, cdata, gdata):
         data_axis = len(field.tensorsig) + axis
@@ -1368,10 +1368,6 @@ class BallBasis(RegularityBasis):
     @CachedMethod
     def operator_matrix(self,op,l,deg,dk=0):
         return dedalus_sphere.ball.operator(3,op,self.Nmax,self.k+dk,l,deg,radius=self.radius,alpha=self.alpha).astype(np.float64)
-
-    @CachedMethod
-    def zeros_matrix(self,l,deg_in,deg_out):
-        return dedalus_sphere.ball.zeros(self.Nmax,l,deg_out,deg_in)
 
     @CachedMethod
     def conversion_matrix(self, ell, regtotal, dk):
@@ -1393,7 +1389,7 @@ class BallBasis(RegularityBasis):
         if not self.regularity_allowed(ell, regindex):
             return None
         regtotal = self.regtotal(regindex)
-        nmin = dedalus_sphere.ball.Nmin(ell, regtotal)
+        nmin = dedalus_sphere.ball.Nmin(ell, 0)
         return (nmin, Nmax)
 
     def n_size(self, regindex, ell, Nmax=None):
@@ -1468,7 +1464,7 @@ class ConvertBall(operators.Convert, operators.SphericalEllOperator):
         if regindex_in == regindex_out:
             return basis.conversion_matrix(ell, regtotal, dk)
         else:
-            return basis.zeros_matrix(ell, basis.regtotal(regindex_in), basis.regtotal(regindex_out))
+            return basis.operator_matrix('0', ell, 0)
 
 
 # I wanted this _check_args for all Interpolation operators on the Ball... but doesn't seem to work

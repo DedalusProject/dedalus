@@ -14,7 +14,7 @@ c = coords.CartesianCoordinates('x')
 d = distributor.Distributor(c.coords)
 xb = basis.ChebyshevT(c.coords[0], size=16, bounds=(0, 1))
 x = xb.local_grid(1)
-f = field.Field(dist=d, bases=[xb], dtype=np.complex128)
+f = field.Field(dist=d, bases=(xb,), dtype=np.complex128)
 f['g'] = x**5
 fx= operators.Differentiate(f, c.coords[0]).evaluate()
 fxg = 5 * x**4

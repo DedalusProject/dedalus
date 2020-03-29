@@ -32,7 +32,7 @@ def D(sp,mu,i,deg):
 
 def E(sp,i,deg): return ball.operator(3,'E',N,i,sp.ell,deg)
 
-def Z(sp,deg_out,deg_in): return ball.zeros(N,sp.ell,deg_out,deg_in)
+def zeros(sp): return ball.operator(3,'0',N,0,sp.ell,0)
 
 sp = Subproblem(3)
 
@@ -43,12 +43,13 @@ xip = intertwiner.xi(+1,sp.ell)
 gradf = operators.Gradient(f, c)
 L1 = gradf.subproblem_matrix(sp)
 
+Z = zeros(sp)
+
 L03 = xim*D(sp,-1,0,0)
 L13 = xip*D(sp,+1,0,0)
-L23 = Z(sp,0,0)
 L1_old = sparse.bmat([[L03],
                       [L13],
-                      [L23]])
+                      [Z]])
 
 result = np.allclose(L1.todense(),L1_old.todense())
 results.append(result)
@@ -58,20 +59,15 @@ print(len(results), ':', result)
 lapu = operators.Laplacian(u, c)
 L2 = lapu.subproblem_matrix(sp)
 
-Z01 = Z(sp,-1,+1)
-Z02 = Z(sp,-1, 0)
-Z10 = Z(sp,+1,-1)
-Z12 = Z(sp,+1, 0)
-Z20 = Z(sp, 0,-1)
-Z21 = Z(sp, 0,+1)
+Z = zeros(sp)
 
 L00 = D(sp,-1,1, 0).dot(D(sp,+1, 0,-1))
 L11 = D(sp,+1,1, 0).dot(D(sp,-1, 0,+1))
 L22 = D(sp,-1,1,+1).dot(D(sp,+1, 0, 0))
 
-L2_old=sparse.bmat([[L00, Z01, Z02],
-                    [Z10, L11, Z12],
-                    [Z20, Z21, L22]])
+L2_old=sparse.bmat([[L00,   Z,   Z],
+                    [  Z, L11,   Z],
+                    [  Z,   Z, L22]])
 
 result = np.allclose(L2.todense(),L2_old.todense())
 results.append(result)
@@ -83,9 +79,9 @@ L3 = divu.subproblem_matrix(sp)
 
 L30 = xim*D(sp,+1,0,-1)
 L31 = xip*D(sp,-1,0,+1)
-Z32 = Z(sp, 0, 0)
+Z = zeros(sp)
 
-L3_old=sparse.bmat([[L30, L31, Z32]])
+L3_old=sparse.bmat([[L30, L31, Z]])
 
 result = np.allclose(L3.todense(),L3_old.todense())
 results.append(result)
@@ -110,9 +106,9 @@ M00 = E(sp,1,-1).dot(E(sp, 0,-1))
 M11 = E(sp,1,+1).dot(E(sp, 0,+1))
 M22 = E(sp,1, 0).dot(E(sp, 0, 0))
 
-L5_old=sparse.bmat([[M00, Z01, Z02],
-                    [Z10, M11, Z12],
-                    [Z20, Z21, M22]])
+L5_old=sparse.bmat([[M00,   Z,   Z],
+                    [  Z, M11,   Z],
+                    [  Z,   Z, M22]])
 
 result = np.allclose(L5.todense(),L5_old.todense())
 results.append(result)
@@ -126,10 +122,10 @@ L6 = op_matrices[f]
 
 L03 = xim*E(sp,+1,-1)@D(sp,-1,0,0)
 L13 = xip*E(sp,+1,+1)@D(sp,+1,0,0)
-L23 = Z(sp,0,0)
+Z = zeros(sp)
 L6_old = sparse.bmat([[L03],
                       [L13],
-                      [L23]])
+                      [Z]])
 
 result = np.allclose(L6.todense(),L6_old.todense())
 results.append(result)
@@ -144,11 +140,10 @@ print(len(results), ':', result)
 
 # Zeros
 
-Z20 = Z(sp, 0,-1)
-Z21 = Z(sp, 0,+1)
+Z = zeros(sp)
 L22 = D(sp,-1,1,+1).dot(D(sp,+1, 0, 0))
 
-L8_old=0*sparse.bmat([[Z20, Z21, L22]])
+L8_old=0*sparse.bmat([[Z, Z, L22]])
 
 zero = operators.Zero(u, c, ())
 L8 = zero.subproblem_matrix(sp)

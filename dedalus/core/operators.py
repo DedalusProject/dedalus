@@ -1573,7 +1573,7 @@ class SphericalGradient(Gradient, SphericalEllOperator):
         if regindex_out[0] != 2 and regindex_in == regindex_out[1:]:
             return self._radial_matrix(basis, regindex_out[0], regtotal, ell)
         else:
-            return basis.zeros_matrix(ell, basis.regtotal(regindex_in), basis.regtotal(regindex_out))
+            return basis.operator_matrix('0', ell, 0)
 
     @staticmethod
     @CachedMethod
@@ -1734,7 +1734,7 @@ class SphericalDivergence(Divergence, SphericalEllOperator):
         if regindex_in[0] != 2 and regindex_in[1:] == regindex_out:
             return self._radial_matrix(basis, regindex_in[0], regtotal, ell)
         else:
-            return basis.zeros_matrix(ell, basis.regtotal(regindex_in), basis.regtotal(regindex_out))
+            return basis.operator_matrix('0', ell, 0)
 
     @staticmethod
     @CachedMethod
@@ -1814,7 +1814,7 @@ class SphericalCurl(Curl, SphericalEllOperator):
         if regindex_in[1:] == regindex_out[1:]:
             return self._radial_matrix(basis, regindex_in[0], regindex_out[0], regtotal_in, regtotal_out, ell)
         else:
-            return basis.zeros_matrix(ell, regtotal_in, regtotal_out)
+            return basis.operator_matrix('0', ell, 0)
 
     @staticmethod
     @CachedMethod
@@ -1828,7 +1828,7 @@ class SphericalCurl(Curl, SphericalEllOperator):
         elif regindex_in0 == 2 and regindex_out0 == 1:
             return 1j * basis.xi(-1, ell+regtotal_in) * basis.operator_matrix('D+', ell, regtotal_in)
         else:
-            return basis.zeros_matrix(ell, regtotal_in, regtotal_out)
+            return basis.operator_matrix('0', ell, 0)
 
 
 class Laplacian(LinearOperator, metaclass=MultiClass):
@@ -1885,19 +1885,18 @@ class SphericalLaplacian(Laplacian, SphericalEllOperator):
     def regindex_out(self, regindex_in):
         return (regindex_in,)
 
-    # Could probably cache this?
     def radial_matrix(self, regindex_in, regindex_out, ell):
         basis = self.input_basis
         regtotal = basis.regtotal(regindex_in)
         if regindex_in == regindex_out:
             return self._radial_matrix(basis, regtotal, ell)
         else:
-            return basis.zeros_matrix(ell, basis.regtotal(regindex_in), basis.regtotal(regindex_out))
+            return basis.operator_matrix('0', ell, 0)
 
     @staticmethod
     @CachedMethod
     def _radial_matrix(basis, regtotal, ell):
-        return basis.operator_matrix('D-', ell+1, regtotal, dk=1) @ basis.operator_matrix('D+', ell, regtotal)
+        return basis.operator_matrix('D-', ell, regtotal+1, dk=1) @ basis.operator_matrix('D+', ell, regtotal)
 
 
 # Don't know if we really need this, but I'm making it anyway...
