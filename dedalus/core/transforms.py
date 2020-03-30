@@ -570,6 +570,8 @@ class SWSHColatitudeTransform(NonSeparableTransform):
                 grm = gdata[:, dm, :, :]
                 crm = cdata[:, dm, Lmin:, :]
                 apply_matrix(m_matrices[dm][Lmin:], grm, axis=1, out=crm)
+                # zero out low ell data -- hopefully never try to access these data
+                #cdata[:, dm, :Lmin, :] = 0
 
     def backward_reduced(self, cdata, gdata):
 

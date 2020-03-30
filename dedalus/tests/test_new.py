@@ -311,11 +311,17 @@ u['g'][2] = r**2*st*(2*ct**2*cp-r*ct**3*sp+r**3*cp**3*st**5*sp**3+r*ct*st**2*(cp
 u['g'][1] = r**2*(2*ct**3*cp-r*cp**3*st**4+r**3*ct*cp**3*st**5*sp**3-1/16*r*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
 u['g'][0] = r**2*sp*(-2*ct**2+r*ct*cp*st**2*sp-r**3*cp**2*st**5*sp**3)
 v = operators.interpolate(u,r=1).evaluate()
-v0 = 0*u['g']
 v0[0] = sp*(-2*ct**2+ct*cp*st**2*sp-cp**2*st**5*sp**3)
 v0[1] = (2*ct**3*cp-cp**3*st**4+ct*cp**3*st**5*sp**3-1/16*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
 v0[2] = st*(2*ct**2*cp-ct**3*sp+cp**3*st**5*sp**3+ct*st**2*(cp**3+sp**3))
 result = np.allclose(v['g'],v0)
+results.append(result)
+print(len(results), ':', result)
+
+b_S2 = b.S2_basis()
+v_S2 = field.Field(dist=d, bases=(b_S2,), tensorsig=(c,), dtype=np.complex128)
+v_S2['g'][:,:,:,0] = v0[:,:,:,0]
+result = np.allclose(v['c'],v_S2['c'])
 results.append(result)
 print(len(results), ':', result)
 
@@ -328,9 +334,7 @@ Ag0[2,0] = Ag0[0,2] = 2*np.cos(phi)*(np.cos(theta) - 3*np.sin(theta)*np.sin(phi)
 Ag0[1,1] = 2*np.cos(theta)*(3*np.cos(theta)*np.cos(phi)**2 - 2*np.sin(theta)*np.sin(phi))
 Ag0[1,0] = Ag0[0,1] = -2*np.cos(phi)*(np.sin(theta) + 3*np.cos(theta)*np.sin(phi))
 Ag0[0,0] = 6*np.sin(phi)**2
-#print(A['g'][0,0,:,0,0])
-#print(Ag0[0,0,:,0,0])
-result = np.allclose(A['g'][0,0],Ag0[0,0])
+result = np.allclose(A['g'],Ag0)
 results.append(result)
 print(len(results), ':', result)
 
