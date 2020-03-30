@@ -58,7 +58,7 @@ Conda Installation
 
 We preliminarily support installation through conda via a custom script that allows you to link against custom MPI/FFTW/HDF5 libraries, or opt for the builds of those packages that are available through conda.
 
-First, install conda/miniconda for your system if you don't already have it, following the `instructions from conda <https://conda.io/docs/user-guide/install/index.html>`_.
+First, install conda/miniconda for your system if you don't already have it, following the `instructions from conda <https://conda.io/en/latest/miniconda.html>`_.
 Then download the Dedalus conda installation script from `this link <https://raw.githubusercontent.com/DedalusProject/conda_dedalus/master/install_conda.sh>`_ or using::
 
     wget https://raw.githubusercontent.com/DedalusProject/conda_dedalus/master/install_conda.sh
