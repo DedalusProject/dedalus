@@ -1019,15 +1019,16 @@ class RegularityBasis(MultidimensionalBasis):
         return not dedalus_sphere.intertwiner.forbidden_regularity(l,Rb[np.array(regularity)])
 
     @CachedMethod
-    def radial_recombinations(self, tensorsig):
+    def radial_recombinations(self, tensorsig, ell_list=None):
+        if ell_list == None: ell_list = self.local_l
         # For now only implement recombinations for Ball-only tensors
         for vs in tensorsig:
             if self.coordsystem is not vs:
                 raise ValueError("Only supports tensors over ball.")
         order = len(tensorsig)
 
-        Q_matrices = np.zeros((len(self.local_l),3**order,3**order))
-        for i, l in enumerate(self.local_l):
+        Q_matrices = np.zeros((len(ell_list),3**order,3**order))
+        for i, l in enumerate(ell_list):
             for j in range(3**order):
                 for k in range(3**order):
                     s = dedalus_sphere.intertwiner.index2tuple(j,order,indexing=(-1,+1,0))
@@ -1437,7 +1438,6 @@ def prod(arg):
     else:
         return 1
 
-
 def reduced_view(data, axis, dim):
     shape = data.shape
     Na = (int(prod(shape[:axis])),)
@@ -1501,7 +1501,27 @@ class BallRadialInterpolate(operators.Interpolate):
         return input_basis.S2_basis(radius=self.position)
 
     def subproblem_matrix(self, subproblem):
-        pass
+        operand = self.args[0]
+        R_in = self.input_basis.regularity_classes(operand.tensorsig)
+        R_out = self.input_basis.regularity_classes(self.tensorsig)
+
+        # need to get ell from subproblem -- don't know how to do this
+        ell = subproblem.ell
+
+        submatrices = []
+        for regindex_out, regtotal_out in np.ndenumerate(R_out):
+            submatrix_row = []
+            for regindex_in, regtotal_in in np.ndenumerate(R_in):
+                submatrix_row.append(self.radial_matrix(ell, regindex_in, regindex_out))
+            submatrices.append(submatrix_row)
+        matrix = np.bmat(submatrices)
+        if self.tensorsig != ():
+            Q = self.input_basis.radial_recombinations(self.tensorsig,ell_list=(ell,))
+            shape = matrix.shape
+            rank = len(self.tensorsig)
+            temp = matrix.reshape((-1,)+shape[rank:])
+            apply_matrix(Q[0], temp, axis=0, out=temp)
+        return matrix
 
     def operate(self, out):
         """Perform operation."""
@@ -1520,18 +1540,22 @@ class BallRadialInterpolate(operators.Interpolate):
                    vec3_in = basis_in.radial_vector_3(comp_in, m, ell, regindex)
                    vec3_out = basis_out.vector_3(comp_out, m, ell)
                    if (vec3_in is not None) and (vec3_out is not None):
-                       A = self.radial_vector(ell, regtotal, self.position)
+                       A = self.radial_matrix(ell, regindex, regindex)
                        apply_matrix(A, vec3_in, axis=1, out=vec3_out)
         # Q matrix
         basis_in.backward_regularity_recombination(operand.tensorsig, self.basis_subaxis, out.data)
 
-    def radial_vector(self, ell, regtotal, position):
+    def radial_matrix(self, ell, regindex_in, regindex_out):
+        position = self.position
         basis = self.input_basis
-        return self._radial_vector(basis, 'r=R', ell, regtotal)
+        if regindex_in == regindex_out:
+            return self._radial_matrix(basis, 'r=R', ell, basis.regtotal(regindex_in))
+        else:
+            return np.zeros((1,basis.n_size((), ell)))
 
     @staticmethod
     @CachedMethod
-    def _radial_vector(basis, op, ell, regtotal):
+    def _radial_matrix(basis, op, ell, regtotal):
         return reshape_vector(basis.operator_matrix(op, ell, regtotal), dim=2, axis=1)
 
 

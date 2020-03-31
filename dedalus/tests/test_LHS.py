@@ -138,17 +138,63 @@ result = np.allclose(L7.todense(),L7_old.todense())
 results.append(result)
 print(len(results), ':', result)
 
-# Zeros
+# Matrix of Zeros
 
 Z = zeros(sp)
 L22 = D(sp,-1,1,+1).dot(D(sp,+1, 0, 0))
 
 L8_old=0*sparse.bmat([[Z, Z, L22]])
 
-zero = operators.Zero(u, c, ())
+zero = operators.ZeroMatrix(u, c, ())
 L8 = zero.subproblem_matrix(sp)
 
 result = np.allclose(L8.todense(),L8_old.todense())
+results.append(result)
+print(len(results), ':', result)
+
+# Scalar Interpolation
+
+op = operators.interpolate(f,r=1)
+L9 = op.subproblem_matrix(sp)
+
+L9_old = ball.operator(3,'r=R',N,0,sp.ell,0)
+
+result = np.allclose(L9,L9_old)
+results.append(result)
+print(len(results), ':', result)
+
+# Vector Interpolation
+
+op = operators.interpolate(u,r=1)
+L10 = op.subproblem_matrix(sp)
+
+N0 = b.n_size((),sp.ell)
+N1 = 2*N0
+N2 = 3*N0
+N3 = 4*N0
+
+row0=np.concatenate((             ball.operator(3,'r=R',N,0,sp.ell,-1),np.zeros(N2-N0)))
+row1=np.concatenate((np.zeros(N0),ball.operator(3,'r=R',N,0,sp.ell,+1),np.zeros(N2-N1)))
+row2=np.concatenate((np.zeros(N1),ball.operator(3,'r=R',N,0,sp.ell, 0)))
+L10_old = np.vstack((row0,row1,row2))
+Q = b.radial_recombinations((c,),ell_list=(sp.ell,))[0]
+L10_old = Q @ L10_old
+
+result = np.allclose(L10,L10_old)
+results.append(result)
+print(len(results), ':', result)
+
+# Vector of Zeros
+
+zero = operators.ZeroVector(u, c, (c,))
+L11 = zero.subproblem_matrix(sp)
+
+row0=np.concatenate((             ball.operator(3,'r=R',N,0,sp.ell,-1),np.zeros(N2-N0)))
+row1=np.concatenate((np.zeros(N0),ball.operator(3,'r=R',N,0,sp.ell,+1),np.zeros(N2-N1)))
+row2=np.concatenate((np.zeros(N1),ball.operator(3,'r=R',N,0,sp.ell, 0)))
+L11_old = 0*np.vstack((row0,row1,row2))
+
+result = np.allclose(L11,L11_old)
 results.append(result)
 print(len(results), ':', result)
 

@@ -1900,7 +1900,7 @@ class SphericalLaplacian(Laplacian, SphericalEllOperator):
 
 
 # Don't know if we really need this, but I'm making it anyway...
-class Zero(LinearOperator, metaclass=MultiClass):
+class Zero(LinearOperator):
 
     def __init__(self, operand, coords, out_tensorsig, out=None):
         super().__init__(operand, coords, out=out)
@@ -1908,27 +1908,6 @@ class Zero(LinearOperator, metaclass=MultiClass):
         self.cs = coords
         self.tensorsig = out_tensorsig
         self.dtype = operand.dtype
-
-    @classmethod
-    def _check_args(cls, operand, coords, out=None):
-        # Dispatch by coordinate system
-        if isinstance(operand, Operand):
-            if isinstance(coords, cls.cs_type):
-                return True
-        return False
-
-    @property
-    def base(self):
-        return Zero
-
-
-class SphericalZero(Zero):
-
-    cs_type = coords.SphericalCoordinates
-
-    def __init__(self, operand, coords, out_tensorsig, out=None):
-        super().__init__(operand, coords, out_tensorsig, out=out)
-        self.radius_axis = self.cs.coords[2].axis
 
     @CachedAttribute
     def bases(self):
@@ -1953,11 +1932,40 @@ class SphericalZero(Zero):
         out.set_layout(operand.layout)
         out.data[:] = 0
 
+    @property
+    def base(self):
+        return Zero
+
+
+class ZeroMatrix(Zero, metaclass=MultiClass):
+
+    @classmethod
+    def _check_args(cls, operand, coords, out=None):
+        # Dispatch by coordinate system
+        if isinstance(operand, Operand):
+            if isinstance(coords, cls.cs_type):
+                return True
+        return False
+
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
         basis = self.input_basis
-        R_in = basis.regularity_classes(operand.tensorsig)
-        R_out = basis.regularity_classes(self.tensorsig)
+
+        n_out, n_in = self.n_out_in(operand.tensorsig, self.tensorsig, basis, subproblem)
+        matrix = sparse.csr_matrix((n_out,n_in))
+        return matrix
+
+    def n_out_in(self, tensorsig_in, tensorsig_out, basis, subproblem):
+        raise NotImplementedError()
+
+
+class SphericalZeroMatrix(ZeroMatrix):
+
+    cs_type = coords.SphericalCoordinates
+
+    def n_out_in(self, tensorsig_in, tensorsig_out, basis, subproblem):
+        R_in = basis.regularity_classes(tensorsig_in)
+        R_out = basis.regularity_classes(tensorsig_out)
 
         # need to get ell from subproblem -- don't know how to do this
         ell = subproblem.ell
@@ -1968,8 +1976,49 @@ class SphericalZero(Zero):
             n_out += basis.n_size(regindex_out, ell)
         for regindex_in, regtotal_in in np.ndenumerate(R_in):
             n_in  += basis.n_size(regindex_in,  ell)
-        matrix = sparse.csr_matrix((n_out,n_in))
-        return matrix
+        return n_out, n_in
+
+
+class ZeroVector(Zero, metaclass=MultiClass):
+
+    @classmethod
+    def _check_args(cls, operand, coords, out=None):
+        # Dispatch by coordinate system
+        if isinstance(operand, Operand):
+            if isinstance(coords, cls.cs_type):
+                return True
+        return False
+
+    def subproblem_matrix(self, subproblem):
+        operand = self.args[0]
+        basis = self.input_basis
+
+        n_out, n_in = self.n_out_in(operand.tensorsig, self.tensorsig, basis, subproblem)
+        vector = np.zeros((n_out,n_in))
+        return vector
+
+    def n_out_in(self, tensorsig_in, tensorsig_out, basis, subproblem):
+        raise NotImplementedError()
+
+
+class SphericalZeroVector(ZeroVector):
+
+    cs_type = coords.SphericalCoordinates
+
+    def n_out_in(self, tensorsig_in, tensorsig_out, basis, subproblem):
+        R_in = basis.regularity_classes(tensorsig_in)
+        R_out = basis.regularity_classes(tensorsig_out)
+
+        # need to get ell from subproblem -- don't know how to do this
+        ell = subproblem.ell
+
+        n_out = 0
+        n_in = 0
+        for regindex_out, regtotal_out in np.ndenumerate(R_out):
+            n_out += 1
+        for regindex_in, regtotal_in in np.ndenumerate(R_in):
+            n_in  += basis.n_size(regindex_in,  ell)
+        return n_out, n_in
 
 
 class CrossProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
