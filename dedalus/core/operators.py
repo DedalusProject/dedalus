@@ -1973,9 +1973,11 @@ class SphericalZeroMatrix(ZeroMatrix):
         n_out = 0
         n_in = 0
         for regindex_out, regtotal_out in np.ndenumerate(R_out):
-            n_out += basis.n_size(regindex_out, ell)
+            if basis.regularity_allowed(ell, regindex_out):
+                n_out += basis.n_size(regindex_out, ell)
         for regindex_in, regtotal_in in np.ndenumerate(R_in):
-            n_in  += basis.n_size(regindex_in,  ell)
+            if basis.regularity_allowed(ell, regindex_in):
+                n_in  += basis.n_size(regindex_in,  ell)
         return n_out, n_in
 
 
