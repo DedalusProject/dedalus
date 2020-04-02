@@ -40,7 +40,6 @@ print(len(results), ':', result, '(gradient of a vector)')
 
 # Divergence of a vector
 h = operators.Divergence(u, c)
-print(h)
 h = h.evaluate()
 h.name = 'h'
 hg = - np.sin(x) * y**5 + np.sin(x) * 20 * y**3

@@ -1280,12 +1280,13 @@ class Convert(LinearOperator, metaclass=MultiClass):
         operand = self.operand
         layout = operand.layout
         last_axis = self.axis + self.input_basis.dim - 1
-        # Revert to matrix application for coeff space
-        if not layout.grid_space[last_axis]:
-            super().operate(out)
         # Copy for grid space
-        out.set_layout(layout)
-        np.copyto(out.data, operand.data)
+        if layout.grid_space[last_axis]:
+            out.set_layout(layout)
+            np.copyto(out.data, operand.data)
+        # Revert to matrix application for coeff space
+        else:
+            super().operate(out)
 
 
 class ConvertSame(Convert):
@@ -1653,7 +1654,6 @@ class CartesianComponent(Component, LinearOperator1D):
         out.set_layout(arg0.layout)
         # Copy specified comonent
         take_comp = tuple([None] * self.index + [self.coord.axis])
-        print(take_comp)
         out.data[:] = arg0.data[take_comp]
 
 

@@ -42,3 +42,4 @@ qg = f['g'] + fxx['g']
 result = np.allclose(q['g'], qg)
 results.append(result)
 print(len(results), ':', result, '(Jacobi conversion 2)')
+

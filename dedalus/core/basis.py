@@ -313,7 +313,7 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
     def _native_grid(self, scale):
         """Native flat global grid."""
         N, = self.grid_shape((scale,))
-        return jacobi.build_grid(N, a=self.a, b=self.b)
+        return jacobi.build_grid(N, a=self.a0, b=self.b0)
 
     @CachedMethod
     def transform_plan(self, grid_size):
@@ -400,7 +400,7 @@ def ChebyshevT(*args, **kw):
 
 
 def ChebyshevU(*args, **kw):
-    return Ultraphserical(*args, alpha=1, **kw)
+    return Ultraspherical(*args, alpha=1, **kw)
 
 
 class ConvertJacobi(operators.Convert, operators.LinearOperator1D):
