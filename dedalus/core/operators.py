@@ -1853,6 +1853,39 @@ class Laplacian(LinearOperator, metaclass=MultiClass):
         return Laplacian
 
 
+class CartesianLaplacian(Laplacian):
+
+    cs_type = coords.CartesianCoordinates
+
+    def __init__(self, operand, cs, out=None):
+        parts = [Differentiate(Differentiate(operand, c), c) for c in cs.coords]
+        arg = sum(parts)
+        LinearOperator.__init__(self, arg, cs, out=out)
+        #self.operand = operand
+        self.cs = cs
+        self.bases = arg.bases
+        self.tensorsig = arg.tensorsig
+        self.dtype = arg.dtype
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Any layout (addition is done)
+        return True
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Any layout (addition is done)
+        pass
+
+    def operate(self, out):
+        """Perform operation."""
+        # OPTIMIZE: this has an extra copy
+        arg0 = self.args[0]
+        # Set output layout
+        out.set_layout(arg0.layout)
+        np.copyto(out.data, arg0.data)
+
+
 class SphericalLaplacian(Laplacian, SphericalEllOperator):
 
     cs_type = coords.SphericalCoordinates

@@ -47,10 +47,11 @@ result = np.allclose(h['g'], hg)
 results.append(result)
 print(len(results), ':', result, '(divergence of a vector)')
 
-# h = operators.Divergence(u, c)
-# hi = h.args[0].args[0]
-# print(repr(hi))
-# print(hi.input_basis.a, hi.args[2].axis)
-# hi = hi.evaluate()
-# print(np.allclose(hi['g'], -np.sin(x) * y**5))
-# #print(np.allclose(hi['g'], np.sin(x) * 20 * y**3))
+# Laplacian of a scalar
+k = operators.Laplacian(f, c)
+k = k.evaluate()
+k.name = 'k'
+result = np.allclose(k['g'], hg)
+results.append(result)
+print(len(results), ':', result, '(laplacian of a scalar)')
+
