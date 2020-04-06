@@ -1559,4 +1559,74 @@ class BallRadialInterpolate(operators.Interpolate):
         return reshape_vector(basis.operator_matrix(op, ell, regtotal), dim=2, axis=1)
 
 
+class SphericalTransposeComponents(operators.TransposeComponents):
+
+    basis_type = BallBasis
+
+    def __init__(self, operand, indices=(0,1), out=None):
+        super().__init__(operand, indices=(0,1), out=out)
+        self.radius_axis = self.cs.coords[2].axis
+
+    def check_conditions(self):
+        """Can always take the transpose"""
+        return True
+
+    def enforce_conditions(self):
+        """Can always take the transpose"""
+        pass
+
+    def subproblem_matrix(self, subproblem):
+        operand = self.args[0]
+        R = self.input_basis.regularity_classes(self.tensorsig)
+
+        # need to get ell from subproblem -- don't know how to do this
+        ell = subproblem.ell
+
+        indices = self.indices
+        rank = len(self.tensorsig)
+        neworder = np.arange(rank)
+        neworder[indices[0]] = indices[1]
+        neworder[indices[1]] = indices[0]
+
+        n_size = self.input_basis.Nmax - dedalus_sphere.ball.Nmin(ell, 0) + 1
+        submatrices = []
+        for regindex_out, regtotal_out in np.ndenumerate(R):
+            submatrix_row = []
+            for regindex_in, regtotal_in in np.ndenumerate(R):
+                if regindex_out[neworder] == regindex_in:
+                    submatrix_row.append( sparse.identity(n_size, self.dtype, format='csr') )
+                else:
+                    submatrix_row.append( sparse.csr_matrix((n_size, n_size)) )
+            submatrices.append(submatrix_row)
+        matrix = np.bmat(submatrices)
+        if self.tensorsig != ():
+            Q = self.input_basis.radial_recombinations(self.tensorsig,ell_list=(ell,))
+            shape = matrix.shape
+            temp = matrix.reshape((-1,)+shape[rank:])
+            apply_matrix(temp, Q[0], axis=0, out=temp)
+            apply_matrix(Q[0].T, temp, axis=0, out=temp)
+        return matrix
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        # Set output layout
+        layout = operand.layout
+        out.set_layout(layout)
+        indices = self.indices
+        np.copyto(out.data, operand.data)
+
+        if not layout.grid_space[self.radius_axis]: # in regularity components
+            basis = self.input_basis
+            basis.backward_regularity_recombination(operand.tensorsig, self.radius_axis, out.data)
+
+        axes_list = np.arange(len(out.data.shape))
+        axes_list[indices[0]] = indices[1]
+        axes_list[indices[1]] = indices[0]
+        np.copyto(out.data,np.transpose(out.data,axes=axes_list))
+
+        if not layout.grid_space[self.radius_axis]: # in regularity components
+            basis.forward_regularity_recombination(operand.tensorsig, self.radius_axis, out.data)
+
+
 from . import transforms

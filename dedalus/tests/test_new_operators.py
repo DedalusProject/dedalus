@@ -1,6 +1,7 @@
 
 import numpy as np
 from dedalus.core import coords, distributor, basis, field, operators
+from dedalus.core import future
 from mpi4py import MPI
 
 comm = MPI.COMM_WORLD
@@ -190,6 +191,24 @@ result = np.allclose(w['g'],u['g']+v['g'])
 results.append(result)
 print(len(results), ':', result)
 
+# Transpose
+T = operators.Gradient(u, c).evaluate()
+T['g']
+Tg0 = np.transpose(np.copy(T['g']),(1,0,2,3,4))
+
+# grid-space transpose
+T = operators.TransposeComponents(T).evaluate()
+result = np.allclose(T['g'],Tg0)
+results.append(result)
+print(len(results), ':', result)
+
+# coeff-space transpose
+T = operators.Gradient(u, c).evaluate()
+T = operators.TransposeComponents(T).evaluate()
+result = np.allclose(T['g'],Tg0)
+results.append(result)
+print(len(results), ':', result)
+
 # Scalar Interpolation
 f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
 f['g'] = x**4 + 2*y**4 + 3*z**4
@@ -219,6 +238,12 @@ results.append(result)
 print(len(results), ':', result)
 
 # Tensor Interpolation
+T['g'][2,2] = (6*x**2+4*y*z)/r**2
+T['g'][2,1] = T['g'][1,2] = -2*(y**3+x**2*(y-3*z)-y*z**2)/(r**3*np.sin(theta))
+T['g'][2,0] = T['g'][0,2] = 2*x*(z-3*y)/(r**2*np.sin(theta))
+T['g'][1,1] = 6*x**2/(r**2*np.sin(theta)**2) - (6*x**2+4*y*z)/r**2
+T['g'][1,0] = T['g'][0,1] = -2*x*(x**2+y**2+3*y*z)/(r**3*np.sin(theta)**2)
+T['g'][0,0] = 6*y**2/(x**2+y**2)
 A = operators.interpolate(T,r=1).evaluate()
 Ag0 = 0*A['g']
 Ag0[2,2] = 2*np.sin(theta)*(3*np.cos(phi)**2*np.sin(theta)+2*np.cos(theta)*np.sin(phi)) 

@@ -1358,6 +1358,47 @@ class ConvertSame(Convert):
 #             out.data[axindex(axis, mask)] = operand.data / output_basis.const
 
 
+class TransposeComponents(LinearOperator, metaclass=MultiClass):
+
+    def __init__(self, operand, indices=(0,1), out=None):
+        if max(indices) > len(operand.tensorsig):
+            raise ValueError("Transpose index greater than operand rank")
+        cs0 = operand.tensorsig[indices[0]]
+        cs1 = operand.tensorsig[indices[1]]
+        if cs0 != cs1:
+            raise ValueError("Can only transpose two indices which have the same coordinate system")
+        self.cs = cs0
+        super().__init__(operand, self.cs, out=out)
+        tensorsig = operand.tensorsig
+        indices = list(indices)
+        for index in indices:
+            if index < 0: index = len(operand.tensorsig) + index
+        self.indices = tuple(indices)
+        self.dtype = operand.dtype
+
+    @classmethod
+    def _check_args(cls, operand, indices=(0,1), out=None):
+        # Dispatch by basis
+        if isinstance(operand, Operand):
+            cs = operand.tensorsig[indices[0]]
+            basis = operand.get_basis(cs)
+            if isinstance(basis, cls.basis_type):
+                return True
+        return False
+
+    @property
+    def base(self):
+        return TransposeComponents
+
+    @CachedAttribute
+    def bases(self):
+        return (self.output_basis(self.operand.bases[0]),)
+
+    @staticmethod
+    def output_basis(input_basis):
+        return input_basis
+
+
 class Gradient(LinearOperator, metaclass=MultiClass):
 
     def __init__(self, operand, cs, out=None):
