@@ -1588,23 +1588,24 @@ class SphericalTransposeComponents(operators.TransposeComponents):
         neworder[indices[0]] = indices[1]
         neworder[indices[1]] = indices[0]
 
-        n_size = self.input_basis.Nmax - dedalus_sphere.ball.Nmin(ell, 0) + 1
-        submatrices = []
+        matrix = []
         for regindex_out, regtotal_out in np.ndenumerate(R):
-            submatrix_row = []
+            regindex_out = np.array(regindex_out)
+            matrix_row = []
             for regindex_in, regtotal_in in np.ndenumerate(R):
-                if regindex_out[neworder] == regindex_in:
-                    submatrix_row.append( sparse.identity(n_size, self.dtype, format='csr') )
+                if tuple(regindex_out[neworder]) == regindex_in:
+                    matrix_row.append( 1 )
                 else:
-                    submatrix_row.append( sparse.csr_matrix((n_size, n_size)) )
-            submatrices.append(submatrix_row)
-        matrix = np.bmat(submatrices)
-        if self.tensorsig != ():
-            Q = self.input_basis.radial_recombinations(self.tensorsig,ell_list=(ell,))
-            shape = matrix.shape
-            temp = matrix.reshape((-1,)+shape[rank:])
-            apply_matrix(temp, Q[0], axis=0, out=temp)
-            apply_matrix(Q[0].T, temp, axis=0, out=temp)
+                    matrix_row.append( 0 )
+            matrix.append(matrix_row)
+        transpose = np.array(matrix)
+
+        Q = self.input_basis.radial_recombinations(self.tensorsig,ell_list=(ell,))
+        transpose = Q[0].T @ transpose @ Q[0]
+
+        n_size = self.input_basis.Nmax - dedalus_sphere.ball.Nmin(ell, 0) + 1
+        eye = sparse.identity(n_size, self.dtype, format='csr')
+        matrix = sparse.kron( transpose, eye)
         return matrix
 
     def operate(self, out):

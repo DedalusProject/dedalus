@@ -18,6 +18,7 @@ bk2 = basis.BallBasis(c, (16,16,16), radius=1, k=2)
 
 f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
 u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
+T = field.Field(dist=d, bases=(b,), tensorsig=(c,c,), dtype=np.complex128)
 
 class Subproblem:
 
@@ -98,7 +99,6 @@ results.append(result)
 print(len(results), ':', result)
 
 # Conversion
-
 convertu = operators.convert(u, (bk2,)) 
 L5 = convertu.subproblem_matrix(sp)
 
@@ -115,7 +115,6 @@ results.append(result)
 print(len(results), ':', result)
 
 # Composition
-
 op = operators.convert(operators.Gradient(f, c) + operators.Laplacian(u, c), (bk2,))
 op_matrices = op.expression_matrices(sp, (f,u,))
 L6 = op_matrices[f]
@@ -139,7 +138,6 @@ results.append(result)
 print(len(results), ':', result)
 
 # Matrix of Zeros
-
 Z = zeros(sp)
 L22 = D(sp,-1,1,+1).dot(D(sp,+1, 0, 0))
 
@@ -153,7 +151,6 @@ results.append(result)
 print(len(results), ':', result)
 
 # Scalar Interpolation
-
 op = operators.interpolate(f,r=1)
 L9 = op.subproblem_matrix(sp)
 
@@ -164,7 +161,6 @@ results.append(result)
 print(len(results), ':', result)
 
 # Vector Interpolation
-
 op = operators.interpolate(u,r=1)
 L10 = op.subproblem_matrix(sp)
 
@@ -185,7 +181,6 @@ results.append(result)
 print(len(results), ':', result)
 
 # Vector of Zeros
-
 zero = operators.ZeroVector(u, c, (c,))
 L11 = zero.subproblem_matrix(sp)
 
@@ -197,4 +192,30 @@ L11_old = 0*np.vstack((row0,row1,row2))
 result = np.allclose(L11,L11_old)
 results.append(result)
 print(len(results), ':', result)
+
+# Transpose
+op = operators.TransposeComponents(T)
+L12 = op.subproblem_matrix(sp)
+
+Z = zeros(sp)
+eye = np.eye(Z.shape[0])
+
+transpose = np.zeros((9,9))
+transpose[0,0] = 1
+transpose[1,3] = 1
+transpose[2,6] = 1
+transpose[3,1] = 1
+transpose[4,4] = 1
+transpose[5,7] = 1
+transpose[6,2] = 1
+transpose[7,5] = 1
+transpose[8,8] = 1
+Q = b.radial_recombinations((c,c,),ell_list=(sp.ell,))[0]
+trans = Q.T @ transpose @ Q
+L12_old = np.kron(trans, eye)
+
+result = np.allclose(L12.todense(),L12_old)
+results.append(result)
+print(len(results), ':', result)
+
 
