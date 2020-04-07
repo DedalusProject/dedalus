@@ -344,7 +344,7 @@ class Transform:
     def increment_single(self, field):
         """Backward transform a field."""
         axis = self.axis
-        basis = field.full_bases[axis]
+        basis = field.domain.full_bases[axis]
         # Reference views from both layouts
         cdata = field.data
         field.set_layout(self.layout1)
@@ -359,7 +359,7 @@ class Transform:
     def decrement_single(self, field):
         """Forward transform a field."""
         axis = self.axis
-        basis = field.full_bases[axis]
+        basis = field.domain.full_bases[axis]
         # Reference views from both layouts
         gdata = field.data
         field.set_layout(self.layout0)

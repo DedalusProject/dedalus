@@ -50,16 +50,27 @@ class Domain(metaclass=CachedClass):
         self.bases, self.full_bases = self._check_bases(bases)
         # self.dim = sum(space.dim for space in self.spaces)
         self.dealias = 1
+        self.bases_dict = {basis.coords: basis for basis in bases}
 
     def __add__(self, other):
         dist = unify_attributes([self, other], 'dist')
         full_bases = [b1+b2 for b1, b2 in zip(self.full_bases, other.full_bases)]
         raise
 
-    # def reduce_bases(self, bases):
+    # def reduce_bases(self, bases):m
+
+    def substitute_basis(self, basis):
+        bases_dict = self.bases_dict
+        bases_dict[basis.coords] = basis
+        bases = tuple(bases_dict.values())
+        return Domain(self.dist, bases)
 
     def get_basis(self, coord):
-        return self.full_bases[coord.axis]
+        if isinstance(coord, Coordinate):
+            axis = coord.axis
+        else:
+            axis = coord
+        return self.full_bases[axis]
 
     def get_basis_subaxis(self, coord):
         axis = coord.axis

@@ -36,14 +36,14 @@ class Operand:
 
     __array_priority__ = 100.
 
-    def __getattr__(self, attr):
-        # Intercept numpy ufunc calls
-        from .operators import UnaryGridFunction
-        try:
-            ufunc = UnaryGridFunction.supported[attr]
-            return partial(UnaryGridFunction, ufunc, self)
-        except KeyError:
-            raise AttributeError("%r object has no attribute %r" %(self.__class__.__name__, attr))
+    # def __getattr__(self, attr):
+    #     # Intercept numpy ufunc calls
+    #     from .operators import UnaryGridFunction
+    #     try:
+    #         ufunc = UnaryGridFunction.supported[attr]
+    #         return partial(UnaryGridFunction, ufunc, self)
+    #     except KeyError:
+    #         raise AttributeError("%r object has no attribute %r" %(self.__class__.__name__, attr))
 
     ## Idea for alternate ufunc implementation based on changes eventually (?) coming in numpy
     # def __numpy_ufunc__(self, ufunc, method, i, inputs, **kw):
@@ -129,8 +129,8 @@ class Operand:
             out['c'] = x
             return out
 
-    def get_basis(self, coord):
-        return self.domain.get_basis(coord)
+    # def get_basis(self, coord):
+    #     return self.domain.get_basis(coord)
         # space = self.domain.get_basis(coord)
         # if self.domain.spaces[space.axis] in [space, None]:
         #     return self.bases[space.axis]
@@ -429,10 +429,10 @@ class Field(Current):
         self.name = name
         self.tensorsig = tensorsig
         self.dtype = dtype
-        self.bases = bases
+        #self.bases = bases
         # Build domain
-        self.domain = Domain(dist, self.bases)
-        self.bases, self.full_bases = self.domain.bases, self.domain.full_bases
+        self.domain = Domain(dist, bases)
+        #self.bases, self.full_bases = self.domain.bases, self.domain.full_bases
         #self.bases = dist.check_bases(bases)
 
         # Set initial scales and layout

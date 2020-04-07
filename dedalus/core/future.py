@@ -39,10 +39,10 @@ class Future(Operand):
     store_last = False
 
     def __init__(self, *args, out=None):
-        # Check output consistency
-        if out is not None:
-            if out.bases != self.bases:
-                raise ValueError("Output field has wrong bases.")
+        # # Check output consistency
+        # if out is not None:
+        #     if out.bases != self.bases:
+        #         raise ValueError("Output field has wrong bases.")
         # Attributes
         self.args = list(args)
         self.original_args = tuple(args)
@@ -54,9 +54,9 @@ class Future(Operand):
         self.last_id = None
         self.scales = 1 # self.domain.dealias
 
-    @CachedAttribute
-    def domain(self):
-        return Domain(self.dist, self.bases)
+    # @CachedAttribute
+    # def domain(self):
+    #     return Domain(self.dist, self.bases)
 
     def __repr__(self):
         repr_args = map(repr, self.args)
@@ -180,7 +180,7 @@ class Future(Operand):
         if self.out:
             out = self.out
         else:
-            bases = self.bases
+            bases = self.domain.bases
             if any(bases):
                 out = self.future_type(dist=self.dist, bases=bases, tensorsig=self.tensorsig, dtype=self.dtype)
             else:

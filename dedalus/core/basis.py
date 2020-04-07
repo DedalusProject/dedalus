@@ -96,8 +96,8 @@ class Basis:
 
     def __init__(self, coords):
         self.coords = coords
-        self.dist = coords[0].dist
-        self.axis = self.dist.coords.index(coords[0])
+        self.dist = coords.dist
+        self.axis = coords.axis
         self.domain = Domain(self.dist, bases=(self,))
 
     # def __repr__(self):
@@ -232,7 +232,7 @@ class IntervalBasis(Basis):
     dim = 1
 
     def __init__(self, coord, size, bounds):
-        super().__init__((coord,))
+        super().__init__(coord)
         self.coord = coord
         self.size = size
         self.shape = (size,)
@@ -403,7 +403,7 @@ def ChebyshevU(*args, **kw):
     return Ultraspherical(*args, alpha=1, **kw)
 
 
-class ConvertJacobi(operators.Convert, operators.LinearOperator1D):
+class ConvertJacobi(operators.Convert, operators.SpectralOperator1D):
     """Jacobi polynomial conversion."""
 
     input_basis_type = Jacobi
@@ -426,7 +426,7 @@ class DifferentiateJacobi(operators.Differentiate):
     separable = False
 
     @staticmethod
-    def output_basis(input_basis):
+    def _output_basis(input_basis):
         a = input_basis.a + 1
         b = input_basis.b + 1
         return input_basis._new_a_b(a, b)
@@ -568,7 +568,7 @@ class DifferentiateComplexFourier(operators.Differentiate):
     separable = True
 
     @staticmethod
-    def output_basis(input_basis):
+    def _output_basis(input_basis):
         return input_basis
 
     @staticmethod
@@ -1525,7 +1525,7 @@ class BallRadialInterpolate(operators.Interpolate):
 
     def operate(self, out):
         """Perform operation."""
-        operand = self.operand
+        operand = self.args[0]
         basis_in = self.input_basis
         basis_out = out.bases[0] # We're assuming here only one basis...
         # Set output layout
