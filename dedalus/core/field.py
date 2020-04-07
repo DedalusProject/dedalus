@@ -276,7 +276,7 @@ class Current(Operand):
     def separability(self, *vars):
         """Determine separable dimensions of expression as a linear operator on specified variables."""
         self.require_linearity(*vars)
-        return np.array([True for basis in self.bases])
+        return np.array([True for basis in self.domain.bases])
 
     # def operator_order(self, operator):
     #     """Determine maximum application order of an operator in the expression."""
@@ -293,7 +293,7 @@ class Current(Operand):
         # group_shape = subproblem.group_shape(self.domain)
         # factors = (sparse.identity(n, format='csr') for n in group_shape)
         # matrix = reduce(sparse.kron, factors, 1).tocsr()
-        size = self.bases[0].field_radial_size(self, subproblem.ell)
+        size = self.domain.bases[0].field_radial_size(self, subproblem.ell)
         matrix = sparse.identity(size, format='csr')
         return {self: matrix}
 
@@ -472,7 +472,7 @@ class Field(Current):
         return self.layout.global_shape(self.domain, self.scales)
 
     def copy(self):
-        copy = Field(self.dist, bases=self.bases)
+        copy = Field(self.dist, bases=self.domain.bases)
         copy.set_scales(self.scales)
         copy[self.layout] = self.data
         return copy
@@ -641,7 +641,7 @@ class Field(Current):
 
     @property
     def is_scalar(self):
-        return all(basis is None for basis in self.bases)
+        return all(basis is None for basis in self.domain.bases)
 
     def local_elements(self):
         return self.layout.local_elements(self.domain, self.scales)

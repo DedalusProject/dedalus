@@ -112,6 +112,10 @@ class Basis:
     # def __rmul__(self, other):
     #     return self.__mul__(other)
 
+    @property
+    def last_axis(self):
+        return self.axis + self.dim - 1
+
     def grid_shape(self, scales):
         return tuple(int(np.ceil(s*n)) for s, n in zip(scales, self.shape))
 
@@ -898,12 +902,12 @@ class MultidimensionalBasis(Basis):
 class SpinBasis(MultidimensionalBasis):
 
     def __init__(self, coordsystem, shape, azimuth_library='matrix'):
-        super().__init__(coordsystem.coords)
+        super().__init__(coordsystem)
         self.coordsystem = coordsystem
         self.shape = shape
         self.azimuth_library = azimuth_library
         self.mmax = (shape[0] - 1) // 2
-        self.azimuth_basis = ComplexFourier(self.coords[0], shape[0], bounds=(0, 2*np.pi), library=azimuth_library)
+        self.azimuth_basis = ComplexFourier(coordsystem.coords[0], shape[0], bounds=(0, 2*np.pi), library=azimuth_library)
         self.global_grid_azimuth = self.azimuth_basis.global_grid
         self.local_grid_azimuth = self.azimuth_basis.local_grid
         self.forward_transform_azimuth = self.azimuth_basis.forward_transform
@@ -976,7 +980,7 @@ class SpinBasis(MultidimensionalBasis):
 class RegularityBasis(MultidimensionalBasis):
 
     def __init__(self, coordsystem, shape, azimuth_library='matrix', colatitude_library='matrix'):
-        super().__init__(coordsystem.coords)
+        super().__init__(coordsystem)
         self.coordsystem = coordsystem
         self.shape = shape
         self.azimuth_library = azimuth_library
@@ -1460,7 +1464,7 @@ class ConvertBall(operators.Convert, operators.SphericalEllOperator):
     def radial_matrix(self, regindex_in, regindex_out, ell):
         basis = self.input_basis
         regtotal = basis.regtotal(regindex_in)
-        dk = self.bases[0].k - basis.k
+        dk = self.output_basis.k - basis.k
         if regindex_in == regindex_out:
             return basis.conversion_matrix(ell, regtotal, dk)
         else:

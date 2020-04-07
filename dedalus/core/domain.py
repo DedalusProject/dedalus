@@ -65,11 +65,11 @@ class Domain(metaclass=CachedClass):
         bases = tuple(bases_dict.values())
         return Domain(self.dist, bases)
 
-    def get_basis(self, coord):
-        if isinstance(coord, Coordinate):
-            axis = coord.axis
+    def get_basis(self, coords):
+        if isinstance(coords, int):
+            axis = coords
         else:
-            axis = coord
+            axis = coords.axis
         return self.full_bases[axis]
 
     def get_basis_subaxis(self, coord):

@@ -785,7 +785,7 @@ class SpectralOperator1D(SpectralOperator):
         """Perform operation."""
         arg = self.args[0]
         layout = arg.layout
-        axis = self.axis
+        axis = self.last_axis
         matrix = self.subspace_matrix
         # Set output layout
         out.set_layout(layout)
@@ -795,7 +795,7 @@ class SpectralOperator1D(SpectralOperator):
             out_elements = out.local_elements()[axis]
             matrix = matrix[arg_elements[:,None], out_elements[None,:]]
         # Apply matrix
-        data_axis = self.axis + len(arg.tensorsig)
+        data_axis = self.last_axis + len(arg.tensorsig)
         apply_matrix(matrix, arg.data, data_axis, out=out.data)
 
 
@@ -1245,11 +1245,10 @@ class Convert(SpectralOperator, metaclass=MultiClass):
     def __init__(self, operand, output_basis, out=None):
         super().__init__(operand, out=out)
         # SpectralOperator requirements
-        self.coord = output_basis.coord
-        self.input_basis = operand.domain.get_basis(self.coord)
+        self.coords = output_basis.coords
+        self.input_basis = operand.domain.get_basis(self.coords)
         self.output_basis = output_basis
-        self.last_axis = self.coord.axis
-        self.axis = self.coord.axis
+        self.last_axis = self.output_basis.last_axis
         # LinearOperator requirements
         self.operand = operand
         # Operator requirements
@@ -1287,7 +1286,7 @@ class Convert(SpectralOperator, metaclass=MultiClass):
     def check_conditions(self):
         """Check that arguments are in a proper layout."""
         arg0 = self.args[0]
-        last_axis = self.axis + self.input_basis.dim - 1
+        last_axis = self.last_axis
         is_coeff = not arg0.layout.grid_space[last_axis]
         is_local = arg0.layout.local[last_axis]
         # Allow conversion in grid space
@@ -1302,7 +1301,7 @@ class Convert(SpectralOperator, metaclass=MultiClass):
     def enforce_conditions(self):
         """Require arguments to be in a proper layout."""
         arg0 = self.args[0]
-        last_axis = self.axis + self.input_basis.dim - 1
+        last_axis = self.last_axis
         is_coeff = not arg0.layout.grid_space[last_axis]
         is_local = arg0.layout.local[last_axis]
         # Require locality if non-separable and in coeff space
@@ -1337,7 +1336,7 @@ class Convert(SpectralOperator, metaclass=MultiClass):
         """Perform operation."""
         arg = self.args[0]
         layout = arg.layout
-        last_axis = self.axis + self.input_basis.dim - 1
+        last_axis = self.last_axis
         # Copy for grid space
         if layout.grid_space[last_axis]:
             out.set_layout(layout)
@@ -1461,14 +1460,6 @@ class TransposeComponents(LinearOperator, metaclass=MultiClass):
 
 class Gradient(LinearOperator, metaclass=MultiClass):
 
-    def __init__(self, operand, coords, out=None):
-        super().__init__(operand, cs, out=out)
-        self._operand = operand
-        self.cs = cs
-#        self.bases = operand.bases
-        self.tensorsig = tuple([cs,] + list(operand.tensorsig))
-        self.dtype = operand.dtype
-
     @classmethod
     def _check_args(cls, operand, cs, out=None):
         # Dispatch by coordinate system
@@ -1496,7 +1487,7 @@ class CartesianGradient(Gradient):
         self.operand = operand
         # Operator requirements
         self.domain = Domain(operand.dist, bases)
-        self.tensorsig = tuple([coordsys,] + list(operand.tensorsig))
+        self.tensorsig = (coordsys,) + operand.tensorsig
         self.dtype = operand.dtype
 
     def _build_bases(self, *args):
@@ -1529,14 +1520,24 @@ class CartesianGradient(Gradient):
             out.data[i] = comp.data
 
 
-class S2Gradient(Gradient):
+class S2Gradient(Gradient, SpectralOperator):
 
     cs_type = coords.S2Coordinates
 
-    def __init__(self, operand, cs, out=None):
-        super().__init__(operand, cs, out=out)
-        self.colatitude_axis = cs.coords[1].axis
-        self.bases = operand.bases
+    def __init__(self, operand, coordsys, out=None):
+        super().__init__(operand, out=out)
+        self.coordsys = coordsys
+        self.colatitude_axis = coordsys.coords[1].axis
+        # SpectralOperator requirements
+        self.input_basis = operand.domain.get_basis(coordsys)
+        self.output_basis = self.input_basis
+        self.last_axis = self.input_basis.last_axis
+        # LinearOperator requirements
+        self.operand = operand
+        # Operator requirements
+        self.domain  = operand.domain
+        self.tensorsig = (coordsys,) + operand.tensorsig
+        self.dtype = operand.dtype
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""
@@ -1552,7 +1553,7 @@ class S2Gradient(Gradient):
     def operate(self, out):
         """Perform operation."""
         operand = self.args[0]
-        basis = operand.domain.get_basis(self.cs.coords[1])
+        basis = self.input_basis
         azimuthal_axis = self.colatitude_axis - 1
         layout = operand.layout
         # Set output layout
@@ -1589,7 +1590,7 @@ def reduced_view_4(data, axis):
     return data.reshape((N0, N1, N2, N3))
 
 
-class SphericalEllOperator(LinearOperator, metaclass=MultiClass):
+class SphericalEllOperator(SpectralOperator, metaclass=MultiClass):
 
     def operate(self, out):
         """Perform operation."""
@@ -1641,16 +1642,23 @@ class SphericalGradient(Gradient, SphericalEllOperator):
 
     cs_type = coords.SphericalCoordinates
 
-    def __init__(self, operand, cs, out=None):
-        super().__init__(operand, cs, out=out)
-        self.radius_axis = cs.coords[2].axis
-
-    @CachedAttribute
-    def bases(self):
-        return (self.output_basis(self.operand.bases[0]),)
+    def __init__(self, operand, coordsys, out=None):
+        super().__init__(operand, out=out)
+        self.coordsys = coordsys
+        self.radius_axis = coordsys.coords[2].axis
+        # SpectralOperator requirements
+        self.input_basis = operand.domain.get_basis(coordsys)
+        self.output_basis = self._output_basis(self.input_basis)
+        self.last_axis = self.input_basis.last_axis
+        # LinearOperator requirements
+        self.operand = operand
+        # Operator requirements
+        self.domain  = operand.domain.substitute_basis(self.output_basis)
+        self.tensorsig = (coordsys,) + operand.tensorsig
+        self.dtype = operand.dtype
 
     @staticmethod
-    def output_basis(input_basis):
+    def _output_basis(input_basis):
         out = input_basis._new_k(input_basis.k + 1)
         return out
 
@@ -1694,14 +1702,6 @@ class Divergence(LinearOperator, metaclass=MultiClass):
 
     name = 'Div'
     # should check that we're not taking div of a scalar'
-
-    def __init__(self, operand, out=None):
-        self.cs = operand.tensorsig[0]
-        super().__init__(operand, self.cs, out=out)
-        self._operand = operand
-#        self.bases = operand.bases
-        self.tensorsig = tuple(list(operand.tensorsig)[1:])
-        self.dtype = operand.dtype
 
     @classmethod
     def _check_args(cls, operand, out=None):
@@ -1768,11 +1768,13 @@ class CartesianDivergence(Divergence):
 
     cs_type = coords.CartesianCoordinates
 
-    def __init__(self, operand, coordsys, out=None):
-        comps = [CartesianComponent(operand, index=0, coord=c) for c in coordsys.coords]
+    def __init__(self, operand, index=0, out=None):
+        coordsys = operand.tensorsig[index]
+        comps = [CartesianComponent(operand, index=index, coord=c) for c in coordsys.coords]
         comps = [Differentiate(comp, c) for comp, c in zip(comps, coordsys.coords)]
         arg = sum(comps)
         LinearOperator.__init__(self, arg, out=out)
+        self.index = index
         self.coordsys = coordsys
         # LinearOperator requirements
         self.operand = operand
@@ -1804,16 +1806,27 @@ class SphericalDivergence(Divergence, SphericalEllOperator):
 
     cs_type = coords.SphericalCoordinates
 
-    def __init__(self, operand, out=None):
+    def __init__(self, operand, index=0, out=None):
+        if index != 0:
+            raise ValueError("Divergence only implemented along index 0.")
+        coordsys = operand.tensorsig[index]
         super().__init__(operand, out=out)
-        self.radius_axis = self.cs.coords[2].axis
-
-    @CachedAttribute
-    def bases(self):
-        return (self.output_basis(self.operand.bases[0]),)
+        self.index = index
+        self.coordsys = coordsys
+        self.radius_axis = coordsys.coords[2].axis
+        # SpectralOperator requirements
+        self.input_basis = operand.domain.get_basis(coordsys)
+        self.output_basis = self._output_basis(self.input_basis)
+        self.last_axis = self.input_basis.last_axis
+        # LinearOperator requirements
+        self.operand = operand
+        # Operator requirements
+        self.domain  = operand.domain.substitute_basis(self.output_basis)
+        self.tensorsig = operand.tensorsig[:index] + operand.tensorsig[index+1:]
+        self.dtype = operand.dtype
 
     @staticmethod
-    def output_basis(input_basis):
+    def _output_basis(input_basis):
         out = input_basis._new_k(input_basis.k + 1)
         return out
 
@@ -1858,13 +1871,6 @@ class SphericalDivergence(Divergence, SphericalEllOperator):
 
 class Curl(LinearOperator, metaclass=MultiClass):
 
-    def __init__(self, operand, out=None):
-        self.cs = operand.tensorsig[0]
-        super().__init__(operand, self.cs, out=out)
-        self._operand = operand
-        self.tensorsig = operand.tensorsig
-        self.dtype = operand.dtype
-
     @classmethod
     def _check_args(cls, operand, out=None):
         # Dispatch by coordinate system
@@ -1882,16 +1888,27 @@ class SphericalCurl(Curl, SphericalEllOperator):
 
     cs_type = coords.SphericalCoordinates
 
-    def __init__(self, operand, out=None):
+    def __init__(self, operand, index=0, out=None):
+        if index != 0:
+            raise ValueError("Curl only implemented along index 0.")
+        coordsys = operand.tensorsig[index]
         super().__init__(operand, out=out)
-        self.radius_axis = self.cs.coords[2].axis
-
-    @CachedAttribute
-    def bases(self):
-        return (self.output_basis(self.operand.bases[0]),)
+        self.index = index
+        self.coordsys = coordsys
+        self.radius_axis = coordsys.coords[2].axis
+        # SpectralOperator requirements
+        self.input_basis = operand.domain.get_basis(coordsys)
+        self.output_basis = self._output_basis(self.input_basis)
+        self.last_axis = self.input_basis.last_axis
+        # LinearOperator requirements
+        self.operand = operand
+        # Operator requirements
+        self.domain  = operand.domain.substitute_basis(self.output_basis)
+        self.tensorsig = (coordsys,) + operand.tensorsig[:index] + operand.tensorsig[index+1:]
+        self.dtype = operand.dtype
 
     @staticmethod
-    def output_basis(input_basis):
+    def _output_basis(input_basis):
         out = input_basis._new_k(input_basis.k + 1)
         return out
 
@@ -1941,13 +1958,6 @@ class SphericalCurl(Curl, SphericalEllOperator):
 
 
 class Laplacian(LinearOperator, metaclass=MultiClass):
-
-    def __init__(self, operand, coords, out=None):
-        super().__init__(operand, coords, out=out)
-        self._operand = operand
-        self.cs = coords
-        self.tensorsig = operand.tensorsig
-        self.dtype = operand.dtype
 
     @classmethod
     def _check_args(cls, operand, coords, out=None):
@@ -2001,16 +2011,23 @@ class SphericalLaplacian(Laplacian, SphericalEllOperator):
 
     cs_type = coords.SphericalCoordinates
 
-    def __init__(self, operand, coords, out=None):
-        super().__init__(operand, coords, out=out)
-        self.radius_axis = self.cs.coords[2].axis
-
-    @CachedAttribute
-    def bases(self):
-        return (self.output_basis(self.operand.bases[0]),)
+    def __init__(self, operand, coordsys, out=None):
+        super().__init__(operand, out=out)
+        self.coordsys = coordsys
+        self.radius_axis = coordsys.coords[2].axis
+        # SpectralOperator requirements
+        self.input_basis = operand.domain.get_basis(coordsys)
+        self.output_basis = self._output_basis(self.input_basis)
+        self.last_axis = self.input_basis.last_axis
+        # LinearOperator requirements
+        self.operand = operand
+        # Operator requirements
+        self.domain  = operand.domain.substitute_basis(self.output_basis)
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
 
     @staticmethod
-    def output_basis(input_basis):
+    def _output_basis(input_basis):
         out = input_basis._new_k(input_basis.k + 2)
         return out
 
@@ -2174,9 +2191,16 @@ class CrossProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
 
     def __init__(self, arg0, arg1, out=None):
         super().__init__(arg0, arg1, out=out)
+        # Operator requirements
+        self.domain = Domain(arg0.dist, self._bases)
         self.tensorsig = arg0.tensorsig
-        # this is incorrect... should depend on the dtype of both arguments in some way...
-        self.dtype = arg0.dtype
+        self.dtype = np.result_type(arg0.dtype, arg1.dtype)
+
+    @CachedAttribute
+    def _bases(self):
+        # Need to fix this to do real multiplication
+        arg0, arg1 = self.args
+        return tuple(b0*b1 for b0, b1 in zip(arg0.domain.bases, arg1.domain.bases))
 
     def check_conditions(self):
         layout0 = self.args[0].layout
@@ -2207,12 +2231,6 @@ class CrossProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
     @property
     def base(self):
         return CrossProduct
-
-    @CachedAttribute
-    def bases(self):
-        # Need to fix this to do real multiplication
-        arg0, arg1 = self.args
-        return tuple(b0*b1 for b0, b1 in zip(arg0.bases, arg1.bases))
 
 
 class CartesianCrossProduct(CrossProduct):
@@ -2261,6 +2279,12 @@ class DotProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
         self.tensorsig = tuple(arg0_ts_reduced + arg1_ts_reduced)
         self.dtype = np.result_type(arg0.dtype, arg1.dtype)
 
+    @CachedAttribute
+    def _bases(self):
+        # Need to fix this to do real multiplication
+        arg0, arg1 = self.args
+        return tuple(b0*b1 for b0, b1 in zip(arg0.domain.bases, arg1.domain.bases))
+
     def check_conditions(self):
         layout0 = self.args[0].layout
         layout1 = self.args[1].layout
@@ -2291,12 +2315,6 @@ class DotProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
     @property
     def base(self):
         return DotProduct
-
-    @CachedAttribute
-    def _bases(self):
-        # Need to fix this to do real multiplication
-        arg0, arg1 = self.args
-        return tuple(b0*b1 for b0, b1 in zip(arg0.domain.bases, arg1.domain.bases))
 
     def operate(self, out):
         arg0, arg1 = self.args
