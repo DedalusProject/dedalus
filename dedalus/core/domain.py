@@ -80,9 +80,14 @@ class Domain(metaclass=CachedClass):
 
     def get_coord(self, name):
         for basis in self.bases:
-            for basis_coord in basis.coords:
-                if name == basis_coord.name:
-                    return basis_coord
+            # This is hacky...
+            if isinstance(basis.coords, Coordinate):
+                if name == basis.coords.name:
+                    return basis.coords
+            else:
+                for basis_coord in basis.coords.coords:
+                    if name == basis_coord.name:
+                        return basis_coord
         raise ValueError("Coordinate name not in domain")
 
     def _check_bases(self, bases):

@@ -876,7 +876,7 @@ def interpolate(arg, **positions):
         arg = Interpolate(arg, coord, position)
     return arg
 
-class Interpolate(LinearOperator, metaclass=MultiClass):
+class Interpolate(SpectralOperator, metaclass=MultiClass):
     """
     Interpolation along one dimension.
 
@@ -909,6 +909,18 @@ class Interpolate(LinearOperator, metaclass=MultiClass):
     def __init__(self, operand, coord, position, out=None):
         self.position = position
         super().__init__(operand, coord, position, out=out)
+        self.position = position
+        # SpectralOperator requirements
+        self.coord = coord
+        self.input_basis = operand.domain.get_basis(coord)
+        self.output_basis = self._output_basis(self.input_basis, position)
+        self.last_axis = coord.axis
+        # LinearOperator requirements
+        self.operand = operand
+        # Operator requirements
+        self.domain = operand.domain.substitute_basis(self.output_basis)
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
 
     def _expand_multiply(self, operand, vars):
         """Expand over multiplication."""
@@ -1420,19 +1432,27 @@ class ConvertSame(Convert):
 class TransposeComponents(LinearOperator, metaclass=MultiClass):
 
     def __init__(self, operand, indices=(0,1), out=None):
-        if max(indices) > len(operand.tensorsig):
+        i0, i1 = indices
+        if i0 < 0:
+            i0 += len(operand.tensorsig)
+        if i1 < 0:
+            i1 += len(operand.tensorsig)
+        if max(i0, i1) > len(operand.tensorsig):
             raise ValueError("Transpose index greater than operand rank")
-        cs0 = operand.tensorsig[indices[0]]
-        cs1 = operand.tensorsig[indices[1]]
+        if i0 == i1:
+            raise ValueError("Don't transpose same indices")
+        cs0 = operand.tensorsig[i0]
+        cs1 = operand.tensorsig[i1]
         if cs0 != cs1:
             raise ValueError("Can only transpose two indices which have the same coordinate system")
-        self.cs = cs0
-        super().__init__(operand, self.cs, out=out)
-        tensorsig = operand.tensorsig
-        indices = list(indices)
-        for index in indices:
-            if index < 0: index = len(operand.tensorsig) + index
-        self.indices = tuple(indices)
+        super().__init__(operand, out=out)
+        self.indices = (i0, i1)
+        self.coordsys = cs0
+        # LinearOperator requirements
+        self.operand = operand
+        # Operator requirements
+        self.domain = operand.domain
+        self.tensorsig = operand.tensorsig
         self.dtype = operand.dtype
 
     @classmethod
@@ -1448,14 +1468,6 @@ class TransposeComponents(LinearOperator, metaclass=MultiClass):
     @property
     def base(self):
         return TransposeComponents
-
-    @CachedAttribute
-    def bases(self):
-        return (self.output_basis(self.operand.bases[0]),)
-
-    @staticmethod
-    def output_basis(input_basis):
-        return input_basis
 
 
 class Gradient(LinearOperator, metaclass=MultiClass):
