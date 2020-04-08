@@ -560,7 +560,17 @@ class UnaryGridFunctionField(UnaryGridFunction, FutureField):
 class LinearOperator(FutureField):
     """
     Base class for linear operators.
-    First argument is expected to be the operand.
+
+    Subclasses must define the following attributes:
+
+        # LinearOperator requirements
+        self.operand
+
+        # FutureField requirements
+        self.domain
+        self.tensorsig
+        self.dtype
+
     """
 
     # def __init__(self, *args, **kw):
@@ -691,6 +701,26 @@ class LinearOperator(FutureField):
 
 
 class SpectralOperator(LinearOperator):
+    """
+    Base class for linear operators acting on the coefficients of an individual spectral basis.
+
+    Subclasses must define the following attributes:
+
+        # SpectralOperator requirements
+        self.coord
+        self.input_basis
+        self.output_basis
+        self.last_axis
+
+        # LinearOperator requirements
+        self.operand
+
+        # FutureField requirements
+        self.domain
+        self.tensorsig
+        self.dtype
+
+    """
 
     def check_conditions(self):
         """Check that arguments are in a proper layout."""
@@ -698,8 +728,8 @@ class SpectralOperator(LinearOperator):
         last_axis = self.last_axis
         is_coeff = not arg0.layout.grid_space[last_axis]
         is_local = arg0.layout.local[last_axis]
-        # Require coefficient space along operator axis
-        # Require locality along operator axis if non-separable
+        # Require coefficient space along last axis
+        # Require locality along last axis if non-separable
         if self.separable:
             return is_coeff
         else:
@@ -707,11 +737,11 @@ class SpectralOperator(LinearOperator):
 
     def enforce_conditions(self):
         """Require arguments to be in a proper layout."""
-        last_axis = self.last_axis
         arg0 = self.args[0]
-        # Require coefficient space along operator axis
+        last_axis = self.last_axis
+        # Require coefficient space along last axis
         arg0.require_coeff_space(last_axis)
-        # Require locality along operator axis if non-separable
+        # Require locality along last axis if non-separable
         if not self.separable:
             arg0.require_local(last_axis)
 
@@ -907,8 +937,7 @@ class Interpolate(SpectralOperator, metaclass=MultiClass):
 #        return False
 
     def __init__(self, operand, coord, position, out=None):
-        self.position = position
-        super().__init__(operand, coord, position, out=out)
+        super().__init__(operand, out=out)
         self.position = position
         # SpectralOperator requirements
         self.coord = coord
@@ -917,7 +946,7 @@ class Interpolate(SpectralOperator, metaclass=MultiClass):
         self.last_axis = coord.axis
         # LinearOperator requirements
         self.operand = operand
-        # Operator requirements
+        # FutureField requirements
         self.domain = operand.domain.substitute_basis(self.output_basis)
         self.tensorsig = operand.tensorsig
         self.dtype = operand.dtype
@@ -1122,7 +1151,7 @@ class Differentiate(SpectralOperator1D, metaclass=MultiClass):
         self.axis = coord.axis
         # LinearOperator requirements
         self.operand = operand
-        # Operator requirements
+        # FutureField requirements
         self.domain = operand.domain.substitute_basis(self.output_basis)
         self.tensorsig = operand.tensorsig
         self.dtype = operand.dtype
@@ -1263,7 +1292,7 @@ class Convert(SpectralOperator, metaclass=MultiClass):
         self.last_axis = self.output_basis.last_axis
         # LinearOperator requirements
         self.operand = operand
-        # Operator requirements
+        # FutureField requirements
         self.domain = operand.domain.substitute_basis(self.output_basis)
         self.tensorsig = operand.tensorsig
         self.dtype = operand.dtype
@@ -1450,7 +1479,7 @@ class TransposeComponents(LinearOperator, metaclass=MultiClass):
         self.coordsys = cs0
         # LinearOperator requirements
         self.operand = operand
-        # Operator requirements
+        # FutureField requirements
         self.domain = operand.domain
         self.tensorsig = operand.tensorsig
         self.dtype = operand.dtype
@@ -1497,7 +1526,7 @@ class CartesianGradient(Gradient):
         self.coordsys = coordsys
         # LinearOperator requirements
         self.operand = operand
-        # Operator requirements
+        # FutureField requirements
         self.domain = Domain(operand.dist, bases)
         self.tensorsig = (coordsys,) + operand.tensorsig
         self.dtype = operand.dtype
@@ -1546,7 +1575,7 @@ class S2Gradient(Gradient, SpectralOperator):
         self.last_axis = self.input_basis.last_axis
         # LinearOperator requirements
         self.operand = operand
-        # Operator requirements
+        # FutureField requirements
         self.domain  = operand.domain
         self.tensorsig = (coordsys,) + operand.tensorsig
         self.dtype = operand.dtype
@@ -1664,7 +1693,7 @@ class SphericalGradient(Gradient, SphericalEllOperator):
         self.last_axis = self.input_basis.last_axis
         # LinearOperator requirements
         self.operand = operand
-        # Operator requirements
+        # FutureField requirements
         self.domain  = operand.domain.substitute_basis(self.output_basis)
         self.tensorsig = (coordsys,) + operand.tensorsig
         self.dtype = operand.dtype
@@ -1738,7 +1767,7 @@ class Component(LinearOperator, metaclass=MultiClass):
         self.coord = coord
         # LinearOperator requirements
         self.operand = operand
-        # Operator requirements
+        # FutureField requirements
         self.domain = operand.domain
         self.tensorsig = operand.tensorsig[:index] + operand.tensorsig[index+1:]
         self.dtype = operand.dtype
@@ -1790,7 +1819,7 @@ class CartesianDivergence(Divergence):
         self.coordsys = coordsys
         # LinearOperator requirements
         self.operand = operand
-        # Operator requirements
+        # FutureField requirements
         self.domain = arg.domain
         self.tensorsig = arg.tensorsig
         self.dtype = arg.dtype
@@ -1832,7 +1861,7 @@ class SphericalDivergence(Divergence, SphericalEllOperator):
         self.last_axis = self.input_basis.last_axis
         # LinearOperator requirements
         self.operand = operand
-        # Operator requirements
+        # FutureField requirements
         self.domain  = operand.domain.substitute_basis(self.output_basis)
         self.tensorsig = operand.tensorsig[:index] + operand.tensorsig[index+1:]
         self.dtype = operand.dtype
@@ -1914,7 +1943,7 @@ class SphericalCurl(Curl, SphericalEllOperator):
         self.last_axis = self.input_basis.last_axis
         # LinearOperator requirements
         self.operand = operand
-        # Operator requirements
+        # FutureField requirements
         self.domain  = operand.domain.substitute_basis(self.output_basis)
         self.tensorsig = (coordsys,) + operand.tensorsig[:index] + operand.tensorsig[index+1:]
         self.dtype = operand.dtype
@@ -1995,7 +2024,7 @@ class CartesianLaplacian(Laplacian):
         self.coordsys = coordsys
         # LinearOperator requirements
         self.operand = operand
-        # Operator requirements
+        # FutureField requirements
         self.domain = arg.domain
         self.tensorsig = arg.tensorsig
         self.dtype = arg.dtype
@@ -2033,7 +2062,7 @@ class SphericalLaplacian(Laplacian, SphericalEllOperator):
         self.last_axis = self.input_basis.last_axis
         # LinearOperator requirements
         self.operand = operand
-        # Operator requirements
+        # FutureField requirements
         self.domain  = operand.domain.substitute_basis(self.output_basis)
         self.tensorsig = operand.tensorsig
         self.dtype = operand.dtype
@@ -2203,7 +2232,7 @@ class CrossProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
 
     def __init__(self, arg0, arg1, out=None):
         super().__init__(arg0, arg1, out=out)
-        # Operator requirements
+        # FutureField requirements
         self.domain = Domain(arg0.dist, self._bases)
         self.tensorsig = arg0.tensorsig
         self.dtype = np.result_type(arg0.dtype, arg1.dtype)
@@ -2286,7 +2315,7 @@ class DotProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
         arg1_ts_reduced = list(arg1.tensorsig)
         arg1_ts_reduced.pop(indices[1])
         self.indices = indices
-        # Operator requirements
+        # FutureField requirements
         self.domain = Domain(arg0.dist, self._bases)
         self.tensorsig = tuple(arg0_ts_reduced + arg1_ts_reduced)
         self.dtype = np.result_type(arg0.dtype, arg1.dtype)
