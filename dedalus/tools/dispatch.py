@@ -6,7 +6,29 @@ Tools for emulating multiple dispatch.
 from .cache import CachedClass
 
 
-class MultiClass(type):
+class SkipDispatchException(Exception):
+    """Exceptions for shortcutting MultiClass dispatch."""
+
+    def __init__(self, output):
+        self.output = output
+
+
+class SkipDispatch(type):
+    """Metclass for skipping dispatch based on arguments."""
+
+    def __call__(cls, *args, **kw):
+        try:
+            args, kw = cls.__dispatch__(*args, **kw)
+            return super().__call__(*args, **kw)
+        except SkipDispatchException as skip:
+            return skip.output
+
+    def __dispatch__(cls, *args, **kw):
+        """Preprocess args or skip dispatch."""
+        return args, kw
+
+
+class MultiClass(SkipDispatch):
     """Metaclass for dispatching instantiation to subclasses."""
 
     def __call__(cls, *args, **kw):
@@ -14,7 +36,11 @@ class MultiClass(type):
 
         # Create instance if no subclasses
         if not cls.__subclasses__():
-            return super().__call__(*args, **kw)
+            # Check arguments
+            if cls._check_args(*args, **kw):
+                return super().__call__(*args, **kw)
+            else:
+                raise TypeError("Provided types do not pass dispatch check.")
 
         # Preprocess arguments and keywords
         args, kw = cls._preprocess_args(*args, **kw)

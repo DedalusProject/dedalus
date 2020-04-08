@@ -12,7 +12,7 @@ from .future import Future, FutureScalar, FutureArray, FutureField
 from .metadata import Metadata, freeze_meta
 from ..tools.array import reshape_vector, apply_matrix, add_sparse
 from ..tools.cache import CachedAttribute
-from ..tools.dispatch import MultiClass
+from ..tools.dispatch import MultiClass, SkipDispatch, SkipDispatchException
 from ..tools.exceptions import NonlinearOperatorError
 from ..tools.exceptions import SymbolicParsingError
 from ..tools.exceptions import UndefinedParityError
@@ -460,16 +460,17 @@ class AddScalarScalar(Add, FutureScalar):
     argtypes = {0: (Scalar, FutureScalar),
                 1: (Scalar, FutureScalar)}
 
-    def __new__(cls, arg0, arg1, *args, **kw):
+    @classmethod
+    def __dispatch__(cls, arg0, arg1, *args, **kw):
         if (arg0.name is None) and (arg1.name is None):
             value = arg0.value + arg1.value
-            return Scalar(value=value)
+            raise SkipDispatchException(Scalar(value=value))
         elif (arg0.name is None) and (arg0.value == 0):
-            return arg1
+            raise SkipDispatchException(arg1)
         elif (arg1.name is None) and (arg1.value == 0):
-            return arg0
+            raise SkipDispatchException(arg0)
         else:
-            return object.__new__(cls)
+            return (arg0, arg1, *args), kw
 
     def check_conditions(self):
         return True
@@ -514,11 +515,12 @@ class AddScalarArray(Add, FutureArray):
     argtypes = {0: (Scalar, FutureScalar),
                 1: (Array, FutureArray)}
 
-    def __new__(cls, arg0, arg1, *args, **kw):
+    @classmethod
+    def __dispatch__(cls, arg0, arg1, *args, **kw):
         if (arg0.name is None) and (arg0.value == 0):
-            return arg1
+            raise SkipDispatchException(arg1)
         else:
-            return object.__new__(cls)
+            return (arg0, arg1, *args), kw
 
     def check_conditions(self):
         return True
@@ -533,11 +535,12 @@ class AddArrayScalar(Add, FutureArray):
     argtypes = {0: (Array, FutureArray),
                 1: (Scalar, FutureScalar)}
 
-    def __new__(cls, arg0, arg1, *args, **kw):
+    @classmethod
+    def __dispatch__(cls, arg0, arg1, *args, **kw):
         if (arg1.name is None) and (arg1.value == 0):
-            return arg0
+            raise SkipDispatchException(arg0)
         else:
-            return object.__new__(cls)
+            return (arg0, arg1, *args), kw
 
     def check_conditions(self):
         return True
@@ -552,11 +555,12 @@ class AddScalarField(Add, FutureField):
     argtypes = {0: (Scalar, FutureScalar),
                 1: (Field, FutureField)}
 
-    def __new__(cls, arg0, arg1, *args, **kw):
+    @classmethod
+    def __dispatch__(cls, arg0, arg1, *args, **kw):
         if (arg0.name is None) and (arg0.value == 0):
-            return arg1
+            raise SkipDispatchException(arg1)
         else:
-            return object.__new__(cls)
+            return (arg0, arg1, *args), kw
 
     def check_conditions(self):
         # Field must be in grid layout
@@ -575,11 +579,12 @@ class AddFieldScalar(Add, FutureField):
     argtypes = {0: (Field, FutureField),
                 1: (Scalar, FutureScalar)}
 
-    def __new__(cls, arg0, arg1, *args, **kw):
+    @classmethod
+    def __dispatch__(cls, arg0, arg1, *args, **kw):
         if (arg1.name is None) and (arg1.value == 0):
-            return arg0
+            raise SkipDispatchException(arg0)
         else:
-            return object.__new__(cls)
+            return (arg0, arg1, *args), kw
 
     def check_conditions(self):
         # Field must be in grid layout
@@ -730,20 +735,21 @@ class MultiplyScalarScalar(Multiply, FutureScalar):
     argtypes = {0: (Scalar, FutureScalar),
                 1: (Scalar, FutureScalar)}
 
-    def __new__(cls, arg0, arg1, *args, **kw):
+    @classmethod
+    def __dispatch__(cls, arg0, arg1, *args, **kw):
         if (arg0.name is None) and (arg1.name is None):
             value = arg0.value * arg1.value
-            return Scalar(value=value)
+            raise SkipDispatchException(Scalar(value=value))
         elif (arg0.name is None) and (arg0.value == 0):
-            return 0
+            raise SkipDispatchException(0)
         elif (arg0.name is None) and (arg0.value == 1):
-            return arg1
+            raise SkipDispatchException(arg1)
         elif (arg1.name is None) and (arg1.value == 0):
-            return 0
+            raise SkipDispatchException(0)
         elif (arg1.name is None) and (arg1.value == 1):
-            return arg0
+            raise SkipDispatchException(arg0)
         else:
-            return object.__new__(cls)
+            return (arg0, arg1, *args), kw
 
     def check_conditions(self):
         return True
@@ -799,13 +805,14 @@ class MultiplyScalarArray(Multiply, FutureArray):
     argtypes = {0: (Scalar, FutureScalar),
                 1: (Array, FutureArray)}
 
-    def __new__(cls, arg0, arg1, *args, **kw):
+    @classmethod
+    def __dispatch__(cls, arg0, arg1, *args, **kw):
         if (arg0.name is None) and (arg0.value == 0):
-            return 0
+            raise SkipDispatchException(0)
         elif (arg0.name is None) and (arg0.value == 1):
-            return arg1
+            raise SkipDispatchException(arg1)
         else:
-            return object.__new__(cls)
+            return (arg0, arg1, *args), kw
 
     def check_conditions(self):
         return True
@@ -820,13 +827,14 @@ class MultiplyArrayScalar(Multiply, FutureArray):
     argtypes = {0: (Array, FutureArray),
                 1: (Scalar, FutureScalar)}
 
-    def __new__(cls, arg0, arg1, *args, **kw):
+    @classmethod
+    def __dispatch__(cls, arg0, arg1, *args, **kw):
         if (arg1.name is None) and (arg1.value == 0):
-            return 0
+            raise SkipDispatchException(0)
         elif (arg1.name is None) and (arg1.value == 1):
-            return arg0
+            raise SkipDispatchException(arg0)
         else:
-            return object.__new__(cls)
+            return (arg0, arg1, *args), kw
 
     def check_conditions(self):
         return True
@@ -841,13 +849,14 @@ class MultiplyScalarField(Multiply, FutureField):
     argtypes = {0: (Scalar, FutureScalar),
                 1: (Field, FutureField)}
 
-    def __new__(cls, arg0, arg1, *args, **kw):
+    @classmethod
+    def __dispatch__(cls, arg0, arg1, *args, **kw):
         if (arg0.name is None) and (arg0.value == 0):
-            return 0
+            raise SkipDispatchException(0)
         elif (arg0.name is None) and (arg0.value == 1):
-            return arg1
+            raise SkipDispatchException(arg1)
         else:
-            return object.__new__(cls)
+            return (arg0, arg1, *args), kw
 
     def check_conditions(self):
         return True
@@ -864,13 +873,14 @@ class MultiplyFieldScalar(Multiply, FutureField):
     argtypes = {0: (Field, FutureField),
                 1: (Scalar, FutureScalar)}
 
-    def __new__(cls, arg0, arg1, *args, **kw):
+    @classmethod
+    def __dispatch__(cls, arg0, arg1, *args, **kw):
         if (arg1.name is None) and (arg1.value == 0):
-            return 0
+            raise SkipDispatchException(0)
         elif (arg1.name is None) and (arg1.value == 1):
-            return arg0
+            raise SkipDispatchException(arg0)
         else:
-            return object.__new__(cls)
+            return (arg0, arg1, *args), kw
 
     def check_conditions(self):
         return True
@@ -941,13 +951,14 @@ class PowerDataScalar(Power):
     argtypes = {0: (Data, Future),
                 1: (Scalar, FutureScalar)}
 
-    def __new__(cls, arg0, arg1, *args, **kw):
+    @classmethod
+    def __dispatch__(cls, arg0, arg1, *args, **kw):
         if (arg1.name is None) and (arg1.value == 0):
-            return 1
+            raise SkipDispatchException(1)
         elif (arg1.name is None) and (arg1.value == 1):
-            return arg0
+            raise SkipDispatchException(arg0)
         else:
-            return object.__new__(cls)
+            return (arg0, arg1, *args), kw
 
     def meta_constant(self, axis):
         # Preserves constancy
@@ -982,11 +993,12 @@ class PowerScalarScalar(PowerDataScalar, FutureScalar):
     argtypes = {0: (Scalar, FutureScalar),
                 1: (Scalar, FutureScalar)}
 
-    def __new__(cls, arg0, arg1, *args, **kw):
+    @classmethod
+    def __dispatch__(cls, arg0, arg1, *args, **kw):
         if (arg0.name is None) and (arg0.value == 0):
-            return 0
+            raise SkipDispatchException(0)
         else:
-            return super().__new__(cls, arg0, arg1, *args, **kw)
+            return super().__dispatch__(arg0, arg1, *args, **kw)
 
     def check_conditions(self):
         return True
@@ -1076,15 +1088,16 @@ class LinearOperator(Operator):
         return self.base(diff0, **self.kw)
 
 
-class TimeDerivative(LinearOperator, FutureField):
+class TimeDerivative(LinearOperator, FutureField, metaclass=SkipDispatch):
 
     name = 'dt'
 
-    def __new__(cls, arg0, **kw):
+    @classmethod
+    def __dispatch__(cls, arg0, **kw):
         if not isinstance(arg0, Operand):
-            return 0
+            raise SkipDispatchException(0)
         else:
-            return object.__new__(cls)
+            return (arg0,), kw
 
     @property
     def base(self):
@@ -1215,11 +1228,12 @@ class Coupled(LinearBasisOperator, FutureField):
 
 
 @parseable
-class Integrate(LinearBasisOperator):
+class Integrate(LinearBasisOperator, metaclass=SkipDispatch):
 
     name = 'integ'
 
-    def __new__(cls, arg0, out=None):
+    @classmethod
+    def __dispatch__(cls, arg0, out=None):
         # Cast to operand
         arg0 = Operand.cast(arg0)
         # Check if operand depends on basis
@@ -1227,9 +1241,9 @@ class Integrate(LinearBasisOperator):
             length = cls.basis.interval[1] - cls.basis.interval[0]
             integral = arg0*length
             integral.out = out
-            return integral
+            raise SkipDispatchException(integral)
         else:
-            return object.__new__(cls)
+            return (arg0,), {'out': out}
 
     def __init__(self, arg0, **kw):
         # Cast argument to field
@@ -1263,20 +1277,21 @@ def integrate(arg0, *bases, out=None):
 
 
 @parseable
-class Interpolate(LinearBasisOperator):
+class Interpolate(LinearBasisOperator, metaclass=SkipDispatch):
 
     name = 'interp'
 
-    def __new__(cls, arg0, position, out=None):
+    @classmethod
+    def __dispatch__(cls, arg0, position, out=None):
         # Cast to operand
         arg0 = Operand.cast(arg0)
         # Check if operand depends on basis
         if (cls.basis not in arg0.domain.bases):
-            return arg0
+            raise SkipDispatchException(arg0)
         elif (arg0.meta[cls.basis.name]['constant']):
-            return arg0
+            raise SkipDispatchException(arg0)
         else:
-            return object.__new__(cls)
+            return (arg0, position), {'out': out}
 
     def __init__(self, arg0, position, out=None):
         # Cast argument to field
@@ -1346,20 +1361,21 @@ def right(arg0, out=None):
     return basis.Interpolate(arg0, 'right', out=out)
 
 
-class Differentiate(LinearBasisOperator):
+class Differentiate(LinearBasisOperator, metaclass=SkipDispatch):
 
     name = 'd'
 
-    def __new__(cls, arg0, **kw):
+    @classmethod
+    def __dispatch__(cls, arg0, **kw):
         # Cast to operand
         arg0 = Operand.cast(arg0)
         # Check if operand depends on basis
         if cls.basis not in arg0.domain.bases:
-            return 0
+            raise SkipDispatchException(0)
         elif arg0.meta[cls.basis.name]['constant']:
-            return 0
+            raise SkipDispatchException(0)
         else:
-            return object.__new__(cls)
+            return (arg0,), kw
 
     def __init__(self, arg0, **kw):
         # Cast argument to field
@@ -1409,20 +1425,21 @@ def differentiate(arg0, *bases, out=None, **basis_kw):
 
 
 @parseable
-class HilbertTransform(LinearBasisOperator):
+class HilbertTransform(LinearBasisOperator, metaclass=SkipDispatch):
 
     name = 'Hilbert'
 
-    def __new__(cls, arg0, **kw):
+    @classmethod
+    def __dispatch__(cls, arg0, **kw):
         # Cast to operand
         arg0 = Operand.cast(arg0)
         # Check if operand depends on basis
         if cls.basis not in arg0.domain.bases:
-            return 0
+            raise SkipDispatchException(0)
         elif arg0.meta[cls.basis.name]['constant']:
-            return 0
+            raise SkipDispatchException(0)
         else:
-            return object.__new__(cls)
+            return (arg0,), kw
 
     def __init__(self, arg0, **kw):
         # Cast argument to field
