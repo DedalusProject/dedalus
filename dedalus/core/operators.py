@@ -1399,6 +1399,81 @@ class TransposeComponents(LinearOperator, metaclass=MultiClass):
         return input_basis
 
 
+class SphericalComponent(LinearOperator):
+
+    def __init__(self, operand, index=0, out=None):
+        if index < 0: index += len(operand.tensorsig)
+        if index >= len(operand.tensorsig):
+            raise ValueError("index greater than rank")
+        self.index = index
+        self.cs = operand.tensorsig[self.index]
+        if not isinstance(self.cs, coords.SphericalCoordinates):
+            raise ValueError("Can only take the SphericalComponent of a SphericalCoordinate vector")
+        super().__init__(operand, self.cs, out=out)
+
+    def check_conditions(self):
+        """Can always take components"""
+        return True
+
+    def enforce_conditions(self):
+        """Can always take components"""
+        pass
+
+    @CachedAttribute
+    def bases(self):
+        return (self.output_basis(self.operand.bases[0]),)
+
+    @staticmethod
+    def output_basis(input_basis):
+        return input_basis
+
+
+class RadialComponent(SphericalComponent, metaclass=MultiClass):
+
+    @classmethod
+    def _check_args(cls, operand, index=0, out=None):
+        # Dispatch by coordinate system
+        if isinstance(operand, Operand):
+            if index < 0: index += len(operand.tensorsig)
+            cs = operand.tensorsig[index]
+            basis = operand.get_basis(cs)
+            if isinstance(basis, cls.basis_type):
+                return True
+        return False
+
+    def __init__(self, operand, index=0, out=None):
+        super().__init__(operand, index=index, out=out)
+        tensorsig = operand.tensorsig
+        self.tensorsig = tuple( tensorsig[:index] + tensorsig[index+1:] )
+
+    @property
+    def base(self):
+        return RadialComponent
+
+
+class AngularComponent(SphericalComponent, metaclass=MultiClass):
+
+    @classmethod
+    def _check_args(cls, operand, index=0, out=None):
+        # Dispatch by coordinate system
+        if isinstance(operand, Operand):
+            if index < 0: index += len(operand.tensorsig)
+            cs = operand.tensorsig[index]
+            basis = operand.get_basis(cs)
+            if isinstance(basis, cls.basis_type):
+                return True
+        return False
+
+    def __init__(self, operand, index=0, out=None):
+        super().__init__(operand, index=index, out=out)
+        tensorsig = operand.tensorsig
+        S2coords = tensorsig[index].S2cs
+        self.tensorsig = tuple( tensorsig[:index] + S2coords + tensorsig[index+1:] )
+
+    @property
+    def base(self):
+        return AngularComponent
+
 class Gradient(LinearOperator, metaclass=MultiClass):
 
     def __init__(self, operand, cs, out=None):

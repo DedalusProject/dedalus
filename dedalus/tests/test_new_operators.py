@@ -237,6 +237,12 @@ result = np.allclose(v['c'],v_S2['c'])
 results.append(result)
 print(len(results), ':', result)
 
+# Radial Component
+w = operators.RadialComponent(v).evaluate()
+result = np.allclose(w['g'],v['g'][2])
+results.append(result)
+print(len(results), ':', result)
+
 # Tensor Interpolation
 T['g'][2,2] = (6*x**2+4*y*z)/r**2
 T['g'][2,1] = T['g'][1,2] = -2*(y**3+x**2*(y-3*z)-y*z**2)/(r**3*np.sin(theta))
@@ -255,6 +261,14 @@ Ag0[0,0] = 6*np.sin(phi)**2
 result = np.allclose(A['g'],Ag0)
 results.append(result)
 print(len(results), ':', result)
+
+# Radial Component
+Tr = operators.RadialComponent(T).evaluate()
+print(Tr.tensorsig)
+result = np.allclose(Tr['g'],T['g'][:,2])
+results.append(result)
+print(len(results), ':', result)
+
 
 # ScalarField - ScalarField multiplication
 f = field.Field(dist=d, bases=(b,), dtype=np.complex128)

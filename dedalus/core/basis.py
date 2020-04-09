@@ -17,7 +17,7 @@ from ..tools.cache import CachedMethod
 from ..tools.cache import CachedClass
 from ..tools import jacobi
 from ..tools import clenshaw
-from ..tools.array import reshape_vector
+from ..tools.array import reshape_vector, axindex, axslice
 from ..tools.dispatch import MultiClass
 
 from .spaces import ParityInterval, Disk
@@ -1628,6 +1628,65 @@ class SphericalTransposeComponents(operators.TransposeComponents):
 
         if not layout.grid_space[self.radius_axis]: # in regularity components
             basis.forward_regularity_recombination(operand.tensorsig, self.radius_axis, out.data)
+
+
+class S2RadialComponent(operators.RadialComponent):
+
+    basis_type = SWSH
+
+    def subproblem_matrix(self, subproblem):
+        operand = self.args[0]
+        S_in = self.input_basis.spin_weights(operand.tensorsig)
+        S_out = self.input_basis.spin_weights(self.tensorsig)
+
+        matrix = []
+        for spinindex_out, spintotal_out in np.ndenumerate(S_out):
+            matrix_row = []
+            for spinindex_in, spintotal_in in np.ndenumerate(S_in):
+                if tuple(spinindex_in[self.index:] + spinindex_in[:self.index+1]) == spinindex_out and spinindex_in[index] == 2:
+                    matrix_row.append( 1 )
+                else:
+                    matrix_row.append( 0 )
+            matrix.append(matrix_row)
+        return np.array(matrix)
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        # Set output layout
+        layout = operand.layout
+        out.set_layout(layout)
+        np.copyto(out.data, operand.data[axindex(self.index,2)])
+
+
+class S2AngularComponent(operators.AngularComponent):
+
+    def subproblem_matrix(self, subproblem):
+        operand = self.args[0]
+        S_in = self.input_basis.spin_weights(operand.tensorsig)
+        S_out = self.input_basis.spin_weights(self.tensorsig)
+
+        matrix = []
+        for spinindex_out, spintotal_out in np.ndenumerate(S_out):
+            matrix_row = []
+            for spinindex_in, spintotal_in in np.ndenumerate(S_in):
+                if spinindex_in == spinindex_out:
+                    matrix_row.append( 1 )
+                else:
+                    matrix_row.append( 0 )
+            matrix.append(matrix_row)
+        return np.array(matrix)
+
+    def subproblem_matrix(self, subproblem):
+        return np.array([[1, 0, 0], [0, 1, 0]])
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        # Set output layout
+        layout = operand.layout
+        out.set_layout(layout)
+        np.copyto(out.data, operand.data[axslice(self.index,0,2)])
 
 
 from . import transforms
