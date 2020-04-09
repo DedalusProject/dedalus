@@ -1667,6 +1667,8 @@ class S2RadialComponent(operators.RadialComponent):
 
 class S2AngularComponent(operators.AngularComponent):
 
+    basis_type = SWSH
+
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
         S_in = self.input_basis.spin_weights(operand.tensorsig)
@@ -1682,9 +1684,6 @@ class S2AngularComponent(operators.AngularComponent):
                     matrix_row.append( 0 )
             matrix.append(matrix_row)
         return np.array(matrix)
-
-    def subproblem_matrix(self, subproblem):
-        return np.array([[1, 0, 0], [0, 1, 0]])
 
     def operate(self, out):
         """Perform operation."""

@@ -1488,7 +1488,9 @@ class TransposeComponents(LinearOperator, metaclass=MultiClass):
     def _check_args(cls, operand, indices=(0,1), out=None):
         # Dispatch by basis
         if isinstance(operand, Operand):
-            cs = operand.tensorsig[indices[0]]
+            if indices[0] < 0: index = indices[0] + len(operand.tensorsig)
+            else: index = indices[0]
+            cs = operand.tensorsig[index]
             basis = operand.get_basis(cs)
             if isinstance(basis, cls.basis_type):
                 return True
@@ -1509,7 +1511,13 @@ class SphericalComponent(LinearOperator):
         self.cs = operand.tensorsig[self.index]
         if not isinstance(self.cs, coords.SphericalCoordinates):
             raise ValueError("Can only take the SphericalComponent of a SphericalCoordinate vector")
-        super().__init__(operand, self.cs, out=out)
+        super().__init__(operand, out=out)
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = operand.domain
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
 
     def check_conditions(self):
         """Can always take components"""
@@ -1568,7 +1576,7 @@ class AngularComponent(SphericalComponent, metaclass=MultiClass):
         super().__init__(operand, index=index, out=out)
         tensorsig = operand.tensorsig
         S2coords = tensorsig[index].S2cs
-        self.tensorsig = tuple( tensorsig[:index] + S2coords + tensorsig[index+1:] )
+        self.tensorsig = tuple( tensorsig[:index] + (S2coords,) + tensorsig[index+1:] )
 
     @property
     def base(self):
