@@ -11,7 +11,7 @@ from numbers import Number
 from inspect import isclass
 from operator import add
 
-#from .domain import Domain
+from .domain import Domain
 from . import coords
 from .field import Operand, Array, Field
 from .future import Future, FutureArray, FutureField
@@ -560,58 +560,55 @@ class UnaryGridFunctionField(UnaryGridFunction, FutureField):
 class LinearOperator(FutureField):
     """
     Base class for linear operators.
-    First argument is expected to be the operand.
+
+    Subclasses must define the following attributes:
+
+        # LinearOperator requirements
+        self.operand
+
+        # FutureField requirements
+        self.domain
+        self.tensorsig
+        self.dtype
+
     """
 
-    def __init__(self, *args, **kw):
-        self.coord = args[1]
-        try:
-            self.axis = self.coord.axis
-        except AttributeError:
-            self.axis = self.coord.coords[0].axis
-        self.input_basis = args[0].domain.full_bases[self.axis]
-        self.basis_axis = self.input_basis.axis
-        self.tensorsig = args[0].tensorsig
-        self.dtype = args[0].dtype
-        super().__init__(*args, **kw)
+    # def __init__(self, *args, **kw):
+    #     self.coord = args[1]
+    #     try:
+    #         self.axis = self.coord.axis
+    #     except AttributeError:
+    #         self.axis = self.coord.coords[0].axis
+    #     self.input_basis = args[0].domain.full_bases[self.axis]
+    #     self.basis_axis = self.input_basis.axis
+    #     self.tensorsig = args[0].tensorsig
+    #     self.dtype = args[0].dtype
+    #     super().__init__(*args, **kw)
 
-    @CachedAttribute
-    def bases(self):
-        output_bases = list(self.operand.bases)  # copy input bases
-        output_bases[self.basis_axis] = self.output_basis(self.input_basis)
-        return tuple(output_bases)
+    # @CachedAttribute
+    # def bases(self):
+    #     output_bases = list(self.operand.bases)  # copy input bases
+    #     output_bases[self.basis_axis] = self.output_basis(self.input_basis)
+    #     return tuple(output_bases)
 
-    def check_conditions(self):
-        """Check that arguments are in a proper layout."""
-        last_axis = self.basis_axis + self.input_basis.dim - 1
-        is_coeff = not self.operand.layout.grid_space[last_axis]
-        is_local = self.operand.layout.local[last_axis]
-        # Require coefficient space along operator axis
-        # Require locality along operator axis if non-separable
-        if self.separable:
-            return is_coeff
-        else:
-            return (is_coeff and is_local)
+    # @property
+    # def operand(self):
+    #     # Set as a property rather than an attribute so it correctly updates during evaluation
+    #     return self.args[0]
 
-    def enforce_conditions(self):
-        """Require arguments to be in a proper layout."""
-        last_axis = self.basis_axis + self.input_basis.dim - 1
-        # Require coefficient space along operator axis
-        self.operand.require_coeff_space(last_axis)
-        # Require locality along operator axis if non-separable
-        if not self.separable:
-            self.operand.require_local(last_axis)
+    # def new_operand(self, operand):
+    #     """Call operator with new operand."""
+    #     args = list(self.args)
+    #     args[0] = operand
+    #     return self.base(*args)
 
-    @property
-    def operand(self):
-        # Set as a property rather than an attribute so it correctly updates during evaluation
-        return self.args[0]
+    def __str__(self):
+        str_args = map(str, self.args)
+        return '{}({})'.format(self.name, str(self.operand))
 
     def new_operand(self, operand):
-        """Call operator with new operand."""
-        args = list(self.args)
-        args[0] = operand
-        return self.base(*args)
+        # Subclasses must implement with correct arguments
+        raise NotImplementedError()
 
     def split(self, *vars):
         """Split into expressions containing and not containing specified operands/operators."""
@@ -626,6 +623,20 @@ class LinearOperator(FutureField):
         """Symbolically differentiate with respect to specified operand."""
         # Differentiate argument
         return self.new_operand(self.operand.sym_diff(var))
+
+    def replace(self, old, new):
+        """Replace specified operand/operator."""
+        # Check for entire expression match
+        if self == old:
+            return new
+        # Check base and call with replaced arguments
+        elif isinstance(self, old):
+            new_operand = self.operand.replace(new, old)
+            return new(new_operand)
+        # Call with replaced arguments
+        else:
+            new_operand = self.operand.replace(old, new)
+            return self.new_operand(new_operand)
 
     def expand(self, *vars):
         """Expand expression over specified variables."""
@@ -689,24 +700,70 @@ class LinearOperator(FutureField):
         raise NotImplementedError()
 
 
-class LinearOperator1D(LinearOperator):
+class SpectralOperator(LinearOperator):
+    """
+    Base class for linear operators acting on the coefficients of an individual spectral basis.
+
+    Subclasses must define the following attributes:
+
+        # SpectralOperator requirements
+        self.coord
+        self.input_basis
+        self.output_basis
+        self.last_axis
+
+        # LinearOperator requirements
+        self.operand
+
+        # FutureField requirements
+        self.domain
+        self.tensorsig
+        self.dtype
+
+    """
+
+    def check_conditions(self):
+        """Check that arguments are in a proper layout."""
+        arg0 = self.args[0]
+        last_axis = self.last_axis
+        is_coeff = not arg0.layout.grid_space[last_axis]
+        is_local = arg0.layout.local[last_axis]
+        # Require coefficient space along last axis
+        # Require locality along last axis if non-separable
+        if self.separable:
+            return is_coeff
+        else:
+            return (is_coeff and is_local)
+
+    def enforce_conditions(self):
+        """Require arguments to be in a proper layout."""
+        arg0 = self.args[0]
+        last_axis = self.last_axis
+        # Require coefficient space along last axis
+        arg0.require_coeff_space(last_axis)
+        # Require locality along last axis if non-separable
+        if not self.separable:
+            arg0.require_local(last_axis)
+
+
+class SpectralOperator1D(SpectralOperator):
     """
     Base class for linear operators acting on a single coordinate.
     Arguments: operand, coordinate, others...
     """
 
-    def __init__(self, *args, **kw):
-        self.coord = args[1]
-        self.axis = self.coord.axis
-        self.input_basis = args[0].bases[self.axis]
-        self.tensorsig = args[0].tensorsig
-        self.dtype = args[0].dtype
-        super().__init__(*args, **kw)
+    # def __init__(self, *args, **kw):
+    #     self.coord = args[1]
+    #     self.axis = self.coord.axis
+    #     self.input_basis = args[0].bases[self.axis]
+    #     self.tensorsig = args[0].tensorsig
+    #     self.dtype = args[0].dtype
+    #     super().__init__(*args, **kw)
 
-    @staticmethod
-    def output_basis(input_basis):
-        # Subclasses must implement
-        raise NotImplementedError()
+    # @staticmethod
+    # def output_basis(input_basis):
+    #     # Subclasses must implement
+    #     raise NotImplementedError()
 
     def separability(self, *vars):
         """Determine separable dimensions of expression as a linear operator on specified variables."""
@@ -733,7 +790,7 @@ class LinearOperator1D(LinearOperator):
     @CachedAttribute
     def subspace_matrix(self):
         """Build matrix operating on global subspace data."""
-        return self._subspace_matrix(self.input_basis, *self.args[2:])
+        return self._subspace_matrix(self.input_basis, *self.args[1:])
 
     @classmethod
     def _subspace_matrix(cls, basis, *args):
@@ -756,9 +813,9 @@ class LinearOperator1D(LinearOperator):
 
     def operate(self, out):
         """Perform operation."""
-        operand = arg = self.operand
-        layout = operand.layout
-        axis = self.axis
+        arg = self.args[0]
+        layout = arg.layout
+        axis = self.last_axis
         matrix = self.subspace_matrix
         # Set output layout
         out.set_layout(layout)
@@ -768,11 +825,11 @@ class LinearOperator1D(LinearOperator):
             out_elements = out.local_elements()[axis]
             matrix = matrix[arg_elements[:,None], out_elements[None,:]]
         # Apply matrix
-        data_axis = self.axis + len(operand.tensorsig)
-        apply_matrix(matrix, operand.data, data_axis, out=out.data)
+        data_axis = self.last_axis + len(arg.tensorsig)
+        apply_matrix(matrix, arg.data, data_axis, out=out.data)
 
 
-class LinearSubspaceFunctional(LinearOperator1D):
+class LinearSubspaceFunctional(SpectralOperator1D):
     """Base class for linear functionals acting within a single space."""
 
     separable = False
@@ -849,7 +906,7 @@ def interpolate(arg, **positions):
         arg = Interpolate(arg, coord, position)
     return arg
 
-class Interpolate(LinearOperator, metaclass=MultiClass):
+class Interpolate(SpectralOperator, metaclass=MultiClass):
     """
     Interpolation along one dimension.
 
@@ -880,8 +937,19 @@ class Interpolate(LinearOperator, metaclass=MultiClass):
 #        return False
 
     def __init__(self, operand, coord, position, out=None):
+        super().__init__(operand, out=out)
         self.position = position
-        super().__init__(operand, coord, position, out=out)
+        # SpectralOperator requirements
+        self.coord = coord
+        self.input_basis = operand.domain.get_basis(coord)
+        self.output_basis = self._output_basis(self.input_basis, position)
+        self.last_axis = coord.axis
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = operand.domain.substitute_basis(self.output_basis)
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
 
     def _expand_multiply(self, operand, vars):
         """Expand over multiplication."""
@@ -1062,7 +1130,7 @@ def differentiate(arg, *spaces, **space_kw):
     return arg
 
 
-class Differentiate(LinearOperator1D, metaclass=MultiClass):
+class Differentiate(SpectralOperator1D, metaclass=MultiClass):
     """
     Differentiation along one dimension.
 
@@ -1073,17 +1141,40 @@ class Differentiate(LinearOperator1D, metaclass=MultiClass):
 
     """
 
-    def __str__(self):
-        return 'd{!s}({!s})'.format(self.coord.name, self.operand)
+    def __init__(self, operand, coord, out=None):
+        super().__init__(operand, out=out)
+        # SpectralOperator requirements
+        self.coord = coord
+        self.input_basis = operand.domain.get_basis(coord)
+        self.output_basis = self._output_basis(self.input_basis)
+        self.last_axis = coord.axis
+        self.axis = coord.axis
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = operand.domain.substitute_basis(self.output_basis)
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
 
     @classmethod
-    def _check_args(cls, operand, space, out=None):
+    def _check_args(cls, operand, coord, out=None):
         # Dispatch by operand basis
         if isinstance(operand, Operand):
-            basis = operand.get_basis(space)
+            basis = operand.domain.get_basis(coord)
             if isinstance(basis, cls.input_basis_type):
                 return True
         return False
+
+    def new_operand(self, operand):
+        return Differentiate(operand, self.coord)
+
+    @staticmethod
+    def _output_basis(input_basis):
+        # Subclasses must implement
+        raise NotImplementedError()
+
+    def __str__(self):
+        return 'd{!s}({!s})'.format(self.coord.name, self.operand)
 
     def _expand_multiply(self, operand, vars):
         """Expand over multiplication."""
@@ -1092,25 +1183,21 @@ class Differentiate(LinearOperator1D, metaclass=MultiClass):
         partial_diff = lambda i: np.prod([self.new_operand(arg) if i==j else arg for j,arg in enumerate(args)])
         return sum((partial_diff(i) for i in range(len(args))))
 
-    @property
-    def base(self):
-        return Differentiate
-
 
 class DifferentiateConstant(Differentiate):
     """Constant differentiation."""
 
     @classmethod
-    def _check_args(cls, operand, space, out=None):
+    def _check_args(cls, operand, coord, out=None):
         # Dispatch for numbers of constant bases
         if isinstance(operand, Number):
             return True
         if isinstance(operand, Operand):
-            if operand.get_basis(space) is None:
+            if operand.domain.get_basis(coord) is None:
                 return True
         return False
 
-    def __new__(cls, operand, space, out=None):
+    def __new__(cls, operand, coord, out=None):
         return 0
 
 
@@ -1129,7 +1216,7 @@ def hilbert_transform(arg, *spaces, **space_kw):
     return arg
 
 
-class HilbertTransform(LinearOperator1D, metaclass=MultiClass):
+class HilbertTransform(SpectralOperator1D, metaclass=MultiClass):
     """
     Hilbert transform along one dimension.
 
@@ -1181,11 +1268,11 @@ def convert(arg, bases):
 
     # Apply iteratively
     for basis in bases:
-        arg = Convert(arg, basis.coords[0], basis)
+        arg = Convert(arg, basis)
     return arg
 
 
-class Convert(LinearOperator, metaclass=MultiClass):
+class Convert(SpectralOperator, metaclass=MultiClass):
     """
     Convert bases along one dimension.
 
@@ -1196,17 +1283,31 @@ class Convert(LinearOperator, metaclass=MultiClass):
 
     """
 
+    def __init__(self, operand, output_basis, out=None):
+        super().__init__(operand, out=out)
+        # SpectralOperator requirements
+        self.coords = output_basis.coords
+        self.input_basis = operand.domain.get_basis(self.coords)
+        self.output_basis = output_basis
+        self.last_axis = self.output_basis.last_axis
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = operand.domain.substitute_basis(self.output_basis)
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
+
     # @classmethod
     # def _preprocess_args(cls, operand, space, output_basis, out=None):
     #     operand = Cast(operand, space.domain)
     #     return (operand, space, output_basis), {'out': out}
 
     @classmethod
-    def _check_args(cls, operand, coord, output_basis, out=None):
+    def _check_args(cls, operand, output_basis, out=None):
         # Dispatch by operand and output basis
-        # Require same space, different bases, and correct types
+        # Require correct types
         if isinstance(operand, Operand):
-            input_basis = operand.get_basis(coord)
+            input_basis = operand.domain.get_basis(output_basis.coords)
             if input_basis == output_basis:
                 return False
             if not isinstance(input_basis, cls.input_basis_type):
@@ -1217,13 +1318,18 @@ class Convert(LinearOperator, metaclass=MultiClass):
         return False
 
     def __str__(self):
-        return str(self.operand)
+        return 'C(%s)' %str(self.operand)
+
+    def new_operand(self, operand):
+        # Pass through without conversion
+        return operand
 
     def check_conditions(self):
         """Check that arguments are in a proper layout."""
-        last_axis = self.axis + self.input_basis.dim - 1
-        is_coeff = not self.operand.layout.grid_space[last_axis]
-        is_local = self.operand.layout.local[last_axis]
+        arg0 = self.args[0]
+        last_axis = self.last_axis
+        is_coeff = not arg0.layout.grid_space[last_axis]
+        is_local = arg0.layout.local[last_axis]
         # Allow conversion in grid space
         if not is_coeff:
             return True
@@ -1235,55 +1341,47 @@ class Convert(LinearOperator, metaclass=MultiClass):
 
     def enforce_conditions(self):
         """Require arguments to be in a proper layout."""
-        last_axis = self.axis + self.input_basis.dim - 1
-        is_coeff = not self.operand.layout.grid_space[last_axis]
-        is_local = self.operand.layout.local[last_axis]
+        arg0 = self.args[0]
+        last_axis = self.last_axis
+        is_coeff = not arg0.layout.grid_space[last_axis]
+        is_local = arg0.layout.local[last_axis]
         # Require locality if non-separable and in coeff space
         if is_coeff and not self.separable:
-            self.operand.require_local(last_axis)
+            self.args[0].require_local(last_axis)
 
     @property
     def base(self):
         return Convert
-
-    def output_basis(self, input_basis):
-        """Determine output basis."""
-        return self.args[2]
-
-    def split(self, *vars):
-        """Split into expressions containing and not containing specified operands/operators."""
-        # Split operand, skipping conversion
-        return self.operand.split(*vars)
 
     def replace(self, old, new):
         """Replace specified operand/operator."""
         # Replace operand, skipping conversion
         return self.operand.replace(old, new)
 
-    def sym_diff(self, var):
-        """Symbolically differentiate with respect to specified operand."""
-        # Differentiate operand, skipping conversion
-        return self.operand.sym_diff(var)
-
-    def expand(self, *vars):
-        """Expand expression over specified variables."""
-        # Expand operand, skipping conversion
-        return self.operand.expand(*vars)
+    # def expand(self, *vars):
+    #     """Expand expression over specified variables."""
+    #     # Expand operand, skipping conversion
+    #     return self.operand.expand(*vars)
 
     # def simplify(self, *vars):
     #     """Simplify expression, except subtrees containing specified variables."""
     #     # Simplify operand, skipping conversion
     #     return self.operand.simplify(*vars)
 
+    @CachedAttribute
+    def subspace_matrix(self):
+        """Build matrix operating on global subspace data."""
+        return self._subspace_matrix(self.input_basis, self.output_basis)
+
     def operate(self, out):
         """Perform operation."""
-        operand = self.operand
-        layout = operand.layout
-        last_axis = self.axis + self.input_basis.dim - 1
+        arg = self.args[0]
+        layout = arg.layout
+        last_axis = self.last_axis
         # Copy for grid space
         if layout.grid_space[last_axis]:
             out.set_layout(layout)
-            np.copyto(out.data, operand.data)
+            np.copyto(out.data, arg.data)
         # Revert to matrix application for coeff space
         else:
             super().operate(out)
@@ -1293,15 +1391,17 @@ class ConvertSame(Convert):
     """Identity conversion."""
 
     @classmethod
-    def _check_args(cls, operand, coord, output_basis, out=None):
+    def _check_args(cls, operand, output_basis, out=None):
         # Dispatch by operand and output basis
         if isinstance(operand, Operand):
-            for basis in operand.bases:
-                if output_basis == basis:
+            for basis in operand.domain.bases:
+                if basis == output_basis:
                     return True
         return False
 
-    def __new__(cls, operand, coord, output_basis, out=None):
+    def __new__(cls, operand, output_basis, out=None):
+        if out is not None:
+            raise NotImplementedError()
         return operand
 
 
@@ -1361,19 +1461,27 @@ class ConvertSame(Convert):
 class TransposeComponents(LinearOperator, metaclass=MultiClass):
 
     def __init__(self, operand, indices=(0,1), out=None):
-        if max(indices) > len(operand.tensorsig):
+        i0, i1 = indices
+        if i0 < 0:
+            i0 += len(operand.tensorsig)
+        if i1 < 0:
+            i1 += len(operand.tensorsig)
+        if max(i0, i1) > len(operand.tensorsig):
             raise ValueError("Transpose index greater than operand rank")
-        cs0 = operand.tensorsig[indices[0]]
-        cs1 = operand.tensorsig[indices[1]]
+        if i0 == i1:
+            raise ValueError("Don't transpose same indices")
+        cs0 = operand.tensorsig[i0]
+        cs1 = operand.tensorsig[i1]
         if cs0 != cs1:
             raise ValueError("Can only transpose two indices which have the same coordinate system")
-        self.cs = cs0
-        super().__init__(operand, self.cs, out=out)
-        tensorsig = operand.tensorsig
-        indices = list(indices)
-        for index in indices:
-            if index < 0: index = len(operand.tensorsig) + index
-        self.indices = tuple(indices)
+        super().__init__(operand, out=out)
+        self.indices = (i0, i1)
+        self.coordsys = cs0
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = operand.domain
+        self.tensorsig = operand.tensorsig
         self.dtype = operand.dtype
 
     @classmethod
@@ -1389,14 +1497,6 @@ class TransposeComponents(LinearOperator, metaclass=MultiClass):
     @property
     def base(self):
         return TransposeComponents
-
-    @CachedAttribute
-    def bases(self):
-        return (self.output_basis(self.operand.bases[0]),)
-
-    @staticmethod
-    def output_basis(input_basis):
-        return input_basis
 
 
 class SphericalComponent(LinearOperator):
@@ -1476,14 +1576,6 @@ class AngularComponent(SphericalComponent, metaclass=MultiClass):
 
 class Gradient(LinearOperator, metaclass=MultiClass):
 
-    def __init__(self, operand, cs, out=None):
-        super().__init__(operand, cs, out=out)
-        self._operand = operand
-        self.cs = cs
-#        self.bases = operand.bases
-        self.tensorsig = tuple([cs,] + list(operand.tensorsig))
-        self.dtype = operand.dtype
-
     @classmethod
     def _check_args(cls, operand, cs, out=None):
         # Dispatch by coordinate system
@@ -1501,20 +1593,22 @@ class CartesianGradient(Gradient):
 
     cs_type = coords.CartesianCoordinates
 
-    def __init__(self, operand, cs, out=None):
-        args = [Differentiate(operand, c) for c in cs.coords]
+    def __init__(self, operand, coordsys, out=None):
+        args = [Differentiate(operand, coord) for coord in coordsys.coords]
         bases = self._build_bases(*args)
         args = [convert(arg, bases) for arg in args]
         LinearOperator.__init__(self, *args, out=out)
-        self._operand = operand
-        self.cs = cs
-        self.bases = bases
-        self.tensorsig = tuple([cs,] + list(operand.tensorsig))
+        self.coordsys = coordsys
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = Domain(operand.dist, bases)
+        self.tensorsig = (coordsys,) + operand.tensorsig
         self.dtype = operand.dtype
 
     def _build_bases(self, *args):
         sum = reduce(add, args)
-        return reduce(add, args).bases
+        return reduce(add, args).domain.bases
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""
@@ -1528,8 +1622,8 @@ class CartesianGradient(Gradient):
         # Require operands to be in same layout
         # Take coeff layout arbitrarily
         layout = self.dist.coeff_layout
-        for operand in self.args:
-            operand.require_layout(layout)
+        for arg in self.args:
+            arg.require_layout(layout)
 
     def operate(self, out):
         """Perform operation."""
@@ -1542,14 +1636,24 @@ class CartesianGradient(Gradient):
             out.data[i] = comp.data
 
 
-class S2Gradient(Gradient):
+class S2Gradient(Gradient, SpectralOperator):
 
     cs_type = coords.S2Coordinates
 
-    def __init__(self, operand, cs, out=None):
-        super().__init__(operand, cs, out=out)
-        self.colatitude_axis = cs.coords[1].axis
-        self.bases = operand.bases
+    def __init__(self, operand, coordsys, out=None):
+        super().__init__(operand, out=out)
+        self.coordsys = coordsys
+        self.colatitude_axis = coordsys.coords[1].axis
+        # SpectralOperator requirements
+        self.input_basis = operand.domain.get_basis(coordsys)
+        self.output_basis = self.input_basis
+        self.last_axis = self.input_basis.last_axis
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain  = operand.domain
+        self.tensorsig = (coordsys,) + operand.tensorsig
+        self.dtype = operand.dtype
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""
@@ -1565,7 +1669,7 @@ class S2Gradient(Gradient):
     def operate(self, out):
         """Perform operation."""
         operand = self.args[0]
-        basis = operand.domain.get_basis(self.cs.coords[1])
+        basis = self.input_basis
         azimuthal_axis = self.colatitude_axis - 1
         layout = operand.layout
         # Set output layout
@@ -1602,7 +1706,7 @@ def reduced_view_4(data, axis):
     return data.reshape((N0, N1, N2, N3))
 
 
-class SphericalEllOperator(LinearOperator, metaclass=MultiClass):
+class SphericalEllOperator(SpectralOperator, metaclass=MultiClass):
 
     def operate(self, out):
         """Perform operation."""
@@ -1654,16 +1758,23 @@ class SphericalGradient(Gradient, SphericalEllOperator):
 
     cs_type = coords.SphericalCoordinates
 
-    def __init__(self, operand, cs, out=None):
-        super().__init__(operand, cs, out=out)
-        self.radius_axis = cs.coords[2].axis
-
-    @CachedAttribute
-    def bases(self):
-        return (self.output_basis(self.operand.bases[0]),)
+    def __init__(self, operand, coordsys, out=None):
+        super().__init__(operand, out=out)
+        self.coordsys = coordsys
+        self.radius_axis = coordsys.coords[2].axis
+        # SpectralOperator requirements
+        self.input_basis = operand.domain.get_basis(coordsys)
+        self.output_basis = self._output_basis(self.input_basis)
+        self.last_axis = self.input_basis.last_axis
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain  = operand.domain.substitute_basis(self.output_basis)
+        self.tensorsig = (coordsys,) + operand.tensorsig
+        self.dtype = operand.dtype
 
     @staticmethod
-    def output_basis(input_basis):
+    def _output_basis(input_basis):
         out = input_basis._new_k(input_basis.k + 1)
         return out
 
@@ -1708,14 +1819,6 @@ class Divergence(LinearOperator, metaclass=MultiClass):
     name = 'Div'
     # should check that we're not taking div of a scalar'
 
-    def __init__(self, operand, out=None):
-        self.cs = operand.tensorsig[0]
-        super().__init__(operand, self.cs, out=out)
-        self._operand = operand
-#        self.bases = operand.bases
-        self.tensorsig = tuple(list(operand.tensorsig)[1:])
-        self.dtype = operand.dtype
-
     @classmethod
     def _check_args(cls, operand, out=None):
         # Dispatch by coordinate system
@@ -1734,12 +1837,13 @@ class Component(LinearOperator, metaclass=MultiClass):
     name = 'Comp'
 
     def __init__(self, operand, index, coord, out=None):
-        args = [operand]
-        super().__init__(*args, coord, out=out)
-        #self.operand = operand
+        super().__init__(operand, out=out)
         self.index = index
         self.coord = coord
-        self.bases = operand.bases
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = operand.domain
         self.tensorsig = operand.tensorsig[:index] + operand.tensorsig[index+1:]
         self.dtype = operand.dtype
 
@@ -1748,8 +1852,11 @@ class Component(LinearOperator, metaclass=MultiClass):
         # Dispatch by coordinate system
         return isinstance(operand.tensorsig[index], cls.cs_type)
 
+    def new_operand(self, operand):
+        return Component(operand, self.index, self.coord)
 
-class CartesianComponent(Component, LinearOperator1D):
+
+class CartesianComponent(Component):
 
     cs_type = coords.CartesianCoordinates
 
@@ -1777,14 +1884,18 @@ class CartesianDivergence(Divergence):
 
     cs_type = coords.CartesianCoordinates
 
-    def __init__(self, operand, cs, out=None):
-        comps = [CartesianComponent(operand, index=0, coord=c) for c in cs.coords]
-        comps = [Differentiate(comp, c) for comp, c in zip(comps, cs.coords)]
+    def __init__(self, operand, index=0, out=None):
+        coordsys = operand.tensorsig[index]
+        comps = [CartesianComponent(operand, index=index, coord=c) for c in coordsys.coords]
+        comps = [Differentiate(comp, c) for comp, c in zip(comps, coordsys.coords)]
         arg = sum(comps)
-        LinearOperator.__init__(self, arg, cs, out=out)
-        #self.operand = operand
-        self.cs = cs
-        self.bases = arg.bases
+        LinearOperator.__init__(self, arg, out=out)
+        self.index = index
+        self.coordsys = coordsys
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = arg.domain
         self.tensorsig = arg.tensorsig
         self.dtype = arg.dtype
 
@@ -1811,16 +1922,27 @@ class SphericalDivergence(Divergence, SphericalEllOperator):
 
     cs_type = coords.SphericalCoordinates
 
-    def __init__(self, operand, out=None):
+    def __init__(self, operand, index=0, out=None):
+        if index != 0:
+            raise ValueError("Divergence only implemented along index 0.")
+        coordsys = operand.tensorsig[index]
         super().__init__(operand, out=out)
-        self.radius_axis = self.cs.coords[2].axis
-
-    @CachedAttribute
-    def bases(self):
-        return (self.output_basis(self.operand.bases[0]),)
+        self.index = index
+        self.coordsys = coordsys
+        self.radius_axis = coordsys.coords[2].axis
+        # SpectralOperator requirements
+        self.input_basis = operand.domain.get_basis(coordsys)
+        self.output_basis = self._output_basis(self.input_basis)
+        self.last_axis = self.input_basis.last_axis
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain  = operand.domain.substitute_basis(self.output_basis)
+        self.tensorsig = operand.tensorsig[:index] + operand.tensorsig[index+1:]
+        self.dtype = operand.dtype
 
     @staticmethod
-    def output_basis(input_basis):
+    def _output_basis(input_basis):
         out = input_basis._new_k(input_basis.k + 1)
         return out
 
@@ -1865,13 +1987,6 @@ class SphericalDivergence(Divergence, SphericalEllOperator):
 
 class Curl(LinearOperator, metaclass=MultiClass):
 
-    def __init__(self, operand, out=None):
-        self.cs = operand.tensorsig[0]
-        super().__init__(operand, self.cs, out=out)
-        self._operand = operand
-        self.tensorsig = operand.tensorsig
-        self.dtype = operand.dtype
-
     @classmethod
     def _check_args(cls, operand, out=None):
         # Dispatch by coordinate system
@@ -1889,16 +2004,27 @@ class SphericalCurl(Curl, SphericalEllOperator):
 
     cs_type = coords.SphericalCoordinates
 
-    def __init__(self, operand, out=None):
+    def __init__(self, operand, index=0, out=None):
+        if index != 0:
+            raise ValueError("Curl only implemented along index 0.")
+        coordsys = operand.tensorsig[index]
         super().__init__(operand, out=out)
-        self.radius_axis = self.cs.coords[2].axis
-
-    @CachedAttribute
-    def bases(self):
-        return (self.output_basis(self.operand.bases[0]),)
+        self.index = index
+        self.coordsys = coordsys
+        self.radius_axis = coordsys.coords[2].axis
+        # SpectralOperator requirements
+        self.input_basis = operand.domain.get_basis(coordsys)
+        self.output_basis = self._output_basis(self.input_basis)
+        self.last_axis = self.input_basis.last_axis
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain  = operand.domain.substitute_basis(self.output_basis)
+        self.tensorsig = (coordsys,) + operand.tensorsig[:index] + operand.tensorsig[index+1:]
+        self.dtype = operand.dtype
 
     @staticmethod
-    def output_basis(input_basis):
+    def _output_basis(input_basis):
         out = input_basis._new_k(input_basis.k + 1)
         return out
 
@@ -1949,13 +2075,6 @@ class SphericalCurl(Curl, SphericalEllOperator):
 
 class Laplacian(LinearOperator, metaclass=MultiClass):
 
-    def __init__(self, operand, coords, out=None):
-        super().__init__(operand, coords, out=out)
-        self._operand = operand
-        self.cs = coords
-        self.tensorsig = operand.tensorsig
-        self.dtype = operand.dtype
-
     @classmethod
     def _check_args(cls, operand, coords, out=None):
         # Dispatch by coordinate system
@@ -1973,13 +2092,15 @@ class CartesianLaplacian(Laplacian):
 
     cs_type = coords.CartesianCoordinates
 
-    def __init__(self, operand, cs, out=None):
-        parts = [Differentiate(Differentiate(operand, c), c) for c in cs.coords]
+    def __init__(self, operand, coordsys, out=None):
+        parts = [Differentiate(Differentiate(operand, c), c) for c in coordsys.coords]
         arg = sum(parts)
-        LinearOperator.__init__(self, arg, cs, out=out)
-        #self.operand = operand
-        self.cs = cs
-        self.bases = arg.bases
+        LinearOperator.__init__(self, arg, out=out)
+        self.coordsys = coordsys
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = arg.domain
         self.tensorsig = arg.tensorsig
         self.dtype = arg.dtype
 
@@ -2006,16 +2127,23 @@ class SphericalLaplacian(Laplacian, SphericalEllOperator):
 
     cs_type = coords.SphericalCoordinates
 
-    def __init__(self, operand, coords, out=None):
-        super().__init__(operand, coords, out=out)
-        self.radius_axis = self.cs.coords[2].axis
-
-    @CachedAttribute
-    def bases(self):
-        return (self.output_basis(self.operand.bases[0]),)
+    def __init__(self, operand, coordsys, out=None):
+        super().__init__(operand, out=out)
+        self.coordsys = coordsys
+        self.radius_axis = coordsys.coords[2].axis
+        # SpectralOperator requirements
+        self.input_basis = operand.domain.get_basis(coordsys)
+        self.output_basis = self._output_basis(self.input_basis)
+        self.last_axis = self.input_basis.last_axis
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain  = operand.domain.substitute_basis(self.output_basis)
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
 
     @staticmethod
-    def output_basis(input_basis):
+    def _output_basis(input_basis):
         out = input_basis._new_k(input_basis.k + 2)
         return out
 
@@ -2179,9 +2307,16 @@ class CrossProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
 
     def __init__(self, arg0, arg1, out=None):
         super().__init__(arg0, arg1, out=out)
+        # FutureField requirements
+        self.domain = Domain(arg0.dist, self._bases)
         self.tensorsig = arg0.tensorsig
-        # this is incorrect... should depend on the dtype of both arguments in some way...
-        self.dtype = arg0.dtype
+        self.dtype = np.result_type(arg0.dtype, arg1.dtype)
+
+    @CachedAttribute
+    def _bases(self):
+        # Need to fix this to do real multiplication
+        arg0, arg1 = self.args
+        return tuple(b0*b1 for b0, b1 in zip(arg0.domain.bases, arg1.domain.bases))
 
     def check_conditions(self):
         layout0 = self.args[0].layout
@@ -2212,12 +2347,6 @@ class CrossProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
     @property
     def base(self):
         return CrossProduct
-
-    @CachedAttribute
-    def bases(self):
-        # Need to fix this to do real multiplication
-        arg0, arg1 = self.args
-        return tuple(b0*b1 for b0, b1 in zip(arg0.bases, arg1.bases))
 
 
 class CartesianCrossProduct(CrossProduct):
@@ -2260,10 +2389,17 @@ class DotProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
         arg0_ts_reduced.pop(indices[0])
         arg1_ts_reduced = list(arg1.tensorsig)
         arg1_ts_reduced.pop(indices[1])
-        self.tensorsig = tuple(arg0_ts_reduced+arg1_ts_reduced)
         self.indices = indices
-        # this is incorrect... should depend on the dtype of both arguments in some way...
-        self.dtype = arg0.dtype
+        # FutureField requirements
+        self.domain = Domain(arg0.dist, self._bases)
+        self.tensorsig = tuple(arg0_ts_reduced + arg1_ts_reduced)
+        self.dtype = np.result_type(arg0.dtype, arg1.dtype)
+
+    @CachedAttribute
+    def _bases(self):
+        # Need to fix this to do real multiplication
+        arg0, arg1 = self.args
+        return tuple(b0*b1 for b0, b1 in zip(arg0.domain.bases, arg1.domain.bases))
 
     def check_conditions(self):
         layout0 = self.args[0].layout
@@ -2295,12 +2431,6 @@ class DotProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
     @property
     def base(self):
         return DotProduct
-
-    @CachedAttribute
-    def bases(self):
-        # Need to fix this to do real multiplication
-        arg0, arg1 = self.args
-        return tuple(b0*b1 for b0, b1 in zip(arg0.bases, arg1.bases))
 
     def operate(self, out):
         arg0, arg1 = self.args

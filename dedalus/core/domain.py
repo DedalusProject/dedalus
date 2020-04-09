@@ -50,16 +50,27 @@ class Domain(metaclass=CachedClass):
         self.bases, self.full_bases = self._check_bases(bases)
         # self.dim = sum(space.dim for space in self.spaces)
         self.dealias = 1
+        self.bases_dict = {basis.coords: basis for basis in bases}
 
     def __add__(self, other):
         dist = unify_attributes([self, other], 'dist')
         full_bases = [b1+b2 for b1, b2 in zip(self.full_bases, other.full_bases)]
         raise
 
-    # def reduce_bases(self, bases):
+    # def reduce_bases(self, bases):m
 
-    def get_basis(self, coord):
-        return self.full_bases[coord.axis]
+    def substitute_basis(self, basis):
+        bases_dict = self.bases_dict
+        bases_dict[basis.coords] = basis
+        bases = tuple(bases_dict.values())
+        return Domain(self.dist, bases)
+
+    def get_basis(self, coords):
+        if isinstance(coords, int):
+            axis = coords
+        else:
+            axis = coords.axis
+        return self.full_bases[axis]
 
     def get_basis_subaxis(self, coord):
         axis = coord.axis
@@ -69,9 +80,14 @@ class Domain(metaclass=CachedClass):
 
     def get_coord(self, name):
         for basis in self.bases:
-            for basis_coord in basis.coords:
-                if name == basis_coord.name:
-                    return basis_coord
+            # This is hacky...
+            if isinstance(basis.coords, Coordinate):
+                if name == basis.coords.name:
+                    return basis.coords
+            else:
+                for basis_coord in basis.coords.coords:
+                    if name == basis_coord.name:
+                        return basis_coord
         raise ValueError("Coordinate name not in domain")
 
     def _check_bases(self, bases):

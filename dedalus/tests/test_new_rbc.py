@@ -32,7 +32,7 @@ div = operators.Divergence
 lap = operators.Laplacian
 grad = operators.Gradient
 dot = operators.DotProduct
-eq0 = [0, div(u,c), 0]
+eq0 = [0, div(u,0), 0]
 eq1 = [b, -P*lap(b,c), -dot(u,grad(b,c))]
 eq2 = [u, -R*lap(u,c) + grad(p,c), -dot(u,grad(u,c)) - b*ghat]
 # bc1 = [0, u(z=0), 0]
@@ -47,10 +47,13 @@ bcs = []
 # Apply conversions
 for eq in eqs + bcs:
     M, L, F = eq
-    bases = (M + L - F).bases
-    eq[0] = operators.convert(M, bases)
-    eq[1] = operators.convert(L, bases)
-    eq[2] = operators.convert(F, bases)
+    bases = (M + L - F).domain.bases
+    if M:
+        eq[0] = operators.convert(M, bases)
+    if L:
+        eq[1] = operators.convert(L, bases)
+    if F:
+        eq[2] = operators.convert(F, bases)
 
 # Check we can evaluate everything
 for eq in eqs + bcs:
@@ -58,3 +61,4 @@ for eq in eqs + bcs:
         if expr:
             expr.evaluate()
 
+print("All expressions evaluate.")

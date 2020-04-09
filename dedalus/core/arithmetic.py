@@ -10,6 +10,7 @@ import itertools
 import operator
 import numbers
 
+from .domain import Domain
 from .field import Operand, Array, Field
 from .future import Future, FutureArray, FutureField
 from .operators import convert, Cast
@@ -57,10 +58,9 @@ class Add(Future, metaclass=MultiClass):
 
     def __init__(self, *args, out=None):
         # Convert arguments to output bases
-        bases = self._build_bases(*args)
-        args = [convert(arg, bases) for arg in args]
+        self._bases = self._build_bases(*args)
+        args = [convert(arg, self._bases) for arg in args]
         super().__init__(*args, out=out)
-        self.bases = bases
 
     def __str__(self):
         str_args = map(str, self.args)
@@ -69,7 +69,7 @@ class Add(Future, metaclass=MultiClass):
     def _build_bases(self, *args):
         """Build output bases."""
         bases = []
-        for ax_bases in zip(*(arg.bases for arg in args)):
+        for ax_bases in zip(*(arg.domain.bases for arg in args)):
             # All constant bases yields constant basis
             if all(basis is None for basis in ax_bases):
                 bases.append(None)
@@ -164,13 +164,12 @@ class AddFields(Add, FutureField):
 
     argtypes = (Field, FutureField)
 
-    @CachedAttribute
-    def tensorsig(self):
-        return unify_attributes(self.args, 'tensorsig')
-
-    @CachedAttribute
-    def dtype(self):
-        return np.result_type(*[arg.dtype for arg in self.args])
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self.dist = unify_attributes(self.args, 'dist')
+        self.domain = Domain(self.dist, self._bases)
+        self.tensorsig = unify_attributes(self.args, 'tensorsig')
+        self.dtype = np.result_type(*[arg.dtype for arg in self.args])
 
     def check_conditions(self):
         """Check that arguments are in a proper layout."""
@@ -253,7 +252,7 @@ class Multiply(Future, metaclass=MultiClass):
     def _build_bases(self, *args):
         """Build output bases."""
         bases = []
-        for ax_bases in zip(*(arg.bases for arg in args)):
+        for ax_bases in zip(*(arg.domain.bases for arg in args)):
             # All constant bases yields constant basis
             if all(basis is None for basis in ax_bases):
                 bases.append(None)
@@ -438,18 +437,14 @@ class MultiplyFields(Multiply, FutureField):
         super().__init__(*args, **kw)
         # Find required grid axes
         # Require grid space if more than one argument has nonconstant basis
-        ax_bases = tuple(zip(*(arg.bases for arg in self.args)))
+        ax_bases = tuple(zip(*(arg.domain.bases for arg in self.args)))
         nonconst_ax_bases = [[b for b in bases if b is not None] for bases in ax_bases]
         self.required_grid_axes = [len(bases) > 1 for bases in nonconst_ax_bases]
-        self.bases = tuple(reduce(operator.mul, bases) for bases in ax_bases)
-
-    @CachedAttribute
-    def tensorsig(self):
-        return sum((arg.tensorsig for arg in self.args), tuple())
-
-    @CachedAttribute
-    def dtype(self):
-        return np.result_type(*[arg.dtype for arg in self.args])
+        bases = tuple(reduce(operator.mul, bases) for bases in ax_bases)
+        self.dist = unify_attributes(self.args, 'dist')
+        self.domain = Domain(self.dist, bases)
+        self.tensorsig = sum((arg.tensorsig for arg in self.args), tuple())
+        self.dtype = np.result_type(*[arg.dtype for arg in self.args])
 
     def check_conditions(self):
         """Check that arguments are in a proper layout."""
@@ -505,7 +500,7 @@ class MultiplyNumberField(Multiply, FutureField):
         if isinstance(arg1, numbers.Number):
             arg0, arg1 = arg1, arg0
         super().__init__(arg0, arg1, **kw)
-        self.bases = arg1.bases
+        self.domain = arg1.domain
         self.tensorsig = arg1.tensorsig
         self.dtype = np.result_type(type(arg0), arg1.dtype)
 

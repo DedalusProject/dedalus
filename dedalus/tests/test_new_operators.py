@@ -237,11 +237,11 @@ result = np.allclose(v['c'],v_S2['c'])
 results.append(result)
 print(len(results), ':', result)
 
-# Radial Component
-w = operators.RadialComponent(v).evaluate()
-result = np.allclose(w['g'],v['g'][2])
-results.append(result)
-print(len(results), ':', result)
+## Radial Component
+#w = operators.RadialComponent(v).evaluate()
+#result = np.allclose(w['g'],v['g'][2])
+#results.append(result)
+#print(len(results), ':', result)
 
 # Tensor Interpolation
 T['g'][2,2] = (6*x**2+4*y*z)/r**2
@@ -252,7 +252,7 @@ T['g'][1,0] = T['g'][0,1] = -2*x*(x**2+y**2+3*y*z)/(r**3*np.sin(theta)**2)
 T['g'][0,0] = 6*y**2/(x**2+y**2)
 A = operators.interpolate(T,r=1).evaluate()
 Ag0 = 0*A['g']
-Ag0[2,2] = 2*np.sin(theta)*(3*np.cos(phi)**2*np.sin(theta)+2*np.cos(theta)*np.sin(phi)) 
+Ag0[2,2] = 2*np.sin(theta)*(3*np.cos(phi)**2*np.sin(theta)+2*np.cos(theta)*np.sin(phi))
 Ag0[2,1] = Ag0[1,2] = 6*np.cos(theta)*np.cos(phi)**2*np.sin(theta) + 2*np.cos(2*theta)*np.sin(phi)
 Ag0[2,0] = Ag0[0,2] = 2*np.cos(phi)*(np.cos(theta) - 3*np.sin(theta)*np.sin(phi))
 Ag0[1,1] = 2*np.cos(theta)*(3*np.cos(theta)*np.cos(phi)**2 - 2*np.sin(theta)*np.sin(phi))
@@ -262,12 +262,12 @@ result = np.allclose(A['g'],Ag0)
 results.append(result)
 print(len(results), ':', result)
 
-# Radial Component
-Tr = operators.RadialComponent(T).evaluate()
-print(Tr.tensorsig)
-result = np.allclose(Tr['g'],T['g'][:,2])
-results.append(result)
-print(len(results), ':', result)
+## Radial Component
+#Tr = operators.RadialComponent(T).evaluate()
+#print(Tr.tensorsig)
+#result = np.allclose(Tr['g'],T['g'][:,2])
+#results.append(result)
+#print(len(results), ':', result)
 
 
 # ScalarField - ScalarField multiplication

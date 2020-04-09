@@ -36,14 +36,14 @@ class Operand:
 
     __array_priority__ = 100.
 
-    def __getattr__(self, attr):
-        # Intercept numpy ufunc calls
-        from .operators import UnaryGridFunction
-        try:
-            ufunc = UnaryGridFunction.supported[attr]
-            return partial(UnaryGridFunction, ufunc, self)
-        except KeyError:
-            raise AttributeError("%r object has no attribute %r" %(self.__class__.__name__, attr))
+    # def __getattr__(self, attr):
+    #     # Intercept numpy ufunc calls
+    #     from .operators import UnaryGridFunction
+    #     try:
+    #         ufunc = UnaryGridFunction.supported[attr]
+    #         return partial(UnaryGridFunction, ufunc, self)
+    #     except KeyError:
+    #         raise AttributeError("%r object has no attribute %r" %(self.__class__.__name__, attr))
 
     ## Idea for alternate ufunc implementation based on changes eventually (?) coming in numpy
     # def __numpy_ufunc__(self, ufunc, method, i, inputs, **kw):
@@ -129,8 +129,8 @@ class Operand:
             out['c'] = x
             return out
 
-    def get_basis(self, coord):
-        return self.domain.get_basis(coord)
+    # def get_basis(self, coord):
+    #     return self.domain.get_basis(coord)
         # space = self.domain.get_basis(coord)
         # if self.domain.spaces[space.axis] in [space, None]:
         #     return self.bases[space.axis]
@@ -276,7 +276,7 @@ class Current(Operand):
     def separability(self, *vars):
         """Determine separable dimensions of expression as a linear operator on specified variables."""
         self.require_linearity(*vars)
-        return np.array([True for basis in self.bases])
+        return np.array([True for basis in self.domain.bases])
 
     # def operator_order(self, operator):
     #     """Determine maximum application order of an operator in the expression."""
@@ -293,7 +293,7 @@ class Current(Operand):
         # group_shape = subproblem.group_shape(self.domain)
         # factors = (sparse.identity(n, format='csr') for n in group_shape)
         # matrix = reduce(sparse.kron, factors, 1).tocsr()
-        size = self.bases[0].field_radial_size(self, subproblem.ell)
+        size = self.domain.bases[0].field_radial_size(self, subproblem.ell)
         matrix = sparse.identity(size, format='csr')
         return {self: matrix}
 
@@ -429,10 +429,10 @@ class Field(Current):
         self.name = name
         self.tensorsig = tensorsig
         self.dtype = dtype
-        self.bases = bases
+        #self.bases = bases
         # Build domain
-        self.domain = Domain(dist, self.bases)
-        self.bases, self.full_bases = self.domain.bases, self.domain.full_bases
+        self.domain = Domain(dist, bases)
+        #self.bases, self.full_bases = self.domain.bases, self.domain.full_bases
         #self.bases = dist.check_bases(bases)
 
         # Set initial scales and layout
@@ -472,7 +472,7 @@ class Field(Current):
         return self.layout.global_shape(self.domain, self.scales)
 
     def copy(self):
-        copy = Field(self.dist, bases=self.bases)
+        copy = Field(self.dist, bases=self.domain.bases)
         copy.set_scales(self.scales)
         copy[self.layout] = self.data
         return copy
@@ -641,7 +641,7 @@ class Field(Current):
 
     @property
     def is_scalar(self):
-        return all(basis is None for basis in self.bases)
+        return all(basis is None for basis in self.domain.bases)
 
     def local_elements(self):
         return self.layout.local_elements(self.domain, self.scales)

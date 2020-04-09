@@ -96,8 +96,8 @@ class Basis:
 
     def __init__(self, coords):
         self.coords = coords
-        self.dist = coords[0].dist
-        self.axis = self.dist.coords.index(coords[0])
+        self.dist = coords.dist
+        self.axis = coords.axis
         self.domain = Domain(self.dist, bases=(self,))
 
     # def __repr__(self):
@@ -111,6 +111,10 @@ class Basis:
 
     # def __rmul__(self, other):
     #     return self.__mul__(other)
+
+    @property
+    def last_axis(self):
+        return self.axis + self.dim - 1
 
     def grid_shape(self, scales):
         return tuple(int(np.ceil(s*n)) for s, n in zip(scales, self.shape))
@@ -232,7 +236,7 @@ class IntervalBasis(Basis):
     dim = 1
 
     def __init__(self, coord, size, bounds):
-        super().__init__((coord,))
+        super().__init__(coord)
         self.coord = coord
         self.size = size
         self.shape = (size,)
@@ -403,7 +407,7 @@ def ChebyshevU(*args, **kw):
     return Ultraspherical(*args, alpha=1, **kw)
 
 
-class ConvertJacobi(operators.Convert, operators.LinearOperator1D):
+class ConvertJacobi(operators.Convert, operators.SpectralOperator1D):
     """Jacobi polynomial conversion."""
 
     input_basis_type = Jacobi
@@ -426,7 +430,7 @@ class DifferentiateJacobi(operators.Differentiate):
     separable = False
 
     @staticmethod
-    def output_basis(input_basis):
+    def _output_basis(input_basis):
         a = input_basis.a + 1
         b = input_basis.b + 1
         return input_basis._new_a_b(a, b)
@@ -568,7 +572,7 @@ class DifferentiateComplexFourier(operators.Differentiate):
     separable = True
 
     @staticmethod
-    def output_basis(input_basis):
+    def _output_basis(input_basis):
         return input_basis
 
     @staticmethod
@@ -898,12 +902,12 @@ class MultidimensionalBasis(Basis):
 class SpinBasis(MultidimensionalBasis):
 
     def __init__(self, coordsystem, shape, azimuth_library='matrix'):
-        super().__init__(coordsystem.coords)
+        super().__init__(coordsystem)
         self.coordsystem = coordsystem
         self.shape = shape
         self.azimuth_library = azimuth_library
         self.mmax = (shape[0] - 1) // 2
-        self.azimuth_basis = ComplexFourier(self.coords[0], shape[0], bounds=(0, 2*np.pi), library=azimuth_library)
+        self.azimuth_basis = ComplexFourier(coordsystem.coords[0], shape[0], bounds=(0, 2*np.pi), library=azimuth_library)
         self.global_grid_azimuth = self.azimuth_basis.global_grid
         self.local_grid_azimuth = self.azimuth_basis.local_grid
         self.forward_transform_azimuth = self.azimuth_basis.forward_transform
@@ -976,7 +980,7 @@ class SpinBasis(MultidimensionalBasis):
 class RegularityBasis(MultidimensionalBasis):
 
     def __init__(self, coordsystem, shape, azimuth_library='matrix', colatitude_library='matrix'):
-        super().__init__(coordsystem.coords)
+        super().__init__(coordsystem)
         self.coordsystem = coordsystem
         self.shape = shape
         self.azimuth_library = azimuth_library
@@ -1460,7 +1464,7 @@ class ConvertBall(operators.Convert, operators.SphericalEllOperator):
     def radial_matrix(self, regindex_in, regindex_out, ell):
         basis = self.input_basis
         regtotal = basis.regtotal(regindex_in)
-        dk = self.bases[0].k - basis.k
+        dk = self.output_basis.k - basis.k
         if regindex_in == regindex_out:
             return basis.conversion_matrix(ell, regtotal, dk)
         else:
@@ -1497,8 +1501,9 @@ class BallRadialInterpolate(operators.Interpolate):
                     return True
         return False
 
-    def output_basis(self, input_basis):
-        return input_basis.S2_basis(radius=self.position)
+    @staticmethod
+    def _output_basis(input_basis, position):
+        return input_basis.S2_basis(radius=position)
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
@@ -1525,9 +1530,9 @@ class BallRadialInterpolate(operators.Interpolate):
 
     def operate(self, out):
         """Perform operation."""
-        operand = self.operand
+        operand = self.args[0]
         basis_in = self.input_basis
-        basis_out = out.bases[0] # We're assuming here only one basis...
+        basis_out = self.output_basis
         # Set output layout
         out.set_layout(operand.layout)
         # Apply operator
@@ -1564,8 +1569,8 @@ class SphericalTransposeComponents(operators.TransposeComponents):
     basis_type = BallBasis
 
     def __init__(self, operand, indices=(0,1), out=None):
-        super().__init__(operand, indices=(0,1), out=out)
-        self.radius_axis = self.cs.coords[2].axis
+        super().__init__(operand, indices=indices, out=out)
+        self.radius_axis = self.coordsys.coords[2].axis
 
     def check_conditions(self):
         """Can always take the transpose"""
@@ -1577,7 +1582,8 @@ class SphericalTransposeComponents(operators.TransposeComponents):
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
-        R = self.input_basis.regularity_classes(self.tensorsig)
+        basis = self.domain.get_basis(self.coordsys)
+        R = basis.regularity_classes(self.tensorsig)
 
         # need to get ell from subproblem -- don't know how to do this
         ell = subproblem.ell
@@ -1600,10 +1606,10 @@ class SphericalTransposeComponents(operators.TransposeComponents):
             matrix.append(matrix_row)
         transpose = np.array(matrix)
 
-        Q = self.input_basis.radial_recombinations(self.tensorsig,ell_list=(ell,))
+        Q = basis.radial_recombinations(self.tensorsig,ell_list=(ell,))
         transpose = Q[0].T @ transpose @ Q[0]
 
-        n_size = self.input_basis.Nmax - dedalus_sphere.ball.Nmin(ell, 0) + 1
+        n_size = basis.Nmax - dedalus_sphere.ball.Nmin(ell, 0) + 1
         eye = sparse.identity(n_size, self.dtype, format='csr')
         matrix = sparse.kron( transpose, eye)
         return matrix
@@ -1611,14 +1617,14 @@ class SphericalTransposeComponents(operators.TransposeComponents):
     def operate(self, out):
         """Perform operation."""
         operand = self.args[0]
+        basis = self.domain.get_basis(self.coordsys)
         # Set output layout
         layout = operand.layout
         out.set_layout(layout)
         indices = self.indices
         np.copyto(out.data, operand.data)
 
-        if not layout.grid_space[self.radius_axis]: # in regularity components
-            basis = self.input_basis
+        if not layout.grid_space[self.radius_axis]: # in regularity componentsinput
             basis.backward_regularity_recombination(operand.tensorsig, self.radius_axis, out.data)
 
         axes_list = np.arange(len(out.data.shape))
