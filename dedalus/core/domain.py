@@ -60,7 +60,7 @@ class Domain(metaclass=CachedClass):
     # def reduce_bases(self, bases):m
 
     def substitute_basis(self, inbasis, outbasis):
-        bases_dict = self.bases_dict
+        bases_dict = self.bases_dict.copy()
         bases_dict[inbasis.coords] = outbasis
         bases = tuple(bases_dict.values())
         return Domain(self.dist, bases)

@@ -1147,6 +1147,8 @@ class Differentiate(SpectralOperator1D, metaclass=MultiClass):
 
     """
 
+    name = "Diff"
+
     def __init__(self, operand, coord, out=None):
         super().__init__(operand, out=out)
         # SpectralOperator requirements
@@ -1288,6 +1290,8 @@ class Convert(SpectralOperator, metaclass=MultiClass):
     output_basis : Basis object
 
     """
+
+    name = "Convert"
 
     def __init__(self, operand, output_basis, out=None):
         super().__init__(operand, out=out)
@@ -1613,8 +1617,7 @@ class CartesianGradient(Gradient):
         self.dtype = operand.dtype
 
     def _build_bases(self, *args):
-        sum = reduce(add, args)
-        return reduce(add, args).domain.bases
+        return sum(args).domain.bases
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""
@@ -2080,6 +2083,8 @@ class SphericalCurl(Curl, SphericalEllOperator):
 
 
 class Laplacian(LinearOperator, metaclass=MultiClass):
+
+    name = "Lap"
 
     @classmethod
     def _check_args(cls, operand, coords, out=None):

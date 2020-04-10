@@ -10,7 +10,7 @@ results = []
 
 ## 2D Fourier * Chebyshev
 c = coords.CartesianCoordinates('x', 'y')
-d = distributor.Distributor(c.coords)
+d = distributor.Distributor((c,))
 xb = basis.ComplexFourier(c.coords[0], size=16, bounds=(0, 2*np.pi))
 yb = basis.ChebyshevT(c.coords[1], size=16, bounds=(0, 1))
 x = xb.local_grid(1)
@@ -39,7 +39,7 @@ results.append(result)
 print(len(results), ':', result, '(gradient of a vector)')
 
 # Divergence of a vector
-h = operators.Divergence(u, c)
+h = operators.Divergence(u)
 h = h.evaluate()
 h.name = 'h'
 hg = - np.sin(x) * y**5 + np.sin(x) * 20 * y**3

@@ -85,9 +85,9 @@ class Future(Operand):
         # Subclasses must implement
         raise NotImplementedError()
 
-    @property
-    def name(self):
-        return self.base.__name__
+    # @property
+    # def name(self):
+    #     return self.base.__name__
 
     def reset(self):
         """Restore original arguments."""
