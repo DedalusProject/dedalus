@@ -1031,6 +1031,16 @@ class RegularityBasis(MultidimensionalBasis):
         self.backward_transform_azimuth = self.sphere_basis.backward_transform_azimuth
         self.backward_transform_colatitude = self.sphere_basis.backward_transform_colatitude
 
+    def global_grids(self, scales):
+        return (self.global_grid_azimuth(scales[0]),
+                self.global_grid_colatitude(scales[1]),
+                self.global_grid_radius(scales[2]))
+
+    def local_grids(self, scales):
+        return (self.local_grid_azimuth(scales[0]),
+                self.local_grid_colatitude(scales[1]),
+                self.local_grid_radius(scales[2]))
+
     def S2_basis(self,radius=1):
         return SWSH(self.coordsystem, self.shape[:2], radius=radius,
                     azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library)
@@ -1268,6 +1278,171 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
 
 SWSH = SpinWeightedSphericalHarmonics
 
+class SphericalShellBasis(RegularityBasis):
+
+    dim = 3
+    dims = ['azimuth', 'colatitude', 'radius']
+    group_shape = (1, 1, 1)
+    transforms = {}
+
+    def __init__(self, coordsys, shape, radii=(1,2), alpha=(-0.5,-0.5), k=0, azimuth_library='matrix', colatitude_library='matrix', radius_library='matrix'):
+        super().__init__(coordsys, shape, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
+        if radii[0] <= 0:
+            raise ValueError("Inner radius must be positive.")
+        self.radii = radii
+        self.dR = self.radii[1] - self.radii[0]
+        self.rho = (self.radii[1] + self.radii[0])/self.dR
+        self.alpha = alpha
+        self.k = k
+        self.radius_library = radius_library
+# Do we need this? Don't think so....
+#        self.radial_COV = AffineCOV((0, 1), (0, radius))
+        self.Nmax = shape[2] - 1
+        self.forward_transforms = [self.forward_transform_azimuth,
+                                   self.forward_transform_colatitude,
+                                   self.forward_transform_radius]
+        self.backward_transforms = [self.backward_transform_azimuth,
+                                    self.backward_transform_colatitude,
+                                    self.backward_transform_radius]
+        self.grid_params = (coordsys, radii, alpha)
+
+# could these be moved to Regularity?
+    def __eq__(self, other):
+        if isinstance(other, SphericalShellBasis):
+            if self.coordsys == other.coordsys:
+                if self.grid_params == other.grid_params:
+                    if self.k == other.k:
+                        return True
+        return False
+
+    def __hash__(self):
+        return id(self)
+
+    def __add__(self, other):
+        if other is None:
+            return self
+        if other is self:
+            return self
+        if isinstance(other, SphericalShellBasis):
+            if self.grid_params == other.grid_params:
+                shape = np.maximum(self.shape, other.shape)
+                k = max(self.k, other.k)
+                return SphericalShellBasis(self.coordsys, shape, radii=self.radii, alpha=self.alpha, k=k)
+        return NotImplemented
+
+    def __mul__(self, other):
+        if other is None:
+            return self
+        if other is self:
+            return self
+        if isinstance(other, SphericalShellBasis):
+            if self.grid_params == other.grid_params:
+                shape = np.maximum(self.shape, other.shape)
+                k = 0
+                return SphericalShellBasis(self.coordsys, shape, radii=self.radii, alpha=self.alpha, k=k)
+        return NotImplemented
+
+    def _new_k(self, k):
+        return SphericalShellBasis(self.coordsys, self.shape, radii = self.radii, alpha=self.alpha, k=k,
+                                   azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
+                                   radius_library=self.radius_library)
+
+    def global_grid_radius(self, scale):
+        grid = self._radius_grid(scale)[local_elements]
+        return reshape_vector(grid, dim=self.dist.dim, axis=self.axis+2)
+
+    def local_grid_radius(self, scale):
+        local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis+2]
+        grid = self._radius_grid(scale)[local_elements]
+        return reshape_vector(grid, dim=self.dist.dim, axis=self.axis+2)
+
+    def _radius_grid(self, scale):
+        N = int(np.ceil(scale * self.shape[2]))
+        z, weights = dedalus_sphere.annulus.quadrature(N-1, alpha=self.alpha, niter=3)
+        r = (self.dR*z + self.rho)/2
+        return r.astype(np.float64)
+
+    def global_radius_weights(self, scale):
+        N = int(np.ceil(scale * self.shape[1]))
+        z, weights = dedalus_sphere.ball.quadrature(N-1, alpha=self.alpha, niter=3)
+        return reshape_vector(weights.astype(np.float64), dim=self.dist.dim, axis=self.axis+2)
+
+    def local_radius_weights(self, scale):
+        local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis+2]
+        N = int(np.ceil(scale * self.shape[1]))
+        z, weights = dedalus_sphere.ball.quadrature(N-1, alpha=self.alpha, niter=3)
+        return reshape_vector(weights.astype(np.float64)[local_elements], dim=self.dist.dim, axis=self.axis+2)
+
+    @CachedMethod
+    def transform_plan(self, grid_size, k):
+        """Build transform plan."""
+        a = self.alpha[0] + k
+        b = self.alpha[1] + k
+        a0 = self.alpha[0]
+        b0 = self.alpha[1]
+        return self.transforms[self.radius_library](grid_size, self.Nmax+1, a, b, a0, b0)
+
+    def forward_transform_radius(self, field, axis, gdata, cdata):
+        data_axis = len(field.tensorsig) + axis
+        grid_size = gdata.shape[data_axis]
+        # Apply regularity recombination
+        self.forward_regularity_recombination(field.tensorsig, axis, gdata)
+        # Perform radial transforms component-by-component
+        R = self.regularity_classes(field.tensorsig)
+        for regindex, regtotal in np.ndenumerate(R):
+           plan = self.transform_plan(grid_size, self.k)
+           plan.forward(gdata[regindex], cdata[regindex], axis)
+
+    def backward_transform_radius(self, field, axis, cdata, gdata):
+        data_axis = len(field.tensorsig) + axis
+        grid_size = gdata.shape[data_axis]
+        # Perform radial transforms component-by-component
+        R = self.regularity_classes(field.tensorsig)
+        for i, r in np.ndenumerate(R):
+           plan = self.transform_plan(grid_size, self.k)
+           plan.backward(cdata[i], gdata[i], axis)
+        # Apply regularity recombinations
+        self.backward_regularity_recombination(field.tensorsig, axis, gdata)
+
+    @CachedMethod
+    def operator_matrix(self,op,l,dk=0):
+        return dedalus_sphere.annulus.operator(3,op,self.Nmax,self.k+dk,l,self.radii,alpha=self.alpha).astype(np.float64)
+
+    @CachedMethod
+    def conversion_matrix(self, l, dk):
+        for dki in range(dk):
+            Ek = dedalus_sphere.annulus.operator(3, 'E', self.Nmax, self.k+dki, l, self.radii, alpha=self.alpha)
+            if dki == 0:
+                E = Ek
+            else:
+                E = Ek @ E
+        return E.astype(np.float64)
+
+    @CachedMethod
+    def radial_vector_slices(self, m, ell, regindex):
+        if m > ell:
+            return None
+        if not self.regularity_allowed(ell, regindex):
+            return None
+        mi = self.local_m.index(m)
+        li = self.local_l.index(ell)
+        return (mi, li, slice(0,self.Nmax+1))
+
+    def radial_vector_3(self, comp, m, ell, regindex):
+        slices = self.radial_vector_slices(m, ell, regindex)
+        if slices is None:
+            return None
+        comp5 = reduced_view(comp, axis=self.axis, dim=self.dim)
+        return comp5[(slice(None),) + slices + (slice(None),)]
+
+    def field_radial_size(self, field, ell):
+        comp_sizes = 0
+        R = self.regularity_classes(field.tensorsig)
+        for regindex, regtotal in np.ndenumerate(R):
+            if self.regularity_allowed(ell, regindex):
+                comp_sizes += self.Nmax+1
+        return comp_sizes
+
 
 class BallBasis(RegularityBasis):
 
@@ -1335,16 +1510,6 @@ class BallBasis(RegularityBasis):
         return BallBasis(self.coordsystem, self.shape, radius = self.radius, k=k, alpha=self.alpha,
                          azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
                          radius_library=self.radius_library)
-
-    def global_grids(self, scales):
-        return (self.global_grid_azimuth(scales[0]),
-                self.global_grid_colatitude(scales[1]),
-                self.global_grid_radius(scales[2]))
-
-    def local_grids(self, scales):
-        return (self.local_grid_azimuth(scales[0]),
-                self.local_grid_colatitude(scales[1]),
-                self.local_grid_radius(scales[2]))
 
     def global_grid_radius(self, scale):
         native_grid = self._native_radius_grid(scale)[local_elements]

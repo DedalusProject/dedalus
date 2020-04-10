@@ -152,6 +152,7 @@ class FastTransform(SeparableTransform):
 
 
 @register_transform(basis.Jacobi, 'matrix')
+@register_transform(basis.SphericalShellBasis, 'matrix')
 class JacobiMatrixTransform(MatrixTransform):
     """Jacobi polynomial transforms."""
 
