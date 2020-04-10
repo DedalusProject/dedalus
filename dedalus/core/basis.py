@@ -443,17 +443,24 @@ class DifferentiateJacobi(operators.Differentiate):
         return (matrix.tocsr() / input_basis.COV.stretch)
 
 
-# class InterpolateJacobi(operators.Interpolate):
-#     """Jacobi polynomial interpolation."""
+class InterpolateJacobi(operators.Interpolate):
+    """Jacobi polynomial interpolation."""
 
-#     input_basis_type = Jacobi
+    input_basis_type = Jacobi
+    separable = False
 
-#     @staticmethod
-#     def _subspace_matrix(space, input_basis, position):
-#         N = space.coeff_size
-#         a, b = input_basis.a, input_basis.b
-#         x = space.COV.native_coord(position)
-#         return jacobi.interpolation_vector(N, a, b, x)
+    @staticmethod
+    def _subspace_matrix(input_basis, position):
+        N = input_basis.size
+        a, b = input_basis.a, input_basis.b
+        x = input_basis.COV.native_coord(position)
+        interp_vector = jacobi.interpolation_vector(N, a, b, x)
+        # Return as 1*N array
+        return interp_vector[None,:]
+
+    @staticmethod
+    def _output_basis(input_basis, position):
+        return None
 
 
 # class IntegrateJacobi(operators.Integrate):

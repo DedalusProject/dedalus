@@ -254,13 +254,11 @@ def differentiation_matrix(N, a, b):
 #     J = Jacobi_operator('J', a, b, N-1)
 #     return J.tocsr().astype(output_dtype)
 
-# def interpolation_vector(N, a, b, x):
-#     J = Jacobi_operator('J', a, b, N-1)
-#     if np.isscalar(x):
-#         x = np.array([x])
-#     const = 1 / np.sqrt(mass(a, b))
-#     interp = three_term_recursion(J, x, N-1, const)
-#     return interp.T.copy().astype(output_dtype)
+def interpolation_vector(M, a, b, x):
+    X = np.array([x])  # jacobi128 currently requires grid to be an array
+    interp = build_polynomials(M, a, b, X)
+    return interp.reshape(M).astype(output_dtype)
+
 
 # def integration_vector(N, a, b):
 #     # Build Legendre quadrature

@@ -906,7 +906,7 @@ def interpolate(arg, **positions):
         arg = Interpolate(arg, coord, position)
     return arg
 
-class Interpolate(SpectralOperator, metaclass=MultiClass):
+class Interpolate(SpectralOperator1D, metaclass=MultiClass):
     """
     Interpolation along one dimension.
 
@@ -947,9 +947,17 @@ class Interpolate(SpectralOperator, metaclass=MultiClass):
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements
-        self.domain = operand.domain.substitute_basis(self.output_basis)
+        self.domain = operand.domain.substitute_basis(self.input_basis, self.output_basis)
         self.tensorsig = operand.tensorsig
         self.dtype = operand.dtype
+
+    def new_operand(self, operand):
+        return Interpolate(operand, self.coord, self.position)
+
+    @CachedAttribute
+    def subspace_matrix(self):
+        """Build matrix operating on global subspace data."""
+        return self._subspace_matrix(self.input_basis, self.position)
 
     def _expand_multiply(self, operand, vars):
         """Expand over multiplication."""
@@ -963,10 +971,6 @@ class Interpolate(SpectralOperator, metaclass=MultiClass):
         if not self.separable:
             separability[self.axis] = False
         return separability
-
-    @property
-    def base(self):
-        return Interpolate
 
 
 #class Interpolate(LinearSubspaceFunctional, metaclass=MultiClass):
@@ -1152,7 +1156,7 @@ class Differentiate(SpectralOperator1D, metaclass=MultiClass):
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements
-        self.domain = operand.domain.substitute_basis(self.output_basis)
+        self.domain = operand.domain.substitute_basis(self.input_basis, self.output_basis)
         self.tensorsig = operand.tensorsig
         self.dtype = operand.dtype
 
@@ -1293,7 +1297,7 @@ class Convert(SpectralOperator, metaclass=MultiClass):
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements
-        self.domain = operand.domain.substitute_basis(self.output_basis)
+        self.domain = operand.domain.substitute_basis(self.input_basis, self.output_basis)
         self.tensorsig = operand.tensorsig
         self.dtype = operand.dtype
 
@@ -1769,7 +1773,7 @@ class SphericalGradient(Gradient, SphericalEllOperator):
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements
-        self.domain  = operand.domain.substitute_basis(self.output_basis)
+        self.domain  = operand.domain.substitute_basis(self.input_basis, self.output_basis)
         self.tensorsig = (coordsys,) + operand.tensorsig
         self.dtype = operand.dtype
 
@@ -1937,7 +1941,7 @@ class SphericalDivergence(Divergence, SphericalEllOperator):
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements
-        self.domain  = operand.domain.substitute_basis(self.output_basis)
+        self.domain  = operand.domain.substitute_basis(self.input_basis, self.output_basis)
         self.tensorsig = operand.tensorsig[:index] + operand.tensorsig[index+1:]
         self.dtype = operand.dtype
 
@@ -2019,7 +2023,7 @@ class SphericalCurl(Curl, SphericalEllOperator):
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements
-        self.domain  = operand.domain.substitute_basis(self.output_basis)
+        self.domain  = operand.domain.substitute_basis(self.input_basis, self.output_basis)
         self.tensorsig = (coordsys,) + operand.tensorsig[:index] + operand.tensorsig[index+1:]
         self.dtype = operand.dtype
 
@@ -2138,7 +2142,7 @@ class SphericalLaplacian(Laplacian, SphericalEllOperator):
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements
-        self.domain  = operand.domain.substitute_basis(self.output_basis)
+        self.domain  = operand.domain.substitute_basis(self.input_basis, self.output_basis)
         self.tensorsig = operand.tensorsig
         self.dtype = operand.dtype
 

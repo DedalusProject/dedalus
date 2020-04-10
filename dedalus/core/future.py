@@ -184,7 +184,7 @@ class Future(Operand):
             if any(bases):
                 out = self.future_type(dist=self.dist, bases=bases, tensorsig=self.tensorsig, dtype=self.dtype)
             else:
-                out = self.future_type(domain=self.domain)
+                out = self.future_type(dist=self.dist, tensorsig=self.tensorsig, dtype=self.dtype)
             #out = self.domain.new_data(self.future_type)
             #out = Field(name=str(self), bases=self.bases)
 

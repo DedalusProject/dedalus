@@ -50,7 +50,7 @@ class Domain(metaclass=CachedClass):
         self.bases, self.full_bases = self._check_bases(bases)
         # self.dim = sum(space.dim for space in self.spaces)
         self.dealias = 1
-        self.bases_dict = {basis.coords: basis for basis in bases}
+        self.bases_dict = {basis.coords: basis for basis in self.bases}
 
     def __add__(self, other):
         dist = unify_attributes([self, other], 'dist')
@@ -59,9 +59,9 @@ class Domain(metaclass=CachedClass):
 
     # def reduce_bases(self, bases):m
 
-    def substitute_basis(self, basis):
+    def substitute_basis(self, inbasis, outbasis):
         bases_dict = self.bases_dict
-        bases_dict[basis.coords] = basis
+        bases_dict[inbasis.coords] = outbasis
         bases = tuple(bases_dict.values())
         return Domain(self.dist, bases)
 
@@ -91,6 +91,8 @@ class Domain(metaclass=CachedClass):
         raise ValueError("Coordinate name not in domain")
 
     def _check_bases(self, bases):
+        # Drop Nones
+        bases = [basis for basis in bases if basis is not None]
         # Drop duplicates
         bases = list(set(bases))
         # Sort by axis
