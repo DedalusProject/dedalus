@@ -245,20 +245,20 @@ class FutureField(Future):
     future_type = Field
 
     @staticmethod
-    def parse(string, namespace, domain):
+    def parse(string, namespace, dist):
         """Build FutureField from a string expression."""
         expression = eval(string, namespace)
-        return FutureField.cast(expression, domain)
+        return FutureField.cast(expression, dist)
 
     @staticmethod
-    def cast(input, domain):
+    def cast(arg, dist):
         """Cast an object to a FutureField."""
         from .operators import FieldCopy
-        # Cast to operand
-        input = Operand.cast(input, domain)
+        # Cast to Operand (checks dist)
+        arg = Operand.cast(arg, dist)
         # Cast to FutureField
-        if isinstance(input, FutureField):
-            return input
+        if isinstance(arg, FutureField):
+            return arg
         else:
-            return FieldCopy(input, domain)
+            return FieldCopy(arg)
 

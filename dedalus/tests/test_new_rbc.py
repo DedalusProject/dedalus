@@ -35,19 +35,19 @@ dot = operators.DotProduct
 eq0 = [0, div(u,0), 0]
 eq1 = [b, -P*lap(b,c), -dot(u,grad(b,c))]
 eq2 = [u, -R*lap(u,c) + grad(p,c), -dot(u,grad(u,c)) - b*ghat]
-# bc1 = [0, u(z=0), 0]
-# bc2 = [0, u(z=Lz), 0]
-# bc3 = [0, b(z=0), 0]
-# bc4 = [0, b(z=Lz), Lz]
+bc1 = [0, u(z=0), 0]
+bc2 = [0, u(z=Lz), 0]
+bc3 = [0, b(z=0), Lz]
+bc4 = [0, b(z=Lz), 0]
 # Pressure gauge?
 eqs = [eq0, eq1, eq2]
-bcs = []
-#bcs = [bc1, bc2, bc3, bc4]
+bcs = [bc1, bc2, bc3, bc4]
 
 # Apply conversions
 for eq in eqs + bcs:
     M, L, F = eq
     bases = (M + L - F).domain.bases
+    print(M, L, F, bases)
     if M:
         eq[0] = operators.convert(M, bases)
     if L:

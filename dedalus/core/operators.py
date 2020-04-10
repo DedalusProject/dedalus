@@ -46,117 +46,117 @@ def prefix(*names):
 
 
 
-class Cast(FutureField, metaclass=MultiClass):
-    """
-    Cast to field.
+# class Cast(FutureField, metaclass=MultiClass):
+#     """
+#     Cast to field.
 
-    Parameters
-    ----------
-    input : Number or Operand
-    domain : Domain object
+#     Parameters
+#     ----------
+#     input : Number or Operand
+#     domain : Domain object
 
-    """
+#     """
 
-    @classmethod
-    def _check_args(cls, input, domain):
-        return isinstance(input, cls.argtype)
+#     @classmethod
+#     def _check_args(cls, input, domain):
+#         return isinstance(input, cls.argtype)
 
-    @property
-    def base(self):
-        return Cast
-
-
-class CastNumber(Cast):
-    """Cast number to field."""
-
-    argtype = Number
-
-    def __init__(self, input, domain, out=None):
-        self.args = [input, domain]
-        self.original_args = tuple(self.args)
-        self.out = out
-        self.bases = (None,) * domain.dim
-        self.domain = domain
-        self.subdomain = Subdomain.from_bases(self.domain, self.bases)
-        self._grid_layout = self.domain.dist.grid_layout
-        self._coeff_layout = self.domain.dist.coeff_layout
-        self.last_id = None
-        self.scales = self.subdomain.dealias
-
-    def __str__(self):
-        return str(self.number)
-
-    def __eq__(self, other):
-        # Compare by value
-        return (self.number == other)
-
-    @property
-    def number(self):
-        return self.args[0]
-
-    def split(self, *vars):
-        """Split into expressions containing and not containing specified operands/operators."""
-        return (0, self.number)
-
-    def replace(self, old, new):
-        """Replace specified operand/operator."""
-        return self.number
-
-    def sym_diff(self, var):
-        """Symbolically differentiate with respect to specified operand."""
-        return 0
-
-    def expand(self, *vars):
-        """Expand expression over specified variables."""
-        return self.number
-
-    # def simplify(self, *vars):
-    #     """Simplify expression, except subtrees containing specified variables."""
-    #     return self.number
-
-    def require_linearity(self, *vars, name=None):
-        """Require expression to be linear in specified variables."""
-        raise NonlinearOperatorError("{} is not linear in the specified variables.".format(name if name else str(self)))
-
-    def separability(self, *vars):
-        """Determine separable dimensions of expression as a linear operator on specified variables."""
-        raise NonlinearOperatorError("{} is not one of the specified variables.".format(str(self)))
-
-    def build_ncc_matrices(self, separability, vars, **kw):
-        """Precompute non-constant coefficients and build multiplication matrices."""
-        raise NonlinearOperatorError("{} is not one of the specified variables.".format(str(self)))
-
-    def expression_matrices(self, subproblem, vars):
-        """Build expression matrices for a specific subproblem and variables."""
-        raise NonlinearOperatorError("{} is not one of the specified variables.".format(str(self)))
-
-    def check_conditions(self):
-        """Check that arguments are in a proper layout."""
-        # No conditions
-        return True
-
-    def enforce_conditions(self):
-        """Require arguments to be in a proper layout."""
-        # No conditions
-        pass
-
-    def operate(self, out):
-        """Perform operation."""
-        # Copy data
-        np.copyto(out.data, self.number)
+#     @property
+#     def base(self):
+#         return Cast
 
 
-class CastOperand(Cast):
-    """Cast operand to field."""
+# class CastNumber(Cast):
+#     """Cast number to field."""
 
-    argtype = Operand
+#     argtype = Number
 
-    def __new__(cls, input, domain):
-        # Make sure domains match
-        if input.domain is not domain:
-            raise ValueError()
-        else:
-            return input
+#     def __init__(self, input, domain, out=None):
+#         self.args = [input, domain]
+#         self.original_args = tuple(self.args)
+#         self.out = out
+#         self.bases = (None,) * domain.dim
+#         self.domain = domain
+#         self.subdomain = Subdomain.from_bases(self.domain, self.bases)
+#         self._grid_layout = self.domain.dist.grid_layout
+#         self._coeff_layout = self.domain.dist.coeff_layout
+#         self.last_id = None
+#         self.scales = self.subdomain.dealias
+
+#     def __str__(self):
+#         return str(self.number)
+
+#     def __eq__(self, other):
+#         # Compare by value
+#         return (self.number == other)
+
+#     @property
+#     def number(self):
+#         return self.args[0]
+
+#     def split(self, *vars):
+#         """Split into expressions containing and not containing specified operands/operators."""
+#         return (0, self.number)
+
+#     def replace(self, old, new):
+#         """Replace specified operand/operator."""
+#         return self.number
+
+#     def sym_diff(self, var):
+#         """Symbolically differentiate with respect to specified operand."""
+#         return 0
+
+#     def expand(self, *vars):
+#         """Expand expression over specified variables."""
+#         return self.number
+
+#     # def simplify(self, *vars):
+#     #     """Simplify expression, except subtrees containing specified variables."""
+#     #     return self.number
+
+#     def require_linearity(self, *vars, name=None):
+#         """Require expression to be linear in specified variables."""
+#         raise NonlinearOperatorError("{} is not linear in the specified variables.".format(name if name else str(self)))
+
+#     def separability(self, *vars):
+#         """Determine separable dimensions of expression as a linear operator on specified variables."""
+#         raise NonlinearOperatorError("{} is not one of the specified variables.".format(str(self)))
+
+#     def build_ncc_matrices(self, separability, vars, **kw):
+#         """Precompute non-constant coefficients and build multiplication matrices."""
+#         raise NonlinearOperatorError("{} is not one of the specified variables.".format(str(self)))
+
+#     def expression_matrices(self, subproblem, vars):
+#         """Build expression matrices for a specific subproblem and variables."""
+#         raise NonlinearOperatorError("{} is not one of the specified variables.".format(str(self)))
+
+#     def check_conditions(self):
+#         """Check that arguments are in a proper layout."""
+#         # No conditions
+#         return True
+
+#     def enforce_conditions(self):
+#         """Require arguments to be in a proper layout."""
+#         # No conditions
+#         pass
+
+#     def operate(self, out):
+#         """Perform operation."""
+#         # Copy data
+#         np.copyto(out.data, self.number)
+
+
+# class CastOperand(Cast):
+#     """Cast operand to field."""
+
+#     argtype = Operand
+
+#     def __new__(cls, input, domain):
+#         # Make sure domains match
+#         if input.domain is not domain:
+#             raise ValueError()
+#         else:
+#             return input
 
 
 
@@ -917,6 +917,8 @@ class Interpolate(SpectralOperator1D, metaclass=MultiClass):
     position : 'left', 'center', 'right', or float
 
     """
+
+    name = 'interp'
 
     @classmethod
     def _preprocess_args(cls, operand, coord, position, out=None):

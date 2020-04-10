@@ -118,16 +118,23 @@ class Operand:
         return Power(other, self)
 
     @staticmethod
-    def cast(x, domain):
-        if isinstance(x, Operand):
-            if x.domain is not domain:
-                raise ValueError('Wrong domain')
+    def cast(arg, dist):
+        # Check distributor for operands
+        if isinstance(arg, Operand):
+            if arg.domain.dist is not dist:
+                raise ValueError("Mismatching distributor.")
             else:
-                return x
-        elif isinstance(x, Number):
-            out = Field(name=str(x), domain=domain)
-            out['c'] = x
+                return arg
+        # Cast numbers to constant fields
+        elif isinstance(arg, Number):
+            # Cast integers to floats
+            if isinstance(arg, int):
+                arg = float(arg)
+            out = Field(name=str(arg), dist=dist, dtype=np.dtype(type(arg)))
+            out['g'] = arg  # Set in grid space to avoid needing mode normalizations
             return out
+        else:
+            raise NotImplementedError("Cannot cast type %s" %type(arg))
 
     # def get_basis(self, coord):
     #     return self.domain.get_basis(coord)

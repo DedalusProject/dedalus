@@ -13,7 +13,7 @@ import numbers
 from .domain import Domain
 from .field import Operand, Array, Field
 from .future import Future, FutureArray, FutureField
-from .operators import convert, Cast
+from .operators import convert
 from ..tools.cache import CachedAttribute
 from ..tools.dispatch import MultiClass
 from ..tools.exceptions import NonlinearOperatorError
@@ -32,19 +32,19 @@ class Add(Future, metaclass=MultiClass):
         # Drop zeros
         args = [arg for arg in args if arg != 0]
         # Flatten additions
-        arg_sets = [arg.args if isinstance(arg, Add) else [arg] for arg in args]
-        args = [arg for arg_set in arg_sets for arg in arg_set]
+        # arg_sets = [arg.args if isinstance(arg, Add) else [arg] for arg in args]
+        # args = [arg for arg_set in arg_sets for arg in arg_set]
         # Return single argument
         if len(args) == 1:
             raise SkipDispatchException(output=args[0])
-        # Cast all args to Field, if any present
-        elif any(isinstance(arg, (Field, FutureField)) for arg in args):
+        # Cast all args to Operands, if any present
+        if any(isinstance(arg, Operand) for arg in args):
             dist = unify_attributes(args, 'dist', require=False)
-            #args = [Cast(arg, domain) for arg in args]
+            args = [Operand.cast(arg, dist) for arg in args]
             return args, kw
         # Cast all args to Array, if any present
-        elif any(isinstance(arg, (Array, FutureArray)) for arg in args):
-            raise NotImplementederror()
+        # elif any(isinstance(arg, (Array, FutureArray)) for arg in args):
+        #     raise NotImplementederror()
             # domain = unify_attributes(args, 'domain', require=False)
             # args = [Cast(arg, domain) for arg in args]
             # return args, kw
@@ -69,7 +69,7 @@ class Add(Future, metaclass=MultiClass):
     def _build_bases(self, *args):
         """Build output bases."""
         bases = []
-        for ax_bases in zip(*(arg.domain.bases for arg in args)):
+        for ax_bases in zip(*(arg.domain.full_bases for arg in args)):
             # All constant bases yields constant basis
             if all(basis is None for basis in ax_bases):
                 bases.append(None)
@@ -252,7 +252,7 @@ class Multiply(Future, metaclass=MultiClass):
     def _build_bases(self, *args):
         """Build output bases."""
         bases = []
-        for ax_bases in zip(*(arg.domain.bases for arg in args)):
+        for ax_bases in zip(*(arg.domain.full_bases for arg in args)):
             # All constant bases yields constant basis
             if all(basis is None for basis in ax_bases):
                 bases.append(None)

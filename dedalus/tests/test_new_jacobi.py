@@ -12,10 +12,10 @@ results = []
 # Jacobi derivatives
 c = coords.CartesianCoordinates('x')
 xc = c.coords[0]
-d = distributor.Distributor((c,))
+dist = distributor.Distributor((c,))
 xb = basis.ChebyshevT(xc, size=16, bounds=(0, 1))
 x = xb.local_grid(1)
-f = field.Field(dist=d, bases=(xb,), dtype=np.complex128)
+f = field.Field(dist=dist, bases=(xb,), dtype=np.complex128)
 f['g'] = x**5
 fx = operators.Differentiate(f, xc).evaluate()
 fxg = 5 * x**4
@@ -66,3 +66,4 @@ fpg = np.mean(xb.bounds)**5
 result = np.allclose(fp['g'], fpg)
 results.append(result)
 print(len(results), ':', result, '(Jacobi center interpolation)')
+
