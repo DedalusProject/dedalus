@@ -11,7 +11,7 @@ Rayleigh = 3000
 
 # Bases
 c = coords.CartesianCoordinates('x', 'y', 'z')
-d = distributor.Distributor(c.coords)
+d = distributor.Distributor((c,))
 xb = basis.ComplexFourier(c.coords[0], size=Nx, bounds=(0, Lx))
 yb = basis.ComplexFourier(c.coords[1], size=Ny, bounds=(0, Ly))
 zb = basis.ChebyshevT(c.coords[2], size=Nz, bounds=(0, Lz))

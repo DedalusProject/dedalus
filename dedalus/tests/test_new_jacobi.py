@@ -11,7 +11,7 @@ results = []
 
 # Jacobi derivatives
 c = coords.CartesianCoordinates('x')
-d = distributor.Distributor(c.coords)
+d = distributor.Distributor((c,))
 xb = basis.ChebyshevT(c.coords[0], size=16, bounds=(0, 1))
 x = xb.local_grid(1)
 f = field.Field(dist=d, bases=(xb,), dtype=np.complex128)

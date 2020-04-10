@@ -80,7 +80,7 @@ class SphericalCoordinates(CoordinateSystem):
         self.azimuth = Coordinate(azimuth, cs=self)
         self.colatitude = Coordinate(colatitude, cs=self)
         self.radius = Coordinate(radius, cs=self)
-        self.S2cs = S2Coordinates(azimuth, colatitude)
+        self.S2coordsys = S2Coordinates(azimuth, colatitude)
         self.coords = (self.azimuth, self.colatitude, self.radius)
 
     @property
@@ -90,5 +90,5 @@ class SphericalCoordinates(CoordinateSystem):
     def set_distributor(self, distributor):
         self.dist = distributor
         super().set_distributor(distributor)
-        self.S2cs.set_distributor(distributor)
+        self.S2coordsys.set_distributor(distributor)
 

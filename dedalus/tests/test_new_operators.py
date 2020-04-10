@@ -10,7 +10,7 @@ results = []
 
 ## Cartesian
 c = coords.CartesianCoordinates('x', 'y')
-d = distributor.Distributor(c.coords)
+d = distributor.Distributor((c,))
 xb = basis.ComplexFourier(c.coords[0], size=8, bounds=(0, 2*np.pi))
 yb = basis.ChebyshevT(c.coords[1], size=16, bounds=(0, 1))
 x = xb.local_grid(1)
@@ -46,7 +46,7 @@ print(len(results), ':', result)
 
 ## S2
 c = coords.S2Coordinates('phi', 'theta')
-d = distributor.Distributor(c.coords)
+d = distributor.Distributor((c,))
 sb = basis.SpinWeightedSphericalHarmonics(c, (32,16), radius=1)
 phi, theta = sb.local_grids((1, 1))
 
@@ -69,7 +69,7 @@ print(len(results), ':', result)
 
 ## Ball
 c = coords.SphericalCoordinates('phi', 'theta', 'r')
-d = distributor.Distributor(c.coords)
+d = distributor.Distributor((c,))
 b = basis.BallBasis(c, (16,16,16), radius=1)
 phi, theta, r = b.local_grids((1, 1, 1))
 x = r * np.sin(theta) * np.cos(phi)

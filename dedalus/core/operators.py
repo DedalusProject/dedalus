@@ -1490,8 +1490,8 @@ class TransposeComponents(LinearOperator, metaclass=MultiClass):
         if isinstance(operand, Operand):
             if indices[0] < 0: index = indices[0] + len(operand.tensorsig)
             else: index = indices[0]
-            cs = operand.tensorsig[index]
-            basis = operand.get_basis(cs)
+            coordsys = operand.tensorsig[index]
+            basis = operand.domain.get_basis(coordsys)
             if isinstance(basis, cls.basis_type):
                 return True
         return False
@@ -1508,8 +1508,8 @@ class SphericalComponent(LinearOperator):
         if index >= len(operand.tensorsig):
             raise ValueError("index greater than rank")
         self.index = index
-        self.cs = operand.tensorsig[self.index]
-        if not isinstance(self.cs, coords.SphericalCoordinates):
+        self.coordsys = operand.tensorsig[self.index]
+        if not isinstance(self.coordsys, coords.SphericalCoordinates):
             raise ValueError("Can only take the SphericalComponent of a SphericalCoordinate vector")
         super().__init__(operand, out=out)
         # LinearOperator requirements
@@ -1527,14 +1527,6 @@ class SphericalComponent(LinearOperator):
         """Can always take components"""
         pass
 
-    @CachedAttribute
-    def bases(self):
-        return (self.output_basis(self.operand.bases[0]),)
-
-    @staticmethod
-    def output_basis(input_basis):
-        return input_basis
-
 
 class RadialComponent(SphericalComponent, metaclass=MultiClass):
 
@@ -1543,8 +1535,8 @@ class RadialComponent(SphericalComponent, metaclass=MultiClass):
         # Dispatch by coordinate system
         if isinstance(operand, Operand):
             if index < 0: index += len(operand.tensorsig)
-            cs = operand.tensorsig[index]
-            basis = operand.get_basis(cs)
+            coordsys = operand.tensorsig[index]
+            basis = operand.domain.get_basis(coordsys)
             if isinstance(basis, cls.basis_type):
                 return True
         return False
@@ -1566,8 +1558,8 @@ class AngularComponent(SphericalComponent, metaclass=MultiClass):
         # Dispatch by coordinate system
         if isinstance(operand, Operand):
             if index < 0: index += len(operand.tensorsig)
-            cs = operand.tensorsig[index]
-            basis = operand.get_basis(cs)
+            coordsys = operand.tensorsig[index]
+            basis = operand.domain.get_basis(coordsys)
             if isinstance(basis, cls.basis_type):
                 return True
         return False
@@ -1575,8 +1567,8 @@ class AngularComponent(SphericalComponent, metaclass=MultiClass):
     def __init__(self, operand, index=0, out=None):
         super().__init__(operand, index=index, out=out)
         tensorsig = operand.tensorsig
-        S2coords = tensorsig[index].S2cs
-        self.tensorsig = tuple( tensorsig[:index] + (S2coords,) + tensorsig[index+1:] )
+        S2coordsys = tensorsig[index].S2coordsys
+        self.tensorsig = tuple( tensorsig[:index] + (S2coordsys,) + tensorsig[index+1:] )
 
     @property
     def base(self):
@@ -2187,20 +2179,14 @@ class SphericalLaplacian(Laplacian, SphericalEllOperator):
 # Don't know if we really need this, but I'm making it anyway...
 class Zero(LinearOperator):
 
-    def __init__(self, operand, coords, out_tensorsig, out=None):
-        super().__init__(operand, coords, out=out)
-        self._operand = operand
-        self.cs = coords
+    def __init__(self, operand, out_tensorsig, out=None):
+        super().__init__(operand, out=out)
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain  = operand.domain
         self.tensorsig = out_tensorsig
         self.dtype = operand.dtype
-
-    @CachedAttribute
-    def bases(self):
-        return (self.output_basis(self.operand.bases[0]),)
-
-    @staticmethod
-    def output_basis(input_basis):
-        return input_basis
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""
@@ -2225,16 +2211,17 @@ class Zero(LinearOperator):
 class ZeroMatrix(Zero, metaclass=MultiClass):
 
     @classmethod
-    def _check_args(cls, operand, coords, out=None):
+    def _check_args(cls, operand, out=None):
         # Dispatch by coordinate system
         if isinstance(operand, Operand):
-            if isinstance(coords, cls.cs_type):
+            basis = operand.domain.bases[0]
+            if isinstance(basis, cls.basis_type):
                 return True
         return False
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
-        basis = self.input_basis
+        basis = self.domain.bases[0]
 
         n_out, n_in = self.n_out_in(operand.tensorsig, self.tensorsig, basis, subproblem)
         matrix = sparse.csr_matrix((n_out,n_in))
@@ -2244,41 +2231,20 @@ class ZeroMatrix(Zero, metaclass=MultiClass):
         raise NotImplementedError()
 
 
-class SphericalZeroMatrix(ZeroMatrix):
-
-    cs_type = coords.SphericalCoordinates
-
-    def n_out_in(self, tensorsig_in, tensorsig_out, basis, subproblem):
-        R_in = basis.regularity_classes(tensorsig_in)
-        R_out = basis.regularity_classes(tensorsig_out)
-
-        # need to get ell from subproblem -- don't know how to do this
-        ell = subproblem.ell
-
-        n_out = 0
-        n_in = 0
-        for regindex_out, regtotal_out in np.ndenumerate(R_out):
-            if basis.regularity_allowed(ell, regindex_out):
-                n_out += basis.n_size(regindex_out, ell)
-        for regindex_in, regtotal_in in np.ndenumerate(R_in):
-            if basis.regularity_allowed(ell, regindex_in):
-                n_in  += basis.n_size(regindex_in,  ell)
-        return n_out, n_in
-
-
 class ZeroVector(Zero, metaclass=MultiClass):
 
     @classmethod
-    def _check_args(cls, operand, coords, out=None):
+    def _check_args(cls, operand, out=None):
         # Dispatch by coordinate system
         if isinstance(operand, Operand):
-            if isinstance(coords, cls.cs_type):
+            basis = operand.domain.bases[0]
+            if isinstance(basis, cls.basis_type):
                 return True
         return False
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
-        basis = self.input_basis
+        basis = self.domain.bases[0]
 
         n_out, n_in = self.n_out_in(operand.tensorsig, self.tensorsig, basis, subproblem)
         vector = np.zeros((n_out,n_in))
@@ -2286,26 +2252,6 @@ class ZeroVector(Zero, metaclass=MultiClass):
 
     def n_out_in(self, tensorsig_in, tensorsig_out, basis, subproblem):
         raise NotImplementedError()
-
-
-class SphericalZeroVector(ZeroVector):
-
-    cs_type = coords.SphericalCoordinates
-
-    def n_out_in(self, tensorsig_in, tensorsig_out, basis, subproblem):
-        R_in = basis.regularity_classes(tensorsig_in)
-        R_out = basis.regularity_classes(tensorsig_out)
-
-        # need to get ell from subproblem -- don't know how to do this
-        ell = subproblem.ell
-
-        n_out = 0
-        n_in = 0
-        for regindex_out, regtotal_out in np.ndenumerate(R_out):
-            n_out += 1
-        for regindex_in, regtotal_in in np.ndenumerate(R_in):
-            n_in  += basis.n_size(regindex_in,  ell)
-        return n_out, n_in
 
 
 class CrossProduct(NonlinearOperator, FutureField, metaclass=MultiClass):

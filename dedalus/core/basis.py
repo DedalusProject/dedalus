@@ -925,7 +925,7 @@ class SpinBasis(MultidimensionalBasis):
         Ss = {2:np.array([-1, 1], dtype=int), 3:np.array([-1, 1, 0], dtype=int)}
         S = np.zeros([cs.dim for cs in tensorsig], dtype=int)
         for i, cs in enumerate(tensorsig):
-            if self.coordsystem == cs or (type(cs) is SphericalCoordinates and cs.S2cs == self.coordsystem):
+            if self.coordsystem == cs or (type(cs) is SphericalCoordinates and cs.S2coordsys == self.coordsystem):
                 S[axslice(i, 0, cs.dim)] += reshape_vector(Ss[cs.dim], dim=len(tensorsig), axis=i)
             #if self.coordsystem is vs: # kludge before we decide how compound coordinate systems work
             #    S[axslice(i, 0, self.dim)] += reshape_vector(Ss, dim=len(tensorsig), axis=i)
@@ -944,7 +944,7 @@ class SpinBasis(MultidimensionalBasis):
         # Perform unitary spin recombination along relevant tensor indeces
         U = []
         for i, cs in enumerate(tensorsig):
-            if self.coordsystem == cs or (type(cs) is SphericalCoordinates and cs.S2cs == self.coordsystem):
+            if self.coordsystem == cs or (type(cs) is SphericalCoordinates and cs.S2coordsys == self.coordsystem):
                 U.append(Us[cs.dim])
             #if self.coordsystem is vs: # kludge before we decide how compound coordinate systems work
             #    Ui = np.identity(vs.dim, dtype=np.complex128)
@@ -1496,7 +1496,7 @@ class BallRadialInterpolate(operators.Interpolate):
     def _check_args(cls, operand, coord, position, out=None):
         # Dispatch by operand basis
         if isinstance(operand, Operand):
-            if isinstance(operand.get_basis(coord), cls.basis_type):
+            if isinstance(operand.domain.get_basis(coord), cls.basis_type):
                 if operand.domain.get_basis_subaxis(coord) == cls.basis_subaxis:
                     return True
         return False
@@ -1522,10 +1522,7 @@ class BallRadialInterpolate(operators.Interpolate):
         matrix = np.bmat(submatrices)
         if self.tensorsig != ():
             Q = self.input_basis.radial_recombinations(self.tensorsig,ell_list=(ell,))
-            shape = matrix.shape
-            rank = len(self.tensorsig)
-            temp = matrix.reshape((-1,)+shape[rank:])
-            apply_matrix(Q[0], temp, axis=0, out=temp)
+            matrix = Q[0] @ matrix
         return matrix
 
     def operate(self, out):
@@ -1642,14 +1639,15 @@ class S2RadialComponent(operators.RadialComponent):
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
-        S_in = self.input_basis.spin_weights(operand.tensorsig)
-        S_out = self.input_basis.spin_weights(self.tensorsig)
+        basis = self.domain.get_basis(self.coordsys)
+        S_in = basis.spin_weights(operand.tensorsig)
+        S_out = basis.spin_weights(self.tensorsig)
 
         matrix = []
         for spinindex_out, spintotal_out in np.ndenumerate(S_out):
             matrix_row = []
             for spinindex_in, spintotal_in in np.ndenumerate(S_in):
-                if tuple(spinindex_in[self.index:] + spinindex_in[:self.index+1]) == spinindex_out and spinindex_in[index] == 2:
+                if tuple(spinindex_in[:self.index] + spinindex_in[self.index+1:]) == spinindex_out and spinindex_in[self.index] == 2:
                     matrix_row.append( 1 )
                 else:
                     matrix_row.append( 0 )
@@ -1671,8 +1669,9 @@ class S2AngularComponent(operators.AngularComponent):
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
-        S_in = self.input_basis.spin_weights(operand.tensorsig)
-        S_out = self.input_basis.spin_weights(self.tensorsig)
+        basis = self.domain.get_basis(self.coordsys)
+        S_in = basis.spin_weights(operand.tensorsig)
+        S_out = basis.spin_weights(self.tensorsig)
 
         matrix = []
         for spinindex_out, spintotal_out in np.ndenumerate(S_out):
@@ -1692,6 +1691,49 @@ class S2AngularComponent(operators.AngularComponent):
         layout = operand.layout
         out.set_layout(layout)
         np.copyto(out.data, operand.data[axslice(self.index,0,2)])
+
+
+class SphericalZeroMatrix(operators.ZeroMatrix):
+
+    basis_type = RegularityBasis
+
+    def n_out_in(self, tensorsig_in, tensorsig_out, basis, subproblem):
+        R_in = basis.regularity_classes(tensorsig_in)
+        R_out = basis.regularity_classes(tensorsig_out)
+
+        # need to get ell from subproblem -- don't know how to do this
+        ell = subproblem.ell
+
+        n_out = 0
+        n_in = 0
+        for regindex_out, regtotal_out in np.ndenumerate(R_out):
+            if basis.regularity_allowed(ell, regindex_out):
+                n_out += basis.n_size(regindex_out, ell)
+        for regindex_in, regtotal_in in np.ndenumerate(R_in):
+            if basis.regularity_allowed(ell, regindex_in):
+                n_in  += basis.n_size(regindex_in,  ell)
+        return n_out, n_in
+
+
+class SphericalZeroVector(operators.ZeroVector):
+
+    basis_type = RegularityBasis
+
+    def n_out_in(self, tensorsig_in, tensorsig_out, basis, subproblem):
+        R_in = basis.regularity_classes(tensorsig_in)
+        R_out = basis.regularity_classes(tensorsig_out)
+
+        # need to get ell from subproblem -- don't know how to do this
+        ell = subproblem.ell
+
+        n_out = 0
+        n_in = 0
+        for regindex_out, regtotal_out in np.ndenumerate(R_out):
+            n_out += 1
+        for regindex_in, regtotal_in in np.ndenumerate(R_in):
+            n_in  += basis.n_size(regindex_in,  ell)
+        return n_out, n_in
+
 
 
 from . import transforms
