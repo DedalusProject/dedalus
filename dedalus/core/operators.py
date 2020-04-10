@@ -1586,6 +1586,8 @@ class AngularComponent(SphericalComponent, metaclass=MultiClass):
 
 class Gradient(LinearOperator, metaclass=MultiClass):
 
+    name = "Grad"
+
     @classmethod
     def _check_args(cls, operand, cs, out=None):
         # Dispatch by coordinate system
@@ -2342,6 +2344,8 @@ class SphericalCrossProduct(CrossProduct):
 alphabet = "abcdefghijklmnopqrstuvwxy"
 
 class DotProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
+
+    name = "Dot"
 
     # Should make sure arg0 and arg1 are at least rank 1
     # and that the cs are the same for arg0 and arg1

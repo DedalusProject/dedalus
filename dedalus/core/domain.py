@@ -61,7 +61,13 @@ class Domain(metaclass=CachedClass):
 
     def substitute_basis(self, inbasis, outbasis):
         bases_dict = self.bases_dict.copy()
-        bases_dict[inbasis.coords] = outbasis
+        if inbasis is None:
+            if outbasis.coords in bases_dict:
+                raise ValueError("Basis already specified for coords: %s" %coords)
+            else:
+                bases_dict[outbasis.coords] = outbasis
+        else:
+            bases_dict[inbasis.coords] = outbasis
         bases = tuple(bases_dict.values())
         return Domain(self.dist, bases)
 

@@ -47,12 +47,14 @@ bcs = [bc1, bc2, bc3, bc4]
 for eq in eqs + bcs:
     M, L, F = eq
     bases = (M + L - F).domain.bases
-    print(M, L, F, bases)
     if M:
+        M = field.Operand.cast(M, d)
         eq[0] = operators.convert(M, bases)
     if L:
+        L = field.Operand.cast(L, d)
         eq[1] = operators.convert(L, bases)
     if F:
+        F = field.Operand.cast(F, d)
         eq[2] = operators.convert(F, bases)
 
 # Check we can evaluate everything

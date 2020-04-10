@@ -423,6 +423,19 @@ class ConvertJacobi(operators.Convert, operators.SpectralOperator1D):
         return matrix.tocsr()
 
 
+class ConvertConstantJacobi(operators.Convert, operators.SpectralOperator1D):
+
+    input_basis_type = type(None)
+    output_basis_type = Jacobi
+    separable = True
+
+    @staticmethod
+    def _subspace_matrix(input_basis, output_basis):
+        basis = output_basis
+        MMT = self.transforms['matrix'](grid_size=1, coeff_size=basis.size, a=basis.a, b=basis.b, a0=basis.a0, b0=basis.b0)
+        return MMT.forward_matrix
+
+
 class DifferentiateJacobi(operators.Differentiate):
     """Jacobi polynomial differentiation."""
 
@@ -569,6 +582,17 @@ class ComplexFourier(IntervalBasis):
     #         # Sine modes: drop k=0 and Nyquist mode
     #         return (1 <= k <= self.space.kmax)
 
+
+class ConvertConstantComplexFourier(operators.Convert, operators.SpectralOperator1D):
+
+    input_basis_type = type(None)
+    output_basis_type = ComplexFourier
+    separable = True
+
+    @staticmethod
+    def _subspace_matrix(input_basis, output_basis):
+        MMT = self.transforms['matrix'](grid_size=1, coeff_size=output_basis.size)
+        return MMT.forward_matrix
 
 
 class DifferentiateComplexFourier(operators.Differentiate):
