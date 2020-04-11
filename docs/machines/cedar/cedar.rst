@@ -54,7 +54,7 @@ Finally, build Dedalus::
     python3 setup.py build_ext --inplace
 
 Cedar strongly recommends against automatically loading modules using your ``.bashrc``, rather advocating for loading modules manually at the start of each job script (note: you may do this with a module collection).
-In light of that, to use Dedalus, add the following at the top of your job script:
+In light of that, to use Dedalus, add the following at the top of your job script::
 
     module purge
     module load intel/2018.3
