@@ -930,13 +930,14 @@ class Interpolate(SpectralOperator1D, metaclass=MultiClass):
             raise ValueError("coord must be Coordinate or str")
         return (operand, coord, position), {'out': out}
 
-#    @classmethod
-#    def _check_args(cls, operand, coord, position, out=None):
-#        # Dispatch by operand basis
-#        if isinstance(operand, Operand):
-#            if isinstance(operand.get_basis(coord), cls.basis_type):
-#                return True
-#        return False
+    @classmethod
+    def _check_args(cls, operand, coord, position, out=None):
+        # Dispatch by operand basis
+        if isinstance(operand, Operand):
+            basis = operand.domain.get_basis(coord)
+            if isinstance(basis, cls.input_basis_type):
+                return True
+        return False
 
     def __init__(self, operand, coord, position, out=None):
         super().__init__(operand, out=out)
