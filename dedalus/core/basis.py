@@ -1060,6 +1060,24 @@ class RegularityBasis(MultidimensionalBasis):
                 self.local_grid_colatitude(scales[1]),
                 self.local_grid_radius(scales[2]))
 
+    def global_grid_radius(self, scale):
+        problem_grid = self._radius_grid(scale)
+        return reshape_vector(problem_grid, dim=self.dist.dim, axis=self.axis+2)
+
+    def local_grid_radius(self, scale):
+        local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis+2]
+        problem_grid = self._radius_grid(scale)[local_elements]
+        return reshape_vector(problem_grid, dim=self.dist.dim, axis=self.axis+2)
+
+    def global_radius_weights(self, scale):
+        weights = self._radius_weights(scale)
+        return reshape_vector(weights.astype(np.float64), dim=self.dist.dim, axis=self.axis+2)
+
+    def local_radius_weights(self, scale):
+        local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis+2]
+        weights = self._radius_weights(scale)
+        return reshape_vector(weights.astype(np.float64)[local_elements], dim=self.dist.dim, axis=self.axis+2)
+
     def S2_basis(self,radius=1):
         return SWSH(self.coordsystem, self.shape[:2], radius=radius,
                     azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library)
@@ -1146,6 +1164,31 @@ class RegularityBasis(MultidimensionalBasis):
                 # Here the l axis is 'axis' instead of 'axis-1' since we have one tensor axis prepended
                 l_view = temp[axslice(axis, l_index, l_index+1)]
                 apply_matrix(Q_l, l_view, axis=0, out=l_view)
+
+    def radial_vector_3(self, comp, m, ell, regindex):
+        slices = self.radial_vector_slices(m, ell, regindex)
+        if slices is None:
+            return None
+        comp5 = reduced_view(comp, axis=self.axis, dim=self.dim)
+        return comp5[(slice(None),) + slices + (slice(None),)]
+
+    @CachedMethod
+    def radial_vector_slices(self, m, ell, regindex):
+        if m > ell:
+            return None
+        if not self.regularity_allowed(ell, regindex):
+            return None
+        mi = self.local_m.index(m)
+        li = self.local_l.index(ell)
+        return (mi, li, self.n_slice(regindex, ell))
+
+    def field_radial_size(self, field, ell):
+        comp_sizes = []
+        R = self.regularity_classes(field.tensorsig)
+        for regindex, regtotal in np.ndenumerate(R):
+            comp_sizes.append(self.n_size(regindex, ell))
+        return sum(comp_sizes)
+
 
 class DiskBasis(SpinBasis):
 
@@ -1372,15 +1415,7 @@ class SphericalShellBasis(RegularityBasis):
                                    azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
                                    radius_library=self.radius_library)
 
-    def global_grid_radius(self, scale):
-        grid = self._radius_grid(scale)[local_elements]
-        return reshape_vector(grid, dim=self.dist.dim, axis=self.axis+2)
-
-    def local_grid_radius(self, scale):
-        local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis+2]
-        grid = self._radius_grid(scale)[local_elements]
-        return reshape_vector(grid, dim=self.dist.dim, axis=self.axis+2)
-
+    @CachedMethod
     def _radius_grid(self, scale):
         N = int(np.ceil(scale * self.shape[2]))
         z, weights = dedalus_sphere.annulus.quadrature(N-1, alpha=self.alpha, niter=3)
@@ -1388,20 +1423,15 @@ class SphericalShellBasis(RegularityBasis):
         return r.astype(np.float64)
 
     @CachedMethod
+    def _radius_weights(self, scale):
+        N = int(np.ceil(scale * self.shape[2]))
+        z, weights = dedalus_sphere.annulus.quadrature(N-1, alpha=self.alpha, niter=3)
+        return weights
+
+    @CachedMethod
     def radial_transform_factor(self, scale, data_axis, dk):
         r = reshape_vector(self._radius_grid(scale), dim=data_axis, axis=data_axis-1)
         return (self.dR/r)**dk
-
-    def global_radius_weights(self, scale):
-        N = int(np.ceil(scale * self.shape[1]))
-        z, weights = dedalus_sphere.ball.quadrature(N-1, alpha=self.alpha, niter=3)
-        return reshape_vector(weights.astype(np.float64), dim=self.dist.dim, axis=self.axis+2)
-
-    def local_radius_weights(self, scale):
-        local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis+2]
-        N = int(np.ceil(scale * self.shape[1]))
-        z, weights = dedalus_sphere.ball.quadrature(N-1, alpha=self.alpha, niter=3)
-        return reshape_vector(weights.astype(np.float64)[local_elements], dim=self.dist.dim, axis=self.axis+2)
 
     @CachedMethod
     def transform_plan(self, grid_size, k):
@@ -1454,30 +1484,13 @@ class SphericalShellBasis(RegularityBasis):
                 E = Ek @ E
         return E.astype(np.float64)
 
-    @CachedMethod
-    def radial_vector_slices(self, m, ell, regindex):
-        if m > ell:
-            return None
-        if not self.regularity_allowed(ell, regindex):
-            return None
-        mi = self.local_m.index(m)
-        li = self.local_l.index(ell)
-        return (mi, li, slice(0,self.Nmax+1))
+    def n_size(self, regindex, ell, Nmax=None):
+        if Nmax == None: Nmax = self.Nmax
+        return Nmax + 1
 
-    def radial_vector_3(self, comp, m, ell, regindex):
-        slices = self.radial_vector_slices(m, ell, regindex)
-        if slices is None:
-            return None
-        comp5 = reduced_view(comp, axis=self.axis, dim=self.dim)
-        return comp5[(slice(None),) + slices + (slice(None),)]
-
-    def field_radial_size(self, field, ell):
-        comp_sizes = 0
-        R = self.regularity_classes(field.tensorsig)
-        for regindex, regtotal in np.ndenumerate(R):
-            if self.regularity_allowed(ell, regindex):
-                comp_sizes += self.Nmax+1
-        return comp_sizes
+    def n_slice(self, regindex, ell, Nmax=None):
+        if Nmax == None: Nmax = self.Nmax
+        return slice(0, Nmax + 1)
 
 
 class BallBasis(RegularityBasis):
@@ -1547,16 +1560,9 @@ class BallBasis(RegularityBasis):
                          azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
                          radius_library=self.radius_library)
 
-    def global_grid_radius(self, scale):
-        native_grid = self._native_radius_grid(scale)[local_elements]
-        problem_grid = self.radial_COV.problem_coord(native_grid)
-        return reshape_vector(problem_grid, dim=self.dist.dim, axis=self.axis+2)
-
-    def local_grid_radius(self, scale):
-        local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis+2]
-        native_grid = self._native_radius_grid(scale)[local_elements]
-        problem_grid = self.radial_COV.problem_coord(native_grid)
-        return reshape_vector(problem_grid, dim=self.dist.dim, axis=self.axis+2)
+    @CachedMethod
+    def _radius_grid(self, scale):
+        return self.radial_COV.problem_coord(self._native_radius_grid(scale))
 
     def _native_radius_grid(self, scale):
         N = int(np.ceil(scale * self.shape[2]))
@@ -1564,16 +1570,11 @@ class BallBasis(RegularityBasis):
         r = np.sqrt((z + 1) / 2)
         return r.astype(np.float64)
 
-    def global_radius_weights(self, scale):
-        N = int(np.ceil(scale * self.shape[1]))
-        z, weights = dedalus_sphere.ball.quadrature(3, N-1, niter=3, alpha=self.alpha)
-        return reshape_vector(weights.astype(np.float64), dim=self.dist.dim, axis=self.axis+2)
-
-    def local_radius_weights(self, scale):
-        local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis+2]
-        N = int(np.ceil(scale * self.shape[1]))
-        z, weights = dedalus_sphere.ball.quadrature(3, N-1, niter=3, alpha=self.alpha)
-        return reshape_vector(weights.astype(np.float64)[local_elements], dim=self.dist.dim, axis=self.axis+2)
+    @CachedMethod
+    def _radius_weights(self, scale):
+        N = int(np.ceil(scale * self.shape[2]))
+        z, weights = dedalus_sphere.ball.quadrature(N-1, alpha=self.alpha, niter=3)
+        return weights
 
     @CachedMethod
     def transform_plan(self, grid_size, regindex, regtotal, k, alpha):
@@ -1616,7 +1617,7 @@ class BallBasis(RegularityBasis):
                 E = Ek @ E
         return E.astype(np.float64)
 
-    def n_limits(self, regindex, ell, Nmax=None):
+    def _n_limits(self, regindex, ell, Nmax=None):
         if Nmax == None: Nmax = self.Nmax
         if not self.regularity_allowed(ell, regindex):
             return None
@@ -1628,39 +1629,15 @@ class BallBasis(RegularityBasis):
         if Nmax == None: Nmax = self.Nmax
         if not self.regularity_allowed(ell, regindex):
             return 0
-        nmin, nmax = self.n_limits(regindex, ell, Nmax=Nmax)
+        nmin, nmax = self._n_limits(regindex, ell, Nmax=Nmax)
         return nmax - nmin + 1
 
     def n_slice(self, regindex, ell, Nmax=None):
         if Nmax == None: Nmax = self.Nmax
         if not self.regularity_allowed(ell, regindex):
             return None
-        nmin, nmax = self.n_limits(regindex, ell, Nmax=Nmax)
+        nmin, nmax = self._n_limits(regindex, ell, Nmax=Nmax)
         return slice(nmin, nmax+1)
-
-    @CachedMethod
-    def radial_vector_slices(self, m, ell, regindex):
-        if m > ell:
-            return None
-        if not self.regularity_allowed(ell, regindex):
-            return None
-        mi = self.local_m.index(m)
-        li = self.local_l.index(ell)
-        return (mi, li, self.n_slice(regindex, ell))
-
-    def radial_vector_3(self, comp, m, ell, regindex):
-        slices = self.radial_vector_slices(m, ell, regindex)
-        if slices is None:
-            return None
-        comp5 = reduced_view(comp, axis=self.axis, dim=self.dim)
-        return comp5[(slice(None),) + slices + (slice(None),)]
-
-    def field_radial_size(self, field, ell):
-        comp_sizes = []
-        R = self.regularity_classes(field.tensorsig)
-        for regindex, regtotal in np.ndenumerate(R):
-            comp_sizes.append(self.n_size(regindex, ell))
-        return sum(comp_sizes)
 
 
 def prod(arg):
@@ -1790,7 +1767,7 @@ class BallRadialInterpolate(operators.Interpolate):
 
 class SphericalTransposeComponents(operators.TransposeComponents):
 
-    basis_type = BallBasis
+    basis_type = RegularityBasis
 
     def __init__(self, operand, indices=(0,1), out=None):
         super().__init__(operand, indices=indices, out=out)
@@ -1833,8 +1810,8 @@ class SphericalTransposeComponents(operators.TransposeComponents):
         Q = basis.radial_recombinations(self.tensorsig,ell_list=(ell,))
         transpose = Q[0].T @ transpose @ Q[0]
 
-        n_size = basis.Nmax - dedalus_sphere.ball.Nmin(ell, 0) + 1
-        eye = sparse.identity(n_size, self.dtype, format='csr')
+        # assume all regularities have the same n_size
+        eye = sparse.identity(basis.n_size(0, ell), self.dtype, format='csr')
         matrix = sparse.kron( transpose, eye)
         return matrix
 
