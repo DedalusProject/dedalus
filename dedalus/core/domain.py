@@ -100,10 +100,17 @@ class Domain(metaclass=CachedClass):
         # Drop Nones
         bases = [basis for basis in bases if basis is not None]
         # Drop duplicates
-        bases = list(set(bases))
+        bases_unique = []
+        for basis in bases:
+            repeat = False
+            for basis_unique in bases_unique:
+                if basis == basis_unique:
+                    repeat = True
+            if not repeat:
+                bases_unique.append(basis)
         # Sort by axis
         key = lambda b: b.axis
-        bases = sorted(bases, key=key)
+        bases = sorted(bases_unique, key=key)
         # Check for overlap
         full_bases = [None for i in range(self.dist.dim)]
         for basis in bases:
