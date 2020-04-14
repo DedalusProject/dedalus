@@ -51,7 +51,7 @@ class MultiClass(type):
 
     def _check_args(cls, *args, **kw):
         """Check arguments and keywords to determine proper subclass for dispatch."""
-        return True
+        raise NotImplementedError()
 
     def _postprocess_args(cls, *args, **kw):
         """Process arguments and keywords after checking dispatch."""

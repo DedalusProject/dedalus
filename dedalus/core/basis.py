@@ -617,6 +617,25 @@ class DifferentiateComplexFourier(operators.Differentiate):
             raise
 
 
+class InterpolateComplexFourier(operators.Interpolate):
+    """Complex Fourier interpolation."""
+
+    input_basis_type = ComplexFourier
+    separable = False
+
+    @staticmethod
+    def _subspace_matrix(input_basis, position):
+        N = input_basis.size
+        x = input_basis.COV.native_coord(position)
+        interp_vector = np.array([np.exp(1j*k*x) for k in input_basis.wavenumbers])
+        # Return as 1*N array
+        return interp_vector[None,:]
+
+    @staticmethod
+    def _output_basis(input_basis, position):
+        return None
+
+
 # class InterpolateFourier(operators.Interpolate):
 #     """Fourier series interpolation."""
 
