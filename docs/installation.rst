@@ -9,8 +9,8 @@ This procedure can be easily customized to link to existing MPI/FFTW/HDF5 librar
 Once you have the necessary C dependencies (MPI, FFTW+MPI, and HDF5), as well as Python 3, you should be able to install Dedalus from PyPI or build it from source.
 
 
-Conda Installation
-==================
+Conda installation (recommended)
+================================
 
 We recommend installing Dedalus via a conda script that will create a new conda environment with a complete Dedalus installation.
 The script allows you to link against custom MPI/FFTW/HDF5 libraries or opt for builds of those packages that are available through conda.
@@ -34,7 +34,7 @@ To use Dedalus, you simply need to activate the new environment. You can test th
 The Dedalus package within the environment can be updated using pip as described below.
 
 
-Installing the Dedalus Package
+Installing the Dedalus package
 ==============================
 
 Once the necessary C dependencies and Python 3 are present, Dedalus can be installed from PyPI or built from source using pip.
@@ -91,13 +91,13 @@ If Dedalus was installed using pip, it can be uninstalled using::
     pip3 uninstall dedalus
 
 
-Alternative Installation Procedures
+Alternative installation procedures
 ===================================
 
 **Note**: We recommend installing Dedalus using conda, as described above.
-These alternative procedures may be out-of-date and are generally not recommended for non-experts.
+These alternative procedures may be out-of-date and are provided for historical reference and expert use.
 
-Installation Script
+Installation script
 -------------------
 
 This all-in-one installation script will build an isolated stack containing a Python installation and the other dependencies needed to run Dedalus.
@@ -114,7 +114,7 @@ and execute it using::
 The installation script has been tested on a number of Linux distributions and OS X.
 If you run into trouble using the script, please get in touch on the `user list <https://groups.google.com/forum/#!forum/dedalus-users>`_.
 
-Manual Installation
+Manual installation
 -------------------
 
 Below are instructions for building the dependency stack on a variety of machines and operating systems:
