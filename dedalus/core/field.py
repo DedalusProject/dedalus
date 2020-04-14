@@ -15,7 +15,6 @@ from numbers import Number
 
 from ..libraries.fftw import fftw_wrappers as fftw
 from ..tools.config import config
-from ..tools.array import reshape_vector
 from ..tools.cache import CachedMethod
 from ..tools.exceptions import UndefinedParityError
 from ..tools.exceptions import SymbolicParsingError

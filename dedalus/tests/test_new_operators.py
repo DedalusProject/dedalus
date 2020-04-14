@@ -67,6 +67,29 @@ result = np.allclose(T['g'], Tg)
 results.append(result)
 print(len(results), ':', result)
 
+## Spherical Shell
+c = coords.SphericalCoordinates('phi', 'theta', 'r')
+d = distributor.Distributor((c,))
+b = basis.SphericalShellBasis(c, (16,16,16), radii=(0.5,3))
+phi, theta, r = b.local_grids((1, 1, 1))
+x = r * np.sin(theta) * np.cos(phi)
+y = r * np.sin(theta) * np.sin(phi)
+z = r * np.cos(theta)
+
+# gradient of a scalar
+f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+f['g'] = fg = 3*x**2 + 2*y*z
+u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
+ug = np.copy(u['g'])
+u = operators.Gradient(f, c).evaluate()
+ug[2] = (6*x**2+4*y*z)/r
+ug[1] = -2*(y**3+x**2*(y-3*z)-y*z**2)/(r**2*np.sin(theta))
+ug[0] = 2*x*(-3*y+z)/(r*np.sin(theta))
+result = np.allclose(u['g'], ug)
+results.append(result)
+print(len(results), ':', result)
+
+
 ## Ball
 c = coords.SphericalCoordinates('phi', 'theta', 'r')
 d = distributor.Distributor((c,))

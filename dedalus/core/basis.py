@@ -1064,6 +1064,12 @@ class RegularityBasis(MultidimensionalBasis):
         return not dedalus_sphere.intertwiner.forbidden_regularity(l,Rb[np.array(regularity)])
 
     @CachedMethod
+    def regtotal(self, regindex):
+        regorder = [-1, 1, 0]
+        reg = lambda index: regorder[index]
+        return sum(reg(index) for index in regindex)
+
+    @CachedMethod
     def radial_recombinations(self, tensorsig, ell_list=None):
         if ell_list == None: ell_list = self.local_l
         # For now only implement recombinations for Ball-only tensors
@@ -1285,8 +1291,8 @@ class SphericalShellBasis(RegularityBasis):
     group_shape = (1, 1, 1)
     transforms = {}
 
-    def __init__(self, coordsys, shape, radii=(1,2), alpha=(-0.5,-0.5), k=0, azimuth_library='matrix', colatitude_library='matrix', radius_library='matrix'):
-        super().__init__(coordsys, shape, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
+    def __init__(self, coordsystem, shape, radii=(1,2), alpha=(-0.5,-0.5), k=0, azimuth_library='matrix', colatitude_library='matrix', radius_library='matrix'):
+        super().__init__(coordsystem, shape, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
         if radii[0] <= 0:
             raise ValueError("Inner radius must be positive.")
         self.radii = radii
@@ -1304,12 +1310,12 @@ class SphericalShellBasis(RegularityBasis):
         self.backward_transforms = [self.backward_transform_azimuth,
                                     self.backward_transform_colatitude,
                                     self.backward_transform_radius]
-        self.grid_params = (coordsys, radii, alpha)
+        self.grid_params = (coordsystem, radii, alpha)
 
 # could these be moved to Regularity?
     def __eq__(self, other):
         if isinstance(other, SphericalShellBasis):
-            if self.coordsys == other.coordsys:
+            if self.coordsystem == other.coordsystem:
                 if self.grid_params == other.grid_params:
                     if self.k == other.k:
                         return True
@@ -1327,7 +1333,7 @@ class SphericalShellBasis(RegularityBasis):
             if self.grid_params == other.grid_params:
                 shape = np.maximum(self.shape, other.shape)
                 k = max(self.k, other.k)
-                return SphericalShellBasis(self.coordsys, shape, radii=self.radii, alpha=self.alpha, k=k)
+                return SphericalShellBasis(self.coordsystem, shape, radii=self.radii, alpha=self.alpha, k=k)
         return NotImplemented
 
     def __mul__(self, other):
@@ -1339,11 +1345,11 @@ class SphericalShellBasis(RegularityBasis):
             if self.grid_params == other.grid_params:
                 shape = np.maximum(self.shape, other.shape)
                 k = 0
-                return SphericalShellBasis(self.coordsys, shape, radii=self.radii, alpha=self.alpha, k=k)
+                return SphericalShellBasis(self.coordsystem, shape, radii=self.radii, alpha=self.alpha, k=k)
         return NotImplemented
 
     def _new_k(self, k):
-        return SphericalShellBasis(self.coordsys, self.shape, radii = self.radii, alpha=self.alpha, k=k,
+        return SphericalShellBasis(self.coordsystem, self.shape, radii = self.radii, alpha=self.alpha, k=k,
                                    azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
                                    radius_library=self.radius_library)
 
@@ -1359,8 +1365,13 @@ class SphericalShellBasis(RegularityBasis):
     def _radius_grid(self, scale):
         N = int(np.ceil(scale * self.shape[2]))
         z, weights = dedalus_sphere.annulus.quadrature(N-1, alpha=self.alpha, niter=3)
-        r = (self.dR*z + self.rho)/2
+        r = self.dR/2*(z + self.rho)
         return r.astype(np.float64)
+
+    @CachedMethod
+    def radial_transform_factor(self, scale, data_axis, dk):
+        r = reshape_vector(self._radius_grid(scale), dim=data_axis, axis=data_axis-1)
+        return (self.dR/r)**dk
 
     def global_radius_weights(self, scale):
         N = int(np.ceil(scale * self.shape[1]))
@@ -1385,6 +1396,9 @@ class SphericalShellBasis(RegularityBasis):
     def forward_transform_radius(self, field, axis, gdata, cdata):
         data_axis = len(field.tensorsig) + axis
         grid_size = gdata.shape[data_axis]
+        # Multiply by radial factor
+        if self.k > 0:
+            gdata *= self.radial_transform_factor(field.scales[axis], data_axis, -self.k)
         # Apply regularity recombination
         self.forward_regularity_recombination(field.tensorsig, axis, gdata)
         # Perform radial transforms component-by-component
@@ -1403,9 +1417,12 @@ class SphericalShellBasis(RegularityBasis):
            plan.backward(cdata[i], gdata[i], axis)
         # Apply regularity recombinations
         self.backward_regularity_recombination(field.tensorsig, axis, gdata)
+        # Multiply by radial factor
+        if self.k > 0:
+            gdata *= self.radial_transform_factor(field.scales[axis], data_axis, self.k)
 
     @CachedMethod
-    def operator_matrix(self,op,l,dk=0):
+    def operator_matrix(self, op, l, regtotal, dk=0):
         return dedalus_sphere.annulus.operator(3,op,self.Nmax,self.k+dk,l,self.radii,alpha=self.alpha).astype(np.float64)
 
     @CachedMethod
@@ -1491,6 +1508,7 @@ class BallBasis(RegularityBasis):
             if self.grid_params == other.grid_params:
                 shape = np.maximum(self.shape, other.shape)
                 k = max(self.k, other.k)
+                print(k)
                 return BallBasis(self.coordsystem, shape, radius=self.radius, k=k, alpha=self.alpha)
         return NotImplemented
 
@@ -1579,11 +1597,6 @@ class BallBasis(RegularityBasis):
             else:
                 E = Ek @ E
         return E.astype(np.float64)
-
-    def regtotal(self, regindex):
-        regorder = [-1, 1, 0]
-        reg = lambda index: regorder[index]
-        return sum(reg(index) for index in regindex)
 
     def n_limits(self, regindex, ell, Nmax=None):
         if Nmax == None: Nmax = self.Nmax
