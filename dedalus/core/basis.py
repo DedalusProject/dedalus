@@ -1442,12 +1442,12 @@ class SphericalShellBasis(RegularityBasis):
 
     @CachedMethod
     def operator_matrix(self, op, l, regtotal, dk=0):
-        return dedalus_sphere.annulus.operator(3,op,self.Nmax,self.k+dk,l,self.radii,alpha=self.alpha).astype(np.float64)
+        return dedalus_sphere.annulus.operator(3,op,self.Nmax,self.k+dk,l+regtotal,self.radii,alpha=self.alpha).astype(np.float64)
 
     @CachedMethod
-    def conversion_matrix(self, l, dk):
+    def conversion_matrix(self, l, regtotal, dk):
         for dki in range(dk):
-            Ek = dedalus_sphere.annulus.operator(3, 'E', self.Nmax, self.k+dki, l, self.radii, alpha=self.alpha)
+            Ek = dedalus_sphere.annulus.operator(3, 'E', self.Nmax, self.k+dki, l+regtotal, self.radii, alpha=self.alpha)
             if dki == 0:
                 E = Ek
             else:
@@ -1677,11 +1677,11 @@ def reduced_view(data, axis, dim):
     return data.reshape(Na+Nb+Nc)
 
 
-class ConvertBall(operators.Convert, operators.SphericalEllOperator):
+class ConvertRegularity(operators.Convert, operators.SphericalEllOperator):
     """Jacobi polynomial conversion."""
 
-    input_basis_type = BallBasis
-    output_basis_type = BallBasis
+    input_basis_type = RegularityBasis
+    output_basis_type = RegularityBasis
     separable = False
 
     def regindex_out(self, regindex_in):

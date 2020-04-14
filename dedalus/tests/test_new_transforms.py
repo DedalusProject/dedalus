@@ -117,7 +117,8 @@ print(len(results), ':', result, '(S2, 3D vector)')
 ## Spherical Shell
 c = coords.SphericalCoordinates('phi', 'theta', 'r')
 d = distributor.Distributor(c.coords)
-b = basis.SphericalShellBasis(c, (16,16,16), radii=(1,3))
+b  = basis.SphericalShellBasis(c, (16,16,16), radii=(1,3))
+bk = basis.SphericalShellBasis(c, (16,16,16), k=1, radii=(1,3))
 phi, theta, r = b.local_grids((1, 1, 1))
 x = r * np.sin(theta) * np.cos(phi)
 y = r * np.sin(theta) * np.sin(phi)
@@ -130,6 +131,15 @@ f['c']
 result = np.allclose(f['g'], fg)
 results.append(result)
 print(len(results), ':', result, '(Spherical Shell scalar)')
+
+f = field.Field(dist=d, bases=(bk,), dtype=np.complex128)
+f['g'] = fg = 3*x**2 + 2*y*z
+f['c']
+fc0 = np.copy(f['c'])
+f['g']
+result = np.allclose(f['c'], fc0)
+results.append(result)
+print(len(results), ':', result, '(Spherical Shell scalar coeff k=1)')
 
 # Vector transforms
 u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
@@ -144,6 +154,19 @@ u['c']
 result = np.allclose(u['g'], ug)
 results.append(result)
 print(len(results), ':', result, '(Spherical Shell vector)')
+
+u = field.Field(dist=d, bases=(bk,), tensorsig=(c,), dtype=np.complex128)
+ug = np.copy(u['g'])
+# phi-dependent function
+# note: this function is the gradient of a scalar
+ug[2] =  4*r**3*np.sin(theta)*np.cos(theta)*np.exp(1j*phi)
+ug[1] =    r**3*np.cos(2*theta)*np.exp(1j*phi)
+ug[0] = 1j*r**3*np.cos(theta)*np.exp(1j*phi)
+u['g'] = ug
+u['c']
+result = np.allclose(u['g'], ug)
+results.append(result)
+print(len(results), ':', result, '(Spherical Shell vector k=1)')
 
 ## Ball
 c = coords.SphericalCoordinates('phi', 'theta', 'r')
