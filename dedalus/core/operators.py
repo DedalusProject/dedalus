@@ -2387,16 +2387,9 @@ class DotProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
         arg0.require_grid_space()
         arg1.require_grid_space()
 
-# Don't think we need this because dot product is always the same
-#    @classmethod
-#    def _check_args(cls, arg0, arg1, out=None):
-#        # might want to check if args are fields
-#        # if isinstance(operand, Operand):
-#        #     if isinstance(arg0.tensorsig[0], cls.cs_type):
-#        #         return True
-#        if isinstance(arg0.tensorsig[0], cls.cs_type):
-#            return True
-#        return False
+    @classmethod
+    def _check_args(cls, arg0, arg1, indices=(-1,0), out=None):
+        return True
 
     @property
     def base(self):

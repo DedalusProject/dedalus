@@ -1527,7 +1527,6 @@ class BallBasis(RegularityBasis):
             if self.grid_params == other.grid_params:
                 shape = np.maximum(self.shape, other.shape)
                 k = max(self.k, other.k)
-                print(k)
                 return BallBasis(self.coordsystem, shape, radius=self.radius, k=k, alpha=self.alpha)
         return NotImplemented
 
