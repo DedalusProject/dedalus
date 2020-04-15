@@ -11,7 +11,7 @@ from scipy.linalg import eig
 
 #from ..data.operators import parsable_ops
 from . import operators
-from . import subsystems
+#from . import subsystems
 from .evaluator import Evaluator
 from .system import CoeffSystem, FieldSystem
 from .field import Field

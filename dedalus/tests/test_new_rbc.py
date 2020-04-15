@@ -1,7 +1,7 @@
 
 
 import numpy as np
-from dedalus.core import coords, distributor, basis, field, operators
+from dedalus.core import coords, distributor, basis, field, operators, problems
 
 # Parameters
 Lx, Ly, Lz = (4, 4, 1)
@@ -17,50 +17,30 @@ yb = basis.ComplexFourier(c.coords[1], size=Ny, bounds=(0, Ly))
 zb = basis.ChebyshevT(c.coords[2], size=Nz, bounds=(0, Lz))
 
 # Fields
-p = field.Field(dist=d, bases=(xb,yb,zb), dtype=np.complex128)
-b = field.Field(dist=d, bases=(xb,yb,zb), dtype=np.complex128)
-u = field.Field(dist=d, bases=(xb,yb,zb), dtype=np.complex128, tensorsig=(c,))
-X = [p, b, u]
-ez = field.Field(dist=d, bases=(xb,yb,zb), dtype=np.complex128, tensorsig=(c,))
-ez['g'][2] = 1
+p = field.Field(name='p', dist=d, bases=(xb,yb,zb), dtype=np.complex128)
+b = field.Field(name='b', dist=d, bases=(xb,yb,zb), dtype=np.complex128)
+u = field.Field(name='u',dist=d, bases=(xb,yb,zb), dtype=np.complex128, tensorsig=(c,))
 
 # Equations [M, L, F]
 P = (Rayleigh * Prandtl)**(-1/2)
 R = (Rayleigh / Prandtl)**(-1/2)
+ez = field.Field(name='ez', dist=d, bases=(xb,yb,zb), dtype=np.complex128, tensorsig=(c,))
+ez['g'][2] = 1
 ghat = - ez
 div = operators.Divergence
 lap = operators.Laplacian
 grad = operators.Gradient
 dot = operators.DotProduct
-eq0 = [0, div(u,0), 0]
-eq1 = [b, -P*lap(b,c), -dot(u,grad(b,c))]
-eq2 = [u, -R*lap(u,c) + grad(p,c), -dot(u,grad(u,c)) - b*ghat]
-bc1 = [0, u(z=0), 0]
-bc2 = [0, u(z=Lz), 0]
-bc3 = [0, b(z=0), Lz]
-bc4 = [0, b(z=Lz), 0]
+dt = operators.TimeDerivative
+
+problem = problems.IVP([p, b, u])
+problem.add_equation([div(u,0), 0])
+problem.add_equation([dt(b) - P*lap(b,c), -dot(u,grad(b,c))])
+problem.add_equation([dt(u) - R*lap(u,c) + grad(p,c), -dot(u,grad(u,c)) - b*ghat])
+problem.add_equation([u(z=0), 0])
+problem.add_equation([u(z=Lz), 0])
+problem.add_equation([b(z=0), Lz])
+problem.add_equation([b(z=Lz), 0])
 # Pressure gauge?
-eqs = [eq0, eq1, eq2]
-bcs = [bc1, bc2, bc3, bc4]
 
-# Apply conversions
-for eq in eqs + bcs:
-    M, L, F = eq
-    bases = (M + L - F).domain.bases
-    if M:
-        M = field.Operand.cast(M, d)
-        eq[0] = operators.convert(M, bases)
-    if L:
-        L = field.Operand.cast(L, d)
-        eq[1] = operators.convert(L, bases)
-    if F:
-        F = field.Operand.cast(F, d)
-        eq[2] = operators.convert(F, bases)
-
-# Check we can evaluate everything
-for eq in eqs + bcs:
-    for expr in eq:
-        if expr:
-            expr.evaluate()
-
-print("All expressions evaluate.")
+print("Problem built")

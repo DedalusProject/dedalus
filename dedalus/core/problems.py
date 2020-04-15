@@ -16,6 +16,7 @@ from . import operators
 from . import solvers
 from ..tools import parsing
 from ..tools.cache import CachedAttribute
+from ..tools.general import unify_attributes
 from ..tools.exceptions import SymbolicParsingError
 from ..tools.exceptions import UnsupportedEquationError
 
@@ -126,28 +127,29 @@ class ProblemBase:
 
     """
 
-    def __init__(self, domain, ncc_cutoff=1e-10, max_ncc_terms=None):
-        self.domain = domain
-        self.variables = []
+    def __init__(self, variables, ncc_cutoff=1e-10, max_ncc_terms=None):
+        self.variables = variables
+        self.dist = unify_attributes(variables, 'dist')
         self.equations = self.eqs = []
         self.parameters = OrderedDict()
         self.substitutions = OrderedDict()
-        self.op_kw = {'cutoff': ncc_cutoff}
-
-    def add_variable(self, var, **kw):
-        """Add variable to problem."""
-        # Build fields if name is specified
-        if isinstance(var, str):
-            var = Field(name=var, **kw)
-        self.variables.append(var)
+        #self.op_kw = {'cutoff': ncc_cutoff}
 
     def add_equation(self, equation, condition="True"):
         """Add equation to problem."""
         logger.debug("Parsing Eqn {}".format(len(self.eqs)))
+        # Parse string-valued equations
+        if isinstance(equation, str):
+            raise NotImplementedError()
+            # self._store_string_forms(eqn, equation, condition)
+            # self._build_object_forms(eqn)
+        # Determine equation domain
+        LHS, RHS = equation
+        domain = (LHS - RHS).domain
         # Build equation dictionary
-        eqn = {}
-        self._store_string_forms(eqn, equation, condition)
-        self._build_object_forms(eqn)
+        eqn = {'LHS': LHS,
+               'RHS': RHS,
+               'domain': domain}
         self._build_matrix_expressions(eqn)
         # Store equation dictionary
         self.equations.append(eqn)
@@ -184,11 +186,6 @@ class ProblemBase:
     def _build_matrix_expressions(self, eqn):
         """Build LHS matrix expressions and check equation conditions."""
         raise NotImplementedError()
-
-
-
-
-
 
     @CachedAttribute
     def namespace(self):
@@ -401,9 +398,10 @@ class InitialValueProblem(ProblemBase):
 
     solver_class = solvers.InitialValueSolver
 
-    def __init__(self, domain, time='t', **kw):
-        super().__init__(domain, **kw)
+    def __init__(self, variables, time='t', **kw):
+        super().__init__(variables, **kw)
         self.time = time
+        self.dt = operators.TimeDerivative
 
     @CachedAttribute
     def namespace_additions(self):
@@ -450,30 +448,43 @@ class InitialValueProblem(ProblemBase):
         """Build LHS matrix expressions and check equation conditions."""
         # NEW CHECK!! boulder
         vars = self.variables
+        dist = self.dist
+        domain = eqn['domain']
         # Equation conditions
-        self._check_basis_containment(eqn, 'LHS', 'RHS')
-        eqn['LHS'].require_linearity(*vars, name='LHS')
+        #self._check_basis_containment(eqn, 'LHS', 'RHS')
+        #eqn['LHS'].require_linearity(*vars, name='LHS')
         #eqn['LHS'].require_linearity(self._dt, name='LHS')
         #eqn['LHS'].require_independent(self._t, name='LHS')
         # Matrix expressions
-        M, L = eqn['LHS'].split(self._dt)
-        print(M)
-        print(L)
-        print('-'*20)
-        M = operators.Cast(M, self.domain)
-        M = M.replace(self._dt, lambda x:x)
-        M = operators.Cast(M, self.domain)
-        M = M.expand(*vars)
-        M = operators.Cast(M, self.domain)
-        L = operators.Cast(L, self.domain)
-        L = L.expand(*vars)
-        L = operators.Cast(L, self.domain)
-        eqn['M'] = operators.convert(M, eqn['bases'])
-        eqn['L'] = operators.convert(L, eqn['bases'])
-        eqn['F'] = operators.convert(eqn['RHS'], eqn['bases'])
-        eqn['separability'] = eqn['LHS'].separability(*vars)
-        # Debug logging
-        logger.debug('  {} linear form: {}'.format('L', eqn['L']))
+        # Split LHS into M and L
+        M, L = eqn['LHS'].split(self.dt)
+        # Drop time derivatives
+        if M:
+            M = M.replace(self.dt, lambda x:x)
+        # Convert to equation bases and store
+        if M:
+            M = operators.convert(M, domain.bases)
+        if L:
+            L = operators.convert(L, domain.bases)
+        F = eqn['RHS']
+        if F:
+            F = Operand.cast(F, dist)
+            F = operators.convert(F, domain.bases)
+        eqn['M'] = M
+        eqn['L'] = L
+        eqn['F'] = F
+        # M = operators.Cast(M, self.domain)
+        # M = M.expand(*vars)
+        # M = operators.Cast(M, self.domain)
+        # L = operators.Cast(L, self.domain)
+        # L = L.expand(*vars)
+        # L = operators.Cast(L, self.domain)
+        # eqn['M'] = operators.convert(M, eqn['bases'])
+        # eqn['L'] = operators.convert(L, eqn['bases'])
+        # eqn['F'] = operators.convert(eqn['RHS'], eqn['bases'])
+        # eqn['separability'] = eqn['LHS'].separability(*vars)
+        # # Debug logging
+        # logger.debug('  {} linear form: {}'.format('L', eqn['L']))
 
 
 

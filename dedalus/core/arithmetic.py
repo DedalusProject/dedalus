@@ -91,7 +91,6 @@ class Add(Future, metaclass=MultiClass):
         # Sum over argument splittings
         split_args = zip(*(arg.split(*vars) for arg in self.args))
         split = tuple(sum(args) for args in split_args)
-        print(self, split)
         return split
 
     def sym_diff(self, var):
@@ -272,7 +271,7 @@ class Multiply(Future, metaclass=MultiClass):
     def split(self, *vars):
         """Split into expressions containing and not containing specified operands/operators."""
         # Take cartesian product of argument splittings
-        split_args = [arg.split(*vars) for arg in self.args]
+        split_args = [arg.split(*vars) if isinstance(arg, Operand) else (0, arg) for arg in self.args]
         split_combos = list(map(np.prod, itertools.product(*split_args)))
         # Last combo is all negative splittings, others contain atleast one positive splitting
         return (sum(split_combos[:-1]), split_combos[-1])

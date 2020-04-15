@@ -21,6 +21,7 @@ from ..tools.dispatch import MultiClass
 from ..tools.exceptions import NonlinearOperatorError
 from ..tools.exceptions import SymbolicParsingError
 from ..tools.exceptions import UndefinedParityError
+from ..tools.exceptions import SkipDispatchException
 from ..tools.general import unify, unify_attributes
 
 
@@ -602,18 +603,20 @@ class LinearOperator(FutureField):
     #     args[0] = operand
     #     return self.base(*args)
 
+    def __repr__(self):
+        return '{}({})'.format(self.name, repr(self.operand))
+
     def __str__(self):
-        str_args = map(str, self.args)
         return '{}({})'.format(self.name, str(self.operand))
 
     def new_operand(self, operand):
         # Subclasses must implement with correct arguments
-        raise NotImplementedError()
+        raise NotImplementedError("%s has not implemented the new_operand method." %type(self))
 
     def split(self, *vars):
         """Split into expressions containing and not containing specified operands/operators."""
         # Check for matching operator
-        if self.base in vars:
+        if any(isinstance(self, var) for var in vars):
             return (self, 0)
         # Distribute over split operand
         else:
@@ -860,15 +863,20 @@ class TimeDerivative(LinearOperator):
 
     name = 'dt'
 
-    def __new__(cls, arg):
-        if isinstance(arg, (Number, Cast)):
-            return 0
-        else:
-            return object.__new__(cls)
+    # def __new__(cls, arg):
+    #     if isinstance(arg, (Number, Cast)):
+    #         return 0
+    #     else:
+    #         return object.__new__(cls)
 
-    def _build_bases(self, operand):
-        """Build output bases."""
-        return operand.bases
+    def __init__(self, operand, out=None):
+        super().__init__(operand, out=out)
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = operand.domain
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
 
     @property
     def base(self):
@@ -922,6 +930,8 @@ class Interpolate(SpectralOperator1D, metaclass=MultiClass):
 
     @classmethod
     def _preprocess_args(cls, operand, coord, position, out=None):
+        if isinstance(operand, Number):
+            raise SkipDispatchException(output=operand)
         if isinstance(coord, coords.Coordinate):
             pass
         elif isinstance(coord, str):
@@ -1590,16 +1600,18 @@ class Gradient(LinearOperator, metaclass=MultiClass):
     name = "Grad"
 
     @classmethod
+    def _preprocess_args(cls, operand, coordsys, out=None):
+        if isinstance(operand, Number):
+            raise SkipDispatchException(output=0)
+        return [operand, coordsys], {'out': out}
+
+    @classmethod
     def _check_args(cls, operand, cs, out=None):
         # Dispatch by coordinate system
         if isinstance(operand, Operand):
             if isinstance(cs, cls.cs_type):
                 return True
         return False
-
-    @property
-    def base(self):
-        return Gradient
 
 
 class CartesianGradient(Gradient):
@@ -1621,6 +1633,9 @@ class CartesianGradient(Gradient):
 
     def _build_bases(self, *args):
         return sum(args).domain.bases
+
+    def new_operand(self, operand):
+        return Gradient(operand, self.coordsys)
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""
@@ -1826,24 +1841,6 @@ class SphericalGradient(Gradient, SphericalEllOperator):
             raise ValueError("This should never happen")
 
 
-class Divergence(LinearOperator, metaclass=MultiClass):
-
-    name = 'Div'
-    # should check that we're not taking div of a scalar'
-
-    @classmethod
-    def _check_args(cls, operand, out=None):
-        # Dispatch by coordinate system
-        if isinstance(operand, Operand):
-            if isinstance(operand.tensorsig[0], cls.cs_type):
-                return True
-        return False
-
-    @property
-    def base(self):
-        return Divergence
-
-
 class Component(LinearOperator, metaclass=MultiClass):
 
     name = 'Comp'
@@ -1892,6 +1889,26 @@ class CartesianComponent(Component):
         out.data[:] = arg0.data[take_comp]
 
 
+class Divergence(LinearOperator, metaclass=MultiClass):
+
+    name = 'Div'
+    # should check that we're not taking div of a scalar'
+
+    @classmethod
+    def _preprocess_args(cls, operand, index=0, out=None):
+        if isinstance(operand, Number):
+            raise SkipDispatchException(output=0)
+        return [operand], {'index': index, 'out': out}
+
+    @classmethod
+    def _check_args(cls, operand, index=0, out=None):
+        # Dispatch by coordinate system
+        if isinstance(operand, Operand):
+            if isinstance(operand.tensorsig[index], cls.cs_type):
+                return True
+        return False
+
+
 class CartesianDivergence(Divergence):
 
     cs_type = coords.CartesianCoordinates
@@ -1910,6 +1927,9 @@ class CartesianDivergence(Divergence):
         self.domain = arg.domain
         self.tensorsig = arg.tensorsig
         self.dtype = arg.dtype
+
+    def new_operand(self, operand):
+        return Divergence(operand, index=self.index)
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""
@@ -2090,10 +2110,16 @@ class Laplacian(LinearOperator, metaclass=MultiClass):
     name = "Lap"
 
     @classmethod
-    def _check_args(cls, operand, coords, out=None):
+    def _preprocess_args(cls, operand, coordsys, out=None):
+        if isinstance(operand, Number):
+            raise SkipDispatchException(output=0)
+        return [operand, coordsys], {'out': out}
+
+    @classmethod
+    def _check_args(cls, operand, coordsys, out=None):
         # Dispatch by coordinate system
         if isinstance(operand, Operand):
-            if isinstance(coords, cls.cs_type):
+            if isinstance(coordsys, cls.cs_type):
                 return True
         return False
 
@@ -2117,6 +2143,9 @@ class CartesianLaplacian(Laplacian):
         self.domain = arg.domain
         self.tensorsig = arg.tensorsig
         self.dtype = arg.dtype
+
+    def new_operand(self, operand):
+        return Laplacian(operand, self.coordsys)
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""

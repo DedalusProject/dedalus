@@ -129,8 +129,8 @@ class Operand:
             # Cast integers to floats
             if isinstance(arg, int):
                 arg = float(arg)
-            out = Field(name=str(arg), dist=dist, dtype=np.dtype(type(arg)))
-            out['g'] = arg  # Set in grid space to avoid needing mode normalizations
+            out = Field(dist=dist, dtype=np.dtype(type(arg)))
+            out['g'] = arg  # Set in grid space arbitrarily
             return out
         else:
             raise NotImplementedError("Cannot cast type %s" %type(arg))
