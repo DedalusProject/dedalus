@@ -773,7 +773,7 @@ class SpectralOperator1D(SpectralOperator):
         # Start from operand separability
         separability = self.operand.separability(*vars).copy()
         if not self.separable:
-            separability[self.axis] = False
+            separability[self.last_axis] = False
         return separability
 
     def subproblem_matrix(self, subproblem):
@@ -976,14 +976,6 @@ class Interpolate(SpectralOperator1D, metaclass=MultiClass):
         """Expand over multiplication."""
         # Apply to each factor
         return np.prod([self.new_operand(arg) for arg in operand.args])
-
-    def separability(self, *vars):
-        """Determine separable dimensions of expression as a linear operator on specified variables."""
-        # Start from operand separability
-        separability = self.operand.separability(*vars).copy()
-        if not self.separable:
-            separability[self.axis] = False
-        return separability
 
 
 #class Interpolate(LinearSubspaceFunctional, metaclass=MultiClass):
@@ -1637,6 +1629,10 @@ class CartesianGradient(Gradient):
     def new_operand(self, operand):
         return Gradient(operand, self.coordsys)
 
+    def separability(self, *vars):
+        arg_seps = [arg.separability(*vars) for arg in self.args]
+        return np.logical_and.reduce(arg_seps)
+
     def check_conditions(self):
         """Check that operands are in a proper layout."""
         # Require operands to be in same layout
@@ -1864,6 +1860,9 @@ class Component(LinearOperator, metaclass=MultiClass):
     def new_operand(self, operand):
         return Component(operand, self.index, self.coord)
 
+    def separability(self, *vars):
+        return self.operand.separability(*vars)
+
 
 class CartesianComponent(Component):
 
@@ -1930,6 +1929,9 @@ class CartesianDivergence(Divergence):
 
     def new_operand(self, operand):
         return Divergence(operand, index=self.index)
+
+    def separability(self, *vars):
+        return self.original_args[0].separability(*vars)
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""
@@ -2146,6 +2148,9 @@ class CartesianLaplacian(Laplacian):
 
     def new_operand(self, operand):
         return Laplacian(operand, self.coordsys)
+
+    def separability(self, *vars):
+        return self.original_args[0].separability(*vars)
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""

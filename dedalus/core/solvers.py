@@ -11,7 +11,7 @@ from scipy.linalg import eig
 
 #from ..data.operators import parsable_ops
 from . import operators
-#from . import subsystems
+from . import subsystems
 from .evaluator import Evaluator
 from .system import CoeffSystem, FieldSystem
 from .field import Field
@@ -253,7 +253,8 @@ class InitialValueSolver:
         logger.debug('Beginning IVP instantiation')
 
         self.problem = problem
-        self.domain = domain = problem.domain
+        #self.domain = domain = problem.domain
+        self.dist = problem.dist
         self._wall_time_array = np.zeros(1, dtype=float)
         self.start_time = self.get_wall_time()
 
@@ -291,17 +292,17 @@ class InitialValueSolver:
 
         logger.debug('Finished IVP instantiation')
 
-    @property
-    def sim_time(self):
-        return self._sim_time.value
+    # @property
+    # def sim_time(self):
+    #     return self._sim_time.value
 
-    @sim_time.setter
-    def sim_time(self, t):
-        self._sim_time.value = t
+    # @sim_time.setter
+    # def sim_time(self, t):
+    #     self._sim_time.value = t
 
     def get_wall_time(self):
         self._wall_time_array[0] = time.time()
-        comm = self.domain.dist.comm_cart
+        comm = self.dist.comm_cart
         comm.Allreduce(MPI.IN_PLACE, self._wall_time_array, op=MPI.MAX)
         return self._wall_time_array[0]
 

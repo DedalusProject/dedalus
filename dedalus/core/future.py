@@ -105,7 +105,7 @@ class Future(Operand):
     def has(self, *vars):
         """Determine if tree contains any specified operands/operators."""
         # Check for matching operator
-        if self.base in vars:
+        if any(isinstance(self, var) for var in vars if isinstance(var, type)):
             return True
         # Check arguments
         else:

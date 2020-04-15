@@ -307,8 +307,9 @@ class Multiply(Future, metaclass=MultiClass):
 
     def require_linearity(self, *vars, name=None):
         """Require expression to be linear in specified variables."""
-        nccs = [arg for arg in self.args if not arg.has(*vars)]
-        operands = [arg for arg in self.args if arg.has(*vars)]
+        nccs = [arg for arg in self.args if ((not isinstance(arg, Operand)) or (not arg.has(*vars)))]
+        operands = [arg for arg in self.args if (arg not in nccs)]
+        #operands = [arg for arg in self.args if arg.has(*vars)]
         # Require exactly one argument to contain vars, for linearity
         if len(operands) != 1:
             raise NonlinearOperatorError("{} is a non-linear product of the specified variables.".format(name if name else str(self)))
@@ -321,7 +322,7 @@ class Multiply(Future, metaclass=MultiClass):
         """Determine separable dimensions of expression as a linear operator on specified variables."""
         nccs, operand = self.require_linearity(*vars)
         # NCCs couple along any non-constant dimensions
-        ncc_bases = np.prod(nccs).bases
+        ncc_bases = Operand.cast(np.prod(nccs), self.dist).domain.full_bases
         ncc_separability = np.array([(basis is None) for basis in ncc_bases])
         # Combine with operand separability
         return ncc_separability & operand.separability(*vars)

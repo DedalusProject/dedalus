@@ -482,7 +482,7 @@ class InitialValueProblem(ProblemBase):
         # eqn['M'] = operators.convert(M, eqn['bases'])
         # eqn['L'] = operators.convert(L, eqn['bases'])
         # eqn['F'] = operators.convert(eqn['RHS'], eqn['bases'])
-        # eqn['separability'] = eqn['LHS'].separability(*vars)
+        eqn['separability'] = eqn['LHS'].separability(*vars)
         # # Debug logging
         # logger.debug('  {} linear form: {}'.format('L', eqn['L']))
 

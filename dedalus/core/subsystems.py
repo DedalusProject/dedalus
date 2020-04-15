@@ -11,7 +11,7 @@ from scipy import sparse
 from mpi4py import MPI
 import uuid
 
-from .domain import Subdomain
+from .domain import Domain
 from ..tools.array import zeros_with_pattern, expand_pattern, sparse_block_diag
 from ..tools.cache import CachedAttribute, CachedMethod
 from ..tools.general import replace
@@ -32,15 +32,17 @@ logger = logging.getLogger(__name__.split('.')[-1])
 
 def build_local_subproblems(problem):
     """Build local subproblem objects."""
-    domain = problem.domain
     # Check that distributed dimensions are separable
-    for axis in range(len(domain.dist.mesh)):
-        if not problem.separable[axis]:
-            raise ValueError("Problem is not separable along distributed dimension %i" %axis)
+    # for axis in range(len(problem.dist.mesh)):
+    #     if not problem.separable[axis]:
+    #         raise ValueError("Problem is not separable along distributed dimension %i" %axis)
+    ## HACKS
+    dist = problem.dist
+    domain = problem.variables[0].domain
     # Build subproblems on local groups of separable subdomain
-    subdomain = domain.subdomain(problem.separability())
-    coeff_layout = domain.dist.coeff_layout
-    local_groups = coeff_layout.local_groups(subdomain, scales=1)
+    # subdomain = domain.subdomain(problem.separability())
+    coeff_layout = dist.coeff_layout
+    local_groups = coeff_layout.local_groups(domain, scales=1)
     local_groups = list(replace(local_groups, problem.coupled, [0]))
     return [Subproblem(problem, group, index) for index, group in enumerate_product(*local_groups)]
 

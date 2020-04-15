@@ -1,7 +1,7 @@
 
 
 import numpy as np
-from dedalus.core import coords, distributor, basis, field, operators, problems
+from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers
 
 # Parameters
 Lx, Ly, Lz = (4, 4, 1)
@@ -44,3 +44,5 @@ problem.add_equation([b(z=Lz), 0])
 # Pressure gauge?
 
 print("Problem built")
+
+solver = solvers.InitialValueSolver(problem, timesteppers.RK111)

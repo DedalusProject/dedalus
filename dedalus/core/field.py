@@ -205,7 +205,7 @@ class Operand:
 
     def separability(self, *vars):
         """Determine separable dimensions of expression as a linear operator on specified variables."""
-        raise NotImplementedError()
+        raise NotImplementedError("%s has not implemented a separability method." %type(self))
 
     # def operator_order(self, operator):
     #     """Determine maximum application order of an operator in the expression."""
