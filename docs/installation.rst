@@ -16,9 +16,9 @@ We recommend installing Dedalus via a conda script that will create a new conda 
 The script allows you to link against custom MPI/FFTW/HDF5 libraries or opt for builds of those packages that are available through conda.
 
 First, install conda/miniconda for your system if you don't already have it, following the `instructions from conda <https://conda.io/en/latest/miniconda.html>`_.
-Then download the Dedalus conda installation script from `this link <https://raw.githubusercontent.com/DedalusProject/conda_dedalus/master/install_conda.sh>`_ or using::
+Then download the Dedalus conda installation script from `this link <https://raw.githubusercontent.com/DedalusProject/dedalus_conda/master/install_conda.sh>`_ or using::
 
-    wget https://raw.githubusercontent.com/DedalusProject/conda_dedalus/master/install_conda.sh
+    wget https://raw.githubusercontent.com/DedalusProject/dedalus_conda/master/install_conda.sh
 
 Modify the options at the top of the script to changes the name of the resulting conda environment, link against custom MPI/FFTW/HDF5 libraries, choose between OpenBLAS and MKL-based numpy/scipy, and more.
 Then activate the base conda environment and run the script to build a new conda environment with Dedalus and its dependencies, as requested::
