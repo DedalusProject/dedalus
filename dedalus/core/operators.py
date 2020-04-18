@@ -700,7 +700,7 @@ class LinearOperator(FutureField):
 
     def subproblem_matrix(self, subproblem):
         """Build operator matrix for a specific subproblem."""
-        raise NotImplementedError()
+        raise NotImplementedError("%s has not implemented a subproblem_matrix method." %type(self))
 
 
 class SpectralOperator(LinearOperator):
@@ -778,16 +778,17 @@ class SpectralOperator1D(SpectralOperator):
 
     def subproblem_matrix(self, subproblem):
         """Build operator matrix for a specific subproblem."""
+        axis = self.last_axis
         # Build identity matrices for each axis
-        group_shape = subproblem.group_shape(self.subdomain)
+        group_shape = subproblem.group_shape(self.domain)
         factors = [sparse.identity(n, format='csr') for n in group_shape]
         # Substitute group portion of subspace matrix
         if self.separable:
-            argslice = subproblem.global_slices(self.operand.subdomain)[self.axis]
-            outslice = subproblem.global_slices(self.subdomain)[self.axis]
-            factors[self.axis] = self.subspace_matrix[outslice, argslice]
+            argslice = subproblem.global_slices(self.operand.domain)[axis]
+            outslice = subproblem.global_slices(self.domain)[axis]
+            factors[axis] = self.subspace_matrix[outslice, argslice]
         else:
-            factors[self.axis] = self.subspace_matrix
+            factors[axis] = self.subspace_matrix
         return reduce(sparse.kron, factors, 1).tocsr()
 
     @CachedAttribute
@@ -1587,6 +1588,49 @@ class AngularComponent(SphericalComponent, metaclass=MultiClass):
     def base(self):
         return AngularComponent
 
+
+class SphericalEllOperator(SpectralOperator, metaclass=MultiClass):
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        basis = self.input_basis
+        # Set output layout
+        out.set_layout(operand.layout)
+        out.data[:] = 0
+        # Apply operator
+        R_in = basis.regularity_classes(operand.tensorsig)
+        for regindex_in, regtotal_in in np.ndenumerate(R_in):
+            for regindex_out in self.regindex_out(regindex_in):
+                comp_in = operand.data[regindex_in]
+                comp_out = out.data[regindex_out]
+                for m in basis.local_m:
+                    for ell in basis.local_l:
+                        vec3_in = basis.radial_vector_3(comp_in, m, ell, regindex_in)
+                        vec3_out = basis.radial_vector_3(comp_out, m, ell, regindex_out)
+                        if (vec3_in is not None) and (vec3_out is not None):
+                            A = self.radial_matrix(regindex_in, regindex_out, ell)
+                            vec3_out += apply_matrix(A, vec3_in, axis=1)
+
+    def subproblem_matrix(self, subproblem):
+        operand = self.args[0]
+        R_in = self.input_basis.regularity_classes(operand.tensorsig)
+        R_out = self.input_basis.regularity_classes(self.tensorsig)
+
+        # need to get ell from subproblem -- don't know how to do this
+        ell = subproblem.ell
+
+        submatrices = []
+        for regindex_out, regtotal_out in np.ndenumerate(R_out):
+            submatrix_row = []
+            for regindex_in, regtotal_in in np.ndenumerate(R_in):
+                submatrix_row.append(self.radial_matrix(regindex_in, regindex_out, ell))
+            submatrices.append(submatrix_row)
+        matrix = sparse.bmat(submatrices)
+        matrix.tocsr()
+        return matrix
+
+
 class Gradient(LinearOperator, metaclass=MultiClass):
 
     name = "Grad"
@@ -1845,6 +1889,8 @@ class Component(LinearOperator, metaclass=MultiClass):
         super().__init__(operand, out=out)
         self.index = index
         self.coord = coord
+        self.coordsys = operand.tensorsig[index]
+        self.coord_subaxis = self.coord.axis - self.coordsys.first_axis
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements
@@ -1878,13 +1924,24 @@ class CartesianComponent(Component):
         # Any layout
         pass
 
+    def subproblem_matrix(self, subproblem):
+        # Build identities for each tangent space
+        factors = [sparse.identity(cs.dim, format='csr') for cs in self.operand.tensorsig]
+        factors.append(sparse.identity(subproblem.group_size(self.domain), format='csr'))
+        # Build selection matrix for selected coord
+        index_factor = np.zeros((1, self.coordsys.dim))
+        index_factor[0, self.coord_subaxis] = 1
+        # Replace indexed factor with selection matrix
+        factors[self.index] = index_factor
+        return reduce(sparse.kron, factors, 1).tocsr()
+
     def operate(self, out):
         """Perform operation."""
         arg0 = self.args[0]
         # Set output layout
         out.set_layout(arg0.layout)
         # Copy specified comonent
-        take_comp = tuple([None] * self.index + [self.coord.axis])
+        take_comp = tuple([None] * self.index + [self.coord_subaxis])
         out.data[:] = arg0.data[take_comp]
 
 
@@ -1914,8 +1971,12 @@ class CartesianDivergence(Divergence):
 
     def __init__(self, operand, index=0, out=None):
         coordsys = operand.tensorsig[index]
+        # Get components
         comps = [CartesianComponent(operand, index=index, coord=c) for c in coordsys.coords]
         comps = [Differentiate(comp, c) for comp, c in zip(comps, coordsys.coords)]
+        # Convert to correct bases before adding
+        bases = sum(comps).domain.bases
+        comps = [convert(comp, bases) for comp in comps]
         arg = sum(comps)
         LinearOperator.__init__(self, arg, out=out)
         self.index = index
@@ -1942,6 +2003,10 @@ class CartesianDivergence(Divergence):
         """Require operands to be in a proper layout."""
         # Any layout (addition is done)
         pass
+
+    def expression_matrices(self, subproblem, vars):
+        """Build expression matrices for a specific subproblem and variables."""
+        return self.original_args[0].expression_matrices(subproblem, vars)
 
     def operate(self, out):
         """Perform operation."""

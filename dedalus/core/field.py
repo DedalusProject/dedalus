@@ -299,8 +299,10 @@ class Current(Operand):
         # group_shape = subproblem.group_shape(self.domain)
         # factors = (sparse.identity(n, format='csr') for n in group_shape)
         # matrix = reduce(sparse.kron, factors, 1).tocsr()
-        size = self.domain.bases[0].field_radial_size(self, subproblem.ell)
-        matrix = sparse.identity(size, format='csr')
+        comps = np.prod([cs.dim for cs in self.tensorsig])
+        group_size = subproblem.group_size(self.domain)
+        #size = self.domain.bases[0].field_radial_size(self, subproblem.ell)
+        matrix = sparse.identity(comps*group_size, format='csr')
         return {self: matrix}
 
     # def setup_operator_matrix(self, separability, vars, **kw):

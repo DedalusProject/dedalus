@@ -35,12 +35,12 @@ dt = operators.TimeDerivative
 
 problem = problems.IVP([p, b, u])
 problem.add_equation([div(u,0), 0])
-problem.add_equation([dt(b) - P*lap(b,c), -dot(u,grad(b,c))])
-problem.add_equation([dt(u) - R*lap(u,c) + grad(p,c), -dot(u,grad(u,c)) - b*ghat])
-problem.add_equation([u(z=0), 0])
-problem.add_equation([u(z=Lz), 0])
-problem.add_equation([b(z=0), Lz])
-problem.add_equation([b(z=Lz), 0])
+# problem.add_equation([dt(b) - P*lap(b,c), -dot(u,grad(b,c))])
+# problem.add_equation([dt(u) - R*lap(u,c) + grad(p,c), -dot(u,grad(u,c)) - b*ghat])
+# problem.add_equation([u(z=0), 0])
+# problem.add_equation([u(z=Lz), 0])
+# problem.add_equation([b(z=0), Lz])
+# problem.add_equation([b(z=Lz), 0])
 # Pressure gauge?
 
 print("Problem built")

@@ -20,6 +20,10 @@ class CoordinateSystem:
         for coord in self.coords:
             coord.dist = distributor
 
+    @property
+    def first_axis(self):
+        return self.dist.coords.index(self.coords[0])
+
 
 class Coordinate:
     dim = 1
