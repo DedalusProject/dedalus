@@ -188,7 +188,7 @@ class Pencil:
         if n_nonconst_eqs != n_nonconst_vars:
             raise ValueError("Pencil {} has {} non-constant equations for {} non-constant variables.".format(global_index, n_nonconst_eqs, n_nonconst_vars))
         if n_const_eqs != n_const_vars + n_tau:
-            raise ValueError("Pencil {} has {} constant equations for {} constant variables plus {} differential (tau modified) equations.".format(global_index, n_const_eqs, n_const_vars, n_tau))
+            raise ValueError("Pencil {} has {} constant equations for {} constant variables plus {} differential equations / tau terms.".format(global_index, n_const_eqs, n_const_vars, n_tau))
 
         # Local references
         Zero_Nz = sparse.csr_matrix((zsize, zsize), dtype=zdtype)
@@ -240,9 +240,9 @@ class Pencil:
             if eq['LHS'].meta[zbasis.name]['constant']:
                 PL = zbasis.DropNonfirst
             elif eq['tau'] and eq['differential']:
-                PL = zbasis.PreconditionDropTau
+                PL = zbasis.PreconditionDropTau(eq['tau'])
             elif eq['tau']:
-                PL = zbasis.DropTau
+                PL = zbasis.DropTau(eq['tau'])
             elif eq['differential']:
                 PL = zbasis.PreconditionDropMatch
             else:
@@ -372,8 +372,8 @@ def left_permutation(zbasis, n_vars, eqs):
                     coeff_size = 1
                 else:
                     coeff_size = 0
-            elif (subbasis is zbasis.subbases[-1]) and (not eq['tau']):
-                coeff_size = subbasis.coeff_size
+            elif subbasis is zbasis.subbases[-1]:
+                coeff_size = subbasis.coeff_size - eq['tau']
             else:
                 coeff_size = subbasis.coeff_size - 1
             # Record indeces

@@ -195,11 +195,13 @@ class ProblemBase:
         """Require LHS To be first order in coupled derivatives."""
         coupled_diffs = [basis.Differentiate for basis in self.domain.bases if not basis.separable]
         order = self._require_first_order(temp, 'LHS', coupled_diffs)
-        temp['differential'] = bool(order)
+        temp['differential'] = int(order)
         if temp['constant']:
-            temp['tau'] = False
+            temp['tau'] = 0
         elif temp['tau'] is None:
             temp['tau'] = temp['differential']
+        else:
+            temp['tau'] = int(temp['tau'])
 
     def _check_if_zero(self, expr):
         ''' Checks if the expression is equal to zero, within a tolerance '''

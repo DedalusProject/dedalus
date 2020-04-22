@@ -216,11 +216,11 @@ class ImplicitBasis(Basis):
         """Preconditioning matrix."""
         raise NotImplementedError()
 
-    @CachedAttribute
-    def DropTau(self):
+    @CachedMethod
+    def DropTau(self, n_tau):
         """Matrix dropping tau+match rows."""
         N = self.coeff_size
-        DLR = sparse.eye(N-1, N, dtype=self.coeff_dtype, format='csr')
+        DLR = sparse.eye(N-n_tau, N, dtype=self.coeff_dtype, format='csr')
         return DLR
 
     @CachedAttribute
@@ -241,13 +241,13 @@ class ImplicitBasis(Basis):
         N = self.coeff_size
         return sparse.eye(N, N, dtype=self.coeff_dtype, format='csr')
 
-    @CachedAttribute
-    def PreconditionDropTau(self):
+    @CachedMethod
+    def PreconditionDropTau(self, n_tau):
         """Preconditioning with tau+match filtering."""
         if self.tau_after_pre:
-            return self.DropTau @ self.Precondition
+            return self.DropTau(n_tau) @ self.Precondition
         else:
-            return self.Precondition[:-1,:-1] @ self.DropTau
+            return self.Precondition[:-n_tau,:-n_tau] @ self.DropTau(n_tau)
 
     @CachedAttribute
     def PreconditionDropMatch(self):
@@ -2699,10 +2699,11 @@ class Compound(ImplicitBasis):
             max_term = max(max_term, max_term_i)
         return n_terms, max_term, matrix
 
-    @CachedAttribute
-    def DropTau(self):
+    @CachedMethod
+    def DropTau(self, n_tau):
         """Matrix dropping tau+match rows."""
-        blocks = [subbasis.DropTau for subbasis in self.subbases]
+        blocks = [subbasis.DropTau(1) for subbasis in self.subbases]
+        blocks[-1] = self.subbases[-1].DropTau(n_tau)
         return sparse.block_diag(blocks, format='csr')
 
     @CachedAttribute
@@ -2720,20 +2721,21 @@ class Compound(ImplicitBasis):
     @CachedAttribute
     def DropMatch(self):
         """Matrix dropping last row from each subbasis except the last."""
-        blocks = [subbasis.DropTau for subbasis in self.subbases]
+        blocks = [subbasis.DropTau(1) for subbasis in self.subbases]
         blocks[-1] = self.subbases[-1].DropMatch
         return sparse.block_diag(blocks, format='csr')
 
-    @CachedAttribute
-    def PreconditionDropTau(self):
+    @CachedMethod
+    def PreconditionDropTau(self, n_tau):
         """Preconditioning and tau+match filtering."""
-        blocks = [subbasis.PreconditionDropTau for subbasis in self.subbases]
+        blocks = [subbasis.PreconditionDropTau(1) for subbasis in self.subbases]
+        blocks[-1] = self.subbases[-1].PreconditionDropTau(n_tau)
         return sparse.block_diag(blocks, format='csr')
 
     @CachedAttribute
     def PreconditionDropMatch(self):
         """Preconditioning and match filtering."""
-        blocks = [subbasis.PreconditionDropTau for subbasis in self.subbases]
+        blocks = [subbasis.PreconditionDropTau(1) for subbasis in self.subbases]
         blocks[-1] = self.subbases[-1].PreconditionDropMatch
         return sparse.block_diag(blocks, format='csr')
 
