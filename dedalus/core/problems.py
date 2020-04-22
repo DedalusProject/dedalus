@@ -72,9 +72,11 @@ class ProblemBase:
     variables : list of str
         List of variable names, e.g. ['u', 'v', 'w']
     ncc_cutoff : float, optional
-        Mode amplitude cutoff for LHS NCC expansions (default: 1e-10)
+        Mode amplitude cutoff for LHS NCC expansions (default: 1e-6)
     max_ncc_terms : int, optional
         Maximum terms to include in LHS NCC expansions (default: None (no limit))
+    entry_cutoff : float, optional
+        Matrix entry cutoff to avoid fill-in from cancellation errors (default: 1e-12)
 
     Attributes
     ----------
@@ -100,7 +102,7 @@ class ProblemBase:
 
     """
 
-    def __init__(self, domain, variables, ncc_cutoff=1e-10, max_ncc_terms=None, entry_cutoff=0):
+    def __init__(self, domain, variables, ncc_cutoff=1e-6, max_ncc_terms=None, entry_cutoff=1e-12):
         self.domain = domain
         self.variables = variables
         self.nvars = len(variables)

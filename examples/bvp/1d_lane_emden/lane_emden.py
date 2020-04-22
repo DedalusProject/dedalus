@@ -42,9 +42,9 @@ logger = logging.getLogger(__name__)
 
 # Parameters
 Nx = 128
-n = 3.25
-ncc_cutoff = 1e-4
-tolerance = 1e-8
+n = 3.0
+ncc_cutoff = 1e-6
+tolerance = 1e-12
 
 # Build domain
 x_basis = de.Chebyshev('x', Nx, interval=(0, 1), dealias=2)
