@@ -279,10 +279,18 @@ class Current(Operand):
         if self not in vars:
             raise NonlinearOperatorError("{} is not linear the specified variables.".format(name if name else str(self)))
 
-    def separability(self, *vars):
-        """Determine separable dimensions of expression as a linear operator on specified variables."""
+    # def separability(self, *vars):
+    #     """Determine separable dimensions of expression as a linear operator on specified variables."""
+    #     self.require_linearity(*vars)
+    #     return np.array([True for basis in self.domain.bases])
+
+    def matrix_dependence(self, *vars):
         self.require_linearity(*vars)
-        return np.array([True for basis in self.domain.bases])
+        return np.array([False for axis in range(self.domain.dist.dim)])
+
+    def matrix_coupling(self, *vars):
+        self.require_linearity(*vars)
+        return np.array([False for axis in range(self.domain.dist.dim)])
 
     # def operator_order(self, operator):
     #     """Determine maximum application order of an operator in the expression."""
@@ -299,10 +307,9 @@ class Current(Operand):
         # group_shape = subproblem.group_shape(self.domain)
         # factors = (sparse.identity(n, format='csr') for n in group_shape)
         # matrix = reduce(sparse.kron, factors, 1).tocsr()
-        comps = np.prod([cs.dim for cs in self.tensorsig])
-        group_size = subproblem.group_size(self.domain)
         #size = self.domain.bases[0].field_radial_size(self, subproblem.ell)
-        matrix = sparse.identity(comps*group_size, format='csr')
+        size = subproblem.subfield_size(self)
+        matrix = sparse.identity(size, format='csr')
         return {self: matrix}
 
     # def setup_operator_matrix(self, separability, vars, **kw):

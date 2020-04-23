@@ -262,24 +262,24 @@ class InitialValueSolver:
         self.subproblems = subsystems.build_local_subproblems(problem)
         subsystems.build_matrices(self.subproblems, ['M', 'L'])
 
-        # Build systems
-        namespace = problem.namespace
-        #vars = [namespace[var] for var in problem.variables]
-        #self.state = FieldSystem.from_fields(vars)
-        self.state = problem.variables
-        self._sim_time = namespace[problem.time]
+        # # Build systems
+        # namespace = problem.namespace
+        # #vars = [namespace[var] for var in problem.variables]
+        # #self.state = FieldSystem.from_fields(vars)
+        # self.state = problem.variables
+        # self._sim_time = namespace[problem.time]
 
-        # Create F operator trees
-        self.evaluator = Evaluator(domain, namespace)
-        F_handler = self.evaluator.add_system_handler(iter=1, group='F')
-        for eq in problem.eqs:
-            F_handler.add_task(eq['F'])
-        F_handler.build_system()
-        self.F = F_handler.fields
+        # # Create F operator trees
+        # self.evaluator = Evaluator(domain, namespace)
+        # F_handler = self.evaluator.add_system_handler(iter=1, group='F')
+        # for eq in problem.eqs:
+        #     F_handler.add_task(eq['F'])
+        # F_handler.build_system()
+        # self.F = F_handler.fields
 
-        # Initialize timestepper
-        subdomains = [eq['subdomain'] for eq in problem.eqs]
-        self.timestepper = timestepper(subdomains, self.subproblems)
+        # # Initialize timestepper
+        # subdomains = [eq['subdomain'] for eq in problem.eqs]
+        # self.timestepper = timestepper(subdomains, self.subproblems)
 
         # Attributes
         self.sim_time = 0.

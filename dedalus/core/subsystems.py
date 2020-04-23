@@ -33,18 +33,25 @@ logger = logging.getLogger(__name__.split('.')[-1])
 def build_local_subproblems(problem):
     """Build local subproblem objects."""
     # Check that distributed dimensions are separable
-    # for axis in range(len(problem.dist.mesh)):
-    #     if not problem.separable[axis]:
-    #         raise ValueError("Problem is not separable along distributed dimension %i" %axis)
-    ## HACKS
+    for axis in range(len(problem.dist.mesh)):
+        if problem.matrix_coupling[axis]:
+            raise ValueError("Problem is coupled along distributed dimension %i" %axis)
+    # Get all local groups
     dist = problem.dist
-    domain = problem.variables[0].domain
-    # Build subproblems on local groups of separable domain
-    # domain = domain.domain(problem.separability())
-    coeff_layout = dist.coeff_layout
-    local_groups = coeff_layout.local_groups(domain, scales=1)
-    #local_groups = list(replace(local_groups, problem.coupled, [0]))
-    return [Subproblem(problem, group, index) for index, group in enumerate_product(*local_groups)]
+    domain = problem.variables[0].domain  # HACK
+    local_groups = dist.coeff_layout.local_groups(domain, scales=1)
+    # Build subsystems from groups of separable domain
+    local_subsystems = list(replace(local_groups, problem.matrix_coupling, [0]))
+    local_subsystems = enumerate_product(*local_subsystems)
+    # Check subsystem validity
+    local_subsystems = [ls for ls in local_subsystems if include_subsystem(domain, *ls)]
+    return [Subproblem(problem, group, index) for index, group in local_subsystems]
+
+
+def include_subsystem(domain, index, group):
+    # HACK
+    # This should throw out invalid pencils in the triangular truncation.
+    return True
 
 def build_matrices(subproblems, matrices):
     """Build subproblem matrices with progress logger."""
@@ -77,14 +84,14 @@ class Subproblem:
 
     def __init__(self, problem, group, index):
         # Remove coupled indices
-        group = tuple(replace(group, problem.coupled, None))
-        index = tuple(replace(index, problem.coupled, None))
+        group = tuple(replace(group, problem.matrix_coupling, None))
+        index = tuple(replace(index, problem.matrix_coupling, None))
         self.problem = problem
         ## HACKs
         self.domain = problem.variables[0].domain
         self.global_index = self.group = group
         self.local_index = index
-        self.first_coupled_axis = np.sum(problem.separable)
+        #self.first_coupled_axis = np.sum(problem.separable)
 
     # @CachedAttribute
     # def group_dict(self):
@@ -97,27 +104,32 @@ class Subproblem:
     #     return group_dict
 
     @CachedMethod
-    def group_shape(self, domain):
+    def subsystem_shape(self, domain):
         """Shape of group coefficients."""
-        group_shape = []
+        shape = []
         for axis, (group, basis) in enumerate(zip(self.group, domain.full_bases)):
             if basis is None:
                 if group in [0, None]:
-                    group_shape.append(1)
+                    shape.append(1)
                 else:
-                    group_shape.append(0)
+                    shape.append(0)
             else:
                 subaxis = axis - basis.axis
                 if group is None:
-                    group_shape.append(basis.shape[subaxis])
+                    shape.append(basis.shape[subaxis])
                 else:
-                    group_shape.append(basis.group_shape[subaxis])
-        return tuple(group_shape)
+                    shape.append(basis.group_shape[subaxis])
+        return tuple(shape)
 
     @CachedMethod
-    def group_size(self, domain):
+    def subsystem_size(self, domain):
         """Size of group coefficients."""
-        return np.prod(self.group_shape(domain))
+        return np.prod(self.subsystem_shape(domain))
+
+    def subfield_size(self, field):
+        comps = np.prod([cs.dim for cs in field.tensorsig], dtype=int)
+        size = self.subsystem_size(field.domain)
+        return comps * size
 
     @CachedMethod
     def _start(self, domain, group_index):
@@ -141,7 +153,7 @@ class Subproblem:
     def _slices(self, domain, group_index):
         """Slices for group coefficients."""
         group_start = self._start(domain, group_index)
-        group_shape = self.group_shape(domain)
+        group_shape = self.subsystem_shape(domain)
         slices = []
         for start, shape in zip(group_start, group_shape):
             slices.append(slice(start, start+shape))
@@ -259,15 +271,17 @@ class Subproblem:
     #         matrices.append(matrix)
     #     return reduce(sparse.kron, matrices, 1)
 
-    def group_to_modes(self, bases):
+    def group_to_modes(self, field):
         """Matrix restricting group data to nonzero modes."""
-        matrices = []
-        for group, basis in zip(self.group, bases):
-            if basis is None:
-                matrices.append(np.array([[1]]))
-            else:
-                matrices.append(basis.mode_map(group))
-        return reduce(sparse.kron, matrices, 1).tocsr()
+        # matrices = []
+        # for group, basis in zip(self.group, bases):
+        #     if basis is None:
+        #         matrices.append(np.array([[1]]))
+        #     else:
+        #         matrices.append(basis.mode_map(group))
+        # return reduce(sparse.kron, matrices, 1).tocsr()
+        size = self.subfield_size(field)
+        return sparse.identity(size, format='csr')
 
     # def mode_map(self, basis_sets):
     #     """Restrict group data to nonzero modes."""
@@ -290,8 +304,8 @@ class Subproblem:
 
         eqns = self.problem.equations
         vars = self.problem.variables
-        eqn_sizes = [self.group_size(eqn['LHS'].domain) for eqn in eqns]
-        var_sizes = [self.group_size(var.domain) for var in vars]
+        eqn_sizes = [self.subfield_size(eqn['LHS']) for eqn in eqns]
+        var_sizes = [self.subfield_size(var) for var in vars]
         I = sum(eqn_sizes)
         J = sum(var_sizes)
 
@@ -299,7 +313,6 @@ class Subproblem:
         # Include all equations and group entries
         matrices = {}
         for name in names:
-            print(name)
             # Collect entries
             data, rows, cols = [], [], []
             i0 = 0
@@ -329,18 +342,19 @@ class Subproblem:
             matrices[name] = sparse.coo_matrix((data, (rows, cols)), shape=(I, J)).tocsr()
 
         # Create maps restricting group data to included modes
-        drop_eqn = [self.group_to_modes(eqn['LHS'].bases) for eqn in eqns]
-        drop_var = [self.group_to_modes(var.bases) for var in vars]
+        drop_eqn = [self.group_to_modes(eqn['LHS']) for eqn in eqns]
+        drop_var = [self.group_to_modes(var) for var in vars]
         # Drop equations that fail condition test
         for n, eqn in enumerate(eqns):
-            if not eval(eqn['condition_str'], self.group_dict):
+            #if not eval(eqn['condition_str'], self.group_dict):
+            if False:  # HACK
                 drop_eqn[n] = drop_eqn[n][0:0, :]
         self.drop_eqn = drop_eqn = sparse_block_diag(drop_eqn).tocsr()
         self.drop_var = drop_var = sparse_block_diag(drop_var).tocsr()
 
         # Check squareness of restricted system
-        if drop_eqn.shape[0] != drop_var.shape[0]:
-            raise ValueError("Non-square system: group={}, I={}, J={}".format(self.group, drop_eqn.shape[0], drop_var.shape[0]))
+        # if drop_eqn.shape[0] != drop_var.shape[0]:
+        #     raise ValueError("Non-square system: group={}, I={}, J={}".format(self.group, drop_eqn.shape[0], drop_var.shape[0]))
 
         # Restrict matrices to included modes
         for name in matrices:

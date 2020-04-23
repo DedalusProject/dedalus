@@ -255,17 +255,25 @@ class ProblemBase:
         """Build corresponding solver class."""
         return self.solver_class(self, *args, **kw)
 
-    def separability(self):
-        seps = [eqn['separability'] for eqn in self.equations]
-        return reduce(np.logical_and, seps)
+    # def separability(self):
+    #     seps = [eqn['separability'] for eqn in self.equations]
+    #     return reduce(np.logical_and, seps)
+
+    # @property
+    # def separable(self):
+    #     return self.separability()
+
+    # @property
+    # def coupled(self):
+    #     return np.invert(self.separable)
 
     @property
-    def separable(self):
-        return self.separability()
+    def matrix_dependence(self):
+        return np.logical_or.reduce([eqn['matrix_dependence'] for eqn in self.equations])
 
     @property
-    def coupled(self):
-        return np.invert(self.separable)
+    def matrix_coupling(self):
+        return np.logical_or.reduce([eqn['matrix_coupling'] for eqn in self.equations])
 
 
 class LinearBoundaryValueProblem(ProblemBase):
@@ -482,7 +490,8 @@ class InitialValueProblem(ProblemBase):
         # eqn['M'] = operators.convert(M, eqn['bases'])
         # eqn['L'] = operators.convert(L, eqn['bases'])
         # eqn['F'] = operators.convert(eqn['RHS'], eqn['bases'])
-        eqn['separability'] = eqn['LHS'].separability(*vars)
+        eqn['matrix_dependence'] = eqn['LHS'].matrix_dependence(*vars)
+        eqn['matrix_coupling'] = eqn['LHS'].matrix_coupling(*vars)
         # # Debug logging
         # logger.debug('  {} linear form: {}'.format('L', eqn['L']))
 

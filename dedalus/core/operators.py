@@ -714,6 +714,8 @@ class SpectralOperator(LinearOperator):
         self.input_basis
         self.output_basis
         self.last_axis
+        self.subaxis_dependence
+        self.subaxis_coupling
 
         # LinearOperator requirements
         self.operand
@@ -724,6 +726,20 @@ class SpectralOperator(LinearOperator):
         self.dtype
 
     """
+
+    def matrix_dependence(self, *vars):
+        # Assumes operand is linear in vars
+        md = self.operand.matrix_dependence(*vars).copy()
+        axes = slice(self.first_axis, self.last_axis+1)
+        md[axes] = np.logical_or(md[axes], self.subaxis_dependence)
+        return md
+
+    def matrix_coupling(self, *vars):
+        # Assumes operand is linear in vars
+        mc = self.operand.matrix_coupling(*vars).copy()
+        axes = slice(self.first_axis, self.last_axis+1)
+        mc[axes] = np.logical_or(mc[axes], self.subaxis_coupling)
+        return mc
 
     def check_conditions(self):
         """Check that arguments are in a proper layout."""
@@ -768,36 +784,39 @@ class SpectralOperator1D(SpectralOperator):
     #     # Subclasses must implement
     #     raise NotImplementedError()
 
-    def separability(self, *vars):
-        """Determine separable dimensions of expression as a linear operator on specified variables."""
-        # Start from operand separability
-        separability = self.operand.separability(*vars).copy()
-        if not self.separable:
-            separability[self.last_axis] = False
-        return separability
+    # def separability(self, *vars):
+    #     """Determine separable dimensions of expression as a linear operator on specified variables."""
+    #     # Start from operand separability
+    #     separability = self.operand.separability(*vars).copy()
+    #     if not self.separable:
+    #         separability[self.last_axis] = False
+    #     return separability
 
     def subproblem_matrix(self, subproblem):
         """Build operator matrix for a specific subproblem."""
         axis = self.last_axis
         # Build identity matrices for each axis
-        group_shape = subproblem.group_shape(self.domain)
-        factors = [sparse.identity(n, format='csr') for n in group_shape]
-        # Substitute group portion of subspace matrix
-        if self.separable:
+        subsystem_shape = subproblem.subsystem_shape(self.domain)
+        factors = [sparse.identity(n, format='csr') for n in subsystem_shape]
+        # Substitute factor for operator axis
+        if self.subaxis_coupling[0]:
+            factors[axis] = self.subspace_matrix
+        else:
             argslice = subproblem.global_slices(self.operand.domain)[axis]
             outslice = subproblem.global_slices(self.domain)[axis]
             factors[axis] = self.subspace_matrix[outslice, argslice]
-        else:
-            factors[axis] = self.subspace_matrix
+        # Add factor for components
+        comps = np.prod([cs.dim for cs in self.tensorsig], dtype=int)
+        factors = [sparse.identity(comps, format='csr')] + factors
         return reduce(sparse.kron, factors, 1).tocsr()
 
     @CachedAttribute
     def subspace_matrix(self):
         """Build matrix operating on global subspace data."""
-        return self._subspace_matrix(self.input_basis, *self.args[1:])
+        return self._subspace_matrix(self.input_basis)
 
     @classmethod
-    def _subspace_matrix(cls, basis, *args):
+    def _subspace_matrix(cls, basis):
         dtype = np.complex128
         N = basis.size
         # Build matrix entry by entry over nonzero bands
@@ -806,13 +825,13 @@ class SpectralOperator1D(SpectralOperator):
             for b in cls.bands:
                 j = i + b
                 if (0 <= j < N):
-                    Mij = cls._subspace_entry(i, j, basis, *args)
+                    Mij = cls._subspace_entry(i, j, basis)
                     if Mij:
                         M[i,j] = Mij
         return M.tocsr()
 
     @staticmethod
-    def _subspace_entry(i, j, basis, *args):
+    def _subspace_entry(i, j, basis):
         raise NotImplementedError()
 
     def operate(self, out):
@@ -901,9 +920,15 @@ class TimeDerivative(LinearOperator):
         # Re-expand to continue propagating
         return out.expand(*vars)
 
-    def separability(self, *vars):
-        """Determine separable dimensions of expression as a linear operator on specified variables."""
-        return self.operand.separability(*vars).copy()
+    # def separability(self, *vars):
+    #     """Determine separable dimensions of expression as a linear operator on specified variables."""
+    #     return self.operand.separability(*vars).copy()
+
+    def matrix_dependence(self, *vars):
+        return self.operand.matrix_dependence(*vars)
+
+    def matrix_coupling(self, *vars):
+        return self.operand.matrix_coupling(*vars)
 
 
 @parseable('interpolate', 'interp')
@@ -957,6 +982,7 @@ class Interpolate(SpectralOperator1D, metaclass=MultiClass):
         self.coord = coord
         self.input_basis = operand.domain.get_basis(coord)
         self.output_basis = self._output_basis(self.input_basis, position)
+        self.first_axis = coord.axis
         self.last_axis = coord.axis
         # LinearOperator requirements
         self.operand = operand
@@ -1159,6 +1185,7 @@ class Differentiate(SpectralOperator1D, metaclass=MultiClass):
         self.coord = coord
         self.input_basis = operand.domain.get_basis(coord)
         self.output_basis = self._output_basis(self.input_basis)
+        self.first_axis = coord.axis
         self.last_axis = coord.axis
         self.axis = coord.axis
         # LinearOperator requirements
@@ -1303,6 +1330,7 @@ class Convert(SpectralOperator, metaclass=MultiClass):
         self.coords = output_basis.coords
         self.input_basis = operand.domain.get_basis(self.coords)
         self.output_basis = output_basis
+        self.first_axis = self.output_basis.first_axis
         self.last_axis = self.output_basis.last_axis
         # LinearOperator requirements
         self.operand = operand
@@ -1589,48 +1617,6 @@ class AngularComponent(SphericalComponent, metaclass=MultiClass):
         return AngularComponent
 
 
-class SphericalEllOperator(SpectralOperator, metaclass=MultiClass):
-
-    def operate(self, out):
-        """Perform operation."""
-        operand = self.args[0]
-        basis = self.input_basis
-        # Set output layout
-        out.set_layout(operand.layout)
-        out.data[:] = 0
-        # Apply operator
-        R_in = basis.regularity_classes(operand.tensorsig)
-        for regindex_in, regtotal_in in np.ndenumerate(R_in):
-            for regindex_out in self.regindex_out(regindex_in):
-                comp_in = operand.data[regindex_in]
-                comp_out = out.data[regindex_out]
-                for m in basis.local_m:
-                    for ell in basis.local_l:
-                        vec3_in = basis.radial_vector_3(comp_in, m, ell, regindex_in)
-                        vec3_out = basis.radial_vector_3(comp_out, m, ell, regindex_out)
-                        if (vec3_in is not None) and (vec3_out is not None):
-                            A = self.radial_matrix(regindex_in, regindex_out, ell)
-                            vec3_out += apply_matrix(A, vec3_in, axis=1)
-
-    def subproblem_matrix(self, subproblem):
-        operand = self.args[0]
-        R_in = self.input_basis.regularity_classes(operand.tensorsig)
-        R_out = self.input_basis.regularity_classes(self.tensorsig)
-
-        # need to get ell from subproblem -- don't know how to do this
-        ell = subproblem.ell
-
-        submatrices = []
-        for regindex_out, regtotal_out in np.ndenumerate(R_out):
-            submatrix_row = []
-            for regindex_in, regtotal_in in np.ndenumerate(R_in):
-                submatrix_row.append(self.radial_matrix(regindex_in, regindex_out, ell))
-            submatrices.append(submatrix_row)
-        matrix = sparse.bmat(submatrices)
-        matrix.tocsr()
-        return matrix
-
-
 class Gradient(LinearOperator, metaclass=MultiClass):
 
     name = "Grad"
@@ -1673,9 +1659,17 @@ class CartesianGradient(Gradient):
     def new_operand(self, operand):
         return Gradient(operand, self.coordsys)
 
-    def separability(self, *vars):
-        arg_seps = [arg.separability(*vars) for arg in self.args]
-        return np.logical_and.reduce(arg_seps)
+    def matrix_dependence(self, *vars):
+        arg_vals = [arg.matrix_dependence(self, *vars) for arg in self.args]
+        return np.logical_or.reduce(arg_vals)
+
+    def matrix_coupling(self, *vars):
+        arg_vals = [arg.matrix_coupling(self, *vars) for arg in self.args]
+        return np.logical_or.reduce(arg_vals)
+
+    def subproblem_matrix(self, subproblem):
+        """Build operator matrix for a specific subproblem."""
+        return sparse.vstack(arg.subproblem_matrix(subproblem) for arg in self.args)
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""
@@ -1906,8 +1900,14 @@ class Component(LinearOperator, metaclass=MultiClass):
     def new_operand(self, operand):
         return Component(operand, self.index, self.coord)
 
-    def separability(self, *vars):
-        return self.operand.separability(*vars)
+    # def separability(self, *vars):
+    #     return self.operand.separability(*vars)
+
+    def matrix_dependence(self, *vars):
+        return self.operand.matrix_dependence(*vars)
+
+    def matrix_coupling(self, *vars):
+        return self.operand.matrix_coupling(*vars)
 
 
 class CartesianComponent(Component):
@@ -1927,7 +1927,7 @@ class CartesianComponent(Component):
     def subproblem_matrix(self, subproblem):
         # Build identities for each tangent space
         factors = [sparse.identity(cs.dim, format='csr') for cs in self.operand.tensorsig]
-        factors.append(sparse.identity(subproblem.group_size(self.domain), format='csr'))
+        factors.append(sparse.identity(subproblem.subsystem_size(self.domain), format='csr'))
         # Build selection matrix for selected coord
         index_factor = np.zeros((1, self.coordsys.dim))
         index_factor[0, self.coord_subaxis] = 1
@@ -1991,8 +1991,14 @@ class CartesianDivergence(Divergence):
     def new_operand(self, operand):
         return Divergence(operand, index=self.index)
 
-    def separability(self, *vars):
-        return self.original_args[0].separability(*vars)
+    def matrix_dependence(self, *vars):
+        return self.args[0].matrix_dependence(*vars)
+
+    def matrix_coupling(self, *vars):
+        return self.args[0].matrix_coupling(*vars)
+
+    # def separability(self, *vars):
+    #     return self.original_args[0].separability(*vars)
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""
@@ -2214,8 +2220,15 @@ class CartesianLaplacian(Laplacian):
     def new_operand(self, operand):
         return Laplacian(operand, self.coordsys)
 
-    def separability(self, *vars):
-        return self.original_args[0].separability(*vars)
+    def matrix_dependence(self, *vars):
+        return self.args[0].matrix_dependence(*vars)
+
+    def matrix_coupling(self, *vars):
+        return self.args[0].matrix_coupling(*vars)
+
+    def expression_matrices(self, subproblem, vars):
+        """Build expression matrices for a specific subproblem and variables."""
+        return self.args[0].expression_matrices(subproblem, vars)
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""

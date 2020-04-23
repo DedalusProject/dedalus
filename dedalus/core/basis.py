@@ -113,6 +113,10 @@ class Basis:
     #     return self.__mul__(other)
 
     @property
+    def first_axis(self):
+        return self.axis
+
+    @property
     def last_axis(self):
         return self.axis + self.dim - 1
 
@@ -412,7 +416,8 @@ class ConvertJacobi(operators.Convert, operators.SpectralOperator1D):
 
     input_basis_type = Jacobi
     output_basis_type = Jacobi
-    separable = False
+    subaxis_dependence = [True]
+    subaxis_coupling = [True]
 
     @staticmethod
     def _subspace_matrix(input_basis, output_basis):
@@ -440,7 +445,8 @@ class DifferentiateJacobi(operators.Differentiate):
     """Jacobi polynomial differentiation."""
 
     input_basis_type = Jacobi
-    separable = False
+    subaxis_dependence = [True]
+    subaxis_coupling = [True]
 
     @staticmethod
     def _output_basis(input_basis):
@@ -460,7 +466,8 @@ class InterpolateJacobi(operators.Interpolate):
     """Jacobi polynomial interpolation."""
 
     input_basis_type = Jacobi
-    separable = False
+    subaxis_dependence = [True]
+    subaxis_coupling = [True]
 
     @staticmethod
     def _subspace_matrix(input_basis, position):
@@ -600,7 +607,8 @@ class DifferentiateComplexFourier(operators.Differentiate):
 
     input_basis_type = ComplexFourier
     bands = [0]
-    separable = True
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
 
     @staticmethod
     def _output_basis(input_basis):

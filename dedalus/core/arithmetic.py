@@ -112,11 +112,17 @@ class Add(Future, metaclass=MultiClass):
         for arg in self.args:
             arg.require_linearity(*vars, name=name)
 
-    def separability(self, *vars):
-        """Determine separable dimensions of expression as a linear operator on specified variables."""
-        # Logical and of argument separabilities
-        arg_seps = [arg.separability(*vars) for arg in self.args]
-        return np.logical_and.reduce(arg_seps)
+    def matrix_dependence(self, *vars):
+        return np.logical_or.reduce([arg.matrix_dependence(*vars) for arg in self.args])
+
+    def matrix_coupling(self, *vars):
+        return np.logical_or.reduce([arg.matrix_coupling(*vars) for arg in self.args])
+
+    # def separability(self, *vars):
+    #     """Determine separable dimensions of expression as a linear operator on specified variables."""
+    #     # Logical and of argument separabilities
+    #     arg_seps = [arg.separability(*vars) for arg in self.args]
+    #     return np.logical_and.reduce(arg_seps)
 
     # def operator_order(self, operator):
     #     """Determine maximum application order of an operator in the expression."""
@@ -318,14 +324,14 @@ class Multiply(Future, metaclass=MultiClass):
         operand.require_linearity(*vars, name=name)
         return nccs, operand
 
-    def separability(self, *vars):
-        """Determine separable dimensions of expression as a linear operator on specified variables."""
-        nccs, operand = self.require_linearity(*vars)
-        # NCCs couple along any non-constant dimensions
-        ncc_bases = Operand.cast(np.prod(nccs), self.dist).domain.full_bases
-        ncc_separability = np.array([(basis is None) for basis in ncc_bases])
-        # Combine with operand separability
-        return ncc_separability & operand.separability(*vars)
+    # def separability(self, *vars):
+    #     """Determine separable dimensions of expression as a linear operator on specified variables."""
+    #     nccs, operand = self.require_linearity(*vars)
+    #     # NCCs couple along any non-constant dimensions
+    #     ncc_bases = Operand.cast(np.prod(nccs), self.dist).domain.full_bases
+    #     ncc_separability = np.array([(basis is None) for basis in ncc_bases])
+    #     # Combine with operand separability
+    #     return ncc_separability & operand.separability(*vars)
 
     # def operator_order(self, operator):
     #     """Determine maximum application order of an operator in the expression."""
@@ -527,6 +533,12 @@ class MultiplyNumberField(Multiply, FutureField):
         out.set_layout(arg1.layout)
         # Multiply all argument data, reshaped by tensorsig
         np.multiply(arg0, arg1.data, out=out.data)
+
+    def matrix_dependence(self, *vars):
+        return self.args[1].matrix_dependence(*vars)
+
+    def matrix_coupling(self, *vars):
+        return self.args[1].matrix_coupling(*vars)
 
     def expression_matrices(self, subproblem, vars):
         """Build expression matrices for a specific subproblem and variables."""
