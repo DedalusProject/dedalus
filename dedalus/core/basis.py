@@ -629,7 +629,8 @@ class InterpolateComplexFourier(operators.Interpolate):
     """Complex Fourier interpolation."""
 
     input_basis_type = ComplexFourier
-    separable = False
+    subaxis_dependence = [True]
+    subaxis_coupling = [True]
 
     @staticmethod
     def _subspace_matrix(input_basis, position):

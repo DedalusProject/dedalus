@@ -1,7 +1,7 @@
 
 
 import numpy as np
-from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers
+from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
 from dedalus.tools import logging
 from dedalus.tools.parsing import split_equation
 
@@ -36,7 +36,7 @@ ghat = - ez
 div = lambda A: operators.Divergence(A, index=0)
 lap = lambda A: operators.Laplacian(A, c)
 grad = lambda A: operators.Gradient(A, c)
-dot = lambda A, B: operators.DotProduct(A, B)
+dot = lambda A, B: arithmetic.DotProduct(A, B)
 dt = lambda A: operators.TimeDerivative(A)
 
 # Problem

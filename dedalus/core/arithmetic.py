@@ -210,13 +210,13 @@ class AddFields(Add, FutureField):
 # used for einsum string manipulation
 alphabet = "abcdefghijklmnopqrstuvwxy"
 
-class DotProduct(Future, metaclass=MultiClass):
+class DotProduct(FutureField):
 
     name = "Dot"
 
     @classmethod
     def _preprocess_args(cls, arg0, arg1, indices=(-1,0), out=None):
-        if (not isinstance(arg0, Future)) or (not is instance(arg1, Future)):
+        if (not isinstance(arg0, Future)) or (not isinstance(arg1, Future)):
             raise ValueError("Both arguments to DotProduct must be Future")
         arg0_rank = len(arg0.tensorsig)
         arg1_rank = len(arg1.tensorsig)
@@ -228,11 +228,6 @@ class DotProduct(Future, metaclass=MultiClass):
                 index += rank
         indices = tuple(indices)
         return arg0, arg1, indices, out
-
-# Don't know if we need this either...
-#    @classmethod
-#    def _check_args(cls, *args, **kw):
-#        return all(isinstance(arg, cls.argtypes) for arg in args)
 
     def __init__(self, arg0, arg1, indices=(-1,0), out=None):
         super().__init__(arg0, arg1, out=out)
@@ -428,10 +423,6 @@ class DotProduct(Future, metaclass=MultiClass):
         arg0, arg1 = self.args
         arg0.require_grid_space()
         arg1.require_grid_space()
-
-    @classmethod
-    def _check_args(cls, arg0, arg1, indices=(-1,0), out=None):
-        return True
 
     def operate(self, out):
         arg0, arg1 = self.args

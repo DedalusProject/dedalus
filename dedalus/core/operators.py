@@ -749,7 +749,7 @@ class SpectralOperator(LinearOperator):
         is_local = arg0.layout.local[last_axis]
         # Require coefficient space along last axis
         # Require locality along last axis if non-separable
-        if self.separable:
+        if not self.subaxis_coupling[-1]:
             return is_coeff
         else:
             return (is_coeff and is_local)
@@ -761,7 +761,7 @@ class SpectralOperator(LinearOperator):
         # Require coefficient space along last axis
         arg0.require_coeff_space(last_axis)
         # Require locality along last axis if non-separable
-        if not self.separable:
+        if not not self.subaxis_coupling[-1]:
             arg0.require_local(last_axis)
 
 
@@ -843,7 +843,7 @@ class SpectralOperator1D(SpectralOperator):
         # Set output layout
         out.set_layout(layout)
         # Restrict subspace matrix to local elements if separable
-        if self.separable:
+        if not self.subaxis_coupling[-1]:
             arg_elements = arg.local_elements()[axis]
             out_elements = out.local_elements()[axis]
             matrix = matrix[arg_elements[:,None], out_elements[None,:]]
@@ -1376,7 +1376,7 @@ class Convert(SpectralOperator, metaclass=MultiClass):
         if not is_coeff:
             return True
         # In coeff space, require locality if non-separable
-        if self.separable:
+        if not self.subaxis_coupling[-1]:
             return True
         else:
             return is_local
@@ -1388,7 +1388,7 @@ class Convert(SpectralOperator, metaclass=MultiClass):
         is_coeff = not arg0.layout.grid_space[last_axis]
         is_local = arg0.layout.local[last_axis]
         # Require locality if non-separable and in coeff space
-        if is_coeff and not self.separable:
+        if is_coeff and self.subaxis_coupling[-1]:
             self.args[0].require_local(last_axis)
 
     @property
