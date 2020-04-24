@@ -2,7 +2,7 @@
 # import scipy             as sp
 # import scipy.sparse      as sparse
 # import scipy.linalg      as linear
-# import scipy.special     as fun
+import scipy.special     as fun
 
 
 
@@ -112,8 +112,8 @@
 # def pull(operator,data):
 #     return (operator.transpose()).dot(data)
 
-# def mass(a,b):
-#     return np.exp( (a+b+1)*np.log(2) + fun.gammaln(a+1) + fun.gammaln(b+1) - fun.gammaln(a+b+2) )
+def mass(a,b):
+    return np.exp( (a+b+1)*np.log(2) + fun.gammaln(a+1) + fun.gammaln(b+1) - fun.gammaln(a+b+2) )
 
 # def Jacobi_operator(op,a,b,max_degree,format='csr',rescale=None):
 
@@ -250,9 +250,9 @@ def differentiation_matrix(N, a, b):
     diff = jacobi128.operator('D+', N-1, a, b)
     return diff.tocsr().astype(output_dtype)
 
-# def jacobi_matrix(N, a, b):
-#     J = Jacobi_operator('J', a, b, N-1)
-#     return J.tocsr().astype(output_dtype)
+def jacobi_matrix(N, a, b):
+    J = jacobi128.operator('J', N, a, b)
+    return J.tocsr().astype(output_dtype)
 
 def interpolation_vector(M, a, b, x):
     X = np.array([x])  # jacobi128 currently requires grid to be an array
