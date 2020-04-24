@@ -207,6 +207,83 @@ class AddFields(Add, FutureField):
         np.copyto(out.data, np.sum(args_data, axis=0))
 
 
+# used for einsum string manipulation
+alphabet = "abcdefghijklmnopqrstuvwxy"
+
+class DotProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
+
+    name = "Dot"
+
+    # Should make sure arg0 and arg1 are at least rank 1
+    # and that the cs are the same for arg0 and arg1
+
+    def __init__(self, arg0, arg1, indices=(-1,0), out=None):
+        super().__init__(arg0, arg1, out=out)
+        self.arg0_rank = len(arg0.tensorsig)
+        self.arg1_rank = len(arg1.tensorsig)
+        arg0_ts_reduced = list(arg0.tensorsig)
+        arg0_ts_reduced.pop(indices[0])
+        arg1_ts_reduced = list(arg1.tensorsig)
+        arg1_ts_reduced.pop(indices[1])
+        self.indices = indices
+        # FutureField requirements
+        self.domain = Domain(arg0.dist, self._bases)
+        self.tensorsig = tuple(arg0_ts_reduced + arg1_ts_reduced)
+        self.dtype = np.result_type(arg0.dtype, arg1.dtype)
+
+    @CachedAttribute
+    def _bases(self):
+        # Need to fix this to do real multiplication
+        arg0, arg1 = self.args
+        return tuple(b0*b1 for b0, b1 in zip(arg0.domain.bases, arg1.domain.bases))
+
+    def check_conditions(self):
+        layout0 = self.args[0].layout
+        layout1 = self.args[1].layout
+        # Fields must be in grid layout
+        # Just do full grid space for now
+        return all(layout0.grid_space) and (layout0 is layout1)
+
+    def enforce_conditions(self):
+        arg0, arg1 = self.args
+        # if self.require_grid_axis is not None:
+        #     axis = self.require_grid_axis
+        #     arg0.require_grid_space(axis=axis)
+        # arg1.require_layout(arg0.layout)
+        arg0.require_grid_space()
+        arg1.require_grid_space()
+
+    @classmethod
+    def _check_args(cls, arg0, arg1, indices=(-1,0), out=None):
+        return True
+
+    @property
+    def base(self):
+        return DotProduct
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+
+        out.set_layout(arg0.layout)
+
+        # compose eigsum string
+        array0_str = alphabet[:self.arg0_rank]
+        char0 = array0_str[self.indices[0]]
+        array0_str = array0_str.replace(char0,'z')
+
+        array1_str = alphabet[-self.arg1_rank:]
+        char1 = array1_str[self.indices[1]]
+        array1_str = array1_str.replace(char1,'z')
+
+        array0_str_reduced = array0_str.replace('z','')
+        array1_str_reduced = array1_str.replace('z','')
+        out_str = array0_str_reduced + array1_str_reduced
+
+        einsum_str = array0_str + '...,' + array1_str + '...->' + out_str + '...'
+
+        np.einsum(einsum_str,arg0.data,arg1.data,out=out.data)
+
+
 class Multiply(Future, metaclass=MultiClass):
     """Multiplication operator."""
 
