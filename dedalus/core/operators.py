@@ -713,6 +713,7 @@ class SpectralOperator(LinearOperator):
         self.coord
         self.input_basis
         self.output_basis
+        self.first_axis
         self.last_axis
         self.subaxis_dependence
         self.subaxis_coupling
@@ -940,7 +941,7 @@ def interpolate(arg, **positions):
         arg = Interpolate(arg, coord, position)
     return arg
 
-class Interpolate(SpectralOperator1D, metaclass=MultiClass):
+class Interpolate(SpectralOperator, metaclass=MultiClass):
     """
     Interpolation along one dimension.
 
@@ -982,8 +983,8 @@ class Interpolate(SpectralOperator1D, metaclass=MultiClass):
         self.coord = coord
         self.input_basis = operand.domain.get_basis(coord)
         self.output_basis = self._output_basis(self.input_basis, position)
-        self.first_axis = coord.axis
-        self.last_axis = coord.axis
+        self.first_axis = self.input_basis.first_axis
+        self.last_axis = self.input_basis.last_axis
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements
@@ -1635,6 +1636,9 @@ class Gradient(LinearOperator, metaclass=MultiClass):
                 return True
         return False
 
+    def new_operand(self, operand):
+        return Gradient(operand, self.coordsys)
+
 
 class CartesianGradient(Gradient):
 
@@ -1655,9 +1659,6 @@ class CartesianGradient(Gradient):
 
     def _build_bases(self, *args):
         return sum(args).domain.bases
-
-    def new_operand(self, operand):
-        return Gradient(operand, self.coordsys)
 
     def matrix_dependence(self, *vars):
         arg_vals = [arg.matrix_dependence(self, *vars) for arg in self.args]
@@ -1769,6 +1770,9 @@ def reduced_view_4(data, axis):
 
 class SphericalEllOperator(SpectralOperator, metaclass=MultiClass):
 
+    subaxis_dependence = [False, True, True]  # Depends on ell and n
+    subaxis_coupling = [False, False, True]  # Only couples n
+
     def operate(self, out):
         """Perform operation."""
         operand = self.args[0]
@@ -1794,15 +1798,19 @@ class SphericalEllOperator(SpectralOperator, metaclass=MultiClass):
         operand = self.args[0]
         R_in = self.input_basis.regularity_classes(operand.tensorsig)
         R_out = self.input_basis.regularity_classes(self.tensorsig)
-
-        # need to get ell from subproblem -- don't know how to do this
-        ell = subproblem.ell
-
+        ell = subproblem.group[self.last_axis - 1]
+        # Loop over components
         submatrices = []
         for regindex_out, regtotal_out in np.ndenumerate(R_out):
             submatrix_row = []
             for regindex_in, regtotal_in in np.ndenumerate(R_in):
-                submatrix_row.append(self.radial_matrix(regindex_in, regindex_out, ell))
+                # Build identity matrices for each axis
+                subsystem_shape = subproblem.subsystem_shape(self.domain)
+                factors = [sparse.identity(n, format='csr') for n in subsystem_shape]
+                # Substitute factor for radial axis
+                factors[self.last_axis] = self.radial_matrix(regindex_in, regindex_out, ell)
+                comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
+                submatrix_row.append(comp_matrix)
             submatrices.append(submatrix_row)
         matrix = sparse.bmat(submatrices)
         matrix.tocsr()
@@ -1826,6 +1834,7 @@ class SphericalGradient(Gradient, SphericalEllOperator):
         # SpectralOperator requirements
         self.input_basis = operand.domain.get_basis(coordsys)
         self.output_basis = self._output_basis(self.input_basis)
+        self.first_axis = self.input_basis.first_axis
         self.last_axis = self.input_basis.last_axis
         # LinearOperator requirements
         self.operand = operand
@@ -1964,6 +1973,9 @@ class Divergence(LinearOperator, metaclass=MultiClass):
                 return True
         return False
 
+    def new_operand(self, operand):
+        return Divergence(operand, index=self.index)
+
 
 class CartesianDivergence(Divergence):
 
@@ -1987,9 +1999,6 @@ class CartesianDivergence(Divergence):
         self.domain = arg.domain
         self.tensorsig = arg.tensorsig
         self.dtype = arg.dtype
-
-    def new_operand(self, operand):
-        return Divergence(operand, index=self.index)
 
     def matrix_dependence(self, *vars):
         return self.args[0].matrix_dependence(*vars)
@@ -2038,6 +2047,7 @@ class SphericalDivergence(Divergence, SphericalEllOperator):
         # SpectralOperator requirements
         self.input_basis = operand.domain.get_basis(coordsys)
         self.output_basis = self._output_basis(self.input_basis)
+        self.first_axis = self.input_basis.first_axis
         self.last_axis = self.input_basis.last_axis
         # LinearOperator requirements
         self.operand = operand
@@ -2196,9 +2206,8 @@ class Laplacian(LinearOperator, metaclass=MultiClass):
                 return True
         return False
 
-    @property
-    def base(self):
-        return Laplacian
+    def new_operand(self, operand):
+        return Laplacian(operand, self.coordsys)
 
 
 class CartesianLaplacian(Laplacian):
@@ -2216,9 +2225,6 @@ class CartesianLaplacian(Laplacian):
         self.domain = arg.domain
         self.tensorsig = arg.tensorsig
         self.dtype = arg.dtype
-
-    def new_operand(self, operand):
-        return Laplacian(operand, self.coordsys)
 
     def matrix_dependence(self, *vars):
         return self.args[0].matrix_dependence(*vars)
@@ -2260,6 +2266,7 @@ class SphericalLaplacian(Laplacian, SphericalEllOperator):
         # SpectralOperator requirements
         self.input_basis = operand.domain.get_basis(coordsys)
         self.output_basis = self._output_basis(self.input_basis)
+        self.first_axis = self.input_basis.first_axis
         self.last_axis = self.input_basis.last_axis
         # LinearOperator requirements
         self.operand = operand

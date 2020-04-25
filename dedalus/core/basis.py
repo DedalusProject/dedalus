@@ -31,7 +31,7 @@ import logging
 logger = logging.getLogger(__name__.split('.')[-1])
 
 from ..tools.config import config
-DEFAULT_LIBRARY = config['transforms'].get('DEFAULT_LIBRARY')
+#DEFAULT_LIBRARY = config['transforms'].get('DEFAULT_LIBRARY')
 DEFAULT_LIBRARY = 'scipy'
 
 
@@ -291,6 +291,14 @@ class IntervalBasis(Basis):
         # Subclasses must implement
         raise NotImplementedError
 
+    def coeff_subshape(self, groups):
+        subshape = []
+        for subaxis, group in enumerate(groups):
+            if group is None:
+                subshape.append(self.shape[subaxis])
+            else:
+                subshape.append(self.group_shape[subaxis])
+        return subshape
 
 class Jacobi(IntervalBasis, metaclass=CachedClass):
     """Jacobi polynomial basis."""
@@ -462,7 +470,7 @@ class DifferentiateJacobi(operators.Differentiate):
         return (matrix.tocsr() / input_basis.COV.stretch)
 
 
-class InterpolateJacobi(operators.Interpolate):
+class InterpolateJacobi(operators.Interpolate, operators.SpectralOperator1D):
     """Jacobi polynomial interpolation."""
 
     input_basis_type = Jacobi
@@ -625,7 +633,7 @@ class DifferentiateComplexFourier(operators.Differentiate):
             raise
 
 
-class InterpolateComplexFourier(operators.Interpolate):
+class InterpolateComplexFourier(operators.Interpolate, operators.SpectralOperator1D):
     """Complex Fourier interpolation."""
 
     input_basis_type = ComplexFourier
@@ -1191,12 +1199,25 @@ class RegularityBasis(MultidimensionalBasis):
         li = self.local_l.index(ell)
         return (mi, li, self.n_slice(regindex, ell))
 
-    def field_radial_size(self, field, ell):
-        comp_sizes = []
-        R = self.regularity_classes(field.tensorsig)
-        for regindex, regtotal in np.ndenumerate(R):
-            comp_sizes.append(self.n_size(regindex, ell))
-        return sum(comp_sizes)
+    def coeff_subshape(self, groups):
+        subshape = []
+        for subaxis, group in enumerate(groups):
+            if group is None:
+                if subaxis == 2:
+                    ell = groups[1]
+                    subshape.append(self.n_size((), ell))  # Hack to avoid passing regindex?
+                else:
+                    subshape.append(self.shape[subaxis])
+            else:
+                subshape.append(self.group_shape[subaxis])
+        return subshape
+
+    # def field_radial_size(self, field, ell):
+    #     comp_sizes = []
+    #     R = self.regularity_classes(field.tensorsig)
+    #     for regindex, regtotal in np.ndenumerate(R):
+    #         comp_sizes.append(self.n_size(regindex, ell))
+    #     return sum(comp_sizes)
 
     def dot_product_ncc(self, arg_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, ncc_first, indices, cutoff=1e-6):
         Gamma = dedalus_sphere.intertwiner.GammaDotProduct(indices, ncc_first=ncc_first)
@@ -1336,6 +1357,48 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
                                    self.forward_transform_colatitude]
         self.backward_transforms = [self.backward_transform_azimuth,
                                     self.backward_transform_colatitude]
+        self.grid_params = (coordsystem, radius)
+
+    def __eq__(self, other):
+        if isinstance(other, SpinWeightedSphericalHarmonics):
+            if self.grid_params == other.grid_params:
+                if self.shape == other.shape:
+                    return True
+        return False
+
+    def __hash__(self):
+        return id(self)
+
+    def __add__(self, other):
+        if other is None:
+            return self
+        if other is self:
+            return self
+        if isinstance(other, SpinWeightedSphericalHarmonics):
+            if self.radius == other.radius:
+                shape = tuple(np.maximum(self.shape, other.shape))
+                return SpinWeightedSphericalHarmonics(self.coordsystem, shape, radius=self.radius)
+        return NotImplemented
+
+    def __mul__(self, other):
+        if other is None:
+            return self
+        if other is self:
+            return self
+        if isinstance(other, SpinWeightedSphericalHarmonics):
+            if self.radius == other.radius:
+                shape = tuple(np.maximum(self.shape, other.shape))
+                return SpinWeightedSphericalHarmonics(self.coordsystem, shape, radius=self.radius)
+        return NotImplemented
+
+    def coeff_subshape(self, groups):
+        subshape = []
+        for subaxis, group in enumerate(groups):
+            if group is None:
+                subshape.append(self.shape[subaxis])
+            else:
+                subshape.append(self.group_shape[subaxis])
+        return subshape
 
     @CachedAttribute
     def local_l(self):
@@ -1478,7 +1541,7 @@ class SphericalShellBasis(RegularityBasis):
             return self
         if isinstance(other, SphericalShellBasis):
             if self.grid_params == other.grid_params:
-                shape = np.maximum(self.shape, other.shape)
+                shape = tuple(np.maximum(self.shape, other.shape))
                 k = max(self.k, other.k)
                 return SphericalShellBasis(self.coordsystem, shape, radii=self.radii, alpha=self.alpha, k=k)
         return NotImplemented
@@ -1490,7 +1553,7 @@ class SphericalShellBasis(RegularityBasis):
             return self
         if isinstance(other, SphericalShellBasis):
             if self.grid_params == other.grid_params:
-                shape = np.maximum(self.shape, other.shape)
+                shape = tuple(np.maximum(self.shape, other.shape))
                 k = 0
                 return SphericalShellBasis(self.coordsystem, shape, radii=self.radii, alpha=self.alpha, k=k)
         return NotImplemented
@@ -1606,6 +1669,7 @@ class BallBasis(RegularityBasis):
                                     self.backward_transform_colatitude,
                                     self.backward_transform_radius]
         self.grid_params = (coordsystem, radius, alpha)
+        self.surface_basis = self.S2_basis(self.radius)
 
     def __eq__(self, other):
         if isinstance(other, BallBasis):
@@ -1625,7 +1689,7 @@ class BallBasis(RegularityBasis):
             return self
         if isinstance(other, BallBasis):
             if self.grid_params == other.grid_params:
-                shape = np.maximum(self.shape, other.shape)
+                shape = tuple(np.maximum(self.shape, other.shape))
                 k = max(self.k, other.k)
                 return BallBasis(self.coordsystem, shape, radius=self.radius, k=k, alpha=self.alpha)
         return NotImplemented
@@ -1637,7 +1701,7 @@ class BallBasis(RegularityBasis):
             return self
         if isinstance(other, BallBasis):
             if self.grid_params == other.grid_params:
-                shape = np.maximum(self.shape, other.shape)
+                shape = tuple(np.maximum(self.shape, other.shape))
                 k = 0
                 return BallBasis(self.coordsystem, shape, radius=self.radius, k=k, alpha=self.alpha)
         return NotImplemented
@@ -1760,7 +1824,8 @@ class ConvertRegularity(operators.Convert, operators.SphericalEllOperator):
 
     input_basis_type = RegularityBasis
     output_basis_type = RegularityBasis
-    separable = False
+    subaxis_dependence = [False, True, True]
+    subaxis_coupling = [False, False, True]
 
     def regindex_out(self, regindex_in):
         # Doesn't couple components
@@ -1791,11 +1856,12 @@ class ConvertRegularity(operators.Convert, operators.SphericalEllOperator):
 #        return False
 
 
-class BallRadialInterpolate(operators.Interpolate):
+class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperator):
 
     basis_type = BallBasis
     basis_subaxis = 2
-    separable = False
+    subaxis_dependence = [False, True, False]
+    subaxis_coupling = [False, False, True]
 
     @classmethod
     def _check_args(cls, operand, coord, position, out=None):
@@ -1811,22 +1877,10 @@ class BallRadialInterpolate(operators.Interpolate):
         return input_basis.S2_basis(radius=position)
 
     def subproblem_matrix(self, subproblem):
-        operand = self.args[0]
-        R_in = self.input_basis.regularity_classes(operand.tensorsig)
-        R_out = self.input_basis.regularity_classes(self.tensorsig)
-
-        # need to get ell from subproblem -- don't know how to do this
-        ell = subproblem.ell
-
-        submatrices = []
-        for regindex_out, regtotal_out in np.ndenumerate(R_out):
-            submatrix_row = []
-            for regindex_in, regtotal_in in np.ndenumerate(R_in):
-                submatrix_row.append(self.radial_matrix(ell, regindex_in, regindex_out))
-            submatrices.append(submatrix_row)
-        matrix = np.bmat(submatrices)
+        ell = subproblem.group[self.last_axis - 1]
+        matrix = super().subproblem_matrix(subproblem)
         if self.tensorsig != ():
-            Q = self.input_basis.radial_recombinations(self.tensorsig,ell_list=(ell,))
+            Q = self.input_basis.radial_recombinations(self.tensorsig, ell_list=(ell,))
             matrix = Q[0] @ matrix
         return matrix
 
@@ -1852,7 +1906,7 @@ class BallRadialInterpolate(operators.Interpolate):
         # Q matrix
         basis_in.backward_regularity_recombination(operand.tensorsig, self.basis_subaxis, out.data)
 
-    def radial_matrix(self, ell, regindex_in, regindex_out):
+    def radial_matrix(self, regindex_in, regindex_out, ell):
         position = self.position
         basis = self.input_basis
         if regindex_in == regindex_out:

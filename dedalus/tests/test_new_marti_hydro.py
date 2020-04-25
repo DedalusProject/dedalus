@@ -1,7 +1,7 @@
 
 
 import numpy as np
-from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers
+from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
 from dedalus.tools import logging
 from dedalus.tools.parsing import split_equation
 
@@ -11,8 +11,8 @@ logger = logging.getLogger(__name__)
 
 # Parameters
 radius = 1
-Lmax = 15
-Nmax = 15
+Lmax = 9
+Nmax = 9
 Om = 20.
 u0 = np.sqrt(3/(2*np.pi))
 nu = 1e-2
@@ -29,24 +29,24 @@ b_S2 = b.S2_basis()
 phi, theta, r = b.local_grids((1, 1, 1))
 
 # Fields
-u = de.field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
-p = de.field.Field(dist=d, bases=(b,), dtype=np.complex128)
+u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
+p = field.Field(dist=d, bases=(b,), dtype=np.complex128)
 
 # create boundary conditions
-u_BC = de.field.Field(dist=d, bases=(b_S2,), tensorsig=(c,), dtype=np.complex128)
+u_BC = field.Field(dist=d, bases=(b_S2,), tensorsig=(c,), dtype=np.complex128)
 u_BC['g'][2] = 0. # u_r = 0
 u_BC['g'][1] = - u0*np.cos(theta)*np.cos(phi)
 u_BC['g'][0] = u0*np.sin(phi)
 
 # Parameters and operators
-ez = de.field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
+ez = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
 ez['g'][1] = -np.sin(theta)
 ez['g'][2] =  np.cos(theta)
 div = lambda A: operators.Divergence(A, index=0)
 lap = lambda A: operators.Laplacian(A, c)
 grad = lambda A: operators.Gradient(A, c)
-dot = lambda A, B: operators.DotProduct(A, B)
-cross = lambda A, B: operators.CrossProdcut(A, B)
+dot = lambda A, B: arithmetic.DotProduct(A, B)
+cross = lambda A, B: operators.CrossProduct(A, B)
 dt = lambda A: operators.TimeDerivative(A)
 
 # Problem
@@ -76,4 +76,4 @@ for i, sp in enumerate(solver.subproblems[:I]):
         axes.set_aspect('equal')
         plt.colorbar(im)
 plt.tight_layout()
-plt.savefig("rbc_matrices.pdf")
+plt.savefig("nmh_matrices.pdf")

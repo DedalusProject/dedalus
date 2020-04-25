@@ -114,11 +114,9 @@ class Subproblem:
                 else:
                     shape.append(0)
             else:
-                subaxis = axis - basis.axis
-                if group is None:
-                    shape.append(basis.shape[subaxis])
-                else:
-                    shape.append(basis.group_shape[subaxis])
+                subaxis = axis - basis.first_axis
+                basis_group = self.group[basis.first_axis:basis.last_axis+1]
+                shape.append(basis.coeff_subshape(basis_group)[subaxis])
         return tuple(shape)
 
     @CachedMethod
@@ -328,7 +326,7 @@ class Subproblem:
                         j0 = 0
                         for var, var_size in zip(vars, var_sizes):
                             if var_size and (var in eqn_blocks):
-                                block = eqn_blocks[var].tocoo()
+                                block = sparse.coo_matrix(eqn_blocks[var])
                                 data.append(block.data)
                                 rows.append(i0 + block.row)
                                 cols.append(j0 + block.col)
