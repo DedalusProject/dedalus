@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 # Parameters
 radius = 1
-Lmax = 9
+Lmax = 3
 Nmax = 9
 Om = 20.
 u0 = np.sqrt(3/(2*np.pi))
@@ -62,18 +62,66 @@ print("Problem built")
 # Solver
 solver = solvers.InitialValueSolver(problem, timesteppers.RK111)
 
+class Subproblem_l:
+
+    def __init__(self,ell):
+        self.ell = ell
+
+ell = 2
+sp = solver.subproblems[ell]
+sp_l = Subproblem_l(ell)
+
+# Making old M operator:
+bk2 = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), k=2, radius=radius)
+op = operators.convert(u, (bk2,))
+M11 = op.subproblem_matrix(sp)
+M10 = operators.ZeroMatrix(p, (c,)).subproblem_matrix(sp_l)
+M01 = operators.ZeroMatrix(u, ()).subproblem_matrix(sp_l)
+M00 = operators.ZeroMatrix(p, ()).subproblem_matrix(sp_l)
+from scipy import sparse
+M=sparse.bmat([[M00,M01],
+               [M10,M11]])
+M.tocsr()
+
+M_new = solver.subproblems[2].M_min
+
+print('New M matrix matches with old M matrix:')
+print(np.allclose(M.toarray(), M_new.toarray()[:-3,:]))
+
+# Making old L operator:
+op = operators.convert(-nu*operators.Laplacian(u, c) + operators.Gradient(p, c), (bk2,))
+op_matrices = op.expression_matrices(sp, (p,u))
+L11 = op_matrices[u]
+L10 = op_matrices[p]
+op = operators.Divergence(u)
+L01 = op.subproblem_matrix(sp)
+L00 = operators.ZeroMatrix(p, ()).subproblem_matrix(sp_l)
+op = operators.interpolate(u,r=1)
+R = op.subproblem_matrix(sp)
+Z = operators.ZeroVector(p, (c,)).subproblem_matrix(sp_l)
+L=sparse.bmat([[L00,L01],
+               [L10,L11],
+               [Z  ,R  ]])
+
+L = L.tocsr()
+
+L_new = solver.subproblems[2].L_min
+
+print('New L matrix matches with old L matrix:')
+print( np.allclose(L.toarray(), L_new.toarray() ))
+
 # Plot matrices
-import matplotlib.pyplot as plt
-plt.figure()
-I = 2
-J = 2
-for i, sp in enumerate(solver.subproblems[:I]):
-    for j, mat in enumerate(['M_min', 'L_min']):
-        axes = plt.subplot(I,J,i*J+j+1)
-        A = getattr(sp, mat)
-        im = axes.pcolor(np.log10(np.abs(A.A[::-1])))
-        axes.set_title('sp %i, %s' %(i, mat))
-        axes.set_aspect('equal')
-        plt.colorbar(im)
-plt.tight_layout()
-plt.savefig("nmh_matrices.pdf")
+#import matplotlib.pyplot as plt
+#plt.figure()
+#I = 2
+#J = 2
+#for i, sp in enumerate(solver.subproblems[:I]):
+#    for j, mat in enumerate(['M_min', 'L_min']):
+#        axes = plt.subplot(I,J,i*J+j+1)
+#        A = getattr(sp, mat)
+#        im = axes.pcolor(np.log10(np.abs(A.A[::-1])))
+#        axes.set_title('sp %i, %s' %(i, mat))
+#        axes.set_aspect('equal')
+#        plt.colorbar(im)
+#plt.tight_layout()
+#plt.savefig("nmh_matrices.pdf")
