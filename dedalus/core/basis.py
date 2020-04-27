@@ -106,11 +106,11 @@ class Basis:
     # def __str__(self):
     #     return '%s.%s' %(self.space.name, self.__class__.__name__)
 
-    # def __radd__(self, other):
-    #     return self.__add__(other)
+    def __radd__(self, other):
+        return self.__add__(other)
 
-    # def __rmul__(self, other):
-    #     return self.__mul__(other)
+    def __rmul__(self, other):
+        return self.__mul__(other)
 
     @property
     def first_axis(self):
@@ -195,27 +195,27 @@ class Basis:
     #     # Discard empty rows
     #     return matrix[flags, :]
 
-#     def ncc_matrix(self, arg_basis, coeffs, cutoff=1e-6):
-#         """Build NCC matrix via direct summation."""
-#         N = len(coeffs)
-#         for i in range(N):
-#             coeff = coeffs[i]
-#             # Build initial matrix
-#             if i == 0:
-#                 matrix = self.product_matrix(arg_basis, i)
-#                 total = 0 * sparse.kron(matrix, coeff)
-#                 total.eliminate_zeros()
-#             if len(coeff.shape) or (abs(coeff) > cutoff):
-#                 matrix = self.product_matrix(arg_basis, i)
-#                 total = total + sparse.kron(matrix, coeff)
-#         return total
+    def ncc_matrix(self, arg_basis, coeffs, cutoff=1e-6):
+        """Build NCC matrix via direct summation."""
+        N = len(coeffs)
+        for i in range(N):
+            coeff = coeffs[i]
+            # Build initial matrix
+            if i == 0:
+                matrix = self.product_matrix(arg_basis, i)
+                total = 0 * sparse.kron(matrix, coeff)
+                total.eliminate_zeros()
+            if len(coeff.shape) or (abs(coeff) > cutoff):
+                matrix = self.product_matrix(arg_basis, i)
+                total = total + sparse.kron(matrix, coeff)
+        return total
 
-#     def product_matrix(self, arg_basis, i):
-#         if arg_basis is None:
-#             N = self.space.coeff_size
-#             return sparse.coo_matrix(([1],([i],[0])), shape=(N,1)).tocsr()
-#         else:
-#             raise NotImplementedError()
+    def product_matrix(self, arg_basis, i):
+        if arg_basis is None:
+            N = self.size
+            return sparse.coo_matrix(([1],([i],[0])), shape=(N,1)).tocsr()
+        else:
+            raise NotImplementedError()
 
 
 # class Constant(Basis, metaclass=CachedClass):
@@ -377,25 +377,28 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
     # def include_mode(self, mode):
     #     return (0 <= mode < self.space.coeff_size)
 
-    # def ncc_matrix(self, arg_basis, coeffs, cutoff=1e-6):
-    #     """Build NCC matrix via Clenshaw algorithm."""
-    #     if arg_basis is None:
-    #         return super().ncc_matrix(arg_basis, coeffs)
-    #     # Kronecker Clenshaw on argument Jacobi matrix
-    #     N = self.space.coeff_size
-    #     J = jacobi.jacobi_matrix(N, arg_basis.a, arg_basis.b)
-    #     A, B = clenshaw.jacobi_recursion(N, self.a, self.b, J)
-    #     f0 = self.const * sparse.identity(N)
-    #     total = clenshaw.kronecker_clenshaw(coeffs, A, B, f0, cutoff=cutoff)
-    #     # Conversion matrix
-    #     input_basis = arg_basis
-    #     output_basis = (self * arg_basis)
-    #     conversion = ConvertJacobiJacobi._subspace_matrix(self.space, input_basis, output_basis)
-    #     # Kronecker with identity for matrix coefficients
-    #     coeff_size = total.shape[0] // conversion.shape[0]
-    #     if coeff_size > 1:
-    #         conversion = sparse.kron(conversion, sparse.identity(coeff_size))
-    #     return (conversion @ total)
+    def ncc_matrix(self, arg_basis, coeffs, cutoff=1e-6):
+        """Build NCC matrix via Clenshaw algorithm."""
+        if arg_basis is None:
+            return super().ncc_matrix(arg_basis, coeffs)
+        # Kronecker Clenshaw on argument Jacobi matrix
+        elif isinstance(arg_basis, Jacobi):
+            N = self.size
+            J = jacobi.jacobi_matrix(N, arg_basis.a, arg_basis.b)
+            A, B = clenshaw.jacobi_recursion(N, self.a, self.b, J)
+            f0 = self.const * sparse.identity(N)
+            total = clenshaw.kronecker_clenshaw(coeffs, A, B, f0, cutoff=cutoff)
+            # Conversion matrix
+            input_basis = arg_basis
+            output_basis = (self * arg_basis)
+            conversion = ConvertJacobi._subspace_matrix(input_basis, output_basis)
+            # Kronecker with identity for matrix coefficients
+            coeff_size = total.shape[0] // conversion.shape[0]
+            if coeff_size > 1:
+                conversion = sparse.kron(conversion, sparse.identity(coeff_size))
+            return (conversion @ total)
+        else:
+            raise ValueError("Jacobi ncc_matrix not implemented for basis type: %s" %type(arg_basis))
 
 
 def Legendre(*args, **kw):
@@ -419,6 +422,10 @@ def ChebyshevU(*args, **kw):
     return Ultraspherical(*args, alpha=1, **kw)
 
 
+def ChebyshevV(*args, **kw):
+    return Ultraspherical(*args, alpha=2, **kw)
+
+
 class ConvertJacobi(operators.Convert, operators.SpectralOperator1D):
     """Jacobi polynomial conversion."""
 
@@ -440,12 +447,13 @@ class ConvertConstantJacobi(operators.Convert, operators.SpectralOperator1D):
 
     input_basis_type = type(None)
     output_basis_type = Jacobi
-    separable = True
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
 
     @staticmethod
     def _subspace_matrix(input_basis, output_basis):
         basis = output_basis
-        MMT = self.transforms['matrix'](grid_size=1, coeff_size=basis.size, a=basis.a, b=basis.b, a0=basis.a0, b0=basis.b0)
+        MMT = basis.transforms['matrix'](grid_size=1, coeff_size=basis.size, a=basis.a, b=basis.b, a0=basis.a0, b0=basis.b0)
         return MMT.forward_matrix
 
 
