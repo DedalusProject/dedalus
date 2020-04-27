@@ -1212,6 +1212,9 @@ class RegularityBasis(MultidimensionalBasis):
                 subshape.append(self.group_shape[subaxis])
         return subshape
 
+    def start(self, groups):
+        raise NotImplementedError
+
     # def field_radial_size(self, field, ell):
     #     comp_sizes = []
     #     R = self.regularity_classes(field.tensorsig)
@@ -1724,7 +1727,7 @@ class BallBasis(RegularityBasis):
     @CachedMethod
     def _radius_weights(self, scale):
         N = int(np.ceil(scale * self.shape[2]))
-        z, weights = dedalus_sphere.ball.quadrature(N-1, alpha=self.alpha, niter=3)
+        z, weights = dedalus_sphere.ball.quadrature(3, N-1, alpha=self.alpha, niter=3)
         return weights
 
     @CachedMethod
@@ -1804,6 +1807,10 @@ class BallBasis(RegularityBasis):
         nmin, nmax = self._n_limits(regindex, ell, Nmax=Nmax)
         return slice(nmin, nmax+1)
 
+    def start(self, groups):
+        ell = groups[1]
+        (nmin, Nmax) = self._n_limits((), ell)
+        return nmin
 
 def prod(arg):
     if arg:

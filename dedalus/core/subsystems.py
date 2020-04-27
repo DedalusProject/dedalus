@@ -141,7 +141,8 @@ class Subproblem:
                     start.append(1)
             else:
                 if group is None:
-                    start.append(0)
+                    # HACK! I don't understand what group==None means. However, for ball, the start index is non-zero.
+                    start.append(basis.start(group_index))
                 else:
                     subaxis = axis - basis.axis
                     start.append(index * basis.group_shape[subaxis])
@@ -153,6 +154,7 @@ class Subproblem:
         group_start = self._start(domain, group_index)
         group_shape = self.subsystem_shape(domain)
         slices = []
+        # wouldn't it be better to get the slice directly from the basis???
         for start, shape in zip(group_start, group_shape):
             slices.append(slice(start, start+shape))
         return tuple(slices)
@@ -179,9 +181,10 @@ class Subproblem:
         """Retrieve and concatenate group coefficients from variables."""
         vec = []
         for var in vars:
-            if self.group_size(var.domain):
+            if self.subfield_size(var):
                 slices = self.local_slices(var.domain)
-                var_data = var['c'][slices]
+                full_slices = (slice(None),) * len(var.tensorsig) + slices
+                var_data = var['c'][full_slices]
                 vec.append(var_data.ravel())
         return np.concatenate(vec)
 
@@ -189,11 +192,12 @@ class Subproblem:
         """Assign vectorized group coefficients to variables."""
         i0 = 0
         for var in vars:
-            group_size = self.group_size(var.domain)
+            group_size = self.subfield_size(var)
             if group_size:
                 i1 = i0 + group_size
                 slices = self.local_slices(var.domain)
-                var_data = var['c'][slices]
+                full_slices = (slice(None),) * len(var.tensorsig) + slices
+                var_data = var['c'][full_slices]
                 vec_data = data[i0:i1].reshape(var_data.shape)
                 np.copyto(var_data, vec_data)
                 i0 = i1
