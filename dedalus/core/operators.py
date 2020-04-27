@@ -847,7 +847,7 @@ class SpectralOperator1D(SpectralOperator):
         if not self.subaxis_coupling[-1]:
             arg_elements = arg.local_elements()[axis]
             out_elements = out.local_elements()[axis]
-            matrix = matrix[arg_elements[:,None], out_elements[None,:]]
+            matrix = matrix[out_elements[:,None], arg_elements[None,:]]
         # Apply matrix
         data_axis = self.last_axis + len(arg.tensorsig)
         apply_matrix(matrix, arg.data, data_axis, out=out.data)

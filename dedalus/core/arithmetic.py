@@ -573,6 +573,17 @@ class Multiply(Future, metaclass=MultiClass):
     #     # Combine with operand separability
     #     return ncc_separability & operand.separability(*vars)
 
+    def matrix_dependence(self, *vars):
+        return self.matrix_coupling(*vars) ## HACK: only right for cartesian?
+
+    def matrix_coupling(self, *vars):
+        nccs, operand = self.require_linearity(*vars)
+        # NCCs couple along any non-constant dimensions
+        ncc_bases = Operand.cast(np.prod(nccs), self.dist).domain.full_bases
+        ncc_coupling = np.array([(basis is not None) for basis in ncc_bases])
+        # Combine with operand separability
+        return ncc_coupling | operand.matrix_coupling(*vars)
+
     # def operator_order(self, operator):
     #     """Determine maximum application order of an operator in the expression."""
     #     # Take maximum order from arguments
@@ -590,7 +601,7 @@ class Multiply(Future, metaclass=MultiClass):
         ncc.require_coeff_space()
         # Store NCC matrix, assuming constant-group along operand's constant axes
         # This generalization enables subproblem-agnostic pre-construction
-        self._ncc_matrix = self._ncc_matrix_recursion(ncc.data, ncc.bases, operand.bases, separability, **kw)
+        self._ncc_matrix = self._ncc_matrix_recursion(ncc.data, ncc.domain.full_bases, operand.domain.full_bases, separability, **kw)
         self._ncc_operand = operand
         self._ncc_vars = vars
         self._ncc_separability = separability
@@ -620,10 +631,10 @@ class Multiply(Future, metaclass=MultiClass):
                 return const
             # Group-size identity for separable dimensions
             if separability[0]:
-                I = sparse.identity(arg_basis.space.group_size)
+                I = sparse.identity(arg_basis.group_shape[0])
             # Coeff-size identity for non-separable dimensions
             else:
-                I = sparse.identity(arg_basis.space.coeff_size)
+                I = sparse.identity(arg_basis.size)
             # Apply cutoff to scalar coeffs
             if len(const.shape) == 0:
                 cutoff = kw.get('cutoff', 1e-6)
@@ -644,14 +655,14 @@ class Multiply(Future, metaclass=MultiClass):
             raise SymbolicParsingError("Must build NCC matrices before expression matrices.")
         if vars != self._ncc_vars:
             raise SymbolicParsingError("Must build NCC matrices with same variables.")
-        if tuple(subproblem.problem.separability()) != tuple(self._ncc_separability):
-            raise SymbolicParsingError("Must build NCC matrices with same separability.")
+        # if tuple(subproblem.problem.separability()) != tuple(self._ncc_separability):
+        #     raise SymbolicParsingError("Must build NCC matrices with same separability.")
         # Build operand matrices
         operand = self._ncc_operand
         operand_mats = operand.expression_matrices(subproblem, vars)
         # Modify NCC matrix for subproblem
         # Build projection matrix dropping constant-groups as necessary
-        group_shape = subproblem.group_shape(self.subdomain)
+        group_shape = subproblem.subsystem_shape(self.domain)
         const_shape = np.maximum(group_shape, 1)
         factors = (sparse.eye(*shape, format='csr') for shape in zip(group_shape, const_shape))
         projection = reduce(sparse.kron, factors, 1).tocsr()
@@ -683,7 +694,7 @@ class MultiplyFields(Multiply, FutureField):
         super().__init__(*args, **kw)
         # Find required grid axes
         # Require grid space if more than one argument has nonconstant basis
-        ax_bases = tuple(zip(*(arg.domain.bases for arg in self.args)))
+        ax_bases = tuple(zip(*(arg.domain.full_bases for arg in self.args)))
         nonconst_ax_bases = [[b for b in bases if b is not None] for bases in ax_bases]
         self.required_grid_axes = [len(bases) > 1 for bases in nonconst_ax_bases]
         bases = tuple(reduce(operator.mul, bases) for bases in ax_bases)
@@ -788,3 +799,8 @@ class MultiplyNumberField(Multiply, FutureField):
         # Multiply field matrices
         return {var: arg0 * arg1_mats[var] for var in arg1_mats}
 
+    def build_ncc_matrices(self, separability, vars, **kw):
+        """Precompute non-constant coefficients and build multiplication matrices."""
+        nccs, operand = self.require_linearity(*vars)
+        # Continue NCC matrix construction
+        operand.build_ncc_matrices(separability, vars, **kw)

@@ -60,8 +60,8 @@ def build_matrices(subproblems, matrices):
         for matrix in matrices:
             expr = eq[matrix]
             if expr:
-                pass
-                #expr.build_ncc_matrices(problem.separability(), problem.variables)
+                separability = ~problem.matrix_coupling
+                expr.build_ncc_matrices(separability, problem.variables)
     for subproblem in log_progress(subproblems, logger, 'info', desc='Building subproblem matrices', iter=np.inf, frac=0.1, dt=10):
         subproblem.build_matrices(matrices)
 
