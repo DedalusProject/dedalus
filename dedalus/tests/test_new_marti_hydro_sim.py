@@ -128,15 +128,12 @@ timestepper = timesteppers_sphere.CNAB2(StateVector, (solver, [p,u,u_BC] ))
 
 LU = [None]*len(solver.subproblems)
 
-op = - dot(u,grad(u)) - Om*cross(ez, u)
-conv_op = operators.convert(op,(bk2,))
-
 # calculate RHS terms from state vector
 def nonlinear(state_vector, NL, t):
 
     # get U in coefficient space
     state_vector.unpack((p,u,taus))
-    u_rhs = conv_op.evaluate()
+    u_rhs = problem.equations[1]['F'].evaluate()
     if 0 in b.local_l:
         u_rhs['c'][:,:,0,:].fill(0) # very important to zero out the ell=0 RHS
     NL.pack((p_rhs,u_rhs,u_BC))

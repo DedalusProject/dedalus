@@ -1653,6 +1653,8 @@ class SphericalShellBasis(RegularityBasis):
             return None
         return slice(0, Nmax + 1)
 
+    def start(self, groups):
+        return 0
 
 class BallBasis(RegularityBasis):
 
@@ -1926,6 +1928,75 @@ class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperato
         basis = self.input_basis
         if regindex_in == regindex_out:
             return self._radial_matrix(basis, 'r=R', ell, basis.regtotal(regindex_in))
+        else:
+            return np.zeros((1,basis.n_size((), ell)))
+
+    @staticmethod
+    @CachedMethod
+    def _radial_matrix(basis, op, ell, regtotal):
+        return reshape_vector(basis.operator_matrix(op, ell, regtotal), dim=2, axis=1)
+
+
+class SphericalShellRadialInterpolate(operators.Interpolate, operators.SphericalEllOperator):
+
+    basis_type = SphericalShellBasis
+    basis_subaxis = 2
+    subaxis_dependence = [False, False, False]
+    subaxis_coupling = [False, False, True]
+
+    @classmethod
+    def _check_args(cls, operand, coord, position, out=None):
+        # Dispatch by operand basis
+        if isinstance(operand, Operand):
+            if isinstance(operand.domain.get_basis(coord), cls.basis_type):
+                if operand.domain.get_basis_subaxis(coord) == cls.basis_subaxis:
+                    return True
+        return False
+
+    @staticmethod
+    def _output_basis(input_basis, position):
+        return input_basis.S2_basis(radius=position)
+
+    def subproblem_matrix(self, subproblem):
+        ell = subproblem.group[self.last_axis - 1]
+        matrix = super().subproblem_matrix(subproblem)
+        if self.tensorsig != ():
+            Q = self.input_basis.radial_recombinations(self.tensorsig, ell_list=(ell,))
+            matrix = Q[0] @ matrix
+        return matrix
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        basis_in = self.input_basis
+        basis_out = self.output_basis
+        # Set output layout
+        out.set_layout(operand.layout)
+        # Apply operator
+        R = basis_in.regularity_classes(operand.tensorsig)
+        for regindex, regtotal in np.ndenumerate(R):
+           comp_in = operand.data[regindex]
+           comp_out = out.data[regindex]
+           for m in basis_in.local_m:
+               for ell in basis_in.local_l:
+                   vec3_in = basis_in.radial_vector_3(comp_in, m, ell, regindex)
+                   vec3_out = basis_out.vector_3(comp_out, m, ell)
+                   if (vec3_in is not None) and (vec3_out is not None):
+                       A = self.radial_matrix(ell, regindex, regindex)
+                       apply_matrix(A, vec3_in, axis=1, out=vec3_out)
+        # Q matrix
+        basis_in.backward_regularity_recombination(operand.tensorsig, self.basis_subaxis, out.data)
+
+    def radial_matrix(self, regindex_in, regindex_out, ell):
+        position = self.position
+        basis = self.input_basis
+        if regindex_in == regindex_out:
+            if position == basis.radii[0]:
+                return self._radial_matrix(basis, 'r=Ri', ell, basis.regtotal(regindex_in))
+            elif position == basis.radii[1]:
+                return self._radial_matrix(basis, 'r=Ro', ell, basis.regtotal(regindex_in))
+            else:
+                raise ValueError("Right now can only interpolate to inner or outer radii")
         else:
             return np.zeros((1,basis.n_size((), ell)))
 

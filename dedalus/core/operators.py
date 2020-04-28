@@ -2389,6 +2389,8 @@ class ZeroVector(Zero, metaclass=MultiClass):
 
 class CrossProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
 
+    name = "Cross"
+
     # Should make sure arg0 and arg1 are rank 1
     # and that the cs are the same for arg0 and arg1
 
