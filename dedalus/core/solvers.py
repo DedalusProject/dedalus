@@ -259,8 +259,8 @@ class InitialValueSolver:
         self.start_time = self.get_wall_time()
 
         # Build subproblems and subproblem matrices
-        self.subsystems = subsystems.build_local_subsystems(problem)
-        subsystems.build_matrices(self.subproblems, ['M', 'L'])
+        self.subsystems = subsystems.build_subsystems(problem)
+        #subsystems.build_matrices(self.subproblems, ['M', 'L'])
 
         # # Build systems
         # namespace = problem.namespace

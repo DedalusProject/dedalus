@@ -30,28 +30,28 @@ logger = logging.getLogger(__name__.split('.')[-1])
 #             trans_shape.append(basis.)
 #     else:
 
-def build_local_subsystems(problem):
+def build_subsystems(problem):
     """Build local subsystem objects."""
     # Check that distributed dimensions are separable
     for axis in range(len(problem.dist.mesh)):
         if problem.matrix_coupling[axis]:
             raise ValueError("Problem is coupled along distributed dimension %i" %axis)
-    # Build subsystems indeces as products of basis indeces
+    # Determine local groups for each basis
     domain = problem.variables[0].domain  # HACK
-    basis_indeces = []
+    basis_groups = []
     for axis, basis in domain.enumerate_unique_bases():
         if basis is None:
             raise NotImplementedError()
         else:
             basis_coupling = problem.matrix_coupling[basis.first_axis:basis.last_axis+1]
-            basis_indeces.append(basis.local_subsystem_indices(basis_coupling))
-    local_subsystem_indices = [sum(p, []) for p in product(*basis_indeces)]
-    return [Subsystem(index) for index in local_subsystem_indices]
+            basis_groups.append(basis.local_groups(basis_coupling))
+    # Build subsystems groups as product of basis groups
+    local_groups = [sum(p, []) for p in product(*basis_groups)]
+    return [Subsystem(problem, group) for group in local_groups]
 
 
-def build_matrices(subproblems, matrices):
+def build_subproblems(problem, subsystems, matrices):
     """Build subproblem matrices with progress logger."""
-    problem = subproblems[0].problem
     for eq in problem.eqs:
         for matrix in matrices:
             expr = eq[matrix]
@@ -62,23 +62,22 @@ def build_matrices(subproblems, matrices):
         subproblem.build_matrices(matrices)
 
 
-def enumerate_product(*iterables):
-    indices = (range(len(iter)) for iter in iterables)
-    return zip(product(*indices), product(*iterables))
-
-
 class Subsystem:
     """
     Class representing a subset of the global coefficient space.
     I.e. the multidimensional generalization of a pencil.
 
-    Each subsystem is described by a global_index containing a
+    Each subsystem is described by a "group" tuple containing a
     group index (for each separable axis) or None (for each coupled
     axis).
     """
 
-    def __init__(self, global_index):
-        self.global_index = global_index
+    def __init__(self, problem, group):
+        self.problem = problem
+        self.group = group
+        # Determine matrix group using problem matrix dependence
+        matrix_independence = ~ problem.matrix_dependence
+        self.matrix_group = replace(group, matrix_independence, 0)
 
     def coeff_slices(self, domain):
         slices = []
@@ -86,15 +85,15 @@ class Subsystem:
         for axis, basis in domain.enumerate_unique_bases():
             if basis is None:
                 # Take single mode for constant bases
-                ax_index = self.global_index[axis]
-                if ax_index is None:
+                ax_group = self.group[axis]
+                if ax_group is None:
                     slices.append(slice(0, 1))
                 else:
                     raise NotImplementedError()
             else:
                 # Get slices from basis
-                basis_index = self.global_index[basis.first_axis:basis.last_axis+1]
-                slices.extend(basis.local_subsystem_slices(basis_index))
+                basis_group = self.group[basis.first_axis:basis.last_axis+1]
+                slices.extend(basis.local_group_slices(basis_group))
         return tuple(slices)
 
     def coeff_shape(self, domain):

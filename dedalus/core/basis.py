@@ -291,25 +291,25 @@ class IntervalBasis(Basis):
         # Subclasses must implement
         raise NotImplementedError
 
-    def local_subsystem_indices(self, basis_coupling):
+    def local_groups(self, basis_coupling):
         coupling, = basis_coupling
         if coupling:
             return [[None]]
         else:
-            local_groups = self.dist.coeff_layout.local_groups(self.domain, scales=1)[self.axis]
-            return [[gi] for gi in local_groups]
+            local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)[self.axis]
+            return [[group] for group in local_chunks]
 
-    def local_subsystem_slices(self, basis_index):
-        global_index, = basis_index
+    def local_group_slices(self, basis_group):
+        group, = basis_group
         # Return slices
-        if global_index is None:
+        if group is None:
             # Return all coefficients
             return [slice(None)]
         else:
             # Get local groups
-            local_groups = self.dist.coeff_layout.local_groups(self.domain, scales=1)[self.axis]
+            local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)[self.axis]
             # Groups are stored sequentially
-            local_index = list(local_groups).index(global_index)
+            local_index = list(local_chunks).index(group)
             group_size = self.group_shape[0]
             return [slice(local_index*group_size, (local_index+1)*group_size)]
 

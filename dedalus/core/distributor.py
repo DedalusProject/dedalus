@@ -186,42 +186,42 @@ class Layout:
         global_shape[self.grid_space] = np.array(domain.grid_shape(scales))[self.grid_space]
         return tuple(global_shape)
 
-    def group_shape(self, domain, scales):
-        """Group shape."""
+    def chunk_shape(self, domain, scales):
+        """Chunk shape."""
         scales = self.dist.remedy_scales(scales)
-        group_shape = np.array(domain.coeff_group_shape).copy()
-        group_shape[self.grid_space] = 1
-        return tuple(group_shape)
+        chunk_shape = np.array(domain.coeff_group_shape).copy()
+        chunk_shape[self.grid_space] = 1
+        return tuple(chunk_shape)
 
-    def local_groups(self, domain, scales):
-        """Local group indices by axis."""
+    def local_chunks(self, domain, scales):
+        """Local chunk indices by axis."""
         global_shape = self.global_shape(domain, scales)
-        group_shape = self.group_shape(domain, scales)
-        group_nums = np.array(global_shape) // np.array(group_shape)
-        local_groups = []
+        chunk_shape = self.chunk_shape(domain, scales)
+        chunk_nums = np.array(global_shape) // np.array(chunk_shape)
+        local_chunks = []
         for axis, basis in enumerate(domain.full_bases):
             if self.local[axis]:
-                # All groups for local dimensions
-                local_groups.append(np.arange(group_nums[axis]))
+                # All chunks for local dimensions
+                local_chunks.append(np.arange(chunk_nums[axis]))
             elif basis is None:
                 # Copy across constant dimensions
-                local_groups.append(np.arange(group_nums[axis]))
+                local_chunks.append(np.arange(chunk_nums[axis]))
             else:
                 # Block distribution otherwise
                 mesh = self.ext_mesh[axis]
                 coord = self.ext_coords[axis]
-                block = -(-group_nums[axis] // mesh)
-                start = min(group_nums[axis], block*coord)
-                end = min(group_nums[axis], block*(coord+1))
-                local_groups.append(np.arange(start, end))
-        return tuple(local_groups)
+                block = -(-chunk_nums[axis] // mesh)
+                start = min(chunk_nums[axis], block*coord)
+                end = min(chunk_nums[axis], block*(coord+1))
+                local_chunks.append(np.arange(start, end))
+        return tuple(local_chunks)
 
     def local_elements(self, domain, scales):
         """Local element indices by axis."""
-        group_shape = self.group_shape(domain, scales)
-        local_groups = self.local_groups(domain, scales)
+        chunk_shape = self.chunk_shape(domain, scales)
+        local_chunks = self.local_chunks(domain, scales)
         indices = []
-        for GS, LG in zip(group_shape, local_groups):
+        for GS, LG in zip(chunk_shape, local_chunks):
             indices.append(np.array([GS*G+i for G in LG for i in range(GS)]))
         return indices
 
