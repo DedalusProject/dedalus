@@ -122,6 +122,15 @@ class Domain(metaclass=CachedClass):
                     full_bases[axis] = basis
         return tuple(bases), tuple(full_bases)
 
+    def enumerate_unique_bases():
+        axes = []
+        unique_bases = []
+        for axis, basis in enumerate(self.full_bases):
+            if (basis is None) or (basis not in unique_bases):
+                axes.append(axis)
+                unique_bases.append(basis)
+        return zip(axes, unique_bases)
+
     # @classmethod
     # def from_dist(cls, dist):
     #     """Build constant domain from distributor."""

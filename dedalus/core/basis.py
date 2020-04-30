@@ -300,6 +300,8 @@ class IntervalBasis(Basis):
                 subshape.append(self.group_shape[subaxis])
         return subshape
 
+
+
 class Jacobi(IntervalBasis, metaclass=CachedClass):
     """Jacobi polynomial basis."""
 
