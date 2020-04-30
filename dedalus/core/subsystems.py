@@ -30,28 +30,24 @@ logger = logging.getLogger(__name__.split('.')[-1])
 #             trans_shape.append(basis.)
 #     else:
 
-def build_local_subproblems(problem):
-    """Build local subproblem objects."""
+def build_local_subsystems(problem):
+    """Build local subsystem objects."""
     # Check that distributed dimensions are separable
     for axis in range(len(problem.dist.mesh)):
         if problem.matrix_coupling[axis]:
             raise ValueError("Problem is coupled along distributed dimension %i" %axis)
-    # Get all local groups
-    dist = problem.dist
+    # Build subsystems indeces as products of basis indeces
     domain = problem.variables[0].domain  # HACK
-    local_groups = dist.coeff_layout.local_groups(domain, scales=1)
-    # Build subsystems from groups of separable domain
-    local_subsystems = list(replace(local_groups, problem.matrix_coupling, [0]))
-    local_subsystems = enumerate_product(*local_subsystems)
-    # Check subsystem validity
-    local_subsystems = [ls for ls in local_subsystems if include_subsystem(domain, *ls)]
-    return [Subproblem(problem, group, index) for index, group in local_subsystems]
+    basis_indeces = []
+    for axis, basis in domain.enumerate_unique_bases():
+        if basis is None:
+            raise NotImplementedError()
+        else:
+            basis_coupling = problem.matrix_coupling[basis.first_axis:basis.last_axis+1]
+            basis_indeces.append(basis.local_subsystem_indices(basis_coupling))
+    local_subsystem_indices = [sum(p, []) for p in product(*basis_indeces)]
+    return [Subsystem(index) for index in local_subsystem_indices]
 
-
-def include_subsystem(domain, index, group):
-    # HACK
-    # This should throw out invalid pencils in the triangular truncation.
-    return True
 
 def build_matrices(subproblems, matrices):
     """Build subproblem matrices with progress logger."""
@@ -69,6 +65,86 @@ def build_matrices(subproblems, matrices):
 def enumerate_product(*iterables):
     indices = (range(len(iter)) for iter in iterables)
     return zip(product(*indices), product(*iterables))
+
+
+class Subsystem:
+    """
+    Class representing a subset of the global coefficient space.
+    I.e. the multidimensional generalization of a pencil.
+
+    Each subsystem is described by a global_index containing a
+    group index (for each separable axis) or None (for each coupled
+    axis).
+    """
+
+    def __init__(self, global_index):
+        self.global_index = global_index
+
+    def coeff_slices(self, domain):
+        slices = []
+        # Loop over bases
+        for axis, basis in domain.enumerate_unique_bases():
+            if basis is None:
+                # Take single mode for constant bases
+                ax_index = self.global_index[axis]
+                if ax_index is None:
+                    slices.append(slice(0, 1))
+                else:
+                    raise NotImplementedError()
+            else:
+                # Get slices from basis
+                basis_index = self.global_index[basis.first_axis:basis.last_axis+1]
+                slices.extend(basis.local_subsystem_slices(basis_index))
+        return tuple(slices)
+
+    def coeff_shape(self, domain):
+        shape = []
+        # Extract shape from slices
+        coeff_slices = self.coeff_slices(domain)
+        for ax_slice, ax_size in zip(coeff_slices, domain.coeff_shape):
+            indices = ax_slice.indices(ax_size)
+            shape.append(len(range(*indices)))
+        return tuple(shape)
+
+    def coeff_size(self, domain):
+        return np.prod(self.coeff_shape(domain))
+
+    def field_slices(self, field):
+        comp_slices = (slice(None),) * len(field.tensorsig)
+        coeff_slices = self.coeff_slices(field.domain)
+        return comp_slices + coeff_slices
+
+    def field_shape(self, field):
+        comp_shape = tuple(cs.dim for cs in field.tensorsig)
+        coeff_shape = self.coeff_shape(field.domain)
+        return comp_shape + coeff_shape
+
+    def field_size(self, field):
+        return np.prod(self.field_shape(field))
+
+    def gather(self, fields):
+        """Gather and concatenate subsystem data in from multiple fields."""
+        # TODO optimize: maybe preallocate here for speed?
+        vec = []
+        for field in fields:
+            if self.field_size(field):
+                field_slices = self.field_slices(field)
+                field_data = field['c'][field_slices]
+                vec.append(field_data.ravel())
+        return np.concatenate(vec)
+
+    def scatter(self, data, fields):
+        """Scatter concatenated subsystem data out to multiple fields."""
+        i0 = 0
+        for field in fields:
+            field_size = self.field_size(field)
+            if field_size:
+                i1 = i0 + field_size
+                field_slices = self.field_slices(field)
+                field_data = field['c'][field_slices]
+                vec_data = data[i0:i1].reshape(field_data.shape)
+                np.copyto(field_data, vec_data)
+                i0 = i1
 
 
 class Subproblem:
@@ -103,104 +179,7 @@ class Subproblem:
     #                 group_dict['n'+space.name] = group
     #     return group_dict
 
-    @CachedMethod
-    def subsystem_shape(self, domain):
-        """Shape of group coefficients."""
-        shape = []
-        for axis, (group, basis) in enumerate(zip(self.group, domain.full_bases)):
-            if basis is None:
-                if group in [0, None]:
-                    shape.append(1)
-                else:
-                    shape.append(0)
-            else:
-                subaxis = axis - basis.first_axis
-                basis_group = self.group[basis.first_axis:basis.last_axis+1]
-                shape.append(basis.coeff_subshape(basis_group)[subaxis])
-        return tuple(shape)
 
-    @CachedMethod
-    def subsystem_size(self, domain):
-        """Size of group coefficients."""
-        return np.prod(self.subsystem_shape(domain))
-
-    def subfield_size(self, field):
-        comps = np.prod([cs.dim for cs in field.tensorsig], dtype=int)
-        size = self.subsystem_size(field.domain)
-        return comps * size
-
-    @CachedMethod
-    def _start(self, domain, group_index):
-        """Starting index of group coefficients."""
-        start = []
-        for axis, (group, index, basis) in enumerate(zip(self.group, group_index, domain.full_bases)):
-            if basis is None:
-                if group in [0, None]:
-                    start.append(0)
-                else:
-                    start.append(1)
-            else:
-                if group is None:
-                    # HACK! I don't understand what group==None means. However, for ball, the start index is non-zero.
-                    start.append(basis.start(group_index))
-                else:
-                    subaxis = axis - basis.axis
-                    start.append(index * basis.group_shape[subaxis])
-        return start
-
-    @CachedMethod
-    def _slices(self, domain, group_index):
-        """Slices for group coefficients."""
-        group_start = self._start(domain, group_index)
-        group_shape = self.subsystem_shape(domain)
-        slices = []
-        # wouldn't it be better to get the slice directly from the basis???
-        for start, shape in zip(group_start, group_shape):
-            slices.append(slice(start, start+shape))
-        return tuple(slices)
-
-    # def global_start(self, domain):
-    #     """Global starting index of group coefficients."""
-    #     return self._start(domain, self.global_index)
-
-    # def local_start(self, domain, group_index):
-    #     """Local starting index of group coefficients."""
-    #     return self._start(subdomian, self.local_index)
-
-    @CachedMethod
-    def global_slices(self, domain):
-        """Global slices for group coefficients."""
-        return self._slices(domain, self.global_index)
-
-    @CachedMethod
-    def local_slices(self, domain):
-        """Local slices for group coefficients."""
-        return self._slices(domain, self.local_index)
-
-    def get_vector(self, vars):
-        """Retrieve and concatenate group coefficients from variables."""
-        vec = []
-        for var in vars:
-            if self.subfield_size(var):
-                slices = self.local_slices(var.domain)
-                full_slices = (slice(None),) * len(var.tensorsig) + slices
-                var_data = var['c'][full_slices]
-                vec.append(var_data.ravel())
-        return np.concatenate(vec)
-
-    def set_vector(self, vars, data):
-        """Assign vectorized group coefficients to variables."""
-        i0 = 0
-        for var in vars:
-            group_size = self.subfield_size(var)
-            if group_size:
-                i1 = i0 + group_size
-                slices = self.local_slices(var.domain)
-                full_slices = (slice(None),) * len(var.tensorsig) + slices
-                var_data = var['c'][full_slices]
-                vec_data = data[i0:i1].reshape(var_data.shape)
-                np.copyto(var_data, vec_data)
-                i0 = i1
 
     def inclusion_matrices(self, bases):
         """List of inclusion matrices."""
