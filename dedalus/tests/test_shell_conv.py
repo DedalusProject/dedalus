@@ -15,8 +15,8 @@ logger = logging.getLogger(__name__)
 
 rank = MPI.COMM_WORLD.rank
 
-Lmax = 15
-Nmax = 15
+Lmax = 31
+Nmax = 31
 
 # right now can't run with dealiasing
 L_dealias = 1
@@ -84,6 +84,7 @@ def eq_eval(eq_str):
     return [eval(expr) for expr in split_equation(eq_str)]
 problem = problems.IVP([u, p, T])
 problem.add_equation(eq_eval("Ekman*dt(u) - Ekman*lap(u) + grad(p) = - Ekman*dot(u,grad(u)) + Rayleigh*r_vec*T - 2*cross(ez, u)"))
+#problem.add_equation(eq_eval("Ekman*dt(u) - Ekman*lap(u) + grad(p) = - Ekman*dot(u,grad(u)) + Rayleigh*r_vec*T"))
 problem.add_equation(eq_eval("div(u) = 0"))
 problem.add_equation(eq_eval("dt(T) - lap(T)/Prandtl = - dot(u,grad(T))"))
 problem.add_equation(eq_eval("u(r=7/13) = 0"))
@@ -91,7 +92,7 @@ problem.add_equation(eq_eval("T(r=7/13) = T_inner"))
 problem.add_equation(eq_eval("u(r=20/13) = 0"))
 problem.add_equation(eq_eval("T(r=20/13) = 0"))
 # pressure gauge?
-print("Problem built")
+logger.info("Problem built")
 
 # Solver
 solver = solvers.InitialValueSolver(problem, timesteppers.RK111)
@@ -116,7 +117,8 @@ state = StateVector( (solver, [u,p,T,tau_u_inner,tau_T_inner,tau_u_outer,tau_T_o
 state.pack( (u,p,T,tau_u_inner,tau_T_inner,tau_u_outer,tau_T_outer) )
 NL    = StateVector( (solver, [u,p,T,tau_u_inner,tau_T_inner,tau_u_outer,tau_T_outer]) )
 
-alpha_BC = (-1/2, -1/2)
+# ChebyshevV
+alpha_BC = (2-1/2, 2-1/2)
 
 def C(N):
     ab = alpha_BC
@@ -181,7 +183,7 @@ def set_ell_zero(solver):
             subproblem.M_min = M.tocsr()
             subproblem.L_min = L.tocsr()
 
-timestepper = timesteppers_sphere.CNAB2(StateVector, (solver, [u,p,T,tau_u_inner,tau_T_inner,tau_u_outer,tau_T_outer] ))
+timestepper = timesteppers_sphere.SBDF2(StateVector, (solver, [u,p,T,tau_u_inner,tau_T_inner,tau_u_outer,tau_T_outer] ))
 
 LU = [None]*len(solver.subproblems)
 
@@ -206,22 +208,6 @@ vol_test = reducer.reduce_scalar(vol_test, MPI.SUM)
 vol = 4*np.pi/3*(r_outer**3-r_inner**3)
 vol_correction = vol/vol_test
 
-# Plot matrices
-#import matplotlib.pyplot as plt
-#plt.figure()
-#I = 2
-#J = 2
-#for i, sp in enumerate(solver.subproblems[:I]):
-#    for j, mat in enumerate(['M_min', 'L_min']):
-#        axes = plt.subplot(I,J,i*J+j+1)
-#        A = getattr(sp, mat)
-#        im = axes.pcolor(np.log10(np.abs(A.A[::-1])))
-#        axes.set_title('sp %i, %s' %(i, mat))
-#        axes.set_aspect('equal')
-#        plt.colorbar(im)
-#plt.tight_layout()
-#plt.savefig("sc_matrices.png")
-
 t = 0.
 
 t_list = []
@@ -232,14 +218,14 @@ start_time = time.time()
 iter = 0
 
 # Integration parameters
-dt = 1.5e-4
-t_end = 5
+dt = 1.e-4
+t_end = 1.25
 
 while t < t_end:
 
     nonlinear(state, NL, t)
 
-    if iter % 1 == 0:
+    if iter % 10 == 0:
         E0 = np.sum(vol_correction*weight_r*weight_theta*u['g'].real**2)
         E0 = 0.5*E0*(np.pi)/(Lmax+1)/L_dealias/vol
         E0 = reducer.reduce_scalar(E0, MPI.SUM)
