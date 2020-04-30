@@ -30,28 +30,24 @@ logger = logging.getLogger(__name__.split('.')[-1])
 #             trans_shape.append(basis.)
 #     else:
 
-def build_local_subproblems(problem):
-    """Build local subproblem objects."""
+def build_local_subsystems(problem):
+    """Build local subsystem objects."""
     # Check that distributed dimensions are separable
     for axis in range(len(problem.dist.mesh)):
         if problem.matrix_coupling[axis]:
             raise ValueError("Problem is coupled along distributed dimension %i" %axis)
-    # Get all local groups
-    dist = problem.dist
+    # Build subsystems indeces as products of basis indeces
     domain = problem.variables[0].domain  # HACK
-    local_groups = dist.coeff_layout.local_groups(domain, scales=1)
-    # Build subsystems from groups of separable domain
-    local_subsystems = list(replace(local_groups, problem.matrix_coupling, [0]))
-    local_subsystems = enumerate_product(*local_subsystems)
-    # Check subsystem validity
-    local_subsystems = [ls for ls in local_subsystems if include_subsystem(domain, *ls)]
-    return [Subproblem(problem, group, index) for index, group in local_subsystems]
+    basis_indeces = []
+    for axis, basis in domain.enumerate_unique_bases():
+        if basis is None:
+            raise NotImplementedError()
+        else:
+            basis_coupling = problem.matrix_coupling[basis.first_axis:basis.last_axis+1]
+            basis_indeces.append(basis.local_subsystem_indices(basis_coupling))
+    local_subsystem_indices = [sum(p, []) for p in product(*basis_indeces)]
+    return [Subsystem(index) for index in local_subsystem_indices]
 
-
-def include_subsystem(domain, index, group):
-    # HACK
-    # This should throw out invalid pencils in the triangular truncation.
-    return True
 
 def build_matrices(subproblems, matrices):
     """Build subproblem matrices with progress logger."""
@@ -98,7 +94,7 @@ class Subsystem:
             else:
                 # Get slices from basis
                 basis_index = self.global_index[basis.first_axis:basis.last_axis+1]
-                slices.append(basis.local_subsystem_slices(basis_index))
+                slices.extend(basis.local_subsystem_slices(basis_index))
         return tuple(slices)
 
     def coeff_shape(self, domain):
@@ -114,7 +110,7 @@ class Subsystem:
         return np.prod(self.coeff_shape(domain))
 
     def field_slices(self, field):
-        comp_slices = (slice(None,) * len(field.tensorsig))
+        comp_slices = (slice(None),) * len(field.tensorsig)
         coeff_slices = self.coeff_slices(field.domain)
         return comp_slices + coeff_slices
 

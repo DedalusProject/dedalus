@@ -122,7 +122,7 @@ class Domain(metaclass=CachedClass):
                     full_bases[axis] = basis
         return tuple(bases), tuple(full_bases)
 
-    def enumerate_unique_bases():
+    def enumerate_unique_bases(self):
         axes = []
         unique_bases = []
         for axis, basis in enumerate(self.full_bases):

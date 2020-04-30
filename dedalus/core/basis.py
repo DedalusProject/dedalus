@@ -291,15 +291,27 @@ class IntervalBasis(Basis):
         # Subclasses must implement
         raise NotImplementedError
 
-    def coeff_subshape(self, groups):
-        subshape = []
-        for subaxis, group in enumerate(groups):
-            if group is None:
-                subshape.append(self.shape[subaxis])
-            else:
-                subshape.append(self.group_shape[subaxis])
-        return subshape
+    def local_subsystem_indices(self, basis_coupling):
+        coupling, = basis_coupling
+        if coupling:
+            return [[None]]
+        else:
+            local_groups = self.dist.coeff_layout.local_groups(self.domain, scales=1)[self.axis]
+            return [[gi] for gi in local_groups]
 
+    def local_subsystem_slices(self, basis_index):
+        global_index, = basis_index
+        # Return slices
+        if global_index is None:
+            # Return all coefficients
+            return [slice(None)]
+        else:
+            # Get local groups
+            local_groups = self.dist.coeff_layout.local_groups(self.domain, scales=1)[self.axis]
+            # Groups are stored sequentially
+            local_index = list(local_groups).index(global_index)
+            group_size = self.group_shape[0]
+            return [slice(local_index*group_size, (local_index+1)*group_size)]
 
 
 class Jacobi(IntervalBasis, metaclass=CachedClass):
