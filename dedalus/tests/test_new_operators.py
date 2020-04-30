@@ -1,6 +1,6 @@
 
 import numpy as np
-from dedalus.core import coords, distributor, basis, field, operators
+from dedalus.core import coords, distributor, basis, field, operators, arithmetic
 from dedalus.core import future
 from mpi4py import MPI
 
@@ -104,7 +104,7 @@ results.append(result)
 print(len(results), ':', result)
 
 # Dot product, tensor-vector, using indices
-op = u + operators.DotProduct(T,u,indices=(0,0))
+op = u + arithmetic.DotProduct(T,u,indices=(0,0))
 h = op.evaluate()
 hg = u['g'] + np.sum(T['g']*u['g'][:,None,:,:,:],axis=0)
 result = np.allclose(h['g'],hg)
@@ -232,21 +232,21 @@ results.append(result)
 print(len(results), ':', result)
 
 # Dot product, vector-vector
-h = operators.DotProduct(ez,u).evaluate()
+h = arithmetic.DotProduct(ez,u).evaluate()
 hg = np.sum(ez['g']*u['g'],axis=0)
 result = np.allclose(h['g'],hg)
 results.append(result)
 print(len(results), ':', result)
 
 # Dot product, tensor-vector
-h = operators.DotProduct(T,u).evaluate()
+h = arithmetic.DotProduct(T,u).evaluate()
 hg = np.sum(T['g']*u['g'][None,:,:,:,:],axis=1)
 result = np.allclose(h['g'],hg)
 results.append(result)
 print(len(results), ':', result)
 
 # Dot product, tensor-vector, using indices
-op = u + operators.DotProduct(T,u,indices=(0,0))
+op = u + arithmetic.DotProduct(T,u,indices=(0,0))
 h = op.evaluate()
 hg = u['g'] + np.sum(T['g']*u['g'][:,None,:,:,:],axis=0)
 result = np.allclose(h['g'],hg)
