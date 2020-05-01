@@ -287,9 +287,9 @@ class InitialValueSolver:
         self.iteration = 0
 
         # Default integration parameters
-        self.stop_sim_time = 10.
-        self.stop_wall_time = 10.
-        self.stop_iteration = 10.
+        self.stop_sim_time = np.inf
+        self.stop_wall_time = np.inf
+        self.stop_iteration = np.inf
 
         logger.debug('Finished IVP instantiation')
 
@@ -340,6 +340,7 @@ class InitialValueSolver:
                 X1 = linalg.spsolve(LHS, RHS, permc_spec=PERMC_SPEC)
                 ss.scatter(X1, self.state)
         self.iteration += 1
+        self.sim_time += dt
 
     def step(self, dt):
         """Advance system by one iteration/timestep."""
