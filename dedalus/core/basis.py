@@ -1006,6 +1006,40 @@ class SpinBasis(MultidimensionalBasis):
         local_m_elements = layout.local_elements(self.domain, scales=1)[self.axis]
         return tuple(self.azimuth_basis.wavenumbers[local_m_elements])
 
+    def local_groups(self, basis_coupling):
+        m_coupling, ell_coupling = basis_coupling
+        if (not m_coupling) and (not ell_coupling):
+            local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)
+            m_chunks = local_chunks[self.first_axis]
+            ell_chunks = local_chunks[self.first_axis+1]
+            groups = []
+            # Add groups satisfying triangular truncation
+            for m_chunk in m_chunks:
+                m = self.azimuth_basis.wavenumbers[m_chunk]
+                for ell_chunk in ell_chunks:
+                    ell = ell_chunk
+                    if ell >= np.abs(m):
+                        groups.append([m_chunk, ell_chunk])
+            return groups
+        else:
+            raise NotImplementedError()
+
+    def local_group_slices(self, basis_group):
+        m_group, ell_group = basis_group
+        if (m_group is not None) and (ell_group is not None):
+            local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)
+            m_chunks = local_chunks[self.first_axis]
+            m_index = list(m_chunks).index(m_group)
+            m_gs = self.group_shape[0]
+            m_slice = slice(m_index*m_gs, (m_index+1)*m_gs)
+            ell_chunks = local_chunks[self.last_axis]
+            ell_index = list(ell_chunks).index(ell_group)
+            ell_gs = self.group_shape[1]
+            ell_slice = slice(ell_index*ell_gs, (ell_index+1)*ell_gs)
+            return [m_slice, ell_slice]
+        else:
+            raise NotImplementedError()
+
     @CachedMethod
     def spin_weights(self, tensorsig):
         # Spin-component ordering: [-, +, 0]
@@ -1219,21 +1253,21 @@ class RegularityBasis(MultidimensionalBasis):
         li = self.local_l.index(ell)
         return (mi, li, self.n_slice(regindex, ell))
 
-    def coeff_subshape(self, groups):
-        subshape = []
-        for subaxis, group in enumerate(groups):
-            if group is None:
-                if subaxis == 2:
-                    ell = groups[1]
-                    subshape.append(self.n_size((), ell))  # Hack to avoid passing regindex?
-                else:
-                    subshape.append(self.shape[subaxis])
-            else:
-                subshape.append(self.group_shape[subaxis])
-        return subshape
+    # def coeff_subshape(self, groups):
+    #     subshape = []
+    #     for subaxis, group in enumerate(groups):
+    #         if group is None:
+    #             if subaxis == 2:
+    #                 ell = groups[1]
+    #                 subshape.append(self.n_size((), ell))  # Hack to avoid passing regindex?
+    #             else:
+    #                 subshape.append(self.shape[subaxis])
+    #         else:
+    #             subshape.append(self.group_shape[subaxis])
+    #     return subshape
 
-    def start(self, groups):
-        raise NotImplementedError
+    # def start(self, groups):
+    #     raise NotImplementedError
 
     # def field_radial_size(self, field, ell):
     #     comp_sizes = []
@@ -1241,6 +1275,41 @@ class RegularityBasis(MultidimensionalBasis):
     #     for regindex, regtotal in np.ndenumerate(R):
     #         comp_sizes.append(self.n_size(regindex, ell))
     #     return sum(comp_sizes)
+
+    def local_groups(self, basis_coupling):
+        m_coupling, ell_coupling, n_coupling = basis_coupling
+        if (not m_coupling) and (not ell_coupling) and (n_coupling):
+            local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)
+            m_chunks = local_chunks[self.first_axis]
+            ell_chunks = local_chunks[self.first_axis+1]
+            groups = []
+            # Add groups satisfying triangular truncation
+            for m_chunk in m_chunks:
+                m = self.sphere_basis.azimuth_basis.wavenumbers[m_chunk]
+                for ell_chunk in ell_chunks:
+                    ell = ell_chunk
+                    if ell >= np.abs(m):
+                        groups.append([m_chunk, ell_chunk, None])
+            return groups
+        else:
+            raise NotImplementedError()
+
+    def local_group_slices(self, basis_group):
+        m_group, ell_group, n_group = basis_group
+        if (m_group is not None) and (ell_group is not None) and (n_group is None):
+            local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)
+            m_chunks = local_chunks[self.first_axis]
+            m_index = list(m_chunks).index(m_group)
+            m_gs = self.group_shape[0]
+            m_slice = slice(m_index*m_gs, (m_index+1)*m_gs)
+            ell_chunks = local_chunks[self.first_axis+1]
+            ell_index = list(ell_chunks).index(ell_group)
+            ell_gs = self.group_shape[1]
+            ell_slice = slice(ell_index*ell_gs, (ell_index+1)*ell_gs)
+            n_slice = self.n_slice((), ell=ell_group)  # HACK b/c we decided this is always independent of regindex?
+            return [m_slice, ell_slice, n_slice]
+        else:
+            raise NotImplementedError()
 
     def dot_product_ncc(self, arg_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, ncc_first, indices, cutoff=1e-6):
         Gamma = dedalus_sphere.intertwiner.GammaDotProduct(indices, ncc_first=ncc_first)
