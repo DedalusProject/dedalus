@@ -129,4 +129,4 @@ while solver.ok:
         E_list.append(E0)
     solver.euler_step(dt)
 end_time = time.time()
-
+print('Run time:', end_time-start_time)

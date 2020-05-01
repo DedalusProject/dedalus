@@ -119,16 +119,19 @@ class Subsystem:
     def coeff_size(self, domain):
         return np.prod(self.coeff_shape(domain))
 
+    @CachedMethod
     def field_slices(self, field):
         comp_slices = (slice(None),) * len(field.tensorsig)
         coeff_slices = self.coeff_slices(field.domain)
         return comp_slices + coeff_slices
 
+    @CachedMethod
     def field_shape(self, field):
         comp_shape = tuple(cs.dim for cs in field.tensorsig)
         coeff_shape = self.coeff_shape(field.domain)
         return comp_shape + coeff_shape
 
+    @CachedMethod
     def field_size(self, field):
         return np.prod(self.field_shape(field))
 
