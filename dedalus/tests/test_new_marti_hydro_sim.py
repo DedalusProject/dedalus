@@ -105,9 +105,8 @@ for subproblem in solver.subproblems:
         shape = subproblem.M_min.shape
         subproblem.M_min = sparse.csr_matrix(shape, dtype=np.complex128)
         subproblem.L_min = sparse.identity(shape[0], format='csr', dtype=np.complex128)
-
-# if 0 in b.local_l:
-#     u_rhs['c'][:,:,0,:].fill(0) # very important to zero out the ell=0 RHS
+        subproblem.rhs_map[:,:] = 0
+        subproblem.rhs_map.eliminate_zeros()
 
 t_list = []
 E_list = []
