@@ -331,13 +331,14 @@ class InitialValueSolver:
         # Compute RHS
         self.evaluator.evaluate_group('F', 0, 0, 0)
         # Solve system for each subproblem, updating state
-        for ss in self.subproblems:
-            X0 = ss.gather(self.state)
-            F0 = ss.gather(self.F)
-            RHS = ss.M_min*X0 + dt*ss.rhs_map*F0
-            LHS = ss.M_min + dt*ss.L_min
-            X1 = linalg.spsolve(LHS, RHS, permc_spec=PERMC_SPEC)
-            ss.scatter(X1, self.state)
+        for sp in self.subproblems:
+            LHS = sp.M_min + dt*sp.L_min
+            for ss in sp.subsystems:
+                X0 = ss.gather(self.state)
+                F0 = ss.gather(self.F)
+                RHS = sp.M_min*X0 + dt*sp.rhs_map*F0
+                X1 = linalg.spsolve(LHS, RHS, permc_spec=PERMC_SPEC)
+                ss.scatter(X1, self.state)
         self.iteration += 1
 
     def step(self, dt):
