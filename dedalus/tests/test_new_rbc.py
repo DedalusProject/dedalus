@@ -15,7 +15,7 @@ Nx, Ny, Nz = 8, 8, 16
 Prandtl = 1
 Rayleigh = 3000
 timestep = 0.01
-stop_iteration = 1
+stop_iteration = 10
 
 # Bases
 c = coords.CartesianCoordinates('x', 'y', 'z')
@@ -63,7 +63,6 @@ problem.add_equation(eq_eval("u(z=0) = 0"))
 problem.add_equation(eq_eval("u(z=Lz) = 0"))
 problem.add_equation(eq_eval("b(z=0) = Lz"))
 problem.add_equation(eq_eval("b(z=Lz) = 0"))
-# pressure gauge?
 print("Problem built")
 
 # Solver
@@ -74,12 +73,18 @@ solver.stop_iteration = stop_iteration
 for i, subproblem in enumerate(solver.subproblems):
     M = subproblem.M_min
     L = subproblem.L_min
+    # Pressure gauge
+    if i == 0:
+        L = subproblem.L_min
+        L[0, 0] = 1
+    # Tau terms
     L[Nz*3-1, -6] = 1
     L[Nz*3-2, -5] = 1
     L[Nz*4-1, -4] = 1
     L[Nz*4-2, -3] = 1
     L[Nz*5-1, -2] = 1
     L[Nz*5-2, -1] = 1
+    L[Nz-1,   -1] = 1
     print(i, subproblem.group, np.linalg.cond((M+L).A))
 
 # Main loop
@@ -88,7 +93,7 @@ while solver.ok:
 
 # Plot matrices
 import matplotlib.pyplot as plt
-spi = [0, 1, 8, 14, 15]
+spi = [0, 15]
 I = len(spi)
 J = 2
 plt.figure(figsize=(3*J,3*I))
