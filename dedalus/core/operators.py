@@ -797,14 +797,17 @@ class SpectralOperator1D(SpectralOperator):
         """Build operator matrix for a specific subproblem."""
         axis = self.last_axis
         # Build identity matrices for each axis
-        subsystem_shape = subproblem.subsystem_shape(self.domain)
+        subsystem_shape = subproblem.coeff_shape(self.domain)
         factors = [sparse.identity(n, format='csr') for n in subsystem_shape]
         # Substitute factor for operator axis
-        if self.subaxis_coupling[0]:
+        if subproblem.group[axis] is None:
             factors[axis] = self.subspace_matrix
         else:
-            argslice = subproblem.global_slices(self.operand.domain)[axis]
-            outslice = subproblem.global_slices(self.domain)[axis]
+            group = subproblem.group[axis]
+            group_size = self.input_basis.group_shape[0]
+            argslice = outslice = slice(group*group_size, (group+1)*group_size)
+            # argslice = subproblem.global_slices(self.operand.domain)[axis]
+            # outslice = subproblem.global_slices(self.domain)[axis]
             factors[axis] = self.subspace_matrix[outslice, argslice]
         # Add factor for components
         comps = np.prod([cs.dim for cs in self.tensorsig], dtype=int)
@@ -1805,7 +1808,7 @@ class SphericalEllOperator(SpectralOperator, metaclass=MultiClass):
             submatrix_row = []
             for regindex_in, regtotal_in in np.ndenumerate(R_in):
                 # Build identity matrices for each axis
-                subsystem_shape = subproblem.subsystem_shape(self.domain)
+                subsystem_shape = subproblem.coeff_shape(self.domain)
                 factors = [sparse.identity(n, format='csr') for n in subsystem_shape]
                 # Substitute factor for radial axis
                 factors[self.last_axis] = self.radial_matrix(regindex_in, regindex_out, ell)
@@ -1936,7 +1939,7 @@ class CartesianComponent(Component):
     def subproblem_matrix(self, subproblem):
         # Build identities for each tangent space
         factors = [sparse.identity(cs.dim, format='csr') for cs in self.operand.tensorsig]
-        factors.append(sparse.identity(subproblem.subsystem_size(self.domain), format='csr'))
+        factors.append(sparse.identity(subproblem.coeff_size(self.domain), format='csr'))
         # Build selection matrix for selected coord
         index_factor = np.zeros((1, self.coordsys.dim))
         index_factor[0, self.coord_subaxis] = 1

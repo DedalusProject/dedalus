@@ -308,7 +308,7 @@ class Current(Operand):
         # factors = (sparse.identity(n, format='csr') for n in group_shape)
         # matrix = reduce(sparse.kron, factors, 1).tocsr()
         #size = self.domain.bases[0].field_radial_size(self, subproblem.ell)
-        size = subproblem.subfield_size(self)
+        size = subproblem.field_size(self)
         matrix = sparse.identity(size, format='csr')
         return {self: matrix}
 

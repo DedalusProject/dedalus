@@ -46,20 +46,31 @@ def build_subsystems(problem):
             basis_coupling = problem.matrix_coupling[basis.first_axis:basis.last_axis+1]
             basis_groups.append(basis.local_groups(basis_coupling))
     # Build subsystems groups as product of basis groups
-    local_groups = [sum(p, []) for p in product(*basis_groups)]
-    return [Subsystem(problem, group) for group in local_groups]
+    local_groups = [tuple(sum(p, [])) for p in product(*basis_groups)]
+    return tuple(Subsystem(problem, group) for group in local_groups)
 
 
 def build_subproblems(problem, subsystems, matrices):
     """Build subproblem matrices with progress logger."""
+    # Setup NCCs
     for eq in problem.eqs:
         for matrix in matrices:
             expr = eq[matrix]
             if expr:
                 separability = ~problem.matrix_coupling
                 expr.build_ncc_matrices(separability, problem.variables)
-    for subproblem in log_progress(subproblems, logger, 'info', desc='Building subproblem matrices', iter=np.inf, frac=0.1, dt=10):
+    # Get matrix groups
+    subproblem_map = defaultdict(list)
+    for subsystem in subsystems:
+        subproblem_map[subsystem.matrix_group].append(subsystem)
+    # Build subproblems
+    subproblems = []
+    for matrix_group in log_progress(subproblem_map, logger, 'info', desc='Building subproblem matrices', iter=np.inf, frac=0.1, dt=10):
+        subsystems = tuple(subproblem_map[matrix_group])
+        subproblem = Subproblem(problem, subsystems, matrix_group)
         subproblem.build_matrices(matrices)
+        subproblems.append(subproblem)
+    return tuple(subproblems)
 
 
 class Subsystem:
@@ -77,7 +88,7 @@ class Subsystem:
         self.group = group
         # Determine matrix group using problem matrix dependence
         matrix_independence = ~ problem.matrix_dependence
-        self.matrix_group = replace(group, matrix_independence, 0)
+        self.matrix_group = tuple(replace(group, matrix_independence, 0))
 
     def coeff_slices(self, domain):
         slices = []
@@ -146,7 +157,7 @@ class Subsystem:
                 i0 = i1
 
 
-class Subproblem:
+class Subproblem(Subsystem):
     """
     Object representing one coupled subsystem of a problem.
 
@@ -157,16 +168,15 @@ class Subproblem:
     coupled dimension.
     """
 
-    def __init__(self, problem, group, index):
-        # Remove coupled indices
-        group = tuple(replace(group, problem.matrix_coupling, None))
-        index = tuple(replace(index, problem.matrix_coupling, None))
+    def __init__(self, problem, subsystems, matrix_group):
         self.problem = problem
-        ## HACKs
-        self.domain = problem.variables[0].domain
-        self.global_index = self.group = group
-        self.local_index = index
-        #self.first_coupled_axis = np.sum(problem.separable)
+        self.subsystems = subsystems
+        self.group = matrix_group
+        self.matrix_group = matrix_group
+        self.domain = problem.variables[0].domain  # HACK
+        # Cross reference from subsystems
+        for subsystem in subsystems:
+            subsystem.subproblem = self
 
     # @CachedAttribute
     # def group_dict(self):
@@ -177,8 +187,6 @@ class Subproblem:
     #             for space in self.domain.spaces[axis]:
     #                 group_dict['n'+space.name] = group
     #     return group_dict
-
-
 
     def inclusion_matrices(self, bases):
         """List of inclusion matrices."""
@@ -260,7 +268,7 @@ class Subproblem:
         #     else:
         #         matrices.append(basis.mode_map(group))
         # return reduce(sparse.kron, matrices, 1).tocsr()
-        size = self.subfield_size(field)
+        size = self.field_size(field)
         return sparse.identity(size, format='csr')
 
     # def mode_map(self, basis_sets):
@@ -284,8 +292,8 @@ class Subproblem:
 
         eqns = self.problem.equations
         vars = self.problem.variables
-        eqn_sizes = [self.subfield_size(eqn['LHS']) for eqn in eqns]
-        var_sizes = [self.subfield_size(var) for var in vars]
+        eqn_sizes = [self.field_size(eqn['LHS']) for eqn in eqns]
+        var_sizes = [self.field_size(var) for var in vars]
         I = sum(eqn_sizes)
         J = sum(var_sizes)
 

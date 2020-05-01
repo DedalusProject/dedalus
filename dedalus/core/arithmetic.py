@@ -398,7 +398,7 @@ class DotProduct(FutureField):
         operand_mats = operand.expression_matrices(subproblem, vars)
         # Modify NCC matrix for subproblem
         # Build projection matrix dropping constant-groups as necessary
-        group_shape = subproblem.group_shape(self.subdomain)
+        group_shape = subproblem.coeff_shape(self.subdomain)
         const_shape = np.maximum(group_shape, 1)
         factors = (sparse.eye(*shape, format='csr') for shape in zip(group_shape, const_shape))
         projection = reduce(sparse.kron, factors, 1).tocsr()
@@ -662,7 +662,7 @@ class Multiply(Future, metaclass=MultiClass):
         operand_mats = operand.expression_matrices(subproblem, vars)
         # Modify NCC matrix for subproblem
         # Build projection matrix dropping constant-groups as necessary
-        group_shape = subproblem.subsystem_shape(self.domain)
+        group_shape = subproblem.coeff_shape(self.domain)
         const_shape = np.maximum(group_shape, 1)
         factors = (sparse.eye(*shape, format='csr') for shape in zip(group_shape, const_shape))
         projection = reduce(sparse.kron, factors, 1).tocsr()

@@ -260,7 +260,7 @@ class InitialValueSolver:
 
         # Build subproblems and subproblem matrices
         self.subsystems = subsystems.build_subsystems(problem)
-        #subsystems.build_matrices(self.subproblems, ['M', 'L'])
+        self.subproblems = subsystems.build_subproblems(problem, self.subsystems, ['M', 'L'])
 
         # # Build systems
         # namespace = problem.namespace
