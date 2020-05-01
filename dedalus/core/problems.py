@@ -145,11 +145,13 @@ class ProblemBase:
             # self._build_object_forms(eqn)
         # Determine equation domain
         LHS, RHS = equation
-        domain = (LHS - RHS).domain
+        expr = LHS - RHS
         # Build equation dictionary
         eqn = {'LHS': LHS,
                'RHS': RHS,
-               'domain': domain}
+               'domain': expr.domain,
+               'tensorsig': expr.tensorsig,
+               'dtype': expr.dtype}
         self._build_matrix_expressions(eqn)
         # Store equation dictionary
         self.equations.append(eqn)
@@ -458,6 +460,8 @@ class InitialValueProblem(ProblemBase):
         vars = self.variables
         dist = self.dist
         domain = eqn['domain']
+        tensorsig = eqn['tensorsig']
+        dtype = eqn['dtype']
         # Equation conditions
         #self._check_basis_containment(eqn, 'LHS', 'RHS')
         #eqn['LHS'].require_linearity(*vars, name='LHS')
@@ -475,8 +479,14 @@ class InitialValueProblem(ProblemBase):
         if L:
             L = operators.convert(L, domain.bases)
         F = eqn['RHS']
-        F = Operand.cast(F, dist, tensorsig=eqn['LHS'].tensorsig, dtype=eqn['LHS'].dtype)
-        F = operators.convert(F, domain.bases)
+        if F:
+            # Cast to match LHS
+            F = Operand.cast(F, dist, tensorsig=tensorsig, dtype=dtype)
+            F = operators.convert(F, domain.bases)
+        else:
+            # Allocate zero field
+            F = Field(dist=dist, bases=domain.bases, tensorsig=tensorsig, dtype=dtype)
+            F['c'] = 0
         eqn['M'] = M
         eqn['L'] = L
         eqn['F'] = F

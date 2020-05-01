@@ -152,15 +152,18 @@ class Evaluator:
             if isinstance(task_op, Field):
                 # Hack: out is always assigned to task
                 # Grab it here and copy field over
-                output = task_op.out
-                output.set_scales(task_op.scales)
-                output[task_op.layout] = task_op.data
+                ## Don't need this since field tasks are directly set as system fields?
+                task['out'] = task_op
+                continue
+                # output = task_op.out
+                # output.set_scales(task_op.scales)
+                # output[task_op.layout] = task_op.data
             else:
                 output = task['operator'].attempt(**kw)
-            if output is None:
-                unfinished.append(task)
-            else:
-                task['out'] = output
+                if output is None:
+                    unfinished.append(task)
+                else:
+                    task['out'] = output
 
         return unfinished
 
@@ -275,8 +278,11 @@ class SystemHandler(Handler):
         self.fields = []
         for i, task in enumerate(self.tasks):
             op = task['operator']
-            op.out = op.build_out()
-            self.fields.append(op.out)
+            if isinstance(op, FutureField):
+                op.out = op.build_out()
+                self.fields.append(op.out)
+            else:
+                self.fields.append(op)
             # field = Field(task['operator'].bases)
             # task['operator'].out = self.system.fields[i]
 

@@ -1803,7 +1803,7 @@ class SphericalEllOperator(SpectralOperator, metaclass=MultiClass):
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
         R_in = self.input_basis.regularity_classes(operand.tensorsig)
-        R_out = self.input_basis.regularity_classes(self.tensorsig)
+        R_out = self.input_basis.regularity_classes(self.tensorsig)  # Should this use output_basis?
         ell = subproblem.group[self.last_axis - 1]
         # Loop over components
         submatrices = []

@@ -1834,11 +1834,13 @@ class BallBasis(RegularityBasis):
         (nmin, Nmax) = self._n_limits((), ell)
         return nmin
 
+
 def prod(arg):
     if arg:
         return reduce(operator.mul, arg)
     else:
         return 1
+
 
 def reduced_view(data, axis, dim):
     shape = data.shape
@@ -1849,7 +1851,6 @@ def reduced_view(data, axis, dim):
 
 
 class ConvertRegularity(operators.Convert, operators.SphericalEllOperator):
-    """Jacobi polynomial conversion."""
 
     input_basis_type = RegularityBasis
     output_basis_type = RegularityBasis
