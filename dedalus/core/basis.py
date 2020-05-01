@@ -1359,11 +1359,14 @@ class RegularityBasis(MultidimensionalBasis):
                 if abs(gamma) > gamma_threshold:
                     coeffs_filter = coeffs[regindex_ncc][:N]
                     J = basis_in.operator_matrix('Z',ell,regtotal_in)
+                    R2 = (J + basis_in.operator_matrix('I',ell,regtotal_in))/2
                     A, B = clenshaw.jacobi_recursion(N, a_ncc, b_ncc, J)
                     f0 = 1/np.sqrt(jacobi.mass(a_ncc, b_ncc)) * sparse.identity(N)
                     prefactor = basis_in.radius_multiplication_matrix(ell, regtotal_in, diff_regtotal)
+                    if np.max(np.abs(coeffs_filter)) > 1e-5:
+                        print(regindex_ncc, regindex_in, regindex_out, d, diff_regtotal)
                     for i in range(d//2):
-                        prefactor = prefactor @ J
+                        prefactor = prefactor @ R2
                     matrix += gamma * prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff)
 
         return matrix

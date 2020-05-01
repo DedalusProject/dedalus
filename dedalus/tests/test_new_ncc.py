@@ -103,6 +103,46 @@ class Subproblem:
 #results.append(result)
 #print(len(results), ':', result)
 
+# Tensor x Scalar
+f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+g = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+W = field.Field(dist=d, bases=(b,), tensorsig=(c,c), dtype=np.complex128)
+
+f['g'] = r**6
+g['g'] = 3*x**2 + 2*y*z
+T = operators.Gradient(operators.Gradient(f, c), c).evaluate()
+
+#T['c'][0,1].fill(0)
+T['c'][1,1].fill(0)
+
+W['g'] = g['g']*T['g']
+
+U = field.Field(dist=d, bases=(b,), tensorsig=(c,c), dtype=np.complex128)
+
+ncc_basis = T.domain.bases[0]
+
+#for ell in ncc_basis.local_l:
+for ell in [2]:
+    sp = Subproblem(ell)
+    matrix = ncc_basis.tensor_product_ncc(b, T['c'][:,:,0,0,:], (c,c), (), (c,c), sp, ncc_first=True)
+    slice = b.n_slice((),ell)
+    view = apply_matrix(matrix, g['c'][:,ell,slice], axis=1)
+    shape = T['c'][:,:,:,ell,slice].shape
+    vector = view.reshape(shape[2],shape[0],shape[1],shape[3])
+    U['c'][:,:,:,ell,slice] = np.transpose(vector, axes=(1,2,0,3))
+
+print(U['c'][0,0,2,2,:5])
+print(W['c'][0,0,2,2,:5])
+
+for i in range(3):
+    for j in range(3):
+        print(i,j,np.allclose(U['c'][i,j,2,2,:5],W['c'][i,j,2,2,:5]))
+
+result = np.allclose(U['g'], W['g'])
+results.append(result)
+print(len(results), ':', result)
+
+
 ## Vector x Vector
 #f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
 #g = field.Field(dist=d, bases=(b,), dtype=np.complex128)
@@ -173,46 +213,46 @@ class Subproblem:
 #results.append(result)
 #print(len(results), ':', result)
 
-# Vector dot Tensor
-
-f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
-T = field.Field(dist=d, bases=(b,), tensorsig=(c,c,), dtype=np.complex128)
-
-T['g'][2,2] = (6*x**2+4*y*z)/r**2
-T['g'][2,1] = T['g'][1,2] = -2*(y**3+x**2*(y-3*z)-y*z**2)/(r**3*np.sin(theta))
-T['g'][2,0] = T['g'][0,2] = 2*x*(z-3*y)/(r**2*np.sin(theta))
-T['g'][1,1] = 6*x**2/(r**2*np.sin(theta)**2) - (6*x**2+4*y*z)/r**2
-T['g'][1,0] = T['g'][0,1] = -2*x*(x**2+y**2+3*y*z)/(r**3*np.sin(theta)**2)
-T['g'][0,0] = 6*y**2/(x**2+y**2)
-
-f['g'] = r**6
-u = operators.Gradient(f, c).evaluate()
-
-v = field.Field(dist=d, bases=T.domain.bases, tensorsig=(c,), dtype=np.complex128)
-
-for i in range(3):
-    for j in range(3):
-        v['g'][i] = u['g'][j]*T['g'][j,i]
-
-ncc_basis = u.domain.bases[0]
-arg_basis = T.domain.bases[0]
-
-w = field.Field(dist=d, bases=T.domain.bases, tensorsig=(c,), dtype=np.complex128)
-
-for ell in b.local_l:
-    sp = Subproblem(ell)
-    slice = b.n_slice((),ell)
-    vector = np.transpose(T['c'][:,:,:,ell,slice], axes=(2,0,1,3))
-    shape = vector.shape
-    view = vector.reshape((shape[0],shape[1]*shape[2]*shape[3]))
-    matrix = ncc_basis.dot_product_ncc(arg_basis, u['c'][:,0,0,:], (c,), (c,c), (c,), sp, ncc_first=True, indices=(0,0))
-    view = apply_matrix(matrix, view, axis=1)
-    shape = w['c'][:,:,ell,slice].shape
-    vector = view.reshape(shape[1],shape[0],shape[2])
-    w['c'][:,:,ell,slice] = np.transpose(vector, axes=(1,0,2))
-
-result = np.allclose(v['g'], w['g'])
-results.append(result)
-print(len(results), ':', result)
+## Vector dot Tensor
+#
+#f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+#T = field.Field(dist=d, bases=(b,), tensorsig=(c,c,), dtype=np.complex128)
+#
+#T['g'][2,2] = (6*x**2+4*y*z)/r**2
+#T['g'][2,1] = T['g'][1,2] = -2*(y**3+x**2*(y-3*z)-y*z**2)/(r**3*np.sin(theta))
+#T['g'][2,0] = T['g'][0,2] = 2*x*(z-3*y)/(r**2*np.sin(theta))
+#T['g'][1,1] = 6*x**2/(r**2*np.sin(theta)**2) - (6*x**2+4*y*z)/r**2
+#T['g'][1,0] = T['g'][0,1] = -2*x*(x**2+y**2+3*y*z)/(r**3*np.sin(theta)**2)
+#T['g'][0,0] = 6*y**2/(x**2+y**2)
+#
+#f['g'] = r**6
+#u = operators.Gradient(f, c).evaluate()
+#
+#v = field.Field(dist=d, bases=T.domain.bases, tensorsig=(c,), dtype=np.complex128)
+#
+#for i in range(3):
+#    for j in range(3):
+#        v['g'][i] = u['g'][j]*T['g'][j,i]
+#
+#ncc_basis = u.domain.bases[0]
+#arg_basis = T.domain.bases[0]
+#
+#w = field.Field(dist=d, bases=T.domain.bases, tensorsig=(c,), dtype=np.complex128)
+#
+#for ell in b.local_l:
+#    sp = Subproblem(ell)
+#    slice = b.n_slice((),ell)
+#    vector = np.transpose(T['c'][:,:,:,ell,slice], axes=(2,0,1,3))
+#    shape = vector.shape
+#    view = vector.reshape((shape[0],shape[1]*shape[2]*shape[3]))
+#    matrix = ncc_basis.dot_product_ncc(arg_basis, u['c'][:,0,0,:], (c,), (c,c), (c,), sp, ncc_first=True, indices=(0,0))
+#    view = apply_matrix(matrix, view, axis=1)
+#    shape = w['c'][:,:,ell,slice].shape
+#    vector = view.reshape(shape[1],shape[0],shape[2])
+#    w['c'][:,:,ell,slice] = np.transpose(vector, axes=(1,0,2))
+#
+#result = np.allclose(v['g'], w['g'])
+#results.append(result)
+#print(len(results), ':', result)
 
 
