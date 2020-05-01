@@ -475,9 +475,8 @@ class InitialValueProblem(ProblemBase):
         if L:
             L = operators.convert(L, domain.bases)
         F = eqn['RHS']
-        if F:
-            F = Operand.cast(F, dist)
-            F = operators.convert(F, domain.bases)
+        F = Operand.cast(F, dist, tensorsig=eqn['LHS'].tensorsig, dtype=eqn['LHS'].dtype)
+        F = operators.convert(F, domain.bases)
         eqn['M'] = M
         eqn['L'] = L
         eqn['F'] = F

@@ -117,19 +117,20 @@ class Operand:
         return Power(other, self)
 
     @staticmethod
-    def cast(arg, dist):
+    def cast(arg, dist, tensorsig, dtype):
         # Check distributor for operands
         if isinstance(arg, Operand):
             if arg.domain.dist is not dist:
                 raise ValueError("Mismatching distributor.")
+            elif arg.tensorsig != tensorsig:
+                raise ValueError("Mismatching tensorsig.")
+            elif arg.dtype != dtype:
+                raise ValueError("Mismatching dtype.")
             else:
                 return arg
         # Cast numbers to constant fields
         elif isinstance(arg, Number):
-            # Cast integers to floats
-            if isinstance(arg, int):
-                arg = float(arg)
-            out = Field(dist=dist, dtype=np.dtype(type(arg)))
+            out = Field(dist=dist, tensorsig=tensorsig, dtype=dtype)
             out['g'] = arg  # Set in grid space arbitrarily
             return out
         else:

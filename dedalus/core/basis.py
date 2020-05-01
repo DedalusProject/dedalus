@@ -646,8 +646,6 @@ class DifferentiateComplexFourier(operators.Differentiate):
 
     @staticmethod
     def _subspace_entry(i, j, input_basis, *args):
-        # dx(cos(n*x)) = -n*sin(n*x)
-        # dx(sin(n*x)) = n*cos(n*x)
         if i == j:
             k = input_basis.wavenumbers[i]
             return 1j*k / input_basis.COV.stretch

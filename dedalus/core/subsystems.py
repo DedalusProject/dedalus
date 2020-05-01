@@ -327,6 +327,7 @@ class Subproblem(Subsystem):
                 data = np.concatenate(data)
                 rows = np.concatenate(rows)
                 cols = np.concatenate(cols)
+            data[np.abs(data) < 1e-12] = 0
             matrices[name] = sparse.coo_matrix((data, (rows, cols)), shape=(I, J)).tocsr()
 
         # Create maps restricting group data to included modes

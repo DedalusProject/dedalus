@@ -692,6 +692,9 @@ class LinearOperator(FutureField):
 
     def expression_matrices(self, subproblem, vars):
         """Build expression matrices for a specific subproblem and variables."""
+        # Intercept calls to compute matrices over expressions
+        if self in vars:
+            return Field.expression_matrices(self, subproblem, vars)
         # Build operand matrices
         operand_mats = self.operand.expression_matrices(subproblem, vars)
         # Apply operator matrix
@@ -1673,7 +1676,7 @@ class CartesianGradient(Gradient):
 
     def subproblem_matrix(self, subproblem):
         """Build operator matrix for a specific subproblem."""
-        return sparse.vstack(arg.subproblem_matrix(subproblem) for arg in self.args)
+        return sparse.vstack(arg.expression_matrices(subproblem, [self.operand])[self.operand] for arg in self.args)
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""
@@ -1989,9 +1992,9 @@ class CartesianDivergence(Divergence):
         # Get components
         comps = [CartesianComponent(operand, index=index, coord=c) for c in coordsys.coords]
         comps = [Differentiate(comp, c) for comp, c in zip(comps, coordsys.coords)]
-        # Convert to correct bases before adding
-        bases = sum(comps).domain.bases
-        comps = [convert(comp, bases) for comp in comps]
+        # Convert to correct bases before adding?
+        #bases = sum(comps).domain.bases
+        #comps = [convert(comp, bases) for comp in comps]
         arg = sum(comps)
         LinearOperator.__init__(self, arg, out=out)
         self.index = index
@@ -2022,9 +2025,9 @@ class CartesianDivergence(Divergence):
         # Any layout (addition is done)
         pass
 
-    def expression_matrices(self, subproblem, vars):
-        """Build expression matrices for a specific subproblem and variables."""
-        return self.original_args[0].expression_matrices(subproblem, vars)
+    def subproblem_matrix(self, subproblem):
+        """Build operator matrix for a specific subproblem."""
+        return self.args[0].expression_matrices(subproblem, [self.operand])[self.operand]
 
     def operate(self, out):
         """Perform operation."""
@@ -2235,9 +2238,9 @@ class CartesianLaplacian(Laplacian):
     def matrix_coupling(self, *vars):
         return self.args[0].matrix_coupling(*vars)
 
-    def expression_matrices(self, subproblem, vars):
-        """Build expression matrices for a specific subproblem and variables."""
-        return self.args[0].expression_matrices(subproblem, vars)
+    def subproblem_matrix(self, subproblem):
+        """Build operator matrix for a specific subproblem."""
+        return self.args[0].expression_matrices(subproblem, [self.operand])[self.operand]
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""

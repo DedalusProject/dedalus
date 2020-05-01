@@ -262,20 +262,21 @@ class InitialValueSolver:
         self.subsystems = subsystems.build_subsystems(problem)
         self.subproblems = subsystems.build_subproblems(problem, self.subsystems, ['M', 'L'])
 
-        # # Build systems
+        # Build systems
         # namespace = problem.namespace
         # #vars = [namespace[var] for var in problem.variables]
         # #self.state = FieldSystem.from_fields(vars)
-        # self.state = problem.variables
+        self.state = problem.variables
         # self._sim_time = namespace[problem.time]
 
-        # # Create F operator trees
-        # self.evaluator = Evaluator(domain, namespace)
-        # F_handler = self.evaluator.add_system_handler(iter=1, group='F')
-        # for eq in problem.eqs:
-        #     F_handler.add_task(eq['F'])
-        # F_handler.build_system()
-        # self.F = F_handler.fields
+        # Create F operator trees
+        namespace = {}
+        self.evaluator = Evaluator(self.dist, namespace)
+        F_handler = self.evaluator.add_system_handler(iter=1, group='F')
+        for eq in problem.eqs:
+            F_handler.add_task(eq['F'])
+        F_handler.build_system()
+        self.F = F_handler.fields
 
         # # Initialize timestepper
         # subdomains = [eq['subdomain'] for eq in problem.eqs]
@@ -309,7 +310,6 @@ class InitialValueSolver:
     @property
     def ok(self):
         """Check that current time and iteration pass stop conditions."""
-
         if self.sim_time >= self.stop_sim_time:
             logger.info('Simulation stop time reached.')
             return False
@@ -332,12 +332,12 @@ class InitialValueSolver:
         self.evaluator.evaluate_group('F', 0, 0, 0)
         # Solve system for each subproblem, updating state
         for ss in self.subproblems:
-            X0 = ss.get_vector(self.state)
-            F0 = ss.get_vector(self.F)
-            RHS = ss.M_csr*X0 + dt*ss.RHS_C_csr*F0
-            LHS = ss.M_csc + dt*ss.L_csc
+            X0 = ss.gather(self.state)
+            F0 = ss.gather(self.F)
+            RHS = ss.M_min*X0 + dt*ss.rhs_map*F0
+            LHS = ss.M_min + dt*ss.L_min
             X1 = linalg.spsolve(LHS, RHS, permc_spec=PERMC_SPEC)
-            ss.set_vector(self.state, X1)
+            ss.scatter(X1, self.state)
         self.iteration += 1
 
     def step(self, dt):

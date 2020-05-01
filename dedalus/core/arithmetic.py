@@ -40,7 +40,9 @@ class Add(Future, metaclass=MultiClass):
         # Cast all args to Operands, if any present
         if any(isinstance(arg, Operand) for arg in args):
             dist = unify_attributes(args, 'dist', require=False)
-            args = [Operand.cast(arg, dist) for arg in args]
+            tensorsig = unify_attributes(args, 'tensorsig', require=False)
+            dtype = unify_attributes(args, 'dtype', require=False)
+            args = [Operand.cast(arg, dist, tensorsig, dtype) for arg in args]
             return args, kw
         # Cast all args to Array, if any present
         # elif any(isinstance(arg, (Array, FutureArray)) for arg in args):
@@ -137,6 +139,9 @@ class Add(Future, metaclass=MultiClass):
 
     def expression_matrices(self, subproblem, vars):
         """Build expression matrices for a specific subproblem and variables."""
+        # Intercept calls to compute matrices over expressions
+        if self in vars:
+            return Field.expression_matrices(self, subproblem, vars)
         matrices = {}
         # Iteratively add argument expression matrices
         for arg in self.args:
@@ -386,6 +391,9 @@ class DotProduct(FutureField):
 
     def expression_matrices(self, subproblem, vars):
         """Build expression matrices for a specific subproblem and variables."""
+        # Intercept calls to compute matrices over expressions
+        if self in vars:
+            return Field.expression_matrices(self, subproblem, vars)
         # Check arguments vs. NCC matrix construction
         if not hasattr(self, '_ncc_matrix'):
             raise SymbolicParsingError("Must build NCC matrices before expression matrices.")
@@ -579,7 +587,7 @@ class Multiply(Future, metaclass=MultiClass):
     def matrix_coupling(self, *vars):
         nccs, operand = self.require_linearity(*vars)
         # NCCs couple along any non-constant dimensions
-        ncc_bases = Operand.cast(np.prod(nccs), self.dist).domain.full_bases
+        ncc_bases = Operand.cast(np.prod(nccs), self.dist, self.tensorsig, self.dtype).domain.full_bases
         ncc_coupling = np.array([(basis is not None) for basis in ncc_bases])
         # Combine with operand separability
         return ncc_coupling | operand.matrix_coupling(*vars)
@@ -650,6 +658,9 @@ class Multiply(Future, metaclass=MultiClass):
 
     def expression_matrices(self, subproblem, vars):
         """Build expression matrices for a specific subproblem and variables."""
+        # Intercept calls to compute matrices over expressions
+        if self in vars:
+            return Field.expression_matrices(self, subproblem, vars)
         # Check arguments vs. NCC matrix construction
         if not hasattr(self, '_ncc_matrix'):
             raise SymbolicParsingError("Must build NCC matrices before expression matrices.")
@@ -793,6 +804,9 @@ class MultiplyNumberField(Multiply, FutureField):
 
     def expression_matrices(self, subproblem, vars):
         """Build expression matrices for a specific subproblem and variables."""
+        # Intercept calls to compute matrices over expressions
+        if self in vars:
+            return Field.expression_matrices(self, subproblem, vars)
         arg0, arg1 = self.args
         # Build field matrices
         arg1_mats = arg1.expression_matrices(subproblem, vars)

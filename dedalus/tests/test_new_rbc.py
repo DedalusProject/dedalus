@@ -14,6 +14,8 @@ Lx, Ly, Lz = (4, 4, 1)
 Nx, Ny, Nz = 8, 8, 16
 Prandtl = 1
 Rayleigh = 3000
+timestep = 0.01
+stop_iteration = 1
 
 # Bases
 c = coords.CartesianCoordinates('x', 'y', 'z')
@@ -66,14 +68,32 @@ print("Problem built")
 
 # Solver
 solver = solvers.InitialValueSolver(problem, timesteppers.RK111)
+solver.stop_iteration = stop_iteration
+
+# Add vector taus by hand
+for i, subproblem in enumerate(solver.subproblems):
+    M = subproblem.M_min
+    L = subproblem.L_min
+    L[Nz*3-1, -6] = 1
+    L[Nz*3-2, -5] = 1
+    L[Nz*4-1, -4] = 1
+    L[Nz*4-2, -3] = 1
+    L[Nz*5-1, -2] = 1
+    L[Nz*5-2, -1] = 1
+    print(i, subproblem.group, np.linalg.cond((M+L).A))
+
+# Main loop
+while solver.ok:
+    solver.euler_step(timestep)
 
 # Plot matrices
 import matplotlib.pyplot as plt
-plt.figure()
-I = 2
+spi = [0, 1, 8, 14, 15]
+I = len(spi)
 J = 2
-for i, sp in enumerate(solver.subproblems[:I]):
-    print(np.linalg.cond((sp.M_min + sp.L_min).A))
+plt.figure(figsize=(3*J,3*I))
+for i, ind in enumerate(spi):
+    sp = solver.subproblems[ind]
     for j, mat in enumerate(['M_min', 'L_min']):
         axes = plt.subplot(I,J,i*J+j+1)
         A = getattr(sp, mat)

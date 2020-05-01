@@ -33,34 +33,29 @@ class Evaluator:
 
     """
 
-    def __init__(self, domain, vars):
-
-        self.domain = domain
+    def __init__(self, dist, vars):
+        self.dist = dist
         self.vars = vars
         self.handlers = []
         self.groups = defaultdict(list)
 
     def add_dictionary_handler(self, **kw):
         """Create a dictionary handler and add to evaluator."""
-
-        DH = DictionaryHandler(self.domain, self.vars, **kw)
+        DH = DictionaryHandler(self.dist, self.vars, **kw)
         return self.add_handler(DH)
 
     def add_system_handler(self, **kw):
         """Create a system handler and add to evaluator."""
-
-        SH = SystemHandler(self.domain, self.vars, **kw)
+        SH = SystemHandler(self.dist, self.vars, **kw)
         return self.add_handler(SH)
 
     def add_file_handler(self, filename, **kw):
         """Create a file handler and add to evaluator."""
-
-        FH = FileHandler(filename, self.domain, self.vars, **kw)
+        FH = FileHandler(filename, self.dist, self.vars, **kw)
         return self.add_handler(FH)
 
     def add_handler(self, handler):
         """Add a handler to evaluator."""
-
         self.handlers.append(handler)
         # Register with group
         if handler.group is not None:
@@ -69,7 +64,6 @@ class Evaluator:
 
     def evaluate_group(self, group, wall_time, sim_time, iteration):
         """Evaluate all handlers in a group."""
-
         handlers = self.groups[group]
         self.evaluate_handlers(handlers, wall_time, sim_time, iteration)
 
@@ -110,11 +104,11 @@ class Evaluator:
         fields = self.get_fields(tasks)
         for f in fields:
             f.require_coeff_space()
-            f.require_scales(f.subdomain.dealias)
+            f.require_scales(f.domain.dealias)
         tasks = self.attempt_tasks(tasks, id=sim_time)
 
         # Oscillate through layouts until all tasks are evaluated
-        n_layouts = len(self.domain.dist.layouts)
+        n_layouts = len(self.dist.layouts)
         oscillate_indices = oscillate(range(n_layouts))
         current_index = next(oscillate_indices)
         while tasks:
@@ -122,9 +116,9 @@ class Evaluator:
             # Transform fields
             fields = self.get_fields(tasks)
             if current_index < next_index:
-                self.domain.dist.paths[current_index].increment(fields)
+                self.dist.paths[current_index].increment(fields)
             else:
-                self.domain.dist.paths[next_index].decrement(fields)
+                self.dist.paths[next_index].decrement(fields)
             current_index = next_index
             # Attempt evaluation
             tasks = self.attempt_tasks(tasks, id=sim_time)
@@ -192,10 +186,10 @@ class Handler:
 
     """
 
-    def __init__(self, domain, vars, group=None, wall_dt=np.inf, sim_dt=np.inf, iter=np.inf):
+    def __init__(self, dist, vars, group=None, wall_dt=np.inf, sim_dt=np.inf, iter=np.inf):
 
         # Attributes
-        self.domain = domain
+        self.dist = dist
         self.vars = vars
         self.group = group
         self.wall_dt = wall_dt
@@ -219,7 +213,7 @@ class Handler:
         # if isinstance(task, Operator):
         #     op = task
         if isinstance(task, str):
-            op = FutureField.parse(task, self.vars, self.domain)
+            op = FutureField.parse(task, self.vars, self.dist)
         else:
             # op = FutureField.cast(task, self.domain)
             # op = Cast(task)
@@ -228,9 +222,9 @@ class Handler:
         # Build task dictionary
         task = dict()
         task['operator'] = op
-        task['layout'] = self.domain.distributor.get_layout_object(layout)
+        task['layout'] = self.dist.get_layout_object(layout)
         task['name'] = name
-        task['scales'] = self.domain.remedy_scales(scales)
+        task['scales'] = self.dist.remedy_scales(scales)
 
         self.tasks.append(task)
 
@@ -281,12 +275,8 @@ class SystemHandler(Handler):
         self.fields = []
         for i, task in enumerate(self.tasks):
             op = task['operator']
-            if all(basis is None for basis in op.bases):
-                field = Field(domain=self.domain)
-            else:
-                field = Field(bases=op.bases)
-            op.out = field
-            self.fields.append(field)
+            op.out = op.build_out()
+            self.fields.append(op.out)
             # field = Field(task['operator'].bases)
             # task['operator'].out = self.system.fields[i]
 
@@ -323,8 +313,8 @@ class FileHandler(Handler):
         if any(base_path.suffixes):
             raise ValueError("base_path should indicate a folder for storing HDF5 files.")
         if not base_path.exists():
-            with Sync(self.domain.distributor.comm_cart):
-                if self.domain.distributor.rank == 0:
+            with Sync(self.dist.comm_cart):
+                if self.dist.rank == 0:
                     base_path.mkdir()
 
         # Attributes
@@ -351,7 +341,7 @@ class FileHandler(Handler):
         size_limit = (self.current_path.stat().st_size >= self.max_size)
         if not self.parallel:
             # reduce(size_limit, or) across processes
-            comm = self.domain.distributor.comm_cart
+            comm = self.dist.comm_cart
             self._sl_array[0] = size_limit
             comm.Allreduce(MPI.IN_PLACE, self._sl_array, op=MPI.LOR)
             size_limit = self._sl_array[0]
@@ -368,7 +358,7 @@ class FileHandler(Handler):
             return self.new_file()
         # Otherwise open current file
         if self.parallel:
-            comm = self.domain.distributor.comm_cart
+            comm = self.dist.comm_cart
             return h5py.File(str(self.current_path), 'a', driver='mpio', comm=comm)
         else:
             return h5py.File(str(self.current_path), 'a')
@@ -376,12 +366,12 @@ class FileHandler(Handler):
     def new_file(self):
         """Generate new HDF5 file."""
 
-        domain = self.domain
+        dist = self.dist
 
         # Create next file
         self.set_num += 1
         self.file_write_num = 0
-        comm = domain.distributor.comm_cart
+        comm = dist.comm_cart
         if self.parallel:
             # Save in base directory
             file_name = '%s_s%i.hdf5' %(self.base_path.stem, self.set_num)
@@ -392,8 +382,8 @@ class FileHandler(Handler):
             folder_name = '%s_s%i' %(self.base_path.stem, self.set_num)
             folder_path = self.base_path.joinpath(folder_name)
             if not folder_path.exists():
-                with Sync(domain.distributor.comm_cart):
-                    if domain.distributor.rank == 0:
+                with Sync(dist.comm_cart):
+                    if dist.rank == 0:
                         folder_path.mkdir()
             file_name = '%s_s%i_p%i.h5' %(self.base_path.stem, self.set_num, comm.rank)
             self.current_path = folder_path.joinpath(file_name)
@@ -405,15 +395,15 @@ class FileHandler(Handler):
 
     def setup_file(self, file):
 
-        domain = self.domain
+        dist = self.dist
 
         # Metadeta
         file.attrs['set_number'] = self.set_num
         file.attrs['handler_name'] = self.base_path.stem
         file.attrs['writes'] = self.file_write_num
         if not self.parallel:
-            file.attrs['mpi_rank'] = domain.distributor.comm_cart.rank
-            file.attrs['mpi_size'] = domain.distributor.comm_cart.size
+            file.attrs['mpi_rank'] = dist.comm_cart.rank
+            file.attrs['mpi_size'] = dist.comm_cart.size
 
         # Scales
         scale_group = file.create_group('scales')

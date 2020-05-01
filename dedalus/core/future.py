@@ -66,19 +66,19 @@ class Future(Operand):
         str_args = map(str, self.args)
         return '{}({})'.format(self.name, ', '.join(str_args))
 
-    def __eq__(self, other):
-        # Require same class and arguments
-        if type(other) is type(self):
-            return self.args == other.args
-        else:
-            return NotImplemented
+    # def __eq__(self, other):
+    #     # Require same class and arguments
+    #     if type(other) is type(self):
+    #         return self.args == other.args
+    #     else:
+    #         return NotImplemented
 
-    def __ne__(self, other):
-        # Negate equality test
-        if type(other) is type(self):
-            return not self.__eq__(other)
-        else:
-            return NotImplemented
+    # def __ne__(self, other):
+    #     # Negate equality test
+    #     if type(other) is type(self):
+    #         return not self.__eq__(other)
+    #     else:
+    #         return NotImplemented
 
     @CachedAttribute
     def bases(self):
@@ -180,11 +180,7 @@ class Future(Operand):
         if self.out:
             out = self.out
         else:
-            bases = self.domain.bases
-            if any(bases):
-                out = self.future_type(dist=self.dist, bases=bases, tensorsig=self.tensorsig, dtype=self.dtype)
-            else:
-                out = self.future_type(dist=self.dist, tensorsig=self.tensorsig, dtype=self.dtype)
+            out = self.build_out()
             #out = self.domain.new_data(self.future_type)
             #out = Field(name=str(self), bases=self.bases)
 
@@ -203,6 +199,13 @@ class Future(Operand):
             self.last_out = out
 
         return out
+
+    def build_out(self):
+        bases = self.domain.bases
+        if any(bases):
+            return self.future_type(dist=self.dist, bases=bases, tensorsig=self.tensorsig, dtype=self.dtype)
+        else:
+            return self.future_type(dist=self.dist, tensorsig=self.tensorsig, dtype=self.dtype)
 
     def attempt(self, id=None):
         """Recursively attempt to evaluate operation."""
