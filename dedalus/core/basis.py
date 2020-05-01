@@ -1853,8 +1853,6 @@ class ConvertRegularity(operators.Convert, operators.SphericalEllOperator):
 
     input_basis_type = RegularityBasis
     output_basis_type = RegularityBasis
-    subaxis_dependence = [False, True, True]
-    subaxis_coupling = [False, False, True]
 
     def regindex_out(self, regindex_in):
         # Doesn't couple components
@@ -1889,8 +1887,6 @@ class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperato
 
     basis_type = BallBasis
     basis_subaxis = 2
-    subaxis_dependence = [False, True, False]
-    subaxis_coupling = [False, False, True]
 
     @classmethod
     def _check_args(cls, operand, coord, position, out=None):
@@ -1953,8 +1949,6 @@ class SphericalShellRadialInterpolate(operators.Interpolate, operators.Spherical
 
     basis_type = SphericalShellBasis
     basis_subaxis = 2
-    subaxis_dependence = [False, False, False]
-    subaxis_coupling = [False, False, True]
 
     @classmethod
     def _check_args(cls, operand, coord, position, out=None):
