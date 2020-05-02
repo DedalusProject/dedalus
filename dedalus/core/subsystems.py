@@ -160,7 +160,7 @@ class Subsystem:
                 i0 = i1
 
 
-class Subproblem(Subsystem):
+class Subproblem:
     """
     Object representing one coupled subsystem of a problem.
 
@@ -171,15 +171,32 @@ class Subproblem(Subsystem):
     coupled dimension.
     """
 
-    def __init__(self, problem, subsystems, matrix_group):
+    def __init__(self, problem, subsystems, group):
         self.problem = problem
         self.subsystems = subsystems
-        self.group = matrix_group
-        self.matrix_group = matrix_group
+        self.group = group
         self.domain = problem.variables[0].domain  # HACK
         # Cross reference from subsystems
         for subsystem in subsystems:
             subsystem.subproblem = self
+
+    def coeff_slices(self, domain):
+        return self.subsystems[0].coeff_slices(domain)
+
+    def coeff_shape(self, domain):
+        return self.subsystems[0].coeff_shape(domain)
+
+    def coeff_size(self, domain):
+        return self.subsystems[0].coeff_size(domain)
+
+    def field_slices(self, field):
+        return self.subsystems[0].field_slices(field)
+
+    def field_shape(self, field):
+        return self.subsystems[0].field_shape(field)
+
+    def field_size(self, field):
+        return self.subsystems[0].field_size(field)
 
     # @CachedAttribute
     # def group_dict(self):

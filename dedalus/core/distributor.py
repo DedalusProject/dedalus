@@ -373,13 +373,13 @@ class Transform:
 
     def increment_group(self, fields):
         """Backward transform multiple fields simultaneously."""
-        logger.warning("Group transforms not implemented.")
+        #logger.warning("Group transforms not implemented.")
         for field in fields:
             self.increment_single(field)
 
     def decrement_group(self, fields):
         """Forward transform multiple fields simultaneously."""
-        logger.warning("Group transforms not implemented.")
+        #logger.warning("Group transforms not implemented.")
         for field in fields:
             self.decrement_single(field)
 
@@ -537,13 +537,13 @@ class Transpose:
 
     def increment_group(self, fields):
         """Backward transpose multiple fields simultaneously."""
-        logger.warning("Group transposes not implemented.")
+        #logger.warning("Group transposes not implemented.")
         for field in fields:
             self.increment_single(field)
 
     def decrement_group(self, fields):
         """Forward transpose multiple fields simultaneously."""
-        logger.warning("Group transposes not implemented.")
+        #logger.warning("Group transposes not implemented.")
         for field in fields:
             self.decrement_single(field)
 
