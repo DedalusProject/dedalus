@@ -69,7 +69,7 @@ dt = 0.01
 t_end = 20
 
 # Solver
-solver = solvers.InitialValueSolver(problem, timesteppers.RK111)
+solver = solvers.InitialValueSolver(problem, timesteppers.SBDF2)
 solver.stop_sim_time = t_end
 
 # Add taus
@@ -98,6 +98,7 @@ for subproblem in solver.subproblems:
     tau_columns[N2:N3,2] = (C(Nmax, ell,  0))[:,-1]
     subproblem.L_min[:,-3:] = tau_columns
     subproblem.L_min.eliminate_zeros()
+    subproblem.expand_matrices(['M','L'])
 
 # Handle ell=0
 for subproblem in solver.subproblems:
@@ -105,8 +106,10 @@ for subproblem in solver.subproblems:
         shape = subproblem.M_min.shape
         subproblem.M_min = sparse.csr_matrix(shape, dtype=np.complex128)
         subproblem.L_min = sparse.identity(shape[0], format='csr', dtype=np.complex128)
+        subproblem.expand_matrices(['M','L'])
         subproblem.rhs_map[:,:] = 0
         subproblem.rhs_map.eliminate_zeros()
+
 
 t_list = []
 E_list = []
@@ -127,6 +130,6 @@ while solver.ok:
         logger.info("t = %f, E = %e" %(solver.sim_time, E0))
         t_list.append(solver.sim_time)
         E_list.append(E0)
-    solver.euler_step(dt)
+    solver.step(dt)
 end_time = time.time()
 print('Run time:', end_time-start_time)
