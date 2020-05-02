@@ -35,23 +35,27 @@ class CoeffSystem:
 
     """
 
-    def __init__(self, subproblems):
-        self.subproblems = subproblems
-        self.sizes = sizes = [sp.LHS.shape[0] for sp in subproblems]
-        self.starts = [sum(sizes[:i]) for i in range(len(sizes))]
-        self.data = np.zeros(sum(self.sizes), dtype=subproblems[0].domain.dtype)
+    def __init__(self, subproblems, fields):
+        # Build buffer
+        total_size = sum(ss.field_size(field) for sp in subproblems for ss in sp.subsystems for field in fields)
+        dtype = fields[0].dtype  # HACK
+        self.data = np.zeros(total_size, dtype=dtype)
+        # Build views
+        i0 = i1 = 0
+        self.views = views = {}
+        for sp in subproblems:
+            views[sp] = views_sp = {}
+            for ss in sp.subsystems:
+                for field in fields:
+                    i1 += ss.field_size(field)
+                views_sp[ss] = self.data[i0:i1]
+                i0 = i1
 
-    def get_subdata(self, subproblem):
-        i = self.subproblems.index(subproblem)
-        start = self.starts[i]
-        size = self.sizes[i]
-        return self.data[start:start+size]
+    def get_subdata(self, sp, ss):
+        return self.views[sp][ss]
 
-    def set_subdata(self, subproblem, data):
-        i = self.subproblems.index(subproblem)
-        start = self.starts[i]
-        size = self.sizes[i]
-        self.data[start:start+size] = data
+    def set_subdata(self, sp, ss, data):
+        np.copyto(self.views[sp][ss], data)
 
 
 class FieldSystem(CoeffSystem):

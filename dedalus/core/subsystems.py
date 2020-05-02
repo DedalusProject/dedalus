@@ -375,3 +375,12 @@ class Subproblem(Subsystem):
         # self.rhs_map = drop_eqn * sparse_block_diag(F_conv).tocsr()
         self.rhs_map = drop_eqn
 
+    def expand_matrices(self, matrices):
+        matrices = {matrix: getattr(self, '%s_min' %matrix) for matrix in matrices}
+        # Store expanded CSR matrices for fast combination
+        self.LHS = zeros_with_pattern(*matrices.values()).tocsr()
+        for name, matrix in matrices.items():
+            expanded = expand_pattern(matrix, self.LHS)
+            setattr(self, '{:}_exp'.format(name), expanded.tocsr())
+
+

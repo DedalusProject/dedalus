@@ -278,9 +278,8 @@ class InitialValueSolver:
         F_handler.build_system()
         self.F = F_handler.fields
 
-        # # Initialize timestepper
-        # subdomains = [eq['subdomain'] for eq in problem.eqs]
-        # self.timestepper = timestepper(subdomains, self.subproblems)
+        # Initialize timestepper
+        self.timestepper = timestepper(self)
 
         # Attributes
         self.sim_time = 0.
@@ -352,7 +351,7 @@ class InitialValueSolver:
         #state.gather()
         # Advance using timestepper
         wall_time = self.get_wall_time() - self.start_time
-        self.timestepper.step(self, dt, wall_time)
+        self.timestepper.step(dt, wall_time)
         # (Safety scatter)
         #state.scatter()
         # Update iteration

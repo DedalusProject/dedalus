@@ -52,12 +52,10 @@ class MultistepIMEX:
 
     """
 
-    def __init__(self, subdomains, subsystems):
+    def __init__(self, solver):
 
-        self.subdomains = subdomains
-        self.subsystems = subsystems
-
-        self.RHS = CoeffSystem(subdomains, subsystems)
+        self.solver = solver
+        self.RHS = CoeffSystem(solver.subproblems, solver.F)
 
         # Create deque for storing recent timesteps
         N = max(self.amax, self.bmax, self.cmax)
@@ -68,27 +66,29 @@ class MultistepIMEX:
         self.LX = LX = deque()
         self.F = F = deque()
         for j in range(self.amax):
-            MX.append(CoeffSystem(subdomains, subsystems))
+            MX.append(CoeffSystem(solver.subproblems, solver.F))
         for j in range(self.bmax):
-            LX.append(CoeffSystem(subdomains, subsystems))
+            LX.append(CoeffSystem(solver.subproblems, solver.F))
         for j in range(self.cmax):
-            F.append(CoeffSystem(subdomains, subsystems))
+            F.append(CoeffSystem(solver.subproblems, solver.F))
 
         # Attributes
         self._iteration = 0
         self._LHS_params = None
 
-    def step(self, solver, dt, wall_time):
+    def step(self, dt, wall_time):
         """Advance solver by one timestep."""
 
         # Solver references
+        solver = self.solver
+        subproblems = solver.subproblems
         evaluator = solver.evaluator
         state_fields = solver.state
         F_fields = solver.F
         sim_time = solver.sim_time
         iteration = solver.iteration
 
-        # References
+        # Other references
         MX = self.MX
         LX = self.LX
         F = self.F
@@ -121,13 +121,13 @@ class MultistepIMEX:
             update_LHS = ((a0, b0) != self._LHS_params)
             self._LHS_params = (a0, b0)
 
-        for ss in self.subsystems:
-            ssX = ss.get_vector(state_fields)
-            ssF = ss.get_vector(F_fields)
-
-            MX0.set_subdata(ss, ss.M*ssX)
-            LX0.set_subdata(ss, ss.L*ssX)
-            F0.set_subdata(ss, ss.RHS_C*ssF)
+        for sp in subproblems:
+            for ss in sp.subsystems:
+                ssX = ss.gather(state_fields)
+                ssF = ss.gather(F_fields)
+                MX0.set_subdata(sp, ss, sp.M_min*ssX)
+                LX0.set_subdata(sp, ss, sp.L_min*ssX)
+                F0.set_subdata(sp, ss, sp.rhs_map*ssF)
 
         # Build RHS
         RHS.data.fill(0)
@@ -139,18 +139,21 @@ class MultistepIMEX:
             RHS.data -= b[j] * LX[j-1].data
 
         # Solve
-        for ss in self.subsystems:
-            ssRHS = RHS.get_subdata(ss)
+        for sp in subproblems:
             if STORE_LU:
                 if update_LHS:
-                    np.copyto(ss.LHS.data, a0*ss.M_exp.data + b0*ss.L_exp.data)
-                    ss.LHS_LU = linalg.splu(ss.LHS.tocsc(), permc_spec=PERMC_SPEC)
-                ssLHS = ss.LHS_LU
-                ssX = ssLHS.solve(ssRHS)
+                    np.copyto(sp.LHS.data, a0*sp.M_exp.data + b0*sp.L_exp.data)
+                    sp.LHS_LU = linalg.splu(sp.LHS.tocsc(), permc_spec=PERMC_SPEC)
             else:
-                np.copyto(ss.LHS.data, a0*ss.M_exp.data + b0*ss.L_exp.data)
-                ssX = linalg.spsolve(ss.LHS, ssRHS, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
-            ss.set_vector(state_fields, ssX)
+                np.copyto(sp.LHS.data, a0*sp.M_exp.data + b0*sp.L_exp.data)
+            for ss in sp.subsystems:
+                ssRHS = RHS.get_subdata(sp, ss)
+                if STORE_LU:
+                    spLHS = sp.LHS_LU
+                    ssX = spLHS.solve(ssRHS)
+                else:
+                    ssX = linalg.spsolve(sp.LHS, ssRHS, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
+                ss.scatter(ssX, state_fields)
 
         # Update solver
         solver.sim_time += dt
@@ -487,23 +490,24 @@ class RungeKuttaIMEX:
 
     """
 
-    def __init__(self, subdomains, subsystems):
+    def __init__(self, solver):
 
-        self.subsystems = subsystems
-        self.RHS = CoeffSystem(subsystems)
+        self.solver = solver
+        self.RHS = CoeffSystem(solver.subproblems, solver.F)
 
         # Create coefficient systems for multistep history
-        self.MX0 = CoeffSystem(subsystems)
-        self.LX = LX = [CoeffSystem(subsystems) for i in range(self.stages)]
-        self.F = F = [CoeffSystem(subsystems) for i in range(self.stages)]
+        self.MX0 = CoeffSystem(solver.subproblems, solver.F)
+        self.LX = [CoeffSystem(solver.subproblems, solver.F) for i in range(self.stages)]
+        self.F = [CoeffSystem(solver.subproblems, solver.F) for i in range(self.stages)]
 
         self._LHS_params = None
 
-    def step(self, solver, dt, wall_time):
+    def step(self, dt, wall_time):
         """Advance solver by one timestep."""
 
         # Solver references
-        subsystems = self.subsystems
+        solver = self.solver
+        subproblems = solver.subproblems
         evaluator = solver.evaluator
         state_fields = solver.state
         F_fields = solver.F
@@ -525,11 +529,12 @@ class RungeKuttaIMEX:
             self._LHS_params = k
 
         # Compute M.X(n,0)
-        for ss in subsystems:
-            pX0 = ss.col_map * ss.get_vector(state_fields)
-            MX0.set_subdata(ss, ss.M*pX0)
+        for sp in subproblems:
+            for ss in sp.subsystems:
+                ssX0 = ss.gather(state_fields)
+                MX0.set_subdata(sp, ss, sp.M_min*ssX0)
             if STORE_LU and update_LHS:
-                ss.LHS_LU = [None] * (self.stages+1)
+                sp.LHS_LU = [None] * (self.stages+1)
 
         # Compute stages
         # (M + k Hii L).X(n,i) = M.X(n,0) + k Aij F(n,j) - k Hij L.X(n,j)
@@ -541,11 +546,12 @@ class RungeKuttaIMEX:
                 evaluator.evaluate_scheduled(wall_time, solver.sim_time, iteration)
             else:
                 evaluator.evaluate_group('F', wall_time, solver.sim_time, iteration)
-            for ss in subsystems:
-                pX = ss.col_map * ss.get_vector(state_fields)
-                pFe = ss.rhs_map * ss.get_vector(F_fields)
-                LX[i-1].set_subdata(ss, ss.L*pX)
-                F[i-1].set_subdata(ss, pFe)
+            for sp in subproblems:
+                for ss in sp.subsystems:
+                    ssX = ss.gather(state_fields)
+                    ssF = ss.gather(F_fields)
+                    LX[i-1].set_subdata(sp, ss, sp.L_min*ssX)
+                    F[i-1].set_subdata(sp, ss, sp.rhs_map*ssF)
 
             # Construct RHS(n,i)
             np.copyto(RHS.data, MX0.data)
@@ -553,19 +559,22 @@ class RungeKuttaIMEX:
                 RHS.data += k * A[i,j] * F[j].data
                 RHS.data -= k * H[i,j] * LX[j].data
 
-            for ss in subsystems:
-                ssRHS = RHS.get_subdata(ss)
+            for sp in subproblems:
                 # Construct LHS(n,i)
                 if STORE_LU:
                     if update_LHS:
-                        np.copyto(ss.LHS.data, ss.M_exp.data + (k*H[i,i])*ss.L_exp.data)
-                        ss.LHS_LU[i] = linalg.splu(ss.LHS.tocsc(), permc_spec=PERMC_SPEC)
-                    ssLHS = ss.LHS_LU[i]
-                    ssX = ssLHS.solve(ssRHS)
+                        np.copyto(sp.LHS.data, sp.M_exp.data + (k*H[i,i])*sp.L_exp.data)
+                        sp.LHS_LU[i] = linalg.splu(sp.LHS.tocsc(), permc_spec=PERMC_SPEC)
                 else:
-                    np.copyto(ss.LHS.data, ss.M_exp.data + (k*H[i,i])*ss.L_exp.data)
-                    ssX = linalg.spsolve(ss.LHS, ssRHS, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
-                ss.set_vector(state_fields, ss.col_map.T*ssX)
+                    np.copyto(sp.LHS.data, sp.M_exp.data + (k*H[i,i])*sp.L_exp.data)
+                for ss in sp.subsystems:
+                    ssRHS = RHS.get_subdata(sp, ss)
+                    if STORE_LU:
+                        spLHS = sp.LHS_LU[i]
+                        ssX = spLHS.solve(ssRHS)
+                    else:
+                        ssX = linalg.spsolve(sp.LHS, ssRHS, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
+                    ss.scatter(ssX, state_fields)
             solver.sim_time = sim_time_0 + k*c[i]
 
 
