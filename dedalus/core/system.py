@@ -35,10 +35,10 @@ class CoeffSystem:
 
     """
 
-    def __init__(self, subproblems, fields):
+    def __init__(self, subproblems):
         # Build buffer
-        total_size = sum(ss.field_size(field) for sp in subproblems for ss in sp.subsystems for field in fields)
-        dtype = fields[0].dtype  # HACK
+        total_size = sum(sp.LHS.shape[1]*len(sp.subsystems) for sp in subproblems)
+        dtype = subproblems[0].dtype
         self.data = np.zeros(total_size, dtype=dtype)
         # Build views
         i0 = i1 = 0
@@ -46,8 +46,7 @@ class CoeffSystem:
         for sp in subproblems:
             views[sp] = views_sp = {}
             for ss in sp.subsystems:
-                for field in fields:
-                    i1 += ss.field_size(field)
+                i1 += sp.LHS.shape[1]
                 views_sp[ss] = self.data[i0:i1]
                 i0 = i1
 

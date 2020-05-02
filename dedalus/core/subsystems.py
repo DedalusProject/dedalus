@@ -175,10 +175,18 @@ class Subproblem:
         self.problem = problem
         self.subsystems = subsystems
         self.group = group
+        self.dist = problem.dist
         self.domain = problem.variables[0].domain  # HACK
+        self.dtype = problem.dtype
         # Cross reference from subsystems
         for subsystem in subsystems:
             subsystem.subproblem = self
+        # Build group dictionary
+        self.group_dict = {}
+        for axis, ax_group in enumerate(group):
+            if ax_group is not None:
+                ax_coord = self.dist.coords[axis]
+                self.group_dict['n'+ax_coord.name] = ax_group
 
     def coeff_slices(self, domain):
         return self.subsystems[0].coeff_slices(domain)
@@ -197,16 +205,6 @@ class Subproblem:
 
     def field_size(self, field):
         return self.subsystems[0].field_size(field)
-
-    # @CachedAttribute
-    # def group_dict(self):
-    #     """Group dictionary for evaluation equation conditions."""
-    #     group_dict = {}
-    #     for axis, group in enumerate(self.group):
-    #         if group is not None:
-    #             for space in self.domain.spaces[axis]:
-    #                 group_dict['n'+space.name] = group
-    #     return group_dict
 
     def inclusion_matrices(self, bases):
         """List of inclusion matrices."""
@@ -305,17 +303,20 @@ class Subproblem:
     #         var_mats.append(reduce(sparse.kron, ax_mats, 1).tocsr())
     #     return sparse_block_diag(var_mats).tocsr()
 
-
+    def check_condition(self, eqn):
+        return eval(eqn['condition'], self.group_dict)
 
     def build_matrices(self, names):
         """Build problem matrices."""
 
         eqns = self.problem.equations
         vars = self.problem.variables
+        eqn_conditions = [self.check_condition(eqn) for eqn in eqns]  # HACK
         eqn_sizes = [self.field_size(eqn['LHS']) for eqn in eqns]
         var_sizes = [self.field_size(var) for var in vars]
         I = sum(eqn_sizes)
         J = sum(var_sizes)
+        dtype = self.dtype
 
         # Construct subsystem matrices
         # Include all equations and group entries
@@ -324,12 +325,9 @@ class Subproblem:
             # Collect entries
             data, rows, cols = [], [], []
             i0 = 0
-            for eqn, eqn_size in zip(eqns, eqn_sizes):
-                #if eqn.size and eqn.evaluate(self):
-                #if eqn_size and eval(eqn['condition_str'], self.group_dict):
-                # HACK: skipped conditions
-                pass_conditions = True
-                if eqn_size and pass_conditions:
+            for eqn, eqn_size, eqn_cond in zip(eqns, eqn_sizes, eqn_conditions):
+                if eqn_size and eqn_cond:
+                    # Build matrix and append data
                     expr = eqn[name]
                     if expr != 0:
                         eqn_blocks = eqn[name].expression_matrices(subproblem=self, vars=vars)
@@ -341,33 +339,37 @@ class Subproblem:
                                 rows.append(i0 + block.row)
                                 cols.append(j0 + block.col)
                             j0 += var_size
-                i0 += eqn_size
+                    i0 += eqn_size
+                else:
+                    # Leave empty blocks
+                    i0 += eqn_size
             # Build sparse matrix
             if data:
                 data = np.concatenate(data)
                 rows = np.concatenate(rows)
                 cols = np.concatenate(cols)
-            data[np.abs(data) < 1e-12] = 0
-            matrices[name] = sparse.coo_matrix((data, (rows, cols)), shape=(I, J)).tocsr()
+                # Filter entries
+                entry_cutoff = 1e-12  # HACK: this should be passed as a variable somehow
+                data[np.abs(data) < entry_cutoff] = 0
+            matrices[name] = sparse.coo_matrix((data, (rows, cols)), shape=(I, J), dtype=dtype).tocsr()
 
         # Create maps restricting group data to included modes
         drop_eqn = [self.group_to_modes(eqn['LHS']) for eqn in eqns]
-        drop_var = [self.group_to_modes(var) for var in vars]
+        #drop_var = [self.group_to_modes(var) for var in vars]
         # Drop equations that fail condition test
-        for n, eqn in enumerate(eqns):
-            #if not eval(eqn['condition_str'], self.group_dict):
-            if False:  # HACK
+        for n, eqn_cond in enumerate(eqn_conditions):
+            if not eqn_cond:
                 drop_eqn[n] = drop_eqn[n][0:0, :]
         self.drop_eqn = drop_eqn = sparse_block_diag(drop_eqn).tocsr()
-        self.drop_var = drop_var = sparse_block_diag(drop_var).tocsr()
+        #self.drop_var = drop_var = sparse_block_diag(drop_var).tocsr()
 
         # Check squareness of restricted system
-        # if drop_eqn.shape[0] != drop_var.shape[0]:
-        #     raise ValueError("Non-square system: group={}, I={}, J={}".format(self.group, drop_eqn.shape[0], drop_var.shape[0]))
+        if drop_eqn.shape[0] != J:
+            raise ValueError("Non-square system: group={}, I={}, J={}".format(self.group, drop_eqn.shape[0], J))
 
         # Restrict matrices to included modes
         for name in matrices:
-            matrices[name] = drop_eqn @ matrices[name] @ drop_var.T
+            matrices[name] = drop_eqn @ matrices[name]
 
         # Eliminate any remaining zeros for maximal sparsity
         for name in matrices:

@@ -55,7 +55,7 @@ class MultistepIMEX:
     def __init__(self, solver):
 
         self.solver = solver
-        self.RHS = CoeffSystem(solver.subproblems, solver.F)
+        self.RHS = CoeffSystem(solver.subproblems)
 
         # Create deque for storing recent timesteps
         N = max(self.amax, self.bmax, self.cmax)
@@ -66,11 +66,11 @@ class MultistepIMEX:
         self.LX = LX = deque()
         self.F = F = deque()
         for j in range(self.amax):
-            MX.append(CoeffSystem(solver.subproblems, solver.F))
+            MX.append(CoeffSystem(solver.subproblems))
         for j in range(self.bmax):
-            LX.append(CoeffSystem(solver.subproblems, solver.F))
+            LX.append(CoeffSystem(solver.subproblems))
         for j in range(self.cmax):
-            F.append(CoeffSystem(solver.subproblems, solver.F))
+            F.append(CoeffSystem(solver.subproblems))
 
         # Attributes
         self._iteration = 0
@@ -493,12 +493,12 @@ class RungeKuttaIMEX:
     def __init__(self, solver):
 
         self.solver = solver
-        self.RHS = CoeffSystem(solver.subproblems, solver.F)
+        self.RHS = CoeffSystem(solver.subproblems)
 
         # Create coefficient systems for multistep history
-        self.MX0 = CoeffSystem(solver.subproblems, solver.F)
-        self.LX = [CoeffSystem(solver.subproblems, solver.F) for i in range(self.stages)]
-        self.F = [CoeffSystem(solver.subproblems, solver.F) for i in range(self.stages)]
+        self.MX0 = CoeffSystem(solver.subproblems)
+        self.LX = [CoeffSystem(solver.subproblems) for i in range(self.stages)]
+        self.F = [CoeffSystem(solver.subproblems) for i in range(self.stages)]
 
         self._LHS_params = None
 

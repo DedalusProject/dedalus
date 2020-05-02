@@ -151,7 +151,8 @@ class ProblemBase:
                'RHS': RHS,
                'domain': expr.domain,
                'tensorsig': expr.tensorsig,
-               'dtype': expr.dtype}
+               'dtype': expr.dtype,
+               'condition': condition}
         self._build_matrix_expressions(eqn)
         # Store equation dictionary
         self.equations.append(eqn)
@@ -277,6 +278,9 @@ class ProblemBase:
     def matrix_coupling(self):
         return np.logical_or.reduce([eqn['matrix_coupling'] for eqn in self.equations])
 
+    @property
+    def dtype(self):
+        return np.result_type(*[eqn['dtype'] for eqn in self.equations])
 
 class LinearBoundaryValueProblem(ProblemBase):
     """
