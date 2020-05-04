@@ -1545,6 +1545,9 @@ class TransposeComponents(LinearOperator, metaclass=MultiClass):
                 return True
         return False
 
+    def new_operand(self, operand):
+        return TransposeComponents(operand, self.indices)
+
     @property
     def base(self):
         return TransposeComponents
@@ -1576,6 +1579,8 @@ class SphericalComponent(LinearOperator):
         """Can always take components"""
         pass
 
+    def new_operand(self, operand):
+        return SphericalComponent(operand, self.index)
 
 class RadialComponent(SphericalComponent, metaclass=MultiClass):
 
