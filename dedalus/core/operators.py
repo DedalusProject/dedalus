@@ -1509,6 +1509,24 @@ class ConvertSame(Convert):
 
 class TransposeComponents(LinearOperator, metaclass=MultiClass):
 
+    @classmethod
+    def _preprocess_args(cls, operand, indices=(0,1), out=None):
+        if isinstance(operand, Number):
+            raise SkipDispatchException(output=0)
+        return [operand], {'indices': indices, 'out': out}
+
+    @classmethod
+    def _check_args(cls, operand, indices=(0,1), out=None):
+        # Dispatch by basis
+        if isinstance(operand, Operand):
+            if indices[0] < 0: index = indices[0] + len(operand.tensorsig)
+            else: index = indices[0]
+            coordsys = operand.tensorsig[index]
+            basis = operand.domain.get_basis(coordsys)
+            if isinstance(basis, cls.basis_type):
+                return True
+        return False
+
     def __init__(self, operand, indices=(0,1), out=None):
         i0, i1 = indices
         if i0 < 0:
@@ -1533,20 +1551,14 @@ class TransposeComponents(LinearOperator, metaclass=MultiClass):
         self.tensorsig = operand.tensorsig
         self.dtype = operand.dtype
 
-    @classmethod
-    def _check_args(cls, operand, indices=(0,1), out=None):
-        # Dispatch by basis
-        if isinstance(operand, Operand):
-            if indices[0] < 0: index = indices[0] + len(operand.tensorsig)
-            else: index = indices[0]
-            coordsys = operand.tensorsig[index]
-            basis = operand.domain.get_basis(coordsys)
-            if isinstance(basis, cls.basis_type):
-                return True
-        return False
-
     def new_operand(self, operand):
         return TransposeComponents(operand, self.indices)
+
+    def matrix_dependence(self, *vars):
+        return self.operand.matrix_dependence(*vars)
+
+    def matrix_coupling(self, *vars):
+        return self.operand.matrix_coupling(*vars)
 
     @property
     def base(self):

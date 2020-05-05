@@ -2106,8 +2106,7 @@ class SphericalTransposeComponents(operators.TransposeComponents):
         basis = self.domain.get_basis(self.coordsys)
         R = basis.regularity_classes(self.tensorsig)
 
-        # need to get ell from subproblem -- don't know how to do this
-        ell = subproblem.ell
+        ell = subproblem.group[self.radius_axis - 1]
 
         indices = self.indices
         rank = len(self.tensorsig)
@@ -2131,7 +2130,7 @@ class SphericalTransposeComponents(operators.TransposeComponents):
         transpose = Q[0].T @ transpose @ Q[0]
 
         # assume all regularities have the same n_size
-        eye = sparse.identity(basis.n_size(0, ell), self.dtype, format='csr')
+        eye = sparse.identity(basis.n_size((), ell), self.dtype, format='csr')
         matrix = sparse.kron( transpose, eye)
         return matrix
 
