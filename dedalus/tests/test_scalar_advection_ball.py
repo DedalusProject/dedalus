@@ -7,6 +7,7 @@ Usage:
 Options:
     --Pe=<Pe>                            Peclet number of flow [default: 10]
     --c_source=<c_source>                Source function for scalar [default: 0]
+    --ell_benchmark=<ell_benchmark>      Integer value of benchmark perturbation m=+-ell [default: 3]
 
     --L=<L>                              Max spherical harmonic [default: 15]
     --N=<N>                              Max radial polynomial  [default: 15]
@@ -77,7 +78,11 @@ u['g'][0] = Omega*r*np.sin(theta)
 
 # multi-armed perturbation
 A = 1
-T_IC['g'] = 1/8*A*np.sqrt(35/np.pi)*r**3*(1-r**2)*(np.cos(3*phi)+np.sin(3*phi))*np.sin(theta)**3
+𝓁 = int(args['--ell_benchmark'])
+norm = 1/(2**𝓁*np.math.factorial(𝓁))*np.sqrt(np.math.factorial(2*𝓁+1)/(4*np.pi))
+T_IC['g'] = A*norm*r**𝓁*(1-r**2)*(np.cos(𝓁*phi)+np.sin(𝓁*phi))*np.sin(theta)**𝓁
+logger.info("benchmark run with perturbations at ell={} with norm={}".format(𝓁, norm))
+
 T['g'] = T_IC['g']
 T_c['g'] = T['g']
 
@@ -140,6 +145,7 @@ for subproblem in solver.subproblems:
 t_list = []
 E_list = []
 T_list = []
+T_err_list = []
 weight_theta = b.local_colatitude_weights(1)
 weight_r = b.local_radius_weights(1)
 reducer = GlobalArrayReducer(d.comm_cart)
@@ -161,6 +167,15 @@ while solver.ok:
         t_list.append(solver.sim_time)
         E_list.append(E0)
         T_list.append(T0)
+    if np.isclose(𝓁*solver.sim_time % 1, 0, atol=dt):
+        T_err = np.sum(vol_correction*weight_r*weight_theta*(T['g'].real-T_c['g'].real)**2)
+        T_err = T_err*(np.pi)/(Lmax+1)/L_dealias
+        T_err = reducer.reduce_scalar(T_err, MPI.SUM)
+        T_ref = np.sum(vol_correction*weight_r*weight_theta*(T_c['g'].real)**2)
+        T_ref = T_ref*(np.pi)/(Lmax+1)/L_dealias
+        T_ref = reducer.reduce_scalar(T_ref, MPI.SUM)
+        logger.info("at time {} ({}), <T_err**2>/<T_ref**2> =  {:g}".format(solver.sim_time, solver.sim_time*𝓁, T_err/T_ref))
+        T_err_list.append((solver.sim_time*𝓁, T_err/T_ref))
     solver.step(dt)
 end_time = time.time()
 T_err = np.sum(vol_correction*weight_r*weight_theta*(T['g'].real-T_c['g'].real)**2)
@@ -169,5 +184,10 @@ T_err = reducer.reduce_scalar(T_err, MPI.SUM)
 T_ref = np.sum(vol_correction*weight_r*weight_theta*(T_c['g'].real)**2)
 T_ref = T_ref*(np.pi)/(Lmax+1)/L_dealias
 T_ref = reducer.reduce_scalar(T_ref, MPI.SUM)
+T_err_list.append((solver.sim_time*𝓁, T_err/T_ref))
+
 logger.info("at time {}, <T_err**2>/<T_ref**2> =  {:g}".format(solver.sim_time, T_err/T_ref))
 logger.info('Run time: {}'.format(end_time-start_time))
+logger.info("relative error comparison each time the pattern returns to original")
+for n, err in T_err_list:
+    logger.info("comparison {}: relative error = {:g}".format(n, err))
