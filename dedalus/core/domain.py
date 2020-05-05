@@ -149,7 +149,7 @@ class Domain(metaclass=CachedClass):
     @CachedAttribute
     def constant(self):
         """Tuple of constant flags."""
-        return tuple(basis.constant for basis in self.bases)
+        return tuple(basis is None for basis in self.full_bases)
 
     @CachedAttribute
     def coeff_group_shape(self):
