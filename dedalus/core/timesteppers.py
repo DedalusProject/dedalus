@@ -121,6 +121,9 @@ class MultistepIMEX:
             update_LHS = ((a0, b0) != self._LHS_params)
             self._LHS_params = (a0, b0)
 
+        # Ensure coeff space to avoid transforms in subsystem gathers
+        for field in state_fields + F_fields:
+            field.require_coeff_space()
         for sp in subproblems:
             for ss in sp.subsystems:
                 ssX = ss.gather(state_fields)
@@ -528,6 +531,10 @@ class RungeKuttaIMEX:
             update_LHS = (k != self._LHS_params)
             self._LHS_params = k
 
+        # Ensure coeff space to avoid transforms in subsystem gathers
+        for field in state_fields:
+            field.require_coeff_space()
+
         # Compute M.X(n,0)
         for sp in subproblems:
             for ss in sp.subsystems:
@@ -546,6 +553,9 @@ class RungeKuttaIMEX:
                 evaluator.evaluate_scheduled(wall_time, solver.sim_time, iteration)
             else:
                 evaluator.evaluate_group('F', wall_time, solver.sim_time, iteration)
+            # Ensure coeff space to avoid transforms in subsystem gathers
+            for field in state_fields + F_fields:
+                field.require_coeff_space()
             for sp in subproblems:
                 for ss in sp.subsystems:
                     ssX = ss.gather(state_fields)
