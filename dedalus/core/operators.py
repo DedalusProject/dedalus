@@ -1555,6 +1555,12 @@ class TransposeComponents(LinearOperator, metaclass=MultiClass):
 
 class SphericalComponent(LinearOperator):
 
+    @classmethod
+    def _preprocess_args(cls, operand, index=0, out=None):
+        if isinstance(operand, Number):
+            raise SkipDispatchException(output=0)
+        return [operand], {'index': index, 'out': out}
+
     def __init__(self, operand, index=0, out=None):
         if index < 0: index += len(operand.tensorsig)
         if index >= len(operand.tensorsig):
@@ -1579,8 +1585,12 @@ class SphericalComponent(LinearOperator):
         """Can always take components"""
         pass
 
-    def new_operand(self, operand):
-        return SphericalComponent(operand, self.index)
+    def matrix_dependence(self, *vars):
+        return self.operand.matrix_dependence(*vars)
+
+    def matrix_coupling(self, *vars):
+        return self.operand.matrix_coupling(*vars)
+
 
 class RadialComponent(SphericalComponent, metaclass=MultiClass):
 
@@ -1600,9 +1610,8 @@ class RadialComponent(SphericalComponent, metaclass=MultiClass):
         tensorsig = operand.tensorsig
         self.tensorsig = tuple( tensorsig[:index] + tensorsig[index+1:] )
 
-    @property
-    def base(self):
-        return RadialComponent
+    def new_operand(self, operand):
+        return RadialComponent(operand, self.index)
 
 
 class AngularComponent(SphericalComponent, metaclass=MultiClass):
@@ -1624,9 +1633,8 @@ class AngularComponent(SphericalComponent, metaclass=MultiClass):
         S2coordsys = tensorsig[index].S2coordsys
         self.tensorsig = tuple( tensorsig[:index] + (S2coordsys,) + tensorsig[index+1:] )
 
-    @property
-    def base(self):
-        return AngularComponent
+    def new_operand(self, operand):
+        return AngularComponent(operand, self.index)
 
 
 class Gradient(LinearOperator, metaclass=MultiClass):

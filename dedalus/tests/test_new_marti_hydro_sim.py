@@ -89,18 +89,14 @@ def BC_rows(N, ell, num_comp):
 for subproblem in solver.subproblems:
     if subproblem.group[1] != 0:
         ell = subproblem.group[1]
-        M = subproblem.M_min
         L = subproblem.L_min
-        shape = M.shape
-        subproblem.M_min[:,-3:] = 0
-        subproblem.M_min.eliminate_zeros()
         N0, N1, N2, N3 = BC_rows(Nmax, ell, 4)
-        tau_columns = np.zeros((shape[0], 3))
+        tau_columns = np.zeros((L.shape[0], 3))
         tau_columns[N0:N1,0] = (C(Nmax, ell, -1))[:,-1]
         tau_columns[N1:N2,1] = (C(Nmax, ell, +1))[:,-1]
         tau_columns[N2:N3,2] = (C(Nmax, ell,  0))[:,-1]
-        subproblem.L_min[:,-3:] = tau_columns
-        subproblem.L_min.eliminate_zeros()
+        L[:,-3:] = tau_columns
+        L.eliminate_zeros()
         subproblem.expand_matrices(['M','L'])
 
 # Analysis
