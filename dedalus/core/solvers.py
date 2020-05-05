@@ -255,6 +255,7 @@ class InitialValueSolver:
         self.problem = problem
         #self.domain = domain = problem.domain
         self.dist = problem.dist
+        self.dtype = problem.dtype
         self._wall_time_array = np.zeros(1, dtype=float)
         self.start_time = self.get_wall_time()
 
