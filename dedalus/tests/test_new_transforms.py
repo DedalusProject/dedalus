@@ -38,7 +38,7 @@ if comm.size == 1:
 
 ## 2D Fourier * Chebyshev
 c = coords.CartesianCoordinates('x', 'y')
-d = distributor.Distributor(c.coords)
+d = distributor.Distributor((c,))
 xb = basis.ComplexFourier(c.coords[0], size=8, bounds=(0, 2*np.pi))
 yb = basis.ChebyshevT(c.coords[1], size=16, bounds=(0, 1))
 x = xb.local_grid(1)
@@ -71,7 +71,7 @@ print(len(results), ':', result, '(Fourier x Chebyshev x-dependent vector)')
 
 ## S2
 c = coords.S2Coordinates('phi', 'theta')
-d = distributor.Distributor(c.coords)
+d = distributor.Distributor((c,))
 sb = basis.SpinWeightedSphericalHarmonics(c, (32,16), radius=1)
 phi, theta = sb.local_grids((1, 1))
 
@@ -90,6 +90,15 @@ ug0 = - 1j * np.sqrt(35/512) / 2 * (np.sin(theta) - 4*np.sin(2*theta) - 3*np.sin
 result = np.allclose(u['g'][0], ug0)
 results.append(result)
 print(len(results), ':', result, '(S2 vector)')
+
+# more complicated transform test... u is the gradient of cos(theta)*exp(1j*phi)
+u['g'][1] =    np.cos(2*theta)*np.exp(1j*phi)
+u['g'][0] = 1j*np.cos(theta)*np.exp(1j*phi)
+ug0 = np.copy(u['g'])
+u['c']
+result = np.allclose(u['g'], ug0)
+results.append(result)
+print(len(results), ':', result, '(S2 vector 2)')
 
 # Tensor transforms
 T = field.Field(dist=d, bases=(sb,), tensorsig=(c,c), dtype=np.complex128)
@@ -114,9 +123,19 @@ result = np.allclose(u['g'][0,:,:,0],ug0) and np.allclose(u['g'][2,:,:,0],ug2)
 results.append(result)
 print(len(results), ':', result, '(S2, 3D vector)')
 
+# more complicated transform test... u is the S2 gradient of cos(theta)*exp(1j*phi)
+u['g'][2] = 0
+u['g'][1,:,:,0] =    np.cos(2*theta)*np.exp(1j*phi)
+u['g'][0,:,:,0] = 1j*np.cos(theta)*np.exp(1j*phi)
+ug0 = np.copy(u['g'])
+u['c']
+result = np.allclose(u['g'], ug0)
+results.append(result)
+print(len(results), ':', result, '(S2, 3D vector 2)')
+
 ## Spherical Shell
 c = coords.SphericalCoordinates('phi', 'theta', 'r')
-d = distributor.Distributor(c.coords)
+d = distributor.Distributor((c,))
 b  = basis.SphericalShellBasis(c, (16,16,16), radii=(1,3))
 bk = basis.SphericalShellBasis(c, (16,16,16), k=1, radii=(1,3))
 phi, theta, r = b.local_grids((1, 1, 1))
@@ -170,7 +189,7 @@ print(len(results), ':', result, '(Spherical Shell vector k=1)')
 
 ## Ball
 c = coords.SphericalCoordinates('phi', 'theta', 'r')
-d = distributor.Distributor(c.coords)
+d = distributor.Distributor((c,))
 b = basis.BallBasis(c, (16,16,16), radius=1)
 phi, theta, r = b.local_grids((1, 1, 1))
 x = r * np.sin(theta) * np.cos(phi)

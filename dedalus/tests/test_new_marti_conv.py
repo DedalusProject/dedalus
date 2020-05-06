@@ -45,7 +45,7 @@ tau_T = field.Field(dist=d, bases=(b_S2,), dtype=np.complex128)
 r_vec = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
 r_vec['g'][2] = r
 
-T['g'] = 0.5*(1-r**2) + 1/8*np.sqrt(35/np.pi)*r**3*(1-r**2)*(np.cos(3*phi)+np.sin(3*phi))*np.sin(theta)**3
+T['g'] = 0.5*(1-r**2) + 0.1/8*np.sqrt(35/np.pi)*r**3*(1-r**2)*(np.cos(3*phi)+np.sin(3*phi))*np.sin(theta)**3
 
 T_source = field.Field(dist=d, bases=(b,), dtype=np.complex128)
 T_source['g'] = 3
@@ -77,12 +77,10 @@ problem.add_equation(eq_eval("p = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("Ekman*ddt(u) - Ekman*lap(u) + grad(p) = - Ekman*dot(u,grad(u)) + Rayleigh*r_vec*T - cross(ez, u)"), condition = "ntheta != 0")
 problem.add_equation(eq_eval("u = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("Prandtl*ddt(T) - lap(T) = - Prandtl*dot(u,grad(T)) + T_source"))
-#problem.add_equation(eq_eval("u(r=1) = 0"), condition="ntheta != 0")
 problem.add_equation(eq_eval("u_r_bc = 0"), condition="ntheta != 0")
 problem.add_equation(eq_eval("u_perp_bc = 0"), condition="ntheta != 0")
 problem.add_equation(eq_eval("tau_u = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("T(r=1) = 0"))
-
 
 print("Problem built")
 

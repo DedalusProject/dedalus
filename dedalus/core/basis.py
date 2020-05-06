@@ -1097,7 +1097,7 @@ class SpinBasis(MultidimensionalBasis):
                 apply_matrix(Ui.T.conj(), gdata, axis=i, out=gdata)
 
 
-# These are common for S2 and B3
+# These are common for SphericalShell and B3
 class RegularityBasis(MultidimensionalBasis):
 
     def __init__(self, coordsystem, shape, azimuth_library='matrix', colatitude_library='matrix'):
@@ -1150,7 +1150,7 @@ class RegularityBasis(MultidimensionalBasis):
         return reshape_vector(weights.astype(np.float64)[local_elements], dim=self.dist.dim, axis=self.axis+2)
 
     def S2_basis(self,radius=1):
-        return SWSH(self.coordsystem, self.shape[:2], radius=radius,
+        return SWSH(self.coordsystem.S2coordsys, self.shape[:2], radius=radius,
                     azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library)
 
     @CachedAttribute
@@ -1999,7 +1999,7 @@ class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperato
                    vec3_in = basis_in.radial_vector_3(comp_in, m, ell, regindex)
                    vec3_out = basis_out.vector_3(comp_out, m, ell)
                    if (vec3_in is not None) and (vec3_out is not None):
-                       A = self.radial_matrix(ell, regindex, regindex)
+                       A = self.radial_matrix(regindex, regindex, ell)
                        apply_matrix(A, vec3_in, axis=1, out=vec3_out)
         # Q matrix
         basis_in.backward_regularity_recombination(operand.tensorsig, self.basis_subaxis, out.data)
@@ -2061,7 +2061,7 @@ class SphericalShellRadialInterpolate(operators.Interpolate, operators.Spherical
                    vec3_in = basis_in.radial_vector_3(comp_in, m, ell, regindex)
                    vec3_out = basis_out.vector_3(comp_out, m, ell)
                    if (vec3_in is not None) and (vec3_out is not None):
-                       A = self.radial_matrix(ell, regindex, regindex)
+                       A = self.radial_matrix(regindex, regindex, ell)
                        apply_matrix(A, vec3_in, axis=1, out=vec3_out)
         # Q matrix
         basis_in.backward_regularity_recombination(operand.tensorsig, self.basis_subaxis, out.data)
