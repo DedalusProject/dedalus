@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__.split('.')[-1])
 #             trans_shape.append(basis.)
 #     else:
 
-def build_subsystems(problem):
+def build_subsystems(problem, basis_coupling=None):
     """Build local subsystem objects."""
     # Check that distributed dimensions are separable
     for axis in range(len(problem.dist.mesh)):
@@ -43,7 +43,8 @@ def build_subsystems(problem):
         if basis is None:
             raise NotImplementedError()
         else:
-            basis_coupling = problem.matrix_coupling[basis.first_axis:basis.last_axis+1]
+            if basis_coupling == None:
+                basis_coupling = problem.matrix_coupling[basis.first_axis:basis.last_axis+1]
             basis_groups.append(basis.local_groups(basis_coupling))
     # Build subsystems groups as product of basis groups
     local_groups = [tuple(sum(p, [])) for p in product(*basis_groups)]
