@@ -211,7 +211,7 @@ while solver.ok:
         T_ref = T_ref*(np.pi)/(Lmax+1)/L_dealias
         T_ref = reducer.reduce_scalar(T_ref, MPI.SUM)
         logger.info("at time {} ({}), <T_err**2>/<T_ref**2> =  {:g}".format(solver.sim_time, overlap, T_err/T_ref))
-        T_err_list.append((solver.sim_time*𝓁, T_err/T_ref))
+        T_err_list.append((overlap, T_err/T_ref))
 
     solver.step(dt)
 end_time = time.time()
