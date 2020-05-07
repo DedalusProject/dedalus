@@ -1,18 +1,31 @@
 """
 Dedalus script for full sphere testing scalar advection.
 
+An ell=m pattern is advected by solid body rotation (t=1 is one full rotation
+of the pattern).  This advected pattern is compared against a static pattern
+that diffuses at the same diffusion rate.  Each time the pattern overlaps the
+static pattern, the relative L2 error is computed.
+
+Significant apparent (but not true) errors come about from slight mismatch
+of the advected and static pattern.  To eliminate this source of misunderstanding,
+the actual timestep taken is dt = <dt>/<ell_benchmark>, and ell-many comparisons
+are made during the test.
+
+At default settings, on 256 cores, this test takes about 1 minute to run.
+The run time grows for higher ell_benchmark, since dt decreases.
+
 Usage:
     test_scalar_advection.py [options]
 
 Options:
-    --Pe=<Pe>                            Peclet number of flow [default: 10]
+    --Pe=<Pe>                            Peclet number of flow [default: 20]
     --c_source=<c_source>                Source function for scalar [default: 0]
     --ell_benchmark=<ell_benchmark>      Integer value of benchmark perturbation m=+-ell [default: 3]
 
-    --L=<L>                              Max spherical harmonic [default: 15]
-    --N=<N>                              Max radial polynomial  [default: 15]
+    --L=<L>                              Max spherical harmonic [default: 31]
+    --N=<N>                              Max radial polynomial  [default: 31]
     --t_end=<t_end>                      Stop time of problem; 1 = one revolution [default: 1]
-    --dt=<dt>                            Timestep size [default: 5e-3]
+    --dt=<dt>                            Timestep size [default: 1e-3]
 
     --mesh=<mesh>                        Processor mesh for 3-D runs
 
@@ -50,11 +63,17 @@ Lmax = int(args['--L'])
 L_dealias = 1
 Nmax = int(args['--N'])
 N_dealias = 1
+
+𝓁 = int(args['--ell_benchmark'])
 dt = float(args['--dt'])
+dt /= 𝓁
+
 t_end = float(args['--t_end'])
-ts = timesteppers.SBDF2
+ts = timesteppers.SBDF4
 
 Pe = float(args['--Pe'])
+
+
 
 # Bases
 c = coords.SphericalCoordinates('phi', 'theta', 'r')
@@ -78,7 +97,6 @@ u['g'][0] = Omega*r*np.sin(theta)
 
 # multi-armed perturbation
 A = 1
-𝓁 = int(args['--ell_benchmark'])
 norm = 1/(2**𝓁*np.math.factorial(𝓁))*np.sqrt(np.math.factorial(2*𝓁+1)/(4*np.pi))
 T_IC['g'] = A*norm*r**𝓁*(1-r**2)*(np.cos(𝓁*phi)+np.sin(𝓁*phi))*np.sin(theta)**𝓁
 logger.info("benchmark run with perturbations at ell={} with norm={}".format(𝓁, norm))
@@ -138,7 +156,7 @@ for subproblem in solver.subproblems:
     tau_columns[N0:N1, 1] = (C(Nmax, ell, 0))[:,-1]
     subproblem.L_min[:,-2:] = tau_columns
     subproblem.L_min.eliminate_zeros()
-    if ell == 0 :  logger.debug("L_min for L={}:\n {}".format(ell, subproblem.L_min[:,-2:]))
+    #if ell == 0 :  logger.debug("L_min for L={}:\n {}".format(ell, subproblem.L_min[:,-2:]))
     subproblem.expand_matrices(['M','L'])
 
 # Analysis
@@ -153,10 +171,12 @@ vol_test = np.sum(weight_r*weight_theta+0*T['g'])*np.pi/(Lmax+1)/L_dealias
 vol_test = reducer.reduce_scalar(vol_test, MPI.SUM)
 vol_correction = 4*np.pi/3/vol_test
 
+report_cadence = np.inf
+
 # Main loop
 start_time = time.time()
 while solver.ok:
-    if solver.iteration % 10 == 0:
+    if solver.iteration % report_cadence == 0 and solver.iteration > 0 :
         E0 = np.sum(vol_correction*weight_r*weight_theta*u['g'].real**2)
         E0 = 0.5*E0*(np.pi)/(Lmax+1)/L_dealias
         E0 = reducer.reduce_scalar(E0, MPI.SUM)
@@ -167,7 +187,8 @@ while solver.ok:
         t_list.append(solver.sim_time)
         E_list.append(E0)
         T_list.append(T0)
-    if np.isclose(𝓁*solver.sim_time % 1, 0, atol=dt):
+    overlap_test = 𝓁*solver.sim_time%1
+    if np.isclose(overlap_test, 1, atol=0.1*dt) or np.isclose(overlap_test, 0, atol=0.1*dt):
         T_err = np.sum(vol_correction*weight_r*weight_theta*(T['g'].real-T_c['g'].real)**2)
         T_err = T_err*(np.pi)/(Lmax+1)/L_dealias
         T_err = reducer.reduce_scalar(T_err, MPI.SUM)
@@ -176,15 +197,9 @@ while solver.ok:
         T_ref = reducer.reduce_scalar(T_ref, MPI.SUM)
         logger.info("at time {} ({}), <T_err**2>/<T_ref**2> =  {:g}".format(solver.sim_time, solver.sim_time*𝓁, T_err/T_ref))
         T_err_list.append((solver.sim_time*𝓁, T_err/T_ref))
+
     solver.step(dt)
 end_time = time.time()
-T_err = np.sum(vol_correction*weight_r*weight_theta*(T['g'].real-T_c['g'].real)**2)
-T_err = T_err*(np.pi)/(Lmax+1)/L_dealias
-T_err = reducer.reduce_scalar(T_err, MPI.SUM)
-T_ref = np.sum(vol_correction*weight_r*weight_theta*(T_c['g'].real)**2)
-T_ref = T_ref*(np.pi)/(Lmax+1)/L_dealias
-T_ref = reducer.reduce_scalar(T_ref, MPI.SUM)
-T_err_list.append((solver.sim_time*𝓁, T_err/T_ref))
 
 logger.info("at time {}, <T_err**2>/<T_ref**2> =  {:g}".format(solver.sim_time, T_err/T_ref))
 logger.info('Run time: {}'.format(end_time-start_time))
