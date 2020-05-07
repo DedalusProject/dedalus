@@ -11,6 +11,11 @@ of the advected and static pattern.  To eliminate this source of misunderstandin
 the actual timestep taken is dt = <dt>/<ell_benchmark>, and ell-many comparisons
 are made during the test.
 
+If the "polar_flow" version is chosen, then comparisons are made every pi degrees
+of rotation, with expected values of either 2 (exact mismatch) or 0 (exact match).
+For these tests, it probably is most sensible to use an even-ell pattern, so the
+timestepping can bring the pattern exactly to the pole for the mismatch test.
+
 At default settings, on 256 cores, this test takes about 1 minute to run.
 The run time grows for higher ell_benchmark, since dt decreases.
 
@@ -70,6 +75,7 @@ N_dealias = 1
 
 𝓁 = int(args['--ell_benchmark'])
 dt = float(args['--dt'])
+dt /= 𝓁
 
 t_end = float(args['--t_end'])
 ts = timesteppers.SBDF4
@@ -100,7 +106,6 @@ if args['--polar_flow']:
     u['g'][0] =  Omega*r*np.sin(phi)*np.cos(theta)
     u['g'][1] = -Omega*r*np.cos(phi)
 else:
-    dt /= 𝓁
     u['g'][0] = Omega*r*np.sin(theta)
 
 # multi-armed perturbation
