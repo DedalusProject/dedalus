@@ -22,6 +22,9 @@ Options:
     --c_source=<c_source>                Source function for scalar [default: 0]
     --ell_benchmark=<ell_benchmark>      Integer value of benchmark perturbation m=+-ell [default: 3]
 
+    --polar_flow                         Test flow over the pole by using solid body flow about the x-axis
+                                         (default is solid body flow about z-axis)
+
     --L=<L>                              Max spherical harmonic [default: 31]
     --N=<N>                              Max radial polynomial  [default: 31]
     --t_end=<t_end>                      Stop time of problem; 1 = one revolution [default: 1]
@@ -29,6 +32,7 @@ Options:
 
     --mesh=<mesh>                        Processor mesh for 3-D runs
 
+    --verbose                            Output frequently during test
 """
 
 import numpy as np
@@ -66,7 +70,6 @@ N_dealias = 1
 
 𝓁 = int(args['--ell_benchmark'])
 dt = float(args['--dt'])
-dt /= 𝓁
 
 t_end = float(args['--t_end'])
 ts = timesteppers.SBDF4
@@ -93,7 +96,12 @@ tau_T_c = field.Field(dist=d, bases=(b_S2,), dtype=np.complex128)
 
 # solid body rotation
 Omega = 2*np.pi
-u['g'][0] = Omega*r*np.sin(theta)
+if args['--polar_flow']:
+    u['g'][0] =  Omega*r*np.sin(phi)*np.cos(theta)
+    u['g'][1] = -Omega*r*np.cos(phi)
+else:
+    dt /= 𝓁
+    u['g'][0] = Omega*r*np.sin(theta)
 
 # multi-armed perturbation
 A = 1
@@ -129,7 +137,7 @@ logger.info("Problem built")
 
 # Solver
 solver = solvers.InitialValueSolver(problem, ts)
-solver.stop_sim_time = t_end
+solver.stop_sim_time = t_end+dt
 
 # Add taus
 alpha_BC = 0
@@ -171,37 +179,43 @@ vol_test = np.sum(weight_r*weight_theta+0*T['g'])*np.pi/(Lmax+1)/L_dealias
 vol_test = reducer.reduce_scalar(vol_test, MPI.SUM)
 vol_correction = 4*np.pi/3/vol_test
 
-report_cadence = np.inf
+report_cadence = 10
 
 # Main loop
 start_time = time.time()
 while solver.ok:
-    if solver.iteration % report_cadence == 0 and solver.iteration > 0 :
+    if args['--verbose'] and solver.iteration % report_cadence == 0 and solver.iteration > 0 :
         E0 = np.sum(vol_correction*weight_r*weight_theta*u['g'].real**2)
         E0 = 0.5*E0*(np.pi)/(Lmax+1)/L_dealias
         E0 = reducer.reduce_scalar(E0, MPI.SUM)
         T0 = np.sum(vol_correction*weight_r*weight_theta*T['g'].real**2)
         T0 = T0*(np.pi)/(Lmax+1)/L_dealias
         T0 = reducer.reduce_scalar(T0, MPI.SUM)
-        logger.info("iter = {:d}, t = {:f}, E = {:g}, c = {:g}".format(solver.iteration, solver.sim_time, E0, T0))
-        t_list.append(solver.sim_time)
-        E_list.append(E0)
-        T_list.append(T0)
-    overlap_test = 𝓁*solver.sim_time%1
-    if np.isclose(overlap_test, 1, atol=0.1*dt) or np.isclose(overlap_test, 0, atol=0.1*dt):
         T_err = np.sum(vol_correction*weight_r*weight_theta*(T['g'].real-T_c['g'].real)**2)
         T_err = T_err*(np.pi)/(Lmax+1)/L_dealias
         T_err = reducer.reduce_scalar(T_err, MPI.SUM)
         T_ref = np.sum(vol_correction*weight_r*weight_theta*(T_c['g'].real)**2)
         T_ref = T_ref*(np.pi)/(Lmax+1)/L_dealias
         T_ref = reducer.reduce_scalar(T_ref, MPI.SUM)
-        logger.info("at time {} ({}), <T_err**2>/<T_ref**2> =  {:g}".format(solver.sim_time, solver.sim_time*𝓁, T_err/T_ref))
+        logger.info("iter = {:d}, t = {:f}, E = {:g}, c = {:g}, err = {:g}".format(solver.iteration, solver.sim_time, E0, T0, T_err/T_ref))
+
+    if args['--polar_flow']:
+        overlap = 2*solver.sim_time
+    else:
+        overlap = 𝓁*solver.sim_time
+    if np.isclose(overlap%1, 1, atol=0.1*dt) or np.isclose(overlap%1, 0, atol=0.1*dt):
+        T_err = np.sum(vol_correction*weight_r*weight_theta*(T['g'].real-T_c['g'].real)**2)
+        T_err = T_err*(np.pi)/(Lmax+1)/L_dealias
+        T_err = reducer.reduce_scalar(T_err, MPI.SUM)
+        T_ref = np.sum(vol_correction*weight_r*weight_theta*(T_c['g'].real)**2)
+        T_ref = T_ref*(np.pi)/(Lmax+1)/L_dealias
+        T_ref = reducer.reduce_scalar(T_ref, MPI.SUM)
+        logger.info("at time {} ({}), <T_err**2>/<T_ref**2> =  {:g}".format(solver.sim_time, overlap, T_err/T_ref))
         T_err_list.append((solver.sim_time*𝓁, T_err/T_ref))
 
     solver.step(dt)
 end_time = time.time()
 
-logger.info("at time {}, <T_err**2>/<T_ref**2> =  {:g}".format(solver.sim_time, T_err/T_ref))
 logger.info('Run time: {}'.format(end_time-start_time))
 logger.info("relative error comparison each time the pattern returns to original")
 for n, err in T_err_list:
