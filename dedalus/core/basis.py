@@ -2008,9 +2008,9 @@ class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperato
         position = self.position
         basis = self.input_basis
         if regindex_in == regindex_out:
-            return self._radial_matrix(basis, 'r=R', ell, basis.regtotal(regindex_in))
-        else:
-            return np.zeros((1,basis.n_size((), ell)))
+            if ell + basis.regtotal(regindex_in) >= 0:
+                return self._radial_matrix(basis, 'r=R', ell, basis.regtotal(regindex_in))
+        return np.zeros((1,basis.n_size((), ell)))
 
     @staticmethod
     @CachedMethod
@@ -2038,11 +2038,13 @@ class SphericalShellRadialInterpolate(operators.Interpolate, operators.Spherical
 
     def subproblem_matrix(self, subproblem):
         ell = subproblem.group[self.last_axis - 1]
+        basis_in = self.input_basis
         matrix = super().subproblem_matrix(subproblem)
         if self.tensorsig != ():
-            Q = self.input_basis.radial_recombinations(self.tensorsig, ell_list=(ell,))
+            Q = basis_in.radial_recombinations(self.tensorsig, ell_list=(ell,))
             matrix = Q[0] @ matrix
-        return matrix
+        # Radial rescaling
+        return matrix * (basis_in.dR/self.position)**basis_in.k
 
     def operate(self, out):
         """Perform operation."""
@@ -2065,6 +2067,8 @@ class SphericalShellRadialInterpolate(operators.Interpolate, operators.Spherical
                        apply_matrix(A, vec3_in, axis=1, out=vec3_out)
         # Q matrix
         basis_in.backward_regularity_recombination(operand.tensorsig, self.basis_subaxis, out.data)
+        # Radial rescaling
+        out.data *= (basis_in.dR/self.position)**basis_in.k
 
     def radial_matrix(self, regindex_in, regindex_out, ell):
         position = self.position
