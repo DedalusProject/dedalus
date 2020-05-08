@@ -2220,47 +2220,4 @@ class S2AngularComponent(operators.AngularComponent):
         np.copyto(out.data, operand.data[axslice(self.index,0,2)])
 
 
-class SphericalZeroMatrix(operators.ZeroMatrix):
-
-    basis_type = RegularityBasis
-
-    def n_out_in(self, tensorsig_in, tensorsig_out, basis, subproblem):
-        R_in = basis.regularity_classes(tensorsig_in)
-        R_out = basis.regularity_classes(tensorsig_out)
-
-        # need to get ell from subproblem -- don't know how to do this
-        ell = subproblem.ell
-
-        n_out = 0
-        n_in = 0
-        for regindex_out, regtotal_out in np.ndenumerate(R_out):
-            if basis.regularity_allowed(ell, regindex_out):
-                n_out += basis.n_size(regindex_out, ell)
-        for regindex_in, regtotal_in in np.ndenumerate(R_in):
-            if basis.regularity_allowed(ell, regindex_in):
-                n_in  += basis.n_size(regindex_in,  ell)
-        return n_out, n_in
-
-
-class SphericalZeroVector(operators.ZeroVector):
-
-    basis_type = RegularityBasis
-
-    def n_out_in(self, tensorsig_in, tensorsig_out, basis, subproblem):
-        R_in = basis.regularity_classes(tensorsig_in)
-        R_out = basis.regularity_classes(tensorsig_out)
-
-        # need to get ell from subproblem -- don't know how to do this
-        ell = subproblem.ell
-
-        n_out = 0
-        n_in = 0
-        for regindex_out, regtotal_out in np.ndenumerate(R_out):
-            n_out += 1
-        for regindex_in, regtotal_in in np.ndenumerate(R_in):
-            n_in  += basis.n_size(regindex_in,  ell)
-        return n_out, n_in
-
-
-
 from . import transforms
