@@ -1915,15 +1915,9 @@ class SphericalGradient(Gradient, SphericalEllOperator):
     @CachedMethod
     def _radial_matrix(basis, regindex_out0, regtotal, ell):
         if regindex_out0 == 0:
-            if ell + regtotal >= 0:
-                return basis.xi(-1, ell+regtotal) * basis.operator_matrix('D-', ell, regtotal)
-            else:
-                return basis.operator_matrix('0', ell, regtotal)
+            return basis.xi(-1, ell+regtotal) * basis.operator_matrix('D-', ell, regtotal)
         elif regindex_out0 == 1:
-            if ell + regtotal >= 0:
-                return basis.xi(+1, ell+regtotal) * basis.operator_matrix('D+', ell, regtotal)
-            else:
-                return basis.operator_matrix('0', ell, regtotal)
+            return basis.xi(+1, ell+regtotal) * basis.operator_matrix('D+', ell, regtotal)
         else:
             raise ValueError("This should never happen")
 

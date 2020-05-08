@@ -2008,9 +2008,9 @@ class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperato
         position = self.position
         basis = self.input_basis
         if regindex_in == regindex_out:
-            if ell + basis.regtotal(regindex_in) >= 0:
-                return self._radial_matrix(basis, 'r=R', ell, basis.regtotal(regindex_in))
-        return np.zeros((1,basis.n_size((), ell)))
+            return self._radial_matrix(basis, 'r=R', ell, basis.regtotal(regindex_in))
+        else:
+            return np.zeros((1,basis.n_size((), ell)))
 
     @staticmethod
     @CachedMethod
