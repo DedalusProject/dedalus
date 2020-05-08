@@ -15,8 +15,8 @@ logger = logging.getLogger(__name__)
 
 rank = MPI.COMM_WORLD.rank
 
-Lmax = 15
-Nmax = 15
+Lmax = 31
+Nmax = 31
 
 # right now can't run with dealiasing
 L_dealias = 1
@@ -31,7 +31,7 @@ r_outer = 20/13
 radii = (r_inner,r_outer)
 
 c = de.coords.SphericalCoordinates('phi', 'theta', 'r')
-d = de.distributor.Distributor((c,))
+d = de.distributor.Distributor((c,), mesh=[8,8])
 b    = de.basis.SphericalShellBasis(c, (2*(Lmax+1),Lmax+1,Nmax+1), radii=radii)
 bk2  = de.basis.SphericalShellBasis(c, (2*(Lmax+1),Lmax+1,Nmax+1), k=2, radii=radii)
 b_inner = b.S2_basis(radius=r_inner)
@@ -39,7 +39,7 @@ b_outer = b.S2_basis(radius=r_outer)
 phi, theta, r = b.local_grids((1, 1, 1))
 
 weight_theta = b.local_colatitude_weights(1)
-weight_r = b.local_radius_weights(1)
+weight_r = b.local_radius_weights(1)*np.sqrt((r_outer-r)*(r-r_inner))*r**2
 
 u = de.field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
 p = de.field.Field(dist=d, bases=(b,), dtype=np.complex128)
@@ -153,7 +153,6 @@ E_list = []
 
 # timestepping loop
 start_time = time.time()
-iter = 0
 
 # Integration parameters
 dt = 1.e-4
@@ -162,7 +161,7 @@ solver.stop_sim_time = t_end
 
 while solver.ok:
 
-    if iter % 10 == 0:
+    if solver.iteration % 10 == 0:
         E0 = np.sum(vol_correction*weight_r*weight_theta*u['g'].real**2)
         E0 = 0.5*E0*(np.pi)/(Lmax+1)/L_dealias/vol
         E0 = reducer.reduce_scalar(E0, MPI.SUM)
@@ -170,7 +169,7 @@ while solver.ok:
         T0 = 0.5*T0*(np.pi)/(Lmax+1)/L_dealias/vol
         T0 = reducer.reduce_scalar(T0, MPI.SUM)
         logger.info("iter: {:d}, dt={:e}, t={:e}, E0={:e}, T0={:e}".format(solver.iteration, dt, solver.sim_time, E0, T0))
-        t_list.append(t)
+        t_list.append(solver.sim_time)
         E_list.append(E0)
 
     solver.step(dt)
