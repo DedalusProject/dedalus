@@ -1827,8 +1827,9 @@ class SphericalEllOperator(SpectralOperator, metaclass=MultiClass):
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
-        R_in = self.input_basis.regularity_classes(operand.tensorsig)
-        R_out = self.input_basis.regularity_classes(self.tensorsig)  # Should this use output_basis?
+        basis = self.input_basis
+        R_in = basis.regularity_classes(operand.tensorsig)
+        R_out = basis.regularity_classes(self.tensorsig)  # Should this use output_basis?
         ell = subproblem.group[self.last_axis - 1]
         # Loop over components
         submatrices = []
@@ -1836,11 +1837,17 @@ class SphericalEllOperator(SpectralOperator, metaclass=MultiClass):
             submatrix_row = []
             for regindex_in, regtotal_in in np.ndenumerate(R_in):
                 # Build identity matrices for each axis
-                subsystem_shape = subproblem.coeff_shape(self.domain)
-                factors = [sparse.identity(n, format='csr') for n in subsystem_shape]
-                # Substitute factor for radial axis
-                factors[self.last_axis] = self.radial_matrix(regindex_in, regindex_out, ell)
-                comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
+                subshape_in = subproblem.coeff_shape(self.operand.domain)
+                subshape_out = subproblem.coeff_shape(self.domain)
+                # Check if regularity component exists for this ell
+                if basis.regularity_allowed(ell, regindex_in) and basis.regularity_allowed(ell, regindex_out):
+                    # Substitute factor for radial axis
+                    factors = [sparse.eye(m, n, format='csr') for m, n in zip(subshape_out, subshape_in)]
+                    factors[self.last_axis] = self.radial_matrix(regindex_in, regindex_out, ell)
+                    comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
+                else:
+                    # Build zero matrix
+                    comp_matrix = sparse.csr_matrix(shape=(np.prod(subshape_out), np.prod(subshape_in)))
                 submatrix_row.append(comp_matrix)
             submatrices.append(submatrix_row)
         matrix = sparse.bmat(submatrices)
