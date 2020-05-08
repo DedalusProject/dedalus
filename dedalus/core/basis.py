@@ -1668,8 +1668,14 @@ class SphericalShellBasis(RegularityBasis):
     @CachedMethod
     def _radius_weights(self, scale):
         N = int(np.ceil(scale * self.shape[2]))
-        z, weights = dedalus_sphere.annulus.quadrature(N-1, alpha=self.alpha, niter=3)
-        return weights
+        z_proj, weights_proj = dedalus_sphere.annulus.quadrature(N-1, alpha=self.alpha, niter=3)
+        z0, weights0 = dedalus_sphere.jacobi128.quadrature(N-1, 0, 0)
+        init0 = dedalus_sphere.jacobi128.envelope(-1/2,-1/2,-1/2,-1/2,z0)
+        Q0 = dedalus_sphere.jacobi128.recursion(N-1,-1/2,-1/2,z0,init0)
+        init_proj = dedalus_sphere.jacobi128.envelope(-1/2,-1/2,-1/2,-1/2,z_proj)
+        Q_proj = dedalus_sphere.jacobi128.recursion(N-1,-1/2,-1/2,z_proj,init_proj)
+        normalization = self.dR/2
+        return normalization*((Q0.dot(weights0)).T).dot(weights_proj*Q_proj)
 
     @CachedMethod
     def radial_transform_factor(self, scale, data_axis, dk):

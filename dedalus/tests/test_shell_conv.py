@@ -45,7 +45,7 @@ phig,thetag,rg= b.global_grids((1,1, 1))
 theta_target = thetag[0,(Lmax+1)//2,0]
 
 weight_theta = b.local_colatitude_weights(1)
-weight_r = b.local_radius_weights(1)*np.sqrt((r_outer-r)*(r-r_inner))*r**2
+weight_r = b.local_radius_weights(1)*r**2
 
 u = de.field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
 p = de.field.Field(dist=d, bases=(b,), dtype=np.complex128)

@@ -143,8 +143,9 @@ vol_test = reducer.reduce_scalar(vol_test, MPI.SUM)
 vol_correctionB = 4*np.pi/3*0.5**3/vol_test
 
 weightS_theta = bS.local_colatitude_weights(1)
-weightS_r = bS.local_radius_weights(1)
+weightS_r = bS.local_radius_weights(1)*r_S**2
 reducer = GlobalArrayReducer(d.comm_cart)
+
 vol_test = np.sum(weightS_r*weightS_theta+0*pS['g'])*np.pi/(Lmax+1)/L_dealias
 vol_test = reducer.reduce_scalar(vol_test, MPI.SUM)
 vol_correctionS = 4*np.pi/3*(1**3 - 0.5**3)/vol_test
