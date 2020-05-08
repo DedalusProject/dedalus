@@ -68,7 +68,7 @@ problem.add_equation(eq_eval("u(r=1) = u_BC"), condition="ntheta != 0")
 problem.add_equation(eq_eval("p = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("u = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("tau = 0"), condition="ntheta == 0")
-print("Problem built")
+logger.info("Problem built")
 
 # Solver
 solver = solvers.InitialValueSolver(problem, ts)
@@ -121,4 +121,4 @@ while solver.ok:
         E_list.append(E0)
     solver.step(dt)
 end_time = time.time()
-print('Run time:', end_time-start_time)
+logger.info('Run time:', end_time-start_time)

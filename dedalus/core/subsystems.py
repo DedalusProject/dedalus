@@ -43,7 +43,7 @@ def build_subsystems(problem, basis_coupling=None):
         if basis is None:
             raise NotImplementedError()
         else:
-            if basis_coupling == None:
+            if basis_coupling is None:
                 basis_coupling = problem.matrix_coupling[basis.first_axis:basis.last_axis+1]
             basis_groups.append(basis.local_groups(basis_coupling))
     # Build subsystems groups as product of basis groups

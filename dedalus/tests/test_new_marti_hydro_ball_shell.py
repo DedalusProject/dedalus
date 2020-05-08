@@ -32,7 +32,7 @@ c_S2 = c.S2coordsys
 d = distributor.Distributor((c,))
 bB = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), radius=radius/2)
 bS = basis.SphericalShellBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), radii=(radius/2, radius))
-bmid = bB.S2_basis(radius=radius/3)
+bmid = bB.S2_basis(radius=radius/2)
 btop = bS.S2_basis(radius=radius)
 phi_B, theta_B, r_B = bB.local_grids((1, 1, 1))
 phi_S, theta_S, r_S = bS.local_grids((1, 1, 1))
@@ -93,7 +93,7 @@ problem.add_equation(eq_eval("tB = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("tS_ang = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("tS_rad = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("tS2 = 0"), condition="ntheta == 0")
-print("Problem built")
+logger.info("Problem built")
 
 # Solver
 solver = solvers.InitialValueSolver(problem, ts)
@@ -164,4 +164,4 @@ while solver.ok:
         E_list.append(E0B + E0S)
     solver.step(dt)
 end_time = time.time()
-print('Run time:', end_time-start_time)
+logger.info('Run time:', end_time-start_time)
