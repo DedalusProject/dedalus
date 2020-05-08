@@ -13,7 +13,8 @@ from dedalus_sphere import jacobi128 as jacobi
 import logging
 logger = logging.getLogger(__name__)
 
-rank = MPI.COMM_WORLD.rank
+comm = MPI.COMM_WORLD
+rank = comm.rank
 
 Lmax = 31
 Nmax = 31
@@ -30,13 +31,18 @@ r_inner = 7/13
 r_outer = 20/13
 radii = (r_inner,r_outer)
 
+# mesh must be 2D for plotting
+mesh = [8,4]
+
 c = de.coords.SphericalCoordinates('phi', 'theta', 'r')
-d = de.distributor.Distributor((c,), mesh=[8,8])
+d = de.distributor.Distributor((c,), mesh=mesh)
 b    = de.basis.SphericalShellBasis(c, (2*(Lmax+1),Lmax+1,Nmax+1), radii=radii)
 bk2  = de.basis.SphericalShellBasis(c, (2*(Lmax+1),Lmax+1,Nmax+1), k=2, radii=radii)
 b_inner = b.S2_basis(radius=r_inner)
 b_outer = b.S2_basis(radius=r_outer)
 phi, theta, r = b.local_grids((1, 1, 1))
+phig,thetag,rg= b.global_grids((1,1, 1))
+theta_target = thetag[0,(Lmax+1)//2,0]
 
 weight_theta = b.local_colatitude_weights(1)
 weight_r = b.local_radius_weights(1)*np.sqrt((r_outer-r)*(r-r_inner))*r**2
@@ -151,6 +157,44 @@ t = 0.
 t_list = []
 E_list = []
 
+report_cadence = 10
+
+plot_cadence = 100
+dpi = 150
+
+plot = theta_target in theta
+
+include_data = comm.gather(plot)
+
+var = T['g']
+name = 'T'
+if plot:
+    i_theta = np.argmin(np.abs(theta[0,:,0] - theta_target))
+    plot_data = var[:,i_theta,:].real
+else:
+    plot_data = None
+
+plot_data = comm.gather(plot_data, root=0)
+
+if rank == 0:
+    print(include_data)
+    data = []
+    for pd, id in zip(plot_data, include_data):
+        if id: data.append(pd)
+    data = np.array(data)
+    data = np.transpose(data, axes=(1,0,2)).reshape((2*(Lmax+1),Nmax+1))
+    import matplotlib.pyplot as plt
+    from dedalus.extras import plot_tools
+    r = rg[0,0,:]
+    phi = phig[:,0,0]
+    rm, phim = plot_tools.quad_mesh(r,phi)
+    x = rm*np.cos(phim)
+    y = rm*np.sin(phim)
+    fig, ax = plt.subplots()
+    im = ax.pcolormesh(x,y,data)
+    plt.colorbar(im)
+    plt.savefig('frames/%s_%04i.png' %(name, solver.iteration//plot_cadence), dpi=dpi)
+
 # timestepping loop
 start_time = time.time()
 
@@ -161,7 +205,7 @@ solver.stop_sim_time = t_end
 
 while solver.ok:
 
-    if solver.iteration % 10 == 0:
+    if solver.iteration % report_cadence == 0:
         E0 = np.sum(vol_correction*weight_r*weight_theta*u['g'].real**2)
         E0 = 0.5*E0*(np.pi)/(Lmax+1)/L_dealias/vol
         E0 = reducer.reduce_scalar(E0, MPI.SUM)
@@ -171,6 +215,22 @@ while solver.ok:
         logger.info("iter: {:d}, dt={:e}, t={:e}, E0={:e}, T0={:e}".format(solver.iteration, dt, solver.sim_time, E0, T0))
         t_list.append(solver.sim_time)
         E_list.append(E0)
+
+    if solver.iteration % plot_cadence == 0:
+        if plot:
+            plot_data = var[:,i_theta,:].real
+
+        plot_data = comm.gather(plot_data, root=0)
+        
+        if rank == 0:
+            data = []
+            for pd, id in zip(plot_data, include_data):
+                if id: data.append(pd)
+            data = np.array(data)
+            data = np.transpose(data, axes=(1,0,2)).reshape((2*(Lmax+1),Nmax+1))
+
+            im.set_array(np.ravel(data))
+            plt.savefig('frames/%s_%04i.png' %(name,solver.iteration//plot_cadence), dpi=dpi)
 
     solver.step(dt)
 
