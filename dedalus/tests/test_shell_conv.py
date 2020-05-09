@@ -10,8 +10,12 @@ import time
 from dedalus_sphere import ball, intertwiner
 from dedalus_sphere import jacobi128 as jacobi
 
+import matplotlib
 import logging
 logger = logging.getLogger(__name__)
+
+matplotlib_logger = logging.getLogger('matplotlib')
+matplotlib_logger.setLevel(logging.WARNING)
 
 comm = MPI.COMM_WORLD
 rank = comm.rank
@@ -32,7 +36,7 @@ r_outer = 20/13
 radii = (r_inner,r_outer)
 
 # mesh must be 2D for plotting
-mesh = [8,4]
+mesh = [16,16]
 
 c = de.coords.SphericalCoordinates('phi', 'theta', 'r')
 d = de.distributor.Distributor((c,), mesh=mesh)
@@ -159,7 +163,7 @@ E_list = []
 
 report_cadence = 10
 
-plot_cadence = 100
+plot_cadence = 500
 dpi = 150
 
 plot = theta_target in theta
@@ -168,6 +172,7 @@ include_data = comm.gather(plot)
 
 var = T['g']
 name = 'T'
+remove_m0 = True
 if plot:
     i_theta = np.argmin(np.abs(theta[0,:,0] - theta_target))
     plot_data = var[:,i_theta,:].real
@@ -176,23 +181,46 @@ else:
 
 plot_data = comm.gather(plot_data, root=0)
 
+import matplotlib.pyplot as plt
+def equator_plot(r, phi, data, index=None, pcm=None, cmap=None, title=None):
+    if pcm is None:
+        r_pad   = np.pad(r[0,0,:], ((0,1)), mode='constant', constant_values=(r_inner,r_outer))
+        phi_pad = np.append(phi[:,0,0], 2*np.pi)
+        fig, ax = plt.subplots(subplot_kw=dict(polar=True))
+        r_plot, phi_plot = np.meshgrid(r_pad,phi_pad)
+        pcm = ax.pcolormesh(phi_plot,r_plot,data, cmap=cmap)
+        ax.set_rlim(bottom=0, top=r_outer)
+        ax.set_rticks([])
+        ax.set_aspect(1)
+
+        pmin,pmax = pcm.get_clim()
+        cNorm = matplotlib.colors.Normalize(vmin=pmin, vmax=pmax)
+        ax_cb = fig.add_axes([0.8, 0.3, 0.03, 1-0.3*2])
+        cb = fig.colorbar(pcm, cax=ax_cb, norm=cNorm, cmap=cmap)
+        fig.subplots_adjust(left=0.05,right=0.85)
+        if title is not None:
+            ax_cb.set_title(title)
+        pcm.ax_cb = ax_cb
+        pcm.cb_cmap = cmap
+        pcm.cb = cb
+        return fig, pcm
+    else:
+        pcm.set_array(np.ravel(data))
+        pcm.set_clim([np.min(data),np.max(data)])
+        cNorm = matplotlib.colors.Normalize(vmin=np.min(data), vmax=np.max(data))
+        pcm.cb.mappable.set_norm(cNorm)
+        if title is not None:
+            pcm.ax_cb.set_title(title)
+
 if rank == 0:
-    print(include_data)
     data = []
     for pd, id in zip(plot_data, include_data):
         if id: data.append(pd)
     data = np.array(data)
     data = np.transpose(data, axes=(1,0,2)).reshape((2*(Lmax+1),Nmax+1))
-    import matplotlib.pyplot as plt
-    from dedalus.extras import plot_tools
-    r = rg[0,0,:]
-    phi = phig[:,0,0]
-    rm, phim = plot_tools.quad_mesh(r,phi)
-    x = rm*np.cos(phim)
-    y = rm*np.sin(phim)
-    fig, ax = plt.subplots()
-    im = ax.pcolormesh(x,y,data)
-    plt.colorbar(im)
+    if remove_m0:
+        data -= np.mean(data, axis=0)
+    fig, pcm = equator_plot(rg, phig, data, title=name+"'\n t = {:5.2f}".format(0), cmap = 'RdYlBu_r')
     plt.savefig('frames/%s_%04i.png' %(name, solver.iteration//plot_cadence), dpi=dpi)
 
 # timestepping loop
@@ -200,7 +228,7 @@ start_time = time.time()
 
 # Integration parameters
 dt = 1.e-4
-t_end = 1.25
+t_end = 10 #1.25
 solver.stop_sim_time = t_end
 
 while solver.ok:
@@ -221,16 +249,17 @@ while solver.ok:
             plot_data = var[:,i_theta,:].real
 
         plot_data = comm.gather(plot_data, root=0)
-        
+
         if rank == 0:
             data = []
             for pd, id in zip(plot_data, include_data):
                 if id: data.append(pd)
             data = np.array(data)
             data = np.transpose(data, axes=(1,0,2)).reshape((2*(Lmax+1),Nmax+1))
-
-            im.set_array(np.ravel(data))
-            plt.savefig('frames/%s_%04i.png' %(name,solver.iteration//plot_cadence), dpi=dpi)
+            if remove_m0:
+                data -= np.mean(data, axis=0)
+            equator_plot(rg, phig, data, title=name+"'\n t = {:5.2f}".format(solver.sim_time), cmap='RdYlBu_r', pcm=pcm)
+            fig.savefig('frames/%s_%04i.png' %(name,solver.iteration//plot_cadence), dpi=dpi)
 
     solver.step(dt)
 
@@ -240,4 +269,3 @@ if rank==0:
     t_list = np.array(t_list)
     E_list = np.array(E_list)
     np.savetxt('marti_conv.dat',np.array([t_list,E_list]))
-
