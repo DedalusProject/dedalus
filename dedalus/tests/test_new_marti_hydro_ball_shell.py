@@ -17,19 +17,19 @@ logger = logging.getLogger(__name__)
 radius = 1
 Lmax = 15
 L_dealias = 1
-Nmax = 15
+Nmax = 23
 N_dealias = 1
 Om = 20.
 u0 = np.sqrt(3/(2*np.pi))
 nu = 1e-2
-dt = 0.02
+dt = 0.005
 t_end = 20
-ts = timesteppers.SBDF2
+ts = timesteppers.SBDF4
 
 # Bases
 c = coords.SphericalCoordinates('phi', 'theta', 'r')
 c_S2 = c.S2coordsys
-d = distributor.Distributor((c,))
+d = distributor.Distributor((c,), mesh=[4,4])
 bB = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), radius=radius/2)
 bS = basis.SphericalShellBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), radii=(radius/2, radius))
 bmid = bB.S2_basis(radius=radius/2)
@@ -100,14 +100,21 @@ solver = solvers.InitialValueSolver(problem, ts)
 solver.stop_sim_time = t_end
 
 # Add taus
+alpha_BC = 0
+
+def C(N, ell, deg):
+    ab = (alpha_BC,ell+deg+0.5)
+    cd = (2,       ell+deg+0.5)
+    return dedalus_sphere.jacobi128.coefficient_connection(N - ell//2,ab,cd)
+
 for subproblem in solver.subproblems:
     if subproblem.group[1] != 0:
         ell = subproblem.group[1]
         L = subproblem.L_min
         NB = Nmax - ell//2 + 1
-        L[2*NB-1, -9] = 1
-        L[3*NB-1, -8] = 1
-        L[4*NB-1, -7] = 1
+        L[1*NB:2*NB, -9] = (C(Nmax, ell, -1))[:,-1].reshape((NB,1))
+        L[2*NB:3*NB, -8] = (C(Nmax, ell, +1))[:,-1].reshape((NB,1))
+        L[3*NB:4*NB, -7] = (C(Nmax, ell,  0))[:,-1].reshape((NB,1))
         NS = bS.shape[-1]
         L[4*NB+2*NS-1, -6] = 1
         L[4*NB+2*NS-2, -3] = 1
@@ -118,18 +125,18 @@ for subproblem in solver.subproblems:
         L.eliminate_zeros()
         subproblem.expand_matrices(['M','L'])
 
-# Check condition number and plot matrices
-import matplotlib.pyplot as plt
-plt.figure()
-for subproblem in solver.subproblems:
-    ell = subproblem.group[1]
-    M = subproblem.M_min
-    L = subproblem.L_min
-#    plt.imshow(np.log10(np.abs(L.A)))
-#    plt.colorbar()
-#    plt.savefig("matrices/ell_%03i.png" %ell, dpi=300)
-#    plt.clf()
-    print(subproblem.group, np.linalg.cond((M + L).A))
+## Check condition number and plot matrices
+#import matplotlib.pyplot as plt
+#plt.figure()
+#for subproblem in solver.subproblems:
+#    ell = subproblem.group[1]
+#    M = subproblem.M_min
+#    L = subproblem.L_min
+##    plt.imshow(np.log10(np.abs(L.A)))
+##    plt.colorbar()
+##    plt.savefig("matrices/ell_%03i.png" %ell, dpi=300)
+##    plt.clf()
+#    print(subproblem.group, np.linalg.cond((M + L).A))
 
 # Analysis
 t_list = []
@@ -166,3 +173,9 @@ while solver.ok:
     solver.step(dt)
 end_time = time.time()
 logger.info('Run time:', end_time-start_time)
+
+if MPI.COMM_WORLD.rank==0:
+    print('simulation took: %f' %(end_time-start_time))
+    t_list = np.array(t_list)
+    E_list = np.array(E_list)
+    np.savetxt('marti_hydro_ball_shell.dat',np.array([t_list,E_list]))
