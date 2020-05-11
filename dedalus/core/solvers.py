@@ -248,7 +248,7 @@ class InitialValueSolver:
 
     """
 
-    def __init__(self, problem, timestepper, basis_coupling=None):
+    def __init__(self, problem, timestepper, matrix_coupling=None):
 
         logger.debug('Beginning IVP instantiation')
 
@@ -260,7 +260,7 @@ class InitialValueSolver:
         self.start_time = self.get_wall_time()
 
         # Build subproblems and subproblem matrices
-        self.subsystems = subsystems.build_subsystems(problem, basis_coupling=basis_coupling)
+        self.subsystems = subsystems.build_subsystems(problem, matrix_coupling=matrix_coupling)
         self.subproblems = subsystems.build_subproblems(problem, self.subsystems, ['M', 'L'])
 
         # Build systems

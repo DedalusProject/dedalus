@@ -66,7 +66,7 @@ problem.add_equation(eq_eval("ddt(T) = - dot(u,grad(T))"))
 logger.info("Problem built")
 
 # Solver
-solver = solvers.InitialValueSolver(problem, ts, basis_coupling=[False, False, True])
+solver = solvers.InitialValueSolver(problem, ts, matrix_coupling=[False, False, True])
 solver.stop_sim_time = 1.
 
 weight_theta = b.local_colatitude_weights(1)
