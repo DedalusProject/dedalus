@@ -5,7 +5,7 @@ from dedalus.core import coords, distributor, basis, field, operators
 from dedalus.core import future
 from dedalus.tools.array import apply_matrix
 
-N_range = [8, 12, 16]
+N_range = [8, 12]
 
 
 class Subproblem:
@@ -13,11 +13,13 @@ class Subproblem:
     def __init__(self,ell):
         self.ell = ell
 
+ang_res = 6
+
 @pytest.mark.parametrize('N', N_range)
 def test_scalar_prod_scalar(N):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (N, N, N), radius=1)
+    b = basis.BallBasis(c, (ang_res, ang_res, N), radius=1)
     phi, theta, r = b.local_grids((1, 1, 1))
     x = r * np.sin(theta) * np.cos(phi)
     y = r * np.sin(theta) * np.sin(phi)
@@ -42,7 +44,7 @@ def test_scalar_prod_scalar(N):
 def test_scalar_prod_vector(N):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (N, N, N), radius=1)
+    b = basis.BallBasis(c, (ang_res, ang_res, N), radius=1)
     phi, theta, r = b.local_grids((1, 1, 1))
     x = r * np.sin(theta) * np.cos(phi)
     y = r * np.sin(theta) * np.sin(phi)
@@ -76,7 +78,7 @@ def test_scalar_prod_vector(N):
 def test_vector_prod_scalar(N):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (N, N, N), radius=1)
+    b = basis.BallBasis(c, (ang_res, ang_res, N), radius=1)
     phi, theta, r = b.local_grids((1, 1, 1))
     x = r * np.sin(theta) * np.cos(phi)
     y = r * np.sin(theta) * np.sin(phi)
@@ -112,7 +114,7 @@ def test_vector_prod_scalar(N):
 def test_vector_prod_vector(N, ncc_first):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (N, N, N), radius=1)
+    b = basis.BallBasis(c, (ang_res, ang_res, N), radius=1)
     phi, theta, r = b.local_grids((1, 1, 1))
     x = r * np.sin(theta) * np.cos(phi)
     y = r * np.sin(theta) * np.sin(phi)
@@ -157,7 +159,7 @@ def test_vector_prod_vector(N, ncc_first):
 def test_vector_dot_vector(N):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (N, N, N), radius=1)
+    b = basis.BallBasis(c, (ang_res, ang_res, N), radius=1)
     phi, theta, r = b.local_grids((1, 1, 1))
     x = r * np.sin(theta) * np.cos(phi)
     y = r * np.sin(theta) * np.sin(phi)
@@ -197,7 +199,7 @@ def test_vector_dot_vector(N):
 def test_tensor_dot_vector(N):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (N, N, N), radius=1)
+    b = basis.BallBasis(c, (ang_res, ang_res, N), radius=1)
     phi, theta, r = b.local_grids((1, 1, 1))
     x = r * np.sin(theta) * np.cos(phi)
     y = r * np.sin(theta) * np.sin(phi)
