@@ -1847,7 +1847,7 @@ class SphericalEllOperator(SpectralOperator, metaclass=MultiClass):
                     comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
                 else:
                     # Build zero matrix
-                    comp_matrix = sparse.csr_matrix(shape=(np.prod(subshape_out), np.prod(subshape_in)))
+                    comp_matrix = sparse.csr_matrix((np.prod(subshape_out), np.prod(subshape_in)))
                 submatrix_row.append(comp_matrix)
             submatrices.append(submatrix_row)
         matrix = sparse.bmat(submatrices)
