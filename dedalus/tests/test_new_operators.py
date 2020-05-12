@@ -193,6 +193,36 @@ x = r * np.sin(theta) * np.cos(phi)
 y = r * np.sin(theta) * np.sin(phi)
 z = r * np.cos(theta)
 
+# SphericalEllProduct
+f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+g = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+f['g'] = fg = 3*x**2 + 2*y*z
+for ell in b.local_l:
+    g['c'][:,ell,:]  = (ell+3)*f['c'][:,ell,:]
+
+func = lambda ell: ell+3
+h = operators.SphericalEllProduct(f, c, func).evaluate()
+
+result = np.allclose(h['g'],g['g'])
+results.append(result)
+print(len(results), ':', result, '(SphericalEllProduct Scalar)')
+
+# Vectors
+u = operators.Gradient(f, c).evaluate()
+uk0 = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
+uk0['g'] = u['g']
+v = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
+
+for ell in b.local_l:
+    v['c'][:,:,ell,:]  = (ell+3)*uk0['c'][:,:,ell,:]
+
+func = lambda ell: ell+3
+w = operators.SphericalEllProduct(u, c, func).evaluate()
+
+result = np.allclose(w['g'],v['g'])
+results.append(result)
+print(len(results), ':', result, '(SphericalEllProduct Vector)')
+
 # gradient of a scalar
 f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
 f['g'] = fg = 3*x**2 + 2*y*z

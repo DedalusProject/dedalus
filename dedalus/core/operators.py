@@ -1799,7 +1799,7 @@ def reduced_view_4(data, axis):
     return data.reshape((N0, N1, N2, N3))
 
 
-class SphericalEllOperator(SpectralOperator, metaclass=MultiClass):
+class SphericalEllOperator(SpectralOperator):
 
     subaxis_dependence = [False, True, True]  # Depends on ell and n
     subaxis_coupling = [False, False, True]  # Only couples n
@@ -2345,6 +2345,66 @@ class SphericalLaplacian(Laplacian, SphericalEllOperator):
     @CachedMethod
     def _radial_matrix(basis, regtotal, ell):
         return basis.operator_matrix('D-', ell, regtotal+1, dk=1) @ basis.operator_matrix('D+', ell, regtotal)
+
+
+class SphericalEllProduct(SphericalEllOperator, metaclass=MultiClass):
+
+    @classmethod
+    def _preprocess_args(cls, operand, coordsys, ell_func, out=None):
+        if isinstance(operand, Number):
+            raise SkipDispatchException(output=0)
+        return [operand, coordsys, ell_func], {'out': out}
+
+    @classmethod
+    def _check_args(cls, operand, coordsys, ell_func, out=None):
+        return True
+
+    def __init__(self, operand, coordsys, ell_func, out=None):
+        super().__init__(operand, out=out)
+        self.coordsys = coordsys
+        self.radius_axis = coordsys.coords[2].axis
+        self.ell_func = ell_func
+        # SpectralOperator requirements
+        self.input_basis = operand.domain.get_basis(coordsys)
+        self.output_basis = self.input_basis
+        self.first_axis = self.input_basis.first_axis
+        self.last_axis = self.input_basis.last_axis
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain  = operand.domain
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Require radius to be in coefficient space
+        layout = self.args[0].layout
+        return (not layout.grid_space[self.radius_axis]) and (layout.local[self.radius_axis])
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Require radius to be in coefficient space
+        self.args[0].require_coeff_space(self.radius_axis)
+        self.args[0].require_local(self.radius_axis)
+
+    def regindex_out(self, regindex_in):
+        return (regindex_in,)
+
+    def radial_matrix(self, regindex_in, regindex_out, ell):
+        basis = self.input_basis
+        regtotal = basis.regtotal(regindex_in)
+        if regindex_in == regindex_out:
+            return self._radial_matrix(ell, regtotal)
+        else:
+            return basis.operator_matrix('0', ell, 0)
+
+    @CachedMethod
+    def _radial_matrix(self, ell, regtotal):
+        return self.ell_func(ell) * self.input_basis.operator_matrix('I', ell, regtotal)
+
+    def new_operand(self, operand):
+        return SphericalEllProduct(operand, self.coordsys, self.ell_func)
 
 
 class CrossProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
