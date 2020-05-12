@@ -2355,9 +2355,16 @@ class SphericalEllProduct(SphericalEllOperator, metaclass=MultiClass):
             raise SkipDispatchException(output=0)
         return [operand, coordsys, ell_func], {'out': out}
 
+    def new_operand(self, operand):
+        return SphericalEllProduct(operand, self.coordsys, self.ell_func)
+
+
+class SphericalEllProductField(SphericalEllProduct):
+
     @classmethod
     def _check_args(cls, operand, coordsys, ell_func, out=None):
-        return True
+        return isinstance(operand, Operand)
+
 
     def __init__(self, operand, coordsys, ell_func, out=None):
         super().__init__(operand, out=out)
@@ -2402,9 +2409,6 @@ class SphericalEllProduct(SphericalEllOperator, metaclass=MultiClass):
     @CachedMethod
     def _radial_matrix(self, ell, regtotal):
         return self.ell_func(ell) * self.input_basis.operator_matrix('I', ell, regtotal)
-
-    def new_operand(self, operand):
-        return SphericalEllProduct(operand, self.coordsys, self.ell_func)
 
 
 class CrossProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
