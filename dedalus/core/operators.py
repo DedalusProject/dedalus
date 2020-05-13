@@ -2140,6 +2140,8 @@ class SphericalDivergence(Divergence, SphericalEllOperator):
 
 class Curl(LinearOperator, metaclass=MultiClass):
 
+    name = 'Curl'
+
     @classmethod
     def _check_args(cls, operand, out=None):
         # Dispatch by coordinate system
@@ -2515,6 +2517,3 @@ k(I*I), (D*I), (I*D)
 
 
 """
-
-
-
