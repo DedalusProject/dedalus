@@ -53,9 +53,7 @@ T_source['g'] = 3
 # Potential BC on u
 r_out = 1
 ell_func = lambda ell: ell+1
-#u_bc = operators.RadialComponent(operators.interpolate(operators.Gradient(u, c), r=1))
-u_bc = operators.interpolate(operators.SphericalEllProduct(u, c, ell_func), r=1)
-#u_bc = operators.RadialComponent(operators.interpolate(operators.Gradient(u, c), r=1)) + operators.interpolate(operators.SphericalEllProduct(u, c, ell_func), r=1)/r_out
+u_potential_bc = operators.RadialComponent(operators.interpolate(operators.Gradient(u, c), r=1)) + operators.interpolate(operators.SphericalEllProduct(u, c, ell_func), r=1)/r_out
 
 # Parameters and operators
 ez = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
@@ -78,7 +76,7 @@ problem.add_equation(eq_eval("p = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("Ekman*ddt(u) - Ekman*lap(u) + grad(p) = - Ekman*dot(u,grad(u)) + Rayleigh*r_vec*T - cross(ez, u)"), condition = "ntheta != 0")
 problem.add_equation(eq_eval("u = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("Prandtl*ddt(T) - lap(T) = - Prandtl*dot(u,grad(T)) + T_source"))
-problem.add_equation(eq_eval("u_bc = 0"), condition="ntheta != 0")
+problem.add_equation(eq_eval("u_potential_bc = 0"), condition="ntheta != 0")
 problem.add_equation(eq_eval("tau_u = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("T(r=1) = 0"))
 
