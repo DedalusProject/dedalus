@@ -39,12 +39,15 @@ phi, theta, r = b.local_grids((1, 1, 1))
 
 # Fields
 u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
-B = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
+A = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
 p = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+φ = field.Field(dist=d, bases=(b,), dtype=np.complex128)
 T = field.Field(dist=d, bases=(b,), dtype=np.complex128)
 tau_u = field.Field(dist=d, bases=(b_S2,), tensorsig=(c,), dtype=np.complex128)
-tau_B = field.Field(dist=d, bases=(b_S2,), tensorsig=(c,), dtype=np.complex128)
+tau_A = field.Field(dist=d, bases=(b_S2,), tensorsig=(c,), dtype=np.complex128)
 tau_T = field.Field(dist=d, bases=(b_S2,), dtype=np.complex128)
+
+B = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
 
 r_vec = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
 r_vec['g'][2] = r
@@ -65,7 +68,7 @@ B['g'][2] = -3./4.*r*(-1+r**2)*np.cos(theta)* \
                  ( 3*r*(2-5*r**2+4*r**4)*np.sin(theta)
                   +2*(1-3*r**2+3*r**4)*(np.cos(phi)-np.sin(phi)))
 
-
+A['g'] = B['g']
 T_source = field.Field(dist=d, bases=(b,), dtype=np.complex128)
 T_source['g'] = Source
 
@@ -78,7 +81,7 @@ u_perp_bc = operators.RadialComponent(operators.AngularComponent(operators.inter
 # Potential BC on B
 r_out = 1
 ell_func = lambda ell: ell+1
-B_potential_bc = operators.RadialComponent(operators.interpolate(operators.Gradient(u, c), r=1)) + operators.interpolate(operators.SphericalEllProduct(u, c, ell_func), r=1)/r_out
+A_potential_bc = operators.RadialComponent(operators.interpolate(operators.Gradient(A, c), r=1)) + operators.interpolate(operators.SphericalEllProduct(A, c, ell_func), r=1)/r_out
 
 # Parameters and operators
 ez = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
@@ -95,20 +98,22 @@ curl = lambda A: operators.Curl(A)
 # Problem
 def eq_eval(eq_str):
     return [eval(expr) for expr in split_equation(eq_str)]
-problem = problems.IVP([p, u, B, T, tau_u, tau_B, tau_T])
+problem = problems.IVP([p, u, φ, A, T, tau_u, tau_A, tau_T])
 
 problem.add_equation(eq_eval("div(u) = 0"), condition="ntheta != 0")
 problem.add_equation(eq_eval("p = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("Rossby*ddt(u) - Ekman*lap(u) + grad(p) = - Rossby*dot(u,grad(u)) + Roberts*Rayleigh*r_vec*T - cross(ez, u) + dot(B,grad(B))"), condition = "ntheta != 0")
 problem.add_equation(eq_eval("u = 0"), condition="ntheta == 0")
-problem.add_equation(eq_eval("ddt(B) - lap(B) = curl(cross(u, B))"), condition="ntheta != 0")
-problem.add_equation(eq_eval("B = 0"), condition="ntheta == 0")
+problem.add_equation(eq_eval("div(A) = 0"), condition="ntheta != 0")
+problem.add_equation(eq_eval("φ = 0"), condition="ntheta == 0")
+problem.add_equation(eq_eval("ddt(A) - lap(A) + grad(φ) = cross(u, B)"), condition="ntheta != 0")
+problem.add_equation(eq_eval("A = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("ddt(T) - Roberts*lap(T) = - dot(u,grad(T)) + T_source"))
 problem.add_equation(eq_eval("u_r_bc = 0"), condition="ntheta != 0")
 problem.add_equation(eq_eval("u_perp_bc = 0"), condition="ntheta != 0")
 problem.add_equation(eq_eval("tau_u = 0"), condition="ntheta == 0")
-problem.add_equation(eq_eval("B_potential_bc = 0"), condition="ntheta != 0")
-problem.add_equation(eq_eval("tau_B = 0"), condition="ntheta == 0")
+problem.add_equation(eq_eval("A_potential_bc = 0"), condition="ntheta != 0")
+problem.add_equation(eq_eval("tau_A = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("T(r=1) = 0"))
 
 # Solver
