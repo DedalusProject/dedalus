@@ -31,7 +31,7 @@ Source = 3*Roberts
 
 # Bases
 c = coords.SphericalCoordinates('phi', 'theta', 'r')
-d = distributor.Distributor((c,), mesh=[1,1]) #[16,16])
+d = distributor.Distributor((c,), mesh=[8,8]) #[16,16])
 b = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), radius=radius)
 bk2 = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), k=2, radius=radius)
 b_S2 = b.S2_basis()
@@ -81,6 +81,9 @@ u_perp_bc = operators.RadialComponent(operators.AngularComponent(operators.inter
 r_out = 1
 ell_func = lambda ell: ell+1
 A_potential_bc = operators.RadialComponent(operators.interpolate(operators.Gradient(A, c), r=1)) + operators.interpolate(operators.SphericalEllProduct(A, c, ell_func), r=1)/r_out
+
+A_perp_bc = operators.AngularComponent(operators.interpolate(A,r=1))
+
 
 # Parameters and operators
 ez = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
@@ -191,18 +194,21 @@ A['g'][2] = A_analytic_2
 problem = problems.IVP([p, u, φ, A, T, tau_u, tau_A, tau_T])
 
 problem.add_equation(eq_eval("div(u) = 0"), condition="ntheta != 0")
-problem.add_equation(eq_eval("p = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("Rossby*ddt(u) - Ekman*lap(u) + grad(p) = - Rossby*dot(u,grad(u)) + Roberts*Rayleigh*r_vec*T - cross(ez, u) + dot(curl(A),grad(curl(A)))"), condition = "ntheta != 0")
-problem.add_equation(eq_eval("u = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("div(A) = 0"), condition="ntheta != 0")
-problem.add_equation(eq_eval("φ = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("ddt(A) - lap(A) + grad(φ) = cross(u, B)"), condition="ntheta != 0")
-problem.add_equation(eq_eval("A = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("ddt(T) - Roberts*lap(T) = - dot(u,grad(T)) + T_source"))
+problem.add_equation(eq_eval("p = 0"), condition="ntheta == 0")
+problem.add_equation(eq_eval("u = 0"), condition="ntheta == 0")
+problem.add_equation(eq_eval("φ = 0"), condition="ntheta == 0")
+problem.add_equation(eq_eval("A = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("u_r_bc = 0"), condition="ntheta != 0")
 problem.add_equation(eq_eval("u_perp_bc = 0"), condition="ntheta != 0")
+#problem.add_equation(eq_eval("A_potential_bc = 0"), condition="ntheta != 0") # placeholder
+problem.add_equation(eq_eval("φ(r=1) = 0"), condition="ntheta != 0") # perfect conductor
+problem.add_equation(eq_eval("A_perp_bc = 0"), condition="ntheta != 0") # perfect conductor
+#problem.add_equation(eq_eval("A(r=1) = 0"), condition="ntheta != 0") # who knows
 problem.add_equation(eq_eval("tau_u = 0"), condition="ntheta == 0")
-problem.add_equation(eq_eval("A_potential_bc = 0"), condition="ntheta != 0") # placeholder
 problem.add_equation(eq_eval("tau_A = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("T(r=1) = 0"))
 
@@ -246,7 +252,7 @@ for subproblem in solver.subproblems:
         BCs[0,N3:N4] = b.operator_matrix('r=R', ell, -1)
         BCs[1,N4:N5] = b.operator_matrix('r=R', ell,  0, dk=1) @ b.operator_matrix('D-', ell, +1)
         BCs[2,N5:N6] = b.operator_matrix('r=R', ell, -1, dk=1) @ b.operator_matrix('D-', ell,  0)
-        subproblem.L_min[-4:-1,:] = BCs
+        #subproblem.L_min[-4:-1,:] = BCs
     else: # ell = 0
         tau_columns[N6:N7, 6] = (C(Nmax, ell, 0))[:,-1]
         subproblem.L_min[:,-1:] = tau_columns[:,6:]
