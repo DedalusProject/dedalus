@@ -243,9 +243,9 @@ for subproblem in solver.subproblems:
         subproblem.L_min[:,-7:] = tau_columns
 
         # hand built potential field boundary condition
-        BCs[0,  :N0] = b.operator_matrix('r=R', ell, -1)
-        BCs[1,N0:N1] = b.operator_matrix('r=R', ell,  0, dk=1) @ b.operator_matrix('D-', ell, +1)
-        BCs[2,N1:N2] = b.operator_matrix('r=R', ell, -1, dk=1) @ b.operator_matrix('D-', ell,  0)
+        BCs[0,N3:N4] = b.operator_matrix('r=R', ell, -1)
+        BCs[1,N4:N5] = b.operator_matrix('r=R', ell,  0, dk=1) @ b.operator_matrix('D-', ell, +1)
+        BCs[2,N5:N6] = b.operator_matrix('r=R', ell, -1, dk=1) @ b.operator_matrix('D-', ell,  0)
         subproblem.L_min[-4:-1,:] = BCs
     else: # ell = 0
         tau_columns[N6:N7, 6] = (C(Nmax, ell, 0))[:,-1]
