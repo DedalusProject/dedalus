@@ -54,12 +54,12 @@ r_vec['g'][2] = r
 T['g'] = 0.5*(1-r**2) + 0.1/8*np.sqrt(35/np.pi)*r**3*(1-r**2)*(np.cos(3*phi)+np.sin(3*phi))*np.sin(theta)**3
 
 # initial toroidal velocity field
-u['g'][1] = -10*r**2/7/np.sqrt(3)*np.cos(theta)*(  3*(-147+343*r**2-217*r**4+29*r**6)*np.cos(phi)
-                                                 +14*(-9 - 125*r**2 +39*r**4+27*r**6)*np.sin(phi) )
-u['g'][2] = -5*r/5544*( 7*(           (43700-58113*r**2-15345*r**4+1881*r**6+20790*r**8)*np.sin(theta)
+u['g'][0] = -5*r/5544*( 7*(           (43700-58113*r**2-15345*r**4+1881*r**6+20790*r**8)*np.sin(theta)
                            +1485*r**2*(-9 + 115*r**2 - 167*r**4 + 70*r**6)*np.sin(3*theta) )
                        +528*np.sqrt(3)*r*np.cos(2*theta)*( 14*(-9-125*r**2+39*r**4+27*r**6)*np.cos(phi)
                                                            +3*(147-343*r**2+217*r**4-29*r**6)*np.sin(phi) ) )
+u['g'][1] = -10*r**2/7/np.sqrt(3)*np.cos(theta)*(  3*(-147+343*r**2-217*r**4+29*r**6)*np.cos(phi)
+                                                 +14*(-9 - 125*r**2 +39*r**4+27*r**6)*np.sin(phi) )
 
 T_source = field.Field(dist=d, bases=(b,), dtype=np.complex128)
 T_source['g'] = Source
