@@ -94,33 +94,23 @@ for subproblem in solver.subproblems:
         tau_columns[N1:N2,1] = (C(Nmax, ell,  0))[:,-1]
         tau_columns[N2:N3,2] = (C(Nmax, ell,  0))[:,-1]
         subproblem.L_min[:,-3:] = tau_columns
-
-        BCs[0,  :N0] = b.operator_matrix('r=R', ell, -1)
-        BCs[1,N0:N1] = b.operator_matrix('r=R', ell,  0, dk=1) @ b.operator_matrix('D-', ell, +1)
-        BCs[2,N1:N2] = b.operator_matrix('r=R', ell, -1, dk=1) @ b.operator_matrix('D-', ell,  0)
-        subproblem.L_min[-3:,:] = BCs
     subproblem.L_min.eliminate_zeros()
-    print(ell, np.linalg.cond(subproblem.L_min.A))
     subproblem.expand_matrices(['L'])
-
-#import matplotlib.pyplot as plt
-#plt.figure()
-#I = 2
-#J = 1
-#for i, sp in enumerate(solver.subproblems[:I]):
-#    for j, mat in enumerate(['L_min']):
-#        axes = plt.subplot(I,J,i*J+j+1)
-#        A = getattr(sp, mat)
-#        im = axes.pcolor(np.log10(np.abs(A.A[::-1])))
-#        axes.set_title('sp %i, %s' %(i, mat))
-#        axes.set_aspect('equal')
-#        plt.colorbar(im)
-#plt.tight_layout()
-#plt.savefig("bvp_matrices.pdf")
 
 solver.solve()
 
-A_analytic_0 = (3/2*r**2*(1-4*r**2+6*r**4-3*r**6)
+def err(a,b):
+    print(np.max(np.abs(a-b))/np.max(np.abs(b)))
+
+print('largest entry of V:')
+print(np.max(np.abs(V['g'])))
+
+B2 = (operators.Curl(A) + operators.Gradient(V, c)).evaluate()
+
+print('magnetic field error:')
+err(B2['g'],B['g'])
+
+A_analytic['g'][2] = (3/2*r**2*(1-4*r**2+6*r**4-3*r**6)
                    *np.sin(theta)*(np.sin(phi)-np.cos(phi))
                +3/8*r**3*(2-7*r**2+9*r**4-4*r**6)
                    *(3*np.cos(theta)**2-1)
@@ -132,24 +122,16 @@ A_analytic_0 = (3/2*r**2*(1-4*r**2+6*r**4-3*r**6)
                    *np.sin(theta)*(np.sin(phi)-np.cos(phi))
                +1/8*(1-24/5*r**2+72/7*r**4-32/3*r**6+45/11*r**8)
                    *np.sin(theta)*(np.sin(phi)-np.cos(phi)))
-A_analytic_1 = (-27/80*r*(1-100/21*r**2+245/27*r**4-90/11*r**6+110/39*r**8)
+A_analytic['g'][1] = (-27/80*r*(1-100/21*r**2+245/27*r**4-90/11*r**6+110/39*r**8)
                         *np.cos(theta)*np.sin(theta)
                 +1/8*(1-24/5*r**2+72/7*r**4-32/3*r**6+45/11*r**8)
                     *np.cos(theta)*(np.sin(phi)-np.cos(phi)))
-A_analytic_2 = (1/8*(1-24/5*r**2+72/7*r**4-32/3*r**6+45/11*r**8)
+A_analytic['g'][0] = (1/8*(1-24/5*r**2+72/7*r**4-32/3*r**6+45/11*r**8)
                    *(np.cos(phi)+np.sin(phi)))
 
-def err(a,b):
-    print(np.max(np.abs(a-b))/np.max(np.abs(b)))
+print('errors in components of A (r, theta, phi):')
+err(A['g'][2],A_analytic['g'][2])
+err(A['g'][1],A_analytic['g'][1])
+err(A['g'][0],A_analytic['g'][0])
 
-print(np.max(np.abs(V['g'])))
 
-B2 = (operators.Curl(A) + operators.Gradient(V, c)).evaluate()
-
-print('magnetic field error:')
-err(B2['g'],B['g'])
-
-print('errors:')
-err(A['g'][2],A_analytic_0)
-err(A['g'][1],A_analytic_1)
-err(A['g'][0],A_analytic_2)

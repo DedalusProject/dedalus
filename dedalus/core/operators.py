@@ -2413,7 +2413,7 @@ class SphericalEllProductField(SphericalEllProduct):
 
     @CachedMethod
     def _radial_matrix(self, ell, regtotal):
-        return self.ell_func(ell) * self.input_basis.operator_matrix('I', ell, regtotal)
+        return self.ell_func(ell + regtotal) * self.input_basis.operator_matrix('I', ell, regtotal)
 
 
 class CrossProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
