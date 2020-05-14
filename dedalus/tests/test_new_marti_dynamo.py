@@ -31,7 +31,7 @@ Source = 3*Roberts
 
 # Bases
 c = coords.SphericalCoordinates('phi', 'theta', 'r')
-d = distributor.Distributor((c,), mesh=[16,16])
+d = distributor.Distributor((c,), mesh=[1,1]) #[16,16])
 b = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), radius=radius)
 bk2 = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), k=2, radius=radius)
 b_S2 = b.S2_basis()
@@ -46,7 +46,6 @@ T = field.Field(dist=d, bases=(b,), dtype=np.complex128)
 tau_u = field.Field(dist=d, bases=(b_S2,), tensorsig=(c,), dtype=np.complex128)
 tau_A = field.Field(dist=d, bases=(b_S2,), tensorsig=(c,), dtype=np.complex128)
 tau_T = field.Field(dist=d, bases=(b_S2,), dtype=np.complex128)
-
 B = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
 
 r_vec = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
@@ -62,15 +61,15 @@ u['g'][2] = -5*r/5544*( 7*(           (43700-58113*r**2-15345*r**4+1881*r**6+207
                        +528*np.sqrt(3)*r*np.cos(2*theta)*( 14*(-9-125*r**2+39*r**4+27*r**6)*np.cos(phi)
                                                            +3*(147-343*r**2+217*r**4-29*r**6)*np.sin(phi) ) )
 
-# initial toroidal magnetic field
-B['g'][1] = -3./2.*r*(-1+4*r**2-6*r**4+3*r**6)*(np.cos(phi)+np.sin(phi))
-B['g'][2] = -3./4.*r*(-1+r**2)*np.cos(theta)* \
-                 ( 3*r*(2-5*r**2+4*r**4)*np.sin(theta)
-                  +2*(1-3*r**2+3*r**4)*(np.cos(phi)-np.sin(phi)))
-
-A['g'] = B['g']
 T_source = field.Field(dist=d, bases=(b,), dtype=np.complex128)
 T_source['g'] = Source
+
+# initial toroidal magnetic field
+B['g'][0] = -3./4.*r*(-1+r**2)*np.cos(theta)* \
+                 ( 3*r*(2-5*r**2+4*r**4)*np.sin(theta)
+                  +2*(1-3*r**2+3*r**4)*(np.cos(phi)-np.sin(phi)))
+B['g'][1] = -3./2.*r*(-1+4*r**2-6*r**4+3*r**6)*(np.cos(phi)+np.sin(phi))
+
 
 # Boundary conditions
 u_r_bc = operators.RadialComponent(operators.interpolate(u,r=1))
@@ -95,14 +94,105 @@ cross = lambda A, B: operators.CrossProduct(A, B)
 ddt = lambda A: operators.TimeDerivative(A)
 curl = lambda A: operators.Curl(A)
 
-# Problem
 def eq_eval(eq_str):
     return [eval(expr) for expr in split_equation(eq_str)]
+
+# Initial condtions on A
+# # BVP for initial A
+# solve for A via BVP; conduct on serial domain
+# d_IC = distributor.Distributor((c,), comm=MPI.COMM_SELF)
+#
+# B_IC = field.Field(dist=d_IC, bases=(b,), tensorsig=(c,), dtype=np.complex128)
+# V = field.Field(dist=d_IC, bases=(b,), dtype=np.complex128)
+# tau_A_IC = field.Field(dist=d_IC, bases=(b_S2,), tensorsig=(c,), dtype=np.complex128)
+# A_IC = field.Field(dist=d_IC, bases=(b,), tensorsig=(c,), dtype=np.complex128)
+#
+# A_potential_bc_IC = operators.RadialComponent(operators.interpolate(operators.Gradient(A_IC, c), r=1)) + operators.interpolate(operators.SphericalEllProduct(A_IC, c, ell_func), r=1)/r_out
+#
+# B_IC['g'] = B['g']
+#
+# BVP = problems.LBVP([A_IC, V, tau_A_IC])
+#
+# def eq_eval(eq_str):
+#     return [eval(expr) for expr in split_equation(eq_str)]
+# BVP.add_equation(eq_eval("curl(A_IC) + grad(V) = B_IC"), condition="ntheta != 0")
+# BVP.add_equation(eq_eval("div(A_IC) = 0"), condition="ntheta != 0")
+# BVP.add_equation(eq_eval("A_potential_bc_IC = 0"), condition="ntheta != 0")
+# #BVP.add_equation(eq_eval("A_bc = 0"), condition="ntheta != 0")
+# BVP.add_equation(eq_eval("A_IC = 0"), condition="ntheta == 0")
+# BVP.add_equation(eq_eval("V = 0"), condition="ntheta == 0")
+# BVP.add_equation(eq_eval("tau_A_IC = 0"), condition="ntheta == 0")
+#
+# solver = solvers.LinearBoundaryValueSolver(BVP)
+#
+# # Add taus
+# alpha_BC = 0
+#
+# def C(N, ell, deg):
+#     ab = (alpha_BC,ell+deg+0.5)
+#     cd = (1,       ell+deg+0.5)
+#     return dedalus_sphere.jacobi128.coefficient_connection(N - ell//2,ab,cd)
+#
+# def BC_rows(N, ell, num_comp):
+#     N_list = (np.arange(num_comp)+1)*(N - ell//2 + 1)
+#     return N_list
+#
+# for subproblem in solver.subproblems:
+#     ell = subproblem.group[1]
+#     L = subproblem.L_min
+#     shape = L.shape
+#     tau_columns = np.zeros((shape[0], 3))
+#     BCs         = np.zeros((3, shape[1]))
+#     N0, N1, N2, N3 = BC_rows(Nmax, ell, 4)
+#     if ell != 0:
+#         tau_columns[N0:N1,0] = (C(Nmax, ell, +1))[:,-1]
+#         tau_columns[N1:N2,1] = (C(Nmax, ell,  0))[:,-1]
+#         tau_columns[N2:N3,2] = (C(Nmax, ell,  0))[:,-1]
+#         subproblem.L_min[:,-3:] = tau_columns
+#
+#         # hand built potential field boundary condition
+#         BCs[0,  :N0] = b.operator_matrix('r=R', ell, -1)
+#         BCs[1,N0:N1] = b.operator_matrix('r=R', ell,  0, dk=1) @ b.operator_matrix('D-', ell, +1)
+#         BCs[2,N1:N2] = b.operator_matrix('r=R', ell, -1, dk=1) @ b.operator_matrix('D-', ell,  0)
+#         subproblem.L_min[-3:,:] = BCs
+#     subproblem.L_min.eliminate_zeros()
+#     subproblem.expand_matrices(['L'])
+#
+# logger.info("built BVP")
+# solver.solve()
+# logger.info("solved BVP")
+#
+# A['g'] = A_IC['g']
+
+A_analytic_2 = (3/2*r**2*(1-4*r**2+6*r**4-3*r**6)
+                   *np.sin(theta)*(np.sin(phi)-np.cos(phi))
+               +3/8*r**3*(2-7*r**2+9*r**4-4*r**6)
+                   *(3*np.cos(theta)**2-1)
+               +9/160*r**2*(-200/21*r+980/27*r**3-540/11*r**5+880/39*r**7)
+                     *(3*np.cos(theta)**2-1)
+               +9/80*r*(1-100/21*r**2+245/27*r**4-90/11*r**6+110/39*r**8)
+                    *(3*np.cos(theta)**2-1)
+               +1/8*r*(-48/5*r+288/7*r**3-64*r**5+360/11*r**7)
+                   *np.sin(theta)*(np.sin(phi)-np.cos(phi))
+               +1/8*(1-24/5*r**2+72/7*r**4-32/3*r**6+45/11*r**8)
+                   *np.sin(theta)*(np.sin(phi)-np.cos(phi)))
+A_analytic_1 = (-27/80*r*(1-100/21*r**2+245/27*r**4-90/11*r**6+110/39*r**8)
+                        *np.cos(theta)*np.sin(theta)
+                +1/8*(1-24/5*r**2+72/7*r**4-32/3*r**6+45/11*r**8)
+                    *np.cos(theta)*(np.sin(phi)-np.cos(phi)))
+A_analytic_0 = (1/8*(1-24/5*r**2+72/7*r**4-32/3*r**6+45/11*r**8)
+                   *(np.cos(phi)+np.sin(phi)))
+
+A['g'][0] = A_analytic_0
+A['g'][1] = A_analytic_1
+A['g'][2] = A_analytic_2
+
+# Problem
 problem = problems.IVP([p, u, φ, A, T, tau_u, tau_A, tau_T])
 
 problem.add_equation(eq_eval("div(u) = 0"), condition="ntheta != 0")
 problem.add_equation(eq_eval("p = 0"), condition="ntheta == 0")
-problem.add_equation(eq_eval("Rossby*ddt(u) - Ekman*lap(u) + grad(p) = - Rossby*dot(u,grad(u)) + Roberts*Rayleigh*r_vec*T - cross(ez, u) + dot(B,grad(B))"), condition = "ntheta != 0")
+problem.add_equation(eq_eval("Rossby*ddt(u) - Ekman*lap(u) + grad(p) = - Rossby*dot(u,grad(u)) + Roberts*Rayleigh*r_vec*T - cross(ez, u) + dot(curl(A),grad(curl(A)))"), condition = "ntheta != 0")
 problem.add_equation(eq_eval("u = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("div(A) = 0"), condition="ntheta != 0")
 problem.add_equation(eq_eval("φ = 0"), condition="ntheta == 0")
@@ -112,7 +202,7 @@ problem.add_equation(eq_eval("ddt(T) - Roberts*lap(T) = - dot(u,grad(T)) + T_sou
 problem.add_equation(eq_eval("u_r_bc = 0"), condition="ntheta != 0")
 problem.add_equation(eq_eval("u_perp_bc = 0"), condition="ntheta != 0")
 problem.add_equation(eq_eval("tau_u = 0"), condition="ntheta == 0")
-problem.add_equation(eq_eval("A_potential_bc = 0"), condition="ntheta != 0")
+problem.add_equation(eq_eval("A_potential_bc = 0"), condition="ntheta != 0") # placeholder
 problem.add_equation(eq_eval("tau_A = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("T(r=1) = 0"))
 
@@ -141,6 +231,7 @@ for subproblem in solver.subproblems:
     subproblem.M_min.eliminate_zeros()
     N0, N1, N2, N3, N4, N5, N6, N7 = BC_rows(Nmax, ell, 8)
     tau_columns = np.zeros((shape[0], 7))
+    BCs         = np.zeros((3, shape[1]))
     if ell != 0:
         tau_columns[N0:N1,0] = (C(Nmax, ell, -1))[:,-1]
         tau_columns[N1:N2,1] = (C(Nmax, ell, +1))[:,-1]
@@ -150,11 +241,19 @@ for subproblem in solver.subproblems:
         tau_columns[N5:N6,5] = (C(Nmax, ell,  0))[:,-1]
         tau_columns[N6:N7,6] = (C(Nmax, ell,  0))[:,-1]
         subproblem.L_min[:,-7:] = tau_columns
+
+        # hand built potential field boundary condition
+        BCs[0,  :N0] = b.operator_matrix('r=R', ell, -1)
+        BCs[1,N0:N1] = b.operator_matrix('r=R', ell,  0, dk=1) @ b.operator_matrix('D-', ell, +1)
+        BCs[2,N1:N2] = b.operator_matrix('r=R', ell, -1, dk=1) @ b.operator_matrix('D-', ell,  0)
+        subproblem.L_min[-4:-1,:] = BCs
     else: # ell = 0
         tau_columns[N6:N7, 6] = (C(Nmax, ell, 0))[:,-1]
         subproblem.L_min[:,-1:] = tau_columns[:,6:]
     subproblem.L_min.eliminate_zeros()
     subproblem.expand_matrices(['M','L'])
+
+logger.info("built IVP")
 
 # Analysis
 t_list = []
@@ -168,14 +267,17 @@ vol_test = reducer.reduce_scalar(vol_test, MPI.SUM)
 vol_correction = 4*np.pi/3/vol_test
 
 # Main loop
+report_cadence = 1
 start_time = time.time()
 while solver.ok:
-    if solver.iteration % 10 == 0:
+    if solver.iteration % report_cadence == 0:
         KE = np.sum(vol_correction*weight_r*weight_theta*u['g'].real**2)
         KE = 0.5*KE*(np.pi)/(Lmax+1)/L_dealias
         KE = reducer.reduce_scalar(KE, MPI.SUM)
+        B = (operators.Curl(A)).evaluate()
         ME = np.sum(vol_correction*weight_r*weight_theta*B['g'].real**2)
         ME = 0.5*ME*(np.pi)/(Lmax+1)/L_dealias
+        ME /= Rossby
         ME = reducer.reduce_scalar(ME, MPI.SUM)
         logger.info("t = {:f}, KE = {:e},  ME = {:e}".format(solver.sim_time, KE, ME))
         t_list.append(solver.sim_time)

@@ -64,7 +64,6 @@ def eq_eval(eq_str):
 BVP.add_equation(eq_eval("curl(A) + grad(V) = B"), condition="ntheta != 0")
 BVP.add_equation(eq_eval("div(A) = 0"), condition="ntheta != 0")
 BVP.add_equation(eq_eval("A_potential_bc = 0"), condition="ntheta != 0")
-#BVP.add_equation(eq_eval("A_bc = 0"), condition="ntheta != 0")
 BVP.add_equation(eq_eval("A = 0"), condition="ntheta == 0")
 BVP.add_equation(eq_eval("V = 0"), condition="ntheta == 0")
 BVP.add_equation(eq_eval("tau_A = 0"), condition="ntheta == 0")
@@ -95,13 +94,8 @@ for subproblem in solver.subproblems:
         tau_columns[N1:N2,1] = (C(Nmax, ell,  0))[:,-1]
         tau_columns[N2:N3,2] = (C(Nmax, ell,  0))[:,-1]
         subproblem.L_min[:,-3:] = tau_columns
-    if ell == 1:
+
         BCs[0,  :N0] = b.operator_matrix('r=R', ell, -1)
-        BCs[1,N0:N1] = b.operator_matrix('r=R', ell,  0, dk=1) @ b.operator_matrix('D-', ell, +1)
-        BCs[2,N1:N2] = b.operator_matrix('r=R', ell, -1, dk=1) @ b.operator_matrix('D-', ell,  0)
-        subproblem.L_min[-3:,:] = BCs
-    if ell == 2:
-        BCs[0,  :N0] = b.operator_matrix('r=R', ell, -2, dk=1) @ b.operator_matrix('D-', ell, -1)
         BCs[1,N0:N1] = b.operator_matrix('r=R', ell,  0, dk=1) @ b.operator_matrix('D-', ell, +1)
         BCs[2,N1:N2] = b.operator_matrix('r=R', ell, -1, dk=1) @ b.operator_matrix('D-', ell,  0)
         subproblem.L_min[-3:,:] = BCs
@@ -159,5 +153,3 @@ print('errors:')
 err(A['g'][2],A_analytic_0)
 err(A['g'][1],A_analytic_1)
 err(A['g'][0],A_analytic_2)
-
-
