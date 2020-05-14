@@ -2169,6 +2169,7 @@ class SphericalTransposeComponents(operators.TransposeComponents):
 class S2RadialComponent(operators.RadialComponent):
 
     basis_type = SWSH
+    name = 'Radial'
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]

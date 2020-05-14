@@ -2170,6 +2170,7 @@ class SphericalCurl(Curl, SphericalEllOperator):
         # SpectralOperator requirements
         self.input_basis = operand.domain.get_basis(coordsys)
         self.output_basis = self._output_basis(self.input_basis)
+        self.first_axis = self.input_basis.first_axis
         self.last_axis = self.input_basis.last_axis
         # LinearOperator requirements
         self.operand = operand
@@ -2350,6 +2351,8 @@ class SphericalLaplacian(Laplacian, SphericalEllOperator):
 
 
 class SphericalEllProduct(SphericalEllOperator, metaclass=MultiClass):
+
+    name = "SphericalEllProduct"
 
     @classmethod
     def _preprocess_args(cls, operand, coordsys, ell_func, out=None):
