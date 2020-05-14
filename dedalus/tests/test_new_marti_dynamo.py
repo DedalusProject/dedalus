@@ -82,7 +82,9 @@ r_out = 1
 ell_func = lambda ell: ell+1
 A_potential_bc = operators.RadialComponent(operators.interpolate(operators.Gradient(A, c), r=1)) + operators.interpolate(operators.SphericalEllProduct(A, c, ell_func), r=1)/r_out
 
-A_perp_bc = operators.AngularComponent(operators.interpolate(A,r=1))
+#A_perp_bc = operators.AngularComponent(operators.interpolate(A,r=1))
+# problem.add_equation(eq_eval("φ(r=1) = 0"), condition="ntheta != 0") # perfect conductor
+# problem.add_equation(eq_eval("A_perp_bc = 0"), condition="ntheta != 0") # perfect conductor
 
 
 # Parameters and operators
@@ -204,10 +206,7 @@ problem.add_equation(eq_eval("φ = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("A = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("u_r_bc = 0"), condition="ntheta != 0")
 problem.add_equation(eq_eval("u_perp_bc = 0"), condition="ntheta != 0")
-#problem.add_equation(eq_eval("A_potential_bc = 0"), condition="ntheta != 0") # placeholder
-problem.add_equation(eq_eval("φ(r=1) = 0"), condition="ntheta != 0") # perfect conductor
-problem.add_equation(eq_eval("A_perp_bc = 0"), condition="ntheta != 0") # perfect conductor
-#problem.add_equation(eq_eval("A(r=1) = 0"), condition="ntheta != 0") # who knows
+problem.add_equation(eq_eval("A_potential_bc = 0"), condition="ntheta != 0") # placeholder
 problem.add_equation(eq_eval("tau_u = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("tau_A = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("T(r=1) = 0"))
@@ -235,26 +234,28 @@ for subproblem in solver.subproblems:
     shape = M.shape
     subproblem.M_min[:,-7:] = 0
     subproblem.M_min.eliminate_zeros()
-    N0, N1, N2, N3, N4, N5, N6, N7 = BC_rows(Nmax, ell, 8)
+    N0, N1, N2, N3, N4, N5, N6, N7, N8 = BC_rows(Nmax, ell, 9)
     tau_columns = np.zeros((shape[0], 7))
     BCs         = np.zeros((3, shape[1]))
     if ell != 0:
+        # nothing on p
         tau_columns[N0:N1,0] = (C(Nmax, ell, -1))[:,-1]
         tau_columns[N1:N2,1] = (C(Nmax, ell, +1))[:,-1]
         tau_columns[N2:N3,2] = (C(Nmax, ell,  0))[:,-1]
-        tau_columns[N3:N4,3] = (C(Nmax, ell, -1))[:,-1]
-        tau_columns[N4:N5,4] = (C(Nmax, ell, +1))[:,-1]
-        tau_columns[N5:N6,5] = (C(Nmax, ell,  0))[:,-1]
-        tau_columns[N6:N7,6] = (C(Nmax, ell,  0))[:,-1]
+        # nothing on phi
+        tau_columns[N4:N5,3] = (C(Nmax, ell, -1))[:,-1]
+        tau_columns[N5:N6,4] = (C(Nmax, ell, +1))[:,-1]
+        tau_columns[N6:N7,5] = (C(Nmax, ell,  0))[:,-1]
+        tau_columns[N7:N8,6] = (C(Nmax, ell,  0))[:,-1]
         subproblem.L_min[:,-7:] = tau_columns
 
         # hand built potential field boundary condition
-        BCs[0,N3:N4] = b.operator_matrix('r=R', ell, -1)
-        BCs[1,N4:N5] = b.operator_matrix('r=R', ell,  0, dk=1) @ b.operator_matrix('D-', ell, +1)
-        BCs[2,N5:N6] = b.operator_matrix('r=R', ell, -1, dk=1) @ b.operator_matrix('D-', ell,  0)
-        #subproblem.L_min[-4:-1,:] = BCs
+        BCs[0,N4:N5] = b.operator_matrix('r=R', ell, -1)
+        BCs[1,N5:N6] = b.operator_matrix('r=R', ell,  0, dk=1) @ b.operator_matrix('D-', ell, +1)
+        BCs[2,N6:N7] = b.operator_matrix('r=R', ell, -1, dk=1) @ b.operator_matrix('D-', ell,  0)
+        subproblem.L_min[-4:-1,:] = BCs
     else: # ell = 0
-        tau_columns[N6:N7, 6] = (C(Nmax, ell, 0))[:,-1]
+        tau_columns[N7:N8, 6] = (C(Nmax, ell, 0))[:,-1]
         subproblem.L_min[:,-1:] = tau_columns[:,6:]
     subproblem.L_min.eliminate_zeros()
     subproblem.expand_matrices(['M','L'])
