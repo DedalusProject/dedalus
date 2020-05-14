@@ -31,7 +31,7 @@ Source = 3*Roberts
 
 # Bases
 c = coords.SphericalCoordinates('phi', 'theta', 'r')
-d = distributor.Distributor((c,), mesh=[8,8]) #[16,16])
+d = distributor.Distributor((c,), mesh=[16,16])
 b = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), radius=radius)
 bk2 = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), k=2, radius=radius)
 b_S2 = b.S2_basis()
@@ -199,11 +199,12 @@ problem.add_equation(eq_eval("div(u) = 0"), condition="ntheta != 0")
 problem.add_equation(eq_eval("Rossby*ddt(u) - Ekman*lap(u) + grad(p) = - Rossby*dot(u,grad(u)) + Roberts*Rayleigh*r_vec*T - cross(ez, u) + dot(curl(A),grad(curl(A)))"), condition = "ntheta != 0")
 problem.add_equation(eq_eval("div(A) = 0"), condition="ntheta != 0")
 problem.add_equation(eq_eval("ddt(A) - lap(A) + grad(φ) = cross(u, B)"), condition="ntheta != 0")
-problem.add_equation(eq_eval("ddt(T) - Roberts*lap(T) = - dot(u,grad(T)) + T_source"))
 problem.add_equation(eq_eval("p = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("u = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("φ = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("A = 0"), condition="ntheta == 0")
+problem.add_equation(eq_eval("ddt(T) - Roberts*lap(T) = - dot(u,grad(T)) + T_source"))
+
 problem.add_equation(eq_eval("u_r_bc = 0"), condition="ntheta != 0")
 problem.add_equation(eq_eval("u_perp_bc = 0"), condition="ntheta != 0")
 problem.add_equation(eq_eval("A_potential_bc = 0"), condition="ntheta != 0") # placeholder
