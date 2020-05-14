@@ -307,14 +307,30 @@ class LinearBoundaryValueProblem(ProblemBase):
     def _build_matrix_expressions(self, eqn):
         """Build LHS matrix expressions and check equation conditions."""
         vars = self.variables
+        dist = self.dist
+        domain = eqn['domain']
+        tensorsig = eqn['tensorsig']
+        dtype = eqn['dtype']
         # Equation conditions
-        self._check_basis_containment(eqn, 'LHS', 'RHS')
-        eqn['LHS'].require_linearity(*vars, name='LHS')
-        eqn['RHS'].require_independent(*vars, name='RHS')
+        #self._check_basis_containment(eqn, 'LHS', 'RHS')
+        #eqn['LHS'].require_linearity(*vars, name='LHS')
+        #eqn['RHS'].require_independent(*vars, name='RHS')
         # Matrix expressions
-        eqn['L'] = operators.convert(eqn['LHS'].expand(*vars), eqn['bases'])
-        eqn['F'] = operators.convert(eqn['RHS'], eqn['bases'])
-        eqn['separability'] = eqn['L'].separability(*vars)
+        L = operators.convert(eqn['LHS'], domain.bases)
+        F = eqn['RHS']
+        if F:
+            # Cast to match LHS
+            F = Operand.cast(F, dist, tensorsig=tensorsig, dtype=dtype)
+            F = operators.convert(F, domain.bases)
+        else:
+            # Allocate zero field
+            F = Field(dist=dist, bases=domain.bases, tensorsig=tensorsig, dtype=dtype)
+            F['c'] = 0
+        eqn['L'] = L
+        eqn['F'] = F
+        eqn['matrix_dependence'] = eqn['LHS'].matrix_dependence(*vars)
+        eqn['matrix_coupling'] = eqn['LHS'].matrix_coupling(*vars)
+        #eqn['separability'] = eqn['L'].separability(*vars)
         # Debug logging
         logger.debug('  {} linear form: {}'.format('L', eqn['L']))
 

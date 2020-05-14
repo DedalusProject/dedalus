@@ -107,25 +107,22 @@ class LinearBoundaryValueSolver:
 
     """
 
-    def __init__(self, problem):
+    def __init__(self, problem, matrix_coupling=None):
 
         logger.debug('Beginning LBVP instantiation')
 
         self.problem = problem
-        self.domain = domain = problem.domain
+        self.dist = problem.dist
 
-        # Build subproblems and subproblem matrices
-        self.subproblems = subsystems.build_local_subproblems(problem)
-        subsystems.build_matrices(self.subproblems, ['L'])
+        # Build subsystems and subproblem matrices
+        self.subsystems = subsystems.build_subsystems(problem, matrix_coupling=matrix_coupling)
+        self.subproblems = subsystems.build_subproblems(problem, self.subsystems, ['L'])
 
-        # Build systems
-        namespace = problem.namespace
-        #vars = [namespace[var] for var in problem.variables]
-        #self.state = FieldSystem.from_fields(problem.variables)
         self.state = problem.variables
 
         # Create F operator trees
-        self.evaluator = Evaluator(domain, namespace)
+        namespace = {}
+        self.evaluator = Evaluator(self.dist, namespace)
         F_handler = self.evaluator.add_system_handler(iter=1, group='F')
         for eq in problem.eqs:
             F_handler.add_task(eq['F'])
@@ -140,11 +137,12 @@ class LinearBoundaryValueSolver:
         # Compute RHS
         self.evaluator.evaluate_group('F', 0, 0, 0)
         # Solve system for each subproblem, updating state
-        for ss in self.subproblems:
-            LHS = ss.L_exp
-            RHS = ss.rhs_map * ss.get_vector(self.F)
-            X = linalg.spsolve(LHS, RHS, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
-            ss.set_vector(self.state, ss.drop_var.T*X)
+        for sp in self.subproblems:
+            LHS = sp.L_exp
+            for ss in sp.subsystems:
+                RHS = sp.rhs_map * ss.gather(self.F)
+                X = linalg.spsolve(LHS, RHS, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
+                ss.scatter(X, self.state)
         #self.state.scatter()
 
 
