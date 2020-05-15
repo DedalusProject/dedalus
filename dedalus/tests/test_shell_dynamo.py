@@ -219,7 +219,8 @@ for subproblem in solver.subproblems:
     else: # ell = 0
         tau_columns[N7:N8,6]  = (C(Nmax))[:,-1]
         tau_columns[N7:N8,13] = (C(Nmax))[:,-2]
-        subproblem.L_min[:,-8:] = tau_columns[:,6:]
+        subproblem.L_min[:,-8:-7] = tau_columns[:,6:7]
+        subproblem.L_min[:,-1:] = tau_columns[:,13:]
     subproblem.L_min.eliminate_zeros()
     subproblem.expand_matrices(['M','L'])
 
@@ -319,6 +320,7 @@ while solver.ok:
         ME = np.sum(vol_correction*weight_r*weight_theta*B['g'].real**2)
         ME = 0.5*ME*(np.pi)/(Lmax+1)/L_dealias
         ME = reducer.reduce_scalar(ME, MPI.SUM)
+        ME /= (Ekman*Pm)
 
         logger.info("iter: {:d}, dt={:e}, t={:e}, E0={:e}, ME={:e}, T0={:e}".format(solver.iteration, dt, solver.sim_time, KE, ME, T0))
         t_list.append(solver.sim_time)
