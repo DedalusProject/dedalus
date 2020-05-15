@@ -20,6 +20,13 @@ matplotlib_logger.setLevel(logging.WARNING)
 comm = MPI.COMM_WORLD
 rank = comm.rank
 
+
+# mesh must be 2D for plotting
+mesh = [1,1] #[16,16]
+
+Lmax = 127
+Nmax = 63
+
 Lmax = 31
 Nmax = 31
 
@@ -48,9 +55,6 @@ def BC_rows(N, num_comp):
     N_list = (np.arange(num_comp)+1)*(N + 1)
     return N_list
 
-
-# mesh must be 2D for plotting
-mesh = [16,16] #[16,16]
 
 c = de.coords.SphericalCoordinates('phi', 'theta', 'r')
 d = de.distributor.Distributor((c,), mesh=mesh)
@@ -152,6 +156,15 @@ for subproblem in solver.subproblems:
 logger.info("built BVP")
 solver.solve()
 logger.info("solved BVP")
+
+B2 = (operators.Curl(A) + operators.Gradient(V, c)).evaluate()
+divB = (operators.Divergence(B)).evaluate()
+divB2 = (operators.Divergence(B2)).evaluate()
+print("|divB| = {}".format(np.max(np.abs(divB['g']))))
+print("|divB2| = {}".format(np.max(np.abs(divB2['g']))))
+print("|B2 - B| = {}".format(np.max(np.abs(B2['g']-B['g']))/np.max(np.abs(B['g']))))
+print("|V| = {}".format(np.max(np.abs(V['g']))))
+
 
 problem = problems.IVP([p, u, φ, A, T, tau_u_inner, tau_A_inner, tau_T_inner, tau_u_outer, tau_A_outer, tau_T_outer])
 problem.add_equation(eq_eval("div(u) = 0"), condition = "ntheta != 0")
