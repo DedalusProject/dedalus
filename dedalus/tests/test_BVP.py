@@ -22,7 +22,7 @@ N_dealias = 1
 
 # Bases
 c = coords.SphericalCoordinates('phi', 'theta', 'r')
-d = distributor.Distributor((c,))
+d = distributor.Distributor((c,),comm=MPI.COMM_SELF)
 b = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), radius=radius)
 b_S2 = b.S2_basis()
 phi, theta, r = b.local_grids((1, 1, 1))
@@ -102,15 +102,24 @@ solver.solve()
 def err(a,b):
     print(np.max(np.abs(a-b))/np.max(np.abs(b)))
 
-print('largest entry of V:')
-print(np.max(np.abs(V['g'])))
+#print('largest entry of V:')
+#print(np.max(np.abs(V['g'])))
 
 B2 = (operators.Curl(A) + operators.Gradient(V, c)).evaluate()
 
-print('magnetic field error:')
-err(B2['g'],B['g'])
+#print('magnetic field error:')
+#err(B2['g'],B['g'])
 
-A_analytic['g'][2] = (3/2*r**2*(1-4*r**2+6*r**4-3*r**6)
+c_par = coords.SphericalCoordinates('phi', 'theta', 'r')
+d_par = distributor.Distributor((c_par,))
+b_par = basis.BallBasis(c_par, (2*(Lmax+1), Lmax+1, Nmax+1), radius=radius)
+phi, theta, r = b_par.local_grids((1, 1, 1))
+
+A_par = field.Field(dist=d_par, bases=(b_par,), tensorsig=(c_par,), dtype=np.complex128)
+slices = d_par.grid_layout.slices(A_par.domain,(1,1,1))
+A_par['g'][:] = A['g'][:,slices[0],slices[1],slices[2]]
+
+A_analytic_2 = (3/2*r**2*(1-4*r**2+6*r**4-3*r**6)
                    *np.sin(theta)*(np.sin(phi)-np.cos(phi))
                +3/8*r**3*(2-7*r**2+9*r**4-4*r**6)
                    *(3*np.cos(theta)**2-1)
@@ -122,16 +131,16 @@ A_analytic['g'][2] = (3/2*r**2*(1-4*r**2+6*r**4-3*r**6)
                    *np.sin(theta)*(np.sin(phi)-np.cos(phi))
                +1/8*(1-24/5*r**2+72/7*r**4-32/3*r**6+45/11*r**8)
                    *np.sin(theta)*(np.sin(phi)-np.cos(phi)))
-A_analytic['g'][1] = (-27/80*r*(1-100/21*r**2+245/27*r**4-90/11*r**6+110/39*r**8)
+A_analytic_1 = (-27/80*r*(1-100/21*r**2+245/27*r**4-90/11*r**6+110/39*r**8)
                         *np.cos(theta)*np.sin(theta)
                 +1/8*(1-24/5*r**2+72/7*r**4-32/3*r**6+45/11*r**8)
                     *np.cos(theta)*(np.sin(phi)-np.cos(phi)))
-A_analytic['g'][0] = (1/8*(1-24/5*r**2+72/7*r**4-32/3*r**6+45/11*r**8)
+A_analytic_0 = (1/8*(1-24/5*r**2+72/7*r**4-32/3*r**6+45/11*r**8)
                    *(np.cos(phi)+np.sin(phi)))
 
 print('errors in components of A (r, theta, phi):')
-err(A['g'][2],A_analytic['g'][2])
-err(A['g'][1],A_analytic['g'][1])
-err(A['g'][0],A_analytic['g'][0])
+err(A_par['g'][2],A_analytic_2)
+err(A_par['g'][1],A_analytic_1)
+err(A_par['g'][0],A_analytic_0)
 
 
