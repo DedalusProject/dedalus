@@ -50,7 +50,7 @@ def BC_rows(N, num_comp):
 
 
 # mesh must be 2D for plotting
-mesh = [1,1] #[16,16]
+mesh = [16,16] #[16,16]
 
 c = de.coords.SphericalCoordinates('phi', 'theta', 'r')
 d = de.distributor.Distributor((c,), mesh=mesh)
@@ -116,61 +116,42 @@ A_potential_bc_inner = operators.RadialComponent(operators.interpolate(operators
 def eq_eval(eq_str):
     return [eval(expr) for expr in split_equation(eq_str)]
 
-def initial_conditions(B_IC):
-    # Initial condtions on A
-    # BVP for initial A
-    d = de.distributor.Distributor((c,), comm=MPI.COMM_SELF)
-    V = de.field.Field(dist=d, bases=(b,), dtype=np.complex128)
-    A = de.field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
-    B = de.field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
-    tau_A_inner = de.field.Field(dist=d, bases=(b_inner,), tensorsig=(c,), dtype=np.complex128)
-    tau_A_outer = de.field.Field(dist=d, bases=(b_outer,), tensorsig=(c,), dtype=np.complex128)
-    A_potential_bc_outer = operators.RadialComponent(operators.interpolate(operators.Gradient(A, c), r=r_outer)) + operators.interpolate(operators.SphericalEllProduct(A, c, ell_func), r=r_outer)/r_outer
-    A_potential_bc_inner = operators.RadialComponent(operators.interpolate(operators.Gradient(A, c), r=r_inner)) + operators.interpolate(operators.SphericalEllProduct(A, c, ell_func), r=r_inner)/r_inner
+V = de.field.Field(dist=d, bases=(b,), dtype=np.complex128)
 
-    B['g'] = B_IC
+BVP = problems.LBVP([A, V, tau_A_inner, tau_A_outer])
 
-    BVP = problems.LBVP([A, V, tau_A_inner, tau_A_outer])
+BVP.add_equation(eq_eval("curl(A) + grad(V) = B"), condition="ntheta != 0")
+BVP.add_equation(eq_eval("div(A) = 0"), condition="ntheta != 0")
+BVP.add_equation(eq_eval("A_potential_bc_inner = 0"), condition="ntheta != 0")
+BVP.add_equation(eq_eval("A_potential_bc_outer = 0"), condition="ntheta != 0")
+BVP.add_equation(eq_eval("A = 0"), condition="ntheta == 0")
+BVP.add_equation(eq_eval("V = 0"), condition="ntheta == 0")
+BVP.add_equation(eq_eval("tau_A_inner = 0"), condition="ntheta == 0")
+BVP.add_equation(eq_eval("tau_A_outer = 0"), condition="ntheta == 0")
 
-    def eq_eval(eq_str):
-        return [eval(expr) for expr in split_equation(eq_str)]
-    BVP.add_equation(eq_eval("curl(A) + grad(V) = B"), condition="ntheta != 0")
-    BVP.add_equation(eq_eval("div(A) = 0"), condition="ntheta != 0")
-    BVP.add_equation(eq_eval("A_potential_bc_inner = 0"), condition="ntheta != 0")
-    BVP.add_equation(eq_eval("A_potential_bc_outer = 0"), condition="ntheta != 0")
-    BVP.add_equation(eq_eval("A = 0"), condition="ntheta == 0")
-    BVP.add_equation(eq_eval("V = 0"), condition="ntheta == 0")
-    BVP.add_equation(eq_eval("tau_A_inner = 0"), condition="ntheta == 0")
-    BVP.add_equation(eq_eval("tau_A_outer = 0"), condition="ntheta == 0")
+solver = solvers.LinearBoundaryValueSolver(BVP)
 
-    solver = solvers.LinearBoundaryValueSolver(BVP)
+for subproblem in solver.subproblems:
+    ell = subproblem.group[1]
+    L = subproblem.L_min
+    shape = L.shape
+    tau_columns = np.zeros((shape[0], 6))
+    BCs         = np.zeros((3, shape[1]))
+    N0, N1, N2, N3 = BC_rows(Nmax, 4)
+    if ell != 0:
+        tau_columns[N0:N1,0] = (C(Nmax))[:,-1]
+        tau_columns[N1:N2,1] = (C(Nmax))[:,-1]
+        tau_columns[N2:N3,2] = (C(Nmax))[:,-1]
+        tau_columns[N0:N1,3] = (C(Nmax))[:,-2]
+        tau_columns[N1:N2,4] = (C(Nmax))[:,-2]
+        tau_columns[N2:N3,5] = (C(Nmax))[:,-2]
+        subproblem.L_min[:,-6:] = tau_columns
+    subproblem.L_min.eliminate_zeros()
+    subproblem.expand_matrices(['L'])
 
-    for subproblem in solver.subproblems:
-        ell = subproblem.group[1]
-        L = subproblem.L_min
-        shape = L.shape
-        tau_columns = np.zeros((shape[0], 6))
-        BCs         = np.zeros((3, shape[1]))
-        N0, N1, N2, N3 = BC_rows(Nmax, 4)
-        if ell != 0:
-            tau_columns[N0:N1,0] = (C(Nmax))[:,-1]
-            tau_columns[N1:N2,1] = (C(Nmax))[:,-1]
-            tau_columns[N2:N3,2] = (C(Nmax))[:,-1]
-            tau_columns[N0:N1,3] = (C(Nmax))[:,-2]
-            tau_columns[N1:N2,4] = (C(Nmax))[:,-2]
-            tau_columns[N2:N3,5] = (C(Nmax))[:,-2]
-            subproblem.L_min[:,-6:] = tau_columns
-        subproblem.L_min.eliminate_zeros()
-        subproblem.expand_matrices(['L'])
-
-    logger.info("built BVP")
-    solver.solve()
-    logger.info("solved BVP")
-    return A['g']
-
-slices = d.grid_layout.slices(A.domain,(1,1,1))
-A_IC = initial_conditions(B['c'][:,slices[0],slices[1],slices[2]])
-A['g'][:,slices[0],slices[1],slices[2]] = A_IC
+logger.info("built BVP")
+solver.solve()
+logger.info("solved BVP")
 
 problem = problems.IVP([p, u, φ, A, T, tau_u_inner, tau_A_inner, tau_T_inner, tau_u_outer, tau_A_outer, tau_T_outer])
 problem.add_equation(eq_eval("div(u) = 0"), condition = "ntheta != 0")
@@ -252,7 +233,7 @@ t_list = []
 KE_list = []
 ME_list = []
 
-report_cadence = 10
+report_cadence = 1
 
 plot_cadence = 500
 dpi = 150
@@ -322,7 +303,8 @@ dt = 1.e-4
 t_end = 10 #1.25
 solver.stop_sim_time = t_end
 
-while solver.ok:
+good_solution = True
+while solver.ok and good_solution:
 
     if solver.iteration % report_cadence == 0:
         KE = np.sum(vol_correction*weight_r*weight_theta*u['g'].real**2)
@@ -341,7 +323,7 @@ while solver.ok:
         t_list.append(solver.sim_time)
         KE_list.append(KE)
         ME_list.append(ME)
-
+        good_solution = np.isfinite(KE) and np.isfinite(ME)
     if solver.iteration % plot_cadence == 0:
         if plot:
             plot_data = var[:,i_theta,:].real
