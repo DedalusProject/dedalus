@@ -46,7 +46,7 @@ T = field.Field(dist=d, bases=(b,), dtype=np.complex128)
 tau_u = field.Field(dist=d, bases=(b_S2,), tensorsig=(c,), dtype=np.complex128)
 tau_A = field.Field(dist=d, bases=(b_S2,), tensorsig=(c,), dtype=np.complex128)
 tau_T = field.Field(dist=d, bases=(b_S2,), dtype=np.complex128)
-B = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
+#B = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
 
 r_vec = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
 r_vec['g'][2] = r
@@ -54,21 +54,21 @@ r_vec['g'][2] = r
 T['g'] = 0.5*(1-r**2) + 0.1/8*np.sqrt(35/np.pi)*r**3*(1-r**2)*(np.cos(3*phi)+np.sin(3*phi))*np.sin(theta)**3
 
 # initial toroidal velocity field
-u['g'][1] = -10*r**2/7/np.sqrt(3)*np.cos(theta)*(  3*(-147+343*r**2-217*r**4+29*r**6)*np.cos(phi)
-                                                 +14*(-9 - 125*r**2 +39*r**4+27*r**6)*np.sin(phi) )
-u['g'][2] = -5*r/5544*( 7*(           (43700-58113*r**2-15345*r**4+1881*r**6+20790*r**8)*np.sin(theta)
+u['g'][0] = -5*r/5544*( 7*(           (43700-58113*r**2-15345*r**4+1881*r**6+20790*r**8)*np.sin(theta)
                            +1485*r**2*(-9 + 115*r**2 - 167*r**4 + 70*r**6)*np.sin(3*theta) )
                        +528*np.sqrt(3)*r*np.cos(2*theta)*( 14*(-9-125*r**2+39*r**4+27*r**6)*np.cos(phi)
                                                            +3*(147-343*r**2+217*r**4-29*r**6)*np.sin(phi) ) )
+u['g'][1] = -10*r**2/7/np.sqrt(3)*np.cos(theta)*(  3*(-147+343*r**2-217*r**4+29*r**6)*np.cos(phi)
+                                                 +14*(-9 - 125*r**2 +39*r**4+27*r**6)*np.sin(phi) )
 
 T_source = field.Field(dist=d, bases=(b,), dtype=np.complex128)
 T_source['g'] = Source
 
 # initial toroidal magnetic field
-B['g'][0] = -3./4.*r*(-1+r**2)*np.cos(theta)* \
-                 ( 3*r*(2-5*r**2+4*r**4)*np.sin(theta)
-                  +2*(1-3*r**2+3*r**4)*(np.cos(phi)-np.sin(phi)))
-B['g'][1] = -3./2.*r*(-1+4*r**2-6*r**4+3*r**6)*(np.cos(phi)+np.sin(phi))
+# B['g'][0] = -3./4.*r*(-1+r**2)*np.cos(theta)* \
+#                  ( 3*r*(2-5*r**2+4*r**4)*np.sin(theta)
+#                   +2*(1-3*r**2+3*r**4)*(np.cos(phi)-np.sin(phi)))
+# B['g'][1] = -3./2.*r*(-1+4*r**2-6*r**4+3*r**6)*(np.cos(phi)+np.sin(phi))
 
 
 # Boundary conditions
@@ -81,11 +81,6 @@ u_perp_bc = operators.RadialComponent(operators.AngularComponent(operators.inter
 r_out = 1
 ell_func = lambda ell: ell+1
 A_potential_bc = operators.RadialComponent(operators.interpolate(operators.Gradient(A, c), r=1)) + operators.interpolate(operators.SphericalEllProduct(A, c, ell_func), r=1)/r_out
-
-#A_perp_bc = operators.AngularComponent(operators.interpolate(A,r=1))
-# problem.add_equation(eq_eval("φ(r=1) = 0"), condition="ntheta != 0") # perfect conductor
-# problem.add_equation(eq_eval("A_perp_bc = 0"), condition="ntheta != 0") # perfect conductor
-
 
 # Parameters and operators
 ez = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
@@ -198,7 +193,7 @@ problem = problems.IVP([p, u, φ, A, T, tau_u, tau_A, tau_T])
 problem.add_equation(eq_eval("div(u) = 0"), condition="ntheta != 0")
 problem.add_equation(eq_eval("Rossby*ddt(u) - Ekman*lap(u) + grad(p) = - Rossby*dot(u,grad(u)) + Roberts*Rayleigh*r_vec*T - cross(ez, u) + dot(curl(A),grad(curl(A)))"), condition = "ntheta != 0")
 problem.add_equation(eq_eval("div(A) = 0"), condition="ntheta != 0")
-problem.add_equation(eq_eval("ddt(A) - lap(A) + grad(φ) = cross(u, B)"), condition="ntheta != 0")
+problem.add_equation(eq_eval("ddt(A) - lap(A) + grad(φ) = cross(u, curl(A))"), condition="ntheta != 0")
 problem.add_equation(eq_eval("p = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("u = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("φ = 0"), condition="ntheta == 0")
@@ -237,7 +232,6 @@ for subproblem in solver.subproblems:
     subproblem.M_min.eliminate_zeros()
     N0, N1, N2, N3, N4, N5, N6, N7, N8 = BC_rows(Nmax, ell, 9)
     tau_columns = np.zeros((shape[0], 7))
-    BCs         = np.zeros((3, shape[1]))
     if ell != 0:
         # nothing on p
         tau_columns[N0:N1,0] = (C(Nmax, ell, -1))[:,-1]
@@ -249,12 +243,6 @@ for subproblem in solver.subproblems:
         tau_columns[N6:N7,5] = (C(Nmax, ell,  0))[:,-1]
         tau_columns[N7:N8,6] = (C(Nmax, ell,  0))[:,-1]
         subproblem.L_min[:,-7:] = tau_columns
-
-        # hand built potential field boundary condition
-        BCs[0,N4:N5] = b.operator_matrix('r=R', ell, -1)
-        BCs[1,N5:N6] = b.operator_matrix('r=R', ell,  0, dk=1) @ b.operator_matrix('D-', ell, +1)
-        BCs[2,N6:N7] = b.operator_matrix('r=R', ell, -1, dk=1) @ b.operator_matrix('D-', ell,  0)
-        subproblem.L_min[-4:-1,:] = BCs
     else: # ell = 0
         tau_columns[N7:N8, 6] = (C(Nmax, ell, 0))[:,-1]
         subproblem.L_min[:,-1:] = tau_columns[:,6:]
@@ -275,9 +263,10 @@ vol_test = reducer.reduce_scalar(vol_test, MPI.SUM)
 vol_correction = 4*np.pi/3/vol_test
 
 # Main loop
-report_cadence = 1
+report_cadence = 10
+good_solution = True
 start_time = time.time()
-while solver.ok:
+while solver.ok and good_solution:
     if solver.iteration % report_cadence == 0:
         KE = np.sum(vol_correction*weight_r*weight_theta*u['g'].real**2)
         KE = 0.5*KE*(np.pi)/(Lmax+1)/L_dealias
@@ -291,6 +280,13 @@ while solver.ok:
         t_list.append(solver.sim_time)
         KE_list.append(KE)
         ME_list.append(ME)
+        good_solution = np.isfinite(KE) and np.isfinite(ME)
     solver.step(dt)
 end_time = time.time()
 print('Run time:', end_time-start_time)
+
+if MPI.COMM_WORLD.rank==0:
+    print('simulation took: %f' %(end_time-start_time))
+    t_list = np.array(t_list)
+    E_list = np.array(E_list)
+    np.savetxt('marti_dynamo.dat',np.array([t_list,E_list, ME_list]))
