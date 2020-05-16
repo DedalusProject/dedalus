@@ -18,9 +18,9 @@ r_inner = 7/13
 r_outer = 20/13
 radii = (r_inner,r_outer)
 
-Lmax = 7
+Lmax = 31
 L_dealias = 1
-Nmax = 7
+Nmax = 31
 N_dealias = 1
 
 # Bases
@@ -87,7 +87,7 @@ def C(N):
 def BC_rows(N, num_comp):
     N_list = (np.arange(num_comp)+1)*(N + 1)
     return N_list
-    
+
 for subproblem in solver.subproblems:
     ell = subproblem.group[1]
     L = subproblem.L_min
