@@ -16,13 +16,14 @@ Nx, Nz = 128, 32
 Prandtl = 1
 Rayleigh = 1e5
 timestep = 0.01
-stop_iteration = 1000
+stop_iteration = 100
 
 # Bases
 c = coords.CartesianCoordinates('x', 'z')
 d = distributor.Distributor((c,))
 xb = basis.ComplexFourier(c.coords[0], size=Nx, bounds=(0, Lx))
 zb = basis.ChebyshevT(c.coords[1], size=Nz, bounds=(0, Lz))
+x = xb.local_grid(1)
 z = zb.local_grid(1)
 
 # Fields
@@ -44,9 +45,14 @@ P2['c'][0,-2] = 1
 # Parameters and operators
 P = (Rayleigh * Prandtl)**(-1/2)
 R = (Rayleigh / Prandtl)**(-1/2)
-ez = field.Field(name='ez', dist=d, bases=(xb,zb), dtype=np.complex128, tensorsig=(c,))
+
+ez = field.Field(name='ez', dist=d, bases=None, dtype=np.complex128, tensorsig=(c,))
 ez['g'][1] = 1
 ghat = - ez
+
+B = field.Field(name='B', dist=d, bases=(zb,), dtype=np.complex128)
+B['g'] = Lz - z
+
 div = lambda A: operators.Divergence(A, index=0)
 lap = lambda A: operators.Laplacian(A, c)
 grad = lambda A: operators.Gradient(A, c)
@@ -57,13 +63,17 @@ dt = lambda A: operators.TimeDerivative(A)
 def eq_eval(eq_str):
     return [eval(expr) for expr in split_equation(eq_str)]
 problem = problems.IVP([p, b, u, t1, t2, t3, t4])
-problem.add_equation(eq_eval("div(u) = 0"))
-problem.add_equation(eq_eval("dt(b) - P*lap(b) + P1*t1 + P2*t2 = - dot(u,grad(b))"))
-problem.add_equation(eq_eval("dt(u) - R*lap(u) + grad(p) = - dot(u,grad(u)) - b*ghat"))
-problem.add_equation(eq_eval("u(z=0) = 0"))
-problem.add_equation(eq_eval("u(z=Lz) = 0"))
-problem.add_equation(eq_eval("b(z=0) = Lz"))
-problem.add_equation(eq_eval("b(z=Lz) = 0"))
+problem.add_equation(eq_eval("div(u) = 0"), condition="nx != 0")
+problem.add_equation(eq_eval("dt(b) - P*lap(b) + P1*t1 + P2*t2 = - dot(u,grad(b)) - dot(u,grad(B)) + P*lap(B)"))
+problem.add_equation(eq_eval("dt(u) - R*lap(u) + grad(p) + P1*t3 + P2*t4 = - dot(u,grad(u)) - b*ghat - B*ghat"), condition="nx != 0")
+problem.add_equation(eq_eval("b(z=0) = Lz - B(z=0)"))
+problem.add_equation(eq_eval("b(z=Lz) = 0 - B(z=Lz)"))
+problem.add_equation(eq_eval("u(z=0) = 0"), condition="nx != 0")
+problem.add_equation(eq_eval("u(z=Lz) = 0"), condition="nx != 0")
+problem.add_equation(eq_eval("p = 0"), condition="nx == 0")
+problem.add_equation(eq_eval("u = 0"), condition="nx == 0")
+problem.add_equation(eq_eval("t3 = 0"), condition="nx == 0")
+problem.add_equation(eq_eval("t4 = 0"), condition="nx == 0")
 print("Problem built")
 
 # Solver
@@ -74,21 +84,10 @@ solver.stop_iteration = stop_iteration
 for i, subproblem in enumerate(solver.subproblems):
     M = subproblem.M_min
     L = subproblem.L_min
-    # Pressure gauge
-    if i == 0:
-        L = subproblem.L_min
-        L[0, 0] = 1
-    # Tau terms
-    L[Nz*3-1, -4] = 1
-    L[Nz*3-2, -3] = 1
-    L[Nz*4-1, -2] = 1
-    L[Nz*4-2, -1] = 1
-    L[Nz-1,   -1] = 1
     print(i, subproblem.group, np.linalg.cond((M+L).A))
-    subproblem.expand_matrices(['M','L'])
 
 # Initial conditions
-b['g'] = Lz - z + 1e-1 * np.random.randn(*b['g'].shape)
+b['g'] = 1e-1 * np.random.randn(*b['g'].shape)
 
 # Main loop
 plt.figure()

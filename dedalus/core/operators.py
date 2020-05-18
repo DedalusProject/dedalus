@@ -1304,6 +1304,9 @@ class HilbertTransformConstant(HilbertTransform):
 
 
 def convert(arg, bases):
+    # Skip for numbers
+    if isinstance(arg, Number):
+        return arg
     # Drop Nones
     bases = [b for b in bases if b is not None]
     # if not bases:
@@ -1706,7 +1709,7 @@ class CartesianGradient(Gradient):
     def check_conditions(self):
         """Check that operands are in a proper layout."""
         # Require operands to be in same layout
-        layouts = [operand.layout for operand in self.args]
+        layouts = [operand.layout for operand in self.args if operand]
         all_layouts_equal = (len(set(layouts)) == 1)
         return all_layouts_equal
 
@@ -1716,17 +1719,21 @@ class CartesianGradient(Gradient):
         # Take coeff layout arbitrarily
         layout = self.dist.coeff_layout
         for arg in self.args:
-            arg.require_layout(layout)
+            if arg:
+                arg.require_layout(layout)
 
     def operate(self, out):
         """Perform operation."""
         operands = self.args
-        layout = operands[0].layout
+        layouts = [operand.layout for operand in self.args if operand]
         # Set output layout
-        out.set_layout(layout)
+        out.set_layout(layouts[0])
         # Copy operand data to output components
         for i, comp in enumerate(operands):
-            out.data[i] = comp.data
+            if comp:
+                out.data[i] = comp.data
+            else:
+                out.data[i] = 0
 
 
 class S2Gradient(Gradient, SpectralOperator):
@@ -2026,9 +2033,6 @@ class CartesianDivergence(Divergence):
         # Get components
         comps = [CartesianComponent(operand, index=index, coord=c) for c in coordsys.coords]
         comps = [Differentiate(comp, c) for comp, c in zip(comps, coordsys.coords)]
-        # Convert to correct bases before adding?
-        #bases = sum(comps).domain.bases
-        #comps = [convert(comp, bases) for comp in comps]
         arg = sum(comps)
         LinearOperator.__init__(self, arg, out=out)
         self.index = index
@@ -2045,9 +2049,6 @@ class CartesianDivergence(Divergence):
 
     def matrix_coupling(self, *vars):
         return self.args[0].matrix_coupling(*vars)
-
-    # def separability(self, *vars):
-    #     return self.original_args[0].separability(*vars)
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""
