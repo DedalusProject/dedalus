@@ -988,10 +988,16 @@ class MultidimensionalBasis(Basis):
 # These are common for S2 and D2
 class SpinBasis(MultidimensionalBasis):
 
-    def __init__(self, coordsystem, shape, azimuth_library='matrix'):
+    def __init__(self, coordsystem, shape, dealias, azimuth_library='matrix'):
         super().__init__(coordsystem)
         self.coordsystem = coordsystem
         self.shape = shape
+        if np.isscalar(dealias):
+            self.dealias = (dealias, dealias)
+        elif len(dealias) != 2:
+            raise ValueError("dealias must either be a number or a tuple of two numbers")
+        else:
+            self.dealias = dealias
         self.azimuth_library = azimuth_library
         self.mmax = (shape[0] - 1) // 2
         self.azimuth_basis = ComplexFourier(coordsystem.coords[0], shape[0], bounds=(0, 2*np.pi), library=azimuth_library)
@@ -1100,10 +1106,16 @@ class SpinBasis(MultidimensionalBasis):
 # These are common for SphericalShell and B3
 class RegularityBasis(MultidimensionalBasis):
 
-    def __init__(self, coordsystem, shape, azimuth_library='matrix', colatitude_library='matrix'):
+    def __init__(self, coordsystem, shape, dealias, azimuth_library='matrix', colatitude_library='matrix'):
         super().__init__(coordsystem)
         self.coordsystem = coordsystem
         self.shape = shape
+        if np.isscalar(dealias):
+            self.dealias = (dealias, dealias, dealias)
+        elif len(dealias) != 3:
+            raise ValueError("dealias must either be a number or a tuple of three numbers")
+        else:
+            self.dealias = dealias
         self.azimuth_library = azimuth_library
         self.colatitude_library = colatitude_library
         self.sphere_basis = SWSH(coordsystem, shape[:2], azimuth_library=azimuth_library, colatitude_library=colatitude_library)
@@ -1150,7 +1162,7 @@ class RegularityBasis(MultidimensionalBasis):
         return reshape_vector(weights.astype(np.float64)[local_elements], dim=self.dist.dim, axis=self.axis+2)
 
     def S2_basis(self,radius=1):
-        return SWSH(self.coordsystem.S2coordsys, self.shape[:2], radius=radius,
+        return SWSH(self.coordsystem.S2coordsys, self.shape[:2], radius=radius, dealias=(self.dealias[0],self.dealias[1]),
                     azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library)
 
     @CachedAttribute
@@ -1438,8 +1450,8 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
     group_shape = (1, 1)
     transforms = {}
 
-    def __init__(self, coordsystem, shape, radius=1, colatitude_library='matrix', **kw):
-        super().__init__(coordsystem, shape, **kw)
+    def __init__(self, coordsystem, shape, radius=1, dealias=(1,1), colatitude_library='matrix', **kw):
+        super().__init__(coordsystem, shape, dealias, **kw)
         if radius <= 0:
             raise ValueError("Radius must be positive.")
         self.radius = radius
@@ -1501,7 +1513,8 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         local_l_elements = layout.local_elements(self.domain, scales=1)[self.axis+1]
         return tuple(self.degrees[local_l_elements])
 
-    def global_grids(self, scales):
+    def global_grids(self, scales=None):
+        if scales == None: scales = self.dealias
         return (self.global_grid_azimuth(scales[0]),
                 self.global_grid_colatitude(scales[1]))
 
@@ -1509,7 +1522,8 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         theta = self._native_colatitude_grid(scale)
         return reshape_vector(theta, dim=self.dist.dim, axis=self.axis+1)
 
-    def local_grids(self, scales):
+    def local_grids(self, scales=None):
+        if scales == None: scales = self.dealias
         return (self.local_grid_azimuth(scales[0]),
                 self.local_grid_colatitude(scales[1]))
 
@@ -1536,28 +1550,26 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         return reshape_vector(weights.astype(np.float64)[local_elements], dim=self.dist.dim, axis=self.axis+1)
 
     @CachedMethod
-    def transform_plan(self, grid_size, s):
+    def transform_plan(self, grid_shape, axis, s):
         """Build transform plan."""
-        return self.transforms[self.colatitude_library](grid_size, self.Lmax+1, self.local_m, s)
+        return self.transforms[self.colatitude_library](grid_shape, self.Lmax+1, axis, self.local_m, s)
 
     def forward_transform_colatitude(self, field, axis, gdata, cdata):
-        data_axis = len(field.tensorsig) + axis
-        grid_size = gdata.shape[data_axis]
         # Apply spin recombination
         self.forward_spin_recombination(field.tensorsig, gdata)
         # Perform transforms component-by-component
         S = self.spin_weights(field.tensorsig)
         for i, s in np.ndenumerate(S):
-            plan = self.transform_plan(grid_size, s)
+            grid_shape = gdata[i].shape
+            plan = self.transform_plan(grid_shape, axis, s)
             plan.forward(gdata[i], cdata[i], axis)
 
     def backward_transform_colatitude(self, field, axis, cdata, gdata):
-        data_axis = len(field.tensorsig) + axis
-        grid_size = gdata.shape[data_axis]
         # Perform transforms component-by-component
         S = self.spin_weights(field.tensorsig)
         for i, s in np.ndenumerate(S):
-            plan = self.transform_plan(grid_size, s)
+            grid_shape = gdata[i].shape
+            plan = self.transform_plan(grid_shape, axis, s)
             plan.backward(cdata[i], gdata[i], axis)
         # Apply spin recombination
         self.backward_spin_recombination(field.tensorsig, gdata)
@@ -1596,8 +1608,8 @@ class SphericalShellBasis(RegularityBasis):
     group_shape = (1, 1, 1)
     transforms = {}
 
-    def __init__(self, coordsystem, shape, radii=(1,2), alpha=(-0.5,-0.5), k=0, azimuth_library='matrix', colatitude_library='matrix', radius_library='matrix'):
-        super().__init__(coordsystem, shape, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
+    def __init__(self, coordsystem, shape, radii=(1,2), alpha=(-0.5,-0.5), dealias=(1,1,1), k=0, azimuth_library='matrix', colatitude_library='matrix', radius_library='matrix'):
+        super().__init__(coordsystem, shape, dealias, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
         if radii[0] <= 0:
             raise ValueError("Inner radius must be positive.")
         self.radii = radii
@@ -1753,8 +1765,8 @@ class BallBasis(RegularityBasis):
     group_shape = (1, 1, 1)
     transforms = {}
 
-    def __init__(self, coordsystem, shape, radius=1, k=0, alpha=0, azimuth_library='matrix', colatitude_library='matrix', radius_library='matrix'):
-        super().__init__(coordsystem, shape, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
+    def __init__(self, coordsystem, shape, radius=1, k=0, alpha=0, dealias=(1,1,1), azimuth_library='matrix', colatitude_library='matrix', radius_library='matrix'):
+        super().__init__(coordsystem, shape, dealias, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
         if radius <= 0:
             raise ValueError("Radius must be positive.")
         self.radius = radius
@@ -1831,29 +1843,27 @@ class BallBasis(RegularityBasis):
         return weights
 
     @CachedMethod
-    def transform_plan(self, grid_size, regindex, regtotal, k, alpha):
+    def transform_plan(self, grid_shape, regindex, axis, regtotal, k, alpha):
         """Build transform plan."""
-        return self.transforms[self.radius_library](grid_size, self.Nmax+1, self.local_l, regindex, regtotal, k, alpha)
+        return self.transforms[self.radius_library](grid_shape, self.Nmax+1, axis, self.local_l, regindex, regtotal, k, alpha)
 
     def forward_transform_radius(self, field, axis, gdata, cdata):
-        data_axis = len(field.tensorsig) + axis
-        grid_size = gdata.shape[data_axis]
         # Apply regularity recombination
         self.forward_regularity_recombination(field.tensorsig, axis, gdata)
         # Perform radial transforms component-by-component
         R = self.regularity_classes(field.tensorsig)
         for regindex, regtotal in np.ndenumerate(R):
-           plan = self.transform_plan(grid_size, regindex, regtotal, self.k, self.alpha)
+           grid_shape = gdata[regindex].shape
+           plan = self.transform_plan(grid_shape, regindex, axis, regtotal, self.k, self.alpha)
            plan.forward(gdata[regindex], cdata[regindex], axis)
 
     def backward_transform_radius(self, field, axis, cdata, gdata):
-        data_axis = len(field.tensorsig) + axis
-        grid_size = gdata.shape[data_axis]
         # Perform radial transforms component-by-component
         R = self.regularity_classes(field.tensorsig)
-        for i, r in np.ndenumerate(R):
-           plan = self.transform_plan(grid_size, i, r, self.k, self.alpha)
-           plan.backward(cdata[i], gdata[i], axis)
+        for regindex, regtotal in np.ndenumerate(R):
+           grid_shape = gdata[regindex].shape
+           plan = self.transform_plan(grid_shape, regindex, axis, regtotal, self.k, self.alpha)
+           plan.backward(cdata[regindex], gdata[regindex], axis)
         # Apply regularity recombinations
         self.backward_regularity_recombination(field.tensorsig, axis, gdata)
 

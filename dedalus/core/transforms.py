@@ -2,6 +2,7 @@
 
 import numpy as np
 from scipy import fftpack
+import dedalus_sphere
 
 from . import basis
 from ..tools import jacobi
@@ -533,6 +534,31 @@ def backward_DFT(cdata, gdata, axis):
 
 class NonSeparableTransform(Transform):
 
+    def __init__(self, grid_shape, coeff_size, axis, dtype):
+
+        self.N2g = grid_shape[axis]
+        self.N2c = coeff_size
+        N0 = np.prod(grid_shape[:axis-1], dtype=int)
+        N1 = grid_shape[axis-1]
+        N2 = max(self.N2g, self.N2c)
+        self.N3 = N3 = np.prod(grid_shape[axis+1:], dtype=int)
+        self.temp = np.zeros(shape=[N0, N1, N2, N3], dtype=dtype)
+
+    @staticmethod
+    def resize_reduced(data_in, data_out):
+        """Resize data by padding/truncation."""
+        size_in = data_in.shape[2]
+        size_out = data_out.shape[2]
+        if size_in < size_out:
+            # Pad with zeros at end of data
+            np.copyto(data_out[:, :, :size_in, :], data_in)
+            np.copyto(data_out[:, :, size_in:, :], 0)
+        elif size_in > size_out:
+            # Truncate higher order modes at end of data
+            np.copyto(data_out, data_in[:, :, :size_out, :])
+        else:
+            np.copyto(data_out, data_in)
+
     def forward(self, gdata, cdata, axis):
         # Make reduced view into input arrays
         gdata = reduced_view_4(gdata, axis-1)
@@ -551,10 +577,9 @@ class NonSeparableTransform(Transform):
 @register_transform(basis.SpinWeightedSphericalHarmonics, 'matrix')
 class SWSHColatitudeTransform(NonSeparableTransform):
 
-    def __init__(self, grid_size, coeff_size, local_m, s):
+    def __init__(self, grid_shape, coeff_size, axis, local_m, s, dtype=np.complex128):
 
-        self.N2g = grid_size
-        self.N2c = coeff_size
+        super().__init__(grid_shape, coeff_size, axis, dtype)
         self.local_m = local_m
         self.s = s
 
@@ -565,14 +590,16 @@ class SWSHColatitudeTransform(NonSeparableTransform):
             raise ValueError("Local m must match size of %i axis." %(self.axis-1) )
 
         m_matrices = self._forward_SWSH_matrices
+        temp = self.temp
         for dm, m in enumerate(local_m):
             if m <= self.N2c - 1:
                 Lmin = max(np.abs(m), np.abs(self.s))
                 grm = gdata[:, dm, :, :]
-                crm = cdata[:, dm, Lmin:, :]
+                crm =  temp[:, dm, Lmin:self.N2c, :]
                 apply_matrix(m_matrices[dm][Lmin:], grm, axis=1, out=crm)
                 # zero out low ell data -- hopefully never try to access these data
                 #cdata[:, dm, :Lmin, :] = 0
+        self.resize_reduced(temp, cdata)
 
     def backward_reduced(self, cdata, gdata):
 
@@ -581,24 +608,24 @@ class SWSHColatitudeTransform(NonSeparableTransform):
             raise ValueError("Local m must match size of %i axis." %(self.axis-1) )
 
         m_matrices = self._backward_SWSH_matrices
+        temp = self.temp
         for dm, m in enumerate(local_m):
             if m <= self.N2c - 1:
                 Lmin = max(np.abs(m), np.abs(self.s))
-                grm = gdata[:, dm, :, :]
+                grm =  temp[:, dm, :self.N2g, :]
                 crm = cdata[:, dm, Lmin:, :]
                 apply_matrix(m_matrices[dm][:,Lmin:], crm, axis=1, out=grm)
+        self.resize_reduced(temp, gdata)
 
     @CachedAttribute
     def _quadrature(self):
         # get grid and weights from sphere library
         Lmax = self.N2g - 1
-        import dedalus_sphere
         return dedalus_sphere.sphere.quadrature(Lmax, niter=3)
 
     @CachedAttribute
     def _forward_SWSH_matrices(self):
         """Build transform matrix for single m and s."""
-        import dedalus_sphere
         # Get functions from sphere library
         cos_grid, weights = self._quadrature
         Lmax = self.N2c - 1
@@ -618,7 +645,6 @@ class SWSHColatitudeTransform(NonSeparableTransform):
     @CachedAttribute
     def _backward_SWSH_matrices(self):
         """Build transform matrix for single m and s."""
-        import dedalus_sphere
         # Get functions from sphere library
         cos_grid, weights = self._quadrature
         Lmax = self.N2c - 1
@@ -638,10 +664,9 @@ class SWSHColatitudeTransform(NonSeparableTransform):
 @register_transform(basis.BallBasis, 'matrix')
 class BallRadialTransform(NonSeparableTransform):
 
-    def __init__(self, grid_size, coeff_size, local_l, regindex, regtotal, k, alpha):
+    def __init__(self, grid_shape, coeff_size, axis, local_l, regindex, regtotal, k, alpha, dtype=np.complex128):
 
-        self.N2g = grid_size
-        self.N2c = coeff_size
+        super().__init__(grid_shape, coeff_size, axis, dtype)
         self.local_l = local_l
         self.regindex = regindex
         self.regtotal = regtotal
@@ -656,10 +681,13 @@ class BallRadialTransform(NonSeparableTransform):
 
         # Apply transform for each l
         l_matrices = self._forward_GSZP_matrix
+        temp = self.temp
         for dl, l in enumerate(local_l):
+            Nmin = dedalus_sphere.ball.Nmin(l, 0)
             grl = gdata[:, dl, :, :]
-            crl = cdata[:, dl, :, :]
-            apply_matrix(l_matrices[dl], grl, axis=1, out=crl)
+            crl =  temp[:, dl, Nmin:self.N2c, :]
+            apply_matrix(l_matrices[dl][Nmin:], grl, axis=1, out=crl)
+        self.resize_reduced(temp, cdata)
 
     def backward_reduced(self, cdata, gdata):
 
@@ -669,22 +697,23 @@ class BallRadialTransform(NonSeparableTransform):
 
         # Apply transform for each l
         l_matrices = self._backward_GSZP_matrix
+        temp = self.temp
         for dl, l in enumerate(local_l):
-            grl = gdata[:, dl, :, :]
-            crl = cdata[:, dl, :, :]
-            apply_matrix(l_matrices[dl], crl, axis=1, out=grl)
+            Nmin = dedalus_sphere.ball.Nmin(l, 0)
+            grl =  temp[:, dl, :self.N2g, :]
+            crl = cdata[:, dl, Nmin:, :]
+            apply_matrix(l_matrices[dl][:,Nmin:], crl, axis=1, out=grl)
+        self.resize_reduced(temp, gdata)
 
     @CachedAttribute
     def _quadrature(self):
         Nmax = self.N2g - 1
         # get grid and weights from sphere library
-        import dedalus_sphere
         return dedalus_sphere.ball.quadrature(3, Nmax, niter=3, alpha=self.alpha)
 
     @CachedAttribute
     def _forward_GSZP_matrix(self):
         """Build transform matrix for single l and r."""
-        import dedalus_sphere
         # Get functions from sphere library
         z_grid, weights = self._quadrature
         l_matrices = []
@@ -709,9 +738,7 @@ class BallRadialTransform(NonSeparableTransform):
     @CachedAttribute
     def _backward_GSZP_matrix(self):
         """Build transform matrix for single l and r."""
-        import dedalus_sphere
         # Get functions from sphere library
-        Nmin = 0
         z_grid, weights = self._quadrature
         l_matrices = []
         for l in self.local_l:
@@ -758,7 +785,6 @@ def forward_disk(gdata, cdata, axis, k0, k, s, local_m):
 
 def _forward_disk_matrix(Ng, Nc, k0, k, m):
     """Build forward transform matrix for Q[k,m,n](r[k0])."""
-    import dedalus_sphere
     # Get base grid and weights
     z_grid, weights = dedalus_sphere.disk128.quadrature(Ng-1, k=k0, niter=3)
     # Get functions
@@ -786,7 +812,6 @@ def backward_disk(cdata, gdata, axis, k, s, local_m):
 
 def _backward_disk_matrix(Nc, Ng, k0, k, m):
     """Build backward transform matrix for Q[k,m,n](r[k0])."""
-    import dedalus_sphere
     # Get base grid and weights
     z_grid, weights = dedalus_sphere.disk128.quadrature(Ng-1, k=k0, niter=3)
     # Get functions

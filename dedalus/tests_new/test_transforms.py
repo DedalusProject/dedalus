@@ -168,6 +168,54 @@ def test_spherical_shell_scalar(Nphi, Ntheta, Nr, radii, k):
     f['c']
     assert np.allclose(f['g'], fg)
 
+@pytest.mark.parametrize('dealias', [1/2, 3/2])
+def test_dealias_shell(dealias):
+    Nphi, Ntheta, Nr = 16, 8, 8
+    c = coords.SphericalCoordinates('phi', 'theta', 'r')
+    d = distributor.Distributor((c,))
+    b  = basis.SphericalShellBasis(c, (Nphi, Ntheta, Nr), dealias=(dealias, dealias, dealias), k=0, radii=(0.5,3))
+    phi, theta, r = b.local_grids((1, 1, 1))
+    x = r * np.sin(theta) * np.cos(phi)
+    y = r * np.sin(theta) * np.sin(phi)
+    z = r * np.cos(theta)
+    f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+    f.set_scales((1,1,1))
+    f['g'] = 3*x**2 + 2*y*z
+    phi, theta, r = b.local_grids(b.dealias)
+    x = r * np.sin(theta) * np.cos(phi)
+    y = r * np.sin(theta) * np.sin(phi)
+    z = r * np.cos(theta)
+    g = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+    g.set_scales(b.dealias)
+    g['g'] = 3*x**2 + 2*y*z
+    f.require_scales(b.dealias)
+    print(f['g'].shape)
+    assert np.allclose(f['g'],g['g'])
+
+@pytest.mark.parametrize('dealias', [1/2, 3/2])
+def test_dealias_ball(dealias):
+    Nphi, Ntheta, Nr = 16, 8, 8
+    c = coords.SphericalCoordinates('phi', 'theta', 'r')
+    d = distributor.Distributor((c,))
+    b  = basis.BallBasis(c, (Nphi, Ntheta, Nr), dealias=(dealias, dealias, dealias), k=0, radius=2)
+    phi, theta, r = b.local_grids((1, 1, 1))
+    x = r * np.sin(theta) * np.cos(phi)
+    y = r * np.sin(theta) * np.sin(phi)
+    z = r * np.cos(theta)
+    f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+    f.set_scales((1,1,1))
+    f['g'] = 3*x**2 + 2*y*z
+    phi, theta, r = b.local_grids(b.dealias)
+    x = r * np.sin(theta) * np.cos(phi)
+    y = r * np.sin(theta) * np.sin(phi)
+    z = r * np.cos(theta)
+    g = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+    g.set_scales(b.dealias)
+    g['g'] = 3*x**2 + 2*y*z
+    f.require_scales(b.dealias)
+    print(f['g'].shape)
+    assert np.allclose(f['g'],g['g'])
+
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('Nr', Nr_range)
