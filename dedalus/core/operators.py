@@ -2444,13 +2444,11 @@ class CrossProduct(NonlinearOperator, FutureField, metaclass=MultiClass):
         return all(layout0.grid_space) and (layout0 is layout1)
 
     def enforce_conditions(self):
-        arg0, arg1 = self.args
-        # if self.require_grid_axis is not None:
-        #     axis = self.require_grid_axis
-        #     arg0.require_grid_space(axis=axis)
-        # arg1.require_layout(arg0.layout)
-        arg0.require_grid_space()
-        arg1.require_grid_space()
+        for arg in self.args:
+            # Dealias
+            arg.require_scales(self.domain.dealias)
+            # Grid space
+            arg.require_grid_space()
 
     @classmethod
     def _check_args(cls, arg0, arg1, out=None):

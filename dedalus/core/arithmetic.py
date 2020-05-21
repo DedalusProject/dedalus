@@ -428,9 +428,11 @@ class DotProduct(FutureField):
         return all(layout0.grid_space) and (layout0 is layout1)
 
     def enforce_conditions(self):
-        arg0, arg1 = self.args
-        arg0.require_grid_space()
-        arg1.require_grid_space()
+        for arg in self.args:
+            # Dealias
+            arg.require_scales(self.domain.dealias)
+            # Grid space
+            arg.require_grid_space()
 
     def operate(self, out):
         arg0, arg1 = self.args
@@ -726,6 +728,9 @@ class MultiplyFields(Multiply, FutureField):
 
     def enforce_conditions(self):
         """Require arguments to be in a proper layout."""
+        # Dealias
+        for arg in self.args:
+            arg.require_scales(self.domain.dealias)
         # Determine best target layout
         layout = self.choose_layout()
         # Require layout for all args

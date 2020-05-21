@@ -634,7 +634,7 @@ class SWSHColatitudeTransform(NonSeparableTransform):
                 Yfull = np.zeros((self.N2c, self.N2g))
                 Yfull[Lmin:, :] = (Y*weights).astype(np.float64)
                 # zero out modes higher than grid resolution
-                Yfull[self.N2g-1:, :] = 0
+                Yfull[self.N2g:, :] = 0
             else: Yfull = None
             m_matrices.append(Yfull)
 
@@ -726,7 +726,7 @@ class BallRadialTransform(NonSeparableTransform):
                 Wfull = np.zeros((self.N2c, self.N2g))
                 Wfull[Nmin:, :] = (W*weights).astype(np.float64)
                 # zero out modes higher than grid resolution
-                Wfull[self.N2g-1:, :] = 0
+                Wfull[self.N2g:, :] = 0
                 l_matrices.append(Wfull)
         return l_matrices
 

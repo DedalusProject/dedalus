@@ -997,7 +997,7 @@ class SpinBasis(MultidimensionalBasis):
         self.coordsystem = coordsystem
         self.shape = shape
         if np.isscalar(dealias):
-            self.dealias = (dealias, dealias)
+            self.dealias = (dealias,) * 2
         elif len(dealias) != 2:
             raise ValueError("dealias must either be a number or a tuple of two numbers")
         else:
@@ -1115,14 +1115,14 @@ class RegularityBasis(MultidimensionalBasis):
         self.coordsystem = coordsystem
         self.shape = shape
         if np.isscalar(dealias):
-            self.dealias = (dealias, dealias, dealias)
+            self.dealias = (dealias,) * 3
         elif len(dealias) != 3:
             raise ValueError("dealias must either be a number or a tuple of three numbers")
         else:
             self.dealias = dealias
         self.azimuth_library = azimuth_library
         self.colatitude_library = colatitude_library
-        self.sphere_basis = SWSH(coordsystem, shape[:2], azimuth_library=azimuth_library, colatitude_library=colatitude_library)
+        self.sphere_basis = SWSH(coordsystem, shape[:2], dealias=dealias[:2], azimuth_library=azimuth_library, colatitude_library=colatitude_library)
         self.mmax = self.sphere_basis.mmax
         self.Lmax = self.sphere_basis.Lmax
         self.local_m = self.sphere_basis.local_m
@@ -1139,13 +1139,13 @@ class RegularityBasis(MultidimensionalBasis):
         super().__init__(coordsystem)
 
     def global_grids(self, scales=None):
-        if scales == None: scales = self.domain.dealias
+        if scales == None: scales = self.dealias
         return (self.global_grid_azimuth(scales[0]),
                 self.global_grid_colatitude(scales[1]),
                 self.global_grid_radius(scales[2]))
 
     def local_grids(self, scales=None):
-        if scales == None: scales = self.domain.dealias
+        if scales == None: scales = self.dealias
         return (self.local_grid_azimuth(scales[0]),
                 self.local_grid_colatitude(scales[1]),
                 self.local_grid_radius(scales[2]))
@@ -1159,17 +1159,19 @@ class RegularityBasis(MultidimensionalBasis):
         problem_grid = self._radius_grid(scale)[local_elements]
         return reshape_vector(problem_grid, dim=self.dist.dim, axis=self.axis+2)
 
-    def global_radius_weights(self, scale):
+    def global_radius_weights(self, scale=None):
+        if scale == None: scale = self.dealias[2]
         weights = self._radius_weights(scale)
         return reshape_vector(weights.astype(np.float64), dim=self.dist.dim, axis=self.axis+2)
 
-    def local_radius_weights(self, scale):
+    def local_radius_weights(self, scale=None):
+        if scale == None: scale = self.dealias[2]
         local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis+2]
         weights = self._radius_weights(scale)
         return reshape_vector(weights.astype(np.float64)[local_elements], dim=self.dist.dim, axis=self.axis+2)
 
     def S2_basis(self,radius=1):
-        return SWSH(self.coordsystem.S2coordsys, self.shape[:2], radius=radius, dealias=(self.dealias[0],self.dealias[1]),
+        return SWSH(self.coordsystem.S2coordsys, self.shape[:2], radius=radius, dealias=self.dealias[:2],
                     azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library)
 
     @CachedAttribute
@@ -1491,7 +1493,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         if isinstance(other, SpinWeightedSphericalHarmonics):
             if self.radius == other.radius:
                 shape = tuple(np.maximum(self.shape, other.shape))
-                return SpinWeightedSphericalHarmonics(self.coordsystem, shape, radius=self.radius)
+                return SpinWeightedSphericalHarmonics(self.coordsystem, shape, radius=self.radius, dealias=self.dealias)
         return NotImplemented
 
     def __mul__(self, other):
@@ -1545,12 +1547,14 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         theta = np.arccos(cos_theta).astype(np.float64)
         return theta
 
-    def global_colatitude_weights(self, scale):
+    def global_colatitude_weights(self, scale=None):
+        if scale == None: scale = self.dealias[1]
         N = int(np.ceil(scale * self.shape[1]))
         cos_theta, weights = dedalus_sphere.sphere.quadrature(Lmax=N-1)
         return reshape_vector(weights.astype(np.float64), dim=self.dist.dim, axis=self.axis+1)
 
-    def local_colatitude_weights(self,scale):
+    def local_colatitude_weights(self, scale=None):
+        if scale == None: scale = self.dealias[1]
         local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis+1]
         N = int(np.ceil(scale * self.shape[1]))
         cos_theta, weights = dedalus_sphere.sphere.quadrature(Lmax=N-1)
