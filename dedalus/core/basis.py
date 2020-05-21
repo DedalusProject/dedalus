@@ -239,30 +239,37 @@ class IntervalBasis(Basis):
 
     dim = 1
 
-    def __init__(self, coord, size, bounds):
-        super().__init__(coord)
+    def __init__(self, coord, size, bounds, dealias):
         self.coord = coord
         self.size = size
         self.shape = (size,)
         self.bounds = bounds
+        self.dealias = (dealias,)
         self.COV = AffineCOV(self.native_bounds, bounds)
+        super().__init__(coord)
 
-    def global_grids(self, scales):
+    # Why do we need this?
+    def global_grids(self, scales=None):
         """Global grids."""
+        if scales == None: scales = self.dealias
         return (self.global_grid(scales[0]),)
 
-    def global_grid(self, scale):
+    def global_grid(self, scale=None):
         """Global grid."""
+        if scale == None: scale = self.dealias[0]
         native_grid = self._native_grid(scale)
         problem_grid = self.COV.problem_coord(native_grid)
         return reshape_vector(problem_grid, dim=self.dist.dim, axis=self.axis)
 
-    def local_grids(self, scales):
+    # Why do we need this?
+    def local_grids(self, scales=None):
         """Local grids."""
+        if scales == None: scales = self.dealias
         return (self.local_grid(scales[0]),)
 
-    def local_grid(self, scale):
+    def local_grid(self, scale=None):
         """Local grid."""
+        if scale == None: scale = self.dealias[0]
         local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis]
         native_grid = self._native_grid(scale)[local_elements]
         problem_grid = self.COV.problem_coord(native_grid)
@@ -322,7 +329,7 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
     transforms = {}
 
     def __init__(self, coord, size, bounds, a, b, a0=None, b0=None, dealias=1, library='matrix'):
-        super().__init__(coord, size, bounds)
+        super().__init__(coord, size, bounds, dealias)
         # Default grid parameters
         if a0 is None:
             a0 = a
@@ -332,13 +339,12 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         self.b = float(b)
         self.a0 = float(a0)
         self.b0 = float(b0)
-        self.dealias = dealias
         self.library = library
         self.grid_params = (coord, bounds, a0, b0)
         #self.const = 1 / np.sqrt(jacobi.mass(self.a, self.b))
 
     def _new_a_b(self, a, b):
-        return Jacobi(self.coord, self.size, self.bounds, a, b, a0=self.a0, b0=self.b0, dealias=self.dealias, library=self.library)
+        return Jacobi(self.coord, self.size, self.bounds, a, b, a0=self.a0, b0=self.b0, dealias=self.dealias[0], library=self.library)
 
     def _native_grid(self, scale):
         """Native flat global grid."""
@@ -370,7 +376,7 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
                 size = max(self.size, other.size)
                 a = max(self.a, other.a)
                 b = max(self.b, other.b)
-                dealias = max(self.dealias, other.dealias)
+                dealias = max(self.dealias[0], other.dealias[0])
                 return Jacobi(self.coord, size, self.bounds, a, b, a0=self.a0, b0=self.b0, dealias=dealias, library=self.library)
         return NotImplemented
 
@@ -384,7 +390,7 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
                 size = max(self.size, other.size)
                 a = self.a0
                 b = self.b0
-                dealias = max(self.dealias, other.dealias)
+                dealias = max(self.dealias[0], other.dealias[0])
                 return Jacobi(self.coord, size, self.bounds, a, b, a0=self.a0, b0=self.b0, dealias=dealias, library=self.library)
         return NotImplemented
 
@@ -594,8 +600,7 @@ class ComplexFourier(IntervalBasis):
     #     return self.space.Fourier
 
     def __init__(self, coord, size, bounds, dealias=1, library='matrix'):
-        super().__init__(coord, size, bounds)
-        self.dealias = dealias
+        super().__init__(coord, size, bounds, dealias)
         self.library = library
         self.kmax = kmax = (size - 1) // 2
         self.wavenumbers = np.concatenate((np.arange(0, kmax+2), np.arange(-kmax, 0)))  # Includes Nyquist mode
@@ -989,7 +994,6 @@ class MultidimensionalBasis(Basis):
 class SpinBasis(MultidimensionalBasis):
 
     def __init__(self, coordsystem, shape, dealias, azimuth_library='matrix'):
-        super().__init__(coordsystem)
         self.coordsystem = coordsystem
         self.shape = shape
         if np.isscalar(dealias):
@@ -1005,6 +1009,7 @@ class SpinBasis(MultidimensionalBasis):
         self.local_grid_azimuth = self.azimuth_basis.local_grid
         self.forward_transform_azimuth = self.azimuth_basis.forward_transform
         self.backward_transform_azimuth = self.azimuth_basis.backward_transform
+        super().__init__(coordsystem)
 
     @CachedAttribute
     def local_m(self):
@@ -1107,7 +1112,6 @@ class SpinBasis(MultidimensionalBasis):
 class RegularityBasis(MultidimensionalBasis):
 
     def __init__(self, coordsystem, shape, dealias, azimuth_library='matrix', colatitude_library='matrix'):
-        super().__init__(coordsystem)
         self.coordsystem = coordsystem
         self.shape = shape
         if np.isscalar(dealias):
@@ -1132,13 +1136,16 @@ class RegularityBasis(MultidimensionalBasis):
         self.forward_transform_colatitude = self.sphere_basis.forward_transform_colatitude
         self.backward_transform_azimuth = self.sphere_basis.backward_transform_azimuth
         self.backward_transform_colatitude = self.sphere_basis.backward_transform_colatitude
+        super().__init__(coordsystem)
 
-    def global_grids(self, scales):
+    def global_grids(self, scales=None):
+        if scales == None: scales = self.domain.dealias
         return (self.global_grid_azimuth(scales[0]),
                 self.global_grid_colatitude(scales[1]),
                 self.global_grid_radius(scales[2]))
 
-    def local_grids(self, scales):
+    def local_grids(self, scales=None):
+        if scales == None: scales = self.domain.dealias
         return (self.local_grid_azimuth(scales[0]),
                 self.local_grid_colatitude(scales[1]),
                 self.local_grid_radius(scales[2]))
@@ -1464,7 +1471,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
                                    self.forward_transform_colatitude]
         self.backward_transforms = [self.backward_transform_azimuth,
                                     self.backward_transform_colatitude]
-        self.grid_params = (coordsystem, radius)
+        self.grid_params = (coordsystem, radius, dealias)
 
     def __eq__(self, other):
         if isinstance(other, SpinWeightedSphericalHarmonics):
@@ -1495,7 +1502,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         if isinstance(other, SpinWeightedSphericalHarmonics):
             if self.radius == other.radius:
                 shape = tuple(np.maximum(self.shape, other.shape))
-                return SpinWeightedSphericalHarmonics(self.coordsystem, shape, radius=self.radius)
+                return SpinWeightedSphericalHarmonics(self.coordsystem, shape, radius=self.radius, dealias=self.dealias)
         return NotImplemented
 
     def coeff_subshape(self, groups):
@@ -1559,19 +1566,25 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         self.forward_spin_recombination(field.tensorsig, gdata)
         # Perform transforms component-by-component
         S = self.spin_weights(field.tensorsig)
+        # HACK -- don't want to make a new array every transform
+        temp = np.copy(cdata)
         for i, s in np.ndenumerate(S):
             grid_shape = gdata[i].shape
             plan = self.transform_plan(grid_shape, axis, s)
-            plan.forward(gdata[i], cdata[i], axis)
+            plan.forward(gdata[i], temp[i], axis)
+        np.copyto(cdata, temp)
 
     def backward_transform_colatitude(self, field, axis, cdata, gdata):
         # Perform transforms component-by-component
         S = self.spin_weights(field.tensorsig)
+        # HACK -- don't want to make a new array every transform
+        temp = np.copy(gdata)
         for i, s in np.ndenumerate(S):
             grid_shape = gdata[i].shape
             plan = self.transform_plan(grid_shape, axis, s)
-            plan.backward(cdata[i], gdata[i], axis)
+            plan.backward(cdata[i], temp[i], axis)
         # Apply spin recombination
+        np.copyto(gdata, temp)
         self.backward_spin_recombination(field.tensorsig, gdata)
 
     @CachedMethod
@@ -1627,7 +1640,7 @@ class SphericalShellBasis(RegularityBasis):
         self.backward_transforms = [self.backward_transform_azimuth,
                                     self.backward_transform_colatitude,
                                     self.backward_transform_radius]
-        self.grid_params = (coordsystem, radii, alpha)
+        self.grid_params = (coordsystem, radii, alpha, dealias)
 
 # could these be moved to Regularity?
     def __eq__(self, other):
@@ -1650,7 +1663,7 @@ class SphericalShellBasis(RegularityBasis):
             if self.grid_params == other.grid_params:
                 shape = tuple(np.maximum(self.shape, other.shape))
                 k = max(self.k, other.k)
-                return SphericalShellBasis(self.coordsystem, shape, radii=self.radii, alpha=self.alpha, k=k)
+                return SphericalShellBasis(self.coordsystem, shape, radii=self.radii, alpha=self.alpha, dealias=self.dealias, k=k)
         return NotImplemented
 
     def __mul__(self, other):
@@ -1662,11 +1675,11 @@ class SphericalShellBasis(RegularityBasis):
             if self.grid_params == other.grid_params:
                 shape = tuple(np.maximum(self.shape, other.shape))
                 k = 0
-                return SphericalShellBasis(self.coordsystem, shape, radii=self.radii, alpha=self.alpha, k=k)
+                return SphericalShellBasis(self.coordsystem, shape, radii=self.radii, alpha=self.alpha, dealias=self.dealias, k=k)
         return NotImplemented
 
     def _new_k(self, k):
-        return SphericalShellBasis(self.coordsystem, self.shape, radii = self.radii, alpha=self.alpha, k=k,
+        return SphericalShellBasis(self.coordsystem, self.shape, radii = self.radii, alpha=self.alpha, dealias=self.dealias, k=k,
                                    azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
                                    radius_library=self.radius_library)
 
@@ -1713,18 +1726,24 @@ class SphericalShellBasis(RegularityBasis):
         self.forward_regularity_recombination(field.tensorsig, axis, gdata)
         # Perform radial transforms component-by-component
         R = self.regularity_classes(field.tensorsig)
+        # HACK -- don't want to make a new array every transform
+        temp = np.copy(cdata)
         for regindex, regtotal in np.ndenumerate(R):
            plan = self.transform_plan(grid_size, self.k)
-           plan.forward(gdata[regindex], cdata[regindex], axis)
+           plan.forward(gdata[regindex], temp[regindex], axis)
+        np.copyto(cdata, temp)
 
     def backward_transform_radius(self, field, axis, cdata, gdata):
         data_axis = len(field.tensorsig) + axis
         grid_size = gdata.shape[data_axis]
         # Perform radial transforms component-by-component
         R = self.regularity_classes(field.tensorsig)
+        # HACK -- don't want to make a new array every transform
+        temp = np.copy(gdata)
         for i, r in np.ndenumerate(R):
            plan = self.transform_plan(grid_size, self.k)
-           plan.backward(cdata[i], gdata[i], axis)
+           plan.backward(cdata[i], temp[i], axis)
+        np.copyto(gdata, temp)
         # Apply regularity recombinations
         self.backward_regularity_recombination(field.tensorsig, axis, gdata)
         # Multiply by radial factor
@@ -1783,7 +1802,7 @@ class BallBasis(RegularityBasis):
         self.backward_transforms = [self.backward_transform_azimuth,
                                     self.backward_transform_colatitude,
                                     self.backward_transform_radius]
-        self.grid_params = (coordsystem, radius, alpha)
+        self.grid_params = (coordsystem, radius, alpha, dealias)
         self.surface_basis = self.S2_basis(self.radius)
 
     def __eq__(self, other):
@@ -1806,7 +1825,7 @@ class BallBasis(RegularityBasis):
             if self.grid_params == other.grid_params:
                 shape = tuple(np.maximum(self.shape, other.shape))
                 k = max(self.k, other.k)
-                return BallBasis(self.coordsystem, shape, radius=self.radius, k=k, alpha=self.alpha)
+                return BallBasis(self.coordsystem, shape, radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias)
         return NotImplemented
 
     def __mul__(self, other):
@@ -1818,11 +1837,11 @@ class BallBasis(RegularityBasis):
             if self.grid_params == other.grid_params:
                 shape = tuple(np.maximum(self.shape, other.shape))
                 k = 0
-                return BallBasis(self.coordsystem, shape, radius=self.radius, k=k, alpha=self.alpha)
+                return BallBasis(self.coordsystem, shape, radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias)
         return NotImplemented
 
     def _new_k(self, k):
-        return BallBasis(self.coordsystem, self.shape, radius = self.radius, k=k, alpha=self.alpha,
+        return BallBasis(self.coordsystem, self.shape, radius = self.radius, k=k, alpha=self.alpha, dealias=self.dealias,
                          azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
                          radius_library=self.radius_library)
 
@@ -1852,18 +1871,24 @@ class BallBasis(RegularityBasis):
         self.forward_regularity_recombination(field.tensorsig, axis, gdata)
         # Perform radial transforms component-by-component
         R = self.regularity_classes(field.tensorsig)
+        # HACK -- don't want to make a new array every transform
+        temp = np.copy(cdata)
         for regindex, regtotal in np.ndenumerate(R):
            grid_shape = gdata[regindex].shape
            plan = self.transform_plan(grid_shape, regindex, axis, regtotal, self.k, self.alpha)
-           plan.forward(gdata[regindex], cdata[regindex], axis)
+           plan.forward(gdata[regindex], temp[regindex], axis)
+        np.copyto(cdata, temp)
 
     def backward_transform_radius(self, field, axis, cdata, gdata):
         # Perform radial transforms component-by-component
         R = self.regularity_classes(field.tensorsig)
+        # HACK -- don't want to make a new array every transform
+        temp = np.copy(gdata)
         for regindex, regtotal in np.ndenumerate(R):
            grid_shape = gdata[regindex].shape
            plan = self.transform_plan(grid_shape, regindex, axis, regtotal, self.k, self.alpha)
-           plan.backward(cdata[regindex], gdata[regindex], axis)
+           plan.backward(cdata[regindex], temp[regindex], axis)
+        np.copyto(gdata, temp)
         # Apply regularity recombinations
         self.backward_regularity_recombination(field.tensorsig, axis, gdata)
 

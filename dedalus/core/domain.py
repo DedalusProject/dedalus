@@ -49,7 +49,11 @@ class Domain(metaclass=CachedClass):
         self.dist = dist
         self.bases, self.full_bases = self._check_bases(bases)
         # self.dim = sum(space.dim for space in self.spaces)
-        self.dealias = 1
+        self.dealias = [1] * dist.dim
+        for basis in self.bases:
+            for ax in range(basis.dim):
+                self.dealias[basis.axis + ax] = basis.dealias[ax]
+        self.dealias = tuple(self.dealias)
         self.bases_dict = {basis.coords: basis for basis in self.bases}
 
     def __add__(self, other):

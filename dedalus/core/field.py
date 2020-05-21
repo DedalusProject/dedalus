@@ -455,7 +455,9 @@ class Field(Current):
         self.scales = None
         self.layout = self.dist.get_layout_object('c')
         # Change scales to build buffer and data
-        self.set_scales((1,) * self.dist.dim)
+#        self.set_scales((1,) * self.dist.dim)
+        self.set_scales(self.domain.dealias)
+#        self.set_scales((1,) * self.dist.dim)
 
     def __getitem__(self, layout):
         """Return data viewed in specified layout."""

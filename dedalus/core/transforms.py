@@ -542,22 +542,22 @@ class NonSeparableTransform(Transform):
         N1 = grid_shape[axis-1]
         N2 = max(self.N2g, self.N2c)
         self.N3 = N3 = np.prod(grid_shape[axis+1:], dtype=int)
-        self.temp = np.zeros(shape=[N0, N1, N2, N3], dtype=dtype)
+#        self.temp = np.zeros(shape=[N0, N1, N2, N3], dtype=dtype)
 
-    @staticmethod
-    def resize_reduced(data_in, data_out):
-        """Resize data by padding/truncation."""
-        size_in = data_in.shape[2]
-        size_out = data_out.shape[2]
-        if size_in < size_out:
-            # Pad with zeros at end of data
-            np.copyto(data_out[:, :, :size_in, :], data_in)
-            np.copyto(data_out[:, :, size_in:, :], 0)
-        elif size_in > size_out:
-            # Truncate higher order modes at end of data
-            np.copyto(data_out, data_in[:, :, :size_out, :])
-        else:
-            np.copyto(data_out, data_in)
+#    @staticmethod
+#    def resize_reduced(data_in, data_out):
+#        """Resize data by padding/truncation."""
+#        size_in = data_in.shape[2]
+#        size_out = data_out.shape[2]
+#        if size_in < size_out:
+#            # Pad with zeros at end of data
+#            np.copyto(data_out[:, :, :size_in, :], data_in)
+#            np.copyto(data_out[:, :, size_in:, :], 0)
+#        elif size_in > size_out:
+#            # Truncate higher order modes at end of data
+#            np.copyto(data_out, data_in[:, :, :size_out, :])
+#        else:
+#            np.copyto(data_out, data_in)
 
     def forward(self, gdata, cdata, axis):
         # Make reduced view into input arrays
@@ -590,16 +590,14 @@ class SWSHColatitudeTransform(NonSeparableTransform):
             raise ValueError("Local m must match size of %i axis." %(self.axis-1) )
 
         m_matrices = self._forward_SWSH_matrices
-        temp = self.temp
         for dm, m in enumerate(local_m):
             if m <= self.N2c - 1:
                 Lmin = max(np.abs(m), np.abs(self.s))
                 grm = gdata[:, dm, :, :]
-                crm =  temp[:, dm, Lmin:self.N2c, :]
+                crm = cdata[:, dm, Lmin:self.N2c, :]
                 apply_matrix(m_matrices[dm][Lmin:], grm, axis=1, out=crm)
                 # zero out low ell data -- hopefully never try to access these data
                 #cdata[:, dm, :Lmin, :] = 0
-        self.resize_reduced(temp, cdata)
 
     def backward_reduced(self, cdata, gdata):
 
@@ -608,14 +606,12 @@ class SWSHColatitudeTransform(NonSeparableTransform):
             raise ValueError("Local m must match size of %i axis." %(self.axis-1) )
 
         m_matrices = self._backward_SWSH_matrices
-        temp = self.temp
         for dm, m in enumerate(local_m):
             if m <= self.N2c - 1:
                 Lmin = max(np.abs(m), np.abs(self.s))
-                grm =  temp[:, dm, :self.N2g, :]
+                grm = gdata[:, dm, :self.N2g, :]
                 crm = cdata[:, dm, Lmin:, :]
                 apply_matrix(m_matrices[dm][:,Lmin:], crm, axis=1, out=grm)
-        self.resize_reduced(temp, gdata)
 
     @CachedAttribute
     def _quadrature(self):
@@ -637,6 +633,8 @@ class SWSHColatitudeTransform(NonSeparableTransform):
                 Lmin = max(np.abs(m), np.abs(self.s))
                 Yfull = np.zeros((self.N2c, self.N2g))
                 Yfull[Lmin:, :] = (Y*weights).astype(np.float64)
+                # zero out modes higher than grid resolution
+                Yfull[self.N2g-1:, :] = 0
             else: Yfull = None
             m_matrices.append(Yfull)
 
@@ -681,13 +679,11 @@ class BallRadialTransform(NonSeparableTransform):
 
         # Apply transform for each l
         l_matrices = self._forward_GSZP_matrix
-        temp = self.temp
         for dl, l in enumerate(local_l):
             Nmin = dedalus_sphere.ball.Nmin(l, 0)
             grl = gdata[:, dl, :, :]
-            crl =  temp[:, dl, Nmin:self.N2c, :]
+            crl = cdata[:, dl, Nmin:self.N2c, :]
             apply_matrix(l_matrices[dl][Nmin:], grl, axis=1, out=crl)
-        self.resize_reduced(temp, cdata)
 
     def backward_reduced(self, cdata, gdata):
 
@@ -697,13 +693,11 @@ class BallRadialTransform(NonSeparableTransform):
 
         # Apply transform for each l
         l_matrices = self._backward_GSZP_matrix
-        temp = self.temp
         for dl, l in enumerate(local_l):
             Nmin = dedalus_sphere.ball.Nmin(l, 0)
-            grl =  temp[:, dl, :self.N2g, :]
+            grl = gdata[:, dl, :self.N2g, :]
             crl = cdata[:, dl, Nmin:, :]
             apply_matrix(l_matrices[dl][:,Nmin:], crl, axis=1, out=grl)
-        self.resize_reduced(temp, gdata)
 
     @CachedAttribute
     def _quadrature(self):
@@ -731,7 +725,8 @@ class BallRadialTransform(NonSeparableTransform):
                     W = conversion @ W
                 Wfull = np.zeros((self.N2c, self.N2g))
                 Wfull[Nmin:, :] = (W*weights).astype(np.float64)
-    #            Wfull[self.N2g-1:, :] = 0
+                # zero out modes higher than grid resolution
+                Wfull[self.N2g-1:, :] = 0
                 l_matrices.append(Wfull)
         return l_matrices
 
@@ -743,7 +738,7 @@ class BallRadialTransform(NonSeparableTransform):
         l_matrices = []
         for l in self.local_l:
             if dedalus_sphere.intertwiner.forbidden_regularity(l,self.regindex):
-                l_matrices.append(np.zeros((self.N2c, self.N2g)))
+                l_matrices.append(np.zeros((self.N2g, self.N2c)))
             else:
                 Nmin = dedalus_sphere.ball.Nmin(l, 0)
                 Nmax = self.N2c - 1 - Nmin + dedalus_sphere.ball.Nmin(l, self.regtotal)
