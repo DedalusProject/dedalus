@@ -14,7 +14,7 @@ from .domain import Domain
 from .field import Operand, Array, Field
 from .future import Future, FutureArray, FutureField
 from .operators import convert
-from ..tools.cache import CachedAttribute
+from ..tools.cache import CachedAttribute, CachedMethod
 from ..tools.dispatch import MultiClass
 from ..tools.exceptions import NonlinearOperatorError
 from ..tools.exceptions import SymbolicParsingError
@@ -453,6 +453,57 @@ class DotProduct(FutureField):
         einsum_str = array0_str + '...,' + array1_str + '...->' + out_str + '...'
 
         np.einsum(einsum_str,arg0.data,arg1.data,out=out.data)
+
+
+class CrossProduct(FutureField):
+
+    name = "Cross"
+
+    # Should make sure arg0 and arg1 are rank 1
+    # and that the cs are the same for arg0 and arg1
+
+    def __init__(self, arg0, arg1, out=None):
+        super().__init__(arg0, arg1, out=out)
+        # FutureField requirements
+        self.domain = Domain(arg0.dist, self._bases)
+        self.tensorsig = arg0.tensorsig
+        self.dtype = np.result_type(arg0.dtype, arg1.dtype)
+
+    @CachedAttribute
+    def _bases(self):
+        # Need to fix this to do real multiplication
+        arg0, arg1 = self.args
+        return tuple(b0*b1 for b0, b1 in zip(arg0.domain.bases, arg1.domain.bases))
+
+    def check_conditions(self):
+        layout0 = self.args[0].layout
+        layout1 = self.args[1].layout
+        # Fields must be in grid layout
+        # Just do full grid space for now
+        return all(layout0.grid_space) and (layout0 is layout1)
+
+    def enforce_conditions(self):
+        for arg in self.args:
+            # Dealias
+            arg.require_scales(self.domain.dealias)
+            # Grid space
+            arg.require_grid_space()
+
+    @property
+    def base(self):
+        return CrossProduct
+
+    @CachedMethod
+    def epsilon(self, i, j, k):
+        coordsys = self.tensorsig[0]
+        return coordsys.epsilon(i, j, k)
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        out.set_layout(arg0.layout)
+        out.data[0] = self.epsilon(0,1,2)*(arg0.data[1]*arg1.data[2] - arg0.data[2]*arg1.data[1])
+        out.data[1] = self.epsilon(1,2,0)*(arg0.data[2]*arg1.data[0] - arg0.data[0]*arg1.data[2])
+        out.data[2] = self.epsilon(2,0,1)*(arg0.data[0]*arg1.data[1] - arg0.data[1]*arg1.data[0])
 
 
 class Multiply(Future, metaclass=MultiClass):

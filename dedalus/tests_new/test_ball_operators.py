@@ -88,7 +88,7 @@ def test_ball_cross_product(Nphi, Ntheta, Nr, radius, dealias):
     u['g'][2] = (6*x**2+4*y*z)/r
     u['g'][1] = -2*(y**3+x**2*(y-3*z)-y*z**2)/(r**2*np.sin(theta))
     u['g'][0] = 2*x*(-3*y+z)/(r*np.sin(theta))
-    h = operators.CrossProduct(ez,u).evaluate()
+    h = arithmetic.CrossProduct(ez,u).evaluate()
     hg = np.zeros(h['g'].shape, dtype=h['g'].dtype)
     hg[0] = - ez['g'][1]*u['g'][2] + ez['g'][2]*u['g'][1]
     hg[1] = - ez['g'][2]*u['g'][0] + ez['g'][0]*u['g'][2]

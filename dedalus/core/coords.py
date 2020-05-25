@@ -63,6 +63,12 @@ class CartesianCoordinates(CoordinateSystem):
     def __str__(self):
         return '{' + ','.join([c.name for c in self.coords]) + '}'
 
+    @staticmethod
+    def epsilon(i, j, k):
+        if (i==0 and j==1 and k==2) or (i==1 and j==2 and k==0) or (i==2 and j==0 and k==1): return +1
+        if (i==1 and j==0 and k==2) or (i==2 and j==1 and k==0) or (i==0 and j==2 and k==1): return -1
+        return 0
+
 
 class S2Coordinates(CoordinateSystem):
     dim = 2
@@ -95,4 +101,10 @@ class SphericalCoordinates(CoordinateSystem):
         self.dist = distributor
         super().set_distributor(distributor)
         self.S2coordsys.set_distributor(distributor)
+
+    @staticmethod
+    def epsilon(i, j, k):
+        if (i==0 and j==1 and k==2) or (i==1 and j==2 and k==0) or (i==2 and j==0 and k==1): return -1
+        if (i==1 and j==0 and k==2) or (i==2 and j==1 and k==0) or (i==0 and j==2 and k==1): return +1
+        return 0
 
