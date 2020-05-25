@@ -25,7 +25,7 @@ def build_ball(Nphi, Ntheta, Nr, radius, dealias):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
     b = basis.BallBasis(c, (Nphi, Ntheta, Nr), radius=radius, dealias=(dealias, dealias, dealias))
-    phi, theta, r = b.local_grids()
+    phi, theta, r = b.local_grids(b.dealias)
     x, y, z = cartesian(phi, theta, r)
     return c, d, b, phi, theta, r, x, y, z
 
@@ -37,8 +37,10 @@ def build_ball(Nphi, Ntheta, Nr, radius, dealias):
 def test_ball_gradient_scalar(Nphi, Ntheta, Nr, radius, dealias):
     c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, dealias)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+    f.set_scales(b.dealias)
     f['g'] = fg = 3*x**2 + 2*y*z
     u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
+    u.set_scales(b.dealias)
     ug = np.copy(u['g'])
     u = operators.Gradient(f, c).evaluate()
     ug[2] = (6*x**2+4*y*z)/r
@@ -54,6 +56,7 @@ def test_ball_gradient_scalar(Nphi, Ntheta, Nr, radius, dealias):
 def test_ball_gradient_vector(Nphi, Ntheta, Nr, radius, dealias):
     c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, dealias)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+    f.set_scales(b.dealias)
     f['g'] = 3*x**2 + 2*y*z
     grad = lambda A: operators.Gradient(A, c)
     T = grad(grad(f)).evaluate()

@@ -251,12 +251,12 @@ class IntervalBasis(Basis):
     # Why do we need this?
     def global_grids(self, scales=None):
         """Global grids."""
-        if scales == None: scales = self.dealias
+        if scales == None: scales = (1,)
         return (self.global_grid(scales[0]),)
 
     def global_grid(self, scale=None):
         """Global grid."""
-        if scale == None: scale = self.dealias[0]
+        if scale == None: scale = 1
         native_grid = self._native_grid(scale)
         problem_grid = self.COV.problem_coord(native_grid)
         return reshape_vector(problem_grid, dim=self.dist.dim, axis=self.axis)
@@ -264,12 +264,12 @@ class IntervalBasis(Basis):
     # Why do we need this?
     def local_grids(self, scales=None):
         """Local grids."""
-        if scales == None: scales = self.dealias
+        if scales == None: scales = (1,)
         return (self.local_grid(scales[0]),)
 
     def local_grid(self, scale=None):
         """Local grid."""
-        if scale == None: scale = self.dealias[0]
+        if scale == None: scale = 1
         local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis]
         native_grid = self._native_grid(scale)[local_elements]
         problem_grid = self.COV.problem_coord(native_grid)
@@ -1139,13 +1139,13 @@ class RegularityBasis(MultidimensionalBasis):
         super().__init__(coordsystem)
 
     def global_grids(self, scales=None):
-        if scales == None: scales = self.dealias
+        if scales == None: scales = (1,1,1)
         return (self.global_grid_azimuth(scales[0]),
                 self.global_grid_colatitude(scales[1]),
                 self.global_grid_radius(scales[2]))
 
     def local_grids(self, scales=None):
-        if scales == None: scales = self.dealias
+        if scales == None: scales = (1,1,1)
         return (self.local_grid_azimuth(scales[0]),
                 self.local_grid_colatitude(scales[1]),
                 self.local_grid_radius(scales[2]))
@@ -1160,12 +1160,12 @@ class RegularityBasis(MultidimensionalBasis):
         return reshape_vector(problem_grid, dim=self.dist.dim, axis=self.axis+2)
 
     def global_radius_weights(self, scale=None):
-        if scale == None: scale = self.dealias[2]
+        if scale == None: scale = 1
         weights = self._radius_weights(scale)
         return reshape_vector(weights.astype(np.float64), dim=self.dist.dim, axis=self.axis+2)
 
     def local_radius_weights(self, scale=None):
-        if scale == None: scale = self.dealias[2]
+        if scale == None: scale = 1
         local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis+2]
         weights = self._radius_weights(scale)
         return reshape_vector(weights.astype(np.float64)[local_elements], dim=self.dist.dim, axis=self.axis+2)
@@ -1523,7 +1523,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         return tuple(self.degrees[local_l_elements])
 
     def global_grids(self, scales=None):
-        if scales == None: scales = self.dealias
+        if scales == None: scales = (1, 1)
         return (self.global_grid_azimuth(scales[0]),
                 self.global_grid_colatitude(scales[1]))
 
@@ -1532,7 +1532,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         return reshape_vector(theta, dim=self.dist.dim, axis=self.axis+1)
 
     def local_grids(self, scales=None):
-        if scales == None: scales = self.dealias
+        if scales == None: scales = (1, 1)
         return (self.local_grid_azimuth(scales[0]),
                 self.local_grid_colatitude(scales[1]))
 
@@ -1548,13 +1548,13 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         return theta
 
     def global_colatitude_weights(self, scale=None):
-        if scale == None: scale = self.dealias[1]
+        if scale == None: scale = 1
         N = int(np.ceil(scale * self.shape[1]))
         cos_theta, weights = dedalus_sphere.sphere.quadrature(Lmax=N-1)
         return reshape_vector(weights.astype(np.float64), dim=self.dist.dim, axis=self.axis+1)
 
     def local_colatitude_weights(self, scale=None):
-        if scale == None: scale = self.dealias[1]
+        if scale == None: scale = 1
         local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis+1]
         N = int(np.ceil(scale * self.shape[1]))
         cos_theta, weights = dedalus_sphere.sphere.quadrature(Lmax=N-1)
