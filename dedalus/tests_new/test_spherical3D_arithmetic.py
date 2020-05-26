@@ -7,7 +7,6 @@ from mpi4py import MPI
 
 comm = MPI.COMM_WORLD
 
-## Ball
 Nphi_range = [8]
 Ntheta_range = [10]
 Nr_range = [6]
@@ -20,11 +19,22 @@ def cartesian(phi, theta, r):
     z = r * np.cos(theta)
     return x, y, z
 
+radius_ball = 1.5
 @CachedMethod
-def build_ball(Nphi, Ntheta, Nr, radius, dealias):
+def build_ball(Nphi, Ntheta, Nr, dealias):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (Nphi, Ntheta, Nr), radius=radius, dealias=(dealias, dealias, dealias))
+    b = basis.BallBasis(c, (Nphi, Ntheta, Nr), radius=radius_ball, dealias=(dealias, dealias, dealias))
+    phi, theta, r = b.local_grids()
+    x, y, z = cartesian(phi, theta, r)
+    return c, d, b, phi, theta, r, x, y, z
+
+radii_shell = (0.5, 3)
+@CachedMethod
+def build_shell(Nphi, Ntheta, Nr, dealias):
+    c = coords.SphericalCoordinates('phi', 'theta', 'r')
+    d = distributor.Distributor((c,))
+    b = basis.SphericalShellBasis(c, (Nphi, Ntheta, Nr), radii=radii_shell, dealias=(dealias, dealias, dealias))
     phi, theta, r = b.local_grids()
     x, y, z = cartesian(phi, theta, r)
     return c, d, b, phi, theta, r, x, y, z
@@ -32,10 +42,10 @@ def build_ball(Nphi, Ntheta, Nr, radius, dealias):
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_ball_cross_product(Nphi, Ntheta, Nr, radius, dealias):
-    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, dealias)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+def test_cross_product(Nphi, Ntheta, Nr, dealias, basis):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     f['g'] = z
     ez = operators.Gradient(f, c).evaluate()
@@ -53,10 +63,10 @@ def test_ball_cross_product(Nphi, Ntheta, Nr, radius, dealias):
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_ball_dot_product_vector_vector(Nphi, Ntheta, Nr, radius, dealias):
-    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, dealias)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+def test_dot_product_vector_vector(Nphi, Ntheta, Nr, dealias, basis):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     f['g'] = z
     ez = operators.Gradient(f, c).evaluate()
@@ -71,10 +81,10 @@ def test_ball_dot_product_vector_vector(Nphi, Ntheta, Nr, radius, dealias):
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_ball_dot_product_tensor_vector(Nphi, Ntheta, Nr, radius, dealias):
-    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, dealias)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+def test_dot_product_tensor_vector(Nphi, Ntheta, Nr, dealias, basis):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
     u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
     u['g'][2] = (6*x**2+4*y*z)/r
     u['g'][1] = -2*(y**3+x**2*(y-3*z)-y*z**2)/(r**2*np.sin(theta))
@@ -93,10 +103,10 @@ def test_ball_dot_product_tensor_vector(Nphi, Ntheta, Nr, radius, dealias):
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_ball_multiply_number_scalar(Nphi, Ntheta, Nr, radius, dealias):
-    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, dealias)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+def test_multiply_number_scalar(Nphi, Ntheta, Nr, dealias, basis):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     f['g'] = x**3 + 2*y**3 + 3*z**3
     h = (2 * f).evaluate()
@@ -108,10 +118,10 @@ def test_ball_multiply_number_scalar(Nphi, Ntheta, Nr, radius, dealias):
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_ball_multiply_scalar_number(Nphi, Ntheta, Nr, radius, dealias):
-    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, dealias)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+def test_multiply_scalar_number(Nphi, Ntheta, Nr, dealias, basis):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     f['g'] = x**3 + 2*y**3 + 3*z**3
     h = (f * 2).evaluate()
@@ -123,10 +133,10 @@ def test_ball_multiply_scalar_number(Nphi, Ntheta, Nr, radius, dealias):
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_ball_multiply_scalar_scalar(Nphi, Ntheta, Nr, radius, dealias):
-    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, dealias)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+def test_multiply_scalar_scalar(Nphi, Ntheta, Nr, dealias, basis):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     f['g'] = x**3 + 2*y**3 + 3*z**3
     h = (f * f).evaluate()
@@ -138,10 +148,10 @@ def test_ball_multiply_scalar_scalar(Nphi, Ntheta, Nr, radius, dealias):
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_ball_multiply_scalar_vector(Nphi, Ntheta, Nr, radius, dealias):
-    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, dealias)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+def test_multiply_scalar_vector(Nphi, Ntheta, Nr, dealias, basis):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
     phi, theta, r = b.local_grids(b.domain.dealias)
     x, y, z = cartesian(phi, theta, r)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
@@ -155,10 +165,10 @@ def test_ball_multiply_scalar_vector(Nphi, Ntheta, Nr, radius, dealias):
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_ball_multiply_vector_vector(Nphi, Ntheta, Nr, radius, dealias):
-    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, dealias)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+def test_multiply_vector_vector(Nphi, Ntheta, Nr, dealias, basis):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     f['g'] = x**3 + 2*y**3 + 3*z**3
     u = operators.Gradient(f, c).evaluate()
@@ -169,10 +179,10 @@ def test_ball_multiply_vector_vector(Nphi, Ntheta, Nr, radius, dealias):
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_ball_multiply_vector_tensor(Nphi, Ntheta, Nr, radius, dealias):
-    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, dealias)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+def test_multiply_vector_tensor(Nphi, Ntheta, Nr, dealias, basis):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     f['g'] = x**3 + 2*y**3 + 3*z**3
     u = operators.Gradient(f, c).evaluate()
@@ -184,10 +194,10 @@ def test_ball_multiply_vector_tensor(Nphi, Ntheta, Nr, radius, dealias):
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_ball_multiply_tensor_tensor(Nphi, Ntheta, Nr, radius, dealias):
-    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, dealias)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+def test_multiply_tensor_tensor(Nphi, Ntheta, Nr, dealias, basis):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     f['g'] = x**3 + 2*y**3 + 3*z**3
     u = operators.Gradient(f, c).evaluate()

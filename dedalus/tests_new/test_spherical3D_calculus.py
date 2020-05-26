@@ -7,11 +7,9 @@ from mpi4py import MPI
 
 comm = MPI.COMM_WORLD
 
-## Ball
 Nphi_range = [8]
 Ntheta_range = [10]
 Nr_range = [6]
-radius_range = [1.5]
 dealias_range = [1, 3/2]
 
 def cartesian(phi, theta, r):
@@ -20,11 +18,22 @@ def cartesian(phi, theta, r):
     z = r * np.cos(theta)
     return x, y, z
 
+radius_ball = 1.5
 @CachedMethod
-def build_ball(Nphi, Ntheta, Nr, radius, dealias):
+def build_ball(Nphi, Ntheta, Nr, dealias):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (Nphi, Ntheta, Nr), radius=radius, dealias=(dealias, dealias, dealias))
+    b = basis.BallBasis(c, (Nphi, Ntheta, Nr), radius=radius_ball, dealias=(dealias, dealias, dealias))
+    phi, theta, r = b.local_grids()
+    x, y, z = cartesian(phi, theta, r)
+    return c, d, b, phi, theta, r, x, y, z
+
+radii_shell = (0.5, 3)
+@CachedMethod
+def build_shell(Nphi, Ntheta, Nr, dealias):
+    c = coords.SphericalCoordinates('phi', 'theta', 'r')
+    d = distributor.Distributor((c,))
+    b = basis.SphericalShellBasis(c, (Nphi, Ntheta, Nr), radii=radii_shell, dealias=(dealias, dealias, dealias))
     phi, theta, r = b.local_grids()
     x, y, z = cartesian(phi, theta, r)
     return c, d, b, phi, theta, r, x, y, z
@@ -32,10 +41,10 @@ def build_ball(Nphi, Ntheta, Nr, radius, dealias):
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_ball_gradient_scalar(Nphi, Ntheta, Nr, radius, dealias):
-    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, dealias)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+def test_gradient_scalar(Nphi, Ntheta, Nr, dealias, basis):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     f['g'] = fg = 3*x**2 + 2*y*z
     u = operators.Gradient(f, c).evaluate()
@@ -50,10 +59,10 @@ def test_ball_gradient_scalar(Nphi, Ntheta, Nr, radius, dealias):
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_ball_gradient_vector(Nphi, Ntheta, Nr, radius, dealias):
-    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, dealias)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+def test_gradient_vector(Nphi, Ntheta, Nr, dealias, basis):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     f['g'] = 3*x**2 + 2*y*z
     grad = lambda A: operators.Gradient(A, c)
@@ -72,10 +81,10 @@ def test_ball_gradient_vector(Nphi, Ntheta, Nr, radius, dealias):
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_ball_divergence_vector(Nphi, Ntheta, Nr, radius, dealias):
-    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, dealias)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+def test_divergence_vector(Nphi, Ntheta, Nr, dealias, basis):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     f['g'] = x**3 + 2*y**3 + 3*z**3
     u = operators.Gradient(f, c)
@@ -89,10 +98,10 @@ def test_ball_divergence_vector(Nphi, Ntheta, Nr, radius, dealias):
 @pytest.mark.parametrize('Nphi', [16])
 @pytest.mark.parametrize('Ntheta', [16])
 @pytest.mark.parametrize('Nr', [8])
-@pytest.mark.parametrize('radius', radius_range)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_ball_curl_vector(Nphi, Ntheta, Nr, radius, dealias):
-    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, dealias)
+def test_curl_vector(Nphi, Ntheta, Nr, dealias, basis):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
     u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
     ct, st, cp, sp = np.cos(theta), np.sin(theta), np.cos(phi), np.sin(phi)
     u['g'][2] = r**2*st*(2*ct**2*cp-r*ct**3*sp+r**3*cp**3*st**5*sp**3+r*ct*st**2*(cp**3+sp**3))
@@ -110,10 +119,10 @@ def test_ball_curl_vector(Nphi, Ntheta, Nr, radius, dealias):
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_ball_laplacian_scalar(Nphi, Ntheta, Nr, radius, dealias):
-    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, dealias)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+def test_laplacian_scalar(Nphi, Ntheta, Nr, dealias, basis):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     f['g'] = x**4 + 2*y**4 + 3*z**4
     h = operators.Laplacian(f, c).evaluate()
@@ -126,10 +135,10 @@ def test_ball_laplacian_scalar(Nphi, Ntheta, Nr, radius, dealias):
 @pytest.mark.parametrize('Nphi', [16])
 @pytest.mark.parametrize('Ntheta', [16])
 @pytest.mark.parametrize('Nr', [8])
-@pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_ball_laplacian_vector(Nphi, Ntheta, Nr, radius, dealias):
-    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, dealias)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+def test_laplacian_vector(Nphi, Ntheta, Nr, dealias, basis):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
     u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
     ct, st, cp, sp = np.cos(theta), np.sin(theta), np.cos(phi), np.sin(phi)
     u['g'][2] = r**2*st*(2*ct**2*cp-r*ct**3*sp+r**3*cp**3*st**5*sp**3+r*ct*st**2*(cp**3+sp**3))
