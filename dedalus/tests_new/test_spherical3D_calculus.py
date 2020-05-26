@@ -12,12 +12,6 @@ Ntheta_range = [10]
 Nr_range = [6]
 dealias_range = [1, 3/2]
 
-def cartesian(phi, theta, r):
-    x = r * np.sin(theta) * np.cos(phi)
-    y = r * np.sin(theta) * np.sin(phi)
-    z = r * np.cos(theta)
-    return x, y, z
-
 radius_ball = 1.5
 @CachedMethod
 def build_ball(Nphi, Ntheta, Nr, dealias):
@@ -25,7 +19,7 @@ def build_ball(Nphi, Ntheta, Nr, dealias):
     d = distributor.Distributor((c,))
     b = basis.BallBasis(c, (Nphi, Ntheta, Nr), radius=radius_ball, dealias=(dealias, dealias, dealias))
     phi, theta, r = b.local_grids()
-    x, y, z = cartesian(phi, theta, r)
+    x, y, z = c.cartesian(phi, theta, r)
     return c, d, b, phi, theta, r, x, y, z
 
 radii_shell = (0.5, 3)
@@ -35,7 +29,7 @@ def build_shell(Nphi, Ntheta, Nr, dealias):
     d = distributor.Distributor((c,))
     b = basis.SphericalShellBasis(c, (Nphi, Ntheta, Nr), radii=radii_shell, dealias=(dealias, dealias, dealias))
     phi, theta, r = b.local_grids()
-    x, y, z = cartesian(phi, theta, r)
+    x, y, z = c.cartesian(phi, theta, r)
     return c, d, b, phi, theta, r, x, y, z
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
@@ -49,7 +43,7 @@ def test_gradient_scalar(Nphi, Ntheta, Nr, dealias, basis):
     f['g'] = fg = 3*x**2 + 2*y*z
     u = operators.Gradient(f, c).evaluate()
     phi, theta, r = b.local_grids(b.domain.dealias)
-    x, y, z = cartesian(phi, theta, r)
+    x, y, z = c.cartesian(phi, theta, r)
     ug = np.copy(u['g'])
     ug[2] = (6*x**2+4*y*z)/r
     ug[1] = -2*(y**3+x**2*(y-3*z)-y*z**2)/(r**2*np.sin(theta))
@@ -68,7 +62,7 @@ def test_gradient_vector(Nphi, Ntheta, Nr, dealias, basis):
     grad = lambda A: operators.Gradient(A, c)
     T = grad(grad(f)).evaluate()
     phi, theta, r = b.local_grids(b.domain.dealias)
-    x, y, z = cartesian(phi, theta, r)
+    x, y, z = c.cartesian(phi, theta, r)
     Tg = np.copy(T['g'])
     Tg[2,2] = (6*x**2+4*y*z)/r**2
     Tg[2,1] = Tg[1,2] = -2*(y**3+x**2*(y-3*z)-y*z**2)/(r**3*np.sin(theta))
@@ -90,7 +84,7 @@ def test_divergence_vector(Nphi, Ntheta, Nr, dealias, basis):
     u = operators.Gradient(f, c)
     h = operators.Divergence(u).evaluate()
     phi, theta, r = b.local_grids(b.domain.dealias)
-    x, y, z = cartesian(phi, theta, r)
+    x, y, z = c.cartesian(phi, theta, r)
     hg = 6*x + 12*y + 18*z
     assert np.allclose(h['g'], hg)
 
@@ -127,7 +121,7 @@ def test_laplacian_scalar(Nphi, Ntheta, Nr, dealias, basis):
     f['g'] = x**4 + 2*y**4 + 3*z**4
     h = operators.Laplacian(f, c).evaluate()
     phi, theta, r = b.local_grids(b.domain.dealias)
-    x, y, z = cartesian(phi, theta, r)
+    x, y, z = c.cartesian(phi, theta, r)
     hg = 12*x**2+24*y**2+36*z**2
     assert np.allclose(h['g'], hg)
 
@@ -148,7 +142,7 @@ def test_laplacian_vector(Nphi, Ntheta, Nr, dealias, basis):
     vg = 0*v['g']
     phi, theta, r = b.local_grids(b.domain.dealias)
     ct, st, cp, sp = np.cos(theta), np.sin(theta), np.cos(phi), np.sin(phi)
-    x, y, z = cartesian(phi, theta, r)
+    x, y, z = c.cartesian(phi, theta, r)
     vg[2] = 2*(2+3*r*ct)*cp*st+1/2*r**3*st**4*(4*np.sin(2*phi)+np.sin(4*phi))
     vg[1] = 2*r*(-3*cp*st**2+sp)+1/2*ct*(8*cp+r**3*st**3*(4*np.sin(2*phi)+np.sin(4*phi)))
     vg[0] = 2*r*ct*cp+2*sp*(-2-r**3*(2+np.cos(2*phi))*st**3*sp)

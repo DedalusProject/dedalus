@@ -1,5 +1,5 @@
 """Coordinates and coordinate sytems."""
-
+import numpy as np
 
 class CoordinateSystem:
 
@@ -101,6 +101,13 @@ class SphericalCoordinates(CoordinateSystem):
         self.dist = distributor
         super().set_distributor(distributor)
         self.S2coordsys.set_distributor(distributor)
+
+    @staticmethod
+    def cartesian(phi, theta, r):
+        x = r * np.sin(theta) * np.cos(phi)
+        y = r * np.sin(theta) * np.sin(phi)
+        z = r * np.cos(theta)
+        return x, y, z
 
     @staticmethod
     def epsilon(i, j, k):

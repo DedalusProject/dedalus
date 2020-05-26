@@ -7,12 +7,6 @@ from mpi4py import MPI
 
 comm = MPI.COMM_WORLD
 
-def cartesian(phi, theta, r):
-    x = r * np.sin(theta) * np.cos(phi)
-    y = r * np.sin(theta) * np.sin(phi)
-    z = r * np.cos(theta)
-    return x, y, z
-
 ball_radius = 1.5
 @CachedMethod
 def build_ball(Nphi, Ntheta, Nr, dealias):
@@ -20,7 +14,7 @@ def build_ball(Nphi, Ntheta, Nr, dealias):
     d = distributor.Distributor((c,))
     b = basis.BallBasis(c, (Nphi, Ntheta, Nr), radius=ball_radius, dealias=(dealias, dealias, dealias))
     phi, theta, r = b.local_grids()
-    x, y, z = cartesian(phi, theta, r)
+    x, y, z = c.cartesian(phi, theta, r)
     return c, d, b, phi, theta, r, x, y, z
 
 shell_radii = (0.5, 3)
@@ -30,7 +24,7 @@ def build_shell(Nphi, Ntheta, Nr, dealias):
     d = distributor.Distributor((c,))
     b = basis.SphericalShellBasis(c, (Nphi, Ntheta, Nr), radii=shell_radii, dealias=(dealias, dealias, dealias))
     phi, theta, r = b.local_grids()
-    x, y, z = cartesian(phi, theta, r)
+    x, y, z = c.cartesian(phi, theta, r)
     return c, d, b, phi, theta, r, x, y, z
 
 Nphi_range = [8]
@@ -141,7 +135,7 @@ def test_transpose_coeff_tensor(Nphi, Ntheta, Nr, dealias, basis):
 @pytest.mark.parametrize('Nr', [8])
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis_radius', basis_radius)
-def test_ball_interpolation_scalar(Nphi, Ntheta, Nr, dealias, basis_radius):
+def test_interpolation_scalar(Nphi, Ntheta, Nr, dealias, basis_radius):
     basis, radius = basis_radius
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
@@ -157,7 +151,7 @@ def test_ball_interpolation_scalar(Nphi, Ntheta, Nr, dealias, basis_radius):
 @pytest.mark.parametrize('Nr', [8])
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis_radius', basis_radius)
-def test_ball_interpolation_vector(Nphi, Ntheta, Nr, dealias, basis_radius):
+def test_interpolation_vector(Nphi, Ntheta, Nr, dealias, basis_radius):
     basis, radius = basis_radius
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
     u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
@@ -179,7 +173,7 @@ def test_ball_interpolation_vector(Nphi, Ntheta, Nr, dealias, basis_radius):
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis_radius', basis_radius)
-def test_ball_interpolation_tensor(Nphi, Ntheta, Nr, dealias, basis_radius):
+def test_interpolation_tensor(Nphi, Ntheta, Nr, dealias, basis_radius):
     # Note: In this test, the boundary restriction of the tensor does not depend on the radius
     basis, radius = basis_radius
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
@@ -193,7 +187,7 @@ def test_ball_interpolation_tensor(Nphi, Ntheta, Nr, dealias, basis_radius):
     A = operators.interpolate(T,r=radius).evaluate()
     Ag = 0*A['g']
     phi, theta, r = b.local_grids(b.domain.dealias)
-    x, y, z = cartesian(phi, theta, r)
+    x, y, z = c.cartesian(phi, theta, r)
     Ag[2,2] = 2*np.sin(theta)*(3*np.cos(phi)**2*np.sin(theta)+2*np.cos(theta)*np.sin(phi))
     Ag[2,1] = Ag[1,2] = 6*np.cos(theta)*np.cos(phi)**2*np.sin(theta) + 2*np.cos(2*theta)*np.sin(phi)
     Ag[2,0] = Ag[0,2] = 2*np.cos(phi)*(np.cos(theta) - 3*np.sin(theta)*np.sin(phi))
@@ -208,7 +202,7 @@ def test_ball_interpolation_tensor(Nphi, Ntheta, Nr, dealias, basis_radius):
 @pytest.mark.parametrize('Nr', [8])
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis_radius', basis_radius)
-def test_ball_radial_component_vector(Nphi, Ntheta, Nr, dealias, basis_radius):
+def test_radial_component_vector(Nphi, Ntheta, Nr, dealias, basis_radius):
     basis, radius = basis_radius
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
     u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
@@ -227,7 +221,7 @@ def test_ball_radial_component_vector(Nphi, Ntheta, Nr, dealias, basis_radius):
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis_radius', basis_radius)
-def test_ball_radial_component_tensor(Nphi, Ntheta, Nr, dealias, basis_radius):
+def test_radial_component_tensor(Nphi, Ntheta, Nr, dealias, basis_radius):
     # Note: In this test, the boundary restriction of the tensor does not depend on the radius
     basis, radius = basis_radius
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
@@ -241,7 +235,7 @@ def test_ball_radial_component_tensor(Nphi, Ntheta, Nr, dealias, basis_radius):
     A = operators.RadialComponent(operators.interpolate(T,r=radius)).evaluate()
     Ag = 0*A['g']
     phi, theta, r = b.local_grids(b.domain.dealias)
-    x, y, z = cartesian(phi, theta, r)
+    x, y, z = c.cartesian(phi, theta, r)
     Ag[2] = 2*np.sin(theta)*(3*np.cos(phi)**2*np.sin(theta)+2*np.cos(theta)*np.sin(phi))
     Ag[1] = 6*np.cos(theta)*np.cos(phi)**2*np.sin(theta) + 2*np.cos(2*theta)*np.sin(phi)
     Ag[0] = 2*np.cos(phi)*(np.cos(theta) - 3*np.sin(theta)*np.sin(phi))
@@ -253,7 +247,7 @@ def test_ball_radial_component_tensor(Nphi, Ntheta, Nr, dealias, basis_radius):
 @pytest.mark.parametrize('Nr', [8])
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis_radius', basis_radius)
-def test_ball_angular_component_vector(Nphi, Ntheta, Nr, dealias, basis_radius):
+def test_angular_component_vector(Nphi, Ntheta, Nr, dealias, basis_radius):
     basis, radius = basis_radius
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
     u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
@@ -274,7 +268,7 @@ def test_ball_angular_component_vector(Nphi, Ntheta, Nr, dealias, basis_radius):
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis_radius', basis_radius)
-def test_ball_angular_component_tensor(Nphi, Ntheta, Nr, dealias, basis_radius):
+def test_angular_component_tensor(Nphi, Ntheta, Nr, dealias, basis_radius):
     # Note: In this test, the boundary restriction of the tensor does not depend on the radius
     basis, radius = basis_radius
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
@@ -288,7 +282,7 @@ def test_ball_angular_component_tensor(Nphi, Ntheta, Nr, dealias, basis_radius):
     A = operators.AngularComponent(operators.interpolate(T,r=radius),index=1).evaluate()
     Ag = 0*A['g']
     phi, theta, r = b.local_grids(b.domain.dealias)
-    x, y, z = cartesian(phi, theta, r)
+    x, y, z = c.cartesian(phi, theta, r)
     Ag[2,1] = 6*np.cos(theta)*np.cos(phi)**2*np.sin(theta) + 2*np.cos(2*theta)*np.sin(phi)
     Ag[2,0] = 2*np.cos(phi)*(np.cos(theta) - 3*np.sin(theta)*np.sin(phi))
     Ag[1,1] = 2*np.cos(theta)*(3*np.cos(theta)*np.cos(phi)**2 - 2*np.sin(theta)*np.sin(phi))

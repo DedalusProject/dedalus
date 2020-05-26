@@ -13,12 +13,6 @@ Nr_range = [6]
 radius_range = [1.5]
 dealias_range = [1, 3/2]
 
-def cartesian(phi, theta, r):
-    x = r * np.sin(theta) * np.cos(phi)
-    y = r * np.sin(theta) * np.sin(phi)
-    z = r * np.cos(theta)
-    return x, y, z
-
 radius_ball = 1.5
 @CachedMethod
 def build_ball(Nphi, Ntheta, Nr, dealias):
@@ -26,7 +20,7 @@ def build_ball(Nphi, Ntheta, Nr, dealias):
     d = distributor.Distributor((c,))
     b = basis.BallBasis(c, (Nphi, Ntheta, Nr), radius=radius_ball, dealias=(dealias, dealias, dealias))
     phi, theta, r = b.local_grids()
-    x, y, z = cartesian(phi, theta, r)
+    x, y, z = c.cartesian(phi, theta, r)
     return c, d, b, phi, theta, r, x, y, z
 
 radii_shell = (0.5, 3)
@@ -36,7 +30,7 @@ def build_shell(Nphi, Ntheta, Nr, dealias):
     d = distributor.Distributor((c,))
     b = basis.SphericalShellBasis(c, (Nphi, Ntheta, Nr), radii=radii_shell, dealias=(dealias, dealias, dealias))
     phi, theta, r = b.local_grids()
-    x, y, z = cartesian(phi, theta, r)
+    x, y, z = c.cartesian(phi, theta, r)
     return c, d, b, phi, theta, r, x, y, z
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
@@ -111,7 +105,7 @@ def test_multiply_number_scalar(Nphi, Ntheta, Nr, dealias, basis):
     f['g'] = x**3 + 2*y**3 + 3*z**3
     h = (2 * f).evaluate()
     phi, theta, r = b.local_grids(b.domain.dealias)
-    x, y, z = cartesian(phi, theta, r)
+    x, y, z = c.cartesian(phi, theta, r)
     hg = 2*(x**3 + 2*y**3 + 3*z**3)
     assert np.allclose(h['g'], hg)
 
@@ -126,7 +120,7 @@ def test_multiply_scalar_number(Nphi, Ntheta, Nr, dealias, basis):
     f['g'] = x**3 + 2*y**3 + 3*z**3
     h = (f * 2).evaluate()
     phi, theta, r = b.local_grids(b.domain.dealias)
-    x, y, z = cartesian(phi, theta, r)
+    x, y, z = c.cartesian(phi, theta, r)
     hg = 2*(x**3 + 2*y**3 + 3*z**3)
     assert np.allclose(h['g'], hg)
 
@@ -141,7 +135,7 @@ def test_multiply_scalar_scalar(Nphi, Ntheta, Nr, dealias, basis):
     f['g'] = x**3 + 2*y**3 + 3*z**3
     h = (f * f).evaluate()
     phi, theta, r = b.local_grids(b.domain.dealias)
-    x, y, z = cartesian(phi, theta, r)
+    x, y, z = c.cartesian(phi, theta, r)
     hg = (x**3 + 2*y**3 + 3*z**3)**2
     assert np.allclose(h['g'], hg)
 
@@ -153,7 +147,7 @@ def test_multiply_scalar_scalar(Nphi, Ntheta, Nr, dealias, basis):
 def test_multiply_scalar_vector(Nphi, Ntheta, Nr, dealias, basis):
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
     phi, theta, r = b.local_grids(b.domain.dealias)
-    x, y, z = cartesian(phi, theta, r)
+    x, y, z = c.cartesian(phi, theta, r)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     f.set_scales(b.domain.dealias)
     f['g'] = x**3 + 2*y**3 + 3*z**3
