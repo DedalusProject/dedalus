@@ -20,6 +20,9 @@ class CoordinateSystem:
         for coord in self.coords:
             coord.dist = distributor
 
+    def check_bounds(self, coord, bounds):
+        pass
+
     @property
     def first_axis(self):
         return self.dist.coords.index(self.coords[0])
@@ -46,6 +49,10 @@ class Coordinate:
     @property
     def axis(self):
         return self.dist.coords.index(self)
+
+    def check_bounds(self, bounds):
+        if self.cs == None: return
+        else: self.cs.check_bounds(self, bounds)
 
     def set_distributor(self, distributor):
         self.dist = distributor
@@ -96,6 +103,11 @@ class SphericalCoordinates(CoordinateSystem):
     @property
     def axis(self):
         return self.azimuth.axis
+
+    def check_bounds(self, coord, bounds):
+        if coord == self.radius:
+            if min(bounds) < 0:
+                raise ValueError("bounds for radial coordinate must not be negative")
 
     def set_distributor(self, distributor):
         self.dist = distributor

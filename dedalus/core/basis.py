@@ -241,6 +241,7 @@ class IntervalBasis(Basis):
 
     def __init__(self, coord, size, bounds, dealias):
         self.coord = coord
+        coord.check_bounds(bounds)
         self.size = size
         self.shape = (size,)
         self.bounds = bounds
@@ -392,6 +393,8 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
                 b = self.b0
                 dealias = max(self.dealias[0], other.dealias[0])
                 return Jacobi(self.coord, size, self.bounds, a, b, a0=self.a0, b0=self.b0, dealias=dealias, library=self.library)
+        if isinstance(other, SpinWeightedSphericalHarmonics):
+            return other.__mul__(self)
         return NotImplemented
 
     # def include_mode(self, mode):
@@ -1122,7 +1125,7 @@ class RegularityBasis(MultidimensionalBasis):
             self.dealias = dealias
         self.azimuth_library = azimuth_library
         self.colatitude_library = colatitude_library
-        self.sphere_basis = SWSH(coordsystem, shape[:2], dealias=dealias[:2], azimuth_library=azimuth_library, colatitude_library=colatitude_library)
+        self.sphere_basis = self.S2_basis()
         self.mmax = self.sphere_basis.mmax
         self.Lmax = self.sphere_basis.Lmax
         self.local_m = self.sphere_basis.local_m
@@ -1505,6 +1508,18 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             if self.radius == other.radius:
                 shape = tuple(np.maximum(self.shape, other.shape))
                 return SpinWeightedSphericalHarmonics(self.coordsystem, shape, radius=self.radius, dealias=self.dealias)
+        if isinstance(other, Jacobi):
+            if isinstance(other.coord.cs, coords.SphericalCoordinates):
+                spherical_coords = other.coord.cs
+                if self.coordsystem == spherical_coords.S2coordsys and other.coord == spherical_coords.radius:
+                    if other.bounds[0] == 0:
+                        raise ValueError("Cannot multiply a radial function starting at r=0 by an angular function")
+                    else:
+                        shape = (self.shape[0], self.shape[1], other.shape)
+                        dealias = (self.dealias[0], self.dealias[1], other.dealias)
+                        return SphericalShellBasis(spherical_coords, shape, radii=other.bounds, alpha=(other.a0, other.b0), dealias=dealias,
+                                                   azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
+                                                   radius_library=other.library)
         return NotImplemented
 
     def coeff_subshape(self, groups):
