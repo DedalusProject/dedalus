@@ -25,7 +25,7 @@ Other Links
 ===========
 
 * Project homepage: http://dedalus-project.org
-* Code repository: http://bitbucket.org/dedalus-project/dedalus
+* Code repository: https://github.com/DedalusProject/dedalus
 * Documentation: http://dedalus-project.readthedocs.org
 * User mailing list: https://groups.google.com/forum/#!forum/dedalus-users
 * Development mailing list: https://groups.google.com/forum/#!forum/dedalus-dev
