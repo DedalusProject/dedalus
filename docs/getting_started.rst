@@ -30,7 +30,7 @@ Below are several notebooks that walk through the setup and execution of more co
 Example Scripts
 ===============
 
-A wider range of examples are available under the ``examples`` subdirectory of the main code repository, which you can browse `here <https://bitbucket.org/dedalus-project/dedalus/src/tip/examples/?at=default>`_.
+A wider range of examples are available under the ``examples`` subdirectory of the main code repository, which you can browse `here <https://github.com/DedalusProject/dedalus/tree/master/examples>`_.
 These examples cover a wider range of use cases, including larger multidimensional problems designed for parallel execution.
 Basic post-processing and plotting scripts are also provided with many problems.
 
