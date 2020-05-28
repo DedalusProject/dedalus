@@ -58,7 +58,7 @@ Building from source
 
 Alternately, to build the lastest version of Dedalus from source: clone the repository, set FFTW/MPI paths, and install using pip::
 
-    hg clone https://bitbucket.org/dedalus-project/dedalus
+    git clone https://github.com/DedalusProject/dedalus
     cd dedalus
     export FFTW_PATH=/path/to/your/fftw_prefix
     export MPI_PATH=/path/to/your/mpi_prefix
@@ -77,8 +77,7 @@ If Dedalus was installed using the conda script or manually from PyPI, it can be
 If Dedalus was built from source, it can be updated by first pulling new changes from the source repository, and then reinstalling with pip::
 
     cd /path/to/dedalus/repo
-    hg pull
-    hg update
+    git pull
     export FFTW_PATH=/path/to/your/fftw_prefix
     export MPI_PATH=/path/to/your/mpi_prefix
     pip3 install --upgrade --force-reinstall .
@@ -103,9 +102,9 @@ Installation script
 This all-in-one installation script will build an isolated stack containing a Python installation and the other dependencies needed to run Dedalus.
 In most cases, the script can be modified to link with system installations of FFTW, MPI, and linear algebra libraries.
 
-You can get the installation script from `this link <https://bitbucket.org/dedalus-project/dedalus/raw/tip/docs/install.sh>`_, or download it using::
+You can get the installation script from `this link <https://raw.githubusercontent.com/DedalusProject/dedalus/master/docs/install.sh>`_, or download it using::
 
-    wget https://bitbucket.org/dedalus-project/dedalus/raw/tip/docs/install.sh
+    wget https://raw.githubusercontent.com/DedalusProject/dedalus/master/docs/install.sh
 
 and execute it using::
 
