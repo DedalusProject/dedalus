@@ -2143,16 +2143,21 @@ class Curl(LinearOperator, metaclass=MultiClass):
     name = 'Curl'
 
     @classmethod
-    def _check_args(cls, operand, out=None):
+    def _preprocess_args(cls, operand, index=0, out=None):
+        if isinstance(operand, Number):
+            raise SkipDispatchException(output=0)
+        return [operand], {'index': index, 'out': out}
+
+    @classmethod
+    def _check_args(cls, operand, index=0, out=None):
         # Dispatch by coordinate system
         if isinstance(operand, Operand):
-            if isinstance(operand.tensorsig[0], cls.cs_type):
+            if isinstance(operand.tensorsig[index], cls.cs_type):
                 return True
         return False
 
-    @property
-    def base(self):
-        return Curl
+    def new_operand(self, operand):
+        return Curl(operand, index=self.index)
 
 
 class SphericalCurl(Curl, SphericalEllOperator):
