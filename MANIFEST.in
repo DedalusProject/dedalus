@@ -1,0 +1,9 @@
+include license.txt
+include MANIFEST.in
+include pyproject.toml
+include README.md
+include requirements.txt
+include setup.py
+global-include *.pyx
+global-include *.pxd
+global-exclude *.c
