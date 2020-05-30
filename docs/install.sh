@@ -180,7 +180,6 @@ function host_specific
         echo "Looks like you're running on Mac OSX."
         echo
         echo "NOTE: you must have the Xcode command line tools installed."
-	echo "You also need install mercurial (https://www.mercurial-scm.org/downloads), and gfortran (https://gcc.gnu.org/wiki/GFortranBinaries#MacOS)"
         echo
 	echo "The instructions for obtaining the Xcode tools varies according"
 	echo "to your exact OS version.  On older versions of OS X, you"
@@ -261,7 +260,6 @@ function host_specific
             echo
             echo "  * atlas"
             echo "  * atlas-devel"
-            echo "  * mercurial"
             echo "  * openmpi"
             echo "  * openssl-devel"
             echo "  * ncurses"
@@ -285,7 +283,7 @@ function host_specific
             echo
             echo "You can accomplish this by executing:"
             echo
-            echo "$ sudo yum install atlas atlas-devel openmpi openmpi-devel openssl openssl-devel ncurses ncurses-devel zip uuid uuid-devel freetype freetype-devel tk tk-devel hdf5 hdf5-devel libpng-devel mercurial sqlite sqlite-devel gcc-gfortran gcc-c++"
+            echo "$ sudo yum install atlas atlas-devel openmpi openmpi-devel openssl openssl-devel ncurses ncurses-devel zip uuid uuid-devel freetype freetype-devel tk tk-devel hdf5 hdf5-devel libpng-devel sqlite sqlite-devel gcc-gfortran gcc-c++"
             echo
 	    echo "Some of these packages may require access to EPEL (extra packages for enterprise linux), and you'll need optional packages enabled."
 	    echo
@@ -308,7 +306,6 @@ function host_specific
         echo "You need to have these packages installed:"
         echo
         echo "  * libatlas-base-dev"
-        echo "  * mercurial"
         echo "  * libatlas3-base"
         echo "  * libopenmpi-dev"
         echo "  * openmpi-bin"
@@ -333,9 +330,9 @@ function host_specific
         echo
         if [ $UBUNTU_VERSION -lt 17 ]
         then
-            echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev mercurial libzmq-dev libsqlite3-dev gfortran libbz2-dev"
+            echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev libzmq-dev libsqlite3-dev gfortran libbz2-dev"
         else
-            echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev mercurial libsqlite3-dev gfortran libbz2-dev"
+            echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev libsqlite3-dev gfortran libbz2-dev"
         fi
         echo
         echo
@@ -361,7 +358,6 @@ function host_specific
         echo
         echo "  * libbz2-dev"
         echo "  * libatlas-base-dev"
-        echo "  * mercurial"
         echo "  * libatlas3-base"
         echo "  * libopenmpi-dev"
         echo "  * openmpi-bin"
@@ -379,7 +375,7 @@ function host_specific
         echo
         echo "You can accomplish this by executing:"
         echo
-        echo "$ sudo apt-get install libbz2-dev libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev mercurial libsqlite3-dev gfortran"
+        echo "$ sudo apt-get install libbz2-dev libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev libsqlite3-dev gfortran"
         echo
         echo
 	echo "You're running Debian $DEBIAN_VERSION"
@@ -811,45 +807,19 @@ then
     ( ${DEST_DIR}/bin/pip3 install jinja2 2>&1 ) 1>> ${LOG_FILE} || do_exit
 
 fi
-# We assume that hg can be found in the path.
-if type -P hg &>/dev/null
-then
-    export HG_EXEC=hg
-else
-    echo "Cannot find mercurial.  Please make sure it is installed."
-    do_exit
-fi
 
-if [ -z "$DEDALUS_DIR" ]
-then
-    DEDALUS_DIR="$PWD/dedalus/"
-    if [ ! -e dedalus ]
-    then
-        ( ${HG_EXEC} --debug clone https://bitbucket.org/dedalus-project/dedalus/ dedalus 2>&1 ) 1>> ${LOG_FILE}
-
-        # Now we update to the branch we're interested in.
-        ( ${HG_EXEC} -R ${DEDALUS_DIR} up -C ${BRANCH} 2>&1 ) 1>> ${LOG_FILE}
-    fi
-    echo Setting DEDALUS_DIR=${DEDALUS_DIR}
-fi
-
+echo "pip installing Dedalus"
+${DEST_DIR}/bin/pip3 install dedalus
 
 ## afterwards
 # Add the environment scripts
-( cp ${DEDALUS_DIR}/docs/activate ${DEST_DIR}/bin/activate 2>&1 ) 1>> ${LOG_FILE}
+${GETFILE} "https://raw.githubusercontent.com/DedalusProject/dedalus/master/docs/activate" || do_exit
+( cp ${DEST_DIR}/src/activate ${DEST_DIR}/bin/activate 2>&1 ) 1>> ${LOG_FILE}
+
 sed -i.bak -e "s,__DEDALUS_DIR__,${DEST_DIR}," ${DEST_DIR}/bin/activate
-( cp ${DEDALUS_DIR}/docs/activate.csh ${DEST_DIR}/bin/activate.csh 2>&1 ) 1>> ${LOG_FILE}
+( cp ${DEST_DIR}/src/activate.csh ${DEST_DIR}/bin/activate.csh 2>&1 ) 1>> ${LOG_FILE}
+${GETFILE} "https://raw.githubusercontent.com/DedalusProject/dedalus/master/docs/activate.csh" || do_exit
 sed -i.bak -e "s,__DEDALUS_DIR__,${DEST_DIR}," ${DEST_DIR}/bin/activate.csh
-
-echo "Doing Dedalus update, wiping local changes and updating to branch ${BRANCH}"
-MY_PWD=`pwd`
-cd $DEDALUS_DIR
-( ${HG_EXEC} pull 2>1 && ${HG_EXEC} up -C 2>1 ${BRANCH} 2>&1 ) 1>> ${LOG_FILE}
-
-echo "Installing Dedalus"
-( export PATH=$DEST_DIR/bin:$PATH ; ${DEST_DIR}/bin/python3 setup.py build_ext --inplace 2>&1 ) 1>> ${LOG_FILE} || do_exit
-touch done
-cd $MY_PWD
 
 if !( ( ${DEST_DIR}/bin/python3 -c "import readline" 2>&1 )>> ${LOG_FILE})
 then
