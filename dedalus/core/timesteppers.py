@@ -667,3 +667,146 @@ class RKSMR(RungeKuttaIMEX):
                   [α1, β1+α2,    β2,  0],
                   [α1, β1+α2, β2+α3, β3]])
 
+class ExplicitRungeKutta:
+    """
+    Base class for fully explicit multistep methods.
+
+    Parameters
+    ----------
+    pencil_length : int
+        Number of fields in problem
+    domain : domain object
+        Problem domain
+
+    Notes
+    -----
+    NB: THIS METHOD REQUIRES M TO BE FULL RANK
+
+    These timesteppers discretize the system
+        M.dt(X) + L.X = F
+    by first rewriting them using an auxiliary variable 
+        G = F - L.X
+    such that
+        M.dt(X) = G
+    and then constructing s stages
+        M.X(n,i) - M.X(n,0) = k Aij G(n,j)
+    where j runs from {0, 0} to {i, i-1}, and G(n,i) is evaluated at time
+        t(n,i) = t(n,0) + k ci
+
+    The s stages are solved as
+        M.X(n,i) = M.X(n,0) + k Aij G(n,j)
+    where j runs from {0, 0} to {i-1, i-1}.
+
+    The final stage is used as the advanced solution*:
+        X(n+1,0) = X(n,s)
+        t(n+1,0) = t(n,s) = t(n,0) + k
+
+    * Equivalently the Butcher tableaus must follow
+        b    = A[s, :]
+        c[s] = 1
+
+    References
+    ----------
+    FIND REF
+
+    """
+
+    def __init__(self, pencil_length, domain):
+        """using F and LX instead of G to make use of upstream solver code.
+
+        """
+        self.RHS = CoeffSystem(pencil_length, domain)
+
+        # Create coefficient systems for multistep history
+        self.MX0 = CoeffSystem(pencil_length, domain)
+        self.LX = LX = [CoeffSystem(pencil_length, domain) for i in range(self.stages)]
+        self.F = F = [CoeffSystem(pencil_length, domain) for i in range(self.stages)]
+        # need this to know when to factorize M matrix
+        self._iteration = 0
+
+    def build_M_solvers(self, solver):
+        """Construct solvers for M matrix. Only needs to be done once.
+
+        """
+        for p in solver.pencils:
+            p.M_solver = solver.matsolver(p.M_exp, solver)
+
+    def step(self, solver, dt):
+        """Advance solver by one timestep."""
+
+        # Solver references
+        pencils = solver.pencils
+        evaluator = solver.evaluator
+        state = solver.state
+
+        evaluator_kw = {}
+        evaluator_kw['world_time'] = world_time = solver.get_world_time()
+        evaluator_kw['wall_time'] = world_time - solver.start_time
+        evaluator_kw['sim_time'] = sim_time_0 = solver.sim_time
+        evaluator_kw['timestep'] = dt
+        evaluator_kw['iteration'] = solver.iteration
+
+        # Other references
+        RHS = self.RHS
+        MX0 = self.MX0
+        LX = self.LX
+        F = self.F
+        A = self.A
+        c = self.c
+        k = dt
+
+        if self._iteration == 0:
+            self.build_M_solvers(solver)
+
+        # Compute M.X(n,0)
+        MX0.data.fill(0)
+        for p in pencils:
+            fast_csr_matvec(p.M, state.get_pencil(p), MX0.get_pencil(p))
+
+        # Compute stages
+        # (M + k Hii L).X(n,i) = M.X(n,0) + k Aij F(n,j) - k Hij L.X(n,j)
+        for i in range(1, self.stages+1):
+            # Compute F(n,i-1), L.X(n,i-1)
+            state.scatter()
+            evaluator_kw['sim_time'] = solver.sim_time
+            if i == 1:
+                evaluator.evaluate_scheduled(**evaluator_kw)
+            else:
+                evaluator.evaluate_group('F', **evaluator_kw)
+            LX[i-1].data.fill(0)
+            F[i-1].data.fill(0)
+            for p in pencils:
+                fast_csr_matvec(p.L, state.get_pencil(p), LX[i-1].get_pencil(p))
+                fast_csr_matvec(p.pre_left, solver.F.get_pencil(p), F[i-1].get_pencil(p))
+
+            # Construct RHS(n,i)
+            np.copyto(RHS.data, MX0.data)
+            for j in range(0, i):
+                RHS.data += (k * A[i,j]) * (F[j].data - LX[j].data)
+
+            state.data.fill(0)
+            for p in pencils:
+                pRHS = RHS.get_pencil(p)
+                # Construct LHS(n,i)
+                pX = p.M_solver.solve(pRHS)
+                if p.pre_right is None:
+                    state.set_pencil(p, pX)
+                else:
+                    fast_csr_matvec(p.pre_right, pX, state.get_pencil(p))
+            solver.sim_time = sim_time_0 + k*c[i]
+        self._iteration += 1
+
+@add_scheme
+class ERK4(ExplicitRungeKutta):
+    """4th-order 4-stage Explicit Runge Kutta scheme"""
+
+    stages = 4
+
+    c = np.array([0, 1/2, 2/3, 1/2, 1])
+
+    A = np.array([[  0  ,   0  ,  0 ,   0 , 0],
+                  [ 1/2 ,   0  ,  0 ,   0 , 0],
+                  [11/18,  1/18,  0 ,   0 , 0],
+                  [ 5/6 , -5/6 , 1/2,   0 , 0],
+                  [ 1/4 ,  7/4 , 3/4, -7/4, 0]])
+
