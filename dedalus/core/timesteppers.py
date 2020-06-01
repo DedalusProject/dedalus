@@ -796,8 +796,23 @@ class ExplicitRungeKutta:
             solver.sim_time = sim_time_0 + k*c[i]
         self._iteration += 1
 
+
 @add_scheme
 class ERK4(ExplicitRungeKutta):
+    """4th-order 4-stage Explicit Runge Kutta scheme"""
+
+    stages = 4
+
+    c = np.array([0, 1/2, 1/2, 1, 1])
+
+    A = np.array([[  0  ,   0  ,  0 ,   0 ],
+                  [ 1/2 ,   0  ,  0 ,   0 ],
+                  [  0  ,  1/2 ,  0 ,   0 ],
+                  [  0  ,   0  ,  1 ,   0 ],
+                  [ 1/6 ,  1/3 , 1/3,  1/6]])
+
+@add_scheme
+class ERK4mod(ExplicitRungeKutta):
     """4th-order 4-stage Explicit Runge Kutta scheme"""
 
     stages = 4
