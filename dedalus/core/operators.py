@@ -1807,7 +1807,7 @@ class SphericalEllOperator(SpectralOperator):
     def operate(self, out):
         """Perform operation."""
         operand = self.args[0]
-        basis = self.input_basis
+        basis = self.radial_basis
         # Set output layout
         out.set_layout(operand.layout)
         out.data[:] = 0
@@ -1827,7 +1827,7 @@ class SphericalEllOperator(SpectralOperator):
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
-        basis = self.input_basis
+        basis = self.radial_basis
         R_in = basis.regularity_classes(operand.tensorsig)
         R_out = basis.regularity_classes(self.tensorsig)  # Should this use output_basis?
         ell = subproblem.group[self.last_axis - 1]
@@ -1869,8 +1869,10 @@ class SphericalGradient(Gradient, SphericalEllOperator):
         super().__init__(operand, out=out)
         self.coordsys = coordsys
         self.radius_axis = coordsys.coords[2].axis
+        input_basis = operand.domain.get_basis(coordsys)
+        self.radial_basis = input_basis.radial_basis
         # SpectralOperator requirements
-        self.input_basis = operand.domain.get_basis(coordsys)
+        self.input_basis = input_basis
         self.output_basis = self._output_basis(self.input_basis)
         self.first_axis = self.input_basis.first_axis
         self.last_axis = self.input_basis.last_axis
@@ -1904,7 +1906,7 @@ class SphericalGradient(Gradient, SphericalEllOperator):
         return ((0,) + regindex_in, (1,) + regindex_in)
 
     def radial_matrix(self, regindex_in, regindex_out, ell):
-        basis = self.input_basis
+        basis = self.radial_basis
         regtotal = basis.regtotal(regindex_in)
         if regindex_out[0] != 2 and regindex_in == regindex_out[1:]:
             return self._radial_matrix(basis, regindex_out[0], regtotal, ell)
@@ -2082,8 +2084,10 @@ class SphericalDivergence(Divergence, SphericalEllOperator):
         self.index = index
         self.coordsys = coordsys
         self.radius_axis = coordsys.coords[2].axis
+        input_basis = operand.domain.get_basis(coordsys)
+        self.radial_basis = input_basis.radial_basis
         # SpectralOperator requirements
-        self.input_basis = operand.domain.get_basis(coordsys)
+        self.input_basis = input_basis
         self.output_basis = self._output_basis(self.input_basis)
         self.first_axis = self.input_basis.first_axis
         self.last_axis = self.input_basis.last_axis
@@ -2120,7 +2124,7 @@ class SphericalDivergence(Divergence, SphericalEllOperator):
             return tuple()
 
     def radial_matrix(self, regindex_in, regindex_out, ell):
-        basis = self.input_basis
+        basis = self.radial_basis
         regtotal = basis.regtotal(regindex_in)
         if regindex_in[0] != 2 and regindex_in[1:] == regindex_out:
             return self._radial_matrix(basis, regindex_in[0], regtotal, ell)
@@ -2172,8 +2176,10 @@ class SphericalCurl(Curl, SphericalEllOperator):
         self.index = index
         self.coordsys = coordsys
         self.radius_axis = coordsys.coords[2].axis
+        input_basis = operand.domain.get_basis(coordsys)
+        self.radial_basis = input_basis.radial_basis
         # SpectralOperator requirements
-        self.input_basis = operand.domain.get_basis(coordsys)
+        self.input_basis = input_basis
         self.output_basis = self._output_basis(self.input_basis)
         self.first_axis = self.input_basis.first_axis
         self.last_axis = self.input_basis.last_axis
@@ -2211,7 +2217,7 @@ class SphericalCurl(Curl, SphericalEllOperator):
             return ((0,) + regindex_in[1:], (1,) + regindex_in[1:])
 
     def radial_matrix(self, regindex_in, regindex_out, ell):
-        basis = self.input_basis
+        basis = self.radial_basis
         regtotal_in = basis.regtotal(regindex_in)
         regtotal_out = basis.regtotal(regindex_out)
         if regindex_in[1:] == regindex_out[1:]:
@@ -2309,8 +2315,10 @@ class SphericalLaplacian(Laplacian, SphericalEllOperator):
         super().__init__(operand, out=out)
         self.coordsys = coordsys
         self.radius_axis = coordsys.coords[2].axis
+        input_basis = operand.domain.get_basis(coordsys)
+        self.radial_basis = input_basis.radial_basis
         # SpectralOperator requirements
-        self.input_basis = operand.domain.get_basis(coordsys)
+        self.input_basis = input_basis
         self.output_basis = self._output_basis(self.input_basis)
         self.first_axis = self.input_basis.first_axis
         self.last_axis = self.input_basis.last_axis
@@ -2342,7 +2350,7 @@ class SphericalLaplacian(Laplacian, SphericalEllOperator):
         return (regindex_in,)
 
     def radial_matrix(self, regindex_in, regindex_out, ell):
-        basis = self.input_basis
+        basis = self.radial_basis
         regtotal = basis.regtotal(regindex_in)
         if regindex_in == regindex_out:
             return self._radial_matrix(basis, regtotal, ell)
@@ -2381,8 +2389,10 @@ class SphericalEllProductField(SphericalEllProduct):
         self.coordsys = coordsys
         self.radius_axis = coordsys.coords[2].axis
         self.ell_func = ell_func
+        input_basis = operand.domain.get_basis(coordsys)
+        self.radial_basis = input_basis.radial_basis
         # SpectralOperator requirements
-        self.input_basis = operand.domain.get_basis(coordsys)
+        self.input_basis = input_basis
         self.output_basis = self.input_basis
         self.first_axis = self.input_basis.first_axis
         self.last_axis = self.input_basis.last_axis
@@ -2409,7 +2419,7 @@ class SphericalEllProductField(SphericalEllProduct):
         return (regindex_in,)
 
     def radial_matrix(self, regindex_in, regindex_out, ell):
-        basis = self.input_basis
+        basis = self.radial_basis
         regtotal = basis.regtotal(regindex_in)
         if regindex_in == regindex_out:
             return self._radial_matrix(ell, regtotal)
@@ -2418,7 +2428,7 @@ class SphericalEllProductField(SphericalEllProduct):
 
     @CachedMethod
     def _radial_matrix(self, ell, regtotal):
-        return self.ell_func(ell + regtotal) * self.input_basis.operator_matrix('I', ell, regtotal)
+        return self.ell_func(ell + regtotal) * self.radial_basis.operator_matrix('I', ell, regtotal)
 
 
 """

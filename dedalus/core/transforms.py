@@ -153,7 +153,7 @@ class FastTransform(SeparableTransform):
 
 
 @register_transform(basis.Jacobi, 'matrix')
-@register_transform(basis.SphericalShellBasis, 'matrix')
+@register_transform(basis.SphericalShellRadialBasis, 'matrix')
 class JacobiMatrixTransform(MatrixTransform):
     """Jacobi polynomial transforms."""
 
@@ -659,7 +659,7 @@ class SWSHColatitudeTransform(NonSeparableTransform):
         return m_matrices
 
 
-@register_transform(basis.BallBasis, 'matrix')
+@register_transform(basis.BallRadialBasis, 'matrix')
 class BallRadialTransform(NonSeparableTransform):
 
     def __init__(self, grid_shape, coeff_size, axis, local_l, regindex, regtotal, k, alpha, dtype=np.complex128):
