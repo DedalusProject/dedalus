@@ -269,22 +269,28 @@ class Transform:
     # To Do: group transforms for multiple fields
 
     def __init__(self, layout0, layout1, axis, basis):
-
         self.layout0 = layout0
         self.layout1 = layout1
         self.axis = axis
         self.basis = basis
+        if (np.issubdtype(layout0.dtype, np.complexfloating) and
+            np.issubdtype(layout1.dtype, np.floating)):
+            self.copyto = self._copyto_real_part
+        else:
+            self.copyto = np.copyto
+
+    @staticmethod
+    def _copyto_real_part(output, input):
+        np.copyto(output, np.real(input))
 
     @CachedMethod
     def group_data(self, nfields, scales):
-
         local_shape0 = self.layout0.local_shape(scales)
         local_shape1 = self.layout1.local_shape(scales)
         group_shape0 = [nfields] + list(local_shape0)
         group_shape1 = [nfields] + list(local_shape1)
         group_cdata = fftw.create_array(group_shape0, self.layout0.dtype)
         group_gdata = fftw.create_array(group_shape1, self.layout1.dtype)
-
         return group_cdata, group_gdata
 
     def increment_group(self, fields):
@@ -331,7 +337,7 @@ class Transform:
         if cdata.size:
             # Shortcut constant transforms
             if field.meta[self.axis]['constant']:
-                gdata[:] = cdata[axslice(self.axis, 0, 1)]
+                self.copyto(gdata, cdata[axslice(self.axis, 0, 1)])
             else:
                 self.basis.backward(cdata, gdata, self.axis, field.meta[self.axis], field.scales[self.axis])
 
