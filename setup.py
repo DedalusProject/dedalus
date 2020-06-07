@@ -186,10 +186,10 @@ if bool_env('CYTHON_PROFILE', unset=False):
 
 setup(
     name='dedalus',
-    version='2.1905',
+    version='2.2006a1',
     author='Keaton J. Burns',
     author_email='keaton.burns@gmail.com',
-    description="A flexible framework for solving differential equations using spectral methods.",
+    description="A flexible framework for solving PDEs with modern spectral methods.",
     long_description=long_description,
     long_description_content_type='text/markdown',
     url='http://dedalus-project.org',
