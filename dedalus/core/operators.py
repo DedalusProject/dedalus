@@ -983,7 +983,7 @@ class Interpolate(SpectralOperator, metaclass=MultiClass):
         return False
 
     def __init__(self, operand, coord, position, out=None):
-        super().__init__(operand, out=out)
+        SpectralOperator.__init__(self, operand, out=out)
         self.position = position
         # SpectralOperator requirements
         self.coord = coord
@@ -1335,7 +1335,7 @@ class Convert(SpectralOperator, metaclass=MultiClass):
     name = "Convert"
 
     def __init__(self, operand, output_basis, out=None):
-        super().__init__(operand, out=out)
+        SpectralOperator.__init__(self, operand, out=out)
         # SpectralOperator requirements
         self.coords = output_basis.coords
         self.input_basis = operand.domain.get_basis(self.coords)
@@ -1812,6 +1812,21 @@ class SphericalEllOperator(SpectralOperator):
     subaxis_dependence = [False, True, True]  # Depends on ell and n
     subaxis_coupling = [False, False, True]  # Only couples n
 
+    def __init__(self, operand, coordsys):
+        self.coordsys = coordsys
+        self.radius_axis = coordsys.coords[2].axis
+        input_basis = operand.domain.get_basis(coordsys)
+        if input_basis is None:
+            input_basis = operand.domain.get_basis(coordsys.radius)
+        self.radial_basis = input_basis.get_radial_basis()
+        # SpectralOperator requirements
+        self.input_basis = input_basis
+        self.output_basis = self._output_basis(self.input_basis)
+        self.first_axis = self.input_basis.first_axis
+        self.last_axis = self.input_basis.last_axis
+        # LinearOperator requirements
+        self.operand = operand
+
     def operate(self, out):
         """Perform operation."""
         operand = self.args[0]
@@ -1875,18 +1890,8 @@ class SphericalGradient(Gradient, SphericalEllOperator):
     cs_type = coords.SphericalCoordinates
 
     def __init__(self, operand, coordsys, out=None):
-        super().__init__(operand, out=out)
-        self.coordsys = coordsys
-        self.radius_axis = coordsys.coords[2].axis
-        input_basis = operand.domain.get_basis(coordsys)
-        self.radial_basis = input_basis.radial_basis
-        # SpectralOperator requirements
-        self.input_basis = input_basis
-        self.output_basis = self._output_basis(self.input_basis)
-        self.first_axis = self.input_basis.first_axis
-        self.last_axis = self.input_basis.last_axis
-        # LinearOperator requirements
-        self.operand = operand
+        Gradient.__init__(self, operand, out=out)
+        SphericalEllOperator.__init__(self, operand, coordsys)
         # FutureField requirements
         self.domain  = operand.domain.substitute_basis(self.input_basis, self.output_basis)
         self.tensorsig = (coordsys,) + operand.tensorsig
@@ -2080,22 +2085,12 @@ class SphericalDivergence(Divergence, SphericalEllOperator):
     cs_type = coords.SphericalCoordinates
 
     def __init__(self, operand, index=0, out=None):
+        Divergence.__init__(self, operand, out=out)
         if index != 0:
             raise ValueError("Divergence only implemented along index 0.")
-        coordsys = operand.tensorsig[index]
-        super().__init__(operand, out=out)
         self.index = index
-        self.coordsys = coordsys
-        self.radius_axis = coordsys.coords[2].axis
-        input_basis = operand.domain.get_basis(coordsys)
-        self.radial_basis = input_basis.radial_basis
-        # SpectralOperator requirements
-        self.input_basis = input_basis
-        self.output_basis = self._output_basis(self.input_basis)
-        self.first_axis = self.input_basis.first_axis
-        self.last_axis = self.input_basis.last_axis
-        # LinearOperator requirements
-        self.operand = operand
+        coordsys = operand.tensorsig[index]
+        SphericalEllOperator.__init__(self, operand, coordsys)
         # FutureField requirements
         self.domain  = operand.domain.substitute_basis(self.input_basis, self.output_basis)
         self.tensorsig = operand.tensorsig[:index] + operand.tensorsig[index+1:]
@@ -2172,22 +2167,12 @@ class SphericalCurl(Curl, SphericalEllOperator):
     cs_type = coords.SphericalCoordinates
 
     def __init__(self, operand, index=0, out=None):
+        Curl.__init__(self, operand, out=out)
         if index != 0:
             raise ValueError("Curl only implemented along index 0.")
-        coordsys = operand.tensorsig[index]
-        super().__init__(operand, out=out)
         self.index = index
-        self.coordsys = coordsys
-        self.radius_axis = coordsys.coords[2].axis
-        input_basis = operand.domain.get_basis(coordsys)
-        self.radial_basis = input_basis.radial_basis
-        # SpectralOperator requirements
-        self.input_basis = input_basis
-        self.output_basis = self._output_basis(self.input_basis)
-        self.first_axis = self.input_basis.first_axis
-        self.last_axis = self.input_basis.last_axis
-        # LinearOperator requirements
-        self.operand = operand
+        coordsys = operand.tensorsig[index]
+        SphericalEllOperator.__init__(self, operand, coordsys)
         # FutureField requirements
         self.domain  = operand.domain.substitute_basis(self.input_basis, self.output_basis)
         self.tensorsig = (coordsys,) + operand.tensorsig[:index] + operand.tensorsig[index+1:]
@@ -2315,18 +2300,8 @@ class SphericalLaplacian(Laplacian, SphericalEllOperator):
     cs_type = coords.SphericalCoordinates
 
     def __init__(self, operand, coordsys, out=None):
-        super().__init__(operand, out=out)
-        self.coordsys = coordsys
-        self.radius_axis = coordsys.coords[2].axis
-        input_basis = operand.domain.get_basis(coordsys)
-        self.radial_basis = input_basis.radial_basis
-        # SpectralOperator requirements
-        self.input_basis = input_basis
-        self.output_basis = self._output_basis(self.input_basis)
-        self.first_axis = self.input_basis.first_axis
-        self.last_axis = self.input_basis.last_axis
-        # LinearOperator requirements
-        self.operand = operand
+        Laplacian.__init__(self, operand, out=out)
+        SphericalEllOperator.__init__(self, operand, coordsys)
         # FutureField requirements
         self.domain  = operand.domain.substitute_basis(self.input_basis, self.output_basis)
         self.tensorsig = operand.tensorsig
@@ -2386,25 +2361,18 @@ class SphericalEllProductField(SphericalEllProduct):
     def _check_args(cls, operand, coordsys, ell_func, out=None):
         return isinstance(operand, Operand)
 
-
     def __init__(self, operand, coordsys, ell_func, out=None):
-        super().__init__(operand, out=out)
-        self.coordsys = coordsys
-        self.radius_axis = coordsys.coords[2].axis
+        SpectralOperator.__init__(self, operand, out=out)
+        SphericalEllOperator.__init__(self, operand, coordsys)
         self.ell_func = ell_func
-        input_basis = operand.domain.get_basis(coordsys)
-        self.radial_basis = input_basis.radial_basis
-        # SpectralOperator requirements
-        self.input_basis = input_basis
-        self.output_basis = self.input_basis
-        self.first_axis = self.input_basis.first_axis
-        self.last_axis = self.input_basis.last_axis
-        # LinearOperator requirements
-        self.operand = operand
         # FutureField requirements
         self.domain  = operand.domain
         self.tensorsig = operand.tensorsig
         self.dtype = operand.dtype
+
+    @staticmethod
+    def _output_basis(input_basis):
+        return input_basis
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""

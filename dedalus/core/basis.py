@@ -1348,6 +1348,9 @@ class RegularityBasis(Basis):
     def local_m(self):
         return (0,)
 
+    def get_radial_basis(self):
+        return self
+
     def global_grid(self, scale):
         problem_grid = self._radius_grid(scale)
         return reshape_vector(problem_grid, dim=self.dist.dim, axis=self.axis)
@@ -1596,7 +1599,7 @@ class SphericalShellRadialBasis(RegularityBasis):
             return self
         if isinstance(other, SphericalShellRadialBasis):
             if self.grid_params == other.grid_params:
-                shape = max(self.shape, other.shape)
+                shape = max(self.shape[0], other.shape[0])
                 k = max(self.k, other.k)
                 return SphericalShellRadialBasis(self.coordsystem, shape, radii=self.radii, alpha=self.alpha, dealias=self.dealias, k=k, radius_library=self.radius_library)
         return NotImplemented
@@ -1608,13 +1611,13 @@ class SphericalShellRadialBasis(RegularityBasis):
             return self
         if isinstance(other, SphericalShellRadialBasis):
             if self.grid_params == other.grid_params:
-                shape = max(self.shape, other.shape)
+                shape = max(self.shape[0], other.shape[0])
                 k = 0
                 return SphericalShellRadialBasis(self.coordsystem, shape, radii=self.radii, alpha=self.alpha, dealias=self.dealias, k=k, radius_library=self.radius_library)
         return NotImplemented
 
     def _new_k(self, k):
-        return SphericalShellRadialBasis(self.coordsystem, self.shape, radii = self.radii, alpha=self.alpha, dealias=self.dealias, k=k,
+        return SphericalShellRadialBasis(self.coordsystem, self.shape[0], radii = self.radii, alpha=self.alpha, dealias=self.dealias, k=k,
                                          radius_library=self.radius_library)
 
     @CachedMethod
@@ -1745,7 +1748,7 @@ class BallRadialBasis(RegularityBasis):
             return self
         if isinstance(other, BallRadialBasis):
             if self.grid_params == other.grid_params:
-                shape = max(self.shape, other.shape)
+                shape = max(self.shape[0], other.shape[0])
                 k = max(self.k, other.k)
                 return BallRadialBasis(self.coordsystem, shape, radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias, radius_library=self.radius_library)
         return NotImplemented
@@ -1757,13 +1760,13 @@ class BallRadialBasis(RegularityBasis):
             return self
         if isinstance(other, BallRadialBasis):
             if self.grid_params == other.grid_params:
-                shape = max(self.shape, other.shape)
+                shape = max(self.shape[0], other.shape[0])
                 k = 0
                 return BallRadialBasis(self.coordsystem, shape, radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias, radius_library=self.radius_library)
         return NotImplemented
 
     def _new_k(self, k):
-        return BallRadialBasis(self.coordsystem, self.shape, radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias, radius_library=self.radius_library)
+        return BallRadialBasis(self.coordsystem, self.shape[0], radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias, radius_library=self.radius_library)
 
     @CachedMethod
     def _radius_grid(self, scale):
@@ -1907,6 +1910,9 @@ class Spherical3DBasis(MultidimensionalBasis):
         return (self.local_grid_azimuth(scales[0]),
                 self.local_grid_colatitude(scales[1]),
                 self.local_grid_radius(scales[2]))
+
+    def get_radial_basis(self):
+        return self.radial_basis
 
     def S2_basis(self,radius=1):
         return SWSH(self.coordsystem.S2coordsys, self.shape[:2], radius=radius, dealias=self.dealias[:2],
@@ -2170,8 +2176,8 @@ class ConvertRegularity(operators.Convert, operators.SphericalEllOperator):
     output_basis_type = Spherical3DBasis
 
     def __init__(self, operand, output_basis, out=None):
-        super().__init__(operand, output_basis, out=out)
-        self.radial_basis = self.input_basis.radial_basis
+        operators.Convert.__init__(self, operand, output_basis, out=out)
+        self.radial_basis = self.input_basis.get_radial_basis()
 
     def regindex_out(self, regindex_in):
         return (regindex_in,)
@@ -2203,11 +2209,16 @@ class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperato
     def _output_basis(input_basis, position):
         return input_basis.S2_basis(radius=position)
 
+    def __init__(self, operand, coord, position, out=None):
+        operators.Interpolate.__init__(self, operand, coord, position, out=None)
+        self.radial_basis = self.input_basis.get_radial_basis()
+
     def subproblem_matrix(self, subproblem):
         ell = subproblem.group[self.last_axis - 1]
         matrix = super().subproblem_matrix(subproblem)
+        radial_basis = self.radial_basis
         if self.tensorsig != ():
-            Q = self.input_basis.radial_basis.radial_recombinations(self.tensorsig, ell_list=(ell,))
+            Q = radial_basis.radial_recombinations(self.tensorsig, ell_list=(ell,))
             matrix = Q[0] @ matrix
         return matrix
 
@@ -2216,7 +2227,7 @@ class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperato
         operand = self.args[0]
         input_basis = self.input_basis
         output_basis = self.output_basis
-        radial_basis = input_basis.radial_basis
+        radial_basis = self.radial_basis
         # Set output layout
         out.set_layout(operand.layout)
         # Apply operator
@@ -2238,7 +2249,7 @@ class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperato
 
     def radial_matrix(self, regindex_in, regindex_out, ell):
         position = self.position
-        basis = self.input_basis.radial_basis
+        basis = self.radial_basis
         if regindex_in == regindex_out:
             return self._radial_matrix(basis, 'r=R', ell, basis.regtotal(regindex_in))
         else:
@@ -2255,6 +2266,10 @@ class SphericalShellRadialInterpolate(operators.Interpolate, operators.Spherical
     basis_type = SphericalShellBasis
     basis_subaxis = 2
 
+    def __init__(self, operand, coord, position, out=None):
+        operators.Interpolate.__init__(self, operand, coord, position, out=None)
+        self.radial_basis = self.input_basis.get_radial_basis()
+
     @classmethod
     def _check_args(cls, operand, coord, position, out=None):
         # Dispatch by operand basis
@@ -2270,7 +2285,7 @@ class SphericalShellRadialInterpolate(operators.Interpolate, operators.Spherical
 
     def subproblem_matrix(self, subproblem):
         ell = subproblem.group[self.last_axis - 1]
-        basis_in = self.input_basis.radial_basis
+        basis_in = self.radial_basis
         matrix = super().subproblem_matrix(subproblem)
         if self.tensorsig != ():
             Q = basis_in.radial_recombinations(self.tensorsig, ell_list=(ell,))
@@ -2282,7 +2297,7 @@ class SphericalShellRadialInterpolate(operators.Interpolate, operators.Spherical
         """Perform operation."""
         operand = self.args[0]
         input_basis = self.input_basis
-        radial_basis = input_basis.radial_basis
+        radial_basis = self.radial_basis
         output_basis = self.output_basis
         # Set output layout
         out.set_layout(operand.layout)
@@ -2307,7 +2322,7 @@ class SphericalShellRadialInterpolate(operators.Interpolate, operators.Spherical
 
     def radial_matrix(self, regindex_in, regindex_out, ell):
         position = self.position
-        basis = self.input_basis.radial_basis
+        basis = self.radial_basis
         if regindex_in == regindex_out:
             if position == basis.radii[0]:
                 return self._radial_matrix(basis, 'r=Ri', ell, basis.regtotal(regindex_in))
@@ -2331,6 +2346,9 @@ class SphericalTransposeComponents(operators.TransposeComponents):
     def __init__(self, operand, indices=(0,1), out=None):
         super().__init__(operand, indices=indices, out=out)
         self.radius_axis = self.coordsys.coords[2].axis
+        input_basis = self.domain.get_basis(self.coordsys)
+        self.input_basis = input_basis
+        self.radial_basis = self.input_basis.get_radial_basis()
 
     def check_conditions(self):
         """Can always take the transpose"""
@@ -2342,8 +2360,7 @@ class SphericalTransposeComponents(operators.TransposeComponents):
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
-        input_basis = self.domain.get_basis(self.coordsys)
-        basis = input_basis.radial_basis
+        basis = self.radial_basis
         R = basis.regularity_classes(self.tensorsig)
 
         ell = subproblem.group[self.radius_axis - 1]
@@ -2377,8 +2394,7 @@ class SphericalTransposeComponents(operators.TransposeComponents):
     def operate(self, out):
         """Perform operation."""
         operand = self.args[0]
-        input_basis = self.domain.get_basis(self.coordsys)
-        basis = input_basis.radial_basis
+        basis = self.input_basis.radial_basis
         # Set output layout
         layout = operand.layout
         out.set_layout(layout)

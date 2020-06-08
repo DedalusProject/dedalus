@@ -55,6 +55,22 @@ def test_gradient_scalar(Nphi, Ntheta, Nr, dealias, basis):
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
+def test_gradient_1D_scalar(Nphi, Ntheta, Nr, dealias, basis):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
+    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
+    f['g'] = fg = r**4/3
+    u = operators.Gradient(f, c).evaluate()
+    phi, theta, r = b.local_grids(b.domain.dealias)
+    x, y, z = c.cartesian(phi, theta, r)
+    ug = np.copy(u['g'])
+    ug[2] = 4/3*r**3
+    assert np.allclose(u['g'], ug)
+
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
 def test_gradient_vector(Nphi, Ntheta, Nr, dealias, basis):
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
@@ -77,6 +93,23 @@ def test_gradient_vector(Nphi, Ntheta, Nr, dealias, basis):
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
+def test_gradient_1D_vector(Nphi, Ntheta, Nr, dealias, basis):
+    # note: only tests gradient of a radial vector, which is one of three components of ell=0 rank 2 tensor
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
+    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
+    f['g'] = r**4 / 3
+    grad = lambda A: operators.Gradient(A, c)
+    T = grad(grad(f)).evaluate()
+    phi, theta, r = b.local_grids(b.domain.dealias)
+    Tg = np.copy(T['g'])
+    Tg[2,2] = 12/3 * r**2
+    assert np.allclose(T['g'], Tg)
+
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
 def test_divergence_vector(Nphi, Ntheta, Nr, dealias, basis):
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
@@ -86,6 +119,21 @@ def test_divergence_vector(Nphi, Ntheta, Nr, dealias, basis):
     phi, theta, r = b.local_grids(b.domain.dealias)
     x, y, z = c.cartesian(phi, theta, r)
     hg = 6*x + 12*y + 18*z
+    assert np.allclose(h['g'], hg)
+
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+def test_divergence_1D_vector(Nphi, Ntheta, Nr, dealias, basis):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
+    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
+    f['g'] = r**4/3
+    u = operators.Gradient(f, c)
+    h = operators.Divergence(u).evaluate()
+    phi, theta, r = b.local_grids(b.domain.dealias)
+    hg = 20/3*r**2
     assert np.allclose(h['g'], hg)
 
 # test function needs higher resolution
@@ -125,6 +173,20 @@ def test_laplacian_scalar(Nphi, Ntheta, Nr, dealias, basis):
     hg = 12*x**2+24*y**2+36*z**2
     assert np.allclose(h['g'], hg)
 
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+def test_laplacian_1D_scalar(Nphi, Ntheta, Nr, dealias, basis):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
+    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
+    f['g'] = r**4 / 3
+    h = operators.Laplacian(f, c).evaluate()
+    phi, theta, r = b.local_grids(b.domain.dealias)
+    hg = 20/3 * r**2
+    assert np.allclose(h['g'], hg)
+
 # test function needs higher resolution
 @pytest.mark.parametrize('Nphi', [16])
 @pytest.mark.parametrize('Ntheta', [16])
@@ -147,4 +209,20 @@ def test_laplacian_vector(Nphi, Ntheta, Nr, dealias, basis):
     vg[1] = 2*r*(-3*cp*st**2+sp)+1/2*ct*(8*cp+r**3*st**3*(4*np.sin(2*phi)+np.sin(4*phi)))
     vg[0] = 2*r*ct*cp+2*sp*(-2-r**3*(2+np.cos(2*phi))*st**3*sp)
     assert np.allclose(v['g'],vg)
+
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+def test_laplacian_1D_vector(Nphi, Ntheta, Nr, dealias, basis):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
+    u = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=np.complex128)
+    u['g'][2] = 4/3 * r**3
+    v = operators.Laplacian(u, c).evaluate()
+    vg = 0*v['g']
+    phi, theta, r = b.local_grids(b.domain.dealias)
+    vg[2] = 40/3 * r
+    assert np.allclose(v['g'],vg)
+
 
