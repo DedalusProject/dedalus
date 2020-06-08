@@ -1334,6 +1334,10 @@ SWSH = SpinWeightedSphericalHarmonics
 # These are common for RadialBallBasis and RadialSphericalShellBasis
 class RegularityBasis(Basis):
 
+    dim = 1
+    dims = ['radius']
+    group_shape = (1,)
+
     @CachedAttribute
     def local_l(self):
         return (0,)
@@ -1409,11 +1413,11 @@ class RegularityBasis(Basis):
             #    R[axslice(i, n, n+self.dim)] += reshape_vector(Rb, dim=len(tensorsig), axis=i)
         return R
 
-    def forward_regularity_recombination(self, tensorsig, axis, gdata):
+    def forward_regularity_recombination(self, tensorsig, axis, gdata, local_l=None):
         rank = len(tensorsig)
         # Apply radial recombinations
         if rank > 0:
-            Q = self.radial_recombinations(tensorsig)
+            Q = self.radial_recombinations(tensorsig, ell_list=local_l)
             # Flatten tensor axes
             shape = gdata.shape
             temp = gdata.reshape((-1,)+shape[rank:])
@@ -1423,11 +1427,11 @@ class RegularityBasis(Basis):
                 l_view = temp[axslice(axis, l_index, l_index+1)]
                 apply_matrix(Q_l.T, l_view, axis=0, out=l_view)
 
-    def backward_regularity_recombination(self, tensorsig, axis, gdata):
+    def backward_regularity_recombination(self, tensorsig, axis, gdata, local_l=None):
         rank = len(tensorsig)
         # Apply radial recombinations
         if rank > 0:
-            Q = self.radial_recombinations(tensorsig)
+            Q = self.radial_recombinations(tensorsig, ell_list=local_l)
             # Flatten tensor axes
             shape = gdata.shape
             temp = gdata.reshape((-1,)+shape[rank:])
@@ -1437,21 +1441,23 @@ class RegularityBasis(Basis):
                 l_view = temp[axslice(axis, l_index, l_index+1)]
                 apply_matrix(Q_l, l_view, axis=0, out=l_view)
 
-    def radial_vector_3(self, comp, m, ell, regindex):
-        slices = self.radial_vector_slices(m, ell, regindex)
+    def radial_vector_3(self, comp, m, ell, regindex, local_m=None, local_l=None):
+        if local_m == None: local_m = self.local_m
+        if local_l == None: local_l = self.local_l
+        slices = self.radial_vector_slices(m, ell, regindex, local_m, local_l)
         if slices is None:
             return None
         comp5 = reduced_view(comp, axis=self.axis-2, dim=3)
         return comp5[(slice(None),) + slices + (slice(None),)]
 
     @CachedMethod
-    def radial_vector_slices(self, m, ell, regindex):
+    def radial_vector_slices(self, m, ell, regindex, local_m, local_l):
         if m > ell:
             return None
         if not self.regularity_allowed(ell, regindex):
             return None
-        mi = self.local_m.index(m)
-        li = self.local_l.index(ell)
+        mi = local_m.index(m)
+        li = local_l.index(ell)
         return (mi, li, self.n_slice(ell))
 
     def local_groups(self, basis_coupling):
@@ -1552,9 +1558,6 @@ class RegularityBasis(Basis):
 
 class SphericalShellRadialBasis(RegularityBasis):
 
-    dim = 1
-    dims = ['radius']
-    group_shape = (1,)
     transforms = {}
 
     def __init__(self, coordsystem, shape, radii=(1,2), alpha=(-0.5,-0.5), dealias=(1,), k=0, radius_library='matrix'):
@@ -1569,7 +1572,7 @@ class SphericalShellRadialBasis(RegularityBasis):
         self.k = k
         self.radius_library = radius_library
         self.Nmax = shape - 1
-        self.shape = shape
+        self.shape = (shape,)
         self.grid_params = (coordsystem, radii, alpha, dealias)
         Basis.__init__(self, coordsystem)
 
@@ -1614,14 +1617,14 @@ class SphericalShellRadialBasis(RegularityBasis):
 
     @CachedMethod
     def _radius_grid(self, scale):
-        N = int(np.ceil(scale * self.shape))
+        N = int(np.ceil(scale * self.shape[0]))
         z, weights = dedalus_sphere.annulus.quadrature(N-1, alpha=self.alpha, niter=3)
         r = self.dR/2*(z + self.rho)
         return r.astype(np.float64)
 
     @CachedMethod
     def _radius_weights(self, scale):
-        N = int(np.ceil(scale * self.shape))
+        N = int(np.ceil(scale * self.shape[0]))
         z_proj, weights_proj = dedalus_sphere.annulus.quadrature(N-1, alpha=self.alpha, niter=3)
         z0, weights0 = dedalus_sphere.jacobi128.quadrature(N-1, 0, 0)
         init0 = dedalus_sphere.jacobi128.envelope(-1/2,-1/2,-1/2,-1/2,z0)
@@ -1705,9 +1708,6 @@ class SphericalShellRadialBasis(RegularityBasis):
 
 class BallRadialBasis(RegularityBasis):
 
-    dim = 1
-    dims = ['radius']
-    group_shape = (1,)
     transforms = {}
 
     def __init__(self, coordsystem, shape, radius=1, k=0, alpha=0, dealias=(1,), radius_library='matrix'):
@@ -1721,7 +1721,7 @@ class BallRadialBasis(RegularityBasis):
         self.radial_COV = AffineCOV((0, 1), (0, radius))
         self.radius_library = radius_library
         self.Nmax = shape - 1
-        self.shape = shape
+        self.shape = (shape,)
         self.grid_params = (coordsystem, radius, alpha, dealias)
         Basis.__init__(self, coordsystem)
 
@@ -1765,30 +1765,21 @@ class BallRadialBasis(RegularityBasis):
 
     @CachedMethod
     def _radius_grid(self, scale):
-        N = int(np.ceil(scale * self.shape))
+        N = int(np.ceil(scale * self.shape[0]))
         z, weights = dedalus_sphere.ball.quadrature(3, N-1, niter=3, alpha=self.alpha)
         r = np.sqrt((z + 1) / 2)
         return self.radial_COV.problem_coord(r)
 
     @CachedMethod
     def _radius_weights(self, scale):
-        N = int(np.ceil(scale * self.shape))
+        N = int(np.ceil(scale * self.shape[0]))
         z, weights = dedalus_sphere.ball.quadrature(3, N-1, alpha=self.alpha, niter=3)
         return weights
 
     @CachedMethod
-    def transform_plan(self, grid_size, k):
+    def transform_plan(self, grid_shape, regindex, axis, local_l, regtotal, k, alpha):
         """Build transform plan."""
-        a = self.alpha[0] + k
-        b = self.alpha[1] + k
-        a0 = self.alpha[0]
-        b0 = self.alpha[1]
-        return self.transforms[self.radius_library](grid_size, self.Nmax+1, a, b, a0, b0)
-
-    @CachedMethod
-    def transform_plan(self, grid_shape, regindex, axis, regtotal, k, alpha):
-        """Build transform plan."""
-        return self.transforms[self.radius_library](grid_shape, self.Nmax+1, axis, self.local_l, regindex, regtotal, k, alpha)
+        return self.transforms[self.radius_library](grid_shape, self.Nmax+1, axis, local_l, regindex, regtotal, k, alpha)
 
     def forward_transform(self, field, axis, gdata, cdata):
         # Apply regularity recombination
@@ -1799,7 +1790,7 @@ class BallRadialBasis(RegularityBasis):
         temp = np.copy(cdata)
         for regindex, regtotal in np.ndenumerate(R):
            grid_shape = gdata[regindex].shape
-           plan = self.transform_plan(grid_shape, regindex, axis, regtotal, self.k, self.alpha)
+           plan = self.transform_plan(grid_shape, regindex, axis, self.local_l, regtotal, self.k, self.alpha)
            plan.forward(gdata[regindex], temp[regindex], axis)
         np.copyto(cdata, temp)
 
@@ -1810,7 +1801,7 @@ class BallRadialBasis(RegularityBasis):
         temp = np.copy(gdata)
         for regindex, regtotal in np.ndenumerate(R):
            grid_shape = gdata[regindex].shape
-           plan = self.transform_plan(grid_shape, regindex, axis, regtotal, self.k, self.alpha)
+           plan = self.transform_plan(grid_shape, regindex, axis, self.local_l, regtotal, self.k, self.alpha)
            plan.backward(cdata[regindex], temp[regindex], axis)
         np.copyto(gdata, temp)
         # Apply regularity recombinations
@@ -1871,7 +1862,7 @@ class Spherical3DBasis(MultidimensionalBasis):
 
     def __init__(self, coordsystem, shape_angular, dealias_angular, radial_basis, azimuth_library='matrix', colatitude_library='matrix'):
         self.coordsystem = coordsystem
-        self.shape = tuple( (*shape_angular, radial_basis.shape ) )
+        self.shape = tuple( (*shape_angular, *radial_basis.shape ) )
         if np.isscalar(dealias_angular):
             self.dealias = ( (dealias_angular, dealias_angular, *radial_basis.dealias) )
         elif len(dealias_angular) != 2:
@@ -1885,40 +1876,23 @@ class Spherical3DBasis(MultidimensionalBasis):
         self.sphere_basis = self.S2_basis()
         self.mmax = self.sphere_basis.mmax
         self.Lmax = self.sphere_basis.Lmax
-        self.radial_basis.local_m = self.sphere_basis.local_m
-        self.radial_basis.local_l = self.sphere_basis.local_l
+        self.local_m = self.sphere_basis.local_m
+        self.local_l = self.sphere_basis.local_l
         self.global_grid_azimuth = self.sphere_basis.global_grid_azimuth
         self.global_grid_colatitude = self.sphere_basis.global_grid_colatitude
+        self.global_grid_radius = self.radial_basis.global_grid
         self.local_grid_azimuth = self.sphere_basis.local_grid_azimuth
         self.local_grid_colatitude = self.sphere_basis.local_grid_colatitude
+        self.local_grid_radius = self.radial_basis.local_grid
         self.global_colatitude_weights = self.sphere_basis.global_colatitude_weights
+        self.global_radial_weights = self.radial_basis.global_weights
         self.local_colatitude_weights = self.sphere_basis.local_colatitude_weights
+        self.local_radial_weights = self.radial_basis.local_weights
         self.forward_transform_azimuth = self.sphere_basis.forward_transform_azimuth
         self.forward_transform_colatitude = self.sphere_basis.forward_transform_colatitude
-        self.forward_transform_radius = self.radial_basis.forward_transform
         self.backward_transform_azimuth = self.sphere_basis.backward_transform_azimuth
         self.backward_transform_colatitude = self.sphere_basis.backward_transform_colatitude
-        self.backward_transform_radius = self.radial_basis.backward_transform
-        self.forward_transforms = [self.forward_transform_azimuth,
-                                   self.forward_transform_colatitude,
-                                   self.forward_transform_radius]
-        self.backward_transforms = [self.backward_transform_azimuth,
-                                    self.backward_transform_colatitude,
-                                    self.backward_transform_radius]
         Basis.__init__(self, coordsystem)
-        self.radial_basis.domain = self.domain
-
-    def global_grid_radius(self, scale=None):
-        return self.radial_basis.global_grid(scale)
-
-    def local_grid_radius(self, scale=None):
-        return self.radial_basis.local_grid(scale)
-
-    def global_radial_weights(self, scale=None):
-        return self.radial_basis.global_weights(scale)
-
-    def local_radial_weights(self, scale=None):
-        return self.radial_basis.local_weights(scale)
 
     def global_grids(self, scales=None):
         if scales == None: scales = (1,1,1)
@@ -1995,6 +1969,14 @@ class SphericalShellBasis(Spherical3DBasis):
         self.radial_basis = SphericalShellRadialBasis(coordsystem.radius, shape[2], radii=radii, alpha=alpha, dealias=(dealias[2],), k=k, radius_library=radius_library)
         Spherical3DBasis.__init__(self, coordsystem, shape[:2], dealias[:2], self.radial_basis, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
         self.grid_params = (coordsystem, radii, alpha, dealias)
+#        self.forward_transform_radius = self.radial_basis.forward_transform
+#        self.backward_transform_radius = self.radial_basis.backward_transform
+        self.forward_transforms = [self.forward_transform_azimuth,
+                                   self.forward_transform_colatitude,
+                                   self.forward_transform_radius]
+        self.backward_transforms = [self.backward_transform_azimuth,
+                                    self.backward_transform_colatitude,
+                                    self.backward_transform_radius]
 
     def __eq__(self, other):
         if isinstance(other, SphericalShellBasis):
@@ -2040,6 +2022,43 @@ class SphericalShellBasis(Spherical3DBasis):
                                    azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
                                    radius_library=self.radial_basis.radius_library)
 
+    def forward_transform_radius(self, field, axis, gdata, cdata):
+        # apply transforms based off the 3D basis' local_l
+        radial_basis = self.radial_basis
+        data_axis = len(field.tensorsig) + axis
+        grid_size = gdata.shape[data_axis]
+        # Multiply by radial factor
+        if self.k > 0:
+            gdata *= radial_basis.radial_transform_factor(field.scales[axis], data_axis, -self.k)
+        # Apply regularity recombination
+        radial_basis.forward_regularity_recombination(field.tensorsig, axis, gdata, local_l=self.local_l)
+        # Perform radial transforms component-by-component
+        R = radial_basis.regularity_classes(field.tensorsig)
+        # HACK -- don't want to make a new array every transform
+        temp = np.copy(cdata)
+        for regindex, regtotal in np.ndenumerate(R):
+           plan = radial_basis.transform_plan(grid_size, self.k)
+           plan.forward(gdata[regindex], temp[regindex], axis)
+        np.copyto(cdata, temp)
+
+    def backward_transform_radius(self, field, axis, cdata, gdata):
+        # apply transforms based off the 3D basis' local_l
+        radial_basis = self.radial_basis
+        data_axis = len(field.tensorsig) + axis
+        grid_size = gdata.shape[data_axis]
+        # Perform radial transforms component-by-component
+        R = radial_basis.regularity_classes(field.tensorsig)
+        # HACK -- don't want to make a new array every transform
+        temp = np.copy(gdata)
+        for i, r in np.ndenumerate(R):
+           plan = radial_basis.transform_plan(grid_size, self.k)
+           plan.backward(cdata[i], temp[i], axis)
+        np.copyto(gdata, temp)
+        # Apply regularity recombinations
+        radial_basis.backward_regularity_recombination(field.tensorsig, axis, gdata, local_l = self.local_l)
+        # Multiply by radial factor
+        if self.k > 0:
+            gdata *= radial_basis.radial_transform_factor(field.scales[axis], data_axis, self.k)
 
 class BallBasis(Spherical3DBasis):
 
@@ -2047,6 +2066,12 @@ class BallBasis(Spherical3DBasis):
         self.radial_basis = BallRadialBasis(coordsystem.radius, shape[2], radius=radius, k=k, alpha=alpha, dealias=(dealias[2],), radius_library=radius_library)
         Spherical3DBasis.__init__(self, coordsystem, shape[:2], dealias[:2], self.radial_basis, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
         self.grid_params = (coordsystem, radius, alpha, dealias)
+        self.forward_transforms = [self.forward_transform_azimuth,
+                                   self.forward_transform_colatitude,
+                                   self.forward_transform_radius]
+        self.backward_transforms = [self.backward_transform_azimuth,
+                                    self.backward_transform_colatitude,
+                                    self.backward_transform_radius]
 
     def __eq__(self, other):
         if isinstance(other, BallBasis):
@@ -2092,6 +2117,35 @@ class BallBasis(Spherical3DBasis):
                          azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
                          radius_library=self.radial_basis.radius_library)
 
+    def forward_transform_radius(self, field, axis, gdata, cdata):
+        # apply transforms based off the 3D basis' local_l
+        radial_basis = self.radial_basis
+        # Apply regularity recombination
+        radial_basis.forward_regularity_recombination(field.tensorsig, axis, gdata, local_l=self.local_l)
+        # Perform radial transforms component-by-component
+        R = radial_basis.regularity_classes(field.tensorsig)
+        # HACK -- don't want to make a new array every transform
+        temp = np.copy(cdata)
+        for regindex, regtotal in np.ndenumerate(R):
+           grid_shape = gdata[regindex].shape
+           plan = radial_basis.transform_plan(grid_shape, regindex, axis, self.local_l, regtotal, radial_basis.k, radial_basis.alpha)
+           plan.forward(gdata[regindex], temp[regindex], axis)
+        np.copyto(cdata, temp)
+
+    def backward_transform_radius(self, field, axis, cdata, gdata):
+        # apply transforms based off the 3D basis' local_l
+        radial_basis = self.radial_basis
+        # Perform radial transforms component-by-component
+        R = radial_basis.regularity_classes(field.tensorsig)
+        # HACK -- don't want to make a new array every transform
+        temp = np.copy(gdata)
+        for regindex, regtotal in np.ndenumerate(R):
+           grid_shape = gdata[regindex].shape
+           plan = radial_basis.transform_plan(grid_shape, regindex, axis, self.local_l, regtotal, radial_basis.k, radial_basis.alpha)
+           plan.backward(cdata[regindex], temp[regindex], axis)
+        np.copyto(gdata, temp)
+        # Apply regularity recombinations
+        radial_basis.backward_regularity_recombination(field.tensorsig, axis, gdata, local_l=self.local_l)
 
 def prod(arg):
     if arg:
@@ -2121,13 +2175,13 @@ class ConvertRegularity(operators.Convert, operators.SphericalEllOperator):
         return (regindex_in,)
 
     def radial_matrix(self, regindex_in, regindex_out, ell):
-        basis = self.radial_basis
-        regtotal = basis.regtotal(regindex_in)
-        dk = self.output_basis.k - basis.k
+        radial_basis = self.radial_basis
+        regtotal = radial_basis.regtotal(regindex_in)
+        dk = self.output_basis.k - radial_basis.k
         if regindex_in == regindex_out:
-            return basis.conversion_matrix(ell, regtotal, dk)
+            return radial_basis.conversion_matrix(ell, regtotal, dk)
         else:
-            return basis.operator_matrix('0', ell, 0)
+            return radial_basis.operator_matrix('0', ell, 0)
 
 
 class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperator):
@@ -2158,24 +2212,27 @@ class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperato
     def operate(self, out):
         """Perform operation."""
         operand = self.args[0]
-        basis_in = self.input_basis.radial_basis
-        basis_out = self.output_basis
+        input_basis = self.input_basis
+        output_basis = self.output_basis
+        radial_basis = input_basis.radial_basis
         # Set output layout
         out.set_layout(operand.layout)
         # Apply operator
-        R = basis_in.regularity_classes(operand.tensorsig)
+        R = radial_basis.regularity_classes(operand.tensorsig)
+        local_m = input_basis.local_m
+        local_l = input_basis.local_l
         for regindex, regtotal in np.ndenumerate(R):
            comp_in = operand.data[regindex]
            comp_out = out.data[regindex]
-           for m in basis_in.local_m:
-               for ell in basis_in.local_l:
-                   vec3_in = basis_in.radial_vector_3(comp_in, m, ell, regindex)
-                   vec3_out = basis_out.vector_3(comp_out, m, ell)
+           for m in local_m:
+               for ell in local_l:
+                   vec3_in = radial_basis.radial_vector_3(comp_in, m, ell, regindex, local_m=local_m, local_l=local_l)
+                   vec3_out = output_basis.vector_3(comp_out, m, ell)
                    if (vec3_in is not None) and (vec3_out is not None):
                        A = self.radial_matrix(regindex, regindex, ell)
                        apply_matrix(A, vec3_in, axis=1, out=vec3_out)
         # Q matrix
-        basis_in.backward_regularity_recombination(operand.tensorsig, self.basis_subaxis, out.data)
+        radial_basis.backward_regularity_recombination(operand.tensorsig, self.basis_subaxis, out.data, local_l=self.input_basis.local_l)
 
     def radial_matrix(self, regindex_in, regindex_out, ell):
         position = self.position
@@ -2222,26 +2279,29 @@ class SphericalShellRadialInterpolate(operators.Interpolate, operators.Spherical
     def operate(self, out):
         """Perform operation."""
         operand = self.args[0]
-        basis_in = self.input_basis.radial_basis
-        basis_out = self.output_basis
+        input_basis = self.input_basis
+        radial_basis = input_basis.radial_basis
+        output_basis = self.output_basis
         # Set output layout
         out.set_layout(operand.layout)
         # Apply operator
-        R = basis_in.regularity_classes(operand.tensorsig)
+        R = radial_basis.regularity_classes(operand.tensorsig)
+        local_m = input_basis.local_m
+        local_l = input_basis.local_l
         for regindex, regtotal in np.ndenumerate(R):
            comp_in = operand.data[regindex]
            comp_out = out.data[regindex]
-           for m in basis_in.local_m:
-               for ell in basis_in.local_l:
-                   vec3_in = basis_in.radial_vector_3(comp_in, m, ell, regindex)
-                   vec3_out = basis_out.vector_3(comp_out, m, ell)
+           for m in local_m:
+               for ell in local_l:
+                   vec3_in = radial_basis.radial_vector_3(comp_in, m, ell, regindex, local_m=local_m, local_l=local_l)
+                   vec3_out = output_basis.vector_3(comp_out, m, ell)
                    if (vec3_in is not None) and (vec3_out is not None):
                        A = self.radial_matrix(regindex, regindex, ell)
                        apply_matrix(A, vec3_in, axis=1, out=vec3_out)
         # Q matrix
-        basis_in.backward_regularity_recombination(operand.tensorsig, self.basis_subaxis, out.data)
+        radial_basis.backward_regularity_recombination(operand.tensorsig, self.basis_subaxis, out.data, local_l=local_l)
         # Radial rescaling
-        out.data *= (basis_in.dR/self.position)**basis_in.k
+        out.data *= (radial_basis.dR/self.position)**radial_basis.k
 
     def radial_matrix(self, regindex_in, regindex_out, ell):
         position = self.position
