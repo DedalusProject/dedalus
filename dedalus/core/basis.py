@@ -632,11 +632,13 @@ class ConvertConstantComplexFourier(operators.Convert, operators.SpectralOperato
 
     input_basis_type = type(None)
     output_basis_type = ComplexFourier
-    separable = True
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
 
     @staticmethod
     def _subspace_matrix(input_basis, output_basis):
-        MMT = self.transforms['matrix'](grid_size=1, coeff_size=output_basis.size)
+        basis = output_basis
+        MMT = basis.transforms['matrix'](grid_size=1, coeff_size=output_basis.size)
         return MMT.forward_matrix
 
 
