@@ -5,6 +5,8 @@ from dedalus.core import coords, distributor, basis, field, operators, problems,
 from dedalus.tools import logging
 from dedalus.tools.parsing import split_equation
 import matplotlib.pyplot as plt
+from mpi4py import MPI
+rank = MPI.COMM_WORLD.rank
 
 import logging
 logger = logging.getLogger(__name__)
@@ -39,8 +41,9 @@ t3 = field.Field(name='t3', dist=d, bases=(xb,), dtype=np.complex128, tensorsig=
 t4 = field.Field(name='t4', dist=d, bases=(xb,), dtype=np.complex128, tensorsig=(c,))
 P1 = field.Field(name='P1', dist=d, bases=(zb2,), dtype=np.complex128)
 P2 = field.Field(name='P2', dist=d, bases=(zb2,), dtype=np.complex128)
-P1['c'][0,-1] = 1
-P2['c'][0,-2] = 1
+if rank == 0:
+    P1['c'][0,-1] = 1
+    P2['c'][0,-2] = 1
 
 # Parameters and operators
 P = (Rayleigh * Prandtl)**(-1/2)
@@ -65,7 +68,7 @@ def eq_eval(eq_str):
 problem = problems.IVP([p, b, u, t1, t2, t3, t4])
 problem.add_equation(eq_eval("div(u) = 0"), condition="nx != 0")
 problem.add_equation(eq_eval("dt(b) - P*lap(b) + P1*t1 + P2*t2 = - dot(u,grad(b)) - dot(u,grad(B)) + P*lap(B)"))
-problem.add_equation(eq_eval("dt(u) - R*lap(u) + grad(p) + P1*t3 + P2*t4 = - dot(u,grad(u)) - b*ghat - B*ghat"), condition="nx != 0")
+problem.add_equation(eq_eval("dt(u) - R*lap(u) + grad(p) + P1*t3 + P2*t4 + b*ghat = - dot(u,grad(u)) - B*ghat"), condition="nx != 0")
 problem.add_equation(eq_eval("b(z=0) = Lz - B(z=0)"))
 problem.add_equation(eq_eval("b(z=Lz) = 0 - B(z=Lz)"))
 problem.add_equation(eq_eval("u(z=0) = 0"), condition="nx != 0")
