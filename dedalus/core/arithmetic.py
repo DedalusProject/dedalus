@@ -670,7 +670,8 @@ class Multiply(Future, metaclass=MultiClass):
         ncc.require_coeff_space()
         # Store NCC matrix, assuming constant-group along operand's constant axes
         # This generalization enables subproblem-agnostic pre-construction
-        self._ncc_matrix = self._ncc_matrix_recursion(ncc.data, ncc.domain.full_bases, operand.domain.full_bases, separability, **kw)
+        tshape = [cs.dim for cs in ncc.tensorsig]
+        self._ncc_matrices = [self._ncc_matrix_recursion(ncc.data[ind], ncc.domain.full_bases, operand.domain.full_bases, separability, **kw) for ind in np.ndindex(*tshape)]
         self._ncc_operand = operand
         self._ncc_vars = vars
         self._ncc_separability = separability
@@ -723,7 +724,7 @@ class Multiply(Future, metaclass=MultiClass):
         if self in vars:
             return Field.expression_matrices(self, subproblem, vars)
         # Check arguments vs. NCC matrix construction
-        if not hasattr(self, '_ncc_matrix'):
+        if not hasattr(self, '_ncc_matrices'):
             raise SymbolicParsingError("Must build NCC matrices before expression matrices.")
         if vars != self._ncc_vars:
             raise SymbolicParsingError("Must build NCC matrices with same variables.")
@@ -741,8 +742,11 @@ class Multiply(Future, metaclass=MultiClass):
         # ncc_mat = projection @ self._ncc_matrix
         # Add factor for components
         comps = np.prod([cs.dim for cs in operand.tensorsig], dtype=int)
-        factors = [sparse.identity(comps, format='csr'), self._ncc_matrix]
-        ncc_mat = reduce(sparse.kron, factors, 1).tocsr()
+        blocks = []
+        for ncc_comp_mat in self._ncc_matrices:
+            factors = [sparse.identity(comps, format='csr'), ncc_comp_mat]
+            blocks.append(reduce(sparse.kron, factors, 1).tocsr())
+        ncc_mat = sparse.vstack(blocks, format='csr')
         # Apply NCC matrix
         return {var: ncc_mat @ operand_mats[var] for var in operand_mats}
 
