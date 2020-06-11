@@ -1925,7 +1925,7 @@ class SphericalGradient(Gradient, SphericalEllOperator):
         if regindex_out[0] != 2 and regindex_in == regindex_out[1:]:
             return self._radial_matrix(radial_basis, regindex_out[0], regtotal, ell)
         else:
-            return basis.operator_matrix('0', ell, 0)
+            return radial_basis.operator_matrix('0', ell, 0)
 
     @staticmethod
     @CachedMethod

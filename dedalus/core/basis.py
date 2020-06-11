@@ -2253,7 +2253,7 @@ class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperato
         if regindex_in == regindex_out:
             return self._radial_matrix(basis, 'r=R', ell, basis.regtotal(regindex_in))
         else:
-            return np.zeros((1,basis.n_size((), ell)))
+            return np.zeros((1,basis.n_size(ell)))
 
     @staticmethod
     @CachedMethod
@@ -2387,7 +2387,7 @@ class SphericalTransposeComponents(operators.TransposeComponents):
         transpose = Q[0].T @ transpose @ Q[0]
 
         # assume all regularities have the same n_size
-        eye = sparse.identity(basis.n_size((), ell), self.dtype, format='csr')
+        eye = sparse.identity(basis.n_size(ell), self.dtype, format='csr')
         matrix = sparse.kron( transpose, eye)
         return matrix
 
