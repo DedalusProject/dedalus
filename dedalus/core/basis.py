@@ -513,7 +513,7 @@ class InterpolateJacobi(operators.Interpolate, operators.SpectralOperator1D):
         N = input_basis.size
         a, b = input_basis.a, input_basis.b
         x = input_basis.COV.native_coord(position)
-        interp_vector = jacobi.interpolation_vector(N, a, b, x)
+        interp_vector = jacobi.build_polynomials(N, a, b, x)
         # Return as 1*N array
         return interp_vector[None,:]
 
@@ -1123,6 +1123,7 @@ class RegularityBasis(MultidimensionalBasis):
             raise ValueError("dealias must either be a number or a tuple of three numbers")
         else:
             self.dealias = dealias
+        self.intertwiner = lambda l: dedalus_sphere.spin_operators.Intertwiner(l, indexing=(-1,+1,0))
         self.azimuth_library = azimuth_library
         self.colatitude_library = colatitude_library
         self.sphere_basis = self.S2_basis()
@@ -1187,19 +1188,19 @@ class RegularityBasis(MultidimensionalBasis):
 
     @CachedMethod
     def xi(self,mu,l):
-        return dedalus_sphere.intertwiner.xi(mu,l)
+        return np.sqrt( (l + (mu+1)//2 )/(2*l + 1) )
 
     @CachedMethod
     def regularity_allowed(self,l,regularity):
         Rb = np.array([-1, 1, 0], dtype=int)
         if regularity == (): return True
-        return not dedalus_sphere.intertwiner.forbidden_regularity(l,Rb[np.array(regularity)])
+        return not self.intertwiner(l).forbidden_regularity(Rb[np.array(regularity)])
 
     @CachedMethod
     def regtotal(self, regindex):
-        regorder = [-1, 1, 0]
-        reg = lambda index: regorder[index]
-        return sum(reg(index) for index in regindex)
+        if regindex == (): return 0
+        indexing = np.array([-1, 1, 0])
+        return sum(indexing[np.array(regindex)])
 
     @CachedMethod
     def radial_recombinations(self, tensorsig, ell_list=None):
@@ -1212,11 +1213,8 @@ class RegularityBasis(MultidimensionalBasis):
 
         Q_matrices = np.zeros((len(ell_list),3**order,3**order))
         for i, l in enumerate(ell_list):
-            for j in range(3**order):
-                for k in range(3**order):
-                    s = dedalus_sphere.intertwiner.index2tuple(j,order,indexing=(-1,+1,0))
-                    r = dedalus_sphere.intertwiner.index2tuple(k,order,indexing=(-1,+1,0))
-                    Q_matrices[i,j,k] = dedalus_sphere.intertwiner.regularity2spinMap(l,s,r)
+            Q = dedalus_sphere.spin_operators.Intertwiner(l, indexing=(-1,+1,0))
+            Q_matrices[i] = Q(order)
         return Q_matrices
 
     @CachedMethod
@@ -1705,19 +1703,17 @@ class SphericalShellBasis(RegularityBasis):
     @CachedMethod
     def _radius_grid(self, scale):
         N = int(np.ceil(scale * self.shape[2]))
-        z, weights = dedalus_sphere.annulus.quadrature(N-1, alpha=self.alpha, niter=3)
+        z, weights = dedalus_sphere.annulus.quadrature(N, alpha=self.alpha)
         r = self.dR/2*(z + self.rho)
         return r.astype(np.float64)
 
     @CachedMethod
     def _radius_weights(self, scale):
         N = int(np.ceil(scale * self.shape[2]))
-        z_proj, weights_proj = dedalus_sphere.annulus.quadrature(N-1, alpha=self.alpha, niter=3)
-        z0, weights0 = dedalus_sphere.jacobi128.quadrature(N-1, 0, 0)
-        init0 = dedalus_sphere.jacobi128.envelope(-1/2,-1/2,-1/2,-1/2,z0)
-        Q0 = dedalus_sphere.jacobi128.recursion(N-1,-1/2,-1/2,z0,init0)
-        init_proj = dedalus_sphere.jacobi128.envelope(-1/2,-1/2,-1/2,-1/2,z_proj)
-        Q_proj = dedalus_sphere.jacobi128.recursion(N-1,-1/2,-1/2,z_proj,init_proj)
+        z_proj, weights_proj = dedalus_sphere.annulus.quadrature(N, alpha=self.alpha)
+        z0, weights0 = dedalus_sphere.jacobi.quadrature(N, 0, 0)
+        Q0 = dedalus_sphere.jacobi.polynomials(N, -1/2, -1/2, z0)
+        Q_proj = dedalus_sphere.jacobi.polynomials(N, -1/2, -1/2, z_proj)
         normalization = self.dR/2
         return normalization*((Q0.dot(weights0)).T).dot(weights_proj*Q_proj)
 
@@ -1870,15 +1866,20 @@ class BallBasis(RegularityBasis):
 
     def _native_radius_grid(self, scale):
         N = int(np.ceil(scale * self.shape[2]))
-        z, weights = dedalus_sphere.ball.quadrature(3, N-1, niter=3, alpha=self.alpha)
+        z, weights = dedalus_sphere.zernike.quadrature(3, N, k=self.alpha)
         r = np.sqrt((z + 1) / 2)
         return r.astype(np.float64)
 
     @CachedMethod
     def _radius_weights(self, scale):
         N = int(np.ceil(scale * self.shape[2]))
-        z, weights = dedalus_sphere.ball.quadrature(3, N-1, alpha=self.alpha, niter=3)
+        z, weights = dedalus_sphere.ball.quadrature(3, N, k=self.alpha)
         return weights
+
+    @CachedMethod
+    def polynomials(self, ell, regtotal, position):
+        native_position = self.radial_COV.native_coord(position)
+        return dedalus_sphere.zernike.polynomials(3, self.n_size(ell), self.alpha + self.k, ell + regtotal, native_position)
 
     @CachedMethod
     def transform_plan(self, grid_shape, regindex, axis, regtotal, k, alpha):
@@ -1913,7 +1914,15 @@ class BallBasis(RegularityBasis):
 
     @CachedMethod
     def operator_matrix(self,op,l,deg,dk=0):
-        return dedalus_sphere.ball.operator(3,op,self.Nmax,self.k+dk,l,deg,radius=self.radius,alpha=self.alpha).astype(np.float64)
+
+        if op[-1] in ['+', '-']:
+            o = op[:-1]
+            p = int(op[-1]+'1')
+            operator = dedalus_sphere.zernike.operator(3, o, radius=self.radius)(p)
+        else:
+            operator = dedalus_sphere.zernike.operator(3, op, radius=self.radius)
+
+        return operator(self.n_size(l), self.alpha + self.k + dk, l + deg).square.astype(np.float64)
 
     @CachedMethod
     def conversion_matrix(self, ell, regtotal, dk):
@@ -1939,33 +1948,22 @@ class BallBasis(RegularityBasis):
             R = Ri @ R
         return R.astype(np.float64)
 
-    def _n_limits(self, regindex, ell, Nmax=None):
-        if Nmax == None: Nmax = self.Nmax
-        if not self.regularity_allowed(ell, regindex):
-            return None
-        regtotal = self.regtotal(regindex)
-        nmin = dedalus_sphere.ball.Nmin(ell, 0)
-        return (nmin, Nmax)
+    def _n_limits(self, ell):
+        nmin = dedalus_sphere.zernike.min_degree(ell)
+        return (nmin, self.Nmax)
 
-    def n_size(self, regindex, ell, Nmax=None):
-        if Nmax == None: Nmax = self.Nmax
-        if not self.regularity_allowed(ell, regindex):
-            return 0
-        nmin, nmax = self._n_limits(regindex, ell, Nmax=Nmax)
+    def n_size(self, ell):
+        nmin, nmax = self._n_limits(ell)
         return nmax - nmin + 1
 
-    def n_slice(self, regindex, ell, Nmax=None):
-        if Nmax == None: Nmax = self.Nmax
-        if not self.regularity_allowed(ell, regindex):
-            return None
-        nmin, nmax = self._n_limits(regindex, ell, Nmax=Nmax)
+    def n_slice(self, regindex, ell):
+        nmin, nmax = self._n_limits(ell)
         return slice(nmin, nmax+1)
 
     def start(self, groups):
         ell = groups[1]
-        (nmin, Nmax) = self._n_limits((), ell)
+        (nmin, Nmax) = self._n_limits(ell)
         return nmin
-
 
 def prod(arg):
     if arg:
@@ -2068,14 +2066,14 @@ class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperato
         position = self.position
         basis = self.input_basis
         if regindex_in == regindex_out:
-            return self._radial_matrix(basis, 'r=R', ell, basis.regtotal(regindex_in))
+            return self._radial_matrix(basis, ell, basis.regtotal(regindex_in), position)
         else:
             return np.zeros((1,basis.n_size((), ell)))
 
     @staticmethod
     @CachedMethod
-    def _radial_matrix(basis, op, ell, regtotal):
-        return reshape_vector(basis.operator_matrix(op, ell, regtotal), dim=2, axis=1)
+    def _radial_matrix(basis, ell, regtotal, position):
+        return reshape_vector(basis.polynomials(ell, regtotal, position), dim=2, axis=1)
 
 
 class SphericalShellRadialInterpolate(operators.Interpolate, operators.SphericalEllOperator):

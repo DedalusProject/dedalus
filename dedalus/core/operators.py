@@ -2352,7 +2352,7 @@ class SphericalLaplacian(Laplacian, SphericalEllOperator):
     @staticmethod
     @CachedMethod
     def _radial_matrix(basis, regtotal, ell):
-        return basis.operator_matrix('D-', ell, regtotal+1, dk=1) @ basis.operator_matrix('D+', ell, regtotal)
+        return basis.operator_matrix('L', ell, regtotal)
 
 
 class SphericalEllProduct(SphericalEllOperator, metaclass=MultiClass):
@@ -2418,7 +2418,7 @@ class SphericalEllProductField(SphericalEllProduct):
 
     @CachedMethod
     def _radial_matrix(self, ell, regtotal):
-        return self.ell_func(ell + regtotal) * self.input_basis.operator_matrix('I', ell, regtotal)
+        return self.ell_func(ell + regtotal) * self.input_basis.operator_matrix('Id', ell, regtotal)
 
 
 """
