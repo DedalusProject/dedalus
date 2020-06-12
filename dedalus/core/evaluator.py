@@ -322,28 +322,38 @@ class FileHandler(Handler):
 
     Parameters
     ----------
-    filename : str
-        Base of filename, without an extension
+    base_path : str
+        Base path for analyis output folder
     max_writes : int, optional
         Maximum number of writes per set (default: infinite)
     max_size : int, optional
         Maximum file size to write to, in bytes (default: 2**30 = 1 GB).
         (Note: files may be larger after final write.)
+    parallel : bool, optional
+        Perform parallel writes from each process to single file (True), or
+        separately write to individual process files (False).
+        Default behavior set by config option.
+    mode : str, optional
+        'overwrite' to delete any present analysis output with the same base path.
+        'append' to begin with set number incremented past any present analysis output.
+        Default behavior set by config option.
 
     """
 
-    def __init__(self, base_path, *args, max_writes=np.inf, max_size=2**30, parallel=False, **kw):
+    def __init__(self, base_path, *args, max_writes=np.inf, max_size=2**30, parallel=None, mode=None, **kw):
 
         Handler.__init__(self, *args, **kw)
 
+        # Resolve defaults from config
+        if parallel is None:
+            parallel = FILEHANDLER_PARALLEL_DEFAULT
+        if mode is None:
+            mode = FILEHANDLER_MODE_DEFAULT
+
         # Check base_path
-        base_path = pathlib.Path(base_path).absolute()
+        base_path = pathlib.Path(base_path).resolve()
         if any(base_path.suffixes):
             raise ValueError("base_path should indicate a folder for storing HDF5 files.")
-        if not base_path.exists():
-            with Sync(self.dist.comm_cart):
-                if self.dist.rank == 0:
-                    base_path.mkdir()
 
         # Attributes
         self.base_path = base_path
@@ -352,10 +362,58 @@ class FileHandler(Handler):
         self.parallel = parallel
         self._sl_array = np.zeros(1, dtype=int)
 
-        self.set_num = 0
-        self.current_path = None
-        self.total_write_num = 0
-        self.file_write_num = 0
+        # Resolve mode
+        mode = mode.lower()
+        if mode not in ['overwrite', 'append']:
+            raise ValueError("Write mode {} not defined.".format(mode))
+
+        comm = self.dist.comm_cart
+        if comm.rank == 0:
+            set_pattern = '%s_s*' % (self.base_path.stem)
+            sets = list(self.base_path.glob(set_pattern))
+            if mode == "overwrite":
+                for set in sets:
+                    if set.is_dir():
+                        shutil.rmtree(str(set))
+                    else:
+                        set.unlink()
+                set_num = 1
+                total_write_num = 0
+            elif mode == "append":
+                set_nums = []
+                if sets:
+                    for set in sets:
+                        m = re.match("{}_s(\d+)$".format(base_path.stem), set.stem)
+                        if m:
+                            set_nums.append(int(m.groups()[0]))
+                    max_set = max(set_nums)
+                    joined_file = base_path.joinpath("{}_s{}.h5".format(base_path.stem,max_set))
+                    p0_file = base_path.joinpath("{0}_s{1}/{0}_s{1}_p0.h5".format(base_path.stem,max_set))
+                    if os.path.exists(str(joined_file)):
+                        with h5py.File(str(joined_file),'r') as testfile:
+                            last_write_num = testfile['/scales/write_number'][-1]
+                    elif os.path.exists(str(p0_file)):
+                        with h5py.File(str(p0_file),'r') as testfile:
+                            last_write_num = testfile['/scales/write_number'][-1]
+                    else:
+                        last_write_num = 0
+                        logger.warn("Cannot determine write num from files. Restarting count.")
+                else:
+                    max_set = 0
+                    last_write_num = 0
+                set_num = max_set + 1
+                total_write_num = last_write_num
+        else:
+            set_num = None
+            total_write_num = None
+        # Communicate set and write numbers
+        self.set_num = comm.bcast(set_num, root=0)
+        self.total_write_num = comm.bcast(total_write_num, root=0)
+
+        # Create output folder
+        with Sync(comm):
+            if comm.rank == 0:
+                base_path.mkdir(exist_ok=True)
 
         if parallel:
             # Set HDF5 property list for collective writing
@@ -364,8 +422,7 @@ class FileHandler(Handler):
 
     def check_file_limits(self):
         """Check if write or size limits have been reached."""
-
-        write_limit = ((self.total_write_num % self.max_writes) == 0)
+        write_limit = (self.file_write_num >= self.max_writes)
         size_limit = (self.current_path.stat().st_size >= self.max_size)
         if not self.parallel:
             # reduce(size_limit, or) across processes
@@ -373,53 +430,60 @@ class FileHandler(Handler):
             self._sl_array[0] = size_limit
             comm.Allreduce(MPI.IN_PLACE, self._sl_array, op=MPI.LOR)
             size_limit = self._sl_array[0]
-
         return (write_limit or size_limit)
 
     def get_file(self):
         """Return current HDF5 file, creating if necessary."""
-        # Create file on first call
-        if not self.current_path:
-            return self.new_file()
-        # Create file at file limits
-        if self.check_file_limits():
-            return self.new_file()
-        # Otherwise open current file
+        # Create new file if necessary
+        if os.path.exists(str(self.current_path)):
+            if self.check_file_limits():
+                self.set_num += 1
+                self.create_current_file()
+        else:
+            self.create_current_file()
+        # Open current file
         if self.parallel:
             comm = self.dist.comm_cart
-            return h5py.File(str(self.current_path), 'a', driver='mpio', comm=comm)
+            h5file = h5py.File(str(self.current_path), 'r+', driver='mpio', comm=comm)
         else:
-            return h5py.File(str(self.current_path), 'a')
+            h5file = h5py.File(str(self.current_path), 'r+')
+        self.file_write_num = h5file['/scales/write_number'].shape[0]
+        return h5file
 
-    def new_file(self):
-        """Generate new HDF5 file."""
-
-        dist = self.dist
-
-        # Create next file
-        self.set_num += 1
-        self.file_write_num = 0
-        comm = dist.comm_cart
+    @property
+    def current_path(self):
+        comm = self.dist.comm_cart
+        set_num = self.set_num
         if self.parallel:
             # Save in base directory
-            file_name = '%s_s%i.hdf5' %(self.base_path.stem, self.set_num)
-            self.current_path = self.base_path.joinpath(file_name)
-            file = h5py.File(str(self.current_path), 'w', driver='mpio', comm=comm)
+            file_name = '%s_s%i.hdf5' %(self.base_path.stem, set_num)
+            return self.base_path.joinpath(file_name)
         else:
             # Save in folders for each filenum in base directory
-            folder_name = '%s_s%i' %(self.base_path.stem, self.set_num)
+            folder_name = '%s_s%i' %(self.base_path.stem, set_num)
             folder_path = self.base_path.joinpath(folder_name)
-            if not folder_path.exists():
-                with Sync(dist.comm_cart):
-                    if dist.rank == 0:
-                        folder_path.mkdir()
-            file_name = '%s_s%i_p%i.h5' %(self.base_path.stem, self.set_num, comm.rank)
-            self.current_path = folder_path.joinpath(file_name)
-            file = h5py.File(str(self.current_path), 'w')
+            file_name = '%s_s%i_p%i.h5' %(self.base_path.stem, set_num, comm.rank)
+            return folder_path.joinpath(file_name)
 
+    def create_current_file(self):
+        """Generate new HDF5 file in current_path."""
+        self.file_write_num = 0
+        comm = self.dist.comm_cart
+        if self.parallel:
+            file = h5py.File(str(self.current_path), 'w-', driver='mpio', comm=comm)
+        else:
+            # Create set folder
+            with Sync(comm):
+                if comm.rank == 0:
+                    self.current_path.parent.mkdir()
+            if FILEHANDLER_TOUCH_TMPFILE:
+                tmpfile = self.base_path.joinpath('tmpfile_p%i' %(comm.rank))
+                tmpfile.touch()
+            file = h5py.File(str(self.current_path), 'w-')
+            if FILEHANDLER_TOUCH_TMPFILE:
+                tmpfile.unlink()
         self.setup_file(file)
-
-        return file
+        file.close()
 
     def setup_file(self, file):
 
@@ -437,6 +501,8 @@ class FileHandler(Handler):
         scale_group = file.create_group('scales')
         # Start time scales with shape=(0,) to chunk across writes
         scale_group.create_dataset(name='sim_time', shape=(0,), maxshape=(None,), dtype=np.float64)
+        scale_group.create_dataset(name='timestep', shape=(0,), maxshape=(None,), dtype=np.float64)
+        scale_group.create_dataset(name='world_time', shape=(0,), maxshape=(None,), dtype=np.float64)
         scale_group.create_dataset(name='wall_time', shape=(0,), maxshape=(None,), dtype=np.float64)
         scale_group.create_dataset(name='iteration', shape=(0,), maxshape=(None,), dtype=np.int)
         scale_group.create_dataset(name='write_number', shape=(0,), maxshape=(None,), dtype=np.int)
@@ -474,14 +540,14 @@ class FileHandler(Handler):
 
             # Time scales
             dset.dims[0].label = 't'
-            for sn in ['sim_time', 'wall_time', 'iteration', 'write_number']:
+            for sn in ['sim_time', 'world_time', 'wall_time', 'timestep', 'iteration', 'write_number']:
                 scale = scale_group[sn]
                 dset.dims.create_scale(scale, sn)
                 dset.dims[0].attach_scale(scale)
 
             # Spatial scales
             for axis in enumerate(dist.dim):
-                basis = task['operator'].bases[axis]
+                basis = task['operator'].domain.full_bases[axis]
                 if basis is None:
                     sn = lookup = 'constant'
                 else:
@@ -498,9 +564,9 @@ class FileHandler(Handler):
                 dset.dims[axis+1].label = sn
                 dset.dims[axis+1].attach_scale(scale)
 
-    def process(self, wall_time, sim_time, iteration):
+    def process(self, world_time=0, wall_time, sim_time, timestep=0, iteration, **kw):
         """Save task outputs to HDF5 file."""
-
+        # HACK: fix world time and timestep inputs from solvers.py/timestepper.py
         file = self.get_file()
         self.total_write_num += 1
         self.file_write_num += 1
@@ -509,14 +575,20 @@ class FileHandler(Handler):
 
         # Update time scales
         sim_time_dset = file['scales/sim_time']
+        world_time_dset = file['scales/world_time']
         wall_time_dset = file['scales/wall_time']
+        timestep_dset = file['scales/timestep']
         iteration_dset = file['scales/iteration']
         write_num_dset = file['scales/write_number']
 
         sim_time_dset.resize(index+1, axis=0)
         sim_time_dset[index] = sim_time
+        world_time_dset.resize(index+1, axis=0)
+        world_time_dset[index] = world_time
         wall_time_dset.resize(index+1, axis=0)
         wall_time_dset[index] = wall_time
+        timestep_dset.resize(index+1, axis=0)
+        timestep_dset[index] = timestep
         iteration_dset.resize(index+1, axis=0)
         iteration_dset[index] = iteration
         write_num_dset.resize(index+1, axis=0)
