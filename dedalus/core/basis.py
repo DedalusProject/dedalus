@@ -1480,15 +1480,15 @@ class RegularityBasis(Basis):
         else:
             raise NotImplementedError()
 
-    def dot_product_ncc(self, arg_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, ncc_first, indices, cutoff=1e-6):
+    def dot_product_ncc(self, operand_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, ncc_first, indices, cutoff=1e-6):
         Gamma = dedalus_sphere.intertwiner.GammaDotProduct(indices, ncc_first=ncc_first)
-        return self._spin_op_ncc(arg_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, Gamma, cutoff)
+        return self._spin_op_ncc(operand_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, Gamma, cutoff)
 
-    def tensor_product_ncc(self, arg_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, ncc_first, cutoff=1e-6):
+    def tensor_product_ncc(self, operand_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, ncc_first, cutoff=1e-6):
         Gamma = dedalus_sphere.intertwiner.GammaTensorProduct(ncc_first=ncc_first)
-        return self._spin_op_ncc(arg_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, Gamma, cutoff)
+        return self._spin_op_ncc(operand_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, Gamma, cutoff)
 
-    def _spin_op_ncc(self, arg_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, Gamma, cutoff):
+    def _spin_op_ncc(self, operand_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, Gamma, cutoff):
         # Don't really understand what this is doing...
         #if arg_basis is None:
         #    return super().ncc_matrix(arg_basis, coeffs)
@@ -1502,22 +1502,23 @@ class RegularityBasis(Basis):
         for regindex_out, regtotal_out in np.ndenumerate(R_out):
             submatrix_row = []
             for regindex_in, regtotal_in in np.ndenumerate(R_in):
-                submatrix_row.append(self._spin_op_matrix(ell, arg_basis, coeffs, regindex_in, regtotal_in, regindex_out, regtotal_out, ncc_ts, arg_ts, Gamma, cutoff))
+                submatrix_row.append(self._spin_op_matrix(ell, operand_basis, coeffs, regindex_in, regtotal_in, regindex_out, regtotal_out, ncc_ts, arg_ts, Gamma, cutoff))
             submatrices.append(submatrix_row)
         return sparse.bmat(submatrices)
 
-    def _spin_op_matrix(self, ell, basis_in, coeffs, regindex_in, regtotal_in, regindex_out, regtotal_out, ncc_ts, input_ts, Gamma, cutoff, gamma_threshold=1e-10):
+    def _spin_op_matrix(self, ell, operand_basis, coeffs, regindex_in, regtotal_in, regindex_out, regtotal_out, ncc_ts, input_ts, Gamma, cutoff, gamma_threshold=1e-10):
         # here self is the ncc
+        operand_radial_basis = operand_basis.radial_basis
         R_ncc = self.regularity_classes(ncc_ts)
-        S_ncc = self.sphere_basis.spin_weights(ncc_ts)
+        S_ncc = operand_basis.sphere_basis.spin_weights(ncc_ts)
 
-        S_in = self.sphere_basis.spin_weights(input_ts)
+        S_in = operand_basis.sphere_basis.spin_weights(input_ts)
         diff_regtotal = regtotal_out - regtotal_in
 
         # jacobi parameters
         a_ncc = self.alpha + self.k
 
-        N = self.n_size((),ell)
+        N = self.n_size(ell)
         matrix = 0 * sparse.identity(N)
 
         for regindex_ncc, regtotal_ncc in np.ndenumerate(R_ncc):
@@ -1527,38 +1528,18 @@ class RegularityBasis(Basis):
                 gamma = Gamma(ell, S_ncc, S_in, regindex_ncc, regindex_in, regindex_out)
                 if abs(gamma) > gamma_threshold:
                     coeffs_filter = coeffs[regindex_ncc][:N]
-                    J = basis_in.operator_matrix('Z',ell,regtotal_in)
-                    R2 = (J + basis_in.operator_matrix('I',ell,regtotal_in))/2
+                    J = operand_radial_basis.operator_matrix('Z',ell,regtotal_in)
+                    R2 = (J + operand_radial_basis.operator_matrix('I',ell,regtotal_in))/2
                     A, B = clenshaw.jacobi_recursion(N, a_ncc, b_ncc, J)
                     f0 = 1/np.sqrt(jacobi.mass(a_ncc, b_ncc)) * sparse.identity(N)
-                    prefactor = basis_in.radius_multiplication_matrix(ell, regtotal_in, diff_regtotal)
+                    prefactor = operand_radial_basis.radius_multiplication_matrix(ell, regtotal_in, diff_regtotal)
                     if np.max(np.abs(coeffs_filter)) > 1e-5:
-                        print(regindex_ncc, regindex_in, regindex_out, d, diff_regtotal)
+                        print(regindex_ncc, regindex_in, regindex_out, d, diff_regtotal, gamma)
                     for i in range(d//2):
                         prefactor = prefactor @ R2
                     matrix += gamma * prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff)
 
         return matrix
-
-    # def ncc_matrix(self, arg_basis, coeffs, cutoff=1e-6):
-    #     """Build NCC matrix via Clenshaw algorithm."""
-    #     if arg_basis is None:
-    #         return super().ncc_matrix(arg_basis, coeffs)
-    #     # Kronecker Clenshaw on argument Jacobi matrix
-    #     N = self.space.coeff_size
-    #     J = jacobi.jacobi_matrix(N, arg_basis.a, arg_basis.b)
-    #     A, B = clenshaw.jacobi_recursion(N, self.a, self.b, J)
-    #     f0 = self.const * sparse.identity(N)
-    #     total = clenshaw.kronecker_clenshaw(coeffs, A, B, f0, cutoff=cutoff)
-    #     # Conversion matrix
-    #     input_basis = arg_basis
-    #     output_basis = (self * arg_basis)
-    #     conversion = ConvertJacobiJacobi._subspace_matrix(self.space, input_basis, output_basis)
-    #     # Kronecker with identity for matrix coefficients
-    #     coeff_size = total.shape[0] // conversion.shape[0]
-    #     if coeff_size > 1:
-    #         conversion = sparse.kron(conversion, sparse.identity(coeff_size))
-    #     return (conversion @ total)
 
 
 class SphericalShellRadialBasis(RegularityBasis):
