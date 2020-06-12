@@ -1913,26 +1913,25 @@ class BallBasis(RegularityBasis):
         self.backward_regularity_recombination(field.tensorsig, axis, gdata)
 
     @CachedMethod
-    def operator_matrix(self,op,l,deg,dk=0):
+    def operator_matrix(self,op,l,deg):
 
         if op[-1] in ['+', '-']:
             o = op[:-1]
             p = int(op[-1]+'1')
             operator = dedalus_sphere.zernike.operator(3, o, radius=self.radius)(p)
+        elif op == 'L':
+            D = dedalus_sphere.zernike.operator(3, 'D', radius=self.radius)
+            operator = D(-1) @ D(+1)
         else:
             operator = dedalus_sphere.zernike.operator(3, op, radius=self.radius)
 
-        return operator(self.n_size(l), self.alpha + self.k + dk, l + deg).square.astype(np.float64)
+        return operator(self.n_size(l), self.alpha + self.k, l + deg).square.astype(np.float64)
 
     @CachedMethod
     def conversion_matrix(self, ell, regtotal, dk):
-        for dki in range(dk):
-            Ek = dedalus_sphere.ball.operator(3, 'E', self.Nmax, self.k+dki, ell, regtotal, radius=self.radius, alpha=self.alpha)
-            if dki == 0:
-                E = Ek
-            else:
-                E = Ek @ E
-        return E.astype(np.float64)
+        E = dedalus_sphere.zernike.operator(3, 'E', radius=self.radius)
+        operator = E(+1)**dk
+        return operator(self.n_size(ell), self.alpha + self.k, ell + regtotal).square.astype(np.float64)
 
     @CachedMethod
     def radius_multiplication_matrix(self, ell, regtotal, order):
