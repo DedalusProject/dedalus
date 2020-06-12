@@ -104,7 +104,7 @@ class MultistepIMEX:
 
         # Run evaluator
         #state.scatter()
-        evaluator.evaluate_scheduled(wall_time, sim_time, iteration)
+        evaluator.evaluate_scheduled(wall_time=wall_time, sim_time=sim_time, iteration=iteration)
 
         # Update RHS components and LHS matrices
         MX.rotate()
@@ -550,9 +550,9 @@ class RungeKuttaIMEX:
             # Compute F(n,i-1), L.X(n,i-1)
             #state.scatter()
             if i == 1:
-                evaluator.evaluate_scheduled(wall_time, solver.sim_time, iteration)
+                evaluator.evaluate_scheduled(wall_time=wall_time, sim_time=solver.sim_time, iteration=iteration)
             else:
-                evaluator.evaluate_group('F', wall_time, solver.sim_time, iteration)
+                evaluator.evaluate_group('F', wall_time=wall_time, sim_time=solver.sim_time, iteration=iteration)
             # Ensure coeff space to avoid transforms in subsystem gathers
             for field in state_fields + F_fields:
                 field.require_coeff_space()

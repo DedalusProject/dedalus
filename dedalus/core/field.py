@@ -275,6 +275,10 @@ class Current(Operand):
         if self not in vars:
             raise ValueError("This should never happen.")
 
+    def attempt(self, id=None):
+        """Recursively attempt to evaluate operation."""
+        return self
+
     # def simplify(self, *vars):
     #     """Simplify expression, except subtrees containing specified variables."""
     #     return self

@@ -4,20 +4,32 @@ Class for centralized evaluation of expression trees.
 """
 
 import os
+import re
 from collections import defaultdict
 import pathlib
 import h5py
+import shutil
+import uuid
 import numpy as np
 from mpi4py import MPI
 
 from .system import FieldSystem
 #from .operators import Operator, Cast
+#from .operators import FieldCopy
 from .future import Future, FutureField
 from .field import Field
 from ..tools.array import reshape_vector
 from ..tools.general import OrderedSet
 from ..tools.general import oscillate
 from ..tools.parallel import Sync
+
+from ..tools.config import config
+FILEHANDLER_MODE_DEFAULT = config['analysis'].get('FILEHANDLER_MODE_DEFAULT')
+FILEHANDLER_PARALLEL_DEFAULT = config['analysis'].getboolean('FILEHANDLER_PARALLEL_DEFAULT')
+FILEHANDLER_TOUCH_TMPFILE = config['analysis'].getboolean('FILEHANDLER_TOUCH_TMPFILE')
+
+import logging
+logger = logging.getLogger(__name__.split('.')[-1])
 
 
 class Evaluator:
@@ -26,8 +38,8 @@ class Evaluator:
 
     Parameters
     ----------
-    domain : domain object
-        Problem domain
+    dist : dist object
+        Problem dist
     vars : dict
         Variables for parsing task expression strings
 
@@ -62,12 +74,12 @@ class Evaluator:
             self.groups[handler.group].append(handler)
         return handler
 
-    def evaluate_group(self, group, wall_time, sim_time, iteration):
+    def evaluate_group(self, group, **kw):
         """Evaluate all handlers in a group."""
         handlers = self.groups[group]
-        self.evaluate_handlers(handlers, wall_time, sim_time, iteration)
+        self.evaluate_handlers(handlers, **kw)
 
-    def evaluate_scheduled(self, wall_time, sim_time, iteration):
+    def evaluate_scheduled(self, wall_time, sim_time, iteration, **kw):
         """Evaluate all scheduled handlers."""
 
         scheduled_handlers = []
@@ -88,24 +100,26 @@ class Evaluator:
                 handler.last_sim_div  = sim_div
                 handler.last_iter_div = iter_div
 
-        self.evaluate_handlers(scheduled_handlers, wall_time, sim_time, iteration)
+        self.evaluate_handlers(scheduled_handlers, wall_time=wall_time, sim_time=sim_time, iteration=iteration, **kw)
 
-    def evaluate_handlers(self, handlers, wall_time, sim_time, iteration):
+    def evaluate_handlers(self, handlers, id=None, **kw):
         """Evaluate a collection of handlers."""
+
+        # Default to uuid to cache within evaluation, but not across evaluations
+        if id is None:
+            id = uuid.uuid4()
 
         tasks = [t for h in handlers for t in h.tasks]
         for task in tasks:
             task['out'] = None
 
         # Attempt initial evaluation
-        tasks = self.attempt_tasks(tasks, id=sim_time)
+        tasks = self.attempt_tasks(tasks, id=id)
 
         # Move all fields to coefficient layout
         fields = self.get_fields(tasks)
-        for f in fields:
-            f.require_coeff_space()
-            f.require_scales(f.domain.dealias)
-        tasks = self.attempt_tasks(tasks, id=sim_time)
+        self.require_coeff_space(fields)
+        tasks = self.attempt_tasks(tasks, id=id)
 
         # Oscillate through layouts until all tasks are evaluated
         n_layouts = len(self.dist.layouts)
@@ -121,51 +135,62 @@ class Evaluator:
                 self.dist.paths[next_index].decrement(fields)
             current_index = next_index
             # Attempt evaluation
-            tasks = self.attempt_tasks(tasks, id=sim_time)
+            tasks = self.attempt_tasks(tasks, id=id)
 
-        # Transform all outputs to coefficient layout to dealias
+        # # Transform all outputs to coefficient layout to dealias
+        ## D3 note: need to worry about this for redundent tasks?
+        # outputs = OrderedSet([t['out'] for h in handlers for t in h.tasks])
+        # self.require_coeff_space(outputs)
+
+        # # Copy redundant outputs so processing is independent
+        # outputs = set()
+        # for handler in handlers:
+        #     for task in handler.tasks:
+        #         if task['out'] in outputs:
+        #             task['out'] = task['out'].copy()
+        #         else:
+        #             outputs.add(task['out'])
         for handler in handlers:
             for task in handler.tasks:
                 task['out'].require_coeff_space()
 
         # Process
         for handler in handlers:
-            handler.process(wall_time, sim_time, iteration)
+            handler.process(**kw)
+
+    def require_coeff_space(self, fields):
+        """Move all fields to coefficient layout."""
+        # Build dictionary of starting layout indices
+        layouts = defaultdict(list, {0:[]})
+        for f in fields:
+            layouts[f.layout.index].append(f)
+        # Decrement all fields down to layout 0
+        max_index = max(layouts.keys())
+        current_fields = []
+        for index in range(max_index, 0, -1):
+            current_fields.extend(layouts[index])
+            self.dist.paths[index-1].decrement(current_fields)
 
     @staticmethod
     def get_fields(tasks):
         """Get field set for a collection of tasks."""
-
         fields = OrderedSet()
         for task in tasks:
             fields.update(task['operator'].atoms(Field))
-
         return fields
 
     @staticmethod
     def attempt_tasks(tasks, **kw):
         """Attempt tasks and return the unfinished ones."""
-
         unfinished = []
         for task in tasks:
-            task_op = task['operator']
-            if isinstance(task_op, Field):
-                # Hack: out is always assigned to task
-                # Grab it here and copy field over
-                ## Don't need this since field tasks are directly set as system fields?
-                task['out'] = task_op
-                continue
-                # output = task_op.out
-                # output.set_scales(task_op.scales)
-                # output[task_op.layout] = task_op.data
+            output = task['operator'].attempt(**kw)
+            if output is None:
+                unfinished.append(task)
             else:
-                output = task['operator'].attempt(**kw)
-                if output is None:
-                    unfinished.append(task)
-                else:
-                    task['out'] = output
-
+                task['out'] = output
         return unfinished
+
 
 
 class Handler:
@@ -213,15 +238,13 @@ class Handler:
             name = str(task)
 
         # Create operator
-        # if isinstance(task, Operator):
-        #     op = task
         if isinstance(task, str):
             op = FutureField.parse(task, self.vars, self.dist)
         else:
             # op = FutureField.cast(task, self.domain)
             # op = Cast(task)
+            # TODO: figure out if we need to copying here
             op = task
-
         # Build task dictionary
         task = dict()
         task['operator'] = op
@@ -249,16 +272,14 @@ class DictionaryHandler(Handler):
     """Handler that stores outputs in a dictionary."""
 
     def __init__(self, *args, **kw):
-
         Handler.__init__(self, *args, **kw)
         self.fields = dict()
 
     def __getitem__(self, item):
         return self.fields[item]
 
-    def process(self, wall_time, sim_time, iteration):
+    def process(self, **kw):
         """Reference fields from dictionary."""
-
         for task in self.tasks:
             task['out'].require_scales(task['scales'])
             task['out'].require_layout(task['layout'])
@@ -288,10 +309,11 @@ class SystemHandler(Handler):
 
         #return self.system
 
-    def process(self, wall_time, sim_time, iteration):
+    def process(self, **kw):
         """Gather fields into system."""
-        pass
         #self.system.gather()
+        pass
+
 
 
 class FileHandler(Handler):
@@ -419,7 +441,7 @@ class FileHandler(Handler):
         scale_group.create_dataset(name='iteration', shape=(0,), maxshape=(None,), dtype=np.int)
         scale_group.create_dataset(name='write_number', shape=(0,), maxshape=(None,), dtype=np.int)
         const = scale_group.create_dataset(name='constant', data=np.array([0.], dtype=np.float64))
-        for basis in domain.bases:
+        for basis in dist.bases:
             coeff_name = basis.element_label + basis.name
             scale_group.create_dataset(name=coeff_name, data=basis.elements)
             scale_group.create_group(basis.name)
@@ -458,7 +480,7 @@ class FileHandler(Handler):
                 dset.dims[0].attach_scale(scale)
 
             # Spatial scales
-            for axis in enumerate(domain.dim):
+            for axis in enumerate(dist.dim):
                 basis = task['operator'].bases[axis]
                 if basis is None:
                     sn = lookup = 'constant'
