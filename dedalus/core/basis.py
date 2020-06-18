@@ -1703,24 +1703,34 @@ class SphericalShellBasis(RegularityBasis):
     @CachedMethod
     def _radius_grid(self, scale):
         N = int(np.ceil(scale * self.shape[2]))
-        z, weights = dedalus_sphere.annulus.quadrature(N, alpha=self.alpha)
+        z, weights = dedalus_sphere.jacobi.quadrature(N, self.alpha[0], self.alpha[1])
+        #z, weights = dedalus_sphere.annulus.quadrature(N, alpha=self.alpha)
         r = self.dR/2*(z + self.rho)
         return r.astype(np.float64)
 
     @CachedMethod
     def _radius_weights(self, scale):
         N = int(np.ceil(scale * self.shape[2]))
-        z_proj, weights_proj = dedalus_sphere.annulus.quadrature(N, alpha=self.alpha)
+        #z_proj, weights_proj = dedalus_sphere.annulus.quadrature(N, alpha=self.alpha)
+        z_proj, weights_proj = dedalus_sphere.jacobi.quadrature(N, self.alpha[0], self.alpha[1])
         z0, weights0 = dedalus_sphere.jacobi.quadrature(N, 0, 0)
-        Q0 = dedalus_sphere.jacobi.polynomials(N, -1/2, -1/2, z0)
-        Q_proj = dedalus_sphere.jacobi.polynomials(N, -1/2, -1/2, z_proj)
+        Q0 = dedalus_sphere.jacobi.polynomials(N, self.alpha[0], self.alpha[1], z0)
+        Q_proj = dedalus_sphere.jacobi.polynomials(N, self.alpha[0], self.alpha[1], z_proj)
         normalization = self.dR/2
-        return normalization*((Q0.dot(weights0)).T).dot(weights_proj*Q_proj)
+        return normalization * ( (Q0 @ weights0).T ) @ (weights_proj*Q_proj)
 
     @CachedMethod
     def radial_transform_factor(self, scale, data_axis, dk):
         r = reshape_vector(self._radius_grid(scale), dim=data_axis, axis=data_axis-1)
         return (self.dR/r)**dk
+
+    @CachedMethod
+    def polynomials(self, position):
+        native_position = position*2/self.dR - self.rho
+        a = self.alpha[0] + self.k
+        b = self.alpha[1] + self.k
+        radial_factor = (self.dR/position)**(self.k)
+        return radial_factor*dedalus_sphere.jacobi.polynomials(self.n_size(0), a, b, native_position)
 
     @CachedMethod
     def transform_plan(self, grid_size, k):
@@ -1766,20 +1776,28 @@ class SphericalShellBasis(RegularityBasis):
             gdata *= self.radial_transform_factor(field.scales[axis], data_axis, self.k)
 
     @CachedMethod
-    def operator_matrix(self, op, l, regtotal, dk=0):
-        return dedalus_sphere.annulus.operator(3,op,self.Nmax,self.k+dk,l+regtotal,self.radii,alpha=self.alpha).astype(np.float64)
+    def operator_matrix(self, op, l, regtotal):
+
+        l = l + regtotal
+
+        if op in ['D+', 'D-']:
+            p = int(op[-1]+'1')
+            operator = dedalus_sphere.shell.operator(3, self.radii, 'D', self.alpha)(p, l)
+        elif op == 'L':
+            D = dedalus_sphere.shell.operator(3, self.radii, 'D', self.alpha)
+            operator = D(-1, l+1) @ D(+1, l)
+        else:   
+            operator = dedalus_sphere.shell.operator(3, self.radii, op, self.alpha)
+
+        return operator(self.n_size(l), self.k).square.astype(np.float64)
 
     @CachedMethod
     def conversion_matrix(self, l, regtotal, dk):
-        for dki in range(dk):
-            Ek = dedalus_sphere.annulus.operator(3, 'E', self.Nmax, self.k+dki, l+regtotal, self.radii, alpha=self.alpha)
-            if dki == 0:
-                E = Ek
-            else:
-                E = Ek @ E
-        return E.astype(np.float64)
+        E = dedalus_sphere.shell.operator(3, self.radii, 'E', self.alpha)
+        operator = E**dk
+        return operator(self.n_size(l), self.k).square.astype(np.float64)
 
-    def n_size(self, regindex, ell, Nmax=None):
+    def n_size(self, ell, Nmax=None):
         if Nmax == None: Nmax = self.Nmax
         return Nmax + 1
 
@@ -1873,7 +1891,7 @@ class BallBasis(RegularityBasis):
     @CachedMethod
     def _radius_weights(self, scale):
         N = int(np.ceil(scale * self.shape[2]))
-        z, weights = dedalus_sphere.ball.quadrature(3, N, k=self.alpha)
+        z, weights = dedalus_sphere.zernike.quadrature(3, N, k=self.alpha)
         return weights
 
     @CachedMethod
@@ -2101,7 +2119,7 @@ class SphericalShellRadialInterpolate(operators.Interpolate, operators.Spherical
             Q = basis_in.radial_recombinations(self.tensorsig, ell_list=(ell,))
             matrix = Q[0] @ matrix
         # Radial rescaling
-        return matrix * (basis_in.dR/self.position)**basis_in.k
+        return matrix
 
     def operate(self, out):
         """Perform operation."""
@@ -2124,26 +2142,19 @@ class SphericalShellRadialInterpolate(operators.Interpolate, operators.Spherical
                        apply_matrix(A, vec3_in, axis=1, out=vec3_out)
         # Q matrix
         basis_in.backward_regularity_recombination(operand.tensorsig, self.basis_subaxis, out.data)
-        # Radial rescaling
-        out.data *= (basis_in.dR/self.position)**basis_in.k
 
     def radial_matrix(self, regindex_in, regindex_out, ell):
         position = self.position
         basis = self.input_basis
         if regindex_in == regindex_out:
-            if position == basis.radii[0]:
-                return self._radial_matrix(basis, 'r=Ri', ell, basis.regtotal(regindex_in))
-            elif position == basis.radii[1]:
-                return self._radial_matrix(basis, 'r=Ro', ell, basis.regtotal(regindex_in))
-            else:
-                raise ValueError("Right now can only interpolate to inner or outer radii")
+            return self._radial_matrix(basis, position)
         else:
-            return np.zeros((1,basis.n_size((), ell)))
+            return np.zeros((1,basis.n_size(ell)))
 
     @staticmethod
     @CachedMethod
-    def _radial_matrix(basis, op, ell, regtotal):
-        return reshape_vector(basis.operator_matrix(op, ell, regtotal), dim=2, axis=1)
+    def _radial_matrix(basis, position):
+        return reshape_vector(basis.polynomials(position), dim=2, axis=1)
 
 
 class SphericalTransposeComponents(operators.TransposeComponents):

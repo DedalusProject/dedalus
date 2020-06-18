@@ -9,20 +9,20 @@ comm = MPI.COMM_WORLD
 
 ball_radius = 1.5
 @CachedMethod
-def build_ball(Nphi, Ntheta, Nr, dealias):
+def build_ball(Nphi, Ntheta, Nr, dealias, k=0):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (Nphi, Ntheta, Nr), radius=ball_radius, dealias=(dealias, dealias, dealias))
+    b = basis.BallBasis(c, (Nphi, Ntheta, Nr), radius=ball_radius, k=k, dealias=(dealias, dealias, dealias))
     phi, theta, r = b.local_grids()
     x, y, z = c.cartesian(phi, theta, r)
     return c, d, b, phi, theta, r, x, y, z
 
 shell_radii = (0.5, 3)
 @CachedMethod
-def build_shell(Nphi, Ntheta, Nr, dealias):
+def build_shell(Nphi, Ntheta, Nr, dealias, k=0):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    b = basis.SphericalShellBasis(c, (Nphi, Ntheta, Nr), radii=shell_radii, dealias=(dealias, dealias, dealias))
+    b = basis.SphericalShellBasis(c, (Nphi, Ntheta, Nr), radii=shell_radii, k=k, dealias=(dealias, dealias, dealias))
     phi, theta, r = b.local_grids()
     x, y, z = c.cartesian(phi, theta, r)
     return c, d, b, phi, theta, r, x, y, z
@@ -73,9 +73,9 @@ def test_spherical_ell_product_vector(Nphi, Ntheta, Nr, dealias, basis):
     w = operators.SphericalEllProduct(u, c, func).evaluate()
     assert np.allclose(w['g'], v['g'])
 
-@pytest.mark.parametrize('Nphi', Nphi_range)
-@pytest.mark.parametrize('Ntheta', Ntheta_range)
-@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('Nphi', [16])
+@pytest.mark.parametrize('Ntheta', [16])
+@pytest.mark.parametrize('Nr', [8])
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
 def test_convert_k2_vector(Nphi, Ntheta, Nr, dealias, basis):
@@ -151,9 +151,10 @@ def test_interpolation_scalar(Nphi, Ntheta, Nr, dealias, basis_radius):
 @pytest.mark.parametrize('Nr', [8])
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis_radius', basis_radius)
-def test_interpolation_vector(Nphi, Ntheta, Nr, dealias, basis_radius):
+@pytest.mark.parametrize('k', [0, 1])
+def test_interpolation_vector(Nphi, Ntheta, Nr, dealias, basis_radius, k):
     basis, radius = basis_radius
-    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias, k=k)
     u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
     ct, st, cp, sp = np.cos(theta), np.sin(theta), np.cos(phi), np.sin(phi)
     u['g'][2] = r**2*st*(2*ct**2*cp-r*ct**3*sp+r**3*cp**3*st**5*sp**3+r*ct*st**2*(cp**3+sp**3))
