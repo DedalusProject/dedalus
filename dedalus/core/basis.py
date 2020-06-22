@@ -1374,7 +1374,8 @@ class RegularityBasis(Basis):
     def regularity_allowed(self,l,regularity):
         Rb = np.array([-1, 1, 0], dtype=int)
         if regularity == (): return True
-        return not dedalus_sphere.intertwiner.forbidden_regularity(l,Rb[np.array(regularity)])
+        intertwiner = dedalus_sphere.spin_operators.Intertwiner(l, indexing=(-1,+1,0))
+        return not intertwiner.forbidden_regularity(Rb[np.array(regularity)])
 
     @CachedMethod
     def regtotal(self, regindex):
@@ -1384,7 +1385,7 @@ class RegularityBasis(Basis):
 
     @CachedMethod
     def xi(self,mu,l):
-        return dedalus_sphere.intertwiner.xi(mu,l)
+        return np.sqrt( (l + (mu+1)//2 )/(2*l + 1) )
 
     @CachedMethod
     def radial_recombinations(self, tensorsig, ell_list=None):
@@ -1397,11 +1398,8 @@ class RegularityBasis(Basis):
 
         Q_matrices = np.zeros((len(ell_list),3**order,3**order))
         for i, l in enumerate(ell_list):
-            for j in range(3**order):
-                for k in range(3**order):
-                    s = dedalus_sphere.intertwiner.index2tuple(j,order,indexing=(-1,+1,0))
-                    r = dedalus_sphere.intertwiner.index2tuple(k,order,indexing=(-1,+1,0))
-                    Q_matrices[i,j,k] = dedalus_sphere.intertwiner.regularity2spinMap(l,s,r)
+            Q = dedalus_sphere.spin_operators.Intertwiner(l, indexing=(-1,+1,0))
+            Q_matrices[i] = Q(order)
         return Q_matrices
 
     @CachedMethod
@@ -1474,7 +1472,7 @@ class RegularityBasis(Basis):
     def local_group_slices(self, basis_group):
         group, = basis_group
         if group is None:
-            n_slice = self.n_slice((), ell=0)
+            n_slice = self.n_slice(ell=0)
             return [n_slice]
         else:
             raise NotImplementedError()
@@ -1602,14 +1600,14 @@ class SphericalShellRadialBasis(RegularityBasis):
 
     @CachedMethod
     def _radius_grid(self, scale):
-        N = int(np.ceil(scale * self.shape[2]))
+        N = int(np.ceil(scale * self.shape[0]))
         z, weights = dedalus_sphere.jacobi.quadrature(N, self.alpha[0], self.alpha[1])
         r = self.dR/2*(z + self.rho)
         return r.astype(np.float64)
 
     @CachedMethod
     def _radius_weights(self, scale):
-        N = int(np.ceil(scale * self.shape[2]))
+        N = int(np.ceil(scale * self.shape[0]))
         #z_proj, weights_proj = dedalus_sphere.annulus.quadrature(N, alpha=self.alpha)
         z_proj, weights_proj = dedalus_sphere.jacobi.quadrature(N, self.alpha[0], self.alpha[1])
         z0, weights0 = dedalus_sphere.jacobi.quadrature(N, 0, 0)
@@ -1769,14 +1767,14 @@ class BallRadialBasis(RegularityBasis):
         return self.radial_COV.problem_coord(self._native_radius_grid(scale))
 
     def _native_radius_grid(self, scale):
-        N = int(np.ceil(scale * self.shape[2]))
+        N = int(np.ceil(scale * self.shape[0]))
         z, weights = dedalus_sphere.zernike.quadrature(3, N, k=self.alpha)
         r = np.sqrt((z + 1) / 2)
-        return self.radial_COV.problem_coord(r)
+        return r.astype(np.float64)
 
     @CachedMethod
     def _radius_weights(self, scale):
-        N = int(np.ceil(scale * self.shape[2]))
+        N = int(np.ceil(scale * self.shape[0]))
         z, weights = dedalus_sphere.zernike.quadrature(3, N, k=self.alpha)
         return weights
 
@@ -1859,7 +1857,7 @@ class BallRadialBasis(RegularityBasis):
         nmin, nmax = self._n_limits(ell)
         return nmax - nmin + 1
 
-    def n_slice(self, regindex, ell):
+    def n_slice(self, ell):
         nmin, nmax = self._n_limits(ell)
         return slice(nmin, nmax+1)
 
@@ -1930,7 +1928,7 @@ class Spherical3DBasis(MultidimensionalBasis):
 
     @CachedMethod
     def operator_matrix(self, op, l, regtotal, dk=0):
-        return self.radial_basis.operator_matrix(op, l, regtotal, dk=dk)
+        return self.radial_basis.operator_matrix(op, l, regtotal)
 
     @CachedMethod
     def conversion_matrix(self, l, regtotal, dk):

@@ -60,7 +60,6 @@ def test_S2_Jacobi_scalar_scalar_multiplication(Nphi, Ntheta, Nr, dealias):
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.skip
 def test_S2_Jacobi_vector_scalar_multiplication(Nphi, Ntheta, Nr, dealias):
     c, d, b, phi, theta, r, x, y, z = build_shell(Nphi, Ntheta, Nr, dealias)
     c_S2 = c.S2coordsys

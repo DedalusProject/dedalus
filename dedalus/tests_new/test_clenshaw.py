@@ -25,13 +25,13 @@ def test_clenshaw(N, regtotal_in, k, ell, norm):
     y = r * np.sin(theta) * np.sin(phi)
     z = r * np.cos(theta)
 
-    ncc = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+    ncc = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
     ncc['g'] = 2*r**2-1
     ncc_basis = ncc.domain.bases[0]
     a_ncc = ncc_basis.alpha + ncc_basis.k
     b_ncc = 1/2
 
-    n_size = b.n_size((),ell)
+    n_size = b.n_size(ell)
 
     coeffs_filter = ncc['c'][0,0,:n_size]
     J = basis_in.operator_matrix('Z', ell, regtotal_in)
