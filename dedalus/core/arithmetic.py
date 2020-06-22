@@ -244,7 +244,7 @@ class DotProduct(FutureField):
         arg1_ts_reduced.pop(indices[1])
         self.indices = indices
         # FutureField requirements
-        self.domain = Domain(arg0.dist, self._bases)
+        self.domain = Domain(arg0.dist, self._build_bases(arg0, arg1))
         self.tensorsig = tuple(arg0_ts_reduced + arg1_ts_reduced)
         self.dtype = np.result_type(arg0.dtype, arg1.dtype)
 
@@ -262,17 +262,32 @@ class DotProduct(FutureField):
         """Build output bases."""
         bases = []
         for ax_bases in zip(*(arg.domain.full_bases for arg in args)):
-            # All constant bases yields constant basis
-            if all(basis is None for basis in ax_bases):
-                bases.append(None)
-            # Combine any constant bases to avoid multiplying None and None
-            elif any(basis is None for basis in ax_bases):
-                ax_bases = [basis for basis in ax_bases if basis is not None]
-                bases.append(np.prod(ax_bases) * None)
-            # Multiply all bases
-            else:
-                bases.append(np.prod(ax_bases))
+            if any(basis is not None for basis in ax_bases):
+                # Combine any constant bases to avoid multiplying None and None
+                if any(basis is None for basis in ax_bases):
+                    ax_bases = [basis for basis in ax_bases if basis is not None]
+                    bases.append(np.prod(ax_bases) * None)
+                # Multiply all bases
+                else:
+                    bases.append(np.prod(ax_bases))
         return tuple(bases)
+
+    # @CachedAttribute
+    # def _bases(self):
+    #     bases = []
+    #     for ax_bases in zip(*(arg.domain.full_bases for arg in self.args)):
+
+
+    #     ax_bases = tuple(zip(*(arg.domain.full_bases for arg in self.args)))
+    #     nonconst_ax_bases = [[b for b in bases if b is not None] for bases in ax_bases]
+    #     self.required_grid_axes = [len(bases) > 1 for bases in nonconst_ax_bases]
+    #     bases = tuple(reduce(operator.mul, bases) for bases in ax_bases)
+
+
+    #     # Need to fix this to do real multiplication
+    #     arg0, arg1 = self.args
+    #     return tuple(b0*b1 for b0, b1 in zip(arg0.domain.bases, arg1.domain.bases))
+
 
     @property
     def base(self):
@@ -413,12 +428,6 @@ class DotProduct(FutureField):
         ncc_mat = projection @ self._ncc_matrix
         # Apply NCC matrix
         return {var: ncc_mat @ operand_mats[var] for var in operand_mats}
-
-    @CachedAttribute
-    def _bases(self):
-        # Need to fix this to do real multiplication
-        arg0, arg1 = self.args
-        return tuple(b0*b1 for b0, b1 in zip(arg0.domain.bases, arg1.domain.bases))
 
     def check_conditions(self):
         layout0 = self.args[0].layout
@@ -638,7 +647,8 @@ class Multiply(Future, metaclass=MultiClass):
     def matrix_coupling(self, *vars):
         nccs, operand = self.require_linearity(*vars)
         # NCCs couple along any non-constant dimensions
-        ncc_bases = Operand.cast(np.prod(nccs), self.dist, self.tensorsig, self.dtype).domain.full_bases
+        #ncc_bases = Operand.cast(np.prod(nccs), self.dist, self.tensorsig, self.dtype).domain.full_bases
+        ncc_bases = np.prod(nccs).domain.full_bases
         ncc_coupling = np.array([(basis is not None) for basis in ncc_bases])
         # Combine with operand separability
         return ncc_coupling | operand.matrix_coupling(*vars)
@@ -660,7 +670,8 @@ class Multiply(Future, metaclass=MultiClass):
         ncc.require_coeff_space()
         # Store NCC matrix, assuming constant-group along operand's constant axes
         # This generalization enables subproblem-agnostic pre-construction
-        self._ncc_matrix = self._ncc_matrix_recursion(ncc.data, ncc.domain.full_bases, operand.domain.full_bases, separability, **kw)
+        tshape = [cs.dim for cs in ncc.tensorsig]
+        self._ncc_matrices = [self._ncc_matrix_recursion(ncc.data[ind], ncc.domain.full_bases, operand.domain.full_bases, separability, **kw) for ind in np.ndindex(*tshape)]
         self._ncc_operand = operand
         self._ncc_vars = vars
         self._ncc_separability = separability
@@ -713,7 +724,7 @@ class Multiply(Future, metaclass=MultiClass):
         if self in vars:
             return Field.expression_matrices(self, subproblem, vars)
         # Check arguments vs. NCC matrix construction
-        if not hasattr(self, '_ncc_matrix'):
+        if not hasattr(self, '_ncc_matrices'):
             raise SymbolicParsingError("Must build NCC matrices before expression matrices.")
         if vars != self._ncc_vars:
             raise SymbolicParsingError("Must build NCC matrices with same variables.")
@@ -724,13 +735,24 @@ class Multiply(Future, metaclass=MultiClass):
         operand_mats = operand.expression_matrices(subproblem, vars)
         # Modify NCC matrix for subproblem
         # Build projection matrix dropping constant-groups as necessary
-        group_shape = subproblem.coeff_shape(self.domain)
-        const_shape = np.maximum(group_shape, 1)
-        factors = (sparse.eye(*shape, format='csr') for shape in zip(group_shape, const_shape))
-        projection = reduce(sparse.kron, factors, 1).tocsr()
-        ncc_mat = projection @ self._ncc_matrix
+        # group_shape = subproblem.coeff_shape(self.domain)
+        # const_shape = np.maximum(group_shape, 1)
+        # factors = (sparse.eye(*shape, format='csr') for shape in zip(group_shape, const_shape))
+        # projection = reduce(sparse.kron, factors, 1).tocsr()
+        # ncc_mat = projection @ self._ncc_matrix
+        # Add factor for components
+        comps = np.prod([cs.dim for cs in operand.tensorsig], dtype=int)
+        blocks = []
+        for ncc_comp_mat in self._ncc_matrices:
+            factors = [sparse.identity(comps, format='csr'), ncc_comp_mat]
+            blocks.append(reduce(sparse.kron, factors, 1).tocsr())
+        ncc_mat = sparse.vstack(blocks, format='csr')
         # Apply NCC matrix
         return {var: ncc_mat @ operand_mats[var] for var in operand_mats}
+
+
+
+
 
 
 # class MultiplyArrayArray(Multiply, FutureArray):
@@ -759,11 +781,26 @@ class MultiplyFields(Multiply, FutureField):
         ax_bases = tuple(zip(*(arg.domain.full_bases for arg in self.args)))
         nonconst_ax_bases = [[b for b in bases if b is not None] for bases in ax_bases]
         self.required_grid_axes = [len(bases) > 1 for bases in nonconst_ax_bases]
-        bases = tuple(reduce(operator.mul, bases) for bases in ax_bases)
+        #bases = tuple(reduce(operator.mul, bases) for bases in ax_bases)
+        bases = self._build_bases(*self.args)
         self.dist = unify_attributes(self.args, 'dist')
         self.domain = Domain(self.dist, bases)
         self.tensorsig = sum((arg.tensorsig for arg in self.args), tuple())
         self.dtype = np.result_type(*[arg.dtype for arg in self.args])
+
+    def _build_bases(self, *args):
+        """Build output bases."""
+        bases = []
+        for ax_bases in zip(*(arg.domain.full_bases for arg in args)):
+            if any(basis is not None for basis in ax_bases):
+                # Combine any constant bases to avoid multiplying None and None
+                if any(basis is None for basis in ax_bases):
+                    ax_bases = [basis for basis in ax_bases if basis is not None]
+                    bases.append(np.prod(ax_bases) * None)
+                # Multiply all bases
+                else:
+                    bases.append(np.prod(ax_bases))
+        return tuple(bases)
 
     def check_conditions(self):
         """Check that arguments are in a proper layout."""

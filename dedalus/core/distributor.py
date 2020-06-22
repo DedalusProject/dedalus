@@ -203,9 +203,9 @@ class Layout:
             if self.local[axis]:
                 # All chunks for local dimensions
                 local_chunks.append(np.arange(chunk_nums[axis]))
-            elif basis is None:
-                # Copy across constant dimensions
-                local_chunks.append(np.arange(chunk_nums[axis]))
+            # elif basis is None:
+            #     # Copy across constant dimensions
+            #     local_chunks.append(np.arange(chunk_nums[axis]))
             else:
                 # Block distribution otherwise
                 mesh = self.ext_mesh[axis]

@@ -13,32 +13,6 @@ Nr_range = [6]
 radius_range = [1.5]
 dealias_range = [1, 3/2]
 
-#Nphi = 8
-#Ntheta = 10
-#Nr = 6
-#dealias = 1
-#radii = (0.5, 3)
-#c = coords.SphericalCoordinates('phi', 'theta', 'r')
-#d = distributor.Distributor((c,))
-#b = basis.SphericalShellBasis(c, (Nphi, Ntheta, Nr), radii=radii, dealias=(dealias, dealias, dealias))
-#phi, theta, r = b.local_grids()
-#f0 = field.Field(dist=d, bases=(b,), dtype=np.complex128)
-#f0['g'] = (r**2 - 0.5*r**3)*(5*np.cos(theta)**2-1)*np.sin(theta)*np.exp(1j*phi)
-#
-#b_S2 = basis.SWSH(c.S2coordsys, (Nphi, Ntheta), dealias=(dealias, dealias))
-#phi, theta = b_S2.local_grids()
-#g = field.Field(dist=d, bases=(b_S2,), dtype=np.complex128)
-#g['g'] = (5*np.cos(theta)**2-1)*np.sin(theta)*np.exp(1j*phi)
-#
-#b_r = basis.Jacobi(c.radius, size=Nr, a=-1/2, b=-1/2, bounds=radii, dealias=dealias)
-#r = b_r.local_grid()
-#h = field.Field(dist=d, bases=(b_r,), dtype=np.complex128)
-#h['g'] = (r**2 - 0.5*r**3)
-#
-#f = (g * h).evaluate()
-#
-#print(np.allclose(f['g'], f0['g']))
-
 radius_ball = 1.5
 @CachedMethod
 def build_ball(Nphi, Ntheta, Nr, dealias):
@@ -75,7 +49,7 @@ def test_S2_Jacobi_scalar_scalar_multiplication(Nphi, Ntheta, Nr, dealias):
     g = field.Field(dist=d, bases=(b_S2,), dtype=np.complex128)
     g['g'] = (5*np.cos(theta)**2-1)*np.sin(theta)*np.exp(1j*phi)
 
-    b_r = basis.Jacobi(c.radius, size=Nr, a=-1/2, b=-1/2, bounds=b.radii, dealias=dealias)
+    b_r = basis.Jacobi(c.radius, size=Nr, a=-1/2, b=-1/2, bounds=radii_shell, dealias=dealias)
     r = b_r.local_grid()
     h = field.Field(dist=d, bases=(b_r,), dtype=np.complex128)
     h['g'] = (r**2 - 0.5*r**3)
@@ -90,20 +64,21 @@ def test_S2_Jacobi_scalar_scalar_multiplication(Nphi, Ntheta, Nr, dealias):
 def test_S2_Jacobi_vector_scalar_multiplication(Nphi, Ntheta, Nr, dealias):
     c, d, b, phi, theta, r, x, y, z = build_shell(Nphi, Ntheta, Nr, dealias)
     c_S2 = c.S2coordsys
-    v0 = field.Field(dist=d, bases=(b,), tensorsig=(c_S2,), dtype=np.complex128)
+    v0 = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
     v0.set_scales(b.domain.dealias)
     phi, theta, r = b.local_grids(b.domain.dealias)
     v0['g'][0] = (r**2 - 0.5*r**3)*(-1j * np.sin(theta)*np.exp(-2j*phi))
     v0['g'][1] = (r**2 - 0.5*r**3)*(np.cos(theta)*np.sin(theta)*np.exp(-2j*phi))
+    v0['g'][2] = (r**2 - 0.5*r**3)*(5*np.cos(theta)**2-1)*np.sin(theta)*np.exp(1j*phi)
 
     b_S2 = b.S2_basis()
-    c_S2_2 = b_S2.cs
     phi, theta = b_S2.local_grids()
-    f = field.Field(dist=d, bases=(b_S2,), dtype=np.complex128)
-    f['g'] = 1/2*np.sin(theta)**2*np.exp(-2j*phi)
-    u = operators.Gradient(f, c_S2_2)
+    u = field.Field(dist=d, bases=(b_S2,), tensorsig=(c,), dtype=np.complex128)
+    u['g'][0] = (-1j * np.sin(theta)*np.exp(-2j*phi))
+    u['g'][1] = (np.cos(theta)*np.sin(theta)*np.exp(-2j*phi))
+    u['g'][2] = (5*np.cos(theta)**2-1)*np.sin(theta)*np.exp(1j*phi)
 
-    b_r = basis.Jacobi(c.radius, size=Nr, a=-1/2, b=-1/2, bounds=b.radii, dealias=dealias)
+    b_r = basis.Jacobi(c.radius, size=Nr, a=-1/2, b=-1/2, bounds=radii_shell, dealias=dealias)
     r = b_r.local_grid()
     h = field.Field(dist=d, bases=(b_r,), dtype=np.complex128)
     h['g'] = (r**2 - 0.5*r**3)
