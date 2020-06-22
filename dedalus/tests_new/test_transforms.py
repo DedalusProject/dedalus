@@ -157,7 +157,7 @@ Nphi_range = [12]
 Ntheta_range = [10]
 Nr_range = [8]
 radii_range = [(0.5, 3)]
-k_range = [0, 1]
+k_range = [0, 1, 2]
 dealias_range = [0.5, 1, 3/2]
 
 @CachedMethod
@@ -234,12 +234,13 @@ Ntheta_range = [12]
 Nr_range = [8]
 radius_range = [1.5]
 dealias_range = [0.5, 1, 3/2]
+k_range = [0, 1, 2]
 
 @CachedMethod
-def build_ball(Nphi, Ntheta, Nr, radius, dealias):
+def build_ball(Nphi, Ntheta, Nr, radius, k, dealias):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (Nphi, Ntheta, Nr), radius=radius, dealias=(dealias, dealias, dealias))
+    b = basis.BallBasis(c, (Nphi, Ntheta, Nr), radius=radius, k=k, dealias=(dealias, dealias, dealias))
     phi, theta, r = b.local_grids()
     x = r * np.sin(theta) * np.cos(phi)
     y = r * np.sin(theta) * np.sin(phi)
@@ -250,9 +251,10 @@ def build_ball(Nphi, Ntheta, Nr, radius, dealias):
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('radius', radius_range)
+@pytest.mark.parametrize('k', k_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_ball_radial_scalar(Nphi, Ntheta, Nr, radius, dealias):
-    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, dealias)
+def test_ball_radial_scalar(Nphi, Ntheta, Nr, radius, k, dealias):
+    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, k, dealias)
     f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
     f['g'] = fg = r**2 - r**4/7
     f['c']
@@ -262,9 +264,10 @@ def test_ball_radial_scalar(Nphi, Ntheta, Nr, radius, dealias):
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('radius', radius_range)
+@pytest.mark.parametrize('k', k_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_ball_radial_vector(Nphi, Ntheta, Nr, radius, dealias):
-    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, dealias)
+def test_ball_radial_vector(Nphi, Ntheta, Nr, radius, k, dealias):
+    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, k, dealias)
     u = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=np.complex128)
     u['g'][2] = 2*r - 3*r**3/7
     u0 = np.copy(u['g'])
@@ -275,9 +278,10 @@ def test_ball_radial_vector(Nphi, Ntheta, Nr, radius, dealias):
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('radius', radius_range)
+@pytest.mark.parametrize('k', k_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_ball_scalar(Nphi, Ntheta, Nr, radius, dealias):
-    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, dealias)
+def test_ball_scalar(Nphi, Ntheta, Nr, radius, k, dealias):
+    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, k, dealias)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     f['g'] = fg = 3*x**2 + 2*y*z
     f['c']
@@ -288,10 +292,11 @@ def test_ball_scalar(Nphi, Ntheta, Nr, radius, dealias):
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('radius', radius_range)
+@pytest.mark.parametrize('k', k_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_ball_vector(Nphi, Ntheta, Nr, radius, dealias):
+def test_ball_vector(Nphi, Ntheta, Nr, radius, k, dealias):
     # Note: u is the gradient of a scalar
-    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, dealias)
+    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, k, dealias)
     u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
     u['g'][2] =  4*r**3*np.sin(theta)*np.cos(theta)*np.exp(1j*phi)
     u['g'][1] =    r**3*np.cos(2*theta)*np.exp(1j*phi)

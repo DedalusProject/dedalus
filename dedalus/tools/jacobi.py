@@ -210,21 +210,20 @@ def mass(a,b):
 # Interfacing with Dedalus
 import numpy as np
 from scipy import sparse
-from dedalus_sphere import jacobi128
+from dedalus_sphere import jacobi
 
 output_dtype = np.float64
 
 def build_grid(N, a, b):
-    grid, weights = jacobi128.quadrature(N-1, a, b)
+    grid, weights = jacobi.quadrature(N, a, b)
     return grid.astype(output_dtype)
 
 def build_weights(N, a, b):
-    grid, weights = jacobi128.quadrature(N-1, a, b)
+    grid, weights = jacobi.quadrature(N, a, b)
     return weights.astype(output_dtype)
 
 def build_polynomials(M, a, b, grid):
-    init = jacobi128.envelope(a, b, a, b, grid)
-    poly = jacobi128.recursion(M-1, a, b, grid, init)
+    poly = jacobi.polynomials(M, a, b, grid)
     return poly.astype(output_dtype)
 
 def conversion_matrix(N, a0, b0, a1, b1):
@@ -237,28 +236,19 @@ def conversion_matrix(N, a0, b0, a1, b1):
     if b0 > b1:
         raise ValueError("b0 must be less than or equal to b1")
 
-    conv = sparse.identity(N).tocsr()
-    for da in range(int(a1-a0)):
-        Ap = jacobi128.operator('A+', N-1, a0+da, b0).tocsr()
-        conv = Ap * conv
-    for db in range(int(b1-b0)):
-        Bp = jacobi128.operator('B+', N-1, a1, b0+db).tocsr()
-        conv = Bp * conv
-    return conv.tocsr().astype(output_dtype)
+    A = jacobi.operator('A')(+1)
+    B = jacobi.operator('B')(+1)
+
+    da, db = int(a1-a0), int(b1-b0)
+    conv = A**da @ B**db
+
+    return conv(N, a0, b0).astype(output_dtype)
 
 def differentiation_matrix(N, a, b):
-    diff = jacobi128.operator('D+', N-1, a, b)
-    return diff.tocsr().astype(output_dtype)
+    return jacobi.operator('D')(+1)(N, a, b).square.astype(output_dtype)
 
 def jacobi_matrix(N, a, b):
-    J = jacobi128.operator('J', N, a, b)
-    return J.tocsr().astype(output_dtype)
-
-def interpolation_vector(M, a, b, x):
-    X = np.array([x])  # jacobi128 currently requires grid to be an array
-    interp = build_polynomials(M, a, b, X)
-    return interp.reshape(M).astype(output_dtype)
-
+    return jacobi.operator('Z')(N, a, b).square.astype(output_dtype)
 
 # def integration_vector(N, a, b):
 #     # Build Legendre quadrature

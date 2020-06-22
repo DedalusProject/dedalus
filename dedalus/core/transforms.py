@@ -175,15 +175,15 @@ class JacobiMatrixTransform(MatrixTransform):
         base_grid = jacobi.build_grid(N, a=a0, b=b0)
         base_polynomials = jacobi.build_polynomials(M, a0, b0, base_grid)
         base_weights = jacobi.build_weights(N, a=a0, b=b0)
-        base_quadrature = (base_polynomials * base_weights)
+        base_transform = (base_polynomials * base_weights)
         # Zero higher coefficients for transforms with grid_size < coeff_size
-        base_quadrature[N:, :] = 0
+        base_transform[N:, :] = 0
         # Spectral conversion
         if (a == a0) and (b == b0):
-            forward_matrix = base_quadrature
+            forward_matrix = base_transform
         else:
             conversion = jacobi.conversion_matrix(M, a0, b0, a, b)
-            forward_matrix = conversion @ base_quadrature
+            forward_matrix = conversion @ base_transform
         return forward_matrix
 
     @CachedAttribute
@@ -617,7 +617,7 @@ class SWSHColatitudeTransform(NonSeparableTransform):
     def _quadrature(self):
         # get grid and weights from sphere library
         Lmax = self.N2g - 1
-        return dedalus_sphere.sphere.quadrature(Lmax, niter=3)
+        return dedalus_sphere.sphere.quadrature(Lmax)
 
     @CachedAttribute
     def _forward_SWSH_matrices(self):
@@ -628,7 +628,7 @@ class SWSHColatitudeTransform(NonSeparableTransform):
         m_matrices = []
         for m in self.local_m:
             if m <= Lmax: # make sure we don't try to make a matrix for the Nyquist mode
-                Y = dedalus_sphere.sphere.Y(Lmax, m, self.s, cos_grid).astype(np.float64)  # shape (Nc-Lmin, Ng)
+                Y = dedalus_sphere.sphere.harmonics(Lmax, m, self.s, cos_grid)  # shape (Nc-Lmin, Ng)
                 # Pad to square transform and keep l aligned
                 Lmin = max(np.abs(m), np.abs(self.s))
                 Yfull = np.zeros((self.N2c, self.N2g))
@@ -649,7 +649,7 @@ class SWSHColatitudeTransform(NonSeparableTransform):
         m_matrices = []
         for m in self.local_m:
             if m <= Lmax: # make sure we don't try to make a matrix for the Nyquist mode
-                Y = dedalus_sphere.sphere.Y(Lmax, m, self.s, cos_grid) # shape (Nc-Lmin, Ng)
+                Y = dedalus_sphere.sphere.harmonics(Lmax, m, self.s, cos_grid) # shape (Nc-Lmin, Ng)
                 # Pad to square transform and keep l aligned
                 Lmin = self.N2c - Y.shape[0]
                 Yfull = np.zeros((self.N2g, self.N2c))
@@ -666,6 +666,7 @@ class BallRadialTransform(NonSeparableTransform):
 
         super().__init__(grid_shape, coeff_size, axis, dtype)
         self.local_l = local_l
+        self.intertwiner = lambda l: dedalus_sphere.spin_operators.Intertwiner(l, indexing=(-1,+1,0))
         self.regindex = regindex
         self.regtotal = regtotal
         self.k = k
@@ -680,10 +681,10 @@ class BallRadialTransform(NonSeparableTransform):
         # Apply transform for each l
         l_matrices = self._forward_GSZP_matrix
         for dl, l in enumerate(local_l):
-            Nmin = dedalus_sphere.ball.Nmin(l, 0)
+            Nmin = dedalus_sphere.zernike.min_degree(l)
             grl = gdata[:, dl, :, :]
-            crl = cdata[:, dl, Nmin:self.N2c, :]
-            apply_matrix(l_matrices[dl][Nmin:], grl, axis=1, out=crl)
+            crl = cdata[:, dl, Nmin:, :]
+            apply_matrix(l_matrices[dl], grl, axis=1, out=crl)
 
     def backward_reduced(self, cdata, gdata):
 
@@ -694,16 +695,15 @@ class BallRadialTransform(NonSeparableTransform):
         # Apply transform for each l
         l_matrices = self._backward_GSZP_matrix
         for dl, l in enumerate(local_l):
-            Nmin = dedalus_sphere.ball.Nmin(l, 0)
-            grl = gdata[:, dl, :self.N2g, :]
+            Nmin = dedalus_sphere.zernike.min_degree(l)
+            grl = gdata[:, dl, :, :]
             crl = cdata[:, dl, Nmin:, :]
-            apply_matrix(l_matrices[dl][:,Nmin:], crl, axis=1, out=grl)
+            apply_matrix(l_matrices[dl], crl, axis=1, out=grl)
 
     @CachedAttribute
     def _quadrature(self):
-        Nmax = self.N2g - 1
         # get grid and weights from sphere library
-        return dedalus_sphere.ball.quadrature(3, Nmax, niter=3, alpha=self.alpha)
+        return dedalus_sphere.zernike.quadrature(3, self.N2g, k=self.alpha)
 
     @CachedAttribute
     def _forward_GSZP_matrix(self):
@@ -712,23 +712,20 @@ class BallRadialTransform(NonSeparableTransform):
         z_grid, weights = self._quadrature
         l_matrices = []
         for l in self.local_l:
-            if dedalus_sphere.intertwiner.forbidden_regularity(l,self.regindex):
+            # CHECK TO SEE IF IT WORKS -- SEEMS LIKE IT WOULDN'T!!!!!
+            if self.intertwiner(l).forbidden_regularity(self.regindex):
                 l_matrices.append(np.zeros((self.N2c, self.N2g)))
             else:
-                Nmin = dedalus_sphere.ball.Nmin(l, 0)
-                Nmax = self.N2c - 1 - Nmin + dedalus_sphere.ball.Nmin(l, self.regtotal)
-                W = dedalus_sphere.ball.trial_functions(3, Nmax, l, self.regtotal, z_grid, alpha=self.alpha) # shape (Nmax+1-Nmin, Ng)
-                # Pad to square transform and keep n aligned
-                for i in range(self.k):
-                    Nmax_conv = self.N2c - 1
-                    conversion = dedalus_sphere.ball.operator(3, 'E', Nmax_conv, i, l, self.regtotal, alpha=self.alpha)
-                    W = conversion @ W
-                Wfull = np.zeros((self.N2c, self.N2g))
-                Wfull[Nmin:, :] = (W*weights).astype(np.float64)
-                # zero out modes higher than grid resolution
-                Wfull[self.N2g:, :] = 0
-                l_matrices.append(Wfull)
-        return l_matrices
+                Nmin = dedalus_sphere.zernike.min_degree(l)
+                Nc = self.N2c - Nmin
+                W = dedalus_sphere.zernike.polynomials(3, Nc, self.alpha, l + self.regtotal, z_grid) # shape (N2c-Nmin, Ng)
+                conversion = dedalus_sphere.zernike.operator(3, 'E')(+1)**self.k
+                W = conversion(Nc, self.alpha, l + self.regtotal) @ W
+                W = (W*weights).astype(np.float64)
+                # zero out modes higher than grid resolution taking into account n starts at Nmin
+                W[self.N2g-Nmin:] = 0
+                l_matrices.append(W)
+        return tuple(l_matrices)
 
     @CachedAttribute
     def _backward_GSZP_matrix(self):
@@ -737,17 +734,14 @@ class BallRadialTransform(NonSeparableTransform):
         z_grid, weights = self._quadrature
         l_matrices = []
         for l in self.local_l:
-            if dedalus_sphere.intertwiner.forbidden_regularity(l,self.regindex):
+            if self.intertwiner(l).forbidden_regularity(self.regindex):
                 l_matrices.append(np.zeros((self.N2g, self.N2c)))
             else:
-                Nmin = dedalus_sphere.ball.Nmin(l, 0)
-                Nmax = self.N2c - 1 - Nmin + dedalus_sphere.ball.Nmin(l, self.regtotal)
-                W = dedalus_sphere.ball.trial_functions(3, Nmax, l, self.regtotal, z_grid, alpha=self.alpha+self.k)
-                # Pad to square transform and keep n aligned
-                Wfull = np.zeros((self.N2g, self.N2c))
-                Wfull[:, Nmin:] = W.T.astype(np.float64)
-                l_matrices.append(Wfull)
-        return l_matrices
+                Nmin = dedalus_sphere.zernike.min_degree(l)
+                Nc = self.N2c - Nmin
+                W = dedalus_sphere.zernike.polynomials(3, Nc, self.alpha + self.k, l + self.regtotal, z_grid)
+                l_matrices.append(W.T.astype(np.float64))
+        return tuple(l_matrices)
 
 
 
