@@ -215,7 +215,87 @@ class AddFields(Add, FutureField):
 # used for einsum string manipulation
 alphabet = "abcdefghijklmnopqrstuvwxy"
 
-class DotProduct(FutureField):
+
+class Product(Future):
+
+    def _build_bases(self, *args):
+        """Build output bases."""
+        bases = []
+        for ax_bases in zip(*(arg.domain.full_bases for arg in args)):
+            # All constant bases yields constant basis
+            if all(basis is None for basis in ax_bases):
+                bases.append(None)
+            # Combine any constant bases to avoid multiplying None and None
+            elif any(basis is None for basis in ax_bases):
+                ax_bases = [basis for basis in ax_bases if basis is not None]
+                bases.append(np.prod(ax_bases) * None)
+            # Multiply all bases
+            else:
+                bases.append(np.prod(ax_bases))
+        return tuple(bases)
+
+    def new_args(self, *args):
+        raise NotImplementedError("%s has not implemented new_args method." %type(self))
+
+    def split(self, *vars):
+        """Split into expressions containing and not containing specified operands/operators."""
+        # Take cartesian product of argument splittings
+        split_args = [arg.split(*vars) if isinstance(arg, Operand) else (0, arg) for arg in self.args]
+        split_args = itertools.product(*split_args)
+        # Take product of each term
+        split_ops = [self.new_args(*args) for args in split_args]
+        # Last combo is all negative splittings, others contain atleast one positive splitting
+        return (sum(split_ops[:-1]), split_ops[-1])
+
+    def sym_diff(self, var):
+        """Symbolically differentiate with respect to specified operand."""
+        args = self.args
+        # Apply product rule to arguments
+        partial_diff = lambda i: self.new_args(*[arg.sym_diff(var) if i==j else arg for j,arg in enumerate(args)])
+        return sum((partial_diff(i) for i in range(len(args))))
+
+    def expand(self, *vars):
+        """Expand expression over specified variables."""
+        if self.has(*vars):
+            # Expand arguments
+            args = [arg.expand(*vars) for arg in self.args]
+            # Sum over cartesian product of sums including specified variables
+            arg_sets = [arg.args if (isinstance(arg, Add) and arg.has(*vars)) else [arg] for arg in args]
+            arg_sets = itertools.product(*arg_sets)
+            return sum(self.new_operand(*args) for args in arg_sets)
+        else:
+            return self
+
+    def require_linearity(self, *vars, name=None):
+        """Require expression to be linear in specified variables."""
+        arg0, arg1 = self.args
+        op_arg0 = (isinstance(arg0, Operand) and arg0.has(*vars))
+        op_arg1 = (isinstance(arg1, Operand) and arg1.has(*vars))
+        # Require exactly one argument to contain vars, for linearity
+        if op_arg0 and op_arg1:
+            raise NonlinearOperatorError("{} is a non-linear product of the specified variables.".format(name if name else str(self)))
+        if not (op_arg0 or op_arg1):
+            raise NonlinearOperatorError("{} does not involve the specified variables.".format(name if name else str(self)))
+        # Require argument linearity
+        op_index = int(op_arg1)
+        self.args[op_index].require_linearity(*vars, name=name)
+        return op_index
+
+    def check_conditions(self):
+        layout0 = self.args[0].layout
+        layout1 = self.args[1].layout
+        # Fields must be in grid layout
+        # Just do full grid space for now
+        return all(layout0.grid_space) and (layout0 is layout1)
+
+    def enforce_conditions(self):
+        # Fields must be in grid layout
+        # Just do full grid space for now
+        for arg in self.args:
+            arg.require_grid_space()
+
+
+class DotProduct(Product, FutureField):
 
     name = "Dot"
 
@@ -244,7 +324,8 @@ class DotProduct(FutureField):
         arg1_ts_reduced.pop(indices[1])
         self.indices = indices
         # FutureField requirements
-        self.domain = Domain(arg0.dist, self._build_bases(arg0, arg1))
+        dist = unify_attributes((arg0, arg1), 'dist')
+        self.domain = Domain(dist, self._build_bases(arg0, arg1))
         self.tensorsig = tuple(arg0_ts_reduced + arg1_ts_reduced)
         self.dtype = np.result_type(arg0.dtype, arg1.dtype)
 
@@ -258,93 +339,8 @@ class DotProduct(FutureField):
         str_args = map(paren_str, self.args)
         return '@'.join(str_args)
 
-    def _build_bases(self, *args):
-        """Build output bases."""
-        bases = []
-        for ax_bases in zip(*(arg.domain.full_bases for arg in args)):
-            if any(basis is not None for basis in ax_bases):
-                # Combine any constant bases to avoid multiplying None and None
-                if any(basis is None for basis in ax_bases):
-                    ax_bases = [basis for basis in ax_bases if basis is not None]
-                    bases.append(np.prod(ax_bases) * None)
-                # Multiply all bases
-                else:
-                    bases.append(np.prod(ax_bases))
-        return tuple(bases)
-
-    # @CachedAttribute
-    # def _bases(self):
-    #     bases = []
-    #     for ax_bases in zip(*(arg.domain.full_bases for arg in self.args)):
-
-
-    #     ax_bases = tuple(zip(*(arg.domain.full_bases for arg in self.args)))
-    #     nonconst_ax_bases = [[b for b in bases if b is not None] for bases in ax_bases]
-    #     self.required_grid_axes = [len(bases) > 1 for bases in nonconst_ax_bases]
-    #     bases = tuple(reduce(operator.mul, bases) for bases in ax_bases)
-
-
-    #     # Need to fix this to do real multiplication
-    #     arg0, arg1 = self.args
-    #     return tuple(b0*b1 for b0, b1 in zip(arg0.domain.bases, arg1.domain.bases))
-
-
-    @property
-    def base(self):
-        return DotProduct
-
-# Check if this is correct
-    def split(self, *vars):
-        """Split into expressions containing and not containing specified operands/operators."""
-        # Take cartesian product of argument splittings
-        split_args = [arg.split(*vars) for arg in self.args]
-        split_combos = list(map(np.prod, itertools.product(*split_args)))
-        # Last combo is all negative splittings, others contain atleast one positive splitting
-        return (sum(split_combos[:-1]), split_combos[-1])
-
-# Check if this is correct
-    def sym_diff(self, var):
-        """Symbolically differentiate with respect to specified operand."""
-        args = self.args
-        # Apply product rule to arguments
-        partial_diff = lambda i: np.prod([arg.sym_diff(var) if i==j else arg for j,arg in enumerate(args)])
-        return sum((partial_diff(i) for i in range(len(args))))
-
-# Check if this is correct
-    def expand(self, *vars):
-        """Expand expression over specified variables."""
-        if self.has(*vars):
-            # Expand arguments
-            args = [arg.expand(*vars) for arg in self.args]
-            # Sum over cartesian product of sums including specified variables
-            arg_sets = [arg.args if (isinstance(arg, Add) and arg.has(*vars)) else [arg] for arg in args]
-            out = sum(map(np.prod, itertools.product(*arg_sets)))
-            return out
-        else:
-            return self
-
-    def require_linearity(self, *vars, name=None):
-        """Require expression to be linear in specified variables."""
-        nccs = [arg for arg in self.args if not arg.has(*vars)]
-        operands = [arg for arg in self.args if arg.has(*vars)]
-        # Require exactly one argument to contain vars, for linearity
-        if len(operands) != 1:
-            raise NonlinearOperatorError("{} is a non-linear product of the specified variables.".format(name if name else str(self)))
-        operand = operands[0]
-        ncc = nccs[0]
-        if arg0.has(*vars): operand_first = True
-        else: operand_first = False
-        # Require argument linearity
-        operand.require_linearity(*vars, name=name)
-        return ncc, operand, operand_first
-
-    def separability(self, *vars):
-        """Determine separable dimensions of expression as a linear operator on specified variables."""
-        ncc, operand, operand_first = self.require_linearity(*vars)
-        # NCCs couple along any non-constant dimensions
-        ncc_separability = np.array([(basis is None) for basis in ncc.bases])
-        # Combine with operand separability
-        return ncc_separability & operand.separability(*vars)
+    def new_args(self, arg0, arg1):
+        return DotProduct(arg0, arg1, indices=self.indices)
 
     def build_ncc_matrices(self, separability, vars, **kw):
         """Precompute non-constant coefficients and build multiplication matrices."""
@@ -429,18 +425,6 @@ class DotProduct(FutureField):
         # Apply NCC matrix
         return {var: ncc_mat @ operand_mats[var] for var in operand_mats}
 
-    def check_conditions(self):
-        layout0 = self.args[0].layout
-        layout1 = self.args[1].layout
-        # Fields must be in grid layout
-        # Just do full grid space for now
-        return all(layout0.grid_space) and (layout0 is layout1)
-
-    def enforce_conditions(self):
-        for arg in self.args:
-            # Grid space
-            arg.require_grid_space()
-
     def operate(self, out):
         arg0, arg1 = self.args
 
@@ -464,7 +448,7 @@ class DotProduct(FutureField):
         np.einsum(einsum_str,arg0.data,arg1.data,out=out.data)
 
 
-class CrossProduct(FutureField):
+class CrossProduct(Product, FutureField):
 
     name = "Cross"
 
@@ -474,33 +458,9 @@ class CrossProduct(FutureField):
     def __init__(self, arg0, arg1, out=None):
         super().__init__(arg0, arg1, out=out)
         # FutureField requirements
-        self.domain = Domain(arg0.dist, self._bases)
+        self.domain = Domain(arg0.dist, self._build_bases(arg0, arg1))
         self.tensorsig = arg0.tensorsig
         self.dtype = np.result_type(arg0.dtype, arg1.dtype)
-
-    @CachedAttribute
-    def _bases(self):
-        # Need to fix this to do real multiplication
-        arg0, arg1 = self.args
-        return tuple(b0*b1 for b0, b1 in zip(arg0.domain.bases, arg1.domain.bases))
-
-    def check_conditions(self):
-        layout0 = self.args[0].layout
-        layout1 = self.args[1].layout
-        # Fields must be in grid layout
-        # Just do full grid space for now
-        return all(layout0.grid_space) and (layout0 is layout1)
-
-    def enforce_conditions(self):
-        for arg in self.args:
-            # Dealias
-            arg.require_scales(self.domain.dealias)
-            # Grid space
-            arg.require_grid_space()
-
-    @property
-    def base(self):
-        return CrossProduct
 
     @CachedMethod
     def epsilon(self, i, j, k):
@@ -515,7 +475,7 @@ class CrossProduct(FutureField):
         out.data[2] = self.epsilon(2,0,1)*(arg0.data[0]*arg1.data[1] - arg0.data[1]*arg1.data[0])
 
 
-class Multiply(Future, metaclass=MultiClass):
+class Multiply(Product, metaclass=MultiClass):
     """Multiplication operator."""
 
     name = 'Mul'
@@ -562,52 +522,8 @@ class Multiply(Future, metaclass=MultiClass):
         str_args = map(paren_str, self.args)
         return '*'.join(str_args)
 
-    def _build_bases(self, *args):
-        """Build output bases."""
-        bases = []
-        for ax_bases in zip(*(arg.domain.full_bases for arg in args)):
-            # All constant bases yields constant basis
-            if all(basis is None for basis in ax_bases):
-                bases.append(None)
-            # Combine any constant bases to avoid multiplying None and None
-            elif any(basis is None for basis in ax_bases):
-                ax_bases = [basis for basis in ax_bases if basis is not None]
-                bases.append(np.prod(ax_bases) * None)
-            # Multiply all bases
-            else:
-                bases.append(np.prod(ax_bases))
-        return tuple(bases)
-
-    @property
-    def base(self):
-        return Multiply
-
-    def split(self, *vars):
-        """Split into expressions containing and not containing specified operands/operators."""
-        # Take cartesian product of argument splittings
-        split_args = [arg.split(*vars) if isinstance(arg, Operand) else (0, arg) for arg in self.args]
-        split_combos = list(map(np.prod, itertools.product(*split_args)))
-        # Last combo is all negative splittings, others contain atleast one positive splitting
-        return (sum(split_combos[:-1]), split_combos[-1])
-
-    def sym_diff(self, var):
-        """Symbolically differentiate with respect to specified operand."""
-        args = self.args
-        # Apply product rule to arguments
-        partial_diff = lambda i: np.prod([arg.sym_diff(var) if i==j else arg for j,arg in enumerate(args)])
-        return sum((partial_diff(i) for i in range(len(args))))
-
-    def expand(self, *vars):
-        """Expand expression over specified variables."""
-        if self.has(*vars):
-            # Expand arguments
-            args = [arg.expand(*vars) for arg in self.args]
-            # Sum over cartesian product of sums including specified variables
-            arg_sets = [arg.args if (isinstance(arg, Add) and arg.has(*vars)) else [arg] for arg in args]
-            out = sum(map(np.prod, itertools.product(*arg_sets)))
-            return out
-        else:
-            return self
+    def new_args(self, arg0, arg1):
+        return Multiply(arg0, arg1)
 
     # def simplify(self, *vars):
     #     """Simplify expression, except subtrees containing specified variables."""
@@ -618,28 +534,6 @@ class Multiply(Future, metaclass=MultiClass):
     #     # Otherwise evaluate expression
     #     else:
     #         return self.evaluate()
-
-    def require_linearity(self, *vars, name=None):
-        """Require expression to be linear in specified variables."""
-        nccs = [arg for arg in self.args if ((not isinstance(arg, Operand)) or (not arg.has(*vars)))]
-        operands = [arg for arg in self.args if (arg not in nccs)]
-        #operands = [arg for arg in self.args if arg.has(*vars)]
-        # Require exactly one argument to contain vars, for linearity
-        if len(operands) != 1:
-            raise NonlinearOperatorError("{} is a non-linear product of the specified variables.".format(name if name else str(self)))
-        operand = operands[0]
-        # Require argument linearity
-        operand.require_linearity(*vars, name=name)
-        return nccs, operand
-
-    # def separability(self, *vars):
-    #     """Determine separable dimensions of expression as a linear operator on specified variables."""
-    #     nccs, operand = self.require_linearity(*vars)
-    #     # NCCs couple along any non-constant dimensions
-    #     ncc_bases = Operand.cast(np.prod(nccs), self.dist).domain.full_bases
-    #     ncc_separability = np.array([(basis is None) for basis in ncc_bases])
-    #     # Combine with operand separability
-    #     return ncc_separability & operand.separability(*vars)
 
     def matrix_dependence(self, *vars):
         return self.matrix_coupling(*vars) ## HACK: only right for cartesian?
@@ -751,80 +645,22 @@ class Multiply(Future, metaclass=MultiClass):
         return {var: ncc_mat @ operand_mats[var] for var in operand_mats}
 
 
-
-
-
-
-# class MultiplyArrayArray(Multiply, FutureArray):
-
-#     argtypes = (Array, FutureArray)
-
-#     def check_conditions(self):
-#         return True
-
-#     def enforce_conditions(self):
-#         pass
-
-#     def operate(self, out):
-#         np.prod([arg.data for arg in self.args], axis=0, out=out.data)
-
-
 class MultiplyFields(Multiply, FutureField):
     """Multiplication operator for fields."""
 
     argtypes = (Field, FutureField)
 
-    def __init__(self, *args, **kw):
-        super().__init__(*args, **kw)
-        # Find required grid axes
-        # Require grid space if more than one argument has nonconstant basis
-        ax_bases = tuple(zip(*(arg.domain.full_bases for arg in self.args)))
-        nonconst_ax_bases = [[b for b in bases if b is not None] for bases in ax_bases]
-        self.required_grid_axes = [len(bases) > 1 for bases in nonconst_ax_bases]
-        #bases = tuple(reduce(operator.mul, bases) for bases in ax_bases)
-        bases = self._build_bases(*self.args)
-        self.dist = unify_attributes(self.args, 'dist')
-        self.domain = Domain(self.dist, bases)
-        self.tensorsig = sum((arg.tensorsig for arg in self.args), tuple())
-        self.dtype = np.result_type(*[arg.dtype for arg in self.args])
-
-    def _build_bases(self, *args):
-        """Build output bases."""
-        bases = []
-        for ax_bases in zip(*(arg.domain.full_bases for arg in args)):
-            if any(basis is not None for basis in ax_bases):
-                # Combine any constant bases to avoid multiplying None and None
-                if any(basis is None for basis in ax_bases):
-                    ax_bases = [basis for basis in ax_bases if basis is not None]
-                    bases.append(np.prod(ax_bases) * None)
-                # Multiply all bases
-                else:
-                    bases.append(np.prod(ax_bases))
-        return tuple(bases)
-
-    def check_conditions(self):
-        """Check that arguments are in a proper layout."""
-        # All layouts must match
-        layouts = set(arg.layout for arg in self.args)
-        if len(layouts) != 1:
-            return False
-        # Required grid axes must be satisfied
-        layout = layouts.pop()
-        return all(layout.grid_space[self.required_grid_axes])
-
-    def enforce_conditions(self):
-        """Require arguments to be in a proper layout."""
-        # Determine best target layout
-        layout = self.choose_layout()
-        # Require layout for all args
-        for arg in self.args:
-            arg.require_layout(layout)
-
-    def choose_layout(self):
-        """Determine best target layout."""
-        # OPTIMIZE: pick shortest absolute distance?
-        # For now require full grid space
-        return self.domain.dist.grid_layout
+    def __init__(self, arg0, arg1, **kw):
+        super().__init__(arg0, arg1, **kw)
+        # # Find required grid axes
+        # # Require grid space if more than one argument has nonconstant basis
+        # ax_bases = tuple(zip(*(arg.domain.full_bases for arg in self.args)))
+        # nonconst_ax_bases = [[b for b in bases if b is not None] for bases in ax_bases]
+        # self.required_grid_axes = [len(bases) > 1 for bases in nonconst_ax_bases]
+        dist = unify_attributes((arg0, arg1), 'dist')
+        self.domain = Domain(dist, self._build_bases(arg0, arg1))
+        self.tensorsig = arg0.tensorsig + arg1.tensorsig
+        self.dtype = np.result_type(arg0.dtype, arg1.dtype)
 
     def operate(self, out):
         """Perform operation."""
@@ -853,6 +689,7 @@ class MultiplyNumberField(Multiply, FutureField):
                 ((Field, FutureField), numbers.Number))
 
     def __init__(self, arg0, arg1, **kw):
+        # Make number come first
         if isinstance(arg1, numbers.Number):
             arg0, arg1 = arg1, arg0
         super().__init__(arg0, arg1, **kw)
