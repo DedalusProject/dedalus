@@ -1478,14 +1478,23 @@ class RegularityBasis(Basis):
             raise NotImplementedError()
 
     def dot_product_ncc(self, operand_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, ncc_first, indices, cutoff=1e-6):
-        Gamma = dedalus_sphere.intertwiner.GammaDotProduct(indices, ncc_first=ncc_first)
-        return self._spin_op_ncc(operand_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, Gamma, cutoff)
+
+        # need to make this work
+        if ncc_first: action = 'left'
+        else:         action = 'right'
+        # P_op = lambda kappa: dedalus_sphere.spin_operators.DorProduct(kappa,action=action)
+
+        return self._spin_op_ncc(operand_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, P_op, cutoff)
 
     def tensor_product_ncc(self, operand_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, ncc_first, cutoff=1e-6):
-        Gamma = dedalus_sphere.intertwiner.GammaTensorProduct(ncc_first=ncc_first)
-        return self._spin_op_ncc(operand_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, Gamma, cutoff)
 
-    def _spin_op_ncc(self, operand_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, Gamma, cutoff):
+        if ncc_first: action = 'left'
+        else:         action = 'right'
+        P_op = lambda kappa: dedalus_sphere.spin_operators.TensorProduct(kappa,action=action)
+
+        return self._spin_op_ncc(operand_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, P_op, cutoff)
+
+    def _spin_op_ncc(self, operand_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, P_op, cutoff):
         # Don't really understand what this is doing...
         #if arg_basis is None:
         #    return super().ncc_matrix(arg_basis, coeffs)
@@ -1499,17 +1508,17 @@ class RegularityBasis(Basis):
         for regindex_out, regtotal_out in np.ndenumerate(R_out):
             submatrix_row = []
             for regindex_in, regtotal_in in np.ndenumerate(R_in):
-                submatrix_row.append(self._spin_op_matrix(ell, operand_basis, coeffs, regindex_in, regtotal_in, regindex_out, regtotal_out, ncc_ts, arg_ts, Gamma, cutoff))
+                submatrix_row.append(self._spin_op_matrix(ell, operand_basis, coeffs, ncc_ts, regindex_in, regindex_out, P_op, cutoff))
             submatrices.append(submatrix_row)
         return sparse.bmat(submatrices)
 
-    def _spin_op_matrix(self, ell, operand_basis, coeffs, regindex_in, regtotal_in, regindex_out, regtotal_out, ncc_ts, input_ts, Gamma, cutoff, gamma_threshold=1e-10):
+    def _spin_op_matrix(self, ell, operand_basis, coeffs, ncc_ts, regindex_in, regindex_out, P_op, cutoff, gamma_threshold=1e-10):
         # here self is the ncc
         operand_radial_basis = operand_basis.radial_basis
         R_ncc = self.regularity_classes(ncc_ts)
-        S_ncc = operand_basis.sphere_basis.spin_weights(ncc_ts)
 
-        S_in = operand_basis.sphere_basis.spin_weights(input_ts)
+        regtotal_in = self.regtotal(regindex_in)
+        regtotal_out = self.regtotal(regindex_out)
         diff_regtotal = regtotal_out - regtotal_in
 
         # jacobi parameters
@@ -1518,22 +1527,37 @@ class RegularityBasis(Basis):
         N = self.n_size(ell)
         matrix = 0 * sparse.identity(N)
 
+        # constructing Gamma function
+        indexing  = np.array([-1,+1,0], dtype=int)
+        def tup(reg):
+            if reg == ():
+                return ()
+            else:
+                return indexing[np.array(reg)]
+
+        def Gamma(ell,r_ncc,r_in,r_out):
+            Q = lambda ell: dedalus_sphere.spin_operators.Intertwiner(ell)
+            a = tup(r_ncc)
+            b = tup(r_in)
+            c = tup(r_out)
+            return (Q(ell).T @ sum( Q(0)[e,a] * P_op(e) for e in Q(0).range(len(a))) @ Q(ell))[c,b]
+
         for regindex_ncc, regtotal_ncc in np.ndenumerate(R_ncc):
             b_ncc = sum(regindex_ncc) + 1/2
             d = regtotal_ncc - abs(diff_regtotal)
             if (d >= 0) and (d % 2 == 0):
-                gamma = Gamma(ell, S_ncc, S_in, regindex_ncc, regindex_in, regindex_out)
+                gamma = Gamma(ell, regindex_ncc, regindex_in, regindex_out)
+                if ell == 0:
+                    print(ell, regindex_ncc, regindex_in, regindex_out, gamma)
                 if abs(gamma) > gamma_threshold:
                     coeffs_filter = coeffs[regindex_ncc][:N]
                     J = operand_radial_basis.operator_matrix('Z',ell,regtotal_in)
-                    R2 = (J + operand_radial_basis.operator_matrix('I',ell,regtotal_in))/2
                     A, B = clenshaw.jacobi_recursion(N, a_ncc, b_ncc, J)
-                    f0 = 1/np.sqrt(jacobi.mass(a_ncc, b_ncc)) * sparse.identity(N)
-                    prefactor = operand_radial_basis.radius_multiplication_matrix(ell, regtotal_in, diff_regtotal)
+                    # assuming that we're doing ball for now...
+                    f0 = dedalus_sphere.zernike.polynomials(3, 1, a_ncc, regtotal_ncc, 1)[0] * sparse.identity(N)
+                    prefactor = operand_radial_basis.radius_multiplication_matrix(ell, regtotal_in, diff_regtotal, d)
                     if np.max(np.abs(coeffs_filter)) > 1e-5:
                         print(regindex_ncc, regindex_in, regindex_out, d, diff_regtotal, gamma)
-                    for i in range(d//2):
-                        prefactor = prefactor @ R2
                     matrix += gamma * prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff)
 
         return matrix
@@ -1622,7 +1646,7 @@ class SphericalShellRadialBasis(RegularityBasis):
         return (self.dR/r)**dk
 
     @CachedMethod
-    def polynomials(self, position):
+    def interpolation(self, position):
         native_position = position*2/self.dR - self.rho
         a = self.alpha[0] + self.k
         b = self.alpha[1] + self.k
@@ -1779,7 +1803,7 @@ class BallRadialBasis(RegularityBasis):
         return weights
 
     @CachedMethod
-    def polynomials(self, ell, regtotal, position):
+    def interpolation(self, ell, regtotal, position):
         native_position = self.radial_COV.native_coord(position)
         return dedalus_sphere.zernike.polynomials(3, self.n_size(ell), self.alpha + self.k, ell + regtotal, native_position)
 
@@ -1836,18 +1860,23 @@ class BallRadialBasis(RegularityBasis):
         return operator(self.n_size(ell), self.alpha + self.k, ell + regtotal).square.astype(np.float64)
 
     @CachedMethod
-    def radius_multiplication_matrix(self, ell, regtotal, order):
-        R = dedalus_sphere.ball.operator(3, 'I', self.Nmax, self.k, ell, regtotal, radius=self.radius, alpha=self.alpha)
-        if order < 0:
-            op = 'R-'
-            sign = -1
-        if order > 0:
-            op = 'R+'
-            sign = +1
-        for order_i in range(abs(order)):
-            Ri = dedalus_sphere.ball.operator(3, op, self.Nmax, self.k, ell, regtotal+sign*order_i, radius=self.radius, alpha=self.alpha)
-            R = Ri @ R
-        return R.astype(np.float64)
+    def radius_multiplication_matrix(self, ell, regtotal, order, d):
+        if order == 0:
+            operator = dedalus_sphere.zernike.operator(3, 'Id', radius=self.radius)
+        else:
+            R = dedalus_sphere.zernike.operator(3, 'R', radius=self.radius)
+
+            if order < 0:
+                operator = R(-1)**abs(order)
+            else: # order > 0
+                operator = R(+1)**abs(order)
+
+        if d > 0:
+            R = dedalus_sphere.zernike.operator(3, 'R', radius=self.radius)
+            R2 = R(-1) @ R(+1)
+            operator = R2**(d//2) @ operator
+
+        return operator(self.n_size(ell), self.alpha + self.k, ell + regtotal).square.astype(np.float64)
 
     def _n_limits(self, ell):
         nmin = dedalus_sphere.zernike.min_degree(ell)
@@ -2266,7 +2295,7 @@ class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperato
     @staticmethod
     @CachedMethod
     def _radial_matrix(basis, ell, regtotal, position):
-        return reshape_vector(basis.polynomials(ell, regtotal, position), dim=2, axis=1)
+        return reshape_vector(basis.interpolation(ell, regtotal, position), dim=2, axis=1)
 
 
 class SphericalShellRadialInterpolate(operators.Interpolate, operators.SphericalEllOperator):
@@ -2337,7 +2366,7 @@ class SphericalShellRadialInterpolate(operators.Interpolate, operators.Spherical
     @staticmethod
     @CachedMethod
     def _radial_matrix(basis, position):
-        return reshape_vector(basis.polynomials(position), dim=2, axis=1)
+        return reshape_vector(basis.interpolation(position), dim=2, axis=1)
 
 
 class SphericalTransposeComponents(operators.TransposeComponents):

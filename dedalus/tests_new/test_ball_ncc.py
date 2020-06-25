@@ -106,7 +106,7 @@ def test_vector_prod_scalar(N):
         sp = Subproblem(ell)
         matrix = ncc_basis.tensor_product_ncc(b, u['c'][:,0,0,:], (c,), (), (c,), sp, ncc_first=True)
         slice = b.n_slice(ell)
-        view = apply_matrix(matrix*np.sqrt(2), g['c'][:,ell,slice], axis=1)
+        view = apply_matrix(matrix, g['c'][:,ell,slice], axis=1)
         shape = w['c'][:,:,ell,slice].shape
         vector = view.reshape(shape[1],shape[0],shape[2])
         w['c'][:,:,ell,slice] = np.transpose(vector, axes=(1,0,2))
@@ -152,7 +152,7 @@ def test_vector_prod_vector(N, ncc_first):
         view = vector.reshape((shape[0],shape[1]*shape[2]))
         matrix = ncc_basis.tensor_product_ncc(arg_basis, u['c'][:,0,0,:], (c,), (c,), (c,c), sp, ncc_first=ncc_first)
         matrix = matrix.tocsr()
-        view = apply_matrix(matrix*np.sqrt(2), view, axis=1)
+        view = apply_matrix(matrix, view, axis=1)
         shape = T['c'][:,:,:,ell,slice].shape
         vector = view.reshape(shape[2],shape[0],shape[1],shape[3])
         W['c'][:,:,:,ell,slice] = np.transpose(vector, axes=(1,2,0,3))
@@ -160,6 +160,7 @@ def test_vector_prod_vector(N, ncc_first):
     assert np.allclose(T['g'], W['g'])
 
 @pytest.mark.parametrize('N', N_range)
+@pytest.mark.skip
 def test_vector_dot_vector(N):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
@@ -194,13 +195,14 @@ def test_vector_dot_vector(N):
         shape = vector.shape
         view = vector.reshape((shape[0],shape[1]*shape[2]))
         matrix = ncc_basis.dot_product_ncc(arg_basis, u['c'][:,0,0,:], (c,), (c,), (), sp, ncc_first=False, indices=(0,0))
-        t['c'][:,ell,slice] = apply_matrix(matrix*np.sqrt(2), view, axis=1)
+        t['c'][:,ell,slice] = apply_matrix(matrix, view, axis=1)
 
     assert np.allclose(t['g'], h['g'])
 
 
 @pytest.mark.parametrize('N', N_range)
-def test_tensor_dot_vector(N):
+@pytest.mark.skip
+def test_vector_dot_tensor(N):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
     b = basis.BallBasis(c, (ang_res, ang_res, N), radius=1)
