@@ -160,7 +160,6 @@ def test_vector_prod_vector(N, ncc_first):
     assert np.allclose(T['g'], W['g'])
 
 @pytest.mark.parametrize('N', N_range)
-@pytest.mark.skip
 def test_vector_dot_vector(N):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
@@ -199,9 +198,7 @@ def test_vector_dot_vector(N):
 
     assert np.allclose(t['g'], h['g'])
 
-
 @pytest.mark.parametrize('N', N_range)
-@pytest.mark.skip
 def test_vector_dot_tensor(N):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
@@ -242,7 +239,7 @@ def test_vector_dot_tensor(N):
         shape = vector.shape
         view = vector.reshape((shape[0],shape[1]*shape[2]*shape[3]))
         matrix = ncc_basis.dot_product_ncc(arg_basis, u['c'][:,0,0,:], (c,), (c,c), (c,), sp, ncc_first=True, indices=(0,0))
-        view = apply_matrix(matrix*np.sqrt(2), view, axis=1)
+        view = apply_matrix(matrix, view, axis=1)
         shape = w['c'][:,:,ell,slice].shape
         vector = view.reshape(shape[1],shape[0],shape[2])
         w['c'][:,:,ell,slice] = np.transpose(vector, axes=(1,0,2))

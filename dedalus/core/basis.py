@@ -1479,10 +1479,15 @@ class RegularityBasis(Basis):
 
     def dot_product_ncc(self, operand_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, ncc_first, indices, cutoff=1e-6):
 
-        # need to make this work
-        if ncc_first: action = 'left'
-        else:         action = 'right'
-        # P_op = lambda kappa: dedalus_sphere.spin_operators.DorProduct(kappa,action=action)
+        index1 = indices[0]
+        if ncc_first:
+            action = 'left'
+            index2 = indices[1] + len(ncc_ts)
+        else:
+            action = 'right'
+            index2 = indices[1] + len(arg_ts)
+        T = dedalus_sphere.spin_operators.Trace((index1, index2))
+        P_op = lambda kappa: T @ dedalus_sphere.spin_operators.TensorProduct(kappa,action=action)
 
         return self._spin_op_ncc(operand_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, P_op, cutoff)
 
@@ -1547,8 +1552,6 @@ class RegularityBasis(Basis):
             d = regtotal_ncc - abs(diff_regtotal)
             if (d >= 0) and (d % 2 == 0):
                 gamma = Gamma(ell, regindex_ncc, regindex_in, regindex_out)
-                if ell == 0:
-                    print(ell, regindex_ncc, regindex_in, regindex_out, gamma)
                 if abs(gamma) > gamma_threshold:
                     coeffs_filter = coeffs[regindex_ncc][:N]
                     J = operand_radial_basis.operator_matrix('Z',ell,regtotal_in)
