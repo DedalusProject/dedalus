@@ -232,3 +232,73 @@ def test_vector_dot_tensor(N, ncc_first):
     w1 = w1.evaluate_as_ncc()
     assert np.allclose(w0['g'], w1['g'])
 
+@pytest.mark.parametrize('N', N_range)
+def test_tensor_pp_prod_scalar(N):
+    c = coords.SphericalCoordinates('phi', 'theta', 'r')
+    d = distributor.Distributor((c,))
+    b = basis.BallBasis(c, (ang_res, ang_res, N), radius=1)
+    phi, theta, r = b.local_grids((1, 1, 1))
+    x = r * np.sin(theta) * np.cos(phi)
+    y = r * np.sin(theta) * np.sin(phi)
+    z = r * np.cos(theta)
+
+    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
+    g = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+    W = field.Field(dist=d, bases=(b,), tensorsig=(c,c), dtype=np.complex128)
+    T = field.Field(dist=d, bases=(b,), tensorsig=(c,c,), dtype=np.complex128)
+
+    f['g'] = r**6
+    g['g'] = 3*x**2 + 2*y*z
+    T = operators.Gradient(operators.Gradient(f, c), c).evaluate()
+
+    T['c'][0,1].fill(0)
+
+    vars = [g]
+    U0 = T * g
+    U1 = U0.reinitialize(ncc=True, ncc_vars=vars)
+
+    problem = problems.LBVP(vars)
+    problem.add_equation((f*g, 0))
+    solver = solvers.LinearBoundaryValueSolver(problem)
+    U1.prep_nccs(vars)
+    U1.store_ncc_matrices(solver.subproblems)
+
+    U0 = U0.evaluate()
+    U1 = U1.evaluate_as_ncc()
+    assert np.allclose(U0['g'], U1['g'])
+
+@pytest.mark.parametrize('N', N_range)
+def test_tensor_mp_prod_scalar(N):
+    c = coords.SphericalCoordinates('phi', 'theta', 'r')
+    d = distributor.Distributor((c,))
+    b = basis.BallBasis(c, (ang_res, ang_res, N), radius=1)
+    phi, theta, r = b.local_grids((1, 1, 1))
+    x = r * np.sin(theta) * np.cos(phi)
+    y = r * np.sin(theta) * np.sin(phi)
+    z = r * np.cos(theta)
+
+    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
+    g = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+    W = field.Field(dist=d, bases=(b,), tensorsig=(c,c), dtype=np.complex128)
+    T = field.Field(dist=d, bases=(b,), tensorsig=(c,c,), dtype=np.complex128)
+
+    f['g'] = r**6
+    g['g'] = 3*x**2 + 2*y*z
+    T = operators.Gradient(operators.Gradient(f, c), c).evaluate()
+
+    T['c'][1,1].fill(0)
+
+    vars = [g]
+    U0 = T * g
+    U1 = U0.reinitialize(ncc=True, ncc_vars=vars)
+
+    problem = problems.LBVP(vars)
+    problem.add_equation((f*g, 0))
+    solver = solvers.LinearBoundaryValueSolver(problem)
+    U1.prep_nccs(vars)
+    U1.store_ncc_matrices(solver.subproblems)
+
+    U0 = U0.evaluate()
+    U1 = U1.evaluate_as_ncc()
+    assert np.allclose(U0['g'], U1['g'])
+
