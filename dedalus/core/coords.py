@@ -109,6 +109,17 @@ class SphericalCoordinates(CoordinateSystem):
             if min(bounds) < 0:
                 raise ValueError("bounds for radial coordinate must not be negative")
 
+    def sub_cs(self, other):
+        if type(other) is Coordinate:
+            if (other == self.radius) or (other == self.colatitude) or (other == self.azimuth):
+                return True
+            else:
+                return False
+        elif type(other) is S2Coordinates:
+            if other == self.S2coordsys: return True
+            else: return False
+        return False
+
     def set_distributor(self, distributor):
         self.dist = distributor
         super().set_distributor(distributor)

@@ -995,8 +995,52 @@ class MultidimensionalBasis(Basis):
         return self.backward_transforms[subaxis](field, axis, cdata, gdata)
 
 
+class SpinRecombinationBasis:
+
+    @CachedMethod
+    def spin_recombination_matrices(self, tensorsig):
+        """Build matrices for appling spin recombination to each tensor rank."""
+        # Setup unitary spin recombination
+        # [azimuth, colatitude] -> [-, +]
+        Us = {2:np.array([[-1j, 1], [1j, 1]]) / np.sqrt(2),
+              3:np.array([[-1j, 1, 0], [1j, 1, 0], [0, 0, np.sqrt(2)]]) / np.sqrt(2)}
+        # Perform unitary spin recombination along relevant tensor indeces
+        U = []
+        for i, cs in enumerate(tensorsig):
+            if cs == self.coordsystem or (type(cs) is SphericalCoordinates and cs.sub_cs(self.coordsystem)):
+                U.append(Us[cs.dim])
+            #if self.coordsystem is vs: # kludge before we decide how compound coordinate systems work
+            #    Ui = np.identity(vs.dim, dtype=np.complex128)
+            #    Ui[:self.dim, :self.dim] = Us
+            #    U.append(Ui)
+            #elif self.coordsystem in vs.spaces:
+            #    n = vector_space.get_index(self.space)
+            #    Ui = np.identity(vector_space.dim, dtype=np.complex128)
+            #    Ui[n:n+self.dim, n:n+self.dim] = Us
+            #    U.append(Ui)
+            else:
+                U.append(None)
+        return U
+
+    def forward_spin_recombination(self, tensorsig, gdata):
+        """Apply component-to-spin recombination in place."""
+        U = self.spin_recombination_matrices(tensorsig)
+        for i, Ui in enumerate(U):
+            if Ui is not None:
+                # Directly apply U
+                apply_matrix(Ui, gdata, axis=i, out=gdata)
+
+    def backward_spin_recombination(self, tensorsig, gdata):
+        """Apply spin-to-component recombination in place."""
+        U = self.spin_recombination_matrices(tensorsig)
+        for i, Ui in enumerate(U):
+            if Ui is not None:
+                # Apply U^H (inverse of U)
+                apply_matrix(Ui.T.conj(), gdata, axis=i, out=gdata)
+
+
 # These are common for S2 and D2
-class SpinBasis(MultidimensionalBasis):
+class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):
 
     def __init__(self, coordsystem, shape, dealias, azimuth_library='matrix'):
         self.coordsystem = coordsystem
@@ -1070,47 +1114,6 @@ class SpinBasis(MultidimensionalBasis):
             #    n = vs.get_index(self.coordsystem)
             #    S[axslice(i, n, n+self.dim)] += reshape_vector(Ss, dim=len(tensorsig), axis=i)
         return S
-
-    @CachedMethod
-    def spin_recombination_matrices(self, tensorsig):
-        """Build matrices for appling spin recombination to each tensor rank."""
-        # Setup unitary spin recombination
-        # [azimuth, colatitude] -> [-, +]
-        Us = {2:np.array([[-1j, 1], [1j, 1]]) / np.sqrt(2),
-              3:np.array([[-1j, 1, 0], [1j, 1, 0], [0, 0, np.sqrt(2)]]) / np.sqrt(2)}
-        # Perform unitary spin recombination along relevant tensor indeces
-        U = []
-        for i, cs in enumerate(tensorsig):
-            if self.coordsystem == cs or (type(cs) is SphericalCoordinates and cs.S2coordsys == self.coordsystem):
-                U.append(Us[cs.dim])
-            #if self.coordsystem is vs: # kludge before we decide how compound coordinate systems work
-            #    Ui = np.identity(vs.dim, dtype=np.complex128)
-            #    Ui[:self.dim, :self.dim] = Us
-            #    U.append(Ui)
-            #elif self.coordsystem in vs.spaces:
-            #    n = vector_space.get_index(self.space)
-            #    Ui = np.identity(vector_space.dim, dtype=np.complex128)
-            #    Ui[n:n+self.dim, n:n+self.dim] = Us
-            #    U.append(Ui)
-            else:
-                U.append(None)
-        return U
-
-    def forward_spin_recombination(self, tensorsig, gdata):
-        """Apply component-to-spin recombination in place."""
-        U = self.spin_recombination_matrices(tensorsig)
-        for i, Ui in enumerate(U):
-            if Ui is not None:
-                # Directly apply U
-                apply_matrix(Ui, gdata, axis=i, out=gdata)
-
-    def backward_spin_recombination(self, tensorsig, gdata):
-        """Apply spin-to-component recombination in place."""
-        U = self.spin_recombination_matrices(tensorsig)
-        for i, Ui in enumerate(U):
-            if Ui is not None:
-                # Apply U^H (inverse of U)
-                apply_matrix(Ui.T.conj(), gdata, axis=i, out=gdata)
 
 
 class DiskBasis(SpinBasis):
@@ -1333,7 +1336,7 @@ SWSH = SpinWeightedSphericalHarmonics
 
 
 # These are common for BallRadialBasis and SphericalShellRadialBasis
-class RegularityBasis(Basis):
+class RegularityBasis(Basis, SpinRecombinationBasis):
 
     dim = 1
     dims = ['radius']
@@ -1671,7 +1674,8 @@ class SphericalShellRadialBasis(RegularityBasis):
         # Multiply by radial factor
         if self.k > 0:
             gdata *= self.radial_transform_factor(field.scales[axis], data_axis, -self.k)
-        # Apply regularity recombination
+        # Apply recombinations
+        self.forward_spin_recombination(field.tensorsig, gdata)
         self.forward_regularity_recombination(field.tensorsig, axis, gdata)
         # Perform radial transforms component-by-component
         R = self.regularity_classes(field.tensorsig)
@@ -1693,8 +1697,9 @@ class SphericalShellRadialBasis(RegularityBasis):
            plan = self.transform_plan(grid_size, self.k)
            plan.backward(cdata[i], temp[i], axis)
         np.copyto(gdata, temp)
-        # Apply regularity recombinations
+        # Apply recombinations
         self.backward_regularity_recombination(field.tensorsig, axis, gdata)
+        self.backward_spin_recombination(field.tensorsig, gdata)
         # Multiply by radial factor
         if self.k > 0:
             gdata *= self.radial_transform_factor(field.scales[axis], data_axis, self.k)
