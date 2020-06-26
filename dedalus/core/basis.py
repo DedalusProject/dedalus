@@ -1563,7 +1563,7 @@ class RegularityBasis(Basis, SpinRecombinationBasis):
                     f0 = dedalus_sphere.zernike.polynomials(3, 1, a_ncc, regtotal_ncc, 1)[0] * sparse.identity(N)
                     prefactor = operand_radial_basis.radius_multiplication_matrix(ell, regtotal_in, diff_regtotal, d)
                     if np.max(np.abs(coeffs_filter)) > 1e-5:
-                        print(regindex_ncc, regindex_in, regindex_out, d, diff_regtotal, gamma)
+                        print(regindex_ncc, regtotal_ncc, regindex_in, regindex_out, d, diff_regtotal, gamma)
                     matrix += gamma * prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff)
 
         return matrix
@@ -1832,7 +1832,8 @@ class BallRadialBasis(RegularityBasis):
         return self.transforms[self.radius_library](grid_shape, self.Nmax+1, axis, local_l, regindex, regtotal, k, alpha)
 
     def forward_transform(self, field, axis, gdata, cdata):
-        # Apply regularity recombination
+        # Apply recombination
+        self.forward_spin_recombination(field.tensorsig, gdata)
         self.forward_regularity_recombination(field.tensorsig, axis, gdata)
         # Perform radial transforms component-by-component
         R = self.regularity_classes(field.tensorsig)
@@ -1854,8 +1855,9 @@ class BallRadialBasis(RegularityBasis):
            plan = self.transform_plan(grid_shape, regindex, axis, self.local_l, regtotal, self.k, self.alpha)
            plan.backward(cdata[regindex], temp[regindex], axis)
         np.copyto(gdata, temp)
-        # Apply regularity recombinations
+        # Apply recombinations
         self.backward_regularity_recombination(field.tensorsig, axis, gdata)
+        self.backward_spin_recombination(field.tensorsig, gdata)
 
     @CachedMethod
     def operator_matrix(self,op,l,deg):

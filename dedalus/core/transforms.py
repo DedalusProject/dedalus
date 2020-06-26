@@ -711,9 +711,9 @@ class BallRadialTransform(NonSeparableTransform):
         # Get functions from sphere library
         z_grid, weights = self._quadrature
         l_matrices = []
+        Rb = np.array([-1, 1, 0], dtype=int)
         for l in self.local_l:
-            # CHECK TO SEE IF IT WORKS -- SEEMS LIKE IT WOULDN'T!!!!!
-            if self.intertwiner(l).forbidden_regularity(self.regindex):
+            if self.regindex != () and self.intertwiner(l).forbidden_regularity(Rb[np.array(self.regindex)]):
                 l_matrices.append(np.zeros((self.N2c, self.N2g)))
             else:
                 Nmin = dedalus_sphere.zernike.min_degree(l)
@@ -733,8 +733,9 @@ class BallRadialTransform(NonSeparableTransform):
         # Get functions from sphere library
         z_grid, weights = self._quadrature
         l_matrices = []
+        Rb = np.array([-1, 1, 0], dtype=int)
         for l in self.local_l:
-            if self.intertwiner(l).forbidden_regularity(self.regindex):
+            if self.regindex != () and self.intertwiner(l).forbidden_regularity(Rb[np.array(self.regindex)]):
                 l_matrices.append(np.zeros((self.N2g, self.N2c)))
             else:
                 Nmin = dedalus_sphere.zernike.min_degree(l)
