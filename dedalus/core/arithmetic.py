@@ -9,6 +9,7 @@ from scipy import sparse
 import itertools
 import operator
 import numbers
+from collections import defaultdict
 
 from .domain import Domain
 from .field import Operand, Array, Field
@@ -58,7 +59,7 @@ class Add(Future, metaclass=MultiClass):
     def _check_args(cls, *args, **kw):
         return all(isinstance(arg, cls.argtypes) for arg in args)
 
-    def __init__(self, *args, out=None):
+    def __init__(self, *args, out=None, **kw):
         # Convert arguments to output bases
         self._bases = self._build_bases(*args)
         args = [convert(arg, self._bases) for arg in args]
@@ -87,6 +88,14 @@ class Add(Future, metaclass=MultiClass):
     @property
     def base(self):
         return Add
+
+    def reinitialize(self, **kw):
+        arg0 = self.args[0].reinitialize(**kw)
+        arg1 = self.args[1].reinitialize(**kw)
+        return self.new_operands(arg0, arg1, **kw)
+
+    def new_operands(self, arg0, arg1, **kw):
+        return Add(arg0, arg1, **kw)
 
     def split(self, *vars):
         """Split into expressions containing and not containing specified operands/operators."""
@@ -218,24 +227,30 @@ alphabet = "abcdefghijklmnopqrstuvwxy"
 
 class Product(Future):
 
-    def _build_bases(self, *args):
+    def _build_bases(self, arg0, arg1, ncc=False, ncc_vars=None, **kw):
         """Build output bases."""
         bases = []
-        for ax_bases in zip(*(arg.domain.full_bases for arg in args)):
+        for b0, b1 in zip(arg0.domain.full_bases, arg1.domain.full_bases):
             # All constant bases yields constant basis
-            if all(basis is None for basis in ax_bases):
-                bases.append(None)
-            # Combine any constant bases to avoid multiplying None and None
-            elif any(basis is None for basis in ax_bases):
-                ax_bases = [basis for basis in ax_bases if basis is not None]
-                bases.append(np.prod(ax_bases) * None)
+            if b0 is None and b1 is None:
+                continue
             # Multiply all bases
+            elif ncc and arg0.has(*ncc_vars):
+                bases.append(b1 @ b0)
+            elif ncc and arg1.has(*ncc_vars):
+                bases.append(b0 @ b1)
             else:
-                bases.append(np.prod(ax_bases))
-        return tuple(bases)
+                bases.append(b0 * b1)
+        bases = {basis.coordsystem: basis for basis in bases}
+        return tuple(bases.values())
 
-    def new_args(self, *args):
-        raise NotImplementedError("%s has not implemented new_args method." %type(self))
+    def reinitialize(self, **kw):
+        arg0 = self.args[0].reinitialize(**kw)
+        arg1 = self.args[1].reinitialize(**kw)
+        return self.new_operands(arg0, arg1, **kw)
+
+    def new_operands(self, *args, **kw):
+        raise NotImplementedError("%s has not implemented new_operands method." %type(self))
 
     def split(self, *vars):
         """Split into expressions containing and not containing specified operands/operators."""
@@ -243,7 +258,7 @@ class Product(Future):
         split_args = [arg.split(*vars) if isinstance(arg, Operand) else (0, arg) for arg in self.args]
         split_args = itertools.product(*split_args)
         # Take product of each term
-        split_ops = [self.new_args(*args) for args in split_args]
+        split_ops = [self.new_operands(*args) for args in split_args]
         # Last combo is all negative splittings, others contain atleast one positive splitting
         return (sum(split_ops[:-1]), split_ops[-1])
 
@@ -251,7 +266,7 @@ class Product(Future):
         """Symbolically differentiate with respect to specified operand."""
         args = self.args
         # Apply product rule to arguments
-        partial_diff = lambda i: self.new_args(*[arg.sym_diff(var) if i==j else arg for j,arg in enumerate(args)])
+        partial_diff = lambda i: self.new_operands(*[arg.sym_diff(var) if i==j else arg for j,arg in enumerate(args)])
         return sum((partial_diff(i) for i in range(len(args))))
 
     def expand(self, *vars):
@@ -266,7 +281,7 @@ class Product(Future):
         else:
             return self
 
-    def require_linearity(self, *vars, name=None):
+    def require_linearity(self, *vars, name=None, recurse=True):
         """Require expression to be linear in specified variables."""
         arg0, arg1 = self.args
         op_arg0 = (isinstance(arg0, Operand) and arg0.has(*vars))
@@ -276,90 +291,68 @@ class Product(Future):
             raise NonlinearOperatorError("{} is a non-linear product of the specified variables.".format(name if name else str(self)))
         if not (op_arg0 or op_arg1):
             raise NonlinearOperatorError("{} does not involve the specified variables.".format(name if name else str(self)))
-        # Require argument linearity
         op_index = int(op_arg1)
-        self.args[op_index].require_linearity(*vars, name=name)
+        if recurse:
+            # Require argument linearity
+            self.args[op_index].require_linearity(*vars, name=name)
         return op_index
 
-    def check_conditions(self):
-        layout0 = self.args[0].layout
-        layout1 = self.args[1].layout
-        # Fields must be in grid layout
-        # Just do full grid space for now
-        return all(layout0.grid_space) and (layout0 is layout1)
-
-    def enforce_conditions(self):
-        # Fields must be in grid layout
-        # Just do full grid space for now
-        for arg in self.args:
-            arg.require_grid_space()
-
-
-class DotProduct(Product, FutureField):
-
-    name = "Dot"
-
-    @classmethod
-    def _preprocess_args(cls, arg0, arg1, indices=(-1,0), out=None):
-        if (not isinstance(arg0, Future)) or (not isinstance(arg1, Future)):
-            raise ValueError("Both arguments to DotProduct must be Future")
-        arg0_rank = len(arg0.tensorsig)
-        arg1_rank = len(arg1.tensorsig)
-        indices = list(indices)
-        for index,rank in zip(indices,(arg0_rank,arg1_rank)):
-            if index > rank or index < -rank:
-                raise ValueError("index %i out of range for field with rank %i" %(index,rank))
-            if index < 0:
-                index += rank
-        indices = tuple(indices)
-        return arg0, arg1, indices, out
-
-    def __init__(self, arg0, arg1, indices=(-1,0), out=None):
-        super().__init__(arg0, arg1, out=out)
-        self.arg0_rank = len(arg0.tensorsig)
-        self.arg1_rank = len(arg1.tensorsig)
-        arg0_ts_reduced = list(arg0.tensorsig)
-        arg0_ts_reduced.pop(indices[0])
-        arg1_ts_reduced = list(arg1.tensorsig)
-        arg1_ts_reduced.pop(indices[1])
-        self.indices = indices
-        # FutureField requirements
-        dist = unify_attributes((arg0, arg1), 'dist')
-        self.domain = Domain(dist, self._build_bases(arg0, arg1))
-        self.tensorsig = tuple(arg0_ts_reduced + arg1_ts_reduced)
-        self.dtype = np.result_type(arg0.dtype, arg1.dtype)
-
-    def __str__(self):
-        # Parenthesize addition arguments
-        def paren_str(arg):
-            if isinstance(arg, Add):
-                return '({})'.format(arg)
-            else:
-                return str(arg)
-        str_args = map(paren_str, self.args)
-        return '@'.join(str_args)
-
-    def new_args(self, arg0, arg1):
-        return DotProduct(arg0, arg1, indices=self.indices)
-
-    def build_ncc_matrices(self, separability, vars, **kw):
-        """Precompute non-constant coefficients and build multiplication matrices."""
-        ncc, operand, operand_first = self.require_linearity(*vars)
-        # Continue NCC matrix construction
-        operand.build_ncc_matrices(separability, vars, **kw)
-        # Evaluate NCC
-        if isinstance(ncc, Future):
-            ncc = ncc.evaluate()
-        ncc.require_coeff_space()
-        # Store NCC matrix, assuming constant-group along operand's constant axes
-        # This generalization enables subproblem-agnostic pre-construction
-        self._ncc_matrix = self._ncc_matrix_recursion(ncc.data, ncc.tensorsig, ncc.bases, operand.bases, operand.tensorsig, separability, self.indices, **kw)
-        self._ncc_operand = operand
+    def prep_nccs(self, vars):
+        """Communicate NCC coeffs prior to matrix construction."""
         self._ncc_vars = vars
-        self._ncc_separability = separability
+        op_index = self.require_linearity(*vars, recurse=False)
+        # Prep operand
+        self.operand = operand = self.args[op_index]
+        operand.prep_nccs(vars)
+        # Evaluate NCC
+        self.ncc = ncc = self.args[1 - op_index]
+        if isinstance(self.ncc, Future):
+            ncc = ncc.evaluate()
+        # Allgather NCC coefficients
+        if isinstance(ncc, Field):
+            ncc.require_coeff_space()
+            self._ncc_data = ncc.allgather_data()
+        else:
+            self._ncc_data = ncc
 
-    @staticmethod
-    def _ncc_matrix_recursion(data, ncc_ts, ncc_bases, arg_bases, arg_ts, separability, indices, **kw):
+    def store_ncc_matrices(self, subproblems, **kw):
+        self._ncc_matrices = {}
+        for subproblem in subproblems:
+            self._ncc_matrices[subproblem] = self.build_ncc_matrix(subproblem, **kw)
+
+    def evaluate_as_ncc(self):
+        op = self.operand.evaluate()
+        out = self.get_out()
+        out['c'] = 0
+        for subproblem, ncc_matrix in self._ncc_matrices.items():
+            for subsystem in subproblem.subsystems:
+                op_ss = op['c'][subsystem.field_slices(op)]
+                out_ss = out['c'][subsystem.field_slices(out)]
+                out_ss[:] = (ncc_matrix @ op_ss.ravel()).reshape(out_ss.shape)
+        return out
+
+    def build_ncc_matrix(self, subproblem, **kw):
+        """Precompute non-constant coefficients and build multiplication matrices."""
+        operand = self.operand
+        ncc = self.ncc
+        ncc_data = self._ncc_data
+        separability = ~ subproblem.problem.matrix_coupling
+        #return = self._ncc_matrix_recursion(ncc_data, ncc.tensorsig, ncc.bases, operand.bases, operand.tensorsig, separability, self.gamma_args, **kw)
+        ncc_basis = ncc.domain.bases[-1]
+        arg_basis = operand.domain.bases[-1]
+        ncc_ts = ncc.tensorsig
+        ncc_ts_shape = [cs.dim for cs in ncc_ts]
+        coeffs = ncc_data.reshape(ncc_ts_shape + [-1])
+        arg_ts = operand.tensorsig
+        out_ts = self.tensorsig
+        gamma_args = self.gamma_args
+        ncc_first = (ncc is self.args[0])
+        return getattr(ncc_basis, self.ncc_method)(arg_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, ncc_first, *gamma_args, cutoff=1e-6)
+
+        # tshape = [cs.dim for cs in ncc.tensorsig]
+        # self._ncc_matrices = [self._ncc_matrix_recursion(ncc.data[ind], ncc.domain.full_bases, operand.domain.full_bases, separability, **kw) for ind in np.ndindex(*tshape)]
+
+    def _ncc_matrix_recursion(self, data, ncc_ts, ncc_bases, arg_bases, arg_ts, separability, gamma_args, **kw):
         """Build NCC matrix by recursing down through the axes."""
         # Build function for deferred-computation of matrix-valued coefficients
         def build_lower_coeffs(i):
@@ -368,8 +361,8 @@ class DotProduct(Product, FutureField):
                 return data[i]
             # Otherwise recursively build matrix-valued coefficients
             else:
-                args = (data[i], ncc_ts, ncc_bases[1:], arg_bases[1:], arg_ts, separability[1:], indices)
-                return DotProduct._ncc_matrix_recursion(*args, **kw)
+                args = (data[i], ncc_ts, ncc_bases[1:], arg_bases[1:], arg_ts, separability[1:], gamma_args)
+                return self._ncc_matrix_recursion(*args, **kw)
         # Build top-level matrix using deferred coeffs
         coeffs = DeferredTuple(build_lower_coeffs, size=data.shape[0])
         ncc_basis = ncc_bases[0]
@@ -398,32 +391,112 @@ class DotProduct(Product, FutureField):
                 return sparse.kron(I, const)
         # Call basis method for constructing NCC matrix
         else:
-            return ncc_basis.dot_product_ncc_matrix(arg_basis, coeffs, ncc_ts, arg_ts, indices, **kw)
+            return getattr(ncc_basis, self.ncc_method)(arg_basis, coeffs, ncc_ts, arg_ts, *gamma_args, **kw)
 
-    def expression_matrices(self, subproblem, vars):
+    def expression_matrices(self, subproblem, vars, **kw):
         """Build expression matrices for a specific subproblem and variables."""
         # Intercept calls to compute matrices over expressions
         if self in vars:
             return Field.expression_matrices(self, subproblem, vars)
-        # Check arguments vs. NCC matrix construction
-        if not hasattr(self, '_ncc_matrix'):
-            raise SymbolicParsingError("Must build NCC matrices before expression matrices.")
+        # Check vars vs. NCC prep
         if vars != self._ncc_vars:
             raise SymbolicParsingError("Must build NCC matrices with same variables.")
-        if tuple(subproblem.problem.separability()) != tuple(self._ncc_separability):
-            raise SymbolicParsingError("Must build NCC matrices with same separability.")
-        # Build operand matrices
-        operand = self._ncc_operand
-        operand_mats = operand.expression_matrices(subproblem, vars)
-        # Modify NCC matrix for subproblem
-        # Build projection matrix dropping constant-groups as necessary
-        group_shape = subproblem.coeff_shape(self.subdomain)
-        const_shape = np.maximum(group_shape, 1)
-        factors = (sparse.eye(*shape, format='csr') for shape in zip(group_shape, const_shape))
-        projection = reduce(sparse.kron, factors, 1).tocsr()
-        ncc_mat = projection @ self._ncc_matrix
-        # Apply NCC matrix
+        # Apply NCC matrix to operand matrices
+        operand_mats = self.operand.expression_matrices(subproblem, vars)
+        ncc_mat = self.build_ncc_matrix(subproblem, **kw)
         return {var: ncc_mat @ operand_mats[var] for var in operand_mats}
+
+        # # Modify NCC matrix for subproblem
+        # # Build projection matrix dropping constant-groups as necessary
+        # group_shape = subproblem.coeff_shape(self.subdomain)
+        # const_shape = np.maximum(group_shape, 1)
+        # factors = (sparse.eye(*shape, format='csr') for shape in zip(group_shape, const_shape))
+        # projection = reduce(sparse.kron, factors, 1).tocsr()
+        # ncc_mat = projection @ self._ncc_matrix
+
+        # # Add factor for components
+        # comps = np.prod([cs.dim for cs in operand.tensorsig], dtype=int)
+        # blocks = []
+        # for ncc_comp_mat in self._ncc_matrices:
+        #     factors = [sparse.identity(comps, format='csr'), ncc_comp_mat]
+        #     blocks.append(reduce(sparse.kron, factors, 1).tocsr())
+        # ncc_mat = sparse.vstack(blocks, format='csr')
+
+    def matrix_dependence(self, *vars):
+        coupling = self.matrix_coupling(*vars)
+        coupling[1] = True  # HACK HACK HACK for spheres coupling ell
+        return coupling
+
+    def matrix_coupling(self, *vars):
+        self.prep_nccs(vars)  # HACK: called too much?
+        operand = self.operand
+        operand_coupling = operand.matrix_coupling(*vars)
+        ncc = self.ncc
+        ncc_coupling = np.array([basis is not None for basis in ncc.domain.full_bases])
+        return ncc_coupling | operand_coupling
+
+    def check_conditions(self):
+        layout0 = self.args[0].layout
+        layout1 = self.args[1].layout
+        # Fields must be in grid layout
+        # Just do full grid space for now
+        return all(layout0.grid_space) and (layout0 is layout1)
+
+    def enforce_conditions(self):
+        # Fields must be in grid layout
+        # Just do full grid space for now
+        for arg in self.args:
+            arg.require_grid_space()
+
+
+class DotProduct(Product, FutureField):
+
+    name = "Dot"
+    ncc_method = "dot_product_ncc"
+
+    def __init__(self, arg0, arg1, indices=(-1,0), out=None, **kw):
+        indices = self._check_indices(arg0, arg1, indices)
+        super().__init__(arg0, arg1, out=out)
+        self.arg0_rank = len(arg0.tensorsig)
+        self.arg1_rank = len(arg1.tensorsig)
+        arg0_ts_reduced = list(arg0.tensorsig)
+        arg0_ts_reduced.pop(indices[0])
+        arg1_ts_reduced = list(arg1.tensorsig)
+        arg1_ts_reduced.pop(indices[1])
+        self.indices = indices
+        self.gamma_args = [indices]
+        # FutureField requirements
+        dist = unify_attributes((arg0, arg1), 'dist')
+        self.domain = Domain(dist, self._build_bases(arg0, arg1, **kw))
+        self.tensorsig = tuple(arg0_ts_reduced + arg1_ts_reduced)
+        self.dtype = np.result_type(arg0.dtype, arg1.dtype)
+
+    def _check_indices(self, arg0, arg1, indices):
+        if (not isinstance(arg0, Operand)) or (not isinstance(arg1, Operand)):
+            raise ValueError("Both arguments to DotProduct must be Operand")
+        arg0_rank = len(arg0.tensorsig)
+        arg1_rank = len(arg1.tensorsig)
+        indices = list(indices)
+        for i,(index,rank) in enumerate(zip(indices,(arg0_rank,arg1_rank))):
+            if index > rank or index < -rank:
+                raise ValueError("index %i out of range for field with rank %i" %(index,rank))
+            if index < 0:
+                index += rank
+            indices[i] = index
+        return tuple(indices)
+
+    def __str__(self):
+        # Parenthesize addition arguments
+        def paren_str(arg):
+            if isinstance(arg, Add):
+                return '({})'.format(arg)
+            else:
+                return str(arg)
+        str_args = map(paren_str, self.args)
+        return '@'.join(str_args)
+
+    def new_operands(self, arg0, arg1, **kw):
+        return DotProduct(arg0, arg1, indices=self.indices, **kw)
 
     def operate(self, out):
         arg0, arg1 = self.args
@@ -455,7 +528,7 @@ class CrossProduct(Product, FutureField):
     # Should make sure arg0 and arg1 are rank 1
     # and that the cs are the same for arg0 and arg1
 
-    def __init__(self, arg0, arg1, out=None):
+    def __init__(self, arg0, arg1, out=None, **kw):
         super().__init__(arg0, arg1, out=out)
         # FutureField requirements
         self.domain = Domain(arg0.dist, self._build_bases(arg0, arg1))
@@ -522,8 +595,8 @@ class Multiply(Product, metaclass=MultiClass):
         str_args = map(paren_str, self.args)
         return '*'.join(str_args)
 
-    def new_args(self, arg0, arg1):
-        return Multiply(arg0, arg1)
+    def new_operands(self, arg0, arg1, **kw):
+        return Multiply(arg0, arg1, **kw)
 
     # def simplify(self, *vars):
     #     """Simplify expression, except subtrees containing specified variables."""
@@ -535,132 +608,30 @@ class Multiply(Product, metaclass=MultiClass):
     #     else:
     #         return self.evaluate()
 
-    def matrix_dependence(self, *vars):
-        return self.matrix_coupling(*vars) ## HACK: only right for cartesian?
-
-    def matrix_coupling(self, *vars):
-        nccs, operand = self.require_linearity(*vars)
-        # NCCs couple along any non-constant dimensions
-        #ncc_bases = Operand.cast(np.prod(nccs), self.dist, self.tensorsig, self.dtype).domain.full_bases
-        ncc_bases = np.prod(nccs).domain.full_bases
-        ncc_coupling = np.array([(basis is not None) for basis in ncc_bases])
-        # Combine with operand separability
-        return ncc_coupling | operand.matrix_coupling(*vars)
-
     # def operator_order(self, operator):
     #     """Determine maximum application order of an operator in the expression."""
     #     # Take maximum order from arguments
     #     return max(arg.operator_order(operator) for arg in self.args)
-
-    def build_ncc_matrices(self, separability, vars, **kw):
-        """Precompute non-constant coefficients and build multiplication matrices."""
-        nccs, operand = self.require_linearity(*vars)
-        # Continue NCC matrix construction
-        operand.build_ncc_matrices(separability, vars, **kw)
-        # Evaluate NCC
-        ncc = np.prod(nccs)
-        if isinstance(ncc, Future):
-            ncc = ncc.evaluate()
-        ncc.require_coeff_space()
-        # Store NCC matrix, assuming constant-group along operand's constant axes
-        # This generalization enables subproblem-agnostic pre-construction
-        tshape = [cs.dim for cs in ncc.tensorsig]
-        self._ncc_matrices = [self._ncc_matrix_recursion(ncc.data[ind], ncc.domain.full_bases, operand.domain.full_bases, separability, **kw) for ind in np.ndindex(*tshape)]
-        self._ncc_operand = operand
-        self._ncc_vars = vars
-        self._ncc_separability = separability
-
-    @staticmethod
-    def _ncc_matrix_recursion(data, ncc_bases, arg_bases, separability, **kw):
-        """Build NCC matrix by recursing down through the axes."""
-        # Build function for deferred-computation of matrix-valued coefficients
-        def build_lower_coeffs(i):
-            # Return scalar-valued coefficients at bottom level
-            if len(data.shape) == 1:
-                return data[i]
-            # Otherwise recursively build matrix-valued coefficients
-            else:
-                args = (data[i], ncc_bases[1:], arg_bases[1:], separability[1:])
-                return Multiply._ncc_matrix_recursion(*args, **kw)
-        # Build top-level matrix using deferred coeffs
-        coeffs = DeferredTuple(build_lower_coeffs, size=data.shape[0])
-        ncc_basis = ncc_bases[0]
-        arg_basis = arg_bases[0]
-        # Kronecker with identities for constant NCC bases
-        if ncc_basis is None:
-            const = coeffs[0]
-            # Trivial Kronecker with [[1]] for constant arg bases
-            # This generalization enables problem-agnostic pre-construction
-            if arg_basis is None:
-                return const
-            # Group-size identity for separable dimensions
-            if separability[0]:
-                I = sparse.identity(arg_basis.group_shape[0])
-            # Coeff-size identity for non-separable dimensions
-            else:
-                I = sparse.identity(arg_basis.size)
-            # Apply cutoff to scalar coeffs
-            if len(const.shape) == 0:
-                cutoff = kw.get('cutoff', 1e-6)
-                if abs(const) > cutoff:
-                    return I * const
-                else:
-                    return I * 0
-            else:
-                return sparse.kron(I, const)
-        # Call basis method for constructing NCC matrix
-        else:
-            return ncc_basis.ncc_matrix(arg_basis, coeffs, **kw)
-
-    def expression_matrices(self, subproblem, vars):
-        """Build expression matrices for a specific subproblem and variables."""
-        # Intercept calls to compute matrices over expressions
-        if self in vars:
-            return Field.expression_matrices(self, subproblem, vars)
-        # Check arguments vs. NCC matrix construction
-        if not hasattr(self, '_ncc_matrices'):
-            raise SymbolicParsingError("Must build NCC matrices before expression matrices.")
-        if vars != self._ncc_vars:
-            raise SymbolicParsingError("Must build NCC matrices with same variables.")
-        # if tuple(subproblem.problem.separability()) != tuple(self._ncc_separability):
-        #     raise SymbolicParsingError("Must build NCC matrices with same separability.")
-        # Build operand matrices
-        operand = self._ncc_operand
-        operand_mats = operand.expression_matrices(subproblem, vars)
-        # Modify NCC matrix for subproblem
-        # Build projection matrix dropping constant-groups as necessary
-        # group_shape = subproblem.coeff_shape(self.domain)
-        # const_shape = np.maximum(group_shape, 1)
-        # factors = (sparse.eye(*shape, format='csr') for shape in zip(group_shape, const_shape))
-        # projection = reduce(sparse.kron, factors, 1).tocsr()
-        # ncc_mat = projection @ self._ncc_matrix
-        # Add factor for components
-        comps = np.prod([cs.dim for cs in operand.tensorsig], dtype=int)
-        blocks = []
-        for ncc_comp_mat in self._ncc_matrices:
-            factors = [sparse.identity(comps, format='csr'), ncc_comp_mat]
-            blocks.append(reduce(sparse.kron, factors, 1).tocsr())
-        ncc_mat = sparse.vstack(blocks, format='csr')
-        # Apply NCC matrix
-        return {var: ncc_mat @ operand_mats[var] for var in operand_mats}
 
 
 class MultiplyFields(Multiply, FutureField):
     """Multiplication operator for fields."""
 
     argtypes = (Field, FutureField)
+    ncc_method = "tensor_product_ncc"
 
-    def __init__(self, arg0, arg1, **kw):
-        super().__init__(arg0, arg1, **kw)
+    def __init__(self, arg0, arg1, out=None, **kw):
+        super().__init__(arg0, arg1, out=out)
         # # Find required grid axes
         # # Require grid space if more than one argument has nonconstant basis
         # ax_bases = tuple(zip(*(arg.domain.full_bases for arg in self.args)))
         # nonconst_ax_bases = [[b for b in bases if b is not None] for bases in ax_bases]
         # self.required_grid_axes = [len(bases) > 1 for bases in nonconst_ax_bases]
         dist = unify_attributes((arg0, arg1), 'dist')
-        self.domain = Domain(dist, self._build_bases(arg0, arg1))
+        self.domain = Domain(dist, self._build_bases(arg0, arg1, **kw))
         self.tensorsig = arg0.tensorsig + arg1.tensorsig
         self.dtype = np.result_type(arg0.dtype, arg1.dtype)
+        self.gamma_args = []
 
     def operate(self, out):
         """Perform operation."""
@@ -688,11 +659,11 @@ class MultiplyNumberField(Multiply, FutureField):
     argtypes = ((numbers.Number, (Field, FutureField)),
                 ((Field, FutureField), numbers.Number))
 
-    def __init__(self, arg0, arg1, **kw):
+    def __init__(self, arg0, arg1, out=None,**kw):
         # Make number come first
         if isinstance(arg1, numbers.Number):
             arg0, arg1 = arg1, arg0
-        super().__init__(arg0, arg1, **kw)
+        super().__init__(arg0, arg1, out=out)
         self.domain = arg1.domain
         self.tensorsig = arg1.tensorsig
         self.dtype = np.result_type(type(arg0), arg1.dtype)

@@ -242,6 +242,7 @@ class IntervalBasis(Basis):
     def __init__(self, coord, size, bounds, dealias):
         self.coord = coord
         coord.check_bounds(bounds)
+        self.coordsystem = coord
         self.size = size
         self.shape = (size,)
         self.bounds = bounds
@@ -1506,8 +1507,7 @@ class RegularityBasis(Basis, SpinRecombinationBasis):
         # Don't really understand what this is doing...
         #if arg_basis is None:
         #    return super().ncc_matrix(arg_basis, coeffs)
-
-        ell = subproblem.ell
+        ell = subproblem.group[operand_basis.coordsystem.axis + 1]
 
         R_in = self.regularity_classes(arg_ts)
         R_out = self.regularity_classes(out_ts)
@@ -1715,7 +1715,7 @@ class SphericalShellRadialBasis(RegularityBasis):
         elif op == 'L':
             D = dedalus_sphere.shell.operator(3, self.radii, 'D', self.alpha)
             operator = D(-1, l+1) @ D(+1, l)
-        else:   
+        else:
             operator = dedalus_sphere.shell.operator(3, self.radii, op, self.alpha)
 
         return operator(self.n_size(l), self.k).square.astype(np.float64)
@@ -1782,12 +1782,23 @@ class BallRadialBasis(RegularityBasis):
     def __mul__(self, other):
         if other is None:
             return self
-        if other is self:
-            return self
         if isinstance(other, BallRadialBasis):
             if self.grid_params == other.grid_params:
                 shape = max(self.shape[0], other.shape[0])
                 k = 0
+                return BallRadialBasis(self.coordsystem, shape, radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias, radius_library=self.radius_library)
+        return NotImplemented
+
+    def __matmul__(self, other):
+        return other.__rmatmul__(self)
+
+    def __rmatmul__(self, other):
+        if other is None:
+            return self
+        if isinstance(other, BallRadialBasis):
+            if self.grid_params == other.grid_params:
+                shape = max(self.shape[0], other.shape[0])
+                k = self.k
                 return BallRadialBasis(self.coordsystem, shape, radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias, radius_library=self.radius_library)
         return NotImplemented
 
@@ -1909,6 +1920,7 @@ class Spherical3DBasis(MultidimensionalBasis):
     dims = ['azimuth', 'colatitude', 'radius']
     group_shape = (1, 1, 1)
     transforms = {}
+    subaxis_dependence = [False, True, True]
 
     def __init__(self, coordsystem, shape_angular, dealias_angular, radial_basis, azimuth_library='matrix', colatitude_library='matrix'):
         self.coordsystem = coordsystem
@@ -2154,8 +2166,6 @@ class BallBasis(Spherical3DBasis):
     def __mul__(self, other):
         if other is None:
             return self
-        if other is self:
-            return self
         if isinstance(other, BallBasis):
             if self.grid_params == other.grid_params:
                 shape = tuple(np.maximum(self.shape, other.shape))
@@ -2163,6 +2173,17 @@ class BallBasis(Spherical3DBasis):
                 return BallBasis(self.coordsystem, shape, radius=self.radial_basis.radius, k=k, alpha=self.radial_basis.alpha, dealias=self.dealias,
                                  azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
                                  radius_library=self.radial_basis.radius_library)
+        if isinstance(other, BallRadialBasis):
+            radial_basis = other * self.radial_basis
+            return self._new_k(radial_basis.k)
+        return NotImplemented
+
+    def __rmatmul__(self, other):
+        if other is None:
+            return self
+        if isinstance(other, BallRadialBasis):
+            radial_basis = other @ self.radial_basis
+            return self._new_k(radial_basis.k)
         return NotImplemented
 
     def _new_k(self, k):

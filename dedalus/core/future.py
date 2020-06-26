@@ -135,7 +135,9 @@ class Future(Operand):
     #     else:
     #         return self.evaluate()
 
-
+    def prep_nccs(self, vars):
+        for arg in self.args:
+            arg.prep_nccs(vars)
 
 
     def evaluate(self, id=None, force=True):
@@ -177,12 +179,9 @@ class Future(Operand):
                 return None
 
         # Allocate output field if necessary
-        if self.out:
-            out = self.out
-        else:
-            out = self.build_out()
-            #out = self.domain.new_data(self.future_type)
-            #out = Field(name=str(self), bases=self.bases)
+        out = self.get_out()
+        #out = self.domain.new_data(self.future_type)
+        #out = Field(name=str(self), bases=self.bases)
 
         # Copy metadata
         out.set_scales(self.domain.dealias)
@@ -199,6 +198,12 @@ class Future(Operand):
             self.last_out = out
 
         return out
+
+    def get_out(self):
+        if self.out:
+            return self.out
+        else:
+            return self.build_out()
 
     def build_out(self):
         bases = self.domain.bases

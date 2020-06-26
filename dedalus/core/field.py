@@ -271,6 +271,10 @@ class Current(Operand):
         """Expand expression over specified variables."""
         return self
 
+    def prep_nccs(self, vars):
+        if self not in vars:
+            raise ValueError("This should never happen.")
+
     # def simplify(self, *vars):
     #     """Simplify expression, except subtrees containing specified variables."""
     #     return self
@@ -330,9 +334,11 @@ class Current(Operand):
     #     # # Store Kronecker product
     #     # self.operator_matrix = reduce(sparse.kron, axmats, 1).tocsr()
 
+    def evaluate(self):
+        return self
 
-
-
+    def reinitialize(self, **kw):
+        return self
 
     @staticmethod
     def _create_buffer(buffer_size):
@@ -665,3 +671,7 @@ class Field(Current):
     # @CachedAttribute
     # def mode_mask(self):
     #     return reduce()
+
+    def allgather_data(self):
+        # HACK: doesn't work in parallel!
+        return self.data.copy()

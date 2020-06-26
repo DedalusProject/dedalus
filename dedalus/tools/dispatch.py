@@ -21,22 +21,21 @@ class MultiClass(type):
             else:
                 raise TypeError("Provided types do not pass dispatch check.")
 
-        # Preprocess arguments and keywords
         try:
+            # Preprocess arguments and keywords
             args, kw = cls._preprocess_args(*args, **kw)
+            # Find applicable subclasses
+            passlist = []
+            for subclass in cls.__subclasses__():
+                if subclass._check_args(*args, **kw):
+                    passlist.append(subclass)
         except SkipDispatchException as exception:
             return exception.output
-
-        # Find applicable subclasses
-        passlist = []
-        for subclass in cls.__subclasses__():
-            if subclass._check_args(*args, **kw):
-                passlist.append(subclass)
 
         if len(passlist) == 0:
             raise NotImplementedError("No subclasses of {} found for the supplied arguments: {}, {}".format(cls, args, kw))
         elif len(passlist) > 1:
-            raise ValueError("Degenerate subclasses of {} found for the supplied arguments: {}, {}".format(cls, args, kw))
+            raise ValueError("Degenerate subclasses of {} found for the supplied arguments {}, {}: {}".format(cls, args, kw, passlist))
         else:
             subclass, = passlist
 

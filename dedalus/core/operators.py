@@ -609,7 +609,11 @@ class LinearOperator(FutureField):
     def __str__(self):
         return '{}({})'.format(self.name, str(self.operand))
 
-    def new_operand(self, operand):
+    def reinitialize(self, **kw):
+        operand = self.operand.reinitialize(**kw)
+        return self.new_operand(operand, **kw)
+
+    def new_operand(self, operand, **kw):
         # Subclasses must implement with correct arguments
         raise NotImplementedError("%s has not implemented the new_operand method." %type(self))
 
@@ -998,8 +1002,8 @@ class Interpolate(SpectralOperator, metaclass=MultiClass):
         self.tensorsig = operand.tensorsig
         self.dtype = operand.dtype
 
-    def new_operand(self, operand):
-        return Interpolate(operand, self.coord, self.position)
+    def new_operand(self, operand, **kw):
+        return Interpolate(operand, self.coord, self.position, **kw)
 
     @CachedAttribute
     def subspace_matrix(self):
@@ -1211,8 +1215,8 @@ class Differentiate(SpectralOperator1D, metaclass=MultiClass):
                 return True
         return False
 
-    def new_operand(self, operand):
-        return Differentiate(operand, self.coord)
+    def new_operand(self, operand, **kw):
+        return Differentiate(operand, self.coord, **kw)
 
     @staticmethod
     def _output_basis(input_basis):
@@ -1372,7 +1376,7 @@ class Convert(SpectralOperator, metaclass=MultiClass):
     def __str__(self):
         return 'C(%s)' %str(self.operand)
 
-    def new_operand(self, operand):
+    def new_operand(self, operand, **kw):
         # Pass through without conversion
         return operand
 
@@ -1448,7 +1452,7 @@ class ConvertSame(Convert):
         if isinstance(operand, Operand):
             for basis in operand.domain.bases:
                 if basis == output_basis:
-                    return True
+                    raise SkipDispatchException(output=operand)
         return False
 
     def __new__(cls, operand, output_basis, out=None):
@@ -1554,8 +1558,8 @@ class TransposeComponents(LinearOperator, metaclass=MultiClass):
         self.tensorsig = operand.tensorsig
         self.dtype = operand.dtype
 
-    def new_operand(self, operand):
-        return TransposeComponents(operand, self.indices)
+    def new_operand(self, operand, **kw):
+        return TransposeComponents(operand, self.indices, **kw)
 
     def matrix_dependence(self, *vars):
         return self.operand.matrix_dependence(*vars)
@@ -1625,8 +1629,8 @@ class RadialComponent(SphericalComponent, metaclass=MultiClass):
         tensorsig = operand.tensorsig
         self.tensorsig = tuple( tensorsig[:index] + tensorsig[index+1:] )
 
-    def new_operand(self, operand):
-        return RadialComponent(operand, self.index)
+    def new_operand(self, operand, **kw):
+        return RadialComponent(operand, self.index, **kw)
 
 
 class AngularComponent(SphericalComponent, metaclass=MultiClass):
@@ -1648,8 +1652,8 @@ class AngularComponent(SphericalComponent, metaclass=MultiClass):
         S2coordsys = tensorsig[index].S2coordsys
         self.tensorsig = tuple( tensorsig[:index] + (S2coordsys,) + tensorsig[index+1:] )
 
-    def new_operand(self, operand):
-        return AngularComponent(operand, self.index)
+    def new_operand(self, operand, **kw):
+        return AngularComponent(operand, self.index, **kw)
 
 
 class Gradient(LinearOperator, metaclass=MultiClass):
@@ -1670,8 +1674,8 @@ class Gradient(LinearOperator, metaclass=MultiClass):
                 return True
         return False
 
-    def new_operand(self, operand):
-        return Gradient(operand, self.coordsys)
+    def new_operand(self, operand, **kw):
+        return Gradient(operand, self.coordsys, **kw)
 
 
 class CartesianGradient(Gradient):
@@ -1960,8 +1964,8 @@ class Component(LinearOperator, metaclass=MultiClass):
         # Dispatch by coordinate system
         return isinstance(operand.tensorsig[index], cls.cs_type)
 
-    def new_operand(self, operand):
-        return Component(operand, self.index, self.coord)
+    def new_operand(self, operand, **kw):
+        return Component(operand, self.index, self.coord, **kw)
 
     # def separability(self, *vars):
     #     return self.operand.separability(*vars)
@@ -2027,8 +2031,8 @@ class Divergence(LinearOperator, metaclass=MultiClass):
                 return True
         return False
 
-    def new_operand(self, operand):
-        return Divergence(operand, index=self.index)
+    def new_operand(self, operand, **kw):
+        return Divergence(operand, index=self.index, **kw)
 
 
 class CartesianDivergence(Divergence):
@@ -2158,8 +2162,8 @@ class Curl(LinearOperator, metaclass=MultiClass):
                 return True
         return False
 
-    def new_operand(self, operand):
-        return Curl(operand, index=self.index)
+    def new_operand(self, operand, **kw):
+        return Curl(operand, index=self.index, **kw)
 
 
 class SphericalCurl(Curl, SphericalEllOperator):
@@ -2246,8 +2250,8 @@ class Laplacian(LinearOperator, metaclass=MultiClass):
                 return True
         return False
 
-    def new_operand(self, operand):
-        return Laplacian(operand, self.coordsys)
+    def new_operand(self, operand, **kw):
+        return Laplacian(operand, self.coordsys, **kw)
 
 
 class CartesianLaplacian(Laplacian):
@@ -2351,8 +2355,8 @@ class SphericalEllProduct(SphericalEllOperator, metaclass=MultiClass):
             raise SkipDispatchException(output=0)
         return [operand, coordsys, ell_func], {'out': out}
 
-    def new_operand(self, operand):
-        return SphericalEllProduct(operand, self.coordsys, self.ell_func)
+    def new_operand(self, operand, **kw):
+        return SphericalEllProduct(operand, self.coordsys, self.ell_func, **kw)
 
 
 class SphericalEllProductField(SphericalEllProduct):

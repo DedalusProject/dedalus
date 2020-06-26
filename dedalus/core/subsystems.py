@@ -60,8 +60,9 @@ def build_subproblems(problem, subsystems, matrices):
         for matrix in matrices:
             expr = eq[matrix]
             if expr:
-                separability = ~problem.matrix_coupling
-                expr.build_ncc_matrices(separability, problem.variables)
+                expr.prep_nccs(problem.variables)
+                # separability = ~problem.matrix_coupling
+                # expr.build_ncc_matrices(separability, problem.variables)
     # Get matrix groups
     subproblem_map = defaultdict(list)
     for subsystem in subsystems:
