@@ -1551,7 +1551,7 @@ class RegularityBasis(Basis, SpinRecombinationBasis):
             return (Q(ell).T @ sum( Q(0)[e,a] * P_op(e) for e in Q(0).range(len(a))) @ Q(ell))[c,b]
 
         for regindex_ncc, regtotal_ncc in np.ndenumerate(R_ncc):
-            b_ncc = sum(regindex_ncc) + 1/2
+            b_ncc = regtotal_ncc + 1/2
             d = regtotal_ncc - abs(diff_regtotal)
             if (d >= 0) and (d % 2 == 0):
                 gamma = Gamma(ell, regindex_ncc, regindex_in, regindex_out)
@@ -1562,8 +1562,6 @@ class RegularityBasis(Basis, SpinRecombinationBasis):
                     # assuming that we're doing ball for now...
                     f0 = dedalus_sphere.zernike.polynomials(3, 1, a_ncc, regtotal_ncc, 1)[0] * sparse.identity(N)
                     prefactor = operand_radial_basis.radius_multiplication_matrix(ell, regtotal_in, diff_regtotal, d)
-                    if np.max(np.abs(coeffs_filter)) > 1e-5:
-                        print(regindex_ncc, regtotal_ncc, regindex_in, regindex_out, d, diff_regtotal, gamma)
                     matrix += gamma * prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff)
 
         return matrix
