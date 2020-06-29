@@ -564,7 +564,7 @@ class FileHandler(Handler):
                 dset.dims[axis+1].label = sn
                 dset.dims[axis+1].attach_scale(scale)
 
-    def process(self, world_time=0, wall_time, sim_time, timestep=0, iteration, **kw):
+    def process(self, world_time=0, wall_time=0, sim_time=0, timestep=0, iteration=0, **kw):
         """Save task outputs to HDF5 file."""
         # HACK: fix world time and timestep inputs from solvers.py/timestepper.py
         file = self.get_file()

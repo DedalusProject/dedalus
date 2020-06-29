@@ -1868,7 +1868,7 @@ class SphericalEllOperator(SpectralOperator):
                 subshape_in = subproblem.coeff_shape(self.operand.domain)
                 subshape_out = subproblem.coeff_shape(self.domain)
                 # Check if regularity component exists for this ell
-                if radial_basis.regularity_allowed(ell, regindex_in) and radial_basis.regularity_allowed(ell, regindex_out):
+                if (regindex_out in self.regindex_out(regindex_in)) and radial_basis.regularity_allowed(ell, regindex_in) and radial_basis.regularity_allowed(ell, regindex_out):
                     # Substitute factor for radial axis
                     factors = [sparse.eye(m, n, format='csr') for m, n in zip(subshape_out, subshape_in)]
                     factors[self.last_axis] = self.radial_matrix(regindex_in, regindex_out, ell)

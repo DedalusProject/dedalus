@@ -117,13 +117,13 @@ class Future(Operand):
         if self == old:
             return new
         # Check base and call with replaced arguments
-        elif self.base == old:
+        elif isinstance(self,old):
             args = [arg.replace(old, new) if isinstance(arg, Operand) else arg for arg in self.args]
             return new(*args)
         # Call with replaced arguments
         else:
             args = [arg.replace(old, new) if isinstance(arg, Operand) else arg for arg in self.args]
-            return self.base(*args)
+            return self.new_operands(*args)
 
     # def simplify(self, *vars):
     #     """Simplify expression, except subtrees containing specified variables."""
@@ -138,7 +138,6 @@ class Future(Operand):
     def prep_nccs(self, vars):
         for arg in self.args:
             arg.prep_nccs(vars)
-
 
     def evaluate(self, id=None, force=True):
         """Recursively evaluate operation."""
