@@ -439,7 +439,7 @@ class Transpose:
         local_shape = self.layout0.local_shape(domain, scales)
         global_shape = self.layout0.global_shape(domain, scales)
         # Global shape along transposing axes, local shape along others
-        sub_shape = local_shape.copy()
+        sub_shape = np.array(local_shape)
         sub_shape[self.axis] = global_shape[self.axis]
         sub_shape[self.axis+1] = global_shape[self.axis+1]
         return sub_shape

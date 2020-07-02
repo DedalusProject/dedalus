@@ -12,6 +12,7 @@ import shutil
 import uuid
 import numpy as np
 from mpi4py import MPI
+import hashlib
 
 from .system import FieldSystem
 #from .operators import Operator, Cast
@@ -508,12 +509,8 @@ class FileHandler(Handler):
         scale_group.create_dataset(name='wall_time', shape=(0,), maxshape=(None,), dtype=np.float64)
         scale_group.create_dataset(name='iteration', shape=(0,), maxshape=(None,), dtype=np.int)
         scale_group.create_dataset(name='write_number', shape=(0,), maxshape=(None,), dtype=np.int)
-        const = scale_group.create_dataset(name='constant', data=np.array([0.], dtype=np.float64))
-        if not skip_spatial_scales:
-            for basis in dist.bases:
-                coeff_name = basis.element_label + basis.name
-                scale_group.create_dataset(name=coeff_name, data=basis.elements)
-                scale_group.create_group(basis.name)
+        scale_group.create_dataset(name='constant', data=np.array([0.], dtype=np.float64))
+        scale_group['constant'].make_scale()
 
         # Tasks
         task_group =  file.create_group('tasks')
@@ -548,25 +545,26 @@ class FileHandler(Handler):
                 dset.dims.create_scale(scale, sn)
                 dset.dims[0].attach_scale(scale)
 
-            if not skip_spatial_scales:
-                # Spatial scales
-                for axis in enumerate(dist.dim):
-                    basis = op.domain.full_bases[axis]
-                    if basis is None:
-                        sn = lookup = 'constant'
+            # Spatial scales
+            for axis in range(dist.dim):
+                basis = op.domain.full_bases[axis]
+                if basis is None:
+                    sn = lookup = 'constant'
+                else:
+                    subaxis = axis - basis.axis
+                    if layout.grid_space[axis]:
+                        sn = basis.coordsystem.coords[subaxis].name
+                        data = basis.local_grids(scales)[subaxis].ravel()
                     else:
-                        if layout.grid_space[axis]:
-                            sn = basis.name
-                            axscale = scales[axis]
-                            if str(axscale) not in scale_group[sn]:
-                                scale_group[sn].create_dataset(name=str(axscale), data=basis.grid(axscale))
-                            lookup = '/'.join((sn, str(axscale)))
-                        else:
-                            sn = lookup = basis.element_label + basis.name
-                    scale = scale_group[lookup]
-                    dset.dims.create_scale(scale, lookup)
-                    dset.dims[axis+1].label = sn
-                    dset.dims[axis+1].attach_scale(scale)
+                        sn = 'k' + basis.coordsystem.coords[subaxis].name
+                        data = basis.local_elements()[subaxis].ravel()
+                    lookup = 'hash_' + hashlib.sha1(data).hexdigest()
+                    if lookup not in scale_group:
+                        scale_group.create_dataset(name=lookup, data=data)
+                        scale_group[lookup].make_scale()
+                scale = scale_group[lookup]
+                dset.dims[axis+1].label = sn
+                dset.dims[axis+1].attach_scale(scale)
 
     def process(self, world_time=0, wall_time=0, sim_time=0, timestep=0, iteration=0, **kw):
         """Save task outputs to HDF5 file."""

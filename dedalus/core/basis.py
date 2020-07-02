@@ -135,6 +135,13 @@ class Basis:
         # Returns tuple of local grids along each subaxis
         raise NotImplementedError
 
+    def local_elements(self):
+        """
+        Local element arrays used for output.
+        Should correspond to all memory indices, NOT applying e.g. triangular truncation.
+        """
+        raise NotImplementedError
+
     def forward_transform(self, field, axis, gdata, cdata):
         """Grid-to-coefficient transform."""
         # Subclasses must implement
@@ -276,6 +283,10 @@ class IntervalBasis(Basis):
         native_grid = self._native_grid(scale)[local_elements]
         problem_grid = self.COV.problem_coord(native_grid)
         return reshape_vector(problem_grid, dim=self.dist.dim, axis=self.axis)
+
+    def local_elements(self):
+        local_elements = self.dist.coeff_layout.local_elements(self.domain, scales=scale)[self.axis]
+        return (local_elements,)
 
     def _native_grid(self, scale):
         """Native flat global grid."""
@@ -618,6 +629,10 @@ class ComplexFourier(IntervalBasis):
     def transform_plan(self, grid_size):
         """Build transform plan."""
         return self.transforms[self.library](grid_size, self.size)
+
+    def local_elements(self):
+        local_elements = self.dist.coeff_layout.local_elements(self.domain, scales=scale)[self.axis]
+        return (self.wavenumbers[local_elements],)
 
     # def include_mode(self, mode):
     #     k = mode // 2
@@ -1066,6 +1081,12 @@ class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):
         layout = self.dist.coeff_layout
         local_m_elements = layout.local_elements(self.domain, scales=1)[self.axis]
         return tuple(self.azimuth_basis.wavenumbers[local_m_elements])
+
+    def local_elements(self):
+        CL = self.dist.coeff_layout
+        LE = CL.local_elements(self.domain, scales=1)[self.axis:self.axis+self.dim]
+        LE[0] = self.local_m
+        return tuple(LE)
 
     def local_groups(self, basis_coupling):
         m_coupling, ell_coupling = basis_coupling
@@ -1967,6 +1988,12 @@ class Spherical3DBasis(MultidimensionalBasis):
         return (self.local_grid_azimuth(scales[0]),
                 self.local_grid_colatitude(scales[1]),
                 self.local_grid_radius(scales[2]))
+
+    def local_elements(self):
+        CL = self.dist.coeff_layout
+        LE = CL.local_elements(self.domain, scales=1)[self.axis:self.axis+self.dim]
+        LE[0] = np.array(self.local_m)
+        return tuple(LE)
 
     def get_radial_basis(self):
         return self.radial_basis
