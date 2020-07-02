@@ -2255,7 +2255,7 @@ class ConvertRegularity(operators.Convert, operators.SphericalEllOperator):
         if regindex_in == regindex_out:
             return radial_basis.conversion_matrix(ell, regtotal, dk)
         else:
-            return radial_basis.operator_matrix('0', ell, 0)
+            raise ValueError("This should never happen.")
 
 
 class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperator):
@@ -2390,7 +2390,7 @@ class SphericalShellRadialInterpolate(operators.Interpolate, operators.Spherical
         if regindex_in == regindex_out:
             return self._radial_matrix(basis, position)
         else:
-            return np.zeros((1,basis.n_size(ell)))
+            raise ValueError("This should never happen.")
 
     def regindex_out(self, regindex_in):
         return (regindex_in,)

@@ -1883,7 +1883,7 @@ class SphericalEllOperator(SpectralOperator):
         return matrix
 
     def regindex_out(self, regindex_in):
-        raise NotImplementedError()
+        raise NotImplementedError("regindex_out not implemented for type %s" %type(self))
 
     def radial_matrix(regindex_in, regindex_out, ell):
         raise NotImplementedError()
