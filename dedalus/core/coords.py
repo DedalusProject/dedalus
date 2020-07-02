@@ -1,5 +1,9 @@
 """Coordinates and coordinate sytems."""
+
 import numpy as np
+
+from ..tools.array import nkron
+
 
 class CoordinateSystem:
 
@@ -78,6 +82,13 @@ class CartesianCoordinates(CoordinateSystem):
 
 
 class S2Coordinates(CoordinateSystem):
+    """
+    S2 coordinate system: (azimuth, colatitude)
+    Coord component ordering: (azimuth, colatitude)
+    Spin component ordering: (-, +)
+    """
+
+    spin_ordering = (-1, +1)
     dim = 2
 
     def __init__(self, azimuth, colatitude):
@@ -85,12 +96,57 @@ class S2Coordinates(CoordinateSystem):
         self.colatitude = Coordinate(colatitude, cs=self)
         self.coords = (self.azimuth, self.colatitude)
 
+    @classmethod
+    def _U_forward(cls, order):
+        """Unitary transfrom from coord to spin components."""
+        # u[+-] = (u[θ] +- 1j*u[φ]) / sqrt(2)
+        Ui = {+1: np.array([+1j, 1]) / np.sqrt(2),
+              -1: np.array([-1j, 1]) / np.sqrt(2)}
+        U = np.array([Ui[spin] for spin in cls.spin_ordering])
+        return nkron(U, order)
+
+    @classmethod
+    def _U_backward(cls, order):
+        """Unitary transform from spin to coord components."""
+        return cls._U_forward(order).T.conj()
+
     @property
     def axis(self):
         return self.azimuth.axis
 
+    def forward_intertwiner(self, axis, order, group):
+        subaxis = axis - self.axis
+        if subaxis == 0:
+            # Azimuth intertwiner is identity, independent of group
+            return np.identity(self.dim**order)
+        elif subaxis == 1:
+            # Colatitude intertwiner is spin-U, independent of group
+            return self._U_forward(order)
+        else:
+            raise ValueError("Invalid axis")
+
+    def backward_intertwiner(self, axis, order, group):
+        subaxis = axis - self.axis
+        if subaxis == 0:
+            # Azimuth intertwiner is identity, independent of group
+            return np.identity(self.dim**order)
+        elif subaxis == 1:
+            # Colatitude intertwiner is spin-U, independent of group
+            return self._U_backward(order)
+        else:
+            raise ValueError("Invalid axis")
+
 
 class SphericalCoordinates(CoordinateSystem):
+    """
+    Spherical coordinate system: (azimuth, colatitude, radius)
+    Coord component ordering: (azimuth, colatitude, radius)
+    Spin component ordering: (-, +, 0)
+    Regularity component ordering: (-, +, 0)
+    """
+
+    spin_ordering = (-1, +1, 0)
+    reg_ordering = (-1, +1, 0)
     dim = 3
 
     def __init__(self, azimuth, colatitude, radius):
@@ -99,6 +155,33 @@ class SphericalCoordinates(CoordinateSystem):
         self.radius = Coordinate(radius, cs=self)
         self.S2coordsys = S2Coordinates(azimuth, colatitude)
         self.coords = (self.azimuth, self.colatitude, self.radius)
+
+    @classmethod
+    def _U_forward(cls, order):
+        """Unitary transfrom from coord to spin components."""
+        # u[+-] = (u[θ] +- 1j*u[φ]) / sqrt(2)
+        # u[0] = u[r]
+        Ui = {+1: np.array([+1j, 1, 0]) / np.sqrt(2),
+              -1: np.array([-1j, 1, 0]) / np.sqrt(2),
+               0: np.array([  0, 0, 1])}
+        U = np.array([Ui[spin] for spin in cls.spin_ordering])
+        return nkron(U, order)
+
+    @classmethod
+    def _U_backward(cls, order):
+        """Unitary transform from spin to coord components."""
+        return cls._U_forward(order).T.conj()
+
+    @classmethod
+    def _Q_forward(cls, ell, order):
+        """Orthogonal transform from spin to regularity components."""
+        return self._Q_backward(ell, order).T
+
+    @classmethod
+    def _Q_backward(cls, ell, order):
+        """Orthogonal transform from regularity to spin components."""
+        # This may not rebust to having spin and reg orderings be different?
+        return dedalus_sphere.spin_operators.Intertwiner(ell, indexing=cls.reg_ordering)(order)
 
     @property
     def axis(self):
@@ -137,4 +220,34 @@ class SphericalCoordinates(CoordinateSystem):
         if (i==0 and j==1 and k==2) or (i==1 and j==2 and k==0) or (i==2 and j==0 and k==1): return -1
         if (i==1 and j==0 and k==2) or (i==2 and j==1 and k==0) or (i==0 and j==2 and k==1): return +1
         return 0
+
+    def forward_intertwiner(self, axis, order, group):
+        subaxis = axis - self.axis
+        if subaxis == 0:
+            # Azimuth intertwiner is identity, independent of group
+            return np.identity(self.dim**order)
+        elif subaxis == 1:
+            # Colatitude intertwiner is spin-U, independent of group
+            return self._U_forward(order)
+        elif subaxis == 2:
+            # Radius intertwiner is reg-Q, dependent on ell
+            ell = group[-1]
+            return self._Q_forward(ell, order)
+        else:
+            raise ValueError("Invalid axis")
+
+    def backward_intertwiner(self, axis, order, group):
+        subaxis = axis - self.axis
+        if subaxis == 0:
+            # Azimuth intertwiner is identity, independent of group
+            return np.identity(self.dim**order)
+        elif subaxis == 1:
+            # Colatitude intertwiner is spin-U, independent of group
+            return self._U_backward(order)
+        elif subaxis == 2:
+            # Radius intertwiner is reg-Q, dependent on ell
+            ell = group[-1]
+            return self._Q_backward(ell, order)
+        else:
+            raise ValueError("Invalid axis")
 

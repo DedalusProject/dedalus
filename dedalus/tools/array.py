@@ -129,3 +129,18 @@ def sparse_block_diag(blocks):
     rows = np.concatenate(rows)
     cols = np.concatenate(cols)
     return sparse.coo_matrix((data, (rows, cols)), shape=(i0,j0))
+
+
+def kron(*factors):
+    if factors:
+        out = factors[0]
+        for f in factors[1:]:
+            out = np.kron(out, f)
+    else:
+        out = np.identity(1)
+    return out
+
+
+def nkron(factor, n):
+    return kron(*[factor for i in range(n)])
+
