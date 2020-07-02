@@ -487,6 +487,8 @@ class FileHandler(Handler):
 
     def setup_file(self, file):
 
+        # Skip spatial scales for now
+        skip_spatial_scales = True
         dist = self.dist
 
         # Metadeta
@@ -507,18 +509,19 @@ class FileHandler(Handler):
         scale_group.create_dataset(name='iteration', shape=(0,), maxshape=(None,), dtype=np.int)
         scale_group.create_dataset(name='write_number', shape=(0,), maxshape=(None,), dtype=np.int)
         const = scale_group.create_dataset(name='constant', data=np.array([0.], dtype=np.float64))
-        for basis in dist.bases:
-            coeff_name = basis.element_label + basis.name
-            scale_group.create_dataset(name=coeff_name, data=basis.elements)
-            scale_group.create_group(basis.name)
+        if not skip_spatial_scales:
+            for basis in dist.bases:
+                coeff_name = basis.element_label + basis.name
+                scale_group.create_dataset(name=coeff_name, data=basis.elements)
+                scale_group.create_group(basis.name)
 
         # Tasks
         task_group =  file.create_group('tasks')
         for task_num, task in enumerate(self.tasks):
+            op = task['operator']
             layout = task['layout']
-            constant = task['operator'].meta[:]['constant']
             scales = task['scales']
-            gnc_shape, gnc_start, write_shape, write_start, write_count = self.get_write_stats(layout, scales, constant, index=0)
+            gnc_shape, gnc_start, write_shape, write_start, write_count = self.get_write_stats(layout, scales, op.domain, op.tensorsig, index=0)
             if np.prod(write_shape) <= 1:
                 # Start with shape[0] = 0 to chunk across writes for scalars
                 file_shape = (0,) + tuple(write_shape)
@@ -526,7 +529,7 @@ class FileHandler(Handler):
                 # Start with shape[0] = 1 to chunk within writes
                 file_shape = (1,) + tuple(write_shape)
             file_max = (None,) + tuple(write_shape)
-            dset = task_group.create_dataset(name=task['name'], shape=file_shape, maxshape=file_max, dtype=layout.dtype)
+            dset = task_group.create_dataset(name=task['name'], shape=file_shape, maxshape=file_max, dtype=op.dtype)
             if not self.parallel:
                 dset.attrs['global_shape'] = gnc_shape
                 dset.attrs['start'] = gnc_start
@@ -534,7 +537,7 @@ class FileHandler(Handler):
 
             # Metadata and scales
             dset.attrs['task_number'] = task_num
-            dset.attrs['constant'] = constant
+            dset.attrs['constant'] = op.domain.constant
             dset.attrs['grid_space'] = layout.grid_space
             dset.attrs['scales'] = scales
 
@@ -545,24 +548,25 @@ class FileHandler(Handler):
                 dset.dims.create_scale(scale, sn)
                 dset.dims[0].attach_scale(scale)
 
-            # Spatial scales
-            for axis in enumerate(dist.dim):
-                basis = task['operator'].domain.full_bases[axis]
-                if basis is None:
-                    sn = lookup = 'constant'
-                else:
-                    if layout.grid_space[axis]:
-                        sn = basis.name
-                        axscale = scales[axis]
-                        if str(axscale) not in scale_group[sn]:
-                            scale_group[sn].create_dataset(name=str(axscale), data=basis.grid(axscale))
-                        lookup = '/'.join((sn, str(axscale)))
+            if not skip_spatial_scales:
+                # Spatial scales
+                for axis in enumerate(dist.dim):
+                    basis = op.domain.full_bases[axis]
+                    if basis is None:
+                        sn = lookup = 'constant'
                     else:
-                        sn = lookup = basis.element_label + basis.name
-                scale = scale_group[lookup]
-                dset.dims.create_scale(scale, lookup)
-                dset.dims[axis+1].label = sn
-                dset.dims[axis+1].attach_scale(scale)
+                        if layout.grid_space[axis]:
+                            sn = basis.name
+                            axscale = scales[axis]
+                            if str(axscale) not in scale_group[sn]:
+                                scale_group[sn].create_dataset(name=str(axscale), data=basis.grid(axscale))
+                            lookup = '/'.join((sn, str(axscale)))
+                        else:
+                            sn = lookup = basis.element_label + basis.name
+                    scale = scale_group[lookup]
+                    dset.dims.create_scale(scale, lookup)
+                    dset.dims[axis+1].label = sn
+                    dset.dims[axis+1].attach_scale(scale)
 
     def process(self, world_time=0, wall_time=0, sim_time=0, timestep=0, iteration=0, **kw):
         """Save task outputs to HDF5 file."""
@@ -603,7 +607,7 @@ class FileHandler(Handler):
             dset = file['tasks'][task['name']]
             dset.resize(index+1, axis=0)
 
-            memory_space, file_space = self.get_hdf5_spaces(out.layout, task['scales'], out.meta[:]['constant'], index)
+            memory_space, file_space = self.get_hdf5_spaces(out.layout, task['scales'], out.domain, out.tensorsig, index)
             if self.parallel:
                 dset.id.write(memory_space, file_space, out.data, dxpl=self._property_list)
             else:
@@ -611,25 +615,29 @@ class FileHandler(Handler):
 
         file.close()
 
-    def get_write_stats(self, layout, scales, constant, index):
+    def get_write_stats(self, layout, scales, domain, tensorsig, index):
         """Determine write parameters for nonconstant subspace of a field."""
 
-        constant = np.array(constant)
+
         # References
-        gshape = layout.global_shape(scales)
-        lshape = layout.local_shape(scales)
-        start = layout.start(scales)
+        tensor_order = len(tensorsig)
+        tensor_shape = tuple(cs.dim for cs in tensorsig)
+        gshape = tensor_shape + layout.global_shape(domain, scales)
+        lshape = tensor_shape + layout.local_shape(domain, scales)
+
+        constant = np.array((False,)*tensor_order + domain.constant)
+        start = np.array([0 for i in range(tensor_order)] + [elements[0] for elements in layout.local_elements(domain, scales)])
         first = (start == 0)
 
         # Build counts, taking just the first entry along constant axes
-        write_count = lshape.copy()
+        write_count = np.array(lshape)
         write_count[constant & first] = 1
         write_count[constant & ~first] = 0
 
         # Collectively writing global data
-        global_nc_shape = gshape.copy()
+        global_nc_shape = np.array(gshape)
         global_nc_shape[constant] = 1
-        global_nc_start = start.copy()
+        global_nc_start = np.array(start)
         global_nc_start[constant & ~first] = 1
 
         if self.parallel:
@@ -643,14 +651,16 @@ class FileHandler(Handler):
 
         return global_nc_shape, global_nc_start, write_shape, write_start, write_count
 
-    def get_hdf5_spaces(self, layout, scales, constant, index):
+    def get_hdf5_spaces(self, layout, scales, domain, tensorsig, index):
         """Create HDF5 space objects for writing nonconstant subspace of a field."""
 
-        constant = np.array(constant)
         # References
-        lshape = layout.local_shape(scales)
-        start = layout.start(scales)
-        gnc_shape, gnc_start, write_shape, write_start, write_count = self.get_write_stats(layout, scales, constant, index)
+        tensor_order = len(tensorsig)
+        tensor_shape = tuple(cs.dim for cs in tensorsig)
+        lshape = tensor_shape + layout.local_shape(domain, scales)
+        constant = np.array((False,)*tensor_order + domain.constant)
+        start = np.array([0 for i in range(tensor_order)] + [elements[0] for elements in layout.local_elements(domain, scales)])
+        gnc_shape, gnc_start, write_shape, write_start, write_count = self.get_write_stats(layout, scales, domain, tensorsig, index)
 
         # Build HDF5 spaces
         memory_shape = tuple(lshape)

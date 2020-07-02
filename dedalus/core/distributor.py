@@ -232,7 +232,7 @@ class Layout:
     def local_shape(self, domain, scales):
         """Local data shape."""
         local_elements = self.local_elements(domain, scales)
-        return np.array([LE.size for LE in local_elements], dtype=int)
+        return tuple(LE.size for LE in local_elements)
 
     def buffer_size(self, bases, scales, dtype):
         """Local buffer size (bytes)."""
