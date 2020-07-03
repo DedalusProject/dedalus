@@ -1589,29 +1589,6 @@ class RegularityBasis(Basis, SpinRecombinationBasis):
 
         return matrix
 
-    def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
-        ell = subproblem.group[1]  # HACK
-        arg_radial_basis = arg_basis.radial_basis
-        regtotal_ncc = self.regtotal(ncc_comp)
-        regtotal_arg = self.regtotal(arg_comp)
-        regtotal_out = self.regtotal(out_comp)
-        diff_regtotal = regtotal_out - regtotal_arg
-        # jacobi parameters
-        a_ncc = self.alpha + self.k
-        b_ncc = regtotal_ncc + 1/2
-        N = self.n_size(ell)
-        matrix = 0 * sparse.identity(N)
-        d = regtotal_ncc - abs(diff_regtotal)
-        if (d >= 0) and (d % 2 == 0):
-            coeffs_filter = coeffs[:N]
-            J = arg_radial_basis.operator_matrix('Z', ell, regtotal_arg)
-            A, B = clenshaw.jacobi_recursion(N, a_ncc, b_ncc, J)
-            # assuming that we're doing ball for now...
-            f0 = dedalus_sphere.zernike.polynomials(3, 1, a_ncc, regtotal_ncc, 1)[0] * sparse.identity(N)
-            prefactor = arg_radial_basis.radius_multiplication_matrix(ell, regtotal_arg, diff_regtotal, d)
-            matrix = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff)
-        return matrix
-
 
 class SphericalShellRadialBasis(RegularityBasis):
 
@@ -1659,13 +1636,24 @@ class SphericalShellRadialBasis(RegularityBasis):
     def __mul__(self, other):
         if other is None:
             return self
-        if other is self:
-            return self
         if isinstance(other, SphericalShellRadialBasis):
             if self.grid_params == other.grid_params:
                 shape = max(self.shape[0], other.shape[0])
                 k = 0
                 return SphericalShellRadialBasis(self.coordsystem, shape, radii=self.radii, alpha=self.alpha, dealias=self.dealias, k=k, radius_library=self.radius_library)
+        return NotImplemented
+
+    def __matmul__(self, other):
+        return other.__rmatmul__(self)
+
+    def __rmatmul__(self, other):
+        if other is None:
+            return self
+        if isinstance(other, SphericalShellRadialBasis):
+            if self.grid_params == other.grid_params:
+                shape = max(self.shape[0], other.shape[0])
+                k = self.k + other.k
+                return SphericalShellRadialBasis(self.coordsystem, shape, radii=self.radii, k=k, alpha=self.alpha, dealias=self.dealias, radius_library=self.radius_library)
         return NotImplemented
 
     def _new_k(self, k):
@@ -1761,7 +1749,11 @@ class SphericalShellRadialBasis(RegularityBasis):
             operator = D(-1, l+1) @ D(+1, l)
         else:
             operator = dedalus_sphere.shell.operator(3, self.radii, op, self.alpha)
+        return operator(self.n_size(l), self.k).square.astype(np.float64)
 
+    def jacobi_conversion(self, l, dk):
+        AB = dedalus_sphere.shell.operator(3, self.radii, 'AB', self.alpha)
+        operator = AB**dk
         return operator(self.n_size(l), self.k).square.astype(np.float64)
 
     @CachedMethod
@@ -1779,6 +1771,24 @@ class SphericalShellRadialBasis(RegularityBasis):
 
     def start(self, groups):
         return 0
+
+    def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
+        ell = subproblem.group[1]  # HACK
+        arg_radial_basis = arg_basis.radial_basis
+        regtotal_arg = self.regtotal(arg_comp)
+        # Jacobi parameters
+        a_ncc = self.k + self.alpha[0]
+        b_ncc = self.k + self.alpha[1]
+        N = self.n_size(ell)
+        matrix = 0 * sparse.identity(N)
+        coeffs_filter = coeffs[:N]
+        J = arg_radial_basis.operator_matrix('Z', ell, regtotal_arg)
+        A, B = clenshaw.jacobi_recursion(N, a_ncc, b_ncc, J)
+        f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0] * sparse.identity(N)
+        # Conversions to account for radial prefactors
+        prefactor = arg_radial_basis.jacobi_conversion(ell, dk=self.k)
+        matrix = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff)
+        return matrix
 
 
 class BallRadialBasis(RegularityBasis):
@@ -1960,6 +1970,30 @@ class BallRadialBasis(RegularityBasis):
         (nmin, Nmax) = self._n_limits(ell)
         return nmin
 
+    def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
+        ell = subproblem.group[1]  # HACK
+        arg_radial_basis = arg_basis.radial_basis
+        regtotal_ncc = self.regtotal(ncc_comp)
+        regtotal_arg = self.regtotal(arg_comp)
+        regtotal_out = self.regtotal(out_comp)
+        diff_regtotal = regtotal_out - regtotal_arg
+        # jacobi parameters
+        a_ncc = self.alpha + self.k
+        b_ncc = regtotal_ncc + 1/2
+        N = self.n_size(ell)
+        matrix = 0 * sparse.identity(N)
+        d = regtotal_ncc - abs(diff_regtotal)
+        if (d >= 0) and (d % 2 == 0):
+            coeffs_filter = coeffs[:N]
+            J = arg_radial_basis.operator_matrix('Z', ell, regtotal_arg)
+            A, B = clenshaw.jacobi_recursion(N, a_ncc, b_ncc, J)
+            # assuming that we're doing ball for now...
+            f0 = dedalus_sphere.zernike.polynomials(3, 1, a_ncc, regtotal_ncc, 1)[0] * sparse.identity(N)
+            prefactor = arg_radial_basis.radius_multiplication_matrix(ell, regtotal_arg, diff_regtotal, d)
+            matrix = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff)
+        return matrix
+
+
 class Spherical3DBasis(MultidimensionalBasis):
 
     dim = 3
@@ -2123,8 +2157,6 @@ class SphericalShellBasis(Spherical3DBasis):
     def __mul__(self, other):
         if other is None:
             return self
-        if other is self:
-            return self
         if isinstance(other, SphericalShellBasis):
             if self.grid_params == other.grid_params:
                 shape = tuple(np.maximum(self.shape, other.shape))
@@ -2132,6 +2164,17 @@ class SphericalShellBasis(Spherical3DBasis):
                 return SphericalShellBasis(self.coordsystem, shape, radii=self.radial_basis.radii, alpha=self.radial_basis.alpha, dealias=self.dealias, k=k,
                                            azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
                                            radius_library=self.radial_basis.radius_library)
+        if isinstance(other, SphericalShellRadialBasis):
+            radial_basis = other * self.radial_basis
+            return self._new_k(radial_basis.k)
+        return NotImplemented
+
+    def __rmatmul__(self, other):
+        if other is None:
+            return self
+        if isinstance(other, SphericalShellRadialBasis):
+            radial_basis = other @ self.radial_basis
+            return self._new_k(radial_basis.k)
         return NotImplemented
 
     def _new_k(self, k):

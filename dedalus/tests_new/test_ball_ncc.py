@@ -4,28 +4,47 @@ import numpy as np
 from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, arithmetic
 from dedalus.core import future
 from dedalus.tools.array import apply_matrix
+from dedalus.tools.cache import CachedFunction
 
 
 dot = arithmetic.DotProduct
-N_range = [8]
-ang_res = 6
+Nphi_range = [6]
+Ntheta_range = [6]
+Nr_range = [12]
+radius_ball = 1
+radii_shell = (0.5, 1)
 
-
-@pytest.mark.parametrize('N', N_range)
-@pytest.mark.parametrize('ncc_first', [True,False])
-def test_scalar_prod_scalar(N, ncc_first):
+@CachedFunction
+def build_ball(Nphi, Ntheta, Nr, dealias):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (ang_res, ang_res, N), radius=1)
-    phi, theta, r = b.local_grids((1, 1, 1))
-    x = r * np.sin(theta) * np.cos(phi)
-    y = r * np.sin(theta) * np.sin(phi)
-    z = r * np.cos(theta)
+    b = basis.BallBasis(c, (Nphi, Ntheta, Nr), radius=radius_ball, dealias=(dealias, dealias, dealias))
+    phi, theta, r = b.local_grids()
+    x, y, z = c.cartesian(phi, theta, r)
+    return c, d, b, phi, theta, r, x, y, z
+
+@CachedFunction
+def build_shell(Nphi, Ntheta, Nr, dealias):
+    c = coords.SphericalCoordinates('phi', 'theta', 'r')
+    d = distributor.Distributor((c,))
+    b = basis.SphericalShellBasis(c, (Nphi, Ntheta, Nr), radii=radii_shell, dealias=(dealias, dealias, dealias))
+    phi, theta, r = b.local_grids()
+    x, y, z = c.cartesian(phi, theta, r)
+    return c, d, b, phi, theta, r, x, y, z
+
+
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+@pytest.mark.parametrize('ncc_first', [True,False])
+def test_scalar_prod_scalar(Nphi, Ntheta, Nr, basis, ncc_first):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=1.5)
 
     f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
     g = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     f['g'] = r**4
-    g['g'] = 3*x**2 + 2*y*z
+    g['g'] = (3*x**2 + 2*y*z)
 
     vars = [g]
     if ncc_first:
@@ -41,20 +60,18 @@ def test_scalar_prod_scalar(N, ncc_first):
     w1.store_ncc_matrices(solver.subproblems)
 
     w0 = w0.evaluate()
+    w0.require_scales(1)
     w1 = w1.evaluate_as_ncc()
     assert np.allclose(w0['g'], w1['g'])
 
 
-@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('ncc_first', [True,False])
-def test_scalar_prod_vector(N, ncc_first):
-    c = coords.SphericalCoordinates('phi', 'theta', 'r')
-    d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (ang_res, ang_res, N), radius=1)
-    phi, theta, r = b.local_grids((1, 1, 1))
-    x = r * np.sin(theta) * np.cos(phi)
-    y = r * np.sin(theta) * np.sin(phi)
-    z = r * np.cos(theta)
+def test_scalar_prod_vector(Nphi, Ntheta, Nr, basis, ncc_first):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=1.5)
 
     f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
     g = field.Field(dist=d, bases=(b,), dtype=np.complex128)
@@ -77,20 +94,18 @@ def test_scalar_prod_vector(N, ncc_first):
     w1.store_ncc_matrices(solver.subproblems)
 
     w0 = w0.evaluate()
+    w0.require_scales(1)
     w1 = w1.evaluate_as_ncc()
     assert np.allclose(w0['g'], w1['g'])
 
 
-@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('ncc_first', [True,False])
-def test_scalar_prod_tensor(N, ncc_first):
-    c = coords.SphericalCoordinates('phi', 'theta', 'r')
-    d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (ang_res, ang_res, N), radius=1)
-    phi, theta, r = b.local_grids((1, 1, 1))
-    x = r * np.sin(theta) * np.cos(phi)
-    y = r * np.sin(theta) * np.sin(phi)
-    z = r * np.cos(theta)
+def test_scalar_prod_tensor(Nphi, Ntheta, Nr, basis, ncc_first):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=1.5)
 
     f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
     g = field.Field(dist=d, bases=(b,), dtype=np.complex128)
@@ -113,20 +128,19 @@ def test_scalar_prod_tensor(N, ncc_first):
     w1.store_ncc_matrices(solver.subproblems)
 
     w0 = w0.evaluate()
+    w0.require_scales(1)
     w1 = w1.evaluate_as_ncc()
     assert np.allclose(w0['g'], w1['g'])
 
 
-@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('ncc_first', [True,False])
-def test_vector_prod_scalar(N, ncc_first):
-    c = coords.SphericalCoordinates('phi', 'theta', 'r')
-    d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (ang_res, ang_res, N), radius=1)
-    phi, theta, r = b.local_grids((1, 1, 1))
-    x = r * np.sin(theta) * np.cos(phi)
-    y = r * np.sin(theta) * np.sin(phi)
-    z = r * np.cos(theta)
+def test_vector_prod_scalar(Nphi, Ntheta, Nr, basis, ncc_first):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=1.5)
+
 
     f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
     g = field.Field(dist=d, bases=(b,), dtype=np.complex128)
@@ -149,20 +163,18 @@ def test_vector_prod_scalar(N, ncc_first):
     w1.store_ncc_matrices(solver.subproblems)
 
     w0 = w0.evaluate()
+    w0.require_scales(1)
     w1 = w1.evaluate_as_ncc()
     assert np.allclose(w0['g'], w1['g'])
 
 
-@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('ncc_first', [True,False])
-def test_vector_prod_vector(N, ncc_first):
-    c = coords.SphericalCoordinates('phi', 'theta', 'r')
-    d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (ang_res, ang_res, N), radius=1)
-    phi, theta, r = b.local_grids((1, 1, 1))
-    x = r * np.sin(theta) * np.cos(phi)
-    y = r * np.sin(theta) * np.sin(phi)
-    z = r * np.cos(theta)
+def test_vector_prod_vector(Nphi, Ntheta, Nr, basis, ncc_first):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=1.5)
 
     f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
     g = field.Field(dist=d, bases=(b,), dtype=np.complex128)
@@ -186,20 +198,18 @@ def test_vector_prod_vector(N, ncc_first):
     w1.store_ncc_matrices(solver.subproblems)
 
     w0 = w0.evaluate()
+    w0.require_scales(1)
     w1 = w1.evaluate_as_ncc()
     assert np.allclose(w0['g'], w1['g'])
 
 
-@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('ncc_first', [True,False])
-def test_vector_dot_vector(N, ncc_first):
-    c = coords.SphericalCoordinates('phi', 'theta', 'r')
-    d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (ang_res, ang_res, N), radius=1)
-    phi, theta, r = b.local_grids((1, 1, 1))
-    x = r * np.sin(theta) * np.cos(phi)
-    y = r * np.sin(theta) * np.sin(phi)
-    z = r * np.cos(theta)
+def test_vector_dot_vector(Nphi, Ntheta, Nr, basis, ncc_first):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=1.5)
 
     f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
     g = field.Field(dist=d, bases=(b,), dtype=np.complex128)
@@ -223,20 +233,18 @@ def test_vector_dot_vector(N, ncc_first):
     w1.store_ncc_matrices(solver.subproblems)
 
     w0 = w0.evaluate()
+    w0.require_scales(1)
     w1 = w1.evaluate_as_ncc()
     assert np.allclose(w0['g'], w1['g'])
 
 
-@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('ncc_first', [True,False])
-def test_vector_dot_tensor(N, ncc_first):
-    c = coords.SphericalCoordinates('phi', 'theta', 'r')
-    d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (ang_res, ang_res, N), radius=1)
-    phi, theta, r = b.local_grids((1, 1, 1))
-    x = r * np.sin(theta) * np.cos(phi)
-    y = r * np.sin(theta) * np.sin(phi)
-    z = r * np.cos(theta)
+def test_vector_dot_tensor(Nphi, Ntheta, Nr, basis, ncc_first):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=1.5)
 
     f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
     T = field.Field(dist=d, bases=(b,), tensorsig=(c,c,), dtype=np.complex128)
@@ -265,20 +273,18 @@ def test_vector_dot_tensor(N, ncc_first):
     w1.store_ncc_matrices(solver.subproblems)
 
     w0 = w0.evaluate()
+    w0.require_scales(1)
     w1 = w1.evaluate_as_ncc()
     assert np.allclose(w0['g'], w1['g'])
 
 
-@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('ncc_first', [True,False])
-def test_tensor_prod_scalar(N, ncc_first):
-    c = coords.SphericalCoordinates('phi', 'theta', 'r')
-    d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (ang_res, ang_res, N), radius=1)
-    phi, theta, r = b.local_grids((1, 1, 1))
-    x = r * np.sin(theta) * np.cos(phi)
-    y = r * np.sin(theta) * np.sin(phi)
-    z = r * np.cos(theta)
+def test_tensor_prod_scalar(Nphi, Ntheta, Nr, basis, ncc_first):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=1.5)
 
     f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
     g = field.Field(dist=d, bases=(b,), dtype=np.complex128)
@@ -301,20 +307,18 @@ def test_tensor_prod_scalar(N, ncc_first):
     U1.store_ncc_matrices(solver.subproblems)
 
     U0 = U0.evaluate()
+    U0.require_scales(1)
     U1 = U1.evaluate_as_ncc()
     assert np.allclose(U0['g'], U1['g'])
 
 
-@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('ncc_first', [True,False])
-def test_tensor_dot_vector(N, ncc_first):
-    c = coords.SphericalCoordinates('phi', 'theta', 'r')
-    d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (ang_res, ang_res, N), radius=1)
-    phi, theta, r = b.local_grids((1, 1, 1))
-    x = r * np.sin(theta) * np.cos(phi)
-    y = r * np.sin(theta) * np.sin(phi)
-    z = r * np.cos(theta)
+def test_tensor_dot_vector(Nphi, Ntheta, Nr, basis, ncc_first):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=1.5)
 
     f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
     g = field.Field(dist=d, bases=(b,), dtype=np.complex128)
@@ -338,20 +342,18 @@ def test_tensor_dot_vector(N, ncc_first):
     w1.store_ncc_matrices(solver.subproblems)
 
     w0 = w0.evaluate()
+    w0.require_scales(1)
     w1 = w1.evaluate_as_ncc()
     assert np.allclose(w0['g'], w1['g'])
 
 
-@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('ncc_first', [True,False])
-def test_tensor_dot_tensor(N, ncc_first):
-    c = coords.SphericalCoordinates('phi', 'theta', 'r')
-    d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (ang_res, ang_res, N), radius=1)
-    phi, theta, r = b.local_grids((1, 1, 1))
-    x = r * np.sin(theta) * np.cos(phi)
-    y = r * np.sin(theta) * np.sin(phi)
-    z = r * np.cos(theta)
+def test_tensor_dot_tensor(Nphi, Ntheta, Nr, basis, ncc_first):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=1.5)
 
     f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
     f['g'] = r**6
@@ -380,6 +382,7 @@ def test_tensor_dot_tensor(N, ncc_first):
     W1.store_ncc_matrices(solver.subproblems)
 
     W0 = W0.evaluate()
+    W0.require_scales(1)
     W1 = W1.evaluate_as_ncc()
     assert np.allclose(W0['g'], W1['g'])
 
