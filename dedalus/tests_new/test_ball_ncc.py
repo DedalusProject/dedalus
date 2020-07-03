@@ -83,6 +83,42 @@ def test_scalar_prod_vector(N, ncc_first):
 
 @pytest.mark.parametrize('N', N_range)
 @pytest.mark.parametrize('ncc_first', [True,False])
+def test_scalar_prod_tensor(N, ncc_first):
+    c = coords.SphericalCoordinates('phi', 'theta', 'r')
+    d = distributor.Distributor((c,))
+    b = basis.BallBasis(c, (ang_res, ang_res, N), radius=1)
+    phi, theta, r = b.local_grids((1, 1, 1))
+    x = r * np.sin(theta) * np.cos(phi)
+    y = r * np.sin(theta) * np.sin(phi)
+    z = r * np.cos(theta)
+
+    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
+    g = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+
+    f['g'] = r**6
+    g['g'] = 3*x**2 + 2*y*z
+    T = operators.Gradient(operators.Gradient(g, c), c).evaluate()
+
+    vars = [T]
+    if ncc_first:
+        w0 = f * T
+    else:
+        w0 = T * f
+    w1 = w0.reinitialize(ncc=True, ncc_vars=vars)
+
+    problem = problems.LBVP(vars)
+    problem.add_equation((w1, 0))
+    solver = solvers.LinearBoundaryValueSolver(problem)
+    w1.prep_nccs(vars)
+    w1.store_ncc_matrices(solver.subproblems)
+
+    w0 = w0.evaluate()
+    w1 = w1.evaluate_as_ncc()
+    assert np.allclose(w0['g'], w1['g'])
+
+
+@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('ncc_first', [True,False])
 def test_vector_prod_scalar(N, ncc_first):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
