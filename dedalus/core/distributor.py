@@ -6,7 +6,7 @@ import logging
 from mpi4py import MPI
 import numpy as np
 
-from ..tools.cache import CachedMethod
+from ..tools.cache import CachedMethod, CachedAttribute
 from ..tools.config import config
 
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -67,6 +67,7 @@ class Distributor:
         self.coords = tuple([coord for coordsystem in coordsystems for coord in coordsystem.coords])
         for coordsystem in coordsystems:
             coordsystem.set_distributor(self)
+        self.coordsystems = coordsystems
         # Defaults
         if comm is None:
             comm = MPI.COMM_WORLD
@@ -88,6 +89,17 @@ class Distributor:
         self.comm_coords = np.array(self.comm_cart.coords, dtype=int)
         # Build layout objects
         self._build_layouts()
+
+    @CachedAttribute
+    def cs_by_axis(self):
+        cs_dict = {}
+        for cs in self.coordsystems:
+            for subaxis in range(cs.dim):
+                cs_dict[cs.axis+subaxis] = cs
+        return cs_dict
+
+    def get_coordsystem(self, axis):
+        return self.cs_by_axis[axis]
 
     def _build_layouts(self, dry_run=False):
         """Construct layout objects."""

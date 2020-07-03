@@ -15,12 +15,18 @@ from .domain import Domain
 from .field import Operand, Array, Field
 from .future import Future, FutureArray, FutureField
 from .operators import convert
+from ..tools.array import kron
 from ..tools.cache import CachedAttribute, CachedMethod
 from ..tools.dispatch import MultiClass
 from ..tools.exceptions import NonlinearOperatorError
 from ..tools.exceptions import SymbolicParsingError
 from ..tools.exceptions import SkipDispatchException
 from ..tools.general import unify_attributes, DeferredTuple
+
+
+def enum_indices(tensorsig):
+    shape = tuple(cs.dim for cs in tensorsig)
+    return enumerate(np.ndindex(shape))
 
 
 class Add(Future, metaclass=MultiClass):
@@ -346,9 +352,34 @@ class Product(Future):
         arg_ts = operand.tensorsig
         out_ts = self.tensorsig
         gamma_args = self.gamma_args
-        ncc_first = (ncc is self.args[0])
-        return getattr(ncc_basis, self.ncc_method)(arg_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, ncc_first, *gamma_args, cutoff=1e-6)
 
+        # ASSUME NCC IS ALONG LAST AXIS
+        axis = self.dist.dim - 1
+        group = subproblem.group
+        ncc_first = (ncc is self.args[0])
+        ncc_group = tuple(0*g if g is not None else None for g in group)
+        if ncc_first:
+            Gamma = self.Gamma(ncc.tensorsig, operand.tensorsig, self.tensorsig, ncc_group, group, group, axis)
+        else:
+            Gamma = self.Gamma(operand.tensorsig, ncc.tensorsig, self.tensorsig, group, ncc_group, group, axis)
+            Gamma = Gamma.transpose((1,0,2))
+
+        # Loop over input and output components to build matrix blocks
+        N = subproblem.coeff_size(operand.domain)
+        blocks = []
+        for ic, out_comp in enum_indices(self.tensorsig):
+            block_row = []
+            for ib, arg_comp in enum_indices(operand.tensorsig):
+                block = sparse.csr_matrix((N, N))
+                # Loop over ncc components
+                for ia, ncc_comp in enum_indices(ncc.tensorsig):
+                    G = Gamma[ia, ib, ic]
+                    if abs(G) > 1e-10:
+                        block += G * ncc_basis.multiplication_matrix(subproblem, arg_basis, coeffs[ncc_comp], ncc_comp, arg_comp, out_comp, cutoff=1e-6)
+                block_row.append(block)
+            blocks.append(block_row)
+        return sparse.bmat(blocks, format='csr')
+        #return getattr(ncc_basis, self.ncc_method)(arg_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, ncc_first, *gamma_args, cutoff=1e-6)
         # tshape = [cs.dim for cs in ncc.tensorsig]
         # self._ncc_matrices = [self._ncc_matrix_recursion(ncc.data[ind], ncc.domain.full_bases, operand.domain.full_bases, separability, **kw) for ind in np.ndindex(*tshape)]
 
@@ -448,6 +479,29 @@ class Product(Future):
         for arg in self.args:
             arg.require_grid_space()
 
+    def Gamma(self, A_tensorsig, B_tensorsig, C_tensorsig, A_group, B_group, C_group, axis):
+        """
+        Gamma(a,b,c) in components after intertwiners for specified axis.
+        Requires wavenumbers of previous axes, i.e. len(group) = axis
+        """
+        # Base case
+        if axis == 0:
+            return self.GammaCoord(A_tensorsig, B_tensorsig, C_tensorsig)
+        # Recurse
+        if axis > 0:
+            G = self.Gamma(A_tensorsig, B_tensorsig, C_tensorsig, A_group, B_group, C_group, axis-1)
+        # Apply Q
+        cs = self.dist.get_coordsystem(axis)
+        QA = cs.backward_intertwiner(axis, len(A_tensorsig), A_group).T
+        QB = cs.backward_intertwiner(axis, len(B_tensorsig), B_group).T
+        QC = cs.forward_intertwiner(axis, len(C_tensorsig), C_group)
+        Q = kron(QA, QB, QC)
+        G = (Q @ G.ravel()).reshape(G.shape)
+        return G
+
+    def GammaCoord(self, A_tensorsig, B_tensorsig, C_tensorsig):
+        raise NotImplementedError("%s has not implemented GammaCoord" %type(self))
+
 
 class DotProduct(Product, FutureField):
 
@@ -497,6 +551,23 @@ class DotProduct(Product, FutureField):
 
     def new_operands(self, arg0, arg1, **kw):
         return DotProduct(arg0, arg1, indices=self.indices, **kw)
+
+    def GammaCoord(self, A_tensorsig, B_tensorsig, C_tensorsig):
+        A_dim = int(np.prod([cs.dim for cs in A_tensorsig]))
+        B_dim = int(np.prod([cs.dim for cs in B_tensorsig]))
+        C_dim = int(np.prod([cs.dim for cs in C_tensorsig]))
+        G = np.zeros((A_dim, B_dim, C_dim), dtype=int)
+        for ia, a in enum_indices(A_tensorsig):
+            a_other = list(a)
+            a_dot = a_other.pop(self.indices[0])
+            for ib, b in enum_indices(B_tensorsig):
+                b_other = list(b)
+                b_dot = b_other.pop(self.indices[1])
+                if a_dot == b_dot:
+                    for ic, c, in enum_indices(C_tensorsig):
+                        if tuple(a_other + b_other) == c:
+                            G[ia, ib, ic] = 1
+        return G
 
     def operate(self, out):
         arg0, arg1 = self.args
@@ -597,6 +668,18 @@ class Multiply(Product, metaclass=MultiClass):
 
     def new_operands(self, arg0, arg1, **kw):
         return Multiply(arg0, arg1, **kw)
+
+    def GammaCoord(self, A_tensorsig, B_tensorsig, C_tensorsig):
+        A_dim = int(np.prod([cs.dim for cs in A_tensorsig]))
+        B_dim = int(np.prod([cs.dim for cs in B_tensorsig]))
+        C_dim = int(np.prod([cs.dim for cs in C_tensorsig]))
+        G = np.zeros((A_dim, B_dim, C_dim), dtype=int)
+        for ia, a in enum_indices(A_tensorsig):
+            for ib, b in enum_indices(B_tensorsig):
+                for ic, c, in enum_indices(C_tensorsig):
+                    if a + b == c:
+                        G[ia, ib, ic] = 1
+        return G
 
     # def simplify(self, *vars):
     #     """Simplify expression, except subtrees containing specified variables."""

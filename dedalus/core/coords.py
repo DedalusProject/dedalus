@@ -1,6 +1,7 @@
 """Coordinates and coordinate sytems."""
 
 import numpy as np
+import dedalus_sphere
 
 from ..tools.array import nkron
 
@@ -175,7 +176,7 @@ class SphericalCoordinates(CoordinateSystem):
     @classmethod
     def _Q_forward(cls, ell, order):
         """Orthogonal transform from spin to regularity components."""
-        return self._Q_backward(ell, order).T
+        return cls._Q_backward(ell, order).T
 
     @classmethod
     def _Q_backward(cls, ell, order):
@@ -231,7 +232,7 @@ class SphericalCoordinates(CoordinateSystem):
             return self._U_forward(order)
         elif subaxis == 2:
             # Radius intertwiner is reg-Q, dependent on ell
-            ell = group[-1]
+            ell = group[axis-1]
             return self._Q_forward(ell, order)
         else:
             raise ValueError("Invalid axis")
@@ -246,7 +247,7 @@ class SphericalCoordinates(CoordinateSystem):
             return self._U_backward(order)
         elif subaxis == 2:
             # Radius intertwiner is reg-Q, dependent on ell
-            ell = group[-1]
+            ell = group[axis-1]
             return self._Q_backward(ell, order)
         else:
             raise ValueError("Invalid axis")

@@ -1589,6 +1589,29 @@ class RegularityBasis(Basis, SpinRecombinationBasis):
 
         return matrix
 
+    def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
+        ell = subproblem.group[1]  # HACK
+        arg_radial_basis = arg_basis.radial_basis
+        regtotal_ncc = self.regtotal(ncc_comp)
+        regtotal_arg = self.regtotal(arg_comp)
+        regtotal_out = self.regtotal(out_comp)
+        diff_regtotal = regtotal_out - regtotal_arg
+        # jacobi parameters
+        a_ncc = self.alpha + self.k
+        b_ncc = regtotal_ncc + 1/2
+        N = self.n_size(ell)
+        matrix = 0 * sparse.identity(N)
+        d = regtotal_ncc - abs(diff_regtotal)
+        if (d >= 0) and (d % 2 == 0):
+            coeffs_filter = coeffs[:N]
+            J = arg_radial_basis.operator_matrix('Z', ell, regtotal_arg)
+            A, B = clenshaw.jacobi_recursion(N, a_ncc, b_ncc, J)
+            # assuming that we're doing ball for now...
+            f0 = dedalus_sphere.zernike.polynomials(3, 1, a_ncc, regtotal_ncc, 1)[0] * sparse.identity(N)
+            prefactor = arg_radial_basis.radius_multiplication_matrix(ell, regtotal_arg, diff_regtotal, d)
+            matrix = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff)
+        return matrix
+
 
 class SphericalShellRadialBasis(RegularityBasis):
 
