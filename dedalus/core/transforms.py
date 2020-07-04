@@ -6,9 +6,10 @@ import dedalus_sphere
 
 from . import basis
 from ..tools import jacobi
-from ..tools.array import apply_matrix
+from ..tools.array import apply_matrix, axslice
 from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
+
 
 def register_transform(basis, name):
     """Decorator to add transform to basis class dictionary."""
@@ -18,6 +19,23 @@ def register_transform(basis, name):
         basis.transforms[name] = cls
         return cls
     return wrapper
+
+
+def reduced_view_3(data, axis):
+    shape = data.shape
+    N0 = int(np.prod(shape[:axis]))
+    N1 = shape[axis]
+    N2 = int(np.prod(shape[axis+1:]))
+    return data.reshape((N0, N1, N2))
+
+
+def reduced_view_4(data, axis):
+    shape = data.shape
+    N0 = int(np.prod(shape[:axis]))
+    N1 = shape[axis]
+    N2 = shape[axis+1]
+    N3 = int(np.prod(shape[axis+2:]))
+    return data.reshape((N0, N1, N2, N3))
 
 
 class Transform:
@@ -119,7 +137,7 @@ class SeparableTransform(Transform):
         # Subclasses must implement
         raise NotImplementedError
 
-    def backward(self, gdata, cdata, axis):
+    def backward(self, cdata, gdata, axis):
         """Apply backward transform along specified axis."""
         # Subclasses must implement
         raise NotImplementedError
@@ -145,11 +163,6 @@ class MatrixTransform(SeparableTransform):
     def backward_matrix(self):
         # Subclasses must implement
         raise NotImplementedError
-
-
-class FastTransform(SeparableTransform):
-    """Separable fast transforms."""
-    pass
 
 
 @register_transform(basis.Jacobi, 'matrix')
@@ -211,13 +224,10 @@ class FourierTransform(SeparableTransform):
         f(x) = \sum_{k=-K}^{K} F(k) \exp(2 \pi i k x / N)
         K = (M - 1) // 2
 
-    Note: Nyquist mode is dropped.
-
+    Notes:
+        - Nyquist mode is zeroed in both directions.
+        - Coefficient ordering is [0, 1, 2, ..., K, K+1, -K, -K+1, ..., -1].
     """
-
-@register_transform(basis.ComplexFourier, 'matrix')
-class FourierMatrixTransform(FourierTransform, MatrixTransform):
-    """Complex Fourier matrix transform."""
 
     def __init__(self, grid_size, coeff_size):
         self.N = grid_size
@@ -229,7 +239,24 @@ class FourierMatrixTransform(FourierTransform, MatrixTransform):
         K = np.arange(M)
         # Wrap around Nyquist mode
         KN = (M + 1) // 2
-        return (K + KN - 1) % M - KN + 1
+        return (K + KN - 1) % M - (KN - 1)
+
+    @staticmethod
+    def resize_coeffs(data_in, data_out, axis, rescale=1):
+        """Resize coefficients by padding/truncation."""
+        data_in_reduced = reduced_view_3(data_in, axis)
+        data_out_reduced = reduced_view_3(data_out, axis)
+        K_in = (data_in.shape[axis] - 1) // 2
+        K_out = (data_out.shape[axis] - 1) // 2
+        K = min(K_in, K_out)
+        np.multiply(data_in_reduced[:, :K+1], rescale, out=data_out_reduced[:, :K+1])
+        data_out_reduced[:, K+1:-K] = 0
+        np.multiply(data_in_reduced[:, -K:], rescale, out=data_out_reduced[:, -K:])
+
+
+@register_transform(basis.ComplexFourier, 'matrix')
+class FourierMatrixTransform(FourierTransform, MatrixTransform):
+    """Complex Fourier matrix transform."""
 
     @CachedAttribute
     def forward_matrix(self):
@@ -237,7 +264,7 @@ class FourierMatrixTransform(FourierTransform, MatrixTransform):
         X = np.arange(self.N)[None, :]
         dX = self.N / 2 / np.pi
         quadrature = np.exp(-1j*K*X/dX) / self.N
-        # Zero Nyquist mode / higher modes for transforms with grid_size < coeff_size
+        # Zero Nyquist and higher modes for transforms with grid_size <= coeff_size
         KN = (min(self.M, self.N) + 1) // 2
         quadrature *= (np.abs(K) < KN)
         return quadrature
@@ -248,12 +275,31 @@ class FourierMatrixTransform(FourierTransform, MatrixTransform):
         X = np.arange(self.N)[:, None]
         dX = self.N / 2 / np.pi
         functions = np.exp(1j*K*X/dX)
-        # Zero Nyquist mode / higher modes for transforms with grid_size < coeff_size
+        # Zero Nyquist and higher modes for transforms with grid_size <= coeff_size
         KN = (min(self.M, self.N) + 1) // 2
         functions *= (np.abs(K) < KN)
         return functions
 
 
+@register_transform(basis.ComplexFourier, 'ScipyFFT')
+class ScipyFFT(FourierTransform):
+    """Complex FFT using Scipy's FFTPACK."""
+
+    def forward(self, gdata, cdata, axis):
+        """Apply forward transform along specified axis."""
+        # Call FFT
+        temp = fftpack.fft(gdata, axis=axis)
+        # Resize and rescale for unit-amplitude normalization
+        self.resize_coeffs(temp, cdata, axis, rescale=1/self.N)
+
+    def backward(self, cdata, gdata, axis):
+        """Apply backward transform along specified axis."""
+        # Resize and rescale for unit-amplitude normalization
+        # Need temporary to avoid overwriting problems
+        temp = np.empty_like(gdata)
+        self.resize_coeffs(cdata, temp, axis, rescale=self.N)
+        # Call FFT
+        gdata[:] = fftpack.ifft(temp, axis=axis)
 
 
 class ScipyDST(PolynomialTransform):
@@ -743,16 +789,6 @@ class BallRadialTransform(NonSeparableTransform):
                 W = dedalus_sphere.zernike.polynomials(3, Nc, self.alpha + self.k, l + self.regtotal, z_grid)
                 l_matrices.append(W.T.astype(np.float64))
         return tuple(l_matrices)
-
-
-
-def reduced_view_4(data, axis):
-    shape = data.shape
-    N0 = int(np.prod(shape[:axis]))
-    N1 = shape[axis]
-    N2 = shape[axis+1]
-    N3 = int(np.prod(shape[axis+2:]))
-    return data.reshape((N0, N1, N2, N3))
 
 
 ## Disk transforms

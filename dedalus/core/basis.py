@@ -614,8 +614,10 @@ class ComplexFourier(IntervalBasis):
     # def __pow__(self, other):
     #     return self.space.Fourier
 
-    def __init__(self, coord, size, bounds, dealias=1, library='matrix'):
+    def __init__(self, coord, size, bounds, dealias=1, library=None):
         super().__init__(coord, size, bounds, dealias)
+        if library is None:
+            library = 'ScipyFFT'
         self.library = library
         self.kmax = kmax = (size - 1) // 2
         self.wavenumbers = np.concatenate((np.arange(0, kmax+2), np.arange(-kmax, 0)))  # Includes Nyquist mode
@@ -1058,7 +1060,7 @@ class SpinRecombinationBasis:
 # These are common for S2 and D2
 class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):
 
-    def __init__(self, coordsystem, shape, dealias, azimuth_library='matrix'):
+    def __init__(self, coordsystem, shape, dealias, azimuth_library=None):
         self.coordsystem = coordsystem
         self.shape = shape
         if np.isscalar(dealias):
@@ -1943,7 +1945,7 @@ class Spherical3DBasis(MultidimensionalBasis):
     transforms = {}
     subaxis_dependence = [False, True, True]
 
-    def __init__(self, coordsystem, shape_angular, dealias_angular, radial_basis, azimuth_library='matrix', colatitude_library='matrix'):
+    def __init__(self, coordsystem, shape_angular, dealias_angular, radial_basis, azimuth_library=None, colatitude_library='matrix'):
         self.coordsystem = coordsystem
         self.shape = tuple( (*shape_angular, *radial_basis.shape ) )
         if np.isscalar(dealias_angular):
@@ -2057,7 +2059,7 @@ class Spherical3DBasis(MultidimensionalBasis):
 
 class SphericalShellBasis(Spherical3DBasis):
 
-    def __init__(self, coordsystem, shape, radii=(1,2), alpha=(-0.5,-0.5), dealias=(1,1,1), k=0, azimuth_library='matrix', colatitude_library='matrix', radius_library='matrix'):
+    def __init__(self, coordsystem, shape, radii=(1,2), alpha=(-0.5,-0.5), dealias=(1,1,1), k=0, azimuth_library=None, colatitude_library='matrix', radius_library='matrix'):
         self.radial_basis = SphericalShellRadialBasis(coordsystem.radius, shape[2], radii=radii, alpha=alpha, dealias=(dealias[2],), k=k, radius_library=radius_library)
         Spherical3DBasis.__init__(self, coordsystem, shape[:2], dealias[:2], self.radial_basis, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
         self.grid_params = (coordsystem, radii, alpha, dealias)
@@ -2154,7 +2156,7 @@ class SphericalShellBasis(Spherical3DBasis):
 
 class BallBasis(Spherical3DBasis):
 
-    def __init__(self, coordsystem, shape, radius=1, k=0, alpha=0, dealias=(1,1,1), azimuth_library='matrix', colatitude_library='matrix', radius_library='matrix'):
+    def __init__(self, coordsystem, shape, radius=1, k=0, alpha=0, dealias=(1,1,1), azimuth_library=None, colatitude_library='matrix', radius_library='matrix'):
         self.radial_basis = BallRadialBasis(coordsystem.radius, shape[2], radius=radius, k=k, alpha=alpha, dealias=(dealias[2],), radius_library=radius_library)
         Spherical3DBasis.__init__(self, coordsystem, shape[:2], dealias[:2], self.radial_basis, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
         self.grid_params = (coordsystem, radius, alpha, dealias)
