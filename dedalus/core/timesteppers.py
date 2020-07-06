@@ -143,6 +143,9 @@ class MultistepIMEX:
         for j in range(1, len(b)):
             RHS.data -= b[j] * LX[j-1].data
 
+        # make sure fields are in coeff space to avoid deadlock in scatter
+        for field in state_fields:
+            field.set_layout('c')
         # Solve
         for sp in subproblems:
             if STORE_LU:
@@ -574,6 +577,9 @@ class RungeKuttaIMEX:
                 RHS.data += k * A[i,j] * F[j].data
                 RHS.data -= k * H[i,j] * LX[j].data
 
+	    # make sure fields are in coeff space to avoid deadlock in scatter
+            for field in state_fields:
+                field.set_layout('c')
             for sp in subproblems:
                 # Construct LHS(n,i)
                 if STORE_LU:
