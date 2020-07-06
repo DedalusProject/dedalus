@@ -79,7 +79,7 @@ def expand_pattern(input, pattern):
     return sparse.coo_matrix((data, (rows, cols)), shape=shape)
 
 
-def apply_matrix(matrix, array, axis, **kw):
+def apply_matrix(matrix, array, axis, optimize=True, **kw):
     """Contract any direction of a multidimensional array with a matrix."""
 
     dim = len(array.shape)
@@ -91,7 +91,7 @@ def apply_matrix(matrix, array, axis, **kw):
     # Handle sparse matrices
     if sparse.isspmatrix(matrix):
         matrix = matrix.todense()
-    out = np.einsum(matrix, mat_sig, array, arr_sig, out_sig, **kw)
+    out = np.einsum(matrix, mat_sig, array, arr_sig, out_sig, optimize=optimize, **kw)
     return out
 
 
