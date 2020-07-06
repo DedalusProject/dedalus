@@ -263,6 +263,8 @@ class Product(Future):
         # Take cartesian product of argument splittings
         split_args = [arg.split(*vars) if isinstance(arg, Operand) else (0, arg) for arg in self.args]
         split_args = itertools.product(*split_args)
+        # Drop any terms with a zero
+        split_args = [(arg0, arg1) for arg0, arg1 in split_args if (arg0 and arg1)]
         # Take product of each term
         split_ops = [self.new_operands(*args) for args in split_args]
         # Last combo is all negative splittings, others contain atleast one positive splitting
@@ -344,8 +346,8 @@ class Product(Future):
         ncc_data = self._ncc_data
         separability = ~ subproblem.problem.matrix_coupling
         #return = self._ncc_matrix_recursion(ncc_data, ncc.tensorsig, ncc.bases, operand.bases, operand.tensorsig, separability, self.gamma_args, **kw)
-        ncc_basis = ncc.domain.bases[-1]
-        arg_basis = operand.domain.bases[-1]
+        ncc_basis = ncc.domain.full_bases[-1]
+        arg_basis = operand.domain.full_bases[-1]
         ncc_ts = ncc.tensorsig
         ncc_ts_shape = [cs.dim for cs in ncc_ts]
         coeffs = ncc_data.reshape(ncc_ts_shape + [-1])
@@ -365,12 +367,13 @@ class Product(Future):
             Gamma = Gamma.transpose((1,0,2))
 
         # Loop over input and output components to build matrix blocks
+        M = subproblem.coeff_size(self.domain)
         N = subproblem.coeff_size(operand.domain)
         blocks = []
         for ic, out_comp in enum_indices(self.tensorsig):
             block_row = []
             for ib, arg_comp in enum_indices(operand.tensorsig):
-                block = sparse.csr_matrix((N, N))
+                block = sparse.csr_matrix((M, N))
                 # Loop over ncc components
                 for ia, ncc_comp in enum_indices(ncc.tensorsig):
                     G = Gamma[ia, ib, ic]

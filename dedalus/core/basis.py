@@ -409,8 +409,20 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
             return other.__mul__(self)
         return NotImplemented
 
+    def __matmul__(self, other):
+        if other is None:
+            return self.__rmatmul__(other)
+        else:
+            return other.__rmatmul__(self)
+
+    def __rmatmul__(self, other):
+        return self.__mul__(other)
+
     # def include_mode(self, mode):
     #     return (0 <= mode < self.space.coeff_size)
+
+    def Jacobi_matrix(self):
+        return dedalus_sphere.jacobi.operator('Z')(self.size, self.a, self.b).square
 
     def ncc_matrix(self, arg_basis, coeffs, cutoff=1e-6):
         """Build NCC matrix via Clenshaw algorithm."""
@@ -434,6 +446,19 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
             return (conversion @ total)
         else:
             raise ValueError("Jacobi ncc_matrix not implemented for basis type: %s" %type(arg_basis))
+
+    def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
+        if arg_basis is None:
+            return super().ncc_matrix(arg_basis, coeffs)
+        # Jacobi parameters
+        a_ncc = self.a
+        b_ncc = self.b
+        M = coeffs.size
+        N = arg_basis.size
+        J = arg_basis.Jacobi_matrix()
+        A, B = clenshaw.jacobi_recursion(M, a_ncc, b_ncc, J)
+        f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0] * sparse.identity(N)
+        return clenshaw.matrix_clenshaw(coeffs, A, B, f0, cutoff=cutoff)
 
 
 def Legendre(*args, **kw):
@@ -607,6 +632,18 @@ class ComplexFourier(IntervalBasis):
         if other is None:
             return self
         elif other is self:
+            return self
+        else:
+            return NotImplemented
+
+    def __matmul__(self, other):
+        if other is None:
+            return self.__rmatmul__(other)
+        else:
+            return other.__rmatmul__(self)
+
+    def __rmatmul__(self, other):
+        if other is None:
             return self
         else:
             return NotImplemented

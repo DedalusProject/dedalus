@@ -32,6 +32,10 @@ class CoordinateSystem:
     def first_axis(self):
         return self.dist.coords.index(self.coords[0])
 
+    @property
+    def axis(self):
+        return self.dist.coords.index(self.coords[0])
+
 
 class Coordinate:
     dim = 1
@@ -80,6 +84,12 @@ class CartesianCoordinates(CoordinateSystem):
         if (i==0 and j==1 and k==2) or (i==1 and j==2 and k==0) or (i==2 and j==0 and k==1): return +1
         if (i==1 and j==0 and k==2) or (i==2 and j==1 and k==0) or (i==0 and j==2 and k==1): return -1
         return 0
+
+    def forward_intertwiner(self, axis, order, group):
+        return np.identity(self.dim**order)
+
+    def backward_intertwiner(self, axis, order, group):
+        return np.identity(self.dim**order)
 
 
 class S2Coordinates(CoordinateSystem):

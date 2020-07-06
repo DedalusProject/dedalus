@@ -49,7 +49,7 @@ if rank == 0:
 P = (Rayleigh * Prandtl)**(-1/2)
 R = (Rayleigh / Prandtl)**(-1/2)
 
-ez = field.Field(name='ez', dist=d, bases=None, dtype=np.complex128, tensorsig=(c,))
+ez = field.Field(name='ez', dist=d, bases=(zb,), dtype=np.complex128, tensorsig=(c,))
 ez['g'][1] = 1
 ghat = - ez
 
@@ -67,8 +67,8 @@ def eq_eval(eq_str):
     return [eval(expr) for expr in split_equation(eq_str)]
 problem = problems.IVP([p, b, u, t1, t2, t3, t4])
 problem.add_equation(eq_eval("div(u) = 0"), condition="nx != 0")
-problem.add_equation(eq_eval("dt(b) - P*lap(b) + P1*t1 + P2*t2 = - dot(u,grad(b)) - dot(u,grad(B)) + P*lap(B)"))
-problem.add_equation(eq_eval("dt(u) - R*lap(u) + grad(p) + P1*t3 + P2*t4 + b*ghat = - dot(u,grad(u)) - B*ghat"), condition="nx != 0")
+problem.add_equation(eq_eval("dt(b) - P*lap(b) + P1*t1 + P2*t2 + dot(u,grad(B)) = - dot(u,grad(b)) + P*lap(B)"))
+problem.add_equation(eq_eval("dt(u) - R*lap(u) + grad(p) + P1*t3 + P2*t4 - b*ghat = - dot(u,grad(u)) - B*ghat"), condition="nx != 0")
 problem.add_equation(eq_eval("b(z=0) = Lz - B(z=0)"))
 problem.add_equation(eq_eval("b(z=Lz) = 0 - B(z=Lz)"))
 problem.add_equation(eq_eval("u(z=0) = 0"), condition="nx != 0")
