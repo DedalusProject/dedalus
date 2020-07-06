@@ -2416,6 +2416,9 @@ class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperato
         else:
             return np.zeros((1,basis.n_size(ell)))
 
+    def regindex_out(self, regindex_in):
+        return (regindex_in,)
+
     @staticmethod
     @CachedMethod
     def _radial_matrix(basis, ell, regtotal, position):
