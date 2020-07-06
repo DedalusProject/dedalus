@@ -102,10 +102,6 @@ class MultistepIMEX:
         a, b, c = self.compute_coefficients(self.dt, self._iteration)
         self._iteration += 1
 
-        # Run evaluator
-        #state.scatter()
-        evaluator.evaluate_scheduled(wall_time=wall_time, sim_time=sim_time, iteration=iteration)
-
         # Update RHS components and LHS matrices
         MX.rotate()
         LX.rotate()
@@ -121,15 +117,21 @@ class MultistepIMEX:
             update_LHS = ((a0, b0) != self._LHS_params)
             self._LHS_params = (a0, b0)
 
-        # Ensure coeff space to avoid transforms in subsystem gathers
-        for field in state_fields + F_fields:
+        # Evaluate M.X0 and L.X0
+        for field in state_fields:
             field.require_coeff_space()
         for sp in subproblems:
             for ss in sp.subsystems:
                 ssX = ss.gather(state_fields)
-                ssF = ss.gather(F_fields)
                 MX0.set_subdata(sp, ss, sp.M_min*ssX)
                 LX0.set_subdata(sp, ss, sp.L_min*ssX)
+
+        # Run evaluator
+        evaluator.evaluate_scheduled(wall_time=wall_time, sim_time=sim_time, iteration=iteration)
+        # F should be in coeff space from evaluator
+        for sp in subproblems:
+            for ss in sp.subsystems:
+                ssF = ss.gather(F_fields)
                 F0.set_subdata(sp, ss, sp.rhs_map*ssF)
 
         # Build RHS
@@ -547,20 +549,23 @@ class RungeKuttaIMEX:
         # (M + k Hii L).X(n,i) = M.X(n,0) + k Aij F(n,j) - k Hij L.X(n,j)
         for i in range(1, self.stages+1):
 
-            # Compute F(n,i-1), L.X(n,i-1)
-            #state.scatter()
-            if i == 1:
-                evaluator.evaluate_scheduled(wall_time=wall_time, sim_time=solver.sim_time, iteration=iteration)
-            else:
-                evaluator.evaluate_group('F', wall_time=wall_time, sim_time=solver.sim_time, iteration=iteration)
-            # Ensure coeff space to avoid transforms in subsystem gathers
-            for field in state_fields + F_fields:
+            # Compute L.X(n,i-1)
+            for field in state_fields:
                 field.require_coeff_space()
             for sp in subproblems:
                 for ss in sp.subsystems:
                     ssX = ss.gather(state_fields)
-                    ssF = ss.gather(F_fields)
                     LX[i-1].set_subdata(sp, ss, sp.L_min*ssX)
+
+            # Compute F(n,i-1)
+            if i == 1:
+                evaluator.evaluate_scheduled(wall_time=wall_time, sim_time=solver.sim_time, iteration=iteration)
+            else:
+                evaluator.evaluate_group('F', wall_time=wall_time, sim_time=solver.sim_time, iteration=iteration)
+            # F should be in coeff space from evaluator
+            for sp in subproblems:
+                for ss in sp.subsystems:
+                    ssF = ss.gather(F_fields)
                     F[i-1].set_subdata(sp, ss, sp.rhs_map*ssF)
 
             # Construct RHS(n,i)
