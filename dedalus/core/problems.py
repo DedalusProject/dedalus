@@ -149,7 +149,6 @@ class ProblemBase:
         # Build equation dictionary
         eqn = {'LHS': LHS,
                'RHS': RHS,
-               'domain': expr.domain,
                'tensorsig': expr.tensorsig,
                'dtype': expr.dtype,
                'condition': condition}
@@ -308,7 +307,7 @@ class LinearBoundaryValueProblem(ProblemBase):
         """Build LHS matrix expressions and check equation conditions."""
         vars = self.variables
         dist = self.dist
-        domain = eqn['domain']
+        #domain = eqn['domain']
         tensorsig = eqn['tensorsig']
         dtype = eqn['dtype']
         # Equation conditions
@@ -316,8 +315,12 @@ class LinearBoundaryValueProblem(ProblemBase):
         #eqn['LHS'].require_linearity(*vars, name='LHS')
         #eqn['RHS'].require_independent(*vars, name='RHS')
         # Matrix expressions
-        L = operators.convert(eqn['LHS'], domain.bases)
+        # Update domain after ncc reinitialization
+        L = eqn['LHS']
+        L = L.reinitialize(ncc=True, ncc_vars=vars)
         F = eqn['RHS']
+        domain = (L - F).domain
+        L = operators.convert(L, domain.bases)
         if F:
             # Cast to match LHS
             F = Operand.cast(F, dist, tensorsig=tensorsig, dtype=dtype)
@@ -479,7 +482,7 @@ class InitialValueProblem(ProblemBase):
         # NEW CHECK!! boulder
         vars = self.variables
         dist = self.dist
-        domain = eqn['domain']
+        #domain = eqn['domain']
         tensorsig = eqn['tensorsig']
         dtype = eqn['dtype']
         # Equation conditions
@@ -493,12 +496,18 @@ class InitialValueProblem(ProblemBase):
         # Drop time derivatives
         if M:
             M = M.replace(self.dt, lambda x:x)
+        # Update domain after ncc reinitialization
+        if M:
+            M = M.reinitialize(ncc=True, ncc_vars=vars)
+        if L:
+            L = L.reinitialize(ncc=True, ncc_vars=vars)
+        F = eqn['RHS']
+        domain = (M + L - F).domain
         # Convert to equation bases and store
         if M:
             M = operators.convert(M, domain.bases)
         if L:
             L = operators.convert(L, domain.bases)
-        F = eqn['RHS']
         if F:
             # Cast to match LHS
             F = Operand.cast(F, dist, tensorsig=tensorsig, dtype=dtype)

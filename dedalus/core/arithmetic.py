@@ -797,3 +797,8 @@ class MultiplyNumberField(Multiply, FutureField):
         nccs, operand = self.require_linearity(*vars)
         # Continue NCC matrix construction
         operand.build_ncc_matrices(separability, vars, **kw)
+
+    def reinitialize(self, **kw):
+        arg0 = self.args[0]
+        arg1 = self.args[1].reinitialize(**kw)
+        return self.new_operands(arg0, arg1, **kw)

@@ -611,7 +611,7 @@ class LinearOperator(FutureField):
 
     def reinitialize(self, **kw):
         operand = self.operand.reinitialize(**kw)
-        return self.new_operand(operand, **kw)
+        return self.new_operand(operand)
 
     def new_operand(self, operand, **kw):
         # Subclasses must implement with correct arguments
