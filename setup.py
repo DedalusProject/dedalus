@@ -21,6 +21,8 @@ import mpi4py
 import os
 import sys
 import glob
+import pathlib
+import tarfile
 
 
 # Helper functions
@@ -184,6 +186,18 @@ compiler_directives['language_level'] = 3
 if bool_env('CYTHON_PROFILE', unset=False):
     compiler_directives['profile'] = True
 
+# Override build command to pack up examples
+from distutils.command.build import build as _build
+class build(_build):
+    def run(self):
+        # Create tar file with example scripts
+        with tarfile.open('dedalus/examples.tar.gz', mode='w:gz') as archive:
+            for file in pathlib.Path('examples').glob('**/*.py'):
+                archive.add(str(file))
+        # Run the original build command
+        _build.run(self)
+
+# Setup
 setup(
     name='dedalus',
     version='2.2006a1',
@@ -197,5 +211,7 @@ setup(
     install_requires=install_requires,
     license='GPL3',
     packages=setuptools.find_packages(),
-    package_data={'': ['dedalus.cfg']},
-    ext_modules=cythonize(extensions, compiler_directives=compiler_directives))
+    package_data={'': ['dedalus.cfg', 'examples.tar.gz']},
+    ext_modules=cythonize(extensions, compiler_directives=compiler_directives),
+    cmdclass={"build": build})
+
