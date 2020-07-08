@@ -126,8 +126,8 @@ class MultistepIMEX:
         for sp in subproblems:
             for ss in sp.subsystems:
                 ssX = ss.gather(state_fields)  # CREATES TEMPORARY
-                csr_matvec(sp.M_min, ssX, out=MX0.get_subdata(sp, ss))
-                csr_matvec(sp.L_min, ssX, out=LX0.get_subdata(sp, ss))
+                csr_matvec(sp.M_min, ssX, MX0.get_subdata(sp, ss))
+                csr_matvec(sp.L_min, ssX, LX0.get_subdata(sp, ss))
 
         # Run evaluator
         evaluator.evaluate_scheduled(wall_time=wall_time, sim_time=sim_time, iteration=iteration)
@@ -136,7 +136,7 @@ class MultistepIMEX:
         for sp in subproblems:
             for ss in sp.subsystems:
                 ssF = ss.gather(F_fields)  # CREATES TEMPORARY
-                csr_matvec(sp.rhs_map, ssF, out=F0.get_subdata(sp, ss))
+                csr_matvec(sp.rhs_map, ssF, F0.get_subdata(sp, ss))
 
         # Build RHS
         np.multiply(c[1], F[0].data, out=RHS.data)
@@ -550,7 +550,7 @@ class RungeKuttaIMEX:
         for sp in subproblems:
             for ss in sp.subsystems:
                 ssX = ss.gather(state_fields)  # CREATES TEMPORARY
-                csr_matvec(sp.M_min, ssX, out=MX0.get_subdata(sp, ss))
+                csr_matvec(sp.M_min, ssX, MX0.get_subdata(sp, ss))
             if STORE_LU and update_LHS:
                 sp.LHS_LU = [None] * (self.stages+1)
 
@@ -565,7 +565,7 @@ class RungeKuttaIMEX:
             for sp in subproblems:
                 for ss in sp.subsystems:
                     ssX = ss.gather(state_fields)  # CREATES TEMPORARY
-                    csr_matvec(sp.L_min, ssX, out=LXi.get_subdata(sp, ss))
+                    csr_matvec(sp.L_min, ssX, LXi.get_subdata(sp, ss))
 
             # Compute F(n,i-1)
             if i == 1:
@@ -578,7 +578,7 @@ class RungeKuttaIMEX:
             for sp in subproblems:
                 for ss in sp.subsystems:
                     ssF = ss.gather(F_fields)  # CREATES TEMPORARY
-                    csr_matvec(sp.rhs_map, ssF, out=Fi.get_subdata(sp, ss))
+                    csr_matvec(sp.rhs_map, ssF, Fi.get_subdata(sp, ss))
 
             # Construct RHS(n,i)
             np.copyto(RHS.data, MX0.data)
