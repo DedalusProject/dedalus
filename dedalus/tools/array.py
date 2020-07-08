@@ -1,37 +1,29 @@
-"""
-Tools for array manipulations.
-
-"""
+"""Tools for array manipulations."""
 
 import numpy as np
 from scipy import sparse
+from scipy.sparse import _sparsetools
 
 
 def interleaved_view(data):
     """
     View n-dim complex array as (n+1)-dim real array, where the last axis
     separates real and imaginary parts.
-
     """
-
     # Check datatype
     if data.dtype != np.complex128:
         raise ValueError("Complex array required.")
-
     # Create view array
     iv_shape = data.shape + (2,)
     iv = np.ndarray(iv_shape, dtype=np.float64, buffer=data.data)
-
     return iv
 
 
 def reshape_vector(data, dim=2, axis=-1):
     """Reshape 1-dim array as a multidimensional vector."""
-
     # Build multidimensional shape
     shape = [1] * dim
     shape[axis] = data.size
-
     return data.reshape(shape)
 
 
@@ -50,49 +42,66 @@ def axslice(axis, start, stop, step=None):
 
 def zeros_with_pattern(*args):
     """Create sparse matrix with the combined pattern of other sparse matrices."""
-
     # Join individual patterns in COO format
     coo = [A.tocoo() for A in args]
     rows = np.concatenate([A.row for A in coo])
     cols = np.concatenate([A.col for A in coo])
     shape = coo[0].shape
-
     # Create new COO matrix with zeroed data and combined pattern
     data = np.concatenate([A.data*0 for A in coo])
-
     return sparse.coo_matrix((data, (rows, cols)), shape=shape)
 
 
 def expand_pattern(input, pattern):
     """Return copy of sparse matrix with extended pattern."""
-
     # Join input and pattern in COO format
     A = input.tocoo()
     P = pattern.tocoo()
     rows = np.concatenate((A.row, P.row))
     cols = np.concatenate((A.col, P.col))
     shape = A.shape
-
     # Create new COO matrix with expanded data and combined pattern
     data = np.concatenate((A.data, P.data*0))
-
     return sparse.coo_matrix((data, (rows, cols)), shape=shape)
 
 
-def apply_matrix(matrix, array, axis, optimize=True, **kw):
-    """Contract any direction of a multidimensional array with a matrix."""
+def apply_matrix(matrix, array, axis, **kw):
+    """Apply matrix along any axis of an array."""
+    if sparse.isspmatrix(matrix):
+        return apply_sparse(matrix, array, axis, **kw)
+    else:
+        return apply_dense(matrix, array, axis, **kw)
 
+
+def apply_dense(matrix, array, axis, optimize=True, **kw):
+    """Apply dense matrix along any axis of an array."""
     dim = len(array.shape)
     # Build Einstein signatures
     mat_sig = [dim, axis]
     arr_sig = list(range(dim))
     out_sig = list(range(dim))
     out_sig[axis] = dim
-    # Handle sparse matrices
-    if sparse.isspmatrix(matrix):
-        matrix = matrix.todense()
     out = np.einsum(matrix, mat_sig, array, arr_sig, out_sig, optimize=optimize, **kw)
     return out
+
+
+def apply_sparse(matrix, array, axis, **kw):
+    """Apply sparse matrix along any axis of an array."""
+    return apply_dense(matrix.todense(), array, axis, **kw)
+
+
+def csr_matvec(A_csr, x_vec, out_vec):
+    """
+    Fast CSR matvec skipping shape checks and output allocation. The result is
+    added to the specificed output array, so the output should be manually
+    zeroed prior to calling this routine, if necessary.
+    """
+    # Check format but don't convert
+    if A_csr.format != "csr":
+        raise ValueError("Matrix must be in CSR format.")
+    M, N = A_csr._shape
+    _sparsetools.csr_matvec(M, N, A_csr.indptr, A_csr.indices, A_csr.data, x_vec, out_vec)
+    return out_vec
 
 
 def add_sparse(A, B):
@@ -129,3 +138,4 @@ def sparse_block_diag(blocks):
     rows = np.concatenate(rows)
     cols = np.concatenate(cols)
     return sparse.coo_matrix((data, (rows, cols)), shape=(i0,j0))
+
