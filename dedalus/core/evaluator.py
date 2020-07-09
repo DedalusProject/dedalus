@@ -28,6 +28,7 @@ from ..tools.config import config
 FILEHANDLER_MODE_DEFAULT = config['analysis'].get('FILEHANDLER_MODE_DEFAULT')
 FILEHANDLER_PARALLEL_DEFAULT = config['analysis'].getboolean('FILEHANDLER_PARALLEL_DEFAULT')
 FILEHANDLER_TOUCH_TMPFILE = config['analysis'].getboolean('FILEHANDLER_TOUCH_TMPFILE')
+FILEHANDLER_VIRTUAL_FILE = config['analysis'].getboolean('FILEHANDLER_VIRTUAL_FILE')
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -346,7 +347,7 @@ class FileHandler(Handler):
 
     """
 
-    def __init__(self, base_path, *args, max_writes=np.inf, max_size=2**30, parallel=None, mode=None, **kw):
+    def __init__(self, base_path, *args, max_writes=np.inf, max_size=2**30, parallel=None, mode=None, virtual_file=None, **kw):
 
         Handler.__init__(self, *args, **kw)
 
@@ -355,6 +356,8 @@ class FileHandler(Handler):
             parallel = FILEHANDLER_PARALLEL_DEFAULT
         if mode is None:
             mode = FILEHANDLER_MODE_DEFAULT
+        if virtual_file is None:
+            virtual_file = FILEHANDLER_VIRTUAL_FILE
 
         # Check base_path
         base_path = pathlib.Path(base_path).resolve()
@@ -366,6 +369,7 @@ class FileHandler(Handler):
         self.max_writes = max_writes
         self.max_size = max_size
         self.parallel = parallel
+        self.virtual_file = virtual_file
         self._sl_array = np.zeros(1, dtype=int)
 
         # Resolve mode
@@ -426,11 +430,12 @@ class FileHandler(Handler):
             self._property_list = h5py.h5p.create(h5py.h5p.DATASET_XFER)
             self._property_list.set_dxpl_mpio(h5py.h5fd.MPIO_COLLECTIVE)
 
-    def check_file_limits(self):
+    def check_file_limits(self, virtual_file=False):
         """Check if write or size limits have been reached."""
         write_limit = (self.file_write_num >= self.max_writes)
         size_limit = (self.current_path.stat().st_size >= self.max_size)
-        if not self.parallel:
+        if not self.parallel and not self.virtual_file:
+            logger.info("reducing size_limit. virtual_file = {}".format(virtual_file))
             # reduce(size_limit, or) across processes
             comm = self.dist.comm_cart
             self._sl_array[0] = size_limit
@@ -438,11 +443,11 @@ class FileHandler(Handler):
             size_limit = self._sl_array[0]
         return (write_limit or size_limit)
 
-    def get_file(self):
+    def get_file(self, virtual_file=False):
         """Return current HDF5 file, creating if necessary."""
         # Create new file if necessary
         if os.path.exists(str(self.current_path)):
-            if self.check_file_limits():
+            if self.check_file_limits(virtual_file):
                 self.set_num += 1
                 self.create_current_file()
         else:
@@ -452,7 +457,10 @@ class FileHandler(Handler):
             comm = self.dist.comm_cart
             h5file = h5py.File(str(self.current_path), 'r+', driver='mpio', comm=comm)
         else:
-            h5file = h5py.File(str(self.current_path), 'r+')
+            if virtual_file:
+                h5file = h5py.File(str(self.current_virtual_path), 'r+')
+            else:
+                h5file = h5py.File(str(self.current_path), 'r+')
         self.file_write_num = h5file['/scales/write_number'].shape[0]
         return h5file
 
@@ -470,6 +478,16 @@ class FileHandler(Handler):
             folder_path = self.base_path.joinpath(folder_name)
             file_name = '%s_s%i_p%i.h5' %(self.base_path.stem, set_num, comm.rank)
             return folder_path.joinpath(file_name)
+
+    @property
+    def current_virtual_path(self):
+        comm = self.dist.comm_cart
+        set_num = self.set_num
+        if comm.rank == 0 and self.virtual_file:
+            file_name = '%s_s%i.h5' %(self.base_path.stem, set_num)
+            return self.base_path.joinpath(file_name)
+        else:
+            return None
 
     def create_current_file(self):
         """Generate new HDF5 file in current_path."""
@@ -489,19 +507,59 @@ class FileHandler(Handler):
             if FILEHANDLER_TOUCH_TMPFILE:
                 tmpfile.unlink()
         self.setup_file(file)
-        file.close()
 
-    def setup_file(self, file):
+        file.close()
+        with Sync(comm):
+            if comm.rank == 0 and self.virtual_file:
+                virtual_file = h5py.File(str(self.current_virtual_path), 'w-')
+                self.setup_file(virtual_file, virtual_file=True)
+
+
+        if comm.rank == 0 and self.virtual_file:
+            virtual_file.close()
+
+    def construct_virtual_sources(self, task, file_shape):
+        taskname = task['name']
+        op = task['operator']
+        virt_layout = h5py.VirtualLayout(shape=file_shape, dtype=op.dtype)
+        # extract virtual sources from each data file
+        # OPTIMIZATION: this only needs to happen once per simulation,
+        #               not for each set.
+        for i in range(self.dist.comm_cart.size):
+            file_name = '%s_s%i_p%i.h5' %(self.base_path.stem, self.set_num, i)
+            folder_name = '%s_s%i' %(self.base_path.stem, self.set_num)
+            folder_path = self.base_path.joinpath(folder_name)
+            src_file_name = folder_path.joinpath(file_name)
+            with h5py.File(src_file_name,'r') as proc_file:
+                proc_dset = proc_file['tasks'][taskname]
+                start = proc_dset.attrs['start']
+                count = proc_dset.attrs['count']
+                src_shape = proc_dset.shape
+            spatial_slices = tuple(slice(s, s+c) for (s,c) in zip(start, count))
+            # Merge maintains same set of writes
+            slices = (slice(None),) + spatial_slices
+            maxshape = (None,) + tuple(count)
+            tname = 'tasks/{}'.format(taskname)
+
+            vsource = h5py.VirtualSource(src_file_name, name=tname, shape=src_shape, maxshape=maxshape)
+            virt_layout[slices] = vsource
+
+        return virt_layout
+
+    def setup_file(self, file, virtual_file=False):
 
         # Skip spatial scales for now
         skip_spatial_scales = True
         dist = self.dist
+        comm = dist.comm_cart
 
+        if virtual_file and comm.rank != 0:
+            raise ValueError("Rank {} attemped to setup the virutal file. This should never happen.".format(comm.rank))
         # Metadeta
         file.attrs['set_number'] = self.set_num
         file.attrs['handler_name'] = self.base_path.stem
         file.attrs['writes'] = self.file_write_num
-        if not self.parallel:
+        if not self.parallel and not virtual_file:
             file.attrs['mpi_rank'] = dist.comm_cart.rank
             file.attrs['mpi_size'] = dist.comm_cart.size
 
@@ -523,7 +581,7 @@ class FileHandler(Handler):
             op = task['operator']
             layout = task['layout']
             scales = task['scales']
-            gnc_shape, gnc_start, write_shape, write_start, write_count = self.get_write_stats(layout, scales, op.domain, op.tensorsig, index=0)
+            gnc_shape, gnc_start, write_shape, write_start, write_count = self.get_write_stats(layout, scales, op.domain, op.tensorsig, index=0, virtual_file=virtual_file)
             if np.prod(write_shape) <= 1:
                 # Start with shape[0] = 0 to chunk across writes for scalars
                 file_shape = (0,) + tuple(write_shape)
@@ -531,7 +589,14 @@ class FileHandler(Handler):
                 # Start with shape[0] = 1 to chunk within writes
                 file_shape = (1,) + tuple(write_shape)
             file_max = (None,) + tuple(write_shape)
-            dset = task_group.create_dataset(name=task['name'], shape=file_shape, maxshape=file_max, dtype=op.dtype)
+
+            if virtual_file:
+                # set up virtual layout
+                virt_layout = self.construct_virtual_sources(task, file_shape)
+                # create virtual dataset
+                dset = task_group.create_virtual_dataset(task['name'], virt_layout, fillvalue=None)
+            else:
+                dset = task_group.create_dataset(name=task['name'], shape=file_shape, maxshape=file_max, dtype=op.dtype)
             if not self.parallel:
                 dset.attrs['global_shape'] = gnc_shape
                 dset.attrs['start'] = gnc_start
@@ -570,11 +635,19 @@ class FileHandler(Handler):
                 scale = scale_group[lookup]
                 dset.dims[axis+1].label = sn
                 dset.dims[axis+1].attach_scale(scale)
+    
 
     def process(self, world_time=0, wall_time=0, sim_time=0, timestep=0, iteration=0, **kw):
+        self.process_file(world_time=world_time, wall_time=wall_time, sim_time=sim_time, timestep=timestep, iteration=iteration, **kw)
+        if self.virtual_file:
+            with Sync(self.dist.comm_cart):
+                if self.dist.comm_cart.rank == 0:
+                    self.process_file(world_time=world_time, wall_time=wall_time, sim_time=sim_time, timestep=timestep, iteration=iteration, virtual_file = True, **kw)
+
+    def process_file(self, world_time=0, wall_time=0, sim_time=0, timestep=0, iteration=0, virtual_file=False, **kw):
         """Save task outputs to HDF5 file."""
         # HACK: fix world time and timestep inputs from solvers.py/timestepper.py
-        file = self.get_file()
+        file = self.get_file(virtual_file=virtual_file)
         self.total_write_num += 1
         self.file_write_num += 1
         file.attrs['writes'] = self.file_write_num
@@ -603,22 +676,40 @@ class FileHandler(Handler):
 
         # Create task datasets
         for task_num, task in enumerate(self.tasks):
-            out = task['out']
-            out.require_scales(task['scales'])
-            out.require_layout(task['layout'])
+            if virtual_file:
+                op = task['operator']
+                layout = task['layout']
+                scales = task['scales']
 
-            dset = file['tasks'][task['name']]
-            dset.resize(index+1, axis=0)
-
-            memory_space, file_space = self.get_hdf5_spaces(out.layout, task['scales'], out.domain, out.tensorsig, index)
-            if self.parallel:
-                dset.id.write(memory_space, file_space, out.data, dxpl=self._property_list)
+                del file['tasks'][task['name']]
+                gnc_shape, gnc_start, write_shape, write_start, write_count = self.get_write_stats(layout, scales, op.domain, op.tensorsig, index=0, virtual_file=virtual_file)
+                if np.prod(write_shape) <= 1:
+                    # Start with shape[0] = 0 to chunk across writes for scalars
+                    file_shape = (0,) + tuple(write_shape)
+                else:
+                    # Start with shape[0] = 1 to chunk within writes
+                    file_shape = (index+1,) + tuple(write_shape)
+                
+                virt_layout = self.construct_virtual_sources(task, file_shape)
+                # create new virtual dataset
+                dset = file['tasks'].create_virtual_dataset(task['name'], virt_layout, fillvalue=None)
             else:
-                dset.id.write(memory_space, file_space, out.data)
+                out = task['out']
+                out.require_scales(task['scales'])
+                out.require_layout(task['layout'])
+
+                dset = file['tasks'][task['name']]
+                dset.resize(index+1, axis=0)
+
+                memory_space, file_space = self.get_hdf5_spaces(out.layout, task['scales'], out.domain, out.tensorsig, index)
+                if self.parallel:
+                    dset.id.write(memory_space, file_space, out.data, dxpl=self._property_list)
+                else:
+                    dset.id.write(memory_space, file_space, out.data)
 
         file.close()
 
-    def get_write_stats(self, layout, scales, domain, tensorsig, index):
+    def get_write_stats(self, layout, scales, domain, tensorsig, index, virtual_file=False):
         """Determine write parameters for nonconstant subspace of a field."""
 
 
@@ -643,7 +734,7 @@ class FileHandler(Handler):
         global_nc_start = np.array(start)
         global_nc_start[constant & ~first] = 1
 
-        if self.parallel:
+        if self.parallel or virtual_file:
             # Collectively writing global data
             write_shape = global_nc_shape
             write_start = global_nc_start
