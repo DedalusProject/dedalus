@@ -677,5 +677,18 @@ class Field(Current):
     #     return reduce()
 
     def allgather_data(self):
-        # HACK: doesn't work in parallel!
-        return self.data.copy()
+        """Build global data on all processes."""
+        # Shortcut for serial execution
+        if self.dist.comm.size == 1:
+            return self.data.copy()
+        # Build global buffers
+        tensor_shape = tuple(cs.dim for cs in self.tensorsig)
+        global_shape = tensor_shape + self.layout.global_shape(self.domain, self.scales)
+        local_slices = tuple(slice(None) for cs in self.tensorsig) + self.layout.slices(self.domain, self.scales)
+        send_buff = np.zeros(shape=global_shape, dtype=self.dtype)
+        recv_buff = np.empty_like(send_buff)
+        # Combine data via allreduce -- easy but not communication-optimal
+        # Should be optimized using Allgatherv if this is used past startup
+        send_buff[local_slices] = self.data
+        self.dist.comm.Allreduce(send_buff, recv_buff, op=MPI.SUM)
+        return recv_buff

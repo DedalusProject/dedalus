@@ -234,7 +234,7 @@ class Layout:
         local_chunks = self.local_chunks(domain, scales)
         indices = []
         for GS, LG in zip(chunk_shape, local_chunks):
-            indices.append(np.array([GS*G+i for G in LG for i in range(GS)]))
+            indices.append(np.array([GS*G+i for G in LG for i in range(GS)], dtype=int))
         return indices
 
     def slices(self, domain, scales):

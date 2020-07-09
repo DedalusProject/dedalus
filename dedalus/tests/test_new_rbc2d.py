@@ -98,7 +98,7 @@ while solver.ok:
     if solver.iteration % 10 == 0:
         print('Iteration: %i' %solver.iteration)
         plt.imshow(b['g'].real.T, origin='lower')
-        plt.savefig('frames/frame_%06i.png' %solver.iteration)
+        plt.savefig('rbc_frames/frames_r%i/frame_%06i.png' %(rank,solver.iteration))
         plt.clf()
     solver.step(timestep)
 
