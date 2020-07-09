@@ -597,45 +597,59 @@ class FileHandler(Handler):
                 dset = task_group.create_virtual_dataset(task['name'], virt_layout, fillvalue=None)
             else:
                 dset = task_group.create_dataset(name=task['name'], shape=file_shape, maxshape=file_max, dtype=op.dtype)
-            if not self.parallel:
-                dset.attrs['global_shape'] = gnc_shape
-                dset.attrs['start'] = gnc_start
-                dset.attrs['count'] = write_count
 
-            # Metadata and scales
-            dset.attrs['task_number'] = task_num
-            dset.attrs['constant'] = op.domain.constant
-            dset.attrs['grid_space'] = layout.grid_space
-            dset.attrs['scales'] = scales
+            self.dset_metadata(task, task_num, dset, scale_group, gnc_shape, gnc_start, write_count, virtual_file=virtual_file)
 
-            # Time scales
-            dset.dims[0].label = 't'
-            for sn in ['sim_time', 'world_time', 'wall_time', 'timestep', 'iteration', 'write_number']:
-                scale = scale_group[sn]
-                dset.dims.create_scale(scale, sn)
-                dset.dims[0].attach_scale(scale)
+    def dset_metadata(self, task, task_num, dset, scale_group, gnc_shape, gnc_start, write_count, virtual_file=False):
+        op = task['operator']
+        layout = task['layout']
+        scales = task['scales']
 
-            # Spatial scales
-            for axis in range(dist.dim):
-                basis = op.domain.bases_by_axis[axis]
-                if basis is None:
-                    sn = lookup = 'constant'
-                else:
-                    subaxis = axis - basis.axis
-                    if layout.grid_space[axis]:
-                        sn = basis.coordsystem.coords[subaxis].name
-                        data = basis.local_grids(scales)[subaxis].ravel()
+        if not self.parallel:
+            dset.attrs['global_shape'] = gnc_shape
+            dset.attrs['start'] = gnc_start
+            dset.attrs['count'] = write_count
+
+        # Metadata and scales
+        dset.attrs['task_number'] = task_num
+        dset.attrs['constant'] = op.domain.constant
+        dset.attrs['grid_space'] = layout.grid_space
+        dset.attrs['scales'] = scales
+
+        # Time scales
+        dset.dims[0].label = 't'
+        for sn in ['sim_time', 'world_time', 'wall_time', 'timestep', 'iteration', 'write_number']:
+            scale = scale_group[sn]
+            dset.dims.create_scale(scale, sn)
+            dset.dims[0].attach_scale(scale)
+
+        # Spatial scales
+        for axis in range(self.dist.dim):
+            basis = op.domain.bases_by_axis[axis]
+            if basis is None:
+                sn = lookup = 'constant'
+            else:
+                subaxis = axis - basis.axis
+                if layout.grid_space[axis]:
+                    sn = basis.coordsystem.coords[subaxis].name
+                    if virtual_file:
+                        data = basis.global_grids(scales)[subaxis].ravel()
                     else:
-                        sn = 'k' + basis.coordsystem.coords[subaxis].name
+                        data = basis.local_grids(scales)[subaxis].ravel()
+                else:
+                    sn = 'k' + basis.coordsystem.coords[subaxis].name
+                    if virtual_file:
+                        data = basis.global_elements()[subaxis].ravel()
+                    else:
                         data = basis.local_elements()[subaxis].ravel()
-                    lookup = 'hash_' + hashlib.sha1(data).hexdigest()
-                    if lookup not in scale_group:
-                        scale_group.create_dataset(name=lookup, data=data)
-                        scale_group[lookup].make_scale()
-                scale = scale_group[lookup]
-                dset.dims[axis+1].label = sn
-                dset.dims[axis+1].attach_scale(scale)
-    
+                lookup = 'hash_' + hashlib.sha1(data).hexdigest()
+                if lookup not in scale_group:
+                    scale_group.create_dataset(name=lookup, data=data)
+                    scale_group[lookup].make_scale()
+            scale = scale_group[lookup]
+            dset.dims[axis+1].label = sn
+            dset.dims[axis+1].attach_scale(scale)
+
 
     def process(self, world_time=0, wall_time=0, sim_time=0, timestep=0, iteration=0, **kw):
         self.process_file(world_time=world_time, wall_time=wall_time, sim_time=sim_time, timestep=timestep, iteration=iteration, **kw)
@@ -654,6 +668,7 @@ class FileHandler(Handler):
         index = self.file_write_num - 1
 
         # Update time scales
+        scale_group = file['scales']
         sim_time_dset = file['scales/sim_time']
         world_time_dset = file['scales/world_time']
         wall_time_dset = file['scales/wall_time']
@@ -677,11 +692,14 @@ class FileHandler(Handler):
         # Create task datasets
         for task_num, task in enumerate(self.tasks):
             if virtual_file:
+                # h5py does not support resizing virtual datasets
+                # so we must rebuild at each write.
                 op = task['operator']
                 layout = task['layout']
                 scales = task['scales']
 
                 del file['tasks'][task['name']]
+
                 gnc_shape, gnc_start, write_shape, write_start, write_count = self.get_write_stats(layout, scales, op.domain, op.tensorsig, index=0, virtual_file=virtual_file)
                 if np.prod(write_shape) <= 1:
                     # Start with shape[0] = 0 to chunk across writes for scalars
@@ -689,10 +707,12 @@ class FileHandler(Handler):
                 else:
                     # Start with shape[0] = 1 to chunk within writes
                     file_shape = (index+1,) + tuple(write_shape)
-                
+
                 virt_layout = self.construct_virtual_sources(task, file_shape)
                 # create new virtual dataset
                 dset = file['tasks'].create_virtual_dataset(task['name'], virt_layout, fillvalue=None)
+                # restore scales
+                self.dset_metadata(task, task_num, dset, scale_group, gnc_shape, gnc_start, write_count, virtual_file=virtual_file)
             else:
                 out = task['out']
                 out.require_scales(task['scales'])
