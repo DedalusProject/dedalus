@@ -7,7 +7,6 @@ import numpy as np
 from mpi4py import MPI
 
 from ..core import operators
-from ..core.field import Array
 from ..core.future import FutureField
 
 import logging

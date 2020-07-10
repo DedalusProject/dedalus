@@ -18,7 +18,7 @@ from .system import FieldSystem
 #from .operators import Operator, Cast
 #from .operators import FieldCopy
 from .future import Future, FutureField
-from .field import Field
+from .field import Field, LockedField
 from ..tools.array import reshape_vector
 from ..tools.general import OrderedSet
 from ..tools.general import oscillate
@@ -123,8 +123,9 @@ class Evaluator:
         tasks = self.attempt_tasks(tasks, id=id)
 
         # Oscillate through layouts until all tasks are evaluated
+        # Limit to 10 passes to break on potential infinite loops
         n_layouts = len(self.dist.layouts)
-        oscillate_indices = oscillate(range(n_layouts))
+        oscillate_indices = oscillate(range(n_layouts), max_passes=10)
         current_index = next(oscillate_indices)
         while tasks:
             next_index = next(oscillate_indices)
@@ -178,6 +179,10 @@ class Evaluator:
         fields = OrderedSet()
         for task in tasks:
             fields.update(task['operator'].atoms(Field))
+        # Drop locked fields
+        locked = [f for f in fields if isinstance(f, LockedField)]
+        for field in locked:
+            fields.pop(field)
         return fields
 
     @staticmethod

@@ -5,6 +5,7 @@ Extended built-ins, etc.
 
 import collections
 import re
+import numpy as np
 
 
 class OrderedSet(collections.OrderedDict):
@@ -43,14 +44,17 @@ def natural_sort(iterable, reverse=False):
     return sorted(iterable, key=key, reverse=reverse)
 
 
-def oscillate(iterable):
+def oscillate(iterable, max_passes=np.inf):
     """Oscillate forward and backward through an iterable."""
-
     forward = iterable
     backward = iterable[::-1][1:-1]  # Weird slicing to work with range
+    passes = 0
     while True:
         yield from forward
         yield from backward
+        passes += 1
+        if passes >= max_passes:
+            return
 
 
 def unify(objects):

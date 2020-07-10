@@ -12,8 +12,8 @@ import numbers
 from collections import defaultdict
 
 from .domain import Domain
-from .field import Operand, Array, Field
-from .future import Future, FutureArray, FutureField
+from .field import Operand, Field
+from .future import Future, FutureField
 from .operators import convert
 from ..tools.array import kron
 from ..tools.cache import CachedAttribute, CachedMethod
@@ -646,8 +646,8 @@ class Multiply(Product, metaclass=MultiClass):
             #args = [Cast(arg, domain) for arg in args]
             return args, kw
         # Cast all args to Array, if any present
-        elif any(isinstance(arg, (Array, FutureArray)) for arg in args):
-            raise NotImplementedError()
+        # elif any(isinstance(arg, (Array, FutureArray)) for arg in args):
+        #     raise NotImplementedError()
             # domain = unify_attributes(args, 'domain', require=False)
             # args = [Array.cast(arg, domain) for arg in args]
             # return args, kw

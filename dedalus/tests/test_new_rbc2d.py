@@ -52,9 +52,11 @@ R = (Rayleigh / Prandtl)**(-1/2)
 ez = field.Field(name='ez', dist=d, bases=(zb,), dtype=np.complex128, tensorsig=(c,))
 ez['g'][1] = 1
 ghat = - ez
+grid_ghat = operators.Grid(ghat).evaluate()
 
 B = field.Field(name='B', dist=d, bases=(zb,), dtype=np.complex128)
 B['g'] = Lz - z
+grid_B = operators.Grid(B).evaluate()
 
 div = lambda A: operators.Divergence(A, index=0)
 lap = lambda A: operators.Laplacian(A, c)
@@ -68,7 +70,7 @@ def eq_eval(eq_str):
 problem = problems.IVP([p, b, u, t1, t2, t3, t4])
 problem.add_equation(eq_eval("div(u) = 0"), condition="nx != 0")
 problem.add_equation(eq_eval("dt(b) - P*lap(b) + P1*t1 + P2*t2 + dot(u,grad(B)) = - dot(u,grad(b)) + P*lap(B)"))
-problem.add_equation(eq_eval("dt(u) - R*lap(u) + grad(p) + P1*t3 + P2*t4 - b*ghat = - dot(u,grad(u)) - B*ghat"), condition="nx != 0")
+problem.add_equation(eq_eval("dt(u) - R*lap(u) + grad(p) + P1*t3 + P2*t4 - b*ghat = - dot(u,grad(u)) - grid_B*grid_ghat"), condition="nx != 0")
 problem.add_equation(eq_eval("b(z=0) = Lz - B(z=0)"))
 problem.add_equation(eq_eval("b(z=Lz) = 0 - B(z=Lz)"))
 problem.add_equation(eq_eval("u(z=0) = 0"), condition="nx != 0")

@@ -6,7 +6,7 @@ Classes for future evaluation.
 import numpy as np
 from functools import partial
 
-from .field import Operand, Array, Field
+from .field import Operand, Field, LockedField
 from .domain import Domain
 #from .domain import Domain
 from ..tools.general import OrderedSet, unify_attributes
@@ -242,9 +242,7 @@ class Future(Operand):
 
 
 
-class FutureArray(Future):
-    """Class for deferred operations producing an Array."""
-    future_type = Array
+
 
 
 class FutureField(Future):
@@ -268,4 +266,10 @@ class FutureField(Future):
             return arg
         else:
             return FieldCopy(arg)
+
+
+class FutureLockedField(Future):
+    """Class for deferred operations producing an Array."""
+    future_type = LockedField
+
 

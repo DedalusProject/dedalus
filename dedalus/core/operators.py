@@ -13,8 +13,8 @@ from operator import add
 
 from .domain import Domain
 from . import coords
-from .field import Operand, Array, Field
-from .future import Future, FutureArray, FutureField
+from .field import Operand, Field
+from .future import Future, FutureField, FutureLockedField
 from ..tools.array import reshape_vector, apply_matrix, add_sparse, axindex, axslice
 from ..tools.cache import CachedAttribute, CachedMethod
 from ..tools.dispatch import MultiClass
@@ -524,15 +524,15 @@ class UnaryGridFunction(NonlinearOperator, metaclass=MultiClass):
 #         out.value = self.func(self.args[0].value)
 
 
-class UnaryGridFunctionArray(UnaryGridFunction, FutureArray):
+# class UnaryGridFunctionArray(UnaryGridFunction, FutureArray):
 
-    argtypes = {1: (Array, FutureArray)}
+#     argtypes = {1: (Array, FutureArray)}
 
-    def check_conditions(self):
-        return True
+#     def check_conditions(self):
+#         return True
 
-    def operate(self, out):
-        self.func(self.args[0].data, out=out.data)
+#     def operate(self, out):
+#         self.func(self.args[0].data, out=out.data)
 
 
 class UnaryGridFunctionField(UnaryGridFunction, FutureField):
@@ -550,12 +550,6 @@ class UnaryGridFunctionField(UnaryGridFunction, FutureField):
         arg0.require_grid_space()
         out.set_layout(self._grid_layout)
         self.func(arg0.data, out=out.data)
-
-
-
-
-
-
 
 
 class LinearOperator(FutureField):
@@ -708,6 +702,46 @@ class LinearOperator(FutureField):
     def subproblem_matrix(self, subproblem):
         """Build operator matrix for a specific subproblem."""
         raise NotImplementedError("%s has not implemented a subproblem_matrix method." %type(self))
+
+
+class Lock(FutureLockedField, LinearOperator):
+
+    name = 'Lock'
+
+    def __init__(self, operand, layout):
+        super().__init__(operand)
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = operand.domain
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
+        # Resolve layout
+        self.layout = self.dist.get_layout_object(layout)
+
+    def check_conditions(self):
+        """Check that arguments are in a proper layout."""
+        return (self.args[0].layout is self.layout)
+
+    def enforce_conditions(self):
+        """Require arguments to be in a proper layout."""
+        self.args[0].require_layout(self.layout)
+
+    def operate(self, out):
+        """Perform operation."""
+        out.set_layout(self.layout)
+        np.copyto(out.data, self.args[0].data)
+
+    def new_operand(self, operand, **kw):
+        return Lock(operand, layout=self.layout, **kw)
+
+
+def Grid(operand):
+    return Lock(operand, 'g')
+
+
+def Coeff(operand):
+    return Lock(operand, 'c')
 
 
 class SpectralOperator(LinearOperator):

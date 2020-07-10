@@ -383,48 +383,6 @@ class Current(Operand):
         #self.global_start = layout.start(self.domain, self.scales)
 
 
-class Array(Current):
-
-    def __init__(self, bases, name=None):
-        from .domain import Domain
-        self.domain = domain.from_bases(bases)
-        self.domain = self.domain.domain
-        self.bases = self.domain.expand_bases(bases)
-        self.name = name
-        # Set initial scales and layout
-        self.scales = None
-        self.layout = self.dist.grid_layout
-        # Change scales to build buffer and data
-        self.set_scales((1,) * self.dist.dim)
-
-    def set_global_data(self, global_data):
-        slices = self.layout.slices(self.domain, self.scales)
-        self.set_local_data(global_data[slices])
-
-    def set_local_data(self, local_data):
-        np.copyto(self.data, local_data)
-
-    def require_scales(self, scales):
-        scales = self.dist.remedy_scales(scales)
-        if scales != self.scales:
-            raise ValueError("Cannot change array scales.")
-
-    def require_layout(self, layout):
-        layout = self.domain.dist.get_layout.object(layout)
-        if layout != self.layout:
-            raise ValueError("Cannot change array layout.")
-
-    @CachedMethod(max_size=1)
-    def as_ncc_operator(self, *args, **kw):
-        """Cast to field and convert to NCC operator."""
-        from .future import FutureField
-        ncc = FutureField.cast(self, self.domain)
-        ncc = ncc.evaluate()
-        if 'name' not in kw:
-            kw['name'] = str(self)
-        return ncc.as_ncc_operator(*args, **kw)
-
-
 class Field(Current):
     """
     Scalar field over a domain.
@@ -692,3 +650,40 @@ class Field(Current):
         send_buff[local_slices] = self.data
         self.dist.comm.Allreduce(send_buff, recv_buff, op=MPI.SUM)
         return recv_buff
+
+
+class LockedField(Field):
+    """Field locked to a particular layout, disallowing any layout changes."""
+
+    def require_scales(self, scales):
+        scales = self.dist.remedy_scales(scales)
+        if scales != self.scales:
+            raise ValueError("Cannot change locked scales.")
+
+    def require_layout(self, layout):
+        layout = self.domain.dist.get_layout_object(layout)
+        if layout != self.layout:
+            raise ValueError("Cannot change locked layout.")
+
+    def towards_grid_space(self):
+        """Change to next layout towards grid space."""
+        raise ValueError("Cannot change locked layout.")
+
+    def towards_coeff_space(self):
+        """Change to next layout towards coefficient space."""
+        raise ValueError("Cannot change locked layout.")
+
+    def require_grid_space(self, axis=None):
+        """Require one axis (default: all axes) to be in grid space."""
+        if not all(self.layout.grid_space):
+            raise ValueError("Cannot change locked layout.")
+
+    def require_coeff_space(self, axis=None):
+        if any(self.layout.grid_space):
+            raise ValueError("Cannot change locked layout.")
+
+    def require_local(self, axis):
+        """Require an axis to be local."""
+        if not self.layout.local[axis]:
+            raise ValueError("Cannot change locked layout.")
+
