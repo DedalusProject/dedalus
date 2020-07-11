@@ -509,34 +509,32 @@ class FileHandler(Handler):
         self.setup_file(file)
 
         file.close()
-        with Sync(comm):
-            if comm.rank == 0 and self.virtual_file:
-                virtual_file = h5py.File(str(self.current_virtual_path), 'w-')
-                self.setup_file(virtual_file, virtual_file=True)
-
-
+        
         if comm.rank == 0 and self.virtual_file:
+            virtual_file = h5py.File(str(self.current_virtual_path), 'w-')
+            self.setup_file(virtual_file, virtual_file=True)            
             virtual_file.close()
 
     def construct_virtual_sources(self, task, file_shape):
         taskname = task['name']
+        layout = task['layout']
+        scales = task['scales']
         op = task['operator']
         virt_layout = h5py.VirtualLayout(shape=file_shape, dtype=op.dtype)
-        # extract virtual sources from each data file
-        # OPTIMIZATION: this only needs to happen once per simulation,
-        #               not for each set.
+        
         for i in range(self.dist.comm_cart.size):
             file_name = '%s_s%i_p%i.h5' %(self.base_path.stem, self.set_num, i)
             folder_name = '%s_s%i' %(self.base_path.stem, self.set_num)
             folder_path = self.base_path.joinpath(folder_name)
             src_file_name = folder_path.joinpath(file_name)
-            with h5py.File(src_file_name,'r') as proc_file:
-                proc_dset = proc_file['tasks'][taskname]
-                start = proc_dset.attrs['start']
-                count = proc_dset.attrs['count']
-                src_shape = proc_dset.shape
+            gnc_shape, gnc_start, write_shape, write_start, write_count = self.get_write_stats(layout, scales, op.domain, op.tensorsig, index=0, virtual_file=True, rank=i)
+            
+            src_shape = [file_shape[0],] + list(layout.local_shape(op.domain, scales, rank=i))
+            start = gnc_start
+            count = write_count
+            logger.debug("constructing virtual sources proc {}: start = {}; count = {}; src_shape = {}".format(i,start,count, src_shape))
             spatial_slices = tuple(slice(s, s+c) for (s,c) in zip(start, count))
-            # Merge maintains same set of writes
+
             slices = (slice(None),) + spatial_slices
             maxshape = (None,) + tuple(count)
             tname = 'tasks/{}'.format(taskname)
@@ -654,9 +652,8 @@ class FileHandler(Handler):
     def process(self, world_time=0, wall_time=0, sim_time=0, timestep=0, iteration=0, **kw):
         self.process_file(world_time=world_time, wall_time=wall_time, sim_time=sim_time, timestep=timestep, iteration=iteration, **kw)
         if self.virtual_file:
-            with Sync(self.dist.comm_cart):
-                if self.dist.comm_cart.rank == 0:
-                    self.process_file(world_time=world_time, wall_time=wall_time, sim_time=sim_time, timestep=timestep, iteration=iteration, virtual_file = True, **kw)
+            if self.dist.comm_cart.rank == 0:
+                self.process_file(world_time=world_time, wall_time=wall_time, sim_time=sim_time, timestep=timestep, iteration=iteration, virtual_file = True, **kw)
 
     def process_file(self, world_time=0, wall_time=0, sim_time=0, timestep=0, iteration=0, virtual_file=False, **kw):
         """Save task outputs to HDF5 file."""
@@ -729,7 +726,7 @@ class FileHandler(Handler):
 
         file.close()
 
-    def get_write_stats(self, layout, scales, domain, tensorsig, index, virtual_file=False):
+    def get_write_stats(self, layout, scales, domain, tensorsig, index, virtual_file=False, rank = None):
         """Determine write parameters for nonconstant subspace of a field."""
 
 
@@ -740,7 +737,7 @@ class FileHandler(Handler):
         lshape = tensor_shape + layout.local_shape(domain, scales)
 
         constant = np.array((False,)*tensor_order + domain.constant)
-        start = np.array([0 for i in range(tensor_order)] + [elements[0] for elements in layout.local_elements(domain, scales)])
+        start = np.array([0 for i in range(tensor_order)] + [elements[0] for elements in layout.local_elements(domain, scales, rank = rank)])
         first = (start == 0)
 
         # Build counts, taking just the first entry along constant axes
