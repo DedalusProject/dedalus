@@ -1514,6 +1514,8 @@ class RegularityBasis(Basis, SpinRecombinationBasis):
         if slices is None:
             return None
         comp5 = reduced_view(comp, axis=self.axis-2, dim=3)
+        if comp5.shape[1] == 0 or comp5.shape[2] == 0:
+            return None
         return comp5[(slice(None),) + slices + (slice(None),)]
 
     @CachedMethod
