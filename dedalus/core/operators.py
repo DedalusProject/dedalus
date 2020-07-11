@@ -1548,7 +1548,51 @@ class ConvertSame(Convert):
 #             out.data[axindex(axis, mask)] = operand.data / output_basis.const
 
 
+class Trace(LinearOperator):
+
+    name = "Trace"
+
+    def __init__(self, operand, out=None):
+        super().__init__(operand, out=out)
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = operand.domain
+        self.tensorsig = tuple(operand.tensorsig[2:])
+        self.dtype = operand.dtype
+
+    def new_operand(self, operand, **kw):
+        return TransposeComponents(operand, self.indices, **kw)
+
+    def matrix_dependence(self, *vars):
+        return self.operand.matrix_dependence(*vars)
+
+    def matrix_coupling(self, *vars):
+        return self.operand.matrix_coupling(*vars)
+
+    def check_conditions(self):
+        """Right now require grid space"""
+        layout = self.args[0].layout
+        return all(layout.grid_space)
+
+    def enforce_conditions(self):
+        """Require arguments to be in a proper layout."""
+        self.args[0].require_grid_space()
+
+    @property
+    def base(self):
+        return Trace
+
+    def operate(self, out):
+        """Perform operation."""
+        arg = self.args[0]
+        out.set_layout(arg.layout)
+        np.einsum('ii...', arg.data, out=out.data)
+
+
 class TransposeComponents(LinearOperator, metaclass=MultiClass):
+
+    name = "TransposeComponents"
 
     @classmethod
     def _preprocess_args(cls, operand, indices=(0,1), out=None):

@@ -98,6 +98,25 @@ def test_convert_k2_vector(Nphi, Ntheta, Nr, dealias, basis):
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
+def test_trace_tensor(Nphi, Ntheta, Nr, dealias, basis):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
+    u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
+    ct, st, cp, sp = np.cos(theta), np.sin(theta), np.cos(phi), np.sin(phi)
+    u['g'][2] = r**2*st*(2*ct**2*cp-r*ct**3*sp+r**3*cp**3*st**5*sp**3+r*ct*st**2*(cp**3+sp**3))
+    u['g'][1] = r**2*(2*ct**3*cp-r*cp**3*st**4+r**3*ct*cp**3*st**5*sp**3-1/16*r*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
+    u['g'][0] = r**2*sp*(-2*ct**2+r*ct*cp*st**2*sp-r**3*cp**2*st**5*sp**3)
+    T = operators.Gradient(u, c).evaluate()
+    T.require_grid_space()
+    fg = T['g'][0,0] + T['g'][1,1] + T['g'][2,2]
+    T.require_coeff_space()
+    f = operators.Trace(T).evaluate()
+    assert np.allclose(f['g'], fg)
+
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
 def test_transpose_grid_tensor(Nphi, Ntheta, Nr, dealias, basis):
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
     u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)

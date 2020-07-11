@@ -35,8 +35,7 @@ T = field.Field(dist=d, bases=(b,), dtype=np.complex128)
 tau = field.Field(dist=d, bases=(b_S2,), dtype=np.complex128)
 
 prefactor = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
-#prefactor['g'] = 1/(1+r**4)
-prefactor['g'] = 1.
+prefactor['g'] = 1/(1+r**4)
 
 forcing = field.Field(dist=d, bases=(b,), dtype=np.complex128)
 forcing['g'] = 1/(1+r**2)
@@ -79,6 +78,7 @@ def BC_rows(N, ell, num_comp):
 for subproblem in solver.subproblems:
     ell = subproblem.group[1]
     L = subproblem.L_min
+    M = subproblem.M_min
     N0, = BC_rows(Nmax, ell, 1)
     tau_columns = np.zeros((L.shape[0], 1))
     tau_columns[:N0,0] = (C(Nmax, ell, 0))[:,-1]
@@ -109,4 +109,11 @@ while solver.ok:
     solver.step(dt)
 end_time = time.time()
 logger.info('Run time: %f', (end_time-start_time))
+
+analytic_solution = -(r**4-1)/20 + (r**2-1)/6 - 2*np.arctan(r)/r + 2*np.arctan(1) - np.log(1 + r**2) + np.log(2)
+analytic_solution = analytic_solution[0,0]
+numerical_solution = T['g'][0,0]
+logger.info("max fractional error: %e" % np.max(np.abs(analytic_solution - numerical_solution)/np.abs(analytic_solution)))
+logger.info("we can decrease the error by decreasing the timestep.")
+
 
