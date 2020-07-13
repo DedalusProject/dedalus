@@ -1405,11 +1405,21 @@ class RegularityBasis(Basis, SpinRecombinationBasis):
 
     @CachedAttribute
     def local_l(self):
-        return (0,)
+        layout = self.dist.coeff_layout
+        local_l_elements = layout.local_elements(self.domain, scales=1)[self.axis-1]
+        if 0 in local_l_elements:
+            return (0,)
+        else:
+            return ()
 
     @CachedAttribute
     def local_m(self):
-        return (0,)
+        layout = self.dist.coeff_layout
+        local_m_elements = layout.local_elements(self.domain, scales=1)[self.axis-2]
+        if 0 in local_m_elements:
+            return (0,)
+        else:
+            return ()
 
     def get_radial_basis(self):
         return self
@@ -1514,8 +1524,6 @@ class RegularityBasis(Basis, SpinRecombinationBasis):
         if slices is None:
             return None
         comp5 = reduced_view(comp, axis=self.axis-2, dim=3)
-        if comp5.shape[1] == 0 or comp5.shape[2] == 0:
-            return None
         return comp5[(slice(None),) + slices + (slice(None),)]
 
     @CachedMethod
