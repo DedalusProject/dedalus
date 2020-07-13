@@ -241,6 +241,7 @@ class Layout:
         """Local element slices by axis."""
         return np.ix_(*self.local_elements(domain, scales))
 
+    @CachedMethod
     def local_shape(self, domain, scales):
         """Local data shape."""
         local_elements = self.local_elements(domain, scales)
