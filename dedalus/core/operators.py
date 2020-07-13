@@ -1562,7 +1562,7 @@ class Trace(LinearOperator):
         self.dtype = operand.dtype
 
     def new_operand(self, operand, **kw):
-        return TransposeComponents(operand, self.indices, **kw)
+        return Trace(operand, **kw)
 
     def matrix_dependence(self, *vars):
         return self.operand.matrix_dependence(*vars)
