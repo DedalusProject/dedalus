@@ -89,8 +89,8 @@ def test_2D_fourier_chebyshev_1D_vector(Nx, Ny, dealias_x, dealias_y):
 
 ## S2
 Nphi_range = [8]
-Ntheta_range = [10]
-dealias_range = [0.5, 1, 3/2]
+Ntheta_range = [8]
+dealias_range = [1]
 
 @CachedMethod
 def build_S2(Nphi, Ntheta, dealias):
@@ -106,7 +106,9 @@ def build_S2(Nphi, Ntheta, dealias):
 def test_S2_scalar(Nphi, Ntheta, dealias):
     c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias)
     f = field.Field(dist=d, bases=(sb,), dtype=np.complex128)
-    f['c'][-2,2] = 1
+    m = sb.local_m
+    ell = sb.local_ell
+    f['c'][(m == -2) * (ell == 2)] = 1
     fg = np.sqrt(15) / 4 * np.sin(theta)**2 * np.exp(-2j*phi)
     assert np.allclose(f['g'], fg)
 
@@ -130,7 +132,10 @@ def test_S2_tensor(Nphi, Ntheta, dealias):
     # Note: only checking one component of the tensor
     c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias)
     T = field.Field(dist=d, bases=(sb,), tensorsig=(c,c), dtype=np.complex128)
-    T['c'][0,0,2,3] = 1
+    m = sb.local_m
+    ell = sb.local_ell
+    #T['c'][0,0,2,3] = 1
+    T['c'][0,0][(m == 2) * (ell == 3)] = 1
     Tg00 = - 0.5 * np.sqrt(7/2) * (np.cos(theta/2)**4 * (-2 + 3*np.cos(theta))) * np.exp(2j*phi)
     assert np.allclose(T['g'][0,0], Tg00)
 

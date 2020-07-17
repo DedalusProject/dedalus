@@ -144,3 +144,15 @@ def kron(*factors):
 def nkron(factor, n):
     return kron(*[factor for i in range(n)])
 
+
+def permute_axis(array, axis, permutation, out=None):
+    # OPTIMIZE: currently creates a temporary
+    slices = [slice(None) for i in array.shape]
+    slices[axis] = permutation
+    perm = array[tuple(slices)]
+    if out is None:
+        return perm
+    else:
+        np.copyto(out, perm)
+        return out
+

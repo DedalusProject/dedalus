@@ -622,41 +622,60 @@ class NonSeparableTransform(Transform):
 
 @register_transform(basis.SpinWeightedSphericalHarmonics, 'matrix')
 class SWSHColatitudeTransform(NonSeparableTransform):
+    """
+    TODO:
+        - Remove dependence on grid_shape?
+    """
 
-    def __init__(self, grid_shape, coeff_size, axis, local_m, s, dtype=np.complex128):
-
-        super().__init__(grid_shape, coeff_size, axis, dtype)
+    def __init__(self, grid_shape, basis_shape, axis, local_m, s, dtype=np.complex128):
+        Nphi = basis_shape[0]
+        Lmax = basis_shape[1] - 1
+        super().__init__(grid_shape, Lmax+1, axis, dtype)
         self.local_m = local_m
         self.s = s
+        self.shift = max(0, Lmax + 1 - Nphi//2)
 
     def forward_reduced(self, gdata, cdata):
-
         local_m = self.local_m
         if gdata.shape[1] != len(local_m): # do we want to do this check???
-            raise ValueError("Local m must match size of %i axis." %(self.axis-1) )
-
+            raise ValueError("gdata.shape[1]: %i, len(local_m): %i" %(gdata.shape[1], len(local_m)))
         m_matrices = self._forward_SWSH_matrices
+        shift = self.shift
+        Lmax = self.N2c - 1
         for dm, m in enumerate(local_m):
-            if m <= self.N2c - 1:
+            # Skip transforms when |m| > Lmax
+            if np.abs(m) <= Lmax:
                 Lmin = max(np.abs(m), np.abs(self.s))
                 grm = gdata[:, dm, :, :]
-                crm = cdata[:, dm, Lmin:self.N2c, :]
+                if dm % 2 == 0:
+                    # Positive wavenumbers
+                    crm = cdata[:, dm//2, (shift+Lmin):, :]
+                else:
+                    # Negative wavenumbers
+                    crm = cdata[:, dm//2, Lmax-Lmin::-1, :]
                 apply_matrix(m_matrices[dm][Lmin:], grm, axis=1, out=crm)
-                # zero out low ell data -- hopefully never try to access these data
-                #cdata[:, dm, :Lmin, :] = 0
 
     def backward_reduced(self, cdata, gdata):
-
         local_m = self.local_m
         if gdata.shape[1] != len(local_m): # do we want to do this check???
-            raise ValueError("Local m must match size of %i axis." %(self.axis-1) )
-
+            raise ValueError("gdata.shape[1]: %i, len(local_m): %i" %(gdata.shape[1], len(local_m)))
         m_matrices = self._backward_SWSH_matrices
+        shift = self.shift
+        Lmax = self.N2c - 1
         for dm, m in enumerate(local_m):
-            if m <= self.N2c - 1:
+            # Skip transforms when |m| > Lmax
+            if np.abs(m) > Lmax:
+                # Write zeros because they'll be used by the inverse azimuthal transform
+                gdata[:, dm, :, :] = 0
+            else:
                 Lmin = max(np.abs(m), np.abs(self.s))
-                grm = gdata[:, dm, :self.N2g, :]
-                crm = cdata[:, dm, Lmin:, :]
+                grm = gdata[:, dm, :, :]
+                if dm % 2 == 0:
+                    # Positive wavenumbers
+                    crm = cdata[:, dm//2, (shift+Lmin):, :]
+                else:
+                    # Negative wavenumbers
+                    crm = cdata[:, dm//2, Lmax-Lmin::-1, :]
                 apply_matrix(m_matrices[dm][:,Lmin:], crm, axis=1, out=grm)
 
     @CachedAttribute

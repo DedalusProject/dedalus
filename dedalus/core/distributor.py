@@ -165,6 +165,12 @@ class Distributor:
             raise ValueError("Scales must be nonzero.")
         return tuple(scales)
 
+    def get_transform_object(self, axis):
+        for path in self.paths:
+            if isinstance(path, Transform):
+                if path.axis == axis:
+                    return path
+
 
 class Layout:
     """
@@ -194,22 +200,24 @@ class Layout:
     def global_shape(self, domain, scales):
         """Global data shape."""
         scales = self.dist.remedy_scales(scales)
-        global_shape = np.array(domain.coeff_shape).copy()
-        global_shape[self.grid_space] = np.array(domain.grid_shape(scales))[self.grid_space]
+        #global_shape = np.array(domain.coeff_shape).copy()
+        #global_shape[self.grid_space] = np.array(domain.grid_shape(scales))[self.grid_space]
+        global_shape = domain.global_shape(self, scales)
         return tuple(global_shape)
 
-    def chunk_shape(self, domain, scales):
+    def chunk_shape(self, domain):
         """Chunk shape."""
-        scales = self.dist.remedy_scales(scales)
-        chunk_shape = np.array(domain.coeff_group_shape).copy()
-        chunk_shape[self.grid_space] = 1
+        #scales = self.dist.remedy_scales(scales)
+        #chunk_shape = np.array(domain.coeff_group_shape).copy()
+        #chunk_shape[self.grid_space] = 1
+        chunk_shape = domain.chunk_shape(self)
         return tuple(chunk_shape)
 
     def local_chunks(self, domain, scales):
         """Local chunk indices by axis."""
         global_shape = self.global_shape(domain, scales)
-        chunk_shape = self.chunk_shape(domain, scales)
-        chunk_nums = np.array(global_shape) // np.array(chunk_shape)
+        chunk_shape = self.chunk_shape(domain)
+        chunk_nums = -(-np.array(global_shape) // np.array(chunk_shape))  # ceil
         local_chunks = []
         for axis, basis in enumerate(domain.full_bases):
             if self.local[axis]:
@@ -230,7 +238,7 @@ class Layout:
 
     def local_elements(self, domain, scales):
         """Local element indices by axis."""
-        chunk_shape = self.chunk_shape(domain, scales)
+        chunk_shape = self.chunk_shape(domain)
         local_chunks = self.local_chunks(domain, scales)
         indices = []
         for GS, LG in zip(chunk_shape, local_chunks):
@@ -435,6 +443,7 @@ class Transpose:
 
     TODO:
         - Implement grouped transposes
+        - Transpose all components simultaneously
     """
 
     def __init__(self, layout0, layout1, axis, comm_cart):
@@ -471,7 +480,8 @@ class Transpose:
         # elif domain.constant[axis+1]:
         #     return ColDistributor(sub_shape, dtype, axis, self.comm_sub)
         else:
-            return TransposePlanner(sub_shape, dtype, axis, self.comm_sub)
+            chunk_shape = domain.chunk_shape(self.layout0)
+            return TransposePlanner(sub_shape, chunk_shape, dtype, axis, self.comm_sub)
 
     # @CachedMethod
     # def _group_plan(self, nfields, scales, dtype):
@@ -525,6 +535,7 @@ class Transpose:
             field.set_layout(self.layout1)
             data1 = field.data
             # Transpose between data views
+            # OPTIMIZE: create plans for all components at once
             tensorshape = data0.shape[:len(field.tensorsig)]
             for i in np.ndindex(tensorshape):
                 plan.localize_columns(data0[i], data1[i])

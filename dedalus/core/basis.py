@@ -12,6 +12,7 @@ import operator
 from . import operators
 from ..tools.array import axslice
 from ..tools.array import apply_matrix
+from ..tools.array import permute_axis
 from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
 from ..tools.cache import CachedClass
@@ -292,6 +293,16 @@ class IntervalBasis(Basis):
         """Native flat global grid."""
         # Subclasses must implement
         raise NotImplementedError
+
+    def global_shape(self, layout, scales):
+        grid_space = layout.grid_space[self.axis]
+        if grid_space:
+            return self.grid_shape(scales)
+        else:
+            return self.shape
+
+    def chunk_shape(self, layout):
+        return 1
 
     def forward_transform(self, field, axis, gdata, cdata):
         """Forward transform field data."""
@@ -1077,22 +1088,31 @@ class SpinRecombinationBasis:
                 U.append(None)
         return U
 
-    def forward_spin_recombination(self, tensorsig, gdata):
-        """Apply component-to-spin recombination in place."""
-        U = self.spin_recombination_matrices(tensorsig)
-        for i, Ui in enumerate(U):
-            if Ui is not None:
-                # Directly apply U
-                apply_matrix(Ui, gdata, axis=i, out=gdata)
+    def forward_spin_recombination(self, tensorsig, gdata, out=None):
+        """Apply component-to-spin recombination."""
+        if out is None:
+            out = gdata
+        if tensorsig:
+            U = self.spin_recombination_matrices(tensorsig)
+            for i, Ui in enumerate(U):
+                if Ui is not None:
+                    # Directly apply U
+                    apply_matrix(Ui, gdata, axis=i, out=out)
+        else:
+            np.copyto(out, gdata)
 
-    def backward_spin_recombination(self, tensorsig, gdata):
-        """Apply spin-to-component recombination in place."""
-        U = self.spin_recombination_matrices(tensorsig)
-        for i, Ui in enumerate(U):
-            if Ui is not None:
-                # Apply U^H (inverse of U)
-                apply_matrix(Ui.T.conj(), gdata, axis=i, out=gdata)
-
+    def backward_spin_recombination(self, tensorsig, gdata, out=None):
+        """Apply spin-to-component recombination."""
+        if out is None:
+            out = gdata
+        if tensorsig:
+            U = self.spin_recombination_matrices(tensorsig)
+            for i, Ui in enumerate(U):
+                if Ui is not None:
+                    # Apply U^H (inverse of U)
+                    apply_matrix(Ui.T.conj(), gdata, axis=i, out=out)
+        else:
+            np.copyto(out, gdata)
 
 # These are common for S2 and D2
 class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):
@@ -1111,8 +1131,6 @@ class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):
         self.azimuth_basis = ComplexFourier(coordsystem.coords[0], shape[0], bounds=(0, 2*np.pi), library=azimuth_library)
         self.global_grid_azimuth = self.azimuth_basis.global_grid
         self.local_grid_azimuth = self.azimuth_basis.local_grid
-        self.forward_transform_azimuth = self.azimuth_basis.forward_transform
-        self.backward_transform_azimuth = self.azimuth_basis.backward_transform
         super().__init__(coordsystem)
 
     @CachedAttribute
@@ -1189,12 +1207,10 @@ class DiskBasis(SpinBasis):
         self.k = space.k0 + dk
         self.axis = space.axis
         self.azimuth_basis = Fourier(self.space.azimuth_space)
-        self.forward_transforms = [self.forward_transform_azimuth,
+        self.forward_transforms = [self.azimuth_basis.forward_transform,
                                    self.forward_transform_radius]
-        self.backward_transforms = [self.backward_transform_azimuth,
+        self.backward_transforms = [self.azimuth_basis.backward_transform,
                                     self.backward_transform_radius]
-        #self.forward_transform_azimuth = self.azimuth_basis.forward_transform
-        #self.backward_transform_azimuth = self.azimuth_basis.backward_transform
 
     def forward_transform_radius(self, field, axis, gdata, cdata):
         # Apply spin recombination
@@ -1239,6 +1255,43 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         self.backward_transforms = [self.backward_transform_azimuth,
                                     self.backward_transform_colatitude]
         self.grid_params = (coordsystem, radius, dealias)
+        # m permutations for repacking triangular truncation
+        if shape[0] % 2 != 0:
+            raise ValueError("Don't use an odd phi resolution please")
+        az_index = np.arange(shape[0])
+        az_div, az_mod = divmod(az_index, 2)
+        self.forward_m_perm = az_div + shape[0] // 2 * az_mod
+        self.backward_m_perm = np.argsort(self.forward_m_perm)
+
+    def global_shape(self, layout, scales):
+        grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
+        grid_shape = self.grid_shape(scales)
+        if grid_space[1]:
+            # grid-grid space
+            return grid_shape
+        elif grid_space[0]:
+            # coeff-grid space
+            shape = grid_shape.copy()
+            shape[0] = self.shape[0]
+            return shape
+        else:
+            # coeff-coeff space
+            # Repacked triangular truncation
+            Nphi = self.shape[0]
+            Lmax = self.shape[1] - 1
+            return np.array([Nphi//2, Lmax+1+max(0, Lmax+1-Nphi//2)])
+
+    def chunk_shape(self, layout):
+        grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
+        if grid_space[1]:
+            # grid-grid space
+            return np.array([1, 1], dtype=int)
+        elif grid_space[0]:
+            # coeff-grid space
+            return np.array([2, 1], dtype=int)
+        else:
+            # coeff-coeff space
+            return np.array([1, 1], dtype=int)
 
     def __eq__(self, other):
         if isinstance(other, SpinWeightedSphericalHarmonics):
@@ -1294,10 +1347,50 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         return subshape
 
     @CachedAttribute
-    def local_l(self):
+    def local_unpacked_m(self):
+        # Permute Fourier wavenumbers
+        wavenumbers = self.azimuth_basis.wavenumbers[self.forward_m_perm]
+        # Get layout before colatitude forward transform
+        transform = self.dist.get_transform_object(axis=self.axis)
+        layout = transform.layout1
+        # Take local elements
+        local_m_elements = layout.local_elements(self.domain, scales=1)[self.axis]
+        local_wavenumbers = wavenumbers[local_m_elements]
+        return tuple(local_wavenumbers)
+
+    @CachedAttribute
+    def local_m_ell(self):
         layout = self.dist.coeff_layout
-        local_l_elements = layout.local_elements(self.domain, scales=1)[self.axis+1]
-        return tuple(self.degrees[local_l_elements])
+        local_i = layout.local_elements(self.domain, scales=1)[self.axis][:, None]
+        local_j = layout.local_elements(self.domain, scales=1)[self.axis + 1][None, :]
+        local_i = local_i + 0*local_j
+        local_j = local_j + 0*local_i
+        # Valid for m >= 0 except Nyquist
+        Nphi = self.shape[0]
+        Lmax = self.shape[1] - 1
+        shift = max(0, Lmax + 1 - Nphi//2)
+        local_m = 1 * local_i
+        local_ell = local_j - shift
+        # Fix for m < 0
+        neg_modes = (local_ell < local_m)
+        local_m[neg_modes] = local_i[neg_modes] - (Nphi+1)//2
+        local_ell[neg_modes] = Lmax - local_j[neg_modes]
+        # Fix for Nyquist
+        nyq_modes = (local_m == -(Nphi+1)//2)
+        local_m[nyq_modes] *= -1
+        # Reshape as multidimensional vectors
+        # HACK
+        if self.first_axis != 0:
+            raise ValueError("Need to reshape these")
+        return local_m, local_ell
+
+    @CachedAttribute
+    def local_m(self):
+        return self.local_m_ell[0]
+
+    @CachedAttribute
+    def local_ell(self):
+        return self.local_m_ell[1]
 
     def global_grids(self, scales=None):
         if scales == None: scales = (1, 1)
@@ -1340,33 +1433,45 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
     @CachedMethod
     def transform_plan(self, grid_shape, axis, s):
         """Build transform plan."""
-        return self.transforms[self.colatitude_library](grid_shape, self.Lmax+1, axis, self.local_m, s)
+        return self.transforms[self.colatitude_library](grid_shape, self.shape, axis, self.local_unpacked_m, s)
+
+    def forward_transform_azimuth(self, field, axis, gdata, cdata):
+        # Call Fourier transform
+        self.azimuth_basis.forward_transform(field, axis, gdata, cdata)
+        # Permute m for triangular truncation
+        permute_axis(cdata, axis+len(field.tensorsig), self.forward_m_perm, out=cdata)
+
+    def backward_transform_azimuth(self, field, axis, gdata, cdata):
+        # Permute m back from triangular truncation
+        permute_axis(cdata, axis+len(field.tensorsig), self.backward_m_perm, out=cdata)
+        # Call Fourier transform
+        self.azimuth_basis.backward_transform(field, axis, gdata, cdata)
 
     def forward_transform_colatitude(self, field, axis, gdata, cdata):
-        # Apply spin recombination
-        self.forward_spin_recombination(field.tensorsig, gdata)
-        # Perform transforms component-by-component
+        # Create temporary
+        temp = np.zeros_like(gdata)
+        # Apply spin recombination from gdata to temp
+        self.forward_spin_recombination(field.tensorsig, gdata, out=temp)
+        cdata.fill(0)  # OPTIMIZE: shouldn't be necessary
+        # Transform component-by-component from temp to cdata
         S = self.spin_weights(field.tensorsig)
-        # HACK -- don't want to make a new array every transform
-        temp = np.copy(cdata)
         for i, s in np.ndenumerate(S):
             grid_shape = gdata[i].shape
             plan = self.transform_plan(grid_shape, axis, s)
-            plan.forward(gdata[i], temp[i], axis)
-        np.copyto(cdata, temp)
+            plan.forward(temp[i], cdata[i], axis)
 
     def backward_transform_colatitude(self, field, axis, cdata, gdata):
-        # Perform transforms component-by-component
+        # Create temporary
+        temp = np.zeros_like(gdata)
+        # Transform component-by-component from cdata to temp
         S = self.spin_weights(field.tensorsig)
-        # HACK -- don't want to make a new array every transform
-        temp = np.copy(gdata)
         for i, s in np.ndenumerate(S):
             grid_shape = gdata[i].shape
             plan = self.transform_plan(grid_shape, axis, s)
             plan.backward(cdata[i], temp[i], axis)
-        # Apply spin recombination
-        np.copyto(gdata, temp)
-        self.backward_spin_recombination(field.tensorsig, gdata)
+        # Apply spin recombination from temp to gdata
+        gdata.fill(0)  # OPTIMIZE: shouldn't be necessary
+        self.backward_spin_recombination(field.tensorsig, temp, out=gdata)
 
     @CachedMethod
     def k_vector(self,mu,m,s,local_l):

@@ -156,15 +156,6 @@ class Domain(metaclass=CachedClass):
         return tuple(basis is None for basis in self.full_bases)
 
     @CachedAttribute
-    def coeff_group_shape(self):
-        """Compute group shape."""
-        shape = np.ones(self.dist.dim, dtype=int)
-        for basis in self.bases:
-            for subaxis in range(basis.dim):
-                shape[basis.axis+subaxis] = basis.group_shape[subaxis]
-        return tuple(shape)
-
-    @CachedAttribute
     def coeff_shape(self):
         """Compute coefficient shape."""
         shape = np.ones(self.dist.dim, dtype=int)
@@ -178,6 +169,19 @@ class Domain(metaclass=CachedClass):
         # Remedy scales before calling cached method
         scales = self.dist.remedy_scales(scales)
         return self._grid_shape(scales)
+
+    def global_shape(self, layout, scales):
+        shape = np.ones(self.dist.dim, dtype=int)
+        for basis in self.bases:
+            shape[basis.first_axis:basis.last_axis+1] = basis.global_shape(layout, scales)
+        return shape
+
+    def chunk_shape(self, layout):
+        """Compute group shape."""
+        shape = np.ones(self.dist.dim, dtype=int)
+        for basis in self.bases:
+            shape[basis.first_axis:basis.last_axis+1] = basis.chunk_shape(layout)
+        return tuple(shape)
 
     @CachedMethod
     def _grid_shape(self, scales):
