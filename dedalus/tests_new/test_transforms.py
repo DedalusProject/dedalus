@@ -118,26 +118,18 @@ def test_S2_scalar_backward(Nphi, Ntheta, dealias):
 def test_S2_scalar_forward(Nphi, Ntheta, dealias):
     c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias)
     f = field.Field(dist=d, bases=(sb,), dtype=np.complex128)
-    f['g'] = np.sqrt(15) / 4 * np.sin(theta)**2 * np.exp(-2j*phi)
     m = sb.local_m
     ell = sb.local_ell
-    assert np.allclose(f['c'][(m == -2) * (ell == 2)], 1)
-
-@pytest.mark.parametrize('Nphi', Nphi_range)
-@pytest.mark.parametrize('Ntheta', Ntheta_range)
-@pytest.mark.parametrize('dealias', dealias_range)
-def test_S2_scalar_roundtrip(Nphi, Ntheta, dealias):
-    c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias)
-    f = field.Field(dist=d, bases=(sb,), dtype=np.complex128)
     f['g'] = np.sqrt(15) / 4 * np.sin(theta)**2 * np.exp(-2j*phi)
-    fg = f['g'].copy()
-    f['c']
-    assert np.allclose(f['g'], fg)
+    fc = np.zeros_like(f['c'])
+    fc[(m == -2) * (ell == 2)] = 1
+    assert np.allclose(f['c'], fc)
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 def test_S2_vector_backward(Nphi, Ntheta, dealias):
+    # Note: u is the gradient of cos(theta)*exp(1j*phi)
     c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias)
     u = field.Field(dist=d, bases=(sb,), tensorsig=(c,), dtype=np.complex128)
     m = sb.local_m
@@ -152,15 +144,18 @@ def test_S2_vector_backward(Nphi, Ntheta, dealias):
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_S2_vector_roundtrip(Nphi, Ntheta, dealias):
+def test_S2_vector_forward(Nphi, Ntheta, dealias):
     # Note: u is the gradient of cos(theta)*exp(1j*phi)
     c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias)
     u = field.Field(dist=d, bases=(sb,), tensorsig=(c,), dtype=np.complex128)
+    m = sb.local_m
+    ell = sb.local_ell
     u['g'][0] = 1j*np.cos(theta)*np.exp(1j*phi)
     u['g'][1] = np.cos(2*theta)*np.exp(1j*phi)
-    ug = u['g'].copy()
-    u['c']
-    assert np.allclose(u['g'], ug)
+    uc = np.zeros_like(u['c'])
+    uc[0][(m == 1) * (ell == 2)] = -np.sqrt(4/5)
+    uc[1][(m == 1) * (ell == 2)] = np.sqrt(4/5)
+    assert np.allclose(u['c'], uc)
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
@@ -172,23 +167,22 @@ def test_S2_tensor_backward(Nphi, Ntheta, dealias):
     m = sb.local_m
     ell = sb.local_ell
     T['c'][0,0][(m == 2) * (ell == 3)] = 1
-    Tg00 = - 0.5 * np.sqrt(7/2) * (np.cos(theta/2)**4 * (-2 + 3*np.cos(theta))) * np.exp(2j*phi)
-    assert np.allclose(T['g'][0,0], Tg00)
+    Tg = np.zeros_like(T['g'])
+    Tg[0,0] = - 0.5 * np.sqrt(7/2) * (np.cos(theta/2)**4 * (-2 + 3*np.cos(theta))) * np.exp(2j*phi)
+    assert np.allclose(T['g'][0,0], Tg[0,0])
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_S2_tensor(Nphi, Ntheta, dealias):
-    # Note: only checking one component of the tensor
+def test_S2_tensor_roundtrip(Nphi, Ntheta, dealias):
     c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias)
     T = field.Field(dist=d, bases=(sb,), tensorsig=(c,c), dtype=np.complex128)
-    Ag = np.copy(T['g'])
-    Ag[1,1] = 2*np.cos(theta)*(3*np.cos(theta)*np.cos(phi)**2 - 2*np.sin(theta)*np.sin(phi))
-    Ag[1,0] = Ag[0,1] = -2*np.cos(phi)*(np.sin(theta) + 3*np.cos(theta)*np.sin(phi))
-    Ag[0,0] = 6*np.sin(phi)**2
-    T['g'] = Ag
-    T.require_coeff_space()
-    assert np.allclose(T['g'], Ag)
+    T['g'][1,1] = 2*np.cos(theta)*(3*np.cos(theta)*np.cos(phi)**2 - 2*np.sin(theta)*np.sin(phi))
+    T['g'][1,0] = T['g'][0,1] = -2*np.cos(phi)*(np.sin(theta) + 3*np.cos(theta)*np.sin(phi))
+    T['g'][0,0] = 6*np.sin(phi)**2
+    Tg = T['g'].copy()
+    T['c']
+    assert np.allclose(T['g'], Tg)
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
@@ -204,7 +198,7 @@ def test_S2_3D_vector_roundtrip(Nphi, Ntheta, dealias):
     u['g'][2] = 0
     u['g'][1] = np.cos(2*theta)*np.exp(1j*phi)
     u['g'][0] = 1j*np.cos(theta)*np.exp(1j*phi)
-    ug = np.copy(u['g'])
+    ug = u['g'].copy()
     u['c']
     assert np.allclose(u['g'], ug)
 
