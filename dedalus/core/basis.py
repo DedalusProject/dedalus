@@ -1268,32 +1268,32 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
     def global_shape(self, layout, scales):
         grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
         grid_shape = self.grid_shape(scales)
-        if grid_space[1]:
+        if grid_space[0]:
             # grid-grid space
             return grid_shape
-        elif grid_space[0]:
+        elif grid_space[1]:
             # coeff-grid space
-            shape = grid_shape.copy()
+            shape = list(grid_shape)
             shape[0] = self.shape[0]
-            return shape
+            return tuple(shape)
         else:
             # coeff-coeff space
             # Repacked triangular truncation
             Nphi = self.shape[0]
             Lmax = self.shape[1] - 1
-            return np.array([Nphi//2, Lmax+1+max(0, Lmax+1-Nphi//2)])
+            return (Nphi//2, Lmax+1+max(0, Lmax+1-Nphi//2))
 
     def chunk_shape(self, layout):
         grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
-        if grid_space[1]:
+        if grid_space[0]:
             # grid-grid space
-            return np.array([1, 1], dtype=int)
-        elif grid_space[0]:
+            return (1, 1)
+        elif grid_space[1]:
             # coeff-grid space
-            return np.array([2, 1], dtype=int)
+            return (2, 1)
         else:
             # coeff-coeff space
-            return np.array([1, 1], dtype=int)
+            return (1, 1)
 
     def __eq__(self, other):
         if isinstance(other, SpinWeightedSphericalHarmonics):

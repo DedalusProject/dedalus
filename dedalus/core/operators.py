@@ -1923,6 +1923,7 @@ class SphericalEllOperator(SpectralOperator):
             for regindex_out in self.regindex_out(regindex_in):
                 comp_in = operand.data[regindex_in]
                 comp_out = out.data[regindex_out]
+                # Should reorder to make ell loop first, check forbidden reg, remove reg from radial_vector_3
                 for m in input_basis.local_m:
                     for ell in input_basis.local_l:
                         vec3_in = radial_basis.radial_vector_3(comp_in, m, ell, regindex_in, local_m=input_basis.local_m, local_l=input_basis.local_l)
