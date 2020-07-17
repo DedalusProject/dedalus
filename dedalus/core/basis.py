@@ -1535,23 +1535,57 @@ class RegularityBasis(Basis, SpinRecombinationBasis):
     dims = ['radius']
     group_shape = (1,)
 
+    # @CachedAttribute
+    # def local_l(self):
+    #     layout = self.dist.coeff_layout
+    #     local_l_elements = layout.local_elements(self.domain, scales=1)[self.axis-1]
+    #     if 0 in local_l_elements:
+    #         return (0,)
+    #     else:
+    #         return ()
+
+    # @CachedAttribute
+    # def local_m(self):
+    #     layout = self.dist.coeff_layout
+    #     local_m_elements = layout.local_elements(self.domain, scales=1)[self.axis-2]
+    #     if 0 in local_m_elements:
+    #         return (0,)
+    #     else:
+    #         return ()
+
     @CachedAttribute
-    def local_l(self):
+    def local_m_ell(self):
         layout = self.dist.coeff_layout
-        local_l_elements = layout.local_elements(self.domain, scales=1)[self.axis-1]
-        if 0 in local_l_elements:
-            return (0,)
-        else:
-            return ()
+        local_i = layout.local_elements(self.domain, scales=1)[self.axis - 2][:, None]
+        local_j = layout.local_elements(self.domain, scales=1)[self.axis - 1][None, :]
+        local_i = local_i + 0*local_j
+        local_j = local_j + 0*local_i
+        # Valid for m >= 0 except Nyquist
+        Nphi = self.shape[0]
+        Lmax = self.shape[1] - 1
+        shift = max(0, Lmax + 1 - Nphi//2)
+        local_m = 1 * local_i
+        local_ell = local_j - shift
+        # Fix for m < 0
+        neg_modes = (local_ell < local_m)
+        local_m[neg_modes] = local_i[neg_modes] - (Nphi+1)//2
+        local_ell[neg_modes] = Lmax - local_j[neg_modes]
+        # Fix for Nyquist
+        nyq_modes = (local_m == -(Nphi+1)//2)
+        local_m[nyq_modes] *= -1
+        # Reshape as multidimensional vectors
+        # HACK
+        if self.axis != 2:
+            raise ValueError("Need to reshape these")
+        return local_m, local_ell
 
     @CachedAttribute
     def local_m(self):
-        layout = self.dist.coeff_layout
-        local_m_elements = layout.local_elements(self.domain, scales=1)[self.axis-2]
-        if 0 in local_m_elements:
-            return (0,)
-        else:
-            return ()
+        return self.local_m_ell[0]
+
+    @CachedAttribute
+    def local_ell(self):
+        return self.local_m_ell[1]
 
     def global_shape(self, layout, scales):
         grid_space = layout.grid_space[self.axis]
@@ -1562,6 +1596,31 @@ class RegularityBasis(Basis, SpinRecombinationBasis):
 
     def chunk_shape(self, layout):
         return 1
+
+    @CachedAttribute
+    def ell_maps(self):
+        """
+        Tuple of (ell, m_indices, ell_indices) for all local ells.
+        m_indices and ell_indices are local slices along the phi and theta axes.
+
+        Data for each ell should be sliced as:
+
+            for ell, m_indices, ell_indices in ell_maps:
+                ell_data = data[m_indices, ell_indices]
+        """
+        ell_maps = []
+        for dl, ell_row in enumerate(self.local_ell.T):
+            if ell_row[0] == ell_row[-1]:
+                # Only one ell
+                ell_map = (ell_row[0], slice(None), slice(dl, dl+1))
+                ell_maps.append(ell_map)
+            else:
+                switch = np.where(np.diff(ell_row))[0][0] + 1
+                ell_map = (ell_row[0], slice(0, switch), slice(dl, dl+1))
+                ell_maps.append(ell_map)
+                ell_map = (ell_row[-1], slice(switch, None), slice(dl, dl+1))
+                ell_maps.append(ell_map)
+        return tuple(ell_maps)
 
     def get_radial_basis(self):
         return self
@@ -1604,20 +1663,17 @@ class RegularityBasis(Basis, SpinRecombinationBasis):
         return np.sqrt( (l + (mu+1)//2 )/(2*l + 1) )
 
     @CachedMethod
-    def radial_recombinations(self, tensorsig, local_ell=None):
-        if local_ell == None:
-            local_ell = self.local_ell
-        # For now only implement recombinations for Ball-only tensors
+    def radial_recombinations(self, tensorsig, ell_list):
+        # For now only implement recombinations for sphere-only tensors
         for cs in tensorsig:
             if self.coordsystem.cs is not cs:
-                raise ValueError("Only supports tensors over ball.")
+                raise ValueError("Only supports tensors over spherical coords.")
         order = len(tensorsig)
-        # Make set of all ell values
-        ell_set = set(local_ell.ravel())
         Q_matrices = {}
-        for ell in ell_set:
-            Q = dedalus_sphere.spin_operators.Intertwiner(ell, indexing=(-1,+1,0))
-            Q_matrices[ell] = Q(order)
+        for ell in ell_list:
+            if ell not in Q_matrices:
+                Q = dedalus_sphere.spin_operators.Intertwiner(ell, indexing=(-1,+1,0))
+                Q_matrices[ell] = Q(order)
         return Q_matrices
 
     @CachedMethod
@@ -1633,33 +1689,43 @@ class RegularityBasis(Basis, SpinRecombinationBasis):
             #    R[axslice(i, n, n+self.dim)] += reshape_vector(Rb, dim=len(tensorsig), axis=i)
         return R
 
-    def forward_regularity_recombination(self, tensorsig, axis, gdata, local_l=None):
+    def forward_regularity_recombination(self, tensorsig, axis, gdata, ell_maps=None):
         rank = len(tensorsig)
+        if ell_maps is None:
+            ell_maps = self.ell_maps
+        ell_list = tuple(map[0] for map in ell_maps)
         # Apply radial recombinations
         if rank > 0:
-            Q = self.radial_recombinations(tensorsig, ell_list=local_l)
+            Q = self.radial_recombinations(tensorsig, ell_list)
             # Flatten tensor axes
             shape = gdata.shape
             temp = gdata.reshape((-1,)+shape[rank:])
-            # Apply Q transformations for each l to flattened tensor data
-            for l_index, Q_l in enumerate(Q):
-                # Here the l axis is 'axis' instead of 'axis-1' since we have one tensor axis prepended
-                l_view = temp[axslice(axis, l_index, l_index+1)]
-                apply_matrix(Q_l.T, l_view, axis=0, out=l_view)
+            slices = [slice(None) for i in range(1+self.dist.dim)]
+            # Apply Q transformations for each ell to flattened tensor data
+            for ell, m_ind, ell_ind in ell_maps:
+                slices[axis-2+1] = m_ind    # Add 1 for tensor axis
+                slices[axis-1+1] = ell_ind  # Add 1 for tensor axis
+                temp_ell = temp[tuple(slices)]
+                apply_matrix(Q[ell].T, temp_ell, axis=0, out=temp_ell)
 
-    def backward_regularity_recombination(self, tensorsig, axis, gdata, local_l=None):
+    def backward_regularity_recombination(self, tensorsig, axis, gdata, ell_maps=None):
         rank = len(tensorsig)
+        if ell_maps is None:
+            ell_maps = self.ell_maps
+        ell_list = tuple(map[0] for map in ell_maps)
         # Apply radial recombinations
         if rank > 0:
-            Q = self.radial_recombinations(tensorsig, ell_list=local_l)
+            Q = self.radial_recombinations(tensorsig, ell_list)
             # Flatten tensor axes
             shape = gdata.shape
             temp = gdata.reshape((-1,)+shape[rank:])
-            # Apply Q transformations for each l to flattened tensor data
-            for l_index, Q_l in enumerate(Q):
-                # Here the l axis is 'axis' instead of 'axis-1' since we have one tensor axis prepended
-                l_view = temp[axslice(axis, l_index, l_index+1)]
-                apply_matrix(Q_l, l_view, axis=0, out=l_view)
+            slices = [slice(None) for i in range(1+self.dist.dim)]
+            # Apply Q transformations for each ell to flattened tensor data
+            for ell, m_ind, ell_ind in ell_maps:
+                slices[axis-2+1] = m_ind    # Add 1 for tensor axis
+                slices[axis-1+1] = ell_ind  # Add 1 for tensor axis
+                temp_ell = temp[tuple(slices)]
+                apply_matrix(Q[ell], temp_ell, axis=0, out=temp_ell)
 
     def radial_vector_3(self, comp, m, ell, regindex, local_m=None, local_l=None):
         if local_m == None: local_m = self.local_m
@@ -2211,6 +2277,7 @@ class Spherical3DBasis(MultidimensionalBasis):
         self.Lmax = self.sphere_basis.Lmax
         self.local_m = self.sphere_basis.local_m
         self.local_ell = self.sphere_basis.local_ell
+        self.ell_maps = self.sphere_basis.ell_maps
         self.global_grid_azimuth = self.sphere_basis.global_grid_azimuth
         self.global_grid_colatitude = self.sphere_basis.global_grid_colatitude
         self.global_grid_radius = self.radial_basis.global_grid
@@ -2389,15 +2456,14 @@ class SphericalShellBasis(Spherical3DBasis):
                                    radius_library=self.radial_basis.radius_library)
 
     def forward_transform_radius(self, field, axis, gdata, cdata):
-        # apply transforms based off the 3D basis' local_l
         radial_basis = self.radial_basis
         data_axis = len(field.tensorsig) + axis
         grid_size = gdata.shape[data_axis]
         # Multiply by radial factor
         if self.k > 0:
             gdata *= radial_basis.radial_transform_factor(field.scales[axis], data_axis, -self.k)
-        # Apply regularity recombination
-        radial_basis.forward_regularity_recombination(field.tensorsig, axis, gdata, local_l=self.local_l)
+        # Apply regularity recombination using 3D ell map
+        radial_basis.forward_regularity_recombination(field.tensorsig, axis, gdata, ell_maps=self.ell_maps)
         # Perform radial transforms component-by-component
         R = radial_basis.regularity_classes(field.tensorsig)
         # HACK -- don't want to make a new array every transform
@@ -2408,7 +2474,6 @@ class SphericalShellBasis(Spherical3DBasis):
         np.copyto(cdata, temp)
 
     def backward_transform_radius(self, field, axis, cdata, gdata):
-        # apply transforms based off the 3D basis' local_l
         radial_basis = self.radial_basis
         data_axis = len(field.tensorsig) + axis
         grid_size = gdata.shape[data_axis]
@@ -2420,8 +2485,8 @@ class SphericalShellBasis(Spherical3DBasis):
            plan = radial_basis.transform_plan(grid_size, self.k)
            plan.backward(cdata[i], temp[i], axis)
         np.copyto(gdata, temp)
-        # Apply regularity recombinations
-        radial_basis.backward_regularity_recombination(field.tensorsig, axis, gdata, local_l = self.local_l)
+        # Apply regularity recombinations using 3D ell map
+        radial_basis.backward_regularity_recombination(field.tensorsig, axis, gdata, ell_maps=self.ell_maps)
         # Multiply by radial factor
         if self.k > 0:
             gdata *= radial_basis.radial_transform_factor(field.scales[axis], data_axis, self.k)
