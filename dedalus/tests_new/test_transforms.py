@@ -118,12 +118,10 @@ def test_S2_scalar_backward(Nphi, Ntheta, dealias):
 def test_S2_scalar_roundtrip(Nphi, Ntheta, dealias):
     c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias)
     f = field.Field(dist=d, bases=(sb,), dtype=np.complex128)
-    m = sb.local_m
-    ell = sb.local_ell
-    f['c'][(m == -2) * (ell == 2)] = 1
-    fc = f['c'].copy()
-    f['g']
-    assert np.allclose(f['c'], fc)
+    f['g'] = np.sqrt(15) / 4 * np.sin(theta)**2 * np.exp(-2j*phi)
+    fg = f['g'].copy()
+    f['c']
+    assert np.allclose(f['g'], fg)
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
@@ -134,12 +132,12 @@ def test_S2_vector_backward(Nphi, Ntheta, dealias):
     u = field.Field(dist=d, bases=(sb,), tensorsig=(c,), dtype=np.complex128)
     m = sb.local_m
     ell = sb.local_ell
-    u['c'][0][(m == 1) * (ell == 2)] = 1  # Need to work this normalization out
-    u['c'][1][(m == 1) * (ell == 2)] = 1  # Need to work this normalization out
-    ug = np.array([np.cos(2*theta)*np.exp(1j*phi),
-                   1j*np.cos(theta)*np.exp(1j*phi)])
-    prop = u['g'].ravel()[0] / ug.ravel()[0]
-    assert np.allclose(u['g'], prop*ug)
+    u['c'][0][(m == 1) * (ell == 2)] = -np.sqrt(4/5)
+    u['c'][1][(m == 1) * (ell == 2)] = np.sqrt(4/5)
+    ug = np.zeros_like(u['g'])
+    ug[0] = 1j*np.cos(theta)*np.exp(1j*phi)
+    ug[1] = np.cos(2*theta)*np.exp(1j*phi)
+    assert np.allclose(u['g'], ug)
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
@@ -148,13 +146,11 @@ def test_S2_vector_roundtrip(Nphi, Ntheta, dealias):
     # Note: u is the gradient of cos(theta)*exp(1j*phi)
     c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias)
     u = field.Field(dist=d, bases=(sb,), tensorsig=(c,), dtype=np.complex128)
-    m = sb.local_m
-    ell = sb.local_ell
-    u['c'][0][(m == 1) * (ell == 2)] = np.sqrt(4/5)
-    u['c'][1][(m == 1) * (ell == 2)] = np.sqrt(4/5)
-    uc = u['c'].copy()
-    u['g']
-    assert np.allclose(u['c'], uc)
+    u['g'][0] = 1j*np.cos(theta)*np.exp(1j*phi)
+    u['g'][1] = np.cos(2*theta)*np.exp(1j*phi)
+    ug = u['g'].copy()
+    u['c']
+    assert np.allclose(u['g'], ug)
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
@@ -172,20 +168,32 @@ def test_S2_tensor_backward(Nphi, Ntheta, dealias):
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('dealias', dealias_range)
+def test_S2_tensor_roundtrip(Nphi, Ntheta, dealias):
+    # Note: only checking one component of the tensor
+    c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias)
+    T = field.Field(dist=d, bases=(sb,), tensorsig=(c,c), dtype=np.complex128)
+    T['g'][0,0] = - 0.5 * np.sqrt(7/2) * (np.cos(theta/2)**4 * (-2 + 3*np.cos(theta))) * np.exp(2j*phi)
+    Tg00 = T['g'][0,0].copy()
+    T['c']
+    assert np.allclose(T['g'][0,0], Tg00)
+
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('dealias', dealias_range)
 def test_S2_3D_vector_roundtrip(Nphi, Ntheta, dealias):
     # Note: u is the S2 gradient of cos(theta)*exp(1j*phi)
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
-    d = distributor.Distributor( (c,) )
+    d = distributor.Distributor((c,))
     c_S2 = c.S2coordsys
-    sb = basis.SpinWeightedSphericalHarmonics(c_S2, (32,16), radius=1, dealias=(dealias, dealias))
+    sb = basis.SpinWeightedSphericalHarmonics(c_S2, (Nphi, Ntheta), radius=1, dealias=(dealias, dealias))
     phi, theta = sb.local_grids()
     u = field.Field(dist=d, bases=(sb,), tensorsig=(c,), dtype=np.complex128)
     u['g'][2] = 0
-    u['g'][1] =    np.cos(2*theta)*np.exp(1j*phi)
+    u['g'][1] = np.cos(2*theta)*np.exp(1j*phi)
     u['g'][0] = 1j*np.cos(theta)*np.exp(1j*phi)
-    ug0 = np.copy(u['g'])
+    ug = np.copy(u['g'])
     u['c']
-    assert np.allclose(u['g'], ug0)
+    assert np.allclose(u['g'], ug)
 
 ## Spherical Shell
 Nphi_range = [12]
