@@ -1092,27 +1092,35 @@ class SpinRecombinationBasis:
         """Apply component-to-spin recombination."""
         if out is None:
             out = gdata
+        else:
+            # HACK: just copying the data so we can apply_matrix repeatedly
+            np.copyto(out, gdata)
         if tensorsig:
             U = self.spin_recombination_matrices(tensorsig)
             for i, Ui in enumerate(U):
                 if Ui is not None:
                     # Directly apply U
-                    apply_matrix(Ui, gdata, axis=i, out=out)
-        else:
-            np.copyto(out, gdata)
+#                    apply_matrix(Ui, gdata, axis=i, out=out)
+                    apply_matrix(Ui, out, axis=i, out=out)
+#        else:
+#            np.copyto(out, gdata)
 
     def backward_spin_recombination(self, tensorsig, gdata, out=None):
         """Apply spin-to-component recombination."""
         if out is None:
             out = gdata
+        else:
+            # HACK: just copying the data so we can apply_matrix repeatedly
+            np.copyto(out, gdata)
         if tensorsig:
             U = self.spin_recombination_matrices(tensorsig)
             for i, Ui in enumerate(U):
                 if Ui is not None:
                     # Apply U^H (inverse of U)
-                    apply_matrix(Ui.T.conj(), gdata, axis=i, out=out)
-        else:
-            np.copyto(out, gdata)
+#                    apply_matrix(Ui.T.conj(), gdata, axis=i, out=out)
+                    apply_matrix(Ui.T.conj(), out, axis=i, out=out)
+#        else:
+#            np.copyto(out, gdata)
 
 # These are common for S2 and D2
 class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):

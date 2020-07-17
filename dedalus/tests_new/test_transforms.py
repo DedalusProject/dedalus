@@ -115,6 +115,17 @@ def test_S2_scalar_backward(Nphi, Ntheta, dealias):
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('dealias', dealias_range)
+def test_S2_scalar_forward(Nphi, Ntheta, dealias):
+    c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias)
+    f = field.Field(dist=d, bases=(sb,), dtype=np.complex128)
+    f['g'] = np.sqrt(15) / 4 * np.sin(theta)**2 * np.exp(-2j*phi)
+    m = sb.local_m
+    ell = sb.local_ell
+    assert np.allclose(f['c'][(m == -2) * (ell == 2)], 1)
+
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('dealias', dealias_range)
 def test_S2_scalar_roundtrip(Nphi, Ntheta, dealias):
     c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias)
     f = field.Field(dist=d, bases=(sb,), dtype=np.complex128)
@@ -127,7 +138,6 @@ def test_S2_scalar_roundtrip(Nphi, Ntheta, dealias):
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 def test_S2_vector_backward(Nphi, Ntheta, dealias):
-    # Note: u is the gradient of cos(theta)*exp(1j*phi)
     c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias)
     u = field.Field(dist=d, bases=(sb,), tensorsig=(c,), dtype=np.complex128)
     m = sb.local_m
@@ -168,14 +178,17 @@ def test_S2_tensor_backward(Nphi, Ntheta, dealias):
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_S2_tensor_roundtrip(Nphi, Ntheta, dealias):
+def test_S2_tensor(Nphi, Ntheta, dealias):
     # Note: only checking one component of the tensor
     c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias)
     T = field.Field(dist=d, bases=(sb,), tensorsig=(c,c), dtype=np.complex128)
-    T['g'][0,0] = - 0.5 * np.sqrt(7/2) * (np.cos(theta/2)**4 * (-2 + 3*np.cos(theta))) * np.exp(2j*phi)
-    Tg00 = T['g'][0,0].copy()
-    T['c']
-    assert np.allclose(T['g'][0,0], Tg00)
+    Ag = np.copy(T['g'])
+    Ag[1,1] = 2*np.cos(theta)*(3*np.cos(theta)*np.cos(phi)**2 - 2*np.sin(theta)*np.sin(phi))
+    Ag[1,0] = Ag[0,1] = -2*np.cos(phi)*(np.sin(theta) + 3*np.cos(theta)*np.sin(phi))
+    Ag[0,0] = 6*np.sin(phi)**2
+    T['g'] = Ag
+    T.require_coeff_space()
+    assert np.allclose(T['g'], Ag)
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
