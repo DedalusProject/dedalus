@@ -1367,7 +1367,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         local_j = layout.local_elements(self.domain, scales=1)[self.axis + 1][None, :]
         local_i = local_i + 0*local_j
         local_j = local_j + 0*local_i
-        # Valid for m >= 0 except Nyquist
+        # Valid for m > 0 except Nyquist
         Nphi = self.shape[0]
         Lmax = self.shape[1] - 1
         shift = max(0, Lmax + 1 - Nphi//2)
@@ -1377,9 +1377,14 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         neg_modes = (local_ell < local_m)
         local_m[neg_modes] = local_i[neg_modes] - (Nphi+1)//2
         local_ell[neg_modes] = Lmax - local_j[neg_modes]
+        # Fix for m = 0
+        m_zero = (local_i == 0)
+        local_m[m_zero] = 0
+        local_ell[m_zero] = local_j[m_zero]
         # Fix for Nyquist
-        nyq_modes = (local_m == -(Nphi+1)//2)
-        local_m[nyq_modes] *= -1
+        nyq_modes = (local_i == 0) * (local_j > Lmax)
+        local_m[nyq_modes] = Nphi//2
+        local_ell[nyq_modes] = local_j[nyq_modes] - shift
         # Reshape as multidimensional vectors
         # HACK
         if self.first_axis != 0:
@@ -1560,9 +1565,9 @@ class RegularityBasis(Basis, SpinRecombinationBasis):
         local_j = layout.local_elements(self.domain, scales=1)[self.axis - 1][None, :]
         local_i = local_i + 0*local_j
         local_j = local_j + 0*local_i
-        # Valid for m >= 0 except Nyquist
-        Nphi = self.shape[0]
-        Lmax = self.shape[1] - 1
+        # Valid for m > 0 except Nyquist
+        Nphi = 1
+        Lmax = 0
         shift = max(0, Lmax + 1 - Nphi//2)
         local_m = 1 * local_i
         local_ell = local_j - shift
@@ -1570,9 +1575,14 @@ class RegularityBasis(Basis, SpinRecombinationBasis):
         neg_modes = (local_ell < local_m)
         local_m[neg_modes] = local_i[neg_modes] - (Nphi+1)//2
         local_ell[neg_modes] = Lmax - local_j[neg_modes]
+        # Fix for m = 0
+        m_zero = (local_i == 0)
+        local_m[m_zero] = 0
+        local_ell[m_zero] = local_j[m_zero]
         # Fix for Nyquist
-        nyq_modes = (local_m == -(Nphi+1)//2)
-        local_m[nyq_modes] *= -1
+        nyq_modes = (local_i == 0) * (local_j > Lmax)
+        local_m[nyq_modes] = Nphi//2
+        local_ell[nyq_modes] = local_j[nyq_modes] - shift
         # Reshape as multidimensional vectors
         # HACK
         if self.axis != 2:

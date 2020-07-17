@@ -628,12 +628,12 @@ class SWSHColatitudeTransform(NonSeparableTransform):
     """
 
     def __init__(self, grid_shape, basis_shape, axis, local_m, s, dtype=np.complex128):
-        Nphi = basis_shape[0]
-        Lmax = basis_shape[1] - 1
-        super().__init__(grid_shape, Lmax+1, axis, dtype)
+        self.Nphi = basis_shape[0]
+        self.Lmax = basis_shape[1] - 1
+        super().__init__(grid_shape, self.Lmax+1, axis, dtype)
         self.local_m = local_m
         self.s = s
-        self.shift = max(0, Lmax + 1 - Nphi//2)
+        self.shift = max(0, self.Lmax + 1 - self.Nphi//2)
 
     def forward_reduced(self, gdata, cdata):
         local_m = self.local_m
@@ -641,13 +641,20 @@ class SWSHColatitudeTransform(NonSeparableTransform):
             raise ValueError("gdata.shape[1]: %i, len(local_m): %i" %(gdata.shape[1], len(local_m)))
         m_matrices = self._forward_SWSH_matrices
         shift = self.shift
-        Lmax = self.N2c - 1
+        Nphi = self.Nphi
+        Lmax = self.Lmax
         for dm, m in enumerate(local_m):
             # Skip transforms when |m| > Lmax
             if np.abs(m) <= Lmax:
                 Lmin = max(np.abs(m), np.abs(self.s))
                 grm = gdata[:, dm, :, :]
-                if dm % 2 == 0:
+                if m == 0:
+                    # m=0 mode
+                    crm = cdata[:, 0, Lmin:Lmax+1, :]
+                elif m == Nphi//2:
+                    # Nyquist mode
+                    crm = cdata[:, 0, Lmax+1:, :]
+                elif dm % 2 == 0:
                     # Positive wavenumbers
                     crm = cdata[:, dm//2, (shift+Lmin):, :]
                 else:
@@ -661,7 +668,8 @@ class SWSHColatitudeTransform(NonSeparableTransform):
             raise ValueError("gdata.shape[1]: %i, len(local_m): %i" %(gdata.shape[1], len(local_m)))
         m_matrices = self._backward_SWSH_matrices
         shift = self.shift
-        Lmax = self.N2c - 1
+        Nphi = self.Nphi
+        Lmax = self.Lmax
         for dm, m in enumerate(local_m):
             # Skip transforms when |m| > Lmax
             if np.abs(m) > Lmax:
@@ -670,7 +678,13 @@ class SWSHColatitudeTransform(NonSeparableTransform):
             else:
                 Lmin = max(np.abs(m), np.abs(self.s))
                 grm = gdata[:, dm, :, :]
-                if dm % 2 == 0:
+                if m == 0:
+                    # m=0 mode
+                    crm = cdata[:, 0, Lmin:Lmax+1, :]
+                elif m == Nphi//2:
+                    # Nyquist mode
+                    crm = cdata[:, 0, Lmax+1:, :]
+                elif dm % 2 == 0:
                     # Positive wavenumbers
                     crm = cdata[:, dm//2, (shift+Lmin):, :]
                 else:
