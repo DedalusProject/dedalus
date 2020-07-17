@@ -1394,6 +1394,31 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
     def local_ell(self):
         return self.local_m_ell[1]
 
+    @CachedAttribute
+    def ell_maps(self):
+        """
+        Tuple of (ell, m_indices, ell_indices) for all local ells.
+        m_indices and ell_indices are local slices along the phi and theta axes.
+
+        Data for each ell should be sliced as:
+
+            for ell, m_indices, ell_indices in ell_maps:
+                ell_data = data[m_indices, ell_indices]
+        """
+        ell_maps = []
+        for dl, ell_row in enumerate(self.local_ell.T):
+            if ell_row[0] == ell_row[-1]:
+                # Only one ell
+                ell_map = (ell_row[0], slice(None), slice(dl, dl+1))
+                ell_maps.append(ell_map)
+            else:
+                switch = np.where(np.diff(ell_row))[0][0] + 1
+                ell_map = (ell_row[0], slice(0, switch), slice(dl, dl+1))
+                ell_maps.append(ell_map)
+                ell_map = (ell_row[-1], slice(switch, None), slice(dl, dl+1))
+                ell_maps.append(ell_map)
+        return tuple(ell_maps)
+
     def global_grids(self, scales=None):
         if scales == None: scales = (1, 1)
         return (self.global_grid_azimuth(scales[0]),
@@ -1528,6 +1553,16 @@ class RegularityBasis(Basis, SpinRecombinationBasis):
         else:
             return ()
 
+    def global_shape(self, layout, scales):
+        grid_space = layout.grid_space[self.axis]
+        if grid_space:
+            return self.grid_shape(scales)
+        else:
+            return self.shape
+
+    def chunk_shape(self, layout):
+        return 1
+
     def get_radial_basis(self):
         return self
 
@@ -1569,18 +1604,20 @@ class RegularityBasis(Basis, SpinRecombinationBasis):
         return np.sqrt( (l + (mu+1)//2 )/(2*l + 1) )
 
     @CachedMethod
-    def radial_recombinations(self, tensorsig, ell_list=None):
-        if ell_list == None: ell_list = self.local_l
+    def radial_recombinations(self, tensorsig, local_ell=None):
+        if local_ell == None:
+            local_ell = self.local_ell
         # For now only implement recombinations for Ball-only tensors
         for cs in tensorsig:
             if self.coordsystem.cs is not cs:
                 raise ValueError("Only supports tensors over ball.")
         order = len(tensorsig)
-
-        Q_matrices = np.zeros((len(ell_list),3**order,3**order))
-        for i, l in enumerate(ell_list):
-            Q = dedalus_sphere.spin_operators.Intertwiner(l, indexing=(-1,+1,0))
-            Q_matrices[i] = Q(order)
+        # Make set of all ell values
+        ell_set = set(local_ell.ravel())
+        Q_matrices = {}
+        for ell in ell_set:
+            Q = dedalus_sphere.spin_operators.Intertwiner(ell, indexing=(-1,+1,0))
+            Q_matrices[ell] = Q(order)
         return Q_matrices
 
     @CachedMethod
@@ -2173,7 +2210,7 @@ class Spherical3DBasis(MultidimensionalBasis):
         self.mmax = self.sphere_basis.mmax
         self.Lmax = self.sphere_basis.Lmax
         self.local_m = self.sphere_basis.local_m
-        self.local_l = self.sphere_basis.local_l
+        self.local_ell = self.sphere_basis.local_ell
         self.global_grid_azimuth = self.sphere_basis.global_grid_azimuth
         self.global_grid_colatitude = self.sphere_basis.global_grid_colatitude
         self.global_grid_radius = self.radial_basis.global_grid
@@ -2231,6 +2268,21 @@ class Spherical3DBasis(MultidimensionalBasis):
 
     def start(self, groups):
         return self.radial_basis.start(groups)
+
+    def global_shape(self, layout, scales):
+        grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
+        grid_shape = self.grid_shape(scales)
+        if grid_space[2]:
+            s2_shape = self.sphere_basis.global_shape(layout, scales)
+            return s2_shape + (grid_shape[2],)
+        else:
+            # coeff-coeff-coeff space
+            s2_shape = self.sphere_basis.global_shape(layout, scales)
+            return s2_shape + (self.shape[2],)
+
+    def chunk_shape(self, layout):
+        s2_chunk = self.sphere_basis.chunk_shape(layout)
+        return s2_chunk + (1,)
 
     def local_groups(self, basis_coupling):
         m_coupling, ell_coupling, n_coupling = basis_coupling
