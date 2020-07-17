@@ -1353,7 +1353,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         # Permute Fourier wavenumbers
         wavenumbers = self.azimuth_basis.wavenumbers[self.forward_m_perm]
         # Get layout before colatitude forward transform
-        transform = self.dist.get_transform_object(axis=self.axis)
+        transform = self.dist.get_transform_object(axis=self.axis+1)
         layout = transform.layout1
         # Take local elements
         local_m_elements = layout.local_elements(self.domain, scales=1)[self.axis]
