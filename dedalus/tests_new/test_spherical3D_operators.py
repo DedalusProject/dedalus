@@ -44,8 +44,8 @@ def test_spherical_ell_product_scalar(Nphi, Ntheta, Nr, dealias, basis):
     g = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     g.set_scales(b.domain.dealias)
     f['g'] = 3*x**2 + 2*y*z
-    for ell in b.local_l:
-        g['c'][:,ell,:]  = (ell+3)*f['c'][:,ell,:]
+    for ell, m_ind, ell_ind in b.ell_maps:
+        g['c'][m_ind, ell_ind, :] = (ell+3)*f['c'][m_ind, ell_ind, :]
     func = lambda ell: ell+3
     h = operators.SphericalEllProduct(f, c, func).evaluate()
     assert np.allclose(h['g'], g['g'])
@@ -65,10 +65,10 @@ def test_spherical_ell_product_vector(Nphi, Ntheta, Nr, dealias, basis):
     uk0['g'] = u['g']
     v = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
     v.set_scales(b.domain.dealias)
-    for ell in b.local_l:
-        v['c'][0,:,ell,:] = (ell+2)*uk0['c'][0,:,ell,:]
-        v['c'][1,:,ell,:] = (ell+4)*uk0['c'][1,:,ell,:]
-        v['c'][2,:,ell,:] = (ell+3)*uk0['c'][2,:,ell,:]
+    for ell, m_ind, ell_ind in b.ell_maps:
+        v['c'][0, m_ind, ell_ind, :] = (ell+2)*uk0['c'][0, m_ind, ell_ind, :]
+        v['c'][1, m_ind, ell_ind, :] = (ell+4)*uk0['c'][1, m_ind, ell_ind, :]
+        v['c'][2, m_ind, ell_ind, :] = (ell+3)*uk0['c'][2, m_ind, ell_ind, :]
     func = lambda ell: ell+3
     w = operators.SphericalEllProduct(u, c, func).evaluate()
     assert np.allclose(w['g'], v['g'])
