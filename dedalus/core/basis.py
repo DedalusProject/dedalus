@@ -1412,13 +1412,25 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         """
         ell_maps = []
         for dl, ell_row in enumerate(self.local_ell.T):
-            if ell_row[0] == ell_row[-1]:
+            if len(ell_row) == 1:
+                ell_map = (ell_row[0], slice(0, 1), slice(dl, dl+1))
+                ell_maps.append(ell_map)
+                continue
+            if ell_row[0] == ell_row[1]:
+                ell_left = ell_row[0]
+                left_index = 0
+            else:
+                ell_map = (ell_row[0], slice(0, 1), slice(dl, dl+1))
+                ell_maps.append(ell_map)
+                ell_left = ell_row[1]
+                left_index = 1
+            if ell_left == ell_row[-1]:
                 # Only one ell
-                ell_map = (ell_row[0], slice(None), slice(dl, dl+1))
+                ell_map = (ell_row[1], slice(left_index, None), slice(dl, dl+1))
                 ell_maps.append(ell_map)
             else:
-                switch = np.where(np.diff(ell_row))[0][0] + 1
-                ell_map = (ell_row[0], slice(0, switch), slice(dl, dl+1))
+                switch = np.where(np.diff(ell_row[1:]))[0][0] + 2
+                ell_map = (ell_row[1], slice(left_index, switch), slice(dl, dl+1))
                 ell_maps.append(ell_map)
                 ell_map = (ell_row[-1], slice(switch, None), slice(dl, dl+1))
                 ell_maps.append(ell_map)
@@ -1477,7 +1489,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         # Permute m back from triangular truncation
         permute_axis(cdata, axis+len(field.tensorsig), self.backward_m_perm, out=cdata)
         # Call Fourier transform
-        self.azimuth_basis.backward_transform(field, axis, gdata, cdata)
+        self.azimuth_basis.backward_transform(field, axis, cdata, gdata)
 
     def forward_transform_colatitude(self, field, axis, gdata, cdata):
         # Create temporary
@@ -1600,7 +1612,7 @@ class RegularityBasis(Basis, SpinRecombinationBasis):
     def global_shape(self, layout, scales):
         grid_space = layout.grid_space[self.axis]
         if grid_space:
-            return self.grid_shape(scales)
+            return self.grid_shape((scales[self.axis],))
         else:
             return self.shape
 
@@ -2582,7 +2594,7 @@ class BallBasis(Spherical3DBasis):
         # Perform radial transforms component-by-component
         R = radial_basis.regularity_classes(field.tensorsig)
         # HACK -- don't want to make a new array every transform
-        temp = np.copy(cdata)
+        temp = np.zeros_like(cdata)
         for regindex, regtotal in np.ndenumerate(R):
            grid_shape = gdata[regindex].shape
            plan = self.transform_plan(grid_shape, regindex, axis, regtotal, radial_basis.k, radial_basis.alpha)
@@ -2595,7 +2607,7 @@ class BallBasis(Spherical3DBasis):
         # Perform radial transforms component-by-component
         R = radial_basis.regularity_classes(field.tensorsig)
         # HACK -- don't want to make a new array every transform
-        temp = np.copy(gdata)
+        temp = np.zeros_like(gdata)
         for regindex, regtotal in np.ndenumerate(R):
            grid_shape = gdata[regindex].shape
            plan = self.transform_plan(grid_shape, regindex, axis, regtotal, radial_basis.k, radial_basis.alpha)

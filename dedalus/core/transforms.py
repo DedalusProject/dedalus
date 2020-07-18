@@ -592,11 +592,6 @@ class NonSeparableTransform(Transform):
 
         self.N2g = grid_shape[axis]
         self.N2c = coeff_size
-        N0 = np.prod(grid_shape[:axis-1], dtype=int)
-        N1 = grid_shape[axis-1]
-        N2 = max(self.N2g, self.N2c)
-        self.N3 = N3 = np.prod(grid_shape[axis+1:], dtype=int)
-#        self.temp = np.zeros(shape=[N0, N1, N2, N3], dtype=dtype)
 
 #    @staticmethod
 #    def resize_reduced(data_in, data_out):
@@ -752,8 +747,8 @@ class BallRadialTransform(Transform):
 
     def __init__(self, grid_shape, coeff_size, axis, ell_maps, regindex, regtotal, k, alpha, dtype=np.complex128):
 
-        self.N2g = grid_shape[axis]
-        self.N2c = coeff_size
+        self.N3g = grid_shape[axis]
+        self.N3c = coeff_size
 
         self.ell_maps = ell_maps
         self.intertwiner = lambda l: dedalus_sphere.spin_operators.Intertwiner(l, indexing=(-1,+1,0))
@@ -805,7 +800,7 @@ class BallRadialTransform(Transform):
     @CachedAttribute
     def _quadrature(self):
         # get grid and weights from sphere library
-        return dedalus_sphere.zernike.quadrature(3, self.N2g, k=self.alpha)
+        return dedalus_sphere.zernike.quadrature(3, self.N3g, k=self.alpha)
 
     @CachedAttribute
     def _forward_GSZP_matrix(self):
@@ -818,16 +813,16 @@ class BallRadialTransform(Transform):
         for ell in ell_list:
             if ell not in ell_matrices:
                 if self.regindex != () and self.intertwiner(ell).forbidden_regularity(Rb[np.array(self.regindex)]):
-                    ell_matrices[ell] = np.zeros((self.N2c, self.N2g))
+                    ell_matrices[ell] = np.zeros((self.N3c, self.N3g))
                 else:
                     Nmin = dedalus_sphere.zernike.min_degree(ell)
-                    Nc = self.N2c - Nmin
-                    W = dedalus_sphere.zernike.polynomials(3, Nc, self.alpha, ell + self.regtotal, z_grid) # shape (N2c-Nmin, Ng)
+                    Nc = self.N3c - Nmin
+                    W = dedalus_sphere.zernike.polynomials(3, Nc, self.alpha, ell + self.regtotal, z_grid) # shape (N3c-Nmin, Ng)
                     conversion = dedalus_sphere.zernike.operator(3, 'E')(+1)**self.k
                     W = conversion(Nc, self.alpha, ell + self.regtotal) @ W
                     W = (W*weights).astype(np.float64)
                     # zero out modes higher than grid resolution taking into account n starts at Nmin
-                    W[self.N2g-Nmin:] = 0
+                    W[self.N3g-Nmin:] = 0
                     ell_matrices[ell] = W
         return ell_matrices
 
@@ -842,10 +837,10 @@ class BallRadialTransform(Transform):
         for ell in ell_list:
             if ell not in ell_matrices:
                 if self.regindex != () and self.intertwiner(ell).forbidden_regularity(Rb[np.array(self.regindex)]):
-                    ell_matrices[ell] = np.zeros((self.N2g, self.N2c))
+                    ell_matrices[ell] = np.zeros((self.N3g, self.N3c))
                 else:
                     Nmin = dedalus_sphere.zernike.min_degree(ell)
-                    Nc = self.N2c - Nmin
+                    Nc = self.N3c - Nmin
                     W = dedalus_sphere.zernike.polynomials(3, Nc, self.alpha + self.k, ell + self.regtotal, z_grid)
                     ell_matrices[ell] = W.T.astype(np.float64)
         return ell_matrices
