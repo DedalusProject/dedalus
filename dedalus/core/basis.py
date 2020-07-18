@@ -2148,9 +2148,9 @@ class BallRadialBasis(RegularityBasis):
         return dedalus_sphere.zernike.polynomials(3, self.n_size(ell), self.alpha + self.k, ell + regtotal, native_position)
 
     @CachedMethod
-    def transform_plan(self, grid_shape, regindex, axis, local_l, regtotal, k, alpha):
+    def transform_plan(self, grid_shape, regindex, axis, regtotal, k, alpha):
         """Build transform plan."""
-        return self.transforms[self.radius_library](grid_shape, self.Nmax+1, axis, local_l, regindex, regtotal, k, alpha)
+        return self.transforms[self.radius_library](grid_shape, self.Nmax+1, axis, self.ell_maps, regindex, regtotal, k, alpha)
 
     def forward_transform(self, field, axis, gdata, cdata):
         # Apply recombination
@@ -2162,7 +2162,7 @@ class BallRadialBasis(RegularityBasis):
         temp = np.copy(cdata)
         for regindex, regtotal in np.ndenumerate(R):
            grid_shape = gdata[regindex].shape
-           plan = self.transform_plan(grid_shape, regindex, axis, self.local_l, regtotal, self.k, self.alpha)
+           plan = self.transform_plan(grid_shape, regindex, axis, regtotal, self.k, self.alpha)
            plan.forward(gdata[regindex], temp[regindex], axis)
         np.copyto(cdata, temp)
 
@@ -2173,7 +2173,7 @@ class BallRadialBasis(RegularityBasis):
         temp = np.copy(gdata)
         for regindex, regtotal in np.ndenumerate(R):
            grid_shape = gdata[regindex].shape
-           plan = self.transform_plan(grid_shape, regindex, axis, self.local_l, regtotal, self.k, self.alpha)
+           plan = self.transform_plan(grid_shape, regindex, axis, regtotal, self.k, self.alpha)
            plan.backward(cdata[regindex], temp[regindex], axis)
         np.copyto(gdata, temp)
         # Apply recombinations
@@ -2567,18 +2567,23 @@ class BallBasis(Spherical3DBasis):
                          azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
                          radius_library=self.radial_basis.radius_library)
 
+    @CachedMethod
+    def transform_plan(self, grid_shape, regindex, axis, regtotal, k, alpha):
+        """Build transform plan."""
+        return self.transforms[self.radius_library](grid_shape, self.Nmax+1, axis, self.ell_maps, regindex, regtotal, k, alpha)
+
     def forward_transform_radius(self, field, axis, gdata, cdata):
         # apply transforms based off the 3D basis' local_l
         radial_basis = self.radial_basis
         # Apply regularity recombination
-        radial_basis.forward_regularity_recombination(field.tensorsig, axis, gdata, local_l=self.local_l)
+        radial_basis.forward_regularity_recombination(field.tensorsig, axis, gdata, ell_maps=self.ell_maps)
         # Perform radial transforms component-by-component
         R = radial_basis.regularity_classes(field.tensorsig)
         # HACK -- don't want to make a new array every transform
         temp = np.copy(cdata)
         for regindex, regtotal in np.ndenumerate(R):
            grid_shape = gdata[regindex].shape
-           plan = radial_basis.transform_plan(grid_shape, regindex, axis, self.local_l, regtotal, radial_basis.k, radial_basis.alpha)
+           plan = radial_basis.transform_plan(grid_shape, regindex, axis, regtotal, radial_basis.k, radial_basis.alpha)
            plan.forward(gdata[regindex], temp[regindex], axis)
         np.copyto(cdata, temp)
 
@@ -2591,11 +2596,11 @@ class BallBasis(Spherical3DBasis):
         temp = np.copy(gdata)
         for regindex, regtotal in np.ndenumerate(R):
            grid_shape = gdata[regindex].shape
-           plan = radial_basis.transform_plan(grid_shape, regindex, axis, self.local_l, regtotal, radial_basis.k, radial_basis.alpha)
+           plan = radial_basis.transform_plan(grid_shape, regindex, axis, regtotal, radial_basis.k, radial_basis.alpha)
            plan.backward(cdata[regindex], temp[regindex], axis)
         np.copyto(gdata, temp)
         # Apply regularity recombinations
-        radial_basis.backward_regularity_recombination(field.tensorsig, axis, gdata, local_l=self.local_l)
+        radial_basis.backward_regularity_recombination(field.tensorsig, axis, gdata, ell_maps=self.ell_maps)
 
 def prod(arg):
     if arg:

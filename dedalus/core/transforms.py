@@ -37,6 +37,14 @@ def reduced_view_4(data, axis):
     N3 = int(np.prod(shape[axis+2:]))
     return data.reshape((N0, N1, N2, N3))
 
+def reduced_view_5(data, axis):
+    shape = data.shape
+    N0 = int(np.prod(shape[:axis]))
+    N1 = shape[axis]
+    N2 = shape[axis+1]
+    N3 = shape[axis+2]
+    N4 = int(np.prod(shape[axis+3:]))
+    return data.reshape((N0, N1, N2, N3, N4))
 
 class Transform:
     pass
@@ -739,45 +747,66 @@ class SWSHColatitudeTransform(NonSeparableTransform):
 
 
 @register_transform(basis.BallRadialBasis, 'matrix')
-class BallRadialTransform(NonSeparableTransform):
+class BallRadialTransform(Transform):
 
-    def __init__(self, grid_shape, coeff_size, axis, local_l, regindex, regtotal, k, alpha, dtype=np.complex128):
+    def __init__(self, grid_shape, coeff_size, axis, ell_maps, regindex, regtotal, k, alpha, dtype=np.complex128):
 
-        super().__init__(grid_shape, coeff_size, axis, dtype)
-        self.local_l = local_l
+        self.N2g = grid_shape[axis]
+        self.N2c = coeff_size
+#        N0 = np.prod(grid_shape[:axis-1], dtype=int)
+#        N1 = grid_shape[axis-1]
+#        N2 = max(self.N2g, self.N2c)
+#        self.N3 = N3 = np.prod(grid_shape[axis+1:], dtype=int)
+
+        self.ell_maps = ell_maps
         self.intertwiner = lambda l: dedalus_sphere.spin_operators.Intertwiner(l, indexing=(-1,+1,0))
         self.regindex = regindex
         self.regtotal = regtotal
         self.k = k
         self.alpha = alpha
 
+    def forward(self, gdata, cdata, axis):
+        # Make reduced view into input arrays
+        gdata = reduced_view_5(gdata, axis-2)
+        cdata = reduced_view_5(cdata, axis-2)
+        # Transform reduced arrays
+        self.forward_reduced(gdata, cdata)
+
+    def backward(self, cdata, gdata, axis):
+        # Make reduced view into input arrays
+        cdata = reduced_view_5(cdata, axis-2)
+        gdata = reduced_view_5(gdata, axis-2)
+        # Transform reduced arrays
+        self.backward_reduced(cdata, gdata)
+
     def forward_reduced(self, gdata, cdata):
 
-        local_l = self.local_l
-        if gdata.shape[1] != len(local_l): # do we want to do this check???
-            raise ValueError("Local l must match size of %i axis." %(self.axis-1) )
+        #if gdata.shape[1] != len(local_l): # do we want to do this check???
+        #    raise ValueError("Local l must match size of %i axis." %(self.axis-1) )
 
         # Apply transform for each l
-        l_matrices = self._forward_GSZP_matrix
-        for dl, l in enumerate(local_l):
-            Nmin = dedalus_sphere.zernike.min_degree(l)
-            grl = gdata[:, dl, :, :]
-            crl = cdata[:, dl, Nmin:, :]
-            apply_matrix(l_matrices[dl], grl, axis=1, out=crl)
+        ell_matrices = self._forward_GSZP_matrix
+        for ell, m_ind, ell_ind in self.ell_maps:
+            Nmin = dedalus_sphere.zernike.min_degree(ell)
+            grl = gdata[:, m_ind, ell_ind, :, :]
+            crl = cdata[:, m_ind, ell_ind, Nmin:, :]
+            #print(grl.shape)
+            #print(ell_matrices[ell].shape)
+            #print(crl.shape)
+            apply_matrix(ell_matrices[ell], grl, axis=3, out=crl)
 
     def backward_reduced(self, cdata, gdata):
 
-        local_l = self.local_l
-        if gdata.shape[1] != len(local_l): # do we want to do this check???
-            raise ValueError("Local l must match size of %i axis." %(self.axis-1) )
+        #if gdata.shape[1] != len(local_l): # do we want to do this check???
+        #    raise ValueError("Local l must match size of %i axis." %(self.axis-1) )
 
         # Apply transform for each l
-        l_matrices = self._backward_GSZP_matrix
-        for dl, l in enumerate(local_l):
-            Nmin = dedalus_sphere.zernike.min_degree(l)
-            grl = gdata[:, dl, :, :]
-            crl = cdata[:, dl, Nmin:, :]
-            apply_matrix(l_matrices[dl], crl, axis=1, out=grl)
+        ell_matrices = self._backward_GSZP_matrix
+        for ell, m_ind, ell_ind in self.ell_maps:
+            Nmin = dedalus_sphere.zernike.min_degree(ell)
+            grl = gdata[:, m_ind, ell_ind, :, :]
+            crl = cdata[:, m_ind, ell_ind, Nmin:, :]
+            apply_matrix(ell_matrices[ell], crl, axis=3, out=grl)
 
     @CachedAttribute
     def _quadrature(self):
@@ -789,39 +818,43 @@ class BallRadialTransform(NonSeparableTransform):
         """Build transform matrix for single l and r."""
         # Get functions from sphere library
         z_grid, weights = self._quadrature
-        l_matrices = []
+        ell_list = tuple(map[0] for map in self.ell_maps)
+        ell_matrices = {}
         Rb = np.array([-1, 1, 0], dtype=int)
-        for l in self.local_l:
-            if self.regindex != () and self.intertwiner(l).forbidden_regularity(Rb[np.array(self.regindex)]):
-                l_matrices.append(np.zeros((self.N2c, self.N2g)))
-            else:
-                Nmin = dedalus_sphere.zernike.min_degree(l)
-                Nc = self.N2c - Nmin
-                W = dedalus_sphere.zernike.polynomials(3, Nc, self.alpha, l + self.regtotal, z_grid) # shape (N2c-Nmin, Ng)
-                conversion = dedalus_sphere.zernike.operator(3, 'E')(+1)**self.k
-                W = conversion(Nc, self.alpha, l + self.regtotal) @ W
-                W = (W*weights).astype(np.float64)
-                # zero out modes higher than grid resolution taking into account n starts at Nmin
-                W[self.N2g-Nmin:] = 0
-                l_matrices.append(W)
-        return tuple(l_matrices)
+        for ell in ell_list:
+            if ell not in ell_matrices:
+                if self.regindex != () and self.intertwiner(ell).forbidden_regularity(Rb[np.array(self.regindex)]):
+                    ell_matrices[ell] = np.zeros((self.N2c, self.N2g))
+                else:
+                    Nmin = dedalus_sphere.zernike.min_degree(ell)
+                    Nc = self.N2c - Nmin
+                    W = dedalus_sphere.zernike.polynomials(3, Nc, self.alpha, ell + self.regtotal, z_grid) # shape (N2c-Nmin, Ng)
+                    conversion = dedalus_sphere.zernike.operator(3, 'E')(+1)**self.k
+                    W = conversion(Nc, self.alpha, ell + self.regtotal) @ W
+                    W = (W*weights).astype(np.float64)
+                    # zero out modes higher than grid resolution taking into account n starts at Nmin
+                    W[self.N2g-Nmin:] = 0
+                    ell_matrices[ell] = W
+        return ell_matrices
 
     @CachedAttribute
     def _backward_GSZP_matrix(self):
         """Build transform matrix for single l and r."""
         # Get functions from sphere library
         z_grid, weights = self._quadrature
-        l_matrices = []
+        ell_list = tuple(map[0] for map in self.ell_maps)
+        ell_matrices = {}
         Rb = np.array([-1, 1, 0], dtype=int)
-        for l in self.local_l:
-            if self.regindex != () and self.intertwiner(l).forbidden_regularity(Rb[np.array(self.regindex)]):
-                l_matrices.append(np.zeros((self.N2g, self.N2c)))
-            else:
-                Nmin = dedalus_sphere.zernike.min_degree(l)
-                Nc = self.N2c - Nmin
-                W = dedalus_sphere.zernike.polynomials(3, Nc, self.alpha + self.k, l + self.regtotal, z_grid)
-                l_matrices.append(W.T.astype(np.float64))
-        return tuple(l_matrices)
+        for ell in ell_list:
+            if ell not in ell_matrices:
+                if self.regindex != () and self.intertwiner(ell).forbidden_regularity(Rb[np.array(self.regindex)]):
+                    ell_matrices[ell] = np.zeros((self.N2g, self.N2c))
+                else:
+                    Nmin = dedalus_sphere.zernike.min_degree(ell)
+                    Nc = self.N2c - Nmin
+                    W = dedalus_sphere.zernike.polynomials(3, Nc, self.alpha + self.k, ell + self.regtotal, z_grid)
+                    ell_matrices[ell] = W.T.astype(np.float64)
+        return ell_matrices
 
 
 ## Disk transforms
