@@ -1473,7 +1473,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         # Permute m for triangular truncation
         permute_axis(cdata, axis+len(field.tensorsig), self.forward_m_perm, out=cdata)
 
-    def backward_transform_azimuth(self, field, axis, gdata, cdata):
+    def backward_transform_azimuth(self, field, axis, cdata, gdata):
         # Permute m back from triangular truncation
         permute_axis(cdata, axis+len(field.tensorsig), self.backward_m_perm, out=cdata)
         # Call Fourier transform
@@ -2570,7 +2570,9 @@ class BallBasis(Spherical3DBasis):
     @CachedMethod
     def transform_plan(self, grid_shape, regindex, axis, regtotal, k, alpha):
         """Build transform plan."""
-        return self.transforms[self.radius_library](grid_shape, self.Nmax+1, axis, self.ell_maps, regindex, regtotal, k, alpha)
+        radius_library = self.radial_basis.radius_library
+        Nmax = self.radial_basis.Nmax
+        return self.transforms[radius_library](grid_shape, Nmax+1, axis, self.ell_maps, regindex, regtotal, k, alpha)
 
     def forward_transform_radius(self, field, axis, gdata, cdata):
         # apply transforms based off the 3D basis' local_l
@@ -2583,7 +2585,7 @@ class BallBasis(Spherical3DBasis):
         temp = np.copy(cdata)
         for regindex, regtotal in np.ndenumerate(R):
            grid_shape = gdata[regindex].shape
-           plan = radial_basis.transform_plan(grid_shape, regindex, axis, regtotal, radial_basis.k, radial_basis.alpha)
+           plan = self.transform_plan(grid_shape, regindex, axis, regtotal, radial_basis.k, radial_basis.alpha)
            plan.forward(gdata[regindex], temp[regindex], axis)
         np.copyto(cdata, temp)
 
@@ -2596,7 +2598,7 @@ class BallBasis(Spherical3DBasis):
         temp = np.copy(gdata)
         for regindex, regtotal in np.ndenumerate(R):
            grid_shape = gdata[regindex].shape
-           plan = radial_basis.transform_plan(grid_shape, regindex, axis, regtotal, radial_basis.k, radial_basis.alpha)
+           plan = self.transform_plan(grid_shape, regindex, axis, regtotal, radial_basis.k, radial_basis.alpha)
            plan.backward(cdata[regindex], temp[regindex], axis)
         np.copyto(gdata, temp)
         # Apply regularity recombinations

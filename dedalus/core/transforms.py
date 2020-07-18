@@ -747,16 +747,13 @@ class SWSHColatitudeTransform(NonSeparableTransform):
 
 
 @register_transform(basis.BallRadialBasis, 'matrix')
+@register_transform(basis.BallBasis, 'matrix')
 class BallRadialTransform(Transform):
 
     def __init__(self, grid_shape, coeff_size, axis, ell_maps, regindex, regtotal, k, alpha, dtype=np.complex128):
 
         self.N2g = grid_shape[axis]
         self.N2c = coeff_size
-#        N0 = np.prod(grid_shape[:axis-1], dtype=int)
-#        N1 = grid_shape[axis-1]
-#        N2 = max(self.N2g, self.N2c)
-#        self.N3 = N3 = np.prod(grid_shape[axis+1:], dtype=int)
 
         self.ell_maps = ell_maps
         self.intertwiner = lambda l: dedalus_sphere.spin_operators.Intertwiner(l, indexing=(-1,+1,0))
@@ -790,9 +787,6 @@ class BallRadialTransform(Transform):
             Nmin = dedalus_sphere.zernike.min_degree(ell)
             grl = gdata[:, m_ind, ell_ind, :, :]
             crl = cdata[:, m_ind, ell_ind, Nmin:, :]
-            #print(grl.shape)
-            #print(ell_matrices[ell].shape)
-            #print(crl.shape)
             apply_matrix(ell_matrices[ell], grl, axis=3, out=crl)
 
     def backward_reduced(self, cdata, gdata):

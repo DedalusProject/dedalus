@@ -10,6 +10,7 @@ from scipy import sparse
 from numbers import Number
 from inspect import isclass
 from operator import add
+import dedalus_sphere
 
 from .domain import Domain
 from . import coords
@@ -1901,6 +1902,7 @@ class SphericalEllOperator(SpectralOperator):
         if input_basis is None:
             input_basis = operand.domain.get_basis(coordsys.radius)
         self.radial_basis = input_basis.get_radial_basis()
+        self.intertwiner = lambda l: dedalus_sphere.spin_operators.Intertwiner(l, indexing=(-1,+1,0))
         # SpectralOperator requirements
         self.input_basis = input_basis
         self.output_basis = self._output_basis(self.input_basis)
@@ -1914,23 +1916,36 @@ class SphericalEllOperator(SpectralOperator):
         operand = self.args[0]
         input_basis = self.input_basis
         radial_basis = self.radial_basis
+        axis = radial_basis.axis
         # Set output layout
         out.set_layout(operand.layout)
         out.data[:] = 0
         # Apply operator
         R_in = radial_basis.regularity_classes(operand.tensorsig)
+        slices = [slice(None) for i in range(input_basis.dist.dim)]
         for regindex_in, regtotal_in in np.ndenumerate(R_in):
             for regindex_out in self.regindex_out(regindex_in):
                 comp_in = operand.data[regindex_in]
                 comp_out = out.data[regindex_out]
                 # Should reorder to make ell loop first, check forbidden reg, remove reg from radial_vector_3
-                for m in input_basis.local_m:
-                    for ell in input_basis.local_l:
-                        vec3_in = radial_basis.radial_vector_3(comp_in, m, ell, regindex_in, local_m=input_basis.local_m, local_l=input_basis.local_l)
-                        vec3_out = radial_basis.radial_vector_3(comp_out, m, ell, regindex_out, local_m=input_basis.local_m, local_l=input_basis.local_l)
-                        if (vec3_in is not None) and (vec3_out is not None):
-                            A = self.radial_matrix(regindex_in, regindex_out, ell)
-                            vec3_out += apply_matrix(A, vec3_in, axis=1)
+                for ell, m_ind, ell_ind in input_basis.ell_maps:
+                    allowed_in  = radial_basis.regularity_allowed(ell, regindex_in)
+                    allowed_out = radial_basis.regularity_allowed(ell, regindex_out)
+                    if allowed_in and allowed_out:
+                        slices[axis-2] = m_ind
+                        slices[axis-1] = ell_ind
+                        slices[axis] = radial_basis.n_slice(ell)
+                        vec_in  = comp_in[slices]
+                        vec_out = comp_out[slices]
+                        A = self.radial_matrix(regindex_in, regindex_out, ell)
+                        vec_out += apply_matrix(A, vec_in, axis=axis)
+                #for m in input_basis.local_m:
+                #    for ell in input_basis.local_l:
+                #        vec3_in = radial_basis.radial_vector_3(comp_in, m, ell, regindex_in, local_m=input_basis.local_m, local_l=input_basis.local_l)
+                #        vec3_out = radial_basis.radial_vector_3(comp_out, m, ell, regindex_out, local_m=input_basis.local_m, local_l=input_basis.local_l)
+                #        if (vec3_in is not None) and (vec3_out is not None):
+                #            A = self.radial_matrix(regindex_in, regindex_out, ell)
+                #            vec3_out += apply_matrix(A, vec3_in, axis=1)
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]

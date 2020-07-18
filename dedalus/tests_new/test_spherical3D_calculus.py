@@ -7,10 +7,14 @@ from mpi4py import MPI
 
 comm = MPI.COMM_WORLD
 
-Nphi_range = [8]
-Ntheta_range = [10]
-Nr_range = [6]
-dealias_range = [1, 3/2]
+#Nphi_range = [8]
+#Ntheta_range = [10]
+#Nr_range = [6]
+#dealias_range = [1, 3/2]
+Nphi_range = [16]
+Ntheta_range = [8]
+Nr_range = [8]
+dealias_range = [1]
 
 radius_ball = 1.5
 @CachedMethod
