@@ -1935,17 +1935,10 @@ class SphericalEllOperator(SpectralOperator):
                         slices[axis-2] = m_ind
                         slices[axis-1] = ell_ind
                         slices[axis] = radial_basis.n_slice(ell)
-                        vec_in  = comp_in[slices]
-                        vec_out = comp_out[slices]
+                        vec_in  = comp_in[tuple(slices)]
+                        vec_out = comp_out[tuple(slices)]
                         A = self.radial_matrix(regindex_in, regindex_out, ell)
                         vec_out += apply_matrix(A, vec_in, axis=axis)
-                #for m in input_basis.local_m:
-                #    for ell in input_basis.local_l:
-                #        vec3_in = radial_basis.radial_vector_3(comp_in, m, ell, regindex_in, local_m=input_basis.local_m, local_l=input_basis.local_l)
-                #        vec3_out = radial_basis.radial_vector_3(comp_out, m, ell, regindex_out, local_m=input_basis.local_m, local_l=input_basis.local_l)
-                #        if (vec3_in is not None) and (vec3_out is not None):
-                #            A = self.radial_matrix(regindex_in, regindex_out, ell)
-                #            vec3_out += apply_matrix(A, vec3_in, axis=1)
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
