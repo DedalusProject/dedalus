@@ -2376,17 +2376,12 @@ class Spherical3DBasis(MultidimensionalBasis):
     def local_groups(self, basis_coupling):
         m_coupling, ell_coupling, n_coupling = basis_coupling
         if (not m_coupling) and (not ell_coupling) and (n_coupling):
-            local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)
-            m_chunks = local_chunks[self.first_axis]
-            ell_chunks = local_chunks[self.first_axis+1]
             groups = []
-            # Add groups satisfying triangular truncation
-            for m_chunk in m_chunks:
-                m = self.sphere_basis.azimuth_basis.wavenumbers[m_chunk]
-                for ell_chunk in ell_chunks:
-                    ell = ell_chunk
-                    if ell >= np.abs(m):
-                        groups.append([m_chunk, ell_chunk, None])
+            local_m, local_ell = self.sphere_basis.local_m_ell
+            local_m = local_m.ravel()
+            local_ell = local_ell.ravel()
+            for (m, ell) in zip(local_m, local_ell):
+                groups.append([m, ell, None])
             return groups
         else:
             raise NotImplementedError()
@@ -2394,13 +2389,12 @@ class Spherical3DBasis(MultidimensionalBasis):
     def local_group_slices(self, basis_group):
         m_group, ell_group, n_group = basis_group
         if (m_group is not None) and (ell_group is not None) and (n_group is None):
-            local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)
-            m_chunks = local_chunks[self.first_axis]
-            m_index = list(m_chunks).index(m_group)
+            local_m, local_ell = self.sphere_basis.local_m_ell
+            local_indices = np.where((local_m==m_group)*(local_ell==ell_group))
+            m_index = local_indices[0][0]
             m_gs = self.group_shape[0]
             m_slice = slice(m_index*m_gs, (m_index+1)*m_gs)
-            ell_chunks = local_chunks[self.first_axis+1]
-            ell_index = list(ell_chunks).index(ell_group)
+            ell_index = local_indices[1][0]
             ell_gs = self.group_shape[1]
             ell_slice = slice(ell_index*ell_gs, (ell_index+1)*ell_gs)
             n_slice = self.radial_basis.n_slice(ell=ell_group)
