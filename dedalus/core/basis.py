@@ -1147,40 +1147,6 @@ class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):
         LE[0] = self.local_m
         return tuple(LE)
 
-    def local_groups(self, basis_coupling):
-        m_coupling, ell_coupling = basis_coupling
-        if (not m_coupling) and (not ell_coupling):
-            local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)
-            m_chunks = local_chunks[self.first_axis]
-            ell_chunks = local_chunks[self.first_axis+1]
-            groups = []
-            # Add groups satisfying triangular truncation
-            for m_chunk in m_chunks:
-                m = self.azimuth_basis.wavenumbers[m_chunk]
-                for ell_chunk in ell_chunks:
-                    ell = ell_chunk
-                    if ell >= np.abs(m):
-                        groups.append([m_chunk, ell_chunk])
-            return groups
-        else:
-            raise NotImplementedError()
-
-    def local_group_slices(self, basis_group):
-        m_group, ell_group = basis_group
-        if (m_group is not None) and (ell_group is not None):
-            local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)
-            m_chunks = local_chunks[self.first_axis]
-            m_index = list(m_chunks).index(m_group)
-            m_gs = self.group_shape[0]
-            m_slice = slice(m_index*m_gs, (m_index+1)*m_gs)
-            ell_chunks = local_chunks[self.last_axis]
-            ell_index = list(ell_chunks).index(ell_group)
-            ell_gs = self.group_shape[1]
-            ell_slice = slice(ell_index*ell_gs, (ell_index+1)*ell_gs)
-            return [m_slice, ell_slice]
-        else:
-            raise NotImplementedError()
-
     @CachedMethod
     def spin_weights(self, tensorsig):
         # Spin-component ordering: [-, +, 0]
@@ -1294,6 +1260,34 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         else:
             # coeff-coeff space
             return (1, 1)
+
+    def local_groups(self, basis_coupling):
+        m_coupling, ell_coupling = basis_coupling
+        if (not m_coupling) and (not ell_coupling):
+            groups = []
+            local_m, local_ell = self.local_m_ell
+            local_m = local_m.ravel()
+            local_ell = local_ell.ravel()
+            for (m, ell) in zip(local_m, local_ell):
+                groups.append([m, ell])
+            return groups
+        else:
+            raise NotImplementedError()
+
+    def local_group_slices(self, basis_group):
+        m_group, ell_group = basis_group
+        if (m_group is not None) and (ell_group is not None):
+            local_m, local_ell = self.local_m_ell
+            local_indices = np.where((local_m==m_group)*(local_ell==ell_group))
+            m_index = local_indices[0][0]
+            m_gs = self.group_shape[0]
+            m_slice = slice(m_index*m_gs, (m_index+1)*m_gs)
+            ell_index = local_indices[1][0]
+            ell_gs = self.group_shape[1]
+            ell_slice = slice(ell_index*ell_gs, (ell_index+1)*ell_gs)
+            return [m_slice, ell_slice]
+        else:
+            raise NotImplementedError()
 
     def __eq__(self, other):
         if isinstance(other, SpinWeightedSphericalHarmonics):
@@ -2376,12 +2370,9 @@ class Spherical3DBasis(MultidimensionalBasis):
     def local_groups(self, basis_coupling):
         m_coupling, ell_coupling, n_coupling = basis_coupling
         if (not m_coupling) and (not ell_coupling) and (n_coupling):
-            groups = []
-            local_m, local_ell = self.sphere_basis.local_m_ell
-            local_m = local_m.ravel()
-            local_ell = local_ell.ravel()
-            for (m, ell) in zip(local_m, local_ell):
-                groups.append([m, ell, None])
+            groups = self.sphere_basis.local_groups((m_coupling, ell_coupling))
+            for group in groups:
+                group.append(None)
             return groups
         else:
             raise NotImplementedError()
@@ -2389,16 +2380,10 @@ class Spherical3DBasis(MultidimensionalBasis):
     def local_group_slices(self, basis_group):
         m_group, ell_group, n_group = basis_group
         if (m_group is not None) and (ell_group is not None) and (n_group is None):
-            local_m, local_ell = self.sphere_basis.local_m_ell
-            local_indices = np.where((local_m==m_group)*(local_ell==ell_group))
-            m_index = local_indices[0][0]
-            m_gs = self.group_shape[0]
-            m_slice = slice(m_index*m_gs, (m_index+1)*m_gs)
-            ell_index = local_indices[1][0]
-            ell_gs = self.group_shape[1]
-            ell_slice = slice(ell_index*ell_gs, (ell_index+1)*ell_gs)
+            slices = self.sphere_basis.local_group_slices((m_group, ell_group))
             n_slice = self.radial_basis.n_slice(ell=ell_group)
-            return [m_slice, ell_slice, n_slice]
+            slices.append(n_slice)
+            return slices
         else:
             raise NotImplementedError()
 
@@ -2674,7 +2659,7 @@ class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperato
         radial_basis = self.radial_basis
         if self.tensorsig != ():
             Q = radial_basis.radial_recombinations(self.tensorsig, ell_list=(ell,))
-            matrix = Q[0] @ matrix
+            matrix = Q[ell] @ matrix
         return matrix
 
     def operate(self, out):
@@ -2750,7 +2735,7 @@ class SphericalShellRadialInterpolate(operators.Interpolate, operators.Spherical
         matrix = super().subproblem_matrix(subproblem)
         if self.tensorsig != ():
             Q = basis_in.radial_recombinations(self.tensorsig, ell_list=(ell,))
-            matrix = Q[0] @ matrix
+            matrix = Q[ell] @ matrix
         # Radial rescaling
         return matrix
 
@@ -2825,7 +2810,7 @@ class SphericalTransposeComponents(operators.TransposeComponents):
         transpose = np.array(matrix)
 
         Q = basis.radial_recombinations(self.tensorsig,ell_list=(ell,))
-        transpose = Q[0].T @ transpose @ Q[0]
+        transpose = Q[ell].T @ transpose @ Q[ell]
 
         # assume all regularities have the same n_size
         eye = sparse.identity(basis.n_size(ell), self.dtype, format='csr')

@@ -53,7 +53,7 @@ div = lambda A: operators.Divergence(A, index=0)
 lap = lambda A: operators.Laplacian(A, c)
 grad = lambda A: operators.Gradient(A, c)
 dot = lambda A, B: arithmetic.DotProduct(A, B)
-cross = lambda A, B: operators.CrossProduct(A, B)
+cross = lambda A, B: arithmetic.CrossProduct(A, B)
 ddt = lambda A: operators.TimeDerivative(A)
 
 # Problem
@@ -80,7 +80,7 @@ alpha_BC = 0
 def C(N, ell, deg):
     ab = (alpha_BC,ell+deg+0.5)
     cd = (2,       ell+deg+0.5)
-    return dedalus_sphere.jacobi128.coefficient_connection(N - ell//2,ab,cd)
+    return dedalus_sphere.jacobi.coefficient_connection(N - ell//2 + 1,ab,cd)
 
 def BC_rows(N, ell, num_comp):
     N_list = (np.arange(num_comp)+1)*(N - ell//2 + 1)
@@ -103,7 +103,7 @@ for subproblem in solver.subproblems:
 t_list = []
 E_list = []
 weight_theta = b.local_colatitude_weights(1)
-weight_r = b.local_radius_weights(1)
+weight_r = b.local_radial_weights(1)
 reducer = GlobalArrayReducer(d.comm_cart)
 vol_test = np.sum(weight_r*weight_theta+0*p['g'])*np.pi/(Lmax+1)/L_dealias
 vol_test = reducer.reduce_scalar(vol_test, MPI.SUM)
