@@ -154,4 +154,5 @@ def permute_axis(array, axis, permutation, out=None):
         return perm
     else:
         np.copyto(out, perm)
+        return out
 

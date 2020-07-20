@@ -1406,6 +1406,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         """
         ell_maps = []
         for dl, ell_row in enumerate(self.local_ell.T):
+            # check if only one m in the row
             if len(ell_row) == 1:
                 ell_map = (ell_row[0], slice(0, 1), slice(dl, dl+1))
                 ell_maps.append(ell_map)
@@ -1414,15 +1415,17 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
                 ell_left = ell_row[0]
                 left_index = 0
             else:
+                # make ell_map for 0 element, which could be m=0 mode
                 ell_map = (ell_row[0], slice(0, 1), slice(dl, dl+1))
                 ell_maps.append(ell_map)
                 ell_left = ell_row[1]
                 left_index = 1
             if ell_left == ell_row[-1]:
-                # Only one ell
+                # Only one more ell
                 ell_map = (ell_row[1], slice(left_index, None), slice(dl, dl+1))
                 ell_maps.append(ell_map)
             else:
+                # Two additional ell's
                 switch = np.where(np.diff(ell_row[1:]))[0][0] + 2
                 ell_map = (ell_row[1], slice(left_index, switch), slice(dl, dl+1))
                 ell_maps.append(ell_map)
@@ -2573,6 +2576,7 @@ class BallBasis(Spherical3DBasis):
         # Perform radial transforms component-by-component
         R = radial_basis.regularity_classes(field.tensorsig)
         # HACK -- don't want to make a new array every transform
+        # transforms don't seem to work properly if we don't zero these
         temp = np.zeros_like(cdata)
         for regindex, regtotal in np.ndenumerate(R):
            grid_shape = gdata[regindex].shape
@@ -2586,6 +2590,7 @@ class BallBasis(Spherical3DBasis):
         # Perform radial transforms component-by-component
         R = radial_basis.regularity_classes(field.tensorsig)
         # HACK -- don't want to make a new array every transform
+        # transforms don't seem to work properly if we don't zero these
         temp = np.zeros_like(gdata)
         for regindex, regtotal in np.ndenumerate(R):
            grid_shape = gdata[regindex].shape
