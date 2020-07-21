@@ -1629,6 +1629,9 @@ class RegularityBasis(Basis, SpinRecombinationBasis):
         """
         ell_maps = []
         for dl, ell_row in enumerate(self.local_ell.T):
+            # check if ell_row is empty
+            if len(ell_row) == 0:
+                continue
             if ell_row[0] == ell_row[-1]:
                 # Only one ell
                 ell_map = (ell_row[0], slice(None), slice(dl, dl+1))
