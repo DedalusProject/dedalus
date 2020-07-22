@@ -52,24 +52,29 @@ class Transform:
 
 class PolynomialTransform(Transform):
 
-    def __init__(self, basis, coeff_shape, dtype, axis, scale):
-        self.basis = basis
-        self.dtype = dtype
-        self.coeff_shape = coeff_shape
-        self.axis = axis
-        self.scale = scale
+    def __init__(self, grid_size, coeff_size):
+        self.grid_size = self.N1G = grid_size
+        self.coeff_size = self.N1C = coeff_size
 
-        # Treat complex arrays as higher dimensional real arrays
-        if self.dtype == np.complex128:
-            coeff_shape = list(coeff_shape) + [2]
+    # def __init__(self, basis, coeff_shape, dtype, axis, scale):
+    #     self.basis = basis
+    #     self.dtype = dtype
+    #     self.coeff_shape = coeff_shape
+    #     self.axis = axis
+    #     self.scale = scale
 
-        self.N0 = N0 = np.prod(coeff_shape[:axis], dtype=int)
-        self.N1C = N1C = coeff_shape[axis]
-        self.N1G = N1G = int(self.N1C * scale)
-        self.N2 = N2 = np.prod(coeff_shape[axis+1:], dtype=int)
+    #     # Treat complex arrays as higher dimensional real arrays
+    #     if self.dtype == np.complex128:
+    #         coeff_shape = list(coeff_shape) + [2]
 
-        self.gdata_reduced = np.zeros(shape=[N0, N1G, N2], dtype=np.float64)
-        self.cdata_reduced = np.zeros(shape=[N0, N1C, N2], dtype=np.float64)
+    #     self.N0 = N0 = np.prod(coeff_shape[:axis], dtype=int)
+    #     self.N1C = N1C = coeff_shape[axis]
+    #     self.N1G = N1G = int(self.N1C * scale)
+    #     self.N2 = N2 = np.prod(coeff_shape[axis+1:], dtype=int)
+
+    #     self.gdata_reduced = np.zeros(shape=[N0, N1G, N2], dtype=np.float64)
+    #     self.cdata_reduced = np.zeros(shape=[N0, N1C, N2], dtype=np.float64)
+
 
     # def check_arrays(self, cdata, gdata, axis, scale=None):
     #     """
@@ -122,17 +127,21 @@ class PolynomialTransform(Transform):
         else:
             np.copyto(data_out, data_in)
 
-    def forward(self, gdata, cdata):
+    def forward(self, gdata, cdata, axis):
         # Make reduced view into input arrays
-        self.gdata_reduced.data = gdata
-        self.cdata_reduced.data = cdata
+        self.gdata_reduced = reduced_view_3(gdata, axis)
+        self.cdata_reduced = reduced_view_3(cdata, axis)
+        #self.gdata_reduced.data = gdata
+        #self.cdata_reduced.data = cdata
         # Transform reduced arrays
         self.forward_reduced()
 
-    def backward(self, cdata, gdata):
+    def backward(self, cdata, gdata, axis):
         # Make reduced view into input arrays
-        self.cdata_reduced.data = cdata
-        self.gdata_reduced.data = gdata
+        self.gdata_reduced = reduced_view_3(gdata, axis)
+        self.cdata_reduced = reduced_view_3(cdata, axis)
+        # self.cdata_reduced.data = cdata
+        # self.gdata_reduced.data = gdata
         # Transform reduced arrays
         self.backward_reduced()
 
@@ -475,7 +484,7 @@ class ScipyRFFT(PolynomialTransform):
         # Rescale as sinusoid amplitudes
         scaling = np.ones(self.N1G) / self.N1G
         scaling[1:-1] *= 2
-        scaling[2::2] *= -1
+        #scaling[2::2] *= -1
         temp *= scaling[None, :, None]
         # Resize
         self.resize_reduced(temp, self.cdata_reduced)
@@ -486,14 +495,14 @@ class ScipyRFFT(PolynomialTransform):
         # Rescale from sinusoid amplitudes
         scaling = np.ones(self.N1G) / self.N1G
         scaling[1:-1] *= 2
-        scaling[2::2] *= -1
+        #scaling[2::2] *= -1
         self.gdata_reduced *= 1 / scaling[None, :, None]
         # IRFFT
         temp = fftpack.irfft(self.gdata_reduced, axis=1)
         np.copyto(self.gdata_reduced, temp)
 
 
-#@register_transform(basis.Fourier, 'scipy')
+@register_transform(basis.RealFourier, 'ScipyRFFT')
 class ScipyFourierTransform(ScipyRFFT):
 
     def forward_reduced(self):

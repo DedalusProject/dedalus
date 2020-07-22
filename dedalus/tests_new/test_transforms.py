@@ -2,7 +2,7 @@
 import pytest
 import numpy as np
 from dedalus.core import coords, distributor, basis, field, operators
-from dedalus.tools.cache import CachedMethod
+from dedalus.tools.cache import CachedMethod, CachedFunction
 from mpi4py import MPI
 
 comm = MPI.COMM_WORLD
@@ -28,6 +28,25 @@ def test_1D_complex_fourier_scalar(N, dealias):
     else:
         pytest.skip("Can only test 1D transform in serial")
 
+
+@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+def test_1D_real_fourier_scalar(N, dealias):
+    if comm.size == 1:
+        c = coords.Coordinate('x')
+        d = distributor.Distributor([c])
+        xb = basis.RealFourier(c, size=N, bounds=(0, 1), dealias=dealias)
+        x = xb.local_grid()
+        # Scalar transforms
+        u = field.Field(dist=d, bases=(xb,), dtype=np.float64)
+        ug = np.cos(2*np.pi*x + np.pi/4)
+        u['g'] = ug
+        u['c']
+        assert np.allclose(u['g'], ug)
+    else:
+        pytest.skip("Can only test 1D transform in serial")
+
+
 @pytest.mark.parametrize('N', N_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 def test_1D_chebyshev_scalar(N, dealias):
@@ -44,7 +63,28 @@ def test_1D_chebyshev_scalar(N, dealias):
     else:
         pytest.skip("Can only test 1D transform in serial")
 
-@CachedMethod
+@CachedFunction
+def build_2D_real_fourier(Nx, Ny, dealias_x, dealias_y):
+    c = coords.CartesianCoordinates('x', 'y')
+    d = distributor.Distributor((c,))
+    xb = basis.RealFourier(c.coords[0], size=Nx, bounds=(0, 2*np.pi), dealias=dealias_x)
+    yb = basis.RealFourier(c.coords[1], size=Ny, bounds=(0, 2*np.pi), dealias=dealias_y)
+    x = xb.local_grid()
+    y = yb.local_grid()
+    return c, d, xb, yb, x, y
+
+@pytest.mark.parametrize('Nx', N_range)
+@pytest.mark.parametrize('Ny', N_range)
+@pytest.mark.parametrize('dealias_x', dealias_range)
+@pytest.mark.parametrize('dealias_y', dealias_range)
+def test_2D_real_fourier_scalar(Nx, Ny, dealias_x, dealias_y):
+    c, d, xb, yb, x, y = build_2D_real_fourier(Nx, Ny, dealias_x, dealias_y)
+    f = field.Field(dist=d, bases=(xb,yb), dtype=np.float64)
+    f['g'] = fg = np.sin(x) * np.cos(2*y + np.pi/3) + 3 + np.sin(y)
+    f['c']
+    assert np.allclose(f['g'], fg)
+
+@CachedFunction
 def build_2D_fourier_chebyshev(Nx, Ny, dealias_x, dealias_y):
     c = coords.CartesianCoordinates('x', 'y')
     d = distributor.Distributor((c,))

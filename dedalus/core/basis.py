@@ -302,7 +302,12 @@ class IntervalBasis(Basis):
             return self.shape
 
     def chunk_shape(self, layout):
-        return 1
+        grid_space = layout.grid_space[self.axis]
+        if grid_space:
+            return 1
+        else:
+            # Chunk groups together
+            return self.group_shape[0]
 
     def forward_transform(self, field, axis, gdata, cdata):
         """Forward transform field data."""
@@ -715,6 +720,7 @@ class DifferentiateComplexFourier(operators.Differentiate):
     bands = [0]
     subaxis_dependence = [True]
     subaxis_coupling = [False]
+    dtype = np.complex128
 
     @staticmethod
     def _output_basis(input_basis):
@@ -735,6 +741,7 @@ class InterpolateComplexFourier(operators.Interpolate, operators.SpectralOperato
     input_basis_type = ComplexFourier
     subaxis_dependence = [True]
     subaxis_coupling = [True]
+    dtype = np.complex128
 
     @staticmethod
     def _subspace_matrix(input_basis, position):
@@ -749,21 +756,135 @@ class InterpolateComplexFourier(operators.Interpolate, operators.SpectralOperato
         return None
 
 
-# class InterpolateFourier(operators.Interpolate):
-#     """Fourier series interpolation."""
+class RealFourier(IntervalBasis):
+    """Fourier real sine/cosine basis."""
 
-#     input_basis_type = Fourier
+    group_shape = (2,)
+    native_bounds = (0, 2*np.pi)
+    transforms = {}
+    default_library = 'ScipyRFFT'
 
-#     @staticmethod
-#     def _build_subspace_entry(j, space, input_basis, position):
-#         # cos(n*x)
-#         # sin(n*x)
-#         n = j // 2
-#         x = space.COV.native_coord(position)
-#         if (j % 2) == 0:
-#             return math.cos(n*x)
-#         else:
-#             return math.sin(n*x)
+    def __init__(self, coord, size, bounds, dealias=1, library=None):
+        if library is None:
+            library = self.default_library
+        super().__init__(coord, size, bounds, dealias)
+        self.library = library
+        self.kmax = kmax = (size - 1) // 2
+        self.wavenumbers = np.arange(0, kmax+1)  # Excludes Nyquist mode
+
+    def __add__(self, other):
+        if other is None:
+            return self
+        elif other is self:
+            return self
+        else:
+            return NotImplemented
+
+    def __mul__(self, other):
+        if other is None:
+            return self
+        elif other is self:
+            return self
+        else:
+            return NotImplemented
+
+    def __matmul__(self, other):
+        if other is None:
+            return self.__rmatmul__(other)
+        else:
+            return other.__rmatmul__(self)
+
+    def __rmatmul__(self, other):
+        if other is None:
+            return self
+        else:
+            return NotImplemented
+
+    # def __pow__(self, other):
+    #     return self.space.Fourier
+
+    def _native_grid(self, scale):
+        """Native flat global grid."""
+        N, = self.grid_shape((scale,))
+        return (2 * np.pi / N) * np.arange(N)
+
+    @CachedMethod
+    def transform_plan(self, grid_size):
+        """Build transform plan."""
+        return self.transforms[self.library](grid_size, self.size)
+
+    def local_elements(self):
+        local_elements = self.dist.coeff_layout.local_elements(self.domain, scales=scale)[self.axis]
+        return (self.wavenumbers[local_elements],)
+
+
+class ConvertConstantRealFourier(operators.Convert, operators.SpectralOperator1D):
+
+    input_basis_type = type(None)
+    output_basis_type = RealFourier
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
+
+    @staticmethod
+    def _subspace_matrix(input_basis, output_basis):
+        basis = output_basis
+        MMT = basis.transforms['matrix'](grid_size=1, coeff_size=output_basis.size)
+        return MMT.forward_matrix
+
+
+class DifferentiateRealFourier(operators.Differentiate):
+
+    input_basis_type = RealFourier
+    bands = [-1, 1]
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
+    dtype = np.float64
+
+    @staticmethod
+    def _output_basis(input_basis):
+        return input_basis
+
+    @staticmethod
+    def _subspace_entry(i, j, input_basis):
+        # dx(cos(k*x)) = k*(-sin(k*x))
+        # dx(-sin(k*x)) = -k*cos(k*x)
+        n = j // 2
+        k = n / input_basis.COV.stretch
+        if n == 0:
+            return 0
+        elif (j % 2) == 0:
+            # dx(cos(k*x)) = k*(-sin(k*x))
+            if i == (j + 1):
+                return k
+            else:
+                return 0
+        else:
+            # dx(-sin(k*x)) = -k*cos(k*x)
+            if i == (j - 1):
+                return -k
+            else:
+                return 0
+
+class InterpolateRealFourier(operators.Interpolate, operators.SpectralOperator1D):
+
+    input_basis_type = RealFourier
+    subaxis_dependence = [True]
+    subaxis_coupling = [True]
+    dtype = np.float64
+
+    @staticmethod
+    def _output_basis(input_basis, position):
+        return None
+
+    @staticmethod
+    def _subspace_matrix(input_basis, position):
+        # Interleaved cos(k*x), -sin(k*x)
+        x = input_basis.COV.native_coord(position)
+        k = input_basis.wavenumbers
+        interp_vector = np.exp(1j*k*x).view(dtype=np.float64)
+        interp_vector[1::2] *= -1
+        # Return as 1*N array
+        return interp_vector[None,:]
 
 
 # class IntegrateFourier(operators.Integrate):
@@ -779,39 +900,6 @@ class InterpolateComplexFourier(operators.Interpolate, operators.SpectralOperato
 #             return 2 * np.pi * space.COV.stretch
 #         else:
 #             return 0
-
-
-# class DifferentiateFourier(operators.Differentiate):
-#     """Fourier series differentiation."""
-
-#     input_basis_type = Fourier
-#     bands = [-1, 1]
-#     separable = True
-
-#     @staticmethod
-#     def output_basis(space, input_basis):
-#         return space.Fourier
-
-#     @staticmethod
-#     def _build_subspace_entry(i, j, space, input_basis):
-#         # dx(cos(n*x)) = -n*sin(n*x)
-#         # dx(sin(n*x)) = n*cos(n*x)
-#         n = j // 2
-#         if n == 0:
-#             return 0
-#         elif (j % 2) == 0:
-#             # dx(cos(n*x)) = -n*sin(n*x)
-#             if i == (j + 1):
-#                 return (-n) / space.COV.stretch
-#             else:
-#                 return 0
-#         else:
-#             # dx(sin(n*x)) = n*cos(n*x)
-#             if i == (j - 1):
-#                 return n / space.COV.stretch
-#             else:
-#                 return 0
-
 
 # class HilbertTransformFourier(operators.HilbertTransform):
 #     """Fourier series Hilbert transform."""

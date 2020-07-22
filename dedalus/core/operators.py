@@ -863,7 +863,7 @@ class SpectralOperator1D(SpectralOperator):
 
     @classmethod
     def _subspace_matrix(cls, basis):
-        dtype = np.complex128
+        dtype = cls.dtype
         N = basis.size
         # Build matrix entry by entry over nonzero bands
         M = sparse.lil_matrix((N, N), dtype=dtype)
@@ -889,6 +889,7 @@ class SpectralOperator1D(SpectralOperator):
         # Set output layout
         out.set_layout(layout)
         # Restrict subspace matrix to local elements if separable
+        # OPTIMIZE: don't need to construct full matrix if separable
         if not self.subaxis_coupling[-1]:
             arg_elements = arg.local_elements()[axis]
             out_elements = out.local_elements()[axis]
