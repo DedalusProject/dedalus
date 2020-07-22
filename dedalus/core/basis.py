@@ -770,7 +770,8 @@ class RealFourier(IntervalBasis):
         super().__init__(coord, size, bounds, dealias)
         self.library = library
         self.kmax = kmax = (size - 1) // 2
-        self.wavenumbers = np.arange(0, kmax+1)  # Excludes Nyquist mode
+        self.wavenumbers_no_repeats = np.arange(0, kmax+1)  # Excludes Nyquist mode
+        self.wavenumbers = np.repeat(self.wavenumbers_no_repeats, 2)
 
     def __add__(self, other):
         if other is None:
@@ -880,7 +881,7 @@ class InterpolateRealFourier(operators.Interpolate, operators.SpectralOperator1D
     def _subspace_matrix(input_basis, position):
         # Interleaved cos(k*x), -sin(k*x)
         x = input_basis.COV.native_coord(position)
-        k = input_basis.wavenumbers
+        k = input_basis.wavenumbers_no_repeats
         interp_vector = np.exp(1j*k*x).view(dtype=np.float64)
         interp_vector[1::2] *= -1
         # Return as 1*N array
@@ -1207,9 +1208,10 @@ class SpinRecombinationBasis:
 # These are common for S2 and D2
 class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):
 
-    def __init__(self, coordsystem, shape, dealias, azimuth_library=None):
+    def __init__(self, coordsystem, shape, dealias, dtype=np.complex128, azimuth_library=None):
         self.coordsystem = coordsystem
         self.shape = shape
+        self.dtype = dtype
         if np.isscalar(dealias):
             self.dealias = (dealias,) * 2
         elif len(dealias) != 2:
@@ -1218,7 +1220,12 @@ class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):
             self.dealias = dealias
         self.azimuth_library = azimuth_library
         self.mmax = (shape[0] - 1) // 2
-        self.azimuth_basis = ComplexFourier(coordsystem.coords[0], shape[0], bounds=(0, 2*np.pi), library=azimuth_library)
+        if dtype == np.complex128:
+            self.azimuth_basis = ComplexFourier(coordsystem.coords[0], shape[0], bounds=(0, 2*np.pi), library=azimuth_library)
+        elif dtype == np.float64:
+            self.azimuth_basis = RealFourier(coordsystem.coords[0], shape[0], bounds=(0, 2*np.pi), library=azimuth_library)
+        else:
+            raise NotImplementedError()
         self.global_grid_azimuth = self.azimuth_basis.global_grid
         self.local_grid_azimuth = self.azimuth_basis.local_grid
         super().__init__(coordsystem)
@@ -1293,7 +1300,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
 
     dim = 2
     dims = ['azimuth', 'colatitude']
-    group_shape = (1, 1)
+    #group_shape = (1, 1)
     transforms = {}
 
     def __init__(self, coordsystem, shape, radius=1, dealias=(1,1), colatitude_library='matrix', **kw):
@@ -1314,10 +1321,19 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         # m permutations for repacking triangular truncation
         if shape[0] % 2 != 0:
             raise ValueError("Don't use an odd phi resolution please")
-        az_index = np.arange(shape[0])
-        az_div, az_mod = divmod(az_index, 2)
-        self.forward_m_perm = az_div + shape[0] // 2 * az_mod
-        self.backward_m_perm = np.argsort(self.forward_m_perm)
+        if self.dtype == np.complex128:
+            az_index = np.arange(shape[0])
+            az_div, az_mod = divmod(az_index, 2)
+            self.forward_m_perm = az_div + shape[0] // 2 * az_mod
+            self.backward_m_perm = np.argsort(self.forward_m_perm)
+            self.group_shape = (1, 1)
+        elif self.dtype == np.float64:
+            az_index = np.arange(shape[0])
+            div2, mod2 = divmod(az_index, 2)
+            div22 = div2 % 2
+            self.forward_m_perm = (mod2 + div2) * (1 - div22) + (shape[0] - 1 + mod2 - div2) * div22
+            self.backward_m_perm = np.argsort(self.forward_m_perm)
+            self.group_shape = (2, 1)
 
     def global_shape(self, layout, scales):
         grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
@@ -1335,7 +1351,10 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             # Repacked triangular truncation
             Nphi = self.shape[0]
             Lmax = self.shape[1] - 1
-            return (Nphi//2, Lmax+1+max(0, Lmax+1-Nphi//2))
+            if self.dtype == np.complex128:
+                return (Nphi//2, Lmax+1+max(0, Lmax+1-Nphi//2))
+            elif self.dtype == np.float64:
+                return (Nphi//2, Lmax+1+max(0, Lmax+2-Nphi//2))
 
     def chunk_shape(self, layout):
         grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
@@ -1344,10 +1363,16 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             return (1, 1)
         elif grid_space[1]:
             # coeff-grid space
-            return (2, 1)
+            if self.dtype == np.complex128:
+                return (2, 1)
+            elif self.dtype == np.float64:
+                return (4, 1)
         else:
             # coeff-coeff space
-            return (1, 1)
+            if self.dtype == np.complex128:
+                return (1, 1)
+            elif self.dtype == np.float64:
+                return (2, 1)
 
     def local_groups(self, basis_coupling):
         m_coupling, ell_coupling = basis_coupling
@@ -1449,24 +1474,42 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         local_j = layout.local_elements(self.domain, scales=1)[self.axis + 1][None, :]
         local_i = local_i + 0*local_j
         local_j = local_j + 0*local_i
-        # Valid for m > 0 except Nyquist
-        Nphi = self.shape[0]
-        Lmax = self.shape[1] - 1
-        shift = max(0, Lmax + 1 - Nphi//2)
-        local_m = 1 * local_i
-        local_ell = local_j - shift
-        # Fix for m < 0
-        neg_modes = (local_ell < local_m)
-        local_m[neg_modes] = local_i[neg_modes] - (Nphi+1)//2
-        local_ell[neg_modes] = Lmax - local_j[neg_modes]
-        # Fix for m = 0
-        m_zero = (local_i == 0)
-        local_m[m_zero] = 0
-        local_ell[m_zero] = local_j[m_zero]
-        # Fix for Nyquist
-        nyq_modes = (local_i == 0) * (local_j > Lmax)
-        local_m[nyq_modes] = Nphi//2
-        local_ell[nyq_modes] = local_j[nyq_modes] - shift
+        if self.dtype == np.complex128:
+            # Valid for m > 0 except Nyquist
+            Nphi = self.shape[0]
+            Lmax = self.shape[1] - 1
+            shift = max(0, Lmax + 1 - Nphi//2)
+            local_m = 1 * local_i
+            local_ell = local_j - shift
+            # Fix for m < 0
+            neg_modes = (local_ell < local_m)
+            local_m[neg_modes] = local_i[neg_modes] - (Nphi+1)//2
+            local_ell[neg_modes] = Lmax - local_j[neg_modes]
+            # Fix for m = 0
+            m_zero = (local_i == 0)
+            local_m[m_zero] = 0
+            local_ell[m_zero] = local_j[m_zero]
+            # Fix for Nyquist
+            nyq_modes = (local_i == 0) * (local_j > Lmax)
+            local_m[nyq_modes] = Nphi//2
+            local_ell[nyq_modes] = local_j[nyq_modes] - shift
+        elif self.dtype == np.float64:
+            # Valid for 0 < m < Nphi//4
+            shift = max(0, Lmax + 2 - Nphi//2)
+            local_m = local_i // 2
+            local_ell = local_j - shift
+            # Fix for Nphi//4 <= m < Nphi//2-1
+            neg_modes = (local_ell < local_m)
+            local_m[neg_modes] = (Nphi//2 - 1) - local_m[neg_modes]
+            local_ell[neg_modes] = Lmax - local_j[neg_modes]
+            # Fix for m = 0
+            m_zero = (local_i < 2)
+            local_m[m_zero] = 0
+            local_ell[m_zero] = local_j[m_zero]
+            # Fix for m = Nphi//2 - 1
+            m_max = (local_i < 2) * (local_j > Lmax)
+            local_m[m_max] = Nphi//2 - 1
+            local_ell[m_max] = local_j[m_max] - shift
         # Reshape as multidimensional vectors
         # HACK
         if self.first_axis != 0:
