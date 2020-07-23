@@ -477,6 +477,13 @@ class ScipyDCT(PolynomialTransform):
 
 
 class ScipyRFFT(PolynomialTransform):
+    """
+    Mode order: [cos 0, -sin 0, cos 1, -sin 1, ...]
+
+    (a + bi) e^{ikx}
+    (a + bi) (cos(kx) + i sin(kx))
+    a cos(kx) - b sin(kx) + i (...)
+    """
 
     def forward_reduced(self):
         # RFFT
@@ -662,6 +669,11 @@ class SWSHColatitudeTransform(NonSeparableTransform):
                 grm = gdata[:, mg_slice, :, :]
                 crm = cdata[:, mc_slice, ell_slice, :]
                 apply_matrix(m_matrices[m], grm, axis=2, out=crm)
+                if m == 1:
+                    print(self.s, m)
+                    print(grm)
+                    print(crm)
+                    print()
 
     def backward_reduced(self, cdata, gdata):
         # local_m = self.local_m

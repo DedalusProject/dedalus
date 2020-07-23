@@ -757,7 +757,11 @@ class InterpolateComplexFourier(operators.Interpolate, operators.SpectralOperato
 
 
 class RealFourier(IntervalBasis):
-    """Fourier real sine/cosine basis."""
+    """
+    Fourier real sine/cosine basis.
+
+    Modes: [cos 0, -sin 0, cos 1, -sin 1, ...]
+    """
 
     group_shape = (2,)
     native_bounds = (0, 2*np.pi)
@@ -1186,10 +1190,24 @@ class SpinRecombinationBasis:
             np.copyto(out, gdata)
         if tensorsig:
             U = self.spin_recombination_matrices(tensorsig)
-            for i, Ui in enumerate(U):
-                if Ui is not None:
-                    # Directly apply U
-                    apply_matrix(Ui, out, axis=i, out=out)
+            if gdata.dtype == np.complex128:
+                data = out
+                for i, Ui in enumerate(U):
+                    if Ui is not None:
+                        # Directly apply U
+                        apply_matrix(Ui, data, axis=i, out=data)
+            elif gdata.dtype == np.float64:
+                data_cos = out[axslice(self.axis+len(tensorsig), 0, None, 2)]
+                data_msin = out[axslice(self.axis+len(tensorsig), 1, None, 2)]  # minus sine coefficient
+                for i, Ui in enumerate(U):
+                    if Ui is not None:
+                        # Apply U split up into real and imaginary pieces
+                        RC = apply_matrix(Ui.real, data_cos, axis=i)
+                        RmS = apply_matrix(Ui.real, data_msin, axis=i)
+                        IC = apply_matrix(Ui.imag, data_cos, axis=i)
+                        ImS = apply_matrix(Ui.imag, data_msin, axis=i)
+                        data_cos[:] = RC + ImS
+                        data_msin[:] = RmS - IC
 
     def backward_spin_recombination(self, tensorsig, gdata, out=None):
         """Apply spin-to-component recombination."""
@@ -1200,10 +1218,26 @@ class SpinRecombinationBasis:
             np.copyto(out, gdata)
         if tensorsig:
             U = self.spin_recombination_matrices(tensorsig)
-            for i, Ui in enumerate(U):
-                if Ui is not None:
-                    # Apply U^H (inverse of U)
-                    apply_matrix(Ui.T.conj(), out, axis=i, out=out)
+            if gdata.dtype == np.complex128:
+                data = out
+                for i, Ui in enumerate(U):
+                    if Ui is not None:
+                        # Directly apply U
+                        apply_matrix(Ui.T.conj(), data, axis=i, out=data)
+            elif gdata.dtype == np.float64:
+                data_cos = out[axslice(self.axis+len(tensorsig), 0, None, 2)]
+                data_msin = out[axslice(self.axis+len(tensorsig), 1, None, 2)]  # minus sine coefficient
+                for i, Ui in enumerate(U):
+                    if Ui is not None:
+                        # Apply U split up into real and imaginary pieces
+                        Ui_inv = Ui.T.conj()
+                        RC = apply_matrix(Ui_inv.real, data_cos, axis=i)
+                        RmS = apply_matrix(Ui_inv.real, data_msin, axis=i)
+                        IC = apply_matrix(Ui_inv.imag, data_cos, axis=i)
+                        ImS = apply_matrix(Ui_inv.imag, data_msin, axis=i)
+                        data_cos[:] = RC + ImS
+                        data_msin[:] = RmS - IC
+
 
 # These are common for S2 and D2
 class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):
@@ -1474,10 +1508,10 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         local_j = layout.local_elements(self.domain, scales=1)[self.axis + 1][None, :]
         local_i = local_i + 0*local_j
         local_j = local_j + 0*local_i
+        Nphi = self.shape[0]
+        Lmax = self.Lmax
         if self.dtype == np.complex128:
             # Valid for m > 0 except Nyquist
-            Nphi = self.shape[0]
-            Lmax = self.shape[1] - 1
             shift = max(0, Lmax + 1 - Nphi//2)
             local_m = 1 * local_i
             local_ell = local_j - shift
@@ -1555,7 +1589,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             # Fold over every other segment
             gs = mg_end - mg_start
             shift = max(0, Lmax + gs - Nphi//2)  # Assuming gs=1 for complex and gs=2 for real
-            mc_slice = slice(gs*dseg//2, gs*dseg//2 + gs)
+            mc_slice = slice(gs*(dseg//2), gs*(dseg//2) + gs)
             # Reverse ell's on folded segments for ell locality
             if m == 0:
                 # Start m=0 at zero for easier parallelization
