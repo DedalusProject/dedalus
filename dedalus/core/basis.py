@@ -1525,42 +1525,83 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         return self.local_m_ell[1]
 
     @CachedAttribute
+    def m_maps(self):
+        return self._compute_m_maps(self.local_unpacked_m, Lmax=self.Lmax, Nphi=self.shape[0])
+
+    @CachedAttribute
     def ell_maps(self):
+        return self._compute_ell_maps(self.local_ell)
+
+    @staticmethod
+    def _compute_m_maps(local_unpacked_m, Lmax, Nphi):
         """
-        Tuple of (ell, m_indices, ell_indices) for all local ells.
-        m_indices and ell_indices are local slices along the phi and theta axes.
+        Tuple of (m, mg_slice, mc_slice, ell_slice) for all local m's.
+        """
+        m_maps = []
+        # Get continuous segments of unpacked m's
+        segment = [local_unpacked_m[0], 0, 0] # m, start, end
+        segments = [segment]
+        m = local_unpacked_m[0]
+        for i, m_i in enumerate(local_unpacked_m):
+            if (m_i == m):
+                segment[2] = i + 1
+            else:
+                m = m_i
+                segment = [m, i, i+1]
+                segments.append(segment)
+        # Build slices for each segment
+        for dseg, (m, mg_start, mg_end) in enumerate(segments):
+            mg_slice = slice(mg_start, mg_end)
+            # Fold over every other segment
+            gs = mg_end - mg_start
+            shift = max(0, Lmax + gs - Nphi//2)  # Assuming gs=1 for complex and gs=2 for real
+            mc_slice = slice(gs*dseg//2, gs*dseg//2 + gs)
+            # Reverse ell's on folded segments for ell locality
+            if m == 0:
+                # Start m=0 at zero for easier parallelization
+                ell_slice = slice(0, Lmax+1)
+            elif (gs == 1) and (m == Nphi//2):  # Nyquist mode for complex folding
+                ell_slice = slice(Lmax+1, None)
+            elif (gs == 2) and (m == Nphi//2 - 1):  # One below Nyquist mode for real folding
+                ell_slice = slice(Lmax+1, None)
+            elif dseg % 2 == 0:
+                # Shifted up
+                ell_slice = slice(shift + np.abs(m), None)
+            else:
+                # Reversed for ell locality
+                ell_slice = slice(Lmax - np.abs(m), None, -1)
+            m_maps.append((m, mg_slice, mc_slice, ell_slice))
+        return tuple(m_maps)
+
+    @staticmethod
+    def _compute_ell_maps(local_ell):
+        """
+        Tuple of (ell, m_slice, ell_slice) for all local ells.
+        m_slice and ell_slice are local slices along the phi and theta axes.
 
         Data for each ell should be sliced as:
 
-            for ell, m_indices, ell_indices in ell_maps:
-                ell_data = data[m_indices, ell_indices]
+            for ell, m_slice, ell_slice in ell_maps:
+                ell_data = data[m_slice, ell_slice]
         """
         ell_maps = []
-        for dl, ell_row in enumerate(self.local_ell.T):
-            # check if only one m in the row
-            if len(ell_row) == 1:
-                ell_map = (ell_row[0], slice(0, 1), slice(dl, dl+1))
-                ell_maps.append(ell_map)
+        for dl, ell_row in enumerate(local_ell.T):
+            if len(ell_row) == 0:
                 continue
-            if ell_row[0] == ell_row[1]:
-                ell_left = ell_row[0]
-                left_index = 0
-            else:
-                # make ell_map for 0 element, which could be m=0 mode
-                ell_map = (ell_row[0], slice(0, 1), slice(dl, dl+1))
-                ell_maps.append(ell_map)
-                ell_left = ell_row[1]
-                left_index = 1
-            if ell_left == ell_row[-1]:
-                # Only one more ell
-                ell_map = (ell_row[1], slice(left_index, None), slice(dl, dl+1))
-                ell_maps.append(ell_map)
-            else:
-                # Two additional ell's
-                switch = np.where(np.diff(ell_row[1:]))[0][0] + 2
-                ell_map = (ell_row[1], slice(left_index, switch), slice(dl, dl+1))
-                ell_maps.append(ell_map)
-                ell_map = (ell_row[-1], slice(switch, None), slice(dl, dl+1))
+            # Get continuous segments of ells
+            segment = [ell_row[0], 0, 0] # ell, start, end
+            segments = [segment]
+            ell = ell_row[0]
+            for i, ell_i in enumerate(ell_row):
+                if (ell_i == ell):
+                    segment[2] = i + 1
+                else:
+                    ell = ell_i
+                    segment = [ell, i, i+1]
+                    segments.append(segment)
+            # Build slices for each segment
+            for ell, start, end in segments:
+                ell_map = (ell, slice(start, end), slice(dl, dl+1))
                 ell_maps.append(ell_map)
         return tuple(ell_maps)
 
@@ -1605,7 +1646,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
     @CachedMethod
     def transform_plan(self, grid_shape, axis, s):
         """Build transform plan."""
-        return self.transforms[self.colatitude_library](grid_shape, self.shape, axis, self.local_unpacked_m, s)
+        return self.transforms[self.colatitude_library](grid_shape, self.shape, axis, self.m_maps, s)
 
     def forward_transform_azimuth(self, field, axis, gdata, cdata):
         # Call Fourier transform
@@ -1749,31 +1790,7 @@ class RegularityBasis(Basis, SpinRecombinationBasis):
 
     @CachedAttribute
     def ell_maps(self):
-        """
-        Tuple of (ell, m_indices, ell_indices) for all local ells.
-        m_indices and ell_indices are local slices along the phi and theta axes.
-
-        Data for each ell should be sliced as:
-
-            for ell, m_indices, ell_indices in ell_maps:
-                ell_data = data[m_indices, ell_indices]
-        """
-        ell_maps = []
-        for dl, ell_row in enumerate(self.local_ell.T):
-            # check if ell_row is empty
-            if len(ell_row) == 0:
-                continue
-            if ell_row[0] == ell_row[-1]:
-                # Only one ell
-                ell_map = (ell_row[0], slice(None), slice(dl, dl+1))
-                ell_maps.append(ell_map)
-            else:
-                switch = np.where(np.diff(ell_row))[0][0] + 1
-                ell_map = (ell_row[0], slice(0, switch), slice(dl, dl+1))
-                ell_maps.append(ell_map)
-                ell_map = (ell_row[-1], slice(switch, None), slice(dl, dl+1))
-                ell_maps.append(ell_map)
-        return tuple(ell_maps)
+        return SWSH._compute_ell_maps(self.local_ell)
 
     def get_radial_basis(self):
         return self

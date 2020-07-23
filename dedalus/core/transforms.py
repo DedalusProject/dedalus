@@ -639,70 +639,47 @@ class SWSHColatitudeTransform(NonSeparableTransform):
         - Remove dependence on grid_shape?
     """
 
-    def __init__(self, grid_shape, basis_shape, axis, local_m, s, dtype=np.complex128):
+    def __init__(self, grid_shape, basis_shape, axis, m_maps, s, dtype=np.complex128):
         self.Nphi = basis_shape[0]
         self.Lmax = basis_shape[1] - 1
         super().__init__(grid_shape, self.Lmax+1, axis, dtype)
-        self.local_m = local_m
+        self.m_maps = m_maps
         self.s = s
         self.shift = max(0, self.Lmax + 1 - self.Nphi//2)
 
     def forward_reduced(self, gdata, cdata):
-        local_m = self.local_m
-        if gdata.shape[1] != len(local_m): # do we want to do this check???
-            raise ValueError("gdata.shape[1]: %i, len(local_m): %i" %(gdata.shape[1], len(local_m)))
+        # local_m = self.local_m
+        # if gdata.shape[1] != len(local_m): # do we want to do this check???
+        #     raise ValueError("gdata.shape[1]: %i, len(local_m): %i" %(gdata.shape[1], len(local_m)))
         m_matrices = self._forward_SWSH_matrices
         shift = self.shift
         Nphi = self.Nphi
         Lmax = self.Lmax
-        for dm, m in enumerate(local_m):
+        for m, mg_slice, mc_slice, ell_slice in self.m_maps:
             # Skip transforms when |m| > Lmax
             if np.abs(m) <= Lmax:
-                Lmin = max(np.abs(m), np.abs(self.s))
-                grm = gdata[:, dm, :, :]
-                if m == 0:
-                    # m=0 mode
-                    crm = cdata[:, 0, Lmin:Lmax+1, :]
-                elif m == Nphi//2:
-                    # Nyquist mode
-                    crm = cdata[:, 0, Lmax+1:, :]
-                elif dm % 2 == 0:
-                    # Positive wavenumbers
-                    crm = cdata[:, dm//2, (shift+Lmin):, :]
-                else:
-                    # Negative wavenumbers
-                    crm = cdata[:, dm//2, Lmax-Lmin::-1, :]
-                apply_matrix(m_matrices[dm][Lmin:], grm, axis=1, out=crm)
+                # Use rectangular transform matrix, padded with zeros when Lmin > abs(m)
+                grm = gdata[:, mg_slice, :, :]
+                crm = cdata[:, mc_slice, ell_slice, :]
+                apply_matrix(m_matrices[m], grm, axis=2, out=crm)
 
     def backward_reduced(self, cdata, gdata):
-        local_m = self.local_m
-        if gdata.shape[1] != len(local_m): # do we want to do this check???
-            raise ValueError("gdata.shape[1]: %i, len(local_m): %i" %(gdata.shape[1], len(local_m)))
+        # local_m = self.local_m
+        # if gdata.shape[1] != len(local_m): # do we want to do this check???
+        #     raise ValueError("gdata.shape[1]: %i, len(local_m): %i" %(gdata.shape[1], len(local_m)))
         m_matrices = self._backward_SWSH_matrices
         shift = self.shift
         Nphi = self.Nphi
         Lmax = self.Lmax
-        for dm, m in enumerate(local_m):
-            # Skip transforms when |m| > Lmax
+        for m, mg_slice, mc_slice, ell_slice in self.m_maps:
             if np.abs(m) > Lmax:
                 # Write zeros because they'll be used by the inverse azimuthal transform
-                gdata[:, dm, :, :] = 0
+                gdata[:, mg_slice, :, :] = 0
             else:
-                Lmin = max(np.abs(m), np.abs(self.s))
-                grm = gdata[:, dm, :, :]
-                if m == 0:
-                    # m=0 mode
-                    crm = cdata[:, 0, Lmin:Lmax+1, :]
-                elif m == Nphi//2:
-                    # Nyquist mode
-                    crm = cdata[:, 0, Lmax+1:, :]
-                elif dm % 2 == 0:
-                    # Positive wavenumbers
-                    crm = cdata[:, dm//2, (shift+Lmin):, :]
-                else:
-                    # Negative wavenumbers
-                    crm = cdata[:, dm//2, Lmax-Lmin::-1, :]
-                apply_matrix(m_matrices[dm][:,Lmin:], crm, axis=1, out=grm)
+                # Use rectangular transform matrix, padded with zeros when Lmin > abs(m)
+                grm = gdata[:, mg_slice, :, :]
+                crm = cdata[:, mc_slice, ell_slice, :]
+                apply_matrix(m_matrices[m], crm, axis=2, out=grm)
 
     @CachedAttribute
     def _quadrature(self):
@@ -716,19 +693,22 @@ class SWSHColatitudeTransform(NonSeparableTransform):
         # Get functions from sphere library
         cos_grid, weights = self._quadrature
         Lmax = self.N2c - 1
-        m_matrices = []
-        for m in self.local_m:
-            if m <= Lmax: # make sure we don't try to make a matrix for the Nyquist mode
+        m_matrices = {}
+        for m, _, _, _ in self.m_maps:
+            if m in m_matrices:
+                continue
+            if m > Lmax:
+                # Don't make matrices for m's that will be dropped after transform
+                m_matrices[m] = None
+            else:
                 Y = dedalus_sphere.sphere.harmonics(Lmax, m, self.s, cos_grid)  # shape (Nc-Lmin, Ng)
-                # Pad to square transform and keep l aligned
+                # Pad to shape (Nc-|m|, Ng) so transforms don't depend on Lmin
                 Lmin = max(np.abs(m), np.abs(self.s))
-                Yfull = np.zeros((self.N2c, self.N2g))
-                Yfull[Lmin:, :] = (Y*weights).astype(np.float64)
-                # zero out modes higher than grid resolution
+                Yfull = np.zeros((self.N2c-np.abs(m), self.N2g))
+                Yfull[Lmin-np.abs(m):, :] = (Y*weights).astype(np.float64)
+                # Zero out modes higher than grid resolution
                 Yfull[self.N2g:, :] = 0
-            else: Yfull = None
-            m_matrices.append(Yfull)
-
+                m_matrices[m] = Yfull
         return m_matrices
 
     @CachedAttribute
@@ -737,16 +717,22 @@ class SWSHColatitudeTransform(NonSeparableTransform):
         # Get functions from sphere library
         cos_grid, weights = self._quadrature
         Lmax = self.N2c - 1
-        m_matrices = []
-        for m in self.local_m:
-            if m <= Lmax: # make sure we don't try to make a matrix for the Nyquist mode
+        m_matrices = {}
+        for m, _, _, _ in self.m_maps:
+            if m in m_matrices:
+                continue
+            if m > Lmax:
+                # Don't make matrices for m's that will be dropped after transform
+                m_matrices[m] = None
+            else:
                 Y = dedalus_sphere.sphere.harmonics(Lmax, m, self.s, cos_grid) # shape (Nc-Lmin, Ng)
-                # Pad to square transform and keep l aligned
-                Lmin = self.N2c - Y.shape[0]
-                Yfull = np.zeros((self.N2g, self.N2c))
-                Yfull[:, Lmin:] = Y.T.astype(np.float64)
-            else: Yfull = None
-            m_matrices.append(Yfull)
+                # Pad to shape (Nc-|m|, Ng) so transforms don't depend on Lmin
+                Lmin = max(np.abs(m), np.abs(self.s))
+                Yfull = np.zeros((self.N2g, self.N2c-np.abs(m)))
+                Yfull[:, Lmin-np.abs(m):] = Y.T.astype(np.float64)
+                # Zero out modes higher than grid resolution
+                Yfull[:, self.N2g:] = 0
+                m_matrices[m] = Yfull
         return m_matrices
 
 
