@@ -307,9 +307,10 @@ def test_S2_tensor_backward(Nphi, Ntheta, dealias):
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_S2_tensor_roundtrip(Nphi, Ntheta, dealias):
-    c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias)
-    T = field.Field(dist=d, bases=(sb,), tensorsig=(c,c), dtype=np.complex128)
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_S2_tensor_roundtrip(Nphi, Ntheta, dealias, dtype):
+    c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias, dtype=dtype)
+    T = field.Field(dist=d, bases=(sb,), tensorsig=(c,c), dtype=dtype)
     T['g'][1,1] = 2*np.cos(theta)*(3*np.cos(theta)*np.cos(phi)**2 - 2*np.sin(theta)*np.sin(phi))
     T['g'][1,0] = T['g'][0,1] = -2*np.cos(phi)*(np.sin(theta) + 3*np.cos(theta)*np.sin(phi))
     T['g'][0,0] = 6*np.sin(phi)**2
@@ -320,17 +321,18 @@ def test_S2_tensor_roundtrip(Nphi, Ntheta, dealias):
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_S2_3D_vector_roundtrip(Nphi, Ntheta, dealias):
-    # Note: u is the S2 gradient of cos(theta)*exp(1j*phi)
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_S2_3D_vector_roundtrip(Nphi, Ntheta, dealias, dtype):
+    # Note: u is the S2 gradient of cos(theta)*cos(phi)
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
     c_S2 = c.S2coordsys
-    sb = basis.SpinWeightedSphericalHarmonics(c_S2, (Nphi, Ntheta), radius=1, dealias=(dealias, dealias))
+    sb = basis.SpinWeightedSphericalHarmonics(c_S2, (Nphi, Ntheta), radius=1, dealias=(dealias, dealias), dtype=dtype)
     phi, theta = sb.local_grids()
-    u = field.Field(dist=d, bases=(sb,), tensorsig=(c,), dtype=np.complex128)
+    u = field.Field(dist=d, bases=(sb,), tensorsig=(c,), dtype=dtype)
     u['g'][2] = 0
-    u['g'][1] = np.cos(2*theta)*np.exp(1j*phi)
-    u['g'][0] = 1j*np.cos(theta)*np.exp(1j*phi)
+    u['g'][1] = np.cos(2*theta)*np.cos(phi)
+    u['g'][0] = -np.cos(theta)*np.sin(phi)
     ug = u['g'].copy()
     u['c']
     assert np.allclose(u['g'], ug)
