@@ -93,13 +93,15 @@ class AffineCOV:
 class Basis:
     """Abstract base class for spectral bases."""
 
-    constant = False
-
     def __init__(self, coords):
         self.coords = coords
         self.dist = coords.dist
         self.axis = coords.axis
         self.domain = Domain(self.dist, bases=(self,))
+
+    @CachedAttribute
+    def constant(self):
+        return tuple(False for i in range(self.dim))
 
     # def __repr__(self):
     #     return '<%s %i>' %(self.__class__.__name__, id(self))
@@ -1755,6 +1757,16 @@ class RegularityBasis(Basis, SpinRecombinationBasis):
     dims = ['radius']
     group_shape = (1,)
 
+    def __init__(self, coordsystem, shape, k, dealias, dtype):
+        self.coordsystem = coordsystem
+        self.shape = (shape,)
+        self.k = k
+        self.dealias = dealias
+        self.Nmax = shape - 1
+        self.dtype = dtype
+        # Call at end because dealias is needed to build self.domain
+        Basis.__init__(self, coordsystem)
+
     # @CachedAttribute
     # def local_l(self):
     #     layout = self.dist.coeff_layout
@@ -2055,21 +2067,16 @@ class SphericalShellRadialBasis(RegularityBasis):
 
     transforms = {}
 
-    def __init__(self, coordsystem, shape, radii=(1,2), alpha=(-0.5,-0.5), dealias=(1,), k=0, radius_library='matrix'):
-        self.coordsystem = coordsystem
+    def __init__(self, coordsystem, shape, radii=(1,2), alpha=(-0.5,-0.5), dealias=(1,), k=0, radius_library='matrix', dtype=np.complex128):
+        super().__init__(coordsystem, shape, k=k, dealias=dealias, dtype=dtype)
         if radii[0] <= 0:
             raise ValueError("Inner radius must be positive.")
         self.radii = radii
         self.dR = self.radii[1] - self.radii[0]
         self.rho = (self.radii[1] + self.radii[0])/self.dR
         self.alpha = alpha
-        self.dealias = dealias
-        self.k = k
         self.radius_library = radius_library
-        self.Nmax = shape - 1
-        self.shape = (shape,)
         self.grid_params = (coordsystem, radii, alpha, dealias)
-        Basis.__init__(self, coordsystem)
 
     def __eq__(self, other):
         if isinstance(other, SphericalShellRadialBasis):
@@ -2256,20 +2263,15 @@ class BallRadialBasis(RegularityBasis):
 
     transforms = {}
 
-    def __init__(self, coordsystem, shape, radius=1, k=0, alpha=0, dealias=(1,), radius_library='matrix'):
-        self.coordsystem = coordsystem
+    def __init__(self, coordsystem, shape, radius=1, k=0, alpha=0, dealias=(1,), radius_library='matrix', dtype=np.complex128):
+        super().__init__(coordsystem, shape, k=k, dealias=dealias, dtype=dtype)
         if radius <= 0:
             raise ValueError("Radius must be positive.")
         self.radius = radius
-        self.k = k
         self.alpha = alpha
-        self.dealias = dealias
         self.radial_COV = AffineCOV((0, 1), (0, radius))
         self.radius_library = radius_library
-        self.Nmax = shape - 1
-        self.shape = (shape,)
         self.grid_params = (coordsystem, radius, alpha, dealias)
-        Basis.__init__(self, coordsystem)
 
     def __eq__(self, other):
         if isinstance(other, BallRadialBasis):
@@ -2497,6 +2499,10 @@ class Spherical3DBasis(MultidimensionalBasis):
         self.backward_transform_azimuth = self.sphere_basis.backward_transform_azimuth
         self.backward_transform_colatitude = self.sphere_basis.backward_transform_colatitude
         Basis.__init__(self, coordsystem)
+
+    @CachedAttribute
+    def constant(self):
+        return (self.Lmax==0, self.Lmax==0, False)
 
     def global_grids(self, scales=None):
         if scales == None: scales = (1,1,1)

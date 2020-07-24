@@ -466,7 +466,8 @@ class Product(Future):
         operand = self.operand
         operand_coupling = operand.matrix_coupling(*vars)
         ncc = self.ncc
-        ncc_coupling = np.array([basis is not None for basis in ncc.domain.full_bases])
+        #ncc_coupling = np.array([basis is not None for basis in ncc.domain.full_bases])
+        ncc_coupling = ncc.domain.nonconstant
         return ncc_coupling | operand_coupling
 
     def check_conditions(self):

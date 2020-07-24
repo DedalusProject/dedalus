@@ -153,7 +153,15 @@ class Domain(metaclass=CachedClass):
     @CachedAttribute
     def constant(self):
         """Tuple of constant flags."""
-        return tuple(basis is None for basis in self.full_bases)
+        const = np.ones(self.dist.dim, dtype=bool)
+        for basis in self.bases:
+            for subaxis in range(basis.dim):
+                const[basis.axis+subaxis] = basis.constant[subaxis]
+        return tuple(const)
+
+    @CachedAttribute
+    def nonconstant(self):
+        return tuple(~c for c in self.constant)
 
     @CachedAttribute
     def coeff_shape(self):
