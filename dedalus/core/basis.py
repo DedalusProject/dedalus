@@ -1206,8 +1206,8 @@ class SpinRecombinationBasis:
                         RmS = apply_matrix(Ui.real, data_msin, axis=i)
                         IC = apply_matrix(Ui.imag, data_cos, axis=i)
                         ImS = apply_matrix(Ui.imag, data_msin, axis=i)
-                        data_cos[:] = RC + ImS
-                        data_msin[:] = RmS - IC
+                        data_cos[:] = RC - ImS
+                        data_msin[:] = RmS + IC
 
     def backward_spin_recombination(self, tensorsig, gdata, out=None):
         """Apply spin-to-component recombination."""
@@ -1235,8 +1235,8 @@ class SpinRecombinationBasis:
                         RmS = apply_matrix(Ui_inv.real, data_msin, axis=i)
                         IC = apply_matrix(Ui_inv.imag, data_cos, axis=i)
                         ImS = apply_matrix(Ui_inv.imag, data_msin, axis=i)
-                        data_cos[:] = RC + ImS
-                        data_msin[:] = RmS - IC
+                        data_cos[:] = RC - ImS
+                        data_msin[:] = RmS + IC
 
 
 # These are common for S2 and D2
