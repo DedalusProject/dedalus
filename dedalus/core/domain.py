@@ -166,11 +166,8 @@ class Domain(metaclass=CachedClass):
     @CachedAttribute
     def coeff_shape(self):
         """Compute coefficient shape."""
-        shape = np.ones(self.dist.dim, dtype=int)
-        for basis in self.bases:
-            for subaxis in range(basis.dim):
-                shape[basis.axis+subaxis] = basis.shape[subaxis]
-        return tuple(shape)
+        scales = (1 for i in range(self.dist.dim))
+        return self.global_shape(layout=self.dist.coeff_layout, scales=scales)
 
     def grid_shape(self, scales):
         """Compute grid shape."""

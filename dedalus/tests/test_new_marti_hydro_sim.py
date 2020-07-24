@@ -25,28 +25,30 @@ nu = 1e-2
 dt = 0.02
 t_end = 20
 ts = timesteppers.SBDF2
+dtype = np.float64
+Nphi = 2*(Lmax+1)
 
 # Bases
 c = coords.SphericalCoordinates('phi', 'theta', 'r')
 d = distributor.Distributor((c,))
-b = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), radius=radius)
-bk2 = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), k=2, radius=radius)
+b = basis.BallBasis(c, (Nphi, Lmax+1, Nmax+1), radius=radius, dtype=dtype)
+bk2 = basis.BallBasis(c, (Nphi, Lmax+1, Nmax+1), k=2, radius=radius, dtype=dtype)
 b_S2 = b.S2_basis()
 phi, theta, r = b.local_grids((1, 1, 1))
 
 # Fields
-u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
-p = field.Field(dist=d, bases=(b,), dtype=np.complex128)
-tau = field.Field(dist=d, bases=(b_S2,), tensorsig=(c,), dtype=np.complex128)
+u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
+p = field.Field(dist=d, bases=(b,), dtype=dtype)
+tau = field.Field(dist=d, bases=(b_S2,), tensorsig=(c,), dtype=dtype)
 
 # Boundary conditions
-u_BC = field.Field(dist=d, bases=(b_S2,), tensorsig=(c,), dtype=np.complex128)
+u_BC = field.Field(dist=d, bases=(b_S2,), tensorsig=(c,), dtype=dtype)
 u_BC['g'][2] = 0. # u_r = 0
 u_BC['g'][1] = - u0*np.cos(theta)*np.cos(phi)
 u_BC['g'][0] = u0*np.sin(phi)
 
 # Parameters and operators
-ez = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
+ez = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
 ez['g'][1] = -np.sin(theta)
 ez['g'][2] =  np.cos(theta)
 div = lambda A: operators.Divergence(A, index=0)
@@ -90,12 +92,24 @@ for subproblem in solver.subproblems:
     if subproblem.group[1] != 0:
         ell = subproblem.group[1]
         L = subproblem.L_min
-        N0, N1, N2, N3 = BC_rows(Nmax, ell, 4)
-        tau_columns = np.zeros((L.shape[0], 3))
-        tau_columns[N0:N1,0] = (C(Nmax, ell, -1))[:,-1]
-        tau_columns[N1:N2,1] = (C(Nmax, ell, +1))[:,-1]
-        tau_columns[N2:N3,2] = (C(Nmax, ell,  0))[:,-1]
-        L[:,-3:] = tau_columns
+        if dtype == np.complex128:
+            N0, N1, N2, N3 = BC_rows(Nmax, ell, 4)
+            tau_columns = np.zeros((L.shape[0], 3))
+            tau_columns[N0:N1,0] = (C(Nmax, ell, -1))[:,-1]
+            tau_columns[N1:N2,1] = (C(Nmax, ell, +1))[:,-1]
+            tau_columns[N2:N3,2] = (C(Nmax, ell,  0))[:,-1]
+            L[:,-3:] = tau_columns
+        elif dtype == np.float64:
+            NL = Nmax - ell//2 + 1
+            N0, N1, N2, N3 = BC_rows(Nmax, ell, 4) * 2
+            tau_columns = np.zeros((L.shape[0], 6))
+            tau_columns[N0:N0+NL,0] = (C(Nmax, ell, -1))[:,-1]
+            tau_columns[N1:N1+NL,1] = (C(Nmax, ell, +1))[:,-1]
+            tau_columns[N2:N2+NL,2] = (C(Nmax, ell,  0))[:,-1]
+            tau_columns[N0+NL:N0+2*NL,3] = tau_columns[N0:N0+NL,0]
+            tau_columns[N1+NL:N1+2*NL,4] = tau_columns[N1:N1+NL,1]
+            tau_columns[N2+NL:N2+2*NL,5] = tau_columns[N2:N2+NL,2]
+            L[:,-6:] = tau_columns
         L.eliminate_zeros()
         subproblem.expand_matrices(['M','L'])
 

@@ -1420,7 +1420,9 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             local_m = local_m.ravel()
             local_ell = local_ell.ravel()
             for (m, ell) in zip(local_m, local_ell):
-                groups.append([m, ell])
+                # Avoid writing repeats for real data
+                if [m, ell] not in groups:
+                    groups.append([m, ell])
             return groups
         else:
             raise NotImplementedError()
@@ -1432,10 +1434,10 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             local_indices = np.where((local_m==m_group)*(local_ell==ell_group))
             m_index = local_indices[0][0]
             m_gs = self.group_shape[0]
-            m_slice = slice(m_index*m_gs, (m_index+1)*m_gs)
+            m_slice = slice(m_index, m_index+m_gs)
             ell_index = local_indices[1][0]
             ell_gs = self.group_shape[1]
-            ell_slice = slice(ell_index*ell_gs, (ell_index+1)*ell_gs)
+            ell_slice = slice(ell_index, ell_index+ell_gs)
             return [m_slice, ell_slice]
         else:
             raise NotImplementedError()
@@ -2858,7 +2860,11 @@ class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperato
         radial_basis = self.radial_basis
         if self.tensorsig != ():
             Q = radial_basis.radial_recombinations(self.tensorsig, ell_list=(ell,))
-            matrix = Q[ell] @ matrix
+            if self.dtype == np.float64:
+                # Block-diag for sin/cos parts for real dtype
+                matrix = np.kron(Q[ell], np.eye(2)) @ matrix
+            else:
+                matrix = Q[ell] @ matrix
         return matrix
 
     def operate(self, out):
@@ -3014,6 +3020,9 @@ class SphericalTransposeComponents(operators.TransposeComponents):
         # assume all regularities have the same n_size
         eye = sparse.identity(basis.n_size(ell), self.dtype, format='csr')
         matrix = sparse.kron( transpose, eye)
+        # Block-diag for sin/cos parts for real dtype
+        if self.dtype == np.float64:
+            matrix = sparse.kron(matrix, sparse.identity(2, format='csr')).tocsr()
         return matrix
 
     def operate(self, out):
