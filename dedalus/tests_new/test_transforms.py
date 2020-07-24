@@ -128,8 +128,8 @@ def test_2D_fourier_chebyshev_1D_vector(Nx, Ny, dealias_x, dealias_y):
     assert np.allclose(v['g'], vg)
 
 ## S2
-Nphi_range = [16]
-Ntheta_range = [8]
+Nphi_range = [8, 16]
+Ntheta_range = [12]
 dealias_range = [0.5, 1, 1.5]
 
 @CachedMethod
@@ -338,18 +338,18 @@ def test_S2_3D_vector_roundtrip(Nphi, Ntheta, dealias, dtype):
     assert np.allclose(u['g'], ug)
 
 ## Spherical Shell
-Nphi_range = [12]
-Ntheta_range = [10]
+Nphi_range = [8, 16]
+Ntheta_range = [12]
 Nr_range = [8]
 radii_range = [(0.5, 3)]
 k_range = [0, 1, 2]
 dealias_range = [0.5, 1, 3/2]
 
 @CachedMethod
-def build_spherical_shell(Nphi, Ntheta, Nr, radii, k, dealias):
+def build_spherical_shell(Nphi, Ntheta, Nr, radii, k, dealias, dtype=np.complex128):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    b  = basis.SphericalShellBasis(c, (Nphi, Ntheta, Nr), k=k, radii=radii, dealias=(dealias, dealias, dealias))
+    b  = basis.SphericalShellBasis(c, (Nphi, Ntheta, Nr), k=k, radii=radii, dealias=(dealias, dealias, dealias), dtype=dtype)
     phi, theta, r = b.local_grids()
     x = r * np.sin(theta) * np.cos(phi)
     y = r * np.sin(theta) * np.sin(phi)
@@ -389,9 +389,10 @@ def test_spherical_shell_radial_vector(Nphi, Ntheta, Nr, radii, k, dealias):
 @pytest.mark.parametrize('radii', radii_range)
 @pytest.mark.parametrize('k', k_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_spherical_shell_scalar(Nphi, Ntheta, Nr, radii, k, dealias):
-    c, d, b, phi, theta, r, x, y, z = build_spherical_shell(Nphi, Ntheta, Nr, radii, k, dealias)
-    f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_spherical_shell_scalar(Nphi, Ntheta, Nr, radii, k, dealias, dtype):
+    c, d, b, phi, theta, r, x, y, z = build_spherical_shell(Nphi, Ntheta, Nr, radii, k, dealias, dtype)
+    f = field.Field(dist=d, bases=(b,), dtype=dtype)
     f['g'] = fg = 3*x**2 + 2*y*z
     f['c']
     assert np.allclose(f['g'], fg)
@@ -402,19 +403,20 @@ def test_spherical_shell_scalar(Nphi, Ntheta, Nr, radii, k, dealias):
 @pytest.mark.parametrize('radii', radii_range)
 @pytest.mark.parametrize('k', k_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_spherical_shell_vector(Nphi, Ntheta, Nr, radii, k, dealias):
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_spherical_shell_vector(Nphi, Ntheta, Nr, radii, k, dealias, dtype):
     # Note: u is the gradient of a scalar
-    c, d, b, phi, theta, r, x, y, z = build_spherical_shell(Nphi, Ntheta, Nr, radii, k, dealias)
-    u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
-    u['g'][2] =  4*r**3*np.sin(theta)*np.cos(theta)*np.exp(1j*phi)
-    u['g'][1] =    r**3*np.cos(2*theta)*np.exp(1j*phi)
-    u['g'][0] = 1j*r**3*np.cos(theta)*np.exp(1j*phi)
+    c, d, b, phi, theta, r, x, y, z = build_spherical_shell(Nphi, Ntheta, Nr, radii, k, dealias, dtype)
+    u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
+    u['g'][2] =  4*r**3*np.sin(theta)*np.cos(theta)*np.cos(phi)
+    u['g'][1] =    r**3*np.cos(2*theta)*np.cos(phi)
+    u['g'][0] = -r**3*np.cos(theta)*np.sin(phi)
     ug = np.copy(u['g'])
     u['c']
     assert np.allclose(u['g'], ug)
 
 ## Ball
-Nphi_range = [10]
+Nphi_range = [8, 16]
 Ntheta_range = [12]
 Nr_range = [8]
 radius_range = [1.5]
@@ -422,10 +424,10 @@ dealias_range = [0.5, 1, 3/2]
 k_range = [0, 1, 2]
 
 @CachedMethod
-def build_ball(Nphi, Ntheta, Nr, radius, k, dealias):
+def build_ball(Nphi, Ntheta, Nr, radius, k, dealias, dtype=np.complex128):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (Nphi, Ntheta, Nr), radius=radius, k=k, dealias=(dealias, dealias, dealias))
+    b = basis.BallBasis(c, (Nphi, Ntheta, Nr), radius=radius, k=k, dealias=(dealias, dealias, dealias), dtype=dtype)
     phi, theta, r = b.local_grids()
     x = r * np.sin(theta) * np.cos(phi)
     y = r * np.sin(theta) * np.sin(phi)
@@ -465,9 +467,10 @@ def test_ball_radial_vector(Nphi, Ntheta, Nr, radius, k, dealias):
 @pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('k', k_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_ball_scalar(Nphi, Ntheta, Nr, radius, k, dealias):
-    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, k, dealias)
-    f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_ball_scalar(Nphi, Ntheta, Nr, radius, k, dealias, dtype):
+    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, k, dealias, dtype)
+    f = field.Field(dist=d, bases=(b,), dtype=dtype)
     f['g'] = fg = 3*x**2 + 2*y*z
     f['c']
     assert np.allclose(f['g'], fg)
@@ -479,13 +482,14 @@ def test_ball_scalar(Nphi, Ntheta, Nr, radius, k, dealias):
 @pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('k', k_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_ball_vector(Nphi, Ntheta, Nr, radius, k, dealias):
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_ball_vector(Nphi, Ntheta, Nr, radius, k, dealias, dtype):
     # Note: u is the gradient of a scalar
-    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, k, dealias)
-    u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
-    u['g'][2] =  4*r**3*np.sin(theta)*np.cos(theta)*np.exp(1j*phi)
-    u['g'][1] =    r**3*np.cos(2*theta)*np.exp(1j*phi)
-    u['g'][0] = 1j*r**3*np.cos(theta)*np.exp(1j*phi)
+    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, k, dealias, dtype)
+    u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
+    u['g'][2] =  4*r**3*np.sin(theta)*np.cos(theta)*np.cos(phi)
+    u['g'][1] =    r**3*np.cos(2*theta)*np.cos(phi)
+    u['g'][0] = -1*r**3*np.cos(theta)*np.sin(phi)
     ug = np.copy(u['g'])
     u['c']
     assert np.allclose(u['g'], ug)

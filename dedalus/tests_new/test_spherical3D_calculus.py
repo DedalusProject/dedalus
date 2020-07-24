@@ -8,26 +8,26 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 
 Nphi_range = [8]
-Ntheta_range = [10]
-Nr_range = [6]
+Ntheta_range = [8]
+Nr_range = [8]
 dealias_range = [1, 3/2]
 
 radius_ball = 1.5
 @CachedMethod
-def build_ball(Nphi, Ntheta, Nr, dealias):
+def build_ball(Nphi, Ntheta, Nr, dealias, dtype=np.complex128):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (Nphi, Ntheta, Nr), radius=radius_ball, dealias=(dealias, dealias, dealias))
+    b = basis.BallBasis(c, (Nphi, Ntheta, Nr), radius=radius_ball, dealias=(dealias, dealias, dealias), dtype=dtype)
     phi, theta, r = b.local_grids()
     x, y, z = c.cartesian(phi, theta, r)
     return c, d, b, phi, theta, r, x, y, z
 
 radii_shell = (0.5, 3)
 @CachedMethod
-def build_shell(Nphi, Ntheta, Nr, dealias):
+def build_shell(Nphi, Ntheta, Nr, dealias, dtype=np.complex128):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    b = basis.SphericalShellBasis(c, (Nphi, Ntheta, Nr), radii=radii_shell, dealias=(dealias, dealias, dealias))
+    b = basis.SphericalShellBasis(c, (Nphi, Ntheta, Nr), radii=radii_shell, dealias=(dealias, dealias, dealias), dtype=dtype)
     phi, theta, r = b.local_grids()
     x, y, z = c.cartesian(phi, theta, r)
     return c, d, b, phi, theta, r, x, y, z
@@ -37,9 +37,10 @@ def build_shell(Nphi, Ntheta, Nr, dealias):
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
-def test_gradient_scalar(Nphi, Ntheta, Nr, dealias, basis):
-    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
-    f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_gradient_scalar(Nphi, Ntheta, Nr, dealias, basis, dtype):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias, dtype)
+    f = field.Field(dist=d, bases=(b,), dtype=dtype)
     f['g'] = fg = 3*x**2 + 2*y*z
     u = operators.Gradient(f, c).evaluate()
     phi, theta, r = b.local_grids(b.domain.dealias)
@@ -71,9 +72,10 @@ def test_gradient_1D_scalar(Nphi, Ntheta, Nr, dealias, basis):
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
-def test_gradient_vector(Nphi, Ntheta, Nr, dealias, basis):
-    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
-    f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_gradient_vector(Nphi, Ntheta, Nr, dealias, basis, dtype):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias, dtype)
+    f = field.Field(dist=d, bases=(b,), dtype=dtype)
     f['g'] = 3*x**2 + 2*y*z
     grad = lambda A: operators.Gradient(A, c)
     T = grad(grad(f)).evaluate()
@@ -110,9 +112,10 @@ def test_gradient_1D_vector(Nphi, Ntheta, Nr, dealias, basis):
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
-def test_divergence_vector(Nphi, Ntheta, Nr, dealias, basis):
-    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
-    f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_divergence_vector(Nphi, Ntheta, Nr, dealias, basis, dtype):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias, dtype)
+    f = field.Field(dist=d, bases=(b,), dtype=dtype)
     f['g'] = x**3 + 2*y**3 + 3*z**3
     u = operators.Gradient(f, c)
     h = operators.Divergence(u).evaluate()
@@ -142,9 +145,10 @@ def test_divergence_1D_vector(Nphi, Ntheta, Nr, dealias, basis):
 @pytest.mark.parametrize('Nr', [8])
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
-def test_curl_vector(Nphi, Ntheta, Nr, dealias, basis):
-    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
-    u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_curl_vector(Nphi, Ntheta, Nr, dealias, basis, dtype):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias, dtype)
+    u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
     ct, st, cp, sp = np.cos(theta), np.sin(theta), np.cos(phi), np.sin(phi)
     u['g'][2] = r**2*st*(2*ct**2*cp-r*ct**3*sp+r**3*cp**3*st**5*sp**3+r*ct*st**2*(cp**3+sp**3))
     u['g'][1] = r**2*(2*ct**3*cp-r*cp**3*st**4+r**3*ct*cp**3*st**5*sp**3-1/16*r*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
@@ -163,9 +167,10 @@ def test_curl_vector(Nphi, Ntheta, Nr, dealias, basis):
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
-def test_laplacian_scalar(Nphi, Ntheta, Nr, dealias, basis):
-    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
-    f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_laplacian_scalar(Nphi, Ntheta, Nr, dealias, basis, dtype):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias, dtype)
+    f = field.Field(dist=d, bases=(b,), dtype=dtype)
     f['g'] = x**4 + 2*y**4 + 3*z**4
     h = operators.Laplacian(f, c).evaluate()
     phi, theta, r = b.local_grids(b.domain.dealias)
@@ -193,9 +198,10 @@ def test_laplacian_1D_scalar(Nphi, Ntheta, Nr, dealias, basis):
 @pytest.mark.parametrize('Nr', [8])
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
-def test_laplacian_vector(Nphi, Ntheta, Nr, dealias, basis):
-    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
-    u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_laplacian_vector(Nphi, Ntheta, Nr, dealias, basis, dtype):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias, dtype)
+    u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
     ct, st, cp, sp = np.cos(theta), np.sin(theta), np.cos(phi), np.sin(phi)
     u['g'][2] = r**2*st*(2*ct**2*cp-r*ct**3*sp+r**3*cp**3*st**5*sp**3+r*ct*st**2*(cp**3+sp**3))
     u['g'][1] = r**2*(2*ct**3*cp-r*cp**3*st**4+r**3*ct*cp**3*st**5*sp**3-1/16*r*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
