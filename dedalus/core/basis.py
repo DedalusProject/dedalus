@@ -1354,11 +1354,11 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         self.backward_transforms = [self.backward_transform_azimuth,
                                     self.backward_transform_colatitude]
         self.grid_params = (coordsystem, radius, dealias)
-        # m permutations for repacking triangular truncation
-        if shape[0] % 2 != 0:
+        if self.Lmax > 0 and shape[0] % 2 != 0:
             raise ValueError("Don't use an odd phi resolution please")
-        if self.dtype == np.float64 and shape[0] % 4 != 0:
+        if self.Lmax > 0 and self.dtype == np.float64 and shape[0] % 4 != 0:
             raise ValueError("Don't use a phi resolution that isn't divisible by 4, please")
+        # m permutations for repacking triangular truncation
         if self.dtype == np.complex128:
             az_index = np.arange(shape[0])
             az_div, az_mod = divmod(az_index, 2)
@@ -1388,23 +1388,36 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             # coeff-coeff space
             # Repacked triangular truncation
             Nphi = self.shape[0]
-            Lmax = self.shape[1] - 1
-            if self.dtype == np.complex128:
-                return (Nphi//2, Lmax+1+max(0, Lmax+1-Nphi//2))
-            elif self.dtype == np.float64:
-                return (Nphi//2, Lmax+1+max(0, Lmax+2-Nphi//2))
+            Lmax = self.Lmax
+            if Lmax > 0:
+                if self.dtype == np.complex128:
+                    return (Nphi//2, Lmax+1+max(0, Lmax+1-Nphi//2))
+                elif self.dtype == np.float64:
+                    return (Nphi//2, Lmax+1+max(0, Lmax+2-Nphi//2))
+            else:
+                if self.dtype == np.complex128:
+                    return (1, 1)
+                elif self.dtype == np.float64:
+                    return (2, 1)
 
     def chunk_shape(self, layout):
         grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
+        Lmax = self.Lmax
         if grid_space[0]:
             # grid-grid space
             return (1, 1)
         elif grid_space[1]:
             # coeff-grid space
             if self.dtype == np.complex128:
-                return (2, 1)
+                if Lmax > 0:
+                    return (2, 1)
+                else:
+                    return (1, 1)
             elif self.dtype == np.float64:
-                return (4, 1)
+                if Lmax > 0:
+                    return (4, 1)
+                else:
+                    return (2, 1)
         else:
             # coeff-coeff space
             if self.dtype == np.complex128:
@@ -1688,17 +1701,32 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         """Build transform plan."""
         return self.transforms[self.colatitude_library](grid_shape, self.shape, axis, self.m_maps, s)
 
+    def forward_transform_azimuth_Lmax0(self, field, axis, gdata, cdata):
+        slice_axis = axis + len(field.tensorsig)
+        np.copyto(cdata[axslice(slice_axis, 0, 1)], gdata)
+
     def forward_transform_azimuth(self, field, axis, gdata, cdata):
         # Call Fourier transform
         self.azimuth_basis.forward_transform(field, axis, gdata, cdata)
         # Permute m for triangular truncation
         permute_axis(cdata, axis+len(field.tensorsig), self.forward_m_perm, out=cdata)
 
+    def backward_transform_azimuth_Lmax0(self, field, axis, cdata, gdata):
+        slice_axis = axis + len(field.tensorsig)
+        np.copyto(gdata, cdata[axslice(slice_axis, 0, 1)])
+
     def backward_transform_azimuth(self, field, axis, cdata, gdata):
         # Permute m back from triangular truncation
         permute_axis(cdata, axis+len(field.tensorsig), self.backward_m_perm, out=cdata)
         # Call Fourier transform
         self.azimuth_basis.backward_transform(field, axis, cdata, gdata)
+
+    def forward_transform_colatitude_Lmax0(self, field, axis, gdata, cdata):
+        # Create temporary
+        temp = np.zeros_like(gdata)
+        # Apply spin recombination from gdata to temp
+        self.forward_spin_recombination(field.tensorsig, gdata, out=temp)
+        np.copyto(cdata, temp)
 
     def forward_transform_colatitude(self, field, axis, gdata, cdata):
         # Create temporary
@@ -1712,6 +1740,13 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             grid_shape = gdata[i].shape
             plan = self.transform_plan(grid_shape, axis, s)
             plan.forward(temp[i], cdata[i], axis)
+
+    def backward_transform_colatitude_Lmax0(self, field, axis, cdata, gdata):
+        # Create temporary
+        temp = np.zeros_like(cdata)
+        # Apply spin recombination from cdata to temp
+        self.backward_spin_recombination(field.tensorsig, cdata, out=temp)
+        np.copyto(gdata, temp)
 
     def backward_transform_colatitude(self, field, axis, cdata, gdata):
         # Create temporary
@@ -2499,10 +2534,16 @@ class Spherical3DBasis(MultidimensionalBasis):
         self.global_radial_weights = self.radial_basis.global_weights
         self.local_colatitude_weights = self.sphere_basis.local_colatitude_weights
         self.local_radial_weights = self.radial_basis.local_weights
-        self.forward_transform_azimuth = self.sphere_basis.forward_transform_azimuth
-        self.forward_transform_colatitude = self.sphere_basis.forward_transform_colatitude
-        self.backward_transform_azimuth = self.sphere_basis.backward_transform_azimuth
-        self.backward_transform_colatitude = self.sphere_basis.backward_transform_colatitude
+        if self.Lmax > 0:
+            self.forward_transform_azimuth = self.sphere_basis.forward_transform_azimuth
+            self.forward_transform_colatitude = self.sphere_basis.forward_transform_colatitude
+            self.backward_transform_azimuth = self.sphere_basis.backward_transform_azimuth
+            self.backward_transform_colatitude = self.sphere_basis.backward_transform_colatitude
+        else:
+            self.forward_transform_azimuth = self.sphere_basis.forward_transform_azimuth_Lmax0
+            self.forward_transform_colatitude = self.sphere_basis.forward_transform_colatitude_Lmax0
+            self.backward_transform_azimuth = self.sphere_basis.backward_transform_azimuth_Lmax0
+            self.backward_transform_colatitude = self.sphere_basis.backward_transform_colatitude_Lmax0
         Basis.__init__(self, coordsystem)
 
     @CachedAttribute
