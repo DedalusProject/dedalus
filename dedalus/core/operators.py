@@ -2319,6 +2319,83 @@ class SphericalCurl(Curl, SphericalEllOperator):
         else:
             raise ValueError("This should never happen")
 
+    def subproblem_matrix(self, subproblem):
+        if self.dtype == np.complex128:
+            return super().subproblem_matrix(subproblem)
+        elif self.dtype == np.float64:
+            operand = self.args[0]
+            radial_basis = self.radial_basis
+            R_in = radial_basis.regularity_classes(operand.tensorsig)
+            R_out = radial_basis.regularity_classes(self.tensorsig)  # Should this use output_basis?
+            ell = subproblem.group[self.last_axis - 1]
+            # Loop over components
+            submatrices = []
+            for regindex_out, regtotal_out in np.ndenumerate(R_out):
+                submatrix_row = []
+                for regindex_in, regtotal_in in np.ndenumerate(R_in):
+                    # Build identity matrices for each axis
+                    subshape_in = subproblem.coeff_shape(self.operand.domain)
+                    subshape_out = subproblem.coeff_shape(self.domain)
+                    # Check if regularity component exists for this ell
+                    if (regindex_out in self.regindex_out(regindex_in)) and radial_basis.regularity_allowed(ell, regindex_in) and radial_basis.regularity_allowed(ell, regindex_out):
+                        factors = [sparse.eye(m, n, format='csr') for m, n in zip(subshape_out, subshape_in)]
+                        radial_matrix = self.radial_matrix(regindex_in, regindex_out, ell)
+                        # Real part
+                        factors[self.last_axis] = radial_matrix.real
+                        comp_matrix_real = reduce(sparse.kron, factors, 1).tocsr()
+                        # Imaginary pary
+                        m_size = subshape_in[self.first_axis]
+                        mult_1j = np.array([[0, -1], [1, 0]])
+                        m_blocks = sparse.eye(m_size//2, m_size//2, format='csr')
+                        factors[self.first_axis] = sparse.kron(mult_1j, m_blocks)
+                        factors[self.last_axis] = radial_matrix.imag
+                        comp_matrix_imag = reduce(sparse.kron, factors, 1).tocsr()
+                        comp_matrix = comp_matrix_real + comp_matrix_imag
+                    else:
+                        # Build zero matrix
+                        comp_matrix = sparse.csr_matrix((np.prod(subshape_out), np.prod(subshape_in)))
+                    submatrix_row.append(comp_matrix)
+                submatrices.append(submatrix_row)
+            matrix = sparse.bmat(submatrices)
+            matrix.tocsr()
+            return matrix
+
+    def operate(self, out):
+        """Perform operation."""
+        if self.dtype == np.complex128:
+            return super().operate(out)
+        operand = self.args[0]
+        input_basis = self.input_basis
+        radial_basis = self.radial_basis
+        axis = radial_basis.axis
+        # Set output layout
+        out.set_layout(operand.layout)
+        out.data[:] = 0
+        # Apply operator
+        R_in = radial_basis.regularity_classes(operand.tensorsig)
+        slices = [slice(None) for i in range(input_basis.dist.dim)]
+        for regindex_in, regtotal_in in np.ndenumerate(R_in):
+            for regindex_out in self.regindex_out(regindex_in):
+                comp_in = operand.data[regindex_in]
+                comp_out = out.data[regindex_out]
+                # Should reorder to make ell loop first, check forbidden reg, remove reg from radial_vector_3
+                for ell, m_ind, ell_ind in input_basis.ell_maps:
+                    allowed_in  = radial_basis.regularity_allowed(ell, regindex_in)
+                    allowed_out = radial_basis.regularity_allowed(ell, regindex_out)
+                    if allowed_in and allowed_out:
+                        slices[axis-2] = m_ind
+                        slices[axis-1] = ell_ind
+                        slices[axis] = radial_basis.n_slice(ell)
+                        cos_slice = axslice(axis-2, 0, None, 2)
+                        msin_slice = axslice(axis-2, 1, None, 2)
+                        vec_in_cos = comp_in[tuple(slices)][cos_slice]
+                        vec_in_msin = comp_in[tuple(slices)][msin_slice]
+                        vec_in_complex = vec_in_cos + 1j*vec_in_msin
+                        A = self.radial_matrix(regindex_in, regindex_out, ell)
+                        vec_out_complex = apply_matrix(A, vec_in_complex, axis=axis)
+                        comp_out[tuple(slices)][cos_slice] += vec_out_complex.real
+                        comp_out[tuple(slices)][msin_slice] += vec_out_complex.imag
+
 
 class Laplacian(LinearOperator, metaclass=MultiClass):
 
