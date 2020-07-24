@@ -2017,7 +2017,7 @@ class SphericalGradient(Gradient, SphericalEllOperator):
         if regindex_out[0] != 2 and regindex_in == regindex_out[1:]:
             return self._radial_matrix(radial_basis, regindex_out[0], regtotal, ell)
         else:
-            return radial_basis.operator_matrix('0', ell, 0)
+            raise ValueError("This should never happen")
 
     @staticmethod
     @CachedMethod
@@ -2219,7 +2219,7 @@ class SphericalDivergence(Divergence, SphericalEllOperator):
         if regindex_in[0] != 2 and regindex_in[1:] == regindex_out:
             return self._radial_matrix(radial_basis, regindex_in[0], regtotal, ell)
         else:
-            return radial_basis.operator_matrix('0', ell, 0)
+            raise ValueError("This should never happen")
 
     @staticmethod
     @CachedMethod
@@ -2303,7 +2303,7 @@ class SphericalCurl(Curl, SphericalEllOperator):
         if regindex_in[1:] == regindex_out[1:]:
             return self._radial_matrix(radial_basis, regindex_in[0], regindex_out[0], regtotal_in, regtotal_out, ell)
         else:
-            return radial_basis.operator_matrix('0', ell, 0)
+            raise ValueError("This should never happen")
 
     @staticmethod
     @CachedMethod
@@ -2317,7 +2317,7 @@ class SphericalCurl(Curl, SphericalEllOperator):
         elif regindex_in0 == 2 and regindex_out0 == 1:
             return 1j * radial_basis.xi(-1, ell+regtotal_in) * radial_basis.operator_matrix('D+', ell, regtotal_in)
         else:
-            return radial_basis.operator_matrix('0', ell, 0)
+            raise ValueError("This should never happen")
 
 
 class Laplacian(LinearOperator, metaclass=MultiClass):
@@ -2425,7 +2425,7 @@ class SphericalLaplacian(Laplacian, SphericalEllOperator):
         if regindex_in == regindex_out:
             return self._radial_matrix(radial_basis, regtotal, ell)
         else:
-            return radial_basis.operator_matrix('0', ell, 0)
+            raise ValueError("This should never happen")
 
     @staticmethod
     @CachedMethod
@@ -2487,7 +2487,7 @@ class SphericalEllProductField(SphericalEllProduct):
         if regindex_in == regindex_out:
             return self._radial_matrix(ell, regtotal)
         else:
-            return radial_basis.operator_matrix('0', ell, 0)
+            raise ValueError("This should never happen")
 
     @CachedMethod
     def _radial_matrix(self, ell, regtotal):
