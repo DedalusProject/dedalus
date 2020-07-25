@@ -2981,7 +2981,11 @@ class SphericalShellRadialInterpolate(operators.Interpolate, operators.Spherical
         matrix = super().subproblem_matrix(subproblem)
         if self.tensorsig != ():
             Q = basis_in.radial_recombinations(self.tensorsig, ell_list=(ell,))
-            matrix = Q[ell] @ matrix
+            if self.dtype == np.float64:
+                # Block-diag for sin/cos parts for real dtype
+                matrix = np.kron(Q[ell], np.eye(2)) @ matrix
+            else:
+                matrix = Q[ell] @ matrix
         # Radial rescaling
         return matrix
 
