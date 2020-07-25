@@ -1347,7 +1347,8 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         self.colatitude_library = colatitude_library
         self.Lmax = shape[1] - 1
         if self.mmax > self.Lmax:
-            raise ValueError("shape[0] cannot be more than twice shape[1].")
+            logger.warning("You are using more azimuthal modes than can be resolved with your current colatitude resolution")
+            #raise ValueError("shape[0] cannot be more than twice shape[1].")
         self.degrees = np.arange(shape[1])
         self.forward_transforms = [self.forward_transform_azimuth,
                                    self.forward_transform_colatitude]
