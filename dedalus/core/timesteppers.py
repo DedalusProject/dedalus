@@ -9,6 +9,7 @@ from scipy.sparse import linalg
 
 from .system import CoeffSystem, FieldSystem
 from ..tools.config import config
+from ..tools.array import csr_matvec
 
 
 # Load config options
@@ -120,47 +121,51 @@ class MultistepIMEX:
         # Evaluate M.X0 and L.X0
         for field in state_fields:
             field.require_coeff_space()
+        MX0.data.fill(0)
+        LX0.data.fill(0)
         for sp in subproblems:
             for ss in sp.subsystems:
-                ssX = ss.gather(state_fields)
-                MX0.set_subdata(sp, ss, sp.M_min*ssX)
-                LX0.set_subdata(sp, ss, sp.L_min*ssX)
+                ssX = ss.gather(state_fields)  # CREATES TEMPORARY
+                csr_matvec(sp.M_min, ssX, MX0.get_subdata(sp, ss))
+                csr_matvec(sp.L_min, ssX, LX0.get_subdata(sp, ss))
 
         # Run evaluator
         evaluator.evaluate_scheduled(wall_time=wall_time, sim_time=sim_time, iteration=iteration)
         # F should be in coeff space from evaluator
+        F0.data.fill(0)
         for sp in subproblems:
             for ss in sp.subsystems:
-                ssF = ss.gather(F_fields)
-                F0.set_subdata(sp, ss, sp.rhs_map*ssF)
+                ssF = ss.gather(F_fields)  # CREATES TEMPORARY
+                csr_matvec(sp.rhs_map, ssF, F0.get_subdata(sp, ss))
 
         # Build RHS
-        RHS.data.fill(0)
-        for j in range(1, len(c)):
-            RHS.data += c[j] * F[j-1].data
+        np.multiply(c[1], F[0].data, out=RHS.data)
+        for j in range(2, len(c)):
+            RHS.data += c[j] * F[j-1].data  # CREATES TEMPORARY
         for j in range(1, len(a)):
-            RHS.data -= a[j] * MX[j-1].data
+            RHS.data -= a[j] * MX[j-1].data  # CREATES TEMPORARY
         for j in range(1, len(b)):
-            RHS.data -= b[j] * LX[j-1].data
+            RHS.data -= b[j] * LX[j-1].data  # CREATES TEMPORARY
 
-        # make sure fields are in coeff space to avoid deadlock in scatter
+        # Make sure fields are in coeff space to avoid deadlock in scatter
         for field in state_fields:
             field.set_layout('c')
+
         # Solve
         for sp in subproblems:
             if STORE_LU:
                 if update_LHS:
-                    np.copyto(sp.LHS.data, a0*sp.M_exp.data + b0*sp.L_exp.data)
+                    np.copyto(sp.LHS.data, a0*sp.M_exp.data + b0*sp.L_exp.data)  # CREATES TEMPORARY
                     sp.LHS_LU = linalg.splu(sp.LHS.tocsc(), permc_spec=PERMC_SPEC)
             else:
-                np.copyto(sp.LHS.data, a0*sp.M_exp.data + b0*sp.L_exp.data)
+                np.copyto(sp.LHS.data, a0*sp.M_exp.data + b0*sp.L_exp.data)  # CREATES TEMPORARY
             for ss in sp.subsystems:
                 ssRHS = RHS.get_subdata(sp, ss)
                 if STORE_LU:
                     spLHS = sp.LHS_LU
-                    ssX = spLHS.solve(ssRHS)
+                    ssX = spLHS.solve(ssRHS)  # CREATES TEMPORARY
                 else:
-                    ssX = linalg.spsolve(sp.LHS, ssRHS, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
+                    ssX = linalg.spsolve(sp.LHS, ssRHS, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)  # CREATES TEMPORARY
                 ss.scatter(ssX, state_fields)
 
         # Update solver
@@ -541,24 +546,26 @@ class RungeKuttaIMEX:
             field.require_coeff_space()
 
         # Compute M.X(n,0)
+        MX0.data.fill(0)
         for sp in subproblems:
             for ss in sp.subsystems:
-                ssX0 = ss.gather(state_fields)
-                MX0.set_subdata(sp, ss, sp.M_min*ssX0)
+                ssX = ss.gather(state_fields)  # CREATES TEMPORARY
+                csr_matvec(sp.M_min, ssX, MX0.get_subdata(sp, ss))
             if STORE_LU and update_LHS:
                 sp.LHS_LU = [None] * (self.stages+1)
 
         # Compute stages
         # (M + k Hii L).X(n,i) = M.X(n,0) + k Aij F(n,j) - k Hij L.X(n,j)
         for i in range(1, self.stages+1):
-
             # Compute L.X(n,i-1)
+            LXi = LX[i-1]
+            LXi.data.fill(0)
             for field in state_fields:
                 field.require_coeff_space()
             for sp in subproblems:
                 for ss in sp.subsystems:
-                    ssX = ss.gather(state_fields)
-                    LX[i-1].set_subdata(sp, ss, sp.L_min*ssX)
+                    ssX = ss.gather(state_fields)  # CREATES TEMPORARY
+                    csr_matvec(sp.L_min, ssX, LXi.get_subdata(sp, ss))
 
             # Compute F(n,i-1)
             if i == 1:
@@ -566,16 +573,18 @@ class RungeKuttaIMEX:
             else:
                 evaluator.evaluate_group('F', wall_time=wall_time, sim_time=solver.sim_time, iteration=iteration)
             # F should be in coeff space from evaluator
+            Fi = F[i-1]
+            Fi.data.fill(0)
             for sp in subproblems:
                 for ss in sp.subsystems:
-                    ssF = ss.gather(F_fields)
-                    F[i-1].set_subdata(sp, ss, sp.rhs_map*ssF)
+                    ssF = ss.gather(F_fields)  # CREATES TEMPORARY
+                    csr_matvec(sp.rhs_map, ssF, Fi.get_subdata(sp, ss))
 
             # Construct RHS(n,i)
             np.copyto(RHS.data, MX0.data)
             for j in range(0, i):
-                RHS.data += k * A[i,j] * F[j].data
-                RHS.data -= k * H[i,j] * LX[j].data
+                RHS.data += (k * A[i,j]) * F[j].data  # CREATES TEMPORARY
+                RHS.data -= (k * H[i,j]) * LX[j].data  # CREATES TEMPORARY
 
 	    # make sure fields are in coeff space to avoid deadlock in scatter
             for field in state_fields:
@@ -584,17 +593,17 @@ class RungeKuttaIMEX:
                 # Construct LHS(n,i)
                 if STORE_LU:
                     if update_LHS:
-                        np.copyto(sp.LHS.data, sp.M_exp.data + (k*H[i,i])*sp.L_exp.data)
+                        np.copyto(sp.LHS.data, sp.M_exp.data + (k*H[i,i])*sp.L_exp.data)  # CREATES TEMPORARY
                         sp.LHS_LU[i] = linalg.splu(sp.LHS.tocsc(), permc_spec=PERMC_SPEC)
                 else:
-                    np.copyto(sp.LHS.data, sp.M_exp.data + (k*H[i,i])*sp.L_exp.data)
+                    np.copyto(sp.LHS.data, sp.M_exp.data + (k*H[i,i])*sp.L_exp.data)  # CREATES TEMPORARY
                 for ss in sp.subsystems:
                     ssRHS = RHS.get_subdata(sp, ss)
                     if STORE_LU:
                         spLHS = sp.LHS_LU[i]
-                        ssX = spLHS.solve(ssRHS)
+                        ssX = spLHS.solve(ssRHS)  # CREATES TEMPORARY
                     else:
-                        ssX = linalg.spsolve(sp.LHS, ssRHS, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
+                        ssX = linalg.spsolve(sp.LHS, ssRHS, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)  # CREATES TEMPORARY
                     ss.scatter(ssX, state_fields)
             solver.sim_time = sim_time_0 + k*c[i]
 
