@@ -214,7 +214,7 @@ class JacobiMatrixTransform(MatrixTransform):
         else:
             conversion = jacobi.conversion_matrix(M, a0, b0, a, b)
             forward_matrix = conversion @ base_transform
-        return forward_matrix
+        return np.asarray(forward_matrix, order='C')
 
     @CachedAttribute
     def backward_matrix(self):
@@ -227,7 +227,7 @@ class JacobiMatrixTransform(MatrixTransform):
         polynomials = jacobi.build_polynomials(M, a, b, base_grid)
         # Zero higher polynomials for transforms with grid_size < coeff_size
         polynomials[N:, :] = 0
-        return polynomials.T.copy()  # copy forces memory transpose
+        return np.asarray(polynomials.T, order='C')
 
 
 class FourierTransform(SeparableTransform):
@@ -284,7 +284,7 @@ class FourierMatrixTransform(FourierTransform, MatrixTransform):
         # Zero Nyquist and higher modes for transforms with grid_size <= coeff_size
         KN = (min(self.M, self.N) + 1) // 2
         quadrature *= (np.abs(K) < KN)
-        return quadrature
+        return np.asarray(quadrature, order='C')
 
     @CachedAttribute
     def backward_matrix(self):
@@ -295,7 +295,7 @@ class FourierMatrixTransform(FourierTransform, MatrixTransform):
         # Zero Nyquist and higher modes for transforms with grid_size <= coeff_size
         KN = (min(self.M, self.N) + 1) // 2
         functions *= (np.abs(K) < KN)
-        return functions
+        return np.asarray(functions, order='C')
 
 
 @register_transform(basis.ComplexFourier, 'ScipyFFT')
@@ -715,7 +715,7 @@ class SWSHColatitudeTransform(NonSeparableTransform):
                 Yfull[Lmin-np.abs(m):, :] = (Y*weights).astype(np.float64)
                 # Zero out modes higher than grid resolution
                 Yfull[self.N2g:, :] = 0
-                m_matrices[m] = Yfull
+                m_matrices[m] = np.asarray(Yfull, order='C')
         return m_matrices
 
     @CachedAttribute
@@ -739,7 +739,7 @@ class SWSHColatitudeTransform(NonSeparableTransform):
                 Yfull[:, Lmin-np.abs(m):] = Y.T.astype(np.float64)
                 # Zero out modes higher than grid resolution
                 Yfull[:, self.N2g:] = 0
-                m_matrices[m] = Yfull
+                m_matrices[m] = np.asarray(Yfull, order='C')
         return m_matrices
 
 
@@ -825,7 +825,7 @@ class BallRadialTransform(Transform):
                     W = (W*weights).astype(np.float64)
                     # zero out modes higher than grid resolution taking into account n starts at Nmin
                     W[self.N3g-Nmin:] = 0
-                    ell_matrices[ell] = W
+                    ell_matrices[ell] = np.asarray(W, order='C')
         return ell_matrices
 
     @CachedAttribute
@@ -844,7 +844,7 @@ class BallRadialTransform(Transform):
                     Nmin = dedalus_sphere.zernike.min_degree(ell)
                     Nc = self.N3c - Nmin
                     W = dedalus_sphere.zernike.polynomials(3, Nc, self.alpha + self.k, ell + self.regtotal, z_grid)
-                    ell_matrices[ell] = W.T.astype(np.float64)
+                    ell_matrices[ell] = np.asarray(W.T.astype(np.float64), order='C')
         return ell_matrices
 
 
