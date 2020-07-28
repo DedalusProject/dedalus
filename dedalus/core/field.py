@@ -25,10 +25,6 @@ from ..tools.general import unify, unify_attributes, DeferredTuple, OrderedSet
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
 
-# Load config options
-permc_spec = config['linear algebra']['permc_spec']
-use_umfpack = config['linear algebra'].getboolean('use_umfpack')
-
 
 class Operand:
     """Base class for operand classes."""

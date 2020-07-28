@@ -357,7 +357,7 @@ class InitialValueSolver:
                 X0 = ss.gather(self.state)
                 F0 = ss.gather(self.F)
                 RHS = sp.M_min*X0 + dt*sp.rhs_map*F0
-                X1 = linalg.spsolve(LHS, RHS, permc_spec=PERMC_SPEC)
+                X1 = self.matsolver(LHS, self).solve(RHS)
                 ss.scatter(X1, self.state)
         self.iteration += 1
         self.sim_time += dt
