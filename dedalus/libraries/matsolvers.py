@@ -208,3 +208,12 @@ class BlockInverse(BandedSolver):
     def _solve_diag(self, vector):
         return self.matrix_inv_diagonal * vector
 
+@add_solver
+class ScipyDenseLU(DenseSolver):
+    """Scipy dense LU factorized solve."""
+
+    def __init__(self, matrix, solver=None):
+        self.LU = sla.lu_factor(matrix.A, check_finite=False)
+
+    def solve(self, vector):
+        return sla.lu_solve(self.LU, vector, check_finite=False)
