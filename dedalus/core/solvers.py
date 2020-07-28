@@ -15,11 +15,9 @@ from . import subsystems
 from .evaluator import Evaluator
 from .system import CoeffSystem, FieldSystem
 from .field import Field
+from ..libraries.matsolvers import matsolvers
 from ..tools.progress import log_progress
-
 from ..tools.config import config
-PERMC_SPEC = config['linear algebra']['permc_spec']
-USE_UMFPACK = config['linear algebra'].getboolean('use_umfpack')
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -51,25 +49,25 @@ class EigenvalueSolver:
 
     """
 
-    def __init__(self, problem):
-
+    def __init__(self, problem, matsolver=None):
         logger.debug('Beginning EVP instantiation')
-
+        if matsolver is None:
+            # Default to factorizer to speed up solves within the Arnoldi iteration
+            matsolver = matsolvers[config['linear algebra']['MATRIX_FACTORIZER'].lower()]
+        elif isinstance(matsolver, str):
+            matsolver = matsolvers[matsolver.lower()]
         self.problem = problem
         self.domain = domain = problem.domain
-
+        self.matsolver = matsolver
         # Build subproblems and subproblem matrices
         self.subproblems = subsystems.build_local_subproblems(problem)
-
         # Build systems
         namespace = problem.namespace
         #vars = [namespace[var] for var in problem.variables]
         #self.state = FieldSystem.from_fields(vars)
         self.state = problem.variables
-
         # Create F operator trees
         self.evaluator = Evaluator(domain, namespace)
-
         logger.debug('Finished EVP instantiation')
 
     def solve(self, subproblem):
@@ -82,7 +80,6 @@ class EigenvalueSolver:
 
     def set_state(self, num):
         """Set state vector to the num-th eigenvector"""
-
         for p in self.pencils:
             if p == self.eigenvalue_pencil:
                 self.state.set_pencil(p, self.eigenvectors[:,num])
@@ -107,16 +104,23 @@ class LinearBoundaryValueSolver:
 
     """
 
-    def __init__(self, problem, matrix_coupling=None):
+    def __init__(self, problem, matrix_coupling=None, matsolver=None):
 
         logger.debug('Beginning LBVP instantiation')
 
+        if matsolver is None:
+            # Default to factorizer to speed up repeated solves
+            matsolver = matsolvers[config['linear algebra']['MATRIX_FACTORIZER'].lower()]
+        elif isinstance(matsolver, str):
+            matsolver = matsolvers[matsolver.lower()]
         self.problem = problem
         self.dist = problem.dist
+        self.matsolver = matsolver
 
         # Build subsystems and subproblem matrices
         self.subsystems = subsystems.build_subsystems(problem, matrix_coupling=matrix_coupling)
         self.subproblems = subsystems.build_subproblems(problem, self.subsystems, ['L'])
+        self._build_subproblem_matsolvers()
 
         self.state = problem.variables
 
@@ -131,17 +135,23 @@ class LinearBoundaryValueSolver:
 
         logger.debug('Finished LBVP instantiation')
 
+    def _build_subproblem_matsolvers(self):
+        """Build matsolvers for each pencil LHS."""
+        self.subproblem_matsolvers = {}
+        for sp in self.subproblems:
+            self.subproblem_matsolvers[sp] = self.matsolver(sp.L_exp, self)
+
     def solve(self):
         """Solve BVP."""
-
         # Compute RHS
         self.evaluator.evaluate_group('F', sim_time=0, wall_time=0, iteration=0)
         # Solve system for each subproblem, updating state
         for sp in self.subproblems:
+            sp_matsolver = self.subproblem_matsolvers[sp]
             LHS = sp.L_exp
             for ss in sp.subsystems:
                 RHS = sp.rhs_map * ss.gather(self.F)
-                X = linalg.spsolve(LHS, RHS, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
+                X = sp_matsolver.solve(RHS)
                 ss.scatter(X, self.state)
         #self.state.scatter()
 
@@ -162,13 +172,19 @@ class NonlinearBoundaryValueSolver:
 
     """
 
-    def __init__(self, problem):
+    def __init__(self, problem, matsolver=None):
 
         logger.debug('Beginning NLBVP instantiation')
 
         self.problem = problem
         self.domain = domain = problem.domain
         self.iteration = 0
+        if matsolver is None:
+            # Default to solver since every iteration sees a new matrix
+            matsolver = matsolvers[config['linear algebra']['MATRIX_SOLVER'].lower()]
+        elif isinstance(matsolver, str):
+            matsolver = matsolvers[matsolver.lower()]
+        self.matsolver = matsolver
 
         # Build pencils and pencil matrices
         self.pencils = pencil.build_pencils(domain)
@@ -206,7 +222,7 @@ class NonlinearBoundaryValueSolver:
             pFb = self.Fb.get_pencil(p)
             A = p.L - p.dF
             b = p.G_eq * pFe + p.G_bc * pFb
-            x = linalg.spsolve(A, b, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)
+            x = self.matsolver(A, self).solve(b)
             self.perturbations.set_pencil(p, x)
         self.perturbations.scatter()
         # Update state
@@ -246,12 +262,18 @@ class InitialValueSolver:
 
     """
 
-    def __init__(self, problem, timestepper, matrix_coupling=None):
+    def __init__(self, problem, timestepper, matrix_coupling=None, matsolver=None):
 
         logger.debug('Beginning IVP instantiation')
 
+        if matsolver is None:
+            # Default to factorizer to speed up repeated solves
+            matsolver = matsolvers[config['linear algebra']['MATRIX_FACTORIZER'].lower()]
+        elif isinstance(matsolver, str):
+            matsolver = matsolvers[matsolver.lower()]
         self.problem = problem
         #self.domain = domain = problem.domain
+        self.matsolver = matsolver
         self.dist = problem.dist
         self.dtype = problem.dtype
         self._wall_time_array = np.zeros(1, dtype=float)

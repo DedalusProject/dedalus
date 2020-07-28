@@ -3,19 +3,19 @@ ODE solvers for timestepping.
 
 """
 
-from collections import deque
+from collections import deque, OrderedDict
 import numpy as np
 from scipy.sparse import linalg
 
-from .system import CoeffSystem, FieldSystem
-from ..tools.config import config
+from .system import CoeffSystem
 from ..tools.array import csr_matvec
 
 
-# Load config options
-STORE_LU = config['linear algebra'].getboolean('store_LU')
-PERMC_SPEC = config['linear algebra']['permc_spec']
-USE_UMFPACK = config['linear algebra'].getboolean('use_umfpack')
+# Track implemented schemes
+schemes = OrderedDict()
+def add_scheme(scheme):
+    schemes[scheme.__name__] = scheme
+    return scheme
 
 
 class MultistepIMEX:
@@ -114,9 +114,9 @@ class MultistepIMEX:
         a0 = a[0]
         b0 = b[0]
 
-        if STORE_LU:
-            update_LHS = ((a0, b0) != self._LHS_params)
-            self._LHS_params = (a0, b0)
+        # Check on updating LHS
+        update_LHS = ((a0, b0) != self._LHS_params)
+        self._LHS_params = (a0, b0)
 
         # Evaluate M.X0 and L.X0
         for field in state_fields:
@@ -128,6 +128,9 @@ class MultistepIMEX:
                 ssX = ss.gather(state_fields)  # CREATES TEMPORARY
                 csr_matvec(sp.M_min, ssX, MX0.get_subdata(sp, ss))
                 csr_matvec(sp.L_min, ssX, LX0.get_subdata(sp, ss))
+            if update_LHS:
+                # Remove old solver reference
+                sp.LHS_solver = None
 
         # Run evaluator
         evaluator.evaluate_scheduled(wall_time=wall_time, sim_time=sim_time, iteration=iteration)
@@ -139,7 +142,7 @@ class MultistepIMEX:
                 csr_matvec(sp.rhs_map, ssF, F0.get_subdata(sp, ss))
 
         # Build RHS
-        np.multiply(c[1], F[0].data, out=RHS.data)
+        np.multiply(c[1], F0.data, out=RHS.data)
         for j in range(2, len(c)):
             RHS.data += c[j] * F[j-1].data  # CREATES TEMPORARY
         for j in range(1, len(a)):
@@ -153,25 +156,19 @@ class MultistepIMEX:
 
         # Solve
         for sp in subproblems:
-            if STORE_LU:
-                if update_LHS:
-                    np.copyto(sp.LHS.data, a0*sp.M_exp.data + b0*sp.L_exp.data)  # CREATES TEMPORARY
-                    sp.LHS_LU = linalg.splu(sp.LHS.tocsc(), permc_spec=PERMC_SPEC)
-            else:
+            if update_LHS:
                 np.copyto(sp.LHS.data, a0*sp.M_exp.data + b0*sp.L_exp.data)  # CREATES TEMPORARY
+                sp.LHS_solver = solver.matsolver(sp.LHS, solver)
             for ss in sp.subsystems:
                 ssRHS = RHS.get_subdata(sp, ss)
-                if STORE_LU:
-                    spLHS = sp.LHS_LU
-                    ssX = spLHS.solve(ssRHS)  # CREATES TEMPORARY
-                else:
-                    ssX = linalg.spsolve(sp.LHS, ssRHS, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)  # CREATES TEMPORARY
+                ssX = sp.LHS_solver.solve(ssRHS)  # CREATES TEMPORARY
                 ss.scatter(ssX, state_fields)
 
         # Update solver
         solver.sim_time += dt
 
 
+@add_scheme
 class CNAB1(MultistepIMEX):
     """
     1st-order Crank-Nicolson Adams-Bashforth scheme [Wang 2008 eqn 2.5.3]
@@ -203,6 +200,7 @@ class CNAB1(MultistepIMEX):
         return a, b, c
 
 
+@add_scheme
 class SBDF1(MultistepIMEX):
     """
     1st-order semi-implicit BDF scheme [Wang 2008 eqn 2.6]
@@ -233,6 +231,7 @@ class SBDF1(MultistepIMEX):
         return a, b, c
 
 
+@add_scheme
 class CNAB2(MultistepIMEX):
     """
     2nd-order Crank-Nicolson Adams-Bashforth scheme [Wang 2008 eqn 2.9]
@@ -269,6 +268,7 @@ class CNAB2(MultistepIMEX):
         return a, b, c
 
 
+@add_scheme
 class MCNAB2(MultistepIMEX):
     """
     2nd-order modified Crank-Nicolson Adams-Bashforth scheme [Wang 2008 eqn 2.10]
@@ -306,6 +306,7 @@ class MCNAB2(MultistepIMEX):
         return a, b, c
 
 
+@add_scheme
 class SBDF2(MultistepIMEX):
     """
     2nd-order semi-implicit BDF scheme [Wang 2008 eqn 2.8]
@@ -342,6 +343,7 @@ class SBDF2(MultistepIMEX):
         return a, b, c
 
 
+@add_scheme
 class CNLF2(MultistepIMEX):
     """
     2nd-order Crank-Nicolson leap-frog scheme [Wang 2008 eqn 2.11]
@@ -379,6 +381,7 @@ class CNLF2(MultistepIMEX):
         return a, b, c
 
 
+@add_scheme
 class SBDF3(MultistepIMEX):
     """
     3rd-order semi-implicit BDF scheme [Wang 2008 eqn 2.14]
@@ -418,6 +421,7 @@ class SBDF3(MultistepIMEX):
         return a, b, c
 
 
+@add_scheme
 class SBDF4(MultistepIMEX):
     """
     4th-order semi-implicit BDF scheme [Wang 2008 eqn 2.15]
@@ -537,9 +541,9 @@ class RungeKuttaIMEX:
         c = self.c
         k = dt
 
-        if STORE_LU:
-            update_LHS = (k != self._LHS_params)
-            self._LHS_params = k
+        # Check on updating LHS
+        update_LHS = (k != self._LHS_params)
+        self._LHS_params = k
 
         # Ensure coeff space to avoid transforms in subsystem gathers
         for field in state_fields:
@@ -551,8 +555,9 @@ class RungeKuttaIMEX:
             for ss in sp.subsystems:
                 ssX = ss.gather(state_fields)  # CREATES TEMPORARY
                 csr_matvec(sp.M_min, ssX, MX0.get_subdata(sp, ss))
-            if STORE_LU and update_LHS:
-                sp.LHS_LU = [None] * (self.stages+1)
+            if update_LHS:
+                # Remove old solver references
+                sp.LHS_solvers = [None] * (self.stages+1)
 
         # Compute stages
         # (M + k Hii L).X(n,i) = M.X(n,0) + k Aij F(n,j) - k Hij L.X(n,j)
@@ -586,28 +591,24 @@ class RungeKuttaIMEX:
                 RHS.data += (k * A[i,j]) * F[j].data  # CREATES TEMPORARY
                 RHS.data -= (k * H[i,j]) * LX[j].data  # CREATES TEMPORARY
 
-	    # make sure fields are in coeff space to avoid deadlock in scatter
+            # Make sure fields are in coeff space to avoid deadlock in scatter
             for field in state_fields:
                 field.set_layout('c')
+
+            # Solve for stage
             for sp in subproblems:
                 # Construct LHS(n,i)
-                if STORE_LU:
-                    if update_LHS:
-                        np.copyto(sp.LHS.data, sp.M_exp.data + (k*H[i,i])*sp.L_exp.data)  # CREATES TEMPORARY
-                        sp.LHS_LU[i] = linalg.splu(sp.LHS.tocsc(), permc_spec=PERMC_SPEC)
-                else:
+                if update_LHS:
                     np.copyto(sp.LHS.data, sp.M_exp.data + (k*H[i,i])*sp.L_exp.data)  # CREATES TEMPORARY
+                    sp.LHS_solvers[i] = solver.matsolver(sp.LHS, solver)
                 for ss in sp.subsystems:
                     ssRHS = RHS.get_subdata(sp, ss)
-                    if STORE_LU:
-                        spLHS = sp.LHS_LU[i]
-                        ssX = spLHS.solve(ssRHS)  # CREATES TEMPORARY
-                    else:
-                        ssX = linalg.spsolve(sp.LHS, ssRHS, use_umfpack=USE_UMFPACK, permc_spec=PERMC_SPEC)  # CREATES TEMPORARY
+                    ssX = sp.LHS_solvers[i].solve(ssRHS)  # CREATES TEMPORARY
                     ss.scatter(ssX, state_fields)
             solver.sim_time = sim_time_0 + k*c[i]
 
 
+@add_scheme
 class RK111(RungeKuttaIMEX):
     """1st-order 1-stage DIRK+ERK scheme [Ascher 1997 sec 2.1]"""
 
@@ -622,6 +623,7 @@ class RK111(RungeKuttaIMEX):
                   [0, 1]])
 
 
+@add_scheme
 class RK222(RungeKuttaIMEX):
     """2nd-order 2-stage DIRK+ERK scheme [Ascher 1997 sec 2.6]"""
 
@@ -641,6 +643,7 @@ class RK222(RungeKuttaIMEX):
                   [0, 1-γ, γ]])
 
 
+@add_scheme
 class RK443(RungeKuttaIMEX):
     """3rd-order 4-stage DIRK+ERK scheme [Ascher 1997 sec 2.8]"""
 
@@ -661,6 +664,7 @@ class RK443(RungeKuttaIMEX):
                   [0,  3/2, -3/2, 1/2, 1/2]])
 
 
+@add_scheme
 class RKSMR(RungeKuttaIMEX):
     """(3-ε)-order 3rd-stage DIRK+ERK scheme [Spalart 1991 Appendix]"""
 

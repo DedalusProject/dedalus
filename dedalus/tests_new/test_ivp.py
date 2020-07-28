@@ -8,19 +8,11 @@ import functools
 from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
 
 
-def bench_wrapper(test):
-    @functools.wraps(test)
-    def wrapper(benchmark, *args, **kw):
-        benchmark.pedantic(test, args=(None,)+args, kwargs=kw)
-    return wrapper
-
-
 @pytest.mark.parametrize('dtype', [np.complex128])
-@pytest.mark.parametrize('timestepper', [timesteppers.RK222, timesteppers.SBDF2])
+@pytest.mark.parametrize('timestepper', timesteppers.schemes)
 @pytest.mark.parametrize('Nx', [32])
 @pytest.mark.parametrize('x_basis_class', [basis.ComplexFourier])
-@bench_wrapper
-def test_heat_1d_periodic(benchmark, x_basis_class, Nx, timestepper, dtype):
+def test_heat_1d_periodic(x_basis_class, Nx, timestepper, dtype):
     # Bases
     c = coords.Coordinate('x')
     d = distributor.Distributor((c,))
