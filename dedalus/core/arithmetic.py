@@ -264,11 +264,12 @@ class Product(Future):
         split_args = [arg.split(*vars) if isinstance(arg, Operand) else (0, arg) for arg in self.args]
         split_args = list(itertools.product(*split_args))
         # Drop any terms with a zero since not all product instantiations check for it yet
+        drop_last = not (split_args[-1][0] and split_args[-1][1])
         split_args_filt = [(arg0, arg1) for arg0, arg1 in split_args if (arg0 and arg1)]
         # Take product of each term
         split_ops = [self.new_operands(*args) for args in split_args_filt]
         # Append zero in case last combo was dropped
-        if split_args_filt[-1] is not split_args[-1]:
+        if drop_last:
             split_ops.append(0)
         # Last combo is all negative splittings, others contain atleast one positive splitting
         return (sum(split_ops[:-1]), split_ops[-1])
