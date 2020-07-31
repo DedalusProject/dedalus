@@ -2035,6 +2035,137 @@ def reduced_view_4(data, axis):
     N3 = int(np.prod(shape[axis+2:]))
     return data.reshape((N0, N1, N2, N3))
 
+class PolarMOperator(SpectralOperator):
+
+    subaxis_dependence = [True, True]  # Depends on m and n
+    subaxis_coupling = [False, True]  # Only couples n
+
+    def __init__(self, operand, coordsys):
+        self.coordsys = coordsys
+        self.radius_axis = coordsys.coords[1].axis
+        input_basis = operand.domain.get_basis(coordsys)
+        if input_basis is None:
+            input_basis = operand.domain.get_basis(coordsys.radius)
+        # SpectralOperator requirements
+        self.input_basis = input_basis
+        self.output_basis = self._output_basis(self.input_basis)
+        self.first_axis = self.input_basis.first_axis
+        self.last_axis = self.input_basis.last_axis
+        # LinearOperator requirements
+        self.operand = operand
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        input_basis = self.input_basis
+        axis = self.radius_axis
+        # Set output layout
+        out.set_layout(operand.layout)
+        out.data[:] = 0
+        # Apply operator
+        S_in = input_basis.spin_weights(operand.tensorsig)
+        slices = [slice(None) for i in range(input_basis.dist.dim)]
+        for spinindex_in, spintotal_in in np.ndenumerate(S_in):
+            for spinindex_out in self.spinindex_out(spinindex_in):
+                comp_in = operand.data[spinindex_in]
+                comp_out = out.data[spinindex_out]
+                for m, mg_slice, mc_slice, n_slice in input_basis.m_maps:
+                    slices[axis-1] = mc_slice
+                    slices[axis] = n_slice
+                    vec_in  = comp_in[tuple(slices)]
+                    vec_out = comp_out[tuple(slices)]
+                    A = self.radial_matrix(spinindex_in, spinindex_out, m)
+                    vec_out += apply_matrix(A, vec_in, axis=axis)
+
+    def subproblem_matrix(self, subproblem):
+        raise NotImplementedError("Need to write subproblem_matrix.")
+        operand = self.args[0]
+        radial_basis = self.radial_basis
+        S_in = radial_basis.regularity_classes(operand.tensorsig)
+        R_out = radial_basis.regularity_classes(self.tensorsig)  # Should this use output_basis?
+        ell = subproblem.group[self.last_axis - 1]
+        # Loop over components
+        submatrices = []
+        for regindex_out, spintotal_out in np.ndenumerate(R_out):
+            submatrix_row = []
+            for regindex_in, spintotal_in in np.ndenumerate(S_in):
+                # Build identity matrices for each axis
+                subshape_in = subproblem.coeff_shape(self.operand.domain)
+                subshape_out = subproblem.coeff_shape(self.domain)
+                # Check if regularity component exists for this ell
+                if (regindex_out in self.regindex_out(regindex_in)) and radial_basis.regularity_allowed(ell, regindex_in) and radial_basis.regularity_allowed(ell, regindex_out):
+                    # Substitute factor for radial axis
+                    factors = [sparse.eye(m, n, format='csr') for m, n in zip(subshape_out, subshape_in)]
+                    factors[self.last_axis] = self.radial_matrix(regindex_in, regindex_out, ell)
+                    comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
+                else:
+                    # Build zero matrix
+                    comp_matrix = sparse.csr_matrix((np.prod(subshape_out), np.prod(subshape_in)))
+                submatrix_row.append(comp_matrix)
+            submatrices.append(submatrix_row)
+        matrix = sparse.bmat(submatrices)
+        matrix.tocsr()
+        return matrix
+
+    def spinindex_out(self, spinindex_in):
+        raise NotImplementedError("spinindex_out not implemented for type %s" %type(self))
+
+    def radial_matrix(spinindex_in, spinindex_out, m):
+        raise NotImplementedError()
+
+
+class PolarGradient(Gradient, PolarMOperator):
+
+    cs_type = coords.PolarCoordinates
+
+    def __init__(self, operand, coordsys, out=None):
+        Gradient.__init__(self, operand, out=out)
+        PolarMOperator.__init__(self, operand, coordsys)
+        # FutureField requirements
+        self.domain  = operand.domain.substitute_basis(self.input_basis, self.output_basis)
+        self.tensorsig = (coordsys,) + operand.tensorsig
+        self.dtype = operand.dtype
+
+    @staticmethod
+    def _output_basis(input_basis):
+        out = input_basis._new_k(input_basis.k + 1)
+        return out
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Require radius to be in coefficient space
+        layout = self.args[0].layout
+        return (not layout.grid_space[self.radius_axis]) and (layout.local[self.radius_axis])
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Require radius to be in coefficient space
+        self.args[0].require_coeff_space(self.radius_axis)
+        self.args[0].require_local(self.radius_axis)
+
+    def spinindex_out(self, spinindex_in):
+        # Spinorder: -, +, 0
+        # Gradients hits - and +
+        return ((0,) + spinindex_in, (1,) + spinindex_in)
+
+    def radial_matrix(self, spinindex_in, spinindex_out, m):
+        radial_basis = self.input_basis
+        spintotal = radial_basis.spintotal(spinindex_in)
+        if spinindex_out in self.spinindex_out(spinindex_in):
+            return self._radial_matrix(radial_basis, spinindex_out[0], spintotal, m)
+        else:
+            raise ValueError("This should never happen")
+
+    @staticmethod
+    @CachedMethod
+    def _radial_matrix(radial_basis, spinindex_out0, spintotal, m):
+        if spinindex_out0 == 0:
+            return radial_basis.operator_matrix('D-', m, spintotal)
+        elif spinindex_out0 == 1:
+            return radial_basis.operator_matrix('D+', m, spintotal)
+        else:
+            raise ValueError("This should never happen")
+
 
 class SphericalEllOperator(SpectralOperator):
 

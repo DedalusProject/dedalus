@@ -1292,43 +1292,368 @@ class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):
             #    S[axslice(i, n, n+self.dim)] += reshape_vector(Ss, dim=len(tensorsig), axis=i)
         return S
 
+    @CachedMethod
+    def spintotal(self, spinindex):
+        spinorder = [-1, 1, 0]
+        spin = lambda index: spinorder[index]
+        return sum(spin(index) for index in spinindex)
+
+
+
 
 class DiskBasis(SpinBasis):
 
-    space_type = Disk
     dim = 2
+    dims = ['azimuth', 'radius']
+    #group_shape = (1, 1)
+    transforms = {}
 
-    def __init__(self, space, dk=0):
-        self._check_space(space)
-        self.space = space
-        self.dk = dk
-        self.k = space.k0 + dk
-        self.axis = space.axis
-        self.azimuth_basis = Fourier(self.space.azimuth_space)
-        self.forward_transforms = [self.azimuth_basis.forward_transform,
+    def __init__(self, coordsystem, shape, radius=1, k=0, alpha=0, dealias=(1,1), radius_library='matrix', **kw):
+        super().__init__(coordsystem, shape, dealias, **kw)
+        if radius <= 0:
+            raise ValueError("Radius must be positive.")
+        self.radius = radius
+        self.k = k
+        self.alpha = alpha
+        self.radial_COV = AffineCOV((0, 1), (0, radius))
+        self.radius_library = radius_library
+        self.Nmax = shape[1] - 1
+        if self.mmax > 2*self.Nmax:
+            logger.warning("You are using more azimuthal modes than can be resolved with your current radial resolution")
+            #raise ValueError("shape[0] cannot be more than twice shape[1].")
+        self.forward_transforms = [self.forward_transform_azimuth,
                                    self.forward_transform_radius]
-        self.backward_transforms = [self.azimuth_basis.backward_transform,
+        self.backward_transforms = [self.backward_transform_azimuth,
                                     self.backward_transform_radius]
+        self.grid_params = (coordsystem, radius, alpha, dealias)
+        if self.Nmax > 0 and shape[0] % 2 != 0:
+            raise ValueError("Don't use an odd phi resolution, please")
+        if self.Nmax > 0 and self.dtype == np.float64 and shape[0] % 4 != 0:
+            raise ValueError("Don't use a phi resolution that isn't divisible by 4, please")
+        # m permutations for repacking triangular truncation
+        if self.dtype == np.complex128:
+            raise NotImplementedError("Complex values are not supported for Disk Bases.")
+        elif self.dtype == np.float64:
+            az_index = np.arange(shape[0])
+            div2, mod2 = divmod(az_index, 2)
+            div22 = div2 % 2
+            self.forward_m_perm = (mod2 + div2) * (1 - div22) + (shape[0] - 1 + mod2 - div2) * div22
+            self.backward_m_perm = np.argsort(self.forward_m_perm)
+            self.group_shape = (2, 1)
+
+    def global_shape(self, layout, scales):
+        grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
+        grid_shape = self.grid_shape(scales)
+        if grid_space[0]:
+            # grid-grid space
+            return grid_shape
+        elif grid_space[1]:
+            # coeff-grid space
+            shape = list(grid_shape)
+            shape[0] = self.shape[0]
+            return tuple(shape)
+        else:
+            # coeff-coeff space
+            Nphi = self.shape[0]
+            if Nphi > 1:
+                if self.dtype == np.complex128:
+                    raise
+                elif self.dtype == np.float64:
+                    return self.shape
+            else:
+                if self.dtype == np.complex128:
+                    raise
+                elif self.dtype == np.float64:
+                    return (2, self.shape[1])
+
+            # DRAFT Repacked triangular truncation for DiskBasis
+            # if Nphi > 1:
+            #     if self.dtype == np.complex128:
+            #         raise
+            #     elif self.dtype == np.float64:
+            #         return (Nphi//2, Nmax+1+max(0, Nmax+2-Nphi//4))
+            # else:
+            #     if self.dtype == np.complex128:
+            #         raise
+            #     elif self.dtype == np.float64:
+            #         return (2, Nmax+1+max(0, Nmax+2-Nphi//4))
+
+    def chunk_shape(self, layout):
+        grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
+        Nmax = self.Nmax
+        if grid_space[0]:
+            # grid-grid space
+            return (1, 1)
+        elif grid_space[1]:
+            # coeff-grid space
+            if self.dtype == np.complex128:
+                if Nmax > 0:
+                    raise
+                else:
+                    raise
+            elif self.dtype == np.float64:
+                # pairs of m don't have to be distributed together
+                # since folding is not implemented
+                return (2, 1)
+        else:
+            # coeff-coeff space
+            if self.dtype == np.complex128:
+                raise
+            elif self.dtype == np.float64:
+                return (2, 1)
+
+    def local_groups(self, basis_coupling):
+        m_coupling, n_coupling = basis_coupling
+        if (not m_coupling) and n_coupling:
+            groups = []
+            local_m = self.local_m.ravel()
+            
+            for m in local_m:
+                # Avoid writing repeats for real data
+                if [m,None] not in groups:
+                    groups.append([m, None])
+            return groups
+        else:
+            raise NotImplementedError()
+
+    def local_group_slices(self, basis_group):
+        m_group, n_group = basis_group
+        if (m_group is not None) and (n_group is None):
+            local_m = self.local_m
+            local_indices = np.where((local_m==m_group))
+            m_index = local_indices[0][0]
+            m_gs = self.group_shape[0]
+            m_slice = slice(m_index, m_index+m_gs)
+            n_slice = self.n_slice(m_group)
+            return [m_slice, n_slice]
+        else:
+            raise NotImplementedError()
+
+    def _n_limits(self, m):
+        nmin = dedalus_sphere.zernike.min_degree(m)
+        return (nmin, self.Nmax)
+
+    def n_size(self, m):
+        nmin, nmax = self._n_limits(m)
+        return nmax - nmin + 1
+
+    def n_slice(self, m):
+        nmin, nmax = self._n_limits(m)
+        return slice(nmin, nmax+1)
+
+    def __eq__(self, other):
+        if isinstance(other, DiskBasis):
+            if self.grid_params == other.grid_params:
+                if self.shape == other.shape:
+                    return True
+        return False
+
+    def __hash__(self):
+        return id(self)
+
+    def __add__(self, other):
+        if other is None:
+            return self
+        if other is self:
+            return self
+        if isinstance(other, DiskBasis):
+            if self.grid_params == other.grid_params:
+                shape = tuple(np.maximum(self.shape, other.shape))
+                k = max(self.k, other.k)
+                return DiskBasis(self.coordsystem, shape, radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias)
+        return NotImplemented
+
+    def __mul__(self, other):
+        if other is None:
+            return self
+        if other is self:
+            return self
+        if isinstance(other, DiskBasis):
+            if self.grid_params == other.grid_params:
+                shape = tuple(np.maximum(self.shape, other.shape))
+                return DiskBasis(self.coordsystem, shape, radius=self.radius, k=0, alpha=self.alpha, dealias=self.dealias)
+        return NotImplemented
+
+    @CachedAttribute
+    def local_m(self):
+        # Permute Fourier wavenumbers
+        wavenumbers = self.azimuth_basis.wavenumbers[self.forward_m_perm]
+        # Get layout before radius forward transform
+        transform = self.dist.get_transform_object(axis=self.axis+1)
+        layout = transform.layout1
+        # Take local elements
+        local_m_elements = layout.local_elements(self.domain, scales=1)[self.axis]
+        local_wavenumbers = wavenumbers[local_m_elements]
+        return tuple(local_wavenumbers)
+
+    @CachedAttribute
+    def local_n(self):
+        layout = self.dist.coeff_layout
+        local_j = layout.local_elements(self.domain, scales=1)[self.axis + 1][None, :]
+        return local_j
+
+    @CachedAttribute
+    def m_maps(self):
+        return self._compute_m_maps(self.local_m, Nmax=self.Nmax, Nphi=self.shape[0])
+
+    def _compute_m_maps(self, local_m, Nmax, Nphi):
+        """
+        Tuple of (m, mg_slice, mc_slice, n_slice) for all local m's.
+        """
+        m_maps = []
+        # Get continuous segments of unpacked m's
+        segment = [local_m[0], 0, 0] # m, start, end
+        segments = [segment]
+        m = local_m[0]
+        for i, m_i in enumerate(local_m):
+            if (m_i == m):
+                segment[2] = i + 1
+            else:
+                m = m_i
+                segment = [m, i, i+1]
+                segments.append(segment)
+        # Build slices for each segment
+        for dseg, (m, mg_start, mg_end) in enumerate(segments):
+            mg_slice = slice(mg_start, mg_end)
+            mc_slice = mg_slice
+            m_maps.append((m, mg_slice, mc_slice, self.n_slice(m)))
+        return tuple(m_maps)
+
+    def global_grids(self, scales=None):
+        if scales == None: scales = (1, 1)
+        return (self.global_grid_azimuth(scales[0]),
+                self.global_grid_radius(scales[1]))
+
+    def global_grid_radius(self, scale):
+        r = self.radial_COV.problem_coord(self._native_radius_grid(scale))
+        return reshape_vector(r, dim=self.dist.dim, axis=self.axis+1)
+
+    def local_grids(self, scales=None):
+        if scales == None: scales = (1, 1)
+        return (self.local_grid_azimuth(scales[0]),
+                self.local_grid_radius(scales[1]))
+
+    def local_grid_radius(self, scale):
+        r = self.radial_COV.problem_coord(self._native_radius_grid(scale))
+        local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis+1]
+        return reshape_vector(r[local_elements], dim=self.dist.dim, axis=self.axis+1)
+
+    def _native_radius_grid(self, scale):
+        N = int(np.ceil(scale * self.shape[1]))
+        z, weights = dedalus_sphere.zernike.quadrature(2,N,k=self.alpha)
+        r = np.sqrt((z+1)/2).astype(np.float64)
+        return r
+
+    def global_radius_weights(self, scale=None):
+        if scale == None: scale = 1
+        N = int(np.ceil(scale * self.shape[1]))
+        z, weights = dedalus_sphere.sphere.quadrature(2,N,k=self.alpha)
+        return reshape_vector(weights.astype(np.float64), dim=self.dist.dim, axis=self.axis+1)
+
+    def local_radius_weights(self, scale=None):
+        if scale == None: scale = 1
+        local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis+1]
+        N = int(np.ceil(scale * self.shape[1]))
+        z, weights = dedalus_sphere.sphere.quadrature(2,N,k=self.alpha)
+        return reshape_vector(weights.astype(np.float64)[local_elements], dim=self.dist.dim, axis=self.axis+1)
+
+    def _new_k(self, k):
+        return DiskBasis(self.coordsystem, self.shape, radius = self.radius, k=k, alpha=self.alpha, dealias=self.dealias, dtype=self.dtype,
+                         azimuth_library=self.azimuth_library,
+                         radius_library=self.radius_library)
+    
+    @CachedMethod
+    def transform_plan(self, grid_shape, axis, s):
+        """Build transform plan."""
+        return self.transforms[self.radius_library](grid_shape, self.shape, axis, self.m_maps, s, self.k, self.alpha)
+
+    def forward_transform_azimuth_Nmax0(self, field, axis, gdata, cdata):
+        raise NotImplementedError("Not yet.")
+        # slice_axis = axis + len(field.tensorsig)
+        # np.copyto(cdata[axslice(slice_axis, 0, 1)], gdata)
+
+    def forward_transform_azimuth(self, field, axis, gdata, cdata):
+        # Call Fourier transform
+        self.azimuth_basis.forward_transform(field, axis, gdata, cdata)
+        # Permute m for triangular truncation
+        permute_axis(cdata, axis+len(field.tensorsig), self.forward_m_perm, out=cdata)
+
+    def backward_transform_azimuth_Nmax0(self, field, axis, cdata, gdata):
+        raise NotImplementedError("Not yet.")
+        # slice_axis = axis + len(field.tensorsig)
+        # np.copyto(gdata, cdata[axslice(slice_axis, 0, 1)])
+
+    def backward_transform_azimuth(self, field, axis, cdata, gdata):
+        # Permute m back from triangular truncation
+        permute_axis(cdata, axis+len(field.tensorsig), self.backward_m_perm, out=cdata)
+        # Call Fourier transform
+        self.azimuth_basis.backward_transform(field, axis, cdata, gdata)
+
+    def forward_transform_radius_Nmax0(self, field, axis, gdata, cdata):
+        raise NotImplementedError("Not yet.")
+        # # Create temporary
+        # temp = np.zeros_like(gdata)
+        # # Apply spin recombination from gdata to temp
+        # self.forward_spin_recombination(field.tensorsig, gdata, out=temp)
+        # np.copyto(cdata, temp)
 
     def forward_transform_radius(self, field, axis, gdata, cdata):
-        # Apply spin recombination
-        self.forward_spin_recombination(field.tensorsig, gdata)
-        # Perform transforms component-by-component
+        # Create temporary
+        temp = np.zeros_like(gdata)
+        # Apply spin recombination from gdata to temp
+        self.forward_spin_recombination(field.tensorsig, gdata, out=temp)
+        cdata.fill(0)  # OPTIMIZE: shouldn't be necessary
+        # Transform component-by-component from temp to cdata
         S = self.spin_weights(field.tensorsig)
-        k0, k = self.k0, self.k
-        local_m = self.local_m
         for i, s in np.ndenumerate(S):
-            transforms.forward_disk(gdata[i], cdata[i], axis=axis, k0=k0, k=k, s=s, local_m=local_m)
+            grid_shape = gdata[i].shape
+            plan = self.transform_plan(grid_shape, axis, s)
+            plan.forward(temp[i], cdata[i], axis)
+
+    def backward_transform_radius_Nmax0(self, field, axis, cdata, gdata):
+        raise NotImplementedError("Not yet.")
+        # # Create temporary
+        # temp = np.zeros_like(cdata)
+        # # Apply spin recombination from cdata to temp
+        # self.backward_spin_recombination(field.tensorsig, cdata, out=temp)
+        # np.copyto(gdata, temp)
 
     def backward_transform_radius(self, field, axis, cdata, gdata):
-        # Perform transforms component-by-component
+        # Create temporary
+        temp = np.zeros_like(gdata)
+        # Transform component-by-component from cdata to temp
         S = self.spin_weights(field.tensorsig)
-        k0, k = self.k0, self.k
-        local_m = self.local_m
         for i, s in np.ndenumerate(S):
-            transforms.backward_disk(cdata[i], gdata[i], axis=axis, k0=k0, k=k, s=s, local_m=local_m)
-        # Apply spin recombination
-        self.backward_spin_recombination(field.tensorsig, gdata)
+            grid_shape = gdata[i].shape
+            plan = self.transform_plan(grid_shape, axis, s)
+            plan.backward(cdata[i], temp[i], axis)
+        # Apply spin recombination from temp to gdata
+        gdata.fill(0)  # OPTIMIZE: shouldn't be necessary
+        self.backward_spin_recombination(field.tensorsig, temp, out=gdata)
+
+    @CachedMethod
+    def operator_matrix(self,op,m,spin):
+
+        if op[-1] in ['+', '-']:
+            o = op[:-1]
+            p = int(op[-1]+'1')
+            operator = dedalus_sphere.zernike.operator(2, o, radius=self.radius)(p)
+        elif op == 'L':
+            D = dedalus_sphere.zernike.operator(2, 'D', radius=self.radius)
+            operator = D(-1) @ D(+1)
+        else:
+            operator = dedalus_sphere.zernike.operator(2, op, radius=self.radius)
+
+
+        print("self.n_size(m) = {}".format(self.n_size(m)))
+        print("self.alpha + self.k = {}".format(self.alpha + self.k))
+        print("m = {}".format(m))
+        print("spin = {}".format(spin))
+        print("np.abs(m + spin) = {}".format(np.abs(m + spin)))
+        print("op = {}".format(op))
+        output = operator(self.n_size(m), self.alpha + self.k, np.abs(m + spin)).square.astype(np.float64)
+        print("operator output = {}".format(output))
+        return output
 
 
 class SpinWeightedSphericalHarmonics(SpinBasis):
@@ -1348,7 +1673,6 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         if self.mmax > self.Lmax + 1:
             logger.warning("You are using more azimuthal modes than can be resolved with your current colatitude resolution")
             #raise ValueError("shape[0] cannot be more than twice shape[1].")
-        self.degrees = np.arange(shape[1])
         self.forward_transforms = [self.forward_transform_azimuth,
                                    self.forward_transform_colatitude]
         self.backward_transforms = [self.backward_transform_azimuth,
@@ -1498,15 +1822,6 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
                                                    azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
                                                    radius_library=other.library, dtype=self.dtype)
         return NotImplemented
-
-    def coeff_subshape(self, groups):
-        subshape = []
-        for subaxis, group in enumerate(groups):
-            if group is None:
-                subshape.append(self.shape[subaxis])
-            else:
-                subshape.append(self.group_shape[subaxis])
-        return subshape
 
     @CachedAttribute
     def local_unpacked_m(self):
