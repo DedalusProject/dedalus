@@ -2901,12 +2901,11 @@ class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperato
         matrix = super().subproblem_matrix(subproblem)
         radial_basis = self.radial_basis
         if self.tensorsig != ():
-            Q = radial_basis.radial_recombinations(self.tensorsig, ell_list=(ell,))
+            Q = radial_basis.radial_recombinations(self.tensorsig, ell_list=(ell,))[ell]
             if self.dtype == np.float64:
                 # Block-diag for sin/cos parts for real dtype
-                matrix = np.kron(Q[ell], np.eye(2)) @ matrix
-            else:
-                matrix = Q[ell] @ matrix
+                Q = np.kron(Q, np.eye(2))
+            matrix = Q @ matrix
         return matrix
 
     def operate(self, out):
@@ -2981,12 +2980,11 @@ class SphericalShellRadialInterpolate(operators.Interpolate, operators.Spherical
         basis_in = self.radial_basis
         matrix = super().subproblem_matrix(subproblem)
         if self.tensorsig != ():
-            Q = basis_in.radial_recombinations(self.tensorsig, ell_list=(ell,))
+            Q = basis_in.radial_recombinations(self.tensorsig, ell_list=(ell,))[ell]
             if self.dtype == np.float64:
                 # Block-diag for sin/cos parts for real dtype
-                matrix = np.kron(Q[ell], np.eye(2)) @ matrix
-            else:
-                matrix = Q[ell] @ matrix
+                Q = np.kron(Q, np.eye(2))
+            matrix = Q @ matrix
         # Radial rescaling
         return matrix
 
@@ -3113,7 +3111,11 @@ class S2RadialComponent(operators.RadialComponent):
                 else:
                     matrix_row.append( 0 )
             matrix.append(matrix_row)
-        return np.array(matrix)
+        matrix = np.array(matrix)
+        if self.dtype == np.float64:
+            # Block-diag for sin/cos parts for real dtype
+            matrix = np.kron(matrix, np.eye(2))
+        return matrix
 
     def operate(self, out):
         """Perform operation."""
@@ -3143,7 +3145,11 @@ class S2AngularComponent(operators.AngularComponent):
                 else:
                     matrix_row.append( 0 )
             matrix.append(matrix_row)
-        return np.array(matrix)
+        matrix = np.array(matrix)
+        if self.dtype == np.float64:
+            # Block-diag for sin/cos parts for real dtype
+            matrix = np.kron(matrix, np.eye(2))
+        return matrix
 
     def operate(self, out):
         """Perform operation."""

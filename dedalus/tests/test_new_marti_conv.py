@@ -1,7 +1,7 @@
 
 
 import numpy as np
-from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic, timesteppers_sphere
+from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
 from dedalus.tools import logging
 from dedalus.tools.parsing import split_equation
 from dedalus.extras.flow_tools import GlobalArrayReducer
@@ -22,6 +22,7 @@ N_dealias = 1
 dt = 8e-5
 t_end = 20
 ts = timesteppers.SBDF2
+dtype = np.float64
 
 Ekman = 3e-4
 Rayleigh = 95
@@ -30,24 +31,24 @@ Prandtl = 1
 # Bases
 c = coords.SphericalCoordinates('phi', 'theta', 'r')
 d = distributor.Distributor((c,))
-b = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), radius=radius)
-bk2 = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), k=2, radius=radius)
+b = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), radius=radius, dtype=dtype)
+bk2 = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), k=2, radius=radius, dtype=dtype)
 b_S2 = b.S2_basis()
 phi, theta, r = b.local_grids((1, 1, 1))
 
 # Fields
-u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
-p = field.Field(dist=d, bases=(b,), dtype=np.complex128)
-T = field.Field(dist=d, bases=(b,), dtype=np.complex128)
-tau_u = field.Field(dist=d, bases=(b_S2,), tensorsig=(c,), dtype=np.complex128)
-tau_T = field.Field(dist=d, bases=(b_S2,), dtype=np.complex128)
+u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
+p = field.Field(dist=d, bases=(b,), dtype=dtype)
+T = field.Field(dist=d, bases=(b,), dtype=dtype)
+tau_u = field.Field(dist=d, bases=(b_S2,), tensorsig=(c,), dtype=dtype)
+tau_T = field.Field(dist=d, bases=(b_S2,), dtype=dtype)
 
-r_vec = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
+r_vec = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
 r_vec['g'][2] = r
 
 T['g'] = 0.5*(1-r**2) + 0.1/8*np.sqrt(35/np.pi)*r**3*(1-r**2)*(np.cos(3*phi)+np.sin(3*phi))*np.sin(theta)**3
 
-T_source = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+T_source = field.Field(dist=d, bases=(b,), dtype=dtype)
 T_source['g'] = 3
 
 # Boundary conditions
@@ -57,14 +58,14 @@ stress = operators.Gradient(u, c) + operators.TransposeComponents(operators.Grad
 u_perp_bc = operators.RadialComponent(operators.AngularComponent(operators.interpolate(stress,r=1), index=1))
 
 # Parameters and operators
-ez = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
+ez = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
 ez['g'][1] = -np.sin(theta)
 ez['g'][2] =  np.cos(theta)
 div = lambda A: operators.Divergence(A, index=0)
 lap = lambda A: operators.Laplacian(A, c)
 grad = lambda A: operators.Gradient(A, c)
 dot = lambda A, B: arithmetic.DotProduct(A, B)
-cross = lambda A, B: operators.CrossProduct(A, B)
+cross = lambda A, B: arithmetic.CrossProduct(A, B)
 ddt = lambda A: operators.TimeDerivative(A)
 
 # Problem
@@ -94,7 +95,7 @@ alpha_BC = 0
 def C(N, ell, deg):
     ab = (alpha_BC,ell+deg+0.5)
     cd = (2,       ell+deg+0.5)
-    return dedalus_sphere.jacobi128.coefficient_connection(N - ell//2,ab,cd)
+    return dedalus_sphere.jacobi.coefficient_connection(N - ell//2 + 1,ab,cd)
 
 def BC_rows(N, ell, num_comp):
     N_list = (np.arange(num_comp)+1)*(N - ell//2 + 1)
@@ -102,31 +103,46 @@ def BC_rows(N, ell, num_comp):
 
 for subproblem in solver.subproblems:
     ell = subproblem.group[1]
-    M = subproblem.M_min
     L = subproblem.L_min
-    shape = M.shape
-    subproblem.M_min[:,-4:] = 0
-    subproblem.M_min.eliminate_zeros()
-    N0, N1, N2, N3, N4 = BC_rows(Nmax, ell, 5)
-    tau_columns = np.zeros((shape[0], 4))
-    if ell != 0:
-        tau_columns[N0:N1,0] = (C(Nmax, ell, -1))[:,-1]
-        tau_columns[N1:N2,1] = (C(Nmax, ell, +1))[:,-1]
-        tau_columns[N2:N3,2] = (C(Nmax, ell,  0))[:,-1]
-        tau_columns[N3:N4,3] = (C(Nmax, ell,  0))[:,-1]
-        subproblem.L_min[:,-4:] = tau_columns
-    else: # ell = 0
-        tau_columns[N3:N4, 3] = (C(Nmax, ell, 0))[:,-1]
-        subproblem.L_min[:,-1:] = tau_columns[:,3:]
-    subproblem.L_min.eliminate_zeros()
-#    if ell == 0 :  print(subproblem.L_min[:,-4:])
+    shape = L.shape
+    if dtype == np.complex128:
+        N0, N1, N2, N3, N4 = BC_rows(Nmax, ell, 5)
+        tau_columns = np.zeros((shape[0], 4))
+        if ell != 0:
+            tau_columns[N0:N1,0] = (C(Nmax, ell, -1))[:,-1]
+            tau_columns[N1:N2,1] = (C(Nmax, ell, +1))[:,-1]
+            tau_columns[N2:N3,2] = (C(Nmax, ell,  0))[:,-1]
+            tau_columns[N3:N4,3] = (C(Nmax, ell,  0))[:,-1]
+            subproblem.L_min[:,-4:] = tau_columns
+        else: # ell = 0
+            tau_columns[N3:N4, 3] = (C(Nmax, ell, 0))[:,-1]
+            subproblem.L_min[:,-1:] = tau_columns[:,6:]
+    elif dtype == np.float64:
+        NL = Nmax - ell//2 + 1
+        N0, N1, N2, N3, N4 = BC_rows(Nmax, ell, 5) * 2
+        tau_columns = np.zeros((shape[0], 8))
+        if ell != 0:
+            tau_columns[N0:N0+NL,0] = (C(Nmax, ell, -1))[:,-1]
+            tau_columns[N1:N1+NL,2] = (C(Nmax, ell, +1))[:,-1]
+            tau_columns[N2:N2+NL,4] = (C(Nmax, ell,  0))[:,-1]
+            tau_columns[N3:N3+NL,6] = (C(Nmax, ell,  0))[:,-1]
+            tau_columns[N0+NL:N0+2*NL,1] = (C(Nmax, ell, -1))[:,-1]
+            tau_columns[N1+NL:N1+2*NL,3] = (C(Nmax, ell, +1))[:,-1]
+            tau_columns[N2+NL:N2+2*NL,5] = (C(Nmax, ell,  0))[:,-1]
+            tau_columns[N3+NL:N3+2*NL,7] = (C(Nmax, ell,  0))[:,-1]
+            subproblem.L_min[:,-8:] = tau_columns
+        else: # ell = 0
+            tau_columns[N3:N3+NL,6] = (C(Nmax, ell,  0))[:,-1]
+            tau_columns[N3+NL:N3+2*NL,7] = (C(Nmax, ell,  0))[:,-1]
+            subproblem.L_min[:,-2:] = tau_columns[:,6:]
+    L.eliminate_zeros()
     subproblem.expand_matrices(['M','L'])
 
 # Analysis
 t_list = []
 E_list = []
 weight_theta = b.local_colatitude_weights(1)
-weight_r = b.local_radius_weights(1)
+weight_r = b.local_radial_weights(1)
 reducer = GlobalArrayReducer(d.comm_cart)
 vol_test = np.sum(weight_r*weight_theta+0*p['g'])*np.pi/(Lmax+1)/L_dealias
 vol_test = reducer.reduce_scalar(vol_test, MPI.SUM)

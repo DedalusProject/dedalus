@@ -1,7 +1,7 @@
 
 
 import numpy as np
-from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic, timesteppers_sphere
+from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
 from dedalus.tools import logging
 from dedalus.tools.parsing import split_equation
 from dedalus.extras.flow_tools import GlobalArrayReducer
@@ -104,11 +104,11 @@ for subproblem in solver.subproblems:
             N0, N1, N2, N3 = BC_rows(Nmax, ell, 4) * 2
             tau_columns = np.zeros((L.shape[0], 6))
             tau_columns[N0:N0+NL,0] = (C(Nmax, ell, -1))[:,-1]
-            tau_columns[N1:N1+NL,1] = (C(Nmax, ell, +1))[:,-1]
-            tau_columns[N2:N2+NL,2] = (C(Nmax, ell,  0))[:,-1]
-            tau_columns[N0+NL:N0+2*NL,3] = tau_columns[N0:N0+NL,0]
-            tau_columns[N1+NL:N1+2*NL,4] = tau_columns[N1:N1+NL,1]
-            tau_columns[N2+NL:N2+2*NL,5] = tau_columns[N2:N2+NL,2]
+            tau_columns[N1:N1+NL,2] = (C(Nmax, ell, +1))[:,-1]
+            tau_columns[N2:N2+NL,4] = (C(Nmax, ell,  0))[:,-1]
+            tau_columns[N0+NL:N0+2*NL,1] = (C(Nmax, ell, -1))[:,-1]
+            tau_columns[N1+NL:N1+2*NL,3] = (C(Nmax, ell, +1))[:,-1]
+            tau_columns[N2+NL:N2+2*NL,5] = (C(Nmax, ell,  0))[:,-1]
             L[:,-6:] = tau_columns
         L.eliminate_zeros()
         subproblem.expand_matrices(['M','L'])
