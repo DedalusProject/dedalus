@@ -23,6 +23,7 @@ dt = 8e-5
 t_end = 20
 ts = timesteppers.SBDF2
 dtype = np.float64
+mesh = None
 
 Ekman = 3e-4
 Rayleigh = 95
@@ -30,7 +31,7 @@ Prandtl = 1
 
 # Bases
 c = coords.SphericalCoordinates('phi', 'theta', 'r')
-d = distributor.Distributor((c,))
+d = distributor.Distributor((c,), mesh=mesh)
 b = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), radius=radius, dtype=dtype)
 bk2 = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), k=2, radius=radius, dtype=dtype)
 b_S2 = b.S2_basis()
@@ -116,7 +117,7 @@ for subproblem in solver.subproblems:
             subproblem.L_min[:,-4:] = tau_columns
         else: # ell = 0
             tau_columns[N3:N4, 3] = (C(Nmax, ell, 0))[:,-1]
-            subproblem.L_min[:,-1:] = tau_columns[:,6:]
+            subproblem.L_min[:,-1:] = tau_columns[:,3:]
     elif dtype == np.float64:
         NL = Nmax - ell//2 + 1
         N0, N1, N2, N3, N4 = BC_rows(Nmax, ell, 5) * 2
