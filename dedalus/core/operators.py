@@ -2160,9 +2160,11 @@ class PolarGradient(Gradient, PolarMOperator):
     @CachedMethod
     def _radial_matrix(radial_basis, spinindex_out0, spintotal, m):
         if spinindex_out0 == 0:
-            return radial_basis.operator_matrix('D-', m, spintotal)
+            # HACK: added in a 1/sqrt(2) factor just to make things work
+            return 1/np.sqrt(2)*radial_basis.operator_matrix('D-', m, spintotal)
         elif spinindex_out0 == 1:
-            return radial_basis.operator_matrix('D+', m, spintotal)
+            # HACK: added ina a 1/sqrt(2) factor just to make things work
+            return 1/np.sqrt(2)*radial_basis.operator_matrix('D+', m, spintotal)
         else:
             raise ValueError("This should never happen")
 

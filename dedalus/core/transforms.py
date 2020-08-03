@@ -1058,9 +1058,9 @@ class DiskRadialTransform(NonSeparableTransform):
             if m not in m_matrices:
                 Nmin = dedalus_sphere.zernike.min_degree(m)
                 Nc = self.N2c - Nmin
-                W = dedalus_sphere.zernike.polynomials(2, Nc, self.k + self.alpha, np.abs(m + self.s), z_grid) # shape (N2c-Nmin, Ng)
+                W = dedalus_sphere.zernike.polynomials(2, Nc, self.alpha, np.abs(m + self.s), z_grid) # shape (N2c-Nmin, Ng)
                 conversion = dedalus_sphere.zernike.operator(2, 'E')(+1)**self.k
-                W = conversion(Nc, self.k + self.alpha, np.abs(m + self.s)) @ W
+                W = conversion(Nc, self.alpha, np.abs(m + self.s)) @ W
                 W = (W*weights).astype(np.float64)
                 # zero out modes higher than grid resolution taking into account n starts at Nmin
                 W[self.N2g-Nmin:] = 0

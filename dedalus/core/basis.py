@@ -1637,6 +1637,8 @@ class DiskBasis(SpinBasis):
         if op[-1] in ['+', '-']:
             o = op[:-1]
             p = int(op[-1]+'1')
+            if m+spin == 0:
+                p = +1
             operator = dedalus_sphere.zernike.operator(2, o, radius=self.radius)(p)
         elif op == 'L':
             D = dedalus_sphere.zernike.operator(2, 'D', radius=self.radius)
