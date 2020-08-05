@@ -1639,23 +1639,20 @@ class DiskBasis(SpinBasis):
             p = int(op[-1]+'1')
             if m+spin == 0:
                 p = +1
+            elif m+spin < 0:
+                p = -p
             operator = dedalus_sphere.zernike.operator(2, o, radius=self.radius)(p)
         elif op == 'L':
             D = dedalus_sphere.zernike.operator(2, 'D', radius=self.radius)
-            operator = D(-1) @ D(+1)
+            if m+spin < 0:
+                operator = D(+1) @ D(-1)
+            else:
+                operator = D(-1) @ D(+1)
+
         else:
             operator = dedalus_sphere.zernike.operator(2, op, radius=self.radius)
 
-
-        print("self.n_size(m) = {}".format(self.n_size(m)))
-        print("self.alpha + self.k = {}".format(self.alpha + self.k))
-        print("m = {}".format(m))
-        print("spin = {}".format(spin))
-        print("np.abs(m + spin) = {}".format(np.abs(m + spin)))
-        print("op = {}".format(op))
-        output = operator(self.n_size(m), self.alpha + self.k, np.abs(m + spin)).square.astype(np.float64)
-        print("operator output = {}".format(output))
-        return output
+        return operator(self.n_size(m), self.alpha + self.k, np.abs(m + spin)).square.astype(np.float64)
 
 
 class SpinWeightedSphericalHarmonics(SpinBasis):
