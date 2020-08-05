@@ -18,6 +18,11 @@ from ..tools.cache import CachedAttribute
 from ..tools.exceptions import SymbolicParsingError
 from ..tools.exceptions import UnsupportedEquationError
 
+from ..tools.config import config
+BC_TOP = lambda: config['matrix construction'].getboolean('BC_TOP')
+INTERLEAVE_SUBBASES = lambda: config['matrix construction'].getboolean('INTERLEAVE_SUBBASES')
+STORE_EXPANDED_MATRICES = lambda: config['matrix construction'].getboolean('STORE_EXPANDED_MATRICES')
+
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
 
@@ -113,6 +118,10 @@ class ProblemBase:
         self.ncc_kw = {'cutoff': ncc_cutoff, 'max_terms': max_ncc_terms}
         self.entry_cutoff = entry_cutoff
         self.coupled = domain.bases[-1].coupled
+        # Matrix construction config options
+        self.BC_TOP = BC_TOP()
+        self.INTERLEAVE_SUBBASES = INTERLEAVE_SUBBASES()
+        self.STORE_EXPANDED_MATRICES = STORE_EXPANDED_MATRICES()
 
     @property
     def nvars_const(self):
