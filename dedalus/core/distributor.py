@@ -531,7 +531,7 @@ class Transpose:
         plan = self._single_plan(field.domain, field.scales, field.dtype)
         if plan:
             # Reference views from both layouts
-            data0 = field.data
+            data0 = field.data.copy()  # Copy to prevent components overwriting each other
             field.set_layout(self.layout1)
             data1 = field.data
             # Transpose between data views
@@ -548,7 +548,7 @@ class Transpose:
         plan = self._single_plan(field.domain, field.scales, field.dtype)
         if plan:
             # Reference views from both layouts
-            data1 = field.data
+            data1 = field.data.copy()  # Copy to prevent components overwriting each other
             field.set_layout(self.layout0)
             data0 = field.data
             # Transpose between data views
