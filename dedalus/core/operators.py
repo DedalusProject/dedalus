@@ -2786,10 +2786,12 @@ class PolarCurl(Curl, PolarMOperator):
     @staticmethod
     @CachedMethod
     def _radial_matrix(radial_basis, spinindex_in0, spintotal_in, m):
+        # NB: the sign here is different than Vasil et al. (2019) eqn 84
+        # because det(Q) = -1 
         if spinindex_in0 == 0:
-            return -1j * 1/np.sqrt(2) * radial_basis.operator_matrix('D+', m, spintotal_in)
+            return 1j * 1/np.sqrt(2) * radial_basis.operator_matrix('D+', m, spintotal_in)
         elif spinindex_in0 == 1:
-            return 1j * 1/np.sqrt(2) * radial_basis.operator_matrix('D-', m, spintotal_in)
+            return -1j * 1/np.sqrt(2) * radial_basis.operator_matrix('D-', m, spintotal_in)
         else:
             raise ValueError("This should never happen")
 
