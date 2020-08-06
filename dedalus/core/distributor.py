@@ -464,10 +464,10 @@ class Transpose:
         sub_shape = np.array(local_shape)
         sub_shape[self.axis] = global_shape[self.axis]
         sub_shape[self.axis+1] = global_shape[self.axis+1]
-        return sub_shape
+        return tuple(sub_shape)
 
     @CachedMethod
-    def _single_plan(self, domain, scales, dtype):
+    def _single_plan(self, ncomp, domain, scales, dtype):
         """Build single transpose plan."""
         sub_shape = self._sub_shape(domain, scales)
         axis = self.axis
@@ -480,8 +480,10 @@ class Transpose:
         # elif domain.constant[axis+1]:
         #     return ColDistributor(sub_shape, dtype, axis, self.comm_sub)
         else:
-            chunk_shape = domain.chunk_shape(self.layout0)
-            return TransposePlanner(sub_shape, chunk_shape, dtype, axis, self.comm_sub)
+            # Add axis for components
+            sub_shape = (ncomp,) + sub_shape
+            chunk_shape = (ncomp,) + domain.chunk_shape(self.layout0)
+            return TransposePlanner(sub_shape, chunk_shape, dtype, axis+1, self.comm_sub)
 
     # @CachedMethod
     # def _group_plan(self, nfields, scales, dtype):
@@ -528,33 +530,30 @@ class Transpose:
 
     def increment_single(self, field):
         """Backward transpose a field."""
-        plan = self._single_plan(field.domain, field.scales, field.dtype)
+        ncomp = np.prod([cs.dim for cs in field.tensorsig])
+        plan = self._single_plan(ncomp, field.domain, field.scales, field.dtype)
         if plan:
             # Reference views from both layouts
-            data0 = field.data.copy()  # Copy to prevent components overwriting each other
+            data0 = field.data
             field.set_layout(self.layout1)
             data1 = field.data
             # Transpose between data views
-            # OPTIMIZE: create plans for all components at once
-            tensorshape = data0.shape[:len(field.tensorsig)]
-            for i in np.ndindex(tensorshape):
-                plan.localize_columns(data0[i], data1[i])
+            plan.localize_columns(data0, data1)
         else:
             # No communication: just update field layout
             field.set_layout(self.layout1)
 
     def decrement_single(self, field):
         """Forward transpose a field."""
-        plan = self._single_plan(field.domain, field.scales, field.dtype)
+        ncomp = np.prod([cs.dim for cs in field.tensorsig])
+        plan = self._single_plan(ncomp, field.domain, field.scales, field.dtype)
         if plan:
             # Reference views from both layouts
-            data1 = field.data.copy()  # Copy to prevent components overwriting each other
+            data1 = field.data
             field.set_layout(self.layout0)
             data0 = field.data
             # Transpose between data views
-            tensorshape = data0.shape[:len(field.tensorsig)]
-            for i in np.ndindex(tensorshape):
-                plan.localize_rows(data1[i], data0[i])
+            plan.localize_rows(data1, data0)
         else:
             # No communication: just update field layout
             field.set_layout(self.layout0)

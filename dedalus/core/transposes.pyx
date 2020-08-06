@@ -60,7 +60,7 @@ cdef class FFTWTranspose:
     def __init__(self, global_shape, chunk_shape, dtype, axis, pycomm):
         logger.debug("Building FFTW transpose plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, global_shape, axis))
         # Attributes
-        self.global_shape = global_shape = global_shape.astype(np.int32)
+        self.global_shape = global_shape = np.array(global_shape, dtype=np.int32)
         self.datasize = {np.float64: 1, np.complex128: 2}[np.dtype(dtype).type]
         self.axis = axis
         self.pycomm = pycomm
