@@ -371,24 +371,36 @@ class Subproblem:
         if drop_eqn.shape[0] != J:
             raise ValueError("Non-square system: group={}, I={}, J={}".format(self.group, drop_eqn.shape[0], J))
 
-        # Restrict matrices to included modes
-        for name in matrices:
-            matrices[name] = drop_eqn @ matrices[name]
+        # Permutations
+        problem = self.problem
+        eqn_pass_cond = [eqn for eqn, cond in zip(eqns, eqn_conditions) if cond]
+        self.left_perm = left_permutation(self, eqn_pass_cond, bc_top=problem.BC_TOP, interleave_components=problem.INTERLEAVE_COMPONENTS)
+        self.right_perm = right_permutation(self, vars, tau_left=problem.TAU_LEFT, interleave_components=problem.INTERLEAVE_COMPONENTS)
+        self.pre_left = self.left_perm @ self.drop_eqn
+        self.pre_right = self.right_perm
 
-        # Eliminate any remaining zeros for maximal sparsity
+        # Left-precondition matrices
         for name in matrices:
-            matrices[name] = matrices[name].tocsr()
-            matrices[name].eliminate_zeros()
+            matrices[name] = self.pre_left @ matrices[name]
 
         # Store minimal CSR matrices for fast dot products
         for name, matrix in matrices.items():
             setattr(self, '{:}_min'.format(name), matrix.tocsr())
 
-        # Store expanded CSR matrices for fast combination
-        self.LHS = zeros_with_pattern(*matrices.values()).tocsr()
-        for name, matrix in matrices.items():
-            expanded = expand_pattern(matrix, self.LHS)
-            setattr(self, '{:}_exp'.format(name), expanded.tocsr())
+        # Store expanded right-preconditioned matrices
+        if problem.STORE_EXPANDED_MATRICES:
+            # Apply right preconditioning
+            for name in matrices:
+                matrices[name] = matrices[name] @ self.pre_right
+            # Build expanded LHS matrix to store matrix combinations
+            self.LHS = zeros_with_pattern(*matrices.values()).tocsr()
+            # Store expanded matrices for fast combination
+            for name, matrix in matrices.items():
+                expanded = expand_pattern(matrix, self.LHS)
+                setattr(self, '{:}_exp'.format(name), expanded.tocsr())
+        else:
+            # Placeholder for accessing shape
+            self.LHS = list(matrices.values())[0]
 
         # Store RHS conversion matrix
         # F_conv = [self.expansion_matrix(eq['F'].domain, eq['domain']) for eq in eqns]
@@ -396,14 +408,139 @@ class Subproblem:
         #     if not eval(eqn['raw_condition'], self.group_dict):
         #         F_conv[n] = F_conv[n][0:0, :]
         # self.rhs_map = drop_eqn * sparse_block_diag(F_conv).tocsr()
-        self.rhs_map = drop_eqn
 
     def expand_matrices(self, matrices):
         matrices = {matrix: getattr(self, '%s_min' %matrix) for matrix in matrices}
-        # Store expanded CSR matrices for fast combination
+        # Apply right preconditioning
+        for name in matrices:
+            matrices[name] = matrices[name] @ self.pre_right
+        # Build expanded LHS matrix to store matrix combinations
         self.LHS = zeros_with_pattern(*matrices.values()).tocsr()
+         # Store expanded matrices for fast combination
         for name, matrix in matrices.items():
             expanded = expand_pattern(matrix, self.LHS)
             setattr(self, '{:}_exp'.format(name), expanded.tocsr())
 
+
+def sparse_perm(perm, M):
+    """Build sparse permutation matrix from permutation vector."""
+    N = len(perm)
+    data = np.ones(N)
+    row = np.array(perm)
+    col = np.arange(N)
+    return sparse.coo_matrix((data, (row, col)), shape=(M, N))
+
+
+def left_permutation(subproblem, equations, bc_top, interleave_components):
+    """
+    Left permutation acting on equations.
+    bc_top determines if lower-dimensional equations are placed at the top or bottom of the matrix.
+
+    Input ordering:
+        Equations > Components > Modes
+    Output ordering with interleave_components=True:
+        Modes > Components > Equations
+    Output ordering with interleave_components=False:
+        Modes > Equations > Components
+    """
+    # Compute hierarchy or input equation indices
+    i = 0
+    L0 = []
+    for eqn in equations:
+        L1 = []
+        for comp in np.ndindex(*[cs.dim for cs in eqn['tensorsig']]):
+            L2 = []
+            for coeff in range(subproblem.coeff_size(eqn['domain'])):
+                L2.append(i)
+                i += 1
+            L1.append(L2)
+        L0.append(L1)
+    # Reverse list hierarchy, grouping by dimension
+    indices = defaultdict(list)  # dict over dimension
+    n1max = len(L0)
+    n2max = max(len(L1) for L1 in L0)
+    n3max = max(len(L2) for L1 in L0 for L2 in L1)
+    if interleave_components:
+        for n3 in range(n3max):
+            for n2 in range(n2max):
+                for n1 in range(n1max):
+                    dim = equations[n1]['domain'].dim
+                    try:
+                        indices[dim].append(L0[n1][n2][n3])
+                    except IndexError:
+                        continue
+    else:
+        for n3 in range(n3max):
+            for n1 in range(n1max):
+                dim = equations[n1]['domain'].dim
+                for n2 in range(n2max):
+                    try:
+                        indices[dim].append(L0[n1][n2][n3])
+                    except IndexError:
+                        continue
+    # Combine indices by dimension
+    dims = sorted(list(indices.keys()))
+    if bc_top:
+        indices = [indices[dim] for dim in dims]
+    else:
+        indices = [indices[dim] for dim in dims[::-1]]
+    indices = sum(indices, [])
+    return sparse_perm(indices, len(indices)).T.tocsr()
+
+
+def right_permutation(subproblem, variables, tau_left, interleave_components):
+    """
+    Right permutation acting on variables.
+    tau_left determines if lower-dimensional variables are placed at the left or right of the matrix.
+
+    Input ordering:
+        Variables > Components > Modes
+    Output ordering with interleave_components=True:
+        Modes > Components > Variables
+    Output ordering with interleave_components=False:
+        Modes > Variables > Components
+    """
+    # Compute hierarchy or input variable indices
+    i = 0
+    L0 = []
+    for var in variables:
+        L1 = []
+        for comp in np.ndindex(*[cs.dim for cs in var.tensorsig]):
+            L2 = []
+            for coeff in range(subproblem.coeff_size(var.domain)):
+                L2.append(i)
+                i += 1
+            L1.append(L2)
+        L0.append(L1)
+    # Reverse list hierarchy, grouping by dimension
+    indices = defaultdict(list)  # dict over dimension
+    L1max = len(L0)
+    L2max = max(len(L1) for L1 in L0)
+    L3max = max(len(L2) for L1 in L0 for L2 in L1)
+    if interleave_components:
+        for n3 in range(L3max):
+            for n2 in range(L2max):
+                for n1 in range(L1max):
+                    dim = variables[n1].domain.dim
+                    try:
+                        indices[dim].append(L0[n1][n2][n3])
+                    except IndexError:
+                        continue
+    else:
+        for n3 in range(L3max):
+            for n1 in range(L1max):
+                dim = variables[n1].domain.dim
+                for n2 in range(L2max):
+                    try:
+                        indices[dim].append(L0[n1][n2][n3])
+                    except IndexError:
+                        continue
+    # Combine indices by dimension
+    dims = sorted(list(indices.keys()))
+    if tau_left:
+        indices = [indices[dim] for dim in dims]
+    else:
+        indices = [indices[dim] for dim in dims[::-1]]
+    indices = sum(indices, [])
+    return sparse_perm(indices, len(indices)).tocsr()
 

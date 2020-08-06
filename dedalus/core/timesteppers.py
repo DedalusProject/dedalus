@@ -88,6 +88,7 @@ class MultistepIMEX:
         F_fields = solver.F
         sim_time = solver.sim_time
         iteration = solver.iteration
+        STORE_EXPANDED_MATRICES = solver.problem.STORE_EXPANDED_MATRICES
 
         # Other references
         MX = self.MX
@@ -139,7 +140,7 @@ class MultistepIMEX:
         for sp in subproblems:
             for ss in sp.subsystems:
                 ssF = ss.gather(F_fields)  # CREATES TEMPORARY
-                csr_matvec(sp.rhs_map, ssF, F0.get_subdata(sp, ss))
+                csr_matvec(sp.pre_left, ssF, F0.get_subdata(sp, ss))
 
         # Build RHS
         np.multiply(c[1], F0.data, out=RHS.data)
@@ -157,12 +158,17 @@ class MultistepIMEX:
         # Solve
         for sp in subproblems:
             if update_LHS:
-                np.copyto(sp.LHS.data, a0*sp.M_exp.data + b0*sp.L_exp.data)  # CREATES TEMPORARY
+                if STORE_EXPANDED_MATRICES:
+                    np.copyto(sp.LHS.data, a0*sp.M_exp.data + b0*sp.L_exp.data)  # CREATES TEMPORARY
+                else:
+                    sp.LHS = (a0*sp.M_min + b0*sp.L_min) @ sp.pre_right  # CREATES TEMPORARY
                 sp.LHS_solver = solver.matsolver(sp.LHS, solver)
             for ss in sp.subsystems:
                 ssRHS = RHS.get_subdata(sp, ss)
                 ssX = sp.LHS_solver.solve(ssRHS)  # CREATES TEMPORARY
-                ss.scatter(ssX, state_fields)
+                ssX2 = np.zeros_like(ssX)  # CREATES TEMPORARY
+                csr_matvec(sp.pre_right, ssX, ssX2)
+                ss.scatter(ssX2, state_fields)
 
         # Update solver
         solver.sim_time += dt
@@ -530,6 +536,7 @@ class RungeKuttaIMEX:
         F_fields = solver.F
         sim_time_0 = solver.sim_time
         iteration = solver.iteration
+        STORE_EXPANDED_MATRICES = solver.problem.STORE_EXPANDED_MATRICES
 
         # Other references
         RHS = self.RHS
@@ -583,7 +590,7 @@ class RungeKuttaIMEX:
             for sp in subproblems:
                 for ss in sp.subsystems:
                     ssF = ss.gather(F_fields)  # CREATES TEMPORARY
-                    csr_matvec(sp.rhs_map, ssF, Fi.get_subdata(sp, ss))
+                    csr_matvec(sp.pre_left, ssF, Fi.get_subdata(sp, ss))
 
             # Construct RHS(n,i)
             np.copyto(RHS.data, MX0.data)
@@ -599,12 +606,17 @@ class RungeKuttaIMEX:
             for sp in subproblems:
                 # Construct LHS(n,i)
                 if update_LHS:
-                    np.copyto(sp.LHS.data, sp.M_exp.data + (k*H[i,i])*sp.L_exp.data)  # CREATES TEMPORARY
+                    if STORE_EXPANDED_MATRICES:
+                        np.copyto(sp.LHS.data, sp.M_exp.data + (k*H[i,i])*sp.L_exp.data)  # CREATES TEMPORARY
+                    else:
+                        sp.LHS = (sp.M_min + (k*H[i,i])*sp.L_min) @ sp.pre_right  # CREATES TEMPORARY
                     sp.LHS_solvers[i] = solver.matsolver(sp.LHS, solver)
                 for ss in sp.subsystems:
                     ssRHS = RHS.get_subdata(sp, ss)
                     ssX = sp.LHS_solvers[i].solve(ssRHS)  # CREATES TEMPORARY
-                    ss.scatter(ssX, state_fields)
+                    ssX2 = np.zeros_like(ssX)  # CREATES TEMPORARY
+                    csr_matvec(sp.pre_right, ssX, ssX2)
+                    ss.scatter(ssX2, state_fields)
             solver.sim_time = sim_time_0 + k*c[i]
 
 

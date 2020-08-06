@@ -111,6 +111,17 @@ class SuperluNaturalFactorized(SparseSolver):
 
 
 @add_solver
+class SuperluNaturalFactorizedTranspose(SparseSolver):
+    """SuperLU+NATURAL LU factorized solve."""
+
+    def __init__(self, matrix, solver=None):
+        self.LU = spla.splu(matrix.T.tocsc(), permc_spec='NATURAL')
+
+    def solve(self, vector):
+        return self.LU.solve(vector, trans='T')
+
+
+@add_solver
 class SuperluColamdFactorized(SparseSolver):
     """SuperLU+COLAMD LU factorized solve."""
 

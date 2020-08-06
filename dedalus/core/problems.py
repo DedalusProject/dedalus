@@ -20,6 +20,12 @@ from ..tools.general import unify_attributes
 from ..tools.exceptions import SymbolicParsingError
 from ..tools.exceptions import UnsupportedEquationError
 
+from ..tools.config import config
+BC_TOP = lambda: config['matrix construction'].getboolean('BC_TOP')
+TAU_LEFT = lambda: config['matrix construction'].getboolean('TAU_LEFT')
+INTERLEAVE_COMPONENTS = lambda: config['matrix construction'].getboolean('INTERLEAVE_COMPONENTS')
+STORE_EXPANDED_MATRICES = lambda: config['matrix construction'].getboolean('STORE_EXPANDED_MATRICES')
+
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
 
@@ -134,6 +140,11 @@ class ProblemBase:
         self.parameters = OrderedDict()
         self.substitutions = OrderedDict()
         #self.op_kw = {'cutoff': ncc_cutoff}
+        # Matrix construction config options
+        self.BC_TOP = BC_TOP()
+        self.TAU_LEFT = TAU_LEFT()
+        self.INTERLEAVE_COMPONENTS = INTERLEAVE_COMPONENTS()
+        self.STORE_EXPANDED_MATRICES = STORE_EXPANDED_MATRICES()
 
     def add_equation(self, equation, condition="True"):
         """Add equation to problem."""
@@ -502,7 +513,7 @@ class InitialValueProblem(ProblemBase):
         if L:
             L = L.reinitialize(ncc=True, ncc_vars=vars)
         F = eqn['RHS']
-        domain = (M + L - F).domain
+        domain = eqn['domain'] = (M + L - F).domain
         # Convert to equation bases and store
         if M:
             M = operators.convert(M, domain.bases)

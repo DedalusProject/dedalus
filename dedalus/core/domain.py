@@ -164,6 +164,10 @@ class Domain(metaclass=CachedClass):
         return tuple(~c for c in self.constant)
 
     @CachedAttribute
+    def dim(self):
+        return sum(self.nonconstant)
+
+    @CachedAttribute
     def coeff_shape(self):
         """Compute coefficient shape."""
         scales = (1 for i in range(self.dist.dim))
