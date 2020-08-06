@@ -2078,29 +2078,24 @@ class PolarMOperator(SpectralOperator):
                     vec_out += apply_matrix(A, vec_in, axis=axis)
 
     def subproblem_matrix(self, subproblem):
-        raise NotImplementedError("Need to write subproblem_matrix.")
         operand = self.args[0]
-        radial_basis = self.radial_basis
-        S_in = radial_basis.regularity_classes(operand.tensorsig)
-        R_out = radial_basis.regularity_classes(self.tensorsig)  # Should this use output_basis?
-        ell = subproblem.group[self.last_axis - 1]
+        radial_basis = self.input_basis
+        S_in = radial_basis.spin_weights(operand.tensorsig)
+        S_out = radial_basis.spin_weights(self.tensorsig)  # Should this use output_basis?
+        m = subproblem.group[self.last_axis - 1]
         # Loop over components
         submatrices = []
-        for regindex_out, spintotal_out in np.ndenumerate(R_out):
+        for spinindex_out, spintotal_out in np.ndenumerate(S_out):
             submatrix_row = []
-            for regindex_in, spintotal_in in np.ndenumerate(S_in):
+            for spinindex_in, spintotal_in in np.ndenumerate(S_in):
                 # Build identity matrices for each axis
                 subshape_in = subproblem.coeff_shape(self.operand.domain)
                 subshape_out = subproblem.coeff_shape(self.domain)
-                # Check if regularity component exists for this ell
-                if (regindex_out in self.regindex_out(regindex_in)) and radial_basis.regularity_allowed(ell, regindex_in) and radial_basis.regularity_allowed(ell, regindex_out):
-                    # Substitute factor for radial axis
-                    factors = [sparse.eye(m, n, format='csr') for m, n in zip(subshape_out, subshape_in)]
-                    factors[self.last_axis] = self.radial_matrix(regindex_in, regindex_out, ell)
-                    comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
-                else:
-                    # Build zero matrix
-                    comp_matrix = sparse.csr_matrix((np.prod(subshape_out), np.prod(subshape_in)))
+                # Substitute factor for radial axis
+                factors = [sparse.eye(i, j, format='csr') for i, j in zip(subshape_out, subshape_in)]
+                factors[self.last_axis] = self.radial_matrix(spinindex_in, spinindex_out, m)
+                comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
+                
                 submatrix_row.append(comp_matrix)
             submatrices.append(submatrix_row)
         matrix = sparse.bmat(submatrices)

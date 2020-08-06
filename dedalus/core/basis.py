@@ -1443,9 +1443,10 @@ class DiskBasis(SpinBasis):
 
     def __eq__(self, other):
         if isinstance(other, DiskBasis):
-            if self.grid_params == other.grid_params:
-                if self.shape == other.shape:
-                    return True
+            if self.coordsystem == other.coordsystem:
+                if self.grid_params == other.grid_params:
+                    if self.k == other.k:
+                        return True
         return False
 
     def __hash__(self):
@@ -1460,7 +1461,7 @@ class DiskBasis(SpinBasis):
             if self.grid_params == other.grid_params:
                 shape = tuple(np.maximum(self.shape, other.shape))
                 k = max(self.k, other.k)
-                return DiskBasis(self.coordsystem, shape, radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias)
+                return DiskBasis(self.coordsystem, shape, radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias, dtype=self.dtype)
         return NotImplemented
 
     def __mul__(self, other):
@@ -1471,7 +1472,7 @@ class DiskBasis(SpinBasis):
         if isinstance(other, DiskBasis):
             if self.grid_params == other.grid_params:
                 shape = tuple(np.maximum(self.shape, other.shape))
-                return DiskBasis(self.coordsystem, shape, radius=self.radius, k=0, alpha=self.alpha, dealias=self.dealias)
+                return DiskBasis(self.coordsystem, shape, radius=self.radius, k=0, alpha=self.alpha, dealias=self.dealias, dtype=self.dtype)
         return NotImplemented
 
     @CachedAttribute
@@ -1632,6 +1633,12 @@ class DiskBasis(SpinBasis):
         self.backward_spin_recombination(field.tensorsig, temp, out=gdata)
 
     @CachedMethod
+    def conversion_matrix(self, m, spintotal, dk):
+        E = dedalus_sphere.zernike.operator(2, 'E', radius=self.radius)
+        operator = E(+1)**dk
+        return operator(self.n_size(m), self.alpha + self.k, np.abs(m + spintotal)).square.astype(np.float64)
+
+    @CachedMethod
     def operator_matrix(self,op,m,spin):
 
         if op[-1] in ['+', '-']:
@@ -1653,6 +1660,27 @@ class DiskBasis(SpinBasis):
             operator = dedalus_sphere.zernike.operator(2, op, radius=self.radius)
 
         return operator(self.n_size(m), self.alpha + self.k, np.abs(m + spin)).square.astype(np.float64)
+
+class ConvertPolar(operators.Convert, operators.PolarMOperator):
+
+    input_basis_type = DiskBasis
+    output_basis_type = DiskBasis
+
+    def __init__(self, operand, output_basis, out=None):
+        operators.Convert.__init__(self, operand, output_basis, out=out)
+        self.radius_axis = self.last_axis
+
+    def spinindex_out(self, spinindex_in):
+        return (spinindex_in,)
+
+    def radial_matrix(self, spinindex_in, spinindex_out, m):
+        radial_basis = self.input_basis
+        spintotal = radial_basis.spintotal(spinindex_in)
+        dk = self.output_basis.k - radial_basis.k
+        if spinindex_in == spinindex_out:
+            return radial_basis.conversion_matrix(m, spintotal, dk)
+        else:
+            raise ValueError("This should never happen.")
 
 
 class SpinWeightedSphericalHarmonics(SpinBasis):
