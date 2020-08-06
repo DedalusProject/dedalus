@@ -13,6 +13,10 @@ from mpi4py import MPI
 import logging
 logger = logging.getLogger(__name__)
 
+from dedalus.tools.config import config
+config['linear algebra']['MATRIX_FACTORIZER'] = 'SuperLUNaturalFactorizedTranspose'
+
+
 # Parameters
 radius = 1
 Lmax = 15
@@ -20,7 +24,7 @@ L_dealias = 1
 Nmax = 15
 N_dealias = 1
 dt = 8e-5
-t_end = 20
+t_end = 0.01
 ts = timesteppers.SBDF2
 dtype = np.float64
 mesh = None
@@ -104,7 +108,7 @@ def BC_rows(N, ell, num_comp):
 
 for subproblem in solver.subproblems:
     ell = subproblem.group[1]
-    L = subproblem.L_min
+    L = subproblem.left_perm.T @ subproblem.L_min
     shape = L.shape
     if dtype == np.complex128:
         N0, N1, N2, N3, N4 = BC_rows(Nmax, ell, 5)
@@ -114,10 +118,10 @@ for subproblem in solver.subproblems:
             tau_columns[N1:N2,1] = (C(Nmax, ell, +1))[:,-1]
             tau_columns[N2:N3,2] = (C(Nmax, ell,  0))[:,-1]
             tau_columns[N3:N4,3] = (C(Nmax, ell,  0))[:,-1]
-            subproblem.L_min[:,-4:] = tau_columns
+            L[:,-4:] = tau_columns
         else: # ell = 0
             tau_columns[N3:N4, 3] = (C(Nmax, ell, 0))[:,-1]
-            subproblem.L_min[:,-1:] = tau_columns[:,3:]
+            L[:,-1:] = tau_columns[:,3:]
     elif dtype == np.float64:
         NL = Nmax - ell//2 + 1
         N0, N1, N2, N3, N4 = BC_rows(Nmax, ell, 5) * 2
@@ -131,13 +135,14 @@ for subproblem in solver.subproblems:
             tau_columns[N1+NL:N1+2*NL,3] = (C(Nmax, ell, +1))[:,-1]
             tau_columns[N2+NL:N2+2*NL,5] = (C(Nmax, ell,  0))[:,-1]
             tau_columns[N3+NL:N3+2*NL,7] = (C(Nmax, ell,  0))[:,-1]
-            subproblem.L_min[:,-8:] = tau_columns
+            L[:,-8:] = tau_columns
         else: # ell = 0
             tau_columns[N3:N3+NL,6] = (C(Nmax, ell,  0))[:,-1]
             tau_columns[N3+NL:N3+2*NL,7] = (C(Nmax, ell,  0))[:,-1]
-            subproblem.L_min[:,-2:] = tau_columns[:,6:]
-    L.eliminate_zeros()
-    subproblem.expand_matrices(['M','L'])
+            L[:,-2:] = tau_columns[:,6:]
+    subproblem.L_min = subproblem.left_perm @ L
+    if problem.STORE_EXPANDED_MATRICES:
+        subproblem.expand_matrices(['M','L'])
 
 # Analysis
 t_list = []

@@ -35,6 +35,8 @@ z = zb.local_grid(1)
 p = field.Field(name='p', dist=d, bases=(xb,zb), dtype=np.complex128)
 b = field.Field(name='b', dist=d, bases=(xb,zb), dtype=np.complex128)
 u = field.Field(name='u', dist=d, bases=(xb,zb), dtype=np.complex128, tensorsig=(c,))
+bz = field.Field(name='bz', dist=d, bases=(xb,zb), dtype=np.complex128)
+uz = field.Field(name='uz', dist=d, bases=(xb,zb), dtype=np.complex128, tensorsig=(c,))
 
 # Taus
 zb1 = basis.ChebyshevU(c.coords[1], size=Nz, bounds=(0, Lz), alpha0=0)
@@ -70,15 +72,17 @@ dt = lambda A: operators.TimeDerivative(A)
 
 dx = lambda A: operators.Differentiate(A, c.coords[0])
 dz = lambda A: operators.Differentiate(A, c.coords[1])
-P2 = dz(P1).evaluate()
+lapfo = lambda A, Az: dx(dx(A)) + dz(Az)
 
 # Problem
 def eq_eval(eq_str):
     return [eval(expr) for expr in split_equation(eq_str)]
-problem = problems.IVP([p, b, u, t1, t2, t3, t4])
-problem.add_equation(eq_eval("div(u) - P1*dot(ez,t4) = 0"))
-problem.add_equation(eq_eval("dt(b) - P*lap(b) + P1*t1 + P2*t2 + dot(u,grad(B)) = - dot(u,grad(b)) + P*lap(B)"))
-problem.add_equation(eq_eval("dt(u) - R*lap(u) + grad(p) + P1*t3 + P2*t4 - b*ghat = - dot(u,grad(u)) - grid_B*grid_ghat"))
+problem = problems.IVP([p, b, u, bz, uz, t1, t2, t3, t4])
+problem.add_equation(eq_eval("dot(ex, dx(u)) + dot(ez, uz) = 0"))
+problem.add_equation(eq_eval("dt(b) - P*lapfo(b,bz) + P1*t1 + dot(u,grad(B)) = - dot(u,grad(b)) + P*lapfo(B,-1)"))
+problem.add_equation(eq_eval("dt(u) - R*lapfo(u,uz) + grad(p) + P1*t3 - b*ghat = - dot(u,grad(u)) - grid_B*grid_ghat"))
+problem.add_equation(eq_eval("bz - dz(b) + P1*t2 = 0"))
+problem.add_equation(eq_eval("uz - dz(u) + P1*t4 = 0"))
 problem.add_equation(eq_eval("b(z=0) = Lz - B(z=0)"))
 problem.add_equation(eq_eval("u(z=0) = 0"))
 problem.add_equation(eq_eval("b(z=Lz) = 0 - B(z=Lz)"))
@@ -90,6 +94,8 @@ print("Problem built")
 # Solver
 solver = solvers.InitialValueSolver(problem, timesteppers.RK222)
 solver.stop_iteration = stop_iteration
+
+print(solver.matsolver.__name__)
 
 # Add vector taus by hand
 for i, subproblem in enumerate(solver.subproblems):
