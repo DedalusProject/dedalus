@@ -676,6 +676,9 @@ class ComplexFourier(IntervalBasis):
         self.library = library
         self.kmax = kmax = (size - 1) // 2
         self.wavenumbers = np.concatenate((np.arange(0, kmax+2), np.arange(-kmax, 0)))  # Includes Nyquist mode
+        # No permutations by default
+        self.forward_coeff_permutation = None
+        self.backward_coeff_permutation = None
 
     def _native_grid(self, scale):
         """Native flat global grid."""
@@ -778,6 +781,10 @@ class RealFourier(IntervalBasis):
         self.kmax = kmax = (size - 1) // 2
         self.wavenumbers_no_repeats = np.arange(0, kmax+1)  # Excludes Nyquist mode
         self.wavenumbers = np.repeat(self.wavenumbers_no_repeats, 2)
+        # No permutations by default
+        self.forward_coeff_permutation = None
+        self.backward_coeff_permutation = None
+        
 
     def __add__(self, other):
         if other is None:
