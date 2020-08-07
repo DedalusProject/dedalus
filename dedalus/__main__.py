@@ -5,8 +5,8 @@ Usage:
     dedalus test
     dedalus bench
     dedalus cov
-    dedalus drop_config
-    dedalus drop_examples
+    dedalus get_config
+    dedalus get_examples
     dedalus merge_procs <base_path> [--cleanup]
     dedalus merge_sets <joint_path> <set_paths>... [--cleanup]
 
@@ -32,10 +32,10 @@ if __name__ == "__main__":
         bench()
     elif args['cov']:
         cov()
-    elif args['drop_config']:
+    elif args['get_config']:
         config_path = pathlib.Path(__file__).parent.joinpath('dedalus.cfg')
         shutil.copy(str(config_path), '.')
-    elif args['drop_examples']:
+    elif args['get_examples']:
         example_path = pathlib.Path(__file__).parent.joinpath('examples.tar.gz')
         with tarfile.open(str(example_path), mode='r:gz') as archive:
             archive.extractall('dedalus_examples')
