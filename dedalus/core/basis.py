@@ -1474,7 +1474,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         if isinstance(other, SpinWeightedSphericalHarmonics):
             if self.radius == other.radius:
                 shape = tuple(np.maximum(self.shape, other.shape))
-                return SpinWeightedSphericalHarmonics(self.coordsystem, shape, radius=self.radius, dealias=self.dealias)
+                return SpinWeightedSphericalHarmonics(self.coordsystem, shape, radius=self.radius, dealias=self.dealias, dtype=self.dtype)
         return NotImplemented
 
     def __mul__(self, other):
@@ -1485,7 +1485,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         if isinstance(other, SpinWeightedSphericalHarmonics):
             if self.radius == other.radius:
                 shape = tuple(np.maximum(self.shape, other.shape))
-                return SpinWeightedSphericalHarmonics(self.coordsystem, shape, radius=self.radius, dealias=self.dealias)
+                return SpinWeightedSphericalHarmonics(self.coordsystem, shape, radius=self.radius, dealias=self.dealias, dtype=self.dtype)
         if isinstance(other, Jacobi):
             if isinstance(other.coord.cs, coords.SphericalCoordinates):
                 spherical_coords = other.coord.cs
@@ -1497,7 +1497,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
                         dealias = (self.dealias[0], self.dealias[1], other.dealias)
                         return SphericalShellBasis(spherical_coords, shape, radii=other.bounds, alpha=(other.a0, other.b0), dealias=dealias,
                                                    azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
-                                                   radius_library=other.library)
+                                                   radius_library=other.library, dtype=self.dtype)
         return NotImplemented
 
     def coeff_subshape(self, groups):
