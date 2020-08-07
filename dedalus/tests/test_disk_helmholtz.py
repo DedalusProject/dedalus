@@ -1,5 +1,5 @@
-
-
+from scipy.special import jn_zeros
+from scipy.linalg import eig
 import numpy as np
 from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
 from dedalus.tools import logging
@@ -12,8 +12,8 @@ dtype = np.float64
 
 # Parameters
 radius = 1
-Mmax = 3
-Nmax = 9
+Mmax = 7
+Nmax = 63
 
 # Bases
 c = coords.PolarCoordinates('phi', 'r')
@@ -66,20 +66,40 @@ for subproblem in solver.subproblems:
     L.eliminate_zeros()
     subproblem.expand_matrices(['M','L'])
 
+# get third bessel function j
+target_m = 3
 
+for sp in solver.subproblems:
+    if sp.group[0] == target_m:
+        break
+subprob = sp
 
-# Plot matrices
-import matplotlib.pyplot as plt
-plt.figure()
-I = 2
-J = 2
-for i, sp in enumerate(solver.subproblems[:I]):
-   for j, mat in enumerate(['M_min', 'L_min']):
-       axes = plt.subplot(I,J,i*J+j+1)
-       A = getattr(sp, mat)
-       im = axes.pcolor(np.log10(np.abs(A.A[::-1])))
-       axes.set_title('sp %i, %s' %(i, mat))
-       axes.set_aspect('equal')
-       plt.colorbar(im)
-plt.tight_layout()
-plt.savefig("nmh_matrices.pdf")
+vals, vecs = eig(subprob.L_min.A,-subprob.M_min.A)
+
+good_vals = np.isfinite(vals)
+vals = np.sqrt(np.abs(vals[good_vals]))
+vals = list(set(vals))
+vals.sort()
+
+n_zeros = len(vals)
+reference = jn_zeros(target_m, n_zeros)
+
+error = (vals - reference)/reference
+print("Dedalus returns {} finite eigenvalues".format(n_zeros))
+print("errors are {}".format(error))
+
+# # Plot matrices
+# import matplotlib.pyplot as plt
+# plt.figure()
+# I = 2
+# J = 2
+# for i, sp in enumerate(solver.subproblems[:I]):
+#    for j, mat in enumerate(['M_min', 'L_min']):
+#        axes = plt.subplot(I,J,i*J+j+1)
+#        A = getattr(sp, mat)
+#        im = axes.pcolor(np.log10(np.abs(A.A[::-1])))
+#        axes.set_title('sp %i, %s' %(i, mat))
+#        axes.set_aspect('equal')
+#        plt.colorbar(im)
+# plt.tight_layout()
+# plt.savefig("nmh_matrices.pdf")

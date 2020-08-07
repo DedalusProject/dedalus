@@ -2091,11 +2091,14 @@ class PolarMOperator(SpectralOperator):
                 # Build identity matrices for each axis
                 subshape_in = subproblem.coeff_shape(self.operand.domain)
                 subshape_out = subproblem.coeff_shape(self.domain)
-                # Substitute factor for radial axis
-                factors = [sparse.eye(i, j, format='csr') for i, j in zip(subshape_out, subshape_in)]
-                factors[self.last_axis] = self.radial_matrix(spinindex_in, spinindex_out, m)
-                comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
-                
+                if spinindex_out in self.spinindex_out(spinindex_in):
+                    # Substitute factor for radial axis
+                    factors = [sparse.eye(i, j, format='csr') for i, j in zip(subshape_out, subshape_in)]
+                    factors[self.last_axis] = self.radial_matrix(spinindex_in, spinindex_out, m)
+                    comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
+                else:
+                    # Build zero matrix
+                    comp_matrix = sparse.csr_matrix((np.prod(subshape_out), np.prod(subshape_in)))                
                 submatrix_row.append(comp_matrix)
             submatrices.append(submatrix_row)
         matrix = sparse.bmat(submatrices)
