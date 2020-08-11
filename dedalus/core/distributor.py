@@ -214,7 +214,7 @@ class Layout:
         chunk_shape = domain.chunk_shape(self)
         return tuple(chunk_shape)
 
-    def local_chunks(self, domain, scales):
+    def local_chunks(self, domain, scales, rank=None):
         """Local chunk indices by axis."""
         global_shape = self.global_shape(domain, scales)
         chunk_shape = self.chunk_shape(domain)
@@ -230,17 +230,22 @@ class Layout:
             else:
                 # Block distribution otherwise
                 mesh = self.ext_mesh[axis]
-                coord = self.ext_coords[axis]
+                if rank:
+                    coords = np.zeros(self.dist.dim, dtype=int)
+                    coords[~self.local] = self.dist.comm_cart.Get_coords(rank)
+                    coord = coords[axis]
+                else:
+                    coord = self.ext_coords[axis]
                 block = -(-chunk_nums[axis] // mesh)
                 start = min(chunk_nums[axis], block*coord)
                 end = min(chunk_nums[axis], block*(coord+1))
                 local_chunks.append(np.arange(start, end))
         return tuple(local_chunks)
 
-    def local_elements(self, domain, scales):
+    def local_elements(self, domain, scales, rank = None):
         """Local element indices by axis."""
         chunk_shape = self.chunk_shape(domain)
-        local_chunks = self.local_chunks(domain, scales)
+        local_chunks = self.local_chunks(domain, scales, rank = None)
         indices = []
         for GS, LG in zip(chunk_shape, local_chunks):
             indices.append(np.array([GS*G+i for G in LG for i in range(GS)], dtype=int))
@@ -250,10 +255,9 @@ class Layout:
         """Local element slices by axis."""
         return np.ix_(*self.local_elements(domain, scales))
 
-    @CachedMethod
-    def local_shape(self, domain, scales):
+    def local_shape(self, domain, scales, rank = None):
         """Local data shape."""
-        local_elements = self.local_elements(domain, scales)
+        local_elements = self.local_elements(domain, scales, rank = rank)
         return tuple(LE.size for LE in local_elements)
 
     def buffer_size(self, bases, scales, dtype):
