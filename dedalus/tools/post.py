@@ -227,7 +227,6 @@ def merge_setup(joint_file, proc_path):
                 joint_dset.dims[i].label = proc_dim.label
                 for scalename in proc_dim:
                     scale = joint_file['scales'][scalename]
-                    joint_dset.dims.create_scale(scale, scalename)
                     joint_dset.dims[i].attach_scale(scale)
 
 
@@ -346,7 +345,6 @@ def merge_sets(joint_path, set_paths, cleanup=False, comm=MPI.COMM_WORLD):
                     joint_dset.dims[i].label = set_dim.label
                     for scale_name in set_dim:
                         scale = joint_file['scales'][scale_name]
-                        joint_dset.dims.create_scale(scale, scale_name)
                         joint_dset.dims[i].attach_scale(scale)
         # Merge sets
         i0 = i1 = 0

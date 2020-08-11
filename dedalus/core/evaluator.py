@@ -489,17 +489,21 @@ class FileHandler(Handler):
         # Scales
         scale_group = file.create_group('scales')
         # Start time scales with shape=(0,) to chunk across writes
-        scale_group.create_dataset(name='sim_time', shape=(0,), maxshape=(None,), dtype=np.float64)
-        scale_group.create_dataset(name='timestep', shape=(0,), maxshape=(None,), dtype=np.float64)
-        scale_group.create_dataset(name='world_time', shape=(0,), maxshape=(None,), dtype=np.float64)
-        scale_group.create_dataset(name='wall_time', shape=(0,), maxshape=(None,), dtype=np.float64)
-        scale_group.create_dataset(name='iteration', shape=(0,), maxshape=(None,), dtype=np.int)
-        scale_group.create_dataset(name='write_number', shape=(0,), maxshape=(None,), dtype=np.int)
+        for sn, dtype in [('sim_time', np.float64),
+                          ('world_time', np.float64),
+                          ('wall_time', np.float64),
+                          ('timestep', np.float64),
+                          ('iteration', np.int),
+                          ('write_number', np.int)]:
+            scale = scale_group.create_dataset(name=sn, shape=(0,), maxshape=(None,), dtype=dtype)
+            scale.make_scale(sn)
         const = scale_group.create_dataset(name='constant', data=np.array([0.], dtype=np.float64))
+        const.make_scale('constant')
         for axis, basis in enumerate(domain.bases):
-            coeff_name = basis.element_label + basis.name
-            scale_group.create_dataset(name=coeff_name, data=basis.elements)
             scale_group.create_group(basis.name)
+            coeff_name = basis.element_label + basis.name
+            scale = scale_group.create_dataset(name=coeff_name, data=basis.elements)
+            scale.make_scale(coeff_name)
 
         # Tasks
         task_group =  file.create_group('tasks')
@@ -530,9 +534,7 @@ class FileHandler(Handler):
             # Time scales
             dset.dims[0].label = 't'
             for sn in ['sim_time', 'world_time', 'wall_time', 'timestep', 'iteration', 'write_number']:
-                scale = scale_group[sn]
-                dset.dims.create_scale(scale, sn)
-                dset.dims[0].attach_scale(scale)
+                dset.dims[0].attach_scale(scale_group[sn])
 
             # Spatial scales
             for axis, basis in enumerate(domain.bases):
@@ -542,15 +544,14 @@ class FileHandler(Handler):
                     if layout.grid_space[axis]:
                         sn = basis.name
                         axscale = scales[axis]
-                        if str(axscale) not in scale_group[sn]:
-                            scale_group[sn].create_dataset(name=str(axscale), data=basis.grid(axscale))
                         lookup = '/'.join((sn, str(axscale)))
+                        if str(axscale) not in scale_group[sn]:
+                            scale = scale_group[sn].create_dataset(name=str(axscale), data=basis.grid(axscale))
+                            scale.make_scale(lookup)
                     else:
                         sn = lookup = basis.element_label + basis.name
-                scale = scale_group[lookup]
-                dset.dims.create_scale(scale, lookup)
                 dset.dims[axis+1].label = sn
-                dset.dims[axis+1].attach_scale(scale)
+                dset.dims[axis+1].attach_scale(scale_group[lookup])
 
     def process(self, world_time, wall_time, sim_time, timestep, iteration, **kw):
         """Save task outputs to HDF5 file."""

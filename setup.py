@@ -167,7 +167,7 @@ extensions = [
 # Runtime requirements
 install_requires = [
     "docopt",
-    "h5py >= 2.6.0",
+    "h5py >= 2.10.0",
     "matplotlib",
     "mpi4py >= 2.0.0",
     "numpy",
