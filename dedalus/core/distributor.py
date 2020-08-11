@@ -230,7 +230,7 @@ class Layout:
             else:
                 # Block distribution otherwise
                 mesh = self.ext_mesh[axis]
-                if rank:
+                if rank is not None:
                     coords = np.zeros(self.dist.dim, dtype=int)
                     coords[~self.local] = self.dist.comm_cart.Get_coords(rank)
                     coord = coords[axis]
