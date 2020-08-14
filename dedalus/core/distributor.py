@@ -5,6 +5,7 @@ Distributor, Layout, Transform, and Transpose class definitions.
 import logging
 from mpi4py import MPI
 import numpy as np
+from collections import OrderedDict
 
 from ..tools.cache import CachedMethod, CachedAttribute
 from ..tools.config import config
@@ -467,42 +468,45 @@ class Transpose:
         return tuple(sub_shape)
 
     @CachedMethod
-    def _single_plan(self, ncomp, domain, scales, dtype):
-        """Build single transpose plan."""
-        sub_shape = self._sub_shape(domain, scales)
+    def _plan(self, ncomp, sub_shape, chunk_shape, dtype):
         axis = self.axis
         if np.prod(sub_shape) == 0:
             return None  # no data
-        elif domain.constant[axis] and domain.constant[axis+1]:
+        elif (sub_shape[axis] == chunk_shape[axis]) and (sub_shape[axis+1] == chunk_shape[axis+1]):
             return None  # no change
-        # elif domain.constant[axis]:
-        #     return RowDistributor(sub_shape, dtype, axis, self.comm_sub)
-        # elif domain.constant[axis+1]:
-        #     return ColDistributor(sub_shape, dtype, axis, self.comm_sub)
         else:
             # Add axis for components
-            sub_shape = (ncomp,) + sub_shape
-            chunk_shape = (ncomp,) + domain.chunk_shape(self.layout0)
-            return TransposePlanner(sub_shape, chunk_shape, dtype, axis+1, self.comm_sub)
+            full_sub_shape = (ncomp,) + sub_shape
+            full_chunk_shape = (ncomp,) + chunk_shape
+            return TransposePlanner(full_sub_shape, full_chunk_shape, dtype, axis+1, self.comm_sub)
 
-    # @CachedMethod
-    # def _group_plan(self, nfields, scales, dtype):
-    #     """Build group transpose plan."""
-    #     sub_shape = self._sub_shape(scales)
-    #     group_shape = np.hstack([nfields, sub_shape])
-    #     if np.prod(group_shape) == 0:
-    #         return None, None, None  # no data
-    #     else:
-    #         # Create group buffer to hold group data contiguously
-    #         buffer0_shape = np.hstack([nfields, self.layout0.local_array_shape(scales)])
-    #         buffer1_shape = np.hstack([nfields, self.layout1.local_array_shape(scales)])
-    #         size = max(np.prod(buffer0_shape), np.prod(buffer1_shape))
-    #         buffer = fftw.create_array(shape=[size], dtype=dtype)
-    #         buffer0 = np.ndarray(shape=buffer0_shape, dtype=dtype, buffer=buffer)
-    #         buffer1 = np.ndarray(shape=buffer1_shape, dtype=dtype, buffer=buffer)
-    #         # Creat plan on subsequent axis of group shape
-    #         plan = TransposePlanner(group_shape, dtype, self.axis+1, self.comm_sub)
-    #         return plan, buffer0, buffer1
+    def _single_plan(self, field):
+        """Build single transpose plan."""
+        ncomp = np.prod([cs.dim for cs in field.tensorsig], dtype=int)
+        sub_shape = self._sub_shape(field.domain, field.scales)
+        chunk_shape = field.domain.chunk_shape(self.layout0)
+        return self._plan(ncomp, sub_shape, chunk_shape, field.dtype)
+
+    def _group_plans(self, fields):
+        """Build group transpose plan."""
+        # Segment fields by sub_shapes and chunk_shapes
+        field_groups = OrderedDict()
+        for field in fields:
+            sub_shape = self._sub_shape(field.domain, field.scales)
+            chunk_shape = field.domain.chunk_shape(self.layout0)
+            if (sub_shape, chunk_shape) in field_groups:
+                field_groups[(sub_shape, chunk_shape)].append(field)
+            else:
+                field_groups[(sub_shape, chunk_shape)] = [field]
+        # Plan for each field group
+        plans = []
+        for (sub_shape, chunk_shape), fields in field_groups.items():
+            ncomp = 0
+            for field in fields:
+                ncomp += np.prod([cs.dim for cs in field.tensorsig], dtype=int)
+            plan = self._plan(ncomp, sub_shape, chunk_shape, field.dtype) # Assumes last field's dtype is good for everybody
+            plans.append((fields, plan))
+        return plans
 
     def increment(self, fields):
         """Backward transpose a list of fields."""
@@ -530,8 +534,7 @@ class Transpose:
 
     def increment_single(self, field):
         """Backward transpose a field."""
-        ncomp = np.prod([cs.dim for cs in field.tensorsig])
-        plan = self._single_plan(ncomp, field.domain, field.scales, field.dtype)
+        plan = self._single_plan(field)
         if plan:
             # Reference views from both layouts
             data0 = field.data
@@ -545,8 +548,7 @@ class Transpose:
 
     def decrement_single(self, field):
         """Forward transpose a field."""
-        ncomp = np.prod([cs.dim for cs in field.tensorsig])
-        plan = self._single_plan(ncomp, field.domain, field.scales, field.dtype)
+        plan = self._single_plan(field)
         if plan:
             # Reference views from both layouts
             data1 = field.data
@@ -560,15 +562,83 @@ class Transpose:
 
     def increment_group(self, fields):
         """Backward transpose multiple fields simultaneously."""
-        #logger.warning("Group transposes not implemented.")
-        for field in fields:
-            self.increment_single(field)
+        plans = self._group_plans(fields)
+        for fields, plan in plans:
+            if plan:
+                if len(fields) == 1:
+                    # Reference views from both layouts
+                    data0 = field.data
+                    field.set_layout(self.layout1)
+                    data1 = field.data
+                    # Transpose between data views
+                    plan.localize_columns(data0, data1)
+                else:
+                    # Gather data across fields
+                    data0 = []
+                    data1 = []
+                    for field in fields:
+                        rank = len(field.tensorsig)
+                        # Reference views from both layouts
+                        flat_comp_shape = (-1,) + field.data.shape[rank:]
+                        data0.append(field.data.reshape(flat_comp_shape))
+                        field.set_layout(self.layout1)
+                        flat_comp_shape = (-1,) + field.data.shape[rank:]
+                        data1.append(field.data.reshape(flat_comp_shape))
+                    data0 = np.concatenate(data0)
+                    data1 = np.concatenate(data1)
+                    # Transpose between data views
+                    plan.localize_columns(data0, data1)
+                    # Split up transposed data
+                    i = 0
+                    for field in fields:
+                        ncomp = np.prod([cs.dim for cs in field.tensorsig], dtype=int)
+                        data = data1[i:i+ncomp]
+                        field.data[:] = data.reshape(field.data.shape)
+                        i += ncomp
+            else:
+                # No communication: just update field layouts
+                for field in fields:
+                    field.set_layout(self.layout1)
 
     def decrement_group(self, fields):
         """Forward transpose multiple fields simultaneously."""
-        #logger.warning("Group transposes not implemented.")
-        for field in fields:
-            self.decrement_single(field)
+        plans = self._group_plans(fields)
+        for fields, plan in plans:
+            if plan:
+                if len(fields) == 1:
+                    # Reference views from both layouts
+                    data1 = field.data
+                    field.set_layout(self.layout0)
+                    data0 = field.data
+                    # Transpose between data views
+                    plan.localize_rows(data1, data0)
+                else:
+                    # Gather data across fields
+                    data0 = []
+                    data1 = []
+                    for field in fields:
+                        rank = len(field.tensorsig)
+                        # Reference views from both layouts
+                        flat_comp_shape = (-1,) + field.data.shape[rank:]
+                        data1.append(field.data.reshape(flat_comp_shape))
+                        field.set_layout(self.layout0)
+                        flat_comp_shape = (-1,) + field.data.shape[rank:]
+                        data0.append(field.data.reshape(flat_comp_shape))
+                    data0 = np.concatenate(data0)
+                    data1 = np.concatenate(data1)
+                    # Transpose between data views
+                    plan.localize_rows(data1, data0)
+                    # Split up transposed data
+                    i = 0
+                    for field in fields:
+                        ncomp = np.prod([cs.dim for cs in field.tensorsig], dtype=int)
+                        data = data0[i:i+ncomp]
+                        field.data[:] = data.reshape(field.data.shape)
+                        i += ncomp
+            else:
+                # No communication: just update field layouts
+                for field in fields:
+                    field.set_layout(self.layout1)
 
     # def increment_group(self, *fields):
     #     """Transpose group from layout0 to layout1."""
