@@ -120,9 +120,32 @@ def apply_dense(matrix, array, axis, out=None):
         return out
 
 
-def apply_sparse(matrix, array, axis, **kw):
+def apply_sparse(matrix, array, axis, out=None):
     """Apply sparse matrix along any axis of an array."""
-    return apply_dense(matrix.toarray(), array, axis, **kw)
+    dim = array.ndim
+    # Resolve wraparound axis
+    axis = axis % dim
+    # Move axis to 0
+    if axis != 0:
+        array = move_single_axis(array, axis, 0) # May allocate copy
+    # Flatten later axes
+    if dim > 2:
+        array_shape = array.shape
+        array = array.reshape((array_shape[0], -1)) # May allocate copy
+    # Apply matmul
+    temp = matrix.dot(array) # Allocates temp
+    # Unflatten later axes
+    if dim > 2:
+        temp = temp.reshape((temp.shape[0],) + array_shape[1:]) # View
+    # Move axis back from 0
+    if axis != 0:
+        temp = move_single_axis(temp, 0, axis) # View
+    # Return
+    if out is None:
+        return temp
+    else:
+        out[:] = temp # Copy
+        return out
 
 
 def csr_matvec(A_csr, x_vec, out_vec):
