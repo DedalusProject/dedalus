@@ -121,16 +121,16 @@ Below are instructions for building the dependency stack on a variety of machine
 .. toctree::
     :maxdepth: 1
 
-    machines/bridges/bridges
-    machines/cedar/cedar
-    machines/engaging/engaging
-    machines/janus/janus
-    machines/mac_os/mac_os
-    machines/nasa_discover/discover
-    machines/nasa_pleiades/pleiades
-    machines/savio/savio
-    machines/stampede/stampede
-    machines/trestles/trestles
+    /machines/bridges/bridges
+    /machines/cedar/cedar
+    /machines/engaging/engaging
+    /machines/janus/janus
+    /machines/mac_os/mac_os
+    /machines/nasa_discover/discover
+    /machines/nasa_pleiades/pleiades
+    /machines/savio/savio
+    /machines/stampede/stampede
+    /machines/trestles/trestles
 
 Once the dependency stack has been installed, Dedalus can be installed `as described above <#installing-the-dedalus-package>`_.
 

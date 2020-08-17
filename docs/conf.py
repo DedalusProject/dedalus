@@ -20,7 +20,7 @@
 # -- Project information -----------------------------------------------------
 
 project = 'Dedalus Project'
-copyright = '2018 Dedalus Collaboration'
+copyright = '2020 Dedalus Collaboration'
 author = 'Dedalus Collaboration'
 
 # The short X.Y version

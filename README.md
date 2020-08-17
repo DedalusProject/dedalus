@@ -1,30 +1,39 @@
-# Dedalus Project
+<!-- Title -->
+<h1 align="center">
+  Dedalus Project
+</h1>
 
-## About Dedalus
+<!-- Information badges -->
+<p align="center">
+  <a href="https://www.repostatus.org/#active">
+    <img alt="Repo status" src="https://www.repostatus.org/badges/latest/active.svg" />
+  </a>
+  <a href="http://dedalus-project.readthedocs.org">
+    <img alt="Read the Docs" src="https://img.shields.io/readthedocs/dedalus-project">
+  </a>
+  <img alt="PyPI - Python Version" src="https://img.shields.io/pypi/pyversions/dedalus">
+  <img alt="PyPI" src="https://img.shields.io/pypi/v/dedalus">
+  <img alt="PyPI - License" src="https://img.shields.io/pypi/l/dedalus">
+</p>
 
 Dedalus is a flexible framework for solving partial differential equations using spectral methods.
-The code is open-source and developed by a team of researchers working on problems in astrophysical and geophysical fluid dynamics.
+The code is open-source and developed by a team of researchers studying astrophysical and geophysical fluid dynamics.
 
-The code is written primarily in Python and features an easy-to-use interface, including text-based equation entry.
-Our numerical algorithm produces highly sparse systems for a wide variety of equations on spectrally-discretized domains.
-These systems are efficiently solved using compiled libraries and multidimensional parallelization though MPI.
+Dedalus is written primarily in Python and features an easy-to-use interface with symbolic equation entry.
+Our numerical algorithm produces sparse systems for a wide variety of equations and spectrally-discretized domains.
+These systems are efficiently solved using compiled libraries and are automatically parallelized using MPI.
 
 ## Links
-
-Learn more about Dedalus by visiting the
 
 * Project homepage: <http://dedalus-project.org>
 * Code repository: <https://github.com/DedalusProject/dedalus>
 * Documentation: <http://dedalus-project.readthedocs.org>
-* User mailing list: <https://groups.google.com/forum/#!forum/dedalus-users>
-* Development mailing list: <https://groups.google.com/forum/#!forum/dedalus-dev>
+* Mailing list: <https://groups.google.com/forum/#!forum/dedalus-users>
 
 ## Developers
 
-The core development team consists of
-
-* Keaton Burns (<keaton.burns@gmail.com>)
-* Ben Brown (<bpbrown@gmail.com>)
-* Daniel Lecoanet (<dlecoanet@gmail.com>)
-* Jeff Oishi (<jsoishi@gmail.com>)
-* Geoff Vasil (<geoffrey.m.vasil@gmail.com>)
+* [Keaton Burns (@kburns)](https://github.com/kburns)
+* [Geoff Vasil (@gmvasil)](https://github.com/gmvasil)
+* [Jeff Oishi (@jsoishi)](https://github.com/jsoishi)
+* [Daniel Lecoanet (@lecoanet)](https://github.com/lecoanet/)
+* [Ben Brown (@bpbrown)](https://github.com/bpbrown)
