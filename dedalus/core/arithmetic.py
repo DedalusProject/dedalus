@@ -224,7 +224,7 @@ class AddFields(Add, FutureField):
         # Add all argument data
         args_data = [arg.data for arg in args]
         # OPTIMIZE: less intermediate arrays?
-        np.copyto(out.data, np.sum(args_data, axis=0))
+        np.copyto(out.data, reduce(np.add, args_data))
 
 
 # used for einsum string manipulation
