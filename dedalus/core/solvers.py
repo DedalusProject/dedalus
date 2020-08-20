@@ -320,6 +320,8 @@ class InitialValueSolver:
         Timestepper to use in evolving initial conditions
     matsolver : matsolver class or name, optional
         Matrix solver routine (default set by config file).
+    enforce_real_cadence : int, optional
+        Iteration cadence for enforcing Hermitian symmetry on real variables (default: 100).
 
     Attributes
     ----------
@@ -340,7 +342,7 @@ class InitialValueSolver:
 
     """
 
-    def __init__(self, problem, timestepper, matsolver=None):
+    def __init__(self, problem, timestepper, matsolver=None, enforce_real_cadence=100):
 
         logger.debug('Beginning IVP instantiation')
 
@@ -350,6 +352,7 @@ class InitialValueSolver:
         self.problem = problem
         self.domain = domain = problem.domain
         self.matsolver = matsolver
+        self.enforce_real_cadence = enforce_real_cadence
         self._float_array = np.zeros(1, dtype=float)
         self.start_time = self.get_world_time()
 
@@ -506,17 +509,24 @@ class InitialValueSolver:
         self.state.scatter()
         # Update iteration
         self.iteration += 1
+        # Enforce Hermitian symmetry for real variables
+        if self.domain.grid_dtype == np.float64:
+            # Enforce for as many iterations as timestepper uses internally
+            if self.iteration % self.enforce_real_cadence <= self.timestepper._history:
+                # Transform state variables to grid and back
+                for path in self.domain.dist.paths:
+                    path.increment(self.state.fields)
+                for path in self.domain.dist.paths[::-1]:
+                    path.decrement(self.state.fields)
         return dt
 
     def evolve(self, timestep_function):
         """Advance system until stopping criterion is reached."""
-
         # Check for a stopping criterion
         if np.isinf(self.stop_sim_time):
             if np.isinf(self.stop_wall_time):
                 if np.isinf(self.stop_iteration):
                     raise ValueError("No stopping criterion specified.")
-
         # Evolve
         while self.ok:
             dt = timestep_function()
@@ -535,7 +545,5 @@ class InitialValueSolver:
         end_wall_time = end_world_time - self.start_time
         if handlers is None:
             handlers = self.evaluator.handlers
-
         self.evaluator.evaluate_handlers(handlers, timestep=dt, sim_time=self.sim_time, world_time=end_world_time, wall_time=end_wall_time, iteration=self.iteration)
-
 

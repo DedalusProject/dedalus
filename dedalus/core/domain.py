@@ -43,6 +43,7 @@ class Domain:
 
         # Iteratively set basis data types
         # (Grid-to-coefficient transforms proceed in the listed order)
+        self.grid_dtype = grid_dtype
         for basis in bases:
             grid_dtype = basis.set_dtype(grid_dtype)
 

@@ -59,6 +59,7 @@ class MultistepIMEX:
 
         # Create deque for storing recent timesteps
         N = max(self.amax, self.bmax, self.cmax)
+        self._history = N
         self.dt = deque([0.]*N)
 
         # Create coefficient systems for multistep history
@@ -502,6 +503,8 @@ class RungeKuttaIMEX:
     U. M. Ascher, S. J. Ruuth, and R. J. Spiteri, Applied Numerical Mathematics (1997).
 
     """
+
+    _history = 0
 
     def __init__(self, pencil_length, domain):
 
