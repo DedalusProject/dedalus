@@ -8,26 +8,28 @@ from dedalus.tools.cache import CachedFunction
 
 
 dot = arithmetic.DotProduct
-Nphi_range = [6]
-Ntheta_range = [6]
+Nphi_range = [8]
+Ntheta_range = [8]
 Nr_range = [12]
 radius_ball = 1
 radii_shell = (0.5, 1)
+dealias = [1]
+dtypes = [np.float64, np.complex128]
 
 @CachedFunction
-def build_ball(Nphi, Ntheta, Nr, dealias):
+def build_ball(Nphi, Ntheta, Nr, dealias, dtype):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (Nphi, Ntheta, Nr), radius=radius_ball, dealias=(dealias, dealias, dealias))
+    b = basis.BallBasis(c, (Nphi, Ntheta, Nr), radius=radius_ball, dealias=(dealias, dealias, dealias), dtype=dtype)
     phi, theta, r = b.local_grids()
     x, y, z = c.cartesian(phi, theta, r)
     return c, d, b, phi, theta, r, x, y, z
 
 @CachedFunction
-def build_shell(Nphi, Ntheta, Nr, dealias):
+def build_shell(Nphi, Ntheta, Nr, dealias, dtype):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    b = basis.SphericalShellBasis(c, (Nphi, Ntheta, Nr), radii=radii_shell, dealias=(dealias, dealias, dealias))
+    b = basis.SphericalShellBasis(c, (Nphi, Ntheta, Nr), radii=radii_shell, dealias=(dealias, dealias, dealias), dtype=dtype)
     phi, theta, r = b.local_grids()
     x, y, z = c.cartesian(phi, theta, r)
     return c, d, b, phi, theta, r, x, y, z
@@ -38,27 +40,25 @@ def build_shell(Nphi, Ntheta, Nr, dealias):
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('ncc_first', [True,False])
-def test_scalar_prod_scalar(Nphi, Ntheta, Nr, basis, ncc_first):
-    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=1.5)
-
-    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
-    g = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+@pytest.mark.parametrize('dealias', dealias)
+@pytest.mark.parametrize('dtype', dtypes)
+def test_scalar_prod_scalar(Nphi, Ntheta, Nr, basis, ncc_first, dealias, dtype):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=dealias, dtype=dtype)
+    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
+    g = field.Field(dist=d, bases=(b,), dtype=dtype)
     f['g'] = r**4
     g['g'] = (3*x**2 + 2*y*z)
-
     vars = [g]
     if ncc_first:
         w0 = f * g
     else:
         w0 = g * f
     w1 = w0.reinitialize(ncc=True, ncc_vars=vars)
-
     problem = problems.LBVP(vars)
     problem.add_equation((w1, 0))
     solver = solvers.LinearBoundaryValueSolver(problem, matsolver='SuperluNaturalSpsolve')
     w1.prep_nccs(vars)
     w1.store_ncc_matrices(solver.subproblems)
-
     w0 = w0.evaluate()
     w0.require_scales(1)
     w1 = w1.evaluate_as_ncc()
@@ -70,11 +70,13 @@ def test_scalar_prod_scalar(Nphi, Ntheta, Nr, basis, ncc_first):
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('ncc_first', [True,False])
-def test_scalar_prod_vector(Nphi, Ntheta, Nr, basis, ncc_first):
-    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=1.5)
+@pytest.mark.parametrize('dealias', dealias)
+@pytest.mark.parametrize('dtype', dtypes)
+def test_scalar_prod_vector(Nphi, Ntheta, Nr, basis, ncc_first, dealias, dtype):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=dealias, dtype=dtype)
 
-    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
-    g = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
+    g = field.Field(dist=d, bases=(b,), dtype=dtype)
 
     f['g'] = r**6
     g['g'] = 3*x**2 + 2*y*z
@@ -104,11 +106,13 @@ def test_scalar_prod_vector(Nphi, Ntheta, Nr, basis, ncc_first):
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('ncc_first', [True,False])
-def test_scalar_prod_tensor(Nphi, Ntheta, Nr, basis, ncc_first):
-    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=1.5)
+@pytest.mark.parametrize('dealias', dealias)
+@pytest.mark.parametrize('dtype', dtypes)
+def test_scalar_prod_tensor(Nphi, Ntheta, Nr, basis, ncc_first, dealias, dtype):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=dealias, dtype=dtype)
 
-    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
-    g = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
+    g = field.Field(dist=d, bases=(b,), dtype=dtype)
 
     f['g'] = r**6
     g['g'] = 3*x**2 + 2*y*z
@@ -138,12 +142,14 @@ def test_scalar_prod_tensor(Nphi, Ntheta, Nr, basis, ncc_first):
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('ncc_first', [True,False])
-def test_vector_prod_scalar(Nphi, Ntheta, Nr, basis, ncc_first):
-    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=1.5)
+@pytest.mark.parametrize('dealias', dealias)
+@pytest.mark.parametrize('dtype', dtypes)
+def test_vector_prod_scalar(Nphi, Ntheta, Nr, basis, ncc_first, dealias, dtype):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=dealias, dtype=dtype)
 
 
-    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
-    g = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
+    g = field.Field(dist=d, bases=(b,), dtype=dtype)
 
     f['g'] = r**6
     g['g'] = 3*x**2 + 2*y*z
@@ -173,11 +179,13 @@ def test_vector_prod_scalar(Nphi, Ntheta, Nr, basis, ncc_first):
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('ncc_first', [True,False])
-def test_vector_prod_vector(Nphi, Ntheta, Nr, basis, ncc_first):
-    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=1.5)
+@pytest.mark.parametrize('dealias', dealias)
+@pytest.mark.parametrize('dtype', dtypes)
+def test_vector_prod_vector(Nphi, Ntheta, Nr, basis, ncc_first, dealias, dtype):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=dealias, dtype=dtype)
 
-    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
-    g = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
+    g = field.Field(dist=d, bases=(b,), dtype=dtype)
 
     f['g'] = r**6
     g['g'] = 3*x**2 + 2*y*z
@@ -208,11 +216,13 @@ def test_vector_prod_vector(Nphi, Ntheta, Nr, basis, ncc_first):
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('ncc_first', [True,False])
-def test_vector_dot_vector(Nphi, Ntheta, Nr, basis, ncc_first):
-    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=1.5)
+@pytest.mark.parametrize('dealias', dealias)
+@pytest.mark.parametrize('dtype', dtypes)
+def test_vector_dot_vector(Nphi, Ntheta, Nr, basis, ncc_first, dealias, dtype):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=dealias, dtype=dtype)
 
-    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
-    g = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
+    g = field.Field(dist=d, bases=(b,), dtype=dtype)
 
     f['g'] = r**6
     g['g'] = 3*x**2 + 2*y*z
@@ -243,11 +253,13 @@ def test_vector_dot_vector(Nphi, Ntheta, Nr, basis, ncc_first):
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('ncc_first', [True,False])
-def test_vector_dot_tensor(Nphi, Ntheta, Nr, basis, ncc_first):
-    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=1.5)
+@pytest.mark.parametrize('dealias', dealias)
+@pytest.mark.parametrize('dtype', dtypes)
+def test_vector_dot_tensor(Nphi, Ntheta, Nr, basis, ncc_first, dealias, dtype):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=dealias, dtype=dtype)
 
-    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
-    T = field.Field(dist=d, bases=(b,), tensorsig=(c,c,), dtype=np.complex128)
+    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
+    T = field.Field(dist=d, bases=(b,), tensorsig=(c,c,), dtype=dtype)
 
     T['g'][2,2] = (6*x**2+4*y*z)/r**2
     T['g'][2,1] = T['g'][1,2] = -2*(y**3+x**2*(y-3*z)-y*z**2)/(r**3*np.sin(theta))
@@ -283,11 +295,13 @@ def test_vector_dot_tensor(Nphi, Ntheta, Nr, basis, ncc_first):
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('ncc_first', [True,False])
-def test_tensor_prod_scalar(Nphi, Ntheta, Nr, basis, ncc_first):
-    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=1.5)
+@pytest.mark.parametrize('dealias', dealias)
+@pytest.mark.parametrize('dtype', dtypes)
+def test_tensor_prod_scalar(Nphi, Ntheta, Nr, basis, ncc_first, dealias, dtype):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=dealias, dtype=dtype)
 
-    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
-    g = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
+    g = field.Field(dist=d, bases=(b,), dtype=dtype)
 
     f['g'] = r**6
     g['g'] = 3*x**2 + 2*y*z
@@ -317,11 +331,13 @@ def test_tensor_prod_scalar(Nphi, Ntheta, Nr, basis, ncc_first):
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('ncc_first', [True,False])
-def test_tensor_dot_vector(Nphi, Ntheta, Nr, basis, ncc_first):
-    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=1.5)
+@pytest.mark.parametrize('dealias', dealias)
+@pytest.mark.parametrize('dtype', dtypes)
+def test_tensor_dot_vector(Nphi, Ntheta, Nr, basis, ncc_first, dealias, dtype):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=dealias, dtype=dtype)
 
-    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
-    g = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
+    g = field.Field(dist=d, bases=(b,), dtype=dtype)
 
     f['g'] = r**6
     g['g'] = 3*x**2 + 2*y*z
@@ -352,14 +368,16 @@ def test_tensor_dot_vector(Nphi, Ntheta, Nr, basis, ncc_first):
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('ncc_first', [True,False])
-def test_tensor_dot_tensor(Nphi, Ntheta, Nr, basis, ncc_first):
-    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=1.5)
+@pytest.mark.parametrize('dealias', dealias)
+@pytest.mark.parametrize('dtype', dtypes)
+def test_tensor_dot_tensor(Nphi, Ntheta, Nr, basis, ncc_first, dealias, dtype):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=dealias, dtype=dtype)
 
-    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
+    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
     f['g'] = r**6
     U = operators.Gradient(operators.Gradient(f, c), c).evaluate()
 
-    T = field.Field(dist=d, bases=(b,), tensorsig=(c,c,), dtype=np.complex128)
+    T = field.Field(dist=d, bases=(b,), tensorsig=(c,c,), dtype=dtype)
 
     T['g'][2,2] = (6*x**2+4*y*z)/r**2
     T['g'][2,1] = T['g'][1,2] = -2*(y**3+x**2*(y-3*z)-y*z**2)/(r**3*np.sin(theta))

@@ -1917,7 +1917,7 @@ class SphericalEllOperator(SpectralOperator):
         operand = self.args[0]
         input_basis = self.input_basis
         radial_basis = self.radial_basis
-        axis = radial_basis.axis
+        axis = radial_basis.radial_axis
         # Set output layout
         out.set_layout(operand.layout)
         out.data[:] = 0
@@ -2367,7 +2367,7 @@ class SphericalCurl(Curl, SphericalEllOperator):
         operand = self.args[0]
         input_basis = self.input_basis
         radial_basis = self.radial_basis
-        axis = radial_basis.axis
+        axis = radial_basis.radial_axis
         # Set output layout
         out.set_layout(operand.layout)
         out.data[:] = 0

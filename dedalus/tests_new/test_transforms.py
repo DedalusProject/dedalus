@@ -361,8 +361,8 @@ def build_spherical_shell(Nphi, Ntheta, Nr, radii, k, dealias, dtype=np.complex1
 @pytest.mark.parametrize('k', k_range)
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 def test_spherical_shell_radial_scalar(Nr, radii, k, dtype):
-    c, d, b, phi, theta, r, x, y, z = build_spherical_shell(1, 1, Nr, radii, k, 1, dtype)
-    f = field.Field(dist=d, bases=(b,), dtype=dtype)
+    c, d, b, phi, theta, r, x, y, z = build_spherical_shell(4, 4, Nr, radii, k, 1, dtype)
+    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
     f['g'] = fg = r - r**2/7
     f['c']
     assert np.allclose(f['g'], fg)
@@ -372,8 +372,8 @@ def test_spherical_shell_radial_scalar(Nr, radii, k, dtype):
 @pytest.mark.parametrize('k', k_range)
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 def test_spherical_shell_radial_vector(Nr, radii, k, dtype):
-    c, d, b, phi, theta, r, x, y, z = build_spherical_shell(1, 1, Nr, radii, k, 1, dtype)
-    u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
+    c, d, b, phi, theta, r, x, y, z = build_spherical_shell(4, 4, Nr, radii, k, 1, dtype)
+    u = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
     u['g'][2] = 1 - 2*r/7
     u0 = np.copy(u['g'])
     u['c']
@@ -435,8 +435,8 @@ def build_ball(Nphi, Ntheta, Nr, radius, k, dealias, dtype=np.complex128):
 @pytest.mark.parametrize('k', k_range)
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 def test_ball_radial_scalar(Nr, radius, k, dtype):
-    c, d, b, phi, theta, r, x, y, z = build_ball(1, 1, Nr, radius, k, 1, dtype)
-    f = field.Field(dist=d, bases=(b,), dtype=dtype)
+    c, d, b, phi, theta, r, x, y, z = build_ball(4, 4, Nr, radius, k, 1, dtype)
+    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
     f['g'] = fg = r**2 - r**4/7
     f['c']
     assert np.allclose(f['g'], fg)
@@ -446,8 +446,8 @@ def test_ball_radial_scalar(Nr, radius, k, dtype):
 @pytest.mark.parametrize('k', k_range)
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 def test_ball_radial_vector(Nr, radius, k, dtype):
-    c, d, b, phi, theta, r, x, y, z = build_ball(1, 1, Nr, radius, k, 1, dtype)
-    u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
+    c, d, b, phi, theta, r, x, y, z = build_ball(4, 4, Nr, radius, k, 1, dtype)
+    u = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
     u['g'][2] = 2*r - 3*r**3/7
     u0 = np.copy(u['g'])
     u['c']

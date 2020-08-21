@@ -353,8 +353,7 @@ class Product(Future):
         ncc_basis = ncc.domain.full_bases[-1]
         arg_basis = operand.domain.full_bases[-1]
         ncc_ts = ncc.tensorsig
-        ncc_ts_shape = [cs.dim for cs in ncc_ts]
-        coeffs = ncc_data.reshape(ncc_ts_shape + [-1])
+        coeffs = ncc_data
         arg_ts = operand.tensorsig
         out_ts = self.tensorsig
         gamma_args = self.gamma_args
