@@ -138,8 +138,14 @@ class LinearBoundaryValueSolver:
     def _build_subproblem_matsolvers(self):
         """Build matsolvers for each pencil LHS."""
         self.subproblem_matsolvers = {}
-        for sp in self.subproblems:
-            self.subproblem_matsolvers[sp] = self.matsolver(sp.L_exp, self)
+        if self.problem.STORE_EXPANDED_MATRICES:
+            for sp in self.subproblems:
+                L = sp.L_exp
+                self.subproblem_matsolvers[sp] = self.matsolver(L, self)
+        else:
+            for sp in self.subproblems:
+                L = sp.L_min @ sp.pre_right
+                self.subproblem_matsolvers[sp] = self.matsolver(L, self)
 
     def solve(self):
         """Solve BVP."""
@@ -148,7 +154,6 @@ class LinearBoundaryValueSolver:
         # Solve system for each subproblem, updating state
         for sp in self.subproblems:
             sp_matsolver = self.subproblem_matsolvers[sp]
-            LHS = sp.L_exp
             for ss in sp.subsystems:
                 RHS = sp.rhs_map * ss.gather(self.F)
                 X = sp_matsolver.solve(RHS)

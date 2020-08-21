@@ -330,7 +330,7 @@ class LinearBoundaryValueProblem(ProblemBase):
         L = eqn['LHS']
         L = L.reinitialize(ncc=True, ncc_vars=vars)
         F = eqn['RHS']
-        domain = (L - F).domain
+        domain = eqn['domain'] = (L - F).domain
         L = operators.convert(L, domain.bases)
         if F:
             # Cast to match LHS
