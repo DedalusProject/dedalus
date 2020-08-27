@@ -15,6 +15,8 @@ from ..tools.cache import CachedAttribute, CachedMethod
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
 
+from ..tools.config import config
+STORE_OUTPUTS = config['memory'].getboolean('STORE_OUTPUTS')
 
 class Future(Operand):
     """
@@ -202,7 +204,10 @@ class Future(Operand):
         if self.out:
             return self.out
         else:
-            return self.build_out()
+            out = self.build_out()
+            if STORE_OUTPUTS:
+                self.out = out
+            return out
 
     def build_out(self):
         bases = self.domain.bases
