@@ -359,10 +359,15 @@ class Current(Operand):
             return
         # Set metadata
         self.scales = new_scales
-        # Build new buffer
-        buffer_size = self.dist.buffer_size(self.domain, new_scales, dtype=self.dtype)
-        ncomp = int(np.prod([vs.dim for vs in self.tensorsig]))
-        self.buffer = self._create_buffer(buffer_size*ncomp)
+        # Get buffer size, floored at dealias buffer size
+        buffer_size_new = self.dist.buffer_size(self.domain, new_scales, dtype=self.dtype)
+        buffer_size_dealias = self.dist.buffer_size(self.domain, self.domain.dealias, dtype=self.dtype)
+        buffer_size = max(buffer_size_new, buffer_size_dealias)
+        # Build new buffer if current buffer is different size
+        if buffer_size != self.buffer_size:
+            ncomp = int(np.prod([vs.dim for vs in self.tensorsig]))
+            self.buffer = self._create_buffer(buffer_size*ncomp)
+            self.buffer_size = buffer_size
         # Reset layout to build new data view
         self.set_layout(self.layout)
 
@@ -417,6 +422,7 @@ class Field(Current):
 
         # Set initial scales and layout
         self.scales = None
+        self.buffer_size = -1
         self.layout = self.dist.get_layout_object('c')
         # Change scales to build buffer and data
         self.set_scales((1,) * self.dist.dim)
