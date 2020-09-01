@@ -1,14 +1,23 @@
-
+"""Spectral transform classes."""
 
 import numpy as np
-from scipy import fftpack
+import scipy
+import scipy.fft
+import scipy.fftpack
 import dedalus_sphere
 
 from . import basis
+from ..libraries.fftw import fftw_wrappers as fftw
 from ..tools import jacobi
-from ..tools.array import apply_matrix, axslice
+from ..tools.array import apply_matrix, apply_dense, axslice
 from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
+
+import logging
+logger = logging.getLogger(__name__.split('.')[-1])
+
+from ..tools.config import config
+FFTW_RIGOR = lambda: config['transforms-fftw'].get('PLANNING_RIGOR')
 
 
 def register_transform(basis, name):
@@ -19,6 +28,681 @@ def register_transform(basis, name):
         basis.transforms[name] = cls
         return cls
     return wrapper
+
+
+class Transform:
+    """Abstract base class for all transforms."""
+    pass
+
+
+class SeparableTransform(Transform):
+    """Abstract base class for transforms that only apply to one dimension, independent of all others."""
+
+    def forward(self, gdata, cdata, axis):
+        """Apply forward transform along specified axis."""
+        # Subclasses must implement
+        raise NotImplementedError("%s has not implemented 'forward' method" %type(self))
+
+    def backward(self, cdata, gdata, axis):
+        """Apply backward transform along specified axis."""
+        # Subclasses must implement
+        raise NotImplementedError("%s has not implemented 'backward' method" %type(self))
+
+
+class SeparableMatrixTransform(SeparableTransform):
+    """Abstract base class for separable matrix-multiplication transforms."""
+
+    def forward(self, gdata, cdata, axis):
+        """Apply forward transform along specified axis."""
+        apply_dense(self.forward_matrix, gdata, axis=axis, out=cdata)
+
+    def backward(self, cdata, gdata, axis):
+        """Apply backward transform along specified axis."""
+        apply_dense(self.backward_matrix, cdata, axis=axis, out=gdata)
+
+    @CachedAttribute
+    def forward_matrix(self):
+        """Build forward transform matrix."""
+        # Subclasses must implement
+        raise NotImplementedError("%s has not implemented 'forward_matrix' method" %type(self))
+
+    @CachedAttribute
+    def backward_matrix(self):
+        """Build backward transform matrix."""
+        # Subclasses must implement
+        raise NotImplementedError("%s has not implemented 'backward_matrix' method" %type(self))
+
+
+class JacobiTransform(SeparableTransform):
+    """
+    Abstract base class for Jacobi polynomial transforms.
+
+    Parameters
+    ----------
+    grid_size : int
+        Grid size (N) along transform dimension.
+    coeff_size : int
+        Coefficient size (M) along transform dimension.
+    a : int
+        Jacobi "a" parameter for polynomials.
+    b : int
+        Jacobi "b" parameters for polynomials.
+    a0 : int
+        Jacobi "a" parameter for the quadrature grid.
+    b0 : int
+        Jacobi "b" parameter for the quadrature grid.
+
+    Notes
+    -----
+    TODO: We need to define the normalization we use here.
+    """
+
+    def __init__(self, grid_size, coeff_size, a, b, a0, b0):
+        self.N = grid_size
+        self.M = coeff_size
+        self.a = a
+        self.b = b
+        self.a0 = a0
+        self.b0 = b0
+
+
+@register_transform(basis.Jacobi, 'matrix')
+@register_transform(basis.SphericalShellRadialBasis, 'matrix')
+class JacobiMMT(JacobiTransform, SeparableMatrixTransform):
+    """Jacobi polynomial MMTs."""
+
+    @CachedAttribute
+    def forward_matrix(self):
+        """Build forward transform matrix."""
+        N, M = self.N, self.M
+        a, a0 = self.a, self.a0
+        b, b0 = self.b, self.b0
+        # Gauss quadrature with base (a0, b0) polynomials
+        base_grid = jacobi.build_grid(N, a=a0, b=b0)
+        base_polynomials = jacobi.build_polynomials(M, a0, b0, base_grid)
+        base_weights = jacobi.build_weights(N, a=a0, b=b0)
+        base_transform = (base_polynomials * base_weights)
+        # Zero higher coefficients for transforms with grid_size < coeff_size
+        base_transform[N:, :] = 0
+        # Spectral conversion
+        if (a == a0) and (b == b0):
+            forward_matrix = base_transform
+        else:
+            conversion = jacobi.conversion_matrix(M, a0, b0, a, b)
+            forward_matrix = conversion @ base_transform
+        # Ensure C ordering for fast dot products
+        return np.asarray(forward_matrix, order='C')
+
+    @CachedAttribute
+    def backward_matrix(self):
+        """Build backward transform matrix."""
+        N, M = self.N, self.M
+        a, a0 = self.a, self.a0
+        b, b0 = self.b, self.b0
+        # Construct polynomials on the base grid
+        base_grid = jacobi.build_grid(N, a=a0, b=b0)
+        polynomials = jacobi.build_polynomials(M, a, b, base_grid)
+        # Zero higher polynomials for transforms with grid_size < coeff_size
+        polynomials[N:, :] = 0
+        # Transpose and ensure C ordering for fast dot products
+        return np.asarray(polynomials.T, order='C')
+
+
+class ComplexFourierTransform(SeparableTransform):
+    """
+    Abstract base class for complex-to-complex Fourier transforms.
+
+    Parameters
+    ----------
+    grid_size : int
+        Grid size (N) along transform dimension.
+    coeff_size : int
+        Coefficient size (M) along transform dimension.
+
+    Notes
+    -----
+    Let KN = (N - 1) // 2 be the maximum fully resolved (non-Nyquist) mode on the grid.
+    Let KM = (M - 1) // 2 be the maximum retained mode in coeff space.
+    Then K = min(KN, KM) is the maximum wavenumber used in the transforms.
+    A unit-amplitude normalization is used.
+
+    Forward transform:
+        if abs(k) <= K:
+            F(k) = (1/N) \sum_{x=0}^{N-1} f(x) \exp(-2 \pi i k x / N)
+        else:
+            F(k) = 0
+
+    Backward transform:
+        f(x) = \sum_{k=-K}^{K} F(k) \exp(2 \pi i k x / N)
+
+    Coefficient ordering:
+        If M is odd, the ordering is [0, 1, 2, ..., KM, KM+1, -KM, -KM+1, ..., -1],
+        where the Nyquist mode k = KM + 1 is zeroed in both directions.
+        If M is even, the ordering is [0, 1, 2, ..., KM, -KM, -KM+1, ..., -1].
+    """
+
+    def __init__(self, grid_size, coeff_size):
+        self.N = grid_size
+        self.M = coeff_size
+        self.KN = (self.N - 1) // 2
+        self.KM = (self.M - 1) // 2
+        self.Kmax = Kmax = min(self.KN, self.KM)
+
+    @property
+    def wavenumbers(self):
+        """One-dimensional global wavenumber array."""
+        M = self.M
+        KM = self.KM
+        k = np.arange(M)
+        # Wrap around Nyquist mode
+        return (k + KM) % M - KM
+
+
+@register_transform(basis.ComplexFourier, 'matrix')
+class ComplexFourierMMT(ComplexFourierTransform, SeparableMatrixTransform):
+    """Complex-to-complex Fourier MMT."""
+
+    @CachedAttribute
+    def forward_matrix(self):
+        """Build forward transform matrix."""
+        K = self.wavenumbers[:, None]
+        X = np.arange(self.N)[None, :]
+        dX = self.N / 2 / np.pi
+        quadrature = np.exp(-1j*K*X/dX) / self.N
+        # Zero Nyquist and higher modes for transforms with grid_size <= coeff_size
+        quadrature *= np.abs(K) <= self.Kmax
+        # Ensure C ordering for fast dot products
+        return np.asarray(quadrature, order='C')
+
+    @CachedAttribute
+    def backward_matrix(self):
+        """Build backward transform matrix."""
+        K = self.wavenumbers[None, :]
+        X = np.arange(self.N)[:, None]
+        dX = self.N / 2 / np.pi
+        functions = np.exp(1j*K*X/dX)
+        # Zero Nyquist and higher modes for transforms with grid_size <= coeff_size
+        functions *= np.abs(K) <= self.Kmax
+        # Ensure C ordering for fast dot products
+        return np.asarray(functions, order='C')
+
+
+class ComplexFFT(ComplexFourierTransform):
+    """Abstract base class for complex-to-complex FFTs."""
+
+    def resize_coeffs(self, data_in, data_out, axis, rescale):
+        """Resize and rescale coefficients in standard FFT format by intermediate padding/truncation."""
+        M = self.M
+        Kmax = self.Kmax
+        if Kmax == 0:
+            posfreq = axslice(axis, 0, 1)
+            badfreq = axslice(axis, 1, None)
+            if rescale is None:
+                np.copyto(data_out[posfreq], data_in[posfreq])
+                data_out[badfreq] = 0
+            else:
+                np.multiply(data_in[posfreq], rescale, data_out[posfreq])
+                data_out[badfreq] = 0
+        else:
+            posfreq = axslice(axis, 0, Kmax+1)
+            badfreq = axslice(axis, Kmax+1, -Kmax)
+            negfreq = axslice(axis, -Kmax, None)
+            if rescale is None:
+                np.copyto(data_out[posfreq], data_in[posfreq])
+                data_out[badfreq] = 0
+                np.copyto(data_out[negfreq], data_in[negfreq])
+            else:
+                np.multiply(data_in[posfreq], rescale, data_out[posfreq])
+                data_out[badfreq] = 0
+                np.multiply(data_in[negfreq], rescale, data_out[negfreq])
+
+
+@register_transform(basis.ComplexFourier, 'scipy')
+class ScipyComplexFFT(ComplexFFT):
+    """Complex-to-complex FFT using scipy.fft."""
+
+    def forward(self, gdata, cdata, axis):
+        """Apply forward transform along specified axis."""
+        # Call FFT
+        temp = scipy.fft.fft(gdata, axis=axis) # Creates temporary
+        # Resize and rescale for unit-amplitude normalization
+        self.resize_coeffs(temp, cdata, axis, rescale=1/self.N)
+
+    def backward(self, cdata, gdata, axis):
+        """Apply backward transform along specified axis."""
+        # Resize and rescale for unit-amplitude normalization
+        # Need temporary to avoid overwriting problems
+        temp = np.empty_like(gdata) # Creates temporary
+        self.resize_coeffs(cdata, temp, axis, rescale=self.N)
+        # Call FFT
+        temp = scipy.fft.ifft(temp, axis=axis, overwrite_x=True) # Creates temporary
+        np.copyto(gdata, temp)
+
+
+@register_transform(basis.ComplexFourier, 'fftw')
+class FFTWComplexFFT(ComplexFFT):
+    """Complex-to-complex FFT using FFTW."""
+
+    @CachedMethod
+    def _fftw_setup(self, gshape, axis):
+        """Build FFTW plans and temporary arrays."""
+        dtype = np.complex128
+        logger.debug("Building FFTW FFT plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, gshape, axis))
+        flags = ['FFTW_'+FFTW_RIGOR().upper()]
+        plan = fftw.FourierTransform(dtype, gshape, axis, flags=flags)
+        temp = fftw.create_array(plan.cshape, np.complex128)
+        return plan, temp
+
+    def forward(self, gdata, cdata, axis):
+        """Apply forward transform along specified axis."""
+        plan, temp = self._fftw_setup(gdata.shape, axis)
+        # Execute FFTW plan
+        plan.forward(gdata, temp)
+        # Resize and rescale for unit-amplitude normalization
+        self.resize_coeffs(temp, cdata, axis, rescale=1/self.N)
+
+    def backward(self, cdata, gdata, axis):
+        """Apply backward transform along specified axis."""
+        plan, temp = self._fftw_setup(gdata.shape, axis)
+        # Resize and rescale for unit-amplitude normalization
+        self.resize_coeffs(cdata, temp, axis, rescale=None)
+        # Execute FFTW plan
+        plan.backward(temp, gdata)
+
+
+class RealFourierTransform(SeparableTransform):
+    """
+    Abstract base class for real-to-real Fourier transforms.
+
+    Parameters
+    ----------
+    grid_size : int
+        Grid size (N) along transform dimension.
+    coeff_size : int
+        Coefficient size (M) along transform dimension.
+
+    Notes
+    -----
+    Let KN = (N - 1) // 2 be the maximum fully resolved (non-Nyquist) mode on the grid.
+    Let KM = (M - 1) // 2 be the maximum retained mode in coeff space.
+    Then K = min(KN, KM) is the maximum wavenumber used in the transforms.
+    A unit-amplitude normalization is used.
+
+    Forward transform:
+        if k == 0:
+            a(k) = (1/N) \sum_{x=0}^{N-1} f(x)
+            b(k) = 0
+        elif k <= K:
+            a(k) =  (2/N) \sum_{x=0}^{N-1} f(x) \cos(-2 \pi k x / N)
+            b(k) = -(2/N) \sum_{x=0}^{N-1} f(x) \sin(-2 \pi k x / N)
+        else:
+            a(k) = 0
+            b(k) = 0
+
+    Backward transform:
+        f(x) = \sum_{k=0}^{K} a(k) \cos(2 \pi k x / N) - b(k) \sin(2 \pi k x / N)
+
+    Coefficient ordering:
+        The cosine and minus-sine coefficients are interleaved as
+        [a(0), b(0), a(1), b(1), a(2), b(2), ..., a(KM), b(KM)]
+        where the k = 0 minus-sine mode is zeroed in both directions.
+    """
+
+    def __init__(self, grid_size, coeff_size):
+        if coeff_size % 2 != 0:
+            raise ValueError("coeff_size must be even.")
+        self.N = grid_size
+        self.M = coeff_size
+        self.KN = (self.N - 1) // 2
+        self.KM = (self.M - 1) // 2
+        self.Kmax = Kmax = min(self.KN, self.KM)
+
+    @property
+    def wavenumbers(self):
+        """One-dimensional global wavenumber array."""
+        # Repeat k's for cos and msin parts
+        return np.repeat(np.arange(self.Kmax+1), 2)
+
+
+@register_transform(basis.RealFourier, 'matrix')
+class RealFourierMMT(RealFourierTransform, SeparableMatrixTransform):
+    """Real-to-real Fourier MMT."""
+
+    @CachedAttribute
+    def forward_matrix(self):
+        """Build forward transform matrix."""
+        N = self.N
+        M = self.M
+        Kmax = self.Kmax
+        K = self.wavenumbers[::2, None]
+        X = np.arange(N)[None, :]
+        dX = N / 2 / np.pi
+        quadrature = np.zeros((M, N))
+        quadrature[0::2] = (2 / N) * np.cos(K*X/dX)
+        quadrature[1::2] = -(2 / N) * np.sin(K*X/dX)
+        quadrature[0] = 1 / N
+        # Zero Nyquist and higher modes for transforms with grid_size <= coeff_size
+        quadrature *= self.wavenumbers <= self.Kmax
+        # Ensure C ordering for fast dot products
+        return np.asarray(quadrature, order='C')
+
+    @CachedAttribute
+    def backward_matrix(self):
+        """Build backward transform matrix."""
+        N = self.N
+        M = self.M
+        Kmax = self.Kmax
+        K = self.wavenumbers[None, ::2]
+        X = np.arange(N)[:, None]
+        dX = N / 2 / np.pi
+        functions = np.zeros((N, M))
+        functions[:, 0::2] = np.cos(K*X/dX)
+        functions[:, 1::2] = -np.sin(K*X/dX)
+        # Zero Nyquist and higher modes for transforms with grid_size <= coeff_size
+        functions *= self.wavenumbers <= self.Kmax
+        # Ensure C ordering for fast dot products
+        return np.asarray(functions, order='C')
+
+
+@register_transform(basis.RealFourier, 'fftpack')
+class FFTPACKRealFFT(RealFourierTransform):
+    """Real-to-real FFT using scipy.fftpack."""
+
+    def forward(self, gdata, cdata, axis):
+        """Apply forward transform along specified axis."""
+        N = self.N
+        Kmax = self.Kmax
+        # Call RFFT
+        temp = scipy.fftpack.rfft(gdata, axis=axis) # Creates temporary
+        # Scale k = 0 cos data
+        meancos = axslice(axis, 0, 1)
+        np.multiply(temp[meancos], (1 / N), cdata[meancos])
+        # Zero k = 0 sin data
+        cdata[axslice(axis, 1, 2)] = 0
+        # Shift and scale 1 < k <= Kmax data
+        temp_posfreq = temp[axslice(axis, 1, 2*(Kmax+1)-1)]
+        cdata_posfreq = cdata[axslice(axis, 2, 2*(Kmax+1))]
+        np.multiply(temp_posfreq, (2 / N), cdata_posfreq)
+        # Zero k > Kmax data
+        cdata[axslice(axis, 2*(Kmax+1), None)] = 0
+
+    def backward(self, cdata, gdata, axis):
+        """Apply backward transform along specified axis."""
+        N = self.N
+        Kmax = self.Kmax
+        # Need temporary to avoid overwriting problems
+        temp = np.empty_like(gdata) # Creates temporary
+        # Scale k = 0 cos data
+        meancos = axslice(axis, 0, 1)
+        np.multiply(cdata[meancos], N, temp[meancos])
+        # Shift and scale 1 < k <= Kmax data
+        temp_posfreq = temp[axslice(axis, 1, 2*(Kmax+1)-1)]
+        cdata_posfreq = cdata[axslice(axis, 2, 2*(Kmax+1))]
+        np.multiply(cdata_posfreq, (N / 2), temp_posfreq)
+        # Zero k > Kmax data
+        temp[axslice(axis, 2*(Kmax+1)-1, None)] = 0
+        # Call IRFFT
+        temp = scipy.fftpack.irfft(temp, axis=axis, overwrite_x=True) # Creates temporary
+        np.copyto(gdata, temp)
+
+
+class RealFFT(RealFourierTransform):
+    """Abstract base class for real-to-real FFTs using real-to-complex algorithms."""
+
+    def unpack_rescale(self, temp, cdata, axis, rescale):
+        """Unpack complex coefficients and rescale for unit-amplitude normalization."""
+        Kmax = self.Kmax
+        # Scale k = 0 cos data
+        meancos = axslice(axis, 0, 1)
+        np.multiply(temp[meancos].real, rescale, cdata[meancos])
+        # Zero k = 0 msin data
+        cdata[axslice(axis, 1, 2)] = 0
+        # Unpack and scale 1 < k <= Kmax data
+        temp_posfreq = temp[axslice(axis, 1, Kmax+1)]
+        cdata_posfreq_cos = cdata[axslice(axis, 2, 2*(Kmax+1), 2)]
+        cdata_posfreq_msin = cdata[axslice(axis, 3, 2*(Kmax+1), 2)]
+        np.multiply(temp_posfreq.real, 2*rescale, cdata_posfreq_cos)
+        np.multiply(temp_posfreq.imag, 2*rescale, cdata_posfreq_msin)
+        # Zero k > Kmax data
+        cdata[axslice(axis, 2*(Kmax+1), None)] = 0
+
+    def repack_rescale(self, cdata, temp, axis, rescale):
+        """Repack into complex coefficients and rescale for unit-amplitude normalization."""
+        Kmax = self.Kmax
+        # Scale k = 0 data
+        meancos = axslice(axis, 0, 1)
+        if rescale is None:
+            np.copyto(temp[meancos], cdata[meancos])
+        else:
+            np.multiply(cdata[meancos], rescale, temp[meancos])
+        # Repack and scale 1 < k <= Kmax data
+        temp_posfreq = temp[axslice(axis, 1, Kmax+1)]
+        cdata_posfreq_cos = cdata[axslice(axis, 2, 2*(Kmax+1), 2)]
+        cdata_posfreq_msin = cdata[axslice(axis, 3, 2*(Kmax+1), 2)]
+        if rescale is None:
+            np.multiply(cdata_posfreq_cos, (1 / 2), temp_posfreq.real)
+            np.multiply(cdata_posfreq_msin, (1 / 2), temp_posfreq.imag)
+        else:
+            np.multiply(cdata_posfreq_cos, (rescale / 2), temp_posfreq.real)
+            np.multiply(cdata_posfreq_msin, (rescale / 2), temp_posfreq.imag)
+        # Zero k > Kmax data
+        temp[axslice(axis, Kmax+1, None)] = 0
+
+
+@register_transform(basis.RealFourier, 'scipy')
+class ScipyRealFFT(RealFFT):
+    """Real-to-real FFT using scipy.fft."""
+
+    def forward(self, gdata, cdata, axis):
+        """Apply forward transform along specified axis."""
+        # Call RFFT
+        temp = scipy.fft.rfft(gdata, axis=axis) # Creates temporary
+        # Unpack from complex form and rescale
+        self.unpack_rescale(temp, cdata, axis, rescale=1/self.N)
+
+    def backward(self, cdata, gdata, axis):
+        """Apply backward transform along specified axis."""
+        N = self.N
+        # Rescale all modes and combine into complex form
+        shape = list(gdata.shape)
+        shape[axis] = N // 2 + 1
+        temp = np.empty(shape=shape, dtype=np.complex128) # Creates temporary
+        # Repack into complex form and rescale
+        self.repack_rescale(cdata, temp, axis, rescale=N)
+        # Call IRFFT
+        temp = scipy.fft.irfft(temp, axis=axis, n=N, overwrite_x=True) # Creates temporary
+        np.copyto(gdata, temp)
+
+
+@register_transform(basis.RealFourier, 'fftw')
+class FFTWRealFFT(RealFFT):
+    """Real-to-real FFT using FFTW."""
+
+    @CachedMethod
+    def _fftw_setup(self, gshape, axis):
+        """Build FFTW plans and temporary arrays."""
+        dtype = np.float64
+        logger.debug("Building FFTW FFT plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, gshape, axis))
+        flags = ['FFTW_'+FFTW_RIGOR().upper()]
+        plan = fftw.FourierTransform(dtype, gshape, axis, flags=flags)
+        temp = fftw.create_array(plan.cshape, np.complex128)
+        return plan, temp
+
+    def forward(self, gdata, cdata, axis):
+        """Apply forward transform along specified axis."""
+        plan, temp = self._fftw_setup(gdata.shape, axis)
+        # Execute FFTW plan
+        plan.forward(gdata, temp)
+        # Unpack from complex form and rescale
+        self.unpack_rescale(temp, cdata, axis, rescale=1/self.N)
+
+    def backward(self, cdata, gdata, axis):
+        """Apply backward transform along specified axis."""
+        plan, temp = self._fftw_setup(gdata.shape, axis)
+        # Repack into complex form and rescale
+        self.repack_rescale(cdata, temp, axis, rescale=None)
+        # Execute FFTW plan
+        plan.backward(temp, gdata)
+
+
+# class ScipyDST(PolynomialTransform):
+
+#     def forward_reduced(self):
+#         # DST-II transform from interior points
+#         temp = fftpack.dst(self.gdata_reduced, type=2, axis=1)
+#         # Rescale as sinusoid amplitudes
+#         temp[:, -1, :] *= 0.5
+#         temp *= (1 / self.N1G)
+#         # Resize
+#         self.resize_reduced(temp, self.cdata_reduced)
+
+#     def backward_reduced(self):
+#         # Resize into gdata for memory efficiency
+#         self.resize_reduced(self.cdata_reduced, self.gdata_reduced)
+#         # Rescale from sinusoid amplitudes
+#         self.gdata_reduced[:, :-1, :] *= 0.5
+#         # DST-III transform to interior points
+#         temp = fftpack.dst(self.gdata_reduced, type=3, axis=1)
+#         np.copyto(self.gdata_reduced, temp)
+
+
+# #@register_transform(basis.Sine, 'scipy')
+# class ScipySineTransform(ScipyDST):
+
+#     def forward_reduced(self):
+#         super().forward_reduced()
+#         # Shift data, adding zero mode and dropping Nyquist
+#         start = self.cdata_reduced[:, :-1, :]
+#         shift = self.cdata_reduced[:, 1:, :]
+#         np.copyto(shift, start)
+#         self.cdata_reduced[:, 0, :] = 0
+
+#     def backward_reduced(self):
+#         # Unshift data, adding Nyquist mode and dropping zero
+#         start = self.cdata_reduced[:, :-1, :]
+#         shift = self.cdata_reduced[:, 1:, :]
+#         np.copyto(start, shift)
+#         self.cdata_reduced[:, -1, :] = 0
+#         super().backward_reduced()
+
+
+# @register_transform(basis.ChebyshevU, 'scipy')
+# class ScipyChebyshevUTransform(ScipyDST):
+#     """
+#     f(x) = c_n U_n(x)
+#     f(x) sin(θ) = c_n sin(θ) U_n(x)
+#                 = c_n sin((n+1)θ)
+
+#     c_n are the U_n coefficients of f(x)
+#                 sine coefficients of f(x) sin(θ)
+#     """
+
+#     def forward_reduced(self):
+#         self.gdata_reduced *= sin_θ
+#         super().forward_reduced()
+
+#     def backward_reduce(self):
+#         super().backward_reduced()
+#         self.gdata_reduced *= (1 / sin_θ)
+
+
+# cdef class FFTWSineTransform:
+
+#     @CachedMethod
+#     def _fftw_dst_setup(self, dtype, gshape, axis):
+#         """Build FFTW DST plan and temporary array."""
+#         flags = ['FFTW_'+FFTW_RIGOR.upper()]
+#         logger.debug("Building FFTW DST plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, gshape, axis))
+#         plan = fftw.DiscreteSineTransform(dtype, gshape, axis, flags=flags)
+#         temp = fftw.create_array(gshape, dtype)
+#         return plan, temp
+
+#     def _forward_fftw(self, gdata, cdata, axis, scale):
+#         """Forward transform using FFTW DCT."""
+#         cdata, gdata = self.check_arrays(cdata, gdata, axis)
+#         plan, temp = self._fftw_dst_setup(gdata.dtype, gdata.shape, axis)
+#         plan.forward(gdata, temp)
+#         self._forward_dst_scaling(temp, axis)
+#         self._resize_coeffs(temp, cdata, axis)
+#         return cdata
+
+#     def _backward_fftw(self, cdata, gdata, axis, scale):
+#         """Backward transform using FFTW IDCT."""
+#         cdata, gdata = self.check_arrays(cdata, gdata, axis, scale)
+#         plan, temp = self._fftw_dst_setup(gdata.dtype, gdata.shape, axis)
+#         self._resize_coeffs(cdata, temp, axis)
+#         self._backward_dst_scaling(temp, axis)
+#         plan.backward(temp, gdata)
+#         return gdata
+
+
+#@register_transform(basis.Cosine, 'scipy')
+# class ScipyDCT(PolynomialTransform):
+
+#     def forward_reduced(self):
+#         # DCT-II transform from interior points
+#         temp = fftpack.dct(self.gdata_reduced, type=2, axis=1)
+#         # Rescale as sinusoid amplitudes
+#         temp[:, 0, :] *= 0.5
+#         temp *= (1 / self.N1G)
+#         # Resize
+#         self.resize_reduced(temp, self.cdata_reduced)
+
+#     def backward_reduced(self):
+#         # Resize into gdata for memory efficiency
+#         self.resize_reduced(self.cdata_reduced, self.gdata_reduced)
+#         # Rescale from sinusoid amplitudes
+#         self.gdata_reduced[:, 1:, :] *= 0.5
+#         # DCT-III transform to interior points
+#         temp = fftpack.dct(self.gdata_reduced, type=3, axis=1)
+#         np.copyto(self.gdata_reduced, temp)
+
+
+# @register_transform(basis.ChebyshevT, 'scipy')
+# class ScipyChebyshevTTransform(ScipyDCT):
+
+#     def forward_reduced(self):
+#         super().forward_reduced()
+#         # Negate odd modes for natural grid ordering
+#         self.cdata_reduced[:, 1::2, :] *= -1
+
+#     def backward_reduced(self):
+#         # Negate odd modes for natural grid ordering
+#         self.cdata_reduced[:, 1::2, :] *= -1
+#         super().backward_reduced()
+
+
+# class FFTWCosine:
+
+#     @CachedMethod
+#     def _fftw_dct_setup(self, dtype, gshape, axis):
+#         """Build FFTW DCT plan and temporary array."""
+#         flags = ['FFTW_'+FFTW_RIGOR.upper()]
+#         logger.debug("Building FFTW DCT plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, gshape, axis))
+#         plan = fftw.DiscreteCosineTransform(dtype, gshape, axis, flags=flags)
+#         temp = fftw.create_array(gshape, dtype)
+#         return plan, temp
+
+#     def _forward_fftw(self, gdata, cdata, axis, scale):
+#         """Forward transform using FFTW DCT."""
+#         cdata, gdata = self.check_arrays(cdata, gdata, axis)
+#         plan, temp = self._fftw_dct_setup(gdata.dtype, gdata.shape, axis)
+#         plan.forward(gdata, temp)
+#         self._forward_dct_scaling(temp, axis)
+#         self._resize_coeffs(temp, cdata, axis)
+#         return cdata
+
+#     def _backward_fftw(self, cdata, gdata, axis, scale):
+#         """Backward transform using FFTW IDCT."""
+#         cdata, gdata = self.check_arrays(cdata, gdata, axis, scale)
+#         plan, temp = self._fftw_dct_setup(gdata.dtype, gdata.shape, axis)
+#         self._resize_coeffs(cdata, temp, axis)
+#         self._backward_dct_scaling(temp, axis)
+#         plan.backward(temp, gdata)
+#         return gdata
+
+
+
 
 
 def reduced_view_3(data, axis):
@@ -45,10 +729,6 @@ def reduced_view_5(data, axis):
     N3 = shape[axis+2]
     N4 = int(np.prod(shape[axis+3:]))
     return data.reshape((N0, N1, N2, N3, N4))
-
-class Transform:
-    pass
-
 
 class PolynomialTransform(Transform):
 
@@ -146,388 +826,6 @@ class PolynomialTransform(Transform):
         self.backward_reduced()
 
 
-class SeparableTransform(Transform):
-    """Abstract base class for transforms that only apply to one dimension, independent of all others."""
-
-    def forward(self, gdata, cdata, axis):
-        """Apply forward transform along specified axis."""
-        # Subclasses must implement
-        raise NotImplementedError
-
-    def backward(self, cdata, gdata, axis):
-        """Apply backward transform along specified axis."""
-        # Subclasses must implement
-        raise NotImplementedError
-
-
-class MatrixTransform(SeparableTransform):
-    """Separable matrix-multiplication transforms."""
-
-    def forward(self, gdata, cdata, axis):
-        """Apply forward transform along specified axis."""
-        apply_matrix(self.forward_matrix, gdata, axis=axis, out=cdata)
-
-    def backward(self, cdata, gdata, axis):
-        """Apply backward transform along specified axis."""
-        apply_matrix(self.backward_matrix, cdata, axis=axis, out=gdata)
-
-    @CachedAttribute
-    def forward_matrix(self):
-        # Subclasses must implement
-        raise NotImplementedError
-
-    @CachedAttribute
-    def backward_matrix(self):
-        # Subclasses must implement
-        raise NotImplementedError
-
-
-@register_transform(basis.Jacobi, 'matrix')
-@register_transform(basis.SphericalShellRadialBasis, 'matrix')
-class JacobiMatrixTransform(MatrixTransform):
-    """Jacobi polynomial transforms."""
-
-    def __init__(self, grid_size, coeff_size, a, b, a0, b0):
-        self.grid_size = grid_size
-        self.coeff_size = coeff_size
-        self.a = a
-        self.b = b
-        self.a0 = a0
-        self.b0 = b0
-
-    @CachedAttribute
-    def forward_matrix(self):
-        N = self.grid_size
-        M = self.coeff_size
-        a, a0 = self.a, self.a0
-        b, b0 = self.b, self.b0
-        # Gauss quadrature with base polynomials
-        base_grid = jacobi.build_grid(N, a=a0, b=b0)
-        base_polynomials = jacobi.build_polynomials(M, a0, b0, base_grid)
-        base_weights = jacobi.build_weights(N, a=a0, b=b0)
-        base_transform = (base_polynomials * base_weights)
-        # Zero higher coefficients for transforms with grid_size < coeff_size
-        base_transform[N:, :] = 0
-        # Spectral conversion
-        if (a == a0) and (b == b0):
-            forward_matrix = base_transform
-        else:
-            conversion = jacobi.conversion_matrix(M, a0, b0, a, b)
-            forward_matrix = conversion @ base_transform
-        return np.asarray(forward_matrix, order='C')
-
-    @CachedAttribute
-    def backward_matrix(self):
-        N = self.grid_size
-        M = self.coeff_size
-        a, a0 = self.a, self.a0
-        b, b0 = self.b, self.b0
-        # Polynomial recursion using base grid
-        base_grid = jacobi.build_grid(N, a=a0, b=b0)
-        polynomials = jacobi.build_polynomials(M, a, b, base_grid)
-        # Zero higher polynomials for transforms with grid_size < coeff_size
-        polynomials[N:, :] = 0
-        return np.asarray(polynomials.T, order='C')
-
-
-class FourierTransform(SeparableTransform):
-    """
-    Complex Fourier transform with unit-amplitude normalization:
-
-    Forward transform:
-        F(k) = (1/N) \sum_{x=0}^{N-1} f(x) \exp(-2 \pi i k x / N)
-
-    Backward transform:
-        f(x) = \sum_{k=-K}^{K} F(k) \exp(2 \pi i k x / N)
-        K = (M - 1) // 2
-
-    Notes:
-        - Nyquist mode is zeroed in both directions.
-        - Coefficient ordering is [0, 1, 2, ..., K, K+1, -K, -K+1, ..., -1].
-    """
-
-    def __init__(self, grid_size, coeff_size):
-        self.N = grid_size
-        self.M = coeff_size
-
-    @property
-    def wavenumbers(self):
-        M = self.M
-        K = np.arange(M)
-        # Wrap around Nyquist mode
-        KN = (M + 1) // 2
-        return (K + KN - 1) % M - (KN - 1)
-
-    @staticmethod
-    def resize_coeffs(data_in, data_out, axis, rescale=1):
-        """Resize coefficients by padding/truncation."""
-        data_in_reduced = reduced_view_3(data_in, axis)
-        data_out_reduced = reduced_view_3(data_out, axis)
-        K_in = (data_in.shape[axis] - 1) // 2
-        K_out = (data_out.shape[axis] - 1) // 2
-        K = min(K_in, K_out)
-        np.multiply(data_in_reduced[:, :K+1], rescale, out=data_out_reduced[:, :K+1])
-        data_out_reduced[:, K+1:-K] = 0
-        np.multiply(data_in_reduced[:, -K:], rescale, out=data_out_reduced[:, -K:])
-
-
-@register_transform(basis.ComplexFourier, 'matrix')
-class FourierMatrixTransform(FourierTransform, MatrixTransform):
-    """Complex Fourier matrix transform."""
-
-    @CachedAttribute
-    def forward_matrix(self):
-        K = self.wavenumbers[:, None]
-        X = np.arange(self.N)[None, :]
-        dX = self.N / 2 / np.pi
-        quadrature = np.exp(-1j*K*X/dX) / self.N
-        # Zero Nyquist and higher modes for transforms with grid_size <= coeff_size
-        KN = (min(self.M, self.N) + 1) // 2
-        quadrature *= (np.abs(K) < KN)
-        return np.asarray(quadrature, order='C')
-
-    @CachedAttribute
-    def backward_matrix(self):
-        K = self.wavenumbers[None, :]
-        X = np.arange(self.N)[:, None]
-        dX = self.N / 2 / np.pi
-        functions = np.exp(1j*K*X/dX)
-        # Zero Nyquist and higher modes for transforms with grid_size <= coeff_size
-        KN = (min(self.M, self.N) + 1) // 2
-        functions *= (np.abs(K) < KN)
-        return np.asarray(functions, order='C')
-
-
-@register_transform(basis.ComplexFourier, 'ScipyFFT')
-class ScipyFFT(FourierTransform):
-    """Complex FFT using Scipy's FFTPACK."""
-
-    def forward(self, gdata, cdata, axis):
-        """Apply forward transform along specified axis."""
-        # Call FFT
-        temp = fftpack.fft(gdata, axis=axis)
-        # Resize and rescale for unit-amplitude normalization
-        self.resize_coeffs(temp, cdata, axis, rescale=1/self.N)
-
-    def backward(self, cdata, gdata, axis):
-        """Apply backward transform along specified axis."""
-        # Resize and rescale for unit-amplitude normalization
-        # Need temporary to avoid overwriting problems
-        temp = np.empty_like(gdata)
-        self.resize_coeffs(cdata, temp, axis, rescale=self.N)
-        # Call FFT
-        gdata[:] = fftpack.ifft(temp, axis=axis)
-
-
-class ScipyDST(PolynomialTransform):
-
-    def forward_reduced(self):
-        # DST-II transform from interior points
-        temp = fftpack.dst(self.gdata_reduced, type=2, axis=1)
-        # Rescale as sinusoid amplitudes
-        temp[:, -1, :] *= 0.5
-        temp *= (1 / self.N1G)
-        # Resize
-        self.resize_reduced(temp, self.cdata_reduced)
-
-    def backward_reduced(self):
-        # Resize into gdata for memory efficiency
-        self.resize_reduced(self.cdata_reduced, self.gdata_reduced)
-        # Rescale from sinusoid amplitudes
-        self.gdata_reduced[:, :-1, :] *= 0.5
-        # DST-III transform to interior points
-        temp = fftpack.dst(self.gdata_reduced, type=3, axis=1)
-        np.copyto(self.gdata_reduced, temp)
-
-
-#@register_transform(basis.Sine, 'scipy')
-class ScipySineTransform(ScipyDST):
-
-    def forward_reduced(self):
-        super().forward_reduced()
-        # Shift data, adding zero mode and dropping Nyquist
-        start = self.cdata_reduced[:, :-1, :]
-        shift = self.cdata_reduced[:, 1:, :]
-        np.copyto(shift, start)
-        self.cdata_reduced[:, 0, :] = 0
-
-    def backward_reduced(self):
-        # Unshift data, adding Nyquist mode and dropping zero
-        start = self.cdata_reduced[:, :-1, :]
-        shift = self.cdata_reduced[:, 1:, :]
-        np.copyto(start, shift)
-        self.cdata_reduced[:, -1, :] = 0
-        super().backward_reduced()
-
-
-# @register_transform(basis.ChebyshevU, 'scipy')
-# class ScipyChebyshevUTransform(ScipyDST):
-#     """
-#     f(x) = c_n U_n(x)
-#     f(x) sin(θ) = c_n sin(θ) U_n(x)
-#                 = c_n sin((n+1)θ)
-
-#     c_n are the U_n coefficients of f(x)
-#                 sine coefficients of f(x) sin(θ)
-#     """
-
-#     def forward_reduced(self):
-#         self.gdata_reduced *= sin_θ
-#         super().forward_reduced()
-
-#     def backward_reduce(self):
-#         super().backward_reduced()
-#         self.gdata_reduced *= (1 / sin_θ)
-
-
-# cdef class FFTWSineTransform:
-
-#     @CachedMethod
-#     def _fftw_dst_setup(self, dtype, gshape, axis):
-#         """Build FFTW DST plan and temporary array."""
-#         flags = ['FFTW_'+FFTW_RIGOR.upper()]
-#         logger.debug("Building FFTW DST plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, gshape, axis))
-#         plan = fftw.DiscreteSineTransform(dtype, gshape, axis, flags=flags)
-#         temp = fftw.create_array(gshape, dtype)
-#         return plan, temp
-
-#     def _forward_fftw(self, gdata, cdata, axis, scale):
-#         """Forward transform using FFTW DCT."""
-#         cdata, gdata = self.check_arrays(cdata, gdata, axis)
-#         plan, temp = self._fftw_dst_setup(gdata.dtype, gdata.shape, axis)
-#         plan.forward(gdata, temp)
-#         self._forward_dst_scaling(temp, axis)
-#         self._resize_coeffs(temp, cdata, axis)
-#         return cdata
-
-#     def _backward_fftw(self, cdata, gdata, axis, scale):
-#         """Backward transform using FFTW IDCT."""
-#         cdata, gdata = self.check_arrays(cdata, gdata, axis, scale)
-#         plan, temp = self._fftw_dst_setup(gdata.dtype, gdata.shape, axis)
-#         self._resize_coeffs(cdata, temp, axis)
-#         self._backward_dst_scaling(temp, axis)
-#         plan.backward(temp, gdata)
-#         return gdata
-
-
-#@register_transform(basis.Cosine, 'scipy')
-class ScipyDCT(PolynomialTransform):
-
-    def forward_reduced(self):
-        # DCT-II transform from interior points
-        temp = fftpack.dct(self.gdata_reduced, type=2, axis=1)
-        # Rescale as sinusoid amplitudes
-        temp[:, 0, :] *= 0.5
-        temp *= (1 / self.N1G)
-        # Resize
-        self.resize_reduced(temp, self.cdata_reduced)
-
-    def backward_reduced(self):
-        # Resize into gdata for memory efficiency
-        self.resize_reduced(self.cdata_reduced, self.gdata_reduced)
-        # Rescale from sinusoid amplitudes
-        self.gdata_reduced[:, 1:, :] *= 0.5
-        # DCT-III transform to interior points
-        temp = fftpack.dct(self.gdata_reduced, type=3, axis=1)
-        np.copyto(self.gdata_reduced, temp)
-
-
-# @register_transform(basis.ChebyshevT, 'scipy')
-# class ScipyChebyshevTTransform(ScipyDCT):
-
-#     def forward_reduced(self):
-#         super().forward_reduced()
-#         # Negate odd modes for natural grid ordering
-#         self.cdata_reduced[:, 1::2, :] *= -1
-
-#     def backward_reduced(self):
-#         # Negate odd modes for natural grid ordering
-#         self.cdata_reduced[:, 1::2, :] *= -1
-#         super().backward_reduced()
-
-
-# class FFTWCosine:
-
-#     @CachedMethod
-#     def _fftw_dct_setup(self, dtype, gshape, axis):
-#         """Build FFTW DCT plan and temporary array."""
-#         flags = ['FFTW_'+FFTW_RIGOR.upper()]
-#         logger.debug("Building FFTW DCT plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, gshape, axis))
-#         plan = fftw.DiscreteCosineTransform(dtype, gshape, axis, flags=flags)
-#         temp = fftw.create_array(gshape, dtype)
-#         return plan, temp
-
-#     def _forward_fftw(self, gdata, cdata, axis, scale):
-#         """Forward transform using FFTW DCT."""
-#         cdata, gdata = self.check_arrays(cdata, gdata, axis)
-#         plan, temp = self._fftw_dct_setup(gdata.dtype, gdata.shape, axis)
-#         plan.forward(gdata, temp)
-#         self._forward_dct_scaling(temp, axis)
-#         self._resize_coeffs(temp, cdata, axis)
-#         return cdata
-
-#     def _backward_fftw(self, cdata, gdata, axis, scale):
-#         """Backward transform using FFTW IDCT."""
-#         cdata, gdata = self.check_arrays(cdata, gdata, axis, scale)
-#         plan, temp = self._fftw_dct_setup(gdata.dtype, gdata.shape, axis)
-#         self._resize_coeffs(cdata, temp, axis)
-#         self._backward_dct_scaling(temp, axis)
-#         plan.backward(temp, gdata)
-#         return gdata
-
-
-class ScipyRFFT(PolynomialTransform):
-    """
-    Mode order: [cos 0, -sin 0, cos 1, -sin 1, ...]
-
-    (a + bi) e^{ikx}
-    (a + bi) (cos(kx) + i sin(kx))
-    a cos(kx) - b sin(kx) + i (...)
-    """
-
-    def forward_reduced(self):
-        # RFFT
-        temp = fftpack.rfft(self.gdata_reduced, axis=1)
-        # Rescale as sinusoid amplitudes
-        scaling = np.ones(self.N1G) / self.N1G
-        scaling[1:-1] *= 2
-        #scaling[2::2] *= -1
-        temp *= scaling[None, :, None]
-        # Resize
-        self.resize_reduced(temp, self.cdata_reduced)
-
-    def backward_reduced(self):
-        # Resize into gdata for memory efficiency
-        self.resize_reduced(self.cdata_reduced, self.gdata_reduced)
-        # Rescale from sinusoid amplitudes
-        scaling = np.ones(self.N1G) / self.N1G
-        scaling[1:-1] *= 2
-        #scaling[2::2] *= -1
-        self.gdata_reduced *= 1 / scaling[None, :, None]
-        # IRFFT
-        temp = fftpack.irfft(self.gdata_reduced, axis=1)
-        np.copyto(self.gdata_reduced, temp)
-
-
-@register_transform(basis.RealFourier, 'ScipyRFFT')
-class ScipyFourierTransform(ScipyRFFT):
-
-    def forward_reduced(self):
-        super().forward_reduced()
-        # Shift data, adding zero sine mode and dropping Nyquist cosine
-        start = self.cdata_reduced[:, 1:-1, :]
-        shift = self.cdata_reduced[:, 2:, :]
-        np.copyto(shift, start)
-        self.cdata_reduced[:, 1, :] = 0
-
-    def backward_reduced(self):
-        # Unshift data, adding Nyquist cosine and dropping zero sine
-        start = self.cdata_reduced[:, 1:-1, :]
-        shift = self.cdata_reduced[:, 2:, :]
-        np.copyto(start, shift)
-        self.cdata_reduced[:, -1, :] = 0
-        super().backward_reduced()
-
 
 def reduce_array(data, axis):
     """Return reduced 3D view of array collapsed above and below specified axis."""
@@ -554,52 +852,6 @@ def backward_DFT(cdata, gdata, axis):
     PolynomialTransform.resize_reduced(cdata_reduced, gdata_reduced)
     temp = np.fft.ifft(gdata_reduced, axis=1)
     np.copyto(gdata_reduced, temp)
-
-
-
-# class FFTWFourierTransform:
-
-#     @CachedMethod
-#     def _fftw_setup(self, dtype, gshape, axis):
-#         """Build FFTW plans and temporary arrays."""
-#         # Note: regular method used to cache through basis instance
-
-#         logger.debug("Building FFTW FFT plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, gshape, axis))
-#         flags = ['FFTW_'+FFTW_RIGOR.upper()]
-#         plan = fftw.FourierTransform(dtype, gshape, axis, flags=flags)
-#         temp = fftw.create_array(plan.cshape, np.complex128)
-#         if dtype == np.float64:
-#             resize_coeffs = self._resize_real_coeffs
-#         elif dtype == np.complex128:
-#             resize_coeffs = self._resize_complex_coeffs
-
-#         return plan, temp, resize_coeffs
-
-#     def _forward_fftw(self, gdata, cdata, axis, meta):
-#         """Forward transform using FFTW FFT."""
-
-#         cdata, gdata = self.check_arrays(cdata, gdata, axis)
-#         plan, temp, resize_coeffs = self._fftw_setup(gdata.dtype, gdata.shape, axis)
-#         # Execute FFTW plan
-#         plan.forward(gdata, temp)
-#         # Scale FFT output to mode amplitudes
-#         temp *= 1 / gdata.shape[axis]
-#         # Pad / truncate coefficients
-#         resize_coeffs(temp, cdata, axis, gdata.shape[axis])
-
-#         return cdata
-
-#     def _backward_fftw(self, cdata, gdata, axis, meta):
-#         """Backward transform using FFTW IFFT."""
-
-#         cdata, gdata = self.check_arrays(cdata, gdata, axis, meta)
-#         plan, temp, resize_coeffs = self._fftw_setup(gdata.dtype, gdata.shape, axis)
-#         # Pad / truncate coefficients
-#         resize_coeffs(cdata, temp, axis, gdata.shape[axis])
-#         # Execute FFTW plan
-#         plan.backward(temp, gdata)
-
-#         return gdata
 
 
 class NonSeparableTransform(Transform):

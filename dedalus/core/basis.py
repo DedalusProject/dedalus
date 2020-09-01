@@ -672,7 +672,7 @@ class ComplexFourier(IntervalBasis):
     def __init__(self, coord, size, bounds, dealias=1, library=None):
         super().__init__(coord, size, bounds, dealias)
         if library is None:
-            library = 'ScipyFFT'
+            library = 'fftw'
         self.library = library
         self.kmax = kmax = (size - 1) // 2
         self.wavenumbers = np.concatenate((np.arange(0, kmax+2), np.arange(-kmax, 0)))  # Includes Nyquist mode
@@ -768,7 +768,7 @@ class RealFourier(IntervalBasis):
     group_shape = (2,)
     native_bounds = (0, 2*np.pi)
     transforms = {}
-    default_library = 'ScipyRFFT'
+    default_library = 'fftw'
 
     def __init__(self, coord, size, bounds, dealias=1, library=None):
         if library is None:
