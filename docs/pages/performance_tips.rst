@@ -3,6 +3,16 @@
 Performance Tips
 ****************
 
+Stack Configuration
+===================
+
+Disable multithreading
+----------------------
+
+Dedalus does not fully implement hybrid parallelism, so the best performance is typically seen when there is one MPI process for each available core.
+Some underlying stack components (e.g. Numpy or Scipy or the libraries they wrap) may still attempt to use multiple threads behind the scenes, though, and this can substantially degrade performance.
+We therefore recommend explicitly disabling threading by setting environment variables such as ``OMP_NUM_THREADS`` to ``1`` before running Dedalus.
+
 Domain Specification
 ====================
 
