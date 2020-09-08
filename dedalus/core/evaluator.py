@@ -430,12 +430,13 @@ class FileHandler(Handler):
             self._property_list = h5py.h5p.create(h5py.h5p.DATASET_XFER)
             self._property_list.set_dxpl_mpio(h5py.h5fd.MPIO_COLLECTIVE)
 
-    def check_file_limits(self, virtual_file=False):
+    def check_file_limits(self):
         """Check if write or size limits have been reached."""
         write_limit = (self.file_write_num >= self.max_writes)
         size_limit = (self.current_path.stat().st_size >= self.max_size)
-        if not self.parallel and not self.virtual_file:
-            logger.info("reducing size_limit. virtual_file = {}".format(virtual_file))
+        logger.debug("checking file limits. Write limit = {}; self.file_write_num = {}, self.max_writes = {}".format(write_limit, self.file_write_num, self.max_writes))
+
+        if not self.parallel:
             # reduce(size_limit, or) across processes
             comm = self.dist.comm_cart
             self._sl_array[0] = size_limit
@@ -447,7 +448,7 @@ class FileHandler(Handler):
         """Return current HDF5 file, creating if necessary."""
         # Create new file if necessary
         if os.path.exists(str(self.current_path)):
-            if self.check_file_limits(virtual_file):
+            if not virtual_file and self.check_file_limits():
                 self.set_num += 1
                 self.create_current_file()
         else:
@@ -461,7 +462,7 @@ class FileHandler(Handler):
                 h5file = h5py.File(str(self.current_virtual_path), 'r+')
             else:
                 h5file = h5py.File(str(self.current_path), 'r+')
-        self.file_write_num = h5file['/scales/write_number'].shape[0]
+                self.file_write_num = h5file['/scales/write_number'].shape[0]
         return h5file
 
     @property
@@ -660,7 +661,8 @@ class FileHandler(Handler):
         # HACK: fix world time and timestep inputs from solvers.py/timestepper.py
         file = self.get_file(virtual_file=virtual_file)
         self.total_write_num += 1
-        self.file_write_num += 1
+        if not virtual_file:
+            self.file_write_num += 1
         file.attrs['writes'] = self.file_write_num
         index = self.file_write_num - 1
 
