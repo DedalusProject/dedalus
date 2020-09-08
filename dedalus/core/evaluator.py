@@ -593,7 +593,7 @@ class FileHandler(Handler):
                 # set up virtual layout
                 virt_layout = self.construct_virtual_sources(task, file_shape)
                 # create virtual dataset
-                dset = task_group.create_virtual_dataset(task['name'], virt_layout, fillvalue=None)
+                dset = task_group.create_virtual_dataset(task['name'], virt_layout, fillvalue=np.nan)
             else:
                 dset = task_group.create_dataset(name=task['name'], shape=file_shape, maxshape=file_max, dtype=op.dtype)
 
@@ -740,6 +740,7 @@ class FileHandler(Handler):
 
         constant = np.array((False,)*tensor_order + domain.constant)
         start = np.array([0 for i in range(tensor_order)] + [elements[0] for elements in layout.local_elements(domain, scales, rank = rank)])
+        logger.debug("rank: {}, start = {}".format(rank, start))
         first = (start == 0)
 
         # Build counts, taking just the first entry along constant axes

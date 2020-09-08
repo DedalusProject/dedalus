@@ -245,7 +245,7 @@ class Layout:
     def local_elements(self, domain, scales, rank = None):
         """Local element indices by axis."""
         chunk_shape = self.chunk_shape(domain)
-        local_chunks = self.local_chunks(domain, scales, rank = None)
+        local_chunks = self.local_chunks(domain, scales, rank = rank)
         indices = []
         for GS, LG in zip(chunk_shape, local_chunks):
             indices.append(np.array([GS*G+i for G in LG for i in range(GS)], dtype=int))
