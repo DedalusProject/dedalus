@@ -200,7 +200,7 @@ class build(_build):
 # Setup
 setup(
     name='dedalus',
-    version='2.2006a1',
+    version='2.2006',
     author='Keaton J. Burns',
     author_email='keaton.burns@gmail.com',
     description="A flexible framework for solving PDEs with modern spectral methods.",
