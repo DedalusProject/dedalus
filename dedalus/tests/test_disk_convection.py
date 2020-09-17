@@ -88,8 +88,8 @@ def BC_rows(N, m, num_comp):
 
 for subproblem in solver.subproblems:
     m = subproblem.group[0]
-    L = subproblem.L_min
-    M = subproblem.M_min
+    L = subproblem.left_perm.T @ subproblem.L_min
+    
     if dtype == np.complex128:
         raise NotImplementedError()
     elif dtype == np.float64:
@@ -110,17 +110,22 @@ for subproblem in solver.subproblems:
             tau_columns[N1+NM:N2,5] = (C(Nmax, m, 0))[:,-1]
             L[:,-6:] = tau_columns
 
-    L.eliminate_zeros()
-    subproblem.expand_matrices(['M','L'])
+    subproblem.L_min = subproblem.left_perm @ L
+    if problem.STORE_EXPANDED_MATRICES:
+        subproblem.expand_matrices(['M','L'])
 
     #print("m = {}: Condition number {}".format(m, np.linalg.cond((L+M).A)))
     
 # initial conditions
-noise = np.random.randn(*T['g'].shape)*Ampl
-T['g'] = 1-r**2 + noise
+np.random.seed(10)
+slices = T.dist.grid_layout.slices(T.domain,T.scales)
+noise = np.random.randn(*T.dist.grid_layout.global_shape(T.domain, T.scales))*Ampl
+T['g'] = 1-r**2 + noise[slices]
+print(T['c'][:,5])
 T.require_scales((0.25,0.25))
 T['g']
 T.require_scales((1,1))
+print(T['c'][:,5])
 
 # Main loop
 solver.stop_sim_time = 1
