@@ -1,3 +1,4 @@
 setuptools >= 18.0
 sphinx-autoapi
 nbsphinx
+pygments>=2.4.1
