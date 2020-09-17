@@ -841,6 +841,21 @@ class RealFourier(IntervalBasis):
             permute_axis(cdata, axis+len(field.tensorsig), self.backward_coeff_permutation, out=cdata)
         super().backward_transform(field, axis, cdata, gdata)        
 
+    def local_group_slices(self, basis_group):
+        group, = basis_group
+        # Return slices
+        if group is None:
+            # Return all coefficients
+            return [slice(None)]
+        else:
+            # Get local groups
+            local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)[self.axis]
+            # Groups are stored sequentially
+            permuted_wavenumbers = self.wavenumbers[self.forward_coeff_permutation][::2]
+            local_groups = permuted_wavenumbers[local_chunks]
+            local_index = list(local_groups).index(group)
+            group_size = self.group_shape[0]
+            return [slice(local_index*group_size, (local_index+1)*group_size)]
 
 class ConvertConstantRealFourier(operators.Convert, operators.SpectralOperator1D):
 
