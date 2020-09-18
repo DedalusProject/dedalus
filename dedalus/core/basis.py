@@ -2117,12 +2117,23 @@ class SphericalShellRadialBasis(RegularityBasis):
 
     def __mul__(self, other):
         if other is None:
+            print("hitting None")
             return self
         if isinstance(other, SphericalShellRadialBasis):
             if self.grid_params == other.grid_params:
                 radial_size = max(self.shape[2], other.shape[2])
                 k = 0
                 return SphericalShellRadialBasis(self.coordsystem, radial_size, radii=self.radii, alpha=self.alpha, dealias=self.dealias[2:], k=k, radius_library=self.radius_library, dtype=self.dtype)
+        if isinstance(other, SpinWeightedSphericalHarmonics):
+            # hacked to not check grid parameters, and setting shape and dealias by hand
+            shape = (other.shape[0], other.shape[1], self.shape[2])
+            dealias = (other.dealias[0], other.dealias[1], self.dealias[2])
+            k = self.k
+            print(shape)
+            print(dealias)
+            return SphericalShellBasis(self.coordsystem, shape, radii=self.radii, alpha=self.alpha, dealias=dealias, k=k,
+                                       dtype=self.dtype, azimuth_library=other.azimuth_library, colatitude_library=other.colatitude_library,
+                                       radius_library=self.radius_library)
         return NotImplemented
 
     def __matmul__(self, other):
@@ -2136,6 +2147,14 @@ class SphericalShellRadialBasis(RegularityBasis):
                 radial_size = max(self.shape[2], other.shape[2])
                 k = self.k + other.k
                 return SphericalShellRadialBasis(self.coordsystem, radial_size, radii=self.radii, k=k, alpha=self.alpha, dealias=self.dealias[2:], radius_library=self.radius_library, dtype=self.dtype)
+        if isinstance(other, SpinWeightedSphericalHarmonics):
+            # hacked to not check grid parameters, and setting shape and dealias by hand
+            shape = (other.shape[0], other.shape[1], self.shape[2])
+            dealias = (other.dealias[0], other.dealias[1], self.dealias[2])
+            k = self.k
+            return SphericalShellBasis(self.coordsystem, shape, radii=self.radii, alpha=self.alpha, dealias=dealias, k=k,
+                                       dtype=self.dtype, azimuth_library=other.azimuth_library, colatitude_library=other.colatitude_library,
+                                       radius_library=self.radius_library)
         return NotImplemented
 
     def _new_k(self, k):
