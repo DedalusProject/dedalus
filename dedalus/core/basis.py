@@ -1225,24 +1225,20 @@ class SpinRecombinationBasis:
                       + np.kron(matrix.imag,np.array([[0,-1],[1,0]])))
         return matrix
 
-    def forward_spin_recombination(self, tensorsig, gdata, out=None):
+    def forward_spin_recombination(self, tensorsig, gdata, temp):
         """Apply component-to-spin recombination."""
-        if out is None:
-            out = gdata
-        else:
-            # HACK: just copying the data so we can apply_matrix repeatedly
-            np.copyto(out, gdata)
+        # HACK: just copying the data so we can apply_matrix repeatedly
+        np.copyto(temp, gdata)
         if tensorsig:
             U = self.spin_recombination_matrices(tensorsig)
-            if gdata.dtype == np.complex128:
-                data = out
+            if self.dtype == np.complex128:
                 for i, Ui in enumerate(U):
                     if Ui is not None:
                         # Directly apply U
-                        apply_matrix(Ui, data, axis=i, out=data)
-            elif gdata.dtype == np.float64:
-                data_cos = out[axslice(self.axis+len(tensorsig), 0, None, 2)]
-                data_msin = out[axslice(self.axis+len(tensorsig), 1, None, 2)]  # minus sine coefficient
+                        apply_matrix(Ui, temp, axis=i, out=temp)
+            elif self.dtype == np.float64:
+                data_cos = temp[axslice(self.axis+len(tensorsig), 0, None, 2)]
+                data_msin = temp[axslice(self.axis+len(tensorsig), 1, None, 2)]  # minus sine coefficient
                 for i, Ui in enumerate(U):
                     if Ui is not None:
                         # Apply U split up into real and imaginary pieces
@@ -1253,24 +1249,19 @@ class SpinRecombinationBasis:
                         data_cos[:] = RC - ImS
                         data_msin[:] = RmS + IC
 
-    def backward_spin_recombination(self, tensorsig, gdata, out=None):
+    def backward_spin_recombination(self, tensorsig, temp, gdata):
         """Apply spin-to-component recombination."""
-        if out is None:
-            out = gdata
-        else:
-            # HACK: just copying the data so we can apply_matrix repeatedly
-            np.copyto(out, gdata)
+        # HACK: just copying the data so we can apply_matrix repeatedly
         if tensorsig:
             U = self.spin_recombination_matrices(tensorsig)
-            if gdata.dtype == np.complex128:
-                data = out
+            if temp.dtype == np.complex128:
                 for i, Ui in enumerate(U):
                     if Ui is not None:
                         # Directly apply U
-                        apply_matrix(Ui.T.conj(), data, axis=i, out=data)
-            elif gdata.dtype == np.float64:
-                data_cos = out[axslice(self.axis+len(tensorsig), 0, None, 2)]
-                data_msin = out[axslice(self.axis+len(tensorsig), 1, None, 2)]  # minus sine coefficient
+                        apply_matrix(Ui.T.conj(), temp, axis=i, out=temp)
+            elif temp.dtype == np.float64:
+                data_cos = temp[axslice(self.axis+len(tensorsig), 0, None, 2)]
+                data_msin = temp[axslice(self.axis+len(tensorsig), 1, None, 2)]  # minus sine coefficient
                 for i, Ui in enumerate(U):
                     if Ui is not None:
                         # Apply U split up into real and imaginary pieces
@@ -1281,6 +1272,7 @@ class SpinRecombinationBasis:
                         ImS = apply_matrix(Ui_inv.imag, data_msin, axis=i)
                         data_cos[:] = RC - ImS
                         data_msin[:] = RmS + IC
+        np.copyto(gdata, temp)
 
 
 # These are common for S2 and D2
@@ -1364,28 +1356,47 @@ class DiskBasis(SpinBasis):
         if self.mmax > 2*self.Nmax:
             logger.warning("You are using more azimuthal modes than can be resolved with your current radial resolution")
             #raise ValueError("shape[0] cannot be more than twice shape[1].")
-        self.forward_transforms = [self.forward_transform_azimuth,
-                                   self.forward_transform_radius]
-        self.backward_transforms = [self.backward_transform_azimuth,
-                                    self.backward_transform_radius]
+        if self.mmax == 0:
+            self.forward_transforms = [self.forward_transform_azimuth_Mmax0,
+                                       self.forward_transform_radius]
+            self.backward_transforms = [self.backward_transform_azimuth_Mmax0,
+                                        self.backward_transform_radius]            
+        else:
+            self.forward_transforms = [self.forward_transform_azimuth,
+                                       self.forward_transform_radius]
+            self.backward_transforms = [self.backward_transform_azimuth,
+                                        self.backward_transform_radius]
+        
         self.grid_params = (coordsystem, radius, alpha, dealias)
-        if self.Nmax > 0 and shape[0] % 2 != 0:
+        if self.mmax > 0 and self.Nmax > 0 and shape[0] % 2 != 0:
             raise ValueError("Don't use an odd phi resolution, please")
-        if self.Nmax > 0 and self.dtype == np.float64 and shape[0] % 4 != 0:
+        if self.mmax > 0 and self.Nmax > 0 and self.dtype == np.float64 and shape[0] % 4 != 0:
             raise ValueError("Don't use a phi resolution that isn't divisible by 4, please")
+
+        # ASSUMPTION: we assume we are dropping Nyquist mode, so shape=2 --> mmax = 0
         # m permutations for repacking triangular truncation
         if self.dtype == np.complex128:
             raise NotImplementedError("Complex values are not supported for Disk Bases.")
         elif self.dtype == np.float64:
-            az_index = np.arange(shape[0])
-            div2, mod2 = divmod(az_index, 2)
-            div22 = div2 % 2
-            self.forward_m_perm = (mod2 + div2) * (1 - div22) + (shape[0] - 1 + mod2 - div2) * div22
-            self.backward_m_perm = np.argsort(self.forward_m_perm)
-            self.group_shape = (2, 1)
+            if self.mmax > 0:
+                az_index = np.arange(shape[0])
+                div2, mod2 = divmod(az_index, 2)
+                div22 = div2 % 2
+                self.forward_m_perm = (mod2 + div2) * (1 - div22) + (shape[0] - 1 + mod2 - div2) * div22
+                self.backward_m_perm = np.argsort(self.forward_m_perm)
+            else:
+                self.forward_m_perm = None
+                self.backward_m_perm = None
 
+            self.group_shape = (2, 1)
         # this should probably be cleaned up later; needed for m permutation in disk
         self.azimuth_basis = self.S1_basis(radius=self.radius)
+
+    @CachedAttribute
+    def radial_basis(self):
+        new_shape = (1, self.shape[1])
+        dealias = (1, self.dealias[1])
+        return DiskBasis(self.coordsystem, new_shape, radius=self.radius, k=self.k, alpha=self.alpha, dealias=dealias, radius_library=self.radius_library, dtype=self.dtype, azimuth_library=self.azimuth_library)
 
     @CachedMethod
     def S1_basis(self, radius=1):
@@ -1407,7 +1418,10 @@ class DiskBasis(SpinBasis):
         grid_shape = self.grid_shape(scales)
         if grid_space[0]:
             # grid-grid space
-            return grid_shape
+            if self.mmax == 0:
+                return (1, grid_shape[1])
+            else:
+                return grid_shape
         elif grid_space[1]:
             # coeff-grid space
             shape = list(grid_shape)
@@ -1536,8 +1550,19 @@ class DiskBasis(SpinBasis):
                 return DiskBasis(self.coordsystem, shape, radius=self.radius, k=0, alpha=self.alpha, dealias=self.dealias, dtype=self.dtype)
         return NotImplemented
 
+    def __matmul__(self, other):
+        """NCC is other.
+        """
+        if other is None:
+            return self
+        if isinstance(other, DiskBasis):
+            return other._new_k(self.k)
+        return NotImplemented
+
     @CachedAttribute
     def local_m(self):
+        if self.shape[0] == 1:
+            return tuple([0,])
         # Permute Fourier wavenumbers
         wavenumbers = self.azimuth_basis.wavenumbers[self.forward_m_perm]
         # Get layout before radius forward transform
@@ -1629,10 +1654,11 @@ class DiskBasis(SpinBasis):
         """Build transform plan."""
         return self.transforms[self.radius_library](grid_shape, self.shape, axis, self.m_maps, s, self.k, self.alpha)
 
-    def forward_transform_azimuth_Nmax0(self, field, axis, gdata, cdata):
-        raise NotImplementedError("Not yet.")
+    def forward_transform_azimuth_Mmax0(self, field, axis, gdata, cdata):
         # slice_axis = axis + len(field.tensorsig)
         # np.copyto(cdata[axslice(slice_axis, 0, 1)], gdata)
+        print("gdata.shape = {}; cdata.shape = {}".format(gdata.shape, cdata.shape))
+        np.copyto(cdata[axslice(self.axis+len(field.tensorsig), 0, 1)], gdata)
 
     def forward_transform_azimuth(self, field, axis, gdata, cdata):
         # Call Fourier transform
@@ -1640,10 +1666,11 @@ class DiskBasis(SpinBasis):
         # Permute m for triangular truncation
         #permute_axis(cdata, axis+len(field.tensorsig), self.forward_m_perm, out=cdata)
 
-    def backward_transform_azimuth_Nmax0(self, field, axis, cdata, gdata):
-        raise NotImplementedError("Not yet.")
+    def backward_transform_azimuth_Mmax0(self, field, axis, cdata, gdata):
         # slice_axis = axis + len(field.tensorsig)
         # np.copyto(gdata, cdata[axslice(slice_axis, 0, 1)])
+        print("gdata.shape = {}; cdata.shape = {}".format(gdata.shape, cdata.shape))
+        np.copyto(gdata, cdata[axslice(self.axis+len(field.tensorsig), 0, 1)])
 
     def backward_transform_azimuth(self, field, axis, cdata, gdata):
         # Permute m back from triangular truncation
@@ -1663,7 +1690,7 @@ class DiskBasis(SpinBasis):
         # Create temporary
         temp = np.zeros_like(gdata)
         # Apply spin recombination from gdata to temp
-        self.forward_spin_recombination(field.tensorsig, gdata, out=temp)
+        self.forward_spin_recombination(field.tensorsig, gdata, temp)
         cdata.fill(0)  # OPTIMIZE: shouldn't be necessary
         # Transform component-by-component from temp to cdata
         S = self.spin_weights(field.tensorsig)
@@ -1689,9 +1716,10 @@ class DiskBasis(SpinBasis):
             grid_shape = gdata[i].shape
             plan = self.transform_plan(grid_shape, axis, s)
             plan.backward(cdata[i], temp[i], axis)
+
         # Apply spin recombination from temp to gdata
         gdata.fill(0)  # OPTIMIZE: shouldn't be necessary
-        self.backward_spin_recombination(field.tensorsig, temp, out=gdata)
+        self.backward_spin_recombination(field.tensorsig, temp, gdata)
 
     @CachedMethod
     def conversion_matrix(self, m, spintotal, dk):
@@ -1726,6 +1754,59 @@ class DiskBasis(SpinBasis):
     def interpolation(self, m, spintotal, position):
         native_position = self.radial_COV.native_coord(position)
         return dedalus_sphere.zernike.polynomials(2, self.n_size(m), self.alpha + self.k, np.abs(m + spintotal), native_position)
+
+    @CachedMethod
+    def radius_multiplication_matrix(self, m, spintotal, order, d):
+        if order == 0:
+            operator = dedalus_sphere.zernike.operator(2, 'Id', radius=self.radius)
+        else:
+            R = dedalus_sphere.zernike.operator(2, 'R', radius=self.radius)
+
+            if order < 0:
+                operator = R(-1)**abs(order)
+            else: # order > 0
+                operator = R(+1)**abs(order)
+
+        if d > 0:
+            R = dedalus_sphere.zernike.operator(2, 'R', radius=self.radius)
+            R2 = R(-1) @ R(+1)
+            operator = R2**(d//2) @ operator
+
+        return operator(self.n_size(m), self.alpha + self.k, m + spintotal).square.astype(np.float64)
+
+    def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
+        m = subproblem.group[0]  # HACK
+        arg_radial_basis = arg_basis.radial_basis
+        spintotal_ncc = self.spintotal(ncc_comp)
+        spintotal_arg = self.spintotal(arg_comp)
+        spintotal_out = self.spintotal(out_comp)
+        diff_spintotal = spintotal_out - spintotal_arg
+        # jacobi parameters
+        a_ncc = self.alpha + self.k
+        b_ncc = spintotal_ncc + 1/2
+        N = self.n_size(m)
+        d = spintotal_ncc - abs(diff_spintotal)
+        if (d >= 0) and (d % 2 == 0):
+            J = arg_radial_basis.operator_matrix('Z', m, spintotal_arg)
+            A, B = clenshaw.jacobi_recursion(N, a_ncc, b_ncc, J)
+            # assuming that we're doing ball for now...
+            f0 = dedalus_sphere.zernike.polynomials(2, 1, a_ncc, spintotal_ncc, 1)[0] * sparse.identity(N)
+            prefactor = arg_radial_basis.radius_multiplication_matrix(m, spintotal_arg, diff_spintotal, d)
+            if self.dtype == np.float64:
+                coeffs_filter = coeffs.ravel()[:2*N]
+                matrix_cos = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter[:N], A, B, f0, cutoff=cutoff)
+                matrix_msin = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter[N:], A, B, f0, cutoff=cutoff)
+                matrix = sparse.bmat([[matrix_cos, -matrix_msin], [matrix_msin, matrix_cos]], format='csr')
+            elif self.dtype == np.complex128:
+                coeffs_filter = coeffs.ravel()[:N]
+                matrix = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff)
+        else:
+            if self.dtype == np.float64:
+                matrix = sparse.csr_matrix((2*N, 2*N))
+            elif self.dtype == np.complex128:
+                matrix = sparse.csr_matrix((N, N))
+        return matrix
+
 
 class ConvertPolar(operators.Convert, operators.PolarMOperator):
 

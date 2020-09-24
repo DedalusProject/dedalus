@@ -362,6 +362,21 @@ def test_D2_scalar_roundtrip(Nphi, Nr, radius, dealias):
     f['c']
     assert np.allclose(f['g'], fg)
 
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('radius', radius_range)
+def test_D2_scalar_roundtrip_mmax0(Nr, radius, dealias):
+    Nphi = 1
+    c, d, db, phi, r = build_D2(Nphi, Nr, radius, dealias)
+    f = field.Field(dist=d, bases=(db,), dtype=np.float64)
+    f['g'] = r**4
+    f.set_scales(dealias, dealias)
+    #f.towards_coeff_space()
+
+    fg = f['g'].copy()
+    f['c']
+    assert np.allclose(f['g'], fg)    
+
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('dealias', dealias_range)
@@ -378,6 +393,20 @@ def test_D2_vector_roundtrip(Nphi, Nr, radius, dealias):
     vf['c']
     assert np.allclose(vf['g'], vfg)
 
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('radius', radius_range)
+def test_D2_vector_roundtrip_mmax0(Nr, radius, dealias):
+    Nphi = 1
+    c, d, db, phi, r = build_D2(Nphi, Nr, radius, dealias)
+    vf = field.Field(dist=d, bases=(db,), tensorsig=(c,), dtype=np.float64)
+
+    vf['g'][1] = 0*r*phi + 3*r**3
+    vfg = vf['g'].copy()
+    vf['c']
+    assert np.allclose(vf['g'], vfg)
+
+
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('dealias', dealias_range)
@@ -390,6 +419,18 @@ def test_D2_tensor_roundtrip(Nphi, Nr, radius, dealias):
     exex = ex[None,:,...]*ex[:, None,...]
 
     tf['g'] = 6*x * exex
+    tfg = tf['g'].copy()
+    tf['c']
+    assert np.allclose(tf['g'][1][1], tfg[1][1])
+
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('radius', radius_range)
+def test_D2_tensor_roundtrip(Nr, radius, dealias):
+    Nphi = 1
+    c, d, db, phi, r = build_D2(Nphi, Nr, radius, dealias)
+    tf = field.Field(dist=d, bases=(db,), tensorsig=(c,c), dtype=np.float64)
+    tf['g'][1,1] = r**2 + 0.*phi
     tfg = tf['g'].copy()
     tf['c']
     assert np.allclose(tf['g'][1][1], tfg[1][1])
