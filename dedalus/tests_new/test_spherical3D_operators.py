@@ -127,7 +127,7 @@ def test_transpose_grid_tensor(Nphi, Ntheta, Nr, dealias, basis):
     T = operators.Gradient(u, c).evaluate()
     T.require_grid_space()
     Tg = np.transpose(np.copy(T['g']),(1,0,2,3,4))
-    T = operators.TransposeComponents(T).evaluate()
+    T = operators.TransposeComponents(T, c).evaluate()
     assert np.allclose(T['g'], Tg)
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
@@ -145,7 +145,7 @@ def test_transpose_coeff_tensor(Nphi, Ntheta, Nr, dealias, basis):
     T = operators.Gradient(u, c).evaluate()
     T.require_coeff_space()
     Tg = np.transpose(np.copy(T['g']),(1,0,2,3,4))
-    T = operators.TransposeComponents(T).evaluate()
+    T = operators.TransposeComponents(T, c).evaluate()
     assert np.allclose(T['g'], Tg)
 
 # need higher resolution for the test function
@@ -309,4 +309,3 @@ def test_angular_component_tensor(Nphi, Ntheta, Nr, dealias, basis_radius):
     Ag[1,0] = Ag[0,1] = -2*np.cos(phi)*(np.sin(theta) + 3*np.cos(theta)*np.sin(phi))
     Ag[0,0] = 6*np.sin(phi)**2
     assert np.allclose(A['g'],Ag)
-
