@@ -1658,6 +1658,44 @@ class TransposeComponents(LinearOperator, metaclass=MultiClass):
     def base(self):
         return TransposeComponents
 
+
+class CartesianTransposeComponents(TransposeComponents):
+
+    cs_type = coords.CartesianCoordinates
+
+    def __init__(self, operand, coordsys, indices=(0,1), out=None):
+        super().__init__(operand, coordsys, indices=indices, out=out)
+        input_basis = self.domain.get_basis(self.coordsys)
+        self.input_basis = input_basis
+
+    def check_conditions(self):
+        """Can always take the transpose"""
+        return True
+
+    def enforce_conditions(self):
+        """Can always take the transpose"""
+        pass
+
+    def subproblem_matrix(self, subproblem):
+        """Build operator matrix for a specific subproblem."""
+        return sparse.vstack(arg.expression_matrices(subproblem, [self.operand])[self.operand] for arg in self.args)
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+
+        # Set output layout
+        layout = operand.layout
+        out.set_layout(layout)
+        indices = self.indices
+        np.copyto(out.data, operand.data)
+
+        axes_list = np.arange(len(out.data.shape))
+        axes_list[indices[0]] = indices[1]
+        axes_list[indices[1]] = indices[0]
+        np.copyto(out.data,np.transpose(out.data,axes=axes_list))
+
+
 class SphericalTransposeComponents(TransposeComponents):
 
     cs_type = coords.SphericalCoordinates
