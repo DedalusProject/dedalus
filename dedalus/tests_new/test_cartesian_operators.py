@@ -52,7 +52,7 @@ def test_transpose_3d_grid_tensor(Nx, Ny, Nz, dealias, basis):
     T = operators.Gradient(u, c).evaluate()
     T.require_grid_space()
     Tg = np.transpose(np.copy(T['g']),(1,0,2,3,4))
-    T = operators.TransposeComponents(T, c).evaluate()
+    T = operators.TransposeComponents(T).evaluate()
     assert np.allclose(T['g'], Tg)
 
 @pytest.mark.parametrize('Nx', Nx_range)
@@ -67,5 +67,5 @@ def test_transpose_2d_grid_tensor(Nx, Nz, dealias, basis):
     T = operators.Gradient(u, c).evaluate()
     T.require_grid_space()
     Tg = np.transpose(np.copy(T['g']),(1,0,2,3))
-    T = operators.TransposeComponents(T, c).evaluate()
+    T = operators.TransposeComponents(T).evaluate()
     assert np.allclose(T['g'], Tg)

@@ -1606,20 +1606,25 @@ class TransposeComponents(LinearOperator, metaclass=MultiClass):
     name = "TransposeComponents"
 
     @classmethod
-    def _preprocess_args(cls, operand, coordsys, indices=(0,1), out=None):
+    def _preprocess_args(cls, operand, indices=(0,1), out=None):
         if isinstance(operand, Number):
             raise SkipDispatchException(output=0)
-        return [operand, coordsys], {'indices': indices, 'out': out}
+        return [operand], {'indices': indices, 'out': out}
 
     @classmethod
-    def _check_args(cls, operand, cs, indices=(0,1), out=None):
-        # Dispatch by coordinate system
+    def _check_args(cls, operand, indices=(0,1), out=None):
+        # Dispatch by coordinate system; not clear that this is useful (see Keaton's note)
         if isinstance(operand, Operand):
-            if isinstance(cs, cls.cs_type):
+            # hack to check coordsys of first index only
+            i0, i1 = indices
+            if i0 < 0:
+                i0 += len(operand.tensorsig)
+            cs0 = operand.tensorsig[i0]
+            if isinstance(cs0, cls.cs_type):
                 return True
         return False
 
-    def __init__(self, operand, coordsys, indices=(0,1), out=None):
+    def __init__(self, operand, indices=(0,1), out=None):
         i0, i1 = indices
         if i0 < 0:
             i0 += len(operand.tensorsig)
@@ -1633,11 +1638,9 @@ class TransposeComponents(LinearOperator, metaclass=MultiClass):
         cs1 = operand.tensorsig[i1]
         if cs0 != cs1:
             raise ValueError("Can only transpose two indices which have the same coordinate system")
-        if cs0 != coordsys:
-            raise ValueError("Can only transpose index which matches operator coordinate system")
         super().__init__(operand, out=out)
         self.indices = (i0, i1)
-        self.coordsys = coordsys
+        self.coordsys = cs0 # arbitrary choice; not clear that this is useful (see Keaton's note)
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements
@@ -1663,8 +1666,8 @@ class CartesianTransposeComponents(TransposeComponents):
 
     cs_type = coords.CartesianCoordinates
 
-    def __init__(self, operand, coordsys, indices=(0,1), out=None):
-        super().__init__(operand, coordsys, indices=indices, out=out)
+    def __init__(self, operand, indices=(0,1), out=None):
+        super().__init__(operand, indices=indices, out=out)
         input_basis = self.domain.get_basis(self.coordsys)
         self.input_basis = input_basis
 
@@ -1700,8 +1703,8 @@ class SphericalTransposeComponents(TransposeComponents):
 
     cs_type = coords.SphericalCoordinates
 
-    def __init__(self, operand, coordsys, indices=(0,1), out=None):
-        super().__init__(operand, coordsys, indices=indices, out=out)
+    def __init__(self, operand, indices=(0,1), out=None):
+        super().__init__(operand, indices=indices, out=out)
         self.radius_axis = self.coordsys.coords[2].axis
         input_basis = self.domain.get_basis(self.coordsys)
         self.input_basis = input_basis
