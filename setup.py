@@ -23,6 +23,7 @@ import sys
 import glob
 import pathlib
 import tarfile
+import codecs
 
 
 # Helper functions
@@ -92,6 +93,19 @@ def get_lib(name):
     prefix = get_prefix(name)
     if prefix:
         return os.path.join(prefix, 'lib')
+
+def get_version(rel_path):
+    """Read version from a file via text parsing, following PyPA guide."""
+    def read(rel_path):
+        here = os.path.abspath(os.path.dirname(__file__))
+        with codecs.open(os.path.join(here, rel_path), 'r') as fp:
+            return fp.read()
+    for line in read(rel_path).splitlines():
+        if line.startswith('__version__'):
+            delim = '"' if '"' in line else "'"
+            return line.split(delim)[1]
+    else:
+        raise RuntimeError("Unable to find version string.")
 
 # C-dependency paths for extension compilation and linking
 include_dirs = ['dedalus/libraries/fftw/',
@@ -200,7 +214,7 @@ class build(_build):
 # Setup
 setup(
     name='dedalus',
-    version='2.2006',
+    version=get_version("dedalus/__init__.py"),
     author='Keaton J. Burns',
     author_email='keaton.burns@gmail.com',
     description="A flexible framework for solving PDEs with modern spectral methods.",
