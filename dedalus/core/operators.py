@@ -540,15 +540,24 @@ class UnaryGridFunctionField(UnaryGridFunction, FutureField):
 
     argtypes = {1: (Field, FutureField)}
 
+    def __init__(self, func, arg, **kw):
+        #arg = Operand.cast(arg)
+        super().__init__(func, arg, **kw)
+        self.domain = arg.domain
+        self.tensorsig = arg.tensorsig
+        self.dtype = arg.dtype
+
     def check_conditions(self):
         # Field must be in grid layout
         return (self.args[0].layout is self._grid_layout)
+
+    def enforce_conditions(self):
+        self.args[0].require_grid_space()
 
     def operate(self, out):
         # References
         arg0, = self.args
         # Evaluate in grid layout
-        arg0.require_grid_space()
         out.set_layout(self._grid_layout)
         self.func(arg0.data, out=out.data)
 
