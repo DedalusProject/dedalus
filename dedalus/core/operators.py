@@ -1637,10 +1637,10 @@ class TransposeComponents(LinearOperator, metaclass=MultiClass):
         cs0 = operand.tensorsig[i0]
         cs1 = operand.tensorsig[i1]
         if cs0 != cs1:
-            raise ValueError("Can only transpose two indices which have the same coordinate system")
+            raise NotImplementedError("Can only transpose two indices which have the same coordinate system")
         super().__init__(operand, out=out)
         self.indices = (i0, i1)
-        self.coordsys = cs0 # arbitrary choice; not clear that this is useful (see Keaton's note)
+        self.coordsys = cs0
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements
@@ -1681,7 +1681,28 @@ class CartesianTransposeComponents(TransposeComponents):
 
     def subproblem_matrix(self, subproblem):
         """Build operator matrix for a specific subproblem."""
-        return sparse.vstack(arg.expression_matrices(subproblem, [self.operand])[self.operand] for arg in self.args)
+        operand = self.args[0]
+
+        indices = self.indices
+        rank = len(self.tensorsig)
+        tensor_shape = [cs.dim for cs in self.tensorsig]
+        component_indices = list(np.ndindex(tensor_shape))
+        neworder = np.arange(rank)
+        neworder[indices[0]] = indices[1]
+        neworder[indices[1]] = indices[0]
+
+        transpose = np.zeros((len(component_indices), len(component_indices)))
+        for i, start_index in enumerate(component_indices):
+            end_index = list(start_index)
+            end_index[indices[0]] = start_indices[indices[1]]
+            end_index[indices[1]] = start_indices[indices[0]]
+            j = component_indices.index(end_index)
+            transpose[j,i] = 1
+
+        # assume all regularities have the same n_size
+        eye = sparse.identity(subproblem.coeff_size(self.domain), self.dtype, format='csr')
+        matrix = sparse.kron( transpose, eye)
+        return matrix
 
     def operate(self, out):
         """Perform operation."""
