@@ -784,7 +784,7 @@ class RealFourier(IntervalBasis):
         # No permutations by default
         self.forward_coeff_permutation = None
         self.backward_coeff_permutation = None
-        
+
 
     def __add__(self, other):
         if other is None:
@@ -839,7 +839,7 @@ class RealFourier(IntervalBasis):
     def backward_transform(self, field, axis, cdata, gdata):
         if self.backward_coeff_permutation is not None:
             permute_axis(cdata, axis+len(field.tensorsig), self.backward_coeff_permutation, out=cdata)
-        super().backward_transform(field, axis, cdata, gdata)        
+        super().backward_transform(field, axis, cdata, gdata)
 
     def local_group_slices(self, basis_group):
         group, = basis_group
@@ -1221,7 +1221,7 @@ class SpinRecombinationBasis:
 
         if self.dtype == np.float64:
             #matrix = np.array([[matrix.real,-matrix.imag],[matrix.imag,matrix.real]])
-            matrix = (np.kron(matrix.real,np.array([[1,0],[0,1]])) 
+            matrix = (np.kron(matrix.real,np.array([[1,0],[0,1]]))
                       + np.kron(matrix.imag,np.array([[0,-1],[1,0]])))
         return matrix
 
@@ -1360,13 +1360,13 @@ class DiskBasis(SpinBasis):
             self.forward_transforms = [self.forward_transform_azimuth_Mmax0,
                                        self.forward_transform_radius]
             self.backward_transforms = [self.backward_transform_azimuth_Mmax0,
-                                        self.backward_transform_radius]            
+                                        self.backward_transform_radius]
         else:
             self.forward_transforms = [self.forward_transform_azimuth,
                                        self.forward_transform_radius]
             self.backward_transforms = [self.backward_transform_azimuth,
                                         self.backward_transform_radius]
-        
+
         self.grid_params = (coordsystem, radius, alpha, dealias)
         if self.mmax > 0 and self.Nmax > 0 and shape[0] % 2 != 0:
             raise ValueError("Don't use an odd phi resolution, please")
@@ -1409,9 +1409,9 @@ class DiskBasis(SpinBasis):
 
         S1_basis.radius = radius
         S1_basis.forward_coeff_permutation  = self.forward_m_perm
-        S1_basis.backward_coeff_permutation = self.backward_m_perm 
-        
-        return S1_basis 
+        S1_basis.backward_coeff_permutation = self.backward_m_perm
+
+        return S1_basis
 
     def global_shape(self, layout, scales):
         grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
@@ -1482,7 +1482,7 @@ class DiskBasis(SpinBasis):
         if (not m_coupling) and n_coupling:
             groups = []
             local_m = self.local_m
-            
+
             for m in local_m:
                 # Avoid writing repeats for real data
                 if [m,None] not in groups:
@@ -1655,7 +1655,7 @@ class DiskBasis(SpinBasis):
         return DiskBasis(self.coordsystem, self.shape, radius = self.radius, k=k, alpha=self.alpha, dealias=self.dealias, dtype=self.dtype,
                          azimuth_library=self.azimuth_library,
                          radius_library=self.radius_library)
-    
+
     @CachedMethod
     def transform_plan(self, grid_shape, axis, s):
         """Build transform plan."""
@@ -1753,7 +1753,7 @@ class DiskBasis(SpinBasis):
         else:
             operator = dedalus_sphere.zernike.operator(2, op, radius=self.radius)
 
-        return operator(self.n_size(m), self.alpha + self.k, np.abs(m + spin)).square.astype(np.float64)
+        return operator(self.n_size(m), self.alpha + self.k, abs(m + spin)).square.astype(np.float64)
 
     @CachedMethod
     def interpolation(self, m, spintotal, position):
@@ -1766,36 +1766,36 @@ class DiskBasis(SpinBasis):
             operator = dedalus_sphere.zernike.operator(2, 'Id', radius=self.radius)
         else:
             R = dedalus_sphere.zernike.operator(2, 'R', radius=self.radius)
-
             if order < 0:
                 operator = R(-1)**abs(order)
             else: # order > 0
                 operator = R(+1)**abs(order)
-
         if d > 0:
             R = dedalus_sphere.zernike.operator(2, 'R', radius=self.radius)
             R2 = R(-1) @ R(+1)
             operator = R2**(d//2) @ operator
-
-        return operator(self.n_size(m), self.alpha + self.k, m + spintotal).square.astype(np.float64)
+        return operator(self.n_size(m), self.alpha + self.k, abs(m + spintotal)).square.astype(np.float64)
 
     def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
         m = subproblem.group[0]  # HACK
         spintotal_ncc = self.spintotal(ncc_comp)
         spintotal_arg = self.spintotal(arg_comp)
         spintotal_out = self.spintotal(out_comp)
-        diff_spintotal = spintotal_out - spintotal_arg
+        regtotal_ncc = abs(spintotal_ncc)
+        regtotal_arg = abs(m + spintotal_arg)
+        regtotal_out = abs(m + spintotal_out)
+        diff_regtotal = regtotal_out - regtotal_arg
         # jacobi parameters
         a_ncc = self.alpha + self.k
-        b_ncc = spintotal_ncc
+        b_ncc = regtotal_ncc
         N = self.n_size(m)
-        d = spintotal_ncc - abs(diff_spintotal)
+        d = regtotal_ncc - abs(diff_regtotal)
         if (d >= 0) and (d % 2 == 0):
             J = arg_basis.operator_matrix('Z', m, spintotal_arg)
             A, B = clenshaw.jacobi_recursion(N, a_ncc, b_ncc, J)
             # assuming that we're doing ball for now...
-            f0 = dedalus_sphere.zernike.polynomials(2, 1, a_ncc, spintotal_ncc, 1)[0] * sparse.identity(N)
-            prefactor = arg_basis.radius_multiplication_matrix(m, spintotal_arg, diff_spintotal, d)
+            f0 = dedalus_sphere.zernike.polynomials(2, 1, a_ncc, b_ncc, 1)[0] * sparse.identity(N)
+            prefactor = arg_basis.radius_multiplication_matrix(m, spintotal_arg, diff_regtotal, d)
             if self.dtype == np.float64:
                 coeffs_filter = coeffs.ravel()[:2*N]
                 matrix_cos = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter[:N], A, B, f0, cutoff=cutoff)
