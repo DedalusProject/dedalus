@@ -1781,22 +1781,21 @@ class DiskBasis(SpinBasis):
 
     def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
         m = subproblem.group[0]  # HACK
-        arg_radial_basis = arg_basis.radial_basis
         spintotal_ncc = self.spintotal(ncc_comp)
         spintotal_arg = self.spintotal(arg_comp)
         spintotal_out = self.spintotal(out_comp)
         diff_spintotal = spintotal_out - spintotal_arg
         # jacobi parameters
         a_ncc = self.alpha + self.k
-        b_ncc = spintotal_ncc + 1/2
+        b_ncc = spintotal_ncc
         N = self.n_size(m)
         d = spintotal_ncc - abs(diff_spintotal)
         if (d >= 0) and (d % 2 == 0):
-            J = arg_radial_basis.operator_matrix('Z', m, spintotal_arg)
+            J = arg_basis.operator_matrix('Z', m, spintotal_arg)
             A, B = clenshaw.jacobi_recursion(N, a_ncc, b_ncc, J)
             # assuming that we're doing ball for now...
             f0 = dedalus_sphere.zernike.polynomials(2, 1, a_ncc, spintotal_ncc, 1)[0] * sparse.identity(N)
-            prefactor = arg_radial_basis.radius_multiplication_matrix(m, spintotal_arg, diff_spintotal, d)
+            prefactor = arg_basis.radius_multiplication_matrix(m, spintotal_arg, diff_spintotal, d)
             if self.dtype == np.float64:
                 coeffs_filter = coeffs.ravel()[:2*N]
                 matrix_cos = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter[:N], A, B, f0, cutoff=cutoff)
