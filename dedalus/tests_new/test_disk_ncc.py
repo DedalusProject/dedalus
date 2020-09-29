@@ -44,8 +44,8 @@ def test_scalar_prod_scalar(Nphi, Nr, basis, ncc_first, dealias, dtype):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, dealias=dealias, dtype=dtype)
     f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
     g = field.Field(dist=d, bases=(b,), dtype=dtype)
-    f['g'] = r**2 - 1
-    g['g'] = 1.# (3*x**2 + 2*y)
+    f['g'] = r**4
+    g['g'] = (3*x**2 + 2*y)
     vars = [g]
     if ncc_first:
         w0 = f * g
@@ -62,114 +62,105 @@ def test_scalar_prod_scalar(Nphi, Nr, basis, ncc_first, dealias, dtype):
     w1 = w1.evaluate_as_ncc()
     assert np.allclose(w0['g'], w1['g'])
 
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('basis', [build_disk])
+@pytest.mark.parametrize('ncc_first', [True,False])
+@pytest.mark.parametrize('dealias', dealias)
+@pytest.mark.parametrize('dtype', dtypes)
+def test_scalar_prod_vector(Nphi, Nr, basis, ncc_first, dealias, dtype):
+    c, d, b, phi, r, x, y = basis(Nphi, Nr, dealias=dealias, dtype=dtype)
+    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
+    g = field.Field(dist=d, bases=(b,), dtype=dtype)
 
-# @pytest.mark.parametrize('Nphi', Nphi_range)
-# @pytest.mark.parametrize('Ntheta', Ntheta_range)
-# @pytest.mark.parametrize('Nr', Nr_range)
-# @pytest.mark.parametrize('basis', [build_ball, build_shell])
-# @pytest.mark.parametrize('ncc_first', [True,False])
-# @pytest.mark.parametrize('dealias', dealias)
-# @pytest.mark.parametrize('dtype', dtypes)
-# def test_scalar_prod_vector(Nphi, Ntheta, Nr, basis, ncc_first, dealias, dtype):
-#     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=dealias, dtype=dtype)
+    f['g'] = r**6
+    g['g'] = 3*x**2 + 2*y
+    u = operators.Gradient(g, c).evaluate()
 
-#     f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
-#     g = field.Field(dist=d, bases=(b,), dtype=dtype)
+    vars = [u]
+    if ncc_first:
+        w0 = f * u
+    else:
+        w0 = u * f
+    w1 = w0.reinitialize(ncc=True, ncc_vars=vars)
 
-#     f['g'] = r**6
-#     g['g'] = 3*x**2 + 2*y*z
-#     u = operators.Gradient(g, c).evaluate()
+    problem = problems.LBVP(vars)
+    problem.add_equation((w1, 0))
+    solver = solvers.LinearBoundaryValueSolver(problem, matsolver='SuperluNaturalSpsolve', matrix_coupling=[False,True])
+    w1.prep_nccs(vars)
+    w1.store_ncc_matrices(solver.subproblems)
 
-#     vars = [u]
-#     if ncc_first:
-#         w0 = f * u
-#     else:
-#         w0 = u * f
-#     w1 = w0.reinitialize(ncc=True, ncc_vars=vars)
-
-#     problem = problems.LBVP(vars)
-#     problem.add_equation((w1, 0))
-#     solver = solvers.LinearBoundaryValueSolver(problem, matsolver='SuperluNaturalSpsolve')
-#     w1.prep_nccs(vars)
-#     w1.store_ncc_matrices(solver.subproblems)
-
-#     w0 = w0.evaluate()
-#     w0.require_scales(1)
-#     w1 = w1.evaluate_as_ncc()
-#     assert np.allclose(w0['g'], w1['g'])
+    w0 = w0.evaluate()
+    w0.require_scales(1)
+    w1 = w1.evaluate_as_ncc()
+    assert np.allclose(w0['g'], w1['g'])
 
 
-# @pytest.mark.parametrize('Nphi', Nphi_range)
-# @pytest.mark.parametrize('Ntheta', Ntheta_range)
-# @pytest.mark.parametrize('Nr', Nr_range)
-# @pytest.mark.parametrize('basis', [build_ball, build_shell])
-# @pytest.mark.parametrize('ncc_first', [True,False])
-# @pytest.mark.parametrize('dealias', dealias)
-# @pytest.mark.parametrize('dtype', dtypes)
-# def test_scalar_prod_tensor(Nphi, Ntheta, Nr, basis, ncc_first, dealias, dtype):
-#     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=dealias, dtype=dtype)
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('basis', [build_disk])
+@pytest.mark.parametrize('ncc_first', [True,False])
+@pytest.mark.parametrize('dealias', dealias)
+@pytest.mark.parametrize('dtype', dtypes)
+def test_scalar_prod_tensor(Nphi, Nr, basis, ncc_first, dealias, dtype):
+    c, d, b, phi, r, x, y = basis(Nphi, Nr, dealias=dealias, dtype=dtype)
+    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
+    g = field.Field(dist=d, bases=(b,), dtype=dtype)
 
-#     f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
-#     g = field.Field(dist=d, bases=(b,), dtype=dtype)
+    f['g'] = r**6
+    g['g'] = 3*x**2 + 2*y
+    T = operators.Gradient(operators.Gradient(g, c), c).evaluate()
 
-#     f['g'] = r**6
-#     g['g'] = 3*x**2 + 2*y*z
-#     T = operators.Gradient(operators.Gradient(g, c), c).evaluate()
+    vars = [T]
+    if ncc_first:
+        w0 = f * T
+    else:
+        w0 = T * f
+    w1 = w0.reinitialize(ncc=True, ncc_vars=vars)
 
-#     vars = [T]
-#     if ncc_first:
-#         w0 = f * T
-#     else:
-#         w0 = T * f
-#     w1 = w0.reinitialize(ncc=True, ncc_vars=vars)
+    problem = problems.LBVP(vars)
+    problem.add_equation((w1, 0))
+    solver = solvers.LinearBoundaryValueSolver(problem, matsolver='SuperluNaturalSpsolve', matrix_coupling=[False, True])
+    w1.prep_nccs(vars)
+    w1.store_ncc_matrices(solver.subproblems)
 
-#     problem = problems.LBVP(vars)
-#     problem.add_equation((w1, 0))
-#     solver = solvers.LinearBoundaryValueSolver(problem, matsolver='SuperluNaturalSpsolve')
-#     w1.prep_nccs(vars)
-#     w1.store_ncc_matrices(solver.subproblems)
+    w0 = w0.evaluate()
+    w0.require_scales(1)
+    w1 = w1.evaluate_as_ncc()
+    assert np.allclose(w0['g'], w1['g'])
 
-#     w0 = w0.evaluate()
-#     w0.require_scales(1)
-#     w1 = w1.evaluate_as_ncc()
-#     assert np.allclose(w0['g'], w1['g'])
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('basis', [build_disk])
+@pytest.mark.parametrize('ncc_first', [True,False])
+@pytest.mark.parametrize('dealias', dealias)
+@pytest.mark.parametrize('dtype', dtypes)
+def test_vector_prod_scalar(Nphi, Nr, basis, ncc_first, dealias, dtype):
+    c, d, b, phi, r, x, y = basis(Nphi, Nr, dealias=dealias, dtype=dtype)
+    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
+    g = field.Field(dist=d, bases=(b,), dtype=dtype)
 
+    f['g'] = r**6
+    g['g'] = 3*x**2 + 2*y
+    u = operators.Gradient(f, c).evaluate()
 
-# @pytest.mark.parametrize('Nphi', Nphi_range)
-# @pytest.mark.parametrize('Ntheta', Ntheta_range)
-# @pytest.mark.parametrize('Nr', Nr_range)
-# @pytest.mark.parametrize('basis', [build_ball, build_shell])
-# @pytest.mark.parametrize('ncc_first', [True,False])
-# @pytest.mark.parametrize('dealias', dealias)
-# @pytest.mark.parametrize('dtype', dtypes)
-# def test_vector_prod_scalar(Nphi, Ntheta, Nr, basis, ncc_first, dealias, dtype):
-#     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias=dealias, dtype=dtype)
+    vars = [g]
+    if ncc_first:
+        w0 = u * g
+    else:
+        w0 = g * u
+    w1 = w0.reinitialize(ncc=True, ncc_vars=vars)
 
+    problem = problems.LBVP(vars)
+    problem.add_equation((dot(u,u)*g, 0))
+    solver = solvers.LinearBoundaryValueSolver(problem, matsolver='SuperluNaturalSpsolve', matrix_coupling=[False, True])
+    w1.prep_nccs(vars)
+    w1.store_ncc_matrices(solver.subproblems)
 
-#     f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
-#     g = field.Field(dist=d, bases=(b,), dtype=dtype)
-
-#     f['g'] = r**6
-#     g['g'] = 3*x**2 + 2*y*z
-#     u = operators.Gradient(f, c).evaluate()
-
-#     vars = [g]
-#     if ncc_first:
-#         w0 = u * g
-#     else:
-#         w0 = g * u
-#     w1 = w0.reinitialize(ncc=True, ncc_vars=vars)
-
-#     problem = problems.LBVP(vars)
-#     problem.add_equation((dot(u,u)*g, 0))
-#     solver = solvers.LinearBoundaryValueSolver(problem, matsolver='SuperluNaturalSpsolve')
-#     w1.prep_nccs(vars)
-#     w1.store_ncc_matrices(solver.subproblems)
-
-#     w0 = w0.evaluate()
-#     w0.require_scales(1)
-#     w1 = w1.evaluate_as_ncc()
-#     assert np.allclose(w0['g'], w1['g'])
+    w0 = w0.evaluate()
+    w0.require_scales(1)
+    w1 = w1.evaluate_as_ncc()
+    assert np.allclose(w0['g'], w1['g'])
 
 
 # @pytest.mark.parametrize('Nphi', Nphi_range)
