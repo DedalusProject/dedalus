@@ -44,8 +44,8 @@ def test_scalar_prod_scalar(Nphi, Nr, basis, ncc_first, dealias, dtype):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, dealias=dealias, dtype=dtype)
     f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
     g = field.Field(dist=d, bases=(b,), dtype=dtype)
-    f['g'] = r**4
-    g['g'] = (3*x**2 + 2*y)
+    f['g'] = r**2 - 1
+    g['g'] = 1.# (3*x**2 + 2*y)
     vars = [g]
     if ncc_first:
         w0 = f * g

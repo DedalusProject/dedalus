@@ -1395,7 +1395,7 @@ class DiskBasis(SpinBasis):
     @CachedAttribute
     def radial_basis(self):
         new_shape = (1, self.shape[1])
-        dealias = (1, self.dealias[1])
+        dealias = self.dealias
         return DiskBasis(self.coordsystem, new_shape, radius=self.radius, k=self.k, alpha=self.alpha, dealias=dealias, radius_library=self.radius_library, dtype=self.dtype, azimuth_library=self.azimuth_library)
 
     @CachedMethod
@@ -1551,12 +1551,19 @@ class DiskBasis(SpinBasis):
         return NotImplemented
 
     def __matmul__(self, other):
-        """NCC is other.
+        """NCC is self.
+
+        NB: This does not support NCCs with different number of modes than the fields.
         """
         if other is None:
             return self
         if isinstance(other, DiskBasis):
-            return other._new_k(self.k)
+            return other
+        return NotImplemented
+
+    def __rmatmul__(self, other):
+        if other is None:
+            return self
         return NotImplemented
 
     @CachedAttribute
@@ -1657,7 +1664,6 @@ class DiskBasis(SpinBasis):
     def forward_transform_azimuth_Mmax0(self, field, axis, gdata, cdata):
         # slice_axis = axis + len(field.tensorsig)
         # np.copyto(cdata[axslice(slice_axis, 0, 1)], gdata)
-        print("gdata.shape = {}; cdata.shape = {}".format(gdata.shape, cdata.shape))
         np.copyto(cdata[axslice(self.axis+len(field.tensorsig), 0, 1)], gdata)
 
     def forward_transform_azimuth(self, field, axis, gdata, cdata):
@@ -1669,7 +1675,6 @@ class DiskBasis(SpinBasis):
     def backward_transform_azimuth_Mmax0(self, field, axis, cdata, gdata):
         # slice_axis = axis + len(field.tensorsig)
         # np.copyto(gdata, cdata[axslice(slice_axis, 0, 1)])
-        print("gdata.shape = {}; cdata.shape = {}".format(gdata.shape, cdata.shape))
         np.copyto(gdata, cdata[axslice(self.axis+len(field.tensorsig), 0, 1)])
 
     def backward_transform_azimuth(self, field, axis, cdata, gdata):
