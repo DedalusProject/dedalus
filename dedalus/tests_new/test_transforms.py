@@ -370,7 +370,7 @@ def test_D2_scalar_roundtrip_mmax0(Nr, radius, dealias):
     c, d, db, phi, r = build_D2(Nphi, Nr, radius, dealias)
     f = field.Field(dist=d, bases=(db,), dtype=np.float64)
     f['g'] = r**4
-    f.set_scales(dealias, dealias)
+    f.require_scales(dealias)
     #f.towards_coeff_space()
 
     fg = f['g'].copy()
