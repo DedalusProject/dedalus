@@ -527,7 +527,7 @@ class FileHandler(Handler):
             file_name = '%s_s%i_p%i.h5' %(self.base_path.stem, self.set_num, i)
             folder_name = '%s_s%i' %(self.base_path.stem, self.set_num)
             folder_path = self.base_path.joinpath(folder_name)
-            src_file_name = folder_path.joinpath(file_name)
+            src_file_name = folder_path.joinpath(file_name).relative_to(self.base_path)
             gnc_shape, gnc_start, write_shape, write_start, write_count = self.get_write_stats(layout, scales, op.domain, op.tensorsig, index=0, virtual_file=True, rank=i)
             
             src_shape = [file_shape[0],] + list(layout.local_shape(op.domain, scales, rank=i))
