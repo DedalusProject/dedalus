@@ -161,15 +161,6 @@ extensions = [
         library_dirs=library_dirs,
         runtime_library_dirs=library_dirs,
         extra_compile_args=extra_compile_args,
-        extra_link_args=extra_link_args),
-    Extension(
-        name='dedalus.libraries.arithmetic',
-        sources=['dedalus/libraries/arithmetic.pyx'],
-        include_dirs=include_dirs,
-        libraries=libraries,
-        library_dirs=library_dirs,
-        runtime_library_dirs=library_dirs,
-        extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args)]#,
 #    Extension(
 #        name='dedalus.core.polynomials',
