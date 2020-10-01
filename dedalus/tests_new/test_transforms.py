@@ -399,12 +399,26 @@ def test_D2_vector_roundtrip(Nphi, Nr, radius, dealias):
 def test_D2_vector_roundtrip_mmax0(Nr, radius, dealias):
     Nphi = 1
     c, d, db, phi, r = build_D2(Nphi, Nr, radius, dealias)
-    vf = field.Field(dist=d, bases=(db,), tensorsig=(c,), dtype=np.float64)
+    vf = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.float64)
 
-    vf['g'][1] = 0*r*phi + 3*r**3
+    vf['g'][1] = 6*r**5
     vfg = vf['g'].copy()
     vf['c']
     assert np.allclose(vf['g'], vfg)
+
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('radius', radius_range)
+def test_D2_vector_roundtrip_mmax0_2(Nr, radius, dealias):
+    Nphi = 1
+    c, d, db, phi, r = build_D2(Nphi, Nr, radius, dealias)
+    f = field.Field(dist=d, bases=(db,), dtype=np.float64)
+
+    f['g'] = r**6
+    u = operators.Gradient(f, c).evaluate()
+    ufg = u['c'].copy()
+    u['g']
+    assert np.allclose(u['c'], ufg)
 
 
 @pytest.mark.parametrize('Nphi', Nphi_range)

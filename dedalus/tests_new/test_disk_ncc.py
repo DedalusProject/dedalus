@@ -143,19 +143,24 @@ def test_vector_prod_scalar(Nphi, Nr, basis, ncc_first, dealias, dtype):
     f['g'] = r**6
     g['g'] = 3*x**2 + 2*y
     u = operators.Gradient(f, c).evaluate()
-
+    uu = operators.Gradient(f, c).evaluate()
+    print("u['c'] = {}".format(u['c']))
     vars = [g]
     if ncc_first:
         w0 = u * g
     else:
         w0 = g * u
     w1 = w0.reinitialize(ncc=True, ncc_vars=vars)
-
+    print("u['c'] = {}".format(u['c']))
     problem = problems.LBVP(vars)
-    problem.add_equation((dot(u,u)*g, 0))
+    problem.add_equation((dot(uu,uu)*g, 0))
     solver = solvers.LinearBoundaryValueSolver(problem, matsolver='SuperluNaturalSpsolve', matrix_coupling=[False, True])
     w1.prep_nccs(vars)
     w1.store_ncc_matrices(solver.subproblems)
+    print("u['c'] = {}".format(u['c']))
+    print("w1._ncc_data = {}".format(w1._ncc_data))
+    if ncc_first:
+        print("w1.args[0]['c'] = {}".format(w1.args[0]['c']))
 
     w0 = w0.evaluate()
     w0.require_scales(1)

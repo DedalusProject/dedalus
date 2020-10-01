@@ -49,6 +49,23 @@ def test_gradient_scalar(Nphi, Nr, radius, dealias, basis, dtype):
     ug = 6*x*ex + 2*ey
     
     assert np.allclose(u['g'], ug)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('radius', radius_disk)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_D2])
+@pytest.mark.parametrize('dtype', [np.float64])
+def test_gradient_scalar_mmax0(Nr, radius, dealias, basis, dtype):
+    Nphi = 1
+    c, d, b, phi, r, x, y = basis(Nphi, Nr, radius, dealias, dtype)
+    f = field.Field(dist=d, bases=(b,), dtype=dtype)
+    f['g'] = fg = r**4
+    u = operators.Gradient(f, c).evaluate()
+    phi, r = b.local_grids(b.domain.dealias)
+    x, y = c.cartesian(phi, r)
+
+    ug = [0*r*phi, 4*r**3 + 0*phi]
+    
+    assert np.allclose(u['g'], ug)
 
 # @pytest.mark.parametrize('Nr', Nr_range)
 # @pytest.mark.parametrize('basis', [build_ball, build_shell])
