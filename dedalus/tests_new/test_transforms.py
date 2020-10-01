@@ -399,7 +399,7 @@ def test_D2_vector_roundtrip(Nphi, Nr, radius, dealias):
 def test_D2_vector_roundtrip_mmax0(Nr, radius, dealias):
     Nphi = 1
     c, d, db, phi, r = build_D2(Nphi, Nr, radius, dealias)
-    vf = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.float64)
+    vf = field.Field(dist=d, bases=(db,), tensorsig=(c,), dtype=np.float64)
 
     vf['g'][1] = 6*r**5
     vfg = vf['g'].copy()

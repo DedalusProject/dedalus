@@ -1225,10 +1225,9 @@ class SpinRecombinationBasis:
                       + np.kron(matrix.imag,np.array([[0,-1],[1,0]])))
         return matrix
 
-    def forward_spin_recombination(self, tensorsig, gdata, temp):
+    def forward_spin_recombination(self, tensorsig, temp):
         """Apply component-to-spin recombination."""
         # HACK: just copying the data so we can apply_matrix repeatedly
-        np.copyto(temp, gdata)
         if tensorsig:
             U = self.spin_recombination_matrices(tensorsig)
             if self.dtype == np.complex128:
@@ -1249,7 +1248,7 @@ class SpinRecombinationBasis:
                         data_cos[:] = RC - ImS
                         data_msin[:] = RmS + IC
 
-    def backward_spin_recombination(self, tensorsig, temp, gdata):
+    def backward_spin_recombination(self, tensorsig, temp):
         """Apply spin-to-component recombination."""
         # HACK: just copying the data so we can apply_matrix repeatedly
         if tensorsig:
@@ -1272,7 +1271,6 @@ class SpinRecombinationBasis:
                         ImS = apply_matrix(Ui_inv.imag, data_msin, axis=i)
                         data_cos[:] = RC - ImS
                         data_msin[:] = RmS + IC
-        np.copyto(gdata, temp)
 
 
 # These are common for S2 and D2
@@ -1469,7 +1467,10 @@ class DiskBasis(SpinBasis):
             elif self.dtype == np.float64:
                 # pairs of m don't have to be distributed together
                 # since folding is not implemented
-                return (2, 1)
+                if self.mmax == 0:
+                    return (1, 1)
+                else:
+                    return (2, 1)
         else:
             # coeff-coeff space
             if self.dtype == np.complex128:
@@ -1693,9 +1694,18 @@ class DiskBasis(SpinBasis):
 
     def forward_transform_radius(self, field, axis, gdata, cdata):
         # Create temporary
-        temp = np.zeros_like(gdata)
+        if self.mmax == 0:
+            shape = list(gdata.shape)
+            ax = len(field.tensorsig) + self.axis
+            shape[ax] = 2
+            temp = np.zeros(shape, dtype=gdata.dtype)
+            temp[axslice(ax,0,1)] = gdata
+        else:
+            temp = np.zeros_like(gdata)
+            np.copyto(temp, gdata)
         # Apply spin recombination from gdata to temp
-        self.forward_spin_recombination(field.tensorsig, gdata, temp)
+        
+        self.forward_spin_recombination(field.tensorsig, temp)
         cdata.fill(0)  # OPTIMIZE: shouldn't be necessary
         # Transform component-by-component from temp to cdata
         S = self.spin_weights(field.tensorsig)
@@ -1714,7 +1724,13 @@ class DiskBasis(SpinBasis):
 
     def backward_transform_radius(self, field, axis, cdata, gdata):
         # Create temporary
-        temp = np.zeros_like(gdata)
+        if self.mmax == 0:
+            shape = list(gdata.shape)
+            ax = len(field.tensorsig) + self.axis
+            shape[ax] = 2
+            temp = np.zeros(shape, dtype=gdata.dtype)
+        else:
+            temp = np.zeros_like(gdata)
         # Transform component-by-component from cdata to temp
         S = self.spin_weights(field.tensorsig)
         for i, s in np.ndenumerate(S):
@@ -1724,7 +1740,11 @@ class DiskBasis(SpinBasis):
 
         # Apply spin recombination from temp to gdata
         gdata.fill(0)  # OPTIMIZE: shouldn't be necessary
-        self.backward_spin_recombination(field.tensorsig, temp, gdata)
+        self.backward_spin_recombination(field.tensorsig, temp)
+        if self.mmax == 0:
+            gdata[:] = temp[axslice(ax,0,1)]
+        else:
+            np.copyto(gdata, temp)
 
     @CachedMethod
     def conversion_matrix(self, m, spintotal, dk):
@@ -1790,6 +1810,7 @@ class DiskBasis(SpinBasis):
         b_ncc = regtotal_ncc
         N = self.n_size(m)
         d = regtotal_ncc - abs(diff_regtotal)
+
         if (d >= 0) and (d % 2 == 0):
             J = arg_basis.operator_matrix('Z', m, spintotal_arg)
             A, B = clenshaw.jacobi_recursion(N, a_ncc, b_ncc, J)
@@ -2216,16 +2237,16 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
 
     def forward_transform_colatitude_Lmax0(self, field, axis, gdata, cdata):
         # Create temporary
-        temp = np.zeros_like(gdata)
+        temp = np.copy(gdata)
         # Apply spin recombination from gdata to temp
-        self.forward_spin_recombination(field.tensorsig, gdata, out=temp)
+        self.forward_spin_recombination(field.tensorsig, temp)
         np.copyto(cdata, temp)
 
     def forward_transform_colatitude(self, field, axis, gdata, cdata):
         # Create temporary
-        temp = np.zeros_like(gdata)
+        temp = np.copy(gdata)
         # Apply spin recombination from gdata to temp
-        self.forward_spin_recombination(field.tensorsig, gdata, out=temp)
+        self.forward_spin_recombination(field.tensorsig, temp)
         cdata.fill(0)  # OPTIMIZE: shouldn't be necessary
         # Transform component-by-component from temp to cdata
         S = self.spin_weights(field.tensorsig)
@@ -2236,9 +2257,9 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
 
     def backward_transform_colatitude_Lmax0(self, field, axis, cdata, gdata):
         # Create temporary
-        temp = np.zeros_like(cdata)
+        temp = np.copy(cdata)
         # Apply spin recombination from cdata to temp
-        self.backward_spin_recombination(field.tensorsig, cdata, out=temp)
+        self.backward_spin_recombination(field.tensorsig, temp)
         np.copyto(gdata, temp)
 
     def backward_transform_colatitude(self, field, axis, cdata, gdata):
@@ -2252,7 +2273,8 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             plan.backward(cdata[i], temp[i], axis)
         # Apply spin recombination from temp to gdata
         gdata.fill(0)  # OPTIMIZE: shouldn't be necessary
-        self.backward_spin_recombination(field.tensorsig, temp, out=gdata)
+        self.backward_spin_recombination(field.tensorsig, temp)
+        np.copyto(gdata, temp)
 
     @CachedMethod
     def k_vector(self,mu,m,s,local_l):
@@ -2552,11 +2574,15 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
 
     def forward_transform_colatitude(self, field, axis, gdata, cdata):
         # Spin recombination
-        self.forward_spin_recombination(field.tensorsig, gdata, out=cdata)
+        temp = np.copy(gdata)
+        self.forward_spin_recombination(field.tensorsig, temp)
+        np.copyto(cdata, temp)
 
     def backward_transform_colatitude(self, field, axis, cdata, gdata):
+        temp = np.copy(cdata)
         # Spin recombination
-        self.backward_spin_recombination(field.tensorsig, cdata, out=gdata)
+        self.backward_spin_recombination(field.tensorsig, temp)
+        np.copyto(gdata, temp)
 
     def backward_transform_azimuth(self, field, axis, cdata, gdata):
         # Copy over real part of m = 0
