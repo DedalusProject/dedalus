@@ -6,14 +6,11 @@ ODE solvers for timestepping.
 from collections import deque, OrderedDict
 import numpy as np
 from scipy.sparse import linalg
-import numexpr as ne
+from scipy.linalg import blas
 
 from .system import CoeffSystem
 from ..tools.array import csr_matvec
-from ..tools.config import config
-from ..libraries import arithmetic as arithmetic_library
 
-ARITHMETIC_LIBRARY = lambda: config['arithmetic']['ARITHMETIC_LIBRARY'].lower()
 
 # Track implemented schemes
 schemes = OrderedDict()
@@ -80,8 +77,7 @@ class MultistepIMEX:
         # Attributes
         self._iteration = 0
         self._LHS_params = None
-
-        self.ARITHMETIC_LIBRARY = ARITHMETIC_LIBRARY()
+        self.axpy = blas.get_blas_funcs('axpy', dtype=solver.dtype)
 
     def step(self, dt, wall_time):
         """Advance solver by one timestep."""
@@ -101,6 +97,7 @@ class MultistepIMEX:
         LX = self.LX
         F = self.F
         RHS = self.RHS
+        axpy = self.axpy
 
         # Cycle and compute timesteps
         self.dt.rotate()
@@ -149,52 +146,16 @@ class MultistepIMEX:
                 csr_matvec(sp.pre_left, ssF, F0.get_subdata(sp, ss))
 
         # Build RHS
-        if self.ARITHMETIC_LIBRARY == 'python':
-            np.multiply(c[1], F0.data, out=RHS.data)
-            for j in range(2, len(c)):
-                RHS.data += c[j] * F[j-1].data  # CREATES TEMPORARY
-            for j in range(1, len(a)):
-                RHS.data -= a[j] * MX[j-1].data  # CREATES TEMPORARY
-            for j in range(1, len(b)):
-                RHS.data -= b[j] * LX[j-1].data  # CREATES TEMPORARY
-        elif self.ARITHMETIC_LIBRARY == 'cython':
-            arithmetic_library.num_field_product(c[1], F0.data, RHS.data)
-            for j in range(2, len(c)): 
-                arithmetic_library.sum_product_inplace(c[j], F[j-1].data, RHS.data)
-            for j in range(1, len(a)):
-                arithmetic_library.sum_product_inplace(-a[j], MX[j-1].data, RHS.data)
-            for j in range(1, len(b)):
-                arithmetic_library.sum_product_inplace(-b[j], LX[j-1].data, RHS.data)
-        elif self.ARITHMETIC_LIBRARY == 'numexpr': # numexpr
-            if update_LHS:
-                # change coefficients
-                var_dict = {}
-                expression = ""
-                for j in range(1,len(c)):
-                    var_dict['c%i'%j] = c[j]
-                    expression += "+c%i*F%i" %(j,j)
-                for j in range(1,len(b)):
-                    var_dict['b%i'%j] = b[j]
-                    expression += "-b%i*L%i" %(j,j)
-                for j in range(1,len(a)):
-                    var_dict['a%i'%j] = a[j]
-                    expression += "-a%i*M%i" %(j,j)
-                # remove first "+"
-                expression = expression[1:]
-                self.expression = expression
-                self.var_dict = var_dict
-
-            # add data references
-            for j in range(1,len(c)):
-                self.var_dict['F%i'%j] = F[j-1].data
-            for j in range(1,len(b)):
-                self.var_dict['L%i'%j] = LX[j-1].data
-            for j in range(1,len(a)):
-                self.var_dict['M%i'%j] = MX[j-1].data
-
-            ne.evaluate(self.expression, local_dict=self.var_dict, out=RHS.data)
-        else:
-            raise NotImplementedError("ARITHMETIC_LIBRARY must be python, cython, or numexpr")
+        np.multiply(c[1], F0.data, out=RHS.data)
+        for j in range(2, len(c)):
+            # RHS.data += c[j] * F[j-1].data
+            axpy(a=c[j], x=F[j-1].data, y=RHS.data)
+        for j in range(1, len(a)):
+            # RHS.data -= a[j] * MX[j-1].data
+            axpy(a=-a[j], x=MX[j-1].data, y=RHS.data)
+        for j in range(1, len(b)):
+            # RHS.data -= b[j] * LX[j-1].data
+            axpy(a=-b[j], x=LX[j-1].data, y=RHS.data)
 
         # Make sure fields are in coeff space to avoid deadlock in scatter
         for field in state_fields:
@@ -569,6 +530,7 @@ class RungeKuttaIMEX:
         self.F = [CoeffSystem(solver.subproblems, dtype=solver.dtype) for i in range(self.stages)]
 
         self._LHS_params = None
+        self.axpy = blas.get_blas_funcs('axpy', dtype=solver.dtype)
 
     def step(self, dt, wall_time):
         """Advance solver by one timestep."""
@@ -592,6 +554,7 @@ class RungeKuttaIMEX:
         H = self.H
         c = self.c
         k = dt
+        axpy = self.axpy
 
         # Check on updating LHS
         update_LHS = (k != self._LHS_params)
@@ -640,8 +603,10 @@ class RungeKuttaIMEX:
             # Construct RHS(n,i)
             np.copyto(RHS.data, MX0.data)
             for j in range(0, i):
-                RHS.data += (k * A[i,j]) * F[j].data  # CREATES TEMPORARY
-                RHS.data -= (k * H[i,j]) * LX[j].data  # CREATES TEMPORARY
+                # RHS.data += (k * A[i,j]) * F[j].data
+                axpy(a=(k*A[i,j]), x=F[j].data, y=RHS.data)
+                # RHS.data -= (k * H[i,j]) * LX[j].data
+                axpy(a=-(k*H[i,j]), x=LX[j].data, y=RHS.data)
 
             # Make sure fields are in coeff space to avoid deadlock in scatter
             for field in state_fields:
