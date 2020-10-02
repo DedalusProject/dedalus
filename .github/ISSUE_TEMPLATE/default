@@ -1,6 +1,6 @@
 ---
-name: installation_to_list
-about: Redirect installation issues to mailing list
+name: default
+about: Template for Dedalus issues
 title: ''
 labels: ''
 assignees: ''
