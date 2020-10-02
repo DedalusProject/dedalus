@@ -16,7 +16,6 @@ from .domain import Domain
 from .field import Operand, Field
 from .future import Future, FutureField
 from .operators import convert
-from .coords import SphericalCoordinates
 from ..tools.array import kron
 from ..tools.cache import CachedAttribute, CachedMethod
 from ..tools.dispatch import MultiClass
@@ -606,37 +605,45 @@ class DotProduct(Product, FutureField):
 
 
 class CrossProduct(Product, FutureField):
+    """Cross product on two 3D vector fields."""
 
     name = "Cross"
 
-    # Should make sure arg0 and arg1 are rank 1
-    # and that the cs are the same for arg0 and arg1
-
     def __init__(self, arg0, arg1, out=None, **kw):
         super().__init__(arg0, arg1, out=out)
+        # Check that both fields are rank-1
+        if len(arg0.tensorsig) != 1 or len(arg1.tensorsig) != 1:
+            raise NotImplementedError("CrossProduct currently only implemented for vector fields.")
+        # Check that first coordsys are the same
+        if arg0.tensorsig[0] is not arg1.tensorsig[0]:
+            raise ValueError("CrossProduct requires identical first tangent spaces on both fields.")
         # FutureField requirements
         self.domain = Domain(arg0.dist, self._build_bases(arg0, arg1))
         self.tensorsig = arg0.tensorsig
         self.dtype = np.result_type(arg0.dtype, arg1.dtype)
+        # Pick operate method based on coordsys handedness
+        if self.tensorsig[0].right_handed:
+            self.operate = self.operate_right_handed
+        else:
+            self.operate = self.operate_left_handed
 
-    @CachedMethod
-    def epsilon(self, i, j, k):
-        coordsys = self.tensorsig[0]
-        return coordsys.epsilon(i, j, k)
-
-    def operate(self, out):
+    def operate_right_handed(self, out):
         arg0, arg1 = self.args
         out.set_layout(arg0.layout)
-        if isinstance(self.tensorsig[0], SphericalCoordinates):
-            data00, data01, data02 = arg0.data[0], arg0.data[1], arg0.data[2]
-            data10, data11, data12 = arg1.data[0], arg1.data[1], arg1.data[2]
-            ne.evaluate("data02*data11 - data01*data12", out=out.data[0])
-            ne.evaluate("data00*data12 - data02*data10", out=out.data[1])
-            ne.evaluate("data01*data10 - data00*data11", out=out.data[2])
-        else:
-            out.data[0] = self.epsilon(0,1,2)*(arg0.data[1]*arg1.data[2] - arg0.data[2]*arg1.data[1])
-            out.data[1] = self.epsilon(1,2,0)*(arg0.data[2]*arg1.data[0] - arg0.data[0]*arg1.data[2])
-            out.data[2] = self.epsilon(2,0,1)*(arg0.data[0]*arg1.data[1] - arg0.data[1]*arg1.data[0])
+        data00, data01, data02 = arg0.data[0], arg0.data[1], arg0.data[2]
+        data10, data11, data12 = arg1.data[0], arg1.data[1], arg1.data[2]
+        ne.evaluate("data01*data12 - data02*data11", out=out.data[0])
+        ne.evaluate("data02*data10 - data00*data12", out=out.data[1])
+        ne.evaluate("data00*data11 - data01*data10", out=out.data[2])
+
+    def operate_left_handed(self, out):
+        arg0, arg1 = self.args
+        out.set_layout(arg0.layout)
+        data00, data01, data02 = arg0.data[0], arg0.data[1], arg0.data[2]
+        data10, data11, data12 = arg1.data[0], arg1.data[1], arg1.data[2]
+        ne.evaluate("data02*data11 - data01*data12", out=out.data[0])
+        ne.evaluate("data00*data12 - data02*data10", out=out.data[1])
+        ne.evaluate("data01*data10 - data00*data11", out=out.data[2])
 
 
 class Multiply(Product, metaclass=MultiClass):
