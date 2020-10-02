@@ -514,6 +514,8 @@ class InitialValueSolver:
             # Enforce for as many iterations as timestepper uses internally
             if self.iteration % self.enforce_real_cadence <= self.timestepper._history:
                 # Transform state variables to grid and back
+                for field in self.state.fields:
+                    field.set_scales(self.domain.dealias)
                 for path in self.domain.dist.paths:
                     path.increment(self.state.fields)
                 for path in self.domain.dist.paths[::-1]:
