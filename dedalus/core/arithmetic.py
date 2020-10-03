@@ -749,7 +749,7 @@ class MultiplyFields(Multiply, FutureField):
         out_order = len(self.tensorsig)
         # Set output layout
         out.set_layout(args[0].layout)
-        # Multiply all argument data, reshaped by tensorsig
+        # Reshape arg data to broadcast properly for output tensorsig
         args_data = []
         start_index = 0
         for arg in args:
@@ -759,8 +759,8 @@ class MultiplyFields(Multiply, FutureField):
             shape[start_index: start_index + arg_order] = arg_shape[:arg_order]
             args_data.append(arg.data.reshape(shape))
             start_index += arg_order
-        arg0 = args[0].data
-        arg1 = args[1].data
+        arg0 = args_data[0]
+        arg1 = args_data[1]
         ne.evaluate("arg0*arg1", out=out.data)
 
 
