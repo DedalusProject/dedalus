@@ -1686,17 +1686,17 @@ class CartesianTransposeComponents(TransposeComponents):
         indices = self.indices
         rank = len(self.tensorsig)
         tensor_shape = [cs.dim for cs in self.tensorsig]
-        component_indices = list(np.ndindex(tensor_shape))
+        start_indices = list(np.ndindex(*tensor_shape))
         neworder = np.arange(rank)
         neworder[indices[0]] = indices[1]
         neworder[indices[1]] = indices[0]
 
-        transpose = np.zeros((len(component_indices), len(component_indices)))
-        for i, start_index in enumerate(component_indices):
+        transpose = np.zeros((len(start_indices), len(start_indices)))
+        for i, start_index in enumerate(start_indices):
             end_index = list(start_index)
-            end_index[indices[0]] = start_indices[indices[1]]
-            end_index[indices[1]] = start_indices[indices[0]]
-            j = component_indices.index(end_index)
+            end_index[indices[0]] = start_index[indices[1]]
+            end_index[indices[1]] = start_index[indices[0]]
+            j = start_indices.index(tuple(end_index))
             transpose[j,i] = 1
 
         # assume all regularities have the same n_size
