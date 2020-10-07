@@ -321,6 +321,7 @@ class LinearBoundaryValueProblem(ProblemBase):
         #domain = eqn['domain']
         tensorsig = eqn['tensorsig']
         dtype = eqn['dtype']
+        # TO-DO: check these conditions
         # Equation conditions
         #self._check_basis_containment(eqn, 'LHS', 'RHS')
         #eqn['LHS'].require_linearity(*vars, name='LHS')
@@ -606,4 +607,3 @@ IVP = InitialValueProblem
 LBVP = LinearBoundaryValueProblem
 NLBVP = NonlinearBoundaryValueProblem
 EVP = EigenvalueProblem
-

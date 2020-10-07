@@ -116,6 +116,7 @@ class LinearBoundaryValueSolver:
         self.problem = problem
         self.dist = problem.dist
         self.matsolver = matsolver
+        self.dtype = problem.dtype
 
         # Build subsystems and subproblem matrices
         self.subsystems = subsystems.build_subsystems(problem, matrix_coupling=matrix_coupling)
@@ -155,8 +156,9 @@ class LinearBoundaryValueSolver:
         for sp in self.subproblems:
             sp_matsolver = self.subproblem_matsolvers[sp]
             for ss in sp.subsystems:
-                RHS = sp.rhs_map * ss.gather(self.F)
+                RHS = sp.pre_left @ ss.gather(self.F)
                 X = sp_matsolver.solve(RHS)
+                X = sp.pre_right @ X
                 ss.scatter(X, self.state)
         #self.state.scatter()
 
@@ -347,6 +349,7 @@ class InitialValueSolver:
         else:
             return True
 
+    # TO-DO: remove this
     def euler_step(self, dt):
         """
         M.dt(X) + L.X = F
@@ -398,5 +401,3 @@ class InitialValueSolver:
             if self.sim_time + dt > self.stop_sim_time:
                 dt = self.stop_sim_time - self.sim_time
             self.step(dt)
-
-
