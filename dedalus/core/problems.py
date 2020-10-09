@@ -343,12 +343,11 @@ class LinearBoundaryValueProblem(ProblemBase):
             F['c'] = 0
         eqn['L'] = L
         eqn['F'] = F
-        eqn['matrix_dependence'] = eqn['LHS'].matrix_dependence(*vars)
-        eqn['matrix_coupling'] = eqn['LHS'].matrix_coupling(*vars)
+        eqn['matrix_dependence'] = L.matrix_dependence(*vars)
+        eqn['matrix_coupling'] = L.matrix_coupling(*vars)
         #eqn['separability'] = eqn['L'].separability(*vars)
         # Debug logging
         logger.debug('  {} linear form: {}'.format('L', eqn['L']))
-
 
 
 class NonlinearBoundaryValueProblem(ProblemBase):
@@ -540,8 +539,8 @@ class InitialValueProblem(ProblemBase):
         # eqn['M'] = operators.convert(M, eqn['bases'])
         # eqn['L'] = operators.convert(L, eqn['bases'])
         # eqn['F'] = operators.convert(eqn['RHS'], eqn['bases'])
-        eqn['matrix_dependence'] = eqn['LHS'].matrix_dependence(*vars)
-        eqn['matrix_coupling'] = eqn['LHS'].matrix_coupling(*vars)
+        eqn['matrix_dependence'] = (M + L).matrix_dependence(*vars)
+        eqn['matrix_coupling'] = (M + L).matrix_coupling(*vars)
         # # Debug logging
         # logger.debug('  {} linear form: {}'.format('L', eqn['L']))
 
