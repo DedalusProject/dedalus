@@ -381,7 +381,13 @@ class Product(Future):
                 for ia, ncc_comp in enum_indices(ncc.tensorsig):
                     G = Gamma[ia, ib, ic]
                     if abs(G) > 1e-10:
-                        block += G * ncc_basis.multiplication_matrix(subproblem, arg_basis, coeffs[ncc_comp], ncc_comp, arg_comp, out_comp, cutoff=1e-6)
+                        matrix = ncc_basis.multiplication_matrix(subproblem, arg_basis, coeffs[ncc_comp], ncc_comp, arg_comp, out_comp, cutoff=1e-6)
+                        # Domains with real Fourier bases require kroneckering the Jacobi NCC matrix up to match the subsystem shape including the sin and cos parts of RealFourier data
+                        # This fix assumes the Jacobi basis is on the last axis
+                        if matrix.shape != (M,N):
+                            m, n = matrix.shape
+                            matrix = sparse.kron(sparse.eye(M//m, N//n), matrix)
+                        block += G * matrix
                 block_row.append(block)
             blocks.append(block_row)
         return sparse.bmat(blocks, format='csr')

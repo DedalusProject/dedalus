@@ -476,8 +476,7 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         J = arg_basis.Jacobi_matrix()
         A, B = clenshaw.jacobi_recursion(M, a_ncc, b_ncc, J)
         f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0] * sparse.identity(N)
-        return clenshaw.matrix_clenshaw(coeffs, A, B, f0, cutoff=cutoff)
-
+        return clenshaw.matrix_clenshaw(coeffs.ravel(), A, B, f0, cutoff=cutoff)
 
 def Legendre(*args, **kw):
     return Jacobi(*args, a=0, b=0, **kw)
