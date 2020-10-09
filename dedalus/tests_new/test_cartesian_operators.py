@@ -86,7 +86,6 @@ def test_explicit_transpose_2d_tensor(Nx, Nz, dealias, basis, dtype):
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_3d_box])
 @pytest.mark.parametrize('dtype', [np.complex128, np.float64])
-@pytest.mark.xfail
 def test_implicit_transpose_3d_tensor(Nx, Ny, Nz, dealias, basis, dtype):
     c, d, b, x, y, z = basis(Nx, Ny, Nz, dealias, dtype)
     u = field.Field(dist=d, bases=b, tensorsig=(c,), dtype=dtype)
@@ -96,8 +95,6 @@ def test_implicit_transpose_3d_tensor(Nx, Ny, Nz, dealias, basis, dtype):
     T = operators.Gradient(u, c).evaluate()
     Ttg = np.transpose(np.copy(T['g']),(1,0,2,3,4))
     Tt = field.Field(dist=d, bases=b, tensorsig=(c,c,), dtype=dtype)
-    # passes with this version below, fails with version above with jacobi conversion error
-    #Tt = field.Field(dist=d, bases=T.domain.bases, tensorsig=(c,c,), dtype=dtype)
     trans = lambda A: operators.TransposeComponents(A)
     problem = problems.LBVP([Tt])
     problem.add_equation((trans(Tt), T))
@@ -111,7 +108,6 @@ def test_implicit_transpose_3d_tensor(Nx, Ny, Nz, dealias, basis, dtype):
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_2d_box])
 @pytest.mark.parametrize('dtype', [np.complex128, np.float64])
-@pytest.mark.xfail
 def test_implicit_transpose_2d_tensor(Nx, Nz, dealias, basis, dtype):
     c, d, b, x, z = basis(Nx, Nz, dealias, dtype)
     u = field.Field(dist=d, bases=b, tensorsig=(c,), dtype=dtype)
@@ -121,8 +117,6 @@ def test_implicit_transpose_2d_tensor(Nx, Nz, dealias, basis, dtype):
     T.name = 'T'
     Ttg = np.transpose(np.copy(T['g']),(1,0,2,3))
     Tt = field.Field(name='Tt', dist=d, bases=b, tensorsig=(c,c,), dtype=dtype)
-    # passes with this version below, fails with version above with jacobi conversion error
-    #Tt = field.Field(name='Tt', dist=d, bases=T.domain.bases, tensorsig=(c,c,), dtype=dtype)
     trans = lambda A: operators.TransposeComponents(A)
     problem = problems.LBVP([Tt])
     problem.add_equation((trans(Tt), T))
