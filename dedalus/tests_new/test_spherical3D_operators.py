@@ -309,4 +309,3 @@ def test_angular_component_tensor(Nphi, Ntheta, Nr, dealias, basis_radius):
     Ag[1,0] = Ag[0,1] = -2*np.cos(phi)*(np.sin(theta) + 3*np.cos(theta)*np.sin(phi))
     Ag[0,0] = 6*np.sin(phi)**2
     assert np.allclose(A['g'],Ag)
-
