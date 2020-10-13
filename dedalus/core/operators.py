@@ -1786,7 +1786,7 @@ class SphericalTransposeComponents(TransposeComponents):
         np.copyto(out.data, operand.data)
 
         if not layout.grid_space[self.radius_axis]: # in regularity componentsinput
-            basis.backward_regularity_recombination(operand.tensorsig, self.radius_axis, out.data)
+            basis.backward_regularity_recombination(operand.tensorsig, self.radius_axis, out.data, ell_maps=self.input_basis.ell_maps)
 
         axes_list = np.arange(len(out.data.shape))
         axes_list[indices[0]] = indices[1]
@@ -1794,7 +1794,7 @@ class SphericalTransposeComponents(TransposeComponents):
         np.copyto(out.data,np.transpose(out.data,axes=axes_list))
 
         if not layout.grid_space[self.radius_axis]: # in regularity components
-            basis.forward_regularity_recombination(operand.tensorsig, self.radius_axis, out.data)
+            basis.forward_regularity_recombination(operand.tensorsig, self.radius_axis, out.data, ell_maps=self.input_basis.ell_maps)
 
 
 class SphericalComponent(LinearOperator):

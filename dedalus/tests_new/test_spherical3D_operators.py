@@ -143,8 +143,8 @@ def test_transpose_coeff_tensor(Nphi, Ntheta, Nr, dealias, basis):
     u['g'][1] = r**2*(2*ct**3*cp-r*cp**3*st**4+r**3*ct*cp**3*st**5*sp**3-1/16*r*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
     u['g'][0] = r**2*sp*(-2*ct**2+r*ct*cp*st**2*sp-r**3*cp**2*st**5*sp**3)
     T = operators.Gradient(u, c).evaluate()
-    T.require_coeff_space()
     Tg = np.transpose(np.copy(T['g']),(1,0,2,3,4))
+    T.require_coeff_space()
     T = operators.TransposeComponents(T).evaluate()
     assert np.allclose(T['g'], Tg)
 
