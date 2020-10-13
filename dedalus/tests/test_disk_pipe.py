@@ -28,7 +28,7 @@ c = coords.PolarCoordinates('phi', 'r')
 d = distributor.Distributor((zc,c))
 b = basis.DiskBasis(c, (Mmax+1, Nmax+1), radius=radius, dtype=dtype)
 zb = basis.RealFourier(zc, nz, bounds=(zmin, zmax))
-cb = b.S1_basis(r=radius)
+cb = b.S1_basis(radius=radius)
 
 phi, r = b.local_grids((1, 1))
 z = zb.local_grids((1,))
