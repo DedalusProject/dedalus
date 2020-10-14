@@ -467,7 +467,7 @@ class Product(Future):
 
     def matrix_dependence(self, *vars):
         coupling = self.matrix_coupling(*vars)
-        coupling[1] = True  # HACK HACK HACK for spheres coupling ell
+        #coupling[1] = True  # HACK HACK HACK for spheres coupling ell
         return coupling
 
     def matrix_coupling(self, *vars):
@@ -815,3 +815,7 @@ class MultiplyNumberField(Multiply, FutureField):
         arg0 = self.args[0]
         arg1 = self.args[1].reinitialize(**kw)
         return self.new_operands(arg0, arg1, **kw)
+
+    def sym_diff(self, var):
+        """Symbolically differentiate with respect to specified operand."""
+        return self.args[0]*self.args[1].sym_diff(var)
