@@ -179,63 +179,67 @@ class NonlinearBoundaryValueSolver:
 
     """
 
-    def __init__(self, problem, matsolver=None):
+    def __init__(self, problem, matrix_coupling=None, matsolver=None):
 
         logger.debug('Beginning NLBVP instantiation')
 
-        self.problem = problem
-        self.domain = domain = problem.domain
-        self.iteration = 0
         if matsolver is None:
             # Default to solver since every iteration sees a new matrix
             matsolver = matsolvers[config['linear algebra']['MATRIX_SOLVER'].lower()]
         elif isinstance(matsolver, str):
             matsolver = matsolvers[matsolver.lower()]
         self.matsolver = matsolver
+        self.problem = problem
+        self.dist = problem.dist
+        self.dtype = problem.dtype
 
-        # Build pencils and pencil matrices
-        self.pencils = pencil.build_pencils(domain)
-        pencil.build_matrices(self.pencils, ['L', 'dF'])
+        self.iteration = 0
 
-        # Build systems
-        namespace = problem.namespace
-        vars = [namespace[var] for var in problem.variables]
-        perts = [namespace['δ'+var] for var in problem.variables]
-        self.state = FieldSystem.from_fields(vars)
-        self.perturbations = FieldSystem.from_fields(perts)
+        # Build subsystems and subproblem matrices
+        self.subsystems = subsystems.build_subsystems(problem, matrix_coupling=matrix_coupling)
+
+        self.state = problem.variables
+        self.perturbations = problem.perturbations
 
         # Create F operator trees
-        self.evaluator = Evaluator(domain, namespace)
-        Fe_handler = self.evaluator.add_system_handler(iter=1, group='F')
-        Fb_handler = self.evaluator.add_system_handler(iter=1, group='F')
-        for eqn in problem.eqs:
-            Fe_handler.add_task(eqn['F-L'])
-        for bc in problem.bcs:
-            Fb_handler.add_task(bc['F-L'])
-        self.Fe = Fe_handler.build_system()
-        self.Fb = Fb_handler.build_system()
+        namespace = {}
+        self.evaluator = Evaluator(self.dist, namespace)
+        F_handler = self.evaluator.add_system_handler(iter=1, group='F')
+        for eq in problem.eqs:
+            F_handler.add_task(eq['-H'])
+        F_handler.build_system()
+        self.F = F_handler.fields
 
         logger.debug('Finished NLBVP instantiation')
+
+    def _build_subproblem_matsolver(self, sp):
+        """Build matsolvers for each subproblem LHS."""
+        if self.problem.STORE_EXPANDED_MATRICES:
+            L = sp.dH_exp
+            matsolver = self.matsolver(L, self)
+        else:
+            L = sp.dH_min @ sp.pre_right
+            matsolver = self.matsolver(L, self)
+        return matsolver
 
     def newton_iteration(self):
         """Update solution with a Newton iteration."""
         # Compute RHS
         self.evaluator.evaluate_group('F', sim_time=0, wall_time=0, iteration=self.iteration)
         # Recompute Jacobian
-        pencil.build_matrices(self.pencils, ['dF'])
-        # Solve system for each pencil, updating perturbations
-        for p in self.pencils:
-            pFe = self.Fe.get_pencil(p)
-            pFb = self.Fb.get_pencil(p)
-            A = p.L - p.dF
-            b = p.G_eq * pFe + p.G_bc * pFb
-            x = self.matsolver(A, self).solve(b)
-            self.perturbations.set_pencil(p, x)
-        self.perturbations.scatter()
+        self.subproblems = subsystems.build_subproblems(self.problem, self.subsystems, ['dH'])
+        # Solve system for each subproblem, updating state
+        for sp in self.subproblems:
+            sp_matsolver = self._build_subproblem_matsolver(sp)
+            for ss in sp.subsystems:
+                RHS = sp.pre_left @ ss.gather(self.F)
+                X = sp_matsolver.solve(RHS)
+                X = sp.pre_right @ X
+                ss.scatter(X, self.perturbations)
+
         # Update state
-        self.state.gather()
-        self.state.data += self.perturbations.data
-        self.state.scatter()
+        for var, pert in zip(self.state, self.perturbations):
+            var['c'] += pert['c']
         self.iteration += 1
 
 

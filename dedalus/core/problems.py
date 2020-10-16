@@ -135,6 +135,7 @@ class ProblemBase:
 
     def __init__(self, variables, ncc_cutoff=1e-10, max_ncc_terms=None):
         self.variables = variables
+        self.LHS_variables = variables
         self.dist = unify_attributes(variables, 'dist')
         self.equations = self.eqs = []
         self.parameters = OrderedDict()
@@ -385,6 +386,7 @@ class NonlinearBoundaryValueProblem(ProblemBase):
         for pert, var in zip(self.perturbations, self.variables):
             pert['c'] = 0
             pert.name = 'δ'+var.name
+        self.LHS_variables = self.perturbations
 
     @CachedAttribute
     def namespace_additions(self):
@@ -409,9 +411,11 @@ class NonlinearBoundaryValueProblem(ProblemBase):
         dH = 0
         for var, pert in zip(vars, perts):
             dHi = H.replace(var, var + ep*pert)
-            dHi = Operand.cast(dHi.sym_diff(ep), self.dist, tensorsig=tensorsig, dtype=dtype)
-            dHi = dHi.replace(ep, 0)
-            dH += dHi
+            dHi = dHi.sym_diff(ep)
+            if dHi:
+                dHi = Operand.cast(dHi, self.dist, tensorsig=tensorsig, dtype=dtype)
+                dHi = dHi.replace(ep, 0)
+                dH += dHi
         dH = dH.reinitialize(ncc=True, ncc_vars=vars)
         domain = eqn['domain'] = (dH+H).domain
         dH = operators.convert(dH, domain.bases)
