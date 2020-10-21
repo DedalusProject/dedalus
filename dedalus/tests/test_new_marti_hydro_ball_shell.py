@@ -1,7 +1,7 @@
 
 
 import numpy as np
-from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic, timesteppers_sphere
+from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
 from dedalus.tools import logging
 from dedalus.tools.parsing import split_equation
 from dedalus.extras.flow_tools import GlobalArrayReducer
@@ -24,47 +24,49 @@ u0 = np.sqrt(3/(2*np.pi))
 nu = 1e-2
 dt = 0.005
 t_end = 20
+dtype = np.float64
 ts = timesteppers.SBDF4
+mesh = None
 
 # Bases
 c = coords.SphericalCoordinates('phi', 'theta', 'r')
 c_S2 = c.S2coordsys
-d = distributor.Distributor((c,), mesh=[4,4])
-bB = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), radius=radius/2)
-bS = basis.SphericalShellBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), radii=(radius/2, radius))
+d = distributor.Distributor((c,), mesh=mesh)
+bB = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), radius=radius/2, dtype=dtype)
+bS = basis.SphericalShellBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), radii=(radius/2, radius), dtype=dtype)
 bmid = bB.S2_basis(radius=radius/2)
 btop = bS.S2_basis(radius=radius)
 phi_B, theta_B, r_B = bB.local_grids((1, 1, 1))
 phi_S, theta_S, r_S = bS.local_grids((1, 1, 1))
 
 # Fields
-uB = field.Field(dist=d, bases=(bB,), dtype=np.complex128, tensorsig=(c,))
-pB = field.Field(dist=d, bases=(bB,), dtype=np.complex128)
-tB = field.Field(dist=d, bases=(bmid,), dtype=np.complex128, tensorsig=(c,))
-uS = field.Field(dist=d, bases=(bS,), dtype=np.complex128, tensorsig=(c,))
-pS = field.Field(dist=d, bases=(bS,), dtype=np.complex128)
-tS_ang = field.Field(dist=d, bases=(bmid,), dtype=np.complex128, tensorsig=(c_S2,))
-tS_rad = field.Field(dist=d, bases=(bmid,), dtype=np.complex128)
-tS2 = field.Field(dist=d, bases=(btop,), dtype=np.complex128, tensorsig=(c,))
+uB = field.Field(dist=d, bases=(bB,), dtype=dtype, tensorsig=(c,))
+pB = field.Field(dist=d, bases=(bB,), dtype=dtype)
+tB = field.Field(dist=d, bases=(bmid,), dtype=dtype, tensorsig=(c,))
+uS = field.Field(dist=d, bases=(bS,), dtype=dtype, tensorsig=(c,))
+pS = field.Field(dist=d, bases=(bS,), dtype=dtype)
+tS_ang = field.Field(dist=d, bases=(bmid,), dtype=dtype, tensorsig=(c_S2,))
+tS_rad = field.Field(dist=d, bases=(bmid,), dtype=dtype)
+tS2 = field.Field(dist=d, bases=(btop,), dtype=dtype, tensorsig=(c,))
 
 # Boundary conditions
-utop = field.Field(dist=d, bases=(btop,), dtype=np.complex128, tensorsig=(c,))
+utop = field.Field(dist=d, bases=(btop,), dtype=dtype, tensorsig=(c,))
 utop['g'][2] = 0. # u_r = 0
 utop['g'][1] = - u0*np.cos(theta_S)*np.cos(phi_S)
 utop['g'][0] = u0*np.sin(phi_S)
 
 # Parameters and operators
-ezB = field.Field(dist=d, bases=(bB,), dtype=np.complex128, tensorsig=(c,))
+ezB = field.Field(dist=d, bases=(bB,), dtype=dtype, tensorsig=(c,))
 ezB['g'][1] = -np.sin(theta_B)
 ezB['g'][2] =  np.cos(theta_B)
-ezS = field.Field(dist=d, bases=(bS,), dtype=np.complex128, tensorsig=(c,))
+ezS = field.Field(dist=d, bases=(bS,), dtype=dtype, tensorsig=(c,))
 ezS['g'][1] = -np.sin(theta_S)
 ezS['g'][2] =  np.cos(theta_S)
 div = lambda A: operators.Divergence(A, index=0)
 lap = lambda A: operators.Laplacian(A, c)
 grad = lambda A: operators.Gradient(A, c)
 dot = lambda A, B: arithmetic.DotProduct(A, B)
-cross = lambda A, B: operators.CrossProduct(A, B)
+cross = lambda A, B: arithmetic.CrossProduct(A, B)
 ddt = lambda A: operators.TimeDerivative(A)
 radcomp = lambda A: operators.RadialComponent(A)
 angcomp = lambda A: operators.AngularComponent(A)
@@ -100,42 +102,90 @@ solver = solvers.InitialValueSolver(problem, ts)
 solver.stop_sim_time = t_end
 
 # Add taus
-alpha_BC = 0
+alpha_BC_ball = 0
 
-def C(N, ell, deg):
-    ab = (alpha_BC,ell+deg+0.5)
-    cd = (2,       ell+deg+0.5)
-    return dedalus_sphere.jacobi128.coefficient_connection(N - ell//2,ab,cd)
+def C_ball(N, ell, deg):
+    ab = (alpha_BC_ball,ell+deg+0.5)
+    cd = (2,            ell+deg+0.5)
+    return dedalus_sphere.jacobi.coefficient_connection(N - ell//2 + 1,ab,cd)
+
+# ChebyshevV
+alpha_BC_shell = (2-1/2, 2-1/2)
+
+def C_shell(N):
+    ab = alpha_BC_shell
+    cd = (bS.radial_basis.alpha[0]+2,bS.radial_basis.alpha[1]+2)
+    return dedalus_sphere.jacobi.coefficient_connection(N,ab,cd)
+
+def BC_rows(N, num_comp):
+    N_list = (np.arange(num_comp)+1)*(N + 1)
+    return N_list
 
 for subproblem in solver.subproblems:
     if subproblem.group[1] != 0:
-        ell = subproblem.group[1]
-        L = subproblem.L_min
-        NB = Nmax - ell//2 + 1
-        L[1*NB:2*NB, -9] = (C(Nmax, ell, -1))[:,-1].reshape((NB,1))
-        L[2*NB:3*NB, -8] = (C(Nmax, ell, +1))[:,-1].reshape((NB,1))
-        L[3*NB:4*NB, -7] = (C(Nmax, ell,  0))[:,-1].reshape((NB,1))
-        NS = bS.shape[-1]
-        L[4*NB+2*NS-1, -6] = 1
-        L[4*NB+2*NS-2, -3] = 1
-        L[4*NB+3*NS-1, -5] = 1
-        L[4*NB+3*NS-2, -2] = 1
-        L[4*NB+4*NS-1, -4] = 1
-        L[4*NB+4*NS-2, -1] = 1
-        L.eliminate_zeros()
-        subproblem.expand_matrices(['M','L'])
+        if dtype == np.complex128:
+            ell = subproblem.group[1]
+            L = subproblem.left_perm.T @ subproblem.L_min
+            shape = L.shape
+            tau_columns = np.zeros((shape[0], 9))
+            N0, N1, N2, N3 = BC_rows(Nmax - ell//2, 4)
+            tau_columns[N0:N1, -9] = (C_ball(Nmax, ell, -1))[:,-1]
+            tau_columns[N1:N2, -8] = (C_ball(Nmax, ell, +1))[:,-1]
+            tau_columns[N2:N3, -7] = (C_ball(Nmax, ell,  0))[:,-1]
+            NS = bS.shape[-1]
+            N4, N5, N6, N7 = N3 + BC_rows(NS-1, 4)
+            tau_columns[N4:N5, -6] = (C_shell(NS))[:,-1]
+            tau_columns[N4:N5, -3] = (C_shell(NS))[:,-2]
+            tau_columns[N5:N6, -5] = (C_shell(NS))[:,-1]
+            tau_columns[N5:N6, -2] = (C_shell(NS))[:,-2]
+            tau_columns[N6:N7, -4] = (C_shell(NS))[:,-1]
+            tau_columns[N6:N7, -1] = (C_shell(NS))[:,-2]
+            L[:,-9:] = tau_columns
+            L.eliminate_zeros()
+        elif dtype == np.float64:
+            ell = subproblem.group[1]
+            L = subproblem.left_perm.T @ subproblem.L_min
+            shape = L.shape
+            tau_columns = np.zeros((shape[0], 18))
+            NL = Nmax - ell//2 + 1
+            N0, N1, N2, N3 = BC_rows(Nmax - ell//2, 4) * 2
+            tau_columns[N0:N0+NL, 0] = (C_ball(Nmax, ell, -1))[:,-1]
+            tau_columns[N1:N1+NL, 1] = (C_ball(Nmax, ell, +1))[:,-1]
+            tau_columns[N2:N2+NL, 2] = (C_ball(Nmax, ell,  0))[:,-1]
+            tau_columns[N0+NL:N0+2*NL, 9] = (C_ball(Nmax, ell, -1))[:,-1]
+            tau_columns[N1+NL:N1+2*NL, 10] = (C_ball(Nmax, ell, +1))[:,-1]
+            tau_columns[N2+NL:N2+2*NL, 11] = (C_ball(Nmax, ell,  0))[:,-1]
+            NS = bS.shape[-1]
+            N4, N5, N6, N7 = N3 + BC_rows(NS-1, 4)*2
+            tau_columns[N4:N4+NS, 3] = (C_shell(NS))[:,-1]
+            tau_columns[N4:N4+NS, 4] = (C_shell(NS))[:,-2]
+            tau_columns[N5:N5+NS, 5] = (C_shell(NS))[:,-1]
+            tau_columns[N5:N5+NS, 6] = (C_shell(NS))[:,-2]
+            tau_columns[N6:N6+NS, 7] = (C_shell(NS))[:,-1]
+            tau_columns[N6:N6+NS, 8] = (C_shell(NS))[:,-2]
+            tau_columns[N4+NS:N4+2*NS, 12] = (C_shell(NS))[:,-1]
+            tau_columns[N4+NS:N4+2*NS, 13] = (C_shell(NS))[:,-2]
+            tau_columns[N5+NS:N5+2*NS, 14] = (C_shell(NS))[:,-1]
+            tau_columns[N5+NS:N5+2*NS, 15] = (C_shell(NS))[:,-2]
+            tau_columns[N6+NS:N6+2*NS, 16] = (C_shell(NS))[:,-1]
+            tau_columns[N6+NS:N6+2*NS, 17] = (C_shell(NS))[:,-2]
+            L[:,-18:] = tau_columns
+            L.eliminate_zeros()
+        subproblem.L_min = subproblem.left_perm @ L
+        if problem.STORE_EXPANDED_MATRICES:
+            subproblem.expand_matrices(['M','L'])
 
 ## Check condition number and plot matrices
 #import matplotlib.pyplot as plt
 #plt.figure()
 #for subproblem in solver.subproblems:
 #    ell = subproblem.group[1]
-#    M = subproblem.M_min
-#    L = subproblem.L_min
-##    plt.imshow(np.log10(np.abs(L.A)))
-##    plt.colorbar()
-##    plt.savefig("matrices/ell_%03i.png" %ell, dpi=300)
-##    plt.clf()
+#    M = subproblem.left_perm.T @ subproblem.M_min
+#    L = subproblem.left_perm.T @ subproblem.L_min
+#    plt.imshow(np.log10(np.abs(L.A)))
+#    plt.colorbar()
+#    plt.savefig("matrices/ell_%03i.png" %ell, dpi=300)
+#    plt.clf()
 #    print(subproblem.group, np.linalg.cond((M + L).A))
 
 # Analysis
@@ -143,14 +193,14 @@ t_list = []
 E_list = []
 
 weightB_theta = bB.local_colatitude_weights(1)
-weightB_r = bB.local_radius_weights(1)
+weightB_r = bB.local_radial_weights(1)
 reducer = GlobalArrayReducer(d.comm_cart)
 vol_test = np.sum(weightB_r*weightB_theta+0*pB['g'])*np.pi/(Lmax+1)/L_dealias
 vol_test = reducer.reduce_scalar(vol_test, MPI.SUM)
 vol_correctionB = 4*np.pi/3*0.5**3/vol_test
 
 weightS_theta = bS.local_colatitude_weights(1)
-weightS_r = bS.local_radius_weights(1)*r_S**2
+weightS_r = bS.local_radial_weights(1)*r_S**2
 reducer = GlobalArrayReducer(d.comm_cart)
 
 vol_test = np.sum(weightS_r*weightS_theta+0*pS['g'])*np.pi/(Lmax+1)/L_dealias
