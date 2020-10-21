@@ -1704,7 +1704,7 @@ class DiskBasis(SpinBasis):
             temp = np.zeros_like(gdata)
             np.copyto(temp, gdata)
         # Apply spin recombination from gdata to temp
-        
+
         self.forward_spin_recombination(field.tensorsig, temp)
         cdata.fill(0)  # OPTIMIZE: shouldn't be necessary
         # Transform component-by-component from temp to cdata
@@ -1785,13 +1785,13 @@ class DiskBasis(SpinBasis):
         if order == 0:
             operator = dedalus_sphere.zernike.operator(2, 'Id', radius=self.radius)
         else:
-            R = dedalus_sphere.zernike.operator(2, 'R', radius=self.radius)
+            R = dedalus_sphere.zernike.operator(2, 'R', radius=1)
             if order < 0:
                 operator = R(-1)**abs(order)
             else: # order > 0
                 operator = R(+1)**abs(order)
         if d > 0:
-            R = dedalus_sphere.zernike.operator(2, 'R', radius=self.radius)
+            R = dedalus_sphere.zernike.operator(2, 'R', radius=1)
             R2 = R(-1) @ R(+1)
             operator = R2**(d//2) @ operator
         return operator(self.n_size(m), self.alpha + self.k, abs(m + spintotal)).square.astype(np.float64)
