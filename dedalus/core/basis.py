@@ -248,6 +248,7 @@ class Basis:
 class IntervalBasis(Basis):
 
     dim = 1
+    subaxis_dependence = [True]
 
     def __init__(self, coord, size, bounds, dealias):
         self.coord = coord
