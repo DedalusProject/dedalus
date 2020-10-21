@@ -466,16 +466,17 @@ class Product(Future):
         # ncc_mat = sparse.vstack(blocks, format='csr')
 
     def matrix_dependence(self, *vars):
-        coupling = self.matrix_coupling(*vars)
-        coupling[1] = True  # HACK HACK HACK for spheres coupling ell
-        return coupling
+        self.prep_nccs(vars)  # HACK: called too much?
+        operand = self.operand
+        operand_dependence = operand.matrix_dependence(*vars)
+        ncc_matrix_dependence = operand.domain.mode_dependence
+        return ncc_matrix_dependence | operand_dependence
 
     def matrix_coupling(self, *vars):
         self.prep_nccs(vars)  # HACK: called too much?
         operand = self.operand
         operand_coupling = operand.matrix_coupling(*vars)
         ncc = self.ncc
-        #ncc_coupling = np.array([basis is not None for basis in ncc.domain.full_bases])
         ncc_coupling = ncc.domain.nonconstant
         return ncc_coupling | operand_coupling
 
@@ -815,3 +816,7 @@ class MultiplyNumberField(Multiply, FutureField):
         arg0 = self.args[0]
         arg1 = self.args[1].reinitialize(**kw)
         return self.new_operands(arg0, arg1, **kw)
+
+    def sym_diff(self, var):
+        """Symbolically differentiate with respect to specified operand."""
+        return self.args[0]*self.args[1].sym_diff(var)

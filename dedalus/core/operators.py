@@ -267,14 +267,14 @@ class Power(NonlinearOperator, metaclass=MultiClass):
     @classmethod
     def _preprocess_args(cls, *args, **kw):
         domain = unify_attributes(args, 'domain', require=False)
-        args = tuple(Operand.cast(arg, domain) for arg in args)
+        #args = tuple(Operand.cast(arg, domain) for arg in args)
         return args, kw
 
     @classmethod
     def _check_args(cls, *args, **kw):
         match = (isinstance(args[i], types) for i,types in cls.argtypes.items())
-        arg1_constant = all(b is None for b in args[1].bases)
-        return (all(match) and arg1_constant)
+        #arg1_constant = all(b is None for b in args[1].bases)
+        return all(match) #(all(match) and arg1_constant)
 
     @property
     def base(self):
@@ -289,48 +289,61 @@ class Power(NonlinearOperator, metaclass=MultiClass):
 class PowerFieldConstant(Power, FutureField):
 
     argtypes = {0: (Field, FutureField),
-                1: (Field, FutureField)}
+                1: (Number,)}
 
-    def __new__(cls, arg0, arg1, *args, **kw):
-        if (arg1.name is None) and (arg1.value == 0):
-            return 1
-        elif (arg1.name is None) and (arg1.value == 1):
-            return arg0
-        else:
-            return object.__new__(cls)
+    # def __new__(cls, arg0, arg1, *args, **kw):
+    #     if (arg1.name is None) and (arg1.value == 0):
+    #         return 1
+    #     elif (arg1.name is None) and (arg1.value == 1):
+    #         return arg0
+    #     else:
+    #         return object.__new__(cls)
 
     def __init__(self, arg0, arg1, out=None):
         super().__init__(arg0, arg1, out=out)
-        for axis, b0 in enumerate(arg0.bases):
-            if b0 is not None:
-                self.require_grid_axis = axis
-                break
-        else:
-            self.require_grid_axis = None
+        self.domain = arg0.domain
+        self.tensorsig = arg0.tensorsig
+        self.dtype = arg0.dtype
+    #     for axis, b0 in enumerate(arg0.bases):
+    #         if b0 is not None:
+    #             self.require_grid_axis = axis
+    #             break
+    #     else:
+    #         self.require_grid_axis = None
 
     def check_conditions(self):
         layout0 = self.args[0].layout
-        layout1 = self.args[1].layout
-        # Fields must be in grid layout
-        if self.require_grid_axis is not None:
-            axis = self.require_grid_axis
-            return (layout0.grid_space[axis] and (layout0 is layout1))
-        else:
-            return (layout0 is layout1)
+        # layout1 = self.args[1].layout
+        # # Fields must be in grid layout
+        # if self.require_grid_axis is not None:
+        #     axis = self.require_grid_axis
+        #     return (layout0.grid_space[axis] and (layout0 is layout1))
+        # else:
+        #     return (layout0 is layout1)
+        return all(layout0.grid_space)
 
     def enforce_conditions(self):
         arg0, arg1 = self.args
-        if self.require_grid_axis is not None:
-            axis = self.require_grid_axis
-            arg0.require_grid_space(axis=axis)
-        arg1.require_layout(arg0.layout)
+        # if self.require_grid_axis is not None:
+        #     axis = self.require_grid_axis
+        #     arg0.require_grid_space(axis=axis)
+        # arg1.require_layout(arg0.layout)
+        arg0.require_grid_space()
 
     def operate(self, out):
         arg0, arg1 = self.args
         # Multiply in grid layout
         out.set_layout(arg0.layout)
         if out.data.size:
-            np.power(arg0.data, arg1.data, out.data)
+            np.power(arg0.data, arg1, out.data)
+
+    def new_operands(self, arg0, arg1, **kw):
+        return Power(arg0, arg1)
+
+    def reinitialize(self, **kw):
+        arg0 = self.args[0].reinitialize(**kw)
+        arg1 = self.args[1]
+        return self.new_operands(arg0, arg1, **kw)
 
 
 # class PowerArrayScalar(PowerDataScalar, FutureArray):
@@ -561,6 +574,8 @@ class UnaryGridFunctionField(UnaryGridFunction, FutureField):
         out.set_layout(self._grid_layout)
         self.func(arg0.data, out=out.data)
 
+    def new_operands(self, arg):
+        return UnaryGridFunction(self.func, arg)
 
 class LinearOperator(FutureField):
     """
@@ -641,7 +656,7 @@ class LinearOperator(FutureField):
         if self == old:
             return new
         # Check base and call with replaced arguments
-        elif isinstance(self, old):
+        elif isinstance(old, type) and isinstance(self, old):
             new_operand = self.operand.replace(new, old)
             return new(new_operand)
         # Call with replaced arguments

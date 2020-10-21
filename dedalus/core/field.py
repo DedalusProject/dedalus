@@ -104,12 +104,12 @@ class Operand:
             return 1
         if other == 1:
             return self
-        from .arithmetic import Power
+        from .operators import Power
         return Power(self, other)
 
     def __rpow__(self, other):
         # Call: other ** self
-        from .arithmetic import Power
+        from .operators import Power
         return Power(other, self)
 
     @staticmethod
@@ -282,7 +282,7 @@ class Current(Operand):
     def require_linearity(self, *vars, name=None):
         """Require expression to be linear in specified variables."""
         if self not in vars:
-            raise NonlinearOperatorError("{} is not linear the specified variables.".format(name if name else str(self)))
+            raise NonlinearOperatorError("{} is not linear in the specified variables.".format(name if name else str(self)))
 
     # def separability(self, *vars):
     #     """Determine separable dimensions of expression as a linear operator on specified variables."""
@@ -458,7 +458,7 @@ class Field(Current):
         return self.layout.global_shape(self.domain, self.scales)
 
     def copy(self):
-        copy = Field(self.dist, bases=self.domain.bases)
+        copy = Field(self.dist, bases=self.domain.bases, tensorsig=self.tensorsig, dtype=self.dtype)
         copy.set_scales(self.scales)
         copy[self.layout] = self.data
         return copy
@@ -688,4 +688,3 @@ class LockedField(Field):
         """Require an axis to be local."""
         if not self.layout.local[axis]:
             raise ValueError("Cannot change locked layout.")
-

@@ -119,7 +119,7 @@ class Future(Operand):
         if self == old:
             return new
         # Check base and call with replaced arguments
-        elif isinstance(self,old):
+        elif isinstance(old, type) and isinstance(self,old):
             args = [arg.replace(old, new) if isinstance(arg, Operand) else arg for arg in self.args]
             return new(*args)
         # Call with replaced arguments
@@ -276,5 +276,3 @@ class FutureField(Future):
 class FutureLockedField(Future):
     """Class for deferred operations producing an Array."""
     future_type = LockedField
-
-

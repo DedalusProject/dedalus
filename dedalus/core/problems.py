@@ -135,6 +135,7 @@ class ProblemBase:
 
     def __init__(self, variables, ncc_cutoff=1e-10, max_ncc_terms=None):
         self.variables = variables
+        self.LHS_variables = variables
         self.dist = unify_attributes(variables, 'dist')
         self.equations = self.eqs = []
         self.parameters = OrderedDict()
@@ -379,6 +380,14 @@ class NonlinearBoundaryValueProblem(ProblemBase):
 
     solver_class = solvers.NonlinearBoundaryValueSolver
 
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self.perturbations = [var.copy() for var in self.variables]
+        for pert, var in zip(self.perturbations, self.variables):
+            pert['c'] = 0
+            pert.name = 'δ'+var.name
+        self.LHS_variables = self.perturbations
+
     @CachedAttribute
     def namespace_additions(self):
         """Build namespace for problem parsing."""
@@ -386,34 +395,40 @@ class NonlinearBoundaryValueProblem(ProblemBase):
         self.perturbations = [Field(bases=var.bases, name='δ'+var.name) for var in self.variables]
         return {pert.name: pert for pert in self.perturbations}
 
-    def _set_matrix_expressions(self, temp):
-        """Set expressions for building solver."""
-        ep = Field(domain=self.domain, name='ep')
+    def _build_matrix_expressions(self, eqn):
+        """Build LHS matrix expressions and check equation conditions."""
         vars = self.variables
         perts = self.perturbations
+        tensorsig = eqn['tensorsig']
+        dtype = eqn['dtype']
+        ep = Field(dist=self.dist, name='ep', dtype=dtype)
+        # TO-DO: check conditions
+        # Equation conditions
+
         # Combine LHS and RHS into single expression
         H = eqn['LHS'] - eqn['RHS']
         # Build Frechet derivative
         dH = 0
         for var, pert in zip(vars, perts):
             dHi = H.replace(var, var + ep*pert)
-            dHi = Cast(dHi.sym_diff(ep), self.domain)
-            dHi = dHi.replace(ep, 0)
-            dH += dHi
+            dHi = dHi.sym_diff(ep)
+            if dHi:
+                dHi = Operand.cast(dHi, self.dist, tensorsig=tensorsig, dtype=dtype)
+                dHi = dHi.replace(ep, 0)
+                dH += dHi
+        dH = dH.reinitialize(ncc=True, ncc_vars=vars)
+        domain = eqn['domain'] = (dH+H).domain
+        dH = operators.convert(dH, domain.bases)
+        H = operators.convert(H, domain.bases)
         # Matrix expressions
-        eqn['dH'] = convert(dH.expand(*perts), eqn['bases'])
-        eqn['-H'] = convert(-H, eqn['bases'])
-        eqn['separability'] = eqn['dH'].separability(*perts)
+        #eqn['dH'] = convert(dH.expand(*perts), eqn['bases'])
+        eqn['dH'] = dH
+        eqn['-H'] = -H
+        print(dH)
+        eqn['matrix_dependence'] = dH.matrix_dependence(*perts)
+        eqn['matrix_coupling'] = dH.matrix_coupling(*perts)
         # Debug logging
         logger.debug('  {} linear form: {}'.format('dH', eqn['dH']))
-
-
-
-
-
-
-
-
 
 
 

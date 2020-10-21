@@ -164,6 +164,15 @@ class Domain(metaclass=CachedClass):
         return tuple(~c for c in self.constant)
 
     @CachedAttribute
+    def mode_dependence(self):
+        """Tuple of dependence flags."""
+        dep = np.zeros(self.dist.dim, dtype=bool)
+        for basis in self.bases:
+            for subaxis in range(basis.dim):
+                dep[basis.axis+subaxis] = basis.subaxis_dependence[subaxis]
+        return tuple(dep)
+
+    @CachedAttribute
     def dim(self):
         return sum(self.nonconstant)
 
@@ -235,4 +244,3 @@ class Domain(metaclass=CachedClass):
     #     # Reshape as multidimensional vector
     #     spacing = reshape_vector(spacing, self.dim, axis)
     #     return spacing
-
