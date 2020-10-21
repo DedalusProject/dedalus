@@ -2421,7 +2421,7 @@ class BallRadialBasis(RegularityBasis):
         if order == 0:
             operator = dedalus_sphere.zernike.operator(3, 'Id', radius=self.radius)
         else:
-            R = dedalus_sphere.zernike.operator(3, 'R', radius=self.radius)
+            R = dedalus_sphere.zernike.operator(3, 'R', radius=1)
 
             if order < 0:
                 operator = R(-1)**abs(order)
@@ -2429,7 +2429,7 @@ class BallRadialBasis(RegularityBasis):
                 operator = R(+1)**abs(order)
 
         if d > 0:
-            R = dedalus_sphere.zernike.operator(3, 'R', radius=self.radius)
+            R = dedalus_sphere.zernike.operator(3, 'R', radius=1)
             R2 = R(-1) @ R(+1)
             operator = R2**(d//2) @ operator
 
