@@ -66,7 +66,7 @@ def build_D2(Nphi, Nr, radius, dealias, dtype=np.float64):
 @pytest.mark.parametrize('radius', radius_disk)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_D2])
-@pytest.mark.parametrize('dtype', [np.float64])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 def test_convert_k2_scalar(Nphi, Nr, radius, dealias, basis, dtype):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, radius, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
@@ -95,7 +95,7 @@ def test_convert_k2_scalar(Nphi, Nr, radius, dealias, basis, dtype):
 @pytest.mark.parametrize('radius', radius_disk)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_D2])
-@pytest.mark.parametrize('dtype', [np.float64])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 def test_convert_k2_vector(Nphi, Nr, radius, dealias, basis, dtype):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, radius, dealias, dtype)
     u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
@@ -174,11 +174,11 @@ def test_convert_k2_vector(Nphi, Nr, radius, dealias, basis, dtype):
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis_radius', [(build_D2, 2.0)])
-@pytest.mark.parametrize('dtype', [np.float64])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 def test_interpolation_scalar(Nphi, Nr, dealias, basis_radius, dtype):
     basis, radius = basis_radius
     c, d, b, phi, r, x, y = basis(Nphi, Nr, radius, dealias, dtype)
-    f = field.Field(dist=d, bases=(b,), dtype=np.float64)
+    f = field.Field(dist=d, bases=(b,), dtype=dtype)
     f['g'] = x**4 + 2*y**4
     h = operators.interpolate(f,r=radius).evaluate()
     h.require_scales((1,1))
@@ -198,11 +198,11 @@ def test_interpolation_scalar(Nphi, Nr, dealias, basis_radius, dtype):
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis_radius', [(build_D2, 2.0)])
-@pytest.mark.parametrize('dtype', [np.float64])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 def test_interpolation_vector(Nphi, Nr, dealias, basis_radius, dtype):
     basis, radius = basis_radius
     c, d, b, phi, r, x, y = basis(Nphi, Nr, radius, dealias, dtype)
-    f = field.Field(dist=d, bases=(b,), dtype=np.float64)
+    f = field.Field(dist=d, bases=(b,), dtype=dtype)
     f['g'] = x**4 + 2*y**4
 
     u = operators.Gradient(f, c).evaluate()
@@ -218,11 +218,11 @@ def test_interpolation_vector(Nphi, Nr, dealias, basis_radius, dtype):
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis_radius', [(build_D2, 2.0)])
-@pytest.mark.parametrize('dtype', [np.float64])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 def test_interpolation_tensor(Nphi, Nr, dealias, basis_radius, dtype):
     basis, radius = basis_radius
     c, d, b, phi, r, x, y = basis(Nphi, Nr, radius, dealias, dtype)
-    f = field.Field(dist=d, bases=(b,), dtype=np.float64)
+    f = field.Field(dist=d, bases=(b,), dtype=dtype)
     f['g'] = x**4 + 2*y**4
 
     u = operators.Gradient(f, c).evaluate()

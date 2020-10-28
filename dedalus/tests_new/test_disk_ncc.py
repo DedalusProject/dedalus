@@ -8,7 +8,7 @@ from dedalus.tools.cache import CachedFunction
 
 
 dot = arithmetic.DotProduct
-dtypes = [np.float64]
+dtypes = [np.float64, np.complex128]
 Nphi_range = [16]
 Nr_range = [8]
 dealias = [1, 3/2]

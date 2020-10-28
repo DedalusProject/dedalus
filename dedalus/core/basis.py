@@ -693,7 +693,32 @@ class ComplexFourier(IntervalBasis):
     def local_elements(self):
         local_elements = self.dist.coeff_layout.local_elements(self.domain, scales=scale)[self.axis]
         return (self.wavenumbers[local_elements],)
+    
+    def forward_transform(self, field, axis, gdata, cdata):
+        super().forward_transform(field, axis, gdata, cdata)
+        if self.forward_coeff_permutation is not None:
+            permute_axis(cdata, axis+len(field.tensorsig), self.forward_coeff_permutation, out=cdata)
 
+    def backward_transform(self, field, axis, cdata, gdata):
+        if self.backward_coeff_permutation is not None:
+            permute_axis(cdata, axis+len(field.tensorsig), self.backward_coeff_permutation, out=cdata)
+        super().backward_transform(field, axis, cdata, gdata)
+
+    def local_group_slices(self, basis_group):
+        group, = basis_group
+        # Return slices
+        if group is None:
+            # Return all coefficients
+            return [slice(None)]
+        else:
+            # Get local groups
+            local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)[self.axis]
+            # Groups are stored sequentially
+            permuted_wavenumbers = self.wavenumbers[self.forward_coeff_permutation]
+            local_groups = permuted_wavenumbers[local_chunks]
+            local_index = list(local_groups).index(group)
+            group_size = self.group_shape[0]
+            return [slice(local_index*group_size, (local_index+1)*group_size)]
     # def include_mode(self, mode):
     #     k = mode // 2
     #     if (mode % 2) == 0:
@@ -1369,12 +1394,22 @@ class DiskBasis(SpinBasis):
         if self.mmax > 0 and self.Nmax > 0 and shape[0] % 2 != 0:
             raise ValueError("Don't use an odd phi resolution, please")
         if self.mmax > 0 and self.Nmax > 0 and self.dtype == np.float64 and shape[0] % 4 != 0:
+            # TODO: probably we can get away with pairs rather than factors of 4...
             raise ValueError("Don't use a phi resolution that isn't divisible by 4, please")
 
         # ASSUMPTION: we assume we are dropping Nyquist mode, so shape=2 --> mmax = 0
         # m permutations for repacking triangular truncation
         if self.dtype == np.complex128:
-            raise NotImplementedError("Complex values are not supported for Disk Bases.")
+            if self.mmax > 0:
+                az_index = np.arange(shape[0])
+                az_div, az_mod = divmod(az_index, 2)
+                self.forward_m_perm = az_div + shape[0] // 2 * az_mod
+                self.backward_m_perm = np.argsort(self.forward_m_perm)
+            else:
+                self.forward_m_perm = None
+                self.backward_m_perm = None
+                
+            self.group_shape = (1, 1)
         elif self.dtype == np.float64:
             if self.mmax > 0:
                 az_index = np.arange(shape[0])
@@ -1428,15 +1463,13 @@ class DiskBasis(SpinBasis):
         else:
             # coeff-coeff space
             Nphi = self.shape[0]
-            if Nphi > 1:
-                if self.dtype == np.complex128:
-                    raise
-                elif self.dtype == np.float64:
+
+            if self.dtype == np.complex128:
+                return self.shape
+            elif self.dtype == np.float64:
+                if Nphi > 1:
                     return self.shape
-            else:
-                if self.dtype == np.complex128:
-                    raise
-                elif self.dtype == np.float64:
+                else:
                     return (2, self.shape[1])
 
             # DRAFT Repacked triangular truncation for DiskBasis
@@ -1459,14 +1492,13 @@ class DiskBasis(SpinBasis):
             return (1, 1)
         elif grid_space[1]:
             # coeff-grid space
+            # pairs of m don't have to be distributed together
+            # since folding is not implemented
             if self.dtype == np.complex128:
-                if Nmax > 0:
-                    raise
-                else:
-                    raise
+                return (1, 1)
             elif self.dtype == np.float64:
-                # pairs of m don't have to be distributed together
-                # since folding is not implemented
+                # for mmax == 0, the additional sin mode is added *after* the transpose
+                # in radial transform, not here.
                 if self.mmax == 0:
                     return (1, 1)
                 else:
@@ -1474,7 +1506,7 @@ class DiskBasis(SpinBasis):
         else:
             # coeff-coeff space
             if self.dtype == np.complex128:
-                raise
+                return (1, 1)
             elif self.dtype == np.float64:
                 return (2, 1)
 
@@ -1483,7 +1515,6 @@ class DiskBasis(SpinBasis):
         if (not m_coupling) and n_coupling:
             groups = []
             local_m = self.local_m
-
             for m in local_m:
                 # Avoid writing repeats for real data
                 if [m,None] not in groups:
@@ -1519,10 +1550,11 @@ class DiskBasis(SpinBasis):
 
     def __eq__(self, other):
         if isinstance(other, DiskBasis):
-            if self.coordsystem == other.coordsystem:
-                if self.grid_params == other.grid_params:
-                    if self.k == other.k:
-                        return True
+            if self.dtype == other.dtype:
+                if self.coordsystem == other.coordsystem:
+                    if self.grid_params == other.grid_params:
+                        if self.k == other.k:
+                            return True
         return False
 
     def __hash__(self):
@@ -1694,7 +1726,7 @@ class DiskBasis(SpinBasis):
 
     def forward_transform_radius(self, field, axis, gdata, cdata):
         # Create temporary
-        if self.mmax == 0:
+        if self.mmax == 0 and self.dtype == np.float64:
             shape = list(gdata.shape)
             ax = len(field.tensorsig) + self.axis
             shape[ax] = 2
@@ -1724,7 +1756,7 @@ class DiskBasis(SpinBasis):
 
     def backward_transform_radius(self, field, axis, cdata, gdata):
         # Create temporary
-        if self.mmax == 0:
+        if self.mmax == 0 and self.dtype == np.float64:
             shape = list(gdata.shape)
             ax = len(field.tensorsig) + self.axis
             shape[ax] = 2
@@ -1741,7 +1773,7 @@ class DiskBasis(SpinBasis):
         # Apply spin recombination from temp to gdata
         gdata.fill(0)  # OPTIMIZE: shouldn't be necessary
         self.backward_spin_recombination(field.tensorsig, temp)
-        if self.mmax == 0:
+        if self.mmax == 0 and self.dtype == np.float64:
             gdata[:] = temp[axslice(ax,0,1)]
         else:
             np.copyto(gdata, temp)

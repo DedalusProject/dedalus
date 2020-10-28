@@ -35,7 +35,7 @@ def build_D2(Nphi, Nr, radius, dealias, dtype=np.float64):
 @pytest.mark.parametrize('radius', radius_disk)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_D2])
-@pytest.mark.parametrize('dtype', [np.float64])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 def test_gradient_scalar(Nphi, Nr, radius, dealias, basis, dtype):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, radius, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
@@ -53,7 +53,7 @@ def test_gradient_scalar(Nphi, Nr, radius, dealias, basis, dtype):
 @pytest.mark.parametrize('radius', radius_disk)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_D2])
-@pytest.mark.parametrize('dtype', [np.float64])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 def test_gradient_scalar_mmax0(Nr, radius, dealias, basis, dtype):
     Nphi = 1
     c, d, b, phi, r, x, y = basis(Nphi, Nr, radius, dealias, dtype)
@@ -96,7 +96,7 @@ def test_gradient_scalar_mmax0(Nr, radius, dealias, basis, dtype):
 @pytest.mark.parametrize('radius', radius_disk)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_D2])
-@pytest.mark.parametrize('dtype', [np.float64])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 def test_gradient_vector(Nphi, Nr, radius, dealias, basis, dtype):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, radius, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
@@ -140,7 +140,7 @@ def test_gradient_vector(Nphi, Nr, radius, dealias, basis, dtype):
 @pytest.mark.parametrize('radius', radius_disk)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_D2])
-@pytest.mark.parametrize('dtype', [np.float64])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 def test_divergence_vector(Nphi, Nr, radius, dealias, basis, dtype):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, radius, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
@@ -162,7 +162,7 @@ def test_divergence_vector(Nphi, Nr, radius, dealias, basis, dtype):
 @pytest.mark.parametrize('radius', radius_disk)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_D2])
-@pytest.mark.parametrize('dtype', [np.float64])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 def test_divergence_tensor(Nphi, Nr, radius, dealias, basis, dtype):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, radius, dealias, dtype)
     v = field.Field(dist=d, tensorsig=(c,), bases=(b,), dtype=dtype)
@@ -204,7 +204,7 @@ def test_divergence_tensor(Nphi, Nr, radius, dealias, basis, dtype):
 @pytest.mark.parametrize('radius', radius_disk)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_D2])
-@pytest.mark.parametrize('dtype', [np.float64])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 def test_curl_vector(Nphi, Nr, radius, dealias, basis, dtype):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, radius, dealias, dtype)
     v = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
@@ -227,7 +227,7 @@ def test_curl_vector(Nphi, Nr, radius, dealias, basis, dtype):
 @pytest.mark.parametrize('radius', radius_disk)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_D2])
-@pytest.mark.parametrize('dtype', [np.float64])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 def test_laplacian_scalar(Nphi,  Nr, radius, dealias, basis, dtype):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, radius, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
@@ -255,7 +255,7 @@ def test_laplacian_scalar(Nphi,  Nr, radius, dealias, basis, dtype):
 @pytest.mark.parametrize('radius', radius_disk)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_D2])
-@pytest.mark.parametrize('dtype', [np.float64])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 def test_laplacian_vector(Nphi,  Nr, radius, dealias, basis, dtype):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, radius, dealias, dtype)
     v = field.Field(dist=d, tensorsig=(c,), bases=(b,), dtype=dtype)
