@@ -20,7 +20,7 @@ Then download the Dedalus conda installation script from `this link <https://raw
 
     wget https://raw.githubusercontent.com/DedalusProject/dedalus_conda/master/install_conda.sh
 
-Modify the options at the top of the script to changes the name of the resulting conda environment, link against custom MPI/FFTW/HDF5 libraries, choose between OpenBLAS and MKL-based numpy/scipy, and more.
+Modify the options at the top of the script to change the name of the resulting conda environment, link against custom MPI/FFTW/HDF5 libraries, choose between OpenBLAS and MKL-based numpy/scipy, and more.
 Then activate the base conda environment and run the script to build a new conda environment with Dedalus and its dependencies, as requested::
 
     conda activate base
