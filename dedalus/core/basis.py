@@ -693,7 +693,7 @@ class ComplexFourier(IntervalBasis):
     def local_elements(self):
         local_elements = self.dist.coeff_layout.local_elements(self.domain, scales=scale)[self.axis]
         return (self.wavenumbers[local_elements],)
-    
+
     def forward_transform(self, field, axis, gdata, cdata):
         super().forward_transform(field, axis, gdata, cdata)
         if self.forward_coeff_permutation is not None:
@@ -714,11 +714,15 @@ class ComplexFourier(IntervalBasis):
             # Get local groups
             local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)[self.axis]
             # Groups are stored sequentially
-            permuted_wavenumbers = self.wavenumbers[self.forward_coeff_permutation]
-            local_groups = permuted_wavenumbers[local_chunks]
+            if self.forward_coeff_permutation is None:
+                global_groups = np.arange(self.size)[local_chunks]
+            else:
+                global_groups = np.arange(self.size)[self.forward_coeff_permutation]
+            local_groups = global_groups[local_chunks]
             local_index = list(local_groups).index(group)
             group_size = self.group_shape[0]
             return [slice(local_index*group_size, (local_index+1)*group_size)]
+
     # def include_mode(self, mode):
     #     k = mode // 2
     #     if (mode % 2) == 0:
@@ -810,7 +814,6 @@ class RealFourier(IntervalBasis):
         self.forward_coeff_permutation = None
         self.backward_coeff_permutation = None
 
-
     def __add__(self, other):
         if other is None:
             return self
@@ -876,8 +879,11 @@ class RealFourier(IntervalBasis):
             # Get local groups
             local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)[self.axis]
             # Groups are stored sequentially
-            permuted_wavenumbers = self.wavenumbers[self.forward_coeff_permutation][::2]
-            local_groups = permuted_wavenumbers[local_chunks]
+            if self.forward_coeff_permutation is None:
+                global_groups = self.wavenumbers[::2]
+            else:
+                global_groups = self.wavenumbers[self.forward_coeff_permutation][::2]
+            local_groups = global_groups[local_chunks]
             local_index = list(local_groups).index(group)
             group_size = self.group_shape[0]
             return [slice(local_index*group_size, (local_index+1)*group_size)]
@@ -1408,7 +1414,7 @@ class DiskBasis(SpinBasis):
             else:
                 self.forward_m_perm = None
                 self.backward_m_perm = None
-                
+
             self.group_shape = (1, 1)
         elif self.dtype == np.float64:
             if self.mmax > 0:
@@ -1439,11 +1445,9 @@ class DiskBasis(SpinBasis):
             S1_basis = RealFourier(self.coordsystem.coords[0], self.shape[0], bounds=(0, 2*np.pi), library=self.azimuth_library)
         else:
             raise NotImplementedError()
-
         S1_basis.radius = radius
         S1_basis.forward_coeff_permutation  = self.forward_m_perm
         S1_basis.backward_coeff_permutation = self.backward_m_perm
-
         return S1_basis
 
     def global_shape(self, layout, scales):
