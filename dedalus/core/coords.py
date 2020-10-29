@@ -147,6 +147,67 @@ class S2Coordinates(CoordinateSystem):
         else:
             raise ValueError("Invalid axis")
 
+class PolarCoordinates(CoordinateSystem):
+    """
+    Polar coordinate system: (azimuth, radius)
+    Coord component ordering: (azimuth, radius)
+    Spin component ordering: (-, +)
+    """
+
+    spin_ordering = (-1, +1)
+    dim = 2
+
+    def __init__(self, azimuth, radius):
+        self.azimuth = Coordinate(azimuth, cs=self)
+        self.radius = Coordinate(radius, cs=self)
+        self.coords = (self.azimuth, self.radius)
+
+    @classmethod
+    def _U_forward(cls, order):
+        """Unitary transfrom from coord to spin components."""
+        # u[+-] = (u[radius] +- 1j*u[φ]) / sqrt(2)
+        Ui = {+1: np.array([+1j, 1]) / np.sqrt(2),
+              -1: np.array([-1j, 1]) / np.sqrt(2)}
+        U = np.array([Ui[spin] for spin in cls.spin_ordering])
+        return nkron(U, order)
+
+    @classmethod
+    def _U_backward(cls, order):
+        """Unitary transform from spin to coord components."""
+        return cls._U_forward(order).T.conj()
+
+    @property
+    def axis(self):
+        return self.azimuth.axis
+
+    def forward_intertwiner(self, axis, order, group):
+        subaxis = axis - self.axis
+        if subaxis == 0:
+            # Azimuth intertwiner is identity, independent of group
+            return np.identity(self.dim**order)
+        elif subaxis == 1:
+            # Radial intertwiner is spin-U, independent of group
+            return self._U_forward(order)
+        else:
+            raise ValueError("Invalid axis")
+
+    def backward_intertwiner(self, axis, order, group):
+        subaxis = axis - self.axis
+        if subaxis == 0:
+            # Azimuth intertwiner is identity, independent of group
+            return np.identity(self.dim**order)
+        elif subaxis == 1:
+            # Radial intertwiner is spin-U, independent of group
+            return self._U_backward(order)
+        else:
+            raise ValueError("Invalid axis")
+
+    @staticmethod
+    def cartesian(phi, r):
+        x = r * np.cos(phi)
+        y = r * np.sin(phi)
+        return x, y
+
 
 class SphericalCoordinates(CoordinateSystem):
     """
