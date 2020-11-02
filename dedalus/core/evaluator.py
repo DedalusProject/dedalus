@@ -529,11 +529,12 @@ class FileHandler(Handler):
             folder_path = self.base_path.joinpath(folder_name)
             src_file_name = folder_path.joinpath(file_name).relative_to(self.base_path)
             gnc_shape, gnc_start, write_shape, write_start, write_count = self.get_write_stats(layout, scales, op.domain, op.tensorsig, index=0, virtual_file=True, rank=i)
-            
-            src_shape = [file_shape[0],] + list(layout.local_shape(op.domain, scales, rank=i))
+
+            shape_stop = len(op.tensorsig) + 1
+            src_shape = file_shape[slice(0,shape_stop)] + layout.local_shape(op.domain, scales, rank=i)
             start = gnc_start
             count = write_count
-            logger.debug("constructing virtual sources proc {}: start = {}; count = {}; src_shape = {}".format(i,start,count, src_shape))
+
             spatial_slices = tuple(slice(s, s+c) for (s,c) in zip(start, count))
 
             slices = (slice(None),) + spatial_slices
