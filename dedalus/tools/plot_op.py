@@ -75,13 +75,13 @@ class Tree:
         return node.position
 
 
-def plot_operator(operator, fontsize=8, figsize=8, saveas=None):
+def plot_operator(operator, fontsize=8, figsize=8, opsize=0.3, saveas=None):
 
     # Create tree
     tree = Tree(operator)
 
     # Create figure
-    fig = plt.figure(1, figsize=(figsize, figsize))
+    fig = plt.figure(figsize=(figsize, figsize))
     fig.clear()
     fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
 
@@ -107,7 +107,7 @@ def plot_operator(operator, fontsize=8, figsize=8, saveas=None):
             fc = '#9CBA7F'
         else:
             fc = '#B4CDCD'
-        c = plt.Circle((x[-1], y[-1]), radius=0.2, fc=fc, ec='k', zorder=1)
+        c = plt.Circle((x[-1], y[-1]), radius=opsize, fc=fc, ec='k', zorder=1)
         fig.gca().add_artist(c)
 
         # Plot node label
@@ -115,7 +115,7 @@ def plot_operator(operator, fontsize=8, figsize=8, saveas=None):
             verticalalignment='center', horizontalalignment='center')
 
     # Set limits
-    plt.axis(pad(*plt.axis(), pad=0.5, square=True))
+    plt.axis(pad(*plt.axis(), pad=0.1, square=True))
     plt.axis('off')
 
     # Save

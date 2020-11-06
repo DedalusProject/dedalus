@@ -8,6 +8,7 @@ from .tools import logging as logging_setup
 
 from .core import future as _future
 from .core.domain import Domain
+from .core.field import Field
 from .core import operators
 from .core.basis import Chebyshev, Legendre, Fourier, SinCos, Compound, Hermite, Laguerre
 from .core.problems import InitialValueProblem, IVP
