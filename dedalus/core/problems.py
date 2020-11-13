@@ -586,21 +586,21 @@ class EigenvalueProblem(ProblemBase):
 
     solver_class = solvers.EigenvalueSolver
 
-    def __init__(self, domain, eigenvalue, **kw):
-        super().__init__(domain, **kw)
+    def __init__(self, variables, eigenvalue, **kw):
+        super().__init__(variables, **kw)
         self.eigenvalue = eigenvalue
 
-    @CachedAttribute
-    def namespace_additions(self):
-        """Build namespace for problem parsing."""
-        additions = {}
-        additions[self.eigenvalue] = self._ev = field.Field(name=self.eigenvalue, domain=self.domain)
-        return additions
+    # @CachedAttribute
+    # def namespace_additions(self):
+    #     """Build namespace for problem parsing."""
+    #     additions = {}
+    #     additions[self.eigenvalue] = self._ev = field.Field(name=self.eigenvalue, domain=self.domain)
+    #     return additions
 
-    def _check_conditions(self, temp):
-        """Check object-form conditions."""
-        self._require_first_order(temp, 'LHS', [self._ev])
-        #self._require_zero(temp, 'RHS')
+    # def _check_conditions(self, temp):
+    #     """Check object-form conditions."""
+    #     self._require_first_order(temp, 'LHS', [self._ev])
+    #     #self._require_zero(temp, 'RHS')
 
     def _set_matrix_expressions(self, temp):
         """Set expressions for building solver."""
@@ -613,6 +613,63 @@ class EigenvalueProblem(ProblemBase):
         temp['M'] = self._prep_linear_form(M, vars, name='M')
         temp['L'] = self._prep_linear_form(L, vars, name='L')
         temp['separability'] = temp['LHS'].separability(vars)
+
+    def _build_matrix_expressions(self, eqn):
+        """Build LHS matrix expressions and check equation conditions."""
+        # NEW CHECK!! boulder
+        vars = self.variables
+        dist = self.dist
+        #domain = eqn['domain']
+        tensorsig = eqn['tensorsig']
+        dtype = eqn['dtype']
+        # Equation conditions
+        #self._check_basis_containment(eqn, 'LHS', 'RHS')
+        #eqn['LHS'].require_linearity(*vars, name='LHS')
+        #eqn['LHS'].require_linearity(self._dt, name='LHS')
+        #eqn['LHS'].require_independent(self._t, name='LHS')
+        # Matrix expressions
+        # Split LHS into M and L
+        M, L = eqn['LHS'].split(self.eigenvalue)
+        # Drop time derivatives
+        if M:
+            # TODO check that M is linear in eigenvalue
+            M = M.replace(self.eigenvalue, 1)
+        # Update domain after ncc reinitialization
+        if M:
+            M = M.reinitialize(ncc=True, ncc_vars=vars)
+        if L:
+            L = L.reinitialize(ncc=True, ncc_vars=vars)
+        F = eqn['RHS']
+        domain = eqn['domain'] = (M + L - F).domain
+        # Convert to equation bases and store
+        if M:
+            M = operators.convert(M, domain.bases)
+        if L:
+            L = operators.convert(L, domain.bases)
+        if F:
+            # Cast to match LHS
+            F = Operand.cast(F, dist, tensorsig=tensorsig, dtype=dtype)
+            F = operators.convert(F, domain.bases)
+        else:
+            # Allocate zero field
+            F = Field(dist=dist, bases=domain.bases, tensorsig=tensorsig, dtype=dtype)
+            F['c'] = 0
+        eqn['M'] = M
+        eqn['L'] = L
+        eqn['F'] = F
+        # M = operators.Cast(M, self.domain)
+        # M = M.expand(*vars)
+        # M = operators.Cast(M, self.domain)
+        # L = operators.Cast(L, self.domain)
+        # L = L.expand(*vars)
+        # L = operators.Cast(L, self.domain)
+        # eqn['M'] = operators.convert(M, eqn['bases'])
+        # eqn['L'] = operators.convert(L, eqn['bases'])
+        # eqn['F'] = operators.convert(eqn['RHS'], eqn['bases'])
+        eqn['matrix_dependence'] = (M + L).matrix_dependence(*vars)
+        eqn['matrix_coupling'] = (M + L).matrix_coupling(*vars)
+        # # Debug logging
+        # logger.debug('  {} linear form: {}'.format('L', eqn['L']))
 
 
 
