@@ -27,6 +27,7 @@ from .coords import Coordinate, S2Coordinates, SphericalCoordinates
 from .domain import Domain
 from .field  import Operand
 import dedalus_sphere
+import numexpr as ne
 #from . import transforms
 
 import logging
@@ -35,7 +36,7 @@ logger = logging.getLogger(__name__.split('.')[-1])
 from ..tools.config import config
 #DEFAULT_LIBRARY = config['transforms'].get('DEFAULT_LIBRARY')
 DEFAULT_LIBRARY = 'scipy'
-
+ARITHMETIC_LIBRARY = lambda: config['arithmetic']['ARITHMETIC_LIBRARY'].lower()
 
 class AffineCOV:
     """
@@ -1199,6 +1200,7 @@ class SpinRecombinationBasis:
         if not tensorsig:
             np.copyto(out, gdata)
         else:
+            library = ARITHMETIC_LIBRARY()
             U = self.spin_recombination_matrices(tensorsig)
             if gdata.dtype == np.complex128:
                 if out is None:
@@ -1217,7 +1219,19 @@ class SpinRecombinationBasis:
                 # for an even number of transforms, we need a final copyto
                 num_recombinations = 0
                 for i, Ui in enumerate(U):
-                        dim = Ui.shape[0]
+                    dim = Ui.shape[0]
+                    if library == 'numexpr':
+                        if num_recombinations % 2 == 0:
+                            input = gdata
+                            output = out
+                        else:
+                            input = out
+                            output = gdata
+                        if dim == 3:
+                            self._recombine_forward_numexpr_dim3(input, output, tensorsig, i)
+                        elif dim == 2:
+                            self._recombine_forward_numexpr_dim2(input, output, tensorsig, i)
+                    elif library == 'python' or library == 'cython':
                         if num_recombinations % 2 == 0:
                             input_view = reduced_view_5(gdata, i, self.axis+len(tensorsig))
                             output_view = reduced_view_5(out, i, self.axis+len(tensorsig))
@@ -1225,12 +1239,22 @@ class SpinRecombinationBasis:
                             input_view = reduced_view_5(out, i, self.axis+len(tensorsig))
                             output_view = reduced_view_5(gdata, i, self.axis+len(tensorsig))
                         if dim == 3:
-                            #self._recombine_forward_dim3(input_view, output_view)
-                            spin_recombination.recombine_forward_dim3(input_view, output_view)
+                            if library == 'python':
+                                self._recombine_forward_dim3(input_view, output_view)
+                            elif library == 'cython':
+                                spin_recombination.recombine_forward_dim3(input_view, output_view)
+                            else:
+                                raise ValueError
                         elif dim == 2:
-                            #self._recombine_forward_dim2(input_view, output_view)
-                            spin_recombination.recombine_forward_dim2(input_view, output_view)
-                        num_recombinations += 1
+                            if library == 'python':
+                                self._recombine_forward_dim2(input_view, output_view)
+                            elif library == 'cython':
+                                spin_recombination.recombine_forward_dim2(input_view, output_view)
+                            else:
+                                raise ValueError
+                    else:
+                        raise ValueError
+                    num_recombinations += 1
                 if num_recombinations % 2 == 0:
                     np.copyto(out, gdata)
 
@@ -1239,6 +1263,7 @@ class SpinRecombinationBasis:
         if not tensorsig:
             np.copyto(out, gdata)
         else:
+            library = ARITHMETIC_LIBRARY()
             U = self.spin_recombination_matrices(tensorsig)
             if gdata.dtype == np.complex128:
                 if out is None:
@@ -1257,7 +1282,19 @@ class SpinRecombinationBasis:
                 # for an even number of transforms, we need a final copyto
                 num_recombinations = 0
                 for i, Ui in enumerate(U):
-                        dim = Ui.shape[0]
+                    dim = Ui.shape[0]
+                    if library == 'numexpr':
+                        if num_recombinations % 2 == 0:
+                            input = gdata
+                            output = out
+                        else:
+                            input = out
+                            output = gdata
+                        if dim == 3:
+                            self._recombine_backward_numexpr_dim3(input, output, tensorsig, i)
+                        elif dim == 2:
+                            self._recombine_backward_numexpr_dim2(input, output, tensorsig, i)
+                    elif library == 'python' or library == 'cython':
                         if num_recombinations % 2 == 0:
                             input_view = reduced_view_5(gdata, i, self.axis+len(tensorsig))
                             output_view = reduced_view_5(out, i, self.axis+len(tensorsig))
@@ -1265,41 +1302,68 @@ class SpinRecombinationBasis:
                             input_view = reduced_view_5(out, i, self.axis+len(tensorsig))
                             output_view = reduced_view_5(gdata, i, self.axis+len(tensorsig))
                         if dim == 3:
-                            self._recombine_backward_dim3(input_view, output_view)
-                            #spin_recombination.recombine_backward_dim3(input_view, output_view)
+                            if library == 'python':
+                                self._recombine_backward_dim3(input_view, output_view)
+                            elif library == 'cython':
+                                spin_recombination.recombine_backward_dim3(input_view, output_view)
+                            else:
+                                raise ValueError
                         elif dim == 2:
-                            self._recombine_backward_dim2(input_view, output_view)
-                            #spin_recombination.recombine_backward_dim2(input_view, output_view)
-                        num_recombinations += 1
+                            if library == 'python':
+                                self._recombine_backward_dim2(input_view, output_view)
+                            elif library == 'cython':
+                                spin_recombination.recombine_backward_dim2(input_view, output_view)
+                            else:
+                                raise ValueError
+                    else:
+                        raise ValueError
+                    num_recombinations += 1
                 if num_recombinations % 2 == 0:
                     np.copyto(out, gdata)
 
-    def _recombine_forward_dim3(self, input, output):
-        data_cos = input[axslice(3, 0, None, 2)]
-        data_msin = input[axslice(3, 1, None, 2)]
-        out_cos = output[axslice(3, 0, None, 2)]
-        out_msin = output[axslice(3, 1, None, 2)]
+    def _recombine_forward_numexpr_dim3(self, input, output, tensorsig, i):
+        np.copyto(output[axslice(i, 2, 3)], input[axslice(i, 2, 3)])
+        self._recombine_forward_numexpr_dim2(input, output, tensorsig, i)
 
-        data_cos0 = data_cos[:,0]
-        data_cos1 = data_cos[:,1]
-        data_msin0 = data_msin[:,0]
-        data_msin1 = data_msin[:,1]
-        out_cos0 = out_cos[:,0]
-        out_cos1 = out_cos[:,1]
-        out_msin0 = out_msin[:,0]
-        out_msin1 = out_msin[:,1]
-        inv_sqrt2 = 1 / np.sqrt(2)
-        # Recombination
-        np.add(data_cos1, data_msin0, out=out_cos0)
-        out_cos0 *= inv_sqrt2
-        np.subtract(data_cos1, data_msin0, out=out_cos1)
-        out_cos1 *= inv_sqrt2
-        np.copyto(out_cos[:,2], data_cos[:,2])
-        np.subtract(data_msin1, data_cos0, out=out_msin0)
-        out_msin0 *= inv_sqrt2
-        np.add(data_msin1, data_cos0, out=out_msin1)
-        out_msin1 *= inv_sqrt2
-        np.copyto(out_msin[:,2], data_msin[:,2])
+    def _recombine_forward_numexpr_dim2(self, input, output, tensorsig, i):
+        input_cos   =  input[axslice(self.axis+len(tensorsig), 0, None, 2)]
+        input_msin  =  input[axslice(self.axis+len(tensorsig), 1, None, 2)]  # minus sine coefficient
+        output_cos  = output[axslice(self.axis+len(tensorsig), 0, None, 2)]
+        output_msin = output[axslice(self.axis+len(tensorsig), 1, None, 2)]  # minus sine coefficient
+
+        input_cos0 = input_cos[axslice(i, 0, 1)]
+        input_cos1 = input_cos[axslice(i, 1, 2)]
+        input_msin0 = input_msin[axslice(i, 0, 1)]
+        input_msin1 = input_msin[axslice(i, 1, 2)]
+        inv_sqrt2 = np.sqrt(0.5)
+        ne.evaluate("(input_cos1 + input_msin0)*inv_sqrt2", out =  output_cos[axslice(i, 0, 1)])
+        ne.evaluate("(input_msin1 + input_cos0)*inv_sqrt2", out = output_msin[axslice(i, 1, 2)])
+        ne.evaluate("(input_cos1 - input_msin0)*inv_sqrt2", out =  output_cos[axslice(i, 1, 2)])
+        ne.evaluate("(input_msin1 - input_cos0)*inv_sqrt2", out = output_msin[axslice(i, 0, 1)])
+
+    def _recombine_backward_numexpr_dim3(self, input, output, tensorsig, i): 
+        np.copyto(output[axslice(i, 2, 3)], input[axslice(i, 2, 3)])
+        self._recombine_backward_numexpr_dim2(input, output, tensorsig, i)
+
+    def _recombine_backward_numexpr_dim2(self, input, output, tensorsig, i):
+        input_cos   =  input[axslice(self.axis+len(tensorsig), 0, None, 2)]
+        input_msin  =  input[axslice(self.axis+len(tensorsig), 1, None, 2)]  # minus sine coefficient
+        output_cos  = output[axslice(self.axis+len(tensorsig), 0, None, 2)]
+        output_msin = output[axslice(self.axis+len(tensorsig), 1, None, 2)]  # minus sine coefficient
+
+        input_cos0 = input_cos[axslice(i, 0, 1)]
+        input_cos1 = input_cos[axslice(i, 1, 2)]
+        input_msin0 = input_msin[axslice(i, 0, 1)]
+        input_msin1 = input_msin[axslice(i, 1, 2)]
+        inv_sqrt2 = np.sqrt(0.5)
+        ne.evaluate("(input_msin1 - input_msin0)*inv_sqrt2", out =  output_cos[axslice(i, 0, 1)])
+        ne.evaluate("(input_cos0 - input_cos1)*inv_sqrt2",   out = output_msin[axslice(i, 0, 1)])
+        ne.evaluate("(input_cos0 + input_cos1)*inv_sqrt2",   out =  output_cos[axslice(i, 1, 2)])
+        ne.evaluate("(input_msin0 + input_msin1)*inv_sqrt2", out = output_msin[axslice(i, 1, 2)])
+
+    def _recombine_forward_dim3(self, input, output):
+        np.copyto(output[:,2], input[:,2])
+        self._recombine_forward_dim2(input, output)
 
     def _recombine_forward_dim2(self, input, output):
         data_cos = input[axslice(3, 0, None, 2)]
@@ -1327,31 +1391,8 @@ class SpinRecombinationBasis:
         out_msin1 *= inv_sqrt2
 
     def _recombine_backward_dim3(self, input, output):
-        data_cos = input[axslice(3, 0, None, 2)]
-        data_msin = input[axslice(3, 1, None, 2)]
-        out_cos = output[axslice(3, 0, None, 2)]
-        out_msin = output[axslice(3, 1, None, 2)]
-
-        data_cos0 = data_cos[:,0]
-        data_cos1 = data_cos[:,1]
-        data_msin0 = data_msin[:,0]
-        data_msin1 = data_msin[:,1]
-        out_cos0 = out_cos[:,0]
-        out_cos1 = out_cos[:,1]
-        out_msin0 = out_msin[:,0]
-        out_msin1 = out_msin[:,1]
-        inv_sqrt2 = 1 / np.sqrt(2)
-        # Recombination 
-        np.subtract(data_msin1, data_msin0, out=out_cos0)
-        out_cos0 *= inv_sqrt2
-        np.add(data_cos0, data_cos1, out=out_cos1)
-        out_cos1 *= inv_sqrt2
-        np.copyto(out_cos[:,2], data_cos[:,2])
-        np.subtract(data_cos0, data_cos1, out=out_msin0)
-        out_msin0 *= inv_sqrt2
-        np.add(data_msin0, data_msin1, out=out_msin1)
-        out_msin1 *= inv_sqrt2
-        np.copyto(out_msin[:,2], data_msin[:,2])
+        np.copyto(output[:,2], input[:,2])
+        self._recombine_backward_dim2(input, output)
 
     def _recombine_backward_dim2(self, input, output):
         data_cos = input[axslice(3, 0, None, 2)]
