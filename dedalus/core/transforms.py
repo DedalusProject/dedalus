@@ -361,7 +361,7 @@ class RealFourierTransform(SeparableTransform):
     def wavenumbers(self):
         """One-dimensional global wavenumber array."""
         # Repeat k's for cos and msin parts
-        return np.repeat(np.arange(self.Kmax+1), 2)
+        return np.repeat(np.arange(self.KM+1), 2)
 
 
 @register_transform(basis.RealFourier, 'matrix')
@@ -382,7 +382,7 @@ class RealFourierMMT(RealFourierTransform, SeparableMatrixTransform):
         quadrature[1::2] = -(2 / N) * np.sin(K*X/dX)
         quadrature[0] = 1 / N
         # Zero Nyquist and higher modes for transforms with grid_size <= coeff_size
-        quadrature *= self.wavenumbers <= self.Kmax
+        quadrature *= self.wavenumbers[:,None] <= self.Kmax
         # Ensure C ordering for fast dot products
         return np.asarray(quadrature, order='C')
 
@@ -399,7 +399,7 @@ class RealFourierMMT(RealFourierTransform, SeparableMatrixTransform):
         functions[:, 0::2] = np.cos(K*X/dX)
         functions[:, 1::2] = -np.sin(K*X/dX)
         # Zero Nyquist and higher modes for transforms with grid_size <= coeff_size
-        functions *= self.wavenumbers <= self.Kmax
+        functions *= self.wavenumbers[None, :] <= self.Kmax
         # Ensure C ordering for fast dot products
         return np.asarray(functions, order='C')
 

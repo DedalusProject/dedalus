@@ -469,7 +469,7 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
 
     def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
         if arg_basis is None:
-            return super().ncc_matrix(arg_basis, coeffs)
+            return super().ncc_matrix(arg_basis, coeffs.ravel(), cutoff=cutoff)
         # Jacobi parameters
         a_ncc = self.a
         b_ncc = self.b
@@ -888,6 +888,7 @@ class RealFourier(IntervalBasis):
             local_index = list(local_groups).index(group)
             group_size = self.group_shape[0]
             return [slice(local_index*group_size, (local_index+1)*group_size)]
+
 
 class ConvertConstantRealFourier(operators.Convert, operators.SpectralOperator1D):
 
@@ -1370,8 +1371,8 @@ class DiskBasis(SpinBasis):
 
     dim = 2
     dims = ['azimuth', 'radius']
-    #group_shape = (1, 1)
     transforms = {}
+    subaxis_dependence = [True, True]
 
     def __init__(self, coordsystem, shape, radius=1, k=0, alpha=0, dealias=(1,1), radius_library='matrix', **kw):
         super().__init__(coordsystem, shape, dealias, **kw)
@@ -1896,7 +1897,6 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
 
     dim = 2
     dims = ['azimuth', 'colatitude']
-    #group_shape = (1, 1)
     transforms = {}
 
     def __init__(self, coordsystem, shape, radius=1, dealias=(1,1), colatitude_library='matrix', **kw):
