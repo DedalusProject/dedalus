@@ -7,22 +7,26 @@ from mpi4py import MPI
 
 comm = MPI.COMM_WORLD
 
+
 ## Cartesian
-N_range = [8, 10]
+N_range = [8]
 dealias_range = [0.5, 1, 3/2]
+jacobi_range = [-0.5 , 0]
+dtypes = [np.float64, np.complex128]
+
 
 @pytest.mark.parametrize('N', N_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_1D_complex_fourier_scalar(N, dealias):
+def test_CF_scalar_roundtrip(N, dealias):
     if comm.size == 1:
         c = coords.Coordinate('x')
         d = distributor.Distributor([c])
         xb = basis.ComplexFourier(c, size=N, bounds=(0, 1), dealias=dealias)
-        x = xb.local_grid()
+        x = xb.local_grid(dealias)
         # Scalar transforms
         u = field.Field(dist=d, bases=(xb,), dtype=np.complex128)
-        ug = np.exp(2*np.pi*1j*x)
-        u['g'] = ug
+        u.set_scales(dealias)
+        u['g'] = ug = np.exp(2*np.pi*1j*x)
         u['c']
         assert np.allclose(u['g'], ug)
     else:
@@ -31,101 +35,146 @@ def test_1D_complex_fourier_scalar(N, dealias):
 
 @pytest.mark.parametrize('N', N_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_1D_real_fourier_scalar(N, dealias):
+def test_RF_scalar_roundtrip(N, dealias):
     if comm.size == 1:
         c = coords.Coordinate('x')
         d = distributor.Distributor([c])
         xb = basis.RealFourier(c, size=N, bounds=(0, 1), dealias=dealias)
-        x = xb.local_grid()
+        x = xb.local_grid(dealias)
         # Scalar transforms
         u = field.Field(dist=d, bases=(xb,), dtype=np.float64)
-        ug = np.cos(2*np.pi*x + np.pi/4)
-        u['g'] = ug
+        u.set_scales(dealias)
+        u['g'] = ug = np.cos(2*np.pi*x + np.pi/4)
         u['c']
         assert np.allclose(u['g'], ug)
     else:
         pytest.skip("Can only test 1D transform in serial")
 
 
+@pytest.mark.parametrize('a', jacobi_range)
+@pytest.mark.parametrize('b', jacobi_range)
 @pytest.mark.parametrize('N', N_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_1D_chebyshev_scalar(N, dealias):
+@pytest.mark.parametrize('dtype', dtypes)
+def test_J_scalar_roundtrip(a, b, N, dealias, dtype):
     if comm.size == 1:
         c = coords.Coordinate('x')
         d = distributor.Distributor([c])
-        xb = basis.ChebyshevT(c, size=N, bounds=(0, 1), dealias=dealias)
-        x = xb.local_grid()
+        xb = basis.Jacobi(c, a=a, b=b, size=N, bounds=(0, 1), dealias=dealias)
+        x = xb.local_grid(dealias)
         # Scalar transforms
-        u = field.Field(dist=d, bases=(xb,), dtype=np.complex128)
+        u = field.Field(dist=d, bases=(xb,), dtype=dtype)
+        u.set_scales(dealias)
         u['g'] = ug = 2*x**2 - 1
         u['c']
         assert np.allclose(u['g'], ug)
     else:
         pytest.skip("Can only test 1D transform in serial")
 
+
 @CachedFunction
-def build_2D_real_fourier(Nx, Ny, dealias_x, dealias_y):
+def build_CF_CF(Nx, Ny, dealias_x, dealias_y):
     c = coords.CartesianCoordinates('x', 'y')
     d = distributor.Distributor((c,))
-    xb = basis.RealFourier(c.coords[0], size=Nx, bounds=(0, 2*np.pi), dealias=dealias_x)
-    yb = basis.RealFourier(c.coords[1], size=Ny, bounds=(0, 2*np.pi), dealias=dealias_y)
-    x = xb.local_grid()
-    y = yb.local_grid()
+    xb = basis.ComplexFourier(c.coords[0], size=Nx, bounds=(0, np.pi), dealias=dealias_x)
+    yb = basis.ComplexFourier(c.coords[1], size=Ny, bounds=(0, np.pi), dealias=dealias_y)
+    x = xb.local_grid(dealias_x)
+    y = yb.local_grid(dealias_y)
     return c, d, xb, yb, x, y
+
 
 @pytest.mark.parametrize('Nx', N_range)
 @pytest.mark.parametrize('Ny', N_range)
 @pytest.mark.parametrize('dealias_x', dealias_range)
 @pytest.mark.parametrize('dealias_y', dealias_range)
-def test_2D_real_fourier_scalar(Nx, Ny, dealias_x, dealias_y):
-    c, d, xb, yb, x, y = build_2D_real_fourier(Nx, Ny, dealias_x, dealias_y)
+def test_CF_CF_scalar_roundtrip(Nx, Ny, dealias_x, dealias_y):
+    c, d, xb, yb, x, y = build_CF_CF(Nx, Ny, dealias_x, dealias_y)
+    f = field.Field(dist=d, bases=(xb,yb), dtype=np.complex128)
+    f.set_scales((dealias_x, dealias_y))
+    f['g'] = fg = np.exp(2j*x) * np.exp(2j*y + 1j*np.pi/3) + 3 + np.exp(2j*y)
+    f['c']
+    assert np.allclose(f['g'], fg)
+
+
+@CachedFunction
+def build_RF_RF(Nx, Ny, dealias_x, dealias_y):
+    c = coords.CartesianCoordinates('x', 'y')
+    d = distributor.Distributor((c,))
+    xb = basis.RealFourier(c.coords[0], size=Nx, bounds=(0, np.pi), dealias=dealias_x)
+    yb = basis.RealFourier(c.coords[1], size=Ny, bounds=(0, np.pi), dealias=dealias_y)
+    x = xb.local_grid(dealias_x)
+    y = yb.local_grid(dealias_y)
+    return c, d, xb, yb, x, y
+
+
+@pytest.mark.parametrize('Nx', N_range)
+@pytest.mark.parametrize('Ny', N_range)
+@pytest.mark.parametrize('dealias_x', dealias_range)
+@pytest.mark.parametrize('dealias_y', dealias_range)
+def test_RF_RF_scalar_roundtrip(Nx, Ny, dealias_x, dealias_y):
+    c, d, xb, yb, x, y = build_RF_RF(Nx, Ny, dealias_x, dealias_y)
     f = field.Field(dist=d, bases=(xb,yb), dtype=np.float64)
-    f['g'] = fg = np.sin(x) * np.cos(2*y + np.pi/3) + 3 + np.sin(y)
+    f.set_scales((dealias_x, dealias_y))
+    f['g'] = fg = np.sin(2*x) + np.cos(2*y + np.pi/3) + 3 + np.sin(2*y)
     f['c']
     assert np.allclose(f['g'], fg)
+
 
 @CachedFunction
-def build_2D_fourier_chebyshev(Nx, Ny, dealias_x, dealias_y):
+def build_CF_J(a, b, Nx, Ny, dealias_x, dealias_y):
     c = coords.CartesianCoordinates('x', 'y')
     d = distributor.Distributor((c,))
-    xb = basis.ComplexFourier(c.coords[0], size=Nx, bounds=(0, 2*np.pi), dealias=dealias_x)
-    yb = basis.ChebyshevT(c.coords[1], size=Ny, bounds=(0, 1), dealias=dealias_y)
-    x = xb.local_grid()
-    y = yb.local_grid()
+    xb = basis.ComplexFourier(c.coords[0], size=Nx, bounds=(0, np.pi), dealias=dealias_x)
+    yb = basis.Jacobi(c.coords[1], a=a, b=b, size=Ny, bounds=(0, 1), dealias=dealias_y)
+    x = xb.local_grid(dealias_x)
+    y = yb.local_grid(dealias_y)
     return c, d, xb, yb, x, y
 
+
+@pytest.mark.parametrize('a', jacobi_range)
+@pytest.mark.parametrize('b', jacobi_range)
 @pytest.mark.parametrize('Nx', N_range)
 @pytest.mark.parametrize('Ny', N_range)
 @pytest.mark.parametrize('dealias_x', dealias_range)
 @pytest.mark.parametrize('dealias_y', dealias_range)
-def test_2D_fourier_chebyshev_scalar(Nx, Ny, dealias_x, dealias_y):
-    c, d, xb, yb, x, y = build_2D_fourier_chebyshev(Nx, Ny, dealias_x, dealias_y)
+def test_CF_J_scalar_roundtrip(a, b, Nx, Ny, dealias_x, dealias_y):
+    c, d, xb, yb, x, y = build_CF_J(a, b, Nx, Ny, dealias_x, dealias_y)
     f = field.Field(dist=d, bases=(xb,yb,), dtype=np.complex128)
-    f['g'] = fg = np.sin(x) * y**5
+    f.set_scales((dealias_x, dealias_y))
+    f['g'] = fg = np.sin(2*x) * y**5
     f['c']
     assert np.allclose(f['g'], fg)
 
+
+@pytest.mark.parametrize('a', jacobi_range)
+@pytest.mark.parametrize('b', jacobi_range)
 @pytest.mark.parametrize('Nx', N_range)
 @pytest.mark.parametrize('Ny', N_range)
 @pytest.mark.parametrize('dealias_x', dealias_range)
 @pytest.mark.parametrize('dealias_y', dealias_range)
-def test_2D_fourier_chebyshev_vector(Nx, Ny, dealias_x, dealias_y):
-    c, d, xb, yb, x, y = build_2D_fourier_chebyshev(Nx, Ny, dealias_x, dealias_y)
+def test_CF_J_vector_roundtrip(a, b, Nx, Ny, dealias_x, dealias_y):
+    c, d, xb, yb, x, y = build_CF_J(a, b, Nx, Ny, dealias_x, dealias_y)
     u = field.Field(dist=d, bases=(xb,yb,), tensorsig=(c,), dtype=np.complex128)
-    u['g'] = ug = np.array([np.cos(x) * 2 * y**2, np.sin(x) * y + y])
+    u.set_scales((dealias_x, dealias_y))
+    u['g'] = ug = np.array([np.cos(2*x) * 2 * y**2, np.sin(2*x) * y + y])
     u['c']
     assert np.allclose(u['g'], ug)
 
+
+@pytest.mark.parametrize('a', jacobi_range)
+@pytest.mark.parametrize('b', jacobi_range)
 @pytest.mark.parametrize('Nx', N_range)
 @pytest.mark.parametrize('Ny', N_range)
 @pytest.mark.parametrize('dealias_x', dealias_range)
 @pytest.mark.parametrize('dealias_y', dealias_range)
-def test_2D_fourier_chebyshev_1D_vector(Nx, Ny, dealias_x, dealias_y):
-    c, d, xb, yb, x, y = build_2D_fourier_chebyshev(Nx, Ny, dealias_x, dealias_y)
+def test_CF_J_1d_vector_roundtrip(a, b, Nx, Ny, dealias_x, dealias_y):
+    c, d, xb, yb, x, y = build_CF_J(a, b, Nx, Ny, dealias_x, dealias_y)
     v = field.Field(dist=d, bases=(xb,), tensorsig=(c,), dtype=np.complex128)
-    v['g'] = vg = np.array([np.cos(x) * 2, np.sin(x) + 1])
+    v.set_scales((dealias_x, dealias_y))
+    v['g'] = vg = np.array([np.cos(2*x) * 2, np.sin(2*x) + 1])
     v['c']
     assert np.allclose(v['g'], vg)
+
 
 ## S2
 Nphi_range = [8, 16]
@@ -377,7 +426,7 @@ def test_D2_scalar_roundtrip_mmax0(Nr, radius, dealias, dtype):
 
     fg = f['g'].copy()
     f['c']
-    assert np.allclose(f['g'], fg)    
+    assert np.allclose(f['g'], fg)
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Nr', Nr_range)
