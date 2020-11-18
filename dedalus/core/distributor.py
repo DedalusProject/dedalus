@@ -566,6 +566,7 @@ class Transpose:
         for fields, plan in plans:
             if plan:
                 if len(fields) == 1:
+                    field = fields[0]
                     # Reference views from both layouts
                     data0 = field.data
                     field.set_layout(self.layout1)
@@ -606,6 +607,7 @@ class Transpose:
         for fields, plan in plans:
             if plan:
                 if len(fields) == 1:
+                    field = fields[0]
                     # Reference views from both layouts
                     data1 = field.data
                     field.set_layout(self.layout0)
