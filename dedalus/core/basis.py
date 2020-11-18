@@ -716,7 +716,7 @@ class ComplexFourier(IntervalBasis):
             local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)[self.axis]
             # Groups are stored sequentially
             if self.forward_coeff_permutation is None:
-                global_groups = np.arange(self.size)[local_chunks]
+                global_groups = np.arange(self.size)
             else:
                 global_groups = np.arange(self.size)[self.forward_coeff_permutation]
             local_groups = global_groups[local_chunks]
