@@ -2918,7 +2918,8 @@ class BallRadialBasis(RegularityBasis):
     @CachedMethod
     def interpolation(self, ell, regtotal, position):
         native_position = self.radial_COV.native_coord(position)
-        return dedalus_sphere.zernike.polynomials(3, self.n_size(ell), self.alpha + self.k, ell + regtotal, native_position)
+        native_z = 2*native_position**2 - 1
+        return dedalus_sphere.zernike.polynomials(3, self.n_size(ell), self.alpha + self.k, ell + regtotal, native_z)
 
     @CachedMethod
     def transform_plan(self, grid_shape, regindex, axis, regtotal, k, alpha):

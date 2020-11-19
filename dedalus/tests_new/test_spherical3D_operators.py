@@ -154,14 +154,15 @@ def test_transpose_coeff_tensor(Nphi, Ntheta, Nr, dealias, basis):
 @pytest.mark.parametrize('Nr', [8])
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis_radius', basis_radius)
-def test_interpolation_scalar(Nphi, Ntheta, Nr, dealias, basis_radius):
+@pytest.mark.parametrize('radius_factor', [0.25, 0.5, 1])
+def test_interpolation_scalar(Nphi, Ntheta, Nr, dealias, basis_radius, radius_factor):
     basis, radius = basis_radius
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     f['g'] = x**4 + 2*y**4 + 3*z**4
-    h = operators.interpolate(f,r=radius).evaluate()
+    h = operators.interpolate(f,r=radius*radius_factor).evaluate()
     phi, theta, r = b.local_grids(b.domain.dealias)
-    hg = radius**4*(3*np.cos(theta)**4 + np.cos(phi)**4*np.sin(theta)**4 + 2*np.sin(theta)**4*np.sin(phi)**4)
+    hg = (radius*radius_factor)**4*(3*np.cos(theta)**4 + np.cos(phi)**4*np.sin(theta)**4 + 2*np.sin(theta)**4*np.sin(phi)**4)
     assert np.allclose(h['g'], hg)
 
 # need higher resolution for the test function
