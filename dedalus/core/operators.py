@@ -639,11 +639,12 @@ class LinearOperator(FutureField):
     def split(self, *vars):
         """Split into expressions containing and not containing specified operands/operators."""
         # Check for matching operator
-        if any(isinstance(self, var) for var in vars):
-            return (self, 0)
+        for var in vars:
+            if isinstance(var, type):
+                if isinstance(self, var):
+                    return (self, 0)
         # Distribute over split operand
-        else:
-            return tuple(self.new_operand(arg) for arg in self.operand.split(*vars))
+        return tuple(self.new_operand(arg) for arg in self.operand.split(*vars))
 
     def sym_diff(self, var):
         """Symbolically differentiate with respect to specified operand."""
