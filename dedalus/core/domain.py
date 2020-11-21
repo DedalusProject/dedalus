@@ -8,6 +8,7 @@ from collections import OrderedDict
 
 from ..tools.cache import CachedMethod, CachedClass, CachedAttribute
 from ..tools.general import unify_attributes, unify, OrderedSet
+from ..tools.array import reshape_vector
 from .coords import Coordinate, CartesianCoordinates
 
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -204,17 +205,24 @@ class Domain(metaclass=CachedClass):
     #         space = self.domain.get_space_object(item)
     #         return (space in self.spaces)
 
-    # @CachedMethod
-    # def grid_spacing(self, axis, scales=None):
-    #     """Compute grid spacings along one axis."""
-    #     scales = self.remedy_scales(scales)
-    #     # Compute spacing on global basis grid
-    #     # This includes inter-process spacings
-    #     grid = self.bases[axis].grid(scales[axis])
-    #     spacing = np.gradient(grid)
-    #     # Restrict to local part of global spacing
-    #     slices = self.dist.grid_layout.slices(scales)
-    #     spacing = spacing[slices[axis]]
-    #     # Reshape as multidimensional vector
-    #     spacing = reshape_vector(spacing, self.dim, axis)
-    #     return spacing
+    @CachedMethod
+    def grid_spacing(self, axis, scales=None):
+        """Compute grid spacings along one axis."""
+        from .basis import MultidimensionalBasis
+        scales = self.dist.remedy_scales(scales)
+        # Compute spacing on global basis grid
+        # This includes inter-process spacings
+        basis = self.full_bases[axis]
+        if issubclass(type(basis), MultidimensionalBasis):
+            spacing = basis.grid_spacing(axis - basis.axis, scales=scales)
+        else:
+            spacing = basis.grid_spacing(scale=scales[axis])
+        # Slice out local portion
+        slices = self.dist.grid_layout.slices(self, scales)
+        if len(spacing.shape) > 1:
+            spacing = spacing[slices]
+        else:
+            spacing = spacing[slices[axis]]
+            # Reshape as multidimensional vector
+            spacing = reshape_vector(spacing, self.dim, axis)
+        return spacing
