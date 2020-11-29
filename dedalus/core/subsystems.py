@@ -60,7 +60,7 @@ def build_subproblems(problem, subsystems, matrices):
         for matrix in matrices:
             expr = eq[matrix]
             if expr:
-                expr.prep_nccs(problem.variables)
+                expr.prep_nccs(problem.LHS_variables)
                 # separability = ~problem.matrix_coupling
                 # expr.build_ncc_matrices(separability, problem.variables)
     # Get matrix groups
@@ -75,6 +75,29 @@ def build_subproblems(problem, subsystems, matrices):
         subproblem.build_matrices(matrices)
         subproblems.append(subproblem)
     return tuple(subproblems)
+
+# def rebuild_subproblem_matrices(problem, subsystems, matrices):
+    # """Rebuild subproblem matrices with progress logger."""
+    # # Setup NCCs
+    # for eq in problem.eqs:
+    #     for matrix in matrices:
+    #         expr = eq[matrix]
+    #         if expr:
+    #             expr.prep_nccs(problem.variables)
+    #             # separability = ~problem.matrix_coupling
+    #             # expr.build_ncc_matrices(separability, problem.variables)
+    # # Get matrix groups
+    # subproblem_map = defaultdict(list)
+    # for subsystem in subsystems:
+    #     subproblem_map[subsystem.matrix_group].append(subsystem)
+    # # Build subproblems
+    # subproblems = []
+    # for matrix_group in log_progress(subproblem_map, logger, 'info', desc='Building subproblem matrices', iter=np.inf, frac=0.1, dt=10):
+    #     subsystems = tuple(subproblem_map[matrix_group])
+    #     subproblem = Subproblem(problem, subsystems, matrix_group)
+    #     subproblem.build_matrices(matrices)
+    #     subproblems.append(subproblem)
+    # return tuple(subproblems)
 
 
 class Subsystem:
@@ -314,7 +337,7 @@ class Subproblem:
         """Build problem matrices."""
 
         eqns = self.problem.equations
-        vars = self.problem.variables
+        vars = self.problem.LHS_variables
         eqn_conditions = [self.check_condition(eqn) for eqn in eqns]  # HACK
         eqn_sizes = [self.field_size(eqn['LHS']) for eqn in eqns]
         var_sizes = [self.field_size(var) for var in vars]
@@ -543,4 +566,3 @@ def right_permutation(subproblem, variables, tau_left, interleave_components):
         indices = [indices[dim] for dim in dims[::-1]]
     indices = sum(indices, [])
     return sparse_perm(indices, len(indices)).tocsr()
-

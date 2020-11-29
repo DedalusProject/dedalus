@@ -267,14 +267,14 @@ class Power(NonlinearOperator, metaclass=MultiClass):
     @classmethod
     def _preprocess_args(cls, *args, **kw):
         domain = unify_attributes(args, 'domain', require=False)
-        args = tuple(Operand.cast(arg, domain) for arg in args)
+        #args = tuple(Operand.cast(arg, domain) for arg in args)
         return args, kw
 
     @classmethod
     def _check_args(cls, *args, **kw):
         match = (isinstance(args[i], types) for i,types in cls.argtypes.items())
-        arg1_constant = all(b is None for b in args[1].bases)
-        return (all(match) and arg1_constant)
+        #arg1_constant = all(b is None for b in args[1].bases)
+        return all(match) #(all(match) and arg1_constant)
 
     @property
     def base(self):
@@ -289,48 +289,61 @@ class Power(NonlinearOperator, metaclass=MultiClass):
 class PowerFieldConstant(Power, FutureField):
 
     argtypes = {0: (Field, FutureField),
-                1: (Field, FutureField)}
+                1: (Number,)}
 
-    def __new__(cls, arg0, arg1, *args, **kw):
-        if (arg1.name is None) and (arg1.value == 0):
-            return 1
-        elif (arg1.name is None) and (arg1.value == 1):
-            return arg0
-        else:
-            return object.__new__(cls)
+    # def __new__(cls, arg0, arg1, *args, **kw):
+    #     if (arg1.name is None) and (arg1.value == 0):
+    #         return 1
+    #     elif (arg1.name is None) and (arg1.value == 1):
+    #         return arg0
+    #     else:
+    #         return object.__new__(cls)
 
     def __init__(self, arg0, arg1, out=None):
         super().__init__(arg0, arg1, out=out)
-        for axis, b0 in enumerate(arg0.bases):
-            if b0 is not None:
-                self.require_grid_axis = axis
-                break
-        else:
-            self.require_grid_axis = None
+        self.domain = arg0.domain
+        self.tensorsig = arg0.tensorsig
+        self.dtype = arg0.dtype
+    #     for axis, b0 in enumerate(arg0.bases):
+    #         if b0 is not None:
+    #             self.require_grid_axis = axis
+    #             break
+    #     else:
+    #         self.require_grid_axis = None
 
     def check_conditions(self):
         layout0 = self.args[0].layout
-        layout1 = self.args[1].layout
-        # Fields must be in grid layout
-        if self.require_grid_axis is not None:
-            axis = self.require_grid_axis
-            return (layout0.grid_space[axis] and (layout0 is layout1))
-        else:
-            return (layout0 is layout1)
+        # layout1 = self.args[1].layout
+        # # Fields must be in grid layout
+        # if self.require_grid_axis is not None:
+        #     axis = self.require_grid_axis
+        #     return (layout0.grid_space[axis] and (layout0 is layout1))
+        # else:
+        #     return (layout0 is layout1)
+        return all(layout0.grid_space)
 
     def enforce_conditions(self):
         arg0, arg1 = self.args
-        if self.require_grid_axis is not None:
-            axis = self.require_grid_axis
-            arg0.require_grid_space(axis=axis)
-        arg1.require_layout(arg0.layout)
+        # if self.require_grid_axis is not None:
+        #     axis = self.require_grid_axis
+        #     arg0.require_grid_space(axis=axis)
+        # arg1.require_layout(arg0.layout)
+        arg0.require_grid_space()
 
     def operate(self, out):
         arg0, arg1 = self.args
         # Multiply in grid layout
         out.set_layout(arg0.layout)
         if out.data.size:
-            np.power(arg0.data, arg1.data, out.data)
+            np.power(arg0.data, arg1, out.data)
+
+    def new_operands(self, arg0, arg1, **kw):
+        return Power(arg0, arg1)
+
+    def reinitialize(self, **kw):
+        arg0 = self.args[0].reinitialize(**kw)
+        arg1 = self.args[1]
+        return self.new_operands(arg0, arg1, **kw)
 
 
 # class PowerArrayScalar(PowerDataScalar, FutureArray):
@@ -561,6 +574,8 @@ class UnaryGridFunctionField(UnaryGridFunction, FutureField):
         out.set_layout(self._grid_layout)
         self.func(arg0.data, out=out.data)
 
+    def new_operands(self, arg):
+        return UnaryGridFunction(self.func, arg)
 
 class LinearOperator(FutureField):
     """
@@ -641,7 +656,7 @@ class LinearOperator(FutureField):
         if self == old:
             return new
         # Check base and call with replaced arguments
-        elif isinstance(self, old):
+        elif isinstance(old, type) and isinstance(self, old):
             new_operand = self.operand.replace(new, old)
             return new(new_operand)
         # Call with replaced arguments
@@ -1613,13 +1628,14 @@ class TransposeComponents(LinearOperator, metaclass=MultiClass):
 
     @classmethod
     def _check_args(cls, operand, indices=(0,1), out=None):
-        # Dispatch by basis
+        # Dispatch by coordinate system; not clear that this is useful (see Keaton's note)
         if isinstance(operand, Operand):
-            if indices[0] < 0: index = indices[0] + len(operand.tensorsig)
-            else: index = indices[0]
-            coordsys = operand.tensorsig[index]
-            basis = operand.domain.get_basis(coordsys)
-            if isinstance(basis, cls.basis_type):
+            # hack to check coordsys of first index only
+            i0, i1 = indices
+            if i0 < 0:
+                i0 += len(operand.tensorsig)
+            cs0 = operand.tensorsig[i0]
+            if isinstance(cs0, cls.cs_type):
                 return True
         return False
 
@@ -1636,7 +1652,7 @@ class TransposeComponents(LinearOperator, metaclass=MultiClass):
         cs0 = operand.tensorsig[i0]
         cs1 = operand.tensorsig[i1]
         if cs0 != cs1:
-            raise ValueError("Can only transpose two indices which have the same coordinate system")
+            raise NotImplementedError("Can only transpose two indices which have the same coordinate system")
         super().__init__(operand, out=out)
         self.indices = (i0, i1)
         self.coordsys = cs0
@@ -1659,6 +1675,141 @@ class TransposeComponents(LinearOperator, metaclass=MultiClass):
     @property
     def base(self):
         return TransposeComponents
+
+
+class CartesianTransposeComponents(TransposeComponents):
+
+    cs_type = coords.CartesianCoordinates
+
+    def __init__(self, operand, indices=(0,1), out=None):
+        super().__init__(operand, indices=indices, out=out)
+        input_basis = self.domain.get_basis(self.coordsys)
+        self.input_basis = input_basis
+
+    def check_conditions(self):
+        """Can always take the transpose"""
+        return True
+
+    def enforce_conditions(self):
+        """Can always take the transpose"""
+        pass
+
+    def subproblem_matrix(self, subproblem):
+        """Build operator matrix for a specific subproblem."""
+        operand = self.args[0]
+
+        indices = self.indices
+        rank = len(self.tensorsig)
+        tensor_shape = [cs.dim for cs in self.tensorsig]
+        start_indices = list(np.ndindex(*tensor_shape))
+        neworder = np.arange(rank)
+        neworder[indices[0]] = indices[1]
+        neworder[indices[1]] = indices[0]
+
+        transpose = np.zeros((len(start_indices), len(start_indices)))
+        for i, start_index in enumerate(start_indices):
+            end_index = list(start_index)
+            end_index[indices[0]] = start_index[indices[1]]
+            end_index[indices[1]] = start_index[indices[0]]
+            j = start_indices.index(tuple(end_index))
+            transpose[j,i] = 1
+
+        # assume all regularities have the same n_size
+        eye = sparse.identity(subproblem.coeff_size(self.domain), self.dtype, format='csr')
+        matrix = sparse.kron( transpose, eye)
+        return matrix
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+
+        # Set output layout
+        layout = operand.layout
+        out.set_layout(layout)
+        indices = self.indices
+        np.copyto(out.data, operand.data)
+
+        axes_list = np.arange(len(out.data.shape))
+        axes_list[indices[0]] = indices[1]
+        axes_list[indices[1]] = indices[0]
+        np.copyto(out.data,np.transpose(out.data,axes=axes_list))
+
+
+class SphericalTransposeComponents(TransposeComponents):
+
+    cs_type = coords.SphericalCoordinates
+
+    def __init__(self, operand, indices=(0,1), out=None):
+        super().__init__(operand, indices=indices, out=out)
+        self.radius_axis = self.coordsys.coords[2].axis
+        input_basis = self.domain.get_basis(self.coordsys)
+        self.input_basis = input_basis
+        self.radial_basis = self.input_basis.get_radial_basis()
+
+    def check_conditions(self):
+        """Can always take the transpose"""
+        return True
+
+    def enforce_conditions(self):
+        """Can always take the transpose"""
+        pass
+
+    def subproblem_matrix(self, subproblem):
+        operand = self.args[0]
+        basis = self.radial_basis
+        R = basis.regularity_classes(self.tensorsig)
+
+        ell = subproblem.group[self.radius_axis - 1]
+
+        indices = self.indices
+        rank = len(self.tensorsig)
+        neworder = np.arange(rank)
+        neworder[indices[0]] = indices[1]
+        neworder[indices[1]] = indices[0]
+
+        matrix = []
+        for regindex_out, regtotal_out in np.ndenumerate(R):
+            regindex_out = np.array(regindex_out)
+            matrix_row = []
+            for regindex_in, regtotal_in in np.ndenumerate(R):
+                if tuple(regindex_out[neworder]) == regindex_in:
+                    matrix_row.append( 1 )
+                else:
+                    matrix_row.append( 0 )
+            matrix.append(matrix_row)
+        transpose = np.array(matrix)
+
+        Q = basis.radial_recombinations(self.tensorsig,ell_list=(ell,))
+        transpose = Q[ell].T @ transpose @ Q[ell]
+
+        # assume all regularities have the same n_size
+        eye = sparse.identity(basis.n_size(ell), self.dtype, format='csr')
+        matrix = sparse.kron( transpose, eye)
+        # Block-diag for sin/cos parts for real dtype
+        if self.dtype == np.float64:
+            matrix = sparse.kron(matrix, sparse.identity(2, format='csr')).tocsr()
+        return matrix
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        basis = self.input_basis.radial_basis
+        # Set output layout
+        layout = operand.layout
+        out.set_layout(layout)
+        indices = self.indices
+        np.copyto(out.data, operand.data)
+
+        if not layout.grid_space[self.radius_axis]: # in regularity componentsinput
+            basis.backward_regularity_recombination(operand.tensorsig, self.radius_axis, out.data, ell_maps=self.input_basis.ell_maps)
+
+        axes_list = np.arange(len(out.data.shape))
+        axes_list[indices[0]] = indices[1]
+        axes_list[indices[1]] = indices[0]
+        np.copyto(out.data,np.transpose(out.data,axes=axes_list))
+
+        if not layout.grid_space[self.radius_axis]: # in regularity components
+            basis.forward_regularity_recombination(operand.tensorsig, self.radius_axis, out.data, ell_maps=self.input_basis.ell_maps)
 
 
 class SphericalComponent(LinearOperator):
@@ -1898,6 +2049,137 @@ def reduced_view_4(data, axis):
     N2 = shape[axis+1]
     N3 = int(np.prod(shape[axis+2:]))
     return data.reshape((N0, N1, N2, N3))
+
+class PolarMOperator(SpectralOperator):
+
+    subaxis_dependence = [True, True]  # Depends on m and n
+    subaxis_coupling = [False, True]  # Only couples n
+
+    def __init__(self, operand, coordsys):
+        self.coordsys = coordsys
+        self.radius_axis = coordsys.coords[1].axis
+        input_basis = operand.domain.get_basis(coordsys)
+        if input_basis is None:
+            input_basis = operand.domain.get_basis(coordsys.radius)
+        # SpectralOperator requirements
+        self.input_basis = input_basis
+        self.output_basis = self._output_basis(self.input_basis)
+        self.first_axis = self.input_basis.first_axis
+        self.last_axis = self.input_basis.last_axis
+        # LinearOperator requirements
+        self.operand = operand
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        input_basis = self.input_basis
+        axis = self.radius_axis
+        # Set output layout
+        out.set_layout(operand.layout)
+        out.data[:] = 0
+        # Apply operator
+        S_in = input_basis.spin_weights(operand.tensorsig)
+        slices = [slice(None) for i in range(input_basis.dist.dim)]
+        for spinindex_in, spintotal_in in np.ndenumerate(S_in):
+            for spinindex_out in self.spinindex_out(spinindex_in):
+                comp_in = operand.data[spinindex_in]
+                comp_out = out.data[spinindex_out]
+                for m, mg_slice, mc_slice, n_slice in input_basis.m_maps:
+                    slices[axis-1] = mc_slice
+                    slices[axis] = n_slice
+                    vec_in  = comp_in[tuple(slices)]
+                    vec_out = comp_out[tuple(slices)]
+                    A = self.radial_matrix(spinindex_in, spinindex_out, m)
+                    vec_out += apply_matrix(A, vec_in, axis=axis)
+
+    def subproblem_matrix(self, subproblem):
+        operand = self.args[0]
+        radial_basis = self.input_basis
+        S_in = radial_basis.spin_weights(operand.tensorsig)
+        S_out = radial_basis.spin_weights(self.tensorsig)  # Should this use output_basis?
+        m = subproblem.group[self.last_axis - 1]
+        # Loop over components
+        submatrices = []
+        for spinindex_out, spintotal_out in np.ndenumerate(S_out):
+            submatrix_row = []
+            for spinindex_in, spintotal_in in np.ndenumerate(S_in):
+                # Build identity matrices for each axis
+                subshape_in = subproblem.coeff_shape(self.operand.domain)
+                subshape_out = subproblem.coeff_shape(self.domain)
+                if spinindex_out in self.spinindex_out(spinindex_in):
+                    # Substitute factor for radial axis
+                    factors = [sparse.eye(i, j, format='csr') for i, j in zip(subshape_out, subshape_in)]
+                    factors[self.last_axis] = self.radial_matrix(spinindex_in, spinindex_out, m)
+                    comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
+                else:
+                    # Build zero matrix
+                    comp_matrix = sparse.csr_matrix((np.prod(subshape_out), np.prod(subshape_in)))                
+                submatrix_row.append(comp_matrix)
+            submatrices.append(submatrix_row)
+        matrix = sparse.bmat(submatrices)
+        matrix.tocsr()
+        return matrix
+
+    def spinindex_out(self, spinindex_in):
+        raise NotImplementedError("spinindex_out not implemented for type %s" %type(self))
+
+    def radial_matrix(spinindex_in, spinindex_out, m):
+        raise NotImplementedError()
+
+
+class PolarGradient(Gradient, PolarMOperator):
+
+    cs_type = coords.PolarCoordinates
+
+    def __init__(self, operand, coordsys, out=None):
+        Gradient.__init__(self, operand, out=out)
+        PolarMOperator.__init__(self, operand, coordsys)
+        # FutureField requirements
+        self.domain  = operand.domain.substitute_basis(self.input_basis, self.output_basis)
+        self.tensorsig = (coordsys,) + operand.tensorsig
+        self.dtype = operand.dtype
+
+    @staticmethod
+    def _output_basis(input_basis):
+        out = input_basis._new_k(input_basis.k + 1)
+        return out
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Require radius to be in coefficient space
+        layout = self.args[0].layout
+        return (not layout.grid_space[self.radius_axis]) and (layout.local[self.radius_axis])
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Require radius to be in coefficient space
+        self.args[0].require_coeff_space(self.radius_axis)
+        self.args[0].require_local(self.radius_axis)
+
+    def spinindex_out(self, spinindex_in):
+        # Spinorder: -, +, 0
+        # Gradients hits - and +
+        return ((0,) + spinindex_in, (1,) + spinindex_in)
+
+    def radial_matrix(self, spinindex_in, spinindex_out, m):
+        radial_basis = self.input_basis
+        spintotal = radial_basis.spintotal(spinindex_in)
+        if spinindex_out in self.spinindex_out(spinindex_in):
+            return self._radial_matrix(radial_basis, spinindex_out[0], spintotal, m)
+        else:
+            raise ValueError("This should never happen")
+
+    @staticmethod
+    @CachedMethod
+    def _radial_matrix(radial_basis, spinindex_out0, spintotal, m):
+        if spinindex_out0 == 0:
+            # HACK: added in a 1/sqrt(2) factor just to make things work
+            return 1/np.sqrt(2)*radial_basis.operator_matrix('D-', m, spintotal)
+        elif spinindex_out0 == 1:
+            # HACK: added ina a 1/sqrt(2) factor just to make things work
+            return 1/np.sqrt(2)*radial_basis.operator_matrix('D+', m, spintotal)
+        else:
+            raise ValueError("This should never happen")
 
 
 class SphericalEllOperator(SpectralOperator):
@@ -2240,6 +2522,67 @@ class SphericalDivergence(Divergence, SphericalEllOperator):
         else:
             raise ValueError("This should never happen")
 
+class PolarDivergence(Divergence, PolarMOperator):
+
+    cs_type = coords.PolarCoordinates
+
+    def __init__(self, operand, index=0, out=None):
+        Divergence.__init__(self, operand, out=out)
+        if index != 0:
+            raise ValueError("Divergence only implemented along index 0.")
+        self.index = index
+        coordsys = operand.tensorsig[index]
+        PolarMOperator.__init__(self, operand, coordsys)
+        # FutureField requirements
+        self.domain  = operand.domain.substitute_basis(self.input_basis, self.output_basis)
+        self.tensorsig = operand.tensorsig[:index] + operand.tensorsig[index+1:]
+        self.dtype = operand.dtype
+
+    @staticmethod
+    def _output_basis(input_basis):
+        out = input_basis._new_k(input_basis.k + 1)
+        return out
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Require radius to be in coefficient space
+        layout = self.args[0].layout
+        return (not layout.grid_space[self.radius_axis]) and (layout.local[self.radius_axis])
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Require radius to be in coefficient space
+        self.args[0].require_coeff_space(self.radius_axis)
+        self.args[0].require_local(self.radius_axis)
+
+    def spinindex_out(self, spinindex_in):
+        # Spinorder: -, +, 0
+        # Divergence feels - and +
+        if spinindex_in[0] in (0, 1):
+            return (spinindex_in[1:],)
+        else:
+            return tuple()
+
+    def radial_matrix(self, spinindex_in, spinindex_out, m):
+        radial_basis = self.input_basis
+        spintotal = radial_basis.spintotal(spinindex_in)
+        if spinindex_in[0] != 2 and spinindex_in[1:] == spinindex_out:
+            return self._radial_matrix(radial_basis, spinindex_in[0], spintotal, m)
+        else:
+            raise ValueError("This should never happen")
+
+    @staticmethod
+    @CachedMethod
+    def _radial_matrix(radial_basis, spinindex_in0, spintotal, m):
+        if spinindex_in0 == 0:
+            return 1/np.sqrt(2) * radial_basis.operator_matrix('D+', m, spintotal)
+        elif spinindex_in0 == 1:
+            return 1/np.sqrt(2) * radial_basis.operator_matrix('D-', m, spintotal)
+        else:
+            raise ValueError("This should never happen")
+
+
+
 
 class Curl(LinearOperator, metaclass=MultiClass):
 
@@ -2405,6 +2748,138 @@ class SphericalCurl(Curl, SphericalEllOperator):
                         comp_out[tuple(slices)][cos_slice] += vec_out_complex.real
                         comp_out[tuple(slices)][msin_slice] += vec_out_complex.imag
 
+class PolarCurl(Curl, PolarMOperator):
+
+    cs_type = coords.PolarCoordinates
+
+    def __init__(self, operand, index=0, out=None):
+        Curl.__init__(self, operand, out=out)
+        if index != 0:
+            raise ValueError("Curl only implemented along index 0.")
+        self.index = index
+        coordsys = operand.tensorsig[index]
+        PolarMOperator.__init__(self, operand, coordsys)
+        # FutureField requirements
+        self.domain  = operand.domain.substitute_basis(self.input_basis, self.output_basis)
+        self.tensorsig = operand.tensorsig[:index] + operand.tensorsig[index+1:]
+        self.dtype = operand.dtype
+
+    @staticmethod
+    def _output_basis(input_basis):
+        out = input_basis._new_k(input_basis.k + 1)
+        return out
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Require radius to be in coefficient space
+        layout = self.args[0].layout
+        return (not layout.grid_space[self.radius_axis]) and (layout.local[self.radius_axis])
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Require radius to be in coefficient space
+        self.args[0].require_coeff_space(self.radius_axis)
+        self.args[0].require_local(self.radius_axis)
+
+    def spinindex_out(self, spinindex_in):
+        # Spinorder: -, +, 0
+        # - and + map to 0
+        if spinindex_in[0] in (0, 1):
+            return (spinindex_in[1:],)
+
+    def radial_matrix(self, spinindex_in, spinindex_out, m):
+        radial_basis = self.input_basis
+        spintotal_in = radial_basis.spintotal(spinindex_in)
+
+        if spinindex_in[1:] == spinindex_out:
+            return self._radial_matrix(radial_basis, spinindex_in[0], spintotal_in, m)
+        else:
+            raise ValueError("This should never happen")
+
+    @staticmethod
+    @CachedMethod
+    def _radial_matrix(radial_basis, spinindex_in0, spintotal_in, m):
+        # NB: the sign here is different than Vasil et al. (2019) eqn 84
+        # because det(Q) = -1 
+        if spinindex_in0 == 0:
+            return 1j * 1/np.sqrt(2) * radial_basis.operator_matrix('D+', m, spintotal_in)
+        elif spinindex_in0 == 1:
+            return -1j * 1/np.sqrt(2) * radial_basis.operator_matrix('D-', m, spintotal_in)
+        else:
+            raise ValueError("This should never happen")
+
+    def subproblem_matrix(self, subproblem):
+        raise NotImplementedError("subproblem_matrix is not implemented.")
+        if self.dtype == np.complex128:
+            return super().subproblem_matrix(subproblem)
+        elif self.dtype == np.float64:
+            operand = self.args[0]
+            radial_basis = self.radial_basis
+            R_in = radial_basis.regularity_classes(operand.tensorsig)
+            R_out = radial_basis.regularity_classes(self.tensorsig)  # Should this use output_basis?
+            ell = subproblem.group[self.last_axis - 1]
+            # Loop over components
+            submatrices = []
+            for spinindex_out, spintotal_out in np.ndenumerate(R_out):
+                submatrix_row = []
+                for spinindex_in, spintotal_in in np.ndenumerate(R_in):
+                    # Build identity matrices for each axis
+                    subshape_in = subproblem.coeff_shape(self.operand.domain)
+                    subshape_out = subproblem.coeff_shape(self.domain)
+                    # Check if regularity component exists for this ell
+                    if (spinindex_out in self.spinindex_out(spinindex_in)) and radial_basis.regularity_allowed(ell, spinindex_in) and radial_basis.regularity_allowed(ell, spinindex_out):
+                        factors = [sparse.eye(m, n, format='csr') for m, n in zip(subshape_out, subshape_in)]
+                        radial_matrix = self.radial_matrix(spinindex_in, spinindex_out, ell)
+                        # Real part
+                        factors[self.last_axis] = radial_matrix.real
+                        comp_matrix_real = reduce(sparse.kron, factors, 1).tocsr()
+                        # Imaginary pary
+                        m_size = subshape_in[self.first_axis]
+                        mult_1j = np.array([[0, -1], [1, 0]])
+                        m_blocks = sparse.eye(m_size//2, m_size//2, format='csr')
+                        factors[self.first_axis] = sparse.kron(mult_1j, m_blocks)
+                        factors[self.last_axis] = radial_matrix.imag
+                        comp_matrix_imag = reduce(sparse.kron, factors, 1).tocsr()
+                        comp_matrix = comp_matrix_real + comp_matrix_imag
+                    else:
+                        # Build zero matrix
+                        comp_matrix = sparse.csr_matrix((np.prod(subshape_out), np.prod(subshape_in)))
+                    submatrix_row.append(comp_matrix)
+                submatrices.append(submatrix_row)
+            matrix = sparse.bmat(submatrices)
+            matrix.tocsr()
+            return matrix
+
+    def operate(self, out):
+        """Perform operation."""
+        if self.dtype == np.complex128:
+            return super().operate(out)
+        operand = self.args[0]
+        input_basis = self.input_basis
+        axis = self.radius_axis
+        # Set output layout
+        out.set_layout(operand.layout)
+        out.data[:] = 0
+        # Apply operator
+        S_in = input_basis.spin_weights(operand.tensorsig)
+        slices = [slice(None) for i in range(input_basis.dist.dim)]
+        for spinindex_in, spintotal_in in np.ndenumerate(S_in):
+            for spinindex_out in self.spinindex_out(spinindex_in):
+                comp_in = operand.data[spinindex_in]
+                comp_out = out.data[spinindex_out]
+
+                for m, mg_slice, mc_slice, n_slice in input_basis.m_maps:
+                    slices[axis-1] = mc_slice
+                    slices[axis] = n_slice
+                    cos_slice = axslice(axis-1, 0, None, 2)
+                    msin_slice = axslice(axis-1, 1, None, 2)
+                    vec_in_cos = comp_in[tuple(slices)][cos_slice]
+                    vec_in_msin = comp_in[tuple(slices)][msin_slice]
+                    vec_in_complex = vec_in_cos + 1j*vec_in_msin
+                    A = self.radial_matrix(spinindex_in, spinindex_out, m)
+                    vec_out_complex = apply_matrix(A, vec_in_complex, axis=axis)
+                    comp_out[tuple(slices)][cos_slice] += vec_out_complex.real
+                    comp_out[tuple(slices)][msin_slice] += vec_out_complex.imag
 
 class Laplacian(LinearOperator, metaclass=MultiClass):
 
@@ -2578,6 +3053,51 @@ class SphericalEllProductField(SphericalEllProduct):
     @CachedMethod
     def _radial_matrix(self, ell, regtotal):
         return self.ell_func(ell + regtotal) * self.radial_basis.operator_matrix('Id', ell, regtotal)
+
+class PolarLaplacian(Laplacian, PolarMOperator):
+
+    cs_type = coords.PolarCoordinates
+
+    def __init__(self, operand, coordsys, out=None):
+        Laplacian.__init__(self, operand, out=out)
+        PolarMOperator.__init__(self, operand, coordsys)
+        # FutureField requirements
+        self.domain  = operand.domain.substitute_basis(self.input_basis, self.output_basis)
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
+
+    @staticmethod
+    def _output_basis(input_basis):
+        out = input_basis._new_k(input_basis.k + 2)
+        return out
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Require radius to be in coefficient space
+        layout = self.args[0].layout
+        return (not layout.grid_space[self.radius_axis]) and (layout.local[self.radius_axis])
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Require radius to be in coefficient space
+        self.args[0].require_coeff_space(self.radius_axis)
+        self.args[0].require_local(self.radius_axis)
+
+    def spinindex_out(self, spinindex_in):
+        return (spinindex_in,)
+
+    def radial_matrix(self, spinindex_in, spinindex_out, m):
+        radial_basis = self.input_basis
+        spintotal = radial_basis.spintotal(spinindex_in)
+        if spinindex_in == spinindex_out:
+            return self._radial_matrix(radial_basis, spintotal, m)
+        else:
+            raise ValueError("This should never happen")
+
+    @staticmethod
+    @CachedMethod
+    def _radial_matrix(radial_basis, spintotal, m):
+        return radial_basis.operator_matrix('L', m, spintotal)
 
 
 """

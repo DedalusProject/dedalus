@@ -361,7 +361,7 @@ class RealFourierTransform(SeparableTransform):
     def wavenumbers(self):
         """One-dimensional global wavenumber array."""
         # Repeat k's for cos and msin parts
-        return np.repeat(np.arange(self.Kmax+1), 2)
+        return np.repeat(np.arange(self.KM+1), 2)
 
 
 @register_transform(basis.RealFourier, 'matrix')
@@ -382,7 +382,7 @@ class RealFourierMMT(RealFourierTransform, SeparableMatrixTransform):
         quadrature[1::2] = -(2 / N) * np.sin(K*X/dX)
         quadrature[0] = 1 / N
         # Zero Nyquist and higher modes for transforms with grid_size <= coeff_size
-        quadrature *= self.wavenumbers <= self.Kmax
+        quadrature *= self.wavenumbers[:,None] <= self.Kmax
         # Ensure C ordering for fast dot products
         return np.asarray(quadrature, order='C')
 
@@ -399,7 +399,7 @@ class RealFourierMMT(RealFourierTransform, SeparableMatrixTransform):
         functions[:, 0::2] = np.cos(K*X/dX)
         functions[:, 1::2] = -np.sin(K*X/dX)
         # Zero Nyquist and higher modes for transforms with grid_size <= coeff_size
-        functions *= self.wavenumbers <= self.Kmax
+        functions *= self.wavenumbers[None, :] <= self.Kmax
         # Ensure C ordering for fast dot products
         return np.asarray(functions, order='C')
 
@@ -993,6 +993,98 @@ class SWSHColatitudeTransform(NonSeparableTransform):
                 Yfull[:, self.N2g:] = 0
                 m_matrices[m] = np.asarray(Yfull, order='C')
         return m_matrices
+
+@register_transform(basis.DiskBasis, 'matrix')
+class DiskRadialTransform(NonSeparableTransform):
+    """
+    TODO:
+        - Remove dependence on grid_shape?
+    """
+
+    def __init__(self, grid_shape, basis_shape, axis, m_maps, s, k, alpha, dtype=np.complex128):
+        self.Nphi = basis_shape[0]
+        self.Nmax = basis_shape[1] - 1
+        super().__init__(grid_shape, self.Nmax+1, axis, dtype)
+        self.m_maps = m_maps
+        self.s = s
+        self.k = k
+        self.alpha = alpha
+
+    def forward_reduced(self, gdata, cdata):
+        # local_m = self.local_m
+        # if gdata.shape[1] != len(local_m): # do we want to do this check???
+        #     raise ValueError("gdata.shape[1]: %i, len(local_m): %i" %(gdata.shape[1], len(local_m)))
+        m_matrices = self._forward_matrices
+        Nphi = self.Nphi
+        Nmax = self.Nmax
+        for m, mg_slice, mc_slice, n_slice in self.m_maps:
+            # Skip transforms when |m| > 2*Nmax
+            if np.abs(m) <= 2*Nmax:
+                # Use rectangular transform matrix, padded with zeros when Nmin > abs(m)//2
+                grm = gdata[:, mg_slice, :, :]
+                crm = cdata[:, mc_slice, n_slice, :]
+                apply_matrix(m_matrices[m], grm, axis=2, out=crm)
+
+    def backward_reduced(self, cdata, gdata):
+        # local_m = self.local_m
+        # if gdata.shape[1] != len(local_m): # do we want to do this check???
+        #     raise ValueError("gdata.shape[1]: %i, len(local_m): %i" %(gdata.shape[1], len(local_m)))
+        m_matrices = self._backward_matrices
+        Nphi = self.Nphi
+        Nmax = self.Nmax
+        for m, mg_slice, mc_slice, n_slice in self.m_maps:
+            if np.abs(m) > 2*Nmax:
+                # Write zeros because they'll be used by the inverse azimuthal transform
+                gdata[:, mg_slice, :, :] = 0
+            else:
+                # Use rectangular transform matrix, padded with zeros when Nmin > abs(m)//2
+                grm = gdata[:, mg_slice, :, :]
+                crm = cdata[:, mc_slice, n_slice, :]
+                apply_matrix(m_matrices[m], crm, axis=2, out=grm)
+
+    @CachedAttribute
+    def _quadrature(self):
+        # get grid and weights from sphere library
+        return dedalus_sphere.zernike.quadrature(2, self.N2g, k=self.alpha)
+
+    @CachedAttribute
+    def _forward_matrices(self):
+        """Build transform matrix for single l and r."""
+        # Get functions from sphere library
+        z_grid, weights = self._quadrature
+        m_list = tuple(map[0] for map in self.m_maps)
+        m_matrices = {}
+        for m in m_list:
+            if m not in m_matrices:
+                Nmin = dedalus_sphere.zernike.min_degree(m)
+                Nc = self.N2c - Nmin
+                W = dedalus_sphere.zernike.polynomials(2, Nc, self.alpha, np.abs(m + self.s), z_grid) # shape (N2c-Nmin, Ng)
+                conversion = dedalus_sphere.zernike.operator(2, 'E')(+1)**self.k
+                W = conversion(Nc, self.alpha, np.abs(m + self.s)) @ W
+                W = (W*weights).astype(np.float64)
+                # zero out modes higher than grid resolution taking into account n starts at Nmin
+                W[self.N2g-Nmin:] = 0
+                m_matrices[m] = np.asarray(W, order='C')
+        return m_matrices
+
+    @CachedAttribute
+    def _backward_matrices(self):
+        """Build transform matrix for single l and r."""
+        # Get functions from sphere library
+        z_grid, weights = self._quadrature
+        m_list = tuple(map[0] for map in self.m_maps)
+        m_matrices = {}
+
+        for m in m_list:
+            if m not in m_matrices:
+                Nmin = dedalus_sphere.zernike.min_degree(m)
+                Nc = self.N2c - Nmin
+                W = dedalus_sphere.zernike.polynomials(2, Nc, self.k + self.alpha, np.abs(m + self.s), z_grid)
+                m_matrices[m] = np.asarray(W.T.astype(np.float64), order='C')
+        return m_matrices
+
+
+
 
 
 @register_transform(basis.BallRadialBasis, 'matrix')

@@ -143,8 +143,8 @@ def test_transpose_coeff_tensor(Nphi, Ntheta, Nr, dealias, basis):
     u['g'][1] = r**2*(2*ct**3*cp-r*cp**3*st**4+r**3*ct*cp**3*st**5*sp**3-1/16*r*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
     u['g'][0] = r**2*sp*(-2*ct**2+r*ct*cp*st**2*sp-r**3*cp**2*st**5*sp**3)
     T = operators.Gradient(u, c).evaluate()
-    T.require_coeff_space()
     Tg = np.transpose(np.copy(T['g']),(1,0,2,3,4))
+    T.require_coeff_space()
     T = operators.TransposeComponents(T).evaluate()
     assert np.allclose(T['g'], Tg)
 
@@ -153,16 +153,55 @@ def test_transpose_coeff_tensor(Nphi, Ntheta, Nr, dealias, basis):
 @pytest.mark.parametrize('Ntheta', [16])
 @pytest.mark.parametrize('Nr', [8])
 @pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('basis_radius', basis_radius)
-def test_interpolation_scalar(Nphi, Ntheta, Nr, dealias, basis_radius):
+@pytest.mark.parametrize(('basis_radius', 'radius_factor'),
+    [(basis_radius[0],0.5),
+    (basis_radius[0],1.0),
+    pytest.param(basis_radius[0],1.5,marks=pytest.mark.xfail(reason="extrapolating outside domain")),
+    pytest.param(basis_radius[1],0.5,marks=pytest.mark.xfail(reason="extrapolating outside domain")),
+    (basis_radius[1],1.0),
+    (basis_radius[1],1.5),
+    (basis_radius[2],0.5),
+    (basis_radius[2],1.0),
+    pytest.param(basis_radius[2],1.5,marks=pytest.mark.xfail(reason="extrapolating outside domain")),
+    ])
+def test_interpolation_scalar(Nphi, Ntheta, Nr, dealias, basis_radius, radius_factor):
+    eps = 1
     basis, radius = basis_radius
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     f['g'] = x**4 + 2*y**4 + 3*z**4
-    h = operators.interpolate(f,r=radius).evaluate()
+    h = operators.interpolate(f,r=radius*radius_factor).evaluate()
     phi, theta, r = b.local_grids(b.domain.dealias)
-    hg = radius**4*(3*np.cos(theta)**4 + np.cos(phi)**4*np.sin(theta)**4 + 2*np.sin(theta)**4*np.sin(phi)**4)
+    hg = (radius*radius_factor)**4*(3*np.cos(theta)**4 + np.cos(phi)**4*np.sin(theta)**4 + 2*np.sin(theta)**4*np.sin(phi)**4)
     assert np.allclose(h['g'], hg)
+
+# need higher resolution for the test function
+@pytest.mark.parametrize('Nphi', [16])
+@pytest.mark.parametrize('Ntheta', [16])
+@pytest.mark.parametrize('Nr', [64])
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize(('basis_radius', 'radius_factor'),
+    [(basis_radius[0],0.5),
+    (basis_radius[0],1.0),
+    pytest.param(basis_radius[0],1.5,marks=pytest.mark.xfail(reason="extrapolating outside domain")),
+    pytest.param(basis_radius[1],0.5,marks=pytest.mark.xfail(reason="extrapolating outside domain")),
+    (basis_radius[1],1.0),
+    (basis_radius[1],1.5),
+    (basis_radius[2],0.5),
+    (basis_radius[2],1.0),
+    pytest.param(basis_radius[2],1.5,marks=pytest.mark.xfail(reason="extrapolating outside domain")),
+    ])
+def test_interpolation_scalar_extrapolate_fail(Nphi, Ntheta, Nr, dealias, basis_radius, radius_factor):
+    eps = 1 # regularizing 1/r**2
+    basis, radius = basis_radius
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias)
+    f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+    f['g'] = 1/(x**2+y**2+z**2+eps)
+    h = operators.interpolate(f,r=radius*radius_factor).evaluate()
+    phi, theta, r = b.local_grids(b.domain.dealias)
+    hg = 1/((radius*radius_factor)**2+eps)
+    assert np.allclose(h['g'], hg)
+
 
 # need higher resolution for the test function
 @pytest.mark.parametrize('Nphi', [16])
@@ -309,4 +348,3 @@ def test_angular_component_tensor(Nphi, Ntheta, Nr, dealias, basis_radius):
     Ag[1,0] = Ag[0,1] = -2*np.cos(phi)*(np.sin(theta) + 3*np.cos(theta)*np.sin(phi))
     Ag[0,0] = 6*np.sin(phi)**2
     assert np.allclose(A['g'],Ag)
-

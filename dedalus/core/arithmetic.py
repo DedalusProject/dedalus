@@ -379,7 +379,13 @@ class Product(Future):
                 for ia, ncc_comp in enum_indices(ncc.tensorsig):
                     G = Gamma[ia, ib, ic]
                     if abs(G) > 1e-10:
-                        block += G * ncc_basis.multiplication_matrix(subproblem, arg_basis, coeffs[ncc_comp], ncc_comp, arg_comp, out_comp, cutoff=1e-6)
+                        matrix = ncc_basis.multiplication_matrix(subproblem, arg_basis, coeffs[ncc_comp], ncc_comp, arg_comp, out_comp, cutoff=1e-6)
+                        # Domains with real Fourier bases require kroneckering the Jacobi NCC matrix up to match the subsystem shape including the sin and cos parts of RealFourier data
+                        # This fix assumes the Jacobi basis is on the last axis
+                        if matrix.shape != (M,N):
+                            m, n = matrix.shape
+                            matrix = sparse.kron(sparse.eye(M//m, N//n), matrix)
+                        block += G * matrix
                 block_row.append(block)
             blocks.append(block_row)
         return sparse.bmat(blocks, format='csr')
@@ -458,16 +464,17 @@ class Product(Future):
         # ncc_mat = sparse.vstack(blocks, format='csr')
 
     def matrix_dependence(self, *vars):
-        coupling = self.matrix_coupling(*vars)
-        coupling[1] = True  # HACK HACK HACK for spheres coupling ell
-        return coupling
+        self.prep_nccs(vars)  # HACK: called too much?
+        operand = self.operand
+        operand_dependence = operand.matrix_dependence(*vars)
+        ncc_matrix_dependence = operand.domain.mode_dependence
+        return ncc_matrix_dependence | operand_dependence
 
     def matrix_coupling(self, *vars):
         self.prep_nccs(vars)  # HACK: called too much?
         operand = self.operand
         operand_coupling = operand.matrix_coupling(*vars)
         ncc = self.ncc
-        #ncc_coupling = np.array([basis is not None for basis in ncc.domain.full_bases])
         ncc_coupling = ncc.domain.nonconstant
         return ncc_coupling | operand_coupling
 
@@ -821,3 +828,7 @@ class MultiplyNumberField(Multiply, FutureField):
         arg0 = self.args[0]
         arg1 = self.args[1].reinitialize(**kw)
         return self.new_operands(arg0, arg1, **kw)
+
+    def sym_diff(self, var):
+        """Symbolically differentiate with respect to specified operand."""
+        return self.args[0]*self.args[1].sym_diff(var)

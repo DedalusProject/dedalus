@@ -50,7 +50,7 @@ if rank == 0:
 P = (Rayleigh * Prandtl)**(-1/2)
 R = (Rayleigh / Prandtl)**(-1/2)
 
-ex = field.Field(name='ez', dist=d, bases=(zb,), dtype=np.complex128, tensorsig=(c,))
+ex = field.Field(name='ex', dist=d, bases=(zb,), dtype=np.complex128, tensorsig=(c,))
 ez = field.Field(name='ez', dist=d, bases=(zb,), dtype=np.complex128, tensorsig=(c,))
 ex['g'][0] = 1
 ez['g'][1] = 1

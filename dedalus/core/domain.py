@@ -164,13 +164,22 @@ class Domain(metaclass=CachedClass):
         return tuple(~c for c in self.constant)
 
     @CachedAttribute
+    def mode_dependence(self):
+        """Tuple of dependence flags."""
+        dep = np.zeros(self.dist.dim, dtype=bool)
+        for basis in self.bases:
+            for subaxis in range(basis.dim):
+                dep[basis.axis+subaxis] = basis.subaxis_dependence[subaxis]
+        return tuple(dep)
+
+    @CachedAttribute
     def dim(self):
         return sum(self.nonconstant)
 
     @CachedAttribute
     def coeff_shape(self):
         """Compute coefficient shape."""
-        scales = (1 for i in range(self.dist.dim))
+        scales = tuple(1 for i in range(self.dist.dim))
         return self.global_shape(layout=self.dist.coeff_layout, scales=scales)
 
     def grid_shape(self, scales):
@@ -182,7 +191,8 @@ class Domain(metaclass=CachedClass):
     def global_shape(self, layout, scales):
         shape = np.ones(self.dist.dim, dtype=int)
         for basis in self.bases:
-            shape[basis.first_axis:basis.last_axis+1] = basis.global_shape(layout, scales)
+            basis_scales = scales[basis.first_axis:basis.last_axis+1]
+            shape[basis.first_axis:basis.last_axis+1] = basis.global_shape(layout, basis_scales)
         return shape
 
     def chunk_shape(self, layout):
@@ -235,4 +245,3 @@ class Domain(metaclass=CachedClass):
     #     # Reshape as multidimensional vector
     #     spacing = reshape_vector(spacing, self.dim, axis)
     #     return spacing
-

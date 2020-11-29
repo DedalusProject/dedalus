@@ -78,7 +78,8 @@ def jacobi_recursion(N, a, b, X):
     if np.isscalar(X):
         I = 1
     else:
-        I = sparse.identity(X.shape[0])
+        X = X.tocsr()
+        I = sparse.identity(X.shape[0], format='csr')
     # Clenshaw coefficients
     def compute_A(n):
         if 0 <= n < (N-1):
@@ -87,7 +88,7 @@ def jacobi_recursion(N, a, b, X):
             return 0*I
     def compute_B(n):
         if 0 < n < (N-1):
-            return (-J[n,n-1] / J[n,n+1]) * I
+            return (-JA[n,n-1] / JA[n,n+1]) * I
         else:
             return 0*I
     A = DeferredTuple(compute_A, N+1)
