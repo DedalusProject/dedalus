@@ -743,13 +743,14 @@ class MultiplyFields(Multiply, FutureField):
         self.dtype = np.result_type(arg0.dtype, arg1.dtype)
         self.gamma_args = []
         # Compute expanded shapes for broadcasting data
-        local_gshape = self.dist.grid_layout.local_shape(self.domain, self.domain.dealias)
+        arg0_gshape = self.dist.grid_layout.local_shape(arg0.domain, arg0.domain.dealias)
         arg0_tshape = tuple(cs.dim for cs in arg0.tensorsig)
         arg0_order = len(arg0.tensorsig)
+        arg1_gshape = self.dist.grid_layout.local_shape(arg1.domain, arg1.domain.dealias)
         arg1_tshape = tuple(cs.dim for cs in arg1.tensorsig)
         arg1_order = len(arg1.tensorsig)
-        self.arg0_exp_shape = arg0_tshape + (1,) * arg1_order + local_gshape
-        self.arg1_exp_shape = (1,) * arg0_order + arg1_tshape + local_gshape
+        self.arg0_exp_shape = arg0_tshape + (1,) * arg1_order + arg0_gshape
+        self.arg1_exp_shape = (1,) * arg0_order + arg1_tshape + arg1_gshape
 
     def operate(self, out):
         """Perform operation."""
