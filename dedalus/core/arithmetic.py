@@ -196,11 +196,6 @@ class AddFields(Add, FutureField):
         self.domain = Domain(self.dist, self._bases)
         self.tensorsig = unify_attributes(self.args, 'tensorsig')
         self.dtype = np.result_type(*[arg.dtype for arg in self.args])
-        expression = "arg0"
-        for i in range(1, len(args)):
-            expression += "+arg%i"%i
-        self.expression = expression
-        self.var_dict={}
 
     def check_conditions(self):
         """Check that arguments are in a proper layout."""
@@ -224,12 +219,10 @@ class AddFields(Add, FutureField):
 
     def operate(self, out):
         """Perform operation."""
-        args = self.args
+        arg0, arg1 = self.args
         # Set output layout
-        out.set_layout(args[0].layout)
-        for i, arg in enumerate(args):
-            self.var_dict["arg%i"%i] = arg.data
-        ne.evaluate(self.expression, local_dict=self.var_dict, out=out.data)
+        out.set_layout(arg0.layout)
+        np.add(arg0.data, arg1.data, out=out.data)
 
 
 # used for einsum string manipulation
@@ -737,31 +730,29 @@ class MultiplyFields(Multiply, FutureField):
         # ax_bases = tuple(zip(*(arg.domain.full_bases for arg in self.args)))
         # nonconst_ax_bases = [[b for b in bases if b is not None] for bases in ax_bases]
         # self.required_grid_axes = [len(bases) > 1 for bases in nonconst_ax_bases]
-        dist = unify_attributes((arg0, arg1), 'dist')
-        self.domain = Domain(dist, self._build_bases(arg0, arg1, **kw))
+        self.dist = unify_attributes((arg0, arg1), 'dist')
+        self.domain = Domain(self.dist, self._build_bases(arg0, arg1, **kw))
         self.tensorsig = arg0.tensorsig + arg1.tensorsig
         self.dtype = np.result_type(arg0.dtype, arg1.dtype)
         self.gamma_args = []
+        # Compute expanded shapes for broadcasting data
+        local_gshape = self.dist.grid_layout.local_shape(self.domain, self.domain.dealias)
+        arg0_tshape = tuple(cs.dim for cs in arg0.tensorsig)
+        arg0_order = len(arg0.tensorsig)
+        arg1_tshape = tuple(cs.dim for cs in arg1.tensorsig)
+        arg1_order = len(arg1.tensorsig)
+        self.arg0_exp_shape = arg0_tshape + (1,) * arg1_order + local_gshape
+        self.arg1_exp_shape = (1,) * arg0_order + arg1_tshape + local_gshape
 
     def operate(self, out):
         """Perform operation."""
-        args = self.args
-        out_order = len(self.tensorsig)
+        arg0, arg1 = self.args
         # Set output layout
-        out.set_layout(args[0].layout)
+        out.set_layout(arg0.layout)
         # Reshape arg data to broadcast properly for output tensorsig
-        args_data = []
-        start_index = 0
-        for arg in args:
-            arg_order = len(arg.tensorsig)
-            arg_shape = arg.data.shape
-            shape = [1,] * out_order + list(arg_shape[arg_order:])
-            shape[start_index: start_index + arg_order] = arg_shape[:arg_order]
-            args_data.append(arg.data.reshape(shape))
-            start_index += arg_order
-        arg0 = args_data[0]
-        arg1 = args_data[1]
-        ne.evaluate("arg0*arg1", out=out.data)
+        arg0_exp_data = arg0.data.reshape(self.arg0_exp_shape)
+        arg1_exp_data = arg1.data.reshape(self.arg1_exp_shape)
+        np.multiply(arg0_exp_data, arg1_exp_data, out=out.data)
 
 
 class MultiplyNumberField(Multiply, FutureField):
@@ -801,8 +792,7 @@ class MultiplyNumberField(Multiply, FutureField):
         # Set output layout
         out.set_layout(arg1.layout)
         # Multiply all argument data, reshaped by tensorsig
-        data1 = arg1.data
-        ne.evaluate("arg0*data1", out=out.data)
+        np.multiply(arg0, arg1.data, out=out.data)
 
     def matrix_dependence(self, *vars):
         return self.args[1].matrix_dependence(*vars)
