@@ -9,6 +9,7 @@ from scipy import sparse
 import itertools
 import operator
 import numbers
+import numexpr as ne
 from collections import defaultdict
 
 from .domain import Domain
@@ -218,13 +219,10 @@ class AddFields(Add, FutureField):
 
     def operate(self, out):
         """Perform operation."""
-        args = self.args
+        arg0, arg1 = self.args
         # Set output layout
-        out.set_layout(args[0].layout)
-        # Add all argument data
-        args_data = [arg.data for arg in args]
-        # OPTIMIZE: less intermediate arrays?
-        np.copyto(out.data, reduce(np.add, args_data))
+        out.set_layout(arg0.layout)
+        np.add(arg0.data, arg1.data, out=out.data)
 
 
 # used for einsum string manipulation
@@ -603,34 +601,49 @@ class DotProduct(Product, FutureField):
 
         einsum_str = array0_str + '...,' + array1_str + '...->' + out_str + '...'
 
-        np.einsum(einsum_str,arg0.data,arg1.data,out=out.data)
+        np.einsum(einsum_str,arg0.data,arg1.data,out=out.data,optimize=True)
 
 
 class CrossProduct(Product, FutureField):
+    """Cross product on two 3D vector fields."""
 
     name = "Cross"
 
-    # Should make sure arg0 and arg1 are rank 1
-    # and that the cs are the same for arg0 and arg1
-
     def __init__(self, arg0, arg1, out=None, **kw):
         super().__init__(arg0, arg1, out=out)
+        # Check that both fields are rank-1
+        if len(arg0.tensorsig) != 1 or len(arg1.tensorsig) != 1:
+            raise NotImplementedError("CrossProduct currently only implemented for vector fields.")
+        # Check that first coordsys are the same
+        if arg0.tensorsig[0] is not arg1.tensorsig[0]:
+            raise ValueError("CrossProduct requires identical first tangent spaces on both fields.")
         # FutureField requirements
         self.domain = Domain(arg0.dist, self._build_bases(arg0, arg1))
         self.tensorsig = arg0.tensorsig
         self.dtype = np.result_type(arg0.dtype, arg1.dtype)
+        # Pick operate method based on coordsys handedness
+        if self.tensorsig[0].right_handed:
+            self.operate = self.operate_right_handed
+        else:
+            self.operate = self.operate_left_handed
 
-    @CachedMethod
-    def epsilon(self, i, j, k):
-        coordsys = self.tensorsig[0]
-        return coordsys.epsilon(i, j, k)
-
-    def operate(self, out):
+    def operate_right_handed(self, out):
         arg0, arg1 = self.args
         out.set_layout(arg0.layout)
-        out.data[0] = self.epsilon(0,1,2)*(arg0.data[1]*arg1.data[2] - arg0.data[2]*arg1.data[1])
-        out.data[1] = self.epsilon(1,2,0)*(arg0.data[2]*arg1.data[0] - arg0.data[0]*arg1.data[2])
-        out.data[2] = self.epsilon(2,0,1)*(arg0.data[0]*arg1.data[1] - arg0.data[1]*arg1.data[0])
+        data00, data01, data02 = arg0.data[0], arg0.data[1], arg0.data[2]
+        data10, data11, data12 = arg1.data[0], arg1.data[1], arg1.data[2]
+        ne.evaluate("data01*data12 - data02*data11", out=out.data[0])
+        ne.evaluate("data02*data10 - data00*data12", out=out.data[1])
+        ne.evaluate("data00*data11 - data01*data10", out=out.data[2])
+
+    def operate_left_handed(self, out):
+        arg0, arg1 = self.args
+        out.set_layout(arg0.layout)
+        data00, data01, data02 = arg0.data[0], arg0.data[1], arg0.data[2]
+        data10, data11, data12 = arg1.data[0], arg1.data[1], arg1.data[2]
+        ne.evaluate("data02*data11 - data01*data12", out=out.data[0])
+        ne.evaluate("data00*data12 - data02*data10", out=out.data[1])
+        ne.evaluate("data01*data10 - data00*data11", out=out.data[2])
 
 
 class Multiply(Product, metaclass=MultiClass):
@@ -724,30 +737,30 @@ class MultiplyFields(Multiply, FutureField):
         # ax_bases = tuple(zip(*(arg.domain.full_bases for arg in self.args)))
         # nonconst_ax_bases = [[b for b in bases if b is not None] for bases in ax_bases]
         # self.required_grid_axes = [len(bases) > 1 for bases in nonconst_ax_bases]
-        dist = unify_attributes((arg0, arg1), 'dist')
-        self.domain = Domain(dist, self._build_bases(arg0, arg1, **kw))
+        self.dist = unify_attributes((arg0, arg1), 'dist')
+        self.domain = Domain(self.dist, self._build_bases(arg0, arg1, **kw))
         self.tensorsig = arg0.tensorsig + arg1.tensorsig
         self.dtype = np.result_type(arg0.dtype, arg1.dtype)
         self.gamma_args = []
+        # Compute expanded shapes for broadcasting data
+        arg0_gshape = self.dist.grid_layout.local_shape(arg0.domain, arg0.domain.dealias)
+        arg0_tshape = tuple(cs.dim for cs in arg0.tensorsig)
+        arg0_order = len(arg0.tensorsig)
+        arg1_gshape = self.dist.grid_layout.local_shape(arg1.domain, arg1.domain.dealias)
+        arg1_tshape = tuple(cs.dim for cs in arg1.tensorsig)
+        arg1_order = len(arg1.tensorsig)
+        self.arg0_exp_shape = arg0_tshape + (1,) * arg1_order + arg0_gshape
+        self.arg1_exp_shape = (1,) * arg0_order + arg1_tshape + arg1_gshape
 
     def operate(self, out):
         """Perform operation."""
-        args = self.args
-        out_order = len(self.tensorsig)
+        arg0, arg1 = self.args
         # Set output layout
-        out.set_layout(args[0].layout)
-        # Multiply all argument data, reshaped by tensorsig
-        args_data = []
-        start_index = 0
-        for arg in args:
-            arg_order = len(arg.tensorsig)
-            arg_shape = arg.data.shape
-            shape = [1,] * out_order + list(arg_shape[arg_order:])
-            shape[start_index: start_index + arg_order] = arg_shape[:arg_order]
-            args_data.append(arg.data.reshape(shape))
-            start_index += arg_order
-        # OPTIMIZE: less intermediate arrays?
-        np.copyto(out.data, reduce(np.multiply, args_data))
+        out.set_layout(arg0.layout)
+        # Reshape arg data to broadcast properly for output tensorsig
+        arg0_exp_data = arg0.data.reshape(self.arg0_exp_shape)
+        arg1_exp_data = arg1.data.reshape(self.arg1_exp_shape)
+        np.multiply(arg0_exp_data, arg1_exp_data, out=out.data)
 
 
 class MultiplyNumberField(Multiply, FutureField):

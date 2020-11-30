@@ -71,19 +71,14 @@ class Coordinate:
 
 class CartesianCoordinates(CoordinateSystem):
 
-    def __init__(self, *names):
+    def __init__(self, *names, right_handed=True):
         self.names = names
         self.dim = len(names)
         self.coords = tuple(Coordinate(name, cs=self) for name in names)
+        self.right_handed = right_handed
 
     def __str__(self):
         return '{' + ','.join([c.name for c in self.coords]) + '}'
-
-    @staticmethod
-    def epsilon(i, j, k):
-        if (i==0 and j==1 and k==2) or (i==1 and j==2 and k==0) or (i==2 and j==0 and k==1): return +1
-        if (i==1 and j==0 and k==2) or (i==2 and j==1 and k==0) or (i==0 and j==2 and k==1): return -1
-        return 0
 
     def forward_intertwiner(self, axis, order, group):
         return np.identity(self.dim**order)
@@ -220,6 +215,7 @@ class SphericalCoordinates(CoordinateSystem):
     spin_ordering = (-1, +1, 0)
     reg_ordering = (-1, +1, 0)
     dim = 3
+    right_handed = False
 
     def __init__(self, azimuth, colatitude, radius):
         self.azimuth = Coordinate(azimuth, cs=self)
@@ -286,12 +282,6 @@ class SphericalCoordinates(CoordinateSystem):
         y = r * np.sin(theta) * np.sin(phi)
         z = r * np.cos(theta)
         return x, y, z
-
-    @staticmethod
-    def epsilon(i, j, k):
-        if (i==0 and j==1 and k==2) or (i==1 and j==2 and k==0) or (i==2 and j==0 and k==1): return -1
-        if (i==1 and j==0 and k==2) or (i==2 and j==1 and k==0) or (i==0 and j==2 and k==1): return +1
-        return 0
 
     def forward_intertwiner(self, axis, order, group):
         subaxis = axis - self.axis

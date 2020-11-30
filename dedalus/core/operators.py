@@ -2722,7 +2722,7 @@ class SphericalCurl(Curl, SphericalEllOperator):
         axis = radial_basis.radial_axis
         # Set output layout
         out.set_layout(operand.layout)
-        out.data[:] = 0
+        out.data.fill(0)
         # Apply operator
         R_in = radial_basis.regularity_classes(operand.tensorsig)
         slices = [slice(None) for i in range(input_basis.dist.dim)]
