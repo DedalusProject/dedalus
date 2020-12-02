@@ -44,6 +44,7 @@ def build_ball(Nphi, Ntheta, Nr, dealias, dtype):
     x, y, z = c.cartesian(phi, theta, r)
     return c, d, b, phi, theta, r, x, y, z
 
+
 @pytest.mark.parametrize('dtype', [np.complex128, np.float64])
 @pytest.mark.parametrize('Nmax', [15])
 @pytest.mark.parametrize('Lmax', [3])
@@ -54,12 +55,12 @@ def test_heat_ball(Nmax, Lmax, dtype):
     c, d, b, phi, theta, r, x, y, z = build_ball(2*(Lmax+1), Lmax+1, Nmax+1, dealias=dealias, dtype=dtype)
     # Fields
     u = field.Field(name='u', dist=d, bases=(b,), dtype=dtype)
-    τu = field.Field(name='u', dist=d, bases=(b.S2_basis,), dtype=dtype)
-    #P = some L-dependent operator goes here
+    τu = field.Field(name='u', dist=d, bases=(b.S2_basis(),), dtype=dtype)
     # Problem
     Lap = lambda A: operators.Laplacian(A, c)
-    problem = problems.LBVP([u])
-    problem.add_equation((Lap(u) - P(τu), 3))
+    LiftTau = lambda A: operators.LiftTau(A, b, -1)
+    problem = problems.LBVP([u, τu])
+    problem.add_equation((Lap(u) + LiftTau(τu), 3))
     problem.add_equation((u(r=1), 0))
     # Solver
     solver = solvers.LinearBoundaryValueSolver(problem)

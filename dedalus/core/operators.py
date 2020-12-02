@@ -2113,7 +2113,7 @@ class PolarMOperator(SpectralOperator):
                     comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
                 else:
                     # Build zero matrix
-                    comp_matrix = sparse.csr_matrix((np.prod(subshape_out), np.prod(subshape_in)))                
+                    comp_matrix = sparse.csr_matrix((np.prod(subshape_out), np.prod(subshape_in)))
                 submatrix_row.append(comp_matrix)
             submatrices.append(submatrix_row)
         matrix = sparse.bmat(submatrices)
@@ -2800,7 +2800,7 @@ class PolarCurl(Curl, PolarMOperator):
     @CachedMethod
     def _radial_matrix(radial_basis, spinindex_in0, spintotal_in, m):
         # NB: the sign here is different than Vasil et al. (2019) eqn 84
-        # because det(Q) = -1 
+        # because det(Q) = -1
         if spinindex_in0 == 0:
             return 1j * 1/np.sqrt(2) * radial_basis.operator_matrix('D+', m, spintotal_in)
         elif spinindex_in0 == 1:
@@ -3098,6 +3098,47 @@ class PolarLaplacian(Laplacian, PolarMOperator):
     @CachedMethod
     def _radial_matrix(radial_basis, spintotal, m):
         return radial_basis.operator_matrix('L', m, spintotal)
+
+
+class LiftTau(SpectralOperator, metaclass=MultiClass):
+
+    name = "LiftTau"
+
+    @classmethod
+    def _preprocess_args(cls, operand, output_basis, n, out=None):
+        if operand == 0:
+            raise SkipDispatchException(output=0)
+        return (operand, output_basis, n), {'out': out}
+
+    @classmethod
+    def _check_args(cls, operand, output_basis, n, out=None):
+        # Dispatch by output basis
+        if isinstance(operand, Operand):
+            input_basis = operand.domain.get_basis(output_basis.coordsystem)
+            if (isinstance(input_basis, cls.input_basis_type) and
+                isinstance(output_basis, cls.output_basis_type)):
+                return True
+        return False
+
+    def __init__(self, operand, output_basis, n, out=None):
+        if n >= 0:
+            raise ValueError("Only negative mode specifiers allowed.")
+        SpectralOperator.__init__(self, operand, out=out)
+        self.n = n
+        # SpectralOperator requirements
+        self.input_basis = operand.domain.get_basis(output_basis.coords)
+        self.output_basis = output_basis
+        self.first_axis = min(self.input_basis.first_axis, self.output_basis.first_axis)
+        self.last_axis = max(self.input_basis.last_axis, self.output_basis.last_axis)
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.tensorsig = operand.tensorsig
+        self.domain = operand.domain.substitute_basis(self.input_basis, self.output_basis)
+        self.dtype = operand.dtype
+
+    def new_operand(self, operand, **kw):
+        return LiftTau(operand, self.output_basis, self.n)
 
 
 """

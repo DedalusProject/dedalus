@@ -72,6 +72,7 @@ grad = lambda A: operators.Gradient(A, c)
 dot = lambda A, B: arithmetic.DotProduct(A, B)
 cross = lambda A, B: arithmetic.CrossProduct(A, B)
 ddt = lambda A: operators.TimeDerivative(A)
+LiftTau = lambda A: operators.LiftTau(A, b, -1)
 
 # Problem
 def eq_eval(eq_str):
@@ -80,69 +81,18 @@ problem = problems.IVP([p, u, T, tau_u, tau_T])
 
 problem.add_equation(eq_eval("div(u) = 0"), condition="ntheta != 0")
 problem.add_equation(eq_eval("p = 0"), condition="ntheta == 0")
-problem.add_equation(eq_eval("Ekman*ddt(u) - Ekman*lap(u) + grad(p) = - Ekman*dot(u,grad(u)) + Rayleigh*r_vec*T - cross(ez, u)"), condition = "ntheta != 0")
+problem.add_equation(eq_eval("Ekman*ddt(u) - Ekman*lap(u) + grad(p) + LiftTau(tau_u) = - Ekman*dot(u,grad(u)) + Rayleigh*r_vec*T - cross(ez, u)"), condition = "ntheta != 0")
 problem.add_equation(eq_eval("u = 0"), condition="ntheta == 0")
-problem.add_equation(eq_eval("Prandtl*ddt(T) - lap(T) = - Prandtl*dot(u,grad(T)) + T_source"))
+problem.add_equation(eq_eval("Prandtl*ddt(T) - lap(T) + LiftTau(tau_T) = - Prandtl*dot(u,grad(T)) + T_source"))
 problem.add_equation(eq_eval("u_r_bc = 0"), condition="ntheta != 0")
 problem.add_equation(eq_eval("u_perp_bc = 0"), condition="ntheta != 0")
 problem.add_equation(eq_eval("tau_u = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("T(r=1) = 0"))
-
 print("Problem built")
 
 # Solver
 solver = solvers.InitialValueSolver(problem, ts)
 solver.stop_sim_time = t_end
-
-# Add taus
-alpha_BC = 0
-
-def C(N, ell, deg):
-    ab = (alpha_BC,ell+deg+0.5)
-    cd = (2,       ell+deg+0.5)
-    return dedalus_sphere.jacobi.coefficient_connection(N - ell//2 + 1,ab,cd)
-
-def BC_rows(N, ell, num_comp):
-    N_list = (np.arange(num_comp)+1)*(N - ell//2 + 1)
-    return N_list
-
-for subproblem in solver.subproblems:
-    ell = subproblem.group[1]
-    L = subproblem.left_perm.T @ subproblem.L_min
-    shape = L.shape
-    if dtype == np.complex128:
-        N0, N1, N2, N3, N4 = BC_rows(Nmax, ell, 5)
-        tau_columns = np.zeros((shape[0], 4))
-        if ell != 0:
-            tau_columns[N0:N1,0] = (C(Nmax, ell, -1))[:,-1]
-            tau_columns[N1:N2,1] = (C(Nmax, ell, +1))[:,-1]
-            tau_columns[N2:N3,2] = (C(Nmax, ell,  0))[:,-1]
-            tau_columns[N3:N4,3] = (C(Nmax, ell,  0))[:,-1]
-            L[:,-4:] = tau_columns
-        else: # ell = 0
-            tau_columns[N3:N4, 3] = (C(Nmax, ell, 0))[:,-1]
-            L[:,-1:] = tau_columns[:,3:]
-    elif dtype == np.float64:
-        NL = Nmax - ell//2 + 1
-        N0, N1, N2, N3, N4 = BC_rows(Nmax, ell, 5) * 2
-        tau_columns = np.zeros((shape[0], 8))
-        if ell != 0:
-            tau_columns[N0:N0+NL,0] = (C(Nmax, ell, -1))[:,-1]
-            tau_columns[N1:N1+NL,2] = (C(Nmax, ell, +1))[:,-1]
-            tau_columns[N2:N2+NL,4] = (C(Nmax, ell,  0))[:,-1]
-            tau_columns[N3:N3+NL,6] = (C(Nmax, ell,  0))[:,-1]
-            tau_columns[N0+NL:N0+2*NL,1] = (C(Nmax, ell, -1))[:,-1]
-            tau_columns[N1+NL:N1+2*NL,3] = (C(Nmax, ell, +1))[:,-1]
-            tau_columns[N2+NL:N2+2*NL,5] = (C(Nmax, ell,  0))[:,-1]
-            tau_columns[N3+NL:N3+2*NL,7] = (C(Nmax, ell,  0))[:,-1]
-            L[:,-8:] = tau_columns
-        else: # ell = 0
-            tau_columns[N3:N3+NL,6] = (C(Nmax, ell,  0))[:,-1]
-            tau_columns[N3+NL:N3+2*NL,7] = (C(Nmax, ell,  0))[:,-1]
-            L[:,-2:] = tau_columns[:,6:]
-    subproblem.L_min = subproblem.left_perm @ L
-    if problem.STORE_EXPANDED_MATRICES:
-        subproblem.expand_matrices(['M','L'])
 
 # Analysis
 t_list = []

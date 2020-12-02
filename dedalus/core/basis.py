@@ -3514,6 +3514,99 @@ class DiskInterpolate(operators.Interpolate, operators.PolarMOperator):
         return reshape_vector(basis.interpolation(m, spintotal, position), dim=2, axis=1)
 
 
+class LiftTauDisk(operators.LiftTau, operators.PolarMOperator):
+
+    input_basis_type = (RealFourier, ComplexFourier)
+    output_basis_type = DiskBasis
+
+    def spinindex_out(self, spinindex_in):
+        return (spinindex_in,)
+
+    def subproblem_matrix(self, subproblem):
+        operand = self.args[0]
+        radial_basis = self.output_basis  ## CHANGED RELATIVE TO POLARMOPERATOR
+        S_in = radial_basis.spin_weights(operand.tensorsig)
+        S_out = radial_basis.spin_weights(self.tensorsig)  # Should this use output_basis?
+        m = subproblem.group[self.last_axis - 1]
+        # Loop over components
+        submatrices = []
+        for spinindex_out, spintotal_out in np.ndenumerate(S_out):
+            submatrix_row = []
+            for spinindex_in, spintotal_in in np.ndenumerate(S_in):
+                # Build identity matrices for each axis
+                subshape_in = subproblem.coeff_shape(self.operand.domain)
+                subshape_out = subproblem.coeff_shape(self.domain)
+                if spinindex_out in self.spinindex_out(spinindex_in):
+                    # Substitute factor for radial axis
+                    factors = [sparse.eye(i, j, format='csr') for i, j in zip(subshape_out, subshape_in)]
+                    factors[self.last_axis] = self.radial_matrix(spinindex_in, spinindex_out, m)
+                    comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
+                else:
+                    # Build zero matrix
+                    comp_matrix = sparse.csr_matrix((np.prod(subshape_out), np.prod(subshape_in)))
+                submatrix_row.append(comp_matrix)
+            submatrices.append(submatrix_row)
+        matrix = sparse.bmat(submatrices)
+        matrix.tocsr()
+        return matrix
+
+    def radial_matrix(self, spinindex_in, spinindex_out, m):
+        if spinindex_in == spinindex_out:
+            n_size = self.output_basis.n_size(m)
+            matrix = np.zeros((n_size, 1))
+            matrix[self.n, 0] = 1
+            return matrix
+        else:
+            raise ValueError("This should never happen.")
+
+
+class LiftTauBall(operators.LiftTau, operators.SphericalEllOperator):
+
+    input_basis_type = SWSH
+    output_basis_type = BallBasis
+
+    def regindex_out(self, regindex_in):
+        return (regindex_in,)
+
+    def subproblem_matrix(self, subproblem):
+        operand = self.args[0]
+        radial_basis = self.output_basis.radial_basis  ## CHANGED RELATIVE TO POLARMOPERATOR
+        R_in = radial_basis.regularity_classes(operand.tensorsig)
+        R_out = radial_basis.regularity_classes(self.tensorsig)  # Should this use output_basis?
+        ell = subproblem.group[self.last_axis - 1]
+        # Loop over components
+        submatrices = []
+        for regindex_out, regtotal_out in np.ndenumerate(R_out):
+            submatrix_row = []
+            for regindex_in, regtotal_in in np.ndenumerate(R_in):
+                # Build identity matrices for each axis
+                subshape_in = subproblem.coeff_shape(self.operand.domain)
+                subshape_out = subproblem.coeff_shape(self.domain)
+                # Check if regularity component exists for this ell
+                if (regindex_out in self.regindex_out(regindex_in)) and radial_basis.regularity_allowed(ell, regindex_in) and radial_basis.regularity_allowed(ell, regindex_out):
+                    # Substitute factor for radial axis
+                    factors = [sparse.eye(m, n, format='csr') for m, n in zip(subshape_out, subshape_in)]
+                    factors[self.last_axis] = self.radial_matrix(regindex_in, regindex_out, ell)
+                    comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
+                else:
+                    # Build zero matrix
+                    comp_matrix = sparse.csr_matrix((np.prod(subshape_out), np.prod(subshape_in)))
+                submatrix_row.append(comp_matrix)
+            submatrices.append(submatrix_row)
+        matrix = sparse.bmat(submatrices)
+        matrix.tocsr()
+        return matrix
+
+    def radial_matrix(self, regindex_in, regindex_out, m):
+        if regindex_in == regindex_out:
+            n_size = self.output_basis.n_size(m)
+            matrix = np.zeros((n_size, 1))
+            matrix[self.n, 0] = 1
+            return matrix
+        else:
+            raise ValueError("This should never happen.")
+
+
 class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperator):
 
     basis_type = BallBasis
