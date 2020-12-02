@@ -138,28 +138,24 @@ class EigenvalueSolver:
     #         self.eigenvectors = pencil.pre_right @ self.eigenvectors
     #     self.eigenvalue_pencil = pencil
     #
-    # def set_state(self, index):
-    #     """
-    #     Set state vector to the specified eigenmode.
-    #
-    #     Parameters
-    #     ----------
-    #     index : int
-    #         Index of desired eigenmode
-    #     """
-    #     self.state.data[:] = 0
-    #     self.state.set_pencil(self.eigenvalue_pencil, self.eigenvectors[:,index])
-    #     self.state.scatter()
 
+    def set_state(self, index, subsystem):
+        """
+        Set state vector to the specified eigenmode.
 
-    # def set_state(self, num):
-    #     """Set state vector to the num-th eigenvector"""
-    #     for p in self.pencils:
-    #         if p == self.eigenvalue_pencil:
-    #             self.state.set_pencil(p, self.eigenvectors[:,num])
-    #         else:
-    #             self.state.set_pencil(p, 0.*self.eigenvectors[:,num])
-    #     self.state.scatter()
+        Parameters
+        ----------
+        index : int
+            Index of desired eigenmode
+        subsystem : Subsystem object
+            subsystem that eigenvalue data will be put into
+        """
+        if subsystem not in self.eigenvalue_subproblem.subsystems:
+            raise ValueError("subsystem must be in eigenvalue_subproblem")
+        for var in self.state:
+            var['c'] = 0
+        X = self.eigenvectors[:,index]
+        subsystem.scatter(X, self.state)
 
 
 class LinearBoundaryValueSolver:

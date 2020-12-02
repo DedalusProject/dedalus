@@ -4,6 +4,7 @@ Test 1D EVP.
 
 import pytest
 import numpy as np
+import scipy.special as spec
 import functools
 from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
 
@@ -68,3 +69,47 @@ def test_waves_1d(x_basis_class, Nx, dtype):
     Nmodes = Nx//4
     k = np.arange(Nmodes)+1
     assert np.allclose(sorted_eigenvalues[:Nmodes], k**2)
+
+@pytest.mark.parametrize('dtype', [np.complex128])
+@pytest.mark.parametrize('Lmax', [3])
+@pytest.mark.parametrize('Nmax', [31])
+@pytest.mark.parametrize('Leig', [0,1,2,3])
+@pytest.mark.parametrize('Neig', [0,1,5,10])
+@pytest.mark.parametrize('radius', [1,1.5])
+def test_ball_bessel_eigenfunction(Lmax, Nmax, Leig, Neig, radius, dtype):
+    # Bases
+    c = coords.SphericalCoordinates('phi', 'theta', 'r')
+    d = distributor.Distributor((c,))
+    b = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), radius=radius, dtype=dtype)
+    b_S2 = b.S2_basis()
+    phi, theta, r = b.local_grids((1, 1, 1))
+    # Fields
+    f = field.Field(dist=d, bases=(b,), dtype=dtype)
+    τ_f = field.Field(dist=d, bases=(b_S2,), dtype=dtype)
+    k2 = field.Field(name='k2', dist=d, dtype=dtype)
+    # Parameters and operators
+    lap = lambda A: operators.Laplacian(A, c)
+    LiftTau = lambda A: operators.LiftTau(A, b, -1)
+    # Bessel equation: k^2*f + lap(f) = 0
+    problem = problems.EVP([f,τ_f], k2)
+    problem.add_equation((k2*f + lap(f) + LiftTau(τ_f), 0))
+    problem.add_equation((f(r=radius), 0))
+    # Solver
+    solver = solvers.EigenvalueSolver(problem)
+    if not solver.subproblems[Leig].group[1] == Leig:
+        raise ValueError("subproblems indexed in a strange way")
+    solver.solve_dense(solver.subproblems[Leig])
+    i_sort = np.argsort(solver.eigenvalues)
+    solver.eigenvalues = solver.eigenvalues[i_sort]
+    solver.eigenvectors = solver.eigenvectors[:,i_sort]
+    solver.set_state(Neig,solver.subproblems[Leig].subsystems[0]) # m = 0 mode
+    f.require_layout(d.layouts[1])
+    local_m, local_ell = b.local_m, b.local_ell
+    radial_eigenfunction = f.data[(local_m == 0)*(local_ell == Leig)][0,:]
+    i_max = np.argmax(np.abs(radial_eigenfunction))
+    radial_eigenfunction /= radial_eigenfunction[i_max]
+    k = np.sqrt(solver.eigenvalues[Neig])
+    sol = spec.jv(Leig+1/2,k*r)/np.sqrt(k*r)
+    sol = sol.ravel()
+    sol /= sol[i_max]
+    assert np.allclose(radial_eigenfunction, sol)
