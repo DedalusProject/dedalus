@@ -122,7 +122,7 @@ Below are instructions for building the dependency stack on a variety of machine
     :maxdepth: 1
 
     /machines/bridges/bridges
-    /machines/cedar/cedar
+    /machines/computecanada/computecanada
     /machines/engaging/engaging
     /machines/janus/janus
     /machines/mac_os/mac_os
