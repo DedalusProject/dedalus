@@ -292,7 +292,7 @@ class IntervalBasis(Basis):
         return reshape_vector(problem_grid, dim=self.dist.dim, axis=self.axis)
 
     def local_elements(self):
-        local_elements = self.dist.coeff_layout.local_elements(self.domain, scales=scale)[self.axis]
+        local_elements = self.dist.coeff_layout.local_elements(self.domain, scales=1)[self.axis]
         return (local_elements,)
 
     def _native_grid(self, scale):
@@ -694,7 +694,7 @@ class ComplexFourier(IntervalBasis):
         return self.transforms[self.library](grid_size, self.size)
 
     def local_elements(self):
-        local_elements = self.dist.coeff_layout.local_elements(self.domain, scales=scale)[self.axis]
+        local_elements = self.dist.coeff_layout.local_elements(self.domain, scales=1)[self.axis]
         return (self.wavenumbers[local_elements],)
 
     def forward_transform(self, field, axis, gdata, cdata):
@@ -707,6 +707,14 @@ class ComplexFourier(IntervalBasis):
             permute_axis(cdata, axis+len(field.tensorsig), self.backward_coeff_permutation, out=cdata)
         super().backward_transform(field, axis, cdata, gdata)
 
+    def local_groups(self, basis_coupling):
+        coupling, = basis_coupling
+        if coupling:
+            return [[None]]
+        else:
+            local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)[self.axis]
+            return [[self.wavenumbers[chunk]] for chunk in local_chunks]
+
     def local_group_slices(self, basis_group):
         group, = basis_group
         # Return slices
@@ -718,9 +726,9 @@ class ComplexFourier(IntervalBasis):
             local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)[self.axis]
             # Groups are stored sequentially
             if self.forward_coeff_permutation is None:
-                global_groups = np.arange(self.size)
+                global_groups = self.wavenumbers
             else:
-                global_groups = np.arange(self.size)[self.forward_coeff_permutation]
+                global_groups = self.wavenumbers[self.forward_coeff_permutation]
             local_groups = global_groups[local_chunks]
             local_index = list(local_groups).index(group)
             group_size = self.group_shape[0]
@@ -859,7 +867,7 @@ class RealFourier(IntervalBasis):
         return self.transforms[self.library](grid_size, self.size)
 
     def local_elements(self):
-        local_elements = self.dist.coeff_layout.local_elements(self.domain, scales=scale)[self.axis]
+        local_elements = self.dist.coeff_layout.local_elements(self.domain, scales=1)[self.axis]
         return (self.wavenumbers[local_elements],)
 
     def forward_transform(self, field, axis, gdata, cdata):
@@ -3439,6 +3447,32 @@ class ConvertRegularity(operators.Convert, operators.SphericalEllOperator):
             return radial_basis.conversion_matrix(ell, regtotal, dk)
         else:
             raise ValueError("This should never happen.")
+
+
+# class ConvertConstantRegularity(operators.Convert, operators.SphericalEllOperator):
+
+#     input_basis_type = type(None)
+#     output_basis_type = Spherical3DBasis
+#     subaxis_dependence = [False, True, True]
+#     subaxis_coupling = [False, False, False]
+
+#     def __init__(self, operand, output_basis, out=None):
+#         operators.Convert.__init__(self, operand, output_basis, out=out)
+#         self.radial_basis = self.output_basis.get_radial_basis()
+
+#     def subproblem_matrix(self, subproblem):
+#         operand = self.args[0]
+#         radial_basis = self.radial_basis
+#         ell = subproblem.group[self.last_axis - 1]
+#         # Build identity matrices for each axis
+#         subshape_in = subproblem.coeff_shape(self.operand.domain)
+#         subshape_out = subproblem.coeff_shape(self.domain)
+#         # Substitute factor for radial axis
+#         factors = [sparse.eye(m, n, format='csr') for m, n in zip(subshape_out, subshape_in)]
+#         factors[self.last_axis][:] = 0
+#         if ell == 0:
+#             factors[self.last_axis][0, 0] = 1
+#         return reduce(sparse.kron, factors, 1).tocsr()
 
 
 class DiskInterpolate(operators.Interpolate, operators.PolarMOperator):

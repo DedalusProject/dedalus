@@ -7,6 +7,7 @@ import functools
 from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
 from dedalus.tools.cache import CachedFunction
 
+
 @pytest.mark.parametrize('dtype', [np.complex128, np.float64])
 @pytest.mark.parametrize('Nx', [32])
 def test_heat_1d_periodic(Nx, dtype):
@@ -34,7 +35,49 @@ def test_heat_1d_periodic(Nx, dtype):
     u_true = np.sin(x)
     assert np.allclose(u['g'], u_true)
 
+
+radius_disk = 1
+
+
+@CachedFunction
+def build_disk(Nphi, Nr, dealias, dtype):
+    c = coords.PolarCoordinates('phi', 'r')
+    d = distributor.Distributor((c,))
+    b = basis.DiskBasis(c, (Nphi, Nr), radius=radius_disk, dealias=(dealias, dealias), dtype=dtype)
+    phi, r = b.local_grids()
+    x, y = c.cartesian(phi, r)
+    return c, d, b, phi, r, x, y
+
+
+@pytest.mark.parametrize('dtype', [np.complex128, np.float64])
+@pytest.mark.parametrize('Nphi', [4])
+@pytest.mark.parametrize('Nr', [8])
+def test_heat_disk(Nr, Nphi, dtype):
+    # Bases
+    dealias = 1
+    c, d, b, phi, r, x, y = build_disk(Nphi, Nr, dealias=dealias, dtype=dtype)
+    # Fields
+    u = field.Field(name='u', dist=d, bases=(b,), dtype=dtype)
+    τu = field.Field(name='u', dist=d, bases=(b.S1_basis(),), dtype=dtype)
+    F = field.Field(name='a', dist=d, bases=(b,), dtype=dtype)
+    F['g'] = 4
+    # Problem
+    Lap = lambda A: operators.Laplacian(A, c)
+    LiftTau = lambda A: operators.LiftTau(A, b, -1)
+    problem = problems.LBVP([u, τu])
+    problem.add_equation((Lap(u) + LiftTau(τu), F))
+    problem.add_equation((u(r=radius_disk), 0))
+    # Solver
+    solver = solvers.LinearBoundaryValueSolver(problem)
+    solver.solve()
+    # Check solution
+    u_true = r**2 - 1
+    assert np.allclose(u['g'], u_true)
+
+
 radius_ball = 1
+
+
 @CachedFunction
 def build_ball(Nphi, Ntheta, Nr, dealias, dtype):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
@@ -48,7 +91,6 @@ def build_ball(Nphi, Ntheta, Nr, dealias, dtype):
 @pytest.mark.parametrize('dtype', [np.complex128, np.float64])
 @pytest.mark.parametrize('Nmax', [15])
 @pytest.mark.parametrize('Lmax', [3])
-@pytest.mark.skip(reason="spherical tau not implemented")
 def test_heat_ball(Nmax, Lmax, dtype):
     # Bases
     dealias = 1
@@ -56,17 +98,19 @@ def test_heat_ball(Nmax, Lmax, dtype):
     # Fields
     u = field.Field(name='u', dist=d, bases=(b,), dtype=dtype)
     τu = field.Field(name='u', dist=d, bases=(b.S2_basis(),), dtype=dtype)
+    F = field.Field(name='a', dist=d, bases=(b,), dtype=dtype)
+    F['g'] = 6
     # Problem
     Lap = lambda A: operators.Laplacian(A, c)
     LiftTau = lambda A: operators.LiftTau(A, b, -1)
     problem = problems.LBVP([u, τu])
-    problem.add_equation((Lap(u) + LiftTau(τu), 3))
-    problem.add_equation((u(r=1), 0))
+    problem.add_equation((Lap(u) + LiftTau(τu), F))
+    problem.add_equation((u(r=radius_ball), 0))
     # Solver
     solver = solvers.LinearBoundaryValueSolver(problem)
     solver.solve()
     # Check solution
-    u_true = np.sin(x)
+    u_true = r**2 - 1
     assert np.allclose(u['g'], u_true)
 
 

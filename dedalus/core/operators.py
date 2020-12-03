@@ -870,8 +870,9 @@ class SpectralOperator1D(SpectralOperator):
             factors[axis] = self.subspace_matrix
         else:
             group = subproblem.group[axis]
+            chunk = list(self.input_basis.local_elements()[0]).index(group)
             group_size = self.input_basis.group_shape[0]
-            argslice = outslice = slice(group*group_size, (group+1)*group_size)
+            argslice = outslice = slice(chunk, chunk+group_size)
             # argslice = subproblem.global_slices(self.operand.domain)[axis]
             # outslice = subproblem.global_slices(self.domain)[axis]
             factors[axis] = self.subspace_matrix[outslice, argslice]
