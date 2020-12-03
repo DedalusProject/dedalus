@@ -1,69 +1,31 @@
-Install notes for Compute Canada's Cedar cluster
+Install notes for Compute Canada's clusters
 ************************************************
 
 Notes
 -----
 
-The following instructions have been provided by `David Goluskin <goluskin@uvic.ca>`_ and `Hannah Swan <hannah.swan.3.14@gmail.com>`_.
-Last updated 2020/03/31.
+The following instructions have been provided by Maxime Boissonneault, staff at Compute Canada. 
+Last updated 2020-12-03.
 
 Instructions
 ------------
 
-In your home directory, load the following modules::
+Compute Canada already pre-builds Dedalus on demand. You can contact https://docs.computecanada.ca/wiki/Technical_support in order to request a new version. In your home: 
 
     module purge
-    module load intel/2018.3
-    module load openmpi/3.1.2
-    module load fftw-mpi/3.3.8
-    module load python/3.6.3
-    module load scipy-stack
-    module load mpi4py/3.0.3
-    module load hdf5-mpi/1.10.3
+    module load StdEnv/2020 fftw-mpi mpi4py hdf5-mpi
 
-Now build and activate the virtual environment for your python build.
-This environment is where Dedalus will be built.
+Now build and activate the virtual environment for your installation: .
 You should also update pip as soon as the environment is activated. ::
 
     virtualenv --no-download python_env
     source python_env/bin/activate
     pip install --no-index --upgrade pip
 
-Now install the remaining few dependencies using pip::
+Now install dedalus: 
 
-    pip install h5py
-    pip install mercurial
-    pip install pytest
+    pip install --no-index dedalus
 
-Pull down Dedalus from bitbucket::
-
-    hg clone https://bitbucket.org/dedalus-project/dedalus
-    cd dedalus
-    pip install -r requirements.txt
-
-Before building Dedalus, the ``FFTW PATH`` and ``MPI PATH`` need to be set.
-At the same time, set the ``FFTW STATIC`` environment variable.
-This lets the setup script know to statically link the FFTW build to the Dedalus extensions, preventing MKL from overwriting the FFTW symbols and breaking everything (full FFTW functionality is not implemented in MKL). ::
-
-    export FFTW_PATH=$EBROOTFFTW
-    export MPI_PATH=$EBROOTOPENMPI
-    export FFTW_STATIC=1
-
-Finally, build Dedalus::
-
-    python3 setup.py build_ext --inplace
-
-Cedar strongly recommends against automatically loading modules using your ``.bashrc``, rather advocating for loading modules manually at the start of each job script (note: you may do this with a module collection).
-In light of that, to use Dedalus, add the following at the top of your job script::
-
-    module purge
-    module load intel/2018.3
-    module load openmpi/3.1.2
-    module load fftw-mpi/3.3.8
-    module load python/3.6.3
-    module load scipy-stack
-    module load mpi4py/3.0.3
-    module load hdf5-mpi/1.10.3
-    source ~/python_env/bin/activate
-    export PYTHONPATH=$PYTHONPATH:~/dedalus
+Compute Canada recommends creating your virtual environment and loading your modules in your job scripts. For more information about doing so, please see
+https://docs.computecanada.ca/wiki/Python#Creating_and_using_a_virtual_environment
 
