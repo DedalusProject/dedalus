@@ -1512,7 +1512,6 @@ class PolarBasis(SpinBasis):
 
     dim = 2
     dims = ['azimuth', 'radius']
-    transforms = {}
 
     def __init__(self, coordsystem, shape, k=0, dealias=(1,1), radius_library=None, **kw):
         if radius_library is None:
@@ -1873,6 +1872,7 @@ class PolarBasis(SpinBasis):
 
 class AnnulusBasis(PolarBasis):
 
+    transforms = {}
     subaxis_dependence = (False, True)
 
     def __init__(self, coordsystem, shape, radii=(1,2), k=0, alpha=(-0.5,-0.5), dealias=(1,1), radius_library='matrix', **kw):
@@ -2026,6 +2026,7 @@ class AnnulusBasis(PolarBasis):
 
 class DiskBasis(PolarBasis):
 
+    transforms = {}
     subaxis_dependence = (True, True)
 
     def __init__(self, coordsystem, shape, radius=1, k=0, alpha=0, dealias=(1,1), radius_library='matrix', **kw):

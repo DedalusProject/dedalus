@@ -376,8 +376,9 @@ Nphi_range = [8, 16]
 Nr_range = [12]
 dealias_range = [0.5, 1, 1.5]
 radius_range = [1, 2]
+
 @CachedMethod
-def build_Disk(Nphi, Nr, radius, dealias, dtype=np.float64):
+def build_disk(Nphi, Nr, radius, dealias, dtype=np.float64):
     c = coords.PolarCoordinates('phi', 'r')
     d = distributor.Distributor((c,))
     db = basis.DiskBasis(c, (Nphi, Nr), radius=radius, dealias=(dealias, dealias), dtype=dtype)
@@ -385,7 +386,7 @@ def build_Disk(Nphi, Nr, radius, dealias, dtype=np.float64):
     return c, d, db, phi, r
 
 @CachedMethod
-def build_Annulus(Nphi, Nr, radius, dealias, dtype=np.float64):
+def build_annulus(Nphi, Nr, radius, dealias, dtype=np.float64):
     c = coords.PolarCoordinates('phi', 'r')
     d = distributor.Distributor((c,))
     db = basis.AnnulusBasis(c, (Nphi, Nr), radii=(radius,radius+1.3), dealias=(dealias, dealias), dtype=dtype)
@@ -397,8 +398,8 @@ def build_Annulus(Nphi, Nr, radius, dealias, dtype=np.float64):
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-@pytest.mark.parametrize('build_basis', [build_Annulus, build_Disk])
-def test_D2_scalar_roundtrip(Nphi, Nr, radius, dealias, dtype,build_basis):
+@pytest.mark.parametrize('build_basis', [build_annulus, build_disk])
+def test_polar_scalar_roundtrip(Nphi, Nr, radius, dealias, dtype, build_basis):
     c, d, db, phi, r = build_basis(Nphi, Nr, radius, dealias, dtype=dtype)
     f = field.Field(dist=d, bases=(db,), dtype=dtype)
     f['g'] = (r*np.cos(phi))**3
@@ -410,9 +411,10 @@ def test_D2_scalar_roundtrip(Nphi, Nr, radius, dealias, dtype,build_basis):
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-def test_D2_scalar_roundtrip_mmax0(Nr, radius, dealias, dtype):
+@pytest.mark.parametrize('build_basis', [build_annulus, build_disk])
+def test_polar_scalar_roundtrip_mmax0(Nr, radius, dealias, dtype, build_basis):
     Nphi = 1
-    c, d, db, phi, r = build_D2(Nphi, Nr, radius, dealias, dtype=dtype)
+    c, d, db, phi, r = build_basis(Nphi, Nr, radius, dealias, dtype=dtype)
     f = field.Field(dist=d, bases=(db,), dtype=dtype)
     f['g'] = r**4
     f.require_scales(dealias)
@@ -427,8 +429,9 @@ def test_D2_scalar_roundtrip_mmax0(Nr, radius, dealias, dtype):
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-def test_D2_vector_roundtrip(Nphi, Nr, radius, dealias, dtype):
-    c, d, db, phi, r = build_D2(Nphi, Nr, radius, dealias, dtype=dtype)
+@pytest.mark.parametrize('build_basis', [build_annulus, build_disk])
+def test_polar_vector_roundtrip(Nphi, Nr, radius, dealias, dtype, build_basis):
+    c, d, db, phi, r = build_basis(Nphi, Nr, radius, dealias, dtype=dtype)
     vf = field.Field(dist=d, bases=(db,), tensorsig=(c,), dtype=dtype)
     x = r*np.cos(phi)
     y = r*np.sin(phi)
@@ -443,9 +446,10 @@ def test_D2_vector_roundtrip(Nphi, Nr, radius, dealias, dtype):
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-def test_D2_vector_roundtrip_mmax0(Nr, radius, dealias, dtype):
+@pytest.mark.parametrize('build_basis', [build_annulus, build_disk])
+def test_polar_vector_roundtrip_mmax0(Nr, radius, dealias, dtype, build_basis):
     Nphi = 1
-    c, d, db, phi, r = build_D2(Nphi, Nr, radius, dealias, dtype=dtype)
+    c, d, db, phi, r = build_basis(Nphi, Nr, radius, dealias, dtype=dtype)
     vf = field.Field(dist=d, bases=(db,), tensorsig=(c,), dtype=dtype)
 
     vf['g'][1] = 6*r**5
@@ -457,9 +461,10 @@ def test_D2_vector_roundtrip_mmax0(Nr, radius, dealias, dtype):
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-def test_D2_vector_roundtrip_mmax0_2(Nr, radius, dealias, dtype):
+@pytest.mark.parametrize('build_basis', [build_annulus, build_disk])
+def test_polar_vector_roundtrip_mmax0_2(Nr, radius, dealias, dtype, build_basis):
     Nphi = 1
-    c, d, db, phi, r = build_D2(Nphi, Nr, radius, dealias, dtype=dtype)
+    c, d, db, phi, r = build_basis(Nphi, Nr, radius, dealias, dtype=dtype)
     f = field.Field(dist=d, bases=(db,), dtype=dtype)
 
     f['g'] = r**6
@@ -474,8 +479,9 @@ def test_D2_vector_roundtrip_mmax0_2(Nr, radius, dealias, dtype):
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-def test_D2_tensor_roundtrip(Nphi, Nr, radius, dealias, dtype):
-    c, d, db, phi, r = build_D2(Nphi, Nr, radius, dealias, dtype=dtype)
+@pytest.mark.parametrize('build_basis', [build_annulus, build_disk])
+def test_polar_tensor_roundtrip(Nphi, Nr, radius, dealias, dtype, build_basis):
+    c, d, db, phi, r = build_basis(Nphi, Nr, radius, dealias, dtype=dtype)
     tf = field.Field(dist=d, bases=(db,), tensorsig=(c,c), dtype=dtype)
     x = r*np.cos(phi)
     ex = np.array([-np.sin(phi)+0.*r,np.cos(phi)+0.*r])
@@ -490,9 +496,10 @@ def test_D2_tensor_roundtrip(Nphi, Nr, radius, dealias, dtype):
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-def test_D2_tensor_roundtrip_mmax0(Nr, radius, dealias, dtype):
+@pytest.mark.parametrize('build_basis', [build_annulus, build_disk])
+def test_polar_tensor_roundtrip_mmax0(Nr, radius, dealias, dtype, build_basis):
     Nphi = 1
-    c, d, db, phi, r = build_D2(Nphi, Nr, radius, dealias, dtype=dtype)
+    c, d, db, phi, r = build_basis(Nphi, Nr, radius, dealias, dtype=dtype)
     tf = field.Field(dist=d, bases=(db,), tensorsig=(c,c), dtype=dtype)
     tf['g'][1,1] = r**2 + 0.*phi
     tfg = tf['g'].copy()
