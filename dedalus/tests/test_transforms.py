@@ -377,10 +377,18 @@ Nr_range = [12]
 dealias_range = [0.5, 1, 1.5]
 radius_range = [1, 2]
 @CachedMethod
-def build_D2(Nphi, Nr, radius, dealias, dtype=np.float64):
+def build_Disk(Nphi, Nr, radius, dealias, dtype=np.float64):
     c = coords.PolarCoordinates('phi', 'r')
     d = distributor.Distributor((c,))
     db = basis.DiskBasis(c, (Nphi, Nr), radius=radius, dealias=(dealias, dealias), dtype=dtype)
+    phi, r = db.local_grids()
+    return c, d, db, phi, r
+
+@CachedMethod
+def build_Annulus(Nphi, Nr, radius, dealias, dtype=np.float64):
+    c = coords.PolarCoordinates('phi', 'r')
+    d = distributor.Distributor((c,))
+    db = basis.AnnulusBasis(c, (Nphi, Nr), radii=(radius,radius+1.3), dealias=(dealias, dealias), dtype=dtype)
     phi, r = db.local_grids()
     return c, d, db, phi, r
 
@@ -389,8 +397,9 @@ def build_D2(Nphi, Nr, radius, dealias, dtype=np.float64):
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-def test_D2_scalar_roundtrip(Nphi, Nr, radius, dealias, dtype):
-    c, d, db, phi, r = build_D2(Nphi, Nr, radius, dealias, dtype=dtype)
+@pytest.mark.parametrize('build_basis', [build_Annulus, build_Disk])
+def test_D2_scalar_roundtrip(Nphi, Nr, radius, dealias, dtype,build_basis):
+    c, d, db, phi, r = build_basis(Nphi, Nr, radius, dealias, dtype=dtype)
     f = field.Field(dist=d, bases=(db,), dtype=dtype)
     f['g'] = (r*np.cos(phi))**3
     fg = f['g'].copy()
