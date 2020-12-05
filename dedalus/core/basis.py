@@ -1077,10 +1077,11 @@ class Hermite(ImplicitBasis):
         if envelope:
             forward_mat *= np.exp(native_grid**2)
         else:
-            n = np.arange(csize, dtype=np.longdouble)[:, None]
-            N2 = np.sqrt(np.pi) * 2**n * special.factorial(n, exact=True)
-            N2 = N2.astype(np.float64)
-            forward_mat /= N2
+            n_int = np.arange(csize, dtype=int)
+            n_long = np.longdouble(n_int)
+            N2 = np.pi**(1/2) * 2**n_long * special.factorial(n_int, exact=True).astype(np.longdouble)
+            N2i = 1 / N2
+            forward_mat *= N2i.astype(np.float64)[:, None]
         return forward_mat, backward_mat
 
     def _forward_mmt(self, gdata, cdata, axis, meta, scale):
@@ -1335,11 +1336,12 @@ class Hermite(ImplicitBasis):
             Mpf[p][k,n] = N[k] / N[n] Mpp[p][k,n]
         """
         # Reweight poly-poly matrix
-        n = np.arange(self.coeff_size, dtype=np.longdouble)
-        N2 = np.sqrt(np.pi) * 2**n * special.factorial(n, exact=True)
-        N = np.sqrt(N2.astype(np.float64))
-        Narr = sparse.diags(N)
-        Ninv = sparse.diags(1 / N)
+        n_int = np.arange(self.coeff_size, dtype=int)
+        n_long = np.longdouble(n_int)
+        N = np.pi**(1/4) * 2**(n_long/2) * special.factorial(n_int, exact=True).astype(np.longdouble)**(1/2)
+        Ni = 1 / N
+        Narr = sparse.diags(N.astype(np.float64))
+        Ninv = sparse.diags(Ni.astype(np.float64))
         return Narr @ self._Multiply_poly_poly(p) @ Ninv
 
 
