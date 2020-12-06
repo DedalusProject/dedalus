@@ -709,3 +709,19 @@ class RKSMR(RungeKuttaIMEX):
                   [α1, β1+α2,    β2,  0],
                   [α1, β1+α2, β2+α3, β3]])
 
+
+class RKGFY(RungeKuttaIMEX):
+    """2nd-order 2-stage scheme from Hollerbach and Marti"""
+
+    stages = 2
+
+    c = np.array([0, 1, 1])
+
+    A = np.array([[  0,  0 , 0],
+                  [  1,  0 , 0],
+                  [0.5, 0.5, 0]])
+
+    H = np.array([[0   , 0  ,   0],
+                  [0.5 , 0.5,   0],
+                  [0.5 , 0  , 0.5]])
+
