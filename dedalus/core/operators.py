@@ -10,7 +10,7 @@ from scipy import sparse
 from numbers import Number
 from inspect import isclass
 from operator import add
-import dedalus_sphere
+from ..libraries import dedalus_sphere
 
 from .domain import Domain
 from . import coords

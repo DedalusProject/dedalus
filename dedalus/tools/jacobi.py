@@ -210,7 +210,7 @@ def mass(a,b):
 # Interfacing with Dedalus
 import numpy as np
 from scipy import sparse
-from dedalus_sphere import jacobi
+from ..libraries.dedalus_sphere import jacobi
 
 output_dtype = np.float64
 

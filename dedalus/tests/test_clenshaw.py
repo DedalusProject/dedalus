@@ -6,7 +6,7 @@ from dedalus.core import coords, distributor, basis, field, operators
 from dedalus.tools.array import apply_matrix
 from dedalus.tools import jacobi
 from dedalus.tools import clenshaw
-import dedalus_sphere
+from ..libraries import dedalus_sphere
 
 N_range = [8, 12]
 regtotal_range = [-1, 0, +1]

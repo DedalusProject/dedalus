@@ -27,7 +27,7 @@ from .spaces import ParityInterval, Disk
 from .coords import Coordinate, S2Coordinates, SphericalCoordinates
 from .domain import Domain
 from .field  import Operand
-import dedalus_sphere
+from ..libraries import dedalus_sphere
 import numexpr as ne
 #from . import transforms
 

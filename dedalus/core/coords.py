@@ -1,7 +1,8 @@
 """Coordinates and coordinate sytems."""
 
 import numpy as np
-import dedalus_sphere
+from ..libraries.dedalus_sphere import jacobi
+from ..libraries import dedalus_sphere
 
 from ..tools.array import nkron
 

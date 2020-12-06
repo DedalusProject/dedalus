@@ -4,7 +4,7 @@ import numpy as np
 import scipy
 import scipy.fft
 import scipy.fftpack
-import dedalus_sphere
+from ..libraries import dedalus_sphere
 
 from . import basis
 from ..libraries.fftw import fftw_wrappers as fftw

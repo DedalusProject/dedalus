@@ -150,7 +150,7 @@ class Disk(Space):
         return (azimuth_grid, radial_grid)
 
     def _radial_grid(self, Ng):
-        import dedalus_sphere
+        from ..libraries import dedalus_sphere
         z_grid, weights = dedalus_sphere.disk128.quadrature(Ng-1, k=k0, niter=3)
         # z = 2*r**2 - 1
         return np.sqrt((z_grid + 1)/2).astype(np.float64)
