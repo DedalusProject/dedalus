@@ -161,7 +161,7 @@ def test_ball_bessel_eigenfunction(Lmax, Nmax, Leig, Neig, radius, dtype):
 @pytest.mark.parametrize('Nmax', [31])
 @pytest.mark.parametrize('Leig', [1,2,3])
 @pytest.mark.parametrize('radius', [1,1.5])
-@pytest.mark.parametrize('bc', ['no-slip', 'stress-free'])
+@pytest.mark.parametrize('bc', ['no-slip', 'stress-free', 'conducting', 'pseudo'])
 def test_ball_diffusion(Lmax, Nmax, Leig, radius, bc, dtype):
     # Bases
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
@@ -177,6 +177,7 @@ def test_ball_diffusion(Lmax, Nmax, Leig, radius, bc, dtype):
     # Parameters and operators
     div = lambda A: operators.Divergence(A)
     grad = lambda A: operators.Gradient(A, c)
+    curl = lambda A: operators.Curl(A)
     lap = lambda A: operators.Laplacian(A, c)
     trans = lambda A: operators.TransposeComponents(A)
     radial = lambda A, index: operators.RadialComponent(A, index=index)
@@ -192,6 +193,17 @@ def test_ball_diffusion(Lmax, Nmax, Leig, radius, bc, dtype):
         E = 1/2*(grad(A) + trans(grad(A)))
         problem.add_equation((radial(A(r=radius),0), 0))
         problem.add_equation((radial(angular(E(r=radius),0),1), 0))
+    elif bc == 'potential':
+        ell_1 = lambda A: operators.SphericalEllProduct(A, c, ell+1)
+        # how does it know what ell to use?
+        problem.add_equation(radial(grad(A)(r=radius),0) + ell_1(A)(r=radius)/radius)
+    elif bc == 'conducting':
+        problem.add_equation((φ(r=radius), 0))
+        problem.add_equation((angular(A(r=radius),0), 0))
+    elif bc == 'pseudo':
+        problem.add_equation((φ(r=radius), 0))
+        problem.add_equation((angular(curl(A)(r=radius),0), 0))
+
     # Solver
     solver = solvers.EigenvalueSolver(problem)
     if not solver.subproblems[Leig].group[1] == Leig:
