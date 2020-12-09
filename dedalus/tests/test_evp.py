@@ -7,7 +7,7 @@ import numpy as np
 import scipy.special as spec
 import functools
 from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
-from ball_diffusion_analytical_eigenvalues import eigenvalues as analytic_eigenvalues
+from .ball_diffusion_analytical_eigenvalues import eigenvalues as analytic_eigenvalues
 
 
 @pytest.mark.parametrize('dtype', [np.complex128])
@@ -70,6 +70,46 @@ def test_waves_1d(x_basis_class, Nx, dtype):
     Nmodes = Nx//4
     k = np.arange(Nmodes)+1
     assert np.allclose(sorted_eigenvalues[:Nmodes], k**2)
+
+
+@pytest.mark.parametrize('dtype', [np.complex128])
+@pytest.mark.parametrize('Nphi', [10])
+@pytest.mark.parametrize('Nr', [16])
+@pytest.mark.parametrize('m', [0,1,2,4])
+@pytest.mark.parametrize('radius', [1, 2])
+def test_disk_bessel_zeros(Nphi, Nr, m, radius, dtype):
+    # Bases
+    c = coords.PolarCoordinates('phi', 'r')
+    d = distributor.Distributor((c,))
+    b = basis.DiskBasis(c, (Nphi, Nr), radius=radius, dtype=dtype)
+    b_S1 = b.S1_basis()
+    phi, r = b.local_grids((1, 1))
+    # Fields
+    f = field.Field(dist=d, bases=(b,), dtype=dtype)
+    τ_f = field.Field(dist=d, bases=(b_S1,), dtype=dtype)
+    k2 = field.Field(name='k2', dist=d, dtype=dtype)
+    # Parameters and operators
+    lap = lambda A: operators.Laplacian(A, c)
+    LiftTau = lambda A: operators.LiftTau(A, b, -1)
+    # Bessel equation: k^2*f + lap(f) = 0
+    problem = problems.EVP([f,τ_f], k2)
+    problem.add_equation((k2*f + lap(f) + LiftTau(τ_f), 0))
+    problem.add_equation((f(r=radius), 0))
+    # Solver
+    solver = solvers.EigenvalueSolver(problem)
+    print(solver.subproblems[0].group)
+    for sp in solver.subproblems:
+        if sp.group[0] == m:
+            break
+    else:
+        raise ValueError("Could not find subproblem with m = %i" %m)
+    solver.solve_dense(sp)
+    # Compare eigenvalues
+    n_compare = 5
+    selected_eigenvalues = np.sort(solver.eigenvalues)[:n_compare]
+    analytic_eigenvalues = (spec.jn_zeros(m, n_compare) / radius)**2
+    assert np.allclose(selected_eigenvalues, analytic_eigenvalues)
+
 
 @pytest.mark.parametrize('dtype', [np.complex128])
 @pytest.mark.parametrize('Lmax', [3])
