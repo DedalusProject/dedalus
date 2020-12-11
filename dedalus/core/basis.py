@@ -1785,35 +1785,6 @@ class PolarBasis(SpinBasis):
         self.azimuth_basis.backward_transform(field, axis, cdata, gdata)
 
     @CachedMethod
-    def conversion_matrix(self, m, spintotal, dk):
-        E = dedalus_sphere.zernike.operator(2, 'E', radius=self.radius)
-        operator = E(+1)**dk
-        return operator(self.n_size(m), self.alpha + self.k, np.abs(m + spintotal)).square.astype(np.float64)
-
-    @CachedMethod
-    def operator_matrix(self,op,m,spin):
-
-        if op[-1] in ['+', '-']:
-            o = op[:-1]
-            p = int(op[-1]+'1')
-            if m+spin == 0:
-                p = +1
-            elif m+spin < 0:
-                p = -p
-            operator = dedalus_sphere.zernike.operator(2, o, radius=self.radius)(p)
-        elif op == 'L':
-            D = dedalus_sphere.zernike.operator(2, 'D', radius=self.radius)
-            if m+spin < 0:
-                operator = D(+1) @ D(-1)
-            else:
-                operator = D(-1) @ D(+1)
-
-        else:
-            operator = dedalus_sphere.zernike.operator(2, op, radius=self.radius)
-
-        return operator(self.n_size(m), self.alpha + self.k, abs(m + spin)).square.astype(np.float64)
-
-    @CachedMethod
     def interpolation(self, m, spintotal, position):
         native_position = self.radial_COV.native_coord(position)
         return dedalus_sphere.zernike.polynomials(2, self.n_size(m), self.alpha + self.k, np.abs(m + spintotal), native_position)
@@ -2023,6 +1994,82 @@ class AnnulusBasis(PolarBasis):
         # Multiply by radial factor
         if self.k > 0:
             gdata *= self.radial_transform_factor(field.scales[axis], data_axis, self.k)
+    
+    def interpolation(self, m, spintotal, position):
+        return self._interpolation(position)
+        
+    @CachedMethod
+    def _interpolation(self, position):
+        native_position = position*2/self.dR - self.rho
+        a = self.alpha[0] + self.k
+        b = self.alpha[1] + self.k
+        radial_factor = (self.dR/position)**(self.k)
+        return radial_factor*dedalus_sphere.jacobi.polynomials(self.n_size(0), a, b, native_position)
+    
+    @CachedMethod
+    def operator_matrix(self,op,m,spintotal):
+        ms = m + spintotal
+        if op[-1] in ['+', '-']:
+            o = op[:-1]
+            p = int(op[-1]+'1')
+            if ms == 0:
+                p = +1
+            elif ms < 0:
+                p = -p
+            operator = dedalus_sphere.shell.operator(2, self.radii, o, self.alpha)(p,ms)
+        elif op == 'L':
+            D = dedalus_sphere.shell.operator(2, self.radii, 'D', self.alpha)
+            if ms < 0:
+                operator = D(+1, ms-1) @ D(-1, ms)
+            else:
+                operator = D(-1, ms+1) @ D(+1, ms)
+        else:
+            operator = dedalus_sphere.shell.operator(2, self.radii, op, self.alpha)
+        return operator(self.n_size(m), self.k).square.astype(np.float64)
+        
+    def jacobi_conversion(self, m, dk):
+        AB = dedalus_sphere.shell.operator(2, self.radii, 'AB', self.alpha)
+        operator = AB**dk
+        return operator(self.n_size(m), self.k).square.astype(np.float64)
+
+    @CachedMethod
+    def conversion_matrix(self, m, spintotal, dk):
+        E = dedalus_sphere.shell.operator(2, self.radii, 'E', self.alpha)
+        operator = E**dk
+        return operator(self.n_size(m), self.k).square.astype(np.float64)
+
+    def n_size(self, m, Nmax=None):
+        if Nmax == None: Nmax = self.Nmax
+        return Nmax + 1
+
+    def n_slice(self, m):
+        return slice(0, self.Nmax + 1)
+
+    def start(self, groups):
+        return 0
+
+#    def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
+#        ell = subproblem.group[1]  # HACK
+#        arg_radial_basis = arg_basis.radial_basis
+#        regtotal_arg = self.regtotal(arg_comp)
+#        # Jacobi parameters
+#        a_ncc = self.k + self.alpha[0]
+#        b_ncc = self.k + self.alpha[1]
+#        N = self.n_size(ell)
+#        J = arg_radial_basis.operator_matrix('Z', ell, regtotal_arg)
+#        A, B = clenshaw.jacobi_recursion(N, a_ncc, b_ncc, J)
+#        f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0] * sparse.identity(N)
+#        # Conversions to account for radial prefactors
+#        prefactor = arg_radial_basis.jacobi_conversion(ell, dk=self.k)
+#        if self.dtype == np.float64:
+#            coeffs_filter = coeffs.ravel()[:2*N]
+#            matrix_cos = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter[:N], A, B, f0, cutoff=cutoff)
+#            matrix_msin = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter[N:], A, B, f0, cutoff=cutoff)
+#            matrix = sparse.bmat([[matrix_cos, -matrix_msin], [matrix_msin, matrix_cos]], format='csr')
+#        elif self.dtype == np.complex128:
+#            coeffs_filter = coeffs.ravel()[:N]
+#            matrix = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff)
+#        return matrix
 
 class DiskBasis(PolarBasis):
 
@@ -2257,8 +2304,8 @@ class DiskBasis(PolarBasis):
 
 class ConvertPolar(operators.Convert, operators.PolarMOperator):
 
-    input_basis_type = DiskBasis
-    output_basis_type = DiskBasis
+    input_basis_type = PolarBasis
+    output_basis_type = PolarBasis
 
     def __init__(self, operand, output_basis, out=None):
         operators.Convert.__init__(self, operand, output_basis, out=out)
@@ -3936,9 +3983,9 @@ class ConvertSpherical3D(operators.Convert, operators.SphericalEllOperator):
 #         return reduce(sparse.kron, factors, 1).tocsr()
 
 
-class DiskInterpolate(operators.Interpolate, operators.PolarMOperator):
+class PolarInterpolate(operators.Interpolate, operators.PolarMOperator):
 
-    basis_type = DiskBasis
+    basis_type = PolarBasis
     basis_subaxis = 1
 
     @classmethod
