@@ -7,18 +7,42 @@ from mpi4py import MPI
 
 comm = MPI.COMM_WORLD
 
+## D2
 Nphi_range = [16]
 Nr_range = [8]
-dealias_range = [1, 3/2]
-radius_disk = [1.5,]
+dealias_range = [1, 1.5]
+radius_range = [1.87]
+
 @CachedMethod
-def build_D2(Nphi, Nr, radius, dealias, dtype=np.float64):
+def build_disk(Nphi, Nr, radius, dealias, dtype=np.float64):
     c = coords.PolarCoordinates('phi', 'r')
     d = distributor.Distributor((c,))
     db = basis.DiskBasis(c, (Nphi, Nr), radius=radius, dealias=(dealias, dealias), dtype=dtype)
     phi, r = db.local_grids()
     x, y = c.cartesian(phi, r)
     return c, d, db, phi, r, x, y
+
+@CachedMethod
+def build_annulus(Nphi, Nr, radius, dealias, dtype=np.float64):
+    c = coords.PolarCoordinates('phi', 'r')
+    d = distributor.Distributor((c,))
+    db = basis.AnnulusBasis(c, (Nphi, Nr), radii=(radius,radius+1.3), dealias=(dealias, dealias), dtype=dtype)
+    phi, r = db.local_grids()
+    x, y = c.cartesian(phi, r)
+    return c, d, db, phi, r, x, y
+
+#Nphi_range = [16]
+#Nr_range = [8]
+#dealias_range = [1, 3/2]
+#radius_disk = [1.5,]
+#@CachedMethod
+#def build_D2(Nphi, Nr, radius, dealias, dtype=np.float64):
+#    c = coords.PolarCoordinates('phi', 'r')
+#    d = distributor.Distributor((c,))
+#    db = basis.DiskBasis(c, (Nphi, Nr), radius=radius, dealias=(dealias, dealias), dtype=dtype)
+#    phi, r = db.local_grids()
+#    x, y = c.cartesian(phi, r)
+#    return c, d, db, phi, r, x, y
 
 #radii_shell = (0.5, 3)
 # @CachedMethod
@@ -32,9 +56,9 @@ def build_D2(Nphi, Nr, radius, dealias, dtype=np.float64):
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('radius', radius_disk)
+@pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('basis', [build_D2])
+@pytest.mark.parametrize('basis', [build_disk,build_annulus])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 def test_gradient_scalar(Nphi, Nr, radius, dealias, basis, dtype):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, radius, dealias, dtype)
@@ -50,9 +74,9 @@ def test_gradient_scalar(Nphi, Nr, radius, dealias, basis, dtype):
     
     assert np.allclose(u['g'], ug)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('radius', radius_disk)
+@pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('basis', [build_D2])
+@pytest.mark.parametrize('basis', [build_disk,build_annulus])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 def test_gradient_scalar_mmax0(Nr, radius, dealias, basis, dtype):
     Nphi = 1
@@ -93,9 +117,9 @@ def test_gradient_scalar_mmax0(Nr, radius, dealias, basis, dtype):
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('radius', radius_disk)
+@pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('basis', [build_D2])
+@pytest.mark.parametrize('basis', [build_disk,build_annulus])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 def test_gradient_vector(Nphi, Nr, radius, dealias, basis, dtype):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, radius, dealias, dtype)
@@ -137,9 +161,9 @@ def test_gradient_vector(Nphi, Nr, radius, dealias, basis, dtype):
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('radius', radius_disk)
+@pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('basis', [build_D2])
+@pytest.mark.parametrize('basis', [build_disk,build_annulus])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 def test_divergence_vector(Nphi, Nr, radius, dealias, basis, dtype):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, radius, dealias, dtype)
@@ -159,9 +183,9 @@ def test_divergence_vector(Nphi, Nr, radius, dealias, basis, dtype):
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('radius', radius_disk)
+@pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('basis', [build_D2])
+@pytest.mark.parametrize('basis', [build_disk,build_annulus])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 def test_divergence_tensor(Nphi, Nr, radius, dealias, basis, dtype):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, radius, dealias, dtype)
@@ -201,9 +225,9 @@ def test_divergence_tensor(Nphi, Nr, radius, dealias, basis, dtype):
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('radius', radius_disk)
+@pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('basis', [build_D2])
+@pytest.mark.parametrize('basis', [build_disk,build_annulus])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 def test_curl_vector(Nphi, Nr, radius, dealias, basis, dtype):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, radius, dealias, dtype)
@@ -224,9 +248,9 @@ def test_curl_vector(Nphi, Nr, radius, dealias, basis, dtype):
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('radius', radius_disk)
+@pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('basis', [build_D2])
+@pytest.mark.parametrize('basis', [build_disk,build_annulus])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 def test_laplacian_scalar(Nphi,  Nr, radius, dealias, basis, dtype):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, radius, dealias, dtype)
@@ -252,9 +276,9 @@ def test_laplacian_scalar(Nphi,  Nr, radius, dealias, basis, dtype):
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('radius', radius_disk)
+@pytest.mark.parametrize('radius', radius_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('basis', [build_D2])
+@pytest.mark.parametrize('basis', [build_disk,build_annulus])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 def test_laplacian_vector(Nphi,  Nr, radius, dealias, basis, dtype):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, radius, dealias, dtype)
