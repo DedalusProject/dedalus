@@ -96,7 +96,6 @@ basis_range = [build_disk,build_annulus]
 def test_convert_k2_scalar(Nphi, Nr, radius, dealias, basis, dtype):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, radius, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-
     f['g'] = 3*x**2 + 2*y
     h = operators.Laplacian(f,c).evaluate()
     f.require_coeff_space()
@@ -106,14 +105,7 @@ def test_convert_k2_scalar(Nphi, Nr, radius, dealias, basis, dtype):
     for fld in [f,h,w]:
         fld.require_scales((1,1))
     ans = f['g']+h['g']
-
-    print("f k = {}".format(f.domain.bases[0].k))
-    print("h k = {}".format(h.domain.bases[0].k))
-    print("w k = {}".format(w.domain.bases[0].k))
-    print("w_op = {}".format(w_op))
-    print("w_op.args[0,1] = {}, {}".format(repr(w_op.args[0]), repr(w_op.args[1])))
     assert np.allclose(w['g'],ans)
-
 
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
@@ -132,7 +124,7 @@ def test_convert_k2_vector(Nphi, Nr, radius, dealias, basis, dtype):
     ex = np.array([-np.sin(phi)+0.*r,np.cos(phi)+0.*r])
     ey = np.array([np.cos(phi)+0.*r,np.sin(phi)+0.*r])
     u.set_scales(b.dealias)
-    
+
     u['g'] = 4*x**3*ey + 3*y**2*ey
     v = operators.Laplacian(u, c).evaluate()
     u.require_coeff_space()
@@ -236,7 +228,6 @@ def test_interpolation_vector(Nphi, Nr, dealias, basis, radius, dtype):
     x0, y0 = c.cartesian(phi, np.array([[radius]]))
     ex0 = np.array([-np.sin(phi)+0.*np.array([[radius]]),np.cos(phi)+0.*np.array([[radius]])])
     ey0 = np.array([np.cos(phi)+0.*np.array([[radius]]),np.sin(phi)+0.*np.array([[radius]])])
-
     vg = 4*x0**3*ex0 + 8*y0**3*ey0
     assert np.allclose(v['g'], vg)
 

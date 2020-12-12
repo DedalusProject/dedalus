@@ -485,7 +485,7 @@ def test_S2_3D_vector_roundtrip(Nphi, Ntheta, dealias, dtype):
 
 ## D2
 Nphi_range = [8, 16]
-Nr_range = [12]
+Nr_range = [16]
 dealias_range = [0.5, 1, 1.5]
 radius_range = [1, 2]
 

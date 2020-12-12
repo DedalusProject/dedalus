@@ -1698,11 +1698,6 @@ class PolarBasis(SpinBasis):
         self.azimuth_basis.backward_transform(field, axis, cdata, gdata)
 
     @CachedMethod
-    def interpolation(self, m, spintotal, position):
-        native_position = self.radial_COV.native_coord(position)
-        return dedalus_sphere.zernike.polynomials(2, self.n_size(m), self.alpha + self.k, np.abs(m + spintotal), native_position)
-
-    @CachedMethod
     def radius_multiplication_matrix(self, m, spintotal, order, d):
         if order == 0:
             operator = dedalus_sphere.zernike.operator(2, 'Id', radius=self.radius)
@@ -1907,10 +1902,10 @@ class AnnulusBasis(PolarBasis):
         # Multiply by radial factor
         if self.k > 0:
             gdata *= self.radial_transform_factor(field.scales[axis], data_axis, self.k)
-    
+
     def interpolation(self, m, spintotal, position):
         return self._interpolation(position)
-        
+
     @CachedMethod
     def _interpolation(self, position):
         native_position = position*2/self.dR - self.rho
@@ -1918,7 +1913,7 @@ class AnnulusBasis(PolarBasis):
         b = self.alpha[1] + self.k
         radial_factor = (self.dR/position)**(self.k)
         return radial_factor*dedalus_sphere.jacobi.polynomials(self.n_size(0), a, b, native_position)
-    
+
     @CachedMethod
     def operator_matrix(self,op,m,spintotal):
         ms = m + spintotal
@@ -1929,6 +1924,7 @@ class AnnulusBasis(PolarBasis):
                 p = +1
             elif ms < 0:
                 p = -p
+                ms = -ms
             operator = dedalus_sphere.shell.operator(2, self.radii, o, self.alpha)(p,ms)
         elif op == 'L':
             D = dedalus_sphere.shell.operator(2, self.radii, 'D', self.alpha)
@@ -1939,7 +1935,7 @@ class AnnulusBasis(PolarBasis):
         else:
             operator = dedalus_sphere.shell.operator(2, self.radii, op, self.alpha)
         return operator(self.n_size(m), self.k).square.astype(np.float64)
-        
+
     def jacobi_conversion(self, m, dk):
         AB = dedalus_sphere.shell.operator(2, self.radii, 'AB', self.alpha)
         operator = AB**dk
@@ -1983,6 +1979,7 @@ class AnnulusBasis(PolarBasis):
 #            coeffs_filter = coeffs.ravel()[:N]
 #            matrix = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff)
 #        return matrix
+
 
 class DiskBasis(PolarBasis):
 
@@ -3908,7 +3905,6 @@ class PolarInterpolate(operators.Interpolate, operators.PolarMOperator):
         if self.tensorsig != ():
             U = radial_basis.spin_recombination_matrix(self.tensorsig)
             matrix = U @ matrix
-
         return matrix
 
     def operate(self, out):
