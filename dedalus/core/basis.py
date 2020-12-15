@@ -1984,11 +1984,11 @@ class AnnulusBasis(PolarBasis):
         # Apply spin recombination from temp to gdata
         gdata.fill(0)  # OPTIMIZE: shouldn't be necessary
         self.backward_spin_recombination(field.tensorsig, temp, gdata)
-        if self.mmax == 0 and self.dtype == np.float64:
-            gdata_orig[:] = gdata[axslice(m_axis, 0, 1)]
         # Multiply by radial factor
         if self.k > 0:
             gdata *= self.radial_transform_factor(field.scales[axis], data_axis, self.k)
+        if self.mmax == 0 and self.dtype == np.float64:
+            gdata_orig[:] = gdata[axslice(m_axis, 0, 1)]
 
     def interpolation(self, m, spintotal, position):
         return self._interpolation(position)
