@@ -161,7 +161,7 @@ def test_ball_bessel_eigenfunction(Lmax, Nmax, Leig, Neig, radius, dtype):
 @pytest.mark.parametrize('Nmax', [31])
 @pytest.mark.parametrize('Leig', [1,2,3])
 @pytest.mark.parametrize('radius', [1,1.5])
-@pytest.mark.parametrize('bc', ['no-slip', 'stress-free', 'conducting', 'pseudo'])
+@pytest.mark.parametrize('bc', ['no-slip', 'stress-free', 'potential', 'conducting', 'pseudo'])
 def test_ball_diffusion(Lmax, Nmax, Leig, radius, bc, dtype):
     # Bases
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
@@ -183,7 +183,6 @@ def test_ball_diffusion(Lmax, Nmax, Leig, radius, bc, dtype):
     radial = lambda A, index: operators.RadialComponent(A, index=index)
     angular = lambda A, index: operators.AngularComponent(A, index=index)
     LiftTau = lambda A: operators.LiftTau(A, b, -1)
-
     problem = problems.EVP([φ,A,τ_A], λ)
     problem.add_equation((div(A), 0))
     problem.add_equation((-λ*A + grad(φ) - lap(A) + LiftTau(τ_A), 0))
@@ -194,16 +193,17 @@ def test_ball_diffusion(Lmax, Nmax, Leig, radius, bc, dtype):
         problem.add_equation((radial(A(r=radius),0), 0))
         problem.add_equation((radial(angular(E(r=radius),0),1), 0))
     elif bc == 'potential':
-        ell_1 = lambda A: operators.SphericalEllProduct(A, c, ell+1)
-        # how does it know what ell to use?
-        problem.add_equation(radial(grad(A)(r=radius),0) + ell_1(A)(r=radius)/radius)
+        ell_func = lambda ell: ell+1
+        ell_1 = lambda A: operators.SphericalEllProduct(A, c, ell_func)
+        problem.add_equation((radial(grad(A)(r=radius),0) + ell_1(A)(r=radius)/radius, 0))
     elif bc == 'conducting':
         problem.add_equation((φ(r=radius), 0))
         problem.add_equation((angular(A(r=radius),0), 0))
     elif bc == 'pseudo':
-        problem.add_equation((φ(r=radius), 0))
+        # this test passes with both of these options; we're not really sure why
+        #problem.add_equation((φ(r=radius), 0))
+        problem.add_equation((radial(grad(φ)(r=radius),0), 0))
         problem.add_equation((angular(curl(A)(r=radius),0), 0))
-
     # Solver
     solver = solvers.EigenvalueSolver(problem)
     if not solver.subproblems[Leig].group[1] == Leig:
@@ -211,5 +211,8 @@ def test_ball_diffusion(Lmax, Nmax, Leig, radius, bc, dtype):
     solver.solve_dense(solver.subproblems[Leig])
     i_sort = np.argsort(solver.eigenvalues)
     solver.eigenvalues = solver.eigenvalues[i_sort]
-    λ_analytic = analytic_eigenvalues(Leig,Nmax,bc, r0=radius)
+    λ_analytic = analytic_eigenvalues(Leig,Nmax+1,bc, r0=radius)
+    if (bc == 'stress-free' and Leig == 1) or bc == 'pseudo':
+        # add null space solution
+        λ_analytic = np.append(0, λ_analytic)
     assert np.allclose(solver.eigenvalues[:Nmax//4], λ_analytic[:Nmax//4])
