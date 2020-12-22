@@ -200,9 +200,7 @@ def test_ball_diffusion(Lmax, Nmax, Leig, radius, bc, dtype):
         problem.add_equation((φ(r=radius), 0))
         problem.add_equation((angular(A(r=radius),0), 0))
     elif bc == 'pseudo':
-        # this test passes with both of these options; we're not really sure why
-        #problem.add_equation((φ(r=radius), 0))
-        problem.add_equation((radial(grad(φ)(r=radius),0), 0))
+        problem.add_equation((radial(A(r=radius),0), 0))
         problem.add_equation((angular(curl(A)(r=radius),0), 0))
     # Solver
     solver = solvers.EigenvalueSolver(problem)
@@ -212,7 +210,7 @@ def test_ball_diffusion(Lmax, Nmax, Leig, radius, bc, dtype):
     i_sort = np.argsort(solver.eigenvalues)
     solver.eigenvalues = solver.eigenvalues[i_sort]
     λ_analytic = analytic_eigenvalues(Leig,Nmax+1,bc, r0=radius)
-    if (bc == 'stress-free' and Leig == 1) or bc == 'pseudo':
+    if (bc == 'stress-free' and Leig == 1):
         # add null space solution
         λ_analytic = np.append(0, λ_analytic)
     assert np.allclose(solver.eigenvalues[:Nmax//4], λ_analytic[:Nmax//4])
