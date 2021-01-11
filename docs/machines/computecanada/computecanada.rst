@@ -24,7 +24,7 @@ You should also update pip as soon as the environment is activated. ::
 
 Now install dedalus: 
 
-    pip install dedalus
+    pip install --no-index dedalus
 
 Compute Canada recommends creating your virtual environment and loading your modules in your job scripts. For more information about doing so, please see
 https://docs.computecanada.ca/wiki/Python#Creating_and_using_a_virtual_environment
