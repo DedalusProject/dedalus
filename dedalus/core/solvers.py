@@ -49,43 +49,81 @@ class EigenvalueSolver:
 
     """
 
-    def __init__(self, problem, matsolver=None):
+    def __init__(self, problem, matrix_coupling=None, matsolver=None):
+
         logger.debug('Beginning EVP instantiation')
+
         if matsolver is None:
-            # Default to factorizer to speed up solves within the Arnoldi iteration
+            # Default to factorizer to speed up repeated solves
             matsolver = matsolvers[config['linear algebra']['MATRIX_FACTORIZER'].lower()]
         elif isinstance(matsolver, str):
             matsolver = matsolvers[matsolver.lower()]
         self.problem = problem
-        self.domain = domain = problem.domain
+        self.dist = problem.dist
         self.matsolver = matsolver
-        # Build subproblems and subproblem matrices
-        self.subproblems = subsystems.build_local_subproblems(problem)
-        # Build systems
-        namespace = problem.namespace
-        #vars = [namespace[var] for var in problem.variables]
-        #self.state = FieldSystem.from_fields(vars)
+        self.dtype = problem.dtype
+
+        # Build subsystems and subproblem matrices
+        self.subsystems = subsystems.build_subsystems(problem, matrix_coupling=matrix_coupling)
+        self.subproblems = subsystems.build_subproblems(problem, self.subsystems, ['M','L'])
+
         self.state = problem.variables
-        # Create F operator trees
-        self.evaluator = Evaluator(domain, namespace)
+
         logger.debug('Finished EVP instantiation')
 
-    def solve(self, subproblem):
-        """Solve EVP."""
-        self.eigenvalue_subproblem = subproblem
-        subsystems.build_matrices([subproblem], ['L','M'])
-        L = subproblem.L_min.todense()
-        M = subproblem.M_min.todense()
-        self.eigenvalues, self.eigenvectors = eig(L, b=-M)
+    def solve_dense(self, subproblem, rebuild_coeffs=False, **kw):
+        """
+        Solve EVP for selected pencil.
 
-    def set_state(self, num):
-        """Set state vector to the num-th eigenvector"""
-        for p in self.pencils:
-            if p == self.eigenvalue_pencil:
-                self.state.set_pencil(p, self.eigenvectors[:,num])
-            else:
-                self.state.set_pencil(p, 0.*self.eigenvectors[:,num])
-        self.state.scatter()
+        Parameters
+        ----------
+        subproblem : subproblem object
+            Subproblem for which to solve the EVP
+        #rebuild_coeffs : bool, optional
+        #    Flag to rebuild cached coefficient matrices (default: False)
+
+        Other keyword options passed to scipy.linalg.eig.
+
+        """
+        # TODO caching of matrices for loops over parameter values
+        # # Build matrices
+        # if rebuild_coeffs:
+        #     # Generate unique cache
+        #     cacheid = uuid.uuid4()
+        # else:
+        #     cacheid = None
+        #pencil.build_matrices(self.problem, ['M', 'L'], cacheid=cacheid)
+
+        # Solve as dense general eigenvalue problem
+        eig_output = eig(subproblem.L_min.A, b=-subproblem.M_min.A, **kw)
+        # Unpack output
+        if len(eig_output) == 2:
+            self.eigenvalues, self.eigenvectors = eig_output
+        elif len(eig_output) == 3:
+            self.eigenvalues, self.left_eigenvectors, self.eigenvectors = eig_output
+        self.eigenvectors = subproblem.pre_right @ self.eigenvectors
+        self.eigenvalue_subproblem = subproblem
+
+    def solve_sparse(self, pencil, N, target, rebuild_coeffs=False, **kw):
+        raise NotImplementedError()
+
+    def set_state(self, index, subsystem):
+        """
+        Set state vector to the specified eigenmode.
+
+        Parameters
+        ----------
+        index : int
+            Index of desired eigenmode
+        subsystem : Subsystem object
+            subsystem that eigenvalue data will be put into
+        """
+        if subsystem not in self.eigenvalue_subproblem.subsystems:
+            raise ValueError("subsystem must be in eigenvalue_subproblem")
+        for var in self.state:
+            var['c'] = 0
+        X = self.eigenvectors[:,index]
+        subsystem.scatter(X, self.state)
 
 
 class LinearBoundaryValueSolver:
