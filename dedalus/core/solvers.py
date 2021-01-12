@@ -104,40 +104,8 @@ class EigenvalueSolver:
         self.eigenvectors = subproblem.pre_right @ self.eigenvectors
         self.eigenvalue_subproblem = subproblem
 
-    # def solve_sparse(self, pencil, N, target, rebuild_coeffs=False, **kw):
-    #     """
-    #     Perform targeted sparse eigenvalue search for selected pencil.
-    #
-    #     Parameters
-    #     ----------
-    #     pencil : pencil object
-    #         Pencil for which to solve the EVP
-    #     N : int
-    #         Number of eigenmodes to solver for.  Note: the dense method may
-    #         be more efficient for finding large numbers of eigenmodes.
-    #     target : complex
-    #         Target eigenvalue for search.
-    #     rebuild_coeffs : bool, optional
-    #         Flag to rebuild cached coefficient matrices (default: False)
-    #
-    #     Other keyword options passed to scipy.sparse.linalg.eigs.
-    #
-    #     """
-    #     # Build matrices
-    #     if rebuild_coeffs:
-    #         # Generate unique cache
-    #         cacheid = uuid.uuid4()
-    #     else:
-    #         cacheid = None
-    #     pencil.build_matrices(self.problem, ['M', 'L'], cacheid=cacheid)
-    #     # Solve as sparse general eigenvalue problem
-    #     A = pencil.L_exp
-    #     B = -pencil.M_exp
-    #     self.eigenvalues, self.eigenvectors = scipy_sparse_eigs(A=A, B=B, N=N, target=target, matsolver=self.matsolver, **kw)
-    #     if pencil.pre_right is not None:
-    #         self.eigenvectors = pencil.pre_right @ self.eigenvectors
-    #     self.eigenvalue_pencil = pencil
-    #
+    def solve_sparse(self, pencil, N, target, rebuild_coeffs=False, **kw):
+        raise NotImplementedError()
 
     def set_state(self, index, subsystem):
         """
