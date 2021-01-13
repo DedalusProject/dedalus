@@ -114,6 +114,48 @@ def test_heat_ball(Nmax, Lmax, dtype):
     assert np.allclose(u['g'], u_true)
 
 
+radii_shell = (1, 2)
+
+
+@CachedFunction
+def build_shell(Nphi, Ntheta, Nr, dealias, dtype):
+    c = coords.SphericalCoordinates('phi', 'theta', 'r')
+    d = distributor.Distributor((c,))
+    b = basis.SphericalShellBasis(c, (Nphi, Ntheta, Nr), radii=radii_shell, dealias=(dealias, dealias, dealias), dtype=dtype)
+    phi, theta, r = b.local_grids()
+    x, y, z = c.cartesian(phi, theta, r)
+    return c, d, b, phi, theta, r, x, y, z
+
+
+@pytest.mark.parametrize('dtype', [np.complex128, np.float64])
+@pytest.mark.parametrize('Nmax', [15])
+@pytest.mark.parametrize('Lmax', [3])
+def test_heat_shell(Nmax, Lmax, dtype):
+    # Bases
+    dealias = 1
+    c, d, b, phi, theta, r, x, y, z = build_shell(2*(Lmax+1), Lmax+1, Nmax+1, dealias=dealias, dtype=dtype)
+    r0, r1 = b.radial_basis.radii
+    # Fields
+    u = field.Field(name='u', dist=d, bases=(b,), dtype=dtype)
+    τu1 = field.Field(name='τu1', dist=d, bases=(b.S2_basis(),), dtype=dtype)
+    τu2 = field.Field(name='τu2', dist=d, bases=(b.S2_basis(),), dtype=dtype)
+    F = field.Field(name='a', dist=d, bases=(b,), dtype=dtype)
+    F['g'] = 6
+    # Problem
+    Lap = lambda A: operators.Laplacian(A, c)
+    LiftTau = lambda A, n: operators.LiftTau(A, b, n)
+    problem = problems.LBVP([u, τu1, τu2])
+    problem.add_equation((Lap(u) + LiftTau(τu1,-1) + LiftTau(τu2,-2), F))
+    problem.add_equation((u(r=r0), 0))
+    problem.add_equation((u(r=r1), 0))
+    # Solver
+    solver = solvers.LinearBoundaryValueSolver(problem)
+    solver.solve()
+    # Check solution
+    u_true = r**2 + 6 / r - 7
+    assert np.allclose(u['g'], u_true)
+
+
 @pytest.mark.parametrize('dtype', [np.complex128, np.float64])
 @pytest.mark.parametrize('Nmax', [15])
 @pytest.mark.parametrize('Lmax', [3])
