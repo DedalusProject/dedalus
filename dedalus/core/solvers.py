@@ -101,7 +101,6 @@ class EigenvalueSolver:
             self.eigenvalues, self.eigenvectors = eig_output
         elif len(eig_output) == 3:
             self.eigenvalues, self.left_eigenvectors, self.eigenvectors = eig_output
-        self.eigenvectors = subproblem.pre_right @ self.eigenvectors
         self.eigenvalue_subproblem = subproblem
 
     def solve_sparse(self, pencil, N, target, rebuild_coeffs=False, **kw):
