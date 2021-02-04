@@ -146,16 +146,17 @@ class MultistepIMEX:
                 csr_matvec(sp.pre_left, ssF, F0.get_subdata(sp, ss))
 
         # Build RHS
-        np.multiply(c[1], F0.data, out=RHS.data)
-        for j in range(2, len(c)):
-            # RHS.data += c[j] * F[j-1].data
-            axpy(a=c[j], x=F[j-1].data, y=RHS.data)
-        for j in range(1, len(a)):
-            # RHS.data -= a[j] * MX[j-1].data
-            axpy(a=-a[j], x=MX[j-1].data, y=RHS.data)
-        for j in range(1, len(b)):
-            # RHS.data -= b[j] * LX[j-1].data
-            axpy(a=-b[j], x=LX[j-1].data, y=RHS.data)
+        if RHS.data.size:
+            np.multiply(c[1], F0.data, out=RHS.data)
+            for j in range(2, len(c)):
+                # RHS.data += c[j] * F[j-1].data
+                axpy(a=c[j], x=F[j-1].data, y=RHS.data)
+            for j in range(1, len(a)):
+                # RHS.data -= a[j] * MX[j-1].data
+                axpy(a=-a[j], x=MX[j-1].data, y=RHS.data)
+            for j in range(1, len(b)):
+                # RHS.data -= b[j] * LX[j-1].data
+                axpy(a=-b[j], x=LX[j-1].data, y=RHS.data)
 
         # Make sure fields are in coeff space to avoid deadlock in scatter
         for field in state_fields:
@@ -601,12 +602,13 @@ class RungeKuttaIMEX:
                     csr_matvec(sp.pre_left, ssF, Fi.get_subdata(sp, ss))
 
             # Construct RHS(n,i)
-            np.copyto(RHS.data, MX0.data)
-            for j in range(0, i):
-                # RHS.data += (k * A[i,j]) * F[j].data
-                axpy(a=(k*A[i,j]), x=F[j].data, y=RHS.data)
-                # RHS.data -= (k * H[i,j]) * LX[j].data
-                axpy(a=-(k*H[i,j]), x=LX[j].data, y=RHS.data)
+            if RHS.data.size:
+                np.copyto(RHS.data, MX0.data)
+                for j in range(0, i):
+                    # RHS.data += (k * A[i,j]) * F[j].data
+                    axpy(a=(k*A[i,j]), x=F[j].data, y=RHS.data)
+                    # RHS.data -= (k * H[i,j]) * LX[j].data
+                    axpy(a=-(k*H[i,j]), x=LX[j].data, y=RHS.data)
 
             # Make sure fields are in coeff space to avoid deadlock in scatter
             for field in state_fields:
