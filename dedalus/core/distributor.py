@@ -581,20 +581,12 @@ class Transpose:
                         rank = len(field.tensorsig)
                         # Reference views from both layouts
                         flat_comp_shape = (-1,) + field.data.shape[rank:]
-                        if field.data.size:
-                            data0.append(field.data.reshape(flat_comp_shape))
+                        data0.append(field.data.reshape(flat_comp_shape))
                         field.set_layout(self.layout1)
                         flat_comp_shape = (-1,) + field.data.shape[rank:]
-                        if field.data.size:
-                            data1.append(field.data.reshape(flat_comp_shape))
-                    if data0:
-                        data0 = np.concatenate(data0)
-                    else:
-                        data0 = np.zeros(0, dtype=fields[0].dtype) # Assumes same dtypes
-                    if data1:
-                        data1 = np.concatenate(data1)
-                    else:
-                        data1 = np.zeros(0, dtype=fields[0].dtype) # Assumes same dtypes
+                        data1.append(field.data.reshape(flat_comp_shape))
+                    data0 = np.concatenate(data0)
+                    data1 = np.concatenate(data1)
                     # Transpose between data views
                     plan.localize_columns(data0, data1)
                     # Split up transposed data
@@ -630,20 +622,12 @@ class Transpose:
                         rank = len(field.tensorsig)
                         # Reference views from both layouts
                         flat_comp_shape = (-1,) + field.data.shape[rank:]
-                        if field.data.size:
-                            data1.append(field.data.reshape(flat_comp_shape))
+                        data1.append(field.data.reshape(flat_comp_shape))
                         field.set_layout(self.layout0)
                         flat_comp_shape = (-1,) + field.data.shape[rank:]
-                        if field.data.size:
-                            data0.append(field.data.reshape(flat_comp_shape))
-                    if data0:
-                        data0 = np.concatenate(data0)
-                    else:
-                        data0 = np.zeros(0, dtype=fields[0].dtype) # Assumes same dtypes
-                    if data1:
-                        data1 = np.concatenate(data1)
-                    else:
-                        data1 = np.zeros(0, dtype=fields[0].dtype) # Assumes same dtypes
+                        data0.append(field.data.reshape(flat_comp_shape))
+                    data0 = np.concatenate(data0)
+                    data1 = np.concatenate(data1)
                     # Transpose between data views
                     plan.localize_rows(data1, data0)
                     # Split up transposed data
