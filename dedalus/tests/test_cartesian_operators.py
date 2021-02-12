@@ -301,3 +301,39 @@ def test_curl_implicit_FFF(basis, N, dealias, dtype):
     solver.solve()
     assert np.allclose(u['c'], f['c'])
 
+    assert np.allclose(Tt['g'], Ttg)
+
+
+@pytest.mark.parametrize('Nx', Nx_range)
+@pytest.mark.parametrize('Ny', Ny_range)
+@pytest.mark.parametrize('Nz', Nz_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_3d_box])
+@pytest.mark.parametrize('dtype', [np.complex128, np.float64])
+def test_curl_3d(Nx, Ny, Nz, dealias, basis, dtype):
+    c, d, b, x, y, z = basis(Nx, Ny, Nz, dealias, dtype)
+    u = field.Field(dist=d, bases=b, tensorsig=(c,), dtype=dtype)
+    u['g'][0] = (np.sin(2*x)+np.sin(x))*np.cos(y)*np.sin(z)
+    u['g'][1] = (np.cos(2*x)+np.cos(x))*np.sin(y)*np.sin(z)
+    u['g'][2] = np.sin(x)*np.cos(y)*np.cos(z)
+    ω = operators.Curl(u).evaluate()
+    ω_c = field.Field(dist=d, bases=b, tensorsig=(c,), dtype=dtype)
+    ω_c['g'][0] = np.cos(2*x)+np.cos(x))*np.sin(y)*np.cos(z) - (-1*np.sin(x)*np.sin(y)*np.cos(z))
+    ω_c['g'][1] = np.cos(x)*np.cos(y)*np.cos(z) - (np.sin(2*x)+np.sin(x))*np.cos(y)*np.cos(z)
+    ω_c['g'][2] = -1*(np.sin(2*x)+np.sin(x))*np.sin(y)*np.sin(z) - (-2*np.sin(2*x)-1*np.sin(x))*np.sin(y)*np.sin(z)
+    assert np.allclose(ω['g'], ω_c['g'])
+
+@pytest.mark.parametrize('Nx', Nx_range)
+@pytest.mark.parametrize('Nz', Nz_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_2d_box])
+@pytest.mark.parametrize('dtype', [np.complex128, np.float64])
+def test_curl_2d(Nx, Nz, dealias, basis, dtype):
+    c, d, b, x, z = basis(Nx, Nz, dealias, dtype)
+    u = field.Field(dist=d, bases=b, tensorsig=(c,), dtype=dtype)
+    u['g'][0] = (np.sin(2*x)+np.sin(x))*np.cos(y)*np.sin(z)
+    u['g'][1] = np.sin(x)*np.cos(y)*np.cos(z) # this is the z-component
+    ω = operators.Curl(u).evaluate()
+    ω_c = field.Field(dist=d, bases=b, dtype=dtype) # is omega_c just a scalar?  or can we specify the y-component.  Is this 2-D or 2.5D?
+    ω_c['g'] = np.cos(x)*np.cos(y)*np.cos(z) - (np.sin(2*x)+np.sin(x))*np.cos(y)*np.cos(z)
+    assert np.allclose(ω['g'], ω_c['g'])
