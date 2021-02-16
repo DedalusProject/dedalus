@@ -47,30 +47,29 @@ def test_sin_nlbvp(basis_class, Nx, dtype, dealias=2):
     u.require_scales(1)
     assert np.allclose(u['g'], u_true)
 
-@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-@pytest.mark.parametrize('Nmax', [31])
-@pytest.mark.parametrize('Lmax', [0,3])
-def test_heat_ball_nlbvp(Nmax, Lmax, dtype, tolerance=1e-10):
+@pytest.mark.parametrize('dtype', [np.complex128,
+    pytest.param(np.float64, marks=pytest.mark.xfail(reason="ell = 0 matrices with float are singular?"))])
+#@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('Nmax', [7])
+def test_heat_ball_nlbvp(Nmax, dtype, tolerance=1e-10):
+    radius = 1
     # Bases
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    if Lmax > 0:
-        nm = 2*(Lmax+1)
-    else:
-        nm = 1
-    b = basis.BallBasis(c, (nm,Lmax+1, Nmax+1), radius=1, dtype=dtype)
+    b = basis.BallBasis(c, (1, 1, Nmax+1), radius=radius, dtype=dtype)
+    br = b.radial_basis
     phi, theta, r = b.local_grids((1, 1, 1))
     # Fields
-    u = field.Field(name='u', dist=d, bases=(b,), dtype=dtype)
-    τu = field.Field(name='τu', dist=d, bases=(b.S2_basis(),), dtype=dtype)
-    F = field.Field(name='F', dist=d, bases=(b,), dtype=dtype)
+    u = field.Field(name='u', dist=d, bases=(br,), dtype=dtype)
+    τ = field.Field(name='τ', dist=d, dtype=dtype)
+    F = field.Field(name='F', dist=d, bases=(br,), dtype=dtype)
     F['g'] = 6
     # Problem
     Lap = lambda A: operators.Laplacian(A, c)
-    LiftTau = lambda A: operators.LiftTau(A, b, -1)
-    problem = problems.NLBVP([u, τu])
-    problem.add_equation((Lap(u) + LiftTau(τu), F))
-    problem.add_equation((u(r=1), 0))
+    LiftTau = lambda A: operators.LiftTau(A, br, -1)
+    problem = problems.NLBVP([u, τ])
+    problem.add_equation((Lap(u) + LiftTau(τ), F))
+    problem.add_equation((u(r=radius), 0))
     # Solver
     solver = solvers.NonlinearBoundaryValueSolver(problem)
     # Initial guess
@@ -86,41 +85,82 @@ def test_heat_ball_nlbvp(Nmax, Lmax, dtype, tolerance=1e-10):
     assert np.allclose(u['g'], u_true)
 
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-@pytest.mark.parametrize('Nmax', [31])
-@pytest.mark.parametrize('Lmax', [0,3])
-def test_lane_emden(Nmax, Lmax, dtype, m=1.5, n_rho=3, radius=1,
-                    ncc_cutoff = 1e-10, tolerance = 1e-10):
+@pytest.mark.parametrize('Nmax', [63])
+def test_lane_emden(Nmax, dtype):
+    n = 3.0
+    ncc_cutoff = 1e-10
+    tolerance = 1e-10
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    if Lmax > 0:
-        nm = 2*(Lmax+1)
-    else:
-        nm = 1
-    b = basis.BallBasis(c, (nm,Lmax+1, Nmax+1), radius=radius, dtype=dtype)
+    b = basis.BallBasis(c, (1, 1, Nmax+1), radius=1, dtype=dtype)
+    br = b.radial_basis
     phi, theta, r = b.local_grids((1, 1, 1))
     # Fields
-    T = field.Field(dist=d, bases=(b,), dtype=dtype, name='T')
-    τ = field.Field(dist=d, bases=(b.S2_basis(),), dtype=dtype, name='τ')
-    C = field.Field(dist=d, dtype=dtype, name='C')
+    f = field.Field(dist=d, bases=(br,), dtype=dtype, name='f')
+    τ = field.Field(dist=d, dtype=dtype, name='τ')
     # Parameters and operators
     lap = lambda A: operators.Laplacian(A, c)
     Pow = lambda A,n: operators.Power(A,n)
-    LiftTau = lambda A: operators.LiftTau(A, b, -1)
-    # from poisson:
-    #      lap(phi) = -C1*rho
-    # from HS balance:
-    #      grad(phi) ~ grad(T)
-    # therefore:
-    #      lap(T) = -C2*rho = -C3*T**n
-    problem = problems.NLBVP([T,τ,C], ncc_cutoff=ncc_cutoff)
-    problem.add_equation((lap(T) + LiftTau(τ), -C*Pow(T,m)))
-    problem.add_equation((T(r=radius), 0))
+    LiftTau = lambda A: operators.LiftTau(A, br, -1)
+    problem = problems.NLBVP([f, τ], ncc_cutoff=ncc_cutoff)
+    problem.add_equation((lap(f) + LiftTau(τ), -Pow(f,n)))
+    problem.add_equation((f(r=1), 0))
     # Solver
     solver = solvers.NonlinearBoundaryValueSolver(problem)
     # Initial guess
-    T.require_scales(1)
-    T['g'] = np.cos(np.pi/2 * r)*0.9
-    C['g'] = 2
+    f['g'] = 5 * np.cos(np.pi/2 * r)**2
+    # Iterations
+    def error(perts):
+        return np.sum([np.sum(np.abs(pert['c'])) for pert in perts])
+    err = np.inf
+    while err > tolerance:
+        f0 = f(r=0).evaluate()['g'][0,0,0]
+        R = f0 ** ((n - 1) / 2)
+        solver.newton_iteration()
+        err = error(solver.perturbations)
+    # Compare to reference solutions from Boyd
+    R_ref = {0.0: np.sqrt(6),
+            0.5: 2.752698054065,
+            1.0: np.pi,
+            1.5: 3.65375373621912608,
+            2.0: 4.3528745959461246769735700,
+            2.5: 5.355275459010779,
+            3.0: 6.896848619376960375454528,
+            3.25: 8.018937527,
+            3.5: 9.535805344244850444,
+            4.0: 14.971546348838095097611066,
+            4.5: 31.836463244694285264}
+    assert np.allclose(R, R_ref[n])
+
+
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('Nmax', [63])
+def test_lane_emden_floating_R(Nmax, dtype):
+    n = 3.0
+    ncc_cutoff = 1e-10
+    tolerance = 1e-10
+    c = coords.SphericalCoordinates('phi', 'theta', 'r')
+    d = distributor.Distributor((c,))
+    b = basis.BallBasis(c, (1, 1, Nmax+1), radius=1, dtype=dtype)
+    br = b.radial_basis
+    phi, theta, r = b.local_grids((1, 1, 1))
+    # Fields
+    f = field.Field(dist=d, bases=(br,), dtype=dtype, name='f')
+    R = field.Field(dist=d, dtype=dtype, name='R')
+    τ = field.Field(dist=d, dtype=dtype, name='τ')
+    # Parameters and operators
+    lap = lambda A: operators.Laplacian(A, c)
+    Pow = lambda A,n: operators.Power(A,n)
+    LiftTau = lambda A: operators.LiftTau(A, br, -1)
+    problem = problems.NLBVP([f, R, τ], ncc_cutoff=ncc_cutoff)
+    problem.add_equation((lap(f) + LiftTau(τ), - R**2 * Pow(f,n)))
+    problem.add_equation((f(r=0), 1))
+    problem.add_equation((f(r=1), 0))
+    # Solver
+    solver = solvers.NonlinearBoundaryValueSolver(problem)
+    # Initial guess
+    f['g'] = np.cos(np.pi/2 * r)**2
+    R['g'] = 5
     # Iterations
     def error(perts):
         return np.sum([np.sum(np.abs(pert['c'])) for pert in perts])
@@ -128,9 +168,17 @@ def test_lane_emden(Nmax, Lmax, dtype, m=1.5, n_rho=3, radius=1,
     while err > tolerance:
         solver.newton_iteration()
         err = error(solver.perturbations)
-    # TO-DO: implement correct assertion test against literature lane-emden
-    # [1]: http://en.wikipedia.org/wiki/Lane–Emden_equation
-    # [2]: J. P. Boyd, "Chebyshev spectral methods and the Lane-Emden problem,"
-    #     Numerical Mathematics Theory (2011).
-    # Note that C here should be R**2 from dedalus2.
-    return T
+    # Compare to reference solutions from Boyd
+    R_ref = {0.0: np.sqrt(6),
+            0.5: 2.752698054065,
+            1.0: np.pi,
+            1.5: 3.65375373621912608,
+            2.0: 4.3528745959461246769735700,
+            2.5: 5.355275459010779,
+            3.0: 6.896848619376960375454528,
+            3.25: 8.018937527,
+            3.5: 9.535805344244850444,
+            4.0: 14.971546348838095097611066,
+            4.5: 31.836463244694285264}
+    assert np.allclose(R['g'].ravel(), R_ref[n])
+

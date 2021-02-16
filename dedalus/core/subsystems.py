@@ -124,7 +124,7 @@ class Subsystem:
             if basis is None:
                 # Take single mode for constant bases
                 ax_group = self.group[axis]
-                if ax_group is None:
+                if ax_group in (None, 0):
                     slices.append(slice(0, 1))
                 else:
                     raise NotImplementedError()

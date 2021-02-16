@@ -2157,7 +2157,10 @@ class SphericalEllOperator(SpectralOperator):
     def operate(self, out):
         """Perform operation."""
         operand = self.args[0]
-        input_basis = self.input_basis
+        if self.input_basis is None:
+            basis = self.output_basis
+        else:
+            basis = self.input_basis
         radial_basis = self.radial_basis
         axis = radial_basis.radial_axis
         # Set output layout
@@ -2165,13 +2168,13 @@ class SphericalEllOperator(SpectralOperator):
         out.data[:] = 0
         # Apply operator
         R_in = radial_basis.regularity_classes(operand.tensorsig)
-        slices = [slice(None) for i in range(input_basis.dist.dim)]
+        slices = [slice(None) for i in range(radial_basis.dist.dim)]
         for regindex_in, regtotal_in in np.ndenumerate(R_in):
             for regindex_out in self.regindex_out(regindex_in):
                 comp_in = operand.data[regindex_in]
                 comp_out = out.data[regindex_out]
                 # Should reorder to make ell loop first, check forbidden reg, remove reg from radial_vector_3
-                for ell, m_ind, ell_ind in input_basis.ell_maps:
+                for ell, m_ind, ell_ind in basis.ell_maps:
                     allowed_in  = radial_basis.regularity_allowed(ell, regindex_in)
                     allowed_out = radial_basis.regularity_allowed(ell, regindex_out)
                     if allowed_in and allowed_out:
@@ -3079,8 +3082,10 @@ class LiftTau(SpectralOperator, metaclass=MultiClass):
         # SpectralOperator requirements
         self.input_basis = operand.domain.get_basis(output_basis.coords)
         self.output_basis = output_basis
-        self.first_axis = min(self.input_basis.first_axis, self.output_basis.first_axis)
-        self.last_axis = max(self.input_basis.last_axis, self.output_basis.last_axis)
+        #self.first_axis = min(self.input_basis.first_axis, self.output_basis.first_axis)
+        #self.last_axis = max(self.input_basis.last_axis, self.output_basis.last_axis)
+        self.first_axis = self.output_basis.first_axis
+        self.last_axis = self.output_basis.last_axis
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements
