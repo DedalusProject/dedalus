@@ -233,6 +233,14 @@ alphabet = "abcdefghijklmnopqrstuvwxy"
 
 class Product(Future):
 
+    # Want to find some way to include this even though Product is not a MultiClass.  For now hacking into new_operand.
+    # @classmethod
+    # def _preprocess_args(cls, *args, **kw):
+    #     if any(arg == 0 for arg in args):
+    #         raise SkipDispatchException(output=0)
+    #     else:
+    #         return args, kw
+
     def _build_bases(self, arg0, arg1, ncc=False, ncc_vars=None, **kw):
         """Build output bases."""
         bases = []
@@ -579,6 +587,8 @@ class DotProduct(Product, FutureField):
         return '@'.join(str_args)
 
     def new_operands(self, arg0, arg1, **kw):
+        if arg0 == 0 or arg1 == 0:
+            return 0
         return DotProduct(arg0, arg1, indices=self.indices, **kw)
 
     def GammaCoord(self, A_tensorsig, B_tensorsig, C_tensorsig):
@@ -661,6 +671,11 @@ class CrossProduct(Product, FutureField):
         ne.evaluate("data02*data11 - data01*data12", out=out.data[0])
         ne.evaluate("data00*data12 - data02*data10", out=out.data[1])
         ne.evaluate("data01*data10 - data00*data11", out=out.data[2])
+
+    def new_operands(self, arg0, arg1, **kw):
+        if arg0 == 0 or arg1 == 0:
+            return 0
+        return CrossProduct(arg0, arg1, **kw)
 
 
 class Multiply(Product, metaclass=MultiClass):
