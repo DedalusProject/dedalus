@@ -31,22 +31,12 @@ class Operand:
 
     __array_priority__ = 100.
 
-    # def __getattr__(self, attr):
-    #     # Intercept numpy ufunc calls
-    #     from .operators import UnaryGridFunction
-    #     try:
-    #         ufunc = UnaryGridFunction.supported[attr]
-    #         return partial(UnaryGridFunction, ufunc, self)
-    #     except KeyError:
-    #         raise AttributeError("%r object has no attribute %r" %(self.__class__.__name__, attr))
-
-    ## Idea for alternate ufunc implementation based on changes eventually (?) coming in numpy
-    # def __numpy_ufunc__(self, ufunc, method, i, inputs, **kw):
-    #     from .operators import UnaryGridFunction
-    #     if ufunc in UnaryGridFunction.supported:
-    #         return UnaryGridFunction(ufunc, self, **kw)
-    #     else:
-    #         return NotImplemented
+    def __array_ufunc__(self, ufunc, method, *inputs, **kw):
+        from .operators import UnaryGridFunction
+        if ufunc is UnaryGridFunction.supported[ufunc.__name__] and method == "__call__":
+            return UnaryGridFunction(ufunc, *inputs, **kw)
+        else:
+            return NotImplemented
 
     def __call__(self, *args, **kw):
         """Interpolate field."""

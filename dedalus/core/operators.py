@@ -448,7 +448,7 @@ class UnaryGridFunction(NonlinearOperator, metaclass=MultiClass):
 
     arity = 1
     supported = {ufunc.__name__: ufunc for ufunc in
-        (np.absolute, np.sign, np.conj, np.exp, np.exp2, np.log, np.log2,
+        (np.absolute, np.conj, np.exp, np.exp2, np.log, np.log2,
          np.log10, np.sqrt, np.square, np.sin, np.cos, np.tan, np.arcsin,
          np.arccos, np.arctan, np.sinh, np.cosh, np.tanh, np.arcsinh,
          np.arccosh, np.arctanh)}
@@ -556,6 +556,8 @@ class UnaryGridFunctionField(UnaryGridFunction, FutureField):
     def __init__(self, func, arg, **kw):
         #arg = Operand.cast(arg)
         super().__init__(func, arg, **kw)
+        if arg.tensorsig:
+            raise ValueError("Ufuncs not defined for non-scalar fields.")
         self.domain = arg.domain
         self.tensorsig = arg.tensorsig
         self.dtype = arg.dtype
@@ -576,6 +578,7 @@ class UnaryGridFunctionField(UnaryGridFunction, FutureField):
 
     def new_operands(self, arg):
         return UnaryGridFunction(self.func, arg)
+
 
 class LinearOperator(FutureField):
     """
