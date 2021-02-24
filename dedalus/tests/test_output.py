@@ -49,7 +49,7 @@ def test_1d_output(x_basis_class, Nx, timestepper, dtype):
         solver.step(dt)
     # Check solution
     post.merge_process_files('test_output')
-    with h5py.File('test_output/test_output_s1.h5') as file:
+    with h5py.File('test_output/test_output_s1.h5', mode='r') as file:
         ug = file['tasks']['ug'][:]
         t = file['scales']['sim_time'][:]
     shutil.rmtree('test_output')
