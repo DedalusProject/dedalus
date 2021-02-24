@@ -444,9 +444,8 @@ class GeneralFunction(NonlinearOperator, FutureField):
         np.copyto(out.data, self.func(*self.args, **self.kw))
 
 
-class UnaryGridFunction(NonlinearOperator, metaclass=MultiClass):
+class UnaryGridFunction(NonlinearOperator, FutureField):
 
-    arity = 1
     supported = {ufunc.__name__: ufunc for ufunc in
         (np.absolute, np.conj, np.exp, np.exp2, np.log, np.log2,
          np.log10, np.sqrt, np.square, np.sin, np.cos, np.tan, np.arcsin,
@@ -457,28 +456,20 @@ class UnaryGridFunction(NonlinearOperator, metaclass=MultiClass):
     parseables.update(supported)
     parseables.update(aliased)
 
-    @classmethod
-    def _preprocess_args(self, func, arg, **kw):
-        #arg = Operand.cast(arg)
-        return (func, arg), kw
-
-    @classmethod
-    def _check_args(cls, *args, **kw):
-        match = (isinstance(args[i], types) for i,types in cls.argtypes.items())
-        return all(match)
-
     def __init__(self, func, arg, **kw):
         #arg = Operand.cast(arg)
         super().__init__(arg, **kw)
         self.func = func
+        if arg.tensorsig:
+            raise ValueError("Ufuncs not defined for non-scalar fields.")
+        # FutureField requirements
+        self.domain = arg.domain
+        self.tensorsig = arg.tensorsig
+        self.dtype = arg.dtype
 
     @property
     def name(self):
         return self.func.__name__
-
-    @property
-    def base(self):
-        return UnaryGridFunction
 
     def _build_bases(self, arg0):
         bases = arg0.bases
@@ -486,18 +477,8 @@ class UnaryGridFunction(NonlinearOperator, metaclass=MultiClass):
             bases = arg0.domain
         return bases
 
-    def meta_constant(self, axis):
-        # Preserves constancy
-        return self.args[0].meta[axis]['constant']
-
-    def meta_parity(self, axis):
-        # Preserving constancy -> even parity
-        if self.args[0].meta[axis]['constant']:
-            return 1
-        elif self.args[0].meta[axis]['parity'] == 1:
-            return 1
-        else:
-            raise UndefinedParityError("Unknown action of {} on odd parity.".format(self._name))
+    def new_operands(self, arg):
+        return UnaryGridFunction(self.func, arg)
 
     def sym_diff(self, var):
         """Symbolically differentiate with respect to specified operand."""
@@ -526,42 +507,6 @@ class UnaryGridFunction(NonlinearOperator, metaclass=MultiClass):
         arg_diff = arg.sym_diff(var)
         return diff_map[self.func](arg) * arg_diff
 
-
-# class UnaryGridFunctionScalar(UnaryGridFunction, FutureScalar):
-
-#     argtypes = {1: (Scalar, FutureScalar)}
-
-#     def check_conditions(self):
-#         return True
-
-#     def operate(self, out):
-#         out.value = self.func(self.args[0].value)
-
-
-# class UnaryGridFunctionArray(UnaryGridFunction, FutureArray):
-
-#     argtypes = {1: (Array, FutureArray)}
-
-#     def check_conditions(self):
-#         return True
-
-#     def operate(self, out):
-#         self.func(self.args[0].data, out=out.data)
-
-
-class UnaryGridFunctionField(UnaryGridFunction, FutureField):
-
-    argtypes = {1: (Field, FutureField)}
-
-    def __init__(self, func, arg, **kw):
-        #arg = Operand.cast(arg)
-        super().__init__(func, arg, **kw)
-        if arg.tensorsig:
-            raise ValueError("Ufuncs not defined for non-scalar fields.")
-        self.domain = arg.domain
-        self.tensorsig = arg.tensorsig
-        self.dtype = arg.dtype
-
     def check_conditions(self):
         # Field must be in grid layout
         return (self.args[0].layout is self._grid_layout)
@@ -575,9 +520,6 @@ class UnaryGridFunctionField(UnaryGridFunction, FutureField):
         # Evaluate in grid layout
         out.set_layout(self._grid_layout)
         self.func(arg0.data, out=out.data)
-
-    def new_operands(self, arg):
-        return UnaryGridFunction(self.func, arg)
 
 
 class LinearOperator(FutureField):
