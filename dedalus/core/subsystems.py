@@ -60,7 +60,7 @@ def build_subproblems(problem, subsystems, matrices):
         for matrix in matrices:
             expr = eq[matrix]
             if expr:
-                expr.prep_nccs(problem.LHS_variables)
+                expr.gather_ncc_coeffs()
                 # separability = ~problem.matrix_coupling
                 # expr.build_ncc_matrices(separability, problem.variables)
     # Get matrix groups
@@ -83,7 +83,7 @@ def build_subproblems(problem, subsystems, matrices):
     #     for matrix in matrices:
     #         expr = eq[matrix]
     #         if expr:
-    #             expr.prep_nccs(problem.variables)
+    #             expr.gather_ncc_coeffs()
     #             # separability = ~problem.matrix_coupling
     #             # expr.build_ncc_matrices(separability, problem.variables)
     # # Get matrix groups

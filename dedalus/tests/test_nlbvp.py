@@ -27,7 +27,7 @@ def test_sin_nlbvp(basis_class, Nx, dtype, dealias=2):
     P['c'][-1] = 1
     # Problem
     dx = lambda A: operators.Differentiate(A, c)
-    sqrt = lambda A: operators.UnaryGridFunctionField(np.sqrt, A)
+    sqrt = np.sqrt
     problem = problems.NLBVP([u, τ], ncc_cutoff=ncc_cutoff)
     problem.add_equation((dx(u) + τ*P, sqrt(1-u*u)))
     problem.add_equation((u(x=0), 0))

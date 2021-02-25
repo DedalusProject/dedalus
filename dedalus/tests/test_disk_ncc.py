@@ -55,8 +55,7 @@ def test_scalar_prod_scalar(Nphi, Nr, basis, ncc_first, dealias, dtype):
     problem = problems.LBVP(vars)
     problem.add_equation((w1, 0))
     solver = solvers.LinearBoundaryValueSolver(problem, matsolver='SuperluNaturalSpsolve', matrix_coupling=[False,True])
-    w1.prep_nccs(vars)
-    w1.store_ncc_matrices(solver.subproblems)
+    w1.store_ncc_matrices(vars, solver.subproblems)
     w0 = w0.evaluate()
     w0.require_scales(1)
     w1 = w1.evaluate_as_ncc()
@@ -87,8 +86,7 @@ def test_scalar_prod_vector(Nphi, Nr, basis, ncc_first, dealias, dtype):
     problem = problems.LBVP(vars)
     problem.add_equation((w1, 0))
     solver = solvers.LinearBoundaryValueSolver(problem, matsolver='SuperluNaturalSpsolve', matrix_coupling=[False,True])
-    w1.prep_nccs(vars)
-    w1.store_ncc_matrices(solver.subproblems)
+    w1.store_ncc_matrices(vars, solver.subproblems)
 
     w0 = w0.evaluate()
     w0.require_scales(1)
@@ -121,8 +119,7 @@ def test_scalar_prod_tensor(Nphi, Nr, basis, ncc_first, dealias, dtype):
     problem = problems.LBVP(vars)
     problem.add_equation((w1, 0))
     solver = solvers.LinearBoundaryValueSolver(problem, matsolver='SuperluNaturalSpsolve', matrix_coupling=[False, True])
-    w1.prep_nccs(vars)
-    w1.store_ncc_matrices(solver.subproblems)
+    w1.store_ncc_matrices(vars, solver.subproblems)
 
     w0 = w0.evaluate()
     w0.require_scales(1)
@@ -152,9 +149,8 @@ def test_vector_prod_scalar(Nphi, Nr, basis, ncc_first, dealias, dtype):
     problem = problems.LBVP(vars)
     problem.add_equation((dot(u,u)*g, 0))
     solver = solvers.LinearBoundaryValueSolver(problem, matsolver='SuperluNaturalSpsolve', matrix_coupling=[False, True])
-    w1.prep_nccs(vars)
-    w1.store_ncc_matrices(solver.subproblems)
-    
+    w1.store_ncc_matrices(vars, solver.subproblems)
+
     w0 = w0.evaluate()
     w0.require_scales(1)
     w1 = w1.evaluate_as_ncc()
@@ -187,8 +183,7 @@ def test_vector_prod_vector(Nphi, Nr, basis, ncc_first, dealias, dtype):
     problem = problems.LBVP(vars)
     problem.add_equation((dot(u,u)*v, 0))
     solver = solvers.LinearBoundaryValueSolver(problem, matsolver='SuperluNaturalSpsolve', matrix_coupling=[False, True])
-    w1.prep_nccs(vars)
-    w1.store_ncc_matrices(solver.subproblems)
+    w1.store_ncc_matrices(vars, solver.subproblems)
 
     w0 = w0.evaluate()
     w0.require_scales(1)
@@ -223,8 +218,7 @@ def test_vector_dot_vector(Nphi, Nr, basis, ncc_first, dealias, dtype):
     problem = problems.LBVP(vars)
     problem.add_equation((dot(u,u)*v, 0))
     solver = solvers.LinearBoundaryValueSolver(problem, matsolver='SuperluNaturalSpsolve', matrix_coupling=[False, True])
-    w1.prep_nccs(vars)
-    w1.store_ncc_matrices(solver.subproblems)
+    w1.store_ncc_matrices(vars, solver.subproblems)
 
     w0 = w0.evaluate()
     w0.require_scales(1)
@@ -262,8 +256,7 @@ def test_vector_dot_tensor(Nphi, Nr, basis, ncc_first, dealias, dtype):
     problem = problems.LBVP(vars)
     problem.add_equation((dot(u,u)*T, 0))
     solver = solvers.LinearBoundaryValueSolver(problem, matsolver='SuperluNaturalSpsolve', matrix_coupling=[False, True])
-    w1.prep_nccs(vars)
-    w1.store_ncc_matrices(solver.subproblems)
+    w1.store_ncc_matrices(vars, solver.subproblems)
 
     w0 = w0.evaluate()
     w0.require_scales(1)
@@ -297,8 +290,7 @@ def test_tensor_prod_scalar(Nphi, Nr, basis, ncc_first, dealias, dtype):
     problem = problems.LBVP(vars)
     problem.add_equation((f*g, 0))
     solver = solvers.LinearBoundaryValueSolver(problem, matsolver='SuperluNaturalSpsolve', matrix_coupling=[False, True])
-    U1.prep_nccs(vars)
-    U1.store_ncc_matrices(solver.subproblems)
+    U1.store_ncc_matrices(vars, solver.subproblems)
 
     U0 = U0.evaluate()
     U0.require_scales(1)
@@ -333,8 +325,7 @@ def test_tensor_dot_vector(Nphi, Nr, basis, ncc_first, dealias, dtype):
     problem = problems.LBVP(vars)
     problem.add_equation((f*u, 0))
     solver = solvers.LinearBoundaryValueSolver(problem, matsolver='SuperluNaturalSpsolve', matrix_coupling=[False, True])
-    w1.prep_nccs(vars)
-    w1.store_ncc_matrices(solver.subproblems)
+    w1.store_ncc_matrices(vars, solver.subproblems)
 
     w0 = w0.evaluate()
     w0.require_scales(1)
@@ -372,8 +363,7 @@ def test_tensor_dot_tensor(Nphi, Nr, basis, ncc_first, dealias, dtype):
     problem = problems.LBVP(vars)
     problem.add_equation((f*T, 0))
     solver = solvers.LinearBoundaryValueSolver(problem, matsolver='SuperluNaturalSpsolve', matrix_coupling=[False, True])
-    W1.prep_nccs(vars)
-    W1.store_ncc_matrices(solver.subproblems)
+    W1.store_ncc_matrices(vars, solver.subproblems)
 
     W0 = W0.evaluate()
     W0.require_scales(1)

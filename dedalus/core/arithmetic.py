@@ -308,15 +308,21 @@ class Product(Future):
         return op_index
 
     def prep_nccs(self, vars):
-        """Communicate NCC coeffs prior to matrix construction."""
+        """Separate NCC factors."""
         self._ncc_vars = vars
         op_index = self.require_linearity(*vars, recurse=False)
-        # Prep operand
-        self.operand = operand = self.args[op_index]
-        operand.prep_nccs(vars)
+        self.operand = self.args[op_index]
+        self.ncc = self.args[1 - op_index]  # Assumes 2 operands
+        # Recurse
+        self.operand.prep_nccs(vars)
+
+    def gather_ncc_coeffs(self):
+        """Communicate NCC coeffs prior to matrix construction."""
+        # Recurse
+        self.operand.gather_ncc_coeffs()
         # Evaluate NCC
-        self.ncc = ncc = self.args[1 - op_index]
-        if isinstance(self.ncc, Future):
+        ncc = self.ncc
+        if isinstance(ncc, Future):
             ncc = ncc.evaluate()
         # Allgather NCC coefficients
         if isinstance(ncc, Field):
@@ -325,7 +331,9 @@ class Product(Future):
         else:
             self._ncc_data = ncc
 
-    def store_ncc_matrices(self, subproblems, **kw):
+    def store_ncc_matrices(self, vars, subproblems, **kw):
+        self.prep_nccs(vars)
+        self.gather_ncc_coeffs()
         self._ncc_matrices = {}
         for subproblem in subproblems:
             self._ncc_matrices[subproblem] = self.build_ncc_matrix(subproblem, **kw)
@@ -464,14 +472,12 @@ class Product(Future):
         # ncc_mat = sparse.vstack(blocks, format='csr')
 
     def matrix_dependence(self, *vars):
-        self.prep_nccs(vars)  # HACK: called too much?
         operand = self.operand
         operand_dependence = operand.matrix_dependence(*vars)
         ncc_matrix_dependence = operand.domain.mode_dependence
         return ncc_matrix_dependence | operand_dependence
 
     def matrix_coupling(self, *vars):
-        self.prep_nccs(vars)  # HACK: called too much?
         operand = self.operand
         operand_coupling = operand.matrix_coupling(*vars)
         ncc = self.ncc

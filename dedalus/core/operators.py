@@ -480,6 +480,10 @@ class UnaryGridFunction(NonlinearOperator, FutureField):
     def new_operands(self, arg):
         return UnaryGridFunction(self.func, arg)
 
+    def reinitialize(self, **kw):
+        arg = self.args[0].reinitialize(**kw)
+        return self.new_operands(arg)
+
     def sym_diff(self, var):
         """Symbolically differentiate with respect to specified operand."""
         diff_map = {np.absolute: lambda x: np.sign(x),

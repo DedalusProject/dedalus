@@ -331,6 +331,7 @@ class LinearBoundaryValueProblem(ProblemBase):
         # Update domain after ncc reinitialization
         L = eqn['LHS']
         L = L.reinitialize(ncc=True, ncc_vars=vars)
+        L.prep_nccs(vars=vars)
         F = eqn['RHS']
         domain = eqn['domain'] = (L - F).domain
         L = operators.convert(L, domain.bases)
@@ -416,7 +417,8 @@ class NonlinearBoundaryValueProblem(ProblemBase):
                 dHi = Operand.cast(dHi, self.dist, tensorsig=tensorsig, dtype=dtype)
                 dHi = dHi.replace(ep, 0)
                 dH += dHi
-        dH = dH.reinitialize(ncc=True, ncc_vars=vars)
+        dH = dH.reinitialize(ncc=True, ncc_vars=perts)
+        dH.prep_nccs(vars=perts)
         domain = eqn['domain'] = (dH+H).domain
         dH = operators.convert(dH, domain.bases)
         H = operators.convert(H, domain.bases)
@@ -424,7 +426,6 @@ class NonlinearBoundaryValueProblem(ProblemBase):
         #eqn['dH'] = convert(dH.expand(*perts), eqn['bases'])
         eqn['dH'] = dH
         eqn['-H'] = -H
-        print(dH)
         eqn['matrix_dependence'] = dH.matrix_dependence(*perts)
         eqn['matrix_coupling'] = dH.matrix_coupling(*perts)
         # Debug logging
@@ -525,8 +526,10 @@ class InitialValueProblem(ProblemBase):
         # Update domain after ncc reinitialization
         if M:
             M = M.reinitialize(ncc=True, ncc_vars=vars)
+            M.prep_nccs(vars=vars)
         if L:
             L = L.reinitialize(ncc=True, ncc_vars=vars)
+            L.prep_nccs(vars=vars)
         F = eqn['RHS']
         domain = eqn['domain'] = (M + L - F).domain
         # Convert to equation bases and store
@@ -637,8 +640,10 @@ class EigenvalueProblem(ProblemBase):
         # Update domain after ncc reinitialization
         if M:
             M = M.reinitialize(ncc=True, ncc_vars=vars)
+            M.prep_nccs(vars=vars)
         if L:
             L = L.reinitialize(ncc=True, ncc_vars=vars)
+            L.prep_nccs(vars=vars)
         F = eqn['RHS']
         domain = eqn['domain'] = (M + L - F).domain
         # Convert to equation bases and store

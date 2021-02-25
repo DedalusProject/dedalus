@@ -141,6 +141,10 @@ class Future(Operand):
         for arg in self.args:
             arg.prep_nccs(vars)
 
+    def gather_ncc_coeffs(self):
+        for arg in self.args:
+            arg.gather_ncc_coeffs()
+
     def evaluate(self, id=None, force=True):
         """Recursively evaluate operation."""
 

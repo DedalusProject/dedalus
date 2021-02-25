@@ -261,6 +261,9 @@ class Current(Operand):
         if self not in vars:
             raise ValueError("This should never happen.")
 
+    def gather_ncc_coeffs(self):
+        pass
+
     def attempt(self, id=None):
         """Recursively attempt to evaluate operation."""
         return self
