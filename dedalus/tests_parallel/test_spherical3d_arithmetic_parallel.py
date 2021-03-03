@@ -88,6 +88,7 @@ def test_sphere_constant_radial_multiplication(Nphi, Ntheta, Nr, dtype, dealias,
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 @pytest.mark.parametrize('dealias', dealias_range)
 def test_shell_S2_radial_multiplication(Nphi, Ntheta, Nr, dtype, dealias):
+    """Tests ghost broadcasting in colatitude and radius."""
     c, d, b, phi, theta, r, x, y, z = build_shell(Nphi, Ntheta, Nr, dtype, dealias, mesh=(2,2))
     b_S2 = b.S2_basis()
     b_r = b.radial_basis
@@ -98,5 +99,6 @@ def test_shell_S2_radial_multiplication(Nphi, Ntheta, Nr, dtype, dealias):
     g['g'] = (r**2 - 0.5*r**3)
     h['g'] = (r**2 - 0.5*r**3) * (5*np.cos(theta)**2 - 1) * np.sin(theta) * np.cos(phi)
     h_op = (f * g).evaluate()
+    h_op.require_scales(1)
     assert np.allclose(h_op['g'], h['g'])
 

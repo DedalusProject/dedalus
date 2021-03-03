@@ -11,14 +11,16 @@ import numpy as np
 class OrderedSet(collections.OrderedDict):
     """Ordered set based on uniqueness of dictionary keys."""
 
-    def update(self, *args):
+    def __init__(self, *collections):
+        super().__init__()
+        self.update(*collections)
 
+    def update(self, *args):
         for arg in args:
             for item in arg:
                 self.add(item)
 
     def add(self, item):
-
         self[item] = None
 
 

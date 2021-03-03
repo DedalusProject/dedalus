@@ -78,8 +78,10 @@ class Add(Future, metaclass=MultiClass):
 
     def _build_bases(self, *args):
         """Build output bases."""
+        dist = unify_attributes(args, 'dist')
         bases = []
-        for ax_bases in zip(*(arg.domain.full_bases for arg in args)):
+        for coord in args[0].domain.bases_by_coord:
+            ax_bases = tuple(arg.domain.bases_by_coord[coord] for arg in args)
             # All constant bases yields constant basis
             if all(basis is None for basis in ax_bases):
                 bases.append(None)
@@ -234,7 +236,11 @@ class Product(Future):
     def _build_bases(self, arg0, arg1, ncc=False, ncc_vars=None, **kw):
         """Build output bases."""
         bases = []
-        for b0, b1 in zip(arg0.domain.full_bases, arg1.domain.full_bases):
+        arg0_bases = arg0.domain.bases_by_coord
+        arg1_bases = arg1.domain.bases_by_coord
+        for coord in arg0_bases:
+            b0 = arg0_bases[coord]
+            b1 = arg1_bases[coord]
             # All constant bases yields constant basis
             if b0 is None and b1 is None:
                 continue
@@ -245,8 +251,7 @@ class Product(Future):
                 bases.append(b0 @ b1)
             else:
                 bases.append(b0 * b1)
-        bases = {basis.coordsystem: basis for basis in bases}
-        return tuple(bases.values())
+        return tuple(bases)
 
     def reinitialize(self, **kw):
         arg0 = self.args[0].reinitialize(**kw)
@@ -770,10 +775,9 @@ class MultiplyFields(Multiply, FutureField):
         # Broadcast
         arg0_data = self.arg0_ghost_broadcaster.cast()
         arg1_data = self.arg1_ghost_broadcaster.cast()
-        print('rank:', self.domain.dist.comm.rank, 'arg0_shape:', arg0_data.shape, 'arg1_shape:', arg1_data.shape)
         # Reshape arg data to broadcast properly for output tensorsig
-        arg0_exp_data = arg0_data.reshape(self.arg0_exp_tshape + arg0_data.shape)
-        arg1_exp_data = arg1_data.reshape(self.arg1_exp_tshape + arg1_data.shape)
+        arg0_exp_data = arg0_data.reshape(self.arg0_exp_tshape + arg0_data.shape[len(arg0.tensorsig):])
+        arg1_exp_data = arg1_data.reshape(self.arg1_exp_tshape + arg1_data.shape[len(arg1.tensorsig):])
         np.multiply(arg0_exp_data, arg1_exp_data, out=out.data)
 
 

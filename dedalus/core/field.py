@@ -407,12 +407,8 @@ class Field(Current):
         self.name = name
         self.tensorsig = tensorsig
         self.dtype = dtype
-        #self.bases = bases
         # Build domain
         self.domain = Domain(dist, bases)
-        #self.bases, self.full_bases = self.domain.bases, self.domain.full_bases
-        #self.bases = dist.check_bases(bases)
-
         # Set initial scales and layout
         self.scales = None
         self.buffer_size = -1

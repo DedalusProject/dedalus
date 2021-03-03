@@ -22,6 +22,7 @@ from ..tools import jacobi
 from ..tools import clenshaw
 from ..tools.array import reshape_vector, axindex, axslice
 from ..tools.dispatch import MultiClass
+from ..tools.general import unify
 
 from .spaces import ParityInterval, Disk
 from .coords import Coordinate, S2Coordinates, SphericalCoordinates
@@ -1253,7 +1254,9 @@ class SpinRecombinationBasis:
         # Perform unitary spin recombination along relevant tensor indeces
         U = []
         for i, cs in enumerate(tensorsig):
-            if cs == self.coordsystem or (type(cs) is SphericalCoordinates and cs.sub_cs(self.coordsystem)):
+            if (cs == self.coordsystem or
+                (type(cs) is SphericalCoordinates and self.coordsystem == cs.S2coordsys) or
+                (type(self.coordsystem) is SphericalCoordinates and self.coordsystem.S2coordsys == cs)):
                 U.append(Us[cs.dim])
             #if self.coordsystem is vs: # kludge before we decide how compound coordinate systems work
             #    Ui = np.identity(vs.dim, dtype=np.complex128)
@@ -1392,7 +1395,9 @@ class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):
         Ss = {2:np.array([-1, 1], dtype=int), 3:np.array([-1, 1, 0], dtype=int)}
         S = np.zeros([cs.dim for cs in tensorsig], dtype=int)
         for i, cs in enumerate(tensorsig):
-            if self.coordsystem == cs or (type(cs) is SphericalCoordinates and cs.S2coordsys == self.coordsystem):
+            if (self.coordsystem == cs or
+                (type(cs) is SphericalCoordinates and self.coordsystem == cs.S2coordsys) or
+                (type(self.coordsystem) is SphericalCoordinates and self.coordsystem.S2coordsys == cs)):
                 S[axslice(i, 0, cs.dim)] += reshape_vector(Ss[cs.dim], dim=len(tensorsig), axis=i)
             #if self.coordsystem is vs: # kludge before we decide how compound coordinate systems work
             #    S[axslice(i, 0, self.dim)] += reshape_vector(Ss, dim=len(tensorsig), axis=i)
@@ -1947,9 +1952,11 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             logger.warning("You are using more azimuthal modes than can be resolved with your current colatitude resolution")
             #raise ValueError("shape[0] cannot be more than twice shape[1].")
         self.forward_transforms = [self.forward_transform_azimuth,
-                                   self.forward_transform_colatitude]
+                                   self.forward_transform_colatitude,
+                                   self.forward_transform_radius]
         self.backward_transforms = [self.backward_transform_azimuth,
-                                    self.backward_transform_colatitude]
+                                    self.backward_transform_colatitude,
+                                    self.backward_transform_radius]
         self.grid_params = (coordsystem, radius, dealias)
         if self.Lmax > 0 and shape[0] % 2 != 0:
             raise ValueError("Don't use an odd phi resolution please")
@@ -2082,18 +2089,6 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             if self.radius == other.radius:
                 shape = tuple(np.maximum(self.shape, other.shape))
                 return SpinWeightedSphericalHarmonics(self.coordsystem, shape, radius=self.radius, dealias=self.dealias, dtype=self.dtype)
-        if isinstance(other, Jacobi):
-            if isinstance(other.coord.cs, coords.SphericalCoordinates):
-                spherical_coords = other.coord.cs
-                if self.coordsystem == spherical_coords.S2coordsys and other.coord == spherical_coords.radius:
-                    if other.bounds[0] == 0:
-                        raise ValueError("Cannot multiply a radial function starting at r=0 by an angular function")
-                    else:
-                        shape = (self.shape[0], self.shape[1], other.shape)
-                        dealias = (self.dealias[0], self.dealias[1], other.dealias)
-                        return SphericalShellBasis(spherical_coords, shape, radii=other.bounds, alpha=(other.a0, other.b0), dealias=dealias,
-                                                   azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
-                                                   radius_library=other.library, dtype=self.dtype)
         return NotImplemented
 
     @CachedAttribute
@@ -2299,6 +2294,10 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         # Permute m for triangular truncation
         permute_axis(cdata, axis+len(field.tensorsig), self.forward_m_perm, out=cdata)
 
+    def forward_transform_radius(self, field, axis, gdata, cdata):
+        # Placeholder for when self.coordsys is SphericalCoordinates
+        pass
+
     def backward_transform_azimuth_Lmax0(self, field, axis, cdata, gdata):
         slice_axis = axis + len(field.tensorsig)
         np.copyto(gdata, cdata[axslice(slice_axis, 0, 1)])
@@ -2308,6 +2307,10 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         permute_axis(cdata, axis+len(field.tensorsig), self.backward_m_perm, out=cdata)
         # Call Fourier transform
         self.azimuth_basis.backward_transform(field, axis, cdata, gdata)
+
+    def backward_transform_radius(self, field, axis, cdata, gdata):
+        # Placeholder for when self.coordsys is SphericalCoordinates
+        pass
 
     def forward_transform_colatitude_Lmax0(self, field, axis, gdata, cdata):
         # Apply spin recombination from gdata to temp
@@ -2710,6 +2713,20 @@ class SphericalShellRadialBasis(RegularityBasis):
                 radial_size = max(self.shape[2], other.shape[2])
                 k = 0
                 return SphericalShellRadialBasis(self.coordsystem, radial_size, radii=self.radii, alpha=self.alpha, dealias=self.dealias[2:], k=k, radius_library=self.radius_library, dtype=self.dtype)
+        if isinstance(other, SpinWeightedSphericalHarmonics):
+            unify((self.coordsystem, other.coordsystem))
+            args = {}
+            args['coordsystem'] = self.coordsystem
+            args['shape'] = other.shape + self.shape[-1:] # Because ShellRadialBasis shape is padded up to 3d
+            args['radii'] = self.radii
+            args['alpha'] = self.alpha
+            args['dealias'] = other.dealias + (self.dealias[-1],)
+            args['k'] = self.k
+            args['dtype'] = unify((self.dtype, other.dtype))
+            args['azimuth_library'] = other.azimuth_library
+            args['colatitude_library'] = other.colatitude_library
+            args['radius_library'] = self.radius_library
+            return SphericalShellBasis(**args)
         return NotImplemented
 
     def __matmul__(self, other):
@@ -3147,7 +3164,7 @@ class Spherical3DBasis(MultidimensionalBasis):
         return self.radial_basis
 
     def S2_basis(self,radius=1):
-        return SWSH(self.coordsystem.S2coordsys, self.shape[:2], radius=radius, dealias=self.dealias[:2], dtype=self.dtype,
+        return SWSH(self.coordsystem, self.shape[:2], radius=radius, dealias=self.dealias[:2], dtype=self.dtype,
                     azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library)
 
     @CachedMethod
