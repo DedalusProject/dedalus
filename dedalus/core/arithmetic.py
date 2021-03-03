@@ -755,8 +755,8 @@ class MultiplyFields(Multiply, FutureField):
         self.gamma_args = []
         # Setup ghost broadcasting
         broadcast_dims = np.array(self.domain.nonconstant)
-        self.arg0_ghost_broadcaster = GhostBroadcaster(arg0, self.dist.grid_layout, broadcast_dims)
-        self.arg1_ghost_broadcaster = GhostBroadcaster(arg1, self.dist.grid_layout, broadcast_dims)
+        self.arg0_ghost_broadcaster = GhostBroadcaster(arg0.domain, self.dist.grid_layout, broadcast_dims)
+        self.arg1_ghost_broadcaster = GhostBroadcaster(arg1.domain, self.dist.grid_layout, broadcast_dims)
         # Compute expanded shapes for broadcasting data
         arg0_gshape = self.dist.grid_layout.local_shape(arg0.domain, arg0.domain.dealias)
         arg0_tshape = tuple(cs.dim for cs in arg0.tensorsig)
@@ -773,8 +773,8 @@ class MultiplyFields(Multiply, FutureField):
         # Set output layout
         out.set_layout(arg0.layout)
         # Broadcast
-        arg0_data = self.arg0_ghost_broadcaster.cast()
-        arg1_data = self.arg1_ghost_broadcaster.cast()
+        arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
+        arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
         # Reshape arg data to broadcast properly for output tensorsig
         arg0_exp_data = arg0_data.reshape(self.arg0_exp_tshape + arg0_data.shape[len(arg0.tensorsig):])
         arg1_exp_data = arg1_data.reshape(self.arg1_exp_tshape + arg1_data.shape[len(arg1.tensorsig):])
@@ -784,41 +784,41 @@ class MultiplyFields(Multiply, FutureField):
 class GhostBroadcaster:
     """Copy field data over constant distributed dimensions for arithmetic broadcasting."""
 
-    def __init__(self, field, layout, broadcast_dims):
-        self.field = field
+    def __init__(self, domain, layout, broadcast_dims):
+        self.domain = domain
         self.layout = layout
         self.broadcast_dims = broadcast_dims
         # Determine deployment dimensions
-        deploy_dims_ext = np.array(broadcast_dims) & np.array(field.domain.constant)
+        deploy_dims_ext = np.array(broadcast_dims) & np.array(domain.constant)
         deploy_dims = deploy_dims_ext[~layout.local]
         # Build subcomm or skip casting
         if any(deploy_dims):
-            self.subcomm = field.domain.dist.comm_cart.Sub(remain_dims=deploy_dims)
+            self.subcomm = domain.dist.comm_cart.Sub(remain_dims=deploy_dims)
         else:
             self.cast = self._skip_cast
 
-    @CachedAttribute
-    def ghost_data(self):
+    @CachedMethod
+    def ghost_data(self, shape, dtype):
         # Broadcast root shape
-        shape = self.subcomm.bcast(self.field.data.shape, root=0)
+        shape = self.subcomm.bcast(shape, root=0)
         # Make ghost buffers
         if self.subcomm.rank == 0:
             return None
         else:
-            return np.empty(dtype=self.field.dtype, shape=shape)
+            return np.empty(dtype=dtype, shape=shape)
 
-    def cast(self):
+    def cast(self, field):
         # Retrieve ghost data on all ranks to prevent deadlocks
-        ghost_data = self.ghost_data
+        ghost_data = self.ghost_data(field.data.shape, field.dtype)
         if self.subcomm.rank == 0:
-            ghost_data = self.field.data
+            ghost_data = field.data
         # Skip broadcasting on empty subcomms
         if ghost_data.size:
             self.subcomm.Bcast(ghost_data, root=0)
         return ghost_data
 
-    def _skip_cast(self):
-        return self.field.data
+    def _skip_cast(self, field):
+        return field.data
 
 
 class MultiplyNumberField(Multiply, FutureField):
