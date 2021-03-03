@@ -3235,6 +3235,8 @@ class Spherical3DBasis(MultidimensionalBasis):
 class SphericalShellBasis(Spherical3DBasis):
 
     def __init__(self, coordsystem, shape, radii=(1,2), alpha=(-0.5,-0.5), dealias=(1,1,1), k=0, dtype=np.complex128, azimuth_library=None, colatitude_library='matrix', radius_library='matrix'):
+        if np.isscalar(dealias):
+            dealias = (dealias, dealias, dealias)
         self.radial_basis = SphericalShellRadialBasis(coordsystem, shape[2], radii=radii, alpha=alpha, dealias=(dealias[2],), k=k, dtype=dtype, radius_library=radius_library)
         Spherical3DBasis.__init__(self, coordsystem, shape[:2], dealias[:2], self.radial_basis, dtype=dtype, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
         self.grid_params = (coordsystem, radii, alpha, dealias)
@@ -3339,6 +3341,8 @@ class SphericalShellBasis(Spherical3DBasis):
 class BallBasis(Spherical3DBasis):
 
     def __init__(self, coordsystem, shape, radius=1, k=0, alpha=0, dealias=(1,1,1), dtype=np.complex128, azimuth_library=None, colatitude_library='matrix', radius_library='matrix'):
+        if np.isscalar(dealias):
+            dealias = (dealias, dealias, dealias)
         self.radial_basis = BallRadialBasis(coordsystem, shape[2], radius=radius, k=k, alpha=alpha, dealias=(dealias[2],), dtype=dtype, radius_library=radius_library)
         Spherical3DBasis.__init__(self, coordsystem, shape[:2], dealias[:2], self.radial_basis, dtype=dtype, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
         self.grid_params = (coordsystem, radius, alpha, dealias)
@@ -3483,6 +3487,35 @@ class ConvertRegularity(operators.Convert, operators.SphericalEllOperator):
         dk = self.output_basis.k - radial_basis.k
         if regindex_in == regindex_out:
             return radial_basis.conversion_matrix(ell, regtotal, dk)
+        else:
+            raise ValueError("This should never happen.")
+
+
+class ConvertConstantRegularity(operators.Convert, operators.SphericalEllOperator):
+
+    input_basis_type = type(None)
+    output_basis_type = RegularityBasis
+
+    def __init__(self, operand, output_basis, out=None):
+        operators.Convert.__init__(self, operand, output_basis, out=out)
+        self.radial_basis = self.output_basis
+
+    def regindex_out(self, regindex_in):
+        return (regindex_in,)
+
+    def radial_matrix(self, regindex_in, regindex_out, ell):
+        radial_basis = self.radial_basis
+        regtotal = radial_basis.regtotal(regindex_in)
+        coeff_size = radial_basis.shape[-1]
+        if ell == 0 and regindex_in == regindex_out:
+            # Convert to k=0
+            W = np.sum(radial_basis.global_weights(1))
+            const_to_k0 = np.zeros((coeff_size, 1))
+            const_to_k0[0, 0] = W ** 0.5
+            # Convert up in k
+            k0_to_k = radial_basis._new_k(0).conversion_matrix(ell, regtotal, radial_basis.k)
+            matrix = k0_to_k @ const_to_k0
+            return matrix
         else:
             raise ValueError("This should never happen.")
 
