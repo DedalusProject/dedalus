@@ -364,13 +364,18 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
     native_bounds = (-1, 1)
     transforms = {}
 
-    def __init__(self, coord, size, bounds, a, b, a0=None, b0=None, dealias=1, library='matrix'):
+    def __init__(self, coord, size, bounds, a, b, a0=None, b0=None, dealias=1, library=None):
         super().__init__(coord, size, bounds, dealias)
         # Default grid parameters
         if a0 is None:
             a0 = a
         if b0 is None:
             b0 = b
+        if library is None:
+            if a0 == b0 == -0.5:
+                library = "scipy_ultraspherical"
+            else:
+                library = "matrix"
         self.a = float(a)
         self.b = float(b)
         self.a0 = float(a0)

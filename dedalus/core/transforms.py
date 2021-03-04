@@ -9,7 +9,7 @@ from ..libraries import dedalus_sphere
 from . import basis
 from ..libraries.fftw import fftw_wrappers as fftw
 from ..tools import jacobi
-from ..tools.array import apply_matrix, apply_dense, axslice
+from ..tools.array import apply_matrix, apply_dense, axslice, splu_inverse, apply_sparse
 from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
 
@@ -186,7 +186,7 @@ class ComplexFourierTransform(SeparableTransform):
         self.M = coeff_size
         self.KN = (self.N - 1) // 2
         self.KM = (self.M - 1) // 2
-        self.Kmax = Kmax = min(self.KN, self.KM)
+        self.Kmax = min(self.KN, self.KM)
 
     @property
     def wavenumbers(self):
@@ -355,7 +355,7 @@ class RealFourierTransform(SeparableTransform):
         self.M = coeff_size
         self.KN = (self.N - 1) // 2
         self.KM = (self.M - 1) // 2
-        self.Kmax = Kmax = min(self.KN, self.KM)
+        self.Kmax = min(self.KN, self.KM)
 
     @property
     def wavenumbers(self):
@@ -543,6 +543,202 @@ class FFTWRealFFT(RealFFT):
         self.repack_rescale(cdata, temp, axis, rescale=None)
         # Execute FFTW plan
         plan.backward(temp, gdata)
+
+
+class CosineTransform(SeparableTransform):
+    """
+    Abstract base class for cosine transforms.
+
+    Parameters
+    ----------
+    grid_size : int
+        Grid size (N) along transform dimension.
+    coeff_size : int
+        Coefficient size (M) along transform dimension.
+
+    Notes
+    -----
+    Let KN = (N - 1) be the maximum (Nyquist) mode on the grid.
+    Let KM = (M - 1) be the maximum retained mode in coeff space.
+    Then K = min(KN, KM) is the maximum wavenumber used in the transforms.
+    A unit-amplitude normalization is used.
+
+    Forward transform:
+        if k == 0:
+            a(k) = (1/N) \sum_{x=0}^{N-1} f(x)
+        elif k <= K:
+            a(k) =  (2/N) \sum_{x=0}^{N-1} f(x) \cos(\pi k x / N)
+        else:
+            a(k) = 0
+
+    Backward transform:
+        f(x) = \sum_{k=0}^{K} a(k) \cos(\pi k x / N)
+
+    Coefficient ordering:
+        The cosine coefficients are ordered simply as
+        [a(0), a(1), a(2), ..., a(KM)]
+    """
+
+    def __init__(self, grid_size, coeff_size):
+        self.N = grid_size
+        self.M = coeff_size
+        self.KN = (self.N - 1)
+        self.KM = (self.M - 1)
+        self.Kmax = min(self.KN, self.KM)
+
+    @property
+    def wavenumbers(self):
+        """One-dimensional global wavenumber array."""
+        return np.arange(self.KM + 1)
+
+
+#@register_transform(basis.Cosine, 'matrix')
+class CosineMMT(CosineTransform, SeparableMatrixTransform):
+    """Cosine MMT."""
+
+    @CachedAttribute
+    def forward_matrix(self):
+        """Build forward transform matrix."""
+        N = self.N
+        M = self.M
+        Kmax = self.Kmax
+        K = self.wavenumbers[:, None]
+        X = np.arange(N)[None, :]
+        dX = N / np.pi
+        quadrature = (2 / N) * np.cos(K*X/dX)
+        quadrature[0] = 1 / N
+        # Zero higher modes for transforms with grid_size < coeff_size
+        quadrature *= (K <= self.Kmax)
+        # Ensure C ordering for fast dot products
+        return np.asarray(quadrature, order='C')
+
+    @CachedAttribute
+    def backward_matrix(self):
+        """Build backward transform matrix."""
+        N = self.N
+        M = self.M
+        Kmax = self.Kmax
+        K = self.wavenumbers[None, :]
+        X = np.arange(N)[:, None] + 1/2
+        dX = N / np.pi
+        functions = np.cos(K*X/dX)
+        # Zero higher modes for transforms with grid_size < coeff_size
+        functions *= (K <= self.Kmax)
+        # Ensure C ordering for fast dot products
+        return np.asarray(functions, order='C')
+
+
+class FCT(CosineTransform):
+    """Abstract base class for fast cosine transforms."""
+
+    def resize_rescale_forward(self, data_in, data_out, axis):
+        """Resize by padding/trunction and rescale to unit amplitude."""
+        N, M = self.N, self.M
+        Kmax = self.Kmax
+        zerofreq = axslice(axis, 0, 1)
+        np.multiply(data_in[zerofreq], (1/N/2), data_out[zerofreq])
+        if Kmax > 0:
+            posfreq = axslice(axis, 1, Kmax+1)
+            np.multiply(data_in[posfreq], (1/N), data_out[posfreq])
+            if M > N:
+                badfreq = axslice(axis, Kmax+1, None)
+                data_out[badfreq] = 0
+
+    def resize_rescale_backward(self, data_in, data_out, axis):
+        """Resize by padding/trunction and rescale to unit amplitude."""
+        N, M = self.N, self.M
+        Kmax = self.Kmax
+        zerofreq = axslice(axis, 0, 1)
+        np.copyto(data_out[zerofreq], data_in[zerofreq])
+        if Kmax > 0:
+            posfreq = axslice(axis, 1, Kmax+1)
+            np.multiply(data_in[posfreq], (1/2), data_out[posfreq])
+            if N > M:
+                badfreq = axslice(axis, Kmax+1, None)
+                data_out[badfreq] = 0
+
+
+#@register_transform(basis.Cosine, 'scipy')
+class ScipyFCT(FCT):
+    """Fast cosine transform using scipy.fft."""
+
+    def forward(self, gdata, cdata, axis):
+        """Apply forward transform along specified axis."""
+        # Call DCT
+        temp = scipy.fft.dct(gdata, type=2, axis=axis) # Creates temporary
+        # Resize and rescale for unit-ampltidue normalization
+        self.resize_rescale_forward(temp, cdata, axis)
+
+    def backward(self, cdata, gdata, axis):
+        """Apply backward transform along specified axis."""
+        # Resize and rescale for unit-amplitude normalization
+        # Need temporary to avoid overwriting problems
+        temp = np.empty_like(gdata) # Creates temporary
+        self.resize_rescale_backward(cdata, temp, axis)
+        # Call IDCT
+        temp = scipy.fft.dct(temp, type=3, axis=axis, overwrite_x=True) # Creates temporary
+        np.copyto(gdata, temp)
+
+
+@register_transform(basis.Jacobi, 'scipy_ultraspherical')
+class ScipyFastUltraspherical(JacobiTransform, ScipyFCT):
+    """Fast ultraspherical transform using scipy.fft and spectral conversion."""
+
+    def __init__(self, grid_size, coeff_size, a, b, a0, b0):
+        JacobiTransform.__init__(self, grid_size, coeff_size, a, b, a0, b0)
+        ScipyFCT.__init__(self, grid_size, coeff_size)
+        if not a0 == b0 == -0.5:
+            raise ValueError("Invalid Jacobi parameters.")
+        self.rescale_forward_zero = np.sqrt(np.pi) / self.N / 2
+        self.rescale_backward_zero = 1 / np.sqrt(np.pi)
+        self.rescale_forward_pos = np.sqrt(np.pi / 2) / self.N
+        self.rescale_backward_pos = 1 / 2 / np.sqrt(np.pi / 2)
+        if a == a0 and b == b0:
+            self.forward_conversion = None
+            self.backward_conversion = None
+        else:
+            self.forward_conversion = jacobi.conversion_matrix(self.M, a0, b0, a, b)
+            self.backward_conversion = splu_inverse(self.forward_conversion)
+
+    def resize_rescale_forward(self, data_in, data_out, axis):
+        """Resize by padding/trunction and rescale to unit amplitude."""
+        N, M = self.N, self.M
+        Kmax = self.Kmax
+        zerofreq = axslice(axis, 0, 1)
+        np.multiply(data_in[zerofreq], self.rescale_forward_zero, data_out[zerofreq])
+        if Kmax > 0:
+            posfreq = axslice(axis, 1, Kmax+1)
+            np.multiply(data_in[posfreq], self.rescale_forward_pos, data_out[posfreq])
+            posfreq_odd = axslice(axis, 1, Kmax+1, 2)
+            data_out[posfreq_odd] *= -1
+            if M > N:
+                badfreq = axslice(axis, Kmax+1, None)
+                data_out[badfreq] = 0
+        # Ultraspherical conversion
+        if self.forward_conversion is not None:
+            apply_sparse(self.forward_conversion, data_out, axis, out=data_out)
+
+    def resize_rescale_backward(self, data_in, data_out, axis):
+        """Resize by padding/trunction and rescale to unit amplitude."""
+        N, M = self.N, self.M
+        Kmax = self.Kmax
+        # Ultraspherical conversion
+        if self.backward_conversion is not None:
+            if M > N:
+                # Truncate before conversion
+                badfreq = axslice(axis, Kmax+1, None)
+                data_in[badfreq] = 0
+            apply_sparse(self.backward_conversion, data_in, axis, out=data_in)
+        zerofreq = axslice(axis, 0, 1)
+        np.multiply(data_in[zerofreq], self.rescale_backward_zero, data_out[zerofreq])
+        if Kmax > 0:
+            posfreq = axslice(axis, 1, Kmax+1)
+            np.multiply(data_in[posfreq], self.rescale_backward_pos, data_out[posfreq])
+            posfreq_odd = axslice(axis, 1, Kmax+1, 2)
+            data_out[posfreq_odd] *= -1
+            if N > M:
+                badfreq = axslice(axis, Kmax+1, None)
+                data_out[badfreq] = 0
 
 
 # class ScipyDST(PolynomialTransform):
