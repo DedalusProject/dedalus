@@ -13,7 +13,7 @@ Ntheta_range = [8]
 Nr_range = [12]
 radius_ball = 1.5
 radii_shell = (0.5, 1)
-dealias = [1]
+dealias = [1,3/2]
 dtypes = [np.float64, np.complex128]
 
 @CachedFunction
@@ -393,4 +393,3 @@ def test_tensor_dot_tensor(Nphi, Ntheta, Nr, basis, ncc_first, dealias, dtype):
     W0.require_scales(1)
     W1 = W1.evaluate_as_ncc()
     assert np.allclose(W0['g'], W1['g'])
-
