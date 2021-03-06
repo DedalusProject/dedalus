@@ -373,7 +373,7 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
             b0 = b
         if library is None:
             if a0 == b0 == -0.5:
-                library = "scipy_ultraspherical"
+                library = "fftw_dct"
             else:
                 library = "matrix"
         self.a = float(a)

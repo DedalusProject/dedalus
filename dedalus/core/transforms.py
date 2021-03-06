@@ -1,5 +1,7 @@
 """Spectral transform classes."""
 
+# TODO: implement transforms as cached classes
+
 import numpy as np
 import scipy
 import scipy.fft
@@ -284,7 +286,7 @@ class FFTWComplexFFT(ComplexFFT):
     """Complex-to-complex FFT using FFTW."""
 
     @CachedMethod
-    def _fftw_setup(self, gshape, axis):
+    def _build_fftw_plan(self, gshape, axis):
         """Build FFTW plans and temporary arrays."""
         dtype = np.complex128
         logger.debug("Building FFTW FFT plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, gshape, axis))
@@ -295,7 +297,7 @@ class FFTWComplexFFT(ComplexFFT):
 
     def forward(self, gdata, cdata, axis):
         """Apply forward transform along specified axis."""
-        plan, temp = self._fftw_setup(gdata.shape, axis)
+        plan, temp = self._build_fftw_plan(gdata.shape, axis)
         # Execute FFTW plan
         plan.forward(gdata, temp)
         # Resize and rescale for unit-amplitude normalization
@@ -303,7 +305,7 @@ class FFTWComplexFFT(ComplexFFT):
 
     def backward(self, cdata, gdata, axis):
         """Apply backward transform along specified axis."""
-        plan, temp = self._fftw_setup(gdata.shape, axis)
+        plan, temp = self._build_fftw_plan(gdata.shape, axis)
         # Resize and rescale for unit-amplitude normalization
         self.resize_coeffs(cdata, temp, axis, rescale=None)
         # Execute FFTW plan
@@ -519,7 +521,7 @@ class FFTWRealFFT(RealFFT):
     """Real-to-real FFT using FFTW."""
 
     @CachedMethod
-    def _fftw_setup(self, gshape, axis):
+    def _build_fftw_plan(self, gshape, axis):
         """Build FFTW plans and temporary arrays."""
         dtype = np.float64
         logger.debug("Building FFTW FFT plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, gshape, axis))
@@ -530,7 +532,7 @@ class FFTWRealFFT(RealFFT):
 
     def forward(self, gdata, cdata, axis):
         """Apply forward transform along specified axis."""
-        plan, temp = self._fftw_setup(gdata.shape, axis)
+        plan, temp = self._build_fftw_plan(gdata.shape, axis)
         # Execute FFTW plan
         plan.forward(gdata, temp)
         # Unpack from complex form and rescale
@@ -538,7 +540,7 @@ class FFTWRealFFT(RealFFT):
 
     def backward(self, cdata, gdata, axis):
         """Apply backward transform along specified axis."""
-        plan, temp = self._fftw_setup(gdata.shape, axis)
+        plan, temp = self._build_fftw_plan(gdata.shape, axis)
         # Repack into complex form and rescale
         self.repack_rescale(cdata, temp, axis, rescale=None)
         # Execute FFTW plan
@@ -628,38 +630,44 @@ class CosineMMT(CosineTransform, SeparableMatrixTransform):
         return np.asarray(functions, order='C')
 
 
-class FCT(CosineTransform):
+class FastCosineTransform(CosineTransform):
     """Abstract base class for fast cosine transforms."""
+
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        # Standard scaling factors for unit-amplitude normalization from DCT-II
+        self.forward_rescale_zero = 1 / self.N / 2
+        self.forward_rescale_pos = 1 / self.N
+        self.backward_rescale_zero = 1
+        self.backward_rescale_pos = 1 / 2
 
     def resize_rescale_forward(self, data_in, data_out, axis):
         """Resize by padding/trunction and rescale to unit amplitude."""
-        N, M = self.N, self.M
         Kmax = self.Kmax
         zerofreq = axslice(axis, 0, 1)
-        np.multiply(data_in[zerofreq], (1/N/2), data_out[zerofreq])
+        np.multiply(data_in[zerofreq], self.forward_rescale_zero, data_out[zerofreq])
         if Kmax > 0:
             posfreq = axslice(axis, 1, Kmax+1)
-            np.multiply(data_in[posfreq], (1/N), data_out[posfreq])
-            if M > N:
+            np.multiply(data_in[posfreq], self.forward_rescale_pos, data_out[posfreq])
+            if self.M > self.N:
                 badfreq = axslice(axis, Kmax+1, None)
                 data_out[badfreq] = 0
 
     def resize_rescale_backward(self, data_in, data_out, axis):
         """Resize by padding/trunction and rescale to unit amplitude."""
-        N, M = self.N, self.M
         Kmax = self.Kmax
         zerofreq = axslice(axis, 0, 1)
-        np.copyto(data_out[zerofreq], data_in[zerofreq])
+        np.multiply(data_in[zerofreq], self.backward_rescale_zero, data_out[zerofreq])
         if Kmax > 0:
             posfreq = axslice(axis, 1, Kmax+1)
-            np.multiply(data_in[posfreq], (1/2), data_out[posfreq])
-            if N > M:
+            np.multiply(data_in[posfreq], self.backward_rescale_pos, data_out[posfreq])
+            if self.N > self.M:
                 badfreq = axslice(axis, Kmax+1, None)
                 data_out[badfreq] = 0
 
 
 #@register_transform(basis.Cosine, 'scipy')
-class ScipyFCT(FCT):
+class ScipyDCT(FastCosineTransform):
     """Fast cosine transform using scipy.fft."""
 
     def forward(self, gdata, cdata, axis):
@@ -680,19 +688,55 @@ class ScipyFCT(FCT):
         np.copyto(gdata, temp)
 
 
-@register_transform(basis.Jacobi, 'scipy_ultraspherical')
-class ScipyFastUltraspherical(JacobiTransform, ScipyFCT):
-    """Fast ultraspherical transform using scipy.fft and spectral conversion."""
+#@register_transform(basis.Cosine, 'fftw')
+class FFTWDCT(FastCosineTransform):
+    """Fast cosine transform using FFTW."""
+
+    @CachedMethod
+    def _build_fftw_plan(self, dtype, gshape, axis):
+        """Build FFTW plans and temporary arrays."""
+        logger.debug("Building FFTW DCT plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, gshape, axis))
+        flags = ['FFTW_'+FFTW_RIGOR().upper()]
+        plan = fftw.DiscreteCosineTransform(dtype, gshape, axis, flags=flags)
+        temp = fftw.create_array(gshape, dtype)
+        return plan, temp
+
+    def forward(self, gdata, cdata, axis):
+        """Apply forward transform along specified axis."""
+        plan, temp = self._build_fftw_plan(gdata.dtype, gdata.shape, axis)
+        # Execute FFTW plan
+        plan.forward(gdata, temp)
+        # Resize and rescale for unit-ampltidue normalization
+        self.resize_rescale_forward(temp, cdata, axis)
+
+    def backward(self, cdata, gdata, axis):
+        """Apply backward transform along specified axis."""
+        plan, temp = self._build_fftw_plan(gdata.dtype, gdata.shape, axis)
+        # Resize and rescale for unit-amplitude normalization
+        self.resize_rescale_backward(cdata, temp, axis)
+        # Execute FFTW plan
+        plan.backward(temp, gdata)
+
+
+class FastChebyshevTransform(JacobiTransform):
+    """
+    Abstract base class for fast Chebyshev transforms including ultraspherical conversion.
+    Subclasses should inherit from this class, then a FastCosineTransform subclass.
+    """
 
     def __init__(self, grid_size, coeff_size, a, b, a0, b0):
-        JacobiTransform.__init__(self, grid_size, coeff_size, a, b, a0, b0)
-        ScipyFCT.__init__(self, grid_size, coeff_size)
-        if not a0 == b0 == -0.5:
-            raise ValueError("Invalid Jacobi parameters.")
-        self.rescale_forward_zero = np.sqrt(np.pi) / self.N / 2
-        self.rescale_backward_zero = 1 / np.sqrt(np.pi)
-        self.rescale_forward_pos = np.sqrt(np.pi / 2) / self.N
-        self.rescale_backward_pos = 1 / 2 / np.sqrt(np.pi / 2)
+        if not a0 == b0 == -1/2:
+            raise ValueError("Fast Chebshev transform requires a0 == b0 == -1/2.")
+        # Jacobi initialization
+        super().__init__(grid_size, coeff_size, a, b, a0, b0)
+        # DCT initialization to set scaling factors
+        super(JacobiTransform, self).__init__(grid_size, coeff_size)
+        # Modify scaling factors to match Jacobi normalizations
+        self.forward_rescale_zero *= np.sqrt(np.pi)
+        self.forward_rescale_pos *= np.sqrt(np.pi / 2)
+        self.backward_rescale_zero /= np.sqrt(np.pi)
+        self.backward_rescale_pos /= np.sqrt(np.pi / 2)
+        # Build conversion operators
         if a == a0 and b == b0:
             self.forward_conversion = None
             self.backward_conversion = None
@@ -702,43 +746,45 @@ class ScipyFastUltraspherical(JacobiTransform, ScipyFCT):
 
     def resize_rescale_forward(self, data_in, data_out, axis):
         """Resize by padding/trunction and rescale to unit amplitude."""
-        N, M = self.N, self.M
+        # DCT resize/rescale
+        super().resize_rescale_forward(data_in, data_out, axis)
+        # Change sign of odd modes
         Kmax = self.Kmax
-        zerofreq = axslice(axis, 0, 1)
-        np.multiply(data_in[zerofreq], self.rescale_forward_zero, data_out[zerofreq])
         if Kmax > 0:
-            posfreq = axslice(axis, 1, Kmax+1)
-            np.multiply(data_in[posfreq], self.rescale_forward_pos, data_out[posfreq])
             posfreq_odd = axslice(axis, 1, Kmax+1, 2)
             data_out[posfreq_odd] *= -1
-            if M > N:
-                badfreq = axslice(axis, Kmax+1, None)
-                data_out[badfreq] = 0
         # Ultraspherical conversion
         if self.forward_conversion is not None:
             apply_sparse(self.forward_conversion, data_out, axis, out=data_out)
 
     def resize_rescale_backward(self, data_in, data_out, axis):
         """Resize by padding/trunction and rescale to unit amplitude."""
-        N, M = self.N, self.M
-        Kmax = self.Kmax
         # Ultraspherical conversion
+        Kmax = self.Kmax
         if self.backward_conversion is not None:
-            if M > N:
+            if self.M > self.N:
                 # Truncate before conversion
                 badfreq = axslice(axis, Kmax+1, None)
                 data_in[badfreq] = 0
             apply_sparse(self.backward_conversion, data_in, axis, out=data_in)
-        zerofreq = axslice(axis, 0, 1)
-        np.multiply(data_in[zerofreq], self.rescale_backward_zero, data_out[zerofreq])
+        # Change sign of odd modes
         if Kmax > 0:
-            posfreq = axslice(axis, 1, Kmax+1)
-            np.multiply(data_in[posfreq], self.rescale_backward_pos, data_out[posfreq])
             posfreq_odd = axslice(axis, 1, Kmax+1, 2)
-            data_out[posfreq_odd] *= -1
-            if N > M:
-                badfreq = axslice(axis, Kmax+1, None)
-                data_out[badfreq] = 0
+            data_in[posfreq_odd] *= -1
+        # DCT resize/rescale
+        super().resize_rescale_backward(data_in, data_out, axis)
+
+
+@register_transform(basis.Jacobi, 'scipy_dct')
+class ScipyFastChebyshevTransform(FastChebyshevTransform, ScipyDCT):
+    """Fast ultraspherical transform using scipy.fft and spectral conversion."""
+    pass  # Implementation is complete via inheritance
+
+
+@register_transform(basis.Jacobi, 'fftw_dct')
+class FFTWFastChebyshevTransform(FastChebyshevTransform, FFTWDCT):
+    """Fast ultraspherical transform using scipy.fft and spectral conversion."""
+    pass  # Implementation is complete via inheritance
 
 
 # class ScipyDST(PolynomialTransform):
