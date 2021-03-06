@@ -25,8 +25,6 @@ FFTW_RIGOR = lambda: config['transforms-fftw'].get('PLANNING_RIGOR')
 def register_transform(basis, name):
     """Decorator to add transform to basis class dictionary."""
     def wrapper(cls):
-        if not hasattr(basis, 'transforms'):
-            basis.transforms = {}
         basis.transforms[name] = cls
         return cls
     return wrapper
@@ -109,7 +107,6 @@ class JacobiTransform(SeparableTransform):
 
 
 @register_transform(basis.Jacobi, 'matrix')
-@register_transform(basis.SphericalShellRadialBasis, 'matrix')
 class JacobiMMT(JacobiTransform, SeparableMatrixTransform):
     """Jacobi polynomial MMTs."""
 
