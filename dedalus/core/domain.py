@@ -4,76 +4,90 @@ Domain class definition.
 
 import logging
 import numpy as np
+from collections import OrderedDict
 
 from ..tools.cache import CachedMethod, CachedClass, CachedAttribute
-from ..tools.general import unify_attributes, unify
-from .coords import Coordinate
+from ..tools.general import unify_attributes, unify, OrderedSet
+from .coords import Coordinate, CartesianCoordinates
 
 logger = logging.getLogger(__name__.split('.')[-1])
 
 
-def constant_spaces(dist):
-    """Construct constant spaces for each axis of a distributor."""
-    from .spaces import Constant
-    return [Constant(dist=dist, axis=axis) for axis in range(dist.dim)]
-
-
-def expand_spaces(spaces):
-    """Expand list of spaces to tuple including constant spaces."""
-    # Verify same distributor
-    dist = unify_attributes(spaces, 'dist')
-    # Verify spaces are non-overlapping
-    if len(spaces) > 1:
-        axes_sets = [set(space.axes) for space in spaces]
-        if set.intersection(*axes_sets):
-            raise ValueError("Overlapping spaces specified.")
-    # Build full space tuple
-    full_spaces = constant_spaces(dist)
-    for space in spaces:
-        for axis in space.axes:
-            full_spaces[axis] = space
-    return tuple(full_spaces)
-
-
 class Domain(metaclass=CachedClass):
-    """Object representing the direct product of a set of spaces."""
+    """
+    The direct product of a set of bases.
 
-    # @classmethod
-    # def _preprocess_args(cls, *args, **kw):
-    #     # Expand spaces for proper caching
-    #     args = list(args)
-    #     args[0] = expand_spaces(args[0])
-    #     return tuple(args), kw
+    Parameters
+    ----------
+    dist : Distributor object
+        Distributor for an operand/field.
+    bases : collection of Basis objects
+        Bases comprising the direct product domain.
+    """
+
+    @classmethod
+    def _preprocess_args(cls, dist, bases):
+        # Drop None bases
+        bases = [b for b in bases if b is not None]
+        # Drop duplicate bases
+        bases = tuple(OrderedSet(bases))
+        # Make sure coordsystems don't overlap
+        cs = [b.coordsystem for b in bases]
+        if len(set(cs)) < len(cs):
+            raise ValueError("Overlapping bases specified.")
+        # Sort by first axis
+        key = lambda basis: basis.first_axis
+        bases = tuple(sorted(bases, key=key))
+        return (dist, bases), {}
 
     def __init__(self, dist, bases):
         self.dist = dist
-        self.bases, self.full_bases = self._check_bases(bases)
-        # self.dim = sum(space.dim for space in self.spaces)
-        self.dealias = [1] * dist.dim
+        self.bases = bases  # Preprocessed to remove Nones and duplicates
+        self.dim = sum(basis.dim for basis in self.bases)
+
+    @CachedAttribute
+    def bases_by_axis(self):
+        bases_by_axis = OrderedDict()
         for basis in self.bases:
-            for ax in range(basis.dim):
-                self.dealias[basis.axis + ax] = basis.dealias[ax]
-        self.dealias = tuple(self.dealias)
-        self.bases_dict = {basis.coords: basis for basis in self.bases}
+            for axis in range(basis.first_axis, basis.first_axis+basis.dim):
+                bases_by_axis[axis] = basis
+        return bases_by_axis
 
-    def __add__(self, other):
-        dist = unify_attributes([self, other], 'dist')
-        full_bases = [b1+b2 for b1, b2 in zip(self.full_bases, other.full_bases)]
-        raise
+    @CachedAttribute
+    def full_bases(self):
+        full_bases = [None for i in range(self.dist.dim)]
+        for basis in self.bases:
+            for axis in range(basis.first_axis, basis.first_axis+basis.dim):
+                full_bases[axis] = basis
+        return tuple(full_bases)
 
-    # def reduce_bases(self, bases):m
-
-    def substitute_basis(self, inbasis, outbasis):
-        bases_dict = self.bases_dict.copy()
-        if inbasis is None:
-            if outbasis.coords in bases_dict:
-                raise ValueError("Basis already specified for coords: %s" %coords)
+    @CachedAttribute
+    def bases_by_coord(self):
+        bases_by_coord = OrderedDict()
+        for coord in self.dist.coords:
+            if type(coord.cs) in [type(None), CartesianCoordinates]:
+                bases_by_coord[coord] = None
             else:
-                bases_dict[outbasis.coords] = outbasis
-        else:
-            bases_dict[inbasis.coords] = outbasis
-        bases = tuple(bases_dict.values())
-        return Domain(self.dist, bases)
+                bases_by_coord[coord.cs] = None
+        for basis in self.bases:
+            bases_by_coord[basis.coords] = basis
+            #bases_by_coord[basis.coordsystem] = basis
+        return bases_by_coord
+
+    @CachedAttribute
+    def dealias(self):
+        dealias = [1] * self.dist.dim
+        for basis in self.bases:
+            for subaxis in range(basis.dim):
+                dealias[basis.first_axis+subaxis] = basis.dealias[subaxis]
+        return tuple(dealias)
+
+    def substitute_basis(self, old_basis, new_basis):
+        new_bases = list(self.bases)
+        if old_basis in new_bases:
+            new_bases.remove(old_basis)
+        new_bases.append(new_basis)
+        return Domain(self.dist, new_bases)
 
     def get_basis(self, coords):
         if isinstance(coords, int):
@@ -100,32 +114,6 @@ class Domain(metaclass=CachedClass):
                         return basis_coord
         raise ValueError("Coordinate name not in domain")
 
-    def _check_bases(self, bases):
-        # Drop Nones
-        bases = [basis for basis in bases if basis is not None]
-        # Drop duplicates
-        bases_unique = []
-        for basis in bases:
-            repeat = False
-            for basis_unique in bases_unique:
-                if basis == basis_unique:
-                    repeat = True
-            if not repeat:
-                bases_unique.append(basis)
-        # Sort by axis
-        key = lambda b: b.axis
-        bases = sorted(bases_unique, key=key)
-        # Check for overlap
-        full_bases = [None for i in range(self.dist.dim)]
-        for basis in bases:
-            for subaxis in range(basis.dim):
-                axis = basis.axis + subaxis
-                if full_bases[axis] is not None:
-                    raise ValueError("Overlapping bases specified.")
-                else:
-                    full_bases[axis] = basis
-        return tuple(bases), tuple(full_bases)
-
     def enumerate_unique_bases(self):
         axes = []
         unique_bases = []
@@ -134,21 +122,6 @@ class Domain(metaclass=CachedClass):
                 axes.append(axis)
                 unique_bases.append(basis)
         return zip(axes, unique_bases)
-
-    # @classmethod
-    # def from_dist(cls, dist):
-    #     """Build constant domain from distributor."""
-    #     return cls(constant_spaces(dist))
-
-    # @classmethod
-    # def from_bases(cls, dist, bases):
-    #     """Build domain from bases."""
-    #     return cls(dist, [basis.space for basis in bases])
-
-    # @CachedAttribute
-    # def dealias(self):
-    #     """Tuple of dealias flags."""
-    #     return tuple(space.dealias for space in self.spaces)
 
     @CachedAttribute
     def constant(self):

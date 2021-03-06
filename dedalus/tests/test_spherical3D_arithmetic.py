@@ -37,7 +37,7 @@ def build_shell(Nphi, Ntheta, Nr, dealias):
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_S2_Jacobi_scalar_scalar_multiplication(Nphi, Ntheta, Nr, dealias):
+def test_S2_radial_scalar_scalar_multiplication(Nphi, Ntheta, Nr, dealias):
     c, d, b, phi, theta, r, x, y, z = build_shell(Nphi, Ntheta, Nr, dealias)
     f0 = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     f0.set_scales(b.domain.dealias)
@@ -49,9 +49,8 @@ def test_S2_Jacobi_scalar_scalar_multiplication(Nphi, Ntheta, Nr, dealias):
     g = field.Field(dist=d, bases=(b_S2,), dtype=np.complex128)
     g['g'] = (5*np.cos(theta)**2-1)*np.sin(theta)*np.exp(1j*phi)
 
-    b_r = basis.Jacobi(c.radius, size=Nr, a=-1/2, b=-1/2, bounds=radii_shell, dealias=dealias)
-    r = b_r.local_grid()
-    h = field.Field(dist=d, bases=(b_r,), dtype=np.complex128)
+    h = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
+    h.set_scales(b.domain.dealias)
     h['g'] = (r**2 - 0.5*r**3)
     f = (g * h).evaluate()
     assert np.allclose(f['g'], f0['g'])
@@ -60,7 +59,7 @@ def test_S2_Jacobi_scalar_scalar_multiplication(Nphi, Ntheta, Nr, dealias):
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_S2_Jacobi_vector_scalar_multiplication(Nphi, Ntheta, Nr, dealias):
+def test_S2_radial_vector_scalar_multiplication(Nphi, Ntheta, Nr, dealias):
     c, d, b, phi, theta, r, x, y, z = build_shell(Nphi, Ntheta, Nr, dealias)
     c_S2 = c.S2coordsys
     v0 = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
@@ -77,9 +76,8 @@ def test_S2_Jacobi_vector_scalar_multiplication(Nphi, Ntheta, Nr, dealias):
     u['g'][1] = (np.cos(theta)*np.sin(theta)*np.exp(-2j*phi))
     u['g'][2] = (5*np.cos(theta)**2-1)*np.sin(theta)*np.exp(1j*phi)
 
-    b_r = basis.Jacobi(c.radius, size=Nr, a=-1/2, b=-1/2, bounds=radii_shell, dealias=dealias)
-    r = b_r.local_grid()
-    h = field.Field(dist=d, bases=(b_r,), dtype=np.complex128)
+    h = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
+    h.set_scales(b.domain.dealias)
     h['g'] = (r**2 - 0.5*r**3)
     v = (h * u).evaluate()
     assert np.allclose(v['g'], v0['g'])

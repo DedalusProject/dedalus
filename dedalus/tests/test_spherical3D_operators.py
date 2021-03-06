@@ -256,9 +256,9 @@ def test_interpolation_tensor(Nphi, Ntheta, Nr, dealias, basis_radius):
     assert np.allclose(A['g'],Ag)
 
 # need higher resolution for the test function
-@pytest.mark.parametrize('Nphi', [16])
-@pytest.mark.parametrize('Ntheta', [16])
-@pytest.mark.parametrize('Nr', [8])
+@pytest.mark.parametrize('Nphi', [32])
+@pytest.mark.parametrize('Ntheta', [32])
+@pytest.mark.parametrize('Nr', [16])
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis_radius', basis_radius)
 def test_radial_component_vector(Nphi, Ntheta, Nr, dealias, basis_radius):
@@ -314,12 +314,21 @@ def test_angular_component_vector(Nphi, Ntheta, Nr, dealias, basis_radius):
     u['g'][2] = r**2*st*(2*ct**2*cp-r*ct**3*sp+r**3*cp**3*st**5*sp**3+r*ct*st**2*(cp**3+sp**3))
     u['g'][1] = r**2*(2*ct**3*cp-r*cp**3*st**4+r**3*ct*cp**3*st**5*sp**3-1/16*r*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
     u['g'][0] = r**2*sp*(-2*ct**2+r*ct*cp*st**2*sp-r**3*cp**2*st**5*sp**3)
-    v = operators.AngularComponent(operators.interpolate(u,r=radius)).evaluate()
+    u['c']
+    w = operators.interpolate(u,r=radius).evaluate()
+    w['c']
+    w.towards_grid_space()
+    #w.towards_grid_space()
+    #w.towards_grid_space()
+    v = operators.AngularComponent(w).evaluate()
+    #v = operators.AngularComponent(operators.interpolate(u,r=radius)).evaluate()
     vg = 0*v['g']
     phi, theta, r = b.local_grids(b.domain.dealias)
     ct, st, cp, sp = np.cos(theta), np.sin(theta), np.cos(phi), np.sin(phi)
     vg[0] = radius**2*sp*(-2*ct**2+radius*ct*cp*st**2*sp-radius**3*cp**2*st**5*sp**3)
     vg[1] = radius**2*(2*ct**3*cp-radius*cp**3*st**4+radius**3*ct*cp**3*st**5*sp**3-1/16*radius*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
+    print(w['g'][:,0,0,0])
+    print(v['g'][:,0,0,0])
     assert np.allclose(v['g'], vg)
 
 @pytest.mark.parametrize('Nphi', Nphi_range)

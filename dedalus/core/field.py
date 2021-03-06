@@ -407,12 +407,8 @@ class Field(Current):
         self.name = name
         self.tensorsig = tensorsig
         self.dtype = dtype
-        #self.bases = bases
         # Build domain
         self.domain = Domain(dist, bases)
-        #self.bases, self.full_bases = self.domain.bases, self.domain.full_bases
-        #self.bases = dist.check_bases(bases)
-
         # Set initial scales and layout
         self.scales = None
         self.buffer_size = -1
@@ -645,6 +641,28 @@ class Field(Current):
         send_buff[local_slices] = self.data
         self.dist.comm.Allreduce(send_buff, recv_buff, op=MPI.SUM)
         return recv_buff
+
+    def broadcast_ghosts(self, output_nonconst_dims):
+        """Copy data over constant distributed dimensions for arithmetic broadcasting."""
+        # Determine deployment dimensions
+        self_const_dims = np.array(self.domain.constant)
+        distributed = ~self.layout.local
+        broadcast_dims = output_nonconst_dims & self_const_dims
+        deploy_dims_ext = broadcast_dims & distributed
+        deploy_dims = deploy_dims_ext[distributed]
+        if not any(deploy_dims):
+            return self.data
+        # Broadcast on subgrid communicator
+        comm_sub = self.domain.dist.comm_cart.Sub(remain_dims=deploy_dims)
+        data = None
+        if comm_sub.rank == 0:
+            data = self.data
+        else:
+            shape = np.array(self.data.shape)
+            shape[shape == 0] = 1
+            data = np.empty(shape=shape, dtype=self.dtype)
+        comm_sub.Bcast(data, root=0)
+        return data
 
 
 class LockedField(Field):

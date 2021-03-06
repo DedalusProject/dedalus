@@ -78,8 +78,10 @@ class Add(Future, metaclass=MultiClass):
 
     def _build_bases(self, *args):
         """Build output bases."""
+        dist = unify_attributes(args, 'dist')
         bases = []
-        for ax_bases in zip(*(arg.domain.full_bases for arg in args)):
+        for coord in args[0].domain.bases_by_coord:
+            ax_bases = tuple(arg.domain.bases_by_coord[coord] for arg in args)
             # All constant bases yields constant basis
             if all(basis is None for basis in ax_bases):
                 bases.append(None)
@@ -234,7 +236,11 @@ class Product(Future):
     def _build_bases(self, arg0, arg1, ncc=False, ncc_vars=None, **kw):
         """Build output bases."""
         bases = []
-        for b0, b1 in zip(arg0.domain.full_bases, arg1.domain.full_bases):
+        arg0_bases = arg0.domain.bases_by_coord
+        arg1_bases = arg1.domain.bases_by_coord
+        for coord in arg0_bases:
+            b0 = arg0_bases[coord]
+            b1 = arg1_bases[coord]
             # All constant bases yields constant basis
             if b0 is None and b1 is None:
                 continue
@@ -245,8 +251,7 @@ class Product(Future):
                 bases.append(b0 @ b1)
             else:
                 bases.append(b0 * b1)
-        bases = {basis.coordsystem: basis for basis in bases}
-        return tuple(bases.values())
+        return tuple(bases)
 
     def reinitialize(self, **kw):
         arg0 = self.args[0].reinitialize(**kw)
@@ -748,6 +753,10 @@ class MultiplyFields(Multiply, FutureField):
         self.tensorsig = arg0.tensorsig + arg1.tensorsig
         self.dtype = np.result_type(arg0.dtype, arg1.dtype)
         self.gamma_args = []
+        # Setup ghost broadcasting
+        broadcast_dims = np.array(self.domain.nonconstant)
+        self.arg0_ghost_broadcaster = GhostBroadcaster(arg0.domain, self.dist.grid_layout, broadcast_dims)
+        self.arg1_ghost_broadcaster = GhostBroadcaster(arg1.domain, self.dist.grid_layout, broadcast_dims)
         # Compute expanded shapes for broadcasting data
         arg0_gshape = self.dist.grid_layout.local_shape(arg0.domain, arg0.domain.dealias)
         arg0_tshape = tuple(cs.dim for cs in arg0.tensorsig)
@@ -755,22 +764,64 @@ class MultiplyFields(Multiply, FutureField):
         arg1_gshape = self.dist.grid_layout.local_shape(arg1.domain, arg1.domain.dealias)
         arg1_tshape = tuple(cs.dim for cs in arg1.tensorsig)
         arg1_order = len(arg1.tensorsig)
-        self.arg0_exp_shape = arg0_tshape + (1,) * arg1_order + arg0_gshape
-        self.arg1_exp_shape = (1,) * arg0_order + arg1_tshape + arg1_gshape
+        self.arg0_exp_tshape = arg0_tshape + (1,) * arg1_order
+        self.arg1_exp_tshape = (1,) * arg0_order + arg1_tshape
 
     def operate(self, out):
         """Perform operation."""
         arg0, arg1 = self.args
         # Set output layout
         out.set_layout(arg0.layout)
+        # Broadcast
+        arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
+        arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
         # Reshape arg data to broadcast properly for output tensorsig
-        arg0_exp_data = arg0.data.reshape(self.arg0_exp_shape)
-        arg1_exp_data = arg1.data.reshape(self.arg1_exp_shape)
+        arg0_exp_data = arg0_data.reshape(self.arg0_exp_tshape + arg0_data.shape[len(arg0.tensorsig):])
+        arg1_exp_data = arg1_data.reshape(self.arg1_exp_tshape + arg1_data.shape[len(arg1.tensorsig):])
         np.multiply(arg0_exp_data, arg1_exp_data, out=out.data)
 
 
+class GhostBroadcaster:
+    """Copy field data over constant distributed dimensions for arithmetic broadcasting."""
+
+    def __init__(self, domain, layout, broadcast_dims):
+        self.domain = domain
+        self.layout = layout
+        self.broadcast_dims = broadcast_dims
+        # Determine deployment dimensions
+        deploy_dims_ext = np.array(broadcast_dims) & np.array(domain.constant)
+        deploy_dims = deploy_dims_ext[~layout.local]
+        # Build subcomm or skip casting
+        if any(deploy_dims):
+            self.subcomm = domain.dist.comm_cart.Sub(remain_dims=deploy_dims)
+        else:
+            self.cast = self._skip_cast
+
+    @CachedMethod
+    def ghost_data(self, shape, dtype):
+        # Broadcast root shape
+        shape = self.subcomm.bcast(shape, root=0)
+        # Make ghost buffers
+        if self.subcomm.rank == 0:
+            return None
+        else:
+            return np.empty(dtype=dtype, shape=shape)
+
+    def cast(self, field):
+        # Retrieve ghost data on all ranks to prevent deadlocks
+        ghost_data = self.ghost_data(field.data.shape, field.dtype)
+        if self.subcomm.rank == 0:
+            ghost_data = field.data
+        # Skip broadcasting on empty subcomms
+        if ghost_data.size:
+            self.subcomm.Bcast(ghost_data, root=0)
+        return ghost_data
+
+    def _skip_cast(self, field):
+        return field.data
+
+
 class MultiplyNumberField(Multiply, FutureField):
-    """Multiplication operator for fields."""
 
     argtypes = ((numbers.Number, (Field, FutureField)),
                 ((Field, FutureField), numbers.Number))
@@ -779,6 +830,7 @@ class MultiplyNumberField(Multiply, FutureField):
         # Make number come first
         if isinstance(arg1, numbers.Number):
             arg0, arg1 = arg1, arg0
+        # Initialization
         super().__init__(arg0, arg1, out=out)
         self.domain = arg1.domain
         self.tensorsig = arg1.tensorsig
@@ -805,7 +857,7 @@ class MultiplyNumberField(Multiply, FutureField):
         arg0, arg1 = self.args
         # Set output layout
         out.set_layout(arg1.layout)
-        # Multiply all argument data, reshaped by tensorsig
+        # Multiply argument data
         np.multiply(arg0, arg1.data, out=out.data)
 
     def matrix_dependence(self, *vars):
@@ -838,4 +890,4 @@ class MultiplyNumberField(Multiply, FutureField):
 
     def sym_diff(self, var):
         """Symbolically differentiate with respect to specified operand."""
-        return self.args[0]*self.args[1].sym_diff(var)
+        return self.args[0] * self.args[1].sym_diff(var)

@@ -189,11 +189,19 @@ def build_S2(Nphi, Ntheta, dealias, dtype=np.complex128):
     phi, theta = sb.local_grids()
     return c, d, sb, phi, theta
 
+def build_sphere_3d(Nphi, Ntheta, dealias, dtype=np.complex128):
+    c = coords.SphericalCoordinates('phi', 'theta', 'r')
+    d = distributor.Distributor((c,))
+    sb = basis.SpinWeightedSphericalHarmonics(c, (Nphi, Ntheta), radius=1, dealias=(dealias, dealias), dtype=dtype)
+    phi, theta = sb.local_grids()
+    return c, d, sb, phi, theta
+
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_S2_scalar_backward(Nphi, Ntheta, dealias):
-    c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias)
+@pytest.mark.parametrize('basis', [build_S2, build_sphere_3d])
+def test_S2_scalar_backward(Nphi, Ntheta, dealias, basis):
+    c, d, sb, phi, theta = basis(Nphi, Ntheta, dealias)
     f = field.Field(dist=d, bases=(sb,), dtype=np.complex128)
     m = sb.local_m
     ell = sb.local_ell
@@ -204,8 +212,9 @@ def test_S2_scalar_backward(Nphi, Ntheta, dealias):
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_S2_scalar_forward(Nphi, Ntheta, dealias):
-    c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias)
+@pytest.mark.parametrize('basis', [build_S2, build_sphere_3d])
+def test_S2_scalar_forward(Nphi, Ntheta, dealias, basis):
+    c, d, sb, phi, theta = basis(Nphi, Ntheta, dealias)
     f = field.Field(dist=d, bases=(sb,), dtype=np.complex128)
     m = sb.local_m
     ell = sb.local_ell
@@ -276,9 +285,10 @@ def test_S2_vector_forward(Nphi, Ntheta, dealias):
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_S2_vector_roundtrip(Nphi, Ntheta, dealias):
+@pytest.mark.parametrize('basis', [build_S2, build_sphere_3d])
+def test_S2_vector_roundtrip(Nphi, Ntheta, dealias, basis):
     # Note: u is the gradient of sin(theta)*exp(1j*phi)
-    c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias)
+    c, d, sb, phi, theta = basis(Nphi, Ntheta, dealias)
     u = field.Field(dist=d, bases=(sb,), tensorsig=(c,), dtype=np.complex128)
     m = sb.local_m
     ell = sb.local_ell
@@ -327,9 +337,10 @@ def test_S2_real_vector_forward(Nphi, Ntheta, dealias):
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_S2_real_vector_roundtrip(Nphi, Ntheta, dealias):
+@pytest.mark.parametrize('basis', [build_S2, build_sphere_3d])
+def test_S2_real_vector_roundtrip(Nphi, Ntheta, dealias, basis):
     # Note: u is the gradient of sin(theta)*cos(phi)
-    c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias, dtype=np.float64)
+    c, d, sb, phi, theta = basis(Nphi, Ntheta, dealias, dtype=np.float64)
     u = field.Field(dist=d, bases=(sb,), tensorsig=(c,), dtype=np.float64)
     m = sb.local_m
     ell = sb.local_ell

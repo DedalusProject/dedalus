@@ -552,7 +552,7 @@ class FileHandler(Handler):
 
             # Spatial scales
             for axis in range(dist.dim):
-                basis = op.domain.full_bases[axis]
+                basis = op.domain.bases_by_axis[axis]
                 if basis is None:
                     sn = lookup = 'constant'
                 else:
