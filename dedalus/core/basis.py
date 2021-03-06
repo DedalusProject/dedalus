@@ -2622,7 +2622,7 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
             raise NotImplementedError()
 
     def local_group_slices(self, basis_group):
-        raise NotImplementedError("Hmm so what called this??")
+        #raise NotImplementedError("Hmm so what called this??")
         m_group, ell_group, r_group = basis_group
         if (m_group is not None) and (ell_group is not None) and (r_group is None):
             if m_group == 0 and ell_group == 0:
@@ -2931,7 +2931,10 @@ class BallRadialBasis(RegularityBasis):
         return NotImplemented
 
     def __matmul__(self, other):
-        return other.__rmatmul__(self)
+        if other is None:
+            return self
+        else:
+            return other.__rmatmul__(self)
 
     def __rmatmul__(self, other):
         if other is None:
@@ -3056,7 +3059,16 @@ class BallRadialBasis(RegularityBasis):
 
     def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
         ell = subproblem.group[1]  # HACK
-        arg_radial_basis = arg_basis.radial_basis
+        if isinstance(arg_basis, BallBasis):
+            arg_radial_basis = arg_basis.radial_basis
+        elif isinstance(arg_basis, BallRadialBasis):
+            arg_radial_basis = arg_basis
+        elif arg_basis is None:
+            # Reshape coeffs as column vector
+            matrix = coeffs.ravel()[:, None]
+            return sparse.csr_matrix(matrix)
+        else:
+            raise NotImplementedError()
         regtotal_ncc = self.regtotal(ncc_comp)
         regtotal_arg = self.regtotal(arg_comp)
         regtotal_out = self.regtotal(out_comp)
@@ -3223,6 +3235,8 @@ class Spherical3DBasis(MultidimensionalBasis):
 class SphericalShellBasis(Spherical3DBasis):
 
     def __init__(self, coordsystem, shape, radii=(1,2), alpha=(-0.5,-0.5), dealias=(1,1,1), k=0, dtype=np.complex128, azimuth_library=None, colatitude_library='matrix', radius_library='matrix'):
+        if np.isscalar(dealias):
+            dealias = (dealias, dealias, dealias)
         self.radial_basis = SphericalShellRadialBasis(coordsystem, shape[2], radii=radii, alpha=alpha, dealias=(dealias[2],), k=k, dtype=dtype, radius_library=radius_library)
         Spherical3DBasis.__init__(self, coordsystem, shape[:2], dealias[:2], self.radial_basis, dtype=dtype, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
         self.grid_params = (coordsystem, radii, alpha, dealias)
@@ -3327,6 +3341,8 @@ class SphericalShellBasis(Spherical3DBasis):
 class BallBasis(Spherical3DBasis):
 
     def __init__(self, coordsystem, shape, radius=1, k=0, alpha=0, dealias=(1,1,1), dtype=np.complex128, azimuth_library=None, colatitude_library='matrix', radius_library='matrix'):
+        if np.isscalar(dealias):
+            dealias = (dealias, dealias, dealias)
         self.radial_basis = BallRadialBasis(coordsystem, shape[2], radius=radius, k=k, alpha=alpha, dealias=(dealias[2],), dtype=dtype, radius_library=radius_library)
         Spherical3DBasis.__init__(self, coordsystem, shape[:2], dealias[:2], self.radial_basis, dtype=dtype, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
         self.grid_params = (coordsystem, radius, alpha, dealias)
@@ -3383,7 +3399,16 @@ class BallBasis(Spherical3DBasis):
         if isinstance(other, BallRadialBasis):
             radial_basis = other @ self.radial_basis
             return self._new_k(radial_basis.k)
+        if isinstance(other, BallBasis):
+            radial_basis = other.radial_basis @ self.radial_basis
+            return self._new_k(radial_basis.k)
         return NotImplemented
+
+    def __matmul__(self, other):
+        if other is None:
+            return self.__rmatmul__(other)
+        else:
+            return other.__rmatmul__(self)
 
     def _new_k(self, k):
         return BallBasis(self.coordsystem, self.shape, radius = self.radial_basis.radius, k=k, alpha=self.radial_basis.alpha, dealias=self.dealias, dtype=self.dtype,
@@ -3445,6 +3470,57 @@ def reduced_view(data, axis, dim):
 
 
 class ConvertRegularity(operators.Convert, operators.SphericalEllOperator):
+
+    input_basis_type = RegularityBasis
+    output_basis_type = RegularityBasis
+
+    def __init__(self, operand, output_basis, out=None):
+        operators.Convert.__init__(self, operand, output_basis, out=out)
+        self.radial_basis = self.input_basis
+
+    def regindex_out(self, regindex_in):
+        return (regindex_in,)
+
+    def radial_matrix(self, regindex_in, regindex_out, ell):
+        radial_basis = self.radial_basis
+        regtotal = radial_basis.regtotal(regindex_in)
+        dk = self.output_basis.k - radial_basis.k
+        if regindex_in == regindex_out:
+            return radial_basis.conversion_matrix(ell, regtotal, dk)
+        else:
+            raise ValueError("This should never happen.")
+
+
+class ConvertConstantRegularity(operators.Convert, operators.SphericalEllOperator):
+
+    input_basis_type = type(None)
+    output_basis_type = RegularityBasis
+
+    def __init__(self, operand, output_basis, out=None):
+        operators.Convert.__init__(self, operand, output_basis, out=out)
+        self.radial_basis = self.output_basis
+
+    def regindex_out(self, regindex_in):
+        return (regindex_in,)
+
+    def radial_matrix(self, regindex_in, regindex_out, ell):
+        radial_basis = self.radial_basis
+        regtotal = radial_basis.regtotal(regindex_in)
+        coeff_size = radial_basis.shape[-1]
+        if ell == 0 and regindex_in == regindex_out:
+            # Convert to k=0
+            W = np.sum(radial_basis.global_weights(1))
+            const_to_k0 = np.zeros((coeff_size, 1))
+            const_to_k0[0, 0] = W ** 0.5
+            # Convert up in k
+            k0_to_k = radial_basis._new_k(0).conversion_matrix(ell, regtotal, radial_basis.k)
+            matrix = k0_to_k @ const_to_k0
+            return matrix
+        else:
+            raise ValueError("This should never happen.")
+
+
+class ConvertSpherical3D(operators.Convert, operators.SphericalEllOperator):
 
     input_basis_type = Spherical3DBasis
     output_basis_type = Spherical3DBasis
@@ -3616,12 +3692,67 @@ class LiftTauBall(operators.LiftTau, operators.SphericalEllOperator):
     input_basis_type = SWSH
     output_basis_type = BallBasis
 
+    def __init__(self, operand, output_basis, n, out=None):
+        super().__init__(operand, output_basis, n)
+        self.radial_basis = self.output_basis.radial_basis
+
     def regindex_out(self, regindex_in):
         return (regindex_in,)
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
         radial_basis = self.output_basis.radial_basis  ## CHANGED RELATIVE TO POLARMOPERATOR
+        R_in = radial_basis.regularity_classes(operand.tensorsig)
+        R_out = radial_basis.regularity_classes(self.tensorsig)  # Should this use output_basis?
+        ell = subproblem.group[self.last_axis - 1]
+        # Loop over components
+        submatrices = []
+        for regindex_out, regtotal_out in np.ndenumerate(R_out):
+            submatrix_row = []
+            for regindex_in, regtotal_in in np.ndenumerate(R_in):
+                # Build identity matrices for each axis
+                subshape_in = subproblem.coeff_shape(self.operand.domain)
+                subshape_out = subproblem.coeff_shape(self.domain)
+                # Check if regularity component exists for this ell
+                if (regindex_out in self.regindex_out(regindex_in)) and radial_basis.regularity_allowed(ell, regindex_in) and radial_basis.regularity_allowed(ell, regindex_out):
+                    # Substitute factor for radial axis
+                    factors = [sparse.eye(m, n, format='csr') for m, n in zip(subshape_out, subshape_in)]
+                    factors[self.last_axis] = self.radial_matrix(regindex_in, regindex_out, ell)
+                    comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
+                else:
+                    # Build zero matrix
+                    comp_matrix = sparse.csr_matrix((np.prod(subshape_out), np.prod(subshape_in)))
+                submatrix_row.append(comp_matrix)
+            submatrices.append(submatrix_row)
+        matrix = sparse.bmat(submatrices)
+        matrix.tocsr()
+        return matrix
+
+    def radial_matrix(self, regindex_in, regindex_out, m):
+        if regindex_in == regindex_out:
+            n_size = self.output_basis.n_size(m)
+            matrix = np.zeros((n_size, 1))
+            matrix[self.n, 0] = 1
+            return matrix
+        else:
+            raise ValueError("This should never happen.")
+
+
+class LiftTauBallRadius(operators.LiftTau, operators.SphericalEllOperator):
+
+    input_basis_type = type(None)
+    output_basis_type = BallRadialBasis
+
+    def __init__(self, operand, output_basis, n, out=None):
+        super().__init__(operand, output_basis, n)
+        self.radial_basis = self.output_basis
+
+    def regindex_out(self, regindex_in):
+        return (regindex_in,)
+
+    def subproblem_matrix(self, subproblem):
+        operand = self.args[0]
+        radial_basis = self.output_basis
         R_in = radial_basis.regularity_classes(operand.tensorsig)
         R_out = radial_basis.regularity_classes(self.tensorsig)  # Should this use output_basis?
         ell = subproblem.group[self.last_axis - 1]
@@ -3707,7 +3838,7 @@ class LiftTauShell(operators.LiftTau, operators.SphericalEllOperator):
 
 class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperator):
 
-    basis_type = BallBasis
+    basis_type = (BallBasis, BallRadialBasis)
     basis_subaxis = 2
 
     @classmethod
@@ -3720,11 +3851,17 @@ class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperato
 
     @staticmethod
     def _output_basis(input_basis, position):
-        return input_basis.S2_basis(radius=position)
+        if isinstance(input_basis, BallBasis):
+            return input_basis.S2_basis(radius=position)
+        elif isinstance(input_basis, BallRadialBasis):
+            return None
 
     def __init__(self, operand, coord, position, out=None):
         operators.Interpolate.__init__(self, operand, coord, position, out=None)
-        self.radial_basis = self.input_basis.get_radial_basis()
+        if isinstance(self.input_basis, BallBasis):
+            self.radial_basis = self.input_basis.get_radial_basis()
+        elif isinstance(self.input_basis, BallRadialBasis):
+            self.radial_basis = self.input_basis
 
     def subproblem_matrix(self, subproblem):
         ell = subproblem.group[self.last_axis - 1]

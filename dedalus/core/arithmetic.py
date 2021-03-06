@@ -233,6 +233,14 @@ alphabet = "abcdefghijklmnopqrstuvwxy"
 
 class Product(Future):
 
+    # Want to find some way to include this even though Product is not a MultiClass.  For now hacking into new_operand.
+    # @classmethod
+    # def _preprocess_args(cls, *args, **kw):
+    #     if any(arg == 0 for arg in args):
+    #         raise SkipDispatchException(output=0)
+    #     else:
+    #         return args, kw
+
     def _build_bases(self, arg0, arg1, ncc=False, ncc_vars=None, **kw):
         """Build output bases."""
         bases = []
@@ -392,12 +400,17 @@ class Product(Future):
                 for ia, ncc_comp in enum_indices(ncc.tensorsig):
                     G = Gamma[ia, ib, ic]
                     if abs(G) > 1e-10:
-                        matrix = ncc_basis.multiplication_matrix(subproblem, arg_basis, coeffs[ncc_comp], ncc_comp, arg_comp, out_comp, cutoff=1e-6)
-                        # Domains with real Fourier bases require kroneckering the Jacobi NCC matrix up to match the subsystem shape including the sin and cos parts of RealFourier data
-                        # This fix assumes the Jacobi basis is on the last axis
-                        if matrix.shape != (M,N):
-                            m, n = matrix.shape
-                            matrix = sparse.kron(sparse.eye(M//m, N//n), matrix)
+                        if ncc_basis is None:
+                            if coeffs[ncc_comp].size != 1:
+                                raise NotImplementedError()
+                            matrix = coeffs[ncc_comp].ravel()[0] * sparse.eye(M, N)
+                        else:
+                            matrix = ncc_basis.multiplication_matrix(subproblem, arg_basis, coeffs[ncc_comp], ncc_comp, arg_comp, out_comp, cutoff=1e-6)
+                            # Domains with real Fourier bases require kroneckering the Jacobi NCC matrix up to match the subsystem shape including the sin and cos parts of RealFourier data
+                            # This fix assumes the Jacobi basis is on the last axis
+                            if matrix.shape != (M,N):
+                                m, n = matrix.shape
+                                matrix = sparse.kron(sparse.eye(M//m, N//n), matrix)
                         block += G * matrix
                 block_row.append(block)
             blocks.append(block_row)
@@ -406,16 +419,17 @@ class Product(Future):
         # tshape = [cs.dim for cs in ncc.tensorsig]
         # self._ncc_matrices = [self._ncc_matrix_recursion(ncc.data[ind], ncc.domain.full_bases, operand.domain.full_bases, separability, **kw) for ind in np.ndindex(*tshape)]
 
-    def _ncc_matrix_recursion(self, data, ncc_ts, ncc_bases, arg_bases, arg_ts, separability, gamma_args, **kw):
+    def _ncc_matrix_recursion(self, subproblem, ncc_bases, arg_bases, coeffs, ncc_comp, arg_comp, out_comp, **kw):
+        #, ncc_ts, ncc_bases, arg_bases, arg_ts, separability, gamma_args, **kw):
         """Build NCC matrix by recursing down through the axes."""
         # Build function for deferred-computation of matrix-valued coefficients
-        def build_lower_coeffs(i):
+        def build_lower_coeffs(index):
             # Return scalar-valued coefficients at bottom level
-            if len(data.shape) - len(ncc_ts) == 1:
-                return data[i]
+            if coeffs.ndim == 1:
+                return coeffs[index]
             # Otherwise recursively build matrix-valued coefficients
             else:
-                args = (data[i], ncc_ts, ncc_bases[1:], arg_bases[1:], arg_ts, separability[1:], gamma_args)
+                args = (subproblem, ncc_bases[1:], arg_bases[1:], coeffs[index], ncc_comp, arg_comp, out_comp)
                 return self._ncc_matrix_recursion(*args, **kw)
         # Build top-level matrix using deferred coeffs
         coeffs = DeferredTuple(build_lower_coeffs, size=data.shape[0])
@@ -573,6 +587,8 @@ class DotProduct(Product, FutureField):
         return '@'.join(str_args)
 
     def new_operands(self, arg0, arg1, **kw):
+        if arg0 == 0 or arg1 == 0:
+            return 0
         return DotProduct(arg0, arg1, indices=self.indices, **kw)
 
     def GammaCoord(self, A_tensorsig, B_tensorsig, C_tensorsig):
@@ -655,6 +671,11 @@ class CrossProduct(Product, FutureField):
         ne.evaluate("data02*data11 - data01*data12", out=out.data[0])
         ne.evaluate("data00*data12 - data02*data10", out=out.data[1])
         ne.evaluate("data01*data10 - data00*data11", out=out.data[2])
+
+    def new_operands(self, arg0, arg1, **kw):
+        if arg0 == 0 or arg1 == 0:
+            return 0
+        return CrossProduct(arg0, arg1, **kw)
 
 
 class Multiply(Product, metaclass=MultiClass):

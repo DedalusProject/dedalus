@@ -259,7 +259,7 @@ class NonlinearBoundaryValueSolver:
             matsolver = self.matsolver(L, self)
         return matsolver
 
-    def newton_iteration(self):
+    def newton_iteration(self, damping=1):
         """Update solution with a Newton iteration."""
         # Compute RHS
         self.evaluator.evaluate_group('F', sim_time=0, wall_time=0, iteration=self.iteration)
@@ -276,7 +276,7 @@ class NonlinearBoundaryValueSolver:
 
         # Update state
         for var, pert in zip(self.state, self.perturbations):
-            var['c'] += pert['c']
+            var['c'] += damping * pert['c']
         self.iteration += 1
 
 
