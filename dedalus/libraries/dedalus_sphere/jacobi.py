@@ -99,17 +99,21 @@ def quadrature(n,a,b,days=3,probability=False,dtype=dtype,internal='longdouble')
     
     z = grid_guess(n,a,b,dtype=internal)
     
-    if (a == b == -1/2) or (a == b == +1/2):
+    if probability:
+        w = 1
+    else:
+        w = mass(a,b)
+    
+    if (a == b == -1/2):
+        return z.astype(dtype), (w/n + 0*z).astype(dtype)
+    elif (a == b == +1/2):
         P = polynomials(n+1,a,b,z,dtype=internal)[:n]
     else:
         for _ in range(days):
             z, P = polynomials(n+1,a,b,z,Newton=True)
         
     P[0] /= np.sqrt(np.sum(P**2,axis=0))
-    w = P[0]**2
-    
-    if not probability:
-        w *= mass(a,b)
+    w *= P[0]**2
     
     return z.astype(dtype), w.astype(dtype)
 
@@ -120,6 +124,9 @@ def grid_guess(n,a,b,dtype='longdouble',quick=False):
     P(n,a,b,z) = 0
     
     """
+    
+    if a == b == -1/2 :
+        quick = True
     
     if n == 1:
         return operator('Z')(n,a,b).A[0]

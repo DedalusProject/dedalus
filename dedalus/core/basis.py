@@ -364,13 +364,18 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
     native_bounds = (-1, 1)
     transforms = {}
 
-    def __init__(self, coord, size, bounds, a, b, a0=None, b0=None, dealias=1, library='matrix'):
+    def __init__(self, coord, size, bounds, a, b, a0=None, b0=None, dealias=1, library=None):
         super().__init__(coord, size, bounds, dealias)
         # Default grid parameters
         if a0 is None:
             a0 = a
         if b0 is None:
             b0 = b
+        if library is None:
+            if a0 == b0 == -0.5:
+                library = "fftw_dct"
+            else:
+                library = "matrix"
         self.a = float(a)
         self.b = float(b)
         self.a0 = float(a0)
@@ -676,7 +681,7 @@ class ComplexFourier(IntervalBasis):
     def __init__(self, coord, size, bounds, dealias=1, library=None):
         super().__init__(coord, size, bounds, dealias)
         if library is None:
-            library = 'fftw'
+            library = "fftw"
         self.library = library
         self.kmax = kmax = (size - 1) // 2
         self.wavenumbers = np.concatenate((np.arange(0, kmax+2), np.arange(-kmax, 0)))  # Includes Nyquist mode
@@ -812,11 +817,10 @@ class RealFourier(IntervalBasis):
     group_shape = (2,)
     native_bounds = (0, 2*np.pi)
     transforms = {}
-    default_library = 'fftw'
 
     def __init__(self, coord, size, bounds, dealias=1, library=None):
         if library is None:
-            library = self.default_library
+            library = "fftw"
         super().__init__(coord, size, bounds, dealias)
         self.library = library
         self.kmax = kmax = (size - 1) // 2
@@ -1422,10 +1426,12 @@ class DiskBasis(SpinBasis):
     transforms = {}
     subaxis_dependence = [True, True]
 
-    def __init__(self, coordsystem, shape, radius=1, k=0, alpha=0, dealias=(1,1), radius_library='matrix', **kw):
+    def __init__(self, coordsystem, shape, radius=1, k=0, alpha=0, dealias=(1,1), radius_library=None, **kw):
         super().__init__(coordsystem, shape, dealias, **kw)
         if radius <= 0:
             raise ValueError("Radius must be positive.")
+        if radius_library is None:
+            radius_library = "matrix"
         self.radius = radius
         self.k = k
         self.alpha = alpha
@@ -1941,10 +1947,12 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
     dims = ['azimuth', 'colatitude']
     transforms = {}
 
-    def __init__(self, coordsystem, shape, radius=1, dealias=(1,1), colatitude_library='matrix', **kw):
+    def __init__(self, coordsystem, shape, radius=1, dealias=(1,1), colatitude_library=None, **kw):
         super().__init__(coordsystem, shape, dealias, **kw)
         if radius <= 0:
             raise ValueError("Radius must be positive.")
+        if colatitude_library is None:
+            colatitude_library = "matrix"
         self.radius = radius
         self.colatitude_library = colatitude_library
         self.Lmax = shape[1] - 1
@@ -2383,7 +2391,6 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
     dim = 3
     dims = ['azimuth', 'colatitude', 'radius']
     group_shape = (1, 1, 1)
-    transforms = {}
     subaxis_dependence = [False, False, True]
 
     def __init__(self, coordsystem, radial_size, k, dealias, dtype):
@@ -2663,12 +2670,15 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
 
 class SphericalShellRadialBasis(RegularityBasis):
 
-    transforms = {}
-
-    def __init__(self, coordsystem, radial_size, radii=(1,2), alpha=(-0.5,-0.5), dealias=(1,), k=0, radius_library='matrix', dtype=np.complex128):
+    def __init__(self, coordsystem, radial_size, radii=(1,2), alpha=(-0.5,-0.5), dealias=(1,), k=0, radius_library=None, dtype=np.complex128):
         super().__init__(coordsystem, radial_size, k=k, dealias=dealias, dtype=dtype)
         if radii[0] <= 0:
             raise ValueError("Inner radius must be positive.")
+        if radius_library is None:
+            if alpha[0] == alpha[1] == -1/2:
+                radius_library = "fftw_dct"
+            else:
+                radius_library = "matrix"
         self.radii = radii
         self.dR = self.radii[1] - self.radii[0]
         self.rho = (self.radii[1] + self.radii[0])/self.dR
@@ -2783,7 +2793,7 @@ class SphericalShellRadialBasis(RegularityBasis):
         b = self.alpha[1] + k
         a0 = self.alpha[0]
         b0 = self.alpha[1]
-        return self.transforms[self.radius_library](grid_size, self.Nmax+1, a, b, a0, b0)
+        return Jacobi.transforms[self.radius_library](grid_size, self.Nmax+1, a, b, a0, b0)
 
     def forward_transform_radius(self, field, axis, gdata, cdata):
         data_axis = len(field.tensorsig) + axis
@@ -2881,10 +2891,12 @@ class BallRadialBasis(RegularityBasis):
 
     transforms = {}
 
-    def __init__(self, coordsystem, radial_size, radius=1, k=0, alpha=0, dealias=(1,), radius_library='matrix', dtype=np.complex128):
+    def __init__(self, coordsystem, radial_size, radius=1, k=0, alpha=0, dealias=(1,), radius_library=None, dtype=np.complex128):
         super().__init__(coordsystem, radial_size, k=k, dealias=dealias, dtype=dtype)
         if radius <= 0:
             raise ValueError("Radius must be positive.")
+        if radius_library is None:
+            radius_library = "matrix"
         self.radius = radius
         self.alpha = alpha
         self.radial_COV = AffineCOV((0, 1), (0, radius))
@@ -3105,10 +3117,9 @@ class Spherical3DBasis(MultidimensionalBasis):
     dim = 3
     dims = ['azimuth', 'colatitude', 'radius']
     group_shape = (1, 1, 1)
-    transforms = {}
     subaxis_dependence = [False, True, True]
 
-    def __init__(self, coordsystem, shape_angular, dealias_angular, radial_basis, dtype, azimuth_library=None, colatitude_library='matrix'):
+    def __init__(self, coordsystem, shape_angular, dealias_angular, radial_basis, dtype, azimuth_library=None, colatitude_library=None):
         self.coordsystem = coordsystem
         self.shape = tuple( (*shape_angular, radial_basis.shape[2] ) )
         self.dtype = dtype
@@ -3234,7 +3245,7 @@ class Spherical3DBasis(MultidimensionalBasis):
 
 class SphericalShellBasis(Spherical3DBasis):
 
-    def __init__(self, coordsystem, shape, radii=(1,2), alpha=(-0.5,-0.5), dealias=(1,1,1), k=0, dtype=np.complex128, azimuth_library=None, colatitude_library='matrix', radius_library='matrix'):
+    def __init__(self, coordsystem, shape, radii=(1,2), alpha=(-0.5,-0.5), dealias=(1,1,1), k=0, dtype=np.complex128, azimuth_library=None, colatitude_library=None, radius_library=None):
         if np.isscalar(dealias):
             dealias = (dealias, dealias, dealias)
         self.radial_basis = SphericalShellRadialBasis(coordsystem, shape[2], radii=radii, alpha=alpha, dealias=(dealias[2],), k=k, dtype=dtype, radius_library=radius_library)
@@ -3338,9 +3349,12 @@ class SphericalShellBasis(Spherical3DBasis):
         if self.k > 0:
             gdata *= radial_basis.radial_transform_factor(field.scales[axis], data_axis, self.k)
 
+
 class BallBasis(Spherical3DBasis):
 
-    def __init__(self, coordsystem, shape, radius=1, k=0, alpha=0, dealias=(1,1,1), dtype=np.complex128, azimuth_library=None, colatitude_library='matrix', radius_library='matrix'):
+    transforms = {}
+
+    def __init__(self, coordsystem, shape, radius=1, k=0, alpha=0, dealias=(1,1,1), dtype=np.complex128, azimuth_library=None, colatitude_library=None, radius_library=None):
         if np.isscalar(dealias):
             dealias = (dealias, dealias, dealias)
         self.radial_basis = BallRadialBasis(coordsystem, shape[2], radius=radius, k=k, alpha=alpha, dealias=(dealias[2],), dtype=dtype, radius_library=radius_library)

@@ -3,6 +3,7 @@
 import numpy as np
 from scipy import sparse
 from scipy.sparse import _sparsetools
+from scipy.sparse import linalg as spla
 
 
 def interleaved_view(data):
@@ -118,6 +119,17 @@ def apply_dense(matrix, array, axis, out=None):
     else:
         out[:] = temp # Copy
         return out
+
+
+def splu_inverse(matrix, permc_spec="NATURAL", **kw):
+    """Create LinearOperator implicitly acting as a sparse matrix inverse."""
+    splu = spla.splu(matrix, permc_spec=permc_spec, **kw)
+    def solve(x):
+        if np.iscomplexobj(x) and matrix.dtype == np.float64:
+            return splu.solve(x.real) + 1j*splu.solve(x.imag)
+        else:
+            return splu.solve(x)
+    return spla.LinearOperator(shape=matrix.shape, dtype=matrix.dtype, matvec=solve, matmat=solve)
 
 
 def apply_sparse(matrix, array, axis, out=None):

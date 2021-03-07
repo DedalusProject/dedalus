@@ -72,6 +72,50 @@ def test_J_scalar_roundtrip(a, b, N, dealias, dtype):
         pytest.skip("Can only test 1D transform in serial")
 
 
+@pytest.mark.parametrize('N', [15, 16])
+@pytest.mark.parametrize('alpha', [0, 1, 2])
+@pytest.mark.parametrize('dealias', [0.5, 1, 1.5])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('library', ['scipy_dct', 'fftw_dct'])
+def test_chebyshev_libraries_backward(N, alpha, dealias, dtype, library):
+    """Tests that fast Chebyshev transforms match matrix transforms."""
+    c = coords.Coordinate('x')
+    d = distributor.Distributor([c])
+    # Matrix
+    b_mat = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library='matrix')
+    u_mat = field.Field(dist=d, bases=(b_mat,), dtype=dtype)
+    u_mat.set_scales(dealias)
+    u_mat['c'] = np.random.randn(N)
+    # Library
+    b_lib = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library=library)
+    u_lib = field.Field(dist=d, bases=(b_lib,), dtype=dtype)
+    u_lib.set_scales(dealias)
+    u_lib['c'] = u_mat['c']
+    assert np.allclose(u_mat['g'], u_lib['g'])
+
+
+@pytest.mark.parametrize('N', [15, 16])
+@pytest.mark.parametrize('alpha', [0, 1, 2])
+@pytest.mark.parametrize('dealias', [0.5, 1, 1.5])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('library', ['scipy_dct', 'fftw_dct'])
+def test_chebyshev_libraries_forward(N, alpha, dealias, dtype, library):
+    """Tests that fast Chebyshev transforms match matrix transforms."""
+    c = coords.Coordinate('x')
+    d = distributor.Distributor([c])
+    # Matrix
+    b_mat = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library='matrix')
+    u_mat = field.Field(dist=d, bases=(b_mat,), dtype=dtype)
+    u_mat.set_scales(dealias)
+    u_mat['g'] = np.random.randn(int(np.ceil(dealias * N)))
+    # Library
+    b_lib = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library=library)
+    u_lib = field.Field(dist=d, bases=(b_lib,), dtype=dtype)
+    u_lib.set_scales(dealias)
+    u_lib['g'] = u_mat['g']
+    assert np.allclose(u_mat['c'], u_lib['c'])
+
+
 @CachedFunction
 def build_CF_CF(Nx, Ny, dealias_x, dealias_y):
     c = coords.CartesianCoordinates('x', 'y')
