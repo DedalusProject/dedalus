@@ -128,7 +128,9 @@ class Basis:
         return self.axis + self.dim - 1
 
     def grid_shape(self, scales):
-        return tuple(int(np.ceil(s*n)) for s, n in zip(scales, self.shape))
+        shape = np.array([int(np.ceil(s*n)) for s, n in zip(scales, self.shape)])
+        shape[np.array(self.shape) == 1] = 1
+        return tuple(shape)
 
     def global_grids(self, scales):
         """Global grids."""
