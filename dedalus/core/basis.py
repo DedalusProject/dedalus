@@ -1515,12 +1515,9 @@ class PolarBasis(SpinBasis):
     dim = 2
     dims = ['azimuth', 'radius']
 
-    def __init__(self, coordsystem, shape, k=0, dealias=(1,1), radius_library=None, **kw):
-        if radius_library is None:
-            radius_library = "matrix"
+    def __init__(self, coordsystem, shape, k=0, dealias=(1,1), **kw):
         super().__init__(coordsystem, shape, dealias, **kw)
         self.k = k
-        self.radius_library = radius_library
         self.Nmax = shape[1] - 1
         if self.mmax == 0:
             self.forward_transforms = [self.forward_transform_azimuth_Mmax0,
@@ -1843,10 +1840,16 @@ class AnnulusBasis(PolarBasis):
     transforms = {}
     subaxis_dependence = (False, True)
 
-    def __init__(self, coordsystem, shape, radii=(1,2), k=0, alpha=(-0.5,-0.5), dealias=(1,1), radius_library='matrix', **kw):
-        super().__init__(coordsystem, shape, k, tuple(dealias), radius_library, **kw)
+    def __init__(self, coordsystem, shape, radii=(1,2), k=0, alpha=(-0.5,-0.5), dealias=(1,1), radius_library=None, **kw):
+        super().__init__(coordsystem, shape, k, tuple(dealias), **kw)
         if min(radii) <= 0:
             raise ValueError("Radii must be positive.")
+        if radius_library is None:
+            if alpha[0] == alpha[1] == -1/2:
+                radius_library = "fftw_dct"
+            else:
+                radius_library = "matrix"
+        self.radius_library = radius_library
         self.radii = tuple(radii)
         self.dR = radii[1] - radii[0]
         self.rho = (radii[1] + radii[0])/self.dR
@@ -1911,7 +1914,6 @@ class AnnulusBasis(PolarBasis):
         normalization = self.dR/2
         return normalization * ( (Q0 @ weights0).T ) @ (weights_proj*Q_proj)
 
-
     def global_radius_weights(self, scale=None):
         if scale == None: scale = 1
         N = int(np.ceil(scale * self.shape[1]))
@@ -1937,7 +1939,7 @@ class AnnulusBasis(PolarBasis):
         b = self.alpha[1] + k
         a0 = self.alpha[0]
         b0 = self.alpha[1]
-        return self.transforms[self.radius_library](grid_size, self.Nmax+1, a, b, a0, b0)
+        return Jacobi.transforms[self.radius_library](grid_size, self.Nmax+1, a, b, a0, b0)
 
     @CachedMethod
     def radial_transform_factor(self, scale, data_axis, dk):
@@ -2075,10 +2077,13 @@ class DiskBasis(PolarBasis):
     transforms = {}
     subaxis_dependence = (True, True)
 
-    def __init__(self, coordsystem, shape, radius=1, k=0, alpha=0, dealias=(1,1), radius_library='matrix', **kw):
-        super().__init__(coordsystem, shape, k, dealias, radius_library, **kw)
+    def __init__(self, coordsystem, shape, radius=1, k=0, alpha=0, dealias=(1,1), radius_library=None, **kw):
+        super().__init__(coordsystem, shape, k, dealias, **kw)
         if radius <= 0:
             raise ValueError("Radius must be positive.")
+        if radius_library is None:
+            radius_library = "matrix"
+        self.radius_library = radius_library
         self.radius = radius
         self.alpha = alpha
         self.radial_COV = AffineCOV((0, 1), (0, radius))
