@@ -661,8 +661,8 @@ class FileHandler(Handler):
         """Save task outputs to HDF5 file."""
         # HACK: fix world time and timestep inputs from solvers.py/timestepper.py
         file = self.get_file(virtual_file=virtual_file)
-        self.total_write_num += 1
         if not virtual_file:
+            self.total_write_num += 1
             self.file_write_num += 1
         file.attrs['writes'] = self.file_write_num
         index = self.file_write_num - 1
