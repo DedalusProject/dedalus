@@ -457,6 +457,8 @@ class UnaryGridFunction(NonlinearOperator, FutureField):
     parseables.update(aliased)
 
     def __init__(self, func, arg, **kw):
+        if func not in self.supported.values():
+            raise ValueError("Unsupported ufunc: %s" %func)
         #arg = Operand.cast(arg)
         super().__init__(arg, **kw)
         self.func = func

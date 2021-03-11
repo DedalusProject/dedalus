@@ -33,8 +33,28 @@ class Operand:
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kw):
         from .operators import UnaryGridFunction
-        if ufunc is UnaryGridFunction.supported[ufunc.__name__] and method == "__call__":
-            return UnaryGridFunction(ufunc, *inputs, **kw)
+        if method != "__call__":
+            return NotImplemented
+        if kw:
+            return NotImplemented
+        # Dispatch unary ufuncs to ufunc operator
+        if len(inputs) == 1:
+            return UnaryGridFunction(ufunc, inputs[0])
+        # Dispatch binary ufuncs to arithmetic operators, triggered by arithmetic with numpy scalars
+        elif len(inputs) == 2:
+            from . import arithmetic
+            if ufunc is np.add:
+                return arithmetic.Add(*inputs)
+            elif ufunc is np.subtract:
+                return arithmetic.Add(inputs[0], (-1)*inputs[1])
+            elif ufunc is np.multiply:
+                return arithmetic.Multiply(*inputs)
+            elif ufunc is np.divide:
+                return arithmetic.Multiply(inputs[0], inputs[1]**(-1))
+            elif ufunc is np.power:
+                return arithmetic.Power(*inputs)
+            else:
+                return NotImplemented
         else:
             return NotImplemented
 
