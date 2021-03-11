@@ -2431,6 +2431,8 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
         layout = self.dist.coeff_layout
         local_i = layout.local_elements(self.domain, scales=1)[self.axis][:, None]
         local_j = layout.local_elements(self.domain, scales=1)[self.axis + 1][None, :]
+        local_i = local_i + 0*local_j
+        local_j = local_j + 0*local_i
         if self.dtype == np.complex128:
             local_m = local_i
             local_ell = local_j
