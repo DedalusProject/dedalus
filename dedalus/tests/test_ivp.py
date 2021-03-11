@@ -6,8 +6,43 @@ import pytest
 import numpy as np
 import functools
 from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
+from dedalus.tools.cache import CachedFunction
 from dedalus.extras import flow_tools
-from test_transforms import build_S2, build_spherical_shell, build_ball, build_D2
+
+@CachedFunction
+def build_ball(Nphi, Ntheta, Nr, radius_ball, dealias, dtype):
+    c = coords.SphericalCoordinates('phi', 'theta', 'r')
+    d = distributor.Distributor((c,))
+    b = basis.BallBasis(c, (Nphi, Ntheta, Nr), radius=radius_ball, dealias=(dealias, dealias, dealias), dtype=dtype)
+    phi, theta, r = b.local_grids()
+    x, y, z = c.cartesian(phi, theta, r)
+    return c, d, b, phi, theta, r, x, y, z
+
+@CachedFunction
+def build_shell(Nphi, Ntheta, Nr, radii_shell, dealias, dtype):
+    c = coords.SphericalCoordinates('phi', 'theta', 'r')
+    d = distributor.Distributor((c,))
+    b = basis.SphericalShellBasis(c, (Nphi, Ntheta, Nr), radii=radii_shell, dealias=(dealias, dealias, dealias), dtype=dtype)
+    phi, theta, r = b.local_grids()
+    x, y, z = c.cartesian(phi, theta, r)
+    return c, d, b, phi, theta, r, x, y, z
+
+@CachedFunction
+def build_disk(Nphi, Nr, radius, dealias, dtype=np.float64):
+    c = coords.PolarCoordinates('phi', 'r')
+    d = distributor.Distributor((c,))
+    b = basis.DiskBasis(c, (Nphi, Nr), radius=radius, dealias=(dealias, dealias), dtype=dtype)
+    phi, r = b.local_grids()
+    x, y = c.cartesian(phi, r)
+    return c, d, b, phi, r, x, y
+
+@CachedFunction
+def build_S2(Nphi, Ntheta, dealias, dtype=np.complex128):
+    c = coords.S2Coordinates('phi', 'theta')
+    d = distributor.Distributor((c,))
+    sb = basis.SpinWeightedSphericalHarmonics(c, (Nphi, Ntheta), radius=1, dealias=(dealias, dealias), dtype=dtype)
+    phi, theta = sb.local_grids()
+    return c, d, sb, phi, theta
 
 @pytest.mark.parametrize('dtype', [np.complex128])
 @pytest.mark.parametrize('timestepper', timesteppers.schemes)
@@ -201,9 +236,8 @@ def test_S2_cfl(Lmax, timestepper, dtype, safety):
 @pytest.mark.parametrize('safety', [0.2, 0.4])
 def test_ball_cfl(Lmax, Nmax, timestepper, dtype, safety):
     radius = 2
-    k = 0
     # Bases
-    c, d, b, phi, theta, r, x, y, z = build_ball(2*(Lmax+1), (Lmax+1), (Nmax+1), radius, k, 1, dtype=dtype)
+    c, d, b, phi, theta, r, x, y, z = build_ball(2*(Lmax+1), (Lmax+1), (Nmax+1), radius, 1, dtype=dtype)
     # Fields
     f = field.Field(name='f', dist=d, bases=(b,), dtype=dtype)
     f['g'] = x*y*z
@@ -223,11 +257,11 @@ def test_ball_cfl(Lmax, Nmax, timestepper, dtype, safety):
     dt = cfl.compute_dt()
     #Compare to reference
     inverse_spacing = field.Field(dist=d, tensorsig=(c,), bases=(b,), dtype=dtype)
-    inverse_spacing['g'][0] = 1/(radius/(1 + Lmax))
-    inverse_spacing['g'][1] = 1/(radius/(1 + Lmax))
-    inverse_spacing['g'][2] = 1/np.gradient(r.flatten())
+    inverse_spacing['g'][0] = np.abs(1/(radius/(1 + Lmax)))
+    inverse_spacing['g'][1] = np.abs(1/(radius/(1 + Lmax)))
+    inverse_spacing['g'][2] = np.abs(1/np.gradient(r.flatten()))
     inverse_spacing = operators.Grid(inverse_spacing).evaluate()
-    operation = arithmetic.DotProduct(np.abs(u), np.abs(inverse_spacing))
+    operation = arithmetic.DotProduct(u, inverse_spacing)
     cfl_freq = np.max(np.abs(operation.evaluate()['g']))
     dt_comparison = safety*(cfl_freq)**(-1)
     assert np.allclose(dt, dt_comparison)
@@ -239,9 +273,8 @@ def test_ball_cfl(Lmax, Nmax, timestepper, dtype, safety):
 @pytest.mark.parametrize('safety', [0.2, 0.4])
 def test_spherical_shell_cfl(Lmax, Nmax, timestepper, dtype, safety):
     radii = (0.5, 2)
-    k = 0
     # Bases
-    c, d, b, phi, theta, r, x, y, z = build_spherical_shell(2*(Lmax+1), (Lmax+1), (Nmax+1), radii, k, 1, dtype=dtype)
+    c, d, b, phi, theta, r, x, y, z = build_shell(2*(Lmax+1), (Lmax+1), (Nmax+1), radii, 1, dtype=dtype)
     # Fields
     f = field.Field(name='f', dist=d, bases=(b,), dtype=dtype)
     f['g'] = x*z
@@ -261,11 +294,11 @@ def test_spherical_shell_cfl(Lmax, Nmax, timestepper, dtype, safety):
     dt = cfl.compute_dt()
     #Compare to reference
     inverse_spacing = field.Field(dist=d, tensorsig=(c,), bases=(b,), dtype=dtype)
-    inverse_spacing['g'][0] = 1/(radii[-1]/(1 + Lmax))
-    inverse_spacing['g'][1] = 1/(radii[-1]/(1 + Lmax))
-    inverse_spacing['g'][2] = 1/np.gradient(r.flatten())
+    inverse_spacing['g'][0] = np.abs(1/(radii[-1]/(1 + Lmax)))
+    inverse_spacing['g'][1] = np.abs(1/(radii[-1]/(1 + Lmax)))
+    inverse_spacing['g'][2] = np.abs(1/np.gradient(r.flatten()))
     inverse_spacing = operators.Grid(inverse_spacing).evaluate()
-    operation = arithmetic.DotProduct(np.abs(u), np.abs(inverse_spacing))
+    operation = arithmetic.DotProduct(u, inverse_spacing)
     cfl_freq = np.max(np.abs(operation.evaluate()['g']))
     dt_comparison = safety*(cfl_freq)**(-1)
     assert np.allclose(dt, dt_comparison)
@@ -279,9 +312,7 @@ def test_disk_cfl(Nr, Nphi, timestepper, dtype, safety):
     radius = 2
     k = 0
     # Bases
-    c, d, db, phi, r = build_D2(Nphi, Nr, radius, 1, dtype=dtype)
-    x = r*np.cos(phi)
-    y = r*np.sin(phi)
+    c, d, db, phi, r, x, y = build_disk(Nphi, Nr, radius, 1, dtype=dtype)
     # Fields
     f = field.Field(name='f', dist=d, bases=(db,), dtype=dtype)
     f['g'] = x*y
@@ -301,10 +332,10 @@ def test_disk_cfl(Nr, Nphi, timestepper, dtype, safety):
     dt = cfl.compute_dt()
     #Compare to reference
     inverse_spacing = field.Field(dist=d, tensorsig=(c,), bases=(db,), dtype=dtype)
-    inverse_spacing['g'][0] = 1/(radius/(1 + db.mmax))
-    inverse_spacing['g'][1] = 1/np.gradient(r.flatten())
+    inverse_spacing['g'][0] = np.abs(1/(radius/(1 + db.mmax)))
+    inverse_spacing['g'][1] = np.abs(1/np.gradient(r.flatten()))
     inverse_spacing = operators.Grid(inverse_spacing).evaluate()
-    operation = arithmetic.DotProduct(np.abs(u), np.abs(inverse_spacing))
+    operation = arithmetic.DotProduct(u, inverse_spacing)
     cfl_freq = np.max(np.abs(operation.evaluate()['g']))
     dt_comparison = safety*(cfl_freq)**(-1)
     assert np.allclose(dt, dt_comparison)

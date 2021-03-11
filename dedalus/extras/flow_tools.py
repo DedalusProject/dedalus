@@ -227,5 +227,5 @@ class CFL:
         for axis in range(domain.dim):
             inv_spacing['g'][axis] = np.abs(1/domain.grid_spacing(axis))
         inv_spacing = operators.Grid(inv_spacing).evaluate()
-        freq = dot(np.abs(velocity), inv_spacing)
+        freq = dot(velocity, inv_spacing)
         self.add_frequency(freq)

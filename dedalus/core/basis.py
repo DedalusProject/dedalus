@@ -130,7 +130,7 @@ class Basis:
     def grid_shape(self, scales):
         return tuple(int(np.ceil(s*n)) for s, n in zip(scales, self.shape))
 
-    def grid_spacing(self, scales=None):
+    def grid_spacing(self, **kwargs):
         """Global grids spacings."""
         raise NotImplementedError
 
@@ -270,11 +270,10 @@ class IntervalBasis(Basis):
         super().__init__(coord)
 
     @CachedMethod
-    def grid_spacing(self, scales=None):
+    def grid_spacing(self, scale=None):
         """Global grids spacings."""
-        if scales is None: scales = (1,)
-        grid = self.global_grid(scales)
-        return np.gradient(grid)
+        grid = self.global_grid(scale=scale)
+        return np.gradient(grid.flatten()).reshape(grid.shape)
 
     # Why do we need this?
     def global_grids(self, scales=None):
@@ -500,18 +499,18 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         return clenshaw.matrix_clenshaw(coeffs.ravel(), A, B, f0, cutoff=cutoff)
 
     @CachedMethod
-    def grid_spacing(self, scales=None):
+    def grid_spacing(self, scale=None):
         """Global Jacobi grids spacings."""
         #Special case for ChebyshevT (a=b=-1/2)
         if self.a == -1/2 and self.b == -1/2:
-            if scales is None: scales = (1,)
-            N = self.grid_shape(scales)[0]
+            if scale is None: scale = 1
+            N = self.grid_shape((scale,))[0]
             i = np.arange(N)
             theta = np.pi * (i + 1/2) / N
             native_spacing = np.sin(theta) * np.pi / N
             return native_spacing * self.COV.stretch
         else:
-            super(Jacobi, self).grid_spacing(scales=scales)
+            super(Jacobi, self).grid_spacing(scale=scale)
 
 def Legendre(*args, **kw):
     return Jacobi(*args, a=0, b=0, **kw)
@@ -892,11 +891,11 @@ class RealFourier(IntervalBasis):
         return (2 * np.pi / N) * np.arange(N)
 
     @CachedMethod
-    def grid_spacing(self, scales=None):
+    def grid_spacing(self, scale=None):
         """Global Fourier grids spacings."""
-        if scales is None: scales = (1,)
-        N = self.grid_shape(scales)[0]
-        native_spacing = 2 * np.pi / N * np.ones(N)
+        if scale is None: scale = 1
+        N = self.grid_shape((scale,))
+        native_spacing = 2 * np.pi / N[0] * np.ones(N)
         return native_spacing * self.COV.stretch
 
     @CachedMethod

@@ -8,6 +8,7 @@ from collections import OrderedDict
 
 from ..tools.cache import CachedMethod, CachedClass, CachedAttribute
 from ..tools.general import unify_attributes, unify, OrderedSet
+from ..tools.array import reshape_vector
 from .coords import Coordinate, CartesianCoordinates
 
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -215,7 +216,7 @@ class Domain(metaclass=CachedClass):
         if issubclass(type(basis), MultidimensionalBasis):
             spacing = basis.grid_spacing(axis - basis.axis, scales=scales)
         else:
-            spacing = basis.grid_spacing(scales=(scales[axis],))
+            spacing = basis.grid_spacing(scale=scales[axis])
         # Slice out local portion
         slices = self.dist.grid_layout.slices(self, scales)
         spacing = spacing[slices[axis]]
