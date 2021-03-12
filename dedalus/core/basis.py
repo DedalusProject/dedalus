@@ -1568,15 +1568,16 @@ class PolarBasis(SpinBasis):
     @CachedMethod
     def S1_basis(self, radius=1):
         if self.dtype == np.complex128:
-            S1_basis = ComplexFourier(self.coordsystem.coords[0], self.shape[0], bounds=(0, 2*np.pi), library=self.azimuth_library)
+            S1_basis = ComplexFourier(self.coordsystem.coords[0], self.shape[0], bounds=(0, 2*np.pi), dealias=self.dealias[0], library=self.azimuth_library)
         elif self.dtype == np.float64:
-            S1_basis = RealFourier(self.coordsystem.coords[0], self.shape[0], bounds=(0, 2*np.pi), library=self.azimuth_library)
+            S1_basis = RealFourier(self.coordsystem.coords[0], self.shape[0], bounds=(0, 2*np.pi), dealias=self.dealias[0], library=self.azimuth_library)
         else:
             raise NotImplementedError()
         S1_basis.radius = radius
         S1_basis.forward_coeff_permutation  = self.forward_m_perm
         S1_basis.backward_coeff_permutation = self.backward_m_perm
         return S1_basis
+
 
     def global_shape(self, layout, scales):
         grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
@@ -2251,7 +2252,8 @@ class DiskBasis(PolarBasis):
     @CachedMethod
     def interpolation(self, m, spintotal, position):
         native_position = self.radial_COV.native_coord(position)
-        return dedalus_sphere.zernike.polynomials(2, self.n_size(m), self.alpha + self.k, np.abs(m + spintotal), native_position)
+        native_z = 2*native_position**2 - 1
+        return dedalus_sphere.zernike.polynomials(2, self.n_size(m), self.alpha + self.k, np.abs(m + spintotal), native_z)
 
     @CachedMethod
     def radius_multiplication_matrix(self, m, spintotal, order, d):
