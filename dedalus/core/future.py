@@ -3,6 +3,7 @@ Classes for future evaluation.
 
 """
 
+from abc import ABC, abstractmethod
 import numpy as np
 from functools import partial
 
@@ -249,12 +250,7 @@ class Future(Operand):
     #     return order
 
 
-
-
-
-
-
-class FutureField(Future):
+class FutureField(Future, ABC):
     """Class for deferred operations producing a Field."""
     future_type = Field
 
@@ -275,6 +271,18 @@ class FutureField(Future):
             return arg
         else:
             return FieldCopy(arg)
+
+    @abstractmethod
+    def domain(self):
+        pass
+
+    @abstractmethod
+    def tensorsig(self):
+        pass
+
+    @abstractmethod
+    def dtype(self):
+        pass
 
 
 class FutureLockedField(Future):
