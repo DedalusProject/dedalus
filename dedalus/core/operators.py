@@ -3,6 +3,7 @@ Abstract and built-in classes defining deferred operations on fields.
 
 """
 
+from abc import abstractmethod
 from collections import defaultdict
 from functools import partial, reduce
 import numpy as np
@@ -529,20 +530,11 @@ class UnaryGridFunction(NonlinearOperator, FutureField):
 
 
 class LinearOperator(FutureField):
-    """
-    Base class for linear operators.
+    """Base class for linear operators."""
 
-    Subclasses must define the following attributes:
-
-        # LinearOperator requirements
-        self.operand
-
-        # FutureField requirements
-        self.domain
-        self.tensorsig
-        self.dtype
-
-    """
+    @abstractmethod
+    def operand(self):
+        pass
 
     # def __init__(self, *args, **kw):
     #     self.coord = args[1]
@@ -724,27 +716,35 @@ def Coeff(operand):
 class SpectralOperator(LinearOperator):
     """
     Base class for linear operators acting on the coefficients of an individual spectral basis.
-
-    Subclasses must define the following attributes:
-
-        # SpectralOperator requirements
-        self.coord
-        self.input_basis
-        self.output_basis
-        self.first_axis
-        self.last_axis
-        self.subaxis_dependence
-        self.subaxis_coupling
-
-        # LinearOperator requirements
-        self.operand
-
-        # FutureField requirements
-        self.domain
-        self.tensorsig
-        self.dtype
-
     """
+
+    @abstractmethod
+    def coord(self):
+        pass
+
+    @abstractmethod
+    def input_basis(self):
+        pass
+
+    @abstractmethod
+    def output_basis(self):
+        pass
+
+    @abstractmethod
+    def first_axis(self):
+        pass
+
+    @abstractmethod
+    def last_axis(self):
+        pass
+
+    @abstractmethod
+    def subaxis_dependence(self):
+        pass
+
+    @abstractmethod
+    def subaxis_coupling(self):
+        pass
 
     def matrix_dependence(self, *vars):
         # Assumes operand is linear in vars
@@ -963,6 +963,7 @@ def interpolate(arg, **positions):
     for coord, position in positions.items():
         arg = Interpolate(arg, coord, position)
     return arg
+
 
 class Interpolate(SpectralOperator, metaclass=MultiClass):
     """
