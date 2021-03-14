@@ -1530,6 +1530,7 @@ class ConvertSame(Convert):
 
 
 class Trace(LinearOperator):
+    # TODO: implement matrix/coefficient versions
 
     name = "Trace"
 
