@@ -100,11 +100,12 @@ class EigenvalueSolver:
             self.eigenvalues, self.eigenvectors = eig_output
         elif len(eig_output) == 3:
             self.eigenvalues, self.left_eigenvectors, self.eigenvectors = eig_output
+            self.modified_left_eigenvectors = np.transpose(np.conjugate(self.left_eigenvectors.T)*-pencil.M)
         if pencil.pre_right is not None:
             self.eigenvectors = pencil.pre_right @ self.eigenvectors
         self.eigenvalue_pencil = pencil
 
-    def solve_sparse(self, pencil, N, target, rebuild_coeffs=False, **kw):
+    def solve_sparse(self, pencil, N, target, rebuild_coeffs=False, left=False, **kw):
         """
         Perform targeted sparse eigenvalue search for selected pencil.
 
@@ -119,6 +120,11 @@ class EigenvalueSolver:
             Target eigenvalue for search.
         rebuild_coeffs : bool, optional
             Flag to rebuild cached coefficient matrices (default: False)
+        left : bool, optional
+            Flag to solve for the left eigenvectors of the system
+            (IN ADDITION TO the right eigenvectors), defined as the right
+            eigenvectors of the conjugate-transposed problem
+            (default: False)
 
         Other keyword options passed to scipy.sparse.linalg.eigs.
 
@@ -133,8 +139,23 @@ class EigenvalueSolver:
         # Solve as sparse general eigenvalue problem
         A = pencil.L_exp
         B = -pencil.M_exp
+        # Solve for the right eigenvectors
         self.eigenvalues, self.eigenvectors = scipy_sparse_eigs(A=A, B=B, N=N, target=target, matsolver=self.matsolver, **kw)
+        if left == True:
+            # Solve for the left eigenvectors
+            #TODO: I think A and B are sparse.csr_matrix objects, in which case csr_matrix.getH might be better than np.conjugate(np.transpose()). Need to test.
+            self.left_eigenvalues, self.left_eigenvectors = scipy_sparse_eigs(A=np.conjugate(np.transpose(A)),
+                                                                              B=np.conjugate(np.transpose(B)),
+                                                                              N=N, target=np.conjugate(target),
+                                                                              matsolver=self.matsolver, **kw)
+            # The following isn't an error, just bad luck: sometimes the sparse solver doesn't hit the same targets for left as it does for right eigenvectors
+            if not np.allclose(self.eigenvalues, np.conjugate(self.left_eigenvalues)):
+                logger.warning("Conjugate of left eigenvalues does not match right eigenvalues.")
+            # In absence of above warning, modified_left_eigenvectors forms a biorthogonal set with the right eigenvectors
+            # (perhaps @ instead of * is better)
+            self.modified_left_eigenvectors = np.transpose(np.conjugate(self.left_eigenvectors.T)*-pencil.M)
         if pencil.pre_right is not None:
+            # I remember Keaton explaining long ago that this step is only necessary for right eigenvectors, I think
             self.eigenvectors = pencil.pre_right @ self.eigenvectors
         self.eigenvalue_pencil = pencil
 
