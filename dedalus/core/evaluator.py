@@ -444,11 +444,11 @@ class FileHandler(Handler):
             size_limit = self._sl_array[0]
         return (write_limit or size_limit)
 
-    def get_file(self, virtual_file=False):
+    def get_file(self):
         """Return current HDF5 file, creating if necessary."""
         # Create new file if necessary
         if os.path.exists(str(self.current_path)):
-            if not virtual_file and self.check_file_limits():
+            if self.check_file_limits():
                 self.set_num += 1
                 self.create_current_file()
         else:
@@ -458,11 +458,8 @@ class FileHandler(Handler):
             comm = self.dist.comm_cart
             h5file = h5py.File(str(self.current_path), 'r+', driver='mpio', comm=comm)
         else:
-            if virtual_file:
-                h5file = h5py.File(str(self.current_virtual_path), 'r+')
-            else:
-                h5file = h5py.File(str(self.current_path), 'r+')
-                self.file_write_num = h5file['/scales/write_number'].shape[0]
+            h5file = h5py.File(str(self.current_path), 'r+')
+            self.file_write_num = h5file['/scales/write_number'].shape[0]
         return h5file
 
     @property
@@ -510,11 +507,9 @@ class FileHandler(Handler):
         self.setup_file(file)
 
         file.close()
-        
-        if comm.rank == 0 and self.virtual_file:
-            virtual_file = h5py.File(str(self.current_virtual_path), 'w-')
-            self.setup_file(virtual_file, virtual_file=True)            
-            virtual_file.close()
+
+        # def create_current_virtual_file(self):
+        #     if comm.rank == 0:
 
     def construct_virtual_sources(self, task, file_shape):
         taskname = task['name']
@@ -642,7 +637,17 @@ class FileHandler(Handler):
                         data = basis.global_elements()[subaxis].ravel()
                     else:
                         data = basis.local_elements()[subaxis].ravel()
-                lookup = 'hash_' + hashlib.sha1(data).hexdigest()
+
+
+                if self.dist.comm_cart.rank == 0:
+                    scale_hash = hashlib.sha1(data).hexdigest()
+                else:
+                    scale_hash = None
+                if not virtual_file:
+                    scale_hash = self.dist.comm_cart.bcast(scale_hash,  root=0)
+
+                lookup = 'hash_' + scale_hash
+
                 if lookup not in scale_group:
                     scale_group.create_dataset(name=lookup, data=data)
                     scale_group[lookup].make_scale()
@@ -652,18 +657,11 @@ class FileHandler(Handler):
 
 
     def process(self, world_time=0, wall_time=0, sim_time=0, timestep=0, iteration=0, **kw):
-        self.process_file(world_time=world_time, wall_time=wall_time, sim_time=sim_time, timestep=timestep, iteration=iteration, **kw)
-        if self.virtual_file:
-            if self.dist.comm_cart.rank == 0:
-                self.process_file(world_time=world_time, wall_time=wall_time, sim_time=sim_time, timestep=timestep, iteration=iteration, virtual_file = True, **kw)
-
-    def process_file(self, world_time=0, wall_time=0, sim_time=0, timestep=0, iteration=0, virtual_file=False, **kw):
         """Save task outputs to HDF5 file."""
         # HACK: fix world time and timestep inputs from solvers.py/timestepper.py
-        file = self.get_file(virtual_file=virtual_file)
-        if not virtual_file:
-            self.total_write_num += 1
-            self.file_write_num += 1
+        file = self.get_file()
+        self.total_write_num += 1
+        self.file_write_num += 1
         file.attrs['writes'] = self.file_write_num
         index = self.file_write_num - 1
 
@@ -691,42 +689,67 @@ class FileHandler(Handler):
 
         # Create task datasets
         for task_num, task in enumerate(self.tasks):
-            if virtual_file:
-                # h5py does not support resizing virtual datasets
-                # so we must rebuild at each write.
-                op = task['operator']
-                layout = task['layout']
-                scales = task['scales']
+            out = task['out']
+            out.require_scales(task['scales'])
+            out.require_layout(task['layout'])
 
-                del file['tasks'][task['name']]
+            dset = file['tasks'][task['name']]
+            dset.resize(index+1, axis=0)
 
-                gnc_shape, gnc_start, write_shape, write_start, write_count = self.get_write_stats(layout, scales, op.domain, op.tensorsig, index=0, virtual_file=virtual_file)
-                if np.prod(write_shape) <= 1:
-                    # Start with shape[0] = 0 to chunk across writes for scalars
-                    file_shape = (0,) + tuple(write_shape)
-                else:
-                    # Start with shape[0] = 1 to chunk within writes
-                    file_shape = (index+1,) + tuple(write_shape)
-
-                virt_layout = self.construct_virtual_sources(task, file_shape)
-                # create new virtual dataset
-                dset = file['tasks'].create_virtual_dataset(task['name'], virt_layout, fillvalue=None)
-                # restore scales
-                self.dset_metadata(task, task_num, dset, scale_group, gnc_shape, gnc_start, write_count, virtual_file=virtual_file)
+            memory_space, file_space = self.get_hdf5_spaces(out.layout, task['scales'], out.domain, out.tensorsig, index)
+            if self.parallel:
+                dset.id.write(memory_space, file_space, out.data, dxpl=self._property_list)
             else:
-                out = task['out']
-                out.require_scales(task['scales'])
-                out.require_layout(task['layout'])
+                dset.id.write(memory_space, file_space, out.data)
 
-                dset = file['tasks'][task['name']]
-                dset.resize(index+1, axis=0)
+        file.close()
+        
+        if self.check_file_limits() and self.virtual_file and self.dist.comm_cart.rank == 0:
+            self.process_virtual_file(world_time=world_time, wall_time=wall_time, sim_time=sim_time, timestep=timestep, iteration=iteration, **kw)
 
-                memory_space, file_space = self.get_hdf5_spaces(out.layout, task['scales'], out.domain, out.tensorsig, index)
-                if self.parallel:
-                    dset.id.write(memory_space, file_space, out.data, dxpl=self._property_list)
-                else:
-                    dset.id.write(memory_space, file_space, out.data)
+    def process_virtual_file(self, world_time=0, wall_time=0, sim_time=0, timestep=0, iteration=0, **kw):
 
+        if not self.dist.comm_cart.rank == 0:
+            raise ValueError("Processing Virtual File not on root processor. This should never happen.")
+        
+        file = h5py.File(str(self.current_virtual_path), 'w-')
+        self.setup_file(file, virtual_file=True)            
+        scale_group = file['scales']
+        # get timescales from root processor
+        file_name = '%s_s%i_p0.h5' %(self.base_path.stem, self.set_num)
+        folder_name = '%s_s%i' %(self.base_path.stem, self.set_num)
+        folder_path = self.base_path.joinpath(folder_name)
+        src_file_name = folder_path.joinpath(file_name)
+
+        file.attrs['writes'] = self.file_write_num
+
+        with h5py.File(src_file_name,"r") as root_file:
+            for time_scale in ['sim_time', 'world_time', 'wall_time', 'timestep', 'iteration', 'write_number']:
+                dset = file['scales'][time_scale]
+                dset.resize(self.file_write_num, axis=0)
+                dset[:] = root_file['scales'][time_scale][:]
+        
+        for task_num, task in enumerate(self.tasks):
+            # h5py does not support resizing virtual datasets
+            # so we must rebuild at each write.
+            op = task['operator']
+            layout = task['layout']
+            scales = task['scales']
+
+            gnc_shape, gnc_start, write_shape, write_start, write_count = self.get_write_stats(layout, scales, op.domain, op.tensorsig, index=0, virtual_file=True)
+            if np.prod(write_shape) <= 1:
+                # Start with shape[0] = 0 to chunk across writes for scalars
+                file_shape = (0,) + tuple(write_shape)
+            else:
+                # Start with shape[0] = 1 to chunk within writes
+                file_shape = (self.file_write_num,) + tuple(write_shape)
+
+            virt_layout = self.construct_virtual_sources(task, file_shape)
+            # create new virtual dataset
+            del file['tasks'][task['name']]
+            dset = file['tasks'].create_virtual_dataset(task['name'], virt_layout, fillvalue=None)
+            # restore scales
+            self.dset_metadata(task, task_num, dset, scale_group, gnc_shape, gnc_start, write_count, virtual_file=True)
         file.close()
 
     def get_write_stats(self, layout, scales, domain, tensorsig, index, virtual_file=False, rank = None):
