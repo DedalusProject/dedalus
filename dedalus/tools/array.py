@@ -123,7 +123,7 @@ def apply_dense(matrix, array, axis, out=None):
 
 def splu_inverse(matrix, permc_spec="NATURAL", **kw):
     """Create LinearOperator implicitly acting as a sparse matrix inverse."""
-    splu = spla.splu(matrix, permc_spec=permc_spec, **kw)
+    splu = spla.splu(matrix.tocsc(), permc_spec=permc_spec, **kw)
     def solve(x):
         if np.iscomplexobj(x) and matrix.dtype == np.float64:
             return splu.solve(x.real) + 1j*splu.solve(x.imag)

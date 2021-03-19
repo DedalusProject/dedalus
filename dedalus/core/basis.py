@@ -522,6 +522,7 @@ class ConvertJacobi(operators.Convert, operators.SpectralOperator1D):
     subaxis_coupling = [True]
 
     @staticmethod
+    @CachedMethod
     def _subspace_matrix(input_basis, output_basis):
         N = input_basis.size
         a0, b0 = input_basis.a, input_basis.b
@@ -538,6 +539,7 @@ class ConvertConstantJacobi(operators.Convert, operators.SpectralOperator1D):
     subaxis_coupling = [False]
 
     @staticmethod
+    @CachedMethod
     def _subspace_matrix(input_basis, output_basis):
         basis = output_basis
         MMT = basis.transforms['matrix'](grid_size=1, coeff_size=basis.size, a=basis.a, b=basis.b, a0=basis.a0, b0=basis.b0)
@@ -558,6 +560,7 @@ class DifferentiateJacobi(operators.Differentiate):
         return input_basis._new_a_b(a, b)
 
     @staticmethod
+    @CachedMethod
     def _subspace_matrix(input_basis):
         N = input_basis.size
         a, b = input_basis.a, input_basis.b
@@ -573,6 +576,7 @@ class InterpolateJacobi(operators.Interpolate, operators.SpectralOperator1D):
     subaxis_coupling = [True]
 
     @staticmethod
+    @CachedMethod
     def _subspace_matrix(input_basis, position):
         N = input_basis.size
         a, b = input_basis.a, input_basis.b

@@ -158,8 +158,6 @@ class LinearBoundaryValueSolver:
         # Build subsystems and subproblem matrices
         self.subsystems = subsystems.build_subsystems(problem, matrix_coupling=matrix_coupling)
         self.subproblems = subsystems.build_subproblems(problem, self.subsystems, ['L'])
-        self._build_subproblem_matsolvers()
-
         self.state = problem.variables
 
         # Create F operator trees
@@ -189,6 +187,9 @@ class LinearBoundaryValueSolver:
         """Solve BVP."""
         # Compute RHS
         self.evaluator.evaluate_group('F', sim_time=0, wall_time=0, iteration=0)
+        # Build matsolvers on demand
+        if not hasattr(self, "subproblem_matsolvers"):
+            self._build_subproblem_matsolvers()
         # Solve system for each subproblem, updating state
         for sp in self.subproblems:
             sp_matsolver = self.subproblem_matsolvers[sp]
