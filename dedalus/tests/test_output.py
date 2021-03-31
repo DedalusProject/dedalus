@@ -27,7 +27,7 @@ def test_cartesian_output(dtype, dealias, output_scales):
     z = zb.local_grid(1)
     # Fields
     u = field.Field(name='u', dist=d, bases=(xb,yb,zb), dtype=dtype)
-    u['g'] = np.sin(x)
+    u['g'] = np.sin(x) * np.sin(y) * np.sin(z)
     # Problem
     dt = operators.TimeDerivative
     problem = problems.IVP([u])

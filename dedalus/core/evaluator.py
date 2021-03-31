@@ -589,7 +589,7 @@ class FileHandler(Handler):
                 # set up virtual layout
                 virt_layout = self.construct_virtual_sources(task, file_shape)
                 # create virtual dataset
-                dset = task_group.create_virtual_dataset(task['name'], virt_layout, fillvalue=np.nan)
+                dset = task_group.create_virtual_dataset(task['name'], virt_layout, fillvalue=None)
             else:
                 dset = task_group.create_dataset(name=task['name'], shape=file_shape, maxshape=file_max, dtype=op.dtype)
 
@@ -705,9 +705,9 @@ class FileHandler(Handler):
         file.close()
 
         if self.check_file_limits() and self.virtual_file and self.dist.comm_cart.rank == 0:
-            self.process_virtual_file(world_time=world_time, wall_time=wall_time, sim_time=sim_time, timestep=timestep, iteration=iteration, **kw)
+            self.process_virtual_file()
 
-    def process_virtual_file(self, world_time=0, wall_time=0, sim_time=0, timestep=0, iteration=0, **kw):
+    def process_virtual_file(self):
 
         if not self.dist.comm_cart.rank == 0:
             raise ValueError("Processing Virtual File not on root processor. This should never happen.")
@@ -737,12 +737,7 @@ class FileHandler(Handler):
             scales = task['scales']
 
             gnc_shape, gnc_start, write_shape, write_start, write_count = self.get_write_stats(layout, scales, op.domain, op.tensorsig, index=0, virtual_file=True)
-            if np.prod(write_shape) <= 1:
-                # Start with shape[0] = 0 to chunk across writes for scalars
-                file_shape = (0,) + tuple(write_shape)
-            else:
-                # Start with shape[0] = 1 to chunk within writes
-                file_shape = (self.file_write_num,) + tuple(write_shape)
+            file_shape = (self.file_write_num,) + tuple(write_shape)
 
             virt_layout = self.construct_virtual_sources(task, file_shape)
             # create new virtual dataset
@@ -791,17 +786,10 @@ class FileHandler(Handler):
     def get_hdf5_spaces(self, layout, scales, domain, tensorsig, index):
         """Create HDF5 space objects for writing nonconstant subspace of a field."""
 
-        # References
-        tensor_order = len(tensorsig)
-        tensor_shape = tuple(cs.dim for cs in tensorsig)
-        lshape = tensor_shape + layout.local_shape(domain, scales)
-        constant = np.array((False,)*tensor_order + domain.constant)
-        start = np.array([0 for i in range(tensor_order)] + [elements[0] for elements in layout.local_elements(domain, scales)])
-        gnc_shape, gnc_start, write_shape, write_start, write_count = self.get_write_stats(layout, scales, domain, tensorsig, index)
+        global_shape, global_start, write_shape, write_start, write_count = self.get_write_stats(layout, scales, domain, tensorsig, index)
 
-        # Build HDF5 spaces
-        memory_shape = tuple(lshape)
-        memory_start = tuple(0 * start)
+        memory_shape = tuple(write_count)
+        memory_start = tuple(0 * write_start)
         memory_count = tuple(write_count)
         memory_space = h5py.h5s.create_simple(memory_shape)
         memory_space.select_hyperslab(memory_start, memory_count)
@@ -810,7 +798,6 @@ class FileHandler(Handler):
         file_start = (index,) + tuple(write_start)
         file_count = (1,) + tuple(write_count)
         file_space = h5py.h5s.create_simple(file_shape)
-        print(file_start, file_count)
         file_space.select_hyperslab(file_start, file_count)
 
         return memory_space, file_space
