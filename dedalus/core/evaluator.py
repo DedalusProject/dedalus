@@ -752,42 +752,41 @@ class FileHandler(Handler):
             self.dset_metadata(task, task_num, dset, scale_group, gnc_shape, gnc_start, write_count, virtual_file=True)
         file.close()
 
-    def get_write_stats(self, layout, scales, domain, tensorsig, index, virtual_file=False, rank = None):
+    def get_write_stats(self, layout, scales, domain, tensorsig, index, virtual_file=False, rank=None):
         """Determine write parameters for nonconstant subspace of a field."""
-
 
         # References
         tensor_order = len(tensorsig)
         tensor_shape = tuple(cs.dim for cs in tensorsig)
-        gshape = tensor_shape + layout.global_shape(domain, scales)
-        lshape = tensor_shape + layout.local_shape(domain, scales)
+        gshape = layout.global_shape(domain, scales)
+        lshape = layout.local_shape(domain, scales)
 
-        constant = np.array((False,)*tensor_order + domain.constant)
-        start = np.array([0 for i in range(tensor_order)] + [elements[0] for elements in layout.local_elements(domain, scales, rank = rank)])
+        local_elements = layout.local_elements(domain, scales, rank=rank)
+        start = []
+        for axis, lei in enumerate(local_elements):
+            if lei.size == 0:
+                start.append(gshape[axis])
+            else:
+                start.append(lei[0])
         logger.debug("rank: {}, start = {}".format(rank, start))
-        first = (start == 0)
 
         # Build counts, taking just the first entry along constant axes
-        write_count = np.array(lshape)
-        write_count[constant & first] = 1
-        write_count[constant & ~first] = 0
+        write_count = np.array(tensor_shape + lshape)
 
         # Collectively writing global data
-        global_nc_shape = np.array(gshape)
-        global_nc_shape[constant] = 1
-        global_nc_start = np.array(start)
-        global_nc_start[constant & ~first] = 1
+        global_shape = np.array(tensor_shape + gshape)
+        global_start = np.array([0 for i in range(tensor_order)] + start)
 
         if self.parallel or virtual_file:
             # Collectively writing global data
-            write_shape = global_nc_shape
-            write_start = global_nc_start
+            write_shape = global_shape
+            write_start = global_start
         else:
             # Independently writing local data
             write_shape = write_count
-            write_start = 0 * start
+            write_start = 0 * global_start
 
-        return global_nc_shape, global_nc_start, write_shape, write_start, write_count
+        return global_shape, global_start, write_shape, write_start, write_count
 
     def get_hdf5_spaces(self, layout, scales, domain, tensorsig, index):
         """Create HDF5 space objects for writing nonconstant subspace of a field."""
@@ -811,6 +810,7 @@ class FileHandler(Handler):
         file_start = (index,) + tuple(write_start)
         file_count = (1,) + tuple(write_count)
         file_space = h5py.h5s.create_simple(file_shape)
+        print(file_start, file_count)
         file_space.select_hyperslab(file_start, file_count)
 
         return memory_space, file_space
