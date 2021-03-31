@@ -517,7 +517,7 @@ class FileHandler(Handler):
         scales = task['scales']
         op = task['operator']
         virt_layout = h5py.VirtualLayout(shape=file_shape, dtype=op.dtype)
-        
+
         for i in range(self.dist.comm_cart.size):
             file_name = '%s_s%i_p%i.h5' %(self.base_path.stem, self.set_num, i)
             folder_name = '%s_s%i' %(self.base_path.stem, self.set_num)
@@ -620,7 +620,7 @@ class FileHandler(Handler):
 
         # Spatial scales
         for axis in range(self.dist.dim):
-            basis = op.domain.bases_by_axis[axis]
+            basis = op.domain.full_bases[axis]
             if basis is None:
                 sn = lookup = 'constant'
             else:
@@ -703,7 +703,7 @@ class FileHandler(Handler):
                 dset.id.write(memory_space, file_space, out.data)
 
         file.close()
-        
+
         if self.check_file_limits() and self.virtual_file and self.dist.comm_cart.rank == 0:
             self.process_virtual_file(world_time=world_time, wall_time=wall_time, sim_time=sim_time, timestep=timestep, iteration=iteration, **kw)
 
@@ -711,9 +711,9 @@ class FileHandler(Handler):
 
         if not self.dist.comm_cart.rank == 0:
             raise ValueError("Processing Virtual File not on root processor. This should never happen.")
-        
+
         file = h5py.File(str(self.current_virtual_path), 'w-')
-        self.setup_file(file, virtual_file=True)            
+        self.setup_file(file, virtual_file=True)
         scale_group = file['scales']
         # get timescales from root processor
         file_name = '%s_s%i_p0.h5' %(self.base_path.stem, self.set_num)
@@ -728,7 +728,7 @@ class FileHandler(Handler):
                 dset = file['scales'][time_scale]
                 dset.resize(self.file_write_num, axis=0)
                 dset[:] = root_file['scales'][time_scale][:]
-        
+
         for task_num, task in enumerate(self.tasks):
             # h5py does not support resizing virtual datasets
             # so we must rebuild at each write.

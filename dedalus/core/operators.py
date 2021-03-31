@@ -1017,6 +1017,12 @@ class Interpolate(SpectralOperator, metaclass=MultiClass):
         self.tensorsig = operand.tensorsig
         self.dtype = operand.dtype
 
+    def __repr__(self):
+        return '{}({}, {}={})'.format(self.name, repr(self.operand), self.coord.name, self.position)
+
+    def __str__(self):
+        return '{}({}, {}={})'.format(self.name, str(self.operand), self.coord.name, self.position)
+
     def new_operand(self, operand, **kw):
         return Interpolate(operand, self.coord, self.position, **kw)
 
