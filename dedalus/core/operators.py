@@ -669,7 +669,9 @@ class LinearOperator(FutureField):
         """Build expression matrices for a specific subproblem and variables."""
         # Intercept calls to compute matrices over expressions
         if self in vars:
-            return Field.expression_matrices(self, subproblem, vars)
+            size = subproblem.field_size(self)
+            matrix = sparse.identity(size, format='csr')
+            return {self: matrix}
         # Build operand matrices
         operand_mats = self.operand.expression_matrices(subproblem, vars)
         # Apply operator matrix

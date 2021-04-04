@@ -159,7 +159,9 @@ class Add(Future, metaclass=MultiClass):
         """Build expression matrices for a specific subproblem and variables."""
         # Intercept calls to compute matrices over expressions
         if self in vars:
-            return Field.expression_matrices(self, subproblem, vars)
+            size = subproblem.field_size(self)
+            matrix = sparse.identity(size, format='csr')
+            return {self: matrix}
         matrices = {}
         # Iteratively add argument expression matrices
         for arg in self.args:
@@ -465,7 +467,9 @@ class Product(Future):
         """Build expression matrices for a specific subproblem and variables."""
         # Intercept calls to compute matrices over expressions
         if self in vars:
-            return Field.expression_matrices(self, subproblem, vars)
+            size = subproblem.field_size(self)
+            matrix = sparse.identity(size, format='csr')
+            return {self: matrix}
         # Check vars vs. NCC prep
         if vars != self._ncc_vars:
             raise SymbolicParsingError("Must build NCC matrices with same variables.")
@@ -891,7 +895,9 @@ class MultiplyNumberField(Multiply, FutureField):
         """Build expression matrices for a specific subproblem and variables."""
         # Intercept calls to compute matrices over expressions
         if self in vars:
-            return Field.expression_matrices(self, subproblem, vars)
+            size = subproblem.field_size(self)
+            matrix = sparse.identity(size, format='csr')
+            return {self: matrix}
         arg0, arg1 = self.args
         # Build field matrices
         arg1_mats = arg1.expression_matrices(subproblem, vars)
