@@ -18,6 +18,7 @@ from .field import Field
 from ..libraries.matsolvers import matsolvers
 from ..tools.progress import log_progress
 from ..tools.config import config
+from ..tools.array import csr_matvec
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -193,10 +194,13 @@ class LinearBoundaryValueSolver:
         # Solve system for each subproblem, updating state
         for sp in self.subproblems:
             sp_matsolver = self.subproblem_matsolvers[sp]
+            F = X = np.empty(sp.L_min.shape[0], dtype=self.dtype)
             for ss in sp.subsystems:
-                RHS = sp.pre_left @ ss.gather(self.F)
-                X = sp_matsolver.solve(RHS)
-                X = sp.pre_right @ X
+                F.fill(0)  # Must zero before csr_matvec
+                csr_matvec(sp.pre_left, ss.gather(self.F), F)
+                x = sp_matsolver.solve(F)
+                X.fill(0)  # Must zero before csr_matvec
+                csr_matvec(sp.pre_right, x, X)
                 ss.scatter(X, self.state)
         #self.state.scatter()
 
@@ -269,12 +273,14 @@ class NonlinearBoundaryValueSolver:
         # Solve system for each subproblem, updating state
         for sp in self.subproblems:
             sp_matsolver = self._build_subproblem_matsolver(sp)
+            F = X = np.empty(sp.dH_min.shape[0], dtype=self.dtype)
             for ss in sp.subsystems:
-                RHS = sp.pre_left @ ss.gather(self.F)
-                X = sp_matsolver.solve(RHS)
-                X = sp.pre_right @ X
+                F.fill(0)  # Must zero before csr_matvec
+                csr_matvec(sp.pre_left, ss.gather(self.F), F)
+                x = sp_matsolver.solve(F)
+                X.fill(0)  # Must zero before csr_matvec
+                csr_matvec(sp.pre_right, x, X)
                 ss.scatter(X, self.perturbations)
-
         # Update state
         for var, pert in zip(self.state, self.perturbations):
             var['c'] += damping * pert['c']
