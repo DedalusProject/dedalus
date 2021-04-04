@@ -544,6 +544,70 @@ class FFTWRealFFT(RealFFT):
         plan.backward(temp, gdata)
 
 
+@register_transform(basis.RealFourier, 'fftw_hc')
+class FFTWHalfComplexFFT(RealFourierTransform):
+    """Real-to-real FFT using FFTW half-complex DFT."""
+
+    @CachedMethod
+    def _build_fftw_plan(self, dtype, gshape, axis):
+        """Build FFTW plans and temporary arrays."""
+        logger.debug("Building FFTW R2HC plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, gshape, axis))
+        flags = ['FFTW_'+FFTW_RIGOR().upper()]
+        plan = fftw.R2HCTransform(dtype, gshape, axis, flags=flags)
+        temp = fftw.create_array(gshape, dtype)
+        return plan, temp
+
+    def unpack_rescale(self, temp, cdata, axis, rescale):
+        """Unpack halfcomplex coefficients and rescale for unit-amplitude normalization."""
+        Kmax = self.Kmax
+        # Scale k = 0 cos data
+        meancos = axslice(axis, 0, 1)
+        np.multiply(temp[meancos], rescale, cdata[meancos])
+        # Zero k = 0 msin data
+        cdata[axslice(axis, 1, 2)] = 0
+        # Unpack and scale 1 < k <= Kmax data
+        temp_posfreq_cos = temp[axslice(axis, 1, Kmax+1)]
+        temp_posfreq_msin = temp[axslice(axis, -1, -(Kmax+1), -1)]
+        cdata_posfreq_cos = cdata[axslice(axis, 2, 2*(Kmax+1), 2)]
+        cdata_posfreq_msin = cdata[axslice(axis, 3, 2*(Kmax+1), 2)]
+        np.multiply(temp_posfreq_cos, 2*rescale, cdata_posfreq_cos)
+        np.multiply(temp_posfreq_msin, 2*rescale, cdata_posfreq_msin)
+        # Zero k > Kmax data
+        cdata[axslice(axis, 2*(Kmax+1), None)] = 0
+
+    def repack(self, cdata, temp, axis):
+        """Repack into complex coefficients and rescale for unit-amplitude normalization."""
+        Kmax = self.Kmax
+        # Copy k = 0 data
+        meancos = axslice(axis, 0, 1)
+        np.copyto(temp[meancos], cdata[meancos])
+        # Repack 1 < k <= Kmax data
+        temp_posfreq_cos = temp[axslice(axis, 1, Kmax+1)]
+        temp_posfreq_msin = temp[axslice(axis, -1, -(Kmax+1), -1)]
+        cdata_posfreq_cos = cdata[axslice(axis, 2, 2*(Kmax+1), 2)]
+        cdata_posfreq_msin = cdata[axslice(axis, 3, 2*(Kmax+1), 2)]
+        np.multiply(cdata_posfreq_cos, (1 / 2), temp_posfreq_cos)
+        np.multiply(cdata_posfreq_msin, (1 / 2), temp_posfreq_msin)
+        # Zero k > Kmax data
+        temp[axslice(axis, Kmax+1, -Kmax)] = 0
+
+    def forward(self, gdata, cdata, axis):
+        """Apply forward transform along specified axis."""
+        plan, temp = self._build_fftw_plan(gdata.dtype, gdata.shape, axis)
+        # Execute FFTW plan
+        plan.forward(gdata, temp)
+        # Unpack from halfcomplex form and rescale
+        self.unpack_rescale(temp, cdata, axis, rescale=1/self.N)
+
+    def backward(self, cdata, gdata, axis):
+        """Apply backward transform along specified axis."""
+        plan, temp = self._build_fftw_plan(gdata.dtype, gdata.shape, axis)
+        # Repack into halfcomplex form
+        self.repack(cdata, temp, axis)
+        # Execute FFTW plan
+        plan.backward(temp, gdata)
+
+
 class CosineTransform(SeparableTransform):
     """
     Abstract base class for cosine transforms.
