@@ -447,6 +447,12 @@ class Subproblem:
             # Placeholder for accessing shape
             self.LHS = list(matrices.values())[0]
 
+        # Update rank for Woodbury
+        eqn_dofs_by_dim = defaultdict(int)
+        for eqn in eqn_pass_cond:
+            eqn_dofs_by_dim[eqn['domain'].dim] += self.field_size(eqn['LHS'])
+        self.update_rank = sum(eqn_dofs_by_dim.values()) - eqn_dofs_by_dim[max(eqn_dofs_by_dim.keys())]
+
         # Store RHS conversion matrix
         # F_conv = [self.expansion_matrix(eq['F'].domain, eq['domain']) for eq in eqns]
         # for n, eqn in enumerate(eqns):

@@ -4,6 +4,7 @@ import numpy as np
 import scipy.linalg as sla
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
+from functools import partial
 
 
 matsolvers = {}
@@ -230,3 +231,43 @@ class ScipyDenseLU(DenseSolver):
 
     def solve(self, vector):
         return sla.lu_solve(self.LU, vector, check_finite=False)
+
+
+class Woodbury(SparseSolver):
+    """Solve top & right bordered matrix using Woodbury formula."""
+
+    config = {'bc_top': True}
+
+    def __init__(self, matrix, subproblem, matsolver):
+        self.matrix = matrix
+        self.matsolver = matsolver
+        self.update_rank = R = subproblem.update_rank
+        # Form Woodbury factors
+        self.U = U = np.zeros((matrix.shape[0], 2*R), dtype=matrix.dtype)
+        self.V = V = np.zeros((2*R, matrix.shape[1]), dtype=matrix.dtype)
+        # Remove top border, leaving upper left subblock
+        U[:R, :R] = np.identity(R)
+        V[:R, R:] = matrix[:R, R:].A
+        # Remove right border, leaving upper right and lower right subblocks
+        U[R:-R, R:] = matrix[R:-R, -R:].A
+        V[-R:, -R:] = np.identity(R)
+        self.A = matrix - sp.csr_matrix(U) @ sp.csr_matrix(V)
+        # Solve A using specified matsolver
+        self.A_matsolver = matsolver(self.A)
+        self.Ainv = self.A_matsolver.solve
+        self.Ainv_U = self.Ainv(U)
+        # Solve S using scipy dense inverse
+        S = np.identity(2*R) + V @ self.Ainv_U
+        self.Sinv_ = sla.inv(S)
+        self.Sinv = lambda Y, Sinv=self.Sinv_: Sinv @ Y
+
+    def solve(self, Y):
+        Ainv_Y = self.Ainv(Y)
+        return Ainv_Y - self.Ainv_U @ self.Sinv(self.V @ Ainv_Y)
+
+
+woodbury_matsolvers = {}
+for name, matsolver in matsolvers.items():
+    woodbury_matsolvers['woodbury' + name] = partial(Woodbury, matsolver=matsolver)
+matsolvers.update(woodbury_matsolvers)
+
