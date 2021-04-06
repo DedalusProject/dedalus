@@ -90,7 +90,7 @@ class MultistepIMEX:
         F_fields = solver.F
         sim_time = solver.sim_time
         iteration = solver.iteration
-        STORE_EXPANDED_MATRICES = solver.problem.STORE_EXPANDED_MATRICES
+        STORE_EXPANDED_MATRICES = solver.store_expanded_matrices
 
         # Other references
         MX = self.MX
@@ -544,7 +544,7 @@ class RungeKuttaIMEX:
         F_fields = solver.F
         sim_time_0 = solver.sim_time
         iteration = solver.iteration
-        STORE_EXPANDED_MATRICES = solver.problem.STORE_EXPANDED_MATRICES
+        STORE_EXPANDED_MATRICES = solver.store_expanded_matrices
 
         # Other references
         RHS = self.RHS

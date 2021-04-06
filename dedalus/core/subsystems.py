@@ -30,14 +30,15 @@ logger = logging.getLogger(__name__.split('.')[-1])
 #             trans_shape.append(basis.)
 #     else:
 
-def build_subsystems(problem, matrix_coupling=None):
+def build_subsystems(solver, matrix_coupling=None):
     """Build local subsystem objects."""
+    problem = solver.problem
     # Override problem matrix coupling
     if matrix_coupling is None:
-        matrix_coupling = problem.matrix_coupling
+        matrix_coupling = solver.matrix_coupling
     # Check that distributed dimensions are separable
     for axis in range(len(problem.dist.mesh)):
-        if problem.matrix_coupling[axis]:
+        if matrix_coupling[axis]:
             raise ValueError("Problem is coupled along distributed dimension %i" %axis)
     # Determine local groups for each basis
     domain = problem.variables[0].domain  # HACK
@@ -50,11 +51,12 @@ def build_subsystems(problem, matrix_coupling=None):
             basis_groups.append(basis.local_groups(basis_coupling))
     # Build subsystems groups as product of basis groups
     local_groups = [tuple(sum(p, [])) for p in product(*basis_groups)]
-    return tuple(Subsystem(problem, group) for group in local_groups)
+    return tuple(Subsystem(solver, group) for group in local_groups)
 
 
-def build_subproblems(problem, subsystems, matrices):
+def build_subproblems(solver, subsystems, matrices):
     """Build subproblem matrices with progress logger."""
+    problem = solver.problem
     # Setup NCCs
     for eq in problem.eqs:
         for matrix in matrices:
@@ -71,7 +73,7 @@ def build_subproblems(problem, subsystems, matrices):
     subproblems = []
     for matrix_group in log_progress(subproblem_map, logger, 'info', desc='Building subproblem matrices', iter=np.inf, frac=0.1, dt=10):
         subsystems = tuple(subproblem_map[matrix_group])
-        subproblem = Subproblem(problem, subsystems, matrix_group)
+        subproblem = Subproblem(solver, subsystems, matrix_group)
         subproblem.build_matrices(matrices)
         subproblems.append(subproblem)
     return tuple(subproblems)
@@ -110,9 +112,10 @@ class Subsystem:
     axis).
     """
 
-    def __init__(self, problem, group):
+    def __init__(self, solver, group):
+        self.solver = solver
+        self.problem = problem = solver.problem
         self.dtype = problem.dtype
-        self.problem = problem
         self.group = group
         # Determine matrix group using problem matrix dependence
         matrix_independence = ~ problem.matrix_dependence
@@ -216,8 +219,9 @@ class Subproblem:
     coupled dimension.
     """
 
-    def __init__(self, problem, subsystems, group):
-        self.problem = problem
+    def __init__(self, solver, subsystems, group):
+        self.solver = solver
+        self.problem = problem = solver.problem
         self.subsystems = subsystems
         self.group = group
         self.dist = problem.dist
@@ -413,10 +417,10 @@ class Subproblem:
             raise ValueError("Non-square system: group={}, I={}, J={}".format(self.group, drop_eqn.shape[0], J))
 
         # Permutations
-        problem = self.problem
+        solver = self.solver
         eqn_pass_cond = [eqn for eqn, cond in zip(eqns, eqn_conditions) if cond]
-        self.left_perm = left_permutation(self, eqn_pass_cond, bc_top=problem.BC_TOP, interleave_components=problem.INTERLEAVE_COMPONENTS)
-        self.right_perm = right_permutation(self, vars, tau_left=problem.TAU_LEFT, interleave_components=problem.INTERLEAVE_COMPONENTS)
+        self.left_perm = left_permutation(self, eqn_pass_cond, bc_top=solver.bc_top, interleave_components=solver.interleave_components)
+        self.right_perm = right_permutation(self, vars, tau_left=solver.tau_left, interleave_components=solver.interleave_components)
         self.pre_left = self.left_perm @ self.drop_eqn
         self.pre_right = self.right_perm
 
@@ -429,7 +433,7 @@ class Subproblem:
             setattr(self, '{:}_min'.format(name), matrix.tocsr())
 
         # Store expanded right-preconditioned matrices
-        if problem.STORE_EXPANDED_MATRICES:
+        if solver.store_expanded_matrices:
             # Apply right preconditioning
             for name in matrices:
                 matrices[name] = matrices[name] @ self.pre_right

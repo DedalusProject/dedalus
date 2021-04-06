@@ -24,7 +24,63 @@ import logging
 logger = logging.getLogger(__name__.split('.')[-1])
 
 
-class EigenvalueSolver:
+class SolverBase:
+    """
+    Base class for PDE solvers.
+
+    Parameters
+    ----------
+    problem : Problem object
+        Dedalus problem.
+    matrix_coupling : tuple of bool, optional
+        Matrix coupling override.
+    matsolver : str or Matsolver class, optional
+        Matrix solver. Default taken from config.
+    bc_top : bool, optional
+        Whether to place boundary conditions at top of matrices. Default taken from config.
+    tau_left : bool, optional
+        Whether to place tau columns at left of matrices. Default taken from config.
+    interleave_components : bool, optional
+        Whether to interleave components before variables. Default taken from config.
+    store_expanded_matrices : bool, optional
+        Whether to store right-preconditioned matrices. Default taken from config.
+    """
+
+    def __init__(self, problem, matrix_coupling=None, matsolver=None, bc_top=None, tau_left=None,
+                 interleave_components=None, store_expanded_matrices=None):
+        # Take attributes from problem
+        self.problem = problem
+        self.dist = problem.dist
+        self.dtype = problem.dtype
+        # Process options
+        if matrix_coupling is None:
+            matrix_coupling = problem.matrix_coupling
+        self.matrix_coupling = matrix_coupling
+        if matsolver is None:
+            matsolver = config['linear algebra'][self.matsolver_default]
+        if isinstance(matsolver, str):
+            matsolver = matsolvers[matsolver.lower()]
+        self.matsolver = matsolver
+        if bc_top is None:
+            bc_top = config['matrix construction'].getboolean('BC_TOP')
+        self.bc_top = bc_top
+        if tau_left is None:
+            tau_left = config['matrix construction'].getboolean('TAU_LEFT')
+        self.tau_left = tau_left
+        if interleave_components is None:
+            interleave_components = config['matrix construction'].getboolean('INTERLEAVE_COMPONENTS')
+        self.interleave_components = interleave_components
+        if store_expanded_matrices is None:
+            store_expanded_matrices = config['matrix construction'].getboolean('STORE_EXPANDED_MATRICES')
+        self.store_expanded_matrices = store_expanded_matrices
+        # Process option overrides from matsolver
+        for key, value in matsolver.config.items():
+            if getattr(self, key, None) is not value:
+                logger.info("matsolver overriding solver option '%i' with '%s'" %(key, value))
+                setattr(self, key, value)
+
+
+class EigenvalueSolver(SolverBase):
     """
     Solves linear eigenvalue problems for oscillation frequency omega, (d_t -> -i omega).
     First converts to dense matrices, then solves the eigenvalue problem for a given pencil,
@@ -33,8 +89,10 @@ class EigenvalueSolver:
 
     Parameters
     ----------
-    problem : problem object
-        Problem describing system of differential equations and constraints
+    problem : Problem object
+        Dedalus problem.
+    **kw :
+        Other options passed to ProblemBase.
 
     Attributes
     ----------
@@ -50,26 +108,16 @@ class EigenvalueSolver:
 
     """
 
-    def __init__(self, problem, matrix_coupling=None, matsolver=None):
+    # Default to factorizer to speed up repeated solves
+    matsolver_default = 'MATRIX_FACTORIZER'
 
+    def __init__(self, problem, **kw):
         logger.debug('Beginning EVP instantiation')
-
-        if matsolver is None:
-            # Default to factorizer to speed up repeated solves
-            matsolver = matsolvers[config['linear algebra']['MATRIX_FACTORIZER'].lower()]
-        elif isinstance(matsolver, str):
-            matsolver = matsolvers[matsolver.lower()]
-        self.problem = problem
-        self.dist = problem.dist
-        self.matsolver = matsolver
-        self.dtype = problem.dtype
-
+        super().__init__(problem, **kw)
         # Build subsystems and subproblem matrices
-        self.subsystems = subsystems.build_subsystems(problem, matrix_coupling=matrix_coupling)
-        self.subproblems = subsystems.build_subproblems(problem, self.subsystems, ['M','L'])
-
+        self.subsystems = subsystems.build_subsystems(self, matrix_coupling=self.matrix_coupling)
+        self.subproblems = subsystems.build_subproblems(self, self.subsystems, ['M','L'])
         self.state = problem.variables
-
         logger.debug('Finished EVP instantiation')
 
     def solve_dense(self, subproblem, rebuild_coeffs=False, **kw):
@@ -126,14 +174,16 @@ class EigenvalueSolver:
         subsystem.scatter(X, self.state)
 
 
-class LinearBoundaryValueSolver:
+class LinearBoundaryValueSolver(SolverBase):
     """
     Linear boundary value problem solver.
 
     Parameters
     ----------
-    problem : problem object
-        Problem describing system of differential equations and constraints
+    problem : Problem object
+        Dedalus problem.
+    **kw :
+        Other options passed to ProblemBase.
 
     Attributes
     ----------
@@ -142,25 +192,16 @@ class LinearBoundaryValueSolver:
 
     """
 
-    def __init__(self, problem, matrix_coupling=None, matsolver=None):
+    # Default to factorizer to speed up repeated solves
+    matsolver_default = 'MATRIX_FACTORIZER'
 
+    def __init__(self, problem, **kw):
         logger.debug('Beginning LBVP instantiation')
-
-        if matsolver is None:
-            # Default to factorizer to speed up repeated solves
-            matsolver = matsolvers[config['linear algebra']['MATRIX_FACTORIZER'].lower()]
-        elif isinstance(matsolver, str):
-            matsolver = matsolvers[matsolver.lower()]
-        self.problem = problem
-        self.dist = problem.dist
-        self.matsolver = matsolver
-        self.dtype = problem.dtype
-
+        super().__init__(problem, **kw)
         # Build subsystems and subproblem matrices
-        self.subsystems = subsystems.build_subsystems(problem, matrix_coupling=matrix_coupling)
-        self.subproblems = subsystems.build_subproblems(problem, self.subsystems, ['L'])
+        self.subsystems = subsystems.build_subsystems(self, matrix_coupling=self.matrix_coupling)
+        self.subproblems = subsystems.build_subproblems(self, self.subsystems, ['L'])
         self.state = problem.variables
-
         # Create F operator trees
         namespace = {}
         self.evaluator = Evaluator(self.dist, namespace)
@@ -169,13 +210,12 @@ class LinearBoundaryValueSolver:
             F_handler.add_task(eq['F'])
         F_handler.build_system()
         self.F = F_handler.fields
-
         logger.debug('Finished LBVP instantiation')
 
     def _build_subproblem_matsolvers(self):
         """Build matsolvers for each pencil LHS."""
         self.subproblem_matsolvers = {}
-        if self.problem.STORE_EXPANDED_MATRICES:
+        if self.store_expanded_matrices:
             for sp in self.subproblems:
                 L = sp.L_exp
                 self.subproblem_matsolvers[sp] = self.matsolver(L, self)
@@ -210,14 +250,16 @@ class LinearBoundaryValueSolver:
         #self.state.scatter()
 
 
-class NonlinearBoundaryValueSolver:
+class NonlinearBoundaryValueSolver(SolverBase):
     """
     Nonlinear boundary value problem solver.
 
     Parameters
     ----------
-    problem : problem object
-        Problem describing system of differential equations and constraints
+    problem : Problem object
+        Dedalus problem.
+    **kw :
+        Other options passed to ProblemBase.
 
     Attributes
     ----------
@@ -226,28 +268,17 @@ class NonlinearBoundaryValueSolver:
 
     """
 
-    def __init__(self, problem, matrix_coupling=None, matsolver=None):
+    # Default to solver since every iteration sees a new matrix
+    matsolver_default = 'MATRIX_SOLVER'
 
+    def __init__(self, problem, **kw):
         logger.debug('Beginning NLBVP instantiation')
-
-        if matsolver is None:
-            # Default to solver since every iteration sees a new matrix
-            matsolver = matsolvers[config['linear algebra']['MATRIX_SOLVER'].lower()]
-        elif isinstance(matsolver, str):
-            matsolver = matsolvers[matsolver.lower()]
-        self.matsolver = matsolver
-        self.problem = problem
-        self.dist = problem.dist
-        self.dtype = problem.dtype
-
+        super().__init__(problem, **kw)
         self.iteration = 0
-
         # Build subsystems and subproblem matrices
-        self.subsystems = subsystems.build_subsystems(problem, matrix_coupling=matrix_coupling)
-
+        self.subsystems = subsystems.build_subsystems(self, matrix_coupling=self.matrix_coupling)
         self.state = problem.variables
         self.perturbations = problem.perturbations
-
         # Create F operator trees
         namespace = {}
         self.evaluator = Evaluator(self.dist, namespace)
@@ -256,12 +287,11 @@ class NonlinearBoundaryValueSolver:
             F_handler.add_task(eq['-H'])
         F_handler.build_system()
         self.F = F_handler.fields
-
         logger.debug('Finished NLBVP instantiation')
 
     def _build_subproblem_matsolver(self, sp):
         """Build matsolvers for each subproblem LHS."""
-        if self.problem.STORE_EXPANDED_MATRICES:
+        if self.store_expanded_matrices:
             L = sp.dH_exp
             matsolver = self.matsolver(L, self)
         else:
@@ -274,7 +304,7 @@ class NonlinearBoundaryValueSolver:
         # Compute RHS
         self.evaluator.evaluate_group('F', sim_time=0, wall_time=0, iteration=self.iteration)
         # Recompute Jacobian
-        self.subproblems = subsystems.build_subproblems(self.problem, self.subsystems, ['dH'])
+        self.subproblems = subsystems.build_subproblems(self, self.subsystems, ['dH'])
         # Ensure coeff space before subsystem gathers/scatters
         for field in self.F:
             field.require_layout('c')
@@ -297,16 +327,18 @@ class NonlinearBoundaryValueSolver:
         self.iteration += 1
 
 
-class InitialValueSolver:
+class InitialValueSolver(SolverBase):
     """
     Initial value problem solver.
 
     Parameters
     ----------
-    problem : problem object
-        Problem describing system of differential equations and constraints
+    problem : Problem object
+        Dedalus problem.
     timestepper : timestepper class
         Timestepper to use in evolving initial conditions
+    **kw :
+        Other options passed to ProblemBase.
 
     Attributes
     ----------
@@ -327,34 +359,23 @@ class InitialValueSolver:
 
     """
 
-    def __init__(self, problem, timestepper, matrix_coupling=None, matsolver=None):
+    # Default to factorizer to speed up repeated solves
+    matsolver_default = 'MATRIX_FACTORIZER'
 
+    def __init__(self, problem, timestepper, **kw):
         logger.debug('Beginning IVP instantiation')
-
-        if matsolver is None:
-            # Default to factorizer to speed up repeated solves
-            matsolver = matsolvers[config['linear algebra']['MATRIX_FACTORIZER'].lower()]
-        elif isinstance(matsolver, str):
-            matsolver = matsolvers[matsolver.lower()]
-        self.problem = problem
-        #self.domain = domain = problem.domain
-        self.matsolver = matsolver
-        self.dist = problem.dist
-        self.dtype = problem.dtype
+        super().__init__(problem, **kw)
         self._wall_time_array = np.zeros(1, dtype=float)
         self.start_time = self.get_wall_time()
-
         # Build subproblems and subproblem matrices
-        self.subsystems = subsystems.build_subsystems(problem, matrix_coupling=matrix_coupling)
-        self.subproblems = subsystems.build_subproblems(problem, self.subsystems, ['M', 'L'])
-
+        self.subsystems = subsystems.build_subsystems(self, matrix_coupling=self.matrix_coupling)
+        self.subproblems = subsystems.build_subproblems(self, self.subsystems, ['M', 'L'])
         # Build systems
         # namespace = problem.namespace
         # #vars = [namespace[var] for var in problem.variables]
         # #self.state = FieldSystem.from_fields(vars)
         self.state = problem.variables
         # self._sim_time = namespace[problem.time]
-
         # Create F operator trees
         namespace = {}
         self.evaluator = Evaluator(self.dist, namespace)
@@ -363,19 +384,15 @@ class InitialValueSolver:
             F_handler.add_task(eq['F'])
         F_handler.build_system()
         self.F = F_handler.fields
-
         # Initialize timestepper
         self.timestepper = timestepper(self)
-
         # Attributes
         self.sim_time = 0.
         self.iteration = 0
-
         # Default integration parameters
         self.stop_sim_time = np.inf
         self.stop_wall_time = np.inf
         self.stop_iteration = np.inf
-
         logger.debug('Finished IVP instantiation')
 
     # @property

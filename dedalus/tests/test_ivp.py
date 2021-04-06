@@ -9,7 +9,7 @@ from dedalus.core import coords, distributor, basis, field, operators, problems,
 
 
 @pytest.mark.parametrize('dtype', [np.complex128])
-@pytest.mark.parametrize('timestepper', timesteppers.schemes)
+@pytest.mark.parametrize('timestepper', timesteppers.schemes.values())
 @pytest.mark.parametrize('Nx', [32])
 @pytest.mark.parametrize('x_basis_class', [basis.ComplexFourier])
 def test_heat_1d_periodic(x_basis_class, Nx, timestepper, dtype):
@@ -28,7 +28,7 @@ def test_heat_1d_periodic(x_basis_class, Nx, timestepper, dtype):
     problem = problems.IVP([u])
     problem.add_equation((-dt(u) + dx(dx(u)), F))
     # Solver
-    solver = solvers.InitialValueSolver(problem, timesteppers.RK222)
+    solver = solvers.InitialValueSolver(problem, timestepper)
     dt = 1e-5
     iter = 10
     for i in range(iter):

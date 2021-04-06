@@ -15,6 +15,8 @@ def add_solver(solver):
 class SolverBase:
     """Abstract base class for all solvers."""
 
+    config = {}
+
     def __init__(self, matrix, solver=None):
         pass
 
