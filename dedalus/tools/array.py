@@ -235,3 +235,8 @@ def permute_axis(array, axis, permutation, out=None):
         np.copyto(out, perm)
         return out
 
+
+def copyto(dest, src):
+    # Seems to be faster than np.copyto
+    dest[:] = src
+

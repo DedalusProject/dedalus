@@ -123,10 +123,11 @@ class MultistepIMEX:
         self._LHS_params = (a0, b0)
 
         # Evaluate M.X0 and L.X0
-        for field in state_fields:
-            field.require_coeff_space()
         MX0.data.fill(0)
         LX0.data.fill(0)
+        # Ensure coeff space before subsystem gathers
+        for field in state_fields:
+            field.require_coeff_space()
         for sp in subproblems:
             for ss in sp.subsystems:
                 ssX = ss.gather(state_fields)  # CREATES TEMPORARY
@@ -138,10 +139,10 @@ class MultistepIMEX:
 
         # Run evaluator
         evaluator.evaluate_scheduled(wall_time=wall_time, sim_time=sim_time, iteration=iteration)
-        # F should be in coeff space from evaluator
         F0.data.fill(0)
         for sp in subproblems:
             for ss in sp.subsystems:
+                # F fields should be in coeff space from evaluator
                 ssF = ss.gather(F_fields)  # CREATES TEMPORARY
                 csr_matvec(sp.pre_left, ssF, F0.get_subdata(sp, ss))
 
@@ -158,11 +159,10 @@ class MultistepIMEX:
                 # RHS.data -= b[j] * LX[j-1].data
                 axpy(a=-b[j], x=LX[j-1].data, y=RHS.data)
 
-        # Make sure fields are in coeff space to avoid deadlock in scatter
+        # Solve
+        # Ensure coeff space before subsystem scatters
         for field in state_fields:
             field.set_layout('c')
-
-        # Solve
         for sp in subproblems:
             if update_LHS:
                 if STORE_EXPANDED_MATRICES:
@@ -561,12 +561,11 @@ class RungeKuttaIMEX:
         update_LHS = (k != self._LHS_params)
         self._LHS_params = k
 
-        # Ensure coeff space to avoid transforms in subsystem gathers
-        for field in state_fields:
-            field.require_coeff_space()
-
         # Compute M.X(n,0)
         MX0.data.fill(0)
+        # Ensure coeff space before subsystem gathers
+        for field in state_fields:
+            field.require_coeff_space()
         for sp in subproblems:
             for ss in sp.subsystems:
                 ssX = ss.gather(state_fields)  # CREATES TEMPORARY
@@ -581,6 +580,7 @@ class RungeKuttaIMEX:
             # Compute L.X(n,i-1)
             LXi = LX[i-1]
             LXi.data.fill(0)
+            # Ensure coeff space before subsystem gathers
             for field in state_fields:
                 field.require_coeff_space()
             for sp in subproblems:
@@ -593,11 +593,11 @@ class RungeKuttaIMEX:
                 evaluator.evaluate_scheduled(wall_time=wall_time, sim_time=solver.sim_time, iteration=iteration)
             else:
                 evaluator.evaluate_group('F', wall_time=wall_time, sim_time=solver.sim_time, iteration=iteration)
-            # F should be in coeff space from evaluator
             Fi = F[i-1]
             Fi.data.fill(0)
             for sp in subproblems:
                 for ss in sp.subsystems:
+                    # F fields should be in coeff space from evaluator
                     ssF = ss.gather(F_fields)  # CREATES TEMPORARY
                     csr_matvec(sp.pre_left, ssF, Fi.get_subdata(sp, ss))
 
@@ -610,11 +610,10 @@ class RungeKuttaIMEX:
                     # RHS.data -= (k * H[i,j]) * LX[j].data
                     axpy(a=-(k*H[i,j]), x=LX[j].data, y=RHS.data)
 
-            # Make sure fields are in coeff space to avoid deadlock in scatter
+            # Solve for stage
+            # Ensure coeff space before subsystem scatters
             for field in state_fields:
                 field.set_layout('c')
-
-            # Solve for stage
             for sp in subproblems:
                 # Construct LHS(n,i)
                 if update_LHS:

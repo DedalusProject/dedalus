@@ -12,7 +12,7 @@ from mpi4py import MPI
 import uuid
 
 from .domain import Domain
-from ..tools.array import zeros_with_pattern, expand_pattern, sparse_block_diag
+from ..tools.array import zeros_with_pattern, expand_pattern, sparse_block_diag, copyto
 from ..tools.cache import CachedAttribute, CachedMethod
 from ..tools.general import replace
 from ..tools.progress import log_progress
@@ -111,6 +111,7 @@ class Subsystem:
     """
 
     def __init__(self, problem, group):
+        self.dtype = problem.dtype
         self.problem = problem
         self.group = group
         # Determine matrix group using problem matrix dependence
@@ -162,29 +163,46 @@ class Subsystem:
     def field_size(self, field):
         return np.prod(self.field_shape(field))
 
+    @CachedMethod
+    def _gather_scatter_setup(self, fields):
+        # Allocate vector
+        fsizes = tuple(self.field_size(f) for f in fields)
+        fslices = tuple(self.field_slices(f) for f in fields)
+        fshapes = tuple(self.field_shape(f) for f in fields)
+        data = np.empty(sum(fsizes), dtype=self.dtype)
+        # Make views into data
+        fviews = []
+        i0 = 0
+        for fsize, fshape in zip(fsizes, fshapes):
+            if fsize:
+                i1 = i0 + fsize
+                fview = data[i0:i1].reshape(fshape)
+                fviews.append(fview)
+                i0 = i1
+            else:
+                fviews.append(None)
+        fviews = tuple(fviews)
+        return data, fsizes, fviews, fslices
+
     def gather(self, fields):
         """Gather and concatenate subsystem data in from multiple fields."""
-        # TODO optimize: maybe preallocate here for speed?
-        vec = []
-        for field in fields:
-            if self.field_size(field):
-                field_slices = self.field_slices(field)
-                field_data = field['c'][field_slices]
-                vec.append(field_data.ravel())
-        return np.concatenate(vec)
+        data, fsizes, fviews, fslices = self._gather_scatter_setup(tuple(fields))
+        # Gather from fields
+        for fsize, fview, fslice, field in zip(fsizes, fviews, fslices, fields):
+            if fsize:
+                copyto(fview, field.data[fslice])
+        return data
 
-    def scatter(self, data, fields):
+    def scatter(self, data_input, fields):
         """Scatter concatenated subsystem data out to multiple fields."""
-        i0 = 0
-        for field in fields:
-            field_size = self.field_size(field)
-            if field_size:
-                i1 = i0 + field_size
-                field_slices = self.field_slices(field)
-                field_data = field['c'][field_slices]
-                vec_data = data[i0:i1].reshape(field_data.shape)
-                np.copyto(field_data, vec_data)
-                i0 = i1
+        data, fsizes, fviews, fslices = self._gather_scatter_setup(tuple(fields))
+        # Copy to preallocated data with views
+        # TODO: optimize by making sure the input data is already written to this buffer
+        copyto(data, data_input)
+        # Scatter to fields
+        for fsize, fview, fslice, field in zip(fsizes, fviews, fslices, fields):
+            if fsize:
+                copyto(field.data[fslice], fview)
 
 
 class Subproblem:

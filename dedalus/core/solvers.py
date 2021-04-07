@@ -191,6 +191,11 @@ class LinearBoundaryValueSolver:
         # Build matsolvers on demand
         if not hasattr(self, "subproblem_matsolvers"):
             self._build_subproblem_matsolvers()
+        # Ensure coeff space before subsystem gathers/scatters
+        for field in self.F:
+            field.require_layout('c')
+        for field in self.state:
+            field.set_layout('c')
         # Solve system for each subproblem, updating state
         for sp in self.subproblems:
             sp_matsolver = self.subproblem_matsolvers[sp]
@@ -270,6 +275,11 @@ class NonlinearBoundaryValueSolver:
         self.evaluator.evaluate_group('F', sim_time=0, wall_time=0, iteration=self.iteration)
         # Recompute Jacobian
         self.subproblems = subsystems.build_subproblems(self.problem, self.subsystems, ['dH'])
+        # Ensure coeff space before subsystem gathers/scatters
+        for field in self.F:
+            field.require_layout('c')
+        for field in self.perturbations:
+            field.set_layout('c')
         # Solve system for each subproblem, updating state
         for sp in self.subproblems:
             sp_matsolver = self._build_subproblem_matsolver(sp)
@@ -406,6 +416,11 @@ class InitialValueSolver:
         """
         # Compute RHS
         self.evaluator.evaluate_group('F', sim_time=0, wall_time=0, iteration=self.iteration)
+        # Ensure coeff space before subsystem gathers/scatters
+        for field in self.F:
+            field.require_layout('c')
+        for field in self.state:
+            field.require_layout('c')
         # Solve system for each subproblem, updating state
         for sp in self.subproblems:
             LHS = sp.M_min + dt*sp.L_min
