@@ -3,6 +3,7 @@ Tools for caching computations.
 
 """
 
+import numpy as np
 import inspect
 import types
 from weakref import WeakValueDictionary
@@ -35,7 +36,7 @@ class CachedAttribute:
 class CachedFunction:
     """Decorator for caching function outputs."""
 
-    def __new__(cls, function=None, max_size=None):
+    def __new__(cls, function=None, max_size=np.inf):
         # Intercept calls without function assignment
         if function is None:
             # Return decorator with max_size partially applied
@@ -43,7 +44,7 @@ class CachedFunction:
         else:
             return object.__new__(cls)
 
-    def __init__(self, function, max_size=None):
+    def __init__(self, function, max_size=np.inf):
         # Function info
         self.function = function
         self.__name__ = function.__name__
@@ -60,16 +61,29 @@ class CachedFunction:
             self.defaults = dict()
 
     def __call__(self, *args, **kw):
-        # Serialize call from provided/default args/kw
-        call = serialize_call(args, kw, self.argnames, self.defaults)
-        # Check cache for call
-        if call in self.cache:
-            return self.cache[call]
-        else:
-            if len(self.cache) == self.max_size:
-                self.cache.popitem(last=False)
-            self.cache[call] = result = self.function(*args, **kw)
+        # First try direct call signature
+        direct_call = (args, tuple(kw.items()))
+        try:
+            return self.cache[direct_call]
+        except KeyError:
+            pass
+        # Then try full resolved call
+        resolved_call = serialize_call(args, kw, self.argnames, self.defaults)
+        try:
+            result = self.cache[resolved_call]
+            # Add direct call key to avoid resolving it in subsequent calls
+            self.cache[direct_call] = result
             return result
+        except KeyError:
+            pass
+        # Reduce cache size if necessary
+        while len(self.cache) >= self.max_size:
+            self.cache.popitem(last=False)
+        # Compute and cache result
+        result = self.function(*args, **kw)
+        self.cache[direct_call] = result
+        self.cache[resolved_call] = result
+        return result
 
 
 class CachedMethod(CachedFunction):
