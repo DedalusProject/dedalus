@@ -16,7 +16,7 @@ def test_heat_1d_periodic(x_basis_class, Nx, timestepper, dtype):
     # Bases
     c = coords.Coordinate('x')
     d = distributor.Distributor((c,))
-    xb = basis.ComplexFourier(c, size=Nx, bounds=(0, 2*np.pi))
+    xb = x_basis_class(c, size=Nx, bounds=(0, 2*np.pi))
     x = xb.local_grid(1)
     # Fields
     u = field.Field(name='u', dist=d, bases=(xb,), dtype=dtype)
@@ -37,4 +37,3 @@ def test_heat_1d_periodic(x_basis_class, Nx, timestepper, dtype):
     amp = 1 - np.exp(-solver.sim_time)
     u_true = amp * np.sin(x)
     assert np.allclose(u['g'], u_true)
-
