@@ -76,7 +76,7 @@ def test_heat_1d_periodic_chebyshev(x_basis_class, Nx, timestepper, dt, dtype):
 @pytest.mark.parametrize('dtype', [np.complex128, np.float64])
 @pytest.mark.parametrize('dt', [1e-5,1e-6,1e-7])
 @pytest.mark.parametrize('timestepper', timesteppers.schemes)
-@pytest.mark.parametrize('k_ncc', [1, 4])
+@pytest.mark.parametrize('k_ncc', [4])
 @pytest.mark.parametrize('Nx', [32])
 @pytest.mark.parametrize('x_basis_class', [basis.ChebyshevT])
 def test_heat_1d_periodic_ncc(x_basis_class, Nx, k_ncc, timestepper, dt, dtype):
@@ -94,7 +94,9 @@ def test_heat_1d_periodic_ncc(x_basis_class, Nx, k_ncc, timestepper, dt, dtype):
     P['c'][-1] = 1
     # Problem
     ncc = field.Field(name='ncc', dist=d, bases=(xb,), dtype=dtype)
-    ncc['g'] = np.cos(k_ncc*x)+2
+    ncc['g'] = k_ncc
+    for ik in np.arange(1,k_ncc+1):
+        ncc['g'] += np.sqrt(ik/k_ncc)*np.cos(ik*x)
     dx = lambda A: operators.Differentiate(A, c)
     ddt = operators.TimeDerivative
     problem = problems.IVP([u,τu])
@@ -149,7 +151,7 @@ def test_wave_1d_periodic_chebyshev(x_basis_class, Nx, timestepper, dt, dtype):
 @pytest.mark.parametrize('dtype', [np.complex128])
 @pytest.mark.parametrize('dt', [1e-4, 1e-5, 1e-6])
 @pytest.mark.parametrize('timestepper', timesteppers.schemes)
-@pytest.mark.parametrize('k_ncc', [1, 4])
+@pytest.mark.parametrize('k_ncc', [4])
 @pytest.mark.parametrize('Nx', [32])
 @pytest.mark.parametrize('x_basis_class', [basis.ChebyshevT])
 def test_wave_1d_periodic_chebyshev_ncc(x_basis_class, Nx, k_ncc, timestepper, dt, dtype):
@@ -169,7 +171,9 @@ def test_wave_1d_periodic_chebyshev_ncc(x_basis_class, Nx, k_ncc, timestepper, d
     P['c'][-1] = 1
     # Problem
     ncc = field.Field(name='ncc', dist=d, bases=(xb,), dtype=dtype)
-    ncc['g'] = np.cos(k_ncc*x)+2
+    ncc['g'] = k_ncc
+    for ik in np.arange(1,k_ncc+1):
+        ncc['g'] += np.sqrt(ik/k_ncc)*np.cos(ik*x)
     dx = lambda A: operators.Differentiate(A, c)
     ddt = operators.TimeDerivative
     problem = problems.IVP([ut,u,τu])
