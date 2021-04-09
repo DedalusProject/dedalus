@@ -446,7 +446,7 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
             return other.__rmatmul__(self)
 
     def __rmatmul__(self, other):
-        return self.__mul__(other)
+        return self
 
     # def include_mode(self, mode):
     #     return (0 <= mode < self.space.coeff_size)

@@ -123,7 +123,7 @@ def build_2d_box(Nx, Nz, dealias, dtype, k=0):
 
 Nx_range = [8]
 Ny_range = [8]
-Nz_range = [8]
+Nz_range = [16]
 dealias_range = [1, 3/2]
 
 @pytest.mark.parametrize('Nx', Nx_range)
@@ -136,6 +136,29 @@ def test_3d_scalar_ncc_scalar(Nx, Ny, Nz, dealias, basis, dtype):
     c, d, b, x, y, z = basis(Nx, Ny, Nz, dealias, dtype)
     u = field.Field(dist=d, bases=b, dtype=dtype)
     ncc = field.Field(name='ncc', dist=d, bases=(b[-1],), dtype=dtype)
+    ncc['g'] = 1/(1+z**2)
+    problem = problems.LBVP([u])
+    problem.add_equation((ncc*u, 1))
+    # Solver
+    solver = solvers.LinearBoundaryValueSolver(problem)
+    solver.solve()
+    assert np.allclose(u['g'], 1/ncc['g'])
+
+@pytest.mark.parametrize('Nx', Nx_range)
+@pytest.mark.parametrize('Ny', Ny_range)
+@pytest.mark.parametrize('Nz', Nz_range)
+@pytest.mark.parametrize('k_arg', [0, 1, 2])
+@pytest.mark.parametrize('k_ncc', [0])
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_3d_box])
+@pytest.mark.parametrize('dtype', [np.float64])
+def test_alt_k(Nx, Ny, Nz, k_arg, k_ncc, dealias, basis, dtype):
+    c, d, b, x, y, z = basis(Nx, Ny, Nz, dealias, dtype)
+    bx, by, bz = b
+    bz_arg = bz._new_a_b(bz.a+k_arg, bz.b+k_arg)
+    bz_ncc = bz._new_a_b(bz.a+k_ncc, bz.b+k_ncc)
+    u = field.Field(dist=d, bases=(bx, by, bz_arg), dtype=dtype)
+    ncc = field.Field(name='ncc', dist=d, bases=(bz_ncc,), dtype=dtype)
     ncc['g'] = 1/(1+z**2)
     problem = problems.LBVP([u])
     problem.add_equation((ncc*u, 1))
