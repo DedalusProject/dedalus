@@ -102,7 +102,7 @@ def test_heat_1d_periodic_ncc(x_basis_class, Nx, k_ncc, timestepper, dt, dtype):
     P1['c'][-1] = 1
     P2['c'][-2] = 1
     # Problem
-    ncc = field.Field(name='ncc', dist=d, bases=(xb2,), dtype=dtype)
+    ncc = field.Field(name='ncc', dist=d, bases=(xb,), dtype=dtype)
     ncc['g'] = k_ncc
     for ik in np.arange(1,k_ncc+1):
         ncc['g'] += np.sqrt(ik/k_ncc)*np.cos(ik*x)
