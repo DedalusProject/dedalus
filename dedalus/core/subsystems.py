@@ -12,7 +12,7 @@ from mpi4py import MPI
 import uuid
 
 from .domain import Domain
-from ..tools.array import zeros_with_pattern, expand_pattern, sparse_block_diag, copyto
+from ..tools.array import zeros_with_pattern, expand_pattern, sparse_block_diag, copyto, perm_matrix
 from ..tools.cache import CachedAttribute, CachedMethod
 from ..tools.general import replace
 from ..tools.progress import log_progress
@@ -472,15 +472,6 @@ class Subproblem:
             setattr(self, '{:}_exp'.format(name), expanded.tocsr())
 
 
-def sparse_perm(perm, M):
-    """Build sparse permutation matrix from permutation vector."""
-    N = len(perm)
-    data = np.ones(N)
-    row = np.array(perm)
-    col = np.arange(N)
-    return sparse.coo_matrix((data, (row, col)), shape=(M, N))
-
-
 def left_permutation(subproblem, equations, bc_top, interleave_components):
     """
     Left permutation acting on equations.
@@ -535,7 +526,7 @@ def left_permutation(subproblem, equations, bc_top, interleave_components):
     else:
         indices = [indices[dim] for dim in dims[::-1]]
     indices = sum(indices, [])
-    return sparse_perm(indices, len(indices)).T.tocsr()
+    return perm_matrix(indices, source_index=True, sparse=True).tocsr()
 
 
 def right_permutation(subproblem, variables, tau_left, interleave_components):
@@ -592,4 +583,4 @@ def right_permutation(subproblem, variables, tau_left, interleave_components):
     else:
         indices = [indices[dim] for dim in dims[::-1]]
     indices = sum(indices, [])
-    return sparse_perm(indices, len(indices)).tocsr()
+    return perm_matrix(indices, source_index=False, sparse=True).tocsr()
