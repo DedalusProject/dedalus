@@ -2,7 +2,7 @@
 
 import pytest
 import numpy as np
-from dedalus.core import coords, distributor, basis, field, operators, arithmetic
+from dedalus.core import coords, distributor, basis, field, operators, arithmetic, problems, solvers
 from dedalus.tools.cache import CachedFunction
 
 
@@ -157,7 +157,7 @@ def test_trace_tensor(Nphi, Ntheta, Nr, k, dealias, basis, dtype, layout):
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 @pytest.mark.parametrize('layout', ['c', 'g'])
-def test_transpose_tensor(Nphi, Ntheta, Nr, k, dealias, dtype, basis, layout):
+def test_explicit_transpose_tensor(Nphi, Ntheta, Nr, k, dealias, dtype, basis, layout):
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
     ct, st, cp, sp = np.cos(theta), np.sin(theta), np.cos(phi), np.sin(phi)
     u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
@@ -166,10 +166,38 @@ def test_transpose_tensor(Nphi, Ntheta, Nr, k, dealias, dtype, basis, layout):
     u['g'][1] = r**2*(2*ct**3*cp-r*cp**3*st**4+r**3*ct*cp**3*st**5*sp**3-1/16*r*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
     u['g'][0] = r**2*sp*(-2*ct**2+r*ct*cp*st**2*sp-r**3*cp**2*st**5*sp**3)
     T = operators.Gradient(u, c).evaluate()
-    Tg = np.transpose(np.copy(T['g']),(1,0,2,3,4))
+    Tg = np.transpose(np.copy(T['g']), (1,0,2,3,4))
     T.require_layout(layout)
     T = operators.TransposeComponents(T).evaluate()
     assert np.allclose(T['g'], Tg)
+
+
+@pytest.mark.skip(reason="matrices are singular for low ell")
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_implicit_transpose_tensor(Nphi, Ntheta, Nr, k, dealias, dtype, basis):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
+    ct, st, cp, sp = np.cos(theta), np.sin(theta), np.cos(phi), np.sin(phi)
+    u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
+    u.set_scales(b.domain.dealias)
+    u['g'][2] = r**2*st*(2*ct**2*cp-r*ct**3*sp+r**3*cp**3*st**5*sp**3+r*ct*st**2*(cp**3+sp**3))
+    u['g'][1] = r**2*(2*ct**3*cp-r*cp**3*st**4+r**3*ct*cp**3*st**5*sp**3-1/16*r*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
+    u['g'][0] = r**2*sp*(-2*ct**2+r*ct*cp*st**2*sp-r**3*cp**2*st**5*sp**3)
+    T = operators.Gradient(u, c).evaluate()
+    Ttg = np.transpose(np.copy(T['g']), (1,0,2,3,4))
+    Tt = field.Field(dist=d, bases=(b,), tensorsig=(c,c,), dtype=dtype)
+    trans = lambda A: operators.TransposeComponents(A)
+    problem = problems.LBVP([Tt])
+    problem.add_equation((trans(Tt), T))
+    # Solver
+    solver = solvers.LinearBoundaryValueSolver(problem)
+    solver.solve()
+    assert np.allclose(Tt['g'], Ttg)
 
 
 @pytest.mark.parametrize('Nphi', [16])
