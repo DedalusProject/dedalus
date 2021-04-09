@@ -136,8 +136,8 @@ def test_wave_1d_periodic(x_basis_class, Nx, timestepper, dt, dtype):
     k = 4
     u = field.Field(name='u', dist=d, bases=(xb,), dtype=dtype)
     ut = field.Field(name='u', dist=d, bases=(xb,), dtype=dtype)
-    u['g'] = u0 = np.sin(k*x)
-    ut['g'] = 1j*k*u0
+    u['g'] = np.sin(k*x)
+    ut['g'] = -k * np.cos(k*x)
     τu1 = field.Field(name='τu1', dist=d, dtype=dtype)
     τu2 = field.Field(name='τu2', dist=d, dtype=dtype)
     xb2 = xb._new_a_b(1.5,1.5)
@@ -159,7 +159,8 @@ def test_wave_1d_periodic(x_basis_class, Nx, timestepper, dt, dtype):
     for i in range(iter):
         solver.step(dt)
     # Check solution
-    u_true = u0*np.exp(1j*k*solver.sim_time)
+    t = solver.sim_time
+    u_true = np.sin(k*(x-t))
     assert np.allclose(u['g'], u_true)
 
 @pytest.mark.parametrize('dtype', [np.complex128])
@@ -178,8 +179,8 @@ def test_wave_1d_periodic_ncc(x_basis_class, Nx, k_ncc, timestepper, dt, dtype):
     k = 4
     u = field.Field(name='u', dist=d, bases=(xb,), dtype=dtype)
     ut = field.Field(name='u', dist=d, bases=(xb,), dtype=dtype)
-    u['g'] = u0 = np.sin(k*x)
-    ut['g'] = 1j*k*u0
+    u['g'] = np.sin(k*x)
+    ut['g'] = -k * np.cos(k*x)
     τu1 = field.Field(name='τu1', dist=d, dtype=dtype)
     τu2 = field.Field(name='τu2', dist=d, dtype=dtype)
     xb2 = xb._new_a_b(1.5,1.5)
@@ -188,8 +189,8 @@ def test_wave_1d_periodic_ncc(x_basis_class, Nx, k_ncc, timestepper, dt, dtype):
     P1['c'][-1] = 1
     P2['c'][-2] = 1
     # Problem
-    ncc = field.Field(name='ncc', dist=d, bases=(xb2,), dtype=dtype)
-    ncc['g'] = k_ncc
+    ncc = field.Field(name='ncc', dist=d, bases=(xb,), dtype=dtype)
+    ncc['g'] = k_ncc + 10
     for ik in np.arange(1,k_ncc+1):
         ncc['g'] += np.sqrt(ik/k_ncc)*np.cos(ik*x)
     dx = lambda A: operators.Differentiate(A, c)
@@ -205,7 +206,8 @@ def test_wave_1d_periodic_ncc(x_basis_class, Nx, k_ncc, timestepper, dt, dtype):
     for i in range(iter):
         solver.step(dt)
     # Check solution
-    u_true = u0*np.exp(1j*k*solver.sim_time)
+    t = solver.sim_time
+    u_true = np.sin(k*(x-t))
     assert np.allclose(u['g'], u_true)
 
 @pytest.mark.parametrize('dtype', [np.complex128])
