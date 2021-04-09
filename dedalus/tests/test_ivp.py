@@ -54,15 +54,20 @@ def test_heat_1d_periodic_chebyshev(x_basis_class, Nx, timestepper, dt, dtype):
     u = field.Field(name='u', dist=d, bases=(xb,), dtype=dtype)
     F = field.Field(name='F', dist=d, bases=(xb,), dtype=dtype)
     F['g'] = -np.sin(x)
-    τu = field.Field(name='τu', dist=d, dtype=dtype)
-    P = field.Field(name='P1', dist=d, bases=(xb,), dtype=dtype)
-    P['c'][-1] = 1
+    τu1 = field.Field(name='τu1', dist=d, dtype=dtype)
+    τu2 = field.Field(name='τu2', dist=d, dtype=dtype)
+    xb2 = xb._new_a_b(1.5,1.5)
+    P1 = field.Field(name='P1', dist=d, bases=(xb2,), dtype=dtype)
+    P2 = field.Field(name='P2', dist=d, bases=(xb2,), dtype=dtype)
+    P1['c'][-1] = 1
+    P2['c'][-2] = 1
     # Problem
     dx = lambda A: operators.Differentiate(A, c)
     ddt = operators.TimeDerivative
-    problem = problems.IVP([u,τu])
-    problem.add_equation((-ddt(u) + P*τu + dx(dx(u)), F))
+    problem = problems.IVP([u,τu1,τu2])
+    problem.add_equation((-ddt(u) + P1*τu1 + P2*τu2+ dx(dx(u)), F))
     problem.add_equation((u(x=0)-u(x=2*np.pi),0))
+    problem.add_equation((dx(u)(x=0)-dx(u)(x=2*np.pi),0))
     # Solver
     solver = solvers.InitialValueSolver(problem, timesteppers.schemes[timestepper])
     iter = 100
@@ -89,19 +94,24 @@ def test_heat_1d_periodic_ncc(x_basis_class, Nx, k_ncc, timestepper, dt, dtype):
     u = field.Field(name='u', dist=d, bases=(xb,), dtype=dtype)
     F = field.Field(name='F', dist=d, bases=(xb,), dtype=dtype)
     F['g'] = -np.sin(x)
-    τu = field.Field(name='τu', dist=d, dtype=dtype)
-    P = field.Field(name='P1', dist=d, bases=(xb,), dtype=dtype)
-    P['c'][-1] = 1
+    τu1 = field.Field(name='τu1', dist=d, dtype=dtype)
+    τu2 = field.Field(name='τu2', dist=d, dtype=dtype)
+    xb2 = xb._new_a_b(1.5,1.5)
+    P1 = field.Field(name='P1', dist=d, bases=(xb2,), dtype=dtype)
+    P2 = field.Field(name='P2', dist=d, bases=(xb2,), dtype=dtype)
+    P1['c'][-1] = 1
+    P2['c'][-2] = 1
     # Problem
-    ncc = field.Field(name='ncc', dist=d, bases=(xb,), dtype=dtype)
+    ncc = field.Field(name='ncc', dist=d, bases=(xb2,), dtype=dtype)
     ncc['g'] = k_ncc
     for ik in np.arange(1,k_ncc+1):
         ncc['g'] += np.sqrt(ik/k_ncc)*np.cos(ik*x)
     dx = lambda A: operators.Differentiate(A, c)
     ddt = operators.TimeDerivative
-    problem = problems.IVP([u,τu])
-    problem.add_equation((-ncc*ddt(u) + P*τu + ncc*dx(dx(u)), ncc*F))
+    problem = problems.IVP([u,τu1,τu2])
+    problem.add_equation((-ncc*ddt(u) + P1*τu1 +  P2*τu2 + ncc*dx(dx(u)), ncc*F))
     problem.add_equation((u(x=0)-u(x=2*np.pi),0))
+    problem.add_equation((dx(u)(x=0)-dx(u)(x=2*np.pi),0))
     # Solver
     solver = solvers.InitialValueSolver(problem, timesteppers.schemes[timestepper])
     iter = 100
@@ -117,7 +127,7 @@ def test_heat_1d_periodic_ncc(x_basis_class, Nx, k_ncc, timestepper, dt, dtype):
 @pytest.mark.parametrize('timestepper', timesteppers.schemes)
 @pytest.mark.parametrize('Nx', [32])
 @pytest.mark.parametrize('x_basis_class', [basis.ChebyshevT])
-def test_wave_1d_periodic_chebyshev(x_basis_class, Nx, timestepper, dt, dtype):
+def test_wave_1d_periodic(x_basis_class, Nx, timestepper, dt, dtype):
     # Bases
     c = coords.Coordinate('x')
     d = distributor.Distributor((c,))
@@ -129,16 +139,21 @@ def test_wave_1d_periodic_chebyshev(x_basis_class, Nx, timestepper, dt, dtype):
     ut = field.Field(name='u', dist=d, bases=(xb,), dtype=dtype)
     u['g'] = u0 = np.sin(k*x)
     ut['g'] = 1j*k*u0
-    τu = field.Field(name='τu', dist=d, dtype=dtype)
-    P = field.Field(name='P1', dist=d, bases=(xb,), dtype=dtype)
-    P['c'][-1] = 1
+    τu1 = field.Field(name='τu1', dist=d, dtype=dtype)
+    τu2 = field.Field(name='τu2', dist=d, dtype=dtype)
+    xb2 = xb._new_a_b(1.5,1.5)
+    P1 = field.Field(name='P1', dist=d, bases=(xb2,), dtype=dtype)
+    P2 = field.Field(name='P2', dist=d, bases=(xb2,), dtype=dtype)
+    P1['c'][-1] = 1
+    P2['c'][-2] = 1
     # Problem
     dx = lambda A: operators.Differentiate(A, c)
     ddt = operators.TimeDerivative
-    problem = problems.IVP([ut,u,τu])
+    problem = problems.IVP([ut,u,τu1,τu2])
     problem.add_equation((ddt(u) - ut, 0))
-    problem.add_equation((ddt(ut) + P*τu - dx(dx(u)), 0))
+    problem.add_equation((ddt(ut) + P1*τu1 + P2*τu2  - dx(dx(u)), 0))
     problem.add_equation((u(x=0)-u(x=2*np.pi),0))
+    problem.add_equation((dx(u)(x=0)-dx(u)(x=2*np.pi),0))
     # Solver
     solver = solvers.InitialValueSolver(problem, timesteppers.schemes[timestepper])
     iter = 100
@@ -154,7 +169,7 @@ def test_wave_1d_periodic_chebyshev(x_basis_class, Nx, timestepper, dt, dtype):
 @pytest.mark.parametrize('k_ncc', [4])
 @pytest.mark.parametrize('Nx', [32])
 @pytest.mark.parametrize('x_basis_class', [basis.ChebyshevT])
-def test_wave_1d_periodic_chebyshev_ncc(x_basis_class, Nx, k_ncc, timestepper, dt, dtype):
+def test_wave_1d_periodic_ncc(x_basis_class, Nx, k_ncc, timestepper, dt, dtype):
     # Bases
     c = coords.Coordinate('x')
     d = distributor.Distributor((c,))
@@ -166,20 +181,25 @@ def test_wave_1d_periodic_chebyshev_ncc(x_basis_class, Nx, k_ncc, timestepper, d
     ut = field.Field(name='u', dist=d, bases=(xb,), dtype=dtype)
     u['g'] = u0 = np.sin(k*x)
     ut['g'] = 1j*k*u0
-    τu = field.Field(name='τu', dist=d, dtype=dtype)
-    P = field.Field(name='P1', dist=d, bases=(xb,), dtype=dtype)
-    P['c'][-1] = 1
+    τu1 = field.Field(name='τu1', dist=d, dtype=dtype)
+    τu2 = field.Field(name='τu2', dist=d, dtype=dtype)
+    xb2 = xb._new_a_b(1.5,1.5)
+    P1 = field.Field(name='P1', dist=d, bases=(xb2,), dtype=dtype)
+    P2 = field.Field(name='P2', dist=d, bases=(xb2,), dtype=dtype)
+    P1['c'][-1] = 1
+    P2['c'][-2] = 1
     # Problem
-    ncc = field.Field(name='ncc', dist=d, bases=(xb,), dtype=dtype)
+    ncc = field.Field(name='ncc', dist=d, bases=(xb2,), dtype=dtype)
     ncc['g'] = k_ncc
     for ik in np.arange(1,k_ncc+1):
         ncc['g'] += np.sqrt(ik/k_ncc)*np.cos(ik*x)
     dx = lambda A: operators.Differentiate(A, c)
     ddt = operators.TimeDerivative
-    problem = problems.IVP([ut,u,τu])
+    problem = problems.IVP([ut,u,τu1,τu2])
     problem.add_equation((ncc*ddt(u) - ncc*ut, 0))
-    problem.add_equation((ncc*ddt(ut) + P*τu - ncc*dx(dx(u)), 0))
+    problem.add_equation((ncc*ddt(ut) + P1*τu1 + P2*τu2  - ncc*dx(dx(u)), 0))
     problem.add_equation((u(x=0)-u(x=2*np.pi),0))
+    problem.add_equation((dx(u)(x=0)-dx(u)(x=2*np.pi),0))
     # Solver
     solver = solvers.InitialValueSolver(problem, timesteppers.schemes[timestepper])
     iter = 100
