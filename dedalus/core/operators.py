@@ -251,7 +251,7 @@ class NonlinearOperator(Future):
         """Precompute non-constant coefficients and build multiplication matrices."""
         raise NonlinearOperatorError("{} is a non-linear function of the specified variables.".format(str(self)))
 
-    def expression_matrices(self, subproblem, vars):
+    def expression_matrices(self, subproblem, vars, **kw):
         """Build expression matrices for a specific subproblem and variables."""
         raise NonlinearOperatorError("{} is a non-linear function of the specified variables.".format(str(self)))
 
@@ -665,7 +665,7 @@ class LinearOperator(FutureField):
         # Build operand matrices
         self.operand.build_ncc_matrices(separability, vars, **kw)
 
-    def expression_matrices(self, subproblem, vars):
+    def expression_matrices(self, subproblem, vars, **kw):
         """Build expression matrices for a specific subproblem and variables."""
         # Intercept calls to compute matrices over expressions
         if self in vars:
@@ -673,7 +673,7 @@ class LinearOperator(FutureField):
             matrix = sparse.identity(size, format='csr')
             return {self: matrix}
         # Build operand matrices
-        operand_mats = self.operand.expression_matrices(subproblem, vars)
+        operand_mats = self.operand.expression_matrices(subproblem, vars, **kw)
         # Apply operator matrix
         operator_mat = self.subproblem_matrix(subproblem)
         return {var: operator_mat @ operand_mats[var] for var in operand_mats}

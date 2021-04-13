@@ -155,7 +155,7 @@ class Add(Future, metaclass=MultiClass):
         for arg in self.args:
             arg.build_ncc_matrices(separability, vars, **kw)
 
-    def expression_matrices(self, subproblem, vars):
+    def expression_matrices(self, subproblem, vars, **kw):
         """Build expression matrices for a specific subproblem and variables."""
         # Intercept calls to compute matrices over expressions
         if self in vars:
@@ -165,7 +165,7 @@ class Add(Future, metaclass=MultiClass):
         matrices = {}
         # Iteratively add argument expression matrices
         for arg in self.args:
-            arg_matrices = arg.expression_matrices(subproblem, vars)
+            arg_matrices = arg.expression_matrices(subproblem, vars, **kw)
             for var in arg_matrices:
                 matrices[var] = matrices.get(var, 0) + arg_matrices[var]
         return matrices
@@ -350,6 +350,10 @@ class Product(Future):
         self.prep_nccs(vars)
         self.gather_ncc_coeffs()
         self._ncc_matrices = {}
+        if 'ncc_cutoff' not in kw:
+            kw['ncc_cutoff'] = 1e-6
+        if 'max_ncc_terms' not in kw:
+            kw['max_ncc_terms'] = None
         for subproblem in subproblems:
             self._ncc_matrices[subproblem] = self.build_ncc_matrix(subproblem, **kw)
 
@@ -364,7 +368,7 @@ class Product(Future):
                 out_ss[:] = (ncc_matrix @ op_ss.ravel()).reshape(out_ss.shape)
         return out
 
-    def build_ncc_matrix(self, subproblem, **kw):
+    def build_ncc_matrix(self, subproblem, ncc_cutoff, max_ncc_terms):
         """Precompute non-constant coefficients and build multiplication matrices."""
         operand = self.operand
         ncc = self.ncc
@@ -401,13 +405,13 @@ class Product(Future):
                 # Loop over ncc components
                 for ia, ncc_comp in enum_indices(ncc.tensorsig):
                     G = Gamma[ia, ib, ic]
-                    if abs(G) > 1e-10:
+                    if abs(G) > ncc_cutoff:
                         if ncc_basis is None:
                             if coeffs[ncc_comp].size != 1:
                                 raise NotImplementedError()
                             matrix = coeffs[ncc_comp].ravel()[0] * sparse.eye(M, N)
                         else:
-                            matrix = ncc_basis.multiplication_matrix(subproblem, arg_basis, coeffs[ncc_comp], ncc_comp, arg_comp, out_comp, cutoff=1e-6)
+                            matrix = ncc_basis.multiplication_matrix(subproblem, arg_basis, coeffs[ncc_comp], ncc_comp, arg_comp, out_comp, cutoff=ncc_cutoff)
                             # Domains with real Fourier bases require kroneckering the Jacobi NCC matrix up to match the subsystem shape including the sin and cos parts of RealFourier data
                             # This fix assumes the Jacobi basis is on the last axis
                             if matrix.shape != (M,N):
@@ -474,7 +478,7 @@ class Product(Future):
         if vars != self._ncc_vars:
             raise SymbolicParsingError("Must build NCC matrices with same variables.")
         # Apply NCC matrix to operand matrices
-        operand_mats = self.operand.expression_matrices(subproblem, vars)
+        operand_mats = self.operand.expression_matrices(subproblem, vars, **kw)
         ncc_mat = self.build_ncc_matrix(subproblem, **kw)
         return {var: ncc_mat @ operand_mats[var] for var in operand_mats}
 
@@ -891,7 +895,7 @@ class MultiplyNumberField(Multiply, FutureField):
     def matrix_coupling(self, *vars):
         return self.args[1].matrix_coupling(*vars)
 
-    def expression_matrices(self, subproblem, vars):
+    def expression_matrices(self, subproblem, vars, **kw):
         """Build expression matrices for a specific subproblem and variables."""
         # Intercept calls to compute matrices over expressions
         if self in vars:
@@ -900,7 +904,7 @@ class MultiplyNumberField(Multiply, FutureField):
             return {self: matrix}
         arg0, arg1 = self.args
         # Build field matrices
-        arg1_mats = arg1.expression_matrices(subproblem, vars)
+        arg1_mats = arg1.expression_matrices(subproblem, vars, **kw)
         # Multiply field matrices
         return {var: arg0 * arg1_mats[var] for var in arg1_mats}
 

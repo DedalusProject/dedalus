@@ -358,6 +358,7 @@ class Subproblem:
     def build_matrices(self, names):
         """Build problem matrices."""
 
+        solver = self.solver
         eqns = self.problem.equations
         vars = self.problem.LHS_variables
         eqn_conditions = [self.check_condition(eqn) for eqn in eqns]  # HACK
@@ -379,7 +380,7 @@ class Subproblem:
                     # Build matrix and append data
                     expr = eqn[name]
                     if expr != 0:
-                        eqn_blocks = eqn[name].expression_matrices(subproblem=self, vars=vars)
+                        eqn_blocks = eqn[name].expression_matrices(subproblem=self, vars=vars, ncc_cutoff=solver.ncc_cutoff, max_ncc_terms=solver.max_ncc_terms)
                         j0 = 0
                         for var, var_size in zip(vars, var_sizes):
                             if var_size and (var in eqn_blocks):
@@ -398,8 +399,7 @@ class Subproblem:
                 rows = np.concatenate(rows)
                 cols = np.concatenate(cols)
                 # Filter entries
-                entry_cutoff = 1e-12  # HACK: this should be passed as a variable somehow
-                data[np.abs(data) < entry_cutoff] = 0
+                data[np.abs(data) < solver.entry_cutoff] = 0
             matrices[name] = sparse.coo_matrix((data, (rows, cols)), shape=(I, J), dtype=dtype).tocsr()
 
         # Create maps restricting group data to included modes
@@ -417,7 +417,6 @@ class Subproblem:
             raise ValueError("Non-square system: group={}, I={}, J={}".format(self.group, drop_eqn.shape[0], J))
 
         # Permutations
-        solver = self.solver
         eqn_pass_cond = [eqn for eqn, cond in zip(eqns, eqn_conditions) if cond]
         self.left_perm = left_permutation(self, eqn_pass_cond, bc_top=solver.bc_top, interleave_components=solver.interleave_components)
         self.right_perm = right_permutation(self, vars, tau_left=solver.tau_left, interleave_components=solver.interleave_components)

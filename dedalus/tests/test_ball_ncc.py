@@ -13,7 +13,7 @@ Ntheta_range = [8]
 Nr_range = [12]
 radius_ball = 1.5
 radii_shell = (0.5, 1)
-dealias = [1,3/2]
+dealias = [3/2]
 dtypes = [np.float64, np.complex128]
 
 @CachedFunction

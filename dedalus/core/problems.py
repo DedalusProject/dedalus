@@ -100,10 +100,6 @@ class ProblemBase:
         Problem domain
     variables : list of str
         List of variable names, e.g. ['u', 'v', 'w']
-    ncc_cutoff : float, optional
-        Mode amplitude cutoff for LHS NCC expansions (default: 1e-10)
-    max_ncc_terms : int, optional
-        Maximum terms to include in LHS NCC expansions (default: None (no limit))
 
     Attributes
     ----------
@@ -129,14 +125,13 @@ class ProblemBase:
 
     """
 
-    def __init__(self, variables, ncc_cutoff=1e-10, max_ncc_terms=None):
+    def __init__(self, variables):
         self.variables = variables
         self.LHS_variables = variables
         self.dist = unify_attributes(variables, 'dist')
         self.equations = self.eqs = []
         self.parameters = OrderedDict()
         self.substitutions = OrderedDict()
-        #self.op_kw = {'cutoff': ncc_cutoff}
 
     def add_equation(self, equation, condition="True"):
         """Add equation to problem."""

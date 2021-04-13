@@ -222,7 +222,7 @@ class Operand:
         """Precompute non-constant coefficients and build multiplication matrices."""
         raise NotImplementedError()
 
-    def expression_matrices(self, subproblem, vars):
+    def expression_matrices(self, subproblem, vars, **kw):
         """Build expression matrices for a specific subproblem and variables."""
         raise NotImplementedError()
 
@@ -318,7 +318,7 @@ class Current(Operand):
         """Precompute non-constant coefficients and build multiplication matrices."""
         self.require_linearity(*vars)
 
-    def expression_matrices(self, subproblem, vars):
+    def expression_matrices(self, subproblem, vars, **kw):
         """Build expression matrices for a specific subproblem and variables."""
         self.require_linearity(*vars)
         # Build identity matrices over subproblem data

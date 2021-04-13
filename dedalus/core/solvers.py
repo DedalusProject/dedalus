@@ -32,6 +32,12 @@ class SolverBase:
     ----------
     problem : Problem object
         Dedalus problem.
+    ncc_cutoff : float, optional
+        Mode amplitude cutoff for LHS NCC expansions (default: 1e-6)
+    max_ncc_terms : int, optional
+        Maximum terms to include in LHS NCC expansions (default: None (no limit))
+    entry_cutoff : float, optional
+        Matrix entry cutoff to avoid fill-in from cancellation errors (default: 1e-12)
     matrix_coupling : tuple of bool, optional
         Matrix coupling override.
     matsolver : str or Matsolver class, optional
@@ -46,13 +52,16 @@ class SolverBase:
         Whether to store right-preconditioned matrices. Default taken from config.
     """
 
-    def __init__(self, problem, matrix_coupling=None, matsolver=None, bc_top=None, tau_left=None,
-                 interleave_components=None, store_expanded_matrices=None):
+    def __init__(self, problem, ncc_cutoff=1e-6, max_ncc_terms=None, entry_cutoff=1e-12, matrix_coupling=None, matsolver=None,
+                 bc_top=None, tau_left=None, interleave_components=None, store_expanded_matrices=None):
         # Take attributes from problem
         self.problem = problem
         self.dist = problem.dist
         self.dtype = problem.dtype
         # Process options
+        self.ncc_cutoff = ncc_cutoff
+        self.max_ncc_terms = max_ncc_terms
+        self.entry_cutoff = entry_cutoff
         if matrix_coupling is None:
             matrix_coupling = problem.matrix_coupling
         self.matrix_coupling = matrix_coupling

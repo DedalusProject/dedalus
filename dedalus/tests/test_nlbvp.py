@@ -26,11 +26,11 @@ def test_sin_nlbvp(Nx, dtype, dealias, basis_class):
     P['c'][-1] = 1
     # Problem
     dx = lambda A: operators.Differentiate(A, c)
-    problem = problems.NLBVP([u, τ], ncc_cutoff=ncc_cutoff)
+    problem = problems.NLBVP([u, τ])
     problem.add_equation((dx(u) + τ*P, np.sqrt(1-u*u)))
     problem.add_equation((u(x=0), 0))
     # Solver
-    solver = solvers.NonlinearBoundaryValueSolver(problem)
+    solver = solvers.NonlinearBoundaryValueSolver(problem, ncc_cutoff=ncc_cutoff)
     # Initial guess
     u['g'] = x
     # Iterations
@@ -69,11 +69,11 @@ def test_heat_ball_nlbvp(Nr, dtype, dealias):
     # Problem
     Lap = lambda A: operators.Laplacian(A, c)
     LiftTau = lambda A: operators.LiftTau(A, br, -1)
-    problem = problems.NLBVP([u, τ], ncc_cutoff=ncc_cutoff)
+    problem = problems.NLBVP([u, τ])
     problem.add_equation((Lap(u) + LiftTau(τ), F))
     problem.add_equation((u(r=radius), 0))
     # Solver
-    solver = solvers.NonlinearBoundaryValueSolver(problem)
+    solver = solvers.NonlinearBoundaryValueSolver(problem, ncc_cutoff=ncc_cutoff)
     # Initial guess
     u['g'] = 1
     # Iterations
@@ -109,11 +109,11 @@ def test_lane_emden_floating_amp(Nr, dtype, dealias):
     # Problem
     lap = lambda A: operators.Laplacian(A, c)
     LiftTau = lambda A: operators.LiftTau(A, br, -1)
-    problem = problems.NLBVP([f, τ], ncc_cutoff=ncc_cutoff)
+    problem = problems.NLBVP([f, τ])
     problem.add_equation((lap(f) + LiftTau(τ), -f**n))
     problem.add_equation((f(r=1), 0))
     # Solver
-    solver = solvers.NonlinearBoundaryValueSolver(problem)
+    solver = solvers.NonlinearBoundaryValueSolver(problem, ncc_cutoff=ncc_cutoff)
     # Initial guess
     f['g'] = 5 * np.cos(np.pi/2 * r)**2
     # Iterations
@@ -163,12 +163,12 @@ def test_lane_emden_floating_R(Nr, dtype, dealias):
     lap = lambda A: operators.Laplacian(A, c)
     Pow = lambda A,n: operators.Power(A,n)
     LiftTau = lambda A: operators.LiftTau(A, br, -1)
-    problem = problems.NLBVP([f, R, τ], ncc_cutoff=ncc_cutoff)
+    problem = problems.NLBVP([f, R, τ])
     problem.add_equation((lap(f) + LiftTau(τ), - R**2 * Pow(f,n)))
     problem.add_equation((f(r=0), 1))
     problem.add_equation((f(r=1), 0))
     # Solver
-    solver = solvers.NonlinearBoundaryValueSolver(problem)
+    solver = solvers.NonlinearBoundaryValueSolver(problem, ncc_cutoff=ncc_cutoff)
     # Initial guess
     f['g'] = np.cos(np.pi/2 * r)**2
     R['g'] = 5
@@ -225,7 +225,7 @@ def test_lane_emden_first_order(Nr, dtype, dealias):
     LiftTau = lambda A: operators.LiftTau(A, br, -1)
     dot = lambda A, B: arithmetic.DotProduct(A, B)
     rdr = lambda A: dot(rf, grad(A))
-    problem = problems.NLBVP([p, ρ, φ, τ, τ2], ncc_cutoff=ncc_cutoff)
+    problem = problems.NLBVP([p, ρ, φ, τ, τ2])
     problem.add_equation((p, ρ**(1+1/n)))
     problem.add_equation((lap(φ) + LiftTau(τ), ρ))
     problem.add_equation((φ(r=1), 0))
@@ -247,7 +247,7 @@ def test_lane_emden_first_order(Nr, dtype, dealias):
     # problem.add_equation((p(r=1), 0))
 
     # Solver
-    solver = solvers.NonlinearBoundaryValueSolver(problem)
+    solver = solvers.NonlinearBoundaryValueSolver(problem, ncc_cutoff=ncc_cutoff)
     # Initial guess
     #φ['g'] = - 55 *  np.cos(np.pi/2 * r)
     #φ['g'] = - 50 *  (1 - r) * (1 + r)
