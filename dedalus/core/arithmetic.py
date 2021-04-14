@@ -417,7 +417,9 @@ class Product(Future):
                             if matrix.shape != (M,N):
                                 m, n = matrix.shape
                                 matrix = sparse.kron(sparse.eye(M//m, N//n), matrix)
-                        block += G * matrix
+                        if G.imag != 0:
+                            raise ValueError()
+                        block += G.real * matrix
                 block_row.append(block)
             blocks.append(block_row)
         return sparse.bmat(blocks, format='csr')

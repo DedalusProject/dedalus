@@ -118,7 +118,7 @@ class JacobiMMT(JacobiTransform, SeparableMatrixTransform):
         b, b0 = self.b, self.b0
         # Gauss quadrature with base (a0, b0) polynomials
         base_grid = jacobi.build_grid(N, a=a0, b=b0)
-        base_polynomials = jacobi.build_polynomials(M, a0, b0, base_grid)
+        base_polynomials = jacobi.build_polynomials(max(M, N), a0, b0, base_grid)
         base_weights = jacobi.build_weights(N, a=a0, b=b0)
         base_transform = (base_polynomials * base_weights)
         # Zero higher coefficients for transforms with grid_size < coeff_size
@@ -127,8 +127,10 @@ class JacobiMMT(JacobiTransform, SeparableMatrixTransform):
         if (a == a0) and (b == b0):
             forward_matrix = base_transform
         else:
-            conversion = jacobi.conversion_matrix(M, a0, b0, a, b)
+            conversion = jacobi.conversion_matrix(max(M, N), a0, b0, a, b)
             forward_matrix = conversion @ base_transform
+        # Truncate to specified coeff_size
+        forward_matrix = forward_matrix[:M, :]
         # Ensure C ordering for fast dot products
         return np.asarray(forward_matrix, order='C')
 
@@ -702,27 +704,25 @@ class FastCosineTransform(CosineTransform):
         self.backward_rescale_zero = 1
         self.backward_rescale_pos = 1 / 2
 
-    def resize_rescale_forward(self, data_in, data_out, axis):
+    def resize_rescale_forward(self, data_in, data_out, axis, Kmax):
         """Resize by padding/trunction and rescale to unit amplitude."""
-        Kmax = self.Kmax
         zerofreq = axslice(axis, 0, 1)
         np.multiply(data_in[zerofreq], self.forward_rescale_zero, data_out[zerofreq])
         if Kmax > 0:
             posfreq = axslice(axis, 1, Kmax+1)
             np.multiply(data_in[posfreq], self.forward_rescale_pos, data_out[posfreq])
-            if self.M > self.N:
+            if self.KM > Kmax:
                 badfreq = axslice(axis, Kmax+1, None)
                 data_out[badfreq] = 0
 
-    def resize_rescale_backward(self, data_in, data_out, axis):
+    def resize_rescale_backward(self, data_in, data_out, axis, Kmax):
         """Resize by padding/trunction and rescale to unit amplitude."""
-        Kmax = self.Kmax
         zerofreq = axslice(axis, 0, 1)
         np.multiply(data_in[zerofreq], self.backward_rescale_zero, data_out[zerofreq])
         if Kmax > 0:
             posfreq = axslice(axis, 1, Kmax+1)
             np.multiply(data_in[posfreq], self.backward_rescale_pos, data_out[posfreq])
-            if self.N > self.M:
+            if self.KN > Kmax:
                 badfreq = axslice(axis, Kmax+1, None)
                 data_out[badfreq] = 0
 
@@ -736,14 +736,14 @@ class ScipyDCT(FastCosineTransform):
         # Call DCT
         temp = scipy.fft.dct(gdata, type=2, axis=axis) # Creates temporary
         # Resize and rescale for unit-ampltidue normalization
-        self.resize_rescale_forward(temp, cdata, axis)
+        self.resize_rescale_forward(temp, cdata, axis, self.Kmax)
 
     def backward(self, cdata, gdata, axis):
         """Apply backward transform along specified axis."""
         # Resize and rescale for unit-amplitude normalization
         # Need temporary to avoid overwriting problems
         temp = np.empty_like(gdata) # Creates temporary
-        self.resize_rescale_backward(cdata, temp, axis)
+        self.resize_rescale_backward(cdata, temp, axis, self.Kmax)
         # Call IDCT
         temp = scipy.fft.dct(temp, type=3, axis=axis, overwrite_x=True) # Creates temporary
         np.copyto(gdata, temp)
@@ -768,13 +768,13 @@ class FFTWDCT(FastCosineTransform):
         # Execute FFTW plan
         plan.forward(gdata, temp)
         # Resize and rescale for unit-ampltidue normalization
-        self.resize_rescale_forward(temp, cdata, axis)
+        self.resize_rescale_forward(temp, cdata, axis, self.Kmax)
 
     def backward(self, cdata, gdata, axis):
         """Apply backward transform along specified axis."""
         plan, temp = self._build_fftw_plan(gdata.dtype, gdata.shape, axis)
         # Resize and rescale for unit-amplitude normalization
-        self.resize_rescale_backward(cdata, temp, axis)
+        self.resize_rescale_backward(cdata, temp, axis, self.Kmax)
         # Execute FFTW plan
         plan.backward(temp, gdata)
 
@@ -791,49 +791,78 @@ class FastChebyshevTransform(JacobiTransform):
         # Jacobi initialization
         super().__init__(grid_size, coeff_size, a, b, a0, b0)
         # DCT initialization to set scaling factors
-        super(JacobiTransform, self).__init__(grid_size, coeff_size)
+        if a != a0 or b != b0:
+            # Modify coeff_size to avoid truncation before conversion
+            super(JacobiTransform, self).__init__(grid_size, grid_size)
+        else:
+            super(JacobiTransform, self).__init__(grid_size, coeff_size)
+        # Make other attributes for M since they're overwritten by DCT initialization
+        self.M_orig = coeff_size
+        self.KM_orig = (self.M_orig - 1)
+        self.Kmax_orig = min(self.KN, self.KM_orig)
         # Modify scaling factors to match Jacobi normalizations
         self.forward_rescale_zero *= np.sqrt(np.pi)
         self.forward_rescale_pos *= np.sqrt(np.pi / 2)
         self.backward_rescale_zero /= np.sqrt(np.pi)
         self.backward_rescale_pos /= np.sqrt(np.pi / 2)
-        # Build conversion operators
+        # Dispatch resize/rescale based on conversion
         if a == a0 and b == b0:
-            self.forward_conversion = None
-            self.backward_conversion = None
+            self.resize_rescale_forward = self._resize_rescale_forward
+            self.resize_rescale_backward = self._resize_rescale_backward
         else:
-            self.forward_conversion = jacobi.conversion_matrix(self.M, a0, b0, a, b)
-            self.backward_conversion = splu_inverse(self.forward_conversion)
+            # Conversion matrices
+            self.forward_conversion = jacobi.conversion_matrix(self.N, a0, b0, a, b)
+            self.forward_conversion.resize(self.M_orig, self.N)
+            self.forward_conversion = self.forward_conversion.tocsr()
+            self.backward_conversion = jacobi.conversion_matrix(self.M_orig, a0, b0, a, b)
+            self.backward_conversion = splu_inverse(self.backward_conversion)
+            self.resize_rescale_forward = self._resize_rescale_forward_convert
+            self.resize_rescale_backward = self._resize_rescale_backward_convert
 
-    def resize_rescale_forward(self, data_in, data_out, axis):
+    def _resize_rescale_forward(self, data_in, data_out, axis, Kmax):
         """Resize by padding/trunction and rescale to unit amplitude."""
         # DCT resize/rescale
-        super().resize_rescale_forward(data_in, data_out, axis)
+        super().resize_rescale_forward(data_in, data_out, axis, Kmax)
         # Change sign of odd modes
-        Kmax = self.Kmax
         if Kmax > 0:
             posfreq_odd = axslice(axis, 1, Kmax+1, 2)
             data_out[posfreq_odd] *= -1
-        # Ultraspherical conversion
-        if self.forward_conversion is not None:
-            apply_sparse(self.forward_conversion, data_out, axis, out=data_out)
 
-    def resize_rescale_backward(self, data_in, data_out, axis):
+    def _resize_rescale_backward(self, data_in, data_out, axis, Kmax):
         """Resize by padding/trunction and rescale to unit amplitude."""
-        # Ultraspherical conversion
-        Kmax = self.Kmax
-        if self.backward_conversion is not None:
-            if self.M > self.N:
-                # Truncate before conversion
-                badfreq = axslice(axis, Kmax+1, None)
-                data_in[badfreq] = 0
-            apply_sparse(self.backward_conversion, data_in, axis, out=data_in)
         # Change sign of odd modes
         if Kmax > 0:
             posfreq_odd = axslice(axis, 1, Kmax+1, 2)
             data_in[posfreq_odd] *= -1
         # DCT resize/rescale
-        super().resize_rescale_backward(data_in, data_out, axis)
+        super().resize_rescale_backward(data_in, data_out, axis, Kmax)
+
+    def _resize_rescale_forward_convert(self, data_in, data_out, axis, Kmax_DCT):
+        """Resize by padding/trunction and rescale to unit amplitude."""
+        # DCT rescale in place
+        super().resize_rescale_forward(data_in, data_in, axis, Kmax_DCT)
+        # Change sign of odd modes
+        if Kmax_DCT > 0:
+            posfreq_odd = axslice(axis, 1, Kmax_DCT+1, 2)
+            data_in[posfreq_odd] *= -1
+        # Ultraspherical conversion with truncation
+        apply_sparse(self.forward_conversion, data_in, axis, out=data_out)
+
+    def _resize_rescale_backward_convert(self, data_in, data_out, axis, Kmax_DCT):
+        """Resize by padding/trunction and rescale to unit amplitude."""
+        Kmax_orig = self.Kmax_orig
+        badfreq = axslice(axis, Kmax_orig+1, None)
+        if self.M_orig > self.N:
+            # Truncate input before conversion
+            data_in[badfreq] = 0
+        # Ultraspherical conversion
+        apply_sparse(self.backward_conversion, data_in, axis, out=data_in)
+        # Change sign of odd modes
+        if Kmax_orig > 0:
+            posfreq_odd = axslice(axis, 1, Kmax_orig+1, 2)
+            data_in[posfreq_odd] *= -1
+        # DCT resize/rescale
+        super().resize_rescale_backward(data_in, data_out, axis, Kmax_orig)
 
 
 @register_transform(basis.Jacobi, 'scipy_dct')

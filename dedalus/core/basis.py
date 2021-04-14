@@ -429,8 +429,8 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         if isinstance(other, Jacobi):
             if self.grid_params == other.grid_params:
                 size = max(self.size, other.size)
-                a = self.a0
-                b = self.b0
+                a = max(self.a, other.a)
+                b = max(self.b, other.b)
                 dealias = max(self.dealias[0], other.dealias[0])
                 return Jacobi(self.coord, size, self.bounds, a, b, a0=self.a0, b0=self.b0, dealias=dealias, library=self.library)
         if isinstance(other, SpinWeightedSphericalHarmonics):
@@ -449,8 +449,10 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
     # def include_mode(self, mode):
     #     return (0 <= mode < self.space.coeff_size)
 
-    def Jacobi_matrix(self):
-        return dedalus_sphere.jacobi.operator('Z')(self.size, self.a, self.b).square
+    def Jacobi_matrix(self, size):
+        if size is None:
+            size = self.size
+        return dedalus_sphere.jacobi.operator('Z')(size, self.a, self.b).square
 
     def ncc_matrix(self, arg_basis, coeffs, cutoff=1e-6):
         """Build NCC matrix via Clenshaw algorithm."""
@@ -475,18 +477,26 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         else:
             raise ValueError("Jacobi ncc_matrix not implemented for basis type: %s" %type(arg_basis))
 
-    def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
+    def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff):
         if arg_basis is None:
             return super().ncc_matrix(arg_basis, coeffs.ravel(), cutoff=cutoff)
         # Jacobi parameters
         a_ncc = self.a
         b_ncc = self.b
-        M = coeffs.size
         N = arg_basis.size
-        J = arg_basis.Jacobi_matrix()
-        A, B = clenshaw.jacobi_recursion(M, a_ncc, b_ncc, J)
-        f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0] * sparse.identity(N)
-        return clenshaw.matrix_clenshaw(coeffs.ravel(), A, B, f0, cutoff=cutoff)
+        out_basis = self * arg_basis
+        da = out_basis.a - arg_basis.a
+        db = out_basis.b - arg_basis.b
+        # Pad for dealiasing with conversion
+        Nmat = 3*((N+1)//2) + min((N+1)//2, int(np.round(da + db)))
+        J = arg_basis.Jacobi_matrix(size=Nmat)
+        A, B = clenshaw.jacobi_recursion(Nmat, a_ncc, b_ncc, J)
+        f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0] * sparse.identity(Nmat)
+        matrix = clenshaw.matrix_clenshaw(coeffs.ravel(), A, B, f0, cutoff=cutoff)
+        convert = jacobi.conversion_matrix(Nmat, arg_basis.a, arg_basis.b, out_basis.a, out_basis.b)
+        matrix = convert @ matrix
+        return matrix[:N, :N]
+
 
 def Legendre(*args, **kw):
     return Jacobi(*args, a=0, b=0, **kw)
