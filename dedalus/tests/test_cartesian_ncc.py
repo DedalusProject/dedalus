@@ -6,6 +6,44 @@ from mpi4py import MPI
 
 comm = MPI.COMM_WORLD
 
+
+@pytest.mark.parametrize('N', [8])
+@pytest.mark.parametrize('a0', [-1/2, 0])
+@pytest.mark.parametrize('b0', [-1/2, 0])
+@pytest.mark.parametrize('k_ncc', [0, 1])
+@pytest.mark.parametrize('k_arg', [0, 1])
+@pytest.mark.parametrize('ncc_first', [True, False])
+@pytest.mark.parametrize('dealias', [3/2])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_jacobi_ncc(N, a0, b0, k_ncc, k_arg, ncc_first, dealias, dtype):
+    c = coords.Coordinate('x')
+    d = distributor.Distributor((c,))
+    b = basis.Jacobi(c, size=N, a=a0, b=b0, bounds=(0, 1), dealias=dealias)
+    x = b.local_grid(1)
+    b_ncc = b._new_a_b(a0+k_ncc, b0+k_ncc)
+    b_arg = b._new_a_b(a0+k_arg, b0+k_arg)
+    f = field.Field(dist=d, bases=(b_ncc,), dtype=dtype)
+    g = field.Field(dist=d, bases=(b_arg,), dtype=dtype)
+    rand = np.random.seed(32)
+    f['g'] = np.random.randn(*f['g'].shape)
+    g['g'] = np.random.randn(*g['g'].shape)
+    vars = [g]
+    if ncc_first:
+        w0 = f * g
+    else:
+        w0 = g * f
+    w1 = w0.reinitialize(ncc=True, ncc_vars=vars)
+    problem = problems.LBVP(vars)
+    problem.add_equation((w1, 0))
+    solver = solvers.LinearBoundaryValueSolver(problem, matsolver='SuperluNaturalSpsolve')
+    w1.store_ncc_matrices(vars, solver.subproblems)
+    w0 = w0.evaluate()
+    w1 = w1.evaluate_as_ncc()
+    w0.require_scales(1)
+    w1.require_scales(1)
+    assert np.allclose(w0['g'], w1['g'])
+
+
 Lx=2
 Ly=2
 Lz=1
