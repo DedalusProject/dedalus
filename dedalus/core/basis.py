@@ -485,10 +485,10 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         b_ncc = self.b
         N = arg_basis.size
         out_basis = self * arg_basis
-        da = out_basis.a - arg_basis.a
-        db = out_basis.b - arg_basis.b
+        da = int(np.round(out_basis.a - arg_basis.a))
+        db = int(np.round(out_basis.b - arg_basis.b))
         # Pad for dealiasing with conversion
-        Nmat = 3*((N+1)//2) + min((N+1)//2, int(np.round(da + db)))
+        Nmat = 3*((N+1)//2) + min((N+1)//2, (da+db+1)//2)
         J = arg_basis.Jacobi_matrix(size=Nmat)
         A, B = clenshaw.jacobi_recursion(Nmat, a_ncc, b_ncc, J)
         f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0] * sparse.identity(Nmat)
@@ -2736,7 +2736,7 @@ class SphericalShellRadialBasis(RegularityBasis):
         if isinstance(other, SphericalShellRadialBasis):
             if self.grid_params == other.grid_params:
                 radial_size = max(self.shape[2], other.shape[2])
-                k = 0
+                k = self.k + other.k
                 return SphericalShellRadialBasis(self.coordsystem, radial_size, radii=self.radii, alpha=self.alpha, dealias=self.dealias[2:], k=k, radius_library=self.radius_library, dtype=self.dtype)
         if isinstance(other, SpinWeightedSphericalHarmonics):
             unify((self.coordsystem, other.coordsystem))
@@ -2889,7 +2889,8 @@ class SphericalShellRadialBasis(RegularityBasis):
         b_ncc = self.k + self.alpha[1]
         N = self.n_size(ell)
         N0 = self.n_size(0)
-        Nmat = int(np.ceil(3/2 * N0)) # For dealiasing
+        # Pad for dealiasing with conversion
+        Nmat = 3*((N0+1)//2) + self.k
         J = arg_radial_basis.operator_matrix('Z', ell, regtotal_arg, size=Nmat)
         A, B = clenshaw.jacobi_recursion(Nmat, a_ncc, b_ncc, J)
         f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0] * sparse.identity(Nmat)
