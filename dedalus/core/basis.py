@@ -2959,7 +2959,7 @@ class BallRadialBasis(RegularityBasis):
         if isinstance(other, BallRadialBasis):
             if self.grid_params == other.grid_params:
                 radial_size = max(self.shape[2], other.shape[2])
-                k = 0
+                k = max(self.k, other.k)
                 return BallRadialBasis(self.coordsystem, radial_size, radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias[2:], radius_library=self.radius_library, dtype=self.dtype)
         return NotImplemented
 
@@ -2975,7 +2975,7 @@ class BallRadialBasis(RegularityBasis):
         if isinstance(other, BallRadialBasis):
             if self.grid_params == other.grid_params:
                 radial_size = max(self.shape[2], other.shape[2])
-                k = self.k
+                k = max(self.k, other.k)
                 return BallRadialBasis(self.coordsystem, radial_size, radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias[2:], radius_library=self.radius_library, dtype=self.dtype)
         return NotImplemented
 
@@ -3049,10 +3049,12 @@ class BallRadialBasis(RegularityBasis):
         return operator(size, self.alpha + self.k, l + deg).square.astype(np.float64)
 
     @CachedMethod
-    def conversion_matrix(self, ell, regtotal, dk):
+    def conversion_matrix(self, ell, regtotal, dk, size=None):
         E = dedalus_sphere.zernike.operator(3, 'E', radius=self.radius)
         operator = E(+1)**dk
-        return operator(self.n_size(ell), self.alpha + self.k, ell + regtotal).square.astype(np.float64)
+        if size is None:
+            size = self.n_size(ell)
+        return operator(size, self.alpha + self.k, ell + regtotal).square.astype(np.float64)
 
     @CachedMethod
     def radius_multiplication_matrix(self, ell, regtotal, order, d, size=None):
@@ -3110,13 +3112,17 @@ class BallRadialBasis(RegularityBasis):
         b_ncc = regtotal_ncc + 1/2
         N = self.n_size(ell)
         N0 = self.n_size(0)
-        Nmat = int(np.ceil(3/2 * N0)) # For dealiasing
         d = regtotal_ncc - abs(diff_regtotal)
+        dk = max(self.k, arg_radial_basis.k) - arg_radial_basis.k
+        # Pad for dealiasing with conversion
+        Nmat = 3*((N0+1)//2) + (dk+1)//2
         if (d >= 0) and (d % 2 == 0):
             J = arg_radial_basis.operator_matrix('Z', ell, regtotal_arg, size=Nmat)
             A, B = clenshaw.jacobi_recursion(N0, a_ncc, b_ncc, J)
             f0 = dedalus_sphere.zernike.polynomials(3, 1, a_ncc, regtotal_ncc, 1)[0] * sparse.identity(Nmat)
-            prefactor = arg_radial_basis.radius_multiplication_matrix(ell, regtotal_arg, diff_regtotal, d, size=Nmat)
+            radial_factor = arg_radial_basis.radius_multiplication_matrix(ell, regtotal_arg, diff_regtotal, d, size=Nmat)
+            conversion = arg_radial_basis.conversion_matrix(ell, regtotal_out, dk, size=Nmat)
+            prefactor = conversion @ radial_factor
             if self.dtype == np.float64:
                 coeffs_cos_filter = coeffs[0].ravel()[:N0]
                 coeffs_msin_filter = coeffs[1].ravel()[:N0]

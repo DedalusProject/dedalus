@@ -1424,10 +1424,8 @@ class DiskRadialTransform(NonSeparableTransform):
 class BallRadialTransform(Transform):
 
     def __init__(self, grid_shape, coeff_size, axis, ell_maps, regindex, regtotal, k, alpha, dtype=np.complex128):
-
         self.N3g = grid_shape[axis]
         self.N3c = coeff_size
-
         self.ell_maps = ell_maps
         self.intertwiner = lambda l: dedalus_sphere.spin_operators.Intertwiner(l, indexing=(-1,+1,0))
         self.regindex = regindex
@@ -1450,10 +1448,8 @@ class BallRadialTransform(Transform):
         self.backward_reduced(cdata, gdata)
 
     def forward_reduced(self, gdata, cdata):
-
         #if gdata.shape[1] != len(local_l): # do we want to do this check???
         #    raise ValueError("Local l must match size of %i axis." %(self.axis-1) )
-
         # Apply transform for each l
         ell_matrices = self._forward_GSZP_matrix
         for ell, m_ind, ell_ind in self.ell_maps:
@@ -1463,10 +1459,8 @@ class BallRadialTransform(Transform):
             apply_matrix(ell_matrices[ell], grl, axis=3, out=crl)
 
     def backward_reduced(self, cdata, gdata):
-
         #if gdata.shape[1] != len(local_l): # do we want to do this check???
         #    raise ValueError("Local l must match size of %i axis." %(self.axis-1) )
-
         # Apply transform for each l
         ell_matrices = self._backward_GSZP_matrix
         for ell, m_ind, ell_ind in self.ell_maps:
@@ -1494,13 +1488,15 @@ class BallRadialTransform(Transform):
                     ell_matrices[ell] = np.zeros((self.N3c, self.N3g))
                 else:
                     Nmin = dedalus_sphere.zernike.min_degree(ell)
-                    Nc = self.N3c - Nmin
-                    W = dedalus_sphere.zernike.polynomials(3, Nc, self.alpha, ell + self.regtotal, z_grid) # shape (N3c-Nmin, Ng)
-                    conversion = dedalus_sphere.zernike.operator(3, 'E')(+1)**self.k
-                    W = conversion(Nc, self.alpha, ell + self.regtotal) @ W
+                    Nc = max(self.N3g, self.N3c) - Nmin
+                    W = dedalus_sphere.zernike.polynomials(3, Nc, self.alpha, ell + self.regtotal, z_grid) # shape (Nc-Nmin, Ng)
                     W = (W*weights).astype(np.float64)
                     # zero out modes higher than grid resolution taking into account n starts at Nmin
                     W[self.N3g-Nmin:] = 0
+                    conversion = dedalus_sphere.zernike.operator(3, 'E')(+1)**self.k
+                    W = conversion(Nc, self.alpha, ell + self.regtotal) @ W
+                    # Truncate after conversion
+                    W = W[:self.N3c-Nmin]
                     ell_matrices[ell] = np.asarray(W, order='C')
         return ell_matrices
 
@@ -1520,6 +1516,7 @@ class BallRadialTransform(Transform):
                     Nmin = dedalus_sphere.zernike.min_degree(ell)
                     Nc = self.N3c - Nmin
                     W = dedalus_sphere.zernike.polynomials(3, Nc, self.alpha + self.k, ell + self.regtotal, z_grid)
+                    W[self.N3g-Nmin:] = 0
                     ell_matrices[ell] = np.asarray(W.T.astype(np.float64), order='C')
         return ell_matrices
 
