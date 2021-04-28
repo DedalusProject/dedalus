@@ -7,7 +7,8 @@ import numpy as np
 from mpi4py import MPI
 
 from ..core import operators
-from ..core.future import FutureField
+from ..core.field import Field
+from ..core.arithmetic import DotProduct as dot
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -154,6 +155,8 @@ class CFL:
         Maximum fractional change between timesteps (default: inf)
     min_change : float, optional
         Minimum fractional change between timesteps (default: 0.)
+    threshold : float, optional
+            Fractional change threshold for changing timestep (default: 0.)
 
     Notes
     -----
@@ -164,8 +167,7 @@ class CFL:
     """
 
     def __init__(self, solver, initial_dt, cadence=1, safety=1., max_dt=np.inf,
-                 min_dt=0., max_change=np.inf, min_change=0.):
-
+                 min_dt=0., max_change=np.inf, min_change=0., threshold=0.):
         self.solver = solver
         self.stored_dt = initial_dt
         self.cadence = cadence
@@ -174,15 +176,10 @@ class CFL:
         self.min_dt = min_dt
         self.max_change = max_change
         self.min_change = min_change
+        self.threshold = threshold
 
-        domain = solver.domain
-        self.grid_spacings = []
-        for axis in range(domain.dim):
-            dx_array = Array(domain)
-            dx_array.from_local_vector(domain.grid_spacing(axis, domain.dealias), axis)
-            self.grid_spacings.append(dx_array)
-        self.reducer = GlobalArrayReducer(solver.domain.dist.comm_cart)
-        self.frequencies = solver.evaluator.add_dictionary_handler(iter=cadence)
+        self.reducer = GlobalArrayReducer(self.solver.dist.comm_cart)
+        self.frequencies = self.solver.evaluator.add_dictionary_handler(iter=cadence)
 
     def compute_dt(self):
         """Compute CFL-limited timestep."""
@@ -205,23 +202,30 @@ class CFL:
             dt *= self.safety
             dt = min(dt, self.max_dt, self.max_change*self.stored_dt)
             dt = max(dt, self.min_dt, self.min_change*self.stored_dt)
-            self.stored_dt = dt
+            if abs(dt - self.stored_dt) > self.threshold * self.stored_dt:
+                self.stored_dt = dt
         return self.stored_dt
 
     def add_frequency(self, freq):
         """Add an on-grid frequency."""
         self.frequencies.add_task(freq, layout='g')
 
-    def add_velocity(self, velocity, axis):
-        """Add grid-crossing frequency from a velocity along one axis."""
-        vel = FutureField.parse(velocity, self.solver.evaluator.vars, self.solver.domain)
-        freq = vel / self.grid_spacings[axis]
+    def add_velocity(self, velocity):
+        """
+        Add grid-crossing frequency from a velocity vector.
+        
+        Arguments
+        ---------
+        velocity : field object
+            The velocity; must be a vector with a tensorsig of length 1
+        """
+        coords = velocity.tensorsig
+        if len(coords) != 1:
+            raise ValueError("Velocity must be a vector")
+        domain = velocity.domain
+        inv_spacing = Field(dist=self.solver.dist, bases=domain.bases, tensorsig=coords, dtype=velocity.dtype)
+        for axis in range(domain.dim):
+            inv_spacing['g'][axis] = np.abs(1/domain.grid_spacing(axis))
+        inv_spacing = operators.Grid(inv_spacing).evaluate()
+        freq = dot(velocity, inv_spacing)
         self.add_frequency(freq)
-
-    def add_velocities(self, components):
-        """Add grid-crossing frequencies from a tuple of velocity components."""
-        if len(components) != self.solver.domain.dim:
-            raise ValueError("Wrong number of components for domain.")
-        for axis, component in enumerate(components):
-            self.add_velocity(component, axis)
-

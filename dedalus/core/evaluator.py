@@ -153,9 +153,10 @@ class Evaluator:
         #             task['out'] = task['out'].copy()
         #         else:
         #             outputs.add(task['out'])
-        for handler in handlers:
-            for task in handler.tasks:
-                task['out'].require_coeff_space()
+        if 'F' in self.groups.keys():
+            for handler in self.groups['F']:
+                for task in handler.tasks:
+                    task['out'].require_coeff_space()
 
         # Process
         for handler in handlers:
