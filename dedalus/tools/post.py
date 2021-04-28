@@ -196,7 +196,7 @@ def merge_setup(joint_file, proc_path):
         except KeyError:
             joint_file.attrs['writes'] = writes = len(proc_file['scales']['write_number'])
         # Copy scales (distributed files all have global scales)
-        proc_file.copy('scales', joint_file)
+        #proc_file.copy('scales', joint_file)
         # Tasks
         joint_tasks = joint_file.create_group('tasks')
         proc_tasks = proc_file['tasks']
@@ -214,13 +214,16 @@ def merge_setup(joint_file, proc_path):
             joint_dset.attrs['constant'] = proc_dset.attrs['constant']
             joint_dset.attrs['grid_space'] = proc_dset.attrs['grid_space']
             joint_dset.attrs['scales'] = proc_dset.attrs['scales']
+
+            # TO FIX: MERGE DIMENSIONS DON'T WORK IN d3 YET!
+            #         THEY ALSO NEED TO BE MERGED ACROSS PROCS
             # Dimension scales
-            for i, proc_dim in enumerate(proc_dset.dims):
-                joint_dset.dims[i].label = proc_dim.label
-                for scalename in proc_dim:
-                    scale = joint_file['scales'][scalename]
-                    joint_dset.dims.create_scale(scale, scalename)
-                    joint_dset.dims[i].attach_scale(scale)
+            # for i, proc_dim in enumerate(proc_dset.dims):
+            #     joint_dset.dims[i].label = proc_dim.label
+            #     for scalename in proc_dim:
+            #         scale = joint_file['scales'][scalename]
+            #         joint_dset.dims.create_scale(scale, scalename)
+            #         joint_dset.dims[i].attach_scale(scale)
 
 
 def merge_data(joint_file, proc_path):
