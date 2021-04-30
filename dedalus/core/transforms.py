@@ -1297,8 +1297,8 @@ class SWSHColatitudeTransform(NonSeparableTransform):
                 Lmin = max(np.abs(m), np.abs(self.s))
                 Yfull = np.zeros((self.N2c-np.abs(m), self.N2g))
                 Yfull[Lmin-np.abs(m):, :] = (Y*weights).astype(np.float64)
-                # Zero out modes higher than grid resolution
-                Yfull[self.N2g:, :] = 0
+                # Zero higher coefficients than can be correctly computed with base Gauss quadrature
+                Yfull[self.N2g-np.abs(m):, :] = 0
                 m_matrices[m] = np.asarray(Yfull, order='C')
         return m_matrices
 
@@ -1321,8 +1321,8 @@ class SWSHColatitudeTransform(NonSeparableTransform):
                 Lmin = max(np.abs(m), np.abs(self.s))
                 Yfull = np.zeros((self.N2g, self.N2c-np.abs(m)))
                 Yfull[:, Lmin-np.abs(m):] = Y.T.astype(np.float64)
-                # Zero out modes higher than grid resolution
-                Yfull[:, self.N2g:] = 0
+                # Zero higher coefficients than can be correctly computed with base Gauss quadrature
+                Yfull[:, self.N2g-np.abs(m):] = 0
                 m_matrices[m] = np.asarray(Yfull, order='C')
         return m_matrices
 
@@ -1477,7 +1477,6 @@ class BallRadialTransform(Transform):
     @CachedAttribute
     def _forward_GSZP_matrix(self):
         """Build transform matrix for single l and r."""
-        # Get functions from sphere library
         z_grid, weights = self._quadrature
         ell_list = tuple(map[0] for map in self.ell_maps)
         ell_matrices = {}
@@ -1487,23 +1486,27 @@ class BallRadialTransform(Transform):
                 if self.regindex != () and self.intertwiner(ell).forbidden_regularity(Rb[np.array(self.regindex)]):
                     ell_matrices[ell] = np.zeros((self.N3c, self.N3g))
                 else:
+                    # Gauss quadrature with base (k=0) polynomials
                     Nmin = dedalus_sphere.zernike.min_degree(ell)
-                    Nc = max(self.N3g, self.N3c) - Nmin
-                    W = dedalus_sphere.zernike.polynomials(3, Nc, self.alpha, ell + self.regtotal, z_grid) # shape (Nc-Nmin, Ng)
-                    W = (W*weights).astype(np.float64)
-                    # zero out modes higher than grid resolution taking into account n starts at Nmin
-                    W[self.N3g-Nmin:] = 0
-                    conversion = dedalus_sphere.zernike.operator(3, 'E')(+1)**self.k
-                    W = conversion(Nc, self.alpha, ell + self.regtotal) @ W
-                    # Truncate after conversion
-                    W = W[:self.N3c-Nmin]
-                    ell_matrices[ell] = np.asarray(W, order='C')
+                    Nc = max(max(self.N3g, self.N3c) - Nmin, 0)
+                    W = dedalus_sphere.zernike.polynomials(3, Nc, self.alpha, ell+self.regtotal, z_grid) # shape (Nc-Nmin, Ng)
+                    W = W * weights
+                    # Zero higher coefficients than can be correctly computed with base Gauss quadrature
+                    dN = (ell + self.regtotal) // 2
+                    W[max(self.N3g-dN,0):] = 0
+                    # Spectral conversion
+                    if self.k > 0:
+                        conversion = dedalus_sphere.zernike.operator(3, 'E')(+1)**self.k
+                        W = conversion(Nc, self.alpha, ell+self.regtotal) @ W
+                    # Truncate to specified coeff_size
+                    W = W[:max(self.N3c-Nmin,0)]
+                    # Ensure C ordering for fast dot products
+                    ell_matrices[ell] = np.asarray(W.astype(np.float64), order='C')
         return ell_matrices
 
     @CachedAttribute
     def _backward_GSZP_matrix(self):
         """Build transform matrix for single l and r."""
-        # Get functions from sphere library
         z_grid, weights = self._quadrature
         ell_list = tuple(map[0] for map in self.ell_maps)
         ell_matrices = {}
@@ -1513,10 +1516,14 @@ class BallRadialTransform(Transform):
                 if self.regindex != () and self.intertwiner(ell).forbidden_regularity(Rb[np.array(self.regindex)]):
                     ell_matrices[ell] = np.zeros((self.N3g, self.N3c))
                 else:
+                    # Construct polynomials on the base grid
                     Nmin = dedalus_sphere.zernike.min_degree(ell)
-                    Nc = self.N3c - Nmin
-                    W = dedalus_sphere.zernike.polynomials(3, Nc, self.alpha + self.k, ell + self.regtotal, z_grid)
-                    W[self.N3g-Nmin:] = 0
+                    Nc = max(self.N3c - Nmin, 0)
+                    W = dedalus_sphere.zernike.polynomials(3, Nc, self.alpha+self.k, ell+self.regtotal, z_grid)
+                    # Zero higher coefficients than can be correctly computed with basee Gauss quadrature
+                    dN = (ell + self.regtotal) // 2
+                    W[max(self.N3g-dN,0):] = 0
+                    # Transpose and ensure C ordering for fast dot products
                     ell_matrices[ell] = np.asarray(W.T.astype(np.float64), order='C')
         return ell_matrices
 

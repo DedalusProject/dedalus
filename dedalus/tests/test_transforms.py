@@ -262,226 +262,114 @@ def test_CF_J_1d_vector_roundtrip(a, b, Nx, Ny, dealias_x, dealias_y):
     assert np.allclose(v['g'], vg)
 
 
-## S2
-Nphi_range = [8, 16]
-Ntheta_range = [12]
-dealias_range = [0.5, 1, 1.5]
+## Sphere
 
 @CachedMethod
-def build_S2(Nphi, Ntheta, dealias, dtype=np.complex128):
+def build_sphere_2d(Nphi, Ntheta, radius, dealias, dtype):
     c = coords.S2Coordinates('phi', 'theta')
     d = distributor.Distributor((c,))
-    sb = basis.SpinWeightedSphericalHarmonics(c, (Nphi, Ntheta), radius=1, dealias=(dealias, dealias), dtype=dtype)
-    phi, theta = sb.local_grids()
-    return c, d, sb, phi, theta
+    b = basis.SpinWeightedSphericalHarmonics(c, (Nphi, Ntheta), radius=radius, dealias=(dealias, dealias), dtype=dtype)
+    phi, theta = b.local_grids((dealias, dealias))
+    return c, d, b, phi, theta
 
-def build_sphere_3d(Nphi, Ntheta, dealias, dtype=np.complex128):
+@CachedMethod
+def build_sphere_3d(Nphi, Ntheta, radius, dealias, dtype):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    sb = basis.SpinWeightedSphericalHarmonics(c, (Nphi, Ntheta), radius=1, dealias=(dealias, dealias), dtype=dtype)
-    phi, theta = sb.local_grids()
-    return c, d, sb, phi, theta
+    b = basis.SpinWeightedSphericalHarmonics(c, (Nphi, Ntheta), radius=radius, dealias=(dealias, dealias), dtype=dtype)
+    phi, theta = b.local_grids((dealias, dealias, dealias))
+    return c, d, b, phi, theta
+
+Nphi_range = [16]
+Ntheta_range = [16]
+radius_range = [1.5]
+basis_range = [build_sphere_2d, build_sphere_3d]
+dealias_range = [1/2, 1, 3/2]
+dtype_range = [np.float64, np.complex128]
+layout_range = ['g', 'c']
+rank_range = [0, 1, 2]
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('radius', radius_range)
+@pytest.mark.parametrize('basis', basis_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('basis', [build_S2, build_sphere_3d])
-def test_S2_scalar_backward(Nphi, Ntheta, dealias, basis):
-    c, d, sb, phi, theta = basis(Nphi, Ntheta, dealias)
-    f = field.Field(dist=d, bases=(sb,), dtype=np.complex128)
-    m = sb.local_m
-    ell = sb.local_ell
+def test_sphere_complex_scalar_backward(Nphi, Ntheta, radius, basis, dealias):
+    c, d, b, phi, theta = basis(Nphi, Ntheta, radius, dealias, np.complex128)
+    f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+    f.set_scales(dealias)
+    m = b.local_m
+    ell = b.local_ell
     f['c'][(m == -2) * (ell == 2)] = 1
     fg = np.sqrt(15) / 4 * np.sin(theta)**2 * np.exp(-2j*phi)
-    assert np.allclose(f['g'], fg)
+    assert np.allclose(fg, f['g'])
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('radius', radius_range)
+@pytest.mark.parametrize('basis', basis_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('basis', [build_S2, build_sphere_3d])
-def test_S2_scalar_forward(Nphi, Ntheta, dealias, basis):
-    c, d, sb, phi, theta = basis(Nphi, Ntheta, dealias)
-    f = field.Field(dist=d, bases=(sb,), dtype=np.complex128)
-    m = sb.local_m
-    ell = sb.local_ell
+def test_sphere_complex_scalar_forward(Nphi, Ntheta, radius, basis, dealias):
+    c, d, b, phi, theta = basis(Nphi, Ntheta, radius, dealias, np.complex128)
+    f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
+    f.set_scales(dealias)
+    m = b.local_m
+    ell = b.local_ell
     f['g'] = np.sqrt(15) / 4 * np.sin(theta)**2 * np.exp(-2j*phi)
     fc = np.zeros_like(f['c'])
     fc[(m == -2) * (ell == 2)] = 1
-    assert np.allclose(f['c'], fc)
+    assert np.allclose(fc, f['c'])
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('radius', radius_range)
+@pytest.mark.parametrize('basis', basis_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_S2_real_scalar_backward(Nphi, Ntheta, dealias):
-    c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias, dtype=np.float64)
-    f = field.Field(dist=d, bases=(sb,), dtype=np.float64)
-    m = sb.local_m
-    ell = sb.local_ell
-    f['c'][(m == 2) * (ell == 2)] = (1, 1)
+def test_sphere_real_scalar_backward(Nphi, Ntheta, radius, basis, dealias):
+    c, d, b, phi, theta = basis(Nphi, Ntheta, radius, dealias, np.float64)
+    f = field.Field(dist=d, bases=(b,), dtype=np.float64)
+    f.set_scales(dealias)
+    m = b.local_m
+    ell = b.local_ell
+    f['c'][(m == 2) * (ell == 2)] = 1
     fg = np.sqrt(15) / 4 * np.sin(theta)**2 * (np.cos(2*phi) - np.sin(2*phi))
-    assert np.allclose(f['g'], fg)
+    assert np.allclose(fg, f['g'])
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('radius', radius_range)
+@pytest.mark.parametrize('basis', basis_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-def test_S2_real_scalar_forward(Nphi, Ntheta, dealias):
-    c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias, dtype=np.float64)
-    f = field.Field(dist=d, bases=(sb,), dtype=np.float64)
-    m = sb.local_m
-    ell = sb.local_ell
+def test_sphere_real_scalar_forward(Nphi, Ntheta, radius, basis, dealias):
+    c, d, b, phi, theta = basis(Nphi, Ntheta, radius, dealias, np.float64)
+    f = field.Field(dist=d, bases=(b,), dtype=np.float64)
+    f.set_scales(dealias)
+    m = b.local_m
+    ell = b.local_ell
     f['g'] = np.sqrt(15) / 4 * np.sin(theta)**2 * (np.cos(2*phi) - np.sin(2*phi))
     fc = np.zeros_like(f['c'])
-    fc[(m == 2) * (ell == 2)] = (1, 1)
-    assert np.allclose(f['c'], fc)
-
-@pytest.mark.xfail(reason="Need to check SWSH normalizations")
-@pytest.mark.parametrize('Nphi', Nphi_range)
-@pytest.mark.parametrize('Ntheta', Ntheta_range)
-@pytest.mark.parametrize('dealias', dealias_range)
-def test_S2_vector_backward(Nphi, Ntheta, dealias):
-    # Note: u is the gradient of sin(theta)*exp(1j*phi)
-    c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias)
-    u = field.Field(dist=d, bases=(sb,), tensorsig=(c,), dtype=np.complex128)
-    m = sb.local_m
-    ell = sb.local_ell
-    u['c'][0][(m == 1) * (ell == 2)] = -np.sqrt(4/5)
-    u['c'][1][(m == 1) * (ell == 2)] = np.sqrt(4/5)
-    ug = np.zeros_like(u['g'])
-    ug[0] = 1j*np.exp(1j*phi)
-    ug[1] = np.cos(theta)*np.exp(1j*phi)
-    assert np.allclose(u['g'], ug)
-
-@pytest.mark.xfail(reason="Need to check SWSH normalizations")
-@pytest.mark.parametrize('Nphi', Nphi_range)
-@pytest.mark.parametrize('Ntheta', Ntheta_range)
-@pytest.mark.parametrize('dealias', dealias_range)
-def test_S2_vector_forward(Nphi, Ntheta, dealias):
-    # Note: u is the gradient of sin(theta)*exp(1j*phi)
-    c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias)
-    u = field.Field(dist=d, bases=(sb,), tensorsig=(c,), dtype=np.complex128)
-    m = sb.local_m
-    ell = sb.local_ell
-    u['g'][0] = 1j*np.exp(1j*phi)
-    u['g'][1] = np.cos(theta)*np.exp(1j*phi)
-    uc = np.zeros_like(u['c'])
-    uc[0][(m == 1) * (ell == 2)] = -np.sqrt(4/5)
-    uc[1][(m == 1) * (ell == 2)] = np.sqrt(4/5)
-    assert np.allclose(u['c'], uc)
+    fc[(m == 2) * (ell == 2)] = 1
+    assert np.allclose(fc, f['c'])
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('radius', radius_range)
+@pytest.mark.parametrize('basis', basis_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('basis', [build_S2, build_sphere_3d])
-def test_S2_vector_roundtrip(Nphi, Ntheta, dealias, basis):
-    # Note: u is the gradient of sin(theta)*exp(1j*phi)
-    c, d, sb, phi, theta = basis(Nphi, Ntheta, dealias)
-    u = field.Field(dist=d, bases=(sb,), tensorsig=(c,), dtype=np.complex128)
-    m = sb.local_m
-    ell = sb.local_ell
-    u['g'][0] = 1j * np.exp(1j*phi)
-    u['g'][1] = np.cos(theta) * np.exp(1j*phi)
-    ug = u['g'].copy()
-    u['c']
-    assert np.allclose(u['g'], ug)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('layout', layout_range)
+@pytest.mark.parametrize('rank', rank_range)
+def test_sphere_roundtrip_noise(Nphi, Ntheta, radius, basis, dealias, dtype, layout, rank):
+    c, d, b, phi, theta = basis(Nphi, Ntheta, radius, dealias, dtype)
+    tensorsig = (c,) * rank
+    f = field.Field(dist=d, bases=(b,), tensorsig=tensorsig, dtype=dtype)
+    f.set_scales(dealias)
+    other = {'g':'c', 'c':'g'}[layout]
+    f[other] = np.random.randn(*f[other].shape)
+    f_layout = f[layout].copy()
+    f[other]
+    assert np.allclose(f_layout, f[layout])
 
-@pytest.mark.xfail(reason="Need to check SWSH normalizations")
-@pytest.mark.parametrize('Nphi', Nphi_range)
-@pytest.mark.parametrize('Ntheta', Ntheta_range)
-@pytest.mark.parametrize('dealias', dealias_range)
-def test_S2_real_vector_backward(Nphi, Ntheta, dealias):
-    # Note: u is the gradient of sin(theta)*cos(phi)
-    c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias, dtype=np.float64)
-    u = field.Field(dist=d, bases=(sb,), tensorsig=(c,), dtype=np.float64)
-    m = sb.local_m
-    ell = sb.local_ell
-    # HACK: don't really know what this should be but it passes by switching sine of ug[0]
-    u['c'][0][(m == 1) * (ell == 2)] = (-np.sqrt(4/5), 0)
-    u['c'][1][(m == 1) * (ell == 2)] = (np.sqrt(4/5), 0)
-    ug = np.zeros_like(u['g'])
-    ug[0] = - np.sin(phi)
-    ug[1] = np.cos(theta) * np.cos(phi)
-    assert np.allclose(u['g'], ug)
-
-@pytest.mark.xfail(reason="Need to check SWSH normalizations")
-@pytest.mark.parametrize('Nphi', Nphi_range)
-@pytest.mark.parametrize('Ntheta', Ntheta_range)
-@pytest.mark.parametrize('dealias', dealias_range)
-def test_S2_real_vector_forward(Nphi, Ntheta, dealias):
-    # Note: u is the gradient of sin(theta)*cos(phi)
-    c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias, dtype=np.float64)
-    u = field.Field(dist=d, bases=(sb,), tensorsig=(c,), dtype=np.float64)
-    m = sb.local_m
-    ell = sb.local_ell
-    u['g'][0] = - np.sin(phi)
-    u['g'][1] = np.cos(theta) * np.cos(phi)
-    uc = np.zeros_like(u['c'])
-    # HACK: don't really know what this should be but it passes by switching sine of ug[0]
-    uc[0][(m == 1) * (ell == 2)] = (-np.sqrt(4/5), 0)
-    uc[1][(m == 1) * (ell == 2)] = (np.sqrt(4/5), 0)
-    assert np.allclose(u['c'], uc)
-
-@pytest.mark.parametrize('Nphi', Nphi_range)
-@pytest.mark.parametrize('Ntheta', Ntheta_range)
-@pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('basis', [build_S2, build_sphere_3d])
-def test_S2_real_vector_roundtrip(Nphi, Ntheta, dealias, basis):
-    # Note: u is the gradient of sin(theta)*cos(phi)
-    c, d, sb, phi, theta = basis(Nphi, Ntheta, dealias, dtype=np.float64)
-    u = field.Field(dist=d, bases=(sb,), tensorsig=(c,), dtype=np.float64)
-    m = sb.local_m
-    ell = sb.local_ell
-    u['g'][0] = - np.sin(phi)
-    u['g'][1] = np.cos(theta) * np.cos(phi)
-    ug = u['g'].copy()
-    u['c']
-    assert np.allclose(u['g'][0], ug[0])
-
-@pytest.mark.parametrize('Nphi', Nphi_range)
-@pytest.mark.parametrize('Ntheta', Ntheta_range)
-@pytest.mark.parametrize('dealias', dealias_range)
-def test_S2_tensor_backward(Nphi, Ntheta, dealias):
-    # Note: only checking one component of the tensor
-    c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias)
-    T = field.Field(dist=d, bases=(sb,), tensorsig=(c,c), dtype=np.complex128)
-    m = sb.local_m
-    ell = sb.local_ell
-    T['c'][0,0][(m == 2) * (ell == 3)] = 1
-    Tg = np.zeros_like(T['g'])
-    Tg[0,0] = - 0.5 * np.sqrt(7/2) * (np.cos(theta/2)**4 * (-2 + 3*np.cos(theta))) * np.exp(2j*phi)
-    assert np.allclose(T['g'][0,0], Tg[0,0])
-
-@pytest.mark.parametrize('Nphi', Nphi_range)
-@pytest.mark.parametrize('Ntheta', Ntheta_range)
-@pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-def test_S2_tensor_roundtrip(Nphi, Ntheta, dealias, dtype):
-    c, d, sb, phi, theta = build_S2(Nphi, Ntheta, dealias, dtype=dtype)
-    T = field.Field(dist=d, bases=(sb,), tensorsig=(c,c), dtype=dtype)
-    T['g'][1,1] = 2*np.cos(theta)*(3*np.cos(theta)*np.cos(phi)**2 - 2*np.sin(theta)*np.sin(phi))
-    T['g'][1,0] = T['g'][0,1] = -2*np.cos(phi)*(np.sin(theta) + 3*np.cos(theta)*np.sin(phi))
-    T['g'][0,0] = 6*np.sin(phi)**2
-    Tg = T['g'].copy()
-    T['c']
-    assert np.allclose(T['g'], Tg)
-
-@pytest.mark.parametrize('Nphi', Nphi_range)
-@pytest.mark.parametrize('Ntheta', Ntheta_range)
-@pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-def test_S2_3D_vector_roundtrip(Nphi, Ntheta, dealias, dtype):
-    # Note: u is the S2 gradient of cos(theta)*cos(phi)
-    c = coords.SphericalCoordinates('phi', 'theta', 'r')
-    d = distributor.Distributor((c,))
-    c_S2 = c.S2coordsys
-    sb = basis.SpinWeightedSphericalHarmonics(c_S2, (Nphi, Ntheta), radius=1, dealias=(dealias, dealias), dtype=dtype)
-    phi, theta = sb.local_grids()
-    u = field.Field(dist=d, bases=(sb,), tensorsig=(c,), dtype=dtype)
-    u['g'][2] = 0
-    u['g'][1] = np.cos(2*theta)*np.cos(phi)
-    u['g'][0] = -np.cos(theta)*np.sin(phi)
-    ug = u['g'].copy()
-    u['c']
-    assert np.allclose(u['g'], ug)
 
 ## D2
 Nphi_range = [8, 16]
@@ -602,152 +490,133 @@ def test_D2_tensor_roundtrip_mmax0(Nr, radius, dealias, dtype):
     tf['c']
     assert np.allclose(tf['g'][1][1], tfg[1][1])
 
-## Spherical Shell
-Nphi_range = [8, 16]
-Ntheta_range = [12]
+
+## Shell
+
+@CachedMethod
+def build_shell(Nphi, Ntheta, Nr, radii, alpha, k, dealias, dtype):
+    c = coords.SphericalCoordinates('phi', 'theta', 'r')
+    d = distributor.Distributor((c,))
+    b  = basis.SphericalShellBasis(c, (Nphi, Ntheta, Nr), radii=radii, alpha=alpha, k=k, dealias=(dealias, dealias, dealias), dtype=dtype)
+    phi, theta, r = b.local_grids((dealias, dealias, dealias))
+    x = r * np.sin(theta) * np.cos(phi)
+    y = r * np.sin(theta) * np.sin(phi)
+    z = r * np.cos(theta)
+    return c, d, b, phi, theta, r, x, y, z
+
+Nphi_range = [8]
+Ntheta_range = [8]
 Nr_range = [8]
 radii_range = [(0.5, 3)]
+alpha_range = [(-1/2, -1/2), (0, 0)]
 k_range = [0, 1, 2]
-dealias_range = [0.5, 1, 3/2]
-
-@CachedMethod
-def build_spherical_shell(Nphi, Ntheta, Nr, radii, k, dealias, dtype=np.complex128):
-    c = coords.SphericalCoordinates('phi', 'theta', 'r')
-    d = distributor.Distributor((c,))
-    b  = basis.SphericalShellBasis(c, (Nphi, Ntheta, Nr), k=k, radii=radii, dealias=(dealias, dealias, dealias), dtype=dtype)
-    phi, theta, r = b.local_grids()
-    x = r * np.sin(theta) * np.cos(phi)
-    y = r * np.sin(theta) * np.sin(phi)
-    z = r * np.cos(theta)
-    return c, d, b, phi, theta, r, x, y, z
+dealias_range = [1/2, 1, 3/2]
+dtype_range = [np.float64, np.complex128]
+layout_range = ['g', 'c']
+rank_range = [0, 1, 2]
 
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('radii', radii_range)
+@pytest.mark.parametrize('alpha', alpha_range)
 @pytest.mark.parametrize('k', k_range)
-@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-def test_spherical_shell_radial_scalar(Nr, radii, k, dtype):
-    c, d, b, phi, theta, r, x, y, z = build_spherical_shell(4, 4, Nr, radii, k, 1, dtype)
-    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
-    f['g'] = fg = r - r**2/7
-    f['c']
-    assert np.allclose(f['g'], fg)
-
-@pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('radii', radii_range)
-@pytest.mark.parametrize('k', k_range)
-@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-def test_spherical_shell_radial_vector(Nr, radii, k, dtype):
-    c, d, b, phi, theta, r, x, y, z = build_spherical_shell(4, 4, Nr, radii, k, 1, dtype)
-    u = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
-    u['g'][2] = 1 - 2*r/7
-    u0 = np.copy(u['g'])
-    u['c']
-    assert np.allclose(u['g'], u0)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('layout', layout_range)
+@pytest.mark.parametrize('rank', rank_range)
+def test_shell_radial_roundtrip_noise(Nr, radii, alpha, k, dealias, dtype, layout, rank):
+    c, d, b, phi, theta, r, x, y, z = build_shell(4, 4, Nr, radii, alpha, k, dealias, dtype)
+    tensorsig = (c,) * rank
+    f = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=tensorsig, dtype=dtype)
+    f.set_scales((dealias, dealias, dealias))
+    other = {'g':'c', 'c':'g'}[layout]
+    f[other] = np.random.randn(*f[other].shape)
+    f_layout = f[layout].copy()
+    f[other]
+    assert np.allclose(f_layout, f[layout])
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('radii', radii_range)
+@pytest.mark.parametrize('alpha', alpha_range)
 @pytest.mark.parametrize('k', k_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-def test_spherical_shell_scalar(Nphi, Ntheta, Nr, radii, k, dealias, dtype):
-    c, d, b, phi, theta, r, x, y, z = build_spherical_shell(Nphi, Ntheta, Nr, radii, k, dealias, dtype)
-    f = field.Field(dist=d, bases=(b,), dtype=dtype)
-    f['g'] = fg = 3*x**2 + 2*y*z
-    f['c']
-    assert np.allclose(f['g'], fg)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('layout', layout_range)
+@pytest.mark.parametrize('rank', rank_range)
+def test_shell_roundtrip_noise(Nphi, Ntheta, Nr, radii, alpha, k, dealias, dtype, layout, rank):
+    c, d, b, phi, theta, r, x, y, z = build_shell(Nphi, Ntheta, Nr, radii, alpha, k, dealias, dtype)
+    tensorsig = (c,) * rank
+    f = field.Field(dist=d, bases=(b,), tensorsig=tensorsig, dtype=dtype)
+    f.set_scales((dealias, dealias, dealias))
+    other = {'g':'c', 'c':'g'}[layout]
+    f[other] = np.random.randn(*f[other].shape)
+    f_layout = f[layout].copy()
+    f[other]
+    assert np.allclose(f_layout, f[layout])
 
-@pytest.mark.parametrize('Nphi', Nphi_range)
-@pytest.mark.parametrize('Ntheta', Ntheta_range)
-@pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('radii', radii_range)
-@pytest.mark.parametrize('k', k_range)
-@pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-def test_spherical_shell_vector(Nphi, Ntheta, Nr, radii, k, dealias, dtype):
-    # Note: u is the gradient of a scalar
-    c, d, b, phi, theta, r, x, y, z = build_spherical_shell(Nphi, Ntheta, Nr, radii, k, dealias, dtype)
-    u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
-    u['g'][2] =  4*r**3*np.sin(theta)*np.cos(theta)*np.cos(phi)
-    u['g'][1] =    r**3*np.cos(2*theta)*np.cos(phi)
-    u['g'][0] = -r**3*np.cos(theta)*np.sin(phi)
-    ug = np.copy(u['g'])
-    u['c']
-    assert np.allclose(u['g'], ug)
 
 ## Ball
-Nphi_range = [8, 16]
-Ntheta_range = [12]
-Nr_range = [8]
-radius_range = [1.5]
-dealias_range = [0.5, 1, 3/2]
-k_range = [0, 1, 2]
 
 @CachedMethod
-def build_ball(Nphi, Ntheta, Nr, radius, k, dealias, dtype=np.complex128):
+def build_ball(Nphi, Ntheta, Nr, radius, alpha, k, dealias, dtype):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (Nphi, Ntheta, Nr), radius=radius, k=k, dealias=(dealias, dealias, dealias), dtype=dtype)
-    phi, theta, r = b.local_grids()
+    b = basis.BallBasis(c, (Nphi, Ntheta, Nr), radius=radius, alpha=alpha, k=k, dealias=(dealias, dealias, dealias), dtype=dtype)
+    phi, theta, r = b.local_grids((dealias, dealias, dealias))
     x = r * np.sin(theta) * np.cos(phi)
     y = r * np.sin(theta) * np.sin(phi)
     z = r * np.cos(theta)
     return c, d, b, phi, theta, r, x, y, z
 
-@pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('radius', radius_range)
-@pytest.mark.parametrize('k', k_range)
-@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-def test_ball_radial_scalar(Nr, radius, k, dtype):
-    c, d, b, phi, theta, r, x, y, z = build_ball(4, 4, Nr, radius, k, 1, dtype)
-    f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
-    f['g'] = fg = r**2 - r**4/7
-    f['c']
-    assert np.allclose(f['g'], fg)
+Nphi_range = [8]
+Ntheta_range = [8]
+Nr_range = [16]
+radius_range = [1.5]
+alpha_range = [0, 1]
+k_range = [0, 1, 2]
+dealias_range = [1/2, 1, 3/2]
+dtype_range = [np.float64, np.complex128]
+layout_range = ['g', 'c']
+rank_range = [0, 1, 2]
 
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('radius', radius_range)
+@pytest.mark.parametrize('alpha', alpha_range)
 @pytest.mark.parametrize('k', k_range)
-@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-def test_ball_radial_vector(Nr, radius, k, dtype):
-    c, d, b, phi, theta, r, x, y, z = build_ball(4, 4, Nr, radius, k, 1, dtype)
-    u = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
-    u['g'][2] = 2*r - 3*r**3/7
-    u0 = np.copy(u['g'])
-    u['c']
-    assert np.allclose(u['g'], u0)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('layout', layout_range)
+@pytest.mark.parametrize('rank', rank_range)
+def test_ball_radial_roundtrip_noise(Nr, radius, alpha, k, dealias, dtype, layout, rank):
+    c, d, b, phi, theta, r, x, y, z = build_ball(4, 4, Nr, radius, alpha, k, dealias, dtype)
+    tensorsig = (c,) * rank
+    f = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=tensorsig, dtype=dtype)
+    f.set_scales((dealias, dealias, dealias))
+    other = {'g':'c', 'c':'g'}[layout]
+    f[other] = np.random.randn(*f[other].shape)
+    f_layout = f[layout].copy()
+    f[other]
+    assert np.allclose(f_layout, f[layout])
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('radius', radius_range)
+@pytest.mark.parametrize('alpha', alpha_range)
 @pytest.mark.parametrize('k', k_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-def test_ball_scalar(Nphi, Ntheta, Nr, radius, k, dealias, dtype):
-    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, k, dealias, dtype)
-    f = field.Field(dist=d, bases=(b,), dtype=dtype)
-    f['g'] = fg = 3*x**2 + 2*y*z
-    f['c']
-    assert np.allclose(f['g'], fg)
-
-# Vector transforms
-@pytest.mark.parametrize('Nphi', Nphi_range)
-@pytest.mark.parametrize('Ntheta', Ntheta_range)
-@pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('radius', radius_range)
-@pytest.mark.parametrize('k', k_range)
-@pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-def test_ball_vector(Nphi, Ntheta, Nr, radius, k, dealias, dtype):
-    # Note: u is the gradient of a scalar
-    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, k, dealias, dtype)
-    u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
-    u['g'][2] =  4*r**3*np.sin(theta)*np.cos(theta)*np.cos(phi)
-    u['g'][1] =    r**3*np.cos(2*theta)*np.cos(phi)
-    u['g'][0] = -1*r**3*np.cos(theta)*np.sin(phi)
-    ug = np.copy(u['g'])
-    u['c']
-    assert np.allclose(u['g'], ug)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('layout', layout_range)
+@pytest.mark.parametrize('rank', rank_range)
+def test_ball_roundtrip_noise(Nphi, Ntheta, Nr, radius, alpha, k, dealias, dtype, layout, rank):
+    c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, alpha, k, dealias, dtype)
+    tensorsig = (c,) * rank
+    f = field.Field(dist=d, bases=(b,), tensorsig=tensorsig, dtype=dtype)
+    f.set_scales((dealias, dealias, dealias))
+    other = {'g':'c', 'c':'g'}[layout]
+    f[other] = np.random.randn(*f[other].shape)
+    f_layout = f[layout].copy()
+    f[other]
+    assert np.allclose(f_layout, f[layout])
 

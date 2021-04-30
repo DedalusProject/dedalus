@@ -227,9 +227,9 @@ def build_polynomials(M, a, b, grid):
     return poly.astype(output_dtype)
 
 def conversion_matrix(N, a0, b0, a1, b1):
-    if not (a1-a0).is_integer():
+    if not float(a1-a0).is_integer():
         raise ValueError("a0 and a1 must be integer-separated")
-    if not (b1-b0).is_integer():
+    if not float(b1-b0).is_integer():
         raise ValueError("b0 and b1 must be integer-separated")
     if a0 > a1:
         raise ValueError("a0 must be less than or equal to a1")
