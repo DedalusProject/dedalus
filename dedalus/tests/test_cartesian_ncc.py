@@ -1,3 +1,4 @@
+from dedalus.tools.general import unify
 import pytest
 import numpy as np
 from dedalus.core import coords, distributor, basis, field, operators, arithmetic, problems, solvers
@@ -5,6 +6,86 @@ from dedalus.tools.cache import CachedMethod
 from mpi4py import MPI
 
 comm = MPI.COMM_WORLD
+
+
+@pytest.mark.parametrize('N', [16])
+@pytest.mark.parametrize('a0', [-1/2])
+@pytest.mark.parametrize('b0', [-1/2])
+@pytest.mark.parametrize('k_ncc', [0, 1, 2, 3])
+@pytest.mark.parametrize('k_arg', [0, 1, 2, 3])
+@pytest.mark.parametrize('dealias', [3/2, 2])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_jacobi_ncc_eval(N, a0, b0, k_ncc, k_arg, dealias, dtype):
+    """
+    This tests for aliasing errors when evaluating the product
+        f(x) * g(x)
+    as both an NCC operator and with the pseudospectral method.
+
+    With 3/2 dealiasing, the product will generally contain aliasing
+    errors in the last 2*max(k_ncc, k_arg) modes. We can eliminate these
+    by zeroing the corresponding number of modes of f(x) and/or g(x).
+    """
+    c = coords.Coordinate('x')
+    d = distributor.Distributor((c,))
+    b = basis.Jacobi(c, size=N, a=a0, b=b0, bounds=(0, 1), dealias=dealias)
+    b_ncc = b._new_a_b(a0+k_ncc, b0+k_ncc)
+    b_arg = b._new_a_b(a0+k_arg, b0+k_arg)
+    f = field.Field(dist=d, bases=(b_ncc,), dtype=dtype)
+    g = field.Field(dist=d, bases=(b_arg,), dtype=dtype)
+    f['g'] = np.random.randn(*f['g'].shape)
+    g['g'] = np.random.randn(*g['g'].shape)
+    kmax = max(k_ncc, k_arg)
+    if kmax > 0 and dealias < 2:
+        f['c'][-kmax:] = 0
+        g['c'][-kmax:] = 0
+    vars = [g]
+    w0 = f * g
+    w1 = w0.reinitialize(ncc=True, ncc_vars=vars)
+    problem = problems.LBVP(vars)
+    problem.add_equation((w1, 0))
+    solver = solvers.LinearBoundaryValueSolver(problem)
+    w1.store_ncc_matrices(vars, solver.subproblems)
+    w0 = w0.evaluate()
+    w1 = w1.evaluate_as_ncc()
+    assert np.allclose(w0['c'], w1['c'])
+
+
+@pytest.mark.parametrize('N', [16])
+@pytest.mark.parametrize('a0', [-1/2])
+@pytest.mark.parametrize('b0', [-1/2])
+@pytest.mark.parametrize('k_ncc', [0, 1, 2, 3])
+@pytest.mark.parametrize('k_arg', [0, 1, 2, 3])
+@pytest.mark.parametrize('dealias', [3/2, 2])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_jacobi_ncc_solve(N, a0, b0, k_ncc, k_arg, dealias, dtype):
+    """
+    This tests for aliasing errors when solving the equation
+        f(x)*u(x) = f(x)*g(x).
+
+    With 3/2 dealiasing, the RHS product will generally contain aliasing
+    errors in the last 2*max(k_ncc, k_arg) modes. We can eliminate these
+    by zeroing the corresponding number of modes of f(x) and/or g(x).
+    """
+    c = coords.Coordinate('x')
+    d = distributor.Distributor((c,))
+    b = basis.Jacobi(c, size=N, a=a0, b=b0, bounds=(0, 1), dealias=dealias)
+    b_ncc = b._new_a_b(a0+k_ncc, b0+k_ncc)
+    b_arg = b._new_a_b(a0+k_arg, b0+k_arg)
+    f = field.Field(dist=d, bases=(b_ncc,), dtype=dtype)
+    g = field.Field(dist=d, bases=(b_arg,), dtype=dtype)
+    u = field.Field(dist=d, bases=(b_arg,), dtype=dtype)
+    f['g'] = np.random.randn(*f['g'].shape)
+    g['g'] = np.random.randn(*g['g'].shape)
+    kmax = max(k_ncc, k_arg)
+    if kmax > 0 and dealias < 2:
+        f['c'][-kmax:] = 0
+        g['c'][-kmax:] = 0
+    problem = problems.LBVP([u])
+    problem.add_equation((f*u, f*g))
+    solver = solvers.LinearBoundaryValueSolver(problem)
+    solver.solve()
+    assert np.allclose(u['c'], g['c'])
+
 
 Lx=2
 Ly=2
