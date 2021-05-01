@@ -2,6 +2,7 @@
 import pytest
 import numpy as np
 from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, arithmetic
+from dedalus.core.basis import BallBasis, SphericalShellBasis
 from dedalus.tools.cache import CachedFunction
 
 
@@ -13,7 +14,7 @@ radii_shell = (0.6, 1.7)
 def build_ball(Nphi, Ntheta, Nr, alpha, dealias, dtype):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (Nphi, Ntheta, Nr), alpha=alpha, radius=radius_ball, dealias=(dealias, dealias, dealias), dtype=dtype)
+    b = BallBasis(c, (Nphi, Ntheta, Nr), alpha=alpha, radius=radius_ball, dealias=(dealias, dealias, dealias), dtype=dtype)
     phi, theta, r = b.local_grids()
     x, y, z = c.cartesian(phi, theta, r)
     return c, d, b, phi, theta, r, x, y, z
@@ -22,7 +23,7 @@ def build_ball(Nphi, Ntheta, Nr, alpha, dealias, dtype):
 def build_shell(Nphi, Ntheta, Nr, alpha, dealias, dtype):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    b = basis.SphericalShellBasis(c, (Nphi, Ntheta, Nr), alpha=(-0.5+alpha,-0.5+alpha), radii=radii_shell, dealias=(dealias, dealias, dealias), dtype=dtype)
+    b = SphericalShellBasis(c, (Nphi, Ntheta, Nr), alpha=(-0.5+alpha,-0.5+alpha), radii=radii_shell, dealias=(dealias, dealias, dealias), dtype=dtype)
     phi, theta, r = b.local_grids()
     x, y, z = c.cartesian(phi, theta, r)
     return c, d, b, phi, theta, r, x, y, z
@@ -30,11 +31,19 @@ def build_shell(Nphi, Ntheta, Nr, alpha, dealias, dtype):
 Nphi_range = [8]
 Ntheta_range = [4]
 Nr_range = [16]
-basis_range = [build_shell]
+basis_range = [build_ball, build_shell]
 alpha_range = [0]
 k_range = [0, 1, 2, 3]
 dealias_range = [3/2, 2]
 dtype_range = [np.float64, np.complex128]
+
+def k_out_ball(k_ncc, k_arg, f, g):
+    rank_f = len(f.tensorsig)
+    rank_g = len(g.tensorsig)
+    return (max(k_ncc, k_arg) + rank_f + rank_g + 1) // 2
+
+def k_out_shell(k_ncc, k_arg):
+    return k_ncc + k_arg
 
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
@@ -54,7 +63,10 @@ def test_scalar_prod_scalar(Nphi, Ntheta, Nr, basis, alpha, k_ncc, k_arg, dealia
     g = field.Field(dist=d, bases=(b_arg,), dtype=dtype)
     f['g'] = np.random.randn(*f['g'].shape)
     g['g'] = np.random.randn(*g['g'].shape)
-    k_out = k_ncc + k_arg
+    if isinstance(b, BallBasis):
+        k_out = k_out_ball(k_ncc, k_arg, f, g)
+    else:
+        k_out = k_out_shell(k_ncc, k_arg)
     if k_out > 0 and dealias < 2:
         f['c'][:, :, -k_out:] = 0
         g['c'][:, :, -k_out:] = 0
@@ -87,7 +99,10 @@ def test_scalar_prod_vector(Nphi, Ntheta, Nr, basis, alpha, k_ncc, k_arg, dealia
     u = field.Field(dist=d, bases=(b_arg,), tensorsig=(c,), dtype=dtype)
     f['g'] = np.random.randn(*f['g'].shape)
     u['g'] = np.random.randn(*u['g'].shape)
-    k_out = k_ncc + k_arg
+    if isinstance(b, BallBasis):
+        k_out = k_out_ball(k_ncc, k_arg, f, u)
+    else:
+        k_out = k_out_shell(k_ncc, k_arg)
     if k_out > 0 and dealias < 2:
         f['c'][:, :, -k_out:] = 0
         u['c'][:, :, :, -k_out:] = 0
@@ -120,7 +135,10 @@ def test_scalar_prod_tensor(Nphi, Ntheta, Nr, basis, alpha, k_ncc, k_arg, dealia
     T = field.Field(dist=d, bases=(b_arg,), tensorsig=(c,c), dtype=dtype)
     f['g'] = np.random.randn(*f['g'].shape)
     T['g'] = np.random.randn(*T['g'].shape)
-    k_out = k_ncc + k_arg
+    if isinstance(b, BallBasis):
+        k_out = k_out_ball(k_ncc, k_arg, f, T)
+    else:
+        k_out = k_out_shell(k_ncc, k_arg)
     if k_out > 0 and dealias < 2:
         f['c'][:, :, -k_out:] = 0
         T['c'][:, :, :, :, -k_out:] = 0
@@ -153,7 +171,10 @@ def test_vector_prod_scalar(Nphi, Ntheta, Nr, basis, alpha, k_ncc, k_arg, dealia
     f = field.Field(dist=d, bases=(b_arg,), dtype=dtype)
     u['g'] = np.random.randn(*u['g'].shape)
     f['g'] = np.random.randn(*f['g'].shape)
-    k_out = k_ncc + k_arg
+    if isinstance(b, BallBasis):
+        k_out = k_out_ball(k_ncc, k_arg, u, f)
+    else:
+        k_out = k_out_shell(k_ncc, k_arg)
     if k_out > 0 and dealias < 2:
         u['c'][:, :, :, -k_out:] = 0
         f['c'][:, :, -k_out:] = 0
@@ -186,7 +207,10 @@ def test_vector_prod_vector(Nphi, Ntheta, Nr, basis, alpha, k_ncc, k_arg, dealia
     v = field.Field(dist=d, bases=(b_arg,), tensorsig=(c,), dtype=dtype)
     u['g'] = np.random.randn(*u['g'].shape)
     v['g'] = np.random.randn(*v['g'].shape)
-    k_out = k_ncc + k_arg
+    if isinstance(b, BallBasis):
+        k_out = k_out_ball(k_ncc, k_arg, u, v)
+    else:
+        k_out = k_out_shell(k_ncc, k_arg)
     if k_out > 0 and dealias < 2:
         u['c'][:, :, :, -k_out:] = 0
         v['c'][:, :, :, -k_out:] = 0
@@ -219,7 +243,10 @@ def test_tensor_prod_scalar(Nphi, Ntheta, Nr, basis, alpha, k_ncc, k_arg, dealia
     f = field.Field(dist=d, bases=(b_arg,), dtype=dtype)
     T['g'] = np.random.randn(*T['g'].shape)
     f['g'] = np.random.randn(*f['g'].shape)
-    k_out = k_ncc + k_arg
+    if isinstance(b, BallBasis):
+        k_out = k_out_ball(k_ncc, k_arg, T, f)
+    else:
+        k_out = k_out_shell(k_ncc, k_arg)
     if k_out > 0 and dealias < 2:
         T['c'][:, :, :, :, -k_out:] = 0
         f['c'][:, :, -k_out:] = 0
@@ -252,7 +279,10 @@ def test_vector_dot_vector(Nphi, Ntheta, Nr, basis, alpha, k_ncc, k_arg, dealias
     v = field.Field(dist=d, bases=(b_arg,), tensorsig=(c,), dtype=dtype)
     u['g'] = np.random.randn(*u['g'].shape)
     v['g'] = np.random.randn(*v['g'].shape)
-    k_out = k_ncc + k_arg
+    if isinstance(b, BallBasis):
+        k_out = k_out_ball(k_ncc, k_arg, u, v)
+    else:
+        k_out = k_out_shell(k_ncc, k_arg)
     if k_out > 0 and dealias < 2:
         u['c'][:, :, :, -k_out:] = 0
         v['c'][:, :, :, -k_out:] = 0
@@ -285,7 +315,10 @@ def test_vector_dot_tensor(Nphi, Ntheta, Nr, basis, alpha, k_ncc, k_arg, dealias
     T = field.Field(dist=d, bases=(b_arg,), tensorsig=(c,c), dtype=dtype)
     u['g'] = np.random.randn(*u['g'].shape)
     T['g'] = np.random.randn(*T['g'].shape)
-    k_out = k_ncc + k_arg
+    if isinstance(b, BallBasis):
+        k_out = k_out_ball(k_ncc, k_arg, u, T)
+    else:
+        k_out = k_out_shell(k_ncc, k_arg)
     if k_out > 0 and dealias < 2:
         u['c'][:, :, :, -k_out:] = 0
         T['c'][:, :, :, :, -k_out:] = 0
@@ -318,7 +351,10 @@ def test_tensor_dot_vector(Nphi, Ntheta, Nr, basis, alpha, k_ncc, k_arg, dealias
     u = field.Field(dist=d, bases=(b_arg,), tensorsig=(c,), dtype=dtype)
     T['g'] = np.random.randn(*T['g'].shape)
     u['g'] = np.random.randn(*u['g'].shape)
-    k_out = k_ncc + k_arg
+    if isinstance(b, BallBasis):
+        k_out = k_out_ball(k_ncc, k_arg, T, u)
+    else:
+        k_out = k_out_shell(k_ncc, k_arg)
     if k_out > 0 and dealias < 2:
         T['c'][:, :, :, :, -k_out:] = 0
         u['c'][:, :, :, -k_out:] = 0
@@ -351,7 +387,10 @@ def test_tensor_dot_tensor(Nphi, Ntheta, Nr, basis, alpha, k_ncc, k_arg, dealias
     U = field.Field(dist=d, bases=(b_arg,), tensorsig=(c,c), dtype=dtype)
     T['g'] = np.random.randn(*T['g'].shape)
     U['g'] = np.random.randn(*U['g'].shape)
-    k_out = k_ncc + k_arg
+    if isinstance(b, BallBasis):
+        k_out = k_out_ball(k_ncc, k_arg, T, U)
+    else:
+        k_out = k_out_shell(k_ncc, k_arg)
     if k_out > 0 and dealias < 2:
         T['c'][:, :, :, :, -k_out:] = 0
         U['c'][:, :, :, :, -k_out:] = 0

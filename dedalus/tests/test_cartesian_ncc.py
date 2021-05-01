@@ -22,7 +22,7 @@ def test_jacobi_ncc_eval(N, a0, b0, k_ncc, k_arg, dealias, dtype):
     as both an NCC operator and with the pseudospectral method.
 
     With 3/2 dealiasing, the product will generally contain aliasing
-    errors in the last 2*max(k_ncc, k_arg) modes. We can aliminate these
+    errors in the last 2*max(k_ncc, k_arg) modes. We can eliminate these
     by zeroing the corresponding number of modes of f(x) and/or g(x).
     """
     c = coords.Coordinate('x')
@@ -63,7 +63,7 @@ def test_jacobi_ncc_solve(N, a0, b0, k_ncc, k_arg, dealias, dtype):
         f(x)*u(x) = f(x)*g(x).
 
     With 3/2 dealiasing, the RHS product will generally contain aliasing
-    errors in the last 2*max(k_ncc, k_arg) modes. We can aliminate these
+    errors in the last 2*max(k_ncc, k_arg) modes. We can eliminate these
     by zeroing the corresponding number of modes of f(x) and/or g(x).
     """
     c = coords.Coordinate('x')
