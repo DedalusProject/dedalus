@@ -4,7 +4,7 @@ import numpy as np
 from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
 from dedalus.tools import logging
 from dedalus.tools.parsing import split_equation
-import dedalus_sphere
+from dedalus.libraries.dedalus_sphere import jacobi
 import logging
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ alpha_BC = 0
 def C(N, m, s):
     ab = (alpha_BC, m+s)
     cd = (2,        m+s)
-    return dedalus_sphere.jacobi.coefficient_connection(N - m//2 + 1,ab,cd)
+    return jacobi.coefficient_connection(N - m//2 + 1,ab,cd)
 
 for subproblem in solver.subproblems:
     m = subproblem.group[0]

@@ -1,12 +1,11 @@
 
 
 import numpy as np
-from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic, timesteppers_sphere
+from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
 from dedalus.tools import logging
 from dedalus.tools.parsing import split_equation
 from dedalus.extras.flow_tools import GlobalArrayReducer
 from scipy import sparse
-import dedalus_sphere
 import time
 from mpi4py import MPI
 
@@ -63,8 +62,9 @@ div = lambda A: operators.Divergence(A, index=0)
 lap = lambda A: operators.Laplacian(A, c)
 grad = lambda A: operators.Gradient(A, c)
 dot = lambda A, B: arithmetic.DotProduct(A, B)
-cross = lambda A, B: operators.CrossProduct(A, B)
+cross = lambda A, B: arithmetic.CrossProduct(A, B)
 ddt = lambda A: operators.TimeDerivative(A)
+LiftTau = lambda A: operators.LiftTau(A, b, -1)
 
 # Problem
 def eq_eval(eq_str):
@@ -73,9 +73,9 @@ problem = problems.IVP([p, u, T, tau_u, tau_T])
 
 problem.add_equation(eq_eval("div(u) = 0"), condition="ntheta != 0")
 problem.add_equation(eq_eval("p = 0"), condition="ntheta == 0")
-problem.add_equation(eq_eval("Ekman*ddt(u) - Ekman*lap(u) + grad(p) = - Ekman*dot(u,grad(u)) + Rayleigh*r_vec*T - cross(ez, u)"), condition = "ntheta != 0")
+problem.add_equation(eq_eval("Ekman*ddt(u) - Ekman*lap(u) + grad(p) + LiftTau(tau_u) = - Ekman*dot(u,grad(u)) + Rayleigh*r_vec*T - cross(ez, u)"), condition = "ntheta != 0")
 problem.add_equation(eq_eval("u = 0"), condition="ntheta == 0")
-problem.add_equation(eq_eval("Prandtl*ddt(T) - lap(T) = - Prandtl*dot(u,grad(T)) + T_source"))
+problem.add_equation(eq_eval("Prandtl*ddt(T) - lap(T) + LiftTau(tau_T) = - Prandtl*dot(u,grad(T)) + T_source"))
 problem.add_equation(eq_eval("u_potential_bc = 0"), condition="ntheta != 0")
 problem.add_equation(eq_eval("tau_u = 0"), condition="ntheta == 0")
 problem.add_equation(eq_eval("T(r=1) = 0"))
@@ -86,45 +86,11 @@ print("Problem built")
 solver = solvers.InitialValueSolver(problem, ts)
 solver.stop_sim_time = t_end
 
-# Add taus
-alpha_BC = 0
-
-def C(N, ell, deg):
-    ab = (alpha_BC,ell+deg+0.5)
-    cd = (2,       ell+deg+0.5)
-    return dedalus_sphere.jacobi128.coefficient_connection(N - ell//2,ab,cd)
-
-def BC_rows(N, ell, num_comp):
-    N_list = (np.arange(num_comp)+1)*(N - ell//2 + 1)
-    return N_list
-
-for subproblem in solver.subproblems:
-    ell = subproblem.group[1]
-    M = subproblem.M_min
-    L = subproblem.L_min
-    shape = M.shape
-    subproblem.M_min[:,-4:] = 0
-    subproblem.M_min.eliminate_zeros()
-    N0, N1, N2, N3, N4 = BC_rows(Nmax, ell, 5)
-    tau_columns = np.zeros((shape[0], 4))
-    if ell != 0:
-        tau_columns[N0:N1,0] = (C(Nmax, ell, -1))[:,-1]
-        tau_columns[N1:N2,1] = (C(Nmax, ell, +1))[:,-1]
-        tau_columns[N2:N3,2] = (C(Nmax, ell,  0))[:,-1]
-        tau_columns[N3:N4,3] = (C(Nmax, ell,  0))[:,-1]
-        subproblem.L_min[:,-4:] = tau_columns
-    else: # ell = 0
-        tau_columns[N3:N4, 3] = (C(Nmax, ell, 0))[:,-1]
-        subproblem.L_min[:,-1:] = tau_columns[:,3:]
-    subproblem.L_min.eliminate_zeros()
-#    if ell == 0 :  print(subproblem.L_min[:,-4:])
-    subproblem.expand_matrices(['M','L'])
-
 # Analysis
 t_list = []
 E_list = []
 weight_theta = b.local_colatitude_weights(1)
-weight_r = b.local_radius_weights(1)
+weight_r = b.local_radial_weights(1)
 reducer = GlobalArrayReducer(d.comm_cart)
 vol_test = np.sum(weight_r*weight_theta+0*p['g'])*np.pi/(Lmax+1)/L_dealias
 vol_test = reducer.reduce_scalar(vol_test, MPI.SUM)

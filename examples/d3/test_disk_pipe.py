@@ -5,7 +5,7 @@ import numpy as np
 from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
 from dedalus.tools import logging
 from dedalus.tools.parsing import split_equation
-import dedalus_sphere
+from dedalus.libraries.dedalus_sphere import jacobi
 import logging
 logger = logging.getLogger(__name__)
 
@@ -57,12 +57,14 @@ problem = problems.IVP([u, w, p, tau_u, tau_w])
 problem.add_equation(eq_eval("dt(u) - nu*(lap(u) + dz(dz(u))) - grad(p) = 0."), condition='nphi != 0')
 problem.add_equation(eq_eval("dt(w) - nu*(lap(w) + dz(dz(w))) - dz(p) = 0."), condition='nphi != 0')
 problem.add_equation(eq_eval("u = 0"), condition='nphi == 0')
+problem.add_equation(eq_eval("w = 0"), condition='nphi == 0')
 problem.add_equation(eq_eval("div(u) + dz(w) = 0"), condition='nphi != 0')
 problem.add_equation(eq_eval("p = 0"), condition='nphi == 0')
 
 problem.add_equation(eq_eval("u(r=1) = 0"), condition='nphi != 0')
 problem.add_equation(eq_eval("tau_u = 0"), condition='nphi == 0')
-problem.add_equation(eq_eval("w(r=1) = 0"))
+problem.add_equation(eq_eval("w(r=1) = 0"), condition='nphi != 0')
+problem.add_equation(eq_eval("tau_w = 0"), condition='nphi == 0')
 
 print("Problem built")
 
@@ -75,7 +77,7 @@ alpha_BC = 0
 def C(N, m, s):
     ab = (alpha_BC, m+s)
     cd = (2,        m+s)
-    return dedalus_sphere.jacobi.coefficient_connection(N - m//2 + 1,ab,cd)
+    return jacobi.coefficient_connection(N - m//2 + 1,ab,cd)
 
 def BC_rows(N, m, num_comp):
     N_list = (np.arange(num_comp)+1)*(N - m//2 + 1)
@@ -106,8 +108,7 @@ for subproblem in solver.subproblems:
             L[:,-6:] = tau_columns
 
     subproblem.L_min = subproblem.left_perm @ L
-    if problem.STORE_EXPANDED_MATRICES:
-        subproblem.expand_matrices(['M','L'])
+    subproblem.expand_matrices(['M','L'])
 
     #print("m = {}: Condition number {}".format(m, np.linalg.cond((L+M).A)))
     

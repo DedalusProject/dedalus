@@ -1,12 +1,11 @@
 
 
 import numpy as np
-from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic, timesteppers_sphere
+from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
 from dedalus.tools import logging
 from dedalus.tools.parsing import split_equation
 from dedalus.extras.flow_tools import GlobalArrayReducer
 from scipy import sparse
-import dedalus_sphere
 import time
 from mpi4py import MPI
 
@@ -50,41 +49,19 @@ grad = lambda A: operators.Gradient(A, c)
 dot = lambda A, B: arithmetic.DotProduct(A, B)
 cross = lambda A, B: arithmetic.CrossProduct(A, B)
 ddt = lambda A: operators.TimeDerivative(A)
+LiftTau = lambda A: operators.LiftTau(A, b, -1)
 
 # Problem
 def eq_eval(eq_str):
     return [eval(expr) for expr in split_equation(eq_str)]
 problem = problems.IVP([T, tau])
-problem.add_equation(eq_eval("ddt(T) - prefactor*lap(T) = forcing"))
+problem.add_equation(eq_eval("ddt(T) - prefactor*lap(T) + LiftTau(tau) = forcing"))
 problem.add_equation(eq_eval("T(r=1) = 0"))
 logger.info("Problem built")
 
 # Solver
 solver = solvers.InitialValueSolver(problem, ts)
 solver.stop_sim_time = t_end
-
-# Add taus
-alpha_BC = 0
-
-def C(N, ell, deg):
-    ab = (alpha_BC,ell+deg+0.5)
-    cd = (2,       ell+deg+0.5)
-    return dedalus_sphere.jacobi.coefficient_connection(N+1 - ell//2,ab,cd)
-
-def BC_rows(N, ell, num_comp):
-    N_list = (np.arange(num_comp)+1)*(N - ell//2 + 1)
-    return N_list
-
-for subproblem in solver.subproblems:
-    ell = subproblem.group[1]
-    L = subproblem.L_min
-    M = subproblem.M_min
-    N0, = BC_rows(Nmax, ell, 1)
-    tau_columns = np.zeros((L.shape[0], 1))
-    tau_columns[:N0,0] = (C(Nmax, ell, 0))[:,-1]
-    L[:,-1] = tau_columns
-    L.eliminate_zeros()
-    subproblem.expand_matrices(['M','L'])
 
 # Analysis
 t_list = []

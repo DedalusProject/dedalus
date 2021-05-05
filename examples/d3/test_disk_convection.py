@@ -5,7 +5,7 @@ import numpy as np
 from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
 from dedalus.tools import logging
 from dedalus.tools.parsing import split_equation
-import dedalus_sphere
+from dedalus.libraries.dedalus_sphere import jacobi
 import logging
 logger = logging.getLogger(__name__)
 
@@ -80,7 +80,7 @@ alpha_BC = 0
 def C(N, m, s):
     ab = (alpha_BC, m+s)
     cd = (2,        m+s)
-    return dedalus_sphere.jacobi.coefficient_connection(N - m//2 + 1,ab,cd)
+    return jacobi.coefficient_connection(N - m//2 + 1,ab,cd)
 
 def BC_rows(N, m, num_comp):
     N_list = (np.arange(num_comp)+1)*(N - m//2 + 1)
@@ -111,8 +111,7 @@ for subproblem in solver.subproblems:
             L[:,-6:] = tau_columns
 
     subproblem.L_min = subproblem.left_perm @ L
-    if problem.STORE_EXPANDED_MATRICES:
-        subproblem.expand_matrices(['M','L'])
+    subproblem.expand_matrices(['M','L'])
 
     #print("m = {}: Condition number {}".format(m, np.linalg.cond((L+M).A)))
     

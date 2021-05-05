@@ -4,11 +4,9 @@ import dedalus.public as de
 from dedalus.core import arithmetic, timesteppers, problems, solvers, operators
 from dedalus.tools.parsing import split_equation
 from dedalus.extras.flow_tools import GlobalArrayReducer
-import dedalus_sphere
 from mpi4py import MPI
 import time
-from dedalus_sphere import ball, intertwiner
-from dedalus_sphere import jacobi128 as jacobi
+from dedalus.libraries.dedalus_sphere import jacobi
 
 import matplotlib
 import logging
@@ -48,8 +46,8 @@ alpha_BC = (2-1/2, 2-1/2)
 
 def C(N):
     ab = alpha_BC
-    cd = (b.alpha[0]+2,b.alpha[1]+2)
-    return dedalus_sphere.jacobi128.coefficient_connection(N,ab,cd)
+    cd = (b.radial_basis.alpha[0]+2,b.radial_basis.alpha[1]+2)
+    return jacobi.coefficient_connection(N+1,ab,cd)
 
 def BC_rows(N, num_comp):
     N_list = (np.arange(num_comp)+1)*(N + 1)
@@ -67,7 +65,7 @@ phig,thetag,rg= b.global_grids((1,1, 1))
 theta_target = thetag[0,(Lmax+1)//2,0]
 
 weight_theta = b.local_colatitude_weights(1)
-weight_r = b.local_radius_weights(1)*r**2
+weight_r = b.local_radial_weights(1)*r**2
 
 u = de.field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
 A = de.field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
@@ -102,14 +100,13 @@ B['g'][0] = 5*np.sin(np.pi*(r-r_inner))*np.sin(2*theta)
 B['g'][1] = 5/8*(9*r -8*r_outer -r_inner**4/r**3)*np.sin(theta)
 B['g'][2] = 5/8*(8*r_outer -6*r -2*r_inner**4/r**3)*np.cos(theta)
 
-
 # Parameters and operators
-div = lambda A: de.operators.Divergence(A, index=0)
-lap = lambda A: de.operators.Laplacian(A, c)
-grad = lambda A: de.operators.Gradient(A, c)
+div = lambda A: operators.Divergence(A, index=0)
+lap = lambda A: operators.Laplacian(A, c)
+grad = lambda A: operators.Gradient(A, c)
 dot = lambda A, B: arithmetic.DotProduct(A, B)
-cross = lambda A, B: de.operators.CrossProduct(A, B)
-ddt = lambda A: de.operators.TimeDerivative(A)
+cross = lambda A, B: arithmetic.CrossProduct(A, B)
+ddt = lambda A: operators.TimeDerivative(A)
 curl = lambda A: operators.Curl(A)
 
 ell_func = lambda ell: ell+1
@@ -137,7 +134,7 @@ solver = solvers.LinearBoundaryValueSolver(BVP)
 
 for subproblem in solver.subproblems:
     ell = subproblem.group[1]
-    L = subproblem.L_min
+    L = subproblem.left_perm.T @ subproblem.L_min
     shape = L.shape
     tau_columns = np.zeros((shape[0], 6))
     BCs         = np.zeros((3, shape[1]))
@@ -149,7 +146,8 @@ for subproblem in solver.subproblems:
         tau_columns[N0:N1,3] = (C(Nmax))[:,-2]
         tau_columns[N1:N2,4] = (C(Nmax))[:,-2]
         tau_columns[N2:N3,5] = (C(Nmax))[:,-2]
-        subproblem.L_min[:,-6:] = tau_columns
+        L[:,-6:] = tau_columns
+    subproblem.L_min = subproblem.left_perm @ L
     subproblem.L_min.eliminate_zeros()
     subproblem.expand_matrices(['L'])
 
@@ -198,11 +196,8 @@ solver = solvers.InitialValueSolver(problem, timesteppers.CNAB2)
 
 for subproblem in solver.subproblems:
     ell = subproblem.group[1]
-    M = subproblem.M_min
-    L = subproblem.L_min
-    shape = M.shape
-    subproblem.M_min[:,-14:] = 0
-    subproblem.M_min.eliminate_zeros()
+    L = subproblem.left_perm.T @ subproblem.L_min
+    shape = L.shape
     N0, N1, N2, N3, N4, N5, N6, N7, N8 = BC_rows(Nmax, 9)
     tau_columns = np.zeros((shape[0], 14))
     if ell != 0:
@@ -224,12 +219,13 @@ for subproblem in solver.subproblems:
         tau_columns[N5:N6,11] = (C(Nmax))[:,-2]
         tau_columns[N6:N7,12] = (C(Nmax))[:,-2]
         tau_columns[N7:N8,13] = (C(Nmax))[:,-2]
-        subproblem.L_min[:,-14:] = tau_columns
+        L[:,-14:] = tau_columns
     else: # ell = 0
         tau_columns[N7:N8,6]  = (C(Nmax))[:,-1]
         tau_columns[N7:N8,13] = (C(Nmax))[:,-2]
-        subproblem.L_min[:,-8:-7] = tau_columns[:,6:7]
-        subproblem.L_min[:,-1:] = tau_columns[:,13:]
+        L[:,-8:-7] = tau_columns[:,6:7]
+        L[:,-1:] = tau_columns[:,13:]
+    subproblem.L_min = subproblem.left_perm @ L
     subproblem.L_min.eliminate_zeros()
     subproblem.expand_matrices(['M','L'])
 
