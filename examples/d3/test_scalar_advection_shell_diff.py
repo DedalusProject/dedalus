@@ -1,11 +1,11 @@
 
 import numpy as np
-from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic, timesteppers_sphere
+from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
 from dedalus.tools import logging
 from dedalus.tools.parsing import split_equation
 from dedalus.extras.flow_tools import GlobalArrayReducer
 from scipy import sparse
-import dedalus_sphere
+from dedalus.libraries.dedalus_sphere import jacobi
 import time
 from mpi4py import MPI
 
@@ -61,12 +61,15 @@ grad = lambda A: operators.Gradient(A, c)
 dot = lambda A, B: arithmetic.DotProduct(A, B)
 cross = lambda A, B: operators.CrossProduct(A, B)
 ddt = lambda A: operators.TimeDerivative(A)
+LiftTau = lambda A, n: operators.LiftTau(A, b, n)
 
 # Problem
 def eq_eval(eq_str):
     return [eval(expr) for expr in split_equation(eq_str)]
 problem = problems.IVP([T,TC,tau_inner,tau_outer,tauC_inner,tauC_outer])
 
+#problem.add_equation(eq_eval("ddt(T) - lap(T)/Pe + LiftTau(tau_inner, -1) + LiftTau(tau_outer, -2) = - dot(u,grad(T))"))
+#problem.add_equation(eq_eval("ddt(TC) - lap(TC)/Pe + LiftTau(tauC_inner, -1) + LiftTau(tauC_outer, -2) = 0"))
 problem.add_equation(eq_eval("ddt(T) - lap(T)/Pe = - dot(u,grad(T))"))
 problem.add_equation(eq_eval("ddt(TC) - lap(TC)/Pe = 0"))
 problem.add_equation(eq_eval("T(r=0.5) = 0"))
@@ -86,8 +89,8 @@ alpha_BC = (2-1/2, 2-1/2)
 
 def C(N):
     ab = alpha_BC
-    cd = (b.alpha[0]+2,b.alpha[1]+2)
-    return dedalus_sphere.jacobi128.coefficient_connection(N,ab,cd)
+    cd = (b.radial_basis.alpha[0]+2,b.radial_basis.alpha[1]+2)
+    return jacobi.coefficient_connection(N+1,ab,cd)
 
 def BC_rows(N, num_comp):
     N_list = (np.arange(num_comp)+1)*(N + 1)
@@ -95,23 +98,21 @@ def BC_rows(N, num_comp):
 
 for subproblem in solver.subproblems:
     ell = subproblem.group[1]
-    M = subproblem.M_min
-    L = subproblem.L_min
-    shape = M.shape
-    subproblem.M_min[:,-4:] = 0
-    subproblem.M_min.eliminate_zeros()
+    L = subproblem.left_perm.T @ subproblem.L_min
+    shape = L.shape
     N0, N1 = BC_rows(Nmax, 2)
     tau_columns = np.zeros((shape[0], 4))
     tau_columns[  :N0,0] = (C(Nmax))[:,-1]
     tau_columns[  :N0,1] = (C(Nmax))[:,-2]
     tau_columns[N0:N1,2] = (C(Nmax))[:,-1]
     tau_columns[N0:N1,3] = (C(Nmax))[:,-2]
-    subproblem.L_min[:,-4:] = tau_columns
+    L[:, -4:] = tau_columns
+    subproblem.L_min = subproblem.left_perm @ L
     subproblem.L_min.eliminate_zeros()
     subproblem.expand_matrices(['M','L'])
 
 weight_theta = b.local_colatitude_weights(1)
-weight_r = b.local_radius_weights(1)
+weight_r = b.local_radial_weights(1)
 reducer = GlobalArrayReducer(d.comm_cart)
 vol_test = np.sum(weight_r*weight_theta+0*T['g'])*np.pi/(Lmax+1)/L_dealias
 vol_test = reducer.reduce_scalar(vol_test, MPI.SUM)

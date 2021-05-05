@@ -1,12 +1,12 @@
 
 
 import numpy as np
-from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic, timesteppers_sphere
+from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
 from dedalus.tools import logging
 from dedalus.tools.parsing import split_equation
 from dedalus.extras.flow_tools import GlobalArrayReducer
+from dedalus.libraries.dedalus_sphere import jacobi
 from scipy import sparse
-import dedalus_sphere
 import time
 from mpi4py import MPI
 
@@ -52,6 +52,7 @@ dot = lambda A, B: arithmetic.DotProduct(A, B)
 cross = lambda A, B: operators.CrossProduct(A, B)
 ddt = lambda A: operators.TimeDerivative(A)
 curl = lambda A: operators.Curl(A)
+LiftTau = lambda A: operators.LiftTau(A, b, -1)
 
 def eq_eval(eq_str):
     return [eval(expr) for expr in split_equation(eq_str)]
@@ -61,6 +62,7 @@ BVP = problems.LBVP([A, V, tau_A])
 
 def eq_eval(eq_str):
     return [eval(expr) for expr in split_equation(eq_str)]
+#BVP.add_equation(eq_eval("curl(A) + grad(V) + LiftTau(tau_A) = B"), condition="ntheta != 0")
 BVP.add_equation(eq_eval("curl(A) + grad(V) = B"), condition="ntheta != 0")
 BVP.add_equation(eq_eval("div(A) = 0"), condition="ntheta != 0")
 BVP.add_equation(eq_eval("A_potential_bc = 0"), condition="ntheta != 0")
@@ -76,7 +78,7 @@ alpha_BC = 0
 def C(N, ell, deg):
     ab = (alpha_BC,ell+deg+0.5)
     cd = (1,       ell+deg+0.5)
-    return dedalus_sphere.jacobi128.coefficient_connection(N - ell//2,ab,cd)
+    return jacobi.coefficient_connection(N + 1 - ell//2,ab,cd)
 
 def BC_rows(N, ell, num_comp):
     N_list = (np.arange(num_comp)+1)*(N - ell//2 + 1)
@@ -84,7 +86,7 @@ def BC_rows(N, ell, num_comp):
 
 for subproblem in solver.subproblems:
     ell = subproblem.group[1]
-    L = subproblem.L_min
+    L = subproblem.left_perm.T @ subproblem.L_min
     shape = L.shape
     tau_columns = np.zeros((shape[0], 3))
     BCs         = np.zeros((3, shape[1]))
@@ -93,22 +95,41 @@ for subproblem in solver.subproblems:
         tau_columns[N0:N1,0] = (C(Nmax, ell, +1))[:,-1]
         tau_columns[N1:N2,1] = (C(Nmax, ell,  0))[:,-1]
         tau_columns[N2:N3,2] = (C(Nmax, ell,  0))[:,-1]
-        subproblem.L_min[:,-3:] = tau_columns
+        L[:,-3:] = tau_columns
+    subproblem.L_min = subproblem.left_perm @ L
     subproblem.L_min.eliminate_zeros()
     subproblem.expand_matrices(['L'])
+
+plot_matrices = False
+
+if plot_matrices:
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    plt.figure()
+    I = 2
+    J = 1
+    for i, sp in enumerate(solver.subproblems[:I]):
+        for j, mat in enumerate(['L_min']):
+            axes = plt.subplot(I,J,i*J+j+1)
+            A = getattr(sp, mat)
+            A = sp.left_perm.T @ A
+            im = axes.pcolor(np.log10(np.abs(A.A[::-1])))
+            axes.set_title('sp %i, %s' %(i, mat))
+            axes.set_aspect('equal')
+            plt.colorbar(im)
+    plt.tight_layout()
+    plt.savefig("nmh_matrices.pdf")
 
 solver.solve()
 
 def err(a,b):
-    print(np.max(np.abs(a-b))/np.max(np.abs(b)))
+    logger.info(np.max(np.abs(a-b))/np.max(np.abs(b)))
 
-#print('largest entry of V:')
-#print(np.max(np.abs(V['g'])))
+B2 = (curl(A) + grad(V)).evaluate()
 
-B2 = (operators.Curl(A) + operators.Gradient(V, c)).evaluate()
-
-#print('magnetic field error:')
-#err(B2['g'],B['g'])
+logger.info('magnetic field error:')
+err(B2['g'],B['g'])
 
 c_par = coords.SphericalCoordinates('phi', 'theta', 'r')
 d_par = distributor.Distributor((c_par,))
@@ -138,9 +159,8 @@ A_analytic_1 = (-27/80*r*(1-100/21*r**2+245/27*r**4-90/11*r**6+110/39*r**8)
 A_analytic_0 = (1/8*(1-24/5*r**2+72/7*r**4-32/3*r**6+45/11*r**8)
                    *(np.cos(phi)+np.sin(phi)))
 
-print('errors in components of A (r, theta, phi):')
+logger.info('errors in components of A (r, theta, phi):')
 err(A_par['g'][2],A_analytic_2)
 err(A_par['g'][1],A_analytic_1)
 err(A_par['g'][0],A_analytic_0)
-
 

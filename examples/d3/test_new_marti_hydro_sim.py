@@ -1,12 +1,9 @@
-
-
 import numpy as np
 from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
 from dedalus.tools import logging
 from dedalus.tools.parsing import split_equation
 from dedalus.extras.flow_tools import GlobalArrayReducer
 from scipy import sparse
-import dedalus_sphere
 import time
 from mpi4py import MPI
 
@@ -32,7 +29,6 @@ Nphi = 2*(Lmax+1)
 c = coords.SphericalCoordinates('phi', 'theta', 'r')
 d = distributor.Distributor((c,))
 b = basis.BallBasis(c, (Nphi, Lmax+1, Nmax+1), radius=radius, dtype=dtype)
-bk2 = basis.BallBasis(c, (Nphi, Lmax+1, Nmax+1), k=2, radius=radius, dtype=dtype)
 b_S2 = b.S2_basis()
 phi, theta, r = b.local_grids((1, 1, 1))
 
@@ -57,6 +53,7 @@ grad = lambda A: operators.Gradient(A, c)
 dot = lambda A, B: arithmetic.DotProduct(A, B)
 cross = lambda A, B: arithmetic.CrossProduct(A, B)
 ddt = lambda A: operators.TimeDerivative(A)
+LiftTau = lambda A: operators.LiftTau(A, b, -1)
 
 # Problem
 def eq_eval(eq_str):
@@ -64,7 +61,7 @@ def eq_eval(eq_str):
 problem = problems.IVP([p, u, tau])
 # Equations for ell != 0
 problem.add_equation(eq_eval("div(u) = 0"), condition="ntheta != 0")
-problem.add_equation(eq_eval("ddt(u) - nu*lap(u) + grad(p) = - dot(u,grad(u)) - Om*cross(ez, u)"), condition="ntheta != 0")
+problem.add_equation(eq_eval("ddt(u) - nu*lap(u) + grad(p) + LiftTau(tau) = - dot(u,grad(u)) - Om*cross(ez, u)"), condition="ntheta != 0")
 problem.add_equation(eq_eval("u(r=1) = u_BC"), condition="ntheta != 0")
 # Equations for ell == 0
 problem.add_equation(eq_eval("p = 0"), condition="ntheta == 0")
@@ -75,43 +72,6 @@ logger.info("Problem built")
 # Solver
 solver = solvers.InitialValueSolver(problem, ts)
 solver.stop_sim_time = t_end
-
-# Add taus
-alpha_BC = 0
-
-def C(N, ell, deg):
-    ab = (alpha_BC,ell+deg+0.5)
-    cd = (2,       ell+deg+0.5)
-    return dedalus_sphere.jacobi.coefficient_connection(N - ell//2 + 1,ab,cd)
-
-def BC_rows(N, ell, num_comp):
-    N_list = (np.arange(num_comp)+1)*(N - ell//2 + 1)
-    return N_list
-
-for subproblem in solver.subproblems:
-    if subproblem.group[1] != 0:
-        ell = subproblem.group[1]
-        L = subproblem.L_min
-        if dtype == np.complex128:
-            N0, N1, N2, N3 = BC_rows(Nmax, ell, 4)
-            tau_columns = np.zeros((L.shape[0], 3))
-            tau_columns[N0:N1,0] = (C(Nmax, ell, -1))[:,-1]
-            tau_columns[N1:N2,1] = (C(Nmax, ell, +1))[:,-1]
-            tau_columns[N2:N3,2] = (C(Nmax, ell,  0))[:,-1]
-            L[:,-3:] = tau_columns
-        elif dtype == np.float64:
-            NL = Nmax - ell//2 + 1
-            N0, N1, N2, N3 = BC_rows(Nmax, ell, 4) * 2
-            tau_columns = np.zeros((L.shape[0], 6))
-            tau_columns[N0:N0+NL,0] = (C(Nmax, ell, -1))[:,-1]
-            tau_columns[N1:N1+NL,2] = (C(Nmax, ell, +1))[:,-1]
-            tau_columns[N2:N2+NL,4] = (C(Nmax, ell,  0))[:,-1]
-            tau_columns[N0+NL:N0+2*NL,1] = (C(Nmax, ell, -1))[:,-1]
-            tau_columns[N1+NL:N1+2*NL,3] = (C(Nmax, ell, +1))[:,-1]
-            tau_columns[N2+NL:N2+2*NL,5] = (C(Nmax, ell,  0))[:,-1]
-            L[:,-6:] = tau_columns
-        L.eliminate_zeros()
-        subproblem.expand_matrices(['M','L'])
 
 # Analysis
 t_list = []
