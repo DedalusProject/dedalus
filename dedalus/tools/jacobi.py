@@ -250,15 +250,16 @@ def differentiation_matrix(N, a, b):
 def jacobi_matrix(N, a, b):
     return jacobi.operator('Z')(N, a, b).square.astype(output_dtype)
 
-# def integration_vector(N, a, b):
-#     # Build Legendre quadrature
-#     leg_grid, leg_weights = Jacobi_quadrature(N-1, 0, 0)
-#     # Evaluate polynomials on Legendre grid
-#     interp = interpolation_vector(N, a, b, leg_grid)
-#     # Compute integrals using Legendre quadrature
-#     integ = leg_weights @ interp * (2 / mass(0, 0))
-#     # Zero out entries below output eps
-#     cutoff = np.finfo(output_dtype).resolution
-#     integ[np.abs(integ) <= cutoff] = 0.
-#     integ = integ[None, :]
-#     return integ.astype(output_dtype)
+def integration_vector(N, a, b):
+    # Build Legendre quadrature
+    leg_grid, leg_weights = jacobi.quadrature(N, 0, 0)
+    # Evaluate polynomials on Legendre grid
+    interp = build_polynomials(N, a, b, leg_grid).T
+    # Compute integrals using Legendre quadrature
+    integ = leg_weights @ interp * (2 / mass(0, 0))
+    # Zero out entries below output eps
+    cutoff = np.finfo(output_dtype).resolution
+    integ[np.abs(integ) <= cutoff] = 0.
+    integ = integ[None, :]
+    return integ.astype(output_dtype)
+
