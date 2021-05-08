@@ -551,8 +551,8 @@ class ConvertConstantJacobi(operators.Convert, operators.SpectralOperator1D):
 
     @staticmethod
     @CachedMethod
-    def _chunk_matrix(chunk, input_basis, output_basis):
-        n = chunk
+    def _group_matrix(group, input_basis, output_basis):
+        n = group
         if n == 0:
             basis = output_basis
             # TODO: optimize by just using correct weight for zero mode.
@@ -560,7 +560,7 @@ class ConvertConstantJacobi(operators.Convert, operators.SpectralOperator1D):
             unit_amplitude = MMT.forward_matrix[0, 0]
             return np.array([[unit_amplitude]])
         else:
-            # Constructor should only loop over chunk 0.
+            # Constructor should only loop over group 0.
             raise ValueError("This should never happen.")
 
 
@@ -797,13 +797,14 @@ class ConvertConstantComplexFourier(operators.Convert, operators.SpectralOperato
     subaxis_coupling = [False]
 
     @staticmethod
-    def _chunk_matrix(chunk, input_basis, output_basis):
+    def _group_matrix(group, input_basis, output_basis):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / output_basis.COV.stretch
         # 1 = exp(1j*0*x)
-        k = output_basis.wavenumbers[chunk]
         if k == 0:
             return np.array([[1]])
         else:
-            # Constructor should only loop over chunk 0.
+            # Constructor should only loop over group 0.
             raise ValueError("This should never happen.")
 
 
@@ -819,9 +820,10 @@ class DifferentiateComplexFourier(operators.Differentiate, operators.SpectralOpe
         return input_basis
 
     @staticmethod
-    def _chunk_matrix(chunk, input_basis, output_basis):
+    def _group_matrix(group, input_basis, output_basis):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / input_basis.COV.stretch
         # dx exp(1j*k*x) = 1j * k * exp(1j*k*x)
-        k = input_basis.wavenumbers[chunk]
         return np.array([[1j*k]])
 
 
@@ -858,14 +860,15 @@ class IntegrateComplexFourier(operators.Integrate, operators.SpectralOperator1D)
         return None
 
     @staticmethod
-    def _chunk_matrix(chunk, input_basis, output_basis):
+    def _group_matrix(group, input_basis, output_basis):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / input_basis.COV.stretch
         # integ exp(1j*k*x) = L * δ(k, 0)
-        k = input_basis.wavenumbers[chunk]
         if k == 0:
             L = input_basis.COV.problem_length
             return np.array([[L]])
         else:
-            # Constructor should only loop over chunk 0.
+            # Constructor should only loop over group 0.
             raise ValueError("This should never happen.")
 
 
@@ -982,14 +985,15 @@ class ConvertConstantRealFourier(operators.Convert, operators.SpectralOperator1D
     subaxis_coupling = [False]
 
     @staticmethod
-    def _chunk_matrix(chunk, input_basis, output_basis):
+    def _group_matrix(group, input_basis, output_basis):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / output_basis.COV.stretch
         # 1 = cos(0*x)
-        k = output_basis.wavenumbers[::2][chunk]
         if k == 0:
             return np.array([[1],
                              [0]])
         else:
-            # Constructor should only loop over chunk 0.
+            # Constructor should only loop over group 0.
             raise ValueError("This should never happen.")
 
 
@@ -1005,10 +1009,11 @@ class DifferentiateRealFourier(operators.Differentiate, operators.SpectralOperat
         return input_basis
 
     @staticmethod
-    def _chunk_matrix(chunk, input_basis, output_basis):
+    def _group_matrix(group, input_basis, output_basis):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / input_basis.COV.stretch
         # dx  cos(k*x) = k * -sin(k*x)
         # dx -sin(k*x) = -k * cos(k*x)
-        k = input_basis.wavenumbers[::2][chunk]
         return np.array([[0, -k],
                          [k,  0]])
 
@@ -1049,15 +1054,16 @@ class IntegrateRealFourier(operators.Integrate, operators.SpectralOperator1D):
         return None
 
     @staticmethod
-    def _chunk_matrix(chunk, input_basis, output_basis):
+    def _group_matrix(group, input_basis, output_basis):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / input_basis.COV.stretch
         # integ  cos(k*x) = L * δ(k, 0)
         # integ -sin(k*x) = 0
-        k = input_basis.wavenumbers[::2][chunk]
         if k == 0:
             L = input_basis.COV.problem_length
             return np.array([[L]])
         else:
-            # Constructor should only loop over chunk 0.
+            # Constructor should only loop over group 0.
             raise ValueError("This should never happen.")
 
 
