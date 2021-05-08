@@ -716,19 +716,25 @@ class ComplexFourier(IntervalBasis):
         self.library = library
         self.kmax = kmax = (size - 1) // 2
         # No permutations by default
-        self.forward_coeff_permutation = slice(None)
-        self.backward_coeff_permutation = slice(None)
+        self.forward_coeff_permutation = None
+        self.backward_coeff_permutation = None
         # Store non-permuted wavenumbers
         self._native_wavenumbers = np.concatenate((np.arange(0, kmax+2), np.arange(-kmax, 0)))  # Includes Nyquist mode
         self._wavenumbers = self._native_wavenumbers / self.COV.stretch
 
     @property
     def native_wavenumbers(self):
-        return self._native_wavenumbers[self.forward_coeff_permutation]
+        if self.forward_coeff_permutation is None:
+            return self._native_wavenumbers
+        else:
+            return self._native_wavenumbers[self.forward_coeff_permutation]
 
     @property
     def wavenumbers(self):
-        return self._wavenumbers[self.forward_coeff_permutation]
+        if self.forward_coeff_permutation is None:
+            return self._wavenumbers
+        else:
+            return self._wavenumbers[self.forward_coeff_permutation]
 
     def _native_grid(self, scale):
         """Native flat global grid."""
@@ -890,19 +896,25 @@ class RealFourier(IntervalBasis):
         self.library = library
         self.kmax = kmax = (size - 1) // 2
         # No permutations by default
-        self.forward_coeff_permutation = slice(None)
-        self.backward_coeff_permutation = slice(None)
+        self.forward_coeff_permutation = None
+        self.backward_coeff_permutation = None
         # Store non-permuted wavenumbers
         self._native_wavenumbers = np.repeat(np.arange(0, kmax+1), 2)  # Excludes Nyquist mode
         self._wavenumbers = self._native_wavenumbers / self.COV.stretch
 
     @property
     def native_wavenumbers(self):
-        return self._native_wavenumbers[self.forward_coeff_permutation]
+        if self.forward_coeff_permutation is None:
+            return self._native_wavenumbers
+        else:
+            return self._native_wavenumbers[self.forward_coeff_permutation]
 
     @property
     def wavenumbers(self):
-        return self._wavenumbers[self.forward_coeff_permutation]
+        if self.forward_coeff_permutation is None:
+            return self._wavenumbers
+        else:
+            return self._wavenumbers[self.forward_coeff_permutation]
 
     def __add__(self, other):
         if other is None:
@@ -1464,7 +1476,7 @@ class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):
     def local_m(self):
         layout = self.dist.coeff_layout
         local_m_elements = layout.local_elements(self.domain, scales=1)[self.axis]
-        return tuple(self.azimuth_basis.wavenumbers[local_m_elements])
+        return tuple(self.azimuth_basis.native_wavenumbers[local_m_elements])
 
     def local_elements(self):
         CL = self.dist.coeff_layout
@@ -1743,7 +1755,7 @@ class DiskBasis(SpinBasis):
         if self.shape[0] == 1:
             return tuple([0,])
         # Permute Fourier wavenumbers
-        wavenumbers = self.azimuth_basis.wavenumbers[self.forward_m_perm]
+        wavenumbers = self.azimuth_basis.native_wavenumbers
         # Get layout before radius forward transform
         transform = self.dist.get_transform_object(axis=self.axis+1)
         layout = transform.layout1
@@ -2062,6 +2074,9 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             self.forward_m_perm = (mod2 + div2) * (1 - div22) + (shape[0] - 1 + mod2 - div2) * div22
             self.backward_m_perm = np.argsort(self.forward_m_perm)
             self.group_shape = (2, 1)
+        # Set permutations on azimuth basis
+        self.azimuth_basis.forward_coeff_permutation = self.forward_m_perm
+        self.azimuth_basis.backward_coeff_permutation = self.backward_m_perm
 
     def global_shape(self, layout, scales):
         grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
@@ -2180,7 +2195,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
     @CachedAttribute
     def local_unpacked_m(self):
         # Permute Fourier wavenumbers
-        wavenumbers = self.azimuth_basis.wavenumbers[self.forward_m_perm]
+        wavenumbers = self.azimuth_basis.native_wavenumbers
         # Get layout before colatitude forward transform
         transform = self.dist.get_transform_object(axis=self.axis+1)
         layout = transform.layout1
@@ -2378,7 +2393,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         # Call Fourier transform
         self.azimuth_basis.forward_transform(field, axis, gdata, cdata)
         # Permute m for triangular truncation
-        permute_axis(cdata, axis+len(field.tensorsig), self.forward_m_perm, out=cdata)
+        #permute_axis(cdata, axis+len(field.tensorsig), self.forward_m_perm, out=cdata)
 
     def forward_transform_radius(self, field, axis, gdata, cdata):
         # Placeholder for when self.coordsys is SphericalCoordinates
@@ -2390,7 +2405,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
 
     def backward_transform_azimuth(self, field, axis, cdata, gdata):
         # Permute m back from triangular truncation
-        permute_axis(cdata, axis+len(field.tensorsig), self.backward_m_perm, out=cdata)
+        #permute_axis(cdata, axis+len(field.tensorsig), self.backward_m_perm, out=cdata)
         # Call Fourier transform
         self.azimuth_basis.backward_transform(field, axis, cdata, gdata)
 
