@@ -824,9 +824,7 @@ class SpectralOperator1D(SpectralOperator):
             factors[axis] = self.subspace_matrix(self.dist.coeff_layout)
         else:
             group = subproblem.group[axis]
-            chunk = list(self.input_basis.local_elements()[0]).index(group)
-            factors[axis] = self.chunk_matrix(chunk)
-            print(self.dist.comm.rank, type(self), group, chunk, factors[axis])
+            factors[axis] = self.group_matrix(group)
         # Add factor for components
         comps = np.prod([cs.dim for cs in self.tensorsig], dtype=int)
         factors = [sparse.identity(comps, format='csr')] + factors
@@ -837,8 +835,8 @@ class SpectralOperator1D(SpectralOperator):
         # Caching layer to allow insertion of other arguments
         return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis)
 
-    def chunk_matrix(self, chunk):
-        return self._chunk_matrix(chunk, self.input_basis, self.output_basis)
+    def group_matrix(self, group):
+        return self._group_matrix(group, self.input_basis, self.output_basis)
 
     @classmethod
     @CachedMethod
@@ -848,10 +846,16 @@ class SpectralOperator1D(SpectralOperator):
         else:
             input_domain = Domain(layout.dist, bases=[input_basis])
             output_domain = Domain(layout.dist, bases=[output_basis])
+            # TODO: clean all this up somehow...?
             arg_chunks = layout.local_chunks(input_domain, scales=1)[axis]
             out_chunks = layout.local_chunks(output_domain, scales=1)[axis]
             local_chunks = [chunk for chunk in arg_chunks if chunk in out_chunks]
-            chunk_blocks = [cls._chunk_matrix(chunk, input_basis, output_basis, *args) for chunk in local_chunks]
+            if input_basis is None:
+                local_groups = output_basis.local_groups(cls.subaxis_coupling)
+            else:
+                local_groups = input_basis.local_groups(cls.subaxis_coupling)
+            local_groups = [local_groups[c][0] for c in local_chunks]
+            chunk_blocks = [cls._group_matrix(group, input_basis, output_basis, *args) for group in local_groups]
             arg_size = layout.local_shape(input_domain, scales=1)[axis]
             out_size = layout.local_shape(output_domain, scales=1)[axis]
             return sparse_block_diag(chunk_blocks, shape=(out_size, arg_size))
@@ -861,7 +865,7 @@ class SpectralOperator1D(SpectralOperator):
         raise NotImplementedError()
 
     @staticmethod
-    def _chunk_matrix(chunk, input_basis, output_basis, *args):
+    def _group_matrix(group, input_basis, output_basis, *args):
         raise NotImplementedError()
 
     def operate(self, out):
