@@ -17,32 +17,38 @@ config['linear algebra']['MATRIX_FACTORIZER'] = 'SuperLUNaturalFactorizedTranspo
 
 # Parameters
 Lx, Lz = (4, 1)
-Nx, Nz = 256, 64
+Nx, Nz = 64, 32
 Prandtl = 1
 Rayleigh = 1e6
 timestep = 0.05
 stop_iteration = 150
+dtype = np.complex128
+print_condition_numbers = True
+plot_subproblem_matrices = False
 
 # Bases
 c = coords.CartesianCoordinates('x', 'z')
 d = distributor.Distributor((c,))
-xb = basis.RealFourier(c.coords[0], size=Nx, bounds=(0, Lx))
+if dtype == np.float64:
+    xb = basis.RealFourier(c.coords[0], size=Nx, bounds=(0, Lx))
+elif dtype == np.complex128:
+    xb = basis.ComplexFourier(c.coords[0], size=Nx, bounds=(0, Lx))
 zb = basis.ChebyshevT(c.coords[1], size=Nz, bounds=(0, Lz))
 x = xb.local_grid(1)
 z = zb.local_grid(1)
 
 # Fields
-p = field.Field(name='p', dist=d, bases=(xb,zb), dtype=np.float64)
-b = field.Field(name='b', dist=d, bases=(xb,zb), dtype=np.float64)
-u = field.Field(name='u', dist=d, bases=(xb,zb), dtype=np.float64, tensorsig=(c,))
+p = field.Field(name='p', dist=d, bases=(xb,zb), dtype=dtype)
+b = field.Field(name='b', dist=d, bases=(xb,zb), dtype=dtype)
+u = field.Field(name='u', dist=d, bases=(xb,zb), dtype=dtype, tensorsig=(c,))
 
 # Taus
 zb1 = basis.ChebyshevU(c.coords[1], size=Nz, bounds=(0, Lz), alpha0=0)
-t1 = field.Field(name='t1', dist=d, bases=(xb,), dtype=np.float64)
-t2 = field.Field(name='t2', dist=d, bases=(xb,), dtype=np.float64)
-t3 = field.Field(name='t3', dist=d, bases=(xb,), dtype=np.float64, tensorsig=(c,))
-t4 = field.Field(name='t4', dist=d, bases=(xb,), dtype=np.float64, tensorsig=(c,))
-P1 = field.Field(name='P1', dist=d, bases=(zb1,), dtype=np.float64)
+t1 = field.Field(name='t1', dist=d, bases=(xb,), dtype=dtype)
+t2 = field.Field(name='t2', dist=d, bases=(xb,), dtype=dtype)
+t3 = field.Field(name='t3', dist=d, bases=(xb,), dtype=dtype, tensorsig=(c,))
+t4 = field.Field(name='t4', dist=d, bases=(xb,), dtype=dtype, tensorsig=(c,))
+P1 = field.Field(name='P1', dist=d, bases=(zb1,), dtype=dtype)
 if rank == 0:
     P1['c'][0,-1] = 1
 
@@ -50,15 +56,15 @@ if rank == 0:
 P = (Rayleigh * Prandtl)**(-1/2)
 R = (Rayleigh / Prandtl)**(-1/2)
 
-ex = field.Field(name='ex', dist=d, bases=(zb,), dtype=np.float64, tensorsig=(c,))
-ez = field.Field(name='ez', dist=d, bases=(zb,), dtype=np.float64, tensorsig=(c,))
+ex = field.Field(name='ex', dist=d, bases=(zb,), dtype=dtype, tensorsig=(c,))
+ez = field.Field(name='ez', dist=d, bases=(zb,), dtype=dtype, tensorsig=(c,))
 ex['g'][0] = 1
 ez['g'][1] = 1
 
 ghat = - ez
 grid_ghat = operators.Grid(ghat).evaluate()
 
-B = field.Field(name='B', dist=d, bases=(zb,), dtype=np.float64)
+B = field.Field(name='B', dist=d, bases=(zb,), dtype=dtype)
 B['g'] = Lz - z
 grid_B = operators.Grid(B).evaluate()
 
@@ -91,11 +97,11 @@ print("Problem built")
 solver = solvers.InitialValueSolver(problem, timesteppers.RK222)
 solver.stop_iteration = stop_iteration
 
-if False:
+if print_condition_numbers:
     for i, subproblem in enumerate(solver.subproblems):
         M = subproblem.M_min
         L = subproblem.L_min
-        print(i, subproblem.group, np.linalg.cond((M+L).A))
+        print(f"Rank: {MPI.COMM_WORLD.rank}, subproblem: {i}, group: {subproblem.group}, cond: {np.linalg.cond((M+L).A)}")
 
 # Initial conditions
 np.random.seed(42)
@@ -133,8 +139,8 @@ def plot_sparse(A):
     ax.text(0.95, 0.95, 'nnz: %i' %A.nnz, horizontalalignment='right', verticalalignment='top', transform=ax.transAxes)
     ax.text(0.95, 0.95, '\ncon: %.1e' %np.linalg.cond(A.A), horizontalalignment='right', verticalalignment='top', transform=ax.transAxes)
 
-if False:
-    for sp in solver.subproblems:
+if plot_subproblem_matrices:
+    for sp in (solver.subproblems[0],) + solver.subproblems:
         m = sp.group[0]
         # Plot LHS
         ax = fig.add_subplot(1, 3, 1)

@@ -846,19 +846,18 @@ class SpectralOperator1D(SpectralOperator):
         else:
             input_domain = Domain(layout.dist, bases=[input_basis])
             output_domain = Domain(layout.dist, bases=[output_basis])
-            # TODO: clean all this up somehow...?
-            arg_chunks = layout.local_chunks(input_domain, scales=1)[axis]
-            out_chunks = layout.local_chunks(output_domain, scales=1)[axis]
-            local_chunks = [chunk for chunk in arg_chunks if chunk in out_chunks]
             if input_basis is None:
                 local_groups = output_basis.local_groups(cls.subaxis_coupling)
+                local_groups = [lg for lg in local_groups if lg == [0]]
+            elif output_basis is None:
+                local_groups = input_basis.local_groups(cls.subaxis_coupling)
+                local_groups = [lg for lg in local_groups if lg == [0]]
             else:
                 local_groups = input_basis.local_groups(cls.subaxis_coupling)
-            local_groups = [local_groups[c][0] for c in local_chunks]
-            chunk_blocks = [cls._group_matrix(group, input_basis, output_basis, *args) for group in local_groups]
+            group_blocks = [cls._group_matrix(group[0], input_basis, output_basis, *args) for group in local_groups]
             arg_size = layout.local_shape(input_domain, scales=1)[axis]
             out_size = layout.local_shape(output_domain, scales=1)[axis]
-            return sparse_block_diag(chunk_blocks, shape=(out_size, arg_size))
+            return sparse_block_diag(group_blocks, shape=(out_size, arg_size))
 
     @staticmethod
     def _full_matrix(input_basis, output_basis, *args):

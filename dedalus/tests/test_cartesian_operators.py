@@ -41,7 +41,7 @@ def build_2d_box(Nx, Nz, dealias, dtype, k=0):
     z = zb.local_grid(1)
     return c, d, b, x, z
 
-Nx_range = [16, 2]
+Nx_range = [8, 2]
 Ny_range = [8]
 Nz_range = [8, 2]
 dealias_range = [1, 3/2]

@@ -204,12 +204,15 @@ def sparse_block_diag(blocks, shape=None):
         i0 += block.shape[0]
         j0 += block.shape[1]
     # Build full matrix
-    data = np.concatenate(data)
-    rows = np.concatenate(rows)
-    cols = np.concatenate(cols)
     if shape is None:
         shape = (i0, j0)
-    return sparse.coo_matrix((data, (rows, cols)), shape=shape)
+    if data:
+        data = np.concatenate(data)
+        rows = np.concatenate(rows)
+        cols = np.concatenate(cols)
+        return sparse.coo_matrix((data, (rows, cols)), shape=shape).tocsr()
+    else:
+        return sparse.csr_matrix(shape)
 
 
 def kron(*factors):
