@@ -96,6 +96,25 @@ class Operand:
         from .operators import Power
         return Power(other, self)
 
+    def __call__(self, *args, **kw):
+        """Create Interpolation operator with this operand."""
+        return self.interp(*args, **kw)
+
+    def diff(self, *args, **kw):
+        """Create Differentiation operator with this operand."""
+        from .operators import differentiate
+        return differentiate(self, *args, **kw)
+
+    def integ(self, *args, **kw):
+        """Create Integration operator with this operand."""
+        from .operators import integrate
+        return integrate(self, *args, **kw)
+
+    def interp(self, *args, **kw):
+        """Create Interpolation operator with this operand."""
+        from .operators import interpolate
+        return interpolate(self, *args, **kw)
+
     @staticmethod
     def parse(string, namespace, domain):
         """Build operand from a string expression."""

@@ -26,8 +26,8 @@ domain = de.Domain([x_basis, y_basis], grid_dtype=np.float64)
 problem = de.LBVP(domain, variables=['u','uy'])
 problem.add_equation("dx(dx(u)) + dy(uy) = -10 * sin(x/2)**2 * (y - y**2)")
 problem.add_equation("uy - dy(u) = 0")
-problem.add_bc("left(u) = left(sin(8*x))")
-problem.add_bc("right(uy) = 0")
+problem.add_bc("u(y='left') = sin(8*x)")
+problem.add_bc("uy(y='right') = 0")
 
 # Build solver
 solver = problem.build_solver()
