@@ -5,7 +5,6 @@ from dedalus.core import coords, distributor, basis, field, operators, problems,
 from dedalus.tools import logging
 from dedalus.tools.parsing import split_equation
 from dedalus.extras.flow_tools import GlobalArrayReducer
-from scipy import sparse
 import time
 from mpi4py import MPI
 
@@ -23,10 +22,10 @@ L_dealias = 1
 Nmax = 15
 N_dealias = 1
 dt = 8e-5
-t_end = 0.01
-ts = timesteppers.SBDF2
+t_end = 2
+ts = timesteppers.SBDF4
 dtype = np.float64
-mesh = None
+mesh = [4,8]
 
 Ekman = 3e-4
 Rayleigh = 95
@@ -36,7 +35,6 @@ Prandtl = 1
 c = coords.SphericalCoordinates('phi', 'theta', 'r')
 d = distributor.Distributor((c,), mesh=mesh)
 b = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), radius=radius, dtype=dtype)
-bk2 = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), k=2, radius=radius, dtype=dtype)
 b_S2 = b.S2_basis()
 phi, theta, r = b.local_grids((1, 1, 1))
 
@@ -103,6 +101,8 @@ vol_test = np.sum(weight_r*weight_theta+0*p['g'])*np.pi/(Lmax+1)/L_dealias
 vol_test = reducer.reduce_scalar(vol_test, MPI.SUM)
 vol_correction = 4*np.pi/3/vol_test
 
+hermitian_cadence = 100
+
 # Main loop
 start_time = time.time()
 while solver.ok:
@@ -113,6 +113,11 @@ while solver.ok:
         logger.info("t = %f, E = %e" %(solver.sim_time, E0))
         t_list.append(solver.sim_time)
         E_list.append(E0)
+
+    if solver.iteration % hermitian_cadence in [0, 1, 2, 3]:
+        for f in solver.state:
+            f.require_grid_space()
+
     solver.step(dt)
 end_time = time.time()
 print('Run time:', end_time-start_time)
