@@ -183,8 +183,17 @@ class Future(Operand):
         return meta
 
     def meta_dirichlet(self, axis):
-        # Set to True to minimize cache problems in NCCs
-        return True
+        # Derived dirichlet metadata should never matter
+        return False
+
+    def meta_constant(self, axis):
+        raise NotImplementedError(f"{type(self)} has not implemented a meta_constant method.")
+
+    def meta_parity(self, axis):
+        raise NotImplementedError(f"{type(self)} has not implemented a meta_parity method.")
+
+    def meta_envelope(self, axis):
+        raise NotImplementedError(f"{type(self)} has not implemented a meta_envelope method.")
 
     def check_conditions(self):
         """Check that all argument fields are in proper layouts."""
