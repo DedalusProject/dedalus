@@ -24,22 +24,34 @@ logger = logging.getLogger(__name__.split('.')[-1])
 
 class Operand:
 
-    def __getattr__(self, attr):
-        # Intercept numpy ufunc calls
-        from .operators import UnaryGridFunction
-        try:
-            ufunc = UnaryGridFunction.supported[attr]
-            return partial(UnaryGridFunction, ufunc, self)
-        except KeyError:
-            raise AttributeError("%r object has no attribute %r" %(self.__class__.__name__, attr))
+    __array_priority__ = 100.
 
-    ## Idea for alternate ufunc implementation based on changes coming in numpy 1.10
-    # def __numpy_ufunc__(self, ufunc, method, i, inputs, **kw):
-    #     from .operators import UnaryGridFunction
-    #     if ufunc in UnaryGridFunction.supported:
-    #         return UnaryGridFunction(ufunc, self, **kw)
-    #     else:
-    #         return NotImplemented
+    def __array_ufunc__(self, ufunc, method, *inputs, **kw):
+        from .operators import UnaryGridFunction
+        if method != "__call__":
+            return NotImplemented
+        if kw:
+            return NotImplemented
+        # Dispatch unary ufuncs to ufunc operator
+        if len(inputs) == 1:
+            return UnaryGridFunction(ufunc, inputs[0])
+        # Dispatch binary ufuncs to arithmetic operators, triggered by arithmetic with numpy scalars
+        elif len(inputs) == 2:
+            from . import operators
+            if ufunc is np.add:
+                return operators.Add(*inputs)
+            elif ufunc is np.subtract:
+                return operators.Add(inputs[0], (-1)*inputs[1])
+            elif ufunc is np.multiply:
+                return operators.Multiply(*inputs)
+            elif ufunc is np.divide:
+                return operators.Multiply(inputs[0], inputs[1]**(-1))
+            elif ufunc is np.power:
+                return operators.Power(*inputs)
+            else:
+                return NotImplemented
+        else:
+            return NotImplemented
 
     def __abs__(self):
         # Call: abs(self)
