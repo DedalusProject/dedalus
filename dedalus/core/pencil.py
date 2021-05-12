@@ -278,17 +278,14 @@ class Pencil:
                 LHS_blocks[name].append(eq_blocks)
 
         # Combine blocks
-        left_perm = left_permutation(zbasis, n_vars, pencil_eqs)
-        right_perm = right_permutation(zbasis, problem)
+        left_perm = left_permutation(zbasis, n_vars, pencil_eqs, bc_top=problem.BC_TOP, interleave_subbases=problem.INTERLEAVE_SUBBASES)
+        right_perm = right_permutation(zbasis, problem, interleave_subbases=problem.INTERLEAVE_SUBBASES)
         self.pre_left = left_perm @ sparse.block_diag(pre_left_diags, format='csr', dtype=zdtype)
         self.pre_right = sparse.block_diag(pre_right_diags, format='csr', dtype=zdtype) @ right_perm
         LHS_matrices = {name: left_perm @ fast_bmat(LHS_blocks[name]).tocsr() for name in names}
 
         # Store minimal-entry matrices for fast dot products
         for name, matrix in LHS_matrices.items():
-            # Store full matrix
-            matrix.eliminate_zeros()
-            setattr(self, name+'_full', matrix.tocsr().copy())
             # Truncate entries
             matrix.data[np.abs(matrix.data) < problem.entry_cutoff] = 0
             matrix.eliminate_zeros()
@@ -296,16 +293,17 @@ class Pencil:
             setattr(self, name, matrix.tocsr().copy())
 
         # Store expanded right-preconditioned matrices
-        # Apply right preconditioning
-        if self.pre_right is not None:
-            for name in names:
-                LHS_matrices[name] = LHS_matrices[name] @ self.pre_right
-        # Build expanded LHS matrix to store matrix combinations
-        self.LHS = zeros_with_pattern(*LHS_matrices.values()).tocsr()
-        # Store expanded matrices for fast combination
-        for name, matrix in LHS_matrices.items():
-            matrix = expand_pattern(matrix, self.LHS)
-            setattr(self, name+'_exp', matrix.tocsr().copy())
+        if problem.STORE_EXPANDED_MATRICES:
+            # Apply right preconditioning
+            if self.pre_right is not None:
+                for name in names:
+                    LHS_matrices[name] = LHS_matrices[name] @ self.pre_right
+            # Build expanded LHS matrix to store matrix combinations
+            self.LHS = zeros_with_pattern(*LHS_matrices.values()).tocsr()
+            # Store expanded matrices for fast combination
+            for name, matrix in LHS_matrices.items():
+                matrix = expand_pattern(matrix, self.LHS)
+                setattr(self, name+'_exp', matrix.tocsr().copy())
 
 
 def fast_bmat(blocks):
@@ -352,15 +350,21 @@ def simple_reorder(N0, N1):
     return sparse_perm(perm_indeces, len(perm_indeces)).tocsr()
 
 
-def left_permutation(zbasis, n_vars, eqs):
+def left_permutation(zbasis, n_vars, eqs, bc_top, interleave_subbases):
     """
-    Left permutation keeping match rows first, and inverting equation nesting:
-        Input: Equations > Subbases > modes
-        Output: Modes > Subbases > Equations
+    Left permutation acting on equations.
+    bc_top determines if constant equations are placed at the top or bottom of the matrix.
+
+    Input ordering:
+        Equations > Subbases > Modes
+    Output ordering with interleave_subbases=True:
+        Modes > Subbases > Equations
+    Output ordering with interleave_subbases=False:
+        Subbases > Modes > Equations
     """
+    # Compute hierarchy or input equation indeces
     nmatch = n_vars * (len(zbasis.subbases) - 1)
-    # Compute list heirarchy of indeces
-    i = i0 = nmatch
+    i = nmatch
     L0 = []
     for eq in eqs:
         L1 = []
@@ -382,30 +386,64 @@ def left_permutation(zbasis, n_vars, eqs):
                 i += 1
             L1.append(L2)
         L0.append(L1)
-    # Reverse list hierarchy
-    indeces = []
-    for i in range(i0):
-        indeces.append(i)
+    # Match indeces
+    match_indeces = []
+    for i in range(nmatch):
+        match_indeces.append(i)
     n1max = len(L0)
     n2max = max(len(L1) for L1 in L0)
     n3max = max(len(L2) for L1 in L0 for L2 in L1)
-    for n3 in range(n3max):
+    # Constant and nonconstant equation indeces
+    const_indeces = []
+    nonconst_indeces = []
+    if interleave_subbases:
+        for n3 in range(n3max):
+            for n2 in range(n2max):
+                for n1 in range(n1max):
+                    if eqs[n1]['LHS'].meta[zbasis.name]['constant']:
+                        try:
+                            const_indeces.append(L0[n1][n2][n3])
+                        except IndexError:
+                            continue
+                    else:
+                        try:
+                            nonconst_indeces.append(L0[n1][n2][n3])
+                        except IndexError:
+                            continue
+    else:
         for n2 in range(n2max):
-            for n1 in range(n1max):
-                try:
-                    indeces.append(L0[n1][n2][n3])
-                except IndexError:
-                    continue
+            for n3 in range(n3max):
+                for n1 in range(n1max):
+                    if eqs[n1]['LHS'].meta[zbasis.name]['constant']:
+                        try:
+                            const_indeces.append(L0[n1][n2][n3])
+                        except IndexError:
+                            continue
+                    else:
+                        try:
+                            nonconst_indeces.append(L0[n1][n2][n3])
+                        except IndexError:
+                            continue
+    # Combine indeces
+    if bc_top:
+        indeces = match_indeces + const_indeces + nonconst_indeces
+    else:
+        indeces = nonconst_indeces + const_indeces + match_indeces
     return sparse_perm(indeces, len(indeces)).T.tocsr()
 
 
-def right_permutation(zbasis, problem):
+def right_permutation(zbasis, problem, interleave_subbases):
     """
-    Right permutation inverting variable nesting:
-        Input: Variables > Subbases > modes
-        Output: Modes > Subbases > Variables
+    Right permutation acting on variables.
+
+    Input ordering:
+        Variables > Subbases > Modes
+    Output ordering with interleave_subbases=True:
+        Modes > Subbases > Variables
+    Output ordering with interleave_subbases=False:
+        Subbases > Modes > Variables
     """
-    # Compute list heirarchy of indeces
+    # Compute hierarchy or input variable indeces
     i = 0
     L0 = []
     for var in problem.variables:
@@ -428,12 +466,21 @@ def right_permutation(zbasis, problem):
     L1max = len(L0)
     L2max = max(len(L1) for L1 in L0)
     L3max = max(len(L2) for L1 in L0 for L2 in L1)
-    for n3 in range(L3max):
+    if interleave_subbases:
+        for n3 in range(L3max):
+            for n2 in range(L2max):
+                for n1 in range(L1max):
+                    try:
+                        indeces.append(L0[n1][n2][n3])
+                    except IndexError:
+                        continue
+    else:
         for n2 in range(L2max):
-            for n1 in range(L1max):
-                try:
-                    indeces.append(L0[n1][n2][n3])
-                except IndexError:
-                    continue
+            for n3 in range(L3max):
+                for n1 in range(L1max):
+                    try:
+                        indeces.append(L0[n1][n2][n3])
+                    except IndexError:
+                        continue
     return sparse_perm(indeces, len(indeces)).tocsr()
 

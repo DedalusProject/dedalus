@@ -27,6 +27,7 @@ from ..tools.exceptions import UndefinedParityError
 logger = logging.getLogger(__name__.split('.')[-1])
 DEFAULT_LIBRARY = config['transforms'].get('DEFAULT_LIBRARY')
 FFTW_RIGOR = config['transforms-fftw'].get('PLANNING_RIGOR')
+DIRICHLET_PRECONDITIONING = lambda: config['matrix construction'].getboolean('DIRICHLET_PRECONDITIONING')
 
 
 class Basis:
@@ -299,7 +300,7 @@ class Chebyshev(ImplicitBasis):
 
     def default_meta(self):
         return {'constant': False,
-                'dirichlet': True}
+                'dirichlet': DIRICHLET_PRECONDITIONING()}
 
     @CachedMethod
     def grid(self, scale=1.):
@@ -657,7 +658,7 @@ class Legendre(ImplicitBasis):
 
     def default_meta(self):
         return {'constant': False,
-                'dirichlet': True}
+                'dirichlet': DIRICHLET_PRECONDITIONING()}
 
     @CachedMethod
     def grid(self, scale=1.):
@@ -1392,7 +1393,7 @@ class Laguerre(ImplicitBasis):
 
     def default_meta(self):
         return {'constant': False,
-                'dirichlet': True,
+                'dirichlet': DIRICHLET_PRECONDITIONING(),
                 'envelope': True}
 
     @CachedMethod

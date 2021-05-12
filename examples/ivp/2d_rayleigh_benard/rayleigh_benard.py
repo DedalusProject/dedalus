@@ -53,7 +53,6 @@ domain = de.Domain([x_basis, z_basis], grid_dtype=np.float64)
 
 # 2D Boussinesq hydrodynamics
 problem = de.IVP(domain, variables=['p','b','u','w','bz','uz','wz'])
-problem.meta['p','b','u','w']['z']['dirichlet'] = True
 problem.parameters['P'] = (Rayleigh * Prandtl)**(-1/2)
 problem.parameters['R'] = (Rayleigh / Prandtl)**(-1/2)
 problem.parameters['F'] = F = 1
