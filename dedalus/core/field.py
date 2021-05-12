@@ -309,15 +309,13 @@ class Array(Data):
         # Save data
         np.copyto(self.data, data)
 
-    @CachedMethod
+    @CachedMethod(max_size=1)
     def as_ncc_operator(self, frozen_arg_basis_meta, cutoff, max_terms, cacheid=None):
         """Cast to field and convert to NCC operator."""
         from .future import FutureField
-        ncc = FutureField.cast(self, self.domain)
-        ncc = ncc.evaluate()
+        ncc = FutureField.cast(self, self.domain).evaluate()
         ncc.name = str(self)
-        # Don't worry about cache here because field is deallocated
-        return ncc.as_ncc_operator(frozen_arg_basis_meta, cutoff, max_terms, cacheid=None)
+        return ncc.as_ncc_operator(frozen_arg_basis_meta, cutoff, max_terms, cacheid=cacheid)
 
 
 class Field(Data):
@@ -572,7 +570,7 @@ class Field(Data):
             # Cast to FutureField
             return FieldCopy(input, domain)
 
-    @CachedMethod
+    @CachedMethod(max_size=1)
     def as_ncc_operator(self, frozen_arg_basis_meta, cutoff, max_terms, cacheid=None):
         """Convert to operator form representing multiplication as a NCC."""
         domain = self.domain

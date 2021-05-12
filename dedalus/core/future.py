@@ -209,13 +209,11 @@ class Future(Operand):
         # field without modifying the data of the arguments.
         raise NotImplementedError()
 
-    @CachedMethod
+    @CachedMethod(max_size=1)
     def as_ncc_operator(self, frozen_arg_basis_meta, cutoff, max_terms, cacheid=None):
         ncc = self.evaluate()
         ncc.name = str(self)
-        # Don't worry about cache here because field is deallocated
-        return ncc.as_ncc_operator(frozen_arg_basis_meta, cutoff, max_terms, cacheid=None)
-
+        return ncc.as_ncc_operator(frozen_arg_basis_meta, cutoff, max_terms, cacheid=cacheid)
 
 
 class FutureScalar(Future):

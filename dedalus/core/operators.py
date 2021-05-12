@@ -1240,7 +1240,8 @@ class Integrate(LinearBasisOperator, metaclass=SkipDispatch):
         if (cls.basis not in arg0.domain.bases) or (arg0.meta[cls.basis.name]['constant']):
             length = cls.basis.interval[1] - cls.basis.interval[0]
             integral = arg0*length
-            integral.out = out
+            if out is not None:
+                integral.out = out
             raise SkipDispatchException(integral)
         else:
             return (arg0,), {'out': out}
