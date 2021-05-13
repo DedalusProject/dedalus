@@ -46,11 +46,14 @@ class Operator(Future):
     def base(self):
         return type(self)
 
-    def order(self, *ops):
-        order = max(arg.order(*ops) for arg in self.args)
-        if type(self) in ops:
+    def comp_order(self, ops, vars):
+        order = max(arg.comp_order(ops, vars) for arg in self.args)
+        if type(self) in ops and self.has(*vars):
             order += 1
         return order
+
+    def mul_order(self, vars):
+        return max(arg.mul_order(vars) for arg in self.args)
 
 
 class FieldCopy(Operator, FutureField, metaclass=MultiClass):
@@ -357,8 +360,8 @@ class Arithmetic(Future):
         str_args = map(substring, self.args)
         return '%s' %self.str_op.join(str_args)
 
-    def order(self, *ops):
-        return max(arg.order(*ops) for arg in self.args)
+    def comp_order(self, ops, vars):
+        return max(arg.comp_order(ops, vars) for arg in self.args)
 
 
 class Add(Arithmetic, metaclass=MultiClass):
@@ -453,6 +456,9 @@ class Add(Arithmetic, metaclass=MultiClass):
         diff0 = arg0.sym_diff(var)
         diff1 = arg1.sym_diff(var)
         return diff0 + diff1
+
+    def mul_order(self, vars):
+        return max(arg.mul_order(vars) for arg in self.args)
 
 
 class AddScalarScalar(Add, FutureScalar):
@@ -729,6 +735,9 @@ class Multiply(Arithmetic, metaclass=MultiClass):
         diff1 = arg1.sym_diff(var)
         return diff0*arg1 + arg0*diff1
 
+    def mul_order(self, vars):
+        return sum(arg.mul_order(vars) for arg in self.args)
+
 
 class MultiplyScalarScalar(Multiply, FutureScalar):
 
@@ -944,6 +953,10 @@ class Power(NonlinearOperator, Arithmetic, metaclass=MultiClass):
     @property
     def base(self):
         return Power
+
+    def mul_order(self, vars):
+        arg0, arg1 = self.args
+        return arg0.mul_order(vars) ** arg1
 
 
 class PowerDataScalar(Power):

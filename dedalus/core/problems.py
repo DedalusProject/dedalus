@@ -205,7 +205,7 @@ class ProblemBase:
     def _check_differential_order(self, temp):
         """Require LHS To be first order in coupled derivatives."""
         coupled_diffs = [basis.Differentiate for basis in self.domain.bases if not basis.separable]
-        order = self._require_first_order(temp, 'LHS', coupled_diffs)
+        order = self._require_first_order_comp(temp, 'LHS', coupled_diffs)
         temp['differential'] = int(order)
         if temp['constant']:
             temp['tau'] = 0
@@ -301,11 +301,20 @@ class ProblemBase:
             names = [var.name for var in vars]
             raise UnsupportedEquationError("{} must be independent of {}.".format(key, names))
 
-    def _require_first_order(self, temp, key, vars):
-        """Require expression to be zeroth or first order in some variables."""
-        order = temp[key].order(*vars)
+    def _require_first_order_comp(self, temp, key, ops):
+        """Require expression to be zeroth or first order compositionally in some operators."""
+        vars = [self.namespace[var] for var in self.variables]
+        order = temp[key].comp_order(ops, vars)
         if order > 1:
-            names = [var.name for var in vars]
+            names = [op.name for op in ops]
+            raise UnsupportedEquationError("{} must be first-order in {}.".format(key, names))
+        return order
+
+    def _require_first_order_mul(self, temp, key, fields):
+        """Require expression to be zeroth or first order multiplicatively in some fields."""
+        order = temp[key].mul_order(fields)
+        if order > 1:
+            names = [field.name for field in fields]
             raise UnsupportedEquationError("{} must be first-order in {}.".format(key, names))
         return order
 
@@ -372,7 +381,7 @@ class InitialValueProblem(ProblemBase):
     def _check_conditions(self, temp):
         """Check object-form conditions."""
         self._require_independent(temp, 'LHS', [self._t])
-        self._require_first_order(temp, 'LHS', [self._dt])
+        self._require_first_order_comp(temp, 'LHS', [self._dt])
         self._require_independent(temp, 'RHS', [self._dt])
 
     def _set_matrix_expressions(self, temp):
@@ -542,8 +551,8 @@ class EigenvalueProblem(ProblemBase):
         """Check object-form conditions."""
         vars = [self.namespace[var] for var in self.variables]
         self._require_homogeneous(temp, 'RHS', vars)
-        self._require_first_order(temp, 'LHS', [self._ev])
-        self._require_first_order(temp, 'RHS', [self._ev])
+        self._require_first_order_mul(temp, 'LHS', [self._ev])
+        self._require_first_order_mul(temp, 'RHS', [self._ev])
 
     def _set_matrix_expressions(self, temp):
         """Set expressions for building solver."""

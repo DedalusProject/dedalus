@@ -203,8 +203,14 @@ class Data(Operand):
         else:
             return self
 
-    def order(self, *ops):
+    def comp_order(self, ops, vars):
         return 0
+
+    def mul_order(self, vars):
+        if self in vars:
+            return 1
+        else:
+            return 0
 
     def operator_dict(self, index, vars, **kw):
         if self in vars:
