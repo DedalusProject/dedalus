@@ -371,127 +371,145 @@ def test_sphere_roundtrip_noise(Nphi, Ntheta, radius, basis, dealias, dtype, lay
     assert np.allclose(f_layout, f[layout])
 
 
-## D2
-Nphi_range = [8, 16]
-Nr_range = [12]
+
+## Polar bases
+Nphi_range = [16]
+Nr_range = [16]
+radius_range = [2.5]
+k_range = [0, 1, 2]
 dealias_range = [0.5, 1, 1.5]
-radius_range = [1, 2]
+
+
 @CachedMethod
-def build_D2(Nphi, Nr, radius, dealias, dtype=np.float64):
+def build_disk(Nphi, Nr, radius, k, dealias, dtype):
     c = coords.PolarCoordinates('phi', 'r')
     d = distributor.Distributor((c,))
-    db = basis.DiskBasis(c, (Nphi, Nr), radius=radius, dealias=(dealias, dealias), dtype=dtype)
-    phi, r = db.local_grids()
-    return c, d, db, phi, r
+    b = basis.DiskBasis(c, (Nphi, Nr), radius=radius, k=k, dealias=(dealias, dealias), dtype=dtype)
+    return c, d, b
+
+
+@CachedMethod
+def build_annulus(Nphi, Nr, radius, k, dealias, dtype):
+    c = coords.PolarCoordinates('phi', 'r')
+    d = distributor.Distributor((c,))
+    b = basis.AnnulusBasis(c, (Nphi, Nr), radii=(radius,radius+1.3), k=k, dealias=(dealias, dealias), dtype=dtype)
+    return c, d, b
+
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('radius', radius_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-def test_D2_scalar_roundtrip(Nphi, Nr, radius, dealias, dtype):
-    c, d, db, phi, r = build_D2(Nphi, Nr, radius, dealias, dtype=dtype)
-    f = field.Field(dist=d, bases=(db,), dtype=dtype)
+@pytest.mark.parametrize('build_basis', [build_annulus, build_disk])
+def test_polar_scalar_roundtrip(Nphi, Nr, radius, k, dealias, dtype, build_basis):
+    c, d, b = build_basis(Nphi, Nr, radius, k, dealias, dtype)
+    phi, r = b.local_grids((dealias, dealias))
+    f = field.Field(dist=d, bases=(b,), dtype=dtype)
+    f.set_scales((dealias, dealias))
     f['g'] = (r*np.cos(phi))**3
     fg = f['g'].copy()
     f['c']
     assert np.allclose(f['g'], fg)
 
-@pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('radius', radius_range)
-@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-def test_D2_scalar_roundtrip_mmax0(Nr, radius, dealias, dtype):
-    Nphi = 1
-    c, d, db, phi, r = build_D2(Nphi, Nr, radius, dealias, dtype=dtype)
-    f = field.Field(dist=d, bases=(db,), dtype=dtype)
-    f['g'] = r**4
-    f.require_scales(dealias)
-    #f.towards_coeff_space()
 
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('radius', radius_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('build_basis', [build_annulus, build_disk])
+def test_polar_scalar_roundtrip_mmax0(Nr, radius, k, dealias, dtype, build_basis):
+    c, d, b = build_basis(1, Nr, radius, k, dealias, dtype)
+    phi, r = b.local_grids((dealias, dealias))
+    f = field.Field(dist=d, bases=(b,), dtype=dtype)
+    f.set_scales((dealias, dealias))
+    f['g'] = r**4 + 0*phi
     fg = f['g'].copy()
     f['c']
     assert np.allclose(f['g'], fg)
 
+
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('radius', radius_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-def test_D2_vector_roundtrip(Nphi, Nr, radius, dealias, dtype):
-    c, d, db, phi, r = build_D2(Nphi, Nr, radius, dealias, dtype=dtype)
-    vf = field.Field(dist=d, bases=(db,), tensorsig=(c,), dtype=dtype)
+@pytest.mark.parametrize('build_basis', [build_annulus, build_disk])
+def test_polar_vector_roundtrip(Nphi, Nr, radius, k, dealias, dtype, build_basis):
+    c, d, b = build_basis(Nphi, Nr, radius, k, dealias, dtype=dtype)
+    phi, r = b.local_grids((dealias, dealias))
     x = r*np.cos(phi)
     y = r*np.sin(phi)
-    ex = np.array([-np.sin(phi)+0.*r,np.cos(phi)+0.*r])
+    ex = np.array([-np.sin(phi)+0*r, np.cos(phi)+0*r])
+    f = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
+    f.set_scales((dealias, dealias))
+    f['g'] = x * ex
+    fg = f['g'].copy()
+    f['c']
+    assert np.allclose(f['g'], fg)
 
-    vf['g'] = x* ex
-    vfg = vf['g'].copy()
-    vf['c']
-    assert np.allclose(vf['g'], vfg)
-
-@pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('radius', radius_range)
-@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-def test_D2_vector_roundtrip_mmax0(Nr, radius, dealias, dtype):
-    Nphi = 1
-    c, d, db, phi, r = build_D2(Nphi, Nr, radius, dealias, dtype=dtype)
-    vf = field.Field(dist=d, bases=(db,), tensorsig=(c,), dtype=dtype)
-
-    vf['g'][1] = 6*r**5
-    vfg = vf['g'].copy()
-    vf['c']
-    assert np.allclose(vf['g'], vfg)
 
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('radius', radius_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-def test_D2_vector_roundtrip_mmax0_2(Nr, radius, dealias, dtype):
-    Nphi = 1
-    c, d, db, phi, r = build_D2(Nphi, Nr, radius, dealias, dtype=dtype)
-    f = field.Field(dist=d, bases=(db,), dtype=dtype)
-
-    f['g'] = r**6
-    u = operators.Gradient(f, c).evaluate()
-    ufg = u['c'].copy()
-    u['g']
-    assert np.allclose(u['c'], ufg)
+@pytest.mark.parametrize('build_basis', [build_annulus, build_disk])
+def test_polar_vector_roundtrip_mmax0(Nr, radius, k, dealias, dtype, build_basis):
+    c, d, b = build_basis(1, Nr, radius, k, dealias, dtype=dtype)
+    phi, r = b.local_grids((dealias, dealias))
+    f = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
+    f.set_scales((dealias, dealias))
+    f['g'][1] = 6*r**5 + 0*phi
+    fg = f['g'].copy()
+    f['c']
+    assert np.allclose(f['g'], fg)
 
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('radius', radius_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-def test_D2_tensor_roundtrip(Nphi, Nr, radius, dealias, dtype):
-    c, d, db, phi, r = build_D2(Nphi, Nr, radius, dealias, dtype=dtype)
-    tf = field.Field(dist=d, bases=(db,), tensorsig=(c,c), dtype=dtype)
+@pytest.mark.parametrize('build_basis', [build_annulus, build_disk])
+def test_polar_tensor_roundtrip(Nphi, Nr, radius, k, dealias, dtype, build_basis):
+    c, d, b = build_basis(Nphi, Nr, radius, k, dealias, dtype=dtype)
+    phi, r = b.local_grids((dealias, dealias))
     x = r*np.cos(phi)
-    ex = np.array([-np.sin(phi)+0.*r,np.cos(phi)+0.*r])
-    exex = ex[None,:,...]*ex[:, None,...]
+    ex = np.array([-np.sin(phi)+0*r, np.cos(phi)+0*r])
+    exex = ex[None, :, ...] * ex[:, None, ...]
+    f = field.Field(dist=d, bases=(b,), tensorsig=(c,c), dtype=dtype)
+    f.set_scales((dealias, dealias))
+    f['g'] = 6*x * exex
+    fg = f['g'].copy()
+    f['c']
+    assert np.allclose(f['g'], fg)
 
-    tf['g'] = 6*x * exex
-    tfg = tf['g'].copy()
-    tf['c']
-    assert np.allclose(tf['g'][1][1], tfg[1][1])
 
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('radius', radius_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-def test_D2_tensor_roundtrip_mmax0(Nr, radius, dealias, dtype):
-    Nphi = 1
-    c, d, db, phi, r = build_D2(Nphi, Nr, radius, dealias, dtype=dtype)
-    tf = field.Field(dist=d, bases=(db,), tensorsig=(c,c), dtype=dtype)
-    tf['g'][1,1] = r**2 + 0.*phi
-    tfg = tf['g'].copy()
-    tf['c']
-    assert np.allclose(tf['g'][1][1], tfg[1][1])
+@pytest.mark.parametrize('build_basis', [build_annulus, build_disk])
+def test_polar_tensor_roundtrip_mmax0(Nr, radius, k, dealias, dtype, build_basis):
+    c, d, b = build_basis(1, Nr, radius, k, dealias, dtype=dtype)
+    phi, r = b.local_grids((dealias, dealias))
+    f = field.Field(dist=d, bases=(b,), tensorsig=(c,c), dtype=dtype)
+    f.set_scales((dealias, dealias))
+    f['g'][1,1] = r**2 + 0*phi
+    fg = f['g'].copy()
+    f['c']
+    assert np.allclose(f['g'], fg)
+
 
 
 ## Shell
+
 
 @CachedMethod
 def build_shell(Nphi, Ntheta, Nr, radii, alpha, k, dealias, dtype):

@@ -16,7 +16,7 @@ from .domain import Domain
 from . import coords
 from .field import Operand, Field
 from .future import Future, FutureField, FutureLockedField
-from ..tools.array import reshape_vector, apply_matrix, add_sparse, axindex, axslice, sparse_block_diag
+from ..tools.array import reshape_vector, apply_matrix, add_sparse, axindex, axslice, perm_matrix, copyto, sparse_block_diag
 from ..tools.cache import CachedAttribute, CachedMethod
 from ..tools.dispatch import MultiClass
 from ..tools.exceptions import NonlinearOperatorError
@@ -1467,6 +1467,7 @@ class ConvertSame(Convert):
 
 
 class Trace(LinearOperator):
+    # TODO: implement matrix/coefficient versions
 
     name = "Trace"
 
@@ -1532,28 +1533,36 @@ class TransposeComponents(LinearOperator, metaclass=MultiClass):
         return False
 
     def __init__(self, operand, indices=(0,1), out=None):
+        # Check indices
         i0, i1 = indices
-        if i0 < 0:
+        while i0 < 0:
             i0 += len(operand.tensorsig)
-        if i1 < 0:
+        while i1 < 0:
             i1 += len(operand.tensorsig)
-        if max(i0, i1) > len(operand.tensorsig):
+        if max(i0, i1) >= len(operand.tensorsig):
             raise ValueError("Transpose index greater than operand rank")
         if i0 == i1:
-            raise ValueError("Don't transpose same indices")
+            raise ValueError("Don't transpose same indices") # Could make this silently skip?
         cs0 = operand.tensorsig[i0]
         cs1 = operand.tensorsig[i1]
         if cs0 != cs1:
             raise NotImplementedError("Can only transpose two indices which have the same coordinate system")
         super().__init__(operand, out=out)
         self.indices = (i0, i1)
-        self.coordsys = cs0
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements
         self.domain = operand.domain
         self.tensorsig = operand.tensorsig
         self.dtype = operand.dtype
+        # Coordsys info
+        self.coordsys = cs0
+        self.input_basis = self.domain.get_basis(self.coordsys)
+        # Store new axis order
+        new_axis_order = np.arange(len(self.tensorsig) + self.dist.dim)
+        new_axis_order[indices[0]] = indices[1]
+        new_axis_order[indices[1]] = indices[0]
+        self.new_axis_order = tuple(new_axis_order)
 
     def new_operand(self, operand, **kw):
         return TransposeComponents(operand, self.indices, **kw)
@@ -1564,20 +1573,6 @@ class TransposeComponents(LinearOperator, metaclass=MultiClass):
     def matrix_coupling(self, *vars):
         return self.operand.matrix_coupling(*vars)
 
-    @property
-    def base(self):
-        return TransposeComponents
-
-
-class CartesianTransposeComponents(TransposeComponents):
-
-    cs_type = coords.CartesianCoordinates
-
-    def __init__(self, operand, indices=(0,1), out=None):
-        super().__init__(operand, indices=indices, out=out)
-        input_basis = self.domain.get_basis(self.coordsys)
-        self.input_basis = input_basis
-
     def check_conditions(self):
         """Can always take the transpose"""
         return True
@@ -1586,97 +1581,56 @@ class CartesianTransposeComponents(TransposeComponents):
         """Can always take the transpose"""
         pass
 
-    def subproblem_matrix(self, subproblem):
-        """Build operator matrix for a specific subproblem."""
-        operand = self.args[0]
-
-        indices = self.indices
+    @CachedAttribute
+    def _transpose_matrix(self):
         rank = len(self.tensorsig)
         tensor_shape = [cs.dim for cs in self.tensorsig]
-        start_indices = list(np.ndindex(*tensor_shape))
-        neworder = np.arange(rank)
-        neworder[indices[0]] = indices[1]
-        neworder[indices[1]] = indices[0]
+        i1 = np.arange(np.prod(tensor_shape))
+        I1 = i1.reshape(tensor_shape)
+        I2 = I1.transpose(self.new_axis_order[:rank])
+        i2 = I2.ravel()
+        return perm_matrix(i2, source_index=True, sparse=True).tocsr()
 
-        transpose = np.zeros((len(start_indices), len(start_indices)))
-        for i, start_index in enumerate(start_indices):
-            end_index = list(start_index)
-            end_index[indices[0]] = start_index[indices[1]]
-            end_index[indices[1]] = start_index[indices[0]]
-            j = start_indices.index(tuple(end_index))
-            transpose[j,i] = 1
 
-        # assume all regularities have the same n_size
+class StandardTransposeComponents(TransposeComponents):
+
+    cs_type = (coords.CartesianCoordinates,
+               coords.PolarCoordinates)
+
+    def subproblem_matrix(self, subproblem):
+        """Build operator matrix for a specific subproblem."""
+        transpose = self._transpose_matrix
         eye = sparse.identity(subproblem.coeff_size(self.domain), self.dtype, format='csr')
-        matrix = sparse.kron( transpose, eye)
-        return matrix
+        return sparse.kron(transpose, eye)
 
     def operate(self, out):
         """Perform operation."""
         operand = self.args[0]
-
         # Set output layout
-        layout = operand.layout
-        out.set_layout(layout)
-        indices = self.indices
-        np.copyto(out.data, operand.data)
-
-        axes_list = np.arange(len(out.data.shape))
-        axes_list[indices[0]] = indices[1]
-        axes_list[indices[1]] = indices[0]
-        np.copyto(out.data,np.transpose(out.data,axes=axes_list))
+        out.set_layout(operand.layout)
+        # Transpose data
+        out.data[:] = np.transpose(operand.data, self.new_axis_order)  # CREATES TEMPORARY
 
 
 class SphericalTransposeComponents(TransposeComponents):
 
     cs_type = coords.SphericalCoordinates
 
-    def __init__(self, operand, indices=(0,1), out=None):
-        super().__init__(operand, indices=indices, out=out)
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
         self.radius_axis = self.coordsys.coords[2].axis
-        input_basis = self.domain.get_basis(self.coordsys)
-        self.input_basis = input_basis
         self.radial_basis = self.input_basis.get_radial_basis()
 
-    def check_conditions(self):
-        """Can always take the transpose"""
-        return True
-
-    def enforce_conditions(self):
-        """Can always take the transpose"""
-        pass
-
     def subproblem_matrix(self, subproblem):
-        operand = self.args[0]
-        basis = self.radial_basis
-        R = basis.regularity_classes(self.tensorsig)
-
+        radial_basis = self.radial_basis
         ell = subproblem.group[self.radius_axis - 1]
-
-        indices = self.indices
-        rank = len(self.tensorsig)
-        neworder = np.arange(rank)
-        neworder[indices[0]] = indices[1]
-        neworder[indices[1]] = indices[0]
-
-        matrix = []
-        for regindex_out, regtotal_out in np.ndenumerate(R):
-            regindex_out = np.array(regindex_out)
-            matrix_row = []
-            for regindex_in, regtotal_in in np.ndenumerate(R):
-                if tuple(regindex_out[neworder]) == regindex_in:
-                    matrix_row.append( 1 )
-                else:
-                    matrix_row.append( 0 )
-            matrix.append(matrix_row)
-        transpose = np.array(matrix)
-
-        Q = basis.radial_recombinations(self.tensorsig,ell_list=(ell,))
+        # Commute transposition with regularity recombination
+        transpose = self._transpose_matrix
+        Q = radial_basis.radial_recombinations(self.tensorsig, ell_list=(ell,))
         transpose = Q[ell].T @ transpose @ Q[ell]
-
-        # assume all regularities have the same n_size
-        eye = sparse.identity(basis.n_size(ell), self.dtype, format='csr')
-        matrix = sparse.kron( transpose, eye)
+        # Assume all components have the same n_size
+        eye = sparse.identity(radial_basis.n_size(ell), self.dtype, format='csr')
+        matrix = sparse.kron(transpose, eye)
         # Block-diag for sin/cos parts for real dtype
         if self.dtype == np.float64:
             matrix = sparse.kron(matrix, sparse.identity(2, format='csr')).tocsr()
@@ -1685,23 +1639,24 @@ class SphericalTransposeComponents(TransposeComponents):
     def operate(self, out):
         """Perform operation."""
         operand = self.args[0]
-        basis = self.input_basis.radial_basis
+        radius_axis = self.radius_axis
         # Set output layout
         layout = operand.layout
         out.set_layout(layout)
-        indices = self.indices
-        np.copyto(out.data, operand.data)
-
-        if not layout.grid_space[self.radius_axis]: # in regularity componentsinput
-            basis.backward_regularity_recombination(operand.tensorsig, self.radius_axis, out.data, ell_maps=self.input_basis.ell_maps)
-
-        axes_list = np.arange(len(out.data.shape))
-        axes_list[indices[0]] = indices[1]
-        axes_list[indices[1]] = indices[0]
-        np.copyto(out.data,np.transpose(out.data,axes=axes_list))
-
-        if not layout.grid_space[self.radius_axis]: # in regularity components
-            basis.forward_regularity_recombination(operand.tensorsig, self.radius_axis, out.data, ell_maps=self.input_basis.ell_maps)
+        # Transpose data
+        if layout.grid_space[radius_axis]:
+            # Not in regularity components: can directly transpose
+            out.data[:] = np.transpose(operand.data, self.new_axis_order)
+        else:
+            radial_basis = self.radial_basis
+            ell_maps = self.input_basis.ell_maps
+            # Copy to output for in-place regularity recombination
+            copyto(out.data, operand.data)
+            out.data[:] = operand.data
+            # Commute transposition with regularity recombination
+            radial_basis.backward_regularity_recombination(operand.tensorsig, radius_axis, out.data, ell_maps=ell_maps)
+            copyto(out.data, np.transpose(out.data, self.new_axis_order))
+            radial_basis.forward_regularity_recombination(operand.tensorsig, radius_axis, out.data, ell_maps=ell_maps)
 
 
 class SphericalComponent(LinearOperator):

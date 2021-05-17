@@ -2,6 +2,7 @@
 
 import numpy as np
 from scipy import sparse
+import scipy.sparse as sp
 from scipy.sparse import _sparsetools
 from scipy.sparse import linalg as spla
 
@@ -244,4 +245,40 @@ def permute_axis(array, axis, permutation, out=None):
 def copyto(dest, src):
     # Seems to be faster than np.copyto
     dest[:] = src
+
+
+def perm_matrix(perm, M=None, source_index=False, sparse=True):
+    """
+    Build sparse permutation matrix from permutation vector.
+
+    Parameters
+    ----------
+    perm : ndarray
+        Permutation vector.
+    M : int, optional
+        Output dimension. Default: len(perm).
+    source_index : bool, optional
+        False (default) if perm entries indicate destination index:
+            output[i,j] = (i == perm[j])
+        True if perm entires indicate source index:
+            output[i,j] = (j == perm[i])
+    sparse : bool, optional
+        Whether to return sparse matrix or dense array (default: True).
+    """
+    N = len(perm)
+    if M is None:
+        M = N
+    if source_index:
+        row = np.arange(N)
+        col = np.array(perm)
+    else:
+        row = np.array(perm)
+        col = np.arange(N)
+    if sparse:
+        data = np.ones(N, dtype=int)
+        return sp.coo_matrix((data, (row, col)), shape=(M, N))
+    else:
+        output = np.zeros((M, N), dtype=int)
+        output[row, col] = 1
+        return output
 

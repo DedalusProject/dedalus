@@ -5,7 +5,7 @@ import numpy as np
 from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
 from dedalus.tools import logging
 from dedalus.tools.parsing import split_equation
-import dedalus_sphere
+from dedalus.libraries import dedalus_sphere
 import logging
 logger = logging.getLogger(__name__)
 
@@ -53,15 +53,16 @@ curl = lambda A: operators.Curl(A)
 dot = lambda A,B: arithmetic.DotProduct(A, B)
 cross = lambda A,B: arithmetic.CrossProduct(A, B)
 dt = lambda A: operators.TimeDerivative(A)
+LiftTau = lambda A: operators.LiftTau(A, b, -1)
 
 # Problem
 def eq_eval(eq_str):
     return [eval(expr) for expr in split_equation(eq_str)]
 problem = problems.IVP([u, T, p, tau_u, tau_T])
 #problem.add_equation(eq_eval("dt(u) - nu*lap(u) - grad(p) = -cross(u, curl(u)) - g*T"), condition='nphi != 0')
-problem.add_equation(eq_eval("dt(u) - nu*lap(u) - grad(p) = -dot(u, grad(u)) - g*T"), condition='nphi != 0')
+problem.add_equation(eq_eval("dt(u) - nu*lap(u) - grad(p) + LiftTau(tau_u) = -dot(u, grad(u)) - g*T"), condition='nphi != 0')
 problem.add_equation(eq_eval("u = 0"), condition='nphi == 0')
-problem.add_equation(eq_eval("dt(T) - kappa*lap(T) = -dot(u, grad(T)) + S"))
+problem.add_equation(eq_eval("dt(T) - kappa*lap(T) + LiftTau(tau_T) = -dot(u, grad(T)) + S"))
 problem.add_equation(eq_eval("div(u) = 0"), condition='nphi != 0')
 problem.add_equation(eq_eval("p = 0"), condition='nphi == 0')
 
@@ -74,48 +75,6 @@ print("Problem built")
 # Solver
 solver = solvers.InitialValueSolver(problem, timesteppers.RK111)
 
-# Add taus
-alpha_BC = 0
-
-def C(N, m, s):
-    ab = (alpha_BC, m+s)
-    cd = (2,        m+s)
-    return dedalus_sphere.jacobi.coefficient_connection(N - m//2 + 1,ab,cd)
-
-def BC_rows(N, m, num_comp):
-    N_list = (np.arange(num_comp)+1)*(N - m//2 + 1)
-    return N_list
-
-for subproblem in solver.subproblems:
-    m = subproblem.group[0]
-    L = subproblem.left_perm.T @ subproblem.L_min
-    
-    if dtype == np.complex128:
-        raise NotImplementedError()
-    elif dtype == np.float64:
-        N0, N1, N2, N3 = BC_rows(Nmax, m, 4) * 2
-        NM = Nmax - m//2 + 1
-        if m == 0:
-            tau_columns = np.zeros((L.shape[0], 2))
-            tau_columns[N1:N1+NM,0] = (C(Nmax, m, 0))[:,-1]
-            tau_columns[N1+NM:N2,1] = (C(Nmax, m, 0))[:,-1]
-            L[:,-2:] = tau_columns
-        else:
-            tau_columns = np.zeros((L.shape[0], 6))
-            tau_columns[0:NM,0] = (C(Nmax, m, -1))[:,-1]
-            tau_columns[NM:N0,1] = (C(Nmax, m, -1))[:,-1]
-            tau_columns[N0:N0+NM,2] = (C(Nmax, m, +1))[:,-1]
-            tau_columns[N0+NM:N1,3] = (C(Nmax, m, +1))[:,-1]
-            tau_columns[N1:N1+NM,4] = (C(Nmax, m, 0))[:,-1]
-            tau_columns[N1+NM:N2,5] = (C(Nmax, m, 0))[:,-1]
-            L[:,-6:] = tau_columns
-
-    subproblem.L_min = subproblem.left_perm @ L
-    if problem.STORE_EXPANDED_MATRICES:
-        subproblem.expand_matrices(['M','L'])
-
-    #print("m = {}: Condition number {}".format(m, np.linalg.cond((L+M).A)))
-    
 # initial conditions
 np.random.seed(10)
 slices = T.dist.grid_layout.slices(T.domain,T.scales)
