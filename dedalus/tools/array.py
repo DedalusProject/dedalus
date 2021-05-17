@@ -190,7 +190,7 @@ def add_sparse(A, B):
         return A + B
 
 
-def sparse_block_diag(blocks):
+def sparse_block_diag(blocks, shape=None):
     """Build a block diagonal sparse matrix allowing size 0 matrices."""
     # Collect subblocks
     data, rows, cols = [], [], []
@@ -204,10 +204,15 @@ def sparse_block_diag(blocks):
         i0 += block.shape[0]
         j0 += block.shape[1]
     # Build full matrix
-    data = np.concatenate(data)
-    rows = np.concatenate(rows)
-    cols = np.concatenate(cols)
-    return sparse.coo_matrix((data, (rows, cols)), shape=(i0,j0))
+    if shape is None:
+        shape = (i0, j0)
+    if data:
+        data = np.concatenate(data)
+        rows = np.concatenate(rows)
+        cols = np.concatenate(cols)
+        return sparse.coo_matrix((data, (rows, cols)), shape=shape).tocsr()
+    else:
+        return sparse.csr_matrix(shape)
 
 
 def kron(*factors):

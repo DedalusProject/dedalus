@@ -533,7 +533,7 @@ class ConvertJacobi(operators.Convert, operators.SpectralOperator1D):
 
     @staticmethod
     @CachedMethod
-    def _subspace_matrix(input_basis, output_basis):
+    def _full_matrix(input_basis, output_basis):
         N = input_basis.size
         a0, b0 = input_basis.a, input_basis.b
         a1, b1 = output_basis.a, output_basis.b
@@ -542,6 +542,7 @@ class ConvertJacobi(operators.Convert, operators.SpectralOperator1D):
 
 
 class ConvertConstantJacobi(operators.Convert, operators.SpectralOperator1D):
+    """Upcast constants to Jacobi."""
 
     input_basis_type = type(None)
     output_basis_type = Jacobi
@@ -550,13 +551,20 @@ class ConvertConstantJacobi(operators.Convert, operators.SpectralOperator1D):
 
     @staticmethod
     @CachedMethod
-    def _subspace_matrix(input_basis, output_basis):
-        basis = output_basis
-        MMT = basis.transforms['matrix'](grid_size=1, coeff_size=basis.size, a=basis.a, b=basis.b, a0=basis.a0, b0=basis.b0)
-        return MMT.forward_matrix
+    def _group_matrix(group, input_basis, output_basis):
+        n = group
+        if n == 0:
+            basis = output_basis
+            # TODO: optimize by just using correct weight for zero mode.
+            MMT = basis.transforms['matrix'](grid_size=1, coeff_size=basis.size, a=basis.a, b=basis.b, a0=basis.a0, b0=basis.b0)
+            unit_amplitude = MMT.forward_matrix[0, 0]
+            return np.array([[unit_amplitude]])
+        else:
+            # Constructor should only loop over group 0.
+            raise ValueError("This should never happen.")
 
 
-class DifferentiateJacobi(operators.Differentiate):
+class DifferentiateJacobi(operators.Differentiate, operators.SpectralOperator1D):
     """Jacobi polynomial differentiation."""
 
     input_basis_type = Jacobi
@@ -571,11 +579,11 @@ class DifferentiateJacobi(operators.Differentiate):
 
     @staticmethod
     @CachedMethod
-    def _subspace_matrix(input_basis):
+    def _full_matrix(input_basis, output_basis):
         N = input_basis.size
         a, b = input_basis.a, input_basis.b
-        matrix = jacobi.differentiation_matrix(N, a, b)
-        return (matrix.tocsr() / input_basis.COV.stretch)
+        matrix = jacobi.differentiation_matrix(N, a, b) / input_basis.COV.stretch
+        return matrix.tocsr()
 
 
 class InterpolateJacobi(operators.Interpolate, operators.SpectralOperator1D):
@@ -586,31 +594,40 @@ class InterpolateJacobi(operators.Interpolate, operators.SpectralOperator1D):
     subaxis_coupling = [True]
 
     @staticmethod
+    def _output_basis(input_basis, position):
+        return None
+
+    @staticmethod
     @CachedMethod
-    def _subspace_matrix(input_basis, position):
+    def _full_matrix(input_basis, output_basis, position):
+        # Build native interpolation vector
         N = input_basis.size
         a, b = input_basis.a, input_basis.b
         x = input_basis.COV.native_coord(position)
         interp_vector = jacobi.build_polynomials(N, a, b, x)
-        # Return as 1*N array
-        return interp_vector[None,:]
+        # Return with shape (1, N)
+        return interp_vector[None, :]
+
+
+class IntegrateJacobi(operators.Integrate, operators.SpectralOperator1D):
+    """Jacobi polynomial integration."""
+
+    input_basis_type = Jacobi
+    subaxis_dependence = [True]
+    subaxis_coupling = [True]
 
     @staticmethod
-    def _output_basis(input_basis, position):
+    def _output_basis(input_basis):
         return None
 
-
-# class IntegrateJacobi(operators.Integrate):
-#     """Jacobi polynomial integration."""
-
-#     input_basis_type = Jacobi
-
-#     @staticmethod
-#     def _subspace_matrix(space, input_basis):
-#         N = space.coeff_size
-#         a, b = input_basis.a, input_basis.b
-#         vector = jacobi.integration_vector(N, a, b)
-#         return (vector * space.COV.stretch)
+    @staticmethod
+    def _full_matrix(input_basis, output_basis):
+        # Build native integration vector
+        N = input_basis.size
+        a, b = input_basis.a, input_basis.b
+        integ_vector = jacobi.integration_vector(N, a, b)
+        # Rescale and return with shape (1, N)
+        return integ_vector[None, :] * input_basis.COV.stretch
 
 
 # class Fourier(Basis, metaclass=CachedClass):
@@ -698,10 +715,26 @@ class ComplexFourier(IntervalBasis):
             library = "fftw"
         self.library = library
         self.kmax = kmax = (size - 1) // 2
-        self.wavenumbers = np.concatenate((np.arange(0, kmax+2), np.arange(-kmax, 0)))  # Includes Nyquist mode
         # No permutations by default
         self.forward_coeff_permutation = None
         self.backward_coeff_permutation = None
+        # Store non-permuted wavenumbers
+        self._native_wavenumbers = np.concatenate((np.arange(0, kmax+2), np.arange(-kmax, 0)))  # Includes Nyquist mode
+        self._wavenumbers = self._native_wavenumbers / self.COV.stretch
+
+    @property
+    def native_wavenumbers(self):
+        if self.forward_coeff_permutation is None:
+            return self._native_wavenumbers
+        else:
+            return self._native_wavenumbers[self.forward_coeff_permutation]
+
+    @property
+    def wavenumbers(self):
+        if self.forward_coeff_permutation is None:
+            return self._wavenumbers
+        else:
+            return self._wavenumbers[self.forward_coeff_permutation]
 
     def _native_grid(self, scale):
         """Native flat global grid."""
@@ -733,7 +766,7 @@ class ComplexFourier(IntervalBasis):
             return [[None]]
         else:
             local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)[self.axis]
-            return [[self.wavenumbers[chunk]] for chunk in local_chunks]
+            return [[self.native_wavenumbers[chunk]] for chunk in local_chunks]
 
     def local_group_slices(self, basis_group):
         group, = basis_group
@@ -745,10 +778,7 @@ class ComplexFourier(IntervalBasis):
             # Get local groups
             local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)[self.axis]
             # Groups are stored sequentially
-            if self.forward_coeff_permutation is None:
-                global_groups = self.wavenumbers
-            else:
-                global_groups = self.wavenumbers[self.forward_coeff_permutation]
+            global_groups = self.native_wavenumbers
             local_groups = global_groups[local_chunks]
             local_index = list(local_groups).index(group)
             group_size = self.group_shape[0]
@@ -765,6 +795,7 @@ class ComplexFourier(IntervalBasis):
 
 
 class ConvertConstantComplexFourier(operators.Convert, operators.SpectralOperator1D):
+    """Upcast constants to ComplexFourier."""
 
     input_basis_type = type(None)
     output_basis_type = ComplexFourier
@@ -772,60 +803,86 @@ class ConvertConstantComplexFourier(operators.Convert, operators.SpectralOperato
     subaxis_coupling = [False]
 
     @staticmethod
-    def _subspace_matrix(input_basis, output_basis):
-        basis = output_basis
-        MMT = basis.transforms['matrix'](grid_size=1, coeff_size=output_basis.size)
-        return MMT.forward_matrix
+    def _group_matrix(group, input_basis, output_basis):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / output_basis.COV.stretch
+        # 1 = exp(1j*0*x)
+        if k == 0:
+            return np.array([[1]])
+        else:
+            # Constructor should only loop over group 0.
+            raise ValueError("This should never happen.")
 
 
-class DifferentiateComplexFourier(operators.Differentiate):
-    """Complex Fourier differentiation."""
+class DifferentiateComplexFourier(operators.Differentiate, operators.SpectralOperator1D):
+    """ComplexFourier differentiation."""
 
     input_basis_type = ComplexFourier
-    bands = [0]
     subaxis_dependence = [True]
     subaxis_coupling = [False]
-    dtype = np.complex128
 
     @staticmethod
     def _output_basis(input_basis):
         return input_basis
 
     @staticmethod
-    def _subspace_entry(i, j, input_basis, *args):
-        if i == j:
-            k = input_basis.wavenumbers[i]
-            return 1j*k / input_basis.COV.stretch
-        else:
-            raise
+    def _group_matrix(group, input_basis, output_basis):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / input_basis.COV.stretch
+        # dx exp(1j*k*x) = 1j * k * exp(1j*k*x)
+        return np.array([[1j*k]])
 
 
 class InterpolateComplexFourier(operators.Interpolate, operators.SpectralOperator1D):
-    """Complex Fourier interpolation."""
+    """ComplexFourier interpolation."""
 
     input_basis_type = ComplexFourier
     subaxis_dependence = [True]
     subaxis_coupling = [True]
-    dtype = np.complex128
-
-    @staticmethod
-    def _subspace_matrix(input_basis, position):
-        N = input_basis.size
-        x = input_basis.COV.native_coord(position)
-        interp_vector = np.array([np.exp(1j*k*x) for k in input_basis.wavenumbers])
-        # Return as 1*N array
-        return interp_vector[None,:]
 
     @staticmethod
     def _output_basis(input_basis, position):
         return None
+
+    @staticmethod
+    def _full_matrix(input_basis, output_basis, position):
+        # Build native interpolation vector
+        x = input_basis.COV.native_coord(position)
+        k = input_basis.native_wavenumbers
+        interp_vector = np.exp(1j * k * x)
+        # Return with shape (1, N)
+        return interp_vector[None, :]
+
+
+class IntegrateComplexFourier(operators.Integrate, operators.SpectralOperator1D):
+    """ComplexFourier integration."""
+
+    input_basis_type = ComplexFourier
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
+
+    @staticmethod
+    def _output_basis(input_basis):
+        return None
+
+    @staticmethod
+    def _group_matrix(group, input_basis, output_basis):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / input_basis.COV.stretch
+        # integ exp(1j*k*x) = L * δ(k, 0)
+        if k == 0:
+            L = input_basis.COV.problem_length
+            return np.array([[L]])
+        else:
+            # Constructor should only loop over group 0.
+            raise ValueError("This should never happen.")
 
 
 class RealFourier(IntervalBasis):
     """
     Fourier real sine/cosine basis.
 
-    Modes: [cos 0, -sin 0, cos 1, -sin 1, ...]
+    Modes: [cos(0*x), -sin(0*x), cos(1*x), -sin(1*x), ...]
     """
 
     group_shape = (2,)
@@ -838,11 +895,26 @@ class RealFourier(IntervalBasis):
         super().__init__(coord, size, bounds, dealias)
         self.library = library
         self.kmax = kmax = (size - 1) // 2
-        self.wavenumbers_no_repeats = np.arange(0, kmax+1)  # Excludes Nyquist mode
-        self.wavenumbers = np.repeat(self.wavenumbers_no_repeats, 2)
         # No permutations by default
         self.forward_coeff_permutation = None
         self.backward_coeff_permutation = None
+        # Store non-permuted wavenumbers
+        self._native_wavenumbers = np.repeat(np.arange(0, kmax+1), 2)  # Excludes Nyquist mode
+        self._wavenumbers = self._native_wavenumbers / self.COV.stretch
+
+    @property
+    def native_wavenumbers(self):
+        if self.forward_coeff_permutation is None:
+            return self._native_wavenumbers
+        else:
+            return self._native_wavenumbers[self.forward_coeff_permutation]
+
+    @property
+    def wavenumbers(self):
+        if self.forward_coeff_permutation is None:
+            return self._wavenumbers
+        else:
+            return self._wavenumbers[self.forward_coeff_permutation]
 
     def __add__(self, other):
         if other is None:
@@ -887,7 +959,7 @@ class RealFourier(IntervalBasis):
 
     def local_elements(self):
         local_elements = self.dist.coeff_layout.local_elements(self.domain, scales=1)[self.axis]
-        return (self.wavenumbers[local_elements],)
+        return (self.native_wavenumbers[local_elements],)
 
     def forward_transform(self, field, axis, gdata, cdata):
         super().forward_transform(field, axis, gdata, cdata)
@@ -909,10 +981,7 @@ class RealFourier(IntervalBasis):
             # Get local groups
             local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)[self.axis]
             # Groups are stored sequentially
-            if self.forward_coeff_permutation is None:
-                global_groups = self.wavenumbers[::2]
-            else:
-                global_groups = self.wavenumbers[self.forward_coeff_permutation][::2]
+            global_groups = self.native_wavenumbers[::2]
             local_groups = global_groups[local_chunks]
             local_index = list(local_groups).index(group)
             group_size = self.group_shape[0]
@@ -920,6 +989,7 @@ class RealFourier(IntervalBasis):
 
 
 class ConvertConstantRealFourier(operators.Convert, operators.SpectralOperator1D):
+    """Upcast constants to RealFourier."""
 
     input_basis_type = type(None)
     output_basis_type = RealFourier
@@ -927,80 +997,87 @@ class ConvertConstantRealFourier(operators.Convert, operators.SpectralOperator1D
     subaxis_coupling = [False]
 
     @staticmethod
-    def _subspace_matrix(input_basis, output_basis):
-        basis = output_basis
-        MMT = basis.transforms['matrix'](grid_size=1, coeff_size=output_basis.size)
-        return MMT.forward_matrix
+    def _group_matrix(group, input_basis, output_basis):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / output_basis.COV.stretch
+        # 1 = cos(0*x)
+        if k == 0:
+            return np.array([[1],
+                             [0]])
+        else:
+            # Constructor should only loop over group 0.
+            raise ValueError("This should never happen.")
 
 
-class DifferentiateRealFourier(operators.Differentiate):
+class DifferentiateRealFourier(operators.Differentiate, operators.SpectralOperator1D):
+    """RealFourier differentiation."""
 
     input_basis_type = RealFourier
-    bands = [-1, 1]
     subaxis_dependence = [True]
     subaxis_coupling = [False]
-    dtype = np.float64
 
     @staticmethod
     def _output_basis(input_basis):
         return input_basis
 
     @staticmethod
-    def _subspace_entry(i, j, input_basis):
-        # dx(cos(k*x)) = k*(-sin(k*x))
-        # dx(-sin(k*x)) = -k*cos(k*x)
-        n = j // 2
-        k = n / input_basis.COV.stretch
-        if n == 0:
-            return 0
-        elif (j % 2) == 0:
-            # dx(cos(k*x)) = k*(-sin(k*x))
-            if i == (j + 1):
-                return k
-            else:
-                return 0
-        else:
-            # dx(-sin(k*x)) = -k*cos(k*x)
-            if i == (j - 1):
-                return -k
-            else:
-                return 0
+    def _group_matrix(group, input_basis, output_basis):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / input_basis.COV.stretch
+        # dx  cos(k*x) = k * -sin(k*x)
+        # dx -sin(k*x) = -k * cos(k*x)
+        return np.array([[0, -k],
+                         [k,  0]])
+
 
 class InterpolateRealFourier(operators.Interpolate, operators.SpectralOperator1D):
+    """RealFourier interpolation."""
 
     input_basis_type = RealFourier
     subaxis_dependence = [True]
     subaxis_coupling = [True]
-    dtype = np.float64
 
     @staticmethod
     def _output_basis(input_basis, position):
         return None
 
     @staticmethod
-    def _subspace_matrix(input_basis, position):
+    def _full_matrix(input_basis, output_basis, position):
+        # Build native interpolation vector
         # Interleaved cos(k*x), -sin(k*x)
         x = input_basis.COV.native_coord(position)
-        k = input_basis.wavenumbers_no_repeats
-        interp_vector = np.exp(1j*k*x).view(dtype=np.float64)
-        interp_vector[1::2] *= -1
-        # Return as 1*N array
-        return interp_vector[None,:]
+        k = input_basis.native_wavenumbers
+        interp_vector = np.zeros(k.size)
+        interp_vector[0::2] = np.cos(k[0::2] * x)
+        interp_vector[1::2] = -np.sin(k[1::2] * x)
+        # Return with shape (1, N)
+        return interp_vector[None, :]
 
 
-# class IntegrateFourier(operators.Integrate):
-#     """Fourier series integration."""
+class IntegrateRealFourier(operators.Integrate, operators.SpectralOperator1D):
+    """RealFourier integration."""
 
-#     input_basis_type = Fourier
+    input_basis_type = RealFourier
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
 
-#     @staticmethod
-#     def _build_subspace_entry(j, space, input_basis):
-#         # integral(cos(n*x), 0, 2*pi) = 2 * pi * δ(n, 0)
-#         # integral(sin(n*x), 0, 2*pi) = 0
-#         if j == 0:
-#             return 2 * np.pi * space.COV.stretch
-#         else:
-#             return 0
+    @staticmethod
+    def _output_basis(input_basis):
+        return None
+
+    @staticmethod
+    def _group_matrix(group, input_basis, output_basis):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / input_basis.COV.stretch
+        # integ  cos(k*x) = L * δ(k, 0)
+        # integ -sin(k*x) = 0
+        if k == 0:
+            L = input_basis.COV.problem_length
+            return np.array([[L]])
+        else:
+            # Constructor should only loop over group 0.
+            raise ValueError("This should never happen.")
+
 
 # class HilbertTransformFourier(operators.HilbertTransform):
 #     """Fourier series Hilbert transform."""
@@ -1399,7 +1476,7 @@ class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):
     def local_m(self):
         layout = self.dist.coeff_layout
         local_m_elements = layout.local_elements(self.domain, scales=1)[self.axis]
-        return tuple(self.azimuth_basis.wavenumbers[local_m_elements])
+        return tuple(self.azimuth_basis.native_wavenumbers[local_m_elements])
 
     def local_elements(self):
         CL = self.dist.coeff_layout
@@ -1678,7 +1755,7 @@ class DiskBasis(SpinBasis):
         if self.shape[0] == 1:
             return tuple([0,])
         # Permute Fourier wavenumbers
-        wavenumbers = self.azimuth_basis.wavenumbers[self.forward_m_perm]
+        wavenumbers = self.azimuth_basis.native_wavenumbers
         # Get layout before radius forward transform
         transform = self.dist.get_transform_object(axis=self.axis+1)
         layout = transform.layout1
@@ -1997,6 +2074,9 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             self.forward_m_perm = (mod2 + div2) * (1 - div22) + (shape[0] - 1 + mod2 - div2) * div22
             self.backward_m_perm = np.argsort(self.forward_m_perm)
             self.group_shape = (2, 1)
+        # Set permutations on azimuth basis
+        self.azimuth_basis.forward_coeff_permutation = self.forward_m_perm
+        self.azimuth_basis.backward_coeff_permutation = self.backward_m_perm
 
     def global_shape(self, layout, scales):
         grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
@@ -2115,7 +2195,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
     @CachedAttribute
     def local_unpacked_m(self):
         # Permute Fourier wavenumbers
-        wavenumbers = self.azimuth_basis.wavenumbers[self.forward_m_perm]
+        wavenumbers = self.azimuth_basis.native_wavenumbers
         # Get layout before colatitude forward transform
         transform = self.dist.get_transform_object(axis=self.axis+1)
         layout = transform.layout1
@@ -2313,7 +2393,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         # Call Fourier transform
         self.azimuth_basis.forward_transform(field, axis, gdata, cdata)
         # Permute m for triangular truncation
-        permute_axis(cdata, axis+len(field.tensorsig), self.forward_m_perm, out=cdata)
+        #permute_axis(cdata, axis+len(field.tensorsig), self.forward_m_perm, out=cdata)
 
     def forward_transform_radius(self, field, axis, gdata, cdata):
         # Placeholder for when self.coordsys is SphericalCoordinates
@@ -2325,7 +2405,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
 
     def backward_transform_azimuth(self, field, axis, cdata, gdata):
         # Permute m back from triangular truncation
-        permute_axis(cdata, axis+len(field.tensorsig), self.backward_m_perm, out=cdata)
+        #permute_axis(cdata, axis+len(field.tensorsig), self.backward_m_perm, out=cdata)
         # Call Fourier transform
         self.azimuth_basis.backward_transform(field, axis, cdata, gdata)
 

@@ -16,7 +16,7 @@ from .domain import Domain
 from . import coords
 from .field import Operand, Field
 from .future import Future, FutureField, FutureLockedField
-from ..tools.array import reshape_vector, apply_matrix, add_sparse, axindex, axslice
+from ..tools.array import reshape_vector, apply_matrix, add_sparse, axindex, axslice, sparse_block_diag
 from ..tools.cache import CachedAttribute, CachedMethod
 from ..tools.dispatch import MultiClass
 from ..tools.exceptions import NonlinearOperatorError
@@ -821,87 +821,61 @@ class SpectralOperator1D(SpectralOperator):
         factors = [sparse.identity(n, format='csr') for n in subsystem_shape]
         # Substitute factor for operator axis
         if subproblem.group[axis] is None:
-            factors[axis] = self.subspace_matrix
+            factors[axis] = self.subspace_matrix(self.dist.coeff_layout)
         else:
             group = subproblem.group[axis]
-            chunk = list(self.input_basis.local_elements()[0]).index(group)
-            group_size = self.input_basis.group_shape[0]
-            argslice = outslice = slice(chunk, chunk+group_size)
-            # argslice = subproblem.global_slices(self.operand.domain)[axis]
-            # outslice = subproblem.global_slices(self.domain)[axis]
-            factors[axis] = self.subspace_matrix[outslice, argslice]
+            factors[axis] = self.group_matrix(group)
         # Add factor for components
         comps = np.prod([cs.dim for cs in self.tensorsig], dtype=int)
         factors = [sparse.identity(comps, format='csr')] + factors
         return reduce(sparse.kron, factors, 1).tocsr()
 
-    @CachedAttribute
-    def subspace_matrix(self):
-        """Build matrix operating on global subspace data."""
-        return self._subspace_matrix(self.input_basis)
+    def subspace_matrix(self, layout):
+        """Build matrix operating on local subspace data."""
+        # Caching layer to allow insertion of other arguments
+        return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis)
+
+    def group_matrix(self, group):
+        return self._group_matrix(group, self.input_basis, self.output_basis)
 
     @classmethod
-    def _subspace_matrix(cls, basis):
-        dtype = cls.dtype
-        N = basis.size
-        # Build matrix entry by entry over nonzero bands
-        M = sparse.lil_matrix((N, N), dtype=dtype)
-        for i in range(N):
-            for b in cls.bands:
-                j = i + b
-                if (0 <= j < N):
-                    Mij = cls._subspace_entry(i, j, basis)
-                    if Mij:
-                        M[i,j] = Mij
-        return M.tocsr()
+    @CachedMethod
+    def _subspace_matrix(cls, layout, input_basis, output_basis, axis, *args):
+        if cls.subaxis_coupling[0]:
+            return cls._full_matrix(input_basis, output_basis, *args)
+        else:
+            input_domain = Domain(layout.dist, bases=[input_basis])
+            output_domain = Domain(layout.dist, bases=[output_basis])
+            if input_basis is None:
+                local_groups = output_basis.local_groups(cls.subaxis_coupling)
+                local_groups = [lg for lg in local_groups if lg == [0]]
+            elif output_basis is None:
+                local_groups = input_basis.local_groups(cls.subaxis_coupling)
+                local_groups = [lg for lg in local_groups if lg == [0]]
+            else:
+                local_groups = input_basis.local_groups(cls.subaxis_coupling)
+            group_blocks = [cls._group_matrix(group[0], input_basis, output_basis, *args) for group in local_groups]
+            arg_size = layout.local_shape(input_domain, scales=1)[axis]
+            out_size = layout.local_shape(output_domain, scales=1)[axis]
+            return sparse_block_diag(group_blocks, shape=(out_size, arg_size))
 
     @staticmethod
-    def _subspace_entry(i, j, basis):
+    def _full_matrix(input_basis, output_basis, *args):
+        raise NotImplementedError()
+
+    @staticmethod
+    def _group_matrix(group, input_basis, output_basis, *args):
         raise NotImplementedError()
 
     def operate(self, out):
         """Perform operation."""
         arg = self.args[0]
         layout = arg.layout
-        axis = self.last_axis
-        matrix = self.subspace_matrix
         # Set output layout
         out.set_layout(layout)
-        # Restrict subspace matrix to local elements if separable
-        # OPTIMIZE: don't need to construct full matrix if separable
-        if not self.subaxis_coupling[-1]:
-            arg_elements = arg.local_elements()[axis]
-            out_elements = out.local_elements()[axis]
-            matrix = matrix[out_elements[:,None], arg_elements[None,:]]
         # Apply matrix
         data_axis = self.last_axis + len(arg.tensorsig)
-        apply_matrix(matrix, arg.data, data_axis, out=out.data)
-
-
-class LinearSubspaceFunctional(SpectralOperator1D):
-    """Base class for linear functionals acting within a single space."""
-
-    separable = False
-
-    def output_basis(self, space, input_basis):
-        """Determine output basis."""
-        return None
-
-    @classmethod
-    def _subspace_matrix(cls, space, basis, *args):
-        dtype = space.domain.dtype
-        N = space.coeff_size
-        # Build row entry by entry
-        M = sparse.lil_matrix((1, N), dtype=dtype)
-        for j in range(N):
-            Mij = cls._subspace_entry(j, space, basis, *args)
-            if Mij:
-                M[0,j] = Mij
-        return M.tocsr()
-
-    @staticmethod
-    def _subspace_entry(j, space, basis, *args):
-        raise NotImplementedError()
+        apply_matrix(self.subspace_matrix(layout), arg.data, data_axis, out=out.data)
 
 
 class TimeDerivative(LinearOperator):
@@ -992,6 +966,15 @@ class Interpolate(SpectralOperator, metaclass=MultiClass):
             raise ValueError("coord must be Coordinate or str")
         return (operand, coord, position), {'out': out}
 
+#    @classmethod
+#    def _check_args(cls, operand, coord, position, out=None):
+#        # Dispatch by operand basis
+#        if isinstance(operand, Operand):
+#            if isinstance(operand.get_basis(coord), cls.input_basis_type):
+#                if operand.domain.get_basis_subaxis(coord) == cls.input_basis_subaxis:
+#                    return True
+#        return False
+
     @classmethod
     def _check_args(cls, operand, coord, position, out=None):
         # Dispatch by operand basis
@@ -1026,67 +1009,14 @@ class Interpolate(SpectralOperator, metaclass=MultiClass):
     def new_operand(self, operand, **kw):
         return Interpolate(operand, self.coord, self.position, **kw)
 
-    @CachedAttribute
-    def subspace_matrix(self):
+    def subspace_matrix(self, layout):
         """Build matrix operating on global subspace data."""
-        return self._subspace_matrix(self.input_basis, self.position)
+        return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis, self.position)
 
     def _expand_multiply(self, operand, vars):
         """Expand over multiplication."""
         # Apply to each factor
         return np.prod([self.new_operand(arg) for arg in operand.args])
-
-
-#class Interpolate(LinearSubspaceFunctional, metaclass=MultiClass):
-#    """
-#    Interpolation along one dimension.
-#
-#    Parameters
-#    ----------
-#    operand : number or Operand object
-#    space : Space object
-#    position : 'left', 'center', 'right', or float
-#
-#    """
-#
-#    @classmethod
-#    def _check_args(cls, operand, coord, position, out=None):
-#        # Dispatch by operand basis
-#        if isinstance(operand, Operand):
-#            if isinstance(operand.get_basis(coord), cls.input_basis_type):
-#                if operand.domain.get_basis_subaxis(coord) == cls.input_basis_subaxis:
-#                    return True
-#        return False
-#
-#    def __init__(self, operand, coord, position, out=None):
-#        self.position = position
-#        super().__init__(operand, coord, position, out=out)
-#
-#    def _expand_multiply(self, operand, vars):
-#        """Expand over multiplication."""
-#        # Apply to each factor
-#        return np.prod([self.new_operand(arg) for arg in operand.args])
-#
-#    @property
-#    def base(self):
-#        return Interpolate
-#
-#
-#class InterpolateConstant(Interpolate):
-#    """Constant interpolation."""
-#
-#    @classmethod
-#    def _check_args(cls, operand, coord, position, out=None):
-#        # Dispatch for numbers or constant bases
-#        if isinstance(operand, Number):
-#            return True
-#        if isinstance(operand, Operand):
-#            if operand.get_basis(coord) is None:
-#                return True
-#        return False
-#
-#    def __new__(cls, operand, coord, position, out=None):
-#        return operand
 
 
 @parseable('integrate', 'integ')
@@ -1100,7 +1030,7 @@ def integrate(arg, *spaces):
     return arg
 
 
-class Integrate(LinearSubspaceFunctional, metaclass=MultiClass):
+class Integrate(LinearOperator, metaclass=MultiClass):
     """
     Integration along one dimension.
 
@@ -1119,26 +1049,32 @@ class Integrate(LinearSubspaceFunctional, metaclass=MultiClass):
                 return True
         return False
 
-    @property
-    def base(self):
-        return Integrate
-
-
-class IntegrateConstant(Integrate):
-    """Constant integration."""
-
     @classmethod
-    def _check_args(cls, operand, space, out=None):
-        # Dispatch for numbers or constant bases
+    def _preprocess_args(cls, operand, coord, out=None):
         if isinstance(operand, Number):
-            return True
-        if isinstance(operand, Operand):
-            if operand.get_basis(space) is None:
-                return True
-        return False
+            raise SkipDispatchException(output=operand)
+        if isinstance(coord, coords.Coordinate):
+            pass
+        elif isinstance(coord, str):
+            coord = operand.domain.get_coord(coord)
+        else:
+            raise ValueError("coord must be Coordinate or str")
+        return (operand, coord), {'out': out}
 
-    def __new__(cls, operand, space, out=None):
-        return (space.COV.problem_length * operand)
+    def __init__(self, operand, coord, out=None):
+        SpectralOperator.__init__(self, operand, out=out)
+        # SpectralOperator requirements
+        self.coord = coord
+        self.input_basis = operand.domain.get_basis(coord)
+        self.output_basis = self._output_basis(self.input_basis)
+        self.first_axis = self.input_basis.first_axis
+        self.last_axis = self.input_basis.last_axis
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = operand.domain.substitute_basis(self.input_basis, self.output_basis)
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
 
 
 # CHECK NEW
@@ -1153,34 +1089,34 @@ def filter(arg, **modes):
     return arg
 
 
-class Filter(LinearSubspaceFunctional):
+# class Filter(LinearSubspaceFunctional):
 
-    def __new__(cls, arg, space, mode):
-        if isinstance(arg, Number) or (arg.get_basis(space) is None):
-            if mode == 0:
-                return arg
-            else:
-                return 0
-        elif space not in arg.subdomain:
-            raise ValueError("Invalid space.")
-        else:
-            return object.__new__(cls)
+#     def __new__(cls, arg, space, mode):
+#         if isinstance(arg, Number) or (arg.get_basis(space) is None):
+#             if mode == 0:
+#                 return arg
+#             else:
+#                 return 0
+#         elif space not in arg.subdomain:
+#             raise ValueError("Invalid space.")
+#         else:
+#             return object.__new__(cls)
 
-    def __init__(self, arg, space, mode):
-        # Wrap initialization to define keywords
-        super().__init__(arg, space, mode)
+#     def __init__(self, arg, space, mode):
+#         # Wrap initialization to define keywords
+#         super().__init__(arg, space, mode)
 
-    @property
-    def base(self):
-        return Filter
+#     @property
+#     def base(self):
+#         return Filter
 
-    @staticmethod
-    def _subspace_entry(j, space, basis, mode):
-        """F(j,m) = δ(j,m)"""
-        if j == mode:
-            return 1
-        else:
-            return 0
+#     @staticmethod
+#     def _subspace_entry(j, space, basis, mode):
+#         """F(j,m) = δ(j,m)"""
+#         if j == mode:
+#             return 1
+#         else:
+#             return 0
 
 
 @prefix('d')
@@ -1426,10 +1362,6 @@ class Convert(SpectralOperator, metaclass=MultiClass):
         if is_coeff and self.subaxis_coupling[-1]:
             self.args[0].require_local(last_axis)
 
-    @property
-    def base(self):
-        return Convert
-
     def replace(self, old, new):
         """Replace specified operand/operator."""
         # Replace operand, skipping conversion
@@ -1445,10 +1377,9 @@ class Convert(SpectralOperator, metaclass=MultiClass):
     #     # Simplify operand, skipping conversion
     #     return self.operand.simplify(*vars)
 
-    @CachedAttribute
-    def subspace_matrix(self):
+    def subspace_matrix(self, layout):
         """Build matrix operating on global subspace data."""
-        return self._subspace_matrix(self.input_basis, self.output_basis)
+        return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis)
 
     def operate(self, out):
         """Perform operation."""

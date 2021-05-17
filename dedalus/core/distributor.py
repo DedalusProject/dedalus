@@ -172,6 +172,9 @@ class Distributor:
                 if path.axis == axis:
                     return path
 
+    def get_axis(self, coord):
+        return self.coords.index(coord)
+
 
 class Layout:
     """
