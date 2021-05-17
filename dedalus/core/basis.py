@@ -429,8 +429,8 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         if isinstance(other, Jacobi):
             if self.grid_params == other.grid_params:
                 size = max(self.size, other.size)
-                a = self.a0
-                b = self.b0
+                a = max(self.a, other.a)
+                b = max(self.b, other.b)
                 dealias = max(self.dealias[0], other.dealias[0])
                 return Jacobi(self.coord, size, self.bounds, a, b, a0=self.a0, b0=self.b0, dealias=dealias, library=self.library)
         if isinstance(other, SpinWeightedSphericalHarmonics):
@@ -449,8 +449,10 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
     # def include_mode(self, mode):
     #     return (0 <= mode < self.space.coeff_size)
 
-    def Jacobi_matrix(self):
-        return dedalus_sphere.jacobi.operator('Z')(self.size, self.a, self.b).square
+    def Jacobi_matrix(self, size):
+        if size is None:
+            size = self.size
+        return dedalus_sphere.jacobi.operator('Z')(size, self.a, self.b).square
 
     def ncc_matrix(self, arg_basis, coeffs, cutoff=1e-6):
         """Build NCC matrix via Clenshaw algorithm."""
@@ -475,18 +477,26 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         else:
             raise ValueError("Jacobi ncc_matrix not implemented for basis type: %s" %type(arg_basis))
 
-    def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
+    def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff):
         if arg_basis is None:
             return super().ncc_matrix(arg_basis, coeffs.ravel(), cutoff=cutoff)
         # Jacobi parameters
         a_ncc = self.a
         b_ncc = self.b
-        M = coeffs.size
         N = arg_basis.size
-        J = arg_basis.Jacobi_matrix()
-        A, B = clenshaw.jacobi_recursion(M, a_ncc, b_ncc, J)
-        f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0] * sparse.identity(N)
-        return clenshaw.matrix_clenshaw(coeffs.ravel(), A, B, f0, cutoff=cutoff)
+        out_basis = self * arg_basis
+        da = int(np.round(out_basis.a - arg_basis.a))
+        db = int(np.round(out_basis.b - arg_basis.b))
+        # Pad for dealiasing with conversion
+        Nmat = 3*((N+1)//2) + min((N+1)//2, (da+db+1)//2)
+        J = arg_basis.Jacobi_matrix(size=Nmat)
+        A, B = clenshaw.jacobi_recursion(Nmat, a_ncc, b_ncc, J)
+        f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0] * sparse.identity(Nmat)
+        matrix = clenshaw.matrix_clenshaw(coeffs.ravel(), A, B, f0, cutoff=cutoff)
+        convert = jacobi.conversion_matrix(Nmat, arg_basis.a, arg_basis.b, out_basis.a, out_basis.b)
+        matrix = convert @ matrix
+        return matrix[:N, :N]
+
 
 def Legendre(*args, **kw):
     return Jacobi(*args, a=0, b=0, **kw)
@@ -1843,8 +1853,7 @@ class DiskBasis(SpinBasis):
         return operator(self.n_size(m), self.alpha + self.k, np.abs(m + spintotal)).square.astype(np.float64)
 
     @CachedMethod
-    def operator_matrix(self,op,m,spin):
-
+    def operator_matrix(self, op, m, spin, size=None):
         if op[-1] in ['+', '-']:
             o = op[:-1]
             p = int(op[-1]+'1')
@@ -1859,11 +1868,11 @@ class DiskBasis(SpinBasis):
                 operator = D(+1) @ D(-1)
             else:
                 operator = D(-1) @ D(+1)
-
         else:
             operator = dedalus_sphere.zernike.operator(2, op, radius=self.radius)
-
-        return operator(self.n_size(m), self.alpha + self.k, abs(m + spin)).square.astype(np.float64)
+        if size is None:
+            size = self.n_size(m)
+        return operator(size, self.alpha + self.k, abs(m + spin)).square.astype(np.float64)
 
     @CachedMethod
     def interpolation(self, m, spintotal, position):
@@ -2727,7 +2736,7 @@ class SphericalShellRadialBasis(RegularityBasis):
         if isinstance(other, SphericalShellRadialBasis):
             if self.grid_params == other.grid_params:
                 radial_size = max(self.shape[2], other.shape[2])
-                k = 0
+                k = self.k + other.k
                 return SphericalShellRadialBasis(self.coordsystem, radial_size, radii=self.radii, alpha=self.alpha, dealias=self.dealias[2:], k=k, radius_library=self.radius_library, dtype=self.dtype)
         if isinstance(other, SpinWeightedSphericalHarmonics):
             unify((self.coordsystem, other.coordsystem))
@@ -2834,10 +2843,8 @@ class SphericalShellRadialBasis(RegularityBasis):
             gdata *= self.radial_transform_factor(field.scales[axis], data_axis, self.k)
 
     @CachedMethod
-    def operator_matrix(self, op, l, regtotal):
-
+    def operator_matrix(self, op, l, regtotal, size=None):
         l = l + regtotal
-
         if op in ['D+', 'D-']:
             p = int(op[-1]+'1')
             operator = dedalus_sphere.shell.operator(3, self.radii, 'D', self.alpha)(p, l)
@@ -2846,12 +2853,16 @@ class SphericalShellRadialBasis(RegularityBasis):
             operator = D(-1, l+1) @ D(+1, l)
         else:
             operator = dedalus_sphere.shell.operator(3, self.radii, op, self.alpha)
-        return operator(self.n_size(l), self.k).square.astype(np.float64)
+        if size is None:
+            size = self.n_size(l)
+        return operator(size, self.k).square.astype(np.float64)
 
-    def jacobi_conversion(self, l, dk):
+    def jacobi_conversion(self, l, dk, size=None):
         AB = dedalus_sphere.shell.operator(3, self.radii, 'AB', self.alpha)
         operator = AB**dk
-        return operator(self.n_size(l), self.k).square.astype(np.float64)
+        if size is None:
+            size = self.n_size(l)
+        return operator(size, self.k).square.astype(np.float64)
 
     @CachedMethod
     def conversion_matrix(self, l, regtotal, dk):
@@ -2877,19 +2888,23 @@ class SphericalShellRadialBasis(RegularityBasis):
         a_ncc = self.k + self.alpha[0]
         b_ncc = self.k + self.alpha[1]
         N = self.n_size(ell)
-        J = arg_radial_basis.operator_matrix('Z', ell, regtotal_arg)
-        A, B = clenshaw.jacobi_recursion(N, a_ncc, b_ncc, J)
-        f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0] * sparse.identity(N)
+        N0 = self.n_size(0)
+        # Pad for dealiasing with conversion
+        Nmat = 3*((N0+1)//2) + self.k
+        J = arg_radial_basis.operator_matrix('Z', ell, regtotal_arg, size=Nmat)
+        A, B = clenshaw.jacobi_recursion(Nmat, a_ncc, b_ncc, J)
+        f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0] * sparse.identity(Nmat)
         # Conversions to account for radial prefactors
-        prefactor = arg_radial_basis.jacobi_conversion(ell, dk=self.k)
+        prefactor = arg_radial_basis.jacobi_conversion(ell, dk=self.k, size=Nmat)
         if self.dtype == np.float64:
-            coeffs_filter = coeffs.ravel()[:2*N]
-            matrix_cos = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter[:N], A, B, f0, cutoff=cutoff)
-            matrix_msin = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter[N:], A, B, f0, cutoff=cutoff)
+            coeffs_cos_filter = coeffs[0].ravel()[:N0]
+            coeffs_msin_filter = coeffs[1].ravel()[:N0]
+            matrix_cos = (prefactor @ clenshaw.matrix_clenshaw(coeffs_cos_filter, A, B, f0, cutoff=cutoff))[:N,:N]
+            matrix_msin = (prefactor @ clenshaw.matrix_clenshaw(coeffs_msin_filter, A, B, f0, cutoff=cutoff))[:N,:N]
             matrix = sparse.bmat([[matrix_cos, -matrix_msin], [matrix_msin, matrix_cos]], format='csr')
         elif self.dtype == np.complex128:
-            coeffs_filter = coeffs.ravel()[:N]
-            matrix = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff)
+            coeffs_filter = coeffs.ravel()[:N0]
+            matrix = (prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff))[:N,:N]
         return matrix
 
 
@@ -2944,7 +2959,7 @@ class BallRadialBasis(RegularityBasis):
         if isinstance(other, BallRadialBasis):
             if self.grid_params == other.grid_params:
                 radial_size = max(self.shape[2], other.shape[2])
-                k = 0
+                k = max(self.k, other.k)
                 return BallRadialBasis(self.coordsystem, radial_size, radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias[2:], radius_library=self.radius_library, dtype=self.dtype)
         return NotImplemented
 
@@ -2960,7 +2975,7 @@ class BallRadialBasis(RegularityBasis):
         if isinstance(other, BallRadialBasis):
             if self.grid_params == other.grid_params:
                 radial_size = max(self.shape[2], other.shape[2])
-                k = self.k
+                k = max(self.k, other.k)
                 return BallRadialBasis(self.coordsystem, radial_size, radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias[2:], radius_library=self.radius_library, dtype=self.dtype)
         return NotImplemented
 
@@ -3019,8 +3034,7 @@ class BallRadialBasis(RegularityBasis):
         self.backward_regularity_recombination(field.tensorsig, axis, gdata)
 
     @CachedMethod
-    def operator_matrix(self,op,l,deg):
-
+    def operator_matrix(self, op, l, deg, size=None):
         if op[-1] in ['+', '-']:
             o = op[:-1]
             p = int(op[-1]+'1')
@@ -3030,33 +3044,35 @@ class BallRadialBasis(RegularityBasis):
             operator = D(-1) @ D(+1)
         else:
             operator = dedalus_sphere.zernike.operator(3, op, radius=self.radius)
-
-        return operator(self.n_size(l), self.alpha + self.k, l + deg).square.astype(np.float64)
+        if size is None:
+            size = self.n_size(l)
+        return operator(size, self.alpha + self.k, l + deg).square.astype(np.float64)
 
     @CachedMethod
-    def conversion_matrix(self, ell, regtotal, dk):
+    def conversion_matrix(self, ell, regtotal, dk, size=None):
         E = dedalus_sphere.zernike.operator(3, 'E', radius=self.radius)
         operator = E(+1)**dk
-        return operator(self.n_size(ell), self.alpha + self.k, ell + regtotal).square.astype(np.float64)
+        if size is None:
+            size = self.n_size(ell)
+        return operator(size, self.alpha + self.k, ell + regtotal).square.astype(np.float64)
 
     @CachedMethod
-    def radius_multiplication_matrix(self, ell, regtotal, order, d):
+    def radius_multiplication_matrix(self, ell, regtotal, order, d, size=None):
         if order == 0:
             operator = dedalus_sphere.zernike.operator(3, 'Id', radius=self.radius)
         else:
             R = dedalus_sphere.zernike.operator(3, 'R', radius=1)
-
             if order < 0:
                 operator = R(-1)**abs(order)
             else: # order > 0
                 operator = R(+1)**abs(order)
-
         if d > 0:
             R = dedalus_sphere.zernike.operator(3, 'R', radius=1)
             R2 = R(-1) @ R(+1)
             operator = R2**(d//2) @ operator
-
-        return operator(self.n_size(ell), self.alpha + self.k, ell + regtotal).square.astype(np.float64)
+        if size is None:
+            size = self.n_size(ell)
+        return operator(size, self.alpha + self.k, ell + regtotal).square.astype(np.float64)
 
     def _n_limits(self, ell):
         nmin = dedalus_sphere.zernike.min_degree(ell)
@@ -3095,21 +3111,27 @@ class BallRadialBasis(RegularityBasis):
         a_ncc = self.alpha + self.k
         b_ncc = regtotal_ncc + 1/2
         N = self.n_size(ell)
+        N0 = self.n_size(0)
         d = regtotal_ncc - abs(diff_regtotal)
+        dk = max(self.k, arg_radial_basis.k) - arg_radial_basis.k
+        # Pad for dealiasing with conversion
+        Nmat = 3*((N0+1)//2) + (dk+1)//2
         if (d >= 0) and (d % 2 == 0):
-            J = arg_radial_basis.operator_matrix('Z', ell, regtotal_arg)
-            A, B = clenshaw.jacobi_recursion(N, a_ncc, b_ncc, J)
-            # assuming that we're doing ball for now...
-            f0 = dedalus_sphere.zernike.polynomials(3, 1, a_ncc, regtotal_ncc, 1)[0] * sparse.identity(N)
-            prefactor = arg_radial_basis.radius_multiplication_matrix(ell, regtotal_arg, diff_regtotal, d)
+            J = arg_radial_basis.operator_matrix('Z', ell, regtotal_arg, size=Nmat)
+            A, B = clenshaw.jacobi_recursion(N0, a_ncc, b_ncc, J)
+            f0 = dedalus_sphere.zernike.polynomials(3, 1, a_ncc, regtotal_ncc, 1)[0] * sparse.identity(Nmat)
+            radial_factor = arg_radial_basis.radius_multiplication_matrix(ell, regtotal_arg, diff_regtotal, d, size=Nmat)
+            conversion = arg_radial_basis.conversion_matrix(ell, regtotal_out, dk, size=Nmat)
+            prefactor = conversion @ radial_factor
             if self.dtype == np.float64:
-                coeffs_filter = coeffs.ravel()[:2*N]
-                matrix_cos = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter[:N], A, B, f0, cutoff=cutoff)
-                matrix_msin = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter[N:], A, B, f0, cutoff=cutoff)
+                coeffs_cos_filter = coeffs[0].ravel()[:N0]
+                coeffs_msin_filter = coeffs[1].ravel()[:N0]
+                matrix_cos = (prefactor @ clenshaw.matrix_clenshaw(coeffs_cos_filter, A, B, f0, cutoff=cutoff))[:N, :N]
+                matrix_msin = (prefactor @ clenshaw.matrix_clenshaw(coeffs_msin_filter, A, B, f0, cutoff=cutoff))[:N, :N]
                 matrix = sparse.bmat([[matrix_cos, -matrix_msin], [matrix_msin, matrix_cos]], format='csr')
             elif self.dtype == np.complex128:
-                coeffs_filter = coeffs.ravel()[:N]
-                matrix = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff)
+                coeffs_filter = coeffs.ravel()[:N0]
+                matrix = (prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff))[:N, :N]
         else:
             if self.dtype == np.float64:
                 matrix = sparse.csr_matrix((2*N, 2*N))
@@ -3197,8 +3219,8 @@ class Spherical3DBasis(MultidimensionalBasis):
                     azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library)
 
     @CachedMethod
-    def operator_matrix(self, op, l, regtotal, dk=0):
-        return self.radial_basis.operator_matrix(op, l, regtotal)
+    def operator_matrix(self, op, l, regtotal, dk=0, size=None):
+        return self.radial_basis.operator_matrix(op, l, regtotal, size=size)
 
     @CachedMethod
     def conversion_matrix(self, l, regtotal, dk):
