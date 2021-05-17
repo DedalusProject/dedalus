@@ -1,12 +1,11 @@
 """Test outputs of various dimensionality."""
 
-import os
-print(os.__file__)
 import pytest
 import numpy as np
-from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
-import shutil
+from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers
 import h5py
+import tempfile
+import pathlib
 
 
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
@@ -36,19 +35,20 @@ def test_cartesian_output(dtype, dealias, output_scales):
     solver = solvers.InitialValueSolver(problem, timesteppers.RK222)
     # Output
     tasks = [u, u(x=0), u(y=0), u(z=0), u(x=0,y=0), u(x=0,z=0), u(y=0,z=0), u(x=0,y=0,z=0)]
-    output = solver.evaluator.add_file_handler('test_output', iter=1)
-    for task in tasks:
-        output.add_task(task, layout='g', name=str(task), scales=output_scales)
-    solver.evaluator.evaluate_handlers([output])
-    # Check solution
-    #post.merge_process_files('test_output')
-    errors = []
-    with h5py.File('test_output/test_output_s1/test_output_s1_p0.h5', mode='r') as file:
+    with tempfile.TemporaryDirectory(dir='.') as tempdir:
+        tempdir = pathlib.Path(tempdir).stem
+        output = solver.evaluator.add_file_handler(tempdir, iter=1)
         for task in tasks:
-            task_saved = file['tasks'][str(task)][-1]
-            task = task.evaluate()
-            task.require_scales(output_scales)
-            errors.append(np.max(np.abs(task['g'] - task_saved)))
-    shutil.rmtree('test_output')
+            output.add_task(task, layout='g', name=str(task), scales=output_scales)
+        solver.evaluator.evaluate_handlers([output])
+        # Check solution
+        #post.merge_process_files('test_output')
+        errors = []
+        with h5py.File(f'{tempdir}/{tempdir}_s1/{tempdir}_s1_p0.h5', mode='r') as file:
+            for task in tasks:
+                task_saved = file['tasks'][str(task)][-1]
+                task = task.evaluate()
+                task.require_scales(output_scales)
+                errors.append(np.max(np.abs(task['g'] - task_saved)))
     assert np.allclose(errors, 0)
 
