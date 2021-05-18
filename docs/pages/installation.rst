@@ -93,34 +93,13 @@ If Dedalus was installed using pip, it can be uninstalled using::
 Alternative installation procedures
 ===================================
 
-**Note**: We recommend installing Dedalus using conda, as described above.
+**Note**: We strongly recommend installing Dedalus using conda, as described above.
 These alternative procedures may be out-of-date and are provided for historical reference and expert use.
-
-Installation script
--------------------
-
-This all-in-one installation script will build an isolated stack containing a Python installation and the other dependencies needed to run Dedalus.
-In most cases, the script can be modified to link with system installations of FFTW, MPI, and linear algebra libraries.
-
-You can get the installation script from `this link <https://raw.githubusercontent.com/DedalusProject/dedalus/master/docs/install.sh>`_, or download it using::
-
-    wget https://raw.githubusercontent.com/DedalusProject/dedalus/master/docs/install.sh
-
-and execute it using::
-
-    bash install.sh
-
-The installation script has been tested on a number of Linux distributions and OS X.
-If you run into trouble using the script, please get in touch on the `user list <https://groups.google.com/forum/#!forum/dedalus-users>`_.
-
-Manual installation
--------------------
-
-Below are instructions for building the dependency stack on a variety of machines and operating systems:
 
 .. toctree::
     :maxdepth: 1
 
+    /machines/shell_script/shell_script
     /machines/bridges/bridges
     /machines/computecanada/computecanada
     /machines/engaging/engaging
@@ -131,6 +110,4 @@ Below are instructions for building the dependency stack on a variety of machine
     /machines/savio/savio
     /machines/stampede/stampede
     /machines/trestles/trestles
-
-Once the dependency stack has been installed, Dedalus can be installed `as described above <#installing-the-dedalus-package>`_.
 
