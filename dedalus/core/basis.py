@@ -233,6 +233,10 @@ class Basis:
         else:
             raise NotImplementedError()
 
+    def valid_components(self, group, tensorsig, enum_components_input):
+        # Keep all components by default
+        return enum_components_input
+
 
 # class Constant(Basis, metaclass=CachedClass):
 #     """Constant basis."""
@@ -2773,6 +2777,19 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         comp5 = reduced_view(comp, axis=self.axis, dim=self.dist.dim)
         return comp5[(slice(None),) + slices + (slice(None),)]
 
+    def valid_components(self, group, tensorsig, enum_components_input):
+        ell = group[self.first_axis + 1]
+        enum_components_output = []
+        for i, comp in enum_components_input:
+            # Filter for indices in self.coordsystem
+            spinindex = tuple([j for j, cs in zip(comp, tensorsig) if cs is self.coordsystem])
+            if self.coordsystem.dim == 3:
+                if abs(self.spintotal(spinindex)) <= ell:
+                    enum_components_output.append((i, comp))
+            else:
+                raise ValueError("cs is 2d")
+        return enum_components_output
+
 
 SWSH = SpinWeightedSphericalHarmonics
 
@@ -2953,6 +2970,16 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
             #    n = vs.get_index(self.space)
             #    R[axslice(i, n, n+self.dim)] += reshape_vector(Rb, dim=len(tensorsig), axis=i)
         return R
+
+    def valid_components(self, group, tensorsig, enum_components_input):
+        ell = group[self.first_axis + 1]
+        enum_components_output = []
+        for i, comp in enum_components_input:
+            # Filter for indices in self.coordsystem
+            regindex = tuple([j for j, cs in zip(comp, tensorsig) if cs is self.coordsystem])
+            if self.regularity_allowed(ell, regindex):
+                enum_components_output.append((i, comp))
+        return enum_components_output
 
     def forward_regularity_recombination(self, tensorsig, axis, gdata, ell_maps=None):
         rank = len(tensorsig)
@@ -3649,6 +3676,10 @@ class Spherical3DBasis(MultidimensionalBasis):
         else:
             raise NotImplementedError()
 
+    def valid_components(self, *args):
+        # Implemented in RegularityBasis
+        return self.radial_basis.valid_components(*args)
+
 
 class SphericalShellBasis(Spherical3DBasis):
 
@@ -4146,7 +4177,10 @@ class LiftTauBall(operators.LiftTau, operators.SphericalEllOperator):
             submatrices.append(submatrix_row)
         matrix = sparse.bmat(submatrices)
         matrix.tocsr()
-        return matrix
+        # Convert tau from spin to regularity first
+        Q = dedalus_sphere.spin_operators.Intertwiner(ell, indexing=(-1,+1,0))(len(self.tensorsig))  # Fix for product domains
+        matrix = matrix @ sparse.kron(Q.T, sparse.identity(np.prod(subshape_in), format='csr'))
+        return matrix.tocsr()
 
     def radial_matrix(self, regindex_in, regindex_out, m):
         if regindex_in == regindex_out:

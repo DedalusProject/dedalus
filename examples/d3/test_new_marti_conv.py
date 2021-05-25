@@ -25,7 +25,8 @@ dt = 8e-5
 t_end = 2
 ts = timesteppers.SBDF4
 dtype = np.float64
-mesh = [4,8]
+mesh = None#[4,8]
+plot_subproblem_matrices = True
 
 Ekman = 3e-4
 Rayleigh = 95
@@ -102,6 +103,51 @@ vol_test = reducer.reduce_scalar(vol_test, MPI.SUM)
 vol_correction = 4*np.pi/3/vol_test
 
 hermitian_cadence = 100
+
+# Plot matrices
+import matplotlib
+import matplotlib.pyplot as plt
+
+# Plot options
+fig = plt.figure(figsize=(5,5))
+cmap = matplotlib.cm.get_cmap("winter_r")
+clim = (-4, 0)
+lim_margin = 0.05
+
+def plot_sparse(A):
+    I, J = A.shape
+    A_mag = np.log10(np.abs(A.A))
+    ax.pcolor(A_mag[::-1], cmap=cmap, vmin=clim[0], vmax=clim[1])
+    ax.set_xlim(-lim_margin, J+lim_margin)
+    ax.set_ylim(-lim_margin, I+lim_margin)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_aspect('equal', 'box')
+    ax.text(0.95, 0.95, 'nnz: %i' %A.nnz, horizontalalignment='right', verticalalignment='top', transform=ax.transAxes)
+    ax.text(0.95, 0.95, '\ncon: %.1e' %np.linalg.cond(A.A), horizontalalignment='right', verticalalignment='top', transform=ax.transAxes)
+
+if plot_subproblem_matrices:
+    for sp in (solver.subproblems[0],) + solver.subproblems:
+        ell = sp.group[1]
+        # Plot LHS
+        ax = fig.add_subplot(1, 1, 1)
+        LHS = sp.left_perm.T @ (sp.M_min + 0.5*sp.L_min)# @ sp.drop_var.T
+        plot_sparse(LHS)
+        ax.set_title('LHS (ell = %i)' %ell)
+        # # Plot L
+        # ax = fig.add_subplot(1, 3, 2)
+        # L = sp.LHS_solvers[-1].LU.L
+        # plot_sparse(L)
+        # ax.set_title('L (ell = %i)' %ell)
+        # # Plot U
+        # ax = fig.add_subplot(1, 3, 3)
+        # U = sp.LHS_solvers[-1].LU.U
+        # plot_sparse(U)
+        # ax.set_title('U (ell = %i)' %ell)
+        plt.tight_layout()
+        plt.savefig("marti_conv_mats/ell_%i.pdf" %ell, dpi=300)
+        fig.clear()
+
 
 # Main loop
 start_time = time.time()
