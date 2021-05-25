@@ -77,14 +77,13 @@ def eq_eval(eq_str):
     return [eval(expr) for expr in split_equation(eq_str)]
 problem = problems.IVP([p, u, T, tau_u, tau_T])
 
-problem.add_equation(eq_eval("div(u) = 0"), condition="ntheta != 0")
-problem.add_equation(eq_eval("p = 0"), condition="ntheta == 0")
-problem.add_equation(eq_eval("Ekman*ddt(u) - Ekman*lap(u) + grad(p) + LiftTau(tau_u) = - Ekman*dot(u,grad(u)) + Rayleigh*r_vec*T - cross(ez, u)"), condition = "ntheta != 0")
-problem.add_equation(eq_eval("u = 0"), condition="ntheta == 0")
+problem.add_equation(eq_eval("div(u) = 0"))
+problem.add_equation(eq_eval("Ekman*ddt(u) - Ekman*lap(u) + grad(p) + LiftTau(tau_u) = - Ekman*dot(u,grad(u)) + Rayleigh*r_vec*T - cross(ez, u)"))
 problem.add_equation(eq_eval("Prandtl*ddt(T) - lap(T) + LiftTau(tau_T) = - Prandtl*dot(u,grad(T)) + T_source"))
-problem.add_equation(eq_eval("u_r_bc = 0"), condition="ntheta != 0")
-problem.add_equation(eq_eval("u_perp_bc = 0"), condition="ntheta != 0")
-problem.add_equation(eq_eval("tau_u = 0"), condition="ntheta == 0")
+problem.add_equation(eq_eval("u_r_bc = 0"), condition="ntheta != 0")  # stress-free
+problem.add_equation(eq_eval("u_perp_bc = 0"), condition="ntheta != 0")  # stress-free
+# problem.add_equation(eq_eval("u(r=1) = 0"), condition="ntheta != 0")  # no-slip
+problem.add_equation(eq_eval("p(r=1) = 0"), condition="ntheta == 0")  # pressure gauge
 problem.add_equation(eq_eval("T(r=1) = 0"))
 print("Problem built")
 
@@ -131,7 +130,7 @@ if plot_subproblem_matrices:
         ell = sp.group[1]
         # Plot LHS
         ax = fig.add_subplot(1, 1, 1)
-        LHS = sp.left_perm.T @ (sp.M_min + 0.5*sp.L_min)# @ sp.drop_var.T
+        LHS = sp.left_perm.T @ (sp.M_min + 0.5*sp.L_min) @ sp.drop_var.T
         plot_sparse(LHS)
         ax.set_title('LHS (ell = %i)' %ell)
         # # Plot L
