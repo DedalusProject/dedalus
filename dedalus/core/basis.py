@@ -25,7 +25,7 @@ from ..tools.dispatch import MultiClass
 from ..tools.general import unify
 
 from .spaces import ParityInterval, Disk
-from .coords import Coordinate, S2Coordinates, SphericalCoordinates
+from .coords import Coordinate, S2Coordinates, SphericalCoordinates, PolarCoordinates, CylindricalCoordinates
 from .domain import Domain
 from .field  import Operand
 from ..libraries import dedalus_sphere
@@ -1353,7 +1353,9 @@ class SpinRecombinationBasis:
         for i, cs in enumerate(tensorsig):
             if (cs == self.coordsystem or
                 (type(cs) is SphericalCoordinates and self.coordsystem == cs.S2coordsys) or
-                (type(self.coordsystem) is SphericalCoordinates and self.coordsystem.S2coordsys == cs)):
+                (type(self.coordsystem) is SphericalCoordinates and self.coordsystem.S2coordsys == cs) or
+                (type(cs) is CylindricalCoordinates and self.coordsystem == cs.polar_coordsys) or
+                (type(self.coordsystem) is CylindricalCoordinates and self.coordsystem.polar_coordsys == cs)):
                 U.append(Us[cs.dim])
             #if self.coordsystem is vs: # kludge before we decide how compound coordinate systems work
             #    Ui = np.identity(vs.dim, dtype=np.complex128)
@@ -1577,7 +1579,6 @@ class PolarBasis(SpinBasis):
         S1_basis.forward_coeff_permutation  = self.forward_m_perm
         S1_basis.backward_coeff_permutation = self.backward_m_perm
         return S1_basis
-
 
     def global_shape(self, layout, scales):
         grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
@@ -2145,14 +2146,14 @@ class DiskBasis(PolarBasis):
     def global_radius_weights(self, scale=None):
         if scale == None: scale = 1
         N = int(np.ceil(scale * self.shape[1]))
-        z, weights = dedalus_sphere.sphere.quadrature(2,N,k=self.alpha)
+        z, weights = dedalus_sphere.zernike.quadrature(2, N, k=self.alpha)
         return reshape_vector(weights.astype(np.float64), dim=self.dist.dim, axis=self.axis+1)
 
     def local_radius_weights(self, scale=None):
         if scale == None: scale = 1
         local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis+1]
         N = int(np.ceil(scale * self.shape[1]))
-        z, weights = dedalus_sphere.sphere.quadrature(2,N,k=self.alpha)
+        z, weights = dedalus_sphere.zernike.quadrature(2,N,k=self.alpha)
         return reshape_vector(weights.astype(np.float64)[local_elements], dim=self.dist.dim, axis=self.axis+1)
 
     def _new_k(self, k):
@@ -4439,6 +4440,7 @@ class S2RadialComponent(operators.RadialComponent):
 class S2AngularComponent(operators.AngularComponent):
 
     basis_type = SWSH
+    name = 'Angular'
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
@@ -4468,6 +4470,124 @@ class S2AngularComponent(operators.AngularComponent):
         layout = operand.layout
         out.set_layout(layout)
         np.copyto(out.data, operand.data[axslice(self.index,0,2)])
+
+
+class DiskVerticalComponent(operators.VerticalComponent):
+
+    basis_type = DiskBasis
+    name = 'Vertical'
+
+    def subproblem_matrix(self, subproblem):
+        operand = self.args[0]
+        basis = self.domain.get_basis(self.coordsys)
+        S_in = basis.spin_weights(operand.tensorsig)
+        S_out = basis.spin_weights(self.tensorsig)
+
+        matrix = []
+        for spinindex_out, spintotal_out in np.ndenumerate(S_out):
+            matrix_row = []
+            for spinindex_in, spintotal_in in np.ndenumerate(S_in):
+                if tuple(spinindex_in[:self.index] + spinindex_in[self.index+1:]) == spinindex_out and spinindex_in[self.index] == 2:
+                    matrix_row.append( 1 )
+                else:
+                    matrix_row.append( 0 )
+            matrix.append(matrix_row)
+        matrix = sparse.csr_matrix(matrix)
+        if isinstance(basis, DiskBasis):
+            # HACK!!!
+            size = subproblem.field_size(operand)//3
+            matrix = sparse.kron(matrix, sparse.eye(size))
+        if self.dtype == np.float64:
+            # Block-diag for sin/cos parts for real dtype
+            matrix = sparse.kron(matrix, sparse.eye(2))
+        return matrix
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        # Set output layout
+        layout = operand.layout
+        out.set_layout(layout)
+        np.copyto(out.data, operand.data[axindex(self.index,2)])
+
+
+class DiskHorizontalComponent(operators.HorizontalComponent):
+
+    basis_type = DiskBasis
+    name = 'Horizontal'
+
+    def subproblem_matrix(self, subproblem):
+        operand = self.args[0]
+        basis = self.domain.get_basis(self.coordsys)
+        S_in = basis.spin_weights(operand.tensorsig)
+        S_out = basis.spin_weights(self.tensorsig)
+
+        matrix = []
+        for spinindex_out, spintotal_out in np.ndenumerate(S_out):
+            matrix_row = []
+            for spinindex_in, spintotal_in in np.ndenumerate(S_in):
+                if spinindex_in == spinindex_out:
+                    matrix_row.append( 1 )
+                else:
+                    matrix_row.append( 0 )
+            matrix.append(matrix_row)
+        matrix = sparse.csr_matrix(matrix)
+        if isinstance(basis, DiskBasis):
+            # HACK !!!
+            size = subproblem.field_size(operand)//3
+            matrix = sparse.kron(matrix, sparse.eye(size))
+        if self.dtype == np.float64:
+            # Block-diag for sin/cos parts for real dtype
+            matrix = sparse.kron(matrix, sparse.eye(2))
+        return matrix
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        # Set output layout
+        layout = operand.layout
+        out.set_layout(layout)
+        np.copyto(out.data, operand.data[axslice(self.index,0,2)])
+
+
+class PolarAzimuthalComponent(operators.AzimuthalComponent):
+
+    basis_type = IntervalBasis
+    name = 'Azimuthal'
+
+    def subproblem_matrix(self, subproblem):
+        # I'm not sure how to generalize this to higher order tensors, since we do
+        # not have spin_weights for the S1 basis.
+        matrix = np.array([[1,0]])
+
+#        operand = self.args[0]
+#        basis = self.domain.get_basis(self.coordsys)
+#        S_in = basis.spin_weights(operand.tensorsig)
+#        S_out = basis.spin_weights(self.tensorsig)
+#
+#        matrix = []
+#        for spinindex_out, spintotal_out in np.ndenumerate(S_out):
+#            matrix_row = []
+#            for spinindex_in, spintotal_in in np.ndenumerate(S_in):
+#                if tuple(spinindex_in[:self.index] + spinindex_in[self.index+1:]) == spinindex_out and spinindex_in[self.index] == 2:
+#                    matrix_row.append( 1 )
+#                else:
+#                    matrix_row.append( 0 )
+#            matrix.append(matrix_row)
+#        matrix = np.array(matrix)
+        if self.dtype == np.float64:
+            # Block-diag for sin/cos parts for real dtype
+            matrix = np.kron(matrix, np.eye(2))
+        return matrix
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        # Set output layout
+        layout = operand.layout
+        out.set_layout(layout)
+        np.copyto(out.data, operand.data[axindex(self.index,0)])
+
 
 
 from . import transforms

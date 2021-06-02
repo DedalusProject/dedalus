@@ -143,6 +143,7 @@ class S2Coordinates(CoordinateSystem):
         else:
             raise ValueError("Invalid axis")
 
+
 class PolarCoordinates(CoordinateSystem):
     """
     Polar coordinate system: (azimuth, radius)
@@ -203,6 +204,100 @@ class PolarCoordinates(CoordinateSystem):
         x = r * np.cos(phi)
         y = r * np.sin(phi)
         return x, y
+
+
+class CylindricalCoordinates(CoordinateSystem):
+    """
+    Cylindrical coordinate system: (azimuth, radius, height)
+    Coord component ordering: (azimuth, radius, height)
+    Spin component ordering: (-, +, 0)
+    """
+
+    spin_ordering = (-1, +1, 0)
+    dim = 3
+    right_handed = False
+
+    def __init__(self, azimuth, radius, height):
+        self.azimuth = Coordinate(azimuth, cs=self)
+        self.radius = Coordinate(radius, cs=self)
+        self.height = Coordinate(height, cs=self)
+        self.polar_coordsys = PolarCoordinates(azimuth, radius)
+        self.coords = (self.azimuth, self.radius)
+
+    @classmethod
+    def _U_forward(cls, order):
+        """Unitary transfrom from coord to spin components."""
+        # u[+-] = (u[radius] +- 1j*u[φ]) / sqrt(2)
+        # u[0] = u[r]
+        Ui = {+1: np.array([+1j, 1, 0]) / np.sqrt(2),
+              -1: np.array([-1j, 1, 0]) / np.sqrt(2),
+               0: np.array([  0, 0, 1])}
+        U = np.array([Ui[spin] for spin in cls.spin_ordering])
+        return nkron(U, order) 
+        
+    @classmethod
+    def _U_backward(cls, order):
+        """Unitary transform from spin to coord components."""
+        return cls._U_forward(order).T.conj()
+
+    @property
+    def axis(self):
+        return self.azimuth.axis
+
+    def check_bounds(self, coord, bounds):
+        if coord == self.radius:
+            if min(bounds) < 0:
+                raise ValueError("bounds for radial coordinate must not be negative")
+
+    def sub_cs(self, other):
+        if type(other) is Coordinate:
+            if (other == self.height) or (other == self.colatitude) or (other == self.azimuth):
+                return True
+            else:
+                return False
+        elif type(other) is PolarCoordinates:
+            if other == self.polar_coordsys: return True
+            else: return False
+        return False
+
+    def set_distributor(self, distributor):
+        self.dist = distributor
+        super().set_distributor(distributor)
+        self.polar_coordsys.set_distributor(distributor)
+
+    def forward_intertwiner(self, axis, order, group):
+        subaxis = axis - self.axis
+        if subaxis == 0:
+            # Azimuth intertwiner is identity, independent of group
+            return np.identity(self.dim**order)
+        elif subaxis == 1:
+            # Radial intertwiner is spin-U, independent of group
+            return self._U_forward(order)
+        elif subaxis == 2:
+            # Height intertwiner is identity, independent of group
+            return np.identity(self.dim**order)
+        else:
+            raise ValueError("Invalid axis")
+
+    def backward_intertwiner(self, axis, order, group):
+        subaxis = axis - self.axis
+        if subaxis == 0:
+            # Azimuth intertwiner is identity, independent of group
+            return np.identity(self.dim**order)
+        elif subaxis == 1:
+            # Radial intertwiner is spin-U, independent of group
+            return self._U_backward(order)
+        elif subaxis == 2:
+            # Height intertwiner is identity, independent of group
+            return np.identity(self.dim**order)
+        else:
+            raise ValueError("Invalid axis")
+
+    @staticmethod
+    def cartesian(phi, r, z):
+        x = r * np.cos(phi)
+        y = r * np.sin(phi)
+        return x, y, z
 
 
 class SphericalCoordinates(CoordinateSystem):
