@@ -2136,6 +2136,7 @@ class S2Gradient(Gradient, SpectralOperator):
 #        local_l = tuple(basis.degrees[local_l_elements])
         local_l = basis.local_l
 
+
         # Apply operator
         S = basis.spin_weights(operand.tensorsig)
         for i, s in np.ndenumerate(S):
@@ -2162,6 +2163,119 @@ def reduced_view_4(data, axis):
     N2 = shape[axis+1]
     N3 = int(prod(shape[axis+2:]))
     return data.reshape((N0, N1, N2, N3))
+
+class SpectralOperatorS2(SpectralOperator):
+    """
+    Base class for linear operators acting on the 2-sphere.
+    Arguments: operand, coordinate, others...
+    """
+
+    # def __init__(self, *args, **kw):
+    #     self.coord = args[1]
+    #     self.axis = self.coord.axis
+    #     self.input_basis = args[0].bases[self.axis]
+    #     self.tensorsig = args[0].tensorsig
+    #     self.dtype = args[0].dtype
+    #     super().__init__(*args, **kw)
+
+    # @staticmethod
+    # def output_basis(input_basis):
+    #     # Subclasses must implement
+    #     raise NotImplementedError()
+
+    # def separability(self, *vars):
+    #     """Determine separable dimensions of expression as a linear operator on specified variables."""
+    #     # Start from operand separability
+    #     separability = self.operand.separability(*vars).copy()
+    #     if not self.separable:
+    #         separability[self.last_axis] = False
+    #     return separability
+
+    def subproblem_matrix(self, subproblem):
+        """Build operator matrix for a specific subproblem."""
+        operand = self.args[0]
+        input_basis = self.input_basis
+        S_in = input_basis.spin_weights(operand.tensorsig)
+        S_out = input_basis.spin_weights(self.tensorsig)  # Should this use output_basis?
+        m = subproblem.group[self.last_axis - 1]
+        l = subproblem.group[self.last_axis]
+        l_coupled = self.subaxis_coupling[1]
+        m_dep = self.subaxis_dependence[0]
+        # Loop over components
+        submatrices = []
+        for spinindex_out, spintotal_out in np.ndenumerate(S_out):
+            submatrix_row = []
+            for spinindex_in, spintotal_in in np.ndenumerate(S_in):
+                # Build identity matrices for each axis
+                subshape_in = subproblem.coeff_shape(self.operand.domain)
+                subshape_out = subproblem.coeff_shape(self.domain)
+                if spinindex_out in self.spinindex_out(spinindex_in):
+                    # Substitute factor for radial axis
+                    factors = [sparse.eye(i, j, format='csr') for i, j in zip(subshape_out, subshape_in)]
+                    if l_coupled and m_dep:
+                        matrix = self.m_matrix(spinindex_in, spinindex_out, m)
+                    elif l_coupled and not m_dep:
+                        matrix = self.assembled_l_matrices(spinindex_in, spinindex_out, m)
+                    elif not m_dep:
+                        matrix = self.l_matrix(spinindex_in, spinindex_out, l)
+                    else:
+                        raise ValueError("This should never happen.")
+                    factors[self.last_axis] = matrix
+                    comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
+                else:
+                    # Build zero matrix
+                    comp_matrix = sparse.csr_matrix((np.prod(subshape_out), np.prod(subshape_in)))
+                submatrix_row.append(comp_matrix)
+            submatrices.append(submatrix_row)
+        matrix = sparse.bmat(submatrices)
+        return matrix.tocsr()
+
+    def subspace_matrix(self, layout):
+        """Build matrix operating on local subspace data."""
+        # Caching layer to allow insertion of other arguments
+        return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis)
+
+    def group_matrix(self, group):
+        return self._group_matrix(group, self.input_basis, self.output_basis)
+
+    @classmethod
+    @CachedMethod
+    def _subspace_matrix(cls, layout, input_basis, output_basis, axis, *args):
+        if cls.subaxis_coupling[0]:
+            return cls._full_matrix(input_basis, output_basis, *args)
+        else:
+            input_domain = Domain(layout.dist, bases=[input_basis])
+            output_domain = Domain(layout.dist, bases=[output_basis])
+            if input_basis is None:
+                local_groups = output_basis.local_groups(cls.subaxis_coupling)
+                local_groups = [lg for lg in local_groups if lg == [0]]
+            elif output_basis is None:
+                local_groups = input_basis.local_groups(cls.subaxis_coupling)
+                local_groups = [lg for lg in local_groups if lg == [0]]
+            else:
+                local_groups = input_basis.local_groups(cls.subaxis_coupling)
+            group_blocks = [cls._group_matrix(group[0], input_basis, output_basis, *args) for group in local_groups]
+            arg_size = layout.local_shape(input_domain, scales=1)[axis]
+            out_size = layout.local_shape(output_domain, scales=1)[axis]
+            return sparse_block_diag(group_blocks, shape=(out_size, arg_size))
+
+    @staticmethod
+    def _full_matrix(input_basis, output_basis, *args):
+        raise NotImplementedError()
+
+    @staticmethod
+    def _group_matrix(group, input_basis, output_basis, *args):
+        raise NotImplementedError()
+
+    def operate(self, out):
+        """Perform operation."""
+        arg = self.args[0]
+        layout = arg.layout
+        # Set output layout
+        out.set_layout(layout)
+        # Apply matrix
+        data_axis = self.last_axis + len(arg.tensorsig)
+        apply_matrix(self.subspace_matrix(layout), arg.data, data_axis, out=out.data)
 
 
 class PolarMOperator(SpectralOperator):
@@ -2235,8 +2349,7 @@ class PolarMOperator(SpectralOperator):
                 submatrix_row.append(comp_matrix)
             submatrices.append(submatrix_row)
         matrix = sparse.bmat(submatrices)
-        matrix.tocsr()
-        return matrix
+        return matrix.tocsr()
 
     def spinindex_out(self, spinindex_in):
         raise NotImplementedError("spinindex_out not implemented for type %s" %type(self))
