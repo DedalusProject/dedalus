@@ -2786,6 +2786,10 @@ class SpinWeightedSphericalHarmonics(SpinBasis, metaclass=CachedClass):
         gdata.fill(0)  # OPTIMIZE: shouldn't be necessary
         self.backward_spin_recombination(field.tensorsig, temp, gdata)
 
+    @staticmethod
+    def k(l, s, mu):
+        return -mu*np.sqrt((l-mu*s)*(l+mu*s+1)/2)
+
     @CachedMethod
     def k_vector(self,mu,m,s,local_l):
         vector = np.zeros(len(local_l))
@@ -2830,6 +2834,77 @@ class SpinWeightedSphericalHarmonics(SpinBasis, metaclass=CachedClass):
 SWSH = SpinWeightedSphericalHarmonics
 SphereBasis = SWSH
 
+class SphereGradient(operators.Gradient, operators.SpectralOperatorS2):
+    """Gradient on S2."""
+    cs_type = S2Coordinates
+    input_basis_type = SpinWeightedSphericalHarmonics
+    subaxis_dependence = [False, True]
+    subaxis_coupling = [False, False]
+
+    @staticmethod
+    def _output_basis(input_basis):
+        return input_basis
+
+    @staticmethod
+    def l_matrix(input_basis, output_basis, spinindex_in, spinindex_out, l):
+        spintotal_in = input_basis.spintotal(spinindex_in)
+        spintotal_out = output_basis.spintotal(spinindex_out)
+        mu = spintotal_out - spintotal_in
+        k = input_basis.k(l, spintotal_in, mu)
+        if input_basis.dtype == np.float64:
+            raise NotImplementedError("No reals yet.")
+        elif input_basis.dtype == np.complex128:
+            return np.array([[k]], dtype=np.complex128)
+        else:
+            raise ValueError("Type must be real or complex.")
+
+    def spinindex_out(self, spinindex_in):
+        # Spinorder: -, +, 0
+        # Gradients hits - and +
+        return ((0,) + spinindex_in, (1,) + spinindex_in)
+
+class SphereLaplacian(operators.Laplacian, operators.SpectralOperatorS2):
+    """Laplacian on S2."""
+    cs_type = S2Coordinates
+    input_basis_type = SpinWeightedSphericalHarmonics
+    subaxis_dependence = [False, True]
+    subaxis_coupling = [False, False]
+
+    def __init__(self, operand, coordsys, out=None):
+        operators.Laplacian.__init__(self, operand, out=out)
+        self.coordsys = coordsys
+        self.operand = operand
+        self.input_basis = operand.domain.get_basis(coordsys)
+        self.output_basis = self.input_basis
+        self.first_axis = self.input_basis.first_axis
+        self.last_axis = self.input_basis.last_axis
+        # FutureField requirements
+        self.domain  = operand.domain#.substitute_basis(self.input_basis, self.output_basis)
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
+
+
+    @staticmethod
+    def _output_basis(input_basis):
+        return input_basis
+
+    @staticmethod
+    def l_matrix(input_basis, output_basis, spinindex_in, spinindex_out, l):
+        spintotal_in = input_basis.spintotal(spinindex_in)
+        kp = input_basis.k(l, spintotal_in, +1)
+        km = input_basis.k(l, spintotal_in, -1)
+        kp_1 = input_basis.k(l, spintotal_in-1, +1)
+        km_1 = input_basis.k(l, spintotal_in+1, -1)
+        k_lap = km_1*kp + kp_1*km
+        if input_basis.dtype == np.float64:
+            raise NotImplementedError("No reals yet.")
+        elif input_basis.dtype == np.complex128:
+            return np.array([[k_lap]], dtype=np.complex128)
+        else:
+            raise ValueError("Type must be real or complex.")
+
+    def spinindex_out(self, spinindex_in):
+        return (spinindex_in,)
 
 # These are common for BallRadialBasis and SphericalShellRadialBasis
 class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):

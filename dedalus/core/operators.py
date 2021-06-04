@@ -2217,7 +2217,7 @@ class SpectralOperatorS2(SpectralOperator):
                     elif l_coupled and not m_dep:
                         matrix = self.assembled_l_matrices(spinindex_in, spinindex_out, m)
                     elif not m_dep:
-                        matrix = self.l_matrix(spinindex_in, spinindex_out, l)
+                        matrix = self.l_matrix(self.input_basis, self.output_basis, spinindex_in, spinindex_out, l)
                     else:
                         raise ValueError("This should never happen.")
                     factors[self.last_axis] = matrix
