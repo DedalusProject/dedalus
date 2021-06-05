@@ -100,12 +100,13 @@ class EigenvalueSolver:
             self.eigenvalues, self.eigenvectors = eig_output
         elif len(eig_output) == 3:
             self.eigenvalues, self.left_eigenvectors, self.eigenvectors = eig_output
+            # TODO: before merging, make sure this line is consistent with its equivalent in solve_sparse
             self.modified_left_eigenvectors = np.transpose(np.conjugate(self.left_eigenvectors.T)*-pencil.M)
         if pencil.pre_right is not None:
             self.eigenvectors = pencil.pre_right @ self.eigenvectors
         self.eigenvalue_pencil = pencil
 
-    def solve_sparse(self, pencil, N, target, rebuild_coeffs=False, left=False, **kw):
+    def solve_sparse(self, pencil, N, target, rebuild_coeffs=False, left=False, raise_on_mismatch=True, **kw):
         """
         Perform targeted sparse eigenvalue search for selected pencil.
 
@@ -143,17 +144,50 @@ class EigenvalueSolver:
         self.eigenvalues, self.eigenvectors = scipy_sparse_eigs(A=A, B=B, N=N, target=target, matsolver=self.matsolver, **kw)
         if left == True:
             # Solve for the left eigenvectors
-            #TODO: I think A and B are sparse.csr_matrix objects, in which case csr_matrix.getH might be better than np.conjugate(np.transpose()). Need to test.
-            self.left_eigenvalues, self.left_eigenvectors = scipy_sparse_eigs(A=np.conjugate(np.transpose(A)),
-                                                                              B=np.conjugate(np.transpose(B)),
+            self.left_eigenvalues, self.left_eigenvectors = scipy_sparse_eigs(A=A.getH(),
+                                                                              B=B.getH(),
                                                                               N=N, target=np.conjugate(target),
                                                                               matsolver=self.matsolver, **kw)
-            # The following isn't an error, just bad luck: sometimes the sparse solver doesn't hit the same targets for left as it does for right eigenvectors
+            # The following can happen due to bad luck: sometimes the sparse solver doesn't hit the same targets for left as it does for right eigenvectors
+            # TODO: decide whether and how to sort eigenvalues and eigenvectors before this point.
             if not np.allclose(self.eigenvalues, np.conjugate(self.left_eigenvalues)):
-                logger.warning("Conjugate of left eigenvalues does not match right eigenvalues.")
-            # In absence of above warning, modified_left_eigenvectors forms a biorthogonal set with the right eigenvectors
-            # (perhaps @ instead of * is better)
-            self.modified_left_eigenvectors = np.transpose(np.conjugate(self.left_eigenvectors.T)*-pencil.M)
+                if raise_on_mismatch:
+                    raise RuntimeError("Conjugate of left eigenvalues does not match right eigenvalues. "
+                                       "The full sets of left and right vectors won't form a biorthogonal set. "
+                                       "This error can be disabled by passing raise_on_mismatch=False to "
+                                       "solve_sparse().")  # Is this too long of an error message?
+                else:
+                    logger.warning("Conjugate of left eigenvalues does not match right eigenvalues.")
+            # In absence of above warning, modified_left_eigenvectors forms a biorthogonal set with the right
+            # eigenvectors.
+            #
+            # There's some choices to be made in how to define modified_left_eigenvectors. Below I've illustrated three
+            # examples.
+            #
+            # Under this definition:
+            self.modified_left_eigenvectors1 = np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M)
+            # the following returns a diagonal matrix:
+            # np.matmul(solver.modified_left_eigenvectors1.T, solver.eigenvectors)
+            #
+            # Under this definition:
+            self.modified_left_eigenvectors2 = np.conjugate(np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M))
+            # the following returns a diagonal matrix:
+            # np.matmul(np.conjugate(solver.modified_left_eigenvectors2.T), solver.eigenvectors)
+            # Under this definition:
+            self.modified_left_eigenvectors3 = self.left_eigenvectors.T * np.conj(-pencil.M)
+            # the following returns a diagonal matrix:
+            # np.matmul(np.conj(solver.modified_left_eigenvectors3), solver.eigenvectors)
+            #
+            # I'm inclined to like 2 the best, but I'm unsure. 2 forces the user to mind the complex conjugation
+            # typically required in inner products. 3 is perhaps more intuitive to some, but I don't like that it gives
+            # solver.modified_left_eigenvectors.shape = solver.left_eigenvectors.T.shape
+            # rather than
+            # solver.modified_left_eigenvectors.shape = solver.left_eigenvectors.shape
+            # (i.e. matrix whose rows are the modified lefts vs the columns being the modified lefts)
+            # Also, I don't like the use of * above since it's not always obvious what it does for array * csr
+            # without some digging. But I can't figure out what to replace it with to make this code more readable.
+            # TODO: decide whether it makes sense to normalize left/modified-left modes to get biorthonormality rather
+            # than just biorthogonality. I think it does.
         if pencil.pre_right is not None:
             # I remember Keaton explaining long ago that this step is only necessary for right eigenvectors, I think
             self.eigenvectors = pencil.pre_right @ self.eigenvectors
@@ -168,6 +202,9 @@ class EigenvalueSolver:
         index : int
             Index of desired eigenmode
         """
+        # TODO: add functionality to set the state to a left and/or modified-left eigenvector?
+        # Not necessary, but would be convenient if you want to handle it as a Dedalus FieldSystem instead of an array,
+        # or pass to eigentools.
         self.state.data[:] = 0
         self.state.set_pencil(self.eigenvalue_pencil, self.eigenvectors[:,index])
         self.state.scatter()
