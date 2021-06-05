@@ -193,7 +193,7 @@ class EigenvalueSolver:
             self.eigenvectors = pencil.pre_right @ self.eigenvectors
         self.eigenvalue_pencil = pencil
 
-    def set_state(self, index):
+    def set_state(self, index, left=False, modified_left=False):
         """
         Set state vector to the specified eigenmode.
 
@@ -201,12 +201,25 @@ class EigenvalueSolver:
         ----------
         index : int
             Index of desired eigenmode
+        left : bool, optional
+            If true, sets state vector to a left (or adjoint) eigenmode
+            instead of right eigenmode unless modified_left=True
+            (default: False)
+        modified_left : bool, optional
+            If true, sets state vector to a modified left eigenmode,
+            which is dual (under the standard dot product in coefficient
+            space) to the corresponding right eigenmode.
+            Supercedes left=True (default: False)
+            TODO: edit this docstring to say "complex dot product" depending on what convention is chosen
         """
-        # TODO: add functionality to set the state to a left and/or modified-left eigenvector?
-        # Not necessary, but would be convenient if you want to handle it as a Dedalus FieldSystem instead of an array,
-        # or pass to eigentools.
         self.state.data[:] = 0
-        self.state.set_pencil(self.eigenvalue_pencil, self.eigenvectors[:,index])
+        if left or modified_left:
+            if modified_left:
+                self.state.set_pencil(self.eigenvalue_pencil, self.modified_left_eigenvectors1[:,index])
+            else:
+                self.state.set_pencil(self.eigenvalue_pencil, self.left_eigenvectors[:, index])
+        else:
+            self.state.set_pencil(self.eigenvalue_pencil, self.eigenvectors[:,index])
         self.state.scatter()
 
     def solve(self, *args, **kw):
