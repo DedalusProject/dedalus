@@ -57,7 +57,7 @@ solver = problem.build_solver()
 
 solver.solve_sparse(solver.pencils[0], N=5, target=0.0, rebuild_coeffs=True, left=True)
 
-# The following print statements can be commented out to test biorthogonality of solver.modified_left_eigenvectors (1-3)
+# The following print statements can be uncommented to test biorthogonality of solver.modified_left_eigenvectors (1-3)
 # and solver.eigenvectors
 # print(np.abs(np.matmul(solver.modified_left_eigenvectors1.T, solver.eigenvectors)))
 # print(np.abs(np.matmul(np.conjugate(solver.modified_left_eigenvectors2.T), solver.eigenvectors)))
