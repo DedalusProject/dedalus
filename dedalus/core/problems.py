@@ -446,7 +446,14 @@ class InitialValueProblem(ProblemBase):
 
     def __init__(self, variables, time='t', **kw):
         super().__init__(variables, **kw)
-        self.time = time
+        if isinstance(time, str):
+            self.time = time
+            self.sim_time_field = Field(dist=self.dist, name=time)
+        elif isinstance(time, Field):
+            self.time = time.name
+            self.sim_time_field = time
+        else:
+            raise ValueError("Unrecognized type for 'time'.")
         self.dt = operators.TimeDerivative
 
     @CachedAttribute

@@ -396,7 +396,7 @@ class InitialValueSolver(SolverBase):
         # Initialize timestepper
         self.timestepper = timestepper(self)
         # Attributes
-        self.sim_time = 0.
+        self.sim_time = 0.  # TODO: allow picking up from current problem sim time?
         self.iteration = 0
         # Default integration parameters
         self.stop_sim_time = np.inf
@@ -404,13 +404,14 @@ class InitialValueSolver(SolverBase):
         self.stop_iteration = np.inf
         logger.debug('Finished IVP instantiation')
 
-    # @property
-    # def sim_time(self):
-    #     return self._sim_time.value
+    @property
+    def sim_time(self):
+        return self._sim_time
 
-    # @sim_time.setter
-    # def sim_time(self, t):
-    #     self._sim_time.value = t
+    @sim_time.setter
+    def sim_time(self, t):
+        self._sim_time = t
+        self.problem.sim_time_field['g'] = t
 
     def get_wall_time(self):
         self._wall_time_array[0] = time.time()
