@@ -2093,67 +2093,66 @@ class CartesianGradient(Gradient):
                 out.data[i] = 0
 
 
-class S2Gradient(Gradient, SpectralOperator):
+# class S2Gradient(Gradient, SpectralOperator):
 
-    cs_type = coords.S2Coordinates
+#     cs_type = coords.S2Coordinates
 
-    def __init__(self, operand, coordsys, out=None):
-        super().__init__(operand, out=out)
-        self.coordsys = coordsys
-        self.colatitude_axis = coordsys.coords[1].axis
-        # SpectralOperator requirements
-        self.input_basis = operand.domain.get_basis(coordsys)
-        self.output_basis = self.input_basis
-        self.last_axis = self.input_basis.last_axis
-        # LinearOperator requirements
-        self.operand = operand
-        # FutureField requirements
-        self.domain  = operand.domain
-        self.tensorsig = (coordsys,) + operand.tensorsig
-        self.dtype = operand.dtype
+#     def __init__(self, operand, coordsys, out=None):
+#         super().__init__(operand, out=out)
+#         self.coordsys = coordsys
+#         self.colatitude_axis = coordsys.coords[1].axis
+#         # SpectralOperator requirements
+#         self.input_basis = operand.domain.get_basis(coordsys)
+#         self.output_basis = self.input_basis
+#         self.last_axis = self.input_basis.last_axis
+#         # LinearOperator requirements
+#         self.operand = operand
+#         # FutureField requirements
+#         self.domain  = operand.domain
+#         self.tensorsig = (coordsys,) + operand.tensorsig
+#         self.dtype = operand.dtype
 
-    def check_conditions(self):
-        """Check that operands are in a proper layout."""
-        # Require colatitude to be in coefficient space
-        layout = self.args[0].layout
-        return not layout.grid_space[self.colatitude_axis]
+#     def check_conditions(self):
+#         """Check that operands are in a proper layout."""
+#         # Require colatitude to be in coefficient space
+#         layout = self.args[0].layout
+#         return not layout.grid_space[self.colatitude_axis]
 
-    def enforce_conditions(self):
-        """Require operands to be in a proper layout."""
-        # Require colatitude to be in coefficient space
-        self.args[0].require_coeff_space(self.colatitude_axis)
+#     def enforce_conditions(self):
+#         """Require operands to be in a proper layout."""
+#         # Require colatitude to be in coefficient space
+#         self.args[0].require_coeff_space(self.colatitude_axis)
 
-    def operate(self, out):
-        """Perform operation."""
-        operand = self.args[0]
-        basis = self.input_basis
-        azimuthal_axis = self.colatitude_axis - 1
-        layout = operand.layout
-        # Set output layout
-        out.set_layout(layout)
-        # slicing local ell's
-#        local_l_elements = layout.local_elements(basis.domain, scales=1)[1]
-#        local_l = tuple(basis.degrees[local_l_elements])
-        local_l = basis.local_l
+#     def operate(self, out):
+#         """Perform operation."""
+#         operand = self.args[0]
+#         basis = self.input_basis
+#         azimuthal_axis = self.colatitude_axis - 1
+#         layout = operand.layout
+#         # Set output layout
+#         out.set_layout(layout)
+#         # slicing local ell's
+# #        local_l_elements = layout.local_elements(basis.domain, scales=1)[1]
+# #        local_l = tuple(basis.degrees[local_l_elements])
+#         local_l = basis.local_l
 
+#         # Apply operator
+#         S = basis.spin_weights(operand.tensorsig)
+#         for i, s in np.ndenumerate(S):
 
-        # Apply operator
-        S = basis.spin_weights(operand.tensorsig)
-        for i, s in np.ndenumerate(S):
+#             operand_spin = reduced_view_4(operand.data[i],azimuthal_axis)
+#             multiindex = (0,)+i
+#             out_m = reduced_view_4(out.data[multiindex],azimuthal_axis)
+#             multiindex = (1,)+i
+#             out_p = reduced_view_4(out.data[multiindex],azimuthal_axis)
+#             for dm, m in enumerate(basis.local_m):
+#                 vector = basis.k_vector(-1,m,s,local_l)
+#                 vector = reshape_vector(vector,dim=3,axis=1)
+#                 out_m[:,dm,:,:] = vector * operand_spin[:,dm,:,:]
 
-            operand_spin = reduced_view_4(operand.data[i],azimuthal_axis)
-            multiindex = (0,)+i
-            out_m = reduced_view_4(out.data[multiindex],azimuthal_axis)
-            multiindex = (1,)+i
-            out_p = reduced_view_4(out.data[multiindex],azimuthal_axis)
-            for dm, m in enumerate(basis.local_m):
-                vector = basis.k_vector(-1,m,s,local_l)
-                vector = reshape_vector(vector,dim=3,axis=1)
-                out_m[:,dm,:,:] = vector * operand_spin[:,dm,:,:]
-
-                vector = basis.k_vector(+1,m,s,local_l)
-                vector = reshape_vector(vector,dim=3,axis=1)
-                out_p[:,dm,:,:] = vector * operand_spin[:,dm,:,:]
+#                 vector = basis.k_vector(+1,m,s,local_l)
+#                 vector = reshape_vector(vector,dim=3,axis=1)
+#                 out_p[:,dm,:,:] = vector * operand_spin[:,dm,:,:]
 
 
 def reduced_view_4(data, axis):
@@ -2230,52 +2229,34 @@ class SpectralOperatorS2(SpectralOperator):
         matrix = sparse.bmat(submatrices)
         return matrix.tocsr()
 
-    def subspace_matrix(self, layout):
-        """Build matrix operating on local subspace data."""
-        # Caching layer to allow insertion of other arguments
-        return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis)
-
-    def group_matrix(self, group):
-        return self._group_matrix(group, self.input_basis, self.output_basis)
-
-    @classmethod
-    @CachedMethod
-    def _subspace_matrix(cls, layout, input_basis, output_basis, axis, *args):
-        if cls.subaxis_coupling[0]:
-            return cls._full_matrix(input_basis, output_basis, *args)
-        else:
-            input_domain = Domain(layout.dist, bases=[input_basis])
-            output_domain = Domain(layout.dist, bases=[output_basis])
-            if input_basis is None:
-                local_groups = output_basis.local_groups(cls.subaxis_coupling)
-                local_groups = [lg for lg in local_groups if lg == [0]]
-            elif output_basis is None:
-                local_groups = input_basis.local_groups(cls.subaxis_coupling)
-                local_groups = [lg for lg in local_groups if lg == [0]]
-            else:
-                local_groups = input_basis.local_groups(cls.subaxis_coupling)
-            group_blocks = [cls._group_matrix(group[0], input_basis, output_basis, *args) for group in local_groups]
-            arg_size = layout.local_shape(input_domain, scales=1)[axis]
-            out_size = layout.local_shape(output_domain, scales=1)[axis]
-            return sparse_block_diag(group_blocks, shape=(out_size, arg_size))
-
-    @staticmethod
-    def _full_matrix(input_basis, output_basis, *args):
-        raise NotImplementedError()
-
-    @staticmethod
-    def _group_matrix(group, input_basis, output_basis, *args):
-        raise NotImplementedError()
-
     def operate(self, out):
         """Perform operation."""
-        arg = self.args[0]
-        layout = arg.layout
+        operand = self.args[0]
+        input_basis = self.input_basis
+        first_axis = self.first_axis
+        if self.subaxis_coupling[1]:
+            raise ValueError("Explicit evaluation not implemented yet for ell-coupled operators.")
         # Set output layout
-        out.set_layout(layout)
-        # Apply matrix
-        data_axis = self.last_axis + len(arg.tensorsig)
-        apply_matrix(self.subspace_matrix(layout), arg.data, data_axis, out=out.data)
+        out.set_layout(operand.layout)
+        out.data[:] = 0
+        # Apply operator
+        S_in = input_basis.spin_weights(operand.tensorsig)
+        slices = [slice(None) for i in range(input_basis.dist.dim)]
+        for spinindex_in, spintotal_in in np.ndenumerate(S_in):
+            for spinindex_out in self.spinindex_out(spinindex_in):
+                comp_in = operand.data[spinindex_in]
+                comp_out = out.data[spinindex_out]
+                for ell, m_ind, ell_ind in input_basis.ell_maps:
+                    # Need to check if components exist for a given spin?
+                    slices[first_axis] = m_ind
+                    slices[first_axis+1] = ell_ind
+                    vec_in  = comp_in[tuple(slices)]
+                    vec_out = comp_out[tuple(slices)]
+                    # Kronecker group matrix up to apply to different m groups
+                    l_matrix = self.l_matrix(input_basis, self.output_basis, spinindex_in, spinindex_out, ell)
+                    I_m_groups = sparse.identity((m_ind.stop - m_ind.start) // l_matrix.shape[1])
+                    A = sparse.kron(I_m_groups, l_matrix)
+                    vec_out += apply_matrix(A, vec_in, axis=first_axis)
 
 
 class PolarMOperator(SpectralOperator):

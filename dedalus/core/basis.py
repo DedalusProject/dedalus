@@ -2841,6 +2841,19 @@ class SphereGradient(operators.Gradient, operators.SpectralOperatorS2):
     subaxis_dependence = [False, True]
     subaxis_coupling = [False, False]
 
+    def __init__(self, operand, coordsys, out=None):
+        operators.Gradient.__init__(self, operand, out=out)  # Gradient has no __init__
+        self.coordsys = coordsys
+        self.operand = operand
+        self.input_basis = operand.domain.get_basis(coordsys)
+        self.output_basis = self.input_basis
+        self.first_axis = self.input_basis.first_axis
+        self.last_axis = self.input_basis.last_axis
+        # FutureField requirements
+        self.domain  = operand.domain#.substitute_basis(self.input_basis, self.output_basis)
+        self.tensorsig = (coordsys,) + operand.tensorsig
+        self.dtype = operand.dtype
+
     @staticmethod
     def _output_basis(input_basis):
         return input_basis

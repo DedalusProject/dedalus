@@ -9,6 +9,7 @@ from scipy.special import sph_harm
 Nphi_range = [32]
 Ntheta_range = [16]
 dealias_range = [1, 3/2]
+pi = np.pi
 
 @CachedFunction
 def build_sphere(Nphi, Ntheta, dealias, dtype):
@@ -23,11 +24,11 @@ def build_sphere(Nphi, Ntheta, dealias, dtype):
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('dtype', [np.complex128])
-def test_implicit_gradient_scalar(Nphi, Ntheta, dealias, basis, dtype):
+def test_implicit_gradient_scalar(Nphi, Ntheta, dealias, dtype):
         #c, d, b, phi, theta, x, y = build_sphere(Nphi, Ntheta, dealias, dtype)
     c, d, b, phi, theta = build_sphere(Nphi, Ntheta, dealias, dtype)
     u = field.Field(dist=d, bases=(b,), dtype=dtype)
-    f = field.Field(dist=d, bases=(b,), dtype=dtype)
+    f = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
     f.set_scales(b.domain.dealias)
     u.set_scales(b.domain.dealias)
     m = 2
@@ -40,14 +41,15 @@ def test_implicit_gradient_scalar(Nphi, Ntheta, dealias, basis, dtype):
     problem.add_equation((u,0), condition='ntheta ==0')
     solver = solvers.LinearBoundaryValueSolver(problem)
     solver.solve()
-    ug = [np.exp(2j*phi)*np.sqrt(15/(2*pi))*np.cos(theta)*np.sin(theta)/2, 1j*np.exp(2j*phi)*np.sqrt(15/(2*np.pi))*np.sin(theta)/2]
+    ug = [1j*np.exp(2j*phi)*np.sqrt(15/(2*np.pi))*np.sin(theta)/2,
+          np.exp(2j*phi)*np.sqrt(15/(2*np.pi))*np.cos(theta)*np.sin(theta)/2]
     assert np.allclose(u['g'], ug)
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('dtype', [np.complex128])
-def test_gradient_scalar(Nphi, Ntheta, dealias, basis, dtype):
+def test_gradient_scalar(Nphi, Ntheta, dealias, dtype):
         #c, d, b, phi, theta, x, y = build_sphere(Nphi, Ntheta, dealias, dtype)
     c, d, b, phi, theta = build_sphere(Nphi, Ntheta, dealias, dtype)
     u = field.Field(dist=d, bases=(b,), dtype=dtype)
@@ -60,7 +62,8 @@ def test_gradient_scalar(Nphi, Ntheta, dealias, basis, dtype):
 
     u = operators.Gradient(f,c).evaluate()
 
-    ug = [np.exp(2j*phi)*np.sqrt(15/(2*pi))*np.cos(theta)*np.sin(theta)/2, 1j*np.exp(2j*phi)*np.sqrt(15/(2*np.pi))*np.sin(theta)/2]
+    ug = [1j*np.exp(2j*phi)*np.sqrt(15/(2*np.pi))*np.sin(theta)/2,
+          np.exp(2j*phi)*np.sqrt(15/(2*np.pi))*np.cos(theta)*np.sin(theta)/2]
     assert np.allclose(u['g'], ug)
 
 # @pytest.mark.parametrize('Ntheta', Ntheta_range)
@@ -204,7 +207,7 @@ def test_laplacian_scalar(Nphi,  Ntheta, dealias, dtype):
     f['g'] = sph_harm(m,l,phi,theta)
 
     u = operators.Laplacian(f,c).evaluate()
-    assert np.allclose(u['g'], -f['g']/(l*(l+1)))
+    assert np.allclose(u['g'], -f['g']*(l*(l+1)))
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
@@ -236,14 +239,14 @@ def test_implicit_laplacian_scalar(Nphi,  Ntheta, dealias, dtype):
 def test_implicit_laplacian_vector(Nphi,  Ntheta, dealias, dtype):
     #c, d, b, phi, theta, x, y = build_sphere(Nphi, Ntheta, dealias, dtype)
     c, d, b, phi, theta = build_sphere(Nphi, Ntheta, dealias, dtype)
-    u = field.Field(dist=d, bases=(b,), dtype=dtype)
-    f = field.Field(dist=d, bases=(b,), dtype=dtype)
+    u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
+    f = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
     f.set_scales(b.domain.dealias)
     u.set_scales(b.domain.dealias)
     m0 = 1
     l0 = 1
     m1 = 1
-    l0 = 2
+    l1 = 2
     f['g'][0] = sph_harm(m0,l0,phi,theta)
     f['g'][1] = sph_harm(m1,l1,phi,theta)
     lap = lambda A: operators.Laplacian(A,c)
