@@ -55,14 +55,14 @@ problem.add_bc("right(phi_z) = 0")
 problem.add_bc("right(Bz) = 0")
 solver = problem.build_solver()
 
-solver.solve_sparse(solver.pencils[0], N=5, target=0.0, rebuild_coeffs=True, left=True)
+solver.solve_sparse(solver.pencils[0], N=5, target=0.0, rebuild_coeffs=True, left=True, normalize_left=True)
 
 # The following print statements can be uncommented to test biorthogonality of solver.modified_left_eigenvectors (1-3)
 # and solver.eigenvectors
 # print(np.abs(np.matmul(solver.modified_left_eigenvectors1.T, solver.eigenvectors)))
 # print(np.abs(np.matmul(np.conjugate(solver.modified_left_eigenvectors2.T), solver.eigenvectors)))
 # print(np.abs(np.matmul(np.conj(solver.modified_left_eigenvectors3), solver.eigenvectors)))
-kronecker1 = np.matmul(solver.modified_left_eigenvectors1.T, solver.eigenvectors)
+kronecker1 = np.matmul(solver.modified_left_eigenvectors2.T, solver.eigenvectors)
 
 # Test biorthogonality using set_state:
 for n in range(5):
