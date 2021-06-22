@@ -234,7 +234,7 @@ class UnaryGridFunction(NonlinearOperator, Future, metaclass=MultiClass):
 
     arity = 1
     supported = {ufunc.__name__: ufunc for ufunc in
-        (np.absolute, np.sign, np.conj, np.exp, np.exp2, np.log, np.log2,
+        (np.absolute, np.sign, np.conjugate, np.exp, np.exp2, np.log, np.log2,
          np.log10, np.sqrt, np.square, np.sin, np.cos, np.tan, np.arcsin,
          np.arccos, np.arctan, np.sinh, np.cosh, np.tanh, np.arcsinh,
          np.arccosh, np.arctanh)}
@@ -282,6 +282,12 @@ class UnaryGridFunction(NonlinearOperator, Future, metaclass=MultiClass):
 
     def sym_diff(self, var):
         """Symbolically differentiate with respect to var."""
+        arg0 = self.args[0]
+        diff0 = arg0.sym_diff(var)
+        # Special case conjugate
+        if self.func is np.conjugate:
+            return np.conjugate(diff0)
+        # Handle others with chain rule
         diffmap = {np.absolute: lambda x: np.sign(x),
                    np.sign: lambda x: 0,
                    np.exp: lambda x: np.exp(x),
@@ -303,8 +309,6 @@ class UnaryGridFunction(NonlinearOperator, Future, metaclass=MultiClass):
                    np.arcsinh: lambda x: (x**2 + 1)**(-1/2),
                    np.arccosh: lambda x: (x**2 - 1)**(-1/2),
                    np.arctanh: lambda x: (1 - x**2)**(-1)}
-        arg0 = self.args[0]
-        diff0 = arg0.sym_diff(var)
         return diffmap[self.func](arg0) * diff0
 
 
