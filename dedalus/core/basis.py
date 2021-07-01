@@ -2782,9 +2782,12 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         enum_components_output = []
         for i, comp in enum_components_input:
             # Filter for indices in self.coordsystem
-            spinindex = tuple([j for j, cs in zip(comp, tensorsig) if cs is self.coordsystem])
             if self.coordsystem.dim == 3:
-                if abs(self.spintotal(spinindex)) <= ell:
+                spinindex_3d = tuple([j for j, cs in zip(comp, tensorsig) if cs is self.coordsystem])
+                spinindex_2d = tuple([j for j, cs in zip(comp, tensorsig) if cs is self.coordsystem.S2coordsys])
+                spintotal_3d = self.spintotal(spinindex_3d)
+                spintotal_2d = self.spintotal(spinindex_2d)
+                if abs(spintotal_3d + spintotal_2d) <= ell:
                     enum_components_output.append((i, comp))
             else:
                 raise ValueError("cs is 2d")

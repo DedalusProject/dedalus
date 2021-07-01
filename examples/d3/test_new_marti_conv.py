@@ -27,7 +27,6 @@ ts = timesteppers.SBDF4
 dtype = np.float64
 mesh = None#[4,8]
 plot_subproblem_matrices = True
-
 Ekman = 3e-4
 Rayleigh = 95
 Prandtl = 1
@@ -43,47 +42,44 @@ phi, theta, r = b.local_grids((1, 1, 1))
 u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
 p = field.Field(dist=d, bases=(b,), dtype=dtype)
 T = field.Field(dist=d, bases=(b,), dtype=dtype)
+T['g'] = 0.5*(1-r**2) + 0.1/8*np.sqrt(35/np.pi)*r**3*(1-r**2)*(np.cos(3*phi)+np.sin(3*phi))*np.sin(theta)**3
 tau_u = field.Field(dist=d, bases=(b_S2,), tensorsig=(c,), dtype=dtype)
 tau_T = field.Field(dist=d, bases=(b_S2,), dtype=dtype)
-
 r_vec = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
 r_vec['g'][2] = r
-
-T['g'] = 0.5*(1-r**2) + 0.1/8*np.sqrt(35/np.pi)*r**3*(1-r**2)*(np.cos(3*phi)+np.sin(3*phi))*np.sin(theta)**3
-
 T_source = field.Field(dist=d, bases=(b,), dtype=dtype)
 T_source['g'] = 3
-
-# Boundary conditions
-u_r_bc = operators.RadialComponent(operators.interpolate(u,r=1))
-
-stress = operators.Gradient(u, c) + operators.TransposeComponents(operators.Gradient(u, c))
-u_perp_bc = operators.RadialComponent(operators.AngularComponent(operators.interpolate(stress,r=1), index=1))
-
-# Parameters and operators
 ez = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
 ez['g'][1] = -np.sin(theta)
 ez['g'][2] =  np.cos(theta)
-div = lambda A: operators.Divergence(A, index=0)
+
+# Operators
+div = operators.Divergence
 lap = lambda A: operators.Laplacian(A, c)
 grad = lambda A: operators.Gradient(A, c)
-dot = lambda A, B: arithmetic.DotProduct(A, B)
-cross = lambda A, B: arithmetic.CrossProduct(A, B)
-ddt = lambda A: operators.TimeDerivative(A)
+dot = arithmetic.DotProduct
+cross = arithmetic.CrossProduct
+ddt = operators.TimeDerivative
 LiftTau = lambda A: operators.LiftTau(A, b, -1)
+rad = operators.RadialComponent
+ang = operators.AngularComponent
+trans = operators.TransposeComponents
+
+# Boundary conditions
+strain_rate = grad(u) + trans(grad(u))
+shear_stress = ang(rad(strain_rate(r=1)))
 
 # Problem
 def eq_eval(eq_str):
     return [eval(expr) for expr in split_equation(eq_str)]
 problem = problems.IVP([p, u, T, tau_u, tau_T])
-
 problem.add_equation(eq_eval("div(u) = 0"))
 problem.add_equation(eq_eval("Ekman*ddt(u) - Ekman*lap(u) + grad(p) + LiftTau(tau_u) = - Ekman*dot(u,grad(u)) + Rayleigh*r_vec*T - cross(ez, u)"))
 problem.add_equation(eq_eval("Prandtl*ddt(T) - lap(T) + LiftTau(tau_T) = - Prandtl*dot(u,grad(T)) + T_source"))
-problem.add_equation(eq_eval("u_r_bc = 0"), condition="ntheta != 0")  # stress-free
-problem.add_equation(eq_eval("u_perp_bc = 0"), condition="ntheta != 0")  # stress-free
-# problem.add_equation(eq_eval("u(r=1) = 0"), condition="ntheta != 0")  # no-slip
+problem.add_equation(eq_eval("rad(u(r=1)) = 0"), condition="ntheta != 0")  # no penetration
 problem.add_equation(eq_eval("p(r=1) = 0"), condition="ntheta == 0")  # pressure gauge
+problem.add_equation(eq_eval("shear_stress = 0"))  # stress free
+#problem.add_equation(eq_eval("ang(u(r=1)) = 0"))  # no slip
 problem.add_equation(eq_eval("T(r=1) = 0"))
 print("Problem built")
 

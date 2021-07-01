@@ -371,7 +371,11 @@ class Subproblem:
         fsize = self.field_size(field)
         vfshape = self.valid_field_shape(field)
         indices = np.arange(fsize).reshape((-1,) + vfshape[1:])
-        indices = indices[self.valid_field_slices(field)[0]].ravel()
+        # Avoid issue when there are no valid slices
+        if self.valid_field_slices(field)[0].size:
+            indices = indices[self.valid_field_slices(field)[0]].ravel()
+        else:
+            indices = slice(0, 0)
         matrix = sparse.identity(fsize, format='csr')[indices]
         return matrix
 
