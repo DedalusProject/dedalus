@@ -1343,14 +1343,11 @@ class Convert(SpectralOperator, metaclass=MultiClass):
         last_axis = self.last_axis
         is_coeff = not arg0.layout.grid_space[last_axis]
         is_local = arg0.layout.local[last_axis]
-        # Allow conversion in grid space
-        if not is_coeff:
-            return True
-        # In coeff space, require locality if non-separable
-        if not self.subaxis_coupling[-1]:
-            return True
-        else:
+        # Require locality if non-separable or in grid space
+        if (not is_coeff) or self.subaxis_coupling[-1]:
             return is_local
+        else:
+            return True
 
     def enforce_conditions(self):
         """Require arguments to be in a proper layout."""
@@ -1358,8 +1355,8 @@ class Convert(SpectralOperator, metaclass=MultiClass):
         last_axis = self.last_axis
         is_coeff = not arg0.layout.grid_space[last_axis]
         is_local = arg0.layout.local[last_axis]
-        # Require locality if non-separable and in coeff space
-        if is_coeff and self.subaxis_coupling[-1]:
+        # Require locality if non-separable or in grid space
+        if (not is_coeff) or self.subaxis_coupling[-1]:
             self.args[0].require_local(last_axis)
 
     def replace(self, old, new):
