@@ -1045,7 +1045,7 @@ class Integrate(LinearOperator, metaclass=MultiClass):
     def _check_args(cls, operand, space, out=None):
         # Dispatch by operand basis
         if isinstance(operand, Operand):
-            if isinstance(operand.get_basis(space), cls.input_basis_type):
+            if isinstance(operand.domain.get_basis(space), cls.input_basis_type):
                 return True
         return False
 

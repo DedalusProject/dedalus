@@ -167,6 +167,30 @@ class Subsystem:
         return np.prod(self.field_shape(field))
 
     @CachedMethod
+    def valid_field_slices(self, field):
+        # Enumerate component indices
+        comp_shape = tuple(cs.dim for cs in field.tensorsig)
+        enum_components = list(enumerate(np.ndindex(*comp_shape)))
+        # Filter through all bases
+        for basis in field.domain.bases:
+            enum_components = basis.valid_components(self.group, field.tensorsig, enum_components)
+        # Keep remaining components
+        comp_selection = np.array([i for i, comp in enum_components])
+        coeff_slices = self.coeff_slices(field.domain)
+        return (comp_selection,) + coeff_slices
+
+    @CachedMethod
+    def valid_field_shape(self, field):
+        slices = self.valid_field_slices(field)
+        comp_selection = slices[0]
+        coeff_shape = self.coeff_shape(field.domain)
+        return (comp_selection.size,) + coeff_shape
+
+    @CachedMethod
+    def valid_field_size(self, field):
+        return np.prod(self.valid_field_shape(field))
+
+    @CachedMethod
     def _gather_scatter_setup(self, fields):
         # Allocate vector
         fsizes = tuple(self.field_size(f) for f in fields)
@@ -255,6 +279,15 @@ class Subproblem:
     def field_size(self, field):
         return self.subsystems[0].field_size(field)
 
+    def valid_field_slices(self, field):
+        return self.subsystems[0].valid_field_slices(field)
+
+    def valid_field_shape(self, field):
+        return self.subsystems[0].valid_field_shape(field)
+
+    def valid_field_size(self, field):
+        return self.subsystems[0].valid_field_size(field)
+
     def inclusion_matrices(self, bases):
         """List of inclusion matrices."""
         matrices = []
@@ -335,8 +368,16 @@ class Subproblem:
         #     else:
         #         matrices.append(basis.mode_map(group))
         # return reduce(sparse.kron, matrices, 1).tocsr()
-        size = self.field_size(field)
-        return sparse.identity(size, format='csr')
+        fsize = self.field_size(field)
+        vfshape = self.valid_field_shape(field)
+        indices = np.arange(fsize).reshape((-1,) + vfshape[1:])
+        # Avoid issue when there are no valid slices
+        if self.valid_field_slices(field)[0].size:
+            indices = indices[self.valid_field_slices(field)[0]].ravel()
+        else:
+            indices = slice(0, 0)
+        matrix = sparse.identity(fsize, format='csr')[indices]
+        return matrix
 
     # def mode_map(self, basis_sets):
     #     """Restrict group data to nonzero modes."""
@@ -404,24 +445,25 @@ class Subproblem:
 
         # Create maps restricting group data to included modes
         drop_eqn = [self.group_to_modes(eqn['LHS']) for eqn in eqns]
-        #drop_var = [self.group_to_modes(var) for var in vars]
+        drop_var = [self.group_to_modes(var) for var in vars]
         # Drop equations that fail condition test
         for n, eqn_cond in enumerate(eqn_conditions):
             if not eqn_cond:
                 drop_eqn[n] = drop_eqn[n][0:0, :]
         self.drop_eqn = drop_eqn = sparse_block_diag(drop_eqn).tocsr()
-        #self.drop_var = drop_var = sparse_block_diag(drop_var).tocsr()
+        self.drop_var = drop_var = sparse_block_diag(drop_var).tocsr()
 
         # Check squareness of restricted system
-        if drop_eqn.shape[0] != J:
-            raise ValueError("Non-square system: group={}, I={}, J={}".format(self.group, drop_eqn.shape[0], J))
+        if drop_eqn.shape[0] != drop_var.shape[0]:
+            raise ValueError("Non-square system: group={}, I={}, J={}".format(self.group, drop_eqn.shape[0], drop_var.shape[0]))
 
         # Permutations
         eqn_pass_cond = [eqn for eqn, cond in zip(eqns, eqn_conditions) if cond]
         self.left_perm = left_permutation(self, eqn_pass_cond, bc_top=solver.bc_top, interleave_components=solver.interleave_components)
         self.right_perm = right_permutation(self, vars, tau_left=solver.tau_left, interleave_components=solver.interleave_components)
-        self.pre_left = self.left_perm @ self.drop_eqn
-        self.pre_right = self.right_perm
+
+        self.pre_left = (self.left_perm @ drop_eqn).tocsr()
+        self.pre_right = (drop_var.T @ self.right_perm).tocsr()
 
         # Left-precondition matrices
         for name in matrices:
@@ -489,9 +531,10 @@ def left_permutation(subproblem, equations, bc_top, interleave_components):
     L0 = []
     for eqn in equations:
         L1 = []
-        for comp in np.ndindex(*[cs.dim for cs in eqn['tensorsig']]):
+        vfshape = subproblem.valid_field_shape(eqn['LHS'])
+        for comp in range(vfshape[0]):
             L2 = []
-            for coeff in range(subproblem.coeff_size(eqn['domain'])):
+            for coeff in range(np.prod(vfshape[1:], dtype=int)):
                 L2.append(i)
                 i += 1
             L1.append(L2)
@@ -546,9 +589,10 @@ def right_permutation(subproblem, variables, tau_left, interleave_components):
     L0 = []
     for var in variables:
         L1 = []
-        for comp in np.ndindex(*[cs.dim for cs in var.tensorsig]):
+        vfshape = subproblem.valid_field_shape(var)
+        for comp in range(vfshape[0]):
             L2 = []
-            for coeff in range(subproblem.coeff_size(var.domain)):
+            for coeff in range(np.prod(vfshape[1:], dtype=int)):
                 L2.append(i)
                 i += 1
             L1.append(L2)
