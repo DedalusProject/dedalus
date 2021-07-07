@@ -952,6 +952,8 @@ class Interpolate(SpectralOperator, metaclass=MultiClass):
 
     """
 
+    # TODO: Probably does not need to inherit from SpectralOperator
+
     name = 'interp'
 
     @classmethod
@@ -2113,6 +2115,111 @@ class SphericalEllOperator(SpectralOperator):
 
     def radial_matrix(regindex_in, regindex_out, ell):
         raise NotImplementedError()
+
+
+class InterpolateAzimuth(Interpolate):
+
+    basis_type = (SWSH, BallBasis, ShellBasis)
+    basis_subaxis = 0
+
+    @staticmethod
+    def _output_basis(input_basis, position):
+        # return same basis but with Mmax = 0 but same Lmax
+        pass
+
+    def check_conditions(self):
+        """Check that arguments are in a proper layout."""
+        arg0 = self.args[0]
+        azimuth_axis = self.first_axis
+        is_grid = arg0.layout.grid_space[azimuth_axis]
+        is_local = arg0.layout.local[azimuth_axis]
+        # Require grid space and locality along azimuthal axis
+        return is_grid and is_local
+
+    def enforce_conditions(self):
+        """Require arguments to be in a proper layout."""
+        arg0 = self.args[0]
+        azimuth_axis = self.first_axis
+        # Require grid space and locality along azimuthal axis
+        arg0.require_grid_space(azimuth_axis)
+        arg0.require_local(azimuth_axis)
+
+    def interpolation_vector(self):
+
+        return self._interpolation_vector(self.input_basis, grid_size, self.position)
+
+    @classmethod
+    @CachedMethod
+    def _interpolation_vector(cls, input_basis, grid_size, position):
+        # Construct collocation interpolation using forward transform matrix and spectral interpolation
+        azimuth_basis = input_basis.azimuth_basis
+        forward = azimuth_basis.transforms['matrix'](grid_size, azimuth_basis.size).forward_matrix
+        if input_basis.dtype is np.float64:
+            interp = basis.InterpolateRealFourier._full_matrix(azimuth_basis, None, position)
+        elif input_basis.dtpye is np.complex128:
+            interp = basis.InterpolateComplexFourier._full_matrix(azimuth_basis, None, position)
+        return interp @ forward
+
+    def operate(self, out):
+        """Perform operation."""
+        arg = self.args[0]
+        layout = arg.layout
+        # Set output layout
+        out.set_layout(layout)
+        # Set output lock
+        # TODO: figure out locking
+        #out.lock_axis(self.first_axis, 'g')
+        # Apply matrix
+        data_axis = self.first_axis + len(arg.tensorsig)
+        apply_matrix(self.interpolation_vector(), arg.data, data_axis, out=out.data)
+
+
+class InterpolateColatitude(Interpolate):
+
+    basis_type = (SWSH, BallBasis, ShellBasis)
+    basis_subaxis = 1
+
+    @staticmethod
+    def _output_basis(input_basis, position):
+        # return same basis but with Lmax = 0 but same Mmax
+        pass
+
+    def check_conditions(self):
+        """Check that arguments are in a proper layout."""
+        arg0 = self.args[0]
+        theta_axis = self.first_axis + 1
+        is_grid = arg0.layout.grid_space[theta_axis]
+        is_local = arg0.layout.local[theta_axis]
+        # Require grid space and locality along theta axis
+        return is_grid and is_local
+
+    def enforce_conditions(self):
+        """Require arguments to be in a proper layout."""
+        arg0 = self.args[0]
+        theta_axis = self.first_axis + 1
+        # Require grid space and locality along theta axis
+        arg0.require_grid_space(theta_axis)
+        arg0.require_local(theta_axis)
+
+    @CachedFunction
+    def interpolation_vector(self, Ntheta, m, s, position):
+        # cached classmethod depending on m and s
+        # use trig interpolation formula for each m
+        pass
+
+    def operate(self, out):
+        """Perform operation."""
+        arg = self.args[0]
+        layout = arg.layout
+        theta_axis = self.first_axis + 1
+        # Set output layout
+        out.set_layout(layout)
+        # Set output lock
+        out.lock_axis(theta_axis, 'g')
+        # Apply matrix
+        # NEED TO LOOP OVER m
+        data_axis = self.first_axis + len(arg.tensorsig)
+        apply_matrix(self.interpolation_vector, arg.data, data_axis, out=out.data)
 
 
 class SphericalGradient(Gradient, SphericalEllOperator):
