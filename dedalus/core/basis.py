@@ -1012,7 +1012,10 @@ class RealFourier(IntervalBasis):
     @CachedMethod
     def transform_plan(self, grid_size):
         """Build transform plan."""
-        return self.transforms[self.library](grid_size, self.size)
+        if grid_size == 1:
+            return self.transforms['matrix'](grid_size, self.size)
+        else:
+            return self.transforms[self.library](grid_size, self.size)
 
     def local_elements(self):
         local_elements = self.dist.coeff_layout.local_elements(self.domain, scales=1)[self.axis]
@@ -2480,8 +2483,8 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
 
     def __init__(self, coordsystem, shape, dtype, radius=1, dealias=(1,1), colatitude_library=None, **kw):
         super().__init__(coordsystem, shape, dtype, dealias, **kw)
-        if radius <= 0:
-            raise ValueError("Radius must be positive.")
+        if radius < 0:
+            raise ValueError("Radius must be non-negative.")
         if colatitude_library is None:
             colatitude_library = "matrix"
         self.radius = radius
@@ -2516,7 +2519,11 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             self.backward_m_perm = np.argsort(self.forward_m_perm)
             self.group_shape = (1, 1)
         elif self.dtype == np.float64:
-            az_index = np.arange(shape[0])
+            if shape[0] == 1:
+                # Include sine and cosine parts of m=0
+                az_index = np.arange(2)
+            else:
+                az_index = np.arange(shape[0])
             div2, mod2 = divmod(az_index, 2)
             div22 = div2 % 2
             self.forward_m_perm = (mod2 + div2) * (1 - div22) + (shape[0] - 1 + mod2 - div2) * div22
@@ -2887,6 +2894,8 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         self.forward_spin_recombination(field.tensorsig, gdata, temp)
         # Copy from temp to cdata
         np.copyto(cdata, temp)
+        # Scale to account for SWSH normalization? Is this right for all spins?
+        cdata *= np.sqrt(2)
 
     def forward_transform_colatitude(self, field, axis, gdata, cdata):
         # Apply spin recombination from gdata to temp
@@ -2905,6 +2914,8 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         temp = np.copy(cdata)
         # Apply spin recombination from temp to gdata
         self.backward_spin_recombination(field.tensorsig, temp, gdata)
+        # Scale to account for SWSH normalization? Is this right for all spins?
+        gdata /= np.sqrt(2)
 
     def backward_transform_colatitude(self, field, axis, cdata, gdata):
         # Transform component-by-component from cdata to temp
@@ -3878,6 +3889,14 @@ class Spherical3DBasis(MultidimensionalBasis):
     def valid_components(self, *args):
         # Implemented in RegularityBasis
         return self.radial_basis.valid_components(*args)
+
+    def multiplication_matrix(self, subproblem, arg_basis, coeffs, *args, **kw):
+        if self.shape[0:2] == (1, 1):
+            # Scale to account for SWSH normalization? Is this right for all spins?
+            coeffs /= np.sqrt(2)
+            return self.radial_basis.multiplication_matrix(subproblem, arg_basis, coeffs, *args, **kw)
+        else:
+            raise ValueError("Cannot build NCCs of non-radial fields.")
 
 
 class SphericalShellBasis(Spherical3DBasis):

@@ -47,9 +47,7 @@ def test_sin_nlbvp(Nx, dtype, dealias, basis_class):
 
 
 @pytest.mark.parametrize('Nr', [16])
-@pytest.mark.parametrize('dtype', [np.complex128,
-    pytest.param(np.float64, marks=pytest.mark.xfail(reason="ell = 0 matrices with float are singular?"))])
-#@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 @pytest.mark.parametrize('dealias', [1, 1.5])
 def test_heat_ball_nlbvp(Nr, dtype, dealias):
     radius = 2
@@ -59,16 +57,16 @@ def test_heat_ball_nlbvp(Nr, dtype, dealias):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
     b = basis.BallBasis(c, (1, 1, Nr), radius=radius, dtype=dtype, dealias=dealias)
-    br = b.radial_basis
+    bs = b.S2_basis(radius=radius)
     phi, theta, r = b.local_grids((1, 1, 1))
     # Fields
-    u = field.Field(name='u', dist=d, bases=(br,), dtype=dtype)
-    τ = field.Field(name='τ', dist=d, dtype=dtype)
-    F = field.Field(name='F', dist=d, dtype=dtype)
+    u = field.Field(name='u', dist=d, bases=(b,), dtype=dtype)
+    τ = field.Field(name='τ', dist=d, bases=(bs,), dtype=dtype)
+    F = field.Field(name='F', dist=d, bases=(b,), dtype=dtype) # todo: make this constant
     F['g'] = 6
     # Problem
     Lap = lambda A: operators.Laplacian(A, c)
-    LiftTau = lambda A: operators.LiftTau(A, br, -1)
+    LiftTau = lambda A: operators.LiftTau(A, b, -1)
     problem = problems.NLBVP([u, τ])
     problem.add_equation((Lap(u) + LiftTau(τ), F))
     problem.add_equation((u(r=radius), 0))
@@ -89,9 +87,7 @@ def test_heat_ball_nlbvp(Nr, dtype, dealias):
 
 
 @pytest.mark.parametrize('Nr', [32])
-@pytest.mark.parametrize('dtype', [np.complex128,
-    pytest.param(np.float64, marks=pytest.mark.xfail(reason="ell = 0 matrices with float are singular?"))])
-#@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 @pytest.mark.parametrize('dealias', [1, 1.5])
 def test_lane_emden_floating_amp(Nr, dtype, dealias):
     n = 3.0
@@ -101,14 +97,14 @@ def test_lane_emden_floating_amp(Nr, dtype, dealias):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
     b = basis.BallBasis(c, (1, 1, Nr), radius=1, dtype=dtype, dealias=dealias)
-    br = b.radial_basis
+    bs = b.S2_basis(radius=1)
     phi, theta, r = b.local_grids((1, 1, 1))
     # Fields
-    f = field.Field(dist=d, bases=(br,), dtype=dtype, name='f')
-    τ = field.Field(dist=d, dtype=dtype, name='τ')
+    f = field.Field(dist=d, bases=(b,), dtype=dtype, name='f')
+    τ = field.Field(dist=d, bases=(bs,), dtype=dtype, name='τ')
     # Problem
     lap = lambda A: operators.Laplacian(A, c)
-    LiftTau = lambda A: operators.LiftTau(A, br, -1)
+    LiftTau = lambda A: operators.LiftTau(A, b, -1)
     problem = problems.NLBVP([f, τ])
     problem.add_equation((lap(f) + LiftTau(τ), -f**n))
     problem.add_equation((f(r=1), 0))
@@ -120,7 +116,7 @@ def test_lane_emden_floating_amp(Nr, dtype, dealias):
     def error(perts):
         return np.sum([np.sum(np.abs(pert['c'])) for pert in perts])
     err = np.inf
-    while err > tolerance:
+    while err > tolerance and solver.iteration < 10:
         solver.newton_iteration()
         err = error(solver.perturbations)
     f0 = f(r=0).evaluate()['g'].ravel()
@@ -141,9 +137,7 @@ def test_lane_emden_floating_amp(Nr, dtype, dealias):
 
 
 @pytest.mark.parametrize('Nr', [32])
-@pytest.mark.parametrize('dtype', [np.complex128,
-    pytest.param(np.float64, marks=pytest.mark.xfail(reason="ell = 0 matrices with float are singular?"))])
-#@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 @pytest.mark.parametrize('dealias', [1, 1.5])
 def test_lane_emden_floating_R(Nr, dtype, dealias):
     n = 3.0
@@ -153,19 +147,21 @@ def test_lane_emden_floating_R(Nr, dtype, dealias):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
     b = basis.BallBasis(c, (1, 1, Nr), radius=1, dtype=dtype, dealias=dealias)
-    br = b.radial_basis
+    bs = b.S2_basis(radius=1)
+    bs0 = b.S2_basis(radius=0)
     phi, theta, r = b.local_grids((1, 1, 1))
     # Fields
-    f = field.Field(dist=d, bases=(br,), dtype=dtype, name='f')
+    f = field.Field(dist=d, bases=(b,), dtype=dtype, name='f')
     R = field.Field(dist=d, dtype=dtype, name='R')
-    τ = field.Field(dist=d, dtype=dtype, name='τ')
+    τ = field.Field(dist=d, bases=(bs,), dtype=dtype, name='τ')
+    one = field.Field(dist=d, bases=(bs0,), dtype=dtype)
+    one['g'] = 1
     # Problem
     lap = lambda A: operators.Laplacian(A, c)
-    Pow = lambda A,n: operators.Power(A,n)
-    LiftTau = lambda A: operators.LiftTau(A, br, -1)
+    LiftTau = lambda A: operators.LiftTau(A, b, -1)
     problem = problems.NLBVP([f, R, τ])
-    problem.add_equation((lap(f) + LiftTau(τ), - R**2 * Pow(f,n)))
-    problem.add_equation((f(r=0), 1))
+    problem.add_equation((lap(f) + LiftTau(τ), - R**2 * f**n))
+    problem.add_equation((f(r=0), one))
     problem.add_equation((f(r=1), 0))
     # Solver
     solver = solvers.NonlinearBoundaryValueSolver(problem, ncc_cutoff=ncc_cutoff)

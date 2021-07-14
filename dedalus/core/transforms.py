@@ -351,7 +351,7 @@ class RealFourierTransform(SeparableTransform):
 
     def __init__(self, grid_size, coeff_size):
         if coeff_size % 2 != 0:
-            raise ValueError("coeff_size must be even.")
+            pass#raise ValueError("coeff_size must be even.")
         self.N = grid_size
         self.M = coeff_size
         self.KN = (self.N - 1) // 2
@@ -373,7 +373,7 @@ class RealFourierMMT(RealFourierTransform, SeparableMatrixTransform):
     def forward_matrix(self):
         """Build forward transform matrix."""
         N = self.N
-        M = self.M
+        M = max(2, self.M) # Account for sin and cos parts of m=0
         Kmax = self.Kmax
         K = self.wavenumbers[::2, None]
         X = np.arange(N)[None, :]
@@ -391,7 +391,7 @@ class RealFourierMMT(RealFourierTransform, SeparableMatrixTransform):
     def backward_matrix(self):
         """Build backward transform matrix."""
         N = self.N
-        M = self.M
+        M = max(2, self.M) # Account for sin and cos parts of m=0
         Kmax = self.Kmax
         K = self.wavenumbers[None, ::2]
         X = np.arange(N)[:, None]
