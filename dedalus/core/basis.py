@@ -28,7 +28,7 @@ from ..tools.general import unify
 from .spaces import ParityInterval, Disk
 from .coords import Coordinate, S2Coordinates, SphericalCoordinates
 from .domain import Domain
-from .field  import Operand
+from .field  import Operand, LockedField
 from ..libraries import dedalus_sphere
 import numexpr as ne
 #from . import transforms
@@ -4317,6 +4317,7 @@ class LiftTauShell(operators.LiftTau, operators.SphericalEllOperator):
 
 class InterpolateAzimuth(operators.Interpolate):
 
+    future_type = LockedField
     input_basis_type = (SphereBasis, BallBasis, ShellBasis)
     basis_subaxis = 0
 
@@ -4368,8 +4369,7 @@ class InterpolateAzimuth(operators.Interpolate):
         # Set output layout
         out.set_layout(layout)
         # Set output lock
-        # TODO: figure out locking
-        #out.lock_axis(self.first_axis, 'g')
+        out.lock_axis_to_grid(self.first_axis)
         # Apply matrix
         data_axis = self.first_axis + len(arg.tensorsig)
         apply_matrix(self.interpolation_vector(), arg.data, data_axis, out=out.data)
