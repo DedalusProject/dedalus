@@ -208,7 +208,7 @@ def test_implicit_transpose_tensor(Nphi, Ntheta, Nr, k, dealias, dtype, basis):
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 @pytest.mark.parametrize('radius', [0.5, 1.0, 1.5])
-def test_interpolate_scalar(Nphi, Ntheta, Nr, k, dealias, dtype, basis, radius):
+def test_interpolate_radius_scalar(Nphi, Ntheta, Nr, k, dealias, dtype, basis, radius):
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
     f.set_scales(b.domain.dealias)
@@ -225,20 +225,66 @@ def test_interpolate_scalar(Nphi, Ntheta, Nr, k, dealias, dtype, basis, radius):
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('phi_interp', [0, 0.1, -0.1, 4.5*np.pi])
+def test_interpolate_azimuth_scalar(Nphi, Ntheta, Nr, k, dealias, dtype, basis, phi_interp):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
+    f = field.Field(dist=d, bases=(b,), dtype=dtype)
+    f.set_scales(b.domain.dealias)
+    f['g'] = x**4 + 2*y**4 + 3*z**4
+    h = operators.interpolate(f, phi=phi_interp).evaluate()
+    x, y, z = c.cartesian(np.array([[[phi_interp]]]), theta, r)
+    hg = x**4 + 2*y**4 + 3*z**4
+    assert np.allclose(h['g'], hg)
+
+
+@pytest.mark.parametrize('Nphi', [16])
+@pytest.mark.parametrize('Ntheta', [8])
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 @pytest.mark.parametrize('radius', [0.5, 1.0, 1.5])
-def test_interpolate_vector(Nphi, Ntheta, Nr, k, dealias, dtype, basis, radius):
+def test_interpolate_radius_vector(Nphi, Ntheta, Nr, k, dealias, dtype, basis, radius):
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
     ct, st, cp, sp = np.cos(theta), np.sin(theta), np.cos(phi), np.sin(phi)
     u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
     u.set_scales(b.domain.dealias)
-    u['g'][2] = r**2*st*(2*ct**2*cp-r*ct**3*sp+r**3*cp**3*st**5*sp**3+r*ct*st**2*(cp**3+sp**3))
-    u['g'][1] = r**2*(2*ct**3*cp-r*cp**3*st**4+r**3*ct*cp**3*st**5*sp**3-1/16*r*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
     u['g'][0] = r**2*sp*(-2*ct**2+r*ct*cp*st**2*sp-r**3*cp**2*st**5*sp**3)
+    u['g'][1] = r**2*(2*ct**3*cp-r*cp**3*st**4+r**3*ct*cp**3*st**5*sp**3-1/16*r*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
+    u['g'][2] = r**2*st*(2*ct**2*cp-r*ct**3*sp+r**3*cp**3*st**5*sp**3+r*ct*st**2*(cp**3+sp**3))
     v = operators.interpolate(u, r=radius).evaluate()
     vg = 0 * v['g']
-    vg[0] = radius**2*sp*(-2*ct**2+radius*ct*cp*st**2*sp-radius**3*cp**2*st**5*sp**3)
-    vg[1] = radius**2*(2*ct**3*cp-radius*cp**3*st**4+radius**3*ct*cp**3*st**5*sp**3-1/16*radius*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
-    vg[2] = radius**2*st*(2*ct**2*cp-radius*ct**3*sp+radius**3*cp**3*st**5*sp**3+radius*ct*st**2*(cp**3+sp**3))
+    r = np.array([[[radius]]])
+    vg[0] = r**2*sp*(-2*ct**2+r*ct*cp*st**2*sp-r**3*cp**2*st**5*sp**3)
+    vg[1] = r**2*(2*ct**3*cp-r*cp**3*st**4+r**3*ct*cp**3*st**5*sp**3-1/16*r*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
+    vg[2] = r**2*st*(2*ct**2*cp-r*ct**3*sp+r**3*cp**3*st**5*sp**3+r*ct*st**2*(cp**3+sp**3))
+    assert np.allclose(v['g'], vg)
+
+
+@pytest.mark.parametrize('Nphi', [16])
+@pytest.mark.parametrize('Ntheta', [8])
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('phi_interp', [0, 0.1, -0.1, 4.5*np.pi])
+def test_interpolate_azimuth_vector(Nphi, Ntheta, Nr, k, dealias, dtype, basis, phi_interp):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
+    ct, st, cp, sp = np.cos(theta), np.sin(theta), np.cos(phi), np.sin(phi)
+    u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
+    u.set_scales(b.domain.dealias)
+    u['g'][0] = r**2*sp*(-2*ct**2+r*ct*cp*st**2*sp-r**3*cp**2*st**5*sp**3)
+    u['g'][1] = r**2*(2*ct**3*cp-r*cp**3*st**4+r**3*ct*cp**3*st**5*sp**3-1/16*r*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
+    u['g'][2] = r**2*st*(2*ct**2*cp-r*ct**3*sp+r**3*cp**3*st**5*sp**3+r*ct*st**2*(cp**3+sp**3))
+    v = operators.interpolate(u, phi=phi_interp).evaluate()
+    vg = 0 * v['g']
+    phi = np.array([[[phi_interp]]])
+    cp, sp = np.cos(phi), np.sin(phi)
+    vg[0] = r**2*sp*(-2*ct**2+r*ct*cp*st**2*sp-r**3*cp**2*st**5*sp**3)
+    vg[1] = r**2*(2*ct**3*cp-r*cp**3*st**4+r**3*ct*cp**3*st**5*sp**3-1/16*r*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
+    vg[2] = r**2*st*(2*ct**2*cp-r*ct**3*sp+r**3*cp**3*st**5*sp**3+r*ct*st**2*(cp**3+sp**3))
     assert np.allclose(v['g'], vg)
 
 
@@ -250,7 +296,7 @@ def test_interpolate_vector(Nphi, Ntheta, Nr, k, dealias, dtype, basis, radius):
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 @pytest.mark.parametrize('radius', [0.5, 1.0, 1.5])
-def test_interpolate_tensor(Nphi, Ntheta, Nr, k, dealias, dtype, basis, radius):
+def test_interpolate_radius_tensor(Nphi, Ntheta, Nr, k, dealias, dtype, basis, radius):
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
     T = field.Field(dist=d, bases=(b,), tensorsig=(c,c), dtype=dtype)
     T.set_scales(b.domain.dealias)

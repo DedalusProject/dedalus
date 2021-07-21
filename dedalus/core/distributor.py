@@ -261,7 +261,8 @@ class Layout:
     def local_shape(self, domain, scales, rank = None):
         """Local data shape."""
         local_elements = self.local_elements(domain, scales, rank = rank)
-        return tuple(LE.size for LE in local_elements)
+        shape = tuple(LE.size for LE in local_elements)
+        return shape
 
     def buffer_size(self, bases, scales, dtype):
         """Local buffer size (bytes)."""
@@ -395,6 +396,7 @@ class Transform:
         cdata = field.data
         # Transform non-constant bases with local data
         if (basis is not None) and np.prod(gdata.shape):
+            (gdata.shape, cdata.shape, field.domain.bases[0].shape, self.layout0.grid_space)
             basis.forward_transform(field, axis, gdata, cdata)
             #basis.forward_transform(gdata, cdata, axis, field.scales[axis], field.tensorsig)
             #plan = basis.transform_plan(cdata.shape, self.axis, field.scales[self.axis], field.dtype)
