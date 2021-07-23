@@ -233,7 +233,6 @@ def test_interpolate_colatitude_scalar(Nphi, Ntheta, Nr, k, dealias, dtype, basi
     f.set_scales(b.domain.dealias)
     f['g'] = x**4 + 2*y**4 + 3*z**4
     h = operators.interpolate(f, theta=theta_interp).evaluate()
-    print(h.layout.grid_space)
     x, y, z = c.cartesian(phi, np.array([[[theta_interp]]]), r)
     hg = x**4 + 2*y**4 + 3*z**4
     assert np.allclose(h['g'], hg)
@@ -246,14 +245,15 @@ def test_interpolate_colatitude_scalar(Nphi, Ntheta, Nr, k, dealias, dtype, basi
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-@pytest.mark.parametrize('radius', [0.5, 1.0, 1.5])
-def test_interpolate_radius_scalar(Nphi, Ntheta, Nr, k, dealias, dtype, basis, radius):
+@pytest.mark.parametrize('r_interp', [0.5, 1.0, 1.5])
+def test_interpolate_radius_scalar(Nphi, Ntheta, Nr, k, dealias, dtype, basis, r_interp):
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
     f.set_scales(b.domain.dealias)
     f['g'] = x**4 + 2*y**4 + 3*z**4
-    h = operators.interpolate(f, r=radius).evaluate()
-    hg = (radius)**4*(3*np.cos(theta)**4 + np.cos(phi)**4*np.sin(theta)**4 + 2*np.sin(theta)**4*np.sin(phi)**4)
+    h = operators.interpolate(f, r=r_interp).evaluate()
+    x, y, z = c.cartesian(phi, theta, np.array([[[r_interp]]]))
+    hg = x**4 + 2*y**4 + 3*z**4
     assert np.allclose(h['g'], hg)
 
 
@@ -316,8 +316,8 @@ def test_interpolate_colatitude_vector(Nphi, Ntheta, Nr, k, dealias, dtype, basi
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-@pytest.mark.parametrize('radius', [0.5, 1.0, 1.5])
-def test_interpolate_radius_vector(Nphi, Ntheta, Nr, k, dealias, dtype, basis, radius):
+@pytest.mark.parametrize('r_interp', [0.5, 1.0, 1.5])
+def test_interpolate_radius_vector(Nphi, Ntheta, Nr, k, dealias, dtype, basis, r_interp):
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
     ct, st, cp, sp = np.cos(theta), np.sin(theta), np.cos(phi), np.sin(phi)
     u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
@@ -325,9 +325,9 @@ def test_interpolate_radius_vector(Nphi, Ntheta, Nr, k, dealias, dtype, basis, r
     u['g'][0] = r**2*sp*(-2*ct**2+r*ct*cp*st**2*sp-r**3*cp**2*st**5*sp**3)
     u['g'][1] = r**2*(2*ct**3*cp-r*cp**3*st**4+r**3*ct*cp**3*st**5*sp**3-1/16*r*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
     u['g'][2] = r**2*st*(2*ct**2*cp-r*ct**3*sp+r**3*cp**3*st**5*sp**3+r*ct*st**2*(cp**3+sp**3))
-    v = operators.interpolate(u, r=radius).evaluate()
+    v = operators.interpolate(u, r=r_interp).evaluate()
     vg = 0 * v['g']
-    r = np.array([[[radius]]])
+    r = np.array([[[r_interp]]])
     vg[0] = r**2*sp*(-2*ct**2+r*ct*cp*st**2*sp-r**3*cp**2*st**5*sp**3)
     vg[1] = r**2*(2*ct**3*cp-r*cp**3*st**4+r**3*ct*cp**3*st**5*sp**3-1/16*r*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
     vg[2] = r**2*st*(2*ct**2*cp-r*ct**3*sp+r**3*cp**3*st**5*sp**3+r*ct*st**2*(cp**3+sp**3))
@@ -341,8 +341,8 @@ def test_interpolate_radius_vector(Nphi, Ntheta, Nr, k, dealias, dtype, basis, r
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-@pytest.mark.parametrize('radius', [0.5, 1.0, 1.5])
-def test_interpolate_radius_tensor(Nphi, Ntheta, Nr, k, dealias, dtype, basis, radius):
+@pytest.mark.parametrize('phi_interp', [0.5, 1.0, 1.5])
+def test_interpolate_azimuth_tensor(Nphi, Ntheta, Nr, k, dealias, dtype, basis, phi_interp):
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
     T = field.Field(dist=d, bases=(b,), tensorsig=(c,c), dtype=dtype)
     T.set_scales(b.domain.dealias)
@@ -352,14 +352,78 @@ def test_interpolate_radius_tensor(Nphi, Ntheta, Nr, k, dealias, dtype, basis, r
     T['g'][1,1] = 6*x**2/(r**2*np.sin(theta)**2) - (6*x**2+4*y*z)/r**2
     T['g'][1,0] = T['g'][0,1] = -2*x*(x**2+y**2+3*y*z)/(r**3*np.sin(theta)**2)
     T['g'][0,0] = 6*y**2/(x**2+y**2)
-    A = operators.interpolate(T, r=radius).evaluate()
+    A = operators.interpolate(T, phi=phi_interp).evaluate()
     Ag = 0 * A['g']
-    Ag[2,2] = 2*np.sin(theta)*(3*np.cos(phi)**2*np.sin(theta)+2*np.cos(theta)*np.sin(phi))
-    Ag[2,1] = Ag[1,2] = 6*np.cos(theta)*np.cos(phi)**2*np.sin(theta) + 2*np.cos(2*theta)*np.sin(phi)
-    Ag[2,0] = Ag[0,2] = 2*np.cos(phi)*(np.cos(theta) - 3*np.sin(theta)*np.sin(phi))
-    Ag[1,1] = 2*np.cos(theta)*(3*np.cos(theta)*np.cos(phi)**2 - 2*np.sin(theta)*np.sin(phi))
-    Ag[1,0] = Ag[0,1] = -2*np.cos(phi)*(np.sin(theta) + 3*np.cos(theta)*np.sin(phi))
-    Ag[0,0] = 6*np.sin(phi)**2
+    phi = np.array([[[phi_interp]]])
+    x, y, z = c.cartesian(phi, theta, r)
+    Ag[2,2] = (6*x**2+4*y*z)/r**2
+    Ag[2,1] = Ag[1,2] = -2*(y**3+x**2*(y-3*z)-y*z**2)/(r**3*np.sin(theta))
+    Ag[2,0] = Ag[0,2] = 2*x*(z-3*y)/(r**2*np.sin(theta))
+    Ag[1,1] = 6*x**2/(r**2*np.sin(theta)**2) - (6*x**2+4*y*z)/r**2
+    Ag[1,0] = Ag[0,1] = -2*x*(x**2+y**2+3*y*z)/(r**3*np.sin(theta)**2)
+    Ag[0,0] = 6*y**2/(x**2+y**2)
+    assert np.allclose(A['g'], Ag)
+
+
+@pytest.mark.parametrize('Nphi', [16])
+@pytest.mark.parametrize('Ntheta', [8])
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('theta_interp', [0.5, 1.0, 1.5])
+def test_interpolate_colatitude_tensor(Nphi, Ntheta, Nr, k, dealias, dtype, basis, theta_interp):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
+    T = field.Field(dist=d, bases=(b,), tensorsig=(c,c), dtype=dtype)
+    T.set_scales(b.domain.dealias)
+    T['g'][2,2] = (6*x**2+4*y*z)/r**2
+    T['g'][2,1] = T['g'][1,2] = -2*(y**3+x**2*(y-3*z)-y*z**2)/(r**3*np.sin(theta))
+    T['g'][2,0] = T['g'][0,2] = 2*x*(z-3*y)/(r**2*np.sin(theta))
+    T['g'][1,1] = 6*x**2/(r**2*np.sin(theta)**2) - (6*x**2+4*y*z)/r**2
+    T['g'][1,0] = T['g'][0,1] = -2*x*(x**2+y**2+3*y*z)/(r**3*np.sin(theta)**2)
+    T['g'][0,0] = 6*y**2/(x**2+y**2)
+    A = operators.interpolate(T, theta=theta_interp).evaluate()
+    Ag = 0 * A['g']
+    theta = np.array([[[theta_interp]]])
+    x, y, z = c.cartesian(phi, theta, r)
+    Ag[2,2] = (6*x**2+4*y*z)/r**2
+    Ag[2,1] = Ag[1,2] = -2*(y**3+x**2*(y-3*z)-y*z**2)/(r**3*np.sin(theta))
+    Ag[2,0] = Ag[0,2] = 2*x*(z-3*y)/(r**2*np.sin(theta))
+    Ag[1,1] = 6*x**2/(r**2*np.sin(theta)**2) - (6*x**2+4*y*z)/r**2
+    Ag[1,0] = Ag[0,1] = -2*x*(x**2+y**2+3*y*z)/(r**3*np.sin(theta)**2)
+    Ag[0,0] = 6*y**2/(x**2+y**2)
+    assert np.allclose(A['g'], Ag)
+
+
+@pytest.mark.parametrize('Nphi', [16])
+@pytest.mark.parametrize('Ntheta', [8])
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('r_interp', [0.5, 1.0, 1.5])
+def test_interpolate_radius_tensor(Nphi, Ntheta, Nr, k, dealias, dtype, basis, r_interp):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
+    T = field.Field(dist=d, bases=(b,), tensorsig=(c,c), dtype=dtype)
+    T.set_scales(b.domain.dealias)
+    T['g'][2,2] = (6*x**2+4*y*z)/r**2
+    T['g'][2,1] = T['g'][1,2] = -2*(y**3+x**2*(y-3*z)-y*z**2)/(r**3*np.sin(theta))
+    T['g'][2,0] = T['g'][0,2] = 2*x*(z-3*y)/(r**2*np.sin(theta))
+    T['g'][1,1] = 6*x**2/(r**2*np.sin(theta)**2) - (6*x**2+4*y*z)/r**2
+    T['g'][1,0] = T['g'][0,1] = -2*x*(x**2+y**2+3*y*z)/(r**3*np.sin(theta)**2)
+    T['g'][0,0] = 6*y**2/(x**2+y**2)
+    A = operators.interpolate(T, r=r_interp).evaluate()
+    Ag = 0 * A['g']
+    r = np.array([[[r_interp]]])
+    x, y, z = c.cartesian(phi, theta, r)
+    Ag[2,2] = (6*x**2+4*y*z)/r**2
+    Ag[2,1] = Ag[1,2] = -2*(y**3+x**2*(y-3*z)-y*z**2)/(r**3*np.sin(theta))
+    Ag[2,0] = Ag[0,2] = 2*x*(z-3*y)/(r**2*np.sin(theta))
+    Ag[1,1] = 6*x**2/(r**2*np.sin(theta)**2) - (6*x**2+4*y*z)/r**2
+    Ag[1,0] = Ag[0,1] = -2*x*(x**2+y**2+3*y*z)/(r**3*np.sin(theta)**2)
+    Ag[0,0] = 6*y**2/(x**2+y**2)
     assert np.allclose(A['g'], Ag)
 
 
