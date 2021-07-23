@@ -2360,9 +2360,9 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         if self.mmax == 0:
             self.forward_transform_azimuth = self.forward_transform_azimuth_Mmax0
             self.backward_transform_azimuth = self.backward_transform_azimuth_Mmax0
-        if self.Lmax == 0:
-            self.forward_transform_colatitude = self.sphere_basis.forward_transform_colatitude_Lmax0
-            self.backward_transform_colatitude = self.sphere_basis.backward_transform_colatitude_Lmax0
+        # if self.Lmax == 0:
+        #     self.forward_transform_colatitude = self.forward_transform_colatitude_Lmax0
+        #     self.backward_transform_colatitude = self.backward_transform_colatitude_Lmax0
         self.forward_transforms = [self.forward_transform_azimuth,
                                    self.forward_transform_colatitude,
                                    self.forward_transform_radius]
@@ -2701,9 +2701,9 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         return reshape_vector(weights.astype(np.float64)[local_elements], dim=self.dist.dim, axis=self.axis+1)
 
     @CachedMethod
-    def transform_plan(self, grid_shape, axis, s):
+    def transform_plan(self, Ntheta, s):
         """Build transform plan."""
-        return self.transforms[self.colatitude_library](grid_shape, self.shape, axis, self.m_maps, s)
+        return self.transforms[self.colatitude_library](Ntheta, self.Lmax, self.m_maps, s)
 
     def forward_transform_azimuth_Mmax0(self, field, axis, gdata, cdata):
         slice_axis = axis + len(field.tensorsig)
@@ -2748,8 +2748,8 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         # Transform component-by-component from temp to cdata
         S = self.spin_weights(field.tensorsig)
         for i, s in np.ndenumerate(S):
-            grid_shape = gdata[i].shape
-            plan = self.transform_plan(grid_shape, axis, s)
+            Ntheta = gdata[i].shape[axis]
+            plan = self.transform_plan(Ntheta, s)
             plan.forward(temp[i], cdata[i], axis)
 
     def backward_transform_colatitude_Lmax0(self, field, axis, cdata, gdata):
@@ -2763,8 +2763,8 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         temp = np.zeros_like(gdata)
         S = self.spin_weights(field.tensorsig)
         for i, s in np.ndenumerate(S):
-            grid_shape = gdata[i].shape
-            plan = self.transform_plan(grid_shape, axis, s)
+            Ntheta = gdata[i].shape[axis]
+            plan = self.transform_plan(Ntheta, s)
             plan.backward(cdata[i], temp[i], axis)
         # Apply spin recombination from temp to gdata
         gdata.fill(0)  # OPTIMIZE: shouldn't be necessary
@@ -4349,9 +4349,9 @@ class InterpolateAzimuth(operators.Interpolate):
         # Wrap class-based caching
         return self._interpolation_vector(self.input_basis, self.position)
 
-    @classmethod
+    @staticmethod
     @CachedMethod
-    def _interpolation_vector(cls, input_basis, position):
+    def _interpolation_vector(input_basis, position):
         # Construct collocation interpolation using forward transform matrix and spectral interpolation
         azimuth_basis = input_basis.azimuth_basis
         grid_size = azimuth_basis.grid_shape(scales=azimuth_basis.dealias)[0]
@@ -4373,6 +4373,100 @@ class InterpolateAzimuth(operators.Interpolate):
         # Apply matrix
         data_axis = self.first_axis + len(arg.tensorsig)
         apply_matrix(self.interpolation_vector(), arg.data, data_axis, out=out.data)
+
+
+class InterpolateColatitude(operators.Interpolate):
+
+    future_type = LockedField
+    input_basis_type = (SphereBasis, BallBasis, ShellBasis)
+    basis_subaxis = 1
+
+    @CachedAttribute
+    def sphere_basis(self):
+        if isinstance(self.input_basis, SphereBasis):
+            return self.input_basis
+        else:
+            return self.input_basis.sphere_basis
+
+    @staticmethod
+    def _output_basis(input_basis, position):
+        # Clone input basis with N_colatitude = 1
+        # Todo: just a function of radius if interpolation is at poles?
+        shape = list(input_basis.shape)
+        shape[1] = 1
+        return input_basis.clone_with(shape=shape)
+
+    def check_conditions(self):
+        """Check that arguments are in a proper layout."""
+        arg0 = self.args[0]
+        azimuth_axis = self.first_axis
+        colat_axis = azimuth_axis + 1
+        # Require azimuth coeff, colat grid, colat, local
+        az_coeff = not arg0.layout.grid_space[azimuth_axis]
+        colat_grid = arg0.layout.grid_space[colat_axis]
+        colat_local = arg0.layout.local[colat_axis]
+        return az_coeff and colat_grid and colat_local
+
+    def enforce_conditions(self):
+        """Require arguments to be in a proper layout."""
+        arg0 = self.args[0]
+        azimuth_axis = self.first_axis
+        colat_axis = azimuth_axis + 1
+        # Require azimuth coeff, colat grid, colat, local
+        arg0.require_coeff_space(azimuth_axis)
+        arg0.require_grid_space(colat_axis)
+        arg0.require_local(colat_axis)
+
+    def interpolation_vectors(self, Ntheta, s):
+        # Wrap class-based caching
+        return self._interpolation_vectors(self.sphere_basis, Ntheta, s, self.position)
+
+    @staticmethod
+    @CachedMethod
+    def _interpolation_vectors(sphere_basis, Ntheta, s, theta):
+        interp_vectors = {}
+        z = np.cos(theta)
+        forward = sphere_basis.transform_plan(Ntheta, s)
+        for m in set(sphere_basis.local_unpacked_m):
+            if m <= sphere_basis.Lmax:
+                Lmin = max(abs(m), abs(s))
+                interp_m = dedalus_sphere.sphere.harmonics(sphere_basis.Lmax, m, s, z)[None, :]
+                forward_m = forward._forward_SWSH_matrices[m][Lmin-abs(m):]
+                interp_vectors[m] = interp_m @ forward_m
+            else:
+                interp_vectors[m] = np.zeros((1, Ntheta))
+        return interp_vectors
+
+    def operate(self, out):
+        """Perform operation."""
+        arg = self.args[0]
+        basis = self.sphere_basis
+        layout = arg.layout
+        azimuth_axis = self.first_axis
+        colat_axis = azimuth_axis + 1
+        Ntheta = arg.data.shape[len(arg.tensorsig) + colat_axis]
+        # Set output layout
+        out.set_layout(layout)
+        # Set output lock
+        out.lock_axis_to_grid(colat_axis)
+        # Forward spin recombination
+        arg_temp = np.zeros_like(arg.data)
+        out_temp = np.zeros_like(out.data)
+        basis.forward_spin_recombination(arg.tensorsig, arg.data, arg_temp)
+        # Loop over spin components
+        S = basis.spin_weights(arg.tensorsig)
+        for i, s in np.ndenumerate(S):
+            arg_s = arg_temp[i]
+            out_s = out_temp[i]
+            interp_vectors = self.interpolation_vectors(Ntheta, s)
+            # Loop over m
+            for m, mg_slice, _, _ in basis.m_maps:
+                mg_slice = axindex(azimuth_axis, mg_slice)
+                arg_sm = arg_s[mg_slice]
+                out_sm = out_s[mg_slice]
+                apply_matrix(interp_vectors[m], arg_sm, axis=colat_axis, out=out_sm)
+        # Backward spin recombination
+        basis.backward_spin_recombination(out.tensorsig, out_temp, out.data)
 
 
 class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperator):

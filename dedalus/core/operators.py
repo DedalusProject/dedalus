@@ -2126,56 +2126,6 @@ class SphericalEllOperator(SpectralOperator):
         raise NotImplementedError()
 
 
-# class InterpolateColatitude(Interpolate):
-
-#     #basis_type = (SWSH, BallBasis, ShellBasis)
-#     basis_subaxis = 1
-
-#     @staticmethod
-#     def _output_basis(input_basis, position):
-#         # Todo: just a function of radius if interpolation is at poles?
-#         shape = list(input_basis.shape)
-#         shape[1] = 1
-#         return input_basis.clone_with(shape=shape)
-
-#     def check_conditions(self):
-#         """Check that arguments are in a proper layout."""
-#         arg0 = self.args[0]
-#         theta_axis = self.first_axis + 1
-#         is_grid = arg0.layout.grid_space[theta_axis]
-#         is_local = arg0.layout.local[theta_axis]
-#         # Require grid space and locality along theta axis
-#         return is_grid and is_local
-
-#     def enforce_conditions(self):
-#         """Require arguments to be in a proper layout."""
-#         arg0 = self.args[0]
-#         theta_axis = self.first_axis + 1
-#         # Require grid space and locality along theta axis
-#         arg0.require_grid_space(theta_axis)
-#         arg0.require_local(theta_axis)
-
-#     @CachedMethod
-#     def interpolation_vector(self, Ntheta, m, s, position):
-#         # cached classmethod depending on m and s
-#         # use trig interpolation formula for each m
-#         pass
-
-#     def operate(self, out):
-#         """Perform operation."""
-#         arg = self.args[0]
-#         layout = arg.layout
-#         theta_axis = self.first_axis + 1
-#         # Set output layout
-#         out.set_layout(layout)
-#         # Set output lock
-#         out.lock_axis(theta_axis, 'g')
-#         # Apply matrix
-#         # NEED TO LOOP OVER m
-#         data_axis = self.first_axis + len(arg.tensorsig)
-#         apply_matrix(self.interpolation_vector, arg.data, data_axis, out=out.data)
-
-
 class SphericalGradient(Gradient, SphericalEllOperator):
 
     cs_type = coords.SphericalCoordinates
