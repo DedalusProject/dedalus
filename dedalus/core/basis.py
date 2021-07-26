@@ -29,6 +29,7 @@ from .spaces import ParityInterval, Disk
 from .coords import Coordinate, S2Coordinates, SphericalCoordinates
 from .domain import Domain
 from .field  import Operand, LockedField
+from .future import FutureLockedField
 from ..libraries import dedalus_sphere
 import numexpr as ne
 #from . import transforms
@@ -600,6 +601,7 @@ class InterpolateJacobi(operators.Interpolate, operators.SpectralOperator1D):
     """Jacobi polynomial interpolation."""
 
     input_basis_type = Jacobi
+    basis_subaxis = 0
     subaxis_dependence = [True]
     subaxis_coupling = [True]
 
@@ -847,6 +849,7 @@ class InterpolateComplexFourier(operators.Interpolate, operators.SpectralOperato
     """ComplexFourier interpolation."""
 
     input_basis_type = ComplexFourier
+    basis_subaxis = 0
     subaxis_dependence = [True]
     subaxis_coupling = [True]
 
@@ -1044,6 +1047,7 @@ class InterpolateRealFourier(operators.Interpolate, operators.SpectralOperator1D
     """RealFourier interpolation."""
 
     input_basis_type = RealFourier
+    basis_subaxis = 0
     subaxis_dependence = [True]
     subaxis_coupling = [True]
 
@@ -4315,9 +4319,8 @@ class LiftTauShell(operators.LiftTau, operators.SphericalEllOperator):
             raise ValueError("This should never happen.")
 
 
-class InterpolateAzimuth(operators.Interpolate):
+class InterpolateAzimuth(FutureLockedField, operators.Interpolate):
 
-    future_type = LockedField
     input_basis_type = (SphereBasis, BallBasis, ShellBasis)
     basis_subaxis = 0
 
@@ -4375,7 +4378,7 @@ class InterpolateAzimuth(operators.Interpolate):
         apply_matrix(self.interpolation_vector(), arg.data, data_axis, out=out.data)
 
 
-class InterpolateColatitude(operators.Interpolate):
+class InterpolateColatitude(FutureLockedField, operators.Interpolate):
 
     future_type = LockedField
     input_basis_type = (SphereBasis, BallBasis, ShellBasis)

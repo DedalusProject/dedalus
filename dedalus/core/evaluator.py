@@ -17,7 +17,7 @@ import hashlib
 from .system import FieldSystem
 #from .operators import Operator, Cast
 #from .operators import FieldCopy
-from .future import Future, FutureField
+from .future import Future, FutureField, FutureLockedField
 from .field import Field, LockedField
 from ..tools.array import reshape_vector
 from ..tools.general import OrderedSet
@@ -155,7 +155,9 @@ class Evaluator:
         #             outputs.add(task['out'])
         for handler in handlers:
             for task in handler.tasks:
-                task['out'].require_coeff_space()
+                out = task['out']
+                if not isinstance(out, LockedField):
+                    out.require_coeff_space()
 
         # Process
         for handler in handlers:
@@ -222,7 +224,6 @@ class Handler:
     """
 
     def __init__(self, dist, vars, group=None, wall_dt=np.inf, sim_dt=np.inf, iter=np.inf):
-
         # Attributes
         self.dist = dist
         self.vars = vars
@@ -230,7 +231,6 @@ class Handler:
         self.wall_dt = wall_dt
         self.sim_dt = sim_dt
         self.iter = iter
-
         self.tasks = []
         # Set initial divisors to be scheduled for sim_time, iteration = 0
         self.last_wall_div = -1
@@ -239,11 +239,9 @@ class Handler:
 
     def add_task(self, task, layout='g', name=None, scales=None):
         """Add task to handler."""
-
         # Default name
         if name is None:
             name = str(task)
-
         # Create operator
         if isinstance(task, str):
             op = FutureField.parse(task, self.vars, self.dist)
@@ -252,18 +250,27 @@ class Handler:
             # op = Cast(task)
             # TODO: figure out if we need to copying here
             op = task
+        # Check scales
+        if isinstance(op, (LockedField, FutureLockedField)):
+            if scales is None:
+                scales = op.domain.dealias
+            else:
+                scales = self.dist.remedy_scales(scales)
+                if scales != op.domain.dealias:
+                    scales = op.domain.dealias
+                    logger.warning("Cannot specify non-delias scales for LockedFields")
+        else:
+            scales = self.dist.remedy_scales(scales)
         # Build task dictionary
         task = dict()
         task['operator'] = op
         task['layout'] = self.dist.get_layout_object(layout)
         task['name'] = name
-        task['scales'] = self.dist.remedy_scales(scales)
-
+        task['scales'] = scales
         self.tasks.append(task)
 
     def add_tasks(self, tasks, **kw):
         """Add multiple tasks."""
-
         name = kw.pop('name', '')
         for task in tasks:
             tname = name + str(task)
@@ -271,7 +278,6 @@ class Handler:
 
     def add_system(self, system, **kw):
         """Add fields from a FieldSystem."""
-
         self.add_tasks(system.fields, **kw)
 
 
@@ -298,11 +304,9 @@ class SystemHandler(Handler):
 
     def build_system(self):
         """Build FieldSystem and set task outputs."""
-
         # nfields = len(self.tasks)
         # names = ['sys'+str(i) for i in range(nfields)]
         # self.system = FieldSystem(names, self.domain)
-
         self.fields = []
         for i, task in enumerate(self.tasks):
             op = task['operator']
@@ -313,14 +317,12 @@ class SystemHandler(Handler):
                 self.fields.append(op)
             # field = Field(task['operator'].bases)
             # task['operator'].out = self.system.fields[i]
-
         #return self.system
 
     def process(self, **kw):
         """Gather fields into system."""
         #self.system.gather()
         pass
-
 
 
 class FileHandler(Handler):
