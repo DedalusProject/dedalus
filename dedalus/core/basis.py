@@ -4351,9 +4351,8 @@ class SphericalAverage(operators.SphericalEllOperator):
             return sparse.csr_matrix(shape=(0, n_size), dtype=self.dtype)
 
 
-class IntegrateBall(operators.Integrate, operators.SphericalEllOperator):
-
-    input_basis_type = BallBasis
+class IntegrateSpherical(operators.SphericalEllOperator):
+    """Integrate spherical scalar fields."""
 
     @CachedAttribute
     def radial_basis(self):
@@ -4363,7 +4362,7 @@ class IntegrateBall(operators.Integrate, operators.SphericalEllOperator):
         return None
 
     def new_operand(self, operand, **kw):
-        return IntegrateBall(operand, self.coord, **kw)
+        return type(self)(operand, self.coord, **kw)
 
     def regindex_out(self, regindex_in):
         if regindex_in is not tuple():
@@ -4373,43 +4372,39 @@ class IntegrateBall(operators.Integrate, operators.SphericalEllOperator):
     def radial_matrix(self, regindex_in, regindex_out, ell):
         if not (regindex_in is regindex_out is tuple()):
             raise ValueError("Can only integrate scalars.")
-        basis = self.radial_basis
+        # Wrap cached method
+        return self._radial_matrix(self.radial_basis, ell)
+
+
+class IntegrateBall(operators.Integrate, IntegrateSpherical):
+    """Integrate BallBasis scalar fields."""
+
+    input_basis_type = BallBasis
+
+    @staticmethod
+    @CachedMethod
+    def _radial_matrix(basis, ell):
         n_size = basis.n_size(ell)
         if ell == 0:
             N = basis.shape[2]
             z0, w0 = dedalus_sphere.zernike.quadrature(3, N, k=0)
             Qk = dedalus_sphere.zernike.polynomials(3, n_size, basis.alpha+basis.k, ell, z0)
-            matrix = (w0[None, :] @ Qk.T).astype(self.dtype)
+            matrix = (w0[None, :] @ Qk.T).astype(basis.dtype)
             matrix *= basis.radius**3
             matrix *= 4 * np.pi / np.sqrt(2) # SWSH contribution
         else:
-            matrix= sparse.csr_matrix((0, n_size), dtype=self.dtype)
+            matrix= sparse.csr_matrix((0, n_size), dtype=basis.dtype)
         return matrix
 
 
-class IntegrateShell(operators.Integrate, operators.SphericalEllOperator):
+class IntegrateShell(operators.Integrate, IntegrateSpherical):
+    """Integrate ShellBasis scalar fields."""
 
     input_basis_type = ShellBasis
 
-    @CachedAttribute
-    def radial_basis(self):
-        return self.input_basis.radial_basis
-
-    def _output_basis(self, input_basis):
-        return None
-
-    def new_operand(self, operand, **kw):
-        return IntegrateShell(operand, self.coord, **kw)
-
-    def regindex_out(self, regindex_in):
-        if regindex_in is not tuple():
-            raise ValueError("Can only integrate scalars.")
-        return (regindex_in,)
-
-    def radial_matrix(self, regindex_in, regindex_out, ell):
-        if not (regindex_in is regindex_out is tuple()):
-            raise ValueError("Can only integrate scalars.")
-        basis = self.radial_basis
+    @staticmethod
+    @CachedMethod
+    def _radial_matrix(basis, ell):
         n_size = basis.n_size(ell)
         if ell == 0:
             N = 2 * basis.shape[2]  # Add some dealiasing to help with large k
@@ -4417,11 +4412,11 @@ class IntegrateShell(operators.Integrate, operators.SphericalEllOperator):
             r0 = basis.dR / 2 * (z0 + basis.rho)
             Qk = dedalus_sphere.jacobi.polynomials(n_size, basis.alpha[0]+basis.k, basis.alpha[1]+basis.k, z0)
             w0_geom = r0**2 * w0 * (r0 / basis.dR)**(-basis.k)
-            matrix = (w0_geom[None, :] @ Qk.T).astype(self.dtype)
+            matrix = (w0_geom[None, :] @ Qk.T).astype(basis.dtype)
             matrix *= basis.dR / 2
             matrix *= 4 * np.pi / np.sqrt(2) # SWSH contribution
         else:
-            matrix= sparse.csr_matrix((0, n_size), dtype=self.dtype)
+            matrix= sparse.csr_matrix((0, n_size), dtype=basis.dtype)
         return matrix
 
 
