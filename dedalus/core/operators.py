@@ -1064,7 +1064,7 @@ class Integrate(LinearOperator, metaclass=MultiClass):
     def _preprocess_args(cls, operand, coord, out=None):
         if isinstance(operand, Number):
             raise SkipDispatchException(output=operand)
-        if isinstance(coord, coords.Coordinate):
+        if isinstance(coord, (coords.Coordinate, coords.CoordinateSystem)):
             pass
         elif isinstance(coord, str):
             coord = operand.domain.get_coord(coord)
@@ -2087,8 +2087,10 @@ class SphericalEllOperator(SpectralOperator):
                         slices[axis] = radial_basis.n_slice(ell)
                         vec_in  = comp_in[tuple(slices)]
                         vec_out = comp_out[tuple(slices)]
-                        A = self.radial_matrix(regindex_in, regindex_out, ell)
-                        vec_out += apply_matrix(A, vec_in, axis=axis)
+                        print(ell, slices, vec_in.shape, vec_out.shape)
+                        if vec_in.size and vec_out.size:
+                            A = self.radial_matrix(regindex_in, regindex_out, ell)
+                            vec_out += apply_matrix(A, vec_in, axis=axis)
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]

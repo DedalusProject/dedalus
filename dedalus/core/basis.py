@@ -4326,6 +4326,67 @@ class LiftTauShell(operators.LiftTau, operators.SphericalEllOperator):
             raise ValueError("This should never happen.")
 
 
+class SphericalAverage(operators.SphericalEllOperator):
+    """Todo: skip when Nphi = Ntheta = 1."""
+
+    def _output_basis(self, input_basis):
+        # Copy with Nphi = Ntheta = 1
+        shape = list(input_basis.shape)
+        shape[0] = shape[1] = 1
+        return input_basis.clone_with(shape=shape)
+
+    def new_operand(self, operand, **kw):
+        return SphericalAverage(operand, self.coord, **kw)
+
+    def regindex_out(self, regindex_in):
+        return (regindex_in,)
+
+    def radial_matrix(self, regindex_in, regindex_out, ell):
+        if regindex_out != regindex_in:
+            raise ValueError("This should never happen.")
+        n_size = self.input_basis.n_size(ell)
+        if ell == 0:
+            return sparse.identity(n_size)
+        else:
+            return sparse.csr_matrix(shape=(0, n_size), dtype=self.dtype)
+
+
+class IntegrateBall(operators.Integrate, operators.SphericalEllOperator):
+
+    input_basis_type = BallBasis
+
+    @CachedAttribute
+    def radial_basis(self):
+        return self.input_basis.radial_basis
+
+    def _output_basis(self, input_basis):
+        return None
+
+    def new_operand(self, operand, **kw):
+        return IntegrateBall(operand, self.coord, **kw)
+
+    def regindex_out(self, regindex_in):
+        if regindex_in is not tuple():
+            raise ValueError("Can only integrate scalars.")
+        return (regindex_in,)
+
+    def radial_matrix(self, regindex_in, regindex_out, ell):
+        if not (regindex_in is regindex_out is tuple()):
+            raise ValueError("Can only integrate scalars.")
+        basis = self.input_basis
+        n_size = basis.n_size(ell)
+        if ell == 0:
+            N = basis.shape[2]
+            z0, w0 = dedalus_sphere.zernike.quadrature(3, N, k=0)
+            Qk = dedalus_sphere.zernike.polynomials(3, n_size, basis.alpha+basis.k, ell, z0)
+            matrix = (w0[None, :] @ Qk.T).astype(self.dtype)
+            matrix *= 4 * np.pi * basis.radius**3
+            matrix /= np.sqrt(2) # SWSH normalization
+        else:
+            matrix= sparse.csr_matrix((0, n_size), dtype=self.dtype)
+        return matrix
+
+
 class InterpolateAzimuth(FutureLockedField, operators.Interpolate):
 
     input_basis_type = (SphereBasis, BallBasis, ShellBasis, DiskBasis, AnnulusBasis)
