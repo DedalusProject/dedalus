@@ -4,6 +4,7 @@ import pytest
 import numpy as np
 from dedalus.core import coords, distributor, basis, field, operators, arithmetic, problems, solvers
 from dedalus.tools.cache import CachedFunction
+from dedalus.core.basis import BallBasis, ShellBasis
 
 
 Nphi_range = [8]
@@ -203,18 +204,22 @@ def test_implicit_transpose_tensor(Nphi, Ntheta, Nr, k, dealias, dtype, basis):
 @pytest.mark.parametrize('Nphi', [16])
 @pytest.mark.parametrize('Ntheta', [8])
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('k', [0, 1, 2])
+@pytest.mark.parametrize('k', [0, 1, 2, 5])
 @pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('basis', [build_ball])
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('dtype', [np.complex128])
 @pytest.mark.parametrize('n', [0, 1, 2])
-def test_integrate_scalar_ball(Nphi, Ntheta, Nr, k, dealias, dtype, basis, n):
+def test_integrate_scalar(Nphi, Ntheta, Nr, k, dealias, dtype, basis, n):
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
     f.set_scales(b.domain.dealias)
     f['g'] = r**(2*n)
     h = operators.Integrate(f, c).evaluate()
-    hg = 4 * np.pi * radius_ball**(3 + 2*n) / (3 + 2*n)
+    if isinstance(b, BallBasis):
+        r_inner, r_outer = 0, b.radius
+    else:
+        r_inner, r_outer = b.radii
+    hg = 4 * np.pi * (r_outer**(3 + 2*n) - r_inner**(3 + 2*n)) / (3 + 2*n)
     assert np.allclose(h['g'], hg)
 
 
