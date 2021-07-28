@@ -396,7 +396,6 @@ class Transform:
         cdata = field.data
         # Transform non-constant bases with local data
         if (basis is not None) and np.prod(gdata.shape):
-            (gdata.shape, cdata.shape, field.domain.bases[0].shape, self.layout0.grid_space)
             basis.forward_transform(field, axis, gdata, cdata)
             #basis.forward_transform(gdata, cdata, axis, field.scales[axis], field.tensorsig)
             #plan = basis.transform_plan(cdata.shape, self.axis, field.scales[self.axis], field.dtype)

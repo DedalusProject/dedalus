@@ -4321,7 +4321,7 @@ class LiftTauShell(operators.LiftTau, operators.SphericalEllOperator):
 
 class InterpolateAzimuth(FutureLockedField, operators.Interpolate):
 
-    input_basis_type = (SphereBasis, BallBasis, ShellBasis)
+    input_basis_type = (SphereBasis, BallBasis, ShellBasis, DiskBasis, AnnulusBasis)
     basis_subaxis = 0
 
     @staticmethod

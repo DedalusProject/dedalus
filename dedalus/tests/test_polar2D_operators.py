@@ -196,15 +196,15 @@ def test_implicit_transpose_tensor(Nphi, Nr, k, dealias, basis, dtype):
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_disk, build_annulus])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-@pytest.mark.parametrize('radius', [0.5, 1.0, 1.5])
-def test_interpolation_scalar(Nphi, Nr, k, dealias, basis, dtype, radius):
+@pytest.mark.parametrize('phi_interp', [0.5, 1.0, 1.5])
+def test_interpolate_azimuth_scalar(Nphi, Nr, k, dealias, basis, dtype, phi_interp):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
     f.set_scales(b.domain.dealias)
     f['g'] = x**4 + 2*y**4
-    h = operators.interpolate(f, r=radius).evaluate()
-    x0, y0 = c.cartesian(phi, np.array([[radius]]))
-    hg = x0**4 + 2*y0**4
+    h = operators.interpolate(f, phi=phi_interp).evaluate()
+    x, y = c.cartesian(np.array([[phi_interp]]), r)
+    hg = x**4 + 2*y**4
     assert np.allclose(h['g'], hg)
 
 
@@ -214,18 +214,37 @@ def test_interpolation_scalar(Nphi, Nr, k, dealias, basis, dtype, radius):
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_disk, build_annulus])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-@pytest.mark.parametrize('radius', [0.5, 1.0, 1.5])
-def test_interpolation_vector(Nphi, Nr, k, dealias, basis, dtype, radius):
+@pytest.mark.parametrize('r_interp', [0.5, 1.0, 1.5])
+def test_interpolate_radius_scalar(Nphi, Nr, k, dealias, basis, dtype, r_interp):
+    c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
+    f = field.Field(dist=d, bases=(b,), dtype=dtype)
+    f.set_scales(b.domain.dealias)
+    f['g'] = x**4 + 2*y**4
+    h = operators.interpolate(f, r=r_interp).evaluate()
+    x, y = c.cartesian(phi, np.array([[r_interp]]))
+    hg = x**4 + 2*y**4
+    assert np.allclose(h['g'], hg)
+
+
+@pytest.mark.parametrize('Nphi', [16])
+@pytest.mark.parametrize('Nr', [8])
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('phi_interp', [0.5, 1.0, 1.5])
+def test_interpolate_azimuth_vector(Nphi, Nr, k, dealias, basis, dtype, phi_interp):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
     f.set_scales(b.domain.dealias)
     f['g'] = x**4 + 2*y**4
     u = operators.Gradient(f, c)
-    v = u(r=radius).evaluate()
-    x0, y0 = c.cartesian(phi, np.array([[radius]]))
-    ex0 = np.array([-np.sin(phi)+0.*np.array([[radius]]),np.cos(phi)+0.*np.array([[radius]])])
-    ey0 = np.array([np.cos(phi)+0.*np.array([[radius]]),np.sin(phi)+0.*np.array([[radius]])])
-    vg = 4*x0**3*ex0 + 8*y0**3*ey0
+    v = u(phi=phi_interp).evaluate()
+    phi = np.array([[phi_interp]])
+    x, y = c.cartesian(phi, r)
+    ex = np.array([-np.sin(phi), np.cos(phi)])
+    ey = np.array([np.cos(phi), np.sin(phi)])
+    vg = 4*x**3*ex + 8*y**3*ey
     assert np.allclose(v['g'], vg)
 
 
@@ -235,21 +254,69 @@ def test_interpolation_vector(Nphi, Nr, k, dealias, basis, dtype, radius):
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_disk, build_annulus])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-@pytest.mark.parametrize('radius', [0.5, 1.0, 1.5])
-def test_interpolation_tensor(Nphi, Nr, k, dealias, basis, dtype, radius):
+@pytest.mark.parametrize('r_interp', [0.5, 1.0, 1.5])
+def test_interpolate_radius_vector(Nphi, Nr, k, dealias, basis, dtype, r_interp):
+    c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
+    f = field.Field(dist=d, bases=(b,), dtype=dtype)
+    f.set_scales(b.domain.dealias)
+    f['g'] = x**4 + 2*y**4
+    u = operators.Gradient(f, c)
+    v = u(r=r_interp).evaluate()
+    r = np.array([[r_interp]])
+    x, y = c.cartesian(phi, r)
+    ex = np.array([-np.sin(phi), np.cos(phi)])
+    ey = np.array([np.cos(phi), np.sin(phi)])
+    vg = 4*x**3*ex + 8*y**3*ey
+    assert np.allclose(v['g'], vg)
+
+
+@pytest.mark.parametrize('Nphi', [16])
+@pytest.mark.parametrize('Nr', [8])
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('phi_interp', [0.5, 1.0, 1.5])
+def test_interpolate_azimuth_tensor(Nphi, Nr, k, dealias, basis, dtype, phi_interp):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
     f.set_scales(b.domain.dealias)
     f['g'] = x**4 + 2*y**4
     u = operators.Gradient(f, c)
     T = operators.Gradient(u, c)
-    v = T(r=radius).evaluate()
-    x0, y0 = c.cartesian(phi, np.array([[radius]]))
-    ex0 = np.array([-np.sin(phi)+0.*np.array([[radius]]),np.cos(phi)+0.*np.array([[radius]])])
-    ey0 = np.array([np.cos(phi)+0.*np.array([[radius]]),np.sin(phi)+0.*np.array([[radius]])])
-    exex0 = ex0[:,None, ...] * ex0[None,...]
-    eyey0 = ey0[:,None, ...] * ey0[None,...]
-    vg = 12*x0**2*exex0 + 24*y0**2*eyey0
+    v = T(phi=phi_interp).evaluate()
+    phi = np.array([[phi_interp]])
+    x, y = c.cartesian(phi, r)
+    ex = np.array([-np.sin(phi), np.cos(phi)])
+    ey = np.array([np.cos(phi), np.sin(phi)])
+    exex = ex[:,None, ...] * ex[None,...]
+    eyey = ey[:,None, ...] * ey[None,...]
+    vg = 12*x**2*exex + 24*y**2*eyey
+    assert np.allclose(v['g'], vg)
+
+
+@pytest.mark.parametrize('Nphi', [16])
+@pytest.mark.parametrize('Nr', [8])
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('r_interp', [0.5, 1.0, 1.5])
+def test_interpolate_radius_tensor(Nphi, Nr, k, dealias, basis, dtype, r_interp):
+    c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
+    f = field.Field(dist=d, bases=(b,), dtype=dtype)
+    f.set_scales(b.domain.dealias)
+    f['g'] = x**4 + 2*y**4
+    u = operators.Gradient(f, c)
+    T = operators.Gradient(u, c)
+    v = T(r=r_interp).evaluate()
+    r = np.array([[r_interp]])
+    x, y = c.cartesian(phi, r)
+    ex = np.array([-np.sin(phi), np.cos(phi)])
+    ey = np.array([np.cos(phi), np.sin(phi)])
+    exex = ex[:,None, ...] * ex[None,...]
+    eyey = ey[:,None, ...] * ey[None,...]
+    vg = 12*x**2*exex + 24*y**2*eyey
     assert np.allclose(v['g'], vg)
 
 
