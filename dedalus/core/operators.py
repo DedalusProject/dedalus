@@ -716,7 +716,7 @@ class Lock(FutureLockedField, LinearOperator):
         """Perform operation."""
         arg0 = self.args[0]
         out.set_layout(arg0.layout)
-        out.lock_layouts(self.layouts)
+        out.lock_to_layouts(self.layouts)
         np.copyto(out.data, arg0.data)
 
     def new_operand(self, operand, **kw):
