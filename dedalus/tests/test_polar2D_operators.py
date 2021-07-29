@@ -4,6 +4,7 @@ import pytest
 import numpy as np
 from dedalus.core import coords, distributor, basis, field, operators, arithmetic, problems, solvers
 from dedalus.tools.cache import CachedFunction
+from dedalus.core.basis import DiskBasis
 
 
 Nphi_range = [8]
@@ -188,6 +189,27 @@ def test_implicit_transpose_tensor(Nphi, Nr, k, dealias, basis, dtype):
     solver.solve()
     Tt.require_scales(b.domain.dealias)
     assert np.allclose(Tt['g'], Ttg)
+
+
+@pytest.mark.parametrize('Nphi', [16])
+@pytest.mark.parametrize('Nr', [10])
+@pytest.mark.parametrize('k', [0, 1, 2, 5])
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
+@pytest.mark.parametrize('dtype', [np.complex128])
+@pytest.mark.parametrize('n', [0, 1, 2])
+def test_integrate_scalar(Nphi, Nr, k, dealias, dtype, basis, n):
+    c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
+    f = field.Field(dist=d, bases=(b,), dtype=dtype)
+    f.set_scales(b.domain.dealias)
+    f['g'] = r**(2*n)
+    h = operators.Integrate(f, c).evaluate()
+    if isinstance(b, DiskBasis):
+        r_inner, r_outer = 0, b.radius
+    else:
+        r_inner, r_outer = b.radii
+    hg = 2 * np.pi * (r_outer**(2 + 2*n) - r_inner**(2 + 2*n)) / (2 + 2*n)
+    assert np.allclose(h['g'], hg)
 
 
 @pytest.mark.parametrize('Nphi', [16])

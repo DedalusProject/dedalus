@@ -1928,7 +1928,7 @@ class PolarMOperator(SpectralOperator):
         """Perform operation."""
         operand = self.args[0]
         input_basis = self.input_basis
-        axis = self.radius_axis
+        axis = self.radial_basis.last_axis
         # Set output layout
         out.set_layout(operand.layout)
         out.data[:] = 0
@@ -1944,8 +1944,9 @@ class PolarMOperator(SpectralOperator):
                     slices[axis] = n_slice
                     vec_in  = comp_in[tuple(slices)]
                     vec_out = comp_out[tuple(slices)]
-                    A = self.radial_matrix(spinindex_in, spinindex_out, m)
-                    vec_out += apply_matrix(A, vec_in, axis=axis)
+                    if vec_in.size and vec_out.size:
+                        A = self.radial_matrix(spinindex_in, spinindex_out, m)
+                        vec_out += apply_matrix(A, vec_in, axis=axis)
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
@@ -1978,7 +1979,7 @@ class PolarMOperator(SpectralOperator):
     def spinindex_out(self, spinindex_in):
         raise NotImplementedError("spinindex_out not implemented for type %s" %type(self))
 
-    def radial_matrix(spinindex_in, spinindex_out, m):
+    def radial_matrix(self, spinindex_in, spinindex_out, m):
         raise NotImplementedError()
 
 
