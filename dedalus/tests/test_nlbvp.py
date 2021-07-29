@@ -21,7 +21,7 @@ def test_sin_nlbvp(Nx, dtype, dealias, basis_class):
     # Fields
     u = field.Field(name='u', dist=d, bases=(xb,), dtype=dtype)
     τ = field.Field(name='τ', dist=d, dtype=dtype)
-    xb1 = xb._new_a_b(xb.a+1, xb.b+1)
+    xb1 = xb.clone_with(a=xb.a+1, b=xb.b+1)
     P = field.Field(name='P', dist=d, bases=(xb1,), dtype=dtype)
     P['c'][-1] = 1
     # Problem

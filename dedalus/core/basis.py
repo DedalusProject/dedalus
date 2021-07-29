@@ -106,7 +106,7 @@ class Basis:
         self.domain = Domain(self.dist, bases=(self,))
 
     def clone_with(self, **new_kw):
-        argnames, _, _, _ = inspect.getargspec(type(self))
+        argnames, _, _, _ = inspect.getargspec(type(self).__init__)
         kw = {name: getattr(self, name) for name in argnames[1:]}
         kw.update(new_kw)
         return type(self)(**kw)
@@ -275,7 +275,10 @@ class IntervalBasis(Basis):
         self.size = size
         self.shape = (size,)
         self.bounds = bounds
-        self.dealias = (dealias,)
+        if isinstance(dealias, tuple):
+            self.dealias = dealias
+        else:
+            self.dealias = (dealias,)
         self.COV = AffineCOV(self.native_bounds, bounds)
         super().__init__(coord)
 
@@ -586,7 +589,7 @@ class DifferentiateJacobi(operators.Differentiate, operators.SpectralOperator1D)
     def _output_basis(input_basis):
         a = input_basis.a + 1
         b = input_basis.b + 1
-        return self.clone_with(a=a, b=b)
+        return input_basis.clone_with(a=a, b=b)
 
     @staticmethod
     @CachedMethod
@@ -2829,9 +2832,13 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
 
     def __init__(self, coordsystem, radial_size, k, dealias, dtype):
         self.coordsystem = coordsystem
+        self.radial_size = radial_size
         self.shape = (1, 1, radial_size)
         self.k = k
-        self.dealias = (1, 1) + dealias
+        if len(dealias) == 1:
+            self.dealias = (1, 1) + dealias
+        else:
+            self.dealias = dealias
         self.Nmax = radial_size - 1
         self.dtype = dtype
         # Call at end because dealias is needed to build self.domain
@@ -3130,7 +3137,7 @@ class SphericalShellRadialBasis(RegularityBasis):
         self.rho = (self.radii[1] + self.radii[0])/self.dR
         self.alpha = alpha
         self.radius_library = radius_library
-        self.grid_params = (coordsystem, radii, alpha, dealias)
+        self.grid_params = (coordsystem, radii, alpha, self.dealias)
         self.forward_transforms = [self.forward_transform_azimuth,
                                    self.forward_transform_colatitude,
                                    self.forward_transform_radius]
@@ -3158,7 +3165,7 @@ class SphericalShellRadialBasis(RegularityBasis):
             if self.grid_params == other.grid_params:
                 radial_size = max(self.shape[2], other.shape[2])
                 k = max(self.k, other.k)
-                return SphericalShellRadialBasis(self.coordsystem, radial_size, radii=self.radii, alpha=self.alpha, dealias=self.dealias[2:], k=k, radius_library=self.radius_library, dtype=self.dtype)
+                return self.clone_with(radial_size=radial_size, k=k)
         return NotImplemented
 
     def __mul__(self, other):
@@ -3168,7 +3175,7 @@ class SphericalShellRadialBasis(RegularityBasis):
             if self.grid_params == other.grid_params:
                 radial_size = max(self.shape[2], other.shape[2])
                 k = self.k + other.k
-                return SphericalShellRadialBasis(self.coordsystem, radial_size, radii=self.radii, alpha=self.alpha, dealias=self.dealias[2:], k=k, radius_library=self.radius_library, dtype=self.dtype)
+                return self.clone_with(radial_size=radial_size, k=k)
         if isinstance(other, SpinWeightedSphericalHarmonics):
             unify((self.coordsystem, other.coordsystem))
             args = {}
@@ -3195,11 +3202,11 @@ class SphericalShellRadialBasis(RegularityBasis):
             if self.grid_params == other.grid_params:
                 radial_size = max(self.shape[2], other.shape[2])
                 k = self.k + other.k
-                return SphericalShellRadialBasis(self.coordsystem, radial_size, radii=self.radii, k=k, alpha=self.alpha, dealias=self.dealias[2:], radius_library=self.radius_library, dtype=self.dtype)
+                return self.clone_with(radial_size=radial_size, k=k)
         return NotImplemented
 
     def _new_k(self, k):
-        return SphericalShellRadialBasis(self.coordsystem, self.shape[2], radii=self.radii, alpha=self.alpha, dealias=self.dealias[2:], k=k, radius_library=self.radius_library, dtype=self.dtype)
+        return self.clone_with(k=k)
 
     @CachedMethod
     def _radius_grid(self, scale):
@@ -3353,7 +3360,7 @@ class BallRadialBasis(RegularityBasis):
         self.alpha = alpha
         self.radial_COV = AffineCOV((0, 1), (0, radius))
         self.radius_library = radius_library
-        self.grid_params = (coordsystem, radius, alpha, dealias)
+        self.grid_params = (coordsystem, radius, alpha, self.dealias)
         self.forward_transforms = [self.forward_transform_azimuth,
                                    self.forward_transform_colatitude,
                                    self.forward_transform_radius]
@@ -3381,7 +3388,7 @@ class BallRadialBasis(RegularityBasis):
             if self.grid_params == other.grid_params:
                 radial_size = max(self.shape[2], other.shape[2])
                 k = max(self.k, other.k)
-                return BallRadialBasis(self.coordsystem, radial_size, radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias[2:], radius_library=self.radius_library, dtype=self.dtype)
+                return self.clone_with(radial_size=radial_size, k=k)
         return NotImplemented
 
     def __mul__(self, other):
@@ -3391,7 +3398,7 @@ class BallRadialBasis(RegularityBasis):
             if self.grid_params == other.grid_params:
                 radial_size = max(self.shape[2], other.shape[2])
                 k = max(self.k, other.k)
-                return BallRadialBasis(self.coordsystem, radial_size, radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias[2:], radius_library=self.radius_library, dtype=self.dtype)
+                return self.clone_with(radial_size=radial_size, k=k)
         return NotImplemented
 
     def __matmul__(self, other):
@@ -3407,11 +3414,11 @@ class BallRadialBasis(RegularityBasis):
             if self.grid_params == other.grid_params:
                 radial_size = max(self.shape[2], other.shape[2])
                 k = max(self.k, other.k)
-                return BallRadialBasis(self.coordsystem, radial_size, radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias[2:], radius_library=self.radius_library, dtype=self.dtype)
+                return self.clone_with(radial_size=radial_size, k=k)
         return NotImplemented
 
     def _new_k(self, k):
-        return BallRadialBasis(self.coordsystem, self.shape[2], radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias[2:], radius_library=self.radius_library, dtype=self.dtype)
+        return self.clone_with(k=k)
 
     @CachedMethod
     def _radius_grid(self, scale):
