@@ -261,7 +261,8 @@ class Layout:
     def local_shape(self, domain, scales, rank = None):
         """Local data shape."""
         local_elements = self.local_elements(domain, scales, rank = rank)
-        return tuple(LE.size for LE in local_elements)
+        shape = tuple(LE.size for LE in local_elements)
+        return shape
 
     def buffer_size(self, bases, scales, dtype):
         """Local buffer size (bytes)."""

@@ -8,6 +8,7 @@ import numpy as np
 from scipy import sparse
 from functools import reduce
 import operator
+import inspect
 
 from . import operators
 from ..libraries import spin_recombination
@@ -27,7 +28,8 @@ from ..tools.general import unify
 from .spaces import ParityInterval, Disk
 from .coords import Coordinate, S2Coordinates, SphericalCoordinates
 from .domain import Domain
-from .field  import Operand
+from .field  import Operand, LockedField
+from .future import FutureLockedField
 from ..libraries import dedalus_sphere
 import numexpr as ne
 #from . import transforms
@@ -102,6 +104,12 @@ class Basis:
         self.dist = coords.dist
         self.axis = coords.axis
         self.domain = Domain(self.dist, bases=(self,))
+
+    def clone_with(self, **new_kw):
+        argnames, _, _, _ = inspect.getargspec(type(self).__init__)
+        kw = {name: getattr(self, name) for name in argnames[1:]}
+        kw.update(new_kw)
+        return type(self)(**kw)
 
     @CachedAttribute
     def constant(self):
@@ -267,7 +275,10 @@ class IntervalBasis(Basis):
         self.size = size
         self.shape = (size,)
         self.bounds = bounds
-        self.dealias = (dealias,)
+        if isinstance(dealias, tuple):
+            self.dealias = dealias
+        else:
+            self.dealias = (dealias,)
         self.COV = AffineCOV(self.native_bounds, bounds)
         super().__init__(coord)
 
@@ -390,9 +401,6 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         self.grid_params = (coord, bounds, a0, b0)
         #self.const = 1 / np.sqrt(jacobi.mass(self.a, self.b))
 
-    def _new_a_b(self, a, b):
-        return Jacobi(self.coord, self.size, self.bounds, a, b, a0=self.a0, b0=self.b0, dealias=self.dealias[0], library=self.library)
-
     def _native_grid(self, scale):
         """Native flat global grid."""
         N, = self.grid_shape((scale,))
@@ -424,7 +432,7 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
                 a = max(self.a, other.a)
                 b = max(self.b, other.b)
                 dealias = max(self.dealias[0], other.dealias[0])
-                return Jacobi(self.coord, size, self.bounds, a, b, a0=self.a0, b0=self.b0, dealias=dealias, library=self.library)
+                return self.clone_with(size=size, a=a, b=b, dealias=dealias)
         return NotImplemented
 
     def __mul__(self, other):
@@ -438,7 +446,7 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
                 a = max(self.a, other.a)
                 b = max(self.b, other.b)
                 dealias = max(self.dealias[0], other.dealias[0])
-                return Jacobi(self.coord, size, self.bounds, a, b, a0=self.a0, b0=self.b0, dealias=dealias, library=self.library)
+                return self.clone_with(size=size, a=a, b=b, dealias=dealias)
         if isinstance(other, SpinWeightedSphericalHarmonics):
             return other.__mul__(self)
         return NotImplemented
@@ -581,7 +589,7 @@ class DifferentiateJacobi(operators.Differentiate, operators.SpectralOperator1D)
     def _output_basis(input_basis):
         a = input_basis.a + 1
         b = input_basis.b + 1
-        return input_basis._new_a_b(a, b)
+        return input_basis.clone_with(a=a, b=b)
 
     @staticmethod
     @CachedMethod
@@ -596,6 +604,7 @@ class InterpolateJacobi(operators.Interpolate, operators.SpectralOperator1D):
     """Jacobi polynomial interpolation."""
 
     input_basis_type = Jacobi
+    basis_subaxis = 0
     subaxis_dependence = [True]
     subaxis_coupling = [True]
 
@@ -843,6 +852,7 @@ class InterpolateComplexFourier(operators.Interpolate, operators.SpectralOperato
     """ComplexFourier interpolation."""
 
     input_basis_type = ComplexFourier
+    basis_subaxis = 0
     subaxis_dependence = [True]
     subaxis_coupling = [True]
 
@@ -1040,6 +1050,7 @@ class InterpolateRealFourier(operators.Interpolate, operators.SpectralOperator1D
     """RealFourier interpolation."""
 
     input_basis_type = RealFourier
+    basis_subaxis = 0
     subaxis_dependence = [True]
     subaxis_coupling = [True]
 
@@ -1469,9 +1480,9 @@ class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):
         self.azimuth_library = azimuth_library
         self.mmax = (shape[0] - 1) // 2
         if dtype == np.complex128:
-            self.azimuth_basis = ComplexFourier(coordsystem.coords[0], shape[0], bounds=(0, 2*np.pi), library=azimuth_library)
+            self.azimuth_basis = ComplexFourier(coordsystem.coords[0], shape[0], bounds=(0, 2*np.pi), library=azimuth_library, dealias=dealias[0])
         elif dtype == np.float64:
-            self.azimuth_basis = RealFourier(coordsystem.coords[0], shape[0], bounds=(0, 2*np.pi), library=azimuth_library)
+            self.azimuth_basis = RealFourier(coordsystem.coords[0], shape[0], bounds=(0, 2*np.pi), library=azimuth_library, dealias=dealias[0])
         else:
             raise NotImplementedError()
         self.global_grid_azimuth = self.azimuth_basis.global_grid
@@ -2352,6 +2363,13 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         if self.mmax > self.Lmax + 1:
             logger.warning("You are using more azimuthal modes than can be resolved with your current colatitude resolution")
             #raise ValueError("shape[0] cannot be more than twice shape[1].")
+        # TODO: make this less hacky
+        if self.mmax == 0:
+            self.forward_transform_azimuth = self.forward_transform_azimuth_Mmax0
+            self.backward_transform_azimuth = self.backward_transform_azimuth_Mmax0
+        # if self.Lmax == 0:
+        #     self.forward_transform_colatitude = self.forward_transform_colatitude_Lmax0
+        #     self.backward_transform_colatitude = self.backward_transform_colatitude_Lmax0
         self.forward_transforms = [self.forward_transform_azimuth,
                                    self.forward_transform_colatitude,
                                    self.forward_transform_radius]
@@ -2359,9 +2377,9 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
                                     self.backward_transform_colatitude,
                                     self.backward_transform_radius]
         self.grid_params = (coordsystem, radius, dealias)
-        if self.Lmax > 0 and shape[0] % 2 != 0:
+        if self.shape[0] > 1 and shape[0] % 2 != 0:
             raise ValueError("Don't use an odd phi resolution please")
-        if self.Lmax > 0 and self.dtype == np.float64 and shape[0] % 4 != 0:
+        if self.shape[0] > 1 and self.dtype == np.float64 and shape[0] % 4 != 0:
             raise ValueError("Don't use a phi resolution that isn't divisible by 4, please")
         # m permutations for repacking triangular truncation
         if self.dtype == np.complex128:
@@ -2378,8 +2396,9 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             self.backward_m_perm = np.argsort(self.forward_m_perm)
             self.group_shape = (2, 1)
         # Set permutations on azimuth basis
-        self.azimuth_basis.forward_coeff_permutation = self.forward_m_perm
-        self.azimuth_basis.backward_coeff_permutation = self.backward_m_perm
+        if self.mmax > 0:
+            self.azimuth_basis.forward_coeff_permutation = self.forward_m_perm
+            self.azimuth_basis.backward_coeff_permutation = self.backward_m_perm
 
     def global_shape(self, layout, scales):
         grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
@@ -2390,39 +2409,44 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         elif grid_space[1]:
             # coeff-grid space
             shape = list(grid_shape)
-            shape[0] = self.shape[0]
+            if self.mmax > 0:
+                shape[0] = self.shape[0]
+            else:
+                if self.dtype == np.complex128:
+                    shape[0] = 1
+                elif self.dtype == np.float64:
+                    shape[0] = 2
             return tuple(shape)
         else:
             # coeff-coeff space
             # Repacked triangular truncation
             Nphi = self.shape[0]
             Lmax = self.Lmax
-            if Lmax > 0:
+            if self.mmax > 0:
                 if self.dtype == np.complex128:
                     return (Nphi//2, Lmax+1+max(0, Lmax+1-Nphi//2))
                 elif self.dtype == np.float64:
                     return (Nphi//2, Lmax+1+max(0, Lmax+2-Nphi//2))
             else:
                 if self.dtype == np.complex128:
-                    return (1, 1)
+                    return (1, Lmax+1)
                 elif self.dtype == np.float64:
-                    return (2, 1)
+                    return (2, Lmax+1)
 
     def chunk_shape(self, layout):
         grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
-        Lmax = self.Lmax
         if grid_space[0]:
             # grid-grid space
             return (1, 1)
         elif grid_space[1]:
             # coeff-grid space
             if self.dtype == np.complex128:
-                if Lmax > 0:
+                if self.mmax > 0:
                     return (2, 1)
                 else:
                     return (1, 1)
             elif self.dtype == np.float64:
-                if Lmax > 0:
+                if self.mmax > 0:
                     return (4, 1)
                 else:
                     return (2, 1)
@@ -2684,11 +2708,11 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         return reshape_vector(weights.astype(np.float64)[local_elements], dim=self.dist.dim, axis=self.axis+1)
 
     @CachedMethod
-    def transform_plan(self, grid_shape, axis, s):
+    def transform_plan(self, Ntheta, s):
         """Build transform plan."""
-        return self.transforms[self.colatitude_library](grid_shape, self.shape, axis, self.m_maps, s)
+        return self.transforms[self.colatitude_library](Ntheta, self.Lmax, self.m_maps, s)
 
-    def forward_transform_azimuth_Lmax0(self, field, axis, gdata, cdata):
+    def forward_transform_azimuth_Mmax0(self, field, axis, gdata, cdata):
         slice_axis = axis + len(field.tensorsig)
         np.copyto(cdata[axslice(slice_axis, 0, 1)], gdata)
 
@@ -2702,7 +2726,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         # Placeholder for when self.coordsys is SphericalCoordinates
         pass
 
-    def backward_transform_azimuth_Lmax0(self, field, axis, cdata, gdata):
+    def backward_transform_azimuth_Mmax0(self, field, axis, cdata, gdata):
         slice_axis = axis + len(field.tensorsig)
         np.copyto(gdata, cdata[axslice(slice_axis, 0, 1)])
 
@@ -2731,8 +2755,8 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         # Transform component-by-component from temp to cdata
         S = self.spin_weights(field.tensorsig)
         for i, s in np.ndenumerate(S):
-            grid_shape = gdata[i].shape
-            plan = self.transform_plan(grid_shape, axis, s)
+            Ntheta = gdata[i].shape[axis]
+            plan = self.transform_plan(Ntheta, s)
             plan.forward(temp[i], cdata[i], axis)
 
     def backward_transform_colatitude_Lmax0(self, field, axis, cdata, gdata):
@@ -2746,8 +2770,8 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         temp = np.zeros_like(gdata)
         S = self.spin_weights(field.tensorsig)
         for i, s in np.ndenumerate(S):
-            grid_shape = gdata[i].shape
-            plan = self.transform_plan(grid_shape, axis, s)
+            Ntheta = gdata[i].shape[axis]
+            plan = self.transform_plan(Ntheta, s)
             plan.backward(cdata[i], temp[i], axis)
         # Apply spin recombination from temp to gdata
         gdata.fill(0)  # OPTIMIZE: shouldn't be necessary
@@ -2795,6 +2819,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
 
 
 SWSH = SpinWeightedSphericalHarmonics
+SphereBasis = SWSH
 
 
 # These are common for BallRadialBasis and SphericalShellRadialBasis
@@ -2807,9 +2832,13 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
 
     def __init__(self, coordsystem, radial_size, k, dealias, dtype):
         self.coordsystem = coordsystem
+        self.radial_size = radial_size
         self.shape = (1, 1, radial_size)
         self.k = k
-        self.dealias = (1, 1) + dealias
+        if len(dealias) == 1:
+            self.dealias = (1, 1) + dealias
+        else:
+            self.dealias = dealias
         self.Nmax = radial_size - 1
         self.dtype = dtype
         # Call at end because dealias is needed to build self.domain
@@ -3108,7 +3137,7 @@ class SphericalShellRadialBasis(RegularityBasis):
         self.rho = (self.radii[1] + self.radii[0])/self.dR
         self.alpha = alpha
         self.radius_library = radius_library
-        self.grid_params = (coordsystem, radii, alpha, dealias)
+        self.grid_params = (coordsystem, radii, alpha, self.dealias)
         self.forward_transforms = [self.forward_transform_azimuth,
                                    self.forward_transform_colatitude,
                                    self.forward_transform_radius]
@@ -3136,7 +3165,7 @@ class SphericalShellRadialBasis(RegularityBasis):
             if self.grid_params == other.grid_params:
                 radial_size = max(self.shape[2], other.shape[2])
                 k = max(self.k, other.k)
-                return SphericalShellRadialBasis(self.coordsystem, radial_size, radii=self.radii, alpha=self.alpha, dealias=self.dealias[2:], k=k, radius_library=self.radius_library, dtype=self.dtype)
+                return self.clone_with(radial_size=radial_size, k=k)
         return NotImplemented
 
     def __mul__(self, other):
@@ -3146,7 +3175,7 @@ class SphericalShellRadialBasis(RegularityBasis):
             if self.grid_params == other.grid_params:
                 radial_size = max(self.shape[2], other.shape[2])
                 k = self.k + other.k
-                return SphericalShellRadialBasis(self.coordsystem, radial_size, radii=self.radii, alpha=self.alpha, dealias=self.dealias[2:], k=k, radius_library=self.radius_library, dtype=self.dtype)
+                return self.clone_with(radial_size=radial_size, k=k)
         if isinstance(other, SpinWeightedSphericalHarmonics):
             unify((self.coordsystem, other.coordsystem))
             args = {}
@@ -3173,11 +3202,11 @@ class SphericalShellRadialBasis(RegularityBasis):
             if self.grid_params == other.grid_params:
                 radial_size = max(self.shape[2], other.shape[2])
                 k = self.k + other.k
-                return SphericalShellRadialBasis(self.coordsystem, radial_size, radii=self.radii, k=k, alpha=self.alpha, dealias=self.dealias[2:], radius_library=self.radius_library, dtype=self.dtype)
+                return self.clone_with(radial_size=radial_size, k=k)
         return NotImplemented
 
     def _new_k(self, k):
-        return SphericalShellRadialBasis(self.coordsystem, self.shape[2], radii=self.radii, alpha=self.alpha, dealias=self.dealias[2:], k=k, radius_library=self.radius_library, dtype=self.dtype)
+        return self.clone_with(k=k)
 
     @CachedMethod
     def _radius_grid(self, scale):
@@ -3331,7 +3360,7 @@ class BallRadialBasis(RegularityBasis):
         self.alpha = alpha
         self.radial_COV = AffineCOV((0, 1), (0, radius))
         self.radius_library = radius_library
-        self.grid_params = (coordsystem, radius, alpha, dealias)
+        self.grid_params = (coordsystem, radius, alpha, self.dealias)
         self.forward_transforms = [self.forward_transform_azimuth,
                                    self.forward_transform_colatitude,
                                    self.forward_transform_radius]
@@ -3359,7 +3388,7 @@ class BallRadialBasis(RegularityBasis):
             if self.grid_params == other.grid_params:
                 radial_size = max(self.shape[2], other.shape[2])
                 k = max(self.k, other.k)
-                return BallRadialBasis(self.coordsystem, radial_size, radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias[2:], radius_library=self.radius_library, dtype=self.dtype)
+                return self.clone_with(radial_size=radial_size, k=k)
         return NotImplemented
 
     def __mul__(self, other):
@@ -3369,7 +3398,7 @@ class BallRadialBasis(RegularityBasis):
             if self.grid_params == other.grid_params:
                 radial_size = max(self.shape[2], other.shape[2])
                 k = max(self.k, other.k)
-                return BallRadialBasis(self.coordsystem, radial_size, radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias[2:], radius_library=self.radius_library, dtype=self.dtype)
+                return self.clone_with(radial_size=radial_size, k=k)
         return NotImplemented
 
     def __matmul__(self, other):
@@ -3385,11 +3414,11 @@ class BallRadialBasis(RegularityBasis):
             if self.grid_params == other.grid_params:
                 radial_size = max(self.shape[2], other.shape[2])
                 k = max(self.k, other.k)
-                return BallRadialBasis(self.coordsystem, radial_size, radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias[2:], radius_library=self.radius_library, dtype=self.dtype)
+                return self.clone_with(radial_size=radial_size, k=k)
         return NotImplemented
 
     def _new_k(self, k):
-        return BallRadialBasis(self.coordsystem, self.shape[2], radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias[2:], radius_library=self.radius_library, dtype=self.dtype)
+        return self.clone_with(k=k)
 
     @CachedMethod
     def _radius_grid(self, scale):
@@ -3571,6 +3600,7 @@ class Spherical3DBasis(MultidimensionalBasis):
         self.azimuth_library = azimuth_library
         self.colatitude_library = colatitude_library
         self.sphere_basis = self.S2_basis()
+        self.azimuth_basis = self.sphere_basis.azimuth_basis
         self.mmax = self.sphere_basis.mmax
         self.Lmax = self.sphere_basis.Lmax
         self.local_m = self.sphere_basis.local_m
@@ -3586,16 +3616,10 @@ class Spherical3DBasis(MultidimensionalBasis):
         self.global_radial_weights = self.radial_basis.global_weights
         self.local_colatitude_weights = self.sphere_basis.local_colatitude_weights
         self.local_radial_weights = self.radial_basis.local_weights
-        if self.Lmax > 0:
-            self.forward_transform_azimuth = self.sphere_basis.forward_transform_azimuth
-            self.forward_transform_colatitude = self.sphere_basis.forward_transform_colatitude
-            self.backward_transform_azimuth = self.sphere_basis.backward_transform_azimuth
-            self.backward_transform_colatitude = self.sphere_basis.backward_transform_colatitude
-        else:
-            self.forward_transform_azimuth = self.sphere_basis.forward_transform_azimuth_Lmax0
-            self.forward_transform_colatitude = self.sphere_basis.forward_transform_colatitude_Lmax0
-            self.backward_transform_azimuth = self.sphere_basis.backward_transform_azimuth_Lmax0
-            self.backward_transform_colatitude = self.sphere_basis.backward_transform_colatitude_Lmax0
+        self.forward_transform_azimuth = self.sphere_basis.forward_transform_azimuth
+        self.backward_transform_azimuth = self.sphere_basis.backward_transform_azimuth
+        self.forward_transform_colatitude = self.sphere_basis.forward_transform_colatitude
+        self.backward_transform_colatitude = self.sphere_basis.backward_transform_colatitude
         Basis.__init__(self, coordsystem)
 
     @CachedAttribute
@@ -3689,6 +3713,9 @@ class SphericalShellBasis(Spherical3DBasis):
     def __init__(self, coordsystem, shape, radii=(1,2), alpha=(-0.5,-0.5), dealias=(1,1,1), k=0, dtype=np.complex128, azimuth_library=None, colatitude_library=None, radius_library=None):
         if np.isscalar(dealias):
             dealias = (dealias, dealias, dealias)
+        self.alpha = alpha
+        self.radii = radii
+        self.radius_library = radius_library
         self.radial_basis = SphericalShellRadialBasis(coordsystem, shape[2], radii=radii, alpha=alpha, dealias=(dealias[2],), k=k, dtype=dtype, radius_library=radius_library)
         Spherical3DBasis.__init__(self, coordsystem, shape[:2], dealias[:2], self.radial_basis, dtype=dtype, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
         self.grid_params = (coordsystem, radii, alpha, dealias)
@@ -3791,6 +3818,9 @@ class SphericalShellBasis(Spherical3DBasis):
             gdata *= radial_basis.radial_transform_factor(field.scales[axis], data_axis, self.k)
 
 
+ShellBasis = SphericalShellBasis
+
+
 class BallBasis(Spherical3DBasis):
 
     transforms = {}
@@ -3798,6 +3828,9 @@ class BallBasis(Spherical3DBasis):
     def __init__(self, coordsystem, shape, radius=1, k=0, alpha=0, dealias=(1,1,1), dtype=np.complex128, azimuth_library=None, colatitude_library=None, radius_library=None):
         if np.isscalar(dealias):
             dealias = (dealias, dealias, dealias)
+        self.alpha = alpha
+        self.radius = radius
+        self.radius_library = radius_library
         self.radial_basis = BallRadialBasis(coordsystem, shape[2], radius=radius, k=k, alpha=alpha, dealias=(dealias[2],), dtype=dtype, radius_library=radius_library)
         Spherical3DBasis.__init__(self, coordsystem, shape[:2], dealias[:2], self.radial_basis, dtype=dtype, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
         self.grid_params = (coordsystem, radius, alpha, dealias)
@@ -4291,6 +4324,159 @@ class LiftTauShell(operators.LiftTau, operators.SphericalEllOperator):
             return matrix
         else:
             raise ValueError("This should never happen.")
+
+
+class InterpolateAzimuth(FutureLockedField, operators.Interpolate):
+
+    input_basis_type = (SphereBasis, BallBasis, ShellBasis, DiskBasis, AnnulusBasis)
+    basis_subaxis = 0
+
+    @staticmethod
+    def _output_basis(input_basis, position):
+        # Clone input basis with N_azimuth = 1
+        shape = list(input_basis.shape)
+        shape[0] = 1
+        return input_basis.clone_with(shape=tuple(shape))
+
+    def check_conditions(self):
+        """Check that arguments are in a proper layout."""
+        arg0 = self.args[0]
+        azimuth_axis = self.first_axis
+        # Require grid space and locality along azimuthal axis
+        is_grid = arg0.layout.grid_space[azimuth_axis]
+        is_local = arg0.layout.local[azimuth_axis]
+        return is_grid and is_local
+
+    def enforce_conditions(self):
+        """Require arguments to be in a proper layout."""
+        arg0 = self.args[0]
+        azimuth_axis = self.first_axis
+        # Require grid space and locality along azimuthal axis
+        arg0.require_grid_space(azimuth_axis)
+        arg0.require_local(azimuth_axis)
+
+    def interpolation_vector(self):
+        # Wrap class-based caching
+        return self._interpolation_vector(self.input_basis, self.position)
+
+    @staticmethod
+    @CachedMethod
+    def _interpolation_vector(input_basis, position):
+        # Construct collocation interpolation using forward transform matrix and spectral interpolation
+        azimuth_basis = input_basis.azimuth_basis
+        grid_size = azimuth_basis.grid_shape(scales=azimuth_basis.dealias)[0]
+        forward = azimuth_basis.transforms['matrix'](grid_size, azimuth_basis.size).forward_matrix[azimuth_basis.forward_coeff_permutation]
+        if input_basis.dtype is np.float64:
+            interp = InterpolateRealFourier._full_matrix(azimuth_basis, None, position)
+        elif input_basis.dtype is np.complex128:
+            interp = InterpolateComplexFourier._full_matrix(azimuth_basis, None, position)
+        return interp @ forward
+
+    def operate(self, out):
+        """Perform operation."""
+        arg = self.args[0]
+        layout = arg.layout
+        # Set output layout
+        out.set_layout(layout)
+        # Set output lock
+        out.lock_axis_to_grid(self.first_axis)
+        # Apply matrix
+        data_axis = self.first_axis + len(arg.tensorsig)
+        apply_matrix(self.interpolation_vector(), arg.data, data_axis, out=out.data)
+
+
+class InterpolateColatitude(FutureLockedField, operators.Interpolate):
+
+    future_type = LockedField
+    input_basis_type = (SphereBasis, BallBasis, ShellBasis)
+    basis_subaxis = 1
+
+    @CachedAttribute
+    def sphere_basis(self):
+        if isinstance(self.input_basis, SphereBasis):
+            return self.input_basis
+        else:
+            return self.input_basis.sphere_basis
+
+    @staticmethod
+    def _output_basis(input_basis, position):
+        # Clone input basis with N_colatitude = 1
+        # Todo: just a function of radius if interpolation is at poles?
+        shape = list(input_basis.shape)
+        shape[1] = 1
+        return input_basis.clone_with(shape=shape)
+
+    def check_conditions(self):
+        """Check that arguments are in a proper layout."""
+        arg0 = self.args[0]
+        azimuth_axis = self.first_axis
+        colat_axis = azimuth_axis + 1
+        # Require azimuth coeff, colat grid, colat, local
+        az_coeff = not arg0.layout.grid_space[azimuth_axis]
+        colat_grid = arg0.layout.grid_space[colat_axis]
+        colat_local = arg0.layout.local[colat_axis]
+        return az_coeff and colat_grid and colat_local
+
+    def enforce_conditions(self):
+        """Require arguments to be in a proper layout."""
+        arg0 = self.args[0]
+        azimuth_axis = self.first_axis
+        colat_axis = azimuth_axis + 1
+        # Require azimuth coeff, colat grid, colat, local
+        arg0.require_coeff_space(azimuth_axis)
+        arg0.require_grid_space(colat_axis)
+        arg0.require_local(colat_axis)
+
+    def interpolation_vectors(self, Ntheta, s):
+        # Wrap class-based caching
+        return self._interpolation_vectors(self.sphere_basis, Ntheta, s, self.position)
+
+    @staticmethod
+    @CachedMethod
+    def _interpolation_vectors(sphere_basis, Ntheta, s, theta):
+        interp_vectors = {}
+        z = np.cos(theta)
+        forward = sphere_basis.transform_plan(Ntheta, s)
+        for m in set(sphere_basis.local_unpacked_m):
+            if m <= sphere_basis.Lmax:
+                Lmin = max(abs(m), abs(s))
+                interp_m = dedalus_sphere.sphere.harmonics(sphere_basis.Lmax, m, s, z)[None, :]
+                forward_m = forward._forward_SWSH_matrices[m][Lmin-abs(m):]
+                interp_vectors[m] = interp_m @ forward_m
+            else:
+                interp_vectors[m] = np.zeros((1, Ntheta))
+        return interp_vectors
+
+    def operate(self, out):
+        """Perform operation."""
+        arg = self.args[0]
+        basis = self.sphere_basis
+        layout = arg.layout
+        azimuth_axis = self.first_axis
+        colat_axis = azimuth_axis + 1
+        Ntheta = arg.data.shape[len(arg.tensorsig) + colat_axis]
+        # Set output layout
+        out.set_layout(layout)
+        # Set output lock
+        out.lock_axis_to_grid(colat_axis)
+        # Forward spin recombination
+        arg_temp = np.zeros_like(arg.data)
+        out_temp = np.zeros_like(out.data)
+        basis.forward_spin_recombination(arg.tensorsig, arg.data, arg_temp)
+        # Loop over spin components
+        S = basis.spin_weights(arg.tensorsig)
+        for i, s in np.ndenumerate(S):
+            arg_s = arg_temp[i]
+            out_s = out_temp[i]
+            interp_vectors = self.interpolation_vectors(Ntheta, s)
+            # Loop over m
+            for m, mg_slice, _, _ in basis.m_maps:
+                mg_slice = axindex(azimuth_axis, mg_slice)
+                arg_sm = arg_s[mg_slice]
+                out_sm = out_s[mg_slice]
+                apply_matrix(interp_vectors[m], arg_sm, axis=colat_axis, out=out_sm)
+        # Backward spin recombination
+        basis.backward_spin_recombination(out.tensorsig, out_temp, out.data)
 
 
 class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperator):

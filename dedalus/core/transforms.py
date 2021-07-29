@@ -1225,30 +1225,22 @@ class NonSeparableTransform(Transform):
 
 @register_transform(basis.SpinWeightedSphericalHarmonics, 'matrix')
 class SWSHColatitudeTransform(NonSeparableTransform):
-    """
-    TODO:
-        - Remove dependence on grid_shape?
-    """
 
-    def __init__(self, grid_shape, basis_shape, axis, m_maps, s, dtype=np.complex128):
-        self.Nphi = basis_shape[0]
-        self.Lmax = basis_shape[1] - 1
-        super().__init__(grid_shape, self.Lmax+1, axis, dtype)
+    def __init__(self, Ntheta, Lmax, m_maps, s):
+        self.Ntheta = Ntheta
+        self.Lmax = Lmax
         self.m_maps = m_maps
         self.s = s
-        self.shift = max(0, self.Lmax + 1 - self.Nphi//2)
 
     def forward_reduced(self, gdata, cdata):
         # local_m = self.local_m
         # if gdata.shape[1] != len(local_m): # do we want to do this check???
         #     raise ValueError("gdata.shape[1]: %i, len(local_m): %i" %(gdata.shape[1], len(local_m)))
         m_matrices = self._forward_SWSH_matrices
-        shift = self.shift
-        Nphi = self.Nphi
         Lmax = self.Lmax
         for m, mg_slice, mc_slice, ell_slice in self.m_maps:
             # Skip transforms when |m| > Lmax
-            if np.abs(m) <= Lmax:
+            if abs(m) <= Lmax:
                 # Use rectangular transform matrix, padded with zeros when Lmin > abs(m)
                 grm = gdata[:, mg_slice, :, :]
                 crm = cdata[:, mc_slice, ell_slice, :]
@@ -1259,11 +1251,9 @@ class SWSHColatitudeTransform(NonSeparableTransform):
         # if gdata.shape[1] != len(local_m): # do we want to do this check???
         #     raise ValueError("gdata.shape[1]: %i, len(local_m): %i" %(gdata.shape[1], len(local_m)))
         m_matrices = self._backward_SWSH_matrices
-        shift = self.shift
-        Nphi = self.Nphi
         Lmax = self.Lmax
         for m, mg_slice, mc_slice, ell_slice in self.m_maps:
-            if np.abs(m) > Lmax:
+            if abs(m) > Lmax:
                 # Write zeros because they'll be used by the inverse azimuthal transform
                 gdata[:, mg_slice, :, :] = 0
             else:
@@ -1274,16 +1264,14 @@ class SWSHColatitudeTransform(NonSeparableTransform):
 
     @CachedAttribute
     def _quadrature(self):
-        # get grid and weights from sphere library
-        Lmax = self.N2g - 1
-        return dedalus_sphere.sphere.quadrature(Lmax)
+        return dedalus_sphere.sphere.quadrature(self.Ntheta-1)
 
     @CachedAttribute
     def _forward_SWSH_matrices(self):
         """Build transform matrix for single m and s."""
         # Get functions from sphere library
         cos_grid, weights = self._quadrature
-        Lmax = self.N2c - 1
+        Lmax = self.Lmax
         m_matrices = {}
         for m, _, _, _ in self.m_maps:
             if m in m_matrices:
@@ -1294,11 +1282,11 @@ class SWSHColatitudeTransform(NonSeparableTransform):
             else:
                 Y = dedalus_sphere.sphere.harmonics(Lmax, m, self.s, cos_grid)  # shape (Nc-Lmin, Ng)
                 # Pad to shape (Nc-|m|, Ng) so transforms don't depend on Lmin
-                Lmin = max(np.abs(m), np.abs(self.s))
-                Yfull = np.zeros((self.N2c-np.abs(m), self.N2g))
-                Yfull[Lmin-np.abs(m):, :] = (Y*weights).astype(np.float64)
+                Lmin = max(abs(m), abs(self.s))
+                Yfull = np.zeros((Lmax+1-abs(m), self.Ntheta))
+                Yfull[Lmin-abs(m):, :] = (Y*weights).astype(np.float64)
                 # Zero higher coefficients than can be correctly computed with base Gauss quadrature
-                Yfull[self.N2g-np.abs(m):, :] = 0
+                Yfull[self.Ntheta-abs(m):, :] = 0
                 m_matrices[m] = np.asarray(Yfull, order='C')
         return m_matrices
 
@@ -1307,7 +1295,7 @@ class SWSHColatitudeTransform(NonSeparableTransform):
         """Build transform matrix for single m and s."""
         # Get functions from sphere library
         cos_grid, weights = self._quadrature
-        Lmax = self.N2c - 1
+        Lmax = self.Lmax
         m_matrices = {}
         for m, _, _, _ in self.m_maps:
             if m in m_matrices:
@@ -1318,11 +1306,11 @@ class SWSHColatitudeTransform(NonSeparableTransform):
             else:
                 Y = dedalus_sphere.sphere.harmonics(Lmax, m, self.s, cos_grid) # shape (Nc-Lmin, Ng)
                 # Pad to shape (Nc-|m|, Ng) so transforms don't depend on Lmin
-                Lmin = max(np.abs(m), np.abs(self.s))
-                Yfull = np.zeros((self.N2g, self.N2c-np.abs(m)))
-                Yfull[:, Lmin-np.abs(m):] = Y.T.astype(np.float64)
+                Lmin = max(abs(m), abs(self.s))
+                Yfull = np.zeros((self.Ntheta, Lmax+1-abs(m)))
+                Yfull[:, Lmin-abs(m):] = Y.T.astype(np.float64)
                 # Zero higher coefficients than can be correctly computed with base Gauss quadrature
-                Yfull[:, self.N2g-np.abs(m):] = 0
+                Yfull[:, self.Ntheta-abs(m):] = 0
                 m_matrices[m] = np.asarray(Yfull, order='C')
         return m_matrices
 
@@ -1351,7 +1339,7 @@ class DiskRadialTransform(NonSeparableTransform):
         Nmax = self.Nmax
         for m, mg_slice, mc_slice, n_slice in self.m_maps:
             # Skip transforms when |m| > 2*Nmax
-            if np.abs(m) <= 2*Nmax:
+            if abs(m) <= 2*Nmax:
                 # Use rectangular transform matrix, padded with zeros when Nmin > abs(m)//2
                 grm = gdata[:, mg_slice, :, :]
                 crm = cdata[:, mc_slice, n_slice, :]
@@ -1365,7 +1353,7 @@ class DiskRadialTransform(NonSeparableTransform):
         Nphi = self.Nphi
         Nmax = self.Nmax
         for m, mg_slice, mc_slice, n_slice in self.m_maps:
-            if np.abs(m) > 2*Nmax:
+            if abs(m) > 2*Nmax:
                 # Write zeros because they'll be used by the inverse azimuthal transform
                 gdata[:, mg_slice, :, :] = 0
             else:
@@ -1390,9 +1378,9 @@ class DiskRadialTransform(NonSeparableTransform):
             if m not in m_matrices:
                 Nmin = dedalus_sphere.zernike.min_degree(m)
                 Nc = self.N2c - Nmin
-                W = dedalus_sphere.zernike.polynomials(2, Nc, self.alpha, np.abs(m + self.s), z_grid) # shape (N2c-Nmin, Ng)
+                W = dedalus_sphere.zernike.polynomials(2, Nc, self.alpha, abs(m + self.s), z_grid) # shape (N2c-Nmin, Ng)
                 conversion = dedalus_sphere.zernike.operator(2, 'E')(+1)**self.k
-                W = conversion(Nc, self.alpha, np.abs(m + self.s)) @ W
+                W = conversion(Nc, self.alpha, abs(m + self.s)) @ W
                 W = (W*weights).astype(np.float64)
                 # zero out modes higher than grid resolution taking into account n starts at Nmin
                 W[self.N2g-Nmin:] = 0
@@ -1411,7 +1399,7 @@ class DiskRadialTransform(NonSeparableTransform):
             if m not in m_matrices:
                 Nmin = dedalus_sphere.zernike.min_degree(m)
                 Nc = self.N2c - Nmin
-                W = dedalus_sphere.zernike.polynomials(2, Nc, self.k + self.alpha, np.abs(m + self.s), z_grid)
+                W = dedalus_sphere.zernike.polynomials(2, Nc, self.k + self.alpha, abs(m + self.s), z_grid)
                 m_matrices[m] = np.asarray(W.T.astype(np.float64), order='C')
         return m_matrices
 

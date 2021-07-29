@@ -687,7 +687,7 @@ class Lock(FutureLockedField, LinearOperator):
 
     name = 'Lock'
 
-    def __init__(self, operand, layout):
+    def __init__(self, operand, *layouts):
         super().__init__(operand)
         # LinearOperator requirements
         self.operand = operand
@@ -695,24 +695,32 @@ class Lock(FutureLockedField, LinearOperator):
         self.domain = operand.domain
         self.tensorsig = operand.tensorsig
         self.dtype = operand.dtype
-        # Resolve layout
-        self.layout = self.dist.get_layout_object(layout)
+        # Resolve layouts
+        self.layouts = [self.dist.get_layout_object(l) for l in layouts]
+        self.indices = np.array([l.index for l in self.layouts])
 
     def check_conditions(self):
         """Check that arguments are in a proper layout."""
-        return (self.args[0].layout is self.layout)
+        return (self.args[0].layout in self.layouts)
 
     def enforce_conditions(self):
         """Require arguments to be in a proper layout."""
-        self.args[0].require_layout(self.layout)
+        # Nothing if in proper layout
+        if self.args[0].layout in self.layouts:
+            return
+        # Change to closest permissible layout
+        closest_layout = self.layouts[np.argmin(np.abs(self.indices - self.args[0].layout.index))]
+        self.args[0].require_layout(closest_layout)
 
     def operate(self, out):
         """Perform operation."""
-        out.set_layout(self.layout)
-        np.copyto(out.data, self.args[0].data)
+        arg0 = self.args[0]
+        out.set_layout(arg0.layout)
+        out.lock_to_layouts(self.layouts)
+        np.copyto(out.data, arg0.data)
 
     def new_operand(self, operand, **kw):
-        return Lock(operand, layout=self.layout, **kw)
+        return Lock(operand, *self.layouts, **kw)
 
 
 def Grid(operand):
@@ -952,6 +960,8 @@ class Interpolate(SpectralOperator, metaclass=MultiClass):
 
     """
 
+    # TODO: Probably does not need to inherit from SpectralOperator
+
     name = 'interp'
 
     @classmethod
@@ -977,10 +987,11 @@ class Interpolate(SpectralOperator, metaclass=MultiClass):
 
     @classmethod
     def _check_args(cls, operand, coord, position, out=None):
-        # Dispatch by operand basis
+        # Dispatch by operand basis and subaxis
         if isinstance(operand, Operand):
             basis = operand.domain.get_basis(coord)
-            if isinstance(basis, cls.input_basis_type):
+            subaxis = basis.coordsystem.coords.index(coord)
+            if isinstance(basis, cls.input_basis_type) and cls.basis_subaxis == subaxis:
                 return True
         return False
 

@@ -693,29 +693,29 @@ class LockedField(Field):
         if scales != self.scales:
             raise ValueError("Cannot change locked scales.")
 
-    def require_layout(self, layout):
-        layout = self.domain.dist.get_layout_object(layout)
-        if layout != self.layout:
-            raise ValueError("Cannot change locked layout.")
-
     def towards_grid_space(self):
         """Change to next layout towards grid space."""
-        raise ValueError("Cannot change locked layout.")
+        index = self.layout.index
+        new_index = index + 1
+        new_layout = self.dist.layouts[new_index]
+        if new_layout in self.allowed_layouts:
+            super().towards_grid_space()
+        else:
+            raise ValueError("Cannot change locked layout.")
 
     def towards_coeff_space(self):
         """Change to next layout towards coefficient space."""
-        raise ValueError("Cannot change locked layout.")
-
-    def require_grid_space(self, axis=None):
-        """Require one axis (default: all axes) to be in grid space."""
-        if not all(self.layout.grid_space):
+        index = self.layout.index
+        new_index = index - 1
+        new_layout = self.dist.layouts[new_index]
+        if new_layout in self.allowed_layouts:
+            super().towards_coeff_space()
+        else:
             raise ValueError("Cannot change locked layout.")
 
-    def require_coeff_space(self, axis=None):
-        if any(self.layout.grid_space):
-            raise ValueError("Cannot change locked layout.")
+    def lock_to_layouts(self, *layouts):
+        self.allowed_layouts = tuple(layouts)
 
-    def require_local(self, axis):
-        """Require an axis to be local."""
-        if not self.layout.local[axis]:
-            raise ValueError("Cannot change locked layout.")
+    def lock_axis_to_grid(self, axis):
+        self.allowed_layouts = tuple(l for l in self.dist.layouts if l.grid_space[axis])
+
