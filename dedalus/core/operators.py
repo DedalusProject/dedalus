@@ -6,6 +6,7 @@ Abstract and built-in classes defining deferred operations on fields.
 from collections import defaultdict
 from functools import partial, reduce
 import numpy as np
+from numpy.testing._private.utils import raises
 from scipy import sparse
 from numbers import Number
 from inspect import isclass
@@ -1053,7 +1054,7 @@ class Integrate(LinearOperator, metaclass=MultiClass):
     """
 
     @classmethod
-    def _check_args(cls, operand, space, out=None):
+    def _check_args(cls, operand, space):
         # Dispatch by operand basis
         if isinstance(operand, Operand):
             if isinstance(operand.domain.get_basis(space), cls.input_basis_type):
@@ -1061,7 +1062,7 @@ class Integrate(LinearOperator, metaclass=MultiClass):
         return False
 
     @classmethod
-    def _preprocess_args(cls, operand, coord, out=None):
+    def _preprocess_args(cls, operand, coord):
         if isinstance(operand, Number):
             raise SkipDispatchException(output=operand)
         if isinstance(coord, (coords.Coordinate, coords.CoordinateSystem)):
@@ -1070,10 +1071,13 @@ class Integrate(LinearOperator, metaclass=MultiClass):
             coord = operand.domain.get_coord(coord)
         else:
             raise ValueError("coord must be Coordinate or str")
-        return (operand, coord), {'out': out}
+        return (operand, coord), {}
 
-    def __init__(self, operand, coord, out=None):
-        SpectralOperator.__init__(self, operand, out=out)
+    def __init__(self, operand, coord):
+        SpectralOperator.__init__(self, operand)
+        # Require integrand is a scalar
+        if coord in operand.tensorsig:
+            raise ValueError("Can only integrate scalars.")
         # SpectralOperator requirements
         self.coord = coord
         self.input_basis = operand.domain.get_basis(coord)

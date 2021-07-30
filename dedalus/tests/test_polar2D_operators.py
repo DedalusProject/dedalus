@@ -196,7 +196,7 @@ def test_implicit_transpose_tensor(Nphi, Nr, k, dealias, basis, dtype):
 @pytest.mark.parametrize('k', [0, 1, 2, 5])
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_disk, build_annulus])
-@pytest.mark.parametrize('dtype', [np.complex128])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 @pytest.mark.parametrize('n', [0, 1, 2])
 def test_integrate_scalar(Nphi, Nr, k, dealias, dtype, basis, n):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)

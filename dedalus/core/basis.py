@@ -4365,15 +4365,32 @@ class IntegrateSpinBasis(operators.PolarMOperator):
         return type(self)(operand, self.coord, **kw)
 
     def spinindex_out(self, spinindex_in):
-        if spinindex_in is not tuple():
-            raise ValueError("Can only integrate scalars.")
         return (spinindex_in,)
 
-    def radial_matrix(self, spinindex_in, spinindex_out, m):
-        if not (spinindex_in is spinindex_out is tuple()):
-            raise ValueError("Can only integrate scalars.")
+    def radial_matrix(self, m):
         # Wrap cached method
         return self._radial_matrix(self.radial_basis, m)
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        basis = self.input_basis
+        axis = self.radial_basis.last_axis
+        # Set output layout
+        out.set_layout(operand.layout)
+        out.data[:] = 0
+        # Apply operator
+        for m, mg_slice, mc_slice, n_slice in basis.m_maps:
+            if m == 0:
+                # Modify mc_slice to ignore sin component
+                slices = [slice(None) for i in range(basis.dist.dim)]
+                slices[axis-1] = slice(mc_slice.start, mc_slice.start+1)
+                slices[axis] = n_slice
+                slices = tuple(slices)
+                vec_in  = operand.data[slices]
+                vec_out = out.data[slices]
+                A = self.radial_matrix(m)
+                vec_out += apply_matrix(A, vec_in, axis=axis)
 
 
 class IntegrateDisk(operators.Integrate, IntegrateSpinBasis):
@@ -4434,15 +4451,33 @@ class IntegrateSpherical(operators.SphericalEllOperator):
         return type(self)(operand, self.coord, **kw)
 
     def regindex_out(self, regindex_in):
-        if regindex_in is not tuple():
-            raise ValueError("Can only integrate scalars.")
         return (regindex_in,)
 
-    def radial_matrix(self, regindex_in, regindex_out, ell):
-        if not (regindex_in is regindex_out is tuple()):
-            raise ValueError("Can only integrate scalars.")
+    def radial_matrix(self, ell):
         # Wrap cached method
         return self._radial_matrix(self.radial_basis, ell)
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        basis = self.input_basis
+        axis = basis.radial_basis.radial_axis
+        # Set output layout
+        out.set_layout(operand.layout)
+        out.data[:] = 0
+        # Apply operator
+        for ell, m_ind, ell_ind in basis.ell_maps:
+            if ell == 0:
+                slices = [slice(None) for i in range(basis.dist.dim)]
+                # Modify m slice to ignore sin component
+                slices[axis-2] = slice(m_ind.start, m_ind.start+1)
+                slices[axis-1] = ell_ind
+                slices[axis] = basis.n_slice(ell)
+                slices = tuple(slices)
+                vec_in  = operand.data[slices]
+                vec_out = out.data[slices]
+                A = self.radial_matrix(ell)
+                vec_out += apply_matrix(A, vec_in, axis=axis)
 
 
 class IntegrateBall(operators.Integrate, IntegrateSpherical):
