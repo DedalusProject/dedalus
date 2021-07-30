@@ -1054,11 +1054,13 @@ class Integrate(LinearOperator, metaclass=MultiClass):
     """
 
     @classmethod
-    def _check_args(cls, operand, space):
+    def _check_args(cls, operand, coords):
         # Dispatch by operand basis
         if isinstance(operand, Operand):
-            if isinstance(operand.domain.get_basis(space), cls.input_basis_type):
-                return True
+            if isinstance(coords, cls.input_coord_type):
+                basis = operand.domain.get_basis(coords)
+                if isinstance(basis, cls.input_basis_type):
+                    return True
         return False
 
     @classmethod
@@ -1078,6 +1080,58 @@ class Integrate(LinearOperator, metaclass=MultiClass):
         # Require integrand is a scalar
         if coord in operand.tensorsig:
             raise ValueError("Can only integrate scalars.")
+        # SpectralOperator requirements
+        self.coord = coord
+        self.input_basis = operand.domain.get_basis(coord)
+        self.output_basis = self._output_basis(self.input_basis)
+        self.first_axis = self.input_basis.first_axis
+        self.last_axis = self.input_basis.last_axis
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = operand.domain.substitute_basis(self.input_basis, self.output_basis)
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
+
+
+class Average(LinearOperator, metaclass=MultiClass):
+    """
+    Average along one dimension.
+
+    Parameters
+    ----------
+    operand : number or Operand object
+    space : Space object
+
+    """
+
+    @classmethod
+    def _check_args(cls, operand, coords):
+        # Dispatch by operand basis
+        if isinstance(operand, Operand):
+            if isinstance(coords, cls.input_coord_type):
+                basis = operand.domain.get_basis(coords)
+                if isinstance(basis, cls.input_basis_type):
+                    return True
+        return False
+
+    @classmethod
+    def _preprocess_args(cls, operand, coord):
+        if isinstance(operand, Number):
+            raise SkipDispatchException(output=operand)
+        if isinstance(coord, (coords.Coordinate, coords.CoordinateSystem)):
+            pass
+        elif isinstance(coord, str):
+            coord = operand.domain.get_coord(coord)
+        else:
+            raise ValueError("coord must be Coordinate or str")
+        return (operand, coord), {}
+
+    def __init__(self, operand, coord):
+        SpectralOperator.__init__(self, operand)
+        # Require integrand is a scalar
+        if coord in operand.tensorsig:
+            raise ValueError("Can only average scalars.")
         # SpectralOperator requirements
         self.coord = coord
         self.input_basis = operand.domain.get_basis(coord)
@@ -1950,6 +2004,7 @@ class PolarMOperator(SpectralOperator):
                     vec_out = comp_out[tuple(slices)]
                     if vec_in.size and vec_out.size:
                         A = self.radial_matrix(spinindex_in, spinindex_out, m)
+                        print(A.shape, vec_in.shape, vec_out.shape, axis)
                         vec_out += apply_matrix(A, vec_in, axis=axis)
 
     def subproblem_matrix(self, subproblem):
@@ -2092,7 +2147,6 @@ class SphericalEllOperator(SpectralOperator):
                         slices[axis] = radial_basis.n_slice(ell)
                         vec_in  = comp_in[tuple(slices)]
                         vec_out = comp_out[tuple(slices)]
-                        print(ell, slices, vec_in.shape, vec_out.shape)
                         if vec_in.size and vec_out.size:
                             A = self.radial_matrix(regindex_in, regindex_out, ell)
                             vec_out += apply_matrix(A, vec_in, axis=axis)

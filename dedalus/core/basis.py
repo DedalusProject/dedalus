@@ -26,7 +26,7 @@ from ..tools.dispatch import MultiClass
 from ..tools.general import unify
 
 from .spaces import ParityInterval, Disk
-from .coords import Coordinate, S2Coordinates, SphericalCoordinates
+from .coords import Coordinate, S2Coordinates, SphericalCoordinates, PolarCoordinates, AzimuthalCoordinate
 from .domain import Domain
 from .field  import Operand, LockedField
 from .future import FutureLockedField
@@ -627,6 +627,7 @@ class InterpolateJacobi(operators.Interpolate, operators.SpectralOperator1D):
 class IntegrateJacobi(operators.Integrate, operators.SpectralOperator1D):
     """Jacobi polynomial integration."""
 
+    input_coord_type = Coordinate
     input_basis_type = Jacobi
     subaxis_dependence = [True]
     subaxis_coupling = [True]
@@ -873,6 +874,7 @@ class InterpolateComplexFourier(operators.Interpolate, operators.SpectralOperato
 class IntegrateComplexFourier(operators.Integrate, operators.SpectralOperator1D):
     """ComplexFourier integration."""
 
+    input_coord_type = Coordinate
     input_basis_type = ComplexFourier
     subaxis_dependence = [True]
     subaxis_coupling = [False]
@@ -1074,6 +1076,7 @@ class InterpolateRealFourier(operators.Interpolate, operators.SpectralOperator1D
 class IntegrateRealFourier(operators.Integrate, operators.SpectralOperator1D):
     """RealFourier integration."""
 
+    input_coord_type = Coordinate
     input_basis_type = RealFourier
     subaxis_dependence = [True]
     subaxis_coupling = [False]
@@ -4326,8 +4329,72 @@ class LiftTauShell(operators.LiftTau, operators.SphericalEllOperator):
             raise ValueError("This should never happen.")
 
 
-class SphericalAverage(operators.SphericalEllOperator):
+class AzimuthalAverage(metaclass=MultiClass):
+
+    input_coord_type = AzimuthalCoordinate
+
+    @staticmethod
+    def _output_basis(input_basis):
+        # Clone input basis with N_azimuth = 1
+        shape = list(input_basis.shape)
+        shape[0] = 1
+        return input_basis.clone_with(shape=tuple(shape))
+
+    def new_operand(self, operand, **kw):
+        return AzimuthalAverage(operand, self.coord, **kw)
+
+
+class PolarAzimuthalAverage(AzimuthalAverage, operators.Average, operators.PolarMOperator):
+
+    input_basis_type = (DiskBasis, AnnulusBasis)
+
+    @CachedAttribute
+    def radial_basis(self):
+        return self.input_basis.radial_basis
+
+    def spinindex_out(self, spinindex_in):
+        return (spinindex_in,)
+
+    def radial_matrix(self, spinindex_in, spinindex_out, m):
+        if spinindex_out != spinindex_in:
+            raise ValueError("This should never happen.")
+        n_size = self.input_basis.n_size(m)
+        if m == 0:
+            return sparse.identity(n_size)
+        else:
+            return sparse.csr_matrix((0, n_size), dtype=self.dtype)
+
+
+class SphericalAzimuthalAverage(AzimuthalAverage, operators.Average, operators.SphericalEllOperator):
+
+    input_basis_type = (BallBasis, ShellBasis)
+
+    @CachedAttribute
+    def radial_basis(self):
+        return self.input_basis.radial_basis
+
+    def regindex_out(self, regindex_in):
+        return (regindex_in,)
+
+    def radial_matrix(self, regindex_in, regindex_out, ell):
+        if regindex_out != regindex_in:
+            raise ValueError("This should never happen.")
+        n_size = self.input_basis.n_size(ell)
+        if ell == 0:
+            return sparse.identity(n_size)
+        else:
+            return sparse.csr_matrix((0, n_size), dtype=self.dtype)
+
+
+class SphericalAverage(operators.Average, operators.SphericalEllOperator):
     """Todo: skip when Nphi = Ntheta = 1."""
+
+    input_coord_type = S2Coordinates
+    input_basis_type = (BallBasis, ShellBasis)
+
+    @CachedAttribute
+    def radial_basis(self):
+        return self.input_basis.radial_basis
 
     def _output_basis(self, input_basis):
         # Copy with Nphi = Ntheta = 1
@@ -4348,15 +4415,21 @@ class SphericalAverage(operators.SphericalEllOperator):
         if ell == 0:
             return sparse.identity(n_size)
         else:
-            return sparse.csr_matrix(shape=(0, n_size), dtype=self.dtype)
+            return sparse.csr_matrix((0, n_size), dtype=self.dtype)
 
 
 class IntegrateSpinBasis(operators.PolarMOperator):
     """Integrate SpinBasis scalar fields."""
 
+    input_coord_type = PolarCoordinates
+
     @CachedAttribute
     def radial_basis(self):
         return self.input_basis.radial_basis
+
+    @classmethod
+    def _check_coords(cls, basis, coords):
+        return coords is basis.coordsys
 
     def _output_basis(self, input_basis):
         return None
@@ -4439,6 +4512,8 @@ class IntegrateAnnulus(operators.Integrate, IntegrateSpinBasis):
 
 class IntegrateSpherical(operators.SphericalEllOperator):
     """Integrate spherical scalar fields."""
+
+    input_coord_type = SphericalCoordinates
 
     @CachedAttribute
     def radial_basis(self):

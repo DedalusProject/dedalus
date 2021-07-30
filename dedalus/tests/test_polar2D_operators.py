@@ -197,6 +197,22 @@ def test_implicit_transpose_tensor(Nphi, Nr, k, dealias, basis, dtype):
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_disk, build_annulus])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_azimuthal_average_scalar(Nphi, Nr, k, dealias, dtype, basis):
+    c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
+    f = field.Field(dist=d, bases=(b,), dtype=dtype)
+    f.set_scales(b.domain.dealias)
+    f['g'] = r**2 + x
+    h = operators.Average(f, c.coords[0]).evaluate()
+    hg = r**2
+    assert np.allclose(h['g'], hg)
+
+
+@pytest.mark.parametrize('Nphi', [16])
+@pytest.mark.parametrize('Nr', [10])
+@pytest.mark.parametrize('k', [0, 1, 2, 5])
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 @pytest.mark.parametrize('n', [0, 1, 2])
 def test_integrate_scalar(Nphi, Nr, k, dealias, dtype, basis, n):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
