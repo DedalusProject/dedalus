@@ -1470,7 +1470,7 @@ class SpinRecombinationBasis:
 # These are common for S2 and D2
 class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):
 
-    def __init__(self, coordsystem, shape, dealias, dtype=np.complex128, azimuth_library=None):
+    def __init__(self, coordsystem, shape, dtype, dealias, azimuth_library=None):
         self.coordsystem = coordsystem
         self.shape = shape
         self.dtype = dtype
@@ -1533,8 +1533,8 @@ class PolarBasis(SpinBasis):
     dim = 2
     dims = ['azimuth', 'radius']
 
-    def __init__(self, coordsystem, shape, k=0, dealias=(1,1), **kw):
-        super().__init__(coordsystem, shape, dealias, **kw)
+    def __init__(self, coordsystem, shape, dtype, k=0, dealias=(1,1), **kw):
+        super().__init__(coordsystem, shape, dtype, dealias, **kw)
         self.k = k
         self.Nmax = shape[1] - 1
         if self.mmax == 0:
@@ -1614,7 +1614,6 @@ class PolarBasis(SpinBasis):
         else:
             # coeff-coeff space
             Nphi = self.shape[0]
-
             if self.dtype == np.complex128:
                 return self.shape
             elif self.dtype == np.float64:
@@ -1854,13 +1853,14 @@ class PolarBasis(SpinBasis):
                 matrix = sparse.csr_matrix((N, N))
         return matrix
 
+
 class AnnulusBasis(PolarBasis):
 
     transforms = {}
     subaxis_dependence = (False, True)
 
-    def __init__(self, coordsystem, shape, radii=(1,2), k=0, alpha=(-0.5,-0.5), dealias=(1,1), radius_library=None, **kw):
-        super().__init__(coordsystem, shape, k, tuple(dealias), **kw)
+    def __init__(self, coordsystem, shape, dtype, radii=(1,2), k=0, alpha=(-0.5,-0.5), dealias=(1,1), radius_library=None, **kw):
+        super().__init__(coordsystem, shape, dtype, k=k, dealias=tuple(dealias), **kw)
         if min(radii) <= 0:
             raise ValueError("Radii must be positive.")
         if radius_library is None:
@@ -2096,8 +2096,8 @@ class DiskBasis(PolarBasis):
     transforms = {}
     subaxis_dependence = (True, True)
 
-    def __init__(self, coordsystem, shape, radius=1, k=0, alpha=0, dealias=(1,1), radius_library=None, **kw):
-        super().__init__(coordsystem, shape, k, dealias, **kw)
+    def __init__(self, coordsystem, shape, dtype, radius=1, k=0, alpha=0, dealias=(1,1), radius_library=None, **kw):
+        super().__init__(coordsystem, shape, dtype, k=k, dealias=dealias, **kw)
         if radius <= 0:
             raise ValueError("Radius must be positive.")
         if radius_library is None:
@@ -2354,8 +2354,8 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
     dims = ['azimuth', 'colatitude']
     transforms = {}
 
-    def __init__(self, coordsystem, shape, radius=1, dealias=(1,1), colatitude_library=None, **kw):
-        super().__init__(coordsystem, shape, dealias, **kw)
+    def __init__(self, coordsystem, shape, dtype, radius=1, dealias=(1,1), colatitude_library=None, **kw):
+        super().__init__(coordsystem, shape, dtype, dealias, **kw)
         if radius <= 0:
             raise ValueError("Radius must be positive.")
         if colatitude_library is None:

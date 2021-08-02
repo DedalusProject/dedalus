@@ -1963,6 +1963,7 @@ def reduced_view_4(data, axis):
     N3 = int(np.prod(shape[axis+2:]))
     return data.reshape((N0, N1, N2, N3))
 
+
 class PolarMOperator(SpectralOperator):
 
     subaxis_dependence = [True, True]  # Depends on m and n
@@ -1986,7 +1987,7 @@ class PolarMOperator(SpectralOperator):
         """Perform operation."""
         operand = self.args[0]
         input_basis = self.input_basis
-        axis = self.radial_basis.last_axis
+        axis = self.input_basis.first_axis + 1
         # Set output layout
         out.set_layout(operand.layout)
         out.data[:] = 0
@@ -2004,7 +2005,6 @@ class PolarMOperator(SpectralOperator):
                     vec_out = comp_out[tuple(slices)]
                     if vec_in.size and vec_out.size:
                         A = self.radial_matrix(spinindex_in, spinindex_out, m)
-                        print(A.shape, vec_in.shape, vec_out.shape, axis)
                         vec_out += apply_matrix(A, vec_in, axis=axis)
 
     def subproblem_matrix(self, subproblem):
