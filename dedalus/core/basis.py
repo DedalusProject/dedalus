@@ -26,7 +26,7 @@ from ..tools.dispatch import MultiClass
 from ..tools.general import unify
 
 from .spaces import ParityInterval, Disk
-from .coords import Coordinate, S2Coordinates, SphericalCoordinates
+from .coords import Coordinate, S2Coordinates, SphericalCoordinates, PolarCoordinates, AzimuthalCoordinate
 from .domain import Domain
 from .field  import Operand, LockedField
 from .future import FutureLockedField
@@ -627,6 +627,7 @@ class InterpolateJacobi(operators.Interpolate, operators.SpectralOperator1D):
 class IntegrateJacobi(operators.Integrate, operators.SpectralOperator1D):
     """Jacobi polynomial integration."""
 
+    input_coord_type = Coordinate
     input_basis_type = Jacobi
     subaxis_dependence = [True]
     subaxis_coupling = [True]
@@ -873,6 +874,7 @@ class InterpolateComplexFourier(operators.Interpolate, operators.SpectralOperato
 class IntegrateComplexFourier(operators.Integrate, operators.SpectralOperator1D):
     """ComplexFourier integration."""
 
+    input_coord_type = Coordinate
     input_basis_type = ComplexFourier
     subaxis_dependence = [True]
     subaxis_coupling = [False]
@@ -1074,6 +1076,7 @@ class InterpolateRealFourier(operators.Interpolate, operators.SpectralOperator1D
 class IntegrateRealFourier(operators.Integrate, operators.SpectralOperator1D):
     """RealFourier integration."""
 
+    input_coord_type = Coordinate
     input_basis_type = RealFourier
     subaxis_dependence = [True]
     subaxis_coupling = [False]
@@ -1467,7 +1470,7 @@ class SpinRecombinationBasis:
 # These are common for S2 and D2
 class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):
 
-    def __init__(self, coordsystem, shape, dealias, dtype=np.complex128, azimuth_library=None):
+    def __init__(self, coordsystem, shape, dtype, dealias, azimuth_library=None):
         self.coordsystem = coordsystem
         self.shape = shape
         self.dtype = dtype
@@ -1530,8 +1533,8 @@ class PolarBasis(SpinBasis):
     dim = 2
     dims = ['azimuth', 'radius']
 
-    def __init__(self, coordsystem, shape, k=0, dealias=(1,1), **kw):
-        super().__init__(coordsystem, shape, dealias, **kw)
+    def __init__(self, coordsystem, shape, dtype, k=0, dealias=(1,1), **kw):
+        super().__init__(coordsystem, shape, dtype, dealias, **kw)
         self.k = k
         self.Nmax = shape[1] - 1
         if self.mmax == 0:
@@ -1611,7 +1614,6 @@ class PolarBasis(SpinBasis):
         else:
             # coeff-coeff space
             Nphi = self.shape[0]
-
             if self.dtype == np.complex128:
                 return self.shape
             elif self.dtype == np.float64:
@@ -1851,13 +1853,14 @@ class PolarBasis(SpinBasis):
                 matrix = sparse.csr_matrix((N, N))
         return matrix
 
+
 class AnnulusBasis(PolarBasis):
 
     transforms = {}
     subaxis_dependence = (False, True)
 
-    def __init__(self, coordsystem, shape, radii=(1,2), k=0, alpha=(-0.5,-0.5), dealias=(1,1), radius_library=None, **kw):
-        super().__init__(coordsystem, shape, k, tuple(dealias), **kw)
+    def __init__(self, coordsystem, shape, dtype, radii=(1,2), k=0, alpha=(-0.5,-0.5), dealias=(1,1), radius_library=None, **kw):
+        super().__init__(coordsystem, shape, dtype, k=k, dealias=tuple(dealias), **kw)
         if min(radii) <= 0:
             raise ValueError("Radii must be positive.")
         if radius_library is None:
@@ -2093,8 +2096,8 @@ class DiskBasis(PolarBasis):
     transforms = {}
     subaxis_dependence = (True, True)
 
-    def __init__(self, coordsystem, shape, radius=1, k=0, alpha=0, dealias=(1,1), radius_library=None, **kw):
-        super().__init__(coordsystem, shape, k, dealias, **kw)
+    def __init__(self, coordsystem, shape, dtype, radius=1, k=0, alpha=0, dealias=(1,1), radius_library=None, **kw):
+        super().__init__(coordsystem, shape, dtype, k=k, dealias=dealias, **kw)
         if radius <= 0:
             raise ValueError("Radius must be positive.")
         if radius_library is None:
@@ -2351,8 +2354,8 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
     dims = ['azimuth', 'colatitude']
     transforms = {}
 
-    def __init__(self, coordsystem, shape, radius=1, dealias=(1,1), colatitude_library=None, **kw):
-        super().__init__(coordsystem, shape, dealias, **kw)
+    def __init__(self, coordsystem, shape, dtype, radius=1, dealias=(1,1), colatitude_library=None, **kw):
+        super().__init__(coordsystem, shape, dtype, dealias, **kw)
         if radius <= 0:
             raise ValueError("Radius must be positive.")
         if colatitude_library is None:
@@ -4324,6 +4327,279 @@ class LiftTauShell(operators.LiftTau, operators.SphericalEllOperator):
             return matrix
         else:
             raise ValueError("This should never happen.")
+
+
+class AzimuthalAverage(metaclass=MultiClass):
+
+    input_coord_type = AzimuthalCoordinate
+
+    @staticmethod
+    def _output_basis(input_basis):
+        # Clone input basis with N_azimuth = 1
+        shape = list(input_basis.shape)
+        shape[0] = 1
+        return input_basis.clone_with(shape=tuple(shape))
+
+    def new_operand(self, operand, **kw):
+        return AzimuthalAverage(operand, self.coord, **kw)
+
+
+class PolarAzimuthalAverage(AzimuthalAverage, operators.Average, operators.PolarMOperator):
+
+    input_basis_type = (DiskBasis, AnnulusBasis)
+
+    @CachedAttribute
+    def radial_basis(self):
+        return self.input_basis.radial_basis
+
+    def spinindex_out(self, spinindex_in):
+        return (spinindex_in,)
+
+    def radial_matrix(self, spinindex_in, spinindex_out, m):
+        if spinindex_out != spinindex_in:
+            raise ValueError("This should never happen.")
+        n_size = self.input_basis.n_size(m)
+        if m == 0:
+            return sparse.identity(n_size)
+        else:
+            return sparse.csr_matrix((0, n_size), dtype=self.dtype)
+
+
+class SphericalAzimuthalAverage(AzimuthalAverage, operators.Average, operators.SpectralOperator):
+
+    input_basis_type = (BallBasis, ShellBasis)
+    subaxis_dependence = [True, False, False]  # Depends on m only
+    subaxis_coupling = [False, False, False]  # No coupling
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        # Set output layout
+        out.set_layout(operand.layout)
+        out.data[:] = 0
+        # Apply operator
+        local_m = self.input_basis.local_m
+        m0_in = (self.input_basis.local_m == 0)
+        m0_out = (self.output_basis.local_m == 0)
+        regcomps = self.input_basis.radial_basis.regularity_classes(operand.tensorsig)
+        # Copy m = 0 for every component
+        for regindex, regtotal in np.ndenumerate(regcomps):
+            comp_in = operand.data[regindex]
+            comp_out = out.data[regindex]
+            comp_out[m0_out] = comp_in[m0_in]
+
+
+class SphericalAverage(operators.Average, operators.SphericalEllOperator):
+    """Todo: skip when Nphi = Ntheta = 1."""
+
+    input_coord_type = S2Coordinates
+    input_basis_type = (BallBasis, ShellBasis)
+
+    @CachedAttribute
+    def radial_basis(self):
+        return self.input_basis.radial_basis
+
+    def _output_basis(self, input_basis):
+        # Copy with Nphi = Ntheta = 1
+        shape = list(input_basis.shape)
+        shape[0] = shape[1] = 1
+        return input_basis.clone_with(shape=shape)
+
+    def new_operand(self, operand, **kw):
+        return SphericalAverage(operand, self.coord, **kw)
+
+    def regindex_out(self, regindex_in):
+        return (regindex_in,)
+
+    def radial_matrix(self, regindex_in, regindex_out, ell):
+        if regindex_out != regindex_in:
+            raise ValueError("This should never happen.")
+        n_size = self.input_basis.n_size(ell)
+        if ell == 0:
+            return sparse.identity(n_size)
+        else:
+            return sparse.csr_matrix((0, n_size), dtype=self.dtype)
+
+
+class IntegrateSpinBasis(operators.PolarMOperator):
+    """Integrate SpinBasis scalar fields."""
+
+    input_coord_type = PolarCoordinates
+
+    @CachedAttribute
+    def radial_basis(self):
+        return self.input_basis.radial_basis
+
+    @classmethod
+    def _check_coords(cls, basis, coords):
+        return coords is basis.coordsys
+
+    def _output_basis(self, input_basis):
+        return None
+
+    def new_operand(self, operand, **kw):
+        return type(self)(operand, self.coord, **kw)
+
+    def spinindex_out(self, spinindex_in):
+        return (spinindex_in,)
+
+    def radial_matrix(self, m):
+        # Wrap cached method
+        return self._radial_matrix(self.radial_basis, m)
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        basis = self.input_basis
+        axis = self.radial_basis.last_axis
+        # Set output layout
+        out.set_layout(operand.layout)
+        out.data[:] = 0
+        # Apply operator
+        for m, mg_slice, mc_slice, n_slice in basis.m_maps:
+            if m == 0:
+                # Modify mc_slice to ignore sin component
+                slices = [slice(None) for i in range(basis.dist.dim)]
+                slices[axis-1] = slice(mc_slice.start, mc_slice.start+1)
+                slices[axis] = n_slice
+                slices = tuple(slices)
+                vec_in  = operand.data[slices]
+                vec_out = out.data[slices]
+                A = self.radial_matrix(m)
+                vec_out += apply_matrix(A, vec_in, axis=axis)
+
+
+class IntegrateDisk(operators.Integrate, IntegrateSpinBasis):
+    """Integrate DiskBasis scalar fields."""
+
+    input_basis_type = DiskBasis
+
+    @staticmethod
+    @CachedMethod
+    def _radial_matrix(basis, m):
+        n_size = basis.n_size(m)
+        if m == 0:
+            N = basis.shape[1]
+            z0, w0 = dedalus_sphere.zernike.quadrature(2, N, k=0)
+            Qk = dedalus_sphere.zernike.polynomials(2, n_size, basis.alpha+basis.k, abs(m), z0)
+            matrix = (w0[None, :] @ Qk.T).astype(basis.dtype)
+            matrix *= basis.radius**2
+            matrix *= 2 * np.pi # Fourier contribution
+        else:
+            matrix= sparse.csr_matrix((0, n_size), dtype=basis.dtype)
+        return matrix
+
+
+class IntegrateAnnulus(operators.Integrate, IntegrateSpinBasis):
+    """Integrate AnnulusBasis scalar fields."""
+
+    input_basis_type = AnnulusBasis
+
+    @staticmethod
+    @CachedMethod
+    def _radial_matrix(basis, m):
+        n_size = basis.n_size(m)
+        if m == 0:
+            N = 2 * basis.shape[1]  # Add some dealiasing to help with large k
+            z0, w0 = dedalus_sphere.jacobi.quadrature(N, a=0, b=0)
+            r0 = basis.dR / 2 * (z0 + basis.rho)
+            Qk = dedalus_sphere.jacobi.polynomials(n_size, basis.alpha[0]+basis.k, basis.alpha[1]+basis.k, z0)
+            w0_geom = r0 * w0 * (r0 / basis.dR)**(-basis.k)
+            matrix = (w0_geom[None, :] @ Qk.T).astype(basis.dtype)
+            matrix *= basis.dR / 2
+            matrix *= 2 * np.pi # Fourier contribution
+        else:
+            matrix= sparse.csr_matrix((0, n_size), dtype=basis.dtype)
+        return matrix
+
+
+class IntegrateSpherical(operators.SphericalEllOperator):
+    """Integrate spherical scalar fields."""
+
+    input_coord_type = SphericalCoordinates
+
+    @CachedAttribute
+    def radial_basis(self):
+        return self.input_basis.radial_basis
+
+    def _output_basis(self, input_basis):
+        return None
+
+    def new_operand(self, operand, **kw):
+        return type(self)(operand, self.coord, **kw)
+
+    def regindex_out(self, regindex_in):
+        return (regindex_in,)
+
+    def radial_matrix(self, ell):
+        # Wrap cached method
+        return self._radial_matrix(self.radial_basis, ell)
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        basis = self.input_basis
+        axis = basis.radial_basis.radial_axis
+        # Set output layout
+        out.set_layout(operand.layout)
+        out.data[:] = 0
+        # Apply operator
+        for ell, m_ind, ell_ind in basis.ell_maps:
+            if ell == 0:
+                slices = [slice(None) for i in range(basis.dist.dim)]
+                # Modify m slice to ignore sin component
+                slices[axis-2] = slice(m_ind.start, m_ind.start+1)
+                slices[axis-1] = ell_ind
+                slices[axis] = basis.n_slice(ell)
+                slices = tuple(slices)
+                vec_in  = operand.data[slices]
+                vec_out = out.data[slices]
+                A = self.radial_matrix(ell)
+                vec_out += apply_matrix(A, vec_in, axis=axis)
+
+
+class IntegrateBall(operators.Integrate, IntegrateSpherical):
+    """Integrate BallBasis scalar fields."""
+
+    input_basis_type = BallBasis
+
+    @staticmethod
+    @CachedMethod
+    def _radial_matrix(basis, ell):
+        n_size = basis.n_size(ell)
+        if ell == 0:
+            N = basis.shape[2]
+            z0, w0 = dedalus_sphere.zernike.quadrature(3, N, k=0)
+            Qk = dedalus_sphere.zernike.polynomials(3, n_size, basis.alpha+basis.k, ell, z0)
+            matrix = (w0[None, :] @ Qk.T).astype(basis.dtype)
+            matrix *= basis.radius**3
+            matrix *= 4 * np.pi / np.sqrt(2) # SWSH contribution
+        else:
+            matrix= sparse.csr_matrix((0, n_size), dtype=basis.dtype)
+        return matrix
+
+
+class IntegrateShell(operators.Integrate, IntegrateSpherical):
+    """Integrate ShellBasis scalar fields."""
+
+    input_basis_type = ShellBasis
+
+    @staticmethod
+    @CachedMethod
+    def _radial_matrix(basis, ell):
+        n_size = basis.n_size(ell)
+        if ell == 0:
+            N = 2 * basis.shape[2]  # Add some dealiasing to help with large k
+            z0, w0 = dedalus_sphere.jacobi.quadrature(N, a=0, b=0)
+            r0 = basis.dR / 2 * (z0 + basis.rho)
+            Qk = dedalus_sphere.jacobi.polynomials(n_size, basis.alpha[0]+basis.k, basis.alpha[1]+basis.k, z0)
+            w0_geom = r0**2 * w0 * (r0 / basis.dR)**(-basis.k)
+            matrix = (w0_geom[None, :] @ Qk.T).astype(basis.dtype)
+            matrix *= basis.dR / 2
+            matrix *= 4 * np.pi / np.sqrt(2) # SWSH contribution
+        else:
+            matrix= sparse.csr_matrix((0, n_size), dtype=basis.dtype)
+        return matrix
 
 
 class InterpolateAzimuth(FutureLockedField, operators.Interpolate):

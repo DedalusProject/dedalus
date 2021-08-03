@@ -6,6 +6,7 @@ Abstract and built-in classes defining deferred operations on fields.
 from collections import defaultdict
 from functools import partial, reduce
 import numpy as np
+from numpy.testing._private.utils import raises
 from scipy import sparse
 from numbers import Number
 from inspect import isclass
@@ -1053,27 +1054,84 @@ class Integrate(LinearOperator, metaclass=MultiClass):
     """
 
     @classmethod
-    def _check_args(cls, operand, space, out=None):
+    def _check_args(cls, operand, coords):
         # Dispatch by operand basis
         if isinstance(operand, Operand):
-            if isinstance(operand.domain.get_basis(space), cls.input_basis_type):
-                return True
+            if isinstance(coords, cls.input_coord_type):
+                basis = operand.domain.get_basis(coords)
+                if isinstance(basis, cls.input_basis_type):
+                    return True
         return False
 
     @classmethod
-    def _preprocess_args(cls, operand, coord, out=None):
+    def _preprocess_args(cls, operand, coord):
         if isinstance(operand, Number):
             raise SkipDispatchException(output=operand)
-        if isinstance(coord, coords.Coordinate):
+        if isinstance(coord, (coords.Coordinate, coords.CoordinateSystem)):
             pass
         elif isinstance(coord, str):
             coord = operand.domain.get_coord(coord)
         else:
             raise ValueError("coord must be Coordinate or str")
-        return (operand, coord), {'out': out}
+        return (operand, coord), {}
 
-    def __init__(self, operand, coord, out=None):
-        SpectralOperator.__init__(self, operand, out=out)
+    def __init__(self, operand, coord):
+        SpectralOperator.__init__(self, operand)
+        # Require integrand is a scalar
+        if coord in operand.tensorsig:
+            raise ValueError("Can only integrate scalars.")
+        # SpectralOperator requirements
+        self.coord = coord
+        self.input_basis = operand.domain.get_basis(coord)
+        self.output_basis = self._output_basis(self.input_basis)
+        self.first_axis = self.input_basis.first_axis
+        self.last_axis = self.input_basis.last_axis
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = operand.domain.substitute_basis(self.input_basis, self.output_basis)
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
+
+
+class Average(LinearOperator, metaclass=MultiClass):
+    """
+    Average along one dimension.
+
+    Parameters
+    ----------
+    operand : number or Operand object
+    space : Space object
+
+    """
+
+    @classmethod
+    def _check_args(cls, operand, coords):
+        # Dispatch by operand basis
+        if isinstance(operand, Operand):
+            if isinstance(coords, cls.input_coord_type):
+                basis = operand.domain.get_basis(coords)
+                if isinstance(basis, cls.input_basis_type):
+                    return True
+        return False
+
+    @classmethod
+    def _preprocess_args(cls, operand, coord):
+        if isinstance(operand, Number):
+            raise SkipDispatchException(output=operand)
+        if isinstance(coord, (coords.Coordinate, coords.CoordinateSystem)):
+            pass
+        elif isinstance(coord, str):
+            coord = operand.domain.get_coord(coord)
+        else:
+            raise ValueError("coord must be Coordinate or str")
+        return (operand, coord), {}
+
+    def __init__(self, operand, coord):
+        SpectralOperator.__init__(self, operand)
+        # Require integrand is a scalar
+        if coord in operand.tensorsig:
+            raise ValueError("Can only average scalars.")
         # SpectralOperator requirements
         self.coord = coord
         self.input_basis = operand.domain.get_basis(coord)
@@ -1905,6 +1963,7 @@ def reduced_view_4(data, axis):
     N3 = int(np.prod(shape[axis+2:]))
     return data.reshape((N0, N1, N2, N3))
 
+
 class PolarMOperator(SpectralOperator):
 
     subaxis_dependence = [True, True]  # Depends on m and n
@@ -1928,7 +1987,7 @@ class PolarMOperator(SpectralOperator):
         """Perform operation."""
         operand = self.args[0]
         input_basis = self.input_basis
-        axis = self.radius_axis
+        axis = self.input_basis.first_axis + 1
         # Set output layout
         out.set_layout(operand.layout)
         out.data[:] = 0
@@ -1944,8 +2003,9 @@ class PolarMOperator(SpectralOperator):
                     slices[axis] = n_slice
                     vec_in  = comp_in[tuple(slices)]
                     vec_out = comp_out[tuple(slices)]
-                    A = self.radial_matrix(spinindex_in, spinindex_out, m)
-                    vec_out += apply_matrix(A, vec_in, axis=axis)
+                    if vec_in.size and vec_out.size:
+                        A = self.radial_matrix(spinindex_in, spinindex_out, m)
+                        vec_out += apply_matrix(A, vec_in, axis=axis)
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
@@ -1978,7 +2038,7 @@ class PolarMOperator(SpectralOperator):
     def spinindex_out(self, spinindex_in):
         raise NotImplementedError("spinindex_out not implemented for type %s" %type(self))
 
-    def radial_matrix(spinindex_in, spinindex_out, m):
+    def radial_matrix(self, spinindex_in, spinindex_out, m):
         raise NotImplementedError()
 
 
@@ -2087,8 +2147,9 @@ class SphericalEllOperator(SpectralOperator):
                         slices[axis] = radial_basis.n_slice(ell)
                         vec_in  = comp_in[tuple(slices)]
                         vec_out = comp_out[tuple(slices)]
-                        A = self.radial_matrix(regindex_in, regindex_out, ell)
-                        vec_out += apply_matrix(A, vec_in, axis=axis)
+                        if vec_in.size and vec_out.size:
+                            A = self.radial_matrix(regindex_in, regindex_out, ell)
+                            vec_out += apply_matrix(A, vec_in, axis=axis)
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]

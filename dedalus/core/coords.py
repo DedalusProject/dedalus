@@ -88,6 +88,10 @@ class CartesianCoordinates(CoordinateSystem):
         return np.identity(self.dim**order)
 
 
+class AzimuthalCoordinate(Coordinate):
+    pass
+
+
 class S2Coordinates(CoordinateSystem):
     """
     S2 coordinate system: (azimuth, colatitude)
@@ -99,7 +103,7 @@ class S2Coordinates(CoordinateSystem):
     dim = 2
 
     def __init__(self, azimuth, colatitude):
-        self.azimuth = Coordinate(azimuth, cs=self)
+        self.azimuth = AzimuthalCoordinate(azimuth, cs=self)
         self.colatitude = Coordinate(colatitude, cs=self)
         self.coords = (self.azimuth, self.colatitude)
 
@@ -154,7 +158,7 @@ class PolarCoordinates(CoordinateSystem):
     dim = 2
 
     def __init__(self, azimuth, radius):
-        self.azimuth = Coordinate(azimuth, cs=self)
+        self.azimuth = AzimuthalCoordinate(azimuth, cs=self)
         self.radius = Coordinate(radius, cs=self)
         self.coords = (self.azimuth, self.radius)
 
@@ -219,7 +223,7 @@ class SphericalCoordinates(CoordinateSystem):
     right_handed = False
 
     def __init__(self, azimuth, colatitude, radius):
-        self.azimuth = Coordinate(azimuth, cs=self)
+        self.azimuth = AzimuthalCoordinate(azimuth, cs=self)
         self.colatitude = Coordinate(colatitude, cs=self)
         self.radius = Coordinate(radius, cs=self)
         self.S2coordsys = S2Coordinates(azimuth, colatitude)
