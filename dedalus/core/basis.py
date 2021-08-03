@@ -4365,25 +4365,28 @@ class PolarAzimuthalAverage(AzimuthalAverage, operators.Average, operators.Polar
             return sparse.csr_matrix((0, n_size), dtype=self.dtype)
 
 
-class SphericalAzimuthalAverage(AzimuthalAverage, operators.Average, operators.SphericalEllOperator):
+class SphericalAzimuthalAverage(AzimuthalAverage, operators.Average, operators.SpectralOperator):
 
     input_basis_type = (BallBasis, ShellBasis)
+    subaxis_dependence = [True, False, False]  # Depends on m only
+    subaxis_coupling = [False, False, False]  # No coupling
 
-    @CachedAttribute
-    def radial_basis(self):
-        return self.input_basis.radial_basis
-
-    def regindex_out(self, regindex_in):
-        return (regindex_in,)
-
-    def radial_matrix(self, regindex_in, regindex_out, ell):
-        if regindex_out != regindex_in:
-            raise ValueError("This should never happen.")
-        n_size = self.input_basis.n_size(ell)
-        if ell == 0:
-            return sparse.identity(n_size)
-        else:
-            return sparse.csr_matrix((0, n_size), dtype=self.dtype)
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        # Set output layout
+        out.set_layout(operand.layout)
+        out.data[:] = 0
+        # Apply operator
+        local_m = self.input_basis.local_m
+        m0_in = (self.input_basis.local_m == 0)
+        m0_out = (self.output_basis.local_m == 0)
+        regcomps = self.input_basis.radial_basis.regularity_classes(operand.tensorsig)
+        # Copy m = 0 for every component
+        for regindex, regtotal in np.ndenumerate(regcomps):
+            comp_in = operand.data[regindex]
+            comp_out = out.data[regindex]
+            comp_out[m0_out] = comp_in[m0_in]
 
 
 class SphericalAverage(operators.Average, operators.SphericalEllOperator):
