@@ -1093,6 +1093,9 @@ class Integrate(LinearOperator, metaclass=MultiClass):
         self.tensorsig = operand.tensorsig
         self.dtype = operand.dtype
 
+    def new_operand(self, operand, **kw):
+        return Integrate(operand, self.coord, **kw)
+
 
 class Average(LinearOperator, metaclass=MultiClass):
     """
