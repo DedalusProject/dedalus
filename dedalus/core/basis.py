@@ -3985,7 +3985,7 @@ class ConvertRegularity(operators.Convert, operators.SphericalEllOperator):
 class ConvertConstantRegularity(operators.Convert, operators.SphericalEllOperator):
 
     input_basis_type = type(None)
-    output_basis_type = RegularityBasis
+    output_basis_type = (RegularityBasis, Spherical3DBasis)
 
     def __init__(self, operand, output_basis, out=None):
         operators.Convert.__init__(self, operand, output_basis, out=out)

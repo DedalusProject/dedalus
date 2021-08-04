@@ -47,7 +47,7 @@ tau_u = field.Field(dist=d, bases=(b_S2,), tensorsig=(c,), dtype=dtype)
 tau_T = field.Field(dist=d, bases=(b_S2,), dtype=dtype)
 r_vec = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
 r_vec['g'][2] = r
-T_source = field.Field(dist=d, bases=(b,), dtype=dtype)
+T_source = field.Field(dist=d, dtype=dtype)
 T_source['g'] = 3
 ez = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
 ez['g'][1] = -np.sin(theta)
