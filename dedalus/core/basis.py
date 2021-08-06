@@ -4338,7 +4338,10 @@ class LiftTauBallRadius(operators.LiftTau, operators.SphericalEllOperator):
             submatrices.append(submatrix_row)
         matrix = sparse.bmat(submatrices)
         matrix.tocsr()
-        return matrix
+        # Convert tau from spin to regularity first
+        Q = dedalus_sphere.spin_operators.Intertwiner(ell, indexing=(-1,+1,0))(len(self.tensorsig))  # Fix for product domains
+        matrix = matrix @ sparse.kron(Q.T, sparse.identity(np.prod(subshape_in), format='csr'))
+        return matrix.tocsr()
 
     def radial_matrix(self, regindex_in, regindex_out, m):
         if regindex_in == regindex_out:
