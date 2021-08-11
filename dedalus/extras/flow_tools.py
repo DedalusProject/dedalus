@@ -7,8 +7,6 @@ import numpy as np
 from mpi4py import MPI
 
 from ..core import operators
-from ..core.field import Field
-from ..core.arithmetic import DotProduct as dot
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -206,9 +204,9 @@ class CFL:
                 self.stored_dt = dt
         return self.stored_dt
 
-    def add_frequency(self, freq, scales=None):
+    def add_frequency(self, freq):
         """Add an on-grid frequency."""
-        self.frequencies.add_task(freq, layout='g', scales=scales)
+        self.frequencies.add_task(freq, layout='g', scales=freq.domain.dealias)
 
     def add_velocity(self, velocity):
         """
@@ -219,16 +217,9 @@ class CFL:
         velocity : field object
             The velocity; must be a vector with a tensorsig of length 1
         """
-        from ..core.basis import MultidimensionalBasis
         coords = velocity.tensorsig
         if len(coords) != 1:
             raise ValueError("Velocity must be a vector")
-        domain = velocity.domain
-        inv_spacing = Field(dist=self.solver.dist, bases=domain.bases, tensorsig=coords, dtype=velocity.dtype)
+        cfl_operator = operators.AdvectiveCFL(velocity, coords[0])
+        self.add_frequency(cfl_operator)
 
-        for axis in range(domain.dim):
-            basis = domain.full_bases[axis]
-            inv_spacing['g'][axis] = np.abs(1/domain.grid_spacing(axis, scales=None))
-        inv_spacing = operators.Grid(inv_spacing).evaluate()
-        freq = dot(velocity, inv_spacing)
-        self.add_frequency(freq, scales=None)

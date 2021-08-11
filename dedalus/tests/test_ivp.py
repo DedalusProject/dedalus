@@ -84,86 +84,12 @@ def test_heat_1d_periodic(x_basis_class, Nx, timestepper, dtype):
 
 @pytest.mark.parametrize('timestepper', [timesteppers.SBDF1])
 @pytest.mark.parametrize('Nx', [32])
-@pytest.mark.parametrize('dtype,x_basis_class', [(np.complex128, basis.ComplexFourier), (np.float64, basis.RealFourier)])
-@pytest.mark.parametrize('safety', [0.2, 0.4])
-@pytest.mark.parametrize('dealias', [1, 3/2])
-def test_fourier_cfl(x_basis_class, Nx, timestepper, dtype, safety, dealias):
-    Lx = 1
-    # Bases
-    c = coords.Coordinate('x')
-    d = distributor.Distributor((c,))
-    xb = x_basis_class(c, size=Nx, bounds=(0, Lx), dealias=dealias)
-    x = xb.local_grid(1)
-    # Fields
-    u = field.Field(name='u', dist=d, tensorsig=(c,), bases=(xb,), dtype=dtype)
-    velocity = lambda x: np.sin(2*np.pi*x/Lx)
-    u['g'][0] = velocity(x)
-    # Problem
-    ddt = operators.TimeDerivative
-    problem = problems.IVP([u])
-    problem.add_equation((ddt(u), 0))
-    # Solver
-    solver = solvers.InitialValueSolver(problem, timestepper)
-    # cfl initialization
-    dt = 1
-    cfl = flow_tools.CFL(solver, dt, safety=safety, cadence=1)
-    cfl.add_velocity(u)
-    # step and compute dt
-    solver.step(dt)
-    dt = cfl.compute_dt()
-    u_max = 1
-    grid_spacing = Lx / Nx
-    dt_comparison = safety*(u_max/grid_spacing)**(-1)
-    # Check solution
-    assert np.allclose(dt, dt_comparison)
-
-@pytest.mark.parametrize('timestepper', [timesteppers.SBDF1])
-@pytest.mark.parametrize('Nx', [32])
-@pytest.mark.parametrize('dtype', [np.complex128, np.float64])
-@pytest.mark.parametrize('safety', [0.2, 0.4])
-@pytest.mark.parametrize('dealias', [1, 3/2])
-def test_chebyshev_cfl(Nx, timestepper, dtype, safety, dealias):
-    # Bases
-    Lx = 1
-    c = coords.Coordinate('x')
-    d = distributor.Distributor((c,))
-    xb = basis.ChebyshevT(c, size=Nx, bounds=(0, Lx), dealias=dealias)
-    x = xb.local_grid(1)
-    # Fields
-    u = field.Field(name='u', dist=d, tensorsig=(c,), bases=(xb,), dtype=dtype)
-    velocity = lambda x: x
-    u['g'][0] = velocity(x)
-    # Problem
-    ddt = operators.TimeDerivative
-    problem = problems.IVP([u])
-    problem.add_equation((ddt(u), 0))
-    # Solver
-    solver = solvers.InitialValueSolver(problem, timestepper)
-    # cfl initialization
-    dt = 1
-    cfl = flow_tools.CFL(solver, dt, safety=safety, cadence=1)
-    cfl.add_velocity(u)
-    # step and compute dt
-    solver.step(dt)
-    dt = cfl.compute_dt()
-
-    u_max = x.max()
-    stretch = Lx/2
-    last_point_theta = np.pi * ( (Nx - 1) + 0.5) / Nx
-    last_point_spacing = np.sin(last_point_theta)*np.pi / Nx
-    grid_spacing = stretch*last_point_spacing
-    dt_comparison = safety*(u_max/grid_spacing)**(-1)
-    # Check solution
-    assert np.allclose(dt, dt_comparison)
-
-@pytest.mark.parametrize('timestepper', [timesteppers.SBDF1])
-@pytest.mark.parametrize('Nx', [32])
-@pytest.mark.parametrize('Nz', [32])
+@pytest.mark.parametrize('Nz', [16])
 @pytest.mark.parametrize('dtype,x_basis_class', [(np.complex128, basis.ComplexFourier), (np.float64, basis.RealFourier)])
 @pytest.mark.parametrize('safety', [0.2, 0.4])
 @pytest.mark.parametrize('z_velocity_mag', [0, 2])
 @pytest.mark.parametrize('dealias', [1, 3/2])
-def test_box_cfl(x_basis_class, Nx, Nz, timestepper, dtype, safety, z_velocity_mag, dealias):
+def test_flow_tools_cfl(x_basis_class, Nx, Nz, timestepper, dtype, safety, z_velocity_mag, dealias):
     # Bases
     Lx = 2
     Lz = 1
@@ -195,24 +121,99 @@ def test_box_cfl(x_basis_class, Nx, Nz, timestepper, dtype, safety, z_velocity_m
     solver.step(dt)
     dt = cfl.compute_dt()
 
-    u_max = 1
-    w_max = -z_velocity_mag*z.max()
-    grid_spacing_fourier = Lx / Nx
-    grid_spacing_chebyshev = (Lz/2)*np.sin(np.pi*( (Nz - 1) + 0.5) / Nz )*np.pi / Nz
-    cfl_freq = np.sum([np.abs(u_max/grid_spacing_fourier), np.abs(w_max/grid_spacing_chebyshev)])
+    cheby_spacing = zb.grid_spacing(scale=dealias)
+    fourier_spacing = xb.grid_spacing(scale=dealias)
+    cfl_freq = np.abs(u['g'][0] / (fourier_spacing * dealias))
+    cfl_freq += np.abs(u['g'][1] / (cheby_spacing * dealias))
+    cfl_freq = np.max(cfl_freq)
     dt_comparison = safety*(cfl_freq)**(-1)
     assert np.allclose(dt, dt_comparison)
 
-@pytest.mark.xfail
+
+
+@pytest.mark.parametrize('timestepper', [timesteppers.SBDF1])
+@pytest.mark.parametrize('Nx', [32])
+@pytest.mark.parametrize('dtype,x_basis_class', [(np.complex128, basis.ComplexFourier), (np.float64, basis.RealFourier)])
+@pytest.mark.parametrize('dealias', [1, 3/2])
+def test_fourier_AdvectiveCFL(x_basis_class, Nx, timestepper, dtype, dealias):
+    Lx = 1
+    # Bases
+    c = coords.CartesianCoordinates('x')
+    d = distributor.Distributor((c,))
+    xb = x_basis_class(c.coords[0], size=Nx, bounds=(0, Lx), dealias=dealias)
+    x = xb.local_grid(1)
+    # Fields
+    u = field.Field(name='u', dist=d, tensorsig=(c,), bases=(xb,), dtype=dtype)
+    velocity = lambda x: np.sin(2*np.pi*x/Lx)
+    u['g'][0] = velocity(x)
+    # AdvectiveCFL initialization
+    cfl = operators.AdvectiveCFL(u, c)
+    cfl_freq = cfl.evaluate()['g']
+    comparison_freq = np.abs(u['g']) / (dealias * xb.grid_spacing(scale=dealias))
+    assert np.allclose(cfl_freq, comparison_freq)
+
+@pytest.mark.parametrize('timestepper', [timesteppers.SBDF1])
+@pytest.mark.parametrize('Nx', [32])
+@pytest.mark.parametrize('dtype', [np.complex128, np.float64])
+@pytest.mark.parametrize('dealias', [1, 3/2])
+def test_chebyshev_AdvectiveCFL(Nx, timestepper, dtype, dealias):
+    # Bases
+    Lx = 1
+    c = coords.CartesianCoordinates('x')
+    d = distributor.Distributor((c,))
+    xb = basis.ChebyshevT(c.coords[0], size=Nx, bounds=(0, Lx), dealias=dealias)
+    x = xb.local_grid(1)
+    # Fields
+    u = field.Field(name='u', dist=d, tensorsig=(c,), bases=(xb,), dtype=dtype)
+    velocity = lambda x: x
+    u['g'][0] = velocity(x)
+    # AdvectiveCFL initialization
+    cfl = operators.AdvectiveCFL(u, c)
+    cfl_freq = cfl.evaluate()['g']
+    comparison_freq = np.abs(u['g']) / (dealias * xb.grid_spacing(scale=dealias))
+    assert np.allclose(cfl_freq, comparison_freq)
+
+@pytest.mark.parametrize('timestepper', [timesteppers.SBDF1])
+@pytest.mark.parametrize('Nx', [32])
+@pytest.mark.parametrize('Nz', [16])
+@pytest.mark.parametrize('dtype,x_basis_class', [(np.complex128, basis.ComplexFourier), (np.float64, basis.RealFourier)])
+@pytest.mark.parametrize('z_velocity_mag', [0, 2])
+@pytest.mark.parametrize('dealias', [1, 3/2])
+def test_box_AdvectiveCFL(x_basis_class, Nx, Nz, timestepper, dtype, z_velocity_mag, dealias):
+    # Bases
+    Lx = 2
+    Lz = 1
+    c = coords.CartesianCoordinates('x', 'z')
+    d = distributor.Distributor((c,))
+    xb = x_basis_class(c.coords[0], size=Nx, bounds=(0, Lx), dealias=dealias)
+    x = xb.local_grid(1)
+    zb = basis.ChebyshevT(c.coords[1], size=Nz, bounds=(0, Lz), dealias=dealias)
+    z = zb.local_grid(1)
+    b = (xb, zb)
+    # Fields
+    u = field.Field(name='u', dist=d, tensorsig=(c,), bases=b, dtype=dtype)
+    print(u.domain.get_basis(c))
+    # Test Fourier CFL
+    fourier_velocity = lambda x: np.sin(4*np.pi*x/Lx)
+    chebyshev_velocity = lambda z: -z_velocity_mag*z
+    u['g'][0] = fourier_velocity(x)
+    u['g'][1] = chebyshev_velocity(z)
+    # AdvectiveCFL initialization
+    cfl = operators.AdvectiveCFL(u, c)
+    cfl_freq = cfl.evaluate()['g']
+    comparison_freq = np.abs(u['g'][0])  / (dealias * xb.grid_spacing(scale=dealias))
+    comparison_freq += np.abs(u['g'][1]) / (dealias * zb.grid_spacing(scale=dealias))[None,:]
+    assert np.allclose(cfl_freq, comparison_freq)
+
+
 @pytest.mark.parametrize('timestepper', [timesteppers.SBDF1])
 @pytest.mark.parametrize('Lmax', [15])
 @pytest.mark.parametrize('dtype', [np.complex128, np.float64])
-@pytest.mark.parametrize('safety', [0.2, 0.4])
 @pytest.mark.parametrize('dealias', [1, 3/2])
-def test_S2_cfl(Lmax, timestepper, dtype, safety, dealias):
+def test_S2_AdvectiveCFL(Lmax, timestepper, dtype, dealias):
     radius=1
     # Bases
-    c, d, sb, phi, theta = build_S2(2*(Lmax+1), (Lmax+1), dealias, dtype=dtype)
+    c, d, sb, phi, theta = build_S2(2*(Lmax+1), (Lmax+1), dealias, dtype=dtype, grid_scale=1)
     x = radius*np.sin(theta)*np.cos(phi)
     y = radius*np.sin(theta)*np.sin(phi)
     z = radius*np.cos(theta)
@@ -221,147 +222,70 @@ def test_S2_cfl(Lmax, timestepper, dtype, safety, dealias):
     # For a scalar field f = x*z, set velocity as u = grad(f). (S2 grad currently not implemened)
     u['g'][0] = -radius*np.cos(theta)*np.sin(phi)
     u['g'][1] = radius*(np.cos(theta)**2 - np.sin(theta)**2)*np.cos(phi)
-    # Problem
-    ddt = operators.TimeDerivative
-    problem = problems.IVP([u])
-    problem.add_equation((ddt(u), 0))
-    # Solver
-    solver = solvers.InitialValueSolver(problem, timestepper)
-    # cfl initialization
-    dt = 1
-    cfl = flow_tools.CFL(solver, dt, safety=safety, cadence=1)
-    cfl.add_velocity(u)
-    # step and compute dt
-    solver.step(dt)
-    dt = cfl.compute_dt()
-    # compare to reference
-    u_max_phi   = radius*np.cos(theta.min())*np.sin(np.pi/4)
-    u_max_theta = radius*(np.cos(theta.min())**2 - np.sin(theta.min())**2)*np.cos(np.pi/4)
-    spacing = radius/(1 + Lmax)
-    cfl_freq = np.sum([np.abs(u_max_phi/spacing), np.abs(u_max_theta/spacing)])
-    dt_comparison = safety*(cfl_freq)**(-1)
-    assert np.allclose(dt, dt_comparison)
+    # AdvectiveCFL initialization
+    cfl = operators.AdvectiveCFL(u, c)
+    cfl_freq = cfl.evaluate()['g']
+    comparison_freq = np.sqrt(u['g'][0]**2 + u['g'][1]**2) * np.sqrt(Lmax*(Lmax+1)) / radius
+    assert np.allclose(cfl_freq, comparison_freq)
 
 @pytest.mark.parametrize('timestepper', [timesteppers.SBDF1])
 @pytest.mark.parametrize('Lmax', [15])
 @pytest.mark.parametrize('Nmax', [15])
 @pytest.mark.parametrize('dtype', [np.complex128, np.float64])
-@pytest.mark.parametrize('safety', [0.2, 0.4])
 @pytest.mark.parametrize('dealias', [1, 3/2])
-def test_ball_cfl(Lmax, Nmax, timestepper, dtype, safety, dealias):
+def test_ball_AdvectiveCFL(Lmax, Nmax, timestepper, dtype, dealias):
     radius = 2
     # Bases
-    c, d, b, phi, theta, r, x, y, z = build_ball(2*(Lmax+1), (Lmax+1), (Nmax+1), radius, dealias, dtype=dtype)
+    c, d, b, phi, theta, r, x, y, z = build_ball(2*(Lmax+1), (Lmax+1), (Nmax+1), radius, dealias, dtype=dtype, grid_scale=1)
     # Fields
     f = field.Field(name='f', dist=d, bases=(b,), dtype=dtype)
     f['g'] = x*y*z
     u      = operators.Gradient(f, c).evaluate()
-    # Problem
-    ddt = operators.TimeDerivative
-    lap = lambda A: operators.Laplacian(A, c)
-    problem = problems.IVP([u,])
-    problem.add_equation((ddt(u) + lap(u) - lap(u), 0), condition='ntheta != 0')
-    problem.add_equation((ddt(u), 0), condition='ntheta == 0')
-    # Solver
-    solver = solvers.InitialValueSolver(problem, timestepper, matrix_coupling=[False, False, True])
-    # cfl initialization
-    dt = 1
-    cfl = flow_tools.CFL(solver, dt, safety=safety, cadence=1)
-    cfl.add_velocity(u)
-    # step and compute dt
-    solver.step(dt)
-    dt = cfl.compute_dt()
-    #Compare to reference
-    inverse_spacing = field.Field(dist=d, tensorsig=(c,), bases=(b,), dtype=dtype)
-    inverse_spacing['g'][0] = 1/np.abs(radius/(1 + Lmax))
-    inverse_spacing['g'][1] = 1/np.abs(radius/(1 + Lmax))
-    inverse_spacing['g'][2] = 1/np.abs(np.gradient(r.flatten()))
-    inverse_spacing = operators.Grid(inverse_spacing).evaluate()
-    operation = arithmetic.DotProduct(u, inverse_spacing)
-    output = operation.evaluate()
-    output.require_scales(1)
-    cfl_freq = np.max(np.abs(output['g']))
-    dt_comparison = safety*(cfl_freq)**(-1)
-    assert np.allclose(dt, dt_comparison)
+    # AdvectiveCFL initialization
+    cfl = operators.AdvectiveCFL(u, c)
+    cfl_freq = cfl.evaluate()['g']
+    comparison_freq = np.sqrt(u['g'][0]**2 + u['g'][1]**2) / b.grid_spacing(0, scales=(dealias, dealias, dealias))
+    comparison_freq += np.abs(u['g'][2]) / (b.grid_spacing(2, scales=(dealias, dealias, dealias)) * dealias)
+    assert np.allclose(cfl_freq, comparison_freq)
+
 
 @pytest.mark.parametrize('timestepper', [timesteppers.SBDF1])
 @pytest.mark.parametrize('Lmax', [15])
 @pytest.mark.parametrize('Nmax', [15])
 @pytest.mark.parametrize('dtype', [np.complex128, np.float64])
-@pytest.mark.parametrize('safety', [0.2, 0.4])
 @pytest.mark.parametrize('dealias', [1, 3/2])
-def test_spherical_shell_cfl(Lmax, Nmax, timestepper, dtype, safety, dealias):
+def test_spherical_shell_AdvectiveCFL(Lmax, Nmax, timestepper, dtype, dealias):
     radii = (0.5, 2)
     # Bases
-    c, d, b, phi, theta, r, x, y, z = build_shell(2*(Lmax+1), (Lmax+1), (Nmax+1), radii, dealias, dtype=dtype)
+    c, d, b, phi, theta, r, x, y, z = build_shell(2*(Lmax+1), (Lmax+1), (Nmax+1), radii, dealias, dtype=dtype, grid_scale=1)
     # Fields
     f = field.Field(name='f', dist=d, bases=(b,), dtype=dtype)
     f['g'] = x*y*z
     u      = operators.Gradient(f, c).evaluate()
+    # AdvectiveCFL initialization
+    cfl = operators.AdvectiveCFL(u, c)
+    cfl_freq = cfl.evaluate()['g']
+    comparison_freq = np.sqrt(u['g'][0]**2 + u['g'][1]**2) / b.grid_spacing(0, scales=(dealias, dealias, dealias))
+    comparison_freq += np.abs(u['g'][2]) / (b.grid_spacing(2, scales=(dealias, dealias, dealias)) * dealias)
+    assert np.allclose(cfl_freq, comparison_freq)
 
-    # Problem
-    ddt = operators.TimeDerivative
-    lap = lambda A: operators.Laplacian(A, c)
-    problem = problems.IVP([u])
-    problem.add_equation((ddt(u) + lap(u) - lap(u), 0), condition='ntheta != 0')
-    problem.add_equation((ddt(u), 0), condition='ntheta == 0')
-    # Solver
-    solver = solvers.InitialValueSolver(problem, timestepper, matrix_coupling=(False, False, True))
-    # cfl initialization
-    dt = 1
-    cfl = flow_tools.CFL(solver, dt, safety=safety, cadence=1)
-    cfl.add_velocity(u)
-    # step and compute dt
-    solver.step(dt)
-    dt = cfl.compute_dt()
-    #Compare to reference
-    inverse_spacing = field.Field(dist=d, tensorsig=(c,), bases=(b,), dtype=dtype)
-    inverse_spacing['g'][0] = 1/np.abs(r/(1 + Lmax))
-    inverse_spacing['g'][1] = 1/np.abs(r/(1 + Lmax))
-    inverse_spacing['g'][2] = 1/np.abs(np.gradient(r.flatten()))
-    inverse_spacing = operators.Grid(inverse_spacing).evaluate()
-    operation = arithmetic.DotProduct(u, inverse_spacing)
-    output = operation.evaluate()
-    output.require_scales(1)
-    cfl_freq = np.max(np.abs(output['g']))
-    dt_comparison = safety*(cfl_freq)**(-1)
-    assert np.allclose(dt, dt_comparison)
-
-@pytest.mark.xfail
 @pytest.mark.parametrize('timestepper', [timesteppers.SBDF1])
-@pytest.mark.parametrize('Nphi', [32])
+@pytest.mark.parametrize('Nphi', [16])
 @pytest.mark.parametrize('Nr', [15])
 @pytest.mark.parametrize('dtype', [np.complex128, np.float64])
-@pytest.mark.parametrize('safety', [0.2, 0.4])
 @pytest.mark.parametrize('dealias', [1, 3/2])
-def test_disk_cfl(Nr, Nphi, timestepper, dtype, safety, dealias):
+def test_disk_AdvectiveCFL(Nr, Nphi, timestepper, dtype, dealias):
     radius = 2
     k = 0
     # Bases
-    c, d, db, phi, r, x, y = build_disk(Nphi, Nr, radius, dealias, dtype=dtype)
+    c, d, db, phi, r, x, y = build_disk(Nphi, Nr, radius, dealias, dtype=dtype, grid_scale=1)
     # Fields
     f = field.Field(name='f', dist=d, bases=(db,), dtype=dtype)
     f['g'] = x*y
     u = operators.Gradient(f, c).evaluate()
-    # Problem
-    ddt = operators.TimeDerivative
-    problem = problems.IVP([u])
-    problem.add_equation((ddt(u), 0))
-    # Solver
-    solver = solvers.InitialValueSolver(problem, timestepper, matrix_coupling=(False, True))
-    # cfl initialization
-    dt = 1
-    cfl = flow_tools.CFL(solver, dt, safety=safety, cadence=1)
-    cfl.add_velocity(u)
-    # step and compute dt
-    solver.step(dt)
-    dt = cfl.compute_dt()
-    #Compare to reference
-    inverse_spacing = field.Field(dist=d, tensorsig=(c,), bases=(db,), dtype=dtype)
-    inverse_spacing['g'][0] = np.abs(1/(radius/(1 + db.mmax)))
-    inverse_spacing['g'][1] = np.abs(1/np.gradient(r.flatten()))
-    inverse_spacing = operators.Grid(inverse_spacing).evaluate()
-    operation = arithmetic.DotProduct(u, inverse_spacing)
-    cfl_freq = np.max(np.abs(operation.evaluate()['g']))
-    dt_comparison = safety*(cfl_freq)**(-1)
-    assert np.allclose(dt, dt_comparison)
+    # AdvectiveCFL initialization
+    cfl = operators.AdvectiveCFL(u, c)
+    cfl_freq = cfl.evaluate()['g']
+    comparison_freq = np.abs(u['g'][0]) / db.grid_spacing(0, scales=(dealias, dealias))
+    comparison_freq += np.abs(u['g'][1]) / (db.grid_spacing(1, scales=(dealias, dealias)) * dealias)
+    assert np.allclose(cfl_freq, comparison_freq)

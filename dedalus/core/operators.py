@@ -3090,3 +3090,80 @@ k(I*I), (D*I), (I*D)
 
 
 """
+
+
+class AdvectiveCFL(FutureLockedField, metaclass=MultiClass):
+    """
+    Calculates the scalar advective grid-crossing frequency associated with a given velocity vector.
+
+    Parameters
+    ----------
+    operand : number or Operand object
+    space : Space object
+
+    """
+
+    name = 'cfl'
+
+    @classmethod
+    def _preprocess_args(cls, operand, coord):
+        if isinstance(coord, (coords.Coordinate, coords.CoordinateSystem)):
+            pass
+        elif isinstance(coord, str):
+            coord = operand.domain.get_coord(coord)
+        else:
+            raise ValueError("coord must be Coordinate or str")
+        return (operand, coord), dict()
+
+    @classmethod
+    def _check_args(cls, operand, coords):
+        # Dispatch by operand basis
+        if isinstance(operand, Operand):
+            if isinstance(coords, cls.input_coord_type):
+                basis = operand.domain.get_basis(coords)
+                if isinstance(basis, cls.input_basis_type):
+                    return True
+        return False
+
+    def __init__(self, operand, coords):
+        super().__init__(operand)
+        if len(operand.tensorsig) != 1:
+            raise ValueError("Velocity must be a vector")
+        self.operand = operand
+        self.coords = coords
+        self.input_basis = operand.domain.get_basis(coords)
+        # FutureField requirements
+        self.domain = operand.domain
+        self.tensorsig = tuple()
+        self.dtype = operand.dtype
+
+    def new_operand(self, operand, **kw):
+        return AdvectiveCFL(operand, self.coords, **kw)
+
+    def check_conditions(self):
+        """Check that operands are in full grid space."""
+        layout = self.args[0].layout
+        return all(layout.grid_space)
+
+    def enforce_conditions(self):
+        """Require operands to be in full grid space."""
+        self.args[0].require_grid_space()
+
+    def operate(self, out):
+        """Perform operation."""
+        arg = self.args[0]
+        layout = arg.layout
+        # Set output layout
+        out.set_layout(layout)
+        # Set output lock
+        out.lock_axis_to_grid(0)
+        # Compute CFL frequencies
+        self.compute_cfl_frequency(arg, out)
+
+    def compute_cfl_frequency(self, velocity, out): 
+        """Return a scalar multi-D field of the cfl frequency everywhere in the domain."""
+        raise NotImplementedError("Must call a subclass CFL.")
+
+
+
+
