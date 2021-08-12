@@ -5062,7 +5062,12 @@ class CartesianAdvectiveCFL(operators.AdvectiveCFL):
         grid_spacing = np.zeros_like(velocity.data)
         for i, c in enumerate(coordsys.coords):
             basis = velocity.domain.get_basis(c)
-            grid_spacing[i] = reshape_vector(basis.grid_spacing(scale=basis.dealias[0]) * basis.dealias[0], dim=self.dist.dim, axis=i)
+            global_spacing = basis.grid_spacing(scale=basis.dealias[0])
+            if isinstance(global_spacing, np.ndarray):
+                local_elements = self.dist.grid_layout.local_elements(self.domain, scales=basis.dealias[0])[i]
+                grid_spacing[i] = reshape_vector(np.ravel(global_spacing)[local_elements] * basis.dealias[0], dim=self.dist.dim, axis=i)
+            else:
+                grid_spacing[i] = global_spacing * basis.dealias[0]
         return grid_spacing
 
     def compute_cfl_frequency(self, velocity, out):
