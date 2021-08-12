@@ -20,6 +20,7 @@ import numpy as np
 from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
 from dedalus.tools import logging
 from dedalus.tools.parsing import split_equation
+from dedalus.extras import flow_tools
 
 import logging
 logger = logging.getLogger(__name__)
@@ -73,12 +74,6 @@ logger.info("Problem built")
 solver = solvers.InitialValueSolver(problem, timesteppers.RK222)
 solver.stop_sim_time = 5.01
 
-#if print_condition_numbers:
-#    for i, subproblem in enumerate(solver.subproblems):
-#        M = subproblem.M_min
-#        L = subproblem.L_min
-#        print(f"Rank: {MPI.COMM_WORLD.rank}, subproblem: {i}, group: {subproblem.group}, cond: {np.linalg.cond((M+L).A)}")
-
 # Initial conditions
 # component 0 is the x component
 u['g'][0] = 1/2 + 1/2 * (np.tanh( (z-0.5)/0.1 ) - np.tanh( (z+0.5)/0.1 ))
@@ -91,24 +86,18 @@ u['g'][1] = 0.1 * ( np.sin(2*np.pi*x/Lx) * np.exp(-(z-0.5)**2/0.01) - np.sin(2*n
 # Save s every 0.05 time units
 snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt = 0.05, max_writes=10, virtual_file=True)
 snapshots.add_task(s)
-#snapshots.add_task(dot(u, ez), name='w')
 
-# TODO: dictionary handler
-#integrate = lambda A: operators.integ(operators.integ(A, 'z'), 'x')
-#KE = integrate(0.5*dot(u, u))
-dx = x[1,0]-x[0,0]
-dz = z[0,1]-z[0,0]
-KEz = np.sum(0.5*u['g'][1]*u['g'][1]*dx*dz)
+# Report maximum |w|
+flow = flow_tools.GlobalFlowProperty(solver, cadence=10)
+flow.add_property(dot(u,ez)**2, name='w2')
 
 # TODO: CFL
 dt = 5e-3
 
 # Main loop
 while solver.ok:
-    if solver.iteration % 10 == 0:
-        u.set_scales((1,1))
-        # we calculate the vertical kinetic energy to track the growth of the instability
-        KEz = np.sum(0.5*u['g'][1]*u['g'][1]*dx*dz)
-        logger.info('Iteration: %i, t: %f, KEz = %f' %(solver.iteration, solver.sim_time, KEz))
     solver.step(dt)
+
+    if solver.iteration % 10 == 0:
+        logger.info('Iteration: %i, t: %f, max w = %f' %(solver.iteration, solver.sim_time, np.sqrt(flow.max('w2'))))
 
