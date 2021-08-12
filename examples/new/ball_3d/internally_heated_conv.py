@@ -12,13 +12,19 @@ We use stress-free boundary conditions, and maintain the temperature on the oute
 equal to 0. The convection is driven by the internal heating term S/P. The conductive
 equilibrium is T=S/6*(1-r^2).
 
+The simulation will run to t=10, about the time for the first convective plumes to hit the
+top boundary. After running this initial simulation, you can restart the simulation by
+running with keyword '--restart', i.e.,
+
+mpirun -np 4 python3 internally_heated_conv.py --restart
+
 """
 
 import numpy as np
 from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
 from dedalus.tools import logging
 from dedalus.tools.parsing import split_equation
-from dedalus.extras.flow_tools import GlobalArrayReducer
+from dedalus.extras import flow_tools
 import time
 from mpi4py import MPI
 import sys
@@ -29,6 +35,9 @@ logger = logging.getLogger(__name__)
 from dedalus.tools.config import config
 config['linear algebra']['MATRIX_FACTORIZER'] = 'SuperLUNaturalFactorizedTranspose'
 
+# TODO:
+# NCC basis
+# CFL
 
 restart = False
 if len(sys.argv) > 1 and sys.argv[1] == '--restart':
@@ -109,19 +118,7 @@ logger.info("Problem built")
 solver = solvers.InitialValueSolver(problem, ts)
 solver.stop_sim_time = t_end
 
-# Analysis
-# TODO: integral operators
-t_list = []
-E_list = []
-weight_theta = b.local_colatitude_weights(1)
-weight_r = b.local_radial_weights(1)
-reducer = GlobalArrayReducer(d.comm_cart)
-vol_test = np.sum(weight_r*weight_theta+0*p['g'])*np.pi/(Lmax+1)/L_dealias
-vol_test = reducer.reduce_scalar(vol_test, MPI.SUM)
-vol_correction = 4*np.pi/3/vol_test
-
 # Initial condition
-
 if not restart:
     T['g'] = 1-r**2
     #T['g'] += 0.04*r**3*(1-r**2)*(np.cos(3*phi)+np.sin(3*phi))*np.sin(theta)**3
@@ -132,6 +129,7 @@ else:
     write, dt = solver.load_state('checkpoints/checkpoints_s11.h5')
     mode = 'append'
 
+# Analysis
 slices = solver.evaluator.add_file_handler('slices', sim_dt = 0.1, max_writes = 10, virtual_file=True, mode=mode)
 slices.add_task(T(theta=np.pi/2), name='T eq')
 slices.add_task(T(phi=0), name='T mer right')
@@ -141,6 +139,10 @@ slices.add_task(T(r=1/2), name='T r=0.5')
 checkpoints = solver.evaluator.add_file_handler('checkpoints', sim_dt = 1, max_writes = 1, virtual_file=True, mode=mode)
 checkpoints.add_tasks(solver.state)
 
+# Report maximum |u|
+flow = flow_tools.GlobalFlowProperty(solver, cadence=10)
+flow.add_property(np.sqrt(dot(u,u)), name='u')
+
 # TODO: CFL
 dt = 0.5e-2
 
@@ -149,13 +151,6 @@ hermitian_cadence = 100
 # Main loop
 start_time = time.time()
 while solver.ok:
-    if solver.iteration % 10 == 0:
-        E0 = np.sum(vol_correction*weight_r*weight_theta*u['g'].real**2)
-        E0 = 0.5*E0*(np.pi)/(Lmax+1)/L_dealias
-        E0 = reducer.reduce_scalar(E0, MPI.SUM)
-        logger.info("t = %f, E = %e" %(solver.sim_time, E0))
-        t_list.append(solver.sim_time)
-        E_list.append(E0)
 
     # Impose hermitian symmetry on two consecutive timesteps because we are using a 2-stage timestepper
     if solver.iteration % hermitian_cadence in [0, 1]:
@@ -163,5 +158,9 @@ while solver.ok:
             f.require_grid_space()
 
     solver.step(dt)
+
+    if solver.iteration % 10 == 0:
+        logger.info("t = %f, |u|_max = %e" %(solver.sim_time, flow.max('u')))
+
 end_time = time.time()
 logger.info('Run time: %f' %(end_time-start_time))
