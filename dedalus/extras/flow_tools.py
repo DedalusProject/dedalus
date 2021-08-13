@@ -86,7 +86,7 @@ class GlobalFlowProperty:
 
         self.solver = solver
         self.cadence = cadence
-        self.reducer = GlobalArrayReducer(solver.domain.dist.comm_cart)
+        self.reducer = GlobalArrayReducer(solver.dist.comm_cart)
         self.properties = solver.evaluator.add_dictionary_handler(iter=cadence)
 
     def add_property(self, property, name, precompute_integral=False):
@@ -211,7 +211,7 @@ class CFL:
     def add_velocity(self, velocity):
         """
         Add grid-crossing frequency from a velocity vector.
-        
+
         Parameters
         ---------
         velocity : field object
