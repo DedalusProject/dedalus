@@ -1812,6 +1812,67 @@ class AngularComponent(SphericalComponent, metaclass=MultiClass):
         return AngularComponent(operand, self.index, **kw)
 
 
+class PolarComponent(LinearOperator):
+
+    @classmethod
+    def _preprocess_args(cls, operand, index=0, out=None):
+        if isinstance(operand, Number):
+            raise SkipDispatchException(output=0)
+        return [operand], {'index': index, 'out': out}
+
+    def __init__(self, operand, index=0, out=None):
+        if index < 0: index += len(operand.tensorsig)
+        if index >= len(operand.tensorsig):
+            raise ValueError("index greater than rank")
+        self.index = index
+        self.coordsys = operand.tensorsig[self.index]
+        if not isinstance(self.coordsys, coords.PolarCoordinates):
+            raise ValueError("Can only take the PolarComponent of a PolarCoordinate vector")
+        super().__init__(operand, out=out)
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = operand.domain
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
+
+    def check_conditions(self):
+        """Can always take components"""
+        return True
+
+    def enforce_conditions(self):
+        """Can always take components"""
+        pass
+
+    def matrix_dependence(self, *vars):
+        return self.operand.matrix_dependence(*vars)
+
+    def matrix_coupling(self, *vars):
+        return self.operand.matrix_coupling(*vars)
+
+
+class AzimuthalComponent(PolarComponent, metaclass=MultiClass):
+
+    @classmethod
+    def _check_args(cls, operand, index=0, out=None):
+        # Dispatch by coordinate system
+        if isinstance(operand, Operand):
+            if index < 0: index += len(operand.tensorsig)
+            coordsys = operand.tensorsig[index]
+            basis = operand.domain.get_basis(coordsys)
+            if isinstance(basis, cls.basis_type):
+                return True
+        return False
+
+    def __init__(self, operand, index=0, out=None):
+        super().__init__(operand, index=index, out=out)
+        tensorsig = operand.tensorsig
+        self.tensorsig = tuple( tensorsig[:index] + tensorsig[index+1:] )
+
+    def new_operand(self, operand, **kw):
+        return AzimuthalComponent(operand, self.index, **kw)
+
+
 class Gradient(LinearOperator, metaclass=MultiClass):
 
     name = "Grad"

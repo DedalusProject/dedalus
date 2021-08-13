@@ -4388,7 +4388,10 @@ class LiftTauShell(operators.LiftTau, operators.SphericalEllOperator):
             submatrices.append(submatrix_row)
         matrix = sparse.bmat(submatrices)
         matrix.tocsr()
-        return matrix
+        # Convert tau from spin to regularity first
+        Q = dedalus_sphere.spin_operators.Intertwiner(ell, indexing=(-1,+1,0))(len(self.tensorsig))  # Fix for product domains
+        matrix = matrix @ sparse.kron(Q.T, sparse.identity(np.prod(subshape_in), format='csr'))
+        return matrix.tocsr()
 
     def radial_matrix(self, regindex_in, regindex_out, m):
         if regindex_in == regindex_out:
@@ -5040,6 +5043,45 @@ class S2AngularComponent(operators.AngularComponent):
         np.copyto(out.data, operand.data[axslice(self.index,0,2)])
 
 
+class PolarAzimuthalComponent(operators.AzimuthalComponent):
+
+    basis_type = IntervalBasis
+    name = 'Azimuthal'
+
+    def subproblem_matrix(self, subproblem):
+        # I'm not sure how to generalize this to higher order tensors, since we do
+        # not have spin_weights for the S1 basis.
+        matrix = np.array([[1,0]])
+
+#        operand = self.args[0]
+#        basis = self.domain.get_basis(self.coordsys)
+#        S_in = basis.spin_weights(operand.tensorsig)
+#        S_out = basis.spin_weights(self.tensorsig)
+#
+#        matrix = []
+#        for spinindex_out, spintotal_out in np.ndenumerate(S_out):
+#            matrix_row = []
+#            for spinindex_in, spintotal_in in np.ndenumerate(S_in):
+#                if tuple(spinindex_in[:self.index] + spinindex_in[self.index+1:]) == spinindex_out and spinindex_in[self.index] == 2:
+#                    matrix_row.append( 1 )
+#                else:
+#                    matrix_row.append( 0 )
+#            matrix.append(matrix_row)
+#        matrix = np.array(matrix)
+        if self.dtype == np.float64:
+            # Block-diag for sin/cos parts for real dtype
+            matrix = np.kron(matrix, np.eye(2))
+        return matrix
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        # Set output layout
+        layout = operand.layout
+        out.set_layout(layout)
+        np.copyto(out.data, operand.data[axindex(self.index,0)])
+
+
 class CartesianAdvectiveCFL(operators.AdvectiveCFL):
 
     input_coord_type = CartesianCoordinates
@@ -5052,7 +5094,7 @@ class CartesianAdvectiveCFL(operators.AdvectiveCFL):
         for i, c in enumerate(coordsys.coords):
             basis = velocity.domain.get_basis(c)
             dealias = basis.dealias[0]
-            axis_spacing = basis.local_grid_spacing(i, dealias) * dealias 
+            axis_spacing = basis.local_grid_spacing(i, dealias) * dealias
             if isinstance(basis, Jacobi) and basis.a == -1/2 and basis.b == -1/2:
                 #Special case for ChebyshevT (a=b=-1/2)
                 N = len(np.ravel(basis.local_grids(scales=(dealias,))[0]))
@@ -5060,7 +5102,7 @@ class CartesianAdvectiveCFL(operators.AdvectiveCFL):
                 theta = np.pi * (i + 1/2) / N
                 axis_spacing[:] = dealias * basis.COV.stretch * np.sin(theta) * np.pi / N
             elif isinstance(basis, (ComplexFourier, RealFourier)):
-                #Special case for Fourier 
+                #Special case for Fourier
                 N = basis.grid_shape((dealias,))[0]
                 native_spacing = 2 * np.pi / N
                 axis_spacing[:] = dealias * native_spacing * basis.COV.stretch
@@ -5149,5 +5191,6 @@ class Spherical3DAdvectiveCFL(operators.AdvectiveCFL):
         S2AdvectiveCFL.compute_cfl_frequency(self, velocity, out)
         u_r = np.abs(velocity.data[2])
         out.data += u_r / self.cfl_spacing()[1]
+
 
 from . import transforms
