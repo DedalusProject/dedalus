@@ -212,7 +212,7 @@ class CFL:
         """
         Add grid-crossing frequency from a velocity vector.
         
-        Arguments
+        Parameters
         ---------
         velocity : field object
             The velocity; must be a vector with a tensorsig of length 1

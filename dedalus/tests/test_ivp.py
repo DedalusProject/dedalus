@@ -121,15 +121,13 @@ def test_flow_tools_cfl(x_basis_class, Nx, Nz, timestepper, dtype, safety, z_vel
     solver.step(dt)
     dt = cfl.compute_dt()
 
-    cheby_spacing = zb.grid_spacing(scale=dealias)
-    fourier_spacing = xb.grid_spacing(scale=dealias)
-    cfl_freq = np.abs(u['g'][0] / (fourier_spacing * dealias))
-    cfl_freq += np.abs(u['g'][1] / (cheby_spacing * dealias))
+    fourier_spacing = xb.local_cfl_spacing(0, scale=dealias)
+    cheby_spacing = zb.local_cfl_spacing(1, scale=dealias)
+    cfl_freq = np.abs(u['g'][0] / fourier_spacing )
+    cfl_freq += np.abs(u['g'][1] / cheby_spacing )
     cfl_freq = np.max(cfl_freq)
     dt_comparison = safety*(cfl_freq)**(-1)
     assert np.allclose(dt, dt_comparison)
-
-
 
 @pytest.mark.parametrize('timestepper', [timesteppers.SBDF1])
 @pytest.mark.parametrize('Nx', [32])
@@ -149,7 +147,7 @@ def test_fourier_AdvectiveCFL(x_basis_class, Nx, timestepper, dtype, dealias):
     # AdvectiveCFL initialization
     cfl = operators.AdvectiveCFL(u, c)
     cfl_freq = cfl.evaluate()['g']
-    comparison_freq = np.abs(u['g']) / (dealias * xb.grid_spacing(scale=dealias))
+    comparison_freq = np.abs(u['g']) / xb.local_cfl_spacing(0, scale=dealias)
     assert np.allclose(cfl_freq, comparison_freq)
 
 @pytest.mark.parametrize('timestepper', [timesteppers.SBDF1])
@@ -170,7 +168,7 @@ def test_chebyshev_AdvectiveCFL(Nx, timestepper, dtype, dealias):
     # AdvectiveCFL initialization
     cfl = operators.AdvectiveCFL(u, c)
     cfl_freq = cfl.evaluate()['g']
-    comparison_freq = np.abs(u['g']) / (dealias * xb.grid_spacing(scale=dealias))
+    comparison_freq = np.abs(u['g']) / xb.local_cfl_spacing(0, scale=dealias)
     assert np.allclose(cfl_freq, comparison_freq)
 
 @pytest.mark.parametrize('timestepper', [timesteppers.SBDF1])
@@ -201,10 +199,9 @@ def test_box_AdvectiveCFL(x_basis_class, Nx, Nz, timestepper, dtype, z_velocity_
     # AdvectiveCFL initialization
     cfl = operators.AdvectiveCFL(u, c)
     cfl_freq = cfl.evaluate()['g']
-    comparison_freq = np.abs(u['g'][0])  / (dealias * xb.grid_spacing(scale=dealias))
-    comparison_freq += np.abs(u['g'][1]) / (dealias * zb.grid_spacing(scale=dealias))[None,:]
+    comparison_freq = np.abs(u['g'][0])  / xb.local_cfl_spacing(0, scale=dealias)
+    comparison_freq += np.abs(u['g'][1]) / zb.local_cfl_spacing(1, scale=dealias)
     assert np.allclose(cfl_freq, comparison_freq)
-
 
 @pytest.mark.parametrize('timestepper', [timesteppers.SBDF1])
 @pytest.mark.parametrize('Lmax', [15])
@@ -225,7 +222,7 @@ def test_S2_AdvectiveCFL(Lmax, timestepper, dtype, dealias):
     # AdvectiveCFL initialization
     cfl = operators.AdvectiveCFL(u, c)
     cfl_freq = cfl.evaluate()['g']
-    comparison_freq = np.sqrt(u['g'][0]**2 + u['g'][1]**2) * np.sqrt(Lmax*(Lmax+1)) / radius
+    comparison_freq = np.sqrt(u['g'][0]**2 + u['g'][1]**2) / sb.local_cfl_spacing(0, scales=sb.dealias)
     assert np.allclose(cfl_freq, comparison_freq)
 
 @pytest.mark.parametrize('timestepper', [timesteppers.SBDF1])
@@ -244,8 +241,8 @@ def test_ball_AdvectiveCFL(Lmax, Nmax, timestepper, dtype, dealias):
     # AdvectiveCFL initialization
     cfl = operators.AdvectiveCFL(u, c)
     cfl_freq = cfl.evaluate()['g']
-    comparison_freq = np.sqrt(u['g'][0]**2 + u['g'][1]**2) / b.grid_spacing(0, scales=(dealias, dealias, dealias))
-    comparison_freq += np.abs(u['g'][2]) / (b.grid_spacing(2, scales=(dealias, dealias, dealias)) * dealias)
+    comparison_freq = np.sqrt(u['g'][0]**2 + u['g'][1]**2) / b.local_cfl_spacing(0, scales=b.dealias)
+    comparison_freq += np.abs(u['g'][2]) / b.local_cfl_spacing(2, scales=b.dealias)
     assert np.allclose(cfl_freq, comparison_freq)
 
 
@@ -265,8 +262,8 @@ def test_spherical_shell_AdvectiveCFL(Lmax, Nmax, timestepper, dtype, dealias):
     # AdvectiveCFL initialization
     cfl = operators.AdvectiveCFL(u, c)
     cfl_freq = cfl.evaluate()['g']
-    comparison_freq = np.sqrt(u['g'][0]**2 + u['g'][1]**2) / b.grid_spacing(0, scales=(dealias, dealias, dealias))
-    comparison_freq += np.abs(u['g'][2]) / (b.grid_spacing(2, scales=(dealias, dealias, dealias)) * dealias)
+    comparison_freq = np.sqrt(u['g'][0]**2 + u['g'][1]**2) / b.local_cfl_spacing(0, scales=b.dealias)
+    comparison_freq += np.abs(u['g'][2]) / b.local_cfl_spacing(2, scales=b.dealias)
     assert np.allclose(cfl_freq, comparison_freq)
 
 @pytest.mark.parametrize('timestepper', [timesteppers.SBDF1])
@@ -286,6 +283,6 @@ def test_disk_AdvectiveCFL(Nr, Nphi, timestepper, dtype, dealias):
     # AdvectiveCFL initialization
     cfl = operators.AdvectiveCFL(u, c)
     cfl_freq = cfl.evaluate()['g']
-    comparison_freq = np.abs(u['g'][0]) / db.grid_spacing(0, scales=(dealias, dealias))
-    comparison_freq += np.abs(u['g'][1]) / (db.grid_spacing(1, scales=(dealias, dealias)) * dealias)
+    comparison_freq = np.abs(u['g'][0]) / db.local_cfl_spacing(0, scales=(dealias, dealias))
+    comparison_freq += np.abs(u['g'][1]) / db.local_cfl_spacing(1, scales=(dealias, dealias))
     assert np.allclose(cfl_freq, comparison_freq)
