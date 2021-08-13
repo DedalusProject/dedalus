@@ -203,18 +203,3 @@ class Domain(metaclass=CachedClass):
     #     else:
     #         space = self.domain.get_space_object(item)
     #         return (space in self.spaces)
-
-    # @CachedMethod
-    # def grid_spacing(self, axis, scales=None):
-    #     """Compute grid spacings along one axis."""
-    #     scales = self.remedy_scales(scales)
-    #     # Compute spacing on global basis grid
-    #     # This includes inter-process spacings
-    #     grid = self.bases[axis].grid(scales[axis])
-    #     spacing = np.gradient(grid)
-    #     # Restrict to local part of global spacing
-    #     slices = self.dist.grid_layout.slices(scales)
-    #     spacing = spacing[slices[axis]]
-    #     # Reshape as multidimensional vector
-    #     spacing = reshape_vector(spacing, self.dim, axis)
-    #     return spacing

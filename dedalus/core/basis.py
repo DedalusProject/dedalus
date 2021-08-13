@@ -26,7 +26,7 @@ from ..tools.dispatch import MultiClass
 from ..tools.general import unify
 
 from .spaces import ParityInterval, Disk
-from .coords import Coordinate, S2Coordinates, SphericalCoordinates, PolarCoordinates, AzimuthalCoordinate
+from .coords import Coordinate, CartesianCoordinates, S2Coordinates, SphericalCoordinates, PolarCoordinates, AzimuthalCoordinate
 from .domain import Domain
 from .field  import Operand, LockedField
 from .future import FutureLockedField
@@ -139,6 +139,14 @@ class Basis:
         shape = np.array([int(np.ceil(s*n)) for s, n in zip(scales, self.shape)])
         shape[np.array(self.shape) == 1] = 1
         return tuple(shape)
+
+    def global_grid_spacing(self, *args, **kwargs):
+        """Global grids spacings."""
+        raise NotImplementedError
+
+    def local_grid_spacing(self, *args, **kwargs):
+        """Local grids spacings."""
+        raise NotImplementedError
 
     def global_grids(self, scales):
         """Global grids."""
@@ -281,6 +289,20 @@ class IntervalBasis(Basis):
             self.dealias = (dealias,)
         self.COV = AffineCOV(self.native_bounds, bounds)
         super().__init__(coord)
+
+    @CachedMethod
+    def global_grid_spacing(self, axis, scale=None):
+        """Global grids spacings."""
+        grid = self.global_grid(scale=scale)
+        return np.gradient(grid, axis=axis, edge_order=2)
+
+    @CachedMethod
+    def local_grid_spacing(self, axis, scale=None):
+        """Local grids spacings."""
+        global_spacing = self.global_grid_spacing(axis, scale=scale)
+        if scale is None: scale = 1
+        local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[axis]
+        return reshape_vector(np.ravel(global_spacing)[local_elements], dim=self.dist.dim, axis=axis)
 
     # Why do we need this?
     def global_grids(self, scales=None):
@@ -510,7 +532,6 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         convert = jacobi.conversion_matrix(Nmat, arg_basis.a, arg_basis.b, out_basis.a, out_basis.b)
         matrix = convert @ matrix
         return matrix[:N, :N]
-
 
 def Legendre(*args, **kw):
     return Jacobi(*args, a=0, b=0, **kw)
@@ -1774,6 +1795,24 @@ class PolarBasis(SpinBasis):
         return (self.global_grid_azimuth(scales[0]),
                 self.global_grid_radius(scales[1]))
 
+    def global_grid_radius(self, scale):
+        r = self.radial_COV.problem_coord(self._native_radius_grid(scale))
+        return reshape_vector(r, dim=self.dist.dim, axis=self.axis+1)
+
+    @CachedMethod
+    def global_grid_spacing(self, axis, scales=None):
+        """Global grids spacings."""
+        if scales is None: scales = (1,1)
+        return np.gradient(self.global_grids(scales=scales)[axis], axis=axis, edge_order=2)
+
+    @CachedMethod
+    def local_grid_spacing(self, axis, scales=None):
+        """Local grids spacings."""
+        global_spacing = self.global_grid_spacing(axis, scales=scales)
+        if scales is None: scales = (1,1)
+        local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scales[axis])[axis]
+        return reshape_vector(np.ravel(global_spacing)[local_elements], dim=self.dist.dim, axis=axis)
+
     def local_grids(self, scales=None):
         if scales == None: scales = (1, 1)
         return (self.local_grid_azimuth(scales[0]),
@@ -2680,6 +2719,20 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
     def global_grid_colatitude(self, scale):
         theta = self._native_colatitude_grid(scale)
         return reshape_vector(theta, dim=self.dist.dim, axis=self.axis+1)
+
+    @CachedMethod
+    def global_grid_spacing(self, axis, scales=None):
+        """Global grids spacings."""
+        if scales is None: scales = (1,1)
+        return np.gradient(self.global_grids(scales=scales)[axis], axis=axis, edge_order=2)
+
+    @CachedMethod
+    def local_grid_spacing(self, axis, scales=None):
+        """Local grids spacings."""
+        global_spacing = self.global_grid_spacing(axis, scales=scales)
+        if scales is None: scales = (1,1)
+        local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scales[axis])[axis]
+        return reshape_vector(np.ravel(global_spacing)[local_elements], dim=self.dist.dim, axis=axis)
 
     def local_grids(self, scales=None):
         if scales == None: scales = (1, 1)
@@ -3641,6 +3694,20 @@ class Spherical3DBasis(MultidimensionalBasis):
                 self.local_grid_colatitude(scales[1]),
                 self.local_grid_radius(scales[2]))
 
+    @CachedMethod
+    def global_grid_spacing(self, axis, scales=None):
+        """Global grids spacings."""
+        if scales is None: scales = (1,1,1)
+        return np.gradient(self.global_grids(scales=scales)[axis], axis=axis, edge_order=2)
+
+    @CachedMethod
+    def local_grid_spacing(self, axis, scales=None):
+        """Local grids spacings."""
+        global_spacing = self.global_grid_spacing(axis, scales=scales)
+        if scales is None: scales = (1,1,1)
+        local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scales[axis])[axis]
+        return reshape_vector(np.ravel(global_spacing)[local_elements], dim=self.dist.dim, axis=axis)
+
     def local_elements(self):
         CL = self.dist.coeff_layout
         LE = CL.local_elements(self.domain, scales=1)[self.axis:self.axis+self.dim]
@@ -3944,6 +4011,7 @@ class BallBasis(Spherical3DBasis):
         np.copyto(gdata, temp)
         # Apply regularity recombinations
         radial_basis.backward_regularity_recombination(field.tensorsig, axis, gdata, ell_maps=self.ell_maps)
+
 
 def prod(arg):
     if arg:
@@ -4968,5 +5036,115 @@ class S2AngularComponent(operators.AngularComponent):
         out.set_layout(layout)
         np.copyto(out.data, operand.data[axslice(self.index,0,2)])
 
+
+class CartesianAdvectiveCFL(operators.AdvectiveCFL):
+
+    input_coord_type = CartesianCoordinates
+    input_basis_type = (ComplexFourier, RealFourier, Jacobi)
+
+    @CachedMethod
+    def cfl_spacing(self, velocity):
+        coordsys = velocity.tensorsig[0]
+        spacing = []
+        for i, c in enumerate(coordsys.coords):
+            basis = velocity.domain.get_basis(c)
+            dealias = basis.dealias[0]
+            axis_spacing = basis.local_grid_spacing(i, dealias) * dealias 
+            if isinstance(basis, Jacobi) and basis.a == -1/2 and basis.b == -1/2:
+                #Special case for ChebyshevT (a=b=-1/2)
+                N = len(np.ravel(basis.local_grids(scales=(dealias,))[0]))
+                i = np.arange(N).reshape(axis_spacing.shape)
+                theta = np.pi * (i + 1/2) / N
+                axis_spacing[:] = dealias * basis.COV.stretch * np.sin(theta) * np.pi / N
+            elif isinstance(basis, (ComplexFourier, RealFourier)):
+                #Special case for Fourier 
+                N = basis.grid_shape((dealias,))[0]
+                native_spacing = 2 * np.pi / N
+                axis_spacing[:] = dealias * native_spacing * basis.COV.stretch
+            spacing.append(axis_spacing)
+        return spacing
+
+    def compute_cfl_frequency(self, velocity, out):
+        u_mag = np.abs(velocity.data)
+        out.data[:] = 0
+        for i, dx in enumerate(self.cfl_spacing(velocity)):
+            out.data += u_mag[i] / dx
+
+
+class D2AdvectiveCFL(operators.AdvectiveCFL):
+
+    input_coord_type = PolarCoordinates
+    input_basis_type = DiskBasis
+
+    @CachedMethod
+    def cfl_spacing(self):
+        #Assumes velocity is a 2-length vector over polar coordinates
+        basis   = self.input_basis
+        dealias = basis.dealias
+        azimuth_spacing = basis.local_grid_spacing(0, scales=dealias)
+        if basis.mmax == 0:
+            azimuth_spacing[:] = np.inf
+        else:
+            azimuth_spacing[:] = basis.radius / basis.mmax
+        radial_spacing = dealias[1] * basis.local_grid_spacing(1, scales=dealias)
+        return [azimuth_spacing, radial_spacing]
+
+    def compute_cfl_frequency(self, velocity, out):
+        #Assumes velocity is a 2-length vector over polar coordinates
+        u_theta, u_r = np.abs(velocity.data)
+        out.data[:] = u_theta / self.cfl_spacing()[0]
+        out.data += u_r / self.cfl_spacing()[1]
+
+
+class S2AdvectiveCFL(operators.AdvectiveCFL):
+
+    input_coord_type = S2Coordinates
+    input_basis_type = SWSH
+
+    @CachedMethod
+    def cfl_spacing(self, r=None):
+        #Assumes velocity is a 2-length vector over spherical coordinates
+        basis   = self.input_basis
+        dealias = basis.dealias
+        if r is None: r = basis.radius
+        s2_spacing = basis.local_grid_spacing(0, scales=dealias)
+        if basis.Lmax == 0:
+            s2_spacing[:] = np.inf
+        else:
+            s2_spacing[:] = r / np.sqrt(basis.Lmax*(basis.Lmax + 1))
+        return [s2_spacing,]
+
+    def compute_cfl_frequency(self, velocity, out):
+        #compute u_mag * sqrt(ell*(ell+1)) / r
+        #Assumes velocity is a 2-length vector over spherical coordinates
+        u_phi, u_theta = velocity.data[0], velocity.data[1]
+        u_mag = np.sqrt(u_phi**2 + u_theta**2)
+        #Again assumes that this field only has an S2 basis
+        out.data[:] = u_mag / self.cfl_spacing()[0]
+
+
+class Spherical3DAdvectiveCFL(operators.AdvectiveCFL):
+
+    input_coord_type = SphericalCoordinates
+    input_basis_type = (BallBasis, ShellBasis)
+
+    @CachedMethod
+    def cfl_spacing(self):
+        #Assumes velocity is a 3-length vector over spherical coordinates.
+        basis   = self.input_basis
+        dealias = basis.dealias
+        if isinstance(basis, BallBasis):
+            spacings = S2AdvectiveCFL.cfl_spacing(self, r=basis.radial_basis.radius)
+        elif isinstance(basis, ShellBasis):
+            spacings = S2AdvectiveCFL.cfl_spacing(self, r=1)
+            spacings[0] = spacings[0] * basis.local_grid_radius(dealias[2]) #get proper radial scaling for shell
+        spacings.append(basis.local_grid_spacing(2, scales=dealias) * dealias[2])
+        return spacings
+
+    def compute_cfl_frequency(self, velocity, out):
+        #Assumes velocity is a 3-length vector in spherical coordinates
+        S2AdvectiveCFL.compute_cfl_frequency(self, velocity, out)
+        u_r = np.abs(velocity.data[2])
+        out.data += u_r / self.cfl_spacing()[1]
 
 from . import transforms
