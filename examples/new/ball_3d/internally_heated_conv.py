@@ -45,9 +45,9 @@ if len(sys.argv) > 1 and sys.argv[1] == '--restart':
 
 # Parameters
 Lmax = 63
-L_dealias = 3/2
+L_dealias = 2
 Nmax = 47
-N_dealias = 3/2
+N_dealias = 2
 if not restart:
     t_end = 10.01
 else:
@@ -63,7 +63,7 @@ P = np.sqrt(Rayleigh/Prandtl)
 # Bases
 c = coords.SphericalCoordinates('phi', 'theta', 'r')
 d = distributor.Distributor((c,), mesh=mesh)
-b = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), radius=1, dtype=dtype)
+b = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), dealias=(L_dealias, L_dealias, N_dealias), radius=1, dtype=dtype)
 b_S2 = b.S2_basis()
 phi, theta, r = b.local_grids((1, 1, 1))
 x = r*np.sin(theta)*np.cos(phi)
@@ -120,10 +120,12 @@ solver.stop_sim_time = t_end
 
 # Initial condition
 if not restart:
+    seed = 42# + d.comm_cart.rank
+    rand = np.random.RandomState(seed=seed)
     T['g'] = 1-r**2
     #T['g'] += 0.04*r**3*(1-r**2)*(np.cos(3*phi)+np.sin(3*phi))*np.sin(theta)**3
     #T['g'] += 0.3*np.exp(-((x+0.3)**2+y**2+z**2)/0.2**2)
-    T['g'] += 0.5*np.random.rand(*T['g'].shape)
+    T['g'] += 0.5*rand.rand(*T['g'].shape)
     mode = 'overwrite'
 else:
     write, dt = solver.load_state('checkpoints/checkpoints_s11.h5')
