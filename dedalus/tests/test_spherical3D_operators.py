@@ -91,10 +91,25 @@ def test_spherical_ell_product_vector(Nphi, Ntheta, Nr, k, dealias, basis, dtype
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_convert_constant(Nphi, Ntheta, Nr, k, dealias, basis, dtype):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
+    f = field.Field(dist=d, dtype=dtype)
+    f['g'] = 1
+    g = operators.Convert(f, b).evaluate()
+    assert np.allclose(f['g'], g['g'])
+
+
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 @pytest.mark.parametrize('layout', ['c', 'g'])
 def test_convert_scalar(Nphi, Ntheta, Nr, k, dealias, basis, dtype, layout):
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
-    f = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
+    f = field.Field(dist=d, bases=(b,), dtype=dtype)
     f.set_scales(b.domain.dealias)
     f['g'] = 3*x**2 + 2*y*z
     g = operators.Laplacian(f, c).evaluate()

@@ -162,7 +162,7 @@ class Future(Operand):
         all_eval = True
         for i, a in enumerate(self.args):
             if isinstance(a, Field):
-                a.require_scales(self.domain.dealias)
+                a.require_scales(a.domain.dealias)
             if isinstance(a, Future):
                 a_eval = a.evaluate(id=id, force=force)
                 # If evaluation succeeds, substitute result

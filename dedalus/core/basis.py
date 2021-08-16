@@ -421,7 +421,7 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         self.b0 = float(b0)
         self.library = library
         self.grid_params = (coord, bounds, a0, b0)
-        #self.const = 1 / np.sqrt(jacobi.mass(self.a, self.b))
+        self.constant_mode_value = 1 / np.sqrt(jacobi.mass(self.a, self.b))
 
     def _native_grid(self, scale):
         """Native flat global grid."""
@@ -576,10 +576,9 @@ class ConvertJacobi(operators.Convert, operators.SpectralOperator1D):
         return matrix.tocsr()
 
 
-class ConvertConstantJacobi(operators.Convert, operators.SpectralOperator1D):
+class ConvertConstantJacobi(operators.ConvertConstant, operators.SpectralOperator1D):
     """Upcast constants to Jacobi."""
 
-    input_basis_type = type(None)
     output_basis_type = Jacobi
     subaxis_dependence = [True]
     subaxis_coupling = [False]
@@ -589,10 +588,7 @@ class ConvertConstantJacobi(operators.Convert, operators.SpectralOperator1D):
     def _group_matrix(group, input_basis, output_basis):
         n = group
         if n == 0:
-            basis = output_basis
-            # TODO: optimize by just using correct weight for zero mode.
-            MMT = basis.transforms['matrix'](grid_size=1, coeff_size=basis.size, a=basis.a, b=basis.b, a0=basis.a0, b0=basis.b0)
-            unit_amplitude = MMT.forward_matrix[0, 0]
+            unit_amplitude = 1 / output_basis.constant_mode_value
             return np.array([[unit_amplitude]])
         else:
             # Constructor should only loop over group 0.
@@ -758,6 +754,7 @@ class ComplexFourier(IntervalBasis):
         # Store non-permuted wavenumbers
         self._native_wavenumbers = np.concatenate((np.arange(0, kmax+2), np.arange(-kmax, 0)))  # Includes Nyquist mode
         self._wavenumbers = self._native_wavenumbers / self.COV.stretch
+        self.constant_mode_value = 1
 
     @property
     def native_wavenumbers(self):
@@ -831,10 +828,9 @@ class ComplexFourier(IntervalBasis):
     #         return (1 <= k <= self.space.kmax)
 
 
-class ConvertConstantComplexFourier(operators.Convert, operators.SpectralOperator1D):
+class ConvertConstantComplexFourier(operators.ConvertConstant, operators.SpectralOperator1D):
     """Upcast constants to ComplexFourier."""
 
-    input_basis_type = type(None)
     output_basis_type = ComplexFourier
     subaxis_dependence = [True]
     subaxis_coupling = [False]
@@ -845,7 +841,8 @@ class ConvertConstantComplexFourier(operators.Convert, operators.SpectralOperato
         k = group / output_basis.COV.stretch
         # 1 = exp(1j*0*x)
         if k == 0:
-            return np.array([[1]])
+            unit_amplitude = 1 / output_basis.constant_mode_value
+            return np.array([[unit_amplitude]])
         else:
             # Constructor should only loop over group 0.
             raise ValueError("This should never happen.")
@@ -940,6 +937,7 @@ class RealFourier(IntervalBasis):
         # Store non-permuted wavenumbers
         self._native_wavenumbers = np.repeat(np.arange(0, kmax+1), 2)  # Excludes Nyquist mode
         self._wavenumbers = self._native_wavenumbers / self.COV.stretch
+        self.constant_mode_value = 1
 
     @property
     def native_wavenumbers(self):
@@ -1027,10 +1025,9 @@ class RealFourier(IntervalBasis):
             return [slice(local_index*group_size, (local_index+1)*group_size)]
 
 
-class ConvertConstantRealFourier(operators.Convert, operators.SpectralOperator1D):
+class ConvertConstantRealFourier(operators.ConvertConstant, operators.SpectralOperator1D):
     """Upcast constants to RealFourier."""
 
-    input_basis_type = type(None)
     output_basis_type = RealFourier
     subaxis_dependence = [True]
     subaxis_coupling = [False]
@@ -1041,7 +1038,8 @@ class ConvertConstantRealFourier(operators.Convert, operators.SpectralOperator1D
         k = group / output_basis.COV.stretch
         # 1 = cos(0*x)
         if k == 0:
-            return np.array([[1],
+            unit_amplitude = 1 / output_basis.constant_mode_value
+            return np.array([[unit_amplitude],
                              [0]])
         else:
             # Constructor should only loop over group 0.
@@ -3282,6 +3280,12 @@ class SphericalShellRadialBasis(RegularityBasis):
         normalization = self.dR/2
         return normalization * ( (Q0 @ weights0).T ) @ (weights_proj*Q_proj)
 
+    @CachedAttribute
+    def constant_mode_value(self):
+        # Note the zeroth mode is constant only for k=0
+        Q0 = dedalus_sphere.jacobi.polynomials(1, self.alpha[0], self.alpha[1], np.array([0.0]))
+        return Q0[0,0]
+
     @CachedMethod
     def radial_transform_factor(self, scale, data_axis, dk):
         r = reshape_vector(self._radius_grid(scale), dim=data_axis, axis=data_axis-1)
@@ -3492,6 +3496,11 @@ class BallRadialBasis(RegularityBasis):
         z, weights = dedalus_sphere.zernike.quadrature(3, N, k=self.alpha)
         return weights
 
+    @CachedAttribute
+    def constant_mode_value(self):
+        Qk = dedalus_sphere.zernike.polynomials(3, 1, self.alpha+self.k, 0, [1])
+        return Qk[0]
+
     @CachedMethod
     def interpolation(self, ell, regtotal, position):
         native_position = self.radial_COV.native_coord(position)
@@ -3676,6 +3685,8 @@ class Spherical3DBasis(MultidimensionalBasis):
         self.backward_transform_azimuth = self.sphere_basis.backward_transform_azimuth
         self.forward_transform_colatitude = self.sphere_basis.forward_transform_colatitude
         self.backward_transform_colatitude = self.sphere_basis.backward_transform_colatitude
+        # Adjust for SWSH normalization
+        self.constant_mode_value = radial_basis.constant_mode_value / np.sqrt(2)
         Basis.__init__(self, coordsystem)
 
     @CachedAttribute
@@ -4035,7 +4046,7 @@ class ConvertRegularity(operators.Convert, operators.SphericalEllOperator):
 
     def __init__(self, operand, output_basis, out=None):
         operators.Convert.__init__(self, operand, output_basis, out=out)
-        self.radial_basis = self.input_basis
+        self.radial_basis = self.input_basis.get_radial_basis()
 
     def regindex_out(self, regindex_in):
         return (regindex_in,)
@@ -4050,14 +4061,41 @@ class ConvertRegularity(operators.Convert, operators.SphericalEllOperator):
             raise ValueError("This should never happen.")
 
 
-class ConvertConstantRegularity(operators.Convert, operators.SphericalEllOperator):
+class ConvertConstantBall(operators.ConvertConstant, operators.SphericalEllOperator):
 
-    input_basis_type = type(None)
-    output_basis_type = (RegularityBasis, Spherical3DBasis)
+    output_basis_type = (BallBasis, BallRadialBasis)
+    subaxis_dependence = [False, True, True]
+    subaxis_coupling = [False, False, False]
 
     def __init__(self, operand, output_basis, out=None):
-        operators.Convert.__init__(self, operand, output_basis, out=out)
-        self.radial_basis = self.output_basis
+        super().__init__(operand, output_basis, out=out)
+        self.radial_basis = self.output_basis.get_radial_basis()
+
+    def regindex_out(self, regindex_in):
+        return (regindex_in,)
+
+    def radial_matrix(self, regindex_in, regindex_out, ell):
+        radial_basis = self.radial_basis
+        regtotal = radial_basis.regtotal(regindex_in)
+        coeff_size = radial_basis.shape[-1]
+        if ell == 0 and regindex_in == regindex_out:
+            unit_amplitude = 1 / self.output_basis.constant_mode_value
+            matrix = np.zeros((coeff_size, 1))
+            matrix[0, 0] = unit_amplitude
+            return matrix
+        else:
+            raise ValueError("This should never happen.")
+
+
+class ConvertConstantShell(operators.ConvertConstant, operators.SphericalEllOperator):
+
+    output_basis_type = (ShellBasis, SphericalShellRadialBasis)
+    subaxis_dependence = [False, True, True]
+    subaxis_coupling = [False, False, False]
+
+    def __init__(self, operand, output_basis, out=None):
+        super().__init__(operand, output_basis, out=out)
+        self.radial_basis = self.output_basis.get_radial_basis()
 
     def regindex_out(self, regindex_in):
         return (regindex_in,)
@@ -4068,9 +4106,8 @@ class ConvertConstantRegularity(operators.Convert, operators.SphericalEllOperato
         coeff_size = radial_basis.shape[-1]
         if ell == 0 and regindex_in == regindex_out:
             # Convert to k=0
-            W = np.sum(radial_basis.global_weights(1))
             const_to_k0 = np.zeros((coeff_size, 1))
-            const_to_k0[0, 0] = W ** 0.5
+            const_to_k0[0, 0] = 1 / self.output_basis.constant_mode_value  # This is really for k=0
             # Convert up in k
             k0_to_k = radial_basis._new_k(0).conversion_matrix(ell, regtotal, radial_basis.k)
             matrix = k0_to_k @ const_to_k0

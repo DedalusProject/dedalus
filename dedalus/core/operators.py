@@ -1356,7 +1356,8 @@ def convert(arg, bases):
 
 class Convert(SpectralOperator, metaclass=MultiClass):
     """
-    Convert bases along one dimension.
+    Convert an operand between two bases, assuming coupling over just
+    the last axis of the bases.
 
     Parameters
     ----------
@@ -1413,22 +1414,20 @@ class Convert(SpectralOperator, metaclass=MultiClass):
         """Check that arguments are in a proper layout."""
         arg0 = self.args[0]
         last_axis = self.last_axis
-        is_coeff = not arg0.layout.grid_space[last_axis]
-        is_local = arg0.layout.local[last_axis]
-        # Require locality if non-separable or in grid space
-        if (not is_coeff) or self.subaxis_coupling[-1]:
-            return is_local
-        else:
-            return True
+        last_is_coeff = not arg0.layout.grid_space[last_axis]
+        last_is_local = arg0.layout.local[last_axis]
+        # In coefficient space, require locality if coupled
+        if last_is_coeff and self.subaxis_coupling[-1]:
+            return last_is_local
+        return True
 
     def enforce_conditions(self):
         """Require arguments to be in a proper layout."""
         arg0 = self.args[0]
         last_axis = self.last_axis
-        is_coeff = not arg0.layout.grid_space[last_axis]
-        is_local = arg0.layout.local[last_axis]
+        last_is_coeff = not arg0.layout.grid_space[last_axis]
         # Require locality if non-separable or in grid space
-        if (not is_coeff) or self.subaxis_coupling[-1]:
+        if last_is_coeff and self.subaxis_coupling[-1]:
             self.args[0].require_local(last_axis)
 
     def replace(self, old, new):
@@ -1454,9 +1453,8 @@ class Convert(SpectralOperator, metaclass=MultiClass):
         """Perform operation."""
         arg = self.args[0]
         layout = arg.layout
-        last_axis = self.last_axis
         # Copy for grid space
-        if layout.grid_space[last_axis]:
+        if layout.grid_space[self.last_axis]:
             out.set_layout(layout)
             np.copyto(out.data, arg.data)
         # Revert to matrix application for coeff space
@@ -1482,57 +1480,64 @@ class ConvertSame(Convert):
         return operand
 
 
-# class Convert1DConstant(Convert1D):
-#     """Constant conversion."""
+class ConvertConstant(Convert):
+    """Constant conversion in full coeff space."""
 
-#     separable = True
-#     bands = [0]
+    input_basis_type = type(None)
+    output_basis_type = object
 
-#     @classmethod
-#     def _check_args(cls, operand, space, output_basis, out=None):
-#         if output_basis.const is not None:
-#             if isinstance(operand, Number):
-#                 return True
-#             if isinstance(operand, Operand):
-#                 input_basis = operand.get_basis(space)
-#                 if input_basis is None:
-#                     return True
-#         return False
+    # TODO: could generalize to allow conversion in full/partial grid space,
+    # but need to be careful about data distributions in that case
 
-#     @staticmethod
-#     def _subspace_matrix(space, input_basis, output_basis):
-#         dtype = space.domain.dtype
-#         N = space.coeff_size
-#         # Reweight by constant-mode amplitude
-#         M = sparse.lil_matrix((N, 1), dtype=dtype)
-#         M[0,0] = 1 / output_basis.const
-#         return M.tocsr()
+    # def check_conditions(self):
+    #     """Check that arguments are in a proper layout."""
+    #     arg0 = self.args[0]
+    #     first_axis = self.first_axis
+    #     last_axis = self.last_axis
+    #     coeff_space = ~ arg0.layout.grid_space
+    #     others_are_coeff = np.all(coeff_space[first_axis:last_axis])
+    #     last_is_coeff = coeff_space[last_axis]
+    #     last_is_local = arg0.layout.local[last_axis]
+    #     # Require locality if last axis in grid space
+    #     return others_are_coeff and (last_is_coeff or last_is_local)
 
-#     def check_conditions(self):
-#         """Check that arguments are in a proper layout."""
-#         # No conditions
-#         return True
+    # def enforce_conditions(self):
+    #     """Require arguments to be in a proper layout."""
+    #     arg0 = self.args[0]
+    #     first_axis = self.first_axis
+    #     last_axis = self.last_axis
+    #     # Require others in coeff space
+    #     if last_axis > first_axis:
+    #         arg0.require_coeff_space(last_axis-1)
+    #     # Require local if last axis in grid space
+    #     if arg0.layout.grid_space[last_axis]:
+    #         arg0.require_local(last_axis)
 
-#     def enforce_conditions(self):
-#         """Require arguments to be in a proper layout."""
-#         # No conditions
-#         pass
+    def check_conditions(self):
+        """Check that arguments are in a proper layout."""
+        arg0 = self.args[0]
+        last_axis = self.last_axis
+        if self.output_basis.dim == 1:
+            # Require coeff space or local
+            last_is_coeff = not arg0.layout.grid_space[last_axis]
+            last_is_local = arg0.layout.local[last_axis]
+            return last_is_coeff or last_is_local
+        else:
+            # Require last axis in coeff space
+            last_is_coeff = not arg0.layout.grid_space[self.last_axis]
+            return last_is_coeff
 
-#     def operate(self, out):
-#         """Perform operation."""
-#         operand = self.operand
-#         axis = self.axis
-#         output_basis = self.args[2]
-#         # Set output layout
-#         out.set_layout(operand.layout)
-#         # Broadcast constant in grid space
-#         if operand.layout.grid_space[axis]:
-#             np.copyto(out.data, operand.data)
-#         # Set constant mode in coefficient space
-#         else:
-#             out.data.fill(0)
-#             mask = out.local_elements()[axis] == 0
-#             out.data[axindex(axis, mask)] = operand.data / output_basis.const
+    def enforce_conditions(self):
+        """Require arguments to be in a proper layout."""
+        arg0 = self.args[0]
+        last_axis = self.last_axis
+        if self.output_basis.dim == 1:
+            # Require coeff space or local
+            if arg0.layout.grid_space[last_axis]:
+                arg0.require_local(last_axis)
+        else:
+            # Require last axis in coeff space
+            arg0.require_coeff_space(self.last_axis)
 
 
 class Trace(LinearOperator):
