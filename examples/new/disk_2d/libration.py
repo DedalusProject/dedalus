@@ -86,7 +86,7 @@ snapshots.add_task(u, name='u')
 traces = solver.evaluator.add_file_handler('traces', sim_dt=0.01, virtual_file=True)
 traces.add_task(integ(0.5*dot(u,u)), name='KE')
 
-solver.stop_sim_time = 50
+solver.stop_sim_time = 0.91
 
 # Report maximum |u|
 flow = flow_tools.GlobalFlowProperty(solver, cadence=100)
