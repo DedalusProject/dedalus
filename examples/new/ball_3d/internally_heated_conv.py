@@ -37,7 +37,6 @@ config['linear algebra']['MATRIX_FACTORIZER'] = 'SuperLUNaturalFactorizedTranspo
 
 # TODO:
 # NCC basis
-# CFL
 
 restart = False
 if len(sys.argv) > 1 and sys.argv[1] == '--restart':
@@ -45,9 +44,9 @@ if len(sys.argv) > 1 and sys.argv[1] == '--restart':
 
 # Parameters
 Lmax = 63
-L_dealias = 2
+L_dealias = 1
 Nmax = 47
-N_dealias = 2
+N_dealias = 1
 if not restart:
     t_end = 10.01
 else:
@@ -66,9 +65,6 @@ d = distributor.Distributor((c,), mesh=mesh)
 b = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), dealias=(L_dealias, L_dealias, N_dealias), radius=1, dtype=dtype)
 b_S2 = b.S2_basis()
 phi, theta, r = b.local_grids((1, 1, 1))
-x = r*np.sin(theta)*np.cos(phi)
-y = r*np.sin(theta)*np.sin(phi)
-z = r*np.cos(theta) + 0*phi
 
 # Fields
 u = field.Field(name='u', dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
@@ -79,9 +75,7 @@ tau_T = field.Field(name='tau T', dist=d, bases=(b_S2,), dtype=dtype)
 # TODO: basis for NCC
 r_vec = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
 r_vec['g'][2] = r
-T_source = field.Field(dist=d, bases=(b,), dtype=dtype)
-T_source['g'] = 6
-#T_source = 6
+T_source = 6
 
 # Operators
 div = operators.Divergence
@@ -107,7 +101,7 @@ def eq_eval(eq_str):
 problem = problems.IVP([u, p, T, tau_u, tau_T])
 problem.add_equation(eq_eval("ddt(u) - 1/R*lap(u) + grad(p) + LiftTau(tau_u) - r_vec*T = - cross(curl(u),u)"))
 problem.add_equation(eq_eval("div(u) = 0"))
-problem.add_equation(eq_eval("ddt(T) - 1/P*lap(T) + LiftTau(tau_T) = - dot(u,grad(T)) + grid(T_source)/P"))
+problem.add_equation(eq_eval("ddt(T) - 1/P*lap(T) + LiftTau(tau_T) = - dot(u,grad(T)) + T_source/P"))
 problem.add_equation(eq_eval("rad(u(r=1)) = 0"), condition="ntheta != 0")  # no penetration
 problem.add_equation(eq_eval("p(r=1) = 0"), condition="ntheta == 0")  # pressure gauge
 problem.add_equation(eq_eval("shear_stress = 0"))  # stress free
@@ -120,13 +114,12 @@ solver.stop_sim_time = t_end
 
 # Initial condition
 if not restart:
-    seed = 42# + d.comm_cart.rank
+    seed = 42 + d.comm_cart.rank
     rand = np.random.RandomState(seed=seed)
     T['g'] = 1-r**2
-    #T['g'] += 0.04*r**3*(1-r**2)*(np.cos(3*phi)+np.sin(3*phi))*np.sin(theta)**3
-    #T['g'] += 0.3*np.exp(-((x+0.3)**2+y**2+z**2)/0.2**2)
     T['g'] += 0.5*rand.rand(*T['g'].shape)
     mode = 'overwrite'
+    dt = 0.05
 else:
     write, dt = solver.load_state('checkpoints/checkpoints_s11.h5')
     mode = 'append'
@@ -145,8 +138,8 @@ checkpoints.add_tasks(solver.state)
 flow = flow_tools.GlobalFlowProperty(solver, cadence=10)
 flow.add_property(np.sqrt(dot(u,u)), name='u')
 
-# TODO: CFL
-dt = 0.5e-2
+CFL = flow_tools.CFL(solver, dt, cadence=1, safety=0.35, threshold=0.1, max_dt=0.05)
+CFL.add_velocity(u)
 
 hermitian_cadence = 100
 
@@ -154,15 +147,15 @@ hermitian_cadence = 100
 start_time = time.time()
 while solver.ok:
 
+    solver.step(dt)
+    dt = CFL.compute_dt()
+    if (solver.iteration-1) % 10 == 0:
+        logger.info("t = %f, dt = %f, |u|_max = %e" %(solver.sim_time, dt, flow.max('u')))
+
     # Impose hermitian symmetry on two consecutive timesteps because we are using a 2-stage timestepper
     if solver.iteration % hermitian_cadence in [0, 1]:
         for f in solver.state:
             f.require_grid_space()
-
-    solver.step(dt)
-
-    if solver.iteration % 10 == 0:
-        logger.info("t = %f, |u|_max = %e" %(solver.sim_time, flow.max('u')))
 
 end_time = time.time()
 logger.info('Run time: %f' %(end_time-start_time))

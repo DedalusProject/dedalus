@@ -472,22 +472,7 @@ class InitialValueSolver(SolverBase):
             logger.info("Loading timestep: {}".format(dt))
             # Load fields
             for field in self.state:
-                dset = file['tasks'][field.name]
-                if not np.all(dset.attrs['grid_space']):
-                    raise ValueError("Can only load state from grid space")
-                dim = len(field.scales)
-                grid_layout = self.dist.layouts[-1]
-                # Set scales to match saved data
-                scales = dset.shape[-dim:] / np.array(grid_layout.global_shape(field.domain, scales=1))
-                spatial_slices = grid_layout.slices(field.domain, scales)
-                # Extract local data from global dset
-                dset_slices = tuple(slice(None) for cs in field.tensorsig) + spatial_slices
-                local_dset = np.array(dset[index])[dset_slices]
-                # Copy to field
-                field_slices = tuple(slice(n) for n in local_dset.shape)
-                field.set_scales(scales, keep_data=False)
-                field['g'][field_slices] = local_dset
-                field.set_scales(field.domain.dealias, keep_data=True)
+                field.load_from_hdf5(file, index)
         return write, dt
 
     # TO-DO: remove this

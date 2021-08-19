@@ -38,7 +38,7 @@ def polynomials(dimension,n,k,l,z):
     init  = Jacobi.measure(0,l,z,log=True,probability=False)
     init -= Jacobi.mass(k,b,log=True)  - np.log(2)*(k + dimension/2 + 1)
     init = np.exp(0.5*init)
-    print(z, type(z))
+
     return Jacobi.polynomials(n,k,b,z,init)
 
 

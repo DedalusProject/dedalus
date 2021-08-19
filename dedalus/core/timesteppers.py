@@ -138,7 +138,7 @@ class MultistepIMEX:
                 sp.LHS_solver = None
 
         # Run evaluator
-        evaluator.evaluate_scheduled(wall_time=wall_time, sim_time=sim_time, iteration=iteration)
+        evaluator.evaluate_scheduled(wall_time=wall_time, timestep=dt, sim_time=sim_time, iteration=iteration)
         F0.data.fill(0)
         for sp in subproblems:
             for ss in sp.subsystems:
@@ -592,9 +592,9 @@ class RungeKuttaIMEX:
 
             # Compute F(n,i-1)
             if i == 1:
-                evaluator.evaluate_scheduled(wall_time=wall_time, sim_time=solver.sim_time, iteration=iteration)
+                evaluator.evaluate_scheduled(wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
             else:
-                evaluator.evaluate_group('F', wall_time=wall_time, sim_time=solver.sim_time, iteration=iteration)
+                evaluator.evaluate_group('F', wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
             Fi = F[i-1]
             Fi.data.fill(0)
             for sp in subproblems:

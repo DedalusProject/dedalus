@@ -11,6 +11,7 @@ from mpi4py import MPI
 from scipy import sparse
 from scipy.sparse import linalg as splinalg
 from numbers import Number
+import h5py
 
 
 from ..libraries.fftw import fftw_wrappers as fftw
@@ -644,6 +645,31 @@ class Field(Current):
     # @CachedAttribute
     # def mode_mask(self):
     #     return reduce()
+
+    def load_from_hdf5(self, file, index):
+        """Loads data from an open hdf5 file, assuming data is in 'tasks/field.name'. Currently assumes
+           data is in grid space."""
+        dset = file['tasks'][self.name]
+        if not np.all(dset.attrs['grid_space']):
+            raise ValueError("Can only load state from grid space")
+        self.load_from_global_data(dset[index])
+
+    def load_from_global_data(self, global_data):
+        """Slices global data to load local data."""
+        dim = len(self.scales)
+        grid_layout = self.dist.layouts[-1]
+        # Set scales to match saved data
+        scales = global_data.shape[-dim:] / np.array(grid_layout.global_shape(self.domain, scales=1))
+        spatial_slices = grid_layout.slices(self.domain, scales)
+        # Extract local data from global data
+        global_slices = tuple(slice(None) for cs in self.tensorsig) + spatial_slices
+        local_data = np.array(global_data)[global_slices]
+        # Copy to field
+        field_slices = tuple(slice(n) for n in local_data.shape)
+        self.set_scales(scales, keep_data=False)
+        self.require_grid_space()
+        self.data[field_slices] = local_data
+        self.set_scales(self.domain.dealias, keep_data=True)
 
     def allgather_data(self):
         """Build global data on all processes."""
