@@ -3498,7 +3498,7 @@ class BallRadialBasis(RegularityBasis):
 
     @CachedAttribute
     def constant_mode_value(self):
-        Qk = dedalus_sphere.zernike.polynomials(3, 1, self.alpha+self.k, 0, [1])
+        Qk = dedalus_sphere.zernike.polynomials(3, 1, self.alpha+self.k, 0, np.array([0]))
         return Qk[0]
 
     @CachedMethod
