@@ -24,7 +24,7 @@ dt = 1.5e-3
 
 c = coords.PolarCoordinates('phi','r')
 d = distributor.Distributor((c,))
-db = basis.DiskBasis(c, (Nphi, Nr), radius=radius, dealias=(dealias, dealias), dtype=dtype)
+db = basis.DiskBasis(c, (Nphi, Nr), radius=radius, dealias=(dealias, dealias), dtype=dtype, azimuth_library='matrix')
 phi, r = db.local_grids()
 cb = db.S1_basis(radius=radius)
 

@@ -2168,7 +2168,7 @@ class DiskBasis(PolarBasis):
             if self.grid_params == other.grid_params:
                 shape = tuple(np.maximum(self.shape, other.shape))
                 k = max(self.k, other.k)
-                return DiskBasis(self.coordsystem, shape, radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias, dtype=self.dtype)
+                return DiskBasis(self.coordsystem, shape, radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias, dtype=self.dtype, azimuth_library=self.azimuth_library, radius_library=self.radius_library)
         return NotImplemented
 
     def __mul__(self, other):
@@ -2179,7 +2179,7 @@ class DiskBasis(PolarBasis):
         if isinstance(other, DiskBasis):
             if self.grid_params == other.grid_params:
                 shape = tuple(np.maximum(self.shape, other.shape))
-                return DiskBasis(self.coordsystem, shape, radius=self.radius, k=0, alpha=self.alpha, dealias=self.dealias, dtype=self.dtype)
+                return DiskBasis(self.coordsystem, shape, radius=self.radius, k=0, alpha=self.alpha, dealias=self.dealias, dtype=self.dtype, azimuth_library=self.azimuth_library, radius_library=self.radius_library)
         return NotImplemented
 
     def global_grid_radius(self, scale):
