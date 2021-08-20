@@ -2827,7 +2827,10 @@ class SpinWeightedSphericalHarmonics(SpinBasis, metaclass=CachedClass):
                 if abs(spintotal_3d + spintotal_2d) <= ell:
                     enum_components_output.append((i, comp))
             else:
-                raise ValueError("cs is 2d")
+                spinindex_2d = tuple([j for j, cs in zip(comp, tensorsig) if cs is self.coordsystem])
+                spintotal_2d = self.spintotal(spinindex_2d)
+                if abs(spintotal_2d) <= ell:
+                    enum_components_output.append((i, comp))
         return enum_components_output
 
 
