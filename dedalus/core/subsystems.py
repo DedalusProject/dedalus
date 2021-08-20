@@ -525,6 +525,10 @@ def left_permutation(subproblem, equations, bc_top, interleave_components):
     for eqn in equations:
         L1 = []
         vfshape = subproblem.valid_field_shape(eqn['LHS'])
+        if vfshape[0] == 0:
+            L1.append([])
+            L0.append(L1)
+            continue
         for comp in range(vfshape[0]):
             L2 = []
             for coeff in range(np.prod(vfshape[1:], dtype=int)):
@@ -583,6 +587,10 @@ def right_permutation(subproblem, variables, tau_left, interleave_components):
     for var in variables:
         L1 = []
         vfshape = subproblem.valid_field_shape(var)
+        if vfshape[0] == 0:
+            L1.append([])
+            L0.append(L1)
+            continue
         for comp in range(vfshape[0]):
             L2 = []
             for coeff in range(np.prod(vfshape[1:], dtype=int)):

@@ -251,8 +251,7 @@ def test_implicit_laplacian_vector(Nphi,  Ntheta, dealias, dtype):
     f['g'][1] = sph_harm(m1,l1,phi,theta)
     lap = lambda A: operators.Laplacian(A,c)
     problem = problems.LBVP([u])
-    problem.add_equation((lap(u),f), condition='ntheta != 0')
-    problem.add_equation((u,0), condition='ntheta ==0')
+    problem.add_equation((lap(u),f))
     solver = solvers.LinearBoundaryValueSolver(problem)
     solver.solve()
 

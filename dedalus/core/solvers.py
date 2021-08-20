@@ -264,7 +264,8 @@ class LinearBoundaryValueSolver(SolverBase):
         # Solve system for each subproblem, updating state
         for sp in self.subproblems:
             sp_matsolver = self.subproblem_matsolvers[sp]
-            F = X = np.empty(sp.L_min.shape[0], dtype=self.dtype)
+            F = np.empty(sp.L_min.shape[0], dtype=self.dtype)
+            X = np.empty(sp.pre_right.shape[0], dtype=self.dtype)
             for ss in sp.subsystems:
                 F.fill(0)  # Must zero before csr_matvec
                 csr_matvec(sp.pre_left, ss.gather(self.F), F)
@@ -338,7 +339,8 @@ class NonlinearBoundaryValueSolver(SolverBase):
         # Solve system for each subproblem, updating state
         for sp in self.subproblems:
             sp_matsolver = self._build_subproblem_matsolver(sp)
-            F = X = np.empty(sp.dH_min.shape[0], dtype=self.dtype)
+            F = np.empty(sp.dH_min.shape[0], dtype=self.dtype)
+            X = np.empty(sp.pre_right.shape[0], dtype=self.dtype)
             for ss in sp.subsystems:
                 F.fill(0)  # Must zero before csr_matvec
                 csr_matvec(sp.pre_left, ss.gather(self.F), F)
