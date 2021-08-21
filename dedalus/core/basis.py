@@ -4927,8 +4927,8 @@ class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperato
                    slices_in[axis-2] = slices_out[axis-2] = m_ind
                    slices_in[axis-1] = slices_out[axis-1] = ell_ind
                    slices_in[axis] = radial_basis.n_slice(ell)
-                   vec_in  = comp_in[slices_in]
-                   vec_out = comp_out[slices_out]
+                   vec_in  = comp_in[tuple(slices_in)]
+                   vec_out = comp_out[tuple(slices_out)]
                    A = self.radial_matrix(regindex, regindex, ell)
                    apply_matrix(A, vec_in, axis=axis, out=vec_out)
         radial_basis.backward_regularity_recombination(operand.tensorsig, self.basis_subaxis, out.data, ell_maps=input_basis.ell_maps)

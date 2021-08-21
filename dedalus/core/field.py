@@ -646,30 +646,29 @@ class Field(Current):
     # def mode_mask(self):
     #     return reduce()
 
-    def load_from_hdf5(self, file, index):
-        """Loads data from an open hdf5 file, assuming data is in 'tasks/field.name'. Currently assumes
-           data is in grid space."""
-        dset = file['tasks'][self.name]
+    def load_from_hdf5(self, file, index, task=None):
+        """Load grid data from an hdf5 file. Task correpsonds to field name by default."""
+        if task is None:
+            task = self.name
+        dset = file['tasks'][task]
         if not np.all(dset.attrs['grid_space']):
-            raise ValueError("Can only load state from grid space")
-        self.load_from_global_data(dset[index])
+            raise ValueError("Can only load data from grid space")
+        self.load_from_global_grid_data(dset, pre_slices=(index,))
 
-    def load_from_global_data(self, global_data):
-        """Slices global data to load local data."""
-        dim = len(self.scales)
-        grid_layout = self.dist.layouts[-1]
+    def load_from_global_grid_data(self, global_data, pre_slices=tuple()):
+        """Load local grid data from array-like global grid data."""
+        dim = self.dist.dim
+        layout = self.dist.grid_layout
         # Set scales to match saved data
-        scales = global_data.shape[-dim:] / np.array(grid_layout.global_shape(self.domain, scales=1))
-        spatial_slices = grid_layout.slices(self.domain, scales)
+        scales = np.array(global_data.shape[-dim:]) / np.array(layout.global_shape(self.domain, scales=1))
+        self.set_scales(scales)
         # Extract local data from global data
-        global_slices = tuple(slice(None) for cs in self.tensorsig) + spatial_slices
-        local_data = np.array(global_data)[global_slices]
-        # Copy to field
-        field_slices = tuple(slice(n) for n in local_data.shape)
-        self.set_scales(scales, keep_data=False)
-        self.require_grid_space()
-        self.data[field_slices] = local_data
-        self.set_scales(self.domain.dealias, keep_data=True)
+        component_slices = tuple(slice(None) for cs in self.tensorsig)
+        spatial_slices = layout.slices(self.domain, scales)
+        local_slices = pre_slices + component_slices + spatial_slices
+        self[layout] = global_data[local_slices]
+        # Change scales back to dealias scales
+        self.require_scales(self.domain.dealias)
 
     def allgather_data(self):
         """Build global data on all processes."""

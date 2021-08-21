@@ -459,10 +459,7 @@ class InitialValueSolver(SolverBase):
         with h5py.File(str(path), mode='r') as file:
             # Load solver attributes
             write = file['scales']['write_number'][index]
-            try:
-                dt = file['scales']['timestep'][index]
-            except KeyError:
-                dt = None
+            dt = file['scales']['timestep'][index]
             self.iteration = self.initial_iteration = file['scales']['iteration'][index]
             self.sim_time = self.initial_sim_time = file['scales']['sim_time'][index]
             # Log restart info
