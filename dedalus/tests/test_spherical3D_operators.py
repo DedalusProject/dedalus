@@ -91,10 +91,26 @@ def test_spherical_ell_product_vector(Nphi, Ntheta, Nr, k, dealias, basis, dtype
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-def test_convert_constant(Nphi, Ntheta, Nr, k, dealias, basis, dtype):
+def test_convert_constant_scalar(Nphi, Ntheta, Nr, k, dealias, basis, dtype):
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
     f = field.Field(dist=d, dtype=dtype)
     f['g'] = 1
+    g = operators.Convert(f, b).evaluate()
+    assert np.allclose(f['g'], g['g'])
+
+
+@pytest.mark.xfail(reason="Not yet implemented", run=False)
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_convert_constant_tensor(Nphi, Ntheta, Nr, k, dealias, basis, dtype):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
+    f = field.Field(dist=d, dtype=dtype, tensorsig=(c,c))
+    f['g'][0,0] = f['g'][1,1] = f['g'][2,2] = 1
     g = operators.Convert(f, b).evaluate()
     assert np.allclose(f['g'], g['g'])
 

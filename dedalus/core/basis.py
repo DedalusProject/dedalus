@@ -1983,6 +1983,12 @@ class AnnulusBasis(PolarBasis):
         z, weights = dedalus_sphere.sphere.quadrature(2,N,k=self.alpha)
         return reshape_vector(weights.astype(np.float64)[local_elements], dim=self.dist.dim, axis=self.axis+1)
 
+    @CachedAttribute
+    def constant_mode_value(self):
+        # Note the zeroth mode is constant only for k=0
+        Q0 = dedalus_sphere.jacobi.polynomials(1, self.alpha[0], self.alpha[1], np.array([0.0]))
+        return Q0[0,0]
+
     def _new_k(self, k):
         return AnnulusBasis(self.coordsystem, self.shape, radii = self.radii, k=k, alpha=self.alpha, dealias=self.dealias, dtype=self.dtype,
                          azimuth_library=self.azimuth_library,
@@ -2146,7 +2152,6 @@ class DiskBasis(PolarBasis):
         if self.mmax > 2*self.Nmax:
             logger.warning("You are using more azimuthal modes than can be resolved with your current radial resolution")
             #raise ValueError("shape[0] cannot be more than twice shape[1].")
-
         self.grid_params = (coordsystem, radius, alpha, dealias)
 
     @CachedAttribute
@@ -2209,6 +2214,11 @@ class DiskBasis(PolarBasis):
         N = int(np.ceil(scale * self.shape[1]))
         z, weights = dedalus_sphere.sphere.quadrature(2,N,k=self.alpha)
         return reshape_vector(weights.astype(np.float64)[local_elements], dim=self.dist.dim, axis=self.axis+1)
+
+    @CachedAttribute
+    def constant_mode_value(self):
+        Qk = dedalus_sphere.zernike.polynomials(2, 1, self.alpha+self.k, 0, np.array([0]))
+        return Qk[0]
 
     def _new_k(self, k):
         return DiskBasis(self.coordsystem, self.shape, radius = self.radius, k=k, alpha=self.alpha, dealias=self.dealias, dtype=self.dtype,
@@ -2381,6 +2391,63 @@ class ConvertPolar(operators.Convert, operators.PolarMOperator):
         dk = self.output_basis.k - radial_basis.k
         if spinindex_in == spinindex_out:
             return radial_basis.conversion_matrix(m, spintotal, dk)
+        else:
+            raise ValueError("This should never happen.")
+
+
+class ConvertConstantDisk(operators.ConvertConstant, operators.PolarMOperator):
+
+    output_basis_type = DiskBasis
+    subaxis_dependence = [True, True]
+    subaxis_coupling = [False, False]
+
+    def __init__(self, operand, output_basis, out=None):
+        super().__init__(operand, output_basis, out=out)
+        if self.coords in operand.tensorsig:
+            raise ValueError("Tensors not yet supported.")
+
+    def spinindex_out(self, spinindex_in):
+        return (spinindex_in,)
+
+    def radial_matrix(self, spinindex_in, spinindex_out, m):
+        radial_basis = self.output_basis
+        spintotal = radial_basis.spintotal(spinindex_in)
+        coeff_size = radial_basis.shape[-1]
+        if m == 0 and spinindex_in == spinindex_out:
+            unit_amplitude = 1 / self.output_basis.constant_mode_value
+            matrix = np.zeros((coeff_size, 1))
+            matrix[0, 0] = unit_amplitude
+            return matrix
+        else:
+            raise ValueError("This should never happen.")
+
+
+class ConvertConstantAnnulus(operators.ConvertConstant, operators.PolarMOperator):
+
+    output_basis_type = AnnulusBasis
+    subaxis_dependence = [True, True]
+    subaxis_coupling = [False, True]
+
+    def __init__(self, operand, output_basis, out=None):
+        super().__init__(operand, output_basis, out=out)
+        if self.coords in operand.tensorsig:
+            raise ValueError("Tensors not yet supported.")
+
+    def spinindex_out(self, spinindex_in):
+        return (spinindex_in,)
+
+    def radial_matrix(self, spinindex_in, spinindex_out, m):
+        radial_basis = self.output_basis
+        spintotal = radial_basis.spintotal(spinindex_in)
+        coeff_size = radial_basis.shape[-1]
+        if m == 0 and spinindex_in == spinindex_out:
+            # Convert to k=0
+            const_to_k0 = np.zeros((coeff_size, 1))
+            const_to_k0[0, 0] = 1 / self.output_basis.constant_mode_value  # This is really for k=0
+            # Convert up in k
+            k0_to_k = radial_basis._new_k(0).conversion_matrix(m, spintotal, radial_basis.k)
+            matrix = k0_to_k @ const_to_k0
+            return matrix
         else:
             raise ValueError("This should never happen.")
 
@@ -3685,13 +3752,17 @@ class Spherical3DBasis(MultidimensionalBasis):
         self.backward_transform_azimuth = self.sphere_basis.backward_transform_azimuth
         self.forward_transform_colatitude = self.sphere_basis.forward_transform_colatitude
         self.backward_transform_colatitude = self.sphere_basis.backward_transform_colatitude
-        # Adjust for SWSH normalization
-        self.constant_mode_value = radial_basis.constant_mode_value / np.sqrt(2)
         Basis.__init__(self, coordsystem)
 
     @CachedAttribute
     def constant(self):
         return (self.Lmax==0, self.Lmax==0, False)
+
+    @CachedAttribute
+    def constant_mode_value(self):
+        # Adjust for SWSH normalization
+        # TODO: check this is right for regtotal != 0?
+        return self.radial_basis.constant_mode_value / np.sqrt(2)
 
     def global_grids(self, scales=None):
         if scales == None: scales = (1,1,1)
@@ -4070,6 +4141,8 @@ class ConvertConstantBall(operators.ConvertConstant, operators.SphericalEllOpera
     def __init__(self, operand, output_basis, out=None):
         super().__init__(operand, output_basis, out=out)
         self.radial_basis = self.output_basis.get_radial_basis()
+        if self.coords in operand.tensorsig:
+            raise ValueError("Tensors not yet supported.")
 
     def regindex_out(self, regindex_in):
         return (regindex_in,)
@@ -4091,11 +4164,13 @@ class ConvertConstantShell(operators.ConvertConstant, operators.SphericalEllOper
 
     output_basis_type = (ShellBasis, SphericalShellRadialBasis)
     subaxis_dependence = [False, True, True]
-    subaxis_coupling = [False, False, False]
+    subaxis_coupling = [False, False, True]
 
     def __init__(self, operand, output_basis, out=None):
         super().__init__(operand, output_basis, out=out)
         self.radial_basis = self.output_basis.get_radial_basis()
+        if self.coords in operand.tensorsig:
+            raise ValueError("Tensors not yet supported.")
 
     def regindex_out(self, regindex_in):
         return (regindex_in,)

@@ -2055,19 +2055,22 @@ class PolarMOperator(SpectralOperator):
     def operate(self, out):
         """Perform operation."""
         operand = self.args[0]
-        input_basis = self.input_basis
-        axis = self.input_basis.first_axis + 1
+        if self.input_basis is None:
+            basis = self.output_basis
+        else:
+            basis = self.input_basis
+        axis = basis.first_axis + 1
         # Set output layout
         out.set_layout(operand.layout)
         out.data[:] = 0
         # Apply operator
-        S_in = input_basis.spin_weights(operand.tensorsig)
-        slices = [slice(None) for i in range(input_basis.dist.dim)]
+        S_in = basis.spin_weights(operand.tensorsig)
+        slices = [slice(None) for i in range(basis.dist.dim)]
         for spinindex_in, spintotal_in in np.ndenumerate(S_in):
             for spinindex_out in self.spinindex_out(spinindex_in):
                 comp_in = operand.data[spinindex_in]
                 comp_out = out.data[spinindex_out]
-                for m, mg_slice, mc_slice, n_slice in input_basis.m_maps:
+                for m, mg_slice, mc_slice, n_slice in basis.m_maps:
                     slices[axis-1] = mc_slice
                     slices[axis] = n_slice
                     vec_in  = comp_in[tuple(slices)]
@@ -3229,7 +3232,7 @@ class AdvectiveCFL(FutureLockedField, metaclass=MultiClass):
         # Compute CFL frequencies
         self.compute_cfl_frequency(arg, out)
 
-    def compute_cfl_frequency(self, velocity, out): 
+    def compute_cfl_frequency(self, velocity, out):
         """Return a scalar multi-D field of the cfl frequency everywhere in the domain."""
         raise NotImplementedError("Must call a subclass CFL.")
 

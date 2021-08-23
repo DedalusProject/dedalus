@@ -89,6 +89,35 @@ def build_annulus(Nphi, Nr, k, dealias, dtype):
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_disk, build_annulus])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_convert_constant_scalar(Nphi, Nr, k, dealias, basis, dtype):
+    c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
+    f = field.Field(dist=d, dtype=dtype)
+    f['g'] = 1
+    g = operators.Convert(f, b).evaluate()
+    assert np.allclose(f['g'], g['g'])
+
+
+@pytest.mark.xfail(reason="Not yet implemented", run=False)
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_convert_constant_tensor(Nphi, Nr, k, dealias, basis, dtype):
+    c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
+    f = field.Field(dist=d, dtype=dtype, tensorsig=(c,c))
+    f['g'][0,0] = f['g'][1,1] = 1
+    g = operators.Convert(f, b).evaluate()
+    assert np.allclose(f['g'], g['g'])
+
+
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 @pytest.mark.parametrize('layout', ['c', 'g'])
 def test_convert_scalar(Nphi, Nr, k, dealias, basis, dtype, layout):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
