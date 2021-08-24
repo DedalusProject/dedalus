@@ -12,8 +12,6 @@ The initial flow is in the x direction and depends only on z. There are two shea
 \pm 0.5. The velocity changes by 1 across the shear layer. The Reynolds number in this
 simulation is 1/nu.
 
-Simulation should run in less than 5 minutes on 4 cores.
-
 """
 
 import numpy as np
@@ -91,13 +89,16 @@ snapshots.add_task(s)
 flow = flow_tools.GlobalFlowProperty(solver, cadence=10)
 flow.add_property(dot(u,ez)**2, name='w2')
 
-# TODO: CFL
+# Use CFL criterion to calculate timestep size
 dt = 5e-3
+CFL = flow_tools.CFL(solver, dt, cadence=1, safety=0.3, threshold=0.1, max_dt=1e-2)
+CFL.add_velocity(u)
 
 # Main loop
 while solver.ok:
     solver.step(dt)
+    dt = CFL.compute_dt()
 
-    if solver.iteration % 10 == 0:
-        logger.info('Iteration: %i, t: %f, max w = %f' %(solver.iteration, solver.sim_time, np.sqrt(flow.max('w2'))))
+    if (solver.iteration-1) % 10 == 0:
+        logger.info('Iteration = %i, t = %f, dt = %f, max w = %f' %(solver.iteration, solver.sim_time, dt, np.sqrt(flow.max('w2'))))
 

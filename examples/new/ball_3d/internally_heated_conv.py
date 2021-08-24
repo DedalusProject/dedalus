@@ -35,9 +35,6 @@ logger = logging.getLogger(__name__)
 from dedalus.tools.config import config
 config['linear algebra']['MATRIX_FACTORIZER'] = 'SuperLUNaturalFactorizedTranspose'
 
-# TODO:
-# NCC basis
-
 restart = False
 if len(sys.argv) > 1 and sys.argv[1] == '--restart':
     restart = True
@@ -53,7 +50,7 @@ else:
     t_end = 20
 ts = timesteppers.SBDF2
 dtype = np.float64
-mesh = None#[4,8]
+mesh = None
 Rayleigh = 1e6
 Prandtl = 1
 R = np.sqrt(Rayleigh*Prandtl)
@@ -72,7 +69,6 @@ p = field.Field(name='p', dist=d, bases=(b,), dtype=dtype)
 T = field.Field(name='T', dist=d, bases=(b,), dtype=dtype)
 tau_u = field.Field(name='tau u', dist=d, bases=(b_S2,), tensorsig=(c,), dtype=dtype)
 tau_T = field.Field(name='tau T', dist=d, bases=(b_S2,), dtype=dtype)
-# TODO: basis for NCC
 r_vec = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
 r_vec['g'][2] = r
 T_source = 6
