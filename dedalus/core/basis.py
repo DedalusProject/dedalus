@@ -549,6 +549,7 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         matrix = convert @ matrix
         return matrix[:N, :N]
 
+
 def Legendre(*args, **kw):
     return Jacobi(*args, a=0, b=0, **kw)
 

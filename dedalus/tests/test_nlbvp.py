@@ -194,7 +194,7 @@ def test_lane_emden_floating_R(Nr, dtype, dealias):
     assert np.allclose(R['g'].ravel(), R_ref[n])
 
 
-@pytest.mark.xfail(reason="First order Lane Emden failing for unkown reason.")
+@pytest.mark.xfail(reason="First order Lane Emden failing for unkown reason.", run=False)
 @pytest.mark.parametrize('Nr', [64])
 @pytest.mark.parametrize('dtype', [np.complex128,
     pytest.param(np.float64, marks=pytest.mark.xfail(reason="ell = 0 matrices with float are singular?"))])

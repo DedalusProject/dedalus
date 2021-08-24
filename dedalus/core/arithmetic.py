@@ -24,6 +24,12 @@ from ..tools.exceptions import SymbolicParsingError
 from ..tools.exceptions import SkipDispatchException
 from ..tools.general import unify_attributes, DeferredTuple
 
+# Public interface
+__all__ = ['Add',
+           'Multiply',
+           'DotProduct',
+           'CrossProduct']
+
 
 def enum_indices(tensorsig):
     shape = tuple(cs.dim for cs in tensorsig)

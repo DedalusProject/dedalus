@@ -8,6 +8,7 @@ from .core.coords import *
 from .core.distributor import *
 from .core.basis import *
 from .core.field import *
-from .core.operators import * # no interface yet
+from .core.operators import *
+from .core.arithmetic import *
 from .core.problems import *
 

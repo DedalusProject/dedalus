@@ -26,6 +26,27 @@ from ..tools.exceptions import UndefinedParityError
 from ..tools.exceptions import SkipDispatchException
 from ..tools.general import unify, unify_attributes
 
+# Public interface
+__all__ = ['GeneralFunction',
+           'Grid',
+           'Coeff',
+           'TimeDerivative',
+           'Interpolate',
+           'Integrate',
+           'Average',
+           'Differentiate',
+           'Convert',
+           'TransposeComponents',
+           'RadialComponent',
+           'AngularComponent',
+           'AzimuthalComponent',
+           'Gradient',
+           'Component',
+           'Divergence',
+           'Curl',
+           'Laplacian',
+           'LiftTau',
+           'AdvectiveCFL']
 
 # Use simple decorator to track parseable operators
 parseables = {}
