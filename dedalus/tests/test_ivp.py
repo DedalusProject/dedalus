@@ -43,6 +43,17 @@ def build_disk(Nphi, Nr, radius, dealias, dtype=np.float64, grid_scale=1):
     return c, d, b, phi, r, x, y
 
 @CachedFunction
+def build_annulus(Nphi, Nr, radii_annulus, dealias, dtype=np.float64, grid_scale=1):
+    c = coords.PolarCoordinates('phi', 'r')
+    d = distributor.Distributor((c,))
+    dealias_tuple = (dealias, dealias)
+    b = basis.AnnulusBasis(c, (Nphi, Nr), radii=radii_annulus, dealias=dealias_tuple, dtype=dtype)
+    grid_scale_tuple = (grid_scale, grid_scale)
+    phi, r = b.local_grids(grid_scale_tuple)
+    x, y = c.cartesian(phi, r)
+    return c, d, b, phi, r, x, y
+
+@CachedFunction
 def build_S2(Nphi, Ntheta, dealias, dtype=np.complex128, grid_scale=1):
     c = coords.S2Coordinates('phi', 'theta')
     d = distributor.Distributor((c,))
@@ -270,9 +281,28 @@ def test_spherical_shell_AdvectiveCFL(Lmax, Nmax, timestepper, dtype, dealias):
 @pytest.mark.parametrize('Nr', [15])
 @pytest.mark.parametrize('dtype', [np.complex128, np.float64])
 @pytest.mark.parametrize('dealias', [1, 3/2])
+def test_annulus_AdvectiveCFL(Nr, Nphi, timestepper, dtype, dealias):
+    radii = (0.5, 2)
+    # Bases
+    c, d, db, phi, r, x, y = build_annulus(Nphi, Nr, radii, dealias, dtype=dtype, grid_scale=1)
+    # Fields
+    f = field.Field(name='f', dist=d, bases=(db,), dtype=dtype)
+    f['g'] = x*y
+    u = operators.Gradient(f, c).evaluate()
+    # AdvectiveCFL initialization
+    cfl = operators.AdvectiveCFL(u, c)
+    cfl_freq = cfl.evaluate()['g']
+    comparison_freq = np.abs(u['g'][0]) / cfl.cfl_spacing()[0]
+    comparison_freq += np.abs(u['g'][1]) / cfl.cfl_spacing()[1]
+    assert np.allclose(cfl_freq, comparison_freq)
+
+@pytest.mark.parametrize('timestepper', [timesteppers.SBDF1])
+@pytest.mark.parametrize('Nphi', [16])
+@pytest.mark.parametrize('Nr', [15])
+@pytest.mark.parametrize('dtype', [np.complex128, np.float64])
+@pytest.mark.parametrize('dealias', [1, 3/2])
 def test_disk_AdvectiveCFL(Nr, Nphi, timestepper, dtype, dealias):
     radius = 2
-    k = 0
     # Bases
     c, d, db, phi, r, x, y = build_disk(Nphi, Nr, radius, dealias, dtype=dtype, grid_scale=1)
     # Fields

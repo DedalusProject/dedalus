@@ -5228,10 +5228,10 @@ class CartesianAdvectiveCFL(operators.AdvectiveCFL):
             out.data += u_mag[i] / dx
 
 
-class D2AdvectiveCFL(operators.AdvectiveCFL):
+class PolarAdvectiveCFL(operators.AdvectiveCFL):
 
     input_coord_type = PolarCoordinates
-    input_basis_type = DiskBasis
+    input_basis_type = (DiskBasis, AnnulusBasis)
 
     @CachedMethod
     def cfl_spacing(self):
@@ -5241,8 +5241,10 @@ class D2AdvectiveCFL(operators.AdvectiveCFL):
         azimuth_spacing = basis.local_grid_spacing(0, scales=dealias)
         if basis.mmax == 0:
             azimuth_spacing[:] = np.inf
-        else:
+        elif isinstance(basis, DiskBasis):
             azimuth_spacing[:] = basis.radius / basis.mmax
+        elif isinstance(basis, AnnulusBasis):
+            azimuth_spacing = basis.local_grid_radius(dealias[1]) / basis.mmax
         radial_spacing = dealias[1] * basis.local_grid_spacing(1, scales=dealias)
         return [azimuth_spacing, radial_spacing]
 
