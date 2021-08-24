@@ -25,6 +25,16 @@ from ..tools.config import config
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
 
+# Public interface
+__all__ = ['EigenvalueProblem',
+           'LinearBoundaryValueProblem',
+           'NonlinearBoundaryValueProblem',
+           'InitialValueProblem',
+           'EVP',
+           'LBVP',
+           'NLBVP',
+           'IVP']
+
 
 class Namespace(OrderedDict):
     """Class ensuring a conflict-free namespace for parsing."""

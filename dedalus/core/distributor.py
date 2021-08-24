@@ -22,6 +22,9 @@ elif TRANSPOSE_LIBRARY.upper() == 'MPI':
     from .transposes import AlltoallvTranspose as TransposePlanner
 from .transposes import RowDistributor, ColDistributor
 
+# Public interface
+__all__ = ['Distributor']
+
 
 class Distributor:
     """

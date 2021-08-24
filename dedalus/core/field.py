@@ -26,6 +26,10 @@ from ..tools.general import unify, unify_attributes, DeferredTuple, OrderedSet
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
 
+# Public interface
+__all__ = ['Field',
+           'LockedField']
+
 
 class Operand:
     """Base class for operand classes."""

@@ -41,6 +41,22 @@ from ..tools.config import config
 #DEFAULT_LIBRARY = config['transforms'].get('DEFAULT_LIBRARY')
 DEFAULT_LIBRARY = 'scipy'
 
+# Public interface
+__all__ = ['Jacobi',
+           'Legendre',
+           'Ultraspherical',
+           'Chebyshev',
+           'ChebyshevT',
+           'ChebyshevU',
+           'ChebyshevV',
+           'RealFourier',
+           'ComplexFourier',
+           'DiskBasis',
+           'AnnulusBasis',
+           'SphereBasis',
+           'BallBasis',
+           'ShellBasis']
+
 
 class AffineCOV:
     """
@@ -556,6 +572,9 @@ def ChebyshevU(*args, **kw):
 
 def ChebyshevV(*args, **kw):
     return Ultraspherical(*args, alpha=2, **kw)
+
+
+Chebyshev = ChebyshevT
 
 
 class ConvertJacobi(operators.Convert, operators.SpectralOperator1D):

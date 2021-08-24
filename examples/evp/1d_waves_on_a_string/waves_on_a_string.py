@@ -1,14 +1,16 @@
 """
 Dedalus script to compute the eigenmodes of waves on a clamped string.
+This script demonstrates solving a 1D eigenvalue problem and produces
+a plot of the relative error of the eigenvalues.
 
-We solve the eigenvalue problem:
+We use a Chebyshev basis to solve the EVP:
     s*u + dx(dx(u)) = 0
-where s is the eigenvalue, using a Chebyshev basis.
+where s is the eigenvalue.
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
-import dedalus.dev as de
+import dedalus.public as d3
 
 import logging
 logger = logging.getLogger(__name__)
@@ -21,25 +23,25 @@ Lx = 1
 dtype = np.complex128
 
 # Bases
-c = de.coords.Coordinate('x')
-d = de.distributor.Distributor((c,))
-b = de.basis.ChebyshevT(c, size=Nx, bounds=(0, Lx))
+c = d3.Coordinate('x')
+d = d3.Distributor((c,))
+b = d3.Chebyshev(c, size=Nx, bounds=(0, Lx))
 
 # Fields
-u = de.field.Field(d, bases=(b,), dtype=dtype)
-t1 = de.field.Field(d, dtype=dtype)
-t2 = de.field.Field(d, dtype=dtype)
-s = de.field.Field(d, dtype=dtype)
+u = d3.Field(d, bases=(b,), dtype=dtype)
+t1 = d3.Field(d, dtype=dtype)
+t2 = d3.Field(d, dtype=dtype)
+s = d3.Field(d, dtype=dtype)
 
 # Problem
-dx = lambda A: de.operators.Differentiate(A, c)
+dx = lambda A: d3.Differentiate(A, c)
 def build_P(n):
     b2 = dx(dx(u)).domain.bases[0]
-    P = de.field.Field(d, bases=(b2,), dtype=dtype)
+    P = d3.Field(d, bases=(b2,), dtype=dtype)
     P['c'][n] = 1
     return P
 LT = lambda A, n: A * build_P(n)
-problem = de.problems.EVP(variables=[u, t1, t2], eigenvalue=s)
+problem = d3.EVP(variables=[u, t1, t2], eigenvalue=s)
 problem.add_equation((s*u + dx(dx(u)) + LT(t1,-1) + LT(t2,-2), 0))
 problem.add_equation((u(x=0), 0))
 problem.add_equation((u(x=Lx), 0))
