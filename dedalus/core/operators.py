@@ -1688,9 +1688,6 @@ class CartesianTrace(Trace):
         # Assume all components have the same n_size
         eye = sparse.identity(subproblem.coeff_size(self.domain), self.dtype, format='csr')
         matrix = sparse.kron(trace, eye)
-        # Block-diag for sin/cos parts for real dtype
-        if self.dtype == np.float64:
-            matrix = sparse.kron(matrix, sparse.identity(2, format='csr')).tocsr()
         return matrix
 
 
