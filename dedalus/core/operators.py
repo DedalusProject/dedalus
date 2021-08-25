@@ -26,6 +26,27 @@ from ..tools.exceptions import UndefinedParityError
 from ..tools.exceptions import SkipDispatchException
 from ..tools.general import unify, unify_attributes
 
+# Public interface
+__all__ = ['GeneralFunction',
+           'Grid',
+           'Coeff',
+           'TimeDerivative',
+           'Interpolate',
+           'Integrate',
+           'Average',
+           'Differentiate',
+           'Convert',
+           'TransposeComponents',
+           'RadialComponent',
+           'AngularComponent',
+           'AzimuthalComponent',
+           'Gradient',
+           'Component',
+           'Divergence',
+           'Curl',
+           'Laplacian',
+           'LiftTau',
+           'AdvectiveCFL']
 
 # Use simple decorator to track parseable operators
 parseables = {}
@@ -1093,6 +1114,9 @@ class Integrate(LinearOperator, metaclass=MultiClass):
         self.tensorsig = operand.tensorsig
         self.dtype = operand.dtype
 
+    def new_operand(self, operand, **kw):
+        return Integrate(operand, self.coord, **kw)
+
 
 class Average(LinearOperator, metaclass=MultiClass):
     """
@@ -1353,7 +1377,8 @@ def convert(arg, bases):
 
 class Convert(SpectralOperator, metaclass=MultiClass):
     """
-    Convert bases along one dimension.
+    Convert an operand between two bases, assuming coupling over just
+    the last axis of the bases.
 
     Parameters
     ----------
@@ -1410,22 +1435,20 @@ class Convert(SpectralOperator, metaclass=MultiClass):
         """Check that arguments are in a proper layout."""
         arg0 = self.args[0]
         last_axis = self.last_axis
-        is_coeff = not arg0.layout.grid_space[last_axis]
-        is_local = arg0.layout.local[last_axis]
-        # Require locality if non-separable or in grid space
-        if (not is_coeff) or self.subaxis_coupling[-1]:
-            return is_local
-        else:
-            return True
+        last_is_coeff = not arg0.layout.grid_space[last_axis]
+        last_is_local = arg0.layout.local[last_axis]
+        # In coefficient space, require locality if coupled
+        if last_is_coeff and self.subaxis_coupling[-1]:
+            return last_is_local
+        return True
 
     def enforce_conditions(self):
         """Require arguments to be in a proper layout."""
         arg0 = self.args[0]
         last_axis = self.last_axis
-        is_coeff = not arg0.layout.grid_space[last_axis]
-        is_local = arg0.layout.local[last_axis]
+        last_is_coeff = not arg0.layout.grid_space[last_axis]
         # Require locality if non-separable or in grid space
-        if (not is_coeff) or self.subaxis_coupling[-1]:
+        if last_is_coeff and self.subaxis_coupling[-1]:
             self.args[0].require_local(last_axis)
 
     def replace(self, old, new):
@@ -1451,9 +1474,8 @@ class Convert(SpectralOperator, metaclass=MultiClass):
         """Perform operation."""
         arg = self.args[0]
         layout = arg.layout
-        last_axis = self.last_axis
         # Copy for grid space
-        if layout.grid_space[last_axis]:
+        if layout.grid_space[self.last_axis]:
             out.set_layout(layout)
             np.copyto(out.data, arg.data)
         # Revert to matrix application for coeff space
@@ -1479,63 +1501,86 @@ class ConvertSame(Convert):
         return operand
 
 
-# class Convert1DConstant(Convert1D):
-#     """Constant conversion."""
+class ConvertConstant(Convert):
+    """Constant conversion in full coeff space."""
 
-#     separable = True
-#     bands = [0]
+    input_basis_type = type(None)
+    output_basis_type = object
 
-#     @classmethod
-#     def _check_args(cls, operand, space, output_basis, out=None):
-#         if output_basis.const is not None:
-#             if isinstance(operand, Number):
-#                 return True
-#             if isinstance(operand, Operand):
-#                 input_basis = operand.get_basis(space)
-#                 if input_basis is None:
-#                     return True
-#         return False
+    # TODO: could generalize to allow conversion in full/partial grid space,
+    # but need to be careful about data distributions in that case
 
-#     @staticmethod
-#     def _subspace_matrix(space, input_basis, output_basis):
-#         dtype = space.domain.dtype
-#         N = space.coeff_size
-#         # Reweight by constant-mode amplitude
-#         M = sparse.lil_matrix((N, 1), dtype=dtype)
-#         M[0,0] = 1 / output_basis.const
-#         return M.tocsr()
+    # def check_conditions(self):
+    #     """Check that arguments are in a proper layout."""
+    #     arg0 = self.args[0]
+    #     first_axis = self.first_axis
+    #     last_axis = self.last_axis
+    #     coeff_space = ~ arg0.layout.grid_space
+    #     others_are_coeff = np.all(coeff_space[first_axis:last_axis])
+    #     last_is_coeff = coeff_space[last_axis]
+    #     last_is_local = arg0.layout.local[last_axis]
+    #     # Require locality if last axis in grid space
+    #     return others_are_coeff and (last_is_coeff or last_is_local)
 
-#     def check_conditions(self):
-#         """Check that arguments are in a proper layout."""
-#         # No conditions
-#         return True
+    # def enforce_conditions(self):
+    #     """Require arguments to be in a proper layout."""
+    #     arg0 = self.args[0]
+    #     first_axis = self.first_axis
+    #     last_axis = self.last_axis
+    #     # Require others in coeff space
+    #     if last_axis > first_axis:
+    #         arg0.require_coeff_space(last_axis-1)
+    #     # Require local if last axis in grid space
+    #     if arg0.layout.grid_space[last_axis]:
+    #         arg0.require_local(last_axis)
 
-#     def enforce_conditions(self):
-#         """Require arguments to be in a proper layout."""
-#         # No conditions
-#         pass
+    def check_conditions(self):
+        """Check that arguments are in a proper layout."""
+        arg0 = self.args[0]
+        last_axis = self.last_axis
+        if self.output_basis.dim == 1:
+            # Require coeff space or local
+            last_is_coeff = not arg0.layout.grid_space[last_axis]
+            last_is_local = arg0.layout.local[last_axis]
+            return last_is_coeff or last_is_local
+        else:
+            # Require last axis in coeff space
+            last_is_coeff = not arg0.layout.grid_space[self.last_axis]
+            return last_is_coeff
 
-#     def operate(self, out):
-#         """Perform operation."""
-#         operand = self.operand
-#         axis = self.axis
-#         output_basis = self.args[2]
-#         # Set output layout
-#         out.set_layout(operand.layout)
-#         # Broadcast constant in grid space
-#         if operand.layout.grid_space[axis]:
-#             np.copyto(out.data, operand.data)
-#         # Set constant mode in coefficient space
-#         else:
-#             out.data.fill(0)
-#             mask = out.local_elements()[axis] == 0
-#             out.data[axindex(axis, mask)] = operand.data / output_basis.const
+    def enforce_conditions(self):
+        """Require arguments to be in a proper layout."""
+        arg0 = self.args[0]
+        last_axis = self.last_axis
+        if self.output_basis.dim == 1:
+            # Require coeff space or local
+            if arg0.layout.grid_space[last_axis]:
+                arg0.require_local(last_axis)
+        else:
+            # Require last axis in coeff space
+            arg0.require_coeff_space(self.last_axis)
 
 
-class Trace(LinearOperator):
-    # TODO: implement matrix/coefficient versions
+class Trace(LinearOperator, metaclass=MultiClass):
+    # TODO: contract arbitrary indices instead of the first two?
 
     name = "Trace"
+
+    @classmethod
+    def _preprocess_args(cls, operand, out=None):
+        if isinstance(operand, Number):
+            raise SkipDispatchException(output=0)
+        return [operand], {'out': out}
+
+    @classmethod
+    def _check_args(cls, operand, out=None):
+        # Dispatch by coordinate system; not clear that this is useful (see Keaton's note)
+        if isinstance(operand, Operand):
+            # hack to check coordsys of first index only
+            cs0 = operand.tensorsig[0]
+            if isinstance(cs0, cls.cs_type):
+                return True
+        return False
 
     def __init__(self, operand, out=None):
         super().__init__(operand, out=out)
@@ -1545,6 +1590,9 @@ class Trace(LinearOperator):
         self.domain = operand.domain
         self.tensorsig = tuple(operand.tensorsig[2:])
         self.dtype = operand.dtype
+        # Coordinate information
+        self.coordsys = operand.tensorsig[0]
+        self.input_basis = self.domain.get_basis(self.coordsys)
 
     def new_operand(self, operand, **kw):
         return Trace(operand, **kw)
@@ -1573,6 +1621,74 @@ class Trace(LinearOperator):
         arg = self.args[0]
         out.set_layout(arg.layout)
         np.einsum('ii...', arg.data, out=out.data)
+
+
+class SphericalTrace(Trace):
+
+    cs_type = coords.SphericalCoordinates
+
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self.radius_axis = self.coordsys.coords[2].axis
+        self.radial_basis = self.input_basis.get_radial_basis()
+
+    def subproblem_matrix(self, subproblem):
+        radial_basis = self.radial_basis
+        ell = subproblem.group[self.radius_axis - 1]
+        # Commute trace with regularity recombination
+        Q_in = radial_basis.radial_recombinations(self.operand.tensorsig, ell_list=(ell,))
+        Q_out = radial_basis.radial_recombinations(self.tensorsig, ell_list=(ell,))
+        # [-+, +-, 00] are 1, other components are 0
+        # [ 1,  3,  8]
+        trace_spin = np.zeros(9)
+        trace_spin[[1, 3, 8]] = 1
+        trace = np.kron(trace_spin, np.eye(3**len(self.tensorsig)))
+        # Apply Q's
+        trace = Q_out[ell].T @ trace @ Q_in[ell]
+        # Assume all components have the same n_size
+        eye = sparse.identity(radial_basis.n_size(ell), self.dtype, format='csr')
+        matrix = sparse.kron(trace, eye)
+        # Block-diag for sin/cos parts for real dtype
+        if self.dtype == np.float64:
+            matrix = sparse.kron(matrix, sparse.identity(2, format='csr')).tocsr()
+        return matrix
+
+
+class CylindricalTrace(Trace):
+
+    cs_type = coords.PolarCoordinates
+
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self.radius_axis = self.coordsys.coords[1].axis
+
+    def subproblem_matrix(self, subproblem):
+        m = subproblem.group[self.radius_axis - 1]
+        # [-+, +-] are 1, other components are 0
+        # [ 1,  2]
+        trace_spin = np.zeros(4)
+        trace_spin[[1, 2]] = 1
+        trace = np.kron(trace_spin, np.eye(2**len(self.tensorsig)))
+        # Assume all components have the same n_size
+        eye = sparse.identity(self.input_basis.n_size(m), self.dtype, format='csr')
+        matrix = sparse.kron(trace, eye)
+        # Block-diag for sin/cos parts for real dtype
+        if self.dtype == np.float64:
+            matrix = sparse.kron(matrix, sparse.identity(2, format='csr')).tocsr()
+        return matrix
+
+
+class CartesianTrace(Trace):
+
+    cs_type = coords.CartesianCoordinates
+
+    def subproblem_matrix(self, subproblem):
+        dim = self.coordsys.dim
+        trace = np.ravel(np.eye(dim))
+        # Assume all components have the same n_size
+        eye = sparse.identity(subproblem.coeff_size(self.domain), self.dtype, format='csr')
+        matrix = sparse.kron(trace, eye)
+        return matrix
 
 
 class TransposeComponents(LinearOperator, metaclass=MultiClass):
@@ -1809,6 +1925,67 @@ class AngularComponent(SphericalComponent, metaclass=MultiClass):
         return AngularComponent(operand, self.index, **kw)
 
 
+class PolarComponent(LinearOperator):
+
+    @classmethod
+    def _preprocess_args(cls, operand, index=0, out=None):
+        if isinstance(operand, Number):
+            raise SkipDispatchException(output=0)
+        return [operand], {'index': index, 'out': out}
+
+    def __init__(self, operand, index=0, out=None):
+        if index < 0: index += len(operand.tensorsig)
+        if index >= len(operand.tensorsig):
+            raise ValueError("index greater than rank")
+        self.index = index
+        self.coordsys = operand.tensorsig[self.index]
+        if not isinstance(self.coordsys, coords.PolarCoordinates):
+            raise ValueError("Can only take the PolarComponent of a PolarCoordinate vector")
+        super().__init__(operand, out=out)
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = operand.domain
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
+
+    def check_conditions(self):
+        """Can always take components"""
+        return True
+
+    def enforce_conditions(self):
+        """Can always take components"""
+        pass
+
+    def matrix_dependence(self, *vars):
+        return self.operand.matrix_dependence(*vars)
+
+    def matrix_coupling(self, *vars):
+        return self.operand.matrix_coupling(*vars)
+
+
+class AzimuthalComponent(PolarComponent, metaclass=MultiClass):
+
+    @classmethod
+    def _check_args(cls, operand, index=0, out=None):
+        # Dispatch by coordinate system
+        if isinstance(operand, Operand):
+            if index < 0: index += len(operand.tensorsig)
+            coordsys = operand.tensorsig[index]
+            basis = operand.domain.get_basis(coordsys)
+            if isinstance(basis, cls.basis_type):
+                return True
+        return False
+
+    def __init__(self, operand, index=0, out=None):
+        super().__init__(operand, index=index, out=out)
+        tensorsig = operand.tensorsig
+        self.tensorsig = tuple( tensorsig[:index] + tensorsig[index+1:] )
+
+    def new_operand(self, operand, **kw):
+        return AzimuthalComponent(operand, self.index, **kw)
+
+
 class Gradient(LinearOperator, metaclass=MultiClass):
 
     name = "Grad"
@@ -1986,19 +2163,22 @@ class PolarMOperator(SpectralOperator):
     def operate(self, out):
         """Perform operation."""
         operand = self.args[0]
-        input_basis = self.input_basis
-        axis = self.input_basis.first_axis + 1
+        if self.input_basis is None:
+            basis = self.output_basis
+        else:
+            basis = self.input_basis
+        axis = basis.first_axis + 1
         # Set output layout
         out.set_layout(operand.layout)
         out.data[:] = 0
         # Apply operator
-        S_in = input_basis.spin_weights(operand.tensorsig)
-        slices = [slice(None) for i in range(input_basis.dist.dim)]
+        S_in = basis.spin_weights(operand.tensorsig)
+        slices = [slice(None) for i in range(basis.dist.dim)]
         for spinindex_in, spintotal_in in np.ndenumerate(S_in):
             for spinindex_out in self.spinindex_out(spinindex_in):
                 comp_in = operand.data[spinindex_in]
                 comp_out = out.data[spinindex_out]
-                for m, mg_slice, mc_slice, n_slice in input_basis.m_maps:
+                for m, mg_slice, mc_slice, n_slice in basis.m_maps:
                     slices[axis-1] = mc_slice
                     slices[axis] = n_slice
                     vec_in  = comp_in[tuple(slices)]
@@ -3160,7 +3340,7 @@ class AdvectiveCFL(FutureLockedField, metaclass=MultiClass):
         # Compute CFL frequencies
         self.compute_cfl_frequency(arg, out)
 
-    def compute_cfl_frequency(self, velocity, out): 
+    def compute_cfl_frequency(self, velocity, out):
         """Return a scalar multi-D field of the cfl frequency everywhere in the domain."""
         raise NotImplementedError("Must call a subclass CFL.")
 

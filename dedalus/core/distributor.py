@@ -22,6 +22,9 @@ elif TRANSPOSE_LIBRARY.upper() == 'MPI':
     from .transposes import AlltoallvTranspose as TransposePlanner
 from .transposes import RowDistributor, ColDistributor
 
+# Public interface
+__all__ = ['Distributor']
+
 
 class Distributor:
     """
@@ -256,7 +259,14 @@ class Layout:
 
     def slices(self, domain, scales):
         """Local element slices by axis."""
-        return np.ix_(*self.local_elements(domain, scales))
+        local_elements = self.local_elements(domain, scales)
+        slices = []
+        for LE in local_elements:
+            if LE.size:
+                slices.append(slice(LE.min(), LE.max()+1))
+            else:
+                slices.append(slice(0, 0))
+        return tuple(slices)
 
     def local_shape(self, domain, scales, rank = None):
         """Local data shape."""

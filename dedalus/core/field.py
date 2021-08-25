@@ -11,6 +11,7 @@ from mpi4py import MPI
 from scipy import sparse
 from scipy.sparse import linalg as splinalg
 from numbers import Number
+import h5py
 
 
 from ..libraries.fftw import fftw_wrappers as fftw
@@ -24,6 +25,10 @@ from ..tools.general import unify, unify_attributes, DeferredTuple, OrderedSet
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
+
+# Public interface
+__all__ = ['Field',
+           'LockedField']
 
 
 class Operand:
@@ -644,6 +649,30 @@ class Field(Current):
     # @CachedAttribute
     # def mode_mask(self):
     #     return reduce()
+
+    def load_from_hdf5(self, file, index, task=None):
+        """Load grid data from an hdf5 file. Task correpsonds to field name by default."""
+        if task is None:
+            task = self.name
+        dset = file['tasks'][task]
+        if not np.all(dset.attrs['grid_space']):
+            raise ValueError("Can only load data from grid space")
+        self.load_from_global_grid_data(dset, pre_slices=(index,))
+
+    def load_from_global_grid_data(self, global_data, pre_slices=tuple()):
+        """Load local grid data from array-like global grid data."""
+        dim = self.dist.dim
+        layout = self.dist.grid_layout
+        # Set scales to match saved data
+        scales = np.array(global_data.shape[-dim:]) / np.array(layout.global_shape(self.domain, scales=1))
+        self.set_scales(scales)
+        # Extract local data from global data
+        component_slices = tuple(slice(None) for cs in self.tensorsig)
+        spatial_slices = layout.slices(self.domain, scales)
+        local_slices = pre_slices + component_slices + spatial_slices
+        self[layout] = global_data[local_slices]
+        # Change scales back to dealias scales
+        self.require_scales(self.domain.dealias)
 
     def allgather_data(self):
         """Build global data on all processes."""

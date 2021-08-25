@@ -351,7 +351,7 @@ class RealFourierTransform(SeparableTransform):
 
     def __init__(self, grid_size, coeff_size):
         if coeff_size % 2 != 0:
-            raise ValueError("coeff_size must be even.")
+            pass#raise ValueError("coeff_size must be even.")
         self.N = grid_size
         self.M = coeff_size
         self.KN = (self.N - 1) // 2
@@ -373,7 +373,7 @@ class RealFourierMMT(RealFourierTransform, SeparableMatrixTransform):
     def forward_matrix(self):
         """Build forward transform matrix."""
         N = self.N
-        M = self.M
+        M = max(2, self.M) # Account for sin and cos parts of m=0
         Kmax = self.Kmax
         K = self.wavenumbers[::2, None]
         X = np.arange(N)[None, :]
@@ -391,7 +391,7 @@ class RealFourierMMT(RealFourierTransform, SeparableMatrixTransform):
     def backward_matrix(self):
         """Build backward transform matrix."""
         N = self.N
-        M = self.M
+        M = max(2, self.M) # Account for sin and cos parts of m=0
         Kmax = self.Kmax
         K = self.wavenumbers[None, ::2]
         X = np.arange(N)[:, None]
@@ -1376,15 +1376,21 @@ class DiskRadialTransform(NonSeparableTransform):
         m_matrices = {}
         for m in m_list:
             if m not in m_matrices:
+                # Gauss quadrature with base (k=0) polynomials
                 Nmin = dedalus_sphere.zernike.min_degree(m)
-                Nc = self.N2c - Nmin
+                Nc = max(max(self.N2g, self.N2c) - Nmin, 0)
                 W = dedalus_sphere.zernike.polynomials(2, Nc, self.alpha, abs(m + self.s), z_grid) # shape (N2c-Nmin, Ng)
-                conversion = dedalus_sphere.zernike.operator(2, 'E')(+1)**self.k
-                W = conversion(Nc, self.alpha, abs(m + self.s)) @ W
-                W = (W*weights).astype(np.float64)
-                # zero out modes higher than grid resolution taking into account n starts at Nmin
-                W[self.N2g-Nmin:] = 0
-                m_matrices[m] = np.asarray(W, order='C')
+                W = W * weights
+                # Zero higher coefficients than can be correctly computed with base Gauss quadrature
+                dN = abs(m + self.s) // 2
+                W[max(self.N2g-dN,0):] = 0
+                # Spectral conversion
+                if self.k > 0:
+                    conversion = dedalus_sphere.zernike.operator(2, 'E')(+1)**self.k
+                    W = conversion(Nc, self.alpha, abs(m + self.s)) @ W
+                # Truncate to specified coeff_size
+                W = W[:max(self.N2c-Nmin,0)]
+                m_matrices[m] = np.asarray(W.astype(np.float64), order='C')
         return m_matrices
 
     @CachedAttribute
@@ -1394,17 +1400,18 @@ class DiskRadialTransform(NonSeparableTransform):
         z_grid, weights = self._quadrature
         m_list = tuple(map[0] for map in self.m_maps)
         m_matrices = {}
-
         for m in m_list:
             if m not in m_matrices:
+                # Construct polynomials on the base grid
                 Nmin = dedalus_sphere.zernike.min_degree(m)
-                Nc = self.N2c - Nmin
+                Nc = max(self.N2c - Nmin, 0)
                 W = dedalus_sphere.zernike.polynomials(2, Nc, self.k + self.alpha, abs(m + self.s), z_grid)
+                # Zero higher coefficients than can be correctly computed with base Gauss quadrature
+                dN = abs(m + self.s) // 2
+                W[max(self.N2g-dN,0):] = 0
+                # Transpose and ensure C ordering for fast dot products
                 m_matrices[m] = np.asarray(W.T.astype(np.float64), order='C')
         return m_matrices
-
-
-
 
 
 @register_transform(basis.BallRadialBasis, 'matrix')
@@ -1508,7 +1515,7 @@ class BallRadialTransform(Transform):
                     Nmin = dedalus_sphere.zernike.min_degree(ell)
                     Nc = max(self.N3c - Nmin, 0)
                     W = dedalus_sphere.zernike.polynomials(3, Nc, self.alpha+self.k, ell+self.regtotal, z_grid)
-                    # Zero higher coefficients than can be correctly computed with basee Gauss quadrature
+                    # Zero higher coefficients than can be correctly computed with base Gauss quadrature
                     dN = (ell + self.regtotal) // 2
                     W[max(self.N3g-dN,0):] = 0
                     # Transpose and ensure C ordering for fast dot products

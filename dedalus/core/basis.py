@@ -41,6 +41,22 @@ from ..tools.config import config
 #DEFAULT_LIBRARY = config['transforms'].get('DEFAULT_LIBRARY')
 DEFAULT_LIBRARY = 'scipy'
 
+# Public interface
+__all__ = ['Jacobi',
+           'Legendre',
+           'Ultraspherical',
+           'Chebyshev',
+           'ChebyshevT',
+           'ChebyshevU',
+           'ChebyshevV',
+           'RealFourier',
+           'ComplexFourier',
+           'DiskBasis',
+           'AnnulusBasis',
+           'SphereBasis',
+           'BallBasis',
+           'ShellBasis']
+
 
 class AffineCOV:
     """
@@ -421,7 +437,7 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         self.b0 = float(b0)
         self.library = library
         self.grid_params = (coord, bounds, a0, b0)
-        #self.const = 1 / np.sqrt(jacobi.mass(self.a, self.b))
+        self.constant_mode_value = 1 / np.sqrt(jacobi.mass(self.a, self.b))
 
     def _native_grid(self, scale):
         """Native flat global grid."""
@@ -533,6 +549,7 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         matrix = convert @ matrix
         return matrix[:N, :N]
 
+
 def Legendre(*args, **kw):
     return Jacobi(*args, a=0, b=0, **kw)
 
@@ -558,6 +575,9 @@ def ChebyshevV(*args, **kw):
     return Ultraspherical(*args, alpha=2, **kw)
 
 
+Chebyshev = ChebyshevT
+
+
 class ConvertJacobi(operators.Convert, operators.SpectralOperator1D):
     """Jacobi polynomial conversion."""
 
@@ -576,10 +596,9 @@ class ConvertJacobi(operators.Convert, operators.SpectralOperator1D):
         return matrix.tocsr()
 
 
-class ConvertConstantJacobi(operators.Convert, operators.SpectralOperator1D):
+class ConvertConstantJacobi(operators.ConvertConstant, operators.SpectralOperator1D):
     """Upcast constants to Jacobi."""
 
-    input_basis_type = type(None)
     output_basis_type = Jacobi
     subaxis_dependence = [True]
     subaxis_coupling = [False]
@@ -589,10 +608,7 @@ class ConvertConstantJacobi(operators.Convert, operators.SpectralOperator1D):
     def _group_matrix(group, input_basis, output_basis):
         n = group
         if n == 0:
-            basis = output_basis
-            # TODO: optimize by just using correct weight for zero mode.
-            MMT = basis.transforms['matrix'](grid_size=1, coeff_size=basis.size, a=basis.a, b=basis.b, a0=basis.a0, b0=basis.b0)
-            unit_amplitude = MMT.forward_matrix[0, 0]
+            unit_amplitude = 1 / output_basis.constant_mode_value
             return np.array([[unit_amplitude]])
         else:
             # Constructor should only loop over group 0.
@@ -758,6 +774,7 @@ class ComplexFourier(IntervalBasis):
         # Store non-permuted wavenumbers
         self._native_wavenumbers = np.concatenate((np.arange(0, kmax+2), np.arange(-kmax, 0)))  # Includes Nyquist mode
         self._wavenumbers = self._native_wavenumbers / self.COV.stretch
+        self.constant_mode_value = 1
 
     @property
     def native_wavenumbers(self):
@@ -831,10 +848,9 @@ class ComplexFourier(IntervalBasis):
     #         return (1 <= k <= self.space.kmax)
 
 
-class ConvertConstantComplexFourier(operators.Convert, operators.SpectralOperator1D):
+class ConvertConstantComplexFourier(operators.ConvertConstant, operators.SpectralOperator1D):
     """Upcast constants to ComplexFourier."""
 
-    input_basis_type = type(None)
     output_basis_type = ComplexFourier
     subaxis_dependence = [True]
     subaxis_coupling = [False]
@@ -845,7 +861,8 @@ class ConvertConstantComplexFourier(operators.Convert, operators.SpectralOperato
         k = group / output_basis.COV.stretch
         # 1 = exp(1j*0*x)
         if k == 0:
-            return np.array([[1]])
+            unit_amplitude = 1 / output_basis.constant_mode_value
+            return np.array([[unit_amplitude]])
         else:
             # Constructor should only loop over group 0.
             raise ValueError("This should never happen.")
@@ -940,6 +957,7 @@ class RealFourier(IntervalBasis):
         # Store non-permuted wavenumbers
         self._native_wavenumbers = np.repeat(np.arange(0, kmax+1), 2)  # Excludes Nyquist mode
         self._wavenumbers = self._native_wavenumbers / self.COV.stretch
+        self.constant_mode_value = 1
 
     @property
     def native_wavenumbers(self):
@@ -994,7 +1012,10 @@ class RealFourier(IntervalBasis):
     @CachedMethod
     def transform_plan(self, grid_size):
         """Build transform plan."""
-        return self.transforms[self.library](grid_size, self.size)
+        if grid_size == 1:
+            return self.transforms['matrix'](grid_size, self.size)
+        else:
+            return self.transforms[self.library](grid_size, self.size)
 
     def local_elements(self):
         local_elements = self.dist.coeff_layout.local_elements(self.domain, scales=1)[self.axis]
@@ -1027,10 +1048,9 @@ class RealFourier(IntervalBasis):
             return [slice(local_index*group_size, (local_index+1)*group_size)]
 
 
-class ConvertConstantRealFourier(operators.Convert, operators.SpectralOperator1D):
+class ConvertConstantRealFourier(operators.ConvertConstant, operators.SpectralOperator1D):
     """Upcast constants to RealFourier."""
 
-    input_basis_type = type(None)
     output_basis_type = RealFourier
     subaxis_dependence = [True]
     subaxis_coupling = [False]
@@ -1041,7 +1061,8 @@ class ConvertConstantRealFourier(operators.Convert, operators.SpectralOperator1D
         k = group / output_basis.COV.stretch
         # 1 = cos(0*x)
         if k == 0:
-            return np.array([[1],
+            unit_amplitude = 1 / output_basis.constant_mode_value
+            return np.array([[unit_amplitude],
                              [0]])
         else:
             # Constructor should only loop over group 0.
@@ -1856,42 +1877,6 @@ class PolarBasis(SpinBasis):
             operator = R2**(d//2) @ operator
         return operator(self.n_size(m), self.alpha + self.k, abs(m + spintotal)).square.astype(np.float64)
 
-    def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
-        m = subproblem.group[0]  # HACK
-        spintotal_ncc = self.spintotal(ncc_comp)
-        spintotal_arg = self.spintotal(arg_comp)
-        spintotal_out = self.spintotal(out_comp)
-        regtotal_ncc = abs(spintotal_ncc)
-        regtotal_arg = abs(m + spintotal_arg)
-        regtotal_out = abs(m + spintotal_out)
-        diff_regtotal = regtotal_out - regtotal_arg
-        # jacobi parameters
-        a_ncc = self.alpha + self.k
-        b_ncc = regtotal_ncc
-        N = self.n_size(m)
-        d = regtotal_ncc - abs(diff_regtotal)
-
-        if (d >= 0) and (d % 2 == 0):
-            J = arg_basis.operator_matrix('Z', m, spintotal_arg)
-            A, B = clenshaw.jacobi_recursion(N, a_ncc, b_ncc, J)
-            # assuming that we're doing ball for now...
-            f0 = dedalus_sphere.zernike.polynomials(2, 1, a_ncc, b_ncc, 1)[0] * sparse.identity(N)
-            prefactor = arg_basis.radius_multiplication_matrix(m, spintotal_arg, diff_regtotal, d)
-            if self.dtype == np.float64:
-                coeffs_filter = coeffs.ravel()[:2*N]
-                matrix_cos = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter[:N], A, B, f0, cutoff=cutoff)
-                matrix_msin = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter[N:], A, B, f0, cutoff=cutoff)
-                matrix = sparse.bmat([[matrix_cos, -matrix_msin], [matrix_msin, matrix_cos]], format='csr')
-            elif self.dtype == np.complex128:
-                coeffs_filter = coeffs.ravel()[:N]
-                matrix = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff)
-        else:
-            if self.dtype == np.float64:
-                matrix = sparse.csr_matrix((2*N, 2*N))
-            elif self.dtype == np.complex128:
-                matrix = sparse.csr_matrix((N, N))
-        return matrix
-
 
 class AnnulusBasis(PolarBasis):
 
@@ -1938,12 +1923,11 @@ class AnnulusBasis(PolarBasis):
     def __mul__(self, other):
         if other is None:
             return self
-        if other is self:
-            return self
         if isinstance(other, AnnulusBasis):
             if self.grid_params == other.grid_params:
                 shape = tuple(np.maximum(self.shape, other.shape))
-                return AnnulusBasis(self.coordsystem, shape, radii=self.radii, k=0, alpha=self.alpha, dealias=self.dealias, dtype=self.dtype)
+                k = self.k + other.k
+                return self.clone_with(shape=shape, k=k)
         return NotImplemented
 
     def global_grid_radius(self, scale):
@@ -1984,6 +1968,12 @@ class AnnulusBasis(PolarBasis):
         N = int(np.ceil(scale * self.shape[1]))
         z, weights = dedalus_sphere.sphere.quadrature(2,N,k=self.alpha)
         return reshape_vector(weights.astype(np.float64)[local_elements], dim=self.dist.dim, axis=self.axis+1)
+
+    @CachedAttribute
+    def constant_mode_value(self):
+        # Note the zeroth mode is constant only for k=0
+        Q0 = dedalus_sphere.jacobi.polynomials(1, self.alpha[0], self.alpha[1], np.array([0.0]))
+        return Q0[0,0]
 
     def _new_k(self, k):
         return AnnulusBasis(self.coordsystem, self.shape, radii = self.radii, k=k, alpha=self.alpha, dealias=self.dealias, dtype=self.dtype,
@@ -2064,7 +2054,7 @@ class AnnulusBasis(PolarBasis):
         return radial_factor*dedalus_sphere.jacobi.polynomials(self.n_size(0), a, b, native_position)
 
     @CachedMethod
-    def operator_matrix(self,op,m,spintotal):
+    def operator_matrix(self,op,m,spintotal, size=None):
         ms = m + spintotal
         if op[-1] in ['+', '-']:
             o = op[:-1]
@@ -2083,12 +2073,16 @@ class AnnulusBasis(PolarBasis):
                 operator = D(-1, ms+1) @ D(+1, ms)
         else:
             operator = dedalus_sphere.shell.operator(2, self.radii, op, self.alpha)
-        return operator(self.n_size(m), self.k).square.astype(np.float64)
+        if size is None:
+            size = self.n_size(m)
+        return operator(size, self.k).square.astype(np.float64)
 
-    def jacobi_conversion(self, m, dk):
+    def jacobi_conversion(self, m, dk, size=None):
         AB = dedalus_sphere.shell.operator(2, self.radii, 'AB', self.alpha)
         operator = AB**dk
-        return operator(self.n_size(m), self.k).square.astype(np.float64)
+        if size is None:
+            size = self.n_size(m)
+        return operator(size, self.k).square.astype(np.float64)
 
     @CachedMethod
     def conversion_matrix(self, m, spintotal, dk):
@@ -2106,28 +2100,31 @@ class AnnulusBasis(PolarBasis):
     def start(self, groups):
         return 0
 
-#    def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
-#        ell = subproblem.group[1]  # HACK
-#        arg_radial_basis = arg_basis.radial_basis
-#        regtotal_arg = self.regtotal(arg_comp)
-#        # Jacobi parameters
-#        a_ncc = self.k + self.alpha[0]
-#        b_ncc = self.k + self.alpha[1]
-#        N = self.n_size(ell)
-#        J = arg_radial_basis.operator_matrix('Z', ell, regtotal_arg)
-#        A, B = clenshaw.jacobi_recursion(N, a_ncc, b_ncc, J)
-#        f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0] * sparse.identity(N)
-#        # Conversions to account for radial prefactors
-#        prefactor = arg_radial_basis.jacobi_conversion(ell, dk=self.k)
-#        if self.dtype == np.float64:
-#            coeffs_filter = coeffs.ravel()[:2*N]
-#            matrix_cos = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter[:N], A, B, f0, cutoff=cutoff)
-#            matrix_msin = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter[N:], A, B, f0, cutoff=cutoff)
-#            matrix = sparse.bmat([[matrix_cos, -matrix_msin], [matrix_msin, matrix_cos]], format='csr')
-#        elif self.dtype == np.complex128:
-#            coeffs_filter = coeffs.ravel()[:N]
-#            matrix = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff)
-#        return matrix
+    def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
+        m = subproblem.group[0]  # HACK
+        spintotal_arg = self.spintotal(arg_comp)
+        # Jacobi parameters
+        a_ncc = self.k + self.alpha[0]
+        b_ncc = self.k + self.alpha[1]
+        N = self.n_size(m)
+        N0 = self.n_size(0)
+        # Pad for dealiasing with conversion
+        Nmat = 3*((N0+1)//2) + self.k
+        J = self.operator_matrix('Z', m, spintotal_arg, size=Nmat)
+        A, B = clenshaw.jacobi_recursion(Nmat, a_ncc, b_ncc, J)
+        f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0] * sparse.identity(Nmat)
+        # Conversions to account for radial prefactors
+        prefactor = self.jacobi_conversion(m, dk=self.k, size=Nmat)
+        if self.dtype == np.float64:
+            coeffs_cos_filter = coeffs[0].ravel()[:N0]
+            coeffs_msin_filter = coeffs[1].ravel()[:N0]
+            matrix_cos = (prefactor @ clenshaw.matrix_clenshaw(coeffs_cos_filter, A, B, f0, cutoff=cutoff))[:N,:N]
+            matrix_msin = (prefactor @ clenshaw.matrix_clenshaw(coeffs_msin_filter, A, B, f0, cutoff=cutoff))[:N,:N]
+            matrix = sparse.bmat([[matrix_cos, -matrix_msin], [matrix_msin, matrix_cos]], format='csr')
+        elif self.dtype == np.complex128:
+            coeffs_filter = coeffs.ravel()[:N0]
+            matrix = (prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff))[:N,:N]
+        return matrix
 
 
 class DiskBasis(PolarBasis):
@@ -2148,7 +2145,6 @@ class DiskBasis(PolarBasis):
         if self.mmax > 2*self.Nmax:
             logger.warning("You are using more azimuthal modes than can be resolved with your current radial resolution")
             #raise ValueError("shape[0] cannot be more than twice shape[1].")
-
         self.grid_params = (coordsystem, radius, alpha, dealias)
 
     @CachedAttribute
@@ -2170,7 +2166,7 @@ class DiskBasis(PolarBasis):
             if self.grid_params == other.grid_params:
                 shape = tuple(np.maximum(self.shape, other.shape))
                 k = max(self.k, other.k)
-                return DiskBasis(self.coordsystem, shape, radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias, dtype=self.dtype)
+                return DiskBasis(self.coordsystem, shape, radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias, dtype=self.dtype, azimuth_library=self.azimuth_library, radius_library=self.radius_library)
         return NotImplemented
 
     def __mul__(self, other):
@@ -2181,7 +2177,7 @@ class DiskBasis(PolarBasis):
         if isinstance(other, DiskBasis):
             if self.grid_params == other.grid_params:
                 shape = tuple(np.maximum(self.shape, other.shape))
-                return DiskBasis(self.coordsystem, shape, radius=self.radius, k=0, alpha=self.alpha, dealias=self.dealias, dtype=self.dtype)
+                return DiskBasis(self.coordsystem, shape, radius=self.radius, k=0, alpha=self.alpha, dealias=self.dealias, dtype=self.dtype, azimuth_library=self.azimuth_library, radius_library=self.radius_library)
         return NotImplemented
 
     def global_grid_radius(self, scale):
@@ -2211,6 +2207,11 @@ class DiskBasis(PolarBasis):
         N = int(np.ceil(scale * self.shape[1]))
         z, weights = dedalus_sphere.sphere.quadrature(2,N,k=self.alpha)
         return reshape_vector(weights.astype(np.float64)[local_elements], dim=self.dist.dim, axis=self.axis+1)
+
+    @CachedAttribute
+    def constant_mode_value(self):
+        Qk = dedalus_sphere.zernike.polynomials(2, 1, self.alpha+self.k, 0, np.array([0]))
+        return Qk[0]
 
     def _new_k(self, k):
         return DiskBasis(self.coordsystem, self.shape, radius = self.radius, k=k, alpha=self.alpha, dealias=self.dealias, dtype=self.dtype,
@@ -2387,6 +2388,63 @@ class ConvertPolar(operators.Convert, operators.PolarMOperator):
             raise ValueError("This should never happen.")
 
 
+class ConvertConstantDisk(operators.ConvertConstant, operators.PolarMOperator):
+
+    output_basis_type = DiskBasis
+    subaxis_dependence = [True, True]
+    subaxis_coupling = [False, False]
+
+    def __init__(self, operand, output_basis, out=None):
+        super().__init__(operand, output_basis, out=out)
+        if self.coords in operand.tensorsig:
+            raise ValueError("Tensors not yet supported.")
+
+    def spinindex_out(self, spinindex_in):
+        return (spinindex_in,)
+
+    def radial_matrix(self, spinindex_in, spinindex_out, m):
+        radial_basis = self.output_basis
+        spintotal = radial_basis.spintotal(spinindex_in)
+        coeff_size = radial_basis.shape[-1]
+        if m == 0 and spinindex_in == spinindex_out:
+            unit_amplitude = 1 / self.output_basis.constant_mode_value
+            matrix = np.zeros((coeff_size, 1))
+            matrix[0, 0] = unit_amplitude
+            return matrix
+        else:
+            raise ValueError("This should never happen.")
+
+
+class ConvertConstantAnnulus(operators.ConvertConstant, operators.PolarMOperator):
+
+    output_basis_type = AnnulusBasis
+    subaxis_dependence = [True, True]
+    subaxis_coupling = [False, True]
+
+    def __init__(self, operand, output_basis, out=None):
+        super().__init__(operand, output_basis, out=out)
+        if self.coords in operand.tensorsig:
+            raise ValueError("Tensors not yet supported.")
+
+    def spinindex_out(self, spinindex_in):
+        return (spinindex_in,)
+
+    def radial_matrix(self, spinindex_in, spinindex_out, m):
+        radial_basis = self.output_basis
+        spintotal = radial_basis.spintotal(spinindex_in)
+        coeff_size = radial_basis.shape[-1]
+        if m == 0 and spinindex_in == spinindex_out:
+            # Convert to k=0
+            const_to_k0 = np.zeros((coeff_size, 1))
+            const_to_k0[0, 0] = 1 / self.output_basis.constant_mode_value  # This is really for k=0
+            # Convert up in k
+            k0_to_k = radial_basis._new_k(0).conversion_matrix(m, spintotal, radial_basis.k)
+            matrix = k0_to_k @ const_to_k0
+            return matrix
+        else:
+            raise ValueError("This should never happen.")
+
+
 class SpinWeightedSphericalHarmonics(SpinBasis):
 
     dim = 2
@@ -2395,13 +2453,17 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
 
     def __init__(self, coordsystem, shape, dtype, radius=1, dealias=(1,1), colatitude_library=None, **kw):
         super().__init__(coordsystem, shape, dtype, dealias, **kw)
-        if radius <= 0:
-            raise ValueError("Radius must be positive.")
+        if radius < 0:
+            raise ValueError("Radius must be non-negative.")
         if colatitude_library is None:
             colatitude_library = "matrix"
         self.radius = radius
         self.colatitude_library = colatitude_library
-        self.Lmax = shape[1] - 1
+        # Set Lmax for optimal load balancing
+        if self.dtype == np.float64:
+            self.Lmax = max(0, shape[1] - 2)
+        elif self.dtype == np.complex128:
+            self.Lmax = shape[1] - 1
         if self.mmax > self.Lmax + 1:
             logger.warning("You are using more azimuthal modes than can be resolved with your current colatitude resolution")
             #raise ValueError("shape[0] cannot be more than twice shape[1].")
@@ -2431,7 +2493,11 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             self.backward_m_perm = np.argsort(self.forward_m_perm)
             self.group_shape = (1, 1)
         elif self.dtype == np.float64:
-            az_index = np.arange(shape[0])
+            if shape[0] == 1:
+                # Include sine and cosine parts of m=0
+                az_index = np.arange(2)
+            else:
+                az_index = np.arange(shape[0])
             div2, mod2 = divmod(az_index, 2)
             div22 = div2 % 2
             self.forward_m_perm = (mod2 + div2) * (1 - div22) + (shape[0] - 1 + mod2 - div2) * div22
@@ -2802,6 +2868,8 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         self.forward_spin_recombination(field.tensorsig, gdata, temp)
         # Copy from temp to cdata
         np.copyto(cdata, temp)
+        # Scale to account for SWSH normalization? Is this right for all spins?
+        cdata *= np.sqrt(2)
 
     def forward_transform_colatitude(self, field, axis, gdata, cdata):
         # Apply spin recombination from gdata to temp
@@ -2820,6 +2888,8 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         temp = np.copy(cdata)
         # Apply spin recombination from temp to gdata
         self.backward_spin_recombination(field.tensorsig, temp, gdata)
+        # Scale to account for SWSH normalization? Is this right for all spins?
+        gdata /= np.sqrt(2)
 
     def backward_transform_colatitude(self, field, axis, cdata, gdata):
         # Transform component-by-component from cdata to temp
@@ -3282,6 +3352,12 @@ class SphericalShellRadialBasis(RegularityBasis):
         normalization = self.dR/2
         return normalization * ( (Q0 @ weights0).T ) @ (weights_proj*Q_proj)
 
+    @CachedAttribute
+    def constant_mode_value(self):
+        # Note the zeroth mode is constant only for k=0
+        Q0 = dedalus_sphere.jacobi.polynomials(1, self.alpha[0], self.alpha[1], np.array([0.0]))
+        return Q0[0,0]
+
     @CachedMethod
     def radial_transform_factor(self, scale, data_axis, dk):
         r = reshape_vector(self._radius_grid(scale), dim=data_axis, axis=data_axis-1)
@@ -3492,6 +3568,11 @@ class BallRadialBasis(RegularityBasis):
         z, weights = dedalus_sphere.zernike.quadrature(3, N, k=self.alpha)
         return weights
 
+    @CachedAttribute
+    def constant_mode_value(self):
+        Qk = dedalus_sphere.zernike.polynomials(3, 1, self.alpha+self.k, 0, np.array([0]))
+        return Qk[0]
+
     @CachedMethod
     def interpolation(self, ell, regtotal, position):
         native_position = self.radial_COV.native_coord(position)
@@ -3682,6 +3763,12 @@ class Spherical3DBasis(MultidimensionalBasis):
     def constant(self):
         return (self.Lmax==0, self.Lmax==0, False)
 
+    @CachedAttribute
+    def constant_mode_value(self):
+        # Adjust for SWSH normalization
+        # TODO: check this is right for regtotal != 0?
+        return self.radial_basis.constant_mode_value / np.sqrt(2)
+
     def global_grids(self, scales=None):
         if scales == None: scales = (1,1,1)
         return (self.global_grid_azimuth(scales[0]),
@@ -3776,6 +3863,14 @@ class Spherical3DBasis(MultidimensionalBasis):
     def valid_components(self, *args):
         # Implemented in RegularityBasis
         return self.radial_basis.valid_components(*args)
+
+    def multiplication_matrix(self, subproblem, arg_basis, coeffs, *args, **kw):
+        if self.shape[0:2] == (1, 1):
+            # Scale to account for SWSH normalization? Is this right for all spins?
+            coeffs /= np.sqrt(2)
+            return self.radial_basis.multiplication_matrix(subproblem, arg_basis, coeffs, *args, **kw)
+        else:
+            raise ValueError("Cannot build NCCs of non-radial fields.")
 
 
 class SphericalShellBasis(Spherical3DBasis):
@@ -4035,7 +4130,7 @@ class ConvertRegularity(operators.Convert, operators.SphericalEllOperator):
 
     def __init__(self, operand, output_basis, out=None):
         operators.Convert.__init__(self, operand, output_basis, out=out)
-        self.radial_basis = self.input_basis
+        self.radial_basis = self.input_basis.get_radial_basis()
 
     def regindex_out(self, regindex_in):
         return (regindex_in,)
@@ -4050,14 +4145,45 @@ class ConvertRegularity(operators.Convert, operators.SphericalEllOperator):
             raise ValueError("This should never happen.")
 
 
-class ConvertConstantRegularity(operators.Convert, operators.SphericalEllOperator):
+class ConvertConstantBall(operators.ConvertConstant, operators.SphericalEllOperator):
 
-    input_basis_type = type(None)
-    output_basis_type = (RegularityBasis, Spherical3DBasis)
+    output_basis_type = (BallBasis, BallRadialBasis)
+    subaxis_dependence = [False, True, True]
+    subaxis_coupling = [False, False, False]
 
     def __init__(self, operand, output_basis, out=None):
-        operators.Convert.__init__(self, operand, output_basis, out=out)
-        self.radial_basis = self.output_basis
+        super().__init__(operand, output_basis, out=out)
+        self.radial_basis = self.output_basis.get_radial_basis()
+        if self.coords in operand.tensorsig:
+            raise ValueError("Tensors not yet supported.")
+
+    def regindex_out(self, regindex_in):
+        return (regindex_in,)
+
+    def radial_matrix(self, regindex_in, regindex_out, ell):
+        radial_basis = self.radial_basis
+        regtotal = radial_basis.regtotal(regindex_in)
+        coeff_size = radial_basis.shape[-1]
+        if ell == 0 and regindex_in == regindex_out:
+            unit_amplitude = 1 / self.output_basis.constant_mode_value
+            matrix = np.zeros((coeff_size, 1))
+            matrix[0, 0] = unit_amplitude
+            return matrix
+        else:
+            raise ValueError("This should never happen.")
+
+
+class ConvertConstantShell(operators.ConvertConstant, operators.SphericalEllOperator):
+
+    output_basis_type = (ShellBasis, SphericalShellRadialBasis)
+    subaxis_dependence = [False, True, True]
+    subaxis_coupling = [False, False, True]
+
+    def __init__(self, operand, output_basis, out=None):
+        super().__init__(operand, output_basis, out=out)
+        self.radial_basis = self.output_basis.get_radial_basis()
+        if self.coords in operand.tensorsig:
+            raise ValueError("Tensors not yet supported.")
 
     def regindex_out(self, regindex_in):
         return (regindex_in,)
@@ -4068,9 +4194,8 @@ class ConvertConstantRegularity(operators.Convert, operators.SphericalEllOperato
         coeff_size = radial_basis.shape[-1]
         if ell == 0 and regindex_in == regindex_out:
             # Convert to k=0
-            W = np.sum(radial_basis.global_weights(1))
             const_to_k0 = np.zeros((coeff_size, 1))
-            const_to_k0[0, 0] = W ** 0.5
+            const_to_k0[0, 0] = 1 / self.output_basis.constant_mode_value  # This is really for k=0
             # Convert up in k
             k0_to_k = radial_basis._new_k(0).conversion_matrix(ell, regtotal, radial_basis.k)
             matrix = k0_to_k @ const_to_k0
@@ -4338,7 +4463,10 @@ class LiftTauBallRadius(operators.LiftTau, operators.SphericalEllOperator):
             submatrices.append(submatrix_row)
         matrix = sparse.bmat(submatrices)
         matrix.tocsr()
-        return matrix
+        # Convert tau from spin to regularity first
+        Q = dedalus_sphere.spin_operators.Intertwiner(ell, indexing=(-1,+1,0))(len(self.tensorsig))  # Fix for product domains
+        matrix = matrix @ sparse.kron(Q.T, sparse.identity(np.prod(subshape_in), format='csr'))
+        return matrix.tocsr()
 
     def radial_matrix(self, regindex_in, regindex_out, m):
         if regindex_in == regindex_out:
@@ -4385,7 +4513,10 @@ class LiftTauShell(operators.LiftTau, operators.SphericalEllOperator):
             submatrices.append(submatrix_row)
         matrix = sparse.bmat(submatrices)
         matrix.tocsr()
-        return matrix
+        # Convert tau from spin to regularity first
+        Q = dedalus_sphere.spin_operators.Intertwiner(ell, indexing=(-1,+1,0))(len(self.tensorsig))  # Fix for product domains
+        matrix = matrix @ sparse.kron(Q.T, sparse.identity(np.prod(subshape_in), format='csr'))
+        return matrix.tocsr()
 
     def radial_matrix(self, regindex_in, regindex_out, m):
         if regindex_in == regindex_out:
@@ -4884,8 +5015,8 @@ class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperato
                    slices_in[axis-2] = slices_out[axis-2] = m_ind
                    slices_in[axis-1] = slices_out[axis-1] = ell_ind
                    slices_in[axis] = radial_basis.n_slice(ell)
-                   vec_in  = comp_in[slices_in]
-                   vec_out = comp_out[slices_out]
+                   vec_in  = comp_in[tuple(slices_in)]
+                   vec_out = comp_out[tuple(slices_out)]
                    A = self.radial_matrix(regindex, regindex, ell)
                    apply_matrix(A, vec_in, axis=axis, out=vec_out)
         radial_basis.backward_regularity_recombination(operand.tensorsig, self.basis_subaxis, out.data, ell_maps=input_basis.ell_maps)
@@ -5037,6 +5168,45 @@ class S2AngularComponent(operators.AngularComponent):
         np.copyto(out.data, operand.data[axslice(self.index,0,2)])
 
 
+class PolarAzimuthalComponent(operators.AzimuthalComponent):
+
+    basis_type = IntervalBasis
+    name = 'Azimuthal'
+
+    def subproblem_matrix(self, subproblem):
+        # I'm not sure how to generalize this to higher order tensors, since we do
+        # not have spin_weights for the S1 basis.
+        matrix = np.array([[1,0]])
+
+#        operand = self.args[0]
+#        basis = self.domain.get_basis(self.coordsys)
+#        S_in = basis.spin_weights(operand.tensorsig)
+#        S_out = basis.spin_weights(self.tensorsig)
+#
+#        matrix = []
+#        for spinindex_out, spintotal_out in np.ndenumerate(S_out):
+#            matrix_row = []
+#            for spinindex_in, spintotal_in in np.ndenumerate(S_in):
+#                if tuple(spinindex_in[:self.index] + spinindex_in[self.index+1:]) == spinindex_out and spinindex_in[self.index] == 2:
+#                    matrix_row.append( 1 )
+#                else:
+#                    matrix_row.append( 0 )
+#            matrix.append(matrix_row)
+#        matrix = np.array(matrix)
+        if self.dtype == np.float64:
+            # Block-diag for sin/cos parts for real dtype
+            matrix = np.kron(matrix, np.eye(2))
+        return matrix
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        # Set output layout
+        layout = operand.layout
+        out.set_layout(layout)
+        np.copyto(out.data, operand.data[axindex(self.index,0)])
+
+
 class CartesianAdvectiveCFL(operators.AdvectiveCFL):
 
     input_coord_type = CartesianCoordinates
@@ -5049,7 +5219,7 @@ class CartesianAdvectiveCFL(operators.AdvectiveCFL):
         for i, c in enumerate(coordsys.coords):
             basis = velocity.domain.get_basis(c)
             dealias = basis.dealias[0]
-            axis_spacing = basis.local_grid_spacing(i, dealias) * dealias 
+            axis_spacing = basis.local_grid_spacing(i, dealias) * dealias
             if isinstance(basis, Jacobi) and basis.a == -1/2 and basis.b == -1/2:
                 #Special case for ChebyshevT (a=b=-1/2)
                 N = len(np.ravel(basis.local_grids(scales=(dealias,))[0]))
@@ -5057,7 +5227,7 @@ class CartesianAdvectiveCFL(operators.AdvectiveCFL):
                 theta = np.pi * (i + 1/2) / N
                 axis_spacing[:] = dealias * basis.COV.stretch * np.sin(theta) * np.pi / N
             elif isinstance(basis, (ComplexFourier, RealFourier)):
-                #Special case for Fourier 
+                #Special case for Fourier
                 N = basis.grid_shape((dealias,))[0]
                 native_spacing = 2 * np.pi / N
                 axis_spacing[:] = dealias * native_spacing * basis.COV.stretch
@@ -5071,10 +5241,10 @@ class CartesianAdvectiveCFL(operators.AdvectiveCFL):
             out.data += u_mag[i] / dx
 
 
-class D2AdvectiveCFL(operators.AdvectiveCFL):
+class PolarAdvectiveCFL(operators.AdvectiveCFL):
 
     input_coord_type = PolarCoordinates
-    input_basis_type = DiskBasis
+    input_basis_type = (DiskBasis, AnnulusBasis)
 
     @CachedMethod
     def cfl_spacing(self):
@@ -5084,8 +5254,10 @@ class D2AdvectiveCFL(operators.AdvectiveCFL):
         azimuth_spacing = basis.local_grid_spacing(0, scales=dealias)
         if basis.mmax == 0:
             azimuth_spacing[:] = np.inf
-        else:
+        elif isinstance(basis, DiskBasis):
             azimuth_spacing[:] = basis.radius / basis.mmax
+        elif isinstance(basis, AnnulusBasis):
+            azimuth_spacing = basis.local_grid_radius(dealias[1]) / basis.mmax
         radial_spacing = dealias[1] * basis.local_grid_spacing(1, scales=dealias)
         return [azimuth_spacing, radial_spacing]
 
@@ -5146,5 +5318,6 @@ class Spherical3DAdvectiveCFL(operators.AdvectiveCFL):
         S2AdvectiveCFL.compute_cfl_frequency(self, velocity, out)
         u_r = np.abs(velocity.data[2])
         out.data += u_r / self.cfl_spacing()[1]
+
 
 from . import transforms

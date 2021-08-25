@@ -6,6 +6,8 @@ Classes for solving differential equations.
 from mpi4py import MPI
 import numpy as np
 import time
+import h5py
+import pathlib
 from scipy.sparse import linalg
 from scipy.linalg import eig
 
@@ -433,6 +435,42 @@ class InitialValueSolver(SolverBase):
             return False
         else:
             return True
+
+    def load_state(self, path, index=-1):
+        """
+        Load state from HDF5 file. Currently can only load grid space data.
+
+        Parameters
+        ----------
+        path : str or pathlib.Path
+            Path to Dedalus HDF5 savefile
+        index : int, optional
+            Local write index (within file) to load (default: -1)
+
+        Returns
+        -------
+        write : int
+            Global write number of loaded write
+        dt : float
+            Timestep at loaded write
+        """
+        path = pathlib.Path(path)
+        logger.info("Loading solver state from: {}".format(path))
+        with h5py.File(str(path), mode='r') as file:
+            # Load solver attributes
+            write = file['scales']['write_number'][index]
+            dt = file['scales']['timestep'][index]
+            self.iteration = self.initial_iteration = file['scales']['iteration'][index]
+            self.sim_time = self.initial_sim_time = file['scales']['sim_time'][index]
+            # Log restart info
+            logger.info("Loading iteration: {}".format(self.iteration))
+            logger.info("Loading write: {}".format(write))
+            logger.info("Loading sim time: {}".format(self.sim_time))
+            logger.info("Loading timestep: {}".format(dt))
+            # Load fields
+            for field in self.state:
+                field.load_from_hdf5(file, index)
+        return write, dt
 
     # TO-DO: remove this
     def euler_step(self, dt):

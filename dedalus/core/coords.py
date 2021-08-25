@@ -6,6 +6,13 @@ from ..libraries import dedalus_sphere
 
 from ..tools.array import nkron
 
+# Public interface
+__all__ = ['Coordinate',
+           'CartesianCoordinates',
+           'S2Coordinates',
+           'PolarCoordinates',
+           'SphericalCoordinates']
+
 
 class CoordinateSystem:
 

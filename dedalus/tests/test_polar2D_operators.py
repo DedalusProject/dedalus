@@ -89,6 +89,35 @@ def build_annulus(Nphi, Nr, k, dealias, dtype):
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('basis', [build_disk, build_annulus])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_convert_constant_scalar(Nphi, Nr, k, dealias, basis, dtype):
+    c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
+    f = field.Field(dist=d, dtype=dtype)
+    f['g'] = 1
+    g = operators.Convert(f, b).evaluate()
+    assert np.allclose(f['g'], g['g'])
+
+
+@pytest.mark.xfail(reason="Not yet implemented", run=False)
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_convert_constant_tensor(Nphi, Nr, k, dealias, basis, dtype):
+    c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
+    f = field.Field(dist=d, dtype=dtype, tensorsig=(c,c))
+    f['g'][0,0] = f['g'][1,1] = 1
+    g = operators.Convert(f, b).evaluate()
+    assert np.allclose(f['g'], g['g'])
+
+
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 @pytest.mark.parametrize('layout', ['c', 'g'])
 def test_convert_scalar(Nphi, Nr, k, dealias, basis, dtype, layout):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
@@ -130,7 +159,7 @@ def test_convert_vector(Nphi, Nr, k, dealias, basis, dtype, layout):
 @pytest.mark.parametrize('basis', [build_disk, build_annulus])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 @pytest.mark.parametrize('layout', ['c', 'g'])
-def test_trace_tensor(Nphi, Nr, k, dealias, basis, dtype, layout):
+def test_explicit_trace_tensor(Nphi, Nr, k, dealias, basis, dtype, layout):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
     u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
     u.set_scales(b.domain.dealias)
@@ -142,6 +171,28 @@ def test_trace_tensor(Nphi, Nr, k, dealias, basis, dtype, layout):
     T.require_layout(layout)
     f = operators.Trace(T).evaluate()
     assert np.allclose(f['g'], fg)
+
+
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_implicit_trace_tensor(Nphi, Nr, k, dealias, basis, dtype):
+    c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
+    f = field.Field(dist=d, bases=(b,), dtype=dtype)
+    g = field.Field(dist=d, bases=(b,), dtype=dtype)
+    g.set_scales(g.domain.dealias)
+    g['g'] = 3*x**2 + 2*y
+    I = field.Field(dist=d, bases=(b.clone_with(shape=(1,Nr)),), tensorsig=(c,c), dtype=dtype)
+    I['g'][0,0] = I['g'][1,1] = 1
+    trace = lambda A: operators.Trace(A)
+    problem = problems.LBVP([f])
+    problem.add_equation((trace(I*f), 2*g))
+    solver = solvers.LinearBoundaryValueSolver(problem, matrix_coupling=[False, True])
+    solver.solve()
+    assert np.allclose(f['c'], g['c'])
 
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
