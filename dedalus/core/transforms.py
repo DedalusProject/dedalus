@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__.split('.')[-1])
 
 from ..tools.config import config
 FFTW_RIGOR = lambda: config['transforms-fftw'].get('PLANNING_RIGOR')
+DEALIAS_BEFORE_CONVERTING = lambda: config['transforms'].getboolean('DEALIAS_BEFORE_CONVERTING')
 
 
 def register_transform(basis, name):
@@ -123,14 +124,18 @@ class JacobiMMT(JacobiTransform, SeparableMatrixTransform):
         base_transform = (base_polynomials * base_weights)
         # Zero higher coefficients for transforms with grid_size < coeff_size
         base_transform[N:, :] = 0
+        if DEALIAS_BEFORE_CONVERTING():
+            # Truncate to specified coeff_size
+            base_transform = base_transform[:M, :]
         # Spectral conversion
         if (a == a0) and (b == b0):
             forward_matrix = base_transform
         else:
-            conversion = jacobi.conversion_matrix(max(M, N), a0, b0, a, b)
+            conversion = jacobi.conversion_matrix(base_transform.shape[0], a0, b0, a, b)
             forward_matrix = conversion @ base_transform
-        # Truncate to specified coeff_size
-        forward_matrix = forward_matrix[:M, :]
+        if not DEALIAS_BEFORE_CONVERTING():
+            # Truncate to specified coeff_size
+            forward_matrix = forward_matrix[:M, :]
         # Ensure C ordering for fast dot products
         return np.asarray(forward_matrix, order='C')
 
@@ -1384,12 +1389,16 @@ class DiskRadialTransform(NonSeparableTransform):
                 # Zero higher coefficients than can be correctly computed with base Gauss quadrature
                 dN = abs(m + self.s) // 2
                 W[max(self.N2g-dN,0):] = 0
+                if DEALIAS_BEFORE_CONVERTING():
+                    # Truncate to specified coeff_size
+                    W = W[:max(self.N2c-Nmin,0)]
                 # Spectral conversion
                 if self.k > 0:
                     conversion = dedalus_sphere.zernike.operator(2, 'E')(+1)**self.k
-                    W = conversion(Nc, self.alpha, abs(m + self.s)) @ W
-                # Truncate to specified coeff_size
-                W = W[:max(self.N2c-Nmin,0)]
+                    W = conversion(W.shape[0], self.alpha, abs(m + self.s)) @ W
+                if not DEALIAS_BEFORE_CONVERTING():
+                    # Truncate to specified coeff_size
+                    W = W[:max(self.N2c-Nmin,0)]
                 m_matrices[m] = np.asarray(W.astype(np.float64), order='C')
         return m_matrices
 
@@ -1489,12 +1498,16 @@ class BallRadialTransform(Transform):
                     # Zero higher coefficients than can be correctly computed with base Gauss quadrature
                     dN = (ell + self.regtotal) // 2
                     W[max(self.N3g-dN,0):] = 0
+                    if DEALIAS_BEFORE_CONVERTING():
+                        # Truncate to specified coeff_size
+                        W = W[:max(self.N3c-Nmin,0)]
                     # Spectral conversion
                     if self.k > 0:
                         conversion = dedalus_sphere.zernike.operator(3, 'E')(+1)**self.k
-                        W = conversion(Nc, self.alpha, ell+self.regtotal) @ W
-                    # Truncate to specified coeff_size
-                    W = W[:max(self.N3c-Nmin,0)]
+                        W = conversion(W.shape[0], self.alpha, ell+self.regtotal) @ W
+                    if not DEALIAS_BEFORE_CONVERTING():
+                        # Truncate to specified coeff_size
+                        W = W[:max(self.N3c-Nmin,0)]
                     # Ensure C ordering for fast dot products
                     ell_matrices[ell] = np.asarray(W.astype(np.float64), order='C')
         return ell_matrices

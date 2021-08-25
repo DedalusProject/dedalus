@@ -34,6 +34,9 @@ def test_jacobi_ncc_eval(N, a0, b0, k_ncc, k_arg, dealias, dtype):
     g = field.Field(dist=d, bases=(b_arg,), dtype=dtype)
     f['g'] = np.random.randn(*f['g'].shape)
     g['g'] = np.random.randn(*g['g'].shape)
+    x = b.local_grid(1)
+    f['g'] = np.cos(6*x)
+    g['g'] = np.cos(6*x)
     kmax = max(k_ncc, k_arg)
     if kmax > 0 and dealias < 2:
         f['c'][-kmax:] = 0
@@ -46,8 +49,15 @@ def test_jacobi_ncc_eval(N, a0, b0, k_ncc, k_arg, dealias, dtype):
     solver = solvers.LinearBoundaryValueSolver(problem)
     w1.store_ncc_matrices(vars, solver.subproblems)
     w0 = w0.evaluate()
+    w2 = field.Field(dist=d, bases=(b,), dtype=dtype)
+    w2.set_scales(w2.domain.dealias)
+    w2['g'] = w0['g']
+    w2['c']
+    w0['c']
+    print(np.max(np.abs(w2['g'] - w0['g'])))
+    w2 = operators.Convert(w2, w0.domain.bases[0]).evaluate()
     w1 = w1.evaluate_as_ncc()
-    assert np.allclose(w0['c'], w1['c'])
+    assert np.allclose(w0['c'], w2['c'])
 
 
 @pytest.mark.parametrize('N', [16])
