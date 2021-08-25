@@ -1683,7 +1683,7 @@ class CartesianTrace(Trace):
     cs_type = coords.CartesianCoordinates
 
     def subproblem_matrix(self, subproblem):
-        dim = len(self.coords)
+        dim = self.coordsys.dim
         trace = np.ravel(np.eye(dim))
         # Assume all components have the same n_size
         eye = sparse.identity(subproblem.coeff_size(self.domain), self.dtype, format='csr')

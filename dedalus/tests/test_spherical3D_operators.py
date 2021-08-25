@@ -166,7 +166,7 @@ def test_convert_vector(Nphi, Ntheta, Nr, k, dealias, basis, dtype, layout):
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 @pytest.mark.parametrize('layout', ['c', 'g'])
-def test_trace_tensor(Nphi, Ntheta, Nr, k, dealias, basis, dtype, layout):
+def test_explicit_trace_tensor(Nphi, Ntheta, Nr, k, dealias, basis, dtype, layout):
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
     ct, st, cp, sp = np.cos(theta), np.sin(theta), np.cos(phi), np.sin(phi)
     u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
@@ -179,6 +179,29 @@ def test_trace_tensor(Nphi, Ntheta, Nr, k, dealias, basis, dtype, layout):
     T.require_layout(layout)
     f = operators.Trace(T).evaluate()
     assert np.allclose(f['g'], fg)
+
+
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_implicit_trace_tensor(Nphi, Ntheta, Nr, k, dealias, basis, dtype):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
+    f = field.Field(dist=d, bases=(b,), dtype=dtype)
+    g = field.Field(dist=d, bases=(b,), dtype=dtype)
+    g.set_scales(g.domain.dealias)
+    g['g'] = 3*x**2 + 2*y*z
+    I = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,c), dtype=dtype)
+    I['g'][0,0] = I['g'][1,1] = I['g'][2,2] = 1
+    trace = lambda A: operators.Trace(A)
+    problem = problems.LBVP([f])
+    problem.add_equation((trace(I*f), 3*g))
+    solver = solvers.LinearBoundaryValueSolver(problem)
+    solver.solve()
+    assert np.allclose(f['c'], g['c'])
 
 
 @pytest.mark.parametrize('Nphi', Nphi_range)

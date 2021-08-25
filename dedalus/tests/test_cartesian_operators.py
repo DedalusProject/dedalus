@@ -46,6 +46,46 @@ Ny_range = [8]
 Nz_range = [8, 2]
 dealias_range = [1, 3/2]
 
+
+@pytest.mark.parametrize('Nx', Nx_range)
+@pytest.mark.parametrize('Nz', Nz_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_2d_box])
+@pytest.mark.parametrize('dtype', [np.complex128, np.float64])
+def test_explicit_trace_2d(Nx, Nz, dealias, basis, dtype):
+    c, d, b, x, z = basis(Nx, Nz, dealias, dtype)
+    u = field.Field(dist=d, bases=(*b,), tensorsig=(c,), dtype=dtype)
+    u['g'][0] = (np.sin(2*x)+np.sin(x))*np.sin(z)
+    u['g'][1] = np.sin(x)*np.cos(z)
+    T = operators.Gradient(u, c).evaluate()
+    f = operators.Trace(T).evaluate()
+    T.require_scales(1)
+    f.require_scales(1)
+    fg = T['g'][0,0] + T['g'][1,1]
+    assert np.allclose(f['g'], fg)
+
+
+@pytest.mark.parametrize('Nx', Nx_range)
+@pytest.mark.parametrize('Nz', Nz_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_2d_box])
+@pytest.mark.parametrize('dtype', [np.complex128, np.float64])
+def test_implicit_trace_2d(Nx, Nz, dealias, basis, dtype):
+    c, d, b, x, z = basis(Nx, Nz, dealias, dtype)
+    f = field.Field(dist=d, bases=(*b,), dtype=dtype)
+    g = field.Field(dist=d, bases=(*b,), dtype=dtype)
+    g.require_scales(g.domain.dealias)
+    g['g'] = (np.sin(2*x) + np.sin(x)) * np.sin(z)
+    I = field.Field(dist=d, tensorsig=(c,c), dtype=dtype)
+    I['g'][0,0] = I['g'][1,1] = 1
+    trace = lambda A: operators.Trace(A)
+    problem = problems.LBVP([f])
+    problem.add_equation((trace(I*f), 2*g))
+    solver = solvers.LinearBoundaryValueSolver(problem)
+    solver.solve()
+    assert np.allclose(f['c'], g['c'])
+
+
 @pytest.mark.parametrize('Nx', Nx_range)
 @pytest.mark.parametrize('Ny', Ny_range)
 @pytest.mark.parametrize('Nz', Nz_range)
