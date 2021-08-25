@@ -11,16 +11,17 @@ from mpi4py import MPI
 import logging
 logger = logging.getLogger(__name__)
 
+# Parameters
 Nphi = 32
 Nr = 128
-# might want to include this in the future
 dealias = 3/2
 
 Ekman = 1/2/20**2
 Ro = 40.
 radius = 1
 dtype = np.float64
-dt = 1.5e-3
+dt = 1.e-3
+t_end = 50.
 
 c = coords.PolarCoordinates('phi','r')
 d = distributor.Distributor((c,))
@@ -33,7 +34,7 @@ p = field.Field(dist=d, bases=(db,), dtype=dtype)
 tau_u = field.Field(dist=d, bases=(cb,), tensorsig=(c,), dtype=dtype)
 tau_w = field.Field(dist=d, bases=(cb,), dtype=dtype)
 
-# Parameters and operators
+# Operators
 lap = lambda A: operators.Laplacian(A, c)
 div = lambda A: operators.Divergence(A)
 grad = lambda A: operators.Gradient(A, c)
@@ -53,6 +54,7 @@ t = field.Field(dist=d, dtype=dtype)
 u0R['g'][0] = Ro* np.real(jv(1, (1-1j)*r/np.sqrt(2*Ekman))/jv(1, (1-1j)/np.sqrt(2*Ekman)))
 u0I['g'][0] = Ro* np.imag(jv(1, (1-1j)*r/np.sqrt(2*Ekman))/jv(1, (1-1j)/np.sqrt(2*Ekman)))
 
+# u0 is solution to non-homogeneous problem; we linearized around it
 u0 = np.cos(t)*u0R - np.sin(t)*u0I
 
 # Problem
@@ -68,9 +70,10 @@ problem.add_equation(eq_eval("p(r=1) = 0"), condition='nphi == 0')
 
 logger.info('building solver')
 solver = solvers.InitialValueSolver(problem, timesteppers.SBDF2)
+solver.stop_sim_time = t_end
 
 # Noise Initial Conditions
-seed = 42# + d.comm_cart.rank
+seed = 42 + d.comm_cart.rank
 rand = np.random.RandomState(seed=seed)
 
 u['g'] = rand.standard_normal(u['g'].shape)
@@ -80,13 +83,12 @@ u['g']
 u['c']
 u.require_scales(dealias)
 
+# Analysis
 snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=0.1, max_writes=20, virtual_file=True)
-snapshots.add_task(u, name='u')
+snapshots.add_task(u, name='u', scales=(4, 1))
 
 traces = solver.evaluator.add_file_handler('traces', sim_dt=0.01, virtual_file=True)
 traces.add_task(integ(0.5*dot(u,u)), name='KE')
-
-solver.stop_sim_time = 0.91
 
 # Report maximum |u|
 flow = flow_tools.GlobalFlowProperty(solver, cadence=100)
@@ -102,8 +104,8 @@ while solver.ok:
     if solver.iteration % 100 in [0, 1]:
         for field in solver.state: field.require_grid_space()
 
-    if solver.iteration % 100 == 0:
-        logger.info("t = %f, max(u) = %f" %(solver.sim_time, flow.max('u')) )
+    if (solver.iteration-1) % 100 == 0:
+        logger.info("iter = %i, t = %f, max(u) = %f" %(solver.iteration-1, solver.sim_time-dt, flow.max('u')) )
 end_time = time.time()
 logger.info('Run time: %f' %(end_time-start_time))
 
