@@ -22,10 +22,9 @@ logger = logging.getLogger(__name__)
 # TODO: add CFL
 # TODO: fix "one" conversion
 # TODO: check loading radial slices from virtual file
-# TODO: adjust resolutions so powers of two are optimal
 
 # Parameters
-Nphi, Ntheta, Nr = 192, 96-1, 8
+Nphi, Ntheta, Nr = 192, 96, 8
 Ri = 14
 Ro = 15
 Prandtl = 1

@@ -40,10 +40,10 @@ if len(sys.argv) > 1 and sys.argv[1] == '--restart':
     restart = True
 
 # Parameters
-Lmax = 63
-L_dealias = 1
-Nmax = 47
-N_dealias = 1
+Nphi = 128
+Ntheta = 64
+Nr = 48
+dealias = 1
 if not restart:
     t_end = 10.01
 else:
@@ -59,7 +59,7 @@ P = np.sqrt(Rayleigh/Prandtl)
 # Bases
 c = coords.SphericalCoordinates('phi', 'theta', 'r')
 d = distributor.Distributor((c,), mesh=mesh)
-b = basis.BallBasis(c, (2*(Lmax+1), Lmax+1, Nmax+1), dealias=(L_dealias, L_dealias, N_dealias), radius=1, dtype=dtype)
+b = basis.BallBasis(c, (Nphi, Ntheta, Nr), dealias=dealias, radius=1, dtype=dtype)
 b_S2 = b.S2_basis()
 phi, theta, r = b.local_grids((1, 1, 1))
 

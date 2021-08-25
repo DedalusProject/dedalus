@@ -2489,7 +2489,11 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             colatitude_library = "matrix"
         self.radius = radius
         self.colatitude_library = colatitude_library
-        self.Lmax = shape[1] - 1
+        # Set Lmax for optimal load balancing
+        if self.dtype == np.float64:
+            self.Lmax = shape[1] - 2
+        elif self.dtype == np.complex128:
+            self.Lmax = shape[1] - 1
         if self.mmax > self.Lmax + 1:
             logger.warning("You are using more azimuthal modes than can be resolved with your current colatitude resolution")
             #raise ValueError("shape[0] cannot be more than twice shape[1].")
