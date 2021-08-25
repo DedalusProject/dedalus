@@ -2491,7 +2491,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         self.colatitude_library = colatitude_library
         # Set Lmax for optimal load balancing
         if self.dtype == np.float64:
-            self.Lmax = shape[1] - 2
+            self.Lmax = max(0, shape[1] - 2)
         elif self.dtype == np.complex128:
             self.Lmax = shape[1] - 1
         if self.mmax > self.Lmax + 1:
