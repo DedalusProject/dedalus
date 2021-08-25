@@ -19,9 +19,7 @@ from dedalus.extras import flow_tools
 import logging
 logger = logging.getLogger(__name__)
 
-# TODO: add CFL
 # TODO: fix "one" conversion
-# TODO: check loading radial slices from virtual file
 
 # Parameters
 Nphi, Ntheta, Nr = 192, 96, 8
@@ -32,9 +30,8 @@ Rayleigh = 3000
 dtype = np.float64
 stop_sim_time = 2000
 dealias = 3/2
-timestepper = "RK222"
-dt = 1
-mesh = (2, 4)
+timestepper = timesteppers.RK222
+mesh = (2, 2)
 
 # Bases
 c = coords.SphericalCoordinates('phi', 'theta', 'r')
@@ -97,7 +94,7 @@ problem.add_equation(eq_eval("u(r=Ro) = 0"), condition="ntheta != 0")
 problem.add_equation(eq_eval("p(r=Ro) = 0"), condition="ntheta == 0")
 
 # Build solver
-solver = solvers.InitialValueSolver(problem, timesteppers.RK222)
+solver = solvers.InitialValueSolver(problem, timestepper)
 solver.stop_sim_time = stop_sim_time
 
 # Check matrix rank
@@ -118,13 +115,11 @@ b['g'] = (Ri - Ri*Ro/r) / (Ri - Ro) + 1e-3 * noise * (Ro - r) * (r - Ri)
 
 # Analysis
 snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=5, max_writes=10, virtual_file=True)
-#snapshots.add_task(b(r=(Ri+Ro)/2), scales=(4,4,1), name='bmid')
-snapshots.add_task(b, scales=(2,2,1))
+snapshots.add_task(b(r=(Ri+Ro)/2), scales=(4,4,1), name='bmid')
 
-# # CFL
-# CFL = flow_tools.CFL(solver, initial_dt=0.1, cadence=10, safety=1,
-#                      max_change=1.5, min_change=0.5, max_dt=0.1)
-# CFL.add_velocities(u)
+# CFL
+CFL = flow_tools.CFL(solver, initial_dt=5, cadence=1, safety=1, max_dt=5, threshold=0.1)
+CFL.add_velocity(u)
 
 # Flow properties
 flow = flow_tools.GlobalFlowProperty(solver, cadence=10)
@@ -135,7 +130,7 @@ try:
     logger.info('Starting loop')
     start_time = time.time()
     while solver.ok:
-        #dt = CFL.compute_dt()
+        dt = CFL.compute_dt()
         solver.step(dt)
         if (solver.iteration-1) % 10 == 0:
             logger.info('Iteration: %i, Time: %e, dt: %e' %(solver.iteration, solver.sim_time, dt))

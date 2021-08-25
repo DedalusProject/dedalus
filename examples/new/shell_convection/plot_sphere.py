@@ -30,7 +30,7 @@ def build_s2_coord_vertices(phi, theta):
 def main(filename, start, count, output):
     """Save plot of specified tasks for given range of analysis writes."""
     # Plot settings
-    task = 'b'
+    task = 'bmid'
     cmap = plt.cm.RdBu_r
     dpi = 100
     figsize = (8, 8)
@@ -49,7 +49,7 @@ def main(filename, start, count, output):
         z = np.cos(theta_vert)
         norm = matplotlib.colors.Normalize(0, 1)
         for index in range(start, start+count):
-            data_slices = (index, slice(None), slice(None), 4)
+            data_slices = (index, slice(None), slice(None), 0)
             data = dset[data_slices]
             fc = cmap(norm(data))
             fc[:, theta.size//2, :] = [0,0,0,1]  # black equator
