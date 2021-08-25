@@ -134,6 +134,7 @@ checkpoints.add_tasks(solver.state)
 flow = flow_tools.GlobalFlowProperty(solver, cadence=10)
 flow.add_property(np.sqrt(dot(u,u)), name='u')
 
+# Use CFL criterion to calculate timestep size
 CFL = flow_tools.CFL(solver, dt, cadence=1, safety=0.35, threshold=0.1, max_dt=0.05)
 CFL.add_velocity(u)
 

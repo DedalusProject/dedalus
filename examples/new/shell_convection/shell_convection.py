@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 
 # TODO: add CFL
 # TODO: fix "one" conversion
-# TODO: use trace in divergence constraint
 # TODO: check loading radial slices from virtual file
 # TODO: adjust resolutions so powers of two are optimal
 
@@ -89,7 +88,7 @@ grad_b = grad(b) + rvec*LT(tb1,-1)
 def eq_eval(eq_str):
     return [eval(expr) for expr in split_equation(eq_str)]
 problem = problems.IVP([p, b, u, tb1, tb2, tu1, tu2])
-problem.add_equation(eq_eval("div(u) + dot(rvec,LT(tu1,-1)) = 0")) # TODO: replace with trace
+problem.add_equation(eq_eval("trace(grad_u) = 0"))
 problem.add_equation(eq_eval("ddt(b) - P*div(grad_b) + LT(tb2,-1) = - dot(u,grad(b))"))
 problem.add_equation(eq_eval("ddt(u) - R*div(grad_u) + grad(p) - b*er + LT(tu2,-1) = - dot(u,grad(u))"))
 problem.add_equation(eq_eval("b(r=Ri) = one"))

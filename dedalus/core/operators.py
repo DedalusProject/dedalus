@@ -1561,10 +1561,26 @@ class ConvertConstant(Convert):
             arg0.require_coeff_space(self.last_axis)
 
 
-class Trace(LinearOperator):
-    # TODO: implement matrix/coefficient versions
+class Trace(LinearOperator, metaclass=MultiClass):
+    # TODO: contract arbitrary indices instead of the first two?
 
     name = "Trace"
+
+    @classmethod
+    def _preprocess_args(cls, operand, out=None):
+        if isinstance(operand, Number):
+            raise SkipDispatchException(output=0)
+        return [operand], {'out': out}
+
+    @classmethod
+    def _check_args(cls, operand, out=None):
+        # Dispatch by coordinate system; not clear that this is useful (see Keaton's note)
+        if isinstance(operand, Operand):
+            # hack to check coordsys of first index only
+            cs0 = operand.tensorsig[0]
+            if isinstance(cs0, cls.cs_type):
+                return True
+        return False
 
     def __init__(self, operand, out=None):
         super().__init__(operand, out=out)
@@ -1574,6 +1590,9 @@ class Trace(LinearOperator):
         self.domain = operand.domain
         self.tensorsig = tuple(operand.tensorsig[2:])
         self.dtype = operand.dtype
+        # Coordinate information
+        self.coordsys = operand.tensorsig[0]
+        self.input_basis = self.domain.get_basis(self.coordsys)
 
     def new_operand(self, operand, **kw):
         return Trace(operand, **kw)
@@ -1602,6 +1621,77 @@ class Trace(LinearOperator):
         arg = self.args[0]
         out.set_layout(arg.layout)
         np.einsum('ii...', arg.data, out=out.data)
+
+
+class SphericalTrace(Trace):
+
+    cs_type = coords.SphericalCoordinates
+
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self.radius_axis = self.coordsys.coords[2].axis
+        self.radial_basis = self.input_basis.get_radial_basis()
+
+    def subproblem_matrix(self, subproblem):
+        radial_basis = self.radial_basis
+        ell = subproblem.group[self.radius_axis - 1]
+        # Commute trace with regularity recombination
+        Q_in = radial_basis.radial_recombinations(self.operand.tensorsig, ell_list=(ell,))
+        Q_out = radial_basis.radial_recombinations(self.tensorsig, ell_list=(ell,))
+        # [-+, +-, 00] are 1, other components are 0
+        # [ 1,  3,  8]
+        trace_spin = np.zeros(9)
+        trace_spin[[1, 3, 8]] = 1
+        trace = np.kron(trace_spin, np.eye(3**len(self.tensorsig)))
+        # Apply Q's
+        trace = Q_out[ell].T @ trace @ Q_in[ell]
+        # Assume all components have the same n_size
+        eye = sparse.identity(radial_basis.n_size(ell), self.dtype, format='csr')
+        matrix = sparse.kron(trace, eye)
+        # Block-diag for sin/cos parts for real dtype
+        if self.dtype == np.float64:
+            matrix = sparse.kron(matrix, sparse.identity(2, format='csr')).tocsr()
+        return matrix
+
+
+class CylindricalTrace(Trace):
+
+    cs_type = coords.PolarCoordinates
+
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self.radius_axis = self.coordsys.coords[1].axis
+
+    def subproblem_matrix(self, subproblem):
+        m = subproblem.group[self.radius_axis - 1]
+        # [-+, +-] are 1, other components are 0
+        # [ 1,  2]
+        trace_spin = np.zeros(4)
+        trace_spin[[1, 2]] = 1
+        trace = np.kron(trace_spin, np.eye(2**len(self.tensorsig)))
+        # Assume all components have the same n_size
+        eye = sparse.identity(self.input_basis.n_size(m), self.dtype, format='csr')
+        matrix = sparse.kron(trace, eye)
+        # Block-diag for sin/cos parts for real dtype
+        if self.dtype == np.float64:
+            matrix = sparse.kron(matrix, sparse.identity(2, format='csr')).tocsr()
+        return matrix
+
+
+class CartesianTrace(Trace):
+
+    cs_type = coords.CartesianCoordinates
+
+    def subproblem_matrix(self, subproblem):
+        dim = len(self.coords)
+        trace = np.ravel(np.eye(dim))
+        # Assume all components have the same n_size
+        eye = sparse.identity(subproblem.coeff_size(self.domain), self.dtype, format='csr')
+        matrix = sparse.kron(trace, eye)
+        # Block-diag for sin/cos parts for real dtype
+        if self.dtype == np.float64:
+            matrix = sparse.kron(matrix, sparse.identity(2, format='csr')).tocsr()
+        return matrix
 
 
 class TransposeComponents(LinearOperator, metaclass=MultiClass):
