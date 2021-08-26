@@ -2837,6 +2837,64 @@ class SpinWeightedSphericalHarmonics(SpinBasis, metaclass=CachedClass):
 SWSH = SpinWeightedSphericalHarmonics
 SphereBasis = SWSH
 
+class SphereDivergence(operators.Divergence, operators.SpectralOperatorS2):
+    """Divergence on S2."""
+    cs_type = S2Coordinates
+    input_basis_type = SpinWeightedSphericalHarmonics
+    subaxis_dependence = [False, True]
+    subaxis_coupling = [False, False]
+
+    def __init__(self, operand, index=0, out=None):
+        operators.Divergence.__init__(self, operand, out=out)  # Gradient has no __init__
+        if index != 0:
+            raise ValueError("Divergence only implemented along index 0.")
+        self.index = index
+        coordsys = operand.tensorsig[index]
+        self.coordsys = coordsys
+        self.operand = operand
+        self.input_basis = operand.domain.get_basis(coordsys)
+        self.output_basis = self.input_basis
+        self.first_axis = self.input_basis.first_axis
+        self.last_axis = self.input_basis.last_axis
+        # FutureField requirements
+        self.domain  = operand.domain#.substitute_basis(self.input_basis, self.output_basis)
+        self.tensorsig = operand.tensorsig[:index] + operand.tensorsig[index+1:]
+        self.dtype = operand.dtype
+
+    @staticmethod
+    def _output_basis(input_basis):
+        return input_basis
+
+    @staticmethod
+    def l_matrix(input_basis, output_basis, spinindex_in, spinindex_out, l):
+        spintotal_in = input_basis.spintotal(spinindex_in)
+        spintotal_out = output_basis.spintotal(spinindex_out)
+        mu = spintotal_out - spintotal_in
+        k = input_basis.k(l, spintotal_in, mu)
+        if input_basis.dtype == np.float64:
+            raise NotImplementedError("No reals yet.")
+        elif input_basis.dtype == np.complex128:
+            return np.array([[k]], dtype=np.complex128)
+        else:
+            raise ValueError("Type must be real or complex.")
+
+        spintotal_in = input_basis.spintotal(spinindex_in)
+        
+        if input_basis.dtype == np.float64:
+            raise NotImplementedError("No reals yet.")
+        elif input_basis.dtype == np.complex128:
+            return np.array([[k]], dtype=np.complex128)
+        else:
+            raise ValueError("Type must be real or complex.")
+
+    def spinindex_out(self, spinindex_in):
+        # Spinorder: -, +, 0
+        # Divergence feels - and +
+        if spinindex_in[0] in (0, 1):
+            return (spinindex_in[1:],)
+        else:
+            return tuple()
+
 class SphereGradient(operators.Gradient, operators.SpectralOperatorS2):
     """Gradient on S2."""
     cs_type = S2Coordinates
@@ -2921,6 +2979,62 @@ class SphereLaplacian(operators.Laplacian, operators.SpectralOperatorS2):
 
     def spinindex_out(self, spinindex_in):
         return (spinindex_in,)
+
+class S2Skew(operators.SpectralOperatorS2):
+    """Skew of S2 vector field."""
+    cs_type = S2Coordinates
+    input_basis_type = SpinWeightedSphericalHarmonics
+    subaxis_dependence = [False, False]
+    subaxis_coupling = [False, False]
+
+    def __init__(self, operand, index=0, out=None):
+        super().__init__(operand, out=out)  # Gradient has no __init__
+        if index != 0:
+            raise ValueError("Skew only implemented along index 0.")
+        self.index = index
+        coordsys = operand.tensorsig[index]
+        self.coordsys = coordsys
+        self.operand = operand
+        self.input_basis = operand.domain.get_basis(coordsys)
+        self.output_basis = self.input_basis
+        self.first_axis = self.input_basis.first_axis
+        self.last_axis = self.input_basis.last_axis
+        # FutureField requirements
+        self.domain  = operand.domain#.substitute_basis(self.input_basis, self.output_basis)
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
+
+    @staticmethod
+    def _output_basis(input_basis):
+        return input_basis
+
+    @staticmethod
+    def l_matrix(input_basis, output_basis, spinindex_in, spinindex_out, l):
+        s = [-1,1][spinindex_in[0]]
+        if input_basis.dtype == np.float64:
+            raise NotImplementedError("No reals yet.")
+        elif input_basis.dtype == np.complex128:
+            return np.array([[s*1j]], dtype=np.complex128)
+        else:
+            raise ValueError("Type must be real or complex.")
+
+    def spinindex_out(self, spinindex_in):
+        # Spinorder: -, +, 0
+        #
+        if spinindex_in[0] == 0:
+            spinindex_out = np.copy(spinindex_in)
+            spinindex_out[0] = 1
+            return spinindex_out
+        else:
+            spinindex_out = np.copy(spinindex_in)
+            spinindex_out[0] = 0
+            return spinindex_out
+
+        # May be called on a 3-vector?
+
+class SphereCurl():
+    pass
+
 
 # These are common for BallRadialBasis and SphericalShellRadialBasis
 class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):

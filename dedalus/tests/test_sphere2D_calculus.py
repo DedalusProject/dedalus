@@ -24,26 +24,44 @@ def build_sphere(Nphi, Ntheta, dealias, dtype):
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('dtype', [np.complex128])
-def test_implicit_gradient_scalar(Nphi, Ntheta, dealias, dtype):
-        #c, d, b, phi, theta, x, y = build_sphere(Nphi, Ntheta, dealias, dtype)
+def test_implicit_divergence_cleaning(Nphi, Ntheta, dealias, dtype):
+    """cleans divergence from a given vector field. Tests Div, Skew, and Grad.
+    """
     c, d, b, phi, theta = build_sphere(Nphi, Ntheta, dealias, dtype)
-    u = field.Field(dist=d, bases=(b,), dtype=dtype)
-    f = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
+    u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
+    psi = field.Field(dist=d, bases=(b,), dtype=dtype)
+    f = field.Field(dist=d, bases=(b,), dtype=dtype)
+    h = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
+
     f.set_scales(b.domain.dealias)
     u.set_scales(b.domain.dealias)
-    m = 2
-    l = 2
-    f['g'] = sph_harm(m,l,phi,theta)
+    h.set_scales(b.domain.dealias)
+    psi.set_scales(b.domain.dealias)
+    
+    x = np.sin(theta)*np.cos(phi)
+    y = np.sin(theta)*np.sin(phi)
+    z = np.cos(theta)
+    f['g'] = z**2
 
     grad = lambda A: operators.Gradient(A,c)
-    problem = problems.LBVP([u])
-    problem.add_equation((grad(u),f), condition='ntheta != 0')
-    problem.add_equation((u,0), condition='ntheta ==0')
+    div = lambda A: operators.Divergence(A)
+    lap = lambda A: operators.Laplacian(A,c)
+    skew = lambda A: basis.S2Skew(A)
+
+    g = operators.Gradient(f, c).evaluate()
+    hh = skew(g).evaluate()
+    h['g'][0] = g['g'][1]
+    h['g'][1] = -g['g'][0]
+    assert np.allclose(hh['g'],h['g'])
+
+    problem = problems.LBVP([u,psi])
+    problem.add_equation((grad(psi) + u, h+g))
+    problem.add_equation((div(u),0), condition='ntheta !=0')
+    problem.add_equation((psi,0), condition='ntheta == 0')
     solver = solvers.LinearBoundaryValueSolver(problem)
     solver.solve()
-    ug = [1j*np.exp(2j*phi)*np.sqrt(15/(2*np.pi))*np.sin(theta)/2,
-          np.exp(2j*phi)*np.sqrt(15/(2*np.pi))*np.cos(theta)*np.sin(theta)/2]
-    assert np.allclose(u['g'], ug)
+    ug = [0*phi, 0*phi]
+    assert np.allclose(u['g'], h['g'])
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
