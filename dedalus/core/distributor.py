@@ -268,6 +268,7 @@ class Layout:
                 slices.append(slice(0, 0))
         return tuple(slices)
 
+    @CachedMethod
     def local_shape(self, domain, scales, rank = None):
         """Local data shape."""
         local_elements = self.local_elements(domain, scales, rank = rank)

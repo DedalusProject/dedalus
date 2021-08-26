@@ -1,5 +1,5 @@
 """
-Dedalus script for solving the Lane-Emden equation. This script demonstrates
+Dedalus script solving the Lane-Emden equation. This script demonstrates
 solving a spherically symmetric nonlinear boundary value problem inside the
 ball. It should be ran serially, should converge within roughly a dozen
 iterations, and should take just a few seconds to run.
@@ -40,7 +40,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 # TODO: print NCC bandwidths and optimize parameters
-
 
 # Parameters
 Nr = 64

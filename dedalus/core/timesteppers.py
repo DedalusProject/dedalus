@@ -11,7 +11,6 @@ from scipy.linalg import blas
 from .system import CoeffSystem
 from ..tools.array import csr_matvec
 
-
 # Track implemented schemes
 schemes = OrderedDict()
 def add_scheme(scheme):

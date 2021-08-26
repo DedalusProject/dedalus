@@ -1,5 +1,5 @@
 """
-Dedalus script to compute the eigenmodes of waves on a clamped string.
+Dedalus script computing the eigenmodes of waves on a clamped string.
 This script demonstrates solving a 1D eigenvalue problem and produces
 a plot of the relative error of the eigenvalues.  It should be ran serially
 and take just a few seconds to complete.

@@ -1,5 +1,5 @@
 """
-Dedalus script to solve the 2D Poisson equation with mixed boundary conditions.
+Dedalus script solving the 2D Poisson equation with mixed boundary conditions.
 This script demonstrates solving a 2D cartesian linear boundary value problem.
 and produces a plot of the solution. It should be ran serially and take just a
 few seconds to complete.
