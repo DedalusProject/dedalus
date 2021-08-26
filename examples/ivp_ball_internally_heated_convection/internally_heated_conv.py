@@ -40,10 +40,8 @@ if len(sys.argv) > 1 and sys.argv[1] == '--restart':
     restart = True
 
 # Parameters
-Nphi = 128
-Ntheta = 64
-Nr = 48
-dealias = 1
+Nphi, Ntheta, Nr = 128, 64, 48
+dealias = 3/2
 if not restart:
     t_end = 10.01
 else:
