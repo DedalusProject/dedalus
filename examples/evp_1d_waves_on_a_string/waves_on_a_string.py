@@ -24,26 +24,26 @@ Lx = 1
 dtype = np.complex128
 
 # Bases
-c = d3.Coordinate('x')
-d = d3.Distributor((c,))
-b = d3.Chebyshev(c, size=Nx, bounds=(0, Lx))
+xcoord = d3.Coordinate('x')
+dist = d3.Distributor(xcoord, dtype=dtype)
+xbasis = d3.Chebyshev(xcoord, size=Nx, bounds=(0, Lx))
 
 # Fields
-u = d3.Field(d, bases=(b,), dtype=dtype)
-t1 = d3.Field(d, dtype=dtype)
-t2 = d3.Field(d, dtype=dtype)
-s = d3.Field(d, dtype=dtype)
+u = dist.Field(name='u', bases=xbasis)
+tau1 = dist.Field(name='tau1')
+tau2 = dist.Field(name='tau2')
+s = dist.Field(name='s')
 
 # Problem
-dx = lambda A: d3.Differentiate(A, c)
+dx = lambda A: d3.Differentiate(A, xcoord)
 def build_P(n):
     b2 = dx(dx(u)).domain.bases[0]
-    P = d3.Field(d, bases=(b2,), dtype=dtype)
+    P = dist.Field(bases=b2)
     P['c'][n] = 1
     return P
 LT = lambda A, n: A * build_P(n)
-problem = d3.EVP(variables=[u, t1, t2], eigenvalue=s)
-problem.add_equation((s*u + dx(dx(u)) + LT(t1,-1) + LT(t2,-2), 0))
+problem = d3.EVP(variables=[u, tau1, tau2], eigenvalue=s)
+problem.add_equation((s*u + dx(dx(u)) + LT(tau1,-1) + LT(tau2,-2), 0))
 problem.add_equation((u(x=0), 0))
 problem.add_equation((u(x=Lx), 0))
 

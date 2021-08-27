@@ -422,11 +422,18 @@ class Field(Current):
 
     """
 
-    def __init__(self, dist, bases=None, name=None, tensorsig=None, dtype=np.float64):
+    def __init__(self, dist, bases=None, name=None, tensorsig=None, dtype=None):
         if bases is None:
             bases = tuple()
+        # Accept single basis in place of tuple/list
+        if not isinstance(bases, (tuple, list)):
+            bases = (bases,)
         if tensorsig is None:
             tensorsig = tuple()
+        if dtype is None:
+            if dist.dtype is None:
+                raise ValueError("dtype must be specified for Distributor or Field.")
+            dtype = dist.dtype
         from .domain import Domain
         self.dist = dist
         self.name = name

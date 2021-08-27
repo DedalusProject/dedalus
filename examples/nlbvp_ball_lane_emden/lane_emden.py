@@ -4,7 +4,7 @@ solving a spherically symmetric nonlinear boundary value problem inside the
 ball. It should be ran serially, should converge within roughly a dozen
 iterations, and should take just a few seconds to run.
 
-In astrophysics, the Lane–Emden equation is a dimensionless form of Poisson's
+In astrophysics, the Lane-Emden equation is a dimensionless form of Poisson's
 equation for the gravitational potential of a Newtonian self-gravitating,
 spherically symmetric, polytropic fluid [1].
 
@@ -50,24 +50,24 @@ dealias = 2
 dtype = np.float64
 
 # Bases
-c = d3.SphericalCoordinates('phi', 'theta', 'r')
-d = d3.Distributor((c,))
-b = d3.BallBasis(c, (1, 1, Nr), radius=1, dtype=dtype, dealias=dealias)
+coords = d3.SphericalCoordinates('phi', 'theta', 'r')
+dist = d3.Distributor(coords, dtype=np.float64)
+basis = d3.BallBasis(coords, (1, 1, Nr), radius=1, dtype=dtype, dealias=dealias)
 
 # Fields
-f = d3.Field(dist=d, name='f', bases=(b,), dtype=dtype)
-t = d3.Field(dist=d, name='t', bases=(b.S2_basis(radius=1),), dtype=dtype)
+f = dist.Field(name='f', bases=basis)
+tau = dist.Field(name='tau', bases=basis.S2_basis(radius=1))
 
 # Problem
-lap = lambda A: d3.Laplacian(A, c)
+lap = lambda A: d3.Laplacian(A, coords)
 b2 = lap(f).domain.bases[0]
 LT = lambda A, n: d3.LiftTau(A, b2, n)
-problem = d3.NLBVP(variables=[f, t])
-problem.add_equation((lap(f) + LT(t,-1), -f**n))
+problem = d3.NLBVP(variables=[f, tau])
+problem.add_equation((lap(f) + LT(tau,-1), -f**n))
 problem.add_equation((f(r=1), 0))
 
 # Initial guess
-phi, theta, r = b.local_grids((1, 1, 1))
+phi, theta, r = basis.local_grids((1, 1, 1))
 R0 = 5
 f['g'] = R0**(2/(n-1)) * (1 - r**2)**2
 

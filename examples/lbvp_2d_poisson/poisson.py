@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 # TODO: make proper plotting using plotbot/xarray
 # TODO: improve build_P or add LiftTau for Jacobi
 # TODO: make parallel safe?
+# TODO: indexing on coord systems by name or axis?
 
 # Parameters
 Nx = 256
@@ -29,35 +30,37 @@ Ly = 1
 dtype = np.float64
 
 # Bases
-c = d3.CartesianCoordinates('x', 'y')
-d = d3.Distributor((c,))
-xb = d3.RealFourier(c.coords[0], size=Nx, bounds=(0, Lx))
-yb = d3.ChebyshevT(c.coords[1], size=Ny, bounds=(0, Ly))
+coords = d3.CartesianCoordinates('x', 'y')
+dist = d3.Distributor(coords, dtype=dtype)
+xbasis = d3.RealFourier(coords.coords[0], size=Nx, bounds=(0, Lx))
+ybasis = d3.ChebyshevT(coords.coords[1], size=Ny, bounds=(0, Ly))
 
 # Fields
-u = d3.Field(d, bases=(xb, yb), dtype=dtype)
-t1 = d3.Field(d, bases=(xb,), dtype=dtype)
-t2 = d3.Field(d, bases=(xb,), dtype=dtype)
-f = d3.Field(d, bases=(xb, yb), dtype=dtype)
-g = d3.Field(d, bases=(xb,), dtype=dtype)
-h = d3.Field(d, bases=(xb,), dtype=dtype)
-x = xb.local_grid()
-y = yb.local_grid()
+u = dist.Field(name='u', bases=(xbasis, ybasis))
+tau1 = dist.Field(name='tau1', bases=xbasis)
+tau2 = dist.Field(name='tau2', bases=xbasis)
+
+# Forcing
+x = xbasis.local_grid()
+y = ybasis.local_grid()
+f = dist.Field(bases=(xbasis, ybasis))
+g = dist.Field(bases=xbasis)
+h = dist.Field(bases=xbasis)
 f['g'] = -10 * np.sin(x/2)**2 * (y - y**2)
 g['g'] = np.sin(8*x)
 h['g'] = 0
 
 # Problem
-dy = lambda A: d3.Differentiate(A, c.coords[1])
-lap = lambda A: d3.Laplacian(A, c)
+dy = lambda A: d3.Differentiate(A, coords.coords[1])
+lap = lambda A: d3.Laplacian(A, coords)
 def build_P(n):
     yb2 = lap(u).domain.bases[1]
-    P = d3.Field(d, bases=(yb2,), dtype=dtype)
+    P = dist.Field(bases=yb2)
     P['c'][0, n] = 1
     return P
 LT = lambda A, n: A * build_P(n)
-problem = d3.LBVP(variables=[u, t1, t2])
-problem.add_equation((lap(u) + LT(t1,-1) + LT(t2,-2), f))
+problem = d3.LBVP(variables=[u, tau1, tau2])
+problem.add_equation((lap(u) + LT(tau1,-1) + LT(tau2,-2), f))
 problem.add_equation((u(y=0), g))
 problem.add_equation((dy(u)(y=Ly), h))
 
@@ -68,6 +71,8 @@ solver.solve()
 # Plot
 plt.figure(figsize=(6, 4))
 plt.imshow(u['g'].T)
-plt.colorbar()
+plt.colorbar(label='u')
+plt.xlabel('x')
+plt.ylabel('y')
 plt.tight_layout()
 plt.savefig('poisson.png')

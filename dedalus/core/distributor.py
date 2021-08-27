@@ -67,7 +67,11 @@ class Distributor:
     states) and the paths between them (D transforms and R transposes).
     """
 
-    def __init__(self, coordsystems, comm=None, mesh=None):
+    def __init__(self, coordsystems, comm=None, mesh=None, dtype=None):
+        # Accept single coordsystem in place of tuple/list
+        if not isinstance(coordsystems, (tuple, list)):
+            coordsystems = (coordsystems,)
+        # Get coords
         self.coords = tuple([coord for coordsystem in coordsystems for coord in coordsystem.coords])
         for coordsystem in coordsystems:
             coordsystem.set_distributor(self)
@@ -88,6 +92,7 @@ class Distributor:
             raise ValueError("Mesh (%s) must have lower dimension than distributor (%i)" %(mesh, dim))
         if np.prod(mesh) != comm.size:
             raise ValueError("Wrong number of processes (%i) for specified mesh (%s)" %(comm.size, mesh))
+        self.dtype = dtype
         # Create cartesian communicator
         self.comm_cart = comm.Create_cart(mesh)
         self.comm_coords = np.array(self.comm_cart.coords, dtype=int)
@@ -177,6 +182,11 @@ class Distributor:
 
     def get_axis(self, coord):
         return self.coords.index(coord)
+
+    def Field(self, *args, **kw):
+        """Alternate constructor for Field objects."""
+        from .field import Field
+        return Field(self, *args, **kw)
 
 
 class Layout:
