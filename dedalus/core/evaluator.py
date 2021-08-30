@@ -28,7 +28,7 @@ from ..tools.config import config
 FILEHANDLER_MODE_DEFAULT = config['analysis'].get('FILEHANDLER_MODE_DEFAULT')
 FILEHANDLER_PARALLEL_DEFAULT = config['analysis'].getboolean('FILEHANDLER_PARALLEL_DEFAULT')
 FILEHANDLER_TOUCH_TMPFILE = config['analysis'].getboolean('FILEHANDLER_TOUCH_TMPFILE')
-FILEHANDLER_VIRTUAL_FILE = config['analysis'].getboolean('FILEHANDLER_VIRTUAL_FILE')
+FILEHANDLER_VIRTUAL_DEFAULT = config['analysis'].getboolean('FILEHANDLER_VIRTUAL_DEFAULT')
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -359,7 +359,7 @@ class FileHandler(Handler):
         if mode is None:
             mode = FILEHANDLER_MODE_DEFAULT
         if virtual_file is None:
-            virtual_file = FILEHANDLER_VIRTUAL_FILE
+            virtual_file = FILEHANDLER_VIRTUAL_DEFAULT
 
         # Check base_path
         base_path = pathlib.Path(base_path).resolve()
