@@ -14,8 +14,6 @@ import dedalus.public as d3
 import logging
 logger = logging.getLogger(__name__)
 
-# TODO: Fix default matrix_coupling for 1D fourier problems
-
 
 # Parameters
 Nx = 1024
@@ -49,7 +47,7 @@ n = 20
 u['g'] = np.log(1 + np.cosh(n)**2/np.cosh(n*(x-0.2*Lx))**2) / (2*n)
 
 # Solver
-solver = problem.build_solver(timestepper, matrix_coupling=[True])
+solver = problem.build_solver(timestepper)
 solver.stop_wall_time = 60
 solver.stop_iteration = 5000
 

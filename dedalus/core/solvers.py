@@ -66,6 +66,10 @@ class SolverBase:
         self.entry_cutoff = entry_cutoff
         if matrix_coupling is None:
             matrix_coupling = problem.matrix_coupling
+            # Couple along last axis by default for efficiency
+            if not any(matrix_coupling):
+                matrix_coupling = list(matrix_coupling)
+                matrix_coupling[-1] = True
         self.matrix_coupling = matrix_coupling
         if matsolver is None:
             matsolver = config['linear algebra'][self.matsolver_default]
