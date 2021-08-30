@@ -564,8 +564,6 @@ class DotProduct(Product, FutureField):
     def __init__(self, arg0, arg1, indices=(-1,0), out=None, **kw):
         indices = self._check_indices(arg0, arg1, indices)
         super().__init__(arg0, arg1, out=out)
-        self.arg0_rank = len(arg0.tensorsig)
-        self.arg1_rank = len(arg1.tensorsig)
         arg0_ts_reduced = list(arg0.tensorsig)
         arg0_ts_reduced.pop(indices[0])
         arg1_ts_reduced = list(arg1.tensorsig)
@@ -577,6 +575,19 @@ class DotProduct(Product, FutureField):
         self.domain = Domain(dist, self._build_bases(arg0, arg1, **kw))
         self.tensorsig = tuple(arg0_ts_reduced + arg1_ts_reduced)
         self.dtype = np.result_type(arg0.dtype, arg1.dtype)
+        # Setup ghost broadcasting
+        broadcast_dims = np.array(self.domain.nonconstant)
+        self.arg0_ghost_broadcaster = GhostBroadcaster(arg0.domain, self.dist.grid_layout, broadcast_dims)
+        self.arg1_ghost_broadcaster = GhostBroadcaster(arg1.domain, self.dist.grid_layout, broadcast_dims)
+        # Compose eigsum string
+        rank0 = len(arg0.tensorsig)
+        rank1 = len(arg1.tensorsig)
+        arg1_str = alphabet[:rank0]
+        arg2_str = alphabet[rank0:rank0+rank1]
+        arg1_str = arg1_str.replace(arg1_str[indices[0]], 'z')
+        arg2_str = arg2_str.replace(arg2_str[indices[1]], 'z')
+        out_str = (arg1_str + arg2_str).replace('z', '')
+        self.einsum_str = arg1_str + '...,' + arg2_str + '...->' + out_str + '...'
 
     def _check_indices(self, arg0, arg1, indices):
         if (not isinstance(arg0, Operand)) or (not isinstance(arg1, Operand)):
@@ -626,25 +637,13 @@ class DotProduct(Product, FutureField):
 
     def operate(self, out):
         arg0, arg1 = self.args
-
         out.set_layout(arg0.layout)
-
-        # compose eigsum string
-        array0_str = alphabet[:self.arg0_rank]
-        char0 = array0_str[self.indices[0]]
-        array0_str = array0_str.replace(char0,'z')
-
-        array1_str = alphabet[-self.arg1_rank:]
-        char1 = array1_str[self.indices[1]]
-        array1_str = array1_str.replace(char1,'z')
-
-        array0_str_reduced = array0_str.replace('z','')
-        array1_str_reduced = array1_str.replace('z','')
-        out_str = array0_str_reduced + array1_str_reduced
-
-        einsum_str = array0_str + '...,' + array1_str + '...->' + out_str + '...'
-
-        np.einsum(einsum_str,arg0.data,arg1.data,out=out.data,optimize=True)
+        # Broadcast
+        arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
+        arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
+        # Call einsum
+        if out.data.size:
+            np.einsum(self.einsum_str, arg0_data, arg1_data, out=out.data, optimize=True)
 
 
 class CrossProduct(Product, FutureField):
@@ -657,13 +656,17 @@ class CrossProduct(Product, FutureField):
         # Check that both fields are rank-1
         if len(arg0.tensorsig) != 1 or len(arg1.tensorsig) != 1:
             raise NotImplementedError("CrossProduct currently only implemented for vector fields.")
-        # Check that first coordsys are the same
+        # Check that vector bundles are the same
         if arg0.tensorsig[0] is not arg1.tensorsig[0]:
-            raise ValueError("CrossProduct requires identical first tangent spaces on both fields.")
+            raise ValueError("CrossProduct requires identical vector bundles.")
         # FutureField requirements
         self.domain = Domain(arg0.dist, self._build_bases(arg0, arg1))
         self.tensorsig = arg0.tensorsig
         self.dtype = np.result_type(arg0.dtype, arg1.dtype)
+        # Setup ghost broadcasting
+        broadcast_dims = np.array(self.domain.nonconstant)
+        self.arg0_ghost_broadcaster = GhostBroadcaster(arg0.domain, self.dist.grid_layout, broadcast_dims)
+        self.arg1_ghost_broadcaster = GhostBroadcaster(arg1.domain, self.dist.grid_layout, broadcast_dims)
         # Pick operate method based on coordsys handedness
         if self.tensorsig[0].right_handed:
             self.operate = self.operate_right_handed
@@ -673,8 +676,10 @@ class CrossProduct(Product, FutureField):
     def operate_right_handed(self, out):
         arg0, arg1 = self.args
         out.set_layout(arg0.layout)
-        data00, data01, data02 = arg0.data[0], arg0.data[1], arg0.data[2]
-        data10, data11, data12 = arg1.data[0], arg1.data[1], arg1.data[2]
+        arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
+        arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
+        data00, data01, data02 = arg0_data[0], arg0_data[1], arg0_data[2]
+        data10, data11, data12 = arg1_data[0], arg1_data[1], arg1_data[2]
         ne.evaluate("data01*data12 - data02*data11", out=out.data[0])
         ne.evaluate("data02*data10 - data00*data12", out=out.data[1])
         ne.evaluate("data00*data11 - data01*data10", out=out.data[2])
@@ -682,8 +687,10 @@ class CrossProduct(Product, FutureField):
     def operate_left_handed(self, out):
         arg0, arg1 = self.args
         out.set_layout(arg0.layout)
-        data00, data01, data02 = arg0.data[0], arg0.data[1], arg0.data[2]
-        data10, data11, data12 = arg1.data[0], arg1.data[1], arg1.data[2]
+        arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
+        arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
+        data00, data01, data02 = arg0_data[0], arg0_data[1], arg0_data[2]
+        data10, data11, data12 = arg1_data[0], arg1_data[1], arg1_data[2]
         ne.evaluate("data02*data11 - data01*data12", out=out.data[0])
         ne.evaluate("data00*data12 - data02*data10", out=out.data[1])
         ne.evaluate("data01*data10 - data00*data11", out=out.data[2])
