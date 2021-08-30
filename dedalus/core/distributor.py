@@ -184,9 +184,24 @@ class Distributor:
         return self.coords.index(coord)
 
     def Field(self, *args, **kw):
-        """Alternate constructor for Field objects."""
+        """Alternate constructor for fields."""
         from .field import Field
         return Field(self, *args, **kw)
+
+    def ScalarField(self, *args, **kw):
+        """Alternate constructor for scalar fields."""
+        from .field import ScalarField
+        return ScalarField(self, *args, **kw)
+
+    def VectorField(self, *args, **kw):
+        """Alternate constructor for vector fields."""
+        from .field import VectorField
+        return VectorField(self, *args, **kw)
+
+    def TensorField(self, *args, **kw):
+        """Alternate constructor for tensor fields."""
+        from .field import TensorField
+        return TensorField(self, *args, **kw)
 
 
 class Layout:

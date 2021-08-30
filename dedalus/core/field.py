@@ -28,6 +28,9 @@ logger = logging.getLogger(__name__.split('.')[-1])
 
 # Public interface
 __all__ = ['Field',
+           'ScalarField',
+           'VectorField',
+           'TensorField',
            'LockedField']
 
 
@@ -719,6 +722,22 @@ class Field(Current):
             data = np.empty(shape=shape, dtype=self.dtype)
         comm_sub.Bcast(data, root=0)
         return data
+
+
+ScalarField = Field
+
+
+def VectorField(dist, coordsys, *args, **kw):
+    tensorsig = (coordsys,)
+    return Field(dist, *args, tensorsig=tensorsig, **kw)
+
+
+def TensorField(dist, coordsys, *args, order=2, **kw):
+    if isinstance(coordsys, (tuple, list)):
+        tensorsig = coordsys
+    else:
+        tensorsig = (coordsys,) * order
+    return Field(dist, *args, tensorsig=tensorsig, **kw)
 
 
 class LockedField(Field):

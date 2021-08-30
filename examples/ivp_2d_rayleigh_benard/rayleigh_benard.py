@@ -46,18 +46,18 @@ z = zbasis.local_grid(1)
 # Fields
 p = dist.Field(name='p', bases=(xbasis,zbasis))
 b = dist.Field(name='b', bases=(xbasis,zbasis))
-u = dist.Field(name='u', bases=(xbasis,zbasis), tensorsig=(coords,))
+u = dist.VectorField(coords, name='u', bases=(xbasis,zbasis))
 tau1b = dist.Field(name='tau1b', bases=xbasis)
 tau2b = dist.Field(name='tau2b', bases=xbasis)
-tau1u = dist.Field(name='tau1u', bases=xbasis, tensorsig=(coords,))
-tau2u = dist.Field(name='tau2u', bases=xbasis, tensorsig=(coords,))
+tau1u = dist.VectorField(coords, name='tau1u', bases=xbasis)
+tau2u = dist.VectorField(coords, name='tau2u', bases=xbasis)
 
 # Substitutions
 P = (Rayleigh * Prandtl)**(-1/2)
 R = (Rayleigh / Prandtl)**(-1/2)
 
-ex = dist.Field(name='ex', tensorsig=(coords,))
-ez = dist.Field(name='ez', tensorsig=(coords,))
+ex = dist.VectorField(coords, name='ex')
+ez = dist.VectorField(coords, name='ez')
 ex['g'][0] = 1
 ez['g'][1] = 1
 
