@@ -27,6 +27,9 @@ We can eliminate R by rescaling f by R**(2/(n-1)), giving:
     f(r=1) = 0
 and R can then be recovered from f(r=0) = R**(2/(n-1)).
 
+For a scalar Laplacian in the ball, we need a single tau term. Here we choose
+to lift it to the natural output (k=2) basis.
+
 References:
     [1]: http://en.wikipedia.org/wiki/Lane–Emden_equation
     [2]: J. P. Boyd, "Chebyshev spectral methods and the Lane-Emden problem,"
@@ -61,7 +64,8 @@ tau = dist.Field(name='tau', bases=basis.S2_basis(radius=1))
 
 # Substitutions
 lap = lambda A: d3.Laplacian(A, coords)
-lift = lambda A, n: d3.LiftTau(A, basis.clone_with(k=2), n)
+lift_basis = basis.clone_with(k=2) # Natural output basis
+lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
 
 # Problem
 problem = d3.NLBVP(variables=[f, tau])

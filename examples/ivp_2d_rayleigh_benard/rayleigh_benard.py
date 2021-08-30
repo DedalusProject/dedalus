@@ -9,6 +9,12 @@ cpu-minutes to run.
 To run and plot using e.g. 4 processes:
     $ mpiexec -n 4 python3 rayleigh_benard.py
     $ mpiexec -n 4 python3 plot_snapshots snapshots/*.h5
+
+For incompressible hydro with two boundaries, we need two tau terms for each the
+velocity and buoyancy. Here we choose to use a first-order formulation, putting
+one tau term each on auxiliary first-order gradient variables and the others in
+the PDE, and lifting them all to the first derivative basis. This formulation puts
+a tau term in the divergence constraint, as required for this geometry.
 """
 
 import numpy as np
@@ -68,8 +74,8 @@ ddt = d3.TimeDerivative
 trace = d3.Trace
 dx = lambda A: d3.Differentiate(A, coords.coords[0])
 dz = lambda A: d3.Differentiate(A, coords.coords[1])
-lift = lambda A, n: d3.LiftTau(A, zbasis.clone_with(a=1/2, b=1/2), n)
-
+lift_basis = zbasis.clone_with(a=1/2, b=1/2) # First derivative basis
+lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
 grad_u = grad(u) + ez*lift(tau1u, -1) # First-order reduction
 grad_b = grad(b) + ez*lift(tau1b, -1) # First-order reduction
 

@@ -7,6 +7,11 @@ and take just a few seconds to complete.
 We use a Chebyshev basis to solve the EVP:
     s*u + dx(dx(u)) = 0
 where s is the eigenvalue.
+
+For the second derivative on a closed interval, we need two tau terms.
+Here we choose to use a first-order formulation, putting one tau term
+on an auxiliary first-order variable and another in the PDE, and lifting
+both to the first derivative basis.
 """
 
 import numpy as np
@@ -34,8 +39,9 @@ s = dist.Field(name='s')
 
 # Substitutions
 dx = lambda A: d3.Differentiate(A, xcoord)
-lift = lambda A, n: d3.LiftTau(A, xbasis.clone_with(a=1/2, b=1/2), n)
-ux = dx(u) + lift(tau1, -1) # First-order reduction
+lift_basis = xbasis.clone_with(a=1/2, b=1/2) # First derivative basis
+lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
+ux = dx(u) + lift(tau1,-1) # First-order reduction
 
 # Problem
 problem = d3.EVP(variables=[u, tau1, tau2], eigenvalue=s)

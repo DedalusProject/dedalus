@@ -8,6 +8,9 @@ We use a Fourier(x) * Chebyshev(y) discretization to solve the LBVP:
     dx(dx(u)) + dy(dy(u)) = f
     u(y=0) = g
     dy(u)(y=Ly) = h
+
+For a scalar Laplacian on a finite interval, we need two tau terms. Here we
+choose to lift them to the natural output (second derivative) basis.
 """
 
 import numpy as np
@@ -51,7 +54,8 @@ h['g'] = 0
 # Substitutions
 dy = lambda A: d3.Differentiate(A, coords.coords[1])
 lap = lambda A: d3.Laplacian(A, coords)
-lift = lambda A, n: d3.LiftTau(A, ybasis.clone_with(a=3/2, b=3/2), n)
+lift_basis = ybasis.clone_with(a=3/2, b=3/2) # Natural output basis
+lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
 
 # Problem
 problem = d3.LBVP(variables=[u, tau1, tau2])
