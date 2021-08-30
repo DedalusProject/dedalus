@@ -17,8 +17,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # TODO: make proper plotting using plotbot/xarray
-# TODO: make parallel safe?
-# TODO: indexing on coord systems by name or axis?
+# TODO: indexing on coord systems by name or axis
 
 
 # Parameters
@@ -65,10 +64,13 @@ solver = problem.build_solver()
 solver.solve()
 
 # Plot
-plt.figure(figsize=(6, 4))
-plt.imshow(u['g'].T)
-plt.colorbar(label='u')
-plt.xlabel('x')
-plt.ylabel('y')
-plt.tight_layout()
-plt.savefig('poisson.png')
+ug = u.allgather_data('g')
+if dist.comm.rank == 0:
+    plt.figure(figsize=(6, 4))
+    plt.imshow(ug.T)
+    plt.colorbar(label='u')
+    plt.xlabel('x')
+    plt.ylabel('y')
+    plt.tight_layout()
+    plt.savefig('poisson.png')
+

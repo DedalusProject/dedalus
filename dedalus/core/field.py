@@ -684,8 +684,11 @@ class Field(Current):
         # Change scales back to dealias scales
         self.require_scales(self.domain.dealias)
 
-    def allgather_data(self):
+    def allgather_data(self, layout=None):
         """Build global data on all processes."""
+        # Change layout
+        if layout is not None:
+            self.require_layout(layout)
         # Shortcut for serial execution
         if self.dist.comm.size == 1:
             return self.data.copy()

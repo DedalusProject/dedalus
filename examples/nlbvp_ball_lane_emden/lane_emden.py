@@ -39,6 +39,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # TODO: print NCC bandwidths and optimize parameters
+# TODO: make parallel safe
 
 
 # Parameters

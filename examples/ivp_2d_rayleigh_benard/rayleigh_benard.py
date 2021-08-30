@@ -19,7 +19,6 @@ logger = logging.getLogger(__name__)
 
 # TODO: maybe fix plotting to directly handle vector
 # TODO: optimize and match d2 resolution
-# TODO: improve tau polynomial
 # TODO: get unit vectors from coords?
 # TODO: timestepper strings
 
@@ -53,37 +52,36 @@ tau1u = dist.VectorField(coords, name='tau1u', bases=xbasis)
 tau2u = dist.VectorField(coords, name='tau2u', bases=xbasis)
 
 # Substitutions
-P = (Rayleigh * Prandtl)**(-1/2)
-R = (Rayleigh / Prandtl)**(-1/2)
+kappa = (Rayleigh * Prandtl)**(-1/2)
+nu = (Rayleigh / Prandtl)**(-1/2)
 
 ex = dist.VectorField(coords, name='ex')
 ez = dist.VectorField(coords, name='ez')
 ex['g'][0] = 1
 ez['g'][1] = 1
 
-div = lambda A: d3.Divergence(A, index=0)
+div = d3.Divergence
 lap = lambda A: d3.Laplacian(A, coords)
 grad = lambda A: d3.Gradient(A, coords)
-dot = lambda A, B: d3.DotProduct(A, B)
-ddt = lambda A: d3.TimeDerivative(A)
-trace = lambda A: d3.Trace(A)
-
+dot = d3.DotProduct
+ddt = d3.TimeDerivative
+trace = d3.Trace
 dx = lambda A: d3.Differentiate(A, coords.coords[0])
 dz = lambda A: d3.Differentiate(A, coords.coords[1])
+lift = lambda A, n: d3.LiftTau(A, zbasis.clone_with(a=1/2, b=1/2), n)
 
-zbasis_U = zbasis.clone_with(a=1/2, b=1/2)
-lift = lambda A, n: d3.LiftTau(A, zbasis_U, n)
-
-grad_u = grad(u) + ez*lift(tau1u, -1)
-grad_b = grad(b) + ez*lift(tau1b, -1)
+grad_u = grad(u) + ez*lift(tau1u, -1) # First-order reduction
+grad_b = grad(b) + ez*lift(tau1b, -1) # First-order reduction
 
 # Problem
+# First-order form: "div(f)" becomes "trace(grad_f)"
+# First-order form: "lap(f)" becomes "div(grad_f)"
 def eq_eval(eq_str):
     return [eval(expr) for expr in d3.split_equation(eq_str)]
 problem = d3.IVP([p, b, u, tau1b, tau2b, tau1u, tau2u])
 problem.add_equation(eq_eval("trace(grad_u) = 0"))
-problem.add_equation(eq_eval("ddt(b) - P*div(grad_b) + lift(tau2b, -1) = - dot(u,grad(b))"))
-problem.add_equation(eq_eval("ddt(u) - R*div(grad_u) + grad(p) + lift(tau2u, -1) - b*ez = - dot(u,grad(u))"))
+problem.add_equation(eq_eval("ddt(b) - kappa*div(grad_b) + lift(tau2b, -1) = - dot(u,grad(b))"))
+problem.add_equation(eq_eval("ddt(u) - nu*div(grad_u) + grad(p) + lift(tau2u, -1) - b*ez = - dot(u,grad(u))"))
 problem.add_equation(eq_eval("b(z=0) = Lz"))
 problem.add_equation(eq_eval("u(z=0) = 0"))
 problem.add_equation(eq_eval("b(z=Lz) = 0"))
@@ -119,7 +117,7 @@ CFL.add_velocity(u)
 
 # Flow properties
 flow = d3.GlobalFlowProperty(solver, cadence=10)
-flow.add_property(np.sqrt(dot(u,u))/R, name='Re')
+flow.add_property(np.sqrt(dot(u,u))/nu, name='Re')
 
 # Main loop
 try:
