@@ -35,11 +35,11 @@ References:
 
 import numpy as np
 import dedalus.public as d3
-
 import logging
 logger = logging.getLogger(__name__)
 
 # TODO: print NCC bandwidths and optimize parameters
+
 
 # Parameters
 Nr = 64
@@ -58,12 +58,13 @@ basis = d3.BallBasis(coords, (1, 1, Nr), radius=1, dtype=dtype, dealias=dealias)
 f = dist.Field(name='f', bases=basis)
 tau = dist.Field(name='tau', bases=basis.S2_basis(radius=1))
 
-# Problem
+# Substitutions
 lap = lambda A: d3.Laplacian(A, coords)
-b2 = lap(f).domain.bases[0]
-LT = lambda A, n: d3.LiftTau(A, b2, n)
+lift = lambda A, n: d3.LiftTau(A, basis.clone_with(k=2), n)
+
+# Problem
 problem = d3.NLBVP(variables=[f, tau])
-problem.add_equation((lap(f) + LT(tau,-1), -f**n))
+problem.add_equation((lap(f) + lift(tau,-1), -f**n))
 problem.add_equation((f(r=1), 0))
 
 # Initial guess

@@ -13,14 +13,13 @@ We use a Fourier(x) * Chebyshev(y) discretization to solve the LBVP:
 import numpy as np
 import matplotlib.pyplot as plt
 import dedalus.public as d3
-
 import logging
 logger = logging.getLogger(__name__)
 
 # TODO: make proper plotting using plotbot/xarray
-# TODO: improve build_P or add LiftTau for Jacobi
 # TODO: make parallel safe?
 # TODO: indexing on coord systems by name or axis?
+
 
 # Parameters
 Nx = 256
@@ -33,7 +32,7 @@ dtype = np.float64
 coords = d3.CartesianCoordinates('x', 'y')
 dist = d3.Distributor(coords, dtype=dtype)
 xbasis = d3.RealFourier(coords.coords[0], size=Nx, bounds=(0, Lx))
-ybasis = d3.ChebyshevT(coords.coords[1], size=Ny, bounds=(0, Ly))
+ybasis = d3.Chebyshev(coords.coords[1], size=Ny, bounds=(0, Ly))
 
 # Fields
 u = dist.Field(name='u', bases=(xbasis, ybasis))
@@ -50,17 +49,14 @@ f['g'] = -10 * np.sin(x/2)**2 * (y - y**2)
 g['g'] = np.sin(8*x)
 h['g'] = 0
 
-# Problem
+# Substitutions
 dy = lambda A: d3.Differentiate(A, coords.coords[1])
 lap = lambda A: d3.Laplacian(A, coords)
-def build_P(n):
-    yb2 = lap(u).domain.bases[1]
-    P = dist.Field(bases=yb2)
-    P['c'][0, n] = 1
-    return P
-LT = lambda A, n: A * build_P(n)
+lift = lambda A, n: d3.LiftTau(A, ybasis.clone_with(a=3/2, b=3/2), n)
+
+# Problem
 problem = d3.LBVP(variables=[u, tau1, tau2])
-problem.add_equation((lap(u) + LT(tau1,-1) + LT(tau2,-2), f))
+problem.add_equation((lap(u) + lift(tau1,-1) + lift(tau2,-2), f))
 problem.add_equation((u(y=0), g))
 problem.add_equation((dy(u)(y=Ly), h))
 

@@ -22,7 +22,7 @@ from ..tools.cache import CachedClass
 from ..tools import jacobi
 from ..tools import clenshaw
 from ..tools.array import reshape_vector, axindex, axslice
-from ..tools.dispatch import MultiClass
+from ..tools.dispatch import MultiClass, SkipDispatchException
 from ..tools.general import unify
 
 from .spaces import ParityInterval, Disk
@@ -681,6 +681,33 @@ class IntegrateJacobi(operators.Integrate, operators.SpectralOperator1D):
         integ_vector = jacobi.integration_vector(N, a, b)
         # Rescale and return with shape (1, N)
         return integ_vector[None, :] * input_basis.COV.stretch
+
+
+class LiftJacobi(operators.LiftTau, operators.Copy):
+    """Jacobi polynomial lift."""
+
+    input_basis_type = type(None)
+    output_basis_type = Jacobi
+    subaxis_dependence = [True]
+    subaxis_coupling = [True]
+
+    @classmethod
+    def _check_args(cls, operand, output_basis, n, out=None):
+        if super()._check_args(operand, output_basis, n):
+            P = cls.build_polynomial(operand.dist, output_basis, n)
+            raise SkipDispatchException(output=P*operand)
+        else:
+            return False
+
+    @staticmethod
+    @CachedMethod
+    def build_polynomial(dist, basis, n):
+        if n < 0:
+            n += basis.size
+        P = dist.Field(bases=basis)
+        axis = basis.first_axis
+        P['c'][axslice(axis, n, n+1)] = 1
+        return P
 
 
 # class Fourier(Basis, metaclass=CachedClass):

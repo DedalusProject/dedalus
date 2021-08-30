@@ -1,5 +1,5 @@
 """
-Dedalus script solving the 1D 1D Korteweg-de Vries / Burgers equation.
+Dedalus script simulating the 1D Korteweg-de Vries / Burgers equation.
 This script demonstrates solving a 1D initial value problem and produces
 a space-time plot of the solution. It should be ran serially and take
 about 1 minute to complete.
@@ -11,11 +11,11 @@ We use a Fourier basis to solve the IVP:
 import numpy as np
 import matplotlib.pyplot as plt
 import dedalus.public as d3
-
 import logging
 logger = logging.getLogger(__name__)
 
 # TODO: Fix default matrix_coupling for 1D fourier problems
+
 
 # Parameters
 Nx = 1024
@@ -35,10 +35,12 @@ xbasis = d3.RealFourier(xcoord, size=Nx, bounds=(0, Lx), dealias=dealias)
 # Fields
 u = dist.Field(name='u', bases=xbasis)
 
-# Problem
-problem = d3.IVP(variables=[u])
+# Substitutions
 dx = lambda A: d3.Differentiate(A, xcoord)
 dt = d3.TimeDerivative
+
+# Problem
+problem = d3.IVP(variables=[u])
 problem.add_equation((dt(u) - a*dx(dx(u)) - b*dx(dx(dx(u))), -u*dx(u)))
 
 # Initial conditions

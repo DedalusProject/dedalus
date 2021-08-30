@@ -40,6 +40,7 @@ __all__ = ['GeneralFunction',
            'RadialComponent',
            'AngularComponent',
            'AzimuthalComponent',
+           'Trace',
            'Gradient',
            'Component',
            'Divergence',
@@ -1373,6 +1374,45 @@ def convert(arg, bases):
     for basis in bases:
         arg = Convert(arg, basis)
     return arg
+
+
+class Copy(LinearOperator):
+
+    name = "Copy"
+
+    def __init__(self, operand, out=None):
+        super().__init__(operand, out=out)
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = operand.domain
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
+
+    def matrix_dependence(self, *vars):
+        return self.operand.matrix_dependence(*vars)
+
+    def matrix_coupling(self, *vars):
+        return self.operand.matrix_coupling(*vars)
+
+    def new_operand(self, operand, **kw):
+        return Copy(operand, **kw)
+
+    def check_conditions(self):
+        return True
+
+    def enforce_conditions(self):
+        pass
+
+    def subproblem_matrix(self, subproblem):
+        size = subproblem.field_size(self.operand)
+        return sparse.identity(size, format='csr')
+
+    def operate(self, out):
+        """Perform operation."""
+        arg = self.args[0]
+        out.set_layout(arg.layout)
+        np.copyto(out.data, arg.data)
 
 
 class Convert(SpectralOperator, metaclass=MultiClass):
@@ -3199,7 +3239,7 @@ class PolarLaplacian(Laplacian, PolarMOperator):
         return radial_basis.operator_matrix('L', m, spintotal)
 
 
-class LiftTau(SpectralOperator, metaclass=MultiClass):
+class LiftTau(LinearOperator, metaclass=MultiClass):
 
     name = "LiftTau"
 

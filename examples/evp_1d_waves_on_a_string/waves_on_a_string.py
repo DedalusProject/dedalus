@@ -12,11 +12,9 @@ where s is the eigenvalue.
 import numpy as np
 import matplotlib.pyplot as plt
 import dedalus.public as d3
-
 import logging
 logger = logging.getLogger(__name__)
 
-# TODO: improve build_P or add LiftTau for Jacobi
 
 # Parameters
 Nx = 128
@@ -34,16 +32,14 @@ tau1 = dist.Field(name='tau1')
 tau2 = dist.Field(name='tau2')
 s = dist.Field(name='s')
 
-# Problem
+# Substitutions
 dx = lambda A: d3.Differentiate(A, xcoord)
-def build_P(n):
-    b2 = dx(dx(u)).domain.bases[0]
-    P = dist.Field(bases=b2)
-    P['c'][n] = 1
-    return P
-LT = lambda A, n: A * build_P(n)
+lift = lambda A, n: d3.LiftTau(A, xbasis.clone_with(a=1/2, b=1/2), n)
+ux = dx(u) + lift(tau1, -1) # First-order reduction
+
+# Problem
 problem = d3.EVP(variables=[u, tau1, tau2], eigenvalue=s)
-problem.add_equation((s*u + dx(dx(u)) + LT(tau1,-1) + LT(tau2,-2), 0))
+problem.add_equation((s*u + dx(ux) + lift(tau2,-1), 0))
 problem.add_equation((u(x=0), 0))
 problem.add_equation((u(x=Lx), 0))
 

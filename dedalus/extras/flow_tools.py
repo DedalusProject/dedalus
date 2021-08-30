@@ -180,6 +180,11 @@ class CFL:
         self.frequencies = self.solver.evaluator.add_dictionary_handler(iter=cadence)
 
     def compute_dt(self):
+        import warnings
+        warnings.warn("compute_dt is deprecated, use compute_timestep instead", DeprecationWarning)
+        return self.compute_timestep()
+
+    def compute_timestep(self):
         """Compute CFL-limited timestep."""
         iteration = self.solver.iteration
         # Return initial dt on first iteration
