@@ -1,8 +1,8 @@
 """
-Plot planes from joint analysis files.
+Plot spherical snapshots.
 
 Usage:
-    plot_2d_series.py <files>... [--output=<dir>]
+    plot_sphere.py <files>... [--output=<dir>]
 
 Options:
     --output=<dir>  Output directory [default: ./frames_sphere]

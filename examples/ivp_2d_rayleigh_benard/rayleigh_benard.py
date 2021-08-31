@@ -3,12 +3,12 @@ Dedalus script simulating 2D horizontally-periodic Rayleigh-Benard convection.
 This script demonstrates solving a 2D cartesian initial value problem. It can
 be ran serially or in parallel, and uses the built-in analysis framework to save
 data snapshots to HDF5 files. The `plot_snapshots.py` script can be used to
-produce plots from the saved data. The simulation shoudl take roughly 10
+produce plots from the saved data. The simulation should take roughly 10
 cpu-minutes to run.
 
 To run and plot using e.g. 4 processes:
     $ mpiexec -n 4 python3 rayleigh_benard.py
-    $ mpiexec -n 4 python3 plot_snapshots snapshots/*.h5
+    $ mpiexec -n 4 python3 plot_snapshots.py snapshots/*.h5
 
 For incompressible hydro with two boundaries, we need two tau terms for each the
 velocity and buoyancy. Here we choose to use a first-order formulation, putting
@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 # TODO: optimize and match d2 resolution
 # TODO: get unit vectors from coords?
 # TODO: timestepper strings
+# TODO: field method for reproducible random noise?
 
 
 # Parameters
@@ -74,8 +75,8 @@ ddt = d3.TimeDerivative
 trace = d3.Trace
 lift_basis = zbasis.clone_with(a=1/2, b=1/2) # First derivative basis
 lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
-grad_u = grad(u) + ez*lift(tau1u, -1) # First-order reduction
-grad_b = grad(b) + ez*lift(tau1b, -1) # First-order reduction
+grad_u = grad(u) + ez*lift(tau1u,-1) # First-order reduction
+grad_b = grad(b) + ez*lift(tau1b,-1) # First-order reduction
 
 # Problem
 # First-order form: "div(f)" becomes "trace(grad_f)"
@@ -84,8 +85,8 @@ def eq_eval(eq_str):
     return [eval(expr) for expr in d3.split_equation(eq_str)]
 problem = d3.IVP([p, b, u, tau1b, tau2b, tau1u, tau2u])
 problem.add_equation(eq_eval("trace(grad_u) = 0"))
-problem.add_equation(eq_eval("ddt(b) - kappa*div(grad_b) + lift(tau2b, -1) = - dot(u,grad(b))"))
-problem.add_equation(eq_eval("ddt(u) - nu*div(grad_u) + grad(p) + lift(tau2u, -1) - b*ez = - dot(u,grad(u))"))
+problem.add_equation(eq_eval("ddt(b) - kappa*div(grad_b) + lift(tau2b,-1) = - dot(u,grad(b))"))
+problem.add_equation(eq_eval("ddt(u) - nu*div(grad_u) + grad(p) + lift(tau2u,-1) - b*ez = - dot(u,grad(u))"))
 problem.add_equation(eq_eval("b(z=0) = Lz"))
 problem.add_equation(eq_eval("u(z=0) = 0"))
 problem.add_equation(eq_eval("b(z=Lz) = 0"))
@@ -115,7 +116,7 @@ snapshots.add_task(dot(u,ex), name='ux')
 snapshots.add_task(dot(u,ez), name='uz')
 
 # CFL
-CFL = d3.CFL(solver, initial_dt=max_timestep, cadence=10, safety=0.5, threshold=0.05,
+CFL = d3.CFL(solver, initial_dt=max_timestep, cadence=10, safety=0.5, threshold=0.1,
              max_change=1.5, min_change=0.5, max_dt=max_timestep)
 CFL.add_velocity(u)
 
@@ -142,3 +143,4 @@ finally:
     logger.info('Sim end time: %f' %solver.sim_time)
     logger.info('Run time: %.2f sec' %(end_time-start_time))
     logger.info('Run time: %f cpu-hr' %((end_time-start_time)/60/60*dist.comm.size))
+

@@ -1,8 +1,8 @@
 """
-Plot planes from joint analysis files.
+Plot 2D cartesian snapshots.
 
 Usage:
-    plot_2d_series.py <files>... [--output=<dir>]
+    plot_snapshots.py <files>... [--output=<dir>]
 
 Options:
     --output=<dir>  Output directory [default: ./frames]
@@ -14,7 +14,6 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-
 from dedalus.extras import plot_tools
 
 
