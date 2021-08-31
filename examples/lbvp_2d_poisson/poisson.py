@@ -24,10 +24,8 @@ logger = logging.getLogger(__name__)
 
 
 # Parameters
-Nx = 256
-Ny = 128
-Lx = 2 * np.pi
-Ly = 1
+Lx, Ly = 2*np.pi, 1
+Nx, Ny = 256, 128
 dtype = np.float64
 
 # Bases
@@ -58,7 +56,7 @@ lift_basis = ybasis.clone_with(a=3/2, b=3/2) # Natural output basis
 lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
 
 # Problem
-problem = d3.LBVP(variables=[u, tau1, tau2])
+problem = d3.LBVP([u, tau1, tau2])
 problem.add_equation((lap(u) + lift(tau1,-1) + lift(tau2,-2), f))
 problem.add_equation((u(y=0), g))
 problem.add_equation((dy(u)(y=Ly), h))

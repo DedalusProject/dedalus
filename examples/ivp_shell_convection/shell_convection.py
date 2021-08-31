@@ -30,15 +30,15 @@ logger = logging.getLogger(__name__)
 
 
 # Parameters
-Nphi, Ntheta, Nr = 192, 96, 8
 Ri, Ro = 14, 15
+Nphi, Ntheta, Nr = 192, 96, 8
 Prandtl = 1
 Rayleigh = 3000
-dtype = np.float64
-stop_sim_time = 2000
 dealias = 3/2
-max_timestep = 5
+stop_sim_time = 2000
 timestepper = d3.RK222
+max_timestep = 5
+dtype = np.float64
 mesh = None
 
 # Bases
@@ -93,7 +93,7 @@ problem.add_equation(eq_eval("b(r=Ri) = one"))
 problem.add_equation(eq_eval("u(r=Ri) = 0"))
 problem.add_equation(eq_eval("b(r=Ro) = 0"))
 problem.add_equation(eq_eval("u(r=Ro) = 0"), condition="ntheta != 0")
-problem.add_equation(eq_eval("p(r=Ro) = 0"), condition="ntheta == 0")
+problem.add_equation(eq_eval("p(r=Ro) = 0"), condition="ntheta == 0") # Pressure gauge
 
 # Build solver
 solver = problem.build_solver(timestepper)
@@ -121,7 +121,7 @@ snapshots.add_task(b(r=(Ri+Ro)/2), scales=(4,4,1), name='bmid')
 
 # CFL
 CFL = d3.CFL(solver, initial_dt=max_timestep, cadence=10, safety=1, threshold=0.1,
-    max_change=1.5, min_change=0.5, max_dt=max_timestep)
+             max_change=1.5, min_change=0.5, max_dt=max_timestep)
 CFL.add_velocity(u)
 
 # Flow properties

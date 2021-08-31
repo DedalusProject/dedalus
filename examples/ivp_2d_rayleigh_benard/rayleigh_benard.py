@@ -6,15 +6,22 @@ data snapshots to HDF5 files. The `plot_snapshots.py` script can be used to
 produce plots from the saved data. The simulation should take roughly 10
 cpu-minutes to run.
 
-To run and plot using e.g. 4 processes:
-    $ mpiexec -n 4 python3 rayleigh_benard.py
-    $ mpiexec -n 4 python3 plot_snapshots.py snapshots/*.h5
+The problem is non-dimensionalized using the box height and freefall time, so
+the resulting thermal diffusivity and viscosity are related to the Prandtl
+and Rayleigh numbers as:
+
+    kappa = (Rayleigh * Prandtl)**(-1/2)
+    nu = (Rayleigh / Prandtl)**(-1/2)
 
 For incompressible hydro with two boundaries, we need two tau terms for each the
 velocity and buoyancy. Here we choose to use a first-order formulation, putting
 one tau term each on auxiliary first-order gradient variables and the others in
 the PDE, and lifting them all to the first derivative basis. This formulation puts
 a tau term in the divergence constraint, as required for this geometry.
+
+To run and plot using e.g. 4 processes:
+    $ mpiexec -n 4 python3 rayleigh_benard.py
+    $ mpiexec -n 4 python3 plot_snapshots.py snapshots/*.h5
 """
 
 import numpy as np
@@ -31,15 +38,15 @@ logger = logging.getLogger(__name__)
 
 
 # Parameters
-Lx, Lz = (4., 1.)
+Lx, Lz = 4, 1
 Nx, Nz = 64, 32
 Prandtl = 1
 Rayleigh = 1e6
-dtype = np.float64
-stop_sim_time = 30
 dealias = 3/2
-max_timestep = 0.1
+stop_sim_time = 30
 timestepper = d3.RK222
+max_timestep = 0.1
+dtype = np.float64
 
 # Bases
 coords = d3.CartesianCoordinates('x', 'z')
@@ -92,7 +99,7 @@ problem.add_equation(eq_eval("u(z=0) = 0"))
 problem.add_equation(eq_eval("b(z=Lz) = 0"))
 problem.add_equation(eq_eval("u(z=Lz) = 0"), condition="nx != 0")
 problem.add_equation(eq_eval("dot(ex,u)(z=Lz) = 0"), condition="nx == 0")
-problem.add_equation(eq_eval("p(z=Lz) = 0"), condition="nx == 0")
+problem.add_equation(eq_eval("p(z=Lz) = 0"), condition="nx == 0") # Pressure gauge
 
 # Solver
 solver = problem.build_solver(timestepper)

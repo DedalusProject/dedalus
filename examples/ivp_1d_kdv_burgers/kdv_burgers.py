@@ -16,13 +16,14 @@ logger = logging.getLogger(__name__)
 
 
 # Parameters
-Nx = 1024
 Lx = 10
+Nx = 1024
 a = 2e-4
 b = 1e-4
+dealias = 3/2
+stop_sim_time = 10
 timestepper = d3.SBDF2
 timestep = 2e-3
-dealias = 3/2
 dtype = np.float64
 
 # Bases
@@ -38,7 +39,7 @@ dx = lambda A: d3.Differentiate(A, xcoord)
 dt = d3.TimeDerivative
 
 # Problem
-problem = d3.IVP(variables=[u])
+problem = d3.IVP([u])
 problem.add_equation((dt(u) - a*dx(dx(u)) - b*dx(dx(dx(u))), -u*dx(u)))
 
 # Initial conditions
@@ -48,8 +49,7 @@ u['g'] = np.log(1 + np.cosh(n)**2/np.cosh(n*(x-0.2*Lx))**2) / (2*n)
 
 # Solver
 solver = problem.build_solver(timestepper)
-solver.stop_wall_time = 60
-solver.stop_iteration = 5000
+solver.stop_sim_time = stop_sim_time
 
 # Main loop
 u.require_scales(1)

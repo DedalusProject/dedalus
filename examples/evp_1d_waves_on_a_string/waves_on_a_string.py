@@ -6,6 +6,8 @@ and take just a few seconds to complete.
 
 We use a Chebyshev basis to solve the EVP:
     s*u + dx(dx(u)) = 0
+    u(x=0) = 0
+    u(x=Lx) = 0
 where s is the eigenvalue.
 
 For the second derivative on a closed interval, we need two tau terms.
@@ -22,8 +24,8 @@ logger = logging.getLogger(__name__)
 
 
 # Parameters
-Nx = 128
 Lx = 1
+Nx = 128
 dtype = np.complex128
 
 # Bases
@@ -44,7 +46,7 @@ lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
 ux = dx(u) + lift(tau1,-1) # First-order reduction
 
 # Problem
-problem = d3.EVP(variables=[u, tau1, tau2], eigenvalue=s)
+problem = d3.EVP([u, tau1, tau2], eigenvalue=s)
 problem.add_equation((s*u + dx(ux) + lift(tau2,-1), 0))
 problem.add_equation((u(x=0), 0))
 problem.add_equation((u(x=Lx), 0))
