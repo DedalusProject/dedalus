@@ -58,7 +58,7 @@ t_list = [solver.sim_time]
 while solver.proceed:
     solver.step(timestep)
     if solver.iteration % 100 == 0:
-        logger.info('Iteration: %i, Time: %e, dt: %e' %(solver.iteration, solver.sim_time, timestep))
+        logger.info('Iteration=%i, Time=%e, dt=%e' %(solver.iteration, solver.sim_time, timestep))
     if solver.iteration % 25 == 0:
         u.require_scales(1)
         u_list.append(np.copy(u['g']))

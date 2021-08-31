@@ -139,8 +139,8 @@ try:
         timestep = CFL.compute_timestep()
         solver.step(timestep)
         if (solver.iteration-1) % 10 == 0:
-            logger.info('Iteration: %i, Time: %e, dt: %e' %(solver.iteration, solver.sim_time, timestep))
-            logger.info('Max Re = %f' %flow.max('Re'))
+            max_Re = flow.max('Re')
+            logger.info('Iteration=%i, Time=%e, dt=%e, max(Re)=%f' %(solver.iteration, solver.sim_time, timestep, max_Re))
 except:
     logger.error('Exception raised, triggering end of main loop.')
     raise
