@@ -140,13 +140,11 @@ hermitian_cadence = 100
 
 # Main loop
 start_time = time.time()
-while solver.ok:
-
+while solver.proceed:
+    dt = CFL.compute_timestep()
     solver.step(dt)
-    dt = CFL.compute_dt()
     if (solver.iteration-1) % 10 == 0:
         logger.info("t = %f, dt = %f, |u|_max = %e" %(solver.sim_time, dt, flow.max('u')))
-
     # Impose hermitian symmetry on two consecutive timesteps because we are using a 2-stage timestepper
     if solver.iteration % hermitian_cadence in [0, 1]:
         for f in solver.state:

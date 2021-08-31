@@ -427,6 +427,12 @@ class InitialValueSolver(SolverBase):
 
     @property
     def ok(self):
+        import warnings
+        warnings.warn("solver.ok is deprecated, use solver.proceed instead")
+        return self.proceed
+
+    @property
+    def proceed(self):
         """Check that current time and iteration pass stop conditions."""
         if self.sim_time >= self.stop_sim_time:
             logger.info('Simulation stop time reached.')

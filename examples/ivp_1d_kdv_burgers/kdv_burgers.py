@@ -55,7 +55,7 @@ solver.stop_iteration = 5000
 u.require_scales(1)
 u_list = [np.copy(u['g'])]
 t_list = [solver.sim_time]
-while solver.ok:
+while solver.proceed:
     solver.step(timestep)
     if solver.iteration % 100 == 0:
         logger.info('Iteration: %i, Time: %e, dt: %e' %(solver.iteration, solver.sim_time, timestep))

@@ -72,8 +72,6 @@ grad = lambda A: d3.Gradient(A, coords)
 dot = d3.DotProduct
 ddt = d3.TimeDerivative
 trace = d3.Trace
-dx = lambda A: d3.Differentiate(A, coords.coords[0])
-dz = lambda A: d3.Differentiate(A, coords.coords[1])
 lift_basis = zbasis.clone_with(a=1/2, b=1/2) # First derivative basis
 lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
 grad_u = grad(u) + ez*lift(tau1u, -1) # First-order reduction
@@ -129,8 +127,8 @@ flow.add_property(np.sqrt(dot(u,u))/nu, name='Re')
 try:
     logger.info('Starting loop')
     start_time = time.time()
-    while solver.ok:
-        timestep = CFL.compute_dt()
+    while solver.proceed:
+        timestep = CFL.compute_timestep()
         solver.step(timestep)
         if (solver.iteration-1) % 10 == 0:
             logger.info('Iteration: %i, Time: %e, dt: %e' %(solver.iteration, solver.sim_time, timestep))

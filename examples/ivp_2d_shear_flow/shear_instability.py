@@ -95,10 +95,9 @@ CFL = flow_tools.CFL(solver, dt, cadence=1, safety=0.3, threshold=0.1, max_dt=1e
 CFL.add_velocity(u)
 
 # Main loop
-while solver.ok:
+while solver.proceed:
+    dt = CFL.compute_timestep()
     solver.step(dt)
-    dt = CFL.compute_dt()
-
     if (solver.iteration-1) % 10 == 0:
         logger.info('Iteration = %i, t = %f, dt = %f, max w = %f' %(solver.iteration, solver.sim_time, dt, np.sqrt(flow.max('w2'))))
 

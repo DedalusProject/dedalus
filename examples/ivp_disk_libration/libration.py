@@ -96,7 +96,7 @@ flow.add_property(np.sqrt(dot(u,u)), name='u')
 
 # Main loop
 start_time = time.time()
-while solver.ok:
+while solver.proceed:
 
     solver.step(dt)
 
