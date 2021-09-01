@@ -2,7 +2,7 @@
 Plot planes from joint analysis files.
 
 Usage:
-    plot_2d_series.py <files>... [--output=<dir>]
+    plot_snapshots.py <files>... [--output=<dir>]
 
 Options:
     --output=<dir>  Output directory [default: ./frames]
