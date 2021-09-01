@@ -25,7 +25,7 @@ def test_heat_1d_periodic(Nx, dtype):
     F['g'] = -np.sin(x)
     # Problem
     dx = lambda A: operators.Differentiate(A, c)
-    problem = problems.LBVP([u])
+    problem = problems.LBVP([u], matrix_coupling=[False])
     problem.add_equation((dx(dx(u)), F), condition='nx != 0')
     problem.add_equation((u, 0), condition='nx == 0')
     # Solver

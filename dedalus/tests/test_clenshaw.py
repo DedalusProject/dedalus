@@ -18,16 +18,17 @@ regtotal_range = [0]
 @pytest.mark.parametrize('k2', [0, 1])
 @pytest.mark.parametrize('ell', [2, 3])
 def test_clenshaw(N, regtotal_in, k1, k2, ell):
+    dtype = np.complex128
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (N, N, N), k=k1, radius=1)
-    basis_in = basis.BallBasis(c, (N, N, N), k=k2, radius=1)
+    b = basis.BallBasis(c, (N, N, N), dtype=dtype, k=k1, radius=1)
+    basis_in = basis.BallBasis(c, (N, N, N), dtype=dtype, k=k2, radius=1)
     phi, theta, r = b.local_grids((1, 1, 1))
     x = r * np.sin(theta) * np.cos(phi)
     y = r * np.sin(theta) * np.sin(phi)
     z = r * np.cos(theta)
 
-    ncc = field.Field(dist=d, bases=(b.radial_basis,), dtype=np.complex128)
+    ncc = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
     ncc['g'] = 2*r**2-1
     ncc_basis = ncc.domain.bases[0]
     a_ncc = ncc_basis.alpha + ncc_basis.k
@@ -50,16 +51,17 @@ def test_clenshaw(N, regtotal_in, k1, k2, ell):
 @pytest.mark.parametrize('k2', [0, 1])
 @pytest.mark.parametrize('ell', [2, 3])
 def test_clenshaw_vector(N, regtotal_in, k1, k2, ell):
+    dtype = np.complex128
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (N, N, N), k=k1, radius=1)
-    basis_in = basis.BallBasis(c, (N, N, N), k=k2, radius=1)
+    b = basis.BallBasis(c, (N, N, N), dtype=dtype, k=k1, radius=1)
+    basis_in = basis.BallBasis(c, (N, N, N), dtype=dtype, k=k2, radius=1)
     phi, theta, r = b.local_grids((1, 1, 1))
     x = r * np.sin(theta) * np.cos(phi)
     y = r * np.sin(theta) * np.sin(phi)
     z = r * np.cos(theta)
 
-    ncc = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=np.complex128)
+    ncc = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,), dtype=dtype)
     ncc['g'][2] = r*(2*r**2-1)
     ncc_basis = ncc.domain.bases[0]
     a_ncc = ncc_basis.alpha + ncc_basis.k

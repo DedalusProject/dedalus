@@ -3276,7 +3276,7 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
 
 class SphericalShellRadialBasis(RegularityBasis):
 
-    def __init__(self, coordsystem, radial_size, radii=(1,2), alpha=(-0.5,-0.5), dealias=(1,), k=0, radius_library=None, dtype=np.complex128):
+    def __init__(self, coordsystem, radial_size, dtype, radii=(1,2), alpha=(-0.5,-0.5), dealias=(1,), k=0, radius_library=None):
         super().__init__(coordsystem, radial_size, k=k, dealias=dealias, dtype=dtype)
         if radii[0] <= 0:
             raise ValueError("Inner radius must be positive.")
@@ -3509,7 +3509,7 @@ class BallRadialBasis(RegularityBasis):
 
     transforms = {}
 
-    def __init__(self, coordsystem, radial_size, radius=1, k=0, alpha=0, dealias=(1,), radius_library=None, dtype=np.complex128):
+    def __init__(self, coordsystem, radial_size, dtype, radius=1, k=0, alpha=0, dealias=(1,), radius_library=None):
         super().__init__(coordsystem, radial_size, k=k, dealias=dealias, dtype=dtype)
         if radius <= 0:
             raise ValueError("Radius must be positive.")
@@ -3902,7 +3902,7 @@ class Spherical3DBasis(MultidimensionalBasis):
 
 class SphericalShellBasis(Spherical3DBasis):
 
-    def __init__(self, coordsystem, shape, radii=(1,2), alpha=(-0.5,-0.5), dealias=(1,1,1), k=0, dtype=np.complex128, azimuth_library=None, colatitude_library=None, radius_library=None):
+    def __init__(self, coordsystem, shape, dtype, radii=(1,2), alpha=(-0.5,-0.5), dealias=(1,1,1), k=0, azimuth_library=None, colatitude_library=None, radius_library=None):
         if np.isscalar(dealias):
             dealias = (dealias, dealias, dealias)
         self.alpha = alpha
@@ -4017,7 +4017,7 @@ class BallBasis(Spherical3DBasis):
 
     transforms = {}
 
-    def __init__(self, coordsystem, shape, radius=1, k=0, alpha=0, dealias=(1,1,1), dtype=np.complex128, azimuth_library=None, colatitude_library=None, radius_library=None):
+    def __init__(self, coordsystem, shape, dtype, radius=1, k=0, alpha=0, dealias=(1,1,1), azimuth_library=None, colatitude_library=None, radius_library=None):
         if np.isscalar(dealias):
             dealias = (dealias, dealias, dealias)
         self.alpha = alpha

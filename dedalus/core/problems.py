@@ -389,7 +389,7 @@ class NonlinearBoundaryValueProblem(ProblemBase):
     def namespace_additions(self):
         """Build namespace for problem parsing."""
         # Variable perturbations
-        self.perturbations = [Field(bases=var.bases, name='δ'+var.name) for var in self.variables]
+        self.perturbations = [Field(bases=var.bases, name='δ'+var.name, dtype=var.dtype) for var in self.variables]
         return {pert.name: pert for pert in self.perturbations}
 
     def _build_matrix_expressions(self, eqn):
@@ -458,7 +458,7 @@ class InitialValueProblem(ProblemBase):
         super().__init__(variables, **kw)
         if isinstance(time, str):
             self.time = time
-            self.sim_time_field = Field(dist=self.dist, name=time)
+            self.sim_time_field = Field(dist=self.dist, name=time, dtype=np.float64)
         elif isinstance(time, Field):
             self.time = time.name
             self.sim_time_field = time
