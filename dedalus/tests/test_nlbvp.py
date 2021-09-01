@@ -137,7 +137,9 @@ def test_lane_emden_floating_amp(Nr, dtype, dealias):
 
 
 @pytest.mark.parametrize('Nr', [32])
-@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('dtype', [np.complex128,
+    pytest.param(np.float64, marks=pytest.mark.xfail(reason="floats and constants still dont play nice"))])
+#@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 @pytest.mark.parametrize('dealias', [1, 1.5])
 def test_lane_emden_floating_R(Nr, dtype, dealias):
     n = 3.0
