@@ -47,7 +47,9 @@ __all__ = ['GeneralFunction',
            'Curl',
            'Laplacian',
            'LiftTau',
-           'AdvectiveCFL']
+           'AdvectiveCFL',
+           'SphericalEllProduct',
+           'UnaryGridFunction']
 
 # Use simple decorator to track parseable operators
 parseables = {}
@@ -470,10 +472,11 @@ class GeneralFunction(NonlinearOperator, FutureField):
 class UnaryGridFunction(NonlinearOperator, FutureField):
 
     supported = {ufunc.__name__: ufunc for ufunc in
-        (np.absolute, np.conj, np.exp, np.exp2, np.log, np.log2,
-         np.log10, np.sqrt, np.square, np.sin, np.cos, np.tan, np.arcsin,
-         np.arccos, np.arctan, np.sinh, np.cosh, np.tanh, np.arcsinh,
-         np.arccosh, np.arctanh)}
+        (np.absolute, np.conj, np.exp, np.exp2, np.expm1,
+         np.log, np.log2, np.log10, np.log1p, np.sqrt, np.square,
+         np.sin, np.cos, np.tan, np.arcsin, np.arccos, np.arctan,
+         np.sinh, np.cosh, np.tanh, np.arcsinh, np.arccosh, np.arctanh,
+         )}
     aliased = {'abs':np.absolute, 'conj':np.conjugate}
     # Add ufuncs and shortcuts to parseables
     parseables.update(supported)
@@ -3383,7 +3386,3 @@ class AdvectiveCFL(FutureLockedField, metaclass=MultiClass):
     def compute_cfl_frequency(self, velocity, out):
         """Return a scalar multi-D field of the cfl frequency everywhere in the domain."""
         raise NotImplementedError("Must call a subclass CFL.")
-
-
-
-
