@@ -47,7 +47,9 @@ def main(filename, start, count, output):
         x = np.sin(theta_vert) * np.cos(phi_vert)
         y = np.sin(theta_vert) * np.sin(phi_vert)
         z = np.cos(theta_vert)
-        norm = matplotlib.colors.Normalize(-1, 1)
+        clim = np.max(dset[:].real)
+        norm = matplotlib.colors.Normalize(-clim, clim)
+        
         for index in range(start, start+count):
             data_slices = (index, slice(None), slice(None))
             data = dset[data_slices].real
