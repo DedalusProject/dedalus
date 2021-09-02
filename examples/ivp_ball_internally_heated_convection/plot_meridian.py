@@ -1,11 +1,11 @@
 """
-Plot T on a meridional plane from joint analysis files.
+Plot meridional slices
 
 Usage:
-    plot_mer_series.py <files>... [--output=<dir>]
+    plot_meridian.py <files>... [--output=<dir>]
 
 Options:
-    --output=<dir>  Output directory [default: ./frames]
+    --output=<dir>  Output directory [default: ./frames_meridian]
 
 """
 

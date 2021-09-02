@@ -1,11 +1,11 @@
 """
-Plot T on equatorial plane from joint analysis files.
+Plot equatorial slices.
 
 Usage:
-    plot_eq_series.py <files>... [--output=<dir>]
+    plot_equator.py <files>... [--output=<dir>]
 
 Options:
-    --output=<dir>  Output directory [default: ./frames]
+    --output=<dir>  Output directory [default: ./frames_equator]
 
 """
 
