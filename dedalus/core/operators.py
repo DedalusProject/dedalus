@@ -2216,7 +2216,12 @@ class SpectralOperatorS2(SpectralOperator):
                     elif l_coupled and not m_dep:
                         matrix = self.assembled_l_matrices(spinindex_in, spinindex_out, m)
                     elif not m_dep:
-                        matrix = self.l_matrix(self.input_basis, self.output_basis, spinindex_in, spinindex_out, l)
+                        spintotal_in = input_basis.spintotal(spinindex_in)
+                        spintotal_out = input_basis.spintotal(spinindex_out)
+                        if abs(spintotal_in) <= l and abs(spintotal_out) <= l:
+                            matrix = self.l_matrix(self.input_basis, self.output_basis, spinindex_in, spinindex_out, l)
+                        else:
+                            matrix = sparse.csr_matrix((np.prod(subshape_out), np.prod(subshape_in)))
                     else:
                         raise ValueError("This should never happen.")
                     factors[self.last_axis] = matrix
@@ -2246,14 +2251,21 @@ class SpectralOperatorS2(SpectralOperator):
             for spinindex_out in self.spinindex_out(spinindex_in):
                 comp_in = operand.data[spinindex_in]
                 comp_out = out.data[spinindex_out]
+                spintotal_in = input_basis.spintotal(spinindex_in)
+                spintotal_out = input_basis.spintotal(spinindex_out)
+
                 for ell, m_ind, ell_ind in input_basis.ell_maps:
+                    if (abs(spintotal_in) > ell) or (abs(spintotal_out) > ell):
+                        continue
                     # Need to check if components exist for a given spin?
                     slices[first_axis] = m_ind
                     slices[first_axis+1] = ell_ind
                     vec_in  = comp_in[tuple(slices)]
                     vec_out = comp_out[tuple(slices)]
                     # Kronecker group matrix up to apply to different m groups
+
                     l_matrix = self.l_matrix(input_basis, self.output_basis, spinindex_in, spinindex_out, ell)
+                        
                     I_m_groups = sparse.identity((m_ind.stop - m_ind.start) // l_matrix.shape[1])
                     A = sparse.kron(I_m_groups, l_matrix)
                     vec_out += apply_matrix(A, vec_in, axis=first_axis)

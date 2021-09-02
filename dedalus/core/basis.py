@@ -2788,6 +2788,9 @@ class SpinWeightedSphericalHarmonics(SpinBasis, metaclass=CachedClass):
 
     @staticmethod
     def k(l, s, mu):
+        if (l-mu*s)*(l+mu*s+1)/2 < 0:
+            print(l, s, mu)
+            raise
         return -mu*np.sqrt((l-mu*s)*(l+mu*s+1)/2)
 
     @CachedMethod
@@ -2983,6 +2986,7 @@ class SphereLaplacian(operators.Laplacian, operators.SpectralOperatorS2):
 class S2Skew(operators.SpectralOperatorS2):
     """Skew of S2 vector field."""
     cs_type = S2Coordinates
+    name = "S2Skew"
     input_basis_type = SpinWeightedSphericalHarmonics
     subaxis_dependence = [False, False]
     subaxis_coupling = [False, False]
@@ -3024,11 +3028,11 @@ class S2Skew(operators.SpectralOperatorS2):
         if spinindex_in[0] == 0:
             spinindex_out = np.copy(spinindex_in)
             spinindex_out[0] = 1
-            return spinindex_out
+            return (tuple(spinindex_out),)
         else:
             spinindex_out = np.copy(spinindex_in)
             spinindex_out[0] = 0
-            return spinindex_out
+            return (tuple(spinindex_out),)
 
         # May be called on a 3-vector?
 
