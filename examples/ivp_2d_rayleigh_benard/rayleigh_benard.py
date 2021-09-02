@@ -40,8 +40,8 @@ logger = logging.getLogger(__name__)
 # Parameters
 Lx, Lz = 4, 1
 Nx, Nz = 64, 32
-Prandtl = 1
 Rayleigh = 1e6
+Prandtl = 1
 dealias = 3/2
 stop_sim_time = 30
 timestepper = d3.RK222

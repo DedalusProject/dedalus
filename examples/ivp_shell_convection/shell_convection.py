@@ -5,15 +5,22 @@ or in parallel, and uses the built-in analysis framework to save data snapshots
 to HDF5 files. The `plot_sphere.py` script can be used to produce plots from the
 saved data. The simulation should take roughly 1 cpu-hour to run.
 
-To run and plot using e.g. 4 processes:
-    $ mpiexec -n 4 python3 shell_convection.py
-    $ mpiexec -n 4 python3 plot_sphere.py snapshots/*.h5
+The problem is non-dimensionalized using the shell thickness and freefall time, so
+the resulting thermal diffusivity and viscosity are related to the Prandtl
+and Rayleigh numbers as:
+
+    kappa = (Rayleigh * Prandtl)**(-1/2)
+    nu = (Rayleigh / Prandtl)**(-1/2)
 
 For incompressible hydro with two boundaries, we need two tau terms for each the
 velocity and buoyancy. Here we choose to use a first-order formulation, putting
 one tau term each on auxiliary first-order gradient variables and the others in
 the PDE, and lifting them all to the first derivative basis. This formulation puts
 a tau term in the divergence constraint, as required for this geometry.
+
+To run and plot using e.g. 4 processes:
+    $ mpiexec -n 4 python3 shell_convection.py
+    $ mpiexec -n 4 python3 plot_sphere.py snapshots/*.h5
 """
 
 import numpy as np
@@ -32,8 +39,8 @@ logger = logging.getLogger(__name__)
 # Parameters
 Ri, Ro = 14, 15
 Nphi, Ntheta, Nr = 192, 96, 8
-Prandtl = 1
 Rayleigh = 3000
+Prandtl = 1
 dealias = 3/2
 stop_sim_time = 2000
 timestepper = d3.RK222
@@ -95,7 +102,7 @@ problem.add_equation(eq_eval("b(r=Ro) = 0"))
 problem.add_equation(eq_eval("u(r=Ro) = 0"), condition="ntheta != 0")
 problem.add_equation(eq_eval("p(r=Ro) = 0"), condition="ntheta == 0") # Pressure gauge
 
-# Build solver
+# Solver
 solver = problem.build_solver(timestepper)
 solver.stop_sim_time = stop_sim_time
 

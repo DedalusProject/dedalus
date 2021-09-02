@@ -402,8 +402,8 @@ class InitialValueSolver(SolverBase):
         # Initialize timestepper
         self.timestepper = timestepper(self)
         # Attributes
-        self.sim_time = 0.  # TODO: allow picking up from current problem sim time?
-        self.iteration = 0
+        self.sim_time = self.initial_sim_time = 0  # TODO: allow picking up from current problem sim time?
+        self.iteration = self.initial_iteration = 0
         # Default integration parameters
         self.stop_sim_time = np.inf
         self.stop_wall_time = np.inf

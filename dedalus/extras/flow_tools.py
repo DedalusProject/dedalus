@@ -187,12 +187,12 @@ class CFL:
     def compute_timestep(self):
         """Compute CFL-limited timestep."""
         iteration = self.solver.iteration
-        # Return initial dt on first iteration
-        if iteration == 0:
-            return self.stored_dt
-        # Otherwise compute new timestep when cadence divides previous iteration
+        # Compute new timestep when cadence divides previous iteration
         # (this is when the frequency dicthandler is freshly updated)
         if (iteration-1) % self.cadence == 0:
+            # Return initial dt on first evaluation
+            if (iteration-1) <= self.solver.initial_iteration:
+                return self.stored_dt
             # Sum across frequencies for each local grid point
             local_freqs = np.sum(np.abs(field['g']) for field in self.frequencies.fields.values())
             # Compute new timestep from max frequency across all grid points
