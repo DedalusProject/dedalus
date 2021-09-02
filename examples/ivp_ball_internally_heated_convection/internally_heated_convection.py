@@ -91,7 +91,7 @@ ang = d3.AngularComponent
 trans = d3.TransposeComponents
 grid = d3.Grid
 
-lift_basis = basis.clone_with(k=2)
+lift_basis = basis.clone_with(k=2) # Natural output
 lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
 
 strain_rate = grad(u) + trans(grad(u))
@@ -100,9 +100,9 @@ shear_stress = ang(rad(strain_rate(r=1)))
 # Problem
 def eq_eval(eq_str):
     return [eval(expr) for expr in d3.split_equation(eq_str)]
-problem = d3.IVP([u, p, T, tau_u, tau_T])
-problem.add_equation(eq_eval("dt(u) - nu*lap(u) + grad(p) - r_vec*T + lift(tau_u,-1) = - cross(curl(u),u)"))
+problem = d3.IVP([p, u, T, tau_u, tau_T])
 problem.add_equation(eq_eval("div(u) = 0"))
+problem.add_equation(eq_eval("dt(u) - nu*lap(u) + grad(p) - r_vec*T + lift(tau_u,-1) = - cross(curl(u),u)"))
 problem.add_equation(eq_eval("dt(T) - kappa*lap(T) + lift(tau_T,-1) = - dot(u,grad(T)) + kappa*T_source"))
 problem.add_equation(eq_eval("shear_stress = 0"))  # stress free
 problem.add_equation(eq_eval("rad(u(r=1)) = 0"), condition="ntheta != 0")  # no penetration
@@ -113,7 +113,7 @@ problem.add_equation(eq_eval("T(r=1) = 0"))
 solver = problem.build_solver(timestepper)
 solver.stop_sim_time = stop_sim_time
 
-# Initial condition
+# Initial conditions
 if not restart:
     seed = 42 + dist.comm_cart.rank
     rand = np.random.RandomState(seed=seed)
@@ -154,7 +154,7 @@ try:
         solver.step(timestep)
         if (solver.iteration-1) % 10 == 0:
             max_u = np.sqrt(flow.max('u2'))
-            logger.info("Iteration=%i, Time=%e, dt=%e, |u|_max=%e" %(solver.iteration, solver.sim_time, timestep, max_u))
+            logger.info("Iteration=%i, Time=%e, dt=%e, max(u)=%e" %(solver.iteration, solver.sim_time, timestep, max_u))
         # Impose hermitian symmetry on two consecutive timesteps because we are using a 2-stage timestepper
         if solver.iteration % hermitian_cadence in [0, 1]:
             for f in solver.state:

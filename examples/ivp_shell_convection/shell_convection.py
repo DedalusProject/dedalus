@@ -81,7 +81,7 @@ div =  d3.Divergence
 lap = lambda A: d3.Laplacian(A, coords)
 grad = lambda A: d3.Gradient(A, coords)
 dot = d3.DotProduct
-ddt = d3.TimeDerivative
+dt = d3.TimeDerivative
 ang = d3.AngularComponent
 trace = d3.Trace
 lift_basis = basis.clone_with(k=1) # First derivative basis
@@ -94,8 +94,8 @@ def eq_eval(eq_str):
     return [eval(expr) for expr in d3.split_equation(eq_str)]
 problem = d3.IVP([p, b, u, tau1b, tau2b, tau1u, tau2u])
 problem.add_equation(eq_eval("trace(grad_u) = 0"))
-problem.add_equation(eq_eval("ddt(b) - kappa*div(grad_b) + lift(tau2b,-1) = - dot(u,grad(b))"))
-problem.add_equation(eq_eval("ddt(u) - nu*div(grad_u) + grad(p) - b*er + lift(tau2u,-1) = - dot(u,grad(u))"))
+problem.add_equation(eq_eval("dt(b) - kappa*div(grad_b) + lift(tau2b,-1) = - dot(u,grad(b))"))
+problem.add_equation(eq_eval("dt(u) - nu*div(grad_u) + grad(p) - b*er + lift(tau2u,-1) = - dot(u,grad(u))"))
 problem.add_equation(eq_eval("b(r=Ri) = one"))
 problem.add_equation(eq_eval("u(r=Ri) = 0"))
 problem.add_equation(eq_eval("b(r=Ro) = 0"))
