@@ -39,8 +39,8 @@ dx = lambda A: d3.Differentiate(A, xcoord)
 dt = d3.TimeDerivative
 
 # Problem
-problem = d3.IVP([u])
-problem.add_equation((dt(u) - a*dx(dx(u)) - b*dx(dx(dx(u))), -u*dx(u)))
+problem = d3.IVP([u], namespace=locals())
+problem.add_equation("dt(u) - a*dx(dx(u)) - b*dx(dx(dx(u))) = - u*dx(u)")
 
 # Initial conditions
 x = xbasis.local_grid(1)

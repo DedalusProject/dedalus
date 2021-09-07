@@ -98,16 +98,14 @@ strain_rate = grad(u) + trans(grad(u))
 shear_stress = ang(rad(strain_rate(r=1)))
 
 # Problem
-def eq_eval(eq_str):
-    return [eval(expr) for expr in d3.split_equation(eq_str)]
-problem = d3.IVP([p, u, T, tau_u, tau_T])
-problem.add_equation(eq_eval("div(u) = 0"))
-problem.add_equation(eq_eval("dt(u) - nu*lap(u) + grad(p) - r_vec*T + lift(tau_u,-1) = - cross(curl(u),u)"))
-problem.add_equation(eq_eval("dt(T) - kappa*lap(T) + lift(tau_T,-1) = - dot(u,grad(T)) + kappa*T_source"))
-problem.add_equation(eq_eval("shear_stress = 0"))  # stress free
-problem.add_equation(eq_eval("rad(u(r=1)) = 0"), condition="ntheta != 0")  # no penetration
-problem.add_equation(eq_eval("p(r=1) = 0"), condition="ntheta == 0")  # pressure gauge
-problem.add_equation(eq_eval("T(r=1) = 0"))
+problem = d3.IVP([p, u, T, tau_u, tau_T], namespace=locals())
+problem.add_equation("div(u) = 0")
+problem.add_equation("dt(u) - nu*lap(u) + grad(p) - r_vec*T + lift(tau_u,-1) = - cross(curl(u),u)")
+problem.add_equation("dt(T) - kappa*lap(T) + lift(tau_T,-1) = - dot(u,grad(T)) + kappa*T_source")
+problem.add_equation("shear_stress = 0")  # stress free
+problem.add_equation("rad(u(r=1)) = 0", condition="ntheta != 0")  # no penetration
+problem.add_equation("p(r=1) = 0", condition="ntheta == 0")  # pressure gauge
+problem.add_equation("T(r=1) = 0")
 
 # Solver
 solver = problem.build_solver(timestepper)

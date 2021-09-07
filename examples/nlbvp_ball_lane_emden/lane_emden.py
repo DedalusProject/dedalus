@@ -68,9 +68,9 @@ lift_basis = basis.clone_with(k=2) # Natural output basis
 lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
 
 # Problem
-problem = d3.NLBVP([f, tau])
-problem.add_equation((lap(f) + lift(tau,-1), -f**n))
-problem.add_equation((f(r=1), 0))
+problem = d3.NLBVP([f, tau], namespace=locals())
+problem.add_equation("lap(f) + lift(tau,-1) = - f**n")
+problem.add_equation("f(r=1) = 0")
 
 # Initial guess
 phi, theta, r = basis.local_grids((1, 1, 1))

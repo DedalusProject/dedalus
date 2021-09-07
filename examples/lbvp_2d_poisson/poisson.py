@@ -56,10 +56,10 @@ lift_basis = ybasis.clone_with(a=3/2, b=3/2) # Natural output basis
 lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
 
 # Problem
-problem = d3.LBVP([u, tau1, tau2])
-problem.add_equation((lap(u) + lift(tau1,-1) + lift(tau2,-2), f))
-problem.add_equation((u(y=0), g))
-problem.add_equation((dy(u)(y=Ly), h))
+problem = d3.LBVP([u, tau1, tau2], namespace=locals())
+problem.add_equation("lap(u) + lift(tau1,-1) + lift(tau2,-2) = f")
+problem.add_equation("u(y=0) = g")
+problem.add_equation("dy(u)(y=Ly) = h")
 
 # Solver
 solver = problem.build_solver()

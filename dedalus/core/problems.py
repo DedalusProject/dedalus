@@ -135,94 +135,70 @@ class ProblemBase:
 
     """
 
-    def __init__(self, variables):
+    def __init__(self, variables, namespace=None):
         self.variables = variables
         self.LHS_variables = variables
         self.dist = unify_attributes(variables, 'dist')
         self.equations = self.eqs = []
-        self.parameters = OrderedDict()
-        self.substitutions = OrderedDict()
+        self.namespace = namespace
 
     def add_equation(self, equation, condition="True"):
         """Add equation to problem."""
-        logger.debug("Parsing Eqn {}".format(len(self.eqs)))
-        # Parse string-valued equations
+        logger.debug(f"Adding eqn {len(self.eqs)}")
+        # Split equation into LHS and RHS
         if isinstance(equation, str):
-            raise NotImplementedError()
-            # self._store_string_forms(eqn, equation, condition)
-            # self._build_object_forms(eqn)
-        # Determine equation domain
-        LHS, RHS = equation
+            # Parse string-valued equations
+            LHS_str, RHS_str = parsing.split_equation(equation)
+            LHS = eval(LHS_str, self.namespace)
+            RHS = eval(RHS_str, self.namespace)
+        else:
+            # Split operator tuples
+            LHS, RHS = equation
+        logger.debug(f"  LHS: {LHS}")
+        logger.debug(f"  RHS: {RHS}")
+        logger.debug(f"  condition: {condition}")
+        # Build equation dictionary (domain determined after NCC reinitialization)
         expr = LHS - RHS
-        # Build equation dictionary
         eqn = {'LHS': LHS,
                'RHS': RHS,
+               'condition': condition,
                'tensorsig': expr.tensorsig,
-               'dtype': expr.dtype,
-               'condition': condition}
+               'dtype': expr.dtype}
+        # Build matrix expressions
         self._build_matrix_expressions(eqn)
         # Store equation dictionary
         self.equations.append(eqn)
-
-    def _store_string_forms(self, eqn, equation, condition):
-        """Split and store equation and condition strings."""
-        eqn['equation_str'] = equation
-        eqn['condition_str'] = condition
-        eqn['LHS_str'], eqn['RHS_str'] = parsing.split_equation(equation)
-        # Debug logging
-        logger.debug("  Condition: {}".format(condition))
-        logger.debug("  LHS string form: {}".format(eqn['LHS_str']))
-        logger.debug("  RHS string form: {}".format(eqn['RHS_str']))
-
-    def _build_object_forms(self, eqn):
-        """Parse LHS/RHS strings to object forms."""
-        # Parse LHS/RHS strings to object expressions
-        eqn['LHS'] = self._parse(eqn['LHS_str'])
-        eqn['RHS'] = self._parse(eqn['RHS_str'])
-        # Determine equation bases using addition operator
-        combo = eqn['LHS'] - eqn['RHS']
-        eqn['bases'] = combo.bases
-        eqn['subdomain'] = combo.subdomain
-        # Debug logging
-        logger.debug("  LHS object form: {}".format(eqn['LHS']))
-        logger.debug("  RHS object form: {}".format(eqn['RHS']))
-
-    def _parse(self, expr_str):
-        """Parse expression using problem namespace."""
-        # ENHANCEMENT: Better security / sanitization?
-        expr = eval(expr_str, self.namespace)
-        return operators.Cast(expr, self.domain)
 
     def _build_matrix_expressions(self, eqn):
         """Build LHS matrix expressions and check equation conditions."""
         raise NotImplementedError()
 
-    @CachedAttribute
-    def namespace(self):
-        """Build namespace for problem parsing."""
-        namespace = Namespace()
-        # Space-specific items
-        for spaceset in self.domain.spaces:
-            for space in spaceset:
-                # Grid
-                namespace[space.name] = space.grid_field(scales=None)
-                # Operators
-                namespace.update(space.operators)
-        # Variables
-        namespace.update({var.name: var for var in self.variables})
-        # Parameters
-        namespace.update(self.parameters)
-        # Built-in functions
-        namespace.update(operators.parseables)
-        # Additions from derived classes
-        namespace.update(self.namespace_additions)
-        # Substitutions
-        namespace.add_substitutions(self.substitutions)
-        return namespace
+    # @CachedAttribute
+    # def namespace(self):
+    #     """Build namespace for problem parsing."""
+    #     namespace = Namespace()
+    #     # Space-specific items
+    #     for spaceset in self.domain.spaces:
+    #         for space in spaceset:
+    #             # Grid
+    #             namespace[space.name] = space.grid_field(scales=None)
+    #             # Operators
+    #             namespace.update(space.operators)
+    #     # Variables
+    #     namespace.update({var.name: var for var in self.variables})
+    #     # Parameters
+    #     namespace.update(self.parameters)
+    #     # Built-in functions
+    #     namespace.update(operators.parseables)
+    #     # Additions from derived classes
+    #     namespace.update(self.namespace_additions)
+    #     # Substitutions
+    #     namespace.add_substitutions(self.substitutions)
+    #     return namespace
 
-    @CachedAttribute
-    def namespace_additions(self):
-        return {}
+    # @CachedAttribute
+    # def namespace_additions(self):
+    #     return {}
 
     @staticmethod
     def _check_basis_containment(eqn, superkey, subkey):
@@ -288,6 +264,7 @@ class ProblemBase:
     @property
     def dtype(self):
         return np.result_type(*[eqn['dtype'] for eqn in self.equations])
+
 
 class LinearBoundaryValueProblem(ProblemBase):
     """
@@ -428,8 +405,6 @@ class NonlinearBoundaryValueProblem(ProblemBase):
         logger.debug('  {} linear form: {}'.format('dH', eqn['dH']))
 
 
-
-
 class InitialValueProblem(ProblemBase):
     """
     Class for non-linear initial value problems.
@@ -566,7 +541,6 @@ class InitialValueProblem(ProblemBase):
         # logger.debug('  {} linear form: {}'.format('L', eqn['L']))
 
 
-
 class EigenvalueProblem(ProblemBase):
     """
     Class for linear eigenvalue problems.
@@ -680,9 +654,9 @@ class EigenvalueProblem(ProblemBase):
         # logger.debug('  {} linear form: {}'.format('L', eqn['L']))
 
 
-
 # Aliases
 IVP = InitialValueProblem
 LBVP = LinearBoundaryValueProblem
 NLBVP = NonlinearBoundaryValueProblem
 EVP = EigenvalueProblem
+

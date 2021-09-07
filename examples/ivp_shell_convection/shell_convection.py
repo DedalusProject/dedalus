@@ -89,17 +89,15 @@ grad_u = grad(u) + rvec*lift(tau1u,-1) # First-order reduction
 grad_b = grad(b) + rvec*lift(tau1b,-1) # First-order reduction
 
 # Problem
-def eq_eval(eq_str):
-    return [eval(expr) for expr in d3.split_equation(eq_str)]
-problem = d3.IVP([p, b, u, tau1b, tau2b, tau1u, tau2u])
-problem.add_equation(eq_eval("trace(grad_u) = 0"))
-problem.add_equation(eq_eval("dt(b) - kappa*div(grad_b) + lift(tau2b,-1) = - dot(u,grad(b))"))
-problem.add_equation(eq_eval("dt(u) - nu*div(grad_u) + grad(p) - b*er + lift(tau2u,-1) = - dot(u,grad(u))"))
-problem.add_equation(eq_eval("b(r=Ri) = one"))
-problem.add_equation(eq_eval("u(r=Ri) = 0"))
-problem.add_equation(eq_eval("b(r=Ro) = 0"))
-problem.add_equation(eq_eval("u(r=Ro) = 0"), condition="ntheta != 0")
-problem.add_equation(eq_eval("p(r=Ro) = 0"), condition="ntheta == 0") # Pressure gauge
+problem = d3.IVP([p, b, u, tau1b, tau2b, tau1u, tau2u], namespace=locals())
+problem.add_equation("trace(grad_u) = 0")
+problem.add_equation("dt(b) - kappa*div(grad_b) + lift(tau2b,-1) = - dot(u,grad(b))")
+problem.add_equation("dt(u) - nu*div(grad_u) + grad(p) - b*er + lift(tau2u,-1) = - dot(u,grad(u))")
+problem.add_equation("b(r=Ri) = one")
+problem.add_equation("u(r=Ri) = 0")
+problem.add_equation("b(r=Ro) = 0")
+problem.add_equation("u(r=Ro) = 0", condition="ntheta != 0")
+problem.add_equation("p(r=Ro) = 0", condition="ntheta == 0") # Pressure gauge
 
 # Solver
 solver = problem.build_solver(timestepper)

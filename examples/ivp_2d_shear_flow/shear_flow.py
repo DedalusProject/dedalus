@@ -67,13 +67,11 @@ dot = d3.DotProduct
 dt = d3.TimeDerivative
 
 # Problem
-def eq_eval(eq_str):
-    return [eval(expr) for expr in d3.split_equation(eq_str)]
-problem = d3.IVP([u, s, p])
-problem.add_equation(eq_eval("dt(u) + grad(p) - nu*lap(u) = - dot(u,grad(u))"))
-problem.add_equation(eq_eval("dt(s) - D*lap(s) = - dot(u,grad(s))"))
-problem.add_equation(eq_eval("div(u) = 0"), condition="(nx != 0) or (nz != 0)")
-problem.add_equation(eq_eval("p = 0"), condition="(nx == 0) and (nz == 0)") # Pressure gauge
+problem = d3.IVP([u, s, p], namespace=locals())
+problem.add_equation("dt(u) + grad(p) - nu*lap(u) = - dot(u,grad(u))")
+problem.add_equation("dt(s) - D*lap(s) = - dot(u,grad(s))")
+problem.add_equation("div(u) = 0", condition="(nx != 0) or (nz != 0)")
+problem.add_equation("p = 0", condition="(nx == 0) and (nz == 0)") # Pressure gauge
 
 # Solver
 solver = problem.build_solver(timestepper, matrix_coupling=[False, False])

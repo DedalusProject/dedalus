@@ -46,10 +46,10 @@ lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
 ux = dx(u) + lift(tau1,-1) # First-order reduction
 
 # Problem
-problem = d3.EVP([u, tau1, tau2], eigenvalue=s)
-problem.add_equation((s*u + dx(ux) + lift(tau2,-1), 0))
-problem.add_equation((u(x=0), 0))
-problem.add_equation((u(x=Lx), 0))
+problem = d3.EVP([u, tau1, tau2], eigenvalue=s, namespace=locals())
+problem.add_equation("s*u + dx(ux) + lift(tau2,-1) = 0")
+problem.add_equation("u(x=0) = 0")
+problem.add_equation("u(x=Lx) = 0")
 
 # Solve
 solver = problem.build_solver()

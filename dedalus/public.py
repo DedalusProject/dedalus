@@ -14,5 +14,4 @@ from .core.problems import *
 from .core.timesteppers import *
 
 # Temporary stuff
-from .tools.parsing import split_equation
 from .extras.flow_tools import CFL, GlobalFlowProperty

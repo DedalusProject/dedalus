@@ -79,14 +79,12 @@ t = dist.Field()
 u0 = np.cos(t) * u0_real - np.sin(t) * u0_imag
 
 # Problem
-def eq_eval(eq_str):
-    return [eval(expr) for expr in d3.split_equation(eq_str)]
-problem = d3.IVP([p, u, tau], time=t)
-problem.add_equation(eq_eval("div(u) = 0"))
-problem.add_equation(eq_eval("dt(u) - nu*lap(u) + grad(p) + lift(tau,-1) = - dot(u, grad(u0)) - dot(u0, grad(u))"))
-problem.add_equation(eq_eval("u(r=1) = 0"), condition='nphi != 0')
-problem.add_equation(eq_eval("azimuthal(u(r=1)) = 0"), condition='nphi == 0')
-problem.add_equation(eq_eval("p(r=1) = 0"), condition='nphi == 0') # Pressure gauge
+problem = d3.IVP([p, u, tau], time=t, namespace=locals())
+problem.add_equation("div(u) = 0")
+problem.add_equation("dt(u) - nu*lap(u) + grad(p) + lift(tau,-1) = - dot(u, grad(u0)) - dot(u0, grad(u))")
+problem.add_equation("u(r=1) = 0", condition='nphi != 0')
+problem.add_equation("azimuthal(u(r=1)) = 0", condition='nphi == 0')
+problem.add_equation("p(r=1) = 0", condition='nphi == 0') # Pressure gauge
 
 # Solver
 solver = problem.build_solver(timestepper)
