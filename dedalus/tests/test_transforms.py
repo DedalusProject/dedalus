@@ -26,12 +26,12 @@ def test_real_fourier_libraries_backward(N, dealias, dtype, library):
     # Matrix
     b_mat = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library='matrix')
     u_mat = field.Field(dist=d, bases=(b_mat,), dtype=dtype)
-    u_mat.set_scales(dealias)
+    u_mat.preset_scales(dealias)
     u_mat['c'] = np.random.randn(N)
     # Library
     b_lib = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library)
     u_lib = field.Field(dist=d, bases=(b_lib,), dtype=dtype)
-    u_lib.set_scales(dealias)
+    u_lib.preset_scales(dealias)
     u_lib['c'] = u_mat['c']
     assert np.allclose(u_mat['g'], u_lib['g'])
 
@@ -47,12 +47,12 @@ def test_real_fourier_libraries_forward(N, dealias, dtype, library):
     # Matrix
     b_mat = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library='matrix')
     u_mat = field.Field(dist=d, bases=(b_mat,), dtype=dtype)
-    u_mat.set_scales(dealias)
+    u_mat.preset_scales(dealias)
     u_mat['g'] = np.random.randn(int(np.ceil(dealias * N)))
     # Library
     b_lib = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library)
     u_lib = field.Field(dist=d, bases=(b_lib,), dtype=dtype)
-    u_lib.set_scales(dealias)
+    u_lib.preset_scales(dealias)
     u_lib['g'] = u_mat['g']
     assert np.allclose(u_mat['c'], u_lib['c'])
 
@@ -67,7 +67,7 @@ def test_CF_scalar_roundtrip(N, dealias):
         x = xb.local_grid(dealias)
         # Scalar transforms
         u = field.Field(dist=d, bases=(xb,), dtype=np.complex128)
-        u.set_scales(dealias)
+        u.preset_scales(dealias)
         u['g'] = ug = np.exp(2*np.pi*1j*x)
         u['c']
         assert np.allclose(u['g'], ug)
@@ -85,7 +85,7 @@ def test_RF_scalar_roundtrip(N, dealias):
         x = xb.local_grid(dealias)
         # Scalar transforms
         u = field.Field(dist=d, bases=(xb,), dtype=np.float64)
-        u.set_scales(dealias)
+        u.preset_scales(dealias)
         u['g'] = ug = np.cos(2*np.pi*x + np.pi/4)
         u['c']
         assert np.allclose(u['g'], ug)
@@ -106,7 +106,7 @@ def test_J_scalar_roundtrip(a, b, N, dealias, dtype):
         x = xb.local_grid(dealias)
         # Scalar transforms
         u = field.Field(dist=d, bases=(xb,), dtype=dtype)
-        u.set_scales(dealias)
+        u.preset_scales(dealias)
         u['g'] = ug = 2*x**2 - 1
         u['c']
         assert np.allclose(u['g'], ug)
@@ -126,12 +126,12 @@ def test_chebyshev_libraries_backward(N, alpha, dealias, dtype, library):
     # Matrix
     b_mat = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library='matrix')
     u_mat = field.Field(dist=d, bases=(b_mat,), dtype=dtype)
-    u_mat.set_scales(dealias)
+    u_mat.preset_scales(dealias)
     u_mat['c'] = np.random.randn(N)
     # Library
     b_lib = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library=library)
     u_lib = field.Field(dist=d, bases=(b_lib,), dtype=dtype)
-    u_lib.set_scales(dealias)
+    u_lib.preset_scales(dealias)
     u_lib['c'] = u_mat['c']
     assert np.allclose(u_mat['g'], u_lib['g'])
 
@@ -148,12 +148,12 @@ def test_chebyshev_libraries_forward(N, alpha, dealias, dtype, library):
     # Matrix
     b_mat = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library='matrix')
     u_mat = field.Field(dist=d, bases=(b_mat,), dtype=dtype)
-    u_mat.set_scales(dealias)
+    u_mat.preset_scales(dealias)
     u_mat['g'] = np.random.randn(int(np.ceil(dealias * N)))
     # Library
     b_lib = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library=library)
     u_lib = field.Field(dist=d, bases=(b_lib,), dtype=dtype)
-    u_lib.set_scales(dealias)
+    u_lib.preset_scales(dealias)
     u_lib['g'] = u_mat['g']
     assert np.allclose(u_mat['c'], u_lib['c'])
 
@@ -176,7 +176,7 @@ def build_CF_CF(Nx, Ny, dealias_x, dealias_y):
 def test_CF_CF_scalar_roundtrip(Nx, Ny, dealias_x, dealias_y):
     c, d, xb, yb, x, y = build_CF_CF(Nx, Ny, dealias_x, dealias_y)
     f = field.Field(dist=d, bases=(xb,yb), dtype=np.complex128)
-    f.set_scales((dealias_x, dealias_y))
+    f.preset_scales((dealias_x, dealias_y))
     f['g'] = fg = np.exp(2j*x) * np.exp(2j*y + 1j*np.pi/3) + 3 + np.exp(2j*y)
     f['c']
     assert np.allclose(f['g'], fg)
@@ -200,7 +200,7 @@ def build_RF_RF(Nx, Ny, dealias_x, dealias_y):
 def test_RF_RF_scalar_roundtrip(Nx, Ny, dealias_x, dealias_y):
     c, d, xb, yb, x, y = build_RF_RF(Nx, Ny, dealias_x, dealias_y)
     f = field.Field(dist=d, bases=(xb,yb), dtype=np.float64)
-    f.set_scales((dealias_x, dealias_y))
+    f.preset_scales((dealias_x, dealias_y))
     f['g'] = fg = np.sin(2*x) + np.cos(2*y + np.pi/3) + 3 + np.sin(2*y)
     f['c']
     assert np.allclose(f['g'], fg)
@@ -226,7 +226,7 @@ def build_CF_J(a, b, Nx, Ny, dealias_x, dealias_y):
 def test_CF_J_scalar_roundtrip(a, b, Nx, Ny, dealias_x, dealias_y):
     c, d, xb, yb, x, y = build_CF_J(a, b, Nx, Ny, dealias_x, dealias_y)
     f = field.Field(dist=d, bases=(xb,yb,), dtype=np.complex128)
-    f.set_scales((dealias_x, dealias_y))
+    f.preset_scales((dealias_x, dealias_y))
     f['g'] = fg = np.sin(2*x) * y**5
     f['c']
     assert np.allclose(f['g'], fg)
@@ -241,7 +241,7 @@ def test_CF_J_scalar_roundtrip(a, b, Nx, Ny, dealias_x, dealias_y):
 def test_CF_J_vector_roundtrip(a, b, Nx, Ny, dealias_x, dealias_y):
     c, d, xb, yb, x, y = build_CF_J(a, b, Nx, Ny, dealias_x, dealias_y)
     u = field.Field(dist=d, bases=(xb,yb,), tensorsig=(c,), dtype=np.complex128)
-    u.set_scales((dealias_x, dealias_y))
+    u.preset_scales((dealias_x, dealias_y))
     u['g'] = ug = np.array([np.cos(2*x) * 2 * y**2, np.sin(2*x) * y + y])
     u['c']
     assert np.allclose(u['g'], ug)
@@ -256,7 +256,7 @@ def test_CF_J_vector_roundtrip(a, b, Nx, Ny, dealias_x, dealias_y):
 def test_CF_J_1d_vector_roundtrip(a, b, Nx, Ny, dealias_x, dealias_y):
     c, d, xb, yb, x, y = build_CF_J(a, b, Nx, Ny, dealias_x, dealias_y)
     v = field.Field(dist=d, bases=(xb,), tensorsig=(c,), dtype=np.complex128)
-    v.set_scales((dealias_x, dealias_y))
+    v.preset_scales((dealias_x, dealias_y))
     v['g'] = vg = np.array([np.cos(2*x) * 2, np.sin(2*x) + 1])
     v['c']
     assert np.allclose(v['g'], vg)
@@ -297,7 +297,7 @@ rank_range = [0, 1, 2]
 def test_sphere_complex_scalar_backward(Nphi, Ntheta, radius, basis, dealias):
     c, d, b, phi, theta = basis(Nphi, Ntheta, radius, dealias, np.complex128)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
-    f.set_scales(dealias)
+    f.preset_scales(dealias)
     m, ell, *_ = d.coeff_layout.local_group_arrays(b.domain, scales=1)
     f['c'][(m == -2) * (ell == 2)] = 1
     fg = np.sqrt(15) / 4 * np.sin(theta)**2 * np.exp(-2j*phi)
@@ -311,7 +311,7 @@ def test_sphere_complex_scalar_backward(Nphi, Ntheta, radius, basis, dealias):
 def test_sphere_complex_scalar_forward(Nphi, Ntheta, radius, basis, dealias):
     c, d, b, phi, theta = basis(Nphi, Ntheta, radius, dealias, np.complex128)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
-    f.set_scales(dealias)
+    f.preset_scales(dealias)
     m, ell, *_  = d.coeff_layout.local_group_arrays(b.domain, scales=1)
     f['g'] = np.sqrt(15) / 4 * np.sin(theta)**2 * np.exp(-2j*phi)
     fc = np.zeros_like(f['c'])
@@ -326,7 +326,7 @@ def test_sphere_complex_scalar_forward(Nphi, Ntheta, radius, basis, dealias):
 def test_sphere_real_scalar_backward(Nphi, Ntheta, radius, basis, dealias):
     c, d, b, phi, theta = basis(Nphi, Ntheta, radius, dealias, np.float64)
     f = field.Field(dist=d, bases=(b,), dtype=np.float64)
-    f.set_scales(dealias)
+    f.preset_scales(dealias)
     m, ell, *_  = d.coeff_layout.local_group_arrays(b.domain, scales=1)
     f['c'][(m == 2) * (ell == 2)] = 1
     fg = np.sqrt(15) / 4 * np.sin(theta)**2 * (np.cos(2*phi) - np.sin(2*phi))
@@ -340,7 +340,7 @@ def test_sphere_real_scalar_backward(Nphi, Ntheta, radius, basis, dealias):
 def test_sphere_real_scalar_forward(Nphi, Ntheta, radius, basis, dealias):
     c, d, b, phi, theta = basis(Nphi, Ntheta, radius, dealias, np.float64)
     f = field.Field(dist=d, bases=(b,), dtype=np.float64)
-    f.set_scales(dealias)
+    f.preset_scales(dealias)
     m, ell, *_  = d.coeff_layout.local_group_arrays(b.domain, scales=1)
     f['g'] = np.sqrt(15) / 4 * np.sin(theta)**2 * (np.cos(2*phi) - np.sin(2*phi))
     fc = np.zeros_like(f['c'])
@@ -359,7 +359,7 @@ def test_sphere_roundtrip_noise(Nphi, Ntheta, radius, basis, dealias, dtype, lay
     c, d, b, phi, theta = basis(Nphi, Ntheta, radius, dealias, dtype)
     tensorsig = (c,) * rank
     f = field.Field(dist=d, bases=(b,), tensorsig=tensorsig, dtype=dtype)
-    f.set_scales(dealias)
+    f.preset_scales(dealias)
     other = {'g':'c', 'c':'g'}[layout]
     f[other] = np.random.randn(*f[other].shape)
     f_layout = f[layout].copy()
@@ -406,7 +406,7 @@ def test_polar_scalar_roundtrip(Nphi, Nr, radius, alpha, k, dealias, dtype, buil
     c, d, b = build_basis(Nphi, Nr, radius, alpha, k, dealias, dtype)
     phi, r = b.local_grids((dealias, dealias))
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-    f.set_scales((dealias, dealias))
+    f.preset_scales((dealias, dealias))
     f['g'] = (r*np.cos(phi))**3
     fg = f['g'].copy()
     f['c']
@@ -427,7 +427,7 @@ def test_polar_roundtrip_noise(Nphi, Nr, radius, alpha, k, dealias, dtype, layou
     c, d, b = build_basis(Nphi, Nr, radius, alpha, k, dealias, dtype)
     tensorsig = (c,) * rank
     f = field.Field(dist=d, bases=(b,), tensorsig=tensorsig, dtype=dtype)
-    f.set_scales((dealias, dealias))
+    f.preset_scales((dealias, dealias))
     other = {'g':'c', 'c':'g'}[layout]
     f[other] = np.random.randn(*f[other].shape)
     f_layout = f[layout].copy()
@@ -446,7 +446,7 @@ def test_polar_scalar_roundtrip_mmax0(Nr, radius, alpha, k, dealias, dtype, buil
     c, d, b = build_basis(1, Nr, radius, alpha, k, dealias, dtype)
     phi, r = b.local_grids((dealias, dealias))
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-    f.set_scales((dealias, dealias))
+    f.preset_scales((dealias, dealias))
     f['g'] = r**4 + 0*phi
     fg = f['g'].copy()
     f['c']
@@ -468,7 +468,7 @@ def test_polar_vector_roundtrip(Nphi, Nr, radius, alpha, k, dealias, dtype, buil
     y = r*np.sin(phi)
     ex = np.array([-np.sin(phi)+0*r, np.cos(phi)+0*r])
     f = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
-    f.set_scales((dealias, dealias))
+    f.preset_scales((dealias, dealias))
     f['g'] = x * ex
     fg = f['g'].copy()
     f['c']
@@ -486,7 +486,7 @@ def test_polar_vector_roundtrip_mmax0(Nr, radius, alpha, k, dealias, dtype, buil
     c, d, b = build_basis(1, Nr, radius, alpha, k, dealias, dtype=dtype)
     phi, r = b.local_grids((dealias, dealias))
     f = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
-    f.set_scales((dealias, dealias))
+    f.preset_scales((dealias, dealias))
     f['g'][1] = 6*r**5 + 0*phi
     fg = f['g'].copy()
     f['c']
@@ -508,7 +508,7 @@ def test_polar_tensor_roundtrip(Nphi, Nr, radius, alpha, k, dealias, dtype, buil
     ex = np.array([-np.sin(phi)+0*r, np.cos(phi)+0*r])
     exex = ex[None, :, ...] * ex[:, None, ...]
     f = field.Field(dist=d, bases=(b,), tensorsig=(c,c), dtype=dtype)
-    f.set_scales((dealias, dealias))
+    f.preset_scales((dealias, dealias))
     f['g'] = 6*x * exex
     fg = f['g'].copy()
     f['c']
@@ -526,7 +526,7 @@ def test_polar_tensor_roundtrip_mmax0(Nr, radius, alpha, k, dealias, dtype, buil
     c, d, b = build_basis(1, Nr, radius, alpha, k, dealias, dtype=dtype)
     phi, r = b.local_grids((dealias, dealias))
     f = field.Field(dist=d, bases=(b,), tensorsig=(c,c), dtype=dtype)
-    f.set_scales((dealias, dealias))
+    f.preset_scales((dealias, dealias))
     f['g'][1,1] = r**2 + 0*phi
     fg = f['g'].copy()
     f['c']
@@ -569,7 +569,7 @@ def test_shell_radial_roundtrip_noise(Nr, radii, alpha, k, dealias, dtype, layou
     c, d, b, phi, theta, r, x, y, z = build_shell(4, 4, Nr, radii, alpha, k, dealias, dtype)
     tensorsig = (c,) * rank
     f = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=tensorsig, dtype=dtype)
-    f.set_scales((dealias, dealias, dealias))
+    f.preset_scales((dealias, dealias, dealias))
     other = {'g':'c', 'c':'g'}[layout]
     f[other] = np.random.randn(*f[other].shape)
     f_layout = f[layout].copy()
@@ -590,7 +590,7 @@ def test_shell_roundtrip_noise(Nphi, Ntheta, Nr, radii, alpha, k, dealias, dtype
     c, d, b, phi, theta, r, x, y, z = build_shell(Nphi, Ntheta, Nr, radii, alpha, k, dealias, dtype)
     tensorsig = (c,) * rank
     f = field.Field(dist=d, bases=(b,), tensorsig=tensorsig, dtype=dtype)
-    f.set_scales((dealias, dealias, dealias))
+    f.preset_scales((dealias, dealias, dealias))
     other = {'g':'c', 'c':'g'}[layout]
     f[other] = np.random.randn(*f[other].shape)
     f_layout = f[layout].copy()
@@ -634,7 +634,7 @@ def test_ball_radial_roundtrip_noise(Nr, radius, alpha, k, dealias, dtype, layou
     c, d, b, phi, theta, r, x, y, z = build_ball(4, 4, Nr, radius, alpha, k, dealias, dtype)
     tensorsig = (c,) * rank
     f = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=tensorsig, dtype=dtype)
-    f.set_scales((dealias, dealias, dealias))
+    f.preset_scales((dealias, dealias, dealias))
     other = {'g':'c', 'c':'g'}[layout]
     f[other] = np.random.randn(*f[other].shape)
     f_layout = f[layout].copy()
@@ -655,7 +655,7 @@ def test_ball_roundtrip_noise(Nphi, Ntheta, Nr, radius, alpha, k, dealias, dtype
     c, d, b, phi, theta, r, x, y, z = build_ball(Nphi, Ntheta, Nr, radius, alpha, k, dealias, dtype)
     tensorsig = (c,) * rank
     f = field.Field(dist=d, bases=(b,), tensorsig=tensorsig, dtype=dtype)
-    f.set_scales((dealias, dealias, dealias))
+    f.preset_scales((dealias, dealias, dealias))
     other = {'g':'c', 'c':'g'}[layout]
     f[other] = np.random.randn(*f[other].shape)
     f_layout = f[layout].copy()

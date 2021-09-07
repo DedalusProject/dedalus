@@ -79,7 +79,7 @@ f['g'] = R0**(2/(n-1)) * (1 - r**2)**2
 # Solver
 solver = problem.build_solver(ncc_cutoff=ncc_cutoff)
 pert_norm = np.inf
-f.require_scales(dealias)
+f.change_scales(dealias)
 steps = [f['g'].ravel().copy()]
 while pert_norm > tolerance:
     solver.newton_iteration()

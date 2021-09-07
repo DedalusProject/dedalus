@@ -51,7 +51,7 @@ solver = problem.build_solver(timestepper)
 solver.stop_sim_time = stop_sim_time
 
 # Main loop
-u.require_scales(1)
+u.change_scales(1)
 u_list = [np.copy(u['g'])]
 t_list = [solver.sim_time]
 while solver.proceed:
@@ -59,7 +59,7 @@ while solver.proceed:
     if solver.iteration % 100 == 0:
         logger.info('Iteration=%i, Time=%e, dt=%e' %(solver.iteration, solver.sim_time, timestep))
     if solver.iteration % 25 == 0:
-        u.require_scales(1)
+        u.change_scales(1)
         u_list.append(np.copy(u['g']))
         t_list.append(solver.sim_time)
 

@@ -37,13 +37,13 @@ u_rhs = field.Field(dist=d, bases=(bk2,), tensorsig=(c,), dtype=np.complex128)
 
 # first formulation
 def calculate1():
-    Du.set_layout(Du.dist.coeff_layout)
+    Du.preset_layout(Du.dist.coeff_layout)
     Du['c'] = 0
     op = operators.Gradient(u, c)
     op.out = Du
     op.evaluate()
     op_dot = neg*operators.DotProduct(u,Du)
-    u_rhs.set_layout(u_rhs.dist.grid_layout)
+    u_rhs.preset_layout(u_rhs.dist.grid_layout)
     u_rhs['g'] = op_dot.evaluate()['g']
 
     # R = ez cross u
@@ -53,7 +53,7 @@ def calculate1():
 # second formulation
 def calculate2():
     op_dot = neg*operators.DotProduct(u,operators.Gradient(u, c))
-    u_rhs.set_layout(u_rhs.dist.grid_layout)
+    u_rhs.preset_layout(u_rhs.dist.grid_layout)
     u_rhs['g'] = op_dot.evaluate()['g']
 
     # R = ez cross u
@@ -63,7 +63,7 @@ def calculate2():
 # third formulation
 def calculate3():
     op_dot = neg*operators.DotProduct(u,operators.Gradient(u, c)) + negOm*operators.CrossProduct(ez,u)
-    u_rhs.set_layout(u_rhs.dist.grid_layout)
+    u_rhs.preset_layout(u_rhs.dist.grid_layout)
     u_rhs['g'] = op_dot.evaluate()['g']
 
 # fourth formulation

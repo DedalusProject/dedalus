@@ -42,7 +42,7 @@ def test_sin_nlbvp(Nx, dtype, dealias, basis_class):
         err = error(solver.perturbations)
     # Check solution
     u_true = np.sin(x)
-    u.require_scales(1)
+    u.change_scales(1)
     assert np.allclose(u['g'], u_true)
 
 
@@ -82,7 +82,7 @@ def test_heat_ball_nlbvp(Nr, dtype, dealias):
         solver.newton_iteration()
         err = error(solver.perturbations)
     u_true = r**2 - radius**2
-    u.require_scales(1)
+    u.change_scales(1)
     assert np.allclose(u['g'], u_true)
 
 

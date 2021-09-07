@@ -51,7 +51,7 @@ def test_cartesian_output(dtype, dealias, output_scales):
         for task in tasks:
             task_saved = file['tasks'][str(task)][-1]
             task = task.evaluate()
-            task.require_scales(output_scales)
+            task.change_scales(output_scales)
             local_error = task['g'] - task_saved
             if local_error.size:
                 errors.append(np.max(np.abs(task['g'] - task_saved)))
@@ -103,7 +103,7 @@ def test_cartesian_output_virtual(dtype, dealias, output_scales):
         for task in tasks:
             task_name = str(task)
             task = task.evaluate()
-            task.require_scales(output_scales)
+            task.change_scales(output_scales)
             local_slices = (slice(None),) * len(task.tensorsig) + d.grid_layout.slices(task.domain, task.scales)
             task_saved = file['tasks'][task_name][-1]
             task_saved = task_saved[local_slices]

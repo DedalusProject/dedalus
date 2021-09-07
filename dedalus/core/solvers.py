@@ -275,9 +275,9 @@ class LinearBoundaryValueSolver(SolverBase):
             self._build_subproblem_matsolvers()
         # Ensure coeff space before subsystem gathers/scatters
         for field in self.F:
-            field.require_layout('c')
+            field.change_layout('c')
         for field in self.state:
-            field.set_layout('c')
+            field.preset_layout('c')
         # Solve system for each subproblem, updating state
         for sp in self.subproblems:
             sp_matsolver = self.subproblem_matsolvers[sp]
@@ -350,9 +350,9 @@ class NonlinearBoundaryValueSolver(SolverBase):
         self.subproblems = subsystems.build_subproblems(self, self.subsystems, ['dH'])
         # Ensure coeff space before subsystem gathers/scatters
         for field in self.F:
-            field.require_layout('c')
+            field.change_layout('c')
         for field in self.perturbations:
-            field.set_layout('c')
+            field.preset_layout('c')
         # Solve system for each subproblem, updating state
         for sp in self.subproblems:
             sp_matsolver = self._build_subproblem_matsolver(sp)
@@ -529,9 +529,9 @@ class InitialValueSolver(SolverBase):
         self.evaluator.evaluate_group('F', sim_time=0, wall_time=0, iteration=self.iteration)
         # Ensure coeff space before subsystem gathers/scatters
         for field in self.F:
-            field.require_layout('c')
+            field.change_layout('c')
         for field in self.state:
-            field.require_layout('c')
+            field.change_layout('c')
         # Solve system for each subproblem, updating state
         for sp in self.subproblems:
             LHS = sp.M_min + dt*sp.L_min
@@ -556,7 +556,7 @@ class InitialValueSolver(SolverBase):
                 # Transform state variables to grid and back
                 # TODO: maybe this should be on scales=1?
                 for field in self.state:
-                    field.require_scales(field.domain.dealias)
+                    field.change_scales(field.domain.dealias)
                 self.evaluator.require_grid_space(self.state)
                 self.evaluator.require_coeff_space(self.state)
         # Record times

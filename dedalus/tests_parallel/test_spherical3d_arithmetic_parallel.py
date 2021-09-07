@@ -55,7 +55,7 @@ def test_sphere_constant_S2_multiplication(Nphi, Ntheta, Nr, dtype, dealias):
     g['g'] = (5*np.cos(theta)**2 - 1) * np.sin(theta) * np.cos(phi)
     h['g'] = 6 * (5*np.cos(theta)**2 - 1) * np.sin(theta) * np.cos(phi)
     h_op = (f * g).evaluate()
-    h_op.require_scales(1)
+    h_op.change_scales(1)
     assert np.allclose(h_op['g'], h['g'])
 
 
@@ -77,7 +77,7 @@ def test_sphere_constant_radial_multiplication(Nphi, Ntheta, Nr, dtype, dealias,
     g['g'] = (r**2 - 0.5*r**4)
     h['g'] = 6 * (r**2 - 0.5*r**4)
     h_op = (f * g).evaluate()
-    h_op.require_scales(1)
+    h_op.change_scales(1)
     assert np.allclose(h_op['g'], h['g'])
 
 
@@ -99,6 +99,6 @@ def test_shell_S2_radial_multiplication(Nphi, Ntheta, Nr, dtype, dealias):
     g['g'] = (r**2 - 0.5*r**3)
     h['g'] = (r**2 - 0.5*r**3) * (5*np.cos(theta)**2 - 1) * np.sin(theta) * np.cos(phi)
     h_op = (f * g).evaluate()
-    h_op.require_scales(1)
+    h_op.change_scales(1)
     assert np.allclose(h_op['g'], h['g'])
 

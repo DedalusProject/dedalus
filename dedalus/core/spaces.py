@@ -55,7 +55,7 @@ class Space:
     #     """Return field object representing grid."""
     #     from .field import Field
     #     grid = Field(name=self.name, dist=self.dist, bases=[self.grid_basis])
-    #     grid.set_scales(scales)
+    #     grid.preset_scales(scales)
     #     grid['g'] = self.local_grid(scales)
     #     return grid
 
@@ -269,7 +269,7 @@ class SphericalShell(Space):
 #         """Return field object representing grid."""
 #         from .field import Field
 #         grid = Field(name=self.name, domain=self.domain, bases=[self.grid_basis])
-#         grid.set_scales(scales)
+#         grid.preset_scales(scales)
 #         grid.set_local_data(self.local_grid(scales))
 #         return grid
 

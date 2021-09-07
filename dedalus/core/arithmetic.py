@@ -228,7 +228,7 @@ class AddFields(Add, FutureField):
         layout = self.choose_layout()
         # Require layout for all args
         for arg in self.args:
-            arg.require_layout(layout)
+            arg.change_layout(layout)
 
     def choose_layout(self):
         """Determine best target layout."""
@@ -240,7 +240,7 @@ class AddFields(Add, FutureField):
         """Perform operation."""
         arg0, arg1 = self.args
         # Set output layout
-        out.set_layout(arg0.layout)
+        out.preset_layout(arg0.layout)
         np.add(arg0.data, arg1.data, out=out.data)
 
 
@@ -656,7 +656,7 @@ class DotProduct(Product, FutureField):
 
     def operate(self, out):
         arg0, arg1 = self.args
-        out.set_layout(arg0.layout)
+        out.preset_layout(arg0.layout)
         # Broadcast
         arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
         arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
@@ -695,7 +695,7 @@ class CrossProduct(Product, FutureField):
 
     def operate_right_handed(self, out):
         arg0, arg1 = self.args
-        out.set_layout(arg0.layout)
+        out.preset_layout(arg0.layout)
         arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
         arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
         data00, data01, data02 = arg0_data[0], arg0_data[1], arg0_data[2]
@@ -706,7 +706,7 @@ class CrossProduct(Product, FutureField):
 
     def operate_left_handed(self, out):
         arg0, arg1 = self.args
-        out.set_layout(arg0.layout)
+        out.preset_layout(arg0.layout)
         arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
         arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
         data00, data01, data02 = arg0_data[0], arg0_data[1], arg0_data[2]
@@ -835,7 +835,7 @@ class MultiplyFields(Multiply, FutureField):
         """Perform operation."""
         arg0, arg1 = self.args
         # Set output layout
-        out.set_layout(arg0.layout)
+        out.preset_layout(arg0.layout)
         # Broadcast
         arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
         arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
@@ -920,7 +920,7 @@ class MultiplyNumberField(Multiply, FutureField):
         """Perform operation."""
         arg0, arg1 = self.args
         # Set output layout
-        out.set_layout(arg1.layout)
+        out.preset_layout(arg1.layout)
         # Multiply argument data
         np.multiply(arg0, arg1.data, out=out.data)
 

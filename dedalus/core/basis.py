@@ -4385,7 +4385,7 @@ class PolarInterpolate(operators.Interpolate, operators.PolarMOperator):
         radial_basis = self.input_basis
         axis = self.last_axis
         # Set output layout
-        out.set_layout(operand.layout)
+        out.preset_layout(operand.layout)
         # Apply operator
         S = radial_basis.spin_weights(operand.tensorsig)
         slices_in  = [slice(None) for i in range(input_basis.dist.dim)]
@@ -4675,7 +4675,7 @@ class SphericalAzimuthalAverage(AzimuthalAverage, operators.Average, operators.S
         operand = self.args[0]
         # Set output layout
         layout = operand.layout
-        out.set_layout(layout)
+        out.preset_layout(layout)
         out.data[:] = 0
         # Apply operator
         azimuth_axis = self.input_basis.first_axis
@@ -4782,7 +4782,7 @@ class IntegrateSpinBasis(operators.PolarMOperator):
         basis = self.input_basis
         axis = self.radial_basis.last_axis
         # Set output layout
-        out.set_layout(operand.layout)
+        out.preset_layout(operand.layout)
         out.data[:] = 0
         # Apply operator
         for m, mg_slice, mc_slice, n_slice in basis.m_maps:
@@ -4870,7 +4870,7 @@ class IntegrateSpherical(operators.SphericalEllOperator):
         basis = self.input_basis
         axis = basis.radial_basis.radial_axis
         # Set output layout
-        out.set_layout(operand.layout)
+        out.preset_layout(operand.layout)
         out.data[:] = 0
         # Apply operator
         for ell, m_ind, ell_ind in basis.ell_maps:
@@ -4982,7 +4982,7 @@ class InterpolateAzimuth(FutureLockedField, operators.Interpolate):
         arg = self.args[0]
         layout = arg.layout
         # Set output layout
-        out.set_layout(layout)
+        out.preset_layout(layout)
         # Set output lock
         out.lock_axis_to_grid(self.first_axis)
         # Apply matrix
@@ -5069,7 +5069,7 @@ class InterpolateColatitude(FutureLockedField, operators.Interpolate):
         colat_axis = azimuth_axis + 1
         Ntheta = arg.data.shape[len(arg.tensorsig) + colat_axis]
         # Set output layout
-        out.set_layout(layout)
+        out.preset_layout(layout)
         # Set output lock
         out.lock_axis_to_grid(colat_axis)
         # Forward spin recombination
@@ -5139,7 +5139,7 @@ class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperato
         radial_basis = self.radial_basis
         axis = radial_basis.radial_axis
         # Set output layout
-        out.set_layout(operand.layout)
+        out.preset_layout(operand.layout)
         # Apply operator
         R = radial_basis.regularity_classes(operand.tensorsig)
         slices_in  = [slice(None) for i in range(input_basis.dist.dim)]
@@ -5268,7 +5268,7 @@ class S2RadialComponent(operators.RadialComponent):
         operand = self.args[0]
         # Set output layout
         layout = operand.layout
-        out.set_layout(layout)
+        out.preset_layout(layout)
         np.copyto(out.data, operand.data[axindex(self.index,2)])
 
 
@@ -5302,7 +5302,7 @@ class S2AngularComponent(operators.AngularComponent):
         operand = self.args[0]
         # Set output layout
         layout = operand.layout
-        out.set_layout(layout)
+        out.preset_layout(layout)
         np.copyto(out.data, operand.data[axslice(self.index,0,2)])
 
 
@@ -5340,7 +5340,7 @@ class PolarAzimuthalComponent(operators.AzimuthalComponent):
         operand = self.args[0]
         # Set output layout
         layout = operand.layout
-        out.set_layout(layout)
+        out.preset_layout(layout)
         np.copyto(out.data, operand.data[axindex(self.index,0)])
 
 
@@ -5378,7 +5378,7 @@ class PolarRadialComponent(operators.RadialComponent):
         operand = self.args[0]
         # Set output layout
         layout = operand.layout
-        out.set_layout(layout)
+        out.preset_layout(layout)
         np.copyto(out.data, operand.data[axindex(self.index,1)])
 
 

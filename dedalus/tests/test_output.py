@@ -50,7 +50,7 @@ def test_cartesian_output(dtype, dealias, output_scales):
             for task in tasks:
                 task_saved = file['tasks'][str(task)][-1]
                 task = task.evaluate()
-                task.require_scales(output_scales)
+                task.change_scales(output_scales)
                 errors.append(np.max(np.abs(task['g'] - task_saved)))
     assert np.allclose(errors, 0)
 
@@ -91,7 +91,7 @@ def test_spherical_output(Nphi, Ntheta, Nr, k, dealias, dtype, basis, output_sca
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
     # Fields
     u = field.Field(name='u', dist=d, bases=(b,), dtype=dtype)
-    u.set_scales(b.domain.dealias)
+    u.preset_scales(b.domain.dealias)
     u['g'] = np.sin(x) * np.sin(y) * np.sin(z)
     # Problem
     dt = operators.TimeDerivative
@@ -115,7 +115,7 @@ def test_spherical_output(Nphi, Ntheta, Nr, k, dealias, dtype, basis, output_sca
                 task_saved = file['tasks'][str(task)][-1]
                 task = task.evaluate()
                 if not isinstance(task, field.LockedField):
-                    task.require_scales(output_scales)
+                    task.change_scales(output_scales)
                 print(task['g'].shape, task_saved.shape, dealias, output_scales)
                 errors.append(np.max(np.abs(task['g'] - task_saved)))
     assert np.allclose(errors, 0)

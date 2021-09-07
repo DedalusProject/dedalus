@@ -43,10 +43,10 @@ op1a.out = Du
 op1b = neg*operators.DotProduct(u,Du)
 op1c = negOm*operators.CrossProduct(ez,u)
 def calculate1():
-    Du.set_layout(Du.dist.coeff_layout)
+    Du.preset_layout(Du.dist.coeff_layout)
     Du['c'] = 0
     op1a.evaluate()
-    u_rhs.set_layout(u_rhs.dist.grid_layout)
+    u_rhs.preset_layout(u_rhs.dist.grid_layout)
     u_rhs['g'] = op1b.evaluate()['g']
     # R = ez cross u
     u_rhs['g'] += op1c.evaluate()['g']
@@ -55,7 +55,7 @@ def calculate1():
 op2a = neg*operators.DotProduct(u,operators.Gradient(u, c))
 op2b = negOm*operators.CrossProduct(ez,u)
 def calculate2():
-    u_rhs.set_layout(u_rhs.dist.grid_layout)
+    u_rhs.preset_layout(u_rhs.dist.grid_layout)
     u_rhs['g'] = op2a.evaluate()['g']
     # R = ez cross u
     u_rhs['g'] += op2b.evaluate()['g']
@@ -63,7 +63,7 @@ def calculate2():
 # third formulation
 op3a = neg*operators.DotProduct(u,operators.Gradient(u, c)) + negOm*operators.CrossProduct(ez,u)
 def calculate3():
-    u_rhs.set_layout(u_rhs.dist.grid_layout)
+    u_rhs.preset_layout(u_rhs.dist.grid_layout)
     u_rhs['g'] = op3a.evaluate()['g']
 
 # fourth formulation

@@ -43,7 +43,7 @@ def build_shell(Nphi, Ntheta, Nr, dealias, dtype):
 def test_gradient_scalar(Nphi, Ntheta, Nr, dealias, basis, dtype):
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-    f.set_scales(b.domain.dealias)
+    f.preset_scales(b.domain.dealias)
     f['g'] = fg = 3*x**2 + 2*y*z
     u = operators.Gradient(f, c).evaluate()
     ug = 0 * u['g']
@@ -61,7 +61,7 @@ def test_gradient_radial_scalar(Nr, dealias, basis, dtype):
     Nphi = Ntheta = 1
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-    f.set_scales(b.domain.dealias)
+    f.preset_scales(b.domain.dealias)
     f['g'] = fg = r**4/3
     u = operators.Gradient(f, c).evaluate()
     ug = 0 * u['g']
@@ -78,7 +78,7 @@ def test_gradient_radial_scalar(Nr, dealias, basis, dtype):
 def test_gradient_vector(Nphi, Ntheta, Nr, dealias, basis, dtype):
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-    f.set_scales(b.domain.dealias)
+    f.preset_scales(b.domain.dealias)
     f['g'] = 3*x**2 + 2*y*z
     grad = lambda A: operators.Gradient(A, c)
     T = grad(grad(f)).evaluate()
@@ -100,7 +100,7 @@ def test_gradient_radial_vector(Nr, dealias, basis, dtype):
     Nphi = Ntheta = 1
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias, dtype=dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-    f.set_scales(b.domain.dealias)
+    f.preset_scales(b.domain.dealias)
     f['g'] = r**4 / 3
     grad = lambda A: operators.Gradient(A, c)
     T = grad(grad(f)).evaluate()
@@ -120,7 +120,7 @@ def test_gradient_radial_vector(Nr, dealias, basis, dtype):
 def test_divergence_vector(Nphi, Ntheta, Nr, dealias, basis, dtype):
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-    f.set_scales(b.domain.dealias)
+    f.preset_scales(b.domain.dealias)
     f['g'] = x**3 + 2*y**3 + 3*z**3
     u = operators.Gradient(f, c)
     h = operators.Divergence(u).evaluate()
@@ -135,7 +135,7 @@ def test_divergence_vector(Nphi, Ntheta, Nr, dealias, basis, dtype):
 def test_divergence_radial_vector(Nr, dealias, basis, dtype):
     c, d, b, phi, theta, r, x, y, z = basis(1, 1, Nr, 1, dtype=dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-    f.set_scales(b.domain.dealias)
+    f.preset_scales(b.domain.dealias)
     f['g'] = r**4/3
     u = operators.Gradient(f, c)
     h = operators.Divergence(u).evaluate()
@@ -152,7 +152,7 @@ def test_divergence_radial_vector(Nr, dealias, basis, dtype):
 def test_curl_vector(Nphi, Ntheta, Nr, dealias, basis, dtype):
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias, dtype)
     u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
-    u.set_scales(b.domain.dealias)
+    u.preset_scales(b.domain.dealias)
     ct, st, cp, sp = np.cos(theta), np.sin(theta), np.cos(phi), np.sin(phi)
     u['g'][2] = r**2*st*(2*ct**2*cp-r*ct**3*sp+r**3*cp**3*st**5*sp**3+r*ct*st**2*(cp**3+sp**3))
     u['g'][1] = r**2*(2*ct**3*cp-r*cp**3*st**4+r**3*ct*cp**3*st**5*sp**3-1/16*r*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
@@ -174,7 +174,7 @@ def test_curl_vector(Nphi, Ntheta, Nr, dealias, basis, dtype):
 def test_laplacian_scalar(Nphi, Ntheta, Nr, dealias, basis, dtype):
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-    f.set_scales(b.domain.dealias)
+    f.preset_scales(b.domain.dealias)
     f['g'] = x**4 + 2*y**4 + 3*z**4
     h = operators.Laplacian(f, c).evaluate()
     hg = 12*x**2+24*y**2+36*z**2
@@ -189,7 +189,7 @@ def test_laplacian_radial_scalar(Nr, basis, dealias, dtype):
     Nphi = Ntheta = 1
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias, dtype=dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-    f.set_scales(b.domain.dealias)
+    f.preset_scales(b.domain.dealias)
     f['g'] = r**4 / 3
     h = operators.Laplacian(f, c).evaluate()
     hg = 20/3 * r**2
@@ -205,7 +205,7 @@ def test_laplacian_radial_scalar(Nr, basis, dealias, dtype):
 def test_laplacian_vector(Nphi, Ntheta, Nr, dealias, basis, dtype):
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias, dtype)
     u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
-    u.set_scales(b.domain.dealias)
+    u.preset_scales(b.domain.dealias)
     ct, st, cp, sp = np.cos(theta), np.sin(theta), np.cos(phi), np.sin(phi)
     u['g'][2] = r**2*st*(2*ct**2*cp-r*ct**3*sp+r**3*cp**3*st**5*sp**3+r*ct*st**2*(cp**3+sp**3))
     u['g'][1] = r**2*(2*ct**3*cp-r*cp**3*st**4+r**3*ct*cp**3*st**5*sp**3-1/16*r*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
@@ -226,7 +226,7 @@ def test_laplacian_radial_vector(Nr, dealias, basis, dtype):
     Nphi = Ntheta = 1
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias, dtype=dtype)
     u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
-    u.set_scales(b.domain.dealias)
+    u.preset_scales(b.domain.dealias)
     u['g'][2] = 4/3 * r**3
     v = operators.Laplacian(u, c).evaluate()
     vg = 0 * v['g']

@@ -535,7 +535,7 @@ class Transform:
         basis = field.domain.full_bases[axis]
         # Reference views from both layouts
         cdata = field.data
-        field.set_layout(self.layout1)
+        field.preset_layout(self.layout1)
         gdata = field.data
         # Transform non-constant bases with local data
         if (basis is not None) and prod(cdata.shape):
@@ -550,7 +550,7 @@ class Transform:
         basis = field.domain.full_bases[axis]
         # Reference views from both layouts
         gdata = field.data
-        field.set_layout(self.layout0)
+        field.preset_layout(self.layout0)
         cdata = field.data
         # Transform non-constant bases with local data
         if (basis is not None) and prod(gdata.shape):
@@ -708,13 +708,13 @@ class Transpose:
         if plan:
             # Reference views from both layouts
             data0 = field.data
-            field.set_layout(self.layout1)
+            field.preset_layout(self.layout1)
             data1 = field.data
             # Transpose between data views
             plan.localize_columns(data0, data1)
         else:
             # No communication: just update field layout
-            field.set_layout(self.layout1)
+            field.preset_layout(self.layout1)
 
     def decrement_single(self, field):
         """Forward transpose a field."""
@@ -722,13 +722,13 @@ class Transpose:
         if plan:
             # Reference views from both layouts
             data1 = field.data
-            field.set_layout(self.layout0)
+            field.preset_layout(self.layout0)
             data0 = field.data
             # Transpose between data views
             plan.localize_rows(data1, data0)
         else:
             # No communication: just update field layout
-            field.set_layout(self.layout0)
+            field.preset_layout(self.layout0)
 
     def increment_group(self, fields):
         """Backward transpose multiple fields simultaneously."""
@@ -739,7 +739,7 @@ class Transpose:
                     field = fields[0]
                     # Reference views from both layouts
                     data0 = field.data
-                    field.set_layout(self.layout1)
+                    field.preset_layout(self.layout1)
                     data1 = field.data
                     # Transpose between data views
                     plan.localize_columns(data0, data1)
@@ -753,7 +753,7 @@ class Transpose:
                         flat_comp_shape = (-1,) + field.data.shape[rank:]
                         if field.data.size:
                             data0.append(field.data.reshape(flat_comp_shape))
-                        field.set_layout(self.layout1)
+                        field.preset_layout(self.layout1)
                         flat_comp_shape = (-1,) + field.data.shape[rank:]
                         if field.data.size:
                             data1.append(field.data.reshape(flat_comp_shape))
@@ -777,7 +777,7 @@ class Transpose:
             else:
                 # No communication: just update field layouts
                 for field in fields:
-                    field.set_layout(self.layout1)
+                    field.preset_layout(self.layout1)
 
     def decrement_group(self, fields):
         """Forward transpose multiple fields simultaneously."""
@@ -788,7 +788,7 @@ class Transpose:
                     field = fields[0]
                     # Reference views from both layouts
                     data1 = field.data
-                    field.set_layout(self.layout0)
+                    field.preset_layout(self.layout0)
                     data0 = field.data
                     # Transpose between data views
                     plan.localize_rows(data1, data0)
@@ -802,7 +802,7 @@ class Transpose:
                         flat_comp_shape = (-1,) + field.data.shape[rank:]
                         if field.data.size:
                             data1.append(field.data.reshape(flat_comp_shape))
-                        field.set_layout(self.layout0)
+                        field.preset_layout(self.layout0)
                         flat_comp_shape = (-1,) + field.data.shape[rank:]
                         if field.data.size:
                             data0.append(field.data.reshape(flat_comp_shape))
@@ -826,7 +826,7 @@ class Transpose:
             else:
                 # No communication: just update field layouts
                 for field in fields:
-                    field.set_layout(self.layout1)
+                    field.preset_layout(self.layout1)
 
     # def increment_group(self, *fields):
     #     """Transpose group from layout0 to layout1."""
@@ -840,12 +840,12 @@ class Transpose:
     #         plan.localize_columns(buffer0, buffer1)
     #         # Copy from group buffer to fields in new layout
     #         for i, field in enumerate(fields):
-    #             field.set_layout(self.layout1)
+    #             field.preset_layout(self.layout1)
     #             np.copyto(field.data, buffer1[i])
     #     else:
     #         # No data: just update field layouts
     #         for field in fields:
-    #             field.set_layout(self.layout1)
+    #             field.preset_layout(self.layout1)
 
     # def decrement_group(self, *fields):
     #     """Transpose group from layout1 to layout0."""
@@ -859,10 +859,10 @@ class Transpose:
     #         plan.localize_rows(buffer1, buffer0)
     #         # Copy from group buffer to fields in new layout
     #         for i, field in enumerate(fields):
-    #             field.set_layout(self.layout0)
+    #             field.preset_layout(self.layout0)
     #             np.copyto(field.data, buffer0[i])
     #     else:
     #         # No data: just update field layouts
     #         for field in fields:
-    #             field.set_layout(self.layout0)
+    #             field.preset_layout(self.layout0)
 

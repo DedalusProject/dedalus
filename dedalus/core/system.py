@@ -147,6 +147,6 @@ class FieldSystem(CoeffSystem):
         # stride = self.nfields
         # coeff_layout = self.domain.dist.coeff_layout
         # for start, field in enumerate(self.fields):
-        #     field.set_layout(coeff_layout)
+        #     field.preset_layout(coeff_layout)
         #     np.copyto(field.data, self.data[..., start::stride])
 

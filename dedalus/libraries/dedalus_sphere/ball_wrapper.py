@@ -491,7 +491,7 @@ class TensorField_2D(TensorField):
         self.ellr_data = np.zeros(ellr_shape,dtype=np.complex128)
         self.rell_data = np.zeros(rell_shape,dtype=np.complex128)
         self.fields = domain.new_fields(3**rank)
-        for field in self.fields: field.set_scales(domain.dealias)
+        for field in self.fields: field.preset_scales(domain.dealias)
         self.coeff_data = []
         for ell in range(self.ell_min,self.ell_max+1):
             N = B.N_max - B.N_min(ell-B.R_max) + 1
@@ -588,7 +588,7 @@ class TensorField_3D(TensorField):
         self.mthr_data    = np.zeros(mthr_shape,dtype=np.complex128)
 
         self.fields = domain.new_fields(3**rank)
-        for field in self.fields: field.set_scales(domain.dealias)
+        for field in self.fields: field.preset_scales(domain.dealias)
 
         m_size = B.m_max - B.m_min + 1
         self.coeff_data = []

@@ -162,7 +162,7 @@ class MultistepIMEX:
         # Solve
         # Ensure coeff space before subsystem scatters
         for field in state_fields:
-            field.set_layout('c')
+            field.preset_layout('c')
         for sp in subproblems:
             if update_LHS:
                 if STORE_EXPANDED_MATRICES:
@@ -625,7 +625,7 @@ class RungeKuttaIMEX:
             # Solve for stage
             # Ensure coeff space before subsystem scatters
             for field in state_fields:
-                field.set_layout('c')
+                field.preset_layout('c')
             for sp in subproblems:
                 # Construct LHS(n,i)
                 if update_LHS:

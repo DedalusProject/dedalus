@@ -305,8 +305,8 @@ class DictionaryHandler(Handler):
     def process(self, **kw):
         """Reference fields from dictionary."""
         for task in self.tasks:
-            task['out'].require_scales(task['scales'])
-            task['out'].require_layout(task['layout'])
+            task['out'].change_scales(task['scales'])
+            task['out'].change_layout(task['layout'])
             self.fields[task['name']] = task['out']
 
 
@@ -703,8 +703,8 @@ class FileHandler(Handler):
         # Create task datasets
         for task_num, task in enumerate(self.tasks):
             out = task['out']
-            out.require_scales(task['scales'])
-            out.require_layout(task['layout'])
+            out.change_scales(task['scales'])
+            out.change_layout(task['layout'])
 
             dset = file['tasks'][task['name']]
             dset.resize(index+1, axis=0)

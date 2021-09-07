@@ -97,7 +97,7 @@ def test_skew_explicit(basis, N, dealias, dtype, layout):
     f = d.VectorField(c, bases=b)
     f.fill_random(layout='g')
     # Evaluate skew
-    f.require_layout(layout)
+    f.change_layout(layout)
     g = d3.skew(f).evaluate()
     assert np.allclose(g[layout][0], -f[layout][1])
     assert np.allclose(g[layout][1], f[layout][0])
@@ -132,7 +132,7 @@ def test_trace_explicit(basis, N, dealias, dtype, layout):
     f = d.TensorField((c,c), bases=b)
     f.fill_random(layout='g')
     # Evaluate trace
-    f.require_layout(layout)
+    f.change_layout(layout)
     g = d3.trace(f).evaluate()
     assert np.allclose(g[layout], np.trace(f[layout]))
 
@@ -170,7 +170,7 @@ def test_transpose_explicit(basis, N, dealias, dtype, layout):
     f = d.TensorField((c,c), bases=b)
     f.fill_random(layout='g')
     # Evaluate transpose
-    f.require_layout(layout)
+    f.change_layout(layout)
     g = d3.transpose(f).evaluate()
     order = np.arange(2 + len(r))
     order[:2] = [1, 0]
@@ -204,12 +204,12 @@ def test_curl_explicit(basis, N, dealias, dtype):
     # ABC vector field
     k = 2*np.pi*np.array([1/Lx, 1/Ly, 1/Lz])
     f = d.VectorField(c, bases=b)
-    f.set_scales(dealias)
+    f.preset_scales(dealias)
     f['g'][0] = np.sin(k[2]*r[2]) + np.cos(k[1]*r[1])
     f['g'][1] = np.sin(k[0]*r[0]) + np.cos(k[2]*r[2])
     f['g'][2] = np.sin(k[1]*r[1]) + np.cos(k[0]*r[0])
     g = d.VectorField(c, bases=b)
-    g.set_scales(dealias)
+    g.preset_scales(dealias)
     g['g'][0] = k[2]*np.sin(k[2]*r[2]) + k[1]*np.cos(k[1]*r[1])
     g['g'][1] = k[0]*np.sin(k[0]*r[0]) + k[2]*np.cos(k[2]*r[2])
     g['g'][2] = k[1]*np.sin(k[1]*r[1]) + k[0]*np.cos(k[0]*r[0])
@@ -225,12 +225,12 @@ def test_curl_explicit_2d_vector(basis, N, dealias, dtype):
     x, y = r
     kx, ky = 2*np.pi/Lx, 2*np.pi/Ly
     f = d.VectorField(c, bases=b)
-    f.set_scales(dealias)
+    f.preset_scales(dealias)
     f['g'][0] = (np.sin(2*kx*x)+np.sin(kx*x))*np.cos(ky*y)
     f['g'][1] = np.sin(kx*x)*np.cos(ky*y)
     g_op = - d3.div(d3.skew(f)) # z @ curl(f)
     g = d.Field(bases=b)
-    g.set_scales(dealias)
+    g.preset_scales(dealias)
     g['g'] = kx*np.cos(kx*x)*np.cos(ky*y) + ky*(np.sin(2*kx*x)+np.sin(kx*x))*np.sin(ky*y)
     assert np.allclose(g_op.evaluate()['g'], g['g'])
 
@@ -244,11 +244,11 @@ def test_curl_explicit_2d_scalar(basis, N, dealias, dtype):
     x, y = r
     kx, ky = 2*np.pi/Lx, 2*np.pi/Ly
     f = d.Field(bases=b)
-    f.set_scales(dealias)
+    f.preset_scales(dealias)
     f['g'] = (np.sin(2*kx*x)+np.sin(kx*x))*np.cos(ky*y)
     g_op = - d3.skew(d3.grad(f)) # curl(f*ez)
     g = d.VectorField(c, bases=b)
-    g.set_scales(dealias)
+    g.preset_scales(dealias)
     g['g'][0] = -ky*(np.sin(2*kx*x)+np.sin(kx*x))*np.sin(ky*y)
     g['g'][1] = -(2*kx*np.cos(2*kx*x)+kx*np.cos(kx*x))*np.cos(ky*y)
     assert np.allclose(g_op.evaluate()['g'], g['g'])
@@ -269,12 +269,12 @@ def test_curl_implicit_FFC(basis, N, dealias, dtype):
     # ABC vector field
     k = 2*np.pi*np.array([1/Lx, 1/Ly, 1/Lz])
     f = d.VectorField(c, bases=b)
-    f.set_scales(dealias)
+    f.preset_scales(dealias)
     f['g'][0] = np.sin(k[2]*r[2]) + np.cos(k[1]*r[1])
     f['g'][1] = np.sin(k[0]*r[0]) + np.cos(k[2]*r[2])
     f['g'][2] = np.sin(k[1]*r[1]) + np.cos(k[0]*r[0])
     g = d.VectorField(c, bases=b)
-    g.set_scales(dealias)
+    g.preset_scales(dealias)
     g['g'][0] = k[2]*np.sin(k[2]*r[2]) + k[1]*np.cos(k[1]*r[1])
     g['g'][1] = k[0]*np.sin(k[0]*r[0]) + k[2]*np.cos(k[2]*r[2])
     g['g'][2] = k[1]*np.sin(k[1]*r[1]) + k[0]*np.cos(k[0]*r[0])
@@ -304,12 +304,12 @@ def test_curl_implicit_FFF(basis, N, dealias, dtype):
     # ABC vector field
     k = 2*np.pi*np.array([1/Lx, 1/Ly, 1/Lz])
     f = d.VectorField(c, bases=b)
-    f.set_scales(dealias)
+    f.preset_scales(dealias)
     f['g'][0] = np.sin(k[2]*r[2]) + np.cos(k[1]*r[1])
     f['g'][1] = np.sin(k[0]*r[0]) + np.cos(k[2]*r[2])
     f['g'][2] = np.sin(k[1]*r[1]) + np.cos(k[0]*r[0])
     g = d.VectorField(c, bases=b)
-    g.set_scales(dealias)
+    g.preset_scales(dealias)
     g['g'][0] = k[2]*np.sin(k[2]*r[2]) + k[1]*np.cos(k[1]*r[1])
     g['g'][1] = k[0]*np.sin(k[0]*r[0]) + k[2]*np.cos(k[2]*r[2])
     g['g'][2] = k[1]*np.sin(k[1]*r[1]) + k[0]*np.cos(k[0]*r[0])

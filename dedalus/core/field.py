@@ -375,7 +375,7 @@ class Current(Operand):
             alloc_doubles = buffer_size // 8
             return fftw.create_buffer(alloc_doubles)
 
-    def set_scales(self, scales, keep_data=True):
+    def preset_scales(self, scales, keep_data=True):
         """Set new transform scales."""
         new_scales = self.dist.remedy_scales(scales)
         old_scales = self.scales
@@ -393,9 +393,9 @@ class Current(Operand):
             self.buffer = self._create_buffer(buffer_size*ncomp)
             self.buffer_size = buffer_size
         # Reset layout to build new data view
-        self.set_layout(self.layout)
+        self.preset_layout(self.layout)
 
-    def set_layout(self, layout):
+    def preset_layout(self, layout):
         """Interpret buffer as data in specified layout."""
         layout = self.dist.get_layout_object(layout)
         self.layout = layout
@@ -452,17 +452,17 @@ class Field(Current):
         self.buffer_size = -1
         self.layout = self.dist.get_layout_object('c')
         # Change scales to build buffer and data
-        self.set_scales((1,) * self.dist.dim)
+        self.preset_scales((1,) * self.dist.dim)
 
     def __getitem__(self, layout):
         """Return data viewed in specified layout."""
-        self.require_layout(layout)
+        self.change_layout(layout)
         return self.data
 
     def __setitem__(self, layout, data):
         """Set data viewed in a specified layout."""
         layout = self.dist.get_layout_object(layout)
-        self.set_layout(layout)
+        self.preset_layout(layout)
         np.copyto(self.data, data)
 
     def get_basis(self, coord):
@@ -486,7 +486,7 @@ class Field(Current):
 
     def copy(self):
         copy = Field(self.dist, bases=self.domain.bases, tensorsig=self.tensorsig, dtype=self.dtype)
-        copy.set_scales(self.scales)
+        copy.preset_scales(self.scales)
         copy[self.layout] = self.data
         return copy
 
@@ -497,7 +497,7 @@ class Field(Current):
     def set_local_data(self, local_data):
         np.copyto(self.data, local_data)
 
-    def require_scales(self, scales):
+    def change_scales(self, scales):
         """Change data to specified scales."""
         # Remedy scales
         new_scales = self.dist.remedy_scales(scales)
@@ -514,10 +514,10 @@ class Field(Current):
                 break
         # Copy over scale change
         old_data = self.data
-        self.set_scales(scales)
+        self.preset_scales(scales)
         np.copyto(self.data, old_data)
 
-    def require_layout(self, layout):
+    def change_layout(self, layout):
         """Change data to specified layout."""
         layout = self.dist.get_layout_object(layout)
         # Transform to specified layout
@@ -626,7 +626,7 @@ class Field(Current):
         if not out:
             out = self.domain.new_field()
 
-        out.set_scales(domain.dealias, keep_data=False)
+        out.preset_scales(domain.dealias, keep_data=False)
         out['c'] = np.copy(solver.state['out']['c'])
 
         return out
@@ -678,20 +678,20 @@ class Field(Current):
         layout = self.dist.grid_layout
         # Set scales to match saved data
         scales = np.array(global_data.shape[-dim:]) / np.array(layout.global_shape(self.domain, scales=1))
-        self.set_scales(scales)
+        self.preset_scales(scales)
         # Extract local data from global data
         component_slices = tuple(slice(None) for cs in self.tensorsig)
         spatial_slices = layout.slices(self.domain, scales)
         local_slices = pre_slices + component_slices + spatial_slices
         self[layout] = global_data[local_slices]
         # Change scales back to dealias scales
-        self.require_scales(self.domain.dealias)
+        self.change_scales(self.domain.dealias)
 
     def allgather_data(self, layout=None):
         """Build global data on all processes."""
         # Change layout
         if layout is not None:
-            self.require_layout(layout)
+            self.change_layout(layout)
         # Shortcut for serial execution
         if self.dist.comm.size == 1:
             return self.data.copy()
@@ -710,7 +710,7 @@ class Field(Current):
     def allreduce_data_norm(self, layout=None, order=2):
         # Change layout
         if layout is not None:
-            self.require_layout(layout)
+            self.change_layout(layout)
         # Compute local data
         if self.data.size == 0:
             norm = 0
@@ -775,7 +775,7 @@ class Field(Current):
         """
         # Set layout if requested
         if layout is not None:
-            self.set_layout(layout)
+            self.preset_layout(layout)
         # Build global chunked random array (does not require global-sized memory)
         shape = tuple(cs.dim for cs in self.tensorsig) + self.global_shape
         if np.iscomplexobj(self):
@@ -812,9 +812,9 @@ class Field(Current):
             global_shape = self.dist.grid_layout.global_shape(self.domain, scales=1)
             scales = np.array(shape) / global_shape
         # Low-pass filter by changing scales
-        self.require_scales(scales)
+        self.change_scales(scales)
         self.require_grid_space()
-        self.require_scales(original_scales)
+        self.change_scales(original_scales)
 
     def high_pass_filter(self, shape=None, scales=None):
         """
@@ -851,9 +851,9 @@ def TensorField(dist, coordsys, *args, order=2, **kw):
 
 
 class LockedField(Field):
-    """Field locked to a particular layout, disallowing any layout changes."""
+    """Field locked to particular layouts, disallowing changes to other layouts."""
 
-    def require_scales(self, scales):
+    def change_scales(self, scales):
         scales = self.dist.remedy_scales(scales)
         if scales != self.scales:
             raise ValueError("Cannot change locked scales.")

@@ -57,7 +57,7 @@ def test_scalar_prod_scalar(Nphi, Nr, basis, ncc_first, dealias, dtype):
     solver = solvers.LinearBoundaryValueSolver(problem, matsolver='SuperluNaturalSpsolve', matrix_coupling=[False,True])
     w1.store_ncc_matrices(vars, solver.subproblems)
     w0 = w0.evaluate()
-    w0.require_scales(1)
+    w0.change_scales(1)
     w1 = w1.evaluate_as_ncc()
     assert np.allclose(w0['g'], w1['g'])
 
@@ -90,7 +90,7 @@ def test_scalar_prod_vector(Nphi, Nr, basis, ncc_first, dealias, dtype):
     w1.store_ncc_matrices(vars, solver.subproblems)
 
     w0 = w0.evaluate()
-    w0.require_scales(1)
+    w0.change_scales(1)
     w1 = w1.evaluate_as_ncc()
     assert np.allclose(w0['g'], w1['g'])
 
@@ -123,7 +123,7 @@ def test_scalar_prod_tensor(Nphi, Nr, basis, ncc_first, dealias, dtype):
     w1.store_ncc_matrices(vars, solver.subproblems)
 
     w0 = w0.evaluate()
-    w0.require_scales(1)
+    w0.change_scales(1)
     w1 = w1.evaluate_as_ncc()
     assert np.allclose(w0['g'], w1['g'])
 
@@ -154,7 +154,7 @@ def test_vector_prod_scalar(Nphi, Nr, basis, ncc_first, dealias, dtype):
     w1.store_ncc_matrices(vars, solver.subproblems)
 
     w0 = w0.evaluate()
-    w0.require_scales(1)
+    w0.change_scales(1)
     w1 = w1.evaluate_as_ncc()
     assert np.allclose(w0['g'], w1['g'])
 
@@ -188,7 +188,7 @@ def test_vector_prod_vector(Nphi, Nr, basis, ncc_first, dealias, dtype):
     w1.store_ncc_matrices(vars, solver.subproblems)
 
     w0 = w0.evaluate()
-    w0.require_scales(1)
+    w0.change_scales(1)
     w1 = w1.evaluate_as_ncc()
     assert np.allclose(w0['g'], w1['g'])
 
@@ -223,7 +223,7 @@ def test_vector_dot_vector(Nphi, Nr, basis, ncc_first, dealias, dtype):
     w1.store_ncc_matrices(vars, solver.subproblems)
 
     w0 = w0.evaluate()
-    w0.require_scales(1)
+    w0.change_scales(1)
     w1 = w1.evaluate_as_ncc()
     assert np.allclose(w0['g'], w1['g'])
 
@@ -261,7 +261,7 @@ def test_vector_dot_tensor(Nphi, Nr, basis, ncc_first, dealias, dtype):
     w1.store_ncc_matrices(vars, solver.subproblems)
 
     w0 = w0.evaluate()
-    w0.require_scales(1)
+    w0.change_scales(1)
     w1 = w1.evaluate_as_ncc()
     assert np.allclose(w0['g'], w1['g'])
 
@@ -295,7 +295,7 @@ def test_tensor_prod_scalar(Nphi, Nr, basis, ncc_first, dealias, dtype):
     U1.store_ncc_matrices(vars, solver.subproblems)
 
     U0 = U0.evaluate()
-    U0.require_scales(1)
+    U0.change_scales(1)
     U1 = U1.evaluate_as_ncc()
     assert np.allclose(U0['g'], U1['g'])
 
@@ -330,7 +330,7 @@ def test_tensor_dot_vector(Nphi, Nr, basis, ncc_first, dealias, dtype):
     w1.store_ncc_matrices(vars, solver.subproblems)
 
     w0 = w0.evaluate()
-    w0.require_scales(1)
+    w0.change_scales(1)
     w1 = w1.evaluate_as_ncc()
     assert np.allclose(w0['g'], w1['g'])
 
@@ -368,7 +368,7 @@ def test_tensor_dot_tensor(Nphi, Nr, basis, ncc_first, dealias, dtype):
     W1.store_ncc_matrices(vars, solver.subproblems)
 
     W0 = W0.evaluate()
-    W0.require_scales(1)
+    W0.change_scales(1)
     W1 = W1.evaluate_as_ncc()
     assert np.allclose(W0['g'], W1['g'])
 

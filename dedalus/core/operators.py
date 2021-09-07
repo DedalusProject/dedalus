@@ -238,7 +238,7 @@ prod = np.prod
 
 #     def operate(self, out):
 #         # Copy in grid layout
-#         out.set_layout(self._grid_layout)
+#         out.preset_layout(self._grid_layout)
 #         np.copyto(out.data, self.args[0].data)
 
 
@@ -249,7 +249,7 @@ prod = np.prod
 #     def operate(self, out):
 #         arg0, = self.args
 #         # Copy in current layout
-#         out.set_layout(arg0.layout)
+#         out.preset_layout(arg0.layout)
 #         np.copyto(out.data, arg0.data)
 
 
@@ -354,13 +354,13 @@ class PowerFieldConstant(Power, FutureField):
         # if self.require_grid_axis is not None:
         #     axis = self.require_grid_axis
         #     arg0.require_grid_space(axis=axis)
-        # arg1.require_layout(arg0.layout)
+        # arg1.change_layout(arg0.layout)
         arg0.require_grid_space()
 
     def operate(self, out):
         arg0, arg1 = self.args
         # Multiply in grid layout
-        out.set_layout(arg0.layout)
+        out.preset_layout(arg0.layout)
         if out.data.size:
             np.power(arg0.data, arg1, out.data)
 
@@ -399,7 +399,7 @@ class PowerFieldConstant(Power, FutureField):
 #         arg0, arg1 = self.args
 #         # Raise in grid layout
 #         arg0.require_grid_space()
-#         out.set_layout(self._grid_layout)
+#         out.preset_layout(self._grid_layout)
 #         np.power(arg0.data, arg1.value, out.data)
 
 
@@ -464,8 +464,8 @@ class GeneralFunction(NonlinearOperator, FutureField):
     def operate(self, out):
         # Apply func in proper layout
         for i in self._field_arg_indices:
-            self.args[i].require_layout(self.layout)
-        out.set_layout(self.layout)
+            self.args[i].change_layout(self.layout)
+        out.preset_layout(self.layout)
         np.copyto(out.data, self.func(*self.args, **self.kw))
 
 
@@ -550,7 +550,7 @@ class UnaryGridFunction(NonlinearOperator, FutureField):
         # References
         arg0, = self.args
         # Evaluate in grid layout
-        out.set_layout(self._grid_layout)
+        out.preset_layout(self._grid_layout)
         self.func(arg0.data, out=out.data)
 
 
@@ -740,12 +740,12 @@ class Lock(FutureLockedField, LinearOperator):
             return
         # Change to closest permissible layout
         closest_layout = self.layouts[np.argmin(np.abs(self.indices - self.args[0].layout.index))]
-        self.args[0].require_layout(closest_layout)
+        self.args[0].change_layout(closest_layout)
 
     def operate(self, out):
         """Perform operation."""
         arg0 = self.args[0]
-        out.set_layout(arg0.layout)
+        out.preset_layout(arg0.layout)
         out.lock_to_layouts(self.layouts)
         np.copyto(out.data, arg0.data)
 
@@ -915,7 +915,7 @@ class SpectralOperator1D(SpectralOperator):
         arg = self.args[0]
         layout = arg.layout
         # Set output layout
-        out.set_layout(layout)
+        out.preset_layout(layout)
         # Apply matrix
         if arg.data.size and out.data.size:
             data_axis = self.last_axis + len(arg.tensorsig)
@@ -1439,7 +1439,7 @@ class Copy(LinearOperator):
     def operate(self, out):
         """Perform operation."""
         arg = self.args[0]
-        out.set_layout(arg.layout)
+        out.preset_layout(arg.layout)
         np.copyto(out.data, arg.data)
 
 
@@ -1544,7 +1544,7 @@ class Convert(SpectralOperator, metaclass=MultiClass):
         layout = arg.layout
         # Copy for grid space
         if layout.grid_space[self.last_axis]:
-            out.set_layout(layout)
+            out.preset_layout(layout)
             np.copyto(out.data, arg.data)
         # Revert to matrix application for coeff space
         else:
@@ -1688,7 +1688,7 @@ class Trace(LinearOperator, metaclass=MultiClass):
     def operate(self, out):
         """Perform operation."""
         arg = self.args[0]
-        out.set_layout(arg.layout)
+        out.preset_layout(arg.layout)
         np.einsum('ii...', arg.data, out=out.data)
 
 
@@ -1860,7 +1860,7 @@ class StandardTransposeComponents(TransposeComponents):
         """Perform operation."""
         operand = self.args[0]
         # Set output layout
-        out.set_layout(operand.layout)
+        out.preset_layout(operand.layout)
         # Transpose data
         out.data[:] = np.transpose(operand.data, self.new_axis_order)  # CREATES TEMPORARY
 
@@ -1895,7 +1895,7 @@ class SphericalTransposeComponents(TransposeComponents):
         radius_axis = self.radius_axis
         # Set output layout
         layout = operand.layout
-        out.set_layout(layout)
+        out.preset_layout(layout)
         # Transpose data
         if layout.grid_space[radius_axis]:
             # Not in regularity components: can directly transpose
@@ -1983,7 +1983,7 @@ class CartesianSkew(Skew):
         """Perform operation."""
         arg = self.args[0]
         # Set output layout
-        out.set_layout(arg.layout)
+        out.preset_layout(arg.layout)
         # Skew data
         if arg.data.size:
             sx = axslice(self.index, 0, 1)
@@ -2029,7 +2029,7 @@ class SpinSkew(Skew):
         azimuth_axis = self.azimuth_axis
         rank = len(self.tensorsig)
         # Set output layout
-        out.set_layout(arg.layout)
+        out.preset_layout(arg.layout)
         # Apply skew
         if arg.data.size:
             if arg.layout.grid_space[azimuth_axis+1]:
@@ -2253,14 +2253,14 @@ class CartesianGradient(Gradient):
         layout = self.dist.coeff_layout
         for arg in self.args:
             if arg:
-                arg.require_layout(layout)
+                arg.change_layout(layout)
 
     def operate(self, out):
         """Perform operation."""
         operands = self.args
         layouts = [operand.layout for operand in self.args if operand]
         # Set output layout
-        out.set_layout(layouts[0])
+        out.preset_layout(layouts[0])
         # Copy operand data to output components
         for i, comp in enumerate(operands):
             if comp:
@@ -2306,7 +2306,7 @@ class CartesianGradient(Gradient):
 #         azimuthal_axis = self.colatitude_axis - 1
 #         layout = operand.layout
 #         # Set output layout
-#         out.set_layout(layout)
+#         out.preset_layout(layout)
 #         # slicing local ell's
 # #        local_l_elements = layout.local_elements(basis.domain, scales=1)[1]
 # #        local_l = tuple(basis.degrees[local_l_elements])
@@ -2471,7 +2471,7 @@ class SpectralOperatorS2(SpectralOperator):
         if self.subaxis_coupling[1]:
             raise ValueError("Explicit evaluation not implemented yet for ell-coupled operators.")
         # Set output layout
-        out.set_layout(operand.layout)
+        out.preset_layout(operand.layout)
         out.data[:] = 0
         # Apply operator
         S_in = input_basis.spin_weights(operand.tensorsig)
@@ -2588,7 +2588,7 @@ class SeparableSphereOperator(SpectralOperator):
         if basis is None:
             basis = self.output_basis
         # Set output layout
-        out.set_layout(layout)
+        out.preset_layout(layout)
         out.data[:] = 0
         # Return for size-zero data
         if operand.data.size == 0 or out.data.size == 0:
@@ -2671,7 +2671,7 @@ class PolarMOperator(SpectralOperator):
             basis = self.input_basis
         axis = basis.first_axis + 1
         # Set output layout
-        out.set_layout(operand.layout)
+        out.preset_layout(operand.layout)
         out.data[:] = 0
         # Apply operator
         S_in = basis.spin_weights(operand.tensorsig)
@@ -2875,7 +2875,7 @@ class SphericalEllOperator(SpectralOperator):
         radial_basis = self.radial_basis
         axis = radial_basis.radial_axis
         # Set output layout
-        out.set_layout(operand.layout)
+        out.preset_layout(operand.layout)
         out.data[:] = 0
         # Apply operator
         R_in = radial_basis.regularity_classes(operand.tensorsig)
@@ -3056,7 +3056,7 @@ class CartesianComponent(Component):
         """Perform operation."""
         arg0 = self.args[0]
         # Set output layout
-        out.set_layout(arg0.layout)
+        out.preset_layout(arg0.layout)
         # Copy specified comonent
         take_comp = tuple([None] * self.index + [self.coord_subaxis])
         out.data[:] = arg0.data[take_comp]
@@ -3131,7 +3131,7 @@ class CartesianDivergence(Divergence):
         # OPTIMIZE: this has an extra copy
         arg0 = self.args[0]
         # Set output layout
-        out.set_layout(arg0.layout)
+        out.preset_layout(arg0.layout)
         np.copyto(out.data, arg0.data)
 
 
@@ -3338,7 +3338,7 @@ class CartesianCurl(Curl):
         arg0 = self.args[0]
 
         # Set output layout
-        out.set_layout(arg0.layout)
+        out.preset_layout(arg0.layout)
         np.copyto(out.data, arg0.data)
 
 
@@ -3458,7 +3458,7 @@ class SphericalCurl(Curl, SphericalEllOperator):
         radial_basis = self.radial_basis
         axis = radial_basis.radial_axis
         # Set output layout
-        out.set_layout(operand.layout)
+        out.preset_layout(operand.layout)
         out.data.fill(0)
         # Apply operator
         R_in = radial_basis.regularity_classes(operand.tensorsig)
@@ -3597,7 +3597,7 @@ class PolarCurl(Curl, PolarMOperator):
         input_basis = self.input_basis
         axis = self.radius_axis
         # Set output layout
-        out.set_layout(operand.layout)
+        out.preset_layout(operand.layout)
         out.data[:] = 0
         # Apply operator
         S_in = input_basis.spin_weights(operand.tensorsig)
@@ -3689,7 +3689,7 @@ class CartesianLaplacian(Laplacian):
         # OPTIMIZE: this has an extra copy
         arg0 = self.args[0]
         # Set output layout
-        out.set_layout(arg0.layout)
+        out.preset_layout(arg0.layout)
         np.copyto(out.data, arg0.data)
 
 
@@ -3985,7 +3985,7 @@ class AdvectiveCFL(FutureLockedField, metaclass=MultiClass):
         arg = self.args[0]
         layout = arg.layout
         # Set output layout
-        out.set_layout(layout)
+        out.preset_layout(layout)
         # Set output lock
         out.lock_axis_to_grid(0)
         # Compute CFL frequencies

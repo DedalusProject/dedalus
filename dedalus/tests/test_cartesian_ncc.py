@@ -50,7 +50,7 @@ def test_jacobi_ncc_eval(N, a0, b0, k_ncc, k_arg, dealias, dtype):
     w1.store_ncc_matrices(vars, solver.subproblems)
     w0 = w0.evaluate()
     w2 = field.Field(dist=d, bases=(b,), dtype=dtype)
-    w2.set_scales(w2.domain.dealias)
+    w2.preset_scales(w2.domain.dealias)
     w2['g'] = w0['g']
     w2['c']
     w0['c']

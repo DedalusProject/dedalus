@@ -369,7 +369,7 @@ def test_heat_ncc_shell(Nmax, Lmax, ncc_exponent, ncc_location, ncc_scale, dtype
         ncc['g'] = r**ncc_exponent
         F['g'] = F_value[ncc_exponent]
     u_true = analytic[ncc_exponent]
-    ncc.require_scales(ncc_scale)
+    ncc.change_scales(ncc_scale)
     ncc['g'] # force transform
     # Problem
     Lap = lambda A: operators.Laplacian(A, c)
@@ -403,7 +403,7 @@ def test_heat_ncc_cos_ball(Nmax, Lmax, ncc_scale, dtype):
     g = - np.pi/2/R**2 * (4*np.pi/2*(r/R)**2*np.cos(np.pi/2*(r/R)**2) + 6*np.sin(np.pi/2*(r/R)**2))
     ncc['g'] = u_true
     F['g'] = u_true*g
-    ncc.require_scales(ncc_scale)
+    ncc.change_scales(ncc_scale)
     ncc['g'] # force transform
     # Problem
     Lap = lambda A: operators.Laplacian(A, c)
