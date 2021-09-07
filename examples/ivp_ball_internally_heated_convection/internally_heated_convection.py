@@ -115,10 +115,8 @@ solver.stop_sim_time = stop_sim_time
 
 # Initial conditions
 if not restart:
-    seed = 42 + dist.comm_cart.rank
-    rand = np.random.RandomState(seed=seed)
-    T['g'] = 1 - r**2
-    T['g'] += 0.5 * rand.rand(*T['g'].shape)
+    T.fill_random('g', seed=42, distribution='normal', scale=0.5) # Random noise
+    T['g'] += 1 - r**2 # Add equilibrium state
     file_handler_mode = 'overwrite'
     initial_timestep = max_timestep
 else:

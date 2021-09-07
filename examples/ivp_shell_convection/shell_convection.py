@@ -33,7 +33,6 @@ logger = logging.getLogger(__name__)
 # TODO: timestepper strings
 # TODO: get unit vectors from coords?
 # TODO: move rank printing to solver method?
-# TODO: field method for reproducible random noise?
 
 
 # Parameters
@@ -114,13 +113,9 @@ solver.stop_sim_time = stop_sim_time
 #     print(f"MPI rank: {MPI.COMM_WORLD.rank}, subproblem: {i}, group: {subproblem.group}, matrix rank: {np.linalg.matrix_rank(A)}/{A.shape[0]}, cond: {np.linalg.cond(A):.1e}")
 
 # Initial conditions
-# # Random perturbations, initialized globally for same results in parallel
-gshape = dist.grid_layout.global_shape(b.domain, scales=1)
-slices = dist.grid_layout.slices(b.domain, scales=1)
-rand = np.random.RandomState(seed=42)
-noise = rand.standard_normal(gshape)[slices]
-# Linear background + perturbations damped at walls
-b['g'] = (Ri - Ri*Ro/r) / (Ri - Ro) + 1e-3 * noise * (Ro - r) * (r - Ri)
+b.fill_random('g', seed=42, distribution='normal', scale=1e-3) # Random noise
+b['g'] *= (r - Ri) * (Ro - r) # Damp noise at walls
+b['g'] += (Ri - Ri*Ro/r) / (Ri - Ro) # Add linear background
 
 # Analysis
 snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=5, max_writes=10)

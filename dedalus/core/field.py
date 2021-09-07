@@ -22,6 +22,7 @@ from ..tools.exceptions import SymbolicParsingError
 from ..tools.exceptions import NonlinearOperatorError
 from ..tools.exceptions import DependentOperatorError
 from ..tools.general import unify, unify_attributes, DeferredTuple, OrderedSet
+from ..tools.random_arrays import ChunkedRandomArray
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -725,6 +726,45 @@ class Field(Current):
             data = np.empty(shape=shape, dtype=self.dtype)
         comm_sub.Bcast(data, root=0)
         return data
+
+    def fill_random(self, layout=None, seed=None, chunk_size=2**20, distribution='standard_normal', **kw):
+        """
+        Fill field with random data. If a seed is specified, the global data is
+        reproducibly generated for any process mesh.
+
+        Parameters
+        ----------
+        layout : Layout object, 'c', or 'g', optional
+            Layout for setting field data. Default: current layout.
+        seed : int, optional
+            RNG seed. Default: None.
+        chunk_size : int, optional
+            Chunk size for drawing from distribution. Should be less than locally
+            available memory. Default: 2**20, corresponding to 8 MB of float64.
+        distribution : str, optional
+            Distribution name, corresponding to numpy random Generator method.
+            Default: 'standard_normal'.
+        **kw : dict
+            Other keywords passed to the distribution method.
+        """
+        # Set layout if requested
+        if layout is not None:
+            self.set_layout(layout)
+        # Build global chunked random array (does not require global-sized memory)
+        shape = tuple(cs.size for cs in self.tensorsig) + self.global_shape
+        if np.iscomplexobj(self):
+            shape = shape + (2,)
+        global_data = ChunkedRandomArray(shape, seed, chunk_size, distribution, **kw)
+        # Extract local data
+        component_slices = tuple(slice(None) for cs in self.tensorsig)
+        spatial_slices = self.layout.slices(self.domain, self.scales)
+        local_slices = component_slices + spatial_slices
+        local_data = global_data[local_slices]
+        if np.isrealobj(self):
+            self.data[:] = local_data
+        else:
+            self.data.real[:] = local_data[..., 0]
+            self.data.imag[:] = local_data[..., 1]
 
 
 ScalarField = Field

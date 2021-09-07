@@ -34,7 +34,6 @@ logger = logging.getLogger(__name__)
 # TODO: optimize and match d2 resolution
 # TODO: get unit vectors from coords?
 # TODO: timestepper strings
-# TODO: field method for reproducible random noise?
 
 
 # Parameters
@@ -106,14 +105,10 @@ solver = problem.build_solver(timestepper)
 solver.stop_sim_time = stop_sim_time
 
 # Initial conditions
-# Random perturbations, initialized globally for same results in parallel
-gshape = dist.grid_layout.global_shape(b.domain, scales=1)
-slices = dist.grid_layout.slices(b.domain, scales=1)
-rand = np.random.RandomState(seed=42)
-noise = rand.standard_normal(gshape)[slices]
-# Linear background + perturbations damped at walls
 zb, zt = zbasis.bounds
-b['g'] = Lz - z +  1e-3 * noise * (zt - z) * (z - zb)
+b.fill_random('g', seed=42, distribution='normal', scale=1e-3) # Random noise
+b['g'] *= z * (Lz - z) # Damp noise at walls
+b['g'] += Lz - z # Add linear background
 
 # Analysis
 snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=0.1, max_writes=50)

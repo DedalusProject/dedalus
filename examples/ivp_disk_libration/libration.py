@@ -93,14 +93,8 @@ solver = problem.build_solver(timestepper)
 solver.stop_sim_time = stop_sim_time
 
 # Initial conditions
-seed = 42 + dist.comm_cart.rank
-rand = np.random.RandomState(seed=seed)
-u['g'] = rand.standard_normal(u['g'].shape)
-u['c']
-u.require_scales(0.25)
-u['g']
-u['c']
-u.require_scales(dealias)
+u.fill_random('g', seed=42, distribution='standard_normal') # Random noise
+u.require_scales(0.25); u['g']; u.require_scales(1) # Low-pass filter noise
 
 # Analysis
 snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=0.1, max_writes=20)
