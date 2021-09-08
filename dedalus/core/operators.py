@@ -1886,6 +1886,8 @@ class SphericalTransposeComponents(TransposeComponents):
 
 class SphericalComponent(LinearOperator):
 
+    name = "SphericalComponent"
+
     @classmethod
     def _preprocess_args(cls, operand, index=0, out=None):
         if isinstance(operand, Number):
@@ -1925,6 +1927,8 @@ class SphericalComponent(LinearOperator):
 
 class RadialComponent(SphericalComponent, metaclass=MultiClass):
 
+    name = "Radial"
+
     @classmethod
     def _check_args(cls, operand, index=0, out=None):
         # Dispatch by coordinate system
@@ -1946,6 +1950,8 @@ class RadialComponent(SphericalComponent, metaclass=MultiClass):
 
 
 class AngularComponent(SphericalComponent, metaclass=MultiClass):
+
+    name = "Angular"
 
     @classmethod
     def _check_args(cls, operand, index=0, out=None):
@@ -1969,6 +1975,8 @@ class AngularComponent(SphericalComponent, metaclass=MultiClass):
 
 
 class PolarComponent(LinearOperator):
+
+    name = "PolarComponent"
 
     @classmethod
     def _preprocess_args(cls, operand, index=0, out=None):
@@ -2008,6 +2016,8 @@ class PolarComponent(LinearOperator):
 
 
 class AzimuthalComponent(PolarComponent, metaclass=MultiClass):
+
+    name = "Azimuthal"
 
     @classmethod
     def _check_args(cls, operand, index=0, out=None):

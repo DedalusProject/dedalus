@@ -5129,7 +5129,6 @@ class SphericalShellRadialInterpolate(operators.Interpolate, operators.Spherical
 class S2RadialComponent(operators.RadialComponent):
 
     basis_type = SWSH
-    name = 'Radial'
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
@@ -5198,7 +5197,6 @@ class S2AngularComponent(operators.AngularComponent):
 class PolarAzimuthalComponent(operators.AzimuthalComponent):
 
     basis_type = IntervalBasis
-    name = 'Azimuthal'
 
     def subproblem_matrix(self, subproblem):
         # I'm not sure how to generalize this to higher order tensors, since we do
