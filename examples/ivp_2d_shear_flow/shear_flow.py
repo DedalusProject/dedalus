@@ -59,12 +59,9 @@ D = nu / Schmidt
 ez = dist.VectorField(coords, name='u', bases=(xbasis,zbasis))
 ez['g'][1] = 1
 
-div = d3.Divergence
 lap = lambda A: d3.Laplacian(A, coords)
 grad = lambda A: d3.Gradient(A, coords)
 integ = lambda A: d3.Integrate(d3.Integrate(A, coords.coords[0]), coords.coords[1])
-dot = d3.DotProduct
-dt = d3.TimeDerivative
 
 # Problem
 problem = d3.IVP([u, s, p], namespace=locals())
@@ -96,7 +93,7 @@ CFL.add_velocity(u)
 
 # Flow properties
 flow = d3.GlobalFlowProperty(solver, cadence=10)
-flow.add_property(dot(u,ez)**2, name='w2')
+flow.add_property(d3.dot(u,ez)**2, name='w2')
 
 # Main loop
 try:
@@ -107,7 +104,7 @@ try:
         solver.step(timestep)
         if (solver.iteration-1) % 10 == 0:
             max_w = np.sqrt(flow.max('w2'))
-            logger.info('Iteration=%i, Time=%e, dt=%e, max(w)=%f' %(solver.iteration, solver.sim_time, timestep, max_w)
+            logger.info('Iteration=%i, Time=%e, dt=%e, max(w)=%f' %(solver.iteration, solver.sim_time, timestep, max_w))
 except:
     logger.error('Exception raised, triggering end of main loop.')
     raise

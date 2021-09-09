@@ -1544,7 +1544,7 @@ class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):
         self.shape = shape
         self.dtype = dtype
         if np.isscalar(dealias):
-            self.dealias = (dealias,) * 2
+            self.dealias = (dealias, dealias)
         elif len(dealias) != 2:
             raise ValueError("dealias must either be a number or a tuple of two numbers")
         else:
@@ -1552,9 +1552,9 @@ class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):
         self.azimuth_library = azimuth_library
         self.mmax = (shape[0] - 1) // 2
         if dtype == np.complex128:
-            self.azimuth_basis = ComplexFourier(coordsystem.coords[0], shape[0], bounds=(0, 2*np.pi), library=azimuth_library, dealias=dealias[0])
+            self.azimuth_basis = ComplexFourier(coordsystem.coords[0], shape[0], bounds=(0, 2*np.pi), library=azimuth_library, dealias=self.dealias[0])
         elif dtype == np.float64:
-            self.azimuth_basis = RealFourier(coordsystem.coords[0], shape[0], bounds=(0, 2*np.pi), library=azimuth_library, dealias=dealias[0])
+            self.azimuth_basis = RealFourier(coordsystem.coords[0], shape[0], bounds=(0, 2*np.pi), library=azimuth_library, dealias=self.dealias[0])
         else:
             raise NotImplementedError()
         self.global_grid_azimuth = self.azimuth_basis.global_grid
@@ -2172,7 +2172,7 @@ class DiskBasis(PolarBasis):
         if self.mmax > 2*self.Nmax:
             logger.warning("You are using more azimuthal modes than can be resolved with your current radial resolution")
             #raise ValueError("shape[0] cannot be more than twice shape[1].")
-        self.grid_params = (coordsystem, radius, alpha, dealias)
+        self.grid_params = (coordsystem, radius, alpha, self.dealias)
 
     @CachedAttribute
     def radial_basis(self):

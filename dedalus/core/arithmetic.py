@@ -30,6 +30,15 @@ __all__ = ['Add',
            'DotProduct',
            'CrossProduct']
 
+# Aliases
+aliases = {}
+def alias(*names):
+    def register_op(op):
+        for name in names:
+            aliases[name] = op
+        return op
+    return register_op
+
 
 def enum_indices(tensorsig):
     shape = tuple(cs.dim for cs in tensorsig)
@@ -556,6 +565,7 @@ class Product(Future):
         raise NotImplementedError("%s has not implemented GammaCoord" %type(self))
 
 
+@alias("dot")
 class DotProduct(Product, FutureField):
 
     name = "Dot"
@@ -646,6 +656,7 @@ class DotProduct(Product, FutureField):
             np.einsum(self.einsum_str, arg0_data, arg1_data, out=out.data, optimize=True)
 
 
+@alias("cross")
 class CrossProduct(Product, FutureField):
     """Cross product on two 3D vector fields."""
 
@@ -937,3 +948,12 @@ class MultiplyNumberField(Multiply, FutureField):
     def sym_diff(self, var):
         """Symbolically differentiate with respect to specified operand."""
         return self.args[0] * self.args[1].sym_diff(var)
+
+
+# Define aliases
+for key, value in aliases.items():
+    exec(f"{key} = {value.__name__}")
+
+# Export aliases
+__all__.extend(aliases.keys())
+

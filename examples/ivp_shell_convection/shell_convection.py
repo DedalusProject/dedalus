@@ -76,13 +76,8 @@ er['g'][2] = 1
 rvec = dist.VectorField(coords, name='er', bases=basis.radial_basis)
 rvec['g'][2] = r
 
-div =  d3.Divergence
 lap = lambda A: d3.Laplacian(A, coords)
 grad = lambda A: d3.Gradient(A, coords)
-dot = d3.DotProduct
-dt = d3.TimeDerivative
-ang = d3.AngularComponent
-trace = d3.Trace
 lift_basis = basis.clone_with(k=1) # First derivative basis
 lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
 grad_u = grad(u) + rvec*lift(tau1u,-1) # First-order reduction
@@ -126,7 +121,7 @@ CFL.add_velocity(u)
 
 # Flow properties
 flow = d3.GlobalFlowProperty(solver, cadence=10)
-flow.add_property(np.sqrt(dot(u,u))/nu, name='Re')
+flow.add_property(np.sqrt(d3.dot(u,u))/nu, name='Re')
 
 # Main loop
 try:

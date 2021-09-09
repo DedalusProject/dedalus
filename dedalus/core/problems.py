@@ -7,6 +7,7 @@ from collections import OrderedDict
 import numpy as np
 from mpi4py import MPI
 from functools import reduce
+from collections import ChainMap
 
 from . import field
 from .field import Operand, Field
@@ -34,6 +35,14 @@ __all__ = ['EigenvalueProblem',
            'LBVP',
            'NLBVP',
            'IVP']
+
+
+# Build basic parsing namespace
+parseables = {}
+parseables.update({name: getattr(operators, name) for name in operators.__all__})
+parseables.update(operators.aliases)
+parseables.update({name: getattr(arithmetic, name) for name in arithmetic.__all__})
+parseables.update(arithmetic.aliases)
 
 
 class Namespace(OrderedDict):
@@ -140,7 +149,11 @@ class ProblemBase:
         self.LHS_variables = variables
         self.dist = unify_attributes(variables, 'dist')
         self.equations = self.eqs = []
-        self.namespace = namespace
+        # Build namespace via chainmap to react to upstream changes
+        # Priority: local dict, specified namespace, parseables
+        if namespace is None:
+            namespace = {}
+        self.namespace = ChainMap({}, namespace, parseables)
 
     def add_equation(self, equation, condition="True"):
         """Add equation to problem."""
@@ -149,8 +162,8 @@ class ProblemBase:
         if isinstance(equation, str):
             # Parse string-valued equations
             LHS_str, RHS_str = parsing.split_equation(equation)
-            LHS = eval(LHS_str, self.namespace)
-            RHS = eval(RHS_str, self.namespace)
+            LHS = eval(LHS_str, dict(self.namespace))
+            RHS = eval(RHS_str, dict(self.namespace))
         else:
             # Split operator tuples
             LHS, RHS = equation

@@ -751,7 +751,7 @@ class Field(Current):
         if layout is not None:
             self.set_layout(layout)
         # Build global chunked random array (does not require global-sized memory)
-        shape = tuple(cs.size for cs in self.tensorsig) + self.global_shape
+        shape = tuple(cs.dim for cs in self.tensorsig) + self.global_shape
         if np.iscomplexobj(self):
             shape = shape + (2,)
         global_data = ChunkedRandomArray(shape, seed, chunk_size, distribution, **kw)

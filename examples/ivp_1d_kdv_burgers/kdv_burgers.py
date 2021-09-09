@@ -36,7 +36,6 @@ u = dist.Field(name='u', bases=xbasis)
 
 # Substitutions
 dx = lambda A: d3.Differentiate(A, xcoord)
-dt = d3.TimeDerivative
 
 # Problem
 problem = d3.IVP([u], namespace=locals())

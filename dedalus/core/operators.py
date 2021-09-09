@@ -51,10 +51,16 @@ __all__ = ['GeneralFunction',
            'SphericalEllProduct',
            'UnaryGridFunction']
 
-# Use simple decorator to track parseable operators
-parseables = {}
-prefixes = {}
+# Use simple decorators to track parseable operators
+aliases = {}
+def alias(*names):
+    def register_op(op):
+        for name in names:
+            aliases[name] = op
+        return op
+    return register_op
 
+parseables = {}
 def parseable(*names):
     def register_op(op):
         for name in names:
@@ -62,15 +68,13 @@ def parseable(*names):
         return op
     return register_op
 
+prefixes = {}
 def prefix(*names):
     def register_op(op):
         for name in names:
             prefixes[name] = op
         return op
     return register_op
-
-
-
 
 
 # class Cast(FutureField, metaclass=MultiClass):
@@ -186,8 +190,6 @@ def prefix(*names):
 #             return input
 
 
-
-
 # class FieldCopy(FutureField):
 #     """Operator making a new field copy of data."""
 
@@ -224,7 +226,6 @@ def prefix(*names):
 #         return self.args[0].sym_diff(var)
 
 
-
 # class FieldCopyArray(FieldCopy):
 
 #     argtypes = {0: (Array, FutureArray)}
@@ -244,11 +245,6 @@ def prefix(*names):
 #         # Copy in current layout
 #         out.set_layout(arg0.layout)
 #         np.copyto(out.data, arg0.data)
-
-
-
-
-
 
 
 class NonlinearOperator(Future):
@@ -399,8 +395,6 @@ class PowerFieldConstant(Power, FutureField):
 #         arg0.require_grid_space()
 #         out.set_layout(self._grid_layout)
 #         np.power(arg0.data, arg1.value, out.data)
-
-
 
 
 class GeneralFunction(NonlinearOperator, FutureField):
@@ -912,6 +906,7 @@ class SpectralOperator1D(SpectralOperator):
         apply_matrix(self.subspace_matrix(layout), arg.data, data_axis, out=out.data)
 
 
+@alias('dt')
 class TimeDerivative(LinearOperator):
     """Class for representing time derivative while parsing."""
 
@@ -973,6 +968,7 @@ def interpolate(arg, **positions):
     for coord, position in positions.items():
         arg = Interpolate(arg, coord, position)
     return arg
+
 
 class Interpolate(SpectralOperator, metaclass=MultiClass):
     """
@@ -1604,6 +1600,7 @@ class ConvertConstant(Convert):
             arg0.require_coeff_space(self.last_axis)
 
 
+@alias("trace")
 class Trace(LinearOperator, metaclass=MultiClass):
     # TODO: contract arbitrary indices instead of the first two?
 
@@ -1734,6 +1731,7 @@ class CartesianTrace(Trace):
         return matrix
 
 
+@alias("transpose", "trans")
 class TransposeComponents(LinearOperator, metaclass=MultiClass):
 
     name = "TransposeComponents"
@@ -1925,6 +1923,7 @@ class SphericalComponent(LinearOperator):
         return self.operand.matrix_coupling(*vars)
 
 
+@alias("radial")
 class RadialComponent(SphericalComponent, metaclass=MultiClass):
 
     name = "Radial"
@@ -1949,6 +1948,7 @@ class RadialComponent(SphericalComponent, metaclass=MultiClass):
         return RadialComponent(operand, self.index, **kw)
 
 
+@alias("angular")
 class AngularComponent(SphericalComponent, metaclass=MultiClass):
 
     name = "Angular"
@@ -2015,6 +2015,7 @@ class PolarComponent(LinearOperator):
         return self.operand.matrix_coupling(*vars)
 
 
+@alias("azimuthal")
 class AzimuthalComponent(PolarComponent, metaclass=MultiClass):
 
     name = "Azimuthal"
@@ -2039,6 +2040,7 @@ class AzimuthalComponent(PolarComponent, metaclass=MultiClass):
         return AzimuthalComponent(operand, self.index, **kw)
 
 
+@alias("grad")
 class Gradient(LinearOperator, metaclass=MultiClass):
 
     name = "Grad"
@@ -2543,6 +2545,7 @@ class CartesianComponent(Component):
         out.data[:] = arg0.data[take_comp]
 
 
+@alias("div")
 class Divergence(LinearOperator, metaclass=MultiClass):
 
     name = 'Div'
@@ -2674,6 +2677,7 @@ class SphericalDivergence(Divergence, SphericalEllOperator):
         else:
             raise ValueError("This should never happen")
 
+
 class PolarDivergence(Divergence, PolarMOperator):
 
     cs_type = coords.PolarCoordinates
@@ -2734,8 +2738,7 @@ class PolarDivergence(Divergence, PolarMOperator):
             raise ValueError("This should never happen")
 
 
-
-
+@alias("curl")
 class Curl(LinearOperator, metaclass=MultiClass):
 
     name = 'Curl'
@@ -2900,6 +2903,7 @@ class SphericalCurl(Curl, SphericalEllOperator):
                         comp_out[tuple(slices)][cos_slice] += vec_out_complex.real
                         comp_out[tuple(slices)][msin_slice] += vec_out_complex.imag
 
+
 class PolarCurl(Curl, PolarMOperator):
 
     cs_type = coords.PolarCoordinates
@@ -3033,6 +3037,8 @@ class PolarCurl(Curl, PolarMOperator):
                     comp_out[tuple(slices)][cos_slice] += vec_out_complex.real
                     comp_out[tuple(slices)][msin_slice] += vec_out_complex.imag
 
+
+@alias("lap")
 class Laplacian(LinearOperator, metaclass=MultiClass):
 
     name = "Lap"
@@ -3206,6 +3212,7 @@ class SphericalEllProductField(SphericalEllProduct):
     def _radial_matrix(self, ell, regtotal):
         return self.ell_func(ell + regtotal) * self.radial_basis.operator_matrix('Id', ell, regtotal)
 
+
 class PolarLaplacian(Laplacian, PolarMOperator):
 
     cs_type = coords.PolarCoordinates
@@ -3252,6 +3259,7 @@ class PolarLaplacian(Laplacian, PolarMOperator):
         return radial_basis.operator_matrix('L', m, spintotal)
 
 
+@alias("lift")
 class LiftTau(LinearOperator, metaclass=MultiClass):
 
     name = "LiftTau"
@@ -3396,3 +3404,12 @@ class AdvectiveCFL(FutureLockedField, metaclass=MultiClass):
     def compute_cfl_frequency(self, velocity, out):
         """Return a scalar multi-D field of the cfl frequency everywhere in the domain."""
         raise NotImplementedError("Must call a subclass CFL.")
+
+
+# Define aliases
+for key, value in aliases.items():
+    exec(f"{key} = {value.__name__}")
+
+# Export aliases
+__all__.extend(aliases.keys())
+

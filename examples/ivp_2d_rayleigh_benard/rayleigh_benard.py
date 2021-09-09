@@ -30,7 +30,7 @@ import dedalus.public as d3
 import logging
 logger = logging.getLogger(__name__)
 
-# TODO: maybe fix plotting to directly handle vector
+# TODO: maybe fix plotting to directly handle vectors
 # TODO: optimize and match d2 resolution
 # TODO: get unit vectors from coords?
 # TODO: timestepper strings
@@ -73,12 +73,8 @@ ez = dist.VectorField(coords, name='ez')
 ex['g'][0] = 1
 ez['g'][1] = 1
 
-div = d3.Divergence
 lap = lambda A: d3.Laplacian(A, coords)
 grad = lambda A: d3.Gradient(A, coords)
-dot = d3.DotProduct
-ddt = d3.TimeDerivative
-trace = d3.Trace
 lift_basis = zbasis.clone_with(a=1/2, b=1/2) # First derivative basis
 lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
 grad_u = grad(u) + ez*lift(tau1u,-1) # First-order reduction
@@ -89,8 +85,8 @@ grad_b = grad(b) + ez*lift(tau1b,-1) # First-order reduction
 # First-order form: "lap(f)" becomes "div(grad_f)"
 problem = d3.IVP([p, b, u, tau1b, tau2b, tau1u, tau2u], namespace=locals())
 problem.add_equation("trace(grad_u) = 0")
-problem.add_equation("ddt(b) - kappa*div(grad_b) + lift(tau2b,-1) = - dot(u,grad(b))")
-problem.add_equation("ddt(u) - nu*div(grad_u) + grad(p) + lift(tau2u,-1) - b*ez = - dot(u,grad(u))")
+problem.add_equation("dt(b) - kappa*div(grad_b) + lift(tau2b,-1) = - dot(u,grad(b))")
+problem.add_equation("dt(u) - nu*div(grad_u) + grad(p) + lift(tau2u,-1) - b*ez = - dot(u,grad(u))")
 problem.add_equation("b(z=0) = Lz")
 problem.add_equation("u(z=0) = 0")
 problem.add_equation("b(z=Lz) = 0")
@@ -112,8 +108,8 @@ b['g'] += Lz - z # Add linear background
 snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=0.1, max_writes=50)
 snapshots.add_task(p)
 snapshots.add_task(b)
-snapshots.add_task(dot(u,ex), name='ux')
-snapshots.add_task(dot(u,ez), name='uz')
+snapshots.add_task(d3.dot(u,ex), name='ux')
+snapshots.add_task(d3.dot(u,ez), name='uz')
 
 # CFL
 CFL = d3.CFL(solver, initial_dt=max_timestep, cadence=10, safety=0.5, threshold=0.1,
@@ -122,7 +118,7 @@ CFL.add_velocity(u)
 
 # Flow properties
 flow = d3.GlobalFlowProperty(solver, cadence=10)
-flow.add_property(np.sqrt(dot(u,u))/nu, name='Re')
+flow.add_property(np.sqrt(d3.dot(u,u))/nu, name='Re')
 
 # Main loop
 try:

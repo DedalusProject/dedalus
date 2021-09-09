@@ -79,23 +79,14 @@ T_source = 6
 kappa = (Rayleigh * Prandtl)**(-1/2)
 nu = (Rayleigh / Prandtl)**(-1/2)
 
-div = d3.Divergence
 lap = lambda A: d3.Laplacian(A, coords)
 grad = lambda A: d3.Gradient(A, coords)
-curl = d3.Curl
-dot = d3.DotProduct
-cross = d3.CrossProduct
-dt = d3.TimeDerivative
-rad = d3.RadialComponent
-ang = d3.AngularComponent
-trans = d3.TransposeComponents
-grid = d3.Grid
 
 lift_basis = basis.clone_with(k=2) # Natural output
 lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
 
-strain_rate = grad(u) + trans(grad(u))
-shear_stress = ang(rad(strain_rate(r=1)))
+strain_rate = grad(u) + d3.trans(grad(u))
+shear_stress = d3.angular(d3.radial(strain_rate(r=1)))
 
 # Problem
 problem = d3.IVP([p, u, T, tau_u, tau_T], namespace=locals())
@@ -103,7 +94,7 @@ problem.add_equation("div(u) = 0")
 problem.add_equation("dt(u) - nu*lap(u) + grad(p) - r_vec*T + lift(tau_u,-1) = - cross(curl(u),u)")
 problem.add_equation("dt(T) - kappa*lap(T) + lift(tau_T,-1) = - dot(u,grad(T)) + kappa*T_source")
 problem.add_equation("shear_stress = 0")  # stress free
-problem.add_equation("rad(u(r=1)) = 0", condition="ntheta != 0")  # no penetration
+problem.add_equation("radial(u(r=1)) = 0", condition="ntheta != 0")  # no penetration
 problem.add_equation("p(r=1) = 0", condition="ntheta == 0")  # pressure gauge
 problem.add_equation("T(r=1) = 0")
 
@@ -138,7 +129,7 @@ CFL.add_velocity(u)
 
 # Flow properties
 flow = d3.GlobalFlowProperty(solver, cadence=10)
-flow.add_property(dot(u,u), name='u2')
+flow.add_property(d3.dot(u,u), name='u2')
 
 # Main loop
 hermitian_cadence = 100

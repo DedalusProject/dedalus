@@ -31,7 +31,6 @@ logger = logging.getLogger(__name__)
 # TODO: remove azimuth library? might need to fix DCT truncation
 # TODO: automate hermitian conjugacy enforcement
 # TODO: finalize filehandlers to process virtual file
-# TODO: simplify initial conditions
 
 
 # Parameters
@@ -54,21 +53,16 @@ S1_basis = basis.S1_basis(radius=1)
 # Fields
 u = dist.VectorField(coords, name='u', bases=basis)
 p = dist.Field(name='p', bases=basis)
-tau = dist.VectorField(coords, name='tau', bases=basis)
+tau = dist.VectorField(coords, name='tau', bases=S1_basis)
 
 # Substitutions
+nu = Ekman
+
 lap = lambda A: d3.Laplacian(A, coords)
-div = d3.Divergence
 grad = lambda A: d3.Gradient(A, coords)
-curl = d3.Curl
-dot = d3.DotProduct
-cross = d3.CrossProduct
-dt = d3.TimeDerivative
+integ = lambda A: d3.Integrate(A, coords)
 lift_basis = basis.clone_with(k=2) # Natural output basis
 lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
-azimuthal = d3.AzimuthalComponent
-integ = lambda A: d3.Integrate(A, coords)
-nu = Ekman
 
 # Background librating flow
 u0_real = dist.VectorField(coords, bases=basis)
@@ -98,11 +92,11 @@ u.low_pass_filter(scales=0.25) # Keep only lower fourth of the modes
 snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=0.1, max_writes=20)
 snapshots.add_task(u, scales=(4, 1))
 scalars = solver.evaluator.add_file_handler('scalars', sim_dt=0.01)
-scalars.add_task(integ(0.5*dot(u,u)), name='KE')
+scalars.add_task(integ(0.5*d3.dot(u,u)), name='KE')
 
 # Flow properties
 flow = d3.GlobalFlowProperty(solver, cadence=100)
-flow.add_property(dot(u,u)), name='u2')
+flow.add_property(d3.dot(u,u), name='u2')
 
 # Main loop
 hermitian_cadence = 100
