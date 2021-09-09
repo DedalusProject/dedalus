@@ -766,6 +766,47 @@ class Field(Current):
             self.data.real[:] = local_data[..., 0]
             self.data.imag[:] = local_data[..., 1]
 
+    def low_pass_filter(self, shape=None, scales=None):
+        """
+        Apply a spectral low-pass filter by zeroing modes above specified relative scales.
+        The scales can be specified directly or deduced from a specified global grid shape.
+
+        Parameters
+        ----------
+        shape : tuple of ints, optional
+            Global grid shape for inferring truncation scales.
+        scales : float or tuple of floats, optional
+            Scale factors for truncation.
+        """
+        original_scales = self.scales
+        # Determine scales from shape
+        if shape is not None:
+            if scales is not None:
+                raise ValueError("Specify either shape or scales.")
+            global_shape = self.dist.grid_layout.global_shape(self.domain, scales=1)
+            scales = np.array(shape) / global_shape
+        # Low-pass filter by changing scales
+        self.require_scales(scales)
+        self.require_grid_space()
+        self.require_scales(original_scales)
+
+    def high_pass_filter(self, shape=None, scales=None):
+        """
+        Apply a spectral high-pass filter by zeroing modes below specified relative scales.
+        The scales can be specified directly or deduced from a specified global grid shape.
+
+        Parameters
+        ----------
+        shape : tuple of ints, optional
+            Global grid shape for inferring truncation scales.
+        scales : float or tuple of floats, optional
+            Scale factors for truncation.
+        """
+        data_orig = self['c'].copy()
+        self.low_pass_filter(shape=shape, scales=scales)
+        data_filt = self['c'].copy()
+        self['c'] = data_orig - data_filt
+
 
 ScalarField = Field
 

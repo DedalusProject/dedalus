@@ -92,7 +92,7 @@ solver.stop_sim_time = stop_sim_time
 
 # Initial conditions
 u.fill_random('g', seed=42, distribution='standard_normal') # Random noise
-u.require_scales(0.25); u['g']; u.require_scales(1) # Low-pass filter noise
+u.low_pass_filter(scales=0.25) # Keep only lower fourth of the modes
 
 # Analysis
 snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=0.1, max_writes=20)
