@@ -59,8 +59,6 @@ D = nu / Schmidt
 ez = dist.VectorField(coords, name='u', bases=(xbasis,zbasis))
 ez['g'][1] = 1
 
-lap = lambda A: d3.Laplacian(A, coords)
-grad = lambda A: d3.Gradient(A, coords)
 integ = lambda A: d3.Integrate(d3.Integrate(A, coords.coords[0]), coords.coords[1])
 
 # Problem

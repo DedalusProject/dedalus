@@ -51,7 +51,6 @@ h['g'] = 0
 
 # Substitutions
 dy = lambda A: d3.Differentiate(A, coords.coords[1])
-lap = lambda A: d3.Laplacian(A, coords)
 lift_basis = ybasis.clone_with(a=3/2, b=3/2) # Natural output basis
 lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
 

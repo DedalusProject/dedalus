@@ -79,13 +79,10 @@ T_source = 6
 kappa = (Rayleigh * Prandtl)**(-1/2)
 nu = (Rayleigh / Prandtl)**(-1/2)
 
-lap = lambda A: d3.Laplacian(A, coords)
-grad = lambda A: d3.Gradient(A, coords)
-
 lift_basis = basis.clone_with(k=2) # Natural output
 lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
 
-strain_rate = grad(u) + d3.trans(grad(u))
+strain_rate = d3.grad(u) + d3.trans(d3.grad(u))
 shear_stress = d3.angular(d3.radial(strain_rate(r=1)))
 
 # Problem

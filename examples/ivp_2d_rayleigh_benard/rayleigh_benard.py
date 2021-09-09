@@ -73,12 +73,10 @@ ez = dist.VectorField(coords, name='ez')
 ex['g'][0] = 1
 ez['g'][1] = 1
 
-lap = lambda A: d3.Laplacian(A, coords)
-grad = lambda A: d3.Gradient(A, coords)
 lift_basis = zbasis.clone_with(a=1/2, b=1/2) # First derivative basis
 lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
-grad_u = grad(u) + ez*lift(tau1u,-1) # First-order reduction
-grad_b = grad(b) + ez*lift(tau1b,-1) # First-order reduction
+grad_u = d3.grad(u) + ez*lift(tau1u,-1) # First-order reduction
+grad_b = d3.grad(b) + ez*lift(tau1b,-1) # First-order reduction
 
 # Problem
 # First-order form: "div(f)" becomes "trace(grad_f)"

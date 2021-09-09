@@ -63,7 +63,6 @@ f = dist.Field(name='f', bases=basis)
 tau = dist.Field(name='tau', bases=basis.S2_basis(radius=1))
 
 # Substitutions
-lap = lambda A: d3.Laplacian(A, coords)
 lift_basis = basis.clone_with(k=2) # Natural output basis
 lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
 

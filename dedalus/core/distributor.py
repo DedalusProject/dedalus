@@ -71,6 +71,11 @@ class Distributor:
         # Accept single coordsystem in place of tuple/list
         if not isinstance(coordsystems, (tuple, list)):
             coordsystems = (coordsystems,)
+        # Note if only a single coordsystem for simplicity
+        if len(coordsystems) == 1:
+            self.single_coordsys = coordsystems[0]
+        else:
+            self.single_coordsys = False
         # Get coords
         self.coords = tuple([coord for coordsystem in coordsystems for coord in coordsystem.coords])
         for coordsystem in coordsystems:

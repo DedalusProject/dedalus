@@ -76,12 +76,10 @@ er['g'][2] = 1
 rvec = dist.VectorField(coords, name='er', bases=basis.radial_basis)
 rvec['g'][2] = r
 
-lap = lambda A: d3.Laplacian(A, coords)
-grad = lambda A: d3.Gradient(A, coords)
 lift_basis = basis.clone_with(k=1) # First derivative basis
 lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
-grad_u = grad(u) + rvec*lift(tau1u,-1) # First-order reduction
-grad_b = grad(b) + rvec*lift(tau1b,-1) # First-order reduction
+grad_u = d3.grad(u) + rvec*lift(tau1u,-1) # First-order reduction
+grad_b = d3.grad(b) + rvec*lift(tau1b,-1) # First-order reduction
 
 # Problem
 problem = d3.IVP([p, b, u, tau1b, tau2b, tau1u, tau2u], namespace=locals())

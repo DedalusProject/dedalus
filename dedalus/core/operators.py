@@ -2046,9 +2046,13 @@ class Gradient(LinearOperator, metaclass=MultiClass):
     name = "Grad"
 
     @classmethod
-    def _preprocess_args(cls, operand, coordsys, out=None):
+    def _preprocess_args(cls, operand, coordsys=None, out=None):
         if isinstance(operand, Number):
             raise SkipDispatchException(output=0)
+        if coordsys is None:
+            coordsys = operand.dist.single_coordsys
+            if coordsys is False:
+                raise ValueError("coordsys must be specified.")
         return [operand, coordsys], {'out': out}
 
     @classmethod
@@ -3044,9 +3048,13 @@ class Laplacian(LinearOperator, metaclass=MultiClass):
     name = "Lap"
 
     @classmethod
-    def _preprocess_args(cls, operand, coordsys, out=None):
+    def _preprocess_args(cls, operand, coordsys=None, out=None):
         if isinstance(operand, Number):
             raise SkipDispatchException(output=0)
+        if coordsys is None:
+            coordsys = operand.dist.single_coordsys
+            if coordsys is False:
+                raise ValueError("coordsys must be specified.")
         return [operand, coordsys], {'out': out}
 
     @classmethod
