@@ -42,8 +42,8 @@ dtype = np.float64
 # Bases
 coords = d3.CartesianCoordinates('x', 'z')
 dist = d3.Distributor(coords, dtype=dtype)
-xbasis = d3.RealFourier(coords.coords[0], size=Nx, bounds=(0, Lx), dealias=dealias)
-zbasis = d3.RealFourier(coords.coords[1], size=Nz, bounds=(-Lz/2, Lz/2), dealias=dealias)
+xbasis = d3.RealFourier(coords['x'], size=Nx, bounds=(0, Lx), dealias=dealias)
+zbasis = d3.RealFourier(coords['z'], size=Nz, bounds=(-Lz/2, Lz/2), dealias=dealias)
 x = xbasis.local_grid(1)
 z = zbasis.local_grid(1)
 
@@ -59,7 +59,7 @@ D = nu / Schmidt
 ez = dist.VectorField(coords, name='u', bases=(xbasis,zbasis))
 ez['g'][1] = 1
 
-integ = lambda A: d3.Integrate(d3.Integrate(A, coords.coords[0]), coords.coords[1])
+integ = lambda A: d3.Integrate(d3.Integrate(A, coords['x']), coords['z'])
 
 # Problem
 problem = d3.IVP([u, s, p], namespace=locals())

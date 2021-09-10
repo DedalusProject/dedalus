@@ -50,8 +50,8 @@ dtype = np.float64
 # Bases
 coords = d3.CartesianCoordinates('x', 'z')
 dist = d3.Distributor(coords, dtype=dtype)
-xbasis = d3.RealFourier(coords.coords[0], size=Nx, bounds=(0, Lx), dealias=dealias)
-zbasis = d3.ChebyshevT(coords.coords[1], size=Nz, bounds=(0, Lz), dealias=dealias)
+xbasis = d3.RealFourier(coords['x'], size=Nx, bounds=(0, Lx), dealias=dealias)
+zbasis = d3.ChebyshevT(coords['z'], size=Nz, bounds=(0, Lz), dealias=dealias)
 x = xbasis.local_grid(1)
 z = zbasis.local_grid(1)
 

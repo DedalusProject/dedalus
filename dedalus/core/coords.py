@@ -28,6 +28,12 @@ class CoordinateSystem:
     def __hash__(self):
         return id(self)
 
+    def __getitem__(self, key):
+        if isinstance(key, str):
+            return self.coords[self.names.index(key)]
+        else:
+            return self.coords[key]
+
     def set_distributor(self, distributor):
         self.dist = distributor
         for coord in self.coords:
@@ -110,6 +116,7 @@ class S2Coordinates(CoordinateSystem):
     dim = 2
 
     def __init__(self, azimuth, colatitude):
+        self.names = (azimuth, colatitude)
         self.azimuth = AzimuthalCoordinate(azimuth, cs=self)
         self.colatitude = Coordinate(colatitude, cs=self)
         self.coords = (self.azimuth, self.colatitude)
@@ -154,6 +161,7 @@ class S2Coordinates(CoordinateSystem):
         else:
             raise ValueError("Invalid axis")
 
+
 class PolarCoordinates(CoordinateSystem):
     """
     Polar coordinate system: (azimuth, radius)
@@ -165,6 +173,7 @@ class PolarCoordinates(CoordinateSystem):
     dim = 2
 
     def __init__(self, azimuth, radius):
+        self.names = (azimuth, radius)
         self.azimuth = AzimuthalCoordinate(azimuth, cs=self)
         self.radius = Coordinate(radius, cs=self)
         self.coords = (self.azimuth, self.radius)
@@ -230,6 +239,7 @@ class SphericalCoordinates(CoordinateSystem):
     right_handed = False
 
     def __init__(self, azimuth, colatitude, radius):
+        self.names = (azimuth, colatitude, radius)
         self.azimuth = AzimuthalCoordinate(azimuth, cs=self)
         self.colatitude = Coordinate(colatitude, cs=self)
         self.radius = Coordinate(radius, cs=self)

@@ -20,7 +20,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 # TODO: make proper plotting using plotbot/xarray
-# TODO: indexing on coord systems by name or axis
 
 
 # Parameters
@@ -31,8 +30,8 @@ dtype = np.float64
 # Bases
 coords = d3.CartesianCoordinates('x', 'y')
 dist = d3.Distributor(coords, dtype=dtype)
-xbasis = d3.RealFourier(coords.coords[0], size=Nx, bounds=(0, Lx))
-ybasis = d3.Chebyshev(coords.coords[1], size=Ny, bounds=(0, Ly))
+xbasis = d3.RealFourier(coords['x'], size=Nx, bounds=(0, Lx))
+ybasis = d3.Chebyshev(coords['y'], size=Ny, bounds=(0, Ly))
 
 # Fields
 u = dist.Field(name='u', bases=(xbasis, ybasis))
@@ -50,7 +49,7 @@ g['g'] = np.sin(8*x)
 h['g'] = 0
 
 # Substitutions
-dy = lambda A: d3.Differentiate(A, coords.coords[1])
+dy = lambda A: d3.Differentiate(A, coords['y'])
 lift_basis = ybasis.clone_with(a=3/2, b=3/2) # Natural output basis
 lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
 
