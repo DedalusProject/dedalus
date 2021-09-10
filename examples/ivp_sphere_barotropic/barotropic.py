@@ -54,7 +54,7 @@ problem.add_equation((p, 0),condition='ntheta == 0')
 print("Problem built")
 
 # Solver
-solver = problem.build_solver(timesteppers.RK222)
+solver = problem.build_solver(timesteppers.RK222, matrix_coupling=[False,False])
 
 # initial conditions
 x = np.sin(theta)*np.cos(phi)
@@ -75,7 +75,6 @@ psi = d3.Field(dist=d, bases=(b,), dtype=dtype)
 psi['g'] = sph_harm(m, l, phi, theta).real
 
 u['g'] = skew(grad(psi)).evaluate()['g']
-print((dot(u,grad(u))).evaluate()['g'])
 
 snapshots = solver.evaluator.add_file_handler('snapshots_barotropic', iter=1, max_writes=10, virtual_file=True)
 snapshots.add_task(div(skew(u)), name='vorticity')
