@@ -539,3 +539,12 @@ class InitialValueSolver(SolverBase):
             if self.sim_time + dt > self.stop_sim_time:
                 dt = self.stop_sim_time - self.sim_time
             self.step(dt)
+
+    def print_subproblem_ranks(self, dt=1):
+        # Check matrix rank
+        for i, subproblem in enumerate(self.subproblems):
+            M = subproblem.M_min @ subproblem.pre_right
+            L = subproblem.L_min @ subproblem.pre_right
+            A = (M + dt*L).A
+            print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {subproblem.group}, matrix rank: {np.linalg.matrix_rank(A)}/{A.shape[0]}, cond: {np.linalg.cond(A):.1e}")
+

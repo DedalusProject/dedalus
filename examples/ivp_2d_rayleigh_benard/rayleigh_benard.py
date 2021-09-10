@@ -33,7 +33,6 @@ logger = logging.getLogger(__name__)
 # TODO: maybe fix plotting to directly handle vectors
 # TODO: optimize and match d2 resolution
 # TODO: get unit vectors from coords?
-# TODO: timestepper strings
 
 
 # Parameters

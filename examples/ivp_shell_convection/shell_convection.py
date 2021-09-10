@@ -30,9 +30,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # TODO: fix "one" conversion
-# TODO: timestepper strings
 # TODO: get unit vectors from coords?
-# TODO: move rank printing to solver method?
 
 
 # Parameters
@@ -78,6 +76,7 @@ rvec['g'][2] = r
 
 lift_basis = basis.clone_with(k=1) # First derivative basis
 lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
+
 grad_u = d3.grad(u) + rvec*lift(tau1u,-1) # First-order reduction
 grad_b = d3.grad(b) + rvec*lift(tau1b,-1) # First-order reduction
 
@@ -95,13 +94,6 @@ problem.add_equation("p(r=Ro) = 0", condition="ntheta == 0") # Pressure gauge
 # Solver
 solver = problem.build_solver(timestepper)
 solver.stop_sim_time = stop_sim_time
-
-# # Check matrix rank
-# for i, subproblem in enumerate(solver.subproblems):
-#     M = subproblem.M_min @ subproblem.pre_right
-#     L = subproblem.L_min @ subproblem.pre_right
-#     A = (M + L).A
-#     print(f"MPI rank: {MPI.COMM_WORLD.rank}, subproblem: {i}, group: {subproblem.group}, matrix rank: {np.linalg.matrix_rank(A)}/{A.shape[0]}, cond: {np.linalg.cond(A):.1e}")
 
 # Initial conditions
 b.fill_random('g', seed=42, distribution='normal', scale=1e-3) # Random noise
