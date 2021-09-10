@@ -42,7 +42,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 # TODO: print NCC bandwidths and optimize parameters
-# TODO: make parallel safe
 
 
 # Parameters
@@ -81,9 +80,9 @@ solver = problem.build_solver(ncc_cutoff=ncc_cutoff)
 pert_norm = np.inf
 while pert_norm > tolerance:
     solver.newton_iteration()
-    pert_norm = np.sum([np.sum(np.abs(pert['c'])) for pert in solver.perturbations])
+    pert_norm = sum(pert.allreduce_data_norm('c', 2) for pert in solver.perturbations)
     logger.info(f'Perturbation norm: {pert_norm:.3e}')
-    f0 = f(r=0).evaluate()['g'][0,0,0]
+    f0 = f(r=0).evaluate().allgather_data('g')[0,0,0]
     Ri = f0**((n-1)/2)
     logger.info(f'R iterate: {Ri}')
 

@@ -705,6 +705,30 @@ class Field(Current):
         self.dist.comm.Allreduce(send_buff, recv_buff, op=MPI.SUM)
         return recv_buff
 
+    def allreduce_data_norm(self, layout=None, order=2):
+        # Change layout
+        if layout is not None:
+            self.require_layout(layout)
+        # Compute local data
+        if self.data.size == 0:
+            norm = 0
+        elif order == np.inf:
+            norm = np.max(np.abs(self.data))
+        else:
+            norm = np.sum(np.abs(self.data)**order)
+        # Reduce
+        if order == np.inf:
+            if self.dist.comm.size > 1:
+                norm = self.dist.comm.allreduce(norm, op=MPI.MAX)
+        else:
+            if self.dist.comm.size > 1:
+                norm = self.dist.comm.allreduce(norm, op=MPI.SUM)
+            norm = norm ** (1 / order)
+        return norm
+
+    def allreduce_data_max(self, layout=None):
+        return self.allreduce_data_norm(layout=layout, order=np.inf)
+
     def broadcast_ghosts(self, output_nonconst_dims):
         """Copy data over constant distributed dimensions for arithmetic broadcasting."""
         # Determine deployment dimensions
