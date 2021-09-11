@@ -10,14 +10,14 @@ logger = logging.getLogger(__name__)
 dtype = np.complex128
 
 # Parameters
-nphi = 128
-ntheta = 64
+nphi = 64
+ntheta = 32
 
 V = 1
 N = 2
 
 Ampl = 1e-3
-l_ic = 3
+l_ic = 10
 m_ic = 3
 L_dealias = 1
 
@@ -41,6 +41,7 @@ skew = lambda A: S2Skew(A)
 dot = d3.DotProduct
 H = 0.1
 Omega = 1e-1
+Re = 100000
 
 # Problem
 def eq_eval(eq_str):
@@ -48,47 +49,31 @@ def eq_eval(eq_str):
 
 f['g'] = 2*Omega*np.cos(theta)
 problem = d3.IVP([u,p])
-problem.add_equation((ddt(u) + grad(p), -f*skew(u) - dot(u,grad(u))))
+problem.add_equation((ddt(u) + grad(p) - lap(u)/Re, -f*skew(u) - dot(u,grad(u))))
 problem.add_equation((div(u), 0),condition='ntheta != 0')
 problem.add_equation((p, 0),condition='ntheta == 0')
-print("Problem built")
+logger.info("Problem built")
 
 # Solver
-solver = problem.build_solver(timesteppers.RK222, matrix_coupling=[False,False])
+solver = problem.build_solver(timesteppers.RK443, matrix_coupling=[False,False])
 
 # initial conditions
-x = np.sin(theta)*np.cos(phi)
-y = np.sin(theta)*np.sin(phi)
-z = np.cos(theta)
-
-x0 = 0
-y0 = 0
-z0 = 1
-eps2 = 0.1
-ampl = 1
-
-r2 = (x - x0)**2 + (y - y0)**2 + (z - z0)**2
-#h['g'] = ampl * np.exp(-r2/eps2)
-l = 10
-m = 3
 psi = d3.Field(dist=d, bases=(b,), dtype=dtype)
-psi['g'] = sph_harm(m, l, phi, theta).real
-
+psi['g'] = 1e-3*sph_harm(m_ic, l_ic, phi, theta).real
 u['g'] = skew(grad(psi)).evaluate()['g']
 
-snapshots = solver.evaluator.add_file_handler('snapshots_barotropic', iter=1, max_writes=10, virtual_file=True)
+# outputs
+snapshots = solver.evaluator.add_file_handler('snapshots_barotropic', iter=10, max_writes=10, virtual_file=True)
 snapshots.add_task(div(skew(u)), name='vorticity')
 
 # Main loop
-
-freq = 2*m*Omega/(l*(l+1))
+freq = 2*m_ic*Omega/(l_ic*(l_ic+1))
 period = 2*np.pi/freq
 solver.stop_sim_time = 3*period
-#solver.stop_wall_time = 60
-solver.stop_iteration = 10
+solver.stop_iteration = np.inf
 dt = period/100
 start_time = time.time()
-while solver.ok:
+while solver.proceed:
     solver.step(dt)
 
     if solver.iteration % 10 == 0:
@@ -96,6 +81,6 @@ while solver.ok:
 
 
 end_time = time.time()
-print('Run time:', end_time-start_time)
+logger.info('Run time: {:3.2f}'.format(end_time-start_time))
 
-print("SUCCESS!")
+logger.info("SUCCESS!")

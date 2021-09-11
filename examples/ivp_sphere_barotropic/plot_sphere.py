@@ -47,7 +47,7 @@ def main(filename, start, count, output):
         x = np.sin(theta_vert) * np.cos(phi_vert)
         y = np.sin(theta_vert) * np.sin(phi_vert)
         z = np.cos(theta_vert)
-        clim = np.max(dset[:].real)
+        clim = 0.05
         norm = matplotlib.colors.Normalize(-clim, clim)
         
         for index in range(start, start+count):
