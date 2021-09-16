@@ -114,8 +114,8 @@ class GlobalFlowProperty:
         gdata = self.properties[name]['g']
         return self.reducer.global_mean(gdata)
 
-    def volume_average(self, name):
-        """Compute volume average of a property."""
+    def volume_integral(self, name):
+        """Compute volume integral of a property."""
         # Check for precomputed integral
         try:
             integral_name = '_{}_integral'.format(name)
@@ -127,9 +127,14 @@ class GlobalFlowProperty:
             integral_field = integral_op.evaluate()
         # Communicate integral value to all processes
         integral_value = self.reducer.global_max(integral_field['g'])
-        average_value = integral_value / self.solver.domain.hypervolume
-        return average_value
+        return integral_value
 
+    def volume_average(self, name):
+        """Compute volume average of a property."""
+        # TODO: missing hypervolume definition
+        raise NotImplementedError("missing definition of hypervolume")
+        average_value = self.volume_integral(name) / self.solver.domain.hypervolume
+        return average_value
 
 class CFL:
     """
@@ -227,4 +232,3 @@ class CFL:
             raise ValueError("Velocity must be a vector")
         cfl_operator = operators.AdvectiveCFL(velocity, coords[0])
         self.add_frequency(cfl_operator)
-
