@@ -1882,9 +1882,9 @@ class SphericalTransposeComponents(TransposeComponents):
             radial_basis.forward_regularity_recombination(operand.tensorsig, radius_axis, out.data, ell_maps=ell_maps)
 
 
-class SphericalComponent(LinearOperator):
+class Component(LinearOperator):
 
-    name = "SphericalComponent"
+    name = "Component"
 
     @classmethod
     def _preprocess_args(cls, operand, index=0, out=None):
@@ -1898,8 +1898,6 @@ class SphericalComponent(LinearOperator):
             raise ValueError("index greater than rank")
         self.index = index
         self.coordsys = operand.tensorsig[self.index]
-        if not isinstance(self.coordsys, coords.SphericalCoordinates):
-            raise ValueError("Can only take the SphericalComponent of a SphericalCoordinate vector")
         super().__init__(operand, out=out)
         # LinearOperator requirements
         self.operand = operand
@@ -1924,7 +1922,7 @@ class SphericalComponent(LinearOperator):
 
 
 @alias("radial")
-class RadialComponent(SphericalComponent, metaclass=MultiClass):
+class RadialComponent(Component, metaclass=MultiClass):
 
     name = "Radial"
 
@@ -1949,7 +1947,7 @@ class RadialComponent(SphericalComponent, metaclass=MultiClass):
 
 
 @alias("angular")
-class AngularComponent(SphericalComponent, metaclass=MultiClass):
+class AngularComponent(Component, metaclass=MultiClass):
 
     name = "Angular"
 
@@ -1966,6 +1964,8 @@ class AngularComponent(SphericalComponent, metaclass=MultiClass):
 
     def __init__(self, operand, index=0, out=None):
         super().__init__(operand, index=index, out=out)
+        if not isinstance(self.coordsys, coords.SphericalCoordinates):
+            raise ValueError("Can only take the AngularComponent of a SphericalCoordinate vector")
         tensorsig = operand.tensorsig
         S2coordsys = tensorsig[index].S2coordsys
         self.tensorsig = tuple( tensorsig[:index] + (S2coordsys,) + tensorsig[index+1:] )
@@ -1974,49 +1974,8 @@ class AngularComponent(SphericalComponent, metaclass=MultiClass):
         return AngularComponent(operand, self.index, **kw)
 
 
-class PolarComponent(LinearOperator):
-
-    name = "PolarComponent"
-
-    @classmethod
-    def _preprocess_args(cls, operand, index=0, out=None):
-        if isinstance(operand, Number):
-            raise SkipDispatchException(output=0)
-        return [operand], {'index': index, 'out': out}
-
-    def __init__(self, operand, index=0, out=None):
-        if index < 0: index += len(operand.tensorsig)
-        if index >= len(operand.tensorsig):
-            raise ValueError("index greater than rank")
-        self.index = index
-        self.coordsys = operand.tensorsig[self.index]
-        if not isinstance(self.coordsys, coords.PolarCoordinates):
-            raise ValueError("Can only take the PolarComponent of a PolarCoordinate vector")
-        super().__init__(operand, out=out)
-        # LinearOperator requirements
-        self.operand = operand
-        # FutureField requirements
-        self.domain = operand.domain
-        self.tensorsig = operand.tensorsig
-        self.dtype = operand.dtype
-
-    def check_conditions(self):
-        """Can always take components"""
-        return True
-
-    def enforce_conditions(self):
-        """Can always take components"""
-        pass
-
-    def matrix_dependence(self, *vars):
-        return self.operand.matrix_dependence(*vars)
-
-    def matrix_coupling(self, *vars):
-        return self.operand.matrix_coupling(*vars)
-
-
 @alias("azimuthal")
-class AzimuthalComponent(PolarComponent, metaclass=MultiClass):
+class AzimuthalComponent(Component, metaclass=MultiClass):
 
     name = "Azimuthal"
 
@@ -2033,6 +1992,8 @@ class AzimuthalComponent(PolarComponent, metaclass=MultiClass):
 
     def __init__(self, operand, index=0, out=None):
         super().__init__(operand, index=index, out=out)
+        if not isinstance(self.coordsys, coords.PolarCoordinates):
+            raise ValueError("Can only take the AzimuthalComponent of a PolarCoordinate vector")
         tensorsig = operand.tensorsig
         self.tensorsig = tuple( tensorsig[:index] + tensorsig[index+1:] )
 

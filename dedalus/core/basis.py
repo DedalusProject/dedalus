@@ -4305,7 +4305,7 @@ class PolarInterpolate(operators.Interpolate, operators.PolarMOperator):
         radial_basis = self.input_basis
         if self.tensorsig != ():
             U = radial_basis.spin_recombination_matrix(self.tensorsig)
-            matrix = U @ matrix
+            matrix = U.T.conj() @ matrix
         return matrix
 
     def operate(self, out):
@@ -5202,6 +5202,9 @@ class PolarAzimuthalComponent(operators.AzimuthalComponent):
         # I'm not sure how to generalize this to higher order tensors, since we do
         # not have spin_weights for the S1 basis.
         matrix = np.array([[1,0]])
+        if self.dtype == np.float64:
+            # Block-diag for sin/cos parts for real dtype
+            matrix = np.kron(matrix, np.eye(2))
 
 #        operand = self.args[0]
 #        basis = self.domain.get_basis(self.coordsys)
@@ -5218,9 +5221,6 @@ class PolarAzimuthalComponent(operators.AzimuthalComponent):
 #                    matrix_row.append( 0 )
 #            matrix.append(matrix_row)
 #        matrix = np.array(matrix)
-        if self.dtype == np.float64:
-            # Block-diag for sin/cos parts for real dtype
-            matrix = np.kron(matrix, np.eye(2))
         return matrix
 
     def operate(self, out):
@@ -5230,6 +5230,44 @@ class PolarAzimuthalComponent(operators.AzimuthalComponent):
         layout = operand.layout
         out.set_layout(layout)
         np.copyto(out.data, operand.data[axindex(self.index,0)])
+
+
+class PolarRadialComponent(operators.RadialComponent):
+
+    basis_type = IntervalBasis
+
+    def subproblem_matrix(self, subproblem):
+        # I'm not sure how to generalize this to higher order tensors, since we do
+        # not have spin_weights for the S1 basis.
+        matrix = np.array([[0,1]])
+        if self.dtype == np.float64:
+            # Block-diag for sin/cos parts for real dtype
+            matrix = np.kron(matrix, np.eye(2))
+
+#        operand = self.args[0]
+#        basis = self.domain.get_basis(self.coordsys)
+#        S_in = basis.spin_weights(operand.tensorsig)
+#        S_out = basis.spin_weights(self.tensorsig)
+#
+#        matrix = []
+#        for spinindex_out, spintotal_out in np.ndenumerate(S_out):
+#            matrix_row = []
+#            for spinindex_in, spintotal_in in np.ndenumerate(S_in):
+#                if tuple(spinindex_in[:self.index] + spinindex_in[self.index+1:]) == spinindex_out and spinindex_in[self.index] == 2:
+#                    matrix_row.append( 1 )
+#                else:
+#                    matrix_row.append( 0 )
+#            matrix.append(matrix_row)
+#        matrix = np.array(matrix)
+        return matrix
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        # Set output layout
+        layout = operand.layout
+        out.set_layout(layout)
+        np.copyto(out.data, operand.data[axindex(self.index,1)])
 
 
 class CartesianAdvectiveCFL(operators.AdvectiveCFL):

@@ -185,7 +185,7 @@ def test_implicit_trace_tensor(Nphi, Nr, k, dealias, basis, dtype):
     g = field.Field(dist=d, bases=(b,), dtype=dtype)
     g.set_scales(g.domain.dealias)
     g['g'] = 3*x**2 + 2*y
-    I = field.Field(dist=d, bases=(b.clone_with(shape=(1,Nr)),), tensorsig=(c,c), dtype=dtype)
+    I = field.Field(dist=d, bases=(b.clone_with(shape=(1,Nr), k=0),), tensorsig=(c,c), dtype=dtype)
     I['g'][0,0] = I['g'][1,1] = 1
     trace = lambda A: operators.Trace(A)
     problem = problems.LBVP([f])
@@ -409,100 +409,90 @@ def test_interpolate_radius_tensor(Nphi, Nr, k, dealias, basis, dtype, r_interp)
     assert np.allclose(v['g'], vg)
 
 
-# @pytest.mark.parametrize('Nphi', [16])
-# @pytest.mark.parametrize('Ntheta', [8])
-# @pytest.mark.parametrize('Nr', Nr_range)
-# @pytest.mark.parametrize('k', k_range)
-# @pytest.mark.parametrize('dealias', dealias_range)
-# @pytest.mark.parametrize('basis', [build_ball, build_shell])
-# @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-# @pytest.mark.parametrize('radius', [0.5, 1.0, 1.5])
-# def test_radial_component_vector(Nphi, Ntheta, Nr, k, dealias, dtype, basis, radius):
-#     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
-#     ct, st, cp, sp = np.cos(theta), np.sin(theta), np.cos(phi), np.sin(phi)
-#     u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
-#     u.set_scales(b.domain.dealias)
-#     u['g'][2] = r**2*st*(2*ct**2*cp-r*ct**3*sp+r**3*cp**3*st**5*sp**3+r*ct*st**2*(cp**3+sp**3))
-#     u['g'][1] = r**2*(2*ct**3*cp-r*cp**3*st**4+r**3*ct*cp**3*st**5*sp**3-1/16*r*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
-#     u['g'][0] = r**2*sp*(-2*ct**2+r*ct*cp*st**2*sp-r**3*cp**2*st**5*sp**3)
-#     v = operators.RadialComponent(operators.interpolate(u, r=radius)).evaluate()
-#     vg = radius**2*st*(2*ct**2*cp-radius*ct**3*sp+radius**3*cp**3*st**5*sp**3+radius*ct*st**2*(cp**3+sp**3))
-#     assert np.allclose(v['g'], vg)
+@pytest.mark.parametrize('Nphi', [16])
+@pytest.mark.parametrize('Nr', [8])
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('radius', [0.5, 1.0, 1.5])
+def test_radial_component_vector(Nphi, Nr, k, dealias, dtype, basis, radius):
+    c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
+    cp, sp = np.cos(phi), np.sin(phi)
+    u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
+    u.set_scales(b.domain.dealias)
+    ex = np.array([-np.sin(phi), np.cos(phi)])
+    ey = np.array([np.cos(phi), np.sin(phi)])
+    u['g'] = (x**2*y - 2*x*y**5)*ex + (x**2*y + 7*x**3*y**2)*ey
+    v = operators.RadialComponent(operators.interpolate(u, r=radius)).evaluate()
+    vg = (radius**3*cp**2*sp - 2*radius**6*cp*sp**5)*cp + (radius**3*cp**2*sp + 7*radius**5*cp**3*sp**2)*sp
+    assert np.allclose(v['g'], vg)
 
 
-# @pytest.mark.parametrize('Nphi', [16])
-# @pytest.mark.parametrize('Ntheta', [8])
-# @pytest.mark.parametrize('Nr', Nr_range)
-# @pytest.mark.parametrize('k', k_range)
-# @pytest.mark.parametrize('dealias', dealias_range)
-# @pytest.mark.parametrize('basis', [build_ball, build_shell])
-# @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-# @pytest.mark.parametrize('radius', [0.5, 1.0, 1.5])
-# def test_radial_component_tensor(Nphi, Ntheta, Nr, k, dealias, dtype, basis, radius):
-#     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
-#     T = field.Field(dist=d, bases=(b,), tensorsig=(c,c), dtype=dtype)
-#     T.set_scales(b.domain.dealias)
-#     T['g'][2,2] = (6*x**2+4*y*z)/r**2
-#     T['g'][2,1] = T['g'][1,2] = -2*(y**3+x**2*(y-3*z)-y*z**2)/(r**3*np.sin(theta))
-#     T['g'][2,0] = T['g'][0,2] = 2*x*(z-3*y)/(r**2*np.sin(theta))
-#     T['g'][1,1] = 6*x**2/(r**2*np.sin(theta)**2) - (6*x**2+4*y*z)/r**2
-#     T['g'][1,0] = T['g'][0,1] = -2*x*(x**2+y**2+3*y*z)/(r**3*np.sin(theta)**2)
-#     T['g'][0,0] = 6*y**2/(x**2+y**2)
-#     A = operators.RadialComponent(operators.interpolate(T, r=radius)).evaluate()
-#     Ag = 0 * A['g']
-#     Ag[2] = 2*np.sin(theta)*(3*np.cos(phi)**2*np.sin(theta)+2*np.cos(theta)*np.sin(phi))
-#     Ag[1] = 6*np.cos(theta)*np.cos(phi)**2*np.sin(theta) + 2*np.cos(2*theta)*np.sin(phi)
-#     Ag[0] = 2*np.cos(phi)*(np.cos(theta) - 3*np.sin(theta)*np.sin(phi))
-#     assert np.allclose(A['g'], Ag)
+@pytest.mark.parametrize('Nphi', [16])
+@pytest.mark.parametrize('Nr', [8])
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('radius', [0.5, 1.0, 1.5])
+def test_radial_component_tensor(Nphi, Nr, k, dealias, dtype, basis, radius):
+    c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
+    cp, sp = np.cos(phi), np.sin(phi)
+    T = field.Field(dist=d, bases=(b,), tensorsig=(c,c), dtype=dtype)
+    T.set_scales(b.domain.dealias)
+    ex = np.array([-np.sin(phi), np.cos(phi)])
+    ey = np.array([np.cos(phi), np.sin(phi)])
+    exex = ex[:,None, ...] * ex[None,...]
+    exey = ex[:,None, ...] * ey[None,...]
+    eyex = ey[:,None, ...] * ex[None,...]
+    eyey = ey[:,None, ...] * ey[None,...]
+    T['g'] = (3*x**2+y)*exex + y**3*exey + x**2*y**2*eyex + (y**5-2*x*y)*eyey
+    A = operators.RadialComponent(operators.interpolate(T, r=radius)).evaluate()
+    Ag = (3*radius**2*cp**2 + radius*sp)*cp*ex + radius**3*sp**3*cp*ey + radius**4*cp**2*sp**2*sp*ex + (radius**5*sp**5-2*radius**2*cp*sp)*sp*ey
+    assert np.allclose(A['g'], Ag)
 
 
-# @pytest.mark.parametrize('Nphi', [16])
-# @pytest.mark.parametrize('Ntheta', [8])
-# @pytest.mark.parametrize('Nr', Nr_range)
-# @pytest.mark.parametrize('k', k_range)
-# @pytest.mark.parametrize('dealias', dealias_range)
-# @pytest.mark.parametrize('basis', [build_ball, build_shell])
-# @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-# @pytest.mark.parametrize('radius', [0.5, 1.0, 1.5])
-# def test_angular_component_vector(Nphi, Ntheta, Nr, k, dealias, dtype, basis, radius):
-#     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
-#     ct, st, cp, sp = np.cos(theta), np.sin(theta), np.cos(phi), np.sin(phi)
-#     u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
-#     u.set_scales(b.domain.dealias)
-#     u['g'][2] = r**2*st*(2*ct**2*cp-r*ct**3*sp+r**3*cp**3*st**5*sp**3+r*ct*st**2*(cp**3+sp**3))
-#     u['g'][1] = r**2*(2*ct**3*cp-r*cp**3*st**4+r**3*ct*cp**3*st**5*sp**3-1/16*r*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
-#     u['g'][0] = r**2*sp*(-2*ct**2+r*ct*cp*st**2*sp-r**3*cp**2*st**5*sp**3)
-#     v = operators.AngularComponent(operators.interpolate(u, r=radius)).evaluate()
-#     vg = 0 * v['g']
-#     vg[0] = radius**2*sp*(-2*ct**2+radius*ct*cp*st**2*sp-radius**3*cp**2*st**5*sp**3)
-#     vg[1] = radius**2*(2*ct**3*cp-radius*cp**3*st**4+radius**3*ct*cp**3*st**5*sp**3-1/16*radius*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
-#     assert np.allclose(v['g'], vg)
+@pytest.mark.parametrize('Nphi', [16])
+@pytest.mark.parametrize('Nr', [8])
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('radius', [0.5, 1.0, 1.5])
+def test_azimuthal_component_vector(Nphi, Nr, k, dealias, dtype, basis, radius):
+    c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
+    cp, sp = np.cos(phi), np.sin(phi)
+    u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
+    u.set_scales(b.domain.dealias)
+    ex = np.array([-np.sin(phi), np.cos(phi)])
+    ey = np.array([np.cos(phi), np.sin(phi)])
+    u['g'] = (x**2*y - 2*x*y**5)*ex + (x**2*y + 7*x**3*y**2)*ey
+    v = operators.AzimuthalComponent(operators.interpolate(u, r=radius)).evaluate()
+    vg = (radius**3*cp**2*sp - 2*radius**6*cp*sp**5)*(-sp) + (radius**3*cp**2*sp + 7*radius**5*cp**3*sp**2)*cp
+    assert np.allclose(v['g'], vg)
 
 
-# @pytest.mark.parametrize('Nphi', [16])
-# @pytest.mark.parametrize('Ntheta', [8])
-# @pytest.mark.parametrize('Nr', Nr_range)
-# @pytest.mark.parametrize('k', k_range)
-# @pytest.mark.parametrize('dealias', dealias_range)
-# @pytest.mark.parametrize('basis', [build_ball, build_shell])
-# @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-# @pytest.mark.parametrize('radius', [0.5, 1.0, 1.5])
-# def test_angular_component_tensor(Nphi, Ntheta, Nr, k, dealias, dtype, basis, radius):
-#     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
-#     T = field.Field(dist=d, bases=(b,), tensorsig=(c,c), dtype=dtype)
-#     T.set_scales(b.domain.dealias)
-#     T['g'][2,2] = (6*x**2+4*y*z)/r**2
-#     T['g'][2,1] = T['g'][1,2] = -2*(y**3+x**2*(y-3*z)-y*z**2)/(r**3*np.sin(theta))
-#     T['g'][2,0] = T['g'][0,2] = 2*x*(z-3*y)/(r**2*np.sin(theta))
-#     T['g'][1,1] = 6*x**2/(r**2*np.sin(theta)**2) - (6*x**2+4*y*z)/r**2
-#     T['g'][1,0] = T['g'][0,1] = -2*x*(x**2+y**2+3*y*z)/(r**3*np.sin(theta)**2)
-#     T['g'][0,0] = 6*y**2/(x**2+y**2)
-#     A = operators.AngularComponent(operators.interpolate(T, r=radius), index=1).evaluate()
-#     Ag = 0 * A['g']
-#     Ag[2,1] = 6*np.cos(theta)*np.cos(phi)**2*np.sin(theta) + 2*np.cos(2*theta)*np.sin(phi)
-#     Ag[2,0] = 2*np.cos(phi)*(np.cos(theta) - 3*np.sin(theta)*np.sin(phi))
-#     Ag[1,1] = 2*np.cos(theta)*(3*np.cos(theta)*np.cos(phi)**2 - 2*np.sin(theta)*np.sin(phi))
-#     Ag[1,0] = Ag[0,1] = -2*np.cos(phi)*(np.sin(theta) + 3*np.cos(theta)*np.sin(phi))
-#     Ag[0,0] = 6*np.sin(phi)**2
-#     assert np.allclose(A['g'], Ag)
+@pytest.mark.parametrize('Nphi', [16])
+@pytest.mark.parametrize('Nr', [8])
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('radius', [0.5, 1.0, 1.5])
+def test_azimuthal_component_tensor(Nphi, Nr, k, dealias, dtype, basis, radius):
+    c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
+    cp, sp = np.cos(phi), np.sin(phi)
+    T = field.Field(dist=d, bases=(b,), tensorsig=(c,c), dtype=dtype)
+    T.set_scales(b.domain.dealias)
+    ex = np.array([-np.sin(phi), np.cos(phi)])
+    ey = np.array([np.cos(phi), np.sin(phi)])
+    exex = ex[:,None, ...] * ex[None,...]
+    exey = ex[:,None, ...] * ey[None,...]
+    eyex = ey[:,None, ...] * ex[None,...]
+    eyey = ey[:,None, ...] * ey[None,...]
+    T['g'] = (3*x**2+y)*exex + y**3*exey + x**2*y**2*eyex + (y**5-2*x*y)*eyey
+    A = operators.AzimuthalComponent(operators.interpolate(T, r=radius)).evaluate()
+    Ag = (3*radius**2*cp**2 + radius*sp)*(-sp)*ex + radius**3*sp**3*(-sp)*ey + radius**4*cp**2*sp**2*cp*ex + (radius**5*sp**5-2*radius**2*cp*sp)*cp*ey
+    assert np.allclose(A['g'], Ag)
 
