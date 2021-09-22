@@ -1775,22 +1775,6 @@ class PolarBasis(SpinBasis):
     def __hash__(self):
         return id(self)
 
-    def __matmul__(self, other):
-        """NCC is self.
-
-        NB: This does not support NCCs with different number of modes than the fields.
-        """
-        if other is None:
-            return self
-        if isinstance(other, type(self)):
-            return other
-        return NotImplemented
-
-    def __rmatmul__(self, other):
-        if other is None:
-            return self
-        return NotImplemented
-
     @CachedAttribute
     def local_m(self):
         if self.shape[0] == 1:
@@ -1948,6 +1932,16 @@ class AnnulusBasis(PolarBasis):
         return NotImplemented
 
     def __mul__(self, other):
+        if other is None:
+            return self
+        if isinstance(other, AnnulusBasis):
+            if self.grid_params == other.grid_params:
+                shape = tuple(np.maximum(self.shape, other.shape))
+                k = self.k + other.k
+                return self.clone_with(shape=shape, k=k)
+        return NotImplemented
+
+    def __matmul__(self, other):
         if other is None:
             return self
         if isinstance(other, AnnulusBasis):
@@ -2137,11 +2131,11 @@ class AnnulusBasis(PolarBasis):
         N0 = self.n_size(0)
         # Pad for dealiasing with conversion
         Nmat = 3*((N0+1)//2) + self.k
-        J = self.operator_matrix('Z', m, spintotal_arg, size=Nmat)
+        J = arg_basis.operator_matrix('Z', m, spintotal_arg, size=Nmat)
         A, B = clenshaw.jacobi_recursion(Nmat, a_ncc, b_ncc, J)
         f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0] * sparse.identity(Nmat)
         # Conversions to account for radial prefactors
-        prefactor = self.jacobi_conversion(m, dk=self.k, size=Nmat)
+        prefactor = arg_basis.jacobi_conversion(m, dk=self.k, size=Nmat)
         if self.dtype == np.float64:
             coeffs_cos_filter = coeffs[0].ravel()[:N0]
             coeffs_msin_filter = coeffs[1].ravel()[:N0]
@@ -2152,6 +2146,8 @@ class AnnulusBasis(PolarBasis):
             coeffs_filter = coeffs.ravel()[:N0]
             matrix = (prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff))[:N,:N]
         return matrix
+
+
 
 
 class DiskBasis(PolarBasis):
@@ -2205,6 +2201,17 @@ class DiskBasis(PolarBasis):
             if self.grid_params == other.grid_params:
                 shape = tuple(np.maximum(self.shape, other.shape))
                 return DiskBasis(self.coordsystem, shape, radius=self.radius, k=0, alpha=self.alpha, dealias=self.dealias, dtype=self.dtype, azimuth_library=self.azimuth_library, radius_library=self.radius_library)
+        return NotImplemented
+
+    def __matmul__(self, other):
+        """NCC is self.
+
+        NB: This does not support NCCs with different number of modes than the fields.
+        """
+        if other is None:
+            return self
+        if isinstance(other, type(self)):
+            return other
         return NotImplemented
 
     def global_grid_radius(self, scale):

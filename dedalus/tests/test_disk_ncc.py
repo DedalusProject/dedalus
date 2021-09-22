@@ -13,6 +13,7 @@ Nphi_range = [16]
 Nr_range = [8]
 dealias = [1, 3/2]
 radius_disk = [1.5,]
+radii_annulus = [(0.5, 3),]
 
 @CachedFunction
 def build_disk(Nphi, Nr, dealias, dtype=np.float64):
@@ -25,10 +26,9 @@ def build_disk(Nphi, Nr, dealias, dtype=np.float64):
 
 @CachedFunction
 def build_annulus(Nphi, Nr, dealias, dtype):
-    # ANNULUS IS NOT IMPLEMENTED YET
     c = coords.PolarCoordinates('phi', 'r')
     d = distributor.Distributor((c,))
-    b = basis.AnnulusBasis(c, (Nphi, Nr), radii=radii_annulus, dealias=(dealias, dealias), dtype=dtype)
+    b = basis.AnnulusBasis(c, (Nphi, Nr), radii=radii_annulus[0], dealias=(dealias, dealias), dtype=dtype)
     phi, r = b.local_grids()
     x, y = c.cartesian(phi, r)
     return c, d, b, phi, r, x, y
@@ -36,7 +36,7 @@ def build_annulus(Nphi, Nr, dealias, dtype):
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('basis', [build_disk])
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
 @pytest.mark.parametrize('ncc_first', [True,False])
 @pytest.mark.parametrize('dealias', dealias)
 @pytest.mark.parametrize('dtype', dtypes)
@@ -61,9 +61,10 @@ def test_scalar_prod_scalar(Nphi, Nr, basis, ncc_first, dealias, dtype):
     w1 = w1.evaluate_as_ncc()
     assert np.allclose(w0['g'], w1['g'])
 
+
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('basis', [build_disk])
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
 @pytest.mark.parametrize('ncc_first', [True,False])
 @pytest.mark.parametrize('dealias', dealias)
 @pytest.mark.parametrize('dtype', dtypes)
@@ -72,7 +73,7 @@ def test_scalar_prod_vector(Nphi, Nr, basis, ncc_first, dealias, dtype):
     f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
     g = field.Field(dist=d, bases=(b,), dtype=dtype)
 
-    f['g'] = r**6
+    f['g'] = r**2
     g['g'] = 3*x**2 + 2*y
     u = operators.Gradient(g, c).evaluate()
 
@@ -96,7 +97,7 @@ def test_scalar_prod_vector(Nphi, Nr, basis, ncc_first, dealias, dtype):
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('basis', [build_disk])
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
 @pytest.mark.parametrize('ncc_first', [True,False])
 @pytest.mark.parametrize('dealias', dealias)
 @pytest.mark.parametrize('dtype', dtypes)
@@ -105,7 +106,7 @@ def test_scalar_prod_tensor(Nphi, Nr, basis, ncc_first, dealias, dtype):
     f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
     g = field.Field(dist=d, bases=(b,), dtype=dtype)
 
-    f['g'] = r**6
+    f['g'] = r**4
     g['g'] = 3*x**2 + 2*y
     T = operators.Gradient(operators.Gradient(g, c), c).evaluate()
 
@@ -126,9 +127,10 @@ def test_scalar_prod_tensor(Nphi, Nr, basis, ncc_first, dealias, dtype):
     w1 = w1.evaluate_as_ncc()
     assert np.allclose(w0['g'], w1['g'])
 
+
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('basis', [build_disk])
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
 @pytest.mark.parametrize('ncc_first', [True,False])
 @pytest.mark.parametrize('dealias', dealias)
 @pytest.mark.parametrize('dtype', dtypes)
@@ -137,7 +139,7 @@ def test_vector_prod_scalar(Nphi, Nr, basis, ncc_first, dealias, dtype):
     f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
     g = field.Field(dist=d, bases=(b,), dtype=dtype)
 
-    f['g'] = r**6
+    f['g'] = r**4
     g['g'] = 3*x**2 + 2*y
     u = operators.Gradient(f, c).evaluate()
     vars = [g]
@@ -159,7 +161,7 @@ def test_vector_prod_scalar(Nphi, Nr, basis, ncc_first, dealias, dtype):
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('basis', [build_disk])
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
 @pytest.mark.parametrize('ncc_first', [True,False])
 @pytest.mark.parametrize('dealias', dealias)
 @pytest.mark.parametrize('dtype', dtypes)
@@ -168,7 +170,7 @@ def test_vector_prod_vector(Nphi, Nr, basis, ncc_first, dealias, dtype):
     f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
     g = field.Field(dist=d, bases=(b,), dtype=dtype)
 
-    f['g'] = r**6
+    f['g'] = r**4
     g['g'] = 3*x**2 + 2*y
     u = operators.Gradient(f, c).evaluate()
     v = operators.Gradient(g, c).evaluate()
@@ -193,7 +195,7 @@ def test_vector_prod_vector(Nphi, Nr, basis, ncc_first, dealias, dtype):
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('basis', [build_disk])
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
 @pytest.mark.parametrize('ncc_first', [True,False])
 @pytest.mark.parametrize('dealias', dealias)
 @pytest.mark.parametrize('dtype', dtypes)
@@ -203,7 +205,7 @@ def test_vector_dot_vector(Nphi, Nr, basis, ncc_first, dealias, dtype):
     f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
     g = field.Field(dist=d, bases=(b,), dtype=dtype)
 
-    f['g'] = r**6
+    f['g'] = r**4
     g['g'] = 3*x**2 + 2*y
     u = operators.Gradient(f, c).evaluate()
     v = operators.Gradient(g, c).evaluate()
@@ -228,7 +230,7 @@ def test_vector_dot_vector(Nphi, Nr, basis, ncc_first, dealias, dtype):
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('basis', [build_disk])
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
 @pytest.mark.parametrize('ncc_first', [True,False])
 @pytest.mark.parametrize('dealias', dealias)
 @pytest.mark.parametrize('dtype', dtypes)
@@ -266,7 +268,7 @@ def test_vector_dot_tensor(Nphi, Nr, basis, ncc_first, dealias, dtype):
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('basis', [build_disk])
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
 @pytest.mark.parametrize('ncc_first', [True,False])
 @pytest.mark.parametrize('dealias', dealias)
 @pytest.mark.parametrize('dtype', dtypes)
@@ -276,7 +278,7 @@ def test_tensor_prod_scalar(Nphi, Nr, basis, ncc_first, dealias, dtype):
     f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
     g = field.Field(dist=d, bases=(b,), dtype=dtype)
 
-    f['g'] = r**6
+    f['g'] = r**4
     g['g'] = 3*x**2 + 2*y
     T = operators.Gradient(operators.Gradient(f, c), c).evaluate()
 
@@ -300,7 +302,7 @@ def test_tensor_prod_scalar(Nphi, Nr, basis, ncc_first, dealias, dtype):
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('basis', [build_disk])
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
 @pytest.mark.parametrize('ncc_first', [True,False])
 @pytest.mark.parametrize('dealias', dealias)
 @pytest.mark.parametrize('dtype', dtypes)
@@ -310,7 +312,7 @@ def test_tensor_dot_vector(Nphi, Nr, basis, ncc_first, dealias, dtype):
     f = field.Field(dist=d, bases=(b.radial_basis,), dtype=dtype)
     g = field.Field(dist=d, bases=(b,), dtype=dtype)
 
-    f['g'] = r**6
+    f['g'] = r**4
     g['g'] = 3*x**2 + 2*y
     T = operators.Gradient(operators.Gradient(f, c), c).evaluate()
     u = operators.Gradient(g, c).evaluate()
@@ -335,7 +337,7 @@ def test_tensor_dot_vector(Nphi, Nr, basis, ncc_first, dealias, dtype):
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Nr', Nr_range)
-@pytest.mark.parametrize('basis', [build_disk])
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
 @pytest.mark.parametrize('ncc_first', [True,False])
 @pytest.mark.parametrize('dealias', dealias)
 @pytest.mark.parametrize('dtype', dtypes)
