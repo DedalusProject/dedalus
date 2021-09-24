@@ -1053,12 +1053,14 @@ class Interpolate(SpectralOperator, metaclass=MultiClass):
 
 
 @parseable('integrate', 'integ')
-def integrate(arg, *spaces):
+def integrate(arg, spaces=None):
+    if spaces is None:
+        spaces = tuple(b.coords for b in arg.domain.bases)
     # Identify domain
-    domain = unify_attributes((arg,)+spaces, 'domain', require=False)
+    #domain = unify_attributes((arg,)+spaces, 'domain', require=False)
     # Apply iteratively
     for space in spaces:
-        space = domain.get_space_object(space)
+        #space = domain.get_space_object(space)
         arg = Integrate(arg, space)
     return arg
 
@@ -1073,6 +1075,8 @@ class Integrate(LinearOperator, metaclass=MultiClass):
     space : Space object
 
     """
+
+    name = 'Integrate'
 
     @classmethod
     def _check_args(cls, operand, coords):
@@ -3381,4 +3385,3 @@ for key, value in aliases.items():
 
 # Export aliases
 __all__.extend(aliases.keys())
-
