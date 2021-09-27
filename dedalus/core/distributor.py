@@ -258,6 +258,10 @@ class Layout:
         chunk_shape = domain.chunk_shape(self)
         return tuple(chunk_shape)
 
+    def group_shape(self, domain):
+        """Chunk shape."""
+        return tuple(domain.group_shape(self))
+
     def local_chunks(self, domain, scales, rank=None):
         """Local chunk indices by axis."""
         global_shape = self.global_shape(domain, scales)

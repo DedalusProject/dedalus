@@ -170,12 +170,21 @@ class Domain(metaclass=CachedClass):
 
     @CachedMethod
     def chunk_shape(self, layout):
-        """Compute group shape."""
+        """Compute chunk shape."""
         shape = np.ones(self.dist.dim, dtype=int)
         for basis in self.bases:
             basis_axes = slice(basis.first_axis, basis.last_axis+1)
             shape[basis_axes] = basis.chunk_shape(layout.grid_space[basis_axes])
         return shape
+
+    def group_shape(self, layout):
+        """Compute group shape."""
+        group_shape = np.ones(self.dist.dim, dtype=int)
+        for basis in self.bases:
+            basis_axes = slice(basis.first_axis, basis.last_axis+1)
+            group_shape[basis_axes] = basis.group_shape
+        group_shape[layout.grid_space] = 1
+        return group_shape
 
     @CachedMethod
     def _grid_shape(self, scales):
