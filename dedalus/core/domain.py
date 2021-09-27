@@ -164,8 +164,8 @@ class Domain(metaclass=CachedClass):
     def global_shape(self, layout, scales):
         shape = np.ones(self.dist.dim, dtype=int)
         for basis in self.bases:
-            basis_scales = scales[basis.first_axis:basis.last_axis+1]
-            shape[basis.first_axis:basis.last_axis+1] = basis.global_shape(layout, basis_scales)
+            basis_axes = slice(basis.first_axis, basis.last_axis+1)
+            shape[basis_axes] = basis.global_shape(layout.grid_space[basis_axes], scales[basis_axes])
         return shape
 
     @CachedMethod
@@ -173,8 +173,9 @@ class Domain(metaclass=CachedClass):
         """Compute group shape."""
         shape = np.ones(self.dist.dim, dtype=int)
         for basis in self.bases:
-            shape[basis.first_axis:basis.last_axis+1] = basis.chunk_shape(layout)
-        return tuple(shape)
+            basis_axes = slice(basis.first_axis, basis.last_axis+1)
+            shape[basis_axes] = basis.chunk_shape(layout.grid_space[basis_axes])
+        return shape
 
     @CachedMethod
     def _grid_shape(self, scales):

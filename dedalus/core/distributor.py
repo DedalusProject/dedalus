@@ -286,7 +286,20 @@ class Layout:
                 local_chunks.append(np.arange(start, end))
         return tuple(local_chunks)
 
-    def local_elements(self, domain, scales, rank = None):
+    def local_groups(self, domain, scales, rank=None):
+        """Dense array of local groups (first axis)."""
+        # Make dense array of local chunk indices
+        chunks = self.local_chunks(domain, scales, rank=rank)
+        chunks = np.array(np.meshgrid(*chunks, indexing='ij'))
+        # Convert to groups basis-by-basis
+        grid_space = self.grid_space
+        groups = np.zeros_like(chunks)
+        for basis in domain.bases:
+            basis_axes = slice(basis.first_axis, basis.last_axis+1)
+            groups[basis_axes] = basis.chunks_to_groups(grid_space[basis_axes], chunks[basis_axes])
+        return groups
+
+    def local_elements(self, domain, scales, rank=None):
         """Local element indices by axis."""
         chunk_shape = self.chunk_shape(domain)
         local_chunks = self.local_chunks(domain, scales, rank = rank)
