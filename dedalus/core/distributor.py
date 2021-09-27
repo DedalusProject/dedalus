@@ -5,6 +5,7 @@ Distributor, Layout, Transform, and Transpose class definitions.
 import logging
 from mpi4py import MPI
 import numpy as np
+import itertools
 from collections import OrderedDict
 
 from ..tools.cache import CachedMethod, CachedAttribute
@@ -312,6 +313,41 @@ class Layout:
             basis_axes = slice(basis.first_axis, basis.last_axis+1)
             groups[basis_axes] = basis.elements_to_groups(grid_space[basis_axes], elements[basis_axes])
         return groups
+
+    def local_group_slices(self, group, domain, scales, rank=None):
+        groups = self.local_groups(domain, scales, rank=rank)
+        dim = groups.shape[0]
+        group_shape = self.group_shape(domain)
+        # find all elements which match group
+        selections = np.ones(groups[0].shape)
+        for i, subgroup in enumerate(group):
+            if subgroup is not None:
+                selections *= subgroup == groups[i]
+        # determine which axes to loop over, which to find bounds for
+        slices = []
+        for i, subgroup in enumerate(group):
+            if subgroup is None:
+                subslices = [slice(None)]
+            else:
+                # loop over axis i but taking into account group_shape
+                subslices = [slice(j, j+group_shape[i]) for j in range(0, groups.shape[i+1], group_shape[i])]
+            slices.append(subslices)
+        group_slices = []
+        for s in itertools.product(*slices):
+            sliced_selections = selections[tuple(s)]
+            if np.any(sliced_selections): # some elements match group
+                # assume selected groups are cartesian product, find left and right bounds
+                lefts = list(map(np.min, np.where(sliced_selections)))
+                rights = list(map(np.max, np.where(sliced_selections)))
+                # build multidimensional group slice
+                group_slice = []
+                for i in range(dim):
+                    if s[i] != slice(None):
+                        group_slice.append(s[i])
+                    else:
+                        group_slice.append(slice(lefts[i], rights[i]+1))
+                group_slices.append(tuple(group_slice))
+        return group_slices
 
     def slices(self, domain, scales):
         """Local element slices by axis."""
