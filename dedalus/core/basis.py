@@ -156,6 +156,18 @@ class Basis:
         shape[np.array(self.shape) == 1] = 1
         return tuple(shape)
 
+    def global_shape(self, grid_space, scales):
+        # Subclasses must implement
+        raise NotImplementedError
+
+    def chunk_shape(self, grid_space):
+        # Subclasses must implement
+        raise NotImplementedError
+
+    def elements_to_groups(self, grid_space, elements):
+        # Subclasses must implement
+        raise NotImplementedError
+
     def global_grid_spacing(self, *args, **kwargs):
         """Global grids spacings."""
         raise NotImplementedError
@@ -356,13 +368,6 @@ class IntervalBasis(Basis):
         # Subclasses must implement
         raise NotImplementedError
 
-    # def global_shape(self, layout, scales):
-    #     grid_space = layout.grid_space[self.axis]
-    #     if grid_space:
-    #         return self.grid_shape(scales)
-    #     else:
-    #         return self.shape
-
     def global_shape(self, grid_space, scales):
         if grid_space[0]:
             return self.grid_shape(scales)
@@ -392,28 +397,6 @@ class IntervalBasis(Basis):
     def transform_plan(self, grid_size):
         # Subclasses must implement
         raise NotImplementedError
-
-    # def local_groups(self, basis_coupling):
-    #     coupling, = basis_coupling
-    #     if coupling:
-    #         return [[None]]
-    #     else:
-    #         local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)[self.axis]
-    #         return [[group] for group in local_chunks]
-
-    # def local_group_slices(self, basis_group):
-    #     group, = basis_group
-    #     # Return slices
-    #     if group is None:
-    #         # Return all coefficients
-    #         return [slice(None)]
-    #     else:
-    #         # Get local groups
-    #         local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)[self.axis]
-    #         # Groups are stored sequentially
-    #         local_index = list(local_chunks).index(group)
-    #         group_size = self.group_shape[0]
-    #         return [slice(local_index*group_size, (local_index+1)*group_size)]
 
 
 class Jacobi(IntervalBasis, metaclass=CachedClass):
@@ -505,9 +488,9 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
     # def include_mode(self, mode):
     #     return (0 <= mode < self.space.coeff_size)
 
-    def chunks_to_groups(self, grid_space, chunks):
+    def elements_to_groups(self, grid_space, elements):
         # No permutations
-        return chunks
+        return elements
 
     def Jacobi_matrix(self, size):
         if size is None:
@@ -761,11 +744,11 @@ class LiftJacobi(operators.LiftTau, operators.Copy):
 
 class FourierBase(IntervalBasis):
 
-    def chunks_to_groups(self, grid_space, chunks):
+    def elements_to_groups(self, grid_space, elements):
         if grid_space[0]:
-            groups = chunks
+            groups = elements
         else:
-            groups = (self.native_wavenumbers[::self.group_shape[0]][chunks[0]],)
+            groups = self.native_wavenumbers[elements]
         return groups
 
 
@@ -858,30 +841,6 @@ class ComplexFourier(FourierBase):
         if self.backward_coeff_permutation is not None:
             permute_axis(cdata, axis+len(field.tensorsig), self.backward_coeff_permutation, out=cdata)
         super().backward_transform(field, axis, cdata, gdata)
-
-    # def local_groups(self, basis_coupling):
-    #     coupling, = basis_coupling
-    #     if coupling:
-    #         return [[None]]
-    #     else:
-    #         local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)[self.axis]
-    #         return [[self.native_wavenumbers[chunk]] for chunk in local_chunks]
-
-    # def local_group_slices(self, basis_group):
-    #     group, = basis_group
-    #     # Return slices
-    #     if group is None:
-    #         # Return all coefficients
-    #         return [slice(None)]
-    #     else:
-    #         # Get local groups
-    #         local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)[self.axis]
-    #         # Groups are stored sequentially
-    #         global_groups = self.native_wavenumbers
-    #         local_groups = global_groups[local_chunks]
-    #         local_index = list(local_groups).index(group)
-    #         group_size = self.group_shape[0]
-    #         return [slice(local_index*group_size, (local_index+1)*group_size)]
 
     # def include_mode(self, mode):
     #     k = mode // 2
@@ -1075,22 +1034,6 @@ class RealFourier(FourierBase):
         if self.backward_coeff_permutation is not None:
             permute_axis(cdata, axis+len(field.tensorsig), self.backward_coeff_permutation, out=cdata)
         super().backward_transform(field, axis, cdata, gdata)
-
-    # def local_group_slices(self, basis_group):
-    #     group, = basis_group
-    #     # Return slices
-    #     if group is None:
-    #         # Return all coefficients
-    #         return [slice(None)]
-    #     else:
-    #         # Get local groups
-    #         local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)[self.axis]
-    #         # Groups are stored sequentially
-    #         global_groups = self.native_wavenumbers[::2]
-    #         local_groups = global_groups[local_chunks]
-    #         local_index = list(local_groups).index(group)
-    #         group_size = self.group_shape[0]
-    #         return [slice(local_index*group_size, (local_index+1)*group_size)]
 
 
 class ConvertConstantRealFourier(operators.ConvertConstant, operators.SpectralOperator1D):
@@ -2560,8 +2503,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             self.azimuth_basis.forward_coeff_permutation = self.forward_m_perm
             self.azimuth_basis.backward_coeff_permutation = self.backward_m_perm
 
-    def global_shape(self, layout, scales):
-        grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
+    def global_shape(self, grid_space, scales):
         grid_shape = self.grid_shape(scales)
         if grid_space[0]:
             # grid-grid space
@@ -2593,8 +2535,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
                 elif self.dtype == np.float64:
                     return (2, Lmax+1)
 
-    def chunk_shape(self, layout):
-        grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
+    def chunk_shape(self, grid_space):
         if grid_space[0]:
             # grid-grid space
             return (1, 1)
@@ -2617,35 +2558,59 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             elif self.dtype == np.float64:
                 return (2, 1)
 
-    def local_groups(self, basis_coupling):
-        m_coupling, ell_coupling = basis_coupling
-        if (not m_coupling) and (not ell_coupling):
-            groups = []
-            local_m, local_ell = self.local_m_ell
-            local_m = local_m.ravel()
-            local_ell = local_ell.ravel()
-            for (m, ell) in zip(local_m, local_ell):
-                # Avoid writing repeats for real data
-                if [m, ell] not in groups:
-                    groups.append([m, ell])
-            return groups
+    def elements_to_groups(self, grid_space, elements):
+        if grid_space[0]:
+            # grid-grid space
+            groups = elements
+        elif grid_space[1]:
+            # coeff-grid space
+            # Unpacked m
+            permuted_native_wavenumbers = self.azimuth_basis.native_wavenumbers
+            groups = elements.copy()
+            groups[0] = permuted_native_wavenumbers[elements[0]]
         else:
-            raise NotImplementedError()
-
-    def local_group_slices(self, basis_group):
-        m_group, ell_group = basis_group
-        if (m_group is not None) and (ell_group is not None):
-            local_m, local_ell = self.local_m_ell
-            local_indices = np.where((local_m==m_group)*(local_ell==ell_group))
-            m_index = local_indices[0][0]
-            m_gs = self.group_shape[0]
-            m_slice = slice(m_index, m_index+m_gs)
-            ell_index = local_indices[1][0]
-            ell_gs = self.group_shape[1]
-            ell_slice = slice(ell_index, ell_index+ell_gs)
-            return [m_slice, ell_slice]
-        else:
-            raise NotImplementedError()
+            # coeff-coeff space
+            # Repacked triangular truncation
+            groups = elements.copy()
+            i, j = elements
+            Nphi = self.shape[0]
+            Lmax = self.Lmax
+            if self.dtype == np.complex128:
+                # Valid for m > 0 except Nyquist
+                shift = max(0, Lmax + 1 - Nphi//2)
+                m = 1 * i
+                ell = j - shift
+                # Fix for m < 0
+                neg_modes = (ell < m)
+                m[neg_modes] = i[neg_modes] - (Nphi+1)//2
+                ell[neg_modes] = Lmax - j[neg_modes]
+                # Fix for m = 0
+                m_zero = (i == 0)
+                m[m_zero] = 0
+                ell[m_zero] = j[m_zero]
+                # Fix for Nyquist
+                nyq_modes = (i == 0) * (j > Lmax)
+                m[nyq_modes] = Nphi//2
+                ell[nyq_modes] = j[nyq_modes] - shift
+            elif self.dtype == np.float64:
+                # Valid for 0 < m < Nphi//4
+                shift = max(0, Lmax + 2 - Nphi//2)
+                m = i // 2
+                ell = j - shift
+                # Fix for Nphi//4 <= m < Nphi//2-1
+                neg_modes = (ell < m)
+                m[neg_modes] = (Nphi//2 - 1) - m[neg_modes]
+                ell[neg_modes] = Lmax - j[neg_modes]
+                # Fix for m = 0
+                m_zero = (i < 2)
+                m[m_zero] = 0
+                ell[m_zero] = j[m_zero]
+                # Fix for m = Nphi//2 - 1
+                m_max = (i < 2) * (j > Lmax)
+                m[m_max] = Nphi//2 - 1
+                ell[m_max] = j[m_max] - shift
+            groups = np.array([m, ell])
+        return groups
 
     def __eq__(self, other):
         if isinstance(other, SpinWeightedSphericalHarmonics):
@@ -2678,75 +2643,6 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
                 shape = tuple(np.maximum(self.shape, other.shape))
                 return SpinWeightedSphericalHarmonics(self.coordsystem, shape, radius=self.radius, dealias=self.dealias, dtype=self.dtype)
         return NotImplemented
-
-    @CachedAttribute
-    def local_unpacked_m(self):
-        # Permute Fourier wavenumbers
-        wavenumbers = self.azimuth_basis.native_wavenumbers
-        # Get layout before colatitude forward transform
-        transform = self.dist.get_transform_object(axis=self.axis+1)
-        layout = transform.layout1
-        # Take local elements
-        local_m_elements = layout.local_elements(self.domain, scales=1)[self.axis]
-        local_wavenumbers = wavenumbers[local_m_elements]
-        return tuple(local_wavenumbers)
-
-    @CachedAttribute
-    def local_m_ell(self):
-        layout = self.dist.coeff_layout
-        local_i = layout.local_elements(self.domain, scales=1)[self.axis][:, None]
-        local_j = layout.local_elements(self.domain, scales=1)[self.axis + 1][None, :]
-        local_i = local_i + 0*local_j
-        local_j = local_j + 0*local_i
-        Nphi = self.shape[0]
-        Lmax = self.Lmax
-        if self.dtype == np.complex128:
-            # Valid for m > 0 except Nyquist
-            shift = max(0, Lmax + 1 - Nphi//2)
-            local_m = 1 * local_i
-            local_ell = local_j - shift
-            # Fix for m < 0
-            neg_modes = (local_ell < local_m)
-            local_m[neg_modes] = local_i[neg_modes] - (Nphi+1)//2
-            local_ell[neg_modes] = Lmax - local_j[neg_modes]
-            # Fix for m = 0
-            m_zero = (local_i == 0)
-            local_m[m_zero] = 0
-            local_ell[m_zero] = local_j[m_zero]
-            # Fix for Nyquist
-            nyq_modes = (local_i == 0) * (local_j > Lmax)
-            local_m[nyq_modes] = Nphi//2
-            local_ell[nyq_modes] = local_j[nyq_modes] - shift
-        elif self.dtype == np.float64:
-            # Valid for 0 < m < Nphi//4
-            shift = max(0, Lmax + 2 - Nphi//2)
-            local_m = local_i // 2
-            local_ell = local_j - shift
-            # Fix for Nphi//4 <= m < Nphi//2-1
-            neg_modes = (local_ell < local_m)
-            local_m[neg_modes] = (Nphi//2 - 1) - local_m[neg_modes]
-            local_ell[neg_modes] = Lmax - local_j[neg_modes]
-            # Fix for m = 0
-            m_zero = (local_i < 2)
-            local_m[m_zero] = 0
-            local_ell[m_zero] = local_j[m_zero]
-            # Fix for m = Nphi//2 - 1
-            m_max = (local_i < 2) * (local_j > Lmax)
-            local_m[m_max] = Nphi//2 - 1
-            local_ell[m_max] = local_j[m_max] - shift
-        # Reshape as multidimensional vectors
-        # HACK
-        if self.first_axis != 0:
-            raise ValueError("Need to reshape these")
-        return local_m, local_ell
-
-    @CachedAttribute
-    def local_m(self):
-        return self.local_m_ell[0]
-
-    @CachedAttribute
-    def local_ell(self):
-        return self.local_m_ell[1]
 
     @CachedAttribute
     def m_maps(self):
