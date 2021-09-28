@@ -121,9 +121,12 @@ class Subsystem:
 
     def coeff_slices(self, domain):
         slices = self.dist.coeff_layout.local_groupset_slices(self.group, domain, scales=1)
+        if len(slices) == 0:
+            return (slice(0,0),) * self.dist.dim
         if len(slices) > 1:
             raise ValueError("Subsystem data not contiguous.")
-        return slices[0]
+        else:
+            return slices[0]
 
     def coeff_shape(self, domain):
         shape = []
@@ -356,15 +359,18 @@ class Subproblem:
         #         matrices.append(basis.mode_map(group))
         # return reduce(sparse.kron, matrices, 1).tocsr()
         fsize = self.field_size(field)
-        vfshape = self.valid_field_shape(field)
-        indices = np.arange(fsize).reshape((-1,) + vfshape[1:])
-        # Avoid issue when there are no valid slices
-        if self.valid_field_slices(field)[0].size:
-            indices = indices[self.valid_field_slices(field)[0]].ravel()
+        if fsize:
+            vfshape = self.valid_field_shape(field)
+            indices = np.arange(fsize).reshape((-1,) + vfshape[1:])
+            # Avoid issue when there are no valid slices
+            if self.valid_field_slices(field)[0].size:
+                indices = indices[self.valid_field_slices(field)[0]].ravel()
+            else:
+                indices = slice(0, 0)
         else:
-            indices = slice(0, 0)
+            indices = (slice(None), slice(None))
         matrix = sparse.identity(fsize, format='csr')[indices]
-        return matrix
+        return matrix.tocsr()
 
     # def mode_map(self, basis_sets):
     #     """Restrict group data to nonzero modes."""

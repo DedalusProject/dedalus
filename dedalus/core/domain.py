@@ -166,7 +166,7 @@ class Domain(metaclass=CachedClass):
         for basis in self.bases:
             basis_axes = slice(basis.first_axis, basis.last_axis+1)
             shape[basis_axes] = basis.global_shape(layout.grid_space[basis_axes], scales[basis_axes])
-        return shape
+        return tuple(shape)
 
     @CachedMethod
     def chunk_shape(self, layout):
@@ -175,7 +175,7 @@ class Domain(metaclass=CachedClass):
         for basis in self.bases:
             basis_axes = slice(basis.first_axis, basis.last_axis+1)
             shape[basis_axes] = basis.chunk_shape(layout.grid_space[basis_axes])
-        return shape
+        return tuple(shape)
 
     def group_shape(self, layout):
         """Compute group shape."""

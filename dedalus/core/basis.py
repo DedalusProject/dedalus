@@ -868,8 +868,7 @@ class ConvertConstantComplexFourier(operators.ConvertConstant, operators.Spectra
             unit_amplitude = 1 / output_basis.constant_mode_value
             return np.array([[unit_amplitude]])
         else:
-            # Constructor should only loop over group 0.
-            raise ValueError("This should never happen.")
+            return np.zeros(shape=(1, 0))
 
 
 class DifferentiateComplexFourier(operators.Differentiate, operators.SpectralOperator1D):
