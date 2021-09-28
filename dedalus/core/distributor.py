@@ -11,6 +11,7 @@ from collections import OrderedDict
 from ..tools.cache import CachedMethod, CachedAttribute
 from ..tools.config import config
 from ..tools.array import prod
+from ..tools.general import OrderedSet
 
 logger = logging.getLogger(__name__.split('.')[-1])
 GROUP_TRANSFORMS = config['transforms'].getboolean('GROUP_TRANSFORMS')
@@ -301,7 +302,7 @@ class Layout:
             indices.append(ax_indices)
         return tuple(indices)
 
-    def local_groups(self, domain, scales, rank=None):
+    def local_group_arrays(self, domain, scales, rank=None):
         """Dense array of local groups (first axis)."""
         # Make dense array of local elements
         elements = self.local_elements(domain, scales, rank=rank)
@@ -314,18 +315,29 @@ class Layout:
             groups[basis_axes] = basis.elements_to_groups(grid_space[basis_axes], elements[basis_axes])
         return groups
 
-    def local_group_slices(self, group, domain, scales, rank=None):
-        groups = self.local_groups(domain, scales, rank=rank)
+    def local_groupsets(self, group_coupling, domain, scales, rank=None):
+        local_groupsets = self.local_group_arrays(domain, scales, rank=rank).astype(object)
+        # Replace non-enumerated axes with None
+        for axis in range(local_groupsets.shape[0]):
+            if group_coupling[axis]:
+                local_groupsets[axis] = None
+        # Flatten local groupsets
+        local_groupsets = local_groupsets.reshape((local_groupsets.shape[0], -1))
+        local_groupsets = tuple(map(tuple, local_groupsets.T))
+        return OrderedSet(local_groupsets)
+
+    def local_groupset_slices(self, groupset, domain, scales, rank=None):
+        groups = self.local_group_arrays(domain, scales, rank=rank)
         dim = groups.shape[0]
         group_shape = self.group_shape(domain)
         # find all elements which match group
         selections = np.ones(groups[0].shape)
-        for i, subgroup in enumerate(group):
+        for i, subgroup in enumerate(groupset):
             if subgroup is not None:
                 selections *= subgroup == groups[i]
         # determine which axes to loop over, which to find bounds for
         slices = []
-        for i, subgroup in enumerate(group):
+        for i, subgroup in enumerate(groupset):
             if subgroup is None:
                 subslices = [slice(None)]
             else:

@@ -14,7 +14,7 @@ import uuid
 from .domain import Domain
 from ..tools.array import zeros_with_pattern, expand_pattern, sparse_block_diag, copyto, perm_matrix
 from ..tools.cache import CachedAttribute, CachedMethod
-from ..tools.general import replace
+from ..tools.general import replace, OrderedSet
 from ..tools.progress import log_progress
 
 import logging
@@ -30,29 +30,26 @@ logger = logging.getLogger(__name__.split('.')[-1])
 #             trans_shape.append(basis.)
 #     else:
 
-def build_subsystems(solver, matrix_coupling=None):
+def build_subsystems(solver):
     """Build local subsystem objects."""
-    problem = solver.problem
-    # Override problem matrix coupling
-    if matrix_coupling is None:
-        matrix_coupling = solver.matrix_coupling
-    # Check that distributed dimensions are separable
-    for axis in range(len(problem.dist.mesh)):
-        if matrix_coupling[axis]:
-            raise ValueError("Problem is coupled along distributed dimension %i" %axis)
-    # Determine local groups for each basis
-    domain = problem.variables[0].domain  # HACK
-    basis_groups = []
-    for axis, basis in domain.enumerate_unique_bases():
-        if basis is None:
-            raise NotImplementedError()
-        else:
-            basis_coupling = matrix_coupling[basis.first_axis:basis.last_axis+1]
-            basis_groups.append(basis.local_groups(basis_coupling))
-    # Build subsystems groups as product of basis groups
-    local_groups = [tuple(sum(p, [])) for p in product(*basis_groups)]
-    return tuple(Subsystem(solver, group) for group in local_groups)
-
+    # Collect local groupsets for each variable and equation
+    matrix_coupling = solver.matrix_coupling
+    coeff_layout = solver.dist.coeff_layout
+    all_local_groupsets = []
+    for var in solver.problem.variables:
+        all_local_groupsets.append(coeff_layout.local_groupsets(matrix_coupling, var.domain, scales=1))
+    for eqn in solver.problem.equations:
+        all_local_groupsets.append(coeff_layout.local_groupsets(matrix_coupling, eqn['domain'], scales=1))
+    # Combine and check that groupsets are nested
+    # This prevents incompatible distributions of e.g. different sized transverse bases
+    local_groupsets = OrderedSet()
+    for i, lgs1 in enumerate(all_local_groupsets):
+        for lgs2 in all_local_groupsets[i+1:]:
+            if not ((set(lgs1) <= set(lgs2)) or (set(lgs1) >= set(lgs2))):
+                raise ValueError("Incompatible group distributions. Are distributed dimensions the same size?")
+        local_groupsets.update(lgs1)
+    # Build subsystem for each local groupset
+    return tuple(Subsystem(solver, groupset) for groupset in local_groupsets)
 
 def build_subproblems(solver, subsystems, matrices):
     """Build subproblem matrices with progress logger."""
@@ -115,6 +112,7 @@ class Subsystem:
     def __init__(self, solver, group):
         self.solver = solver
         self.problem = problem = solver.problem
+        self.dist = solver.dist
         self.dtype = problem.dtype
         self.group = group
         # Determine matrix group using problem matrix dependence
@@ -122,21 +120,10 @@ class Subsystem:
         self.matrix_group = tuple(replace(group, matrix_independence, 0))
 
     def coeff_slices(self, domain):
-        slices = []
-        # Loop over bases
-        for axis, basis in domain.enumerate_unique_bases():
-            if basis is None:
-                # Take single mode for constant bases
-                ax_group = self.group[axis]
-                if ax_group in (None, 0):
-                    slices.append(slice(0, 1))
-                else:
-                    raise NotImplementedError()
-            else:
-                # Get slices from basis
-                basis_group = self.group[basis.first_axis:basis.last_axis+1]
-                slices.extend(basis.local_group_slices(basis_group))
-        return tuple(slices)
+        slices = self.dist.coeff_layout.local_groupset_slices(self.group, domain, scales=1)
+        if len(slices) > 1:
+            raise ValueError("Subsystem data not contiguous.")
+        return slices[0]
 
     def coeff_shape(self, domain):
         shape = []

@@ -2571,7 +2571,6 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         else:
             # coeff-coeff space
             # Repacked triangular truncation
-            groups = elements.copy()
             i, j = elements
             Nphi = self.shape[0]
             Lmax = self.Lmax

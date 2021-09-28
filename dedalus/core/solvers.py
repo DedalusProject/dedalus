@@ -65,11 +65,21 @@ class SolverBase:
         self.max_ncc_terms = max_ncc_terms
         self.entry_cutoff = entry_cutoff
         if matrix_coupling is None:
-            matrix_coupling = problem.matrix_coupling
-            # Couple along last axis by default for efficiency
-            if not any(matrix_coupling):
-                matrix_coupling = list(matrix_coupling)
+            matrix_coupling = np.array(problem.matrix_coupling)
+            # Couple fully separable problems along last axis by default for efficiency
+            if not np.any(matrix_coupling):
                 matrix_coupling[-1] = True
+        else:
+            # Check specified coupling for compatibility
+            problem_coupling = np.array(problem.matrix_coupling)
+            matrix_coupling = np.array(matrix_coupling)
+            if np.any(~matrix_coupling & problem_coupling):
+                raise ValueError(f"Specified solver coupling incompatible with problem coupling: {problem_coupling}")
+        # Check that coupled dimensions are local
+        coeff_layout = self.dist.coeff_layout
+        coupled_nonlocal = matrix_coupling & ~coeff_layout.local
+        if np.any(coupled_nonlocal):
+            raise ValueError(f"Problem is coupled along distributed dimensions: {tuple(np.where(coupled_nonlocal)[0])}")
         self.matrix_coupling = matrix_coupling
         if matsolver is None:
             matsolver = config['linear algebra'][self.matsolver_default]
@@ -130,7 +140,7 @@ class EigenvalueSolver(SolverBase):
         logger.debug('Beginning EVP instantiation')
         super().__init__(problem, **kw)
         # Build subsystems and subproblem matrices
-        self.subsystems = subsystems.build_subsystems(self, matrix_coupling=self.matrix_coupling)
+        self.subsystems = subsystems.build_subsystems(self)
         self.subproblems = subsystems.build_subproblems(self, self.subsystems, ['M','L'])
         self.state = problem.variables
         logger.debug('Finished EVP instantiation')
@@ -214,7 +224,7 @@ class LinearBoundaryValueSolver(SolverBase):
         logger.debug('Beginning LBVP instantiation')
         super().__init__(problem, **kw)
         # Build subsystems and subproblem matrices
-        self.subsystems = subsystems.build_subsystems(self, matrix_coupling=self.matrix_coupling)
+        self.subsystems = subsystems.build_subsystems(self)
         self.subproblems = subsystems.build_subproblems(self, self.subsystems, ['L'])
         self.state = problem.variables
         # Create F operator trees
@@ -291,7 +301,7 @@ class NonlinearBoundaryValueSolver(SolverBase):
         super().__init__(problem, **kw)
         self.iteration = 0
         # Build subsystems and subproblem matrices
-        self.subsystems = subsystems.build_subsystems(self, matrix_coupling=self.matrix_coupling)
+        self.subsystems = subsystems.build_subsystems(self)
         self.state = problem.variables
         self.perturbations = problem.perturbations
         # Create F operator trees
@@ -383,7 +393,7 @@ class InitialValueSolver(SolverBase):
         self._wall_time_array = np.zeros(1, dtype=float)
         self.start_time = self.get_wall_time()
         # Build subproblems and subproblem matrices
-        self.subsystems = subsystems.build_subsystems(self, matrix_coupling=self.matrix_coupling)
+        self.subsystems = subsystems.build_subsystems(self)
         self.subproblems = subsystems.build_subproblems(self, self.subsystems, ['M', 'L'])
         # Build systems
         # namespace = problem.namespace
