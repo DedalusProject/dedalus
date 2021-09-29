@@ -5,15 +5,15 @@ import dedalus
 from dedalus.tools.parallel import RotateProcesses
 
 
-shape = (16, 8)
+shape = (8, 8)
 dtype = np.float64
 scales = 1
 enum = (True, False)
 
 coords = d3.S2Coordinates('phi', 'theta')
 dist = d3.Distributor(coords, dtype=dtype)
-sb = d3.SphereBasis(coords, shape, dtype=dtype)
-domain = dedalus.core.domain.Domain(dist, (sb,))
+basis = d3.SphereBasis(coords, shape, dtype=dtype)
+domain = dedalus.core.domain.Domain(dist, (basis,))
 
 for layout in dist.layouts:
     with RotateProcesses():
@@ -22,4 +22,6 @@ for layout in dist.layouts:
         print("Global shape:", layout.global_shape(domain, scales), " Chunk shape:", layout.chunk_shape(domain))
         print(layout.local_group_arrays(domain, scales))
         print(layout.local_groupsets(enum, domain, scales))
+        print(basis.m_maps)
+        print(basis.ell_maps)
         print()

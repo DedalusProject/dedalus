@@ -1661,8 +1661,7 @@ class PolarBasis(SpinBasis):
             #     elif self.dtype == np.float64:
             #         return (2, Nmax+1+max(0, Nmax+2-Nphi//4))
 
-    def chunk_shape(self, layout):
-        grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
+    def chunk_shape(self, grid_space):
         Nmax = self.Nmax
         if grid_space[0]:
             # grid-grid space
@@ -1756,29 +1755,30 @@ class PolarBasis(SpinBasis):
 
     @CachedAttribute
     def m_maps(self):
-        return self._compute_m_maps(self.local_m, Nmax=self.Nmax, Nphi=self.shape[0])
-
-    def _compute_m_maps(self, local_m, Nmax, Nphi):
         """
         Tuple of (m, mg_slice, mc_slice, n_slice) for all local m's.
         """
+        # Get colatitude transform object
+        colat_transform = self.dist.get_transform_object(self.first_axis+1)
+        colat_coeff_layout = colat_transform.layout0
+        colat_grid_layout = colat_transform.layout1
+        # Get groupsets
+        domain = self.domain
+        group_coupling = [True] * domain.dist.dim
+        group_coupling[self.first_axis] = False
+        groupsets = colat_grid_layout.local_groupsets(group_coupling, domain, scales=domain.dealias, broadcast=True)
+        # Build m_maps from groupset slices
         m_maps = []
-        # Get continuous segments of unpacked m's
-        segment = [local_m[0], 0, 0] # m, start, end
-        segments = [segment]
-        m = local_m[0]
-        for i, m_i in enumerate(local_m):
-            if (m_i == m):
-                segment[2] = i + 1
-            else:
-                m = m_i
-                segment = [m, i, i+1]
-                segments.append(segment)
-        # Build slices for each segment
-        for dseg, (m, mg_start, mg_end) in enumerate(segments):
-            mg_slice = slice(mg_start, mg_end)
-            mc_slice = mg_slice
-            m_maps.append((m, mg_slice, mc_slice, self.n_slice(m)))
+        for groupset in groupsets:
+            m = groupset[self.first_axis]
+            coeff_slices = colat_coeff_layout.local_groupset_slices(groupset, domain, scales=domain.dealias, broadcast=True)
+            grid_slices = colat_grid_layout.local_groupset_slices(groupset, domain, scales=domain.dealias, broadcast=True)
+            if len(coeff_slices) != 1 or len(grid_slices) != 1:
+                raise ValueError("This should never happpen. Ask for help.")
+            mg_slice = grid_slices[0][self.first_axis]
+            mc_slice = coeff_slices[0][self.first_axis]
+            n_slice = coeff_slices[0][self.first_axis+1]
+            m_maps.append((m, mg_slice, mc_slice, n_slice))
         return tuple(m_maps)
 
     def global_grids(self, scales=None):
@@ -2644,57 +2644,40 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
 
     @CachedAttribute
     def m_maps(self):
-        return self._compute_m_maps(self.local_unpacked_m, Lmax=self.Lmax, Nphi=self.shape[0])
-
-    @CachedAttribute
-    def ell_maps(self):
-        return self._compute_ell_maps(self.local_ell)
-
-    @staticmethod
-    def _compute_m_maps(local_unpacked_m, Lmax, Nphi):
         """
-        Tuple of (m, mg_slice, mc_slice, ell_slice) for all local m's.
+        Tuple of (m, mg_slice, mc_slice, ell_slice) for all local m's when
+        the colatitude axis is local.
         """
+        # Get colatitude transform object
+        colat_transform = self.dist.get_transform_object(self.first_axis+1)
+        colat_coeff_layout = colat_transform.layout0
+        colat_grid_layout = colat_transform.layout1
+        # Get groupsets
+        domain = self.domain
+        group_coupling = [True] * domain.dist.dim
+        group_coupling[self.first_axis] = False
+        groupsets = colat_grid_layout.local_groupsets(group_coupling, domain, scales=domain.dealias, broadcast=True)
+        # Build m_maps from groupset slices
         m_maps = []
-        # Get continuous segments of unpacked m's
-        segment = [local_unpacked_m[0], 0, 0] # m, start, end
-        segments = [segment]
-        m = local_unpacked_m[0]
-        for i, m_i in enumerate(local_unpacked_m):
-            if (m_i == m):
-                segment[2] = i + 1
-            else:
-                m = m_i
-                segment = [m, i, i+1]
-                segments.append(segment)
-        # Build slices for each segment
-        for dseg, (m, mg_start, mg_end) in enumerate(segments):
-            mg_slice = slice(mg_start, mg_end)
-            # Fold over every other segment
-            gs = mg_end - mg_start
-            shift = max(0, Lmax + gs - Nphi//2)  # Assuming gs=1 for complex and gs=2 for real
-            mc_slice = slice(gs*(dseg//2), gs*(dseg//2) + gs)
-            # Reverse ell's on folded segments for ell locality
-            if m == 0:
-                # Start m=0 at zero for easier parallelization
-                ell_slice = slice(0, Lmax+1)
-            elif (gs == 1) and (m == Nphi//2):  # Nyquist mode for complex folding
-                ell_slice = slice(Lmax+1, None)
-            elif (gs == 2) and (m == Nphi//2 - 1):  # One below Nyquist mode for real folding
-                ell_slice = slice(Lmax+1, None)
-            elif dseg % 2 == 0:
-                # Shifted up
-                ell_slice = slice(shift + np.abs(m), None)
-            else:
-                # Reversed for ell locality
-                ell_slice = slice(Lmax - np.abs(m), None, -1)
+        for groupset in groupsets:
+            m = groupset[self.first_axis]
+            coeff_slices = colat_coeff_layout.local_groupset_slices(groupset, domain, scales=domain.dealias, broadcast=True)
+            grid_slices = colat_grid_layout.local_groupset_slices(groupset, domain, scales=domain.dealias, broadcast=True)
+            if len(coeff_slices) != 1 or len(grid_slices) != 1:
+                raise ValueError("This should never happpen. Ask for help.")
+            mg_slice = grid_slices[0][self.first_axis]
+            mc_slice = coeff_slices[0][self.first_axis]
+            ell_slice = coeff_slices[0][self.first_axis+1]
+            # Reverse n_slice for folded modes so that ells are well-ordered
+            if ell_slice.start == 0 and m != 0:
+                ell_slice = slice(ell_slice.stop-1, None, -1)
             m_maps.append((m, mg_slice, mc_slice, ell_slice))
         return tuple(m_maps)
 
-    @staticmethod
-    def _compute_ell_maps(local_ell):
+    @CachedAttribute
+    def ell_maps(self):
         """
-        Tuple of (ell, m_slice, ell_slice) for all local ells.
+        Tuple of (ell, m_slice, ell_slice) for all local ells in coeff space.
         m_slice and ell_slice are local slices along the phi and theta axes.
 
         Data for each ell should be sliced as:
@@ -2702,25 +2685,23 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             for ell, m_slice, ell_slice in ell_maps:
                 ell_data = data[m_slice, ell_slice]
         """
+        coeff_layout = self.dist.coeff_layout
+        azimuth_axis = self.first_axis
+        colatitude_axis = self.first_axis + 1
+        # Get groupsets
+        domain = self.domain
+        group_coupling = [True] * domain.dist.dim
+        group_coupling[colatitude_axis] = False
+        groupsets = coeff_layout.local_groupsets(group_coupling, domain, scales=domain.dealias, broadcast=True)
+        # Build ell_maps from groupset slices
         ell_maps = []
-        for dl, ell_row in enumerate(local_ell.T):
-            if len(ell_row) == 0:
-                continue
-            # Get continuous segments of ells
-            segment = [ell_row[0], 0, 0] # ell, start, end
-            segments = [segment]
-            ell = ell_row[0]
-            for i, ell_i in enumerate(ell_row):
-                if (ell_i == ell):
-                    segment[2] = i + 1
-                else:
-                    ell = ell_i
-                    segment = [ell, i, i+1]
-                    segments.append(segment)
-            # Build slices for each segment
-            for ell, start, end in segments:
-                ell_map = (ell, slice(start, end), slice(dl, dl+1))
-                ell_maps.append(ell_map)
+        for groupset in groupsets:
+            ell = groupset[colatitude_axis]
+            groupset_slices = coeff_layout.local_groupset_slices(groupset, domain, scales=domain.dealias, broadcast=True)
+            for groupset_slice in groupset_slices:
+                m_slice = groupset_slice[azimuth_axis]
+                ell_slice = groupset_slice[colatitude_axis]
+                ell_maps.append((ell, m_slice, ell_slice))
         return tuple(ell_maps)
 
     def global_grids(self, scales=None):
@@ -2899,7 +2880,6 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
 
     dim = 3
     dims = ['azimuth', 'colatitude', 'radius']
-    group_shape = (1, 1, 1)
     subaxis_dependence = [False, False, True]
 
     def __init__(self, coordsystem, radial_size, k, dealias, dtype):
@@ -2916,6 +2896,10 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
         # Call at end because dealias is needed to build self.domain
         Basis.__init__(self, coordsystem)
         self.radial_axis = self.first_axis + 2
+        if dtype == np.float64:
+            self.group_shape = (2, 1, 1)
+        elif dtype == np.complex128:
+            self.group_shape = (1, 1, 1)
 
     @CachedAttribute
     def constant(self):
@@ -2939,32 +2923,32 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
     #     else:
     #         return ()
 
-    @CachedAttribute
-    def local_m_ell(self):
-        layout = self.dist.coeff_layout
-        local_i = layout.local_elements(self.domain, scales=1)[self.axis][:, None]
-        local_j = layout.local_elements(self.domain, scales=1)[self.axis + 1][None, :]
-        local_i = local_i + 0*local_j
-        local_j = local_j + 0*local_i
-        if self.dtype == np.complex128:
-            local_m = local_i
-            local_ell = local_j
-        elif self.dtype == np.float64:
-            local_m = local_i // 2
-            local_ell = local_j
-        # Reshape as multidimensional vectors
-        # HACK
-        if self.axis != 0:
-            raise ValueError("Need to reshape these")
-        return local_m, local_ell
+    # @CachedAttribute
+    # def local_m_ell(self):
+    #     layout = self.dist.coeff_layout
+    #     local_i = layout.local_elements(self.domain, scales=1)[self.axis][:, None]
+    #     local_j = layout.local_elements(self.domain, scales=1)[self.axis + 1][None, :]
+    #     local_i = local_i + 0*local_j
+    #     local_j = local_j + 0*local_i
+    #     if self.dtype == np.complex128:
+    #         local_m = local_i
+    #         local_ell = local_j
+    #     elif self.dtype == np.float64:
+    #         local_m = local_i // 2
+    #         local_ell = local_j
+    #     # Reshape as multidimensional vectors
+    #     # HACK
+    #     if self.axis != 0:
+    #         raise ValueError("Need to reshape these")
+    #     return local_m, local_ell
 
-    @CachedAttribute
-    def local_m(self):
-        return self.local_m_ell[0]
+    # @CachedAttribute
+    # def local_m(self):
+    #     return self.local_m_ell[0]
 
-    @CachedAttribute
-    def local_ell(self):
-        return self.local_m_ell[1]
+    # @CachedAttribute
+    # def local_ell(self):
+    #     return self.local_m_ell[1]
 
     def grid_shape(self, scales):
         grid_shape = list(super().grid_shape(scales))
@@ -2973,8 +2957,7 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
         grid_shape[1] = 1
         return tuple(grid_shape)
 
-    def global_shape(self, layout, scales):
-        grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
+    def global_shape(self, grid_space, scales):
         grid_shape = self.grid_shape(scales)
         if grid_space[0]:
             # grid-grid-grid space
@@ -2993,8 +2976,7 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
             shape[2] = self.shape[2]
             return tuple(shape)
 
-    def chunk_shape(self, layout):
-        grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
+    def chunk_shape(self, grid_space):
         if grid_space[0]:
             # grid-grid-grid space
             return (1, 1, 1)
@@ -3004,9 +2986,9 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
             elif self.dtype == np.float64:
                 return (2, 1, 1)
 
-    @CachedAttribute
-    def ell_maps(self):
-        return SWSH._compute_ell_maps(self.local_ell)
+    # @CachedAttribute
+    # def ell_maps(self):
+    #     return SWSH._compute_ell_maps(self.local_ell)
 
     def get_radial_basis(self):
         return self
@@ -3141,35 +3123,6 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
         mi = local_m.index(m)
         li = local_l.index(ell)
         return (mi, li, self.n_slice(ell))
-
-    def local_groups(self, basis_coupling):
-        m_coupling, ell_coupling, r_coupling = basis_coupling
-        if (not m_coupling) and (not ell_coupling) and r_coupling:
-            groups = []
-            local_m, local_ell = self.local_m_ell
-            if len(local_m) and len(local_ell):
-                groups.append([0, 0, None])
-            return groups
-        else:
-            raise NotImplementedError()
-
-    def local_group_slices(self, basis_group):
-        #raise NotImplementedError("Hmm so what called this??")
-        m_group, ell_group, r_group = basis_group
-        if (m_group is not None) and (ell_group is not None) and (r_group is None):
-            if m_group == 0 and ell_group == 0:
-                if self.dtype == np.float64:
-                    m_slice = slice(0, 2)
-                else:
-                    m_slice = slice(0, 1)
-                ell_slice = slice(0, 1)
-            else:
-                m_slice = slice(0, 0)
-                ell_slice = slice(0, 0)
-            n_slice = slice(None)
-            return [m_slice, ell_slice, n_slice]
-        else:
-            raise NotImplementedError()
 
     def forward_transform_azimuth(self, field, axis, gdata, cdata):
         # Copy over real part of m = 0
@@ -3667,7 +3620,6 @@ class Spherical3DBasis(MultidimensionalBasis):
 
     dim = 3
     dims = ['azimuth', 'colatitude', 'radius']
-    group_shape = (1, 1, 1)
     subaxis_dependence = [False, True, True]
 
     def __init__(self, coordsystem, shape_angular, dealias_angular, radial_basis, dtype, azimuth_library=None, colatitude_library=None):
@@ -3688,8 +3640,8 @@ class Spherical3DBasis(MultidimensionalBasis):
         self.azimuth_basis = self.sphere_basis.azimuth_basis
         self.mmax = self.sphere_basis.mmax
         self.Lmax = self.sphere_basis.Lmax
-        self.local_m = self.sphere_basis.local_m
-        self.local_ell = self.sphere_basis.local_ell
+        #self.local_m = self.sphere_basis.local_m
+        #self.local_ell = self.sphere_basis.local_ell
         self.ell_maps = self.sphere_basis.ell_maps
         self.global_grid_azimuth = self.sphere_basis.global_grid_azimuth
         self.global_grid_colatitude = self.sphere_basis.global_grid_colatitude
@@ -3705,6 +3657,10 @@ class Spherical3DBasis(MultidimensionalBasis):
         self.backward_transform_azimuth = self.sphere_basis.backward_transform_azimuth
         self.forward_transform_colatitude = self.sphere_basis.forward_transform_colatitude
         self.backward_transform_colatitude = self.sphere_basis.backward_transform_colatitude
+        if dtype == np.float64:
+            self.group_shape = (2, 1, 1)
+        elif dtype == np.complex128:
+            self.group_shape = (1, 1, 1)
         Basis.__init__(self, coordsystem)
 
     @CachedAttribute
@@ -3774,40 +3730,33 @@ class Spherical3DBasis(MultidimensionalBasis):
     def start(self, groups):
         return self.radial_basis.start(groups)
 
-    def global_shape(self, layout, scales):
-        grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
+    def global_shape(self, grid_space, scales):
         grid_shape = self.grid_shape(scales)
+        s2_shape = self.sphere_basis.global_shape(grid_space, scales)
         if grid_space[2]:
-            s2_shape = self.sphere_basis.global_shape(layout, scales)
-            return s2_shape + (grid_shape[2],)
+            # *-*-grid space
+            radial_shape = (grid_shape[2],)
         else:
             # coeff-coeff-coeff space
-            s2_shape = self.sphere_basis.global_shape(layout, scales)
-            return s2_shape + (self.shape[2],)
+            radial_shape = (self.shape[2],)
+        return s2_shape + radial_shape
 
-    def chunk_shape(self, layout):
-        s2_chunk = self.sphere_basis.chunk_shape(layout)
+    def chunk_shape(self, grid_space):
+        s2_chunk = self.sphere_basis.chunk_shape(grid_space)
         return s2_chunk + (1,)
 
-    def local_groups(self, basis_coupling):
-        m_coupling, ell_coupling, n_coupling = basis_coupling
-        if (not m_coupling) and (not ell_coupling) and (n_coupling):
-            groups = self.sphere_basis.local_groups((m_coupling, ell_coupling))
-            for group in groups:
-                group.append(None)
-            return groups
-        else:
-            raise NotImplementedError()
-
-    def local_group_slices(self, basis_group):
-        m_group, ell_group, n_group = basis_group
-        if (m_group is not None) and (ell_group is not None) and (n_group is None):
-            slices = self.sphere_basis.local_group_slices((m_group, ell_group))
-            n_slice = self.radial_basis.n_slice(ell=ell_group)
-            slices.append(n_slice)
-            return slices
-        else:
-            raise NotImplementedError()
+    def elements_to_groups(self, grid_space, elements):
+        s2_groups = self.sphere_basis.elements_to_groups(grid_space, elements[:2])
+        radial_groups = elements[2]
+        groups = np.array([*s2_groups, radial_groups])
+        if not grid_space[2]:
+            # coeff-coeff-coeff space
+            m, ell, n = groups
+            nmin = lambda ell: self.radial_basis._n_limits(ell)[0] # TODO: cleanup
+            nmin = np.vectorize(nmin)(ell) # TODO: optimize by vectorizing in dedalus_sphere
+            groups = np.ma.masked_array(groups)
+            groups[:, n < nmin] = np.ma.masked
+        return groups
 
     def valid_components(self, *args):
         # Implemented in RegularityBasis

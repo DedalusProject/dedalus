@@ -136,6 +136,7 @@ class Distributor:
         # Layout and path lists
         self.layouts = [layout_0]
         self.paths = []
+        self.transforms = []
         # Subsequent layouts
         for i in range(1, R+D+1):
             # Iterate backwards over bases to last coefficient space basis
@@ -147,6 +148,7 @@ class Distributor:
                         layout_i = Layout(self, local, grid_space)
                         if not dry_run:
                             path_i = Transform(self.layouts[-1], layout_i, d)
+                            self.transforms.insert(0, path_i)
                         break
                     # Otherwise transpose
                     else:
@@ -189,10 +191,7 @@ class Distributor:
         return tuple(scales)
 
     def get_transform_object(self, axis):
-        for path in self.paths:
-            if isinstance(path, Transform):
-                if path.axis == axis:
-                    return path
+        return self.transforms[axis]
 
     def get_axis(self, coord):
         return self.coords.index(coord)
@@ -331,8 +330,8 @@ class Layout:
         local_groupsets = (lg for lg in local_groupsets if np.ma.masked not in lg)
         return OrderedSet(local_groupsets)
 
-    def local_groupset_slices(self, groupset, domain, scales, rank=None):
-        groups = self.local_group_arrays(domain, scales, rank=rank)
+    def local_groupset_slices(self, groupset, domain, scales, rank=None, broadcast=False):
+        groups = self.local_group_arrays(domain, scales, rank=rank, broadcast=broadcast)
         dim = groups.shape[0]
         group_shape = self.group_shape(domain)
         # find all elements which match group
