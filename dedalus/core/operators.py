@@ -876,8 +876,8 @@ class SpectralOperator1D(SpectralOperator):
             output_domain = Domain(layout.dist, bases=[output_basis])
             group_coupling = [True] * input_domain.dist.dim
             group_coupling[axis] = False
-            input_groupsets = layout.local_groupsets(group_coupling, input_domain, scales=input_domain.dealias, rank=0)
-            output_groupsets = layout.local_groupsets(group_coupling, output_domain, scales=output_domain.dealias, rank=0)
+            input_groupsets = layout.local_groupsets(group_coupling, input_domain, scales=input_domain.dealias, broadcast=True)
+            output_groupsets = layout.local_groupsets(group_coupling, output_domain, scales=output_domain.dealias, broadcast=True)
             # Take intersection of input and output groups
             groups = [gs[axis] for gs in input_groupsets if gs in output_groupsets]
             group_blocks = [cls._group_matrix(group, input_basis, output_basis, *args) for group in groups]
