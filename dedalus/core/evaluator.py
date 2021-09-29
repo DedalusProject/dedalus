@@ -153,11 +153,8 @@ class Evaluator:
         #             task['out'] = task['out'].copy()
         #         else:
         #             outputs.add(task['out'])
-        for handler in handlers:
-            for task in handler.tasks:
-                out = task['out']
-                if not isinstance(out, LockedField):
-                    out.require_coeff_space()
+        outputs = OrderedSet([t['out'] for h in handlers for t in h.tasks if not isinstance(t['out'], LockedField)])
+        self.require_coeff_space(outputs)
 
         # Process
         for handler in handlers:

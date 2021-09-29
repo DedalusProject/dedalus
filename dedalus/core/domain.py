@@ -168,6 +168,7 @@ class Domain(metaclass=CachedClass):
             shape[basis.first_axis:basis.last_axis+1] = basis.global_shape(layout, basis_scales)
         return shape
 
+    @CachedMethod
     def chunk_shape(self, layout):
         """Compute group shape."""
         shape = np.ones(self.dist.dim, dtype=int)

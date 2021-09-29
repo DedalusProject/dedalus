@@ -7,7 +7,6 @@ import math
 import numpy as np
 from scipy import sparse
 from functools import reduce
-import operator
 import inspect
 
 from . import operators
@@ -16,6 +15,7 @@ from ..tools.array import kron
 from ..tools.array import axslice
 from ..tools.array import apply_matrix
 from ..tools.array import permute_axis
+from ..tools.array import prod
 from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
 from ..tools.cache import CachedClass
@@ -1418,11 +1418,11 @@ class MultidimensionalBasis(Basis):
 
 def reduced_view_5(data, axis1, axis2):
     shape = data.shape
-    N0 = int(np.prod(shape[:axis1]))
+    N0 = int(prod(shape[:axis1]))
     N1 = shape[axis1]
-    N2 = int(np.prod(shape[axis1+1:axis2]))
+    N2 = int(prod(shape[axis1+1:axis2]))
     N3 = shape[axis2]
-    N4 = int(np.prod(shape[axis2+1:]))
+    N4 = int(prod(shape[axis2+1:]))
     return data.reshape((N0, N1, N2, N3, N4))
 
 
@@ -1759,6 +1759,7 @@ class PolarBasis(SpinBasis):
         nmin, nmax = self._n_limits(m)
         return nmax - nmin + 1
 
+    @CachedMethod
     def n_slice(self, m):
         nmin, nmax = self._n_limits(m)
         return slice(nmin, nmax+1)
@@ -2115,6 +2116,7 @@ class AnnulusBasis(PolarBasis):
         if Nmax == None: Nmax = self.Nmax
         return Nmax + 1
 
+    @CachedMethod
     def n_slice(self, m):
         return slice(0, self.Nmax + 1)
 
@@ -3478,6 +3480,7 @@ class SphericalShellRadialBasis(RegularityBasis):
         if Nmax == None: Nmax = self.Nmax
         return Nmax + 1
 
+    @CachedMethod
     def n_slice(self, ell):
         return slice(0, self.Nmax + 1)
 
@@ -3691,6 +3694,7 @@ class BallRadialBasis(RegularityBasis):
         nmin, nmax = self._n_limits(ell)
         return nmax - nmin + 1
 
+    @CachedMethod
     def n_slice(self, ell):
         nmin, nmax = self._n_limits(ell)
         return slice(nmin, nmax+1)
@@ -3853,6 +3857,7 @@ class Spherical3DBasis(MultidimensionalBasis):
     def n_size(self, ell):
         return self.radial_basis.n_size(ell)
 
+    @CachedMethod
     def n_slice(self, ell):
         return self.radial_basis.n_slice(ell)
 
@@ -4142,13 +4147,6 @@ class BallBasis(Spherical3DBasis):
         radial_basis.backward_regularity_recombination(field.tensorsig, axis, gdata, ell_maps=self.ell_maps)
 
 
-def prod(arg):
-    if arg:
-        return reduce(operator.mul, arg)
-    else:
-        return 1
-
-
 def reduced_view(data, axis, dim):
     shape = data.shape
     Na = (int(prod(shape[:axis])),)
@@ -4387,7 +4385,7 @@ class LiftTauDisk(operators.LiftTau, operators.PolarMOperator):
                     comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
                 else:
                     # Build zero matrix
-                    comp_matrix = sparse.csr_matrix((np.prod(subshape_out), np.prod(subshape_in)))
+                    comp_matrix = sparse.csr_matrix((prod(subshape_out), prod(subshape_in)))
                 submatrix_row.append(comp_matrix)
             submatrices.append(submatrix_row)
         matrix = sparse.bmat(submatrices)
@@ -4438,14 +4436,14 @@ class LiftTauBall(operators.LiftTau, operators.SphericalEllOperator):
                     comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
                 else:
                     # Build zero matrix
-                    comp_matrix = sparse.csr_matrix((np.prod(subshape_out), np.prod(subshape_in)))
+                    comp_matrix = sparse.csr_matrix((prod(subshape_out), prod(subshape_in)))
                 submatrix_row.append(comp_matrix)
             submatrices.append(submatrix_row)
         matrix = sparse.bmat(submatrices)
         matrix.tocsr()
         # Convert tau from spin to regularity first
         Q = dedalus_sphere.spin_operators.Intertwiner(ell, indexing=(-1,+1,0))(len(self.tensorsig))  # Fix for product domains
-        matrix = matrix @ sparse.kron(Q.T, sparse.identity(np.prod(subshape_in), format='csr'))
+        matrix = matrix @ sparse.kron(Q.T, sparse.identity(prod(subshape_in), format='csr'))
         return matrix.tocsr()
 
     def radial_matrix(self, regindex_in, regindex_out, m):
@@ -4492,14 +4490,14 @@ class LiftTauBallRadius(operators.LiftTau, operators.SphericalEllOperator):
                     comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
                 else:
                     # Build zero matrix
-                    comp_matrix = sparse.csr_matrix((np.prod(subshape_out), np.prod(subshape_in)))
+                    comp_matrix = sparse.csr_matrix((prod(subshape_out), prod(subshape_in)))
                 submatrix_row.append(comp_matrix)
             submatrices.append(submatrix_row)
         matrix = sparse.bmat(submatrices)
         matrix.tocsr()
         # Convert tau from spin to regularity first
         Q = dedalus_sphere.spin_operators.Intertwiner(ell, indexing=(-1,+1,0))(len(self.tensorsig))  # Fix for product domains
-        matrix = matrix @ sparse.kron(Q.T, sparse.identity(np.prod(subshape_in), format='csr'))
+        matrix = matrix @ sparse.kron(Q.T, sparse.identity(prod(subshape_in), format='csr'))
         return matrix.tocsr()
 
     def radial_matrix(self, regindex_in, regindex_out, m):
@@ -4542,14 +4540,14 @@ class LiftTauShell(operators.LiftTau, operators.SphericalEllOperator):
                     comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
                 else:
                     # Build zero matrix
-                    comp_matrix = sparse.csr_matrix((np.prod(subshape_out), np.prod(subshape_in)))
+                    comp_matrix = sparse.csr_matrix((prod(subshape_out), prod(subshape_in)))
                 submatrix_row.append(comp_matrix)
             submatrices.append(submatrix_row)
         matrix = sparse.bmat(submatrices)
         matrix.tocsr()
         # Convert tau from spin to regularity first
         Q = dedalus_sphere.spin_operators.Intertwiner(ell, indexing=(-1,+1,0))(len(self.tensorsig))  # Fix for product domains
-        matrix = matrix @ sparse.kron(Q.T, sparse.identity(np.prod(subshape_in), format='csr'))
+        matrix = matrix @ sparse.kron(Q.T, sparse.identity(prod(subshape_in), format='csr'))
         return matrix.tocsr()
 
     def radial_matrix(self, regindex_in, regindex_out, m):

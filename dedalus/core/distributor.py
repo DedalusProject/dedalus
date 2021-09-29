@@ -6,9 +6,11 @@ import logging
 from mpi4py import MPI
 import numpy as np
 from collections import OrderedDict
+import numbers
 
 from ..tools.cache import CachedMethod, CachedAttribute
 from ..tools.config import config
+from ..tools.array import prod
 
 logger = logging.getLogger(__name__.split('.')[-1])
 GROUP_TRANSFORMS = config['transforms'].getboolean('GROUP_TRANSFORMS')
@@ -89,8 +91,7 @@ class Distributor:
         self.dim = dim = len(self.coords)
 #        self.dim = dim = sum(coordsystem.dim for coordsystem in coordsystems)
         self.comm = comm
-        # Squeeze out local/bad (size <= 1) dimensions
-        self.mesh = mesh = np.array([i for i in mesh if (i>1)], dtype=int)
+        self.mesh = mesh = np.array(mesh)
         # Check mesh compatibility
         logger.debug('Mesh: %s' %str(mesh))
         if mesh.size >= dim:
@@ -98,8 +99,9 @@ class Distributor:
         if np.prod(mesh) != comm.size:
             raise ValueError("Wrong number of processes (%i) for specified mesh (%s)" %(comm.size, mesh))
         self.dtype = dtype
-        # Create cartesian communicator
-        self.comm_cart = comm.Create_cart(mesh)
+        # Create cartesian communicator, ignoring axes with m=1
+        reduced_mesh = [m for m in mesh if m > 1]
+        self.comm_cart = comm.Create_cart(reduced_mesh)
         self.comm_coords = np.array(self.comm_cart.coords, dtype=int)
         # Build layout objects
         self._build_layouts()
@@ -118,9 +120,10 @@ class Distributor:
     def _build_layouts(self, dry_run=False):
         """Construct layout objects."""
         D = self.dim
-        R = self.mesh.size
+        R = np.sum(self.mesh > 1)
         # First layout: full coefficient space
-        local = [False] * R + [True] * (D-R)
+        local = np.array([True] * D)
+        local[:self.mesh.size][self.mesh > 1] = False
         grid_space = [False] * D
         layout_0 = Layout(self, local, grid_space)
         layout_0.index = 0
@@ -173,7 +176,7 @@ class Distributor:
         """Remedy different scale inputs."""
         if scales is None:
             scales = 1
-        if np.isscalar(scales):
+        if isinstance(scales, numbers.Number):
             scales = [scales] * self.dim
         if 0 in scales:
             raise ValueError("Scales must be nonzero.")
@@ -230,7 +233,8 @@ class Layout:
         self.grid_space = np.array(grid_space)
         # Extend mesh and coordinates to distributor dimension
         self.ext_mesh = np.ones(dist.dim, dtype=int)
-        self.ext_mesh[~self.local] = dist.mesh
+        reduced_mesh = [m for m in dist.mesh if m > 1]
+        self.ext_mesh[~self.local] = reduced_mesh
         self.ext_coords = np.zeros(dist.dim, dtype=int)
         self.ext_coords[~self.local] = dist.comm_coords
 
@@ -308,7 +312,7 @@ class Layout:
     def buffer_size(self, bases, scales, dtype):
         """Local buffer size (bytes)."""
         local_shape = self.local_shape(bases, scales)
-        return np.prod(local_shape) * np.dtype(dtype).itemsize
+        return prod(local_shape) * np.dtype(dtype).itemsize
 
     # def local_group_index(self, group, domain, scales):
     #     """Index of a group within local groups."""
@@ -421,7 +425,7 @@ class Transform:
         field.set_layout(self.layout1)
         gdata = field.data
         # Transform non-constant bases with local data
-        if (basis is not None) and np.prod(cdata.shape):
+        if (basis is not None) and prod(cdata.shape):
             basis.backward_transform(field, axis, cdata, gdata)
             #basis.backward_transform(cdata, gdata, axis, field.scales[axis], field.tensorsig)
             #plan = basis.transform_plan(cdata.shape, self.axis, field.scales[self.axis], field.dtype)
@@ -436,7 +440,7 @@ class Transform:
         field.set_layout(self.layout0)
         cdata = field.data
         # Transform non-constant bases with local data
-        if (basis is not None) and np.prod(gdata.shape):
+        if (basis is not None) and prod(gdata.shape):
             basis.forward_transform(field, axis, gdata, cdata)
             #basis.forward_transform(gdata, cdata, axis, field.scales[axis], field.tensorsig)
             #plan = basis.transform_plan(cdata.shape, self.axis, field.scales[self.axis], field.dtype)
@@ -503,9 +507,13 @@ class Transpose:
         self.comm_cart = comm_cart
         # Create subgrid communicator along the moving mesh axis
         remain_dims = [0] * comm_cart.dim
-        remain_dims[axis] = 1
+        # No comm cart across axes where mesh = 1
+        mesh = layout0.dist.mesh
+        comm_cart_axis = axis - np.sum(mesh[:axis]==1)
+        remain_dims[comm_cart_axis] = 1
         self.comm_sub = comm_cart.Sub(remain_dims)
 
+    @CachedMethod
     def _sub_shape(self, domain, scales):
         """Build global shape of data assigned to sub-communicator."""
         local_shape = self.layout0.local_shape(domain, scales)
@@ -519,7 +527,7 @@ class Transpose:
     @CachedMethod
     def _plan(self, ncomp, sub_shape, chunk_shape, dtype):
         axis = self.axis
-        if np.prod(sub_shape) == 0:
+        if prod(sub_shape) == 0:
             return None  # no data
         elif (sub_shape[axis] == chunk_shape[axis]) and (sub_shape[axis+1] == chunk_shape[axis+1]):
             return None  # no change
@@ -531,7 +539,7 @@ class Transpose:
 
     def _single_plan(self, field):
         """Build single transpose plan."""
-        ncomp = np.prod([cs.dim for cs in field.tensorsig], dtype=int)
+        ncomp = int(prod([cs.dim for cs in field.tensorsig]))
         sub_shape = self._sub_shape(field.domain, field.scales)
         chunk_shape = field.domain.chunk_shape(self.layout0)
         return self._plan(ncomp, sub_shape, chunk_shape, field.dtype)
@@ -552,7 +560,7 @@ class Transpose:
         for (sub_shape, chunk_shape), fields in field_groups.items():
             ncomp = 0
             for field in fields:
-                ncomp += np.prod([cs.dim for cs in field.tensorsig], dtype=int)
+                ncomp += int(prod([cs.dim for cs in field.tensorsig]))
             plan = self._plan(ncomp, sub_shape, chunk_shape, field.dtype) # Assumes last field's dtype is good for everybody
             plans.append((fields, plan))
         return plans
@@ -649,7 +657,7 @@ class Transpose:
                     # Split up transposed data
                     i = 0
                     for field in fields:
-                        ncomp = np.prod([cs.dim for cs in field.tensorsig], dtype=int)
+                        ncomp = int(prod([cs.dim for cs in field.tensorsig]))
                         data = data1[i:i+ncomp]
                         field.data[:] = data.reshape(field.data.shape)
                         i += ncomp
@@ -698,7 +706,7 @@ class Transpose:
                     # Split up transposed data
                     i = 0
                     for field in fields:
-                        ncomp = np.prod([cs.dim for cs in field.tensorsig], dtype=int)
+                        ncomp = int(prod([cs.dim for cs in field.tensorsig]))
                         data = data0[i:i+ncomp]
                         field.data[:] = data.reshape(field.data.shape)
                         i += ncomp
