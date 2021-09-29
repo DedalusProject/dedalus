@@ -130,6 +130,7 @@ def test_flow_tools_cfl(x_basis_class, Nx, Nz, timestepper, dtype, safety, z_vel
     u['g'][0] = fourier_velocity(x)
     u['g'][1] = chebyshev_velocity(z)
     solver.step(dt)
+    solver.step(dt) #need two timesteps to get past stored_dt per compute_timestep logic
     dt = cfl.compute_dt()
 
     op = operators.AdvectiveCFL(u, c)
