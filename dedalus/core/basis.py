@@ -4737,8 +4737,15 @@ class InterpolateColatitude(FutureLockedField, operators.Interpolate):
     def _interpolation_vectors(sphere_basis, Ntheta, s, theta):
         interp_vectors = {}
         z = np.cos(theta)
+        colat_transform = sphere_basis.dist.get_transform_object(sphere_basis.first_axis+1)
+        layout = colat_transform.layout1
+        coupling = [True] * sphere_basis.dist.dim
+        coupling[sphere_basis.first_axis] = False
+        domain = sphere_basis.domain
+        m_groupsets = layout.local_groupsets(coupling, domain, scales=domain.dealias, broadcast=True)
         forward = sphere_basis.transform_plan(Ntheta, s)
-        for m in set(sphere_basis.local_unpacked_m):
+        for group in m_groupsets:
+            m = group[sphere_basis.first_axis]
             if m <= sphere_basis.Lmax:
                 Lmin = max(abs(m), abs(s))
                 interp_m = dedalus_sphere.sphere.harmonics(sphere_basis.Lmax, m, s, z)[None, :]

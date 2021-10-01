@@ -298,8 +298,7 @@ def test_sphere_complex_scalar_backward(Nphi, Ntheta, radius, basis, dealias):
     c, d, b, phi, theta = basis(Nphi, Ntheta, radius, dealias, np.complex128)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     f.set_scales(dealias)
-    m = b.local_m
-    ell = b.local_ell
+    m, ell, *_ = d.coeff_layout.local_group_arrays(b.domain, scales=1)
     f['c'][(m == -2) * (ell == 2)] = 1
     fg = np.sqrt(15) / 4 * np.sin(theta)**2 * np.exp(-2j*phi)
     assert np.allclose(fg, f['g'])
@@ -313,8 +312,7 @@ def test_sphere_complex_scalar_forward(Nphi, Ntheta, radius, basis, dealias):
     c, d, b, phi, theta = basis(Nphi, Ntheta, radius, dealias, np.complex128)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     f.set_scales(dealias)
-    m = b.local_m
-    ell = b.local_ell
+    m, ell, *_  = d.coeff_layout.local_group_arrays(b.domain, scales=1)
     f['g'] = np.sqrt(15) / 4 * np.sin(theta)**2 * np.exp(-2j*phi)
     fc = np.zeros_like(f['c'])
     fc[(m == -2) * (ell == 2)] = 1
@@ -329,8 +327,7 @@ def test_sphere_real_scalar_backward(Nphi, Ntheta, radius, basis, dealias):
     c, d, b, phi, theta = basis(Nphi, Ntheta, radius, dealias, np.float64)
     f = field.Field(dist=d, bases=(b,), dtype=np.float64)
     f.set_scales(dealias)
-    m = b.local_m
-    ell = b.local_ell
+    m, ell, *_  = d.coeff_layout.local_group_arrays(b.domain, scales=1)
     f['c'][(m == 2) * (ell == 2)] = 1
     fg = np.sqrt(15) / 4 * np.sin(theta)**2 * (np.cos(2*phi) - np.sin(2*phi))
     assert np.allclose(fg, f['g'])
@@ -344,8 +341,7 @@ def test_sphere_real_scalar_forward(Nphi, Ntheta, radius, basis, dealias):
     c, d, b, phi, theta = basis(Nphi, Ntheta, radius, dealias, np.float64)
     f = field.Field(dist=d, bases=(b,), dtype=np.float64)
     f.set_scales(dealias)
-    m = b.local_m
-    ell = b.local_ell
+    m, ell, *_  = d.coeff_layout.local_group_arrays(b.domain, scales=1)
     f['g'] = np.sqrt(15) / 4 * np.sin(theta)**2 * (np.cos(2*phi) - np.sin(2*phi))
     fc = np.zeros_like(f['c'])
     fc[(m == 2) * (ell == 2)] = 1
