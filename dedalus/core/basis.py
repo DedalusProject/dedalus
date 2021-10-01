@@ -5290,15 +5290,15 @@ class CartesianAdvectiveCFL(operators.AdvectiveCFL):
             basis = velocity.domain.get_basis(c)
             dealias = basis.dealias[0]
             axis_spacing = basis.local_grid_spacing(i, dealias) * dealias
+            N = basis.grid_shape((dealias,))[0]
             if isinstance(basis, Jacobi) and basis.a == -1/2 and basis.b == -1/2:
                 #Special case for ChebyshevT (a=b=-1/2)
-                N = len(np.ravel(basis.local_grids(scales=(dealias,))[0]))
-                i = np.arange(N).reshape(axis_spacing.shape)
+                local_elements = basis.dist.grid_layout.local_elements(basis.domain, scales=dealias)[i]
+                i = np.arange(N)[local_elements].reshape(axis_spacing.shape)
                 theta = np.pi * (i + 1/2) / N
                 axis_spacing[:] = dealias * basis.COV.stretch * np.sin(theta) * np.pi / N
             elif isinstance(basis, (ComplexFourier, RealFourier)):
                 #Special case for Fourier
-                N = basis.grid_shape((dealias,))[0]
                 native_spacing = 2 * np.pi / N
                 axis_spacing[:] = dealias * native_spacing * basis.COV.stretch
             spacing.append(axis_spacing)
