@@ -1132,6 +1132,8 @@ class Average(LinearOperator, metaclass=MultiClass):
 
     """
 
+    name = "Average"
+
     @classmethod
     def _check_args(cls, operand, coords):
         # Dispatch by operand basis
@@ -2194,12 +2196,22 @@ class SpectralOperatorS2(SpectralOperator):
         """Build operator matrix for a specific subproblem."""
         operand = self.args[0]
         input_basis = self.input_basis
-        S_in = input_basis.spin_weights(operand.tensorsig)
-        S_out = input_basis.spin_weights(self.tensorsig)  # Should this use output_basis?
+        if input_basis is not None:
+            basis = self.input_basis
+        else:
+            basis = self.output_basis
+        S_in = basis.spin_weights(operand.tensorsig)
+        S_out = basis.spin_weights(self.tensorsig)  # Should this use output_basis?
         m = subproblem.group[self.last_axis - 1]
         l = subproblem.group[self.last_axis]
-        l_coupled = self.subaxis_coupling[1]
+        m_coupled = (m is None)
+        l_coupled = (l is None)
+        if self.subaxis_coupling[0] and not m_coupled:
+            raise ValueError("This should never happen.")
+        if self.subaxis_coupling[1] and not l_coupled:
+            raise ValueError("This should never happen.")
         m_dep = self.subaxis_dependence[0]
+        l_dep = self.subaxis_dependence[1]
         # Loop over components
         submatrices = []
         for spinindex_out, spintotal_out in np.ndenumerate(S_out):
@@ -2211,19 +2223,33 @@ class SpectralOperatorS2(SpectralOperator):
                 if spinindex_out in self.spinindex_out(spinindex_in):
                     # Substitute factor for radial axis
                     factors = [sparse.eye(i, j, format='csr') for i, j in zip(subshape_out, subshape_in)]
-                    if l_coupled and m_dep:
+                    if l_coupled and self.subaxis_coupling[1]:
                         matrix = self.m_matrix(spinindex_in, spinindex_out, m)
-                    elif l_coupled and not m_dep:
-                        matrix = self.assembled_l_matrices(spinindex_in, spinindex_out, m)
-                    elif not m_dep:
-                        spintotal_in = input_basis.spintotal(spinindex_in)
-                        spintotal_out = input_basis.spintotal(spinindex_out)
-                        if abs(spintotal_in) <= l and abs(spintotal_out) <= l:
-                            matrix = self.l_matrix(self.input_basis, self.output_basis, spinindex_in, spinindex_out, l)
-                        else:
-                            matrix = sparse.csr_matrix((np.prod(subshape_out), np.prod(subshape_in)))
+                    elif l_coupled or (not m_dep):
+                        if l_coupled:
+                            if input_basis is not None:
+                                domain = self.operand.domain
+                            else:
+                                domain = self.domain
+                            local_groups = self.dist.coeff_layout.local_group_arrays(domain, scales=1)
+                            local_m = local_groups[basis.first_axis]
+                            local_ell = local_groups[basis.first_axis+1]
+                            ell_list = local_ell[local_m == m].ravel()
+                        elif not m_dep:
+                            ell_list = [l]
+                        blocks = []
+                        spintotal_in = basis.spintotal(spinindex_in)
+                        spintotal_out = basis.spintotal(spinindex_out)
+                        for ell in ell_list:
+                            if abs(spintotal_in) <= ell and abs(spintotal_out) <= ell:
+                                block = self.l_matrix(self.input_basis, self.output_basis, spinindex_in, spinindex_out, ell)
+                            else:
+                                #block = sparse.csr_matrix((np.prod(subshape_out), np.prod(subshape_in)))
+                                block = sparse.csr_matrix((1, 1)) # HACK!
+                            blocks.append(block)
+                        matrix = sparse_block_diag(blocks).tocsr()
                     else:
-                        raise ValueError("This should never happen.")
+                        raise NotImplementedError()
                     factors[self.last_axis] = matrix
                     comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
                 else:
@@ -2253,7 +2279,6 @@ class SpectralOperatorS2(SpectralOperator):
                 comp_out = out.data[spinindex_out]
                 spintotal_in = input_basis.spintotal(spinindex_in)
                 spintotal_out = input_basis.spintotal(spinindex_out)
-
                 for ell, m_ind, ell_ind in input_basis.ell_maps:
                     if (abs(spintotal_in) > ell) or (abs(spintotal_out) > ell):
                         continue
@@ -2263,9 +2288,7 @@ class SpectralOperatorS2(SpectralOperator):
                     vec_in  = comp_in[tuple(slices)]
                     vec_out = comp_out[tuple(slices)]
                     # Kronecker group matrix up to apply to different m groups
-
                     l_matrix = self.l_matrix(input_basis, self.output_basis, spinindex_in, spinindex_out, ell)
-                        
                     I_m_groups = sparse.identity((m_ind.stop - m_ind.start) // l_matrix.shape[1])
                     A = sparse.kron(I_m_groups, l_matrix)
                     vec_out += apply_matrix(A, vec_in, axis=first_axis)

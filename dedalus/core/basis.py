@@ -2597,6 +2597,12 @@ class SpinWeightedSphericalHarmonics(SpinBasis, metaclass=CachedClass):
         return NotImplemented
 
     @CachedAttribute
+    def constant_mode_value(self):
+        # Adjust for SWSH normalization
+        # TODO: check this is right for regtotal != 0?
+        return 1 / np.sqrt(2)
+
+    @CachedAttribute
     def m_maps(self):
         """
         Tuple of (m, mg_slice, mc_slice, ell_slice) for all local m's when
@@ -2827,18 +2833,50 @@ class SpinWeightedSphericalHarmonics(SpinBasis, metaclass=CachedClass):
                 spinindex_2d = tuple([j for j, cs in zip(comp, tensorsig) if cs is self.coordsystem.S2coordsys])
                 spintotal_3d = self.spintotal(spinindex_3d)
                 spintotal_2d = self.spintotal(spinindex_2d)
-                if abs(spintotal_3d + spintotal_2d) <= ell:
+                if ell is None: # HACK
+                    enum_components_output.append((i, comp))
+                elif abs(spintotal_3d + spintotal_2d) <= ell:
                     enum_components_output.append((i, comp))
             else:
                 spinindex_2d = tuple([j for j, cs in zip(comp, tensorsig) if cs is self.coordsystem])
                 spintotal_2d = self.spintotal(spinindex_2d)
-                if abs(spintotal_2d) <= ell:
+                if ell is None: # HACK
+                    enum_components_output.append((i, comp))
+                elif abs(spintotal_2d) <= ell:
                     enum_components_output.append((i, comp))
         return enum_components_output
 
 
 SWSH = SpinWeightedSphericalHarmonics
 SphereBasis = SWSH
+
+
+class ConvertConstantSphere(operators.ConvertConstant, operators.SpectralOperatorS2):
+
+    output_basis_type = SphereBasis
+    subaxis_dependence = [False, True]
+    subaxis_coupling = [False, False]
+
+    def __init__(self, operand, output_basis, out=None):
+        super().__init__(operand, output_basis, out=out)
+        if self.coords in operand.tensorsig:
+            raise ValueError("Tensors not yet supported.")
+
+    def spinindex_out(self, spinindex_in):
+        return (spinindex_in,)
+
+    @staticmethod
+    def l_matrix(input_basis, output_basis, spinindex_in, spinindex_out, ell):
+        coeff_size = output_basis.shape[1]
+        if ell == 0 and spinindex_in == spinindex_out:
+            unit_amplitude = 1 / output_basis.constant_mode_value
+            matrix = np.zeros((coeff_size, 1))
+            matrix[0, 0] = unit_amplitude
+            return matrix
+        else:
+            return np.zeros((1, 0))
+            #raise ValueError("This should never happen.")
+
 
 class SphereDivergence(operators.Divergence, operators.SpectralOperatorS2):
     """Divergence on S2."""
@@ -2882,7 +2920,7 @@ class SphereDivergence(operators.Divergence, operators.SpectralOperatorS2):
             raise ValueError("Type must be real or complex.")
 
         spintotal_in = input_basis.spintotal(spinindex_in)
-        
+
         if input_basis.dtype == np.float64:
             raise NotImplementedError("No reals yet.")
         elif input_basis.dtype == np.complex128:
@@ -4600,6 +4638,37 @@ class SphericalAzimuthalAverage(AzimuthalAverage, operators.Average, operators.S
             comp_in = operand.data[regindex]
             comp_out = out.data[regindex]
             comp_out[m0_out] = comp_in[m0_in]
+
+
+class SphereAverage(operators.Average, operators.SpectralOperatorS2):
+    """Todo: skip when Nphi = Ntheta = 1."""
+
+    input_coord_type = S2Coordinates
+    input_basis_type = SphereBasis
+    subaxis_dependence = [True, True]
+    subaxis_coupling = [False, False]
+
+    def _output_basis(self, input_basis):
+        # Copy with Nphi = Ntheta = 1
+        shape = list(input_basis.shape)
+        shape[0] = shape[1] = 1
+        return input_basis.clone_with(shape=shape)
+
+    def new_operand(self, operand, **kw):
+        return operators.Average(operand, self.coord, **kw)
+
+    def spinindex_out(self, spinindex_in):
+        return (spinindex_in,)
+
+    @staticmethod
+    def l_matrix(input_basis, output_basis, spinindex_in, spinindex_out, ell):
+        coeff_size = input_basis.shape[1]
+        if spinindex_out != spinindex_in:
+            raise ValueError("This should never happen.")
+        if ell == 0:
+            return sparse.identity(1)
+        else:
+            return sparse.csr_matrix((0, 1), dtype=input_basis.dtype)
 
 
 class SphericalAverage(operators.Average, operators.SphericalEllOperator):

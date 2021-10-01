@@ -31,6 +31,7 @@ phi, theta = b.local_grids(b.domain.dealias)
 f = d3.Field(dist=d, bases=(b,), dtype=dtype)
 u = d3.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
 p = d3.Field(dist=d, bases=(b,), dtype=dtype)
+g = d3.Field(dist=d, dtype=dtype)
 
 # Parameters and operators
 lap = lambda A: d3.Laplacian(A, c)
@@ -47,15 +48,17 @@ Re = 100000
 def eq_eval(eq_str):
     return [eval(expr) for expr in split_equation(eq_str)]
 
+ave = lambda A: d3.Average(A, c)
+
 f['g'] = 2*Omega*np.cos(theta)
-problem = d3.IVP([u,p])
+problem = d3.IVP([u,p,g])
 problem.add_equation((ddt(u) + grad(p) - lap(u)/Re, -f*skew(u) - dot(u,grad(u))))
-problem.add_equation((div(u), 0),condition='ntheta != 0')
-problem.add_equation((p, 0),condition='ntheta == 0')
+problem.add_equation((div(u) + g, 0))
+problem.add_equation((ave(p), 0))
 logger.info("Problem built")
 
 # Solver
-solver = problem.build_solver(timesteppers.RK443, matrix_coupling=[False,False])
+solver = problem.build_solver(timesteppers.RK443, matrix_coupling=[False,True])
 
 # initial conditions
 psi = d3.Field(dist=d, bases=(b,), dtype=dtype)
@@ -70,7 +73,7 @@ snapshots.add_task(div(skew(u)), name='vorticity')
 freq = 2*m_ic*Omega/(l_ic*(l_ic+1))
 period = 2*np.pi/freq
 solver.stop_sim_time = 3*period
-solver.stop_iteration = np.inf
+solver.stop_iteration = 50
 dt = period/100
 start_time = time.time()
 while solver.proceed:
