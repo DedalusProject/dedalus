@@ -87,6 +87,8 @@ class Distributor:
             comm = MPI.COMM_WORLD
         if mesh is None:
             mesh = np.array([comm.size], dtype=int)
+        # Trim trailing ones
+        mesh = 1 + np.trim_zeros(mesh - 1, trim='b')
         self.dim = dim = len(self.coords)
 #        self.dim = dim = sum(coordsystem.dim for coordsystem in coordsystems)
         self.comm = comm
