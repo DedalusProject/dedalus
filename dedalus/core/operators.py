@@ -77,6 +77,10 @@ def prefix(*names):
     return register_op
 
 
+# TODO: use optimized import
+prod = np.prod
+
+
 # class Cast(FutureField, metaclass=MultiClass):
 #     """
 #     Cast to field.
@@ -696,6 +700,7 @@ class LinearOperator(FutureField):
         operand_mats = self.operand.expression_matrices(subproblem, vars, **kw)
         # Apply operator matrix
         operator_mat = self.subproblem_matrix(subproblem)
+        print(self, operator_mat.shape, [operand_mats[var].shape for var in operand_mats])
         return {var: operator_mat @ operand_mats[var] for var in operand_mats}
 
     def subproblem_matrix(self, subproblem):
@@ -810,7 +815,7 @@ class SpectralOperator(LinearOperator):
         # Require coefficient space along last axis
         arg0.require_coeff_space(last_axis)
         # Require locality along last axis if non-separable
-        if not not self.subaxis_coupling[-1]:
+        if self.subaxis_coupling[-1]:
             arg0.require_local(last_axis)
 
 
@@ -1121,6 +1126,7 @@ class Integrate(LinearOperator, metaclass=MultiClass):
         return Integrate(operand, self.coord, **kw)
 
 
+@alias("ave")
 class Average(LinearOperator, metaclass=MultiClass):
     """
     Average along one dimension.
@@ -1145,10 +1151,14 @@ class Average(LinearOperator, metaclass=MultiClass):
         return False
 
     @classmethod
-    def _preprocess_args(cls, operand, coord):
+    def _preprocess_args(cls, operand, coord=None):
         if isinstance(operand, Number):
             raise SkipDispatchException(output=operand)
-        if isinstance(coord, (coords.Coordinate, coords.CoordinateSystem)):
+        if coord is None:
+            coord = operand.dist.single_coordsys
+            if coord is False:
+                raise ValueError("coordsys must be specified.")
+        elif isinstance(coord, (coords.Coordinate, coords.CoordinateSystem)):
             pass
         elif isinstance(coord, str):
             coord = operand.domain.get_coord(coord)
@@ -2165,6 +2175,15 @@ def reduced_view_4(data, axis):
     N3 = int(prod(shape[axis+2:]))
     return data.reshape((N0, N1, N2, N3))
 
+
+def reduced_view_3_ravel(data, axis, dim):
+    shape = data.shape
+    N0 = int(prod(shape[:axis]))
+    N1 = int(prod(shape[axis:axis+dim]))
+    N2 = int(prod(shape[axis+dim:]))
+    return data.reshape((N0, N1, N2))
+
+
 class SpectralOperatorS2(SpectralOperator):
     """
     Base class for linear operators acting on the 2-sphere.
@@ -2195,13 +2214,14 @@ class SpectralOperatorS2(SpectralOperator):
     def subproblem_matrix(self, subproblem):
         """Build operator matrix for a specific subproblem."""
         operand = self.args[0]
-        input_basis = self.input_basis
-        if input_basis is not None:
-            basis = self.input_basis
-        else:
+        if self.input_basis is None:
             basis = self.output_basis
+            domain = self.domain
+        else:
+            basis = self.input_basis
+            domain = operand.domain
         S_in = basis.spin_weights(operand.tensorsig)
-        S_out = basis.spin_weights(self.tensorsig)  # Should this use output_basis?
+        S_out = basis.spin_weights(self.tensorsig)
         m = subproblem.group[self.last_axis - 1]
         l = subproblem.group[self.last_axis]
         m_coupled = (m is None)
@@ -2217,20 +2237,16 @@ class SpectralOperatorS2(SpectralOperator):
         for spinindex_out, spintotal_out in np.ndenumerate(S_out):
             submatrix_row = []
             for spinindex_in, spintotal_in in np.ndenumerate(S_in):
-                # Build identity matrices for each axis
                 subshape_in = subproblem.coeff_shape(self.operand.domain)
                 subshape_out = subproblem.coeff_shape(self.domain)
                 if spinindex_out in self.spinindex_out(spinindex_in):
-                    # Substitute factor for radial axis
+                    # Build identity matrices for each axis
                     factors = [sparse.eye(i, j, format='csr') for i, j in zip(subshape_out, subshape_in)]
+                    # Substitute factor for radial axis
                     if l_coupled and self.subaxis_coupling[1]:
                         matrix = self.m_matrix(spinindex_in, spinindex_out, m)
                     elif l_coupled or (not m_dep):
                         if l_coupled:
-                            if input_basis is not None:
-                                domain = self.operand.domain
-                            else:
-                                domain = self.domain
                             local_groups = self.dist.coeff_layout.local_group_arrays(domain, scales=1)
                             local_m = local_groups[basis.first_axis]
                             local_ell = local_groups[basis.first_axis+1]
@@ -2260,6 +2276,29 @@ class SpectralOperatorS2(SpectralOperator):
         matrix = sparse.bmat(submatrices)
         return matrix.tocsr()
 
+    # def subspace_matrix(self, layout, spinindex_in, spinindex_out):
+    #     if self.input_basis is not None:
+    #         basis = self.input_basis
+    #     else:
+    #         basis = self.output_basis
+    #     m, l =
+    #     l_flat =
+    #     spintotal_in = input_basis.spintotal(spinindex_in)
+    #     spintotal_out = input_basis.spintotal(spinindex_out)
+    #     for ell, m_ind, ell_ind in input_basis.ell_maps:
+    #         if (abs(spintotal_in) > ell) or (abs(spintotal_out) > ell):
+    #             continue
+    #         # Need to check if components exist for a given spin?
+    #         slices[first_axis] = m_ind
+    #         slices[first_axis+1] = ell_ind
+    #         vec_in  = comp_in[tuple(slices)]
+    #         vec_out = comp_out[tuple(slices)]
+    #         # Kronecker group matrix up to apply to different m groups
+    #         l_matrix = self.l_matrix(input_basis, self.output_basis, spinindex_in, spinindex_out, ell)
+    #         I_m_groups = sparse.identity((m_ind.stop - m_ind.start) // l_matrix.shape[1])
+    #         A = sparse.kron(I_m_groups, l_matrix)
+    #         vec_out += apply_matrix(A, vec_in, axis=first_axis)
+
     def operate(self, out):
         """Perform operation."""
         operand = self.args[0]
@@ -2274,24 +2313,168 @@ class SpectralOperatorS2(SpectralOperator):
         S_in = input_basis.spin_weights(operand.tensorsig)
         slices = [slice(None) for i in range(input_basis.dist.dim)]
         for spinindex_in, spintotal_in in np.ndenumerate(S_in):
+            comp_in = operand.data[spinindex_in]
+            reduced_in = reduced_view_3_ravel(comp_in, axis, dim)
             for spinindex_out in self.spinindex_out(spinindex_in):
-                comp_in = operand.data[spinindex_in]
                 comp_out = out.data[spinindex_out]
-                spintotal_in = input_basis.spintotal(spinindex_in)
-                spintotal_out = input_basis.spintotal(spinindex_out)
-                for ell, m_ind, ell_ind in input_basis.ell_maps:
-                    if (abs(spintotal_in) > ell) or (abs(spintotal_out) > ell):
-                        continue
-                    # Need to check if components exist for a given spin?
-                    slices[first_axis] = m_ind
-                    slices[first_axis+1] = ell_ind
-                    vec_in  = comp_in[tuple(slices)]
-                    vec_out = comp_out[tuple(slices)]
-                    # Kronecker group matrix up to apply to different m groups
-                    l_matrix = self.l_matrix(input_basis, self.output_basis, spinindex_in, spinindex_out, ell)
-                    I_m_groups = sparse.identity((m_ind.stop - m_ind.start) // l_matrix.shape[1])
-                    A = sparse.kron(I_m_groups, l_matrix)
-                    vec_out += apply_matrix(A, vec_in, axis=first_axis)
+                reduced_out = reduced_view_3_ravel(comp_out, axis, dim)
+                matrix = self.subspace_matrix(layout, spinindex_in, spinindex_out)
+                reduced_out += apply_matrix(matrix, reduced_in, axis=1)
+                # spintotal_in = input_basis.spintotal(spinindex_in)
+                # spintotal_out = input_basis.spintotal(spinindex_out)
+                # for ell, m_ind, ell_ind in input_basis.ell_maps:
+                #     if (abs(spintotal_in) > ell) or (abs(spintotal_out) > ell):
+                #         continue
+                #     # Need to check if components exist for a given spin?
+                #     slices[first_axis] = m_ind
+                #     slices[first_axis+1] = ell_ind
+                #     vec_in  = comp_in[tuple(slices)]
+                #     vec_out = comp_out[tuple(slices)]
+                #     # Kronecker group matrix up to apply to different m groups
+                #     l_matrix = self.l_matrix(input_basis, self.output_basis, spinindex_in, spinindex_out, ell)
+                #     I_m_groups = sparse.identity((m_ind.stop - m_ind.start) // l_matrix.shape[1])
+                #     A = sparse.kron(I_m_groups, l_matrix)
+                #     vec_out += apply_matrix(A, vec_in, axis=first_axis)
+
+
+class SeparableSphereOperator(SpectralOperator):
+    """
+    Base class for separable sphere operators.
+    These operators are defined by symbols that multiply (m,l) groups.
+    """
+
+    subaxis_coupling = [False, False]  # No coupling
+
+    @CachedMethod
+    def local_symbols(self, layout, spinindex_in, spinindex_out):
+        # TODO: improve caching specificity (e.g. for operators that depend only on spintotals)
+        operand = self.args[0]
+        if self.input_basis is None:
+            domain = self.domain
+        else:
+            domain = operand.domain
+        if self.subaxis_dependence[0]:
+            raise NotImplementedError()
+        elif self.subaxis_dependence[1]:
+            colat_axis = self.first_axis + 1
+            local_ell = layout.local_group_arrays(domain, scales=domain.dealias)[colat_axis]
+            return self.symbol(spinindex_in, spinindex_out, local_ell)
+        else:
+            return self.symbol(spinindex_in, spinindex_out)
+
+    @staticmethod
+    def symbol(spinindex_in, spinindex_out, ell):
+        raise NotImplementedError()
+
+    def subproblem_matrix(self, subproblem):
+        """Build operator matrix for a specific subproblem."""
+        operand = self.args[0]
+        if self.input_basis is None:
+            basis = self.output_basis
+            domain = self.domain
+        else:
+            basis = self.input_basis
+            domain = operand.domain
+        layout = self.dist.coeff_layout
+        S_in = basis.spin_weights(operand.tensorsig)
+        S_out = basis.spin_weights(self.tensorsig)
+        # Select overlapping data
+        subshape_in = subproblem.coeff_shape(self.operand.domain)
+        subshape_out = subproblem.coeff_shape(self.domain)
+        subshape = np.minimum(subshape_in, subshape_out)
+        slices = tuple(slice(n) for n in subshape)
+        groupset_slices = self.dist.coeff_layout.local_groupset_slices(subproblem.group, domain, scales=1)
+        # Prepare for complexification if necessary
+        complexify = (self.complex_operator and np.isrealobj(self.dtype()))
+        # Build block matrix over components
+        blocks = []
+        for spinindex_out, spintotal_out in np.ndenumerate(S_out):
+            block_row = []
+            for spinindex_in, spintotal_in in np.ndenumerate(S_in):
+                if (prod(subshape) > 0) and (spinindex_out in self.spinindex_out(spinindex_in)):
+                    # Get symbols for overlapping data
+                    symbols = self.local_symbols(layout, spinindex_in, spinindex_out)
+                    groupset_symbols = np.concatenate([symbols[slices].ravel() for slices in groupset_slices])
+                    if np.isscalar(symbols):
+                        symbols = symbols * np.ones(shape=subshape)
+                    else:
+                        symbols = symbols[slices]
+                    # Build component matrix
+                    if complexify:
+                        raise NotImplementedError("Complex operators not implemented yet for real fields.")
+                    else:
+                        # Directly multiply by symbols
+                        block = sparse.diags(groupset_symbols, format='csr')
+                else:
+                    # Zeros
+                    block = sparse.csr_matrix((prod(subshape_out), prod(subshape_in)))
+                block_row.append(block)
+            blocks.append(block_row)
+        matrix = sparse.bmat(blocks)
+        print(self, matrix.shape)
+        return matrix.tocsr()
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        layout = operand.layout
+        basis = self.input_basis
+        if basis is None:
+            basis = self.output_basis
+        # Set output layout
+        out.set_layout(layout)
+        out.data[:] = 0
+        # Return for size-zero data
+        if operand.data.size == 0 or out.data.size == 0:
+            return
+        # Select overlapping data if necessary
+        rank_in = len(operand.tensorsig)
+        rank_out = len(out.tensorsig)
+        local_shape_in = operand.data.shape[rank_in:]
+        local_shape_out = out.data.shape[rank_out:]
+        if local_shape_in == local_shape_out:
+            slices = None
+            data_in = operand.data
+            data_out = out.data
+        else:
+            slices = tuple(slice(n) for n in np.minimum(local_shape_in, local_shape_out))
+            data_in = operand.data[slices]
+            data_out = out.data[slices]
+        # Prepare complexification if necessary
+        complexify = (self.complex_operator and np.isrealobj(self.dtype()))
+        if complexify:
+            azimuth_axis = self.first_axis
+            data_in_cos = data_in[axslice(rank_in+azimuth_axis, 0, None, 2)]
+            data_in_msin = data_in[axslice(rank_in+azimuth_axis, 1, None, 2)]
+            data_out_cos = data_out[axslice(rank_out+azimuth_axis, 0, None, 2)]
+            data_out_msin = data_out[axslice(rank_out+azimuth_axis, 1, None, 2)]
+        # Apply operator
+        S_in = basis.spin_weights(operand.tensorsig)
+        for spinindex_in, spintotal_in in np.ndenumerate(S_in):
+            if complexify:
+                comp_in_cos = data_in_cos[spinindex_in]
+                comp_in_msin = data_in_msin[spinindex_in]
+                comp_in_complex = comp_in_cos + 1j * comp_in_msin # TEMPORARY
+            else:
+                comp_in = data_in[spinindex_in]
+            for spinindex_out in self.spinindex_out(spinindex_in):
+                # Get symbols for overlapping data
+                symbols = self.local_symbols(layout, spinindex_in, spinindex_out)
+                if slices and not np.isscalar(symbols):
+                    symbols = symbols[slices]
+                # Multiply by symbols
+                if complexify:
+                    # Skip repeated symbols
+                    if not np.isscalar(symbols):
+                        symbols = symbols[::2]
+                    comp_out_complex = symbols * comp_in_complex # TEMPORARY
+                    comp_out_cos = data_out_cos[spinindex_out]
+                    comp_out_msin = data_out_msin[spinindex_out]
+                    comp_out_cos += comp_out_complex.real
+                    comp_out_msin += comp_out_complex.imag
+                else:
+                    comp_out = data_out[spinindex_out]
+                    comp_out += symbols * comp_in # TEMPORARY
 
 
 class PolarMOperator(SpectralOperator):

@@ -1549,8 +1549,9 @@ class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):
             #    S[axslice(i, n, n+self.dim)] += reshape_vector(Ss, dim=len(tensorsig), axis=i)
         return S
 
+    @staticmethod
     @CachedMethod
-    def spintotal(self, spinindex):
+    def spintotal(spinindex):
         spinorder = [-1, 1, 0]
         spin = lambda index: spinorder[index]
         return sum(spin(index) for index in spinindex)
@@ -2399,6 +2400,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis, metaclass=CachedClass):
     dim = 2
     dims = ['azimuth', 'colatitude']
     transforms = {}
+    constant_mode_value = 1 / np.sqrt(2)
 
     def __init__(self, coordsystem, shape, dtype, radius=1, dealias=(1,1), colatitude_library=None, azimuth_library=None):
         super().__init__(coordsystem, shape, dtype, dealias, azimuth_library=azimuth_library)
@@ -2596,11 +2598,12 @@ class SpinWeightedSphericalHarmonics(SpinBasis, metaclass=CachedClass):
                 return SpinWeightedSphericalHarmonics(self.coordsystem, shape, radius=self.radius, dealias=self.dealias, dtype=self.dtype)
         return NotImplemented
 
-    @CachedAttribute
-    def constant_mode_value(self):
-        # Adjust for SWSH normalization
-        # TODO: check this is right for regtotal != 0?
-        return 1 / np.sqrt(2)
+    # @staticmethod
+    # @CachedAttribute
+    # def constant_mode_value():
+    #     # Adjust for SWSH normalization
+    #     # TODO: check this is right for regtotal != 0?
+    #     return 1 / np.sqrt(2)
 
     @CachedAttribute
     def m_maps(self):
@@ -2794,10 +2797,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis, metaclass=CachedClass):
 
     @staticmethod
     def k(l, s, mu):
-        if (l-mu*s)*(l+mu*s+1)/2 < 0:
-            print(l, s, mu)
-            raise
-        return -mu*np.sqrt((l-mu*s)*(l+mu*s+1)/2)
+        return -mu*np.sqrt(np.maximum(0, (l-mu*s)*(l+mu*s+1)/2))
 
     @CachedMethod
     def k_vector(self,mu,m,s,local_l):
@@ -2851,11 +2851,11 @@ SWSH = SpinWeightedSphericalHarmonics
 SphereBasis = SWSH
 
 
-class ConvertConstantSphere(operators.ConvertConstant, operators.SpectralOperatorS2):
+class ConvertConstantSphere(operators.ConvertConstant, operators.SeparableSphereOperator):
 
     output_basis_type = SphereBasis
     subaxis_dependence = [False, True]
-    subaxis_coupling = [False, False]
+    complex_operator = False
 
     def __init__(self, operand, output_basis, out=None):
         super().__init__(operand, output_basis, out=out)
@@ -2866,24 +2866,18 @@ class ConvertConstantSphere(operators.ConvertConstant, operators.SpectralOperato
         return (spinindex_in,)
 
     @staticmethod
-    def l_matrix(input_basis, output_basis, spinindex_in, spinindex_out, ell):
-        coeff_size = output_basis.shape[1]
-        if ell == 0 and spinindex_in == spinindex_out:
-            unit_amplitude = 1 / output_basis.constant_mode_value
-            matrix = np.zeros((coeff_size, 1))
-            matrix[0, 0] = unit_amplitude
-            return matrix
-        else:
-            return np.zeros((1, 0))
-            #raise ValueError("This should never happen.")
+    def symbol(spinindex_in, spinindex_out, ell):
+        unit_amplitude = 1 / SphereBasis.constant_mode_value
+        return unit_amplitude * (ell == 0) * (spinindex_in == spinindex_out)
 
 
-class SphereDivergence(operators.Divergence, operators.SpectralOperatorS2):
+class SphereDivergence(operators.Divergence, operators.SeparableSphereOperator):
     """Divergence on S2."""
+
     cs_type = S2Coordinates
     input_basis_type = SpinWeightedSphericalHarmonics
-    subaxis_dependence = [False, True]
-    subaxis_coupling = [False, False]
+    subaxis_dependence = [False, True]  # Depends on ell
+    complex_operator = False
 
     def __init__(self, operand, index=0, out=None):
         operators.Divergence.__init__(self, operand, out=out)  # Gradient has no __init__
@@ -2906,42 +2900,26 @@ class SphereDivergence(operators.Divergence, operators.SpectralOperatorS2):
     def _output_basis(input_basis):
         return input_basis
 
-    @staticmethod
-    def l_matrix(input_basis, output_basis, spinindex_in, spinindex_out, l):
-        spintotal_in = input_basis.spintotal(spinindex_in)
-        spintotal_out = output_basis.spintotal(spinindex_out)
-        mu = spintotal_out - spintotal_in
-        k = input_basis.k(l, spintotal_in, mu)
-        if input_basis.dtype == np.float64:
-            raise NotImplementedError("No reals yet.")
-        elif input_basis.dtype == np.complex128:
-            return np.array([[k]], dtype=np.complex128)
-        else:
-            raise ValueError("Type must be real or complex.")
-
-        spintotal_in = input_basis.spintotal(spinindex_in)
-
-        if input_basis.dtype == np.float64:
-            raise NotImplementedError("No reals yet.")
-        elif input_basis.dtype == np.complex128:
-            return np.array([[k]], dtype=np.complex128)
-        else:
-            raise ValueError("Type must be real or complex.")
-
     def spinindex_out(self, spinindex_in):
-        # Spinorder: -, +, 0
+        # Spinorder: -, +
         # Divergence feels - and +
         if spinindex_in[0] in (0, 1):
             return (spinindex_in[1:],)
         else:
             return tuple()
 
-class SphereGradient(operators.Gradient, operators.SpectralOperatorS2):
+    @staticmethod
+    def symbol(spinindex_in, spinindex_out, ell):
+        return SphereGradient.symbol(spinindex_in, spinindex_out, ell)
+
+
+class SphereGradient(operators.Gradient, operators.SeparableSphereOperator):
     """Gradient on S2."""
+
     cs_type = S2Coordinates
     input_basis_type = SpinWeightedSphericalHarmonics
-    subaxis_dependence = [False, True]
-    subaxis_coupling = [False, False]
+    subaxis_dependence = [False, True]  # Depends on ell
+    complex_operator = False
 
     def __init__(self, operand, coordsys, out=None):
         operators.Gradient.__init__(self, operand, out=out)  # Gradient has no __init__
@@ -2960,30 +2938,29 @@ class SphereGradient(operators.Gradient, operators.SpectralOperatorS2):
     def _output_basis(input_basis):
         return input_basis
 
-    @staticmethod
-    def l_matrix(input_basis, output_basis, spinindex_in, spinindex_out, l):
-        spintotal_in = input_basis.spintotal(spinindex_in)
-        spintotal_out = output_basis.spintotal(spinindex_out)
-        mu = spintotal_out - spintotal_in
-        k = input_basis.k(l, spintotal_in, mu)
-        if input_basis.dtype == np.float64:
-            raise NotImplementedError("No reals yet.")
-        elif input_basis.dtype == np.complex128:
-            return np.array([[k]], dtype=np.complex128)
-        else:
-            raise ValueError("Type must be real or complex.")
-
     def spinindex_out(self, spinindex_in):
-        # Spinorder: -, +, 0
+        # Spinorder: -, +
         # Gradients hits - and +
         return ((0,) + spinindex_in, (1,) + spinindex_in)
 
-class SphereLaplacian(operators.Laplacian, operators.SpectralOperatorS2):
+    @staticmethod
+    def symbol(spinindex_in, spinindex_out, ell):
+        spintotal_in = SphereBasis.spintotal(spinindex_in)
+        spintotal_out = SphereBasis.spintotal(spinindex_out)
+        mu = spintotal_out - spintotal_in
+        k = SphereBasis.k(ell, spintotal_in, mu)
+        k[np.abs(spintotal_in) > ell] = 0
+        k[np.abs(spintotal_out) > ell] = 0
+        return k
+
+
+class SphereLaplacian(operators.Laplacian, operators.SeparableSphereOperator):
     """Laplacian on S2."""
+
     cs_type = S2Coordinates
     input_basis_type = SpinWeightedSphericalHarmonics
-    subaxis_dependence = [False, True]
-    subaxis_coupling = [False, False]
+    subaxis_dependence = [False, True]  # Depends on ell
+    complex_operator = False
 
     def __init__(self, operand, coordsys, out=None):
         operators.Laplacian.__init__(self, operand, out=out)
@@ -2998,36 +2975,39 @@ class SphereLaplacian(operators.Laplacian, operators.SpectralOperatorS2):
         self.tensorsig = operand.tensorsig
         self.dtype = operand.dtype
 
-
     @staticmethod
     def _output_basis(input_basis):
         return input_basis
 
-    @staticmethod
-    def l_matrix(input_basis, output_basis, spinindex_in, spinindex_out, l):
-        spintotal_in = input_basis.spintotal(spinindex_in)
-        kp = input_basis.k(l, spintotal_in, +1)
-        km = input_basis.k(l, spintotal_in, -1)
-        kp_1 = input_basis.k(l, spintotal_in-1, +1)
-        km_1 = input_basis.k(l, spintotal_in+1, -1)
-        k_lap = km_1*kp + kp_1*km
-        if input_basis.dtype == np.float64:
-            raise NotImplementedError("No reals yet.")
-        elif input_basis.dtype == np.complex128:
-            return np.array([[k_lap]], dtype=np.complex128)
-        else:
-            raise ValueError("Type must be real or complex.")
-
     def spinindex_out(self, spinindex_in):
         return (spinindex_in,)
 
-class S2Skew(operators.SpectralOperatorS2):
-    """Skew of S2 vector field."""
+    @staticmethod
+    def symbol(spinindex_in, spinindex_out, ell):
+        spintotal_in = SphereBasis.spintotal(spinindex_in)
+        spintotal_out = SphereBasis.spintotal(spinindex_out)
+        k = SphereBasis.k
+        kp = k(ell, spintotal_in, +1)
+        km = k(ell, spintotal_in, -1)
+        kp_1 = k(ell, spintotal_in-1, +1)
+        km_1 = k(ell, spintotal_in+1, -1)
+        k_lap = km_1*kp + kp_1*km
+        k_lap[np.abs(spintotal_in) > ell] = 0
+        k_lap[np.abs(spintotal_out) > ell] = 0
+        return k_lap
+
+
+class S2Skew(operators.SeparableSphereOperator):
+    """
+    Skew of S2 vector field.
+    TODO: Implement operation in grid space.
+    """
+
     cs_type = S2Coordinates
     name = "S2Skew"
     input_basis_type = SpinWeightedSphericalHarmonics
-    subaxis_dependence = [False, False]
-    subaxis_coupling = [False, False]
+    subaxis_dependence = [False, False]  # No dependence
+    complex_operator = True
 
     def __init__(self, operand, index=0, out=None):
         super().__init__(operand, out=out)  # Gradient has no __init__
@@ -3050,32 +3030,14 @@ class S2Skew(operators.SpectralOperatorS2):
     def _output_basis(input_basis):
         return input_basis
 
-    @staticmethod
-    def l_matrix(input_basis, output_basis, spinindex_in, spinindex_out, l):
-        s = [-1,1][spinindex_in[0]]
-        if input_basis.dtype == np.float64:
-            raise NotImplementedError("No reals yet.")
-        elif input_basis.dtype == np.complex128:
-            return np.array([[s*1j]], dtype=np.complex128)
-        else:
-            raise ValueError("Type must be real or complex.")
-
     def spinindex_out(self, spinindex_in):
-        # Spinorder: -, +, 0
-        #
-        if spinindex_in[0] == 0:
-            spinindex_out = np.copy(spinindex_in)
-            spinindex_out[0] = 1
-            return (tuple(spinindex_out),)
-        else:
-            spinindex_out = np.copy(spinindex_in)
-            spinindex_out[0] = 0
-            return (tuple(spinindex_out),)
+        return (spinindex_in,)
 
-        # May be called on a 3-vector?
-
-class SphereCurl():
-    pass
+    @staticmethod
+    def symbol(spinindex_in, spinindex_out):
+        # Spinorder: -, +
+        s = [-1, 1][spinindex_in[0]]
+        return 1j*s
 
 
 # These are common for BallRadialBasis and SphericalShellRadialBasis
@@ -4640,13 +4602,13 @@ class SphericalAzimuthalAverage(AzimuthalAverage, operators.Average, operators.S
             comp_out[m0_out] = comp_in[m0_in]
 
 
-class SphereAverage(operators.Average, operators.SpectralOperatorS2):
+class SphereAverage(operators.Average, operators.SeparableSphereOperator):
     """Todo: skip when Nphi = Ntheta = 1."""
 
     input_coord_type = S2Coordinates
     input_basis_type = SphereBasis
-    subaxis_dependence = [True, True]
-    subaxis_coupling = [False, False]
+    subaxis_dependence = [False, True]
+    complex_operator = False
 
     def _output_basis(self, input_basis):
         # Copy with Nphi = Ntheta = 1
@@ -4661,14 +4623,8 @@ class SphereAverage(operators.Average, operators.SpectralOperatorS2):
         return (spinindex_in,)
 
     @staticmethod
-    def l_matrix(input_basis, output_basis, spinindex_in, spinindex_out, ell):
-        coeff_size = input_basis.shape[1]
-        if spinindex_out != spinindex_in:
-            raise ValueError("This should never happen.")
-        if ell == 0:
-            return sparse.identity(1)
-        else:
-            return sparse.csr_matrix((0, 1), dtype=input_basis.dtype)
+    def symbol(spinindex_in, spinindex_out, ell):
+        return 1.0 * (ell == 0) * (spinindex_in == spinindex_out)
 
 
 class SphericalAverage(operators.Average, operators.SphericalEllOperator):
