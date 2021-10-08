@@ -6,7 +6,6 @@ import logging
 from mpi4py import MPI
 import numpy as np
 from collections import OrderedDict
-import numbers
 
 from ..tools.cache import CachedMethod, CachedAttribute
 from ..tools.config import config
@@ -176,7 +175,7 @@ class Distributor:
         """Remedy different scale inputs."""
         if scales is None:
             scales = 1
-        if isinstance(scales, numbers.Number):
+        if not hasattr(scales, "__len__"):
             scales = [scales] * self.dim
         if 0 in scales:
             raise ValueError("Scales must be nonzero.")

@@ -2290,6 +2290,7 @@ class PolarGradient(Gradient, PolarMOperator):
             raise ValueError("This should never happen")
 
     @staticmethod
+    @CachedMethod
     def _radial_matrix(radial_basis, spinindex_out0, spintotal, m):
         if spinindex_out0 == 0:
             # HACK: added in a 1/sqrt(2) factor just to make things work
@@ -2435,6 +2436,7 @@ class SphericalGradient(Gradient, SphericalEllOperator):
             raise ValueError("This should never happen")
 
     @staticmethod
+    @CachedMethod
     def _radial_matrix(radial_basis, regindex_out0, regtotal, ell):
         if regindex_out0 == 0:
             return radial_basis.xi(-1, ell+regtotal) * radial_basis.operator_matrix('D-', ell, regtotal)
@@ -2638,6 +2640,7 @@ class SphericalDivergence(Divergence, SphericalEllOperator):
             raise ValueError("This should never happen")
 
     @staticmethod
+    @CachedMethod
     def _radial_matrix(radial_basis, regindex_in0, regtotal, ell):
         if regindex_in0 == 0:
             return radial_basis.xi(-1, ell+regtotal+1) * radial_basis.operator_matrix('D+', ell, regtotal)
@@ -2698,6 +2701,7 @@ class PolarDivergence(Divergence, PolarMOperator):
             raise ValueError("This should never happen")
 
     @staticmethod
+    @CachedMethod
     def _radial_matrix(radial_basis, spinindex_in0, spintotal, m):
         if spinindex_in0 == 0:
             return 1/np.sqrt(2) * radial_basis.operator_matrix('D+', m, spintotal)
@@ -2783,6 +2787,7 @@ class SphericalCurl(Curl, SphericalEllOperator):
             raise ValueError("This should never happen")
 
     @staticmethod
+    @CachedMethod
     def _radial_matrix(radial_basis, regindex_in0, regindex_out0, regtotal_in, regtotal_out, ell):
         if regindex_in0 == 0 and regindex_out0 == 2:
             return -1j * radial_basis.xi(+1, ell+regtotal_in+1) * radial_basis.operator_matrix('D+', ell, regtotal_in)
@@ -2923,6 +2928,7 @@ class PolarCurl(Curl, PolarMOperator):
             raise ValueError("This should never happen")
 
     @staticmethod
+    @CachedMethod
     def _radial_matrix(radial_basis, spinindex_in0, spintotal_in, m):
         # NB: the sign here is different than Vasil et al. (2019) eqn 84
         # because det(Q) = -1
@@ -3121,6 +3127,7 @@ class SphericalLaplacian(Laplacian, SphericalEllOperator):
             raise ValueError("This should never happen")
 
     @staticmethod
+    @CachedMethod
     def _radial_matrix(radial_basis, regtotal, ell):
         return radial_basis.operator_matrix('L', ell, regtotal)
 
@@ -3182,6 +3189,7 @@ class SphericalEllProductField(SphericalEllProduct):
         else:
             raise ValueError("This should never happen")
 
+    @CachedMethod
     def _radial_matrix(self, ell, regtotal):
         return self.ell_func(ell + regtotal) * self.radial_basis.operator_matrix('Id', ell, regtotal)
 
@@ -3228,6 +3236,7 @@ class PolarLaplacian(Laplacian, PolarMOperator):
             raise ValueError("This should never happen")
 
     @staticmethod
+    @CachedMethod
     def _radial_matrix(radial_basis, spintotal, m):
         return radial_basis.operator_matrix('L', m, spintotal)
 
