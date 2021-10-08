@@ -854,7 +854,7 @@ class SpectralOperator1D(SpectralOperator):
             group = subproblem.group[axis]
             factors[axis] = self.group_matrix(group)
         # Add factor for components
-        comps = prod([cs.dim for cs in self.tensorsig], dtype=int)
+        comps = prod([cs.dim for cs in self.tensorsig])
         factors = [sparse.identity(comps, format='csr')] + factors
         return reduce(sparse.kron, factors, 1).tocsr()
 
