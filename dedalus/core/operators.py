@@ -17,7 +17,7 @@ from .domain import Domain
 from . import coords
 from .field import Operand, Field
 from .future import Future, FutureField, FutureLockedField
-from ..tools.array import reshape_vector, apply_matrix, add_sparse, axindex, axslice, perm_matrix, copyto, sparse_block_diag
+from ..tools.array import reshape_vector, apply_matrix, add_sparse, axindex, axslice, perm_matrix, copyto, sparse_block_diag, prod
 from ..tools.cache import CachedAttribute, CachedMethod
 from ..tools.dispatch import MultiClass
 from ..tools.exceptions import NonlinearOperatorError
@@ -854,7 +854,7 @@ class SpectralOperator1D(SpectralOperator):
             group = subproblem.group[axis]
             factors[axis] = self.group_matrix(group)
         # Add factor for components
-        comps = np.prod([cs.dim for cs in self.tensorsig], dtype=int)
+        comps = prod([cs.dim for cs in self.tensorsig])
         factors = [sparse.identity(comps, format='csr')] + factors
         return reduce(sparse.kron, factors, 1).tocsr()
 
@@ -944,7 +944,7 @@ class TimeDerivative(LinearOperator):
         """Expand over multiplication."""
         args = operand.args
         # Apply product rule to factors
-        partial_diff = lambda i: np.prod([self.new_operand(arg) if i==j else arg for j,arg in enumerate(args)])
+        partial_diff = lambda i: prod([self.new_operand(arg) if i==j else arg for j,arg in enumerate(args)])
         out = sum((partial_diff(i) for i in range(len(args))))
         # Re-expand to continue propagating
         return out.expand(*vars)
@@ -1049,7 +1049,7 @@ class Interpolate(SpectralOperator, metaclass=MultiClass):
     def _expand_multiply(self, operand, vars):
         """Expand over multiplication."""
         # Apply to each factor
-        return np.prod([self.new_operand(arg) for arg in operand.args])
+        return prod([self.new_operand(arg) for arg in operand.args])
 
 
 @parseable('integrate', 'integ')
@@ -1284,7 +1284,7 @@ class Differentiate(SpectralOperator1D, metaclass=MultiClass):
         """Expand over multiplication."""
         args = operand.args
         # Apply product rule to factors
-        partial_diff = lambda i: np.prod([self.new_operand(arg) if i==j else arg for j,arg in enumerate(args)])
+        partial_diff = lambda i: prod([self.new_operand(arg) if i==j else arg for j,arg in enumerate(args)])
         return sum((partial_diff(i) for i in range(len(args))))
 
 
@@ -1812,7 +1812,7 @@ class TransposeComponents(LinearOperator, metaclass=MultiClass):
     def _transpose_matrix(self):
         rank = len(self.tensorsig)
         tensor_shape = [cs.dim for cs in self.tensorsig]
-        i1 = np.arange(np.prod(tensor_shape))
+        i1 = np.arange(prod(tensor_shape))
         I1 = i1.reshape(tensor_shape)
         I2 = I1.transpose(self.new_axis_order[:rank])
         i2 = I2.ravel()
@@ -2158,10 +2158,10 @@ class S2Gradient(Gradient, SpectralOperator):
 
 def reduced_view_4(data, axis):
     shape = data.shape
-    N0 = int(np.prod(shape[:axis]))
+    N0 = int(prod(shape[:axis]))
     N1 = shape[axis]
     N2 = shape[axis+1]
-    N3 = int(np.prod(shape[axis+2:]))
+    N3 = int(prod(shape[axis+2:]))
     return data.reshape((N0, N1, N2, N3))
 
 
@@ -2232,7 +2232,7 @@ class PolarMOperator(SpectralOperator):
                     comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
                 else:
                     # Build zero matrix
-                    comp_matrix = sparse.csr_matrix((np.prod(subshape_out), np.prod(subshape_in)))
+                    comp_matrix = sparse.csr_matrix((prod(subshape_out), prod(subshape_in)))
                 submatrix_row.append(comp_matrix)
             submatrices.append(submatrix_row)
         matrix = sparse.bmat(submatrices)
@@ -2280,6 +2280,7 @@ class PolarGradient(Gradient, PolarMOperator):
         # Gradients hits - and +
         return ((0,) + spinindex_in, (1,) + spinindex_in)
 
+    @CachedMethod
     def radial_matrix(self, spinindex_in, spinindex_out, m):
         radial_basis = self.input_basis
         spintotal = radial_basis.spintotal(spinindex_in)
@@ -2377,7 +2378,7 @@ class SphericalEllOperator(SpectralOperator):
                     comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
                 else:
                     # Build zero matrix
-                    comp_matrix = sparse.csr_matrix((np.prod(subshape_out), np.prod(subshape_in)))
+                    comp_matrix = sparse.csr_matrix((prod(subshape_out), prod(subshape_in)))
                 submatrix_row.append(comp_matrix)
             submatrices.append(submatrix_row)
         matrix = sparse.bmat(submatrices)
@@ -2425,6 +2426,7 @@ class SphericalGradient(Gradient, SphericalEllOperator):
         # Gradients hits - and +
         return ((0,) + regindex_in, (1,) + regindex_in)
 
+    @CachedMethod
     def radial_matrix(self, regindex_in, regindex_out, ell):
         radial_basis = self.radial_basis
         regtotal = radial_basis.regtotal(regindex_in)
@@ -2628,6 +2630,7 @@ class SphericalDivergence(Divergence, SphericalEllOperator):
         else:
             return tuple()
 
+    @CachedMethod
     def radial_matrix(self, regindex_in, regindex_out, ell):
         radial_basis = self.radial_basis
         regtotal = radial_basis.regtotal(regindex_in)
@@ -2688,6 +2691,7 @@ class PolarDivergence(Divergence, PolarMOperator):
         else:
             return tuple()
 
+    @CachedMethod
     def radial_matrix(self, spinindex_in, spinindex_out, m):
         radial_basis = self.input_basis
         spintotal = radial_basis.spintotal(spinindex_in)
@@ -2772,6 +2776,7 @@ class SphericalCurl(Curl, SphericalEllOperator):
         else:
             return ((0,) + regindex_in[1:], (1,) + regindex_in[1:])
 
+    @CachedMethod
     def radial_matrix(self, regindex_in, regindex_out, ell):
         radial_basis = self.radial_basis
         regtotal_in = radial_basis.regtotal(regindex_in)
@@ -2829,7 +2834,7 @@ class SphericalCurl(Curl, SphericalEllOperator):
                         comp_matrix = comp_matrix_real + comp_matrix_imag
                     else:
                         # Build zero matrix
-                        comp_matrix = sparse.csr_matrix((np.prod(subshape_out), np.prod(subshape_in)))
+                        comp_matrix = sparse.csr_matrix((prod(subshape_out), prod(subshape_in)))
                     submatrix_row.append(comp_matrix)
                 submatrices.append(submatrix_row)
             matrix = sparse.bmat(submatrices)
@@ -2912,6 +2917,7 @@ class PolarCurl(Curl, PolarMOperator):
         if spinindex_in[0] in (0, 1):
             return (spinindex_in[1:],)
 
+    @CachedMethod
     def radial_matrix(self, spinindex_in, spinindex_out, m):
         radial_basis = self.input_basis
         spintotal_in = radial_basis.spintotal(spinindex_in)
@@ -2968,7 +2974,7 @@ class PolarCurl(Curl, PolarMOperator):
                         comp_matrix = comp_matrix_real + comp_matrix_imag
                     else:
                         # Build zero matrix
-                        comp_matrix = sparse.csr_matrix((np.prod(subshape_out), np.prod(subshape_in)))
+                        comp_matrix = sparse.csr_matrix((prod(subshape_out), prod(subshape_in)))
                     submatrix_row.append(comp_matrix)
                 submatrices.append(submatrix_row)
             matrix = sparse.bmat(submatrices)
@@ -3111,6 +3117,7 @@ class SphericalLaplacian(Laplacian, SphericalEllOperator):
     def regindex_out(self, regindex_in):
         return (regindex_in,)
 
+    @CachedMethod
     def radial_matrix(self, regindex_in, regindex_out, ell):
         radial_basis = self.radial_basis
         regtotal = radial_basis.regtotal(regindex_in)
@@ -3173,6 +3180,7 @@ class SphericalEllProductField(SphericalEllProduct):
     def regindex_out(self, regindex_in):
         return (regindex_in,)
 
+    @CachedMethod
     def radial_matrix(self, regindex_in, regindex_out, ell):
         radial_basis = self.radial_basis
         regtotal = radial_basis.regtotal(regindex_in)
@@ -3218,6 +3226,7 @@ class PolarLaplacian(Laplacian, PolarMOperator):
     def spinindex_out(self, spinindex_in):
         return (spinindex_in,)
 
+    @CachedMethod
     def radial_matrix(self, spinindex_in, spinindex_out, m):
         radial_basis = self.input_basis
         spintotal = radial_basis.spintotal(spinindex_in)

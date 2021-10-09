@@ -5,6 +5,15 @@ from scipy import sparse
 import scipy.sparse as sp
 from scipy.sparse import _sparsetools
 from scipy.sparse import linalg as spla
+from functools import reduce
+import operator
+
+
+def prod(arg):
+    if arg:
+        return reduce(operator.mul, arg)
+    else:
+        return 1
 
 
 def interleaved_view(data):

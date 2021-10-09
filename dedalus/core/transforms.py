@@ -11,7 +11,7 @@ from ..libraries import dedalus_sphere
 from . import basis
 from ..libraries.fftw import fftw_wrappers as fftw
 from ..tools import jacobi
-from ..tools.array import apply_matrix, apply_dense, axslice, splu_inverse, apply_sparse
+from ..tools.array import apply_matrix, apply_dense, axslice, splu_inverse, apply_sparse, prod
 from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
 
@@ -1044,27 +1044,27 @@ class FFTWFastChebyshevTransform(FastChebyshevTransform, FFTWDCT):
 
 def reduced_view_3(data, axis):
     shape = data.shape
-    N0 = int(np.prod(shape[:axis]))
+    N0 = int(prod(shape[:axis]))
     N1 = shape[axis]
-    N2 = int(np.prod(shape[axis+1:]))
+    N2 = int(prod(shape[axis+1:]))
     return data.reshape((N0, N1, N2))
 
 
 def reduced_view_4(data, axis):
     shape = data.shape
-    N0 = int(np.prod(shape[:axis]))
+    N0 = int(prod(shape[:axis]))
     N1 = shape[axis]
     N2 = shape[axis+1]
-    N3 = int(np.prod(shape[axis+2:]))
+    N3 = int(prod(shape[axis+2:]))
     return data.reshape((N0, N1, N2, N3))
 
 def reduced_view_5(data, axis):
     shape = data.shape
-    N0 = int(np.prod(shape[:axis]))
+    N0 = int(prod(shape[:axis]))
     N1 = shape[axis]
     N2 = shape[axis+1]
     N3 = shape[axis+2]
-    N4 = int(np.prod(shape[axis+3:]))
+    N4 = int(prod(shape[axis+3:]))
     return data.reshape((N0, N1, N2, N3, N4))
 
 class PolynomialTransform(Transform):
@@ -1166,9 +1166,9 @@ class PolynomialTransform(Transform):
 
 def reduce_array(data, axis):
     """Return reduced 3D view of array collapsed above and below specified axis."""
-    N0 = int(np.prod(data.shape[:axis]))
+    N0 = int(prod(data.shape[:axis]))
     N1 = data.shape[axis]
-    N2 = int(np.prod(data.shape[axis+1:]))
+    N2 = int(prod(data.shape[axis+1:]))
     return data.reshape((N0, N1, N2))
 
 def forward_DFT(gdata, cdata, axis):
