@@ -87,6 +87,9 @@ class Distributor:
             comm = MPI.COMM_WORLD
         if mesh is None:
             mesh = np.array([comm.size], dtype=int)
+        else:
+            if isinstance(mesh, list) or isinstance(mesh, tuple):
+                mesh = np.array(mesh, dtype=int)
         # Trim trailing ones
         mesh = 1 + np.trim_zeros(mesh - 1, trim='b')
         self.dim = dim = len(self.coords)
