@@ -614,7 +614,7 @@ class FileHandler(Handler):
         dset.dims[0].label = 't'
         for sn in ['sim_time', 'world_time', 'wall_time', 'timestep', 'iteration', 'write_number']:
             scale = scale_group[sn]
-            dset.dims.create_scale(scale, sn)
+            scale.make_scale(sn)
             dset.dims[0].attach_scale(scale)
 
         # Spatial scales

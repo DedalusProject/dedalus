@@ -1521,6 +1521,10 @@ class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):
         self.local_grid_azimuth = self.azimuth_basis.local_grid
         super().__init__(coordsystem)
 
+    @CachedAttribute
+    def constant(self):
+        return (self.mmax==0, False)
+
     def local_elements(self):
         raise NotImplementedError()
         # CL = self.dist.coeff_layout
@@ -2418,9 +2422,8 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             self.Lmax = max(0, shape[1] - 2)
         elif self.dtype == np.complex128:
             self.Lmax = shape[1] - 1
-        if self.mmax > self.Lmax + 1:
+        if self.Lmax > 0 and (self.mmax > self.Lmax + 1):
             logger.warning("You are using more azimuthal modes than can be resolved with your current colatitude resolution")
-            #raise ValueError("shape[0] cannot be more than twice shape[1].")
         # TODO: make this less hacky
         if self.mmax == 0:
             self.forward_transform_azimuth = self.forward_transform_azimuth_Mmax0
@@ -4396,14 +4399,15 @@ class SphericalAzimuthalAverage(AzimuthalAverage, operators.Average, operators.S
         """Perform operation."""
         operand = self.args[0]
         # Set output layout
-        out.set_layout(operand.layout)
+        layout = operand.layout
+        out.set_layout(layout)
         out.data[:] = 0
         # Apply operator
         azimuth_axis = self.input_basis.first_axis
         domain_in = self.operand.domain
         domain_out = self.domain
-        groups_in = self.dist.local_groups(domain_in, scales=domain_in.dealias)
-        groups_out = self.dist.local_groups(domain_out, scales=domain_out.dealias)
+        groups_in = layout.local_group_arrays(domain_in, scales=domain_in.dealias)
+        groups_out = layout.local_group_arrays(domain_out, scales=domain_out.dealias)
         m0_in = (groups_in[azimuth_axis] == 0)
         m0_out = (groups_out[azimuth_axis] == 0)
         regcomps = self.input_basis.radial_basis.regularity_classes(operand.tensorsig)
