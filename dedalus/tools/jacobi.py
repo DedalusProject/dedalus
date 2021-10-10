@@ -260,6 +260,5 @@ def integration_vector(N, a, b):
     # Zero out entries below output eps
     cutoff = np.finfo(output_dtype).resolution
     integ[np.abs(integ) <= cutoff] = 0.
-    integ = integ[None, :]
     return integ.astype(output_dtype)
 
