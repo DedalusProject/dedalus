@@ -115,9 +115,9 @@ class Subsystem:
         self.dist = solver.dist
         self.dtype = problem.dtype
         self.group = group
-        # Determine matrix group using problem matrix dependence
-        matrix_independence = ~ problem.matrix_dependence
-        self.matrix_group = tuple(replace(group, matrix_independence, 0))
+        # Determine matrix group using solver matrix dependence
+        matrix_dependence = solver.matrix_dependence | solver.matrix_coupling
+        self.matrix_group = tuple(replace(group, ~matrix_dependence, 0))
 
     def coeff_slices(self, domain):
         slices = self.dist.coeff_layout.local_groupset_slices(self.group, domain, scales=1)

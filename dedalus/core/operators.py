@@ -700,7 +700,6 @@ class LinearOperator(FutureField):
         operand_mats = self.operand.expression_matrices(subproblem, vars, **kw)
         # Apply operator matrix
         operator_mat = self.subproblem_matrix(subproblem)
-        print(self, operator_mat.shape, [operand_mats[var].shape for var in operand_mats])
         return {var: operator_mat @ operand_mats[var] for var in operand_mats}
 
     def subproblem_matrix(self, subproblem):
@@ -2378,12 +2377,14 @@ class SeparableSphereOperator(SpectralOperator):
         layout = self.dist.coeff_layout
         S_in = basis.spin_weights(operand.tensorsig)
         S_out = basis.spin_weights(self.tensorsig)
+        groupset_slices = self.dist.coeff_layout.local_groupset_slices(subproblem.group, domain, scales=1)
         # Select overlapping data
         subshape_in = subproblem.coeff_shape(self.operand.domain)
         subshape_out = subproblem.coeff_shape(self.domain)
         subshape = np.minimum(subshape_in, subshape_out)
         slices = tuple(slice(n) for n in subshape)
-        groupset_slices = self.dist.coeff_layout.local_groupset_slices(subproblem.group, domain, scales=1)
+        size_in = prod(subshape_in)
+        size_out = prod(subshape_out)
         # Prepare for complexification if necessary
         complexify = (self.complex_operator and np.isrealobj(self.dtype()))
         # Build block matrix over components
@@ -2404,14 +2405,13 @@ class SeparableSphereOperator(SpectralOperator):
                         raise NotImplementedError("Complex operators not implemented yet for real fields.")
                     else:
                         # Directly multiply by symbols
-                        block = sparse.diags(groupset_symbols, format='csr')
+                        block = sparse.diags(groupset_symbols, format='csr', shape=(size_out, size_in))
                 else:
                     # Zeros
                     block = sparse.csr_matrix((prod(subshape_out), prod(subshape_in)))
                 block_row.append(block)
             blocks.append(block_row)
         matrix = sparse.bmat(blocks)
-        print(self, matrix.shape)
         return matrix.tocsr()
 
     def operate(self, out):

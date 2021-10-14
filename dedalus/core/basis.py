@@ -318,6 +318,9 @@ class IntervalBasis(Basis):
         self.COV = AffineCOV(self.native_bounds, bounds)
         super().__init__(coord)
 
+    def matrix_dependence(self, matrix_coupling):
+        return matrix_coupling
+
     @CachedMethod
     def global_grid_spacing(self, axis, scale=None):
         """Global grids spacings."""
@@ -1611,6 +1614,11 @@ class PolarBasis(SpinBasis):
         # this should probably be cleaned up later; needed for m permutation in disk
         self.azimuth_basis = self.S1_basis(radius=None)
 
+    def matrix_dependence(self, matrix_coupling):
+        matrix_dependence = matrix_coupling.copy()
+        if matrix_coupling[1]:
+            matrix_dependence[0] = True
+        return matrix_dependence
 
     @CachedMethod
     def S1_basis(self, radius=1):
@@ -2457,6 +2465,12 @@ class SpinWeightedSphericalHarmonics(SpinBasis, metaclass=CachedClass):
         if self.mmax > 0:
             self.azimuth_basis.forward_coeff_permutation = self.forward_m_perm
             self.azimuth_basis.backward_coeff_permutation = self.backward_m_perm
+
+    def matrix_dependence(self, matrix_coupling):
+        matrix_dependence = matrix_coupling.copy()
+        if matrix_coupling[1]:
+            matrix_dependence[0] = True
+        return matrix_dependence
 
     def global_shape(self, grid_space, scales):
         grid_shape = self.grid_shape(scales)
@@ -3784,6 +3798,12 @@ class Spherical3DBasis(MultidimensionalBasis):
         elif dtype == np.complex128:
             self.group_shape = (1, 1, 1)
         Basis.__init__(self, coordsystem)
+
+    def matrix_dependence(self, matrix_coupling):
+        matrix_dependence = matrix_coupling.copy()
+        if matrix_coupling[1]:
+            matrix_dependence[0] = True
+        return matrix_dependence
 
     @CachedAttribute
     def constant(self):
