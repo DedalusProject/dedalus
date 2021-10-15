@@ -1691,7 +1691,7 @@ class PolarBasis(SpinBasis):
             # coeff-coeff space
             m, n = groups
             nmin = lambda m: self._n_limits(m)[0] # TODO: cleanup
-            nmin = np.vectorize(nmin)(m) # TODO: optimize by vectorizing in dedalus_sphere
+            nmin = np.vectorize(nmin, otypes=[int])(m) # TODO: optimize by vectorizing in dedalus_sphere
             groups = np.ma.masked_array(groups)
             groups[:, n < nmin] = np.ma.masked
         return groups
@@ -2913,7 +2913,7 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
             # coeff-coeff-coeff space
             m, ell, n = groups
             nmin = lambda ell: self._n_limits(ell)[0] # TODO: cleanup
-            nmin = np.vectorize(nmin)(ell) # TODO: optimize by vectorizing in dedalus_sphere
+            nmin = np.vectorize(nmin, otypes=[int])(ell) # TODO: optimize by vectorizing in dedalus_sphere
             groups = np.ma.masked_array(groups)
             groups[:, n < nmin] = np.ma.masked
         return groups
@@ -3687,7 +3687,7 @@ class Spherical3DBasis(MultidimensionalBasis):
             # coeff-coeff-coeff space
             m, ell, n = groups
             nmin = lambda ell: self.radial_basis._n_limits(ell)[0] # TODO: cleanup
-            nmin = np.vectorize(nmin)(ell) # TODO: optimize by vectorizing in dedalus_sphere
+            nmin = np.vectorize(nmin, otypes=[int])(ell) # TODO: optimize by vectorizing in dedalus_sphere
             groups = np.ma.masked_array(groups)
             groups[:, n < nmin] = np.ma.masked
         return groups
