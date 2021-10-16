@@ -4407,7 +4407,7 @@ class SphericalAverage(operators.Average, operators.SphericalEllOperator):
         # Copy with Nphi = Ntheta = 1
         shape = list(input_basis.shape)
         shape[0] = shape[1] = 1
-        return input_basis.clone_with(shape=shape)
+        return input_basis.clone_with(shape=tuple(shape))
 
     def new_operand(self, operand, **kw):
         return SphericalAverage(operand, self.coord, **kw)
@@ -4684,7 +4684,7 @@ class InterpolateColatitude(FutureLockedField, operators.Interpolate):
         # Todo: just a function of radius if interpolation is at poles?
         shape = list(input_basis.shape)
         shape[1] = 1
-        return input_basis.clone_with(shape=shape)
+        return input_basis.clone_with(shape=tuple(shape))
 
     def check_conditions(self):
         """Check that arguments are in a proper layout."""
@@ -4720,6 +4720,7 @@ class InterpolateColatitude(FutureLockedField, operators.Interpolate):
         layout = colat_transform.layout1
         coupling = [True] * sphere_basis.dist.dim
         coupling[sphere_basis.first_axis] = False
+        coupling = tuple(coupling)
         domain = sphere_basis.domain
         m_groupsets = layout.local_groupsets(coupling, domain, scales=domain.dealias, broadcast=True)
         forward = sphere_basis.transform_plan(Ntheta, s)

@@ -303,6 +303,7 @@ class Layout:
             indices.append(ax_indices)
         return tuple(indices)
 
+    @CachedMethod
     def local_group_arrays(self, domain, scales, rank=None, broadcast=False):
         """Dense array of local groups (first axis)."""
         # Make dense array of local elements
@@ -317,6 +318,7 @@ class Layout:
             groups[basis_axes] = basis.elements_to_groups(grid_space[basis_axes], elements[basis_axes])
         return groups
 
+    @CachedMethod
     def local_groupsets(self, group_coupling, domain, scales, rank=None, broadcast=False):
         local_groupsets = self.local_group_arrays(domain, scales, rank=rank, broadcast=broadcast).astype(object)
         # Replace non-enumerated axes with None
@@ -325,11 +327,13 @@ class Layout:
                 local_groupsets[axis] = None
         # Flatten local groupsets
         local_groupsets = local_groupsets.reshape((local_groupsets.shape[0], -1))
-        local_groupsets = tuple(map(tuple, local_groupsets.T))
         # Drop masked groups
-        local_groupsets = (lg for lg in local_groupsets if np.ma.masked not in lg)
+        local_groupsets = np.ma.compress_cols(local_groupsets)
+        # Return unique groupsets
+        local_groupsets = tuple(map(tuple, local_groupsets.T))
         return OrderedSet(local_groupsets)
 
+    @CachedMethod
     def local_groupset_slices(self, groupset, domain, scales, rank=None, broadcast=False):
         groups = self.local_group_arrays(domain, scales, rank=rank, broadcast=broadcast)
         dim = groups.shape[0]

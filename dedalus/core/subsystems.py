@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__.split('.')[-1])
 def build_subsystems(solver):
     """Build local subsystem objects."""
     # Collect local groupsets for each variable and equation
-    matrix_coupling = solver.matrix_coupling
+    matrix_coupling = tuple(solver.matrix_coupling)
     coeff_layout = solver.dist.coeff_layout
     all_local_groupsets = []
     for var in solver.problem.variables:
