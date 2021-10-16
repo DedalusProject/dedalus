@@ -752,7 +752,7 @@ class FourierBase(IntervalBasis):
         return groups
 
 
-class ComplexFourier(FourierBase):
+class ComplexFourier(FourierBase, metaclass=CachedClass):
     """Fourier complex exponential basis."""
 
     group_shape = (1,)
@@ -937,7 +937,7 @@ class IntegrateComplexFourier(operators.Integrate, operators.SpectralOperator1D)
             raise ValueError("This should never happen.")
 
 
-class RealFourier(FourierBase):
+class RealFourier(FourierBase, metaclass=CachedClass):
     """
     Fourier real sine/cosine basis.
 
@@ -1561,8 +1561,8 @@ class PolarBasis(SpinBasis):
     dim = 2
     dims = ['azimuth', 'radius']
 
-    def __init__(self, coordsystem, shape, dtype, k=0, dealias=(1,1), **kw):
-        super().__init__(coordsystem, shape, dtype, dealias, **kw)
+    def __init__(self, coordsystem, shape, dtype, k=0, dealias=(1,1), azimuth_library=None):
+        super().__init__(coordsystem, shape, dtype, dealias, azimuth_library=azimuth_library)
         self.k = k
         self.Nmax = shape[1] - 1
         if self.mmax == 0:
@@ -1690,19 +1690,21 @@ class PolarBasis(SpinBasis):
         if not grid_space[1]:
             # coeff-coeff space
             m, n = groups
-            nmin = lambda m: self._n_limits(m)[0] # TODO: cleanup
-            nmin = np.vectorize(nmin, otypes=[int])(m) # TODO: optimize by vectorizing in dedalus_sphere
+            nmin = self._nmin(m)
             groups = np.ma.masked_array(groups)
             groups[:, n < nmin] = np.ma.masked
         return groups
 
+    @CachedMethod
     def n_size(self, m):
-        nmin, nmax = self._n_limits(m)
+        nmin = self._nmin(m)
+        nmax = self.Nmax
         return nmax - nmin + 1
 
     @CachedMethod
     def n_slice(self, m):
-        nmin, nmax = self._n_limits(m)
+        nmin = self._nmin(m)
+        nmax = self.Nmax
         return slice(nmin, nmax+1)
 
     def __eq__(self, other):
@@ -1730,6 +1732,7 @@ class PolarBasis(SpinBasis):
         domain = self.domain
         group_coupling = [True] * domain.dist.dim
         group_coupling[self.first_axis] = False
+        group_coupling = tuple(group_coupling)
         groupsets = colat_grid_layout.local_groupsets(group_coupling, domain, scales=domain.dealias, broadcast=True)
         # Build m_maps from groupset slices
         m_maps = []
@@ -1817,8 +1820,8 @@ class AnnulusBasis(PolarBasis):
     transforms = {}
     subaxis_dependence = (False, True)
 
-    def __init__(self, coordsystem, shape, dtype, radii=(1,2), k=0, alpha=(-0.5,-0.5), dealias=(1,1), radius_library=None, **kw):
-        super().__init__(coordsystem, shape, dtype, k=k, dealias=tuple(dealias), **kw)
+    def __init__(self, coordsystem, shape, dtype, radii=(1,2), k=0, alpha=(-0.5,-0.5), dealias=(1,1), radius_library=None, azimuth_library=None):
+        super().__init__(coordsystem, shape, dtype, k=k, dealias=tuple(dealias), azimuth_library=azimuth_library)
         if min(radii) <= 0:
             raise ValueError("Radii must be positive.")
         if radius_library is None:
@@ -1839,8 +1842,9 @@ class AnnulusBasis(PolarBasis):
         dealias = self.dealias
         return AnnulusBasis(self.coordsystem, new_shape, radii=self.radii, k=self.k, alpha=self.alpha, dealias=dealias, radius_library=self.radius_library, dtype=self.dtype, azimuth_library=self.azimuth_library)
 
-    def _n_limits(self, m):
-        return (0, self.Nmax)
+    @staticmethod
+    def _nmin(m):
+        return 0 * m  # To have same array shape as m
 
     def __add__(self, other):
         if other is None:
@@ -2034,17 +2038,6 @@ class AnnulusBasis(PolarBasis):
         operator = E**dk
         return operator(self.n_size(m), self.k).square.astype(np.float64)
 
-    def n_size(self, m, Nmax=None):
-        if Nmax == None: Nmax = self.Nmax
-        return Nmax + 1
-
-    @CachedMethod
-    def n_slice(self, m):
-        return slice(0, self.Nmax + 1)
-
-    def start(self, groups):
-        return 0
-
     def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
         m = subproblem.group[0]  # HACK
         spintotal_arg = self.spintotal(arg_comp)
@@ -2072,15 +2065,13 @@ class AnnulusBasis(PolarBasis):
         return matrix
 
 
-
-
-class DiskBasis(PolarBasis):
+class DiskBasis(PolarBasis, metaclass=CachedClass):
 
     transforms = {}
     subaxis_dependence = (True, True)
 
-    def __init__(self, coordsystem, shape, dtype, radius=1, k=0, alpha=0, dealias=(1,1), radius_library=None, **kw):
-        super().__init__(coordsystem, shape, dtype, k=k, dealias=dealias, **kw)
+    def __init__(self, coordsystem, shape, dtype, radius=1, k=0, alpha=0, dealias=(1,1), radius_library=None, azimuth_library=None):
+        super().__init__(coordsystem, shape, dtype, k=k, dealias=dealias, azimuth_library=azimuth_library)
         if radius <= 0:
             raise ValueError("Radius must be positive.")
         if radius_library is None:
@@ -2100,9 +2091,9 @@ class DiskBasis(PolarBasis):
         dealias = self.dealias
         return DiskBasis(self.coordsystem, new_shape, radius=self.radius, k=self.k, alpha=self.alpha, dealias=dealias, radius_library=self.radius_library, dtype=self.dtype, azimuth_library=self.azimuth_library)
 
-    def _n_limits(self, m):
-        nmin = dedalus_sphere.zernike.min_degree(m)
-        return (nmin, self.Nmax)
+    @staticmethod
+    def _nmin(m):
+        return np.maximum(m//2, 0)
 
     def __add__(self, other):
         if other is None:
@@ -2403,14 +2394,14 @@ class ConvertConstantAnnulus(operators.ConvertConstant, operators.PolarMOperator
             raise ValueError("This should never happen.")
 
 
-class SpinWeightedSphericalHarmonics(SpinBasis):
+class SpinWeightedSphericalHarmonics(SpinBasis, metaclass=CachedClass):
 
     dim = 2
     dims = ['azimuth', 'colatitude']
     transforms = {}
 
-    def __init__(self, coordsystem, shape, dtype, radius=1, dealias=(1,1), colatitude_library=None, **kw):
-        super().__init__(coordsystem, shape, dtype, dealias, **kw)
+    def __init__(self, coordsystem, shape, dtype, radius=1, dealias=(1,1), colatitude_library=None, azimuth_library=None):
+        super().__init__(coordsystem, shape, dtype, dealias, azimuth_library=azimuth_library)
         if radius < 0:
             raise ValueError("Radius must be non-negative.")
         if colatitude_library is None:
@@ -2619,6 +2610,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         domain = self.domain
         group_coupling = [True] * domain.dist.dim
         group_coupling[self.first_axis] = False
+        group_coupling = tuple(group_coupling)
         groupsets = colat_coeff_layout.local_groupsets(group_coupling, domain, scales=domain.dealias, broadcast=True)
         # Build m_maps from groupset slices
         m_maps = []
@@ -2655,6 +2647,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         domain = self.domain
         group_coupling = [True] * domain.dist.dim
         group_coupling[colatitude_axis] = False
+        group_coupling = tuple(group_coupling)
         groupsets = coeff_layout.local_groupsets(group_coupling, domain, scales=domain.dealias, broadcast=True)
         # Build ell_maps from groupset slices
         ell_maps = []
@@ -2912,8 +2905,7 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
         if not grid_space[2]:
             # coeff-coeff-coeff space
             m, ell, n = groups
-            nmin = lambda ell: self._n_limits(ell)[0] # TODO: cleanup
-            nmin = np.vectorize(nmin, otypes=[int])(ell) # TODO: optimize by vectorizing in dedalus_sphere
+            nmin = self._nmin(ell)
             groups = np.ma.masked_array(groups)
             groups[:, n < nmin] = np.ma.masked
         return groups
@@ -3077,8 +3069,20 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
         # Copy over real part of m = 0
         np.copyto(gdata, cdata[axslice(len(field.tensorsig)+axis, 0, 1)])
 
+    @CachedMethod
+    def n_size(self, ell):
+        nmin = self._nmin(ell)
+        nmax = self.Nmax
+        return nmax - nmin + 1
 
-class SphericalShellRadialBasis(RegularityBasis):
+    @CachedMethod
+    def n_slice(self, ell):
+        nmin = self._nmin(ell)
+        nmax = self.Nmax
+        return slice(nmin, nmax+1)
+
+
+class SphericalShellRadialBasis(RegularityBasis, metaclass=CachedClass):
 
     def __init__(self, coordsystem, radial_size, dtype, radii=(1,2), alpha=(-0.5,-0.5), dealias=(1,), k=0, radius_library=None):
         super().__init__(coordsystem, radial_size, k=k, dealias=dealias, dtype=dtype)
@@ -3271,19 +3275,9 @@ class SphericalShellRadialBasis(RegularityBasis):
         operator = E**dk
         return operator(self.n_size(l), self.k).square.astype(np.float64)
 
-    def n_size(self, ell, Nmax=None):
-        if Nmax == None: Nmax = self.Nmax
-        return Nmax + 1
-
-    @CachedMethod
-    def n_slice(self, ell):
-        return slice(0, self.Nmax + 1)
-
-    def _n_limits(self, ell):
-        return (0, self.Nmax)
-
-    def start(self, groups):
-        return 0
+    @staticmethod
+    def _nmin(ell):
+        return 0 * ell  # To have same array shape as ell
 
     def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
         ell = subproblem.group[1]  # HACK
@@ -3313,7 +3307,7 @@ class SphericalShellRadialBasis(RegularityBasis):
         return matrix
 
 
-class BallRadialBasis(RegularityBasis):
+class BallRadialBasis(RegularityBasis, metaclass=CachedClass):
 
     transforms = {}
 
@@ -3484,23 +3478,9 @@ class BallRadialBasis(RegularityBasis):
             size = self.n_size(ell)
         return operator(size, self.alpha + self.k, ell + regtotal).square.astype(np.float64)
 
-    def _n_limits(self, ell):
-        nmin = dedalus_sphere.zernike.min_degree(ell)
-        return (nmin, self.Nmax)
-
-    def n_size(self, ell):
-        nmin, nmax = self._n_limits(ell)
-        return nmax - nmin + 1
-
-    @CachedMethod
-    def n_slice(self, ell):
-        nmin, nmax = self._n_limits(ell)
-        return slice(nmin, nmax+1)
-
-    def start(self, groups):
-        ell = groups[1]
-        (nmin, Nmax) = self._n_limits(ell)
-        return nmin
+    @staticmethod
+    def _nmin(ell):
+        return ell // 2
 
     def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
         ell = subproblem.group[1]  # HACK
@@ -3657,12 +3637,8 @@ class Spherical3DBasis(MultidimensionalBasis):
     def n_size(self, ell):
         return self.radial_basis.n_size(ell)
 
-    @CachedMethod
     def n_slice(self, ell):
         return self.radial_basis.n_slice(ell)
-
-    def start(self, groups):
-        return self.radial_basis.start(groups)
 
     def global_shape(self, grid_space, scales):
         grid_shape = self.grid_shape(scales)
@@ -3686,8 +3662,7 @@ class Spherical3DBasis(MultidimensionalBasis):
         if not grid_space[2]:
             # coeff-coeff-coeff space
             m, ell, n = groups
-            nmin = lambda ell: self.radial_basis._n_limits(ell)[0] # TODO: cleanup
-            nmin = np.vectorize(nmin, otypes=[int])(ell) # TODO: optimize by vectorizing in dedalus_sphere
+            nmin = self.radial_basis._nmin(ell)
             groups = np.ma.masked_array(groups)
             groups[:, n < nmin] = np.ma.masked
         return groups
@@ -3705,7 +3680,7 @@ class Spherical3DBasis(MultidimensionalBasis):
             raise ValueError("Cannot build NCCs of non-radial fields.")
 
 
-class SphericalShellBasis(Spherical3DBasis):
+class SphericalShellBasis(Spherical3DBasis, metaclass=CachedClass):
 
     def __init__(self, coordsystem, shape, dtype, radii=(1,2), alpha=(-0.5,-0.5), dealias=(1,1,1), k=0, azimuth_library=None, colatitude_library=None, radius_library=None):
         if np.isscalar(dealias):
@@ -3818,7 +3793,7 @@ class SphericalShellBasis(Spherical3DBasis):
 ShellBasis = SphericalShellBasis
 
 
-class BallBasis(Spherical3DBasis):
+class BallBasis(Spherical3DBasis, metaclass=CachedClass):
 
     transforms = {}
 
