@@ -304,6 +304,21 @@ class Layout:
         return tuple(indices)
 
     @CachedMethod
+    def valid_elements(self, tensorsig, domain, scales, rank=None, broadcast=False):
+        """Make dense array of mode inclusion."""
+        # Make dense array of local elements
+        elements = self.local_elements(domain, scales, rank=rank, broadcast=broadcast)
+        elements = np.array(np.meshgrid(*elements, indexing='ij'))
+        # Check validity basis-by-basis
+        grid_space = self.grid_space
+        vshape = tuple(cs.dim for cs in tensorsig) + elements[0].shape
+        valid = np.zeros(shape=vshape, dtype=bool)
+        for basis in domain.bases:
+            basis_axes = slice(basis.first_axis, basis.last_axis+1)
+            valid |= basis.valid_elements(tensorsig, grid_space[basis_axes], elements[basis_axes])
+        return valid
+
+    @CachedMethod
     def local_group_arrays(self, domain, scales, rank=None, broadcast=False):
         """Dense array of local groups (first axis)."""
         # Make dense array of local elements

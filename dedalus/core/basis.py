@@ -495,6 +495,11 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         # No permutations
         return elements
 
+    def valid_elements(self, tensorsig, grid_space, elements):
+        # No invalid modes
+        vshape = tuple(cs.dim for cs in tensorsig) + elements[0].shape
+        return np.ones(shape=vshape, dtype=bool)
+
     def Jacobi_matrix(self, size):
         if size is None:
             size = self.size
@@ -845,14 +850,11 @@ class ComplexFourier(FourierBase, metaclass=CachedClass):
             permute_axis(cdata, axis+len(field.tensorsig), self.backward_coeff_permutation, out=cdata)
         super().backward_transform(field, axis, cdata, gdata)
 
-    # def include_mode(self, mode):
-    #     k = mode // 2
-    #     if (mode % 2) == 0:
-    #         # Cosine modes: drop Nyquist mode
-    #         return (0 <= k <= self.space.kmax)
-    #     else:
-    #         # Sine modes: drop k=0 and Nyquist mode
-    #         return (1 <= k <= self.space.kmax)
+    def valid_elements(self, tensorsig, grid_space, elements):
+        # No invalid modes
+         # TODO: consider dropping Nyquist?
+        vshape = tuple(cs.dim for cs in tensorsig) + elements[0].shape
+        return np.ones(shape=vshape, dtype=bool)
 
 
 class ConvertConstantComplexFourier(operators.ConvertConstant, operators.SpectralOperator1D):
@@ -1014,6 +1016,17 @@ class RealFourier(FourierBase, metaclass=CachedClass):
         """Native flat global grid."""
         N, = self.grid_shape((scale,))
         return (2 * np.pi / N) * np.arange(N)
+
+    def valid_elements(self, tensorsig, grid_space, elements):
+        vshape = tuple(cs.dim for cs in tensorsig) + elements[0].shape
+        valid = np.ones(shape=vshape, dtype=bool)
+        # Drop msin part of k=0
+        if not grid_space[0]:
+            groups = self.elements_to_groups(grid_space, elements)
+            allcomps = tuple(slice(None) for cs in tensorsig)
+            selection = (groups == 0) * (elements % 2 == 1)
+            valid[allcomps + (selection[0],)] = False
+        return valid
 
     @CachedMethod
     def transform_plan(self, grid_size):
