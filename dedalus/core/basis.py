@@ -2093,7 +2093,7 @@ class DiskBasis(PolarBasis, metaclass=CachedClass):
 
     @staticmethod
     def _nmin(m):
-        return np.maximum(m//2, 0)
+        return abs(m) // 2
 
     def __add__(self, other):
         if other is None:
