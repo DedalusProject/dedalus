@@ -12,7 +12,7 @@ from mpi4py import MPI
 import uuid
 
 from .domain import Domain
-from ..tools.array import zeros_with_pattern, expand_pattern, sparse_block_diag, copyto, perm_matrix
+from ..tools.array import zeros_with_pattern, expand_pattern, sparse_block_diag, copyto, perm_matrix, drop_empty_rows
 from ..tools.cache import CachedAttribute, CachedMethod
 from ..tools.general import replace, OrderedSet
 from ..tools.progress import log_progress
@@ -372,6 +372,10 @@ class Subproblem:
         matrix = sparse.identity(fsize, format='csr')[indices]
         return matrix.tocsr()
 
+    def valid_modes(self, field):
+        valid_modes = self.dist.coeff_layout.valid_elements(field.tensorsig, field.domain, field.scales)
+        return valid_modes[self.field_slices(field)]
+
     # def mode_map(self, basis_sets):
     #     """Restrict group data to nonzero modes."""
     #     var_mats = []
@@ -410,23 +414,18 @@ class Subproblem:
             data, rows, cols = [], [], []
             i0 = 0
             for eqn, eqn_size, eqn_cond in zip(eqns, eqn_sizes, eqn_conditions):
-                if eqn_size and eqn_cond:
+                if eqn_size and eqn_cond and (eqn[name] != 0):
                     # Build matrix and append data
-                    expr = eqn[name]
-                    if expr != 0:
-                        eqn_blocks = eqn[name].expression_matrices(subproblem=self, vars=vars, ncc_cutoff=solver.ncc_cutoff, max_ncc_terms=solver.max_ncc_terms)
-                        j0 = 0
-                        for var, var_size in zip(vars, var_sizes):
-                            if var_size and (var in eqn_blocks):
-                                block = sparse.coo_matrix(eqn_blocks[var])
-                                data.append(block.data)
-                                rows.append(i0 + block.row)
-                                cols.append(j0 + block.col)
-                            j0 += var_size
-                    i0 += eqn_size
-                else:
-                    # Leave empty blocks
-                    i0 += eqn_size
+                    eqn_blocks = eqn[name].expression_matrices(subproblem=self, vars=vars, ncc_cutoff=solver.ncc_cutoff, max_ncc_terms=solver.max_ncc_terms)
+                    j0 = 0
+                    for var, var_size in zip(vars, var_sizes):
+                        if var_size and (var in eqn_blocks):
+                            block = sparse.coo_matrix(eqn_blocks[var])
+                            data.append(block.data)
+                            rows.append(i0 + block.row)
+                            cols.append(j0 + block.col)
+                        j0 += var_size
+                i0 += eqn_size
             # Build sparse matrix
             if data:
                 data = np.concatenate(data)
@@ -436,27 +435,28 @@ class Subproblem:
                 data[np.abs(data) < solver.entry_cutoff] = 0
             matrices[name] = sparse.coo_matrix((data, (rows, cols)), shape=(I, J), dtype=dtype).tocsr()
 
-        # Create maps restricting group data to included modes
-        drop_eqn = [self.group_to_modes(eqn['LHS']) for eqn in eqns]
-        drop_var = [self.group_to_modes(var) for var in vars]
-        # Drop equations that fail condition test
+        # Valid modes
+        valid_eqn = [self.valid_modes(eqn['LHS']) for eqn in eqns]
+        valid_var = [self.valid_modes(var) for var in vars]
+        # Invalidate equations that fail condition test
         for n, eqn_cond in enumerate(eqn_conditions):
             if not eqn_cond:
-                drop_eqn[n] = drop_eqn[n][0:0, :]
-        self.drop_eqn = drop_eqn = sparse_block_diag(drop_eqn).tocsr()
-        self.drop_var = drop_var = sparse_block_diag(drop_var).tocsr()
+                valid_eqn[n][:] = False
+        # Convert to filter matrices
+        valid_eqn = sparse.diags(np.concatenate([v.ravel() for v in valid_eqn], dtype=int)).tocsr()
+        valid_var = sparse.diags(np.concatenate([v.ravel() for v in valid_var], dtype=int)).tocsr()
 
         # Check squareness of restricted system
-        if drop_eqn.shape[0] != drop_var.shape[0]:
-            raise ValueError("Non-square system: group={}, I={}, J={}".format(self.group, drop_eqn.shape[0], drop_var.shape[0]))
+        if valid_eqn.nnz != valid_var.nnz:
+            raise ValueError("Non-square system: group={}, I={}, J={}".format(self.group, valid_eqn.nnz, valid_var.nnz))
 
         # Permutations
-        eqn_pass_cond = [eqn for eqn, cond in zip(eqns, eqn_conditions) if cond]
-        self.left_perm = left_permutation(self, eqn_pass_cond, bc_top=solver.bc_top, interleave_components=solver.interleave_components)
-        self.right_perm = right_permutation(self, vars, tau_left=solver.tau_left, interleave_components=solver.interleave_components)
+        left_perm = left_permutation(self, eqns, bc_top=solver.bc_top, interleave_components=solver.interleave_components).tocsr()
+        right_perm = right_permutation(self, vars, tau_left=solver.tau_left, interleave_components=solver.interleave_components).tocsr()
 
-        self.pre_left = (self.left_perm @ drop_eqn).tocsr()
-        self.pre_right = (drop_var.T @ self.right_perm).tocsr()
+        # Preconditioners
+        self.pre_left = drop_empty_rows(left_perm @ valid_eqn).tocsr()
+        self.pre_right = drop_empty_rows(right_perm @ valid_var).T.tocsr()
 
         # Left-precondition matrices
         for name in matrices:
@@ -479,10 +479,11 @@ class Subproblem:
                 setattr(self, '{:}_exp'.format(name), expanded.tocsr())
         else:
             # Placeholder for accessing shape
-            self.LHS = list(matrices.values())[0]
+            self.LHS = getattr(self, f'{names[0]}_min')
 
         # Update rank for Woodbury
         eqn_dofs_by_dim = defaultdict(int)
+        eqn_pass_cond = [eqn for eqn, cond in zip(eqns, eqn_conditions) if cond]
         for eqn in eqn_pass_cond:
             eqn_dofs_by_dim[eqn['domain'].dim] += self.field_size(eqn['LHS'])
         self.update_rank = sum(eqn_dofs_by_dim.values()) - eqn_dofs_by_dim[max(eqn_dofs_by_dim.keys())]

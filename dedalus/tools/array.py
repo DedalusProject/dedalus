@@ -291,3 +291,9 @@ def perm_matrix(perm, M=None, source_index=False, sparse=True):
         output[row, col] = 1
         return output
 
+
+def drop_empty_rows(mat):
+    mat = sparse.csr_matrix(mat)
+    nonempty_rows = (np.diff(mat.indptr) > 0)
+    return mat[nonempty_rows]
+

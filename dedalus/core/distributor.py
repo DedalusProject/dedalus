@@ -312,10 +312,10 @@ class Layout:
         # Check validity basis-by-basis
         grid_space = self.grid_space
         vshape = tuple(cs.dim for cs in tensorsig) + elements[0].shape
-        valid = np.zeros(shape=vshape, dtype=bool)
+        valid = np.ones(shape=vshape, dtype=bool)
         for basis in domain.bases:
             basis_axes = slice(basis.first_axis, basis.last_axis+1)
-            valid |= basis.valid_elements(tensorsig, grid_space[basis_axes], elements[basis_axes])
+            valid &= basis.valid_elements(tensorsig, grid_space[basis_axes], elements[basis_axes])
         return valid
 
     @CachedMethod
