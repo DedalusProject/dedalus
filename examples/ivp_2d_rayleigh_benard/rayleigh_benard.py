@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 # TODO: maybe fix plotting to directly handle vectors
 # TODO: optimize and match d2 resolution
 # TODO: get unit vectors from coords?
+# TODO: cleanup integ shortcuts
 
 
 # Parameters
@@ -58,6 +59,7 @@ z = zbasis.local_grid(1)
 p = dist.Field(name='p', bases=(xbasis,zbasis))
 b = dist.Field(name='b', bases=(xbasis,zbasis))
 u = dist.VectorField(coords, name='u', bases=(xbasis,zbasis))
+taup = dist.Field(name='taup')
 tau1b = dist.Field(name='tau1b', bases=xbasis)
 tau2b = dist.Field(name='tau2b', bases=xbasis)
 tau1u = dist.VectorField(coords, name='tau1u', bases=xbasis)
@@ -72,6 +74,8 @@ ez = dist.VectorField(coords, name='ez')
 ex['g'][0] = 1
 ez['g'][1] = 1
 
+integ = lambda A: d3.Integrate(d3.Integrate(A, 'x'), 'z')
+
 lift_basis = zbasis.clone_with(a=1/2, b=1/2) # First derivative basis
 lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
 grad_u = d3.grad(u) + ez*lift(tau1u,-1) # First-order reduction
@@ -80,16 +84,15 @@ grad_b = d3.grad(b) + ez*lift(tau1b,-1) # First-order reduction
 # Problem
 # First-order form: "div(f)" becomes "trace(grad_f)"
 # First-order form: "lap(f)" becomes "div(grad_f)"
-problem = d3.IVP([p, b, u, tau1b, tau2b, tau1u, tau2u], namespace=locals())
-problem.add_equation("trace(grad_u) = 0")
+problem = d3.IVP([p, b, u, taup, tau1b, tau2b, tau1u, tau2u], namespace=locals())
+problem.add_equation("trace(grad_u) + taup = 0")
 problem.add_equation("dt(b) - kappa*div(grad_b) + lift(tau2b,-1) = - dot(u,grad(b))")
 problem.add_equation("dt(u) - nu*div(grad_u) + grad(p) + lift(tau2u,-1) - b*ez = - dot(u,grad(u))")
 problem.add_equation("b(z=0) = Lz")
 problem.add_equation("u(z=0) = 0")
 problem.add_equation("b(z=Lz) = 0")
-problem.add_equation("u(z=Lz) = 0", condition="nx != 0")
-problem.add_equation("dot(ex,u)(z=Lz) = 0", condition="nx == 0")
-problem.add_equation("p(z=Lz) = 0", condition="nx == 0") # Pressure gauge
+problem.add_equation("u(z=Lz) = 0")
+problem.add_equation("integ(p) = 0") # Pressure gauge
 
 # Solver
 solver = problem.build_solver(timestepper)

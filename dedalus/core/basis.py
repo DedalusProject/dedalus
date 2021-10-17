@@ -1068,8 +1068,7 @@ class ConvertConstantRealFourier(operators.ConvertConstant, operators.SpectralOp
             return np.array([[unit_amplitude],
                              [0]])
         else:
-            # Constructor should only loop over group 0.
-            raise ValueError("This should never happen.")
+            return np.zeros(shape=(2, 0))
 
 
 class DifferentiateRealFourier(operators.Differentiate, operators.SpectralOperator1D):
@@ -1138,7 +1137,7 @@ class IntegrateRealFourier(operators.Integrate, operators.SpectralOperator1D):
         # integ -sin(k*x) = 0
         if k == 0:
             L = input_basis.COV.problem_length
-            return np.array([[L]])
+            return np.array([[L, 0]])
         else:
             # Constructor should only loop over group 0.
             raise ValueError("This should never happen.")

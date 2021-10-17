@@ -25,7 +25,7 @@ import dedalus.public as d3
 import logging
 logger = logging.getLogger(__name__)
 
-# TODO: change back to float64 once constants are properly handled
+# TODO: cleanup integ shortcuts
 
 
 # Parameters
@@ -37,13 +37,13 @@ dealias = 3/2
 stop_sim_time = 5
 timestepper = d3.RK222
 max_timestep = 1e-2
-dtype = np.complex128
+dtype = np.float64
 
 # Bases
 coords = d3.CartesianCoordinates('x', 'z')
 dist = d3.Distributor(coords, dtype=dtype)
-xbasis = d3.ComplexFourier(coords['x'], size=Nx, bounds=(0, Lx), dealias=dealias)
-zbasis = d3.ComplexFourier(coords['z'], size=Nz, bounds=(-Lz/2, Lz/2), dealias=dealias)
+xbasis = d3.RealFourier(coords['x'], size=Nx, bounds=(0, Lx), dealias=dealias)
+zbasis = d3.RealFourier(coords['z'], size=Nz, bounds=(-Lz/2, Lz/2), dealias=dealias)
 x = xbasis.local_grid(1)
 z = zbasis.local_grid(1)
 

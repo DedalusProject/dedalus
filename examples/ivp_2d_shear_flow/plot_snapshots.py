@@ -27,7 +27,6 @@ def main(filename, start, count, output):
     dpi = 100
     title_func = lambda sim_time: 't = {:.3f}'.format(sim_time)
     savename_func = lambda write: 'write_{:06}.png'.format(write)
-    func = lambda x, y, d: (x, y, d.real)
     # Layout
     nrows, ncols = 1, 1
     image = plot_tools.Box(1, 2)
@@ -46,7 +45,7 @@ def main(filename, start, count, output):
                 axes = mfig.add_axes(i, j, [0, 0, 1, 1])
                 # Call 3D plotting helper, slicing in time
                 dset = file['tasks'][task]
-                plot_tools.plot_bot_3d(dset, 0, index, axes=axes, title=task, even_scale=True, func=func)
+                plot_tools.plot_bot_3d(dset, 0, index, axes=axes, title=task, even_scale=True)
             # Add time title
             title = title_func(file['scales/sim_time'][index])
             title_height = 1 - 0.5 * mfig.margin.top / mfig.fig.y
