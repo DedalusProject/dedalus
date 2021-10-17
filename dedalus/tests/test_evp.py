@@ -31,6 +31,8 @@ def test_heat_1d_periodic(x_basis_class, Nx, dtype):
     solver.solve_dense(solver.subproblems[0])
     # Check solution
     k = xb.wavenumbers
+    if x_basis_class is basis.RealFourier:
+        k = k[1:]  # Drop one k=0 for msin
     assert np.allclose(solver.eigenvalues, k**2)
 
 

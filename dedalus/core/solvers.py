@@ -175,7 +175,10 @@ class EigenvalueSolver(SolverBase):
         #pencil.build_matrices(self.problem, ['M', 'L'], cacheid=cacheid)
 
         # Solve as dense general eigenvalue problem
-        eig_output = eig(subproblem.L_min.A, b=-subproblem.M_min.A, **kw)
+        sp = subproblem
+        A = (sp.L_min @ sp.pre_right).A
+        B = - (sp.M_min @ sp.pre_right).A
+        eig_output = eig(A, b=B, **kw)
         # Unpack output
         if len(eig_output) == 2:
             self.eigenvalues, self.eigenvectors = eig_output
@@ -197,11 +200,13 @@ class EigenvalueSolver(SolverBase):
         subsystem : Subsystem object
             subsystem that eigenvalue data will be put into
         """
-        if subsystem not in self.eigenvalue_subproblem.subsystems:
+        sp = self.eigenvalue_subproblem
+        ss = subsystem
+        if ss not in sp.subsystems:
             raise ValueError("subsystem must be in eigenvalue_subproblem")
         for var in self.state:
             var['c'] = 0
-        X = self.eigenvectors[:,index]
+        X = sp.pre_right @ self.eigenvectors[:,index]
         subsystem.scatter(X, self.state)
 
 
@@ -270,7 +275,7 @@ class LinearBoundaryValueSolver(SolverBase):
         # Solve system for each subproblem, updating state
         for sp in self.subproblems:
             sp_matsolver = self.subproblem_matsolvers[sp]
-            F = np.empty(sp.L_min.shape[0], dtype=self.dtype)
+            F = np.empty(sp.pre_left.shape[0], dtype=self.dtype)
             X = np.empty(sp.pre_right.shape[0], dtype=self.dtype)
             for ss in sp.subsystems:
                 F.fill(0)  # Must zero before csr_matvec
@@ -345,7 +350,7 @@ class NonlinearBoundaryValueSolver(SolverBase):
         # Solve system for each subproblem, updating state
         for sp in self.subproblems:
             sp_matsolver = self._build_subproblem_matsolver(sp)
-            F = np.empty(sp.dH_min.shape[0], dtype=self.dtype)
+            F = np.empty(sp.pre_left.shape[0], dtype=self.dtype)
             X = np.empty(sp.pre_right.shape[0], dtype=self.dtype)
             for ss in sp.subsystems:
                 F.fill(0)  # Must zero before csr_matvec
