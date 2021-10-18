@@ -874,15 +874,14 @@ class SpectralOperator1D(SpectralOperator):
         else:
             input_domain = Domain(layout.dist, bases=[input_basis])
             output_domain = Domain(layout.dist, bases=[output_basis])
-            if input_basis is None:
-                local_groups = output_basis.local_groups(cls.subaxis_coupling)
-                local_groups = [lg for lg in local_groups if lg == [0]]
-            elif output_basis is None:
-                local_groups = input_basis.local_groups(cls.subaxis_coupling)
-                local_groups = [lg for lg in local_groups if lg == [0]]
-            else:
-                local_groups = input_basis.local_groups(cls.subaxis_coupling)
-            group_blocks = [cls._group_matrix(group[0], input_basis, output_basis, *args) for group in local_groups]
+            group_coupling = [True] * input_domain.dist.dim
+            group_coupling[axis] = False
+            group_coupling = tuple(group_coupling)
+            input_groupsets = layout.local_groupsets(group_coupling, input_domain, scales=input_domain.dealias, broadcast=True)
+            output_groupsets = layout.local_groupsets(group_coupling, output_domain, scales=output_domain.dealias, broadcast=True)
+            # Take intersection of input and output groups
+            groups = [gs[axis] for gs in input_groupsets if gs in output_groupsets]
+            group_blocks = [cls._group_matrix(group, input_basis, output_basis, *args) for group in groups]
             arg_size = layout.local_shape(input_domain, scales=1)[axis]
             out_size = layout.local_shape(output_domain, scales=1)[axis]
             return sparse_block_diag(group_blocks, shape=(out_size, arg_size))
@@ -1076,7 +1075,7 @@ class Integrate(LinearOperator, metaclass=MultiClass):
 
     """
 
-    name = 'Integrate'
+    name = "Integrate"
 
     @classmethod
     def _check_args(cls, operand, coords):

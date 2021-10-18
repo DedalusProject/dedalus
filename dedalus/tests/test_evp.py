@@ -183,8 +183,8 @@ def test_ball_bessel_eigenfunction(Lmax, Nmax, Leig, Neig, radius, dtype):
     solver.eigenvectors = solver.eigenvectors[:,i_sort]
     solver.set_state(Neig,solver.subproblems[Leig].subsystems[0]) # m = 0 mode
     f.require_layout(d.layouts[1])
-    local_m, local_ell = b.local_m, b.local_ell
-    radial_eigenfunction = f.data[(local_m == 0)*(local_ell == Leig)][0,:]
+    local_m, local_ell, local_n = f.layout.local_group_arrays(f.domain, f.scales)
+    radial_eigenfunction = f.data[(local_m == 0)*(local_ell == Leig)]
     i_max = np.argmax(np.abs(radial_eigenfunction))
     radial_eigenfunction /= radial_eigenfunction[i_max]
     k = np.sqrt(solver.eigenvalues[Neig])

@@ -1382,7 +1382,7 @@ class DiskRadialTransform(NonSeparableTransform):
         for m in m_list:
             if m not in m_matrices:
                 # Gauss quadrature with base (k=0) polynomials
-                Nmin = dedalus_sphere.zernike.min_degree(m)
+                Nmin = dedalus_sphere.zernike.min_degree(abs(m))
                 Nc = max(max(self.N2g, self.N2c) - Nmin, 0)
                 W = dedalus_sphere.zernike.polynomials(2, Nc, self.alpha, abs(m + self.s), z_grid) # shape (N2c-Nmin, Ng)
                 W = W * weights
@@ -1412,7 +1412,7 @@ class DiskRadialTransform(NonSeparableTransform):
         for m in m_list:
             if m not in m_matrices:
                 # Construct polynomials on the base grid
-                Nmin = dedalus_sphere.zernike.min_degree(m)
+                Nmin = dedalus_sphere.zernike.min_degree(abs(m))
                 Nc = max(self.N2c - Nmin, 0)
                 W = dedalus_sphere.zernike.polynomials(2, Nc, self.k + self.alpha, abs(m + self.s), z_grid)
                 # Zero higher coefficients than can be correctly computed with base Gauss quadrature

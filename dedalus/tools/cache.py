@@ -15,22 +15,25 @@ class CachedAttribute:
     """Descriptor for building attributes during first access."""
 
     def __init__(self, method):
-
         self.method = method
+        # Copy name and docstring
         self.__name__ = method.__name__
         self.__doc__ = method.__doc__
 
     def __get__(self, instance, owner):
-
-        # Return self when accessed from class
         if instance is None:
+            # Return self when accessed from not from instance
             return self
-        # Set method output as instance attribute
-        # (overrides reference to descriptor from instance)
-        attribute = self.method(instance)
-        setattr(instance, self.__name__, attribute)
+        else:
+            # Set method output as instance attribute
+            # (overrides reference to descriptor from instance)
+            attribute = self.method(instance)
+            setattr(instance, self.__name__, attribute)
+            return attribute
 
-        return attribute
+    def __call__(self, *args, **kw):
+        # Pass through calls when accessed not from instance
+        return self.method(*args, **kw)
 
 
 class CachedFunction:

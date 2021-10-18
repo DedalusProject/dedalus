@@ -156,6 +156,18 @@ class Basis:
         shape[np.array(self.shape) == 1] = 1
         return tuple(shape)
 
+    def global_shape(self, grid_space, scales):
+        # Subclasses must implement
+        raise NotImplementedError
+
+    def chunk_shape(self, grid_space):
+        # Subclasses must implement
+        raise NotImplementedError
+
+    def elements_to_groups(self, grid_space, elements):
+        # Subclasses must implement
+        raise NotImplementedError
+
     def global_grid_spacing(self, *args, **kwargs):
         """Global grids spacings."""
         raise NotImplementedError
@@ -356,20 +368,17 @@ class IntervalBasis(Basis):
         # Subclasses must implement
         raise NotImplementedError
 
-    def global_shape(self, layout, scales):
-        grid_space = layout.grid_space[self.axis]
-        if grid_space:
+    def global_shape(self, grid_space, scales):
+        if grid_space[0]:
             return self.grid_shape(scales)
         else:
             return self.shape
 
-    def chunk_shape(self, layout):
-        grid_space = layout.grid_space[self.axis]
-        if grid_space:
-            return 1
+    def chunk_shape(self, grid_space):
+        if grid_space[0]:
+            return (1,)
         else:
-            # Chunk groups together
-            return self.group_shape[0]
+            return self.group_shape
 
     def forward_transform(self, field, axis, gdata, cdata):
         """Forward transform field data."""
@@ -388,28 +397,6 @@ class IntervalBasis(Basis):
     def transform_plan(self, grid_size):
         # Subclasses must implement
         raise NotImplementedError
-
-    def local_groups(self, basis_coupling):
-        coupling, = basis_coupling
-        if coupling:
-            return [[None]]
-        else:
-            local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)[self.axis]
-            return [[group] for group in local_chunks]
-
-    def local_group_slices(self, basis_group):
-        group, = basis_group
-        # Return slices
-        if group is None:
-            # Return all coefficients
-            return [slice(None)]
-        else:
-            # Get local groups
-            local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)[self.axis]
-            # Groups are stored sequentially
-            local_index = list(local_chunks).index(group)
-            group_size = self.group_shape[0]
-            return [slice(local_index*group_size, (local_index+1)*group_size)]
 
 
 class Jacobi(IntervalBasis, metaclass=CachedClass):
@@ -500,6 +487,10 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
 
     # def include_mode(self, mode):
     #     return (0 <= mode < self.space.coeff_size)
+
+    def elements_to_groups(self, grid_space, elements):
+        # No permutations
+        return elements
 
     def Jacobi_matrix(self, size):
         if size is None:
@@ -751,7 +742,17 @@ class LiftJacobi(operators.LiftTau, operators.Copy):
 #             return (1 <= k <= self.space.kmax)
 
 
-class ComplexFourier(IntervalBasis):
+class FourierBase(IntervalBasis):
+
+    def elements_to_groups(self, grid_space, elements):
+        if grid_space[0]:
+            groups = elements
+        else:
+            groups = self.native_wavenumbers[elements]
+        return groups
+
+
+class ComplexFourier(FourierBase, metaclass=CachedClass):
     """Fourier complex exponential basis."""
 
     group_shape = (1,)
@@ -841,30 +842,6 @@ class ComplexFourier(IntervalBasis):
             permute_axis(cdata, axis+len(field.tensorsig), self.backward_coeff_permutation, out=cdata)
         super().backward_transform(field, axis, cdata, gdata)
 
-    def local_groups(self, basis_coupling):
-        coupling, = basis_coupling
-        if coupling:
-            return [[None]]
-        else:
-            local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)[self.axis]
-            return [[self.native_wavenumbers[chunk]] for chunk in local_chunks]
-
-    def local_group_slices(self, basis_group):
-        group, = basis_group
-        # Return slices
-        if group is None:
-            # Return all coefficients
-            return [slice(None)]
-        else:
-            # Get local groups
-            local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)[self.axis]
-            # Groups are stored sequentially
-            global_groups = self.native_wavenumbers
-            local_groups = global_groups[local_chunks]
-            local_index = list(local_groups).index(group)
-            group_size = self.group_shape[0]
-            return [slice(local_index*group_size, (local_index+1)*group_size)]
-
     # def include_mode(self, mode):
     #     k = mode // 2
     #     if (mode % 2) == 0:
@@ -891,8 +868,7 @@ class ConvertConstantComplexFourier(operators.ConvertConstant, operators.Spectra
             unit_amplitude = 1 / output_basis.constant_mode_value
             return np.array([[unit_amplitude]])
         else:
-            # Constructor should only loop over group 0.
-            raise ValueError("This should never happen.")
+            return np.zeros(shape=(1, 0))
 
 
 class DifferentiateComplexFourier(operators.Differentiate, operators.SpectralOperator1D):
@@ -961,7 +937,7 @@ class IntegrateComplexFourier(operators.Integrate, operators.SpectralOperator1D)
             raise ValueError("This should never happen.")
 
 
-class RealFourier(IntervalBasis):
+class RealFourier(FourierBase, metaclass=CachedClass):
     """
     Fourier real sine/cosine basis.
 
@@ -1057,22 +1033,6 @@ class RealFourier(IntervalBasis):
         if self.backward_coeff_permutation is not None:
             permute_axis(cdata, axis+len(field.tensorsig), self.backward_coeff_permutation, out=cdata)
         super().backward_transform(field, axis, cdata, gdata)
-
-    def local_group_slices(self, basis_group):
-        group, = basis_group
-        # Return slices
-        if group is None:
-            # Return all coefficients
-            return [slice(None)]
-        else:
-            # Get local groups
-            local_chunks = self.dist.coeff_layout.local_chunks(self.domain, scales=1)[self.axis]
-            # Groups are stored sequentially
-            global_groups = self.native_wavenumbers[::2]
-            local_groups = global_groups[local_chunks]
-            local_index = list(local_groups).index(group)
-            group_size = self.group_shape[0]
-            return [slice(local_index*group_size, (local_index+1)*group_size)]
 
 
 class ConvertConstantRealFourier(operators.ConvertConstant, operators.SpectralOperator1D):
@@ -1562,16 +1522,15 @@ class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):
         super().__init__(coordsystem)
 
     @CachedAttribute
-    def local_m(self):
-        layout = self.dist.coeff_layout
-        local_m_elements = layout.local_elements(self.domain, scales=1)[self.axis]
-        return tuple(self.azimuth_basis.native_wavenumbers[local_m_elements])
+    def constant(self):
+        return (self.mmax==0, False)
 
     def local_elements(self):
-        CL = self.dist.coeff_layout
-        LE = CL.local_elements(self.domain, scales=1)[self.axis:self.axis+self.dim]
-        LE[0] = self.local_m
-        return tuple(LE)
+        raise NotImplementedError()
+        # CL = self.dist.coeff_layout
+        # LE = CL.local_elements(self.domain, scales=1)[self.axis:self.axis+self.dim]
+        # LE[0] = self.local_m
+        # return tuple(LE)
 
     @CachedMethod
     def spin_weights(self, tensorsig):
@@ -1602,8 +1561,8 @@ class PolarBasis(SpinBasis):
     dim = 2
     dims = ['azimuth', 'radius']
 
-    def __init__(self, coordsystem, shape, dtype, k=0, dealias=(1,1), **kw):
-        super().__init__(coordsystem, shape, dtype, dealias, **kw)
+    def __init__(self, coordsystem, shape, dtype, k=0, dealias=(1,1), azimuth_library=None):
+        super().__init__(coordsystem, shape, dtype, dealias, azimuth_library=azimuth_library)
         self.k = k
         self.Nmax = shape[1] - 1
         if self.mmax == 0:
@@ -1665,9 +1624,7 @@ class PolarBasis(SpinBasis):
         S1_basis.backward_coeff_permutation = self.backward_m_perm
         return S1_basis
 
-
-    def global_shape(self, layout, scales):
-        grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
+    def global_shape(self, grid_space, scales):
         grid_shape = self.grid_shape(scales)
         if grid_space[0]:
             # grid-grid space
@@ -1690,7 +1647,6 @@ class PolarBasis(SpinBasis):
                     return self.shape
                 else:
                     return (2, self.shape[1])
-
             # DRAFT Repacked triangular truncation for DiskBasis
             # if Nphi > 1:
             #     if self.dtype == np.complex128:
@@ -1703,9 +1659,7 @@ class PolarBasis(SpinBasis):
             #     elif self.dtype == np.float64:
             #         return (2, Nmax+1+max(0, Nmax+2-Nphi//4))
 
-    def chunk_shape(self, layout):
-        grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
-        Nmax = self.Nmax
+    def chunk_shape(self, grid_space):
         if grid_space[0]:
             # grid-grid space
             return (1, 1)
@@ -1729,39 +1683,28 @@ class PolarBasis(SpinBasis):
             elif self.dtype == np.float64:
                 return (2, 1)
 
-    def local_groups(self, basis_coupling):
-        m_coupling, n_coupling = basis_coupling
-        if (not m_coupling) and n_coupling:
-            groups = []
-            local_m = self.local_m
-            for m in local_m:
-                # Avoid writing repeats for real data
-                if [m,None] not in groups:
-                    groups.append([m, None])
-            return groups
-        else:
-            raise NotImplementedError()
+    def elements_to_groups(self, grid_space, elements):
+        s1_groups = self.azimuth_basis.elements_to_groups(grid_space, elements[:1])
+        radial_groups = elements[1]
+        groups = np.array([*s1_groups, radial_groups])
+        if not grid_space[1]:
+            # coeff-coeff space
+            m, n = groups
+            nmin = self._nmin(m)
+            groups = np.ma.masked_array(groups)
+            groups[:, n < nmin] = np.ma.masked
+        return groups
 
-    def local_group_slices(self, basis_group):
-        m_group, n_group = basis_group
-        if (m_group is not None) and (n_group is None):
-            local_m = self.local_m
-            local_indices = np.where((local_m==m_group))
-            m_index = local_indices[0][0]
-            m_gs = self.group_shape[0]
-            m_slice = slice(m_index, m_index+m_gs)
-            n_slice = self.n_slice(m_group)
-            return [m_slice, n_slice]
-        else:
-            raise NotImplementedError()
-
+    @CachedMethod
     def n_size(self, m):
-        nmin, nmax = self._n_limits(m)
+        nmin = self._nmin(m)
+        nmax = self.Nmax
         return nmax - nmin + 1
 
     @CachedMethod
     def n_slice(self, m):
-        nmin, nmax = self._n_limits(m)
+        nmin = self._nmin(m)
+        nmax = self.Nmax
         return slice(nmin, nmax+1)
 
     def __eq__(self, other):
@@ -1777,50 +1720,32 @@ class PolarBasis(SpinBasis):
         return id(self)
 
     @CachedAttribute
-    def local_m(self):
-        if self.shape[0] == 1:
-            return tuple([0,])
-        # Permute Fourier wavenumbers
-        wavenumbers = self.azimuth_basis.native_wavenumbers
-        # Get layout before radius forward transform
-        transform = self.dist.get_transform_object(axis=self.axis+1)
-        layout = transform.layout1
-        # Take local elements
-        local_m_elements = layout.local_elements(self.domain, scales=1)[self.axis]
-        local_wavenumbers = wavenumbers[local_m_elements]
-        return tuple(local_wavenumbers)
-
-    @CachedAttribute
-    def local_n(self):
-        layout = self.dist.coeff_layout
-        local_j = layout.local_elements(self.domain, scales=1)[self.axis + 1][None, :]
-        return local_j
-
-    @CachedAttribute
     def m_maps(self):
-        return self._compute_m_maps(self.local_m, Nmax=self.Nmax, Nphi=self.shape[0])
-
-    def _compute_m_maps(self, local_m, Nmax, Nphi):
         """
         Tuple of (m, mg_slice, mc_slice, n_slice) for all local m's.
         """
+        # Get colatitude transform object
+        colat_transform = self.dist.get_transform_object(self.first_axis+1)
+        colat_coeff_layout = colat_transform.layout0
+        colat_grid_layout = colat_transform.layout1
+        # Get groupsets
+        domain = self.domain
+        group_coupling = [True] * domain.dist.dim
+        group_coupling[self.first_axis] = False
+        group_coupling = tuple(group_coupling)
+        groupsets = colat_grid_layout.local_groupsets(group_coupling, domain, scales=domain.dealias, broadcast=True)
+        # Build m_maps from groupset slices
         m_maps = []
-        # Get continuous segments of unpacked m's
-        segment = [local_m[0], 0, 0] # m, start, end
-        segments = [segment]
-        m = local_m[0]
-        for i, m_i in enumerate(local_m):
-            if (m_i == m):
-                segment[2] = i + 1
-            else:
-                m = m_i
-                segment = [m, i, i+1]
-                segments.append(segment)
-        # Build slices for each segment
-        for dseg, (m, mg_start, mg_end) in enumerate(segments):
-            mg_slice = slice(mg_start, mg_end)
-            mc_slice = mg_slice
-            m_maps.append((m, mg_slice, mc_slice, self.n_slice(m)))
+        for groupset in groupsets:
+            m = groupset[self.first_axis]
+            coeff_slices = colat_coeff_layout.local_groupset_slices(groupset, domain, scales=domain.dealias, broadcast=True)
+            grid_slices = colat_grid_layout.local_groupset_slices(groupset, domain, scales=domain.dealias, broadcast=True)
+            if len(coeff_slices) != 1 or len(grid_slices) != 1:
+                raise ValueError("This should never happpen. Ask for help.")
+            mg_slice = grid_slices[0][self.first_axis]
+            mc_slice = coeff_slices[0][self.first_axis]
+            n_slice = coeff_slices[0][self.first_axis+1]
+            m_maps.append((m, mg_slice, mc_slice, n_slice))
         return tuple(m_maps)
 
     def global_grids(self, scales=None):
@@ -1895,8 +1820,8 @@ class AnnulusBasis(PolarBasis):
     transforms = {}
     subaxis_dependence = (False, True)
 
-    def __init__(self, coordsystem, shape, dtype, radii=(1,2), k=0, alpha=(-0.5,-0.5), dealias=(1,1), radius_library=None, **kw):
-        super().__init__(coordsystem, shape, dtype, k=k, dealias=tuple(dealias), **kw)
+    def __init__(self, coordsystem, shape, dtype, radii=(1,2), k=0, alpha=(-0.5,-0.5), dealias=(1,1), radius_library=None, azimuth_library=None):
+        super().__init__(coordsystem, shape, dtype, k=k, dealias=tuple(dealias), azimuth_library=azimuth_library)
         if min(radii) <= 0:
             raise ValueError("Radii must be positive.")
         if radius_library is None:
@@ -1917,8 +1842,9 @@ class AnnulusBasis(PolarBasis):
         dealias = self.dealias
         return AnnulusBasis(self.coordsystem, new_shape, radii=self.radii, k=self.k, alpha=self.alpha, dealias=dealias, radius_library=self.radius_library, dtype=self.dtype, azimuth_library=self.azimuth_library)
 
-    def _n_limits(self, m):
-        return (0, self.Nmax)
+    @staticmethod
+    def _nmin(m):
+        return 0 * m  # To have same array shape as m
 
     def __add__(self, other):
         if other is None:
@@ -2112,17 +2038,6 @@ class AnnulusBasis(PolarBasis):
         operator = E**dk
         return operator(self.n_size(m), self.k).square.astype(np.float64)
 
-    def n_size(self, m, Nmax=None):
-        if Nmax == None: Nmax = self.Nmax
-        return Nmax + 1
-
-    @CachedMethod
-    def n_slice(self, m):
-        return slice(0, self.Nmax + 1)
-
-    def start(self, groups):
-        return 0
-
     def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
         m = subproblem.group[0]  # HACK
         spintotal_arg = self.spintotal(arg_comp)
@@ -2150,15 +2065,13 @@ class AnnulusBasis(PolarBasis):
         return matrix
 
 
-
-
-class DiskBasis(PolarBasis):
+class DiskBasis(PolarBasis, metaclass=CachedClass):
 
     transforms = {}
     subaxis_dependence = (True, True)
 
-    def __init__(self, coordsystem, shape, dtype, radius=1, k=0, alpha=0, dealias=(1,1), radius_library=None, **kw):
-        super().__init__(coordsystem, shape, dtype, k=k, dealias=dealias, **kw)
+    def __init__(self, coordsystem, shape, dtype, radius=1, k=0, alpha=0, dealias=(1,1), radius_library=None, azimuth_library=None):
+        super().__init__(coordsystem, shape, dtype, k=k, dealias=dealias, azimuth_library=azimuth_library)
         if radius <= 0:
             raise ValueError("Radius must be positive.")
         if radius_library is None:
@@ -2178,9 +2091,9 @@ class DiskBasis(PolarBasis):
         dealias = self.dealias
         return DiskBasis(self.coordsystem, new_shape, radius=self.radius, k=self.k, alpha=self.alpha, dealias=dealias, radius_library=self.radius_library, dtype=self.dtype, azimuth_library=self.azimuth_library)
 
-    def _n_limits(self, m):
-        nmin = dedalus_sphere.zernike.min_degree(m)
-        return (nmin, self.Nmax)
+    @staticmethod
+    def _nmin(m):
+        return abs(m) // 2
 
     def __add__(self, other):
         if other is None:
@@ -2481,14 +2394,14 @@ class ConvertConstantAnnulus(operators.ConvertConstant, operators.PolarMOperator
             raise ValueError("This should never happen.")
 
 
-class SpinWeightedSphericalHarmonics(SpinBasis):
+class SpinWeightedSphericalHarmonics(SpinBasis, metaclass=CachedClass):
 
     dim = 2
     dims = ['azimuth', 'colatitude']
     transforms = {}
 
-    def __init__(self, coordsystem, shape, dtype, radius=1, dealias=(1,1), colatitude_library=None, **kw):
-        super().__init__(coordsystem, shape, dtype, dealias, **kw)
+    def __init__(self, coordsystem, shape, dtype, radius=1, dealias=(1,1), colatitude_library=None, azimuth_library=None):
+        super().__init__(coordsystem, shape, dtype, dealias, azimuth_library=azimuth_library)
         if radius < 0:
             raise ValueError("Radius must be non-negative.")
         if colatitude_library is None:
@@ -2500,9 +2413,8 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             self.Lmax = max(0, shape[1] - 2)
         elif self.dtype == np.complex128:
             self.Lmax = shape[1] - 1
-        if self.mmax > self.Lmax + 1:
+        if self.Lmax > 0 and (self.mmax > self.Lmax + 1):
             logger.warning("You are using more azimuthal modes than can be resolved with your current colatitude resolution")
-            #raise ValueError("shape[0] cannot be more than twice shape[1].")
         # TODO: make this less hacky
         if self.mmax == 0:
             self.forward_transform_azimuth = self.forward_transform_azimuth_Mmax0
@@ -2544,8 +2456,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             self.azimuth_basis.forward_coeff_permutation = self.forward_m_perm
             self.azimuth_basis.backward_coeff_permutation = self.backward_m_perm
 
-    def global_shape(self, layout, scales):
-        grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
+    def global_shape(self, grid_space, scales):
         grid_shape = self.grid_shape(scales)
         if grid_space[0]:
             # grid-grid space
@@ -2577,8 +2488,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
                 elif self.dtype == np.float64:
                     return (2, Lmax+1)
 
-    def chunk_shape(self, layout):
-        grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
+    def chunk_shape(self, grid_space):
         if grid_space[0]:
             # grid-grid space
             return (1, 1)
@@ -2601,35 +2511,58 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             elif self.dtype == np.float64:
                 return (2, 1)
 
-    def local_groups(self, basis_coupling):
-        m_coupling, ell_coupling = basis_coupling
-        if (not m_coupling) and (not ell_coupling):
-            groups = []
-            local_m, local_ell = self.local_m_ell
-            local_m = local_m.ravel()
-            local_ell = local_ell.ravel()
-            for (m, ell) in zip(local_m, local_ell):
-                # Avoid writing repeats for real data
-                if [m, ell] not in groups:
-                    groups.append([m, ell])
-            return groups
+    def elements_to_groups(self, grid_space, elements):
+        if grid_space[0]:
+            # grid-grid space
+            groups = elements
+        elif grid_space[1]:
+            # coeff-grid space
+            # Unpacked m
+            permuted_native_wavenumbers = self.azimuth_basis.native_wavenumbers
+            groups = elements.copy()
+            groups[0] = permuted_native_wavenumbers[elements[0]]
         else:
-            raise NotImplementedError()
-
-    def local_group_slices(self, basis_group):
-        m_group, ell_group = basis_group
-        if (m_group is not None) and (ell_group is not None):
-            local_m, local_ell = self.local_m_ell
-            local_indices = np.where((local_m==m_group)*(local_ell==ell_group))
-            m_index = local_indices[0][0]
-            m_gs = self.group_shape[0]
-            m_slice = slice(m_index, m_index+m_gs)
-            ell_index = local_indices[1][0]
-            ell_gs = self.group_shape[1]
-            ell_slice = slice(ell_index, ell_index+ell_gs)
-            return [m_slice, ell_slice]
-        else:
-            raise NotImplementedError()
+            # coeff-coeff space
+            # Repacked triangular truncation
+            i, j = elements
+            Nphi = self.shape[0]
+            Lmax = self.Lmax
+            if self.dtype == np.complex128:
+                # Valid for m > 0 except Nyquist
+                shift = max(0, Lmax + 1 - Nphi//2)
+                m = 1 * i
+                ell = j - shift
+                # Fix for m < 0
+                neg_modes = (ell < m)
+                m[neg_modes] = i[neg_modes] - (Nphi+1)//2
+                ell[neg_modes] = Lmax - j[neg_modes]
+                # Fix for m = 0
+                m_zero = (i == 0)
+                m[m_zero] = 0
+                ell[m_zero] = j[m_zero]
+                # Fix for Nyquist
+                nyq_modes = (i == 0) * (j > Lmax)
+                m[nyq_modes] = Nphi//2
+                ell[nyq_modes] = j[nyq_modes] - shift
+            elif self.dtype == np.float64:
+                # Valid for 0 < m < Nphi//4
+                shift = max(0, Lmax + 2 - Nphi//2)
+                m = i // 2
+                ell = j - shift
+                # Fix for Nphi//4 <= m < Nphi//2-1
+                neg_modes = (ell < m)
+                m[neg_modes] = (Nphi//2 - 1) - m[neg_modes]
+                ell[neg_modes] = Lmax - j[neg_modes]
+                # Fix for m = 0
+                m_zero = (i < 2)
+                m[m_zero] = 0
+                ell[m_zero] = j[m_zero]
+                # Fix for m = Nphi//2 - 1
+                m_max = (i < 2) * (j > Lmax)
+                m[m_max] = Nphi//2 - 1
+                ell[m_max] = j[m_max] - shift
+            groups = np.array([m, ell])
+        return groups
 
     def __eq__(self, other):
         if isinstance(other, SpinWeightedSphericalHarmonics):
@@ -2664,127 +2597,42 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
         return NotImplemented
 
     @CachedAttribute
-    def local_unpacked_m(self):
-        # Permute Fourier wavenumbers
-        wavenumbers = self.azimuth_basis.native_wavenumbers
-        # Get layout before colatitude forward transform
-        transform = self.dist.get_transform_object(axis=self.axis+1)
-        layout = transform.layout1
-        # Take local elements
-        local_m_elements = layout.local_elements(self.domain, scales=1)[self.axis]
-        local_wavenumbers = wavenumbers[local_m_elements]
-        return tuple(local_wavenumbers)
-
-    @CachedAttribute
-    def local_m_ell(self):
-        layout = self.dist.coeff_layout
-        local_i = layout.local_elements(self.domain, scales=1)[self.axis][:, None]
-        local_j = layout.local_elements(self.domain, scales=1)[self.axis + 1][None, :]
-        local_i = local_i + 0*local_j
-        local_j = local_j + 0*local_i
-        Nphi = self.shape[0]
-        Lmax = self.Lmax
-        if self.dtype == np.complex128:
-            # Valid for m > 0 except Nyquist
-            shift = max(0, Lmax + 1 - Nphi//2)
-            local_m = 1 * local_i
-            local_ell = local_j - shift
-            # Fix for m < 0
-            neg_modes = (local_ell < local_m)
-            local_m[neg_modes] = local_i[neg_modes] - (Nphi+1)//2
-            local_ell[neg_modes] = Lmax - local_j[neg_modes]
-            # Fix for m = 0
-            m_zero = (local_i == 0)
-            local_m[m_zero] = 0
-            local_ell[m_zero] = local_j[m_zero]
-            # Fix for Nyquist
-            nyq_modes = (local_i == 0) * (local_j > Lmax)
-            local_m[nyq_modes] = Nphi//2
-            local_ell[nyq_modes] = local_j[nyq_modes] - shift
-        elif self.dtype == np.float64:
-            # Valid for 0 < m < Nphi//4
-            shift = max(0, Lmax + 2 - Nphi//2)
-            local_m = local_i // 2
-            local_ell = local_j - shift
-            # Fix for Nphi//4 <= m < Nphi//2-1
-            neg_modes = (local_ell < local_m)
-            local_m[neg_modes] = (Nphi//2 - 1) - local_m[neg_modes]
-            local_ell[neg_modes] = Lmax - local_j[neg_modes]
-            # Fix for m = 0
-            m_zero = (local_i < 2)
-            local_m[m_zero] = 0
-            local_ell[m_zero] = local_j[m_zero]
-            # Fix for m = Nphi//2 - 1
-            m_max = (local_i < 2) * (local_j > Lmax)
-            local_m[m_max] = Nphi//2 - 1
-            local_ell[m_max] = local_j[m_max] - shift
-        # Reshape as multidimensional vectors
-        # HACK
-        if self.first_axis != 0:
-            raise ValueError("Need to reshape these")
-        return local_m, local_ell
-
-    @CachedAttribute
-    def local_m(self):
-        return self.local_m_ell[0]
-
-    @CachedAttribute
-    def local_ell(self):
-        return self.local_m_ell[1]
-
-    @CachedAttribute
     def m_maps(self):
-        return self._compute_m_maps(self.local_unpacked_m, Lmax=self.Lmax, Nphi=self.shape[0])
-
-    @CachedAttribute
-    def ell_maps(self):
-        return self._compute_ell_maps(self.local_ell)
-
-    @staticmethod
-    def _compute_m_maps(local_unpacked_m, Lmax, Nphi):
         """
-        Tuple of (m, mg_slice, mc_slice, ell_slice) for all local m's.
+        Tuple of (m, mg_slice, mc_slice, ell_slice) for all local m's when
+        the colatitude axis is local.
         """
+        # Get colatitude transform object
+        colat_transform = self.dist.get_transform_object(self.first_axis+1)
+        colat_coeff_layout = colat_transform.layout0
+        colat_grid_layout = colat_transform.layout1
+        # Get groupsets
+        domain = self.domain
+        group_coupling = [True] * domain.dist.dim
+        group_coupling[self.first_axis] = False
+        group_coupling = tuple(group_coupling)
+        groupsets = colat_coeff_layout.local_groupsets(group_coupling, domain, scales=domain.dealias, broadcast=True)
+        # Build m_maps from groupset slices
         m_maps = []
-        # Get continuous segments of unpacked m's
-        segment = [local_unpacked_m[0], 0, 0] # m, start, end
-        segments = [segment]
-        m = local_unpacked_m[0]
-        for i, m_i in enumerate(local_unpacked_m):
-            if (m_i == m):
-                segment[2] = i + 1
-            else:
-                m = m_i
-                segment = [m, i, i+1]
-                segments.append(segment)
-        # Build slices for each segment
-        for dseg, (m, mg_start, mg_end) in enumerate(segments):
-            mg_slice = slice(mg_start, mg_end)
-            # Fold over every other segment
-            gs = mg_end - mg_start
-            shift = max(0, Lmax + gs - Nphi//2)  # Assuming gs=1 for complex and gs=2 for real
-            mc_slice = slice(gs*(dseg//2), gs*(dseg//2) + gs)
-            # Reverse ell's on folded segments for ell locality
-            if m == 0:
-                # Start m=0 at zero for easier parallelization
-                ell_slice = slice(0, Lmax+1)
-            elif (gs == 1) and (m == Nphi//2):  # Nyquist mode for complex folding
-                ell_slice = slice(Lmax+1, None)
-            elif (gs == 2) and (m == Nphi//2 - 1):  # One below Nyquist mode for real folding
-                ell_slice = slice(Lmax+1, None)
-            elif dseg % 2 == 0:
-                # Shifted up
-                ell_slice = slice(shift + np.abs(m), None)
-            else:
-                # Reversed for ell locality
-                ell_slice = slice(Lmax - np.abs(m), None, -1)
+        for groupset in groupsets:
+            m = groupset[self.first_axis]
+            coeff_slices = colat_coeff_layout.local_groupset_slices(groupset, domain, scales=domain.dealias, broadcast=True)
+            grid_slices = colat_grid_layout.local_groupset_slices(groupset, domain, scales=domain.dealias, broadcast=True)
+            if len(coeff_slices) != 1 or len(grid_slices) != 1:
+                raise ValueError("This should never happpen. Ask for help.")
+            mg_slice = grid_slices[0][self.first_axis]
+            mc_slice = coeff_slices[0][self.first_axis]
+            ell_slice = coeff_slices[0][self.first_axis+1]
+            # Reverse n_slice for folded modes so that ells are well-ordered
+            if ell_slice.start == 0 and m != 0:
+                ell_slice = slice(ell_slice.stop-1, None, -1)
             m_maps.append((m, mg_slice, mc_slice, ell_slice))
         return tuple(m_maps)
 
-    @staticmethod
-    def _compute_ell_maps(local_ell):
+    @CachedAttribute
+    def ell_maps(self):
         """
-        Tuple of (ell, m_slice, ell_slice) for all local ells.
+        Tuple of (ell, m_slice, ell_slice) for all local ells in coeff space.
         m_slice and ell_slice are local slices along the phi and theta axes.
 
         Data for each ell should be sliced as:
@@ -2792,25 +2640,24 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             for ell, m_slice, ell_slice in ell_maps:
                 ell_data = data[m_slice, ell_slice]
         """
+        coeff_layout = self.dist.coeff_layout
+        azimuth_axis = self.first_axis
+        colatitude_axis = self.first_axis + 1
+        # Get groupsets
+        domain = self.domain
+        group_coupling = [True] * domain.dist.dim
+        group_coupling[colatitude_axis] = False
+        group_coupling = tuple(group_coupling)
+        groupsets = coeff_layout.local_groupsets(group_coupling, domain, scales=domain.dealias, broadcast=True)
+        # Build ell_maps from groupset slices
         ell_maps = []
-        for dl, ell_row in enumerate(local_ell.T):
-            if len(ell_row) == 0:
-                continue
-            # Get continuous segments of ells
-            segment = [ell_row[0], 0, 0] # ell, start, end
-            segments = [segment]
-            ell = ell_row[0]
-            for i, ell_i in enumerate(ell_row):
-                if (ell_i == ell):
-                    segment[2] = i + 1
-                else:
-                    ell = ell_i
-                    segment = [ell, i, i+1]
-                    segments.append(segment)
-            # Build slices for each segment
-            for ell, start, end in segments:
-                ell_map = (ell, slice(start, end), slice(dl, dl+1))
-                ell_maps.append(ell_map)
+        for groupset in groupsets:
+            ell = groupset[colatitude_axis]
+            groupset_slices = coeff_layout.local_groupset_slices(groupset, domain, scales=domain.dealias, broadcast=True)
+            for groupset_slice in groupset_slices:
+                m_slice = groupset_slice[azimuth_axis]
+                ell_slice = groupset_slice[colatitude_axis]
+                ell_maps.append((ell, m_slice, ell_slice))
         return tuple(ell_maps)
 
     def global_grids(self, scales=None):
@@ -2948,20 +2795,20 @@ class SpinWeightedSphericalHarmonics(SpinBasis):
             else: vector[i] = dedalus_sphere.sphere.k_element(mu,l,s,self.radius)
         return vector
 
-    @CachedMethod
-    def vector_slice(self, m, ell):
-        if m > ell:
-            return None
-        mi = self.local_m.index(m)
-        li = self.local_l.index(ell)
-        return (mi, li)
+    # @CachedMethod
+    # def vector_slice(self, m, ell):
+    #     if m > ell:
+    #         return None
+    #     mi = self.local_m.index(m)
+    #     li = self.local_l.index(ell)
+    #     return (mi, li)
 
-    def vector_3(self, comp, m, ell):
-        slices = self.vector_slice(m, ell)
-        if slices is None:
-            return None
-        comp5 = reduced_view(comp, axis=self.axis, dim=self.dist.dim)
-        return comp5[(slice(None),) + slices + (slice(None),)]
+    # def vector_3(self, comp, m, ell):
+    #     slices = self.vector_slice(m, ell)
+    #     if slices is None:
+    #         return None
+    #     comp5 = reduced_view(comp, axis=self.axis, dim=self.dist.dim)
+    #     return comp5[(slice(None),) + slices + (slice(None),)]
 
     def valid_components(self, group, tensorsig, enum_components_input):
         ell = group[self.first_axis + 1]
@@ -2989,7 +2836,6 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
 
     dim = 3
     dims = ['azimuth', 'colatitude', 'radius']
-    group_shape = (1, 1, 1)
     subaxis_dependence = [False, False, True]
 
     def __init__(self, coordsystem, radial_size, k, dealias, dtype):
@@ -3006,55 +2852,14 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
         # Call at end because dealias is needed to build self.domain
         Basis.__init__(self, coordsystem)
         self.radial_axis = self.first_axis + 2
+        if dtype == np.float64:
+            self.group_shape = (2, 1, 1)
+        elif dtype == np.complex128:
+            self.group_shape = (1, 1, 1)
 
     @CachedAttribute
     def constant(self):
         return (True, True, False)
-
-    # @CachedAttribute
-    # def local_l(self):
-    #     layout = self.dist.coeff_layout
-    #     local_l_elements = layout.local_elements(self.domain, scales=1)[self.axis-1]
-    #     if 0 in local_l_elements:
-    #         return (0,)
-    #     else:
-    #         return ()
-
-    # @CachedAttribute
-    # def local_m(self):
-    #     layout = self.dist.coeff_layout
-    #     local_m_elements = layout.local_elements(self.domain, scales=1)[self.axis-2]
-    #     if 0 in local_m_elements:
-    #         return (0,)
-    #     else:
-    #         return ()
-
-    @CachedAttribute
-    def local_m_ell(self):
-        layout = self.dist.coeff_layout
-        local_i = layout.local_elements(self.domain, scales=1)[self.axis][:, None]
-        local_j = layout.local_elements(self.domain, scales=1)[self.axis + 1][None, :]
-        local_i = local_i + 0*local_j
-        local_j = local_j + 0*local_i
-        if self.dtype == np.complex128:
-            local_m = local_i
-            local_ell = local_j
-        elif self.dtype == np.float64:
-            local_m = local_i // 2
-            local_ell = local_j
-        # Reshape as multidimensional vectors
-        # HACK
-        if self.axis != 0:
-            raise ValueError("Need to reshape these")
-        return local_m, local_ell
-
-    @CachedAttribute
-    def local_m(self):
-        return self.local_m_ell[0]
-
-    @CachedAttribute
-    def local_ell(self):
-        return self.local_m_ell[1]
 
     def grid_shape(self, scales):
         grid_shape = list(super().grid_shape(scales))
@@ -3063,8 +2868,7 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
         grid_shape[1] = 1
         return tuple(grid_shape)
 
-    def global_shape(self, layout, scales):
-        grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
+    def global_shape(self, grid_space, scales):
         grid_shape = self.grid_shape(scales)
         if grid_space[0]:
             # grid-grid-grid space
@@ -3083,8 +2887,7 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
             shape[2] = self.shape[2]
             return tuple(shape)
 
-    def chunk_shape(self, layout):
-        grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
+    def chunk_shape(self, grid_space):
         if grid_space[0]:
             # grid-grid-grid space
             return (1, 1, 1)
@@ -3094,9 +2897,22 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
             elif self.dtype == np.float64:
                 return (2, 1, 1)
 
+    def elements_to_groups(self, grid_space, elements):
+        groups = elements.copy()
+        if not grid_space[0]:
+            # coeff-*-* space
+            groups[0] = 0
+        if not grid_space[2]:
+            # coeff-coeff-coeff space
+            m, ell, n = groups
+            nmin = self._nmin(ell)
+            groups = np.ma.masked_array(groups)
+            groups[:, n < nmin] = np.ma.masked
+        return groups
+
     @CachedAttribute
     def ell_maps(self):
-        return SWSH._compute_ell_maps(self.local_ell)
+        return SWSH.ell_maps(self)
 
     def get_radial_basis(self):
         return self
@@ -3213,53 +3029,24 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
                 temp_ell = temp[tuple(slices)]
                 apply_matrix(Q[ell], temp_ell, axis=0, out=temp_ell)
 
-    def radial_vector_3(self, comp, m, ell, regindex, local_m=None, local_l=None):
-        if local_m == None: local_m = self.local_m
-        if local_l == None: local_l = self.local_l
-        slices = self.radial_vector_slices(m, ell, regindex, local_m, local_l)
-        if slices is None:
-            return None
-        comp5 = reduced_view(comp, axis=self.axis, dim=3)
-        return comp5[(slice(None),) + slices + (slice(None),)]
+    # def radial_vector_3(self, comp, m, ell, regindex, local_m=None, local_l=None):
+    #     if local_m == None: local_m = self.local_m
+    #     if local_l == None: local_l = self.local_l
+    #     slices = self.radial_vector_slices(m, ell, regindex, local_m, local_l)
+    #     if slices is None:
+    #         return None
+    #     comp5 = reduced_view(comp, axis=self.axis, dim=3)
+    #     return comp5[(slice(None),) + slices + (slice(None),)]
 
-    @CachedMethod
-    def radial_vector_slices(self, m, ell, regindex, local_m, local_l):
-        if m > ell:
-            return None
-        if not self.regularity_allowed(ell, regindex):
-            return None
-        mi = local_m.index(m)
-        li = local_l.index(ell)
-        return (mi, li, self.n_slice(ell))
-
-    def local_groups(self, basis_coupling):
-        m_coupling, ell_coupling, r_coupling = basis_coupling
-        if (not m_coupling) and (not ell_coupling) and r_coupling:
-            groups = []
-            local_m, local_ell = self.local_m_ell
-            if len(local_m) and len(local_ell):
-                groups.append([0, 0, None])
-            return groups
-        else:
-            raise NotImplementedError()
-
-    def local_group_slices(self, basis_group):
-        #raise NotImplementedError("Hmm so what called this??")
-        m_group, ell_group, r_group = basis_group
-        if (m_group is not None) and (ell_group is not None) and (r_group is None):
-            if m_group == 0 and ell_group == 0:
-                if self.dtype == np.float64:
-                    m_slice = slice(0, 2)
-                else:
-                    m_slice = slice(0, 1)
-                ell_slice = slice(0, 1)
-            else:
-                m_slice = slice(0, 0)
-                ell_slice = slice(0, 0)
-            n_slice = slice(None)
-            return [m_slice, ell_slice, n_slice]
-        else:
-            raise NotImplementedError()
+    # @CachedMethod
+    # def radial_vector_slices(self, m, ell, regindex, local_m, local_l):
+    #     if m > ell:
+    #         return None
+    #     if not self.regularity_allowed(ell, regindex):
+    #         return None
+    #     mi = local_m.index(m)
+    #     li = local_l.index(ell)
+    #     return (mi, li, self.n_slice(ell))
 
     def forward_transform_azimuth(self, field, axis, gdata, cdata):
         # Copy over real part of m = 0
@@ -3282,8 +3069,20 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
         # Copy over real part of m = 0
         np.copyto(gdata, cdata[axslice(len(field.tensorsig)+axis, 0, 1)])
 
+    @CachedMethod
+    def n_size(self, ell):
+        nmin = self._nmin(ell)
+        nmax = self.Nmax
+        return nmax - nmin + 1
 
-class SphericalShellRadialBasis(RegularityBasis):
+    @CachedMethod
+    def n_slice(self, ell):
+        nmin = self._nmin(ell)
+        nmax = self.Nmax
+        return slice(nmin, nmax+1)
+
+
+class SphericalShellRadialBasis(RegularityBasis, metaclass=CachedClass):
 
     def __init__(self, coordsystem, radial_size, dtype, radii=(1,2), alpha=(-0.5,-0.5), dealias=(1,), k=0, radius_library=None):
         super().__init__(coordsystem, radial_size, k=k, dealias=dealias, dtype=dtype)
@@ -3476,16 +3275,9 @@ class SphericalShellRadialBasis(RegularityBasis):
         operator = E**dk
         return operator(self.n_size(l), self.k).square.astype(np.float64)
 
-    def n_size(self, ell, Nmax=None):
-        if Nmax == None: Nmax = self.Nmax
-        return Nmax + 1
-
-    @CachedMethod
-    def n_slice(self, ell):
-        return slice(0, self.Nmax + 1)
-
-    def start(self, groups):
-        return 0
+    @staticmethod
+    def _nmin(ell):
+        return 0 * ell  # To have same array shape as ell
 
     def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
         ell = subproblem.group[1]  # HACK
@@ -3515,7 +3307,7 @@ class SphericalShellRadialBasis(RegularityBasis):
         return matrix
 
 
-class BallRadialBasis(RegularityBasis):
+class BallRadialBasis(RegularityBasis, metaclass=CachedClass):
 
     transforms = {}
 
@@ -3686,23 +3478,9 @@ class BallRadialBasis(RegularityBasis):
             size = self.n_size(ell)
         return operator(size, self.alpha + self.k, ell + regtotal).square.astype(np.float64)
 
-    def _n_limits(self, ell):
-        nmin = dedalus_sphere.zernike.min_degree(ell)
-        return (nmin, self.Nmax)
-
-    def n_size(self, ell):
-        nmin, nmax = self._n_limits(ell)
-        return nmax - nmin + 1
-
-    @CachedMethod
-    def n_slice(self, ell):
-        nmin, nmax = self._n_limits(ell)
-        return slice(nmin, nmax+1)
-
-    def start(self, groups):
-        ell = groups[1]
-        (nmin, Nmax) = self._n_limits(ell)
-        return nmin
+    @staticmethod
+    def _nmin(ell):
+        return ell // 2
 
     def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
         ell = subproblem.group[1]  # HACK
@@ -3757,7 +3535,6 @@ class Spherical3DBasis(MultidimensionalBasis):
 
     dim = 3
     dims = ['azimuth', 'colatitude', 'radius']
-    group_shape = (1, 1, 1)
     subaxis_dependence = [False, True, True]
 
     def __init__(self, coordsystem, shape_angular, dealias_angular, radial_basis, dtype, azimuth_library=None, colatitude_library=None):
@@ -3778,8 +3555,6 @@ class Spherical3DBasis(MultidimensionalBasis):
         self.azimuth_basis = self.sphere_basis.azimuth_basis
         self.mmax = self.sphere_basis.mmax
         self.Lmax = self.sphere_basis.Lmax
-        self.local_m = self.sphere_basis.local_m
-        self.local_ell = self.sphere_basis.local_ell
         self.ell_maps = self.sphere_basis.ell_maps
         self.global_grid_azimuth = self.sphere_basis.global_grid_azimuth
         self.global_grid_colatitude = self.sphere_basis.global_grid_colatitude
@@ -3795,6 +3570,10 @@ class Spherical3DBasis(MultidimensionalBasis):
         self.backward_transform_azimuth = self.sphere_basis.backward_transform_azimuth
         self.forward_transform_colatitude = self.sphere_basis.forward_transform_colatitude
         self.backward_transform_colatitude = self.sphere_basis.backward_transform_colatitude
+        if dtype == np.float64:
+            self.group_shape = (2, 1, 1)
+        elif dtype == np.complex128:
+            self.group_shape = (1, 1, 1)
         Basis.__init__(self, coordsystem)
 
     @CachedAttribute
@@ -3834,10 +3613,11 @@ class Spherical3DBasis(MultidimensionalBasis):
         return reshape_vector(np.ravel(global_spacing)[local_elements], dim=self.dist.dim, axis=axis)
 
     def local_elements(self):
-        CL = self.dist.coeff_layout
-        LE = CL.local_elements(self.domain, scales=1)[self.axis:self.axis+self.dim]
-        LE[0] = np.array(self.local_m)
-        return tuple(LE)
+        raise NotImplementedError()
+        # CL = self.dist.coeff_layout
+        # LE = CL.local_elements(self.domain, scales=1)[self.axis:self.axis+self.dim]
+        # LE[0] = np.array(self.local_m)
+        # return tuple(LE)
 
     def get_radial_basis(self):
         return self.radial_basis
@@ -3857,47 +3637,35 @@ class Spherical3DBasis(MultidimensionalBasis):
     def n_size(self, ell):
         return self.radial_basis.n_size(ell)
 
-    @CachedMethod
     def n_slice(self, ell):
         return self.radial_basis.n_slice(ell)
 
-    def start(self, groups):
-        return self.radial_basis.start(groups)
-
-    def global_shape(self, layout, scales):
-        grid_space = layout.grid_space[self.first_axis:self.last_axis+1]
+    def global_shape(self, grid_space, scales):
         grid_shape = self.grid_shape(scales)
+        s2_shape = self.sphere_basis.global_shape(grid_space, scales)
         if grid_space[2]:
-            s2_shape = self.sphere_basis.global_shape(layout, scales)
-            return s2_shape + (grid_shape[2],)
+            # *-*-grid space
+            radial_shape = (grid_shape[2],)
         else:
             # coeff-coeff-coeff space
-            s2_shape = self.sphere_basis.global_shape(layout, scales)
-            return s2_shape + (self.shape[2],)
+            radial_shape = (self.shape[2],)
+        return s2_shape + radial_shape
 
-    def chunk_shape(self, layout):
-        s2_chunk = self.sphere_basis.chunk_shape(layout)
+    def chunk_shape(self, grid_space):
+        s2_chunk = self.sphere_basis.chunk_shape(grid_space)
         return s2_chunk + (1,)
 
-    def local_groups(self, basis_coupling):
-        m_coupling, ell_coupling, n_coupling = basis_coupling
-        if (not m_coupling) and (not ell_coupling) and (n_coupling):
-            groups = self.sphere_basis.local_groups((m_coupling, ell_coupling))
-            for group in groups:
-                group.append(None)
-            return groups
-        else:
-            raise NotImplementedError()
-
-    def local_group_slices(self, basis_group):
-        m_group, ell_group, n_group = basis_group
-        if (m_group is not None) and (ell_group is not None) and (n_group is None):
-            slices = self.sphere_basis.local_group_slices((m_group, ell_group))
-            n_slice = self.radial_basis.n_slice(ell=ell_group)
-            slices.append(n_slice)
-            return slices
-        else:
-            raise NotImplementedError()
+    def elements_to_groups(self, grid_space, elements):
+        s2_groups = self.sphere_basis.elements_to_groups(grid_space, elements[:2])
+        radial_groups = elements[2]
+        groups = np.array([*s2_groups, radial_groups])
+        if not grid_space[2]:
+            # coeff-coeff-coeff space
+            m, ell, n = groups
+            nmin = self.radial_basis._nmin(ell)
+            groups = np.ma.masked_array(groups)
+            groups[:, n < nmin] = np.ma.masked
+        return groups
 
     def valid_components(self, *args):
         # Implemented in RegularityBasis
@@ -3912,7 +3680,7 @@ class Spherical3DBasis(MultidimensionalBasis):
             raise ValueError("Cannot build NCCs of non-radial fields.")
 
 
-class SphericalShellBasis(Spherical3DBasis):
+class SphericalShellBasis(Spherical3DBasis, metaclass=CachedClass):
 
     def __init__(self, coordsystem, shape, dtype, radii=(1,2), alpha=(-0.5,-0.5), dealias=(1,1,1), k=0, azimuth_library=None, colatitude_library=None, radius_library=None):
         if np.isscalar(dealias):
@@ -4025,7 +3793,7 @@ class SphericalShellBasis(Spherical3DBasis):
 ShellBasis = SphericalShellBasis
 
 
-class BallBasis(Spherical3DBasis):
+class BallBasis(Spherical3DBasis, metaclass=CachedClass):
 
     transforms = {}
 
@@ -4606,12 +4374,17 @@ class SphericalAzimuthalAverage(AzimuthalAverage, operators.Average, operators.S
         """Perform operation."""
         operand = self.args[0]
         # Set output layout
-        out.set_layout(operand.layout)
+        layout = operand.layout
+        out.set_layout(layout)
         out.data[:] = 0
         # Apply operator
-        local_m = self.input_basis.local_m
-        m0_in = (self.input_basis.local_m == 0)
-        m0_out = (self.output_basis.local_m == 0)
+        azimuth_axis = self.input_basis.first_axis
+        domain_in = self.operand.domain
+        domain_out = self.domain
+        groups_in = layout.local_group_arrays(domain_in, scales=domain_in.dealias)
+        groups_out = layout.local_group_arrays(domain_out, scales=domain_out.dealias)
+        m0_in = (groups_in[azimuth_axis] == 0)
+        m0_out = (groups_out[azimuth_axis] == 0)
         regcomps = self.input_basis.radial_basis.regularity_classes(operand.tensorsig)
         # Copy m = 0 for every component
         for regindex, regtotal in np.ndenumerate(regcomps):
@@ -4634,7 +4407,7 @@ class SphericalAverage(operators.Average, operators.SphericalEllOperator):
         # Copy with Nphi = Ntheta = 1
         shape = list(input_basis.shape)
         shape[0] = shape[1] = 1
-        return input_basis.clone_with(shape=shape)
+        return input_basis.clone_with(shape=tuple(shape))
 
     def new_operand(self, operand, **kw):
         return SphericalAverage(operand, self.coord, **kw)
@@ -4911,7 +4684,7 @@ class InterpolateColatitude(FutureLockedField, operators.Interpolate):
         # Todo: just a function of radius if interpolation is at poles?
         shape = list(input_basis.shape)
         shape[1] = 1
-        return input_basis.clone_with(shape=shape)
+        return input_basis.clone_with(shape=tuple(shape))
 
     def check_conditions(self):
         """Check that arguments are in a proper layout."""
@@ -4943,8 +4716,16 @@ class InterpolateColatitude(FutureLockedField, operators.Interpolate):
     def _interpolation_vectors(sphere_basis, Ntheta, s, theta):
         interp_vectors = {}
         z = np.cos(theta)
+        colat_transform = sphere_basis.dist.get_transform_object(sphere_basis.first_axis+1)
+        layout = colat_transform.layout1
+        coupling = [True] * sphere_basis.dist.dim
+        coupling[sphere_basis.first_axis] = False
+        coupling = tuple(coupling)
+        domain = sphere_basis.domain
+        m_groupsets = layout.local_groupsets(coupling, domain, scales=domain.dealias, broadcast=True)
         forward = sphere_basis.transform_plan(Ntheta, s)
-        for m in set(sphere_basis.local_unpacked_m):
+        for group in m_groupsets:
+            m = group[sphere_basis.first_axis]
             if m <= sphere_basis.Lmax:
                 Lmin = max(abs(m), abs(s))
                 interp_m = dedalus_sphere.sphere.harmonics(sphere_basis.Lmax, m, s, z)[None, :]

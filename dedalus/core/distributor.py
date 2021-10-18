@@ -5,11 +5,13 @@ Distributor, Layout, Transform, and Transpose class definitions.
 import logging
 from mpi4py import MPI
 import numpy as np
+import itertools
 from collections import OrderedDict
 
 from ..tools.cache import CachedMethod, CachedAttribute
 from ..tools.config import config
 from ..tools.array import prod
+from ..tools.general import OrderedSet
 
 logger = logging.getLogger(__name__.split('.')[-1])
 GROUP_TRANSFORMS = config['transforms'].getboolean('GROUP_TRANSFORMS')
@@ -134,6 +136,7 @@ class Distributor:
         # Layout and path lists
         self.layouts = [layout_0]
         self.paths = []
+        self.transforms = []
         # Subsequent layouts
         for i in range(1, R+D+1):
             # Iterate backwards over bases to last coefficient space basis
@@ -145,6 +148,7 @@ class Distributor:
                         layout_i = Layout(self, local, grid_space)
                         if not dry_run:
                             path_i = Transform(self.layouts[-1], layout_i, d)
+                            self.transforms.insert(0, path_i)
                         break
                     # Otherwise transpose
                     else:
@@ -187,10 +191,7 @@ class Distributor:
         return tuple(scales)
 
     def get_transform_object(self, axis):
-        for path in self.paths:
-            if isinstance(path, Transform):
-                if path.axis == axis:
-                    return path
+        return self.transforms[axis]
 
     def get_axis(self, coord):
         return self.coords.index(coord)
@@ -258,42 +259,116 @@ class Layout:
         chunk_shape = domain.chunk_shape(self)
         return tuple(chunk_shape)
 
-    def local_chunks(self, domain, scales, rank=None):
+    def group_shape(self, domain):
+        """Chunk shape."""
+        return tuple(domain.group_shape(self))
+
+    def local_chunks(self, domain, scales, rank=None, broadcast=False):
         """Local chunk indices by axis."""
         global_shape = self.global_shape(domain, scales)
         chunk_shape = self.chunk_shape(domain)
         chunk_nums = -(-np.array(global_shape) // np.array(chunk_shape))  # ceil
         local_chunks = []
+        # Get coordinates
+        if rank is None:
+            ext_coords = self.ext_coords
+        else:
+            ext_coords = np.zeros(self.dist.dim, dtype=int)
+            ext_coords[~self.local] = self.dist.comm_cart.Get_coords(rank)
+        # Get chunks axis by axis
         for axis, basis in enumerate(domain.full_bases):
             if self.local[axis]:
                 # All chunks for local dimensions
                 local_chunks.append(np.arange(chunk_nums[axis]))
-            # elif basis is None:
-            #     # Copy across constant dimensions
-            #     local_chunks.append(np.arange(chunk_nums[axis]))
             else:
                 # Block distribution otherwise
                 mesh = self.ext_mesh[axis]
-                if rank is not None:
-                    coords = np.zeros(self.dist.dim, dtype=int)
-                    coords[~self.local] = self.dist.comm_cart.Get_coords(rank)
-                    coord = coords[axis]
+                if broadcast and (basis is None):
+                    coord = 0
                 else:
-                    coord = self.ext_coords[axis]
+                    coord = ext_coords[axis]
                 block = -(-chunk_nums[axis] // mesh)
                 start = min(chunk_nums[axis], block*coord)
                 end = min(chunk_nums[axis], block*(coord+1))
                 local_chunks.append(np.arange(start, end))
         return tuple(local_chunks)
 
-    def local_elements(self, domain, scales, rank = None):
+    def local_elements(self, domain, scales, rank=None, broadcast=False):
         """Local element indices by axis."""
         chunk_shape = self.chunk_shape(domain)
-        local_chunks = self.local_chunks(domain, scales, rank = rank)
+        local_chunks = self.local_chunks(domain, scales, rank=rank, broadcast=broadcast)
         indices = []
-        for GS, LG in zip(chunk_shape, local_chunks):
-            indices.append(np.array([GS*G+i for G in LG for i in range(GS)], dtype=int))
-        return indices
+        for chunk_size, chunks in zip(chunk_shape, local_chunks):
+            ax_indices = chunk_size*np.repeat(chunks, chunk_size) + np.tile(np.arange(chunk_size), len(chunks))
+            indices.append(ax_indices)
+        return tuple(indices)
+
+    @CachedMethod
+    def local_group_arrays(self, domain, scales, rank=None, broadcast=False):
+        """Dense array of local groups (first axis)."""
+        # Make dense array of local elements
+        elements = self.local_elements(domain, scales, rank=rank, broadcast=broadcast)
+        elements = np.array(np.meshgrid(*elements, indexing='ij'))
+        # Convert to groups basis-by-basis
+        grid_space = self.grid_space
+        groups = np.zeros_like(elements)
+        groups = np.ma.masked_array(groups)
+        for basis in domain.bases:
+            basis_axes = slice(basis.first_axis, basis.last_axis+1)
+            groups[basis_axes] = basis.elements_to_groups(grid_space[basis_axes], elements[basis_axes])
+        return groups
+
+    @CachedMethod
+    def local_groupsets(self, group_coupling, domain, scales, rank=None, broadcast=False):
+        local_groupsets = self.local_group_arrays(domain, scales, rank=rank, broadcast=broadcast).astype(object)
+        # Replace non-enumerated axes with None
+        for axis in range(local_groupsets.shape[0]):
+            if group_coupling[axis]:
+                local_groupsets[axis] = None
+        # Flatten local groupsets
+        local_groupsets = local_groupsets.reshape((local_groupsets.shape[0], -1))
+        # Drop masked groups
+        local_groupsets = np.ma.compress_cols(local_groupsets)
+        # Return unique groupsets
+        local_groupsets = tuple(map(tuple, local_groupsets.T))
+        return OrderedSet(local_groupsets)
+
+    @CachedMethod
+    def local_groupset_slices(self, groupset, domain, scales, rank=None, broadcast=False):
+        groups = self.local_group_arrays(domain, scales, rank=rank, broadcast=broadcast)
+        dim = groups.shape[0]
+        group_shape = self.group_shape(domain)
+        # find all elements which match group
+        selections = np.ones(groups[0].shape, dtype=int)
+        for i, subgroup in enumerate(groupset):
+            if subgroup is not None:
+                selections *= (subgroup == groups[i])
+                # Note: seems to exclude masked elements for ==, unlike other comparisons
+        # determine which axes to loop over, which to find bounds for
+        slices = []
+        for i, subgroup in enumerate(groupset):
+            if subgroup is None:
+                subslices = [slice(None)]
+            else:
+                # loop over axis i but taking into account group_shape
+                subslices = [slice(j, j+group_shape[i]) for j in range(0, groups.shape[i+1], group_shape[i])]
+            slices.append(subslices)
+        group_slices = []
+        for s in itertools.product(*slices):
+            sliced_selections = selections[tuple(s)]
+            if np.any(sliced_selections): # some elements match group
+                # assume selected groups are cartesian product, find left and right bounds
+                lefts = list(map(np.min, np.where(sliced_selections)))
+                rights = list(map(np.max, np.where(sliced_selections)))
+                # build multidimensional group slice
+                group_slice = []
+                for i in range(dim):
+                    if s[i] != slice(None):
+                        group_slice.append(s[i])
+                    else:
+                        group_slice.append(slice(lefts[i], rights[i]+1))
+                group_slices.append(tuple(group_slice))
+        return group_slices
 
     def slices(self, domain, scales):
         """Local element slices by axis."""

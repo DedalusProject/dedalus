@@ -4,7 +4,7 @@ tracer field for visualization. This script demonstrates solving a 2D periodic
 initial value problem. It can be ran serially or in parallel, and uses the
 built-in analysis framework to save data snapshots to HDF5 files. The
 `plot_snapshots.py` script can be used to produce plots from the saved data. The
-simulation should take roughly 10 cpu-minutes to run.
+simulation should take roughly 1 cpu-minute to run.
 
 The initial flow is in the x-direction and depends only on z. The problem is
 non-dimensionalized usign the shear-layer spacing and velocity jump, so the
@@ -25,7 +25,7 @@ import dedalus.public as d3
 import logging
 logger = logging.getLogger(__name__)
 
-# TODO: work with coupled matrices along last dimension (should be much faster)
+# TODO: change back to float64 once constants are properly handled
 
 
 # Parameters
@@ -37,13 +37,13 @@ dealias = 3/2
 stop_sim_time = 5
 timestepper = d3.RK222
 max_timestep = 1e-2
-dtype = np.float64
+dtype = np.complex128
 
 # Bases
 coords = d3.CartesianCoordinates('x', 'z')
 dist = d3.Distributor(coords, dtype=dtype)
-xbasis = d3.RealFourier(coords['x'], size=Nx, bounds=(0, Lx), dealias=dealias)
-zbasis = d3.RealFourier(coords['z'], size=Nz, bounds=(-Lz/2, Lz/2), dealias=dealias)
+xbasis = d3.ComplexFourier(coords['x'], size=Nx, bounds=(0, Lx), dealias=dealias)
+zbasis = d3.ComplexFourier(coords['z'], size=Nz, bounds=(-Lz/2, Lz/2), dealias=dealias)
 x = xbasis.local_grid(1)
 z = zbasis.local_grid(1)
 
@@ -51,6 +51,7 @@ z = zbasis.local_grid(1)
 p = dist.Field(name='p', bases=(xbasis,zbasis))
 s = dist.Field(name='s', bases=(xbasis,zbasis))
 u = dist.VectorField(coords, name='u', bases=(xbasis,zbasis))
+tau_p = dist.Field(name='g')
 
 # Substitutions
 nu = 1 / Reynolds
@@ -59,17 +60,17 @@ D = nu / Schmidt
 ez = dist.VectorField(coords, name='u', bases=(xbasis,zbasis))
 ez['g'][1] = 1
 
-integ = lambda A: d3.Integrate(d3.Integrate(A, coords['x']), coords['z'])
+integ = lambda A: d3.Integrate(d3.Integrate(A, 'x'), 'z')
 
 # Problem
-problem = d3.IVP([u, s, p], namespace=locals())
+problem = d3.IVP([u, s, p, tau_p], namespace=locals())
 problem.add_equation("dt(u) + grad(p) - nu*lap(u) = - dot(u,grad(u))")
 problem.add_equation("dt(s) - D*lap(s) = - dot(u,grad(s))")
-problem.add_equation("div(u) = 0", condition="(nx != 0) or (nz != 0)")
-problem.add_equation("p = 0", condition="(nx == 0) and (nz == 0)") # Pressure gauge
+problem.add_equation("div(u) + tau_p = 0")
+problem.add_equation("integ(p) = 0") # Pressure gauge
 
 # Solver
-solver = problem.build_solver(timestepper, matrix_coupling=[False, False])
+solver = problem.build_solver(timestepper)
 solver.stop_sim_time = stop_sim_time
 
 # Initial conditions
