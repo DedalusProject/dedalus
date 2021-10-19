@@ -4634,7 +4634,7 @@ class SphereAverage(operators.Average, operators.SeparableSphereOperator):
         # Copy with Nphi = Ntheta = 1
         shape = list(input_basis.shape)
         shape[0] = shape[1] = 1
-        return input_basis.clone_with(shape=shape)
+        return input_basis.clone_with(shape=tuple(shape))
 
     def new_operand(self, operand, **kw):
         return operators.Average(operand, self.coord, **kw)
