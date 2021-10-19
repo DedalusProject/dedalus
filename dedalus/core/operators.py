@@ -49,7 +49,8 @@ __all__ = ['GeneralFunction',
            'LiftTau',
            'AdvectiveCFL',
            'SphericalEllProduct',
-           'UnaryGridFunction']
+           'UnaryGridFunction',
+           'MulCosine']
 
 # Use simple decorators to track parseable operators
 aliases = {}
@@ -2555,6 +2556,54 @@ class PolarMOperator(SpectralOperator):
 
     def radial_matrix(self, spinindex_in, spinindex_out, m):
         raise NotImplementedError()
+
+
+class MulCosine(PolarMOperator):
+    """Cosine multiplication for S2."""
+
+    name = "MulCos"
+
+    def __init__(self, operand, coordsys=None, out=None):
+        if coordsys is None:
+            coordsys = operand.dist.single_coordsys
+            if coordsys is False:
+                raise ValueError("coordsys must be specified.")
+        LinearOperator.__init__(self, operand)
+        PolarMOperator.__init__(self, operand, coordsys)
+        # FutureField requirements
+        self.domain  = operand.domain
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
+
+    @staticmethod
+    def _output_basis(input_basis):
+        return input_basis
+
+    def spinindex_out(self, spinindex_in):
+        # Spinorder: -, +, 0
+        return (spinindex_in,)
+
+    def new_operand(self, operand, **kw):
+        return MulCosine(operand, self.coordsys, **kw)
+
+    @CachedMethod
+    def radial_matrix(self, spinindex_in, spinindex_out, m):
+        radial_basis = self.input_basis
+        spintotal = radial_basis.spintotal(spinindex_in)
+        if spinindex_out in self.spinindex_out(spinindex_in):
+            return self._radial_matrix(radial_basis.Lmax, spintotal, m, self.dtype)
+        else:
+            raise ValueError("This should never happen")
+
+    @staticmethod
+    @CachedMethod
+    def _radial_matrix(Lmax, spintotal, m, dtype):
+        matrix = dedalus_sphere.sphere.operator('Cos', dtype)(Lmax, m, spintotal).square
+        # Pad to include invalid ells
+        trunc = abs(spintotal) - abs(m)
+        if trunc > 0:
+            matrix = sparse_block_diag([sparse.csr_matrix((trunc, trunc)), matrix])
+        return matrix
 
 
 class PolarGradient(Gradient, PolarMOperator):

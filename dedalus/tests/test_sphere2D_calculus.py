@@ -116,6 +116,46 @@ def test_gradient_scalar_explicit(Nphi, Ntheta, dealias, dtype):
     assert np.allclose(u['g'], ug)
 
 
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('rank', [0, 1, 2])
+def test_cosine_explicit(Nphi, Ntheta, dealias, dtype, rank):
+    c, d, b, phi, theta = build_sphere(Nphi, Ntheta, dealias, dtype)
+    # Random input for all components
+    f = d.TensorField((c,)*rank, bases=b)
+    f.fill_random(layout='g')
+    f.low_pass_filter(0.25)
+    # Cosine operator
+    g = operators.MulCosine(f).evaluate()
+    g.require_scales(b.domain.dealias)
+    f.require_scales(b.domain.dealias)
+    assert np.allclose(g['g'], np.cos(theta) * f['g'])
+
+
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('rank', [0, 1, 2])
+def test_cosine_scalar_implicit(Nphi,  Ntheta, dealias, dtype, rank):
+    c, d, b, phi, theta = build_sphere(Nphi, Ntheta, dealias, dtype)
+    # Random input for all components
+    f = d.TensorField((c,)*rank, bases=b)
+    f.fill_random(layout='g')
+    f.low_pass_filter(0.25)
+    # Cosine LBVP
+    u = d.TensorField((c,)*rank, bases=b)
+    problem = problems.LBVP([u], namespace=locals())
+    problem.add_equation("u + MulCosine(u) = f + MulCosine(f)")
+    solver = problem.build_solver()
+    solver.solve()
+    u.require_scales(b.domain.dealias)
+    f.require_scales(b.domain.dealias)
+    assert np.allclose(u['g'], f['g'])
+
+
 # @pytest.mark.parametrize('Ntheta', Ntheta_range)
 # @pytest.mark.parametrize('dealias', dealias_range)
 # @pytest.mark.parametrize('basis', [build_disk, build_annulus])
