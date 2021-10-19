@@ -2396,20 +2396,19 @@ class SeparableSphereOperator(SpectralOperator):
                 if (prod(subshape) > 0) and (spinindex_out in self.spinindex_out(spinindex_in)):
                     # Get symbols for overlapping data
                     symbols = self.local_symbols(layout, spinindex_in, spinindex_out)
-                    groupset_symbols = np.concatenate([symbols[slices].ravel() for slices in groupset_slices])
                     if np.isscalar(symbols):
-                        symbols = symbols * np.ones(shape=subshape)
+                        symbols = symbols * np.ones(prod(subshape))
                     else:
-                        symbols = symbols[slices]
+                        symbols = np.concatenate([symbols[slices].ravel() for slices in groupset_slices])
                     # Build component matrix
                     if complexify:
                         raise NotImplementedError("Complex operators not implemented yet for real fields.")
                     else:
                         # Directly multiply by symbols
-                        block = sparse.diags(groupset_symbols, format='csr', shape=(size_out, size_in))
+                        block = sparse.diags(symbols, format='csr', shape=(size_out, size_in))
                 else:
                     # Zeros
-                    block = sparse.csr_matrix((prod(subshape_out), prod(subshape_in)))
+                    block = sparse.csr_matrix((size_out, size_in))
                 block_row.append(block)
             blocks.append(block_row)
         matrix = sparse.bmat(blocks)
@@ -2558,10 +2557,20 @@ class PolarMOperator(SpectralOperator):
         raise NotImplementedError()
 
 
-class MulCosine(PolarMOperator):
+class MulCosine(PolarMOperator, metaclass=MultiClass):
     """Cosine multiplication for S2."""
 
     name = "MulCos"
+
+    @classmethod
+    def _preprocess_args(cls, operand, coordsys=None, out=None):
+        if operand == 0:
+            raise SkipDispatchException(output=0)
+        return [operand], {'coordsys': coordsys, 'out': out}
+
+    @classmethod
+    def _check_args(cls, operand, coordsys=None, out=None):
+        return True
 
     def __init__(self, operand, coordsys=None, out=None):
         if coordsys is None:

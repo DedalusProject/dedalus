@@ -3011,7 +3011,7 @@ class SphereLaplacian(operators.Laplacian, operators.SeparableSphereOperator):
         return k_lap
 
 
-class S2Skew(operators.SeparableSphereOperator):
+class S2Skew(operators.SeparableSphereOperator, metaclass=MultiClass):
     """
     Skew of S2 vector field.
     TODO: Implement operation in grid space.
@@ -3022,6 +3022,16 @@ class S2Skew(operators.SeparableSphereOperator):
     input_basis_type = SpinWeightedSphericalHarmonics
     subaxis_dependence = [False, False]  # No dependence
     complex_operator = True
+
+    @classmethod
+    def _preprocess_args(cls, operand, index=0, out=None):
+        if operand == 0:
+            raise SkipDispatchException(output=0)
+        return [operand], {'index': index, 'out': out}
+
+    @classmethod
+    def _check_args(cls, operand, index=0, out=None):
+        return True
 
     def __init__(self, operand, index=0, out=None):
         super().__init__(operand, out=out)  # Gradient has no __init__
@@ -3052,6 +3062,9 @@ class S2Skew(operators.SeparableSphereOperator):
         # Spinorder: -, +
         s = [-1, 1][spinindex_in[0]]
         return 1j*s
+
+    def new_operand(self, operand, **kw):
+        return S2Skew(operand, index=self.index, **kw)
 
 
 # These are common for BallRadialBasis and SphericalShellRadialBasis

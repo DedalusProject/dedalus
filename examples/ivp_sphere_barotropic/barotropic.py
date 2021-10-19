@@ -28,7 +28,6 @@ b = d3.SphereBasis(c, (nphi, ntheta), radius=1, dtype=dtype)
 phi, theta = b.local_grids(b.domain.dealias)
 
 # Fields
-f = d3.Field(dist=d, bases=(b,), dtype=dtype)
 u = d3.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
 p = d3.Field(dist=d, bases=(b,), dtype=dtype)
 g = d3.Field(dist=d, dtype=dtype)
@@ -39,6 +38,8 @@ ddt = lambda A: d3.TimeDerivative(A)
 grad = lambda A: d3.Gradient(A, c)
 div = lambda A: d3.Divergence(A)
 skew = lambda A: S2Skew(A)
+zcross = lambda A: d3.MulCosine(skew(A))
+ave = lambda A: d3.Average(A, c)
 dot = d3.DotProduct
 H = 0.1
 Omega = 1e-1
@@ -48,11 +49,8 @@ Re = 100000
 def eq_eval(eq_str):
     return [eval(expr) for expr in split_equation(eq_str)]
 
-ave = lambda A: d3.Average(A, c)
-
-f['g'] = 2*Omega*np.cos(theta)
 problem = d3.IVP([u,p,g])
-problem.add_equation((ddt(u) + grad(p) - lap(u)/Re, -f*skew(u) - dot(u,grad(u))))
+problem.add_equation((ddt(u) + grad(p) - lap(u)/Re + (2*Omega)*zcross(u), - dot(u,grad(u))))
 problem.add_equation((div(u) + g, 0))
 problem.add_equation((ave(p), 0))
 logger.info("Problem built")
