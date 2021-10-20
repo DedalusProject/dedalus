@@ -27,22 +27,36 @@ def build_sphere(Nphi, Ntheta, dealias, dtype):
 @pytest.mark.parametrize('dtype', dtype_range)
 def test_skew_explicit(Nphi, Ntheta, dealias, dtype):
     c, d, b, phi, theta = build_sphere(Nphi, Ntheta, dealias, dtype)
-    x = np.sin(theta)*np.cos(phi)
-    y = np.sin(theta)*np.sin(phi)
-    z = np.cos(theta)
-    # Randomish vector field
+    # Random vector field
     f = d.VectorField(c, bases=b)
-    f.set_scales(b.domain.dealias)
-    if np.iscomplexobj(dtype()):
-        f['g'][0] = x*y + 1j*z**2
-        f['g'][1] = z**2 + 3j*y
-    else:
-        f['g'][0] = x*y + z**2
-        f['g'][1] = z**2 + 3*y
+    f.fill_random(layout='g')
+    f.low_pass_filter(scales=0.75)
     # Evaluate skew
     g = basis.S2Skew(f).evaluate()
     assert np.allclose(g['g'][0], f['g'][1])
     assert np.allclose(g['g'][1], -f['g'][0])
+
+
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+def test_skew_implicit(Nphi,  Ntheta, dealias, dtype):
+    c, d, b, phi, theta = build_sphere(Nphi, Ntheta, dealias, dtype)
+    # Random vector field
+    f = d.VectorField(c, bases=b)
+    f.fill_random(layout='g')
+    f.low_pass_filter(scales=0.75)
+    # Skew LBVP
+    u = d.VectorField(c, bases=b)
+    skew = basis.S2Skew
+    problem = problems.LBVP([u], namespace=locals())
+    problem.add_equation("skew(u) = skew(f)")
+    solver = problem.build_solver()
+    solver.solve()
+    u.require_scales(b.domain.dealias)
+    f.require_scales(b.domain.dealias)
+    assert np.allclose(u['g'], f['g'])
 
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
@@ -395,13 +409,11 @@ def test_laplacian_scalar_implicit(Nphi,  Ntheta, dealias, dtype):
 @pytest.mark.parametrize('dtype', dtype_range)
 def test_divergence_cleaning(Nphi, Ntheta, dealias, dtype):
     c, d, b, phi, theta = build_sphere(Nphi, Ntheta, dealias, dtype)
-    x = np.sin(theta)*np.cos(phi)
-    y = np.sin(theta)*np.sin(phi)
-    z = np.cos(theta)
-    # Build vector field as grad(f) + skew(grad(f))
+    # Random vector field
     f = d.Field(bases=b)
-    f.set_scales(b.domain.dealias)
-    f['g'] = z**2 + 4*x*y
+    f.fill_random(layout='g')
+    f.low_pass_filter(scales=0.75)
+    # Build vector field as grad(f) + skew(grad(f))
     grad = operators.Gradient
     skew = basis.S2Skew
     g = grad(f).evaluate()
