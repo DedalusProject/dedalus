@@ -2653,6 +2653,16 @@ class SpinWeightedSphericalHarmonics(SpinBasis, metaclass=CachedClass):
         return tuple(m_maps)
 
     @CachedAttribute
+    def ell_reversed(self):
+        ell_reversed = {}
+        for m, mg_slice, mc_slice, ell_slice in self.m_maps:
+            ell_reversed[m] = False
+            if ell_slice.step is not None:
+                if ell_slice.step < 0:
+                    ell_reversed[m] = True
+        return ell_reversed
+
+    @CachedAttribute
     def ell_maps(self):
         """
         Tuple of (ell, m_slice, ell_slice) for all local ells in coeff space.
