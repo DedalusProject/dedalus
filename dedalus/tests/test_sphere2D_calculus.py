@@ -126,7 +126,7 @@ def test_cosine_explicit(Nphi, Ntheta, dealias, dtype, rank):
     # Random input for all components
     f = d.TensorField((c,)*rank, bases=b)
     f.fill_random(layout='g')
-    f.low_pass_filter(0.25)
+    f.low_pass_filter(scales=0.75)
     # Cosine operator
     g = operators.MulCosine(f).evaluate()
     g.require_scales(b.domain.dealias)
@@ -139,12 +139,12 @@ def test_cosine_explicit(Nphi, Ntheta, dealias, dtype, rank):
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('dtype', dtype_range)
 @pytest.mark.parametrize('rank', [0, 1, 2])
-def test_cosine_scalar_implicit(Nphi,  Ntheta, dealias, dtype, rank):
+def test_cosine_implicit(Nphi,  Ntheta, dealias, dtype, rank):
     c, d, b, phi, theta = build_sphere(Nphi, Ntheta, dealias, dtype)
     # Random input for all components
     f = d.TensorField((c,)*rank, bases=b)
     f.fill_random(layout='g')
-    f.low_pass_filter(0.25)
+    f.low_pass_filter(scales=0.75)
     # Cosine LBVP
     u = d.TensorField((c,)*rank, bases=b)
     problem = problems.LBVP([u], namespace=locals())
