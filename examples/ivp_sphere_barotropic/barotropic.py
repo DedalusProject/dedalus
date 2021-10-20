@@ -1,87 +1,85 @@
+
+
+import numpy as np
 import time
 from scipy.special import sph_harm
-import numpy as np
 import dedalus.public as d3
-from dedalus.core import timesteppers
-from dedalus.core.basis import S2Skew
 import logging
 logger = logging.getLogger(__name__)
 
-dtype = np.complex128
+# TODO: convert to float64 once constants are working
+# TODO: clean up skew interface
+
 
 # Parameters
-nphi = 64
-ntheta = 32
-
-V = 1
-N = 2
-
-Ampl = 1e-3
+Nphi = 64
+Ntheta = 32
+dealias = 1
+amp_ic = 1e-2
 l_ic = 10
 m_ic = 3
-L_dealias = 1
+Omega = 1
+Re = 1e6
+dtype = np.complex128
+
+freq = 2 * m_ic * Omega / (l_ic * (l_ic + 1))
+period = 2 * np.pi / freq
+timestep = 1 / freq / 10
 
 # Bases
-c = d3.S2Coordinates('phi', 'theta')
-d = d3.Distributor((c,))
-b = d3.SphereBasis(c, (nphi, ntheta), radius=1, dtype=dtype)
-phi, theta = b.local_grids(b.domain.dealias)
+coords = d3.S2Coordinates('phi', 'theta')
+dist = d3.Distributor(coords, dtype=dtype)
+basis = d3.SphereBasis(coords, (Nphi, Ntheta), radius=1, dealias=dealias, dtype=dtype)
+phi, theta = basis.local_grids((1, 1))
 
 # Fields
-u = d3.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
-p = d3.Field(dist=d, bases=(b,), dtype=dtype)
-g = d3.Field(dist=d, dtype=dtype)
+u = dist.VectorField(coords, name='u', bases=basis)
+p = dist.Field(name='p', bases=basis)
+g = dist.Field(name='g')
 
-# Parameters and operators
-lap = lambda A: d3.Laplacian(A, c)
-ddt = lambda A: d3.TimeDerivative(A)
-grad = lambda A: d3.Gradient(A, c)
-div = lambda A: d3.Divergence(A)
+# Substitutions
+from dedalus.core.basis import S2Skew
 skew = lambda A: S2Skew(A)
 zcross = lambda A: d3.MulCosine(skew(A))
-ave = lambda A: d3.Average(A, c)
-dot = d3.DotProduct
-H = 0.1
-Omega = 1e-1
-Re = 100000
 
 # Problem
-def eq_eval(eq_str):
-    return [eval(expr) for expr in split_equation(eq_str)]
-
-problem = d3.IVP([u,p,g])
-problem.add_equation((ddt(u) + grad(p) - lap(u)/Re + (2*Omega)*zcross(u), - dot(u,grad(u))))
-problem.add_equation((div(u) + g, 0))
-problem.add_equation((ave(p), 0))
-logger.info("Problem built")
+problem = d3.IVP([u, p, g], namespace=locals())
+problem.add_equation("dt(u) + grad(p) - (1/Re)*lap(u) + (2*Omega)*zcross(u) = - dot(u,grad(u))")
+problem.add_equation("div(u) + g = 0")
+problem.add_equation("ave(p) = 0")
 
 # Solver
-solver = problem.build_solver(timesteppers.RK443, matrix_coupling=[False,True])
+solver = problem.build_solver(d3.RK443)
+solver.stop_sim_time = 10 * period
 
-# initial conditions
-psi = d3.Field(dist=d, bases=(b,), dtype=dtype)
-psi['g'] = 1e-3*sph_harm(m_ic, l_ic, phi, theta).real
-u['g'] = skew(grad(psi)).evaluate()['g']
+# Initial conditions
+psi = dist.Field(bases=basis)
+psi['g'] = amp_ic * sph_harm(m_ic, l_ic, phi, theta).real
+u['g'] = skew(d3.grad(psi)).evaluate()['g']
 
-# outputs
-snapshots = solver.evaluator.add_file_handler('snapshots_barotropic', iter=10, max_writes=10, virtual_file=True)
-snapshots.add_task(div(skew(u)), name='vorticity')
+# Analysis
+snapshots = solver.evaluator.add_file_handler('snapshots', iter=10, max_writes=10)
+snapshots.add_task(-d3.div(skew(u)), name='vorticity')
 
 # Main loop
-freq = 2*m_ic*Omega/(l_ic*(l_ic+1))
-period = 2*np.pi/freq
-solver.stop_sim_time = 3*period
-solver.stop_iteration = 50
-dt = period/100
-start_time = time.time()
-while solver.proceed:
-    solver.step(dt)
+try:
+    logger.info('Starting loop')
+    start_time = time.time()
+    while solver.proceed:
+        solver.step(timestep)
+        if (solver.iteration-1) % 10 == 0:
+            logger.info('Iteration=%i, Time=%e, dt=%e' %(solver.iteration, solver.sim_time, timestep))
+            print(np.max(np.abs(u['g'].real)), np.max(np.abs(u['g'].imag)))
+except:
+    logger.error('Exception raised, triggering end of main loop.')
+    raise
+finally:
+    end_time = time.time()
+    run_time = end_time - start_time
+    logger.info('Iterations: %i' %solver.iteration)
+    logger.info('Sim end time: %f' %solver.sim_time)
+    logger.info('Run time: %.2f sec' %run_time)
+    logger.info('Run time: %f cpu-hr' %(run_time/60/60*dist.comm.size))
+    DOF = Nphi * Ntheta * 3 + 1
+    logger.info('Speed: %.2e DOF-iters/cpu-sec' %(DOF*solver.iteration/run_time/dist.comm.size))
 
-    if solver.iteration % 10 == 0:
-        logger.info("t = {:3.2f}".format(solver.sim_time))
-
-
-end_time = time.time()
-logger.info('Run time: {:3.2f}'.format(end_time-start_time))
-
-logger.info("SUCCESS!")
