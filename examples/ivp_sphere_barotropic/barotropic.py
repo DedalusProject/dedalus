@@ -7,19 +7,19 @@ import dedalus.public as d3
 import logging
 logger = logging.getLogger(__name__)
 
-# TODO: convert to float64 once constants are working
+# TODO: convert to float64 and remove imag cleaning once constants are working
 # TODO: clean up skew interface
 
 
 # Parameters
 Nphi = 64
 Ntheta = 32
-dealias = 1
+dealias = 3/2
 amp_ic = 1e-2
 l_ic = 10
 m_ic = 3
 Omega = 1
-Re = 1e6
+Re = 1e5
 dtype = np.complex128
 
 freq = 2 * m_ic * Omega / (l_ic * (l_ic + 1))
@@ -55,7 +55,7 @@ solver.stop_sim_time = 10 * period
 # Initial conditions
 psi = dist.Field(bases=basis)
 psi['g'] = amp_ic * sph_harm(m_ic, l_ic, phi, theta).real
-u['g'] = skew(d3.grad(psi)).evaluate()['g']
+u['c'] = skew(d3.grad(psi)).evaluate()['c']
 
 # Analysis
 snapshots = solver.evaluator.add_file_handler('snapshots', iter=10, max_writes=10)
@@ -66,10 +66,11 @@ try:
     logger.info('Starting loop')
     start_time = time.time()
     while solver.proceed:
+        for field in problem.variables:
+            field['g'].imag = 0
         solver.step(timestep)
         if (solver.iteration-1) % 10 == 0:
             logger.info('Iteration=%i, Time=%e, dt=%e' %(solver.iteration, solver.sim_time, timestep))
-            print(np.max(np.abs(u['g'].real)), np.max(np.abs(u['g'].imag)))
 except:
     logger.error('Exception raised, triggering end of main loop.')
     raise

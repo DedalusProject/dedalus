@@ -47,16 +47,16 @@ def main(filename, start, count, output):
         x = np.sin(theta_vert) * np.cos(phi_vert)
         y = np.sin(theta_vert) * np.sin(phi_vert)
         z = np.cos(theta_vert)
-        clim = 0.05
+        clim = 0.5
         norm = matplotlib.colors.Normalize(-clim, clim)
-        
+
         for index in range(start, start+count):
             data_slices = (index, slice(None), slice(None))
             data = dset[data_slices].real
             fc = cmap(norm(data))
-            fc[:, theta.size//2, :] = [0,0,0,1]  # black equator
+            #fc[:, theta.size//2, :] = [0,0,0,1]  # black equator
             if index == start:
-                surf = ax.plot_surface(x, y, z, facecolors=fc, cstride=1, rstride=1, linewidth=0, antialiased=False, shade=False, zorder=3)
+                surf = ax.plot_surface(x, y, z, facecolors=fc, cstride=1, rstride=1, linewidth=0, antialiased=False, shade=False, zorder=5)
                 ax.set_box_aspect((1,1,1))
                 ax.set_xlim(-0.7, 0.7)
                 ax.set_ylim(-0.7, 0.7)
