@@ -65,17 +65,75 @@ def expand_pattern(input, pattern):
 
 
 def apply_matrix(matrix, array, axis, **kw):
-    """Contract any direction of a multidimensional array with a matrix."""
-    dim = len(array.shape)
-    # Build Einstein signatures
-    mat_sig = [dim, axis]
-    arr_sig = list(range(dim))
-    out_sig = list(range(dim))
-    out_sig[axis] = dim
-    # Handle sparse matrices
+    """Apply matrix along any axis of an array."""
     if sparse.isspmatrix(matrix):
-        matrix = matrix.toarray()
-    return np.einsum(matrix, mat_sig, array, arr_sig, out_sig, **kw)
+        return apply_sparse(matrix, array, axis, **kw)
+    else:
+        return apply_dense(matrix, array, axis, **kw)
+
+
+def apply_dense(matrix, array, axis, out=None):
+    """Apply dense matrix along any axis of an array."""
+    dim = array.ndim
+    # Resolve wraparound axis
+    axis = axis % dim
+    # Move axis to 0
+    if axis != 0:
+        array = move_single_axis(array, axis, 0) # May allocate copy
+    # Flatten later axes
+    if dim > 2:
+        array_shape = array.shape
+        array = array.reshape((array_shape[0], -1)) # May allocate copy
+    # Apply matmul
+    temp = np.matmul(matrix, array) # Allocates temp
+    # Unflatten later axes
+    if dim > 2:
+        temp = temp.reshape((temp.shape[0],) + array_shape[1:]) # View
+    # Move axis back from 0
+    if axis != 0:
+        temp = move_single_axis(temp, 0, axis) # View
+    # Return
+    if out is None:
+        return temp
+    else:
+        out[:] = temp # Copy
+        return out
+
+
+def move_single_axis(a, source, destination):
+    """Similar to np.moveaxis but faster for just a single axis."""
+    order = [n for n in range(a.ndim) if n != source]
+    order.insert(destination, source)
+    return a.transpose(order)
+
+
+def apply_sparse(matrix, array, axis, out=None):
+    """Apply sparse matrix along any axis of an array."""
+    dim = array.ndim
+    # Resolve wraparound axis
+    axis = axis % dim
+    # Move axis to 0
+    if axis != 0:
+        array = move_single_axis(array, axis, 0) # May allocate copy
+    # Flatten later axes
+    if dim > 2:
+        array_shape = array.shape
+        array = array.reshape((array_shape[0], -1)) # May allocate copy
+    # Apply matmul
+    temp = matrix.dot(array) # Allocates temp
+    # Unflatten later axes
+    if dim > 2:
+        temp = temp.reshape((temp.shape[0],) + array_shape[1:]) # View
+    # Move axis back from 0
+    if axis != 0:
+        temp = move_single_axis(temp, 0, axis) # View
+    # Return
+    if out is None:
+        return temp
+    else:
+        out[:] = temp # Copy
+        return out
+
 
 
 def add_sparse(A, B):
