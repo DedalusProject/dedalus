@@ -55,21 +55,23 @@ problem.add_bc("right(phi_z) = 0")
 problem.add_bc("right(Bz) = 0")
 solver = problem.build_solver()
 
-solver.solve_sparse(solver.pencils[0], N=5, target=0.0, rebuild_coeffs=True, left=True, normalize_left=True)
+#solver.solve_sparse(solver.pencils[0], N=5, target=0.0, rebuild_coeffs=True, left=True, normalize_left=True)
+solver.solve_dense(solver.pencils[0], left=True, normalize_left=True)
 
 # The following print statements can be uncommented to test biorthogonality of solver.modified_left_eigenvectors (1-3)
 # and solver.eigenvectors
 # print(np.abs(np.matmul(solver.modified_left_eigenvectors1.T, solver.eigenvectors)))
 # print(np.abs(np.matmul(np.conjugate(solver.modified_left_eigenvectors2.T), solver.eigenvectors)))
 # print(np.abs(np.matmul(np.conj(solver.modified_left_eigenvectors3), solver.eigenvectors)))
-kronecker1 = np.matmul(solver.modified_left_eigenvectors2.T, solver.eigenvectors)
+kronecker1 = np.matmul(np.conjugate(solver.modified_left_eigenvectors.T), solver.eigenvectors)
 
+nev = len(solver.eigenvalues)
 # Test biorthogonality using set_state:
-for n in range(5):
+for n in range(nev):
     solver.set_state(n)
     phi_n = solver.state['phi']['c']
-    if n==0:
-        right_phis = np.zeros((5, len(phi_n)), dtype=np.complex128)
+    if n == 0:
+        right_phis = np.zeros((nev, len(phi_n)), dtype=np.complex128)
         right_psis = np.zeros_like(right_phis)
         right_phi_zs = np.zeros_like(right_phis)
         right_psi_zs = np.zeros_like(right_phis)
@@ -90,6 +92,9 @@ for n in range(5):
 
 rights = np.array([right_phis, right_phi_zs, right_psis, right_psi_zs])
 modified_lefts = np.array([modified_left_phis, modified_left_phi_zs, modified_left_psis, modified_left_psi_zs])
-kronecker2 = np.tensordot(modified_lefts, rights, axes=([0,2],[0,2]))
+kronecker2 = np.tensordot(np.conjugate(modified_lefts), rights, axes=([0, 2], [0, 2]))
 # Should produce True
 print(np.allclose(kronecker1, kronecker2))
+# Also, if you did a sparse solve and print np.abs(kronecker1), or did a dense solve and
+# print np.abs(kronecker2[5:-260, 5:-260]) (to cut away the spurious modes) it should be ones on the diagonal.
+# Currently not the case for the dense solver!

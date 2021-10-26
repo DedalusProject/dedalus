@@ -72,7 +72,7 @@ class EigenvalueSolver:
         self.evaluator = Evaluator(domain, namespace)
         logger.debug('Finished EVP instantiation')
 
-    def solve_dense(self, pencil, rebuild_coeffs=False, **kw):
+    def solve_dense(self, pencil, rebuild_coeffs=False, normalize_left=False, **kw):
         """
         Solve EVP for selected pencil.
 
@@ -100,8 +100,11 @@ class EigenvalueSolver:
             self.eigenvalues, self.eigenvectors = eig_output
         elif len(eig_output) == 3:
             self.eigenvalues, self.left_eigenvectors, self.eigenvectors = eig_output
+            if normalize_left:
+                unnormalized_modified_left_eigenvectors = np.conjugate(np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M))
+                norms = np.diag(unnormalized_modified_left_eigenvectors.T.conj() @ self.eigenvectors)
+                self.left_eigenvectors /= norms
             # TODO: before merging, make sure this line is consistent with its equivalent in solve_sparse
-            # self.modified_left_eigenvectors = np.transpose(np.conjugate(self.left_eigenvectors.T)*-pencil.M)
             self.modified_left_eigenvectors = np.conjugate(np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M))
         if pencil.pre_right is not None:
             self.eigenvectors = pencil.pre_right @ self.eigenvectors
@@ -157,16 +160,13 @@ class EigenvalueSolver:
         if pencil.pre_right is not None:
             # I remember Keaton explaining long ago that this step is only necessary for right eigenvectors, I think
             self.eigenvectors = pencil.pre_right @ self.eigenvectors
-        if left == True:
+        if left:
             # Solve for the left eigenvectors
             # Note: this definition of "left eigenvectors" is consistent with the documentation for scipy.linalg.eig
             self.left_eigenvalues, self.left_eigenvectors = scipy_sparse_eigs(A=A.getH(),
                                                                               B=B.getH(),
                                                                               N=N, target=np.conjugate(target),
                                                                               matsolver=self.matsolver, **kw)
-            # TODO: make it so that left_eigenvectors is Y^* (do the same for eigenvalues)?
-            # TODO: and modified_left_eigenvectors is Y^*M?
-            # TODO: Maybe start with making it consistent with scipy.linalg.eig formalism, with clear docstring, then ask Jeff Oishi for input
             # TODO: after normalizing, one last iteration to clean up orthogonality? -- kick this can down the road, Keaton will look into it
             # TODO: decide whether and how to sort eigenvalues and eigenvectors before this point.
             if not np.allclose(self.eigenvalues, np.conjugate(self.left_eigenvalues)):
@@ -183,32 +183,7 @@ class EigenvalueSolver:
                 unnormalized_modified_left_eigenvectors = np.conjugate(np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M))
                 norms = np.diag(unnormalized_modified_left_eigenvectors.T.conj() @ self.eigenvectors)
                 self.left_eigenvectors /= norms
-            # There's some choices to be made in how to define modified_left_eigenvectors. Below I've illustrated three
-            # examples.
-            # (For now, going with the second example)
-            #
-            # Under this definition:
-            self.modified_left_eigenvectors1 = np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M)
-            # the following returns a diagonal matrix:
-            # np.matmul(solver.modified_left_eigenvectors1.T, solver.eigenvectors)
-            #
-            # Under this definition:
-            self.modified_left_eigenvectors2 = np.conjugate(np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M))
-            # the following returns a diagonal matrix:
-            # np.matmul(np.conjugate(solver.modified_left_eigenvectors2.T), solver.eigenvectors)
-            # Under this definition:
-            self.modified_left_eigenvectors3 = self.left_eigenvectors.T * np.conj(-pencil.M)
-            # the following returns a diagonal matrix:
-            # np.matmul(np.conj(solver.modified_left_eigenvectors3), solver.eigenvectors)
-            #
-            # I'm inclined to like 2 the best, but I'm unsure. 2 forces the user to mind the complex conjugation
-            # typically required in inner products. 3 is perhaps more intuitive to some, but I don't like that it gives
-            # solver.modified_left_eigenvectors.shape = solver.left_eigenvectors.T.shape
-            # rather than
-            # solver.modified_left_eigenvectors.shape = solver.left_eigenvectors.shape
-            # (i.e. matrix whose rows are the modified lefts vs the columns being the modified lefts)
-            # Also, I don't like the use of * above since it's not always obvious what it does for array * csr
-            # without some digging. But I can't figure out what to replace it with to make this code more readable.
+            # TODO: the * below seems like bad style. Is there an obviously better replacement?
             self.modified_left_eigenvectors = np.conjugate(np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M))
         self.eigenvalue_pencil = pencil
 
@@ -230,7 +205,6 @@ class EigenvalueSolver:
             space) to the corresponding right eigenmode.
             Supercedes left=True (default: False)
             TODO: edit this docstring to say "complex dot product" depending on what convention is chosen
-            TODO: ask Jeff if there's anything in particular that makes sense to implement here for Eigentools' sake
         """
         self.state.data[:] = 0
         if left or modified_left:
