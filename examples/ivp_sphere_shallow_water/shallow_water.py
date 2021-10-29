@@ -1,89 +1,122 @@
+"""
+Dedalus script simulating the viscous shallow water equations on a sphere. This
+script demonstrates solving an initial value problem on the sphere. It can be
+ran serially or in parallel, and uses the built-in analysis framework to save
+data snapshots to HDF5 files. The `plot_sphere.py` script can be used to produce
+plots from the saved data. The simulation should take roughly 0.2 cpu-hour to run.
+
+The script implements the test case of a barotropically unstable mid-latitude
+jet from Galewsky et al. 2004 (https://doi.org/10.3402/tellusa.v56i5.14436).
+The initial height field balanced the imposed jet is solved with an LBVP.
+A perturbation is then added and the solution is evolved as an IVP.
+
+To run and plot using e.g. 4 processes:
+    $ mpiexec -n 4 python3 shallow_water.py
+    $ mpiexec -n 4 python3 plot_sphere.py snapshots/*.h5
+"""
+
 import time
-from scipy.special import sph_harm
 import numpy as np
 import dedalus.public as d3
-from dedalus.core import timesteppers
-from dedalus.core.basis import S2Skew
 import logging
 logger = logging.getLogger(__name__)
 
-dtype = np.complex128
+np.seterr(over="raise")
+# TODO: convert to float64 and remove imag cleaning once constants are working
+# TODO: clean up skew interface
+
+
+# Simulation units
+meter = 1 / 6.37122e6
+hour = 1
+second = hour / 3600
 
 # Parameters
-nphi = 128
-ntheta = 64
-
-V = 1
-N = 2
-
-Ampl = 1e-3
-l_ic = 3
-m_ic = 3
-L_dealias = 1
+Nphi = 256
+Ntheta = 128
+dealias = 3/2
+R = 6.37122e6 * meter
+Omega = 7.292e-5 / second
+nu = 1e5 / 32**2 * meter**2 / second
+g = 9.80616 * meter / second**2
+H = 1e4 * meter
+timestep = 600 * second
+stop_sim_time = 240 * hour
+dtype = np.complex128
 
 # Bases
-c = d3.S2Coordinates('phi', 'theta')
-d = d3.Distributor((c,))
-b = d3.SphereBasis(c, (nphi, ntheta), radius=1, dtype=dtype)
-phi, theta = b.local_grids(b.domain.dealias)
+coords = d3.S2Coordinates('phi', 'theta')
+dist = d3.Distributor(coords, dtype=dtype)
+basis = d3.SphereBasis(coords, (Nphi, Ntheta), radius=R, dealias=dealias, dtype=dtype)
 
 # Fields
-f = d3.Field(dist=d, bases=(b,), dtype=dtype)
-v = d3.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
-h = d3.Field(dist=d, bases=(b,), dtype=dtype)
+u = dist.VectorField(coords, name='u', bases=basis)
+h = dist.Field(name='h', bases=basis)
 
-# Parameters and operators
-lap = lambda A: d3.Laplacian(A, c)
-ddt = lambda A: d3.TimeDerivative(A)
-grad = lambda A: d3.Gradient(A, c)
-div = lambda A: d3.Divergence(A)
+# Substitutions
+from dedalus.core.basis import S2Skew
 skew = lambda A: S2Skew(A)
-H = 0.1
-Omega = 1e-1
+zcross = lambda A: d3.MulCosine(skew(A))
+
+# Initial conditions: zonal jet
+phi, theta = basis.local_grids((1, 1))
+lat = np.pi / 2 - theta + 0*phi
+umax = 80 * meter / second
+lat0 = np.pi / 7
+lat1 = np.pi / 2 - lat0
+en = np.exp(-4 / (lat1 - lat0)**2)
+jet = (lat0 <= lat) * (lat <= lat1)
+u_jet = umax / en * np.exp(1 / (lat[jet] - lat0) / (lat[jet] - lat1))
+u['g'][0][jet]  = u_jet
+
+# Initial conditions: balanced height
+c = dist.Field(name='c')
+problem = d3.LBVP([h, c], namespace=locals())
+problem.add_equation("g*lap(h) + c = - div(dot(u, grad(u)) + 2*Omega*zcross(u))")
+problem.add_equation("ave(h) = 0")
+solver = problem.build_solver()
+solver.solve()
+
+# Initial conditions: perturbation
+lat2 = np.pi / 4
+hpert = 120 * meter
+alpha = 1 / 3
+beta = 1 / 15
+h['g'] += hpert * np.cos(lat) * np.exp(-(phi/alpha)**2) * np.exp(-((lat2-lat)/beta)**2)
 
 # Problem
-def eq_eval(eq_str):
-    return [eval(expr) for expr in split_equation(eq_str)]
-
-f['g'] = 2*Omega*np.cos(theta)
-problem = d3.IVP([v,h])
-problem.add_equation((ddt(v) + grad(h), -f*skew(v)))
-problem.add_equation((ddt(h) + H*div(v), 0))
-print("Problem built")
+problem = d3.IVP([u, h], namespace=locals())
+problem.add_equation("dt(u) + nu*lap(lap(u)) + g*grad(h) + 2*Omega*zcross(u) = - dot(u, grad(u))")
+problem.add_equation("dt(h) + nu*lap(lap(h)) + H*div(u) = - div(h*u)")
 
 # Solver
-solver = problem.build_solver(timesteppers.RK222)
+solver = problem.build_solver(d3.RK222)
+solver.stop_sim_time = stop_sim_time
 
-# initial conditions
-x = np.sin(theta)*np.cos(phi)
-y = np.sin(theta)*np.sin(phi)
-z = np.cos(theta)
-
-x0 = 0
-y0 = 0
-z0 = 1
-eps2 = 0.1
-ampl = 1
-
-r2 = (x - x0)**2 + (y - y0)**2 + (z - z0)**2
-h['g'] = ampl * np.exp(-r2/eps2)
-
-snapshots = solver.evaluator.add_file_handler('snapshots', iter=5, max_writes=10, virtual_file=True)
+# Analysis
+snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=1*hour, max_writes=10)
 snapshots.add_task(h, name='height')
+snapshots.add_task(-d3.div(skew(u)), name='vorticity')
 
 # Main loop
-solver.stop_sim_time = 15
-#solver.stop_wall_time = 60
-dt = 5e-2
-start_time = time.time()
-while solver.ok:
-    solver.step(dt)
+try:
+    logger.info('Starting loop')
+    start_time = time.time()
+    while solver.proceed:
+        for field in problem.variables:
+            field['g'].imag = 0
+        solver.step(timestep)
+        if (solver.iteration-1) % 10 == 0:
+            logger.info('Iteration=%i, Time=%e, dt=%e' %(solver.iteration, solver.sim_time, timestep))
+except:
+    logger.error('Exception raised, triggering end of main loop.')
+    raise
+finally:
+    end_time = time.time()
+    run_time = end_time - start_time
+    logger.info('Iterations: %i' %solver.iteration)
+    logger.info('Sim end time: %f' %solver.sim_time)
+    logger.info('Run time: %.2f sec' %run_time)
+    logger.info('Run time: %f cpu-hr' %(run_time/60/60*dist.comm.size))
+    logger.info('Speed: %.2e gridpoint-iters/cpu-sec' %(Nphi*Ntheta*solver.iteration/run_time/dist.comm.size))
 
-    if solver.iteration % 10 == 0:
-        logger.info("t = {:3.2f}".format(solver.sim_time))
-
-
-end_time = time.time()
-print('Run time:', end_time-start_time)
-
-print("SUCCESS!")
