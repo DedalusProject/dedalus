@@ -901,8 +901,11 @@ class SpectralOperator1D(SpectralOperator):
         # Set output layout
         out.set_layout(layout)
         # Apply matrix
-        data_axis = self.last_axis + len(arg.tensorsig)
-        apply_matrix(self.subspace_matrix(layout), arg.data, data_axis, out=out.data)
+        if arg.data.size and out.data.size:
+            data_axis = self.last_axis + len(arg.tensorsig)
+            apply_matrix(self.subspace_matrix(layout), arg.data, data_axis, out=out.data)
+        else:
+            out.data.fill(0)
 
 
 @alias('dt')
