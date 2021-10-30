@@ -30,12 +30,13 @@ def build_3d_box(Nx, Ny, Nz, dealias, dtype, k=0):
 @CachedMethod
 def build_2d_box(Nx, Nz, dealias, dtype, k=0):
     c = coords.CartesianCoordinates('x', 'z')
-    d = distributor.Distributor((c,))
+    d = distributor.Distributor(c, dtype=dtype)
     if dtype == np.complex128:
-        xb = basis.ComplexFourier(c.coords[0], size=Nx, bounds=(0, Lx))
+        xb = basis.ComplexFourier(c.coords[0], size=Nx, bounds=(0, Lx), dealias=dealias)
     elif dtype == np.float64:
-        xb = basis.RealFourier(c.coords[0], size=Nx, bounds=(0, Lx))
-    zb = basis.ChebyshevT(c.coords[1], size=Nz, bounds=(0, Lz))
+        xb = basis.RealFourier(c.coords[0], size=Nx, bounds=(0, Lx), dealias=dealias)
+    zb = basis.ChebyshevT(c.coords[1], size=Nz, bounds=(0, Lz), dealias=dealias)
+    zb.clone_with(a=zb.a+k, b=zb.b+k)
     b = (xb, zb)
     x = xb.local_grid(1)
     z = zb.local_grid(1)
@@ -44,7 +45,53 @@ def build_2d_box(Nx, Nz, dealias, dtype, k=0):
 Nx_range = [8, 2]
 Ny_range = [8]
 Nz_range = [8, 2]
+k_range = [0, 1]
 dealias_range = [1, 3/2]
+dtype_range = [np.float64, np.complex128]
+
+
+@pytest.mark.parametrize('basis', [build_2d_box])
+@pytest.mark.parametrize('Nx', Nx_range)
+@pytest.mark.parametrize('Ny', Ny_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('layout', ['c', 'g'])
+def test_skew_explicit(basis, Nx, Ny, k, dealias, dtype, layout):
+    c, d, b, x, y = basis(Nx, Ny, dealias, dtype, k)
+    # Random vector field
+    f = d.VectorField(c, bases=b)
+    f.fill_random(layout='g')
+    f.low_pass_filter(scales=0.75)
+    # Evaluate skew
+    f.require_layout(layout)
+    g = operators.Skew(f).evaluate()
+    assert np.allclose(g['g'][0], -f['g'][1])
+    assert np.allclose(g['g'][1], f['g'][0])
+
+
+@pytest.mark.parametrize('basis', [build_2d_box])
+@pytest.mark.parametrize('Nx', Nx_range)
+@pytest.mark.parametrize('Ny', Ny_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('layout', ['c', 'g'])
+def test_skew_implicit(basis, Nx, Ny, k, dealias, dtype, layout):
+    c, d, b, x, y = basis(Nx, Ny, dealias, dtype, k)
+    # Random vector field
+    f = d.VectorField(c, bases=b)
+    f.fill_random(layout='g')
+    f.low_pass_filter(scales=0.75)
+    # Skew LBVP
+    u = d.VectorField(c, bases=b)
+    problem = problems.LBVP([u], namespace=locals())
+    problem.add_equation("skew(u) = skew(f)")
+    solver = problem.build_solver()
+    solver.solve()
+    u.require_scales(u.domain.dealias)
+    f.require_scales(f.domain.dealias)
+    assert np.allclose(u['g'], f['g'])
 
 
 @pytest.mark.parametrize('Nx', Nx_range)

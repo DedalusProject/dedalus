@@ -3021,62 +3021,6 @@ class SphereLaplacian(operators.Laplacian, operators.SeparableSphereOperator):
         return k_lap
 
 
-class S2Skew(operators.SeparableSphereOperator, metaclass=MultiClass):
-    """
-    Skew of S2 vector field.
-    TODO: Implement operation in grid space.
-    """
-
-    cs_type = S2Coordinates
-    name = "S2Skew"
-    input_basis_type = SpinWeightedSphericalHarmonics
-    subaxis_dependence = [False, False]  # No dependence
-    complex_operator = True
-
-    @classmethod
-    def _preprocess_args(cls, operand, index=0, out=None):
-        if operand == 0:
-            raise SkipDispatchException(output=0)
-        return [operand], {'index': index, 'out': out}
-
-    @classmethod
-    def _check_args(cls, operand, index=0, out=None):
-        return True
-
-    def __init__(self, operand, index=0, out=None):
-        super().__init__(operand, out=out)  # Gradient has no __init__
-        if index != 0:
-            raise ValueError("Skew only implemented along index 0.")
-        self.index = index
-        coordsys = operand.tensorsig[index]
-        self.coordsys = coordsys
-        self.operand = operand
-        self.input_basis = operand.domain.get_basis(coordsys)
-        self.output_basis = self.input_basis
-        self.first_axis = self.input_basis.first_axis
-        self.last_axis = self.input_basis.last_axis
-        # FutureField requirements
-        self.domain  = operand.domain#.substitute_basis(self.input_basis, self.output_basis)
-        self.tensorsig = operand.tensorsig
-        self.dtype = operand.dtype
-
-    @staticmethod
-    def _output_basis(input_basis):
-        return input_basis
-
-    def spinindex_out(self, spinindex_in):
-        return (spinindex_in,)
-
-    @staticmethod
-    def symbol(spinindex_in, spinindex_out):
-        # Spinorder: -, +
-        s = [-1, 1][spinindex_in[0]]
-        return 1j*s
-
-    def new_operand(self, operand, **kw):
-        return S2Skew(operand, index=self.index, **kw)
-
-
 # These are common for BallRadialBasis and SphericalShellRadialBasis
 class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
 

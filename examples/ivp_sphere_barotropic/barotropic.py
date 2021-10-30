@@ -8,7 +8,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 # TODO: convert to float64 and remove imag cleaning once constants are working
-# TODO: clean up skew interface
 
 
 # Parameters
@@ -38,9 +37,7 @@ p = dist.Field(name='p', bases=basis)
 g = dist.Field(name='g')
 
 # Substitutions
-from dedalus.core.basis import S2Skew
-skew = lambda A: S2Skew(A)
-zcross = lambda A: d3.MulCosine(skew(A))
+zcross = lambda A: d3.MulCosine(d3.skew(A))
 
 # Problem
 problem = d3.IVP([u, p, g], namespace=locals())
@@ -59,7 +56,7 @@ u['c'] = skew(d3.grad(psi)).evaluate()['c']
 
 # Analysis
 snapshots = solver.evaluator.add_file_handler('snapshots', iter=10, max_writes=10)
-snapshots.add_task(-d3.div(skew(u)), name='vorticity')
+snapshots.add_task(-d3.div(d3.skew(u)), name='vorticity')
 
 # Main loop
 try:

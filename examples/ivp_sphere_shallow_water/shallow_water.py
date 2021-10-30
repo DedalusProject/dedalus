@@ -23,7 +23,6 @@ logger = logging.getLogger(__name__)
 
 np.seterr(over="raise")
 # TODO: convert to float64 and remove imag cleaning once constants are working
-# TODO: clean up skew interface
 
 
 # Simulation units
@@ -54,9 +53,7 @@ u = dist.VectorField(coords, name='u', bases=basis)
 h = dist.Field(name='h', bases=basis)
 
 # Substitutions
-from dedalus.core.basis import S2Skew
-skew = lambda A: S2Skew(A)
-zcross = lambda A: d3.MulCosine(skew(A))
+zcross = lambda A: d3.MulCosine(d3.skew(A))
 
 # Initial conditions: zonal jet
 phi, theta = basis.local_grids((1, 1))
@@ -96,7 +93,7 @@ solver.stop_sim_time = stop_sim_time
 # Analysis
 snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=1*hour, max_writes=10)
 snapshots.add_task(h, name='height')
-snapshots.add_task(-d3.div(skew(u)), name='vorticity')
+snapshots.add_task(-d3.div(d3.skew(u)), name='vorticity')
 
 # Main loop
 try:

@@ -1897,6 +1897,156 @@ class SphericalTransposeComponents(TransposeComponents):
             radial_basis.forward_regularity_recombination(operand.tensorsig, radius_axis, out.data, ell_maps=ell_maps)
 
 
+@alias("skew")
+class Skew(LinearOperator, metaclass=MultiClass):
+
+    name = "Skew"
+
+    @classmethod
+    def _preprocess_args(cls, operand, index=0, out=None):
+        if operand == 0:
+            raise SkipDispatchException(output=0)
+        if operand.tensorsig[index].dim != 2:
+            raise ValueError("Skew only valid on 2D coordsystems.")
+        return [operand], {'index': index, 'out': out}
+
+    @classmethod
+    def _check_args(cls, operand, index=0, out=None):
+        if isinstance(operand, Operand):
+            cs = operand.tensorsig[index]
+            if isinstance(cs, cls.cs_type):
+                return True
+        return False
+
+    def __init__(self, operand, index=0, out=None):
+        super().__init__(operand, out=out)
+        self.index = index
+        self.coordsys = operand.tensorsig[index]
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = operand.domain
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
+
+    def new_operand(self, operand, **kw):
+        return Skew(operand, index=self.index, **kw)
+
+    def check_conditions(self):
+        """Can always take components"""
+        return True
+
+    def enforce_conditions(self):
+        """Can always take components"""
+        pass
+
+    def matrix_dependence(self, *vars):
+        return self.operand.matrix_dependence(*vars)
+
+    def matrix_coupling(self, *vars):
+        return self.operand.matrix_coupling(*vars)
+
+
+class CartesianSkew(Skew):
+
+    cs_type = coords.CartesianCoordinates
+
+    def subproblem_matrix(self, subproblem):
+        """Build operator matrix for a specific subproblem."""
+        # Build identity factors for each tangent space and coeffs
+        factors = [sparse.identity(cs.dim, format='csr') for cs in self.operand.tensorsig]
+        factors.append(sparse.identity(subproblem.coeff_size(self.domain), format='csr'))
+        # Substitute skew matrix
+        if self.coordsys.right_handed:
+            skew = np.array([[0, -1,], [1, 0]])
+        else:
+            skew = np.array([[0, 1,], [-1, 0]])
+        factors[self.index] = skew
+        return reduce(sparse.kron, factors, 1).tocsr()
+
+    def operate(self, out):
+        """Perform operation."""
+        arg = self.args[0]
+        # Set output layout
+        out.set_layout(arg.layout)
+        # Skew data
+        if arg.data.size:
+            sx = axslice(self.index, 0, 1)
+            sy = axslice(self.index, 1, 2)
+            out.data[sx] = arg.data[sy]
+            out.data[sy] = arg.data[sx]
+            if self.coordsys.right_handed:
+                out.data[sx] *= -1
+            else:
+                out.data[sy] *= -1
+
+
+class SpinSkew(Skew):
+
+    cs_type = (coords.PolarCoordinates,
+               coords.S2Coordinates)
+
+    def __init__(self, operand, index=0, out=None):
+        super().__init__(operand, index=index, out=out)
+        self.azimuth_axis = self.dist.get_axis(self.coordsys.coords[0])
+
+    def subproblem_matrix(self, subproblem):
+        """Build operator matrix for a specific subproblem."""
+        # Build identity factors for each tangent space and coeffs
+        shape = subproblem.field_shape(self)
+        factors = [sparse.identity(size, format='csr') for size in shape]
+        # Weight by spin (spinorder: -, +)
+        factors[self.index] = np.array([[-1, 0], [0, 1]])
+        # Multiply by 1j
+        if np.iscomplexobj(self.dtype()):
+            factors[self.index] = 1j * factors[self.index]
+        else:
+            azimuth_index = len(self.tensorsig) + self.azimuth_axis
+            id_m = sparse.identity(shape[self.azimuth_axis]//2, format='csr')
+            mul_1j = np.array([[0, -1], [1, 0]])
+            factors[azimuth_index] = sparse.kron(id_m, mul_1j)
+        return reduce(sparse.kron, factors, 1).tocsr()
+
+    def operate(self, out):
+        """Perform operation."""
+        arg = self.args[0]
+        index = self.index
+        azimuth_axis = self.azimuth_axis
+        rank = len(self.tensorsig)
+        # Set output layout
+        out.set_layout(arg.layout)
+        # Apply skew
+        if arg.data.size:
+            if arg.layout.grid_space[azimuth_axis+1]:
+                # Left handed
+                sx = axslice(self.index, 0, 1)
+                sy = axslice(self.index, 1, 2)
+                out.data[sx] = arg.data[sy]
+                np.multiply(arg.data[sx], -1, out=out.data[sy])
+            else:
+                print(arg.data.shape)
+                # Spinorder: -, +
+                minus = axslice(index, 0, 1)
+                plus = axslice(index, 1, 2)
+                arg_plus = arg.data[plus]
+                arg_minus = arg.data[minus]
+                out_plus = out.data[plus]
+                out_minus = out.data[minus]
+                if np.iscomplexobj(self.dtype()):
+                    # out = 1j * s * arg
+                    np.multiply(arg_plus, 1j, out=out_plus)
+                    np.multiply(arg_minus, -1j, out=out_minus)
+                else:
+                    # out_cos + 1j * out_msin = (1j * s) * (arg_cos + 1j * arg_msin)
+                    #                         = - s * arg_msin +  1j * s * arg_cos
+                    cos = axslice(rank+azimuth_axis, 0, None, 2)
+                    msin = axslice(rank+azimuth_axis, 1, None, 2)
+                    np.multiply(arg_plus[msin], -1, out=out_plus[cos])
+                    copyto(out_plus[msin], arg_plus[cos])
+                    copyto(out_minus[cos], arg_minus[msin])
+                    np.multiply(arg_minus[cos], -1, out=out_minus[msin])
+
+
 class Component(LinearOperator):
 
     name = "Component"

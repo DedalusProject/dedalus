@@ -25,14 +25,16 @@ def build_sphere(Nphi, Ntheta, dealias, dtype):
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('dtype', dtype_range)
-def test_skew_explicit(Nphi, Ntheta, dealias, dtype):
+@pytest.mark.parametrize('layout', ['c', 'g'])
+def test_skew_explicit(Nphi, Ntheta, dealias, dtype, layout):
     c, d, b, phi, theta = build_sphere(Nphi, Ntheta, dealias, dtype)
     # Random vector field
     f = d.VectorField(c, bases=b)
     f.fill_random(layout='g')
     f.low_pass_filter(scales=0.75)
     # Evaluate skew
-    g = basis.S2Skew(f).evaluate()
+    f.require_layout(layout)
+    g = operators.Skew(f).evaluate()
     assert np.allclose(g['g'][0], f['g'][1])
     assert np.allclose(g['g'][1], -f['g'][0])
 
@@ -49,7 +51,6 @@ def test_skew_implicit(Nphi,  Ntheta, dealias, dtype):
     f.low_pass_filter(scales=0.75)
     # Skew LBVP
     u = d.VectorField(c, bases=b)
-    skew = basis.S2Skew
     problem = problems.LBVP([u], namespace=locals())
     problem.add_equation("skew(u) = skew(f)")
     solver = problem.build_solver()
@@ -414,10 +415,8 @@ def test_divergence_cleaning(Nphi, Ntheta, dealias, dtype):
     f.fill_random(layout='g')
     f.low_pass_filter(scales=0.75)
     # Build vector field as grad(f) + skew(grad(f))
-    grad = operators.Gradient
-    skew = basis.S2Skew
-    g = grad(f).evaluate()
-    h = skew(g).evaluate()
+    g = operators.Gradient(f).evaluate()
+    h = operators.Skew(g).evaluate()
     # Divergence cleaning LBVP
     u = d.VectorField(c, bases=b)
     psi = d.Field(bases=b)
