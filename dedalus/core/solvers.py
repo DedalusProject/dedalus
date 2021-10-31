@@ -82,6 +82,11 @@ class EigenvalueSolver:
             Pencil for which to solve the EVP
         rebuild_coeffs : bool, optional
             Flag to rebuild cached coefficient matrices (default: False)
+        normalize_left : bool, optional
+            Flag to normalize the left eigenvectors (if left=True) such that the
+            modified left eigenvectors form a biorthonormal (not just biorthogonal)
+            set with respect to the right eigenvectors.
+            (default: True)
 
         Other keyword options passed to scipy.linalg.eig.
 
@@ -100,14 +105,13 @@ class EigenvalueSolver:
             self.eigenvalues, self.eigenvectors = eig_output
         elif len(eig_output) == 3:
             self.eigenvalues, self.left_eigenvectors, self.eigenvectors = eig_output
+            self.modified_left_eigenvectors = np.conjugate(np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M))
         if pencil.pre_right is not None:
             self.eigenvectors = pencil.pre_right @ self.eigenvectors
         self.eigenvalue_pencil = pencil
         if len(eig_output) == 3 and normalize_left:
-            unnormalized_modified_left_eigenvectors = np.conjugate(np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M))
-            norms = np.diag(unnormalized_modified_left_eigenvectors.T.conj() @ self.eigenvectors)
+            norms = np.diag(self.modified_left_eigenvectors.T.conj() @ self.eigenvectors)
             self.left_eigenvectors /= norms
-            # TODO: before merging, make sure this line is consistent with its equivalent in solve_sparse
             self.modified_left_eigenvectors = np.conjugate(np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M))
 
     def solve_sparse(self, pencil, N, target, rebuild_coeffs=False, left=False, normalize_left=True, raise_on_mismatch=True, **kw):
@@ -158,7 +162,6 @@ class EigenvalueSolver:
         # Solve for the right eigenvectors
         self.eigenvalues, self.eigenvectors = scipy_sparse_eigs(A=A, B=B, N=N, target=target, matsolver=self.matsolver, **kw)
         if pencil.pre_right is not None:
-            # I remember Keaton explaining long ago that this step is only necessary for right eigenvectors, I think
             self.eigenvectors = pencil.pre_right @ self.eigenvectors
         if left:
             # Solve for the left eigenvectors
@@ -168,13 +171,12 @@ class EigenvalueSolver:
                                                                               N=N, target=np.conjugate(target),
                                                                               matsolver=self.matsolver, **kw)
             # TODO: after normalizing, one last iteration to clean up orthogonality? -- kick this can down the road, Keaton will look into it
-            # TODO: decide whether and how to sort eigenvalues and eigenvectors before this point.
             if not np.allclose(self.eigenvalues, np.conjugate(self.left_eigenvalues)):
                 if raise_on_mismatch:
                     raise RuntimeError("Conjugate of left eigenvalues does not match right eigenvalues. "
                                        "The full sets of left and right vectors won't form a biorthogonal set. "
                                        "This error can be disabled by passing raise_on_mismatch=False to "
-                                       "solve_sparse().")  # Is this too long of an error message?
+                                       "solve_sparse().")
                 else:
                     logger.warning("Conjugate of left eigenvalues does not match right eigenvalues.")
             # In absence of above warning, modified_left_eigenvectors forms a biorthogonal set with the right
@@ -201,10 +203,9 @@ class EigenvalueSolver:
             (default: False)
         modified_left : bool, optional
             If true, sets state vector to a modified left eigenmode,
-            which is dual (under the standard dot product in coefficient
-            space) to the corresponding right eigenmode.
+            which is dual (under the standard complex dot product in
+            coefficient space) to the corresponding right eigenmode.
             Supercedes left=True (default: False)
-            TODO: edit this docstring to say "complex dot product" depending on what convention is chosen
         """
         self.state.data[:] = 0
         if left or modified_left:
