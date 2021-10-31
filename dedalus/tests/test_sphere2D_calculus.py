@@ -16,7 +16,7 @@ dtype_range = [np.float64, np.complex128]
 def build_sphere(Nphi, Ntheta, dealias, dtype):
     c = coords.S2Coordinates('phi', 'theta')
     d = distributor.Distributor(c, dtype=dtype)
-    b = basis.SWSH(c, (Nphi, Ntheta), radius=1, dealias=(dealias, dealias), dtype=dtype)
+    b = basis.SphereBasis(c, (Nphi, Ntheta), radius=1, dealias=(dealias, dealias), dtype=dtype)
     phi, theta = b.local_grids(b.domain.dealias)
     return c, d, b, phi, theta
 

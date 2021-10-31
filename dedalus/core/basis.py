@@ -475,7 +475,7 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
                 b = max(self.b, other.b)
                 dealias = max(self.dealias[0], other.dealias[0])
                 return self.clone_with(size=size, a=a, b=b, dealias=dealias)
-        if isinstance(other, SpinWeightedSphericalHarmonics):
+        if isinstance(other, SphereBasis):
             return other.__mul__(self)
         return NotImplemented
 
@@ -2403,7 +2403,7 @@ class ConvertConstantAnnulus(operators.ConvertConstant, operators.PolarMOperator
             raise ValueError("This should never happen.")
 
 
-class SpinWeightedSphericalHarmonics(SpinBasis, metaclass=CachedClass):
+class SphereBasis(SpinBasis, metaclass=CachedClass):
 
     dim = 2
     dims = ['azimuth', 'colatitude']
@@ -2581,7 +2581,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis, metaclass=CachedClass):
         return groups
 
     def __eq__(self, other):
-        if isinstance(other, SpinWeightedSphericalHarmonics):
+        if isinstance(other, SphereBasis):
             if self.grid_params == other.grid_params:
                 if self.shape == other.shape:
                     return True
@@ -2595,10 +2595,10 @@ class SpinWeightedSphericalHarmonics(SpinBasis, metaclass=CachedClass):
             return self
         if other is self:
             return self
-        if isinstance(other, SpinWeightedSphericalHarmonics):
+        if isinstance(other, SphereBasis):
             if self.radius == other.radius:
                 shape = tuple(np.maximum(self.shape, other.shape))
-                return SpinWeightedSphericalHarmonics(self.coordsystem, shape, radius=self.radius, dealias=self.dealias, dtype=self.dtype)
+                return SphereBasis(self.coordsystem, shape, radius=self.radius, dealias=self.dealias, dtype=self.dtype)
         return NotImplemented
 
     def __mul__(self, other):
@@ -2606,10 +2606,10 @@ class SpinWeightedSphericalHarmonics(SpinBasis, metaclass=CachedClass):
             return self
         if other is self:
             return self
-        if isinstance(other, SpinWeightedSphericalHarmonics):
+        if isinstance(other, SphereBasis):
             if self.radius == other.radius:
                 shape = tuple(np.maximum(self.shape, other.shape))
-                return SpinWeightedSphericalHarmonics(self.coordsystem, shape, radius=self.radius, dealias=self.dealias, dtype=self.dtype)
+                return SphereBasis(self.coordsystem, shape, radius=self.radius, dealias=self.dealias, dtype=self.dtype)
         return NotImplemented
 
     # @staticmethod
@@ -2871,10 +2871,6 @@ class SpinWeightedSphericalHarmonics(SpinBasis, metaclass=CachedClass):
         return enum_components_output
 
 
-SWSH = SpinWeightedSphericalHarmonics
-SphereBasis = SWSH
-
-
 class ConvertConstantSphere(operators.ConvertConstant, operators.SeparableSphereOperator):
 
     output_basis_type = SphereBasis
@@ -2899,7 +2895,7 @@ class SphereDivergence(operators.Divergence, operators.SeparableSphereOperator):
     """Divergence on S2."""
 
     cs_type = S2Coordinates
-    input_basis_type = SpinWeightedSphericalHarmonics
+    input_basis_type = SphereBasis
     subaxis_dependence = [False, True]  # Depends on ell
     complex_operator = False
 
@@ -2941,7 +2937,7 @@ class SphereGradient(operators.Gradient, operators.SeparableSphereOperator):
     """Gradient on S2."""
 
     cs_type = S2Coordinates
-    input_basis_type = SpinWeightedSphericalHarmonics
+    input_basis_type = SphereBasis
     subaxis_dependence = [False, True]  # Depends on ell
     complex_operator = False
 
@@ -2982,7 +2978,7 @@ class SphereLaplacian(operators.Laplacian, operators.SeparableSphereOperator):
     """Laplacian on S2."""
 
     cs_type = S2Coordinates
-    input_basis_type = SpinWeightedSphericalHarmonics
+    input_basis_type = SphereBasis
     subaxis_dependence = [False, True]  # Depends on ell
     complex_operator = False
 
@@ -3102,7 +3098,7 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
 
     @CachedAttribute
     def ell_maps(self):
-        return SWSH.ell_maps(self)
+        return SphereBasis.ell_maps(self)
 
     def get_radial_basis(self):
         return self
@@ -3327,7 +3323,7 @@ class SphericalShellRadialBasis(RegularityBasis, metaclass=CachedClass):
                 radial_size = max(self.shape[2], other.shape[2])
                 k = self.k + other.k
                 return self.clone_with(radial_size=radial_size, k=k)
-        if isinstance(other, SpinWeightedSphericalHarmonics):
+        if isinstance(other, SphereBasis):
             unify((self.coordsystem, other.coordsystem))
             args = {}
             args['coordsystem'] = self.coordsystem
@@ -3819,7 +3815,7 @@ class Spherical3DBasis(MultidimensionalBasis):
         return self.radial_basis
 
     def S2_basis(self,radius=1):
-        return SWSH(self.coordsystem, self.shape[:2], radius=radius, dealias=self.dealias[:2], dtype=self.dtype,
+        return SphereBasis(self.coordsystem, self.shape[:2], radius=radius, dealias=self.dealias[:2], dtype=self.dtype,
                     azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library)
 
     @CachedMethod
@@ -4368,7 +4364,7 @@ class LiftTauDisk(operators.LiftTau, operators.PolarMOperator):
 
 class LiftTauBall(operators.LiftTau, operators.SphericalEllOperator):
 
-    input_basis_type = SWSH
+    input_basis_type = SphereBasis
     output_basis_type = BallBasis
 
     def __init__(self, operand, output_basis, n, out=None):
@@ -4476,7 +4472,7 @@ class LiftTauBallRadius(operators.LiftTau, operators.SphericalEllOperator):
 
 class LiftTauShell(operators.LiftTau, operators.SphericalEllOperator):
 
-    input_basis_type = SWSH
+    input_basis_type = SphereBasis
     output_basis_type = SphericalShellBasis
 
     def regindex_out(self, regindex_in):
@@ -5135,7 +5131,7 @@ class SphericalShellRadialInterpolate(operators.Interpolate, operators.Spherical
 
 class S2RadialComponent(operators.RadialComponent):
 
-    basis_type = SWSH
+    basis_type = SphereBasis
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
@@ -5169,7 +5165,7 @@ class S2RadialComponent(operators.RadialComponent):
 
 class S2AngularComponent(operators.AngularComponent):
 
-    basis_type = SWSH
+    basis_type = SphereBasis
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
@@ -5341,7 +5337,7 @@ class PolarAdvectiveCFL(operators.AdvectiveCFL):
 class S2AdvectiveCFL(operators.AdvectiveCFL):
 
     input_coord_type = S2Coordinates
-    input_basis_type = SWSH
+    input_basis_type = SphereBasis
 
     @CachedMethod
     def cfl_spacing(self, r=None):

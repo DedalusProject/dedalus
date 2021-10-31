@@ -268,7 +268,7 @@ def test_CF_J_1d_vector_roundtrip(a, b, Nx, Ny, dealias_x, dealias_y):
 def build_sphere_2d(Nphi, Ntheta, radius, dealias, dtype):
     c = coords.S2Coordinates('phi', 'theta')
     d = distributor.Distributor((c,))
-    b = basis.SpinWeightedSphericalHarmonics(c, (Nphi, Ntheta), radius=radius, dealias=(dealias, dealias), dtype=dtype)
+    b = basis.SphereBasis(c, (Nphi, Ntheta), radius=radius, dealias=(dealias, dealias), dtype=dtype)
     phi, theta = b.local_grids((dealias, dealias))
     return c, d, b, phi, theta
 
@@ -276,7 +276,7 @@ def build_sphere_2d(Nphi, Ntheta, radius, dealias, dtype):
 def build_sphere_3d(Nphi, Ntheta, radius, dealias, dtype):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    b = basis.SpinWeightedSphericalHarmonics(c, (Nphi, Ntheta), radius=radius, dealias=(dealias, dealias), dtype=dtype)
+    b = basis.SphereBasis(c, (Nphi, Ntheta), radius=radius, dealias=(dealias, dealias), dtype=dtype)
     phi, theta = b.local_grids((dealias, dealias, dealias))
     return c, d, b, phi, theta
 
