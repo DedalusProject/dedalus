@@ -100,15 +100,15 @@ class EigenvalueSolver:
             self.eigenvalues, self.eigenvectors = eig_output
         elif len(eig_output) == 3:
             self.eigenvalues, self.left_eigenvectors, self.eigenvectors = eig_output
-            if normalize_left:
-                unnormalized_modified_left_eigenvectors = np.conjugate(np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M))
-                norms = np.diag(unnormalized_modified_left_eigenvectors.T.conj() @ self.eigenvectors)
-                self.left_eigenvectors /= norms
-            # TODO: before merging, make sure this line is consistent with its equivalent in solve_sparse
-            self.modified_left_eigenvectors = np.conjugate(np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M))
         if pencil.pre_right is not None:
             self.eigenvectors = pencil.pre_right @ self.eigenvectors
         self.eigenvalue_pencil = pencil
+        if len(eig_output) == 3 and normalize_left:
+            unnormalized_modified_left_eigenvectors = np.conjugate(np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M))
+            norms = np.diag(unnormalized_modified_left_eigenvectors.T.conj() @ self.eigenvectors)
+            self.left_eigenvectors /= norms
+            # TODO: before merging, make sure this line is consistent with its equivalent in solve_sparse
+            self.modified_left_eigenvectors = np.conjugate(np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M))
 
     def solve_sparse(self, pencil, N, target, rebuild_coeffs=False, left=False, normalize_left=True, raise_on_mismatch=True, **kw):
         """
