@@ -89,6 +89,16 @@ class SuperluColamdSpsolve(SparseSolver):
     def solve(self, vector):
         return spla.spsolve(self.matrix, vector, permc_spec='COLAMD', use_umfpack=False)
 
+@add_solver
+class SuperluNaturalSpsolve(SparseSolver):
+    """SuperLU+NATURAL spsolve."""
+
+    def __init__(self, matrix, solver=None):
+        self.matrix = matrix.copy()
+
+    def solve(self, vector):
+        return spla.spsolve(self.matrix, vector, permc_spec='NATURAL', use_umfpack=False)
+
 
 @add_solver
 class UmfpackFactorized(SparseSolver):
@@ -134,6 +144,55 @@ class SuperluColamdFactorized(SparseSolver):
     def solve(self, vector):
         return self.LU.solve(vector)
 
+@add_solver
+class SuperluColamdFactorizedTranspose(SparseSolver):
+    """SuperLU+COLAMD LU factorized solve."""
+
+    def __init__(self, matrix, solver=None):
+        self.LU = spla.splu(matrix.T.tocsc(), permc_spec='COLAMD')
+
+    def solve(self, vector):
+        return self.LU.solve(vector, trans='T')
+
+@add_solver
+class SuperluMMD_ATAFactorized(SparseSolver):
+    """SuperLU+COLAMD LU factorized solve."""
+
+    def __init__(self, matrix, solver=None):
+        self.LU = spla.splu(matrix.tocsc(), permc_spec='MMD_ATA')
+
+    def solve(self, vector):
+        return self.LU.solve(vector)
+
+@add_solver
+class SuperluMMD_ATAFactorizedTranspose(SparseSolver):
+    """SuperLU+COLAMD LU factorized solve."""
+
+    def __init__(self, matrix, solver=None):
+        self.LU = spla.splu(matrix.T.tocsc(), permc_spec='MMD_ATA')
+
+    def solve(self, vector):
+        return self.LU.solve(vector, trans='T')
+
+@add_solver
+class SuperluMMD_AT_plus_AFactorized(SparseSolver):
+    """SuperLU+COLAMD LU factorized solve."""
+
+    def __init__(self, matrix, solver=None):
+        self.LU = spla.splu(matrix.tocsc(), permc_spec='MMD_AT_plus_A')
+
+    def solve(self, vector):
+        return self.LU.solve(vector)
+
+@add_solver
+class SuperluMMD_AT_plus_AFactorizedTranspose(SparseSolver):
+    """SuperLU+COLAMD LU factorized solve."""
+
+    def __init__(self, matrix, solver=None):
+        self.LU = spla.splu(matrix.T.tocsc(), permc_spec='MMD_AT_plus_A')
+
+    def solve(self, vector):
+        return self.LU.solve(vector, trans='T')
 
 @add_solver
 class ScipyBanded(BandedSolver):
@@ -270,4 +329,3 @@ woodbury_matsolvers = {}
 for name, matsolver in matsolvers.items():
     woodbury_matsolvers['woodbury' + name] = partial(Woodbury, matsolver=matsolver)
 matsolvers.update(woodbury_matsolvers)
-
