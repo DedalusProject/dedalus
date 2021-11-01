@@ -2886,7 +2886,7 @@ class ConvertConstantSphere(operators.ConvertConstant, operators.SeparableSphere
         return (spinindex_in,)
 
     @staticmethod
-    def symbol(spinindex_in, spinindex_out, ell):
+    def symbol(spinindex_in, spinindex_out, ell, radius):
         unit_amplitude = 1 / SphereBasis.constant_mode_value
         return unit_amplitude * (ell == 0) * (spinindex_in == spinindex_out)
 
@@ -2929,8 +2929,8 @@ class SphereDivergence(operators.Divergence, operators.SeparableSphereOperator):
             return tuple()
 
     @staticmethod
-    def symbol(spinindex_in, spinindex_out, ell):
-        return SphereGradient.symbol(spinindex_in, spinindex_out, ell)
+    def symbol(spinindex_in, spinindex_out, ell, radius):
+        return SphereGradient.symbol(spinindex_in, spinindex_out, ell, radius)
 
 
 class SphereGradient(operators.Gradient, operators.SeparableSphereOperator):
@@ -2964,14 +2964,14 @@ class SphereGradient(operators.Gradient, operators.SeparableSphereOperator):
         return ((0,) + spinindex_in, (1,) + spinindex_in)
 
     @staticmethod
-    def symbol(spinindex_in, spinindex_out, ell):
+    def symbol(spinindex_in, spinindex_out, ell, radius):
         spintotal_in = SphereBasis.spintotal(spinindex_in)
         spintotal_out = SphereBasis.spintotal(spinindex_out)
         mu = spintotal_out - spintotal_in
         k = SphereBasis.k(ell, spintotal_in, mu)
         k[np.abs(spintotal_in) > ell] = 0
         k[np.abs(spintotal_out) > ell] = 0
-        return k
+        return k / radius
 
 
 class SphereLaplacian(operators.Laplacian, operators.SeparableSphereOperator):
@@ -3003,7 +3003,7 @@ class SphereLaplacian(operators.Laplacian, operators.SeparableSphereOperator):
         return (spinindex_in,)
 
     @staticmethod
-    def symbol(spinindex_in, spinindex_out, ell):
+    def symbol(spinindex_in, spinindex_out, ell, radius):
         spintotal_in = SphereBasis.spintotal(spinindex_in)
         spintotal_out = SphereBasis.spintotal(spinindex_out)
         k = SphereBasis.k
@@ -3014,7 +3014,7 @@ class SphereLaplacian(operators.Laplacian, operators.SeparableSphereOperator):
         k_lap = km_1*kp + kp_1*km
         k_lap[np.abs(spintotal_in) > ell] = 0
         k_lap[np.abs(spintotal_out) > ell] = 0
-        return k_lap
+        return k_lap / radius**2
 
 
 # These are common for BallRadialBasis and SphericalShellRadialBasis
@@ -4606,7 +4606,7 @@ class SphereAverage(operators.Average, operators.SeparableSphereOperator):
         return (spinindex_in,)
 
     @staticmethod
-    def symbol(spinindex_in, spinindex_out, ell):
+    def symbol(spinindex_in, spinindex_out, ell, radius):
         return 1.0 * (ell == 0) * (spinindex_in == spinindex_out)
 
 

@@ -11,12 +11,13 @@ Ntheta_range = [16]
 dealias_range = [1, 3/2]
 dtype_range = [np.float64, np.complex128]
 
+radius = 1.37
 
 @CachedFunction
 def build_sphere(Nphi, Ntheta, dealias, dtype):
     c = coords.S2Coordinates('phi', 'theta')
     d = distributor.Distributor(c, dtype=dtype)
-    b = basis.SphereBasis(c, (Nphi, Ntheta), radius=1, dealias=(dealias, dealias), dtype=dtype)
+    b = basis.SphereBasis(c, (Nphi, Ntheta), radius=radius, dealias=(dealias, dealias), dtype=dtype)
     phi, theta = b.local_grids(b.domain.dealias)
     return c, d, b, phi, theta
 
@@ -125,7 +126,7 @@ def test_gradient_scalar_explicit(Nphi, Ntheta, dealias, dtype):
     u = operators.Gradient(f).evaluate()
     ug_phi = 1j*np.exp(2j*phi)*np.sqrt(15/(2*np.pi))*np.sin(theta)/2
     ug_theta = np.exp(2j*phi)*np.sqrt(15/(2*np.pi))*np.cos(theta)*np.sin(theta)/2
-    ug = np.array([ug_phi, ug_theta])
+    ug = np.array([ug_phi, ug_theta]) / radius
     if np.isrealobj(dtype()):
         ug = ug.real
     assert np.allclose(u['g'], ug)
@@ -314,7 +315,7 @@ def test_laplacian_scalar_explicit(Nphi,  Ntheta, dealias, dtype):
         f['g'] = sph_harm(m, l, phi, theta).real
     # Evaluate Laplacian
     u = operators.Laplacian(f).evaluate()
-    assert np.allclose(u['g'], -f['g']*(l*(l+1)))
+    assert np.allclose(u['g'], -f['g']*(l*(l+1))/radius**2)
 
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
@@ -341,7 +342,7 @@ def test_laplacian_scalar_implicit(Nphi,  Ntheta, dealias, dtype):
     solver.solve()
     u.require_scales(1)
     f.require_scales(1)
-    assert np.allclose(u['g'], -f['g']/(l*(l+1)))
+    assert np.allclose(u['g'], -f['g']/(l*(l+1))*radius**2)
 
 
 # @pytest.mark.parametrize('Nphi', Nphi_range)

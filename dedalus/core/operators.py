@@ -2501,16 +2501,18 @@ class SeparableSphereOperator(SpectralOperator):
         operand = self.args[0]
         if self.input_basis is None:
             domain = self.domain
+            radius = self.output_basis.radius
         else:
             domain = operand.domain
+            radius = self.input_basis.radius
         if self.subaxis_dependence[0]:
             raise NotImplementedError()
         elif self.subaxis_dependence[1]:
             colat_axis = self.first_axis + 1
             local_ell = layout.local_group_arrays(domain, scales=domain.dealias)[colat_axis]
-            return self.symbol(spinindex_in, spinindex_out, local_ell)
+            return self.symbol(spinindex_in, spinindex_out, local_ell, radius)
         else:
-            return self.symbol(spinindex_in, spinindex_out)
+            return self.symbol(spinindex_in, spinindex_out, radius)
 
     @staticmethod
     def symbol(spinindex_in, spinindex_out, ell):
