@@ -13,7 +13,7 @@ Instructions
 Compute Canada already pre-builds Dedalus on demand. You can contact https://docs.computecanada.ca/wiki/Technical_support in order to request a new version. In your home::
 
     module purge
-    module load StdEnv/2020 fftw-mpi mpi4py hdf5-mpi python
+    module load StdEnv/2020 fftw-mpi mpi4py hdf5-mpi/1.12.1 python
 
 Now build and activate the virtual environment for your installation.
 You should also update pip as soon as the environment is activated::
