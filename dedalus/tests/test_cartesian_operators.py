@@ -1,213 +1,196 @@
+"""Test cartesian skew, trace, transpose."""
+
 import pytest
 import numpy as np
-from dedalus.core import coords, distributor, basis, field, operators, arithmetic, problems, solvers
+import dedalus.public as d3
 from dedalus.tools.cache import CachedMethod
-from mpi4py import MPI
 
-comm = MPI.COMM_WORLD
 
-Lx=2
-Ly=2
-Lz=1
+Nx_range = [8]
+Ny_range = [8]
+Nz_range = [8]
+N_range = [8]
+dealias_range = [1, 3/2]
+dtype_range = [np.float64, np.complex128]
+
+Lx = 1.3
+Ly = 2.4
+Lz = 1.9
+
 @CachedMethod
-def build_3d_box(Nx, Ny, Nz, dealias, dtype, k=0):
-    c = coords.CartesianCoordinates('x', 'y', 'z')
-    d = distributor.Distributor((c,))
+def build_FF(N, dealias, dtype):
+    c = d3.CartesianCoordinates('x', 'y')
+    d = d3.Distributor(c, dtype=dtype)
     if dtype == np.complex128:
-        xb = basis.ComplexFourier(c.coords[0], size=Nx, bounds=(0, Lx))
-        yb = basis.ComplexFourier(c.coords[1], size=Ny, bounds=(0, Ly))
+        xb = d3.ComplexFourier(c.coords[0], size=N, bounds=(0, Lx), dealias=dealias)
+        yb = d3.ComplexFourier(c.coords[1], size=N, bounds=(0, Ly), dealias=dealias)
     elif dtype == np.float64:
-        xb = basis.RealFourier(c.coords[0], size=Nx, bounds=(0, Lx))
-        yb = basis.RealFourier(c.coords[1], size=Ny, bounds=(0, Ly))
+        xb = d3.RealFourier(c.coords[0], size=N, bounds=(0, Lx), dealias=dealias)
+        yb = d3.RealFourier(c.coords[1], size=N, bounds=(0, Ly), dealias=dealias)
+    b = (xb, yb)
+    x = xb.local_grid(1)
+    y = yb.local_grid(1)
+    r = (x, y)
+    return c, d, b, r
 
-    zb = basis.ChebyshevT(c.coords[2], size=Nz, bounds=(0, Lz))
+@CachedMethod
+def build_FC(N, dealias, dtype):
+    c = d3.CartesianCoordinates('x', 'y')
+    d = d3.Distributor(c, dtype=dtype)
+    if dtype == np.complex128:
+        xb = d3.ComplexFourier(c.coords[0], size=N, bounds=(0, Lx), dealias=dealias)
+    elif dtype == np.float64:
+        xb = d3.RealFourier(c.coords[0], size=N, bounds=(0, Lx), dealias=dealias)
+    yb = d3.Chebyshev(c.coords[1], size=N, bounds=(0, Ly), dealias=dealias)
+    b = (xb, yb)
+    x = xb.local_grid(1)
+    y = yb.local_grid(1)
+    r = (x, y)
+    return c, d, b, r
+
+@CachedMethod
+def build_FFF(N, dealias, dtype):
+    c = d3.CartesianCoordinates('x', 'y', 'z')
+    d = d3.Distributor(c, dtype=dtype)
+    if dtype == np.complex128:
+        xb = d3.ComplexFourier(c.coords[0], size=N, bounds=(0, Lx), dealias=dealias)
+        yb = d3.ComplexFourier(c.coords[1], size=N, bounds=(0, Ly), dealias=dealias)
+        zb = d3.ComplexFourier(c.coords[2], size=N, bounds=(0, Lz), dealias=dealias)
+    elif dtype == np.float64:
+        xb = d3.RealFourier(c.coords[0], size=N, bounds=(0, Lx), dealias=dealias)
+        yb = d3.RealFourier(c.coords[1], size=N, bounds=(0, Ly), dealias=dealias)
+        zb = d3.RealFourier(c.coords[2], size=N, bounds=(0, Lz), dealias=dealias)
     b = (xb, yb, zb)
     x = xb.local_grid(1)
     y = yb.local_grid(1)
     z = zb.local_grid(1)
-    return c, d, b, x, y, z
+    r = (x, y, z)
+    return c, d, b, r
 
 @CachedMethod
-def build_2d_box(Nx, Nz, dealias, dtype, k=0):
-    c = coords.CartesianCoordinates('x', 'z')
-    d = distributor.Distributor(c, dtype=dtype)
+def build_FFC(N, dealias, dtype):
+    c = d3.CartesianCoordinates('x', 'y', 'z')
+    d = d3.Distributor(c, dtype=dtype)
     if dtype == np.complex128:
-        xb = basis.ComplexFourier(c.coords[0], size=Nx, bounds=(0, Lx), dealias=dealias)
+        xb = d3.ComplexFourier(c.coords[0], size=N, bounds=(0, Lx), dealias=dealias)
+        yb = d3.ComplexFourier(c.coords[1], size=N, bounds=(0, Ly), dealias=dealias)
     elif dtype == np.float64:
-        xb = basis.RealFourier(c.coords[0], size=Nx, bounds=(0, Lx), dealias=dealias)
-    zb = basis.ChebyshevT(c.coords[1], size=Nz, bounds=(0, Lz), dealias=dealias)
-    zb.clone_with(a=zb.a+k, b=zb.b+k)
-    b = (xb, zb)
+        xb = d3.RealFourier(c.coords[0], size=N, bounds=(0, Lx), dealias=dealias)
+        yb = d3.RealFourier(c.coords[1], size=N, bounds=(0, Ly), dealias=dealias)
+    zb = d3.ChebyshevT(c.coords[2], size=N, bounds=(0, Lz), dealias=dealias)
+    b = (xb, yb, zb)
     x = xb.local_grid(1)
+    y = yb.local_grid(1)
     z = zb.local_grid(1)
-    return c, d, b, x, z
-
-Nx_range = [8, 2]
-Ny_range = [8]
-Nz_range = [8, 2]
-k_range = [0, 1]
-dealias_range = [1, 3/2]
-dtype_range = [np.float64, np.complex128]
+    r = (x, y, z)
+    return c, d, b, r
 
 
-@pytest.mark.parametrize('basis', [build_2d_box])
-@pytest.mark.parametrize('Nx', Nx_range)
-@pytest.mark.parametrize('Ny', Ny_range)
-@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('basis', [build_FF, build_FC])
+@pytest.mark.parametrize('N', N_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('dtype', dtype_range)
 @pytest.mark.parametrize('layout', ['c', 'g'])
-def test_skew_explicit(basis, Nx, Ny, k, dealias, dtype, layout):
-    c, d, b, x, y = basis(Nx, Ny, dealias, dtype, k)
+def test_skew_explicit(basis, N, dealias, dtype, layout):
+    c, d, b, r = basis(N, dealias, dtype)
     # Random vector field
     f = d.VectorField(c, bases=b)
     f.fill_random(layout='g')
-    f.low_pass_filter(scales=0.75)
     # Evaluate skew
     f.require_layout(layout)
-    g = operators.Skew(f).evaluate()
-    assert np.allclose(g['g'][0], -f['g'][1])
-    assert np.allclose(g['g'][1], f['g'][0])
+    g = d3.skew(f).evaluate()
+    assert np.allclose(g[layout][0], -f[layout][1])
+    assert np.allclose(g[layout][1], f[layout][0])
 
 
-@pytest.mark.parametrize('basis', [build_2d_box])
-@pytest.mark.parametrize('Nx', Nx_range)
-@pytest.mark.parametrize('Ny', Ny_range)
-@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('basis', [build_FF, build_FC])
+@pytest.mark.parametrize('N', N_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('dtype', dtype_range)
-@pytest.mark.parametrize('layout', ['c', 'g'])
-def test_skew_implicit(basis, Nx, Ny, k, dealias, dtype, layout):
-    c, d, b, x, y = basis(Nx, Ny, dealias, dtype, k)
+def test_skew_implicit(basis, N, dealias, dtype):
+    c, d, b, r = basis(N, dealias, dtype)
     # Random vector field
     f = d.VectorField(c, bases=b)
     f.fill_random(layout='g')
-    f.low_pass_filter(scales=0.75)
     # Skew LBVP
     u = d.VectorField(c, bases=b)
-    problem = problems.LBVP([u], namespace=locals())
+    problem = d3.LBVP([u], namespace=locals())
     problem.add_equation("skew(u) = skew(f)")
     solver = problem.build_solver()
     solver.solve()
-    u.require_scales(u.domain.dealias)
-    f.require_scales(f.domain.dealias)
-    assert np.allclose(u['g'], f['g'])
+    assert np.allclose(u['c'], f['c'])
 
 
-@pytest.mark.parametrize('Nx', Nx_range)
-@pytest.mark.parametrize('Nz', Nz_range)
+@pytest.mark.parametrize('basis', [build_FF, build_FC, build_FFF, build_FFC])
+@pytest.mark.parametrize('N', N_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('basis', [build_2d_box])
-@pytest.mark.parametrize('dtype', [np.complex128, np.float64])
-def test_explicit_trace_2d(Nx, Nz, dealias, basis, dtype):
-    c, d, b, x, z = basis(Nx, Nz, dealias, dtype)
-    u = field.Field(dist=d, bases=(*b,), tensorsig=(c,), dtype=dtype)
-    u['g'][0] = (np.sin(2*x)+np.sin(x))*np.sin(z)
-    u['g'][1] = np.sin(x)*np.cos(z)
-    T = operators.Gradient(u, c).evaluate()
-    f = operators.Trace(T).evaluate()
-    T.require_scales(1)
-    f.require_scales(1)
-    fg = T['g'][0,0] + T['g'][1,1]
-    assert np.allclose(f['g'], fg)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('layout', ['c', 'g'])
+def test_trace_explicit(basis, N, dealias, dtype, layout):
+    c, d, b, r = basis(N, dealias, dtype)
+    # Random tensor field
+    f = d.TensorField((c,c), bases=b)
+    f.fill_random(layout='g')
+    # Evaluate trace
+    f.require_layout(layout)
+    g = d3.trace(f).evaluate()
+    assert np.allclose(g[layout], np.trace(f[layout]))
 
 
-@pytest.mark.parametrize('Nx', Nx_range)
-@pytest.mark.parametrize('Nz', Nz_range)
+@pytest.mark.parametrize('basis', [build_FF, build_FC, build_FFF, build_FFC])
+@pytest.mark.parametrize('N', N_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('basis', [build_2d_box])
-@pytest.mark.parametrize('dtype', [np.complex128, np.float64])
-def test_implicit_trace_2d(Nx, Nz, dealias, basis, dtype):
-    c, d, b, x, z = basis(Nx, Nz, dealias, dtype)
-    f = field.Field(dist=d, bases=(*b,), dtype=dtype)
-    g = field.Field(dist=d, bases=(*b,), dtype=dtype)
-    g.require_scales(g.domain.dealias)
-    g['g'] = (np.sin(2*x) + np.sin(x)) * np.sin(z)
-    I = field.Field(dist=d, tensorsig=(c,c), dtype=dtype)
-    I['g'][0,0] = I['g'][1,1] = 1
-    trace = lambda A: operators.Trace(A)
-    problem = problems.LBVP([f])
-    problem.add_equation((trace(I*f), 2*g))
-    solver = solvers.LinearBoundaryValueSolver(problem)
+@pytest.mark.parametrize('dtype', dtype_range)
+def test_trace_implicit(basis, N, dealias, dtype):
+    c, d, b, r = basis(N, dealias, dtype)
+    # Random scalar field
+    f = d.Field(bases=b)
+    f.fill_random(layout='g')
+    # Trace LBVP
+    u = d.Field(bases=b)
+    I = d.TensorField((c,c))
+    dim = len(r)
+    for i in range(dim):
+        I['g'][i,i] = 1
+    problem = d3.LBVP([u], namespace=locals())
+    problem.add_equation("trace(I*u) = dim*f")
+    solver = problem.build_solver()
     solver.solve()
-    assert np.allclose(f['c'], g['c'])
+    assert np.allclose(u['c'], f['c'])
 
 
-@pytest.mark.parametrize('Nx', Nx_range)
-@pytest.mark.parametrize('Ny', Ny_range)
-@pytest.mark.parametrize('Nz', Nz_range)
+@pytest.mark.parametrize('basis', [build_FF, build_FC, build_FFF, build_FFC])
+@pytest.mark.parametrize('N', N_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('basis', [build_3d_box])
-@pytest.mark.parametrize('dtype', [np.complex128, np.float64])
-def test_explicit_transpose_3d_tensor(Nx, Ny, Nz, dealias, basis, dtype):
-    c, d, b, x, y, z = basis(Nx, Ny, Nz, dealias, dtype)
-    u = field.Field(dist=d, bases=(*b,), tensorsig=(c,), dtype=dtype)
-    u['g'][0] = (np.sin(2*x)+np.sin(x))*np.cos(y)*np.sin(z)
-    u['g'][1] = (np.cos(2*x)+np.cos(x))*np.sin(y)*np.sin(z)
-    u['g'][2] = np.sin(x)*np.cos(y)*np.cos(z)
-    T = operators.Gradient(u, c).evaluate()
-    T.require_grid_space()
-    Tg = np.transpose(np.copy(T['g']),(1,0,2,3,4))
-    T = operators.TransposeComponents(T).evaluate()
-    assert np.allclose(T['g'], Tg)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('layout', ['c', 'g'])
+def test_transpose_explicit(basis, N, dealias, dtype, layout):
+    c, d, b, r = basis(N, dealias, dtype)
+    # Random tensor field
+    f = d.TensorField((c,c), bases=b)
+    f.fill_random(layout='g')
+    # Evaluate transpose
+    f.require_layout(layout)
+    g = d3.transpose(f).evaluate()
+    order = np.arange(2 + len(r))
+    order[:2] = [1, 0]
+    assert np.allclose(g[layout], np.transpose(f[layout], order))
 
-@pytest.mark.parametrize('Nx', Nx_range)
-@pytest.mark.parametrize('Nz', Nz_range)
-@pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('basis', [build_2d_box])
-@pytest.mark.parametrize('dtype', [np.complex128, np.float64])
-def test_explicit_transpose_2d_tensor(Nx, Nz, dealias, basis, dtype):
-    c, d, b, x, z = basis(Nx, Nz, dealias, dtype)
-    u = field.Field(dist=d, bases=(*b,), tensorsig=(c,), dtype=dtype)
-    u['g'][0] = (np.sin(2*x)+np.sin(x))*np.sin(z)
-    u['g'][1] = np.sin(x)*np.cos(z)
-    T = operators.Gradient(u, c).evaluate()
-    T.require_grid_space()
-    Tg = np.transpose(np.copy(T['g']),(1,0,2,3))
-    T = operators.TransposeComponents(T).evaluate()
-    assert np.allclose(T['g'], Tg)
 
-@pytest.mark.parametrize('Nx', Nx_range)
-@pytest.mark.parametrize('Ny', Ny_range)
-@pytest.mark.parametrize('Nz', Nz_range)
+@pytest.mark.parametrize('basis', [build_FF, build_FC, build_FFF, build_FFC])
+@pytest.mark.parametrize('N', N_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('basis', [build_3d_box])
-@pytest.mark.parametrize('dtype', [np.complex128, np.float64])
-def test_implicit_transpose_3d_tensor(Nx, Ny, Nz, dealias, basis, dtype):
-    c, d, b, x, y, z = basis(Nx, Ny, Nz, dealias, dtype)
-    u = field.Field(dist=d, bases=b, tensorsig=(c,), dtype=dtype)
-    u['g'][0] = (np.sin(2*x)+np.sin(x))*np.cos(y)*np.sin(z)
-    u['g'][1] = (np.cos(2*x)+np.cos(x))*np.sin(y)*np.sin(z)
-    u['g'][2] = np.sin(x)*np.cos(y)*np.cos(z)
-    T = operators.Gradient(u, c).evaluate()
-    Ttg = np.transpose(np.copy(T['g']),(1,0,2,3,4))
-    Tt = field.Field(dist=d, bases=b, tensorsig=(c,c,), dtype=dtype)
-    trans = lambda A: operators.TransposeComponents(A)
-    problem = problems.LBVP([Tt])
-    problem.add_equation((trans(Tt), T))
-    # Solver
-    solver = solvers.LinearBoundaryValueSolver(problem)
+@pytest.mark.parametrize('dtype', dtype_range)
+def test_transpose_implicit(basis, N, dealias, dtype):
+    c, d, b, r = basis(N, dealias, dtype)
+    # Random tensor field
+    f = d.TensorField((c,c), bases=b)
+    f.fill_random(layout='g')
+    # Transpose LBVP
+    u = d.TensorField((c,c), bases=b)
+    problem = d3.LBVP([u], namespace=locals())
+    problem.add_equation("transpose(u) = transpose(f)")
+    solver = problem.build_solver()
     solver.solve()
-    assert np.allclose(Tt['g'], Ttg)
+    assert np.allclose(u['c'], f['c'])
 
-@pytest.mark.parametrize('Nx', Nx_range)
-@pytest.mark.parametrize('Nz', Nz_range)
-@pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('basis', [build_2d_box])
-@pytest.mark.parametrize('dtype', [np.complex128, np.float64])
-def test_implicit_transpose_2d_tensor(Nx, Nz, dealias, basis, dtype):
-    c, d, b, x, z = basis(Nx, Nz, dealias, dtype)
-    u = field.Field(dist=d, bases=b, tensorsig=(c,), dtype=dtype)
-    u['g'][0] = (np.sin(2*x)+np.sin(x))*np.sin(z)
-    u['g'][1] = np.sin(x)*np.cos(z)
-    T = operators.Gradient(u, c).evaluate()
-    T.name = 'T'
-    Ttg = np.transpose(np.copy(T['g']),(1,0,2,3))
-    Tt = field.Field(name='Tt', dist=d, bases=b, tensorsig=(c,c,), dtype=dtype)
-    trans = lambda A: operators.TransposeComponents(A)
-    problem = problems.LBVP([Tt])
-    problem.add_equation((trans(Tt), T))
-    # Solver
-    solver = solvers.LinearBoundaryValueSolver(problem)
-    solver.solve()
-    assert np.allclose(Tt['g'], Ttg)
