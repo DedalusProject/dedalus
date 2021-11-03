@@ -81,6 +81,12 @@ class SolverBase:
         if np.any(coupled_nonlocal):
             raise ValueError(f"Problem is coupled along distributed dimensions: {tuple(np.where(coupled_nonlocal)[0])}")
         self.matrix_coupling = matrix_coupling
+        # Determine matrix dependence based on specified coupling
+        self.matrix_dependence = np.array(problem.matrix_dependence)
+        for eq in problem.eqs:
+            for basis in eq['domain'].bases:
+                slices = slice(basis.first_axis, basis.last_axis+1)
+                self.matrix_dependence[slices] = self.matrix_dependence[slices] | basis.matrix_dependence(matrix_coupling[slices])
         if matsolver is None:
             matsolver = config['linear algebra'][self.matsolver_default]
         if isinstance(matsolver, str):
@@ -264,7 +270,8 @@ class LinearBoundaryValueSolver(SolverBase):
         # Solve system for each subproblem, updating state
         for sp in self.subproblems:
             sp_matsolver = self.subproblem_matsolvers[sp]
-            F = X = np.empty(sp.L_min.shape[0], dtype=self.dtype)
+            F = np.empty(sp.L_min.shape[0], dtype=self.dtype)
+            X = np.empty(sp.pre_right.shape[0], dtype=self.dtype)
             for ss in sp.subsystems:
                 F.fill(0)  # Must zero before csr_matvec
                 csr_matvec(sp.pre_left, ss.gather(self.F), F)
@@ -338,7 +345,8 @@ class NonlinearBoundaryValueSolver(SolverBase):
         # Solve system for each subproblem, updating state
         for sp in self.subproblems:
             sp_matsolver = self._build_subproblem_matsolver(sp)
-            F = X = np.empty(sp.dH_min.shape[0], dtype=self.dtype)
+            F = np.empty(sp.dH_min.shape[0], dtype=self.dtype)
+            X = np.empty(sp.pre_right.shape[0], dtype=self.dtype)
             for ss in sp.subsystems:
                 F.fill(0)  # Must zero before csr_matvec
                 csr_matvec(sp.pre_left, ss.gather(self.F), F)

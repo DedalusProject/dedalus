@@ -58,7 +58,7 @@ def build_S2(Nphi, Ntheta, dealias, dtype=np.complex128, grid_scale=1):
     c = coords.S2Coordinates('phi', 'theta')
     d = distributor.Distributor((c,))
     dealias_tuple = (dealias, dealias)
-    sb = basis.SpinWeightedSphericalHarmonics(c, (Nphi, Ntheta), radius=1, dealias=dealias_tuple, dtype=dtype)
+    sb = basis.SphereBasis(c, (Nphi, Ntheta), radius=1, dealias=dealias_tuple, dtype=dtype)
     grid_scale_tuple = (grid_scale, grid_scale)
     phi, theta = sb.local_grids(grid_scale_tuple)
     return c, d, sb, phi, theta

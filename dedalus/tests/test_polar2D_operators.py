@@ -11,6 +11,7 @@ Nphi_range = [8]
 Nr_range = [8]
 k_range = [0, 1]
 dealias_range = [1, 3/2]
+dtype_range = [np.float64, np.complex128]
 radius_disk = 1.5
 radii_annulus = (0.5, 3)
 
@@ -18,7 +19,7 @@ radii_annulus = (0.5, 3)
 @CachedFunction
 def build_disk(Nphi, Nr, k, dealias, dtype):
     c = coords.PolarCoordinates('phi', 'r')
-    d = distributor.Distributor((c,))
+    d = distributor.Distributor((c,), dtype=dtype)
     b = basis.DiskBasis(c, (Nphi, Nr), radius=radius_disk, k=k, dealias=(dealias, dealias), dtype=dtype)
     phi, r = b.local_grids(b.domain.dealias)
     x, y = c.cartesian(phi, r)
@@ -28,7 +29,7 @@ def build_disk(Nphi, Nr, k, dealias, dtype):
 @CachedFunction
 def build_annulus(Nphi, Nr, k, dealias, dtype):
     c = coords.PolarCoordinates('phi', 'r')
-    d = distributor.Distributor((c,))
+    d = distributor.Distributor((c,), dtype=dtype)
     b = basis.AnnulusBasis(c, (Nphi, Nr), radii=radii_annulus, k=k, dealias=(dealias, dealias), dtype=dtype)
     phi, r = b.local_grids(b.domain.dealias)
     x, y = c.cartesian(phi, r)
@@ -150,6 +151,49 @@ def test_convert_vector(Nphi, Nr, k, dealias, basis, dtype, layout):
     v.require_layout(layout)
     w = (u + v).evaluate()
     assert np.allclose(w['g'], u['g'] + v['g'])
+
+
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('layout', ['c', 'g'])
+def test_skew_explicit(basis, Nphi, Nr, k, dealias, dtype, layout):
+    c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
+    # Random vector field
+    f = d.VectorField(c, bases=b)
+    f.fill_random(layout='g')
+    f.low_pass_filter(scales=0.75)
+    # Evaluate skew
+    f.require_layout(layout)
+    g = operators.Skew(f).evaluate()
+    assert np.allclose(g['g'][0], f['g'][1])
+    assert np.allclose(g['g'][1], -f['g'][0])
+
+
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+def test_skew_implicit(basis, Nphi, Nr, k, dealias, dtype):
+    c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
+    # Random vector field
+    f = d.VectorField(c, bases=b)
+    f.fill_random(layout='g')
+    f.low_pass_filter(scales=0.75)
+    # Skew LBVP
+    u = d.VectorField(c, bases=b)
+    problem = problems.LBVP([u], namespace=locals())
+    problem.add_equation("skew(u) = skew(f)")
+    solver = problem.build_solver()
+    solver.solve()
+    u.require_scales(b.domain.dealias)
+    f.require_scales(b.domain.dealias)
+    assert np.allclose(u['g'], f['g'])
 
 
 @pytest.mark.parametrize('Nphi', Nphi_range)

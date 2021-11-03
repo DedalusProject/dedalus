@@ -12,18 +12,16 @@ class MultiClass(type):
 
     def __call__(cls, *args, **kw):
         """Dispatch instantiation based on the supplied arguments."""
-
-        # Create instance if no subclasses
-        if not cls.__subclasses__():
-            # Check arguments
-            if cls._check_args(*args, **kw):
-                return super().__call__(*args, **kw)
-            else:
-                raise TypeError("Provided types do not pass dispatch check.")
-
         try:
             # Preprocess arguments and keywords
             args, kw = cls._preprocess_args(*args, **kw)
+            # Create instance if no subclasses
+            if not cls.__subclasses__():
+                # Check arguments
+                if cls._check_args(*args, **kw):
+                    return super().__call__(*args, **kw)
+                else:
+                    raise TypeError("Provided types do not pass dispatch check.")
             # Find applicable subclasses
             passlist = []
             for subclass in cls.__subclasses__():

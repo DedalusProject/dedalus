@@ -318,6 +318,9 @@ class IntervalBasis(Basis):
         self.COV = AffineCOV(self.native_bounds, bounds)
         super().__init__(coord)
 
+    def matrix_dependence(self, matrix_coupling):
+        return matrix_coupling
+
     @CachedMethod
     def global_grid_spacing(self, axis, scale=None):
         """Global grids spacings."""
@@ -472,7 +475,7 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
                 b = max(self.b, other.b)
                 dealias = max(self.dealias[0], other.dealias[0])
                 return self.clone_with(size=size, a=a, b=b, dealias=dealias)
-        if isinstance(other, SpinWeightedSphericalHarmonics):
+        if isinstance(other, SphereBasis):
             return other.__mul__(self)
         return NotImplemented
 
@@ -1549,8 +1552,9 @@ class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):
             #    S[axslice(i, n, n+self.dim)] += reshape_vector(Ss, dim=len(tensorsig), axis=i)
         return S
 
+    @staticmethod
     @CachedMethod
-    def spintotal(self, spinindex):
+    def spintotal(spinindex):
         spinorder = [-1, 1, 0]
         spin = lambda index: spinorder[index]
         return sum(spin(index) for index in spinindex)
@@ -1610,6 +1614,11 @@ class PolarBasis(SpinBasis):
         # this should probably be cleaned up later; needed for m permutation in disk
         self.azimuth_basis = self.S1_basis(radius=None)
 
+    def matrix_dependence(self, matrix_coupling):
+        matrix_dependence = matrix_coupling.copy()
+        if matrix_coupling[1]:
+            matrix_dependence[0] = True
+        return matrix_dependence
 
     @CachedMethod
     def S1_basis(self, radius=1):
@@ -2394,11 +2403,12 @@ class ConvertConstantAnnulus(operators.ConvertConstant, operators.PolarMOperator
             raise ValueError("This should never happen.")
 
 
-class SpinWeightedSphericalHarmonics(SpinBasis, metaclass=CachedClass):
+class SphereBasis(SpinBasis, metaclass=CachedClass):
 
     dim = 2
     dims = ['azimuth', 'colatitude']
     transforms = {}
+    constant_mode_value = 1 / np.sqrt(2)
 
     def __init__(self, coordsystem, shape, dtype, radius=1, dealias=(1,1), colatitude_library=None, azimuth_library=None):
         super().__init__(coordsystem, shape, dtype, dealias, azimuth_library=azimuth_library)
@@ -2455,6 +2465,12 @@ class SpinWeightedSphericalHarmonics(SpinBasis, metaclass=CachedClass):
         if self.mmax > 0:
             self.azimuth_basis.forward_coeff_permutation = self.forward_m_perm
             self.azimuth_basis.backward_coeff_permutation = self.backward_m_perm
+
+    def matrix_dependence(self, matrix_coupling):
+        matrix_dependence = matrix_coupling.copy()
+        if matrix_coupling[1]:
+            matrix_dependence[0] = True
+        return matrix_dependence
 
     def global_shape(self, grid_space, scales):
         grid_shape = self.grid_shape(scales)
@@ -2565,7 +2581,7 @@ class SpinWeightedSphericalHarmonics(SpinBasis, metaclass=CachedClass):
         return groups
 
     def __eq__(self, other):
-        if isinstance(other, SpinWeightedSphericalHarmonics):
+        if isinstance(other, SphereBasis):
             if self.grid_params == other.grid_params:
                 if self.shape == other.shape:
                     return True
@@ -2579,10 +2595,10 @@ class SpinWeightedSphericalHarmonics(SpinBasis, metaclass=CachedClass):
             return self
         if other is self:
             return self
-        if isinstance(other, SpinWeightedSphericalHarmonics):
+        if isinstance(other, SphereBasis):
             if self.radius == other.radius:
                 shape = tuple(np.maximum(self.shape, other.shape))
-                return SpinWeightedSphericalHarmonics(self.coordsystem, shape, radius=self.radius, dealias=self.dealias, dtype=self.dtype)
+                return SphereBasis(self.coordsystem, shape, radius=self.radius, dealias=self.dealias, dtype=self.dtype)
         return NotImplemented
 
     def __mul__(self, other):
@@ -2590,11 +2606,18 @@ class SpinWeightedSphericalHarmonics(SpinBasis, metaclass=CachedClass):
             return self
         if other is self:
             return self
-        if isinstance(other, SpinWeightedSphericalHarmonics):
+        if isinstance(other, SphereBasis):
             if self.radius == other.radius:
                 shape = tuple(np.maximum(self.shape, other.shape))
-                return SpinWeightedSphericalHarmonics(self.coordsystem, shape, radius=self.radius, dealias=self.dealias, dtype=self.dtype)
+                return SphereBasis(self.coordsystem, shape, radius=self.radius, dealias=self.dealias, dtype=self.dtype)
         return NotImplemented
+
+    # @staticmethod
+    # @CachedAttribute
+    # def constant_mode_value():
+    #     # Adjust for SWSH normalization
+    #     # TODO: check this is right for regtotal != 0?
+    #     return 1 / np.sqrt(2)
 
     @CachedAttribute
     def m_maps(self):
@@ -2628,6 +2651,16 @@ class SpinWeightedSphericalHarmonics(SpinBasis, metaclass=CachedClass):
                 ell_slice = slice(ell_slice.stop-1, None, -1)
             m_maps.append((m, mg_slice, mc_slice, ell_slice))
         return tuple(m_maps)
+
+    @CachedAttribute
+    def ell_reversed(self):
+        ell_reversed = {}
+        for m, mg_slice, mc_slice, ell_slice in self.m_maps:
+            ell_reversed[m] = False
+            if ell_slice.step is not None:
+                if ell_slice.step < 0:
+                    ell_reversed[m] = True
+        return ell_reversed
 
     @CachedAttribute
     def ell_maps(self):
@@ -2786,6 +2819,10 @@ class SpinWeightedSphericalHarmonics(SpinBasis, metaclass=CachedClass):
         gdata.fill(0)  # OPTIMIZE: shouldn't be necessary
         self.backward_spin_recombination(field.tensorsig, temp, gdata)
 
+    @staticmethod
+    def k(l, s, mu):
+        return -mu*np.sqrt(np.maximum(0, (l-mu*s)*(l+mu*s+1)/2))
+
     @CachedMethod
     def k_vector(self,mu,m,s,local_l):
         vector = np.zeros(len(local_l))
@@ -2820,15 +2857,164 @@ class SpinWeightedSphericalHarmonics(SpinBasis, metaclass=CachedClass):
                 spinindex_2d = tuple([j for j, cs in zip(comp, tensorsig) if cs is self.coordsystem.S2coordsys])
                 spintotal_3d = self.spintotal(spinindex_3d)
                 spintotal_2d = self.spintotal(spinindex_2d)
-                if abs(spintotal_3d + spintotal_2d) <= ell:
+                if ell is None: # HACK
+                    enum_components_output.append((i, comp))
+                elif abs(spintotal_3d + spintotal_2d) <= ell:
                     enum_components_output.append((i, comp))
             else:
-                raise ValueError("cs is 2d")
+                spinindex_2d = tuple([j for j, cs in zip(comp, tensorsig) if cs is self.coordsystem])
+                spintotal_2d = self.spintotal(spinindex_2d)
+                if ell is None: # HACK
+                    enum_components_output.append((i, comp))
+                elif abs(spintotal_2d) <= ell:
+                    enum_components_output.append((i, comp))
         return enum_components_output
 
 
-SWSH = SpinWeightedSphericalHarmonics
-SphereBasis = SWSH
+class ConvertConstantSphere(operators.ConvertConstant, operators.SeparableSphereOperator):
+
+    output_basis_type = SphereBasis
+    subaxis_dependence = [False, True]
+    complex_operator = False
+
+    def __init__(self, operand, output_basis, out=None):
+        super().__init__(operand, output_basis, out=out)
+        if self.coords in operand.tensorsig:
+            raise ValueError("Tensors not yet supported.")
+
+    def spinindex_out(self, spinindex_in):
+        return (spinindex_in,)
+
+    @staticmethod
+    def symbol(spinindex_in, spinindex_out, ell, radius):
+        unit_amplitude = 1 / SphereBasis.constant_mode_value
+        return unit_amplitude * (ell == 0) * (spinindex_in == spinindex_out)
+
+
+class SphereDivergence(operators.Divergence, operators.SeparableSphereOperator):
+    """Divergence on S2."""
+
+    cs_type = S2Coordinates
+    input_basis_type = SphereBasis
+    subaxis_dependence = [False, True]  # Depends on ell
+    complex_operator = False
+
+    def __init__(self, operand, index=0, out=None):
+        operators.Divergence.__init__(self, operand, out=out)  # Gradient has no __init__
+        if index != 0:
+            raise ValueError("Divergence only implemented along index 0.")
+        self.index = index
+        coordsys = operand.tensorsig[index]
+        self.coordsys = coordsys
+        self.operand = operand
+        self.input_basis = operand.domain.get_basis(coordsys)
+        self.output_basis = self.input_basis
+        self.first_axis = self.input_basis.first_axis
+        self.last_axis = self.input_basis.last_axis
+        # FutureField requirements
+        self.domain  = operand.domain#.substitute_basis(self.input_basis, self.output_basis)
+        self.tensorsig = operand.tensorsig[:index] + operand.tensorsig[index+1:]
+        self.dtype = operand.dtype
+
+    @staticmethod
+    def _output_basis(input_basis):
+        return input_basis
+
+    def spinindex_out(self, spinindex_in):
+        # Spinorder: -, +
+        # Divergence feels - and +
+        if spinindex_in[0] in (0, 1):
+            return (spinindex_in[1:],)
+        else:
+            return tuple()
+
+    @staticmethod
+    def symbol(spinindex_in, spinindex_out, ell, radius):
+        return SphereGradient.symbol(spinindex_in, spinindex_out, ell, radius)
+
+
+class SphereGradient(operators.Gradient, operators.SeparableSphereOperator):
+    """Gradient on S2."""
+
+    cs_type = S2Coordinates
+    input_basis_type = SphereBasis
+    subaxis_dependence = [False, True]  # Depends on ell
+    complex_operator = False
+
+    def __init__(self, operand, coordsys, out=None):
+        operators.Gradient.__init__(self, operand, out=out)  # Gradient has no __init__
+        self.coordsys = coordsys
+        self.operand = operand
+        self.input_basis = operand.domain.get_basis(coordsys)
+        self.output_basis = self.input_basis
+        self.first_axis = self.input_basis.first_axis
+        self.last_axis = self.input_basis.last_axis
+        # FutureField requirements
+        self.domain  = operand.domain#.substitute_basis(self.input_basis, self.output_basis)
+        self.tensorsig = (coordsys,) + operand.tensorsig
+        self.dtype = operand.dtype
+
+    @staticmethod
+    def _output_basis(input_basis):
+        return input_basis
+
+    def spinindex_out(self, spinindex_in):
+        # Spinorder: -, +
+        # Gradients hits - and +
+        return ((0,) + spinindex_in, (1,) + spinindex_in)
+
+    @staticmethod
+    def symbol(spinindex_in, spinindex_out, ell, radius):
+        spintotal_in = SphereBasis.spintotal(spinindex_in)
+        spintotal_out = SphereBasis.spintotal(spinindex_out)
+        mu = spintotal_out - spintotal_in
+        k = SphereBasis.k(ell, spintotal_in, mu)
+        k[np.abs(spintotal_in) > ell] = 0
+        k[np.abs(spintotal_out) > ell] = 0
+        return k / radius
+
+
+class SphereLaplacian(operators.Laplacian, operators.SeparableSphereOperator):
+    """Laplacian on S2."""
+
+    cs_type = S2Coordinates
+    input_basis_type = SphereBasis
+    subaxis_dependence = [False, True]  # Depends on ell
+    complex_operator = False
+
+    def __init__(self, operand, coordsys, out=None):
+        operators.Laplacian.__init__(self, operand, out=out)
+        self.coordsys = coordsys
+        self.operand = operand
+        self.input_basis = operand.domain.get_basis(coordsys)
+        self.output_basis = self.input_basis
+        self.first_axis = self.input_basis.first_axis
+        self.last_axis = self.input_basis.last_axis
+        # FutureField requirements
+        self.domain  = operand.domain#.substitute_basis(self.input_basis, self.output_basis)
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
+
+    @staticmethod
+    def _output_basis(input_basis):
+        return input_basis
+
+    def spinindex_out(self, spinindex_in):
+        return (spinindex_in,)
+
+    @staticmethod
+    def symbol(spinindex_in, spinindex_out, ell, radius):
+        spintotal_in = SphereBasis.spintotal(spinindex_in)
+        spintotal_out = SphereBasis.spintotal(spinindex_out)
+        k = SphereBasis.k
+        kp = k(ell, spintotal_in, +1)
+        km = k(ell, spintotal_in, -1)
+        kp_1 = k(ell, spintotal_in-1, +1)
+        km_1 = k(ell, spintotal_in+1, -1)
+        k_lap = km_1*kp + kp_1*km
+        k_lap[np.abs(spintotal_in) > ell] = 0
+        k_lap[np.abs(spintotal_out) > ell] = 0
+        return k_lap / radius**2
 
 
 # These are common for BallRadialBasis and SphericalShellRadialBasis
@@ -2912,7 +3098,7 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
 
     @CachedAttribute
     def ell_maps(self):
-        return SWSH.ell_maps(self)
+        return SphereBasis.ell_maps(self)
 
     def get_radial_basis(self):
         return self
@@ -3137,7 +3323,7 @@ class SphericalShellRadialBasis(RegularityBasis, metaclass=CachedClass):
                 radial_size = max(self.shape[2], other.shape[2])
                 k = self.k + other.k
                 return self.clone_with(radial_size=radial_size, k=k)
-        if isinstance(other, SpinWeightedSphericalHarmonics):
+        if isinstance(other, SphereBasis):
             unify((self.coordsystem, other.coordsystem))
             args = {}
             args['coordsystem'] = self.coordsystem
@@ -3576,6 +3762,12 @@ class Spherical3DBasis(MultidimensionalBasis):
             self.group_shape = (1, 1, 1)
         Basis.__init__(self, coordsystem)
 
+    def matrix_dependence(self, matrix_coupling):
+        matrix_dependence = matrix_coupling.copy()
+        if matrix_coupling[1]:
+            matrix_dependence[0] = True
+        return matrix_dependence
+
     @CachedAttribute
     def constant(self):
         return (self.Lmax==0, self.Lmax==0, False)
@@ -3623,7 +3815,7 @@ class Spherical3DBasis(MultidimensionalBasis):
         return self.radial_basis
 
     def S2_basis(self,radius=1):
-        return SWSH(self.coordsystem, self.shape[:2], radius=radius, dealias=self.dealias[:2], dtype=self.dtype,
+        return SphereBasis(self.coordsystem, self.shape[:2], radius=radius, dealias=self.dealias[:2], dtype=self.dtype,
                     azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library)
 
     @CachedMethod
@@ -4172,7 +4364,7 @@ class LiftTauDisk(operators.LiftTau, operators.PolarMOperator):
 
 class LiftTauBall(operators.LiftTau, operators.SphericalEllOperator):
 
-    input_basis_type = SWSH
+    input_basis_type = SphereBasis
     output_basis_type = BallBasis
 
     def __init__(self, operand, output_basis, n, out=None):
@@ -4280,7 +4472,7 @@ class LiftTauBallRadius(operators.LiftTau, operators.SphericalEllOperator):
 
 class LiftTauShell(operators.LiftTau, operators.SphericalEllOperator):
 
-    input_basis_type = SWSH
+    input_basis_type = SphereBasis
     output_basis_type = SphericalShellBasis
 
     def regindex_out(self, regindex_in):
@@ -4391,6 +4583,31 @@ class SphericalAzimuthalAverage(AzimuthalAverage, operators.Average, operators.S
             comp_in = operand.data[regindex]
             comp_out = out.data[regindex]
             comp_out[m0_out] = comp_in[m0_in]
+
+
+class SphereAverage(operators.Average, operators.SeparableSphereOperator):
+    """Todo: skip when Nphi = Ntheta = 1."""
+
+    input_coord_type = S2Coordinates
+    input_basis_type = SphereBasis
+    subaxis_dependence = [False, True]
+    complex_operator = False
+
+    def _output_basis(self, input_basis):
+        # Copy with Nphi = Ntheta = 1
+        shape = list(input_basis.shape)
+        shape[0] = shape[1] = 1
+        return input_basis.clone_with(shape=tuple(shape))
+
+    def new_operand(self, operand, **kw):
+        return operators.Average(operand, self.coord, **kw)
+
+    def spinindex_out(self, spinindex_in):
+        return (spinindex_in,)
+
+    @staticmethod
+    def symbol(spinindex_in, spinindex_out, ell, radius):
+        return 1.0 * (ell == 0) * (spinindex_in == spinindex_out)
 
 
 class SphericalAverage(operators.Average, operators.SphericalEllOperator):
@@ -4914,7 +5131,7 @@ class SphericalShellRadialInterpolate(operators.Interpolate, operators.Spherical
 
 class S2RadialComponent(operators.RadialComponent):
 
-    basis_type = SWSH
+    basis_type = SphereBasis
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
@@ -4948,7 +5165,7 @@ class S2RadialComponent(operators.RadialComponent):
 
 class S2AngularComponent(operators.AngularComponent):
 
-    basis_type = SWSH
+    basis_type = SphereBasis
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
@@ -5120,7 +5337,7 @@ class PolarAdvectiveCFL(operators.AdvectiveCFL):
 class S2AdvectiveCFL(operators.AdvectiveCFL):
 
     input_coord_type = S2Coordinates
-    input_basis_type = SWSH
+    input_basis_type = SphereBasis
 
     @CachedMethod
     def cfl_spacing(self, r=None):
