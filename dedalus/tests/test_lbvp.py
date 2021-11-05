@@ -4,32 +4,75 @@ Test 1D LBVP.
 import pytest
 import numpy as np
 import functools
+import dedalus.public as d3
 from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
 from dedalus.tools.cache import CachedFunction
 
 
-@pytest.mark.parametrize('dtype', [np.complex128, np.float64])
+dtype_range = [np.float64, np.complex128]
+
+
 @pytest.mark.parametrize('Nx', [32])
-def test_heat_1d_periodic(Nx, dtype):
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('matrix_coupling', [True, False])
+def test_poisson_1d_fourier(Nx, dtype, matrix_coupling):
     # Bases
-    c = coords.Coordinate('x')
-    d = distributor.Distributor((c,))
+    coord = d3.Coordinate('x')
+    dist = d3.Distributor(coord, dtype=dtype)
     if dtype == np.complex128:
-        xb = basis.ComplexFourier(c, size=Nx, bounds=(0, 2*np.pi))
+        basis = d3.ComplexFourier(coord, size=Nx, bounds=(0, 2*np.pi))
     elif dtype == np.float64:
-        xb = basis.RealFourier(c, size=Nx, bounds=(0, 2*np.pi))
-    x = xb.local_grid(1)
+        basis = d3.RealFourier(coord, size=Nx, bounds=(0, 2*np.pi))
+    x = basis.local_grid(1)
     # Fields
-    u = field.Field(name='u', dist=d, bases=(xb,), dtype=dtype)
-    F = field.Field(name='F', dist=d, bases=(xb,), dtype=dtype)
+    u = dist.Field(name='u', bases=basis)
+    g = dist.Field(name='c')
+    # Substitutions
+    dx = lambda A: d3.Differentiate(A, coord)
+    integ = lambda A: d3.Integrate(A, coord)
+    F = dist.Field(bases=basis)
     F['g'] = -np.sin(x)
     # Problem
-    dx = lambda A: operators.Differentiate(A, c)
-    problem = problems.LBVP([u])
-    problem.add_equation((dx(dx(u)), F), condition='nx != 0')
-    problem.add_equation((u, 0), condition='nx == 0')
+    problem = d3.LBVP([u, g], namespace=locals())
+    problem.add_equation("dx(dx(u)) + g = F")
+    problem.add_equation("integ(u) = 0")
     # Solver
-    solver = solvers.LinearBoundaryValueSolver(problem, matrix_coupling=[False])
+    solver = problem.build_solver(matrix_coupling=[matrix_coupling])
+    solver.solve()
+    # Check solution
+    u_true = np.sin(x)
+    assert np.allclose(u['g'], u_true)
+
+
+@pytest.mark.parametrize('Nx', [32])
+@pytest.mark.parametrize('a0', [-1/2, 0])
+@pytest.mark.parametrize('b0', [-1/2, 0])
+@pytest.mark.parametrize('da', [0, 1])
+@pytest.mark.parametrize('db', [0, 1])
+@pytest.mark.parametrize('dtype', dtype_range)
+def test_poisson_1d_jacobi(Nx, a0, b0, da, db, dtype):
+    # Bases
+    coord = d3.Coordinate('x')
+    dist = d3.Distributor(coord, dtype=dtype)
+    basis = d3.Jacobi(coord, size=Nx, bounds=(0, 2*np.pi), a=a0+da, b=b0+db, a0=a0, b0=b0)
+    x = basis.local_grid(1)
+    # Fields
+    u = dist.Field(name='u', bases=basis)
+    tau1 = dist.Field(name='tau1')
+    tau2 = dist.Field(name='tau2')
+    # Substitutions
+    dx = lambda A: d3.Differentiate(A, coord)
+    lift_basis = basis.clone_with(a=a0+da+2, b=b0+db+2)
+    lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
+    F = dist.Field(bases=basis)
+    F['g'] = -np.sin(x)
+    # Problem
+    problem = d3.LBVP([u, tau1, tau2], namespace=locals())
+    problem.add_equation("dx(dx(u)) + lift(tau1,-1) + lift(tau2,-2) = F")
+    problem.add_equation("u(x='left') = 0")
+    problem.add_equation("u(x='right') = 0")
+    # Solver
+    solver = problem.build_solver()
     solver.solve()
     # Check solution
     u_true = np.sin(x)

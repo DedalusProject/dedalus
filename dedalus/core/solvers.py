@@ -74,7 +74,7 @@ class SolverBase:
             problem_coupling = np.array(problem.matrix_coupling)
             matrix_coupling = np.array(matrix_coupling)
             if np.any(~matrix_coupling & problem_coupling):
-                raise ValueError(f"Specified solver coupling incompatible with problem coupling: {problem_coupling}")
+                raise ValueError(f"Specified solver coupling is incompatible with problem coupling: {problem_coupling}")
         # Check that coupled dimensions are local
         coeff_layout = self.dist.coeff_layout
         coupled_nonlocal = matrix_coupling & ~coeff_layout.local

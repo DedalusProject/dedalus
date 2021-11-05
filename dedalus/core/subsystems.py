@@ -117,7 +117,9 @@ class Subsystem:
         self.group = group
         # Determine matrix group using solver matrix dependence
         matrix_dependence = solver.matrix_dependence | solver.matrix_coupling
-        self.matrix_group = tuple(replace(group, ~matrix_dependence, 0))
+        #self.matrix_group = tuple(replace(group, ~matrix_dependence, 0))
+        # TODO: add back in matrix_group to reduce redundant subproblems
+        self.matrix_group = group
 
     def coeff_slices(self, domain):
         slices = self.dist.coeff_layout.local_groupset_slices(self.group, domain, scales=1)
@@ -156,29 +158,29 @@ class Subsystem:
     def field_size(self, field):
         return np.prod(self.field_shape(field))
 
-    @CachedMethod
-    def valid_field_slices(self, field):
-        # Enumerate component indices
-        comp_shape = tuple(cs.dim for cs in field.tensorsig)
-        enum_components = list(enumerate(np.ndindex(*comp_shape)))
-        # Filter through all bases
-        for basis in field.domain.bases:
-            enum_components = basis.valid_components(self.group, field.tensorsig, enum_components)
-        # Keep remaining components
-        comp_selection = np.array([i for i, comp in enum_components])
-        coeff_slices = self.coeff_slices(field.domain)
-        return (comp_selection,) + coeff_slices
+    # @CachedMethod
+    # def valid_field_slices(self, field):
+    #     # Enumerate component indices
+    #     comp_shape = tuple(cs.dim for cs in field.tensorsig)
+    #     enum_components = list(enumerate(np.ndindex(*comp_shape)))
+    #     # Filter through all bases
+    #     for basis in field.domain.bases:
+    #         enum_components = basis.valid_components(self.group, field.tensorsig, enum_components)
+    #     # Keep remaining components
+    #     comp_selection = np.array([i for i, comp in enum_components])
+    #     coeff_slices = self.coeff_slices(field.domain)
+    #     return (comp_selection,) + coeff_slices
 
-    @CachedMethod
-    def valid_field_shape(self, field):
-        slices = self.valid_field_slices(field)
-        comp_selection = slices[0]
-        coeff_shape = self.coeff_shape(field.domain)
-        return (comp_selection.size,) + coeff_shape
+    # @CachedMethod
+    # def valid_field_shape(self, field):
+    #     slices = self.valid_field_slices(field)
+    #     comp_selection = slices[0]
+    #     coeff_shape = self.coeff_shape(field.domain)
+    #     return (comp_selection.size,) + coeff_shape
 
-    @CachedMethod
-    def valid_field_size(self, field):
-        return np.prod(self.valid_field_shape(field))
+    # @CachedMethod
+    # def valid_field_size(self, field):
+    #     return np.prod(self.valid_field_shape(field))
 
     @CachedMethod
     def _gather_scatter_setup(self, fields):
@@ -269,14 +271,14 @@ class Subproblem:
     def field_size(self, field):
         return self.subsystems[0].field_size(field)
 
-    def valid_field_slices(self, field):
-        return self.subsystems[0].valid_field_slices(field)
+    # def valid_field_slices(self, field):
+    #     return self.subsystems[0].valid_field_slices(field)
 
-    def valid_field_shape(self, field):
-        return self.subsystems[0].valid_field_shape(field)
+    # def valid_field_shape(self, field):
+    #     return self.subsystems[0].valid_field_shape(field)
 
-    def valid_field_size(self, field):
-        return self.subsystems[0].valid_field_size(field)
+    # def valid_field_size(self, field):
+    #     return self.subsystems[0].valid_field_size(field)
 
     def inclusion_matrices(self, bases):
         """List of inclusion matrices."""
@@ -349,28 +351,28 @@ class Subproblem:
     #         matrices.append(matrix)
     #     return reduce(sparse.kron, matrices, 1)
 
-    def group_to_modes(self, field):
-        """Matrix restricting group data to nonzero modes."""
-        # matrices = []
-        # for group, basis in zip(self.group, bases):
-        #     if basis is None:
-        #         matrices.append(np.array([[1]]))
-        #     else:
-        #         matrices.append(basis.mode_map(group))
-        # return reduce(sparse.kron, matrices, 1).tocsr()
-        fsize = self.field_size(field)
-        if fsize:
-            vfshape = self.valid_field_shape(field)
-            indices = np.arange(fsize).reshape((-1,) + vfshape[1:])
-            # Avoid issue when there are no valid slices
-            if self.valid_field_slices(field)[0].size:
-                indices = indices[self.valid_field_slices(field)[0]].ravel()
-            else:
-                indices = slice(0, 0)
-        else:
-            indices = (slice(None), slice(None))
-        matrix = sparse.identity(fsize, format='csr')[indices]
-        return matrix.tocsr()
+    # def group_to_modes(self, field):
+    #     """Matrix restricting group data to nonzero modes."""
+    #     # matrices = []
+    #     # for group, basis in zip(self.group, bases):
+    #     #     if basis is None:
+    #     #         matrices.append(np.array([[1]]))
+    #     #     else:
+    #     #         matrices.append(basis.mode_map(group))
+    #     # return reduce(sparse.kron, matrices, 1).tocsr()
+    #     fsize = self.field_size(field)
+    #     if fsize:
+    #         vfshape = self.valid_field_shape(field)
+    #         indices = np.arange(fsize).reshape((-1,) + vfshape[1:])
+    #         # Avoid issue when there are no valid slices
+    #         if self.valid_field_slices(field)[0].size:
+    #             indices = indices[self.valid_field_slices(field)[0]].ravel()
+    #         else:
+    #             indices = slice(0, 0)
+    #     else:
+    #         indices = (slice(None), slice(None))
+    #     matrix = sparse.identity(fsize, format='csr')[indices]
+    #     return matrix.tocsr()
 
     def valid_modes(self, field):
         valid_modes = self.dist.coeff_layout.valid_elements(field.tensorsig, field.domain, field.scales)
@@ -441,7 +443,7 @@ class Subproblem:
         # Invalidate equations that fail condition test
         for n, eqn_cond in enumerate(eqn_conditions):
             if not eqn_cond:
-                valid_eqn[n][:] = False
+                valid_eqn[n] = False * valid_eqn[n] # Force copy instead of changing in place
         # Convert to filter matrices
         valid_eqn = sparse.diags(np.concatenate([v.ravel() for v in valid_eqn], dtype=int)).tocsr()
         valid_var = sparse.diags(np.concatenate([v.ravel() for v in valid_var], dtype=int)).tocsr()
@@ -525,7 +527,7 @@ def left_permutation(subproblem, equations, bc_top, interleave_components):
     L0 = []
     for eqn in equations:
         L1 = []
-        vfshape = subproblem.valid_field_shape(eqn['LHS'])
+        vfshape = subproblem.field_shape(eqn['LHS'])
         if vfshape[0] == 0:
             L1.append([])
             L0.append(L1)
@@ -587,7 +589,7 @@ def right_permutation(subproblem, variables, tau_left, interleave_components):
     L0 = []
     for var in variables:
         L1 = []
-        vfshape = subproblem.valid_field_shape(var)
+        vfshape = subproblem.field_shape(var)
         if vfshape[0] == 0:
             L1.append([])
             L0.append(L1)
@@ -629,4 +631,4 @@ def right_permutation(subproblem, variables, tau_left, interleave_components):
     else:
         indices = [indices[dim] for dim in dims[::-1]]
     indices = sum(indices, [])
-    return perm_matrix(indices, source_index=False, sparse=True).tocsr()
+    return perm_matrix(indices, source_index=True, sparse=True).tocsr()

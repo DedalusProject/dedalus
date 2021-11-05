@@ -277,10 +277,6 @@ class Basis:
         else:
             raise NotImplementedError()
 
-    def valid_components(self, group, tensorsig, enum_components_input):
-        # Keep all components by default
-        return enum_components_input
-
 
 # class Constant(Basis, metaclass=CachedClass):
 #     """Constant basis."""
