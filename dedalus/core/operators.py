@@ -849,19 +849,25 @@ class SpectralOperator1D(SpectralOperator):
     def subproblem_matrix(self, subproblem):
         """Build operator matrix for a specific subproblem."""
         axis = self.last_axis
-        # Build identity matrices for each axis
-        subsystem_shape = subproblem.coeff_shape(self.domain)
-        factors = [sparse.identity(n, format='csr') for n in subsystem_shape]
-        # Substitute factor for operator axis
-        if subproblem.group[axis] is None:
-            factors[axis] = self.subspace_matrix(self.dist.coeff_layout)
+        group = subproblem.group[axis]
+        # Track sizes for previous and subsequent axes
+        shape = subproblem.coeff_shape(self.domain)
+        N_before = prod([cs.dim for cs in self.tensorsig]) * prod(shape[:axis])
+        N_after = prod(shape[axis+1:])
+        # Build matrix for operator axis
+        if group is None:
+            matrix = self.subspace_matrix(self.dist.coeff_layout)
         else:
-            group = subproblem.group[axis]
-            factors[axis] = self.group_matrix(group)
-        # Add factor for components
-        comps = prod([cs.dim for cs in self.tensorsig])
-        factors = [sparse.identity(comps, format='csr')] + factors
-        return reduce(sparse.kron, factors, 1).tocsr()
+            matrix = self.group_matrix(group)
+        # Kronecker up to proper size
+        if N_before > 1:
+            I_before = sparse.identity(N_before, format='coo') # COO faster for kron
+            matrix = sparse.kron(I_before, matrix)
+        if N_after > 1:
+            I_after = sparse.identity(N_after, format='coo') # COO faster for kron
+            matrix = sparse.kron(matrix, I_after)
+        # Convert to CSR (might be numpy array)
+        return sparse.csr_matrix(matrix)
 
     def subspace_matrix(self, layout):
         """Build matrix operating on local subspace data."""
