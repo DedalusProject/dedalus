@@ -707,7 +707,7 @@ class Legendre(ImplicitBasis):
     def _evaluate_basis_functions(cls, N, xn):
         """Evaluate basis functions on a specified native grid."""
         # Run recursion in higher precision
-        g = cls._recursion(N, xn.astype(np.float128))
+        g = cls._recursion(N, xn.astype(np.longdouble))
         return np.array(g).astype(xn.dtype)
 
     @CachedMethod
@@ -1056,7 +1056,7 @@ class Hermite(ImplicitBasis):
     def _evaluate_basis_functions(cls, N, xn, envelope):
         """Evaluate basis functions on a specified native grid."""
         # Run recursion in higher precision
-        h = cls._recursion(N, xn.astype(np.float128), envelope)
+        h = cls._recursion(N, xn.astype(np.longdouble), envelope)
         return np.array(h).astype(xn.dtype)
 
     @CachedMethod
@@ -1454,7 +1454,7 @@ class Laguerre(ImplicitBasis):
     def _evaluate_basis_functions(cls, N, xn, envelope):
         """Evaluate basis functions on a specified native grid."""
         # Run recursion in higher precision
-        g = cls._recursion(N, xn.astype(np.float128), envelope)
+        g = cls._recursion(N, xn.astype(np.longdouble), envelope)
         return np.array(g).astype(xn.dtype)
 
     @CachedMethod
