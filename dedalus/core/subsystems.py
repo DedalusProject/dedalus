@@ -375,7 +375,7 @@ class Subproblem:
     #     return matrix.tocsr()
 
     def valid_modes(self, field):
-        valid_modes = self.dist.coeff_layout.valid_elements(field.tensorsig, field.domain, field.scales)
+        valid_modes = self.dist.coeff_layout.valid_elements(field.tensorsig, field.domain, scales=1)
         return valid_modes[self.field_slices(field)]
 
     # def mode_map(self, basis_sets):

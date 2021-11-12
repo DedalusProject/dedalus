@@ -21,9 +21,6 @@ import dedalus.public as d3
 import logging
 logger = logging.getLogger(__name__)
 
-np.seterr(over="raise")
-# TODO: convert to float64 and remove imag cleaning once constants are working
-
 
 # Simulation units
 meter = 1 / 6.37122e6
@@ -41,7 +38,7 @@ g = 9.80616 * meter / second**2
 H = 1e4 * meter
 timestep = 600 * second
 stop_sim_time = 240 * hour
-dtype = np.complex128
+dtype = np.float64
 
 # Bases
 coords = d3.S2Coordinates('phi', 'theta')
@@ -100,8 +97,6 @@ try:
     logger.info('Starting loop')
     start_time = time.time()
     while solver.proceed:
-        for field in problem.variables:
-            field['g'].imag = 0
         solver.step(timestep)
         if (solver.iteration-1) % 10 == 0:
             logger.info('Iteration=%i, Time=%e, dt=%e' %(solver.iteration, solver.sim_time, timestep))

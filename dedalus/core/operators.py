@@ -2033,7 +2033,6 @@ class SpinSkew(Skew):
                 out.data[sx] = arg.data[sy]
                 np.multiply(arg.data[sx], -1, out=out.data[sy])
             else:
-                print(arg.data.shape)
                 # Spinorder: -, +
                 minus = axslice(index, 0, 1)
                 plus = axslice(index, 1, 2)

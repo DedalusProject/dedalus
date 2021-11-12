@@ -1016,8 +1016,8 @@ class RealFourier(FourierBase, metaclass=CachedClass):
     def valid_elements(self, tensorsig, grid_space, elements):
         vshape = tuple(cs.dim for cs in tensorsig) + elements[0].shape
         valid = np.ones(shape=vshape, dtype=bool)
-        # Drop msin part of k=0
         if not grid_space[0]:
+            # Drop msin part of k=0
             groups = self.elements_to_groups(grid_space, elements)
             allcomps = tuple(slice(None) for cs in tensorsig)
             selection = (groups == 0) * (elements % 2 == 1)
@@ -2855,28 +2855,50 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
     #     comp5 = reduced_view(comp, axis=self.axis, dim=self.dist.dim)
     #     return comp5[(slice(None),) + slices + (slice(None),)]
 
-    def valid_components(self, group, tensorsig, enum_components_input):
-        ell = group[self.first_axis + 1]
-        enum_components_output = []
-        for i, comp in enum_components_input:
-            # Filter for indices in self.coordsystem
-            if self.coordsystem.dim == 3:
-                spinindex_3d = tuple([j for j, cs in zip(comp, tensorsig) if cs is self.coordsystem])
-                spinindex_2d = tuple([j for j, cs in zip(comp, tensorsig) if cs is self.coordsystem.S2coordsys])
-                spintotal_3d = self.spintotal(spinindex_3d)
-                spintotal_2d = self.spintotal(spinindex_2d)
-                if ell is None: # HACK
-                    enum_components_output.append((i, comp))
-                elif abs(spintotal_3d + spintotal_2d) <= ell:
-                    enum_components_output.append((i, comp))
+    def valid_elements(self, tensorsig, grid_space, elements):
+        if grid_space[1]:
+            # grid-grid and coeff-grid
+            # Same as Fourier validity before spin recombination
+            return self.azimuth_basis.valid_elements(tensorsig, grid_space, elements)
+        else:
+            # coeff-coeff
+            m, ell = self.elements_to_groups(grid_space, elements)
+            if tensorsig:
+                rank = len(tensorsig)
+                dim = len(m.shape)
+                m = m[(None,) * rank]
+                ell = ell[(None,) * rank]
+                s = self.spin_weights(tensorsig)
+                s = s.T[(None,) * dim].T
+                valid = np.maximum(np.abs(m), np.abs(s)) <= ell
             else:
-                spinindex_2d = tuple([j for j, cs in zip(comp, tensorsig) if cs is self.coordsystem])
-                spintotal_2d = self.spintotal(spinindex_2d)
-                if ell is None: # HACK
-                    enum_components_output.append((i, comp))
-                elif abs(spintotal_2d) <= ell:
-                    enum_components_output.append((i, comp))
-        return enum_components_output
+                valid = np.abs(m) <= ell
+                # Drop msin part of m = 0
+                valid[(m == 0) * (elements[0] % 2 == 1)] = False
+            return valid
+
+    # def valid_components(self, group, tensorsig, enum_components_input):
+    #     ell = group[self.first_axis + 1]
+    #     enum_components_output = []
+    #     for i, comp in enum_components_input:
+    #         # Filter for indices in self.coordsystem
+    #         if self.coordsystem.dim == 3:
+    #             spinindex_3d = tuple([j for j, cs in zip(comp, tensorsig) if cs is self.coordsystem])
+    #             spinindex_2d = tuple([j for j, cs in zip(comp, tensorsig) if cs is self.coordsystem.S2coordsys])
+    #             spintotal_3d = self.spintotal(spinindex_3d)
+    #             spintotal_2d = self.spintotal(spinindex_2d)
+    #             if ell is None: # HACK
+    #                 enum_components_output.append((i, comp))
+    #             elif abs(spintotal_3d + spintotal_2d) <= ell:
+    #                 enum_components_output.append((i, comp))
+    #         else:
+    #             spinindex_2d = tuple([j for j, cs in zip(comp, tensorsig) if cs is self.coordsystem])
+    #             spintotal_2d = self.spintotal(spinindex_2d)
+    #             if ell is None: # HACK
+    #                 enum_components_output.append((i, comp))
+    #             elif abs(spintotal_2d) <= ell:
+    #                 enum_components_output.append((i, comp))
+    #     return enum_components_output
 
 
 class ConvertConstantSphere(operators.ConvertConstant, operators.SeparableSphereOperator):
