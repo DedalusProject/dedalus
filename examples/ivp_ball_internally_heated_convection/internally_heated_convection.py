@@ -34,7 +34,6 @@ To run, restart, and plot using e.g. 4 processes:
 
 import sys
 import numpy as np
-import time
 import dedalus.public as d3
 import logging
 logger = logging.getLogger(__name__)
@@ -131,8 +130,7 @@ flow.add_property(d3.dot(u,u), name='u2')
 
 # Main loop
 try:
-    logger.info('Starting loop')
-    start_time = time.time()
+    logger.info('Starting main loop')
     while solver.proceed:
         timestep = CFL.compute_timestep()
         solver.step(timestep)
@@ -143,9 +141,5 @@ except:
     logger.error('Exception raised, triggering end of main loop.')
     raise
 finally:
-    end_time = time.time()
-    logger.info('Iterations: %i' %solver.iteration)
-    logger.info('Sim end time: %f' %solver.sim_time)
-    logger.info('Run time: %.2f sec' %(end_time-start_time))
-    logger.info('Run time: %f cpu-hr' %((end_time-start_time)/60/60*dist.comm.size))
+    solver.log_stats()
 
