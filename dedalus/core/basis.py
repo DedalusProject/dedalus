@@ -3940,7 +3940,11 @@ class Spherical3DBasis(MultidimensionalBasis):
     def global_grid_spacing(self, axis, scales=None):
         """Global grids spacings."""
         if scales is None: scales = (1,1,1)
-        return np.gradient(self.global_grids(scales=scales)[axis], axis=axis, edge_order=2)
+        grid = self.global_grids(scales=scales)[axis]
+        if grid.size == 1:
+            return np.array([np.inf,], dtype=grid.dtype)
+        else:
+            return np.gradient(grid, axis=axis, edge_order=2)
 
     @CachedMethod
     def local_grid_spacing(self, axis, scales=None):
