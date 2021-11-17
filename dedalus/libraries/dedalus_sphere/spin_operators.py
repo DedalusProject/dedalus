@@ -316,6 +316,10 @@ class Intertwiner(TensorOperator):
     
     @int2tuple
     def forbidden_regularity(self,regularity):
+        # Fast return for clearly allowed cases
+        if self.L >= len(regularity):
+            return False
+        # Check other cases
         walk = (self.L,)
         for r in regularity[::-1]:
             walk += (walk[-1] + r,)
