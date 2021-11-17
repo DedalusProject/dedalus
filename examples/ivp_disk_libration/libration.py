@@ -29,7 +29,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 # TODO: remove azimuth library? might need to fix DCT truncation
-# TODO: automate hermitian conjugacy enforcement
 # TODO: finalize filehandlers to process virtual file
 
 
@@ -96,7 +95,6 @@ flow = d3.GlobalFlowProperty(solver, cadence=100)
 flow.add_property(d3.dot(u,u), name='u2')
 
 # Main loop
-hermitian_cadence = 100
 try:
     logger.info('Starting loop')
     start_time = time.time()
@@ -105,10 +103,6 @@ try:
         if (solver.iteration-1) % 10 == 0:
             max_u = np.sqrt(flow.max('u2'))
             logger.info("Iteration=%i, Time=%e, dt=%e, max(u)=%e" %(solver.iteration, solver.sim_time, timestep, max_u))
-        # Impose hermitian symmetry on two consecutive timesteps because we are using a 2-stage timestepper
-        if solver.iteration % hermitian_cadence in [0, 1]:
-            for f in solver.state:
-                f.require_grid_space()
 except:
     logger.error('Exception raised, triggering end of main loop.')
     raise

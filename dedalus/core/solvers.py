@@ -375,6 +375,8 @@ class InitialValueSolver(SolverBase):
         Dedalus problem.
     timestepper : timestepper class
         Timestepper to use in evolving initial conditions
+    enforce_real_cadence : int, optional
+        Iteration cadence for enforcing Hermitian symmetry on real variables (default: 100).
     **kw :
         Other options passed to ProblemBase.
 
@@ -400,9 +402,10 @@ class InitialValueSolver(SolverBase):
     # Default to factorizer to speed up repeated solves
     matsolver_default = 'MATRIX_FACTORIZER'
 
-    def __init__(self, problem, timestepper, **kw):
+    def __init__(self, problem, timestepper, enforce_real_cadence=100, **kw):
         logger.debug('Beginning IVP instantiation')
         super().__init__(problem, **kw)
+        self.enforce_real_cadence = enforce_real_cadence
         self._wall_time_array = np.zeros(1, dtype=float)
         self.start_time = self.get_wall_time()
         # Build subproblems and subproblem matrices
@@ -533,17 +536,24 @@ class InitialValueSolver(SolverBase):
 
     def step(self, dt):
         """Advance system by one iteration/timestep."""
+        # Assert finite timestep
         if not np.isfinite(dt):
             raise ValueError("Invalid timestep")
-        # References
-        #state = self.state
-        # (Safety gather)
-        #state.gather()
+        # Enforce Hermitian symmetry for real variables
+        if np.isrealobj(self.dtype.type()):
+            # Enforce for as many iterations as timestepper uses internally
+            if self.iteration % self.enforce_real_cadence < self.timestepper.steps:
+                # Transform state variables to grid and back
+                # TODO: maybe this should be on scales=1?
+                for field in self.state:
+                    field.require_scales(field.domain.dealias)
+                for path in self.dist.paths:
+                    path.increment(self.state)
+                for path in self.dist.paths[::-1]:
+                    path.decrement(self.state)
         # Advance using timestepper
         wall_time = self.get_wall_time() - self.start_time
         self.timestepper.step(dt, wall_time)
-        # (Safety scatter)
-        #state.scatter()
         # Update iteration
         self.iteration += 1
 

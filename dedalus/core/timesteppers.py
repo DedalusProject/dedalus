@@ -59,8 +59,7 @@ class MultistepIMEX:
         self.RHS = CoeffSystem(solver.subproblems, dtype=solver.dtype)
 
         # Create deque for storing recent timesteps
-        N = max(self.amax, self.bmax, self.cmax)
-        self.dt = deque([0.]*N)
+        self.dt = deque([0.] * self.steps)
 
         # Create coefficient systems for multistep history
         self.MX = MX = deque()
@@ -195,6 +194,7 @@ class CNAB1(MultistepIMEX):
     amax = 1
     bmax = 1
     cmax = 1
+    steps = 1
 
     @classmethod
     def compute_coefficients(self, timesteps, iteration):
@@ -227,6 +227,7 @@ class SBDF1(MultistepIMEX):
     amax = 1
     bmax = 1
     cmax = 1
+    steps = 1
 
     @classmethod
     def compute_coefficients(self, timesteps, iteration):
@@ -258,6 +259,7 @@ class CNAB2(MultistepIMEX):
     amax = 2
     bmax = 2
     cmax = 2
+    steps = 2
 
     @classmethod
     def compute_coefficients(self, timesteps, iteration):
@@ -295,6 +297,7 @@ class MCNAB2(MultistepIMEX):
     amax = 2
     bmax = 2
     cmax = 2
+    steps = 2
 
     @classmethod
     def compute_coefficients(self, timesteps, iteration):
@@ -333,6 +336,7 @@ class SBDF2(MultistepIMEX):
     amax = 2
     bmax = 2
     cmax = 2
+    steps = 2
 
     @classmethod
     def compute_coefficients(self, timesteps, iteration):
@@ -370,6 +374,7 @@ class CNLF2(MultistepIMEX):
     amax = 2
     bmax = 2
     cmax = 2
+    steps = 2
 
     @classmethod
     def compute_coefficients(self, timesteps, iteration):
@@ -408,6 +413,7 @@ class SBDF3(MultistepIMEX):
     amax = 3
     bmax = 3
     cmax = 3
+    steps = 3
 
     @classmethod
     def compute_coefficients(self, timesteps, iteration):
@@ -448,6 +454,7 @@ class SBDF4(MultistepIMEX):
     amax = 4
     bmax = 4
     cmax = 4
+    steps = 4
 
     @classmethod
     def compute_coefficients(self, timesteps, iteration):
@@ -520,6 +527,8 @@ class RungeKuttaIMEX:
     U. M. Ascher, S. J. Ruuth, and R. J. Spiteri, Applied Numerical Mathematics (1997).
 
     """
+
+    steps = 1
 
     def __init__(self, solver):
 
