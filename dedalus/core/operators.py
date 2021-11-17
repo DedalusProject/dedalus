@@ -1842,7 +1842,8 @@ class TransposeComponents(LinearOperator, metaclass=MultiClass):
 class StandardTransposeComponents(TransposeComponents):
 
     cs_type = (coords.CartesianCoordinates,
-               coords.PolarCoordinates)
+               coords.PolarCoordinates,
+               coords.S2Coordinates)
 
     def subproblem_matrix(self, subproblem):
         """Build operator matrix for a specific subproblem."""
@@ -2685,7 +2686,10 @@ class PolarMOperator(SpectralOperator):
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
-        radial_basis = self.input_basis
+        if self.input_basis is None:
+            radial_basis = self.output_basis
+        else:
+            radial_basis = self.input_basis
         S_in = radial_basis.spin_weights(operand.tensorsig)
         S_out = radial_basis.spin_weights(self.tensorsig)  # Should this use output_basis?
         m = subproblem.group[self.last_axis - 1]
@@ -2697,7 +2701,7 @@ class PolarMOperator(SpectralOperator):
                 # Build identity matrices for each axis
                 subshape_in = subproblem.coeff_shape(self.operand.domain)
                 subshape_out = subproblem.coeff_shape(self.domain)
-                if spinindex_out in self.spinindex_out(spinindex_in):
+                if (spinindex_out in self.spinindex_out(spinindex_in)) and prod(subshape_out) and prod(subshape_in):
                     # Substitute factor for radial axis
                     factors = [sparse.eye(i, j, format='csr') for i, j in zip(subshape_out, subshape_in)]
                     radial_matrix = self.radial_matrix(spinindex_in, spinindex_out, m)

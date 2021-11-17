@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 # TODO: remove azimuth library? might need to fix DCT truncation
 # TODO: automate hermitian conjugacy enforcement
 # TODO: finalize filehandlers to process virtual file
+# TODO: figure out m=0 singular matrix issues
 
 
 # Parameters
@@ -53,11 +54,11 @@ S1_basis = basis.S1_basis(radius=1)
 # Fields
 u = dist.VectorField(coords, name='u', bases=basis)
 p = dist.Field(name='p', bases=basis)
-tau = dist.VectorField(coords, name='tau', bases=S1_basis)
+tau_u = dist.VectorField(coords, name='tau_u', bases=S1_basis)
+tau_p = dist.Field(name='tau_p')
 
 # Substitutions
 nu = Ekman
-
 integ = lambda A: d3.Integrate(A, coords)
 lift_basis = basis.clone_with(k=2) # Natural output basis
 lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
@@ -71,16 +72,16 @@ t = dist.Field()
 u0 = np.cos(t) * u0_real - np.sin(t) * u0_imag
 
 # Problem
-problem = d3.IVP([p, u, tau], time=t, namespace=locals())
-problem.add_equation("div(u) = 0")
-problem.add_equation("dt(u) - nu*lap(u) + grad(p) + lift(tau,-1) = - dot(u, grad(u0)) - dot(u0, grad(u))")
-problem.add_equation("u(r=1) = 0", condition='nphi != 0')
-problem.add_equation("azimuthal(u(r=1)) = 0", condition='nphi == 0')
-problem.add_equation("p(r=1) = 0", condition='nphi == 0') # Pressure gauge
+problem = d3.IVP([p, u, tau_u], time=t, namespace=locals())
+problem.add_equation("div(u) + tau_p = 0")
+problem.add_equation("dt(u) - nu*lap(u) + grad(p) + lift(tau_u,-1) = - dot(u, grad(u0)) - dot(u0, grad(u))")
+problem.add_equation("u(r=1) = 0")
+problem.add_equation("integ(p) = 0") # Pressure gauge
 
 # Solver
 solver = problem.build_solver(timestepper)
 solver.stop_sim_time = stop_sim_time
+solver.print_subproblem_ranks()
 
 # Initial conditions
 u.fill_random('g', seed=42, distribution='standard_normal') # Random noise

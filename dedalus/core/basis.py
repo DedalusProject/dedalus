@@ -1020,8 +1020,8 @@ class RealFourier(FourierBase, metaclass=CachedClass):
             # Drop msin part of k=0
             groups = self.elements_to_groups(grid_space, elements)
             allcomps = tuple(slice(None) for cs in tensorsig)
-            selection = (groups == 0) * (elements % 2 == 1)
-            valid[allcomps + (selection[0],)] = False
+            selection = (groups[0] == 0) * (elements[0] % 2 == 1)
+            valid[allcomps + (selection,)] = False
         return valid
 
     @CachedMethod
@@ -1765,6 +1765,13 @@ class PolarBasis(SpinBasis):
             m_maps.append((m, mg_slice, mc_slice, n_slice))
         return tuple(m_maps)
 
+    @CachedAttribute
+    def ell_reversed(self):
+        ell_reversed = {}
+        for m, mg_slice, mc_slice, ell_slice in self.m_maps:
+            ell_reversed[m] = False
+        return ell_reversed
+
     def global_grids(self, scales=None):
         if scales == None: scales = (1, 1)
         return (self.global_grid_azimuth(scales[0]),
@@ -1858,6 +1865,24 @@ class AnnulusBasis(PolarBasis):
         new_shape = (1, self.shape[1])
         dealias = self.dealias
         return AnnulusBasis(self.coordsystem, new_shape, radii=self.radii, k=self.k, alpha=self.alpha, dealias=dealias, radius_library=self.radius_library, dtype=self.dtype, azimuth_library=self.azimuth_library)
+
+    def valid_elements(self, tensorsig, grid_space, elements):
+        if grid_space[1]:
+            # grid-grid and coeff-grid
+            # Same as Fourier validity before spin recombination
+            return self.azimuth_basis.valid_elements(tensorsig, grid_space, elements)
+        else:
+            # coeff-coeff
+            m, n = self.elements_to_groups(grid_space, elements)
+            if tensorsig:
+                rank = len(tensorsig)
+                m = m[(None,) * rank]
+                n = n[(None,) * rank]
+            valid = 0 <= n
+            if not tensorsig:
+                # Drop msin part of m = 0
+                valid[(m == 0) * (elements[0] % 2 == 1)] = False
+            return valid
 
     @staticmethod
     def _nmin(m):
@@ -2107,6 +2132,24 @@ class DiskBasis(PolarBasis, metaclass=CachedClass):
         new_shape = (1, self.shape[1])
         dealias = self.dealias
         return DiskBasis(self.coordsystem, new_shape, radius=self.radius, k=self.k, alpha=self.alpha, dealias=dealias, radius_library=self.radius_library, dtype=self.dtype, azimuth_library=self.azimuth_library)
+
+    def valid_elements(self, tensorsig, grid_space, elements):
+        if grid_space[1]:
+            # grid-grid and coeff-grid
+            # Same as Fourier validity before spin recombination
+            return self.azimuth_basis.valid_elements(tensorsig, grid_space, elements)
+        else:
+            # coeff-coeff
+            m, n = self.elements_to_groups(grid_space, elements)
+            if tensorsig:
+                rank = len(tensorsig)
+                m = m[(None,) * rank]
+                n = n[(None,) * rank]
+            valid = (np.abs(m) // 2) <= n
+            if not tensorsig:
+                # Drop msin part of m = 0
+                valid[(m == 0) * (elements[0] % 2 == 1)] = False
+            return valid
 
     @staticmethod
     def _nmin(m):
@@ -4380,6 +4423,10 @@ class LiftTauDisk(operators.LiftTau, operators.PolarMOperator):
             submatrices.append(submatrix_row)
         matrix = sparse.bmat(submatrices)
         matrix.tocsr()
+        # Convert tau to spin first
+        if self.tensorsig:
+            U = radial_basis.spin_recombination_matrix(self.tensorsig)
+            matrix = (matrix @ sparse.csr_matrix(U)).tocsr()
         return matrix
 
     def radial_matrix(self, spinindex_in, spinindex_out, m):
@@ -4694,7 +4741,7 @@ class IntegrateSpinBasis(operators.PolarMOperator):
     def spinindex_out(self, spinindex_in):
         return (spinindex_in,)
 
-    def radial_matrix(self, m):
+    def radial_matrix(self, spinindex_in, spinindex_out, m):
         # Wrap cached method
         return self._radial_matrix(self.radial_basis, m)
 
@@ -4716,7 +4763,7 @@ class IntegrateSpinBasis(operators.PolarMOperator):
                 slices = tuple(slices)
                 vec_in  = operand.data[slices]
                 vec_out = out.data[slices]
-                A = self.radial_matrix(m)
+                A = self._radial_matrix(self.radial_basis, m)
                 vec_out += apply_matrix(A, vec_in, axis=axis)
 
 

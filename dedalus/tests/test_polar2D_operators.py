@@ -239,51 +239,46 @@ def test_implicit_trace_tensor(Nphi, Nr, k, dealias, basis, dtype):
     assert np.allclose(f['c'], g['c'])
 
 
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('k', k_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('basis', [build_disk, build_annulus])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 @pytest.mark.parametrize('layout', ['c', 'g'])
-def test_explicit_transpose_tensor(Nphi, Nr, k, dealias, basis, dtype, layout):
+def test_transpose_explicit(basis, Nphi, Nr, k, dealias, dtype, layout):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
-    u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
-    u.set_scales(b.domain.dealias)
-    ex = np.array([-np.sin(phi)+0.*r,np.cos(phi)+0.*r])
-    ey = np.array([np.cos(phi)+0.*r,np.sin(phi)+0.*r])
-    u['g'] = 4*x**3*ey + 3*y**2*ey
-    T = operators.Gradient(u, c).evaluate()
-    Tg = np.transpose(np.copy(T['g']), (1,0,2,3))
-    T.require_layout(layout)
-    T = operators.TransposeComponents(T).evaluate()
-    assert np.allclose(T['g'], Tg)
+    # Random tensor field
+    f = d.TensorField((c, c), bases=b)
+    f.fill_random(layout='g')
+    f.low_pass_filter(scales=0.75)
+    # Evaluate transpose
+    f.require_layout(layout)
+    g = operators.transpose(f).evaluate()
+    assert np.allclose(g['g'], np.transpose(f['g'], (1,0,2,3)))
 
 
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Nr', Nr_range)
 @pytest.mark.parametrize('k', k_range)
 @pytest.mark.parametrize('dealias', dealias_range)
-@pytest.mark.parametrize('basis', [build_disk, build_annulus])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-def test_implicit_transpose_tensor(Nphi, Nr, k, dealias, basis, dtype):
+def test_transpose_implicit(basis, Nphi, Nr, k, dealias, dtype):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
-    u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
-    u.set_scales(b.domain.dealias)
-    ex = np.array([-np.sin(phi)+0.*r,np.cos(phi)+0.*r])
-    ey = np.array([np.cos(phi)+0.*r,np.sin(phi)+0.*r])
-    u['g'] = 4*x**3*ey + 3*y**2*ey
-    T = operators.Gradient(u, c).evaluate()
-    Ttg = np.transpose(np.copy(T['g']), (1,0,2,3))
-    Tt = field.Field(dist=d, bases=(b,), tensorsig=(c,c,), dtype=dtype)
-    trans = lambda A: operators.TransposeComponents(A)
-    problem = problems.LBVP([Tt])
-    problem.add_equation((trans(Tt), T))
-    # Solver
-    solver = solvers.LinearBoundaryValueSolver(problem)
+    # Random tensor field
+    f = d.TensorField((c, c), bases=b)
+    f.fill_random(layout='g')
+    f.low_pass_filter(scales=0.75)
+    # Transpose LBVP
+    u = d.TensorField((c, c), bases=b)
+    problem = problems.LBVP([u], namespace=locals())
+    problem.add_equation("trans(u) = trans(f)")
+    solver = problem.build_solver()
     solver.solve()
-    Tt.require_scales(b.domain.dealias)
-    assert np.allclose(Tt['g'], Ttg)
+    u.require_scales(b.domain.dealias)
+    f.require_scales(b.domain.dealias)
+    assert np.allclose(u['g'], f['g'])
 
 
 @pytest.mark.parametrize('Nphi', [16])
