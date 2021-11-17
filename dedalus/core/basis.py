@@ -1017,11 +1017,13 @@ class RealFourier(FourierBase, metaclass=CachedClass):
         vshape = tuple(cs.dim for cs in tensorsig) + elements[0].shape
         valid = np.ones(shape=vshape, dtype=bool)
         if not grid_space[0]:
-            # Drop msin part of k=0
-            groups = self.elements_to_groups(grid_space, elements)
-            allcomps = tuple(slice(None) for cs in tensorsig)
-            selection = (groups[0] == 0) * (elements[0] % 2 == 1)
-            valid[allcomps + (selection,)] = False
+            # Drop msin part of k=0 for all cartesian components and spin scalars
+            if not isinstance(self.coord, AzimuthalCoordinate) or not tensorsig:
+                # Drop msin part of k=0
+                groups = self.elements_to_groups(grid_space, elements)
+                allcomps = tuple(slice(None) for cs in tensorsig)
+                selection = (groups[0] == 0) * (elements[0] % 2 == 1)
+                valid[allcomps + (selection,)] = False
         return valid
 
     @CachedMethod

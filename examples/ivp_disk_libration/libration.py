@@ -31,7 +31,6 @@ logger = logging.getLogger(__name__)
 # TODO: remove azimuth library? might need to fix DCT truncation
 # TODO: automate hermitian conjugacy enforcement
 # TODO: finalize filehandlers to process virtual file
-# TODO: figure out m=0 singular matrix issues
 
 
 # Parameters
@@ -72,7 +71,7 @@ t = dist.Field()
 u0 = np.cos(t) * u0_real - np.sin(t) * u0_imag
 
 # Problem
-problem = d3.IVP([p, u, tau_u], time=t, namespace=locals())
+problem = d3.IVP([p, u, tau_u, tau_p], time=t, namespace=locals())
 problem.add_equation("div(u) + tau_p = 0")
 problem.add_equation("dt(u) - nu*lap(u) + grad(p) + lift(tau_u,-1) = - dot(u, grad(u0)) - dot(u0, grad(u))")
 problem.add_equation("u(r=1) = 0")
@@ -81,7 +80,6 @@ problem.add_equation("integ(p) = 0") # Pressure gauge
 # Solver
 solver = problem.build_solver(timestepper)
 solver.stop_sim_time = stop_sim_time
-solver.print_subproblem_ranks()
 
 # Initial conditions
 u.fill_random('g', seed=42, distribution='standard_normal') # Random noise
