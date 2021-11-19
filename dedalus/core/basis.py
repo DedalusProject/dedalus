@@ -1886,24 +1886,6 @@ class AnnulusBasis(PolarBasis):
         dealias = self.dealias
         return AnnulusBasis(self.coordsystem, new_shape, radii=self.radii, k=self.k, alpha=self.alpha, dealias=dealias, radius_library=self.radius_library, dtype=self.dtype, azimuth_library=self.azimuth_library)
 
-    def valid_elements(self, tensorsig, grid_space, elements):
-        if grid_space[1]:
-            # grid-grid and coeff-grid
-            # Same as Fourier validity before spin recombination
-            return self.azimuth_basis.valid_elements(tensorsig, grid_space, elements)
-        else:
-            # coeff-coeff
-            m, n = self.elements_to_groups(grid_space, elements)
-            if tensorsig:
-                rank = len(tensorsig)
-                m = m[(None,) * rank]
-                n = n[(None,) * rank]
-            valid = 0 <= n
-            if not tensorsig:
-                # Drop msin part of m = 0
-                valid[(m == 0) * (elements[0] % 2 == 1)] = False
-            return valid
-
     @staticmethod
     def _nmin(m):
         return 0 * m  # To have same array shape as m
@@ -2922,29 +2904,6 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
                 valid[(m == 0) * (elements[0] % 2 == 1)] = False
             return valid
 
-    # def valid_components(self, group, tensorsig, enum_components_input):
-    #     ell = group[self.first_axis + 1]
-    #     enum_components_output = []
-    #     for i, comp in enum_components_input:
-    #         # Filter for indices in self.coordsystem
-    #         if self.coordsystem.dim == 3:
-    #             spinindex_3d = tuple([j for j, cs in zip(comp, tensorsig) if cs is self.coordsystem])
-    #             spinindex_2d = tuple([j for j, cs in zip(comp, tensorsig) if cs is self.coordsystem.S2coordsys])
-    #             spintotal_3d = self.spintotal(spinindex_3d)
-    #             spintotal_2d = self.spintotal(spinindex_2d)
-    #             if ell is None: # HACK
-    #                 enum_components_output.append((i, comp))
-    #             elif abs(spintotal_3d + spintotal_2d) <= ell:
-    #                 enum_components_output.append((i, comp))
-    #         else:
-    #             spinindex_2d = tuple([j for j, cs in zip(comp, tensorsig) if cs is self.coordsystem])
-    #             spintotal_2d = self.spintotal(spinindex_2d)
-    #             if ell is None: # HACK
-    #                 enum_components_output.append((i, comp))
-    #             elif abs(spintotal_2d) <= ell:
-    #                 enum_components_output.append((i, comp))
-    #     return enum_components_output
-
 
 class ConvertConstantSphere(operators.ConvertConstant, operators.SeparableSphereOperator):
 
@@ -3242,15 +3201,46 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
             #    R[axslice(i, n, n+self.dim)] += reshape_vector(Rb, dim=len(tensorsig), axis=i)
         return R
 
-    def valid_components(self, group, tensorsig, enum_components_input):
-        ell = group[self.first_axis + 1]
-        enum_components_output = []
-        for i, comp in enum_components_input:
-            # Filter for indices in self.coordsystem
-            regindex = tuple([j for j, cs in zip(comp, tensorsig) if cs is self.coordsystem])
-            if self.regularity_allowed(ell, regindex):
-                enum_components_output.append((i, comp))
-        return enum_components_output
+    def regularity_indices(self, tensorsig):
+        """Return array of regularity multiindeces."""
+        indices = []
+        tshape = [cs.dim for cs in tensorsig]
+        for i, cs in enumerate(tensorsig):
+            if self.coordsystem is cs:
+                index = np.zeros(tshape) + reshape_vector(np.arange(3), dim=len(tshape), axis=i)
+                indices.append(index)
+        return np.stack(indices, axis=-1)
+
+    def valid_elements(self, tensorsig, grid_space, elements):
+        if grid_space[2]:
+            # ggg, cgg, ccg
+            # Same as Sphere validity before regularity recombination
+            return self.S2_basis().valid_elements(tensorsig, grid_space, elements)
+        else:
+            # coeff-coeff-coeff
+            m, l, n = self.elements_to_groups(grid_space, elements)
+            if tensorsig:
+                regindices = self.regularity_indices(tensorsig)
+                tshape = tuple(cs.dim for cs in tensorsig)
+                valid = np.zeros(tshape + m.shape, dtype=bool)
+                for regcomp in np.ndindex(tshape):
+                    regindex = regindices[regcomp]
+                    valid[regcomp] = self.regularity_allowed_vectorized(l, regindex)
+            else:
+                valid = np.ones(m.shape, dtype=bool)
+                # Drop msin part of m = 0
+                valid[(m == 0) * (elements[0] % 2 == 1)] = False
+            return valid
+
+    def regularity_allowed_vectorized(self, l, regindex):
+        valid = np.ones(l.shape, dtype=bool)
+        walk = l
+        for dr in regindex[::-1]:
+            walk = walk + dr
+            valid[walk < 0] = False
+            if dr == 0:
+                valid[walk == 0] = False
+        return valid
 
     def forward_regularity_recombination(self, tensorsig, axis, gdata, ell_maps=None):
         rank = len(tensorsig)
@@ -3934,9 +3924,9 @@ class Spherical3DBasis(MultidimensionalBasis):
             groups[:, n < nmin] = np.ma.masked
         return groups
 
-    def valid_components(self, *args):
+    def valid_elements(self, *args):
         # Implemented in RegularityBasis
-        return self.radial_basis.valid_components(*args)
+        return self.radial_basis.valid_elements(*args)
 
     def multiplication_matrix(self, subproblem, arg_basis, coeffs, *args, **kw):
         if self.shape[0:2] == (1, 1):
