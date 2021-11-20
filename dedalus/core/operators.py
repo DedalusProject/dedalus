@@ -2114,7 +2114,8 @@ class RadialComponent(Component, metaclass=MultiClass):
     def __init__(self, operand, index=0, out=None):
         super().__init__(operand, index=index, out=out)
         tensorsig = operand.tensorsig
-        self.tensorsig = tuple( tensorsig[:index] + tensorsig[index+1:] )
+        self.tensorsig = tuple( tensorsig[:index] + (tensorsig[index].coords[-1],) + tensorsig[index+1:] )
+        #self.tensorsig = tuple( tensorsig[:index] + tensorsig[index+1:] )
 
     def new_operand(self, operand, **kw):
         return RadialComponent(operand, self.index, **kw)
@@ -2908,7 +2909,10 @@ class SphericalEllOperator(SpectralOperator):
                 subshape_in = subproblem.coeff_shape(self.operand.domain)
                 subshape_out = subproblem.coeff_shape(self.domain)
                 # Check if regularity component exists for this ell
-                if (regindex_out in self.regindex_out(regindex_in)) and radial_basis.regularity_allowed(ell, regindex_in) and radial_basis.regularity_allowed(ell, regindex_out):
+                if ((regindex_out in self.regindex_out(regindex_in)) and
+                    radial_basis.regularity_allowed(ell, regindex_in) and
+                    radial_basis.regularity_allowed(ell, regindex_out) and
+                    prod(subshape_in) and prod(subshape_out)):
                     # Substitute factor for radial axis
                     factors = [sparse.eye(m, n, format='csr') for m, n in zip(subshape_out, subshape_in)]
                     factors[self.last_axis] = self.radial_matrix(regindex_in, regindex_out, ell)

@@ -3207,30 +3207,9 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
         tshape = [cs.dim for cs in tensorsig]
         for i, cs in enumerate(tensorsig):
             if self.coordsystem is cs:
-                index = np.zeros(tshape) + reshape_vector(np.arange(3), dim=len(tshape), axis=i)
+                index = np.zeros(tshape) + reshape_vector(np.array([-1, 1, 0]), dim=len(tshape), axis=i)
                 indices.append(index)
         return np.stack(indices, axis=-1)
-
-    def valid_elements(self, tensorsig, grid_space, elements):
-        if grid_space[2]:
-            # ggg, cgg, ccg
-            # Same as Sphere validity before regularity recombination
-            return self.S2_basis().valid_elements(tensorsig, grid_space, elements)
-        else:
-            # coeff-coeff-coeff
-            m, l, n = self.elements_to_groups(grid_space, elements)
-            if tensorsig:
-                regindices = self.regularity_indices(tensorsig)
-                tshape = tuple(cs.dim for cs in tensorsig)
-                valid = np.zeros(tshape + m.shape, dtype=bool)
-                for regcomp in np.ndindex(tshape):
-                    regindex = regindices[regcomp]
-                    valid[regcomp] = self.regularity_allowed_vectorized(l, regindex)
-            else:
-                valid = np.ones(m.shape, dtype=bool)
-                # Drop msin part of m = 0
-                valid[(m == 0) * (elements[0] % 2 == 1)] = False
-            return valid
 
     def regularity_allowed_vectorized(self, l, regindex):
         valid = np.ones(l.shape, dtype=bool)
@@ -3912,6 +3891,27 @@ class Spherical3DBasis(MultidimensionalBasis):
         s2_chunk = self.sphere_basis.chunk_shape(grid_space)
         return s2_chunk + (1,)
 
+    def valid_elements(self, tensorsig, grid_space, elements):
+        if grid_space[2]:
+            # ggg, cgg, ccg
+            # Same as Sphere validity before regularity recombination
+            return self.S2_basis().valid_elements(tensorsig, grid_space, elements)
+        else:
+            # coeff-coeff-coeff
+            m, l, n = self.elements_to_groups(grid_space, elements)
+            if tensorsig:
+                regindices = self.radial_basis.regularity_indices(tensorsig)
+                tshape = tuple(cs.dim for cs in tensorsig)
+                valid = np.zeros(tshape + m.shape, dtype=bool)
+                for regcomp in np.ndindex(tshape):
+                    regindex = regindices[regcomp]
+                    valid[regcomp] = self.radial_basis.regularity_allowed_vectorized(l, regindex)
+            else:
+                valid = np.ones(m.shape, dtype=bool)
+                # Drop msin part of m = 0
+                valid[(m == 0) * (elements[0] % 2 == 1)] = False
+            return valid
+
     def elements_to_groups(self, grid_space, elements):
         s2_groups = self.sphere_basis.elements_to_groups(grid_space, elements[:2])
         radial_groups = elements[2]
@@ -3924,9 +3924,9 @@ class Spherical3DBasis(MultidimensionalBasis):
             groups[:, n < nmin] = np.ma.masked
         return groups
 
-    def valid_elements(self, *args):
-        # Implemented in RegularityBasis
-        return self.radial_basis.valid_elements(*args)
+    # def valid_elements(self, *args):
+    #     # Implemented in RegularityBasis
+    #     return self.radial_basis.valid_elements(*args)
 
     def multiplication_matrix(self, subproblem, arg_basis, coeffs, *args, **kw):
         if self.shape[0:2] == (1, 1):
@@ -4821,7 +4821,7 @@ class IntegrateSpherical(operators.SphericalEllOperator):
     def regindex_out(self, regindex_in):
         return (regindex_in,)
 
-    def radial_matrix(self, ell):
+    def radial_matrix(self, regindex_in, regindex_out, ell):
         # Wrap cached method
         return self._radial_matrix(self.radial_basis, ell)
 
@@ -4844,7 +4844,7 @@ class IntegrateSpherical(operators.SphericalEllOperator):
                 slices = tuple(slices)
                 vec_in  = operand.data[slices]
                 vec_out = out.data[slices]
-                A = self.radial_matrix(ell)
+                A = self.radial_matrix(None, None, ell)
                 vec_out += apply_matrix(A, vec_in, axis=axis)
 
 
@@ -5207,15 +5207,16 @@ class S2RadialComponent(operators.RadialComponent):
         basis = self.domain.get_basis(self.coordsys)
         S_in = basis.spin_weights(operand.tensorsig)
         S_out = basis.spin_weights(self.tensorsig)
-
         matrix = []
         for spinindex_out, spintotal_out in np.ndenumerate(S_out):
             matrix_row = []
             for spinindex_in, spintotal_in in np.ndenumerate(S_in):
-                if tuple(spinindex_in[:self.index] + spinindex_in[self.index+1:]) == spinindex_out and spinindex_in[self.index] == 2:
-                    matrix_row.append( 1 )
-                else:
-                    matrix_row.append( 0 )
+                matrix_row.append(0)
+                if spinindex_in[self.index] == 2:
+                    spinindex_in = list(spinindex_in)
+                    spinindex_in[self.index] = 0
+                    if tuple(spinindex_in) == spinindex_out:
+                        matrix_row[-1] = 1
             matrix.append(matrix_row)
         matrix = np.array(matrix)
         if self.dtype == np.float64:
