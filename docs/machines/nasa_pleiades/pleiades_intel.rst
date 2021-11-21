@@ -16,37 +16,48 @@ Then add the following to your ``.profile``::
 
   export BUILD_HOME=$HOME/build
 
-  export PATH=$BUILD_HOME/bin:$BUILD_HOME:/$PATH  # Add private commands to PATH                                                                                         
+  export PATH=$BUILD_HOME/bin:$BUILD_HOME:/$PATH  # Add private commands to PATH
 
   export LD_LIBRARY_PATH=$BUILD_HOME/lib:$LD_LIBRARY_PATH
   export LD_LIBRARY_PATH=/nasa/openssl/1.0.1h/lib/:$LD_LIBRARY_PATH
 
   export CC=mpicc
 
-  #pathing for Dedalus2
-  export LOCAL_MPI_VERSION=openmpi-1.8.4
+  #pathing for Dedalus
+  export LOCAL_MPI_VERSION=openmpi-1.10.1
+  export LOCAL_MPI_SHORT=v1.10
+
+  # falling back to 1.8 until we resolve tcp wireup errors
+  # (probably at runtime with MCA parameters)
+  export LOCAL_MPI_VERSION=openmpi-1.8.6
   export LOCAL_MPI_SHORT=v1.8
-  export LOCAL_PYTHON_VERSION=3.4.2
-  export LOCAL_NUMPY_VERSION=1.9.1
-  export LOCAL_SCIPY_VERSION=0.14.0
-  #export LOCAL_HDF5_VERSION=1.8.14 # build failure
-  export LOCAL_HDF5_VERSION=1.8.13
+
+  export LOCAL_PYTHON_VERSION=3.5.0
+  export LOCAL_NUMPY_VERSION=1.10.1
+  export LOCAL_SCIPY_VERSION=0.16.1
+  export LOCAL_HDF5_VERSION=1.8.15-patch1
+  export LOCAL_MERCURIAL_VERSION=3.6
 
   export MPI_ROOT=$BUILD_HOME/$LOCAL_MPI_VERSION
-  export PYTHONPATH=$BUILD_HOME/dedalus2:$PYTHONPATH
+  export PYTHONPATH=$BUILD_HOME/dedalus:$PYTHONPATH
   export MPI_PATH=$MPI_ROOT
   export FFTW_PATH=$BUILD_HOME
   export HDF5_DIR=$BUILD_HOME
 
-  # Pleaides workaround for QP errors 8/25/14 from NAS                                                                                             
-  export MPI_USE_UD=true
+  # Openmpi forks:
+  export OMPI_MCA_mpi_warn_on_fork=0
+
+  # don't mess up Pleiades for everyone else
+  export OMPI_MCA_btl_openib_if_include=mlx4_0:1
 
 
 
-Doing the entire build took about 1 hour.  This was with several (4) 
-open ssh connections to Pleaides to do poor-mans-parallel building 
-(of openBLAS, hdf5, fftw, etc.), and one was on a dev node for the
-openmpi compile.
+Doing the entire build took about 2 hours.  This was with several (4)
+open ssh connections to Pleaides to do poor-mans-parallel building
+(of python, hdf5, fftw, etc.), and one was on a dev node for the
+openmpi compile.  The openmpi compile is time intensive and mus be
+done first.  The fftw and hdf5 libraries take a while to build.
+Building scipy remains the most significant time cost.
 
 
 Python stack
@@ -73,7 +84,7 @@ to be built on a compute node so that the right memory space is identified.::
     tar xvf $LOCAL_MPI_VERSION.tar.gz
 
     # get ivy-bridge compute node
-    qsub -I -q devel -l select=1:ncpus=20:mpiprocs=20:model=ivy -l walltime=02:00:00
+    qsub -I -q devel -l select=1:ncpus=24:mpiprocs=24:model=has -l walltime=02:00:00
 
     # once node exists
     cd $BUILD_HOME
@@ -91,9 +102,9 @@ to be built on a compute node so that the right memory space is identified.::
     make -j
     make install
 
-These compilation options are based on ``/nasa/openmpi/1.6.5/NAS_config.sh``, 
+These compilation options are based on ``/nasa/openmpi/1.6.5/NAS_config.sh``,
 and are thanks to advice from Daniel Kokron at NAS.  Compiling takes
-about one hour.
+about 10-15 minutes with make -j.
 
 
 Building Python3
@@ -107,11 +118,12 @@ Create ``$BUILD_HOME`` and then proceed with downloading and installing Python-3
     cd Python-$LOCAL_PYTHON_VERSION
 
     ./configure --prefix=$BUILD_HOME \
-                         CC=mpicc         CFLAGS="-mkl -O3 -axCORE-AVX2 -xSSE4.2 -fPIC -ipo" \
-                         CXX=mpicxx CPPFLAGS="-mkl -O3 -axCORE-AVX2 -xSSE4.2 -fPIC -ipo" \
-                         F90=mpif90  F90FLAGS="-mkl -O3 -axCORE-AVX2 -xSSE4.2 -fPIC -ipo" \
-                         --enable-shared LDFLAGS="-lpthread" \
-                         --with-cxx-main=mpicxx --with-system-ffi
+                         OPT="-mkl -O3 -axCORE-AVX2 -xSSE4.2 -fPIC -ipo -w -vec-report0 -opt-report0" \
+                         FOPT="-mkl -O3 -axCORE-AVX2 -xSSE4.2 -fPIC -ipo -w -vec-report0 -opt-report0" \
+                         CC=mpicc CXX=mpicxx F90=mpif90 \
+                         LDFLAGS="-lpthread" \
+                         --enable-shared --with-system-ffi \
+                         --with-cxx-main=mpicxx --with-gcc=mpicc
 
     make
     make install
@@ -122,7 +134,11 @@ The previous intel patch is no longer required.
 Installing pip
 -------------------------
 
-Python 3.4 now automatically includes pip.
+Python 3.4 now automatically includes pip.  We suggest you do the
+following immediately to suppress version warning messages::
+
+     pip3 install --upgrade pip
+
 
 On Pleiades, you'll need to edit ``.pip/pip.conf``::
 
@@ -160,7 +176,7 @@ under openmpi::
                          MPICC=mpicc MPICXX=mpicxx \
                          --enable-shared \
                          --enable-mpi --enable-openmp --enable-threads
-    make -j
+    make
     make install
 
 It's critical that you use ``mpicc`` as the C-compiler, etc.
@@ -183,23 +199,18 @@ This should just be pip installed::
 
      pip3 install cython
 
-The Feb 11, 2014 update to cython (0.20.1) seems to work with gcc.
-
-
 
 
 Numpy and BLAS libraries
 ======================================
 
 Numpy will be built against a specific BLAS library.  On Pleiades we
-will build against the OpenBLAS libraries.  
-
-All of the intel patches, etc. are unnecessary in the gcc stack.
+will build against the Intel MKL BLAS.
 
 Building numpy against MKL
 ----------------------------------
 
-Now, acquire ``numpy`` (1.8.2)::
+Now, acquire ``numpy`` (1.9.2)::
 
      cd $BUILD_HOME
      wget http://sourceforge.net/projects/numpy/files/NumPy/$LOCAL_NUMPY_VERSION/numpy-$LOCAL_NUMPY_VERSION.tar.gz
@@ -210,7 +221,7 @@ Now, acquire ``numpy`` (1.8.2)::
 
 This last step saves you from needing to hand edit two
 files in ``numpy/distutils``; these are ``intelccompiler.py`` and
-``fcompiler/intel.py``.  I've built a crude patch, :download:`numpy_pleiades_intel_patch.tar<numpy_pleiades_intel_patch.tar>` 
+``fcompiler/intel.py``.  I've built a crude patch, :download:`numpy_pleiades_intel_patch.tar<numpy_pleiades_intel_patch.tar>`
 which is auto-deployed within the ``numpy-$LOCAL_NUMPY_VERSION`` directory by
 the instructions above.  This will unpack and overwrite::
 
@@ -218,7 +229,7 @@ the instructions above.  This will unpack and overwrite::
       numpy/distutils/fcompiler/intel.py
 
 This differs from prior versions in that "-xhost" is replaced with
- "-axAVX -xSSE4.1".   NOTE: this needs to be updated for Haswell.
+ "-axCORE-AVX2 -xSSE4.2".   NOTE: this is now updated for Haswell.
 
 We'll now need to make sure that ``numpy`` is building against the MKL
 libraries.  Start by making a ``site.cfg`` file::
@@ -226,18 +237,24 @@ libraries.  Start by making a ``site.cfg`` file::
      cp site.cfg.example site.cfg
      emacs -nw site.cfg
 
+.. note::
+    If you're doing many different builds, it may be helpful to have
+    the numpy site.cfg shared between builds.  If so, you can edit
+    ~/.numpy-site.cfg instead of site.cfg.  This is per site.cfg.example.
+
+
 Edit ``site.cfg`` in the ``[mkl]`` section; modify the
 library directory so that it correctly point to TACC's
-``$MKLROOT/lib/intel64/``.  
+``$MKLROOT/lib/intel64/``.
 With the modules loaded above, this looks like::
 
      [mkl]
-     library_dirs = /nasa/intel/Compiler/2015.0.090/composer_xe_2015.0.090/mkl/lib/intel64
-     include_dirs = /nasa/intel/Compiler/2015.0.090/composer_xe_2015.0.090/mkl/include
+     library_dirs = /nasa/intel/Compiler/2015.3.187/composer_xe_2015.3.187/mkl/lib/intel64/
+     include_dirs = /nasa/intel/Compiler/2015.3.187/composer_xe_2015.3.187/mkl/include
      mkl_libs = mkl_rt
      lapack_libs =
 
-These are based on intels instructions for 
+These are based on intels instructions for
 `compiling numpy with ifort <http://software.intel.com/en-us/articles/numpyscipy-with-intel-mkl>`_
 and they seem to work so far.
 
@@ -297,35 +314,11 @@ pip install fails, so we'll keep doing it the old fashioned way::
 Installing matplotlib
 -------------------------
 
-This should just be pip installed::
-
-     pip3 install matplotlib
-
-Hmmm... version 1.4.0 of matplotlib has just dropped, but seems to
-have a higher freetype versioning requirement (2.4).  Here's a
-build script for freetype 2.5.3::
-
-    wget http://sourceforge.net/projects/freetype/files/freetype2/2.5.3/freetype-2.5.3.tar.gz/download
-    tar xvf freetype-2.5.3.tar.gz
-    cd freetype-2.5.3
-    ./configure --prefix=$BUILD_HOME
-    make
-    make install
-
-Well... that works, but then we fail on a qhull compile during 
-``pip3 install matplotlib`` later on.
-Let's fall back to 1.3.1::
+This should just be pip installed.  However, we're hitting errors with
+qhull compilation in every part of the 1.4.x branch, so we fall back
+to 1.3.1::
 
      pip3 install matplotlib==1.3.1
-
-
-
-Installing sympy
--------------------------
-
-This should just be pip installed::
-
-     pip3 install sympy
 
 
 Installing HDF5 with parallel support
@@ -351,100 +344,22 @@ needs to be compiled with support for parallel (mpi) I/O::
 H5PY via pip
 -----------------------
 
-This works (Dec 21, 2014)::
+This can now just be pip installed (>=2.6.0)::
 
-     pip3 install h5py==2.4.0b1
+     pip3 install h5py
 
-Installing h5py (working)
-----------------------------------------------------
-
-Next, install h5py.  For reasons that are currently unclear to me, 
-this cannot be done via pip install (fails)::
-
-     git clone https://github.com/h5py/h5py.git
-     cd h5py
-     python3 setup.py configure --mpi
-     python3 setup.py build
-     python3 setup.py install 
-
-This will install ``h5py==2.4.0a0``, and it appears to work (!).
-
-
-Installing h5py with collectives (not currently working)
-------------------------------------------------------------------------
-We've been exploring the use of collectives for faster parallel file
-writing.  
-
-git is having some problems, especially with it's SSL version.  
-I suggest adding the following to ``~/.gitconfig``::
-
-    [http]
-    sslCAinfo = /etc/ssl/certs/ca-bundle.crt
-
-
-This is still not working, owing (most likely) to git being built on
-an outdated SSL version.  Here's a short-term hack::
-
-    export GIT_SSL_NO_VERIFY=true
-
-To build that version of the h5py library::
-
-     git clone git://github.com/andrewcollette/h5py
-     cd h5py
-     git checkout mpi_collective
-     export CC=mpicc
-     export HDF5_DIR=$BUILD_HOME
-     python3 setup.py configure --mpi
-     python3 setup.py build
-     python3 setup.py install 
-
-
-Here's the original h5py repository::
-
-     git clone git://github.com/h5py/h5py
-     cd h5py
-     export CC=mpicc
-     export HDF5_DIR=$BUILD_HOME
-     python3 setup.py configure --mpi
-     python3 setup.py build
-     python3 setup.py install 
-
-.. note::
-     This is ugly.  We're getting a "-R" error at link, triggered by
-     distutils not recognizing that mpicc is gcc or something like
-     that.   Looks like we're failing ``if self._is_gcc(compiler)``
-     For now, I've hand-edited unixccompiler.py in 
-     ``lib/python3.3/distutils`` and changed this line:
-
-           def _is_gcc(self, compiler_name):
-                return "gcc" in compiler_name or "g++" in compiler_name
-
-        to:
-
-           def _is_gcc(self, compiler_name):
-       	        return "gcc" in compiler_name or "g++" in compiler_name or "mpicc" in compiler_name
-
-     This is a hack, but it get's us running and alive!
-
-.. note::
-     Ahh... I understand what's happening here.  We built with
-     ``mpicc``, and the test ``_is_gcc`` looks for whether gcc appears
-     anywhere in the compiler name.  It doesn't in ``mpicc``, so the
-     ``gcc`` checks get missed.  This is only ever used in the
-     ``runtime_library_dir_option()`` call.  So we'd need to either
-     rename the mpicc wrapper something like ``mpicc-gcc`` or do a
-     test on ``compiler --version`` or something.  Oh boy.  Serious
-     upstream problem for mpicc wrapped builds that cythonize and go
-     to link.  Hmm...
+For now we drop our former instructions on attempting to install
+parallel h5py with collectives.  See the repo history for those notes.
 
 Installing Mercurial
 ----------------------------------------------------
 On NASA Pleiades, we need to install mercurial itself.  I can't get
 mercurial to build properly on intel compilers, so for now use gcc::
 
-     wget http://mercurial.selenic.com/release/mercurial-3.1.tar.gz
-     tar xvf mercurial-3.1.tar.gz 
-     cd mercurial-3.1
+     cd $BUILD_HOME
+     wget http://mercurial.selenic.com/release/mercurial-$LOCAL_MERCURIAL_VERSION.tar.gz
+     tar xvf mercurial-$LOCAL_MERCURIAL_VERSION.tar.gz
+     cd mercurial-$LOCAL_MERCURIAL_VERSION
      module load gcc
      export CC=gcc
      make install PREFIX=$BUILD_HOME
@@ -465,22 +380,19 @@ I suggest you add the following to your ``~/.hgrc``::
   mq =
 
 
-Dedalus2
+Dedalus
 ========================================
 
 Preliminaries
 ----------------------------------------
 
-With the modules set as above, set::
+Then do the following::
 
-     export BUILD_HOME=$BUILD_HOME
-     export FFTW_PATH=$BUILD_HOME
-     export MPI_PATH=$BUILD_HOME/$LOCAL_MPI_VERSION
-
-Then change into your root dedalus directory and run::
-
-     pip3 install -r requirements.txt 
-     python setup.py build_ext --inplace
+     cd $BUILD_HOME
+     hg clone https://bitbucket.org/dedalus-project/dedalus
+     cd dedalus
+     pip3 install -r requirements.txt
+     python3 setup.py build_ext --inplace
 
 
 Running Dedalus on Pleiades

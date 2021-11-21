@@ -1,73 +1,55 @@
-Install notes for CU/Janus
+Install notes for NASA/Pleiades: Intel stack with MPI-SGI
 ***************************************************************************
 
-As with NASA/Pleiades, an initial Janus environment is pretty
-bare-bones.  There are no
-modules, and your shell is likely a bash varient.   Here we'll do a
-full build of our stack, using only the prebuilt openmpi compilers.
-Later we'll try a module heavy stack to see if we can avoid this.
+Here we build using the recommended MPI-SGI environment, with Intel compilers.
+An initial Pleiades environment is pretty bare-bones.  There are no
+modules, and your shell is likely a csh varient.  To switch shells,
+send an e-mail to support@nas.nasa.gov; I'll be using ``bash``.
 
-Add the following to your ``.my.bash_profile``::
+Then add the following to your ``.profile``::
 
   # Add your commands here to extend your PATH, etc.
 
-  module load intel
+  module load mpi-sgi/mpt
+  module load comp-intel
+  module load git
+  module load openssl
+  module load emacs
 
   export BUILD_HOME=$HOME/build
 
-  export PATH=$BUILD_HOME/bin:$BUILD_HOME:/$PATH  # Add private commands to PATH                                                                                         
+  export PATH=$BUILD_HOME/bin:$BUILD_HOME:/$PATH  # Add private commands to PATH
 
   export LD_LIBRARY_PATH=$BUILD_HOME/lib:$LD_LIBRARY_PATH
+  export LD_LIBRARY_PATH=/nasa/openssl/1.0.1h/lib/:$LD_LIBRARY_PATH
+
+  # proper wrappers for using Intel rather than GNU compilers,
+  # Thanks to Daniel Kokron at NASA.
+  export MPICC_CC=icc
+  export MPICXX_CXX=icpc
 
   export CC=mpicc
 
   #pathing for Dedalus
-  export LOCAL_MPI_VERSION=openmpi-1.8.5
-  export LOCAL_MPI_SHORT=v1.8
-  export LOCAL_PYTHON_VERSION=3.4.3
-  export LOCAL_NUMPY_VERSION=1.9.2
-  export LOCAL_SCIPY_VERSION=0.15.1
-  export LOCAL_HDF5_VERSION=1.8.15
+  export LOCAL_PYTHON_VERSION=3.5.0
+  export LOCAL_NUMPY_VERSION=1.10.1
+  export LOCAL_SCIPY_VERSION=0.16.1
+  export LOCAL_HDF5_VERSION=1.8.15-patch1
+  export LOCAL_MERCURIAL_VERSION=3.6
 
-
-  export MPI_ROOT=$BUILD_HOME/$LOCAL_MPI_VERSION
   export PYTHONPATH=$BUILD_HOME/dedalus:$PYTHONPATH
   export MPI_PATH=$MPI_ROOT
   export FFTW_PATH=$BUILD_HOME
   export HDF5_DIR=$BUILD_HOME
 
-Do your builds on the janus compile nodes (see MOTD).  As a positive
-note, Janus compile nodes have access to the internet (e.g., wget), so
-you can download and compile on-node.  For now we're using stock
-Pleiades compile flags and patch files.  With intel 15.0.1 the cython
-install is now working well, as does h5py.
+  # Pleaides workaround for QP errors 8/25/14 from NAS (only for MPI-SGI)
+  export MPI_USE_UD=true
 
 
-Building Openmpi
---------------------------
-Tim Dunn has pointed out that we may (may) be able to get some speed
-improvements by building our own openmpi.  Why not give it a try!
-Compiling on the janus-compile nodes seems to do a fine job, and
-unlike Pleiades we can grab software from the internet on the compile
-nodes too.   This streamlines the process.::
-
-    cd $BUILD_HOME
-    wget http://www.open-mpi.org/software/ompi/$LOCAL_MPI_SHORT/downloads/$LOCAL_MPI_VERSION.tar.gz
-    tar xvf $LOCAL_MPI_VERSION.tar.gz
-    cd $LOCAL_MPI_VERSION
-    ./configure \
-        --prefix=$BUILD_HOME \
-        --with-slurm \
-        --with-threads=posix \
-        --enable-mpi-thread-multiple \
-        CC=icc CXX=icpc FC=ifort 
-
-    make -j
-    make install
-
-Config flags thanks to Tim Dunn; the CFLAGS etc are from Pleiades and
-should be general.
-
+Python stack
+=========================
+Here we use the recommended MPI-SGI compilers, rather than our own
+openmpi.
 
 Building Python3
 --------------------------
@@ -75,26 +57,35 @@ Building Python3
 Create ``$BUILD_HOME`` and then proceed with downloading and installing Python-3.4::
 
     cd $BUILD_HOME
-    wget https://www.python.org/ftp/python/$LOCAL_PYTHON_VERSION/Python-$LOCAL_PYTHON_VERSION.tgz
+    wget https://www.python.org/ftp/python/$LOCAL_PYTHON_VERSION/Python-$LOCAL_PYTHON_VERSION.tgz --no-check-certificate
     tar xzf Python-$LOCAL_PYTHON_VERSION.tgz
     cd Python-$LOCAL_PYTHON_VERSION
-
     ./configure --prefix=$BUILD_HOME \
-                         CC=mpicc         CFLAGS="-mkl -O3 -axAVX -xSSE4.1 -fPIC -ipo" \
-                         CXX=mpicxx CPPFLAGS="-mkl -O3 -axAVX -xSSE4.1 -fPIC -ipo" \
-                         F90=mpif90  F90FLAGS="-mkl -O3 -axAVX -xSSE4.1 -fPIC -ipo" \
-                         --enable-shared LDFLAGS="-lpthread" \
-                         --with-cxx-main=mpicxx --with-system-ffi
+                         OPT="-w -vec-report0 -opt-report0" \
+                         FOPT="-w -vec-report0 -opt-report0" \
+                         CFLAGS="-mkl -O3 -ipo -axCORE-AVX2 -xSSE4.2 -fPIC" \
+                         CPPFLAGS="-mkl -O3 -ipo -axCORE-AVX2 -xSSE4.2 -fPIC" \
+                         F90FLAGS="-mkl -O3 -ipo -axCORE-AVX2 -xSSE4.2 -fPIC" \
+                         CC=mpicc  CXX=mpicxx F90=mpif90  \
+                         --with-cxx-main=mpicxx --with-gcc=mpicc \
+                         LDFLAGS="-lpthread" \
+                        --enable-shared --with-system-ffi
 
-    make -j
+    make
     make install
 
-The former patch for Intel compilers to handle ctypes is no longer necessary.
+The previous intel patch is no longer required.
+
 
 Installing pip
 -------------------------
 
 Python 3.4 now automatically includes pip.
+
+On Pleiades, you'll need to edit ``.pip/pip.conf``::
+
+     [global]
+     cert = /etc/ssl/certs/ca-bundle.trust.crt
 
 You will now have ``pip3`` installed in ``$BUILD_HOME/bin``.
 You might try doing ``pip3 -V`` to confirm that ``pip3`` is built
@@ -102,33 +93,37 @@ against python 3.4.  We will use ``pip3`` throughout this
 documentation to remain compatible with systems (e.g., Mac OS) where
 multiple versions of python coexist.
 
+We suggest doing the following immediately to suppress version warning
+messages::
+
+     pip3 install --upgrade pip
+
 Installing mpi4py
 --------------------------
 
 This should be pip installed::
 
-    pip3 install mpi4py
+   pip3 install mpi4py
 
+version >=2.0.0 seem to play well with mpi-sgi.
 
 Installing FFTW3
 ------------------------------
 
-We need to build our own FFTW3, under intel 14 and mvapich2/2.0b, or
-under openmpi::
+We build our own FFTW3::
 
-    cd $BUILD_HOME
     wget http://www.fftw.org/fftw-3.3.4.tar.gz
-    tar xvzf fftw-3.3.4.tar.gz
+    tar -xzf fftw-3.3.4.tar.gz
     cd fftw-3.3.4
 
    ./configure --prefix=$BUILD_HOME \
-                         CC=mpicc        CFLAGS="-O3 -axAVX -xSSE4.1" \
-                         CXX=mpicxx CPPFLAGS="-O3 -axAVX -xSSE4.1" \
-                         F77=mpif90  F90FLAGS="-O3 -axAVX -xSSE4.1" \
-                         MPICC=mpicc MPICXX=mpicxx \
+                         CC=icc        CFLAGS="-O3 -axCORE-AVX2 -xSSE4.2" \
+                         CXX=icpc CPPFLAGS="-O3 -axCORE-AVX2 -xSSE4.2" \
+                         F77=ifort  F90FLAGS="-O3 -axCORE-AVX2 -xSSE4.2" \
+                         MPICC=icc MPICXX=icpc \
+                         LDFLAGS="-lmpi" \
                          --enable-shared \
                          --enable-mpi --enable-openmp --enable-threads
-
     make -j
     make install
 
@@ -152,31 +147,31 @@ This should just be pip installed::
 
      pip3 install cython
 
-Cython is now working (intel 15.0/openmpi-1.8.5).
+
 
 Numpy and BLAS libraries
 ======================================
 
 Numpy will be built against a specific BLAS library.  On Pleiades we
-will build against the OpenBLAS libraries.  
+will build against the OpenBLAS libraries.
 
 All of the intel patches, etc. are unnecessary in the gcc stack.
 
 Building numpy against MKL
 ----------------------------------
 
-Now, acquire ``numpy`` (1.9.0)::
+Now, acquire ``numpy`` (1.10.1)::
 
      cd $BUILD_HOME
      wget http://sourceforge.net/projects/numpy/files/NumPy/$LOCAL_NUMPY_VERSION/numpy-$LOCAL_NUMPY_VERSION.tar.gz
      tar -xvf numpy-$LOCAL_NUMPY_VERSION.tar.gz
      cd numpy-$LOCAL_NUMPY_VERSION
-     wget http://dedalus-project.readthedocs.org/en/latest/_downloads/numpy_janus_intel_patch.tar
-     tar xvf numpy_janus_intel_patch.tar
+     wget http://dedalus-project.readthedocs.org/en/latest/_downloads/numpy_pleiades_intel_patch.tar
+     tar xvf numpy_pleiades_intel_patch.tar
 
 This last step saves you from needing to hand edit two
 files in ``numpy/distutils``; these are ``intelccompiler.py`` and
-``fcompiler/intel.py``.  I've built a crude patch, :download:`numpy_janus_intel_patch.tar<numpy_janus_intel_patch.tar>` 
+``fcompiler/intel.py``.  I've built a crude patch, :download:`numpy_pleiades_intel_patch.tar<numpy_pleiades_intel_patch.tar>`
 which is auto-deployed within the ``numpy-$LOCAL_NUMPY_VERSION`` directory by
 the instructions above.  This will unpack and overwrite::
 
@@ -184,7 +179,8 @@ the instructions above.  This will unpack and overwrite::
       numpy/distutils/fcompiler/intel.py
 
 This differs from prior versions in that "-xhost" is replaced with
- "-axAVX -xSSE4.1". 
+ "-axCORE-AVX2 -xSSE4.2".  I think this could be handled more
+ gracefully using a extra_compile_flag option in the site.cfg.
 
 We'll now need to make sure that ``numpy`` is building against the MKL
 libraries.  Start by making a ``site.cfg`` file::
@@ -194,16 +190,17 @@ libraries.  Start by making a ``site.cfg`` file::
 
 Edit ``site.cfg`` in the ``[mkl]`` section; modify the
 library directory so that it correctly point to TACC's
-``$MKLROOT/lib/intel64/``.  
+``$MKLROOT/lib/intel64/``.
 With the modules loaded above, this looks like::
 
      [mkl]
-     library_dirs = /curc/tools/x_86_64/rh6/intel/15.0.1/composer_xe_2015.1.133/mkl/lib/intel64
-     include_dirs = /curc/tools/x_86_64/rh6/intel/15.0.1/composer_xe_2015.1.133/mkl/include
+     library_dirs = /nasa/intel/Compiler/2015.3.187/composer_xe_2015.3.187/mkl/lib/intel64/
+     include_dirs = /nasa/intel/Compiler/2015.3.187/composer_xe_2015.3.187/mkl/include
      mkl_libs = mkl_rt
      lapack_libs =
 
-These are based on intels instructions for 
+
+These are based on intels instructions for
 `compiling numpy with ifort <http://software.intel.com/en-us/articles/numpyscipy-with-intel-mkl>`_
 and they seem to work so far.
 
@@ -213,6 +210,9 @@ Then proceed with::
     python3 setup.py config --compiler=intelem build_clib --compiler=intelem build_ext --compiler=intelem install
 
 This will config, build and install numpy.
+
+
+
 
 
 
@@ -268,50 +268,44 @@ so we force the C complier to be icpc ::
      pip3 install matplotlib
 
 
-
-
 Installing HDF5 with parallel support
 --------------------------------------------------
 
 The new analysis package brings HDF5 file writing capbaility.  This
-needs to be compiled with support for parallel (mpi) I/O::
+needs to be compiled with support for parallel (mpi) I/O.  Intel
+compilers are failing on this when done with mpi-sgi, and on NASA's
+recommendation we're falling back to gcc for this library::
 
+     export MPICC_CC=
+     export MPICXX_CXX=
      wget http://www.hdfgroup.org/ftp/HDF5/releases/hdf5-$LOCAL_HDF5_VERSION/src/hdf5-$LOCAL_HDF5_VERSION.tar.gz
-
-     tar xvzf hdf5-$LOCAL_HDF5_VERSION.tar.gz
+     tar xzvf hdf5-$LOCAL_HDF5_VERSION.tar.gz
      cd hdf5-$LOCAL_HDF5_VERSION
-     ./configure --prefix=$BUILD_HOME \
-                         CC=mpicc         CFLAGS="-O3 -axAVX -xSSE4.1" \
-                         CXX=mpicxx CPPFLAGS="-O3 -axAVX -xSSE4.1" \
-                         F77=mpif90  F90FLAGS="-O3 -axAVX -xSSE4.1" \
-                         MPICC=mpicc MPICXX=mpicxx \
+     ./configure --prefix=$BUILD_HOME CC=mpicc CXX=mpicxx F77=mpif90 \
                          --enable-shared --enable-parallel
-
-     make -j
+     make
      make install
 
 
+H5PY via pip
+-----------------------
 
-Installing h5py
-----------------------------------------------------
+This can now just be pip installed (>=2.6.0):
 
-This now can be pip installed::
+     pip3 install h5py
 
-     pip3 install hypy
-
+For now we drop our former instructions on attempting to install parallel h5py with collectives. See the repo history for those notes.
 
 Installing Mercurial
 ----------------------------------------------------
-On Janus, we need to install mercurial itself.  I can't get
-mercurial to build properly on intel compilers, so for now use gcc.
-Ah, and we also need python2 for the mercurial build (only)::
-  
-     module unload openmpi intel
-     module load gcc/gcc-4.9.1
-     module load python/anaconda-2.0.0
-     wget http://mercurial.selenic.com/release/mercurial-3.4.tar.gz
-     tar xvf mercurial-3.4.tar.gz 
-     cd mercurial-3.4
+On NASA Pleiades, we need to install mercurial itself.  I can't get
+mercurial to build properly on intel compilers, so for now use gcc::
+
+     cd $BUILD_HOME
+     wget http://mercurial.selenic.com/release/mercurial-$LOCAL_MERCURIAL_VERSION.tar.gz
+     tar xvf mercurial-$LOCAL_MERCURIAL_VERSION.tar.gz
+     cd mercurial-$LOCAL_MERCURIAL_VERSION
+     module load gcc
      export CC=gcc
      make install PREFIX=$BUILD_HOME
 
@@ -320,6 +314,9 @@ I suggest you add the following to your ``~/.hgrc``::
   [ui]
   username = <your bitbucket username/e-mail address here>
   editor = emacs
+
+  [web]
+  cacerts = /etc/ssl/certs/ca-bundle.crt
 
   [extensions]
   graphlog =
@@ -334,35 +331,26 @@ Dedalus
 Preliminaries
 ----------------------------------------
 
-With the modules set as above, set::
+Then do the following::
 
-     export BUILD_HOME=$BUILD_HOME
-     export FFTW_PATH=$BUILD_HOME
-     export MPI_PATH=$BUILD_HOME/$LOCAL_MPI_VERSION
-
-Pull the dedalus repository:::
-
+     cd $BUILD_HOME
      hg clone https://bitbucket.org/dedalus-project/dedalus
-
-Then change into your root dedalus directory and run::
-
-     pip3 install -r requirements.txt 
+     cd dedalus
+     pip3 install -r requirements.txt
      python3 setup.py build_ext --inplace
 
 
-Running Dedalus on Janus
+
+Running Dedalus on Pleiades
 ========================================
 
-Our scratch disk system on Pleiades is ``/lustre/janus_scratch/user-name``.  On
+Our scratch disk system on Pleiades is ``/nobackup/user-name``.  On
 this and other systems, I suggest soft-linking your scratch directory
 to a local working directory in home; I uniformly call mine ``workdir``::
 
-      ln -s /lustre/janus_scratch/bpbrown workdir
+      ln -s /nobackup/bpbrown workdir
 
-I also suggest you move your stack to the ``projects`` directory,
-``/projects/user-name``.  There, I bring back a symbolic link:
+Long-term mass storage is on LOU.
 
-     ln -s /projects/bpbrown projects
-     ln -s projects/build build
 
 

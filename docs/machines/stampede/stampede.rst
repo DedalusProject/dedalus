@@ -1,6 +1,6 @@
 Install notes for TACC/Stampede
 ***************************************************************************
-Install notes for building our python3 stack on TACC/Stampede, using the intel compiler suite.  
+Install notes for building our python3 stack on TACC/Stampede, using the intel compiler suite.
 Many thanks to Yaakoub El Khamra at TACC for help in sorting out the
 python3 build and numpy linking against a fast MKL BLAS.
 
@@ -19,12 +19,12 @@ Modules
 
 Here is my current build environment (from running ``module list``)
 
-    1) TACC-paths   
-    2) Linux   
-    3) cluster-paths   
-    4) TACC   
+    1) TACC-paths
+    2) Linux
+    3) cluster-paths
+    4) TACC
     5) cluster
-    6) intel/14.0.1.106   
+    6) intel/14.0.1.106
     7) mvapich2/2.0b
 
 .. note ::
@@ -65,7 +65,7 @@ Create ``~\build_intel`` and then proceed with downloading and installing Python
 
     # make sure you have the python patch, put it in Python-3.3.3
     wget http://dedalus-project.readthedocs.org/en/latest/_downloads/python_intel_patch.tar
-    tar xvf python_intel_patch.tar 
+    tar xvf python_intel_patch.tar
 
     ./configure --prefix=$BUILD_HOME \
                          CC=icc CFLAGS="-mkl -O3 -xHost -fPIC -ipo" \
@@ -77,12 +77,12 @@ Create ``~\build_intel`` and then proceed with downloading and installing Python
     make
     make install
 
-To successfully build ``python3``, 
+To successfully build ``python3``,
 the key is replacing the file ``ffi64.c``, which is done
 automatically by downloading and unpacking this crude patch
 :download:`python_intel_patch.tar<python_intel_patch.tar>` in
 your ``Python-3.3.3`` directory.   Unpack it in ``Python-3.3.3``
-(``tar xvf python_intel_patch.tar`` line above) 
+(``tar xvf python_intel_patch.tar`` line above)
 and it will overwrite ``ffi64.c``.  If you forget to do this, you'll
 see a warning/error that ``_ctypes`` couldn't be built.  This is important.
 
@@ -121,12 +121,12 @@ Updating shell settings
 At this point, ``python3`` is installed in ``~/build_intel/bin/``.  Add this
 to your path and confirm (currently there is no ``python3`` in the
 default path, so doing a ``which python3`` will fail if you haven't
-added ``~/build_intel/bin``).  
+added ``~/build_intel/bin``).
 
 On Stampede, login shells (interactive connections via ssh) source
 only ``~/.bash_profile``, ``~/.bash_login`` or ``~/.profile``, in that
 order, and do not source ``~/.bashrc``.  Meanwhile non-login shells
-only launch ``~/.bashrc`` 
+only launch ``~/.bashrc``
 (see Stampede `user guide <https://www.tacc.utexas.edu/user-services/user-guides/stampede-user-guide#compenv-startup-technical>`_).
 
 In the bash shell, add the following to
@@ -139,14 +139,14 @@ and the following to ``.profile``::
 
      if [ -f ~/.bashrc ]; then . ~/.bashrc; fi
 
-(from `bash reference manual <https://www.gnu.org/software/bash/manual/html_node/Bash-Startup-Files.html>`_) 
+(from `bash reference manual <https://www.gnu.org/software/bash/manual/html_node/Bash-Startup-Files.html>`_)
 to obtain the same behaviour in both shell types.
 
 Installing pip
 -------------------------
 
 We'll use ``pip`` to install our python library depdencies.
-Instructions on doing this are `available here <http://www.pip-installer.org/en/latest/installing.html>`_ 
+Instructions on doing this are `available here <http://www.pip-installer.org/en/latest/installing.html>`_
 and summarized below.  First
 download and install setup tools::
 
@@ -196,8 +196,8 @@ Now, acquire ``numpy`` (1.8.0)::
 
 This last step saves you from needing to hand edit two
 files in ``numpy/distutils``; these are ``intelccompiler.py`` and
-``fcompiler/intel.py``.  I've built a crude patch, 
-:download:`numpy_intel_patch.tar<numpy_intel_patch.tar>` 
+``fcompiler/intel.py``.  I've built a crude patch,
+:download:`numpy_intel_patch.tar<numpy_intel_patch.tar>`
 which can be auto-deployed by within the ``numpy-1.8.0`` directory by
 the instructions above.  This will unpack and overwrite::
 
@@ -212,7 +212,7 @@ libraries.  Start by making a ``site.cfg`` file::
 
 Edit ``site.cfg`` in the ``[mkl]`` section; modify the
 library directory so that it correctly point to TACC's
-``$MKLROOT/lib/intel64/``.  
+``$MKLROOT/lib/intel64/``.
 With the modules loaded above, this looks like::
 
      [mkl]
@@ -221,7 +221,7 @@ With the modules loaded above, this looks like::
      mkl_libs = mkl_rt
      lapack_libs =
 
-These are based on intels instructions for 
+These are based on intels instructions for
 `compiling numpy with ifort <http://software.intel.com/en-us/articles/numpyscipy-with-intel-mkl>`_
 and they seem to work so far.
 
@@ -244,13 +244,13 @@ full-auto by doing::
      chmod +x numpy_test_full
      ./numpy_test_full
 
-or do so manually by launching ``python3`` 
+or do so manually by launching ``python3``
 and then doing::
 
      import numpy as np
      np.__config__.show()
 
-If you've installed ``nose`` (with ``pip3 install nose``), 
+If you've installed ``nose`` (with ``pip3 install nose``),
 we can further test our numpy build with::
 
      np.test()
@@ -272,10 +272,10 @@ product time).
 Python library stack
 =====================
 
-After ``numpy`` has been built (see links above) 
+After ``numpy`` has been built (see links above)
 we will proceed with the rest of our python stack.
 Right now, all of these need to be installed in each existing
-virtualenv instance (e.g., ``openblas``, ``mkl``, etc.).  
+virtualenv instance (e.g., ``openblas``, ``mkl``, etc.).
 
 For now, skip the venv process.
 
@@ -301,14 +301,14 @@ Installing mpi4py
 
 This should just be pip installed::
 
-      pip3 install -v http://mpi4py.googlecode.com/files/mpi4py-1.3.1.tar.gz
+      pip3 install mpi4py==2.0.0
 
 .. note::
-    
+
       If we use use ::
 
            pip3 install mpi4py
-           
+
       then stampede tries to pull version 0.6.0 of mpi4py.  Hence the
       explicit version pull above.
 
@@ -338,7 +338,7 @@ This should just be pip installed::
       If we use use ::
 
            pip3 install matplotlib
-           
+
       then stampede tries to pull version 1.1.1 of matplotlib.  Hence the
       explicit version pull above.
 
@@ -346,7 +346,7 @@ Installing sympy
 -------------------------
 
 Do this with a regular pip install::
-  
+
       pip3 install sympy
 
 
@@ -373,7 +373,7 @@ Installing h5py
 
 Next, install h5py. We wish for full HDF5 parallel goodness, so we can
 do parallel file access during both simulations and post analysis as
-well.   This will require building directly from source (see 
+well.   This will require building directly from source (see
 `Parallel HDF5 in h5py <http://docs.h5py.org/en/latest/mpi.html#parallel>`_
 for further details).  Here we go::
 
@@ -402,7 +402,7 @@ writing.  To build that version of the h5py library::
      export HDF5_DIR=$BUILD_HOME
      python3 setup.py configure --mpi
      python3 setup.py build
-     python3 setup.py install 
+     python3 setup.py install
 
 To enable collective outputs within dedalus, edit ``dedalus2/data/evaluator.py`` and
 replace::
@@ -423,7 +423,7 @@ with ::
 Alternatively, you can see this same edit in some of the forks
 (Lecoanet, Brown).
 
-.. note:: 
+.. note::
 
      There are some serious problems with this right now; in
      particular, there seems to be an issue with empty arrays causing h5py
@@ -477,7 +477,7 @@ Freetype is necessary for matplotlib ::
 
      cd ~/build
      wget http://sourceforge.net/projects/freetype/files/freetype2/2.5.2/freetype-2.5.2.tar.gz
-     tar -xvf freetype-2.5.2.tar.gz 
+     tar -xvf freetype-2.5.2.tar.gz
      cd freetype-2.5.2
      ./configure --prefix=$HOME/build
      make
@@ -511,7 +511,7 @@ UMFPACK requires AMD (another package by the same group, not processor) and Suit
 
 If we need UMFPACK, we
 can try installing it from ``suite-sparse`` as in the Mac install.
-Here are links to `UMFPACK docs <http://www.cise.ufl.edu/research/sparse/umfpack/>`_ 
+Here are links to `UMFPACK docs <http://www.cise.ufl.edu/research/sparse/umfpack/>`_
 and `Suite-sparse <http://www.cise.ufl.edu/research/sparse/>`_
 
 .. note::
@@ -528,14 +528,14 @@ Well, maybe :)  Let's give it a try, and lets grab the whole library::
      tar xvf SuiteSparse.tar.gz
 
      <edit SuiteSparse_config/SuiteSparse_config.mk>
-     
+
 
 
 
 .. note::
-     
+
      Notes from the original successful build process:
-   
+
      Just got a direct call from Yaakoub.  Very, very helpful.  Here's
      the quick rundown.
 
@@ -554,14 +554,14 @@ Well, maybe :)  Let's give it a try, and lets grab the whole library::
 
      Keep Yaakoub updated with direct e-mail on progress.
 
-     Also, Yaakoub is spear-heading TACCs efforts in doing 
+     Also, Yaakoub is spear-heading TACCs efforts in doing
      auto-offload to Xenon Phi.
-    
+
 
      Beware of disk quotas if you're trying many builds; I hit 5GB
      pretty fast and blew my matplotlib install due to quota limits :)
 
-     
+
 
 
 Installing virtualenv (skipped)
@@ -586,7 +586,7 @@ Python3
 .. note::
 
      With help from Yaakoub, we now build ``_ctypes`` successfully.
-     
+
 
      Also, the mpicc build is much, much slower than icc.  Interesting.
      And we crashed out.  Here's what we tried with mpicc::

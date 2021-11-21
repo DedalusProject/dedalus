@@ -8,4 +8,5 @@ Best performance is coming from our newly developed Pleaides/Intel/MKL stack; we
    :maxdepth: 1
 
    pleiades_intel
+   pleiades_mpi_sgi_intel
    pleiades_gcc

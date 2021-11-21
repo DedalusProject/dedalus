@@ -2,12 +2,7 @@ Install notes for Mac OS X (10.9)
 *******************************************
 
 These instructions assume you're starting with a clean Mac OS X system,
-which will need ``python3`` and all scientific packages installed. These
-instructions are based off an excellent  `guide`_
-and are the result of extensive attempts to properly install ``numpy``
-and ``scipy`` in particular (including building directly from source).
-
-.. _guide: http://www.lowindata.com/2013/installing-scientific-python-on-mac-os-x/
+which will need ``python3`` and all scientific packages installed.
 
 Mac OS X cookbook
 -----------------
@@ -17,7 +12,7 @@ Mac OS X cookbook
     #!bash
 
     # Homebrew
-    ruby -e "$(curl -fsSL https://raw.github.com/Homebrew/homebrew/go/install)"
+    ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
     brew update
     brew doctor
     # ** Fix any errors raised by brew doctor before proceeding **
@@ -35,7 +30,6 @@ Mac OS X cookbook
     pip3 install nose
     pip3 install numpy
     pip3 install scipy
-    pip3 install sympy
     brew install libpng
     brew install freetype
     pip3 install matplotlib
@@ -54,8 +48,8 @@ Mac OS X cookbook
     # Dedalus
     # ** Change to the directory where you want to keep the Dedalus repository **
     brew install hg
-    hg clone https://bitbucket.org/dedalus-project/dedalus2
-    cd dedalus2
+    hg clone https://bitbucket.org/dedalus-project/dedalus
+    cd dedalus
     pip3 install -r requirements.txt
     python3 setup.py build_ext --inplace
 
@@ -79,7 +73,7 @@ following from the Terminal:
 ::
 
     #!bash
-    ruby -e "$(curl -fsSL https://raw.github.com/Homebrew/homebrew/go/install)"
+    ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
     brew update
     brew doctor
 
@@ -124,7 +118,7 @@ during the scipy install.
     brew install suite-sparse
 
 Now use pip, the (the standard Python package management system, installed with
-Python via Homebrew) to install ``nose``, ``numpy``, ``scipy``, and ``sympy``,
+Python via Homebrew) to install ``nose``, ``numpy``, and ``scipy``
 in order:
 
 ::
@@ -133,7 +127,6 @@ in order:
     pip3 install nose
     pip3 install numpy
     pip3 install scipy
-    pip3 install sympy
 
 The ``scipy`` install can fail in a number of surprising ways. Be
 especially wary of custom settings to ``LDFLAGS``, ``CPPFLAGS``, etc.
@@ -193,8 +186,8 @@ Dedalus repository):
 
     #!bash
     brew install hg
-    hg clone https://bitbucket.org/dedalus-project/dedalus2
-    cd dedalus2
+    hg clone https://bitbucket.org/dedalus-project/dedalus
+    cd dedalus
 
 A few other Python packages needed by Dedalus are listed in the
 ``requirements.txt`` file in the Dedalus repository, and can be installed using
@@ -216,7 +209,7 @@ Cython extensions are modified).
     python3 setup.py build_ext --inplace
 
 Finally, you need to add the Dedalus repository to the Python search path so
-that the ``dedalus2`` package can be imported.  To do this, add the following
+that the ``dedalus`` package can be imported.  To do this, add the following
 to your ``~/.bash_profile``, substituting in the path to the Dedalus repository
 you cloned using Mercurial:
 

@@ -11,6 +11,18 @@
 # check the current directory and one up.
 #
 
+if [[ $1 == "-y" ]]; then
+    INTERACTIVE=0
+else
+    INTERACTIVE=1
+fi
+
+if [[ $INTERACTIVE == 0 ]]; then
+    CLEANUP=1
+else
+    CLEANUP=0
+fi
+
 DEST_SUFFIX="dedalus"
 DEST_DIR="`pwd`/${DEST_SUFFIX/ /}"   # Installation location
 BRANCH="tip" # This is the branch to which we will forcibly update.
@@ -34,6 +46,8 @@ INST_IPYTHON=0 # by default, don't build ipython
 INST_FTYPE=0 # by default, don't install freetype
 INST_PNG=0 # by default, don't install libpng
 INST_PKGCFG=0 # by default, don't install pkg-config
+INST_OPENSSL=0 #by default, don't install openssl
+INST_ZLIB=0 # by default, don't install zlib
 
 if [ ${REINST_DEDALUS} ] && [ ${REINST_DEDALUS} -eq 1 ] && [ -n ${DEDALUS_DEST} ]
 then
@@ -97,7 +111,7 @@ function help_needed
 {
     [ -e $1 ] && return
     echo
-    echo "WE NEED YOUR HELP!" 
+    echo "WE NEED YOUR HELP!"
     echo
     echo "We do not have testing facilities on $1 yet. While we're confident "
     echo "that Dedalus will work on $1, to get it working, "
@@ -118,7 +132,7 @@ function get_dedalusproject
 {
     [ -e $1 ] && return
     echo "Downloading $1 from dedalus-project.org"
-    ${GETFILE} "http://dedalus-project.org/dependencies/$1" || do_exit
+    ${GETFILE} "http://data.dedalus-project.org/dependencies/$1" || do_exit
     ( ${SHASUM} -c $1.sha512 2>&1 ) 1>> ${LOG_FILE} || do_exit
 }
 
@@ -160,14 +174,12 @@ function host_specific
 {
     IS_OSX=0              # not OSX by default
     MYHOST=`hostname -s`  # just give the short one, not FQDN
-    MYHOSTLONG=`hostname` # FQDN, for Ranger
     MYOS=`uname -s`       # A guess at the OS
     if [ "${MYOS##Darwin}" != "${MYOS}" ]
     then
         echo "Looks like you're running on Mac OSX."
         echo
         echo "NOTE: you must have the Xcode command line tools installed."
-	echo "You also need install mercurial (http://mercurial.selenic.com/downloads), and gfortran (https://gcc.gnu.org/wiki/GFortranBinaries#MacOS)"
         echo
 	echo "The instructions for obtaining the Xcode tools varies according"
 	echo "to your exact OS version.  On older versions of OS X, you"
@@ -218,7 +230,21 @@ function host_specific
         SDKROOT="/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk"
 	echo
     fi
-
+    if [ "${OSX_VERSION##10.11}" != "${OSX_VERSION}" ]
+    then
+        INST_OPENSSL=1
+	INST_ZLIB=1
+    fi
+    if [ "${OSX_VERSION##10.12}" != "${OSX_VERSION}" ]
+    then
+        INST_OPENSSL=1
+    INST_ZLIB=1
+    fi
+    if [ "${OSX_VERSION##10.13}" != "${OSX_VERSION}" ]
+    then
+        INST_OPENSSL=1
+    INST_ZLIB=1
+    fi
     INST_OPENMPI=1
     INST_ATLAS=0
     INST_HDF5=1
@@ -226,11 +252,7 @@ function host_specific
     INST_PNG=1
     INST_PKGCFG=1
     IS_OSX=1
-    fi
-
-    
-
-    if [ -f /etc/redhat-release ]
+    elif [ -f /etc/redhat-release ]
     then
             echo "Looks like you're on a RedHat-compatible machine."
             echo
@@ -238,8 +260,7 @@ function host_specific
             echo
             echo "  * atlas"
             echo "  * atlas-devel"
-            echo "  * mercurial"
-            echo "  * openmpi"      
+            echo "  * openmpi"
             echo "  * openssl-devel"
             echo "  * ncurses"
             echo "  * ncurses-devel"
@@ -262,7 +283,7 @@ function host_specific
             echo
             echo "You can accomplish this by executing:"
             echo
-            echo "$ sudo yum install atlas atlas-devel openmpi openmpi-devel openssl openssl-devel ncurses ncurses-devel zip uuid uuid-devel freetype freetype-devel tk tk-devel hdf5 hdf5-devel libpng-devel mercurial sqlite sqlite-devel gcc-gfortran gcc-c++"
+            echo "$ sudo yum install atlas atlas-devel openmpi openmpi-devel openssl openssl-devel ncurses ncurses-devel zip uuid uuid-devel freetype freetype-devel tk tk-devel hdf5 hdf5-devel libpng-devel sqlite sqlite-devel gcc-gfortran gcc-c++"
             echo
 	    echo "Some of these packages may require access to EPEL (extra packages for enterprise linux), and you'll need optional packages enabled."
 	    echo
@@ -277,18 +298,17 @@ function host_specific
             export MPI_INCLUDE_PATH="/usr/include/openmpi-x86_64/"
             export MPI_LIBRARY_PATH="/usr/lib64/openmpi/lib/"
         echo
-    fi
-    if [ -f /etc/lsb-release ] && [ `grep --count buntu /etc/lsb-release` -gt 0 ]
+    elif [ -f /etc/lsb-release ] && [ `grep --count buntu /etc/lsb-release` -gt 0 ]
     then
+        UBUNTU_VERSION=`lsb_release -r | cut -f 2 | sed -s 's/\([0-9]\+\)\.\([0-9]\+\)/\1/'`
         echo "Looks like you're on an Ubuntu-compatible machine."
         echo
         echo "You need to have these packages installed:"
         echo
         echo "  * libatlas-base-dev"
-        echo "  * mercurial"
         echo "  * libatlas3-base"
         echo "  * libopenmpi-dev"
-        echo "  * openmpi-bin"       
+        echo "  * openmpi-bin"
         echo "  * libssl-dev"
         echo "  * build-essential"
         echo "  * libncurses5"
@@ -298,18 +318,78 @@ function host_specific
         echo "  * libfreetype6-dev"
         echo "  * tk-dev"
         echo "  * libhdf5-dev"
-        echo "  * libzmq-dev"
+        if [ $UBUNTU_VERSION -lt 17 ]
+        then
+            echo "  * libzmq-dev"
+        fi
+        echo "  * libbz2-dev"
         echo "  * libsqlite3-dev"
         echo "  * gfortran"
         echo
         echo "You can accomplish this by executing:"
         echo
-        echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev mercurial libzmq-dev libsqlite3-dev gfortran"
+        if [ $UBUNTU_VERSION -lt 17 ]
+        then
+            echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev libzmq-dev libsqlite3-dev gfortran libbz2-dev"
+        else
+            echo "$ sudo apt-get install libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev libsqlite3-dev gfortran libbz2-dev"
+        fi
         echo
         echo
+        if [ $UBUNTU_VERSION -lt 16 ] 
+        then
+           echo "Your version of Ubuntu needs a newer version OpenMPI. We'll build our own."
+           INST_OPENMPI=1
+        fi
+        if [ $UBUNTU_VERSION -ge 17 ]
+        then
+            echo "You are using Ubuntu 17 or higher, where the MPI headers have moved. Correcting header paths."
+            export MPI_INCLUDE_PATH="/usr/lib/x86_64-linux-gnu/openmpi/include"
+            export MPI_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/openmpi/lib"
+        fi
         BLAS="/usr/lib/"
         LAPACK="/usr/lib/"
+    elif [ -f /etc/debian_version ]
+    then
+	DEBIAN_VERSION=`cat /etc/debian_version`
+        echo "Looks like you're on a Debian-compatible machine."
+        echo
+        echo "You need to have these packages installed:"
+        echo
+        echo "  * libbz2-dev"
+        echo "  * libatlas-base-dev"
+        echo "  * libatlas3-base"
+        echo "  * libopenmpi-dev"
+        echo "  * openmpi-bin"
+        echo "  * libssl-dev"
+        echo "  * build-essential"
+        echo "  * libncurses5"
+        echo "  * libncurses5-dev"
+        echo "  * zip"
+        echo "  * uuid-dev"
+        echo "  * libfreetype6-dev"
+        echo "  * tk-dev"
+        echo "  * libhdf5-dev"
+        echo "  * libsqlite3-dev"
+        echo "  * gfortran"
+        echo
+        echo "You can accomplish this by executing:"
+        echo
+        echo "$ sudo apt-get install libbz2-dev libatlas-base-dev libatlas3-base libopenmpi-dev openmpi-bin libssl-dev build-essential libncurses5 libncurses5-dev zip uuid-dev libfreetype6-dev tk-dev libhdf5-dev libsqlite3-dev gfortran"
+        echo
+        echo
+	echo "You're running Debian $DEBIAN_VERSION"
+	if [ $(echo $DEBIAN_VERSION'<'9 | bc -l) -eq 1 ];
+	then
+            echo "Currently, Debian versions lower than 9 (Stretch) need a newer version OpenMPI. We'll build our own."
+            INST_OPENMPI=1
+	else
+	    echo "You're running Debian >= 9; we can use the package provided OpenMPI."
+	    export MPI_PATH=/usr/lib/x86_64-linux-gnu/openmpi
+	fi
     fi
+
+    # package installs
     if [ $INST_SCIPY -eq 1 ]
     then
 	echo
@@ -362,15 +442,19 @@ function do_setup_py
 }
 
 ORIG_PWD=`pwd`
-echo "+++++++++"
-echo "Greetings, human. Welcome to the Dedalus Install Script"
-echo
+if [ $INTERACTIVE == 1 ]; then
+   echo "+++++++++"
+   echo "Greetings, human. Welcome to the Dedalus Install Script"
+   echo
+fi
 host_specific
-echo
-echo
-read -p "[hit enter] "
-echo
-echo
+if [ $INTERACTIVE == 1 ]; then
+   echo
+   echo
+   read -p "[hit enter] "
+   echo
+   echo
+fi
 
 LOG_FILE="${DEST_DIR}/dedalus_install.log"
 
@@ -378,20 +462,24 @@ mkdir -p ${DEST_DIR}/src
 cd ${DEST_DIR}/src
 
 ## Packages to install from source
-PYTHON='Python-3.4.1'
+PYTHON='Python-3.6.3'
 FFTW='fftw-3.3.4'
-NUMPY='numpy-1.8.1'
-SCIPY='scipy-0.14.0'
-OPENMPI='openmpi-1.6.5'
+NUMPY='numpy-1.14.3'
+SCIPY='scipy-1.1.0'
+OPENMPI='openmpi-1.10.1'
 HDF5='hdf5-1.8.13'
 FTYPE='freetype-2.5.3'
-MATPLOTLIB='matplotlib-1.3.1'
-PNG='libpng-1.6.12'
+MATPLOTLIB='matplotlib-1.4.3'
+PNG='libpng-1.6.17'
 PKGCFG='pkg-config-0.28'
+OPENSSL='openssl-1.0.1p'
+ZLIB='zlib-1.2.8'
 
 # dump sha512 to files
 printf -v PYFILE "%s.tgz.sha512" $PYTHON
-printf -v PYSHA "43adbef25e1b7a7a0be86231d4aa131d5aa3efd5608f572b3b0878520cd27054cc7993726f7ba4b5c878e0c4247fb443f367e0a786dec9fbfa7a25d67427f107  %s" ${PYFILE%.sha512}
+printf -v PYSHA "73f1477f3d3f5bd978c4ea1d1b679467b45e9fd2f443287b88c5c107a9ced580c56e0e8f33acea84e06b11a252e2a4e733120b721a9b6e1bb3d34493a3353bfb  %s" ${PYFILE%.sha512}
+
+printf -v PYSHA "2cb33a20b77150ecbfc51f08195ec6d2f7a6f9c22a653544e657fb67be46dc8d6129c00a8bc51823476217dd09d290f1395acb63f1f07da50924553c8760a645  %s" ${PYFILE%.sha512}
 echo "$PYSHA" > $PYFILE
 
 printf -v FFTFILE "%s.tar.gz.sha512" $FFTW
@@ -399,15 +487,15 @@ printf -v FFTSHA "1ee2c7bec3657f6846e63c6dfa71410563830d2b951966bf0123bd8f4f2f5d
 echo "$FFTSHA" > $FFTFILE
 
 printf -v NPFILE "%s.tar.gz.sha512" $NUMPY
-printf -v NPSHA "39ef9e13f8681a2c2ba3d74ab96fd28c5669e653308fd1549f262921814fa7c276ce6d9fb65ef135006584c608bdf3db198d43f66c9286fc7b3c79803dbc1f57  %s" ${NPFILE%.sha512}
+printf -v NPSHA "0ed8606bb04225d1126ca8c20a9b83ceae82dc0bdac077dfc0c236ee7aea1a6029e140e2f30d36241fa80d56a8259f5ae6a7bcbba454f5059ec0a9bf35540238  %s" ${NPFILE%.sha512}
 echo "$NPSHA" > $NPFILE
 
 printf -v SPFILE "%s.tar.gz.sha512" $SCIPY
-printf -v SPSHA "ad1278740c1dc44c5e1b15335d61c4552b66c0439325ed6eeebc5872a1c0ba3fce1dd8509116b318d01e2d41da2ee49ec168da330a7fafd22511138b29f7235d  %s" ${SPFILE%.sha512}
+printf -v SPSHA "76ac0661f3248d03a4fab43615955e108be542adc8603b02fc8db00c93a7000bf244f3ad4a3b33f5ff3409b093ae142dc9e816f2a67d6fcddfe98b5a2f595773  %s" ${SPFILE%.sha512}
 echo "$SPSHA" > $SPFILE
 
 printf -v MPIFILE "%s.tar.gz.sha512" $OPENMPI
-printf -v MPISHA "3fe661bef30654c62bbb94bc8a2e132194131906913f2576bda56ec85c2b83e0dd7e864664dca1a8ec62fc6f8308edd18d8d1296c7d778a69ecb28be789bf499  %s" ${MPIFILE%.sha512}
+printf -v MPISHA "9bac61e8cd2ddcca02d7053b7177d0d494eed43e1040d1532ab47eefb9bd14cdf7863a6460ccb859d98ab38458c03c240864084c41508a4743a986d2e95fb059  %s" ${MPIFILE%.sha512}
 echo "$MPISHA" > $MPIFILE
 
 printf -v HDF5FILE "%s.tar.gz.sha512" $HDF5
@@ -419,16 +507,24 @@ printf -v FTSHA "9ab7b77c5c09b1eb5baee7eb16da8a5f6fa7168cfa886bfed392b2fe80a985b
 echo "$FTSHA" > $FTFILE
 
 printf -v MPLFILE "%s.tar.gz.sha512" $MATPLOTLIB
-printf -v MPLSHA "04877aa15b6d52a6f813e8377098d13c432f66ae2522c544575440180944c9b73a2164ae63edd3a0eff807883bf7b39cd55f28454ccee8c76146567ff4a6fd40  %s" ${MPLFILE%.sha512}
+printf -v MPLSHA "51b0f58b2618b47b653e17e4f6b6a1215d3a3b0f1331ce3555cc7435e365d9c75693f289ce12fe3bf8f69fd57b663e545f0f1c2c94e81eaa661cac0689e125f5  %s" ${MPLFILE%.sha512}
 echo "$MPLSHA" > $MPLFILE
 
 printf -v PNGFILE "%s.tar.gz.sha512" $PNG
-printf -v PNGSHA "97959a245f23775a97d63394302da518ea1225a88023bf0906c24fcf8b1765856df36d2705a847d7f822c3b4e6f5da67526bb17fe04d00d523e8a18ea5037f4f  %s" ${PNGFILE%.sha512}
+printf -v PNGSHA "445cf5cace57eb89f2f52be96e9f0e956717a4d4474bd6f5d0545a8b30b45ff45df94325c2504b044d014880cbb3e696475cd6fa7936993dee7ffee93756e384  %s" ${PNGFILE%.sha512}
 echo "$PNGSHA" > $PNGFILE
 
 printf -v PKGCFGFILE "%s.tar.gz.sha512" $PKGCFG
 printf -v PKGCFGSHA "6eafa5ca77c5d44cd15f48457a5e96fcea2555b66d8e35ada5ab59864a0aa03d441e15f54ab9c6343693867b3b490f392c75b7d9312f024c9b7ec6a0194d8320  %s" ${PKGCFGFILE%.sha512}
 echo "$PKGCFGSHA" > $PKGCFGFILE
+
+printf -v SSLFILE "%s.tar.gz.sha512" $OPENSSL
+printf -v SSLSHA "64e475c53a85b78de7c5aa71a22d4bb3a456142842373ebf8f22e9857cb0352b646e591b21af866933baecdbdb5ac4a22aeb64914440c53a0f30cd25914029e5  %s" ${SSLFILE%.sha512}
+echo "$SSLSHA" > $SSLFILE
+
+printf -v ZLIBFILE "%s.tar.gz.sha512" $ZLIB
+printf -v ZLIBSHA "ece209d4c7ec0cb58ede791444dc754e0d10811cbbdebe3df61c0fd9f9f9867c1c3ccd5f1827f847c005e24eef34fb5bf87b5d3f894d75da04f1797538290e4a  %s" ${ZLIBFILE%.sha512}
+echo "$ZLIBSHA" > $ZLIBFILE
 
 # get the files
 get_dedalusproject $PYTHON.tgz
@@ -440,6 +536,8 @@ get_dedalusproject $SCIPY.tar.gz
 [ $INST_FTYPE -eq 1 ] && get_dedalusproject $FTYPE.tar.gz
 [ $INST_PNG -eq 1 ]  && get_dedalusproject $PNG.tar.gz
 [ $INST_PKGCFG -eq 1 ]  && get_dedalusproject $PKGCFG.tar.gz
+[ $INST_OPENSSL -eq 1 ] && get_dedalusproject $OPENSSL.tar.gz
+[ $INST_ZLIB -eq 1 ] && get_dedalusproject $ZLIB.tar.gz
 
 # if we're installing freetype, we need to manually install matplotlib
 [ $INST_FTYPE -eq 1 ] && get_dedalusproject $MATPLOTLIB.tar.gz
@@ -459,19 +557,64 @@ then
         cd ..
     fi
     OPENMPI_DIR=${DEST_DIR}
-    export LDFLAGS="${LDFLAGS} -L${OPENMPI_DIR}/lib/ -L${OPENMPI_DIR}/lib64/"
     LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${OPENMPI_DIR}/lib/"
     PATH="${OPENMPI_DIR}/bin:${PATH}"
     export MPI_PATH=${OPENMPI_DIR}
 fi
 
-# python3 
+# next, OpenSSL if we need it
+if [ $INST_OPENSSL -eq 1 ]
+then
+    if [ ! -e $OPENSSL/done ]
+    then
+        [ ! -e $OPENSSL ] && tar xfz $OPENSSL.tar.gz
+        echo "Installing OPENSSL"
+        cd $OPENSSL
+        ( ./Configure darwin64-x86_64-cc enable-ec_nistp_64_gcc_128 no-ssl2 no-ssl3 no-comp --prefix=${DEST_DIR}/ 2>&1 ) 1>> ${LOG_FILE} || do_exit
+        ( make install 2>&1 ) 1>> ${LOG_FILE} || do_exit
+        ( make clean 2>&1) 1>> ${LOG_FILE} || do_exit
+        touch done
+        cd ..
+    fi
+    OPENSSL_DIR=${DEST_DIR}
+    export LDFLAGS="${LDFLAGS} -L${OPENSSL_DIR}/lib/ -L${OPENSSL_DIR}/lib64/"
+    LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${OPENSSL_DIR}/lib/"
+    PATH="${OPENSSL_DIR}/bin:${PATH}"
+    export MPI_PATH=${OPENSSL_DIR}
+fi
+
+# next, zlib, if necessary
+if [ $INST_ZLIB -eq 1 ]
+then
+    if [ ! -e $ZLIB/done ]
+    then
+        [ ! -e $ZLIB ] && tar xfz $ZLIB.tar.gz
+        echo "Installing ZLIB"
+        cd $ZLIB
+        ( ./configure --prefix=${DEST_DIR}/ 2>&1 ) 1>> ${LOG_FILE} || do_exit
+        ( make install 2>&1 ) 1>> ${LOG_FILE} || do_exit
+        ( make clean 2>&1) 1>> ${LOG_FILE} || do_exit
+        touch done
+        cd ..
+    fi
+    ZLIB_DIR=${DEST_DIR}
+    export LDFLAGS="${LDFLAGS} -L${ZLIB_DIR}/lib/ -L${ZLIB_DIR}/lib64/"
+    LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${ZLIB_DIR}/lib/"
+    PATH="${ZLIB_DIR}/bin:${PATH}"
+fi
+
+# python3
 
 if [ ! -e $PYTHON/done ]
 then
     echo "Installing Python."
     [ ! -e $PYTHON ] && tar xfz $PYTHON.tgz
     cd $PYTHON
+    if [ $INST_OPENSSL -eq 1 ]
+    then
+       export PY_CFLAGS="-I${DEST_DIR}/include"
+    fi
+
     echo "PY_CFLAGS = $PY_CFLAGS"
     ( ./configure --prefix=${DEST_DIR}/ ${PYCONF_ARGS} CFLAGS=${PY_CFLAGS} 2>&1 ) 1>> ${LOG_FILE} || do_exit
 
@@ -482,7 +625,7 @@ then
     cd ..
 fi
 
-export PYTHONPATH=${DEST_DIR}/lib/python3.4/site-packages/
+export PYTHONPATH=${DEST_DIR}/lib/python3.5/site-packages/
 
 # FFTW3
 if [ ! -e $FFTW/done ]
@@ -587,6 +730,10 @@ then
 fi
 # if !OSX ATLAS/OpenBLAS
 
+# cython
+echo "pip installing cython."
+( ${DEST_DIR}/bin/pip3 install cython 2>&1 ) 1>> ${LOG_FILE} || do_exit
+
 # numpy
 # scipy
 if [ ! -e $SCIPY/done ]
@@ -615,10 +762,6 @@ echo "pip installing nose."
 echo "pip installing mpi4py."
 ( ${DEST_DIR}/bin/pip3 install mpi4py 2>&1 ) 1>> ${LOG_FILE} || do_exit
 
-# cython
-echo "pip installing cython."
-( ${DEST_DIR}/bin/pip3 install cython 2>&1 ) 1>> ${LOG_FILE} || do_exit
-
 # h5py
 echo "pip installing h5py."
 ( ${DEST_DIR}/bin/pip3 install h5py 2>&1 ) 1>> ${LOG_FILE} || do_exit
@@ -637,11 +780,22 @@ then
 	echo "[gui_support]" >> ${DEST_DIR}/src/$MATPLOTLIB/setup.cfg
 	echo "macosx = False" >> ${DEST_DIR}/src/$MATPLOTLIB/setup.cfg
     fi
+
+    [ ! -e $MATPLOTLIB/extracted ] && tar xfz $MATPLOTLIB.tar.gz
+    touch $MATPLOTLIB/extracted
+    cd $MATPLOTLIB
+    patch -b setupext.py <<EOF
+960c960
+<             'freetype2', 'ft2build.h',
+---
+>             'freetype2', 'freetype2/ft2build.h',
+EOF
+    cd ..
     do_setup_py $MATPLOTLIB
-    
+
 else
     echo "pip installing matplotlib."
-    ( ${DEST_DIR}/bin/pip3 install matplotlib==1.3.1 2>&1 ) 1>> ${LOG_FILE} || do_exit
+    ( ${DEST_DIR}/bin/pip3 install matplotlib 2>&1 ) 1>> ${LOG_FILE} || do_exit
 fi
 
 # ipython
@@ -653,45 +807,19 @@ then
     ( ${DEST_DIR}/bin/pip3 install jinja2 2>&1 ) 1>> ${LOG_FILE} || do_exit
 
 fi
-# We assume that hg can be found in the path.
-if type -P hg &>/dev/null
-then
-    export HG_EXEC=hg
-else
-    echo "Cannot find mercurial.  Please make sure it is installed."
-    do_exit
-fi
 
-if [ -z "$DEDALUS_DIR" ]
-then
-    DEDALUS_DIR="$PWD/dedalus/"
-    if [ ! -e dedalus ]
-    then
-        ( ${HG_EXEC} --debug clone https://bitbucket.org/dedalus-project/dedalus/ dedalus 2>&1 ) 1>> ${LOG_FILE}
-
-        # Now we update to the branch we're interested in.
-        ( ${HG_EXEC} -R ${DEDALUS_DIR} up -C ${BRANCH} 2>&1 ) 1>> ${LOG_FILE}
-    fi
-    echo Setting DEDALUS_DIR=${DEDALUS_DIR}
-fi
-
+echo "pip installing Dedalus"
+${DEST_DIR}/bin/pip3 install dedalus
 
 ## afterwards
 # Add the environment scripts
-( cp ${DEDALUS_DIR}/docs/activate ${DEST_DIR}/bin/activate 2>&1 ) 1>> ${LOG_FILE}
+${GETFILE} "https://raw.githubusercontent.com/DedalusProject/dedalus/master/docs/activate" || do_exit
+( cp ${DEST_DIR}/src/activate ${DEST_DIR}/bin/activate 2>&1 ) 1>> ${LOG_FILE}
+
 sed -i.bak -e "s,__DEDALUS_DIR__,${DEST_DIR}," ${DEST_DIR}/bin/activate
-( cp ${DEDALUS_DIR}/docs/activate.csh ${DEST_DIR}/bin/activate.csh 2>&1 ) 1>> ${LOG_FILE}
+( cp ${DEST_DIR}/src/activate.csh ${DEST_DIR}/bin/activate.csh 2>&1 ) 1>> ${LOG_FILE}
+${GETFILE} "https://raw.githubusercontent.com/DedalusProject/dedalus/master/docs/activate.csh" || do_exit
 sed -i.bak -e "s,__DEDALUS_DIR__,${DEST_DIR}," ${DEST_DIR}/bin/activate.csh
-
-echo "Doing Dedalus update, wiping local changes and updating to branch ${BRANCH}"
-MY_PWD=`pwd`
-cd $DEDALUS_DIR
-( ${HG_EXEC} pull 2>1 && ${HG_EXEC} up -C 2>1 ${BRANCH} 2>&1 ) 1>> ${LOG_FILE}
-
-echo "Installing Dedalus"
-( export PATH=$DEST_DIR/bin:$PATH ; ${DEST_DIR}/bin/python3 setup.py build_ext --inplace 2>&1 ) 1>> ${LOG_FILE} || do_exit
-touch done
-cd $MY_PWD
 
 if !( ( ${DEST_DIR}/bin/python3 -c "import readline" 2>&1 )>> ${LOG_FILE})
 then
@@ -699,6 +827,24 @@ then
     ( ${DEST_DIR}/bin/pip3 install readline 2>&1 ) 1>> ${LOG_FILE}
 fi
 
+# clean up
+if [ $CLEANUP == 1 ]; then
+    rm ${DEST_DIR}/src/$PYTHON.tgz
+    rm -rf ${DEST_DIR}/src/$PYTHON
+    rm ${DEST_DIR}/src/$FFTW.tar.gz
+    rm -rf ${DEST_DIR}/src/$FFTW
+    rm ${DEST_DIR}/src/$NUMPY.tar.gz
+    rm -rf ${DEST_DIR}/src/$NUMPY
+    rm ${DEST_DIR}/src/$SCIPY.tar.gz
+    rm -rf ${DEST_DIR}/src/$SCIPY
+    [ $INST_OPENMPI -eq 1 ] && rm ${DEST_DIR}/src/$OPENMPI.tar.gz && rm -rf ${DEST_DIR}/src/$OPENMPI
+    [ $INST_HDF5 -eq 1 ]    && rm ${DEST_DIR}/src/$HDF5.tar.gz    && rm -rf ${DEST_DIR}/src/$HDF5
+    [ $INST_FTYPE -eq 1 ]   && rm ${DEST_DIR}/src/$FTYPE.tar.gz   && rm -rf ${DEST_DIR}/src/$FTYPE
+    [ $INST_PNG -eq 1 ]     && rm ${DEST_DIR}/src/$PNG.tar.gz     && rm -rf ${DEST_DIR}/src/$PNG
+    [ $INST_PKGCFG -eq 1 ]  && rm ${DEST_DIR}/src/$PKGCFG.tar.gz  && rm -rf ${DEST_DIR}/src/$PKGCFG
+    [ $INST_OPENSSL -eq 1 ] && rm ${DEST_DIR}/src/$OPENSSL.tar.gz && rm -rf ${DEST_DIR}/src/$OPENSSL
+    [ $INST_ZLIB -eq 1 ]    && rm ${DEST_DIR}/src/$ZLIB.tar.gz    && rm -rf ${DEST_DIR}/src/$ZLIB
+fi
 
 function print_afterword
 {
