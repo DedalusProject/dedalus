@@ -4,3 +4,5 @@
 # under the terms of the GPLv3 license.  A copy of the license should
 # have been included in the file 'LICENSE.txt', and is also available
 # online at <http://www.gnu.org/licenses/gpl-3.0.html>.
+
+__version__ = "3.0.0a"
