@@ -1,0 +1,16 @@
+*.pyc
+*.DS_Store
+*.png
+*.pdf
+*.prof
+*.mp4
+*.db
+*.c
+*.so
+*.o
+*.h5
+.ipynb_checkpoints/
+/build/
+/dist/
+/dedalus.egg-info/
+/dedalus/examples.tar.gz
