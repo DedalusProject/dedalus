@@ -71,7 +71,7 @@ problem.add_equation("lap(f) + lift(tau,-1) = - f**n")
 problem.add_equation("f(r=1) = 0")
 
 # Initial guess
-phi, theta, r = basis.local_grids((1, 1, 1))
+phi, theta, r = dist.local_grids(basis)
 R0 = 5
 f['g'] = R0**(2/(n-1)) * (1 - r**2)**2
 

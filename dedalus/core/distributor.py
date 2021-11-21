@@ -216,6 +216,21 @@ class Distributor:
         from .field import TensorField
         return TensorField(self, *args, **kw)
 
+    def local_grid(self, basis, scale=None):
+        # TODO: remove from bases and do it all here?
+        if basis.dim == 1:
+            return basis.local_grid(scale=scale)
+        else:
+            raise ValueError("Use `local_grids` for multidimensional bases.")
+
+    def local_grids(self, basis, scales=None):
+        # TODO: remove from bases and do it all here?
+        return basis.local_grids(scales=scales)
+
+    def local_modes(self, basis):
+        # TODO: remove from bases and do it all here?
+        return basis.local_modes()
+
 
 class Layout:
     """

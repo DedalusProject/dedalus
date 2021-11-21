@@ -49,7 +49,7 @@ coords = d3.SphericalCoordinates('phi', 'theta', 'r')
 dist = d3.Distributor(coords, dtype=dtype, mesh=mesh)
 basis = d3.ShellBasis(coords, shape=(Nphi, Ntheta, Nr), radii=(Ri, Ro), dealias=dealias, dtype=dtype)
 s2_basis = basis.S2_basis()
-phi, theta, r = basis.local_grids((1, 1, 1))
+phi, theta, r = dist.local_grids(basis)
 
 # Fields
 p = dist.Field(name='p', bases=basis)

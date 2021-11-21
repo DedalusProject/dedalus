@@ -180,13 +180,19 @@ class Basis:
         """Global grids."""
         # Subclasses must implement
         # Returns tuple of global grids along each subaxis
-        raise NotImplementedError
+        raise NotImplementedError(f"{type(self)} has not implement global_grids.")
 
     def local_grids(self, scales):
         """Local grids."""
         # Subclasses must implement
         # Returns tuple of local grids along each subaxis
-        raise NotImplementedError
+        raise NotImplementedError(f"{type(self)} has not implement local_grids.")
+
+    def local_modes(self, scales):
+        """Local modes."""
+        # Subclasses must implement
+        # Returns tuple of local modes along each subaxis
+        raise NotImplementedError(f"{type(self)} has not implement local_modes.")
 
     def local_elements(self):
         """
@@ -357,6 +363,11 @@ class IntervalBasis(Basis):
         native_grid = self._native_grid(scale)[local_elements]
         problem_grid = self.COV.problem_coord(native_grid)
         return reshape_vector(problem_grid, dim=self.dist.dim, axis=self.axis)
+
+    def local_modes(self):
+        """Local grid."""
+        local_modes = self.local_elements()[0]
+        return reshape_vector(local_modes, dim=self.dist.dim, axis=self.axis)
 
     def local_elements(self):
         local_elements = self.dist.coeff_layout.local_elements(self.domain, scales=1)[self.axis]

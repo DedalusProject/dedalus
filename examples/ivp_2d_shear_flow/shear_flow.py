@@ -43,8 +43,8 @@ coords = d3.CartesianCoordinates('x', 'z')
 dist = d3.Distributor(coords, dtype=dtype)
 xbasis = d3.RealFourier(coords['x'], size=Nx, bounds=(0, Lx), dealias=dealias)
 zbasis = d3.RealFourier(coords['z'], size=Nz, bounds=(-Lz/2, Lz/2), dealias=dealias)
-x = xbasis.local_grid(1)
-z = zbasis.local_grid(1)
+x = dist.local_grid(xbasis)
+z = dist.local_grid(zbasis)
 
 # Fields
 p = dist.Field(name='p', bases=(xbasis,zbasis))

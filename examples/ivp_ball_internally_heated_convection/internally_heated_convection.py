@@ -60,7 +60,7 @@ coords = d3.SphericalCoordinates('phi', 'theta', 'r')
 dist = d3.Distributor(coords, dtype=dtype, mesh=mesh)
 basis = d3.BallBasis(coords, shape=(Nphi, Ntheta, Nr), radius=1, dealias=dealias, dtype=dtype)
 S2_basis = basis.S2_basis()
-phi, theta, r = basis.local_grids((1, 1, 1))
+phi, theta, r = dist.local_grids(basis)
 
 # Fields
 u = dist.VectorField(coords, name='u',bases=basis)

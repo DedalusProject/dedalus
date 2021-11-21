@@ -45,7 +45,7 @@ dtype = np.float64
 coords = d3.PolarCoordinates('phi', 'r')
 dist = d3.Distributor(coords, dtype=dtype)
 basis = d3.DiskBasis(coords, shape=(Nphi, Nr), radius=1, dealias=dealias, dtype=dtype, azimuth_library='matrix')
-phi, r = basis.local_grids()
+phi, r = dist.local_grids(basis)
 S1_basis = basis.S1_basis(radius=1)
 
 # Fields

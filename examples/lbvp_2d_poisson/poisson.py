@@ -32,6 +32,8 @@ coords = d3.CartesianCoordinates('x', 'y')
 dist = d3.Distributor(coords, dtype=dtype)
 xbasis = d3.RealFourier(coords['x'], size=Nx, bounds=(0, Lx))
 ybasis = d3.Chebyshev(coords['y'], size=Ny, bounds=(0, Ly))
+x = dist.local_grid(xbasis)
+y = dist.local_grid(ybasis)
 
 # Fields
 u = dist.Field(name='u', bases=(xbasis, ybasis))
@@ -39,8 +41,6 @@ tau1 = dist.Field(name='tau1', bases=xbasis)
 tau2 = dist.Field(name='tau2', bases=xbasis)
 
 # Forcing
-x = xbasis.local_grid()
-y = ybasis.local_grid()
 f = dist.Field(bases=(xbasis, ybasis))
 g = dist.Field(bases=xbasis)
 h = dist.Field(bases=xbasis)

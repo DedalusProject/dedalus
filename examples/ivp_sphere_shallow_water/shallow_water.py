@@ -52,7 +52,7 @@ h = dist.Field(name='h', bases=basis)
 zcross = lambda A: d3.MulCosine(d3.skew(A))
 
 # Initial conditions: zonal jet
-phi, theta = basis.local_grids((1, 1))
+phi, theta = dist.local_grids(basis)
 lat = np.pi / 2 - theta + 0*phi
 umax = 80 * meter / second
 lat0 = np.pi / 7

@@ -42,7 +42,7 @@ problem = d3.IVP([u], namespace=locals())
 problem.add_equation("dt(u) - a*dx(dx(u)) - b*dx(dx(dx(u))) = - u*dx(u)")
 
 # Initial conditions
-x = xbasis.local_grid(1)
+x = dist.local_grid(xbasis)
 n = 20
 u['g'] = np.log(1 + np.cosh(n)**2/np.cosh(n*(x-0.2*Lx))**2) / (2*n)
 
