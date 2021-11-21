@@ -1411,9 +1411,9 @@ class SpinRecombinationBasis:
         # Perform unitary spin recombination along relevant tensor indeces
         U = []
         for i, cs in enumerate(tensorsig):
-            if (cs == self.coordsystem or
-                (type(cs) is SphericalCoordinates and self.coordsystem == cs.S2coordsys) or
-                (type(self.coordsystem) is SphericalCoordinates and self.coordsystem.S2coordsys == cs)):
+            if (cs is self.coordsystem or
+                (type(cs) is SphericalCoordinates and self.coordsystem is cs.S2coordsys) or
+                (type(self.coordsystem) is SphericalCoordinates and self.coordsystem.S2coordsys is cs)):
                 U.append(Us[cs.dim])
             #if self.coordsystem is vs: # kludge before we decide how compound coordinate systems work
             #    Ui = np.identity(vs.dim, dtype=np.complex128)
@@ -1458,18 +1458,19 @@ class SpinRecombinationBasis:
                 # For an even number of transforms, we need a final copy
                 num_recombinations = 0
                 for i, Ui in enumerate(U):
-                    dim = Ui.shape[0]
-                    if num_recombinations % 2 == 0:
-                        input_view = reduced_view_5(gdata, i, self.axis+len(tensorsig))
-                        output_view = reduced_view_5(out, i, self.axis+len(tensorsig))
-                    else:
-                        input_view = reduced_view_5(out, i, self.axis+len(tensorsig))
-                        output_view = reduced_view_5(gdata, i, self.axis+len(tensorsig))
-                    if dim == 3:
-                        spin_recombination.recombine_forward_dim3(input_view, output_view)
-                    elif dim == 2:
-                        spin_recombination.recombine_forward_dim2(input_view, output_view)
-                    num_recombinations += 1
+                    if Ui is not None:
+                        dim = Ui.shape[0]
+                        if num_recombinations % 2 == 0:
+                            input_view = reduced_view_5(gdata, i, self.axis+len(tensorsig))
+                            output_view = reduced_view_5(out, i, self.axis+len(tensorsig))
+                        else:
+                            input_view = reduced_view_5(out, i, self.axis+len(tensorsig))
+                            output_view = reduced_view_5(gdata, i, self.axis+len(tensorsig))
+                        if dim == 3:
+                            spin_recombination.recombine_forward_dim3(input_view, output_view)
+                        elif dim == 2:
+                            spin_recombination.recombine_forward_dim2(input_view, output_view)
+                        num_recombinations += 1
                 if num_recombinations % 2 == 0:
                     np.copyto(out, gdata)
 
@@ -1493,18 +1494,19 @@ class SpinRecombinationBasis:
                 # For an even number of transforms, we need a final copy
                 num_recombinations = 0
                 for i, Ui in enumerate(U):
-                    dim = Ui.shape[0]
-                    if num_recombinations % 2 == 0:
-                        input_view = reduced_view_5(gdata, i, self.axis+len(tensorsig))
-                        output_view = reduced_view_5(out, i, self.axis+len(tensorsig))
-                    else:
-                        input_view = reduced_view_5(out, i, self.axis+len(tensorsig))
-                        output_view = reduced_view_5(gdata, i, self.axis+len(tensorsig))
-                    if dim == 3:
-                        spin_recombination.recombine_backward_dim3(input_view, output_view)
-                    elif dim == 2:
-                        spin_recombination.recombine_backward_dim2(input_view, output_view)
-                    num_recombinations += 1
+                    if Ui is not None:
+                        dim = Ui.shape[0]
+                        if num_recombinations % 2 == 0:
+                            input_view = reduced_view_5(gdata, i, self.axis+len(tensorsig))
+                            output_view = reduced_view_5(out, i, self.axis+len(tensorsig))
+                        else:
+                            input_view = reduced_view_5(out, i, self.axis+len(tensorsig))
+                            output_view = reduced_view_5(gdata, i, self.axis+len(tensorsig))
+                        if dim == 3:
+                            spin_recombination.recombine_backward_dim3(input_view, output_view)
+                        elif dim == 2:
+                            spin_recombination.recombine_backward_dim2(input_view, output_view)
+                        num_recombinations += 1
                 if num_recombinations % 2 == 0:
                     np.copyto(out, gdata)
 
@@ -2442,6 +2444,7 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
 
     dim = 2
     dims = ['azimuth', 'colatitude']
+    subaxis_dependence = [True, True]
     transforms = {}
     constant_mode_value = 1 / np.sqrt(2)
 
@@ -2645,6 +2648,14 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
             if self.radius == other.radius:
                 shape = tuple(np.maximum(self.shape, other.shape))
                 return SphereBasis(self.coordsystem, shape, radius=self.radius, dealias=self.dealias, dtype=self.dtype)
+        return NotImplemented
+
+    def __matmul__(self, other):
+        return other.__rmatmul__(self)
+
+    def __rmatmul__(self, other):
+        if other is None:
+            return self
         return NotImplemented
 
     # @staticmethod
@@ -3858,7 +3869,12 @@ class Spherical3DBasis(MultidimensionalBasis):
     def get_radial_basis(self):
         return self.radial_basis
 
-    def S2_basis(self,radius=1):
+    def S2_basis(self, radius=None):
+        if radius is None:
+            if hasattr(self, "radius"):
+                radius = self.radius
+            else:
+                radius = max(self.radii)
         return SphereBasis(self.coordsystem, self.shape[:2], radius=radius, dealias=self.dealias[:2], dtype=self.dtype,
                     azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library)
 

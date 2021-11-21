@@ -390,8 +390,17 @@ class Product(Future):
         ncc_data = self._ncc_data
         separability = ~ subproblem.problem.matrix_coupling
         #return = self._ncc_matrix_recursion(ncc_data, ncc.tensorsig, ncc.bases, operand.bases, operand.tensorsig, separability, self.gamma_args, **kw)
-        ncc_basis = ncc.domain.full_bases[-1]
-        arg_basis = operand.domain.full_bases[-1]
+        if ncc.domain.bases:
+            ncc_axis = ncc.domain.bases[-1].last_axis
+        else:
+            ncc_axis = 0
+        if operand.domain.bases:
+            arg_axis = operand.domain.bases[-1].last_axis
+        else:
+            arg_axis = 0
+        axis = max(ncc_axis, arg_axis)
+        ncc_basis = ncc.domain.get_basis(axis)
+        arg_basis = operand.domain.get_basis(axis)
         ncc_ts = ncc.tensorsig
         coeffs = ncc_data
         arg_ts = operand.tensorsig
@@ -399,7 +408,7 @@ class Product(Future):
         gamma_args = self.gamma_args
 
         # ASSUME NCC IS ALONG LAST AXIS
-        axis = self.dist.dim - 1
+        #axis = self.dist.dim - 1
         group = subproblem.group
         ncc_first = (ncc is self.args[0])
         ncc_group = tuple(0*g if g is not None else None for g in group)

@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 restart = (len(sys.argv) > 1 and sys.argv[1] == '--restart')
 
 # Parameters
-Nphi, Ntheta, Nr = 16, 8, 10
+Nphi, Ntheta, Nr = 128, 64, 48
 Rayleigh = 1e6
 Prandtl = 1
 dealias = 3/2

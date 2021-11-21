@@ -555,7 +555,7 @@ def test_radial_component_vector(Nphi, Ntheta, Nr, k, dealias, dtype, basis, rad
     u['g'][1] = r**2*(2*ct**3*cp-r*cp**3*st**4+r**3*ct*cp**3*st**5*sp**3-1/16*r*np.sin(2*theta)**2*(-7*sp+np.sin(3*phi)))
     u['g'][0] = r**2*sp*(-2*ct**2+r*ct*cp*st**2*sp-r**3*cp**2*st**5*sp**3)
     v = operators.RadialComponent(operators.interpolate(u, r=radius)).evaluate()
-    vg = radius**2*st*(2*ct**2*cp-radius*ct**3*sp+radius**3*cp**3*st**5*sp**3+radius*ct*st**2*(cp**3+sp**3))
+    vg = [radius**2*st*(2*ct**2*cp-radius*ct**3*sp+radius**3*cp**3*st**5*sp**3+radius*ct*st**2*(cp**3+sp**3))]
     assert np.allclose(v['g'], vg)
 
 
@@ -579,9 +579,9 @@ def test_radial_component_tensor(Nphi, Ntheta, Nr, k, dealias, dtype, basis, rad
     T['g'][0,0] = 6*y**2/(x**2+y**2)
     A = operators.RadialComponent(operators.interpolate(T, r=radius)).evaluate()
     Ag = 0 * A['g']
-    Ag[2] = 2*np.sin(theta)*(3*np.cos(phi)**2*np.sin(theta)+2*np.cos(theta)*np.sin(phi))
-    Ag[1] = 6*np.cos(theta)*np.cos(phi)**2*np.sin(theta) + 2*np.cos(2*theta)*np.sin(phi)
-    Ag[0] = 2*np.cos(phi)*(np.cos(theta) - 3*np.sin(theta)*np.sin(phi))
+    Ag[0, 2] = 2*np.sin(theta)*(3*np.cos(phi)**2*np.sin(theta)+2*np.cos(theta)*np.sin(phi))
+    Ag[0, 1] = 6*np.cos(theta)*np.cos(phi)**2*np.sin(theta) + 2*np.cos(2*theta)*np.sin(phi)
+    Ag[0, 0] = 2*np.cos(phi)*(np.cos(theta) - 3*np.sin(theta)*np.sin(phi))
     assert np.allclose(A['g'], Ag)
 
 

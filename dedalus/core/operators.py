@@ -2170,7 +2170,7 @@ class AzimuthalComponent(Component, metaclass=MultiClass):
         if not isinstance(self.coordsys, coords.PolarCoordinates):
             raise ValueError("Can only take the AzimuthalComponent of a PolarCoordinate vector")
         tensorsig = operand.tensorsig
-        self.tensorsig = tuple( tensorsig[:index] + tensorsig[index+1:] )
+        self.tensorsig = tuple( tensorsig[:index] + (tensorsig[index].coords[0],) + tensorsig[index+1:] )
 
     def new_operand(self, operand, **kw):
         return AzimuthalComponent(operand, self.index, **kw)
