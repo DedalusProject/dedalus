@@ -54,7 +54,7 @@ dtype = np.float64
 
 # Bases
 coords = d3.SphericalCoordinates('phi', 'theta', 'r')
-dist = d3.Distributor(coords, dtype=np.float64)
+dist = d3.Distributor(coords, dtype=dtype)
 basis = d3.BallBasis(coords, (1, 1, Nr), radius=1, dtype=dtype, dealias=dealias)
 
 # Fields
