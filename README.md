@@ -16,6 +16,9 @@
   <img alt="PyPI - License" src="https://img.shields.io/pypi/l/dedalus">
 </p>
 
+**Note: the master branch is currently the development head of version 2 of the codebase.
+The beta release of version 3, including curvilinear domains, is on the `d3` branch.**
+
 Dedalus is a flexible framework for solving partial differential equations using spectral methods.
 The code is open-source and developed by a team of researchers studying astrophysical and geophysical fluid dynamics.
 
