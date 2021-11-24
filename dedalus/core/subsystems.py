@@ -116,10 +116,11 @@ class Subsystem:
         self.dtype = problem.dtype
         self.group = group
         # Determine matrix group using solver matrix dependence
+        # Map non-dependent groups to group 1, since group 0 may have different truncation
         matrix_dependence = solver.matrix_dependence | solver.matrix_coupling
-        #self.matrix_group = tuple(replace(group, ~matrix_dependence, 0))
-        # TODO: add back in matrix_group to reduce redundant subproblems
-        self.matrix_group = group
+        matrix_dependence = matrix_dependence
+        change_group = (~matrix_dependence) & (np.array(group) != 0)
+        self.matrix_group = tuple(replace(group, change_group, 1))
 
     def coeff_slices(self, domain):
         slices = self.dist.coeff_layout.local_groupset_slices(self.group, domain, scales=1)

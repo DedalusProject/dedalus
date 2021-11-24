@@ -119,6 +119,36 @@ def test_heat_disk(Nr, Nphi, dtype):
 
 
 @pytest.mark.parametrize('dtype', [np.complex128, np.float64])
+@pytest.mark.parametrize('Nphi', [16])
+@pytest.mark.parametrize('Nr', [32])
+def test_heat_disk_cart(Nr, Nphi, dtype):
+    # Bases
+    dealias = 1
+    c, d, b, phi, r, x, y = build_disk(Nphi, Nr, dealias=dealias, dtype=dtype)
+    xr = radius_disk * np.cos(phi)
+    yr = radius_disk * np.sin(phi)
+    # Fields
+    u = field.Field(name='u', dist=d, bases=(b,), dtype=dtype)
+    τu = field.Field(name='u', dist=d, bases=(b.S1_basis(),), dtype=dtype)
+    f = field.Field(dist=d, bases=(b,), dtype=dtype)
+    f['g'] = 6*x - 2
+    g = field.Field(dist=d, bases=(b.S1_basis(),), dtype=dtype)
+    g['g'] = xr**3 - yr**2
+    # Problem
+    Lap = lambda A: operators.Laplacian(A, c)
+    LiftTau = lambda A: operators.LiftTau(A, b, -1)
+    problem = problems.LBVP([u, τu])
+    problem.add_equation((Lap(u) + LiftTau(τu), f))
+    problem.add_equation((u(r=radius_disk), g))
+    # Solver
+    solver = solvers.LinearBoundaryValueSolver(problem)
+    solver.solve()
+    # Check solution
+    u_true = x**3 - y**2
+    assert np.allclose(u['g'], u_true)
+
+
+@pytest.mark.parametrize('dtype', [np.complex128, np.float64])
 @pytest.mark.parametrize('Nphi', [4])
 @pytest.mark.parametrize('Nr', [8])
 def test_heat_disk_bc(Nr, Nphi, dtype):
@@ -184,6 +214,37 @@ def test_heat_ball(Nmax, Lmax, dtype):
     solver.solve()
     # Check solution
     u_true = r**2 - 1
+    assert np.allclose(u['g'], u_true)
+
+
+@pytest.mark.parametrize('dtype', [np.complex128, np.float64])
+@pytest.mark.parametrize('Nmax', [7])
+@pytest.mark.parametrize('Lmax', [7])
+def test_heat_ball_cart(Nmax, Lmax, dtype):
+    # Bases
+    dealias = 1
+    c, d, b, phi, theta, r, x, y, z = build_ball(2*(Lmax+1), Lmax+1, Nmax+1, dealias=dealias, dtype=dtype)
+    xr = radius_ball * np.cos(phi) * np.sin(theta)
+    yr = radius_ball * np.sin(phi) * np.sin(theta)
+    zr = radius_ball * np.cos(theta)
+    # Fields
+    u = field.Field(name='u', dist=d, bases=(b,), dtype=dtype)
+    τu = field.Field(name='u', dist=d, bases=(b.S2_basis(),), dtype=dtype)
+    f = field.Field(name='a', dist=d, bases=(b,), dtype=dtype)
+    f['g'] = 12*x**2 - 6*y + 2
+    g = field.Field(name='a', dist=d, bases=(b.S2_basis(),), dtype=dtype)
+    g['g'] = xr**4 - yr**3 + zr**2
+    # Problem
+    Lap = lambda A: operators.Laplacian(A, c)
+    LiftTau = lambda A: operators.LiftTau(A, b, -1)
+    problem = problems.LBVP([u, τu])
+    problem.add_equation((Lap(u) + LiftTau(τu), f))
+    problem.add_equation((u(r=radius_ball), g))
+    # Solver
+    solver = solvers.LinearBoundaryValueSolver(problem)
+    solver.solve()
+    # Check solution
+    u_true = x**4 - y**3 + z**2
     assert np.allclose(u['g'], u_true)
 
 
