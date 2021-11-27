@@ -163,7 +163,7 @@ class Evaluator:
     def require_coeff_space(self, fields):
         """Move all fields to coefficient layout."""
         # Build dictionary of starting layout indices
-        layouts = defaultdict(list, {0:[]})
+        layouts = defaultdict(list, {0: []})
         for f in fields:
             layouts[f.layout.index].append(f)
         # Decrement all fields down to layout 0
@@ -172,6 +172,20 @@ class Evaluator:
         for index in range(max_index, 0, -1):
             current_fields.extend(layouts[index])
             self.dist.paths[index-1].decrement(current_fields)
+
+    def require_grid_space(self, fields):
+        """Move all fields to grid layout."""
+        # Build dictionary of starting layout indices
+        layouts = defaultdict(list, {0: []})
+        for f in fields:
+            layouts[f.layout.index].append(f)
+        # Increment all fields down to grid layout
+        grid_index = len(self.dist.layouts) - 1
+        min_index = min(layouts.keys())
+        current_fields = []
+        for index in range(min_index, grid_index):
+            current_fields.extend(layouts[index])
+            self.dist.paths[index].increment(current_fields)
 
     @staticmethod
     def get_fields(tasks):

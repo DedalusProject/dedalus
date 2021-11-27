@@ -547,10 +547,8 @@ class InitialValueSolver(SolverBase):
                 # TODO: maybe this should be on scales=1?
                 for field in self.state:
                     field.require_scales(field.domain.dealias)
-                for path in self.dist.paths:
-                    path.increment(self.state)
-                for path in self.dist.paths[::-1]:
-                    path.decrement(self.state)
+                self.evaluator.require_grid_space(self.state)
+                self.evaluator.require_coeff_space(self.state)
         # Advance using timestepper
         wall_time = self.get_wall_time() - self.start_time
         self.timestepper.step(dt, wall_time)
