@@ -17,7 +17,7 @@
 </p>
 
 **Note: the master branch is currently the development head of version 2 of the codebase.
-The beta release of version 3, including curvilinear domains, is on the `d3` branch.**
+The beta release of version 3, including curvilinear domains, is on the ["d3" branch](https://github.com/DedalusProject/dedalus/tree/d3).**
 
 Dedalus is a flexible framework for solving partial differential equations using spectral methods.
 The code is open-source and developed by a team of researchers studying astrophysical and geophysical fluid dynamics.
