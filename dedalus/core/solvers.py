@@ -402,15 +402,18 @@ class InitialValueSolver(SolverBase):
     # Default to factorizer to speed up repeated solves
     matsolver_default = 'MATRIX_FACTORIZER'
 
-    def __init__(self, problem, timestepper, enforce_real_cadence=100, **kw):
+    def __init__(self, problem, timestepper, enforce_real_cadence=100, warmup_iterations=10, **kw):
         logger.debug('Beginning IVP instantiation')
         super().__init__(problem, **kw)
         self.enforce_real_cadence = enforce_real_cadence
         self._wall_time_array = np.zeros(1, dtype=float)
-        self.start_time = self.get_wall_time()
+        self.init_time = self.get_wall_time()
         # Build subproblems and subproblem matrices
         self.subsystems = subsystems.build_subsystems(self)
         self.subproblems = subsystems.build_subproblems(self, self.subsystems, ['M', 'L'])
+        # Compute total modes
+        local_modes = sum(ss.subproblem.pre_right.shape[1] for ss in self.subsystems)
+        self.total_modes = self.dist.comm.allreduce(local_modes, op=MPI.SUM)
         # Build systems
         # namespace = problem.namespace
         # #vars = [namespace[var] for var in problem.variables]
@@ -430,6 +433,7 @@ class InitialValueSolver(SolverBase):
         # Attributes
         self.sim_time = self.initial_sim_time = 0  # TODO: allow picking up from current problem sim time?
         self.iteration = self.initial_iteration = 0
+        self.warmup_iterations = warmup_iterations
         # Default integration parameters
         self.stop_sim_time = np.inf
         self.stop_wall_time = np.inf
@@ -463,7 +467,7 @@ class InitialValueSolver(SolverBase):
         if self.sim_time >= self.stop_sim_time:
             logger.info('Simulation stop time reached.')
             return False
-        elif (self.get_wall_time() - self.start_time) >= self.stop_wall_time:
+        elif (self.get_wall_time() - self.init_time) >= self.stop_wall_time:
             logger.info('Wall stop time reached.')
             return False
         elif self.iteration >= self.stop_iteration:
@@ -549,23 +553,27 @@ class InitialValueSolver(SolverBase):
                     field.require_scales(field.domain.dealias)
                 self.evaluator.require_grid_space(self.state)
                 self.evaluator.require_coeff_space(self.state)
+        # Record times
+        wall_time = self.get_wall_time()
+        if self.iteration == self.initial_iteration:
+            self.start_time = wall_time
+        if self.iteration == self.initial_iteration + self.warmup_iterations:
+            self.warmup_time = wall_time
         # Advance using timestepper
-        wall_time = self.get_wall_time() - self.start_time
-        self.timestepper.step(dt, wall_time)
+        wall_elapsed = wall_time - self.init_time
+        self.timestepper.step(dt, wall_elapsed)
         # Update iteration
         self.iteration += 1
 
     def evolve(self, timestep_function):
         """Advance system until stopping criterion is reached."""
-
         # Check for a stopping criterion
         if np.isinf(self.stop_sim_time):
             if np.isinf(self.stop_wall_time):
                 if np.isinf(self.stop_iteration):
                     raise ValueError("No stopping criterion specified.")
-
         # Evolve
-        while self.ok:
+        while self.proceed:
             dt = timestep_function()
             if self.sim_time + dt > self.stop_sim_time:
                 dt = self.stop_sim_time - self.sim_time
@@ -578,4 +586,24 @@ class InitialValueSolver(SolverBase):
             L = subproblem.L_min @ subproblem.pre_right
             A = (M + dt*L).A
             print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {subproblem.group}, matrix rank: {np.linalg.matrix_rank(A)}/{A.shape[0]}, cond: {np.linalg.cond(A):.1e}")
+
+    def log_stats(self, format=".4g"):
+        """Log timing statistics with specified string formatting (optional)."""
+        log_time = self.get_wall_time()
+        logger.info(f"Final iteration: {self.iteration}")
+        logger.info(f"Final sim time: {self.sim_time}")
+        setup_time = self.start_time - self.init_time
+        logger.info(f"Setup time (init - iter 0): {setup_time:{format}} sec")
+        if self.iteration >= self.initial_iteration + self.warmup_iterations:
+            warmup_time = self.warmup_time - self.start_time
+            run_time = log_time - self.warmup_time
+            cpus = self.dist.comm.size
+            modes = self.total_modes
+            stages = (self.iteration - self.initial_iteration) * self.timestepper.stages
+            logger.info(f"Warmup time (iter 0-{self.warmup_iterations}): {warmup_time:{format}} sec")
+            logger.info(f"Run time (iter {self.warmup_iterations}-end): {run_time:{format}} sec")
+            logger.info(f"CPU time (iter {self.warmup_iterations}-end): {run_time*cpus/3600:{format}} cpu-hr")
+            logger.info(f"Speed: {(modes*stages/cpus/run_time):{format}} mode-stages/cpu-sec")
+        else:
+            logger.info(f"Timings unavailable due because warmup did not complete.")
 

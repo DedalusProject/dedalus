@@ -53,6 +53,8 @@ class MultistepIMEX:
 
     """
 
+    stages = 1
+
     def __init__(self, solver):
 
         self.solver = solver

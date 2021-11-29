@@ -15,7 +15,6 @@ To run and plot using e.g. 4 processes:
     $ mpiexec -n 4 python3 plot_sphere.py snapshots/*.h5
 """
 
-import time
 import numpy as np
 import dedalus.public as d3
 import logging
@@ -94,8 +93,7 @@ snapshots.add_task(-d3.div(d3.skew(u)), name='vorticity')
 
 # Main loop
 try:
-    logger.info('Starting loop')
-    start_time = time.time()
+    logger.info('Starting main loop')
     while solver.proceed:
         solver.step(timestep)
         if (solver.iteration-1) % 10 == 0:
@@ -104,11 +102,5 @@ except:
     logger.error('Exception raised, triggering end of main loop.')
     raise
 finally:
-    end_time = time.time()
-    run_time = end_time - start_time
-    logger.info('Iterations: %i' %solver.iteration)
-    logger.info('Sim end time: %f' %solver.sim_time)
-    logger.info('Run time: %.2f sec' %run_time)
-    logger.info('Run time: %f cpu-hr' %(run_time/60/60*dist.comm.size))
-    logger.info('Speed: %.2e gridpoint-iters/cpu-sec' %(Nphi*Ntheta*solver.iteration/run_time/dist.comm.size))
+    solver.log_stats()
 
