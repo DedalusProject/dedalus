@@ -56,10 +56,11 @@ phi, theta, r = basis.local_grids((1, 1, 1))
 p = dist.Field(name='p', bases=basis)
 b = dist.Field(name='b', bases=basis)
 u = dist.VectorField(coords, name='u', bases=basis)
-tau1b = dist.Field(name='tau1b', bases=s2_basis)
-tau2b = dist.Field(name='tau2b', bases=s2_basis)
-tau1u = dist.VectorField(coords, name='tau1u', bases=s2_basis)
-tau2u = dist.VectorField(coords, name='tau2u', bases=s2_basis)
+tau_p = dist.Field(name='tau_p')
+tau_b1 = dist.Field(name='tau_b1', bases=s2_basis)
+tau_b2 = dist.Field(name='tau_b2', bases=s2_basis)
+tau_u1 = dist.VectorField(coords, name='tau_u1', bases=s2_basis)
+tau_u2 = dist.VectorField(coords, name='tau_u2', bases=s2_basis)
 
 # Substitutions
 one = dist.Field(bases=basis.S2_basis(Ri))
@@ -77,19 +78,21 @@ rvec['g'][2] = r
 lift_basis = basis.clone_with(k=1) # First derivative basis
 lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
 
-grad_u = d3.grad(u) + rvec*lift(tau1u,-1) # First-order reduction
-grad_b = d3.grad(b) + rvec*lift(tau1b,-1) # First-order reduction
+grad_u = d3.grad(u) + rvec*lift(tau_u1,-1) # First-order reduction
+grad_b = d3.grad(b) + rvec*lift(tau_b1,-1) # First-order reduction
+
+integ = lambda A: d3.Integrate(A, coords)
 
 # Problem
-problem = d3.IVP([p, b, u, tau1b, tau2b, tau1u, tau2u], namespace=locals())
-problem.add_equation("trace(grad_u) = 0")
-problem.add_equation("dt(b) - kappa*div(grad_b) + lift(tau2b,-1) = - dot(u,grad(b))")
-problem.add_equation("dt(u) - nu*div(grad_u) + grad(p) - b*er + lift(tau2u,-1) = - dot(u,grad(u))")
+problem = d3.IVP([p, b, u, tau_p, tau_b1, tau_b2, tau_u1, tau_u2], namespace=locals())
+problem.add_equation("trace(grad_u) + tau_p = 0")
+problem.add_equation("dt(b) - kappa*div(grad_b) + lift(tau_b2,-1) = - dot(u,grad(b))")
+problem.add_equation("dt(u) - nu*div(grad_u) + grad(p) - b*er + lift(tau_u2,-1) = - dot(u,grad(u))")
 problem.add_equation("b(r=Ri) = one")
 problem.add_equation("u(r=Ri) = 0")
 problem.add_equation("b(r=Ro) = 0")
-problem.add_equation("u(r=Ro) = 0", condition="ntheta != 0")
-problem.add_equation("p(r=Ro) = 0", condition="ntheta == 0") # Pressure gauge
+problem.add_equation("u(r=Ro) = 0")
+problem.add_equation("integ(p) = 0") # Pressure gauge
 
 # Solver
 solver = problem.build_solver(timestepper)

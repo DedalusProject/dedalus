@@ -74,7 +74,7 @@ class SolverBase:
             problem_coupling = np.array(problem.matrix_coupling)
             matrix_coupling = np.array(matrix_coupling)
             if np.any(~matrix_coupling & problem_coupling):
-                raise ValueError(f"Specified solver coupling incompatible with problem coupling: {problem_coupling}")
+                raise ValueError(f"Specified solver coupling is incompatible with problem coupling: {problem_coupling}")
         # Check that coupled dimensions are local
         coeff_layout = self.dist.coeff_layout
         coupled_nonlocal = matrix_coupling & ~coeff_layout.local
@@ -175,7 +175,10 @@ class EigenvalueSolver(SolverBase):
         #pencil.build_matrices(self.problem, ['M', 'L'], cacheid=cacheid)
 
         # Solve as dense general eigenvalue problem
-        eig_output = eig(subproblem.L_min.A, b=-subproblem.M_min.A, **kw)
+        sp = subproblem
+        A = (sp.L_min @ sp.pre_right).A
+        B = - (sp.M_min @ sp.pre_right).A
+        eig_output = eig(A, b=B, **kw)
         # Unpack output
         if len(eig_output) == 2:
             self.eigenvalues, self.eigenvectors = eig_output
@@ -197,11 +200,13 @@ class EigenvalueSolver(SolverBase):
         subsystem : Subsystem object
             subsystem that eigenvalue data will be put into
         """
-        if subsystem not in self.eigenvalue_subproblem.subsystems:
+        sp = self.eigenvalue_subproblem
+        ss = subsystem
+        if ss not in sp.subsystems:
             raise ValueError("subsystem must be in eigenvalue_subproblem")
         for var in self.state:
             var['c'] = 0
-        X = self.eigenvectors[:,index]
+        X = sp.pre_right @ self.eigenvectors[:,index]
         subsystem.scatter(X, self.state)
 
 
@@ -270,7 +275,7 @@ class LinearBoundaryValueSolver(SolverBase):
         # Solve system for each subproblem, updating state
         for sp in self.subproblems:
             sp_matsolver = self.subproblem_matsolvers[sp]
-            F = np.empty(sp.L_min.shape[0], dtype=self.dtype)
+            F = np.empty(sp.pre_left.shape[0], dtype=self.dtype)
             X = np.empty(sp.pre_right.shape[0], dtype=self.dtype)
             for ss in sp.subsystems:
                 F.fill(0)  # Must zero before csr_matvec
@@ -345,7 +350,7 @@ class NonlinearBoundaryValueSolver(SolverBase):
         # Solve system for each subproblem, updating state
         for sp in self.subproblems:
             sp_matsolver = self._build_subproblem_matsolver(sp)
-            F = np.empty(sp.dH_min.shape[0], dtype=self.dtype)
+            F = np.empty(sp.pre_left.shape[0], dtype=self.dtype)
             X = np.empty(sp.pre_right.shape[0], dtype=self.dtype)
             for ss in sp.subsystems:
                 F.fill(0)  # Must zero before csr_matvec
@@ -370,6 +375,8 @@ class InitialValueSolver(SolverBase):
         Dedalus problem.
     timestepper : timestepper class
         Timestepper to use in evolving initial conditions
+    enforce_real_cadence : int, optional
+        Iteration cadence for enforcing Hermitian symmetry on real variables (default: 100).
     **kw :
         Other options passed to ProblemBase.
 
@@ -395,9 +402,10 @@ class InitialValueSolver(SolverBase):
     # Default to factorizer to speed up repeated solves
     matsolver_default = 'MATRIX_FACTORIZER'
 
-    def __init__(self, problem, timestepper, **kw):
+    def __init__(self, problem, timestepper, enforce_real_cadence=100, **kw):
         logger.debug('Beginning IVP instantiation')
         super().__init__(problem, **kw)
+        self.enforce_real_cadence = enforce_real_cadence
         self._wall_time_array = np.zeros(1, dtype=float)
         self.start_time = self.get_wall_time()
         # Build subproblems and subproblem matrices
@@ -528,17 +536,22 @@ class InitialValueSolver(SolverBase):
 
     def step(self, dt):
         """Advance system by one iteration/timestep."""
+        # Assert finite timestep
         if not np.isfinite(dt):
             raise ValueError("Invalid timestep")
-        # References
-        #state = self.state
-        # (Safety gather)
-        #state.gather()
+        # Enforce Hermitian symmetry for real variables
+        if np.isrealobj(self.dtype.type()):
+            # Enforce for as many iterations as timestepper uses internally
+            if self.iteration % self.enforce_real_cadence < self.timestepper.steps:
+                # Transform state variables to grid and back
+                # TODO: maybe this should be on scales=1?
+                for field in self.state:
+                    field.require_scales(field.domain.dealias)
+                self.evaluator.require_grid_space(self.state)
+                self.evaluator.require_coeff_space(self.state)
         # Advance using timestepper
         wall_time = self.get_wall_time() - self.start_time
         self.timestepper.step(dt, wall_time)
-        # (Safety scatter)
-        #state.scatter()
         # Update iteration
         self.iteration += 1
 

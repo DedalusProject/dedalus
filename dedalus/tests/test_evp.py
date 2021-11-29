@@ -31,6 +31,8 @@ def test_heat_1d_periodic(x_basis_class, Nx, dtype):
     solver.solve_dense(solver.subproblems[0])
     # Check solution
     k = xb.wavenumbers
+    if x_basis_class is basis.RealFourier:
+        k = k[1:]  # Drop one k=0 for msin
     assert np.allclose(solver.eigenvalues, k**2)
 
 
@@ -217,10 +219,14 @@ def test_ball_diffusion(Lmax, Nmax, Leig, radius, bc, dtype):
     grad = lambda A: operators.Gradient(A, c)
     curl = lambda A: operators.Curl(A)
     lap = lambda A: operators.Laplacian(A, c)
+    dot = arithmetic.DotProduct
     trans = lambda A: operators.TransposeComponents(A)
     radial = lambda A, index: operators.RadialComponent(A, index=index)
     angular = lambda A, index: operators.AngularComponent(A, index=index)
     LiftTau = lambda A: operators.LiftTau(A, b, -1)
+    r_S2 = field.Field(dist=d, tensorsig=(c,), dtype=dtype)
+    r_S2['g'][2] = 1
+    # Problem
     problem = problems.EVP([φ,A,τ_A], λ)
     problem.add_equation((div(A), 0))
     problem.add_equation((-λ*A + grad(φ) - lap(A) + LiftTau(τ_A), 0))
@@ -233,7 +239,7 @@ def test_ball_diffusion(Lmax, Nmax, Leig, radius, bc, dtype):
     elif bc == 'potential':
         ell_func = lambda ell: ell+1
         ell_1 = lambda A: operators.SphericalEllProduct(A, c, ell_func)
-        problem.add_equation((radial(grad(A)(r=radius),0) + ell_1(A)(r=radius)/radius, 0))
+        problem.add_equation((dot(r_S2,grad(A)(r=radius)) + ell_1(A)(r=radius)/radius, 0))
     elif bc == 'conducting':
         problem.add_equation((φ(r=radius), 0))
         problem.add_equation((angular(A(r=radius),0), 0))

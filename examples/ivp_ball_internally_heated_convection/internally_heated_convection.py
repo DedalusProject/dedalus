@@ -39,7 +39,6 @@ import dedalus.public as d3
 import logging
 logger = logging.getLogger(__name__)
 
-# TODO: automate hermitian conjugacy enforcement
 # TODO: finalize evaluators to save last output
 
 
@@ -68,6 +67,7 @@ phi, theta, r = basis.local_grids((1, 1, 1))
 u = dist.VectorField(coords, name='u',bases=basis)
 p = dist.Field(name='p', bases=basis)
 T = dist.Field(name='T', bases=basis)
+tau_p = dist.Field(name='tau_p')
 tau_u = dist.VectorField(coords, name='tau u', bases=S2_basis)
 tau_T = dist.Field(name='tau T', bases=S2_basis)
 
@@ -83,17 +83,18 @@ lift_basis = basis.clone_with(k=2) # Natural output
 lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
 
 strain_rate = d3.grad(u) + d3.trans(d3.grad(u))
-shear_stress = d3.angular(d3.radial(strain_rate(r=1)))
+shear_stress = d3.angular(d3.radial(strain_rate(r=1), index=1))
+integ = lambda A: d3.Integrate(A, coords)
 
 # Problem
-problem = d3.IVP([p, u, T, tau_u, tau_T], namespace=locals())
-problem.add_equation("div(u) = 0")
+problem = d3.IVP([p, u, T, tau_p, tau_u, tau_T], namespace=locals())
+problem.add_equation("div(u) + tau_p = 0")
 problem.add_equation("dt(u) - nu*lap(u) + grad(p) - r_vec*T + lift(tau_u,-1) = - cross(curl(u),u)")
 problem.add_equation("dt(T) - kappa*lap(T) + lift(tau_T,-1) = - dot(u,grad(T)) + kappa*T_source")
-problem.add_equation("shear_stress = 0")  # stress free
-problem.add_equation("radial(u(r=1)) = 0", condition="ntheta != 0")  # no penetration
-problem.add_equation("p(r=1) = 0", condition="ntheta == 0")  # pressure gauge
+problem.add_equation("shear_stress = 0")  # Stress free
+problem.add_equation("radial(u(r=1)) = 0")  # No penetration
 problem.add_equation("T(r=1) = 0")
+problem.add_equation("integ(p) = 0")  # Pressure gauge
 
 # Solver
 solver = problem.build_solver(timestepper)
@@ -129,7 +130,6 @@ flow = d3.GlobalFlowProperty(solver, cadence=10)
 flow.add_property(d3.dot(u,u), name='u2')
 
 # Main loop
-hermitian_cadence = 100
 try:
     logger.info('Starting loop')
     start_time = time.time()
@@ -139,10 +139,6 @@ try:
         if (solver.iteration-1) % 10 == 0:
             max_u = np.sqrt(flow.max('u2'))
             logger.info("Iteration=%i, Time=%e, dt=%e, max(u)=%e" %(solver.iteration, solver.sim_time, timestep, max_u))
-        # Impose hermitian symmetry on two consecutive timesteps because we are using a 2-stage timestepper
-        if solver.iteration % hermitian_cadence in [0, 1]:
-            for f in solver.state:
-                f.require_grid_space()
 except:
     logger.error('Exception raised, triggering end of main loop.')
     raise

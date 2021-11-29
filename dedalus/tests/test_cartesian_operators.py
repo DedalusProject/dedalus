@@ -118,7 +118,7 @@ def test_skew_implicit(basis, N, dealias, dtype):
     problem.add_equation("skew(u) = skew(f)")
     solver = problem.build_solver()
     solver.solve()
-    assert np.allclose(u['c'], f['c'])
+    assert np.allclose(u['c'][:,0], f['c'][:,0])
 
 
 @pytest.mark.parametrize('basis', [build_FF, build_FC, build_FFF, build_FFC])

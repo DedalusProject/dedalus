@@ -849,19 +849,25 @@ class SpectralOperator1D(SpectralOperator):
     def subproblem_matrix(self, subproblem):
         """Build operator matrix for a specific subproblem."""
         axis = self.last_axis
-        # Build identity matrices for each axis
-        subsystem_shape = subproblem.coeff_shape(self.domain)
-        factors = [sparse.identity(n, format='csr') for n in subsystem_shape]
-        # Substitute factor for operator axis
-        if subproblem.group[axis] is None:
-            factors[axis] = self.subspace_matrix(self.dist.coeff_layout)
+        group = subproblem.group[axis]
+        # Track sizes for previous and subsequent axes
+        shape = subproblem.coeff_shape(self.domain)
+        N_before = prod([cs.dim for cs in self.tensorsig]) * prod(shape[:axis])
+        N_after = prod(shape[axis+1:])
+        # Build matrix for operator axis
+        if group is None:
+            matrix = self.subspace_matrix(self.dist.coeff_layout)
         else:
-            group = subproblem.group[axis]
-            factors[axis] = self.group_matrix(group)
-        # Add factor for components
-        comps = prod([cs.dim for cs in self.tensorsig])
-        factors = [sparse.identity(comps, format='csr')] + factors
-        return reduce(sparse.kron, factors, 1).tocsr()
+            matrix = self.group_matrix(group)
+        # Kronecker up to proper size
+        if N_before > 1:
+            I_before = sparse.identity(N_before, format='coo') # COO faster for kron
+            matrix = sparse.kron(I_before, matrix)
+        if N_after > 1:
+            I_after = sparse.identity(N_after, format='coo') # COO faster for kron
+            matrix = sparse.kron(matrix, I_after)
+        # Convert to CSR (might be numpy array)
+        return sparse.csr_matrix(matrix)
 
     def subspace_matrix(self, layout):
         """Build matrix operating on local subspace data."""
@@ -1836,7 +1842,8 @@ class TransposeComponents(LinearOperator, metaclass=MultiClass):
 class StandardTransposeComponents(TransposeComponents):
 
     cs_type = (coords.CartesianCoordinates,
-               coords.PolarCoordinates)
+               coords.PolarCoordinates,
+               coords.S2Coordinates)
 
     def subproblem_matrix(self, subproblem):
         """Build operator matrix for a specific subproblem."""
@@ -2027,7 +2034,6 @@ class SpinSkew(Skew):
                 out.data[sx] = arg.data[sy]
                 np.multiply(arg.data[sx], -1, out=out.data[sy])
             else:
-                print(arg.data.shape)
                 # Spinorder: -, +
                 minus = axslice(index, 0, 1)
                 plus = axslice(index, 1, 2)
@@ -2108,7 +2114,8 @@ class RadialComponent(Component, metaclass=MultiClass):
     def __init__(self, operand, index=0, out=None):
         super().__init__(operand, index=index, out=out)
         tensorsig = operand.tensorsig
-        self.tensorsig = tuple( tensorsig[:index] + tensorsig[index+1:] )
+        self.tensorsig = tuple( tensorsig[:index] + (tensorsig[index].coords[-1],) + tensorsig[index+1:] )
+        #self.tensorsig = tuple( tensorsig[:index] + tensorsig[index+1:] )
 
     def new_operand(self, operand, **kw):
         return RadialComponent(operand, self.index, **kw)
@@ -2163,7 +2170,7 @@ class AzimuthalComponent(Component, metaclass=MultiClass):
         if not isinstance(self.coordsys, coords.PolarCoordinates):
             raise ValueError("Can only take the AzimuthalComponent of a PolarCoordinate vector")
         tensorsig = operand.tensorsig
-        self.tensorsig = tuple( tensorsig[:index] + tensorsig[index+1:] )
+        self.tensorsig = tuple( tensorsig[:index] + (tensorsig[index].coords[0],) + tensorsig[index+1:] )
 
     def new_operand(self, operand, **kw):
         return AzimuthalComponent(operand, self.index, **kw)
@@ -2680,7 +2687,10 @@ class PolarMOperator(SpectralOperator):
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
-        radial_basis = self.input_basis
+        if self.input_basis is None:
+            radial_basis = self.output_basis
+        else:
+            radial_basis = self.input_basis
         S_in = radial_basis.spin_weights(operand.tensorsig)
         S_out = radial_basis.spin_weights(self.tensorsig)  # Should this use output_basis?
         m = subproblem.group[self.last_axis - 1]
@@ -2692,7 +2702,7 @@ class PolarMOperator(SpectralOperator):
                 # Build identity matrices for each axis
                 subshape_in = subproblem.coeff_shape(self.operand.domain)
                 subshape_out = subproblem.coeff_shape(self.domain)
-                if spinindex_out in self.spinindex_out(spinindex_in):
+                if (spinindex_out in self.spinindex_out(spinindex_in)) and prod(subshape_out) and prod(subshape_in):
                     # Substitute factor for radial axis
                     factors = [sparse.eye(i, j, format='csr') for i, j in zip(subshape_out, subshape_in)]
                     radial_matrix = self.radial_matrix(spinindex_in, spinindex_out, m)
@@ -2899,7 +2909,10 @@ class SphericalEllOperator(SpectralOperator):
                 subshape_in = subproblem.coeff_shape(self.operand.domain)
                 subshape_out = subproblem.coeff_shape(self.domain)
                 # Check if regularity component exists for this ell
-                if (regindex_out in self.regindex_out(regindex_in)) and radial_basis.regularity_allowed(ell, regindex_in) and radial_basis.regularity_allowed(ell, regindex_out):
+                if ((regindex_out in self.regindex_out(regindex_in)) and
+                    radial_basis.regularity_allowed(ell, regindex_in) and
+                    radial_basis.regularity_allowed(ell, regindex_out) and
+                    prod(subshape_in) and prod(subshape_out)):
                     # Substitute factor for radial axis
                     factors = [sparse.eye(m, n, format='csr') for m, n in zip(subshape_out, subshape_in)]
                     factors[self.last_axis] = self.radial_matrix(regindex_in, regindex_out, ell)

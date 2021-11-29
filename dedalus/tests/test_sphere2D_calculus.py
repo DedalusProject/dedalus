@@ -64,6 +64,44 @@ def test_skew_implicit(Nphi,  Ntheta, dealias, dtype):
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('layout', ['c', 'g'])
+def test_transpose_explicit(Nphi, Ntheta, dealias, dtype, layout):
+    c, d, b, phi, theta = build_sphere(Nphi, Ntheta, dealias, dtype)
+    # Random tensor field
+    f = d.TensorField((c, c), bases=b)
+    f.fill_random(layout='g')
+    f.low_pass_filter(scales=0.75)
+    # Evaluate transpose
+    f.require_layout(layout)
+    g = operators.transpose(f).evaluate()
+    assert np.allclose(g['g'], np.transpose(f['g'], (1,0,2,3)))
+
+
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_transpose_implicit(Nphi, Ntheta, dealias, dtype):
+    c, d, b, phi, theta = build_sphere(Nphi, Ntheta, dealias, dtype)
+    # Random tensor field
+    f = d.TensorField((c, c), bases=b)
+    f.fill_random(layout='g')
+    f.low_pass_filter(scales=0.75)
+    # Transpose LBVP
+    u = d.TensorField((c, c), bases=b)
+    problem = problems.LBVP([u], namespace=locals())
+    problem.add_equation("trans(u) = trans(f)")
+    solver = problem.build_solver()
+    solver.solve()
+    u.require_scales(b.domain.dealias)
+    f.require_scales(b.domain.dealias)
+    assert np.allclose(u['g'], f['g'])
+
+
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('dtype', dtype_range)
 def test_convert_constant_scalar_explicit(Nphi, Ntheta, dealias, dtype):
     c, d, b, phi, theta = build_sphere(Nphi, Ntheta, dealias, dtype)

@@ -31,19 +31,19 @@ import logging
 logger = logging.getLogger(__name__)
 
 # TODO: maybe fix plotting to directly handle vectors
-# TODO: optimize and match d2 resolution
 # TODO: get unit vectors from coords?
+# TODO: cleanup integ shortcuts
 
 
 # Parameters
 Lx, Lz = 4, 1
-Nx, Nz = 64, 32
+Nx, Nz = 256, 64
 Rayleigh = 1e6
 Prandtl = 1
 dealias = 3/2
-stop_sim_time = 30
+stop_sim_time = 25
 timestepper = d3.RK222
-max_timestep = 0.1
+max_timestep = 0.125
 dtype = np.float64
 
 # Bases
@@ -58,6 +58,7 @@ z = zbasis.local_grid(1)
 p = dist.Field(name='p', bases=(xbasis,zbasis))
 b = dist.Field(name='b', bases=(xbasis,zbasis))
 u = dist.VectorField(coords, name='u', bases=(xbasis,zbasis))
+taup = dist.Field(name='taup')
 tau1b = dist.Field(name='tau1b', bases=xbasis)
 tau2b = dist.Field(name='tau2b', bases=xbasis)
 tau1u = dist.VectorField(coords, name='tau1u', bases=xbasis)
@@ -72,6 +73,8 @@ ez = dist.VectorField(coords, name='ez')
 ex['g'][0] = 1
 ez['g'][1] = 1
 
+integ = lambda A: d3.Integrate(d3.Integrate(A, 'x'), 'z')
+
 lift_basis = zbasis.clone_with(a=1/2, b=1/2) # First derivative basis
 lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
 grad_u = d3.grad(u) + ez*lift(tau1u,-1) # First-order reduction
@@ -80,16 +83,15 @@ grad_b = d3.grad(b) + ez*lift(tau1b,-1) # First-order reduction
 # Problem
 # First-order form: "div(f)" becomes "trace(grad_f)"
 # First-order form: "lap(f)" becomes "div(grad_f)"
-problem = d3.IVP([p, b, u, tau1b, tau2b, tau1u, tau2u], namespace=locals())
-problem.add_equation("trace(grad_u) = 0")
+problem = d3.IVP([p, b, u, taup, tau1b, tau2b, tau1u, tau2u], namespace=locals())
+problem.add_equation("trace(grad_u) + taup = 0")
 problem.add_equation("dt(b) - kappa*div(grad_b) + lift(tau2b,-1) = - dot(u,grad(b))")
 problem.add_equation("dt(u) - nu*div(grad_u) + grad(p) + lift(tau2u,-1) - b*ez = - dot(u,grad(u))")
 problem.add_equation("b(z=0) = Lz")
 problem.add_equation("u(z=0) = 0")
 problem.add_equation("b(z=Lz) = 0")
-problem.add_equation("u(z=Lz) = 0", condition="nx != 0")
-problem.add_equation("dot(ex,u)(z=Lz) = 0", condition="nx == 0")
-problem.add_equation("p(z=Lz) = 0", condition="nx == 0") # Pressure gauge
+problem.add_equation("u(z=Lz) = 0")
+problem.add_equation("integ(p) = 0") # Pressure gauge
 
 # Solver
 solver = problem.build_solver(timestepper)
@@ -102,14 +104,14 @@ b['g'] *= z * (Lz - z) # Damp noise at walls
 b['g'] += Lz - z # Add linear background
 
 # Analysis
-snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=0.1, max_writes=50)
+snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=0.25, max_writes=50)
 snapshots.add_task(p)
 snapshots.add_task(b)
 snapshots.add_task(d3.dot(u,ex), name='ux')
 snapshots.add_task(d3.dot(u,ez), name='uz')
 
 # CFL
-CFL = d3.CFL(solver, initial_dt=max_timestep, cadence=10, safety=0.5, threshold=0.1,
+CFL = d3.CFL(solver, initial_dt=max_timestep, cadence=10, safety=0.5, threshold=0.05,
              max_change=1.5, min_change=0.5, max_dt=max_timestep)
 CFL.add_velocity(u)
 
@@ -118,6 +120,7 @@ flow = d3.GlobalFlowProperty(solver, cadence=10)
 flow.add_property(np.sqrt(d3.dot(u,u))/nu, name='Re')
 
 # Main loop
+startup_iter = 10
 try:
     logger.info('Starting loop')
     start_time = time.time()
@@ -127,13 +130,17 @@ try:
         if (solver.iteration-1) % 10 == 0:
             max_Re = flow.max('Re')
             logger.info('Iteration=%i, Time=%e, dt=%e, max(Re)=%f' %(solver.iteration, solver.sim_time, timestep, max_Re))
+        if solver.iteration == startup_iter:
+            roll_time = time.time()
 except:
     logger.error('Exception raised, triggering end of main loop.')
     raise
 finally:
     end_time = time.time()
+    startup = end_time - start_time
+    rolltime_iter = (end_time - roll_time) / (solver.iteration - startup_iter)
     logger.info('Iterations: %i' %solver.iteration)
     logger.info('Sim end time: %f' %solver.sim_time)
     logger.info('Run time: %.2f sec' %(end_time-start_time))
     logger.info('Run time: %f cpu-hr' %((end_time-start_time)/60/60*dist.comm.size))
-
+    logger.info('Speed: %.2e mode-iters/cpu-sec' %(Nx*Nz/rolltime_iter/dist.comm.size))

@@ -4,32 +4,75 @@ Test 1D LBVP.
 import pytest
 import numpy as np
 import functools
+import dedalus.public as d3
 from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
 from dedalus.tools.cache import CachedFunction
 
 
-@pytest.mark.parametrize('dtype', [np.complex128, np.float64])
+dtype_range = [np.float64, np.complex128]
+
+
 @pytest.mark.parametrize('Nx', [32])
-def test_heat_1d_periodic(Nx, dtype):
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('matrix_coupling', [True, False])
+def test_poisson_1d_fourier(Nx, dtype, matrix_coupling):
     # Bases
-    c = coords.Coordinate('x')
-    d = distributor.Distributor((c,))
+    coord = d3.Coordinate('x')
+    dist = d3.Distributor(coord, dtype=dtype)
     if dtype == np.complex128:
-        xb = basis.ComplexFourier(c, size=Nx, bounds=(0, 2*np.pi))
+        basis = d3.ComplexFourier(coord, size=Nx, bounds=(0, 2*np.pi))
     elif dtype == np.float64:
-        xb = basis.RealFourier(c, size=Nx, bounds=(0, 2*np.pi))
-    x = xb.local_grid(1)
+        basis = d3.RealFourier(coord, size=Nx, bounds=(0, 2*np.pi))
+    x = basis.local_grid(1)
     # Fields
-    u = field.Field(name='u', dist=d, bases=(xb,), dtype=dtype)
-    F = field.Field(name='F', dist=d, bases=(xb,), dtype=dtype)
+    u = dist.Field(name='u', bases=basis)
+    g = dist.Field(name='c')
+    # Substitutions
+    dx = lambda A: d3.Differentiate(A, coord)
+    integ = lambda A: d3.Integrate(A, coord)
+    F = dist.Field(bases=basis)
     F['g'] = -np.sin(x)
     # Problem
-    dx = lambda A: operators.Differentiate(A, c)
-    problem = problems.LBVP([u])
-    problem.add_equation((dx(dx(u)), F), condition='nx != 0')
-    problem.add_equation((u, 0), condition='nx == 0')
+    problem = d3.LBVP([u, g], namespace=locals())
+    problem.add_equation("dx(dx(u)) + g = F")
+    problem.add_equation("integ(u) = 0")
     # Solver
-    solver = solvers.LinearBoundaryValueSolver(problem, matrix_coupling=[False])
+    solver = problem.build_solver(matrix_coupling=[matrix_coupling])
+    solver.solve()
+    # Check solution
+    u_true = np.sin(x)
+    assert np.allclose(u['g'], u_true)
+
+
+@pytest.mark.parametrize('Nx', [32])
+@pytest.mark.parametrize('a0', [-1/2, 0])
+@pytest.mark.parametrize('b0', [-1/2, 0])
+@pytest.mark.parametrize('da', [0, 1])
+@pytest.mark.parametrize('db', [0, 1])
+@pytest.mark.parametrize('dtype', dtype_range)
+def test_poisson_1d_jacobi(Nx, a0, b0, da, db, dtype):
+    # Bases
+    coord = d3.Coordinate('x')
+    dist = d3.Distributor(coord, dtype=dtype)
+    basis = d3.Jacobi(coord, size=Nx, bounds=(0, 2*np.pi), a=a0+da, b=b0+db, a0=a0, b0=b0)
+    x = basis.local_grid(1)
+    # Fields
+    u = dist.Field(name='u', bases=basis)
+    tau1 = dist.Field(name='tau1')
+    tau2 = dist.Field(name='tau2')
+    # Substitutions
+    dx = lambda A: d3.Differentiate(A, coord)
+    lift_basis = basis.clone_with(a=a0+da+2, b=b0+db+2)
+    lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
+    F = dist.Field(bases=basis)
+    F['g'] = -np.sin(x)
+    # Problem
+    problem = d3.LBVP([u, tau1, tau2], namespace=locals())
+    problem.add_equation("dx(dx(u)) + lift(tau1,-1) + lift(tau2,-2) = F")
+    problem.add_equation("u(x='left') = 0")
+    problem.add_equation("u(x='right') = 0")
+    # Solver
+    solver = problem.build_solver()
     solver.solve()
     # Check solution
     u_true = np.sin(x)
@@ -72,6 +115,36 @@ def test_heat_disk(Nr, Nphi, dtype):
     solver.solve()
     # Check solution
     u_true = r**2 - 1
+    assert np.allclose(u['g'], u_true)
+
+
+@pytest.mark.parametrize('dtype', [np.complex128, np.float64])
+@pytest.mark.parametrize('Nphi', [16])
+@pytest.mark.parametrize('Nr', [32])
+def test_heat_disk_cart(Nr, Nphi, dtype):
+    # Bases
+    dealias = 1
+    c, d, b, phi, r, x, y = build_disk(Nphi, Nr, dealias=dealias, dtype=dtype)
+    xr = radius_disk * np.cos(phi)
+    yr = radius_disk * np.sin(phi)
+    # Fields
+    u = field.Field(name='u', dist=d, bases=(b,), dtype=dtype)
+    τu = field.Field(name='u', dist=d, bases=(b.S1_basis(),), dtype=dtype)
+    f = field.Field(dist=d, bases=(b,), dtype=dtype)
+    f['g'] = 6*x - 2
+    g = field.Field(dist=d, bases=(b.S1_basis(),), dtype=dtype)
+    g['g'] = xr**3 - yr**2
+    # Problem
+    Lap = lambda A: operators.Laplacian(A, c)
+    LiftTau = lambda A: operators.LiftTau(A, b, -1)
+    problem = problems.LBVP([u, τu])
+    problem.add_equation((Lap(u) + LiftTau(τu), f))
+    problem.add_equation((u(r=radius_disk), g))
+    # Solver
+    solver = solvers.LinearBoundaryValueSolver(problem)
+    solver.solve()
+    # Check solution
+    u_true = x**3 - y**2
     assert np.allclose(u['g'], u_true)
 
 
@@ -141,6 +214,37 @@ def test_heat_ball(Nmax, Lmax, dtype):
     solver.solve()
     # Check solution
     u_true = r**2 - 1
+    assert np.allclose(u['g'], u_true)
+
+
+@pytest.mark.parametrize('dtype', [np.complex128, np.float64])
+@pytest.mark.parametrize('Nmax', [7])
+@pytest.mark.parametrize('Lmax', [7])
+def test_heat_ball_cart(Nmax, Lmax, dtype):
+    # Bases
+    dealias = 1
+    c, d, b, phi, theta, r, x, y, z = build_ball(2*(Lmax+1), Lmax+1, Nmax+1, dealias=dealias, dtype=dtype)
+    xr = radius_ball * np.cos(phi) * np.sin(theta)
+    yr = radius_ball * np.sin(phi) * np.sin(theta)
+    zr = radius_ball * np.cos(theta)
+    # Fields
+    u = field.Field(name='u', dist=d, bases=(b,), dtype=dtype)
+    τu = field.Field(name='u', dist=d, bases=(b.S2_basis(),), dtype=dtype)
+    f = field.Field(name='a', dist=d, bases=(b,), dtype=dtype)
+    f['g'] = 12*x**2 - 6*y + 2
+    g = field.Field(name='a', dist=d, bases=(b.S2_basis(),), dtype=dtype)
+    g['g'] = xr**4 - yr**3 + zr**2
+    # Problem
+    Lap = lambda A: operators.Laplacian(A, c)
+    LiftTau = lambda A: operators.LiftTau(A, b, -1)
+    problem = problems.LBVP([u, τu])
+    problem.add_equation((Lap(u) + LiftTau(τu), f))
+    problem.add_equation((u(r=radius_ball), g))
+    # Solver
+    solver = solvers.LinearBoundaryValueSolver(problem)
+    solver.solve()
+    # Check solution
+    u_true = x**4 - y**3 + z**2
     assert np.allclose(u['g'], u_true)
 
 

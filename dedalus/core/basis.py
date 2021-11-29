@@ -277,10 +277,6 @@ class Basis:
         else:
             raise NotImplementedError()
 
-    def valid_components(self, group, tensorsig, enum_components_input):
-        # Keep all components by default
-        return enum_components_input
-
 
 # class Constant(Basis, metaclass=CachedClass):
 #     """Constant basis."""
@@ -494,6 +490,11 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
     def elements_to_groups(self, grid_space, elements):
         # No permutations
         return elements
+
+    def valid_elements(self, tensorsig, grid_space, elements):
+        # No invalid modes
+        vshape = tuple(cs.dim for cs in tensorsig) + elements[0].shape
+        return np.ones(shape=vshape, dtype=bool)
 
     def Jacobi_matrix(self, size):
         if size is None:
@@ -845,14 +846,11 @@ class ComplexFourier(FourierBase, metaclass=CachedClass):
             permute_axis(cdata, axis+len(field.tensorsig), self.backward_coeff_permutation, out=cdata)
         super().backward_transform(field, axis, cdata, gdata)
 
-    # def include_mode(self, mode):
-    #     k = mode // 2
-    #     if (mode % 2) == 0:
-    #         # Cosine modes: drop Nyquist mode
-    #         return (0 <= k <= self.space.kmax)
-    #     else:
-    #         # Sine modes: drop k=0 and Nyquist mode
-    #         return (1 <= k <= self.space.kmax)
+    def valid_elements(self, tensorsig, grid_space, elements):
+        # No invalid modes
+         # TODO: consider dropping Nyquist?
+        vshape = tuple(cs.dim for cs in tensorsig) + elements[0].shape
+        return np.ones(shape=vshape, dtype=bool)
 
 
 class ConvertConstantComplexFourier(operators.ConvertConstant, operators.SpectralOperator1D):
@@ -1015,6 +1013,19 @@ class RealFourier(FourierBase, metaclass=CachedClass):
         N, = self.grid_shape((scale,))
         return (2 * np.pi / N) * np.arange(N)
 
+    def valid_elements(self, tensorsig, grid_space, elements):
+        vshape = tuple(cs.dim for cs in tensorsig) + elements[0].shape
+        valid = np.ones(shape=vshape, dtype=bool)
+        if not grid_space[0]:
+            # Drop msin part of k=0 for all cartesian components and spin scalars
+            if not isinstance(self.coord, AzimuthalCoordinate) or not tensorsig:
+                # Drop msin part of k=0
+                groups = self.elements_to_groups(grid_space, elements)
+                allcomps = tuple(slice(None) for cs in tensorsig)
+                selection = (groups[0] == 0) * (elements[0] % 2 == 1)
+                valid[allcomps + (selection,)] = False
+        return valid
+
     @CachedMethod
     def transform_plan(self, grid_size):
         """Build transform plan."""
@@ -1055,8 +1066,7 @@ class ConvertConstantRealFourier(operators.ConvertConstant, operators.SpectralOp
             return np.array([[unit_amplitude],
                              [0]])
         else:
-            # Constructor should only loop over group 0.
-            raise ValueError("This should never happen.")
+            return np.zeros(shape=(2, 0))
 
 
 class DifferentiateRealFourier(operators.Differentiate, operators.SpectralOperator1D):
@@ -1125,7 +1135,7 @@ class IntegrateRealFourier(operators.Integrate, operators.SpectralOperator1D):
         # integ -sin(k*x) = 0
         if k == 0:
             L = input_basis.COV.problem_length
-            return np.array([[L]])
+            return np.array([[L, 0]])
         else:
             # Constructor should only loop over group 0.
             raise ValueError("This should never happen.")
@@ -1401,9 +1411,9 @@ class SpinRecombinationBasis:
         # Perform unitary spin recombination along relevant tensor indeces
         U = []
         for i, cs in enumerate(tensorsig):
-            if (cs == self.coordsystem or
-                (type(cs) is SphericalCoordinates and self.coordsystem == cs.S2coordsys) or
-                (type(self.coordsystem) is SphericalCoordinates and self.coordsystem.S2coordsys == cs)):
+            if (cs is self.coordsystem or
+                (type(cs) is SphericalCoordinates and self.coordsystem is cs.S2coordsys) or
+                (type(self.coordsystem) is SphericalCoordinates and self.coordsystem.S2coordsys is cs)):
                 U.append(Us[cs.dim])
             #if self.coordsystem is vs: # kludge before we decide how compound coordinate systems work
             #    Ui = np.identity(vs.dim, dtype=np.complex128)
@@ -1448,18 +1458,19 @@ class SpinRecombinationBasis:
                 # For an even number of transforms, we need a final copy
                 num_recombinations = 0
                 for i, Ui in enumerate(U):
-                    dim = Ui.shape[0]
-                    if num_recombinations % 2 == 0:
-                        input_view = reduced_view_5(gdata, i, self.axis+len(tensorsig))
-                        output_view = reduced_view_5(out, i, self.axis+len(tensorsig))
-                    else:
-                        input_view = reduced_view_5(out, i, self.axis+len(tensorsig))
-                        output_view = reduced_view_5(gdata, i, self.axis+len(tensorsig))
-                    if dim == 3:
-                        spin_recombination.recombine_forward_dim3(input_view, output_view)
-                    elif dim == 2:
-                        spin_recombination.recombine_forward_dim2(input_view, output_view)
-                    num_recombinations += 1
+                    if Ui is not None:
+                        dim = Ui.shape[0]
+                        if num_recombinations % 2 == 0:
+                            input_view = reduced_view_5(gdata, i, self.axis+len(tensorsig))
+                            output_view = reduced_view_5(out, i, self.axis+len(tensorsig))
+                        else:
+                            input_view = reduced_view_5(out, i, self.axis+len(tensorsig))
+                            output_view = reduced_view_5(gdata, i, self.axis+len(tensorsig))
+                        if dim == 3:
+                            spin_recombination.recombine_forward_dim3(input_view, output_view)
+                        elif dim == 2:
+                            spin_recombination.recombine_forward_dim2(input_view, output_view)
+                        num_recombinations += 1
                 if num_recombinations % 2 == 0:
                     np.copyto(out, gdata)
 
@@ -1483,18 +1494,19 @@ class SpinRecombinationBasis:
                 # For an even number of transforms, we need a final copy
                 num_recombinations = 0
                 for i, Ui in enumerate(U):
-                    dim = Ui.shape[0]
-                    if num_recombinations % 2 == 0:
-                        input_view = reduced_view_5(gdata, i, self.axis+len(tensorsig))
-                        output_view = reduced_view_5(out, i, self.axis+len(tensorsig))
-                    else:
-                        input_view = reduced_view_5(out, i, self.axis+len(tensorsig))
-                        output_view = reduced_view_5(gdata, i, self.axis+len(tensorsig))
-                    if dim == 3:
-                        spin_recombination.recombine_backward_dim3(input_view, output_view)
-                    elif dim == 2:
-                        spin_recombination.recombine_backward_dim2(input_view, output_view)
-                    num_recombinations += 1
+                    if Ui is not None:
+                        dim = Ui.shape[0]
+                        if num_recombinations % 2 == 0:
+                            input_view = reduced_view_5(gdata, i, self.axis+len(tensorsig))
+                            output_view = reduced_view_5(out, i, self.axis+len(tensorsig))
+                        else:
+                            input_view = reduced_view_5(out, i, self.axis+len(tensorsig))
+                            output_view = reduced_view_5(gdata, i, self.axis+len(tensorsig))
+                        if dim == 3:
+                            spin_recombination.recombine_backward_dim3(input_view, output_view)
+                        elif dim == 2:
+                            spin_recombination.recombine_backward_dim2(input_view, output_view)
+                        num_recombinations += 1
                 if num_recombinations % 2 == 0:
                     np.copyto(out, gdata)
 
@@ -1619,6 +1631,24 @@ class PolarBasis(SpinBasis):
         if matrix_coupling[1]:
             matrix_dependence[0] = True
         return matrix_dependence
+
+    def valid_elements(self, tensorsig, grid_space, elements):
+        if grid_space[1]:
+            # grid-grid and coeff-grid
+            # Same as Fourier validity before spin recombination
+            return self.azimuth_basis.valid_elements(tensorsig, grid_space, elements)
+        else:
+            # coeff-coeff
+            m, n = self.elements_to_groups(grid_space, elements)
+            if tensorsig:
+                rank = len(tensorsig)
+                m = m[(None,) * rank]
+                n = n[(None,) * rank]
+            valid = n >= self._nmin(m)
+            if not tensorsig:
+                # Drop msin part of m = 0
+                valid[(m == 0) * (elements[0] % 2 == 1)] = False
+            return valid
 
     @CachedMethod
     def S1_basis(self, radius=1):
@@ -1756,6 +1786,13 @@ class PolarBasis(SpinBasis):
             n_slice = coeff_slices[0][self.first_axis+1]
             m_maps.append((m, mg_slice, mc_slice, n_slice))
         return tuple(m_maps)
+
+    @CachedAttribute
+    def ell_reversed(self):
+        ell_reversed = {}
+        for m, mg_slice, mc_slice, ell_slice in self.m_maps:
+            ell_reversed[m] = False
+        return ell_reversed
 
     def global_grids(self, scales=None):
         if scales == None: scales = (1, 1)
@@ -2407,6 +2444,7 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
 
     dim = 2
     dims = ['azimuth', 'colatitude']
+    subaxis_dependence = [True, True]
     transforms = {}
     constant_mode_value = 1 / np.sqrt(2)
 
@@ -2610,6 +2648,14 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
             if self.radius == other.radius:
                 shape = tuple(np.maximum(self.shape, other.shape))
                 return SphereBasis(self.coordsystem, shape, radius=self.radius, dealias=self.dealias, dtype=self.dtype)
+        return NotImplemented
+
+    def __matmul__(self, other):
+        return other.__rmatmul__(self)
+
+    def __rmatmul__(self, other):
+        if other is None:
+            return self
         return NotImplemented
 
     # @staticmethod
@@ -2847,28 +2893,27 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
     #     comp5 = reduced_view(comp, axis=self.axis, dim=self.dist.dim)
     #     return comp5[(slice(None),) + slices + (slice(None),)]
 
-    def valid_components(self, group, tensorsig, enum_components_input):
-        ell = group[self.first_axis + 1]
-        enum_components_output = []
-        for i, comp in enum_components_input:
-            # Filter for indices in self.coordsystem
-            if self.coordsystem.dim == 3:
-                spinindex_3d = tuple([j for j, cs in zip(comp, tensorsig) if cs is self.coordsystem])
-                spinindex_2d = tuple([j for j, cs in zip(comp, tensorsig) if cs is self.coordsystem.S2coordsys])
-                spintotal_3d = self.spintotal(spinindex_3d)
-                spintotal_2d = self.spintotal(spinindex_2d)
-                if ell is None: # HACK
-                    enum_components_output.append((i, comp))
-                elif abs(spintotal_3d + spintotal_2d) <= ell:
-                    enum_components_output.append((i, comp))
+    def valid_elements(self, tensorsig, grid_space, elements):
+        if grid_space[1]:
+            # grid-grid and coeff-grid
+            # Same as Fourier validity before spin recombination
+            return self.azimuth_basis.valid_elements(tensorsig, grid_space, elements)
+        else:
+            # coeff-coeff
+            m, ell = self.elements_to_groups(grid_space, elements)
+            if tensorsig:
+                rank = len(tensorsig)
+                dim = len(m.shape)
+                m = m[(None,) * rank]
+                ell = ell[(None,) * rank]
+                s = self.spin_weights(tensorsig)
+                s = s.T[(None,) * dim].T
+                valid = np.maximum(np.abs(m), np.abs(s)) <= ell
             else:
-                spinindex_2d = tuple([j for j, cs in zip(comp, tensorsig) if cs is self.coordsystem])
-                spintotal_2d = self.spintotal(spinindex_2d)
-                if ell is None: # HACK
-                    enum_components_output.append((i, comp))
-                elif abs(spintotal_2d) <= ell:
-                    enum_components_output.append((i, comp))
-        return enum_components_output
+                valid = np.abs(m) <= ell
+                # Drop msin part of m = 0
+                valid[(m == 0) * (elements[0] % 2 == 1)] = False
+            return valid
 
 
 class ConvertConstantSphere(operators.ConvertConstant, operators.SeparableSphereOperator):
@@ -3167,15 +3212,25 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
             #    R[axslice(i, n, n+self.dim)] += reshape_vector(Rb, dim=len(tensorsig), axis=i)
         return R
 
-    def valid_components(self, group, tensorsig, enum_components_input):
-        ell = group[self.first_axis + 1]
-        enum_components_output = []
-        for i, comp in enum_components_input:
-            # Filter for indices in self.coordsystem
-            regindex = tuple([j for j, cs in zip(comp, tensorsig) if cs is self.coordsystem])
-            if self.regularity_allowed(ell, regindex):
-                enum_components_output.append((i, comp))
-        return enum_components_output
+    def regularity_indices(self, tensorsig):
+        """Return array of regularity multiindeces."""
+        indices = []
+        tshape = [cs.dim for cs in tensorsig]
+        for i, cs in enumerate(tensorsig):
+            if self.coordsystem is cs:
+                index = np.zeros(tshape) + reshape_vector(np.array([-1, 1, 0]), dim=len(tshape), axis=i)
+                indices.append(index)
+        return np.stack(indices, axis=-1)
+
+    def regularity_allowed_vectorized(self, l, regindex):
+        valid = np.ones(l.shape, dtype=bool)
+        walk = l
+        for dr in regindex[::-1]:
+            walk = walk + dr
+            valid[walk < 0] = False
+            if dr == 0:
+                valid[walk == 0] = False
+        return valid
 
     def forward_regularity_recombination(self, tensorsig, axis, gdata, ell_maps=None):
         rank = len(tensorsig)
@@ -3814,7 +3869,12 @@ class Spherical3DBasis(MultidimensionalBasis):
     def get_radial_basis(self):
         return self.radial_basis
 
-    def S2_basis(self,radius=1):
+    def S2_basis(self, radius=None):
+        if radius is None:
+            if hasattr(self, "radius"):
+                radius = self.radius
+            else:
+                radius = max(self.radii)
         return SphereBasis(self.coordsystem, self.shape[:2], radius=radius, dealias=self.dealias[:2], dtype=self.dtype,
                     azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library)
 
@@ -3847,6 +3907,27 @@ class Spherical3DBasis(MultidimensionalBasis):
         s2_chunk = self.sphere_basis.chunk_shape(grid_space)
         return s2_chunk + (1,)
 
+    def valid_elements(self, tensorsig, grid_space, elements):
+        if grid_space[2]:
+            # ggg, cgg, ccg
+            # Same as Sphere validity before regularity recombination
+            return self.S2_basis().valid_elements(tensorsig, grid_space, elements)
+        else:
+            # coeff-coeff-coeff
+            m, l, n = self.elements_to_groups(grid_space, elements)
+            if tensorsig:
+                regindices = self.radial_basis.regularity_indices(tensorsig)
+                tshape = tuple(cs.dim for cs in tensorsig)
+                valid = np.zeros(tshape + m.shape, dtype=bool)
+                for regcomp in np.ndindex(tshape):
+                    regindex = regindices[regcomp]
+                    valid[regcomp] = self.radial_basis.regularity_allowed_vectorized(l, regindex)
+            else:
+                valid = np.ones(m.shape, dtype=bool)
+                # Drop msin part of m = 0
+                valid[(m == 0) * (elements[0] % 2 == 1)] = False
+            return valid
+
     def elements_to_groups(self, grid_space, elements):
         s2_groups = self.sphere_basis.elements_to_groups(grid_space, elements[:2])
         radial_groups = elements[2]
@@ -3859,9 +3940,9 @@ class Spherical3DBasis(MultidimensionalBasis):
             groups[:, n < nmin] = np.ma.masked
         return groups
 
-    def valid_components(self, *args):
-        # Implemented in RegularityBasis
-        return self.radial_basis.valid_components(*args)
+    # def valid_elements(self, *args):
+    #     # Implemented in RegularityBasis
+    #     return self.radial_basis.valid_elements(*args)
 
     def multiplication_matrix(self, subproblem, arg_basis, coeffs, *args, **kw):
         if self.shape[0:2] == (1, 1):
@@ -4350,6 +4431,10 @@ class LiftTauDisk(operators.LiftTau, operators.PolarMOperator):
             submatrices.append(submatrix_row)
         matrix = sparse.bmat(submatrices)
         matrix.tocsr()
+        # Convert tau to spin first
+        if self.tensorsig:
+            U = radial_basis.spin_recombination_matrix(self.tensorsig)
+            matrix = (matrix @ sparse.csr_matrix(U)).tocsr()
         return matrix
 
     def radial_matrix(self, spinindex_in, spinindex_out, m):
@@ -4664,7 +4749,7 @@ class IntegrateSpinBasis(operators.PolarMOperator):
     def spinindex_out(self, spinindex_in):
         return (spinindex_in,)
 
-    def radial_matrix(self, m):
+    def radial_matrix(self, spinindex_in, spinindex_out, m):
         # Wrap cached method
         return self._radial_matrix(self.radial_basis, m)
 
@@ -4686,7 +4771,7 @@ class IntegrateSpinBasis(operators.PolarMOperator):
                 slices = tuple(slices)
                 vec_in  = operand.data[slices]
                 vec_out = out.data[slices]
-                A = self.radial_matrix(m)
+                A = self._radial_matrix(self.radial_basis, m)
                 vec_out += apply_matrix(A, vec_in, axis=axis)
 
 
@@ -4752,7 +4837,7 @@ class IntegrateSpherical(operators.SphericalEllOperator):
     def regindex_out(self, regindex_in):
         return (regindex_in,)
 
-    def radial_matrix(self, ell):
+    def radial_matrix(self, regindex_in, regindex_out, ell):
         # Wrap cached method
         return self._radial_matrix(self.radial_basis, ell)
 
@@ -4775,7 +4860,7 @@ class IntegrateSpherical(operators.SphericalEllOperator):
                 slices = tuple(slices)
                 vec_in  = operand.data[slices]
                 vec_out = out.data[slices]
-                A = self.radial_matrix(ell)
+                A = self.radial_matrix(None, None, ell)
                 vec_out += apply_matrix(A, vec_in, axis=axis)
 
 
@@ -5138,15 +5223,16 @@ class S2RadialComponent(operators.RadialComponent):
         basis = self.domain.get_basis(self.coordsys)
         S_in = basis.spin_weights(operand.tensorsig)
         S_out = basis.spin_weights(self.tensorsig)
-
         matrix = []
         for spinindex_out, spintotal_out in np.ndenumerate(S_out):
             matrix_row = []
             for spinindex_in, spintotal_in in np.ndenumerate(S_in):
-                if tuple(spinindex_in[:self.index] + spinindex_in[self.index+1:]) == spinindex_out and spinindex_in[self.index] == 2:
-                    matrix_row.append( 1 )
-                else:
-                    matrix_row.append( 0 )
+                matrix_row.append(0)
+                if spinindex_in[self.index] == 2:
+                    spinindex_in = list(spinindex_in)
+                    spinindex_in[self.index] = 0
+                    if tuple(spinindex_in) == spinindex_out:
+                        matrix_row[-1] = 1
             matrix.append(matrix_row)
         matrix = np.array(matrix)
         if self.dtype == np.float64:
