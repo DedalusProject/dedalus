@@ -210,8 +210,9 @@ class build(_build):
     def run(self):
         # Create tar file with example scripts
         with tarfile.open('dedalus/examples.tar.gz', mode='w:gz') as archive:
-            for file in pathlib.Path('examples').glob('**/*.py'):
-                archive.add(str(file))
+            examples_dir = pathlib.Path('examples')
+            for file in examples_dir.glob('**/*.py'):
+                archive.add(str(file), str(file.relative_to(examples_dir)))
         # Run the original build command
         _build.run(self)
 
