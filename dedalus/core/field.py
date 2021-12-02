@@ -52,6 +52,7 @@ class Operand:
         # Dispatch binary ufuncs to arithmetic operators, triggered by arithmetic with numpy scalars
         elif len(inputs) == 2:
             from . import arithmetic
+            from . import operators
             if ufunc is np.add:
                 return arithmetic.Add(*inputs)
             elif ufunc is np.subtract:
@@ -61,7 +62,7 @@ class Operand:
             elif ufunc is np.divide:
                 return arithmetic.Multiply(inputs[0], inputs[1]**(-1))
             elif ufunc is np.power:
-                return arithmetic.Power(*inputs)
+                return operators.Power(*inputs)
             else:
                 return NotImplemented
         else:

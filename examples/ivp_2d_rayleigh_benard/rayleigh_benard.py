@@ -128,8 +128,6 @@ try:
         if (solver.iteration-1) % 10 == 0:
             max_Re = flow.max('Re')
             logger.info('Iteration=%i, Time=%e, dt=%e, max(Re)=%f' %(solver.iteration, solver.sim_time, timestep, max_Re))
-        if solver.iteration == startup_iter:
-            roll_time = time.time()
 except:
     logger.error('Exception raised, triggering end of main loop.')
     raise
