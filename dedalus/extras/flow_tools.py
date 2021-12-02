@@ -6,7 +6,7 @@ Extra tools that are useful in hydrodynamical problems.
 import numpy as np
 from mpi4py import MPI
 
-from ..core import operators
+from dedalus.core import operators
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])

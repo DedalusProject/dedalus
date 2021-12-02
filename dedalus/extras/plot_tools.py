@@ -6,8 +6,8 @@ import matplotlib.pyplot as plt
 from matplotlib import ticker
 from matplotlib import transforms
 
-from ..core.field import Field
-from ..tools.array import reshape_vector
+from dedalus.core.field import Field
+from dedalus.tools.array import reshape_vector
 
 
 class FieldWrapper:

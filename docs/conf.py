@@ -20,7 +20,7 @@
 # -- Project information -----------------------------------------------------
 
 project = 'Dedalus Project'
-copyright = '2020 Dedalus Collaboration'
+copyright = '2021 Dedalus Collaboration'
 author = 'Dedalus Collaboration'
 
 # The short X.Y version
@@ -43,6 +43,7 @@ extensions += ['sphinx.ext.mathjax']
 extensions += ['autoapi.extension']
 extensions += ['sphinx.ext.viewcode']
 extensions += ['sphinx.ext.napoleon']
+extensions += ['sphinx.ext.extlinks']
 extensions += ['nbsphinx']
 
 add_module_names = False
@@ -56,6 +57,8 @@ autoapi_add_toctree_entry = False
 napoleon_use_param = False
 napoleon_use_keyword = False
 napoleon_use_ivar = True
+
+extlinks = {'repo': ('https://github.com/DedalusProject/dedalus/tree/d3/%s', None)}
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
