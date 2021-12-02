@@ -1,5 +1,6 @@
 
 
+import copy
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
@@ -32,24 +33,24 @@ class DimWrapper:
     def __init__(self, field, axis):
         self.field = field
         self.axis = axis
-        self.basis = field.bases[axis]
+        self.basis = field.domain.bases[axis]
 
     @property
     def label(self):
         if self.field.layout.grid_space[self.axis]:
-            return self.basis.space.name
+            return self.basis.coord.name
         else:
-            return self.basis.element_name
+            return self.basis.coord.name + ' mode'
 
     def __getitem__(self, item):
         if self.field.layout.grid_space[self.axis]:
             scale = self.field.scales[self.axis]
-            return self.basis.space.grid(scale)
+            return self.basis.global_grid(scale).ravel()
         else:
-            return self.basis.elements
+            return self.basis.local_modes().ravel()
 
 
-def plot_bot(dset, image_axes, data_slices, clim=None, even_scale=False, cmap='RdBu_r', axes=None, figkw={}, title=None, func=None):
+def plot_bot(dset, image_axes, data_slices, image_scales=(0,0), clim=None, even_scale=False, cmap='RdBu_r', axes=None, figkw={}, title=None, func=None):
     """
     Plot a 2d slice of the grid data of a dset/field.
 
@@ -61,6 +62,8 @@ def plot_bot(dset, image_axes, data_slices, clim=None, even_scale=False, cmap='R
         Data axes to use for image x and y axes
     data_slices: tuple of slices, ints
         Slices selecting image data from global data
+    image_scales: tuple of ints or strs (xs, ys)
+        Axis scales (default: (0,0))
     clim : tuple of floats, optional
         Colorbar limits (default: (data min, data max))
     even_scale : bool, optional
@@ -84,9 +87,10 @@ def plot_bot(dset, image_axes, data_slices, clim=None, even_scale=False, cmap='R
 
     # Unpack image axes
     xaxis, yaxis = image_axes
+    xscale, yscale = image_scales
 
     # Get meshes and data
-    xmesh, ymesh, data = get_plane(dset, xaxis, yaxis, data_slices)
+    xmesh, ymesh, data = get_plane(dset, xaxis, yaxis, data_slices, xscale, yscale)
     if func is not None:
         xmesh, ymesh, data = func(xmesh, ymesh, data)
 
@@ -109,7 +113,7 @@ def plot_bot(dset, image_axes, data_slices, clim=None, even_scale=False, cmap='R
     axes.axis('off')
 
     # Colormap options
-    cmap = matplotlib.cm.get_cmap(cmap)
+    cmap = copy.copy(matplotlib.cm.get_cmap(cmap))
     cmap.set_bad('0.7')
 
     # Plot
@@ -138,10 +142,16 @@ def plot_bot(dset, image_axes, data_slices, clim=None, even_scale=False, cmap='R
             title = dset.name
     caxes.set_xlabel(title)
     caxes.xaxis.set_label_position('top')
-    paxes.set_ylabel(dset.dims[yaxis].label)
-    paxes.set_xlabel(dset.dims[xaxis].label)
+    if isinstance(xscale, str):
+        paxes.set_xlabel(xscale)
+    else:
+        paxes.set_xlabel(dset.dims[xaxis].label)
+    if isinstance(yscale, str):
+        paxes.set_ylabel(yscale)
+    else:
+        paxes.set_ylabel(dset.dims[yaxis].label)
 
-    return plot, cbar
+    return paxes, caxes
 
 
 def plot_bot_2d(dset, transpose=False, **kw):
@@ -519,7 +529,7 @@ def pad_limits(xgrid, ygrid, xpad=0., ypad=0., square=None):
     return [x0, x1, y0, y1]
 
 
-def get_plane(dset, xaxis, yaxis, slices, **kw):
+def get_plane(dset, xaxis, yaxis, slices, xscale=0, yscale=0, **kw):
     """
     Select plane from dataset.
     Intended for use with e.g. plt.pcolor.
@@ -530,6 +540,8 @@ def get_plane(dset, xaxis, yaxis, slices, **kw):
         Dataset
     xaxis, yaxis : int
         Axes for plotting
+    xscale, yscale : int or str
+        Corresponding axis scales
     slices : tuple of ints, slice objects
         Selection object for dataset
 
@@ -541,8 +553,8 @@ def get_plane(dset, xaxis, yaxis, slices, **kw):
     slices = tuple(slices)
 
     # Build quad meshes from sorted grids
-    xgrid = dset.dims[xaxis][0][slices[xaxis]]
-    ygrid = dset.dims[yaxis][0][slices[yaxis]]
+    xgrid = dset.dims[xaxis][xscale][slices[xaxis]]
+    ygrid = dset.dims[yaxis][yscale][slices[yaxis]]
     xorder = np.argsort(xgrid)
     yorder = np.argsort(ygrid)
     xmesh, ymesh = quad_mesh(xgrid[xorder], ygrid[yorder], **kw)

@@ -148,6 +148,7 @@ class Operand:
         elif isinstance(arg, Number):
             out = Field(dist=dist, tensorsig=tensorsig, dtype=dtype)
             out['g'] = arg  # Set in grid space arbitrarily
+            out.name = str(arg)
             return out
         else:
             raise NotImplementedError("Cannot cast type %s" %type(arg))
