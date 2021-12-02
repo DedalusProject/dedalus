@@ -11,10 +11,10 @@ The notebooks cover the basics of setting up and interacting with the primary fa
 .. toctree::
    :maxdepth: 1
 
-   /notebooks/dedalus_tutorial_bases_domains.ipynb
-   /notebooks/dedalus_tutorial_fields_operators.ipynb
-   /notebooks/dedalus_tutorial_problems_solvers.ipynb
-   /notebooks/dedalus_tutorial_analysis_postprocessing.ipynb
+   /notebooks/dedalus_tutorial_1.ipynb
+   /notebooks/dedalus_tutorial_2.ipynb
+   /notebooks/dedalus_tutorial_3.ipynb
+   /notebooks/dedalus_tutorial_4.ipynb
 
 Example Scripts
 ===============
