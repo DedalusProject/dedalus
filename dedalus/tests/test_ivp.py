@@ -12,7 +12,7 @@ from dedalus.extras import flow_tools
 @CachedFunction
 def build_ball(Nphi, Ntheta, Nr, radius_ball, dealias, dtype, grid_scale=1):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
-    d = distributor.Distributor((c,))
+    d = distributor.Distributor((c,), dtype=dtype)
     dealias_tuple = (dealias, dealias, dealias)
     b = basis.BallBasis(c, (Nphi, Ntheta, Nr), radius=radius_ball, dealias=dealias_tuple, dtype=dtype)
     grid_scale_tuple = (grid_scale, grid_scale, grid_scale)
@@ -92,6 +92,32 @@ def test_heat_1d_periodic(x_basis_class, Nx, timestepper, dtype):
     amp = 1 - np.exp(-solver.sim_time)
     u_true = amp * np.sin(x)
     assert np.allclose(u['g'], u_true)
+
+@pytest.mark.parametrize('dtype', [np.float64])
+@pytest.mark.parametrize('N', [8])
+def test_mag_BC(N, dtype):
+    # Bases
+    c, d, b, phi, theta, r, x, y, z = build_ball(N, N, N, 1, 1, dtype, grid_scale=1)
+    # Fields
+    A = d.VectorField(c, name='A', bases=b)
+    Phi = d.Field(name='Phi', bases=b)
+    tau_A = d.VectorField(c, name='A_tau', bases=b.S2_basis())
+    tau_Phi = d.Field(name='Phi_tau')
+    LiftTau = lambda A: operators.LiftTau(A, b, -1)
+    integ = lambda A: operators.Integrate(A, c)
+    # Problem
+    problem = problems.IVP([A, Phi, tau_A, tau_Phi], namespace=locals())
+    problem.add_equation("div(A) + tau_Phi = 0")
+    problem.add_equation("dt(A) - grad(Phi) - lap(A) + LiftTau(tau_A) = 0")
+    problem.add_equation("integ(Phi) = 0")
+    problem.add_equation("angular(A(r=1), index=0) = 0")
+    problem.add_equation("Phi(r=1) = 0")
+    # Solver
+    solver = solvers.InitialValueSolver(problem, timesteppers.SBDF1)
+    dt = 1e-5
+    iter = 10
+    for i in range(iter):
+        solver.step(dt)
 
 @pytest.mark.parametrize('timestepper', [timesteppers.SBDF1])
 @pytest.mark.parametrize('Nx', [32])
