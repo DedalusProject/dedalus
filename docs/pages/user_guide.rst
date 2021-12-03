@@ -9,6 +9,8 @@ General user guide:
 .. toctree::
     :maxdepth: 1
 
+    switching_from_d2
+    tau_method
     configuration
     performance_tips
     troubleshooting
