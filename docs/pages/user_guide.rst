@@ -1,16 +1,12 @@
 User Guide \& How-To's
 **********************
 
-This is a work-in-progress user guide and how-to section for Dedalus.
-Contributions and suggestions for additions to this section are very welcome!
-
 General user guide:
 
 .. toctree::
     :maxdepth: 1
 
-    switching_from_d2
-    tau_method
+    changes_from_d2
     configuration
     performance_tips
     troubleshooting
@@ -20,6 +16,7 @@ Specific how-to's:
 .. toctree::
     :maxdepth: 1
 
+    tau_method
     general_functions
     parallel_data
     output_format
