@@ -45,6 +45,7 @@ extensions += ['sphinx.ext.viewcode']
 extensions += ['sphinx.ext.napoleon']
 extensions += ['sphinx.ext.extlinks']
 extensions += ['nbsphinx']
+extensions += ['sphinx_rtd_theme']
 
 add_module_names = False
 autoapi_type = 'python'
