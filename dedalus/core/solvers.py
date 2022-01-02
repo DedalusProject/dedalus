@@ -599,11 +599,10 @@ class InitialValueSolver(SolverBase):
             run_time = log_time - self.warmup_time
             cpus = self.dist.comm.size
             modes = self.total_modes
-            stages = (self.iteration - self.initial_iteration) * self.timestepper.stages
+            stages = (self.iteration - self.warmup_iterations - self.initial_iteration) * self.timestepper.stages
             logger.info(f"Warmup time (iter 0-{self.warmup_iterations}): {warmup_time:{format}} sec")
             logger.info(f"Run time (iter {self.warmup_iterations}-end): {run_time:{format}} sec")
             logger.info(f"CPU time (iter {self.warmup_iterations}-end): {run_time*cpus/3600:{format}} cpu-hr")
             logger.info(f"Speed: {(modes*stages/cpus/run_time):{format}} mode-stages/cpu-sec")
         else:
             logger.info(f"Timings unavailable due because warmup did not complete.")
-
