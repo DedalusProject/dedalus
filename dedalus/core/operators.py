@@ -3284,6 +3284,8 @@ class CartesianCurl(Curl):
 
     def __init__(self, operand, index=0, out=None):
         coordsys = operand.tensorsig[index]
+        if coordsys.dim != 3:
+            raise ValueError("CartesianCurl is only implemented for 3D vector fields. For 2D, use skew gradient.")
         # Get components
         comps = [CartesianComponent(operand, index=index, coord=c) for c in coordsys.coords]
         x_comp = Differentiate(comps[2], coordsys.coords[1]) - Differentiate(comps[1], coordsys.coords[2])
