@@ -9,7 +9,7 @@ from dedalus.tools.cache import CachedMethod
 Nx_range = [8]
 Ny_range = [8]
 Nz_range = [8]
-N_range = [8]
+N_range = [16]
 dealias_range = [1, 3/2]
 dtype_range = [np.float64, np.complex128]
 
@@ -28,8 +28,8 @@ def build_FF(N, dealias, dtype):
         xb = d3.RealFourier(c.coords[0], size=N, bounds=(0, Lx), dealias=dealias)
         yb = d3.RealFourier(c.coords[1], size=N, bounds=(0, Ly), dealias=dealias)
     b = (xb, yb)
-    x = xb.local_grid(1)
-    y = yb.local_grid(1)
+    x = xb.local_grid(dealias)
+    y = yb.local_grid(dealias)
     r = (x, y)
     return c, d, b, r
 
@@ -43,8 +43,8 @@ def build_FC(N, dealias, dtype):
         xb = d3.RealFourier(c.coords[0], size=N, bounds=(0, Lx), dealias=dealias)
     yb = d3.Chebyshev(c.coords[1], size=N, bounds=(0, Ly), dealias=dealias)
     b = (xb, yb)
-    x = xb.local_grid(1)
-    y = yb.local_grid(1)
+    x = xb.local_grid(dealias)
+    y = yb.local_grid(dealias)
     r = (x, y)
     return c, d, b, r
 
@@ -61,9 +61,9 @@ def build_FFF(N, dealias, dtype):
         yb = d3.RealFourier(c.coords[1], size=N, bounds=(0, Ly), dealias=dealias)
         zb = d3.RealFourier(c.coords[2], size=N, bounds=(0, Lz), dealias=dealias)
     b = (xb, yb, zb)
-    x = xb.local_grid(1)
-    y = yb.local_grid(1)
-    z = zb.local_grid(1)
+    x = xb.local_grid(dealias)
+    y = yb.local_grid(dealias)
+    z = zb.local_grid(dealias)
     r = (x, y, z)
     return c, d, b, r
 
@@ -79,9 +79,9 @@ def build_FFC(N, dealias, dtype):
         yb = d3.RealFourier(c.coords[1], size=N, bounds=(0, Ly), dealias=dealias)
     zb = d3.ChebyshevT(c.coords[2], size=N, bounds=(0, Lz), dealias=dealias)
     b = (xb, yb, zb)
-    x = xb.local_grid(1)
-    y = yb.local_grid(1)
-    z = zb.local_grid(1)
+    x = xb.local_grid(dealias)
+    y = yb.local_grid(dealias)
+    z = zb.local_grid(dealias)
     r = (x, y, z)
     return c, d, b, r
 
@@ -191,6 +191,103 @@ def test_transpose_implicit(basis, N, dealias, dtype):
     problem = d3.LBVP([u], namespace=locals())
     problem.add_equation("transpose(u) = transpose(f)")
     solver = problem.build_solver()
+    solver.solve()
+    assert np.allclose(u['c'], f['c'])
+
+@pytest.mark.parametrize('basis', [build_FFF, build_FFC])
+@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+def test_curl_explicit(basis, N, dealias, dtype):
+    c, d, b, r = basis(N, dealias, dtype)
+    # ABC vector field
+    k = 2*np.pi*np.array([1/Lx, 1/Ly, 1/Lz])
+    f = d.VectorField(c, bases=b)
+    f.set_scales(dealias)
+    f['g'][0] = np.sin(k[2]*r[2]) + np.cos(k[1]*r[1])
+    f['g'][1] = np.sin(k[0]*r[0]) + np.cos(k[2]*r[2])
+    f['g'][2] = np.sin(k[1]*r[1]) + np.cos(k[0]*r[0])
+
+    g = d.VectorField(c, bases=b)
+    g.set_scales(dealias)
+    g['g'][0] = k[2]*np.sin(k[2]*r[2]) + k[1]*np.cos(k[1]*r[1])
+    g['g'][1] = k[0]*np.sin(k[0]*r[0]) + k[2]*np.cos(k[2]*r[2])
+    g['g'][2] = k[1]*np.sin(k[1]*r[1]) + k[0]*np.cos(k[0]*r[0])
+
+    
+    assert np.allclose(d3.Curl(f).evaluate()['g'], g['g'])
+
+#@pytest.mark.parametrize('basis', [build_FFF, build_FFC])
+@pytest.mark.parametrize('basis', [build_FFC])
+@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+def test_curl_implicit(basis, N, dealias, dtype):
+    c, d, b, r = basis(N, dealias, dtype)
+    Lz = b[2].bounds[1]
+    lift_basis = b[2].clone_with(a=1/2, b=1/2) # First derivative basis
+    lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
+    integ = lambda A: d3.Integrate(d3.Integrate(d3.Integrate(A,c.coords[0]),c.coords[1]),c.coords[2])
+    tau = d.VectorField(c, name='tau', bases=b[0:2])
+    taup = d.Field(name='taup')
+    # ABC vector field
+    k = 2*np.pi*np.array([1/Lx, 1/Ly, 1/Lz])
+    f = d.VectorField(c, bases=b)
+    f.set_scales(dealias)
+    f['g'][0] = np.sin(k[2]*r[2]) + np.cos(k[1]*r[1])
+    f['g'][1] = np.sin(k[0]*r[0]) + np.cos(k[2]*r[2])
+    f['g'][2] = np.sin(k[1]*r[1]) + np.cos(k[0]*r[0])
+
+    g = d.VectorField(c, bases=b)
+    g.set_scales(dealias)
+    g['g'][0] = k[2]*np.sin(k[2]*r[2]) + k[1]*np.cos(k[1]*r[1])
+    g['g'][1] = k[0]*np.sin(k[0]*r[0]) + k[2]*np.cos(k[2]*r[2])
+    g['g'][2] = k[1]*np.sin(k[1]*r[1]) + k[0]*np.cos(k[0]*r[0])
+    # Skew LBVP
+    u = d.VectorField(c, name='u', bases=b)
+    phi = d.Field(name='phi', bases=b)
+    problem = d3.LBVP([u,phi,tau, taup], namespace=locals())
+
+    problem.add_equation("curl(u) + grad(phi) - lift(tau,-1) = g")
+    problem.add_equation("div(u) + taup = 0")
+    problem.add_equation("integ(phi) = 0")
+    problem.add_equation("u(z=0) - u(z=Lz) = 0")
+    solver = problem.build_solver()
+    solver.solve()
+    assert np.allclose(u['c'], f['c'])
+
+@pytest.mark.parametrize('basis', [build_FFF])
+@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+def test_curl_implicit_FFF(basis, N, dealias, dtype):
+    c, d, b, r = basis(N, dealias, dtype)
+    Lz = b[2].bounds[1]
+    integ = lambda A: d3.Integrate(d3.Integrate(d3.Integrate(A,c.coords[0]),c.coords[1]),c.coords[2])
+    taup = d.Field(name='taup')
+    # ABC vector field
+    k = 2*np.pi*np.array([1/Lx, 1/Ly, 1/Lz])
+    f = d.VectorField(c, bases=b)
+    f.set_scales(dealias)
+    f['g'][0] = np.sin(k[2]*r[2]) + np.cos(k[1]*r[1])
+    f['g'][1] = np.sin(k[0]*r[0]) + np.cos(k[2]*r[2])
+    f['g'][2] = np.sin(k[1]*r[1]) + np.cos(k[0]*r[0])
+
+    g = d.VectorField(c, bases=b)
+    g.set_scales(dealias)
+    g['g'][0] = k[2]*np.sin(k[2]*r[2]) + k[1]*np.cos(k[1]*r[1])
+    g['g'][1] = k[0]*np.sin(k[0]*r[0]) + k[2]*np.cos(k[2]*r[2])
+    g['g'][2] = k[1]*np.sin(k[1]*r[1]) + k[0]*np.cos(k[0]*r[0])
+    # Skew LBVP
+    u = d.VectorField(c, name='u', bases=b)
+    phi = d.Field(name='phi', bases=b)
+    problem = d3.LBVP([u,phi, taup], namespace=locals())
+    problem.add_equation("curl(u) + grad(phi) = g")
+    problem.add_equation("taup = 0")
+    problem.add_equation("div(u) = 0", condition="nx != 0 or ny != 0 or nz != 0")
+    problem.add_equation("integ(phi) = 0",condition="nx == 0 and ny == 0 and nz == 0")
+
+    solver = problem.build_solver(matrix_coupling=[False, False, False])
     solver.solve()
     assert np.allclose(u['c'], f['c'])
 
