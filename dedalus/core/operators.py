@@ -3297,6 +3297,8 @@ class CartesianCurl(Curl):
         for i,e in enumerate([ex,ey,ez]):
             e['g'][i] = 1        
         arg = x_comp*ex + y_comp*ey + z_comp*ez
+        if not coordsys.right_handed:
+            arg *= -1
         # arg = ([x_comp, y_comp, z_comp],)
         LinearOperator.__init__(self, arg, out=out)
         self.index = index
