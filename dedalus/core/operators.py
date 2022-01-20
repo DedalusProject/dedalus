@@ -698,6 +698,10 @@ class LinearOperator(FutureField):
             size = subproblem.field_size(self)
             matrix = sparse.identity(size, format='csr')
             return {self: matrix}
+        # Intercept subproblems without data
+        size = subproblem.field_size(self)
+        if size == 0:
+            return {var: sparse.csr_matrix((size, subproblem.field_size(var))) for var in vars}
         # Build operand matrices
         operand_mats = self.operand.expression_matrices(subproblem, vars, **kw)
         # Apply operator matrix

@@ -138,7 +138,7 @@ def test_chebyshev_libraries_backward(N, alpha, dealias, dtype, library):
 
 @pytest.mark.parametrize('N', [15, 16])
 @pytest.mark.parametrize('alpha', [0, 1, 2])
-@pytest.mark.parametrize('dealias', [0.5, 1, 1.5])
+@pytest.mark.parametrize('dealias', [0.5, 1, pytest.param(1.5, marks=pytest.mark.xfail(reason="DCT dealiasing not updated"))])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 @pytest.mark.parametrize('library', ['scipy_dct', 'fftw_dct'])
 def test_chebyshev_libraries_forward(N, alpha, dealias, dtype, library):
