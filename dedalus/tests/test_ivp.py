@@ -93,7 +93,7 @@ def test_heat_1d_periodic(x_basis_class, Nx, timestepper, dtype):
     u_true = amp * np.sin(x)
     assert np.allclose(u['g'], u_true)
 
-@pytest.mark.parametrize('dtype', [np.float64])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 @pytest.mark.parametrize('N', [8])
 def test_mag_BC(N, dtype):
     # Bases
@@ -102,14 +102,11 @@ def test_mag_BC(N, dtype):
     A = d.VectorField(c, name='A', bases=b)
     Phi = d.Field(name='Phi', bases=b)
     tau_A = d.VectorField(c, name='A_tau', bases=b.S2_basis())
-    tau_Phi = d.Field(name='Phi_tau')
     LiftTau = lambda A: operators.LiftTau(A, b, -1)
-    integ = lambda A: operators.Integrate(A, c)
     # Problem
-    problem = problems.IVP([A, Phi, tau_A, tau_Phi], namespace=locals())
-    problem.add_equation("div(A) + tau_Phi = 0")
+    problem = problems.IVP([A, Phi, tau_A], namespace=locals())
+    problem.add_equation("div(A) = 0")
     problem.add_equation("dt(A) - grad(Phi) - lap(A) + LiftTau(tau_A) = 0")
-    problem.add_equation("integ(Phi) = 0")
     problem.add_equation("angular(A(r=1), index=0) = 0")
     problem.add_equation("Phi(r=1) = 0")
     # Solver
