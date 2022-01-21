@@ -2991,6 +2991,7 @@ class SphericalGradient(Gradient, SphericalEllOperator):
             raise ValueError("This should never happen")
 
 
+@alias("comp")
 class Component(LinearOperator, metaclass=MultiClass):
 
     name = 'Comp'
@@ -3279,7 +3280,7 @@ class Curl(LinearOperator, metaclass=MultiClass):
         return Curl(operand, index=self.index, **kw)
 
 class CartesianCurl(Curl):
-    
+
     cs_type = coords.CartesianCoordinates
 
     def __init__(self, operand, index=0, out=None):
@@ -3295,7 +3296,7 @@ class CartesianCurl(Curl):
         ey = operand.dist.VectorField(coordsys, name='ey')
         ez = operand.dist.VectorField(coordsys, name='ez')
         for i,e in enumerate([ex,ey,ez]):
-            e['g'][i] = 1        
+            e['g'][i] = 1
         arg = x_comp*ex + y_comp*ey + z_comp*ez
         if not coordsys.right_handed:
             arg *= -1

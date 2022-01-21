@@ -194,6 +194,7 @@ def test_transpose_implicit(basis, N, dealias, dtype):
     solver.solve()
     assert np.allclose(u['c'], f['c'])
 
+
 @pytest.mark.parametrize('basis', [build_FFF, build_FFC])
 @pytest.mark.parametrize('N', N_range)
 @pytest.mark.parametrize('dealias', dealias_range)
@@ -207,29 +208,26 @@ def test_curl_explicit(basis, N, dealias, dtype):
     f['g'][0] = np.sin(k[2]*r[2]) + np.cos(k[1]*r[1])
     f['g'][1] = np.sin(k[0]*r[0]) + np.cos(k[2]*r[2])
     f['g'][2] = np.sin(k[1]*r[1]) + np.cos(k[0]*r[0])
-
     g = d.VectorField(c, bases=b)
     g.set_scales(dealias)
     g['g'][0] = k[2]*np.sin(k[2]*r[2]) + k[1]*np.cos(k[1]*r[1])
     g['g'][1] = k[0]*np.sin(k[0]*r[0]) + k[2]*np.cos(k[2]*r[2])
     g['g'][2] = k[1]*np.sin(k[1]*r[1]) + k[0]*np.cos(k[0]*r[0])
-
-    
     assert np.allclose(d3.Curl(f).evaluate()['g'], g['g'])
 
-#@pytest.mark.parametrize('basis', [build_FFF, build_FFC])
+
 @pytest.mark.parametrize('basis', [build_FFC])
 @pytest.mark.parametrize('N', N_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('dtype', dtype_range)
-def test_curl_implicit(basis, N, dealias, dtype):
+def test_curl_implicit_FFC(basis, N, dealias, dtype):
     c, d, b, r = basis(N, dealias, dtype)
     Lz = b[2].bounds[1]
     lift_basis = b[2].clone_with(a=1/2, b=1/2) # First derivative basis
     lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
     integ = lambda A: d3.Integrate(d3.Integrate(d3.Integrate(A,c.coords[0]),c.coords[1]),c.coords[2])
-    tau = d.VectorField(c, name='tau', bases=b[0:2])
-    taup = d.Field(name='taup')
+    tau1 = d.VectorField(c, name='tau1', bases=b[0:2])
+    tau2 = d.Field(name='tau2', bases=b[0:2])
     # ABC vector field
     k = 2*np.pi*np.array([1/Lx, 1/Ly, 1/Lz])
     f = d.VectorField(c, bases=b)
@@ -237,7 +235,6 @@ def test_curl_implicit(basis, N, dealias, dtype):
     f['g'][0] = np.sin(k[2]*r[2]) + np.cos(k[1]*r[1])
     f['g'][1] = np.sin(k[0]*r[0]) + np.cos(k[2]*r[2])
     f['g'][2] = np.sin(k[1]*r[1]) + np.cos(k[0]*r[0])
-
     g = d.VectorField(c, bases=b)
     g.set_scales(dealias)
     g['g'][0] = k[2]*np.sin(k[2]*r[2]) + k[1]*np.cos(k[1]*r[1])
@@ -246,15 +243,26 @@ def test_curl_implicit(basis, N, dealias, dtype):
     # Skew LBVP
     u = d.VectorField(c, name='u', bases=b)
     phi = d.Field(name='phi', bases=b)
-    problem = d3.LBVP([u,phi,tau, taup], namespace=locals())
-
-    problem.add_equation("curl(u) + grad(phi) - lift(tau,-1) = g")
-    problem.add_equation("div(u) + taup = 0")
-    problem.add_equation("integ(phi) = 0")
-    problem.add_equation("u(z=0) - u(z=Lz) = 0")
+    problem = d3.LBVP([u, phi, tau1, tau2], namespace=locals())
+    problem.add_equation("curl(u) + grad(phi) + lift(tau1,-1) = g")
+    problem.add_equation("div(u) + lift(tau2,-1) = 0")
+    problem.add_equation("u(z=0) = f(z=0)")
+    problem.add_equation("phi(z=0) = 0")
     solver = problem.build_solver()
     solver.solve()
     assert np.allclose(u['c'], f['c'])
+
+
+# dy uz - dz uy + dx phi = gx
+# dz ux - dx uz + dy phi = gy
+# dx uy - dy ux + dz phi = gz
+# dx ux + dy uy + dz uz = 0
+
+# dz uy = -gx
+# dz ux = gy
+# dz phi = gz
+# dz uz = 0
+
 
 @pytest.mark.parametrize('basis', [build_FFF])
 @pytest.mark.parametrize('N', N_range)
@@ -264,7 +272,8 @@ def test_curl_implicit_FFF(basis, N, dealias, dtype):
     c, d, b, r = basis(N, dealias, dtype)
     Lz = b[2].bounds[1]
     integ = lambda A: d3.Integrate(d3.Integrate(d3.Integrate(A,c.coords[0]),c.coords[1]),c.coords[2])
-    taup = d.Field(name='taup')
+    tau1 = d.VectorField(c, name='tau1')
+    tau2 = d.Field(name='tau2')
     # ABC vector field
     k = 2*np.pi*np.array([1/Lx, 1/Ly, 1/Lz])
     f = d.VectorField(c, bases=b)
@@ -272,7 +281,6 @@ def test_curl_implicit_FFF(basis, N, dealias, dtype):
     f['g'][0] = np.sin(k[2]*r[2]) + np.cos(k[1]*r[1])
     f['g'][1] = np.sin(k[0]*r[0]) + np.cos(k[2]*r[2])
     f['g'][2] = np.sin(k[1]*r[1]) + np.cos(k[0]*r[0])
-
     g = d.VectorField(c, bases=b)
     g.set_scales(dealias)
     g['g'][0] = k[2]*np.sin(k[2]*r[2]) + k[1]*np.cos(k[1]*r[1])
@@ -281,13 +289,15 @@ def test_curl_implicit_FFF(basis, N, dealias, dtype):
     # Skew LBVP
     u = d.VectorField(c, name='u', bases=b)
     phi = d.Field(name='phi', bases=b)
-    problem = d3.LBVP([u,phi, taup], namespace=locals())
-    problem.add_equation("curl(u) + grad(phi) = g")
-    problem.add_equation("taup = 0")
-    problem.add_equation("div(u) = 0", condition="nx != 0 or ny != 0 or nz != 0")
-    problem.add_equation("integ(phi) = 0",condition="nx == 0 and ny == 0 and nz == 0")
-
-    solver = problem.build_solver(matrix_coupling=[False, False, False])
+    problem = d3.LBVP([u, phi, tau1, tau2], namespace=locals())
+    problem.add_equation("curl(u) + grad(phi) + tau1 = g")
+    problem.add_equation("div(u) + tau2 = 0")
+    problem.add_equation("integ(phi) = 0")
+    problem.add_equation("integ(comp(u,index=0,coord=c['x'])) = 0")
+    problem.add_equation("integ(comp(u,index=0,coord=c['y'])) = 0")
+    problem.add_equation("integ(comp(u,index=0,coord=c['z'])) = 0")
+    solver = problem.build_solver()
+    solver.print_subproblem_ranks()
     solver.solve()
     assert np.allclose(u['c'], f['c'])
 
