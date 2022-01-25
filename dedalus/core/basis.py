@@ -2913,7 +2913,7 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
             # coeff-coeff
             m, ell = self.elements_to_groups(grid_space, elements)
             tshape = tuple(cs.dim for cs in tensorsig)
-            valid = np.zeros(tshape + m.shape, dtype=bool)
+            valid = np.ones(tshape + m.shape, dtype=bool)
             # Drop disallowed spin components
             if tensorsig:
                 rank = len(tensorsig)
@@ -3935,7 +3935,7 @@ class Spherical3DBasis(MultidimensionalBasis):
             # coeff-coeff-coeff
             m, l, n = self.elements_to_groups(grid_space, elements)
             tshape = tuple(cs.dim for cs in tensorsig)
-            valid = np.zeros(tshape + m.shape, dtype=bool)
+            valid = np.ones(tshape + m.shape, dtype=bool)
             # Drop disallowed regularity components
             if tensorsig:
                 regindices = self.radial_basis.regularity_indices(tensorsig)
