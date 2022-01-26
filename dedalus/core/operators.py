@@ -2119,8 +2119,7 @@ class RadialComponent(Component, metaclass=MultiClass):
     def __init__(self, operand, index=0, out=None):
         super().__init__(operand, index=index, out=out)
         tensorsig = operand.tensorsig
-        self.tensorsig = tuple( tensorsig[:index] + (tensorsig[index].coords[-1],) + tensorsig[index+1:] )
-        #self.tensorsig = tuple( tensorsig[:index] + tensorsig[index+1:] )
+        self.tensorsig = tuple( tensorsig[:index] + tensorsig[index+1:] )
 
     def new_operand(self, operand, **kw):
         return RadialComponent(operand, self.index, **kw)
@@ -2175,7 +2174,7 @@ class AzimuthalComponent(Component, metaclass=MultiClass):
         if not isinstance(self.coordsys, coords.PolarCoordinates):
             raise ValueError("Can only take the AzimuthalComponent of a PolarCoordinate vector")
         tensorsig = operand.tensorsig
-        self.tensorsig = tuple( tensorsig[:index] + (tensorsig[index].coords[0],) + tensorsig[index+1:] )
+        self.tensorsig = tuple( tensorsig[:index] + tensorsig[index+1:] )
 
     def new_operand(self, operand, **kw):
         return AzimuthalComponent(operand, self.index, **kw)

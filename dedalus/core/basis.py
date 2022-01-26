@@ -5253,7 +5253,7 @@ class S2RadialComponent(operators.RadialComponent):
                 matrix_row.append(0)
                 if spinindex_in[self.index] == 2:
                     spinindex_in = list(spinindex_in)
-                    spinindex_in[self.index] = 0
+                    spinindex_in.pop(self.index)
                     if tuple(spinindex_in) == spinindex_out:
                         matrix_row[-1] = 1
             matrix.append(matrix_row)
