@@ -95,7 +95,7 @@ def build_disk(Nphi, Nr, dealias, dtype):
 @pytest.mark.parametrize('dtype', [np.complex128, np.float64])
 @pytest.mark.parametrize('Nphi', [4])
 @pytest.mark.parametrize('Nr', [8])
-def test_heat_disk(Nr, Nphi, dtype):
+def test_scalar_heat_disk_axisymm(Nr, Nphi, dtype):
     # Bases
     dealias = 1
     c, d, b, phi, r, x, y = build_disk(Nphi, Nr, dealias=dealias, dtype=dtype)
@@ -121,7 +121,7 @@ def test_heat_disk(Nr, Nphi, dtype):
 @pytest.mark.parametrize('dtype', [np.complex128, np.float64])
 @pytest.mark.parametrize('Nphi', [16])
 @pytest.mark.parametrize('Nr', [32])
-def test_heat_disk_cart(Nr, Nphi, dtype):
+def test_scalar_heat_disk(Nr, Nphi, dtype):
     # Bases
     dealias = 1
     c, d, b, phi, r, x, y = build_disk(Nphi, Nr, dealias=dealias, dtype=dtype)
@@ -151,7 +151,35 @@ def test_heat_disk_cart(Nr, Nphi, dtype):
 @pytest.mark.parametrize('dtype', [np.complex128, np.float64])
 @pytest.mark.parametrize('Nphi', [4])
 @pytest.mark.parametrize('Nr', [8])
-def test_heat_disk_bc(Nr, Nphi, dtype):
+def test_vector_heat_disk_dirichlet(Nr, Nphi, dtype):
+    # Bases
+    dealias = 1
+    c, d, b, phi, r, x, y = build_disk(Nphi, Nr, dealias=dealias, dtype=dtype)
+    # Fields
+    u = field.Field(name='u', dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
+    τu = field.Field(name='u', dist=d, bases=(b.S1_basis(),), tensorsig=(c,), dtype=dtype)
+    v = field.Field(name='u', dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
+    ex = np.array([-np.sin(phi), np.cos(phi)])
+    ey = np.array([np.cos(phi), np.sin(phi)])
+    v['g'] = (x+4*y)*ex
+    vr = operators.RadialComponent(v(r=radius_disk))
+    vph= operators.AzimuthalComponent(v(r=radius_disk))
+    # Problem
+    Lap = lambda A: operators.Laplacian(A, c)
+    LiftTau = lambda A: operators.LiftTau(A, b, -1)
+    problem = problems.LBVP([u, τu])
+    problem.add_equation((Lap(u) + LiftTau(τu), 0))
+    problem.add_equation((u(r=radius_disk), v(r=radius_disk)))
+    # Solver
+    solver = solvers.LinearBoundaryValueSolver(problem)
+    solver.solve()
+    assert np.allclose(u['g'], v['g'])
+
+
+@pytest.mark.parametrize('dtype', [np.complex128, np.float64])
+@pytest.mark.parametrize('Nphi', [4])
+@pytest.mark.parametrize('Nr', [8])
+def test_vector_heat_disk_components(Nr, Nphi, dtype):
     # Bases
     dealias = 1
     c, d, b, phi, r, x, y = build_disk(Nphi, Nr, dealias=dealias, dtype=dtype)
