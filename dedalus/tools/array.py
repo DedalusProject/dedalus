@@ -172,14 +172,21 @@ def apply_sparse(matrix, array, axis, out=None):
 
 def csr_matvec(A_csr, x_vec, out_vec):
     """
-    Fast CSR matvec skipping shape checks and output allocation. The result is
+    Fast CSR matvec with dense vector skipping output allocation. The result is
     added to the specificed output array, so the output should be manually
     zeroed prior to calling this routine, if necessary.
     """
     # Check format but don't convert
     if A_csr.format != "csr":
         raise ValueError("Matrix must be in CSR format.")
-    M, N = A_csr._shape
+    # Check shapes
+    M, N = A_csr.shape
+    m, n = out_vec.size, x_vec.size
+    if x_vec.ndim > 1 or out_vec.ndim > 1:
+        raise ValueError("Only vectors allowed for input and output.")
+    if M != m or N != n:
+        raise ValueError(f"Matrix shape {(M,N)} does not match input {(m,)} and output {(n,)} shapes.")
+    # Apply matvec
     _sparsetools.csr_matvec(M, N, A_csr.indptr, A_csr.indices, A_csr.data, x_vec, out_vec)
     return out_vec
 

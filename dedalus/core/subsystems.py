@@ -126,7 +126,7 @@ class Subsystem:
         slices = self.dist.coeff_layout.local_groupset_slices(self.group, domain, scales=1)
         if len(slices) == 0:
             return (slice(0,0),) * self.dist.dim
-        if len(slices) > 1:
+        elif len(slices) > 1:
             raise ValueError("Subsystem data not contiguous.")
         else:
             return slices[0]
@@ -482,7 +482,7 @@ class Subproblem:
                 setattr(self, '{:}_exp'.format(name), expanded.tocsr())
         else:
             # Placeholder for accessing shape
-            self.LHS = getattr(self, f'{names[0]}_min')
+            self.LHS = sparse.csr_matrix((valid_eqn.nnz, valid_var.nnz), dtype=dtype)
 
         # Update rank for Woodbury
         eqn_dofs_by_dim = defaultdict(int)
