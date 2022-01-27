@@ -53,6 +53,7 @@ class CoordinateSystem:
 
 class Coordinate:
     dim = 1
+    default_nonconst_groups = (1,)
 
     def __init__(self, name, cs=None):
         self.name = name
@@ -90,6 +91,7 @@ class CartesianCoordinates(CoordinateSystem):
         self.dim = len(names)
         self.coords = tuple(Coordinate(name, cs=self) for name in names)
         self.right_handed = right_handed
+        self.default_nonconst_groups = (1,) * self.dim
 
     def __str__(self):
         return '{' + ','.join([c.name for c in self.coords]) + '}'
@@ -114,6 +116,7 @@ class S2Coordinates(CoordinateSystem):
 
     spin_ordering = (-1, +1)
     dim = 2
+    default_nonconst_groups = (0, 1) # ell=0 has different validity
 
     def __init__(self, azimuth, colatitude):
         self.names = (azimuth, colatitude)
@@ -171,6 +174,7 @@ class PolarCoordinates(CoordinateSystem):
 
     spin_ordering = (-1, +1)
     dim = 2
+    default_nonconst_groups = (0, 0)
 
     def __init__(self, azimuth, radius):
         self.names = (azimuth, radius)
@@ -237,6 +241,7 @@ class SphericalCoordinates(CoordinateSystem):
     reg_ordering = (-1, +1, 0)
     dim = 3
     right_handed = False
+    default_nonconst_groups = (0, 1, 0) # ell=0 has different validity
 
     def __init__(self, azimuth, colatitude, radius):
         self.names = (azimuth, colatitude, radius)

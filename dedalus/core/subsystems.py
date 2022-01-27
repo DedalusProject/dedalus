@@ -118,9 +118,10 @@ class Subsystem:
         # Determine matrix group using solver matrix dependence
         # Map non-dependent groups to group 1, since group 0 may have different truncation
         matrix_dependence = solver.matrix_dependence | solver.matrix_coupling
-        matrix_dependence = matrix_dependence
         change_group = (~matrix_dependence) & (np.array(group) != 0)
-        self.matrix_group = tuple(replace(group, change_group, 1))
+        matrix_group = np.array(group)
+        matrix_group[change_group] = np.array(self.dist.default_nonconst_groups)[change_group]
+        self.matrix_group = tuple(matrix_group)
 
     def coeff_slices(self, domain):
         slices = self.dist.coeff_layout.local_groupset_slices(self.group, domain, scales=1)
