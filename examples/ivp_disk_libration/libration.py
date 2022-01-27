@@ -72,9 +72,7 @@ u0 = np.cos(t) * u0_real - np.sin(t) * u0_imag
 problem = d3.IVP([p, u, tau_u, tau_p], time=t, namespace=locals())
 problem.add_equation("div(u) + tau_p = 0")
 problem.add_equation("dt(u) - nu*lap(u) + grad(p) + lift(tau_u,-1) = - dot(u, grad(u0)) - dot(u0, grad(u))")
-#problem.add_equation("u(r=1) = 0")
-problem.add_equation("radial(u(r=1)) = 0")
-problem.add_equation("azimuthal(u(r=1)) = 0")
+problem.add_equation("u(r=1) = 0")
 problem.add_equation("integ(p) = 0") # Pressure gauge
 
 # Solver
