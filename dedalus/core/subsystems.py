@@ -118,15 +118,16 @@ class Subsystem:
         # Determine matrix group using solver matrix dependence
         # Map non-dependent groups to group 1, since group 0 may have different truncation
         matrix_dependence = solver.matrix_dependence | solver.matrix_coupling
-        matrix_dependence = matrix_dependence
         change_group = (~matrix_dependence) & (np.array(group) != 0)
-        self.matrix_group = tuple(replace(group, change_group, 1))
+        matrix_group = np.array(group)
+        matrix_group[change_group] = np.array(self.dist.default_nonconst_groups)[change_group]
+        self.matrix_group = tuple(matrix_group)
 
     def coeff_slices(self, domain):
         slices = self.dist.coeff_layout.local_groupset_slices(self.group, domain, scales=1)
         if len(slices) == 0:
             return (slice(0,0),) * self.dist.dim
-        if len(slices) > 1:
+        elif len(slices) > 1:
             raise ValueError("Subsystem data not contiguous.")
         else:
             return slices[0]
@@ -482,7 +483,7 @@ class Subproblem:
                 setattr(self, '{:}_exp'.format(name), expanded.tocsr())
         else:
             # Placeholder for accessing shape
-            self.LHS = getattr(self, f'{names[0]}_min')
+            self.LHS = sparse.csr_matrix((valid_eqn.nnz, valid_var.nnz), dtype=dtype)
 
         # Update rank for Woodbury
         eqn_dofs_by_dim = defaultdict(int)

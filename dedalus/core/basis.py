@@ -2912,18 +2912,26 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
         else:
             # coeff-coeff
             m, ell = self.elements_to_groups(grid_space, elements)
+            tshape = tuple(cs.dim for cs in tensorsig)
+            valid = np.ones(tshape + m.shape, dtype=bool)
+            # Drop disallowed spin components
             if tensorsig:
                 rank = len(tensorsig)
                 dim = len(m.shape)
-                m = m[(None,) * rank]
-                ell = ell[(None,) * rank]
+                full_m = m[(None,) * rank]
+                full_ell = ell[(None,) * rank]
                 s = self.spin_weights(tensorsig)
-                s = s.T[(None,) * dim].T
-                valid = np.maximum(np.abs(m), np.abs(s)) <= ell
+                full_s = s.T[(None,) * dim].T
+                valid[np.maximum(np.abs(full_m), np.abs(full_s)) > full_ell] = False
             else:
-                valid = np.abs(m) <= ell
-                # Drop msin part of m = 0
-                valid[(m == 0) * (elements[0] % 2 == 1)] = False
+                valid[np.abs(m) > ell] = False
+            # Drop msin part of ell == 0 for real scalars and vectors
+            # Does not impose m == 0 symmetry for ell > 0 or tensors
+            if self.dtype == np.float64:
+                if len(tensorsig) == 0:
+                    valid[(ell == 0) * (elements[0] % 2 == 1)] = False
+                elif len(tensorsig) == 1:
+                    valid[:, (ell == 0) * (elements[0] % 2 == 1)] = False
             return valid
 
 
@@ -3926,17 +3934,21 @@ class Spherical3DBasis(MultidimensionalBasis):
         else:
             # coeff-coeff-coeff
             m, l, n = self.elements_to_groups(grid_space, elements)
+            tshape = tuple(cs.dim for cs in tensorsig)
+            valid = np.ones(tshape + m.shape, dtype=bool)
+            # Drop disallowed regularity components
             if tensorsig:
                 regindices = self.radial_basis.regularity_indices(tensorsig)
-                tshape = tuple(cs.dim for cs in tensorsig)
-                valid = np.zeros(tshape + m.shape, dtype=bool)
                 for regcomp in np.ndindex(tshape):
                     regindex = regindices[regcomp]
                     valid[regcomp] = self.radial_basis.regularity_allowed_vectorized(l, regindex)
-            else:
-                valid = np.ones(m.shape, dtype=bool)
-                # Drop msin part of m = 0
-                valid[(m == 0) * (elements[0] % 2 == 1)] = False
+            # Drop msin part of ell == 0 for real scalars and vectors
+            # Does not impose m == 0 symmetry for ell > 0 or tensors
+            if self.dtype == np.float64:
+                if len(tensorsig) == 0:
+                    valid[(l == 0) * (elements[0] % 2 == 1)] = False
+                elif len(tensorsig) == 1:
+                    valid[:, (l == 0) * (elements[0] % 2 == 1)] = False
             return valid
 
     def elements_to_groups(self, grid_space, elements):
@@ -5241,7 +5253,7 @@ class S2RadialComponent(operators.RadialComponent):
                 matrix_row.append(0)
                 if spinindex_in[self.index] == 2:
                     spinindex_in = list(spinindex_in)
-                    spinindex_in[self.index] = 0
+                    spinindex_in.pop(self.index)
                     if tuple(spinindex_in) == spinindex_out:
                         matrix_row[-1] = 1
             matrix.append(matrix_row)
