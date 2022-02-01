@@ -6,7 +6,7 @@ General user guide:
 .. toctree::
     :maxdepth: 1
 
-    changes_from_d2
+    changes_from_v2
     configuration
     performance_tips
     troubleshooting
@@ -17,7 +17,4 @@ Specific how-to's:
     :maxdepth: 1
 
     tau_method
-    general_functions
-    parallel_data
-    output_format
-    restarting
+

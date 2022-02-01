@@ -4,19 +4,19 @@ Troubleshooting
 Singular matrix errors
 ======================
 
-If you come across an error in the linear solver stating that a matrix/factor is singular, that means that the linear LHS portion of the PDE system is not solvable.
+If you come across an error in the linear solver stating that a matrix/factor is singular, that means that the linear LHS portion of the PDE system is not uniquely solvable.
 This error indicates that some degrees of freedom of the solution are unconstrained and some of the specified equations are redundant (these are equivalent since the LHS matrices must be square).
 
 These errors are often due to imposing boundary conditions that are redundant for some set of modes and/or failing to constrain a gauge freedom in the solution.
-For instance, when simulating incompressibly hydrodynamics in a channel, specifying the mean wall-normal velocity on both walls is redundant with the incompressiblity constraint (the mean wall-normal velocity at one wall must be the same as at the other wall for the flow to be divergence-free).
-Instead, the wall-normal velocity boundary condition at one wall should be removed and replaced with a gauge condition setting the constant portion of the pressure.
-This is why you'll see these types of boundary conditions for the wall-normal velocity (e.g. ``w``) in Dedalus scripts for incompressible flow:
+For instance, when simulating incompressible hydrodynamics, the pressure has a constant gauge freedom and the integral of the divergence constraint is redundant with the velocity boundary conditions.
+To fix these issues, a spatially constant variable can be added to the LHS of the divergence constraint, introducing a degree of freedom that allows for fixing the pressure gauge:
 
 .. code-block:: python
 
-    problem.add_bc("left(w) = 0")
-    problem.add_bc("right(w) = 0", condition="(nx != 0)")
-    problem.add_bc("right(p) = 0", condition="(nx == 0)")
+    c = dist.Field() # Constant variable for fixing pressure gauge
+    ...
+    problem.add_equation("div(u) + c = 0") # Add c to break redundancy with boundary conditions
+    problem.add_equation("integ(p) = 0") # Pressure gauge
 
 Out of memory errors
 ====================
@@ -32,13 +32,6 @@ Maintaining Hermitian symmetry with real variables
 ==================================================
 
 In certain problems with real variables, numerical instabilities may arise due to the loss of Hermitian symmetry in the Fourier components of the solution.
-When the grid datatype is set to ``float`` or ``np.float64`` in Dedalus, that means that the first Fourier transform (say in the x direction) will be computed with a real-to-complex FFT where the negative half of the spectrum (kx < 0) is discarded.
-Subsequent transforms are then complex-to-complex.
-
-This strategy maintains the proper Hermitian symmetry for the majority of the modes, since only the non-negative kx half of the spectrum is evolved and the negative kx modes are computed from the conjugates of the positive kx modes whenever they are needed (i.e. for interpolation along x).
-However, modes with kx = 0 should have coefficients that are real after the x-transform, and should have Hermitian symmetry in e.g. ky if there's a subsequent Fourier transform in y.
-If these conditions are not enforced and the PDE has a linear instability for modes with kx = 0, then the imaginary part of the solution can potentially grow without bound (the nonlinear terms are computed in grid space, so they only affect the real portion of the solution and can’t saturate a growing imaginary part).
-
 A simple solution is to periodically transform all the state variables to grid space, which will project away any imaginary component that may have been building up during timestepping.
 This is done in Dedalus every 100 timesteps by default.
 This cadence can be modified via the ``enforce_real_cadence`` keyword when instantiating an IVP solver, and may need to be decreased in simulations with strong linear instabilities.

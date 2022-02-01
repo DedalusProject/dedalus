@@ -18,3 +18,7 @@ The configuration settings can be modified by, in order of increasing precedence
 
     from dedalus.tools.config import config
     config['logging']['stdout_level'] = 'debug'
+
+The default configuration file in this version of Dedalus is copied below for reference:
+
+.. literalinclude:: ../../dedalus/dedalus.cfg
