@@ -20,7 +20,7 @@
 # -- Project information -----------------------------------------------------
 
 project = 'Dedalus Project'
-copyright = '2021 Dedalus Collaboration'
+copyright = '2022 Dedalus Collaboration'
 author = 'Dedalus Collaboration'
 
 # The short X.Y version
@@ -101,7 +101,9 @@ html_logo = 'epic12_4_exp_2_1.25.png'
 # further.  For a list of options available for each theme, see the
 # documentation.
 #
-# html_theme_options = {}
+html_theme_options = {
+    "collapse_navigation": "false"
+}
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
