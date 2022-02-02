@@ -36,7 +36,9 @@ References:
          Numerical Mathematics Theory (2011).
 """
 
+from smtplib import SMTPRecipientsRefused
 import numpy as np
+import matplotlib.pyplot as plt
 import dedalus.public as d3
 import logging
 logger = logging.getLogger(__name__)
@@ -78,6 +80,8 @@ f['g'] = R0**(2/(n-1)) * (1 - r**2)**2
 # Solver
 solver = problem.build_solver(ncc_cutoff=ncc_cutoff)
 pert_norm = np.inf
+f.require_scales(dealias)
+steps = [f['g'].ravel().copy()]
 while pert_norm > tolerance:
     solver.newton_iteration()
     pert_norm = sum(pert.allreduce_data_norm('c', 2) for pert in solver.perturbations)
@@ -85,6 +89,7 @@ while pert_norm > tolerance:
     f0 = f(r=0).evaluate().allgather_data('g')[0,0,0]
     Ri = f0**((n-1)/2)
     logger.info(f'R iterate: {Ri}')
+    steps.append(f['g'].ravel().copy())
 
 # Compare to reference solutions from Boyd
 R_ref = {0.0: np.sqrt(6),
@@ -104,3 +109,17 @@ logger.info(f'Final R iteration: {Ri}')
 if n in R_ref:
     logger.info(f'Error vs reference: {Ri-R_ref[n]:.3e}')
 
+# Plot solution
+plt.figure()
+_, _, r = dist.local_grids(basis, scales=(dealias,dealias,dealias))
+alpha = np.linspace(0.2, 1, len(steps))
+color = ('C0',) * (len(steps)-1) + ('C1',)
+for i, step in enumerate(steps):
+    plt.plot(r.ravel(), step, c=color[i], alpha=alpha[i], label=f"step {i}")
+plt.legend()
+plt.xlim(0, 1)
+plt.ylim(0, None)
+plt.xlabel('r')
+plt.ylabel('f')
+plt.tight_layout()
+plt.savefig('lane_emden.pdf')
