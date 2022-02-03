@@ -50,7 +50,7 @@ class DimWrapper:
             return self.basis.local_modes().ravel()
 
 
-def plot_bot(dset, image_axes, data_slices, image_scales=(0,0), clim=None, even_scale=False, cmap='RdBu_r', axes=None, figkw={}, title=None, func=None):
+def plot_bot(dset, image_axes, data_slices, image_scales=(0,0), clim=None, even_scale=False, cmap='RdBu_r', axes=None, figkw={}, title=None, func=None, visible_axes=True):
     """
     Plot a 2d slice of the grid data of a dset/field.
 
@@ -78,6 +78,8 @@ def plot_bot(dset, image_axes, data_slices, image_scales=(0,0), clim=None, even_
         Title for plot (default: dataset name)
     func : function(xmesh, ymesh, data), optional
         Function to apply to selected meshes and data before plotting (default: None)
+    visible_axes : bool, optional
+        Set to false to remove x and y ticks, ticklabels, and labels
 
     """
 
@@ -150,6 +152,9 @@ def plot_bot(dset, image_axes, data_slices, image_scales=(0,0), clim=None, even_
         paxes.set_ylabel(yscale)
     else:
         paxes.set_ylabel(dset.dims[yaxis].label)
+    if not visible_axes:
+        paxes.xaxis.set_visible(False)
+        paxes.yaxis.set_visible(False)
 
     return paxes, caxes
 

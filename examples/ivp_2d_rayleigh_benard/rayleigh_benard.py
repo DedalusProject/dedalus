@@ -3,8 +3,7 @@ Dedalus script simulating 2D horizontally-periodic Rayleigh-Benard convection.
 This script demonstrates solving a 2D cartesian initial value problem. It can
 be ran serially or in parallel, and uses the built-in analysis framework to save
 data snapshots to HDF5 files. The `plot_snapshots.py` script can be used to
-produce plots from the saved data. The simulation should take roughly 10
-cpu-minutes to run.
+produce plots from the saved data. It should take about a cpu-minute to run.
 
 The problem is non-dimensionalized using the box height and freefall time, so
 the resulting thermal diffusivity and viscosity are related to the Prandtl
@@ -29,18 +28,16 @@ import dedalus.public as d3
 import logging
 logger = logging.getLogger(__name__)
 
-# TODO: maybe fix plotting to directly handle vectors
-# TODO: get unit vectors from coords?
 # TODO: cleanup integ shortcuts
 
 
 # Parameters
 Lx, Lz = 4, 1
 Nx, Nz = 256, 64
-Rayleigh = 1e6
+Rayleigh = 2e6
 Prandtl = 1
 dealias = 3/2
-stop_sim_time = 25
+stop_sim_time = 50
 timestepper = d3.RK222
 max_timestep = 0.125
 dtype = np.float64
@@ -50,8 +47,6 @@ coords = d3.CartesianCoordinates('x', 'z')
 dist = d3.Distributor(coords, dtype=dtype)
 xbasis = d3.RealFourier(coords['x'], size=Nx, bounds=(0, Lx), dealias=dealias)
 zbasis = d3.ChebyshevT(coords['z'], size=Nz, bounds=(0, Lz), dealias=dealias)
-x = dist.local_grid(xbasis)
-z = dist.local_grid(zbasis)
 
 # Fields
 p = dist.Field(name='p', bases=(xbasis,zbasis))
@@ -66,14 +61,9 @@ tau2u = dist.VectorField(coords, name='tau2u', bases=xbasis)
 # Substitutions
 kappa = (Rayleigh * Prandtl)**(-1/2)
 nu = (Rayleigh / Prandtl)**(-1/2)
-
-ex = dist.VectorField(coords, name='ex')
-ez = dist.VectorField(coords, name='ez')
-ex['g'][0] = 1
-ez['g'][1] = 1
-
+x, z = dist.local_grids(xbasis, zbasis)
+ex, ez = coords.unit_vector_fields(dist)
 integ = lambda A: d3.Integrate(d3.Integrate(A, 'x'), 'z')
-
 lift_basis = zbasis.clone_with(a=1/2, b=1/2) # First derivative basis
 lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
 grad_u = d3.grad(u) + ez*lift(tau1u,-1) # First-order reduction
@@ -97,17 +87,14 @@ solver = problem.build_solver(timestepper)
 solver.stop_sim_time = stop_sim_time
 
 # Initial conditions
-zb, zt = zbasis.bounds
 b.fill_random('g', seed=42, distribution='normal', scale=1e-3) # Random noise
 b['g'] *= z * (Lz - z) # Damp noise at walls
 b['g'] += Lz - z # Add linear background
 
 # Analysis
 snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=0.25, max_writes=50)
-snapshots.add_task(p)
-snapshots.add_task(b)
-snapshots.add_task(d3.dot(u,ex), name='ux')
-snapshots.add_task(d3.dot(u,ez), name='uz')
+snapshots.add_task(b, name='buoyancy')
+snapshots.add_task(-d3.div(d3.skew(u)), name='vorticity')
 
 # CFL
 CFL = d3.CFL(solver, initial_dt=max_timestep, cadence=10, safety=0.5, threshold=0.05,

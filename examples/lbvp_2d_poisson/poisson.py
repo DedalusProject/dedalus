@@ -1,8 +1,7 @@
 """
 Dedalus script solving the 2D Poisson equation with mixed boundary conditions.
-This script demonstrates solving a 2D cartesian linear boundary value problem.
-and produces a plot of the solution. It should be ran serially and take just a
-few seconds to complete.
+This script demonstrates solving a 2D Cartesian linear boundary value problem
+and produces a plot of the solution. It should take just a few seconds to run.
 
 We use a Fourier(x) * Chebyshev(y) discretization to solve the LBVP:
     dx(dx(u)) + dy(dy(u)) = f
@@ -19,11 +18,9 @@ import dedalus.public as d3
 import logging
 logger = logging.getLogger(__name__)
 
-# TODO: make proper plotting using plotbot/xarray
-
 
 # Parameters
-Lx, Ly = 2*np.pi, 1
+Lx, Ly = 2*np.pi, np.pi
 Nx, Ny = 256, 128
 dtype = np.float64
 
@@ -44,8 +41,9 @@ tau2 = dist.Field(name='tau2', bases=xbasis)
 f = dist.Field(bases=(xbasis, ybasis))
 g = dist.Field(bases=xbasis)
 h = dist.Field(bases=xbasis)
-f['g'] = -10 * np.sin(x/2)**2 * (y - y**2)
-g['g'] = np.sin(8*x)
+f.fill_random('g', seed=40)
+f.low_pass_filter(shape=(64, 32))
+g['g'] = np.sin(8*x) * 0.025
 h['g'] = 0
 
 # Substitutions
@@ -63,14 +61,19 @@ problem.add_equation("dy(u)(y=Ly) = h")
 solver = problem.build_solver()
 solver.solve()
 
-# Plot
+# Gather global data
+x = xbasis.global_grid()
+y = ybasis.global_grid()
 ug = u.allgather_data('g')
+
+# Plot
 if dist.comm.rank == 0:
     plt.figure(figsize=(6, 4))
-    plt.imshow(ug.T)
-    plt.colorbar(label='u')
+    plt.pcolormesh(x.ravel(), y.ravel(), ug.T, cmap='viridis', shading='gouraud', rasterized=True)
+    plt.gca().set_aspect('equal')
     plt.xlabel('x')
     plt.ylabel('y')
+    plt.title("Randomly forced Poisson equation")
     plt.tight_layout()
-    plt.savefig('poisson.png')
+    plt.savefig('poisson.pdf')
 

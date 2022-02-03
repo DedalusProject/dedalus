@@ -32,6 +32,10 @@ def rng_element(index, seed, chunk_size, distribution, **kw):
 def rng_elements(indices, seed, chunk_size, distribution, **kw):
     """Get an array of elements from a RNG stream."""
     indices = np.array(indices)
+    # Early quit on empty samples
+    if indices.size == 0:
+        data = rng_element(0, seed, chunk_size, distribution, **kw)
+        return np.zeros(indices.shape, dtype=data.dtype)
     # Trim chunk size if all indices are in first chunk
     chunk_size = min(1 + indices.max(), chunk_size)
     # Iterate over RNG until reaching all chunks

@@ -32,11 +32,11 @@ Ntheta = 128
 dealias = 3/2
 R = 6.37122e6 * meter
 Omega = 7.292e-5 / second
-nu = 1e5 / 32**2 * meter**2 / second
+nu = 1e5 * meter**2 / second / 32**2 # Hyperdiffusion matched at ell=32
 g = 9.80616 * meter / second**2
 H = 1e4 * meter
 timestep = 600 * second
-stop_sim_time = 240 * hour
+stop_sim_time = 360 * hour
 dtype = np.float64
 
 # Bases

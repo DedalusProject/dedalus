@@ -3,8 +3,8 @@ Dedalus script simulating a 2D periodic incompressible shear flow with a passive
 tracer field for visualization. This script demonstrates solving a 2D periodic
 initial value problem. It can be ran serially or in parallel, and uses the
 built-in analysis framework to save data snapshots to HDF5 files. The
-`plot_snapshots.py` script can be used to produce plots from the saved data. The
-simulation should take roughly 1 cpu-minute to run.
+`plot_snapshots.py` script can be used to produce plots from the saved data.
+The simulation should take a few cpu-minutes to run.
 
 The initial flow is in the x-direction and depends only on z. The problem is
 non-dimensionalized usign the shear-layer spacing and velocity jump, so the
@@ -29,11 +29,11 @@ logger = logging.getLogger(__name__)
 
 # Parameters
 Lx, Lz = 1, 2
-Nx, Nz = 96, 192
-Reynolds = 1e4
+Nx, Nz = 128, 256
+Reynolds = 5e4
 Schmidt = 1
 dealias = 3/2
-stop_sim_time = 5
+stop_sim_time = 20
 timestepper = d3.RK222
 max_timestep = 1e-2
 dtype = np.float64
@@ -43,8 +43,6 @@ coords = d3.CartesianCoordinates('x', 'z')
 dist = d3.Distributor(coords, dtype=dtype)
 xbasis = d3.RealFourier(coords['x'], size=Nx, bounds=(0, Lx), dealias=dealias)
 zbasis = d3.RealFourier(coords['z'], size=Nz, bounds=(-Lz/2, Lz/2), dealias=dealias)
-x = dist.local_grid(xbasis)
-z = dist.local_grid(zbasis)
 
 # Fields
 p = dist.Field(name='p', bases=(xbasis,zbasis))
@@ -55,10 +53,8 @@ tau_p = dist.Field(name='g')
 # Substitutions
 nu = 1 / Reynolds
 D = nu / Schmidt
-
-ez = dist.VectorField(coords, name='u', bases=(xbasis,zbasis))
-ez['g'][1] = 1
-
+x, z = dist.local_grids(xbasis, zbasis)
+ex, ez = coords.unit_vector_fields(dist)
 integ = lambda A: d3.Integrate(d3.Integrate(A, 'x'), 'z')
 
 # Problem
@@ -82,11 +78,14 @@ u['g'][1] += 0.1 * np.sin(2*np.pi*x/Lx) * np.exp(-(z-0.5)**2/0.01)
 u['g'][1] += 0.1 * np.sin(2*np.pi*x/Lx) * np.exp(-(z+0.5)**2/0.01)
 
 # Analysis
-snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=0.05, max_writes=10)
-snapshots.add_task(s)
+snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=0.1, max_writes=10)
+snapshots.add_task(s, name='tracer')
+snapshots.add_task(p, name='pressure')
+snapshots.add_task(-d3.div(d3.skew(u)), name='vorticity')
 
 # CFL
-CFL = d3.CFL(solver, initial_dt=max_timestep, cadence=10, safety=0.3, threshold=0.1, max_dt=max_timestep)
+CFL = d3.CFL(solver, initial_dt=max_timestep, cadence=10, safety=0.2, threshold=0.1,
+             max_change=1.5, min_change=0.5, max_dt=max_timestep)
 CFL.add_velocity(u)
 
 # Flow properties

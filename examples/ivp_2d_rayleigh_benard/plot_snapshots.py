@@ -21,16 +21,16 @@ def main(filename, start, count, output):
     """Save plot of specified tasks for given range of analysis writes."""
 
     # Plot settings
-    tasks = ['b', 'p', 'ux', 'uz']
-    scale = 2.5
-    dpi = 100
+    tasks = ['buoyancy', 'vorticity']
+    scale = 1.5
+    dpi = 200
     title_func = lambda sim_time: 't = {:.3f}'.format(sim_time)
     savename_func = lambda write: 'write_{:06}.png'.format(write)
     # Layout
-    nrows, ncols = 4, 1
+    nrows, ncols = 2, 1
     image = plot_tools.Box(4, 1)
-    pad = plot_tools.Frame(0.2, 0.2, 0.1, 0.1)
-    margin = plot_tools.Frame(0.3, 0.2, 0.1, 0.1)
+    pad = plot_tools.Frame(0.3, 0, 0, 0)
+    margin = plot_tools.Frame(0.2, 0.1, 0, 0)
 
     # Create multifigure
     mfig = plot_tools.MultiFigure(nrows, ncols, image, pad, margin, scale)
@@ -44,11 +44,11 @@ def main(filename, start, count, output):
                 axes = mfig.add_axes(i, j, [0, 0, 1, 1])
                 # Call 3D plotting helper, slicing in time
                 dset = file['tasks'][task]
-                plot_tools.plot_bot_3d(dset, 0, index, axes=axes, title=task, even_scale=True)
+                plot_tools.plot_bot_3d(dset, 0, index, axes=axes, title=task, even_scale=True, visible_axes=False)
             # Add time title
             title = title_func(file['scales/sim_time'][index])
             title_height = 1 - 0.5 * mfig.margin.top / mfig.fig.y
-            fig.suptitle(title, x=0.48, y=title_height, ha='left')
+            fig.suptitle(title, x=0.44, y=title_height, ha='left')
             # Save figure
             savename = savename_func(file['scales/write_number'][index])
             savepath = output.joinpath(savename)

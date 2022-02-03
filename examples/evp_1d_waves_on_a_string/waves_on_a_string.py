@@ -1,8 +1,8 @@
 """
 Dedalus script computing the eigenmodes of waves on a clamped string.
 This script demonstrates solving a 1D eigenvalue problem and produces
-a plot of the relative error of the eigenvalues.  It should be ran serially
-and take just a few seconds to complete.
+a plot of the relative error of the eigenvalues.  It should take just
+a few seconds to run (serial only).
 
 We use a Chebyshev basis to solve the EVP:
     s*u + dx(dx(u)) = 0

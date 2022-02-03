@@ -5,6 +5,7 @@ from ..libraries.dedalus_sphere import jacobi
 from ..libraries import dedalus_sphere
 
 from ..tools.array import nkron
+from ..tools.cache import CachedMethod
 
 # Public interface
 __all__ = ['Coordinate',
@@ -101,6 +102,15 @@ class CartesianCoordinates(CoordinateSystem):
 
     def backward_intertwiner(self, axis, order, group):
         return np.identity(self.dim**order)
+
+    @CachedMethod
+    def unit_vector_fields(self, dist):
+        fields = []
+        for i, c in enumerate(self.coords):
+            ec = dist.VectorField(self, name=f"e{c.name}")
+            ec['g'][i] = 1
+            fields.append(ec)
+        return tuple(fields)
 
 
 class AzimuthalCoordinate(Coordinate):

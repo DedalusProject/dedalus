@@ -2,10 +2,14 @@
 Poisson equation (2D LBVP)
 **************************
 
+Script
+------
+
 .. literalinclude:: ../../../examples/lbvp_2d_poisson/poisson.py
 
-Resulting image:
+Output
+------
 
-.. image:: images/poisson.png
+.. image:: images/poisson.pdf
     :width: 100 %
     :align: center

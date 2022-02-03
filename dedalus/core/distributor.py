@@ -223,9 +223,9 @@ class Distributor:
         else:
             raise ValueError("Use `local_grids` for multidimensional bases.")
 
-    def local_grids(self, basis, scales=None):
+    def local_grids(self, *bases, scales=None):
         # TODO: remove from bases and do it all here?
-        return basis.local_grids(scales=scales)
+        return sum((basis.local_grids(scales=scales) for basis in bases), ())
 
     def local_modes(self, basis):
         # TODO: remove from bases and do it all here?

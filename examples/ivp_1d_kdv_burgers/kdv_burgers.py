@@ -1,8 +1,8 @@
 """
 Dedalus script simulating the 1D Korteweg-de Vries / Burgers equation.
 This script demonstrates solving a 1D initial value problem and produces
-a space-time plot of the solution. It should be ran serially and take
-about 1 minute to complete.
+a space-time plot of the solution. It should take just a few seconds to
+run (serial only).
 
 We use a Fourier basis to solve the IVP:
     dt(u) + u*dx(u) = a*dx(dx(u)) + b*dx(dx(dx(u)))
@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 # Parameters
 Lx = 10
 Nx = 1024
-a = 2e-4
-b = 1e-4
+a = 1e-4
+b = 2e-4
 dealias = 3/2
 stop_sim_time = 10
 timestepper = d3.SBDF2
@@ -64,14 +64,13 @@ while solver.proceed:
         t_list.append(solver.sim_time)
 
 # Plot
-u_array = np.array(u_list)
-t_array = np.array(t_list)
-plt.figure()
-plt.pcolormesh(x.ravel(), t_array, u_array, cmap='RdBu_r', shading='nearest')
-plt.colorbar(label='u')
+plt.figure(figsize=(6, 4))
+plt.pcolormesh(x.ravel(), np.array(t_list), np.array(u_list), cmap='RdBu_r', shading='gouraud', rasterized=True, clim=(-0.8, 0.8))
+plt.xlim(0, Lx)
+plt.ylim(0, stop_sim_time)
 plt.xlabel('x')
 plt.ylabel('t')
 plt.title(f'KdV-Burgers, (a,b)=({a},{b})')
 plt.tight_layout()
-plt.savefig('kdv_burgers.png')
+plt.savefig('kdv_burgers.pdf')
 

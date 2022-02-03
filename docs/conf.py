@@ -47,6 +47,7 @@ extensions += ['sphinx.ext.extlinks']
 extensions += ['nbsphinx']
 extensions += ['sphinx_rtd_theme']
 extensions += ['sphinx_gallery.load_style']
+extensions += ['sphinxcontrib.video']
 
 add_module_names = False
 autoapi_type = 'python'
@@ -87,7 +88,7 @@ language = None
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
 # The name of the Pygments (syntax highlighting) style to use.
-pygments_style = 'sphinx'
+pygments_style = 'default'
 
 
 # -- Options for HTML output -------------------------------------------------
@@ -181,17 +182,16 @@ texinfo_documents = [
 
 # -- Options for nbsphinx galleries
 # Using _images/ is a hack to get relocated images which have been included in the pages
-
 nbsphinx_thumbnails = {
-    'pages/examples/evp_1d_waves_on_a_string': '_images/eigenvalue_error.pdf',
-    'pages/examples/ivp_1d_kdv_burgers': '_images/kdv_burgers.png',
+    'pages/examples/evp_1d_waves_on_a_string': '_images/waves_on_a_string.pdf',
+    'pages/examples/ivp_1d_kdv_burgers': '_images/kdv_burgers.pdf',
     'pages/examples/ivp_2d_rayleigh_benard': '_images/rayleigh_benard.png',
     'pages/examples/ivp_2d_shear_flow': '_images/shear_flow.png',
     'pages/examples/ivp_ball_internally_heated_convection': '_images/internally_heated_convection.png',
     'pages/examples/ivp_disk_libration': '_images/libration.png',
     'pages/examples/ivp_shell_convection': '_images/shell_convection.png',
     'pages/examples/ivp_sphere_shallow_water': '_images/shallow_water.png',
-    'pages/examples/lbvp_2d_poisson': '_images/poisson.png',
+    'pages/examples/lbvp_2d_poisson': '_images/poisson.pdf',
     'pages/examples/nlbvp_ball_lane_emden': '_images/lane_emden.pdf',
 }
 
