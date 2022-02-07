@@ -170,7 +170,6 @@ class EigenvalueSolver:
                                                                               B=B.getH(),
                                                                               N=N, target=np.conjugate(target),
                                                                               matsolver=self.matsolver, **kw)
-            # TODO: after normalizing, one last iteration to clean up orthogonality? -- kick this can down the road, Keaton will look into it
             if not np.allclose(self.eigenvalues, np.conjugate(self.left_eigenvalues)):
                 if raise_on_mismatch:
                     raise RuntimeError("Conjugate of left eigenvalues does not match right eigenvalues. "
@@ -185,7 +184,6 @@ class EigenvalueSolver:
                 unnormalized_modified_left_eigenvectors = np.conjugate(np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M))
                 norms = np.diag(unnormalized_modified_left_eigenvectors.T.conj() @ self.eigenvectors)
                 self.left_eigenvectors /= norms
-            # TODO: the * below seems like bad style. Is there an obviously better replacement?
             self.modified_left_eigenvectors = np.conjugate(np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M))
         self.eigenvalue_pencil = pencil
 
@@ -205,7 +203,7 @@ class EigenvalueSolver:
             If true, sets state vector to a modified left eigenmode,
             which is dual (under the standard complex dot product in
             coefficient space) to the corresponding right eigenmode.
-            Supercedes left=True (default: False)
+            Supersedes left=True (default: False)
         """
         self.state.data[:] = 0
         if left or modified_left:
