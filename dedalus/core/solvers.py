@@ -72,7 +72,7 @@ class EigenvalueSolver:
         self.evaluator = Evaluator(domain, namespace)
         logger.debug('Finished EVP instantiation')
 
-    def solve_dense(self, pencil, rebuild_coeffs=False, **kw):
+    def solve_dense(self, pencil, rebuild_coeffs=False, normalize_left=False, **kw):
         """
         Solve EVP for selected pencil.
 
@@ -82,6 +82,11 @@ class EigenvalueSolver:
             Pencil for which to solve the EVP
         rebuild_coeffs : bool, optional
             Flag to rebuild cached coefficient matrices (default: False)
+        normalize_left : bool, optional
+            Flag to normalize the left eigenvectors (if left=True) such that the
+            modified left eigenvectors form a biorthonormal (not just biorthogonal)
+            set with respect to the right eigenvectors.
+            (default: True)
 
         Other keyword options passed to scipy.linalg.eig.
 
@@ -100,11 +105,16 @@ class EigenvalueSolver:
             self.eigenvalues, self.eigenvectors = eig_output
         elif len(eig_output) == 3:
             self.eigenvalues, self.left_eigenvectors, self.eigenvectors = eig_output
+            self.modified_left_eigenvectors = np.conjugate(np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M))
         if pencil.pre_right is not None:
             self.eigenvectors = pencil.pre_right @ self.eigenvectors
         self.eigenvalue_pencil = pencil
+        if len(eig_output) == 3 and normalize_left:
+            norms = np.diag(self.modified_left_eigenvectors.T.conj() @ self.eigenvectors)
+            self.left_eigenvectors /= norms
+            self.modified_left_eigenvectors = np.conjugate(np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M))
 
-    def solve_sparse(self, pencil, N, target, rebuild_coeffs=False, **kw):
+    def solve_sparse(self, pencil, N, target, rebuild_coeffs=False, left=False, normalize_left=True, raise_on_mismatch=True, **kw):
         """
         Perform targeted sparse eigenvalue search for selected pencil.
 
@@ -119,6 +129,22 @@ class EigenvalueSolver:
             Target eigenvalue for search.
         rebuild_coeffs : bool, optional
             Flag to rebuild cached coefficient matrices (default: False)
+        left : bool, optional
+            Flag to solve for the left eigenvectors of the system
+            (IN ADDITION TO the right eigenvectors), defined as the right
+            eigenvectors of the conjugate-transposed problem. Follows same
+            definition described in scipy.linalg.eig documentation.
+            (default: False)
+        normalize_left : bool, optional
+            Flag to normalize the left eigenvectors such that the modified
+            left eigenvectors form a biorthonormal (not just biorthogonal)
+            set with respect to the right eigenvectors.
+            (default: True)
+        raise_on_mismatch : bool, optional
+            Flag to raise a RuntimeError if the eigenvalues of the conjugate-
+            transposed problem (i.e. the left eigenvalues) do not match
+            the original (or "right") eigenvalues.
+            (default: True)
 
         Other keyword options passed to scipy.sparse.linalg.eigs.
 
@@ -133,12 +159,35 @@ class EigenvalueSolver:
         # Solve as sparse general eigenvalue problem
         A = pencil.L_exp
         B = -pencil.M_exp
+        # Solve for the right eigenvectors
         self.eigenvalues, self.eigenvectors = scipy_sparse_eigs(A=A, B=B, N=N, target=target, matsolver=self.matsolver, **kw)
         if pencil.pre_right is not None:
             self.eigenvectors = pencil.pre_right @ self.eigenvectors
+        if left:
+            # Solve for the left eigenvectors
+            # Note: this definition of "left eigenvectors" is consistent with the documentation for scipy.linalg.eig
+            self.left_eigenvalues, self.left_eigenvectors = scipy_sparse_eigs(A=A.getH(),
+                                                                              B=B.getH(),
+                                                                              N=N, target=np.conjugate(target),
+                                                                              matsolver=self.matsolver, **kw)
+            if not np.allclose(self.eigenvalues, np.conjugate(self.left_eigenvalues)):
+                if raise_on_mismatch:
+                    raise RuntimeError("Conjugate of left eigenvalues does not match right eigenvalues. "
+                                       "The full sets of left and right vectors won't form a biorthogonal set. "
+                                       "This error can be disabled by passing raise_on_mismatch=False to "
+                                       "solve_sparse().")
+                else:
+                    logger.warning("Conjugate of left eigenvalues does not match right eigenvalues.")
+            # In absence of above warning, modified_left_eigenvectors forms a biorthogonal set with the right
+            # eigenvectors.
+            if normalize_left:
+                unnormalized_modified_left_eigenvectors = np.conjugate(np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M))
+                norms = np.diag(unnormalized_modified_left_eigenvectors.T.conj() @ self.eigenvectors)
+                self.left_eigenvectors /= norms
+            self.modified_left_eigenvectors = np.conjugate(np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M))
         self.eigenvalue_pencil = pencil
 
-    def set_state(self, index):
+    def set_state(self, index, left=False, modified_left=False):
         """
         Set state vector to the specified eigenmode.
 
@@ -146,9 +195,24 @@ class EigenvalueSolver:
         ----------
         index : int
             Index of desired eigenmode
+        left : bool, optional
+            If true, sets state vector to a left (or adjoint) eigenmode
+            instead of right eigenmode unless modified_left=True
+            (default: False)
+        modified_left : bool, optional
+            If true, sets state vector to a modified left eigenmode,
+            which is dual (under the standard complex dot product in
+            coefficient space) to the corresponding right eigenmode.
+            Supersedes left=True (default: False)
         """
         self.state.data[:] = 0
-        self.state.set_pencil(self.eigenvalue_pencil, self.eigenvectors[:,index])
+        if left or modified_left:
+            if modified_left:
+                self.state.set_pencil(self.eigenvalue_pencil, self.modified_left_eigenvectors[:,index])
+            else:
+                self.state.set_pencil(self.eigenvalue_pencil, self.left_eigenvectors[:, index])
+        else:
+            self.state.set_pencil(self.eigenvalue_pencil, self.eigenvectors[:,index])
         self.state.scatter()
 
     def solve(self, *args, **kw):
