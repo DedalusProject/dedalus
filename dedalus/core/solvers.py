@@ -260,6 +260,12 @@ class LinearBoundaryValueSolver(SolverBase):
                 L = sp.L_min @ sp.pre_right
                 self.subproblem_matsolvers[sp] = self.matsolver(L, self)
 
+    def print_subproblem_ranks(self):
+        # Check matrix rank
+        for i, subproblem in enumerate(self.subproblems):
+            L = (subproblem.L_min @ subproblem.pre_right).A
+            print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {subproblem.group}, matrix rank: {np.linalg.matrix_rank(L)}/{L.shape[0]}, cond: {np.linalg.cond(L):.1e}")
+
     def solve(self):
         """Solve BVP."""
         # Compute RHS

@@ -2991,6 +2991,7 @@ class SphericalGradient(Gradient, SphericalEllOperator):
             raise ValueError("This should never happen")
 
 
+@alias("comp")
 class Component(LinearOperator, metaclass=MultiClass):
 
     name = 'Comp'
@@ -3277,6 +3278,68 @@ class Curl(LinearOperator, metaclass=MultiClass):
 
     def new_operand(self, operand, **kw):
         return Curl(operand, index=self.index, **kw)
+
+class CartesianCurl(Curl):
+
+    cs_type = coords.CartesianCoordinates
+
+    def __init__(self, operand, index=0, out=None):
+        coordsys = operand.tensorsig[index]
+        if coordsys.dim != 3:
+            raise ValueError("CartesianCurl is only implemented for 3D vector fields. For 2D, use skew gradient.")
+        # Get components
+        comps = [CartesianComponent(operand, index=index, coord=c) for c in coordsys.coords]
+        x_comp = Differentiate(comps[2], coordsys.coords[1]) - Differentiate(comps[1], coordsys.coords[2])
+        y_comp = Differentiate(comps[0], coordsys.coords[2]) - Differentiate(comps[2], coordsys.coords[0])
+        z_comp = Differentiate(comps[1], coordsys.coords[0]) - Differentiate(comps[0], coordsys.coords[1])
+        ex = operand.dist.VectorField(coordsys, name='ex')
+        ey = operand.dist.VectorField(coordsys, name='ey')
+        ez = operand.dist.VectorField(coordsys, name='ez')
+        for i,e in enumerate([ex,ey,ez]):
+            e['g'][i] = 1
+        arg = x_comp*ex + y_comp*ey + z_comp*ez
+        if not coordsys.right_handed:
+            arg *= -1
+        # arg = ([x_comp, y_comp, z_comp],)
+        LinearOperator.__init__(self, arg, out=out)
+        self.index = index
+        self.coordsys = coordsys
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = arg.domain
+        self.tensorsig = arg.tensorsig
+        self.dtype = arg.dtype
+        self.expression_matrices = arg.expression_matrices
+
+    def matrix_dependence(self, *vars):
+        return self.args[0].matrix_dependence(*vars)
+
+    def matrix_coupling(self, *vars):
+        return self.args[0].matrix_coupling(*vars)
+
+    def subproblem_matrix(self, subproblem):
+        """Build operator matrix for a specific subproblem."""
+        pass
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Any layout (addition is done)
+        return True
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Any layout (addition is done)
+        pass
+
+    def operate(self, out):
+        """Perform operation."""
+        # OPTIMIZE: this has an extra copy
+        arg0 = self.args[0]
+
+        # Set output layout
+        out.set_layout(arg0.layout)
+        np.copyto(out.data, arg0.data)
 
 
 class SphericalCurl(Curl, SphericalEllOperator):
