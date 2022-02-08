@@ -60,7 +60,6 @@ coords = d3.SphericalCoordinates('phi', 'theta', 'r')
 dist = d3.Distributor(coords, dtype=dtype, mesh=mesh)
 basis = d3.BallBasis(coords, shape=(Nphi, Ntheta, Nr), radius=1, dealias=dealias, dtype=dtype)
 S2_basis = basis.S2_basis()
-phi, theta, r = dist.local_grids(basis)
 
 # Fields
 u = dist.VectorField(coords, name='u',bases=basis)
@@ -71,16 +70,14 @@ tau_u = dist.VectorField(coords, name='tau u', bases=S2_basis)
 tau_T = dist.Field(name='tau T', bases=S2_basis)
 
 # Substitutions
+phi, theta, r = dist.local_grids(basis)
 r_vec = dist.VectorField(coords, bases=basis.radial_basis)
 r_vec['g'][2] = r
 T_source = 6
-
 kappa = (Rayleigh * Prandtl)**(-1/2)
 nu = (Rayleigh / Prandtl)**(-1/2)
-
 lift_basis = basis.clone_with(k=2) # Natural output
 lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
-
 strain_rate = d3.grad(u) + d3.trans(d3.grad(u))
 shear_stress = d3.angular(d3.radial(strain_rate(r=1), index=1))
 integ = lambda A: d3.Integrate(A, coords)

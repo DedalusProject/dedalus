@@ -3,7 +3,7 @@ Dedalus script simulating Boussinesq convection in a spherical shell. This scrip
 demonstrates solving an initial value problem in the shell. It can be ran serially
 or in parallel, and uses the built-in analysis framework to save data snapshots
 to HDF5 files. The `plot_sphere.py` script can be used to produce plots from the
-saved data. The simulation should take roughly 1 cpu-hour to run.
+saved data. The simulation should take about 10 cpu-minutes to run.
 
 The problem is non-dimensionalized using the shell thickness and freefall time, so
 the resulting thermal diffusivity and viscosity are related to the Prandtl
@@ -28,19 +28,16 @@ import dedalus.public as d3
 import logging
 logger = logging.getLogger(__name__)
 
-# TODO: fix "one" conversion
-# TODO: get unit vectors from coords?
-
 
 # Parameters
 Ri, Ro = 14, 15
-Nphi, Ntheta, Nr = 192, 96, 8
-Rayleigh = 3000
+Nphi, Ntheta, Nr = 192, 96, 6
+Rayleigh = 3500
 Prandtl = 1
 dealias = 3/2
 stop_sim_time = 2000
-timestepper = d3.RK222
-max_timestep = 5
+timestepper = d3.SBDF2
+max_timestep = 1
 dtype = np.float64
 mesh = None
 
@@ -49,7 +46,6 @@ coords = d3.SphericalCoordinates('phi', 'theta', 'r')
 dist = d3.Distributor(coords, dtype=dtype, mesh=mesh)
 basis = d3.ShellBasis(coords, shape=(Nphi, Ntheta, Nr), radii=(Ri, Ro), dealias=dealias, dtype=dtype)
 s2_basis = basis.S2_basis()
-phi, theta, r = dist.local_grids(basis)
 
 # Fields
 p = dist.Field(name='p', bases=basis)
@@ -62,24 +58,17 @@ tau_u1 = dist.VectorField(coords, name='tau_u1', bases=s2_basis)
 tau_u2 = dist.VectorField(coords, name='tau_u2', bases=s2_basis)
 
 # Substitutions
-one = dist.Field(bases=basis.S2_basis(Ri))
-one['g'] = 1
-
 kappa = (Rayleigh * Prandtl)**(-1/2)
 nu = (Rayleigh / Prandtl)**(-1/2)
-
-er = dist.VectorField(coords, name='er', bases=basis.radial_basis)
+phi, theta, r = dist.local_grids(basis)
+er = dist.VectorField(coords, bases=basis.radial_basis)
 er['g'][2] = 1
-
-rvec = dist.VectorField(coords, name='er', bases=basis.radial_basis)
+rvec = dist.VectorField(coords, bases=basis.radial_basis)
 rvec['g'][2] = r
-
 lift_basis = basis.clone_with(k=1) # First derivative basis
 lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
-
 grad_u = d3.grad(u) + rvec*lift(tau_u1,-1) # First-order reduction
 grad_b = d3.grad(b) + rvec*lift(tau_b1,-1) # First-order reduction
-
 integ = lambda A: d3.Integrate(A, coords)
 
 # Problem
@@ -87,7 +76,7 @@ problem = d3.IVP([p, b, u, tau_p, tau_b1, tau_b2, tau_u1, tau_u2], namespace=loc
 problem.add_equation("trace(grad_u) + tau_p = 0")
 problem.add_equation("dt(b) - kappa*div(grad_b) + lift(tau_b2,-1) = - dot(u,grad(b))")
 problem.add_equation("dt(u) - nu*div(grad_u) + grad(p) - b*er + lift(tau_u2,-1) = - dot(u,grad(u))")
-problem.add_equation("b(r=Ri) = one")
+problem.add_equation("b(r=Ri) = 1")
 problem.add_equation("u(r=Ri) = 0")
 problem.add_equation("b(r=Ro) = 0")
 problem.add_equation("u(r=Ro) = 0")
@@ -103,11 +92,19 @@ b['g'] *= (r - Ri) * (Ro - r) # Damp noise at walls
 b['g'] += (Ri - Ri*Ro/r) / (Ri - Ro) # Add linear background
 
 # Analysis
-snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=5, max_writes=10)
-snapshots.add_task(b(r=(Ri+Ro)/2), scales=(4,4,1), name='bmid')
+db = b# - d3.Average(b, coords.S2coordsys)
+flux = d3.dot(er, -kappa*d3.grad(db) + db*u)
+#db.store_last = True
+flux.store_last = True
+snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=10, max_writes=10)
+snapshots.add_task(b(r=(Ri+Ro)/2), scales=dealias, name='bmid')
+snapshots.add_task(flux(r=Ro), scales=dealias, name='flux_r_outer')
+snapshots.add_task(flux(r=Ri), scales=dealias, name='flux_r_inner')
+snapshots.add_task(flux(phi=0), scales=dealias, name='flux_phi_start')
+snapshots.add_task(flux(phi=3*np.pi/2), scales=dealias, name='flux_phi_end')
 
 # CFL
-CFL = d3.CFL(solver, initial_dt=max_timestep, cadence=10, safety=1, threshold=0.1,
+CFL = d3.CFL(solver, initial_dt=max_timestep, cadence=10, safety=2, threshold=0.1,
              max_change=1.5, min_change=0.5, max_dt=max_timestep)
 CFL.add_velocity(u)
 

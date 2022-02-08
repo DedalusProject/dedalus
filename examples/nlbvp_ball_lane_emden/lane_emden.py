@@ -36,7 +36,6 @@ References:
          Numerical Mathematics Theory (2011).
 """
 
-from smtplib import SMTPRecipientsRefused
 import numpy as np
 import matplotlib.pyplot as plt
 import dedalus.public as d3
@@ -110,7 +109,7 @@ if n in R_ref:
     logger.info(f'Error vs reference: {Ri-R_ref[n]:.3e}')
 
 # Plot solution
-plt.figure()
+plt.figure(figsize=(6, 4))
 _, _, r = dist.local_grids(basis, scales=(dealias,dealias,dealias))
 alpha = np.linspace(0.2, 1, len(steps))
 color = ('C0',) * (len(steps)-1) + ('C1',)
@@ -121,5 +120,6 @@ plt.xlim(0, 1)
 plt.ylim(0, None)
 plt.xlabel('r')
 plt.ylabel('f')
+plt.title(f"Lane-Emden, n={n}")
 plt.tight_layout()
 plt.savefig('lane_emden.pdf')

@@ -2,7 +2,7 @@
 Plot planes from joint analysis files.
 
 Usage:
-    plot_2d_series.py <files>... [--output=<dir>]
+    plot_sphere.py <files>... [--output=<dir>]
 
 Options:
     --output=<dir>  Output directory [default: ./frames_sphere]
@@ -49,7 +49,7 @@ def main(filename, start, count, output):
         z = np.cos(theta_vert)
         for index in range(start, start+count):
             data_slices = (index, slice(None), slice(None))
-            data = dset[data_slices].real
+            data = dset[data_slices]
             clim = np.max(np.abs(data))
             norm = matplotlib.colors.Normalize(-clim, clim)
             fc = cmap(norm(data))

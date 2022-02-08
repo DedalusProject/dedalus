@@ -3,7 +3,7 @@ Dedalus script simulating the viscous shallow water equations on a sphere. This
 script demonstrates solving an initial value problem on the sphere. It can be
 ran serially or in parallel, and uses the built-in analysis framework to save
 data snapshots to HDF5 files. The `plot_sphere.py` script can be used to produce
-plots from the saved data. The simulation should take roughly 0.2 cpu-hour to run.
+plots from the saved data. The simulation should a few cpu-minutes to run.
 
 The script implements the test case of a barotropically unstable mid-latitude
 jet from Galewsky et al. 2004 (https://doi.org/10.3402/tellusa.v56i5.14436).

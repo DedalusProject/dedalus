@@ -216,9 +216,9 @@ class Future(Operand):
     def build_out(self):
         bases = self.domain.bases
         if any(bases):
-            return self.future_type(dist=self.dist, bases=bases, tensorsig=self.tensorsig, dtype=self.dtype)
+            return self.future_type(dist=self.dist, bases=bases, tensorsig=self.tensorsig, dtype=self.dtype, name=str(self))
         else:
-            return self.future_type(dist=self.dist, tensorsig=self.tensorsig, dtype=self.dtype)
+            return self.future_type(dist=self.dist, tensorsig=self.tensorsig, dtype=self.dtype, name=str(self))
 
     def attempt(self, id=None):
         """Recursively attempt to evaluate operation."""
