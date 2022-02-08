@@ -3,9 +3,9 @@ Dedalus script simulating librational instability in a disk by solving the
 incompressible Navier-Stokes equations linearized around a background librating
 flow. This script demonstrates solving an initial value problem in the disk.
 It can be ran serially or in parallel, and uses the built-in analysis framework
-to save data snapshots to HDF5 files. The `plot_snapshots.py` and `plot_scalars.py`
+to save data snapshots to HDF5 files. The `plot_disk.py` and `plot_scalars.py`
 scripts can be used to produce plots from the saved data. The simulation should
-take 10 cpu-minutes to run.
+take roughly 10 cpu-minutes to run.
 
 The problem is non-dimesionalized using the disk radius and librational frequency,
 so the resulting viscosity is related to the Ekman number as:
@@ -18,7 +18,7 @@ Here we lift to the natural output (k=2) basis.
 To run and plot using e.g. 4 processes:
     $ mpiexec -n 4 python3 libration.py
     $ mpiexec -n 4 python3 plot_scalars.py scalars/*.h5
-    $ mpiexec -n 4 python3 plot_snapshots.py snapshots/*.h5
+    $ mpiexec -n 4 python3 plot_disk.py snapshots/*.h5
 """
 
 import numpy as np
@@ -26,9 +26,6 @@ import dedalus.public as d3
 from scipy.special import jv
 import logging
 logger = logging.getLogger(__name__)
-
-# TODO: remove azimuth library? might need to fix DCT truncation
-# TODO: finalize filehandlers to process virtual file
 
 
 # Parameters
@@ -44,8 +41,7 @@ dtype = np.float64
 # Bases
 coords = d3.PolarCoordinates('phi', 'r')
 dist = d3.Distributor(coords, dtype=dtype)
-basis = d3.DiskBasis(coords, shape=(Nphi, Nr), radius=1, dealias=dealias, dtype=dtype, azimuth_library='matrix')
-phi, r = dist.local_grids(basis)
+basis = d3.DiskBasis(coords, shape=(Nphi, Nr), radius=1, dealias=dealias, dtype=dtype)
 S1_basis = basis.S1_basis(radius=1)
 
 # Fields
@@ -55,6 +51,7 @@ tau_u = dist.VectorField(coords, name='tau_u', bases=S1_basis)
 tau_p = dist.Field(name='tau_p')
 
 # Substitutions
+phi, r = dist.local_grids(basis)
 nu = Ekman
 integ = lambda A: d3.Integrate(A, coords)
 lift_basis = basis.clone_with(k=2) # Natural output basis
@@ -73,7 +70,7 @@ problem = d3.IVP([p, u, tau_u, tau_p], time=t, namespace=locals())
 problem.add_equation("div(u) + tau_p = 0")
 problem.add_equation("dt(u) - nu*lap(u) + grad(p) + lift(tau_u,-1) = - dot(u, grad(u0)) - dot(u0, grad(u))")
 problem.add_equation("u(r=1) = 0")
-problem.add_equation("integ(p) = 0") # Pressure gauge
+problem.add_equation("integ(p) = 0")
 
 # Solver
 solver = problem.build_solver(timestepper)
@@ -85,7 +82,7 @@ u.low_pass_filter(scales=0.25) # Keep only lower fourth of the modes
 
 # Analysis
 snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=0.1, max_writes=20)
-snapshots.add_task(u, scales=(4, 1))
+snapshots.add_task(-d3.div(d3.skew(u)), scales=(4, 1), name='vorticity')
 scalars = solver.evaluator.add_file_handler('scalars', sim_dt=0.01)
 scalars.add_task(integ(0.5*d3.dot(u,u)), name='KE')
 
@@ -98,7 +95,7 @@ try:
     logger.info('Starting main loop')
     while solver.proceed:
         solver.step(timestep)
-        if (solver.iteration-1) % 10 == 0:
+        if (solver.iteration-1) % 100 == 0:
             max_u = np.sqrt(flow.max('u2'))
             logger.info("Iteration=%i, Time=%e, dt=%e, max(u)=%e" %(solver.iteration, solver.sim_time, timestep, max_u))
 except:

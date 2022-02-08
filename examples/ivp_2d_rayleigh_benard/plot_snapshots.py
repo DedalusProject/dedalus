@@ -26,6 +26,7 @@ def main(filename, start, count, output):
     dpi = 200
     title_func = lambda sim_time: 't = {:.3f}'.format(sim_time)
     savename_func = lambda write: 'write_{:06}.png'.format(write)
+
     # Layout
     nrows, ncols = 2, 1
     image = plot_tools.Box(4, 1)
@@ -35,6 +36,7 @@ def main(filename, start, count, output):
     # Create multifigure
     mfig = plot_tools.MultiFigure(nrows, ncols, image, pad, margin, scale)
     fig = mfig.figure
+
     # Plot writes
     with h5py.File(filename, mode='r') as file:
         for index in range(start, start+count):

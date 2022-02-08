@@ -2,10 +2,22 @@
 Librational instability (disk IVP)
 **********************************
 
+Script
+------
+
 .. literalinclude:: ../../../examples/ivp_disk_libration/libration.py
 
-Frame from solution:
+Output
+------
 
+..
+    Local videos aren't copied during build, so need to be put in /_static
+.. video:: ../../_static/videos/libration.mp4
+   :width: 600
+   :height: auto
+
+..
+    Zero-size image reference to get the thumbnail copied to _images
 .. image:: images/libration.png
-    :width: 100 %
-    :align: center
+    :width: 0
+    :height: 0
