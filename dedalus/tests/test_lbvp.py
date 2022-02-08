@@ -176,7 +176,7 @@ def test_vector_heat_disk_dirichlet(Nr, Nphi, dtype):
     assert np.allclose(u['g'], v['g'])
 
 
-@pytest.mark.parametrize('dtype', [np.complex128, np.float64])
+@pytest.mark.parametrize('dtype', [np.complex128, pytest.param(np.float64, marks=pytest.mark.xfail(reason="Hermitian symmetry not fixed for polar coords"))])
 @pytest.mark.parametrize('Nphi', [4])
 @pytest.mark.parametrize('Nr', [8])
 def test_vector_heat_disk_components(Nr, Nphi, dtype):
