@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__.split('.')[-1])
 
 from ..tools.config import config
 STORE_OUTPUTS = config['memory'].getboolean('STORE_OUTPUTS')
+STORE_LAST_DEFAULT = config['memory'].getboolean('STORE_LAST_DEFAULT')
 
 class Future(Operand):
     """
@@ -38,7 +39,7 @@ class Future(Operand):
 
     """
 
-    store_last = False
+    store_last = STORE_LAST_DEFAULT
 
     def __init__(self, *args, out=None):
         # # Check output consistency
