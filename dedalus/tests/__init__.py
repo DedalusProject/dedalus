@@ -9,12 +9,12 @@ root = file.parent
 
 def test():
     """Run tests."""
-    pytest.main(['--benchmark-disable', str(root)])
+    pytest.main(["-k", "not ncc", "--workers=auto", "--benchmark-disable", str(root)])
 
 def bench():
     """Run benchmarks."""
-    pytest.main(['--benchmark-only', str(root)])
+    pytest.main(["-k", "not ncc", "--workers=auto", "--benchmark-only", str(root)])
 
 def cov():
     """Print test coverage."""
-    pytest.main(['--cov=dedalus.core', '--benchmark-disable', str(root)])
+    pytest.main(["-k", "not ncc", "--workers=auto", "--benchmark-disable", "--cov=dedalus.core", str(root)])

@@ -181,18 +181,17 @@ extensions = [
 
 # Runtime requirements
 install_requires = [
-    "cython >= 0.22",
     "docopt",
     "h5py >= 2.6.0",
     "matplotlib",
     "mpi4py >= 2.0.0",
     "numexpr",
-    "numpy",
+    "numpy >= 1.20.0",
     "pytest",
+    "pytest-parallel",
     "pytest-benchmark",
     "pytest-cov",
-    "scipy >= 1.4.0"
-    ]
+    "scipy >= 1.4.0"]
 
 # Grab long_description from README
 with open('README.md') as f:
