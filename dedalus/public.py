@@ -1,8 +1,5 @@
 """Dedalus public interface."""
 
-# Import custom logging to setup rootlogger
-from .tools import logging as _logging_setup
-
 # Import public interfaces from submodules
 from .core.coords import *
 from .core.distributor import *

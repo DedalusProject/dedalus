@@ -18,6 +18,8 @@ We therefore recommend explicitly disabling threading by setting the following e
     export OMP_NUM_THREADS=1
     export NUMEXPR_MAX_THREADS=1
 
+If you're using a conda environment built with the provided conda installation script, these variables should be set automatically.
+
 Basis Specification
 ===================
 
