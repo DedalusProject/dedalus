@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 restart = (len(sys.argv) > 1 and sys.argv[1] == '--restart')
 
 # Parameters
-Nphi, Ntheta, Nr = 192, 96, 49
+Nphi, Ntheta, Nr = 128, 64, 96
 Rayleigh = 1e6
 Prandtl = 1
 dealias = 3/2
@@ -98,12 +98,13 @@ solver.stop_sim_time = stop_sim_time
 # Initial conditions
 if not restart:
     T.fill_random('g', seed=42, distribution='normal', scale=0.01) # Random noise
+    T.low_pass_filter(scales=0.5)
     T['g'] += 1 - r**2 # Add equilibrium state
     file_handler_mode = 'overwrite'
     initial_timestep = max_timestep
 else:
-    write, initial_timestep = solver.load_state('checkpoints/checkpoints_s10.h5')
-    initial_timestep = 8e-3
+    write, initial_timestep = solver.load_state('checkpoints/checkpoints_s20.h5')
+    initial_timestep = 2e-2
     file_handler_mode = 'append'
 
 # Analysis
@@ -112,7 +113,6 @@ slices.add_task(T(phi=0), scales=dealias, name='T(phi=0)')
 slices.add_task(T(phi=np.pi), scales=dealias, name='T(phi=pi)')
 slices.add_task(T(phi=3/2*np.pi), scales=dealias, name='T(phi=3/2*pi)')
 slices.add_task(T(r=1), scales=dealias, name='T(r=1)')
-
 checkpoints = solver.evaluator.add_file_handler('checkpoints', sim_dt=1, max_writes=1, mode=file_handler_mode)
 checkpoints.add_tasks(solver.state)
 

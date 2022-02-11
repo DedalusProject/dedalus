@@ -20,7 +20,7 @@ a tau term in the divergence constraint, as required for this geometry.
 
 To run and plot using e.g. 4 processes:
     $ mpiexec -n 4 python3 shell_convection.py
-    $ mpiexec -n 4 python3 plot_sphere.py snapshots/*.h5
+    $ mpiexec -n 4 python3 plot_shell.py snapshots/*.h5
 """
 
 import numpy as np

@@ -1,4 +1,4 @@
-The Tau Method
-**************
+Tau Method
+**********
 
 Documentation coming soon.

@@ -17,8 +17,8 @@ Here we lift to the natural output (k=2) basis.
 
 To run and plot using e.g. 4 processes:
     $ mpiexec -n 4 python3 libration.py
-    $ mpiexec -n 4 python3 plot_scalars.py scalars/*.h5
     $ mpiexec -n 4 python3 plot_disk.py snapshots/*.h5
+    $ python3 plot_scalars.py scalars/*.h5
 """
 
 import numpy as np

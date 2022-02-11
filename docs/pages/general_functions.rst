@@ -1,6 +1,8 @@
 General Functions
 *****************
 
+**Note: this documentation has not yet been updated for v3 of Dedalus.**
+
 The ``GeneralFunction`` class enables users to simply define new explicit operators for the right-hand side and analysis tasks of their simulations.
 Such operators can be used to apply arbitrary user-defined functions to the grid values or coefficients of some set of input fields, or even do things like introduce random data or read data from an external source.
 

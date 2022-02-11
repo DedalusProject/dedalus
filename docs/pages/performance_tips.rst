@@ -1,5 +1,3 @@
-..  _performance_tips:
-
 Performance Tips
 ****************
 
@@ -18,15 +16,15 @@ We therefore recommend explicitly disabling threading by setting the following e
     export OMP_NUM_THREADS=1
     export NUMEXPR_MAX_THREADS=1
 
-If you're using a conda environment built with the provided conda installation script, these variables should be set automatically.
+If you're using a conda environment built with the provided conda installation script, these variables should be set automatically when you activate the environment.
 
-Basis Specification
-===================
+Efficient discretizations
+=========================
 
 Resolutions for faster transforms
 ---------------------------------
 
-The transforms for the ``Fourier`` and ``Chebyshev`` bases are computed using fast Fourier transforms (FFTs).
+The transforms for the Fourier and Chebyshev bases are computed using fast Fourier transforms (FFTs).
 The underlying FFT algorithms are most efficient when the transform sizes are products of small primes.
 We recommend choosing basis resolutions that are powers of two, or powers of two multiplied by other small factors.
 

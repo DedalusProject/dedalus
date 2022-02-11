@@ -1,6 +1,10 @@
 Installing Dedalus
 ******************
 
+**Note: please check you're referencing the intended version of the documentation.
+This documentation is in reference to v3 of the code, which is currently under beta-release.
+Documentation for v2 (the latest on PyPI) can be accessed through the sidebar.**
+
 Dedalus is a Python 3 package that includes custom C-extensions (compiled with Cython) and that relies on MPI, FFTW, HDF5, and a basic scientific-Python stack (numpy, scipy, mpi4py, and h5py).
 
 We recommend using conda to build a Python environment with all the necessary prerequisites, as described in the conda instructions below.
@@ -43,6 +47,9 @@ Once the necessary C dependencies and Python 3 are present, Dedalus can be insta
 You can check this by making sure that ``which pip3`` and ``which python3`` reside in the same location.
 If not, use ``python3 -m pip`` instead of ``pip3`` in the following commands.
 
+**Note**: it is strongly recommended that you disable threading, as described on the :doc:`performance_tips` page, when running Dedalus.
+This is done automatically when Dedalus is installed using the conda procedure above, but must be done manually otherwise.
+
 Installing from PyPI
 --------------------
 
@@ -68,9 +75,9 @@ You can then install Dedalus directly from GitHub using pip::
 
     pip3 install --no-cache http://github.com/dedalusproject/dedalus/zipball/d3/
 
-Alternatively, you can clone the entire source repository and install::
+Alternatively, you can clone the d3 branch from the source repository and install::
 
-    git clone https://github.com/DedalusProject/dedalus
+    git clone -b d3 https://github.com/DedalusProject/dedalus
     cd dedalus
     pip3 install .
 

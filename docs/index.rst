@@ -3,7 +3,7 @@ Dedalus Project
 
 **Note: please check you're referencing the intended version of the documentation.
 This documentation is in reference to v3 of the code, which is currently under beta-release.
-Some documentation may not yet be up to date.**
+Documentation for v2 (the latest on PyPI) can be accessed through the sidebar.**
 
 Dedalus is a flexible framework for solving partial differential equations using spectral methods.
 The code is open-source and developed by a team of researchers studying astrophysical, geophysical, and biological fluid dynamics.
@@ -38,5 +38,5 @@ Developers
 * `Keaton Burns <http://keaton-burns.com/>`_
 * `Geoff Vasil <https://www.sydney.edu.au/science/about/our-people/academic-staff/geoffrey-vasil.html>`_
 * `Jeff Oishi <https://jsoishi.github.io/>`_
-* `Daniel Lecoanet <http://www.princeton.edu/~lecoanet/>`_
+* `Daniel Lecoanet <https://people.esam.northwestern.edu/~lecoanet/>`_
 * `Ben Brown <https://bpbrown.bitbucket.io/>`_

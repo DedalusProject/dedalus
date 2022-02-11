@@ -4,8 +4,8 @@ Changes from Dedalus v2
 This document outlines some of the major conceptual and API differences between v2 and v3 of Dedalus.
 If you are entirely new to Dedalus, the tutorial notebooks may be a better introduction to the new API.
 
-Coordinate and Distributor objects must be explicitly constructed
------------------------------------------------------------------
+Coordinate and Distributor objects
+----------------------------------
 
 In Dedalus v3, fields no longer have to be defined over just a single domain or set of bases.
 You must therefore construct ``Coordinate``/``CoordinateSystem`` and ``Distributor`` objects so that fields with different dimensions and bases can be consistently distrubuted in parallel.
@@ -33,8 +33,8 @@ For problems in curvilinear coordinates, the entire coordinate system object is 
 
 The distributor and bases are both used when creating fields, ensuring that all fields are distributed consistently in parallel.
 
-Simulations no longer have a fixed global domain / set of bases
----------------------------------------------------------------
+No global domain / bases
+------------------------
 
 In Dedalus v2, each problem had a single domain object with a fixed set a bases.
 Field metadata was used to indicate if certain fields were e.g. constant in any coordinates.
@@ -57,11 +57,11 @@ This is often useful for problems with gauge conditions, etc.:
 
     c = dist.Field() # Constant-valued field
 
-Vector and tensor-valued fields can be directly constructed
------------------------------------------------------------
+Vector and tensor-valued fields
+-------------------------------
 
 In Dedalus v2, vector and tensor-valued fields and equations were handled component-wise.
-In Dedalus v3, field objecst can be scalar, vector, or arbitrary-rank-tensor-valued.
+In Dedalus v3, field objects can be scalar, vector, or arbitrary-rank-tensor-valued.
 Component-wise representations are still allowed for Cartesian problems, but not in curvilinear coordinates since the components of vectors and tensors in these coordinates generally do not have the same analytic behavior as smooth scalar-valued fields near the coordinate singularities.
 
 To construct a vector-valued field, the coordinates corresponding to the components you want the vector to contain must be passed at instantiation.
@@ -90,8 +90,8 @@ For instance, to create spatially constant rank-2 identity tensor:
     I['g'][0,0] = 1
     I['g'][1,1] = 1
 
-Vector calculus operations are available for specifying differential equations
-------------------------------------------------------------------------------
+Vector calculus operators
+-------------------------
 
 Along with vector and tensor-valued fields, vectorial differential operators (``Gradient``, ``Divergence``, ``Curl``, and ``Laplacian``) are now available.
 This dramatically simplifies the symbolic specification of vector and tensor-valued equations, particularly in curvilinear coordinates.
@@ -118,4 +118,23 @@ This can reduce the boilerplate associated with retrieving the built in operator
 A best-of-both-worlds approach is to pass your scripts entire local namespace to the problem object, to make it available when parsing string-based equations.
 This is achieved by passing the keyword ``namespace=locals()`` when instantiating problem objects.
 See the built in examples for illustrations of this approach to equation construction.
+
+Tau terms
+---------
+
+In Dedalus v2, problems were required to be first-order in Chebyshev derivatives and rows were automatically dropped from the differential equations to be replaced with the specified boundary conditions.
+In Dedalus v3, first-order reductions are no longer required, allowing for smaller and faster higher-order problem formulations.
+However, this makes it more complicated to determine how boundary conditions should be imposed, particularly in curvilinear coordinates.
+
+Currently in Dedalus v3, boundary condition enforcement is not fully automated.
+Instead, you must explicitly add "tau terms" to your differential equations, which introduce degrees of freedom than allow for your specified boundary conditions to be imposed.
+See the :doc:`tau_method` page and the examples for more details.
+
+Virtual HDF5 datasets
+---------------------
+
+In Dedalus v2, each process wrote to its own HDF5 file, and these process files had to be manually merged after a simulation was completed.
+In Dedalus v3, each process still writes to its own HDF5 file, but a "virtual file" is also created that allows you to access the global data as if it has already been merged.
+This file uses the `Virtual Dataset <https://docs.h5py.org/en/stable/vds.html>`_ feature of HDF5/h5py, and eliminates the need to merge outputs after each simulation.
+Note, however, that these virtual files contains no data themselves -- if you want to relocate the data, you must copy the underlying process along with each virtual file.
 

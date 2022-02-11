@@ -18,12 +18,14 @@ To fix these issues, a spatially constant variable can be added to the LHS of th
     problem.add_equation("div(u) + c = 0") # Add c to break redundancy with boundary conditions
     problem.add_equation("integ(p) = 0") # Pressure gauge
 
+See the :doc:`tau_method` page for more information on specifying boundary conditions.
+
 Out of memory errors
 ====================
 
 Spectral simulations with implicit timestepping can require a large amount of memory to store the LHS matrices and their factorizations.
-The best way to minimize the required memory is to minimize the LHS matrix size by using as few variables as possible and to minimize the LHS matrix bandwidth (see the :ref:`performance_tips` page).
-Beyond this, several of the Dedalus configuration options can be changed the minimize the simulation's memory footprint, potentially at the cost of reduced performance (see the :ref:`configuration` page).
+The best way to minimize the required memory is to minimize the LHS matrix size by using as few variables as possible and to minimize the LHS matrix bandwidth (see the :doc:`performance_tips` page).
+Beyond this, several of the Dedalus configuration options can be changed the minimize the simulation's memory footprint, potentially at the cost of reduced performance (see the :doc:`configuration` page).
 
 Reducing memory consumption in Dedalus is an ongoing effort.
 Any assistance with memory profiling and contributions reducing the code's memory footprint would be greatly appreciated!

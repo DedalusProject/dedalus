@@ -1,9 +1,7 @@
-..  _configuration:
-
 Configuring Dedalus
 *******************
 
-Various aspects of the underlying numerics, logging behavior, and output behavior of Dedalus can be modified through a configuration interface using Python's standard-library `ConfigParser` structure.
+Various aspects of the underlying numerics, logging behavior, and output behavior of Dedalus can be modified through a configuration interface using Python's standard-library ``ConfigParser`` structure.
 
 A ``dedalus.cfg`` file with the default configuration and descriptions of each option is included in the package.
 This file can be copied to any working directory with the command ``python3 -m dedalus get_config``.
