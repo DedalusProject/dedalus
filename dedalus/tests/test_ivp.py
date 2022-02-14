@@ -102,11 +102,11 @@ def test_mag_BC(N, dtype):
     A = d.VectorField(c, name='A', bases=b)
     Phi = d.Field(name='Phi', bases=b)
     tau_A = d.VectorField(c, name='A_tau', bases=b.S2_basis())
-    LiftTau = lambda A: operators.LiftTau(A, b, -1)
+    Lift = lambda A: operators.Lift(A, b, -1)
     # Problem
     problem = problems.IVP([A, Phi, tau_A], namespace=locals())
     problem.add_equation("div(A) = 0")
-    problem.add_equation("dt(A) - grad(Phi) - lap(A) + LiftTau(tau_A) = 0")
+    problem.add_equation("dt(A) - grad(Phi) - lap(A) + Lift(tau_A) = 0")
     problem.add_equation("angular(A(r=1), index=0) = 0")
     problem.add_equation("Phi(r=1) = 0")
     # Solver
@@ -154,8 +154,7 @@ def test_flow_tools_cfl(x_basis_class, Nx, Nz, timestepper, dtype, safety, z_vel
     u['g'][1] = chebyshev_velocity(z)
     solver.step(dt)
     solver.step(dt) #need two timesteps to get past stored_dt per compute_timestep logic
-    dt = cfl.compute_dt()
-
+    dt = cfl.compute_timestep()
     op = operators.AdvectiveCFL(u, c)
     cfl_freq = np.abs(u['g'][0] / op.cfl_spacing(u)[0] )
     cfl_freq += np.abs(u['g'][1] / op.cfl_spacing(u)[1] )

@@ -420,7 +420,7 @@ class FileHandler(Handler):
                             last_write_num = testfile['/scales/write_number'][-1]
                     else:
                         last_write_num = 0
-                        logger.warn("Cannot determine write num from files. Restarting count.")
+                        logger.warning("Cannot determine write num from files. Restarting count.")
                 else:
                     max_set = 0
                     last_write_num = 0

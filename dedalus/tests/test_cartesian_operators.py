@@ -262,7 +262,7 @@ def test_curl_implicit_FFC(basis, N, dealias, dtype):
     c, d, b, r = basis(N, dealias, dtype)
     Lz = b[2].bounds[1]
     lift_basis = b[2].clone_with(a=1/2, b=1/2) # First derivative basis
-    lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
+    lift = lambda A, n: d3.Lift(A, lift_basis, n)
     integ = lambda A: d3.Integrate(d3.Integrate(d3.Integrate(A,c.coords[0]),c.coords[1]),c.coords[2])
     tau1 = d.VectorField(c, name='tau1', bases=b[0:2])
     tau2 = d.Field(name='tau2', bases=b[0:2])

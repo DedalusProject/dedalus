@@ -66,9 +66,9 @@ def test_heat_ball_nlbvp(Nr, dtype, dealias):
     F['g'] = 6
     # Problem
     Lap = lambda A: operators.Laplacian(A, c)
-    LiftTau = lambda A: operators.LiftTau(A, b, -1)
+    Lift = lambda A: operators.Lift(A, b, -1)
     problem = problems.NLBVP([u, τ])
-    problem.add_equation((Lap(u) + LiftTau(τ), F))
+    problem.add_equation((Lap(u) + Lift(τ), F))
     problem.add_equation((u(r=radius), 0))
     # Solver
     solver = solvers.NonlinearBoundaryValueSolver(problem, ncc_cutoff=ncc_cutoff)
@@ -104,9 +104,9 @@ def test_lane_emden_floating_amp(Nr, dtype, dealias):
     τ = field.Field(dist=d, bases=(bs,), dtype=dtype, name='τ')
     # Problem
     lap = lambda A: operators.Laplacian(A, c)
-    LiftTau = lambda A: operators.LiftTau(A, b, -1)
+    Lift = lambda A: operators.Lift(A, b, -1)
     problem = problems.NLBVP([f, τ])
-    problem.add_equation((lap(f) + LiftTau(τ), -f**n))
+    problem.add_equation((lap(f) + Lift(τ), -f**n))
     problem.add_equation((f(r=1), 0))
     # Solver
     solver = solvers.NonlinearBoundaryValueSolver(problem, ncc_cutoff=ncc_cutoff)
@@ -160,9 +160,9 @@ def test_lane_emden_floating_R(Nr, dtype, dealias):
     one['g'] = 1
     # Problem
     lap = lambda A: operators.Laplacian(A, c)
-    LiftTau = lambda A: operators.LiftTau(A, b, -1)
+    Lift = lambda A: operators.Lift(A, b, -1)
     problem = problems.NLBVP([f, R, τ])
-    problem.add_equation((lap(f) + LiftTau(τ), - R**2 * f**n))
+    problem.add_equation((lap(f) + Lift(τ), - R**2 * f**n))
     problem.add_equation((f(r=0), one))
     problem.add_equation((f(r=1), 0))
     # Solver
@@ -220,12 +220,12 @@ def test_lane_emden_first_order(Nr, dtype, dealias):
     lap = lambda A: operators.Laplacian(A, c)
     grad = lambda A: operators.Gradient(A, c)
     div = lambda A: operators.Divergence(A)
-    LiftTau = lambda A: operators.LiftTau(A, br, -1)
+    Lift = lambda A: operators.Lift(A, br, -1)
     dot = lambda A, B: arithmetic.DotProduct(A, B)
     rdr = lambda A: dot(rf, grad(A))
     problem = problems.NLBVP([p, ρ, φ, τ, τ2])
     problem.add_equation((p, ρ**(1+1/n)))
-    problem.add_equation((lap(φ) + LiftTau(τ), ρ))
+    problem.add_equation((lap(φ) + Lift(τ), ρ))
     problem.add_equation((φ(r=1), 0))
 
     # This works
@@ -237,11 +237,11 @@ def test_lane_emden_first_order(Nr, dtype, dealias):
     # problem.add_equation((τ2, 0))
 
     # Doesn't work well
-    problem.add_equation((rdr(p) + LiftTau(τ2), -ρ*rdr(φ)))
+    problem.add_equation((rdr(p) + Lift(τ2), -ρ*rdr(φ)))
     problem.add_equation((p(r=1), 0))
 
     # Also doesn't work well
-    # problem.add_equation((lap(p) + LiftTau(τ2), -div(ρ*grad(φ))))
+    # problem.add_equation((lap(p) + Lift(τ2), -div(ρ*grad(φ))))
     # problem.add_equation((p(r=1), 0))
 
     # Solver

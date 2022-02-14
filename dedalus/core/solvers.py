@@ -463,8 +463,7 @@ class InitialValueSolver(SolverBase):
 
     @property
     def ok(self):
-        import warnings
-        warnings.warn("solver.ok is deprecated, use solver.proceed instead")
+        logger.warning("'solver.ok' is deprecated. Use 'solver.proceed' instead.")
         return self.proceed
 
     @property

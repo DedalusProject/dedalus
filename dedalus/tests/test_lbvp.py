@@ -63,7 +63,7 @@ def test_poisson_1d_jacobi(Nx, a0, b0, da, db, dtype):
     # Substitutions
     dx = lambda A: d3.Differentiate(A, coord)
     lift_basis = basis.clone_with(a=a0+da+2, b=b0+db+2)
-    lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
+    lift = lambda A, n: d3.Lift(A, lift_basis, n)
     F = dist.Field(bases=basis)
     F['g'] = -np.sin(x)
     # Problem
@@ -106,9 +106,9 @@ def test_scalar_heat_disk_axisymm(Nr, Nphi, dtype):
     F['g'] = 4
     # Problem
     Lap = lambda A: operators.Laplacian(A, c)
-    LiftTau = lambda A: operators.LiftTau(A, b, -1)
+    Lift = lambda A: operators.Lift(A, b, -1)
     problem = problems.LBVP([u, τu])
-    problem.add_equation((Lap(u) + LiftTau(τu), F))
+    problem.add_equation((Lap(u) + Lift(τu), F))
     problem.add_equation((u(r=radius_disk), 0))
     # Solver
     solver = solvers.LinearBoundaryValueSolver(problem)
@@ -136,9 +136,9 @@ def test_scalar_heat_disk(Nr, Nphi, dtype):
     g['g'] = xr**3 - yr**2
     # Problem
     Lap = lambda A: operators.Laplacian(A, c)
-    LiftTau = lambda A: operators.LiftTau(A, b, -1)
+    Lift = lambda A: operators.Lift(A, b, -1)
     problem = problems.LBVP([u, τu])
-    problem.add_equation((Lap(u) + LiftTau(τu), f))
+    problem.add_equation((Lap(u) + Lift(τu), f))
     problem.add_equation((u(r=radius_disk), g))
     # Solver
     solver = solvers.LinearBoundaryValueSolver(problem)
@@ -166,9 +166,9 @@ def test_vector_heat_disk_dirichlet(Nr, Nphi, dtype):
     vph= operators.AzimuthalComponent(v(r=radius_disk))
     # Problem
     Lap = lambda A: operators.Laplacian(A, c)
-    LiftTau = lambda A: operators.LiftTau(A, b, -1)
+    Lift = lambda A: operators.Lift(A, b, -1)
     problem = problems.LBVP([u, τu])
-    problem.add_equation((Lap(u) + LiftTau(τu), 0))
+    problem.add_equation((Lap(u) + Lift(τu), 0))
     problem.add_equation((u(r=radius_disk), v(r=radius_disk)))
     # Solver
     solver = solvers.LinearBoundaryValueSolver(problem)
@@ -194,9 +194,9 @@ def test_vector_heat_disk_components(Nr, Nphi, dtype):
     vph= operators.AzimuthalComponent(v(r=radius_disk))
     # Problem
     Lap = lambda A: operators.Laplacian(A, c)
-    LiftTau = lambda A: operators.LiftTau(A, b, -1)
+    Lift = lambda A: operators.Lift(A, b, -1)
     problem = problems.LBVP([u, τu])
-    problem.add_equation((Lap(u) + LiftTau(τu), 0))
+    problem.add_equation((Lap(u) + Lift(τu), 0))
     problem.add_equation((operators.RadialComponent(u(r=radius_disk)), vr))
     problem.add_equation((operators.AzimuthalComponent(u(r=radius_disk)), vph))
     # Solver
@@ -233,9 +233,9 @@ def test_heat_ball(Nmax, Lmax, dtype):
     F['g'] = 6
     # Problem
     Lap = lambda A: operators.Laplacian(A, c)
-    LiftTau = lambda A: operators.LiftTau(A, b, -1)
+    Lift = lambda A: operators.Lift(A, b, -1)
     problem = problems.LBVP([u, τu])
-    problem.add_equation((Lap(u) + LiftTau(τu), F))
+    problem.add_equation((Lap(u) + Lift(τu), F))
     problem.add_equation((u(r=radius_ball), 0))
     # Solver
     solver = solvers.LinearBoundaryValueSolver(problem)
@@ -264,9 +264,9 @@ def test_heat_ball_cart(Nmax, Lmax, dtype):
     g['g'] = xr**4 - yr**3 + zr**2
     # Problem
     Lap = lambda A: operators.Laplacian(A, c)
-    LiftTau = lambda A: operators.LiftTau(A, b, -1)
+    Lift = lambda A: operators.Lift(A, b, -1)
     problem = problems.LBVP([u, τu])
-    problem.add_equation((Lap(u) + LiftTau(τu), f))
+    problem.add_equation((Lap(u) + Lift(τu), f))
     problem.add_equation((u(r=radius_ball), g))
     # Solver
     solver = solvers.LinearBoundaryValueSolver(problem)
@@ -305,9 +305,9 @@ def test_heat_shell(Nmax, Lmax, dtype):
     F['g'] = 6
     # Problem
     Lap = lambda A: operators.Laplacian(A, c)
-    LiftTau = lambda A, n: operators.LiftTau(A, b, n)
+    Lift = lambda A, n: operators.Lift(A, b, n)
     problem = problems.LBVP([u, τu1, τu2])
-    problem.add_equation((Lap(u) + LiftTau(τu1,-1) + LiftTau(τu2,-2), F))
+    problem.add_equation((Lap(u) + Lift(τu1,-1) + Lift(τu2,-2), F))
     problem.add_equation((u(r=r0), 0))
     problem.add_equation((u(r=r1), 0))
     # Solver
@@ -373,9 +373,9 @@ def test_heat_ncc_shell(Nmax, Lmax, ncc_exponent, ncc_location, ncc_scale, dtype
     ncc['g'] # force transform
     # Problem
     Lap = lambda A: operators.Laplacian(A, c)
-    LiftTau = lambda A, n: operators.LiftTau(A, b, n)
+    Lift = lambda A, n: operators.Lift(A, b, n)
     problem = problems.LBVP([u, τu1, τu2])
-    problem.add_equation((ncc*Lap(u) + LiftTau(τu1,-1) + LiftTau(τu2,-2), F))
+    problem.add_equation((ncc*Lap(u) + Lift(τu1,-1) + Lift(τu2,-2), F))
     problem.add_equation((u(r=r0), 0))
     problem.add_equation((u(r=r1), 0))
     # Solver
@@ -407,9 +407,9 @@ def test_heat_ncc_cos_ball(Nmax, Lmax, ncc_scale, dtype):
     ncc['g'] # force transform
     # Problem
     Lap = lambda A: operators.Laplacian(A, c)
-    LiftTau = lambda A: operators.LiftTau(A, b, -1)
+    Lift = lambda A: operators.Lift(A, b, -1)
     problem = problems.LBVP([u, τu])
-    problem.add_equation((ncc*Lap(u) + LiftTau(τu), F))
+    problem.add_equation((ncc*Lap(u) + Lift(τu), F))
     problem.add_equation((u(r=radius_ball), 0))
     # Solver
     solver = solvers.LinearBoundaryValueSolver(problem)

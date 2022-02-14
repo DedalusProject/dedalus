@@ -130,10 +130,10 @@ def test_disk_bessel_zeros(Nphi, Nr, m, radius, dtype):
     k2 = field.Field(name='k2', dist=d, dtype=dtype)
     # Parameters and operators
     lap = lambda A: operators.Laplacian(A, c)
-    LiftTau = lambda A: operators.LiftTau(A, b, -1)
+    Lift = lambda A: operators.Lift(A, b, -1)
     # Bessel equation: k^2*f + lap(f) = 0
     problem = problems.EVP([f,τ_f], k2)
-    problem.add_equation((k2*f + lap(f) + LiftTau(τ_f), 0))
+    problem.add_equation((k2*f + lap(f) + Lift(τ_f), 0))
     problem.add_equation((f(r=radius), 0))
     # Solver
     solver = solvers.EigenvalueSolver(problem)
@@ -170,10 +170,10 @@ def test_ball_bessel_eigenfunction(Lmax, Nmax, Leig, Neig, radius, dtype):
     k2 = field.Field(name='k2', dist=d, dtype=dtype)
     # Parameters and operators
     lap = lambda A: operators.Laplacian(A, c)
-    LiftTau = lambda A: operators.LiftTau(A, b, -1)
+    Lift = lambda A: operators.Lift(A, b, -1)
     # Bessel equation: k^2*f + lap(f) = 0
     problem = problems.EVP([f,τ_f], k2)
-    problem.add_equation((k2*f + lap(f) + LiftTau(τ_f), 0))
+    problem.add_equation((k2*f + lap(f) + Lift(τ_f), 0))
     problem.add_equation((f(r=radius), 0))
     # Solver
     solver = solvers.EigenvalueSolver(problem)
@@ -222,11 +222,11 @@ def test_ball_diffusion(Lmax, Nmax, Leig, radius, bc, dtype):
     trans = lambda A: operators.TransposeComponents(A)
     radial = lambda A, index: operators.RadialComponent(A, index=index)
     angular = lambda A, index: operators.AngularComponent(A, index=index)
-    LiftTau = lambda A: operators.LiftTau(A, b, -1)
+    Lift = lambda A: operators.Lift(A, b, -1)
     # Problem
     problem = problems.EVP([φ,A,τ_A], λ)
     problem.add_equation((div(A), 0))
-    problem.add_equation((-λ*A + grad(φ) - lap(A) + LiftTau(τ_A), 0))
+    problem.add_equation((-λ*A + grad(φ) - lap(A) + Lift(τ_A), 0))
     if bc == 'no-slip':
         problem.add_equation((A(r=radius), 0))
     elif bc == 'stress-free':

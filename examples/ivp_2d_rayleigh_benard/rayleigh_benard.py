@@ -65,7 +65,7 @@ x, z = dist.local_grids(xbasis, zbasis)
 ex, ez = coords.unit_vector_fields(dist)
 integ = lambda A: d3.Integrate(d3.Integrate(A, 'x'), 'z')
 lift_basis = zbasis.clone_with(a=1/2, b=1/2) # First derivative basis
-lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
+lift = lambda A, n: d3.Lift(A, lift_basis, n)
 grad_u = d3.grad(u) + ez*lift(tau1u,-1) # First-order reduction
 grad_b = d3.grad(b) + ez*lift(tau1b,-1) # First-order reduction
 

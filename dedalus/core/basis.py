@@ -689,7 +689,7 @@ class IntegrateJacobi(operators.Integrate, operators.SpectralOperator1D):
         return integ_vector[None, :] * input_basis.COV.stretch
 
 
-class LiftJacobi(operators.LiftTau, operators.Copy):
+class LiftJacobi(operators.Lift, operators.Copy):
     """Jacobi polynomial lift."""
 
     input_basis_type = type(None)
@@ -4420,7 +4420,7 @@ class PolarInterpolate(operators.Interpolate, operators.PolarMOperator):
         return reshape_vector(basis.interpolation(m, spintotal, position), dim=2, axis=1)
 
 
-class LiftTauDisk(operators.LiftTau, operators.PolarMOperator):
+class LiftDisk(operators.Lift, operators.PolarMOperator):
 
     input_basis_type = (RealFourier, ComplexFourier)
     output_basis_type = DiskBasis
@@ -4470,7 +4470,7 @@ class LiftTauDisk(operators.LiftTau, operators.PolarMOperator):
             raise ValueError("This should never happen.")
 
 
-class LiftTauBall(operators.LiftTau, operators.SphericalEllOperator):
+class LiftBall(operators.Lift, operators.SphericalEllOperator):
 
     input_basis_type = SphereBasis
     output_basis_type = BallBasis
@@ -4524,7 +4524,7 @@ class LiftTauBall(operators.LiftTau, operators.SphericalEllOperator):
             raise ValueError("This should never happen.")
 
 
-class LiftTauBallRadius(operators.LiftTau, operators.SphericalEllOperator):
+class LiftBallRadius(operators.Lift, operators.SphericalEllOperator):
 
     input_basis_type = type(None)
     output_basis_type = BallRadialBasis
@@ -4578,7 +4578,7 @@ class LiftTauBallRadius(operators.LiftTau, operators.SphericalEllOperator):
             raise ValueError("This should never happen.")
 
 
-class LiftTauShell(operators.LiftTau, operators.SphericalEllOperator):
+class LiftShell(operators.Lift, operators.SphericalEllOperator):
 
     input_basis_type = SphereBasis
     output_basis_type = SphericalShellBasis

@@ -55,7 +55,7 @@ phi, r = dist.local_grids(basis)
 nu = Ekman
 integ = lambda A: d3.Integrate(A, coords)
 lift_basis = basis.clone_with(k=2) # Natural output basis
-lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
+lift = lambda A, n: d3.Lift(A, lift_basis, n)
 
 # Background librating flow
 u0_real = dist.VectorField(coords, bases=basis)

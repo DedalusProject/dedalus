@@ -42,7 +42,7 @@ s = dist.Field(name='s')
 # Substitutions
 dx = lambda A: d3.Differentiate(A, xcoord)
 lift_basis = xbasis.clone_with(a=1/2, b=1/2) # First derivative basis
-lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
+lift = lambda A, n: d3.Lift(A, lift_basis, n)
 ux = dx(u) + lift(tau1,-1) # First-order reduction
 
 # Problem

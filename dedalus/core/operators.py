@@ -12,6 +12,8 @@ from numbers import Number
 from inspect import isclass
 from operator import add
 from ..libraries import dedalus_sphere
+import logging
+logger = logging.getLogger(__name__.split('.')[-1])
 
 from .domain import Domain
 from . import coords
@@ -47,7 +49,8 @@ __all__ = ['GeneralFunction',
            'Divergence',
            'Curl',
            'Laplacian',
-           'LiftTau',
+           'Lift',
+           'LiftTau', # deprecated
            'AdvectiveCFL',
            'SphericalEllProduct',
            'UnaryGridFunction',
@@ -3850,9 +3853,9 @@ class PolarLaplacian(Laplacian, PolarMOperator):
 
 
 @alias("lift")
-class LiftTau(LinearOperator, metaclass=MultiClass):
+class Lift(LinearOperator, metaclass=MultiClass):
 
-    name = "LiftTau"
+    name = "Lift"
 
     @classmethod
     def _preprocess_args(cls, operand, output_basis, n, out=None):
@@ -3890,7 +3893,12 @@ class LiftTau(LinearOperator, metaclass=MultiClass):
         self.dtype = operand.dtype
 
     def new_operand(self, operand, **kw):
-        return LiftTau(operand, self.output_basis, self.n)
+        return Lift(operand, self.output_basis, self.n)
+
+
+def LiftTau(*args, **kw):
+    logger.warning("'LiftTau' is deprecated. Use 'Lift' instead.")
+    return Lift(*args, **kw)
 
 
 """

@@ -15,8 +15,8 @@ logger = logging.getLogger(__name__.split('.')[-1])
 # Warn if threading is not disabled
 import os
 if os.getenv("OMP_NUM_THREADS") != "1":
-    logger.warn('Threading has not been disabled. This may massively degrade Dedalus performance.')
-    logger.warn('We strongly suggest setting the "OMP_NUM_THREADS" environment variable to "1".')
+    logger.warning('Threading has not been disabled. This may massively degrade Dedalus performance.')
+    logger.warning('We strongly suggest setting the "OMP_NUM_THREADS" environment variable to "1".')
 
 # Set numexpr threading to match OMP_NUM_THREADS to supress warning
 # Could remove pending https://github.com/pydata/numexpr/issues/344

@@ -66,7 +66,7 @@ er['g'][2] = 1
 rvec = dist.VectorField(coords, bases=basis.radial_basis)
 rvec['g'][2] = r
 lift_basis = basis.clone_with(k=1) # First derivative basis
-lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
+lift = lambda A, n: d3.Lift(A, lift_basis, n)
 grad_u = d3.grad(u) + rvec*lift(tau_u1,-1) # First-order reduction
 grad_b = d3.grad(b) + rvec*lift(tau_b1,-1) # First-order reduction
 integ = lambda A: d3.Integrate(A, coords)

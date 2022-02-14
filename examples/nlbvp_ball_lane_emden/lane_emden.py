@@ -64,7 +64,7 @@ tau = dist.Field(name='tau', bases=basis.S2_basis(radius=1))
 
 # Substitutions
 lift_basis = basis.clone_with(k=2) # Natural output basis
-lift = lambda A, n: d3.LiftTau(A, lift_basis, n)
+lift = lambda A, n: d3.Lift(A, lift_basis, n)
 
 # Problem
 problem = d3.NLBVP([f, tau], namespace=locals())

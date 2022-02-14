@@ -1560,7 +1560,7 @@ def _forward_disk_matrix(Ng, Nc, k0, k, m):
     z_grid, weights = dedalus_sphere.disk128.quadrature(Ng-1, k=k0, niter=3)
     # Get functions
     Nc_max = Nc
-    logger.warn("No truncation")
+    logger.warning("No truncation")
     Q = dedalus_sphere.disk128.polynomials(Nc_max-1, k=k, m=m, z=z_grid)
     # Pad to square transform
     Qfull = np.zeros((Nc, Ng))
@@ -1587,7 +1587,7 @@ def _backward_disk_matrix(Nc, Ng, k0, k, m):
     z_grid, weights = dedalus_sphere.disk128.quadrature(Ng-1, k=k0, niter=3)
     # Get functions
     Nc_max = Nc
-    logger.warn("No truncation")
+    logger.warning("No truncation")
     Q = dedalus_sphere.disk128.polynomials(Nc_max-1, k=k, m=m, z=z_grid)
     # Pad to square transform
     Qfull = np.zeros((Nc, Ng))
