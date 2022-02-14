@@ -16,12 +16,96 @@
   <img alt="PyPI - License" src="https://img.shields.io/pypi/l/dedalus">
 </p>
 
-Dedalus is a flexible framework for solving partial differential equations using spectral methods.
-The code is open-source and developed by a team of researchers studying astrophysical and geophysical fluid dynamics.
+**Note: this branch is the development head of v3 of the codebase, which is currently under beta-release.
+The development head of v2 of the codebase is on the ["v2_master" branch](https://github.com/DedalusProject/dedalus/tree/v2_master).**
 
-Dedalus is written primarily in Python and features an easy-to-use interface with symbolic equation entry.
-Our numerical algorithm produces sparse systems for a wide variety of equations and spectrally-discretized domains.
-These systems are efficiently solved using compiled libraries and are automatically parallelized using MPI.
+Dedalus is a flexible framework for solving partial differential equations using spectral methods.
+The code is open-source and developed by a team of researchers studying astrophysical, geophysical, and biological fluid dynamics.
+
+Dedalus is written primarily in Python and features an easy-to-use interface with symbolic vectorial equation entry.
+For example, to simulate incompressible hydrodynamics in a disk or ball, you can symbolically specify the PDEs, including boundary conditions and gauge constraints as well as the [tau modifications](https://dedalus-project.readthedocs.io/en/latest/pages/tau_method.html) needed to enforce them, as:
+
+```python
+    problem.add_equation("div(u) + tau_c = 0")
+    problem.add_equation("dt(u) - nu*lap(u) + grad(p) + lift(tau_1) = - dot(u,grad(u))")
+    problem.add_equation("u(r=1) = 0")
+    problem.add_equation("integ(p) = 0")
+```
+
+Our numerical algorithms produce sparse and spectrally accurate discretiations of a wide variety of equations and domains, including Cartesian domains, disks, annuli, spheres, spherical shells, and balls, as seen in the following examples:
+
+<table style="background-color:#FFFFFF;">
+  <tr>
+    <th width="25%">
+      <a href="https://dedalus-project.readthedocs.io/en/latest/pages/examples/ivp_1d_kdv_burgers.html">
+        <figure>
+          <img src="docs/pages/examples/images/kdv_burgers_preview.png">
+          <figcaption>KdV-Burgers equation (1D IVP)</figcaption>
+        </figure>
+      </a>
+    </th>
+    <th width="25%">
+      <a href="https://dedalus-project.readthedocs.io/en/latest/pages/examples/ivp_2d_rayleigh_benard.html">
+        <figure>
+          <img src="docs/pages/examples/images/rayleigh_benard.png">
+          <figcaption>Rayleigh-Benard convection (2D IVP)</figcaption>
+        </figure>
+      </a>
+    </th>
+    <th width="25%">
+      <a href="https://dedalus-project.readthedocs.io/en/latest/pages/examples/ivp_2d_shear_flow.html">
+        <figure>
+            <img src="docs/pages/examples/images/shear_flow.png">
+            <figcaption>Periodic shear flow (2D IVP)</figcaption>
+        </figure>
+      </a>
+    </th>
+    <th width="25%">
+      <a href="https://dedalus-project.readthedocs.io/en/latest/pages/examples/lbvp_2d_poisson.html">
+        <figure>
+            <img src="docs/pages/examples/images/poisson_preview.png">
+            <figcaption>Poisson equation (2D LBVP)</figcaption>
+        </figure>
+      </a>
+    </th>
+  </tr>
+  <tr>
+    <th width="25%">
+      <a href="https://dedalus-project.readthedocs.io/en/latest/pages/examples/ivp_disk_libration.html">
+        <figure>
+          <img src="docs/pages/examples/images/libration.png">
+          <figcaption>Librational instability (disk IVP)</figcaption>
+        </figure>
+      </a>
+    </th>
+    <th width="25%">
+      <a href="https://dedalus-project.readthedocs.io/en/latest/pages/examples/ivp_sphere_shallow_water.html">
+        <figure>
+          <img src="docs/pages/examples/images/shallow_water.png">
+          <figcaption>Spherical shallow water (sphere IVP)</figcaption>
+        </figure>
+      </a>
+    </th>
+    <th width="25%">
+      <a href="https://dedalus-project.readthedocs.io/en/latest/pages/examples/ivp_shell_convection.html">
+        <figure>
+            <img src="docs/pages/examples/images/shell_convection.png">
+            <figcaption>Spherical shell convection (shell IVP)</figcaption>
+        </figure>
+      </a>
+    </th>
+    <th width="25%">
+      <a href="https://dedalus-project.readthedocs.io/en/latest/pages/examples/ivp_ball_internally_heated_convection.html">
+        <figure>
+            <img src="docs/pages/examples/images/internally_heated_convection.png">
+            <figcaption>Internally heated convection (ball IVP)</figcaption>
+        </figure>
+      </a>
+    </th>
+  </tr>
+</table>
+
+The resulting systems are efficiently solved using compiled libraries and are automatically parallelized using MPI.
 
 ## Links
 

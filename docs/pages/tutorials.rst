@@ -1,6 +1,10 @@
 Tutorials \& Examples
 *********************
 
+**Note: please check you're referencing the intended version of the documentation.
+This documentation is in reference to v3 of the code, which is currently under beta-release.
+Documentation for v2 (the latest on PyPI) can be accessed through the sidebar.**
+
 Tutorial Notebooks
 ==================
 
