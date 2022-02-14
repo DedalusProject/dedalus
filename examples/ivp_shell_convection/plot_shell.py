@@ -1,11 +1,11 @@
 """
-Plot spherical snapshots.
+Plot cutaway spherical shell outputs.
 
 Usage:
-    plot_sphere.py <files>... [--output=<dir>]
+    plot_shell.py <files>... [--output=<dir>]
 
 Options:
-    --output=<dir>  Output directory [default: ./frames_sphere]
+    --output=<dir>  Output directory [default: ./frames]
 
 """
 

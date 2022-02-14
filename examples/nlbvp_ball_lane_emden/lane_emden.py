@@ -28,7 +28,7 @@ We can eliminate R by rescaling f by R**(2/(n-1)), giving:
 and R can then be recovered from f(r=0) = R**(2/(n-1)).
 
 For a scalar Laplacian in the ball, we need a single tau term. Here we choose
-to lift it to the natural output (k=2) basis.
+to lift it to the original (k=0) basis.
 
 References:
     [1]: http://en.wikipedia.org/wiki/Lane–Emden_equation
@@ -63,12 +63,11 @@ f = dist.Field(name='f', bases=basis)
 tau = dist.Field(name='tau', bases=basis.S2_basis(radius=1))
 
 # Substitutions
-lift_basis = basis.clone_with(k=2) # Natural output basis
-lift = lambda A, n: d3.Lift(A, lift_basis, n)
+lift = lambda A: d3.Lift(A, basis, -1)
 
 # Problem
 problem = d3.NLBVP([f, tau], namespace=locals())
-problem.add_equation("lap(f) + lift(tau,-1) = - f**n")
+problem.add_equation("lap(f) + lift(tau) = - f**n")
 problem.add_equation("f(r=1) = 0")
 
 # Initial guess

@@ -32,8 +32,8 @@ ybasis = d3.Chebyshev(coords['y'], size=Ny, bounds=(0, Ly))
 
 # Fields
 u = dist.Field(name='u', bases=(xbasis, ybasis))
-tau1 = dist.Field(name='tau1', bases=xbasis)
-tau2 = dist.Field(name='tau2', bases=xbasis)
+tau_1 = dist.Field(name='tau_1', bases=xbasis)
+tau_2 = dist.Field(name='tau_2', bases=xbasis)
 
 # Forcing
 x, y = dist.local_grids(xbasis, ybasis)
@@ -51,8 +51,8 @@ lift_basis = ybasis.clone_with(a=3/2, b=3/2) # Natural output basis
 lift = lambda A, n: d3.Lift(A, lift_basis, n)
 
 # Problem
-problem = d3.LBVP([u, tau1, tau2], namespace=locals())
-problem.add_equation("lap(u) + lift(tau1,-1) + lift(tau2,-2) = f")
+problem = d3.LBVP([u, tau_1, tau_2], namespace=locals())
+problem.add_equation("lap(u) + lift(tau_1,-1) + lift(tau_2,-2) = f")
 problem.add_equation("u(y=0) = g")
 problem.add_equation("dy(u)(y=Ly) = h")
 

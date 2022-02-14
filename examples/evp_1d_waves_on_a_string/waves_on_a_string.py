@@ -35,19 +35,19 @@ xbasis = d3.Chebyshev(xcoord, size=Nx, bounds=(0, Lx))
 
 # Fields
 u = dist.Field(name='u', bases=xbasis)
-tau1 = dist.Field(name='tau1')
-tau2 = dist.Field(name='tau2')
+tau_1 = dist.Field(name='tau_1')
+tau_2 = dist.Field(name='tau_2')
 s = dist.Field(name='s')
 
 # Substitutions
 dx = lambda A: d3.Differentiate(A, xcoord)
 lift_basis = xbasis.clone_with(a=1/2, b=1/2) # First derivative basis
-lift = lambda A, n: d3.Lift(A, lift_basis, n)
-ux = dx(u) + lift(tau1,-1) # First-order reduction
+lift = lambda A: d3.Lift(A, lift_basis, -1)
+ux = dx(u) + lift(tau_1) # First-order reduction
 
 # Problem
-problem = d3.EVP([u, tau1, tau2], eigenvalue=s, namespace=locals())
-problem.add_equation("s*u + dx(ux) + lift(tau2,-1) = 0")
+problem = d3.EVP([u, tau_1, tau_2], eigenvalue=s, namespace=locals())
+problem.add_equation("s*u + dx(ux) + lift(tau_2) = 0")
 problem.add_equation("u(x=0) = 0")
 problem.add_equation("u(x=Lx) = 0")
 

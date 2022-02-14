@@ -79,20 +79,20 @@ Alternatively, you can clone the d3 branch from the source repository and instal
 
     git clone -b d3 https://github.com/DedalusProject/dedalus
     cd dedalus
-    pip3 install .
+    pip3 install --no-cache .
 
 Updating Dedalus
 ----------------
 
 If Dedalus was installed using the conda script or from GitHub with pip, it can also be updated using pip::
 
-    pip3 install --upgrade --no-cache http://github.com/dedalusproject/dedalus/zipball/d3/
+    pip3 install --upgrade --force-reinstall --no-deps --no-cache http://github.com/dedalusproject/dedalus/zipball/d3/
 
 If Dedalus was built from a clone of the source repository, first pull new changes and then reinstall with pip::
 
     cd /path/to/dedalus/repo
     git pull
-    pip3 install --upgrade --force-reinstall .
+    pip3 install --upgrade --force-reinstall --no-deps --no-cache .
 
 **Note**: any custom FFTW/MPI paths set in the conda script or during the original installation will also need to be exported for the upgrade commands to work.
 

@@ -5,7 +5,7 @@ Usage:
     plot_sphere.py <files>... [--output=<dir>]
 
 Options:
-    --output=<dir>  Output directory [default: ./frames_sphere]
+    --output=<dir>  Output directory [default: ./frames]
 
 """
 

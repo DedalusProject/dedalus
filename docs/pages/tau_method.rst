@@ -121,9 +121,9 @@ We will also include a constant scalar tau term that will allow us to impose the
     # Fields
     p = dist.Field(name='p', bases=(xbasis,ybasis))
     u = dist.VectorField(coords, name='u', bases=(xbasis,ybasis))
-    tau_1 = dist.VectorField(coords, name='tau_1', bases=xbasis)
-    tau_2 = dist.VectorField(coords, name='tau_2', bases=xbasis)
-    tau_c = dist.Field(name='tau_c')
+    tau_u1 = dist.VectorField(coords, name='tau_u1', bases=xbasis)
+    tau_u2 = dist.VectorField(coords, name='tau_u2', bases=xbasis)
+    tau_p = dist.Field(name='tau_p')
 
 We then create substitutions for :math:`G` and :math:`P(y)`.
 Specification of and multiplication by :math:`P(y)` are handled through the ``Lift`` operator, which here simply multiplies its argument by the specified mode/element of a selected basis.
@@ -135,7 +135,7 @@ Here we'll take :math:`P(y)` to be the highest mode in the Chebyshev-U basis, in
     ex, ey = coords.unit_vector_fields(dist)
     lift_basis = ybasis.clone_with(a=1/2, b=1/2) # Chebyshev U basis
     lift = lambda A, n: d3.Lift(A, lift_basis, -1) # Shortcut for multiplying by U_{N-1}(y)
-    grad_u = d3.grad(u) - ey*lift(tau_1) # Operator representing G
+    grad_u = d3.grad(u) - ey*lift(tau_u1) # Operator representing G
 
 We can then create a problem and enter the PDE, boundary condtions, and pressure gauge in vectorial form using these substitutions.
 Note here we will add the contant tau term to the divergence equation, which introduces a degree of freedom allowing the imposition of the pressure gauge (otherwise the integral of the divergence equation will be redundant with integrals of the inflow boundary conditions).
@@ -143,9 +143,9 @@ Note here we will add the contant tau term to the divergence equation, which int
 .. code-block:: python
 
     # Problem
-    problem = d3.IVP([p, u, tau_1, tau_2, tau_c], namespace=locals())
-    problem.add_equation("trace(grad_u) + tau_c = 0")
-    problem.add_equation("dt(u) - nu*div(grad_u) + grad(p) + lift(tau_2) = f")
+    problem = d3.IVP([p, u, tau_u1, tau_u2, tau_p], namespace=locals())
+    problem.add_equation("trace(grad_u) + tau_p = 0")
+    problem.add_equation("dt(u) - nu*div(grad_u) + grad(p) + lift(tau_u2) = f")
     problem.add_equation("u(y=-1) = 0")
     problem.add_equation("u(y=+1) = 0")
     problem.add_equation("integ(p) = 0")
@@ -166,28 +166,27 @@ For instance, to enter the above equation set with homogeneous Dirichlet boundar
     # Fields
     p = dist.Field(name='p', bases=disk_basis)
     u = dist.VectorField(coords, name='u', bases=disk_basis)
-    tau_1 = dist.VectorField(coords, name='tau_1', bases=phi_basis)
-    tau_c = dist.Field(name='tau_c')
+    tau_u = dist.VectorField(coords, name='tau_u', bases=phi_basis)
+    tau_p = dist.Field(name='tau_p')
 
 The disk and ball bases are not direct-product bases, so the tau terms can't actually be written just as the tau field times a radial polynomial.
 Instead, for each horizontal mode (azimuthal mode :math:`m` in the disk and spherical harmonic :math:`\ell` in the ball), the tau term is multiplied by the highest degree radial polynomial in the basis for that particular mode.
 The ``Lift`` operator does this under the hood, and is why we use it rather than explicitly writing out the tau polynomials.
-Here, we'll use a tau polynomial from the second-derivative basis:
+We've found that using tau polynomials from the original bases seems to give good results in the disk and ball:
 
 .. code-block:: python
 
     # Substitutions
-    lift_basis = disk_basis.clone_with(k=2) # Second-derivative basis
-    lift = lambda A, n: d3.Lift(A, lift_basis, -1)
+    lift = lambda A, n: d3.Lift(A, disk_basis, -1)
 
 Now we can enter the PDE with just the single tau term in the momentum equation:
 
 .. code-block:: python
 
     # Problem
-    problem = d3.IVP([p, u, tau_1, tau_c], namespace=locals())
-    problem.add_equation("div(u) + tau_c = 0")
-    problem.add_equation("dt(u) - nu*lap(u) + grad(p) + lift(tau_1) = f")
+    problem = d3.IVP([p, u, tau_u, tau_p], namespace=locals())
+    problem.add_equation("div(u) + tau_p = 0")
+    problem.add_equation("dt(u) - nu*lap(u) + grad(p) + lift(tau_u) = f")
     problem.add_equation("u(r=1) = 0")
     problem.add_equation("integ(p) = 0")
 

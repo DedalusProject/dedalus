@@ -2,7 +2,7 @@
 Dedalus script simulating Boussinesq convection in a spherical shell. This script
 demonstrates solving an initial value problem in the shell. It can be ran serially
 or in parallel, and uses the built-in analysis framework to save data snapshots
-to HDF5 files. The `plot_sphere.py` script can be used to produce plots from the
+to HDF5 files. The `plot_shell.py` script can be used to produce plots from the
 saved data. The simulation should take about 10 cpu-minutes to run.
 
 The problem is non-dimensionalized using the shell thickness and freefall time, so
@@ -66,16 +66,16 @@ er['g'][2] = 1
 rvec = dist.VectorField(coords, bases=basis.radial_basis)
 rvec['g'][2] = r
 lift_basis = basis.clone_with(k=1) # First derivative basis
-lift = lambda A, n: d3.Lift(A, lift_basis, n)
-grad_u = d3.grad(u) + rvec*lift(tau_u1,-1) # First-order reduction
-grad_b = d3.grad(b) + rvec*lift(tau_b1,-1) # First-order reduction
+lift = lambda A: d3.Lift(A, lift_basis, -1)
+grad_u = d3.grad(u) + rvec*lift(tau_u1) # First-order reduction
+grad_b = d3.grad(b) + rvec*lift(tau_b1) # First-order reduction
 integ = lambda A: d3.Integrate(A, coords)
 
 # Problem
 problem = d3.IVP([p, b, u, tau_p, tau_b1, tau_b2, tau_u1, tau_u2], namespace=locals())
 problem.add_equation("trace(grad_u) + tau_p = 0")
-problem.add_equation("dt(b) - kappa*div(grad_b) + lift(tau_b2,-1) = - dot(u,grad(b))")
-problem.add_equation("dt(u) - nu*div(grad_u) + grad(p) - b*er + lift(tau_u2,-1) = - dot(u,grad(u))")
+problem.add_equation("dt(b) - kappa*div(grad_b) + lift(tau_b2) = - dot(u,grad(b))")
+problem.add_equation("dt(u) - nu*div(grad_u) + grad(p) - b*er + lift(tau_u2) = - dot(u,grad(u))")
 problem.add_equation("b(r=Ri) = 1")
 problem.add_equation("u(r=Ri) = 0")
 problem.add_equation("b(r=Ro) = 0")

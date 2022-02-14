@@ -2,9 +2,8 @@
 Dedalus script simulating internally-heated Boussinesq convection in the ball.
 This script demonstrates soving an initial value problem in the ball. It can be
 ran serially or in parallel, and uses the built-in analysis framework to save
-data snapshots to HDF5 files. The `plot_equator.py` and `plot_meridian.py` scripts
-can be used to produce plots from the saved data. The simulation should take
-roughly 15 cpu-minutes to run.
+data snapshots to HDF5 files. The `plot_ball.py` script can be used to produce
+plots from the saved data. The simulation should take roughly 15 cpu-minutes to run.
 
 The strength of gravity is proportional to radius, as for a constant density ball.
 The problem is non-dimensionalized using the ball radius and freefall time, so
@@ -18,8 +17,8 @@ We use stress-free boundary conditions, and maintain a constant flux on the oute
 boundary. The convection is driven by the internal heating term with a conductive
 equilibrium of T(r) = 1 - r**2.
 
-For incompressible hydro in the ball, we need one tau terms for each the velocity
-and temperature. Here we choose to lift them to the natural output (k=2) basis.
+For incompressible hydro in the ball, we need one tau term each for the velocity
+and temperature. Here we choose to lift them to the original (k=0) basis.
 
 The simulation will run to t=10, about the time for the first convective plumes
 to hit the top boundary. After running this initial simulation, you can restart
@@ -28,8 +27,7 @@ the simulation with the command line option '--restart'.
 To run, restart, and plot using e.g. 4 processes:
     $ mpiexec -n 4 python3 internally_heated_convection.py
     $ mpiexec -n 4 python3 internally_heated_convection.py --restart
-    $ mpiexec -n 4 python3 plot_equator.py slices/*.h5
-    $ mpiexec -n 4 python3 plot_meridian.py slices/*.h5
+    $ mpiexec -n 4 python3 plot_ball.py slices/*.h5
 """
 
 import sys
@@ -74,8 +72,7 @@ r_vec['g'][2] = r
 T_source = 6
 kappa = (Rayleigh * Prandtl)**(-1/2)
 nu = (Rayleigh / Prandtl)**(-1/2)
-lift_basis = basis.clone_with(k=2) # Natural output
-lift = lambda A, n: d3.Lift(A, lift_basis, n)
+lift = lambda A: d3.Lift(A, basis, -1)
 strain_rate = d3.grad(u) + d3.trans(d3.grad(u))
 shear_stress = d3.angular(d3.radial(strain_rate(r=1), index=1))
 integ = lambda A: d3.Integrate(A, coords)
@@ -84,8 +81,8 @@ rad = d3.RadialComponent
 # Problem
 problem = d3.IVP([p, u, T, tau_p, tau_u, tau_T], namespace=locals())
 problem.add_equation("div(u) + tau_p = 0")
-problem.add_equation("dt(u) - nu*lap(u) + grad(p) - r_vec*T + lift(tau_u,-1) = - cross(curl(u),u)")
-problem.add_equation("dt(T) - kappa*lap(T) + lift(tau_T,-1) = - dot(u,grad(T)) + kappa*T_source")
+problem.add_equation("dt(u) - nu*lap(u) + grad(p) - r_vec*T + lift(tau_u) = - cross(curl(u),u)")
+problem.add_equation("dt(T) - kappa*lap(T) + lift(tau_T) = - dot(u,grad(T)) + kappa*T_source")
 problem.add_equation("shear_stress = 0")  # Stress free
 problem.add_equation("radial(u(r=1)) = 0")  # No penetration
 problem.add_equation("rad(grad(T)(r=1)) = -2")
