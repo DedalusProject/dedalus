@@ -113,8 +113,7 @@ since
     \nabla \cdot G = \nabla^2 \vec{u} - \vec{\tau}_1(x) \partial_y P(y)
 
 Let's walk through setting up such a problem in Dedalus v3, assuming we're discretizing :math:`x` and :math:`y` with Fourier and Chebyshev bases, respectively.
-First, we need to create the necessary problem variable fields, including fields for the tau terms.
-We will also include a constant scalar tau term that will allow us to impose the pressure gauge.
+First, we need to create the necessary problem variable fields, including fields for the tau variables and a constant scalar tau for imposing the pressure gauge (see the :doc:`gauge_constraints` page):
 
 .. code-block:: python
 
@@ -137,8 +136,9 @@ Here we'll take :math:`P(y)` to be the highest mode in the Chebyshev-U basis, in
     lift = lambda A, n: d3.Lift(A, lift_basis, -1) # Shortcut for multiplying by U_{N-1}(y)
     grad_u = d3.grad(u) - ey*lift(tau_u1) # Operator representing G
 
-We can then create a problem and enter the PDE, boundary condtions, and pressure gauge in vectorial form using these substitutions.
-Note here we will add the contant tau term to the divergence equation, which introduces a degree of freedom allowing the imposition of the pressure gauge (otherwise the integral of the divergence equation will be redundant with integrals of the inflow boundary conditions).
+We can then create a problem and enter the tau-modified PDEs, boundary condtions, and pressure gauge in vectorial form using these substitutions.
+Note that we will need to add the contant tau variable to the divergence equation as described in the :doc:`gauge_constraints` page.
+This allows us to impose the pressure gauge and removes the redundancy between the integral of the divergence equation and the integral of the inflow boundary conditions.
 
 .. code-block:: python
 
@@ -169,8 +169,8 @@ For instance, to enter the above equation set with homogeneous Dirichlet boundar
     tau_u = dist.VectorField(coords, name='tau_u', bases=phi_basis)
     tau_p = dist.Field(name='tau_p')
 
-The disk and ball bases are not direct-product bases, so the tau terms can't actually be written just as the tau field times a radial polynomial.
-Instead, for each horizontal mode (azimuthal mode :math:`m` in the disk and spherical harmonic :math:`\ell` in the ball), the tau term is multiplied by the highest degree radial polynomial in the basis for that particular mode.
+The disk and ball bases are not direct-product bases, so the tau terms can't actually be written just as the tau variable times a radial polynomial.
+Instead, for each horizontal mode (azimuthal mode :math:`m` in the disk and spherical harmonic :math:`\ell` in the ball), that mode of the tau variable is multiplied by the highest degree radial polynomial in the basis for that particular mode.
 The ``Lift`` operator does this under the hood, and is why we use it rather than explicitly writing out the tau polynomials.
 We've found that using tau polynomials from the original bases seems to give good results in the disk and ball:
 
@@ -202,7 +202,7 @@ To summarize, the main points regarding tau formulations are:
 3. For problems in Cartesian geometries, annuli, and spherical shells, we recommend a first-order-style implementation of the tau terms. Note that this only requires defining first-order substitutions that include tau terms, rather than increasing the problem size with first-order variables, as in Dedalus v2.
 4. For problems in the disk and ball, only a single tau term is needed for second-order elliptic/parabolic problems, and no first-order substitutions are necessary.
 
-See the included :doc:`example scripts <tutorials>` for more examples of working tau terms.
+See the included :doc:`example scripts <tutorials>` for more examples of tau modifications in various domains.
 
 
 .. .. math::

@@ -16,5 +16,6 @@ Specific how-to's:
 .. toctree::
     :maxdepth: 1
 
+    gauge_constraints
     tau_method
 

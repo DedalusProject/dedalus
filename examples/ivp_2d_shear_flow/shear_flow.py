@@ -48,7 +48,7 @@ zbasis = d3.RealFourier(coords['z'], size=Nz, bounds=(-Lz/2, Lz/2), dealias=deal
 p = dist.Field(name='p', bases=(xbasis,zbasis))
 s = dist.Field(name='s', bases=(xbasis,zbasis))
 u = dist.VectorField(coords, name='u', bases=(xbasis,zbasis))
-tau_p = dist.Field(name='g')
+tau_p = dist.Field(name='tau_p')
 
 # Substitutions
 nu = 1 / Reynolds

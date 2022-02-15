@@ -6,19 +6,8 @@ Singular matrix errors
 
 If you come across an error in the linear solver stating that a matrix/factor is singular, that means that the linear LHS portion of the PDE system is not uniquely solvable.
 This error indicates that some degrees of freedom of the solution are unconstrained and some of the specified equations are redundant (these are equivalent since the LHS matrices must be square).
-
 These errors are often due to imposing boundary conditions that are redundant for some set of modes and/or failing to constrain a gauge freedom in the solution.
-For instance, when simulating incompressible hydrodynamics, the pressure has a constant gauge freedom and the integral of the divergence constraint is redundant with the velocity boundary conditions.
-To fix these issues, a spatially constant variable can be added to the LHS of the divergence constraint, introducing a degree of freedom that allows for fixing the pressure gauge:
-
-.. code-block:: python
-
-    c = dist.Field() # Constant variable for fixing pressure gauge
-    ...
-    problem.add_equation("div(u) + c = 0") # Add c to break redundancy with boundary conditions
-    problem.add_equation("integ(p) = 0") # Pressure gauge
-
-See the :doc:`tau_method` page for more information on specifying boundary conditions.
+See the :doc:`gauge_constraints` and :doc:`tau_method` pages for more information on fixing these issues.
 
 Out of memory errors
 ====================

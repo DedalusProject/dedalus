@@ -119,6 +119,15 @@ A best-of-both-worlds approach is to pass your scripts entire local namespace to
 This is achieved by passing the keyword ``namespace=locals()`` when instantiating problem objects.
 See the built in examples for illustrations of this approach to equation construction.
 
+Gauge constraints
+-----------------
+
+In Dedalus v2, gauge constraints (like the pressure gauge in incompressible hydrodynamics) were usually set by changing the equations for certain modes with the ``condition`` keyword when entering equations.
+In Dedalus v3, it's recommended to instead add spatially-constant gauge variables to the equations to introduce degrees of freedom that allow the gauge constraints to be directly imposed alongside the other equations.
+In most cases, the ``condition`` keyword can still be used if desired, but for technical/performance reasons it is no longer available in fully-Fourier problems.
+In any event, we find that the new approach (with gauge variables instead of conditions) makes for more readable equations.
+See the :doc:`gauge_constraints` page and the examples for more details.
+
 Tau terms
 ---------
 

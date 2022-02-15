@@ -19,20 +19,20 @@
 **Note: this branch is the development head of v3 of the codebase, which is currently under beta-release.
 The development head of v2 of the codebase is on the ["v2_master" branch](https://github.com/DedalusProject/dedalus/tree/v2_master).**
 
-Dedalus is a flexible framework for solving partial differential equations using spectral methods.
+Dedalus is a flexible framework for solving partial differential equations using modern spectral methods.
 The code is open-source and developed by a team of researchers studying astrophysical, geophysical, and biological fluid dynamics.
 
-Dedalus is written primarily in Python and features an easy-to-use interface with symbolic vectorial equation entry.
-For example, to simulate incompressible hydrodynamics in a disk or ball, you can symbolically specify the PDEs, including boundary conditions and gauge constraints as well as the [tau modifications](https://dedalus-project.readthedocs.io/en/latest/pages/tau_method.html) needed to enforce them, as:
+Dedalus is written primarily in Python and features an easy-to-use interface with symbolic vectorial equation specification.
+For example, to simulate incompressible hydrodynamics in a ball, you can symbolically enter the equations, including [gauge constraints](https://dedalus-project.readthedocs.io/en/latest/pages/gauge_constraints.html) and [boundary conditions enforced with the tau method](https://dedalus-project.readthedocs.io/en/latest/pages/tau_method.html), as:
 
 ```python
-    problem.add_equation("div(u) + tau_c = 0")
-    problem.add_equation("dt(u) - nu*lap(u) + grad(p) + lift(tau_1) = - dot(u,grad(u))")
+    problem.add_equation("div(u) + tau_p = 0")
+    problem.add_equation("dt(u) - nu*lap(u) + grad(p) + lift(tau_u) = - dot(u,grad(u))")
     problem.add_equation("u(r=1) = 0")
     problem.add_equation("integ(p) = 0")
 ```
 
-Our numerical algorithms produce sparse and spectrally accurate discretiations of a wide variety of equations and domains, including Cartesian domains, disks, annuli, spheres, spherical shells, and balls, as seen in the following examples:
+Our numerical algorithms produce sparse and spectrally accurate discretizations of PDEs on simple domains, including Cartesian domains of any dimension, disks, annuli, spheres, spherical shells, and balls:
 
 <table style="background-color:#FFFFFF;">
   <tr>
