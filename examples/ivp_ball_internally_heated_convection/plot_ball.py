@@ -1,8 +1,8 @@
 """
-Plot spherical snapshots.
+Plot cutaway ball outputs.
 
 Usage:
-    plot_sphere.py <files>... [--output=<dir>]
+    plot_ball.py <files>... [--output=<dir>]
 
 Options:
     --output=<dir>  Output directory [default: ./frames]

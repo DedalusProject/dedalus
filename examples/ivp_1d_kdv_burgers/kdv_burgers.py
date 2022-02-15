@@ -73,4 +73,5 @@ plt.ylabel('t')
 plt.title(f'KdV-Burgers, (a,b)=({a},{b})')
 plt.tight_layout()
 plt.savefig('kdv_burgers.pdf')
+plt.savefig('kdv_burgers.png', dpi=200)
 

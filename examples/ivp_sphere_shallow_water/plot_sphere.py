@@ -1,8 +1,8 @@
 """
-Plot cutaway ball outputs.
+Plot sphere outputs.
 
 Usage:
-    plot_ball.py <files>... [--output=<dir>]
+    plot_sphere.py <files>... [--output=<dir>]
 
 Options:
     --output=<dir>  Output directory [default: ./frames]

@@ -10,6 +10,6 @@ Script
 Output
 ------
 
-.. image:: images/kdv_burgers.pdf
+.. image:: images/kdv_burgers.png
     :width: 100 %
     :align: center

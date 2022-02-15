@@ -1,8 +1,8 @@
 """
-Plot velocity from joint analysis files.
+Plot disk outputs.
 
 Usage:
-    plot_velocities.py <files>... [--output=<dir>]
+    plot_disk.py <files>... [--output=<dir>]
 
 Options:
     --output=<dir>  Output directory [default: ./frames]

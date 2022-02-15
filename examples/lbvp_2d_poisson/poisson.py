@@ -75,4 +75,5 @@ if dist.comm.rank == 0:
     plt.title("Randomly forced Poisson equation")
     plt.tight_layout()
     plt.savefig('poisson.pdf')
+    plt.savefig('poisson.png', dpi=200)
 

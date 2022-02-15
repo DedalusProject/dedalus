@@ -10,6 +10,6 @@ Script
 Output
 ------
 
-.. image:: images/poisson.pdf
+.. image:: images/poisson.png
     :width: 100 %
     :align: center

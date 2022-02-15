@@ -39,7 +39,7 @@ Our numerical algorithms produce sparse and spectrally accurate discretizations 
     <th width="25%">
       <a href="https://dedalus-project.readthedocs.io/en/latest/pages/examples/ivp_1d_kdv_burgers.html">
         <figure>
-          <img src="docs/pages/examples/images/kdv_burgers_preview.png">
+          <img src="docs/pages/examples/images/kdv_burgers.png">
           <figcaption>KdV-Burgers equation (1D IVP)</figcaption>
         </figure>
       </a>
@@ -63,7 +63,7 @@ Our numerical algorithms produce sparse and spectrally accurate discretizations 
     <th width="25%">
       <a href="https://dedalus-project.readthedocs.io/en/latest/pages/examples/lbvp_2d_poisson.html">
         <figure>
-            <img src="docs/pages/examples/images/poisson_preview.png">
+            <img src="docs/pages/examples/images/poisson.png">
             <figcaption>Poisson equation (2D LBVP)</figcaption>
         </figure>
       </a>

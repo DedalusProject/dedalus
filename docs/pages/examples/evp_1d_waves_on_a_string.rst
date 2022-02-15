@@ -10,6 +10,6 @@ Script
 Output
 ------
 
-.. image:: images/waves_on_a_string.pdf
+.. image:: images/waves_on_a_string.png
     :width: 100 %
     :align: center
