@@ -689,6 +689,29 @@ class IntegrateJacobi(operators.Integrate, operators.SpectralOperator1D):
         return integ_vector[None, :] * input_basis.COV.stretch
 
 
+class AverageJacobi(operators.Average, operators.SpectralOperator1D):
+    """Jacobi polynomial averaging."""
+
+    input_coord_type = Coordinate
+    input_basis_type = Jacobi
+    subaxis_dependence = [True]
+    subaxis_coupling = [True]
+
+    @staticmethod
+    def _output_basis(input_basis):
+        return None
+
+    @staticmethod
+    def _full_matrix(input_basis, output_basis):
+        # Build native integration vector
+        N = input_basis.size
+        a, b = input_basis.a, input_basis.b
+        integ_vector = jacobi.integration_vector(N, a, b)
+        ave_vector = integ_vector / 2
+        # Rescale and return with shape (1, N)
+        return ave_vector[None, :]
+
+
 class LiftJacobi(operators.Lift, operators.Copy):
     """Jacobi polynomial lift."""
 
@@ -949,6 +972,30 @@ class IntegrateComplexFourier(operators.Integrate, operators.SpectralOperator1D)
             raise ValueError("This should never happen.")
 
 
+class AverageComplexFourier(operators.Average, operators.SpectralOperator1D):
+    """ComplexFourier averaging."""
+
+    input_coord_type = Coordinate
+    input_basis_type = ComplexFourier
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
+
+    @staticmethod
+    def _output_basis(input_basis):
+        return None
+
+    @staticmethod
+    def _group_matrix(group, input_basis, output_basis):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / input_basis.COV.stretch
+        # integ exp(1j*k*x) / L = δ(k, 0)
+        if k == 0:
+            return np.array([[1]])
+        else:
+            # Constructor should only loop over group 0.
+            raise ValueError("This should never happen.")
+
+
 class RealFourier(FourierBase, metaclass=CachedClass):
     """
     Fourier real sine/cosine basis.
@@ -1147,6 +1194,31 @@ class IntegrateRealFourier(operators.Integrate, operators.SpectralOperator1D):
         if k == 0:
             L = input_basis.COV.problem_length
             return np.array([[L, 0]])
+        else:
+            # Constructor should only loop over group 0.
+            raise ValueError("This should never happen.")
+
+
+class AverageRealFourier(operators.Average, operators.SpectralOperator1D):
+    """RealFourier averaging."""
+
+    input_coord_type = Coordinate
+    input_basis_type = RealFourier
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
+
+    @staticmethod
+    def _output_basis(input_basis):
+        return None
+
+    @staticmethod
+    def _group_matrix(group, input_basis, output_basis):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / input_basis.COV.stretch
+        # integ  cos(k*x) / L = δ(k, 0)
+        # integ -sin(k*x) / L = 0
+        if k == 0:
+            return np.array([[1, 0]])
         else:
             # Constructor should only loop over group 0.
             raise ValueError("This should never happen.")

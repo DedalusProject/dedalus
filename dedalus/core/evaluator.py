@@ -578,8 +578,8 @@ class FileHandler(Handler):
         scale_group.create_dataset(name='timestep', shape=(0,), maxshape=(None,), dtype=np.float64)
         scale_group.create_dataset(name='world_time', shape=(0,), maxshape=(None,), dtype=np.float64)
         scale_group.create_dataset(name='wall_time', shape=(0,), maxshape=(None,), dtype=np.float64)
-        scale_group.create_dataset(name='iteration', shape=(0,), maxshape=(None,), dtype=np.int)
-        scale_group.create_dataset(name='write_number', shape=(0,), maxshape=(None,), dtype=np.int)
+        scale_group.create_dataset(name='iteration', shape=(0,), maxshape=(None,), dtype=int)
+        scale_group.create_dataset(name='write_number', shape=(0,), maxshape=(None,), dtype=int)
         scale_group.create_dataset(name='constant', data=np.array([0.], dtype=np.float64))
         scale_group['constant'].make_scale()
 

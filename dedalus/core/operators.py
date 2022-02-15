@@ -1073,27 +1073,16 @@ class Interpolate(SpectralOperator, metaclass=MultiClass):
         return prod([self.new_operand(arg) for arg in operand.args])
 
 
-@parseable('integrate', 'integ')
-def integrate(arg, spaces=None):
-    if spaces is None:
-        spaces = tuple(b.coords for b in arg.domain.bases)
-    # Identify domain
-    #domain = unify_attributes((arg,)+spaces, 'domain', require=False)
-    # Apply iteratively
-    for space in spaces:
-        #space = domain.get_space_object(space)
-        arg = Integrate(arg, space)
-    return arg
-
 @alias("integ")
 class Integrate(LinearOperator, metaclass=MultiClass):
     """
-    Definite integration over operand bases.
+    Integrate over operand bases.
 
     Parameters
     ----------
     operand : number or Operand object
     coords : Coordinate or CoordinateSystem object, or list of these
+
     """
 
     name = "Integrate"
@@ -1154,16 +1143,37 @@ class Integrate(LinearOperator, metaclass=MultiClass):
 @alias("ave")
 class Average(LinearOperator, metaclass=MultiClass):
     """
-    Average along one dimension.
+    Average over operand bases.
 
     Parameters
     ----------
     operand : number or Operand object
-    space : Space object
+    coords : Coordinate or CoordinateSystem object, or list of these
 
     """
 
     name = "Average"
+
+    @classmethod
+    def _preprocess_args(cls, operand, coord=None):
+        # Handle numbers
+        if isinstance(operand, Number):
+            raise SkipDispatchException(output=operand)
+        # Average over all operand bases by default
+        if coord is None:
+            coord = [basis.coordsystem for basis in operand.domain.bases]
+        # Recurse over multiple coordinates
+        if isinstance(coord, (tuple, list)):
+            if len(coord) > 1:
+                operand = Average(operand, coord[:-1])
+            coord = coord[-1]
+        # Resolve strings to coordinates
+        if isinstance(coord, str):
+            coord = operand.domain.get_coord(coord)
+        # Check coordinate type
+        if not isinstance(coord, (coords.Coordinate, coords.CoordinateSystem)):
+            raise ValueError("coords must be Coordinate or str")
+        return (operand, coord), {}
 
     @classmethod
     def _check_args(cls, operand, coords):
@@ -1174,22 +1184,6 @@ class Average(LinearOperator, metaclass=MultiClass):
                 if isinstance(basis, cls.input_basis_type):
                     return True
         return False
-
-    @classmethod
-    def _preprocess_args(cls, operand, coord=None):
-        if isinstance(operand, Number):
-            raise SkipDispatchException(output=operand)
-        if coord is None:
-            coord = operand.dist.single_coordsys
-            if coord is False:
-                raise ValueError("coordsys must be specified.")
-        elif isinstance(coord, (coords.Coordinate, coords.CoordinateSystem)):
-            pass
-        elif isinstance(coord, str):
-            coord = operand.domain.get_coord(coord)
-        else:
-            raise ValueError("coord must be Coordinate or str")
-        return (operand, coord), {}
 
     def __init__(self, operand, coord):
         SpectralOperator.__init__(self, operand)
