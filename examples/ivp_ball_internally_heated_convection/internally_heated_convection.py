@@ -75,8 +75,6 @@ nu = (Rayleigh / Prandtl)**(-1/2)
 lift = lambda A: d3.Lift(A, basis, -1)
 strain_rate = d3.grad(u) + d3.trans(d3.grad(u))
 shear_stress = d3.angular(d3.radial(strain_rate(r=1), index=1))
-integ = lambda A: d3.Integrate(A, coords)
-rad = d3.RadialComponent
 
 # Problem
 problem = d3.IVP([p, u, T, tau_p, tau_u, tau_T], namespace=locals())
@@ -85,7 +83,7 @@ problem.add_equation("dt(u) - nu*lap(u) + grad(p) - r_vec*T + lift(tau_u) = - cr
 problem.add_equation("dt(T) - kappa*lap(T) + lift(tau_T) = - dot(u,grad(T)) + kappa*T_source")
 problem.add_equation("shear_stress = 0")  # Stress free
 problem.add_equation("radial(u(r=1)) = 0")  # No penetration
-problem.add_equation("rad(grad(T)(r=1)) = -2")
+problem.add_equation("radial(grad(T)(r=1)) = -2")
 problem.add_equation("integ(p) = 0")  # Pressure gauge
 
 # Solver

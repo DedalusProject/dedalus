@@ -1085,19 +1085,39 @@ def integrate(arg, spaces=None):
         arg = Integrate(arg, space)
     return arg
 
-
+@alias("integ")
 class Integrate(LinearOperator, metaclass=MultiClass):
     """
-    Integration along one dimension.
+    Definite integration over operand bases.
 
     Parameters
     ----------
     operand : number or Operand object
-    space : Space object
-
+    coords : Coordinate or CoordinateSystem object, or list of these
     """
 
     name = "Integrate"
+
+    @classmethod
+    def _preprocess_args(cls, operand, coord=None):
+        # Handle zeros
+        if operand == 0:
+            raise SkipDispatchException(output=0)
+        # Integrate over all operand bases by default
+        if coord is None:
+            coord = [basis.coordsystem for basis in operand.domain.bases]
+        # Recurse over multiple coordinates
+        if isinstance(coord, (tuple, list)):
+            if len(coord) > 1:
+                operand = Integrate(operand, coord[:-1])
+            coord = coord[-1]
+        # Resolve strings to coordinates
+        if isinstance(coord, str):
+            coord = operand.domain.get_coord(coord)
+        # Check coordinate type
+        if not isinstance(coord, (coords.Coordinate, coords.CoordinateSystem)):
+            raise ValueError("coords must be Coordinate or str")
+        return (operand, coord), {}
 
     @classmethod
     def _check_args(cls, operand, coords):
@@ -1108,18 +1128,6 @@ class Integrate(LinearOperator, metaclass=MultiClass):
                 if isinstance(basis, cls.input_basis_type):
                     return True
         return False
-
-    @classmethod
-    def _preprocess_args(cls, operand, coord):
-        if isinstance(operand, Number):
-            raise SkipDispatchException(output=operand)
-        if isinstance(coord, (coords.Coordinate, coords.CoordinateSystem)):
-            pass
-        elif isinstance(coord, str):
-            coord = operand.domain.get_coord(coord)
-        else:
-            raise ValueError("coord must be Coordinate or str")
-        return (operand, coord), {}
 
     def __init__(self, operand, coord):
         SpectralOperator.__init__(self, operand)

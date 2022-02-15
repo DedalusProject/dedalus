@@ -69,7 +69,6 @@ lift_basis = basis.clone_with(k=1) # First derivative basis
 lift = lambda A: d3.Lift(A, lift_basis, -1)
 grad_u = d3.grad(u) + rvec*lift(tau_u1) # First-order reduction
 grad_b = d3.grad(b) + rvec*lift(tau_b1) # First-order reduction
-integ = lambda A: d3.Integrate(A, coords)
 
 # Problem
 problem = d3.IVP([p, b, u, tau_p, tau_b1, tau_b2, tau_u1, tau_u2], namespace=locals())

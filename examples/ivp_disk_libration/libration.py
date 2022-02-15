@@ -53,7 +53,6 @@ tau_p = dist.Field(name='tau_p')
 # Substitutions
 phi, r = dist.local_grids(basis)
 nu = Ekman
-integ = lambda A: d3.Integrate(A, coords)
 lift = lambda A: d3.Lift(A, basis, -1)
 
 # Background librating flow
@@ -83,7 +82,7 @@ u.low_pass_filter(scales=0.25) # Keep only lower fourth of the modes
 snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=0.1, max_writes=20)
 snapshots.add_task(-d3.div(d3.skew(u)), scales=(4, 1), name='vorticity')
 scalars = solver.evaluator.add_file_handler('scalars', sim_dt=0.01)
-scalars.add_task(integ(0.5*d3.dot(u,u)), name='KE')
+scalars.add_task(d3.integ(0.5*d3.dot(u,u)), name='KE')
 
 # Flow properties
 flow = d3.GlobalFlowProperty(solver, cadence=100)

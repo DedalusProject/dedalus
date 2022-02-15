@@ -24,8 +24,6 @@ import dedalus.public as d3
 import logging
 logger = logging.getLogger(__name__)
 
-# TODO: cleanup integ shortcuts
-
 
 # Parameters
 Lx, Lz = 1, 2
@@ -55,7 +53,6 @@ nu = 1 / Reynolds
 D = nu / Schmidt
 x, z = dist.local_grids(xbasis, zbasis)
 ex, ez = coords.unit_vector_fields(dist)
-integ = lambda A: d3.Integrate(d3.Integrate(A, 'x'), 'z')
 
 # Problem
 problem = d3.IVP([u, s, p, tau_p], namespace=locals())
