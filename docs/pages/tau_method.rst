@@ -113,7 +113,7 @@ since
     \nabla \cdot G = \nabla^2 \vec{u} - \vec{\tau}_1(x) \partial_y P(y)
 
 Let's walk through setting up such a problem in Dedalus v3, assuming we're discretizing :math:`x` and :math:`y` with Fourier and Chebyshev bases, respectively.
-First, we need to create the necessary problem variable fields, including fields for the tau variables and a constant scalar tau for imposing the pressure gauge (see the :doc:`gauge_constraints` page):
+First, we need to create the necessary problem variable fields, including fields for the tau variables and a constant scalar tau for imposing the pressure gauge (see the :doc:`gauge_conditions` page):
 
 .. code-block:: python
 
@@ -137,7 +137,7 @@ Here we'll take :math:`P(y)` to be the highest mode in the Chebyshev-U basis, in
     grad_u = d3.grad(u) - ey*lift(tau_u1) # Operator representing G
 
 We can then create a problem and enter the tau-modified PDEs, boundary condtions, and pressure gauge in vectorial form using these substitutions.
-Note that we will need to add the contant tau variable to the divergence equation as described in the :doc:`gauge_constraints` page.
+Note that we will need to add the contant tau variable to the divergence equation as described in the :doc:`gauge_conditions` page.
 This allows us to impose the pressure gauge and removes the redundancy between the integral of the divergence equation and the integral of the inflow boundary conditions.
 
 .. code-block:: python

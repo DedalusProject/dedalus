@@ -7,7 +7,7 @@ Singular matrix errors
 If you come across an error in the linear solver stating that a matrix/factor is singular, that means that the linear LHS portion of the PDE system is not uniquely solvable.
 This error indicates that some degrees of freedom of the solution are unconstrained and some of the specified equations are redundant (these are equivalent since the LHS matrices must be square).
 These errors are often due to imposing boundary conditions that are redundant for some set of modes and/or failing to constrain a gauge freedom in the solution.
-See the :doc:`gauge_constraints` and :doc:`tau_method` pages for more information on fixing these issues.
+See the :doc:`gauge_conditions` and :doc:`tau_method` pages for more information on fixing these issues.
 
 Out of memory errors
 ====================

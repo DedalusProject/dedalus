@@ -1,5 +1,5 @@
-Gauge Constraints
-*****************
+Gauge Conditions
+****************
 
 When you enter a system of PDEs in Dedalus, the left-hand side (LHS) of the equations is parsed into a sparse linear system.
 For the solver to succeed, this LHS matrix must be square and nonsingular.
@@ -56,4 +56,4 @@ If the prescribed net inflow is nonzero, then the tau variable will acquire a co
 From the modified equation, we can see that the velocity will then have a spatially uniform convergence equal to this tau value.
 Of course, for properly specified boundary conditions with no net inflow, the tau variable will be zero and the velocity will be divergence free.
 
-See the included :doc:`example scripts <tutorials>` for more examples of gauge modifications in various domains.
+See the included :doc:`example scripts <tutorials>` for more examples of gauge conditions in various domains.
