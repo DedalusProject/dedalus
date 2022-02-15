@@ -26,10 +26,10 @@ Dedalus is written primarily in Python and features an easy-to-use interface wit
 For example, to simulate incompressible hydrodynamics in a ball, you can symbolically enter the equations, including [gauge constraints](https://dedalus-project.readthedocs.io/en/latest/pages/gauge_constraints.html) and [boundary conditions enforced with the tau method](https://dedalus-project.readthedocs.io/en/latest/pages/tau_method.html), as:
 
 ```python
-    problem.add_equation("div(u) + tau_p = 0")
-    problem.add_equation("dt(u) - nu*lap(u) + grad(p) + lift(tau_u) = - dot(u,grad(u))")
-    problem.add_equation("u(r=1) = 0")
-    problem.add_equation("integ(p) = 0")
+problem.add_equation("div(u) + tau_p = 0")
+problem.add_equation("dt(u) - nu*lap(u) + grad(p) + lift(tau_u) = - dot(u,grad(u))")
+problem.add_equation("u(r=1) = 0")
+problem.add_equation("integ(p) = 0")
 ```
 
 Our numerical algorithms produce sparse and spectrally accurate discretizations of PDEs on simple domains, including Cartesian domains of any dimension, disks, annuli, spheres, spherical shells, and balls:
