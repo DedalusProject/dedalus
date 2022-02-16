@@ -1095,6 +1095,9 @@ class Integrate(LinearOperator, metaclass=MultiClass):
         # Integrate over all operand bases by default
         if coord is None:
             coord = [basis.coordsystem for basis in operand.domain.bases]
+        # Split Cartesian coordinates
+        if isinstance(coord, coords.CartesianCoordinates):
+            coord = coord.coords
         # Recurse over multiple coordinates
         if isinstance(coord, (tuple, list)):
             if len(coord) > 1:
@@ -1162,6 +1165,9 @@ class Average(LinearOperator, metaclass=MultiClass):
         # Average over all operand bases by default
         if coord is None:
             coord = [basis.coordsystem for basis in operand.domain.bases]
+        # Split Cartesian coordinates
+        if isinstance(coord, coords.CartesianCoordinates):
+            coord = coord.coords
         # Recurse over multiple coordinates
         if isinstance(coord, (tuple, list)):
             if len(coord) > 1:
