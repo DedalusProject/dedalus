@@ -2598,6 +2598,13 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
             self.azimuth_basis.forward_coeff_permutation = self.forward_m_perm
             self.azimuth_basis.backward_coeff_permutation = self.backward_m_perm
 
+    @CachedAttribute
+    def latitude_basis(self):
+        new_shape = (1, self.shape[1])
+        # is this ok??? Do we need to set dealias[0] = 1???
+        dealias = self.dealias
+        return SphereBasis(self.coordsystem, new_shape, self.dtype, radius=self.radius, dealias=dealias, colatitude_library=self.colatitude_library, azimuth_library=self.azimuth_library)
+
     def matrix_dependence(self, matrix_coupling):
         matrix_dependence = matrix_coupling.copy()
         if matrix_coupling[1]:
@@ -2608,7 +2615,10 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
         grid_shape = self.grid_shape(scales)
         if grid_space[0]:
             # grid-grid space
-            return grid_shape
+            if self.mmax == 0:
+                return (1, grid_shape[1])
+            else:
+                return grid_shape
         elif grid_space[1]:
             # coeff-grid space
             shape = list(grid_shape)
@@ -2745,11 +2755,14 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
         return NotImplemented
 
     def __matmul__(self, other):
-        return other.__rmatmul__(self)
+        """NCC is self.
 
-    def __rmatmul__(self, other):
+        NB: This does not support NCCs with different number of modes than the fields.
+        """
         if other is None:
             return self
+        if isinstance(other, type(self)):
+            return other
         return NotImplemented
 
     # @staticmethod
@@ -2892,7 +2905,10 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
 
     def forward_transform_azimuth_Mmax0(self, field, axis, gdata, cdata):
         slice_axis = axis + len(field.tensorsig)
-        np.copyto(cdata[axslice(slice_axis, 0, 1)], gdata)
+        # do we need temp here? I'm worried that cdata and gdata are different views of the same buffer
+        temp = np.zeros(cdata.shape, dtype=cdata.dtype)
+        np.copyto(temp[axslice(slice_axis, 0, 1)], gdata)
+        np.copyto(cdata, temp)
 
     def forward_transform_azimuth(self, field, axis, gdata, cdata):
         # Call Fourier transform
@@ -2928,6 +2944,10 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
         cdata *= np.sqrt(2)
 
     def forward_transform_colatitude(self, field, axis, gdata, cdata):
+        # Expand gdata if mmax=0 and dtype=float for spin recombination
+        if self.mmax == 0 and self.dtype == np.float64:
+            m_axis = len(field.tensorsig) + self.axis
+            gdata = np.concatenate((gdata, np.zeros_like(gdata)), axis=m_axis)
         # Apply spin recombination from gdata to temp
         temp = np.zeros_like(gdata)
         self.forward_spin_recombination(field.tensorsig, gdata, temp)
@@ -2948,8 +2968,17 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
         gdata /= np.sqrt(2)
 
     def backward_transform_colatitude(self, field, axis, cdata, gdata):
-        # Transform component-by-component from cdata to temp
-        temp = np.zeros_like(gdata)
+        # Create temporary
+        if self.mmax == 0 and self.dtype == np.float64:
+            m_axis = len(field.tensorsig) + self.axis
+            shape = list(gdata.shape)
+            shape[m_axis] = 2
+            temp = np.zeros(shape, dtype=gdata.dtype)
+            # Expand gdata for spin recombination
+            gdata_orig = gdata
+            gdata = np.zeros(shape, dtype=gdata.dtype)
+        else:
+            temp = np.zeros_like(gdata)
         S = self.spin_weights(field.tensorsig)
         for i, s in np.ndenumerate(S):
             Ntheta = gdata[i].shape[axis]
@@ -2958,6 +2987,8 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
         # Apply spin recombination from temp to gdata
         gdata.fill(0)  # OPTIMIZE: shouldn't be necessary
         self.backward_spin_recombination(field.tensorsig, temp, gdata)
+        if self.mmax == 0 and self.dtype == np.float64:
+            gdata_orig[:] = gdata[axslice(m_axis, 0, 1)]
 
     @staticmethod
     def k(l, s, mu):
@@ -3016,6 +3047,70 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
                 elif len(tensorsig) == 1:
                     valid[:, (ell == 0) * (elements[0] % 2 == 1)] = False
             return valid
+
+    def ell_size(self, m):
+        return self.Lmax + 1 - abs(m)
+
+    @CachedMethod
+    def operator_matrix(self, op, m, spintotal, size=None):
+        if op in ['Cos']:
+            operator = dedalus_sphere.sphere.operator(op)
+        return operator(size-1, m, spintotal).square.astype(np.float64)
+
+    @CachedMethod
+    def sine_multiplication_matrix(self, m, spintotal, order, size=None):
+        if size is None:
+            size = self.ell_size(m)
+        if order == 0:
+            return sparse.identity(size)
+        else:
+            S = dedalus_sphere.sphere.operator('Sin')
+            if order < 0:
+                operator = S(-1)**abs(order)
+            else: # order > 0
+                operator = S(+1)**abs(order)
+        return (-1)**(max(0,-order))*operator(size - 1 + max(abs(m), abs(spintotal)), m, spintotal).square.astype(np.float64)
+
+    def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff):
+        m = subproblem.group[0]  # HACK
+        spintotal_arg = self.spintotal(arg_comp)
+        spintotal_ncc = self.spintotal(ncc_comp)
+        spintotal_out = self.spintotal(out_comp)
+        # Jacobi parameters
+        a_ncc = abs(spintotal_ncc)
+        b_ncc = abs(spintotal_ncc)
+        N = self.ell_size(m)
+        N0 = self.ell_size(0)
+        # Pad for dealiasing with conversion
+        Nmat = 3*((N0+1)//2)
+        J = arg_basis.operator_matrix('Cos', m, spintotal_arg, size=Nmat)
+        A, B = clenshaw.jacobi_recursion(Nmat, a_ncc, b_ncc, J)
+        f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0] * sparse.identity(Nmat)
+        # Sine and sign prefactors
+        prefactor = self.sine_multiplication_matrix(m, spintotal_arg, spintotal_ncc, size=Nmat)
+        if self.dtype == np.float64:
+            coeffs_cos_filter = coeffs[0].ravel()[abs(spintotal_ncc):N0]
+            coeffs_msin_filter = coeffs[1].ravel()[abs(spintotal_ncc):N0]
+            # ell_min of data is based off |m|, but ell_min of matrix takes into account |s| and |m|
+            lmin_out = max(abs(spintotal_out) - abs(m), 0)
+            lmin_arg = max(abs(spintotal_arg) - abs(m), 0 )
+            matrix_cos = sparse.csr_matrix((N, N))
+            matrix_cos[lmin_out:,lmin_arg:] = (prefactor @ clenshaw.matrix_clenshaw(coeffs_cos_filter, A, B, f0, cutoff=cutoff))[:N-lmin_out,:N-lmin_arg]
+            matrix_msin = sparse.csr_matrix((N, N))
+            matrix_msin[lmin_out:,lmin_arg:] = (prefactor @ clenshaw.matrix_clenshaw(coeffs_msin_filter, A, B, f0, cutoff=cutoff))[:N-lmin_out,:N-lmin_arg]
+            matrix = sparse.bmat([[matrix_cos, -matrix_msin], [matrix_msin, matrix_cos]], format='csr')
+            if m >= arg_basis.mmax//4:
+                matrix = matrix[::-1, ::-1] #for second half of m's, ell's go in opposite direction 
+        elif self.dtype == np.complex128:
+            coeffs_filter = coeffs.ravel()[abs(spintotal_ncc):N0]
+            # ell_min of data is based off |m|, but ell_min of matrix takes into account |s| and |m|
+            lmin_out = max(abs(spintotal_out) - abs(m), 0)
+            lmin_arg = max(abs(spintotal_arg) - abs(m), 0 )
+            matrix = sparse.csr_matrix((N, N))
+            matrix[lmin_out:,lmin_arg:] = (prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff))[:N-lmin_out,:N-lmin_arg]
+            if m < 0:
+                matrix = matrix[::-1, ::-1] #for negative m, ell's go in opposite direction
+        return matrix
 
 
 class ConvertConstantSphere(operators.ConvertConstant, operators.SeparableSphereOperator):
