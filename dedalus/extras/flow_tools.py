@@ -95,7 +95,7 @@ class GlobalFlowProperty:
         if precompute_integral:
             # Add integral under slightly obscured name
             task_op = self.properties.tasks[-1]['operator']
-            integral_op = operators.integrate(task_op)
+            integral_op = operators.Integrate(task_op)
             integral_name = '_{}_integral'.format(name)
             self.properties.add_task(integral_op, layout='g', name=integral_name)
 
@@ -123,7 +123,7 @@ class GlobalFlowProperty:
         except KeyError:
             # Compute volume integral
             field = self.properties[name]
-            integral_op = operators.integrate(field)
+            integral_op = operators.Integrate(field)
             integral_field = integral_op.evaluate()
         # Communicate integral value to all processes
         integral_value = self.reducer.global_max(integral_field['g'])
