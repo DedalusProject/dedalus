@@ -25,7 +25,7 @@ def build_shell(Nphi, Ntheta, Nr, radii_shell, dealias, dtype, grid_scale=1):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
     dealias_tuple = (dealias, dealias, dealias)
-    b = basis.SphericalShellBasis(c, (Nphi, Ntheta, Nr), radii=radii_shell, dealias=dealias_tuple, dtype=dtype)
+    b = basis.ShellBasis(c, (Nphi, Ntheta, Nr), radii=radii_shell, dealias=dealias_tuple, dtype=dtype)
     grid_scale_tuple = (grid_scale, grid_scale, grid_scale)
     phi, theta, r = b.local_grids(grid_scale_tuple)
     x, y, z = c.cartesian(phi, theta, r)

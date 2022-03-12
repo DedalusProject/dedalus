@@ -539,7 +539,7 @@ def test_polar_tensor_roundtrip_mmax0(Nr, radius, alpha, k, dealias, dtype, buil
 def build_shell(Nphi, Ntheta, Nr, radii, alpha, k, dealias, dtype):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    b  = basis.SphericalShellBasis(c, (Nphi, Ntheta, Nr), radii=radii, alpha=alpha, k=k, dealias=(dealias, dealias, dealias), dtype=dtype)
+    b  = basis.ShellBasis(c, (Nphi, Ntheta, Nr), radii=radii, alpha=alpha, k=k, dealias=(dealias, dealias, dealias), dtype=dtype)
     phi, theta, r = b.local_grids((dealias, dealias, dealias))
     x = r * np.sin(theta) * np.cos(phi)
     y = r * np.sin(theta) * np.sin(phi)

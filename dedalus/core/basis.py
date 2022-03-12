@@ -313,6 +313,7 @@ class IntervalBasis(Basis):
         self.size = size
         self.shape = (size,)
         self.bounds = bounds
+        self.volume = bounds[1] - bounds[0]
         if isinstance(dealias, tuple):
             self.dealias = dealias
         else:
@@ -1960,6 +1961,7 @@ class AnnulusBasis(PolarBasis):
                 radius_library = "matrix"
         self.radius_library = radius_library
         self.radii = tuple(radii)
+        self.volume = np.pi * (radii[1]**2 - radii[0]**2)
         self.dR = radii[1] - radii[0]
         self.rho = (radii[1] + radii[0])/self.dR
         self.alpha = tuple(alpha)
@@ -2207,6 +2209,7 @@ class DiskBasis(PolarBasis, metaclass=CachedClass):
             radius_library = "matrix"
         self.radius_library = radius_library
         self.radius = radius
+        self.volume = np.pi * radius**2
         self.alpha = alpha
         self.radial_COV = AffineCOV((0, 1), (0, radius))
         if self.mmax > 2*self.Nmax:
@@ -2538,6 +2541,7 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
         if colatitude_library is None:
             colatitude_library = "matrix"
         self.radius = radius
+        self.volume = 4 * np.pi * radius**2
         self.colatitude_library = colatitude_library
         # Set Lmax for optimal load balancing
         if self.dtype == np.float64:
@@ -3153,7 +3157,7 @@ class SphereLaplacian(operators.Laplacian, operators.SeparableSphereOperator):
         return k_lap / radius**2
 
 
-# These are common for BallRadialBasis and SphericalShellRadialBasis
+# These are common for BallRadialBasis and ShellRadialBasis
 class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
 
     dim = 3
@@ -3414,7 +3418,7 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
         return slice(nmin, nmax+1)
 
 
-class SphericalShellRadialBasis(RegularityBasis, metaclass=CachedClass):
+class ShellRadialBasis(RegularityBasis, metaclass=CachedClass):
 
     def __init__(self, coordsystem, radial_size, dtype, radii=(1,2), alpha=(-0.5,-0.5), dealias=(1,), k=0, radius_library=None):
         super().__init__(coordsystem, radial_size, k=k, dealias=dealias, dtype=dtype)
@@ -3426,6 +3430,7 @@ class SphericalShellRadialBasis(RegularityBasis, metaclass=CachedClass):
             else:
                 radius_library = "matrix"
         self.radii = radii
+        self.volume = 4 / 3 * np.pi * (radii[1]**3 - radii[0]**3)
         self.dR = self.radii[1] - self.radii[0]
         self.rho = (self.radii[1] + self.radii[0])/self.dR
         self.alpha = alpha
@@ -3439,7 +3444,7 @@ class SphericalShellRadialBasis(RegularityBasis, metaclass=CachedClass):
                                     self.backward_transform_radius]
 
     def __eq__(self, other):
-        if isinstance(other, SphericalShellRadialBasis):
+        if isinstance(other, ShellRadialBasis):
             if self.coordsystem == other.coordsystem:
                 if self.grid_params == other.grid_params:
                     if self.k == other.k:
@@ -3454,7 +3459,7 @@ class SphericalShellRadialBasis(RegularityBasis, metaclass=CachedClass):
             return self
         if other is self:
             return self
-        if isinstance(other, SphericalShellRadialBasis):
+        if isinstance(other, ShellRadialBasis):
             if self.grid_params == other.grid_params:
                 radial_size = max(self.shape[2], other.shape[2])
                 k = max(self.k, other.k)
@@ -3464,7 +3469,7 @@ class SphericalShellRadialBasis(RegularityBasis, metaclass=CachedClass):
     def __mul__(self, other):
         if other is None:
             return self
-        if isinstance(other, SphericalShellRadialBasis):
+        if isinstance(other, ShellRadialBasis):
             if self.grid_params == other.grid_params:
                 radial_size = max(self.shape[2], other.shape[2])
                 k = self.k + other.k
@@ -3482,7 +3487,7 @@ class SphericalShellRadialBasis(RegularityBasis, metaclass=CachedClass):
             args['azimuth_library'] = other.azimuth_library
             args['colatitude_library'] = other.colatitude_library
             args['radius_library'] = self.radius_library
-            return SphericalShellBasis(**args)
+            return ShellBasis(**args)
         return NotImplemented
 
     def __matmul__(self, other):
@@ -3491,7 +3496,7 @@ class SphericalShellRadialBasis(RegularityBasis, metaclass=CachedClass):
     def __rmatmul__(self, other):
         if other is None:
             return self
-        if isinstance(other, SphericalShellRadialBasis):
+        if isinstance(other, ShellRadialBasis):
             if self.grid_params == other.grid_params:
                 radial_size = max(self.shape[2], other.shape[2])
                 k = self.k + other.k
@@ -3650,6 +3655,7 @@ class BallRadialBasis(RegularityBasis, metaclass=CachedClass):
         if radius_library is None:
             radius_library = "matrix"
         self.radius = radius
+        self.volume = 4 / 3 * np.pi * radius**3
         self.alpha = alpha
         self.radial_COV = AffineCOV((0, 1), (0, radius))
         self.radius_library = radius_library
@@ -4052,15 +4058,16 @@ class Spherical3DBasis(MultidimensionalBasis):
             raise ValueError("Cannot build NCCs of non-radial fields.")
 
 
-class SphericalShellBasis(Spherical3DBasis, metaclass=CachedClass):
+class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
 
     def __init__(self, coordsystem, shape, dtype, radii=(1,2), alpha=(-0.5,-0.5), dealias=(1,1,1), k=0, azimuth_library=None, colatitude_library=None, radius_library=None):
         if np.isscalar(dealias):
             dealias = (dealias, dealias, dealias)
         self.alpha = alpha
         self.radii = radii
+        self.volume = 4 / 3 * np.pi * (radii[1]**3 - radii[0]**3)
         self.radius_library = radius_library
-        self.radial_basis = SphericalShellRadialBasis(coordsystem, shape[2], radii=radii, alpha=alpha, dealias=(dealias[2],), k=k, dtype=dtype, radius_library=radius_library)
+        self.radial_basis = ShellRadialBasis(coordsystem, shape[2], radii=radii, alpha=alpha, dealias=(dealias[2],), k=k, dtype=dtype, radius_library=radius_library)
         Spherical3DBasis.__init__(self, coordsystem, shape[:2], dealias[:2], self.radial_basis, dtype=dtype, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
         self.grid_params = (coordsystem, radii, alpha, dealias)
 #        self.forward_transform_radius = self.radial_basis.forward_transform
@@ -4073,7 +4080,7 @@ class SphericalShellBasis(Spherical3DBasis, metaclass=CachedClass):
                                     self.backward_transform_radius]
 
     def __eq__(self, other):
-        if isinstance(other, SphericalShellBasis):
+        if isinstance(other, ShellBasis):
             if self.coordsystem == other.coordsystem:
                 if self.grid_params == other.grid_params:
                     if self.k == other.k:
@@ -4088,11 +4095,11 @@ class SphericalShellBasis(Spherical3DBasis, metaclass=CachedClass):
             return self
         if other is self:
             return self
-        if isinstance(other, SphericalShellBasis):
+        if isinstance(other, ShellBasis):
             if self.grid_params == other.grid_params:
                 shape = tuple(np.maximum(self.shape, other.shape))
                 k = max(self.k, other.k)
-                return SphericalShellBasis(self.coordsystem, shape, radii=self.radial_basis.radii, alpha=self.radial_basis.alpha, dealias=self.dealias, k=k,
+                return ShellBasis(self.coordsystem, shape, radii=self.radial_basis.radii, alpha=self.radial_basis.alpha, dealias=self.dealias, k=k,
                                            dtype=self.dtype, azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
                                            radius_library=self.radial_basis.radius_library)
         return NotImplemented
@@ -4100,14 +4107,14 @@ class SphericalShellBasis(Spherical3DBasis, metaclass=CachedClass):
     def __mul__(self, other):
         if other is None:
             return self
-        if isinstance(other, SphericalShellBasis):
+        if isinstance(other, ShellBasis):
             if self.grid_params == other.grid_params:
                 shape = tuple(np.maximum(self.shape, other.shape))
                 k = 0
-                return SphericalShellBasis(self.coordsystem, shape, radii=self.radial_basis.radii, alpha=self.radial_basis.alpha, dealias=self.dealias, k=k,
+                return ShellBasis(self.coordsystem, shape, radii=self.radial_basis.radii, alpha=self.radial_basis.alpha, dealias=self.dealias, k=k,
                                            dtype=self.dtype, azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
                                            radius_library=self.radial_basis.radius_library)
-        if isinstance(other, SphericalShellRadialBasis):
+        if isinstance(other, ShellRadialBasis):
             radial_basis = other * self.radial_basis
             return self._new_k(radial_basis.k)
         return NotImplemented
@@ -4115,13 +4122,13 @@ class SphericalShellBasis(Spherical3DBasis, metaclass=CachedClass):
     def __rmatmul__(self, other):
         if other is None:
             return self
-        if isinstance(other, SphericalShellRadialBasis):
+        if isinstance(other, ShellRadialBasis):
             radial_basis = other @ self.radial_basis
             return self._new_k(radial_basis.k)
         return NotImplemented
 
     def _new_k(self, k):
-        return SphericalShellBasis(self.coordsystem, self.shape, radii=self.radial_basis.radii, alpha=self.radial_basis.alpha, dealias=self.dealias, k=k,
+        return ShellBasis(self.coordsystem, self.shape, radii=self.radial_basis.radii, alpha=self.radial_basis.alpha, dealias=self.dealias, k=k,
                                    dtype=self.dtype, azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
                                    radius_library=self.radial_basis.radius_library)
 
@@ -4162,9 +4169,6 @@ class SphericalShellBasis(Spherical3DBasis, metaclass=CachedClass):
             gdata *= radial_basis.radial_transform_factor(field.scales[axis], data_axis, self.k)
 
 
-ShellBasis = SphericalShellBasis
-
-
 class BallBasis(Spherical3DBasis, metaclass=CachedClass):
 
     transforms = {}
@@ -4174,6 +4178,7 @@ class BallBasis(Spherical3DBasis, metaclass=CachedClass):
             dealias = (dealias, dealias, dealias)
         self.alpha = alpha
         self.radius = radius
+        self.volume = 4 / 3 * np.pi * radius**3
         self.radius_library = radius_library
         self.radial_basis = BallRadialBasis(coordsystem, shape[2], radius=radius, k=k, alpha=alpha, dealias=(dealias[2],), dtype=dtype, radius_library=radius_library)
         Spherical3DBasis.__init__(self, coordsystem, shape[:2], dealias[:2], self.radial_basis, dtype=dtype, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
@@ -4347,7 +4352,7 @@ class ConvertConstantBall(operators.ConvertConstant, operators.SphericalEllOpera
 
 class ConvertConstantShell(operators.ConvertConstant, operators.SphericalEllOperator):
 
-    output_basis_type = (ShellBasis, SphericalShellRadialBasis)
+    output_basis_type = (ShellBasis, ShellRadialBasis)
     subaxis_dependence = [False, True, True]
     subaxis_coupling = [False, False, True]
 
@@ -4657,7 +4662,7 @@ class LiftBallRadius(operators.Lift, operators.SphericalEllOperator):
 class LiftShell(operators.Lift, operators.SphericalEllOperator):
 
     input_basis_type = SphereBasis
-    output_basis_type = SphericalShellBasis
+    output_basis_type = ShellBasis
 
     def regindex_out(self, regindex_in):
         return (regindex_in,)
@@ -5252,9 +5257,9 @@ class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperato
         return reshape_vector(basis.interpolation(ell, regtotal, position), dim=2, axis=1)
 
 
-class SphericalShellRadialInterpolate(operators.Interpolate, operators.SphericalEllOperator):
+class ShellRadialInterpolate(operators.Interpolate, operators.SphericalEllOperator):
 
-    basis_type = SphericalShellBasis
+    basis_type = ShellBasis
     basis_subaxis = 2
 
     def __init__(self, operand, coord, position, out=None):

@@ -731,6 +731,37 @@ class Field(Current):
     def allreduce_data_max(self, layout=None):
         return self.allreduce_data_norm(layout=layout, order=np.inf)
 
+    def allreduce_L2_norm(self, normalize_volume=True):
+        from . import arithmetic
+        from . import operators
+        # Compute local self inner product
+        rank = len(self.tensorsig)
+        if rank == 0:
+            self_inner_product = np.conj(self) * self
+        elif rank == 1:
+            self_inner_product = arithmetic.dot(np.conj(self), self)
+        elif rank == 2:
+            self_inner_product = arithmetic.Trace(arithmetic.Dot(operators.Transpose(np.conj(self)), self))
+        else:
+            raise ValueError("Norms only implemented up to rank-2 tensors.")
+        # Compute L2 norm
+        norm_sq = operators.Integrate(self_inner_product).evaluate().allreduce_data_max()
+        if normalize_volume:
+            norm_sq /= self.domain.volume
+        return norm_sq ** 0.5
+
+    def normalize(self, normalize_volume=True):
+        """
+        Normalize field inplace using L2 norm.
+
+        Parameters
+        ----------
+        normalize_volume : bool, optional
+            Normalize inner product by domain volume. Default: True.
+        """
+        norm = self.allreduce_L2_norm(normalize_volume=normalize_volume)
+        self.data /= norm
+
     def broadcast_ghosts(self, output_nonconst_dims):
         """Copy data over constant distributed dimensions for arithmetic broadcasting."""
         # Determine deployment dimensions

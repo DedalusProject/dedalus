@@ -2,7 +2,7 @@
 import pytest
 import numpy as np
 from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, arithmetic
-from dedalus.core.basis import BallBasis, SphericalShellBasis
+from dedalus.core.basis import BallBasis, ShellBasis
 from dedalus.tools.cache import CachedFunction
 
 
@@ -23,7 +23,7 @@ def build_ball(Nphi, Ntheta, Nr, alpha, dealias, dtype):
 def build_shell(Nphi, Ntheta, Nr, alpha, dealias, dtype):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    b = SphericalShellBasis(c, (Nphi, Ntheta, Nr), alpha=(-0.5+alpha,-0.5+alpha), radii=radii_shell, dealias=(dealias, dealias, dealias), dtype=dtype)
+    b = ShellBasis(c, (Nphi, Ntheta, Nr), alpha=(-0.5+alpha,-0.5+alpha), radii=radii_shell, dealias=(dealias, dealias, dealias), dtype=dtype)
     phi, theta, r = b.local_grids()
     x, y, z = c.cartesian(phi, theta, r)
     return c, d, b, phi, theta, r, x, y, z

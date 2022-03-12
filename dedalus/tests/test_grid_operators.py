@@ -43,7 +43,7 @@ def build_ball(Nphi, Ntheta, Nr, dtype, dealias, radius=1):
 def build_shell(Nphi, Ntheta, Nr, dtype, dealias, radii=(0.5,1)):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
-    b = basis.SphericalShellBasis(c, (Nphi, Ntheta, Nr), radii=radii, dtype=dtype, dealias=(dealias, dealias, dealias))
+    b = basis.ShellBasis(c, (Nphi, Ntheta, Nr), radii=radii, dtype=dtype, dealias=(dealias, dealias, dealias))
     phi, theta, r = b.local_grids()
     x, y, z = c.cartesian(phi, theta, r)
     return c, d, b, phi, theta, r, x, y, z

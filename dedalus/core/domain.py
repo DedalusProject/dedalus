@@ -6,6 +6,7 @@ import logging
 import numpy as np
 from collections import OrderedDict
 
+from ..tools.array import prod
 from ..tools.cache import CachedMethod, CachedClass, CachedAttribute
 from ..tools.general import unify_attributes, unify, OrderedSet
 from .coords import Coordinate, CartesianCoordinates
@@ -44,6 +45,10 @@ class Domain(metaclass=CachedClass):
         self.dist = dist
         self.bases = bases  # Preprocessed to remove Nones and duplicates
         self.dim = sum(basis.dim for basis in self.bases)
+
+    @CachedAttribute
+    def volume(self):
+        return prod([basis.volume for basis in self.bases])
 
     @CachedAttribute
     def bases_by_axis(self):

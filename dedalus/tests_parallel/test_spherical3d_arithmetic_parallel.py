@@ -32,7 +32,7 @@ radii_shell = (1, 2)
 def build_shell(Nphi, Ntheta, Nr, dtype, dealias, mesh=None):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,), mesh=mesh)
-    b = basis.SphericalShellBasis(c, (Nphi, Ntheta, Nr), radii=radii_shell, dtype=dtype, dealias=(dealias, dealias, dealias))
+    b = basis.ShellBasis(c, (Nphi, Ntheta, Nr), radii=radii_shell, dtype=dtype, dealias=(dealias, dealias, dealias))
     phi, theta, r = b.local_grids()
     x, y, z = c.cartesian(phi, theta, r)
     return c, d, b, phi, theta, r, x, y, z
