@@ -1,0 +1,56 @@
+# Following:
+# https://dev.to/epassaro/caching-anaconda-environments-in-github-actions-5hde
+# https://github.com/epassaro/cache-conda-envs
+
+name: test_dedalus3
+on:
+  workflow_dispatch:
+env:
+  CACHE_NUMBER: 0 # increase to reset cache manually
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: ubuntu-latest
+            prefix: /usr/share/miniconda3/envs/dedalus3
+          - os: macos-latest
+            label: macos-latest
+            prefix: /Users/runner/miniconda3/envs/dedalus3
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Setup miniforge
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          miniforge-version: latest
+          auto-activate-base: true
+          activate-environment: ""
+      - name: Set cache date
+        run: echo "DATE=$(date +'%Y%m%d')" >> $GITHUB_ENV
+      - name: Check stack cache
+        uses: actions/cache@v2
+        with:
+          path: ${{ matrix.prefix }}
+          key: ${{ matrix.label }}-stack-${{ env.DATE }}-${{ env.CACHE_NUMBER }}
+        id: cache
+      - name: Run conda installation (stack cache miss)
+        if: steps.cache.outputs.cache-hit != 'true'
+        shell: bash -l {0}
+        run: |
+          curl https://raw.githubusercontent.com/DedalusProject/dedalus_conda/master/install_dedalus3_conda.sh --output install_dedalus3_conda.sh
+          bash install_dedalus3_conda.sh
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Update Dedalus from repository
+        shell: bash -l {0}
+        run: |
+          conda activate dedalus3
+          pip uninstall -y dedalus3
+          pip install --no-cache .
+      - name: Test Dedalus
+        shell: bash -l {0}
+        run: |
+          conda activate dedalus3
+          python3 -m dedalus test
