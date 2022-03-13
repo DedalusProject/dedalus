@@ -73,8 +73,8 @@ grad_b = d3.grad(b) + rvec*lift(tau_b1) # First-order reduction
 # Problem
 problem = d3.IVP([p, b, u, tau_p, tau_b1, tau_b2, tau_u1, tau_u2], namespace=locals())
 problem.add_equation("trace(grad_u) + tau_p = 0")
-problem.add_equation("dt(b) - kappa*div(grad_b) + lift(tau_b2) = - dot(u,grad(b))")
-problem.add_equation("dt(u) - nu*div(grad_u) + grad(p) - b*er + lift(tau_u2) = - dot(u,grad(u))")
+problem.add_equation("dt(b) - kappa*div(grad_b) + lift(tau_b2) = - u@grad(b)")
+problem.add_equation("dt(u) - nu*div(grad_u) + grad(p) - b*er + lift(tau_u2) = - u@grad(u)")
 problem.add_equation("b(r=Ri) = 1")
 problem.add_equation("u(r=Ri) = 0")
 problem.add_equation("b(r=Ro) = 0")
@@ -91,10 +91,7 @@ b['g'] *= (r - Ri) * (Ro - r) # Damp noise at walls
 b['g'] += (Ri - Ri*Ro/r) / (Ri - Ro) # Add linear background
 
 # Analysis
-db = b# - d3.Average(b, coords.S2coordsys)
-flux = d3.dot(er, -kappa*d3.grad(db) + db*u)
-#db.store_last = True
-flux.store_last = True
+flux = er @ (-kappa*d3.grad(b) + u*b)
 snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=10, max_writes=10)
 snapshots.add_task(b(r=(Ri+Ro)/2), scales=dealias, name='bmid')
 snapshots.add_task(flux(r=Ro), scales=dealias, name='flux_r_outer')
@@ -109,7 +106,7 @@ CFL.add_velocity(u)
 
 # Flow properties
 flow = d3.GlobalFlowProperty(solver, cadence=10)
-flow.add_property(np.sqrt(d3.dot(u,u))/nu, name='Re')
+flow.add_property(np.sqrt(u@u)/nu, name='Re')
 
 # Main loop
 try:

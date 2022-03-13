@@ -27,7 +27,7 @@ For example, to simulate incompressible hydrodynamics in a ball, you can symboli
 
 ```python
 problem.add_equation("div(u) + tau_p = 0")
-problem.add_equation("dt(u) - nu*lap(u) + grad(p) + lift(tau_u) = - dot(u,grad(u))")
+problem.add_equation("dt(u) - nu*lap(u) + grad(p) + lift(tau_u) = - u@grad(u)")
 problem.add_equation("u(r=1) = 0")
 problem.add_equation("integ(p) = 0")
 ```

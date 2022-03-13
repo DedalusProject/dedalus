@@ -56,8 +56,8 @@ ex, ez = coords.unit_vector_fields(dist)
 
 # Problem
 problem = d3.IVP([u, s, p, tau_p], namespace=locals())
-problem.add_equation("dt(u) + grad(p) - nu*lap(u) = - dot(u,grad(u))")
-problem.add_equation("dt(s) - D*lap(s) = - dot(u,grad(s))")
+problem.add_equation("dt(u) + grad(p) - nu*lap(u) = - u@grad(u)")
+problem.add_equation("dt(s) - D*lap(s) = - u@grad(s)")
 problem.add_equation("div(u) + tau_p = 0")
 problem.add_equation("integ(p) = 0") # Pressure gauge
 
@@ -87,7 +87,7 @@ CFL.add_velocity(u)
 
 # Flow properties
 flow = d3.GlobalFlowProperty(solver, cadence=10)
-flow.add_property(d3.dot(u,ez)**2, name='w2')
+flow.add_property((u@ez)**2, name='w2')
 
 # Main loop
 try:

@@ -65,7 +65,7 @@ u['g'][0][jet]  = u_jet
 # Initial conditions: balanced height
 c = dist.Field(name='c')
 problem = d3.LBVP([h, c], namespace=locals())
-problem.add_equation("g*lap(h) + c = - div(dot(u, grad(u)) + 2*Omega*zcross(u))")
+problem.add_equation("g*lap(h) + c = - div(u@grad(u) + 2*Omega*zcross(u))")
 problem.add_equation("ave(h) = 0")
 solver = problem.build_solver()
 solver.solve()
@@ -79,7 +79,7 @@ h['g'] += hpert * np.cos(lat) * np.exp(-(phi/alpha)**2) * np.exp(-((lat2-lat)/be
 
 # Problem
 problem = d3.IVP([u, h], namespace=locals())
-problem.add_equation("dt(u) + nu*lap(lap(u)) + g*grad(h) + 2*Omega*zcross(u) = - dot(u, grad(u))")
+problem.add_equation("dt(u) + nu*lap(lap(u)) + g*grad(h) + 2*Omega*zcross(u) = - u@grad(u)")
 problem.add_equation("dt(h) + nu*lap(lap(h)) + H*div(u) = - div(h*u)")
 
 # Solver

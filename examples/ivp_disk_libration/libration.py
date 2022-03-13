@@ -66,7 +66,7 @@ u0 = np.cos(t) * u0_real - np.sin(t) * u0_imag
 # Problem
 problem = d3.IVP([p, u, tau_u, tau_p], time=t, namespace=locals())
 problem.add_equation("div(u) + tau_p = 0")
-problem.add_equation("dt(u) - nu*lap(u) + grad(p) + lift(tau_u) = - dot(u, grad(u0)) - dot(u0, grad(u))")
+problem.add_equation("dt(u) - nu*lap(u) + grad(p) + lift(tau_u) = - u@grad(u0) - u0@grad(u)")
 problem.add_equation("u(r=1) = 0")
 problem.add_equation("integ(p) = 0")
 
@@ -82,11 +82,11 @@ u.low_pass_filter(scales=0.25) # Keep only lower fourth of the modes
 snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=0.1, max_writes=20)
 snapshots.add_task(-d3.div(d3.skew(u)), scales=(4, 1), name='vorticity')
 scalars = solver.evaluator.add_file_handler('scalars', sim_dt=0.01)
-scalars.add_task(d3.integ(0.5*d3.dot(u,u)), name='KE')
+scalars.add_task(d3.integ(0.5*u@u), name='KE')
 
 # Flow properties
 flow = d3.GlobalFlowProperty(solver, cadence=100)
-flow.add_property(d3.dot(u,u), name='u2')
+flow.add_property(u@u, name='u2')
 
 # Main loop
 try:

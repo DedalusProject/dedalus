@@ -71,8 +71,8 @@ grad_b = d3.grad(b) + ez*lift(tau_b1) # First-order reduction
 # First-order form: "lap(f)" becomes "div(grad_f)"
 problem = d3.IVP([p, b, u, tau_p, tau_b1, tau_b2, tau_u1, tau_u2], namespace=locals())
 problem.add_equation("trace(grad_u) + tau_p = 0")
-problem.add_equation("dt(b) - kappa*div(grad_b) + lift(tau_b2) = - dot(u,grad(b))")
-problem.add_equation("dt(u) - nu*div(grad_u) + grad(p) - b*ez + lift(tau_u2) = - dot(u,grad(u))")
+problem.add_equation("dt(b) - kappa*div(grad_b) + lift(tau_b2) = - u@grad(b)")
+problem.add_equation("dt(u) - nu*div(grad_u) + grad(p) - b*ez + lift(tau_u2) = - u@grad(u)")
 problem.add_equation("b(z=0) = Lz")
 problem.add_equation("u(z=0) = 0")
 problem.add_equation("b(z=Lz) = 0")
@@ -100,7 +100,7 @@ CFL.add_velocity(u)
 
 # Flow properties
 flow = d3.GlobalFlowProperty(solver, cadence=10)
-flow.add_property(np.sqrt(d3.dot(u,u))/nu, name='Re')
+flow.add_property(np.sqrt(u@u)/nu, name='Re')
 
 # Main loop
 startup_iter = 10

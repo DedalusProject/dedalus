@@ -18,7 +18,7 @@ At first glance, we might think to build the problem variables and specify the e
     # Problem
     problem = d3.IVP([p, u], namespace=locals())
     problem.add_equation("div(u) = 0")
-    problem.add_equation("dt(u) + grad(p) - nu*lap(u) = - dot(u,grad(u))")
+    problem.add_equation("dt(u) + grad(p) - nu*lap(u) = - u@grad(u)")
 
 This formulation produces square matrices (same number of modes in the equations as the variables), but they are not all nonsingular.
 The problem is that the pressure gauge is undetermined -- any constant can be added to the pressure without affecting any of the equations.
@@ -42,7 +42,7 @@ Another option is to expand the system by adding a spatially-constant variable (
     # Problem
     problem = d3.IVP([p, u, tau_p], namespace=locals())
     problem.add_equation("div(u) + tau_p = 0")
-    problem.add_equation("dt(u) + grad(p) - nu*lap(u) = - dot(u,grad(u))")
+    problem.add_equation("dt(u) + grad(p) - nu*lap(u) = - u@grad(u)")
     problem.add_equation("integ(p) = 0")
 
 We've added a single additional degree of freedom to the variables and a single additional constraint, so this system is still square.

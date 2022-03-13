@@ -80,7 +80,7 @@ shear_stress = d3.angular(d3.radial(strain_rate(r=1), index=1))
 problem = d3.IVP([p, u, T, tau_p, tau_u, tau_T], namespace=locals())
 problem.add_equation("div(u) + tau_p = 0")
 problem.add_equation("dt(u) - nu*lap(u) + grad(p) - r_vec*T + lift(tau_u) = - cross(curl(u),u)")
-problem.add_equation("dt(T) - kappa*lap(T) + lift(tau_T) = - dot(u,grad(T)) + kappa*T_source")
+problem.add_equation("dt(T) - kappa*lap(T) + lift(tau_T) = - u@grad(T) + kappa*T_source")
 problem.add_equation("shear_stress = 0")  # Stress free
 problem.add_equation("radial(u(r=1)) = 0")  # No penetration
 problem.add_equation("radial(grad(T)(r=1)) = -2")
@@ -117,7 +117,7 @@ CFL.add_velocity(u)
 
 # Flow properties
 flow = d3.GlobalFlowProperty(solver, cadence=10)
-flow.add_property(d3.dot(u,u), name='u2')
+flow.add_property(u@u, name='u2')
 
 # Main loop
 try:

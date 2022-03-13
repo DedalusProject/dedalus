@@ -110,6 +110,16 @@ class Operand:
         from .arithmetic import Multiply
         return Multiply(other, self)
 
+    def __matmul__(self, other):
+        # Call: self @ other
+        from .arithmetic import DotProduct
+        return DotProduct(self, other)
+
+    def __rmathmul__(self, other):
+        # Call: other @ self
+        from .arithmetic import DotProduct
+        return DotProduct(other, self)
+
     def __truediv__(self, other):
         # Call: self / other
         return (self * other**(-1))

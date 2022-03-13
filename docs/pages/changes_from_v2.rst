@@ -96,7 +96,7 @@ Vector calculus operators
 Along with vector and tensor-valued fields, vectorial differential operators (``Gradient``, ``Divergence``, ``Curl``, and ``Laplacian``) are now available.
 This dramatically simplifies the symbolic specification of vector and tensor-valued equations, particularly in curvilinear coordinates.
 Individual partial derivative operators are now usually just used in 1D equations.
-Vector algebra operations (dot products, cross products, and outer products) are also available through the ``Dot``, ``Cross``, and regular multiplication operators.
+Vector algebra operations (dot products, cross products, and outer products) are also available through the ``Dot()`` or ``@``, ``Cross()``, and ``*`` operators.
 
 For instance, an operator for computing the strain rate tensor from a velocity field can be created like:
 
