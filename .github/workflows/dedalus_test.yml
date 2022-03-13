@@ -2,24 +2,22 @@
 # https://dev.to/epassaro/caching-anaconda-environments-in-github-actions-5hde
 # https://github.com/epassaro/cache-conda-envs
 
-name: test_dedalus3
+name: dedalus test
 on:
   workflow_dispatch:
 env:
   CACHE_NUMBER: 0 # increase to reset cache manually
 jobs:
-  build:
+  test:
+    name: Test workflow (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         include:
           - os: ubuntu-latest
-            label: ubuntu-latest
             prefix: /usr/share/miniconda3/envs/dedalus3
-          - os: macos-latest
-            label: macos-latest
-            prefix: /Users/runner/miniconda3/envs/dedalus3
-    name: ${{ matrix.label }}
-    runs-on: ${{ matrix.os }}
+          # - os: macos-latest
+          #   prefix: /Users/runner/miniconda3/envs/dedalus3
     steps:
       - name: Setup miniforge
         uses: conda-incubator/setup-miniconda@v2
@@ -33,9 +31,9 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ${{ matrix.prefix }}
-          key: ${{ matrix.label }}-stack-${{ env.DATE }}-${{ env.CACHE_NUMBER }}
+          key: ${{ matrix.os }}-stack-${{ env.DATE }}-${{ env.CACHE_NUMBER }}
         id: cache
-      - name: Run conda installation (stack cache miss)
+      - name: Run conda installation (only on cache miss)
         if: steps.cache.outputs.cache-hit != 'true'
         shell: bash -l {0}
         run: |
@@ -47,11 +45,21 @@ jobs:
         shell: bash -l {0}
         run: |
           conda activate dedalus3
-          pip uninstall -y dedalus3
+          pip uninstall -y dedalus
           pip install --no-cache .
       - name: Test Dedalus
         shell: bash -l {0}
         run: |
           conda activate dedalus3
-          cd ~
-          python3 -m dedalus test
+          # Move out of repository to run tests
+          cd $HOME
+          python3 -m dedalus test --report
+          # Copy report back to repository for test-reporter
+          cp dedalus-test-junit.xml $GITHUB_WORKSPACE
+      - name: Report test results
+        uses: dorny/test-reporter@v1
+        if: success() || failure()
+        with:
+          name: Test report (${{ matrix.os }})
+          path: dedalus-test-junit.xml
+          reporter: java-junit
