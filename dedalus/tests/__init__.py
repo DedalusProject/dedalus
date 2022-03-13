@@ -6,15 +6,27 @@ import pathlib
 
 file = pathlib.Path(__file__)
 root = file.parent
+testpath = str(root)
 
-def test():
+def base_cmd():
+    return ["-k", "not ncc", "--workers=auto"]
+
+def test(report=False):
     """Run tests."""
-    return pytest.main(["-k", "not ncc", "--workers=auto", "--benchmark-disable", str(root)])
+    cmd = base_cmd()
+    cmd.extend(["--benchmark-disable"])
+    if report:
+        cmd.append("--junitxml=dedalus-test-junit.xml")
+    return pytest.main(cmd + [testpath])
 
 def bench():
     """Run benchmarks."""
-    return pytest.main(["-k", "not ncc", "--workers=auto", "--benchmark-only", str(root)])
+    cmd = base_cmd()
+    cmd.extend(["--benchmark-only"])
+    return pytest.main(cmd + [testpath])
 
 def cov():
     """Print test coverage."""
-    return pytest.main(["-k", "not ncc", "--workers=auto", "--benchmark-disable", "--cov=dedalus.core", str(root)])
+    cmd = base_cmd()
+    cmd.extend(["--benchmark-disable", "--cov=dedalus.core"])
+    return pytest.main(cmd + [testpath])

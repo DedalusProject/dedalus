@@ -2,14 +2,11 @@
 Dedalus module interface.
 
 Usage:
-    dedalus test
+    dedalus test [--report]
     dedalus bench
     dedalus cov
     dedalus get_config
     dedalus get_examples
-
-Options:
-    --cleanup   Delete distributed files after merging
 
 """
 
@@ -25,7 +22,7 @@ if __name__ == "__main__":
 
     args = docopt(__doc__)
     if args['test']:
-        sys.exit(test())
+        sys.exit(test(report=args['--report']))
     elif args['bench']:
         sys.exit(bench())
     elif args['cov']:
