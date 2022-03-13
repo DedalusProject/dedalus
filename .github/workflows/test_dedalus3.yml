@@ -53,4 +53,5 @@ jobs:
         shell: bash -l {0}
         run: |
           conda activate dedalus3
+          cd ~
           python3 -m dedalus test
