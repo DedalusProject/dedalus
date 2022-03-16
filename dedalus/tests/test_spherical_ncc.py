@@ -45,6 +45,34 @@ def k_out_ball(k_ncc, k_arg, f, g):
 def k_out_shell(k_ncc, k_arg):
     return k_ncc + k_arg
 
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('alpha', alpha_range)
+@pytest.mark.parametrize('k_ncc', k_range)
+@pytest.mark.parametrize('k_arg', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+def test_shell2D_scalar_prod_scalar(Nphi, Ntheta, Nr, alpha, k_ncc, k_arg, dealias, dtype):
+    c, d, b, phi, theta, r, x, y, z = build_shell(Nphi, Ntheta, Nr, alpha, dealias=dealias, dtype=dtype)
+    b_ncc = b.clone_with(k=k_ncc)
+    b_arg = b.clone_with(k=k_arg)
+    f = field.Field(dist=d, bases=(b_ncc,), dtype=dtype)
+    g = field.Field(dist=d, bases=(b_arg,), dtype=dtype)
+    f['g'] = np.cos(theta)**2*r**2
+    g['g'] = 3*(r*np.sin(theta)*np.cos(phi))**2 + 2*r**4*(np.sin(theta)*np.sin(phi))
+    k_out = k_out_shell(k_ncc, k_arg)
+    vars = [g]
+    w0 = f * g
+    w1 = w0.reinitialize(ncc=True, ncc_vars=vars)
+    problem = problems.LBVP(vars)
+    problem.add_equation((w1, 0))
+    solver = solvers.LinearBoundaryValueSolver(problem)
+    w1.store_ncc_matrices(vars, solver.subproblems)
+    w0 = w0.evaluate()
+    w1 = w1.evaluate_as_ncc()
+    assert np.allclose(w0['c'], w1['c'])
+
 
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
