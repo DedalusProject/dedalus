@@ -295,7 +295,8 @@ class Basis:
         separability = ~ subproblem.problem.matrix_coupling
         #return = self._ncc_matrix_recursion(ncc_data, ncc.tensorsig, ncc.bases, operand.bases, operand.tensorsig, separability, self.gamma_args, **kw)
         ncc_basis = product.ncc.domain.get_basis(axis)
-        arg_basis = product.operand.get_basis(axis)
+        arg_basis = product.operand.domain.get_basis(axis)
+        out_basis = product.domain.get_basis(axis)
         ncc_ts = ncc.tensorsig
         coeffs = ncc_data
         arg_ts = operand.tensorsig
@@ -330,7 +331,7 @@ class Basis:
                                 raise NotImplementedError()
                             matrix = coeffs[ncc_comp].ravel()[0] * sparse.eye(M, N)
                         else:
-                            matrix = ncc_basis.multiplication_matrix(subproblem, arg_basis, coeffs[ncc_comp], ncc_comp, arg_comp, out_comp, cutoff=ncc_cutoff)
+                            matrix = cls.multiplication_matrix(subproblem, ncc_basis, arg_basis, out_basis, coeffs[ncc_comp], ncc_comp, arg_comp, out_comp, cutoff=ncc_cutoff)
                             # Domains with real Fourier bases require kroneckering the Jacobi NCC matrix up to match the subsystem shape including the sin and cos parts of RealFourier data
                             # This fix assumes the Jacobi basis is on the last axis
                             if matrix.shape != (M,N):
@@ -598,14 +599,14 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         else:
             raise ValueError("Jacobi ncc_matrix not implemented for basis type: %s" %type(arg_basis))
 
-    def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff):
+    @classmethod
+    def multiplication_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff):
         if arg_basis is None:
             return super().ncc_matrix(arg_basis, coeffs.ravel(), cutoff=cutoff)
         # Jacobi parameters
-        a_ncc = self.a
-        b_ncc = self.b
+        a_ncc = ncc_basis.a
+        b_ncc = ncc_basis.b
         N = arg_basis.size
-        out_basis = self * arg_basis
         da = int(np.round(out_basis.a - arg_basis.a))
         db = int(np.round(out_basis.b - arg_basis.b))
         # Pad for dealiasing with conversion
@@ -2238,28 +2239,29 @@ class AnnulusBasis(PolarBasis):
         operator = E**dk
         return operator(self.n_size(m), self.k).square.astype(np.float64)
 
-    def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
+    @classmethod
+    def multiplication_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
         m = subproblem.group[0]  # HACK
-        spintotal_arg = self.spintotal(arg_comp)
+        spintotal_arg = cls.spintotal(arg_comp)
         # Jacobi parameters
-        a_ncc = self.k + self.alpha[0]
-        b_ncc = self.k + self.alpha[1]
-        N = self.n_size(m)
-        N0 = self.n_size(0)
+        a_ncc = ncc_basis.k + ncc_basis.alpha[0]
+        b_ncc = ncc_basis.k + ncc_basis.alpha[1]
+        N = ncc_basis.n_size(m)
+        N0 = ncc_basis.n_size(0)
         # Pad for dealiasing with conversion
-        Nmat = 3*((N0+1)//2) + self.k
+        Nmat = 3*((N0+1)//2) + ncc_basis.k
         J = arg_basis.operator_matrix('Z', m, spintotal_arg, size=Nmat)
         A, B = clenshaw.jacobi_recursion(Nmat, a_ncc, b_ncc, J)
         f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0] * sparse.identity(Nmat)
         # Conversions to account for radial prefactors
-        prefactor = arg_basis.jacobi_conversion(m, dk=self.k, size=Nmat)
-        if self.dtype == np.float64:
+        prefactor = arg_basis.jacobi_conversion(m, dk=ncc_basis.k, size=Nmat)
+        if ncc_basis.dtype == np.float64:
             coeffs_cos_filter = coeffs[0].ravel()[:N0]
             coeffs_msin_filter = coeffs[1].ravel()[:N0]
             matrix_cos = (prefactor @ clenshaw.matrix_clenshaw(coeffs_cos_filter, A, B, f0, cutoff=cutoff))[:N,:N]
             matrix_msin = (prefactor @ clenshaw.matrix_clenshaw(coeffs_msin_filter, A, B, f0, cutoff=cutoff))[:N,:N]
             matrix = sparse.bmat([[matrix_cos, -matrix_msin], [matrix_msin, matrix_cos]], format='csr')
-        elif self.dtype == np.complex128:
+        elif ncc_basis.dtype == np.complex128:
             coeffs_filter = coeffs.ravel()[:N0]
             matrix = (prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff))[:N,:N]
         return matrix
@@ -2479,19 +2481,20 @@ class DiskBasis(PolarBasis, metaclass=CachedClass):
             operator = R2**(d//2) @ operator
         return operator(self.n_size(m), self.alpha + self.k, abs(m + spintotal)).square.astype(np.float64)
 
-    def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
+    @classmethod
+    def multiplication_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
         m = subproblem.group[0]  # HACK
-        spintotal_ncc = self.spintotal(ncc_comp)
-        spintotal_arg = self.spintotal(arg_comp)
-        spintotal_out = self.spintotal(out_comp)
+        spintotal_ncc = cls.spintotal(ncc_comp)
+        spintotal_arg = cls.spintotal(arg_comp)
+        spintotal_out = cls.spintotal(out_comp)
         regtotal_ncc = abs(spintotal_ncc)
         regtotal_arg = abs(m + spintotal_arg)
         regtotal_out = abs(m + spintotal_out)
         diff_regtotal = regtotal_out - regtotal_arg
         # jacobi parameters
-        a_ncc = self.alpha + self.k
+        a_ncc = ncc_basis.alpha + ncc_basis.k
         b_ncc = regtotal_ncc
-        N = self.n_size(m)
+        N = ncc_basis.n_size(m)
         d = regtotal_ncc - abs(diff_regtotal)
 
         if (d >= 0) and (d % 2 == 0):
@@ -2500,18 +2503,18 @@ class DiskBasis(PolarBasis, metaclass=CachedClass):
             # assuming that we're doing ball for now...
             f0 = dedalus_sphere.zernike.polynomials(2, 1, a_ncc, b_ncc, 1)[0] * sparse.identity(N)
             prefactor = arg_basis.radius_multiplication_matrix(m, spintotal_arg, diff_regtotal, d)
-            if self.dtype == np.float64:
+            if ncc_basis.dtype == np.float64:
                 coeffs_filter = coeffs.ravel()[:2*N]
                 matrix_cos = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter[:N], A, B, f0, cutoff=cutoff)
                 matrix_msin = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter[N:], A, B, f0, cutoff=cutoff)
                 matrix = sparse.bmat([[matrix_cos, -matrix_msin], [matrix_msin, matrix_cos]], format='csr')
-            elif self.dtype == np.complex128:
+            elif ncc_basis.dtype == np.complex128:
                 coeffs_filter = coeffs.ravel()[:N]
                 matrix = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff)
         else:
-            if self.dtype == np.float64:
+            if ncc_basis.dtype == np.float64:
                 matrix = sparse.csr_matrix((2*N, 2*N))
-            elif self.dtype == np.complex128:
+            elif ncc_basis.dtype == np.complex128:
                 matrix = sparse.csr_matrix((N, N))
         return matrix
 
@@ -3133,24 +3136,25 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
                 operator = S(+1)**abs(order)
         return (-1)**(max(0,-order))*operator(size - 1 + max(abs(m), abs(spintotal)), m, spintotal).square.astype(np.float64)
 
-    def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff):
+    @classmethod
+    def multiplication_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff):
         m = subproblem.group[0]  # HACK
-        spintotal_arg = self.spintotal(arg_comp)
-        spintotal_ncc = self.spintotal(ncc_comp)
-        spintotal_out = self.spintotal(out_comp)
+        spintotal_arg = cls.spintotal(arg_comp)
+        spintotal_ncc = cls.spintotal(ncc_comp)
+        spintotal_out = cls.spintotal(out_comp)
         # Jacobi parameters
         a_ncc = abs(spintotal_ncc)
         b_ncc = abs(spintotal_ncc)
-        N = self.ell_size(m)
-        N0 = self.ell_size(0)
+        N = ncc_basis.ell_size(m)
+        N0 = ncc_basis.ell_size(0)
         # Pad for dealiasing with conversion
         Nmat = 3*((N0+1)//2)
         J = arg_basis.operator_matrix('Cos', m, spintotal_arg, size=Nmat)
         A, B = clenshaw.jacobi_recursion(Nmat, a_ncc, b_ncc, J)
         f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0] * sparse.identity(Nmat)
         # Sine and sign prefactors
-        prefactor = self.sine_multiplication_matrix(m, spintotal_arg, spintotal_ncc, size=Nmat)
-        if self.dtype == np.float64:
+        prefactor = ncc_basis.sine_multiplication_matrix(m, spintotal_arg, spintotal_ncc, size=Nmat)
+        if ncc_basis.dtype == np.float64:
             coeffs_cos_filter = coeffs[0].ravel()[abs(spintotal_ncc):N0]
             coeffs_msin_filter = coeffs[1].ravel()[abs(spintotal_ncc):N0]
             # ell_min of data is based off |m|, but ell_min of matrix takes into account |s| and |m|
@@ -3162,8 +3166,8 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
             matrix_msin[lmin_out:,lmin_arg:] = (prefactor @ clenshaw.matrix_clenshaw(coeffs_msin_filter, A, B, f0, cutoff=cutoff))[:N-lmin_out,:N-lmin_arg]
             matrix = sparse.bmat([[matrix_cos, -matrix_msin], [matrix_msin, matrix_cos]], format='csr')
             if m >= arg_basis.mmax//4:
-                matrix = matrix[::-1, ::-1] #for second half of m's, ell's go in opposite direction 
-        elif self.dtype == np.complex128:
+                matrix = matrix[::-1, ::-1] #for second half of m's, ell's go in opposite direction
+        elif ncc_basis.dtype == np.complex128:
             coeffs_filter = coeffs.ravel()[abs(spintotal_ncc):N0]
             # ell_min of data is based off |m|, but ell_min of matrix takes into account |s| and |m|
             lmin_out = max(abs(spintotal_out) - abs(m), 0)
@@ -3434,8 +3438,9 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
         intertwiner = dedalus_sphere.spin_operators.Intertwiner(l, indexing=(-1,+1,0))
         return not intertwiner.forbidden_regularity(Rb[np.array(regularity)])
 
+    @staticmethod
     @CachedMethod
-    def regtotal(self, regindex):
+    def regtotal(regindex):
         regorder = [-1, 1, 0]
         reg = lambda index: regorder[index]
         return sum(reg(index) for index in regindex)
@@ -3780,29 +3785,30 @@ class ShellRadialBasis(RegularityBasis, metaclass=CachedClass):
     def _nmin(ell):
         return 0 * ell  # To have same array shape as ell
 
-    def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
+    @classmethod
+    def multiplication_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
         ell = subproblem.group[1]  # HACK
         arg_radial_basis = arg_basis.radial_basis
-        regtotal_arg = self.regtotal(arg_comp)
+        regtotal_arg = cls.regtotal(arg_comp)
         # Jacobi parameters
-        a_ncc = self.k + self.alpha[0]
-        b_ncc = self.k + self.alpha[1]
-        N = self.n_size(ell)
-        N0 = self.n_size(0)
+        a_ncc = ncc_basis.k + ncc_basis.alpha[0]
+        b_ncc = ncc_basis.k + ncc_basis.alpha[1]
+        N = ncc_basis.n_size(ell)
+        N0 = ncc_basis.n_size(0)
         # Pad for dealiasing with conversion
-        Nmat = 3*((N0+1)//2) + self.k
+        Nmat = 3*((N0+1)//2) + ncc_basis.k
         J = arg_radial_basis.operator_matrix('Z', ell, regtotal_arg, size=Nmat)
         A, B = clenshaw.jacobi_recursion(Nmat, a_ncc, b_ncc, J)
         f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0] * sparse.identity(Nmat)
         # Conversions to account for radial prefactors
-        prefactor = arg_radial_basis.jacobi_conversion(ell, dk=self.k, size=Nmat)
-        if self.dtype == np.float64:
+        prefactor = arg_radial_basis.jacobi_conversion(ell, dk=ncc_basis.k, size=Nmat)
+        if ncc_basis.dtype == np.float64:
             coeffs_cos_filter = coeffs[0].ravel()[:N0]
             coeffs_msin_filter = coeffs[1].ravel()[:N0]
             matrix_cos = (prefactor @ clenshaw.matrix_clenshaw(coeffs_cos_filter, A, B, f0, cutoff=cutoff))[:N,:N]
             matrix_msin = (prefactor @ clenshaw.matrix_clenshaw(coeffs_msin_filter, A, B, f0, cutoff=cutoff))[:N,:N]
             matrix = sparse.bmat([[matrix_cos, -matrix_msin], [matrix_msin, matrix_cos]], format='csr')
-        elif self.dtype == np.complex128:
+        elif ncc_basis.dtype == np.complex128:
             coeffs_filter = coeffs.ravel()[:N0]
             matrix = (prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff))[:N,:N]
         return matrix
@@ -3984,7 +3990,8 @@ class BallRadialBasis(RegularityBasis, metaclass=CachedClass):
     def _nmin(ell):
         return ell // 2
 
-    def multiplication_matrix(self, subproblem, arg_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
+    @classmethod
+    def multiplication_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
         ell = subproblem.group[1]  # HACK
         if isinstance(arg_basis, BallBasis):
             arg_radial_basis = arg_basis.radial_basis
@@ -3996,17 +4003,17 @@ class BallRadialBasis(RegularityBasis, metaclass=CachedClass):
             return sparse.csr_matrix(matrix)
         else:
             raise NotImplementedError()
-        regtotal_ncc = self.regtotal(ncc_comp)
-        regtotal_arg = self.regtotal(arg_comp)
-        regtotal_out = self.regtotal(out_comp)
+        regtotal_ncc = cls.regtotal(ncc_comp)
+        regtotal_arg = cls.regtotal(arg_comp)
+        regtotal_out = cls.regtotal(out_comp)
         diff_regtotal = regtotal_out - regtotal_arg
         # jacobi parameters
-        a_ncc = self.alpha + self.k
+        a_ncc = ncc_basis.alpha + ncc_basis.k
         b_ncc = regtotal_ncc + 1/2
-        N = self.n_size(ell)
-        N0 = self.n_size(0)
+        N = ncc_basis.n_size(ell)
+        N0 = ncc_basis.n_size(0)
         d = regtotal_ncc - abs(diff_regtotal)
-        dk = max(self.k, arg_radial_basis.k) - arg_radial_basis.k
+        dk = max(ncc_basis.k, arg_radial_basis.k) - arg_radial_basis.k
         # Pad for dealiasing with conversion
         Nmat = 3*((N0+1)//2) + (dk+1)//2
         if (d >= 0) and (d % 2 == 0):
@@ -4016,19 +4023,19 @@ class BallRadialBasis(RegularityBasis, metaclass=CachedClass):
             radial_factor = arg_radial_basis.radius_multiplication_matrix(ell, regtotal_arg, diff_regtotal, d, size=Nmat)
             conversion = arg_radial_basis.conversion_matrix(ell, regtotal_out, dk, size=Nmat)
             prefactor = conversion @ radial_factor
-            if self.dtype == np.float64:
+            if ncc_basis.dtype == np.float64:
                 coeffs_cos_filter = coeffs[0].ravel()[:N0]
                 coeffs_msin_filter = coeffs[1].ravel()[:N0]
                 matrix_cos = (prefactor @ clenshaw.matrix_clenshaw(coeffs_cos_filter, A, B, f0, cutoff=cutoff))[:N, :N]
                 matrix_msin = (prefactor @ clenshaw.matrix_clenshaw(coeffs_msin_filter, A, B, f0, cutoff=cutoff))[:N, :N]
                 matrix = sparse.bmat([[matrix_cos, -matrix_msin], [matrix_msin, matrix_cos]], format='csr')
-            elif self.dtype == np.complex128:
+            elif ncc_basis.dtype == np.complex128:
                 coeffs_filter = coeffs.ravel()[:N0]
                 matrix = (prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff))[:N, :N]
         else:
-            if self.dtype == np.float64:
+            if ncc_basis.dtype == np.float64:
                 matrix = sparse.csr_matrix((2*N, 2*N))
-            elif self.dtype == np.complex128:
+            elif ncc_basis.dtype == np.complex128:
                 matrix = sparse.csr_matrix((N, N))
         return matrix
 
@@ -4217,11 +4224,12 @@ class Spherical3DBasis(MultidimensionalBasis):
     #     # Implemented in RegularityBasis
     #     return self.radial_basis.valid_elements(*args)
 
-    def multiplication_matrix(self, subproblem, arg_basis, coeffs, *args, **kw):
-        if self.shape[0:2] == (1, 1):
+    @classmethod
+    def multiplication_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, *args, **kw):
+        if ncc_basis.shape[0:2] == (1, 1):
             # Scale to account for SWSH normalization? Is this right for all spins?
-            coeffs /= np.sqrt(2)
-            return self.radial_basis.multiplication_matrix(subproblem, arg_basis, coeffs, *args, **kw)
+            #coeffs /= np.sqrt(2) # Need to add this back in once nccs can be non-radial bases?
+            return ncc_basis.multiplication_matrix(subproblem, ncc_basis, arg_basis, out_basis, coeffs, *args, **kw)
         else:
             raise ValueError("Cannot build NCCs of non-radial fields.")
 
