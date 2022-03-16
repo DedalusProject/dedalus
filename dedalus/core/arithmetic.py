@@ -384,114 +384,53 @@ class Product(Future):
         return out
 
     def build_ncc_matrix(self, subproblem, ncc_cutoff, max_ncc_terms):
-        """Precompute non-constant coefficients and build multiplication matrices."""
-        operand = self.operand
-        ncc = self.ncc
-        ncc_data = self._ncc_data
-        separability = ~ subproblem.problem.matrix_coupling
-        #return = self._ncc_matrix_recursion(ncc_data, ncc.tensorsig, ncc.bases, operand.bases, operand.tensorsig, separability, self.gamma_args, **kw)
-        if ncc.domain.bases:
-            ncc_axis = ncc.domain.bases[-1].last_axis
-        else:
-            ncc_axis = 0
-        if operand.domain.bases:
-            arg_axis = operand.domain.bases[-1].last_axis
-        else:
-            arg_axis = 0
-        axis = max(ncc_axis, arg_axis)
-        ncc_basis = ncc.domain.get_basis(axis)
-        arg_basis = operand.domain.get_basis(axis)
-        ncc_ts = ncc.tensorsig
-        coeffs = ncc_data
-        arg_ts = operand.tensorsig
-        out_ts = self.tensorsig
-        gamma_args = self.gamma_args
+        # TODO: recurse over output bases
+        # ASSUME: NCC is on last axis of last output basis
+        out_basis = self.domain.bases[-1]
+        axis = out_basis.last_axis
+        return out_basis.build_last_axis_ncc_matrix(self, axis, subproblem, ncc_cutoff, max_ncc_terms)
 
-        # ASSUME NCC IS ALONG LAST AXIS
-        #axis = self.dist.dim - 1
-        group = subproblem.group
-        ncc_first = (ncc is self.args[0])
-        ncc_group = tuple(0*g if g is not None else None for g in group)
-        if ncc_first:
-            Gamma = self.Gamma(ncc.tensorsig, operand.tensorsig, self.tensorsig, ncc_group, group, group, axis)
-        else:
-            Gamma = self.Gamma(operand.tensorsig, ncc.tensorsig, self.tensorsig, group, ncc_group, group, axis)
-            Gamma = Gamma.transpose((1,0,2))
-
-        # Loop over input and output components to build matrix blocks
-        M = subproblem.coeff_size(self.domain)
-        N = subproblem.coeff_size(operand.domain)
-        blocks = []
-        for ic, out_comp in enum_indices(self.tensorsig):
-            block_row = []
-            for ib, arg_comp in enum_indices(operand.tensorsig):
-                block = sparse.csr_matrix((M, N))
-                # Loop over ncc components
-                for ia, ncc_comp in enum_indices(ncc.tensorsig):
-                    G = Gamma[ia, ib, ic]
-                    if abs(G) > ncc_cutoff:
-                        if ncc_basis is None:
-                            if coeffs[ncc_comp].size != 1:
-                                raise NotImplementedError()
-                            matrix = coeffs[ncc_comp].ravel()[0] * sparse.eye(M, N)
-                        else:
-                            matrix = ncc_basis.multiplication_matrix(subproblem, arg_basis, coeffs[ncc_comp], ncc_comp, arg_comp, out_comp, cutoff=ncc_cutoff)
-                            # Domains with real Fourier bases require kroneckering the Jacobi NCC matrix up to match the subsystem shape including the sin and cos parts of RealFourier data
-                            # This fix assumes the Jacobi basis is on the last axis
-                            if matrix.shape != (M,N):
-                                m, n = matrix.shape
-                                matrix = sparse.kron(sparse.eye(M//m, N//n), matrix)
-                        if G.imag != 0:
-                            raise ValueError()
-                        block += G.real * matrix
-                block_row.append(block)
-            blocks.append(block_row)
-        return sparse.bmat(blocks, format='csr')
-        #return getattr(ncc_basis, self.ncc_method)(arg_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, ncc_first, *gamma_args, cutoff=1e-6)
-        # tshape = [cs.dim for cs in ncc.tensorsig]
-        # self._ncc_matrices = [self._ncc_matrix_recursion(ncc.data[ind], ncc.domain.full_bases, operand.domain.full_bases, separability, **kw) for ind in np.ndindex(*tshape)]
-
-    def _ncc_matrix_recursion(self, subproblem, ncc_bases, arg_bases, coeffs, ncc_comp, arg_comp, out_comp, **kw):
-        #, ncc_ts, ncc_bases, arg_bases, arg_ts, separability, gamma_args, **kw):
-        """Build NCC matrix by recursing down through the axes."""
-        # Build function for deferred-computation of matrix-valued coefficients
-        def build_lower_coeffs(index):
-            # Return scalar-valued coefficients at bottom level
-            if coeffs.ndim == 1:
-                return coeffs[index]
-            # Otherwise recursively build matrix-valued coefficients
-            else:
-                args = (subproblem, ncc_bases[1:], arg_bases[1:], coeffs[index], ncc_comp, arg_comp, out_comp)
-                return self._ncc_matrix_recursion(*args, **kw)
-        # Build top-level matrix using deferred coeffs
-        coeffs = DeferredTuple(build_lower_coeffs, size=data.shape[0])
-        ncc_basis = ncc_bases[0]
-        arg_basis = arg_bases[0]
-        # Kronecker with identities for constant NCC bases
-        if ncc_basis is None:
-            const = coeffs[0]
-            # Trivial Kronecker with [[1]] for constant arg bases
-            # This generalization enables problem-agnostic pre-construction
-            if arg_basis is None:
-                return const
-            # Group-size identity for separable dimensions
-            if separability[0]:
-                I = sparse.identity(arg_basis.space.group_size)
-            # Coeff-size identity for non-separable dimensions
-            else:
-                I = sparse.identity(arg_basis.space.coeff_size)
-            # Apply cutoff to scalar coeffs
-            if len(const.shape) == 0:
-                cutoff = kw.get('cutoff', 1e-6)
-                if abs(const) > cutoff:
-                    return I * const
-                else:
-                    return I * 0
-            else:
-                return sparse.kron(I, const)
-        # Call basis method for constructing NCC matrix
-        else:
-            return getattr(ncc_basis, self.ncc_method)(arg_basis, coeffs, ncc_ts, arg_ts, *gamma_args, **kw)
+    # def _ncc_matrix_recursion(self, subproblem, ncc_bases, arg_bases, coeffs, ncc_comp, arg_comp, out_comp, **kw):
+    #     #, ncc_ts, ncc_bases, arg_bases, arg_ts, separability, gamma_args, **kw):
+    #     """Build NCC matrix by recursing down through the axes."""
+    #     # Build function for deferred-computation of matrix-valued coefficients
+    #     def build_lower_coeffs(index):
+    #         # Return scalar-valued coefficients at bottom level
+    #         if coeffs.ndim == 1:
+    #             return coeffs[index]
+    #         # Otherwise recursively build matrix-valued coefficients
+    #         else:
+    #             args = (subproblem, ncc_bases[1:], arg_bases[1:], coeffs[index], ncc_comp, arg_comp, out_comp)
+    #             return self._ncc_matrix_recursion(*args, **kw)
+    #     # Build top-level matrix using deferred coeffs
+    #     coeffs = DeferredTuple(build_lower_coeffs, size=data.shape[0])
+    #     ncc_basis = ncc_bases[0]
+    #     arg_basis = arg_bases[0]
+    #     # Kronecker with identities for constant NCC bases
+    #     if ncc_basis is None:
+    #         const = coeffs[0]
+    #         # Trivial Kronecker with [[1]] for constant arg bases
+    #         # This generalization enables problem-agnostic pre-construction
+    #         if arg_basis is None:
+    #             return const
+    #         # Group-size identity for separable dimensions
+    #         if separability[0]:
+    #             I = sparse.identity(arg_basis.space.group_size)
+    #         # Coeff-size identity for non-separable dimensions
+    #         else:
+    #             I = sparse.identity(arg_basis.space.coeff_size)
+    #         # Apply cutoff to scalar coeffs
+    #         if len(const.shape) == 0:
+    #             cutoff = kw.get('cutoff', 1e-6)
+    #             if abs(const) > cutoff:
+    #                 return I * const
+    #             else:
+    #                 return I * 0
+    #         else:
+    #             return sparse.kron(I, const)
+    #     # Call basis method for constructing NCC matrix
+    #     else:
+    #         return getattr(ncc_basis, self.ncc_method)(arg_basis, coeffs, ncc_ts, arg_ts, *gamma_args, **kw)
 
     def expression_matrices(self, subproblem, vars, **kw):
         """Build expression matrices for a specific subproblem and variables."""

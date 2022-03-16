@@ -349,4 +349,3 @@ class SphericalCoordinates(CoordinateSystem):
             return self._Q_backward(ell, order)
         else:
             raise ValueError("Invalid axis")
-

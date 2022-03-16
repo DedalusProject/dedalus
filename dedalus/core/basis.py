@@ -283,6 +283,68 @@ class Basis:
         else:
             raise NotImplementedError()
 
+    @classmethod
+    def build_last_axis_ncc_matrix(cls, product, axis, subproblem, ncc_cutoff, max_ncc_terms):
+        """Precompute non-constant coefficients and build multiplication matrices."""
+        def enum_indices(tensorsig):
+            shape = tuple(cs.dim for cs in tensorsig)
+            return enumerate(np.ndindex(shape))
+        operand = product.operand
+        ncc = product.ncc
+        ncc_data = product._ncc_data
+        separability = ~ subproblem.problem.matrix_coupling
+        #return = self._ncc_matrix_recursion(ncc_data, ncc.tensorsig, ncc.bases, operand.bases, operand.tensorsig, separability, self.gamma_args, **kw)
+        ncc_basis = product.ncc.domain.get_basis(axis)
+        arg_basis = product.operand.get_basis(axis)
+        ncc_ts = ncc.tensorsig
+        coeffs = ncc_data
+        arg_ts = operand.tensorsig
+        out_ts = product.tensorsig
+        gamma_args = product.gamma_args
+
+        # ASSUME NCC IS ALONG LAST AXIS
+        #axis = self.dist.dim - 1
+        group = subproblem.group
+        ncc_first = (ncc is product.args[0])
+        ncc_group = tuple(0*g if g is not None else None for g in group)
+        if ncc_first:
+            Gamma = product.Gamma(ncc.tensorsig, operand.tensorsig, product.tensorsig, ncc_group, group, group, axis)
+        else:
+            Gamma = product.Gamma(operand.tensorsig, ncc.tensorsig, product.tensorsig, group, ncc_group, group, axis)
+            Gamma = Gamma.transpose((1,0,2))
+
+        # Loop over input and output components to build matrix blocks
+        M = subproblem.coeff_size(product.domain)
+        N = subproblem.coeff_size(operand.domain)
+        blocks = []
+        for ic, out_comp in enum_indices(product.tensorsig):
+            block_row = []
+            for ib, arg_comp in enum_indices(operand.tensorsig):
+                block = sparse.csr_matrix((M, N))
+                # Loop over ncc components
+                for ia, ncc_comp in enum_indices(ncc.tensorsig):
+                    G = Gamma[ia, ib, ic]
+                    if abs(G) > ncc_cutoff:
+                        if ncc_basis is None:
+                            if coeffs[ncc_comp].size != 1:
+                                raise NotImplementedError()
+                            matrix = coeffs[ncc_comp].ravel()[0] * sparse.eye(M, N)
+                        else:
+                            matrix = ncc_basis.multiplication_matrix(subproblem, arg_basis, coeffs[ncc_comp], ncc_comp, arg_comp, out_comp, cutoff=ncc_cutoff)
+                            # Domains with real Fourier bases require kroneckering the Jacobi NCC matrix up to match the subsystem shape including the sin and cos parts of RealFourier data
+                            # This fix assumes the Jacobi basis is on the last axis
+                            if matrix.shape != (M,N):
+                                m, n = matrix.shape
+                                matrix = sparse.kron(sparse.eye(M//m, N//n), matrix)
+                        if G.imag != 0:
+                            raise ValueError()
+                        block += G.real * matrix
+                block_row.append(block)
+            blocks.append(block_row)
+        return sparse.bmat(blocks, format='csr')
+        #return getattr(ncc_basis, self.ncc_method)(arg_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, ncc_first, *gamma_args, cutoff=1e-6)
+        # tshape = [cs.dim for cs in ncc.tensorsig]
+        # self._ncc_matrices = [self._ncc_matrix_recursion(ncc.data[ind], ncc.domain.full_bases, operand.domain.full_bases, separability, **kw) for ind in np.ndindex(*tshape)]
 
 # class Constant(Basis, metaclass=CachedClass):
 #     """Constant basis."""
