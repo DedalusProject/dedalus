@@ -283,6 +283,10 @@ class Basis:
         else:
             raise NotImplementedError()
 
+    def build_ncc_matrix(self, product, subproblem, ncc_cutoff, max_ncc_terms):
+        # Default to last axis only
+        return self.build_last_axis_ncc_matrix(product, self.last_axis, subproblem, ncc_cutoff, max_ncc_terms)
+
     @classmethod
     def build_last_axis_ncc_matrix(cls, product, axis, subproblem, ncc_cutoff, max_ncc_terms):
         """Precompute non-constant coefficients and build multiplication matrices."""
@@ -4295,11 +4299,22 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
             return self._new_k(radial_basis.k)
         return NotImplemented
 
+    def __matmul__(self, other):
+        if other is None:
+            return self.__rmatmul__(other)
+        else:
+            return other.__rmatmul__(self)
+
     def __rmatmul__(self, other):
         if other is None:
             return self
         if isinstance(other, ShellRadialBasis):
             radial_basis = other @ self.radial_basis
+            return self._new_k(radial_basis.k)
+        if isinstance(other, SphericalShellBasis):
+            if other.shape[0] != 1:
+                raise ValueError("Azimuthal NCCs not yet supported.")
+            radial_basis = other.radial_basis @ self.radial_basis
             return self._new_k(radial_basis.k)
         return NotImplemented
 
@@ -4307,6 +4322,11 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
         return ShellBasis(self.coordsystem, self.shape, radii=self.radial_basis.radii, alpha=self.radial_basis.alpha, dealias=self.dealias, k=k,
                                    dtype=self.dtype, azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
                                    radius_library=self.radial_basis.radius_library)
+
+    @property
+    def meridional_basis(self):
+        meridional_shape = (1,) + self.shape[1:]
+        return self.clone_with(shape=meridional_shape)
 
     def forward_transform_radius(self, field, axis, gdata, cdata):
         radial_basis = self.radial_basis
@@ -4344,6 +4364,32 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
         if self.k > 0:
             gdata *= radial_basis.radial_transform_factor(field.scales[axis], data_axis, self.k)
 
+    def build_ncc_matrix(self, product, subproblem, ncc_cutoff, max_ncc_terms):
+        axis = self.last_axis
+        ncc_basis = product.ncc.domain.get_basis(axis)
+        if ncc_basis.shape[0] == 1:
+            if ncc_basis.shape[1] == 1:
+                # NCC is radial
+                return self.build_last_axis_ncc_matrix(product, self.last_axis, subproblem, ncc_cutoff, max_ncc_terms)
+            else:
+                # NCC is meridional
+                return self.build_meridional_ncc_matrix(product, subproblem, ncc_cutoff, max_ncc_terms)
+        else:
+            raise NotImplementedError("Azimuthal NCCs not yet supported.")
+
+    def build_meridional_ncc_matrix(self, product, subproblem, ncc_cutoff, max_ncc_terms):
+        # Deferred Clenshaw in radius
+        #   For each step, decide based on coefficient amplitudes whether to include that plane
+        #   If including, use s2 ncc matrix construction and apply Qs
+        raise NotImplementedError("Meridional NCCs not yet supported")
+
+        # Build function for deferred-computation of S2 NCC matrices
+        def build_lower_coeffs(index):
+            # Return scalar-valued coefficients at bottom level
+            # FOR THIS TO WORK:
+            #   Need to split the last_axis function to seperate basis and coeff extraction from the loop over components.
+            #   Then we can call the loop over components with S2 bases and a coeff slice
+            return self.S2_basis.build_ncc_matrix(product, subproblem, ncc_cutoff, max_ncc_terms)
 
 class BallBasis(Spherical3DBasis, metaclass=CachedClass):
 

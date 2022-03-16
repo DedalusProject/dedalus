@@ -387,8 +387,7 @@ class Product(Future):
         # TODO: recurse over output bases
         # ASSUME: NCC is on last axis of last output basis
         out_basis = self.domain.bases[-1]
-        axis = out_basis.last_axis
-        return out_basis.build_last_axis_ncc_matrix(self, axis, subproblem, ncc_cutoff, max_ncc_terms)
+        return out_basis.build_ncc_matrix(self, subproblem, ncc_cutoff, max_ncc_terms)
 
     # def _ncc_matrix_recursion(self, subproblem, ncc_bases, arg_bases, coeffs, ncc_comp, arg_comp, out_comp, **kw):
     #     #, ncc_ts, ncc_bases, arg_bases, arg_ts, separability, gamma_args, **kw):

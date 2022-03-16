@@ -33,7 +33,8 @@ Ntheta_range = [4]
 Nr_range = [16]
 basis_range = [build_ball, build_shell]
 alpha_range = [0]
-k_range = [0, 1, 2, 3]
+#k_range = [0, 1, 2, 3]
+k_range = [0, 3]
 dealias_range = [3/2, 2]
 dtype_range = [np.float64, np.complex128]
 
@@ -55,7 +56,7 @@ def k_out_shell(k_ncc, k_arg):
 @pytest.mark.parametrize('dtype', dtype_range)
 def test_shell2D_scalar_prod_scalar(Nphi, Ntheta, Nr, alpha, k_ncc, k_arg, dealias, dtype):
     c, d, b, phi, theta, r, x, y, z = build_shell(Nphi, Ntheta, Nr, alpha, dealias=dealias, dtype=dtype)
-    b_ncc = b.clone_with(k=k_ncc)
+    b_ncc = b.meridional_basis.clone_with(k=k_ncc)
     b_arg = b.clone_with(k=k_arg)
     f = field.Field(dist=d, bases=(b_ncc,), dtype=dtype)
     g = field.Field(dist=d, bases=(b_arg,), dtype=dtype)
