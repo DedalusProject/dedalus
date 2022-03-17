@@ -491,7 +491,7 @@ class Product(Future):
     def Gamma(self, A_tensorsig, B_tensorsig, C_tensorsig, A_group, B_group, C_group, axis):
         """
         Gamma(a,b,c) in components after intertwiners for specified axis.
-        Requires wavenumbers of previous axes, i.e. len(group) = axis
+        Requires mode groups of previous axes, i.e. len(group) = axis
         """
         # Base case
         if axis == 0:

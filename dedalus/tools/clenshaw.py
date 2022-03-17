@@ -39,22 +39,28 @@ def matrix_clenshaw(c, A, B, f0, cutoff):
     return (b0 @ f0)
 
 
-def kronecker_clenshaw(c, A, B, f0, cutoff):
+def kronecker_clenshaw(val_c, norm_c, A, B, f0, cutoff, coeffs_left=True):
     """
     Clenshaw algorithm on matrix coefficients, matrix argument:
         S(X) = sum_n kron(f_n(X), c_n)
     """
-    if np.isscalar(c[0]):
-        return matrix_clenshaw(c, A, B, f0, cutoff)
-    N = len(c)
+    def kron(X, C):
+        if coeffs_left:
+            return sparse.kron(C, X)
+        else:
+            return sparse.kron(X, C)
+    if np.isscalar(val_c[0]):
+        return matrix_clenshaw(val_c, A, B, f0, cutoff)
+    N = len(norm_c)
     I0 = sparse.identity(f0.shape[0])
-    I1 = sparse.identity(c[0].shape[0])
+    I1 = sparse.identity(val_c[0].shape[0])
     # Clenshaw
-    kron = sparse.kron
     b0, b1 = 0*kron(I0, I1), 0*kron(I0, I1)
     for n in reversed(range(N)):
         b1, b2 = b0, b1
-        b0 = kron(I0, c[n]) + (kron(A[n], I1) @ b1) + (kron(B[n+1], I1) @ b2)
+        b0 = (kron(A[n], I1) @ b1) + (kron(B[n+1], I1) @ b2)
+        if norm_c[n] > cutoff:
+            b0 += kron(I0, val_c[n])
     return (b0 @ kron(f0, I1))
 
 

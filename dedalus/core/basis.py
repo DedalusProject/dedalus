@@ -23,7 +23,7 @@ from ..tools import jacobi
 from ..tools import clenshaw
 from ..tools.array import reshape_vector, axindex, axslice
 from ..tools.dispatch import MultiClass, SkipDispatchException
-from ..tools.general import unify
+from ..tools.general import unify, DeferredTuple
 
 from .spaces import ParityInterval, Disk
 from .coords import Coordinate, CartesianCoordinates, S2Coordinates, SphericalCoordinates, PolarCoordinates, AzimuthalCoordinate
@@ -284,31 +284,23 @@ class Basis:
             raise NotImplementedError()
 
     def build_ncc_matrix(self, product, subproblem, ncc_cutoff, max_ncc_terms):
+        if any(product.ncc.domain.nonconstant[self.first_axis:self.last_axis]):
+            raise NotImplementedError("Only last-axis NCCs implemented for this basis.")
         # Default to last axis only
-        return self.build_last_axis_ncc_matrix(product, self.last_axis, subproblem, ncc_cutoff, max_ncc_terms)
+        axis = self.last_axis
+        ncc_basis = product.ncc.domain.get_basis(axis)
+        arg_basis = product.operand.domain.get_basis(axis)
+        out_basis = product.domain.get_basis(axis)
+        coeffs = product._ncc_data
+        return self._last_axis_field_ncc_matrix(product, subproblem, axis, ncc_basis, arg_basis, out_basis, coeffs, ncc_cutoff, max_ncc_terms)
 
     @classmethod
-    def build_last_axis_ncc_matrix(cls, product, axis, subproblem, ncc_cutoff, max_ncc_terms):
-        """Precompute non-constant coefficients and build multiplication matrices."""
+    def _last_axis_field_ncc_matrix(cls, product, subproblem, axis, ncc_basis, arg_basis, out_basis, coeffs, ncc_cutoff, max_ncc_terms):
         def enum_indices(tensorsig):
             shape = tuple(cs.dim for cs in tensorsig)
             return enumerate(np.ndindex(shape))
         operand = product.operand
         ncc = product.ncc
-        ncc_data = product._ncc_data
-        separability = ~ subproblem.problem.matrix_coupling
-        #return = self._ncc_matrix_recursion(ncc_data, ncc.tensorsig, ncc.bases, operand.bases, operand.tensorsig, separability, self.gamma_args, **kw)
-        ncc_basis = product.ncc.domain.get_basis(axis)
-        arg_basis = product.operand.domain.get_basis(axis)
-        out_basis = product.domain.get_basis(axis)
-        ncc_ts = ncc.tensorsig
-        coeffs = ncc_data
-        arg_ts = operand.tensorsig
-        out_ts = product.tensorsig
-        gamma_args = product.gamma_args
-
-        # ASSUME NCC IS ALONG LAST AXIS
-        #axis = self.dist.dim - 1
         group = subproblem.group
         ncc_first = (ncc is product.args[0])
         ncc_group = tuple(0*g if g is not None else None for g in group)
@@ -317,10 +309,9 @@ class Basis:
         else:
             Gamma = product.Gamma(operand.tensorsig, ncc.tensorsig, product.tensorsig, group, ncc_group, group, axis)
             Gamma = Gamma.transpose((1,0,2))
-
         # Loop over input and output components to build matrix blocks
-        M = subproblem.coeff_size(product.domain)
-        N = subproblem.coeff_size(operand.domain)
+        M = subproblem.coeff_size(out_basis.domain)
+        N = subproblem.coeff_size(arg_basis.domain)
         blocks = []
         for ic, out_comp in enum_indices(product.tensorsig):
             block_row = []
@@ -335,7 +326,7 @@ class Basis:
                                 raise NotImplementedError()
                             matrix = coeffs[ncc_comp].ravel()[0] * sparse.eye(M, N)
                         else:
-                            matrix = cls.multiplication_matrix(subproblem, ncc_basis, arg_basis, out_basis, coeffs[ncc_comp], ncc_comp, arg_comp, out_comp, cutoff=ncc_cutoff)
+                            matrix = cls._last_axis_component_ncc_matrix(subproblem, ncc_basis, arg_basis, out_basis, coeffs[ncc_comp].squeeze(), ncc_comp, arg_comp, out_comp, cutoff=ncc_cutoff)
                             # Domains with real Fourier bases require kroneckering the Jacobi NCC matrix up to match the subsystem shape including the sin and cos parts of RealFourier data
                             # This fix assumes the Jacobi basis is on the last axis
                             if matrix.shape != (M,N):
@@ -350,22 +341,6 @@ class Basis:
         #return getattr(ncc_basis, self.ncc_method)(arg_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, ncc_first, *gamma_args, cutoff=1e-6)
         # tshape = [cs.dim for cs in ncc.tensorsig]
         # self._ncc_matrices = [self._ncc_matrix_recursion(ncc.data[ind], ncc.domain.full_bases, operand.domain.full_bases, separability, **kw) for ind in np.ndindex(*tshape)]
-
-# class Constant(Basis, metaclass=CachedClass):
-#     """Constant basis."""
-
-#     def __add__(self, other):
-#         if other is self:
-#             return self
-#         else:
-#             return NotImplemented
-
-#     def __mul__(self, other):
-#         if other is self:
-#             return self
-#         else:
-#             return NotImplemented
-
 
 
 class IntervalBasis(Basis):
@@ -604,7 +579,7 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
             raise ValueError("Jacobi ncc_matrix not implemented for basis type: %s" %type(arg_basis))
 
     @classmethod
-    def multiplication_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff):
+    def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff):
         if arg_basis is None:
             return super().ncc_matrix(arg_basis, coeffs.ravel(), cutoff=cutoff)
         # Jacobi parameters
@@ -2244,7 +2219,7 @@ class AnnulusBasis(PolarBasis):
         return operator(self.n_size(m), self.k).square.astype(np.float64)
 
     @classmethod
-    def multiplication_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
+    def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
         m = subproblem.group[0]  # HACK
         spintotal_arg = cls.spintotal(arg_comp)
         # Jacobi parameters
@@ -2486,7 +2461,7 @@ class DiskBasis(PolarBasis, metaclass=CachedClass):
         return operator(self.n_size(m), self.alpha + self.k, abs(m + spintotal)).square.astype(np.float64)
 
     @classmethod
-    def multiplication_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
+    def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
         m = subproblem.group[0]  # HACK
         spintotal_ncc = cls.spintotal(ncc_comp)
         spintotal_arg = cls.spintotal(arg_comp)
@@ -3141,7 +3116,7 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
         return (-1)**(max(0,-order))*operator(size - 1 + max(abs(m), abs(spintotal)), m, spintotal).square.astype(np.float64)
 
     @classmethod
-    def multiplication_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff):
+    def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff):
         m = subproblem.group[0]  # HACK
         spintotal_arg = cls.spintotal(arg_comp)
         spintotal_ncc = cls.spintotal(ncc_comp)
@@ -3790,8 +3765,8 @@ class ShellRadialBasis(RegularityBasis, metaclass=CachedClass):
         return 0 * ell  # To have same array shape as ell
 
     @classmethod
-    def multiplication_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
-        ell = subproblem.group[1]  # HACK
+    def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
+        ell = 0  # HACK, independent of ell for shell
         arg_radial_basis = arg_basis.radial_basis
         regtotal_arg = cls.regtotal(arg_comp)
         # Jacobi parameters
@@ -3807,14 +3782,21 @@ class ShellRadialBasis(RegularityBasis, metaclass=CachedClass):
         # Conversions to account for radial prefactors
         prefactor = arg_radial_basis.jacobi_conversion(ell, dk=ncc_basis.k, size=Nmat)
         if ncc_basis.dtype == np.float64:
-            coeffs_cos_filter = coeffs[0].ravel()[:N0]
-            coeffs_msin_filter = coeffs[1].ravel()[:N0]
-            matrix_cos = (prefactor @ clenshaw.matrix_clenshaw(coeffs_cos_filter, A, B, f0, cutoff=cutoff))[:N,:N]
-            matrix_msin = (prefactor @ clenshaw.matrix_clenshaw(coeffs_msin_filter, A, B, f0, cutoff=cutoff))[:N,:N]
+            coeffs_cos, coeffs_msin = coeffs
+            if not np.isscalar(coeffs_cos[0]):
+                raise NotImplementedError("Recursive Clenshaw not finished for float64.")
+            matrix_cos = (prefactor @ clenshaw.kronecker_clenshaw(coeffs_cos, None, A, B, f0, cutoff=cutoff))[:N,:N]
+            matrix_msin = (prefactor @ clenshaw.kronecker_clenshaw(coeffs_msin, None, A, B, f0, cutoff=cutoff))[:N,:N]
             matrix = sparse.bmat([[matrix_cos, -matrix_msin], [matrix_msin, matrix_cos]], format='csr')
         elif ncc_basis.dtype == np.complex128:
-            coeffs_filter = coeffs.ravel()[:N0]
-            matrix = (prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff))[:N,:N]
+            if np.isscalar(coeffs[0]):
+                matrix = (prefactor @ clenshaw.matrix_clenshaw(coeffs, A, B, f0, cutoff=cutoff))[:N,:N]
+            else:
+                coeff_vals, coeff_norms = coeffs
+                I0 = sparse.identity(coeff_vals[0].shape[0])
+                matrix = sparse.kron(I0, prefactor) @ clenshaw.kronecker_clenshaw(coeff_vals, coeff_norms, A, B, f0, cutoff=cutoff)
+                dealias = sparse.kron(I0, sparse.eye(N, Nmat))
+                matrix = dealias @ matrix @ dealias.T
         return matrix
 
 
@@ -3995,7 +3977,7 @@ class BallRadialBasis(RegularityBasis, metaclass=CachedClass):
         return ell // 2
 
     @classmethod
-    def multiplication_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
+    def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
         ell = subproblem.group[1]  # HACK
         if isinstance(arg_basis, BallBasis):
             arg_radial_basis = arg_basis.radial_basis
@@ -4097,7 +4079,7 @@ class Spherical3DBasis(MultidimensionalBasis):
 
     @CachedAttribute
     def constant(self):
-        return (self.Lmax==0, self.Lmax==0, False)
+        return (self.shape[0]==1, self.shape[1]==1, False)
 
     def derivative_basis(self, order=1):
         k = self.k + order
@@ -4229,11 +4211,11 @@ class Spherical3DBasis(MultidimensionalBasis):
     #     return self.radial_basis.valid_elements(*args)
 
     @classmethod
-    def multiplication_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, *args, **kw):
+    def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, *args, **kw):
         if ncc_basis.shape[0:2] == (1, 1):
             # Scale to account for SWSH normalization? Is this right for all spins?
             #coeffs /= np.sqrt(2) # Need to add this back in once nccs can be non-radial bases?
-            return ncc_basis.multiplication_matrix(subproblem, ncc_basis, arg_basis, out_basis, coeffs, *args, **kw)
+            return ncc_basis._last_axis_component_ncc_matrix(subproblem, ncc_basis, arg_basis, out_basis, coeffs, *args, **kw)
         else:
             raise ValueError("Cannot build NCCs of non-radial fields.")
 
@@ -4290,7 +4272,8 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
         if isinstance(other, ShellBasis):
             if self.grid_params == other.grid_params:
                 shape = tuple(np.maximum(self.shape, other.shape))
-                k = 0
+                radial_basis = self.radial_basis * other.radial_basis
+                k = radial_basis.k
                 return ShellBasis(self.coordsystem, shape, radii=self.radial_basis.radii, alpha=self.radial_basis.alpha, dealias=self.dealias, k=k,
                                            dtype=self.dtype, azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
                                            radius_library=self.radial_basis.radius_library)
@@ -4311,7 +4294,7 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
         if isinstance(other, ShellRadialBasis):
             radial_basis = other @ self.radial_basis
             return self._new_k(radial_basis.k)
-        if isinstance(other, SphericalShellBasis):
+        if isinstance(other, ShellBasis):
             if other.shape[0] != 1:
                 raise ValueError("Azimuthal NCCs not yet supported.")
             radial_basis = other.radial_basis @ self.radial_basis
@@ -4370,7 +4353,7 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
         if ncc_basis.shape[0] == 1:
             if ncc_basis.shape[1] == 1:
                 # NCC is radial
-                return self.build_last_axis_ncc_matrix(product, self.last_axis, subproblem, ncc_cutoff, max_ncc_terms)
+                return super().build_ncc_matrix(product, subproblem, ncc_cutoff, max_ncc_terms)
             else:
                 # NCC is meridional
                 return self.build_meridional_ncc_matrix(product, subproblem, ncc_cutoff, max_ncc_terms)
@@ -4378,18 +4361,54 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
             raise NotImplementedError("Azimuthal NCCs not yet supported.")
 
     def build_meridional_ncc_matrix(self, product, subproblem, ncc_cutoff, max_ncc_terms):
-        # Deferred Clenshaw in radius
-        #   For each step, decide based on coefficient amplitudes whether to include that plane
-        #   If including, use s2 ncc matrix construction and apply Qs
-        raise NotImplementedError("Meridional NCCs not yet supported")
+        axis = self.last_axis
+        ncc_basis = product.ncc.domain.get_basis(axis)
+        arg_basis = product.operand.domain.get_basis(axis)
+        out_basis = product.domain.get_basis(axis)
+        # Build coeff_norm function that returns same result for all components
+        coeffs = product._ncc_data
+        # Take Frobenius norm of tensor components
+        tensor_axes = tuple(range(len(product.ncc.tensorsig)))
+        subcoeff_norms = np.sum(np.abs(coeffs)**2, axis=tensor_axes)**0.5
+        # Sum over sin and cos for real
+        subcoeff_norms = np.sum(subcoeff_norms**2, axis=0)**0.5
+        # Take max over ell
+        subcoeff_norms = np.max(subcoeff_norms, axis=0)
+        # Convert NCC coeffs to spin components
+        spin_coeffs = coeffs.copy()
+        self.radial_basis.backward_regularity_recombination(product.ncc.tensorsig, axis, spin_coeffs, ell_maps=ncc_basis.ell_maps)
+        # Build deferred regcomp S2 NCC
+        S2_basis = self.S2_basis()
+        def interleave_matrices(matrices):
+            N = len(matrices)
+            sum = 0
+            for i, matrix in enumerate(matrices):
+                P = sparse.csr_matrix((N, N))
+                P[i, i] = 1
+                sum += sparse.kron(matrix, P)
+            return sum
+        def reg_NCC_matrix(radial_index):
+            # Select radial spin data
+            subcoeffs = spin_coeffs[..., radial_index]
+            # Call S2 NCC
+            submatrix = S2_basis._last_axis_field_ncc_matrix(product, subproblem, axis-1, ncc_basis.S2_basis(), arg_basis.S2_basis(), out_basis.S2_basis(), subcoeffs, ncc_cutoff, max_ncc_terms)
+            # Apply forward Q transformations
+            m = subproblem.group[axis-2]
+            ells = np.arange(abs(m), self.Lmax+1)
+            if S2_basis.ell_reversed[m]:
+                ells = ells[::-1]
+            ells = tuple(ells)
+            QA = self.radial_basis.radial_recombinations(product.tensorsig, ells)
+            QA = interleave_matrices([QA[ell].T for ell in ells])
+            QO = self.radial_basis.radial_recombinations(product.operand.tensorsig, ells)
+            QO = interleave_matrices([QO[ell].T for ell in ells])
+            return QO @ submatrix @ QA.T
+        subcoeff_vals = DeferredTuple(reg_NCC_matrix, size=len(subcoeff_norms))
+        # Call last axis Clenshaw via ShellRadialBasis
+        subcoeffs = (subcoeff_vals, subcoeff_norms)
+        ncc_comp = arg_comp = out_comp = tuple()
+        return self.radial_basis._last_axis_component_ncc_matrix(subproblem, ncc_basis, arg_basis, out_basis, subcoeffs, ncc_comp, arg_comp, out_comp, cutoff=ncc_cutoff)
 
-        # Build function for deferred-computation of S2 NCC matrices
-        def build_lower_coeffs(index):
-            # Return scalar-valued coefficients at bottom level
-            # FOR THIS TO WORK:
-            #   Need to split the last_axis function to seperate basis and coeff extraction from the loop over components.
-            #   Then we can call the loop over components with S2 bases and a coeff slice
-            return self.S2_basis.build_ncc_matrix(product, subproblem, ncc_cutoff, max_ncc_terms)
 
 class BallBasis(Spherical3DBasis, metaclass=CachedClass):
 
