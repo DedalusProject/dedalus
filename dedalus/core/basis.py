@@ -3793,10 +3793,13 @@ class ShellRadialBasis(RegularityBasis, metaclass=CachedClass):
                 matrix = (prefactor @ clenshaw.matrix_clenshaw(coeffs, A, B, f0, cutoff=cutoff))[:N,:N]
             else:
                 coeff_vals, coeff_norms = coeffs
-                I0 = sparse.identity(coeff_vals[0].shape[0])
+                i0, i1 = coeff_vals[0].shape
+                I0 = sparse.identity(i0)
+                I1 = sparse.identity(i1)
                 matrix = sparse.kron(I0, prefactor) @ clenshaw.kronecker_clenshaw(coeff_vals, coeff_norms, A, B, f0, cutoff=cutoff)
-                dealias = sparse.kron(I0, sparse.eye(N, Nmat))
-                matrix = dealias @ matrix @ dealias.T
+                dealias0 = sparse.kron(I0, sparse.eye(N, Nmat))
+                dealias1 = sparse.kron(I1, sparse.eye(N, Nmat))
+                matrix = dealias0 @ matrix @ dealias1.T
         return matrix
 
 

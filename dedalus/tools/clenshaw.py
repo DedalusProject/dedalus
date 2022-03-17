@@ -36,7 +36,7 @@ def matrix_clenshaw(c, A, B, f0, cutoff):
             b0 = (c[n] * I) + (A[n] @ b1) + (B[n+1] @ b2)
         else:
             b0 = (A[n] @ b1) + (B[n+1] @ b2)
-    return (b0 @ f0)
+    return (f0 @ b0)
 
 
 def kronecker_clenshaw(val_c, norm_c, A, B, f0, cutoff, coeffs_left=True):
@@ -55,13 +55,13 @@ def kronecker_clenshaw(val_c, norm_c, A, B, f0, cutoff, coeffs_left=True):
     I0 = sparse.identity(f0.shape[0])
     I1 = sparse.identity(val_c[0].shape[0])
     # Clenshaw
-    b0, b1 = 0*kron(I0, I1), 0*kron(I0, I1)
+    b0, b1 = 0*kron(I0, val_c[0]), 0*kron(I0, val_c[0])
     for n in reversed(range(N)):
         b1, b2 = b0, b1
         b0 = (kron(A[n], I1) @ b1) + (kron(B[n+1], I1) @ b2)
         if norm_c[n] > cutoff:
             b0 += kron(I0, val_c[n])
-    return (b0 @ kron(f0, I1))
+    return (kron(f0, I1) @ b0)
 
 
 def jacobi_recursion(N, a, b, X):

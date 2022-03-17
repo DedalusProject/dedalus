@@ -157,7 +157,7 @@ def test_shell2D_vector_prod_scalar(Nphi, Ntheta, Nr, alpha, k_ncc, k_arg, deali
     w0 = u * g
     w1 = w0.reinitialize(ncc=True, ncc_vars=vars)
     problem = problems.LBVP(vars)
-    problem.add_equation((dot(u, u)*w1, 0))
+    problem.add_equation((dot(u, u)*g, 0))
     solver = solvers.LinearBoundaryValueSolver(problem)
     w1.store_ncc_matrices(vars, solver.subproblems)
     w0 = w0.evaluate()
