@@ -4398,11 +4398,11 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
             if S2_basis.ell_reversed[m]:
                 ells = ells[::-1]
             ells = tuple(ells)
-            QA = self.radial_basis.radial_recombinations(product.tensorsig, ells)
-            QA = interleave_matrices([QA[ell].T for ell in ells])
-            QO = self.radial_basis.radial_recombinations(product.operand.tensorsig, ells)
-            QO = interleave_matrices([QO[ell].T for ell in ells])
-            return QO @ submatrix @ QA.T
+            Qout = self.radial_basis.radial_recombinations(product.tensorsig, ells)
+            Qout = interleave_matrices([Qout[ell].T for ell in ells])
+            Qarg = self.radial_basis.radial_recombinations(product.operand.tensorsig, ells)
+            Qarg = interleave_matrices([Qarg[ell].T for ell in ells])
+            return Qout @ submatrix @ Qarg.T
         subcoeff_vals = DeferredTuple(reg_NCC_matrix, size=len(subcoeff_norms))
         # Call last axis Clenshaw via ShellRadialBasis
         subcoeffs = (subcoeff_vals, subcoeff_norms)
