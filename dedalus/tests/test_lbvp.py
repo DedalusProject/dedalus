@@ -384,6 +384,42 @@ def test_heat_ncc_shell(Nmax, Lmax, ncc_exponent, ncc_location, ncc_scale, dtype
     # Check solution
     assert np.allclose(u['g'], u_true)
 
+
+@pytest.mark.parametrize('dtype', [np.complex128])
+@pytest.mark.parametrize('Nmax', [15])
+@pytest.mark.parametrize('Lmax', [7])
+def test_lap_2dncc_shell(Nmax, Lmax, dtype):
+    # Bases
+    dealias = 1
+    c, d, b, phi, theta, r, x, y, z = build_shell(2*(Lmax+1), Lmax+1, Nmax+1, dealias=dealias, dtype=dtype)
+    r0, r1 = b.radial_basis.radii
+    # Fields
+    u = field.Field(name='u', dist=d, bases=(b,), dtype=dtype)
+    τu1 = field.Field(name='τu1', dist=d, bases=(b.S2_basis(),), dtype=dtype)
+    τu2 = field.Field(name='τu2', dist=d, bases=(b.S2_basis(),), dtype=dtype)
+    ncc = field.Field(name='ncc', dist=d, bases=(b.meridional_basis,), dtype=dtype)
+    F = field.Field(name='a', dist=d, bases=(b,), dtype=dtype)
+    u_bc1 = field.Field(name='bc1', dist=d, bases=(b.S2_basis(radius=r0),), dtype=dtype)
+    u_bc2 = field.Field(name='bc1', dist=d, bases=(b.S2_basis(radius=r1),), dtype=dtype)
+    F['g'] = 2*z**2*(x**2+z**2)
+    ncc['g'] = z**2
+    u_bc1['g'] = r0**4*np.cos(theta)**2*(np.sin(theta)*np.cos(phi))**2
+    u_bc2['g'] = r1**4*np.cos(theta)**2*(np.sin(theta)*np.cos(phi))**2
+    u_true = x**2*z**2
+    # Problem
+    Lap = lambda A: operators.Laplacian(A, c)
+    Lift = lambda A, n: operators.Lift(A, b, n)
+    problem = problems.LBVP([u, τu1, τu2])
+    problem.add_equation((ncc*Lap(u) + Lift(τu1,-1) + Lift(τu2,-2), F))
+    problem.add_equation((u(r=r0), u_bc1))
+    problem.add_equation((u(r=r1), u_bc2))
+    # Solver
+    solver = solvers.LinearBoundaryValueSolver(problem)
+    solver.solve()
+    # Check solution
+    assert np.allclose(u['g'], u_true)
+
+
 @pytest.mark.parametrize('dtype', [np.complex128, np.float64])
 @pytest.mark.parametrize('Nmax', [15])
 @pytest.mark.parametrize('Lmax', [3])
