@@ -332,9 +332,9 @@ class Basis:
                             if matrix.shape != (M,N):
                                 m, n = matrix.shape
                                 matrix = sparse.kron(sparse.eye(M//m, N//n), matrix)
-                        if G.imag != 0:
-                            raise ValueError()
-                        block += G.real * matrix
+                        if G.imag != 0 and product.dtype == np.float64:
+                            raise NotImplementedError()
+                        block += G * matrix
                 block_row.append(block)
             blocks.append(block_row)
         return sparse.bmat(blocks, format='csr')
@@ -3151,7 +3151,7 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
             # ell_min of data is based off |m|, but ell_min of matrix takes into account |s| and |m|
             lmin_out = max(abs(spintotal_out) - abs(m), 0)
             lmin_arg = max(abs(spintotal_arg) - abs(m), 0 )
-            matrix = sparse.csr_matrix((N, N))
+            matrix = sparse.csr_matrix((N, N), dtype=np.complex128)
             matrix[lmin_out:,lmin_arg:] = (prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff))[:N-lmin_out,:N-lmin_arg]
             if m < 0:
                 matrix = matrix[::-1, ::-1] #for negative m, ell's go in opposite direction

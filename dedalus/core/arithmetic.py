@@ -617,6 +617,9 @@ class CrossProduct(Product, FutureField):
         # Check that vector bundles are the same
         if arg0.tensorsig[0] is not arg1.tensorsig[0]:
             raise ValueError("CrossProduct requires identical vector bundles.")
+        # Check that vector bundles are 3D
+        if arg0.tensorsig[0].dim != 3:
+            raise ValueError("CrossProduct requires 3-component vector fields.")
         # FutureField requirements
         self.domain = Domain(arg0.dist, self._build_bases(arg0, arg1))
         self.tensorsig = arg0.tensorsig
@@ -657,6 +660,15 @@ class CrossProduct(Product, FutureField):
         if arg0 == 0 or arg1 == 0:
             return 0
         return CrossProduct(arg0, arg1, **kw)
+
+    def GammaCoord(self, A_tensorsig, B_tensorsig, C_tensorsig):
+        cs = A_tensorsig[0]
+        G = np.zeros((3, 3, 3), dtype=int)
+        G[0,1,2] = G[1,2,0] = G[2,0,1] = 1
+        G[0,2,1] = G[2,1,0] = G[1,0,2] = -1
+        if not cs.right_handed:
+            G *= -1
+        return G
 
 
 class Multiply(Product, metaclass=MultiClass):
