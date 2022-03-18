@@ -304,3 +304,38 @@ def drop_empty_rows(mat):
     nonempty_rows = (np.diff(mat.indptr) > 0)
     return mat[nonempty_rows]
 
+
+def scipy_sparse_eigs(A, B, N, target, matsolver, **kw):
+    """
+    Perform targeted eigenmode search using the scipy/ARPACK sparse solver
+    for the reformulated generalized eigenvalue problem
+
+        A.x = λ B.x  ==>  (A - σB)^I B.x = (1/(λ-σ)) x
+
+    for eigenvalues λ near the target σ.
+
+    Parameters
+    ----------
+    A, B : scipy sparse matrices
+        Sparse matrices for generalized eigenvalue problem
+    N : int
+        Number of eigenmodes to return
+    target : complex
+        Target σ for eigenvalue search
+    matsolver : matrix solver class
+        Class implementing solve method for solving sparse systems.
+
+    Other keyword options passed to scipy.sparse.linalg.eigs.
+    """
+    # Build sparse linear operator representing (A - σB)^I B = C^I B = D
+    C = A - target * B
+    solver = matsolver(C)
+    def matvec(x):
+        return solver.solve(B.dot(x))
+    D = spla.LinearOperator(dtype=A.dtype, shape=A.shape, matvec=matvec)
+    # Solve using scipy sparse algorithm
+    evals, evecs = spla.eigs(D, k=N, which='LM', sigma=None, **kw)
+    # Rectify eigenvalues
+    evals = 1 / evals + target
+    return evals, evecs
+

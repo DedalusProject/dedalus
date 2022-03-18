@@ -39,7 +39,8 @@ def test_heat_1d_periodic(x_basis_class, Nx, dtype):
 @pytest.mark.parametrize('dtype', [np.complex128])
 @pytest.mark.parametrize('Nx', [32])
 @pytest.mark.parametrize('x_basis_class', [basis.ChebyshevT])
-def test_waves_1d(x_basis_class, Nx, dtype):
+@pytest.mark.parametrize('sparse', [True, False])
+def test_waves_1d(x_basis_class, Nx, dtype, sparse):
     # Bases
     c = coords.Coordinate('x')
     d = distributor.Distributor((c,))
@@ -63,11 +64,14 @@ def test_waves_1d(x_basis_class, Nx, dtype):
     problem.add_equation((u(x=np.pi), 0))
     # Solver
     solver = solvers.EigenvalueSolver(problem, matrix_coupling=[True])
-    solver.solve_dense(solver.subproblems[0])
+    Nmodes = 4
+    if sparse:
+        solver.solve_sparse(solver.subproblems[0], N=Nmodes, target=1)
+    else:
+        solver.solve_dense(solver.subproblems[0])
     i_sort = np.argsort(solver.eigenvalues)
     sorted_eigenvalues = solver.eigenvalues[i_sort]
     # Check solution
-    Nmodes = Nx//4
     k = np.arange(Nmodes)+1
     assert np.allclose(sorted_eigenvalues[:Nmodes], k**2)
 
