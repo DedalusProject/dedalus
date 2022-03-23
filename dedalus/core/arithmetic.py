@@ -445,7 +445,6 @@ class Product(Future):
         operand_mats = self.operand.expression_matrices(subproblem, vars, **kw)
         ncc_mat = self.build_ncc_matrix(subproblem, **kw)
         return {var: ncc_mat @ operand_mats[var] for var in operand_mats}
-
         # # Modify NCC matrix for subproblem
         # # Build projection matrix dropping constant-groups as necessary
         # group_shape = subproblem.coeff_shape(self.subdomain)

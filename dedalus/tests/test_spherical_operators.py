@@ -194,7 +194,31 @@ def test_implicit_trace_tensor(Nphi, Ntheta, Nr, k, dealias, basis, dtype):
     g = field.Field(dist=d, bases=(b,), dtype=dtype)
     g.preset_scales(g.domain.dealias)
     g['g'] = 3*x**2 + 2*y*z
-    I = field.Field(dist=d, bases=(b.radial_basis,), tensorsig=(c,c), dtype=dtype)
+    I = field.Field(dist=d, tensorsig=(c,c), bases=b.radial_basis, dtype=dtype)
+    I['g'][0,0] = I['g'][1,1] = I['g'][2,2] = 1
+    trace = lambda A: operators.Trace(A)
+    problem = problems.LBVP([f])
+    problem.add_equation((trace(I*f), 3*g))
+    solver = solvers.LinearBoundaryValueSolver(problem)
+    solver.solve()
+    assert np.allclose(f['c'], g['c'])
+
+
+@pytest.mark.xfail(reason="Constant tensors not intertwined", run=False)
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Ntheta', Ntheta_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_implicit_trace_tensor_constant_I(Nphi, Ntheta, Nr, k, dealias, basis, dtype):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
+    f = field.Field(dist=d, bases=(b,), dtype=dtype)
+    g = field.Field(dist=d, bases=(b,), dtype=dtype)
+    g.preset_scales(g.domain.dealias)
+    g['g'] = 3*x**2 + 2*y*z
+    I = field.Field(dist=d, tensorsig=(c,c), dtype=dtype)
     I['g'][0,0] = I['g'][1,1] = I['g'][2,2] = 1
     trace = lambda A: operators.Trace(A)
     problem = problems.LBVP([f])

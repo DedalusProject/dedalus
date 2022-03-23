@@ -709,7 +709,8 @@ class LinearOperator(FutureField):
         operand_mats = self.operand.expression_matrices(subproblem, vars, **kw)
         # Apply operator matrix
         operator_mat = self.subproblem_matrix(subproblem)
-        return {var: operator_mat @ operand_mats[var] for var in operand_mats}
+        out = {var: operator_mat @ operand_mats[var] for var in operand_mats}
+        return out
 
     def subproblem_matrix(self, subproblem):
         """Build operator matrix for a specific subproblem."""

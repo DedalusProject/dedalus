@@ -6,6 +6,10 @@ from dedalus.core.basis import BallBasis, ShellBasis
 from dedalus.tools.cache import CachedFunction
 
 
+def xfail_param(param, reason, run=True):
+    return pytest.param(param, marks=pytest.mark.xfail(reason=reason, run=run))
+
+
 dot = arithmetic.DotProduct
 radius_ball = 1.5
 radii_shell = (0.6, 1.7)
@@ -49,15 +53,16 @@ def k_out_shell(k_ncc, k_arg):
 @pytest.mark.parametrize('Nphi', Nphi_range)
 @pytest.mark.parametrize('Ntheta', Ntheta_range)
 @pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('basis', [build_shell, xfail_param(build_ball, reason="Ball meridional NCCs not implemented.", run=False)])
 @pytest.mark.parametrize('alpha', alpha_range)
 @pytest.mark.parametrize('k_ncc', k_range)
 @pytest.mark.parametrize('k_arg', k_range)
-@pytest.mark.parametrize('rank_ncc', [0, 1, 2])
-@pytest.mark.parametrize('rank_arg', [0, 1, 2])
+@pytest.mark.parametrize('rank_ncc', [0, 1])
+@pytest.mark.parametrize('rank_arg', [0, 1])
 @pytest.mark.parametrize('dealias', [2])
-@pytest.mark.parametrize('dtype', [np.complex128])
-def test_shell2D_multiply(Nphi, Ntheta, Nr, alpha, k_ncc, k_arg, rank_ncc, rank_arg, dealias, dtype):
-    c, d, b, phi, theta, r, x, y, z = build_shell(Nphi, Ntheta, Nr, alpha, dealias=dealias, dtype=dtype)
+@pytest.mark.parametrize('dtype', [xfail_param(np.float64, reason="Real meridional NCCs not implemented.", run=False), np.complex128])
+def test_meridional_multiply(Nphi, Ntheta, Nr, basis, alpha, k_ncc, k_arg, rank_ncc, rank_arg, dealias, dtype):
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, alpha, dealias=dealias, dtype=dtype)
     # Fields
     b_ncc = b.meridional_basis.clone_with(k=k_ncc)
     b_arg = b.clone_with(k=k_arg)

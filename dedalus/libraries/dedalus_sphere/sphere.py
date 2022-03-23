@@ -90,8 +90,8 @@ def operator(name,dtype=dtype):
 
     if name == 'Cos':
         def Cos(Lmax,m,s):
-#            return Jacobi.operator('Z',dtype=dtype)(*spin2Jacobi(Lmax,m,s))
-            return Jacobi.operator('Z',dtype=dtype)(Lmax+1, abs(m+s), abs(m-s))
+            return Jacobi.operator('Z',dtype=dtype)(*spin2Jacobi(Lmax,m,s))
+            #return Jacobi.operator('Z',dtype=dtype)(Lmax+1, abs(m+s), abs(m-s))
         return Operator(Cos,SphereCodomain(1,0,0,0))
 
     return SphereOperator(name,dtype=dtype)

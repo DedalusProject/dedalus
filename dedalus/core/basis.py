@@ -261,18 +261,19 @@ class Basis:
     #     # Discard empty rows
     #     return matrix[flags, :]
 
-    def ncc_matrix(self, arg_basis, coeffs, cutoff=1e-6):
+    @classmethod
+    def ncc_matrix(cls, ncc_basis, arg_basis, out_basis, coeffs, cutoff=1e-6):
         """Build NCC matrix via direct summation."""
         N = len(coeffs)
         for i in range(N):
             coeff = coeffs[i]
             # Build initial matrix
             if i == 0:
-                matrix = self.product_matrix(arg_basis, i)
+                matrix = ncc_basis.product_matrix(arg_basis, i)
                 total = 0 * sparse.kron(matrix, coeff)
                 total.eliminate_zeros()
             if len(coeff.shape) or (abs(coeff) > cutoff):
-                matrix = self.product_matrix(arg_basis, i)
+                matrix = ncc_basis.product_matrix(arg_basis, i)
                 total = total + sparse.kron(matrix, coeff)
         return total
 
@@ -284,9 +285,9 @@ class Basis:
             raise NotImplementedError()
 
     def build_ncc_matrix(self, product, subproblem, ncc_cutoff, max_ncc_terms):
+        # Default to last axis only
         if any(product.ncc.domain.nonconstant[self.first_axis:self.last_axis]):
             raise NotImplementedError("Only last-axis NCCs implemented for this basis.")
-        # Default to last axis only
         axis = self.last_axis
         ncc_basis = product.ncc.domain.get_basis(axis)
         arg_basis = product.operand.domain.get_basis(axis)
@@ -310,8 +311,8 @@ class Basis:
             Gamma = product.Gamma(operand.tensorsig, ncc.tensorsig, product.tensorsig, group, ncc_group, group, axis)
             Gamma = Gamma.transpose((1,0,2))
         # Loop over input and output components to build matrix blocks
-        M = subproblem.coeff_size(out_basis.domain)
-        N = subproblem.coeff_size(arg_basis.domain)
+        M = np.prod(subproblem.coeff_shape(product.domain)[:axis+1])
+        N = np.prod(subproblem.coeff_shape(operand.domain)[:axis+1])
         blocks = []
         for ic, out_comp in enum_indices(product.tensorsig):
             block_row = []
@@ -581,7 +582,7 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
     @classmethod
     def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff):
         if arg_basis is None:
-            return super().ncc_matrix(arg_basis, coeffs.ravel(), cutoff=cutoff)
+            return super().ncc_matrix(ncc_basis, arg_basis, out_basis, coeffs.ravel(), cutoff=cutoff)
         # Jacobi parameters
         a_ncc = ncc_basis.a
         b_ncc = ncc_basis.b
@@ -3099,7 +3100,7 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
     def operator_matrix(self, op, m, spintotal, size=None):
         if op in ['Cos']:
             operator = dedalus_sphere.sphere.operator(op)
-        return operator(size-1, m, spintotal).square.astype(np.float64)
+        return operator(size-1+max(abs(m), abs(spintotal)), m, spintotal).square.astype(np.float64)
 
     @CachedMethod
     def sine_multiplication_matrix(self, m, spintotal, order, size=None):
@@ -4215,10 +4216,12 @@ class Spherical3DBasis(MultidimensionalBasis):
 
     @classmethod
     def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, *args, **kw):
-        if ncc_basis.shape[0:2] == (1, 1):
-            # Scale to account for SWSH normalization? Is this right for all spins?
-            #coeffs /= np.sqrt(2) # Need to add this back in once nccs can be non-radial bases?
+        if isinstance(ncc_basis, RegularityBasis):
             return ncc_basis._last_axis_component_ncc_matrix(subproblem, ncc_basis, arg_basis, out_basis, coeffs, *args, **kw)
+        elif ncc_basis.shape[0:2] == (1, 1):
+            # Scale to account for SWSH normalization? Is this right for all spins?
+            coeffs = coeffs / np.sqrt(2) # Need to add this back in once nccs can be non-radial bases?
+            return ncc_basis.radial_basis._last_axis_component_ncc_matrix(subproblem, ncc_basis, arg_basis, out_basis, coeffs, *args, **kw)
         else:
             raise ValueError("Cannot build NCCs of non-radial fields.")
 
@@ -4353,7 +4356,10 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
     def build_ncc_matrix(self, product, subproblem, ncc_cutoff, max_ncc_terms):
         axis = self.last_axis
         ncc_basis = product.ncc.domain.get_basis(axis)
-        if ncc_basis.shape[0] == 1:
+        if ncc_basis is None:
+            # NCC is constant
+            return super().build_ncc_matrix(product, subproblem, ncc_cutoff, max_ncc_terms)
+        elif ncc_basis.shape[0] == 1:
             if ncc_basis.shape[1] == 1:
                 # NCC is radial
                 return super().build_ncc_matrix(product, subproblem, ncc_cutoff, max_ncc_terms)
