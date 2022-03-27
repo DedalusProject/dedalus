@@ -2813,8 +2813,7 @@ class PolarGradient(Gradient, PolarMOperator):
 
     @staticmethod
     def _output_basis(input_basis):
-        out = input_basis._new_k(input_basis.k + 1)
-        return out
+        return input_basis.derivative_basis(1)
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""
@@ -2962,8 +2961,7 @@ class SphericalGradient(Gradient, SphericalEllOperator):
 
     @staticmethod
     def _output_basis(input_basis):
-        out = input_basis._new_k(input_basis.k + 1)
-        return out
+        return input_basis.derivative_basis(1)
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""
@@ -3164,8 +3162,7 @@ class SphericalDivergence(Divergence, SphericalEllOperator):
 
     @staticmethod
     def _output_basis(input_basis):
-        out = input_basis._new_k(input_basis.k + 1)
-        return out
+        return input_basis.derivative_basis(1)
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""
@@ -3225,8 +3222,7 @@ class PolarDivergence(Divergence, PolarMOperator):
 
     @staticmethod
     def _output_basis(input_basis):
-        out = input_basis._new_k(input_basis.k + 1)
-        return out
+        return input_basis.derivative_basis(1)
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""
@@ -3371,8 +3367,7 @@ class SphericalCurl(Curl, SphericalEllOperator):
 
     @staticmethod
     def _output_basis(input_basis):
-        out = input_basis._new_k(input_basis.k + 1)
-        return out
+        return input_basis.derivative_basis(1)
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""
@@ -3515,8 +3510,7 @@ class PolarCurl(Curl, PolarMOperator):
 
     @staticmethod
     def _output_basis(input_basis):
-        out = input_basis._new_k(input_basis.k + 1)
-        return out
+        return input_basis.derivative_basis(1)
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""
@@ -3718,8 +3712,7 @@ class SphericalLaplacian(Laplacian, SphericalEllOperator):
 
     @staticmethod
     def _output_basis(input_basis):
-        out = input_basis._new_k(input_basis.k + 2)
-        return out
+        return input_basis.derivative_basis(2)
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""
@@ -3827,8 +3820,7 @@ class PolarLaplacian(Laplacian, PolarMOperator):
 
     @staticmethod
     def _output_basis(input_basis):
-        out = input_basis._new_k(input_basis.k + 2)
-        return out
+        return input_basis.derivative_basis(2)
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""

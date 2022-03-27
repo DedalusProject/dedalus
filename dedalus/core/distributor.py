@@ -216,6 +216,14 @@ class Distributor:
         from .field import TensorField
         return TensorField(self, *args, **kw)
 
+    def IdentityTensor(self, coordsys):
+        """Identity tensor field."""
+        from .field import TensorField
+        I = TensorField(self, (coordsys, coordsys))
+        for i in range(coordsys.dim):
+            I['g'][i, i] = 1
+        return I
+
     def local_grid(self, basis, scale=None):
         # TODO: remove from bases and do it all here?
         if basis.dim == 1:

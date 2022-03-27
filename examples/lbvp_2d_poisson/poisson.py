@@ -47,7 +47,7 @@ h['g'] = 0
 
 # Substitutions
 dy = lambda A: d3.Differentiate(A, coords['y'])
-lift_basis = ybasis.clone_with(a=3/2, b=3/2) # Natural output basis
+lift_basis = ybasis.derivative_basis(2)
 lift = lambda A, n: d3.Lift(A, lift_basis, n)
 
 # Problem

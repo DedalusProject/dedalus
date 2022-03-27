@@ -247,7 +247,15 @@ class Operand:
         """Build expression matrices for a specific subproblem and variables."""
         raise NotImplementedError()
 
+    @property
+    def T(self):
+        from .operators import TransposeComponents
+        return TransposeComponents(self)
 
+    @property
+    def H(self):
+        from .operators import TransposeComponents
+        return TransposeComponents(np.conj(self))
 
 
 class Current(Operand):

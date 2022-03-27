@@ -61,7 +61,7 @@ kappa = (Rayleigh * Prandtl)**(-1/2)
 nu = (Rayleigh / Prandtl)**(-1/2)
 x, z = dist.local_grids(xbasis, zbasis)
 ex, ez = coords.unit_vector_fields(dist)
-lift_basis = zbasis.clone_with(a=1/2, b=1/2) # First derivative basis
+lift_basis = zbasis.derivative_basis(1)
 lift = lambda A: d3.Lift(A, lift_basis, -1)
 grad_u = d3.grad(u) + ez*lift(tau_u1) # First-order reduction
 grad_b = d3.grad(b) + ez*lift(tau_b1) # First-order reduction

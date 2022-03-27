@@ -132,7 +132,7 @@ Here we'll take :math:`P(y)` to be the highest mode in the Chebyshev-U basis, in
 
     # Substitutions
     ex, ey = coords.unit_vector_fields(dist)
-    lift_basis = ybasis.clone_with(a=1/2, b=1/2) # Chebyshev U basis
+    lift_basis = ybasis.derivative_basis(1) # Chebyshev U basis
     lift = lambda A, n: d3.Lift(A, lift_basis, -1) # Shortcut for multiplying by U_{N-1}(y)
     grad_u = d3.grad(u) - ey*lift(tau_u1) # Operator representing G
 

@@ -556,6 +556,11 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         matrix = convert @ matrix
         return matrix[:N, :N]
 
+    def derivative_basis(self, order=1):
+        a = self.a + order
+        b = self.b + order
+        return self.clone_with(a=a, b=b)
+
 
 def Legendre(*args, **kw):
     return Jacobi(*args, a=0, b=0, **kw)
@@ -631,9 +636,7 @@ class DifferentiateJacobi(operators.Differentiate, operators.SpectralOperator1D)
 
     @staticmethod
     def _output_basis(input_basis):
-        a = input_basis.a + 1
-        b = input_basis.b + 1
-        return input_basis.clone_with(a=a, b=b)
+        return input_basis.derivative_basis(order=1)
 
     @staticmethod
     @CachedMethod
@@ -1943,6 +1946,10 @@ class PolarBasis(SpinBasis):
             R2 = R(-1) @ R(+1)
             operator = R2**(d//2) @ operator
         return operator(self.n_size(m), self.alpha + self.k, abs(m + spintotal)).square.astype(np.float64)
+
+    def derivative_basis(self, order=1):
+        k = self.k + order
+        return self.clone_with(k=k)
 
 
 class AnnulusBasis(PolarBasis):
@@ -3923,6 +3930,10 @@ class Spherical3DBasis(MultidimensionalBasis):
     @CachedAttribute
     def constant(self):
         return (self.Lmax==0, self.Lmax==0, False)
+
+    def derivative_basis(self, order=1):
+        k = self.k + order
+        return self.clone_with(k=k)
 
     @CachedAttribute
     def constant_mode_value(self):
