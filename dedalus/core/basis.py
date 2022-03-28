@@ -21,7 +21,7 @@ from ..tools.cache import CachedMethod
 from ..tools.cache import CachedClass
 from ..tools import jacobi
 from ..tools import clenshaw
-from ..tools.array import reshape_vector, axindex, axslice
+from ..tools.array import reshape_vector, axindex, axslice, interleave_matrices
 from ..tools.dispatch import MultiClass, SkipDispatchException
 from ..tools.general import unify, DeferredTuple
 
@@ -4075,6 +4075,10 @@ class Spherical3DBasis(MultidimensionalBasis):
             self.group_shape = (1, 1, 1)
         Basis.__init__(self, coordsystem)
 
+    @CachedAttribute
+    def ell_reversed(self):
+        return self.S2_basis().ell_reversed
+
     def matrix_dependence(self, matrix_coupling):
         matrix_dependence = matrix_coupling.copy()
         if matrix_coupling[1]:
@@ -4388,14 +4392,6 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
         self.radial_basis.backward_regularity_recombination(product.ncc.tensorsig, axis, spin_coeffs, ell_maps=ncc_basis.ell_maps)
         # Build deferred regcomp S2 NCC
         S2_basis = self.S2_basis()
-        def interleave_matrices(matrices):
-            N = len(matrices)
-            sum = 0
-            for i, matrix in enumerate(matrices):
-                P = sparse.csr_matrix((N, N))
-                P[i, i] = 1
-                sum += sparse.kron(matrix, P)
-            return sum
         def reg_NCC_matrix(radial_index):
             # Select radial spin data
             subcoeffs = spin_coeffs[..., radial_index]
@@ -4914,39 +4910,32 @@ class LiftShell(operators.Lift, operators.SphericalEllOperator):
     input_basis_type = SphereBasis
     output_basis_type = ShellBasis
 
+    @CachedAttribute
+    def radial_basis(self):
+        return self.output_basis.radial_basis
+
     def regindex_out(self, regindex_in):
         return (regindex_in,)
 
     def subproblem_matrix(self, subproblem):
-        operand = self.args[0]
-        radial_basis = self.output_basis.radial_basis  ## CHANGED RELATIVE TO POLARMOPERATOR
-        R_in = radial_basis.regularity_classes(operand.tensorsig)
-        R_out = radial_basis.regularity_classes(self.tensorsig)  # Should this use output_basis?
+        matrix = super().subproblem_matrix(subproblem)
+        # Get relevant Qs
+        m = subproblem.group[self.last_axis - 2]
         ell = subproblem.group[self.last_axis - 1]
-        # Loop over components
-        submatrices = []
-        for regindex_out, regtotal_out in np.ndenumerate(R_out):
-            submatrix_row = []
-            for regindex_in, regtotal_in in np.ndenumerate(R_in):
-                # Build identity matrices for each axis
-                subshape_in = subproblem.coeff_shape(self.operand.domain)
-                subshape_out = subproblem.coeff_shape(self.domain)
-                # Check if regularity component exists for this ell
-                if (regindex_out in self.regindex_out(regindex_in)) and radial_basis.regularity_allowed(ell, regindex_in) and radial_basis.regularity_allowed(ell, regindex_out):
-                    # Substitute factor for radial axis
-                    factors = [sparse.eye(m, n, format='csr') for m, n in zip(subshape_out, subshape_in)]
-                    factors[self.last_axis] = self.radial_matrix(regindex_in, regindex_out, ell)
-                    comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
-                else:
-                    # Build zero matrix
-                    comp_matrix = sparse.csr_matrix((prod(subshape_out), prod(subshape_in)))
-                submatrix_row.append(comp_matrix)
-            submatrices.append(submatrix_row)
-        matrix = sparse.bmat(submatrices)
-        matrix.tocsr()
-        # Convert tau from spin to regularity first
-        Q = dedalus_sphere.spin_operators.Intertwiner(ell, indexing=(-1,+1,0))(len(self.tensorsig))  # Fix for product domains
-        matrix = matrix @ sparse.kron(Q.T, sparse.identity(prod(subshape_in), format='csr'))
+        if ell is None:
+            ell_list = np.arange(abs(m), self.input_basis.Lmax + 1)
+            if self.input_basis.ell_reversed[m]:
+                ell_list = ell_list[::-1]
+        else:
+            ell_list = [ell]
+        Q_dict = self.output_basis.radial_basis.radial_recombinations(self.tensorsig, ell_list=tuple(ell_list))
+        # Block-diag for sin/cos parts for real dtype
+        if self.dtype == np.float64:
+            I2 = np.eye(2)
+            Q_dict = {ell: np.kron(Q_dict[ell], I2) for ell in ell_list}
+        Q_forward = interleave_matrices([Q_dict[ell].T for ell in ell_list])
+        # Convert tau from spin to regularity before lifting
+        matrix = matrix @ Q_forward
         return matrix.tocsr()
 
     def radial_matrix(self, regindex_in, regindex_out, m):
@@ -5530,17 +5519,25 @@ class ShellRadialInterpolate(operators.Interpolate, operators.SphericalEllOperat
         return input_basis.S2_basis(radius=position)
 
     def subproblem_matrix(self, subproblem):
-        ell = subproblem.group[self.last_axis - 1]
-        basis_in = self.radial_basis
         matrix = super().subproblem_matrix(subproblem)
-        if self.tensorsig != ():
-            Q = basis_in.radial_recombinations(self.tensorsig, ell_list=(ell,))[ell]
-            if self.dtype == np.float64:
-                # Block-diag for sin/cos parts for real dtype
-                Q = np.kron(Q, np.eye(2))
-            matrix = Q @ matrix
-        # Radial rescaling
-        return matrix
+        # Get relevant Qs
+        m = subproblem.group[self.last_axis - 2]
+        ell = subproblem.group[self.last_axis - 1]
+        if ell is None:
+            ell_list = np.arange(abs(m), self.input_basis.Lmax + 1)
+            if self.input_basis.ell_reversed[m]:
+                ell_list = ell_list[::-1]
+        else:
+            ell_list = [ell]
+        Q_dict = self.input_basis.radial_basis.radial_recombinations(self.tensorsig, ell_list=tuple(ell_list))
+        # Block-diag for sin/cos parts for real dtype
+        if self.dtype == np.float64:
+            I2 = np.eye(2)
+            Q_dict = {ell: np.kron(Q_dict[ell], I2) for ell in ell_list}
+        Q_backward = interleave_matrices([Q_dict[ell] for ell in ell_list])
+        # Convert tau from spin to regularity before lifting
+        matrix = Q_backward @ matrix
+        return matrix.tocsr()
 
     def operate(self, out):
         """Perform operation."""
