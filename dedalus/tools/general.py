@@ -109,3 +109,18 @@ class DeferredTuple:
 
     def __len__(self):
         return self.size
+
+
+def is_real_dtype(dtype):
+    # Get types from dtype objects
+    if not isinstance(dtype, type):
+        dtype = dtype.type
+    return np.isrealobj(dtype())
+
+
+def is_complex_dtype(dtype):
+    # Get types from dtype objects
+    if not isinstance(dtype, type):
+        dtype = dtype.type
+    return np.iscomplexobj(dtype())
+
