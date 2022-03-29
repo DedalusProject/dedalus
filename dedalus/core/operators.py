@@ -3004,9 +3004,15 @@ class SphericalEllOperator(SpectralOperator):
         if ((regindex_out in self.regindex_out(regindex_in)) and self.radial_basis.regularity_allowed(ell, regindex_in) and self.radial_basis.regularity_allowed(ell, regindex_out)):
             return self.radial_matrix(regindex_in, regindex_out, ell)
         elif return_zeros:
-            n_in = self.input_basis.n_size(ell)
-            n_out = self.output_basis.n_size(ell)
-            return sparse.csr_matrix((n_in, n_out))
+            if self.input_basis.dim == 2:
+                n_in = 1
+            else:
+                n_in = self.input_basis.n_size(ell)
+            if self.output_basis.dim == 2:
+                n_out = 1
+            else:
+                n_out = self.output_basis.n_size(ell)
+            return sparse.csr_matrix((n_out, n_in))
         else:
             return None
 
