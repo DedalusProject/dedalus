@@ -420,7 +420,7 @@ def test_heat_ncc_shell(Nmax, Lmax, ncc_exponent, ncc_location, ncc_scale, dtype
 @pytest.mark.parametrize('dtype', [np.complex128])
 @pytest.mark.parametrize('Nmax', [15])
 @pytest.mark.parametrize('Lmax', [7])
-def test_lap_2dncc_shell(Nmax, Lmax, dtype):
+def test_lap_meridional_ncc_shell(Nmax, Lmax, dtype):
     # Bases
     dealias = 1
     c, d, b, phi, theta, r, x, y, z = build_shell(2*(Lmax+1), Lmax+1, Nmax+1, dealias=dealias, dtype=dtype)
@@ -445,6 +445,39 @@ def test_lap_2dncc_shell(Nmax, Lmax, dtype):
     solver.solve()
     # Check solution
     assert np.allclose(u['g'], v['g'])
+
+
+@pytest.mark.parametrize('dtype', [np.complex128])
+@pytest.mark.parametrize('Nmax', [15])
+@pytest.mark.parametrize('Lmax', [7])
+def test_lap_meridional_radial_ncc_shell(Nmax, Lmax, dtype):
+    # Bases
+    dealias = 1
+    c, d, b, phi, theta, r, x, y, z = build_shell(2*(Lmax+1), Lmax+1, Nmax+1, dealias=dealias, dtype=dtype)
+    r0, r1 = b.radial_basis.radii
+    # Fields
+    u = field.Field(name='u', dist=d, bases=(b,), dtype=dtype)
+    v = field.Field(name='v', dist=d, bases=(b,), dtype=dtype)
+    τu1 = field.Field(name='τu1', dist=d, bases=(b.S2_basis(),), dtype=dtype)
+    τu2 = field.Field(name='τu2', dist=d, bases=(b.S2_basis(),), dtype=dtype)
+    ncc_m = field.Field(name='ncc', dist=d, bases=(b.meridional_basis,), dtype=dtype)
+    ncc_r = field.Field(name='ncc', dist=d, bases=(b.radial_basis,), dtype=dtype)
+    v['g'] = x**2 + z**2
+    ncc_m['g'] = z**2
+    ncc_r['g'] = r**2
+    # Problem
+    Lap = lambda A: operators.Laplacian(A, c)
+    Lift = lambda A, n: operators.Lift(A, b, n)
+    problem = problems.LBVP([u, τu1, τu2])
+    problem.add_equation((ncc_m*Lap(u) + ncc_r*Lap(u) + Lift(τu1,-1) + Lift(τu2,-2), ncc_m*Lap(v) + ncc_r*Lap(v)))
+    problem.add_equation((u(r=r0), v(r=r0)))
+    problem.add_equation((u(r=r1), v(r=r1)))
+    # Solver
+    solver = solvers.LinearBoundaryValueSolver(problem)
+    solver.solve()
+    # Check solution
+    assert np.allclose(u['g'], v['g'])
+
 
 @pytest.mark.parametrize('dtype', [np.complex128])
 @pytest.mark.parametrize('Nmax', [15])

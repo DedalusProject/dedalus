@@ -1561,7 +1561,6 @@ class SpinRecombinationBasis:
     def spin_recombination_matrix(self, tensorsig):
         U = self.spin_recombination_matrices(tensorsig)
         matrix = kron(*U)
-
         if self.dtype == np.float64:
             #matrix = np.array([[matrix.real,-matrix.imag],[matrix.imag,matrix.real]])
             matrix = (np.kron(matrix.real,np.array([[1,0],[0,1]]))
@@ -4608,6 +4607,14 @@ class ConvertConstantShell(operators.ConvertConstant, operators.SphericalEllOper
         if self.coords in operand.tensorsig:
             raise ValueError("Tensors not yet supported.")
 
+    @CachedAttribute
+    def radial_basis(self):
+        return self.output_basis.radial_basis
+
+    @CachedAttribute
+    def S2_basis(self):
+        return self.output_basis.S2_basis()
+
     def regindex_out(self, regindex_in):
         return (regindex_in,)
 
@@ -4624,7 +4631,8 @@ class ConvertConstantShell(operators.ConvertConstant, operators.SphericalEllOper
             matrix = k0_to_k @ const_to_k0
             return matrix
         else:
-            raise ValueError("This should never happen.")
+            return sparse.csr_matrix((self.output_basis.n_size(ell), 0))
+            #raise ValueError("This should never happen.")
 
 
 class ConvertSpherical3D(operators.Convert, operators.SphericalEllOperator):
@@ -4914,6 +4922,10 @@ class LiftShell(operators.Lift, operators.SphericalEllOperator):
     def radial_basis(self):
         return self.output_basis.radial_basis
 
+    @CachedAttribute
+    def S2_basis(self):
+        return self.output_basis.S2_basis()
+
     def regindex_out(self, regindex_in):
         return (regindex_in,)
 
@@ -4931,12 +4943,12 @@ class LiftShell(operators.Lift, operators.SphericalEllOperator):
         Q_dict = self.output_basis.radial_basis.radial_recombinations(self.tensorsig, ell_list=tuple(ell_list))
         # Block-diag for sin/cos parts for real dtype
         if self.dtype == np.float64:
-            I2 = np.eye(2)
-            Q_dict = {ell: np.kron(Q_dict[ell], I2) for ell in ell_list}
+            I2 = sparse.eye(2)
+            Q_dict = {ell: sparse.kron(Q_dict[ell], I2) for ell in ell_list}
         Q_forward = interleave_matrices([Q_dict[ell].T for ell in ell_list])
         # Convert tau from spin to regularity before lifting
         matrix = matrix @ Q_forward
-        return matrix.tocsr()
+        return sparse.csr_matrix(matrix)
 
     def radial_matrix(self, regindex_in, regindex_out, m):
         if regindex_in == regindex_out:
@@ -5447,7 +5459,7 @@ class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperato
             Q = radial_basis.radial_recombinations(self.tensorsig, ell_list=(ell,))[ell]
             if self.dtype == np.float64:
                 # Block-diag for sin/cos parts for real dtype
-                Q = np.kron(Q, np.eye(2))
+                Q = sparse.kron(Q, sparse.eye(2))
             matrix = Q @ matrix
         return matrix
 
@@ -5532,12 +5544,12 @@ class ShellRadialInterpolate(operators.Interpolate, operators.SphericalEllOperat
         Q_dict = self.input_basis.radial_basis.radial_recombinations(self.tensorsig, ell_list=tuple(ell_list))
         # Block-diag for sin/cos parts for real dtype
         if self.dtype == np.float64:
-            I2 = np.eye(2)
-            Q_dict = {ell: np.kron(Q_dict[ell], I2) for ell in ell_list}
+            I2 = sparse.eye(2)
+            Q_dict = {ell: sparse.kron(Q_dict[ell], I2) for ell in ell_list}
         Q_backward = interleave_matrices([Q_dict[ell] for ell in ell_list])
         # Convert tau from spin to regularity before lifting
         matrix = Q_backward @ matrix
-        return matrix.tocsr()
+        return sparse.csr_matrix(matrix)
 
     def operate(self, out):
         """Perform operation."""
@@ -5586,9 +5598,15 @@ class S2RadialComponent(operators.RadialComponent):
                         matrix_row[-1] = 1
             matrix.append(matrix_row)
         matrix = np.array(matrix)
+        # Block-diag for sin/cos parts for real dtype
         if self.dtype == np.float64:
-            # Block-diag for sin/cos parts for real dtype
-            matrix = np.kron(matrix, np.eye(2))
+            matrix = sparse.kron(matrix, sparse.eye(2))
+        # Block over ell
+        m = subproblem.group[self.input_basis.last_axis - 1]
+        ell = subproblem.group[self.input_basis.last_axis]
+        if ell is None:
+            n_ell = self.input_basis.Lmax + 1 - np.abs(m)
+            matrix = sparse.kron(matrix, sparse.eye(n_ell))
         return matrix
 
     def operate(self, out):
@@ -5609,7 +5627,6 @@ class S2AngularComponent(operators.AngularComponent):
         basis = self.domain.get_basis(self.coordsys)
         S_in = basis.spin_weights(operand.tensorsig)
         S_out = basis.spin_weights(self.tensorsig)
-
         matrix = []
         for spinindex_out, spintotal_out in np.ndenumerate(S_out):
             matrix_row = []
@@ -5620,9 +5637,15 @@ class S2AngularComponent(operators.AngularComponent):
                     matrix_row.append( 0 )
             matrix.append(matrix_row)
         matrix = np.array(matrix)
+        # Block-diag for sin/cos parts for real dtype
         if self.dtype == np.float64:
-            # Block-diag for sin/cos parts for real dtype
-            matrix = np.kron(matrix, np.eye(2))
+            matrix = sparse.kron(matrix, sparse.eye(2))
+        # Block over ell
+        m = subproblem.group[self.input_basis.last_axis - 1]
+        ell = subproblem.group[self.input_basis.last_axis]
+        if ell is None:
+            n_ell = self.input_basis.Lmax + 1 - np.abs(m)
+            matrix = sparse.kron(matrix, sparse.eye(n_ell))
         return matrix
 
     def operate(self, out):
@@ -5644,7 +5667,7 @@ class PolarAzimuthalComponent(operators.AzimuthalComponent):
         matrix = np.array([[1,0]])
         if self.dtype == np.float64:
             # Block-diag for sin/cos parts for real dtype
-            matrix = np.kron(matrix, np.eye(2))
+            matrix = sparse.kron(matrix, sparse.eye(2))
 
 #        operand = self.args[0]
 #        basis = self.domain.get_basis(self.coordsys)
@@ -5682,7 +5705,7 @@ class PolarRadialComponent(operators.RadialComponent):
         matrix = np.array([[0,1]])
         if self.dtype == np.float64:
             # Block-diag for sin/cos parts for real dtype
-            matrix = np.kron(matrix, np.eye(2))
+            matrix = sparse.kron(matrix, sparse.eye(2))
 
 #        operand = self.args[0]
 #        basis = self.domain.get_basis(self.coordsys)

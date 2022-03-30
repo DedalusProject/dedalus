@@ -342,9 +342,12 @@ def scipy_sparse_eigs(A, B, N, target, matsolver, **kw):
 
 def interleave_matrices(matrices):
     N = len(matrices)
+    if N == 1:
+        return matrices[0]
     sum = 0
     for i, matrix in enumerate(matrices):
         P = sparse.csr_matrix((N, N))
         P[i, i] = 1
         sum += sparse.kron(matrix, P)
     return sum
+

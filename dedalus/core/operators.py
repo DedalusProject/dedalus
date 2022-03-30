@@ -19,7 +19,7 @@ from .domain import Domain
 from . import coords
 from .field import Operand, Field
 from .future import Future, FutureField, FutureLockedField
-from ..tools.array import reshape_vector, apply_matrix, add_sparse, axindex, axslice, perm_matrix, copyto, sparse_block_diag, prod
+from ..tools.array import reshape_vector, apply_matrix, add_sparse, axindex, axslice, perm_matrix, copyto, sparse_block_diag, prod, interleave_matrices
 from ..tools.cache import CachedAttribute, CachedMethod
 from ..tools.dispatch import MultiClass
 from ..tools.exceptions import NonlinearOperatorError
@@ -1714,24 +1714,39 @@ class SphericalTrace(Trace):
         self.radial_basis = self.input_basis.get_radial_basis()
 
     def subproblem_matrix(self, subproblem):
+        input_basis = self.input_basis
         radial_basis = self.radial_basis
+        m = subproblem.group[self.radius_axis - 2]
         ell = subproblem.group[self.radius_axis - 1]
         # Commute trace with regularity recombination
-        Q_in = radial_basis.radial_recombinations(self.operand.tensorsig, ell_list=(ell,))
-        Q_out = radial_basis.radial_recombinations(self.tensorsig, ell_list=(ell,))
-        # [-+, +-, 00] are 1, other components are 0
-        # [ 1,  3,  8]
+        # Spin trace: [-+, +-, 00] are 1, other components are 0
+        #             [ 1,  3,  8]
         trace_spin = np.zeros(9)
         trace_spin[[1, 3, 8]] = 1
-        trace = np.kron(trace_spin, np.eye(3**len(self.tensorsig)))
-        # Apply Q's
-        trace = Q_out[ell].T @ trace @ Q_in[ell]
-        # Assume all components have the same n_size
-        eye = sparse.identity(radial_basis.n_size(ell), self.dtype, format='csr')
-        matrix = sparse.kron(trace, eye)
+        trace = sparse.kron(trace_spin, sparse.eye(3**len(self.tensorsig)))
+        # Stack ells
+        if ell is None:
+            ell_list = np.arange(np.abs(m), input_basis.Lmax+1)
+            if input_basis.ell_reversed[m]:
+                ell_list = ell_list[::-1]
+        else:
+            ell_list = [ell]
+        Q_in = radial_basis.radial_recombinations(self.operand.tensorsig, ell_list=tuple(ell_list))
+        Q_out = radial_basis.radial_recombinations(self.tensorsig, ell_list=tuple(ell_list))
+        # Apply Q's and interleave
+        trace_list = [Q_out[ell].T @ trace @ Q_in[ell] for ell in ell_list]
         # Block-diag for sin/cos parts for real dtype
         if self.dtype == np.float64:
-            matrix = sparse.kron(matrix, sparse.identity(2, format='csr')).tocsr()
+            I2 = sparse.eye(2)
+            trace_list = [sparse.kron(trace_ell, I2) for trace_ell in trace_list]
+        trace = interleave_matrices(trace_list)
+        # Apply to all n
+        if ell is None:
+            # Assume all components have the same n_size
+            eye = sparse.identity(radial_basis.n_size(0), self.dtype, format='csr')
+        else:
+            eye = sparse.identity(radial_basis.n_size(ell), self.dtype, format='csr')
+        matrix = sparse.kron(trace, eye)
         return matrix
 
 
@@ -1749,7 +1764,7 @@ class CylindricalTrace(Trace):
         # [ 1,  2]
         trace_spin = np.zeros(4)
         trace_spin[[1, 2]] = 1
-        trace = np.kron(trace_spin, np.eye(2**len(self.tensorsig)))
+        trace = sparse.kron(trace_spin, sparse.eye(2**len(self.tensorsig)))
         # Assume all components have the same n_size
         eye = sparse.identity(self.input_basis.n_size(m), self.dtype, format='csr')
         matrix = sparse.kron(trace, eye)
@@ -1887,18 +1902,35 @@ class SphericalTransposeComponents(TransposeComponents):
         self.radial_basis = self.input_basis.get_radial_basis()
 
     def subproblem_matrix(self, subproblem):
+        input_basis = self.input_basis
         radial_basis = self.radial_basis
+        m = subproblem.group[self.radius_axis - 2]
         ell = subproblem.group[self.radius_axis - 1]
         # Commute transposition with regularity recombination
         transpose = self._transpose_matrix
-        Q = radial_basis.radial_recombinations(self.tensorsig, ell_list=(ell,))
-        transpose = Q[ell].T @ transpose @ Q[ell]
-        # Assume all components have the same n_size
-        eye = sparse.identity(radial_basis.n_size(ell), self.dtype, format='csr')
-        matrix = sparse.kron(transpose, eye)
+        # Stack ells
+        if ell is None:
+            ell_list = np.arange(np.abs(m), input_basis.Lmax+1)
+            if input_basis.ell_reversed[m]:
+                ell_list = ell_list[::-1]
+        else:
+            ell_list = [ell]
+        Q_in = radial_basis.radial_recombinations(self.operand.tensorsig, ell_list=tuple(ell_list))
+        Q_out = radial_basis.radial_recombinations(self.tensorsig, ell_list=tuple(ell_list))
+        # Apply Q's and interleave
+        transpose_list = [Q_out[ell].T @ transpose @ Q_in[ell] for ell in ell_list]
         # Block-diag for sin/cos parts for real dtype
         if self.dtype == np.float64:
-            matrix = sparse.kron(matrix, sparse.identity(2, format='csr')).tocsr()
+            I2 = sparse.eye(2)
+            transpose_list = [sparse.kron(transpose_ell, I2) for transpose_ell in transpose_list]
+        transpose = interleave_matrices(transpose_list)
+        # Apply to all n
+        if ell is None:
+            # Assume all components have the same n_size
+            eye = sparse.identity(radial_basis.n_size(0), self.dtype, format='csr')
+        else:
+            eye = sparse.identity(radial_basis.n_size(ell), self.dtype, format='csr')
+        matrix = sparse.kron(transpose, eye)
         return matrix
 
     def operate(self, out):
@@ -2089,6 +2121,7 @@ class Component(LinearOperator):
             raise ValueError("index greater than rank")
         self.index = index
         self.coordsys = operand.tensorsig[self.index]
+        self.input_basis = operand.domain.get_basis(self.coordsys)
         super().__init__(operand, out=out)
         # LinearOperator requirements
         self.operand = operand
@@ -2919,6 +2952,10 @@ class SphericalEllOperator(SpectralOperator):
     def radial_basis(self):
         return self.input_basis.radial_basis
 
+    @CachedAttribute
+    def S2_basis(self):
+        return self.input_basis.S2_basis()
+
     def operate(self, out):
         """Perform operation."""
         operand = self.args[0]
@@ -2991,7 +3028,7 @@ class SphericalEllOperator(SpectralOperator):
 
     def _coupled_ell_matrices(self, regindex_in, regindex_out, m):
         # Get ordered list of ells
-        basis = self.output_basis
+        basis = self.S2_basis
         ell_list = np.arange(np.abs(m), basis.Lmax+1)
         if basis.ell_reversed[m]:
             ell_list = ell_list[::-1]
@@ -3077,7 +3114,7 @@ class SphericalGradient(Gradient, SphericalEllOperator):
 
 
 @alias("comp")
-class Component(LinearOperator, metaclass=MultiClass):
+class CartCompBase(LinearOperator, metaclass=MultiClass):
 
     name = 'Comp'
 
@@ -3100,7 +3137,7 @@ class Component(LinearOperator, metaclass=MultiClass):
         return isinstance(operand.tensorsig[index], cls.cs_type)
 
     def new_operand(self, operand, **kw):
-        return Component(operand, self.index, self.coord, **kw)
+        return CartCompBase(operand, self.index, self.coord, **kw)
 
     # def separability(self, *vars):
     #     return self.operand.separability(*vars)
@@ -3112,7 +3149,7 @@ class Component(LinearOperator, metaclass=MultiClass):
         return self.operand.matrix_coupling(*vars)
 
 
-class CartesianComponent(Component):
+class CartesianComponent(CartCompBase):
 
     cs_type = coords.CartesianCoordinates
 
