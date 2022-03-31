@@ -2654,6 +2654,36 @@ class SeparableSphereOperator(SpectralOperator):
                     comp_out += symbols * comp_in # TEMPORARY
 
 
+class SphereEllProduct(SeparableSphereOperator):
+
+    name = "SphereEllProduct"
+    complex_operator = False
+    subaxis_dependence = [False, True]
+
+    def __init__(self, operand, coordsys, ell_r_func, out=None):
+        super().__init__(operand, out=out)
+        self.ell_r_func = ell_r_func
+        self.coordsys = coordsys
+        self.operand = operand
+        self.input_basis = operand.domain.get_basis(coordsys)
+        self.output_basis = self.input_basis
+        self.first_axis = self.input_basis.first_axis
+        self.last_axis = self.input_basis.last_axis
+        # FutureField requirements
+        self.domain  = operand.domain
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
+
+    def symbol(self, spinindex_in, spinindex_out, local_ell, radius):
+        return self.ell_r_func(local_ell, radius)
+
+    def new_operand(self, operand, **kw):
+        return SphereEllProduct(operand, self.coordsys, self.ell_r_func, **kw)
+
+    def spinindex_out(self, spinindex_in):
+        return (spinindex_in,)
+
+
 class PolarMOperator(SpectralOperator):
 
     subaxis_dependence = [True, True]  # Depends on m and n
