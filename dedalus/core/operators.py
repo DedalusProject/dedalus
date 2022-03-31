@@ -2654,11 +2654,21 @@ class SeparableSphereOperator(SpectralOperator):
                     comp_out += symbols * comp_in # TEMPORARY
 
 
-class SphereEllProduct(SeparableSphereOperator):
+class SphereEllProduct(SeparableSphereOperator, metaclass=MultiClass):
 
     name = "SphereEllProduct"
     complex_operator = False
     subaxis_dependence = [False, True]
+
+    @classmethod
+    def _preprocess_args(cls, operand, coordsys, ell_r_func, out=None):
+        if operand == 0:
+            raise SkipDispatchException(output=0)
+        return [operand, coordsys, ell_r_func], {'out': out}
+
+    @classmethod
+    def _check_args(cls, operand, coordsys, ell_r_func, out=None):
+        return True
 
     def __init__(self, operand, coordsys, ell_r_func, out=None):
         super().__init__(operand, out=out)
