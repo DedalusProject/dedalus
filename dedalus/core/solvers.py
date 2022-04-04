@@ -181,9 +181,10 @@ class EigenvalueSolver(SolverBase):
         eig_output = eig(A, b=B, **kw)
         # Unpack output
         if len(eig_output) == 2:
-            self.eigenvalues, self.eigenvectors = eig_output
+            self.eigenvalues, eigenvectors = eig_output
         elif len(eig_output) == 3:
-            self.eigenvalues, self.left_eigenvectors, self.eigenvectors = eig_output
+            self.eigenvalues, self.left_eigenvectors, eigenvectors = eig_output
+        self.eigenvectors = sp.pre_right @ eigenvectors
         self.eigenvalue_subproblem = subproblem
 
     def solve_sparse(self, subproblem, N, target, rebuild_coeffs=False, left=False, normalize_left=True, raise_on_mismatch=True, **kw):
@@ -278,8 +279,7 @@ class EigenvalueSolver(SolverBase):
             raise ValueError("subsystem must be in eigenvalue_subproblem")
         for var in self.state:
             var['c'] = 0
-        X = sp.pre_right @ self.eigenvectors[:,index]
-        subsystem.scatter(X, self.state)
+        subsystem.scatter(self.eigenvectors[:, index], self.state)
 
 
 class LinearBoundaryValueSolver(SolverBase):
