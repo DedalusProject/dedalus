@@ -1,8 +1,7 @@
-include license.txt
+include LICENSE.txt
 include MANIFEST.in
-include pyproject.toml
 include README.md
-include requirements.txt
+include pyproject.toml
 include setup.py
 global-include *.pyx
 global-include *.pxd
