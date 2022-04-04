@@ -176,7 +176,8 @@ extensions = [
         libraries=libraries,
         library_dirs=library_dirs,
         runtime_library_dirs=library_dirs,
-        extra_compile_args=extra_compile_args)]
+        extra_compile_args=extra_compile_args,
+        extra_link_args=extra_link_args)]
 
 # Runtime requirements
 install_requires = [
@@ -184,11 +185,12 @@ install_requires = [
     "h5py >= 2.10.0",
     "matplotlib",
     "mpi4py >= 2.0.0",
-    "numpy",
-    "scipy >= 0.13.0",
+    "numpy >= 1.20.0",
     "pytest",
     "pytest-benchmark",
-    "pytest-cov"]
+    "pytest-cov",
+    "pytest-parallel",
+    "scipy >= 1.4.0"]
 
 # Grab long_description from README
 with open('README.md') as f:
@@ -206,8 +208,9 @@ class build(_build):
     def run(self):
         # Create tar file with example scripts
         with tarfile.open('dedalus/examples.tar.gz', mode='w:gz') as archive:
-            for file in pathlib.Path('examples').glob('**/*.py'):
-                archive.add(str(file))
+            examples_dir = pathlib.Path('examples')
+            for file in examples_dir.glob('**/*.py'):
+                archive.add(str(file), str(file.relative_to(examples_dir)))
         # Run the original build command
         _build.run(self)
 
