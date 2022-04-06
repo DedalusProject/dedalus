@@ -23,7 +23,7 @@ Dedalus is a flexible framework for solving partial differential equations using
 The code is open-source and developed by a team of researchers studying astrophysical, geophysical, and biological fluid dynamics.
 
 Dedalus is written primarily in Python and features an easy-to-use interface with symbolic vectorial equation specification.
-For example, to simulate incompressible hydrodynamics in a ball, you can symbolically enter the equations, including [gauge constraints](https://dedalus-project.readthedocs.io/en/latest/pages/gauge_constraints.html) and [boundary conditions enforced with the tau method](https://dedalus-project.readthedocs.io/en/latest/pages/tau_method.html), as:
+For example, to simulate incompressible hydrodynamics in a ball, you can symbolically enter the equations, including [gauge conditions](https://dedalus-project.readthedocs.io/en/latest/pages/gauge_conditions.html) and [boundary conditions enforced with the tau method](https://dedalus-project.readthedocs.io/en/latest/pages/tau_method.html), as:
 
 ```python
 problem.add_equation("div(u) + tau_p = 0")
