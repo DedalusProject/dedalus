@@ -145,9 +145,10 @@ class EigenvalueSolver(SolverBase):
     def __init__(self, problem, **kw):
         logger.debug('Beginning EVP instantiation')
         super().__init__(problem, **kw)
-        # Build subsystems and subproblem matrices
+        # Build subsystems and subproblem without building matrices
         self.subsystems = subsystems.build_subsystems(self)
-        self.subproblems = subsystems.build_subproblems(self, self.subsystems, ['M','L'])
+        self.subproblems = subsystems.build_subproblems(self, self.subsystems)
+        self.subproblems_by_group = {sp.group: sp for sp in self.subproblems}
         self.state = problem.variables
         logger.debug('Finished EVP instantiation')
 
@@ -173,7 +174,7 @@ class EigenvalueSolver(SolverBase):
         # else:
         #     cacheid = None
         #pencil.build_matrices(self.problem, ['M', 'L'], cacheid=cacheid)
-
+        subsystems.build_subproblem_matrices(self, [subproblem], ['M', 'L'])
         # Solve as dense general eigenvalue problem
         sp = subproblem
         A = (sp.L_min @ sp.pre_right).A
@@ -229,7 +230,7 @@ class EigenvalueSolver(SolverBase):
         # else:
         #     cacheid = None
         # pencil.build_matrices(self.problem, ['M', 'L'], cacheid=cacheid)
-
+        subsystems.build_subproblem_matrices(self, [subproblem], ['M', 'L'])
         # Solve as sparse general eigenvalue problem
         sp = subproblem
         A = (sp.L_min @ sp.pre_right)
@@ -308,7 +309,8 @@ class LinearBoundaryValueSolver(SolverBase):
         super().__init__(problem, **kw)
         # Build subsystems and subproblem matrices
         self.subsystems = subsystems.build_subsystems(self)
-        self.subproblems = subsystems.build_subproblems(self, self.subsystems, ['L'])
+        self.subproblems = subsystems.build_subproblems(self, self.subsystems, build_matrices=['L'])
+        self.subproblems_by_group = {sp.group: sp for sp in self.subproblems}
         self.state = problem.variables
         # Create F operator trees
         namespace = {}
@@ -419,7 +421,8 @@ class NonlinearBoundaryValueSolver(SolverBase):
         # Compute RHS
         self.evaluator.evaluate_group('F', sim_time=0, wall_time=0, iteration=self.iteration)
         # Recompute Jacobian
-        self.subproblems = subsystems.build_subproblems(self, self.subsystems, ['dH'])
+        self.subproblems = subsystems.build_subproblems(self, self.subsystems, build_matrices=['dH'])
+        self.subproblems_by_group = {sp.group: sp for sp in self.subproblems}
         # Ensure coeff space before subsystem gathers/scatters
         for field in self.F:
             field.change_layout('c')
@@ -488,7 +491,8 @@ class InitialValueSolver(SolverBase):
         self.init_time = self.get_wall_time()
         # Build subproblems and subproblem matrices
         self.subsystems = subsystems.build_subsystems(self)
-        self.subproblems = subsystems.build_subproblems(self, self.subsystems, ['M', 'L'])
+        self.subproblems = subsystems.build_subproblems(self, self.subsystems, build_matrices=['M', 'L'])
+        self.subproblems_by_group = {sp.group: sp for sp in self.subproblems}
         # Compute total modes
         local_modes = sum(ss.subproblem.pre_right.shape[1] for ss in self.subsystems)
         self.total_modes = self.dist.comm.allreduce(local_modes, op=MPI.SUM)

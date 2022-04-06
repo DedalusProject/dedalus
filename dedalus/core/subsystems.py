@@ -51,29 +51,33 @@ def build_subsystems(solver):
     # Build subsystem for each local groupset
     return tuple(Subsystem(solver, groupset) for groupset in local_groupsets)
 
-def build_subproblems(solver, subsystems, matrices):
+def build_subproblems(solver, subsystems, build_matrices=None):
     """Build subproblem matrices with progress logger."""
-    problem = solver.problem
+    # Arrange subsysytems by matrix groups
+    subsystems_by_group = defaultdict(list)
+    for subsystem in subsystems:
+        subsystems_by_group[subsystem.matrix_group].append(subsystem)
+    # Build subproblem objects for each matrix group
+    subproblems = []
+    for matrix_group, subsystems in subsystems_by_group.items():
+        subproblem = Subproblem(solver, subsystems, matrix_group)
+        subproblems.append(subproblem)
+    subproblems = tuple(subproblems)
+    # Build matrices if requested
+    if build_matrices is not None:
+        build_subproblem_matrices(solver, subproblems, build_matrices)
+    return subproblems
+
+def build_subproblem_matrices(solver, subproblems, matrices):
     # Setup NCCs
-    for eq in problem.eqs:
+    for eq in solver.problem.eqs:
         for matrix in matrices:
             expr = eq[matrix]
             if expr:
                 expr.gather_ncc_coeffs()
-                # separability = ~problem.matrix_coupling
-                # expr.build_ncc_matrices(separability, problem.variables)
-    # Get matrix groups
-    subproblem_map = defaultdict(list)
-    for subsystem in subsystems:
-        subproblem_map[subsystem.matrix_group].append(subsystem)
-    # Build subproblems
-    subproblems = []
-    for matrix_group in log_progress(subproblem_map, logger, 'info', desc='Building subproblem matrices', iter=np.inf, frac=0.1, dt=10):
-        subsystems = tuple(subproblem_map[matrix_group])
-        subproblem = Subproblem(solver, subsystems, matrix_group)
-        subproblem.build_matrices(matrices)
-        subproblems.append(subproblem)
-    return tuple(subproblems)
+    # Build matrices
+    for subproblem in log_progress(subproblems, logger, 'info', desc='Building subproblem matrices', iter=np.inf, frac=0.1, dt=10):
+         subproblem.build_matrices(matrices)
 
 # def rebuild_subproblem_matrices(problem, subsystems, matrices):
     # """Rebuild subproblem matrices with progress logger."""
