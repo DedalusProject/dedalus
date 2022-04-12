@@ -647,10 +647,9 @@ class FileHandler(Handler):
                 else:
                     sn = 'k' + basis.coordsystem.coords[subaxis].name
                     if virtual_file:
-                        data = basis.global_elements()[subaxis].ravel()
+                        data = layout.global_group_arrays(op.domain, scales)[subaxis]
                     else:
-                        data = basis.local_elements()[subaxis].ravel()
-
+                        data = layout.local_group_arrays(op.domain, scales)[subaxis]
 
                 if self.dist.comm_cart.rank == 0:
                     scale_hash = hashlib.sha1(data).hexdigest()

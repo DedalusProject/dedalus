@@ -13,7 +13,8 @@ from dedalus.tools.cache import CachedFunction
 @pytest.mark.parametrize('dealias', [1, 3/2])
 @pytest.mark.parametrize('output_scales', [1, 3/2, 2,
     pytest.param(1/2, marks=pytest.mark.xfail(reason="evaluator not copying correctly for scales < 1"))])
-def test_cartesian_output(dtype, dealias, output_scales):
+@pytest.mark.parametrize('output_layout', ['g', 'c'])
+def test_cartesian_output(dtype, dealias, output_scales, output_layout):
     Nx = Ny = Nz = 16
     Lx = Ly = Lz = 2 * np.pi
     # Bases
@@ -41,17 +42,18 @@ def test_cartesian_output(dtype, dealias, output_scales):
         tempdir = pathlib.Path(tempdir).stem
         output = solver.evaluator.add_file_handler(tempdir, iter=1)
         for task in tasks:
-            output.add_task(task, layout='g', name=str(task), scales=output_scales)
+            output.add_task(task, layout=output_layout, name=str(task), scales=output_scales)
         solver.evaluator.evaluate_handlers([output])
+        output.process_virtual_file()
         # Check solution
         #post.merge_process_files('test_output')
         errors = []
-        with h5py.File(f'{tempdir}/{tempdir}_s1/{tempdir}_s1_p0.h5', mode='r') as file:
+        with h5py.File(f'{tempdir}/{tempdir}_s1.h5', mode='r') as file:
             for task in tasks:
                 task_saved = file['tasks'][str(task)][-1]
                 task = task.evaluate()
                 task.change_scales(output_scales)
-                errors.append(np.max(np.abs(task['g'] - task_saved)))
+                errors.append(np.max(np.abs(task[output_layout] - task_saved)))
     assert np.allclose(errors, 0)
 
 
@@ -107,10 +109,11 @@ def test_spherical_output(Nphi, Ntheta, Nr, k, dealias, dtype, basis, output_sca
         for task in tasks:
             output.add_task(task, layout='g', name=str(task), scales=output_scales)
         solver.evaluator.evaluate_handlers([output])
+        output.process_virtual_file()
         # Check solution
         #post.merge_process_files('test_output')
         errors = []
-        with h5py.File(f'{tempdir}/{tempdir}_s1/{tempdir}_s1_p0.h5', mode='r') as file:
+        with h5py.File(f'{tempdir}/{tempdir}_s1.h5', mode='r') as file:
             for task in tasks:
                 task_saved = file['tasks'][str(task)][-1]
                 task = task.evaluate()

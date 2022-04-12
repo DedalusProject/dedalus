@@ -320,6 +320,12 @@ class Layout:
                 local_chunks.append(np.arange(start, end))
         return tuple(local_chunks)
 
+    def global_elements(self, domain, scales):
+        """Global element indices by axis."""
+        global_shape = self.global_shape(domain, scales)
+        indices = [np.arange(n) for n in global_shape]
+        return tuple(indices)
+
     def local_elements(self, domain, scales, rank=None, broadcast=False):
         """Local element indices by axis."""
         chunk_shape = self.chunk_shape(domain)
@@ -345,12 +351,7 @@ class Layout:
             valid &= basis.valid_elements(tensorsig, grid_space[basis_axes], elements[basis_axes])
         return valid
 
-    @CachedMethod
-    def local_group_arrays(self, domain, scales, rank=None, broadcast=False):
-        """Dense array of local groups (first axis)."""
-        # Make dense array of local elements
-        elements = self.local_elements(domain, scales, rank=rank, broadcast=broadcast)
-        elements = np.array(np.meshgrid(*elements, indexing='ij'))
+    def _group_arrays(self, elements, domain):
         # Convert to groups basis-by-basis
         grid_space = self.grid_space
         groups = np.zeros_like(elements)
@@ -359,6 +360,22 @@ class Layout:
             basis_axes = slice(basis.first_axis, basis.last_axis+1)
             groups[basis_axes] = basis.elements_to_groups(grid_space[basis_axes], elements[basis_axes])
         return groups
+
+    @CachedMethod
+    def local_group_arrays(self, domain, scales, rank=None, broadcast=False):
+        """Dense array of local groups (first axis)."""
+        # Make dense array of local elements
+        elements = self.local_elements(domain, scales, rank=rank, broadcast=broadcast)
+        elements = np.array(np.meshgrid(*elements, indexing='ij'))
+        return self._group_arrays(elements, domain)
+
+    @CachedMethod
+    def global_group_arrays(self, domain, scales):
+        """Dense array of local groups (first axis)."""
+        # Make dense array of local elements
+        elements = self.global_elements(domain, scales)
+        elements = np.array(np.meshgrid(*elements, indexing='ij'))
+        return self._group_arrays(elements, domain)
 
     @CachedMethod
     def local_groupsets(self, group_coupling, domain, scales, rank=None, broadcast=False):
