@@ -66,7 +66,7 @@ def test_waves_1d(x_basis_class, Nx, dtype, sparse):
     solver = solvers.EigenvalueSolver(problem, matrix_coupling=[True])
     Nmodes = 4
     if sparse:
-        solver.solve_sparse(solver.subproblems[0], N=Nmodes, target=1)
+        solver.solve_sparse(solver.subproblems[0], N=Nmodes, target=1.2)
     else:
         solver.solve_dense(solver.subproblems[0])
     i_sort = np.argsort(solver.eigenvalues)

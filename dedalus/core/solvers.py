@@ -394,6 +394,8 @@ class NonlinearBoundaryValueSolver(SolverBase):
         self.iteration = 0
         # Build subsystems and subproblem matrices
         self.subsystems = subsystems.build_subsystems(self)
+        self.subproblems = subsystems.build_subproblems(self, self.subsystems)
+        self.subproblems_by_group = {sp.group: sp for sp in self.subproblems}
         self.state = problem.variables
         self.perturbations = problem.perturbations
         # Create F operator trees
@@ -421,8 +423,7 @@ class NonlinearBoundaryValueSolver(SolverBase):
         # Compute RHS
         self.evaluator.evaluate_group('F', sim_time=0, wall_time=0, iteration=self.iteration)
         # Recompute Jacobian
-        self.subproblems = subsystems.build_subproblems(self, self.subsystems, build_matrices=['dH'])
-        self.subproblems_by_group = {sp.group: sp for sp in self.subproblems}
+        subsystems.build_subproblem_matrices(self, self.subproblems, ['dH'])
         # Ensure coeff space before subsystem gathers/scatters
         for field in self.F:
             field.change_layout('c')
