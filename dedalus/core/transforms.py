@@ -1401,7 +1401,7 @@ class DiskRadialTransform(NonSeparableTransform):
                 # Spectral conversion
                 if self.k > 0:
                     conversion = dedalus_sphere.zernike.operator(2, 'E')(+1)**self.k
-                    W = conversion(W.shape[0], self.alpha, abs(m + self.s)) @ W
+                    W = conversion(W.shape[0], self.alpha, abs(m + self.s)) @ W.astype(np.float64)
                 if not DEALIAS_BEFORE_CONVERTING():
                     # Truncate to specified coeff_size
                     W = W[:max(self.N2c-Nmin,0)]
@@ -1510,7 +1510,7 @@ class BallRadialTransform(Transform):
                     # Spectral conversion
                     if self.k > 0:
                         conversion = dedalus_sphere.zernike.operator(3, 'E')(+1)**self.k
-                        W = conversion(W.shape[0], self.alpha, ell+self.regtotal) @ W
+                        W = conversion(W.shape[0], self.alpha, ell+self.regtotal) @ W.astype(np.float64)
                     if not DEALIAS_BEFORE_CONVERTING():
                         # Truncate to specified coeff_size
                         W = W[:max(self.N3c-Nmin,0)]

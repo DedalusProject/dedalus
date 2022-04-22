@@ -1,72 +1,103 @@
-import numpy as np
-from scipy.sparse import dia_matrix as banded
+"""Jacobi polynomial functions."""
 
+import numpy as np
+import xprec
+from scipy.sparse import dia_matrix
+from scipy.special import beta, betaln
+from scipy.linalg import eigvalsh_tridiagonal
 from .operators import Operator, Codomain, infinite_csr
 
-dtype = 'float64'
+
+# Default dtypes
+DEFAULT_GRID_DTYPE = xprec.ddouble
+DEFAULT_OPERATOR_DTYPE = np.float64
 
 
-def coefficient_connection(N, ab, cd, init_ab=1, init_cd=1):
-    """The connection matrix between any bases coefficients:
-    Pab(z) = Pcd(z) @ Cab2cd    -->    Acd = Cab2cd @ Aab
+def coefficient_connection(n, ab, cd, init_ab=1, init_cd=1):
+    """
+    The connection matrix between any bases coefficients:
+        Pab(z) = Pcd(z) @ Cab2cd    -->    Acd = Cab2cd @ Aab
+
     The output is always a dense matrix format.
+
     Parameters
     ----------
-    N      :  int
-    ab, cd :  tuples of input and output Jacobi parameters.
-    """
+    n : int
+        Number of polynomials (max degree + 1).
+    ab, cd : tuple of floats
+        Tuples of input and output Jacobi parameters.
+    init_ab, init_cd : floats or arrays, optional.
+        Initial envelopes for input  and output polynomials.
 
+    Returns
+    -------
+    conn : array
+        Coupling coefficient matrix from (a,b) to (c,d) polynomials.
+    """
     a, b = ab
     c, d = cd
-
-    zcd, wcd = quadrature(N, c, d)
-
+    zcd, wcd = quadrature(n, c, d)
     wcd /= np.sum(wcd)
-
-    Pab = polynomials(N, a, b, zcd, init_ab + 0 * zcd)
-    Pcd = polynomials(N, c, d, zcd, init_cd + 0 * zcd)
-
+    Pab = polynomials(n, a, b, zcd, init_ab)
+    Pcd = polynomials(n, c, d, zcd, init_cd)
     return Pcd @ (wcd * Pab).T
 
 
-def polynomials(n, a, b, z, init=None, Newton=False, normalised=True, dtype=dtype, internal='longdouble'):
+def polynomials(n, a, b, z, init=None, Newton=False, normalized=True, dtype=None):
     """
-    Jacobi polynomials, P(n,a,b,z), of type (a,b) up to degree n-1.
-
-    Jacobi.polynomials(n,a,b,z)[k] gives P(k,a,b,z).
-
-    Newton = True: cubic-converging update of P(n-1,a,b,z) = 0.
+    Jacobi polynomials of type (a,b) up to degree n-1.
 
     Parameters
     ----------
-    a,b > -1
-    z: float, np.ndarray.
+    n : int
+        Number of polynomials to compute (max degree + 1).
+    a, b : float
+        Jacobi parameters.
+    z : array
+        Grid array.
+    init : float or array, optional
+        Initial envelope for polynomial recursion. Default determined by 'normalized' option.
+    Newton : bool, optional
+        Return cubicly converging update to grid as roots of P[n]. Default: False.
+    normalized : bool, optional
+        True to initialize with 1/sqrt(mass) if init not provided. Default: True.
+    dtype : dtype, optional
+        Data type. Default: module-level DEFAULT_GRID_DTYPE.
 
-    init: float, np.ndarray or None -> 1+0*z, or (1+0*z)/sqrt(mass) if normalised.
-    normalised: classical or unit-integral normalisation.
-    dtype:   'float64','longdouble' output dtype.
-    internal: internal dtype.
-
+    Returns
+    -------
+    grid : array, optional
+        Refined grid as roots of P[n]. Only returned if Newton is True.
+    polynomials : array
+        Array of polynomials evaluated at specified z points.
+        First axis is polynomial degree.
     """
-
+    if dtype is None:
+        dtype = DEFAULT_GRID_DTYPE
+    # Return empty array if n < 1
     if n < 1:
         return np.zeros((0, z.size), dtype=dtype)
-
+    # Cast z to working dtype
+    if np.isscalar(z):
+        z = np.dtype(dtype).type(z)
+        z_shape = tuple()
+    else:
+        z = z.astype(dtype)
+        z_shape = z.shape
+    # Setup initial envelope
     if init is None:
         init = 1 + 0 * z
-        if normalised:
-            init /= np.sqrt(mass(a, b), dtype=internal)
-
-    Z = operator('Z', normalised=normalised, dtype=internal)
-    Z = banded(Z(n + 1, a, b).T).data
-
-    shape = n + 1
-    if type(z) == np.ndarray:
-        shape = (shape, len(z))
-
-    P = np.zeros(shape, dtype=internal)
+        if normalized:
+            init /= np.sqrt(mass(a, b, dtype=dtype))
+    else:
+        init = init + 0 * z  # Cast to working dtype
+    # Get Jacobi operator
+    Z = operator('Z', normalized=normalized)
+    Z = dia_matrix(Z(n + 1, a, b).T).data.astype(dtype)
+    # Build polynomials via recursion in degree
+    shape = (n + 1,) + z_shape
+    P = np.zeros(shape, dtype=dtype)
     P[0] = init
-
     if len(Z) == 2:
         P[1] = z * P[0] / Z[1, 1]
         for k in range(2, n + 1):
@@ -75,146 +106,188 @@ def polynomials(n, a, b, z, init=None, Newton=False, normalised=True, dtype=dtyp
         P[1] = (z - Z[1, 0]) * P[0] / Z[2, 1]
         for k in range(2, n + 1):
             P[k] = ((z - Z[1, k - 1]) * P[k - 1] - Z[0, k - 2] * P[k - 2]) / Z[2, k]
-
+    # Newton update to grid
     if Newton:
         L = n + (a + b) / 2
-        return z + (1 - z**2) * P[n - 1] / (L * Z[-1, n] * P[n] - (L - 1) * Z[0, n - 2] * P[n - 2]), P[: n - 1]
+        return z + (1 - z * z) * P[n - 1] / (L * Z[-1, n] * P[n] - (L - 1) * Z[0, n - 2] * P[n - 2]), P[: n - 1]
+    return P[:n]
 
-    return P[:n].astype(dtype)
 
-
-def quadrature(n, a, b, days=3, probability=False, dtype=dtype, internal='longdouble'):
+def quadrature(n, a, b, iterations=3, probability=False, dtype=None):
     """
-    Jacobi 'roots' grid and weights; solutions to
-
-    P(n,a,b,z) = 0; len(z) = n.
-
-    sum(weights*polynomial) = integrate_(-1,+1)(polynomial),
-    exactly up to degree(polynomial) = 2n - 1.
+    Gauss-Jacobi quadrature grid z and weights w.
+    The grid points are the roots of P[n]: P(n, a, b, z[i]) = 0, len(z) = n.
+    For all polynomials p up to degree 2*n - 1, the weights satisfy: sum(w[i]*p(z[i])) = integ(p).
 
     Parameters
     ----------
-    n: int > 0.
-    a,b: float > -1.
-    days: number of Newton updates.
-    probability: sum(weights) = 1 or sum(weights) = mass(a,b)
-    dtype:   'float64','longdouble' output dtype.
-    internal: internal dtype (Newton uses by default).
+    n : int
+        Number of quadrature nodes.
+    a, b : float
+        Jacobi parameters.
+    iterations : int, optional
+        Number of Newton updates. Default: 3.
+    probability : bool, optional.
+        True for sum(weights) = 1 or False for sum(weights) = mass(a,b). Default: True.
+    dtype : dtype, optional
+        Data type. Default: module-level DEFAULT_GRID_DTYPE.
 
+    Returns
+    -------
+    z : array
+        Quadrature grid.
+    w : array
+        Quadrature weights.
     """
-
-    z = grid_guess(n, a, b, dtype=internal)
-
+    if dtype is None:
+        dtype = DEFAULT_GRID_DTYPE
+    # Initial guesses
+    z = grid_guess(n, a, b, dtype=dtype)
     if probability:
-        w = 1
+        w = 1 / n + 0 * z
     else:
-        w = mass(a, b)
-
+        m = mass(a, b, dtype=dtype)
+        w = mass(a, b, dtype=dtype) / int(n) + 0 * z
+    # Chebyshev T: grid guess exact, uniform weights
     if a == b == -1 / 2:
-        return z.astype(dtype), (w / n + 0 * z).astype(dtype)
-    elif a == b == +1 / 2:
-        P = polynomials(n + 1, a, b, z, dtype=internal)[:n]
+        return z, w
+    # Chebyshev U: grid guess exact
+    elif a == b == 1 / 2:
+        P = polynomials(n, a, b, z, dtype=dtype)
+    # Newton iterations for other Jacobi
     else:
-        for _ in range(days):
-            z, P = polynomials(n + 1, a, b, z, Newton=True)
-
-    P[0] /= np.sqrt(np.sum(P**2, axis=0))
-    w *= P[0] ** 2
-
-    return z.astype(dtype), w.astype(dtype)
+        for _ in range(iterations):
+            z, P = polynomials(n + 1, a, b, z, dtype=dtype, Newton=True)
+    # Compute weights
+    w *= n * P[0] * P[0] / np.sum(P * P, axis=0, initial=0.0)
+    return z, w
 
 
-def grid_guess(n, a, b, dtype='longdouble', quick=False):
+def grid_guess(n, a, b, quick=False, dtype=None):
     """
-    Approximate solution to
+    Approximate guesses for roots of P^(a,b)_n(z) using Golub-Welsch.
 
-    P(n,a,b,z) = 0
+    Parameters
+    ----------
+    n : int
+        Degree / number of roots in grid.
+    a, b : ints or floats
+        Jacobi parameters.
+    quick : bool, optional
+        Use a quick guess. Default: False.
+    dtype : dtype
+        Data type. Default: module-level DEFAULT_GRID_DTYPE.
 
+    Returns
+    -------
+    grid : array
+        Grid guess.
     """
-
+    if dtype is None:
+        dtype = DEFAULT_GRID_DTYPE
+    # Use constant for n = 1
+    if n == 1:
+        return operator('Z')(n, a, b).A[0].astype(dtype)
+    # Quick guess is exact for Chebyshev
     if a == b == -1 / 2:
         quick = True
-
-    if n == 1:
-        return operator('Z')(n, a, b).A[0]
-
+    # Compute guess
     if quick:
-        return np.cos(np.pi * (np.arange(4 * n - 1, 2, -4, dtype=dtype) + 2 * a) / (4 * n + 2 * (a + b + 1)))
-
-    from scipy.linalg import eigvalsh_tridiagonal as eigs
-
-    Z = banded(operator('Z')(n, a, b))
-
-    return eigs(Z.diagonal(0), Z.diagonal(1)).astype(dtype)
+        return np.cos(np.pi * (np.arange(4 * n - 1, 2, -4).astype(dtype) + 2 * a) / (4 * int(n) + 2 * (a + b + 1)))
+    else:
+        # Use Golub-Welsch
+        Z = dia_matrix(operator('Z')(n, a, b))
+        return eigvalsh_tridiagonal(Z.diagonal(0), Z.diagonal(1)).astype(dtype)
 
 
-def measure(a, b, z, probability=True, log=False):
+def measure(a, b, z, probability=True, log=False, dtype=None):
     """
-
-    mu(a,b,z) = (1-z)**a (1+z)**b
-
-    if normalised:  ((1-z)/2)**a ((1+z)/2)**b / (2*Beta(a+1,b+1))
+    Jacobi measure evaluated on a grid. Classical/unnormalized measure:
+        mu(a,b,z) = (1-z)^a (1+z)^b
 
     Parameters
     ----------
-    a,b > -1
+    a, b : ints or floats
+        Jacobi parameters.
+    z : float or array
+        Points for evaluating measure.
+    probability : bool, optional
+        False for classical measure, True to renormalize to have unit integral. Default: True.
+    log : bool, optional
+        Return log of measure. Default: False.
+    dtype : dtype, optional.
+        Data type. Default: module-level DEFAULT_GRID_DTYPE.
 
+    Returns
+    -------
+    measure : float or array
+        Measure evaluated at a z.
     """
-
-    if not log:
-
-        w = 1
-
-        if a != 0:
-            w *= (1 - z) ** a
-
-        if b != 0:
-            w *= (1 + z) ** b
-
+    if dtype is None:
+        dtype = DEFAULT_GRID_DTYPE
+    # Cast z to working dtype
+    if np.isscalar(z):
+        z = np.dtype(dtype).type(z)
+    else:
+        z = z.astype(dtype)
+    # Compute measure
+    if log:
+        log_w = 0 * z
+        if a:
+            log_w += a * np.log(1 - z)
+        if b:
+            log_w += b * np.log(1 + z)
         if probability:
-            w /= mass(a, b)
-
+            log_w -= mass(a, b, log=True, dtype=dtype)
+        if np.isscalar(z):
+            if np.isnan(log_w):
+                log_w = np.dtype(dtype).type(-np.inf)
+        else:
+            log_w[np.isnan(log_w)] = -np.inf  # log(0) gives nan instead of -inf
+        return log_w
+    else:
+        w = 1 + 0 * z
+        if a:
+            w *= (1 - z) ** a
+        if b:
+            w *= (1 + z) ** b
+        if probability:
+            w /= mass(a, b, dtype=dtype)
         return w
 
-    S = 0
 
-    if a != 0:
-        S += a * np.log(1 - z)
-
-    if b != 0:
-        S += b * np.log(1 + z)
-
-    if probability:
-        S -= mass(a, b, log=True)
-
-    return S
-
-
-def mass(a, b, log=False):
+def mass(a, b, log=False, dtype=None):
     """
-
-    2**(a+b+1)*Beta(a+1,b+1) = integrate_(-1,+1)( (1-z)**a (1+z)**b )
+    Integral of classical Jacobi measure:
+        \integ_{-1,+1} (1-z)^a (1+z)^b dz = 2^(a+b+1) beta(a+1,b+1)
 
     Parameters
     __________
-    a,b > -1
-    log: optional
+    a, b : ints or floats
+        Jacobi parameters.
+    log: bool, optional
+        Return natural logarithm of mass. Default: False.
+    dtype : dtype, optional
+        Data type. Default: module-level DEFAULT_GRID_DTYPE.
 
+    Returns
+    -------
+    mass : float
+        Integral of Jacobi measure.
     """
-
-    if not log:
-        from scipy.special import beta
-
-        return 2 ** (a + b + 1) * beta(a + 1, b + 1)
-
-    from scipy.special import betaln
-
-    return (a + b + 1) * np.log(2) + betaln(a + 1, b + 1)
+    if dtype is None:
+        dtype = DEFAULT_GRID_DTYPE
+    # beta and betaln do not natively support xprec, so outputs must be casted
+    type = np.dtype(dtype).type
+    if log:
+        return (a + b + 1) * type(np.log(2)) + type(betaln(a + 1, b + 1))
+    else:
+        return 2 ** (a + b + 1) * type(beta(a + 1, b + 1))
 
 
 def norm_ratio(dn, da, db, n, a, b, squared=False):
     """
-    Ratio of classical Jacobi normalisation.
+    Ratio of classical Jacobi normalization.
 
         N(n,a,b) = integrate_(-1,+1)( (1-z)**a (1+z)**b P(n,a,b,z)**2 )
 
@@ -229,13 +302,20 @@ def norm_ratio(dn, da, db, n, a, b, squared=False):
 
     Parameters
     ----------
-    dn,da,db: int
-    n: np.ndarray, int > 0
-    a,b: float > -1
-    squared: return N(n,a,b) or sqrt(N(n,a,b)) (defalut)
+    dn, da, db : int
+        Increments in n, a, b
+    n : int or array
+        Starting polynomial degrees
+    a, b : float
+        Starting Jacobi parameters.
+    squared : bool, optinoal
+        True for direct norm ratio, False for square root of norm ratio. Default: False.
 
+    Returns
+    -------
+    ratios : float or array
+        Norm ratios for specified n.
     """
-
     if not all(type(d) == int for d in (dn, da, db)):
         raise TypeError('can only increment by integers.')
 
@@ -264,39 +344,47 @@ def norm_ratio(dn, da, db, n, a, b, squared=False):
         return ab_ratio(1, n, a + d - 1, b) * ab_ratio(d - 1, n, a, b)
 
     ratio = n_ratio(dn, n, a + da, b + db) * ab_ratio(da, n, a, b + db) * ab_ratio(db, n, b, a)
-
-    if not squared:
+    if squared:
+        return ratio
+    else:
         return np.sqrt(ratio)
-    return ratio
 
 
-def operator(name, normalised=True, dtype=dtype):
+def operator(name, **kw):
     """
-    Interface to base JacobiOperator class.
+    Build Jacobi operators by name.
 
     Parameters
     ----------
-    name: A, B, C, D, Id, Pi, N, Z (Jacobi matrix)
-    normalised: True --> unit-integral, False --> classical.
-    dtype: output dtype
+    name : str
+        Jacobi operator name: 'A', 'B', 'C', 'D', 'Id', 'Pi', 'N', or 'Z'
+    normalized : bool, optional
+        True for unit-integral normalization, False for classical normalization. Default: True.
+    **kw : dict, optional
+        Other keywords passed to JacobiOperator.
 
+    Returns
+    -------
+    operator : JacobiOperator
+        Specified operator.
     """
     if name == 'Id':
-        return JacobiOperator.identity(dtype=dtype)
-    if name == 'Pi':
-        return JacobiOperator.parity(dtype=dtype)
-    if name == 'N':
-        return JacobiOperator.number(dtype=dtype)
-    if name == 'Z':
-        A = JacobiOperator('A', normalised=normalised, dtype=dtype)
-        B = JacobiOperator('B', normalised=normalised, dtype=dtype)
+        return JacobiOperator.identity(**kw)
+    elif name == 'Pi':
+        return JacobiOperator.parity(**kw)
+    elif name == 'N':
+        return JacobiOperator.number(**kw)
+    elif name == 'Z':
+        A = JacobiOperator('A', **kw)
+        B = JacobiOperator('B', **kw)
         return (B(-1) @ B(+1) - A(-1) @ A(+1)) / 2
-    return JacobiOperator(name, normalised=normalised, dtype=dtype)
+    else:
+        return JacobiOperator(name, **kw)
 
 
 class JacobiOperator:
     """
-    The base class for primary operators acting on finite row vectors of Jacobi polynomials.
+    Operators acting on finite row vectors of Jacobi polynomials.
 
     <n,a,b,z| = [P(0,a,b,z),P(1,a,b,z),...,P(n-1,a,b,z)]
 
@@ -344,11 +432,10 @@ class JacobiOperator:
     ----------
     name: str
         A, B, C, D
-    normalised: bool
-        True gives operators on unit-integral polynomials, False on classical normalisation.
+    normalized: bool
+        True gives operators on unit-integral polynomials, False on classical normalization.
     dtype: 'float64','longdouble'
         output dtype.
-
 
     Methods
     -------
@@ -365,43 +452,38 @@ class JacobiOperator:
 
     """
 
-    dtype = 'longdouble'
-
-    def __init__(self, name, normalised=True, dtype=dtype):
-
+    def __init__(self, name, normalized=True, dtype=None):
         self.__function = getattr(self, f'_JacobiOperator__{name}')
-        self.__normalised = normalised
+        self.__normalized = normalized
+        if dtype is None:
+            dtype = DEFAULT_OPERATOR_DTYPE
         self.dtype = dtype
 
     @property
-    def normalised(self):
-        return self.__normalised
+    def normalized(self):
+        return self.__normalized
 
     def __call__(self, p):
         return Operator(*self.__function(p))
 
     def __A(self, p):
-
         if p == 0:
 
             def A(n, a, b):
                 N = a * np.ones(n, dtype=self.dtype)
-                return infinite_csr(banded((N, [0]), (n, n)))
+                return infinite_csr(dia_matrix((N, [0]), (n, n)))
 
             return A, JacobiCodomain(0, 0, 0, 0)
 
         def A(n, a, b):
-
             N = np.arange(n, dtype=self.dtype)
             bands = np.array({+1: [N + (a + b + 1), -(N + b)], -1: [2 * (N + a), -2 * (N + 1)]}[p])
             bands[:, 0] = 1 if a + b == -1 else bands[:, 0] / (a + b + 1)
             bands[:, 1:] /= 2 * N[1:] + a + b + 1
-
-            if self.normalised:
+            if self.normalized:
                 bands[0] *= norm_ratio(0, p, 0, N, a, b)
                 bands[1, (1 + p) // 2 :] *= norm_ratio(-p, p, 0, N[(1 + p) // 2 :], a, b)
-
-            return infinite_csr(banded((bands, [0, p]), (max(n + (1 - p) // 2, 0), max(n, 0))))
+            return infinite_csr(dia_matrix((bands, [0, p]), (max(n + (1 - p) // 2, 0), max(n, 0))))
 
         return A, JacobiCodomain((1 - p) // 2, p, 0, 0)
 
@@ -414,61 +496,62 @@ class JacobiOperator:
 
     def __C(self, p):
         def C(n, a, b):
-
             N = np.arange(n, dtype=self.dtype)
             bands = np.array([N + {+1: b, -1: a}[p]])
-
-            if self.normalised:
+            if self.normalized:
                 bands[0] *= norm_ratio(0, p, -p, N, a, b)
-
-            return infinite_csr(banded((bands, [0]), (max(n, 0), max(n, 0))))
+            return infinite_csr(dia_matrix((bands, [0]), (max(n, 0), max(n, 0))))
 
         return C, JacobiCodomain(0, p, -p, 0)
 
     def __D(self, p):
         def D(n, a, b):
-
             N = np.arange(n, dtype=self.dtype)
             bands = np.array([(N + {+1: a + b + 1, -1: 1}[p]) * 2 ** (-p)])
-
-            if self.normalised:
+            if self.normalized:
                 bands[0, (1 + p) // 2 :] *= norm_ratio(-p, p, p, N[(1 + p) // 2 :], a, b)
-
-            return infinite_csr(banded((bands, [p]), (max(n - p, 0), max(n, 0))))
+            return infinite_csr(dia_matrix((bands, [p]), (max(n - p, 0), max(n, 0))))
 
         return D, JacobiCodomain(-p, p, p, 0)
 
     @staticmethod
-    def identity(dtype=dtype):
+    def identity(dtype=None):
+        if dtype is None:
+            dtype = DEFAULT_OPERATOR_DTYPE
+
         def I(n, a, b):
             N = np.ones(n, dtype=dtype)
-            return infinite_csr(banded((N, [0]), (max(n, 0), max(n, 0))))
+            return infinite_csr(dia_matrix((N, [0]), (max(n, 0), max(n, 0))))
 
         return Operator(I, JacobiCodomain(0, 0, 0, 0))
 
     @staticmethod
-    def parity(dtype=dtype):
+    def parity(dtype=None):
+        if dtype is None:
+            dtype = DEFAULT_OPERATOR_DTYPE
+
         def P(n, a, b):
             N = np.arange(n, dtype=dtype)
-            return infinite_csr(banded(((-1) ** N, [0]), (max(n, 0), max(n, 0))))
+            return infinite_csr(dia_matrix(((-1) ** N, [0]), (max(n, 0), max(n, 0))))
 
         return Operator(P, JacobiCodomain(0, 0, 0, 1))
 
     @staticmethod
-    def number(dtype=dtype):
+    def number(dtype=None):
+        if dtype is None:
+            dtype = DEFAULT_OPERATOR_DTYPE
+
         def N(n, a, b):
-            return infinite_csr(banded((np.arange(n, dtype=dtype), [0]), (max(n, 0), max(n, 0))))
+            return infinite_csr(dia_matrix((np.arange(n, dtype=dtype), [0]), (max(n, 0), max(n, 0))))
 
         return Operator(N, JacobiCodomain(0, 0, 0, 0))
 
 
 class JacobiCodomain(Codomain):
     """
-    Base class for Jacobi codomain.
-
-    codomain = JacobiCodomain(dn,da,db,pi)
-
-    n', a', b' = codomain(n,a,b)
+    Jacobi codomain:
+        codomain = JacobiCodomain(dn,da,db,pi)
+        n', a', b' = codomain(n,a,b)
 
     if pi == 0:
         n', a', b' = n+dn, a+da, b+db
@@ -482,7 +565,6 @@ class JacobiCodomain(Codomain):
     ----------
     __arrow: stores dn,da,db,pi.
 
-
     Methods
     -------
     self[0:3]: returns dn,da,db,pi respectively.
@@ -493,7 +575,6 @@ class JacobiCodomain(Codomain):
     n*self: iterated codomain addition.
     self == other: determines equivalent codomains (a,b,pi).
     self | other: determines codomain compatiblity and returns larger-n space.
-
     """
 
     def __init__(self, dn=0, da=0, db=0, pi=0, Output=None):

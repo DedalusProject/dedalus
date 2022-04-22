@@ -40,7 +40,7 @@ def test_clenshaw(N, regtotal_in, k1, k2, ell):
     coeffs_filter = ncc['c'][0,0,:n_size]
     J = basis_in.operator_matrix('Z', ell, regtotal_in)
     A, B = clenshaw.jacobi_recursion(n_size, a_ncc, b_ncc, J)
-    f0 = dedalus_sphere.zernike.polynomials(3, 1, a_ncc, regtotal_ncc, 1)[0] * sparse.identity(n_size)
+    f0 = dedalus_sphere.zernike.polynomials(3, 1, a_ncc, regtotal_ncc, 1)[0].astype(np.float64) * sparse.identity(n_size)
     matrix = clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=1e-6)
 
     assert np.allclose(J.todense(), matrix.todense())
@@ -74,7 +74,7 @@ def test_clenshaw_vector(N, regtotal_in, k1, k2, ell):
     J = basis_in.operator_matrix('Z', ell, regtotal_in)
     I = basis_in.operator_matrix('Id', ell, regtotal_in)
     A, B = clenshaw.jacobi_recursion(n_size, a_ncc, b_ncc, J)
-    f0 = dedalus_sphere.zernike.polynomials(3, 1, a_ncc, regtotal_ncc, 1)[0] * sparse.identity(n_size)
+    f0 = dedalus_sphere.zernike.polynomials(3, 1, a_ncc, regtotal_ncc, 1)[0].astype(np.float64) * sparse.identity(n_size)
     matrix = clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=1e-6)
 
     assert np.allclose(J.todense(), matrix.todense())
