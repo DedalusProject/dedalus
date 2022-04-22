@@ -113,6 +113,42 @@ def polynomials(n, a, b, z, init=None, Newton=False, normalized=True, dtype=None
     return P[:n]
 
 
+def polynomial_integrals(n, a, b, dtype=None, **kw):
+    """
+    Definite integrals of the Jacobi polynomials, evaluated with Gauss-Legendre quadrature.
+
+    Parameters
+    ----------
+    n : int
+        Number of polynomials to compute (max degree + 1).
+    a, b : float
+        Jacobi parameters.
+    dtype : dtype, optional
+        Data type. Default: module-level DEFAULT_GRID_DTYPE.
+    **kw : dict, optional
+        Other keywords passed to jacobi.polynomials.
+
+    Returns
+    -------
+    integrals : array
+        Vector of polynomial integrals.
+    """
+    if dtype is None:
+        dtype = DEFAULT_GRID_DTYPE
+    # Build Legendre quadrature
+    grid, weights = quadrature(n, a=0, b=0, dtype=dtype)
+    # Evaluate polynomials on Legendre grid
+    polys = polynomials(n, a, b, grid, dtype=dtype, **kw)
+    # Compute integrals using Legendre quadrature
+    integrals = weights @ polys.T
+    # Eliminate known zeros
+    if a == b == 0:
+        integrals[1:] = 0
+    elif a == b:
+        integrals[1::2] = 0
+    return integrals
+
+
 def quadrature(n, a, b, iterations=3, probability=False, dtype=None):
     """
     Gauss-Jacobi quadrature grid z and weights w.

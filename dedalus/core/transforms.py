@@ -10,7 +10,6 @@ from ..libraries import dedalus_sphere
 
 from . import basis
 from ..libraries.fftw import fftw_wrappers as fftw
-from ..tools import jacobi
 from ..tools.array import apply_matrix, apply_dense, axslice, splu_inverse, apply_sparse, prod
 from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
@@ -118,10 +117,9 @@ class JacobiMMT(JacobiTransform, SeparableMatrixTransform):
         a, a0 = self.a, self.a0
         b, b0 = self.b, self.b0
         # Gauss quadrature with base (a0, b0) polynomials
-        base_grid = jacobi.build_grid(N, a=a0, b=b0)
-        base_polynomials = jacobi.build_polynomials(max(M, N), a0, b0, base_grid)
-        base_weights = jacobi.build_weights(N, a=a0, b=b0)
-        base_transform = (base_polynomials * base_weights)
+        base_grid, base_weights = dedalus_sphere.jacobi.quadrature(N, a0, b0)
+        base_polynomials = dedalus_sphere.jacobi.polynomials(max(M, N), a0, b0, base_grid)
+        base_transform = (base_polynomials * base_weights).astype(np.float64)
         # Zero higher coefficients for transforms with grid_size < coeff_size
         base_transform[N:, :] = 0
         if DEALIAS_BEFORE_CONVERTING():
@@ -131,7 +129,7 @@ class JacobiMMT(JacobiTransform, SeparableMatrixTransform):
         if (a == a0) and (b == b0):
             forward_matrix = base_transform
         else:
-            conversion = jacobi.conversion_matrix(base_transform.shape[0], a0, b0, a, b)
+            conversion = basis.Jacobi.conversion_matrix(base_transform.shape[0], a0, b0, a, b)
             forward_matrix = conversion @ base_transform
         if not DEALIAS_BEFORE_CONVERTING():
             # Truncate to specified coeff_size
@@ -146,8 +144,8 @@ class JacobiMMT(JacobiTransform, SeparableMatrixTransform):
         a, a0 = self.a, self.a0
         b, b0 = self.b, self.b0
         # Construct polynomials on the base grid
-        base_grid = jacobi.build_grid(N, a=a0, b=b0)
-        polynomials = jacobi.build_polynomials(M, a, b, base_grid)
+        base_grid, base_weights = dedalus_sphere.jacobi.quadrature(N, a0, b0)
+        polynomials = dedalus_sphere.jacobi.polynomials(M, a, b, base_grid).astype(np.float64)
         # Zero higher polynomials for transforms with grid_size < coeff_size
         polynomials[N:, :] = 0
         # Transpose and ensure C ordering for fast dot products
@@ -817,12 +815,12 @@ class FastChebyshevTransform(JacobiTransform):
         else:
             # Conversion matrices
             if DEALIAS_BEFORE_CONVERTING() and (self.M_orig < self.N): # truncate prior to conversion matrix
-                self.forward_conversion = jacobi.conversion_matrix(self.M_orig, a0, b0, a, b)
+                self.forward_conversion = basis.Jacobi.conversion_matrix(self.M_orig, a0, b0, a, b)
             else: # input to conversion matrix not truncated
-                self.forward_conversion = jacobi.conversion_matrix(self.N, a0, b0, a, b)
+                self.forward_conversion = basis.Jacobi.conversion_matrix(self.N, a0, b0, a, b)
                 self.forward_conversion.resize(self.M_orig, self.N)
                 self.forward_conversion = self.forward_conversion.tocsr()
-            self.backward_conversion = jacobi.conversion_matrix(self.M_orig, a0, b0, a, b)
+            self.backward_conversion = basis.Jacobi.conversion_matrix(self.M_orig, a0, b0, a, b)
             self.backward_conversion = splu_inverse(self.backward_conversion)
             self.resize_rescale_forward = self._resize_rescale_forward_convert
             self.resize_rescale_backward = self._resize_rescale_backward_convert

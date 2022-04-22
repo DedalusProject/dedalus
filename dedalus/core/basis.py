@@ -19,13 +19,11 @@ from ..tools.array import prod
 from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
 from ..tools.cache import CachedClass
-from ..tools import jacobi
 from ..tools import clenshaw
 from ..tools.array import reshape_vector, axindex, axslice, interleave_matrices
 from ..tools.dispatch import MultiClass, SkipDispatchException
 from ..tools.general import unify, DeferredTuple
 
-from .spaces import ParityInterval, Disk
 from .coords import Coordinate, CartesianCoordinates, S2Coordinates, SphericalCoordinates, PolarCoordinates, AzimuthalCoordinate
 from .domain import Domain
 from .field  import Operand, LockedField
@@ -478,22 +476,18 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         self.b0 = float(b0)
         self.library = library
         self.grid_params = (coord, bounds, a0, b0)
-        self.constant_mode_value = 1 / np.sqrt(jacobi.mass(self.a, self.b))
+        self.constant_mode_value = (1 / np.sqrt(dedalus_sphere.jacobi.mass(self.a, self.b))).astype(np.float64)
 
     def _native_grid(self, scale):
         """Native flat global grid."""
         N, = self.grid_shape((scale,))
-        return jacobi.build_grid(N, a=self.a0, b=self.b0)
+        grid, weights = dedalus_sphere.jacobi.quadrature(N, self.a0, self.b0)
+        return grid.astype(np.float64)
 
     @CachedMethod
     def transform_plan(self, grid_size):
         """Build transform plan."""
         return self.transforms[self.library](grid_size, self.size, self.a, self.b, self.a0, self.b0)
-
-    # def weights(self, scales):
-    #     """Gauss-Jacobi weights."""
-    #     N = self.grid_shape(scales)[0]
-    #     return jacobi.build_weights(N, a=self.a, b=self.b)
 
     # def __str__(self):
     #     space = self.space
@@ -556,6 +550,22 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
             size = self.size
         return dedalus_sphere.jacobi.operator('Z')(size, self.a, self.b).square
 
+    @staticmethod
+    def conversion_matrix(N, a0, b0, a1, b1):
+        if not float(a1-a0).is_integer():
+            raise ValueError("a0 and a1 must be integer-separated")
+        if not float(b1-b0).is_integer():
+            raise ValueError("b0 and b1 must be integer-separated")
+        if a0 > a1:
+            raise ValueError("a0 must be less than or equal to a1")
+        if b0 > b1:
+            raise ValueError("b0 must be less than or equal to b1")
+        A = dedalus_sphere.jacobi.operator('A')(+1)
+        B = dedalus_sphere.jacobi.operator('B')(+1)
+        da, db = int(a1-a0), int(b1-b0)
+        conv = A**da @ B**db
+        return conv(N, a0, b0).astype(np.float64)
+
     def ncc_matrix(self, arg_basis, coeffs, cutoff=1e-6):
         """Build NCC matrix via Clenshaw algorithm."""
         if arg_basis is None:
@@ -563,7 +573,7 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         # Kronecker Clenshaw on argument Jacobi matrix
         elif isinstance(arg_basis, Jacobi):
             N = self.size
-            J = jacobi.jacobi_matrix(N, arg_basis.a, arg_basis.b)
+            J = dedalus_sphere.jacobi.operator('Z')(N, arg_basis.a, arg_basis.b).square.astype(np.float64)
             A, B = clenshaw.jacobi_recursion(N, self.a, self.b, J)
             f0 = self.const * sparse.identity(N)
             total = clenshaw.kronecker_clenshaw(coeffs, A, B, f0, cutoff=cutoff)
@@ -595,7 +605,7 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         A, B = clenshaw.jacobi_recursion(Nmat, a_ncc, b_ncc, J)
         f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0].astype(np.float64) * sparse.identity(Nmat)
         matrix = clenshaw.matrix_clenshaw(coeffs.ravel(), A, B, f0, cutoff=cutoff)
-        convert = jacobi.conversion_matrix(Nmat, arg_basis.a, arg_basis.b, out_basis.a, out_basis.b)
+        convert = Jacobi.conversion_matrix(Nmat, arg_basis.a, arg_basis.b, out_basis.a, out_basis.b)
         matrix = convert @ matrix
         return matrix[:N, :N]
 
@@ -647,7 +657,7 @@ class ConvertJacobi(operators.Convert, operators.SpectralOperator1D):
         N = input_basis.size
         a0, b0 = input_basis.a, input_basis.b
         a1, b1 = output_basis.a, output_basis.b
-        matrix = jacobi.conversion_matrix(N, a0, b0, a1, b1)
+        matrix = Jacobi.conversion_matrix(N, a0, b0, a1, b1)
         return matrix.tocsr()
 
 
@@ -686,8 +696,9 @@ class DifferentiateJacobi(operators.Differentiate, operators.SpectralOperator1D)
     def _full_matrix(input_basis, output_basis):
         N = input_basis.size
         a, b = input_basis.a, input_basis.b
-        matrix = jacobi.differentiation_matrix(N, a, b) / input_basis.COV.stretch
-        return matrix.tocsr()
+        native_matrix = dedalus_sphere.jacobi.operator('D')(+1)(N, a, b).square.astype(np.float64)
+        problem_matrix = native_matrix / input_basis.COV.stretch
+        return problem_matrix.tocsr()
 
 
 class InterpolateJacobi(operators.Interpolate, operators.SpectralOperator1D):
@@ -709,9 +720,9 @@ class InterpolateJacobi(operators.Interpolate, operators.SpectralOperator1D):
         N = input_basis.size
         a, b = input_basis.a, input_basis.b
         x = input_basis.COV.native_coord(position)
-        interp_vector = jacobi.build_polynomials(N, a, b, x)
-        # Return with shape (1, N)
-        return interp_vector[None, :]
+        x = np.array([x])
+        matrix = dedalus_sphere.jacobi.polynomials(N, a, b, x).T
+        return matrix.astype(np.float64)
 
 
 class IntegrateJacobi(operators.Integrate, operators.SpectralOperator1D):
@@ -731,7 +742,7 @@ class IntegrateJacobi(operators.Integrate, operators.SpectralOperator1D):
         # Build native integration vector
         N = input_basis.size
         a, b = input_basis.a, input_basis.b
-        integ_vector = jacobi.integration_vector(N, a, b)
+        integ_vector = dedalus_sphere.jacobi.polynomial_integrals(N, a, b).astype(np.float64)
         # Rescale and return with shape (1, N)
         return integ_vector[None, :] * input_basis.COV.stretch
 
@@ -753,7 +764,7 @@ class AverageJacobi(operators.Average, operators.SpectralOperator1D):
         # Build native integration vector
         N = input_basis.size
         a, b = input_basis.a, input_basis.b
-        integ_vector = jacobi.integration_vector(N, a, b)
+        integ_vector = dedalus_sphere.jacobi.polynomial_integrals(N, a, b).astype(np.float64)
         ave_vector = integ_vector / 2
         # Rescale and return with shape (1, N)
         return ave_vector[None, :]

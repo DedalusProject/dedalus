@@ -4,7 +4,6 @@ import numpy as np
 from scipy import sparse
 from dedalus.core import coords, distributor, basis, field, operators
 from dedalus.tools.array import apply_matrix
-from dedalus.tools import jacobi
 from dedalus.tools import clenshaw
 from ..libraries import dedalus_sphere
 

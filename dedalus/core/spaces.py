@@ -4,7 +4,6 @@ Space class definitions.
 
 import numpy as np
 
-from ..tools import jacobi
 from ..tools.array import reshape_vector
 from ..tools.cache import CachedMethod, CachedAttribute
 
