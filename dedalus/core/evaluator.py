@@ -631,6 +631,29 @@ class FileHandler(Handler):
             scale.make_scale(sn)
             dset.dims[0].attach_scale(scale)
 
+        # Tensor components
+        skip = 1
+        for comp in op.tensorsig:
+            data = np.array(comp.names,dtype='S')
+            sn = 'coords'
+            if self.dist.comm_cart.rank == 0:
+                scale_hash = hashlib.sha1(data).hexdigest()
+            else:
+                scale_hash = None
+            if not virtual_file:
+                scale_hash = self.dist.comm_cart.bcast(scale_hash,  root=0)
+
+            lookup = 'hash_' + scale_hash
+
+            if lookup not in scale_group:
+                scale_group.create_dataset(name=lookup, data=data)
+                scale_group[lookup].make_scale(sn)
+
+            scale = scale_group[lookup]
+            dset.dims[skip].label = sn
+            dset.dims[skip].attach_scale(scale)
+            skip += 1
+
         # Spatial scales
         for axis in range(self.dist.dim):
             basis = op.domain.full_bases[axis]
@@ -662,10 +685,10 @@ class FileHandler(Handler):
 
                 if lookup not in scale_group:
                     scale_group.create_dataset(name=lookup, data=data)
-                    scale_group[lookup].make_scale()
+                    scale_group[lookup].make_scale(sn)
             scale = scale_group[lookup]
-            dset.dims[axis+1].label = sn
-            dset.dims[axis+1].attach_scale(scale)
+            dset.dims[axis+skip].label = sn
+            dset.dims[axis+skip].attach_scale(scale)
 
 
     def process(self, world_time=0, wall_time=0, sim_time=0, timestep=0, iteration=0, **kw):
