@@ -816,9 +816,12 @@ class FastChebyshevTransform(JacobiTransform):
             self.resize_rescale_backward = self._resize_rescale_backward
         else:
             # Conversion matrices
-            self.forward_conversion = jacobi.conversion_matrix(self.N, a0, b0, a, b)
-            self.forward_conversion.resize(self.M_orig, self.N)
-            self.forward_conversion = self.forward_conversion.tocsr()
+            if DEALIAS_BEFORE_CONVERTING() and (self.M_orig < self.N): # truncate prior to conversion matrix
+                self.forward_conversion = jacobi.conversion_matrix(self.M_orig, a0, b0, a, b)
+            else: # input to conversion matrix not truncated
+                self.forward_conversion = jacobi.conversion_matrix(self.N, a0, b0, a, b)
+                self.forward_conversion.resize(self.M_orig, self.N)
+                self.forward_conversion = self.forward_conversion.tocsr()
             self.backward_conversion = jacobi.conversion_matrix(self.M_orig, a0, b0, a, b)
             self.backward_conversion = splu_inverse(self.backward_conversion)
             self.resize_rescale_forward = self._resize_rescale_forward_convert
@@ -850,7 +853,10 @@ class FastChebyshevTransform(JacobiTransform):
         if Kmax_DCT > 0:
             posfreq_odd = axslice(axis, 1, Kmax_DCT+1, 2)
             data_in[posfreq_odd] *= -1
-        # Ultraspherical conversion with truncation
+        # Ultraspherical conversion
+        if DEALIAS_BEFORE_CONVERTING() and self.M_orig < self.N: # truncate data
+            goodfreq = axslice(axis, 0, self.M_orig)
+            data_in = data_in[goodfreq]
         apply_sparse(self.forward_conversion, data_in, axis, out=data_out)
 
     def _resize_rescale_backward_convert(self, data_in, data_out, axis, Kmax_DCT):
