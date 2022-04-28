@@ -451,7 +451,7 @@ class InitialValueSolver:
         self.sim_time = self.initial_sim_time = 0.
         self.iteration = self.initial_iteration = 0
         self.warmup_iterations = warmup_iterations
-        
+
         # Default integration parameters
         self.stop_sim_time = np.inf
         self.stop_wall_time = np.inf
@@ -594,8 +594,6 @@ class InitialValueSolver:
                     path.increment(self.state.fields)
                 for path in self.domain.dist.paths[::-1]:
                     path.decrement(self.state.fields)
-
-        
         return dt
 
     def evolve(self, timestep_function):

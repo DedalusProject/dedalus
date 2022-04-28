@@ -127,7 +127,6 @@ end_init_time = time.time()
 logger.info('Initialization time: %f' %(end_init_time-start_init_time))
 try:
     logger.info('Starting loop')
-    start_run_time = time.time()
     while solver.ok:
         dt = CFL.compute_dt()
         solver.step(dt)
@@ -138,9 +137,4 @@ except:
     logger.error('Exception raised, triggering end of main loop.')
     raise
 finally:
-    end_run_time = time.time()
-    logger.info('Iterations: %i' %solver.iteration)
-    logger.info('Sim end time: %f' %solver.sim_time)
-    logger.info('Run time: %.2f sec' %(end_run_time-start_run_time))
-    logger.info('Run time: %f cpu-hr' %((end_run_time-start_run_time)/60/60*domain.dist.comm_cart.size))
-
+    solver.log_stats()

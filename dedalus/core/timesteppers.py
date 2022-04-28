@@ -53,6 +53,8 @@ class MultistepIMEX:
 
     """
 
+    stages = 1
+
     def __init__(self, pencil_length, domain):
 
         self.RHS = CoeffSystem(pencil_length, domain)
