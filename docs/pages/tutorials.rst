@@ -1,6 +1,10 @@
 Tutorials \& Examples
 *********************
 
+**Note: please check you're referencing the intended version of the documentation.
+This documentation is in reference to v2 of the code.
+The latest documentation for v3 can be accessed through the sidebar.**
+
 Tutorial Notebooks
 ==================
 

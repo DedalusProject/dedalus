@@ -1,6 +1,10 @@
 Installing Dedalus
 ******************
 
+**Note: please check you're referencing the intended version of the documentation.
+This documentation is in reference to v2 of the code.
+The latest documentation for v3 can be accessed through the sidebar.**
+
 Dedalus is a Python 3 package that includes custom C-extensions (compiled with Cython) and that relies on MPI, FFTW (linked to MPI), HDF5, and a basic scientific-Python stack: numpy, scipy, mpi4py (linked to the same MPI), and h5py.
 
 We recommend using conda to build a Python environment with all the necessary prerequisites, as described in the conda instructions below.

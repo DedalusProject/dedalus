@@ -1,4 +1,7 @@
 setuptools >= 18.0
 sphinx-autoapi
 nbsphinx
-pygments>=2.4.1
+pygments >= 2.4.1
+sphinx_rtd_theme >= 1.0.0
+sphinx-gallery
+sphinxcontrib-video
