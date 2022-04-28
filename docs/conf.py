@@ -20,7 +20,7 @@
 # -- Project information -----------------------------------------------------
 
 project = 'Dedalus Project'
-copyright = '2020 Dedalus Collaboration'
+copyright = '2022 Dedalus Collaboration'
 author = 'Dedalus Collaboration'
 
 # The short X.Y version
@@ -43,7 +43,11 @@ extensions += ['sphinx.ext.mathjax']
 extensions += ['autoapi.extension']
 extensions += ['sphinx.ext.viewcode']
 extensions += ['sphinx.ext.napoleon']
+extensions += ['sphinx.ext.extlinks']
 extensions += ['nbsphinx']
+extensions += ['sphinx_rtd_theme']
+extensions += ['sphinx_gallery.load_style']
+extensions += ['sphinxcontrib.video']
 
 add_module_names = False
 autoapi_type = 'python'
@@ -82,7 +86,7 @@ language = None
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
 # The name of the Pygments (syntax highlighting) style to use.
-pygments_style = 'sphinx'
+pygments_style = 'default'
 
 
 # -- Options for HTML output -------------------------------------------------
@@ -97,7 +101,9 @@ html_logo = 'epic12_4_exp_2_1.25.png'
 # further.  For a list of options available for each theme, see the
 # documentation.
 #
-# html_theme_options = {}
+html_theme_options = {
+    "collapse_navigation": "false"
+}
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
