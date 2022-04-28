@@ -54,7 +54,6 @@ t_list = [solver.sim_time]
 dt = 2e-3
 try:
     logger.info('Starting loop')
-    start_time = time.time()
     while solver.proceed:
         solver.step(dt)
         if solver.iteration % 20 == 0:
@@ -67,11 +66,7 @@ except:
     logger.error('Exception raised, triggering end of main loop.')
     raise
 finally:
-    end_time = time.time()
-    logger.info('Iterations: %i' %solver.iteration)
-    logger.info('Sim end time: %f' %solver.sim_time)
-    logger.info('Run time: %.2f sec' %(end_time-start_time))
-    logger.info('Run time: %f cpu-hr' %((end_time-start_time)/60/60*domain.dist.comm_cart.size))
+    solver.log_stats()
 
 # Create space-time plot
 u_array = np.array(u_list)

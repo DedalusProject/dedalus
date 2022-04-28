@@ -85,20 +85,13 @@ check.add_system(solver.state)
 analysis_tasks.append(check)
 
 # Main loop
-start_time = time.time()
 while solver.ok:
     solver.step(dt)
     if (solver.iteration-1) % 10 == 0:
-        logger.info("Time step {}".format(solver.iteration))
-end_time = time.time()
-
-# Print statistics
-logger.info('Total time: %f' %(end_time-start_time))
-logger.info('Iterations: %i' %solver.iteration)
-logger.info('Average timestep: %f' %(solver.sim_time/solver.iteration))
+        logger.info("Iteration {}".format(solver.iteration))
+solver.log_stats()
 
 # Merge output
-logger.info('beginning join operation')
 for task in analysis_tasks:
     logger.info(task.base_path)
     post.merge_analysis(task.base_path)
