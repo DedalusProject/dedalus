@@ -73,11 +73,11 @@ To build and install the most recent version of Dedalus, first set the ``FFTW_PA
 
 You can then install Dedalus directly from GitHub using pip::
 
-    pip3 install --no-cache http://github.com/dedalusproject/dedalus/zipball/d3/
+    pip3 install --no-cache http://github.com/dedalusproject/dedalus/zipball/master/
 
-Alternatively, you can clone the d3 branch from the source repository and install::
+Alternatively, you can clone the master branch from the source repository and install::
 
-    git clone -b d3 https://github.com/DedalusProject/dedalus
+    git clone -b master https://github.com/DedalusProject/dedalus
     cd dedalus
     pip3 install --no-cache .
 
@@ -86,7 +86,7 @@ Updating Dedalus
 
 If Dedalus was installed using the conda script or from GitHub with pip, it can also be updated using pip::
 
-    pip3 install --upgrade --force-reinstall --no-deps --no-cache http://github.com/dedalusproject/dedalus/zipball/d3/
+    pip3 install --upgrade --force-reinstall --no-deps --no-cache http://github.com/dedalusproject/dedalus/zipball/master/
 
 If Dedalus was built from a clone of the source repository, first pull new changes and then reinstall with pip::
 
