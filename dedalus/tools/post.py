@@ -214,7 +214,7 @@ def merge_distributed_set(set_path, cleanup=False):
     # Create joint file, overwriting if it already exists
     with h5py.File(str(joint_path), mode='w') as joint_file:
         # Setup joint file based on first process file (arbitrary)
-        merge_setup(joint_file, proc_paths[0])
+        merge_setup(joint_file, proc_paths)
         # Merge data from all process files
         for proc_path in proc_paths:
             merge_data(joint_file, proc_path)
@@ -225,7 +225,7 @@ def merge_distributed_set(set_path, cleanup=False):
         set_path.rmdir()
 
 
-def merge_setup(joint_file, proc_path, virtual=False):
+def merge_setup(joint_file, proc_paths, virtual=False):
     """
     Merge HDF5 setup from part of a distributed analysis set into a joint file.
 
@@ -233,16 +233,15 @@ def merge_setup(joint_file, proc_path, virtual=False):
     ----------
     joint_file : HDF5 file
         Joint file
-    proc_path : str or pathlib.Path
-        Path to part of a distributed analysis set
+    proc_paths : list of [str or pathlib.Path]
+        List of files in a distributed analysis set
     virtual: bool, optional
         If True, merging a virtual file into a single file rather than distributed set
 
     """
-    proc_path = pathlib.Path(proc_path)
-    logger.info("Merging setup from {}".format(proc_path))
-
-    with h5py.File(str(proc_path), mode='r') as proc_file:
+    proc_path0 = pathlib.Path(proc_paths[0])
+    logger.info("Merging setup for {}".format(joint_file))
+    with h5py.File(str(proc_path0), mode='r') as proc_file:
         # File metadata
         try:
             joint_file.attrs['set_number'] = proc_file.attrs['set_number']
@@ -257,7 +256,13 @@ def merge_setup(joint_file, proc_path, virtual=False):
         if virtual:
             proc_file.copy('scales', joint_file)
         else:
-            raise NotImplementedError("Merging of non-virtual distributed sets is not implemented")
+            needed_hashes = []
+            joint_scales = joint_file.create_group('scales')
+            for scalename in proc_file['scales']:
+                if 'hash_' in scalename:
+                    needed_hashes.append(scalename)
+                else:
+                    joint_scales.create_dataset(name=scalename, data=proc_file['scales'][scalename])
         # Tasks
         joint_tasks = joint_file.create_group('tasks')
         proc_tasks = proc_file['tasks']
@@ -279,35 +284,38 @@ def merge_setup(joint_file, proc_path, virtual=False):
             joint_dset.attrs['grid_space'] = proc_dset.attrs['grid_space']
             joint_dset.attrs['scales'] = proc_dset.attrs['scales']
 
-            if virtual:
-                # Dimension scales
-                for i, virtual_dim in enumerate(proc_dset.dims):
-                    joint_dset.dims[i].label = virtual_dim.label
-                    if joint_dset.dims[i].label == 't':
-                        for scalename in ['sim_time', 'world_time', 'wall_time', 'timestep', 'iteration', 'write_number']:
-                            scale = joint_file['scales'][scalename]
-                            joint_dset.dims.create_scale(scale, scalename)
-                            joint_dset.dims[i].attach_scale(scale)
-                    else:
-                        if virtual_dim.label == 'constant' or virtual_dim.label == '':
-                            scalename = 'constant' 
-                        else:
-                            hashval = hashlib.sha1(np.array(proc_dset.dims[i][0])).hexdigest()
-                            scalename = 'hash_' + hashval
+            for i, proc_dim in enumerate(proc_dset.dims):
+                joint_dset.dims[i].label = proc_dim.label
+                if joint_dset.dims[i].label == 't':
+                    for scalename in ['sim_time', 'world_time', 'wall_time', 'timestep', 'iteration', 'write_number']:
                         scale = joint_file['scales'][scalename]
                         joint_dset.dims.create_scale(scale, scalename)
                         joint_dset.dims[i].attach_scale(scale)
-            else:
-                raise NotImplementedError("Merging of non-virtual distributed sets is not implemented")
-                # TO FIX: MERGE DIMENSIONS DON'T WORK IN d3 YET!
-                #         THEY ALSO NEED TO BE MERGED ACROSS PROCS
-                # Dimension scales
-                # for i, proc_dim in enumerate(proc_dset.dims):
-                #     joint_dset.dims[i].label = proc_dim.label
-                #     for scalename in proc_dim:
-                #         scale = joint_file['scales'][scalename]
-                #         joint_dset.dims.create_scale(scale, scalename)
-                #         joint_dset.dims[i].attach_scale(scale)
+                else:
+                    if proc_dim.label == 'constant' or proc_dim.label == '':
+                        scalename = 'constant' 
+                    else:
+                        hashval = hashlib.sha1(np.array(proc_dset.dims[i][0])).hexdigest()
+                        scalename = 'hash_' + hashval
+                        if not virtual and scalename in needed_hashes:
+                            if joint_shape[i] == 1:
+                                scale_data = np.zeros(1)
+                            else:
+                                scale_data = np.zeros(joint_shape[i])
+                                filled = np.zeros(joint_shape[i], dtype=bool)
+                                for proc_path in proc_paths:
+                                    with h5py.File(proc_path, 'r') as pf:
+                                        start = pf['tasks'][taskname].attrs['start'][i-1]
+                                        stop = start+pf['tasks'][taskname].attrs['count'][i-1]
+                                        scale_data[start:stop] = pf['scales'][scalename]
+                                        filled[start:stop] = 1
+                                    if np.sum(filled) == scale_data.size: break #stop filling
+                            joint_scales.create_dataset(name=scalename, data=scale_data)
+                            needed_hashes.remove(scalename)
+
+                    scale = joint_file['scales'][scalename]
+                    joint_dset.dims.create_scale(scale, scalename)
+                    joint_dset.dims[i].attach_scale(scale)
 
 def merge_data(joint_file, proc_path):
     """
@@ -337,4 +345,4 @@ def merge_data(joint_file, proc_path):
             joint_dset[slices] = proc_dset[:]
 
 
-merge_virtual = lambda joint_file, virtual_path: merge_setup(joint_file, virtual_path, virtual=True)
+merge_virtual = lambda joint_file, virtual_path: merge_setup(joint_file, [virtual_path,], virtual=True)
