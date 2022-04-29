@@ -132,21 +132,11 @@ def merge_virtual_analysis(base_path, cleanup=False):
     stem name of the input FileHandler.
     """
     set_path = pathlib.Path(base_path)
-    merged_path = set_path.parent.joinpath("merged_{}/".format(set_path.stem))
-    with Sync() as sync:
-        if not merged_path.exists():
-            if sync.comm.rank == 0:
-                merged_path.mkdir(exist_ok=True)
-
     virtual_file_paths = get_assigned_sets(set_path, distributed=False)
     for virtual_file_path in virtual_file_paths:
-        merge_virtual_file(virtual_file_path, merged_path, cleanup=cleanup)
+        merge_virtual_file(virtual_file_path, cleanup=cleanup)
 
-    with Sync() as sync:
-        if cleanup and sync.comm.rank == 0:
-            shutil.rmtree(set_path)
-
-def merge_virtual_file(virtual_file_path, merged_path, cleanup=False):
+def merge_virtual_file(virtual_file_path, cleanup=False):
     """
     Merge a virtual file from a FileHandler.
 
@@ -157,24 +147,23 @@ def merge_virtual_file(virtual_file_path, merged_path, cleanup=False):
     cleanup : bool, optional
         Delete distributed files and virtual file after merging (default: False)
     """
-    virtual_file_path = pathlib.Path(virtual_file_path)
-    logger.info("Merging virtual file {}".format(virtual_file_path))
-
-    merge_stem = str(virtual_file_path.stem).replace(str(virtual_file_path.parent.stem), str(merged_path.stem))
-    joint_path = merged_path.joinpath("{}.h5".format(merge_stem))
+    merged_file_path = pathlib.Path(virtual_file_path)
+    logger.info("Merging virtual file {}".format(merged_file_path))
+    tmp_file_path = merged_file_path.parent.joinpath('tmp_{}.h5'.format(merged_file_path.stem))
+    shutil.move(merged_file_path, tmp_file_path)
 
     # Create joint file, overwriting if it already exists
-    with h5py.File(str(joint_path), mode='w') as joint_file:
+    with h5py.File(str(merged_file_path), mode='w') as merged_file:
         # Setup joint file based on first process file (arbitrary)
-        merge_virtual(joint_file, virtual_file_path)
+        merge_virtual(merged_file, tmp_file_path)
+    os.remove(tmp_file_path)
 
     # Cleanup after completed merge, if directed
     if cleanup:
-        folder = virtual_file_path.parent.joinpath("{}/".format(virtual_file_path.stem))
+        folder = merged_file_path.parent.joinpath("{}/".format(virtual_file_path.stem))
         logger.info("cleaning up {}".format(folder))
         if os.path.isdir(folder):
             shutil.rmtree(folder)
-        os.remove(virtual_file_path)
 
 
 def merge_analysis(base_path, cleanup=False):
@@ -276,7 +265,7 @@ def merge_setup(joint_file, proc_path, virtual=False):
             # Setup dataset with automatic chunking
             proc_dset = proc_tasks[taskname]
             if virtual:
-                joint_dset = joint_tasks.create_dataset(taskname, data=proc_dset)
+                joint_dset = joint_tasks.create_dataset(name=proc_dset.name, data=proc_dset)
             else:
                 spatial_shape = proc_dset.attrs['global_shape']
                 joint_shape = (writes,) + tuple(spatial_shape)

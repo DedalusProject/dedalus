@@ -154,10 +154,10 @@ def test_cartesian_output_merged_virtual(dtype, dealias, output_scales):
     # Check solution
     errors = []
     
-    merge_virtual_analysis('test_output', cleanup=False)
+    merge_virtual_analysis('test_output', cleanup=True)
     d.comm.Barrier()
 
-    with h5py.File('merged_test_output/merged_test_output_s1.h5', mode='r') as file:
+    with h5py.File('test_output/test_output_s1.h5', mode='r') as file:
         for task in tasks:
             task_name = str(task)
             task = task.evaluate()
@@ -171,5 +171,4 @@ def test_cartesian_output_merged_virtual(dtype, dealias, output_scales):
     with Sync() as sync:
         if sync.comm.rank == 0:
             shutil.rmtree('test_output')
-            shutil.rmtree('merged_test_output')
     assert np.allclose(errors, 0)
