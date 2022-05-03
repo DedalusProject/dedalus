@@ -2,13 +2,16 @@
 Post-processing helpers.
 
 """
-
+import os
 import pathlib
+import hashlib
+import shutil
 import h5py
 import numpy as np
 from mpi4py import MPI
 
 from ..tools.general import natural_sort
+from ..tools.parallel import Sync
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -109,6 +112,59 @@ def get_assigned_sets(base_path, distributed=False):
     set_paths = natural_sort(set_paths)
     return set_paths[MPI_RANK::MPI_SIZE]
 
+def merge_virtual_analysis(base_path, cleanup=False):
+    """
+    Merge virtual files from a FileHandler into single files.
+
+    Parameters
+    ----------
+    base_path : str or pathlib.Path
+        Base path of FileHandler output
+    cleanup : bool, optional
+        Delete virtual and distributed files after merging (default: False)
+
+    Notes
+    -----
+    This function is parallelized over sets, and so can be effectively
+    parallelized up to the number of virtual files.
+
+    Merged files are output into a 'merged_X' directory, where X is the
+    stem name of the input FileHandler.
+    """
+    set_path = pathlib.Path(base_path)
+    virtual_file_paths = get_assigned_sets(set_path, distributed=False)
+    for virtual_file_path in virtual_file_paths:
+        merge_virtual_file(virtual_file_path, cleanup=cleanup)
+
+def merge_virtual_file(virtual_file_path, cleanup=False):
+    """
+    Merge a virtual file from a FileHandler.
+
+    Parameters
+    ----------
+    virtual_file_path : str of pathlib.Path
+        Path to a virtual .h5 file
+    cleanup : bool, optional
+        Delete distributed files and virtual file after merging (default: False)
+    """
+    merged_file_path = pathlib.Path(virtual_file_path)
+    logger.info("Merging virtual file {}".format(merged_file_path))
+    tmp_file_path = merged_file_path.parent.joinpath('tmp_{}.h5'.format(merged_file_path.stem))
+    shutil.move(merged_file_path, tmp_file_path)
+
+    # Create joint file, overwriting if it already exists
+    with h5py.File(str(merged_file_path), mode='w') as merged_file:
+        # Setup joint file based on first process file (arbitrary)
+        merge_virtual(merged_file, tmp_file_path)
+    os.remove(tmp_file_path)
+
+    # Cleanup after completed merge, if directed
+    if cleanup:
+        folder = merged_file_path.parent.joinpath("{}/".format(virtual_file_path.stem))
+        logger.info("cleaning up {}".format(folder))
+        if os.path.isdir(folder):
+            shutil.rmtree(folder)
+
 
 def merge_analysis(base_path, cleanup=False):
     """
@@ -158,7 +214,7 @@ def merge_distributed_set(set_path, cleanup=False):
     # Create joint file, overwriting if it already exists
     with h5py.File(str(joint_path), mode='w') as joint_file:
         # Setup joint file based on first process file (arbitrary)
-        merge_setup(joint_file, proc_paths[0])
+        merge_setup(joint_file, proc_paths)
         # Merge data from all process files
         for proc_path in proc_paths:
             merge_data(joint_file, proc_path)
@@ -169,7 +225,7 @@ def merge_distributed_set(set_path, cleanup=False):
         set_path.rmdir()
 
 
-def merge_setup(joint_file, proc_path):
+def merge_setup(joint_file, proc_paths, virtual=False):
     """
     Merge HDF5 setup from part of a distributed analysis set into a joint file.
 
@@ -177,14 +233,15 @@ def merge_setup(joint_file, proc_path):
     ----------
     joint_file : HDF5 file
         Joint file
-    proc_path : str or pathlib.Path
-        Path to part of a distributed analysis set
+    proc_paths : list of [str or pathlib.Path]
+        List of files in a distributed analysis set
+    virtual: bool, optional
+        If True, merging a virtual file into a single file rather than distributed set
 
     """
-    proc_path = pathlib.Path(proc_path)
-    logger.info("Merging setup from {}".format(proc_path))
-
-    with h5py.File(str(proc_path), mode='r') as proc_file:
+    proc_path0 = pathlib.Path(proc_paths[0])
+    logger.info("Merging setup for {}".format(joint_file))
+    with h5py.File(str(proc_path0), mode='r') as proc_file:
         # File metadata
         try:
             joint_file.attrs['set_number'] = proc_file.attrs['set_number']
@@ -196,16 +253,28 @@ def merge_setup(joint_file, proc_path):
         except KeyError:
             joint_file.attrs['writes'] = writes = len(proc_file['scales']['write_number'])
         # Copy scales (distributed files all have global scales)
-        #proc_file.copy('scales', joint_file)
+        if virtual:
+            proc_file.copy('scales', joint_file)
+        else:
+            needed_hashes = []
+            joint_scales = joint_file.create_group('scales')
+            for scalename in proc_file['scales']:
+                if 'hash_' in scalename:
+                    needed_hashes.append(scalename)
+                else:
+                    joint_scales.create_dataset(name=scalename, data=proc_file['scales'][scalename])
         # Tasks
         joint_tasks = joint_file.create_group('tasks')
         proc_tasks = proc_file['tasks']
         for taskname in proc_tasks:
             # Setup dataset with automatic chunking
             proc_dset = proc_tasks[taskname]
-            spatial_shape = proc_dset.attrs['global_shape']
-            joint_shape = (writes,) + tuple(spatial_shape)
-            joint_dset = joint_tasks.create_dataset(name=proc_dset.name,
+            if virtual:
+                joint_dset = joint_tasks.create_dataset(name=proc_dset.name, data=proc_dset)
+            else:
+                spatial_shape = proc_dset.attrs['global_shape']
+                joint_shape = (writes,) + tuple(spatial_shape)
+                joint_dset = joint_tasks.create_dataset(name=proc_dset.name,
                                                     shape=joint_shape,
                                                     dtype=proc_dset.dtype,
                                                     chunks=True)
@@ -215,16 +284,38 @@ def merge_setup(joint_file, proc_path):
             joint_dset.attrs['grid_space'] = proc_dset.attrs['grid_space']
             joint_dset.attrs['scales'] = proc_dset.attrs['scales']
 
-            # TO FIX: MERGE DIMENSIONS DON'T WORK IN d3 YET!
-            #         THEY ALSO NEED TO BE MERGED ACROSS PROCS
-            # Dimension scales
-            # for i, proc_dim in enumerate(proc_dset.dims):
-            #     joint_dset.dims[i].label = proc_dim.label
-            #     for scalename in proc_dim:
-            #         scale = joint_file['scales'][scalename]
-            #         joint_dset.dims.create_scale(scale, scalename)
-            #         joint_dset.dims[i].attach_scale(scale)
+            for i, proc_dim in enumerate(proc_dset.dims):
+                joint_dset.dims[i].label = proc_dim.label
+                if joint_dset.dims[i].label == 't':
+                    for scalename in ['sim_time', 'world_time', 'wall_time', 'timestep', 'iteration', 'write_number']:
+                        scale = joint_file['scales'][scalename]
+                        joint_dset.dims.create_scale(scale, scalename)
+                        joint_dset.dims[i].attach_scale(scale)
+                else:
+                    if proc_dim.label == 'constant' or proc_dim.label == '':
+                        scalename = 'constant' 
+                    else:
+                        hashval = hashlib.sha1(np.array(proc_dset.dims[i][0])).hexdigest()
+                        scalename = 'hash_' + hashval
+                        if not virtual and scalename in needed_hashes:
+                            if joint_shape[i] == 1:
+                                scale_data = np.zeros(1)
+                            else:
+                                scale_data = np.zeros(joint_shape[i])
+                                filled = np.zeros(joint_shape[i], dtype=bool)
+                                for proc_path in proc_paths:
+                                    with h5py.File(proc_path, 'r') as pf:
+                                        start = pf['tasks'][taskname].attrs['start'][i-1]
+                                        stop = start+pf['tasks'][taskname].attrs['count'][i-1]
+                                        scale_data[start:stop] = pf['scales'][scalename]
+                                        filled[start:stop] = 1
+                                    if np.sum(filled) == scale_data.size: break #stop filling
+                            joint_scales.create_dataset(name=scalename, data=scale_data)
+                            needed_hashes.remove(scalename)
 
+                    scale = joint_file['scales'][scalename]
+                    joint_dset.dims.create_scale(scale, scalename)
+                    joint_dset.dims[i].attach_scale(scale)
 
 def merge_data(joint_file, proc_path):
     """
@@ -253,3 +344,5 @@ def merge_data(joint_file, proc_path):
             slices = (slice(None),) + spatial_slices
             joint_dset[slices] = proc_dset[:]
 
+
+merge_virtual = lambda joint_file, virtual_path: merge_setup(joint_file, [virtual_path,], virtual=True)
