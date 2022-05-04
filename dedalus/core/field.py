@@ -725,6 +725,10 @@ class Field(Current):
         self.dist.comm.Allreduce(send_buff, recv_buff, op=MPI.SUM)
         return recv_buff
 
+    def gather_data(self, root=0, layout=None):
+        # HACK: just use allgather for now
+        return self.allgather_data(layout=layout)
+
     def allreduce_data_norm(self, layout=None, order=2):
         # Change layout
         if layout is not None:

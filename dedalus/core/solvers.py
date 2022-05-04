@@ -620,4 +620,4 @@ class InitialValueSolver(SolverBase):
             logger.info(f"CPU time (iter {self.warmup_iterations}-end): {run_time*cpus/3600:{format}} cpu-hr")
             logger.info(f"Speed: {(modes*stages/cpus/run_time):{format}} mode-stages/cpu-sec")
         else:
-            logger.info(f"Timings unavailable due because warmup did not complete.")
+            logger.info(f"Timings unavailable because warmup did not complete.")
