@@ -1,7 +1,4 @@
-"""
-Class for centralized evaluation of expression trees.
-
-"""
+"""Class for centralized evaluation of expression trees and handling the results."""
 
 import os
 import re
@@ -11,15 +8,10 @@ import h5py
 import shutil
 import uuid
 import numpy as np
-from mpi4py import MPI
 import hashlib
 
-from .system import FieldSystem
-#from .operators import Operator, Cast
-#from .operators import FieldCopy
-from .future import Future, FutureField, FutureLockedField
+from .future import FutureField, FutureLockedField
 from .field import Field, LockedField
-from ..tools.array import reshape_vector
 from ..tools.general import OrderedSet
 from ..tools.general import oscillate
 from ..tools.parallel import Sync
@@ -68,7 +60,9 @@ class Evaluator:
             parallel = FILEHANDLER_PARALLEL_DEFAULT
         if parallel == 'gather':
             FileHandler = H5GatherFileHandler
-        elif parallel == 'parallel':
+        elif parallel == 'virtual':
+            FileHandler = H5VirtualFileHandler
+        elif parallel == 'mpio':
             FileHandler = H5ParallelFileHandler
         else:
             raise ValueError(f"Parallel method '{parallel}' not recognized.")
@@ -351,15 +345,14 @@ class H5FileHandlerBase(Handler):
     base_path : str
         Base path for analyis output folder
     max_writes : int, optional
-        Maximum number of writes per set (default: infinite)
+        Maximum number of writes per set. Default: None (infinite).
     mode : str, optional
         'overwrite' to delete any present analysis output with the same base path.
         'append' to begin with set number incremented past any present analysis output.
         Default behavior set by config option.
-
     """
 
-    def __init__(self, base_path, *args, max_writes=np.inf, mode=None, **kw):
+    def __init__(self, base_path, *args, max_writes=None, mode=None, **kw):
         Handler.__init__(self, *args, **kw)
         if mode is None:
             mode = FILEHANDLER_MODE_DEFAULT
@@ -376,7 +369,7 @@ class H5FileHandlerBase(Handler):
         if mode not in ['overwrite', 'append']:
             raise ValueError("Write mode {} not defined.".format(mode))
 
-        comm = self.dist.comm_cart
+        self.comm = comm = self.dist.comm_cart
         if comm.rank == 0:
             set_pattern = '%s_s*' % (self.base_path.stem)
             sets = list(self.base_path.glob(set_pattern))
@@ -444,44 +437,37 @@ class H5FileHandlerBase(Handler):
         return self.open_file(**kw)
 
     def create_current_file(self):
-        """Generate new HDF5 file in current_path from root node."""
-        comm = self.dist.comm_cart
-        with Sync(comm):
-            if comm.rank == 0:
-                file = h5py.File(f"{self.current_path}.h5", 'w-')
-                self.setup_file(file)
-                file.close()
+        """Generate and setup new HDF5 file from root process."""
+        with Sync(self.comm):
+            if self.comm.rank == 0:
+                with h5py.File(f"{self.current_path}.h5", 'w-') as file:
+                    self.setup_file(file)
 
     def setup_file(self, file):
-        dist = self.dist
-        comm = dist.comm_cart
-        if comm.rank != 0:
-            raise ValueError("Rank {} attemped to setup the set file. This should never happen.".format(comm.rank))
+        # Only run from root process
+        if self.comm.rank != 0:
+            raise ValueError("Rank {} attemped to setup file. This should never happen.".format(self.comm.rank))
         # Metadeta
         file.attrs['set_number'] = self.set_num
         file.attrs['handler_name'] = self.base_path.stem
         file.attrs['writes'] = self.file_write_num
         # Scales
         file.create_group('scales')
-        for name in ['sim_time', 'timestep', 'world_time', 'wall_time']:
-            file['scales'].create_dataset(name=name, shape=(0,), maxshape=(None,), dtype=np.float64) # shape=(0,) to chunk across writes
-            file['scales'][name].make_scale()
-        for name in ['iteration', 'write_number']:
-            file['scales'].create_dataset(name=name, shape=(0,), maxshape=(None,), dtype=int) # shape=(0,) to chunk across writes
-            file['scales'][name].make_scale()
         file['scales'].create_dataset(name='constant', data=np.zeros(1), dtype=np.float64)
         file['scales']['constant'].make_scale()
+        for name in ['sim_time', 'timestep', 'world_time', 'wall_time']:
+            file['scales'].create_dataset(name=name, shape=(0,), maxshape=(self.max_writes,), dtype=np.float64) # shape=(0,) to chunk across writes
+            file['scales'][name].make_scale()
+        for name in ['iteration', 'write_number']:
+            file['scales'].create_dataset(name=name, shape=(0,), maxshape=(self.max_writes,), dtype=int) # shape=(0,) to chunk across writes
+            file['scales'][name].make_scale()
         # Tasks
         file.create_group('tasks')
         for task in self.tasks:
             op = task['operator']
             layout = task['layout']
             scales = task['scales']
-            global_shape = layout.global_shape(op.domain, scales)
-            tensor_shape = tuple(cs.dim for cs in op.tensorsig)
-            shape = (1,) + tensor_shape + global_shape # shape=(1,...) to chunk within writes
-            maxshape = (None,) + tensor_shape + global_shape # shape=(None,...) to allow dynamic resizing
-            dset = self.create_dataset(file, task['name'], shape, maxshape, op.dtype) # subclass dependent
+            dset = self.create_dataset(file, task)
             # Metadata
             dset.attrs['constant'] = op.domain.constant
             dset.attrs['grid_space'] = layout.grid_space
@@ -513,10 +499,6 @@ class H5FileHandlerBase(Handler):
                 dset.dims[1 + rank + axis].label = sn
                 dset.dims[1 + rank + axis].attach_scale(scale)
 
-    def create_dataset(self, file, name, shape, maxshape, dtype):
-        # Create standard h5py dataset
-        return file['tasks'].create_dataset(name=name, shape=shape, maxshape=maxshape, dtype=dtype)
-
     def process(self, **kw):
         """Save task outputs to HDF5 file."""
         # HACK: fix world time and timestep inputs from solvers.py/timestepper.py
@@ -525,9 +507,10 @@ class H5FileHandlerBase(Handler):
         self.total_write_num += 1
         self.file_write_num += 1
         # Move to next set if necessary
-        if self.file_write_num > self.max_writes:
-            self.set_num += 1
-            self.file_write_num = 1
+        if self.max_writes is not None:
+            if self.file_write_num > self.max_writes:
+                self.set_num += 1
+                self.file_write_num = 1
         # Write file metadata
         file = self.get_file()
         self.write_file_metadata(file, write_number=self.total_write_num, **kw)
@@ -563,6 +546,10 @@ class H5FileHandlerBase(Handler):
         """Close current HDF5 file after processing."""
         raise NotImplementedError("Subclasses must implement.")
 
+    def create_dataset(self, file, task):
+        """Create dataset for a task."""
+        raise NotImplementedError("Subclasses must implement.")
+
 
 class H5GatherFileHandler(H5FileHandlerBase):
     """H5FileHandler that gathers global data to write from root process."""
@@ -570,19 +557,32 @@ class H5GatherFileHandler(H5FileHandlerBase):
     def open_file(self, mode='r+'):
         """Open current HDF5 file for processing."""
         # Only open on root process
-        if self.dist.comm.rank == 0:
+        if self.comm.rank == 0:
             return h5py.File(str(self.current_file), mode)
 
     def close_file(self, file):
         """Close current HDF5 file after processing."""
         # Close on root process
-        if self.dist.comm.rank == 0:
+        if self.comm.rank == 0:
             file.close()
+
+    def create_dataset(self, file, task):
+        """Create dataset for a task."""
+        op = task['operator']
+        layout = task['layout']
+        scales = task['scales']
+        # Create resizable dataset, automatically chunking within writes
+        tensor_shape = tuple(cs.dim for cs in op.tensorsig)
+        global_shape = layout.global_shape(op.domain, scales)
+        shape = (1,) + tensor_shape + global_shape # shape=(1,...) to automatically chunk within writes
+        maxshape = (self.max_writes,) + tensor_shape + global_shape
+        dset = file['tasks'].create_dataset(name=task['name'], shape=shape, maxshape=maxshape, dtype=op.dtype)
+        return dset
 
     def write_file_metadata(self, file, **kw):
         """Write file metadata and time scales."""
         # Write from root process
-        if self.dist.comm.rank == 0:
+        if self.comm.rank == 0:
             super().write_file_metadata(file, **kw)
 
     def write_task(self, file, task):
@@ -591,7 +591,7 @@ class H5GatherFileHandler(H5FileHandlerBase):
         out = task['out']
         data = out.gather_data()
         # Write global data from root process
-        if self.dist.comm.rank == 0:
+        if self.comm.rank == 0:
             dset = file['tasks'][task['name']]
             dset.resize(self.file_write_num, axis=0)
             dset[self.file_write_num-1] = data
@@ -608,61 +608,102 @@ class H5ParallelFileHandler(H5FileHandlerBase):
 
     def open_file(self, mode='r+'):
         """Return current HDF5 file. Must already exist."""
-        comm = self.dist.comm_cart
-        return h5py.File(str(self.current_file), mode, driver='mpio', comm=comm)
+        return h5py.File(str(self.current_file), mode, driver='mpio', comm=self.comm)
 
     def close_file(self, file):
         """Close current HDF5 file after processing."""
         file.close()
+
+    def create_dataset(self, file, task):
+        """Create dataset for a task."""
+        op = task['operator']
+        layout = task['layout']
+        scales = task['scales']
+        # Create resizable dataset, automatically chunking within writes
+        tensor_shape = tuple(cs.dim for cs in op.tensorsig)
+        global_shape = layout.global_shape(op.domain, scales)
+        shape = (1,) + tensor_shape + global_shape # shape=(1,...) to automatically chunk within writes
+        maxshape = (self.max_writes,) + tensor_shape + global_shape
+        dset = file['tasks'].create_dataset(name=task['name'], shape=shape, maxshape=maxshape, dtype=op.dtype)
+        #dset.resize(self.max_writes, axis=0)
+        return dset
 
     def write_task(self, file, task):
         """Write task data."""
         # Collectively resize
         dset = file['tasks'][task['name']]
         dset.resize(self.file_write_num, axis=0)
-        # Collectively write local data
+        # Write local data
         out = task['out']
         index = self.file_write_num - 1
-        memory_space, file_space = self.get_hdf5_spaces(out, index)
-        # Fails when dxpl is included, but this seems to be required if some processes are empty.
-        dset.id.write(memory_space, file_space, out.data[None])#, dxpl=self._property_list)
+
+        raise NotImplementedError()
+
+        # Non-collective high-level call -- slow
+        # Works if dset is fully preallocated
+        # Silent write errors when dset is resized with nonempty cores
+        # Hangs on file close when dset is resized with empty cores
+
+        # global_shape, local_start, local_shape = self.get_write_stats(out)
+        # local_slices = [index] + [slice(start, start+size) for start, size in zip(local_start, local_shape)]
+        # dset[tuple(local_slices)] = out.data
+
+        # Collective high-level call -- hangs with empty cores
+        # Works if dset is fully preallocated with nonempty cores
+        # Fails on write when dset is resized with nonempty cores
+        # Hangs on write when dset is fully preallocated with empty cores
+        # Hangs on write when dset is resized with empty cores
+
+        # global_shape, local_start, local_shape = self.get_write_stats(out)
+        # local_slices = [index] + [slice(start, start+size) for start, size in zip(local_start, local_shape)]
+        # with dset.collective:
+        #     dset[tuple(local_slices)] = out.data
+
+        # Collective low-level call to accomodate empty processes
+        # Works if dset is fully preallocated
+        # Fails if dset is resized during processing
+
+        # memory_space, file_space = self.get_hdf5_spaces(out, index)
+        # dset.id.write(memory_space, file_space, out.data, dxpl=self._property_list)
 
     def get_hdf5_spaces(self, field, index):
         """Create HDF5 space objects for writing local portion of a field."""
-        global_shape, local_start, local_shape = self.get_write_stats(field, index)
-        memory_shape = (1,) + local_shape
-        memory_start = (0,) + (0,) * len(local_shape)
-        memory_count = (1,) + local_shape
+        global_shape, local_start, local_shape = self.get_write_stats(field)
+        memory_shape = local_shape
+        memory_start = (0,) * len(local_shape)
+        memory_count = local_shape
         memory_space = h5py.h5s.create_simple(memory_shape)
         memory_space.select_hyperslab(memory_start, memory_count)
         file_shape = (index+1,) + global_shape
+        # file_maxshape = (h5py.h5s.UNLIMITED,) + global_shape
         file_start = (index,) + local_start
         file_count = (1,) + local_shape
         file_space = h5py.h5s.create_simple(file_shape)
         file_space.select_hyperslab(file_start, file_count)
         return memory_space, file_space
 
-    def get_write_stats(self, field, index):
-        """Determine write parameters for nonconstant subspace of a field."""
+    def get_write_stats(self, field):
+        """Determine write parameters for a field."""
         layout = field.layout
         scales = field.scales
         domain = field.domain
-        # References
-        gshape = layout.global_shape(domain, scales)
-        lshape = layout.local_shape(domain, scales)
+        # Domain shapes
+        global_shape = layout.global_shape(domain, scales)
+        local_shape = layout.local_shape(domain, scales)
+        # Local start
         local_elements = layout.local_elements(domain, scales)
-        start = []
+        local_start = []
         for axis, lei in enumerate(local_elements):
             if lei.size == 0:
-                start.append(gshape[axis])
+                local_start.append(global_shape[axis])
             else:
-                start.append(lei[0])
-        start = tuple(start)
-        # Include tensor axes
+                local_start.append(lei[0])
+        local_start = tuple(local_start)
+        # Field shapes with tensor axes
         tensor_shape = tuple(cs.dim for cs in field.tensorsig)
-        global_shape = tensor_shape + gshape
-        local_shape = tensor_shape + lshape
-        local_start = (0,) * len(tensor_shape) + start
+        global_shape = tensor_shape + global_shape
+        local_shape = tensor_shape + local_shape
+        local_start = (0,) * len(tensor_shape) + local_start
         return global_shape, local_start, local_shape
 
 
@@ -672,7 +713,7 @@ class H5VirtualFileHandler(H5FileHandlerBase):
         """Generate new HDF5 file in current_path."""
         super().create_current_file()
         self.file_write_num = 0
-        comm = self.dist.comm_cart
+        comm = self.comm
         # Save in folders for each filenum in base directory
         folder_path = self.current_path
         file_name = '%s_s%i_p%i.h5' %(self.base_path.stem, self.set_num, comm.rank)
@@ -708,7 +749,7 @@ class H5VirtualFileHandler(H5FileHandlerBase):
 
     @property
     def current_virtual_path(self):
-        comm = self.dist.comm_cart
+        comm = self.comm
         set_num = self.set_num
         if comm.rank == 0 and self.virtual_file:
             file_name = '%s_s%i.h5' %(self.base_path.stem, set_num)
@@ -722,7 +763,7 @@ class H5VirtualFileHandler(H5FileHandlerBase):
         scales = task['scales']
         op = task['operator']
         virt_layout = h5py.VirtualLayout(shape=file_shape, dtype=op.dtype)
-        for i in range(self.dist.comm_cart.size):
+        for i in range(self.comm.size):
             file_name = '%s_s%i_p%i.h5' %(self.base_path.stem, self.set_num, i)
             folder_name = '%s_s%i' %(self.base_path.stem, self.set_num)
             folder_path = self.base_path.joinpath(folder_name)
@@ -741,7 +782,7 @@ class H5VirtualFileHandler(H5FileHandlerBase):
         return virt_layout
 
     def process_virtual_file(self):
-        if not self.dist.comm_cart.rank == 0:
+        if not self.comm.rank == 0:
             raise ValueError("Processing Virtual File not on root processor. This should never happen.")
         file = h5py.File(str(self.current_virtual_path), 'w-')
         self.setup_file(file, virtual_file=True)
