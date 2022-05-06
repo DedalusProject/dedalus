@@ -732,6 +732,7 @@ class Field(Current):
         # Shortcut for serial execution
         if self.dist.comm.size == 1:
             return self.data.copy()
+        # TODO: Shortcut this for constant fields
         # Gather data
         # Should be optimized via Gatherv eventually
         pieces = self.dist.comm.gather(self.data, root=root)
