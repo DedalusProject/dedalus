@@ -185,7 +185,7 @@ def csr_matvec(A_csr, x_vec, out_vec):
     if x_vec.ndim > 1 or out_vec.ndim > 1:
         raise ValueError("Only vectors allowed for input and output.")
     if M != m or N != n:
-        raise ValueError(f"Matrix shape {(M,N)} does not match input {(m,)} and output {(n,)} shapes.")
+        raise ValueError(f"Matrix shape {(M,N)} does not match input {(n,)} and output {(m,)} shapes.")
     # Apply matvec
     _sparsetools.csr_matvec(M, N, A_csr.indptr, A_csr.indices, A_csr.data, x_vec, out_vec)
     return out_vec
