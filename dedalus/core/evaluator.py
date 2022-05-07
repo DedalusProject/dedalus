@@ -801,3 +801,21 @@ class H5VirtualFileHandler(H5FileHandlerBase):
         dset = file['tasks'].create_virtual_dataset(name=task['name'], layout=virtual_layout, fillvalue=None)
         return dset
 
+    @staticmethod
+    def merge_task(file, task_name, overwrite=False):
+        """Merge virtual dataset into regular dataset."""
+        # Create new dataset
+        old_dset = file['tasks'][task_name]
+        if not old_dset.is_virtual:
+            raise ValueError("Specified dataset is not a virtual dataset.")
+        new_name = f"{task_name}_merged"
+        new_dset = file['tasks'].create_dataset(name=new_name, shape=old_dset.shape, maxshape=old_dset.maxshape, dtype=old_dset.dtype, chunks=old_dset.chunk)
+        # Copy attributes and scales
+        new_dset.attrs.update(old_dset.attrs)
+        # Copy data (requires global memory)
+        new_dset[:] = old_dset[:]
+        # Overwrite if requested
+        if overwrite:
+            del file['tasks'][task_name]
+            file['tasks'].move(new_name, task_name)
+
