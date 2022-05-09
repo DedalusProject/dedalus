@@ -430,6 +430,7 @@ class H5FileHandlerBase(Handler):
         task['local_start'] = local_start
         task['local_shape'] = local_shape
         task['local_size'] = np.prod(local_shape)
+        task['local_slices'] = tuple(slice(start, start+size) for start, size in zip(local_start, local_shape))
 
     def get_data_distribution(self, task, rank=None):
         """Determine write parameters for a task."""
@@ -485,9 +486,6 @@ class H5FileHandlerBase(Handler):
 
     def setup_file(self, file):
         """Prepare new HDF5 file for writing."""
-        # Only run from root process
-        if self.comm.rank != 0:
-            raise ValueError("Rank {} attemped to setup file. This should never happen.".format(self.comm.rank))
         # Metadeta
         file.attrs['set_number'] = self.set_num
         file.attrs['handler_name'] = self.name
@@ -646,10 +644,24 @@ class H5ParallelFileHandler(H5FileHandlerBase):
         """Close current HDF5 file after processing."""
         file.close()
 
+    def create_current_file(self):
+        """Generate and setup new HDF5 file."""
+        # Setup file with MPIO to avoid write errors and deadlocks during processing
+        with h5py.File(str(self.current_file), 'w-', driver='mpio', comm=self.comm) as file:
+            self.setup_file(file)
+
     def create_task_dataset(self, file, task):
         """Create dataset for a task."""
-        dset = super().create_task_dataset(file, task)
-        #dset.resize(self.max_writes, axis=0)
+        # Determine chunk size from local data shape on root process
+        local_chunks = None
+        if self.comm.rank == 0:
+            local_chunks = h5py.filters.guess_chunk(task['local_shape'], task['local_shape'], np.dtype(task['dtype']).itemsize)
+        local_chunks = self.comm.bcast(local_chunks, root=0)
+        # Create resizable dataset, chunking within local writes
+        shape = (1,) + task['global_shape']
+        maxshape = (self.max_writes,) + task['global_shape']
+        chunks = (1,) + local_chunks
+        dset = file['tasks'].create_dataset(name=task['name'], shape=shape, maxshape=maxshape, chunks=chunks, dtype=task['dtype'])
         return dset
 
     def write_task(self, file, task):
@@ -657,46 +669,31 @@ class H5ParallelFileHandler(H5FileHandlerBase):
         # Collectively resize
         dset = file['tasks'][task['name']]
         dset.resize(self.file_write_num, axis=0)
-        # Write local data
         index = self.file_write_num - 1
-        raise NotImplementedError("MPIO output not currently working.")
+        # Collective low-level write to accomodate empty processes
+        # Reshape local data to include leading time dimension to avoid dataspace conversion
+        memory_space, file_space = self.get_hdf5_spaces(task, index)
+        dset.id.write(memory_space, file_space, task['out'].data[None], dxpl=self._property_list)
 
-        # Non-collective high-level call -- slow
-        # Works if dset is fully preallocated
-        # Silent write errors when dset is resized with nonempty cores
-        # Hangs on file close when dset is resized with empty cores
+        # Non-collective high-level write -- slow
+        # local_slices = (index,) + task['local_slices']
+        # dset[local_slices] = task['out'].data
 
-        # local_slices = [index] + [slice(start, start+size) for start, size in zip(task['local_start'], task['local_shape'])]
-        # dset[tuple(local_slices)] = task['out'].data
-
-        # Collective high-level call -- hangs with empty cores
-        # Works if dset is fully preallocated with nonempty cores
-        # Fails on write when dset is resized with nonempty cores
-        # Hangs on write when dset is fully preallocated with empty cores
-        # Hangs on write when dset is resized with empty cores
-
-        # local_slices = [index] + [slice(start, start+size) for start, size in zip(task['local_start'], task['local_shape'])]
+        # Collective high-level write -- hangs with empty cores
+        # local_slices = (index,) + task['local_slices']
         # with dset.collective:
-        #     dset[tuple(local_slices)] = task['out'].data
-
-        # Collective low-level call to accomodate empty processes
-        # Works if dset is fully preallocated
-        # Fails if dset is resized during processing
-
-        # memory_space, file_space = self.get_hdf5_spaces(task, index)
-        # dset.id.write(memory_space, file_space, task['out'].data, dxpl=self._property_list)
+        #     dset[local_slices] = task['out'].data
 
     def get_hdf5_spaces(self, task, index):
         """Create HDF5 space objects for writing local portion of a task."""
-        memory_shape = task['local_shape']
+        memory_shape = (1,) + task['local_shape']
         memory_start = (0,) * len(memory_shape)
-        memory_count = task['local_shape']
+        memory_count = (1,) + task['local_shape']
         memory_space = h5py.h5s.create_simple(memory_shape)
         memory_space.select_hyperslab(memory_start, memory_count)
         file_shape = (index+1,) + task['global_shape']
         file_start = (index,) + task['local_start']
         file_count = (1,) + task['local_shape']
-        # file_maxshape = (h5py.h5s.UNLIMITED,) + global_shape
         file_space = h5py.h5s.create_simple(file_shape)
         file_space.select_hyperslab(file_start, file_count)
         return memory_space, file_space
@@ -827,7 +824,7 @@ class H5VirtualFileHandler(H5FileHandlerBase):
         if not old_dset.is_virtual:
             raise ValueError("Specified dataset is not a virtual dataset.")
         new_name = f"{task_name}_merged"
-        new_shape = [1] + list(old_dset.shape)[1:] # shape[0] = 1 to automatically chunk within writes
+        new_shape = (1,) + old_dset.shape[1:] # shape[0] = 1 to automatically chunk within writes
         new_dset = file['tasks'].create_dataset(name=new_name, shape=new_shape, maxshape=old_dset.maxshape, dtype=old_dset.dtype)
         new_dset.resize(old_dset.shape[0], axis=0)
         # Copy attributes and scales

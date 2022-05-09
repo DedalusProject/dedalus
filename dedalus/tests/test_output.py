@@ -14,7 +14,7 @@ from dedalus.tools.cache import CachedFunction
 @pytest.mark.parametrize('output_scales', [1, 3/2, 2,
     pytest.param(1/2, marks=pytest.mark.xfail(reason="evaluator not copying correctly for scales < 1"))])
 @pytest.mark.parametrize('output_layout', ['g', 'c'])
-@pytest.mark.parametrize('parallel', ['gather', 'virtual'])
+@pytest.mark.parametrize('parallel', ['gather', 'mpio', 'virtual'])
 def test_cartesian_output(dtype, dealias, output_scales, output_layout, parallel):
     Nx = Ny = Nz = 16
     Lx = Ly = Lz = 2 * np.pi
