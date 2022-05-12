@@ -2,7 +2,7 @@
 Dedalus module interface.
 
 Usage:
-    dedalus test
+    dedalus test [--report]
     dedalus bench
     dedalus cov
     dedalus get_config
@@ -17,6 +17,7 @@ Options:
 
 if __name__ == "__main__":
 
+    import sys
     import pathlib
     import shutil
     import tarfile
@@ -27,11 +28,11 @@ if __name__ == "__main__":
 
     args = docopt(__doc__)
     if args['test']:
-        test()
+        sys.exit(test(report=args['--report']))
     elif args['bench']:
-        bench()
+        sys.exit(bench())
     elif args['cov']:
-        cov()
+        sys.exit(cov())
     elif args['get_config']:
         config_path = pathlib.Path(__file__).parent.joinpath('dedalus.cfg')
         shutil.copy(str(config_path), '.')
