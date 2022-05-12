@@ -20,15 +20,15 @@ We recommend installing Dedalus via a conda script that will create a new conda 
 The script allows you to link against custom MPI/FFTW/HDF5 libraries or to install builds of those packages from conda.
 
 First, install conda/miniconda for your system if you don't already have it, following the `instructions from conda <https://conda.io/en/latest/miniconda.html>`_.
-Then download the Dedalus v3 conda installation script from `this link <https://raw.githubusercontent.com/DedalusProject/dedalus_conda/master/install_dedalus3_conda.sh>`_ or using::
+Then download the Dedalus v3 conda installation script from `this link <https://raw.githubusercontent.com/DedalusProject/dedalus_conda/master/conda_install_dedalus3.sh>`_ or using::
 
-    curl https://raw.githubusercontent.com/DedalusProject/dedalus_conda/master/install_dedalus3_conda.sh --output install_dedalus3_conda.sh
+    curl https://raw.githubusercontent.com/DedalusProject/dedalus_conda/master/conda_install_dedalus3.sh --output conda_install_dedalus3.sh
 
 Modify the options at the top of the script to change the name of the resulting conda environment, link against custom MPI/FFTW/HDF5 libraries, choose between OpenBLAS and MKL-based numpy/scipy, and more.
 Then activate the base conda environment and run the script to build a new conda environment with Dedalus and its dependencies, as requested::
 
     conda activate base
-    bash install_dedalus3_conda.sh
+    bash conda_install_dedalus3.sh
 
 To use Dedalus, you simply need to activate the new environment. You can test the installation works using the command-line interface::
 
@@ -66,10 +66,10 @@ Please build directly from source as described below.**
 Building from source
 --------------------
 
-To build and install the most recent version of Dedalus, first set the ``FFTW_PATH`` and ``MPI_PATH`` environment variables to the prefix paths for FFTW and MPI::
+To build and install the most recent version of Dedalus, first set the ``MPI_PATH`` and ``FFTW_PATH`` environment variables to the prefix paths for MPI and FFTW::
 
-    export FFTW_PATH=/path/to/your/fftw_prefix
     export MPI_PATH=/path/to/your/mpi_prefix
+    export FFTW_PATH=/path/to/your/fftw_prefix
 
 You can then install Dedalus directly from GitHub using pip::
 

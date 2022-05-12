@@ -1,4 +1,4 @@
-# Copyright (c) 2013-2014, Keaton J. Burns.
+# Copyright (c) 2013-2022, Keaton J. Burns.
 #
 # This file is part of Dedalus, which is free software distributed
 # under the terms of the GPLv3 license.  A copy of the license should
