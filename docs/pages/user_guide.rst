@@ -19,6 +19,3 @@ Specific how-to's:
     :maxdepth: 1
 
     general_functions
-    parallel_data
-    output_format
-    restarting

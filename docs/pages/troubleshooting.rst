@@ -37,7 +37,7 @@ Subsequent transforms are then complex-to-complex.
 
 This strategy maintains the proper Hermitian symmetry for the majority of the modes, since only the non-negative kx half of the spectrum is evolved and the negative kx modes are computed from the conjugates of the positive kx modes whenever they are needed (i.e. for interpolation along x).
 However, modes with kx = 0 should have coefficients that are real after the x-transform, and should have Hermitian symmetry in e.g. ky if there's a subsequent Fourier transform in y.
-If these conditions are not enforced and the PDE has a linear instability for modes with kx = 0, then the imaginary part of the solution can potentially grow without bound (the nonlinear terms are computed in grid space, so they only affect the real portion of the solution and can’t saturate a growing imaginary part).
+If these conditions are not enforced and the PDE has a linear instability for modes with kx = 0, then the imaginary part of the solution can potentially grow without bound (the nonlinear terms are computed in grid space, so they only affect the real portion of the solution and can't saturate a growing imaginary part).
 
 A simple solution is to periodically transform all the state variables to grid space, which will project away any imaginary component that may have been building up during timestepping.
 This is done in Dedalus every 100 timesteps by default.

@@ -5,22 +5,22 @@ Installing Dedalus
 This documentation is in reference to v2 of the code.
 The latest documentation for v3 can be accessed through the sidebar.**
 
-Dedalus is a Python 3 package that includes custom C-extensions (compiled with Cython) and that relies on MPI, FFTW (linked to MPI), HDF5, and a basic scientific-Python stack: numpy, scipy, mpi4py (linked to the same MPI), and h5py.
+Dedalus is a Python 3 package that includes custom C-extensions (compiled with Cython) and that relies on MPI, FFTW, HDF5, and a basic scientific-Python stack (numpy, scipy, mpi4py, and h5py).
 
 We recommend using conda to build a Python environment with all the necessary prerequisites, as described in the conda instructions below.
 This procedure can be easily customized to link to existing MPI/FFTW/HDF5 libraries, which may be preferable when installing Dedalus on a cluster.
 
-Once you have the necessary C dependencies (MPI, FFTW+MPI, and HDF5), as well as Python 3, you should be able to install Dedalus from PyPI or build it from source.
+Once you have the necessary C dependencies (MPI, FFTW, and HDF5) and Python 3 environment (with properly linked mpi4py and h5py, in particular), you should be able to install Dedalus using pip.
 
 
 Conda installation (recommended)
 ================================
 
 We recommend installing Dedalus via a conda script that will create a new conda environment with a complete Dedalus installation.
-The script allows you to link against custom MPI/FFTW/HDF5 libraries or opt for builds of those packages that are available through conda.
+The script allows you to link against custom MPI/FFTW/HDF5 libraries or to install builds of those packages from conda.
 
 First, install conda/miniconda for your system if you don't already have it, following the `instructions from conda <https://conda.io/en/latest/miniconda.html>`_.
-Then download the Dedalus conda installation script from `this link <https://raw.githubusercontent.com/DedalusProject/dedalus_conda/master/conda_install_dedalus2.sh>`_ or using::
+Then download the Dedalus v2 conda installation script from `this link <https://raw.githubusercontent.com/DedalusProject/dedalus_conda/master/conda_install_dedalus2.sh>`_ or using::
 
     curl https://raw.githubusercontent.com/DedalusProject/dedalus_conda/master/conda_install_dedalus2.sh --output conda_install_dedalus2.sh
 
@@ -45,29 +45,32 @@ Once the necessary C dependencies and Python 3 are present, Dedalus can be insta
 
 **Note**: the instructions in this section assume the ``pip3`` command is hitting the right Python 3 installation.
 You can check this by making sure that ``which pip3`` and ``which python3`` reside in the same location.
-If not, you may need to use ``pip`` or ``python3 -m pip`` instead of ``pip3`` in the following commands.
+If not, use ``python3 -m pip`` instead of ``pip3`` in the following commands.
+
+**Note**: it is strongly recommended that you disable threading, as described on the :doc:`performance_tips` page, when running Dedalus.
+This is done automatically when Dedalus is installed using the conda procedure above, but must be done manually otherwise.
 
 Installing from PyPI
 --------------------
 
-We currently only provide Dedalus on PyPI as a source distribution so that the Cython extensions are properly linked to your FFTW/MPI libraries at build-time.
-To install Dedalus from PyPI, first set the ``FFTW_PATH`` and ``MPI_PATH`` environment variables to the prefix paths for FFTW/MPI and then install using pip::
+We currently only provide Dedalus on PyPI as a source distribution so that the Cython extensions are properly linked to your libraries at build-time.
+To install Dedalus from PyPI, first set the ``MPI_PATH`` and ``FFTW_PATH`` environment variables to the prefix paths for MPI/FFTW and then install using pip::
 
-    export FFTW_PATH=/path/to/your/fftw_prefix
     export MPI_PATH=/path/to/your/mpi_prefix
+    export FFTW_PATH=/path/to/your/fftw_prefix
     pip3 install "dedalus==2.*"
 
 Building from source
 --------------------
 
-Alternately, to build the lastest version of Dedalus from source: clone the repository, set FFTW/MPI paths, and install using pip::
+Alternately, to build the lastest version of Dedalus from source: clone the repository, checkout the ``v2_master`` branch, set MPI/FFTW paths, and install using pip::
 
     git clone https://github.com/DedalusProject/dedalus
     cd dedalus
-    export FFTW_PATH=/path/to/your/fftw_prefix
+    git checkout v2_master
     export MPI_PATH=/path/to/your/mpi_prefix
-
-    pip3 install .
+    export FFTW_PATH=/path/to/your/fftw_prefix
+    pip3 install --no-cache .
 
 Updating Dedalus
 ----------------
@@ -89,7 +92,7 @@ If Dedalus was built from source, it can be updated by first pulling new changes
 Uninstalling Dedalus
 --------------------
 
-If Dedalus was installed using pip, it can be uninstalled using::
+Dedalus can be uninstalled using::
 
     pip3 uninstall dedalus
 
