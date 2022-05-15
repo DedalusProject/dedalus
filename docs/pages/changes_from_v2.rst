@@ -14,7 +14,7 @@ These are combined into a Distributor object, mapping the coordinates to specifi
 Coodinates are also used when creating ``Basis`` objects to indicate the coordinates of the basis.
 The datatype of the fields in a problem can also be set when the distributor is constructed.
 
-For instance, to setup the bases for a real-valued problem in 2D Cartesian coordiantes:
+For instance, to setup the bases for a real-valued problem in 2D Cartesian coordinates:
 
 .. code-block:: python
 
