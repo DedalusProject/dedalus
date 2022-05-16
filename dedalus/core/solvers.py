@@ -592,6 +592,17 @@ class InitialValueSolver(SolverBase):
             A = (M + dt*L).A
             print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {subproblem.group}, matrix rank: {np.linalg.matrix_rank(A)}/{A.shape[0]}, cond: {np.linalg.cond(A):.1e}")
 
+    def evaluate_handlers_now(self, dt, handlers=None):
+        """Evaluate all handlers right now. Useful for writing final outputs.
+        by default, all handlers are evaluated; if a list is given
+        only those will be evaluated.
+        """
+        end_world_time = self.get_wall_time()
+        end_wall_time = end_world_time - self.start_time
+        if handlers is None:
+            handlers = self.evaluator.handlers
+        self.evaluator.evaluate_handlers(handlers, timestep=dt, sim_time=self.sim_time, world_time=end_world_time, wall_time=end_wall_time, iteration=self.iteration)
+
     def log_stats(self, format=".4g"):
         """Log timing statistics with specified string formatting (optional)."""
         log_time = self.get_wall_time()
