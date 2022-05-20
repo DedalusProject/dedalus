@@ -530,6 +530,8 @@ def left_permutation(subproblem, equations, bc_top, interleave_components):
     for eqn in equations:
         L1 = []
         vfshape = subproblem.field_shape(eqn['LHS'])
+        rank = len(eqn['LHS'].tensorsig)
+        vfshape = (int(np.prod(vfshape[:rank])),) + vfshape[rank:]
         if vfshape[0] == 0:
             L1.append([])
             L0.append(L1)
@@ -592,6 +594,8 @@ def right_permutation(subproblem, variables, tau_left, interleave_components):
     for var in variables:
         L1 = []
         vfshape = subproblem.field_shape(var)
+        rank = len(var.tensorsig)
+        vfshape = (int(np.prod(vfshape[:rank])),) + vfshape[rank:]
         if vfshape[0] == 0:
             L1.append([])
             L0.append(L1)

@@ -107,8 +107,8 @@ def test_waves_1d_first_order(x_basis_class, Nx, dtype):
     solver.eigenvectors = solver.eigenvectors[:,i_sort]
     # Check solution
     solver.set_state(0, solver.subproblems[0].subsystems[0])
-    eigenfunction = u['g'] / np.max(u['g'])
-    sol = np.sin(x) / np.max(np.sin(x))
+    eigenfunction = u['g'] / u['g'][0]
+    sol = np.sin(x) / np.sin(x[0])
     assert np.allclose(eigenfunction, sol)
 
 

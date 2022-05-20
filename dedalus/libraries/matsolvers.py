@@ -25,6 +25,14 @@ class SolverBase:
         pass
 
 
+@add_solver
+class DummySolver(SolverBase):
+    """Dummy solver that returns zeros for testing."""
+
+    def solve(self, vector):
+        return 0 * vector
+
+
 class SparseSolver(SolverBase):
     """Base class for sparse solvers."""
     sparse = True
