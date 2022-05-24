@@ -516,7 +516,7 @@ class H5FileHandlerBase(Handler):
             for sn in ['sim_time', 'world_time', 'wall_time', 'timestep', 'iteration', 'write_number']:
                 dset.dims[0].attach_scale(file['scales'][sn])
             # Spatial scales
-            rank = 0
+            rank = len(op.tensorsig)
             for axis in range(self.dist.dim):
                 basis = op.domain.full_bases[axis]
                 if basis is None:
