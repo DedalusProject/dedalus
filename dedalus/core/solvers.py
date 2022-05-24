@@ -597,11 +597,10 @@ class InitialValueSolver(SolverBase):
         by default, all handlers are evaluated; if a list is given
         only those will be evaluated.
         """
-        end_world_time = self.get_wall_time()
-        end_wall_time = end_world_time - self.start_time
+        end_wall_time = self.get_wall_time() - self.init_time
         if handlers is None:
             handlers = self.evaluator.handlers
-        self.evaluator.evaluate_handlers(handlers, timestep=dt, sim_time=self.sim_time, world_time=end_world_time, wall_time=end_wall_time, iteration=self.iteration)
+        self.evaluator.evaluate_handlers(handlers, timestep=dt, sim_time=self.sim_time, wall_time=end_wall_time, iteration=self.iteration)
 
     def log_stats(self, format=".4g"):
         """Log timing statistics with specified string formatting (optional)."""
