@@ -725,6 +725,24 @@ class Field(Current):
         self.dist.comm.Allreduce(send_buff, recv_buff, op=MPI.SUM)
         return recv_buff
 
+    def gather_data(self, root=0, layout=None):
+        # Change layout
+        if layout is not None:
+            self.change_layout(layout)
+        # Shortcut for serial execution
+        if self.dist.comm.size == 1:
+            return self.data.copy()
+        # TODO: Shortcut this for constant fields
+        # Gather data
+        # Should be optimized via Gatherv eventually
+        pieces = self.dist.comm.gather(self.data, root=root)
+        # Assemble on root node
+        if self.dist.comm.rank == root:
+            ext_mesh = self.layout.ext_mesh
+            combined = np.zeros(np.prod(ext_mesh), dtype=object)
+            combined[:] = pieces
+            return np.block(combined.reshape(ext_mesh).tolist())
+
     def allreduce_data_norm(self, layout=None, order=2):
         # Change layout
         if layout is not None:
