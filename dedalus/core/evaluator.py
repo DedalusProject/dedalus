@@ -773,7 +773,7 @@ class H5VirtualFileHandler(H5FileHandlerBase):
             if np.prod(local_shape):
                 shape = (1,) + local_shape
                 maxshape = (self.max_writes,) + local_shape
-                filename = str(self._current_process_file(rank))
+                filename = str(self._current_process_file(rank).relative_to(self.base_path))
                 virtual_source = h5py.VirtualSource(filename, dset_name, shape=shape, maxshape=maxshape)
                 layout_slices = [slice(h5py.h5s.UNLIMITED)] + [slice(start, start+size) for start, size in zip(local_start, local_shape)]
                 source_slices = [slice(h5py.h5s.UNLIMITED)] + [slice(size) for size in local_shape]
