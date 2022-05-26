@@ -2843,21 +2843,14 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
             mg_slice = grid_slices[0][self.first_axis]
             mc_slice = coeff_slices[0][self.first_axis]
             ell_slice = coeff_slices[0][self.first_axis+1]
-            # Reverse n_slice for folded modes so that ells are well-ordered
-            if ell_slice.start == 0 and m != 0:
-                ell_slice = slice(ell_slice.stop-1, None, -1)
-            m_maps.append((m, mg_slice, mc_slice, ell_slice))
+            # Reverse ell_slice for folded modes so that ells are well-ordered
+            ell_reversed = (ell_slice.start == 0 and m != 0)
+            m_maps.append((m, mg_slice, mc_slice, ell_slice, ell_reversed))
         return tuple(m_maps)
 
     @CachedAttribute
     def ell_reversed(self):
-        ell_reversed = {}
-        for m, mg_slice, mc_slice, ell_slice in self.m_maps:
-            ell_reversed[m] = False
-            if ell_slice.step is not None:
-                if ell_slice.step < 0:
-                    ell_reversed[m] = True
-        return ell_reversed
+        return {m: ell_reversed for m, _, _, _, ell_reversed in self.m_maps}
 
     @CachedAttribute
     def ell_maps(self):
@@ -5415,7 +5408,7 @@ class InterpolateColatitude(FutureLockedField, operators.Interpolate):
             out_s = out_temp[i]
             interp_vectors = self.interpolation_vectors(Ntheta, s)
             # Loop over m
-            for m, mg_slice, _, _ in basis.m_maps:
+            for m, mg_slice, _, _, _ in basis.m_maps:
                 mg_slice = axindex(azimuth_axis, mg_slice)
                 arg_sm = arg_s[mg_slice]
                 out_sm = out_s[mg_slice]

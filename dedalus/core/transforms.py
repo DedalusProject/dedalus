@@ -1224,106 +1224,143 @@ class NonSeparableTransform(Transform):
         gdata = reduced_view_4(gdata, axis-1)
         cdata = reduced_view_4(cdata, axis-1)
         # Transform reduced arrays
-        self.forward_reduced(gdata, cdata)
+        self._forward_reduced(gdata, cdata)
 
     def backward(self, cdata, gdata, axis):
         # Make reduced view into input arrays
         cdata = reduced_view_4(cdata, axis-1)
         gdata = reduced_view_4(gdata, axis-1)
         # Transform reduced arrays
-        self.backward_reduced(cdata, gdata)
+        self._backward_reduced(cdata, gdata)
 
 
-@register_transform(basis.SphereBasis, 'matrix')
-class SWSHColatitudeTransform(NonSeparableTransform):
+class SpinWeightedAssociatedLegendreTransform(NonSeparableTransform):
+    """
+    Spin-weighted associated Legendre transform.
 
-    def __init__(self, Ntheta, Lmax, m_maps, s):
+    Parameters
+    ----------
+    Ntheta : int
+        Colatitude grid size.
+    Lmax : int
+        Maximum harmonic degree.
+    m_maps : List of tuples of (m, mg_slice, mc_slice, ell_slice, ell_reversed)
+        Data descriptors for the set of local m's to transform (see notes).
+    s : int
+        Spin weight.
+    dtype : dtype, optional
+        Data dtype. Default: np.float64.
+
+    Notes
+    -----
+    The m_maps argument should include a list of data descriptors for each local m.
+    Each entry should be a tuple consisting of:
+        m : int
+            Spherical harmonic order.
+        mg_slice : slice
+            Slice selecting m data from local grid data.
+        mc_slice : slice
+            Slice selecting m data from local coeff data.
+        ell_slice : slice
+            Slice selecting relevant ells from local coeff data.
+        ell_reversed: bool
+            Whether the ell coefficients are stored in reversed order.
+
+    For a transform along axis 1, for instance, the input and output data for each m are then:
+        Input: gdata[mg_slice, ...]
+        Output: cdata[mc_slice, ell_slice, ...]
+
+    These slices should be the same for all spins. The transform routines are responsible for
+    padding with zeros when abs(s) > abs(m). Therefore ell_slice is expected to select
+    Lmax - abs(m) + 1 elements, corresponding to the standard triangular truncation for spin 0.
+    """
+
+    def __init__(self, Ntheta, Lmax, m_maps, s, dtype=np.float64):
         self.Ntheta = Ntheta
         self.Lmax = Lmax
         self.m_maps = m_maps
         self.s = s
+        self.dtype = dtype
 
-    def forward_reduced(self, gdata, cdata):
-        # local_m = self.local_m
-        # if gdata.shape[1] != len(local_m): # do we want to do this check???
-        #     raise ValueError("gdata.shape[1]: %i, len(local_m): %i" %(gdata.shape[1], len(local_m)))
-        m_matrices = self._forward_SWSH_matrices
+    def _forward_reduced(self, gdata, cdata):
+        # Note: data has been reshaped to be four-dimensional with the colatitude axis as axis 2
         Lmax = self.Lmax
-        for m, mg_slice, mc_slice, ell_slice in self.m_maps:
+        for m, mg_slice, mc_slice, ell_slice, _ in self.m_maps:
             # Skip transforms when |m| > Lmax
             if abs(m) <= Lmax:
                 # Use rectangular transform matrix, padded with zeros when Lmin > abs(m)
-                grm = gdata[:, mg_slice, :, :]
-                crm = cdata[:, mc_slice, ell_slice, :]
-                apply_matrix(m_matrices[m], grm, axis=2, out=crm)
+                gdata_m = gdata[:, mg_slice, :, :]
+                cdata_m = cdata[:, mc_slice, ell_slice, :]
+                self._forward_reduced_m(self, m, gdata_m, cdata_m)
 
-    def backward_reduced(self, cdata, gdata):
-        # local_m = self.local_m
-        # if gdata.shape[1] != len(local_m): # do we want to do this check???
-        #     raise ValueError("gdata.shape[1]: %i, len(local_m): %i" %(gdata.shape[1], len(local_m)))
-        m_matrices = self._backward_SWSH_matrices
+    def _backward_reduced(self, cdata, gdata):
+        # Note: data has been reshaped to be four-dimensional with the colatitude axis as axis 2
         Lmax = self.Lmax
-        for m, mg_slice, mc_slice, ell_slice in self.m_maps:
+        for m, mg_slice, mc_slice, ell_slice, _ in self.m_maps:
             if abs(m) > Lmax:
                 # Write zeros because they'll be used by the inverse azimuthal transform
                 gdata[:, mg_slice, :, :] = 0
             else:
                 # Use rectangular transform matrix, padded with zeros when Lmin > abs(m)
-                grm = gdata[:, mg_slice, :, :]
-                crm = cdata[:, mc_slice, ell_slice, :]
-                apply_matrix(m_matrices[m], crm, axis=2, out=grm)
+                gdata_m = gdata[:, mg_slice, :, :]
+                cdata_m = cdata[:, mc_slice, ell_slice, :]
+                self._backward_reduced_m(self, m, gdata_m, cdata_m)
+
+
+@register_transform(basis.SphereBasis, 'matrix')
+class SpinWeightedAssociatedLegendreMMT(SpinWeightedAssociatedLegendreTransform):
+
+    def _forward_reduced_m(self, m, gdata_m, cdata_m):
+        apply_matrix(self._forward_matrices[m], gdata_m, axis=2, out=cdata_m)
+
+    def _backward_reduced_m(self, m, gdata_m, cdata_m):
+        apply_matrix(self._backward_matrices[m], cdata_m, axis=2, out=gdata_m)
 
     @CachedAttribute
-    def _quadrature(self):
-        return dedalus_sphere.sphere.quadrature(self.Ntheta-1)
-
-    @CachedAttribute
-    def _forward_SWSH_matrices(self):
-        """Build transform matrix for single m and s."""
-        # Get functions from sphere library
-        cos_grid, weights = self._quadrature
+    def _transform_matrices(self):
+        """Build transform matrices for all local m."""
+        # Get quadrature from sphere library
+        cos_grid, weights = dedalus_sphere.sphere.quadrature(self.Ntheta-1)
         Lmax = self.Lmax
-        m_matrices = {}
-        for m, _, _, _ in self.m_maps:
-            if m in m_matrices:
+        forward_matrices = {}
+        backward_matrices = {}
+        for m, _, _, _, ell_reversed in self.m_maps:
+            if m in forward_matrices:
+                # Skip repeated m
                 continue
             if m > Lmax:
                 # Don't make matrices for m's that will be dropped after transform
-                m_matrices[m] = None
+                forward_matrices[m] = None
+                backward_matrices[m] = None
             else:
                 Y = dedalus_sphere.sphere.harmonics(Lmax, m, self.s, cos_grid)  # shape (Nc-Lmin, Ng)
-                # Pad to shape (Nc-|m|, Ng) so transforms don't depend on Lmin
+                # Pad to shape (Nc-|m|, Ng) so transform shapes don't depend on s
                 Lmin = max(abs(m), abs(self.s))
-                Yfull = np.zeros((Lmax+1-abs(m), self.Ntheta))
-                Yfull[Lmin-abs(m):, :] = (Y*weights).astype(np.float64)
+                Lmin_s0 = abs(m)
+                N_ell = Lmax - Lmin_s0 + 1
+                forward = np.zeros((N_ell, self.Ntheta), dtype=self.dtype)
+                backward = np.zeros((self.Ntheta, N_ell), dtype=self.dtype)
+                forward[Lmin-Lmin_s0:, :] = Y * weights # casts to self.dtype
+                backward[:, Lmin-Lmin_s0:] = Y.T # casts to self.dtype
                 # Zero higher coefficients than can be correctly computed with base Gauss quadrature
-                Yfull[self.Ntheta-abs(m):, :] = 0
-                m_matrices[m] = np.asarray(Yfull, order='C')
-        return m_matrices
+                forward[self.Ntheta-Lmin_s0:, :] = 0
+                backward[:, self.Ntheta-Lmin_s0:] = 0
+                # Reorder matrices for fastest memory access for reversed groups
+                if ell_reversed:
+                    forward = forward[::-1, :]
+                    backward = backward[:, ::-1]
+                forward_matrices[m] = np.asarray(forward, order='C')
+                backward_matrices[m] = np.asarray(backward, order='C')
+        return forward_matrices, backward_matrices
 
     @CachedAttribute
-    def _backward_SWSH_matrices(self):
-        """Build transform matrix for single m and s."""
-        # Get functions from sphere library
-        cos_grid, weights = self._quadrature
-        Lmax = self.Lmax
-        m_matrices = {}
-        for m, _, _, _ in self.m_maps:
-            if m in m_matrices:
-                continue
-            if m > Lmax:
-                # Don't make matrices for m's that will be dropped after transform
-                m_matrices[m] = None
-            else:
-                Y = dedalus_sphere.sphere.harmonics(Lmax, m, self.s, cos_grid) # shape (Nc-Lmin, Ng)
-                # Pad to shape (Nc-|m|, Ng) so transforms don't depend on Lmin
-                Lmin = max(abs(m), abs(self.s))
-                Yfull = np.zeros((self.Ntheta, Lmax+1-abs(m)))
-                Yfull[:, Lmin-abs(m):] = Y.T.astype(np.float64)
-                # Zero higher coefficients than can be correctly computed with base Gauss quadrature
-                Yfull[:, self.Ntheta-abs(m):] = 0
-                m_matrices[m] = np.asarray(Yfull, order='C')
-        return m_matrices
+    def _forward_matrices(self):
+        return self._transform_matrices[0]
+
+    @CachedAttribute
+    def _backward_matrices(self):
+        return self._transform_matrices[1]
+
 
 @register_transform(basis.DiskBasis, 'matrix')
 class DiskRadialTransform(NonSeparableTransform):
