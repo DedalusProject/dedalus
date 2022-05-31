@@ -20,7 +20,7 @@ from .field import Field
 from ..libraries.matsolvers import matsolvers
 from ..tools.progress import log_progress
 from ..tools.config import config
-from ..tools.array import csr_matvec
+from ..tools.array import csr_matvec, scipy_sparse_eigs
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -145,9 +145,10 @@ class EigenvalueSolver(SolverBase):
     def __init__(self, problem, **kw):
         logger.debug('Beginning EVP instantiation')
         super().__init__(problem, **kw)
-        # Build subsystems and subproblem matrices
+        # Build subsystems and subproblem without building matrices
         self.subsystems = subsystems.build_subsystems(self)
-        self.subproblems = subsystems.build_subproblems(self, self.subsystems, ['M','L'])
+        self.subproblems = subsystems.build_subproblems(self, self.subsystems)
+        self.subproblems_by_group = {sp.group: sp for sp in self.subproblems}
         self.state = problem.variables
         logger.debug('Finished EVP instantiation')
 
@@ -173,7 +174,7 @@ class EigenvalueSolver(SolverBase):
         # else:
         #     cacheid = None
         #pencil.build_matrices(self.problem, ['M', 'L'], cacheid=cacheid)
-
+        subsystems.build_subproblem_matrices(self, [subproblem], ['M', 'L'])
         # Solve as dense general eigenvalue problem
         sp = subproblem
         A = (sp.L_min @ sp.pre_right).A
@@ -181,13 +182,86 @@ class EigenvalueSolver(SolverBase):
         eig_output = eig(A, b=B, **kw)
         # Unpack output
         if len(eig_output) == 2:
-            self.eigenvalues, self.eigenvectors = eig_output
+            self.eigenvalues, eigenvectors = eig_output
         elif len(eig_output) == 3:
-            self.eigenvalues, self.left_eigenvectors, self.eigenvectors = eig_output
+            self.eigenvalues, self.left_eigenvectors, eigenvectors = eig_output
+        self.eigenvectors = sp.pre_right @ eigenvectors
         self.eigenvalue_subproblem = subproblem
 
-    def solve_sparse(self, pencil, N, target, rebuild_coeffs=False, **kw):
-        raise NotImplementedError()
+    def solve_sparse(self, subproblem, N, target, rebuild_coeffs=False, left=False, normalize_left=True, raise_on_mismatch=True, **kw):
+        """
+        Perform targeted sparse eigenvalue search for selected pencil.
+
+        Parameters
+        ----------
+        subproblem : subproblem object
+            Subproblem for which to solve the EVP
+        N : int
+            Number of eigenmodes to solver for.  Note: the dense method may
+            be more efficient for finding large numbers of eigenmodes.
+        target : complex
+            Target eigenvalue for search.
+        rebuild_coeffs : bool, optional
+            Flag to rebuild cached coefficient matrices (default: False)
+        left : bool, optional
+            Flag to solve for the left eigenvectors of the system
+            (IN ADDITION TO the right eigenvectors), defined as the right
+            eigenvectors of the conjugate-transposed problem. Follows same
+            definition described in scipy.linalg.eig documentation.
+            (default: False)
+        normalize_left : bool, optional
+            Flag to normalize the left eigenvectors such that the modified
+            left eigenvectors form a biorthonormal (not just biorthogonal)
+            set with respect to the right eigenvectors.
+            (default: True)
+        raise_on_mismatch : bool, optional
+            Flag to raise a RuntimeError if the eigenvalues of the conjugate-
+            transposed problem (i.e. the left eigenvalues) do not match
+            the original (or "right") eigenvalues.
+            (default: True)
+
+        Other keyword options passed to scipy.sparse.linalg.eigs.
+
+        """
+        # # Build matrices
+        # if rebuild_coeffs:
+        #     # Generate unique cache
+        #     cacheid = uuid.uuid4()
+        # else:
+        #     cacheid = None
+        # pencil.build_matrices(self.problem, ['M', 'L'], cacheid=cacheid)
+        subsystems.build_subproblem_matrices(self, [subproblem], ['M', 'L'])
+        # Solve as sparse general eigenvalue problem
+        sp = subproblem
+        A = (sp.L_min @ sp.pre_right)
+        B = - (sp.M_min @ sp.pre_right)
+        # Solve for the right eigenvectors
+        self.eigenvalues, self.eigenvectors = scipy_sparse_eigs(A=A, B=B, N=N, target=target, matsolver=self.matsolver, **kw)
+        self.eigenvectors = sp.pre_right @ self.eigenvectors
+        if left:
+            # Solve for the left eigenvectors
+            # Note: this definition of "left eigenvectors" is consistent with the documentation for scipy.linalg.eig
+            self.left_eigenvalues, self.left_eigenvectors = scipy_sparse_eigs(A=A.getH(),
+                                                                              B=B.getH(),
+                                                                              N=N, target=np.conjugate(target),
+                                                                              matsolver=self.matsolver, **kw)
+            if not np.allclose(self.eigenvalues, np.conjugate(self.left_eigenvalues)):
+                if raise_on_mismatch:
+                    raise RuntimeError("Conjugate of left eigenvalues does not match right eigenvalues. "
+                                       "The full sets of left and right vectors won't form a biorthogonal set. "
+                                       "This error can be disabled by passing raise_on_mismatch=False to "
+                                       "solve_sparse().")
+                else:
+                    logger.warning("Conjugate of left eigenvalues does not match right eigenvalues.")
+            # In absence of above warning, modified_left_eigenvectors forms a biorthogonal set with the right
+            # eigenvectors.
+            raise NotImplementedError()
+            # if normalize_left:
+            #     unnormalized_modified_left_eigenvectors = np.conjugate(np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M))
+            #     norms = np.diag(unnormalized_modified_left_eigenvectors.T.conj() @ self.eigenvectors)
+            #     self.left_eigenvectors /= norms
+            # self.modified_left_eigenvectors = np.conjugate(np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M))
+        self.eigenvalue_subproblem = subproblem
 
     def set_state(self, index, subsystem):
         """
@@ -206,8 +280,7 @@ class EigenvalueSolver(SolverBase):
             raise ValueError("subsystem must be in eigenvalue_subproblem")
         for var in self.state:
             var['c'] = 0
-        X = sp.pre_right @ self.eigenvectors[:,index]
-        subsystem.scatter(X, self.state)
+        subsystem.scatter(self.eigenvectors[:, index], self.state)
 
 
 class LinearBoundaryValueSolver(SolverBase):
@@ -236,7 +309,8 @@ class LinearBoundaryValueSolver(SolverBase):
         super().__init__(problem, **kw)
         # Build subsystems and subproblem matrices
         self.subsystems = subsystems.build_subsystems(self)
-        self.subproblems = subsystems.build_subproblems(self, self.subsystems, ['L'])
+        self.subproblems = subsystems.build_subproblems(self, self.subsystems, build_matrices=['L'])
+        self.subproblems_by_group = {sp.group: sp for sp in self.subproblems}
         self.state = problem.variables
         # Create F operator trees
         namespace = {}
@@ -320,6 +394,8 @@ class NonlinearBoundaryValueSolver(SolverBase):
         self.iteration = 0
         # Build subsystems and subproblem matrices
         self.subsystems = subsystems.build_subsystems(self)
+        self.subproblems = subsystems.build_subproblems(self, self.subsystems)
+        self.subproblems_by_group = {sp.group: sp for sp in self.subproblems}
         self.state = problem.variables
         self.perturbations = problem.perturbations
         # Create F operator trees
@@ -347,7 +423,7 @@ class NonlinearBoundaryValueSolver(SolverBase):
         # Compute RHS
         self.evaluator.evaluate_group('F', sim_time=0, wall_time=0, iteration=self.iteration)
         # Recompute Jacobian
-        self.subproblems = subsystems.build_subproblems(self, self.subsystems, ['dH'])
+        subsystems.build_subproblem_matrices(self, self.subproblems, ['dH'])
         # Ensure coeff space before subsystem gathers/scatters
         for field in self.F:
             field.change_layout('c')
@@ -416,7 +492,8 @@ class InitialValueSolver(SolverBase):
         self.init_time = self.get_wall_time()
         # Build subproblems and subproblem matrices
         self.subsystems = subsystems.build_subsystems(self)
-        self.subproblems = subsystems.build_subproblems(self, self.subsystems, ['M', 'L'])
+        self.subproblems = subsystems.build_subproblems(self, self.subsystems, build_matrices=['M', 'L'])
+        self.subproblems_by_group = {sp.group: sp for sp in self.subproblems}
         # Compute total modes
         local_modes = sum(ss.subproblem.pre_right.shape[1] for ss in self.subsystems)
         self.total_modes = self.dist.comm.allreduce(local_modes, op=MPI.SUM)

@@ -16,7 +16,7 @@ import h5py
 
 from ..libraries.fftw import fftw_wrappers as fftw
 from ..tools.config import config
-from ..tools.cache import CachedMethod
+from ..tools.cache import CachedMethod, CachedAttribute
 from ..tools.exceptions import UndefinedParityError
 from ..tools.exceptions import SymbolicParsingError
 from ..tools.exceptions import NonlinearOperatorError
@@ -256,6 +256,15 @@ class Operand:
     def H(self):
         from .operators import TransposeComponents
         return TransposeComponents(np.conj(self))
+    @CachedAttribute
+    def is_complex(self):
+        from ..tools.general import is_complex_dtype
+        return is_complex_dtype(self.dtype)
+
+    @CachedAttribute
+    def is_real(self):
+        from ..tools.general import is_real_dtype
+        return is_real_dtype(self.dtype)
 
 
 class Current(Operand):
@@ -845,7 +854,7 @@ class Field(Current):
             self.preset_layout(layout)
         # Build global chunked random array (does not require global-sized memory)
         shape = tuple(cs.dim for cs in self.tensorsig) + self.global_shape
-        if np.iscomplexobj(self):
+        if self.is_complex:
             shape = shape + (2,)
         global_data = ChunkedRandomArray(shape, seed, chunk_size, distribution, **kw)
         # Extract local data
@@ -853,7 +862,7 @@ class Field(Current):
         spatial_slices = self.layout.slices(self.domain, self.scales)
         local_slices = component_slices + spatial_slices
         local_data = global_data[local_slices]
-        if np.isrealobj(self):
+        if self.is_real:
             self.data[:] = local_data
         else:
             self.data.real[:] = local_data[..., 0]

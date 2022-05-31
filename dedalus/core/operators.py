@@ -19,7 +19,7 @@ from .domain import Domain
 from . import coords
 from .field import Operand, Field
 from .future import Future, FutureField, FutureLockedField
-from ..tools.array import reshape_vector, apply_matrix, add_sparse, axindex, axslice, perm_matrix, copyto, sparse_block_diag, prod
+from ..tools.array import reshape_vector, apply_matrix, add_sparse, axindex, axslice, perm_matrix, copyto, sparse_block_diag, prod, interleave_matrices
 from ..tools.cache import CachedAttribute, CachedMethod
 from ..tools.dispatch import MultiClass
 from ..tools.exceptions import NonlinearOperatorError
@@ -709,7 +709,8 @@ class LinearOperator(FutureField):
         operand_mats = self.operand.expression_matrices(subproblem, vars, **kw)
         # Apply operator matrix
         operator_mat = self.subproblem_matrix(subproblem)
-        return {var: operator_mat @ operand_mats[var] for var in operand_mats}
+        out = {var: operator_mat @ operand_mats[var] for var in operand_mats}
+        return out
 
     def subproblem_matrix(self, subproblem):
         """Build operator matrix for a specific subproblem."""
@@ -1713,24 +1714,39 @@ class SphericalTrace(Trace):
         self.radial_basis = self.input_basis.get_radial_basis()
 
     def subproblem_matrix(self, subproblem):
+        input_basis = self.input_basis
         radial_basis = self.radial_basis
+        m = subproblem.group[self.radius_axis - 2]
         ell = subproblem.group[self.radius_axis - 1]
         # Commute trace with regularity recombination
-        Q_in = radial_basis.radial_recombinations(self.operand.tensorsig, ell_list=(ell,))
-        Q_out = radial_basis.radial_recombinations(self.tensorsig, ell_list=(ell,))
-        # [-+, +-, 00] are 1, other components are 0
-        # [ 1,  3,  8]
+        # Spin trace: [-+, +-, 00] are 1, other components are 0
+        #             [ 1,  3,  8]
         trace_spin = np.zeros(9)
         trace_spin[[1, 3, 8]] = 1
-        trace = np.kron(trace_spin, np.eye(3**len(self.tensorsig)))
-        # Apply Q's
-        trace = Q_out[ell].T @ trace @ Q_in[ell]
-        # Assume all components have the same n_size
-        eye = sparse.identity(radial_basis.n_size(ell), self.dtype, format='csr')
-        matrix = sparse.kron(trace, eye)
+        trace = sparse.kron(trace_spin, sparse.eye(3**len(self.tensorsig)))
+        # Stack ells
+        if ell is None:
+            ell_list = np.arange(np.abs(m), input_basis.Lmax+1)
+            if input_basis.ell_reversed[m]:
+                ell_list = ell_list[::-1]
+        else:
+            ell_list = [ell]
+        Q_in = radial_basis.radial_recombinations(self.operand.tensorsig, ell_list=tuple(ell_list))
+        Q_out = radial_basis.radial_recombinations(self.tensorsig, ell_list=tuple(ell_list))
+        # Apply Q's and interleave
+        trace_list = [Q_out[ell].T @ trace @ Q_in[ell] for ell in ell_list]
         # Block-diag for sin/cos parts for real dtype
         if self.dtype == np.float64:
-            matrix = sparse.kron(matrix, sparse.identity(2, format='csr')).tocsr()
+            I2 = sparse.eye(2)
+            trace_list = [sparse.kron(trace_ell, I2) for trace_ell in trace_list]
+        trace = interleave_matrices(trace_list)
+        # Apply to all n
+        if ell is None:
+            # Assume all components have the same n_size
+            eye = sparse.identity(radial_basis.n_size(0), self.dtype, format='csr')
+        else:
+            eye = sparse.identity(radial_basis.n_size(ell), self.dtype, format='csr')
+        matrix = sparse.kron(trace, eye)
         return matrix
 
 
@@ -1748,7 +1764,7 @@ class CylindricalTrace(Trace):
         # [ 1,  2]
         trace_spin = np.zeros(4)
         trace_spin[[1, 2]] = 1
-        trace = np.kron(trace_spin, np.eye(2**len(self.tensorsig)))
+        trace = sparse.kron(trace_spin, sparse.eye(2**len(self.tensorsig)))
         # Assume all components have the same n_size
         eye = sparse.identity(self.input_basis.n_size(m), self.dtype, format='csr')
         matrix = sparse.kron(trace, eye)
@@ -1886,18 +1902,35 @@ class SphericalTransposeComponents(TransposeComponents):
         self.radial_basis = self.input_basis.get_radial_basis()
 
     def subproblem_matrix(self, subproblem):
+        input_basis = self.input_basis
         radial_basis = self.radial_basis
+        m = subproblem.group[self.radius_axis - 2]
         ell = subproblem.group[self.radius_axis - 1]
         # Commute transposition with regularity recombination
         transpose = self._transpose_matrix
-        Q = radial_basis.radial_recombinations(self.tensorsig, ell_list=(ell,))
-        transpose = Q[ell].T @ transpose @ Q[ell]
-        # Assume all components have the same n_size
-        eye = sparse.identity(radial_basis.n_size(ell), self.dtype, format='csr')
-        matrix = sparse.kron(transpose, eye)
+        # Stack ells
+        if ell is None:
+            ell_list = np.arange(np.abs(m), input_basis.Lmax+1)
+            if input_basis.ell_reversed[m]:
+                ell_list = ell_list[::-1]
+        else:
+            ell_list = [ell]
+        Q_in = radial_basis.radial_recombinations(self.operand.tensorsig, ell_list=tuple(ell_list))
+        Q_out = radial_basis.radial_recombinations(self.tensorsig, ell_list=tuple(ell_list))
+        # Apply Q's and interleave
+        transpose_list = [Q_out[ell].T @ transpose @ Q_in[ell] for ell in ell_list]
         # Block-diag for sin/cos parts for real dtype
         if self.dtype == np.float64:
-            matrix = sparse.kron(matrix, sparse.identity(2, format='csr')).tocsr()
+            I2 = sparse.eye(2)
+            transpose_list = [sparse.kron(transpose_ell, I2) for transpose_ell in transpose_list]
+        transpose = interleave_matrices(transpose_list)
+        # Apply to all n
+        if ell is None:
+            # Assume all components have the same n_size
+            eye = sparse.identity(radial_basis.n_size(0), self.dtype, format='csr')
+        else:
+            eye = sparse.identity(radial_basis.n_size(ell), self.dtype, format='csr')
+        matrix = sparse.kron(transpose, eye)
         return matrix
 
     def operate(self, out):
@@ -2088,6 +2121,7 @@ class Component(LinearOperator):
             raise ValueError("index greater than rank")
         self.index = index
         self.coordsys = operand.tensorsig[self.index]
+        self.input_basis = operand.domain.get_basis(self.coordsys)
         super().__init__(operand, out=out)
         # LinearOperator requirements
         self.operand = operand
@@ -2905,7 +2939,6 @@ class SphericalEllOperator(SpectralOperator):
         input_basis = operand.domain.get_basis(coordsys)
         if input_basis is None:
             input_basis = operand.domain.get_basis(coordsys.radius)
-        self.radial_basis = input_basis.get_radial_basis()
         self.intertwiner = lambda l: dedalus_sphere.spin_operators.Intertwiner(l, indexing=(-1,+1,0))
         # SpectralOperator requirements
         self.input_basis = input_basis
@@ -2914,6 +2947,14 @@ class SphericalEllOperator(SpectralOperator):
         self.last_axis = self.input_basis.last_axis
         # LinearOperator requirements
         self.operand = operand
+
+    @CachedAttribute
+    def radial_basis(self):
+        return self.input_basis.radial_basis
+
+    @CachedAttribute
+    def S2_basis(self):
+        return self.input_basis.S2_basis()
 
     def operate(self, out):
         """Perform operation."""
@@ -2950,35 +2991,67 @@ class SphericalEllOperator(SpectralOperator):
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
-        radial_basis = self.radial_basis
-        R_in = radial_basis.regularity_classes(operand.tensorsig)
-        R_out = radial_basis.regularity_classes(self.tensorsig)  # Should this use output_basis?
+        R_in = self.radial_basis.regularity_classes(operand.tensorsig)
+        R_out = self.radial_basis.regularity_classes(self.tensorsig)  # Should this use output_basis?
+        m = subproblem.group[self.last_axis - 2]
         ell = subproblem.group[self.last_axis - 1]
-        # Loop over components
-        submatrices = []
+        # Shortcut if empty
+        size_in = subproblem.field_size(self.operand)
+        size_out = subproblem.field_size(self)
+        if size_in == 0 or size_out == 0:
+            return sparse.csr_matrix((size_out, size_in))
+        # Build identity matrices for each axis
+        subshape_in = subproblem.coeff_shape(self.operand.domain)
+        subshape_out = subproblem.coeff_shape(self.domain)
+        factors = [sparse.eye(m, n, format='csr') for m, n in zip(subshape_out, subshape_in)]
+        if ell is None:
+            factors[self.last_axis - 1] = sparse.eye(1, 1, format='csr')
+        # Assemble block matrix over components
+        zero_block = sparse.csr_matrix((prod(subshape_out), prod(subshape_in)))
+        block_rows = []
         for regindex_out, regtotal_out in np.ndenumerate(R_out):
-            submatrix_row = []
+            block_columns = []
             for regindex_in, regtotal_in in np.ndenumerate(R_in):
-                # Build identity matrices for each axis
-                subshape_in = subproblem.coeff_shape(self.operand.domain)
-                subshape_out = subproblem.coeff_shape(self.domain)
-                # Check if regularity component exists for this ell
-                if ((regindex_out in self.regindex_out(regindex_in)) and
-                    radial_basis.regularity_allowed(ell, regindex_in) and
-                    radial_basis.regularity_allowed(ell, regindex_out) and
-                    prod(subshape_in) and prod(subshape_out)):
-                    # Substitute factor for radial axis
-                    factors = [sparse.eye(m, n, format='csr') for m, n in zip(subshape_out, subshape_in)]
-                    factors[self.last_axis] = self.radial_matrix(regindex_in, regindex_out, ell)
-                    comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
+                if ell is None:
+                    matrix = self._coupled_ell_matrices(regindex_in, regindex_out, m)
                 else:
-                    # Build zero matrix
-                    comp_matrix = sparse.csr_matrix((prod(subshape_out), prod(subshape_in)))
-                submatrix_row.append(comp_matrix)
-            submatrices.append(submatrix_row)
-        matrix = sparse.bmat(submatrices)
-        matrix.tocsr()
-        return matrix
+                    matrix = self._wrap_radial_matrix(regindex_in, regindex_out, ell, return_zeros=False)
+                if matrix is None:
+                    block = zero_block
+                else:
+                    factors[self.last_axis] = matrix
+                    block = reduce(sparse.kron, factors, 1).tocsr()
+                block_columns.append(block)
+            block_rows.append(block_columns)
+        matrix = sparse.bmat(block_rows)
+        return matrix.tocsr()
+
+    def _coupled_ell_matrices(self, regindex_in, regindex_out, m):
+        # Get ordered list of ells
+        basis = self.S2_basis
+        ell_list = np.arange(np.abs(m), basis.Lmax+1)
+        if basis.ell_reversed[m]:
+            ell_list = ell_list[::-1]
+        # Assemble block-diagonal matrix over ells
+        ell_matrices = [self._wrap_radial_matrix(regindex_in, regindex_out, ell, return_zeros=True) for ell in ell_list]
+        return sparse_block_diag(ell_matrices)
+
+    def _wrap_radial_matrix(self, regindex_in, regindex_out, ell, return_zeros):
+        # Check if matrix exists
+        if ((regindex_out in self.regindex_out(regindex_in)) and self.radial_basis.regularity_allowed(ell, regindex_in) and self.radial_basis.regularity_allowed(ell, regindex_out)):
+            return self.radial_matrix(regindex_in, regindex_out, ell)
+        elif return_zeros:
+            if self.input_basis.dim == 2:
+                n_in = 1
+            else:
+                n_in = self.input_basis.n_size(ell)
+            if self.output_basis.dim == 2:
+                n_out = 1
+            else:
+                n_out = self.output_basis.n_size(ell)
+            return sparse.csr_matrix((n_out, n_in))
+        else:
+            return None
 
     def regindex_out(self, regindex_in):
         raise NotImplementedError("regindex_out not implemented for type %s" %type(self))
@@ -3041,7 +3114,7 @@ class SphericalGradient(Gradient, SphericalEllOperator):
 
 
 @alias("comp")
-class Component(LinearOperator, metaclass=MultiClass):
+class CartCompBase(LinearOperator, metaclass=MultiClass):
 
     name = 'Comp'
 
@@ -3064,7 +3137,7 @@ class Component(LinearOperator, metaclass=MultiClass):
         return isinstance(operand.tensorsig[index], cls.cs_type)
 
     def new_operand(self, operand, **kw):
-        return Component(operand, self.index, self.coord, **kw)
+        return CartCompBase(operand, self.index, self.coord, **kw)
 
     # def separability(self, *vars):
     #     return self.operand.separability(*vars)
@@ -3076,7 +3149,7 @@ class Component(LinearOperator, metaclass=MultiClass):
         return self.operand.matrix_coupling(*vars)
 
 
-class CartesianComponent(Component):
+class CartesianComponent(CartCompBase):
 
     cs_type = coords.CartesianCoordinates
 

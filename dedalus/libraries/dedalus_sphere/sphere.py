@@ -91,6 +91,7 @@ def operator(name,dtype=dtype):
     if name == 'Cos':
         def Cos(Lmax,m,s):
             return Jacobi.operator('Z',dtype=dtype)(*spin2Jacobi(Lmax,m,s))
+            #return Jacobi.operator('Z',dtype=dtype)(Lmax+1, abs(m+s), abs(m-s))
         return Operator(Cos,SphereCodomain(1,0,0,0))
 
     return SphereOperator(name,dtype=dtype)
@@ -185,7 +186,7 @@ class SphereOperator():
 
         def S(Lmax,m,s):
             n = spin2Jacobi(Lmax,m,s)[0]
-            N = s*np.ones(n,dtype=dtype)
+            N = abs(s)*np.ones(n,dtype=dtype)
             return infinite_csr(banded((N,[0]),(max(n,0),max(n,0))))
 
         return Operator(S,SphereCodomain(0,0,0,0))

@@ -85,7 +85,7 @@ radius_disk = 1
 @CachedFunction
 def build_disk(Nphi, Nr, dealias, dtype):
     c = coords.PolarCoordinates('phi', 'r')
-    d = distributor.Distributor((c,))
+    d = distributor.Distributor((c,), dtype=dtype)
     b = basis.DiskBasis(c, (Nphi, Nr), radius=radius_disk, dealias=(dealias, dealias), dtype=dtype)
     phi, r = b.local_grids()
     x, y = c.cartesian(phi, r)
@@ -212,7 +212,7 @@ radius_ball = 1
 @CachedFunction
 def build_ball(Nphi, Ntheta, Nr, dealias, dtype):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
-    d = distributor.Distributor((c,))
+    d = distributor.Distributor((c,), dtype=dtype)
     b = basis.BallBasis(c, (Nphi, Ntheta, Nr), radius=radius_ball, dealias=(dealias, dealias, dealias), dtype=dtype)
     phi, theta, r = b.local_grids()
     x, y, z = c.cartesian(phi, theta, r)
@@ -282,7 +282,7 @@ radii_shell = (1, 2)
 @CachedFunction
 def build_shell(Nphi, Ntheta, Nr, dealias, dtype):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
-    d = distributor.Distributor((c,))
+    d = distributor.Distributor((c,), dtype=dtype)
     b = basis.ShellBasis(c, (Nphi, Ntheta, Nr), radii=radii_shell, dealias=(dealias, dealias, dealias), dtype=dtype)
     phi, theta, r = b.local_grids()
     x, y, z = c.cartesian(phi, theta, r)
@@ -315,6 +315,38 @@ def test_heat_shell(Nmax, Lmax, dtype):
     solver.solve()
     # Check solution
     u_true = r**2 + 6 / r - 7
+    assert np.allclose(u['g'], u_true)
+
+
+@pytest.mark.parametrize('dtype', [np.complex128, np.float64])
+@pytest.mark.parametrize('Nmax', [15])
+@pytest.mark.parametrize('Lmax', [3])
+def test_vector_heat_shell(Nmax, Lmax, dtype):
+    # Bases
+    dealias = 1
+    c, d, b, phi, theta, r, x, y, z = build_shell(2*(Lmax+1), Lmax+1, Nmax+1, dealias=dealias, dtype=dtype)
+    r0, r1 = b.radial_basis.radii
+    # Fields
+    u = d.Field(name='u', bases=b, tensorsig=(c,))
+    τu1 = d.Field(name='τu1', bases=b.S2_basis(), tensorsig=(c,))
+    τu2 = d.Field(name='τu2', bases=b.S2_basis(), tensorsig=(c,))
+    ez = d.Field(name='u', bases=b, tensorsig=(c,))
+    ez['g'][1] = - np.sin(theta)
+    ez['g'][2] = np.cos(theta)
+    F = d.Field(name='a', bases=b, tensorsig=(c,))
+    F['g'] = 6 * ez['g']
+    # Problem
+    Lap = lambda A: operators.Laplacian(A, c)
+    Lift = lambda A, n: operators.Lift(A, b, n)
+    problem = problems.LBVP([u, τu1, τu2])
+    problem.add_equation((Lap(u) + Lift(τu1,-1) + Lift(τu2,-2), F))
+    problem.add_equation((u(r=r0), 0))
+    problem.add_equation((u(r=r1), 0))
+    # Solver
+    solver = solvers.LinearBoundaryValueSolver(problem)
+    solver.solve()
+    # Check solution
+    u_true = (r**2 + 6 / r - 7) * ez['g']
     assert np.allclose(u['g'], u_true)
 
 
@@ -383,6 +415,104 @@ def test_heat_ncc_shell(Nmax, Lmax, ncc_exponent, ncc_location, ncc_scale, dtype
     solver.solve()
     # Check solution
     assert np.allclose(u['g'], u_true)
+
+
+@pytest.mark.parametrize('dtype', [np.complex128])
+@pytest.mark.parametrize('Nmax', [15])
+@pytest.mark.parametrize('Lmax', [7])
+def test_lap_meridional_ncc_shell(Nmax, Lmax, dtype):
+    # Bases
+    dealias = 1
+    c, d, b, phi, theta, r, x, y, z = build_shell(2*(Lmax+1), Lmax+1, Nmax+1, dealias=dealias, dtype=dtype)
+    r0, r1 = b.radial_basis.radii
+    # Fields
+    u = field.Field(name='u', dist=d, bases=(b,), dtype=dtype)
+    v = field.Field(name='v', dist=d, bases=(b,), dtype=dtype)
+    τu1 = field.Field(name='τu1', dist=d, bases=(b.S2_basis(),), dtype=dtype)
+    τu2 = field.Field(name='τu2', dist=d, bases=(b.S2_basis(),), dtype=dtype)
+    ncc = field.Field(name='ncc', dist=d, bases=(b.meridional_basis,), dtype=dtype)
+    v['g'] = x**2 + z**2
+    ncc['g'] = z**2
+    # Problem
+    Lap = lambda A: operators.Laplacian(A, c)
+    Lift = lambda A, n: operators.Lift(A, b, n)
+    problem = problems.LBVP([u, τu1, τu2])
+    problem.add_equation((ncc*Lap(u) + Lift(τu1,-1) + Lift(τu2,-2), ncc*Lap(v)))
+    problem.add_equation((u(r=r0), v(r=r0)))
+    problem.add_equation((u(r=r1), v(r=r1)))
+    # Solver
+    solver = solvers.LinearBoundaryValueSolver(problem)
+    solver.solve()
+    # Check solution
+    assert np.allclose(u['g'], v['g'])
+
+
+@pytest.mark.parametrize('dtype', [np.complex128])
+@pytest.mark.parametrize('Nmax', [15])
+@pytest.mark.parametrize('Lmax', [7])
+def test_lap_meridional_radial_ncc_shell(Nmax, Lmax, dtype):
+    # Bases
+    dealias = 1
+    c, d, b, phi, theta, r, x, y, z = build_shell(2*(Lmax+1), Lmax+1, Nmax+1, dealias=dealias, dtype=dtype)
+    r0, r1 = b.radial_basis.radii
+    # Fields
+    u = field.Field(name='u', dist=d, bases=(b,), dtype=dtype)
+    v = field.Field(name='v', dist=d, bases=(b,), dtype=dtype)
+    τu1 = field.Field(name='τu1', dist=d, bases=(b.S2_basis(),), dtype=dtype)
+    τu2 = field.Field(name='τu2', dist=d, bases=(b.S2_basis(),), dtype=dtype)
+    ncc_m = field.Field(name='ncc', dist=d, bases=(b.meridional_basis,), dtype=dtype)
+    ncc_r = field.Field(name='ncc', dist=d, bases=(b.radial_basis,), dtype=dtype)
+    v['g'] = x**2 + z**2
+    ncc_m['g'] = z**2
+    ncc_r['g'] = r**2
+    # Problem
+    Lap = lambda A: operators.Laplacian(A, c)
+    Lift = lambda A, n: operators.Lift(A, b, n)
+    problem = problems.LBVP([u, τu1, τu2])
+    problem.add_equation((ncc_m*Lap(u) + ncc_r*Lap(u) + Lift(τu1,-1) + Lift(τu2,-2), ncc_m*Lap(v) + ncc_r*Lap(v)))
+    problem.add_equation((u(r=r0), v(r=r0)))
+    problem.add_equation((u(r=r1), v(r=r1)))
+    # Solver
+    solver = solvers.LinearBoundaryValueSolver(problem)
+    solver.solve()
+    # Check solution
+    assert np.allclose(u['g'], v['g'])
+
+
+@pytest.mark.parametrize('dtype', [np.complex128])
+@pytest.mark.parametrize('Nmax', [15])
+@pytest.mark.parametrize('Lmax', [7])
+def test_lap_2dncc_vector_shell(Nmax, Lmax, dtype):
+    # Bases
+    dealias = 1
+    c, d, b, phi, theta, r, x, y, z = build_shell(2*(Lmax+1), Lmax+1, Nmax+1, dealias=dealias, dtype=dtype)
+    r0, r1 = b.radial_basis.radii
+    # Fields
+    u = d.Field(name='u', bases=b, tensorsig=(c,))
+    v = d.Field(name='v', bases=b, tensorsig=(c,))
+    τu1 = d.Field(name='τu1', bases=b.S2_basis(), tensorsig=(c,))
+    τu2 = d.Field(name='τu2', bases=b.S2_basis(), tensorsig=(c,))
+    ez = d.Field(name='u', bases=b, tensorsig=(c,))
+    ez['g'][1] = - np.sin(theta)
+    ez['g'][2] = np.cos(theta)
+    ncc_m = d.Field(name='ncc', bases=b.meridional_basis)
+    ncc_r = d.Field(name='ncc', bases=b.radial_basis)
+    v['g'] = (x**2 + z**2) * ez['g']
+    ncc_m['g'] = z**2
+    ncc_r['g'] = r**2
+    # Problem
+    Lap = lambda A: operators.Laplacian(A, c)
+    Lift = lambda A, n: operators.Lift(A, b, n)
+    problem = problems.LBVP([u, τu1, τu2])
+    problem.add_equation((ncc_r*Lap(u) + ncc_m*Lap(u) + Lift(τu1,-1) + Lift(τu2,-2), ncc_r*Lap(v) + ncc_m*Lap(v)))
+    problem.add_equation((u(r=r0), v(r=r0)))
+    problem.add_equation((u(r=r1), v(r=r1)))
+    # Solver
+    solver = solvers.LinearBoundaryValueSolver(problem)
+    solver.solve()
+    # Check solution
+    assert np.allclose(u['g'], v['g'])
+
 
 @pytest.mark.parametrize('dtype', [np.complex128, np.float64])
 @pytest.mark.parametrize('Nmax', [15])
