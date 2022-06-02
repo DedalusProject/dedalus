@@ -1,21 +1,18 @@
-"""
-Post-processing helpers.
+"""Post-processing helpers."""
 
-"""
 import os
 import pathlib
 import hashlib
 import shutil
 import h5py
+import xarray
+from xarray.backends import BackendEntrypoint
 import numpy as np
 from mpi4py import MPI
-
 from ..tools.general import natural_sort
-from ..tools.parallel import Sync
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
-
 MPI_RANK = MPI.COMM_WORLD.rank
 MPI_SIZE = MPI.COMM_WORLD.size
 
@@ -348,24 +345,25 @@ def merge_data(joint_file, proc_path):
 merge_virtual = lambda joint_file, virtual_path: merge_setup(joint_file, [virtual_path,], virtual=True)
 
 
-import h5py
-import xarray as xr
-from xarray.backends import BackendEntrypoint
-
-
 def dset_to_xarray(dset):
+    """Convert Dedalus HDF5 dataset to an Xarray DataArray."""
     dims = [dim.label for dim in dset.dims]
     coords = {}
     for dim in dset.dims:
         for name, coord in dim.items():
             coords[name] = (dim.label, coord[:])
-    return xr.DataArray(dset[:], coords=coords, dims=dims, name=dset.name.split('/')[-1])
+    return xarray.DataArray(dset[:], coords=coords, dims=dims)
 
 
-class MyBackendEntrypoint(BackendEntrypoint):
+class DedalusXarrayBackend(BackendEntrypoint):
+    """Xarray backend targeting Dedalus HDF5 outputs."""
 
     def open_dataset(self, filename_or_obj, *, drop_variables=None):
         with h5py.File(filename_or_obj, 'r') as file:
-            data_arrays = [dset_to_xarray(dset) for dset in file['tasks']]
-        return xr.Dataset(data_arrays)
+            data_arrays = {}
+            for dset in file['tasks'].values():
+                name = dset.name.split('/')[-1]
+                if drop_variables is None or name not in drop_variables:
+                    data_arrays[name] = dset_to_xarray(dset)
+        return xarray.Dataset(data_arrays)
 
