@@ -293,7 +293,7 @@ def merge_setup(joint_file, proc_paths, virtual=False):
                         joint_dset.dims[i].attach_scale(scale)
                 else:
                     if proc_dim.label == 'constant' or proc_dim.label == '':
-                        scalename = 'constant' 
+                        scalename = 'constant'
                     else:
                         hashval = hashlib.sha1(np.array(proc_dset.dims[i][0])).hexdigest()
                         scalename = 'hash_' + hashval
@@ -346,3 +346,26 @@ def merge_data(joint_file, proc_path):
 
 
 merge_virtual = lambda joint_file, virtual_path: merge_setup(joint_file, [virtual_path,], virtual=True)
+
+
+import h5py
+import xarray as xr
+from xarray.backends import BackendEntrypoint
+
+
+def dset_to_xarray(dset):
+    dims = [dim.label for dim in dset.dims]
+    coords = {}
+    for dim in dset.dims:
+        for name, coord in dim.items():
+            coords[name] = (dim.label, coord[:])
+    return xr.DataArray(dset[:], coords=coords, dims=dims, name=dset.name.split('/')[-1])
+
+
+class MyBackendEntrypoint(BackendEntrypoint):
+
+    def open_dataset(self, filename_or_obj, *, drop_variables=None):
+        with h5py.File(filename_or_obj, 'r') as file:
+            data_arrays = [dset_to_xarray(dset) for dset in file['tasks']]
+        return xr.Dataset(data_arrays)
+
