@@ -498,6 +498,7 @@ def test_lap_meridional_radial_ncc_shell(Nmax, Lmax, dtype):
     assert np.allclose(u['g'], v['g'])
 
 
+@pytest.mark.xfail(reason="Radial NCCs don't work in meridional problems for vectors.")
 @pytest.mark.parametrize('dtype', [np.complex128])
 @pytest.mark.parametrize('Nmax', [15])
 @pytest.mark.parametrize('Lmax', [7])
