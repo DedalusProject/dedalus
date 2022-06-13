@@ -12,6 +12,25 @@ from dedalus.tools.cache import CachedFunction
 dtype_range = [np.float64, np.complex128]
 
 
+@pytest.mark.parametrize('dtype', dtype_range)
+def test_algebraic(dtype):
+    # Bases
+    coord = d3.Coordinate('x')
+    dist = d3.Distributor(coord, dtype=dtype)
+    u = dist.Field(name='u')
+    v = dist.Field(name='v')
+    F = dist.Field(name='F')
+    v['g'] = -1
+    F['g'] = -3
+    problem = d3.LBVP([u], namespace=locals())
+    problem.add_equation("v*u = F")
+    solver = problem.build_solver()
+    solver.solve()
+    # Check solution
+    u_true = 3
+    assert np.allclose(u['g'], u_true)
+
+
 @pytest.mark.parametrize('Nx', [32])
 @pytest.mark.parametrize('dtype', dtype_range)
 @pytest.mark.parametrize('matrix_coupling', [True, False])
