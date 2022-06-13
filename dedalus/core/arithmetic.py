@@ -15,6 +15,7 @@ from collections import defaultdict
 from .domain import Domain
 from .field import Operand, Field
 from .future import Future, FutureField
+from .basis import Basis
 from .operators import convert
 from ..tools.array import kron
 from ..tools.cache import CachedAttribute, CachedMethod
@@ -386,8 +387,11 @@ class Product(Future):
     def build_ncc_matrix(self, subproblem, ncc_cutoff, max_ncc_terms):
         # TODO: recurse over output bases
         # ASSUME: NCC is on last axis of last output basis
-        out_basis = self.domain.bases[-1]
-        return out_basis.build_ncc_matrix(self, subproblem, ncc_cutoff, max_ncc_terms)
+        if len(self.domain.bases) > 0:
+            out_basis = self.domain.bases[-1]
+            return out_basis.build_ncc_matrix(self, subproblem, ncc_cutoff, max_ncc_terms)
+        else:
+            return Basis._last_axis_field_ncc_matrix(self, subproblem, 0, None, None, None, self._ncc_data, ncc_cutoff, max_ncc_terms)
 
     # def _ncc_matrix_recursion(self, subproblem, ncc_bases, arg_bases, coeffs, ncc_comp, arg_comp, out_comp, **kw):
     #     #, ncc_ts, ncc_bases, arg_bases, arg_ts, separability, gamma_args, **kw):
