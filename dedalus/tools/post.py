@@ -242,18 +242,9 @@ def merge_setup(joint_file, proc_paths, virtual=False):
     proc_path0 = pathlib.Path(proc_paths[0])
     logger.info("Merging setup for {}".format(joint_file))
     with h5py.File(str(proc_path0), mode='r') as proc_file:
-        # File metadata
-        try:
-            joint_file.attrs['set_number'] = proc_file.attrs['set_number']
-        except KeyError:
-            joint_file.attrs['set_number'] = proc_file.attrs['file_number']
-        joint_file.attrs['handler_name'] = proc_file.attrs['handler_name']
-        try:
-            joint_file.attrs['writes'] = writes = proc_file.attrs['writes']
-        except KeyError:
-            joint_file.attrs['writes'] = writes = len(proc_file['scales']['write_number'])
         # Copy scales (distributed files all have global scales)
         if virtual:
+            print(proc_path0)
             proc_file.copy('scales', joint_file)
         else:
             needed_hashes = []
@@ -267,6 +258,10 @@ def merge_setup(joint_file, proc_paths, virtual=False):
         joint_tasks = joint_file.create_group('tasks')
         proc_tasks = proc_file['tasks']
         for taskname in proc_tasks:
+            try:
+                joint_file.attrs['writes'] = writes = proc_file.attrs['writes']
+            except KeyError:
+                joint_file.attrs['writes'] = writes = len(proc_file['scales']['write_number'])
             # Setup dataset with automatic chunking
             proc_dset = proc_tasks[taskname]
             if virtual:
@@ -279,24 +274,16 @@ def merge_setup(joint_file, proc_paths, virtual=False):
                                                     dtype=proc_dset.dtype,
                                                     chunks=True)
             # Dataset metadata
-            joint_dset.attrs['task_number'] = proc_dset.attrs['task_number']
-            joint_dset.attrs['constant'] = proc_dset.attrs['constant']
             joint_dset.attrs['grid_space'] = proc_dset.attrs['grid_space']
-            joint_dset.attrs['scales'] = proc_dset.attrs['scales']
 
             for i, proc_dim in enumerate(proc_dset.dims):
                 joint_dset.dims[i].label = proc_dim.label
-                if joint_dset.dims[i].label == 't':
-                    for scalename in ['sim_time', 'world_time', 'wall_time', 'timestep', 'iteration', 'write_number']:
-                        scale = joint_file['scales'][scalename]
-                        joint_dset.dims.create_scale(scale, scalename)
-                        joint_dset.dims[i].attach_scale(scale)
-                else:
+                if joint_dset.dims[i].label != 't':
                     if proc_dim.label == 'constant' or proc_dim.label == '':
                         scalename = 'constant' 
                     else:
                         hashval = hashlib.sha1(np.array(proc_dset.dims[i][0])).hexdigest()
-                        scalename = 'hash_' + hashval
+                        scalename = proc_dim.label + '_hash_' + hashval
                         if not virtual and scalename in needed_hashes:
                             if joint_shape[i] == 1:
                                 scale_data = np.zeros(1)
