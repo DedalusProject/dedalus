@@ -1232,8 +1232,11 @@ class NonSeparableTransform(Transform):
         self.backward_reduced(cdata, gdata)
 
 
-@register_transform(basis.SphereBasis, 'matrix')
-class SWSHColatitudeTransform(NonSeparableTransform):
+class AssociatedLegendreTransform(NonSeparableTransform):
+    """
+    Spin generalizations of the associated Legendre transform for transforming
+    spin-weighted spherical harmonics in colatitude.
+    """
 
     def __init__(self, Ntheta, Lmax, m_maps, s):
         self.Ntheta = Ntheta
@@ -1245,31 +1248,45 @@ class SWSHColatitudeTransform(NonSeparableTransform):
         # local_m = self.local_m
         # if gdata.shape[1] != len(local_m): # do we want to do this check???
         #     raise ValueError("gdata.shape[1]: %i, len(local_m): %i" %(gdata.shape[1], len(local_m)))
-        m_matrices = self._forward_SWSH_matrices
-        Lmax = self.Lmax
         for m, mg_slice, mc_slice, ell_slice in self.m_maps:
             # Skip transforms when |m| > Lmax
-            if abs(m) <= Lmax:
+            if abs(m) <= self.Lmax:
                 # Use rectangular transform matrix, padded with zeros when Lmin > abs(m)
-                grm = gdata[:, mg_slice, :, :]
-                crm = cdata[:, mc_slice, ell_slice, :]
-                apply_matrix(m_matrices[m], grm, axis=2, out=crm)
+                gdata_reduced_m = gdata[:, mg_slice, :, :]
+                cdata_reduced_m = cdata[:, mc_slice, ell_slice, :]
+                self.forward_reduced_m(m, gdata_reduced_m, cdata_reduced_m)
 
     def backward_reduced(self, cdata, gdata):
         # local_m = self.local_m
         # if gdata.shape[1] != len(local_m): # do we want to do this check???
         #     raise ValueError("gdata.shape[1]: %i, len(local_m): %i" %(gdata.shape[1], len(local_m)))
-        m_matrices = self._backward_SWSH_matrices
-        Lmax = self.Lmax
         for m, mg_slice, mc_slice, ell_slice in self.m_maps:
-            if abs(m) > Lmax:
+            if abs(m) > self.Lmax:
                 # Write zeros because they'll be used by the inverse azimuthal transform
                 gdata[:, mg_slice, :, :] = 0
             else:
                 # Use rectangular transform matrix, padded with zeros when Lmin > abs(m)
-                grm = gdata[:, mg_slice, :, :]
-                crm = cdata[:, mc_slice, ell_slice, :]
-                apply_matrix(m_matrices[m], crm, axis=2, out=grm)
+                gdata_reduced_m = gdata[:, mg_slice, :, :]
+                cdata_reduced_m = cdata[:, mc_slice, ell_slice, :]
+                self.backward_reduced_m(m, cdata_reduced_m, gdata_reduced_m)
+
+    def forward_reduced_m(self, m, gdata_reduced_m, cdata_reduced_m):
+        raise NotImplementedError("Subclasses must implement.")
+
+    def backward_reduced_m(self, m, cdata_reduced_m, gdata_reduced_m):
+        raise NotImplementedError("Subclasses must implement.")
+
+
+@register_transform(basis.SphereBasis, 'matrix')
+class AssociatedLegendreMMT(AssociatedLegendreTransform):
+
+    def forward_reduced_m(self, m, gdata_reduced_m, cdata_reduced_m):
+        m_matrix = self._forward_SWSH_matrices[m]
+        apply_matrix(m_matrix, gdata_reduced_m, axis=2, out=cdata_reduced_m)
+
+    def backward_reduced_m(self, m, cdata_reduced_m, gdata_reduced_m):
+        m_matrix = self._backward_SWSH_matrices[m]
+        apply_matrix(m_matrix, cdata_reduced_m, axis=2, out=gdata_reduced_m)
 
     @CachedAttribute
     def _quadrature(self):
@@ -1322,6 +1339,38 @@ class SWSHColatitudeTransform(NonSeparableTransform):
                 Yfull[:, self.Ntheta-abs(m):] = 0
                 m_matrices[m] = np.asarray(Yfull, order='C')
         return m_matrices
+
+
+@register_transform(basis.SphereBasis, 'shtns')
+class AssociatedLegendreSHTNS(AssociatedLegendreTransform):
+    """SHTNS-based associated Legendre transform."""
+
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        if self.s != 0:
+            raise ValueError("SHTNS does not support spin-weighted transforms.")
+        # Setup transform based on Ntheta
+        import shtns
+        self.shtns_obj = shtns.sht(self.Ntheta - 1)
+
+    def forward_reduced_m(self, m, gdata_reduced_m, cdata_reduced_m):
+        shtns_obj = self.shtns_obj
+        rshape = list(gdata_reduced_m.shape)
+        rshape.pop(2)
+        for i0, i1, i3 in np.ndindex(*rshape):
+            gvec = gdata_reduced_m[i0, i1, :, i3]
+            cvec = cdata_reduced_m[i0, i1, :, i3]
+            shtns_obj.spat_to_SH_m(gvec, cvec, m)
+
+    def backward_reduced_m(self, m, cdata_reduced_m, gdata_reduced_m):
+        shtns_obj = self.shtns_obj
+        rshape = list(gdata_reduced_m.shape)
+        rshape.pop(2)
+        for i0, i1, i3 in np.ndindex(*rshape):
+            gvec = gdata_reduced_m[i0, i1, :, i3]
+            cvec = cdata_reduced_m[i0, i1, :, i3]
+            shtns_obj.SH_to_spat_m(cvec, gvec, m)
+
 
 @register_transform(basis.DiskBasis, 'matrix')
 class DiskRadialTransform(NonSeparableTransform):
