@@ -79,6 +79,40 @@ def harmonics(Lmax, m, s, cos_theta, **kw):
     return jacobi.polynomials(n, a, b, cos_theta, init, **kw)
 
 
+def generate_harmonics(Lmax, m, s, cos_theta, **kw):
+    """
+    SWSH of type (m,s) up to degree Lmax.
+
+    Parameters
+    ----------
+    Lmax : int
+        Maximum spherical-harmonic degree.
+    m, s : int
+        SWSH parameters.
+    cos_theta : float or array
+        Grid array in z = cos(theta).
+    **kw : dict, optional
+        Other keywords passed to jacobi.polynomials.
+
+    Returns
+    -------
+    polynomials : array
+        Array of polynomials evaluated at specified z points.
+        First axis is polynomial degree.
+    """
+    # Compute Jacobi parameters
+    n, a, b = spin2Jacobi(Lmax, m, s)
+    # Build envelope
+    if np.isscalar(cos_theta):
+        # Call non-log version to avoid issues with |z| = 1
+        init = np.sqrt(jacobi.measure(a, b, cos_theta, dtype=np.float64))
+    else:
+        init = np.exp(0.5 * jacobi.measure(a, b, cos_theta, log=True))
+    init *= (-1.0) ** max(m, -s)
+    # Generate polynomials
+    yield from jacobi.generate_polynomials(n, a, b, cos_theta, init, **kw)
+
+
 def operator(name, **kw):
     """
     Build SWSH operators by name.

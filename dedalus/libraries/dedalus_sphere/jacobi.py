@@ -1,7 +1,7 @@
 """Jacobi polynomial functions."""
 
 import numpy as np
-import xprec
+#import xprec
 from scipy.sparse import dia_matrix
 from scipy.special import beta, betaln
 from scipy.linalg import eigvalsh_tridiagonal
@@ -9,7 +9,7 @@ from .operators import Operator, Codomain, infinite_csr
 
 
 # Default dtypes
-DEFAULT_GRID_DTYPE = xprec.ddouble
+DEFAULT_GRID_DTYPE = np.longdouble
 DEFAULT_OPERATOR_DTYPE = np.float64
 
 
@@ -41,6 +41,78 @@ def coefficient_connection(n, ab, cd, init_ab=1, init_cd=1):
     Pab = polynomials(n, a, b, zcd, init_ab)
     Pcd = polynomials(n, c, d, zcd, init_cd)
     return Pcd @ (wcd * Pab).T
+
+
+def generate_polynomials(n, a, b, z, init=None, normalized=True, dtype=None):
+    """
+    Jacobi polynomials of type (a,b) up to degree n-1.
+
+    Parameters
+    ----------
+    n : int
+        Number of polynomials to compute (max degree + 1).
+    a, b : float
+        Jacobi parameters.
+    z : array
+        Grid array.
+    init : float or array, optional
+        Initial envelope for polynomial recursion. Default determined by 'normalized' option.
+    normalized : bool, optional
+        True to initialize with 1/sqrt(mass) if init not provided. Default: True.
+    dtype : dtype, optional
+        Data type. Default: module-level DEFAULT_GRID_DTYPE.
+
+    Yields
+    ------
+    polynomials : array
+        Polynomials evalauted at specified z points.
+        Yield order follows polynomial degree.
+    """
+    if dtype is None:
+        dtype = DEFAULT_GRID_DTYPE
+    # Return empty array if n < 1
+    if n < 1:
+        return np.zeros((0, z.size), dtype=dtype)
+    # Cast z to working dtype
+    if np.isscalar(z):
+        z = np.dtype(dtype).type(z)
+    else:
+        z = z.astype(dtype)
+    # Setup initial envelope
+    if init is None:
+        init = 1 + 0 * z
+        if normalized:
+            init /= np.sqrt(mass(a, b, dtype=dtype))
+    else:
+        init = init + 0 * z  # Cast to working dtype
+    # Get Jacobi operator
+    Z = operator('Z', normalized=normalized)
+    Z = dia_matrix(Z(n + 1, a, b).T).data.astype(dtype)
+    # Generate polynomials via recursion in degree
+    P0 = init
+    yield P0
+    if n == 1:
+        return
+    if len(Z) == 2:
+        P1 = z * P0 / Z[1, 1]
+        yield P1
+        Pkm2 = P0
+        Pkm1 = P1
+        for k in range(2, n):
+            Pk = (z * Pkm1 - Z[0, k - 2] * Pkm2) / Z[1, k]
+            yield Pk
+            Pkm2 = Pkm1
+            Pkm1 = Pk
+    else:
+        P1 = (z - Z[1, 0]) * P0 / Z[2, 1]
+        yield P1
+        Pkm2 = P0
+        Pkm1 = P1
+        for k in range(2, n):
+            Pk = ((z - Z[1, k - 1]) * Pkm1 - Z[0, k - 2] * Pkm2) / Z[2, k]
+            yield Pk
+            Pkm2 = Pkm1
+            Pkm1 = Pk
 
 
 def polynomials(n, a, b, z, init=None, Newton=False, normalized=True, dtype=None):
