@@ -2956,7 +2956,7 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
     @CachedMethod
     def transform_plan(self, Ntheta, s):
         """Build transform plan."""
-        return self.transforms[self.colatitude_library](Ntheta, self.Lmax, self.m_maps, s)
+        return self.transforms[self.colatitude_library](Ntheta, self.Lmax, self.m_maps, s, self.dtype)
 
     def forward_transform_azimuth_Mmax0(self, field, axis, gdata, cdata):
         slice_axis = axis + len(field.tensorsig)

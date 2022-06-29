@@ -6,11 +6,12 @@ import numpy as np
 import scipy
 import scipy.fft
 import scipy.fftpack
-from ..libraries import dedalus_sphere
 
 from . import basis
+from ..libraries import dedalus_sphere
 from ..libraries.fftw import fftw_wrappers as fftw
 from ..tools.array import apply_matrix, apply_dense, axslice, splu_inverse, apply_sparse, prod
+from ..tools.general import is_real_dtype
 from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
 
@@ -1238,11 +1239,12 @@ class AssociatedLegendreTransform(NonSeparableTransform):
     spin-weighted spherical harmonics in colatitude.
     """
 
-    def __init__(self, Ntheta, Lmax, m_maps, s):
+    def __init__(self, Ntheta, Lmax, m_maps, s, dtype):
         self.Ntheta = Ntheta
         self.Lmax = Lmax
         self.m_maps = m_maps
         self.s = s
+        self.dtype = dtype
 
     def forward_reduced(self, gdata, cdata):
         # local_m = self.local_m
@@ -1351,25 +1353,81 @@ class AssociatedLegendreSHTNS(AssociatedLegendreTransform):
             raise ValueError("SHTNS does not support spin-weighted transforms.")
         # Setup transform based on Ntheta
         import shtns
-        self.shtns_obj = shtns.sht(self.Ntheta - 1)
+        self.shtns_obj = shtns.sht(lmax=self.Lmax, nthreads=1)
+        self.shtns_obj.set_grid(nlat=self.Ntheta)
+        self.real = is_real_dtype(self.dtype)
 
-    def forward_reduced_m(self, m, gdata_reduced_m, cdata_reduced_m):
+    def forward_reduced_m(self, m, grm, crm):
         shtns_obj = self.shtns_obj
-        rshape = list(gdata_reduced_m.shape)
-        rshape.pop(2)
-        for i0, i1, i3 in np.ndindex(*rshape):
-            gvec = gdata_reduced_m[i0, i1, :, i3]
-            cvec = cdata_reduced_m[i0, i1, :, i3]
-            shtns_obj.spat_to_SH_m(gvec, cvec, m)
+        # Make contiguous along theta, m
+        gdata = np.ascontiguousarray(grm.transpose((0, 3, 2, 1)))
+        # Complexify along m axis if real
+        gdata.dtype = np.complex128
+        # Drop singleton m and combine other axes
+        gdata.shape = (-1, grm.shape[2])
+        # Setup contiguous cdata
+        cdata = np.zeros((gdata.shape[0], crm.shape[2]), dtype=np.complex128)
+        # Call transforms on contiguous vectors
+        if m == 0 and not self.real:
+            # m = 0 transforms only do real part apparently
+            gtemp = np.empty_like(gdata[0])
+            ctemp = np.empty_like(cdata[0])
+            for i in range(gdata.shape[0]):
+                gtemp[:] = gdata[i].real
+                shtns_obj.spat_to_SH_m(gtemp, ctemp, m)
+                cdata[i].real = ctemp.real
+                gtemp[:] = gdata[i].imag
+                shtns_obj.spat_to_SH_m(gtemp, ctemp, m)
+                cdata[i].imag = ctemp.real
+        else:
+            for i in range(gdata.shape[0]):
+                shtns_obj.spat_to_SH_m(gdata[i], cdata[i], m)
+        # Rescale cdata
+        mod = 1 / np.sqrt(2 * np.pi)
+        if m < 0:
+            mod *= (-1) ** (m%2)
+        cdata *= mod
+        cdata[:, 1::2] *= -1
+        # Unpack cdata
+        cdata.shape = (crm.shape[0], crm.shape[3], crm.shape[2], 1)
+        cdata.dtype = crm.dtype
+        crm[:] = cdata.transpose((0, 3, 2, 1))
 
-    def backward_reduced_m(self, m, cdata_reduced_m, gdata_reduced_m):
+    def backward_reduced_m(self, m, crm, grm):
         shtns_obj = self.shtns_obj
-        rshape = list(gdata_reduced_m.shape)
-        rshape.pop(2)
-        for i0, i1, i3 in np.ndindex(*rshape):
-            gvec = gdata_reduced_m[i0, i1, :, i3]
-            cvec = cdata_reduced_m[i0, i1, :, i3]
-            shtns_obj.SH_to_spat_m(cvec, gvec, m)
+        # Make contiguous along theta, m
+        cdata = np.ascontiguousarray(crm.transpose((0, 3, 2, 1)))
+        # Complexify along m axis if real
+        cdata.dtype = np.complex128
+        # Drop singleton m
+        cdata.shape = (-1, crm.shape[2])
+        # Rescale gdata
+        mod = np.sqrt(2 * np.pi)
+        if m < 0:
+            mod *= (-1) ** (m%2)
+        cdata *= mod
+        cdata[:, 1::2] *= -1
+        # Setup contiguous gdata
+        gdata = np.zeros((cdata.shape[0], grm.shape[2]), dtype=np.complex128)
+        # Call transforms on contiguous vectors
+        if m == 0 and not self.real:
+            # m = 0 transforms only do real part apparently
+            gtemp = np.empty_like(gdata[0])
+            ctemp = np.empty_like(cdata[0])
+            for i in range(gdata.shape[0]):
+                ctemp[:] = cdata[i].real
+                shtns_obj.SH_to_spat_m(ctemp, gtemp, m)
+                gdata[i].real = gtemp.real
+                ctemp[:] = cdata[i].imag
+                shtns_obj.SH_to_spat_m(ctemp, gtemp, m)
+                gdata[i].imag = gtemp.real
+        else:
+            for i in range(gdata.shape[0]):
+                shtns_obj.SH_to_spat_m(cdata[i], gdata[i], m)
+        # Unpack gdata
+        gdata.shape = (grm.shape[0], grm.shape[3], grm.shape[2], 1)
+        gdata.dtype = grm.dtype
+        grm[:] = gdata.transpose((0, 3, 2, 1))
 
 
 @register_transform(basis.DiskBasis, 'matrix')
