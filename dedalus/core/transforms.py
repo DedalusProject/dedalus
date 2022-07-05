@@ -6,12 +6,12 @@ import numpy as np
 import scipy
 import scipy.fft
 import scipy.fftpack
-from ..libraries import dedalus_sphere
 
 from . import basis
+from ..libraries import dedalus_sphere
 from ..libraries.fftw import fftw_wrappers as fftw
-from ..tools import jacobi
 from ..tools.array import apply_matrix, apply_dense, axslice, splu_inverse, apply_sparse, prod
+from ..tools.general import is_real_dtype, is_complex_dtype
 from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
 
@@ -118,10 +118,9 @@ class JacobiMMT(JacobiTransform, SeparableMatrixTransform):
         a, a0 = self.a, self.a0
         b, b0 = self.b, self.b0
         # Gauss quadrature with base (a0, b0) polynomials
-        base_grid = jacobi.build_grid(N, a=a0, b=b0)
-        base_polynomials = jacobi.build_polynomials(max(M, N), a0, b0, base_grid)
-        base_weights = jacobi.build_weights(N, a=a0, b=b0)
-        base_transform = (base_polynomials * base_weights)
+        base_grid, base_weights = dedalus_sphere.jacobi.quadrature(N, a0, b0)
+        base_polynomials = dedalus_sphere.jacobi.polynomials(max(M, N), a0, b0, base_grid)
+        base_transform = (base_polynomials * base_weights).astype(np.float64)
         # Zero higher coefficients for transforms with grid_size < coeff_size
         base_transform[N:, :] = 0
         if DEALIAS_BEFORE_CONVERTING():
@@ -131,7 +130,7 @@ class JacobiMMT(JacobiTransform, SeparableMatrixTransform):
         if (a == a0) and (b == b0):
             forward_matrix = base_transform
         else:
-            conversion = jacobi.conversion_matrix(base_transform.shape[0], a0, b0, a, b)
+            conversion = basis.Jacobi.conversion_matrix(base_transform.shape[0], a0, b0, a, b)
             forward_matrix = conversion @ base_transform
         if not DEALIAS_BEFORE_CONVERTING():
             # Truncate to specified coeff_size
@@ -146,8 +145,8 @@ class JacobiMMT(JacobiTransform, SeparableMatrixTransform):
         a, a0 = self.a, self.a0
         b, b0 = self.b, self.b0
         # Construct polynomials on the base grid
-        base_grid = jacobi.build_grid(N, a=a0, b=b0)
-        polynomials = jacobi.build_polynomials(M, a, b, base_grid)
+        base_grid, base_weights = dedalus_sphere.jacobi.quadrature(N, a0, b0)
+        polynomials = dedalus_sphere.jacobi.polynomials(M, a, b, base_grid).astype(np.float64)
         # Zero higher polynomials for transforms with grid_size < coeff_size
         polynomials[N:, :] = 0
         # Transpose and ensure C ordering for fast dot products
@@ -817,12 +816,12 @@ class FastChebyshevTransform(JacobiTransform):
         else:
             # Conversion matrices
             if DEALIAS_BEFORE_CONVERTING() and (self.M_orig < self.N): # truncate prior to conversion matrix
-                self.forward_conversion = jacobi.conversion_matrix(self.M_orig, a0, b0, a, b)
+                self.forward_conversion = basis.Jacobi.conversion_matrix(self.M_orig, a0, b0, a, b)
             else: # input to conversion matrix not truncated
-                self.forward_conversion = jacobi.conversion_matrix(self.N, a0, b0, a, b)
+                self.forward_conversion = basis.Jacobi.conversion_matrix(self.N, a0, b0, a, b)
                 self.forward_conversion.resize(self.M_orig, self.N)
                 self.forward_conversion = self.forward_conversion.tocsr()
-            self.backward_conversion = jacobi.conversion_matrix(self.M_orig, a0, b0, a, b)
+            self.backward_conversion = basis.Jacobi.conversion_matrix(self.M_orig, a0, b0, a, b)
             self.backward_conversion = splu_inverse(self.backward_conversion)
             self.resize_rescale_forward = self._resize_rescale_forward_convert
             self.resize_rescale_backward = self._resize_rescale_backward_convert
@@ -1234,44 +1233,62 @@ class NonSeparableTransform(Transform):
         self.backward_reduced(cdata, gdata)
 
 
-@register_transform(basis.SphereBasis, 'matrix')
-class SWSHColatitudeTransform(NonSeparableTransform):
+class AssociatedLegendreTransform(NonSeparableTransform):
+    """
+    Spin generalizations of the associated Legendre transform for transforming
+    spin-weighted spherical harmonics in colatitude.
+    """
 
-    def __init__(self, Ntheta, Lmax, m_maps, s):
+    def __init__(self, Ntheta, Lmax, m_maps, s, dtype):
         self.Ntheta = Ntheta
         self.Lmax = Lmax
         self.m_maps = m_maps
         self.s = s
+        self.dtype = dtype
 
     def forward_reduced(self, gdata, cdata):
         # local_m = self.local_m
         # if gdata.shape[1] != len(local_m): # do we want to do this check???
         #     raise ValueError("gdata.shape[1]: %i, len(local_m): %i" %(gdata.shape[1], len(local_m)))
-        m_matrices = self._forward_SWSH_matrices
-        Lmax = self.Lmax
         for m, mg_slice, mc_slice, ell_slice in self.m_maps:
             # Skip transforms when |m| > Lmax
-            if abs(m) <= Lmax:
+            if abs(m) <= self.Lmax:
                 # Use rectangular transform matrix, padded with zeros when Lmin > abs(m)
-                grm = gdata[:, mg_slice, :, :]
-                crm = cdata[:, mc_slice, ell_slice, :]
-                apply_matrix(m_matrices[m], grm, axis=2, out=crm)
+                gdata_reduced_m = gdata[:, mg_slice, :, :]
+                cdata_reduced_m = cdata[:, mc_slice, ell_slice, :]
+                self.forward_reduced_m(m, gdata_reduced_m, cdata_reduced_m)
 
     def backward_reduced(self, cdata, gdata):
         # local_m = self.local_m
         # if gdata.shape[1] != len(local_m): # do we want to do this check???
         #     raise ValueError("gdata.shape[1]: %i, len(local_m): %i" %(gdata.shape[1], len(local_m)))
-        m_matrices = self._backward_SWSH_matrices
-        Lmax = self.Lmax
         for m, mg_slice, mc_slice, ell_slice in self.m_maps:
-            if abs(m) > Lmax:
+            if abs(m) > self.Lmax:
                 # Write zeros because they'll be used by the inverse azimuthal transform
                 gdata[:, mg_slice, :, :] = 0
             else:
                 # Use rectangular transform matrix, padded with zeros when Lmin > abs(m)
-                grm = gdata[:, mg_slice, :, :]
-                crm = cdata[:, mc_slice, ell_slice, :]
-                apply_matrix(m_matrices[m], crm, axis=2, out=grm)
+                gdata_reduced_m = gdata[:, mg_slice, :, :]
+                cdata_reduced_m = cdata[:, mc_slice, ell_slice, :]
+                self.backward_reduced_m(m, cdata_reduced_m, gdata_reduced_m)
+
+    def forward_reduced_m(self, m, gdata_reduced_m, cdata_reduced_m):
+        raise NotImplementedError("Subclasses must implement.")
+
+    def backward_reduced_m(self, m, cdata_reduced_m, gdata_reduced_m):
+        raise NotImplementedError("Subclasses must implement.")
+
+
+@register_transform(basis.SphereBasis, 'matrix')
+class AssociatedLegendreMMT(AssociatedLegendreTransform):
+
+    def forward_reduced_m(self, m, gdata_reduced_m, cdata_reduced_m):
+        m_matrix = self._forward_SWSH_matrices[m]
+        apply_matrix(m_matrix, gdata_reduced_m, axis=2, out=cdata_reduced_m)
+
+    def backward_reduced_m(self, m, cdata_reduced_m, gdata_reduced_m):
+        m_matrix = self._backward_SWSH_matrices[m]
+        apply_matrix(m_matrix, cdata_reduced_m, axis=2, out=gdata_reduced_m)
 
     @CachedAttribute
     def _quadrature(self):
@@ -1324,6 +1341,189 @@ class SWSHColatitudeTransform(NonSeparableTransform):
                 Yfull[:, self.Ntheta-abs(m):] = 0
                 m_matrices[m] = np.asarray(Yfull, order='C')
         return m_matrices
+
+
+@register_transform(basis.SphereBasis, 'shtns')
+class AssociatedLegendreSHTNS(AssociatedLegendreTransform):
+    """SHTNS-based associated Legendre transform."""
+
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        if self.s != 0:
+            raise ValueError("SHTNS does not support spin-weighted transforms.")
+        # Setup transform based on Ntheta
+        import shtns
+        self.shtns_obj = shtns.sht(lmax=self.Lmax, nthreads=1)
+        self.shtns_obj.set_grid(nlat=self.Ntheta)
+        self.is_complex = is_complex_dtype(self.dtype)
+
+    def forward_reduced_m(self, m, grm, crm):
+        shtns_obj = self.shtns_obj
+        # Make contiguous along theta, m
+        gdata = np.ascontiguousarray(grm.transpose((0, 3, 2, 1)))
+        # Complexify along m axis if real
+        gdata.dtype = np.complex128
+        # Drop singleton m axis and combine leading axes
+        gdata.shape = (-1, grm.shape[2])
+        # Setup contiguous cdata
+        cdata = np.zeros((gdata.shape[0], crm.shape[2]), dtype=np.complex128)
+        # Call transforms on contiguous vectors
+        if self.is_complex and m == 0:
+            # m = 0 transforms only do real part apparently
+            gtemp = np.empty_like(gdata[0])
+            ctemp = np.empty_like(cdata[0])
+            for i in range(gdata.shape[0]):
+                gtemp[:] = gdata[i].real
+                shtns_obj.spat_to_SH_m(gtemp, ctemp, m)
+                cdata[i].real = ctemp.real
+                gtemp[:] = gdata[i].imag
+                shtns_obj.spat_to_SH_m(gtemp, ctemp, m)
+                cdata[i].imag = ctemp.real
+        else:
+            for i in range(gdata.shape[0]):
+                shtns_obj.spat_to_SH_m(gdata[i], cdata[i], m)
+        # Rescale cdata
+        mod = 1 / np.sqrt(2 * np.pi)
+        if m < 0:
+            mod *= (-1) ** (m%2)
+        cdata *= mod
+        cdata[:, 1::2] *= -1
+        # Unpack cdata
+        cdata.shape = (crm.shape[0], crm.shape[3], crm.shape[2], 1)
+        cdata.dtype = crm.dtype
+        crm[:] = cdata.transpose((0, 3, 2, 1))
+
+    def backward_reduced_m(self, m, crm, grm):
+        shtns_obj = self.shtns_obj
+        # Make contiguous along theta, m
+        cdata = np.ascontiguousarray(crm.transpose((0, 3, 2, 1)))
+        # Complexify along m axis if real
+        cdata.dtype = np.complex128
+        # Drop singleton m axis and combine leading axes
+        cdata.shape = (-1, crm.shape[2])
+        # Rescale cdata
+        mod = np.sqrt(2 * np.pi)
+        if m < 0:
+            mod *= (-1) ** (m%2)
+        cdata *= mod
+        cdata[:, 1::2] *= -1
+        # Setup contiguous gdata
+        gdata = np.zeros((cdata.shape[0], grm.shape[2]), dtype=np.complex128)
+        # Call transforms on contiguous vectors
+        if self.is_complex and m == 0:
+            # m = 0 transforms only do real part apparently
+            gtemp = np.empty_like(gdata[0])
+            ctemp = np.empty_like(cdata[0])
+            for i in range(gdata.shape[0]):
+                ctemp[:] = cdata[i].real
+                shtns_obj.SH_to_spat_m(ctemp, gtemp, m)
+                gdata[i].real = gtemp.real
+                ctemp[:] = cdata[i].imag
+                shtns_obj.SH_to_spat_m(ctemp, gtemp, m)
+                gdata[i].imag = gtemp.real
+        else:
+            for i in range(gdata.shape[0]):
+                shtns_obj.SH_to_spat_m(cdata[i], gdata[i], m)
+        # Unpack gdata
+        gdata.shape = (grm.shape[0], grm.shape[3], grm.shape[2], 1)
+        gdata.dtype = grm.dtype
+        grm[:] = gdata.transpose((0, 3, 2, 1))
+
+
+@register_transform(basis.SphereBasis, 'ducc')
+class AssociatedLegendreDUCC(AssociatedLegendreTransform):
+    """DUCC-based associated Legendre transform."""
+
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        # Setup grid
+        import ducc0
+        self.theta = ducc0.sht.experimental.GL_thetas(self.Ntheta)
+        self.ducc_forward = ducc0.sht.experimental.leg2alm
+        self.ducc_backward = ducc0.sht.experimental.alm2leg
+
+    def forward_reduced_m(self, m, grm, crm):
+        # Make contiguous along theta, m
+        gdata = np.ascontiguousarray(grm.transpose((0, 3, 2, 1)))
+        # Complexify along m axis if real
+        gdata.dtype = np.complex128
+        # Drop singleton m and combine other axes
+        gdata.shape = (-1, grm.shape[2])
+        # Repack according to DUCC layout
+        ncomp = 1 + (self.s != 0)
+        if self.s == 0:
+            gdata.shape = (-1, 1, grm.shape[2], 1)
+        else:
+            gdata_padded = np.zeros((gdata.shape[0], ncomp, grm.shape[2], 1), dtype=np.complex128)
+            if self.s > 0:
+                gdata_padded[:, 0, :, 0] = gdata
+            else:
+                gdata_padded[:, 1, :, 0] = gdata
+            gdata = gdata_padded
+        # Setup contiguous cdata with extra padding
+        cdata = np.zeros((gdata.shape[0], ncomp, self.Lmax + 1), dtype=np.complex128)
+        # Call transforms on contiguous vectors
+        mval = np.array([m])
+        mstart = np.array([0])
+        for i in range(gdata.shape[0]):
+            self.ducc_forward(leg=gdata[i], lmax=self.Lmax, theta=self.theta, spin=abs(self.s), mval=mval, mstart=mstart, alm=cdata[i])
+        # Drop extra padding
+        if self.s >= 0:
+            cdata = cdata[:, 0, abs(m):]
+        else:
+            cdata = cdata[:, 1, abs(m):]
+        # Rescale cdata
+        mod = 1 / np.sqrt(2 * np.pi)
+        if m < 0:
+            mod *= (-1) ** (m%2)
+        cdata *= mod
+        cdata[:, 1::2] *= -1
+        # Unpack cdata
+        cdata.shape = (crm.shape[0], crm.shape[3], crm.shape[2], 1)
+        cdata.dtype = crm.dtype
+        crm[:] = cdata.transpose((0, 3, 2, 1))
+
+    def backward_reduced_m(self, m, crm, grm):
+        # Make contiguous along theta, m
+        cdata = np.ascontiguousarray(crm.transpose((0, 3, 2, 1)))
+        # Complexify along m axis if real
+        cdata.dtype = np.complex128
+        # Drop singleton m axis and combine leading axes
+        cdata.shape = (-1, crm.shape[2])
+        # Rescale cdata
+        mod = np.sqrt(2 * np.pi)
+        if m < 0:
+            mod *= (-1) ** (m%2)
+        cdata *= mod
+        cdata[:, 1::2] *= -1
+        # Repack according to DUCC layout
+        ncomp = 1 + (self.s != 0)
+        if self.s == 0 and m == 0:
+            cdata.shape = (-1, 1, crm.shape[2])
+        else:
+            cdata_padded = np.zeros((cdata.shape[0], ncomp, self.Lmax+1), dtype=np.complex128)
+            if self.s >= 0:
+                cdata_padded[:, 0, abs(m):] = cdata
+            else:
+                cdata_padded[:, 1, abs(m):] = cdata
+            cdata = cdata_padded
+        # Setup contiguous gdata with extra padding
+        gdata = np.zeros((cdata.shape[0], ncomp, grm.shape[2], 1), dtype=np.complex128)
+        # Call DUCC transforms
+        mval = np.array([m])
+        mstart = np.array([0])
+        for i in range(gdata.shape[0]):
+            self.ducc_backward(alm=cdata[i], lmax=self.Lmax, theta=self.theta, spin=abs(self.s), mval=mval, mstart=mstart, leg=gdata[i])
+        # Drop extra padding
+        if self.s >= 0:
+            gdata = gdata[:, 0, :, 0]
+        else:
+            gdata = gdata[:, 1, :, 0]
+        # Unpack gdata
+        gdata.shape = (grm.shape[0], grm.shape[3], grm.shape[2], 1)
+        gdata.dtype = grm.dtype
+        grm[:] = gdata.transpose((0, 3, 2, 1))
+
 
 @register_transform(basis.DiskBasis, 'matrix')
 class DiskRadialTransform(NonSeparableTransform):
@@ -1401,7 +1601,7 @@ class DiskRadialTransform(NonSeparableTransform):
                 # Spectral conversion
                 if self.k > 0:
                     conversion = dedalus_sphere.zernike.operator(2, 'E')(+1)**self.k
-                    W = conversion(W.shape[0], self.alpha, abs(m + self.s)) @ W
+                    W = conversion(W.shape[0], self.alpha, abs(m + self.s)) @ W.astype(np.float64)
                 if not DEALIAS_BEFORE_CONVERTING():
                     # Truncate to specified coeff_size
                     W = W[:max(self.N2c-Nmin,0)]
@@ -1510,7 +1710,7 @@ class BallRadialTransform(Transform):
                     # Spectral conversion
                     if self.k > 0:
                         conversion = dedalus_sphere.zernike.operator(3, 'E')(+1)**self.k
-                        W = conversion(W.shape[0], self.alpha, ell+self.regtotal) @ W
+                        W = conversion(W.shape[0], self.alpha, ell+self.regtotal) @ W.astype(np.float64)
                     if not DEALIAS_BEFORE_CONVERTING():
                         # Truncate to specified coeff_size
                         W = W[:max(self.N3c-Nmin,0)]

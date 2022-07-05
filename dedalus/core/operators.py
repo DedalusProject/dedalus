@@ -2858,14 +2858,14 @@ class MulCosine(PolarMOperator, metaclass=MultiClass):
         radial_basis = self.input_basis
         spintotal = radial_basis.spintotal(spinindex_in)
         if spinindex_out in self.spinindex_out(spinindex_in):
-            return self._radial_matrix(radial_basis.Lmax, spintotal, m, self.dtype)
+            return self._radial_matrix(radial_basis.Lmax, spintotal, m)
         else:
             raise ValueError("This should never happen")
 
     @staticmethod
     @CachedMethod
-    def _radial_matrix(Lmax, spintotal, m, dtype):
-        matrix = dedalus_sphere.sphere.operator('Cos', dtype)(Lmax, m, spintotal).square
+    def _radial_matrix(Lmax, spintotal, m):
+        matrix = dedalus_sphere.sphere.operator('Cos')(Lmax, m, spintotal).square
         # Pad to include invalid ells
         trunc = abs(spintotal) - abs(m)
         if trunc > 0:

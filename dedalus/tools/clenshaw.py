@@ -3,7 +3,7 @@
 import numpy as np
 from scipy import sparse
 
-from . import jacobi
+from ..libraries import dedalus_sphere
 from .general import DeferredTuple
 
 
@@ -78,7 +78,7 @@ def jacobi_recursion(N, a, b, X):
         B[n] = - J[n,n-1]/J[n,n+1]
     """
     # Jacobi matrix
-    J = jacobi.jacobi_matrix(N, a, b)
+    J = dedalus_sphere.jacobi.operator('Z')(N, a, b).square.astype(np.float64)
     JA = J.A
     # Identity element
     if np.isscalar(X):

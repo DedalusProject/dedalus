@@ -3,7 +3,8 @@ from scipy.sparse import lil_matrix
 from scipy.sparse import coo_matrix
 from scipy.sparse import identity as id_matrix
 
-class Operator():
+
+class Operator:
     """
     Class for deffered (lazy) evaluation of matrix-valued functions between parameterised vector spaces.
 
@@ -74,12 +75,13 @@ class Operator():
 
     """
 
-    def __init__(self,function,codomain,Output=None):
-        if Output == None: Output = Operator
+    def __init__(self, function, codomain, Output=None):
+        if Output == None:
+            Output = Operator
 
         self.__function = function
         self.__codomain = codomain
-        self.__Output   = Output
+        self.__Output = Output
 
     @property
     def function(self):
@@ -93,40 +95,45 @@ class Operator():
     def Output(self):
         return self.__Output
 
-    def __call__(self,*args):
+    def __call__(self, *args):
         return self.__function(*args)
 
-    def __matmul__(self,other):
+    def __matmul__(self, other):
         def function(*args):
             return self(*other.codomain(*args)) @ other(*args)
+
         return self.Output(function, self.codomain + other.codomain)
 
     @property
     def T(self):
         codomain = -self.codomain
+
         def function(*args):
             return self(*codomain(*args)).T
-        return self.Output(function,codomain)
+
+        return self.Output(function, codomain)
 
     @property
     def identity(self):
         def function(*args):
             return self(*args).identity
-        return  self.Output(function,0*self.codomain)
 
-    def __pow__(self,exponent):
+        return self.Output(function, 0 * self.codomain)
+
+    def __pow__(self, exponent):
         if exponent < 0:
             raise TypeError('exponent must be a non-negative integer.')
         if exponent == 0:
             return self.identity
-        return self @ self**(exponent-1)
+        return self @ self ** (exponent - 1)
 
-    def __add__(self,other):
+    def __add__(self, other):
 
-        if other == 0: return self
+        if other == 0:
+            return self
 
-        if not isinstance(other,Operator):
-            other = other*self.identity
+        if not isinstance(other, Operator):
+            other = other * self.identity
 
         codomain = self.codomain | other.codomain
 
@@ -135,45 +142,44 @@ class Operator():
 
         return self.Output(function, codomain)
 
-    def __mul__(self,other):
-        if isinstance(other,Operator):
+    def __mul__(self, other):
+        if isinstance(other, Operator):
             return self @ other - other @ self
 
         def function(*args):
-            return other*self(*args)
-        return self.Output(function,self.codomain)
+            return other * self(*args)
 
-     #   def function(*args):
-     #       a,b = args[:len(self.codomain)], args[len(self.codomain):]
-     #       return Kronecker(self(*a),other(*b))
-     #   codomain = Codomain(self.codomain,other.codomain)
-     #   return Operator(function,codomain)
+        return self.Output(function, self.codomain)
 
+    #   def function(*args):
+    #       a,b = args[:len(self.codomain)], args[len(self.codomain):]
+    #       return Kronecker(self(*a),other(*b))
+    #   codomain = Codomain(self.codomain,other.codomain)
+    #   return Operator(function,codomain)
 
-
-    def __radd__(self,other):
+    def __radd__(self, other):
         return self + other
 
-    def __rmul__(self,other):
-            return self*other
+    def __rmul__(self, other):
+        return self * other
 
-    def __truediv__(self,other):
-        return self * (1/other)
+    def __truediv__(self, other):
+        return self * (1 / other)
 
     def __pos__(self):
         return self
 
     def __neg__(self):
-        return (-1)*self
+        return (-1) * self
 
-    def __sub__(self,other):
+    def __sub__(self, other):
         return self + (-other)
 
-    def __rsub__(self,other):
+    def __rsub__(self, other):
         return -self + other
 
 
-class Codomain():
+class Codomain:
     """Base class for Codomain objects.
 
 
@@ -187,10 +193,11 @@ class Codomain():
 
     """
 
-    def __init__(self,*arrow,Output=None):
-        if Output == None: Output = Codomain
+    def __init__(self, *arrow, Output=None):
+        if Output == None:
+            Output = Codomain
 
-        self.__arrow  = arrow
+        self.__arrow = arrow
         self.__Output = Output
 
     @property
@@ -201,7 +208,7 @@ class Codomain():
     def Output(self):
         return self.__Output
 
-    def __getitem__(self,item):
+    def __getitem__(self, item):
         return self.__arrow[(item)]
 
     def __len__(self):
@@ -213,39 +220,38 @@ class Codomain():
     def __repr__(self):
         return str(self)
 
-    def __add__(self,other):
-        return self.Output(*tuple(a+b for a,b in zip(self[:],other[:])))
+    def __add__(self, other):
+        return self.Output(*tuple(a + b for a, b in zip(self[:], other[:])))
 
-    def __call__(self,*args):
-        return tuple(a+b for a,b in zip(self.arrow,args))
+    def __call__(self, *args):
+        return tuple(a + b for a, b in zip(self.arrow, args))
 
-    def __eq__(self,other):
+    def __eq__(self, other):
         return self[:] == other[:]
 
-    def __or__(self,other):
+    def __or__(self, other):
         if self != other:
             raise TypeError('operators have incompatible codomains.')
-        return self.Output(*tuple(a|b for a,b in zip(self[:],other[:])))
+        return self.Output(*tuple(a | b for a, b in zip(self[:], other[:])))
 
     def __neg__(self):
         return self.Output(*tuple(-a for a in self.arrow))
 
-    def __mul__(self,other):
+    def __mul__(self, other):
         if type(other) != int:
             raise TypeError('only integer multiplication defined.')
 
         if other == 0:
-            return self.Output(*(len(self.arrow)*(0,)))
+            return self.Output(*(len(self.arrow) * (0,)))
 
         if other < 0:
-            return -self + (other+1)*self
+            return -self + (other + 1) * self
 
-    def __rmul__(self,other):
-        return self*other
+    def __rmul__(self, other):
+        return self * other
 
-    def __sub__(self,other):
+    def __sub__(self, other):
         return self + (-other)
-
 
 
 class infinite_csr(csr_matrix):
@@ -275,15 +281,15 @@ class infinite_csr(csr_matrix):
 
     """
 
-    def __init__(self,*args,**kwargs):
-        csr_matrix.__init__(self,*args,**kwargs)
+    def __init__(self, *args, **kwargs):
+        csr_matrix.__init__(self, *args, **kwargs)
 
     def __repr__(self):
         s = csr_matrix(self).__repr__()
         i = s.find('sparse matrix')
         j = s.find('with')
         k = s.find('stored elements')
-        return s[:i] + 'Infinite Compressed Sparse Row matrix; ' + s[j:k+15] + '>'
+        return s[:i] + 'Infinite Compressed Sparse Row matrix; ' + s[j : k + 15] + '>'
 
     @property
     def T(self):
@@ -295,9 +301,9 @@ class infinite_csr(csr_matrix):
 
     @property
     def square(self):
-        return csr_matrix(self[:self.shape[1]])
+        return csr_matrix(self[: self.shape[1]])
 
-    def __getitem__(self,item):
+    def __getitem__(self, item):
 
         if type(item) == tuple:
             i, j = item[0], item[1:]
@@ -305,7 +311,7 @@ class infinite_csr(csr_matrix):
             i, j = item, ()
 
         if type(i) != slice:
-            i = slice(i, i+1, 1)
+            i = slice(i, i + 1, 1)
 
         s = self.shape
 
@@ -313,12 +319,11 @@ class infinite_csr(csr_matrix):
             return infinite_csr(csr_matrix(self)[item])
 
         coo_self = coo_matrix(self)
-        output = coo_matrix((coo_self.data, (coo_self.row, coo_self.col)), shape=(i.stop+1,s[1]), dtype=self.dtype)
+        output = coo_matrix((coo_self.data, (coo_self.row, coo_self.col)), shape=(i.stop + 1, s[1]), dtype=self.dtype)
         output = lil_matrix(output)
         return infinite_csr(output[(i,) + j])
 
-
-    def __add__(self,other):
+    def __add__(self, other):
 
         ns, no = self.shape[0], other.shape[0]
 
@@ -333,8 +338,7 @@ class infinite_csr(csr_matrix):
             sum_ = lil_matrix(other)
             sum_[:ns] += self
 
-
         return infinite_csr(sum_)
 
-    def __radd__(self,other):
+    def __radd__(self, other):
         return self + other
