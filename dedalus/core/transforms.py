@@ -11,7 +11,7 @@ from . import basis
 from ..libraries import dedalus_sphere
 from ..libraries.fftw import fftw_wrappers as fftw
 from ..tools.array import apply_matrix, apply_dense, axslice, splu_inverse, apply_sparse, prod
-from ..tools.general import is_real_dtype
+from ..tools.general import is_real_dtype, is_complex_dtype
 from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
 
@@ -1355,7 +1355,7 @@ class AssociatedLegendreSHTNS(AssociatedLegendreTransform):
         import shtns
         self.shtns_obj = shtns.sht(lmax=self.Lmax, nthreads=1)
         self.shtns_obj.set_grid(nlat=self.Ntheta)
-        self.real = is_real_dtype(self.dtype)
+        self.is_complex = is_complex_dtype(self.dtype)
 
     def forward_reduced_m(self, m, grm, crm):
         shtns_obj = self.shtns_obj
@@ -1363,12 +1363,12 @@ class AssociatedLegendreSHTNS(AssociatedLegendreTransform):
         gdata = np.ascontiguousarray(grm.transpose((0, 3, 2, 1)))
         # Complexify along m axis if real
         gdata.dtype = np.complex128
-        # Drop singleton m and combine other axes
+        # Drop singleton m axis and combine leading axes
         gdata.shape = (-1, grm.shape[2])
         # Setup contiguous cdata
         cdata = np.zeros((gdata.shape[0], crm.shape[2]), dtype=np.complex128)
         # Call transforms on contiguous vectors
-        if m == 0 and not self.real:
+        if self.is_complex and m == 0:
             # m = 0 transforms only do real part apparently
             gtemp = np.empty_like(gdata[0])
             ctemp = np.empty_like(cdata[0])
@@ -1399,9 +1399,9 @@ class AssociatedLegendreSHTNS(AssociatedLegendreTransform):
         cdata = np.ascontiguousarray(crm.transpose((0, 3, 2, 1)))
         # Complexify along m axis if real
         cdata.dtype = np.complex128
-        # Drop singleton m
+        # Drop singleton m axis and combine leading axes
         cdata.shape = (-1, crm.shape[2])
-        # Rescale gdata
+        # Rescale cdata
         mod = np.sqrt(2 * np.pi)
         if m < 0:
             mod *= (-1) ** (m%2)
@@ -1410,7 +1410,7 @@ class AssociatedLegendreSHTNS(AssociatedLegendreTransform):
         # Setup contiguous gdata
         gdata = np.zeros((cdata.shape[0], grm.shape[2]), dtype=np.complex128)
         # Call transforms on contiguous vectors
-        if m == 0 and not self.real:
+        if self.is_complex and m == 0:
             # m = 0 transforms only do real part apparently
             gtemp = np.empty_like(gdata[0])
             ctemp = np.empty_like(cdata[0])
@@ -1424,6 +1424,101 @@ class AssociatedLegendreSHTNS(AssociatedLegendreTransform):
         else:
             for i in range(gdata.shape[0]):
                 shtns_obj.SH_to_spat_m(cdata[i], gdata[i], m)
+        # Unpack gdata
+        gdata.shape = (grm.shape[0], grm.shape[3], grm.shape[2], 1)
+        gdata.dtype = grm.dtype
+        grm[:] = gdata.transpose((0, 3, 2, 1))
+
+
+@register_transform(basis.SphereBasis, 'ducc')
+class AssociatedLegendreDUCC(AssociatedLegendreTransform):
+    """DUCC-based associated Legendre transform."""
+
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        # Setup grid
+        import ducc0
+        self.theta = ducc0.sht.experimental.GL_thetas(self.Ntheta)
+        self.ducc_forward = ducc0.sht.experimental.leg2alm
+        self.ducc_backward = ducc0.sht.experimental.alm2leg
+
+    def forward_reduced_m(self, m, grm, crm):
+        # Make contiguous along theta, m
+        gdata = np.ascontiguousarray(grm.transpose((0, 3, 2, 1)))
+        # Complexify along m axis if real
+        gdata.dtype = np.complex128
+        # Drop singleton m and combine other axes
+        gdata.shape = (-1, grm.shape[2])
+        # Repack according to DUCC layout
+        ncomp = 1 + (self.s != 0)
+        if self.s == 0:
+            gdata.shape = (-1, 1, grm.shape[2], 1)
+        else:
+            gdata_padded = np.zeros((gdata.shape[0], ncomp, grm.shape[2], 1), dtype=np.complex128)
+            if self.s > 0:
+                gdata_padded[:, 0, :, 0] = gdata
+            else:
+                gdata_padded[:, 1, :, 0] = gdata
+            gdata = gdata_padded
+        # Setup contiguous cdata with extra padding
+        cdata = np.zeros((gdata.shape[0], ncomp, self.Lmax + 1), dtype=np.complex128)
+        # Call transforms on contiguous vectors
+        mval = np.array([m])
+        mstart = np.array([0])
+        for i in range(gdata.shape[0]):
+            self.ducc_forward(leg=gdata[i], lmax=self.Lmax, theta=self.theta, spin=abs(self.s), mval=mval, mstart=mstart, alm=cdata[i])
+        # Drop extra padding
+        if self.s >= 0:
+            cdata = cdata[:, 0, abs(m):]
+        else:
+            cdata = cdata[:, 1, abs(m):]
+        # Rescale cdata
+        mod = 1 / np.sqrt(2 * np.pi)
+        if m < 0:
+            mod *= (-1) ** (m%2)
+        cdata *= mod
+        cdata[:, 1::2] *= -1
+        # Unpack cdata
+        cdata.shape = (crm.shape[0], crm.shape[3], crm.shape[2], 1)
+        cdata.dtype = crm.dtype
+        crm[:] = cdata.transpose((0, 3, 2, 1))
+
+    def backward_reduced_m(self, m, crm, grm):
+        # Make contiguous along theta, m
+        cdata = np.ascontiguousarray(crm.transpose((0, 3, 2, 1)))
+        # Complexify along m axis if real
+        cdata.dtype = np.complex128
+        # Drop singleton m axis and combine leading axes
+        cdata.shape = (-1, crm.shape[2])
+        # Rescale cdata
+        mod = np.sqrt(2 * np.pi)
+        if m < 0:
+            mod *= (-1) ** (m%2)
+        cdata *= mod
+        cdata[:, 1::2] *= -1
+        # Repack according to DUCC layout
+        ncomp = 1 + (self.s != 0)
+        if self.s == 0 and m == 0:
+            cdata.shape = (-1, 1, crm.shape[2])
+        else:
+            cdata_padded = np.zeros((cdata.shape[0], ncomp, self.Lmax+1), dtype=np.complex128)
+            if self.s >= 0:
+                cdata_padded[:, 0, abs(m):] = cdata
+            else:
+                cdata_padded[:, 1, abs(m):] = cdata
+            cdata = cdata_padded
+        # Setup contiguous gdata with extra padding
+        gdata = np.zeros((cdata.shape[0], ncomp, grm.shape[2], 1), dtype=np.complex128)
+        # Call DUCC transforms
+        mval = np.array([m])
+        mstart = np.array([0])
+        for i in range(gdata.shape[0]):
+            self.ducc_backward(alm=cdata[i], lmax=self.Lmax, theta=self.theta, spin=abs(self.s), mval=mval, mstart=mstart, leg=gdata[i])
+        # Drop extra padding
+        if self.s >= 0:
+            gdata = gdata[:, 0, :, 0]
+        else:
+            gdata = gdata[:, 1, :, 0]
         # Unpack gdata
         gdata.shape = (grm.shape[0], grm.shape[3], grm.shape[2], 1)
         gdata.dtype = grm.dtype

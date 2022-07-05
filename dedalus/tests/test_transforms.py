@@ -367,6 +367,54 @@ def test_sphere_roundtrip_noise(Nphi, Ntheta, radius, basis, dealias, dtype, lay
     assert np.allclose(f_layout, f[layout])
 
 
+@pytest.mark.parametrize('Ntheta', [16])
+#@pytest.mark.parametrize('dealias', [0.5, 1, 1.5])
+#@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('dealias', [1, 1.5])
+@pytest.mark.parametrize('dtype', [np.float64])
+@pytest.mark.parametrize('library', ['shtns', 'ducc'])
+def test_colatitude_libraries_backward(Ntheta, dealias, dtype, library):
+    """Tests that ALT library results match matrix transforms."""
+    shape = (2 * Ntheta, Ntheta)
+    c = coords.S2Coordinates('phi', 'theta')
+    d = distributor.Distributor(c, dtype=dtype)
+    # Matrix
+    b_mat = basis.SphereBasis(c, shape=shape, dealias=dealias, dtype=dtype, colatitude_library='matrix')
+    u_mat = d.Field(bases=b_mat)
+    u_mat.preset_scales(dealias)
+    u_mat.fill_random(layout='c')
+    # Library
+    b_lib = basis.SphereBasis(c, shape=shape, dealias=dealias, dtype=dtype, colatitude_library=library)
+    u_lib = d.Field(bases=b_lib)
+    u_lib.preset_scales(dealias)
+    u_lib['c'] = u_mat['c']
+    assert np.allclose(u_mat['g'], u_lib['g'])
+
+
+@pytest.mark.parametrize('Ntheta', [16])
+#@pytest.mark.parametrize('dealias', [0.5, 1, 1.5])
+#@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('dealias', [1, 1.5])
+@pytest.mark.parametrize('dtype', [np.float64])
+@pytest.mark.parametrize('library', ['shtns', 'ducc'])
+def test_colatitude_libraries_forward(Ntheta, dealias, dtype, library):
+    """Tests that ALT library results match matrix transforms."""
+    shape = (2 * Ntheta, Ntheta)
+    c = coords.S2Coordinates('phi', 'theta')
+    d = distributor.Distributor(c, dtype=dtype)
+    # Matrix
+    b_mat = basis.SphereBasis(c, shape=shape, dealias=dealias, dtype=dtype, colatitude_library='matrix')
+    u_mat = d.Field(bases=b_mat)
+    u_mat.preset_scales(dealias)
+    u_mat.fill_random(layout='g')
+    # Library
+    b_lib = basis.SphereBasis(c, shape=shape, dealias=dealias, dtype=dtype, colatitude_library=library)
+    u_lib = d.Field(bases=b_lib)
+    u_lib.preset_scales(dealias)
+    u_lib['g'] = u_mat['g']
+    print(u_lib['c']/u_mat['c'])
+    assert np.allclose(u_mat['c'], u_lib['c'])
+
 
 ## Polar bases
 Nphi_range = [16]
