@@ -262,6 +262,11 @@ class Basis:
     #     return matrix[flags, :]
 
     @classmethod
+    def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff):
+        # Simple matrix method by default
+        return cls.ncc_matrix(ncc_basis, arg_basis, out_basis, coeffs.ravel(), cutoff=cutoff)
+
+    @classmethod
     def ncc_matrix(cls, ncc_basis, arg_basis, out_basis, coeffs, cutoff=1e-6):
         """Build NCC matrix via direct summation."""
         N = len(coeffs)
@@ -269,15 +274,15 @@ class Basis:
             coeff = coeffs[i]
             # Build initial matrix
             if i == 0:
-                matrix = ncc_basis.product_matrix(arg_basis, i)
+                matrix = ncc_basis.product_matrix(arg_basis, out_basis, i)
                 total = 0 * sparse.kron(matrix, coeff)
                 total.eliminate_zeros()
             if len(coeff.shape) or (abs(coeff) > cutoff):
-                matrix = ncc_basis.product_matrix(arg_basis, i)
+                matrix = ncc_basis.product_matrix(arg_basis, out_basis, i)
                 total = total + sparse.kron(matrix, coeff)
         return total
 
-    def product_matrix(self, arg_basis, i):
+    def product_matrix(self, arg_basis, out_basis, i):
         if arg_basis is None:
             N = self.size
             return sparse.coo_matrix(([1],([i],[0])), shape=(N,1)).tocsr()
@@ -874,6 +879,8 @@ class ComplexFourier(FourierBase, metaclass=CachedClass):
     def __rmatmul__(self, other):
         if other is None:
             return self
+        elif other is self:
+            return self
         else:
             return NotImplemented
 
@@ -937,6 +944,23 @@ class ComplexFourier(FourierBase, metaclass=CachedClass):
          # TODO: consider dropping Nyquist?
         vshape = tuple(cs.dim for cs in tensorsig) + elements[0].shape
         return np.ones(shape=vshape, dtype=bool)
+
+    def product_matrix(self, arg_basis, out_basis, i):
+        k_ncc = self.wavenumbers[i]
+        k_out = out_basis.wavenumbers
+        if arg_basis is None:
+            k_arg = np.array([0])
+        else:
+            k_arg = arg_basis.wavenumbers
+        rows = []
+        cols = []
+        for j, kj in enumerate(k_arg):
+            for i, ki in enumerate(k_out):
+                if ki == kj + k_ncc:
+                    rows.append(i)
+                    cols.append(j)
+        data = np.ones_like(rows)
+        return sparse.coo_matrix((data, (rows, cols)), shape=(k_out.size, k_arg.size)).tocsr()
 
 
 class ConvertConstantComplexFourier(operators.ConvertConstant, operators.SpectralOperator1D):
