@@ -75,7 +75,7 @@ Note that the tau variables themselves are now functions of the tangential coord
 If the RHS terms are truncated at degree :math:`N` in :math:`y` and the tau polynomial :math:`P(y)` is of degree :math:`N` in :math:`y`, then the system will have exact polynomial solutions for :math:`u`, :math:`v`, :math:`p`, :math:`u_y`, and :math:`v_y` also of degree :math:`N` in :math:`y`.
 
 In Dedalus v2, equations were required to be entered in first-order form as above.
-Tau terms were then automatically added to the differential equations with :math:`P(y) = U_N(y)`, using the second-kind Chebyshev polynomials :math:`U_n(x)`.
+Tau terms were then automatically added to the differential equations with :math:`P(y) = U_N(y)`, using the second-kind Chebyshev polynomials :math:`U_n(y)`.
 This system consituted a generalized tau method using a first-order form of the Cheybshev ultraspherical method.
 Algorithmically, it is equivalent to dropping the last rows from the differential equations after they have been discretized with the ultraspherical method (using sparse Chebyshev T-to-U operators).
 Enforcing boundary conditions in this fashion is easily automatable, but results in larger linear systems due to the first-order reduction.
