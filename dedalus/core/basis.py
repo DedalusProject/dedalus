@@ -505,10 +505,8 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
     #     N = self.grid_shape(scales)[0]
     #     return jacobi.build_weights(N, a=self.a, b=self.b)
 
-    # def __str__(self):
-    #     space = self.space
-    #     cls = self.__class__
-    #     return '%s.%s(%s,%s)' %(space.name, cls.__name__, self.a, self.b)
+    def __str__(self):
+        return f"Jacobi({self.coord.name}, {self.size}, a0={self.a0}, b0={self.b0}, a={self.a}, b={self.b}, dealias={self.dealias[0]})"
 
     def __add__(self, other):
         if other is None:
@@ -566,28 +564,36 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
             size = self.size
         return dedalus_sphere.jacobi.operator('Z')(size, self.a, self.b).square
 
-    def ncc_matrix(self, arg_basis, coeffs, cutoff=1e-6):
-        """Build NCC matrix via Clenshaw algorithm."""
+    # def ncc_matrix(self, arg_basis, coeffs, cutoff=1e-6):
+    #     """Build NCC matrix via Clenshaw algorithm."""
+    #     if arg_basis is None:
+    #         return super().ncc_matrix(arg_basis, coeffs)
+    #     # Kronecker Clenshaw on argument Jacobi matrix
+    #     elif isinstance(arg_basis, Jacobi):
+    #         N = self.size
+    #         J = jacobi.jacobi_matrix(N, arg_basis.a, arg_basis.b)
+    #         A, B = clenshaw.jacobi_recursion(N, self.a, self.b, J)
+    #         f0 = self.const * sparse.identity(N)
+    #         total = clenshaw.kronecker_clenshaw(coeffs, A, B, f0, cutoff=cutoff)
+    #         # Conversion matrix
+    #         input_basis = arg_basis
+    #         output_basis = (self * arg_basis)
+    #         conversion = ConvertJacobi._subspace_matrix(input_basis, output_basis)
+    #         # Kronecker with identity for matrix coefficients
+    #         coeff_size = total.shape[0] // conversion.shape[0]
+    #         if coeff_size > 1:
+    #             conversion = sparse.kron(conversion, sparse.identity(coeff_size))
+    #         return (conversion @ total)
+    #     else:
+    #         raise ValueError("Jacobi ncc_matrix not implemented for basis type: %s" %type(arg_basis))
+
+    @CachedMethod
+    def product_matrix(self, arg_basis, out_basis, i):
         if arg_basis is None:
-            return super().ncc_matrix(arg_basis, coeffs)
-        # Kronecker Clenshaw on argument Jacobi matrix
-        elif isinstance(arg_basis, Jacobi):
-            N = self.size
-            J = jacobi.jacobi_matrix(N, arg_basis.a, arg_basis.b)
-            A, B = clenshaw.jacobi_recursion(N, self.a, self.b, J)
-            f0 = self.const * sparse.identity(N)
-            total = clenshaw.kronecker_clenshaw(coeffs, A, B, f0, cutoff=cutoff)
-            # Conversion matrix
-            input_basis = arg_basis
-            output_basis = (self * arg_basis)
-            conversion = ConvertJacobi._subspace_matrix(input_basis, output_basis)
-            # Kronecker with identity for matrix coefficients
-            coeff_size = total.shape[0] // conversion.shape[0]
-            if coeff_size > 1:
-                conversion = sparse.kron(conversion, sparse.identity(coeff_size))
-            return (conversion @ total)
-        else:
-            raise ValueError("Jacobi ncc_matrix not implemented for basis type: %s" %type(arg_basis))
+            return super().product_matrix(arg_basis, out_basis, i)
+        coeffs = np.zeros(self.size)
+        coeffs[i] = 1
+        return self._last_axis_component_ncc_matrix(None, self, arg_basis, out_basis, coeffs, None, None, None, 0)
 
     @classmethod
     def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff):
@@ -943,8 +949,14 @@ class ComplexFourier(FourierBase, metaclass=CachedClass):
         # No invalid modes
          # TODO: consider dropping Nyquist?
         vshape = tuple(cs.dim for cs in tensorsig) + elements[0].shape
-        return np.ones(shape=vshape, dtype=bool)
+        valid = np.ones(shape=vshape, dtype=bool)
+        if not grid_space[0]:
+            groups = self.elements_to_groups(grid_space, elements[0])
+            valid_groups = np.abs(groups) <= self.kmax
+            valid *= valid_groups
+        return valid
 
+    @CachedMethod
     def product_matrix(self, arg_basis, out_basis, i):
         k_ncc = self.wavenumbers[i]
         k_out = out_basis.wavenumbers
