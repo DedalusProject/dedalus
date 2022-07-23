@@ -345,14 +345,37 @@ def merge_data(joint_file, proc_path):
 merge_virtual = lambda joint_file, virtual_path: merge_setup(joint_file, [virtual_path,], virtual=True)
 
 
-def dset_to_xarray(dset):
+def dedalus_h5_to_xarray(dset):
     """Convert Dedalus HDF5 dataset to an Xarray DataArray."""
     dims = [dim.label for dim in dset.dims]
+    # Copy all coordinates
     coords = {}
     for dim in dset.dims:
         for name, coord in dim.items():
             coords[name] = (dim.label, coord[:])
-    return xarray.DataArray(dset[:], coords=coords, dims=dims)
+    # Add sim_time as dimensional coordinate for time
+    coords[dims[0]] = (dims[0], dset.dims[0]['sim_time'][:])
+    # Build dataarray
+    name = dset.name.split('/')[-1]
+    return xarray.DataArray(dset[:], coords=coords, dims=dims, name=name)
+
+
+def load_tasks_to_xarray(filename, tasks=None, squeeze_constant=True):
+    """Load task from Dedalus HDF5 output to an Xarray DataArray."""
+    with h5py.File(filename, 'r') as file:
+        if tasks is None:
+            tasks = list(file['tasks'].keys())
+        dsets = [file['tasks'][task] for task in tasks]
+        arrays = [dedalus_h5_to_xarray(dset) for dset in dsets]
+    arrays = {array.name: array for array in arrays}
+    # Drop constant dimensions
+    if squeeze_constant:
+        for task in arrays:
+            array = arrays[task]
+            constant_axes = [i for i, name in enumerate(array.dims) if name == 'constant']
+            array = array.squeeze(axis=constant_axes, drop=True)
+            arrays[task] = array
+    return arrays
 
 
 class DedalusXarrayBackend(BackendEntrypoint):
@@ -364,6 +387,6 @@ class DedalusXarrayBackend(BackendEntrypoint):
             for dset in file['tasks'].values():
                 name = dset.name.split('/')[-1]
                 if drop_variables is None or name not in drop_variables:
-                    data_arrays[name] = dset_to_xarray(dset)
+                    data_arrays[name] = dedalus_h5_to_xarray(dset)
         return xarray.Dataset(data_arrays)
 

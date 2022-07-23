@@ -58,7 +58,10 @@ class Evaluator:
     def add_file_handler(self, filename, parallel=None, **kw):
         """Create a file handler and add to evaluator."""
         if parallel is None:
-            parallel = FILEHANDLER_PARALLEL_DEFAULT
+            if self.dist.comm.size == 1:
+                parallel = 'gather'
+            else:
+                parallel = FILEHANDLER_PARALLEL_DEFAULT
         if parallel == 'gather':
             FileHandler = H5GatherFileHandler
         elif parallel == 'virtual':
