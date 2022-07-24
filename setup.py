@@ -136,7 +136,7 @@ if bool_env('FFTW_STATIC', unset=False):
                            "-Wl,--no-whole-archive"]
     # Choose linker flags based on CC
     CC = os.getenv('CC')
-    if CC == "clang":
+    if "clang" in CC:
         print("CC set to clang; using clang linker flags")
         extra_link_args = clang_extra_link_args
     elif CC:
