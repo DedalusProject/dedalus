@@ -591,7 +591,7 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
     def product_matrix(self, arg_basis, out_basis, i):
         if arg_basis is None:
             return super().product_matrix(arg_basis, out_basis, i)
-        coeffs = np.zeros(self.size)
+        coeffs = np.zeros(i+1)
         coeffs[i] = 1
         return self._last_axis_component_ncc_matrix(None, self, arg_basis, out_basis, coeffs, None, None, None, 0)
 
@@ -958,19 +958,15 @@ class ComplexFourier(FourierBase, metaclass=CachedClass):
 
     @CachedMethod
     def product_matrix(self, arg_basis, out_basis, i):
+        # Directly compare wavenumber arrays to handle any permutations
         k_ncc = self.wavenumbers[i]
         k_out = out_basis.wavenumbers
         if arg_basis is None:
             k_arg = np.array([0])
         else:
             k_arg = arg_basis.wavenumbers
-        rows = []
-        cols = []
-        for j, kj in enumerate(k_arg):
-            for i, ki in enumerate(k_out):
-                if ki == kj + k_ncc:
-                    rows.append(i)
-                    cols.append(j)
+        k_prod = k_arg + k_ncc
+        _, rows, cols = np.intersect1d(k_out, k_prod, assume_unique=True, return_indices=True)
         data = np.ones_like(rows)
         return sparse.coo_matrix((data, (rows, cols)), shape=(k_out.size, k_arg.size)).tocsr()
 

@@ -411,27 +411,30 @@ class Product(Future):
             Gamma = Gamma.transpose((2, 0, 1))
         # Loop over NCC modes
         matrix = 0
-        select_all_comps = tuple(slice(None) for i in range(len(ncc.tensorsig)))
-        for ncc_mode in np.ndindex(self._ncc_data.shape):
+        subproblem_shape = subproblem.coeff_shape(out.domain)
+        ncc_rank = len(ncc.tensorsig)
+        select_all_comps = tuple(slice(None) for i in range(ncc_rank))
+        for ncc_mode in np.ndindex(self._ncc_data.shape[ncc_rank:]):
             ncc_coeffs = self._ncc_data[select_all_comps + ncc_mode]
             if np.max(np.abs(ncc_coeffs)) > ncc_cutoff:
-                mode_matrix = self.cartesian_mode_matrix(subproblem, ncc, arg, out, ncc_mode)
+                mode_matrix = self.cartesian_mode_matrix(subproblem_shape, ncc.domain, arg.domain, out.domain, ncc_mode)
                 matrix += sparse.kron(np.dot(Gamma, ncc_coeffs.ravel()), mode_matrix)
         return matrix
 
     @classmethod
-    def cartesian_mode_matrix(cls, subproblem, ncc, arg, out, ncc_mode):
-        matrix = sparse.identity(1, format='csr')
-        out_coeff_shape = subproblem.coeff_shape(out.domain)
-        for axis in range(out.dist.dim):
-            ncc_basis = ncc.domain.full_bases[axis]
-            arg_basis = arg.domain.full_bases[axis]
-            out_basis = out.domain.full_bases[axis]
+    def cartesian_mode_matrix(cls, subproblem_shape, ncc_domain, arg_domain, out_domain, ncc_mode):
+        for axis in range(out_domain.dist.dim):
+            ncc_basis = ncc_domain.full_bases[axis]
+            arg_basis = arg_domain.full_bases[axis]
+            out_basis = out_domain.full_bases[axis]
             if ncc_basis is None:
-                mode_matrix = sparse.identity(out_coeff_shape[axis], format='csr')
+                mode_matrix = sparse.identity(subproblem_shape[axis], format='csr')
             else:
                 mode_matrix = ncc_basis.product_matrix(arg_basis, out_basis, ncc_mode[axis])
-            matrix = sparse.kron(matrix, mode_matrix, format='csr')
+            if axis == 0:
+                matrix = mode_matrix
+            else:
+                matrix = sparse.kron(matrix, mode_matrix, format='csr')
         return matrix
 
     # def _ncc_matrix_recursion(self, subproblem, ncc_bases, arg_bases, coeffs, ncc_comp, arg_comp, out_comp, **kw):

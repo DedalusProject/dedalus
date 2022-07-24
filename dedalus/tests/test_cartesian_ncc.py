@@ -72,9 +72,6 @@ def test_eval_fourier_ncc(N, dealias, dtype):
     w1.store_ncc_matrices(vars, solver.subproblems)
     w0 = w0.evaluate()
     w1 = w1.evaluate_as_ncc()
-    # TODO: Fix that we have to filter Nyquist of the output
-    w0['c'][N//2] = 0
-    w1['c'][N//2] = 0
     w0.change_scales(1)
     w1.change_scales(1)
     assert np.allclose(w0['g'], w1['g'])
