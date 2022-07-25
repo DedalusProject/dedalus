@@ -1,4 +1,5 @@
 setuptools >= 18.0
+sphinx==5.0.2 # pinned to avoid autoapi issues with 5.1.0
 sphinx-autoapi
 nbsphinx
 pygments >= 2.4.1
