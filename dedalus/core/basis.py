@@ -1,9 +1,5 @@
-"""
-Abstract and built-in classes for spectral bases.
+"""Abstract and built-in classes for spectral bases."""
 
-"""
-
-import math
 import numpy as np
 from scipy import sparse
 from functools import reduce
@@ -11,35 +7,22 @@ import inspect
 
 from . import operators
 from ..libraries import spin_recombination
-from ..tools.array import kron
-from ..tools.array import axslice
-from ..tools.array import apply_matrix
-from ..tools.array import permute_axis
-from ..tools.array import prod
-from ..tools.cache import CachedAttribute
-from ..tools.cache import CachedMethod
-from ..tools.cache import CachedClass
+from ..tools.array import kron, axslice, apply_matrix, permute_axis, prod
+from ..tools.cache import CachedAttribute, CachedMethod, CachedClass
 from ..tools import jacobi
 from ..tools import clenshaw
 from ..tools.array import reshape_vector, axindex, axslice, interleave_matrices
 from ..tools.dispatch import MultiClass, SkipDispatchException
 from ..tools.general import unify, DeferredTuple
-
-from .spaces import ParityInterval, Disk
 from .coords import Coordinate, CartesianCoordinates, S2Coordinates, SphericalCoordinates, PolarCoordinates, AzimuthalCoordinate
 from .domain import Domain
 from .field  import Operand, LockedField
 from .future import FutureLockedField
 from ..libraries import dedalus_sphere
-import numexpr as ne
-#from . import transforms
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
 
-from ..tools.config import config
-#DEFAULT_LIBRARY = config['transforms'].get('DEFAULT_LIBRARY')
-DEFAULT_LIBRARY = 'scipy'
 
 # Public interface
 __all__ = ['Jacobi',
@@ -802,63 +785,21 @@ class LiftJacobi(operators.Lift, operators.Copy):
         return P
 
 
-# class Fourier(Basis, metaclass=CachedClass):
-#     """Fourier cosine/sine basis."""
-#     #space_type = PeriodicInterval
-#     const = 1
-
-#     def __add__(self, other):
-#         space = self.space
-#         if other is None:
-#             return space.Fourier
-#         elif other is space.Fourier:
-#             return space.Fourier
-#         else:
-#             return NotImplemented
-
-#     def __mul__(self, other):
-#         space = self.space
-#         if other is None:
-#             return space.Fourier
-#         elif other is space.Fourier:
-#             return space.Fourier
-#         else:
-#             return NotImplemented
-
-#     def __pow__(self, other):
-#         return self.space.Fourier
-
-#     @CachedAttribute
-#     def wavenumbers(self):
-#         kmax = self.space.kmax
-#         return np.concatenate((np.arange(0, kmax+1), np.arange(-kmax, 0)))
-
-#     def include_mode(self, mode):
-#         k = mode // 2
-#         if (mode % 2) == 0:
-#             # Cosine modes: drop Nyquist mode
-#             return (0 <= k <= self.space.kmax)
-#         else:
-#             # Sine modes: drop k=0 and Nyquist mode
-#             return (1 <= k <= self.space.kmax)
-
-
 class FourierBase(IntervalBasis):
+    """Base class for RealFourier and ComplexFourier."""
 
-    def elements_to_groups(self, grid_space, elements):
-        if grid_space[0]:
-            groups = elements
-        else:
-            groups = self.native_wavenumbers[elements]
-        return groups
-
-
-class ComplexFourier(FourierBase, metaclass=CachedClass):
-    """Fourier complex exponential basis."""
-
-    group_shape = (1,)
     native_bounds = (0, 2*np.pi)
-    transforms = {}
+
+    def __init__(self, coord, size, bounds, dealias=1, library=None):
+        super().__init__(coord, size, bounds, dealias)
+        if library is None:
+            library = "fftw"
+        self.library = library
+        self.kmax = kmax = (size - 1) // 2
+        self.constant_mode_value = 1
+        # No permutations by default
+        self.forward_coeff_permutation = None
+        self.backward_coeff_permutation = None
 
     def __add__(self, other):
         if other is None:
@@ -890,22 +831,20 @@ class ComplexFourier(FourierBase, metaclass=CachedClass):
         else:
             return NotImplemented
 
-    # def __pow__(self, other):
-    #     return self.space.Fourier
+    def __pow__(self, other):
+        return self
 
-    def __init__(self, coord, size, bounds, dealias=1, library=None):
-        super().__init__(coord, size, bounds, dealias)
-        if library is None:
-            library = "fftw"
-        self.library = library
-        self.kmax = kmax = (size - 1) // 2
-        # No permutations by default
-        self.forward_coeff_permutation = None
-        self.backward_coeff_permutation = None
-        # Store non-permuted wavenumbers
-        self._native_wavenumbers = np.concatenate((np.arange(0, kmax+2), np.arange(-kmax, 0)))  # Includes Nyquist mode
-        self._wavenumbers = self._native_wavenumbers / self.COV.stretch
-        self.constant_mode_value = 1
+    def elements_to_groups(self, grid_space, elements):
+        if grid_space[0]:
+            groups = elements
+        else:
+            # Use native wavenumbers for readability
+            groups = self.native_wavenumbers[elements]
+        return groups
+
+    @CachedAttribute
+    def _wavenumbers(self):
+        return self._native_wavenumbers / self.COV.stretch
 
     @property
     def native_wavenumbers(self):
@@ -929,31 +868,62 @@ class ComplexFourier(FourierBase, metaclass=CachedClass):
     @CachedMethod
     def transform_plan(self, grid_size):
         """Build transform plan."""
-        return self.transforms[self.library](grid_size, self.size)
-
-    def local_elements(self):
-        local_elements = self.dist.coeff_layout.local_elements(self.domain, scales=1)[self.axis]
-        return (self.wavenumbers[local_elements],)
+        # Shortcut trivial transforms
+        if grid_size == 1 or self.size == 1:
+            return self.transforms['matrix'](grid_size, self.size)
+        else:
+            return self.transforms[self.library](grid_size, self.size)
 
     def forward_transform(self, field, axis, gdata, cdata):
+        # Transform
         super().forward_transform(field, axis, gdata, cdata)
+        # Permute coefficients
         if self.forward_coeff_permutation is not None:
             permute_axis(cdata, axis+len(field.tensorsig), self.forward_coeff_permutation, out=cdata)
 
     def backward_transform(self, field, axis, cdata, gdata):
+        # Permute coefficients
         if self.backward_coeff_permutation is not None:
             permute_axis(cdata, axis+len(field.tensorsig), self.backward_coeff_permutation, out=cdata)
+        # Transform
         super().backward_transform(field, axis, cdata, gdata)
 
+
+def Fourier(*args, dtype=None, **kw):
+    """Factory function dispatching to RealFourier and ComplexFourier based on provided dtype."""
+    if dtype is None:
+        raise ValueError("dtype must be specified")
+    elif dtype == np.float64:
+        return RealFourier(*args, **kw)
+    elif dtype == np.complex128:
+        return ComplexFourier(*args, **kw)
+    else:
+        raise ValueError(f"Unrecognized dtype: {dtype}")
+
+
+class ComplexFourier(FourierBase, metaclass=CachedClass):
+    """
+    Fourier complex exponential basis.
+    Modes: [exp(0j*x), exp(1j*x), exp(2j*x), ...]
+    """
+
+    group_shape = (1,)
+    transforms = {}
+
+    @CachedAttribute
+    def _native_wavenumbers(self):
+        # Includes Nyquist mode
+        kmax = self.kmax
+        return np.concatenate((np.arange(0, kmax+2), np.arange(-kmax, 0)))
+
     def valid_elements(self, tensorsig, grid_space, elements):
-        # No invalid modes
-         # TODO: consider dropping Nyquist?
         vshape = tuple(cs.dim for cs in tensorsig) + elements[0].shape
         valid = np.ones(shape=vshape, dtype=bool)
-        if not grid_space[0]:
-            groups = self.elements_to_groups(grid_space, elements[0])
-            valid_groups = np.abs(groups) <= self.kmax
-            valid *= valid_groups
+        # # Drop Nyquist mode
+        # if not grid_space[0]:
+        #     groups = self.elements_to_groups(grid_space, elements[0])
+        #     valid_groups = np.abs(groups) <= self.kmax
+        #     valid *= valid_groups
         return valid
 
     @CachedMethod
@@ -1083,77 +1053,17 @@ class AverageComplexFourier(operators.Average, operators.SpectralOperator1D):
 class RealFourier(FourierBase, metaclass=CachedClass):
     """
     Fourier real sine/cosine basis.
-
     Modes: [cos(0*x), -sin(0*x), cos(1*x), -sin(1*x), ...]
     """
 
     group_shape = (2,)
-    native_bounds = (0, 2*np.pi)
     transforms = {}
 
-    def __init__(self, coord, size, bounds, dealias=1, library=None):
-        if library is None:
-            library = "fftw"
-        super().__init__(coord, size, bounds, dealias)
-        self.library = library
-        self.kmax = kmax = (size - 1) // 2
-        # No permutations by default
-        self.forward_coeff_permutation = None
-        self.backward_coeff_permutation = None
-        # Store non-permuted wavenumbers
-        self._native_wavenumbers = np.repeat(np.arange(0, kmax+1), 2)  # Excludes Nyquist mode
-        self._wavenumbers = self._native_wavenumbers / self.COV.stretch
-        self.constant_mode_value = 1
-
-    @property
-    def native_wavenumbers(self):
-        if self.forward_coeff_permutation is None:
-            return self._native_wavenumbers
-        else:
-            return self._native_wavenumbers[self.forward_coeff_permutation]
-
-    @property
-    def wavenumbers(self):
-        if self.forward_coeff_permutation is None:
-            return self._wavenumbers
-        else:
-            return self._wavenumbers[self.forward_coeff_permutation]
-
-    def __add__(self, other):
-        if other is None:
-            return self
-        elif other is self:
-            return self
-        else:
-            return NotImplemented
-
-    def __mul__(self, other):
-        if other is None:
-            return self
-        elif other is self:
-            return self
-        else:
-            return NotImplemented
-
-    def __matmul__(self, other):
-        if other is None:
-            return self.__rmatmul__(other)
-        else:
-            return other.__rmatmul__(self)
-
-    def __rmatmul__(self, other):
-        if other is None:
-            return self
-        else:
-            return NotImplemented
-
-    # def __pow__(self, other):
-    #     return self.space.Fourier
-
-    def _native_grid(self, scale):
-        """Native flat global grid."""
-        N, = self.grid_shape((scale,))
-        return (2 * np.pi / N) * np.arange(N)
+    @CachedAttribute
+    def _native_wavenumbers(self):
+        # Excludes Nyquist mode
+        kmax = self.kmax
+        return np.repeat(np.arange(0, kmax+1), 2)
 
     def valid_elements(self, tensorsig, grid_space, elements):
         vshape = tuple(cs.dim for cs in tensorsig) + elements[0].shape
@@ -1169,26 +1079,51 @@ class RealFourier(FourierBase, metaclass=CachedClass):
         return valid
 
     @CachedMethod
-    def transform_plan(self, grid_size):
-        """Build transform plan."""
-        if grid_size == 1:
-            return self.transforms['matrix'](grid_size, self.size)
+    def product_matrix(self, arg_basis, out_basis, i):
+        # Directly compare wavenumber arrays to handle any permutations
+        k_ncc = self.wavenumbers[i]
+        k_out = out_basis.wavenumbers
+        if arg_basis is None:
+            k_arg = np.array([0])
         else:
-            return self.transforms[self.library](grid_size, self.size)
-
-    def local_elements(self):
-        local_elements = self.dist.coeff_layout.local_elements(self.domain, scales=1)[self.axis]
-        return (self.native_wavenumbers[local_elements],)
-
-    def forward_transform(self, field, axis, gdata, cdata):
-        super().forward_transform(field, axis, gdata, cdata)
-        if self.forward_coeff_permutation is not None:
-            permute_axis(cdata, axis+len(field.tensorsig), self.forward_coeff_permutation, out=cdata)
-
-    def backward_transform(self, field, axis, cdata, gdata):
-        if self.backward_coeff_permutation is not None:
-            permute_axis(cdata, axis+len(field.tensorsig), self.backward_coeff_permutation, out=cdata)
-        super().backward_transform(field, axis, cdata, gdata)
+            k_arg = arg_basis.wavenumbers
+        # Skip multiplication by constant
+        if k_ncc == 0:
+            if i % 2 == 0:
+                return sparse.eye(k_out.size, k_arg.size, format='csr')
+            else:
+                return sparse.csr_matrix((k_out.size, k_arg.size))
+        # Find wavenumber couplings (this is crazy)
+        _, rows_p, cols_p = np.intersect1d(k_out[::2], k_ncc + k_arg[::2], assume_unique=True, return_indices=True)
+        _, rows_m, cols_m = np.intersect1d(k_out[::2], k_ncc - k_arg[::2], assume_unique=True, return_indices=True)
+        _, rows_mn, cols_mn = np.intersect1d(k_out[2::2], k_arg[::2] - k_ncc, assume_unique=True, return_indices=True)
+        rows_mn += 1
+        ones_p = np.ones_like(rows_p)
+        ones_m = np.ones_like(rows_m)
+        ones_mn = np.ones_like(rows_mn)
+        if i % 2 == 0:
+            # 2 cos(mx) cos(nx) = cos((m+n)x) + cos((m-n)x)
+            rows = [2*rows_p, 2*rows_m, 2*rows_mn]
+            cols = [2*cols_p, 2*cols_m, 2*cols_mn]
+            data = [ones_p/2, ones_m/2, ones_mn/2]
+            # 2 cos(mx) msin(nx) = msin((m+n)x) - msin((m-n)x)
+            rows += [2*rows_p+1, 2*rows_m+1, 2*rows_mn+1]
+            cols += [2*cols_p+1, 2*cols_m+1, 2*cols_mn+1]
+            data += [ones_p/2, -ones_m/2, ones_mn/2]
+        else:
+            # 2 msin(mx) cos(nx) = msin((m+n)x) + msin((m-n)x)
+            rows = [2*rows_p+1, 2*rows_m+1, 2*rows_mn+1]
+            cols = [2*cols_p, 2*cols_m, 2*cols_mn]
+            data = [ones_p/2, ones_m/2, -ones_mn/2]
+            # 2 msin(mx) msin(nx) = - cos((m+n)x) + cos((m-n)x)
+            rows += [2*rows_p, 2*rows_m, 2*rows_mn]
+            cols += [2*cols_p+1, 2*cols_m+1, 2*cols_mn+1]
+            data += [-ones_p/2, ones_m/2, ones_mn/2]
+        rows = np.concatenate(rows)
+        cols = np.concatenate(cols)
+        data = np.concatenate(data)
+        matrix = sparse.coo_matrix((data, (rows, cols)), shape=(k_out.size, k_arg.size)).tocsr()
+        return matrix
 
 
 class ConvertConstantRealFourier(operators.ConvertConstant, operators.SpectralOperator1D):

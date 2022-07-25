@@ -53,12 +53,12 @@ def test_eval_jacobi_ncc(N, a0, b0, k_ncc, k_arg, dealias, dtype):
 
 @pytest.mark.parametrize('N', [16])
 @pytest.mark.parametrize('dealias', [3/2, 2])
-@pytest.mark.parametrize('dtype', [np.complex128])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 def test_eval_fourier_ncc(N, dealias, dtype):
     """Compares f(x) * g(x) calculated as an NCC operator and pseudospectrally."""
     c = coords.Coordinate('x')
     d = distributor.Distributor(c, dtype=dtype)
-    b = basis.ComplexFourier(c, size=N, bounds=(0, 1), dealias=dealias)
+    b = basis.Fourier(c, size=N, bounds=(0, 1), dealias=dealias, dtype=dtype)
     f = d.Field(bases=b)
     g = d.Field(bases=b)
     f.fill_random('g')

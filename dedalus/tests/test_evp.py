@@ -33,6 +33,10 @@ def test_heat_1d_periodic(x_basis_class, Nx, dtype):
     k = xb.wavenumbers
     if x_basis_class is basis.RealFourier:
         k = k[1:]  # Drop one k=0 for msin
+    else:
+        pass
+        #kmax = (Nx - 1) // 2
+        #k = np.concatenate([k[:kmax+1], k[-kmax:]]) # Drop Nyquist
     assert np.allclose(solver.eigenvalues, k**2)
 
 
