@@ -5,7 +5,7 @@
 # have been included in the file 'LICENSE.txt', and is also available
 # online at <http://www.gnu.org/licenses/gpl-3.0.html>.
 
-__version__ = "2.2205"
+__version__ = "2.2207a1"
 
 # Import custom logging to setup rootlogger
 from .tools import logging as _logging_setup
