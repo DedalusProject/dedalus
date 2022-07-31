@@ -2,22 +2,25 @@
 # https://dev.to/epassaro/caching-anaconda-environments-in-github-actions-5hde
 # https://github.com/epassaro/cache-conda-envs
 
-name: dedalus test
+name: Test Dedalus
 on:
+  push:
+    branches:
+      - master
   workflow_dispatch:
 env:
   CACHE_NUMBER: 0 # increase to reset cache manually
 jobs:
-  test:
-    name: Test workflow (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+  test_dedalus:
     strategy:
       matrix:
         include:
           - os: ubuntu-latest
             prefix: /usr/share/miniconda3/envs/dedalus3
-          # - os: macos-latest
-          #   prefix: /Users/runner/miniconda3/envs/dedalus3
+          - os: macos-latest
+            prefix: /Users/runner/miniconda3/envs/dedalus3
+    name: dedalus3 on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Setup miniforge
         uses: conda-incubator/setup-miniconda@v2
@@ -37,8 +40,8 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         shell: bash -l {0}
         run: |
-          curl https://raw.githubusercontent.com/DedalusProject/dedalus_conda/master/install_dedalus3_conda.sh --output install_dedalus3_conda.sh
-          bash install_dedalus3_conda.sh
+          curl https://raw.githubusercontent.com/DedalusProject/dedalus_conda/master/conda_install_dedalus3.sh --output conda_install_dedalus3.sh
+          bash conda_install_dedalus3.sh
       - name: Checkout repository
         uses: actions/checkout@v2
       - name: Update Dedalus from repository
@@ -46,13 +49,14 @@ jobs:
         run: |
           conda activate dedalus3
           pip uninstall -y dedalus
-          pip install --no-cache .
+          CC=mpicc python3 setup.py build_ext --inplace
+          CC=mpicc pip install --no-cache .
       - name: Test Dedalus
         shell: bash -l {0}
         run: |
-          conda activate dedalus3
           # Move out of repository to run tests
           cd $HOME
+          conda activate dedalus3
           python3 -m dedalus test --report
           # Copy report back to repository for test-reporter
           cp dedalus-test-junit.xml $GITHUB_WORKSPACE
