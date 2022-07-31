@@ -8,8 +8,7 @@ import numpy as np
 import time
 import h5py
 import pathlib
-from scipy.sparse import linalg
-from scipy.linalg import eig
+import scipy.linalg
 
 #from ..data.operators import parsable_ops
 from . import operators
@@ -179,7 +178,7 @@ class EigenvalueSolver(SolverBase):
         sp = subproblem
         A = (sp.L_min @ sp.pre_right).A
         B = - (sp.M_min @ sp.pre_right).A
-        eig_output = eig(A, b=B, **kw)
+        eig_output = scipy.linalg.eig(A, b=B, **kw)
         # Unpack output
         if len(eig_output) == 2:
             self.eigenvalues, eigenvectors = eig_output
@@ -220,7 +219,7 @@ class EigenvalueSolver(SolverBase):
             the original (or "right") eigenvalues.
             (default: True)
 
-        Other keyword options passed to scipy.sparse.linalg.eigs.
+        Other keyword options passed to scipy.sparse.linalg.eig.
 
         """
         # # Build matrices

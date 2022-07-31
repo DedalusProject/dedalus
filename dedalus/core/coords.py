@@ -55,6 +55,7 @@ class CoordinateSystem:
 class Coordinate:
     dim = 1
     default_nonconst_groups = (1,)
+    curvilinear = False
 
     def __init__(self, name, cs=None):
         self.name = name
@@ -87,6 +88,8 @@ class Coordinate:
 
 class CartesianCoordinates(CoordinateSystem):
 
+    curvilinear = False
+
     def __init__(self, *names, right_handed=True):
         self.names = names
         self.dim = len(names)
@@ -117,7 +120,12 @@ class AzimuthalCoordinate(Coordinate):
     pass
 
 
-class S2Coordinates(CoordinateSystem):
+class CurvilinearCoordinateSystem(CoordinateSystem):
+
+    curvilinear = True
+
+
+class S2Coordinates(CurvilinearCoordinateSystem):
     """
     S2 coordinate system: (azimuth, colatitude)
     Coord component ordering: (azimuth, colatitude)
@@ -175,7 +183,7 @@ class S2Coordinates(CoordinateSystem):
             raise ValueError("Invalid axis")
 
 
-class PolarCoordinates(CoordinateSystem):
+class PolarCoordinates(CurvilinearCoordinateSystem):
     """
     Polar coordinate system: (azimuth, radius)
     Coord component ordering: (azimuth, radius)
@@ -239,7 +247,7 @@ class PolarCoordinates(CoordinateSystem):
         return x, y
 
 
-class SphericalCoordinates(CoordinateSystem):
+class SphericalCoordinates(CurvilinearCoordinateSystem):
     """
     Spherical coordinate system: (azimuth, colatitude, radius)
     Coord component ordering: (azimuth, colatitude, radius)

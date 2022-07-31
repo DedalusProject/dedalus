@@ -342,6 +342,7 @@ class Product(Future):
         """Separate NCC factors."""
         self._ncc_vars = vars
         op_index = self.require_linearity(*vars, recurse=False)
+        self.ncc_first = (op_index == 1)
         self.operand = self.args[op_index]
         self.ncc = self.args[1 - op_index]  # Assumes 2 operands
         # Recurse
@@ -387,11 +388,64 @@ class Product(Future):
     def build_ncc_matrix(self, subproblem, ncc_cutoff, max_ncc_terms):
         # TODO: recurse over output bases
         # ASSUME: NCC is on last axis of last output basis
-        if len(self.domain.bases) > 0:
+        if self.dist.single_coordsys and not self.dist.single_coordsys.curvilinear:
+            return self.build_cartesian_ncc_matrix(subproblem, ncc_cutoff, max_ncc_terms)
+        elif len(self.domain.bases) > 0:
             out_basis = self.domain.bases[-1]
             return out_basis.build_ncc_matrix(self, subproblem, ncc_cutoff, max_ncc_terms)
         else:
             return Basis._last_axis_field_ncc_matrix(self, subproblem, 0, None, None, None, self._ncc_data, ncc_cutoff, max_ncc_terms)
+
+    def build_cartesian_ncc_matrix(self, subproblem, ncc_cutoff, max_ncc_terms):
+        # Assumes no intertwiners
+        # Assumes basis functions are independent of tensor component
+        ncc = self.ncc
+        arg = self.operand
+        out = self
+        # Build Gamma array
+        if self.ncc_first:
+            Gamma = self.GammaCoord(ncc.tensorsig, arg.tensorsig, out.tensorsig)
+            Gamma = Gamma.transpose((2, 1, 0))
+        else:
+            Gamma = self.GammaCoord(arg.tensorsig, ncc.tensorsig, out.tensorsig)
+            Gamma = Gamma.transpose((2, 0, 1))
+        # Loop over NCC modes
+        data = []
+        rows = []
+        cols = []
+        subproblem_shape = subproblem.coeff_shape(out.domain)
+        ncc_rank = len(ncc.tensorsig)
+        select_all_comps = tuple(slice(None) for i in range(ncc_rank))
+        for ncc_mode in np.ndindex(self._ncc_data.shape[ncc_rank:]):
+            ncc_coeffs = self._ncc_data[select_all_comps + ncc_mode]
+            if np.max(np.abs(ncc_coeffs)) > ncc_cutoff:
+                mode_matrix = self.cartesian_mode_matrix(subproblem_shape, ncc.domain, arg.domain, out.domain, ncc_mode)
+                matrix = sparse.kron(np.dot(Gamma, ncc_coeffs.ravel()), mode_matrix, format='coo')
+                shape = matrix.shape
+                data.append(matrix.data)
+                rows.append(matrix.row)
+                cols.append(matrix.col)
+        data = np.concatenate(data)
+        rows = np.concatenate(rows)
+        cols = np.concatenate(cols)
+        matrix = sparse.coo_matrix((data, (rows, cols)), shape=shape).tocsr()
+        return matrix
+
+    @classmethod
+    def cartesian_mode_matrix(cls, subproblem_shape, ncc_domain, arg_domain, out_domain, ncc_mode):
+        for axis in range(out_domain.dist.dim):
+            ncc_basis = ncc_domain.full_bases[axis]
+            arg_basis = arg_domain.full_bases[axis]
+            out_basis = out_domain.full_bases[axis]
+            if ncc_basis is None:
+                mode_matrix = sparse.identity(subproblem_shape[axis], format='csr')
+            else:
+                mode_matrix = ncc_basis.product_matrix(arg_basis, out_basis, ncc_mode[axis])
+            if axis == 0:
+                matrix = mode_matrix
+            else:
+                matrix = sparse.kron(matrix, mode_matrix, format='csr')
+        return matrix
 
     # def _ncc_matrix_recursion(self, subproblem, ncc_bases, arg_bases, coeffs, ncc_comp, arg_comp, out_comp, **kw):
     #     #, ncc_ts, ncc_bases, arg_bases, arg_ts, separability, gamma_args, **kw):
