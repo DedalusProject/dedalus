@@ -10,6 +10,9 @@ We use a Fourier(x) * Chebyshev(y) discretization to solve the LBVP:
 
 For a scalar Laplacian on a finite interval, we need two tau terms. Here we
 choose to lift them to the natural output (second derivative) basis.
+
+To run and plot:
+    $ python3 poisson.py
 """
 
 import numpy as np

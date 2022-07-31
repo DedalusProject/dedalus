@@ -21,6 +21,9 @@ The eigenvalues are not fully converged at the given resolution and shift slight
 if the resolution is increased. For the given resolutions, the eigenvalues agree
 with Table 1 of [1] to several digits of precision.
 
+To run and print the calculated eigenvalues:
+    $ python3 rotating_convection.py
+
 References:
     [1]: P. Marti, M. A. Calkins, K. Julien, "A computationally
          efficient spectral method for modeling coredynamics,"

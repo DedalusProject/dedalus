@@ -1,7 +1,7 @@
 """
 Dedalus script for calculating the maximum linear growth rates in no-slip
 Rayleigh-Benard convection over a range of horizontal wavenumbers. This script
-demonstrates solving a 1D eigenvalue problem in a cartesian domain. It can
+demonstrates solving a 1D eigenvalue problem in a Cartesian domain. It can
 be ran serially or in parallel, and produces a plot of the highest growth rate
 found for each horizontal wavenumber. It should take a few seconds to run.
 

@@ -1,8 +1,8 @@
 """
 Dedalus script solving the Lane-Emden equation. This script demonstrates
 solving a spherically symmetric nonlinear boundary value problem inside the
-ball. It should be ran serially, should converge within roughly a dozen
-iterations, and should take just a few seconds to run.
+ball. It should converge within roughly a dozen Newton iterations, and produces a
+plot of the solution. I should take just a few seconds to run (serial only).
 
 In astrophysics, the Lane-Emden equation is a dimensionless form of Poisson's
 equation for the gravitational potential of a Newtonian self-gravitating,
@@ -29,6 +29,9 @@ and R can then be recovered from f(r=0) = R**(2/(n-1)).
 
 For a scalar Laplacian in the ball, we need a single tau term. Here we choose
 to lift it to the original (k=0) basis.
+
+To run and plot:
+    $ python3 lane_emden.py
 
 References:
     [1]: http://en.wikipedia.org/wiki/Lane–Emden_equation

@@ -6,6 +6,9 @@ run (serial only).
 
 We use a Fourier basis to solve the IVP:
     dt(u) + u*dx(u) = a*dx(dx(u)) + b*dx(dx(dx(u)))
+
+To run and plot:
+    $ python3 kdv_burgers.py
 """
 
 import numpy as np

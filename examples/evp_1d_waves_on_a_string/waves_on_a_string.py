@@ -1,8 +1,8 @@
 """
 Dedalus script computing the eigenmodes of waves on a clamped string.
 This script demonstrates solving a 1D eigenvalue problem and produces
-a plot of the relative error of the eigenvalues.  It should take just
-a few seconds to run (serial only).
+plots of the first few eigenmodes and the relative error of the eigenvalues.
+It should take just a few seconds to run (serial only).
 
 We use a Legendre basis to solve the EVP:
     s*u + dx(dx(u)) = 0
@@ -14,6 +14,9 @@ For the second derivative on a closed interval, we need two tau terms.
 Here we choose to use a first-order formulation, putting one tau term
 on an auxiliary first-order variable and another in the PDE, and lifting
 both to the first derivative basis.
+
+To run and plot:
+    $ python3 waves_on_a_string.py
 """
 
 import numpy as np

@@ -7,6 +7,9 @@ parameter 'q'. It should take just a few seconds to run (serial only).
 We use a Fourier basis to solve the EVP:
     dx(dx(y)) + (a - 2*q*cos(2*x))*y = 0
 where 'a' is the eigenvalue. Periodicity is enforced by using the Fourier basis.
+
+To run and plot:
+    $ python3 mathieu_evp.py
 """
 
 import numpy as np
