@@ -102,7 +102,3 @@ except:
 finally:
     solver.log_stats()
 
-# Post-processing
-if dist.comm.rank == 0:
-    scalars.process_virtual_file()
-
