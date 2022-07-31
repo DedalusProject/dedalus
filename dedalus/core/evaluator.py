@@ -493,13 +493,13 @@ class H5FileHandlerBase(Handler):
         # Scales
         file.create_group('scales')
         file['scales'].create_dataset(name='constant', data=np.zeros(1), dtype=np.float64)
-        file['scales']['constant'].make_scale()
+        file['scales']['constant'].make_scale('constant')
         for name in ['sim_time', 'timestep', 'world_time', 'wall_time']:
             file['scales'].create_dataset(name=name, shape=(0,), maxshape=(self.max_writes,), dtype=np.float64) # shape[0] = 0 to chunk across writes
-            file['scales'][name].make_scale()
+            file['scales'][name].make_scale(name)
         for name in ['iteration', 'write_number']:
             file['scales'].create_dataset(name=name, shape=(0,), maxshape=(self.max_writes,), dtype=int) # shape[0] = 0 to chunk across writes
-            file['scales'][name].make_scale()
+            file['scales'][name].make_scale(name)
         # Tasks
         file.create_group('tasks')
         for task in self.tasks:
@@ -533,7 +533,7 @@ class H5FileHandlerBase(Handler):
                     lookup = f"{sn}_hash_{scale_hash}"
                     if lookup not in file['scales']:
                         file['scales'].create_dataset(name=lookup, data=data)
-                        file['scales'][lookup].make_scale()
+                        file['scales'][lookup].make_scale(sn)
                 scale = file['scales'][lookup]
                 dset.dims[1 + rank + axis].label = sn
                 dset.dims[1 + rank + axis].attach_scale(scale)
