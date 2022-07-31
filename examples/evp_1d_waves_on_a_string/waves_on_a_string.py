@@ -4,7 +4,7 @@ This script demonstrates solving a 1D eigenvalue problem and produces
 a plot of the relative error of the eigenvalues.  It should take just
 a few seconds to run (serial only).
 
-We use a Chebyshev basis to solve the EVP:
+We use a Legendre basis to solve the EVP:
     s*u + dx(dx(u)) = 0
     u(x=0) = 0
     u(x=Lx) = 0
@@ -31,7 +31,7 @@ dtype = np.complex128
 # Bases
 xcoord = d3.Coordinate('x')
 dist = d3.Distributor(xcoord, dtype=dtype)
-xbasis = d3.Chebyshev(xcoord, size=Nx, bounds=(0, Lx))
+xbasis = d3.Legendre(xcoord, size=Nx, bounds=(0, Lx))
 
 # Fields
 u = dist.Field(name='u', bases=xbasis)
@@ -44,10 +44,11 @@ dx = lambda A: d3.Differentiate(A, xcoord)
 lift_basis = xbasis.derivative_basis(1)
 lift = lambda A: d3.Lift(A, lift_basis, -1)
 ux = dx(u) + lift(tau_1) # First-order reduction
+uxx = dx(ux) + lift(tau_2)
 
 # Problem
 problem = d3.EVP([u, tau_1, tau_2], eigenvalue=s, namespace=locals())
-problem.add_equation("s*u + dx(ux) + lift(tau_2) = 0")
+problem.add_equation("s*u + uxx = 0")
 problem.add_equation("u(x=0) = 0")
 problem.add_equation("u(x=Lx) = 0")
 
