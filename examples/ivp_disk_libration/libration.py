@@ -41,23 +41,23 @@ dtype = np.float64
 # Bases
 coords = d3.PolarCoordinates('phi', 'r')
 dist = d3.Distributor(coords, dtype=dtype)
-basis = d3.DiskBasis(coords, shape=(Nphi, Nr), radius=1, dealias=dealias, dtype=dtype)
-S1_basis = basis.S1_basis(radius=1)
+disk = d3.DiskBasis(coords, shape=(Nphi, Nr), radius=1, dealias=dealias, dtype=dtype)
+edge = disk.edge
 
 # Fields
-u = dist.VectorField(coords, name='u', bases=basis)
-p = dist.Field(name='p', bases=basis)
-tau_u = dist.VectorField(coords, name='tau_u', bases=S1_basis)
+u = dist.VectorField(coords, name='u', bases=disk)
+p = dist.Field(name='p', bases=disk)
+tau_u = dist.VectorField(coords, name='tau_u', bases=edge)
 tau_p = dist.Field(name='tau_p')
 
 # Substitutions
-phi, r = dist.local_grids(basis)
+phi, r = dist.local_grids(disk)
 nu = Ekman
-lift = lambda A: d3.Lift(A, basis, -1)
+lift = lambda A: d3.Lift(A, disk, -1)
 
 # Background librating flow
-u0_real = dist.VectorField(coords, bases=basis)
-u0_imag = dist.VectorField(coords, bases=basis)
+u0_real = dist.VectorField(coords, bases=disk)
+u0_imag = dist.VectorField(coords, bases=disk)
 u0_real['g'][0] = Ro * np.real(jv(1, (1-1j)*r/np.sqrt(2*Ekman)) / jv(1, (1-1j)/np.sqrt(2*Ekman)))
 u0_imag['g'][0] = Ro * np.imag(jv(1, (1-1j)*r/np.sqrt(2*Ekman)) / jv(1, (1-1j)/np.sqrt(2*Ekman)))
 t = dist.Field()

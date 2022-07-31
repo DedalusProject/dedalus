@@ -44,28 +44,28 @@ mesh = None
 # Bases
 coords = d3.SphericalCoordinates('phi', 'theta', 'r')
 dist = d3.Distributor(coords, dtype=dtype, mesh=mesh)
-basis = d3.ShellBasis(coords, shape=(Nphi, Ntheta, Nr), radii=(Ri, Ro), dealias=dealias, dtype=dtype)
-s2_basis = basis.S2_basis()
+shell = d3.ShellBasis(coords, shape=(Nphi, Ntheta, Nr), radii=(Ri, Ro), dealias=dealias, dtype=dtype)
+sphere = shell.outer_surface
 
 # Fields
-p = dist.Field(name='p', bases=basis)
-b = dist.Field(name='b', bases=basis)
-u = dist.VectorField(coords, name='u', bases=basis)
+p = dist.Field(name='p', bases=shell)
+b = dist.Field(name='b', bases=shell)
+u = dist.VectorField(coords, name='u', bases=shell)
 tau_p = dist.Field(name='tau_p')
-tau_b1 = dist.Field(name='tau_b1', bases=s2_basis)
-tau_b2 = dist.Field(name='tau_b2', bases=s2_basis)
-tau_u1 = dist.VectorField(coords, name='tau_u1', bases=s2_basis)
-tau_u2 = dist.VectorField(coords, name='tau_u2', bases=s2_basis)
+tau_b1 = dist.Field(name='tau_b1', bases=sphere)
+tau_b2 = dist.Field(name='tau_b2', bases=sphere)
+tau_u1 = dist.VectorField(coords, name='tau_u1', bases=sphere)
+tau_u2 = dist.VectorField(coords, name='tau_u2', bases=sphere)
 
 # Substitutions
 kappa = (Rayleigh * Prandtl)**(-1/2)
 nu = (Rayleigh / Prandtl)**(-1/2)
-phi, theta, r = dist.local_grids(basis)
-er = dist.VectorField(coords, bases=basis.radial_basis)
+phi, theta, r = dist.local_grids(shell)
+er = dist.VectorField(coords, bases=shell.radial_basis)
 er['g'][2] = 1
-rvec = dist.VectorField(coords, bases=basis.radial_basis)
+rvec = dist.VectorField(coords, bases=shell.radial_basis)
 rvec['g'][2] = r
-lift_basis = basis.derivative_basis(1)
+lift_basis = shell.derivative_basis(1)
 lift = lambda A: d3.Lift(A, lift_basis, -1)
 grad_u = d3.grad(u) + rvec*lift(tau_u1) # First-order reduction
 grad_b = d3.grad(b) + rvec*lift(tau_b1) # First-order reduction

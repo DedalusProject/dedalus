@@ -333,12 +333,17 @@ class Basis:
                             if matrix.shape != (M,N):
                                 m, n = matrix.shape
                                 matrix = sparse.kron(sparse.eye(M//m, N//n), matrix)
-                        if G.imag != 0 and product.dtype == np.float64:
-                            raise NotImplementedError()
-                        block += G * matrix
+                        if product.dtype == np.float64:
+                            if G.imag != 0:
+                                raise NotImplementedError()
+                            else:
+                                block += G.real * matrix
+                        else:
+                            block += G * matrix
                 block_row.append(block)
             blocks.append(block_row)
-        return sparse.bmat(blocks, format='csr')
+        matrix = sparse.bmat(blocks, format='csr')
+        return matrix
         #return getattr(ncc_basis, self.ncc_method)(arg_basis, coeffs, ncc_ts, arg_ts, out_ts, subproblem, ncc_first, *gamma_args, cutoff=1e-6)
         # tshape = [cs.dim for cs in ncc.tensorsig]
         # self._ncc_matrices = [self._ncc_matrix_recursion(ncc.data[ind], ncc.domain.full_bases, operand.domain.full_bases, separability, **kw) for ind in np.ndindex(*tshape)]
@@ -2015,6 +2020,8 @@ class AnnulusBasis(PolarBasis):
         self.rho = (radii[1] + radii[0])/self.dR
         self.alpha = tuple(alpha)
         self.grid_params = (coordsystem, self.radii, self.alpha, self.dealias)
+        self.inner_edge = self.S1_basis(radii[0])
+        self.outer_edge = self.S1_basis(radii[1])
 
     @CachedAttribute
     def radial_basis(self):
@@ -2266,6 +2273,7 @@ class DiskBasis(PolarBasis, metaclass=CachedClass):
             logger.warning("You are using more azimuthal modes than can be resolved with your current radial resolution")
             #raise ValueError("shape[0] cannot be more than twice shape[1].")
         self.grid_params = (coordsystem, radius, alpha, self.dealias)
+        self.edge = self.S1_basis(radius)
 
     @CachedAttribute
     def radial_basis(self):
@@ -3151,11 +3159,11 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
             # ell_min of data is based off |m|, but ell_min of matrix takes into account |s| and |m|
             lmin_out = max(abs(spintotal_out) - abs(m), 0)
             lmin_arg = max(abs(spintotal_arg) - abs(m), 0 )
-            matrix = sparse.csr_matrix((N, N), dtype=np.complex128)
+            matrix = sparse.lil_matrix((N, N), dtype=np.complex128)
             matrix[lmin_out:,lmin_arg:] = (prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff))[:N-lmin_out,:N-lmin_arg]
             if m < 0:
                 matrix = matrix[::-1, ::-1] #for negative m, ell's go in opposite direction
-        return matrix
+        return matrix.tocsr()
 
 
 class ConvertConstantSphere(operators.ConvertConstant, operators.SeparableSphereOperator):
@@ -4023,9 +4031,9 @@ class BallRadialBasis(RegularityBasis, metaclass=CachedClass):
                 matrix = (prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff))[:N, :N]
         else:
             if ncc_basis.dtype == np.float64:
-                matrix = sparse.csr_matrix((2*N, 2*N))
+                matrix = sparse.csr_matrix((2*N, 2*N), dtype=np.float64)
             elif ncc_basis.dtype == np.complex128:
-                matrix = sparse.csr_matrix((N, N))
+                matrix = sparse.csr_matrix((N, N), dtype=np.complex128)
         return matrix
 
 
@@ -4249,6 +4257,8 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
         self.backward_transforms = [self.backward_transform_azimuth,
                                     self.backward_transform_colatitude,
                                     self.backward_transform_radius]
+        self.inner_surface = self.S2_basis(radius=radii[0])
+        self.outer_surface = self.S2_basis(radius=radii[1])
 
     def __eq__(self, other):
         if isinstance(other, ShellBasis):
@@ -4434,6 +4444,7 @@ class BallBasis(Spherical3DBasis, metaclass=CachedClass):
         self.backward_transforms = [self.backward_transform_azimuth,
                                     self.backward_transform_colatitude,
                                     self.backward_transform_radius]
+        self.surface = self.S2_basis(radius=radius)
 
     def __eq__(self, other):
         if isinstance(other, BallBasis):

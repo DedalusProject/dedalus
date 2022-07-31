@@ -53,29 +53,29 @@ else:
 # Bases
 coords = d3.SphericalCoordinates('phi', 'theta', 'r')
 dist = d3.Distributor(coords, dtype=dtype)
-basis = d3.ShellBasis(coords, shape=(Nphi, Ntheta, Nr), radii=(Ri, Ro), dtype=dtype)
-basis_S2 = basis.S2_basis()
-phi, theta, r = dist.local_grids(basis)
+shell = d3.ShellBasis(coords, shape=(Nphi, Ntheta, Nr), radii=(Ri, Ro), dtype=dtype)
+sphere = shell.outer_surface
+phi, theta, r = dist.local_grids(shell)
 
 # Fields
 om = dist.Field(name='om')
-u = dist.VectorField(coords, name='u', bases=basis)
-p = dist.Field(name='p', bases=basis)
-T = dist.Field(name='T', bases=basis)
-tau_u1 = dist.VectorField(coords, bases=basis_S2)
-tau_u2 = dist.VectorField(coords, bases=basis_S2)
-tau_T1 = dist.Field(bases=basis_S2)
-tau_T2 = dist.Field(bases=basis_S2)
+u = dist.VectorField(coords, name='u', bases=shell)
+p = dist.Field(name='p', bases=shell)
+T = dist.Field(name='T', bases=shell)
+tau_u1 = dist.VectorField(coords, bases=sphere)
+tau_u2 = dist.VectorField(coords, bases=sphere)
+tau_T1 = dist.Field(bases=sphere)
+tau_T2 = dist.Field(bases=sphere)
 tau_p = dist.Field()
 
 # Substitutions
 dt = lambda A: -1j*om*A
-rvec = dist.VectorField(coords, bases=basis.meridional_basis)
+rvec = dist.VectorField(coords, bases=shell.meridional_basis)
 rvec['g'][2] = r
-ez = dist.VectorField(coords, bases=basis.meridional_basis)
+ez = dist.VectorField(coords, bases=shell.meridional_basis)
 ez['g'][1] = -np.sin(theta)
 ez['g'][2] = np.cos(theta)
-lift_basis = basis.derivative_basis(1)
+lift_basis = shell.derivative_basis(1)
 lift = lambda A: d3.Lift(A, lift_basis, -1)
 grad_u = d3.grad(u) + rvec*lift(tau_u1) # First-order reduction
 grad_T = d3.grad(T) + rvec*lift(tau_T1) # First-order reduction

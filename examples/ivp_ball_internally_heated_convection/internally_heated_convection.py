@@ -54,25 +54,25 @@ mesh = None
 # Bases
 coords = d3.SphericalCoordinates('phi', 'theta', 'r')
 dist = d3.Distributor(coords, dtype=dtype, mesh=mesh)
-basis = d3.BallBasis(coords, shape=(Nphi, Ntheta, Nr), radius=1, dealias=dealias, dtype=dtype)
-S2_basis = basis.S2_basis()
+ball = d3.BallBasis(coords, shape=(Nphi, Ntheta, Nr), radius=1, dealias=dealias, dtype=dtype)
+sphere = ball.surface
 
 # Fields
-u = dist.VectorField(coords, name='u',bases=basis)
-p = dist.Field(name='p', bases=basis)
-T = dist.Field(name='T', bases=basis)
+u = dist.VectorField(coords, name='u',bases=ball)
+p = dist.Field(name='p', bases=ball)
+T = dist.Field(name='T', bases=ball)
 tau_p = dist.Field(name='tau_p')
-tau_u = dist.VectorField(coords, name='tau u', bases=S2_basis)
-tau_T = dist.Field(name='tau T', bases=S2_basis)
+tau_u = dist.VectorField(coords, name='tau u', bases=sphere)
+tau_T = dist.Field(name='tau T', bases=sphere)
 
 # Substitutions
-phi, theta, r = dist.local_grids(basis)
-r_vec = dist.VectorField(coords, bases=basis.radial_basis)
+phi, theta, r = dist.local_grids(ball)
+r_vec = dist.VectorField(coords, bases=ball.radial_basis)
 r_vec['g'][2] = r
 T_source = 6
 kappa = (Rayleigh * Prandtl)**(-1/2)
 nu = (Rayleigh / Prandtl)**(-1/2)
-lift = lambda A: d3.Lift(A, basis, -1)
+lift = lambda A: d3.Lift(A, ball, -1)
 strain_rate = d3.grad(u) + d3.trans(d3.grad(u))
 shear_stress = d3.angular(d3.radial(strain_rate(r=1), index=1))
 

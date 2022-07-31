@@ -345,9 +345,10 @@ def interleave_matrices(matrices):
     if N == 1:
         return matrices[0]
     sum = 0
+    P = sparse.lil_matrix((N, N))
     for i, matrix in enumerate(matrices):
-        P = sparse.csr_matrix((N, N))
         P[i, i] = 1
         sum += sparse.kron(matrix, P)
+        P[i, i] = 0
     return sum
 

@@ -72,7 +72,8 @@ plt.figure(figsize=(6, 4))
 x = dist.local_grid(xbasis)
 for n, idx in enumerate(np.argsort(solver.eigenvalues)[:5], start=1):
     solver.set_state(idx, solver.subsystems[0])
-    plt.plot(x, (u['g']/np.max(np.abs(u['g']))).real, label=f"n={n}")
+    ug = (u['g'] / u['g'][1]).real
+    plt.plot(x, ug/np.max(np.abs(ug)), label=f"n={n}")
 plt.xlim(0, 1)
 plt.legend(loc="lower right")
 plt.ylabel(r"mode structure")

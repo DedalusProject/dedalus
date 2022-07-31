@@ -42,8 +42,6 @@ import dedalus.public as d3
 import logging
 logger = logging.getLogger(__name__)
 
-# TODO: print NCC bandwidths and optimize parameters
-
 
 # Parameters
 Nr = 64
@@ -56,14 +54,14 @@ dtype = np.float64
 # Bases
 coords = d3.SphericalCoordinates('phi', 'theta', 'r')
 dist = d3.Distributor(coords, dtype=dtype)
-basis = d3.BallBasis(coords, (1, 1, Nr), radius=1, dtype=dtype, dealias=dealias)
+ball = d3.BallBasis(coords, (1, 1, Nr), radius=1, dtype=dtype, dealias=dealias)
 
 # Fields
-f = dist.Field(name='f', bases=basis)
-tau = dist.Field(name='tau', bases=basis.S2_basis(radius=1))
+f = dist.Field(name='f', bases=ball)
+tau = dist.Field(name='tau', bases=ball.surface)
 
 # Substitutions
-lift = lambda A: d3.Lift(A, basis, -1)
+lift = lambda A: d3.Lift(A, ball, -1)
 
 # Problem
 problem = d3.NLBVP([f, tau], namespace=locals())
@@ -71,7 +69,7 @@ problem.add_equation("lap(f) + lift(tau) = - f**n")
 problem.add_equation("f(r=1) = 0")
 
 # Initial guess
-phi, theta, r = dist.local_grids(basis)
+phi, theta, r = dist.local_grids(ball)
 R0 = 5
 f['g'] = R0**(2/(n-1)) * (1 - r**2)**2
 
@@ -109,7 +107,7 @@ if n in R_ref:
 
 # Plot solution
 plt.figure(figsize=(6, 4))
-_, _, r = dist.local_grids(basis, scales=(dealias,dealias,dealias))
+_, _, r = dist.local_grids(ball, scales=(dealias,dealias,dealias))
 alpha = np.linspace(0.2, 1, len(steps))
 color = ('C0',) * (len(steps)-1) + ('C1',)
 for i, step in enumerate(steps):
