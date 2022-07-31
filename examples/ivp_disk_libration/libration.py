@@ -5,7 +5,7 @@ flow. This script demonstrates solving an initial value problem in the disk.
 It can be ran serially or in parallel, and uses the built-in analysis framework
 to save data snapshots to HDF5 files. The `plot_disk.py` and `plot_scalars.py`
 scripts can be used to produce plots from the saved data. The simulation should
-take roughly 10 cpu-minutes to run.
+take roughly 20 cpu-minutes to run.
 
 The problem is non-dimesionalized using the disk radius and librational frequency,
 so the resulting viscosity is related to the Ekman number as:

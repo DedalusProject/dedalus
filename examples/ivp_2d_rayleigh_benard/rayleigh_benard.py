@@ -3,7 +3,7 @@ Dedalus script simulating 2D horizontally-periodic Rayleigh-Benard convection.
 This script demonstrates solving a 2D Cartesian initial value problem. It can
 be ran serially or in parallel, and uses the built-in analysis framework to save
 data snapshots to HDF5 files. The `plot_snapshots.py` script can be used to
-produce plots from the saved data. It should take a few cpu-minutes to run.
+produce plots from the saved data. It should take about 5 cpu-minutes to run.
 
 The problem is non-dimensionalized using the box height and freefall time, so
 the resulting thermal diffusivity and viscosity are related to the Prandtl

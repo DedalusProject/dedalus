@@ -4,7 +4,7 @@ tracer field for visualization. This script demonstrates solving a 2D periodic
 initial value problem. It can be ran serially or in parallel, and uses the
 built-in analysis framework to save data snapshots to HDF5 files. The
 `plot_snapshots.py` script can be used to produce plots from the saved data.
-The simulation should take a few cpu-minutes to run.
+The simulation should take about 10 cpu-minutes to run.
 
 The initial flow is in the x-direction and depends only on z. The problem is
 non-dimensionalized usign the shear-layer spacing and velocity jump, so the

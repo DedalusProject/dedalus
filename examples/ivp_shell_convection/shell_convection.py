@@ -3,7 +3,7 @@ Dedalus script simulating Boussinesq convection in a spherical shell. This scrip
 demonstrates solving an initial value problem in the shell. It can be ran serially
 or in parallel, and uses the built-in analysis framework to save data snapshots
 to HDF5 files. The `plot_shell.py` script can be used to produce plots from the
-saved data. The simulation should take about 10 cpu-minutes to run.
+saved data. The simulation should take about 20 cpu-minutes to run.
 
 The problem is non-dimensionalized using the shell thickness and freefall time, so
 the resulting thermal diffusivity and viscosity are related to the Prandtl
