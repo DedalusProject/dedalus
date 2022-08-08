@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 # Parameters
 N = 32
-q_list = np.linspace(0, 10, 100)
+q_list = np.linspace(0, 30, 100)
 
 # Basis
 coord = d3.Coordinate('x')
@@ -52,14 +52,13 @@ def eigenvalues(q):
 evals = np.array([eigenvalues(q)[:10] for q in q_list])
 
 # Plot
-fig = plt.figure(figsize=(6,6))
+fig = plt.figure(figsize=(6, 4))
 plt.plot(q_list, evals[:, 0::2], '.-', c='C0')
 plt.plot(q_list, evals[:, 1::2], '.-', c='C1')
 plt.xlim(q_list.min(), q_list.max())
-plt.ylim(-10, 20)
+plt.ylim(-10, 30)
 plt.xlabel("q")
 plt.ylabel("eigenvalues")
 plt.title("Mathieu eigenvalues")
-plt.grid()
 plt.tight_layout()
-plt.savefig("mathieu_eigenvalues.pdf")
+plt.savefig("mathieu_eigenvalues.png", dpi=200)
