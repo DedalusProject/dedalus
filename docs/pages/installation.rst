@@ -20,34 +20,35 @@ This can be used to quickly install all dependencies before installing Dedalus3 
 This installation route is recommended for laptops, workstations, and some cluster environments.
 If linking to the existing MPI libraries on your cluster is recommended, see the alternative "Custom conda installation" instructions below.
 
-First, install conda on your system if you don't already have it (we recommend the `miniforge variant <https://github.com/conda-forge/miniforge/#download>`_).
-Then create a new environment for your Dedalus installation (here called ``dedalus3``, but you can pick any name) and activate it::
+#. Install conda on your system if you don't already have it (we recommend the `miniforge variant <https://github.com/conda-forge/miniforge/#download>`_).
 
-    # Create and activate environment
-    conda create -n dedalus3
-    conda activate dedalus3
+#. Create a new environment for your Dedalus installation (here called ``dedalus3``, but you can pick any name) and activate it::
 
-**Note**: there are currently upstream issues in scipy that prevent Dedalus from natively running on arm64 at this time.
-If you are using a Mac with an Apple Silicon processor, you will need to do an extra step to instruct the environment to use x86 packages::
+       # Create and activate environment
+       conda create -n dedalus3
+       conda activate dedalus3
 
-    # Macs with Apple Silicon only!
-    conda config --env --set subdir osx-64
+#. *(Apple Silicon only)* There are currently upstream issues in scipy that prevent Dedalus from natively running on arm64 at this time.
+   If you are using a Mac with an Apple Silicon processor, you will need to instruct the environment to use x86 packages::
 
-We strongly recommend disabling threading when running Dedalus for maximum performance on all platforms.
-The conda environment can be configured to do this automatically with the following commands::
+       # Macs with Apple Silicon only!
+       conda config --env --set subdir osx-64
 
-    # Disable threading in the environment (strongly recommended for performance)
-    conda env config vars set OMP_NUM_THREADS=1
-    conda env config vars set NUMEXPR_MAX_THREADS=1
+#. We strongly recommend disabling threading when running Dedalus for maximum performance on all platforms.
+   The conda environment can be configured to do this automatically::
 
-You can then install Dedalus v2 and all its requirements from the conda-forge channel and upgrade to Dedalus v3 using pip::
+       # Disable threading in the environment (strongly recommended for performance)
+       conda env config vars set OMP_NUM_THREADS=1
+       conda env config vars set NUMEXPR_MAX_THREADS=1
 
-    # Install Dedalus v2 from conda-forge to build stack
-    conda install -c conda-forge dedalus
+#. Install Dedalus v2 and all its requirements from the conda-forge channel and upgrade to Dedalus v3 using pip::
 
-    # Upgrade to Dedalus v3
-    pip uninstall -y dedalus
-    CC=mpicc pip3 install --no-cache http://github.com/dedalusproject/dedalus/zipball/master/
+       # Install Dedalus v2 from conda-forge to build stack
+       conda install -c conda-forge dedalus
+
+       # Upgrade to Dedalus v3
+       pip uninstall -y dedalus
+       CC=mpicc pip3 install --no-cache http://github.com/dedalusproject/dedalus/zipball/master/
 
 To use Dedalus, you simply need to activate the new environment.
 You can test the installation using the command-line interface::
@@ -64,16 +65,18 @@ Custom conda installation
 Alternatively, you can use a build script that will create a custom conda environment with all dependencies and then install Dedalus via pip.
 This script allows you to optionally link against custom MPI/FFTW/HDF5 libraries, which may provide better performance on some clusters.
 
-First, install conda on your system if you don't already have it (we recommend the `miniforge variant <https://github.com/conda-forge/miniforge/#download>`_).
-Then download the Dedalus v3 conda installation script from `this link <https://raw.githubusercontent.com/DedalusProject/dedalus_conda/master/conda_install_dedalus3.sh>`_ or using::
+#. Install conda on your system if you don't already have it (we recommend the `miniforge variant <https://github.com/conda-forge/miniforge/#download>`_).
 
-    curl https://raw.githubusercontent.com/DedalusProject/dedalus_conda/master/conda_install_dedalus3.sh --output conda_install_dedalus3.sh
+#. Download the Dedalus v3 conda installation script from `this link <https://raw.githubusercontent.com/DedalusProject/dedalus_conda/master/conda_install_dedalus3.sh>`_ or using::
 
-Modify the options at the top of the script to change the name of the resulting conda environment, link against custom MPI/FFTW/HDF5 libraries, choose between OpenBLAS and MKL-based numpy/scipy, and more.
-Then activate the base conda environment and run the script to build a new conda environment with Dedalus and its dependencies, as requested::
+       curl https://raw.githubusercontent.com/DedalusProject/dedalus_conda/master/conda_install_dedalus3.sh --output conda_install_dedalus3.sh
 
-    conda activate base
-    bash conda_install_dedalus3.sh
+#. Modify the options at the top of the script to change the name of the resulting conda environment, link against custom MPI/FFTW/HDF5 libraries, choose between OpenBLAS and MKL-based numpy/scipy, and more.
+
+#. Activate the base conda environment and run the script to build a new conda environment with Dedalus and its dependencies, as requested::
+
+       conda activate base
+       bash conda_install_dedalus3.sh
 
 To use Dedalus, you simply need to activate the new environment.
 You can test the installation using the command-line interface::
