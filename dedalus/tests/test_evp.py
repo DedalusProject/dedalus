@@ -217,7 +217,7 @@ def test_half_qho_dense_evp(benchmark, x_basis_class, Nx, dtype):
     solver = problem.build_solver()
     solver.solve_dense(solver.pencils[0])
     # Filter infinite/nan eigenmodes
-    finite = np.isfinite(solver.eigenvalues)
+    finite = np.abs(solver.eigenvalues) < 1e10
     solver.eigenvalues = solver.eigenvalues[finite]
     solver.eigenvectors = solver.eigenvectors[:, finite]
     # Sort eigenmodes by eigenvalue
