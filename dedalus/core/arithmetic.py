@@ -416,19 +416,23 @@ class Product(Future):
         subproblem_shape = subproblem.coeff_shape(out.domain)
         ncc_rank = len(ncc.tensorsig)
         select_all_comps = tuple(slice(None) for i in range(ncc_rank))
-        for ncc_mode in np.ndindex(self._ncc_data.shape[ncc_rank:]):
-            ncc_coeffs = self._ncc_data[select_all_comps + ncc_mode]
-            if np.max(np.abs(ncc_coeffs)) > ncc_cutoff:
-                mode_matrix = self.cartesian_mode_matrix(subproblem_shape, ncc.domain, arg.domain, out.domain, ncc_mode)
-                matrix = sparse.kron(np.dot(Gamma, ncc_coeffs.ravel()), mode_matrix, format='coo')
-                shape = matrix.shape
-                data.append(matrix.data)
-                rows.append(matrix.row)
-                cols.append(matrix.col)
-        data = np.concatenate(data)
-        rows = np.concatenate(rows)
-        cols = np.concatenate(cols)
-        matrix = sparse.coo_matrix((data, (rows, cols)), shape=shape).tocsr()
+        if np.any(self._ncc_data):
+            for ncc_mode in np.ndindex(self._ncc_data.shape[ncc_rank:]):
+                ncc_coeffs = self._ncc_data[select_all_comps + ncc_mode]
+                if np.max(np.abs(ncc_coeffs)) > ncc_cutoff:
+                    mode_matrix = self.cartesian_mode_matrix(subproblem_shape, ncc.domain, arg.domain, out.domain, ncc_mode)
+                    matrix = sparse.kron(np.dot(Gamma, ncc_coeffs.ravel()), mode_matrix, format='coo')
+                    shape = matrix.shape
+                    data.append(matrix.data)
+                    rows.append(matrix.row)
+                    cols.append(matrix.col)
+            data = np.concatenate(data)
+            rows = np.concatenate(rows)
+            cols = np.concatenate(cols)
+            matrix = sparse.coo_matrix((data, (rows, cols)), shape=shape).tocsr()
+        else:
+            shape = (subproblem.field_size(out), subproblem.field_size(arg))
+            matrix = sparse.csr_matrix(shape, dtype=self.dtype)
         return matrix
 
     @classmethod
