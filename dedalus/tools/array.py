@@ -191,6 +191,30 @@ def csr_matvec(A_csr, x_vec, out_vec):
     return out_vec
 
 
+def csr_matvecs(A_csr, x_vec, out_vec):
+    """
+    Fast CSR matvec with dense vector skipping output allocation. The result is
+    added to the specificed output array, so the output should be manually
+    zeroed prior to calling this routine, if necessary.
+    """
+    # Check format but don't convert
+    if A_csr.format != "csr":
+        raise ValueError("Matrix must be in CSR format.")
+    # Check shapes
+    M, N = A_csr.shape
+    n, kx = x_vec.shape
+    m, ko = out_vec.shape
+    if x_vec.ndim != 2 or out_vec.ndim != 2:
+        raise ValueError("Only matrices allowed for input and output.")
+    if M != m or N != n:
+        raise ValueError(f"Matrix shape {(M,N)} does not match input {(n,)} and output {(m,)} shapes.")
+    if kx != ko:
+        raise ValueError("Output size does not match input size.")
+    # Apply matvecs
+    _sparsetools.csr_matvecs(M, N, kx, A_csr.indptr, A_csr.indices, A_csr.data, x_vec, out_vec)
+    return out_vec
+
+
 def add_sparse(A, B):
     """Add sparse matrices, promoting scalars to multiples of the identity."""
     A_is_scalar = np.isscalar(A)

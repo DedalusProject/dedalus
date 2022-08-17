@@ -277,14 +277,51 @@ class Subproblem:
     def field_size(self, field):
         return self.subsystems[0].field_size(field)
 
-    # def valid_field_slices(self, field):
-    #     return self.subsystems[0].valid_field_slices(field)
+    @CachedMethod
+    def _gather_scatter_setup(self, fields):
+        n_subsystems = len(self.subsystems)
+        # Allocate array
+        fsizes = tuple(self.field_size(f) for f in fields)
+        data = np.empty((sum(fsizes), n_subsystems), dtype=self.dtype)
+        # Make views into data
+        fviews = []
+        fslices = []
+        i0 = 0
+        for fsize, f in zip(fsizes, fields):
+            views = []
+            slices = []
+            if fsize:
+                fshape = self.field_shape(f)
+                i1 = i0 + fsize
+                for j, ss in enumerate(self.subsystems):
+                    views.append(data[i0:i1, j].reshape(fshape))
+                    slices.append(ss.field_slices(f))
+                i0 = i1
+            fviews.append(views)
+            fslices.append(slices)
+        return data, fsizes, fviews, fslices
 
-    # def valid_field_shape(self, field):
-    #     return self.subsystems[0].valid_field_shape(field)
+    def gather(self, fields):
+        """Gather and concatenate subproblem data in from multiple fields."""
+        data, fsizes, fviews, fslices = self._gather_scatter_setup(tuple(fields))
+        # Gather from fields
+        for fsize, views, slices, field in zip(fsizes, fviews, fslices, fields):
+            if fsize:
+                for view, sli in zip(views, slices):
+                    copyto(view, field.data[sli])
+        return data
 
-    # def valid_field_size(self, field):
-    #     return self.subsystems[0].valid_field_size(field)
+    def scatter(self, data_input, fields):
+        """Scatter concatenated subproblem data out to multiple fields."""
+        data, fsizes, fviews, fslices = self._gather_scatter_setup(tuple(fields))
+        # Copy to preallocated data with views
+        # TODO: optimize by making sure the input data is already written to this buffer
+        copyto(data, data_input)
+        # Scatter to fields
+        for fsize, views, slices, field in zip(fsizes, fviews, fslices, fields):
+            if fsize:
+                for view, sli in zip(views, slices):
+                    copyto(field.data[sli], view)
 
     def inclusion_matrices(self, bases):
         """List of inclusion matrices."""
