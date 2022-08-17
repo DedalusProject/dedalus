@@ -468,18 +468,18 @@ class InitialValueSolver(SolverBase):
     ----------
     state : list of Field objects
         Problem variables containing solution.
-    dt : float
-        Timestep.
     stop_sim_time : float
         Simulation stop time, in simulation units.
     stop_wall_time : float
         Wall stop time, in seconds from instantiation.
     stop_iteration : int
         Stop iteration.
-    time : float
+    sim_time : float
         Current simulation time.
     iteration : int
         Current iteration.
+    dt : float
+        Last timestep.
     """
 
     # Default to factorizer to speed up repeated solves
@@ -582,6 +582,14 @@ class InitialValueSolver(SolverBase):
                 field.load_from_hdf5(file, index)
         return write, dt
 
+    def enforce_hermitian_symmetry(self, fields):
+        """Transform fields to grid and back."""
+        # TODO: maybe this should be on scales=1?
+        for f in fields:
+            f.change_scales(f.domain.dealias)
+        self.evaluator.require_grid_space(fields)
+        self.evaluator.require_coeff_space(fields)
+
     def step(self, dt):
         """Advance system by one iteration/timestep."""
         # Assert finite timestep
@@ -591,12 +599,7 @@ class InitialValueSolver(SolverBase):
         if np.isrealobj(self.dtype.type()):
             # Enforce for as many iterations as timestepper uses internally
             if self.iteration % self.enforce_real_cadence < self.timestepper.steps:
-                # Transform state variables to grid and back
-                # TODO: maybe this should be on scales=1?
-                for field in self.state:
-                    field.change_scales(field.domain.dealias)
-                self.evaluator.require_grid_space(self.state)
-                self.evaluator.require_coeff_space(self.state)
+                self.enforce_hermitian_symmetry(self.state)
         # Record times
         wall_time = self.get_wall_time()
         if self.iteration == self.initial_iteration:
@@ -608,8 +611,9 @@ class InitialValueSolver(SolverBase):
         self.timestepper.step(dt, wall_elapsed)
         # Update iteration
         self.iteration += 1
+        self.dt = dt
 
-    def evolve(self, timestep_function):
+    def evolve(self, timestep_function, log_cadence=100):
         """Advance system until stopping criterion is reached."""
         # Check for a stopping criterion
         if np.isinf(self.stop_sim_time):
@@ -617,11 +621,18 @@ class InitialValueSolver(SolverBase):
                 if np.isinf(self.stop_iteration):
                     raise ValueError("No stopping criterion specified.")
         # Evolve
-        while self.proceed:
-            dt = timestep_function()
-            if self.sim_time + dt > self.stop_sim_time:
-                dt = self.stop_sim_time - self.sim_time
-            self.step(dt)
+        try:
+            logger.info("Starting main loop")
+            while self.proceed:
+                timestep = timestep_function()
+                self.step(timestep)
+                if (self .iteration-1) % log_cadence == 0:
+                    logger.info(f"Iteration={self.iteration}, Time={self.sim_time:e}, Step={timestep:e}")
+        except:
+            logger.error('Exception raised, triggering end of main loop.')
+            raise
+        finally:
+            self.log_stats()
 
     def print_subproblem_ranks(self, subproblems=None, dt=1):
         """Print rank of each subproblem LHS."""
