@@ -222,14 +222,22 @@ class Operand:
     #     """Simplify expression, except subtrees containing specified variables."""
     #     raise NotImplementedError()
 
-    def require_linearity(self, *vars, name=None):
+    def require_linearity(self, *vars, allow_affine=False, self_name=None, vars_name=None, error=AssertionError):
         """Require expression to be linear in specified operands/operators."""
-        raise NotImplementedError()
+        raise NotImplementedError("Subclasses must implement.")
 
-    def require_independent(self, *vars, name=None):
+    def require_first_order(self, *ops, self_name=None, ops_name=None, error=AssertionError):
+        """Require expression to be maximally first order in specified operators."""
+        raise NotImplementedError("Subclasses must implement.")
+
+    def require_independent(self, *vars, self_name=None, vars_name=None, error=AssertionError):
         """Require expression to be independent of specified operands/operators."""
         if self.has(*vars):
-            raise DependentOperatorError("{} is not independent of the specified variables.".format(name if name else str(self)))
+            if self_name is None:
+                self_name = str(self)
+            if vars_name is None:
+                vars_name = [str(var) for var in vars]
+            raise error(f"{self_name} must be independent of {vars_name}.")
 
     def separability(self, *vars):
         """Determine separable dimensions of expression as a linear operator on specified variables."""
@@ -246,6 +254,41 @@ class Operand:
     def expression_matrices(self, subproblem, vars, **kw):
         """Build expression matrices for a specific subproblem and variables."""
         raise NotImplementedError()
+
+    def frechet_differential(self, variables, perturbations):
+        """
+        Compute Frechet differential with respect to specified variables/perturbations.
+
+        Parameters
+        ----------
+        variables : list of Field objects
+            Variables to differentiate around.
+        perturbations : list of Field objects
+            Perturbation directions for each variable.
+
+        Notes
+        -----
+        This method symbolically computes the functional directional derivative in the
+        direction of the specified perturbations:
+            sum_{vars, perts} lim_{ε -> 0} d/dε X(var + ε * pert)
+        The result is a linear operator acting on the perturbations with NCCs that
+        depend on the original variables.
+        """
+        dist = self.dist
+        tensorsig = self.tensorsig
+        dtype = self.dtype
+        # Perturbation variable
+        ep = Field(dist=dist, name='ep', dtype=dtype)
+        # Add differentials for each variable
+        diff = 0
+        for var, pert in zip(variables, perturbations):
+            diff_var = self.replace(var, var + ep*pert)
+            diff_var = diff_var.sym_diff(ep)
+            if diff_var:
+                diff_var = Operand.cast(diff_var, self.dist, tensorsig=tensorsig, dtype=dtype)
+                diff_var = diff_var.replace(ep, 0)
+                diff += diff_var
+        return diff
 
     @property
     def T(self):
@@ -330,10 +373,18 @@ class Current(Operand):
     #     """Simplify expression, except subtrees containing specified variables."""
     #     return self
 
-    def require_linearity(self, *vars, name=None):
+    def require_linearity(self, *vars, allow_affine=False, self_name=None, vars_name=None, error=AssertionError):
         """Require expression to be linear in specified variables."""
-        if self not in vars:
-            raise NonlinearOperatorError("{} is not linear in the specified variables.".format(name if name else str(self)))
+        if (not allow_affine) and (self not in vars):
+            if self_name is None:
+                self_name = str(self)
+            if vars_name is None:
+                vars_name = [str(var) for var in vars]
+            raise error(f"{self_name} must be strictly linear in {vars_name}.")
+
+    def require_first_order(self, *args, **kw):
+        """Require expression to be maximally first order in specified operators."""
+        pass
 
     # def separability(self, *vars):
     #     """Determine separable dimensions of expression as a linear operator on specified variables."""

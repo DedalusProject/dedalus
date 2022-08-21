@@ -269,9 +269,28 @@ class NonlinearOperator(Future):
         """Expand expression over specified variables."""
         return self
 
-    def require_linearity(self, *vars, name=None):
+    def require_linearity(self, *vars, allow_affine=False, self_name=None, vars_name=None, error=AssertionError):
         """Require expression to be linear in specified variables."""
-        raise NonlinearOperatorError("{} is a non-linear function of the specified variables.".format(name if name else str(self)))
+        if self.has(*vars):
+            if self_name is None:
+                self_name = str(self)
+            if vars_name is None:
+                vars_name = [str(var) for var in vars]
+            raise error(f"{self_name} is nonlinear in {vars_name}.")
+        elif not allow_affine:
+            if self_name is None:
+                self_name = str(self)
+            if vars_name is None:
+                vars_name = [str(var) for var in vars]
+            raise error(f"{self_name} must be strictly linear in {vars_name}.")
+
+    def require_first_order(self, *ops, **kw):
+        """Require expression to be maximally first order in specified operators."""
+        if isinstance(self, ops):
+            raise NotImplementedError("Subclasses must implement.")
+        else:
+            for arg in self.args:
+                arg.require_first_order(*ops, **kw)
 
     def separability(self, *vars):
         """Determine separable dimensions of expression as a linear operator on specified variables."""
@@ -684,10 +703,21 @@ class LinearOperator(FutureField):
         # By default, perform no further expansion
         return self.new_operand(operand)
 
-    def require_linearity(self, *vars, name=None):
+    def require_linearity(self, *args, **kw):
         """Require expression to be linear in specified variables."""
-        # Require operand to be linear
-        self.operand.require_linearity(*vars, name=name)
+        self.operand.require_linearity(*args, **kw)
+
+    def require_first_order(self, *ops, self_name=None, ops_name=None, error=AssertionError):
+        """Require expression to be maximally first order in specified operators."""
+        if isinstance(self, ops):
+            if self.operand.has(*ops):
+                if self_name is None:
+                    self_name = str(self)
+                if ops_name is None:
+                    ops_name = [str(op) for op in ops]
+                raise error(f"{self_name} must be first-order in {ops_name}.")
+        else:
+            self.operand.require_first_order(*ops, self_name=self_name, ops_name=ops_name, error=error)
 
     def build_ncc_matrices(self, separability, vars, **kw):
         """Precompute non-constant coefficients and build multiplication matrices."""

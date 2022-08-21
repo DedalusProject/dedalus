@@ -278,6 +278,7 @@ class EigenvalueSolver(SolverBase):
             If an integer, the corresponding subsystem of the last specified
             eigenvalue_subproblem will be used.
         """
+        # TODO: allow setting left modified eigenvectors?
         subproblem = self.eigenvalue_subproblem
         if isinstance(subsystem, int):
             subsystem = subproblem.subsystems[subsystem]
@@ -335,6 +336,11 @@ class LinearBoundaryValueSolver(SolverBase):
             L = (sp.L_min @ sp.pre_right).A
             print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {sp.group}, matrix rank: {np.linalg.matrix_rank(L)}/{L.shape[0]}, cond: {np.linalg.cond(L):.1e}")
 
+    def build_matrices(self, subproblems=None):
+        if subproblems is None:
+            subproblems = self.subproblems
+        subsystems.build_subproblem_matrices(self, subproblems, ['L'])
+
     def solve(self, subproblems=None, rebuild_matrices=False):
         """
         Solve BVP over selected subproblems.
@@ -357,7 +363,7 @@ class LinearBoundaryValueSolver(SolverBase):
         else:
             rebuild_subproblems = [sp for sp in subproblems if sp not in self.subproblem_matsolvers]
         if rebuild_subproblems:
-            subsystems.build_subproblem_matrices(self, rebuild_subproblems, ['L'])
+            self.build_matrices(rebuild_subproblems)
             for sp in rebuild_subproblems:
                 L = sp.L_min @ sp.pre_right
                 self.subproblem_matsolvers[sp] = self.matsolver(L, self)
@@ -415,7 +421,7 @@ class NonlinearBoundaryValueSolver(SolverBase):
         self.evaluator = Evaluator(self.dist, namespace)
         F_handler = self.evaluator.add_system_handler(iter=1, group='F')
         for eq in problem.eqs:
-            F_handler.add_task(eq['-H'])
+            F_handler.add_task(eq['H'])
         F_handler.build_system()
         self.F = F_handler.fields
         logger.debug('Finished NLBVP instantiation')
@@ -425,6 +431,7 @@ class NonlinearBoundaryValueSolver(SolverBase):
         # Compute RHS
         self.evaluator.evaluate_group('F', sim_time=0, wall_time=0, iteration=self.iteration)
         # Recompute Jacobian
+        # TODO: split out linear part for faster recomputation?
         subsystems.build_subproblem_matrices(self, self.subproblems, ['dH'])
         # Ensure coeff space before subsystem gathers/scatters
         for field in self.F:
@@ -439,7 +446,7 @@ class NonlinearBoundaryValueSolver(SolverBase):
             csr_matvecs(sp.pre_left, sp.gather(self.F), pF)
             # Solve, right-precondition, and scatter X
             sp_matsolver = self.matsolver(sp.dH_min @ sp.pre_right, self)
-            pX = sp_matsolver.solve(pF)
+            pX = - sp_matsolver.solve(pF)
             X = np.zeros((sp.pre_right.shape[0], n_ss), dtype=self.dtype)
             csr_matvecs(sp.pre_right, pX.reshape((-1, n_ss)), X)
             sp.scatter(X, self.perturbations)
@@ -461,6 +468,8 @@ class InitialValueSolver(SolverBase):
         Timestepper to use in evolving initial conditions.
     enforce_real_cadence : int, optional
         Iteration cadence for enforcing Hermitian symmetry on real variables (default: 100).
+    warmup_iterations : int, optional
+        Number of warmup iterations to disregard when computing runtime statistics (default: 10).
     **kw :
         Other options passed to ProblemBase.
 
@@ -507,7 +516,7 @@ class InitialValueSolver(SolverBase):
         # Initialize timestepper
         self.timestepper = timestepper(self)
         # Attributes
-        self.sim_time = self.initial_sim_time = problem.sim_time_field['g'].ravel()[0]
+        self.sim_time = self.initial_sim_time = problem.time['g'].ravel()[0]
         self.iteration = self.initial_iteration = 0
         self.warmup_iterations = warmup_iterations
         # Default integration parameters
@@ -523,7 +532,7 @@ class InitialValueSolver(SolverBase):
     @sim_time.setter
     def sim_time(self, t):
         self._sim_time = t
-        self.problem.sim_time_field['g'] = t
+        self.problem.time['g'] = t
 
     def get_wall_time(self):
         self._wall_time_array[0] = time.time()

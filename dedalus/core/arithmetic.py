@@ -142,11 +142,15 @@ class Add(Future, metaclass=MultiClass):
         else:
             return self
 
-    def require_linearity(self, *vars, name=None):
+    def require_linearity(self, *args, **kw):
         """Require expression to be linear in specified variables."""
-        # Require arguments to be linear
         for arg in self.args:
-            arg.require_linearity(*vars, name=name)
+            arg.require_linearity(*args, **kw)
+
+    def require_first_order(self, *args, **kw):
+        """Require expression to be maximally first order in specified operators."""
+        for arg in self.args:
+            arg.require_first_order(*args, **kw)
 
     def matrix_dependence(self, *vars):
         return np.logical_or.reduce([arg.matrix_dependence(*vars) for arg in self.args])
@@ -322,21 +326,34 @@ class Product(Future):
         else:
             return self
 
-    def require_linearity(self, *vars, name=None, recurse=True):
+    def require_linearity(self, *vars, allow_affine=False, self_name=None, vars_name=None, error=AssertionError, recurse=True):
         """Require expression to be linear in specified variables."""
         arg0, arg1 = self.args
         op_arg0 = (isinstance(arg0, Operand) and arg0.has(*vars))
         op_arg1 = (isinstance(arg1, Operand) and arg1.has(*vars))
-        # Require exactly one argument to contain vars, for linearity
         if op_arg0 and op_arg1:
-            raise NonlinearOperatorError("{} is a non-linear product of the specified variables.".format(name if name else str(self)))
-        if not (op_arg0 or op_arg1):
-            raise NonlinearOperatorError("{} does not involve the specified variables.".format(name if name else str(self)))
-        op_index = int(op_arg1)
-        if recurse:
-            # Require argument linearity
-            self.args[op_index].require_linearity(*vars, name=name)
-        return op_index
+            if self_name is None:
+                self_name = str(self)
+            if vars_name is None:
+                vars_name = [str(var) for var in vars]
+            raise error(f"{self_name} is nonlinear in {vars_name}.")
+        elif op_arg0 or op_arg1:
+            op_index = int(op_arg1)
+            if recurse:
+                self.args[op_index].require_linearity(*vars, allow_affine=allow_affine, self_name=self_name, vars_name=vars_name, error=error)
+            return op_index
+        elif not allow_affine:
+            if self_name is None:
+                self_name = str(self)
+            if vars_name is None:
+                vars_name = [str(var) for var in vars]
+            raise error(f"{self_name} must be strictly linear in {vars_name}.")
+
+    def require_first_order(self, *args, **kw):
+        """Require expression to be maximally first order in specified operators."""
+        for arg in self.args:
+            if isinstance(arg, Operand):
+                arg.require_first_order(*args, **kw)
 
     def prep_nccs(self, vars):
         """Separate NCC factors."""
