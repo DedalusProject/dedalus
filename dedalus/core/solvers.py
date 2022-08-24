@@ -516,7 +516,7 @@ class InitialValueSolver(SolverBase):
         # Initialize timestepper
         self.timestepper = timestepper(self)
         # Attributes
-        self.sim_time = self.initial_sim_time = problem.time['g'].ravel()[0]
+        self.sim_time = self.initial_sim_time = problem.time.allreduce_data_max(layout='g')
         self.iteration = self.initial_iteration = 0
         self.warmup_iterations = warmup_iterations
         # Default integration parameters

@@ -252,7 +252,7 @@ class NonlinearBoundaryValueProblem(ProblemBase):
         eqn['matrix_dependence'] = dH.matrix_dependence(*perts)
         eqn['matrix_coupling'] = dH.matrix_coupling(*perts)
         # Debug logging
-        logger.debug(f"   H: {H}")
+        logger.debug(f"  H: {H}")
         logger.debug(f"  dH: {dH}")
 
 
