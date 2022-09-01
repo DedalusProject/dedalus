@@ -2761,6 +2761,8 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
             if self.radius == other.radius:
                 shape = tuple(np.maximum(self.shape, other.shape))
                 return SphereBasis(self.coordsystem, shape, radius=self.radius, dealias=self.dealias, dtype=self.dtype)
+            else:
+                raise ValueError(f"Cannot add two spheres with different radii {self.radius} and {other.radius}.")
         return NotImplemented
 
     def __mul__(self, other):
