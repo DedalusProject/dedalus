@@ -2774,6 +2774,8 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
             if self.radius == other.radius:
                 shape = tuple(np.maximum(self.shape, other.shape))
                 return SphereBasis(self.coordsystem, shape, radius=self.radius, dealias=self.dealias, dtype=self.dtype)
+            else:
+                raise TypeError(f"Cannot multiply two sphere bases with different radii {self.radius} and {other.radius}.")
         return NotImplemented
 
     def __matmul__(self, other):
