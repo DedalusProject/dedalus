@@ -44,10 +44,10 @@ If linking to the existing MPI libraries on your cluster is recommended, see the
 #. Install Dedalus v2 and all its requirements from the conda-forge channel and upgrade to Dedalus v3 using pip::
 
        # Install Dedalus v2 from conda-forge to build stack
-       conda install -c conda-forge dedalus
+       conda install -c conda-forge dedalus c-compiler "h5py=*=mpi*"
 
        # Upgrade to Dedalus v3
-       pip uninstall -y dedalus
+       conda uninstall --force dedalus
        CC=mpicc pip3 install --no-cache http://github.com/dedalusproject/dedalus/zipball/master/
 
 To use Dedalus, you simply need to activate the new environment.
