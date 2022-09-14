@@ -277,14 +277,43 @@ class Subproblem:
     def field_size(self, field):
         return self.subsystems[0].field_size(field)
 
-    # def valid_field_slices(self, field):
-    #     return self.subsystems[0].valid_field_slices(field)
+    @CachedMethod
+    def _gather_scatter_setup(self, fields):
+        n_subsystems = len(self.subsystems)
+        # Allocate array
+        fsizes = tuple(self.field_size(f) for f in fields)
+        data = np.empty((sum(fsizes), n_subsystems), dtype=self.dtype)
+        # Make views into data
+        views = []    
+        i0 = 0
+        for fsize, field in zip(fsizes, fields):
+            if fsize:
+                fshape = self.field_shape(field)
+                i1 = i0 + fsize
+                for j, ss in enumerate(self.subsystems):
+                    ss_view = data[i0:i1, j].reshape(fshape)
+                    ss_slices = ss.field_slices(field)
+                    views.append((field, ss_view, ss_slices)) 
+                i0 = i1
+        return data, views
 
-    # def valid_field_shape(self, field):
-    #     return self.subsystems[0].valid_field_shape(field)
+    def gather(self, fields):
+        """Gather and concatenate subproblem data in from multiple fields."""
+        data, views = self._gather_scatter_setup(tuple(fields))
+        # Gather from fields
+        for field, ss_view, ss_slices in views:
+            copyto(ss_view, field.data[ss_slices])
+        return data
 
-    # def valid_field_size(self, field):
-    #     return self.subsystems[0].valid_field_size(field)
+    def scatter(self, data_input, fields):
+        """Scatter concatenated subproblem data out to multiple fields."""
+        data, views = self._gather_scatter_setup(tuple(fields))
+        # Copy to preallocated data with views
+        # TODO: optimize by making sure the input data is already written to this buffer
+        copyto(data, data_input)
+        # Scatter to fields
+        for field, ss_view, ss_slices in views:
+            copyto(field.data[ss_slices], ss_view)
 
     def inclusion_matrices(self, bases):
         """List of inclusion matrices."""

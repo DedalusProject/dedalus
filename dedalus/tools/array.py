@@ -7,6 +7,9 @@ from scipy.sparse import _sparsetools
 from scipy.sparse import linalg as spla
 from functools import reduce
 import operator
+from ..tools.config import config
+
+SPLIT_CSR_MATVECS = config['linear algebra'].getboolean('SPLIT_CSR_MATVECS')
 
 
 def prod(arg):
@@ -188,6 +191,34 @@ def csr_matvec(A_csr, x_vec, out_vec):
         raise ValueError(f"Matrix shape {(M,N)} does not match input {(n,)} and output {(m,)} shapes.")
     # Apply matvec
     _sparsetools.csr_matvec(M, N, A_csr.indptr, A_csr.indices, A_csr.data, x_vec, out_vec)
+    return out_vec
+
+
+def csr_matvecs(A_csr, x_vec, out_vec):
+    """
+    Fast CSR matvec with dense vector skipping output allocation. The result is
+    added to the specificed output array, so the output should be manually
+    zeroed prior to calling this routine, if necessary.
+    """
+    # Check format but don't convert
+    if A_csr.format != "csr":
+        raise ValueError("Matrix must be in CSR format.")
+    # Check shapes
+    M, N = A_csr.shape
+    n, kx = x_vec.shape
+    m, ko = out_vec.shape
+    if x_vec.ndim != 2 or out_vec.ndim != 2:
+        raise ValueError("Only matrices allowed for input and output.")
+    if M != m or N != n:
+        raise ValueError(f"Matrix shape {(M,N)} does not match input {(n,)} and output {(m,)} shapes.")
+    if kx != ko:
+        raise ValueError("Output size does not match input size.")
+    # Apply matvecs
+    if SPLIT_CSR_MATVECS:
+        for k in range(kx):
+            _sparsetools.csr_matvec(M, N, A_csr.indptr, A_csr.indices, A_csr.data, x_vec[:,k], out_vec[:,k])
+    else:
+        _sparsetools.csr_matvecs(M, N, kx, A_csr.indptr, A_csr.indices, A_csr.data, x_vec, out_vec)
     return out_vec
 
 

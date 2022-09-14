@@ -1,7 +1,4 @@
-"""
-Classes for solving differential equations.
-
-"""
+"""Solver classes."""
 
 from mpi4py import MPI
 import numpy as np
@@ -10,16 +7,11 @@ import h5py
 import pathlib
 import scipy.linalg
 
-#from ..data.operators import parsable_ops
-from . import operators
 from . import subsystems
 from .evaluator import Evaluator
-from .system import CoeffSystem, FieldSystem
-from .field import Field
 from ..libraries.matsolvers import matsolvers
-from ..tools.progress import log_progress
 from ..tools.config import config
-from ..tools.array import csr_matvec, scipy_sparse_eigs
+from ..tools.array import csr_matvecs, scipy_sparse_eigs
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -59,6 +51,7 @@ class SolverBase:
         self.problem = problem
         self.dist = problem.dist
         self.dtype = problem.dtype
+        self.state = problem.variables
         # Process options
         self.ncc_cutoff = ncc_cutoff
         self.max_ncc_terms = max_ncc_terms
@@ -86,6 +79,7 @@ class SolverBase:
             for basis in eq['domain'].bases:
                 slices = slice(basis.first_axis, basis.last_axis+1)
                 self.matrix_dependence[slices] = self.matrix_dependence[slices] | basis.matrix_dependence(matrix_coupling[slices])
+        # Process config options
         if matsolver is None:
             matsolver = config['linear algebra'][self.matsolver_default]
         if isinstance(matsolver, str):
@@ -108,34 +102,34 @@ class SolverBase:
             if getattr(self, key, None) is not value:
                 logger.info("matsolver overriding solver option '%i' with '%s'" %(key, value))
                 setattr(self, key, value)
+        # Setup subsystems and subproblems without building matrices
+        self.subsystems = subsystems.build_subsystems(self)
+        self.subproblems = subsystems.build_subproblems(self, self.subsystems)
+        self.subproblems_by_group = {sp.group: sp for sp in self.subproblems}
 
 
 class EigenvalueSolver(SolverBase):
     """
-    Solves linear eigenvalue problems for oscillation frequency omega, (d_t -> -i omega).
-    First converts to dense matrices, then solves the eigenvalue problem for a given pencil,
-    and stored the eigenvalues and eigenvectors.  The set_state method can be used to set
-    the state to the ith eigenvector.
+    Linear eigenvalue problem solver.
 
     Parameters
     ----------
     problem : Problem object
-        Dedalus problem.
+        Dedalus eigenvalue problem.
     **kw :
         Other options passed to ProblemBase.
 
     Attributes
     ----------
-    state : system object
-        System containing solution fields (after solve method is called)
-    eigenvalues : numpy array
-        Contains a list of eigenvalues omega
-    eigenvectors : numpy array
-        Contains a list of eigenvectors.  The eigenvector corresponding to the ith
-        eigenvalue is in eigenvectors[..., i]
-    eigenvalue_pencil : pencil
-        The pencil for which the eigenvalue problem has been solved.
-
+    state : list of Field objects
+        Problem variables containing solution (after set_state method is called).
+    eigenvalues : ndarray
+        Vector of eigenvalues.
+    eigenvectors : ndarray
+        Array of eigenvectors. The eigenvector corresponding to the i-th
+        eigenvalues is eigenvectors[:, i].
+    eigenvalue_subproblem : Subproblem object
+        The subproblem for which the EVP has een solved.
     """
 
     # Default to factorizer to speed up repeated solves
@@ -144,99 +138,112 @@ class EigenvalueSolver(SolverBase):
     def __init__(self, problem, **kw):
         logger.debug('Beginning EVP instantiation')
         super().__init__(problem, **kw)
-        # Build subsystems and subproblem without building matrices
-        self.subsystems = subsystems.build_subsystems(self)
-        self.subproblems = subsystems.build_subproblems(self, self.subsystems)
-        self.subproblems_by_group = {sp.group: sp for sp in self.subproblems}
-        self.state = problem.variables
         logger.debug('Finished EVP instantiation')
 
-    def solve_dense(self, subproblem, rebuild_coeffs=False, **kw):
+    def print_subproblem_ranks(self, subproblems=None, target=0):
+        """Print rank of each subproblem LHS."""
+        if subproblems is None:
+            subproblems = self.subproblems
+        # Check matrix rank
+        for i, sp in enumerate(subproblems):
+            if not hasattr(sp, 'L_min'):
+                continue
+            L = (sp.L_min @ sp.pre_right).A
+            M = (sp.M_min @ sp.pre_right).A
+            A = L + target * M
+            print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {sp.group}, matrix rank: {np.linalg.matrix_rank(A)}/{A.shape[0]}, cond: {np.linalg.cond(A):.1e}")
+
+    def _build_modified_left_eigenvectors(self):
+        sp = self.eigenvalue_subproblem
+        return - (self.left_eigenvectors.T.conj() * sp.M_min).T.conj()
+
+    def _normalize_left_eigenvectors(self):
+        modified_left_eigenvectors = self._build_modified_left_eigenvectors()
+        norms = np.diag(modified_left_eigenvectors.T.conj() @ self.eigenvectors)
+        self.left_eigenvectors /= norms
+
+    def solve_dense(self, subproblem, rebuild_matrices=False, left=False, normalize_left=True, **kw):
         """
-        Solve EVP for selected pencil.
+        Perform dense eigenvector search for selected subproblem.
+        This routine finds all eigenvectors but is computationally expensive.
 
         Parameters
         ----------
-        subproblem : subproblem object
-            Subproblem for which to solve the EVP
-        #rebuild_coeffs : bool, optional
-        #    Flag to rebuild cached coefficient matrices (default: False)
-
-        Other keyword options passed to scipy.linalg.eig.
-
+        subproblem : Subproblem object
+            Subproblem for which to solve the EVP.
+        rebuild_matrices : bool, optional
+            Rebuild LHS matrices if coefficients have changed (default: False).
+        left : bool, optional
+            Solve for the left eigenvectors of the system in addition to the
+            right eigenvectors. The left eigenvectors are the right eigenvectors
+            of the conjugate-transposed problem. Follows same definition described
+            in scipy.linalg.eig documentation (default: False).
+        normalize_left : bool, optional
+            Normalize the left eigenvectors such that the modified left eigenvectors
+            form a biorthonormal (not just biorthogonal) set with respect to the right
+            eigenvectors (default: True).
+        **kw :
+            Other keyword options passed to scipy.linalg.eig.
         """
-        # TODO caching of matrices for loops over parameter values
-        # # Build matrices
-        # if rebuild_coeffs:
-        #     # Generate unique cache
-        #     cacheid = uuid.uuid4()
-        # else:
-        #     cacheid = None
-        #pencil.build_matrices(self.problem, ['M', 'L'], cacheid=cacheid)
-        subsystems.build_subproblem_matrices(self, [subproblem], ['M', 'L'])
+        self.eigenvalue_subproblem = sp = subproblem
+        # Rebuild matrices if directed or not yet built
+        if rebuild_matrices or not hasattr(sp, 'L_min'):
+            subsystems.build_subproblem_matrices(self, [sp], ['M', 'L'])
         # Solve as dense general eigenvalue problem
-        sp = subproblem
         A = (sp.L_min @ sp.pre_right).A
         B = - (sp.M_min @ sp.pre_right).A
-        eig_output = scipy.linalg.eig(A, b=B, **kw)
+        eig_output = scipy.linalg.eig(A, b=B, left=left, **kw)
         # Unpack output
-        if len(eig_output) == 2:
-            self.eigenvalues, eigenvectors = eig_output
-        elif len(eig_output) == 3:
-            self.eigenvalues, self.left_eigenvectors, eigenvectors = eig_output
-        self.eigenvectors = sp.pre_right @ eigenvectors
-        self.eigenvalue_subproblem = subproblem
+        if left:
+            self.eigenvalues, self.left_eigenvectors, pre_eigenvectors = eig_output
+            self.eigenvectors = sp.pre_right @ pre_eigenvectors
+            if normalize_left:
+                self._normalize_left_eigenvectors()
+            self.modified_left_eigenvectors = self._build_modified_left_eigenvectors()
+        else:
+            self.eigenvalues, pre_eigenvectors = eig_output
+            self.eigenvectors = sp.pre_right @ pre_eigenvectors
 
-    def solve_sparse(self, subproblem, N, target, rebuild_coeffs=False, left=False, normalize_left=True, raise_on_mismatch=True, **kw):
+    def solve_sparse(self, subproblem, N, target, rebuild_matrices=False, left=False, normalize_left=True, raise_on_mismatch=True, **kw):
         """
-        Perform targeted sparse eigenvalue search for selected pencil.
+        Perform targeted sparse eigenvector search for selected subproblem.
+        This routine finds a subset of eigenvectors near the specified target.
 
         Parameters
         ----------
-        subproblem : subproblem object
-            Subproblem for which to solve the EVP
+        subproblem : Subproblem object
+            Subproblem for which to solve the EVP.
         N : int
-            Number of eigenmodes to solver for.  Note: the dense method may
-            be more efficient for finding large numbers of eigenmodes.
+            Number of eigenvectors to solve for. Note: the dense method may
+            be more efficient for finding large numbers of eigenvectors.
         target : complex
             Target eigenvalue for search.
-        rebuild_coeffs : bool, optional
-            Flag to rebuild cached coefficient matrices (default: False)
+        rebuild_matrices : bool, optional
+            Rebuild LHS matrices if coefficients have changed (default: False).
         left : bool, optional
-            Flag to solve for the left eigenvectors of the system
-            (IN ADDITION TO the right eigenvectors), defined as the right
-            eigenvectors of the conjugate-transposed problem. Follows same
-            definition described in scipy.linalg.eig documentation.
-            (default: False)
+            Solve for the left eigenvectors of the system in addition to the
+            right eigenvectors. The left eigenvectors are the right eigenvectors
+            of the conjugate-transposed problem. Follows same definition described
+            in scipy.linalg.eig documentation (default: False).
         normalize_left : bool, optional
-            Flag to normalize the left eigenvectors such that the modified
-            left eigenvectors form a biorthonormal (not just biorthogonal)
-            set with respect to the right eigenvectors.
-            (default: True)
+            Normalize the left eigenvectors such that the modified left eigenvectors
+            form a biorthonormal (not just biorthogonal) set with respect to the right
+            eigenvectors (default: True).
         raise_on_mismatch : bool, optional
-            Flag to raise a RuntimeError if the eigenvalues of the conjugate-
-            transposed problem (i.e. the left eigenvalues) do not match
-            the original (or "right") eigenvalues.
-            (default: True)
-
-        Other keyword options passed to scipy.sparse.linalg.eig.
-
+            Raise a RuntimeError if the left and right eigenvalues do not match (default: True).
+        **kw :
+            Other keyword options passed to scipy.sparse.linalg.eig.
         """
-        # # Build matrices
-        # if rebuild_coeffs:
-        #     # Generate unique cache
-        #     cacheid = uuid.uuid4()
-        # else:
-        #     cacheid = None
-        # pencil.build_matrices(self.problem, ['M', 'L'], cacheid=cacheid)
-        subsystems.build_subproblem_matrices(self, [subproblem], ['M', 'L'])
+        self.eigenvalue_subproblem = sp = subproblem
+        # Rebuild matrices if directed or not yet built
+        if rebuild_matrices or not hasattr(sp, 'L_min'):
+            subsystems.build_subproblem_matrices(self, [sp], ['M', 'L'])
         # Solve as sparse general eigenvalue problem
-        sp = subproblem
         A = (sp.L_min @ sp.pre_right)
         B = - (sp.M_min @ sp.pre_right)
         # Solve for the right eigenvectors
-        self.eigenvalues, self.eigenvectors = scipy_sparse_eigs(A=A, B=B, N=N, target=target, matsolver=self.matsolver, **kw)
-        self.eigenvectors = sp.pre_right @ self.eigenvectors
+        self.eigenvalues, pre_eigenvectors = scipy_sparse_eigs(A=A, B=B, N=N, target=target, matsolver=self.matsolver, **kw)
+        self.eigenvectors = sp.pre_right @ pre_eigenvectors
         if left:
             # Solve for the left eigenvectors
             # Note: this definition of "left eigenvectors" is consistent with the documentation for scipy.linalg.eig
@@ -254,13 +261,9 @@ class EigenvalueSolver(SolverBase):
                     logger.warning("Conjugate of left eigenvalues does not match right eigenvalues.")
             # In absence of above warning, modified_left_eigenvectors forms a biorthogonal set with the right
             # eigenvectors.
-            raise NotImplementedError()
-            # if normalize_left:
-            #     unnormalized_modified_left_eigenvectors = np.conjugate(np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M))
-            #     norms = np.diag(unnormalized_modified_left_eigenvectors.T.conj() @ self.eigenvectors)
-            #     self.left_eigenvectors /= norms
-            # self.modified_left_eigenvectors = np.conjugate(np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M))
-        self.eigenvalue_subproblem = subproblem
+            if normalize_left:
+                self._normalize_left_eigenvectors()
+            self.modified_left_eigenvectors = self._build_modified_left_eigenvectors()
 
     def set_state(self, index, subsystem):
         """
@@ -269,14 +272,20 @@ class EigenvalueSolver(SolverBase):
         Parameters
         ----------
         index : int
-            Index of desired eigenmode
-        subsystem : Subsystem object
-            subsystem that eigenvalue data will be put into
+            Index of desired eigenmode.
+        subsystem : Subsystem object or int
+            Subsystem that will be set to the corresponding eigenmode.
+            If an integer, the corresponding subsystem of the last specified
+            eigenvalue_subproblem will be used.
         """
-        sp = self.eigenvalue_subproblem
-        ss = subsystem
-        if ss not in sp.subsystems:
+        # TODO: allow setting left modified eigenvectors?
+        subproblem = self.eigenvalue_subproblem
+        if isinstance(subsystem, int):
+            subsystem = subproblem.subsystems[subsystem]
+        # Check selection
+        if subsystem not in subproblem.subsystems:
             raise ValueError("subsystem must be in eigenvalue_subproblem")
+        # Set coefficients
         for var in self.state:
             var['c'] = 0
         subsystem.scatter(self.eigenvectors[:, index], self.state)
@@ -295,9 +304,8 @@ class LinearBoundaryValueSolver(SolverBase):
 
     Attributes
     ----------
-    state : system object
-        System containing solution fields (after solve method is called)
-
+    state : list of Field objects
+        Problem variables containing solution (after solve method is called).
     """
 
     # Default to factorizer to speed up repeated solves
@@ -306,12 +314,8 @@ class LinearBoundaryValueSolver(SolverBase):
     def __init__(self, problem, **kw):
         logger.debug('Beginning LBVP instantiation')
         super().__init__(problem, **kw)
-        # Build subsystems and subproblem matrices
-        self.subsystems = subsystems.build_subsystems(self)
-        self.subproblems = subsystems.build_subproblems(self, self.subsystems, build_matrices=['L'])
-        self.subproblems_by_group = {sp.group: sp for sp in self.subproblems}
-        self.state = problem.variables
-        # Create F operator trees
+        self.subproblem_matsolvers = {}
+        # Create RHS handler
         namespace = {}
         self.evaluator = Evaluator(self.dist, namespace)
         F_handler = self.evaluator.add_system_handler(iter=1, group='F')
@@ -321,49 +325,66 @@ class LinearBoundaryValueSolver(SolverBase):
         self.F = F_handler.fields
         logger.debug('Finished LBVP instantiation')
 
-    def _build_subproblem_matsolvers(self):
-        """Build matsolvers for each pencil LHS."""
-        self.subproblem_matsolvers = {}
-        if self.store_expanded_matrices:
-            for sp in self.subproblems:
-                L = sp.L_exp
-                self.subproblem_matsolvers[sp] = self.matsolver(L, self)
+    def print_subproblem_ranks(self, subproblems=None):
+        """Print rank of each subproblem LHS."""
+        if subproblems is None:
+            subproblems = self.subproblems
+        # Check matrix rank
+        for i, sp in enumerate(subproblems):
+            if not hasattr(sp, 'L_min'):
+                continue
+            L = (sp.L_min @ sp.pre_right).A
+            print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {sp.group}, matrix rank: {np.linalg.matrix_rank(L)}/{L.shape[0]}, cond: {np.linalg.cond(L):.1e}")
+
+    def build_matrices(self, subproblems=None):
+        if subproblems is None:
+            subproblems = self.subproblems
+        subsystems.build_subproblem_matrices(self, subproblems, ['L'])
+
+    def solve(self, subproblems=None, rebuild_matrices=False):
+        """
+        Solve BVP over selected subproblems.
+
+        Parameters
+        ----------
+        subproblems : Subproblem object or list of Subproblem objects, optional
+            Subproblems for which to solve the BVP (default: None (all)).
+        rebuild_matrices : bool, optional
+            Rebuild LHS matrices if coefficients have changed (default: False).
+        """
+        # Resolve subproblems
+        if subproblems is None:
+            subproblems = self.subproblems
+        if isinstance(subproblems, subsystems.Subproblem):
+            subproblems = [subproblems]
+        # Rebuild matrices and matsolvers if directed or not yet built
+        if rebuild_matrices:
+            rebuild_subproblems = subproblems
         else:
-            for sp in self.subproblems:
+            rebuild_subproblems = [sp for sp in subproblems if sp not in self.subproblem_matsolvers]
+        if rebuild_subproblems:
+            self.build_matrices(rebuild_subproblems)
+            for sp in rebuild_subproblems:
                 L = sp.L_min @ sp.pre_right
                 self.subproblem_matsolvers[sp] = self.matsolver(L, self)
-
-    def print_subproblem_ranks(self):
-        # Check matrix rank
-        for i, subproblem in enumerate(self.subproblems):
-            L = (subproblem.L_min @ subproblem.pre_right).A
-            print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {subproblem.group}, matrix rank: {np.linalg.matrix_rank(L)}/{L.shape[0]}, cond: {np.linalg.cond(L):.1e}")
-
-    def solve(self):
-        """Solve BVP."""
         # Compute RHS
         self.evaluator.evaluate_group('F', sim_time=0, wall_time=0, iteration=0)
-        # Build matsolvers on demand
-        if not hasattr(self, "subproblem_matsolvers"):
-            self._build_subproblem_matsolvers()
         # Ensure coeff space before subsystem gathers/scatters
         for field in self.F:
             field.change_layout('c')
         for field in self.state:
             field.preset_layout('c')
         # Solve system for each subproblem, updating state
-        for sp in self.subproblems:
-            sp_matsolver = self.subproblem_matsolvers[sp]
-            F = np.empty(sp.pre_left.shape[0], dtype=self.dtype)
-            X = np.empty(sp.pre_right.shape[0], dtype=self.dtype)
-            for ss in sp.subsystems:
-                F.fill(0)  # Must zero before csr_matvec
-                csr_matvec(sp.pre_left, ss.gather(self.F), F)
-                x = sp_matsolver.solve(F)
-                X.fill(0)  # Must zero before csr_matvec
-                csr_matvec(sp.pre_right, x, X)
-                ss.scatter(X, self.state)
-        #self.state.scatter()
+        for sp in subproblems:
+            n_ss = len(sp.subsystems)
+            # Gather and left-precondition RHS
+            pF = np.zeros((sp.pre_left.shape[0], n_ss), dtype=self.dtype)  # CREATES TEMPORARY
+            csr_matvecs(sp.pre_left, sp.gather(self.F), pF)
+            # Solve, right-precondition, and scatter X
+            pX = self.subproblem_matsolvers[sp].solve(pF)  # CREATES TEMPORARY
+            X = np.zeros((sp.pre_right.shape[0], n_ss), dtype=self.dtype)  # CREATES TEMPORARY
+            csr_matvecs(sp.pre_right, pX.reshape((-1, n_ss)), X)
+            sp.scatter(X, self.state)
 
 
 class NonlinearBoundaryValueSolver(SolverBase):
@@ -379,9 +400,12 @@ class NonlinearBoundaryValueSolver(SolverBase):
 
     Attributes
     ----------
-    state : system object
-        System containing solution fields (after solve method is called)
-
+    state : list of Field objects
+        Problem variables containing solution.
+    perturbations : list of Field objects
+        Perturbations to problem variables from each Newton iteration.
+    iteration : int
+        Current iteration.
     """
 
     # Default to solver since every iteration sees a new matrix
@@ -390,56 +414,42 @@ class NonlinearBoundaryValueSolver(SolverBase):
     def __init__(self, problem, **kw):
         logger.debug('Beginning NLBVP instantiation')
         super().__init__(problem, **kw)
-        self.iteration = 0
-        # Build subsystems and subproblem matrices
-        self.subsystems = subsystems.build_subsystems(self)
-        self.subproblems = subsystems.build_subproblems(self, self.subsystems)
-        self.subproblems_by_group = {sp.group: sp for sp in self.subproblems}
-        self.state = problem.variables
         self.perturbations = problem.perturbations
-        # Create F operator trees
+        self.iteration = 0
+        # Create RHS handler
         namespace = {}
         self.evaluator = Evaluator(self.dist, namespace)
         F_handler = self.evaluator.add_system_handler(iter=1, group='F')
         for eq in problem.eqs:
-            F_handler.add_task(eq['-H'])
+            F_handler.add_task(eq['H'])
         F_handler.build_system()
         self.F = F_handler.fields
         logger.debug('Finished NLBVP instantiation')
-
-    def _build_subproblem_matsolver(self, sp):
-        """Build matsolvers for each subproblem LHS."""
-        if self.store_expanded_matrices:
-            L = sp.dH_exp
-            matsolver = self.matsolver(L, self)
-        else:
-            L = sp.dH_min @ sp.pre_right
-            matsolver = self.matsolver(L, self)
-        return matsolver
 
     def newton_iteration(self, damping=1):
         """Update solution with a Newton iteration."""
         # Compute RHS
         self.evaluator.evaluate_group('F', sim_time=0, wall_time=0, iteration=self.iteration)
         # Recompute Jacobian
+        # TODO: split out linear part for faster recomputation?
         subsystems.build_subproblem_matrices(self, self.subproblems, ['dH'])
         # Ensure coeff space before subsystem gathers/scatters
         for field in self.F:
             field.change_layout('c')
         for field in self.perturbations:
             field.preset_layout('c')
-        # Solve system for each subproblem, updating state
+        # Solve system for each subproblem, updating perturbations
         for sp in self.subproblems:
-            sp_matsolver = self._build_subproblem_matsolver(sp)
-            F = np.empty(sp.pre_left.shape[0], dtype=self.dtype)
-            X = np.empty(sp.pre_right.shape[0], dtype=self.dtype)
-            for ss in sp.subsystems:
-                F.fill(0)  # Must zero before csr_matvec
-                csr_matvec(sp.pre_left, ss.gather(self.F), F)
-                x = sp_matsolver.solve(F)
-                X.fill(0)  # Must zero before csr_matvec
-                csr_matvec(sp.pre_right, x, X)
-                ss.scatter(X, self.perturbations)
+            n_ss = len(sp.subsystems)
+            # Gather and left-precondition RHS
+            pF = np.zeros((sp.pre_left.shape[0], n_ss), dtype=self.dtype)
+            csr_matvecs(sp.pre_left, sp.gather(self.F), pF)
+            # Solve, right-precondition, and scatter X
+            sp_matsolver = self.matsolver(sp.dH_min @ sp.pre_right, self)
+            pX = - sp_matsolver.solve(pF)
+            X = np.zeros((sp.pre_right.shape[0], n_ss), dtype=self.dtype)
+            csr_matvecs(sp.pre_right, pX.reshape((-1, n_ss)), X)
+            sp.scatter(X, self.perturbations)
         # Update state
         for var, pert in zip(self.state, self.perturbations):
             var['c'] += damping * pert['c']
@@ -454,30 +464,31 @@ class InitialValueSolver(SolverBase):
     ----------
     problem : Problem object
         Dedalus problem.
-    timestepper : timestepper class
-        Timestepper to use in evolving initial conditions
+    timestepper : Timestepper class
+        Timestepper to use in evolving initial conditions.
     enforce_real_cadence : int, optional
         Iteration cadence for enforcing Hermitian symmetry on real variables (default: 100).
+    warmup_iterations : int, optional
+        Number of warmup iterations to disregard when computing runtime statistics (default: 10).
     **kw :
         Other options passed to ProblemBase.
 
     Attributes
     ----------
-    state : system object
-        System containing current solution fields
-    dt : float
-        Timestep
+    state : list of Field objects
+        Problem variables containing solution.
     stop_sim_time : float
-        Simulation stop time, in simulation units
+        Simulation stop time, in simulation units.
     stop_wall_time : float
-        Wall stop time, in seconds from instantiation
+        Wall stop time, in seconds from instantiation.
     stop_iteration : int
-        Stop iteration
-    time : float
-        Current simulation time
+        Stop iteration.
+    sim_time : float
+        Current simulation time.
     iteration : int
-        Current iteration
-
+        Current iteration.
+    dt : float
+        Last timestep.
     """
 
     # Default to factorizer to speed up repeated solves
@@ -489,20 +500,12 @@ class InitialValueSolver(SolverBase):
         self.enforce_real_cadence = enforce_real_cadence
         self._wall_time_array = np.zeros(1, dtype=float)
         self.init_time = self.get_wall_time()
-        # Build subproblems and subproblem matrices
-        self.subsystems = subsystems.build_subsystems(self)
-        self.subproblems = subsystems.build_subproblems(self, self.subsystems, build_matrices=['M', 'L'])
-        self.subproblems_by_group = {sp.group: sp for sp in self.subproblems}
+        # Build LHS matrices
+        subsystems.build_subproblem_matrices(self, self.subproblems, ['M', 'L'])
         # Compute total modes
         local_modes = sum(ss.subproblem.pre_right.shape[1] for ss in self.subsystems)
         self.total_modes = self.dist.comm.allreduce(local_modes, op=MPI.SUM)
-        # Build systems
-        # namespace = problem.namespace
-        # #vars = [namespace[var] for var in problem.variables]
-        # #self.state = FieldSystem.from_fields(vars)
-        self.state = problem.variables
-        # self._sim_time = namespace[problem.time]
-        # Create F operator trees
+        # Create RHS handler
         namespace = {}
         self.evaluator = Evaluator(self.dist, namespace)
         F_handler = self.evaluator.add_system_handler(iter=1, group='F')
@@ -513,7 +516,7 @@ class InitialValueSolver(SolverBase):
         # Initialize timestepper
         self.timestepper = timestepper(self)
         # Attributes
-        self.sim_time = self.initial_sim_time = 0  # TODO: allow picking up from current problem sim time?
+        self.sim_time = self.initial_sim_time = problem.time.allreduce_data_max(layout='g')
         self.iteration = self.initial_iteration = 0
         self.warmup_iterations = warmup_iterations
         # Default integration parameters
@@ -529,18 +532,13 @@ class InitialValueSolver(SolverBase):
     @sim_time.setter
     def sim_time(self, t):
         self._sim_time = t
-        self.problem.sim_time_field['g'] = t
+        self.problem.time['g'] = t
 
     def get_wall_time(self):
         self._wall_time_array[0] = time.time()
         comm = self.dist.comm_cart
         comm.Allreduce(MPI.IN_PLACE, self._wall_time_array, op=MPI.MAX)
         return self._wall_time_array[0]
-
-    @property
-    def ok(self):
-        logger.warning("'solver.ok' is deprecated. Use 'solver.proceed' instead.")
-        return self.proceed
 
     @property
     def proceed(self):
@@ -593,31 +591,13 @@ class InitialValueSolver(SolverBase):
                 field.load_from_hdf5(file, index)
         return write, dt
 
-    # TO-DO: remove this
-    def euler_step(self, dt):
-        """
-        M.dt(X) + L.X = F
-        M.X1 - M.X0 + h L.X1 = h F
-        (M + h L).X1 = M.X0 + h F
-        """
-        # Compute RHS
-        self.evaluator.evaluate_group('F', sim_time=0, wall_time=0, iteration=self.iteration)
-        # Ensure coeff space before subsystem gathers/scatters
-        for field in self.F:
-            field.change_layout('c')
-        for field in self.state:
-            field.change_layout('c')
-        # Solve system for each subproblem, updating state
-        for sp in self.subproblems:
-            LHS = sp.M_min + dt*sp.L_min
-            for ss in sp.subsystems:
-                X0 = ss.gather(self.state)
-                F0 = ss.gather(self.F)
-                RHS = sp.M_min*X0 + dt*sp.rhs_map*F0
-                X1 = self.matsolver(LHS, self).solve(RHS)
-                ss.scatter(X1, self.state)
-        self.iteration += 1
-        self.sim_time += dt
+    def enforce_hermitian_symmetry(self, fields):
+        """Transform fields to grid and back."""
+        # TODO: maybe this should be on scales=1?
+        for f in fields:
+            f.change_scales(f.domain.dealias)
+        self.evaluator.require_grid_space(fields)
+        self.evaluator.require_coeff_space(fields)
 
     def step(self, dt):
         """Advance system by one iteration/timestep."""
@@ -628,12 +608,7 @@ class InitialValueSolver(SolverBase):
         if np.isrealobj(self.dtype.type()):
             # Enforce for as many iterations as timestepper uses internally
             if self.iteration % self.enforce_real_cadence < self.timestepper.steps:
-                # Transform state variables to grid and back
-                # TODO: maybe this should be on scales=1?
-                for field in self.state:
-                    field.change_scales(field.domain.dealias)
-                self.evaluator.require_grid_space(self.state)
-                self.evaluator.require_coeff_space(self.state)
+                self.enforce_hermitian_symmetry(self.state)
         # Record times
         wall_time = self.get_wall_time()
         if self.iteration == self.initial_iteration:
@@ -645,8 +620,9 @@ class InitialValueSolver(SolverBase):
         self.timestepper.step(dt, wall_elapsed)
         # Update iteration
         self.iteration += 1
+        self.dt = dt
 
-    def evolve(self, timestep_function):
+    def evolve(self, timestep_function, log_cadence=100):
         """Advance system until stopping criterion is reached."""
         # Check for a stopping criterion
         if np.isinf(self.stop_sim_time):
@@ -654,19 +630,29 @@ class InitialValueSolver(SolverBase):
                 if np.isinf(self.stop_iteration):
                     raise ValueError("No stopping criterion specified.")
         # Evolve
-        while self.proceed:
-            dt = timestep_function()
-            if self.sim_time + dt > self.stop_sim_time:
-                dt = self.stop_sim_time - self.sim_time
-            self.step(dt)
+        try:
+            logger.info("Starting main loop")
+            while self.proceed:
+                timestep = timestep_function()
+                self.step(timestep)
+                if (self .iteration-1) % log_cadence == 0:
+                    logger.info(f"Iteration={self.iteration}, Time={self.sim_time:e}, Step={timestep:e}")
+        except:
+            logger.error('Exception raised, triggering end of main loop.')
+            raise
+        finally:
+            self.log_stats()
 
-    def print_subproblem_ranks(self, dt=1):
+    def print_subproblem_ranks(self, subproblems=None, dt=1):
+        """Print rank of each subproblem LHS."""
+        if subproblems is None:
+            subproblems = self.subproblems
         # Check matrix rank
-        for i, subproblem in enumerate(self.subproblems):
-            M = subproblem.M_min @ subproblem.pre_right
-            L = subproblem.L_min @ subproblem.pre_right
+        for i, sp in enumerate(subproblems):
+            M = sp.M_min @ sp.pre_right
+            L = sp.L_min @ sp.pre_right
             A = (M + dt*L).A
-            print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {subproblem.group}, matrix rank: {np.linalg.matrix_rank(A)}/{A.shape[0]}, cond: {np.linalg.cond(A):.1e}")
+            print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {sp.group}, matrix rank: {np.linalg.matrix_rank(A)}/{A.shape[0]}, cond: {np.linalg.cond(A):.1e}")
 
     def evaluate_handlers_now(self, dt, handlers=None):
         """Evaluate all handlers right now. Useful for writing final outputs.

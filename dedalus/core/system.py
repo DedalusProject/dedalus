@@ -44,16 +44,16 @@ class CoeffSystem:
         self.views = views = {}
         for sp in subproblems:
             views[sp] = views_sp = {}
+            i00 = i0
             for ss in sp.subsystems:
                 i1 += sp.LHS.shape[1]
                 views_sp[ss] = self.data[i0:i1]
                 i0 = i1
+            i11 = i1
+            views_sp[None] = self.data[i00:i11].reshape((sp.LHS.shape[1], -1))
 
-    def get_subdata(self, sp, ss):
+    def get_subdata(self, sp, ss=None):
         return self.views[sp][ss]
-
-    def set_subdata(self, sp, ss, data):
-        np.copyto(self.views[sp][ss], data)
 
 
 class FieldSystem(CoeffSystem):
