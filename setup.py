@@ -191,7 +191,8 @@ install_requires = [
     "pytest-parallel",
     "pytest-benchmark",
     "pytest-cov",
-    "scipy >= 1.4.0"]
+    "scipy >= 1.4.0",
+    "xarray"]
 
 # Grab long_description from README
 with open('README.md') as f:
@@ -231,5 +232,6 @@ setup(
     packages=setuptools.find_packages(),
     package_data={'': ['dedalus.cfg', 'examples.tar.gz']},
     ext_modules=cythonize(extensions, compiler_directives=compiler_directives),
-    cmdclass={"build": build})
+    cmdclass={"build": build},
+    entry_points={"xarray.backends": ["dedalus=dedalus.tools.post:DedalusXarrayBackend"]})
 
