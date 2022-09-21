@@ -50,6 +50,16 @@ class SeparableTransform(Transform):
         # Subclasses must implement
         raise NotImplementedError("%s has not implemented 'backward' method" %type(self))
 
+    def forward_adjoint(self, gdata, cdata, axis):
+        """Apply adjoint forward transform along specified axis."""
+        # Subclasses must implement
+        raise NotImplementedError("%s has not implemented 'forward_adjoint' method" %type(self))
+
+    def backward_adjoint(self, cdata, gdata, axis):
+        """Apply adjoint backward transform along specified axis."""
+        # Subclasses must implement
+        raise NotImplementedError("%s has not implemented 'backward_adjoint' method" %type(self))
+
 
 class SeparableMatrixTransform(SeparableTransform):
     """Abstract base class for separable matrix-multiplication transforms."""
@@ -63,11 +73,11 @@ class SeparableMatrixTransform(SeparableTransform):
         apply_dense(self.backward_matrix, cdata, axis=axis, out=gdata)
 
     def forward_adjoint(self, gdata, cdata, axis):
-        """Apply forward transform along specified axis."""
+        """Apply adjoint forward transform along specified axis."""
         apply_dense(np.conj(self.forward_matrix).T, gdata, axis=axis, out=cdata)
 
     def backward_adjoint(self, cdata, gdata, axis):
-        """Apply backward transform along specified axis."""
+        """Apply adjoint backward transform along specified axis."""
         apply_dense(np.conj(self.backward_matrix).T, cdata, axis=axis, out=gdata)
 
     @CachedAttribute
@@ -296,6 +306,21 @@ class ScipyComplexFFT(ComplexFFT):
         temp = scipy.fft.ifft(temp, axis=axis, overwrite_x=True) # Creates temporary
         np.copyto(gdata, temp)
 
+    def forward_adjoint(self, cdata, gdata, axis):
+        """Apply adjoint forward transform along specified axis."""
+        # Resize and rescale for unit-amplitude normalization
+        # Need temporary to avoid overwriting problems
+        temp = np.empty_like(gdata) # Creates temporary
+        self.resize_coeffs(cdata, temp, axis, rescale=1.)
+        # Call FFT
+        temp = scipy.fft.ifft(temp, axis=axis, overwrite_x=True) # Creates temporary
+        np.copyto(gdata, temp)
+
+    def backward_adjoint(self, gdata, cdata, axis):
+        """Apply adjoint backward transform along specified axis."""
+        temp = scipy.fft.fft(gdata, axis=axis) # Creates temporary
+        # Resize and rescale for unit-amplitude normalization
+        self.resize_coeffs(temp, cdata, axis, rescale=1.)
 
 class FFTWBase:
     """Abstract base class for FFTW transforms."""
