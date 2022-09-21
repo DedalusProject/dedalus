@@ -362,6 +362,23 @@ class FFTWComplexFFT(FFTWBase, ComplexFFT):
         # Execute FFTW plan
         plan.backward(temp, gdata)
 
+    def forward_adjoint(self, cdata, gdata, axis):
+        """Apply adjoint forward transform along specified axis."""
+        plan, temp = self._build_fftw_plan(gdata.shape, axis)
+        self.resize_coeffs(cdata, temp, axis, rescale=1/self.N)
+        # Execute FFTW plan
+        plan.backward(temp, gdata)
+
+    def backward_adjoint(self, gdata, cdata, axis):
+        """Apply adjoint backward transform along specified axis."""
+        plan, temp = self._build_fftw_plan(gdata.shape, axis)
+        # Execute FFTW plan
+        plan.forward(gdata, temp)
+        # Resize and rescale for unit-amplitude normalization
+        self.resize_coeffs(temp, cdata, axis, rescale=None)
+
+
+
 
 class RealFourierTransform(SeparableTransform):
     """
