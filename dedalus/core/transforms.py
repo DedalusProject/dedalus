@@ -802,7 +802,7 @@ class FastCosineTransform(CosineTransform):
         if Kmax > 0:
             posfreq = axslice(axis, 1, Kmax+1)
             np.multiply(data_in[posfreq], self.forward_rescale_pos, data_out[posfreq])
-            if self.KM > Kmax:
+            if self.KN > Kmax:
                 badfreq = axslice(axis, Kmax+1, None)
                 data_out[badfreq] = 0
 
@@ -813,7 +813,7 @@ class FastCosineTransform(CosineTransform):
         if Kmax > 0:
             posfreq = axslice(axis, 1, Kmax+1)
             np.multiply(data_in[posfreq], self.backward_rescale_pos, data_out[posfreq])
-            if self.KN > Kmax:
+            if self.KM > Kmax:
                 badfreq = axslice(axis, Kmax+1, None)
                 data_out[badfreq] = 0
 
@@ -840,7 +840,6 @@ class ScipyDCT(FastCosineTransform):
 
     def forward_adjoint(self, cdata, gdata, axis):
         """Apply adjoint forward transform along specified axis."""
-        # Problem if M<N
         # Resize and rescale for unit-amplitude normalization
         # Need temporary to avoid overwriting problems
         temp = np.empty_like(gdata) # Creates temporary
