@@ -62,6 +62,14 @@ class SeparableMatrixTransform(SeparableTransform):
         """Apply backward transform along specified axis."""
         apply_dense(self.backward_matrix, cdata, axis=axis, out=gdata)
 
+    def forward_adjoint(self, gdata, cdata, axis):
+        """Apply forward transform along specified axis."""
+        apply_dense(np.conj(self.forward_matrix).T, gdata, axis=axis, out=cdata)
+
+    def backward_adjoint(self, cdata, gdata, axis):
+        """Apply backward transform along specified axis."""
+        apply_dense(np.conj(self.backward_matrix).T, cdata, axis=axis, out=gdata)
+
     @CachedAttribute
     def forward_matrix(self):
         """Build forward transform matrix."""
@@ -1620,4 +1628,3 @@ def _backward_disk_matrix(Nc, Ng, k0, k, m):
     Qfull = np.zeros((Nc, Ng))
     Qfull[:Nc, :] = Q.astype(np.float64)
     return Qfull
-
