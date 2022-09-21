@@ -795,6 +795,27 @@ class FastCosineTransform(CosineTransform):
                 badfreq = axslice(axis, Kmax+1, None)
                 data_out[badfreq] = 0
 
+    def resize_rescale_forward_adjoint(self, data_in, data_out, axis, Kmax):
+        """Resize by padding/trunction and rescale to unit amplitude."""
+        zerofreq = axslice(axis, 0, 1)
+        np.multiply(data_in[zerofreq], 2*self.forward_rescale_zero, data_out[zerofreq])
+        if Kmax > 0:
+            posfreq = axslice(axis, 1, Kmax+1)
+            np.multiply(data_in[posfreq], self.forward_rescale_pos, data_out[posfreq])
+            if self.KM > Kmax:
+                badfreq = axslice(axis, Kmax+1, None)
+                data_out[badfreq] = 0
+
+    def resize_rescale_backward_adjoint(self, data_in, data_out, axis, Kmax):
+        """Resize by padding/trunction and rescale to unit amplitude."""
+        zerofreq = axslice(axis, 0, 1)
+        np.multiply(data_in[zerofreq], self.backward_rescale_zero/2, data_out[zerofreq])
+        if Kmax > 0:
+            posfreq = axslice(axis, 1, Kmax+1)
+            np.multiply(data_in[posfreq], self.backward_rescale_pos, data_out[posfreq])
+            if self.KN > Kmax:
+                badfreq = axslice(axis, Kmax+1, None)
+                data_out[badfreq] = 0
 
 #@register_transform(basis.Cosine, 'scipy')
 class ScipyDCT(FastCosineTransform):
@@ -817,6 +838,23 @@ class ScipyDCT(FastCosineTransform):
         temp = scipy.fft.dct(temp, type=3, axis=axis, overwrite_x=True) # Creates temporary
         np.copyto(gdata, temp)
 
+    def forward_adjoint(self, cdata, gdata, axis):
+        """Apply adjoint forward transform along specified axis."""
+        # Problem if M<N
+        # Resize and rescale for unit-amplitude normalization
+        # Need temporary to avoid overwriting problems
+        temp = np.empty_like(gdata) # Creates temporary
+        self.resize_rescale_forward_adjoint(cdata, temp, axis, self.Kmax)
+        # Call IDCT
+        temp = scipy.fft.dct(temp, type=3, axis=axis, overwrite_x=True) # Creates temporary
+        np.copyto(gdata, temp)
+
+    def backward_adjoint(self, gdata, cdata, axis):
+        """Apply adjoint backward transform along specified axis."""
+        # Call DCT
+        temp = scipy.fft.dct(gdata, type=2, axis=axis) # Creates temporary
+        # Resize and rescale for unit-ampltidue normalization
+        self.resize_rescale_backward_adjoint(temp, cdata, axis, self.Kmax)
 
 #@register_transform(basis.Cosine, 'fftw')
 class FFTWDCT(FFTWBase, FastCosineTransform):
@@ -846,6 +884,19 @@ class FFTWDCT(FFTWBase, FastCosineTransform):
         self.resize_rescale_backward(cdata, temp, axis, self.Kmax)
         # Execute FFTW plan
         plan.backward(temp, gdata)
+
+    def forward_adjoint(self, cdata, gdata, axis):
+        """Apply adjoint forward transform along specified axis."""
+        plan, temp = self._build_fftw_plan(gdata.dtype, gdata.shape, axis)
+        self.resize_rescale_forward_adjoint(cdata, temp, axis, self.Kmax)
+        plan.backward(temp, gdata)
+
+    def backward_adjoint(self, gdata, cdata, axis):
+        """Apply adjoint backward transform along specified axis."""
+        plan, temp = self._build_fftw_plan(gdata.dtype, gdata.shape, axis)
+        plan.forward(gdata, temp)
+        self.resize_rescale_backward_adjoint(temp, cdata, axis, self.Kmax)
+
 
 
 class FastChebyshevTransform(JacobiTransform):
