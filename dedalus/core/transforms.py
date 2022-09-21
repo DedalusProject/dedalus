@@ -897,8 +897,6 @@ class FFTWDCT(FFTWBase, FastCosineTransform):
         plan.forward(gdata, temp)
         self.resize_rescale_backward_adjoint(temp, cdata, axis, self.Kmax)
 
-
-
 class FastChebyshevTransform(JacobiTransform):
     """
     Abstract base class for fast Chebyshev transforms including ultraspherical conversion.
@@ -929,6 +927,8 @@ class FastChebyshevTransform(JacobiTransform):
         if a == a0 and b == b0:
             self.resize_rescale_forward = self._resize_rescale_forward
             self.resize_rescale_backward = self._resize_rescale_backward
+            self.resize_rescale_forward_adjoint = self._resize_rescale_forward_adjoint
+            self.resize_rescale_backward_adjoint = self._resize_rescale_backward_adjoint
         else:
             # Conversion matrices
             if self.dealias_before_converting and (self.M_orig < self.N): # truncate prior to conversion matrix
@@ -959,6 +959,24 @@ class FastChebyshevTransform(JacobiTransform):
             data_in[posfreq_odd] *= -1
         # DCT resize/rescale
         super().resize_rescale_backward(data_in, data_out, axis, Kmax)
+
+    def _resize_rescale_forward_adjoint(self, data_in, data_out, axis, Kmax):
+        """Resize by padding/trunction and rescale to unit amplitude."""
+        # DCT resize/rescale
+        super().resize_rescale_forward_adjoint(data_in, data_out, axis, Kmax)
+        # Change sign of odd modes
+        if Kmax > 0:
+            posfreq_odd = axslice(axis, 1, Kmax+1, 2)
+            data_out[posfreq_odd] *= -1
+
+    def _resize_rescale_backward_adjoint(self, data_in, data_out, axis, Kmax):
+        """Resize by padding/trunction and rescale to unit amplitude."""
+        # Change sign of odd modes
+        if Kmax > 0:
+            posfreq_odd = axslice(axis, 1, Kmax+1, 2)
+            data_in[posfreq_odd] *= -1
+        # DCT resize/rescale
+        super().resize_rescale_backward_adjoint(data_in, data_out, axis, Kmax)
 
     def _resize_rescale_forward_convert(self, data_in, data_out, axis, Kmax_DCT):
         """Resize by padding/trunction and rescale to unit amplitude."""
