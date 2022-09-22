@@ -140,6 +140,17 @@ def splu_inverse(matrix, permc_spec="NATURAL", **kw):
     return spla.LinearOperator(shape=matrix.shape, dtype=matrix.dtype, matvec=solve, matmat=solve)
 
 
+def splu_inverse_adjoint(matrix, permc_spec="NATURAL", **kw):
+    """Create LinearOperator implicitly acting as a sparse matrix inverse."""
+    splu = spla.splu(np.conj(matrix.tocsc()).T, permc_spec=permc_spec, **kw)
+    def solve(x):
+        if np.iscomplexobj(x) and matrix.dtype == np.float64:
+            return splu.solve(x.real) + 1j*splu.solve(x.imag)
+        else:
+            return splu.solve(x)
+    return spla.LinearOperator(shape=matrix.shape, dtype=matrix.dtype, matvec=solve, matmat=solve)
+
+
 def apply_sparse_dot(matrix, array, axis, out=None):
     """Apply sparse matrix along any axis of an array."""
     dim = array.ndim
@@ -455,6 +466,7 @@ def interleave_matrices(matrices):
         sum += sparse.kron(matrix, P)
         P[i, i] = 0
     return sum
+<<<<<<< HEAD
 
 
 def sparse_allclose(A, B):
@@ -474,3 +486,5 @@ def assert_sparse_pinv(A, B):
     if not sparse_allclose((B @ A).conj().T, B @ A):
         raise AssertionError("Not a pseudoinverse")
 
+=======
+>>>>>>> 6fea707 (All Chebyshev transforms are adjointed, including when (a0,b0) !- (a,b))
