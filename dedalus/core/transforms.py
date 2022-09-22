@@ -515,6 +515,43 @@ class FFTPACKRealFFT(RealFourierTransform):
         temp = scipy.fftpack.irfft(temp, axis=axis, overwrite_x=True) # Creates temporary
         np.copyto(gdata, temp)
 
+    def forward_adjoint(self, cdata, gdata, axis):
+        """Apply adjoint forward transform along specified axis."""
+        N = self.N
+        Kmax = self.Kmax
+        # Need temporary to avoid overwriting problems
+        temp = np.empty_like(gdata) # Creates temporary
+        # Scale k = 0 cos data
+        meancos = axslice(axis, 0, 1)
+        np.multiply(cdata[meancos], 1, temp[meancos])
+        # Shift and scale 1 < k <= Kmax data
+        temp_posfreq = temp[axslice(axis, 1, 2*(Kmax+1)-1)]
+        cdata_posfreq = cdata[axslice(axis, 2, 2*(Kmax+1))]
+        np.multiply(cdata_posfreq, 1, temp_posfreq)
+        # Zero k > Kmax data
+        temp[axslice(axis, 2*(Kmax+1)-1, None)] = 0
+        # Call IRFFT
+        temp = scipy.fftpack.irfft(temp, axis=axis, overwrite_x=True) # Creates temporary
+        np.copyto(gdata, temp)
+
+    def backward_adjoint(self, gdata, cdata, axis):
+        """Apply adjoint backward transform along specified axis."""
+        N = self.N
+        Kmax = self.Kmax
+        # Call RFFT
+        temp = scipy.fftpack.rfft(gdata, axis=axis) # Creates temporary
+        # Scale k = 0 cos data
+        meancos = axslice(axis, 0, 1)
+        np.multiply(temp[meancos], 1, cdata[meancos])
+        # Zero k = 0 sin data
+        cdata[axslice(axis, 1, 2)] = 0
+        # Shift and scale 1 < k <= Kmax data
+        temp_posfreq = temp[axslice(axis, 1, 2*(Kmax+1)-1)]
+        cdata_posfreq = cdata[axslice(axis, 2, 2*(Kmax+1))]
+        np.multiply(temp_posfreq, 1, cdata_posfreq)
+        # Zero k > Kmax data
+        cdata[axslice(axis, 2*(Kmax+1), None)] = 0
+
 
 class RealFFT(RealFourierTransform):
     """Abstract base class for real-to-real FFTs using real-to-complex algorithms."""
@@ -558,6 +595,44 @@ class RealFFT(RealFourierTransform):
         # Zero k > Kmax data
         temp[axslice(axis, Kmax+1, None)] = 0
 
+    def unpack_rescale_adjoint(self, cdata, temp, axis, rescale):
+        """Repack into complex coefficients and rescale for adjoint."""
+        Kmax = self.Kmax
+        # Scale k = 0 data
+        meancos = axslice(axis, 0, 1)
+        if rescale is None:
+            np.copyto(temp[meancos], cdata[meancos])
+        else:
+            np.multiply(cdata[meancos], rescale, temp[meancos])
+        # Repack and scale 1 < k <= Kmax data
+        temp_posfreq = temp[axslice(axis, 1, Kmax+1)]
+        cdata_posfreq_cos = cdata[axslice(axis, 2, 2*(Kmax+1), 2)]
+        cdata_posfreq_msin = cdata[axslice(axis, 3, 2*(Kmax+1), 2)]
+        if rescale is None:
+            np.multiply(cdata_posfreq_cos, 1, temp_posfreq.real)
+            np.multiply(cdata_posfreq_msin, 1, temp_posfreq.imag)
+        else:
+            np.multiply(cdata_posfreq_cos, (rescale), temp_posfreq.real)
+            np.multiply(cdata_posfreq_msin, (rescale), temp_posfreq.imag)
+        # Zero k > Kmax data
+        temp[axslice(axis, Kmax+1, None)] = 0
+
+    def repack_rescale_adjoint(self, temp, cdata, axis, rescale):
+        """Unpack complex coefficients and rescale for adjoint."""
+        Kmax = self.Kmax
+        # Scale k = 0 cos data
+        meancos = axslice(axis, 0, 1)
+        np.multiply(temp[meancos].real, rescale, cdata[meancos])
+        # Zero k = 0 msin data
+        cdata[axslice(axis, 1, 2)] = 0
+        # Unpack and scale 1 < k <= Kmax data
+        temp_posfreq = temp[axslice(axis, 1, Kmax+1)]
+        cdata_posfreq_cos = cdata[axslice(axis, 2, 2*(Kmax+1), 2)]
+        cdata_posfreq_msin = cdata[axslice(axis, 3, 2*(Kmax+1), 2)]
+        np.multiply(temp_posfreq.real, rescale, cdata_posfreq_cos)
+        np.multiply(temp_posfreq.imag, rescale, cdata_posfreq_msin)
+        # Zero k > Kmax data
+        cdata[axslice(axis, 2*(Kmax+1), None)] = 0
 
 @register_transform(basis.RealFourier, 'scipy')
 class ScipyRealFFT(RealFFT):
@@ -582,6 +657,27 @@ class ScipyRealFFT(RealFFT):
         # Call IRFFT
         temp = scipy.fft.irfft(temp, axis=axis, n=N, overwrite_x=True) # Creates temporary
         np.copyto(gdata, temp)
+
+    def forward_adjoint(self, cdata, gdata, axis):
+        """Apply forward adjoint transform along specified axis."""
+        N = self.N
+        # Rescale all modes and combine into complex form
+        shape = list(gdata.shape)
+        shape[axis] = N // 2 + 1
+        temp = np.empty(shape=shape, dtype=np.complex128) # Creates temporary
+        # Repack into complex form and rescale
+        self.unpack_rescale_adjoint(cdata, temp, axis, rescale=1)
+        # Call IRFFT
+        temp = scipy.fft.irfft(temp, axis=axis, n=N, overwrite_x=True) # Creates temporary
+        np.copyto(gdata, temp)
+
+    def backward_adjoint(self, gdata, cdata, axis):
+        """Apply backward adjoint transform along specified axis."""
+        # Call RFFT
+        temp = scipy.fft.rfft(gdata, axis=axis) # Creates temporary
+        # Unpack from complex form and rescale
+        self.repack_rescale_adjoint(temp, cdata, axis, rescale=1)
+
 
 
 @register_transform(basis.RealFourier, 'fftw')
@@ -662,6 +758,40 @@ class FFTWHalfComplexFFT(FFTWBase, RealFourierTransform):
         # Zero k > Kmax data
         temp[axslice(axis, Kmax+1, -Kmax)] = 0
 
+    def unpack_rescale_adjoint(self, cdata, temp, axis, rescale):
+        """Repack into complex coefficients and rescale for adjoint."""
+        Kmax = self.Kmax
+        # Copy k = 0 data
+        meancos = axslice(axis, 0, 1)
+        np.multiply(cdata[meancos], rescale, temp[meancos])
+        # Repack 1 < k <= Kmax data
+        temp_posfreq_cos = temp[axslice(axis, 1, Kmax+1)]
+        temp_posfreq_msin = temp[axslice(axis, -1, -(Kmax+1), -1)]
+        cdata_posfreq_cos = cdata[axslice(axis, 2, 2*(Kmax+1), 2)]
+        cdata_posfreq_msin = cdata[axslice(axis, 3, 2*(Kmax+1), 2)]
+        np.multiply(cdata_posfreq_cos, rescale, temp_posfreq_cos)
+        np.multiply(cdata_posfreq_msin, rescale, temp_posfreq_msin)
+        # Zero k > Kmax data
+        temp[axslice(axis, Kmax+1, -Kmax)] = 0
+
+    def repack_adjoint(self, temp, cdata, axis, rescale):
+        """Unpack halfcomplex coefficients and rescale for adjoint."""
+        Kmax = self.Kmax
+        # Scale k = 0 cos data
+        meancos = axslice(axis, 0, 1)
+        np.multiply(temp[meancos], rescale, cdata[meancos])
+        # Zero k = 0 msin data
+        cdata[axslice(axis, 1, 2)] = 0
+        # Unpack and scale 1 < k <= Kmax data
+        temp_posfreq_cos = temp[axslice(axis, 1, Kmax+1)]
+        temp_posfreq_msin = temp[axslice(axis, -1, -(Kmax+1), -1)]
+        cdata_posfreq_cos = cdata[axslice(axis, 2, 2*(Kmax+1), 2)]
+        cdata_posfreq_msin = cdata[axslice(axis, 3, 2*(Kmax+1), 2)]
+        np.multiply(temp_posfreq_cos, rescale, cdata_posfreq_cos)
+        np.multiply(temp_posfreq_msin, rescale, cdata_posfreq_msin)
+        # Zero k > Kmax data
+        cdata[axslice(axis, 2*(Kmax+1), None)] = 0
+
     def forward(self, gdata, cdata, axis):
         """Apply forward transform along specified axis."""
         plan, temp = self._build_fftw_plan(gdata.dtype, gdata.shape, axis)
@@ -677,6 +807,22 @@ class FFTWHalfComplexFFT(FFTWBase, RealFourierTransform):
         self.repack(cdata, temp, axis)
         # Execute FFTW plan
         plan.backward(temp, gdata)
+
+    def forward_adjoint(self, cdata, gdata, axis):
+        """Apply adjoint forward transform along specified axis."""
+        plan, temp = self._build_fftw_plan(gdata.dtype, gdata.shape, axis)
+        # Repack into halfcomplex form
+        self.unpack_rescale_adjoint(cdata, temp, axis, rescale=1/self.N)
+        # Execute FFTW plan
+        plan.backward(temp, gdata)
+
+    def backward_adjoint(self, gdata, cdata, axis):
+        """Apply adjoint backward transform along specified axis."""
+        plan, temp = self._build_fftw_plan(gdata.dtype, gdata.shape, axis)
+        # Execute FFTW plan
+        plan.forward(gdata, temp)
+        # Unpack from halfcomplex form and rescale
+        self.repack_adjoint(temp, cdata, axis, rescale=1)
 
 
 class CosineTransform(SeparableTransform):
@@ -796,7 +942,7 @@ class FastCosineTransform(CosineTransform):
                 data_out[badfreq] = 0
 
     def resize_rescale_forward_adjoint(self, data_in, data_out, axis, Kmax):
-        """Resize by padding/trunction and rescale to unit amplitude."""
+        """Resize by padding/trunction and rescale for adjoint."""
         zerofreq = axslice(axis, 0, 1)
         np.multiply(data_in[zerofreq], 2*self.forward_rescale_zero, data_out[zerofreq])
         if Kmax > 0:
@@ -807,7 +953,7 @@ class FastCosineTransform(CosineTransform):
                 data_out[badfreq] = 0
 
     def resize_rescale_backward_adjoint(self, data_in, data_out, axis, Kmax):
-        """Resize by padding/trunction and rescale to unit amplitude."""
+        """Resize by padding/trunction and rescale for adjoint."""
         zerofreq = axslice(axis, 0, 1)
         np.multiply(data_in[zerofreq], self.backward_rescale_zero/2, data_out[zerofreq])
         if Kmax > 0:
@@ -938,8 +1084,11 @@ class FastChebyshevTransform(JacobiTransform):
                 self.forward_conversion = self.forward_conversion.tocsr()
             self.backward_conversion = jacobi.conversion_matrix(self.M_orig, a0, b0, a, b).tocsr()
             self.backward_conversion.sum_duplicates() # for faster solve_upper
+            # self.backward_conversion_adjoint = splu_inverse(np.conj(self.backward_conversion).T)
             self.resize_rescale_forward = self._resize_rescale_forward_convert
             self.resize_rescale_backward = self._resize_rescale_backward_convert
+            self.resize_rescale_forward_adjoint = self._resize_rescale_forward_convert_adjoint
+            # self.resize_rescale_backward_adjoint = self._resize_rescale_backward_convert_adjoint
 
     def _resize_rescale_forward(self, data_in, data_out, axis, Kmax):
         """Resize by padding/trunction and rescale to unit amplitude."""
@@ -960,7 +1109,7 @@ class FastChebyshevTransform(JacobiTransform):
         super().resize_rescale_backward(data_in, data_out, axis, Kmax)
 
     def _resize_rescale_forward_adjoint(self, data_in, data_out, axis, Kmax):
-        """Resize by padding/trunction and rescale to unit amplitude."""
+        """Resize by padding/trunction and rescale for adjoint."""
         # DCT resize/rescale
         super().resize_rescale_forward_adjoint(data_in, data_out, axis, Kmax)
         # Change sign of odd modes
@@ -969,7 +1118,7 @@ class FastChebyshevTransform(JacobiTransform):
             data_out[posfreq_odd] *= -1
 
     def _resize_rescale_backward_adjoint(self, data_in, data_out, axis, Kmax):
-        """Resize by padding/trunction and rescale to unit amplitude."""
+        """Resize by padding/trunction and rescale for adjoint."""
         # Change sign of odd modes
         if Kmax > 0:
             posfreq_odd = axslice(axis, 1, Kmax+1, 2)
@@ -1006,6 +1155,40 @@ class FastChebyshevTransform(JacobiTransform):
             data_in[posfreq_odd] *= -1
         # DCT resize/rescale
         super().resize_rescale_backward(data_in, data_out, axis, Kmax_orig)
+
+    def _resize_rescale_forward_convert_adjoint(self, data_in, data_out, axis, Kmax_DCT):
+        """Resize by padding/trunction and rescale to unit amplitude."""
+        apply_sparse(np.conj(self.forward_conversion).T, data_in, axis, out=data_out)
+        # Ultraspherical conversion
+        if DEALIAS_BEFORE_CONVERTING() and self.M_orig < self.N: # truncate data
+            goodfreq = axslice(axis, 0, self.M_orig)
+            data_out = data_out[goodfreq]
+        # Change sign of odd modes
+        if Kmax_DCT > 0:
+            posfreq_odd = axslice(axis, 1, Kmax_DCT+1, 2)
+            data_out[posfreq_odd] *= -1
+
+        # DCT rescale in place
+        super().resize_rescale_forward_adjoint(data_out, data_out, axis, Kmax_DCT)
+
+
+
+
+    # def _resize_rescale_backward_convert_adjoint(self, data_in, data_out, axis, Kmax_DCT):
+    #     """Resize by padding/trunction and rescale to unit amplitude."""
+    #     Kmax_orig = self.Kmax_orig
+    #     badfreq = axslice(axis, Kmax_orig+1, None)
+    #     if self.M_orig > self.N:
+    #         # Truncate input before conversion
+    #         data_in[badfreq] = 0
+    #     # Ultraspherical conversion
+    #     apply_sparse(self.backward_conversion_adjoint, data_in, axis, out=data_in)
+    #     # Change sign of odd modes
+    #     if Kmax_orig > 0:
+    #         posfreq_odd = axslice(axis, 1, Kmax_orig+1, 2)
+    #         data_in[posfreq_odd] *= -1
+    #     # DCT resize/rescale
+    #     super().resize_rescale_backward_adjoint(data_in, data_out, axis, Kmax_orig)
 
 
 @register_transform(basis.Jacobi, 'scipy_dct')
