@@ -12,8 +12,12 @@ from math import prod
 from . import basis
 from ..libraries.fftw import fftw_wrappers as fftw
 from ..tools import jacobi
+<<<<<<< HEAD
 from ..tools.array import apply_matrix, apply_dense, axslice, solve_upper_sparse, apply_sparse
 from ..tools.array import apply_matrix, apply_dense, axslice, splu_inverse, apply_sparse, prod, splu_inverse_adjoint
+=======
+from ..tools.array import apply_matrix, apply_dense, axslice, splu_inverse, apply_sparse, prod
+>>>>>>> c9e45ce (Add Hermitian multiplication to splu_inverse so that adjoint multiplication can be done from the same LU decomposision. Cleanup transforms to use this new version.)
 from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
 
@@ -1195,7 +1199,7 @@ class FastChebyshevTransform(JacobiTransform):
             data_out[posfreq_odd] *= -1
 
         # Ultraspherical conversion
-        apply_sparse(self.backward_conversion_adjoint, data_out, axis, out=data_out)
+        apply_sparse(self.backward_conversion.H, data_out, axis, out=data_out)
         badfreq = axslice(axis, Kmax_orig+1, None)
         if self.M_orig > self.N:
             # Truncate input before conversion

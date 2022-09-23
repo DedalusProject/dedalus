@@ -137,18 +137,14 @@ def splu_inverse(matrix, permc_spec="NATURAL", **kw):
             return splu.solve(x.real) + 1j*splu.solve(x.imag)
         else:
             return splu.solve(x)
-    return spla.LinearOperator(shape=matrix.shape, dtype=matrix.dtype, matvec=solve, matmat=solve)
-
-
-def splu_inverse_adjoint(matrix, permc_spec="NATURAL", **kw):
-    """Create LinearOperator implicitly acting as a sparse matrix inverse."""
-    splu = spla.splu(np.conj(matrix.tocsc()).T, permc_spec=permc_spec, **kw)
-    def solve(x):
+    def solve_adjoint(x):
         if np.iscomplexobj(x) and matrix.dtype == np.float64:
-            return splu.solve(x.real) + 1j*splu.solve(x.imag)
+            return splu.solve(x.real,trans='H') + 1j*splu.solve(x.imag,trans='H')
         else:
-            return splu.solve(x)
-    return spla.LinearOperator(shape=matrix.shape, dtype=matrix.dtype, matvec=solve, matmat=solve)
+            return splu.solve(x,trans='H')
+    return spla.LinearOperator(shape=matrix.shape, dtype=matrix.dtype, matvec=solve, matmat=solve,rmatvec=solve_adjoint,rmatmat=solve_adjoint)
+
+
 
 
 def apply_sparse_dot(matrix, array, axis, out=None):
