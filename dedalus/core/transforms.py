@@ -55,12 +55,12 @@ class SeparableTransform(Transform):
         # Subclasses must implement
         raise NotImplementedError("%s has not implemented 'backward' method" %type(self))
 
-    def forward_adjoint(self, gdata, cdata, axis):
+    def forward_adjoint(self, cdata, gdata, axis):
         """Apply adjoint forward transform along specified axis."""
         # Subclasses must implement
         raise NotImplementedError("%s has not implemented 'forward_adjoint' method" %type(self))
 
-    def backward_adjoint(self, cdata, gdata, axis):
+    def backward_adjoint(self, gdata, cdata, axis):
         """Apply adjoint backward transform along specified axis."""
         # Subclasses must implement
         raise NotImplementedError("%s has not implemented 'backward_adjoint' method" %type(self))
@@ -77,13 +77,13 @@ class SeparableMatrixTransform(SeparableTransform):
         """Apply backward transform along specified axis."""
         apply_dense(self.backward_matrix, cdata, axis=axis, out=gdata)
 
-    def forward_adjoint(self, gdata, cdata, axis):
+    def forward_adjoint(self, cdata, gdata, axis):
         """Apply adjoint forward transform along specified axis."""
-        apply_dense(np.conj(self.forward_matrix).T, gdata, axis=axis, out=cdata)
+        apply_dense(np.conj(self.forward_matrix).T, cdata, axis=axis, out=gdata)
 
-    def backward_adjoint(self, cdata, gdata, axis):
+    def backward_adjoint(self, gdata, cdata, axis):
         """Apply adjoint backward transform along specified axis."""
-        apply_dense(np.conj(self.backward_matrix).T, cdata, axis=axis, out=gdata)
+        apply_dense(np.conj(self.backward_matrix).T, gdata, axis=axis, out=cdata)
 
     @CachedAttribute
     def forward_matrix(self):
