@@ -427,22 +427,20 @@ class PowerFieldConstant(Power, FutureField):
 
 class GeneralFunction(NonlinearOperator, FutureField):
     """
-    Operator wrapping a general python function.
+    Operator wrapping a general python function to return a field.
 
     Parameters
     ----------
+    dist : distributor object
     domain : domain object
-        Domain
-    layout : layout object or identifier
-        Layout of function output
-    func : function
-        Function producing field data
-    args : list
-        Arguments to pass to func
-    kw : dict
-        Keywords to pass to func
-    out : field, optional
-        Output field (default: new field)
+    tensorsig : Tensor signature of output field (corresponding to, e.g.,
+        scalar, vector, rank-2 tensor, etc.)
+    dtype : dtype of output field
+    layout : layout object or identifier of output field
+    func : function that produces the field data
+    args : arguments to pass to func
+    kw : keywords to pass to func
+    out : output field (default: new field)
 
     Notes
     -----
@@ -454,16 +452,16 @@ class GeneralFunction(NonlinearOperator, FutureField):
 
     """
 
-    def __init__(self, domain, layout, func, args=[], kw={}, out=None,):
+    def __init__(self, dist, domain, tensorsig, dtype, layout, func, args=[], kw={}, out=None,):
 
         # Required attributes
         self.args = list(args)
         self.original_args = list(args)
-        self.domain = domain
         self.out = out
         self.last_id = None
         # Additional attributes
-        self.layout = domain.distributor.get_layout_object(layout)
+        self.dist = dist
+        self.layout = self.dist.get_layout_object(layout)
         self.func = func
         self.kw = kw
         self._field_arg_indices = [i for (i,arg) in enumerate(self.args) if is_fieldlike(arg)]
@@ -471,10 +469,10 @@ class GeneralFunction(NonlinearOperator, FutureField):
             self.name = func.__name__
         except AttributeError:
             self.name = str(func)
-        self.build_metadata()
-
-    def build_metadata(self):
-        self.constant = np.array([False] * self.domain.dim)
+        # FutureField requirements
+        self.domain = domain
+        self.tensorsig = tensorsig
+        self.dtype = dtype
 
     def check_conditions(self):
         # Fields must be in proper layout
