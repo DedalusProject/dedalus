@@ -464,7 +464,7 @@ class GeneralFunction(NonlinearOperator, FutureField):
         self.layout = self.dist.get_layout_object(layout)
         self.func = func
         self.kw = kw
-        self._field_arg_indices = [i for (i,arg) in enumerate(self.args) if is_fieldlike(arg)]
+        self._field_arg_indices = [i for (i,arg) in enumerate(self.args) if isinstance(arg, (Field, FutureField, FutureLockedField))]
         try:
             self.name = func.__name__
         except AttributeError:
