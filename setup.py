@@ -187,6 +187,7 @@ install_requires = [
     "mpi4py >= 2.0.0",
     "numexpr",
     "numpy >= 1.20.0",
+    "py",
     "pytest",
     "pytest-parallel",
     "pytest-benchmark",
