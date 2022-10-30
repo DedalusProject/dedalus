@@ -186,6 +186,7 @@ install_requires = [
     "matplotlib",
     "mpi4py >= 2.0.0",
     "numpy >= 1.20.0",
+    "py",
     "pytest",
     "pytest-benchmark",
     "pytest-cov",
