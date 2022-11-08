@@ -16,7 +16,7 @@ jobs:
             label: linux-64
           - os: macos-latest
             label: osx-64
-    name: Test ${GITHUB_REF##*/} via conda-forge on ${{ matrix.label }}
+    name: Test ${{ github.ref_name }} via conda-forge on ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
     steps:
       - name: Setup miniforge
