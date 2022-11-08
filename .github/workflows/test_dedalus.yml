@@ -1,25 +1,22 @@
-# Following:
-# https://dev.to/epassaro/caching-anaconda-environments-in-github-actions-5hde
-# https://github.com/epassaro/cache-conda-envs
 
 name: Test Dedalus
 on:
   push:
     branches:
       - master
+      - v2_master
   workflow_dispatch:
-env:
-  CACHE_NUMBER: 0 # increase to reset cache manually
 jobs:
-  test_dedalus:
+  test_via_conda_forge:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
-            prefix: /usr/share/miniconda3/envs/dedalus3
+            label: linux-64
           - os: macos-latest
-            prefix: /Users/runner/miniconda3/envs/dedalus3
-    name: dedalus3 on ${{ matrix.os }}
+            label: osx-64
+    name: Test ${GITHUB_REF##*/} via conda-forge on ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
     steps:
       - name: Setup miniforge
@@ -28,26 +25,21 @@ jobs:
           miniforge-version: latest
           auto-activate-base: true
           activate-environment: ""
-      - name: Set cache date
-        run: echo "DATE=$(date +'%Y%m%d')" >> $GITHUB_ENV
-      - name: Check stack cache
-        uses: actions/cache@v2
-        with:
-          path: ${{ matrix.prefix }}
-          key: ${{ matrix.os }}-stack-${{ env.DATE }}-${{ env.CACHE_NUMBER }}
-        id: cache
-      - name: Run conda installation (only on cache miss)
-        if: steps.cache.outputs.cache-hit != 'true'
+      - name: Build stack via conda-forge
         shell: bash -l {0}
         run: |
-          curl https://raw.githubusercontent.com/DedalusProject/dedalus_conda/master/conda_install_dedalus3.sh --output conda_install_dedalus3.sh
-          bash conda_install_dedalus3.sh
+          conda create -y -n dedalus
+          conda activate dedalus
+          conda env config vars set OMP_NUM_THREADS=1
+          conda env config vars set NUMEXPR_MAX_THREADS=1
+          conda install -y -c conda-forge dedalus c-compiler "h5py=*=mpi*"
+          conda uninstall -y --force dedalus
       - name: Checkout repository
         uses: actions/checkout@v2
-      - name: Update Dedalus from repository
+      - name: Install Dedalus from repository
         shell: bash -l {0}
         run: |
-          conda activate dedalus3
+          conda activate dedalus
           pip uninstall -y dedalus
           CC=mpicc python3 setup.py build_ext --inplace
           CC=mpicc pip install --no-cache .
@@ -56,7 +48,7 @@ jobs:
         run: |
           # Move out of repository to run tests
           cd $HOME
-          conda activate dedalus3
+          conda activate dedalus
           python3 -m dedalus test --report
           # Copy report back to repository for test-reporter
           cp dedalus-test-junit.xml $GITHUB_WORKSPACE
@@ -67,3 +59,4 @@ jobs:
           name: Test report (${{ matrix.os }})
           path: dedalus-test-junit.xml
           reporter: java-junit
+          
