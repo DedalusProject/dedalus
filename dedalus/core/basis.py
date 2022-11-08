@@ -106,8 +106,8 @@ class Basis:
         self.domain = Domain(self.dist, bases=(self,))
 
     def clone_with(self, **new_kw):
-        argnames, _, _, _ = inspect.getargspec(type(self).__init__)
-        kw = {name: getattr(self, name) for name in argnames[1:]}
+        (_, *argnames), _, _, _, _, _, _ = inspect.getfullargspec(type(self).__init__)
+        kw = {name: getattr(self, name) for name in argnames}
         kw.update(new_kw)
         return type(self)(**kw)
 

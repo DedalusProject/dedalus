@@ -56,7 +56,7 @@ class CachedFunction:
         self.cache = OrderedDict()
         self.max_size = max_size
         # Retrieve arg names and default kw
-        argnames, _, _, defaults = inspect.getargspec(function)
+        argnames, _, _, defaults, _, _, _ = inspect.getfullargspec(function)
         self.argnames = argnames
         if defaults:
             self.defaults = dict(zip(reversed(argnames), reversed(defaults)))
