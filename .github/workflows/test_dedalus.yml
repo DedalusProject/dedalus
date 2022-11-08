@@ -40,8 +40,6 @@ jobs:
         shell: bash -l {0}
         run: |
           conda activate dedalus
-          pip uninstall -y dedalus
-          CC=mpicc python3 setup.py build_ext --inplace
           CC=mpicc pip install --no-cache .
       - name: Test Dedalus
         shell: bash -l {0}
