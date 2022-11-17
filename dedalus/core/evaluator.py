@@ -21,6 +21,7 @@ from ..tools.config import config
 FILEHANDLER_MODE_DEFAULT = config['analysis'].get('FILEHANDLER_MODE_DEFAULT')
 FILEHANDLER_PARALLEL_DEFAULT = config['analysis'].get('FILEHANDLER_PARALLEL_DEFAULT')
 FILEHANDLER_TOUCH_TMPFILE = config['analysis'].getboolean('FILEHANDLER_TOUCH_TMPFILE')
+FILEHANDLER_SIMTIME_EPSILON = config['analysis'].getfloat('FILEHANDLER_SIMTIME_EPSILON')
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -92,7 +93,7 @@ class Evaluator:
         for handler in self.handlers:
             # Get cadence devisors
             wall_div = wall_time // handler.wall_dt
-            sim_div  = sim_time  // handler.sim_dt
+            sim_div  = (sim_time + FILEHANDLER_SIMTIME_EPSILON) // handler.sim_dt
             iter_div = iteration // handler.iter
             # Compare to divisor at last evaluation
             wall_up = (wall_div > handler.last_wall_div)
