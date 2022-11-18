@@ -93,7 +93,7 @@ class Evaluator:
         for handler in self.handlers:
             # Get cadence devisors
             wall_div = wall_time // handler.wall_dt
-            sim_div  = (sim_time + FILEHANDLER_SIMTIME_EPSILON) // handler.sim_dt
+            sim_div  = (sim_time + FILEHANDLER_SIMTIME_EPSILON*sim_time) // handler.sim_dt
             iter_div = iteration // handler.iter
             # Compare to divisor at last evaluation
             wall_up = (wall_div > handler.last_wall_div)
@@ -840,4 +840,3 @@ class H5VirtualFileHandler(H5FileHandlerBase):
         if overwrite:
             del file['tasks'][task_name]
             file['tasks'].move(new_name, task_name)
-
