@@ -129,21 +129,10 @@ for steps in range(NSteps):
             # us.append(np.linalg.solve(LHS,RHS))
             us.insert(0,np.linalg.solve(LHS,RHS))
     # Get initial time
-
     u = 0
     for j in range(1,stages+1):
         u += (M.T@us[j-1]+dt*A[j,0]*FAdj(us[j-1])-dt*H[j,0]*L.T@us[j-1])
 
-    # for j in range(1,stages+1):
-    #     u += (M.T@us[j-1]+dt*A[j,0]*FAdj(us[j-1])-dt*H[j,0]*L.T@us[j-1])
-#         RHS = 0
-#         for j in range(i,stages):
-#             RHS = dt*(A[j,i]*F(us[j])-H[j,i]*L.T@us[j])
-#         us.insert(0,np.linalg.solve(LHS,RHS))
-#     uend = 0
-#     for j in range(1,stages+1):
-#         uend += (-M@us[j]-dt*F(us[j])+H[j,0]*L@us[j])
-#     u = uend
 LTb = u
 
 norm1 = np.vdot(b,La)
