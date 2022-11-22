@@ -1,5 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from dedalus.core import timesteppers
+
+test_timesteppers = [timesteppers.RK111,timesteppers.RK222,timesteppers.RK443,timesteppers.RKSMR,timesteppers.RKGFY]
 
 Nx = 64
 h0 = 1/128
@@ -33,109 +36,59 @@ M = np.eye(Nx,Nx)
 ## Scheme ##
 ############
 
-# stages = 1
-#
-# c = np.array([0, 1])
-#
-# A = np.array([[0, 0],
-#               [1, 0]])
-#
-# H = np.array([[0, 0],
-#               [0, 1]])
+for timestepper in test_timesteppers:
+    A = timestepper.A
+    stages = timestepper.stages
+    H = timestepper.H
+    name = timestepper.__name__
+    print('Timestepper:', name)
+    a = np.random.rand(Nx)
+    b = np.random.rand(Nx)
 
-stages = 4
+    ##############
+    ## Timestep ##
+    ##############
+    NSteps = 100
+    u = a
+    for steps in range(NSteps):
+        us = [u]
+        for i in range(1,stages+1):
+            LHS = M + dt*H[i,i]*L
+            RHS = M@us[0]
+            for j in range(i):
+                RHS += dt*(A[i,j]*F(us[j])-H[i,j]*L@us[j])
+            us.append(np.linalg.solve(LHS,RHS))
+        u = us[-1]
 
-c = np.array([0, 1/2, 2/3, 1/2, 1])
+    La = u
+    #############
+    ## Adjoint ##
+    #############
+    # Initial condition
+    u = b
+    for steps in range(NSteps):
+        for i in reversed(range(1,stages+1)):
+            if(i==stages):
+                LHS = (M + dt*H[i,i]*L).T
+                us = [np.linalg.solve(LHS,u)]
+            else:
+                LHS = (M + dt*H[i,i]*L).T
+                RHS = 0
+                for j in range(i,stages):
+                    RHS += dt*(A[j+1,i]*FAdj(us[j-i])-H[j+1,i]*L.T@us[j-i])
+                us.insert(0,np.linalg.solve(LHS,RHS))
+        # Get initial time
+        u = 0
+        for j in range(1,stages+1):
+            u += (M.T@us[j-1]+dt*A[j,0]*FAdj(us[j-1])-dt*H[j,0]*L.T@us[j-1])
 
-A = np.array([[  0  ,   0  ,  0 ,   0 , 0],
-              [ 1/2 ,   0  ,  0 ,   0 , 0],
-              [11/18,  1/18,  0 ,   0 , 0],
-              [ 5/6 , -5/6 , 1/2,   0 , 0],
-              [ 1/4 ,  7/4 , 3/4, -7/4, 0]])
+    LTb = u
 
-H = np.array([[0,   0 ,   0 ,  0 ,  0 ],
-              [0,  1/2,   0 ,  0 ,  0 ],
-              [0,  1/6,  1/2,  0 ,  0 ],
-              [0, -1/2,  1/2, 1/2,  0 ],
-              [0,  3/2, -3/2, 1/2, 1/2]])
-# stages = 2
-#
-# γ = (2 - np.sqrt(2)) / 2
-# δ = 1 - 1 / γ / 2
-#
-# c = np.array([0, γ, 1])
-#
-# A = np.array([[0,  0 , 0],
-#               [γ,  0 , 0],
-#               [δ, 1-δ, 0]])
-#
-# H = np.array([[0,  0 , 0],
-#               [0,  γ , 0],
-#               [0, 1-γ, γ]])
-# stages = 3
-#
-# α1, α2, α3 = (29/96, -3/40, 1/6)
-# β1, β2, β3 = (37/160, 5/24, 1/6)
-# γ1, γ2, γ3 = (8/15, 5/12, 3/4)
-# ζ2, ζ3 = (-17/60, -5/12)
-#
-# c = np.array([0, 8/15, 2/3, 1])
-#
-# A = np.array([[    0,     0,  0, 0],
-#               [   γ1,     0,  0, 0],
-#               [γ1+ζ2,    γ2,  0, 0],
-#               [γ1+ζ2, γ2+ζ3, γ3, 0]])
-#
-# H = np.array([[ 0,     0,     0,  0],
-#               [α1,    β1,     0,  0],
-#               [α1, β1+α2,    β2,  0],
-#               [α1, β1+α2, β2+α3, β3]])
-a = np.random.rand(Nx)
-b = np.random.rand(Nx)
+    ##################
+    ## Adjoint test ##
+    ##################
 
-##############
-## Timestep ##
-##############
-print('Begin direct solve')
-NSteps = 100
-u = a
-for steps in range(NSteps):
-    us = [u]
-    for i in range(1,stages+1):
-        LHS = M + dt*H[i,i]*L
-        RHS = M@us[0]
-        for j in range(i):
-            RHS += dt*(A[i,j]*F(us[j])-H[i,j]*L@us[j])
-        us.append(np.linalg.solve(LHS,RHS))
-    u = us[-1]
-
-La = u
-#############
-## Adjoint ##
-#############
-print('Begin adjoint solve')
-# Initial condition
-u = b
-for steps in range(NSteps):
-    for i in reversed(range(1,stages+1)):
-        if(i==stages):
-            LHS = (M + dt*H[i,i]*L).T
-            us = [np.linalg.solve(LHS,u)]
-        else:
-            LHS = (M + dt*H[i,i]*L).T
-            RHS = 0
-            for j in range(i,stages):
-                RHS += dt*(A[j+1,i]*FAdj(us[j-i])-H[j+1,i]*L.T@us[j-i])
-            # us.append(np.linalg.solve(LHS,RHS))
-            us.insert(0,np.linalg.solve(LHS,RHS))
-    # Get initial time
-    u = 0
-    for j in range(1,stages+1):
-        u += (M.T@us[j-1]+dt*A[j,0]*FAdj(us[j-1])-dt*H[j,0]*L.T@us[j-1])
-
-LTb = u
-
-norm1 = np.vdot(b,La)
-norm2 = np.vdot(LTb,a)
-print(norm1,norm2)
-print('Error',np.linalg.norm(norm1-norm2)/np.linalg.norm(norm1))
+    norm1 = np.vdot(b,La)
+    norm2 = np.vdot(LTb,a)
+    print('Relative adjoint error',np.linalg.norm(norm1-norm2)/np.linalg.norm(norm1))
+    print()
