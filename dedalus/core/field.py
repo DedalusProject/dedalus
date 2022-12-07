@@ -311,7 +311,10 @@ class Operand:
 
     @CachedAttribute
     def valid_modes(self):
-        return self.dist.coeff_layout.valid_elements(self.tensorsig, self.domain, scales=1)
+        # Get general coeff valid modes
+        valid_modes = self.dist.coeff_layout.valid_elements(self.tensorsig, self.domain, scales=1)
+        # Return copy to avoid mangling cached result from coeff_layout
+        return valid_modes.copy()
 
 
 class Current(Operand):
