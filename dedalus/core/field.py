@@ -309,6 +309,10 @@ class Operand:
         from ..tools.general import is_real_dtype
         return is_real_dtype(self.dtype)
 
+    @CachedAttribute
+    def valid_modes(self):
+        return self.dist.coeff_layout.valid_elements(self.tensorsig, self.domain, scales=1)
+
 
 class Current(Operand):
 

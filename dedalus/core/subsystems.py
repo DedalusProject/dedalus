@@ -284,7 +284,7 @@ class Subproblem:
         fsizes = tuple(self.field_size(f) for f in fields)
         data = np.empty((sum(fsizes), n_subsystems), dtype=self.dtype)
         # Make views into data
-        views = []    
+        views = []
         i0 = 0
         for fsize, field in zip(fsizes, fields):
             if fsize:
@@ -293,7 +293,7 @@ class Subproblem:
                 for j, ss in enumerate(self.subsystems):
                     ss_view = data[i0:i1, j].reshape(fshape)
                     ss_slices = ss.field_slices(field)
-                    views.append((field, ss_view, ss_slices)) 
+                    views.append((field, ss_view, ss_slices))
                 i0 = i1
         return data, views
 
@@ -410,8 +410,9 @@ class Subproblem:
     #     return matrix.tocsr()
 
     def valid_modes(self, field):
-        valid_modes = self.dist.coeff_layout.valid_elements(field.tensorsig, field.domain, scales=1)
-        return valid_modes[self.field_slices(field)]
+        valid_modes = field.valid_modes
+        sp_slices = self.field_slices(field)
+        return valid_modes[sp_slices]
 
     # def mode_map(self, basis_sets):
     #     """Restrict group data to nonzero modes."""
