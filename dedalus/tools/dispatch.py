@@ -16,7 +16,8 @@ class MultiClass(type):
             # Preprocess arguments and keywords
             args, kw = cls._preprocess_args(*args, **kw)
             # Create instance if no subclasses
-            if not cls.__subclasses__():
+            subclasses = [sc for sc in cls.__subclasses__() if not getattr(sc, "stop_dispatch", False)]
+            if not subclasses:
                 # Check arguments
                 if cls._check_args(*args, **kw):
                     return super().__call__(*args, **kw)
@@ -24,7 +25,7 @@ class MultiClass(type):
                     raise TypeError("Provided types do not pass dispatch check.")
             # Find applicable subclasses
             passlist = []
-            for subclass in cls.__subclasses__():
+            for subclass in subclasses:
                 if subclass._check_args(*args, **kw):
                     passlist.append(subclass)
         except SkipDispatchException as exception:
