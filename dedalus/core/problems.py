@@ -88,6 +88,7 @@ class ProblemBase:
         self._check_equation_conditions(eqn)
         self._build_matrix_expressions(eqn)
         self.equations.append(eqn)
+        return eqn
 
     def build_solver(self, *args, **kw):
         """Build corresponding solver class."""
