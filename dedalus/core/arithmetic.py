@@ -443,10 +443,14 @@ class Product(Future):
                     data.append(matrix.data)
                     rows.append(matrix.row)
                     cols.append(matrix.col)
-            data = np.concatenate(data)
-            rows = np.concatenate(rows)
-            cols = np.concatenate(cols)
-            matrix = sparse.coo_matrix((data, (rows, cols)), shape=shape).tocsr()
+            if data:
+                data = np.concatenate(data)
+                rows = np.concatenate(rows)
+                cols = np.concatenate(cols)
+                matrix = sparse.coo_matrix((data, (rows, cols)), shape=shape).tocsr()
+            else:
+                shape = (subproblem.field_size(out), subproblem.field_size(arg))
+                matrix = sparse.csr_matrix(shape, dtype=self.dtype)
         else:
             shape = (subproblem.field_size(out), subproblem.field_size(arg))
             matrix = sparse.csr_matrix(shape, dtype=self.dtype)
