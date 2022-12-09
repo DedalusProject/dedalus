@@ -394,6 +394,10 @@ class PowerFieldConstant(Power, FutureField):
         arg1 = self.args[1]
         return self.new_operands(arg0, arg1, **kw)
 
+    def require_first_order(self, *ops, **kw):
+        """Require expression to be maximally first order in specified operators."""
+        arg0 = self.args[0]
+        arg0.require_first_order(*ops, **kw)
 
 # class PowerArrayScalar(PowerDataScalar, FutureArray):
 
