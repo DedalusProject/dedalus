@@ -493,8 +493,8 @@ class FileHandler(Handler):
                           ('world_time', np.float64),
                           ('wall_time', np.float64),
                           ('timestep', np.float64),
-                          ('iteration', np.int),
-                          ('write_number', np.int)]:
+                          ('iteration', np.int32),
+                          ('write_number', np.int32)]:
             scale = scale_group.create_dataset(name=sn, shape=(0,), maxshape=(None,), dtype=dtype)
             scale.make_scale(sn)
         const = scale_group.create_dataset(name='constant', data=np.array([0.], dtype=np.float64))
