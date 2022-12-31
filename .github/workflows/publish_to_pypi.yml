@@ -1,0 +1,33 @@
+name: Publish to PyPI
+on:
+  workflow_dispatch:
+jobs:
+  publish:
+    name: Publish ${{ github.ref_name }} to PyPI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup miniforge
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          miniforge-version: latest
+          auto-activate-base: true
+          activate-environment: ""
+      - name: Build stack via conda-forge
+        shell: bash -l {0}
+        run: |
+          conda create -y -n dedalus
+          conda activate dedalus
+          conda install -y -c conda-forge dedalus c-compiler "h5py=*=mpi*"
+          conda uninstall -y --force dedalus
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Build sdist
+        shell: bash -l {0}
+        run: |
+          conda activate dedalus
+          pip install build
+          python -m build --sdist
+      - name: Publish sdist to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
