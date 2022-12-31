@@ -1,0 +1,59 @@
+
+name: Test Dedalus v2
+on:
+  push:
+    branches:
+      - v2_master
+  workflow_dispatch:
+jobs:
+  test_via_conda_forge:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: linux-64
+          - os: macos-latest
+            label: osx-64
+    name: Test ${{ github.ref_name }} via conda-forge on ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Setup miniforge
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          miniforge-version: latest
+          auto-activate-base: true
+          activate-environment: ""
+      - name: Build stack via conda-forge
+        shell: bash -l {0}
+        run: |
+          conda create -y -n dedalus
+          conda activate dedalus
+          conda env config vars set OMP_NUM_THREADS=1
+          conda env config vars set NUMEXPR_MAX_THREADS=1
+          conda install -y -c conda-forge dedalus c-compiler "h5py=*=mpi*"
+          conda uninstall -y --force dedalus
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Install Dedalus from repository
+        shell: bash -l {0}
+        run: |
+          conda activate dedalus
+          CC=mpicc pip install --no-cache .
+      - name: Test Dedalus
+        shell: bash -l {0}
+        run: |
+          # Move out of repository to run tests
+          cd $HOME
+          conda activate dedalus
+          python3 -m dedalus test --report
+          # Copy report back to repository for test-reporter
+          cp dedalus-test-junit.xml $GITHUB_WORKSPACE
+      - name: Report test results
+        uses: dorny/test-reporter@v1
+        if: success() || failure()
+        with:
+          name: Test report (${{ matrix.os }})
+          path: dedalus-test-junit.xml
+          reporter: java-junit
+
