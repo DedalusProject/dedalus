@@ -85,28 +85,10 @@ class Evaluator:
         handlers = self.groups[group]
         self.evaluate_handlers(handlers, **kw)
 
-    def evaluate_scheduled(self, wall_time, sim_time, iteration, **kw):
+    def evaluate_scheduled(self, **kw):
         """Evaluate all scheduled handlers."""
-
-        scheduled_handlers = []
-        for handler in self.handlers:
-            # Get cadence devisors
-            wall_div = wall_time // handler.wall_dt
-            sim_div  = sim_time  // handler.sim_dt
-            iter_div = iteration // handler.iter
-            # Compare to divisor at last evaluation
-            wall_up = (wall_div > handler.last_wall_div)
-            sim_up  = (sim_div  > handler.last_sim_div)
-            iter_up = (iter_div > handler.last_iter_div)
-
-            if any((wall_up, sim_up, iter_up)):
-                scheduled_handlers.append(handler)
-                # Update all divisors
-                handler.last_wall_div = wall_div
-                handler.last_sim_div  = sim_div
-                handler.last_iter_div = iter_div
-
-        self.evaluate_handlers(scheduled_handlers, wall_time=wall_time, sim_time=sim_time, iteration=iteration, **kw)
+        handlers = [h for h in self.handlers if h.check_schedule(**kw)]
+        self.evaluate_handlers(handlers, **kw)
 
     def evaluate_handlers(self, handlers, id=None, **kw):
         """Evaluate a collection of handlers."""
@@ -216,10 +198,9 @@ class Evaluator:
         return unfinished
 
 
-
 class Handler:
     """
-    Group of tasks with associated scheduling data.
+    Group of tasks with associated evaluation schedule.
 
     Parameters
     ----------
@@ -228,17 +209,20 @@ class Handler:
     vars : dict
         Variables for parsing task expression strings
     group : str, optional
-        Group name for forcing selected handelrs (default: None)
+        Group name for forcing selected handlers (default: None).
     wall_dt : float, optional
-        Wall time cadence for evaluating tasks (default: infinite)
+        Wall time cadence for evaluating tasks (default: None).
     sim_dt : float, optional
-        Simulation time cadence for evaluating tasks (default: infinite)
+        Simulation time cadence for evaluating tasks (default: None).
     iter : int, optional
-        Iteration cadence for evaluating tasks (default: infinite)
-
+        Iteration cadence for evaluating tasks (default: None).
+    custom_schedule : function, optional
+        Custom scheduling function returning a boolean for triggering output (default: None).
+        Signature for IVPs: custom_schedule(iteration, wall_time, sim_time, timestep)
+        Signature for BVPs: custom_schedule(iteration)
     """
 
-    def __init__(self, dist, vars, group=None, wall_dt=np.inf, sim_dt=np.inf, iter=np.inf):
+    def __init__(self, dist, vars, group=None, wall_dt=None, sim_dt=None, iter=None, custom_schedule=None):
         # Attributes
         self.dist = dist
         self.vars = vars
@@ -246,11 +230,38 @@ class Handler:
         self.wall_dt = wall_dt
         self.sim_dt = sim_dt
         self.iter = iter
+        self.custom_schedule = custom_schedule
         self.tasks = []
-        # Set initial divisors to be scheduled for sim_time, iteration = 0
+        # Set initial divisors to be -1 to trigger output on first iteration
         self.last_wall_div = -1
         self.last_sim_div = -1
         self.last_iter_div = -1
+
+    def check_schedule(self, **kw):
+        scheduled = False
+        # Wall time
+        if self.wall_dt:
+            wall_div = kw['wall_time'] // self.wall_dt
+            if wall_div > self.last_wall_div:
+                scheduled = True
+                self.last_wall_div = wall_div
+        # Sim time
+        if self.sim_dt:
+            sim_div = kw['sim_time'] // self.sim_dt
+            if sim_div > self.last_sim_div:
+                scheduled = True
+                self.last_sim_div = sim_div
+        # Iteration
+        if self.iter:
+            iter_div = kw['iteration'] // self.iter
+            if iter_div > self.last_iter_div:
+                scheduled = True
+                self.last_iter_div = iter_div
+        # Custom call
+        if self.custom_schedule:
+            if self.custom_schedule(**kw):
+                scheduled = True
+        return scheduled
 
     def add_task(self, task, layout='g', name=None, scales=None):
         """Add task to handler."""
