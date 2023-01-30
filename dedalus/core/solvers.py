@@ -315,6 +315,7 @@ class LinearBoundaryValueSolver(SolverBase):
         logger.debug('Beginning LBVP instantiation')
         super().__init__(problem, **kw)
         self.subproblem_matsolvers = {}
+        self.iteration = 0
         # Create RHS handler
         namespace = {}
         self.evaluator = Evaluator(self.dist, namespace)
@@ -368,7 +369,7 @@ class LinearBoundaryValueSolver(SolverBase):
                 L = sp.L_min @ sp.pre_right
                 self.subproblem_matsolvers[sp] = self.matsolver(L, self)
         # Compute RHS
-        self.evaluator.evaluate_group('F', sim_time=0, wall_time=0, iteration=0)
+        self.evaluator.evaluate_scheduled(iteration=self.iteration)
         # Ensure coeff space before subsystem gathers/scatters
         for field in self.F:
             field.change_layout('c')
@@ -385,6 +386,13 @@ class LinearBoundaryValueSolver(SolverBase):
             X = np.zeros((sp.pre_right.shape[0], n_ss), dtype=self.dtype)  # CREATES TEMPORARY
             csr_matvecs(sp.pre_right, pX.reshape((-1, n_ss)), X)
             sp.scatter(X, self.state)
+        self.iteration += 1
+
+    def evaluate_handlers(self, handlers=None):
+        """Evaluate specified list of handlers (all by default)."""
+        if handlers is None:
+            handlers = self.evaluator.handlers
+        self.evaluator.evaluate_handlers(handlers, iteration=self.iteration)
 
 
 class NonlinearBoundaryValueSolver(SolverBase):
@@ -429,7 +437,7 @@ class NonlinearBoundaryValueSolver(SolverBase):
     def newton_iteration(self, damping=1):
         """Update solution with a Newton iteration."""
         # Compute RHS
-        self.evaluator.evaluate_group('F', sim_time=0, wall_time=0, iteration=self.iteration)
+        self.evaluator.evaluate_scheduled(iteration=self.iteration)
         # Recompute Jacobian
         # TODO: split out linear part for faster recomputation?
         subsystems.build_subproblem_matrices(self, self.subproblems, ['dH'])
@@ -454,6 +462,12 @@ class NonlinearBoundaryValueSolver(SolverBase):
         for var, pert in zip(self.state, self.perturbations):
             var['c'] += damping * pert['c']
         self.iteration += 1
+
+    def evaluate_handlers(self, handlers=None):
+        """Evaluate specified list of handlers (all by default)."""
+        if handlers is None:
+            handlers = self.evaluator.handlers
+        self.evaluator.evaluate_handlers(handlers, iteration=self.iteration)
 
 
 class InitialValueSolver(SolverBase):
@@ -655,14 +669,15 @@ class InitialValueSolver(SolverBase):
             print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {sp.group}, matrix rank: {np.linalg.matrix_rank(A)}/{A.shape[0]}, cond: {np.linalg.cond(A):.1e}")
 
     def evaluate_handlers_now(self, dt, handlers=None):
-        """Evaluate all handlers right now. Useful for writing final outputs.
-        by default, all handlers are evaluated; if a list is given
-        only those will be evaluated.
-        """
-        end_wall_time = self.get_wall_time() - self.init_time
+        logger.warning("Deprecation warning: evaluate_handlers_now -> evaluate_handlers")
+        self.evaluate_handlers(handlers=handlers, dt=dt)
+
+    def evaluate_handlers(self, handlers=None, dt=0):
+        """Evaluate specified list of handlers (all by default)."""
         if handlers is None:
             handlers = self.evaluator.handlers
-        self.evaluator.evaluate_handlers(handlers, timestep=dt, sim_time=self.sim_time, wall_time=end_wall_time, iteration=self.iteration)
+        wall_elapsed = self.get_wall_time() - self.init_time
+        self.evaluator.evaluate_handlers(handlers, iteration=self.iteration, wall_time=wall_elapsed, sim_time=self.sim_time, timestep=dt)
 
     def log_stats(self, format=".4g"):
         """Log timing statistics with specified string formatting (optional)."""
