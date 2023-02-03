@@ -447,23 +447,25 @@ class LinearBoundaryValueSolver(SolverBase):
         # self.evaluator.evaluate_group('F', sim_time=0, wall_time=0, iteration=0)
         # For adjoint RHS is specified as F_adjoint
         # Ensure coeff space before subsystem gathers/scatters
-        for field in F_adjoint:
-            field.change_layout('c')
-        for field in state_adjoint:
-            field.preset_layout('c')
+        # for field in F_adjoint:
+        #     field.change_layout('c')
+        # for field in state_adjoint:
+        #     field.preset_layout('c')
         # Solve system for each subproblem, updating state
         for sp in subproblems:
             n_ss = len(sp.subsystems)
             # Gather and adjoint right--precondition RHS
-            pF = np.zeros((sp.pre_right.shape[0], n_ss), dtype=self.dtype)  # CREATES TEMPORARY
+            # pF = np.zeros((sp.pre_right.shape[0], n_ss), dtype=self.dtype)  # CREATES TEMPORARY
             # TODO: get working with csr_matvecs. Tranposing changes csr to csc
-            # csr_matvecs(np.conj(sp.pre_left).T, sp.gather(self.F), pF)
+            # csr_matvecs(np.conj(sp.pre_right).T, sp.gather(self.F), pF)
             pF = np.conj(sp.pre_right).T@sp.gather(F_adjoint)
+            # pF = pF.reshape((-1,n_ss))
+           
             # Adjoint solve, adjoint left-precondition, and scatter X
             pX = self.subproblem_matsolvers_adjoint[sp].solve(pF)  # CREATES TEMPORARY
-            X = np.zeros((sp.pre_right.shape[0], n_ss), dtype=self.dtype)  # CREATES TEMPORARY
+            # X = np.zeros((sp.pre_right.shape[0], n_ss), dtype=self.dtype)  # CREATES TEMPORARY
             # csr_matvecs(np.conj(sp.pre_left).T, pX.reshape((-1, n_ss)), X)
-            X = np.conj(sp.pre_left).T@pX.reshape((-1,n_ss))
+            X = np.conj(sp.pre_left).T@pX
             sp.scatter(X, state_adjoint)
 
 
