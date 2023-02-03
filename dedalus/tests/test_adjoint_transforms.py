@@ -89,7 +89,7 @@ def test_chebyshev_adjoint_forward(N, alpha, dealias, dtype, library):
     c = coords.Coordinate('x')
     d = distributor.Distributor([c])
     # Matrix
-    b = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library='matrix')
+    b = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library=library)
     u = field.Field(dist=d, bases=(b,), dtype=dtype)
 
     N1 = u['g'].shape[0]
@@ -201,7 +201,7 @@ def test_chebyshev_adjoint_backward(N, alpha, dealias, dtype, library):
     c = coords.Coordinate('x')
     d = distributor.Distributor([c])
     # Matrix
-    b = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library='matrix')
+    b = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library=library)
     u = field.Field(dist=d, bases=(b,), dtype=dtype)
 
     N1 = u['g'].shape[0]
@@ -225,7 +225,9 @@ def test_chebyshev_adjoint_backward(N, alpha, dealias, dtype, library):
         y_c = np.random.rand(c_shape) + 1j*np.random.rand(c_shape)
     y_g = np.zeros(g_shape,dtype=dtype)
 
-    transform.backward(x_c,x_g,0)
+    # Note: backward plan changes xc so make a copy
+    x_cc = x_c.copy()
+    transform.backward(x_cc,x_g,0)
     transform.backward_adjoint(y_c,y_g,0)
 
     inner_1 = np.vdot(y_c,x_g)
