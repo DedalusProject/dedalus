@@ -347,6 +347,7 @@ class LinearBoundaryValueSolver(SolverBase):
         super().__init__(problem, **kw)
         self.subproblem_matsolvers = {}
         self.iteration = 0
+        self.subproblem_matsolvers_adjoint = {}
         # Create RHS handler
         F_handler = self.evaluator.add_system_handler(iter=1, group='F')
         for eq in problem.eqs:
@@ -413,6 +414,57 @@ class LinearBoundaryValueSolver(SolverBase):
         if handlers is None:
             handlers = self.evaluator.handlers
         self.evaluator.evaluate_handlers(handlers, iteration=self.iteration)
+
+    def solve_left(self, state_adjoint,F_adjoint,subproblems=None, rebuild_matrices=False):
+        """
+        Solve transposed BVP over selected subproblems.
+
+        Parameters
+        ----------
+        state_adjoint: User supplied state for the solve result
+        F_adjoint: User supplied RHS for the adjoint solve
+        subproblems : Subproblem object or list of Subproblem objects, optional
+            Subproblems for which to solve the BVP (default: None (all)).
+        rebuild_matrices : bool, optional
+            Rebuild LHS matrices if coefficients have changed (default: False).
+        """
+        # Resolve subproblems
+        if subproblems is None:
+            subproblems = self.subproblems
+        if isinstance(subproblems, subsystems.Subproblem):
+            subproblems = [subproblems]
+        # Rebuild matrices and matsolvers if directed or not yet built
+        if rebuild_matrices:
+            rebuild_subproblems = subproblems
+        else:
+            rebuild_subproblems = [sp for sp in subproblems if sp not in self.subproblem_matsolvers_adjoint]
+        if rebuild_subproblems:
+            self.build_matrices(rebuild_subproblems)
+            for sp in rebuild_subproblems:
+                L = sp.L_min @ sp.pre_right
+                self.subproblem_matsolvers_adjoint[sp] = self.matsolver(np.conj(L).T, self)
+        # Compute RHS
+        # self.evaluator.evaluate_group('F', sim_time=0, wall_time=0, iteration=0)
+        # For adjoint RHS is specified as F_adjoint
+        # Ensure coeff space before subsystem gathers/scatters
+        for field in F_adjoint:
+            field.change_layout('c')
+        for field in state_adjoint:
+            field.preset_layout('c')
+        # Solve system for each subproblem, updating state
+        for sp in subproblems:
+            n_ss = len(sp.subsystems)
+            # Gather and adjoint right--precondition RHS
+            pF = np.zeros((sp.pre_right.shape[0], n_ss), dtype=self.dtype)  # CREATES TEMPORARY
+            # TODO: get working with csr_matvecs. Tranposing changes csr to csc
+            # csr_matvecs(np.conj(sp.pre_left).T, sp.gather(self.F), pF)
+            pF = np.conj(sp.pre_right).T@sp.gather(F_adjoint)
+            # Adjoint solve, adjoint left-precondition, and scatter X
+            pX = self.subproblem_matsolvers_adjoint[sp].solve(pF)  # CREATES TEMPORARY
+            X = np.zeros((sp.pre_right.shape[0], n_ss), dtype=self.dtype)  # CREATES TEMPORARY
+            # csr_matvecs(np.conj(sp.pre_left).T, pX.reshape((-1, n_ss)), X)
+            X = np.conj(sp.pre_left).T@pX.reshape((-1,n_ss))
+            sp.scatter(X, state_adjoint)
 
 
 class NonlinearBoundaryValueSolver(SolverBase):
