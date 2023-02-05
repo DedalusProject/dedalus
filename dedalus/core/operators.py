@@ -2303,6 +2303,11 @@ class CartesianGradient(Gradient):
 
     def __init__(self, operand, coordsys, out=None):
         args = [Differentiate(operand, coord) for coord in coordsys.coords]
+        for i in range(len(args)):
+            if args[i] == 0:
+                args[i] = 2*operand
+                args[i].args[0] = 0
+        print(args)
         bases = self._build_bases(*args)
         args = [convert(arg, bases) for arg in args]
         LinearOperator.__init__(self, *args, out=out)
