@@ -354,6 +354,10 @@ class LinearBoundaryValueSolver(SolverBase):
             F_handler.add_task(eq['F'])
         F_handler.build_system()
         self.F = F_handler.fields
+
+        self.F_adj = []
+        self.state_adj = []
+        self.build_adjoint()
         logger.debug('Finished LBVP instantiation')
 
     def print_subproblem_ranks(self, subproblems=None):
@@ -415,14 +419,40 @@ class LinearBoundaryValueSolver(SolverBase):
             handlers = self.evaluator.handlers
         self.evaluator.evaluate_handlers(handlers, iteration=self.iteration)
 
-    def solve_left(self, state_adjoint,F_adjoint,subproblems=None, rebuild_matrices=False):
+    def build_adjoint(self):
+        """
+        Build a field system for the adjoint system
+        self.F_adj has the same layout as self.F
+        self.state_adj has the same layout as self.state
+        """
+        if not self.F_adj:
+            for field in self.F:
+                field_adj = field.copy()
+                # Zero the system
+                field_adj['c'] *= 0
+                if field.name:
+                    # If the direct field has a name, give the adjoint a 
+                    # corresponding name
+                    field_adj.name = '%s_adj' % field.name
+                self.F_adj.append(field_adj)
+
+        if not self.state_adj:
+            for field in self.state:
+                field_adj = field.copy()
+                # Zero the system
+                field_adj['c'] *= 0
+                if field.name:
+                    # If the direct field has a name, give the adjoint a 
+                    # corresponding name
+                    field_adj.name = '%s_adj' % field.name
+                self.state_adj.append(field_adj)
+
+    def solve_adjoint(self, subproblems=None, rebuild_matrices=False):
         """
         Solve transposed BVP over selected subproblems.
 
         Parameters
         ----------
-        state_adjoint: User supplied state for the solve result
-        F_adjoint: User supplied RHS for the adjoint solve
         subproblems : Subproblem object or list of Subproblem objects, optional
             Subproblems for which to solve the BVP (default: None (all)).
         rebuild_matrices : bool, optional
@@ -445,12 +475,12 @@ class LinearBoundaryValueSolver(SolverBase):
                 self.subproblem_matsolvers_adjoint[sp] = self.matsolver(np.conj(L).T, self)
         # Compute RHS
         # self.evaluator.evaluate_group('F', sim_time=0, wall_time=0, iteration=0)
-        # For adjoint RHS is specified as F_adjoint
+        # TODO: see if an evaluator for the adjoint is worthwhile
         # Ensure coeff space before subsystem gathers/scatters
-        # for field in F_adjoint:
-        #     field.change_layout('c')
-        # for field in state_adjoint:
-        #     field.preset_layout('c')
+        for field in self.state_adj:
+            field.change_layout('c')
+        for field in self.F_adj:
+            field.preset_layout('c')
         # Solve system for each subproblem, updating state
         for sp in subproblems:
             n_ss = len(sp.subsystems)
@@ -458,15 +488,14 @@ class LinearBoundaryValueSolver(SolverBase):
             # pF = np.zeros((sp.pre_right.shape[0], n_ss), dtype=self.dtype)  # CREATES TEMPORARY
             # TODO: get working with csr_matvecs. Tranposing changes csr to csc
             # csr_matvecs(np.conj(sp.pre_right).T, sp.gather(self.F), pF)
-            pF = np.conj(sp.pre_right).T@sp.gather(F_adjoint)
-            # pF = pF.reshape((-1,n_ss))
-           
+            pF = np.conj(sp.pre_right).T@sp.gather(self.state_adj)
             # Adjoint solve, adjoint left-precondition, and scatter X
             pX = self.subproblem_matsolvers_adjoint[sp].solve(pF)  # CREATES TEMPORARY
             # X = np.zeros((sp.pre_right.shape[0], n_ss), dtype=self.dtype)  # CREATES TEMPORARY
             # csr_matvecs(np.conj(sp.pre_left).T, pX.reshape((-1, n_ss)), X)
             X = np.conj(sp.pre_left).T@pX
-            sp.scatter(X, state_adjoint)
+  
+            sp.scatter(X, self.F_adj)
 
 
 class NonlinearBoundaryValueSolver(SolverBase):
