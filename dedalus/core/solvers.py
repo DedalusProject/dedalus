@@ -485,16 +485,13 @@ class LinearBoundaryValueSolver(SolverBase):
         for sp in subproblems:
             n_ss = len(sp.subsystems)
             # Gather and adjoint right--precondition RHS
-            # pF = np.zeros((sp.pre_right.shape[0], n_ss), dtype=self.dtype)  # CREATES TEMPORARY
+            pF = np.zeros((sp.pre_right.shape[1], n_ss), dtype=self.dtype)  # CREATES TEMPORARY
             # TODO: get working with csr_matvecs. Tranposing changes csr to csc
-            # csr_matvecs(np.conj(sp.pre_right).T, sp.gather(self.F), pF)
-            pF = np.conj(sp.pre_right).T@sp.gather(self.state_adj)
+            csr_matvecs((np.conj(sp.pre_right).T).tocsr(), sp.gather(self.state_adj), pF)
             # Adjoint solve, adjoint left-precondition, and scatter X
             pX = self.subproblem_matsolvers_adjoint[sp].solve(pF)  # CREATES TEMPORARY
-            # X = np.zeros((sp.pre_right.shape[0], n_ss), dtype=self.dtype)  # CREATES TEMPORARY
-            # csr_matvecs(np.conj(sp.pre_left).T, pX.reshape((-1, n_ss)), X)
-            X = np.conj(sp.pre_left).T@pX
-  
+            X = np.zeros((sp.pre_left.shape[1], n_ss), dtype=self.dtype)  # CREATES TEMPORARY
+            csr_matvecs((np.conj(sp.pre_left).T).tocsr(), pX.reshape((-1, n_ss)), X)
             sp.scatter(X, self.F_adj)
 
 
