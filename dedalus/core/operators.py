@@ -431,14 +431,21 @@ class PowerFieldConstant(Power, FutureField):
 
 class GeneralFunction(NonlinearOperator, FutureField):
     """
-    Operator wrapping a general python function.
+    Operator wrapping a general python function to return a field.
 
     Parameters
     ----------
+    dist : distributor object
+        Distributor
     domain : domain object
         Domain
+    tensorsig : tuple of coordinate systems
+        Tensor signature of output field (corresponding to, e.g., scalar,
+        vector, rank-2 tensor, etc.)
+    dtype : dtype
+        Data type of output field
     layout : layout object or identifier
-        Layout of function output
+        Layout of output field
     func : function
         Function producing field data
     args : list
@@ -458,27 +465,27 @@ class GeneralFunction(NonlinearOperator, FutureField):
 
     """
 
-    def __init__(self, domain, layout, func, args=[], kw={}, out=None,):
+    def __init__(self, dist, domain, tensorsig, dtype, layout, func, args=[], kw={}, out=None,):
 
         # Required attributes
         self.args = list(args)
         self.original_args = list(args)
-        self.domain = domain
         self.out = out
         self.last_id = None
         # Additional attributes
-        self.layout = domain.distributor.get_layout_object(layout)
+        self.dist = dist
+        self.layout = self.dist.get_layout_object(layout)
         self.func = func
         self.kw = kw
-        self._field_arg_indices = [i for (i,arg) in enumerate(self.args) if is_fieldlike(arg)]
+        self._field_arg_indices = [i for (i,arg) in enumerate(self.args) if isinstance(arg, (Field, FutureField, FutureLockedField))]
         try:
             self.name = func.__name__
         except AttributeError:
             self.name = str(func)
-        self.build_metadata()
-
-    def build_metadata(self):
-        self.constant = np.array([False] * self.domain.dim)
+        # FutureField requirements
+        self.domain = domain
+        self.tensorsig = tensorsig
+        self.dtype = dtype
 
     def check_conditions(self):
         # Fields must be in proper layout
@@ -487,10 +494,12 @@ class GeneralFunction(NonlinearOperator, FutureField):
                 return False
         return True
 
-    def operate(self, out):
-        # Apply func in proper layout
+    def enforce_conditions(self):
         for i in self._field_arg_indices:
-            self.args[i].change_layout(self.layout)
+            if self.args[i].layout is not self.layout:
+                self.args[i].change_layout(self.layout)
+
+    def operate(self, out):
         out.preset_layout(self.layout)
         np.copyto(out.data, self.func(*self.args, **self.kw))
 
