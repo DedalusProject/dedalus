@@ -432,15 +432,24 @@ class GeneralFunction(NonlinearOperator, FutureField):
     Parameters
     ----------
     dist : distributor object
+        Distributor
     domain : domain object
-    tensorsig : Tensor signature of output field (corresponding to, e.g.,
-        scalar, vector, rank-2 tensor, etc.)
-    dtype : dtype of output field
-    layout : layout object or identifier of output field
-    func : function that produces the field data
-    args : arguments to pass to func
-    kw : keywords to pass to func
-    out : output field (default: new field)
+        Domain
+    tensorsig : tuple of coordinate systems
+        Tensor signature of output field (corresponding to, e.g., scalar,
+        vector, rank-2 tensor, etc.)
+    dtype : dtype
+        Data type of output field
+    layout : layout object or identifier
+        Layout of output field
+    func : function
+        Function producing field data
+    args : list
+        Arguments to pass to func
+    kw : dict
+        Keywords to pass to func
+    out : field, optional
+        Output field (default: new field)
 
     Notes
     -----
@@ -481,10 +490,12 @@ class GeneralFunction(NonlinearOperator, FutureField):
                 return False
         return True
 
-    def operate(self, out):
-        # Apply func in proper layout
+    def enforce_conditions(self):
         for i in self._field_arg_indices:
-            self.args[i].change_layout(self.layout)
+            if self.args[i].layout is not self.layout:
+                self.args[i].change_layout(self.layout)
+
+    def operate(self, out):
         out.preset_layout(self.layout)
         np.copyto(out.data, self.func(*self.args, **self.kw))
 
