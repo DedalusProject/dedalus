@@ -247,10 +247,16 @@ class Handler:
                 self.last_wall_div = wall_div
         # Sim time
         if self.sim_dt:
-            sim_div = kw['sim_time'] // self.sim_dt
-            if sim_div > self.last_sim_div:
-                scheduled = True
-                self.last_sim_div = sim_div
+            # Output if the output target closest to the current time hasn't triggered
+            # an output yet, and the next timestep will not bring you closer.
+            t = kw['sim_time']
+            dt = kw['timestep']
+            closest_sim_div = int(np.round(t / self.sim_dt))
+            if closest_sim_div > self.last_sim_div:
+                closest_sim_time = closest_sim_div * self.sim_dt
+                if abs(t - closest_sim_time) < abs(t + dt - closest_sim_time):
+                    scheduled = True
+                    self.last_sim_div = closest_sim_div
         # Iteration
         if self.iter:
             iter_div = kw['iteration'] // self.iter
