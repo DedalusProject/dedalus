@@ -2307,7 +2307,6 @@ class CartesianGradient(Gradient):
             if args[i] == 0:
                 args[i] = 2*operand
                 args[i].args[0] = 0
-        print(args)
         bases = self._build_bases(*args)
         args = [convert(arg, bases) for arg in args]
         LinearOperator.__init__(self, *args, out=out)
