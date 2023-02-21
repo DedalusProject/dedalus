@@ -30,7 +30,7 @@ def create_buffer(size_t alloc_doubles):
 
     # Return numpy-allocated array for zero size (cython casting fails)
     if alloc_doubles == 0:
-        return np.zeros((0,), dtype=np.float)
+        return np.zeros((0,), dtype=np.float64)
 
     # Allocate using FFTW
     cdef double *c_data
