@@ -994,6 +994,19 @@ class SpectralOperator1D(SpectralOperator):
         else:
             out.data.fill(0)
 
+    def operate_adjoint(self, out):
+        """Perform adjoint operation."""
+        arg = self.args[0]
+        layout = arg.layout
+        # Set output layout
+        out.preset_layout(layout)
+        # Apply matrix
+        if arg.data.size and out.data.size:
+            data_axis = self.last_axis + len(arg.tensorsig)
+            apply_matrix(np.conj(self.subspace_matrix(layout)).T, arg.data, data_axis, out=out.data)
+        else:
+            out.data.fill(0)
+
 
 @alias('dt')
 class TimeDerivative(LinearOperator):
