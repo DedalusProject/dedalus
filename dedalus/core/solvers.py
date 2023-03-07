@@ -427,7 +427,7 @@ class LinearBoundaryValueSolver(SolverBase):
         """
         if not self.F_adj:
             for field in self.F:
-                field_adj = field.copy()
+                field_adj = field.copy_adjoint()
                 # Zero the system
                 field_adj['c'] *= 0
                 if field.name:
@@ -438,7 +438,7 @@ class LinearBoundaryValueSolver(SolverBase):
 
         if not self.state_adj:
             for field in self.state:
-                field_adj = field.copy()
+                field_adj = field.copy_adjoint()
                 # Zero the system
                 field_adj['c'] *= 0
                 if field.name:
