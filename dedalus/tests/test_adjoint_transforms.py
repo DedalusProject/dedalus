@@ -1,4 +1,3 @@
-
 import pytest
 import numpy as np
 from dedalus.core import coords, distributor, basis, field, operators
@@ -9,7 +8,8 @@ comm = MPI.COMM_WORLD
 
 ## Adjoint tests
 
-# Cartesian
+# Cartesian 
+
 # Forward
 @pytest.mark.parametrize('N', [16])
 @pytest.mark.parametrize('dealias', [0.5, 1, 1.5])
@@ -21,27 +21,20 @@ def test_real_fourier_adjoint_forward(N, dealias, dtype, library):
     # Ensure that <y,Tx> = <T^Hy,x> where T is the transform
     c = coords.Coordinate('x')
     d = distributor.Distributor([c])
+
     b = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library)
     u = field.Field(dist=d, bases=(b,), dtype=dtype)
+
+    b_adj = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library, adjoint=True)
+    u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
     
-    g_shape = u['g'].shape[0]
-    c_shape = u['c'].shape[0]  
-    
-    transform = b.transform_plan(N)
+    u.fill_random(layout='g')
+    u_adj.fill_random(layout='c')
 
-    x_g = np.random.rand(g_shape)
-    x_c = np.zeros(c_shape,dtype=dtype)
+    inner_1 = np.vdot(u_adj['c'],u['c'])
+    inner_2 = np.vdot(u_adj['g'],u['g'])
 
-    y_g = np.random.rand(g_shape)
-    y_c = np.zeros(c_shape,dtype=dtype)
-
-    transform.forward(x_g,x_c,0)
-    transform.forward_adjoint(y_g,y_c,0)
-
-    inner_1 = np.vdot(y_g,x_c)
-    inner_2 = np.vdot(y_c,x_g)
-    rel_err = np.linalg.norm(inner_1-inner_2)/np.linalg.norm(inner_1)
-    assert(rel_err<1e-13)
+    assert np.allclose(inner_1,inner_2)
 
 @pytest.mark.parametrize('N', [16])
 @pytest.mark.parametrize('dealias', [0.5,1,1.5])
@@ -54,27 +47,19 @@ def test_complex_fourier_adjoint_forward(N, dealias, dtype, library):
     c = coords.Coordinate('x')
     d = distributor.Distributor([c])
 
-    b = basis.Fourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library,dtype=dtype)
+    b = basis.Fourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library, dtype=dtype)
     u = field.Field(dist=d, bases=(b,), dtype=dtype)
+
+    b_adj = basis.Fourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library, dtype=dtype, adjoint=True)
+    u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
     
-    g_shape = u['g'].shape[0]
-    c_shape = u['c'].shape[0]  
-    
-    transform = b.transform_plan(N)
+    u.fill_random(layout='g')
+    u_adj.fill_random(layout='c')
 
-    x_g = np.random.rand(g_shape) + 1j*np.random.rand(g_shape)
-    x_c = np.zeros(c_shape,dtype=dtype)
+    inner_1 = np.vdot(u_adj['c'],u['c'])
+    inner_2 = np.vdot(u_adj['g'],u['g'])
 
-    y_g = np.random.rand(g_shape) + 1j*np.random.rand(g_shape)
-    y_c = np.zeros(c_shape,dtype=dtype)
-
-    transform.forward(x_g,x_c,0)
-    transform.forward_adjoint(y_g,y_c,0)
-
-    inner_1 = np.vdot(y_g,x_c)
-    inner_2 = np.vdot(y_c,x_g)
-    rel_err = np.linalg.norm(inner_1-inner_2)/np.linalg.norm(inner_1)
-    assert(rel_err<1e-13)
+    assert np.allclose(inner_1,inner_2)
 
 @pytest.mark.parametrize('N', [15, 16])
 @pytest.mark.parametrize('alpha', [0, 1, 2])
@@ -92,30 +77,16 @@ def test_chebyshev_adjoint_forward(N, alpha, dealias, dtype, library):
     b = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library=library)
     u = field.Field(dist=d, bases=(b,), dtype=dtype)
     
-    transform = b.transform_plan(N)
-
-    g_shape = u['g'].shape[0]
-    c_shape = u['c'].shape[0]  
+    b_adj = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library=library, adjoint=True)
+    u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
     
-    if(dtype==np.float64):
-        x_g = np.random.rand(g_shape)
-    else:
-        x_g = np.random.rand(g_shape) + 1j*np.random.rand(g_shape) 
-    x_c = np.zeros(c_shape,dtype=dtype)
+    u.fill_random(layout='g')
+    u_adj.fill_random(layout='c')
 
-    if(dtype==np.float64):
-        y_g = np.random.rand(g_shape)
-    else:
-        y_g = np.random.rand(g_shape) + 1j*np.random.rand(g_shape)
-    y_c = np.zeros(c_shape,dtype=dtype)
+    inner_1 = np.vdot(u_adj['c'],u['c'])
+    inner_2 = np.vdot(u_adj['g'],u['g'])
 
-    transform.forward(x_g,x_c,0)
-    transform.forward_adjoint(y_g,y_c,0)
-
-    inner_1 = np.vdot(y_g,x_c)
-    inner_2 = np.vdot(y_c,x_g)
-    rel_err = np.linalg.norm(inner_1-inner_2)/np.linalg.norm(inner_1)
-    assert(rel_err<1e-13)
+    assert np.allclose(inner_1,inner_2)
 
 # Backwards
 
@@ -132,24 +103,16 @@ def test_real_fourier_adjoint_backward(N, dealias, dtype, library):
     b = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library)
     u = field.Field(dist=d, bases=(b,), dtype=dtype)
     
-    g_shape = u['g'].shape[0]
-    c_shape = u['c'].shape[0]  
+    b_adj = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library, adjoint=True)
+    u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
     
-    transform = b.transform_plan(N)
+    u.fill_random(layout='c')
+    u_adj.fill_random(layout='g')
 
-    x_g = np.zeros(g_shape)
-    x_c = np.random.rand(c_shape)
+    inner_1 = np.vdot(u_adj['g'],u['g'])
+    inner_2 = np.vdot(u_adj['c'],u['c'])
 
-    y_g = np.zeros(g_shape)
-    y_c = np.random.rand(c_shape)
-
-    transform.backward(x_c,x_g,0)
-    transform.backward_adjoint(y_c,y_g,0)
-
-    inner_1 = np.vdot(y_c,x_g)
-    inner_2 = np.vdot(y_g,x_c)
-    rel_err = np.linalg.norm(inner_1-inner_2)/np.linalg.norm(inner_1)
-    assert(rel_err<1e-13)
+    assert np.allclose(inner_1,inner_2)
 
 @pytest.mark.parametrize('N', [16])
 @pytest.mark.parametrize('dealias', [0.5,1,1.5])
@@ -165,24 +128,16 @@ def test_complex_fourier_adjoint_backward(N, dealias, dtype, library):
     b = basis.Fourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library,dtype=dtype)
     u = field.Field(dist=d, bases=(b,), dtype=dtype)
     
-    g_shape = u['g'].shape[0]
-    c_shape = u['c'].shape[0]  
+    b_adj = basis.Fourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library,dtype=dtype, adjoint=True)
+    u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
     
-    transform = b.transform_plan(N)
+    u.fill_random(layout='c')
+    u_adj.fill_random(layout='g')
 
-    x_g = np.zeros(g_shape,dtype=dtype)
-    x_c = np.random.rand(c_shape) + 1j*np.random.rand(c_shape)
+    inner_1 = np.vdot(u_adj['g'],u['g'])
+    inner_2 = np.vdot(u_adj['c'],u['c'])
 
-    y_g = np.zeros(g_shape,dtype=dtype)
-    y_c = np.random.rand(c_shape) + 1j*np.random.rand(c_shape)
-
-    transform.backward(x_c,x_g,0)
-    transform.backward_adjoint(y_c,y_g,0)
-
-    inner_1 = np.vdot(y_c,x_g)
-    inner_2 = np.vdot(y_g,x_c)
-    rel_err = np.linalg.norm(inner_1-inner_2)/np.linalg.norm(inner_1)
-    assert(rel_err<1e-13)
+    assert np.allclose(inner_1,inner_2)
 
 @pytest.mark.parametrize('N', [15, 16])
 @pytest.mark.parametrize('alpha', [0, 1, 2])
@@ -200,32 +155,16 @@ def test_chebyshev_adjoint_backward(N, alpha, dealias, dtype, library):
     b = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library=library)
     u = field.Field(dist=d, bases=(b,), dtype=dtype)
 
-    transform = b.transform_plan(N)
-
-    g_shape = u['g'].shape[0]
-    c_shape = u['c'].shape[0]  
+    b_adj = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library=library, adjoint=True)
+    u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
     
-    if(dtype==np.float64):
-        x_c = np.random.rand(c_shape)
-    else:
-        x_c = np.random.rand(c_shape) + 1j*np.random.rand(c_shape) 
-    x_g = np.zeros(g_shape,dtype=dtype)
+    u.fill_random(layout='c')
+    u_adj.fill_random(layout='g')
 
-    if(dtype==np.float64):
-        y_c = np.random.rand(c_shape)
-    else:
-        y_c = np.random.rand(c_shape) + 1j*np.random.rand(c_shape)
-    y_g = np.zeros(g_shape,dtype=dtype)
+    inner_1 = np.vdot(u_adj['g'],u['g'])
+    inner_2 = np.vdot(u_adj['c'],u['c'])
 
-    # Note: backward plan changes xc so make a copy
-    x_cc = x_c.copy()
-    transform.backward(x_cc,x_g,0)
-    transform.backward_adjoint(y_c,y_g,0)
-
-    inner_1 = np.vdot(y_c,x_g)
-    inner_2 = np.vdot(y_g,x_c)
-    rel_err = np.linalg.norm(inner_1-inner_2)/np.linalg.norm(inner_1)
-    assert(rel_err<1e-13)
+    assert np.allclose(inner_1,inner_2)
 
 ## Matrix-based tests
 # Forward
@@ -239,26 +178,16 @@ def test_real_fourier_adjoint_forward_matrix(N, dealias, dtype, library):
     # Ensure that forward adjoint transforms match the matrix implementations
     c = coords.Coordinate('x')
     d = distributor.Distributor([c])
+    b_adj = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library, adjoint=True)
+    u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
 
-    b = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library)
-    u = field.Field(dist=d, bases=(b,), dtype=dtype)
-
-    b_mat = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library='matrix')
+    b_mat_adj = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library='matrix', adjoint=True)
+    u_mat_adj = field.Field(dist=d, bases=(b_mat_adj,), dtype=dtype)
     
-    g_shape = u['g'].shape[0]
-    c_shape = u['c'].shape[0]  
-    
-    transform     = b.transform_plan(N)
-    transform_mat = b_mat.transform_plan(N)
+    u_adj.fill_random(layout='g')
+    u_mat_adj['g'] = u_adj['g']
 
-    x_g = np.random.rand(g_shape)
-    x_c = np.zeros(c_shape,dtype=dtype)
-    y_c = np.zeros(c_shape,dtype=dtype)
-
-    transform.forward_adjoint(x_g,x_c,0)
-    transform_mat.forward_adjoint(x_g,y_c,0)
-
-    assert np.allclose(x_c, y_c)
+    assert np.allclose(u_adj['c'], u_mat_adj['c'])
 
 @pytest.mark.parametrize('N', [16])
 @pytest.mark.parametrize('dealias', [0.5,1,1.5])
@@ -271,25 +200,16 @@ def test_complex_fourier_adjoint_forward_matrix(N, dealias, dtype, library):
     c = coords.Coordinate('x')
     d = distributor.Distributor([c])
 
-    b = basis.Fourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library,dtype=dtype)
-    u = field.Field(dist=d, bases=(b,), dtype=dtype)
+    b_adj = basis.Fourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library, dtype=dtype, adjoint=True)
+    u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
 
-    b_mat = basis.Fourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, dtype=dtype, library='matrix')
-    
-    g_shape = u['g'].shape[0]
-    c_shape = u['c'].shape[0]  
-    
-    transform     = b.transform_plan(N)
-    transform_mat = b_mat.transform_plan(N)
+    b_mat_adj = basis.Fourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library='matrix', dtype=dtype, adjoint=True)
+    u_mat_adj = field.Field(dist=d, bases=(b_mat_adj,), dtype=dtype)
 
-    x_g = np.random.rand(g_shape) + 1j*np.random.rand(g_shape)
-    x_c = np.zeros(c_shape,dtype=dtype)
-    y_c = np.zeros(c_shape,dtype=dtype)
+    u_adj.fill_random(layout='g')
+    u_mat_adj['g'] = u_adj['g']
 
-    transform.forward_adjoint(x_g,x_c,0)
-    transform_mat.forward_adjoint(x_g,y_c,0)
-
-    assert np.allclose(x_c, y_c)
+    assert np.allclose(u_adj['c'], u_mat_adj['c'])
 
 @pytest.mark.parametrize('N', [15, 16])
 @pytest.mark.parametrize('alpha', [0, 1, 2])
@@ -304,29 +224,16 @@ def test_chebyshev_adjoint_forward_matrix(N, alpha, dealias, dtype, library):
     c = coords.Coordinate('x')
     d = distributor.Distributor([c])
    
-    b = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library=library)
-    u = field.Field(dist=d, bases=(b,), dtype=dtype)
+    b_adj = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library=library, adjoint=True)
+    u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
 
-    b_mat = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library='matrix')
-    
-    transform     = b.transform_plan(N)
-    transform_mat = b_mat.transform_plan(N)
+    b_mat_adj = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library='matrix', adjoint=True)
+    u_mat_adj = field.Field(dist=d, bases=(b_mat_adj,), dtype=dtype)
 
-    g_shape = u['g'].shape[0]
-    c_shape = u['c'].shape[0]  
-    
-    if(dtype==np.float64):
-        x_g = np.random.rand(g_shape)
-    else:
-        x_g = np.random.rand(g_shape) + 1j*np.random.rand(g_shape)
+    u_adj.fill_random(layout='g')
+    u_mat_adj['g'] = u_adj['g']
 
-    x_c = np.zeros(c_shape,dtype=dtype)
-    y_c = np.zeros(c_shape,dtype=dtype)
-
-    transform.forward_adjoint(x_g,x_c,0)
-    transform_mat.forward_adjoint(x_g,y_c,0)
-
-    assert np.allclose(x_c, y_c)
+    assert np.allclose(u_adj['c'], u_mat_adj['c'])
 
 # Backwards
 
@@ -337,28 +244,19 @@ def test_chebyshev_adjoint_forward_matrix(N, alpha, dealias, dtype, library):
 def test_real_fourier_adjoint_backward_matrix(N, dealias, dtype, library):
     """Tests adjoint backward real fourier transforms"""
 
-    # Ensure that forward adjoint transforms match the matrix implementations
+    # Ensure that backward adjoint transforms match the matrix implementations
     c = coords.Coordinate('x')
     d = distributor.Distributor([c])
-    b = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library)
-    u = field.Field(dist=d, bases=(b,), dtype=dtype)
+    b_adj = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library, adjoint=True)
+    u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
 
-    b_mat = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library='matrix')
+    b_mat_adj = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library='matrix', adjoint=True)
+    u_mat_adj = field.Field(dist=d, bases=(b_mat_adj,), dtype=dtype)
     
-    g_shape = u['g'].shape[0]
-    c_shape = u['c'].shape[0]  
-    
-    transform     = b.transform_plan(N)
-    transform_mat = b_mat.transform_plan(N)
+    u_adj.fill_random(layout='c')
+    u_mat_adj['c'] = u_adj['c']
 
-    x_g = np.zeros(g_shape)
-    y_g = np.zeros(g_shape)
-    x_c = np.random.rand(c_shape)
-
-    transform.backward_adjoint(x_c,x_g,0)
-    transform_mat.backward_adjoint(x_c,y_g,0)
-
-    assert np.allclose(x_g,y_g)
+    assert np.allclose(u_adj['g'], u_mat_adj['g'])
 
 @pytest.mark.parametrize('N', [16])
 @pytest.mark.parametrize('dealias', [0.5,1,1.5])
@@ -367,29 +265,20 @@ def test_real_fourier_adjoint_backward_matrix(N, dealias, dtype, library):
 def test_complex_fourier_adjoint_backward_matrix(N, dealias, dtype, library):
     """Tests adjoint backward complex fourier transforms"""
 
-    # Ensure that forward adjoint transforms match the matrix implementations
+    # Ensure that backward adjoint transforms match the matrix implementations
     c = coords.Coordinate('x')
     d = distributor.Distributor([c])
 
-    b = basis.Fourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library,dtype=dtype)
-    u = field.Field(dist=d, bases=(b,), dtype=dtype)
+    b_adj = basis.Fourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library, dtype=dtype, adjoint=True)
+    u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
 
-    b_mat = basis.Fourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library='matrix',dtype=dtype)
-    
-    g_shape = u['g'].shape[0]
-    c_shape = u['c'].shape[0]  
-    
-    transform     = b.transform_plan(N)
-    transform_mat = b_mat.transform_plan(N)
+    b_mat_adj = basis.Fourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library='matrix', dtype=dtype, adjoint=True)
+    u_mat_adj = field.Field(dist=d, bases=(b_mat_adj,), dtype=dtype)
 
-    x_g = np.zeros(g_shape,dtype=dtype)
-    y_g = np.zeros(g_shape,dtype=dtype)
-    x_c = np.random.rand(c_shape) + 1j*np.random.rand(c_shape)
-    
-    transform.backward_adjoint(x_c,x_g,0)
-    transform_mat.backward_adjoint(x_c,y_g,0)
+    u_adj.fill_random(layout='c')
+    u_mat_adj['c'] = u_adj['c']
 
-    assert np.allclose(x_g,y_g)
+    assert np.allclose(u_adj['g'], u_mat_adj['g'])
 
 @pytest.mark.parametrize('N', [15, 16])
 @pytest.mark.parametrize('alpha', [0, 1, 2])
@@ -400,32 +289,17 @@ def test_complex_fourier_adjoint_backward_matrix(N, dealias, dtype, library):
 def test_chebyshev_adjoint_backward_matrix(N, alpha, dealias, dtype, library):
     """Tests adjoint backward Chebyshev transforms"""
 
-    # Ensure that forward adjoint transforms match the matrix implementations
+    # Ensure that backward adjoint transforms match the matrix implementations
     c = coords.Coordinate('x')
     d = distributor.Distributor([c])
-    
-    b = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library=library)
-    u = field.Field(dist=d, bases=(b,), dtype=dtype)
+   
+    b_adj = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library=library, adjoint=True)
+    u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
 
-    b_mat = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library='matrix')
-    
-    transform = b.transform_plan(N)
-    transform_mat = b_mat.transform_plan(N)
+    b_mat_adj = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library='matrix', adjoint=True)
+    u_mat_adj = field.Field(dist=d, bases=(b_mat_adj,), dtype=dtype)
 
-    g_shape = u['g'].shape[0]
-    c_shape = u['c'].shape[0]  
-    
-    if(dtype==np.float64):
-        x_c = np.random.rand(c_shape)
-    else:
-        x_c = np.random.rand(c_shape) + 1j*np.random.rand(c_shape) 
-    x_g = np.zeros(g_shape,dtype=dtype)
-    y_g = np.zeros(g_shape,dtype=dtype)
+    u_adj.fill_random(layout='c')
+    u_mat_adj['c'] = u_adj['c']
 
-    # Note: backward plan changes xc so make a copy
-    x_cc = x_c.copy()
-    transform.backward_adjoint(x_cc,x_g,0)
-    x_cc = x_c.copy()
-    transform_mat.backward_adjoint(x_cc,y_g,0)
-
-    assert np.allclose(x_g,y_g)
+    assert np.allclose(u_adj['g'], u_mat_adj['g'])
