@@ -994,9 +994,9 @@ class SpectralOperator1D(SpectralOperator):
         else:
             out.data.fill(0)
 
-    def operate_adjoint(self, out):
+    def operate_adjoint(self, input, out):
         """Perform adjoint operation."""
-        arg = self.args[0]
+        arg = input
         layout = arg.layout
         # Set output layout
         out.preset_layout(layout)
@@ -1649,6 +1649,18 @@ class Convert(SpectralOperator, metaclass=MultiClass):
         # Revert to matrix application for coeff space
         else:
             super().operate(out)
+
+    def operate_adjoint(self, input, out):
+        """Perform operation."""
+        arg = input
+        layout = arg.layout
+        # Copy for grid space
+        if layout.grid_space[self.last_axis]:
+            out.preset_layout(layout)
+            np.copyto(out.data, arg.data)
+        # Revert to matrix application for coeff space
+        else:
+            super().operate_adjoint(arg,out)
 
 
 class ConvertSame(Convert):
