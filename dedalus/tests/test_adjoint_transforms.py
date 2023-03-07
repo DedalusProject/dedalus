@@ -25,7 +25,7 @@ def test_real_fourier_adjoint_forward(N, dealias, dtype, library):
     b = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library)
     u = field.Field(dist=d, bases=(b,), dtype=dtype)
 
-    b_adj = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library, adjoint=True)
+    b_adj = b.adjoint_basis()
     u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
     
     u.fill_random(layout='g')
@@ -50,7 +50,7 @@ def test_complex_fourier_adjoint_forward(N, dealias, dtype, library):
     b = basis.Fourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library, dtype=dtype)
     u = field.Field(dist=d, bases=(b,), dtype=dtype)
 
-    b_adj = basis.Fourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library, dtype=dtype, adjoint=True)
+    b_adj = b.adjoint_basis()
     u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
     
     u.fill_random(layout='g')
@@ -77,7 +77,7 @@ def test_chebyshev_adjoint_forward(N, alpha, dealias, dtype, library):
     b = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library=library)
     u = field.Field(dist=d, bases=(b,), dtype=dtype)
     
-    b_adj = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library=library, adjoint=True)
+    b_adj = b.adjoint_basis()
     u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
     
     u.fill_random(layout='g')
@@ -103,7 +103,7 @@ def test_real_fourier_adjoint_backward(N, dealias, dtype, library):
     b = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library)
     u = field.Field(dist=d, bases=(b,), dtype=dtype)
     
-    b_adj = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library, adjoint=True)
+    b_adj = b.adjoint_basis()
     u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
     
     u.fill_random(layout='c')
@@ -128,7 +128,7 @@ def test_complex_fourier_adjoint_backward(N, dealias, dtype, library):
     b = basis.Fourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library,dtype=dtype)
     u = field.Field(dist=d, bases=(b,), dtype=dtype)
     
-    b_adj = basis.Fourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library,dtype=dtype, adjoint=True)
+    b_adj = b.adjoint_basis()
     u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
     
     u.fill_random(layout='c')
@@ -155,7 +155,7 @@ def test_chebyshev_adjoint_backward(N, alpha, dealias, dtype, library):
     b = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library=library)
     u = field.Field(dist=d, bases=(b,), dtype=dtype)
 
-    b_adj = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library=library, adjoint=True)
+    b_adj = b.adjoint_basis()
     u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
     
     u.fill_random(layout='c')
