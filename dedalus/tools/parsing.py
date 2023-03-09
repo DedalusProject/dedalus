@@ -4,73 +4,53 @@ import re
 
 from .exceptions import SymbolicParsingError
 
+TOP_LEVEL_EQUALS_REGEX = re.compile(r"^[^=]+=\s*")
+
 
 def split_equation(equation):
     """
     Split equation string into LHS and RHS strings.
-
     Examples
     --------
     >>> split_equation('f(x, y=5) = x**2')
     ('f(x, y=5)', 'x**2')
-
     """
-    # Find top-level equals signs by tracking parenthetical level
-    # (to avoid capturing equals signs in keyword assignments)
-    parentheses = 0
-    top_level_equals = []
-    for i, character in enumerate(equation):
-        if character == '(':
-            parentheses += 1
-        elif character == ')':
-            parentheses -= 1
-        elif (character == '=') and (parentheses == 0):
-            top_level_equals.append(i)
-    # Raise if there isn't exactly one top-level equals sign
-    if len(top_level_equals) == 0:
+    # Find top-level equals sign using regular expression
+    match = TOP_LEVEL_EQUALS_REGEX.match(equation)
+    if not match:
         raise SymbolicParsingError("Equation contains no top-level equals signs.")
-    elif len(top_level_equals) > 1:
-        raise SymbolicParsingError("Equation contains multiple top-level equals signs.")
-    # Return sides
-    i, = top_level_equals
-    return equation[:i].strip(), equation[i+1:].strip()
+    lhs = match.group().strip()[:-1]
+    rhs = equation[match.end():].strip()
+    return lhs, rhs
 
 
 def split_call(call):
     """
     Convert math-style function definitions into head and arguments.
-
     Examples
     --------
     >>> split_call('f(x, y)')
     ('f', ('x', 'y'))
     >>> split_call('f')
     ('f', ())
-
     """
-    # Check if signature matches a function call
-    match = re.match('(.+)\((.*)\)', call)
-    # Return head and arguments
-    if match:
-        head, argstring = match.groups()
-        args = tuple(argstring.replace(' ','').split(','))
-        return head, args
-    else:
-        return call, ()
+    head, _, argstring = call.partition('(')
+    if not argstring:
+        return head, ()
+    args = tuple(argstring.rstrip(')').split(','))
+    return head, args
 
 
 def lambdify_functions(call, result):
     """
     Convert math-style function definitions into lambda expressions.
     Pass other statements without modification.
-
     Examples
     --------
     >>> lambdify_functions('f(x, y)', 'x*y')
     ('f', 'lambda x,y: x*y')
     >>> lambdify_functions('f', 'a*b')
     ('f', 'a*b')
-
     """
     head, args = split_call(call)
     if args:
@@ -80,5 +60,3 @@ def lambdify_functions(call, result):
     else:
         # Return original rule
         return call, result
-
-
