@@ -160,7 +160,7 @@ class EigenvalueSolver(SolverBase):
     def _normalize_left_eigenvectors(self):
         modified_left_eigenvectors = self._build_modified_left_eigenvectors()
         norms = np.diag(modified_left_eigenvectors.T.conj() @ self.eigenvectors)
-        self.left_eigenvectors /= norms
+        self.left_eigenvectors /= np.conj(norms)
 
     def solve_dense(self, subproblem, rebuild_matrices=False, left=False, normalize_left=True, **kw):
         """
