@@ -93,7 +93,13 @@ def operator(name,dtype=dtype):
             return Jacobi.operator('Z',dtype=dtype)(*spin2Jacobi(Lmax,m,s))
             #return Jacobi.operator('Z',dtype=dtype)(Lmax+1, abs(m+s), abs(m-s))
         return Operator(Cos,SphereCodomain(1,0,0,0))
-
+    
+    if name == '1-Cos':
+        return SphereOperator('A',dtype=dtype)
+        
+    if name == '1+Cos':
+        return SphereOperator('B',dtype=dtype)
+    
     return SphereOperator(name,dtype=dtype)
 
 
@@ -107,8 +113,8 @@ class SphereOperator():
 
         self.__dtype = dtype
 
-    def __call__(self,ds):
-        return Operator(*self.__function(ds))
+    def __call__(self,sign):
+        return Operator(*self.__function(sign))
 
     @property
     def radius(self):
@@ -117,6 +123,40 @@ class SphereOperator():
     @property
     def dtype(self):
         return self.__dtype
+        
+    def __A(self,sign):
+    
+        ds, dm = sign, sign
+    
+        def A(Lmax,m,s):
+            
+            n,a,b,dn,da,db = spin2Jacobi(Lmax,m,s,ds=ds,dm=dm)
+            
+            if abs(da) == 2:
+                A = Jacobi.operator('A')(da//2)**2
+            if da == 0:
+                A = Jacobi.operator('A')(+1) @ Jacobi.operator('A')(-1)
+                
+            return (2*(m+s == -sign) - 1) * A(n,a,b)
+            
+        return A, SphereCodomain(1,dm,ds,0)
+        
+    def __B(self,sign):
+    
+        ds, dm = sign, -sign
+    
+        def B(Lmax,m,s):
+            
+            n,a,b,dn,da,db = spin2Jacobi(Lmax,m,s,ds=ds,dm=dm)
+            
+            if abs(db) == 2:
+                B = Jacobi.operator('B')(db//2)**2
+            if db == 0:
+                B = Jacobi.operator('B')(+1) @ Jacobi.operator('B')(-1)
+            
+            return -B(n,a,b)
+            
+        return B, SphereCodomain(1,dm,ds,0)
 
     def __D(self,ds):
 
@@ -124,7 +164,7 @@ class SphereOperator():
 
             n,a,b,dn,da,db = spin2Jacobi(Lmax,m,s,ds=ds)
 
-            D = Jacobi.operator('C' if da+db == 0 else 'D',dtype=self.dtype)(da)
+            D = Jacobi.operator('C' if da+db == 0 else 'D', dtype=self.dtype)(da)
 
             return  (-ds*np.sqrt(0.5)/self.radius)*D(n,a,b)
 
