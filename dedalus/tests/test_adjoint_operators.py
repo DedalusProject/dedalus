@@ -18,16 +18,14 @@ def test_fourier_adjoint_differentiate(N, bounds, dtype, layout):
     c = coords.Coordinate('x')
     d = distributor.Distributor((c,))
     if dtype == np.float64:
-        b_dir = basis.RealFourier(c, size=N, bounds=bounds)
-        b_adj = basis.RealFourier(c, size=N, bounds=bounds, adjoint=True)
+        b = basis.RealFourier(c, size=N, bounds=bounds)
     elif dtype == np.complex128:
-        b_dir = basis.ComplexFourier(c, size=N, bounds=bounds)
-        b_adj = basis.ComplexFourier(c, size=N, bounds=bounds, adjoint=True) 
+        b = basis.ComplexFourier(c, size=N, bounds=bounds)
 
-    u    = field.Field(dist=d, bases=(b_dir,),dtype=dtype)
-    Cu   = field.Field(dist=d, bases=(b_dir,),dtype=dtype)
-    v    = field.Field(dist=d, bases=(b_adj,),dtype=dtype) 
-    CHv  = field.Field(dist=d, bases=(b_adj,),dtype=dtype) 
+    u    = field.Field(dist=d, bases=(b,),dtype=dtype)
+    Cu   = field.Field(dist=d, bases=(b,),dtype=dtype)
+    v    = field.Field(dist=d, bases=(b,),dtype=dtype, adjoint=True) 
+    CHv  = field.Field(dist=d, bases=(b,),dtype=dtype, adjoint=True) 
 
     u.fill_random(layout=layout)
     v.fill_random(layout=layout)
@@ -51,26 +49,23 @@ d_range = [1,2,3]
 
 @pytest.mark.parametrize('N', N_range)
 @pytest.mark.parametrize('a', ab_range)
-@pytest.mark.parametrize('b', ab_range)
+@pytest.mark.parametrize('b_', ab_range)
 @pytest.mark.parametrize('k', k_range)
 @pytest.mark.parametrize('dtype', dtype_range)
 @pytest.mark.parametrize('d_range', d_range)
 @pytest.mark.parametrize('layout', ['g','c'])
-def test_jacobi_convert_adjoint(N, a, b, k, dtype, d_range, layout):
+def test_jacobi_convert_adjoint(N, a, b_, k, dtype, d_range, layout):
     c = coords.Coordinate('x')
     d = distributor.Distributor((c,))
-    b_dir = basis.Jacobi(c, size=N, a0=a, b0=b, a=a+k, b=b+k, bounds=(0, 1))
-    b_adj = basis.Jacobi(c, size=N, a0=a, b0=b, a=a+k, b=b+k, bounds=(0, 1), adjoint=True)
-    b1     = b_dir.derivative_basis(d_range)
-    b1_adj = b_adj.derivative_basis(d_range)
-
+    b = basis.Jacobi(c, size=N, a0=a, b0=b_, a=a+k, b=b_+k, bounds=(0, 1))
+    b1     = b.derivative_basis(d_range)
        
     # For adjoint v should be in the adjoint basis of Cu, 
     # and CHv will be in the adjoint basis of u.
-    u    = field.Field(dist=d, bases=b_dir,dtype=dtype)
+    u    = field.Field(dist=d, bases=b,dtype=dtype)
     Cu   = field.Field(dist=d, bases=b1,dtype=dtype)
-    v  = field.Field(dist=d, bases=b1_adj,dtype=dtype)
-    CHv  = field.Field(dist=d, bases=b_adj,dtype=dtype) 
+    v  = field.Field(dist=d, bases=b1,dtype=dtype, adjoint=True)
+    CHv  = field.Field(dist=d, bases=b,dtype=dtype, adjoint=True) 
 
     u.fill_random(layout=layout)
     v.fill_random(layout=layout)
@@ -91,23 +86,20 @@ def test_jacobi_convert_adjoint(N, a, b, k, dtype, d_range, layout):
 
 @pytest.mark.parametrize('N', N_range)
 @pytest.mark.parametrize('a', ab_range)
-@pytest.mark.parametrize('b', ab_range)
+@pytest.mark.parametrize('b_', ab_range)
 @pytest.mark.parametrize('k', k_range)
 @pytest.mark.parametrize('dtype', dtype_range)
 @pytest.mark.parametrize('layout', ['g','c'])
-def test_jacobi_differentiate_adjoint(N, a, b, k, dtype, layout):
+def test_jacobi_differentiate_adjoint(N, a, b_, k, dtype, layout):
     c = coords.Coordinate('x')
     d = distributor.Distributor((c,))
-    b_dir = basis.Jacobi(c, size=N, a0=a, b0=b, a=a+k, b=b+k, bounds=(0, 1))
-    b_adj = basis.Jacobi(c, size=N, a0=a, b0=b, a=a+k, b=b+k, bounds=(0, 1),adjoint=True)
-
-    b1     = b_dir.derivative_basis(1)
-    b1_adj = b_adj.derivative_basis(1)
+    b      = basis.Jacobi(c, size=N, a0=a, b0=b_, a=a+k, b=b_+k, bounds=(0, 1))
+    b1     = b.derivative_basis(1)
     
-    u    = field.Field(dist=d, bases=(b_dir,),dtype=dtype)
+    u    = field.Field(dist=d, bases=(b,),dtype=dtype)
     Cu   = field.Field(dist=d, bases=(b1,),dtype=dtype)
-    v    = field.Field(dist=d, bases=(b1_adj,),dtype=dtype)
-    CHv  = field.Field(dist=d, bases=(b_adj,),dtype=dtype) 
+    v    = field.Field(dist=d, bases=(b1,),dtype=dtype, adjoint=True)
+    CHv  = field.Field(dist=d, bases=(b,),dtype=dtype, adjoint=True) 
 
     u.fill_random(layout=layout)
     v.fill_random(layout=layout)
