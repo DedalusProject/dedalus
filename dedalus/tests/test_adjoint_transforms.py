@@ -25,8 +25,7 @@ def test_real_fourier_adjoint_forward(N, dealias, dtype, library):
     b = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library)
     u = field.Field(dist=d, bases=(b,), dtype=dtype)
 
-    b_adj = b.adjoint_basis()
-    u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
+    u_adj = field.Field(dist=d, bases=(b,), dtype=dtype,adjoint=True)
     
     u.fill_random(layout='g')
     u_adj.fill_random(layout='c')
@@ -50,8 +49,7 @@ def test_complex_fourier_adjoint_forward(N, dealias, dtype, library):
     b = basis.Fourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library, dtype=dtype)
     u = field.Field(dist=d, bases=(b,), dtype=dtype)
 
-    b_adj = b.adjoint_basis()
-    u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
+    u_adj = field.Field(dist=d, bases=(b,), dtype=dtype, adjoint=True)
     
     u.fill_random(layout='g')
     u_adj.fill_random(layout='c')
@@ -77,8 +75,7 @@ def test_chebyshev_adjoint_forward(N, alpha, dealias, dtype, library):
     b = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library=library)
     u = field.Field(dist=d, bases=(b,), dtype=dtype)
     
-    b_adj = b.adjoint_basis()
-    u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
+    u_adj = field.Field(dist=d, bases=(b,), dtype=dtype, adjoint=True)
     
     u.fill_random(layout='g')
     u_adj.fill_random(layout='c')
@@ -88,7 +85,7 @@ def test_chebyshev_adjoint_forward(N, alpha, dealias, dtype, library):
 
     assert np.allclose(inner_1,inner_2)
 
-# Backwards
+# # Backwards
 
 @pytest.mark.parametrize('N', [16])
 @pytest.mark.parametrize('dealias', [0.5, 1, 1.5])
@@ -103,8 +100,7 @@ def test_real_fourier_adjoint_backward(N, dealias, dtype, library):
     b = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library)
     u = field.Field(dist=d, bases=(b,), dtype=dtype)
     
-    b_adj = b.adjoint_basis()
-    u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
+    u_adj = field.Field(dist=d, bases=(b,), dtype=dtype,adjoint=True)
     
     u.fill_random(layout='c')
     u_adj.fill_random(layout='g')
@@ -128,8 +124,7 @@ def test_complex_fourier_adjoint_backward(N, dealias, dtype, library):
     b = basis.Fourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library,dtype=dtype)
     u = field.Field(dist=d, bases=(b,), dtype=dtype)
     
-    b_adj = b.adjoint_basis()
-    u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
+    u_adj = field.Field(dist=d, bases=(b,), dtype=dtype, adjoint=True)
     
     u.fill_random(layout='c')
     u_adj.fill_random(layout='g')
@@ -155,8 +150,7 @@ def test_chebyshev_adjoint_backward(N, alpha, dealias, dtype, library):
     b = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library=library)
     u = field.Field(dist=d, bases=(b,), dtype=dtype)
 
-    b_adj = b.adjoint_basis()
-    u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
+    u_adj = field.Field(dist=d, bases=(b,), dtype=dtype, adjoint=True)
     
     u.fill_random(layout='c')
     u_adj.fill_random(layout='g')
@@ -178,11 +172,11 @@ def test_real_fourier_adjoint_forward_matrix(N, dealias, dtype, library):
     # Ensure that forward adjoint transforms match the matrix implementations
     c = coords.Coordinate('x')
     d = distributor.Distributor([c])
-    b_adj = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library, adjoint=True)
-    u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
+    b = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library)
+    u_adj = field.Field(dist=d, bases=(b,), dtype=dtype, adjoint=True)
 
-    b_mat_adj = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library='matrix', adjoint=True)
-    u_mat_adj = field.Field(dist=d, bases=(b_mat_adj,), dtype=dtype)
+    b_mat = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library='matrix')
+    u_mat_adj = field.Field(dist=d, bases=(b_mat,), dtype=dtype, adjoint=True)
     
     u_adj.fill_random(layout='g')
     u_mat_adj['g'] = u_adj['g']
@@ -200,11 +194,11 @@ def test_complex_fourier_adjoint_forward_matrix(N, dealias, dtype, library):
     c = coords.Coordinate('x')
     d = distributor.Distributor([c])
 
-    b_adj = basis.Fourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library, dtype=dtype, adjoint=True)
-    u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
+    b = basis.Fourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library, dtype=dtype)
+    u_adj = field.Field(dist=d, bases=(b,), dtype=dtype, adjoint=True)
 
-    b_mat_adj = basis.Fourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library='matrix', dtype=dtype, adjoint=True)
-    u_mat_adj = field.Field(dist=d, bases=(b_mat_adj,), dtype=dtype)
+    b_mat = basis.Fourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library='matrix', dtype=dtype)
+    u_mat_adj = field.Field(dist=d, bases=(b_mat,), dtype=dtype, adjoint=True)
 
     u_adj.fill_random(layout='g')
     u_mat_adj['g'] = u_adj['g']
@@ -224,18 +218,18 @@ def test_chebyshev_adjoint_forward_matrix(N, alpha, dealias, dtype, library):
     c = coords.Coordinate('x')
     d = distributor.Distributor([c])
    
-    b_adj = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library=library, adjoint=True)
-    u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
+    b = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library=library)
+    u_adj = field.Field(dist=d, bases=(b,), dtype=dtype, adjoint=True)
 
-    b_mat_adj = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library='matrix', adjoint=True)
-    u_mat_adj = field.Field(dist=d, bases=(b_mat_adj,), dtype=dtype)
+    b_mat = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library='matrix')
+    u_mat_adj = field.Field(dist=d, bases=(b_mat,), dtype=dtype, adjoint=True)
 
     u_adj.fill_random(layout='g')
     u_mat_adj['g'] = u_adj['g']
 
     assert np.allclose(u_adj['c'], u_mat_adj['c'])
 
-# Backwards
+# # Backwards
 
 @pytest.mark.parametrize('N', [16])
 @pytest.mark.parametrize('dealias', [0.5, 1, 1.5])
@@ -247,11 +241,11 @@ def test_real_fourier_adjoint_backward_matrix(N, dealias, dtype, library):
     # Ensure that backward adjoint transforms match the matrix implementations
     c = coords.Coordinate('x')
     d = distributor.Distributor([c])
-    b_adj = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library, adjoint=True)
-    u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
+    b = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library)
+    u_adj = field.Field(dist=d, bases=(b,), dtype=dtype, adjoint=True)
 
-    b_mat_adj = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library='matrix', adjoint=True)
-    u_mat_adj = field.Field(dist=d, bases=(b_mat_adj,), dtype=dtype)
+    b_mat = basis.RealFourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library='matrix')
+    u_mat_adj = field.Field(dist=d, bases=(b_mat,), dtype=dtype, adjoint=True)
     
     u_adj.fill_random(layout='c')
     u_mat_adj['c'] = u_adj['c']
@@ -269,11 +263,11 @@ def test_complex_fourier_adjoint_backward_matrix(N, dealias, dtype, library):
     c = coords.Coordinate('x')
     d = distributor.Distributor([c])
 
-    b_adj = basis.Fourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library, dtype=dtype, adjoint=True)
-    u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
+    b = basis.Fourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library=library, dtype=dtype)
+    u_adj = field.Field(dist=d, bases=(b,), dtype=dtype, adjoint=True)
 
-    b_mat_adj = basis.Fourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library='matrix', dtype=dtype, adjoint=True)
-    u_mat_adj = field.Field(dist=d, bases=(b_mat_adj,), dtype=dtype)
+    b_mat = basis.Fourier(c, size=N, bounds=(0, 2*np.pi), dealias=dealias, library='matrix', dtype=dtype)
+    u_mat_adj = field.Field(dist=d, bases=(b_mat,), dtype=dtype, adjoint=True)
 
     u_adj.fill_random(layout='c')
     u_mat_adj['c'] = u_adj['c']
@@ -293,11 +287,11 @@ def test_chebyshev_adjoint_backward_matrix(N, alpha, dealias, dtype, library):
     c = coords.Coordinate('x')
     d = distributor.Distributor([c])
    
-    b_adj = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library=library, adjoint=True)
-    u_adj = field.Field(dist=d, bases=(b_adj,), dtype=dtype)
+    b = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library=library)
+    u_adj = field.Field(dist=d, bases=(b,), dtype=dtype, adjoint=True)
 
-    b_mat_adj = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library='matrix', adjoint=True)
-    u_mat_adj = field.Field(dist=d, bases=(b_mat_adj,), dtype=dtype)
+    b_mat = basis.Ultraspherical(c, size=N, alpha0=0, alpha=alpha, bounds=(-1, 1), dealias=dealias, library='matrix')
+    u_mat_adj = field.Field(dist=d, bases=(b_mat,), dtype=dtype, adjoint=True)
 
     u_adj.fill_random(layout='c')
     u_mat_adj['c'] = u_adj['c']

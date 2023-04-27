@@ -339,7 +339,7 @@ class IntervalBasis(Basis):
     dim = 1
     subaxis_dependence = [True]
 
-    def __init__(self, coord, size, bounds, dealias,adjoint):
+    def __init__(self, coord, size, bounds, dealias):
         self.coord = coord
         coord.check_bounds(bounds)
         self.coordsys = coord
@@ -351,8 +351,6 @@ class IntervalBasis(Basis):
             self.dealias = dealias
         else:
             self.dealias = (dealias,)
-
-        self.adjoint = adjoint
 
         self.COV = AffineCOV(self.native_bounds, bounds)
         super().__init__(coord)
@@ -421,7 +419,7 @@ class IntervalBasis(Basis):
         data_axis = len(field.tensorsig) + axis
         grid_size = gdata.shape[data_axis]
         plan = self.transform_plan(field.dist, grid_size)
-        if(self.adjoint):
+        if(field.adjoint):
             plan.backward_adjoint(gdata, cdata, data_axis)
         else:
             plan.forward(gdata, cdata, data_axis)
@@ -431,7 +429,7 @@ class IntervalBasis(Basis):
         data_axis = len(field.tensorsig) + axis
         grid_size = gdata.shape[data_axis]
         plan = self.transform_plan(field.dist, grid_size)
-        if(self.adjoint):
+        if(field.adjoint):
             plan.forward_adjoint(cdata, gdata, data_axis)
         else:
             plan.backward(cdata, gdata, data_axis)
@@ -439,10 +437,6 @@ class IntervalBasis(Basis):
     def transform_plan(self, dist, grid_size):
         # Subclasses must implement
         raise NotImplementedError
-
-    def adjoint_basis(self):
-        return self.clone_with(adjoint=True)
-
 
 class Jacobi(IntervalBasis, metaclass=CachedClass):
     """Jacobi polynomial basis."""
@@ -454,7 +448,7 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
     default_library = "matrix"
 
     @classmethod
-    def _preprocess_cache_args(cls, coord, size, bounds, a, b, a0, b0, dealias, library, adjoint):
+    def _preprocess_cache_args(cls, coord, size, bounds, a, b, a0, b0, dealias, library):
         """Preprocess arguments into canonical form for caching. Must accept and return __init__ arguments."""
         # coord: Coordinate
         if not isinstance(coord, Coordinate):
@@ -492,10 +486,10 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
                 library = cls.default_dct
             else:
                 library = cls.default_library
-        return (coord, size, bounds, a, b, a0, b0, dealias, library, adjoint)
+        return (coord, size, bounds, a, b, a0, b0, dealias, library)
 
-    def __init__(self, coord, size, bounds, a, b, a0=None, b0=None, dealias=(1,), library=None, adjoint=False):
-        super().__init__(coord, size, bounds, dealias, adjoint)
+    def __init__(self, coord, size, bounds, a, b, a0=None, b0=None, dealias=(1,), library=None):
+        super().__init__(coord, size, bounds, dealias)
         # Save arguments without modification for caching
         self.coord = coord
         self.size = size
@@ -832,7 +826,7 @@ class FourierBase(IntervalBasis):
     default_library = "fftw"
 
     @classmethod
-    def _preprocess_cache_args(cls, coord, size, bounds, dealias, library, adjoint):
+    def _preprocess_cache_args(cls, coord, size, bounds, dealias, library):
         """Preprocess arguments into canonical form for caching. Must accept and return __init__ arguments."""
         # coord: Coordinate
         if not isinstance(coord, Coordinate):
@@ -855,10 +849,10 @@ class FourierBase(IntervalBasis):
         # library: pick default based on (a0, b0)
         if library is None:
             library = cls.default_library
-        return (coord, size, bounds, dealias, library, adjoint)
+        return (coord, size, bounds, dealias, library)
 
-    def __init__(self, coord, size, bounds, dealias=(1,), library=None, adjoint=False):
-        super().__init__(coord, size, bounds, dealias, adjoint)
+    def __init__(self, coord, size, bounds, dealias=(1,), library=None):
+        super().__init__(coord, size, bounds, dealias)
         # Save arguments without modification for caching
         self.coord = coord
         self.size = size
