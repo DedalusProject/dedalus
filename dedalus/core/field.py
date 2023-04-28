@@ -624,10 +624,8 @@ class Field(Current):
         return copy
 
     def copy_adjoint(self):
-        adjoint_bases = tuple(basis.adjoint_basis() for basis in self.domain.bases)
-        copy = Field(self.dist, bases=adjoint_bases, tensorsig=self.tensorsig, dtype=self.dtype)
-        copy.preset_scales(self.scales)
-        copy[self.layout] = self.data
+        copy = self.copy()
+        copy.adjoint = True
         return copy
 
     def set_global_data(self, global_data):
