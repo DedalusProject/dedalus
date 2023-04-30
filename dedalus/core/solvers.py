@@ -431,7 +431,7 @@ class LinearBoundaryValueSolver(SolverBase):
                 # Zero the system
                 field_adj['c'] *= 0
                 if field.name:
-                    # If the direct field has a name, give the adjoint a 
+                    # If the direct field has a name, give the adjoint a
                     # corresponding name
                     field_adj.name = '%s_adj' % field.name
                 self.F_adj.append(field_adj)
@@ -442,7 +442,7 @@ class LinearBoundaryValueSolver(SolverBase):
                 # Zero the system
                 field_adj['c'] *= 0
                 if field.name:
-                    # If the direct field has a name, give the adjoint a 
+                    # If the direct field has a name, give the adjoint a
                     # corresponding name
                     field_adj.name = '%s_adj' % field.name
                 self.state_adj.append(field_adj)
@@ -534,6 +534,10 @@ class NonlinearBoundaryValueSolver(SolverBase):
             F_handler.add_task(eq['F'])
         F_handler.build_system()
         self.F = F_handler.fields
+
+        self.F_adj = []
+        self.state_adj = []
+        self.build_adjoint()
         logger.debug('Finished NLBVP instantiation')
 
     def print_subproblem_ranks(self, subproblems=None):
@@ -546,6 +550,34 @@ class NonlinearBoundaryValueSolver(SolverBase):
                 continue
             dF = sp.dF_min.toarray()
             print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {sp.group}, matrix rank: {np.linalg.matrix_rank(dF)}/{dF.shape[0]}, cond: {np.linalg.cond(dF):.1e}")
+
+    def build_adjoint(self):
+        """
+        Build a field system for the adjoint system
+        self.F_adj has the same layout as self.F
+        self.state_adj has the same layout as self.state
+        """
+        if not self.F_adj:
+            for field in self.F:
+                field_adj = field.copy_adjoint()
+                # Zero the system
+                field_adj['c'] *= 0
+                if field.name:
+                    # If the direct field has a name, give the adjoint a
+                    # corresponding name
+                    field_adj.name = '%s_adj' % field.name
+                self.F_adj.append(field_adj)
+
+        if not self.state_adj:
+            for field in self.state:
+                field_adj = field.copy_adjoint()
+                # Zero the system
+                field_adj['c'] *= 0
+                if field.name:
+                    # If the direct field has a name, give the adjoint a
+                    # corresponding name
+                    field_adj.name = '%s_adj' % field.name
+                self.state_adj.append(field_adj)
 
     def newton_iteration(self, damping=1):
         """Update solution with a Newton iteration."""
@@ -579,6 +611,26 @@ class NonlinearBoundaryValueSolver(SolverBase):
             handlers = self.evaluator.handlers
         self.evaluator.evaluate_handlers(handlers, iteration=self.iteration)
 
+    def solve_adjoint(self):
+        # subsystems.build_subproblem_matrices(self, self.subproblems, ['dH'])
+        # Ensure coeff space before subsystem gathers/scatters
+        for field in self.F_adj:
+            field.preset_layout('c')
+        for field in self.state_adj:
+            field.change_layout('c')
+
+        # Solve system for each subproblem, updating perturbations
+        for sp in self.subproblems:
+            n_ss = len(sp.subsystems)
+            # Gather and adjoint-right-precondition RHS
+            X = np.zeros((sp.pre_right.shape[0], n_ss), dtype=self.dtype)
+            csr_matvecs(np.conj(sp.pre_right).T.tocsr(), sp.gather(self.state_adj), X)
+            # Solve
+            sp_matsolver = self.matsolver(np.conj(sp.dH_min @ sp.pre_right).T, self)
+            pX = - sp_matsolver.solve(X)
+            pF = np.zeros((sp.pre_left.shape[0], n_ss), dtype=self.dtype)
+            csr_matvecs(np.conj(sp.pre_left).T.tocsr(), pX.reshape((-1, n_ss)), pF)
+            sp.scatter(pF, self.F_adj)
 
 class InitialValueSolver(SolverBase):
     """
