@@ -66,21 +66,44 @@ for timestepper in test_timesteppers:
     #############
     # Initial condition
     u = b
+    # for steps in range(NSteps):
+    #     for i in reversed(range(1,stages+1)):
+    #         if(i==stages):
+    #             LHS = (M + dt*H[i,i]*L).T
+    #             us = [np.linalg.solve(LHS,u)]
+    #         else:
+    #             LHS = (M + dt*H[i,i]*L).T
+    #             RHS = 0
+    #             for j in range(i,stages):
+    #                 RHS += dt*(A[j+1,i]*FAdj(us[j-i])-H[j+1,i]*L.T@us[j-i])
+    #             us.insert(0,np.linalg.solve(LHS,RHS))
+    #     # Get initial time
+    #     u = 0
+    #     for j in range(1,stages+1):
+    #         u += (M.T@us[j-1]+dt*A[j,0]*FAdj(us[j-1])-dt*H[j,0]*L.T@us[j-1])
+
+    LX = [None]*stages
+    MX = [None]*stages
+    FX = [None]*stages
+
     for steps in range(NSteps):
         for i in reversed(range(1,stages+1)):
             if(i==stages):
-                LHS = (M + dt*H[i,i]*L).T
-                us = [np.linalg.solve(LHS,u)]
+                RHS = u.copy()
             else:
-                LHS = (M + dt*H[i,i]*L).T
                 RHS = 0
-                for j in range(i,stages):
-                    RHS += dt*(A[j+1,i]*FAdj(us[j-i])-H[j+1,i]*L.T@us[j-i])
-                us.insert(0,np.linalg.solve(LHS,RHS))
-        # Get initial time
+            for j in range(i+1,stages+1):
+                RHS += dt*(A[j,i]*FX[j-1]-H[j,i]*LX[j-1])
+            LHS = (M + dt*H[i,i]*L).T
+
+            u = np.linalg.solve(LHS,RHS)
+            LX[i-1] = L.T@u
+            FX[i-1] = FAdj(u)
+            MX[i-1] = M.T@u 
+    # Get initial time
         u = 0
         for j in range(1,stages+1):
-            u += (M.T@us[j-1]+dt*A[j,0]*FAdj(us[j-1])-dt*H[j,0]*L.T@us[j-1])
+            u += (MX[j-1] + dt*A[j,0]*FX[j-1] - dt*H[j,0]*LX[j-1])
 
     LTb = u
 
