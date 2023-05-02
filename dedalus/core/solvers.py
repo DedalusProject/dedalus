@@ -720,6 +720,9 @@ class InitialValueSolver(SolverBase):
         self.stop_sim_time = np.inf
         self.stop_wall_time = np.inf
         self.stop_iteration = np.inf
+
+        self.state_adj = []
+        self.build_adjoint()
         logger.debug('Finished IVP instantiation')
 
     @property
@@ -760,6 +763,22 @@ class InitialValueSolver(SolverBase):
             return False
         else:
             return True
+
+    def build_adjoint(self):
+        """
+        Build a field system for the adjoint system
+        self.state_adj has the same layout as self.state
+        """
+        if not self.state_adj:
+            for field in self.state:
+                field_adj = field.copy_adjoint()
+                # Zero the system
+                field_adj['c'] *= 0
+                if field.name:
+                    # If the direct field has a name, give the adjoint a
+                    # corresponding name
+                    field_adj.name = '%s_adj' % field.name
+                self.state_adj.append(field_adj)
 
     def load_state(self, path, index=-1, allow_missing=False):
         """
@@ -840,6 +859,27 @@ class InitialValueSolver(SolverBase):
                 self.enforce_hermitian_symmetry(self.state)
         # Update iteration
         self.iteration += 1
+        self.dt = dt
+
+    def step_adjoint(self, dt):
+        """Advance system by one iteration/timestep."""
+        # Assert finite timestep
+        if not np.isfinite(dt):
+            raise ValueError("Invalid timestep")
+        # Enforce Hermitian symmetry for real variables
+        if np.isrealobj(self.dtype.type()):
+            # Enforce for as many iterations as timestepper uses internally
+            if self.iteration % self.enforce_real_cadence < self.timestepper.steps:
+                self.enforce_hermitian_symmetry(self.state)
+        # Record times
+        wall_time = self.get_wall_time()
+        # Advance using timestepper
+        wall_elapsed = wall_time - self.init_time
+        if(self.iteration==self.stop_iteration):
+            logger.info("Warning: Only works if F==0 and linear direct equation.")
+        self.timestepper.step_adjoint(dt, wall_elapsed)
+        # Update iteration
+        self.iteration -= 1
         self.dt = dt
 
     def evolve(self, timestep_function, log_cadence=100):
