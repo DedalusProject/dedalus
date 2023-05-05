@@ -514,7 +514,7 @@ class H5FileHandlerBase(Handler):
         file.create_group('scales')
         file['scales'].create_dataset(name='constant', data=np.zeros(1), dtype=np.float64)
         file['scales']['constant'].make_scale('constant')
-        for name in ['sim_time', 'timestep', 'world_time', 'wall_time']:
+        for name in ['sim_time', 'timestep', 'wall_time']:
             file['scales'].create_dataset(name=name, shape=(0,), maxshape=(self.max_writes,), dtype=np.float64) # shape[0] = 0 to chunk across writes
             file['scales'][name].make_scale(name)
         for name in ['iteration', 'write_number']:
@@ -533,7 +533,7 @@ class H5FileHandlerBase(Handler):
             dset.attrs['scales'] = scales
             # Time scales
             dset.dims[0].label = 't'
-            for sn in ['sim_time', 'world_time', 'wall_time', 'timestep', 'iteration', 'write_number']:
+            for sn in ['sim_time', 'wall_time', 'timestep', 'iteration', 'write_number']:
                 dset.dims[0].attach_scale(file['scales'][sn])
             # Spatial scales
             rank = len(op.tensorsig)
@@ -566,10 +566,8 @@ class H5FileHandlerBase(Handler):
         dset = file['tasks'].create_dataset(name=task['name'], shape=shape, maxshape=maxshape, dtype=task['dtype'])
         return dset
 
-    def process(self, **kw):
+    def process(self, iteration, wall_time=0, sim_time=0, timestep=0):
         """Save task outputs to HDF5 file."""
-        # HACK: fix world time and timestep inputs from solvers.py/timestepper.py
-        kw['world_time'] = 0
         # Update write counts
         self.total_write_num += 1
         self.file_write_num += 1
@@ -580,7 +578,7 @@ class H5FileHandlerBase(Handler):
                 self.file_write_num = 1
         # Write file metadata
         file = self.get_file()
-        self.write_file_metadata(file, write_number=self.total_write_num, **kw)
+        self.write_file_metadata(file, write_number=self.total_write_num, iteration=iteration, wall_time=wall_time, sim_time=sim_time, timestep=timestep)
         # Write tasks
         for task in self.tasks:
             # Transform and process data
@@ -596,7 +594,7 @@ class H5FileHandlerBase(Handler):
         # Update file metadata
         file.attrs['writes'] = self.file_write_num
         # Update time scales
-        for name in ['sim_time', 'world_time', 'wall_time', 'timestep', 'iteration', 'write_number']:
+        for name in ['sim_time', 'wall_time', 'timestep', 'iteration', 'write_number']:
             dset = file['scales'][name]
             dset.resize(self.file_write_num, axis=0)
             dset[self.file_write_num-1] = kw[name]
