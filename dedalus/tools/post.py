@@ -284,7 +284,7 @@ def merge_setup(joint_file, proc_paths, virtual=False):
             for i, proc_dim in enumerate(proc_dset.dims):
                 joint_dset.dims[i].label = proc_dim.label
                 if joint_dset.dims[i].label == 't':
-                    for scalename in ['sim_time', 'world_time', 'wall_time', 'timestep', 'iteration', 'write_number']:
+                    for scalename in ['sim_time', 'wall_time', 'timestep', 'iteration', 'write_number']:
                         scale = joint_file['scales'][scalename]
                         joint_dset.dims.create_scale(scale, scalename)
                         joint_dset.dims[i].attach_scale(scale)

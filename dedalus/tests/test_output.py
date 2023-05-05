@@ -44,7 +44,7 @@ def test_cartesian_output(dtype, dealias, output_scales, output_layout, parallel
         output = solver.evaluator.add_file_handler(tempdir, iter=1, parallel=parallel)
         for task in tasks:
             output.add_task(task, layout=output_layout, name=str(task), scales=output_scales)
-        solver.evaluator.evaluate_handlers([output], sim_time=0, wall_time=0, world_time=0, timestep=0, iteration=0)
+        solver.evaluate_handlers([output])
         # Check solution
         errors = []
         with h5py.File(f'{tempdir}/{tempdir}_s1.h5', mode='r') as file:
@@ -108,7 +108,7 @@ def test_spherical_output(Nphi, Ntheta, Nr, k, dealias, dtype, basis, output_sca
         output = solver.evaluator.add_file_handler(tempdir, iter=1, parallel=parallel)
         for task in tasks:
             output.add_task(task, layout='g', name=str(task), scales=output_scales)
-        solver.evaluator.evaluate_handlers([output], sim_time=0, wall_time=0, world_time=0, timestep=0, iteration=0)
+        solver.evaluate_handlers([output])
         # Check solution
         errors = []
         with h5py.File(f'{tempdir}/{tempdir}_s1.h5', mode='r') as file:

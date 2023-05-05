@@ -106,6 +106,9 @@ class SolverBase:
         self.subsystems = subsystems.build_subsystems(self)
         self.subproblems = subsystems.build_subproblems(self, self.subsystems)
         self.subproblems_by_group = {sp.group: sp for sp in self.subproblems}
+        # Build evaluator
+        namespace = {}
+        self.evaluator = Evaluator(self.dist, namespace)
 
 
 class EigenvalueSolver(SolverBase):
@@ -317,8 +320,6 @@ class LinearBoundaryValueSolver(SolverBase):
         self.subproblem_matsolvers = {}
         self.iteration = 0
         # Create RHS handler
-        namespace = {}
-        self.evaluator = Evaluator(self.dist, namespace)
         F_handler = self.evaluator.add_system_handler(iter=1, group='F')
         for eq in problem.eqs:
             F_handler.add_task(eq['F'])
@@ -425,8 +426,6 @@ class NonlinearBoundaryValueSolver(SolverBase):
         self.perturbations = problem.perturbations
         self.iteration = 0
         # Create RHS handler
-        namespace = {}
-        self.evaluator = Evaluator(self.dist, namespace)
         F_handler = self.evaluator.add_system_handler(iter=1, group='F')
         for eq in problem.eqs:
             F_handler.add_task(eq['H'])
@@ -511,17 +510,18 @@ class InitialValueSolver(SolverBase):
     def __init__(self, problem, timestepper, enforce_real_cadence=100, warmup_iterations=10, **kw):
         logger.debug('Beginning IVP instantiation')
         super().__init__(problem, **kw)
-        self.enforce_real_cadence = enforce_real_cadence
-        self._wall_time_array = np.zeros(1, dtype=float)
-        self.init_time = self.get_wall_time()
+        if np.isrealobj(self.dtype.type()):
+            self.enforce_real_cadence = enforce_real_cadence
+        else:
+            self.enforce_real_cadence = None
+        self._bcast_array = np.zeros(1, dtype=float)
+        self.init_time = self.world_time
         # Build LHS matrices
         subsystems.build_subproblem_matrices(self, self.subproblems, ['M', 'L'])
         # Compute total modes
         local_modes = sum(ss.subproblem.pre_right.shape[1] for ss in self.subsystems)
         self.total_modes = self.dist.comm.allreduce(local_modes, op=MPI.SUM)
         # Create RHS handler
-        namespace = {}
-        self.evaluator = Evaluator(self.dist, namespace)
         F_handler = self.evaluator.add_system_handler(iter=1, group='F')
         for eq in problem.eqs:
             F_handler.add_task(eq['F'])
@@ -548,11 +548,20 @@ class InitialValueSolver(SolverBase):
         self._sim_time = t
         self.problem.time['g'] = t
 
-    def get_wall_time(self):
-        self._wall_time_array[0] = time.time()
-        comm = self.dist.comm_cart
-        comm.Allreduce(MPI.IN_PLACE, self._wall_time_array, op=MPI.MAX)
-        return self._wall_time_array[0]
+    @property
+    def world_time(self):
+        if self.dist.comm.size == 1:
+            return time.time()
+        else:
+            # Broadcast time from root process
+            self._bcast_array[0] = time.time()
+            self.dist.comm_cart.Bcast(self._bcast_array, root=0)
+            return self._bcast_array[0]
+
+    @property
+    def wall_time(self):
+        """Seconds ellapsed since instantiation."""
+        return self.world_time - self.init_time
 
     @property
     def proceed(self):
@@ -560,7 +569,7 @@ class InitialValueSolver(SolverBase):
         if self.sim_time >= self.stop_sim_time:
             logger.info('Simulation stop time reached.')
             return False
-        elif (self.get_wall_time() - self.init_time) >= self.stop_wall_time:
+        elif self.wall_time >= self.stop_wall_time:
             logger.info('Wall stop time reached.')
             return False
         elif self.iteration >= self.stop_iteration:
@@ -619,19 +628,18 @@ class InitialValueSolver(SolverBase):
         if not np.isfinite(dt):
             raise ValueError("Invalid timestep")
         # Enforce Hermitian symmetry for real variables
-        if np.isrealobj(self.dtype.type()):
+        if self.enforce_real_cadence:
             # Enforce for as many iterations as timestepper uses internally
             if self.iteration % self.enforce_real_cadence < self.timestepper.steps:
                 self.enforce_hermitian_symmetry(self.state)
         # Record times
-        wall_time = self.get_wall_time()
+        wall_time = self.wall_time
         if self.iteration == self.initial_iteration:
             self.start_time = wall_time
         if self.iteration == self.initial_iteration + self.warmup_iterations:
             self.warmup_time = wall_time
         # Advance using timestepper
-        wall_elapsed = wall_time - self.init_time
-        self.timestepper.step(dt, wall_elapsed)
+        self.timestepper.step(dt, wall_time)
         # Update iteration
         self.iteration += 1
         self.dt = dt
@@ -676,16 +684,14 @@ class InitialValueSolver(SolverBase):
         """Evaluate specified list of handlers (all by default)."""
         if handlers is None:
             handlers = self.evaluator.handlers
-        wall_elapsed = self.get_wall_time() - self.init_time
-        self.evaluator.evaluate_handlers(handlers, iteration=self.iteration, wall_time=wall_elapsed, sim_time=self.sim_time, timestep=dt)
+        self.evaluator.evaluate_handlers(handlers, iteration=self.iteration, wall_time=self.wall_time, sim_time=self.sim_time, timestep=dt)
 
     def log_stats(self, format=".4g"):
         """Log timing statistics with specified string formatting (optional)."""
-        log_time = self.get_wall_time()
+        log_time = self.wall_time
         logger.info(f"Final iteration: {self.iteration}")
         logger.info(f"Final sim time: {self.sim_time}")
-        setup_time = self.start_time - self.init_time
-        logger.info(f"Setup time (init - iter 0): {setup_time:{format}} sec")
+        logger.info(f"Setup time (init - iter 0): {self.start_time:{format}} sec")
         if self.iteration >= self.initial_iteration + self.warmup_iterations:
             warmup_time = self.warmup_time - self.start_time
             run_time = log_time - self.warmup_time
