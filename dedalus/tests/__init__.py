@@ -1,5 +1,6 @@
 """Dedalus testing module."""
 
+import os
 import pytest
 import pathlib
 
@@ -9,7 +10,8 @@ root = file.parent
 testpath = str(root)
 
 def base_cmd():
-    return ["-k", "not ncc", "--workers=auto"]
+    workers = os.getenv("PYTEST_WORKERS", "auto")
+    return ["-k", "not ncc", f"--workers={workers}"]
 
 def test(report=False):
     """Run tests."""
