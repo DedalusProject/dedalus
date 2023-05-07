@@ -255,7 +255,7 @@ class Operand:
         """Build expression matrices for a specific subproblem and variables."""
         raise NotImplementedError()
 
-    def frechet_differential(self, variables, perturbations):
+    def frechet_differential(self, variables, perturbations, backgrounds=None):
         """
         Compute Frechet differential with respect to specified variables/perturbations.
 
@@ -265,29 +265,32 @@ class Operand:
             Variables to differentiate around.
         perturbations : list of Field objects
             Perturbation directions for each variable.
+        backgrounds : list of Field objects, optional
+            Backgrounds for each variable. Default: variables.
 
         Notes
         -----
-        This method symbolically computes the functional directional derivative in the
-        direction of the specified perturbations:
-            sum_{vars, perts} lim_{ε -> 0} d/dε X(var + ε * pert)
+        This method symbolically computes the functional directional derivative around the
+        specified backgrounds in the direction of the specified perturbations:
+            F'(X0).X1 = lim_{ε -> 0} d/dε F(X0 + ε*X1)
         The result is a linear operator acting on the perturbations with NCCs that
-        depend on the original variables.
+        depend on the backgrounds.
         """
         dist = self.dist
         tensorsig = self.tensorsig
         dtype = self.dtype
-        # Perturbation variable
-        ep = Field(dist=dist, name='ep', dtype=dtype)
-        # Add differentials for each variable
-        diff = 0
+        # Compute differential
+        epsilon = Field(dist=dist, dtype=dtype)
+        diff = self
         for var, pert in zip(variables, perturbations):
-            diff_var = self.replace(var, var + ep*pert)
-            diff_var = diff_var.sym_diff(ep)
-            if diff_var:
-                diff_var = Operand.cast(diff_var, self.dist, tensorsig=tensorsig, dtype=dtype)
-                diff_var = diff_var.replace(ep, 0)
-                diff += diff_var
+            diff = diff.replace(var, var + epsilon*pert)
+        diff = diff.sym_diff(epsilon)
+        diff = Operand.cast(diff, self.dist, tensorsig=tensorsig, dtype=dtype)
+        diff = diff.replace(epsilon, 0)
+        # Replace backgrounds
+        if backgrounds:
+            for var, bg in zip(variables, backgrounds):
+                diff = diff.replace(var, bg)
         return diff
 
     @property

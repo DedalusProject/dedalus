@@ -354,6 +354,56 @@ class InitialValueProblem(ProblemBase):
         logger.debug(f"  L: {L}")
         logger.debug(f"  F: {F}")
 
+    def build_EVP(self, eigenvalue=None, backgrounds=None, perturbations=None, **kw):
+        """
+        Create an eigenvalue problem from an initial value problem.
+
+        Parameters
+        ----------
+        eigenvalue : Field, optional
+            Eigenvalue field.
+        backgrounds : list of Fields, optional
+            Background fields for linearizing the RHS. Default: the IVP variables.
+        perturbations : list of Fields, optional
+            Perturbation fields for the EVP. Default: copies of IVP variables.
+
+        Notes
+        -----
+        This method converts time-independent IVP equations of the form
+            M.dt(X) + L.X = F(X)
+        to EVP equations as
+            λ*M.X1 + L.X1 - F'(X0).X1 = 0.
+        If backgrounds (X0) are not specified, the IVP variables (X) are used.
+        """
+        # Create eigenvalue problem for perturbations
+        variables = self.variables
+        if eigenvalue is None:
+            eigenvalue = self.dist.Field(name='λ')
+        if perturbations is None:
+            perturbations = [var.copy() for var in variables]
+        EVP = EigenvalueProblem(perturbations, eigenvalue, **kw)
+        # Convert equations from IVP
+        for eqn in self.equations:
+            # Extract IVP expressions
+            M, L = eqn['LHS'].split(operators.TimeDerivative)
+            F = eqn['RHS']
+            # Convert M@dt(X) to λ*M@Y
+            if M:
+                M = M.replace(operators.TimeDerivative, lambda x: eigenvalue*x)
+                for var, pert in zip(variables, perturbations):
+                    M = M.replace(var, pert)
+            # Convert L@X to L@Y
+            if L:
+                for var, pert in zip(variables, perturbations):
+                    L = L.replace(var, pert)
+            # Take Frechet differential of F(X)
+            if F:
+                if F.has(self.time):
+                    raise UnsupportedEquationError("Cannot convert time-dependent IVP to EVP.")
+                F = F.frechet_differential(variables=variables, perturbations=perturbations, backgrounds=backgrounds)
+            EVP.add_equation((M + L - F, 0))
+        return EVP
+
 
 class EigenvalueProblem(ProblemBase):
     """
@@ -372,7 +422,7 @@ class EigenvalueProblem(ProblemBase):
     Notes
     -----
     This class supports linear eigenvalue problems of the form:
-        s*M.X + L.X = 0
+        λ*M.X + L.X = 0
     The LHS terms must be linear in the specified variables and affine in the eigenvalue.
     The RHS must be zero.
     """
