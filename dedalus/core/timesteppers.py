@@ -187,7 +187,121 @@ class MultistepIMEX:
         solver.sim_time += dt
 
     def step_adjoint(self, dt, wall_time):
-        raise RuntimeError('Adjoint of multistep IMEX not implemented')
+        """Advance adjoint by one timestep."""
+
+        # Solver references
+        solver = self.solver
+        subproblems = solver.subproblems
+        evaluator = solver.evaluator
+        state_fields = solver.state_adj
+        F_fields = solver.F
+        sim_time = solver.sim_time
+        iteration = solver.iteration
+        STORE_EXPANDED_MATRICES = solver.store_expanded_matrices
+
+        # Other references
+        MX = self.MX
+        LX = self.LX
+        F = self.F
+        RHS = self.RHS
+        axpy = self.axpy
+
+        # Cycle and compute timesteps
+        self.dt.rotate()
+        self.dt[0] = dt
+
+        # Compute IMEX coefficients
+        a, b, c = self.compute_coefficients(self.dt, self._iteration)
+        self._iteration -= 1
+
+        # Update RHS components and LHS matrices
+        MX.rotate()
+        LX.rotate()
+        F.rotate()
+
+        MX0 = MX[0]
+        LX0 = LX[0]
+        F0 = F[0]
+        a0 = a[0]
+        b0 = b[0]
+
+        print(solver.iteration,solver.stop_iteration)
+
+        # Check on updating LHS
+        update_LHS = solver.iteration==solver.stop_iteration # for now
+        # update_LHS = ((a0, b0) != self._LHS_params)
+        self._LHS_params = (a0, b0)
+
+        F0.data.fill(0)
+        # Build RHS
+        if(solver.iteration<solver.stop_iteration):
+            print('in the middle')
+            if RHS.data.size:
+                np.multiply(c[1], F0.data, out=RHS.data)
+                for j in range(2, len(c)):
+                    # RHS.data += c[j] * F[j-1].data
+                    axpy(a=c[j], x=F[j-1].data, y=RHS.data)
+                for j in range(1, len(a)):
+                    # RHS.data -= a[j] * MX[j-1].data
+                    axpy(a=-a[j], x=MX[j-1].data, y=RHS.data)
+                for j in range(1, len(b)):
+                    # RHS.data -= b[j] * LX[j-1].data
+                    axpy(a=-b[j], x=LX[j-1].data, y=RHS.data)
+
+        # Evaluate M.X0 and L.X0
+        MX0.data.fill(0)
+        LX0.data.fill(0)
+        # Solve and form L, M, F terms
+        # Ensure coeff space before subsystem gathers
+      
+        for sp in subproblems:
+            if update_LHS:
+                # Remove old solver reference
+                sp.LHS_solver = None
+            if update_LHS:
+                if STORE_EXPANDED_MATRICES:
+                    np.copyto(sp.LHS.data, a0*sp.M_exp.data + b0*sp.L_exp.data)  # CREATES TEMPORARY
+                else:
+                    sp.LHS = (a0*sp.M_min + b0*sp.L_min) @ sp.pre_right  # CREATES TEMPORARY
+                sp.LHS_solver = solver.matsolver(np.conj(sp.LHS).T.tocsr(), solver)
+
+        # Ensure coeff space before subsystem gathers
+        for field in state_fields:
+            field.require_coeff_space()
+     
+        for sp in subproblems:
+            # Slice out valid subdata, skipping invalid components
+            if(solver.iteration==solver.stop_iteration):
+                # Use adjoint state for RHS
+                spRHS = sp.gather(state_fields)[:sp.LHS.shape[0]] 
+            else:
+                # Use computed adjoint RHS
+                spRHS = RHS.get_subdata(sp)[:sp.LHS.shape[0]]
+
+            for field in state_fields:
+                field.preset_layout('c')
+
+            if(solver.iteration==0):
+                print('at the end')
+                sp.scatter(spRHS, state_fields)
+            else:
+                spX2 = np.zeros((sp.pre_right.shape[0], len(sp.subsystems)), dtype=spRHS.dtype)  # CREATES TEMPORARY
+                csr_matvecs(np.conj(sp.pre_right).T.tocsr(), spRHS, spX2)
+                spX = sp.LHS_solver.solve(spX2)  # CREATES TEMPORARY
+                sp.scatter(spX, state_fields)
+                csr_matvecs(np.conj(sp.M_min).T.tocsr(), spX, MX0.get_subdata(sp))  # Rectangular dot product skipping shape checks
+                csr_matvecs(np.conj(sp.L_min).T.tocsr(), spX, LX0.get_subdata(sp))  # Rectangular dot product skipping shape checks                
+        
+        # Run evaluator (still needs to be adjointed)
+        # evaluator.evaluate_scheduled(wall_time=wall_time, timestep=dt, sim_time=sim_time, iteration=iteration)
+        # F0.data.fill(0)
+        # for sp in subproblems:
+        #     # F fields should be in coeff space from evaluator
+        #     spF = sp.gather(F_fields)  # CREATES TEMPORARY
+        #     csr_matvecs(sp.pre_left, spF, F0.get_subdata(sp))  # Rectangular dot product skipping shape checks
+        
+        # Update solver
+        solver.sim_time -= dt
 
 
 @add_scheme
