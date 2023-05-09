@@ -211,10 +211,18 @@ class MultistepIMEX:
         self.dt[0] = dt
 
         # Compute IMEX coefficients
-        a, b, c = self.compute_coefficients(self.dt, self._iteration)
-        self._iteration -= 1
+        a = []
+        b = []
+        c = []
+        for k in range(self.steps):
+            a_, b_, c_ = self.compute_coefficients(self.dt, self._iteration-1+k)
+            a.append(a_)
+            b.append(b_)
+            c.append(c_)
 
+        self._iteration -= 1
         # Update RHS components and LHS matrices
+
         MX.rotate()
         LX.rotate()
         F.rotate()
@@ -222,36 +230,27 @@ class MultistepIMEX:
         MX0 = MX[0]
         LX0 = LX[0]
         F0 = F[0]
-        a0 = a[0]
-        b0 = b[0]
-
-        print(solver.iteration,solver.stop_iteration)
+        a0 = a[0][0]
+        b0 = b[0][0]
 
         # Check on updating LHS
-        update_LHS = solver.iteration==solver.stop_iteration # for now
-        # update_LHS = ((a0, b0) != self._LHS_params)
+        if(solver.iteration==solver.stop_iteration):
+            # Must clear the deque
+            for m in MX:
+                m.data.fill(0)
+            for l in LX:
+                l.data.fill(0)
+            for f in F:
+                f.data.fill(0)
+
+        update_LHS = ((a0, b0) != self._LHS_params) or solver.iteration==solver.stop_iteration
         self._LHS_params = (a0, b0)
 
-        F0.data.fill(0)
-        # Build RHS
-        if(solver.iteration<solver.stop_iteration):
-            print('in the middle')
-            if RHS.data.size:
-                np.multiply(c[1], F0.data, out=RHS.data)
-                for j in range(2, len(c)):
-                    # RHS.data += c[j] * F[j-1].data
-                    axpy(a=c[j], x=F[j-1].data, y=RHS.data)
-                for j in range(1, len(a)):
-                    # RHS.data -= a[j] * MX[j-1].data
-                    axpy(a=-a[j], x=MX[j-1].data, y=RHS.data)
-                for j in range(1, len(b)):
-                    # RHS.data -= b[j] * LX[j-1].data
-                    axpy(a=-b[j], x=LX[j-1].data, y=RHS.data)
-
-        # Evaluate M.X0 and L.X0
         MX0.data.fill(0)
         LX0.data.fill(0)
-        # Solve and form L, M, F terms
+        F0.data.fill(0)
+
+        # Solve, form L, M, F terms, then form next RHS
         # Ensure coeff space before subsystem gathers
       
         for sp in subproblems:
@@ -281,25 +280,33 @@ class MultistepIMEX:
             for field in state_fields:
                 field.preset_layout('c')
 
-            if(solver.iteration==0):
-                print('at the end')
+            spX2 = np.zeros((sp.pre_right.shape[0], len(sp.subsystems)), dtype=spRHS.dtype)  # CREATES TEMPORARY
+            csr_matvecs(np.conj(sp.pre_right).T.tocsr(), spRHS, spX2)
+            spX = sp.LHS_solver.solve(spX2)  # CREATES TEMPORARY
+            sp.scatter(spX, state_fields)
+            csr_matvecs(np.conj(sp.M_min).T.tocsr(), spX, MX0.get_subdata(sp))  # Rectangular dot product skipping shape checks
+            csr_matvecs(np.conj(sp.L_min).T.tocsr(), spX, LX0.get_subdata(sp))  # Rectangular dot product skipping shape checks 
+
+        if RHS.data.size:
+            np.multiply(c[0][1], F0.data, out=RHS.data)
+            # for j in range(2, self.steps+1):
+                # RHS.data += c[j] * F[j-1].data
+                # axpy(a=c[j-2][j], x=F[j-1].data, y=RHS.data)
+            for j in range(1, len(a[-1])):
+                # RHS.data -= a[j] * MX[j-1].data
+                axpy(a=-a[j-1][j], x=MX[j-1].data, y=RHS.data)
+            for j in range(1, len(b[-1])):
+                # RHS.data -= b[j] * LX[j-1].data
+                axpy(a=-b[j-1][j], x=LX[j-1].data, y=RHS.data)    
+        
+        if(solver.iteration==1):
+            # Here, the next RHS is the adjoint state
+            for field in state_fields:
+                field.preset_layout('c')
+            for sp in subproblems:
+                spRHS = RHS.get_subdata(sp)[:sp.LHS.shape[0]]
                 sp.scatter(spRHS, state_fields)
-            else:
-                spX2 = np.zeros((sp.pre_right.shape[0], len(sp.subsystems)), dtype=spRHS.dtype)  # CREATES TEMPORARY
-                csr_matvecs(np.conj(sp.pre_right).T.tocsr(), spRHS, spX2)
-                spX = sp.LHS_solver.solve(spX2)  # CREATES TEMPORARY
-                sp.scatter(spX, state_fields)
-                csr_matvecs(np.conj(sp.M_min).T.tocsr(), spX, MX0.get_subdata(sp))  # Rectangular dot product skipping shape checks
-                csr_matvecs(np.conj(sp.L_min).T.tocsr(), spX, LX0.get_subdata(sp))  # Rectangular dot product skipping shape checks                
-        
-        # Run evaluator (still needs to be adjointed)
-        # evaluator.evaluate_scheduled(wall_time=wall_time, timestep=dt, sim_time=sim_time, iteration=iteration)
-        # F0.data.fill(0)
-        # for sp in subproblems:
-        #     # F fields should be in coeff space from evaluator
-        #     spF = sp.gather(F_fields)  # CREATES TEMPORARY
-        #     csr_matvecs(sp.pre_left, spF, F0.get_subdata(sp))  # Rectangular dot product skipping shape checks
-        
+
         # Update solver
         solver.sim_time -= dt
 
