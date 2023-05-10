@@ -861,11 +861,8 @@ class InitialValueSolver(SolverBase):
         self.iteration += 1
         self.dt = dt
 
-    def step_adjoint(self, dt):
+    def step_adjoint(self):
         """Advance system by one iteration/timestep."""
-        # Assert finite timestep
-        if not np.isfinite(dt):
-            raise ValueError("Invalid timestep")
         # Enforce Hermitian symmetry for real variables
         if np.isrealobj(self.dtype.type()):
             # Enforce for as many iterations as timestepper uses internally
@@ -877,10 +874,9 @@ class InitialValueSolver(SolverBase):
         wall_elapsed = wall_time - self.init_time
         if(self.iteration==self.stop_iteration):
             logger.info("Warning: Only works if F==0 and linear direct equation.")
-        self.timestepper.step_adjoint(dt, wall_elapsed)
+        self.timestepper.step_adjoint(wall_elapsed)
         # Update iteration
         self.iteration -= 1
-        self.dt = dt
 
     def evolve(self, timestep_function, log_cadence=100):
         """Advance system until stopping criterion is reached."""
