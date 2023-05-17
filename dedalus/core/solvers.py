@@ -111,7 +111,7 @@ class EigenvalueSolver:
         self.eigenvalue_pencil = pencil
         if len(eig_output) == 3 and normalize_left:
             norms = np.diag(self.modified_left_eigenvectors.T.conj() @ self.eigenvectors)
-            self.left_eigenvectors /= norms
+            self.left_eigenvectors /= np.conj(norms)
             self.modified_left_eigenvectors = np.conjugate(np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M))
 
     def solve_sparse(self, pencil, N, target, rebuild_coeffs=False, left=False, normalize_left=True, raise_on_mismatch=True, **kw):
