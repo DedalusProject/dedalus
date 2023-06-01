@@ -61,8 +61,8 @@ def max_growth_rate(Rayleigh, Prandtl, kx, Nz, NEV=10, target=0):
     lift = lambda A: d3.Lift(A, lift_basis, -1)
     lift2 = lambda A: d3.Lift(A, lift_basis, -2)
     dx = lambda A: 1j*kx*A
-    grad = lambda A: d3.grad(A) + dx(A)*ex
-    div = lambda A: d3.div(A) + dx(A@ex)
+    grad = lambda A: d3.grad(A) + ex*dx(A)
+    div = lambda A: d3.div(A) + dx(ex@A)
     lap = lambda A: d3.lap(A) + dx(dx(A))
     grad_u = grad(u) + ez*lift(tau_u1) # First-order reduction
     grad_b = grad(b) + ez*lift(tau_b1) # First-order reduction
