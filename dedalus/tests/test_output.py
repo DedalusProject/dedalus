@@ -9,12 +9,20 @@ import pathlib
 from dedalus.tools.cache import CachedFunction
 
 
+# Check if parallel h5py is available
+handler_options = ['gather', 'virtual']
+if h5py.get_config().mpi:
+    handler_options.append('mpio')
+else:
+    handler_options.append(pytest.param('mpio', marks=pytest.mark.xfail(reason="parallel h5py not available")))
+
+
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 @pytest.mark.parametrize('dealias', [1, 3/2])
 @pytest.mark.parametrize('output_scales', [1, 3/2, 2,
     pytest.param(1/2, marks=pytest.mark.xfail(reason="evaluator not copying correctly for scales < 1"))])
 @pytest.mark.parametrize('output_layout', ['g', 'c'])
-@pytest.mark.parametrize('parallel', ['gather', 'mpio', 'virtual'])
+@pytest.mark.parametrize('parallel', handler_options)
 def test_cartesian_output(dtype, dealias, output_scales, output_layout, parallel):
     Nx = Ny = Nz = 16
     Lx = Ly = Lz = 2 * np.pi
@@ -87,7 +95,7 @@ def build_shell(Nphi, Ntheta, Nr, k, dealias, dtype):
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 @pytest.mark.parametrize('output_scales', [1, 3/2, 2,
     pytest.param(1/2, marks=pytest.mark.xfail(reason="evaluator not copying correctly for scales < 1"))])
-@pytest.mark.parametrize('parallel', ['gather', 'virtual'])
+@pytest.mark.parametrize('parallel', handler_options)
 def test_spherical_output(Nphi, Ntheta, Nr, k, dealias, dtype, basis, output_scales, parallel):
     # Basis
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)

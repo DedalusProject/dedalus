@@ -650,6 +650,9 @@ class H5ParallelFileHandler(H5FileHandlerBase):
 
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
+        # Fail if not using MPI
+        if not h5py.get_config().mpi:
+            raise ValueError("H5ParallelFileHandler requires parallel build of h5py.")
         # Set HDF5 property list for collective writing
         self._property_list = h5py.h5p.create(h5py.h5p.DATASET_XFER)
         self._property_list.set_dxpl_mpio(h5py.h5fd.MPIO_COLLECTIVE)
