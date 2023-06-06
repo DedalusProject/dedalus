@@ -205,10 +205,10 @@ def csr_matvecs(A_csr, x_vec, out_vec):
         raise ValueError("Matrix must be in CSR format.")
     # Check shapes
     M, N = A_csr.shape
-    n, kx = x_vec.shape
-    m, ko = out_vec.shape
     if x_vec.ndim != 2 or out_vec.ndim != 2:
         raise ValueError("Only matrices allowed for input and output.")
+    n, kx = x_vec.shape
+    m, ko = out_vec.shape
     if M != m or N != n:
         raise ValueError(f"Matrix shape {(M,N)} does not match input {(n,)} and output {(m,)} shapes.")
     if kx != ko:

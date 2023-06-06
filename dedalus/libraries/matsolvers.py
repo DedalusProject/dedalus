@@ -73,29 +73,39 @@ class UmfpackSpsolve(SparseSolver):
         self.matrix = matrix.copy()
 
     def solve(self, vector):
-        return spla.spsolve(self.matrix, vector, use_umfpack=True)
+        out = spla.spsolve(self.matrix, vector, use_umfpack=True)
+        # Fix return shape for matrices
+        if vector.ndim == 2 and out.ndim == 1:
+            out = out[:, None]
+        return out
+
+
+class _SuperluSpsolveBase(SparseSolver):
+    """"SuperLU spsolve base class."""
+
+    permc_spec = None
+
+    def __init__(self, matrix, solver=None):
+        self.matrix = matrix.copy()
+
+    def solve(self, vector):
+        out = spla.spsolve(self.matrix, vector, permc_spec=self.permc_spec, use_umfpack=False)
+        # Fix return shape for matrices
+        if vector.ndim == 2 and out.ndim == 1:
+            out = out[:, None]
+        return out
 
 
 @add_solver
 class SuperluNaturalSpsolve(SparseSolver):
-    """SuperLU+NATURAL spsolve."""
-
-    def __init__(self, matrix, solver=None):
-        self.matrix = matrix.copy()
-
-    def solve(self, vector):
-        return spla.spsolve(self.matrix, vector, permc_spec='NATURAL', use_umfpack=False)
+    """SuperLU spsolve with 'NATURAL' column permutation."""
+    permc_spec = "NATURAL"
 
 
 @add_solver
 class SuperluColamdSpsolve(SparseSolver):
-    """SuperLU+COLAMD spsolve."""
-
-    def __init__(self, matrix, solver=None):
-        self.matrix = matrix.copy()
-
-    def solve(self, vector):
-        return spla.spsolve(self.matrix, vector, permc_spec='COLAMD', use_umfpack=False)
+    """SuperLU spsolve with 'COLAMD' column permutation."""
+    permc_spec = "COLAMD"
 
 
 @add_solver
@@ -104,43 +114,62 @@ class UmfpackFactorized(SparseSolver):
 
     def __init__(self, matrix, solver=None):
         from scikits import umfpack
-        self.LU = spla.factorized(matrix.tocsc())
-
-    def solve(self, vector):
-        return self.LU(vector)
-
-
-@add_solver
-class SuperluNaturalFactorized(SparseSolver):
-    """SuperLU+NATURAL LU factorized solve."""
-
-    def __init__(self, matrix, solver=None):
-        self.LU = spla.splu(matrix.tocsc(), permc_spec='NATURAL')
+        self.LU = umfpack.splu(matrix.tocsc())
 
     def solve(self, vector):
         return self.LU.solve(vector)
 
 
-@add_solver
-class SuperluNaturalFactorizedTranspose(SparseSolver):
-    """SuperLU+NATURAL LU factorized solve."""
+class _SuperluFactorizedBase(SparseSolver):
+    """SuperLU factorized solver base class."""
+
+    permc_spec = None
+    diag_pivot_thresh = None
+    relax = None
+    panel_size = None
+    options = {}
+    trans = "N"
 
     def __init__(self, matrix, solver=None):
-        self.LU = spla.splu(matrix.T.tocsc(), permc_spec='NATURAL')
+        if self.trans == "T":
+            matrix = matrix.T
+        elif self.trans == "H":
+            matrix = matrix.H
+        self.LU = spla.splu(matrix.tocsc(),
+                            permc_spec=self.permc_spec,
+                            diag_pivot_thresh=self.diag_pivot_thresh,
+                            relax=self.relax,
+                            panel_size=self.panel_size,
+                            options=self.options)
 
     def solve(self, vector):
-        return self.LU.solve(vector, trans='T')
+        return self.LU.solve(vector, trans=self.trans)
 
 
 @add_solver
-class SuperluColamdFactorized(SparseSolver):
-    """SuperLU+COLAMD LU factorized solve."""
+class SuperluNaturalFactorized(_SuperluFactorizedBase):
+    """SuperLU factorized solve with 'NATURAL' column permutation."""
+    permc_spec = "NATURAL"
 
-    def __init__(self, matrix, solver=None):
-        self.LU = spla.splu(matrix.tocsc(), permc_spec='COLAMD')
 
-    def solve(self, vector):
-        return self.LU.solve(vector)
+@add_solver
+class SuperluNaturalFactorizedTranspose(_SuperluFactorizedBase):
+    """SuperLU factorized solve with 'NATURAL' row permutation."""
+    permc_spec = "NATURAL"
+    trans = "T"
+
+
+@add_solver
+class SuperluColamdFactorized(_SuperluFactorizedBase):
+    """SuperLU factorized solve with 'COLAMD' column permutation."""
+    permc_spec = "COLAMD"
+
+
+@add_solver
+class SuperluColamdFactorizedTranspose(_SuperluFactorizedBase):
+    """SuperLU factorized solve with 'COLAMD' row permutation."""
+    permc_spec = "COLAMD"
+    trans = "T"
 
 
 @add_solver
@@ -229,6 +258,7 @@ class BlockInverse(BandedSolver):
 
     def _solve_diag(self, vector):
         return self.matrix_inv_diagonal * vector
+
 
 @add_solver
 class ScipyDenseLU(DenseSolver):
