@@ -5773,6 +5773,44 @@ class PolarRadialComponent(operators.RadialComponent):
         np.copyto(out.data, operand.data[axindex(self.index,1)])
 
 
+class PolarAngularComponent(operators.AngularComponent):
+
+    basis_type = IntervalBasis
+
+    def subproblem_matrix(self, subproblem):
+        # I'm not sure how to generalize this to higher order tensors, since we do
+        # not have spin_weights for the S1 basis.
+        matrix = np.array([[1,0]])
+        if self.dtype == np.float64:
+            # Block-diag for sin/cos parts for real dtype
+            matrix = sparse.kron(matrix, sparse.eye(2))
+
+#        operand = self.args[0]
+#        basis = self.domain.get_basis(self.coordsys)
+#        S_in = basis.spin_weights(operand.tensorsig)
+#        S_out = basis.spin_weights(self.tensorsig)
+#
+#        matrix = []
+#        for spinindex_out, spintotal_out in np.ndenumerate(S_out):
+#            matrix_row = []
+#            for spinindex_in, spintotal_in in np.ndenumerate(S_in):
+#                if tuple(spinindex_in[:self.index] + spinindex_in[self.index+1:]) == spinindex_out and spinindex_in[self.index] == 2:
+#                    matrix_row.append( 1 )
+#                else:
+#                    matrix_row.append( 0 )
+#            matrix.append(matrix_row)
+#        matrix = np.array(matrix)
+        return matrix
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        # Set output layout
+        layout = operand.layout
+        out.preset_layout(layout)
+        np.copyto(out.data, operand.data[axindex(self.index,0)])
+
+
 class CartesianAdvectiveCFL(operators.AdvectiveCFL):
 
     input_coord_type = CartesianCoordinates

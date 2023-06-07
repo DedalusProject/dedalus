@@ -2231,11 +2231,14 @@ class AngularComponent(Component, metaclass=MultiClass):
 
     def __init__(self, operand, index=0, out=None):
         super().__init__(operand, index=index, out=out)
-        if not isinstance(self.coordsys, coords.SphericalCoordinates):
-            raise ValueError("Can only take the AngularComponent of a SphericalCoordinate vector")
         tensorsig = operand.tensorsig
-        S2coordsys = tensorsig[index].S2coordsys
-        self.tensorsig = tuple( tensorsig[:index] + (S2coordsys,) + tensorsig[index+1:] )
+        if isinstance(self.coordsys, coords.PolarCoordinates):
+            self.tensorsig = tuple( tensorsig[:index] + tensorsig[index+1:] )
+        elif isinstance(self.coordsys, coords.SphericalCoordinates):
+            S2coordsys = tensorsig[index].S2coordsys
+            self.tensorsig = tuple( tensorsig[:index] + (S2coordsys,) + tensorsig[index+1:] )
+        else:
+            raise ValueError("Not supported")
 
     def new_operand(self, operand, **kw):
         return AngularComponent(operand, self.index, **kw)
