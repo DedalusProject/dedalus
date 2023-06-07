@@ -1483,6 +1483,13 @@ class AverageRealFourier(operators.Average, operators.SpectralOperator1D):
 
 class MultidimensionalBasis(Basis):
 
+    @classmethod
+    def _preprocess_args(cls, *args, dealias=None, **kw):
+        if isinstance(dealias, (int, float)):
+            dealias = (dealias,) * cls.dim
+        kw["dealias"] = dealias
+        return args, kw
+
     def forward_transform(self, field, axis, gdata, cdata):
         subaxis = axis - self.axis
         return self.forward_transforms[subaxis](field, axis, gdata, cdata)
@@ -1973,7 +1980,7 @@ class AnnulusBasis(PolarBasis):
     subaxis_dependence = (False, True)
 
     def __init__(self, coordsystem, shape, dtype, radii=(1,2), k=0, alpha=(-0.5,-0.5), dealias=(1,1), radius_library=None, azimuth_library=None):
-        super().__init__(coordsystem, shape, dtype, k=k, dealias=tuple(dealias), azimuth_library=azimuth_library)
+        super().__init__(coordsystem, shape, dtype, k=k, dealias=dealias, azimuth_library=azimuth_library)
         if min(radii) <= 0:
             raise ValueError("Radii must be positive.")
         if radius_library is None:

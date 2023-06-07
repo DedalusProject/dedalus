@@ -97,7 +97,7 @@ class Add(Future, metaclass=MultiClass):
         dist = unify_attributes(args, 'dist')
         bases = []
         for coord in args[0].domain.bases_by_coord:
-            ax_bases = tuple(arg.domain.bases_by_coord[coord] for arg in args)
+            ax_bases = tuple(arg.domain.bases_by_coord.get(coord, None) for arg in args)
             # All constant bases yields constant basis
             if all(basis is None for basis in ax_bases):
                 bases.append(None)
