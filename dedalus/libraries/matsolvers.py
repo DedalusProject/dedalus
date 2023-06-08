@@ -97,13 +97,13 @@ class _SuperluSpsolveBase(SparseSolver):
 
 
 @add_solver
-class SuperluNaturalSpsolve(SparseSolver):
+class SuperluNaturalSpsolve(_SuperluSpsolveBase):
     """SuperLU spsolve with 'NATURAL' column permutation."""
     permc_spec = "NATURAL"
 
 
 @add_solver
-class SuperluColamdSpsolve(SparseSolver):
+class SuperluColamdSpsolve(_SuperluSpsolveBase):
     """SuperLU spsolve with 'COLAMD' column permutation."""
     permc_spec = "COLAMD"
 
