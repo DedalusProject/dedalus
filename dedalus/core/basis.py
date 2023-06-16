@@ -453,25 +453,64 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
     group_shape = (1,)
     native_bounds = (-1, 1)
     transforms = {}
+    default_dct = "fftw_dct"
+    default_library = "matrix"
 
-    def __init__(self, coord, size, bounds, a, b, a0=None, b0=None, dealias=1, library=None):
-        super().__init__(coord, size, bounds, dealias)
-        # Default grid parameters
+    @classmethod
+    def _preprocess_cache_args(cls, coord, size, bounds, a, b, a0, b0, dealias, library):
+        """Preprocess arguments into canonical form for caching. Must accept and return __init__ arguments."""
+        # coord: Coordinate
+        if not isinstance(coord, Coordinate):
+            raise ValueError("Jacobi coord must be Coordinate object.")
+        # size: positive int
+        size = int(size)
+        if size <= 0:
+            raise ValueError("Jacobi size must be positive.")
+        # bounds: length-2 tuple
+        bounds = tuple(bounds)
+        if len(bounds) != 2:
+            raise ValueError("Jacobi bounds must have length 2.")
+        # a: float
+        a = float(a)
+        # b: float
+        b = float(b)
+        # a0: float, pick default
         if a0 is None:
             a0 = a
+        a0 = float(a0)
+        # b0: float, pick default
         if b0 is None:
             b0 = b
+        b0 = float(b0)
+        # dealias: length-1 tuple
+        if isinstance(dealias, (int, float)):
+            dealias = (dealias,)
+        else:
+            dealias = tuple(dealias)
+        if len(dealias) != 1:
+            raise ValueError("Jacobi dealias must have length 1.")
+        # library: pick default based on (a0, b0)
         if library is None:
-            if a0 == b0 == -0.5:
-                library = "fftw_dct"
+            if a0 == b0 == -1/2:
+                library = cls.default_dct
             else:
-                library = "matrix"
-        self.a = float(a)
-        self.b = float(b)
-        self.a0 = float(a0)
-        self.b0 = float(b0)
+                library = cls.default_library
+        return (coord, size, bounds, a, b, a0, b0, dealias, library)
+
+    def __init__(self, coord, size, bounds, a, b, a0=None, b0=None, dealias=(1,), library=None):
+        super().__init__(coord, size, bounds, dealias)
+        # Save arguments without modification for caching
+        self.coord = coord
+        self.size = size
+        self.bounds = bounds
+        self.a = a
+        self.b = b
+        self.a0 = a0
+        self.b0 = b0
+        self.dealias = dealias
         self.library = library
-        self.grid_params = (coord, bounds, a0, b0)
+        # Other attributes
+        self.grid_params = (coord, bounds, a0, b0, dealias, library)
         self.constant_mode_value = 1 / np.sqrt(jacobi.mass(self.a, self.b))
 
     def _native_grid(self, scale):
@@ -493,42 +532,40 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         return f"Jacobi({self.coord.name}, {self.size}, a0={self.a0}, b0={self.b0}, a={self.a}, b={self.b}, dealias={self.dealias[0]})"
 
     def __add__(self, other):
-        if other is None:
-            return self
-        if other is self:
+        if other is None or other is self:
             return self
         if isinstance(other, Jacobi):
             if self.grid_params == other.grid_params:
+                # Everything matches except size, a, b
                 size = max(self.size, other.size)
                 a = max(self.a, other.a)
                 b = max(self.b, other.b)
-                dealias = max(self.dealias[0], other.dealias[0])
-                return self.clone_with(size=size, a=a, b=b, dealias=dealias)
+                return self.clone_with(size=size, a=a, b=b)
         return NotImplemented
 
     def __mul__(self, other):
-        if other is None:
-            return self
-        if other is self:
+        if other is None or other is self:
             return self
         if isinstance(other, Jacobi):
             if self.grid_params == other.grid_params:
+                # Everything matches except size, a, b
                 size = max(self.size, other.size)
                 a = max(self.a, other.a)
                 b = max(self.b, other.b)
-                dealias = max(self.dealias[0], other.dealias[0])
-                return self.clone_with(size=size, a=a, b=b, dealias=dealias)
+                return self.clone_with(size=size, a=a, b=b)
         if isinstance(other, SphereBasis):
             return other.__mul__(self)
         return NotImplemented
 
     def __matmul__(self, other):
+        # NCC (self) * operand (other)
         if other is None:
             return self.__rmatmul__(other)
         else:
             return other.__rmatmul__(self)
 
     def __rmatmul__(self, other):
+        # NCC (other) * operand (self)
         return self.__mul__(other)
 
     # def include_mode(self, mode):
@@ -790,12 +827,43 @@ class FourierBase(IntervalBasis):
     """Base class for RealFourier and ComplexFourier."""
 
     native_bounds = (0, 2*np.pi)
+    default_library = "fftw"
 
-    def __init__(self, coord, size, bounds, dealias=1, library=None):
-        super().__init__(coord, size, bounds, dealias)
+    @classmethod
+    def _preprocess_cache_args(cls, coord, size, bounds, dealias, library):
+        """Preprocess arguments into canonical form for caching. Must accept and return __init__ arguments."""
+        # coord: Coordinate
+        if not isinstance(coord, Coordinate):
+            raise ValueError("Fourier coord must be Coordinate object.")
+        # size: positive int
+        size = int(size)
+        if size <= 0:
+            raise ValueError("Fourier size must be positive.")
+        # bounds: length-2 tuple
+        bounds = tuple(bounds)
+        if len(bounds) != 2:
+            raise ValueError("Fourier bounds must have length 2.")
+        # dealias: length-1 tuple
+        if isinstance(dealias, (int, float)):
+            dealias = (dealias,)
+        else:
+            dealias = tuple(dealias)
+        if len(dealias) != 1:
+            raise ValueError("Fourier dealias must have length 1.")
+        # library: pick default based on (a0, b0)
         if library is None:
-            library = "fftw"
+            library = cls.default_library
+        return (coord, size, bounds, dealias, library)
+
+    def __init__(self, coord, size, bounds, dealias=(1,), library=None):
+        super().__init__(coord, size, bounds, dealias)
+        # Save arguments without modification for caching
+        self.coord = coord
+        self.size = size
+        self.bounds = bounds
+        self.dealias = dealias
         self.library = library
+        # Other attributes
         self.kmax = kmax = (size - 1) // 2
         self.constant_mode_value = 1
         # No permutations by default
@@ -803,20 +871,16 @@ class FourierBase(IntervalBasis):
         self.backward_coeff_permutation = None
 
     def __add__(self, other):
-        if other is None:
+        if other is None or other is self:
             return self
-        elif other is self:
-            return self
-        else:
-            return NotImplemented
+        # TODO: support different sizes
+        return NotImplemented
 
     def __mul__(self, other):
-        if other is None:
+        if other is None or other is self:
             return self
-        elif other is self:
-            return self
-        else:
-            return NotImplemented
+        # TODO: support different sizes
+        return NotImplemented
 
     def __matmul__(self, other):
         if other is None:
@@ -825,12 +889,10 @@ class FourierBase(IntervalBasis):
             return other.__rmatmul__(self)
 
     def __rmatmul__(self, other):
-        if other is None:
+        if other is None or other is self:
             return self
-        elif other is self:
-            return self
-        else:
-            return NotImplemented
+        # TODO: support different sizes
+        return NotImplemented
 
     def __pow__(self, other):
         return self
@@ -1483,13 +1545,6 @@ class AverageRealFourier(operators.Average, operators.SpectralOperator1D):
 
 class MultidimensionalBasis(Basis):
 
-    @classmethod
-    def _preprocess_args(cls, *args, dealias=None, **kw):
-        if isinstance(dealias, (int, float)):
-            dealias = (dealias,) * cls.dim
-        kw["dealias"] = dealias
-        return args, kw
-
     def forward_transform(self, field, axis, gdata, cdata):
         subaxis = axis - self.axis
         return self.forward_transforms[subaxis](field, axis, gdata, cdata)
@@ -1974,50 +2029,94 @@ class PolarBasis(SpinBasis):
         return self.clone_with(k=k)
 
 
-class AnnulusBasis(PolarBasis):
+class AnnulusBasis(PolarBasis, metaclass=CachedClass):
 
     transforms = {}
     subaxis_dependence = (False, True)
 
-    def __init__(self, coordsystem, shape, dtype, radii=(1,2), k=0, alpha=(-0.5,-0.5), dealias=(1,1), radius_library=None, azimuth_library=None):
-        super().__init__(coordsystem, shape, dtype, k=k, dealias=dealias, azimuth_library=azimuth_library)
+    @classmethod
+    def _preprocess_cache_args(cls, coordsystem, shape, dtype, radii, k, alpha, dealias, azimuth_library, radius_library):
+        """Preprocess arguments into canonical form for caching. Must accept and return __init__ arguments."""
+        # coordsystem: PolarCoordinates
+        if not isinstance(coordsystem, PolarCoordinates):
+            raise ValueError("Annulus coordsystem must be PolarCoordinates.")
+        # shape: length-2 tuple
+        shape = tuple(shape)
+        if len(shape) != 2:
+            raise ValueError("Annulus shape must have length 2.")
+        # radii: length-2 tuple of increasing positive numbers
+        radii = tuple(radii)
+        if len(radii) != 2:
+            raise ValueError("Annulus radii must have length 2.")
         if min(radii) <= 0:
-            raise ValueError("Radii must be positive.")
+            raise ValueError("Annulus radii must be positive.")
+        if radii[0] >= radii[1]:
+            raise ValueError("Annulus radii must be in increasing order.")
+        # k: int
+        k = int(k)
+        # alpha: length-2 tuple
+        if isinstance(alpha, (int, float)):
+            alpha = (alpha,) * 2
+        else:
+            alpha = tuple(alpha)
+        if len(alpha) != 2:
+            raise ValueError("Annulus alpha must have length 2.")
+        # dealias: length-2 tuple
+        if isinstance(dealias, (int, float)):
+            dealias = (dealias,) * 2
+        else:
+            dealias = tuple(dealias)
+        if len(dealias) != 2:
+            raise ValueError("Annulus dealias must have length 2.")
+        # azimuth_library: pick default
+        if azimuth_library is None:
+            azimuth_library = RealFourier.default_library
+        # radius_library: pick default based on alpha
         if radius_library is None:
             if alpha[0] == alpha[1] == -1/2:
-                radius_library = "fftw_dct"
+                radius_library = Jacobi.default_dct
             else:
-                radius_library = "matrix"
+                radius_library = Jacobi.default_library
+        return (coordsystem, shape, dtype, radii, k, alpha, dealias, azimuth_library, radius_library)
+
+    def __init__(self, coordsystem, shape, dtype, radii=(1,2), k=0, alpha=(-0.5,-0.5), dealias=(1,1), azimuth_library=None, radius_library=None):
+        super().__init__(coordsystem, shape, dtype, k=k, dealias=dealias, azimuth_library=azimuth_library)
+        # Save arguments without modification for caching
+        self.coordsystem = coordsystem
+        self.shape = shape
+        self.dtype = dtype
+        self.radii = radii
+        self.k = k
+        self.alpha = alpha
+        self.dealias = dealias
+        self.azimuth_library = azimuth_library
         self.radius_library = radius_library
-        self.radii = tuple(radii)
+        # Other attributes
         self.volume = np.pi * (radii[1]**2 - radii[0]**2)
         self.dR = radii[1] - radii[0]
         self.rho = (radii[1] + radii[0])/self.dR
-        self.alpha = tuple(alpha)
-        self.grid_params = (coordsystem, self.radii, self.alpha, self.dealias)
+        self.grid_params = (coordsystem, dtype, radii, alpha, dealias, azimuth_library, radius_library)
         self.inner_edge = self.S1_basis(radii[0])
         self.outer_edge = self.S1_basis(radii[1])
 
     @CachedAttribute
     def radial_basis(self):
-        new_shape = (1, self.shape[1])
-        dealias = self.dealias
-        return AnnulusBasis(self.coordsystem, new_shape, radii=self.radii, k=self.k, alpha=self.alpha, dealias=dealias, radius_library=self.radius_library, dtype=self.dtype, azimuth_library=self.azimuth_library)
+        shape = (1, self.shape[1])
+        return self.clone_with(shape=shape)
 
     @staticmethod
     def _nmin(m):
         return 0 * m  # To have same array shape as m
 
     def __add__(self, other):
-        if other is None:
-            return self
-        if other is self:
+        if other is None or other is self:
             return self
         if isinstance(other, AnnulusBasis):
             if self.grid_params == other.grid_params:
+                # Everything matches except shape and k
                 shape = tuple(np.maximum(self.shape, other.shape))
-                k = max(self.k, other.k)
-                return AnnulusBasis(self.coordsystem, shape, radii=self.radii, k=k, alpha=self.alpha, dealias=self.dealias, dtype=self.dtype)
+                k = max(self.k, other.k)  # minimizes conversions
+                return self.clone_with(shape=shape, k=k)
         return NotImplemented
 
     def __mul__(self, other):
@@ -2025,20 +2124,16 @@ class AnnulusBasis(PolarBasis):
             return self
         if isinstance(other, AnnulusBasis):
             if self.grid_params == other.grid_params:
+                # Everything matches except shape and k
                 shape = tuple(np.maximum(self.shape, other.shape))
                 k = self.k + other.k
                 return self.clone_with(shape=shape, k=k)
         return NotImplemented
 
     def __matmul__(self, other):
-        if other is None:
-            return self
-        if isinstance(other, AnnulusBasis):
-            if self.grid_params == other.grid_params:
-                shape = tuple(np.maximum(self.shape, other.shape))
-                k = self.k + other.k
-                return self.clone_with(shape=shape, k=k)
-        return NotImplemented
+        # NCC (self) * operand (other)
+        # Same as __mul__ since conversion only needs to be upwards in k
+        return self.__mul__(other)
 
     def global_grid_radius(self, scale):
         r = self._radius_grid(scale)
@@ -2086,9 +2181,8 @@ class AnnulusBasis(PolarBasis):
         return Q0[0,0]
 
     def _new_k(self, k):
-        return AnnulusBasis(self.coordsystem, self.shape, radii = self.radii, k=k, alpha=self.alpha, dealias=self.dealias, dtype=self.dtype,
-                         azimuth_library=self.azimuth_library,
-                         radius_library=self.radius_library)
+        # TODO: replace this in all operators
+        return self.clone_with(k=k)
 
     @CachedMethod
     def transform_plan(self, grid_size, k):
@@ -2232,66 +2326,101 @@ class DiskBasis(PolarBasis, metaclass=CachedClass):
 
     transforms = {}
     subaxis_dependence = (True, True)
+    default_library = "matrix"
 
-    def __init__(self, coordsystem, shape, dtype, radius=1, k=0, alpha=0, dealias=(1,1), radius_library=None, azimuth_library=None):
-        super().__init__(coordsystem, shape, dtype, k=k, dealias=dealias, azimuth_library=azimuth_library)
+    @classmethod
+    def _preprocess_cache_args(cls, coordsystem, shape, dtype, radius, k, alpha, dealias, azimuth_library, radius_library):
+        """Preprocess arguments into canonical form for caching. Must accept and return __init__ arguments."""
+        # coordsystem: PolarCoordinates
+        if not isinstance(coordsystem, PolarCoordinates):
+            raise ValueError("Disk coordsystem must be PolarCoordinates.")
+        # shape: length-2 tuple
+        shape = tuple(shape)
+        if len(shape) != 2:
+            raise ValueError("Disk shape must have length 2.")
+        # radius: positive number
         if radius <= 0:
-            raise ValueError("Radius must be positive.")
+            raise ValueError("Disk radius must be positive.")
+        # k: int
+        k = int(k)
+        # alpha
+        # dealias: length-2 tuple
+        if isinstance(dealias, (int, float)):
+            dealias = (dealias,) * 2
+        else:
+            dealias = tuple(dealias)
+        if len(dealias) != 2:
+            raise ValueError("Disk dealias must have length 2.")
+        # azimuth_library: pick default
+        if azimuth_library is None:
+            azimuth_library = RealFourier.default_library
+        # radius_library: pick default
         if radius_library is None:
-            radius_library = "matrix"
-        self.radius_library = radius_library
+            radius_library = cls.default_library
+        return (coordsystem, shape, dtype, radius, k, alpha, dealias, azimuth_library, radius_library)
+
+    def __init__(self, coordsystem, shape, dtype, radius=1, k=0, alpha=0, dealias=(1,1), azimuth_library=None, radius_library=None):
+        super().__init__(coordsystem, shape, dtype, k=k, dealias=dealias, azimuth_library=azimuth_library)
+        # Save arguments without modification for caching
+        self.coordsystem = coordsystem
+        self.shape = shape
+        self.dtype = dtype
         self.radius = radius
-        self.volume = np.pi * radius**2
+        self.k = k
         self.alpha = alpha
+        self.dealias = dealias
+        self.azimuth_library = azimuth_library
+        self.radius_library = radius_library
+        # Other attributes
+        self.volume = np.pi * radius**2
         self.radial_COV = AffineCOV((0, 1), (0, radius))
         if self.mmax > 2*self.Nmax:
             logger.warning("You are using more azimuthal modes than can be resolved with your current radial resolution")
             #raise ValueError("shape[0] cannot be more than twice shape[1].")
-        self.grid_params = (coordsystem, radius, alpha, self.dealias)
+        self.grid_params = (coordsystem, dtype, radius, alpha, dealias, azimuth_library, radius_library)
         self.edge = self.S1_basis(radius)
 
     @CachedAttribute
     def radial_basis(self):
-        new_shape = (1, self.shape[1])
-        dealias = self.dealias
-        return DiskBasis(self.coordsystem, new_shape, radius=self.radius, k=self.k, alpha=self.alpha, dealias=dealias, radius_library=self.radius_library, dtype=self.dtype, azimuth_library=self.azimuth_library)
+        shape = (1, self.shape[1])
+        return self.clone_with(shape=shape)
 
     @staticmethod
     def _nmin(m):
         return abs(m) // 2
 
     def __add__(self, other):
-        if other is None:
-            return self
-        if other is self:
+        if other is None or other is self:
             return self
         if isinstance(other, DiskBasis):
             if self.grid_params == other.grid_params:
+                # Everything matches except shape and k
                 shape = tuple(np.maximum(self.shape, other.shape))
-                k = max(self.k, other.k)
-                return DiskBasis(self.coordsystem, shape, radius=self.radius, k=k, alpha=self.alpha, dealias=self.dealias, dtype=self.dtype, azimuth_library=self.azimuth_library, radius_library=self.radius_library)
+                k = max(self.k, other.k)  # minimizes conversions
+                return self.clone_with(shape=shape, k=k)
         return NotImplemented
 
     def __mul__(self, other):
         if other is None:
             return self
-        if other is self:
-            return self
         if isinstance(other, DiskBasis):
             if self.grid_params == other.grid_params:
+                # Everything matches except shape and k
                 shape = tuple(np.maximum(self.shape, other.shape))
-                return DiskBasis(self.coordsystem, shape, radius=self.radius, k=0, alpha=self.alpha, dealias=self.dealias, dtype=self.dtype, azimuth_library=self.azimuth_library, radius_library=self.radius_library)
+                k = 0  # kind of arbitrary, but minimizes k in RHS expressions
+                return self.clone_with(shape=shape, k=k)
         return NotImplemented
 
     def __matmul__(self, other):
-        """NCC is self.
-
-        NB: This does not support NCCs with different number of modes than the fields.
-        """
+        # NCC (self) * operand (other)
         if other is None:
             return self
-        if isinstance(other, type(self)):
-            return other
+        if isinstance(other, DiskBasis):
+            if self.grid_params == other.grid_params:
+                # Everything matches except shape and k
+                shape = tuple(np.maximum(self.shape, other.shape))
+                k = other.k  # use operand's k value to minimize conversions
+                return self.clone_with(shape=shape, k=k)
         return NotImplemented
 
     def global_grid_radius(self, scale):
@@ -2328,9 +2457,8 @@ class DiskBasis(PolarBasis, metaclass=CachedClass):
         return Qk[0]
 
     def _new_k(self, k):
-        return DiskBasis(self.coordsystem, self.shape, radius = self.radius, k=k, alpha=self.alpha, dealias=self.dealias, dtype=self.dtype,
-                         azimuth_library=self.azimuth_library,
-                         radius_library=self.radius_library)
+        # TODO: replace this in all operators
+        return self.clone_with(k=k)
 
     @CachedMethod
     def transform_plan(self, grid_shape, axis, s):
@@ -2567,16 +2695,49 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
     subaxis_dependence = [True, True]
     transforms = {}
     constant_mode_value = 1 / np.sqrt(2)
+    default_library = "matrix"
 
-    def __init__(self, coordsystem, shape, dtype, radius=1, dealias=(1,1), colatitude_library=None, azimuth_library=None):
-        super().__init__(coordsystem, shape, dtype, dealias, azimuth_library=azimuth_library)
+    @classmethod
+    def _preprocess_cache_args(cls, coordsystem, shape, dtype, radius, dealias, azimuth_library, colatitude_library):
+        """Preprocess arguments into canonical form for caching. Must accept and return __init__ arguments."""
+        # coordsystem: S2Coordinates or SphericalCoordinates
+        if not isinstance(coordsystem, (S2Coordinates, SphericalCoordinates)):
+            raise ValueError("Sphere coordsystem must be S2Coordinates.")
+        # shape: length-2 tuple
+        shape = tuple(shape)
+        if len(shape) != 2:
+            raise ValueError("Sphere shape must have length 2.")
+        # radius: non-negative number
+        # can be zero for interpolation at origin in SphericalCoordinates
         if radius < 0:
-            raise ValueError("Radius must be non-negative.")
+            raise ValueError("Sphere radius must be non-negative.")
+        # dealias: length-2 tuple
+        if isinstance(dealias, (int, float)):
+            dealias = (dealias,) * 2
+        else:
+            dealias = tuple(dealias)
+        if len(dealias) != 2:
+            raise ValueError("Sphere dealias must have length 2.")
+        # azimuth_library: pick default
+        if azimuth_library is None:
+            azimuth_library = RealFourier.default_library
+        # colatitude_library: pick default
         if colatitude_library is None:
-            colatitude_library = "matrix"
+            colatitude_library = cls.default_library
+        return (coordsystem, shape, dtype, radius, dealias, azimuth_library, colatitude_library)
+
+    def __init__(self, coordsystem, shape, dtype, radius=1, dealias=(1,1), azimuth_library=None, colatitude_library=None):
+        super().__init__(coordsystem, shape, dtype, dealias, azimuth_library=azimuth_library)
+        # Save arguments without modification for caching
+        self.coordsystem = coordsystem
+        self.shape = shape
+        self.dtype = dtype
         self.radius = radius
-        self.volume = 4 * np.pi * radius**2
+        self.dealias = dealias
+        self.azimuth_library = azimuth_library
         self.colatitude_library = colatitude_library
+        # Other attributes
+        self.volume = 4 * np.pi * radius**2
         # Set Lmax for optimal load balancing
         if self.dtype == np.float64:
             self.Lmax = max(0, shape[1] - 2)
@@ -2597,7 +2758,7 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
         self.backward_transforms = [self.backward_transform_azimuth,
                                     self.backward_transform_colatitude,
                                     self.backward_transform_radius]
-        self.grid_params = (coordsystem, radius, dealias)
+        self.grid_params = (coordsystem, dtype, radius, dealias, azimuth_library, colatitude_library)
         if self.shape[0] > 1 and shape[0] % 2 != 0:
             raise ValueError("Don't use an odd phi resolution please")
         if self.shape[0] > 1 and self.dtype == np.float64 and shape[0] % 4 != 0:
@@ -2627,10 +2788,8 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
 
     @CachedAttribute
     def latitude_basis(self):
-        new_shape = (1, self.shape[1])
-        # is this ok??? Do we need to set dealias[0] = 1???
-        dealias = self.dealias
-        return SphereBasis(self.coordsystem, new_shape, self.dtype, radius=self.radius, dealias=dealias, colatitude_library=self.colatitude_library, azimuth_library=self.azimuth_library)
+        shape = (1, self.shape[1])
+        return self.clone_with(shape=shape)
 
     def matrix_dependence(self, matrix_coupling):
         matrix_dependence = matrix_coupling.copy()
@@ -2760,29 +2919,29 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
         return id(self)
 
     def __add__(self, other):
-        if other is None:
-            return self
-        if other is self:
+        if other is None or other is self:
             return self
         if isinstance(other, SphereBasis):
-            if self.radius == other.radius:
+            # Better error message for common mistake
+            if self.radius != other.radius:
+                raise NotImplementedError(f"Cannot add two sphere bases with different radii ({self.radius} and {other.radius}).")
+            if self.grid_params == other.grid_params:
+                # Everything matches except shape
                 shape = tuple(np.maximum(self.shape, other.shape))
-                return SphereBasis(self.coordsystem, shape, radius=self.radius, dealias=self.dealias, dtype=self.dtype)
-            else:
-                raise NotImplementedError(f"Cannot add two sphere bases with different radii {self.radius} and {other.radius}.")
+                return self.clone_with(shape=shape)
         return NotImplemented
 
     def __mul__(self, other):
-        if other is None:
-            return self
-        if other is self:
+        if other is None or other is self:
             return self
         if isinstance(other, SphereBasis):
-            if self.radius == other.radius:
+            # Better error message for common mistake
+            if self.radius != other.radius:
+                raise NotImplementedError(f"Cannot multiply two sphere bases with different radii ({self.radius} and {other.radius}).")
+            if self.grid_params == other.grid_params:
+                # Everything matches except shape
                 shape = tuple(np.maximum(self.shape, other.shape))
-                return SphereBasis(self.coordsystem, shape, radius=self.radius, dealias=self.dealias, dtype=self.dtype)
-            else:
-                raise NotImplementedError(f"Cannot multiply two sphere bases with different radii {self.radius} and {other.radius}.")
+                return self.clone_with(shape=shape)
         return NotImplemented
 
     def __matmul__(self, other):
@@ -3561,9 +3720,9 @@ class ShellRadialBasis(RegularityBasis, metaclass=CachedClass):
             raise ValueError("Inner radius must be positive.")
         if radius_library is None:
             if alpha[0] == alpha[1] == -1/2:
-                radius_library = "fftw_dct"
+                radius_library = Jacobi.default_dct
             else:
-                radius_library = "matrix"
+                radius_library = Jacobi.default_library
         self.radii = radii
         self.volume = 4 / 3 * np.pi * (radii[1]**3 - radii[0]**3)
         self.dR = self.radii[1] - self.radii[0]
@@ -4131,7 +4290,8 @@ class Spherical3DBasis(MultidimensionalBasis):
                 radius = self.radius
             else:
                 radius = max(self.radii)
-        return SphereBasis(self.coordsystem, self.shape[:2], radius=radius, dealias=self.dealias[:2], dtype=self.dtype,
+        print(self, radius)
+        return SphereBasis(self.coordsystem, self.shape[:2], self.dtype, radius=radius, dealias=self.dealias[:2],
                     azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library)
 
     @CachedMethod
@@ -4218,16 +4378,72 @@ class Spherical3DBasis(MultidimensionalBasis):
 
 class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
 
-    def __init__(self, coordsystem, shape, dtype, radii=(1,2), alpha=(-0.5,-0.5), dealias=(1,1,1), k=0, azimuth_library=None, colatitude_library=None, radius_library=None):
-        if np.isscalar(dealias):
-            dealias = (dealias, dealias, dealias)
-        self.alpha = alpha
+    @classmethod
+    def _preprocess_cache_args(cls, coordsystem, shape, dtype, radii, k, alpha, dealias, azimuth_library, colatitude_library, radius_library):
+        """Preprocess arguments into canonical form for caching. Must accept and return __init__ arguments."""
+        # coordsystem: SphericalCoordinates
+        if not isinstance(coordsystem, SphericalCoordinates):
+            raise ValueError("Shell coordsystem must be SphericalCoordinates.")
+        # shape: length-3 tuple
+        shape = tuple(shape)
+        if len(shape) != 3:
+            raise ValueError("Shell shape must have length 3.")
+        # radii: length-2 tuple of increasing positive numbers
+        radii = tuple(radii)
+        if len(radii) != 2:
+            raise ValueError("Shell radii must have length 2")
+        if min(radii) <= 0:
+            raise ValueError("Shell radii must be positive.")
+        if radii[0] >= radii[1]:
+            raise ValueError("Shell radii must be in increasing order.")
+        # k: int
+        k = int(k)
+        # alpha: length-2 tuple
+        if isinstance(alpha, (int, float)):
+            alpha = (alpha,) * 2
+        else:
+            alpha = tuple(alpha)
+        if len(alpha) != 2:
+            raise ValueError("Shell alpha must have length 2.")
+        # dealias: length-3 tuple
+        if isinstance(dealias, (int, float)):
+            dealias = (dealias,) * 3
+        else:
+            dealias = tuple(dealias)
+        if len(dealias) != 3:
+            raise ValueError("Shell dealias must have length 3.")
+        # azimuth_library: pick default
+        if azimuth_library is None:
+            azimuth_library = RealFourier.default_library
+        # colatitude_library: pick default
+        if colatitude_library is None:
+            colatitude_library = SphereBasis.default_library
+        # radius_library: pick default based on alpha
+        if radius_library is None:
+            if alpha[0] == alpha[1] == -1/2:
+                radius_library = Jacobi.default_dct
+            else:
+                radius_library = Jacobi.default_library
+        return (coordsystem, shape, dtype, radii, k, alpha, dealias, azimuth_library, colatitude_library, radius_library)
+
+    def __init__(self, coordsystem, shape, dtype, radii=(1,2), k=0, alpha=(-0.5,-0.5), dealias=(1,1,1), azimuth_library=None, colatitude_library=None, radius_library=None):
+        # Save arguments without modification for caching
+        self.coordsystem = coordsystem
+        self.shape = shape
+        self.dtype = dtype
         self.radii = radii
+        self.k = k
+        self.alpha = alpha
+        self.dealias = dealias
+        self.azimuth_library = azimuth_library
+        self.colatitude_library = colatitude_library
+        self.radius_library = radius_library
+        # Other attributes
         self.volume = 4 / 3 * np.pi * (radii[1]**3 - radii[0]**3)
         self.radius_library = radius_library
         self.radial_basis = ShellRadialBasis(coordsystem, shape[2], radii=radii, alpha=alpha, dealias=(dealias[2],), k=k, dtype=dtype, radius_library=radius_library)
         Spherical3DBasis.__init__(self, coordsystem, shape[:2], dealias[:2], self.radial_basis, dtype=dtype, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
-        self.grid_params = (coordsystem, radii, alpha, dealias)
+        self.grid_params = (coordsystem, dtype, radii, alpha, dealias, azimuth_library, colatitude_library, radius_library)
 #        self.forward_transform_radius = self.radial_basis.forward_transform
 #        self.backward_transform_radius = self.radial_basis.backward_transform
         self.forward_transforms = [self.forward_transform_azimuth,
@@ -4251,17 +4467,14 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
         return id(self)
 
     def __add__(self, other):
-        if other is None:
-            return self
-        if other is self:
+        if other is None or other is self:
             return self
         if isinstance(other, ShellBasis):
             if self.grid_params == other.grid_params:
+                # Everything matches except shape and k
                 shape = tuple(np.maximum(self.shape, other.shape))
-                k = max(self.k, other.k)
-                return ShellBasis(self.coordsystem, shape, radii=self.radial_basis.radii, alpha=self.radial_basis.alpha, dealias=self.dealias, k=k,
-                                           dtype=self.dtype, azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
-                                           radius_library=self.radial_basis.radius_library)
+                k = max(self.k, other.k)  # minimizes conversions
+                return self.clone_with(shape=shape, k=k)
         return NotImplemented
 
     def __mul__(self, other):
@@ -4269,24 +4482,24 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
             return self
         if isinstance(other, ShellBasis):
             if self.grid_params == other.grid_params:
+                # Everything matches except shape and k
                 shape = tuple(np.maximum(self.shape, other.shape))
-                radial_basis = self.radial_basis * other.radial_basis
-                k = radial_basis.k
-                return ShellBasis(self.coordsystem, shape, radii=self.radial_basis.radii, alpha=self.radial_basis.alpha, dealias=self.dealias, k=k,
-                                           dtype=self.dtype, azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
-                                           radius_library=self.radial_basis.radius_library)
+                k = (self.radial_basis * other.radial_basis).k  # TODO: inline this
+                return self.clone_with(shape=shape, k=k)
         if isinstance(other, ShellRadialBasis):
-            radial_basis = other * self.radial_basis
-            return self._new_k(radial_basis.k)
+            k = (other * self.radial_basis).k  # TODO: inline this
+            return self.clone_with(k=k)
         return NotImplemented
 
     def __matmul__(self, other):
+        # NCC (self) * operand (other)
         if other is None:
             return self.__rmatmul__(other)
         else:
             return other.__rmatmul__(self)
 
     def __rmatmul__(self, other):
+        # NCC (other) * operand (self)
         if other is None:
             return self
         if isinstance(other, ShellRadialBasis):
@@ -4300,9 +4513,8 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
         return NotImplemented
 
     def _new_k(self, k):
-        return ShellBasis(self.coordsystem, self.shape, radii=self.radial_basis.radii, alpha=self.radial_basis.alpha, dealias=self.dealias, k=k,
-                                   dtype=self.dtype, azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
-                                   radius_library=self.radial_basis.radius_library)
+        # TODO: replace this in all operators
+        return self.clone_with(k=k)
 
     @property
     def meridional_basis(self):
@@ -4406,17 +4618,59 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
 class BallBasis(Spherical3DBasis, metaclass=CachedClass):
 
     transforms = {}
+    default_library = "matrix"
+
+    @classmethod
+    def _preprocess_cache_args(cls, coordsystem, shape, dtype, radius, k, alpha, dealias, azimuth_library, colatitude_library, radius_library):
+        """Preprocess arguments into canonical form for caching. Must accept and return __init__ arguments."""
+        # coordsystem: SphericalCoordinates
+        if not isinstance(coordsystem, SphericalCoordinates):
+            raise ValueError("Ball coordsystem must be SphericalCoordinates.")
+        # shape: length-3 tuple
+        shape = tuple(shape)
+        if len(shape) != 3:
+            raise ValueError("Ball shape must have length 3.")
+        # radius: positive number
+        if radius <= 0:
+            raise ValueError("Ball radius must be positive.")
+        # k: int
+        k = int(k)
+        # alpha
+        # dealias: length-3 tuple
+        if isinstance(dealias, (int, float)):
+            dealias = (dealias,) * 3
+        else:
+            dealias = tuple(dealias)
+        if len(dealias) != 3:
+            raise ValueError("Ball dealias must have length 3.")
+        # azimuth_library: pick default
+        if azimuth_library is None:
+            azimuth_library = RealFourier.default_library
+        # colatitude_library: pick default
+        if colatitude_library is None:
+            colatitude_library = SphereBasis.default_library
+        # radius_library: pick default
+        if radius_library is None:
+            radius_library = cls.default_library
+        return (coordsystem, shape, dtype, radius, k, alpha, dealias, azimuth_library, colatitude_library, radius_library)
 
     def __init__(self, coordsystem, shape, dtype, radius=1, k=0, alpha=0, dealias=(1,1,1), azimuth_library=None, colatitude_library=None, radius_library=None):
-        if np.isscalar(dealias):
-            dealias = (dealias, dealias, dealias)
-        self.alpha = alpha
+        # Save arguments without modification for caching
+        self.coordsystem = coordsystem
+        self.shape = shape
+        self.dtype = dtype
         self.radius = radius
-        self.volume = 4 / 3 * np.pi * radius**3
+        self.k = k
+        self.alpha = alpha
+        self.dealias = dealias
+        self.azimuth_library = azimuth_library
+        self.colatitude_library = colatitude_library
         self.radius_library = radius_library
+        # Other attributes
+        self.volume = 4 / 3 * np.pi * radius**3
         self.radial_basis = BallRadialBasis(coordsystem, shape[2], radius=radius, k=k, alpha=alpha, dealias=(dealias[2],), dtype=dtype, radius_library=radius_library)
         Spherical3DBasis.__init__(self, coordsystem, shape[:2], dealias[:2], self.radial_basis, dtype=dtype, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
-        self.grid_params = (coordsystem, radius, alpha, dealias)
+        self.grid_params = (coordsystem, dtype, radius, alpha, dealias, azimuth_library, colatitude_library, radius_library)
         self.forward_transforms = [self.forward_transform_azimuth,
                                    self.forward_transform_colatitude,
                                    self.forward_transform_radius]
@@ -4437,17 +4691,14 @@ class BallBasis(Spherical3DBasis, metaclass=CachedClass):
         return id(self)
 
     def __add__(self, other):
-        if other is None:
-            return self
-        if other is self:
+        if other is None or other is self:
             return self
         if isinstance(other, BallBasis):
             if self.grid_params == other.grid_params:
+                # Everything matches except shape and k
                 shape = tuple(np.maximum(self.shape, other.shape))
-                k = max(self.k, other.k)
-                return BallBasis(self.coordsystem, shape, radius=self.radial_basis.radius, k=k, alpha=self.radial_basis.alpha, dealias=self.dealias,
-                                 dtype=self.dtype, azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
-                                 radius_library=self.radial_basis.radius_library)
+                k = max(self.k, other.k)  # minimizes conversions
+                return self.clone_with(shape=shape, k=k)
         return NotImplemented
 
     def __mul__(self, other):
@@ -4455,17 +4706,24 @@ class BallBasis(Spherical3DBasis, metaclass=CachedClass):
             return self
         if isinstance(other, BallBasis):
             if self.grid_params == other.grid_params:
+                # Everything matches except shape and k
                 shape = tuple(np.maximum(self.shape, other.shape))
                 k = 0
-                return BallBasis(self.coordsystem, shape, radius=self.radial_basis.radius, k=k, alpha=self.radial_basis.alpha, dealias=self.dealias, dtype=self.dtype,
-                                 azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
-                                 radius_library=self.radial_basis.radius_library)
+                return self.clone_with(shape=shape, k=k)
         if isinstance(other, BallRadialBasis):
-            radial_basis = other * self.radial_basis
-            return self._new_k(radial_basis.k)
+            k = (other * self.radial_basis).k  # TODO: inline this
+            return self.clone_with(k=k)
         return NotImplemented
 
+    def __matmul__(self, other):
+        # NCC (self) * operand (other)
+        if other is None:
+            return self.__rmatmul__(other)
+        else:
+            return other.__rmatmul__(self)
+
     def __rmatmul__(self, other):
+        # NCC (other) * operand (self)
         if other is None:
             return self
         if isinstance(other, BallRadialBasis):
@@ -4476,16 +4734,9 @@ class BallBasis(Spherical3DBasis, metaclass=CachedClass):
             return self._new_k(radial_basis.k)
         return NotImplemented
 
-    def __matmul__(self, other):
-        if other is None:
-            return self.__rmatmul__(other)
-        else:
-            return other.__rmatmul__(self)
-
     def _new_k(self, k):
-        return BallBasis(self.coordsystem, self.shape, radius = self.radial_basis.radius, k=k, alpha=self.radial_basis.alpha, dealias=self.dealias, dtype=self.dtype,
-                         azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library,
-                         radius_library=self.radial_basis.radius_library)
+        # TODO: replace this in all operators
+        return self.clone_with(k=k)
 
     @CachedMethod
     def transform_plan(self, grid_shape, regindex, axis, regtotal, k, alpha):

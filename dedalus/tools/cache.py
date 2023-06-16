@@ -125,16 +125,29 @@ class CachedClass(type):
         # Build call from class signature
         call = cls._signature.bind(None, *args, **kw)
         call.apply_defaults()
-        key = tuple(call.arguments.items())
+        # Preprocess call with all arguments except self
+        if call.kwargs:
+            raise ValueError("Required keyword arguments not supported.")
+        full_args = cls._preprocess_cache_args(*call.args[1:])
         # Instantiate for new call
-        if key not in cls._instance_cache:
+        if full_args not in cls._instance_cache:
             # Bind to local variable so weakref persists until return
-            cls._instance_cache[key] = instance = super().__call__(*args, **kw)
-        return cls._instance_cache[key]
+            cls._instance_cache[full_args] = instance = super().__call__(*full_args)
+        return cls._instance_cache[full_args]
 
     def _preprocess_args(cls, *args, **kw):
         """Process arguments and keywords prior to checking cache."""
         return args, kw
+
+    @classmethod
+    def _preprocess_cache_args(cls, *args):
+        """Process call prior to checking cache."""
+        return args
+        # call = cls._signature.bind(None, *args, **kw)
+        # call.apply_defaults()
+        # if call.kwargs:
+        #     raise ValueError("Required keyword arguments not supported.")
+        # return call.args[1:]
 
 
 def serialize_call(args, kw, argnames, defaults):
