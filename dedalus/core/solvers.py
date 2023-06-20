@@ -110,6 +110,14 @@ class SolverBase:
         namespace = {}
         self.evaluator = Evaluator(self.dist, namespace)
 
+    def build_matrices(self, subproblems=None, matrices=None):
+        """Build matrices for selected subproblems."""
+        if subproblems is None:
+            subproblems = self.subproblems
+        if matrices is None:
+            matrices = self.matrices
+        subsystems.build_subproblem_matrices(self, subproblems, matrices)
+
 
 class EigenvalueSolver(SolverBase):
     """
@@ -137,6 +145,7 @@ class EigenvalueSolver(SolverBase):
 
     # Default to factorizer to speed up repeated solves
     matsolver_default = 'MATRIX_FACTORIZER'
+    matrices = ['M', 'L']
 
     def __init__(self, problem, **kw):
         logger.debug('Beginning EVP instantiation')
@@ -189,9 +198,9 @@ class EigenvalueSolver(SolverBase):
             Other keyword options passed to scipy.linalg.eig.
         """
         self.eigenvalue_subproblem = sp = subproblem
-        # Rebuild matrices if directed or not yet built
+        # Build matrices if directed or not yet built
         if rebuild_matrices or not hasattr(sp, 'L_min'):
-            subsystems.build_subproblem_matrices(self, [sp], ['M', 'L'])
+            self.build_matrices([sp], ['M', 'L'])
         # Solve as dense general eigenvalue problem
         A = (sp.L_min @ sp.pre_right).A
         B = - (sp.M_min @ sp.pre_right).A
@@ -238,9 +247,9 @@ class EigenvalueSolver(SolverBase):
             Other keyword options passed to scipy.sparse.linalg.eig.
         """
         self.eigenvalue_subproblem = sp = subproblem
-        # Rebuild matrices if directed or not yet built
+        # Build matrices if directed or not yet built
         if rebuild_matrices or not hasattr(sp, 'L_min'):
-            subsystems.build_subproblem_matrices(self, [sp], ['M', 'L'])
+            self.build_matrices([sp], ['M', 'L'])
         # Solve as sparse general eigenvalue problem
         A = (sp.L_min @ sp.pre_right)
         B = - (sp.M_min @ sp.pre_right)
@@ -313,6 +322,7 @@ class LinearBoundaryValueSolver(SolverBase):
 
     # Default to factorizer to speed up repeated solves
     matsolver_default = 'MATRIX_FACTORIZER'
+    matrices = ['L']
 
     def __init__(self, problem, **kw):
         logger.debug('Beginning LBVP instantiation')
@@ -338,11 +348,6 @@ class LinearBoundaryValueSolver(SolverBase):
             L = (sp.L_min @ sp.pre_right).A
             print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {sp.group}, matrix rank: {np.linalg.matrix_rank(L)}/{L.shape[0]}, cond: {np.linalg.cond(L):.1e}")
 
-    def build_matrices(self, subproblems=None):
-        if subproblems is None:
-            subproblems = self.subproblems
-        subsystems.build_subproblem_matrices(self, subproblems, ['L'])
-
     def solve(self, subproblems=None, rebuild_matrices=False):
         """
         Solve BVP over selected subproblems.
@@ -359,14 +364,14 @@ class LinearBoundaryValueSolver(SolverBase):
             subproblems = self.subproblems
         if isinstance(subproblems, subsystems.Subproblem):
             subproblems = [subproblems]
-        # Rebuild matrices and matsolvers if directed or not yet built
+        # Build matrices and matsolvers if directed or not yet built
         if rebuild_matrices:
-            rebuild_subproblems = subproblems
+            sp_to_build = subproblems
         else:
-            rebuild_subproblems = [sp for sp in subproblems if sp not in self.subproblem_matsolvers]
-        if rebuild_subproblems:
-            self.build_matrices(rebuild_subproblems)
-            for sp in rebuild_subproblems:
+            sp_to_build = [sp for sp in subproblems if sp not in self.subproblem_matsolvers]
+        if sp_to_build:
+            self.build_matrices(sp_to_build, ['L'])
+            for sp in sp_to_build:
                 L = sp.L_min @ sp.pre_right
                 self.subproblem_matsolvers[sp] = self.matsolver(L, self)
         # Compute RHS
@@ -419,6 +424,7 @@ class NonlinearBoundaryValueSolver(SolverBase):
 
     # Default to solver since every iteration sees a new matrix
     matsolver_default = 'MATRIX_SOLVER'
+    matrices = ['dH']
 
     def __init__(self, problem, **kw):
         logger.debug('Beginning NLBVP instantiation')
@@ -439,7 +445,7 @@ class NonlinearBoundaryValueSolver(SolverBase):
         self.evaluator.evaluate_scheduled(iteration=self.iteration)
         # Recompute Jacobian
         # TODO: split out linear part for faster recomputation?
-        subsystems.build_subproblem_matrices(self, self.subproblems, ['dH'])
+        self.build_matrices(self.subproblems, ['dH'])
         # Ensure coeff space before subsystem gathers/scatters
         for field in self.F:
             field.change_layout('c')
@@ -506,6 +512,7 @@ class InitialValueSolver(SolverBase):
 
     # Default to factorizer to speed up repeated solves
     matsolver_default = 'MATRIX_FACTORIZER'
+    matrices = ['M', 'L']
 
     def __init__(self, problem, timestepper, enforce_real_cadence=100, warmup_iterations=10, **kw):
         logger.debug('Beginning IVP instantiation')
@@ -517,7 +524,7 @@ class InitialValueSolver(SolverBase):
         self._bcast_array = np.zeros(1, dtype=float)
         self.init_time = self.world_time
         # Build LHS matrices
-        subsystems.build_subproblem_matrices(self, self.subproblems, ['M', 'L'])
+        self.build_matrices(self.subproblems, ['M', 'L'])
         # Compute total modes
         local_modes = sum(ss.subproblem.pre_right.shape[1] for ss in self.subsystems)
         self.total_modes = self.dist.comm.allreduce(local_modes, op=MPI.SUM)
