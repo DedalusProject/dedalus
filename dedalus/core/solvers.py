@@ -578,7 +578,7 @@ class InitialValueSolver(SolverBase):
         else:
             return True
 
-    def load_state(self, path, index=-1):
+    def load_state(self, path, index=-1, allow_missing=False):
         """
         Load state from HDF5 file. Currently can only load grid space data.
 
@@ -588,6 +588,8 @@ class InitialValueSolver(SolverBase):
             Path to Dedalus HDF5 savefile
         index : int, optional
             Local write index (within file) to load (default: -1)
+        allow_missing : bool, optional
+            Do not raise an error if state variables are missing from the savefile (default: False).
 
         Returns
         -------
@@ -611,7 +613,12 @@ class InitialValueSolver(SolverBase):
             logger.info("Loading timestep: {}".format(dt))
             # Load fields
             for field in self.state:
-                field.load_from_hdf5(file, index)
+                if field.name in file['tasks']:
+                    field.load_from_hdf5(file, index)
+                elif allow_missing:
+                    logger.warning(f"Field '{field.name}' not found in savefile.")
+                else:
+                    raise IOError(f"Field '{field.name}' not found in savefile. Set allow_missing=True to ignore this error.")
         return write, dt
 
     def enforce_hermitian_symmetry(self, fields):
