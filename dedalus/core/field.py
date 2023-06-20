@@ -656,69 +656,6 @@ class Field(Current):
             while not self.layout.local[axis]:
                 self.towards_grid_space()
 
-    def differentiate(self, *args, **kw):
-        """Differentiate field."""
-        from .operators import differentiate
-        diff_op = differentiate(self, *args, **kw)
-        return diff_op.evaluate()
-
-    def integrate(self, *args, **kw):
-        """Integrate field."""
-        from .operators import integrate
-        integ_op = integrate(self, *args, **kw)
-        return integ_op.evaluate()
-
-    def interpolate(self, *args, **kw):
-        """Interpolate field."""
-        from .operators import interpolate
-        interp_op = interpolate(self, *args, **kw)
-        return interp_op.evaluate()
-
-    def antidifferentiate(self, basis, bc, out=None):
-        """
-        Antidifferentiate field by setting up a simple linear BVP.
-
-        Parameters
-        ----------
-        basis : basis-like
-            Basis to antidifferentiate along
-        bc : (str, object) tuple
-            Boundary conditions as (functional, value) tuple.
-            `functional` is a string, e.g. "left", "right", "int"
-            `value` is a field or scalar
-        out : field, optional
-            Output field
-
-        """
-
-        # References
-        basis = self.domain.get_basis_object(basis)
-        domain = self.domain
-        bc_type, bc_val = bc
-
-        # Only solve along last basis
-        if basis is not domain.bases[-1]:
-            raise NotImplementedError()
-
-        from .problems import LBVP
-        basis_name = basis.name
-        problem = LBVP(domain, variables=['out'])
-        problem.parameters['f'] = self
-        problem.parameters['bc'] = bc_val
-        problem.add_equation('d'+basis_name+'(out) = f')
-        problem.add_bc(bc_type+'(out) = bc')
-
-        solver = problem.build_solver()
-        solver.solve()
-
-        if not out:
-            out = self.domain.new_field()
-
-        out.preset_scales(domain.dealias, keep_data=False)
-        out['c'] = np.copy(solver.state['out']['c'])
-
-        return out
-
     # @classmethod
     # def cast_scalar(cls, scalar, domain):
     #     out = Field(bases=domain)

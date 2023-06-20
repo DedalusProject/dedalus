@@ -1253,16 +1253,16 @@ class Average(LinearOperator, metaclass=MultiClass):
         self.dtype = operand.dtype
 
 
-# CHECK NEW
-@parseable('filter', 'f')
-def filter(arg, **modes):
-    # Identify domain
-    domain = unify_attributes((arg,)+tuple(modes), 'domain', require=False)
-    # Apply iteratively
-    for space, mode in modes.items():
-        space = domain.get_space_object(space)
-        arg = Filter(arg, space, mode)
-    return arg
+# # CHECK NEW
+# @parseable('filter', 'f')
+# def filter(arg, **modes):
+#     # Identify domain
+#     domain = unify_attributes((arg,)+tuple(modes), 'domain', require=False)
+#     # Apply iteratively
+#     for space, mode in modes.items():
+#         space = domain.get_space_object(space)
+#         arg = Filter(arg, space, mode)
+#     return arg
 
 
 # class Filter(LinearSubspaceFunctional):
@@ -1295,19 +1295,19 @@ def filter(arg, **modes):
 #             return 0
 
 
-@prefix('d')
-@parseable('differentiate', 'diff', 'd')
-def differentiate(arg, *spaces, **space_kw):
-    # Parse space/order keywords into space list
-    for space, order in space_kw.items():
-        spaces += (space,) * order
-    # Identify domain
-    domain = unify_attributes((arg,)+spaces, 'domain', require=False)
-    # Apply iteratively
-    for space in spaces:
-        space = domain.get_space_object(space)
-        arg = Differentiate(arg, space)
-    return arg
+# @prefix('d')
+# @parseable('differentiate', 'diff', 'd')
+# def differentiate(arg, *spaces, **space_kw):
+#     # Parse space/order keywords into space list
+#     for space, order in space_kw.items():
+#         spaces += (space,) * order
+#     # Identify domain
+#     domain = unify_attributes((arg,)+spaces, 'domain', require=False)
+#     # Apply iteratively
+#     for space in spaces:
+#         space = domain.get_space_object(space)
+#         arg = Differentiate(arg, space)
+#     return arg
 
 
 class Differentiate(SpectralOperator1D, metaclass=MultiClass):
@@ -1384,19 +1384,19 @@ class DifferentiateConstant(Differentiate):
         return 0
 
 
-@prefix('H')
-@parseable('hilbert_transform', 'hilbert', 'H')
-def hilbert_transform(arg, *spaces, **space_kw):
-    # Parse space/order keywords into space list
-    for space, order in space_kw.items():
-        spaces += (space,) * order
-    # Identify domain
-    domain = unify_attributes((arg,)+spaces, 'domain', require=False)
-    # Apply iteratively
-    for space in spaces:
-        space = domain.get_space_object(space)
-        arg = HilbertTransform(arg, space)
-    return arg
+# @prefix('H')
+# @parseable('hilbert_transform', 'hilbert', 'H')
+# def hilbert_transform(arg, *spaces, **space_kw):
+#     # Parse space/order keywords into space list
+#     for space, order in space_kw.items():
+#         spaces += (space,) * order
+#     # Identify domain
+#     domain = unify_attributes((arg,)+spaces, 'domain', require=False)
+#     # Apply iteratively
+#     for space in spaces:
+#         space = domain.get_space_object(space)
+#         arg = HilbertTransform(arg, space)
+#     return arg
 
 
 class HilbertTransform(SpectralOperator1D, metaclass=MultiClass):
