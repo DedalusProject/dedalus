@@ -198,7 +198,7 @@ class CFL:
             if (iteration-1) <= self.solver.initial_iteration:
                 return self.stored_dt
             # Sum across frequencies for each local grid point
-            local_freqs = np.sum(np.abs(field['g']) for field in self.frequencies.fields.values())
+            local_freqs = sum(np.abs(field['g']) for field in self.frequencies.fields.values())
             # Compute new timestep from max frequency across all grid points
             max_global_freq = self.reducer.global_max(local_freqs)
             if max_global_freq == 0.:
