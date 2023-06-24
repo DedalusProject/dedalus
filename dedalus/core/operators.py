@@ -6,7 +6,6 @@ Abstract and built-in classes defining deferred operations on fields.
 from collections import defaultdict
 from functools import partial, reduce
 import numpy as np
-from numpy.testing._private.utils import raises
 from scipy import sparse
 from numbers import Number
 from inspect import isclass
