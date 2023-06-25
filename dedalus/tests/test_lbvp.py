@@ -24,6 +24,16 @@ def build_disk(Nphi, Nr, radius, alpha, dealias, dtype):
     return c, d, b, phi, r, x, y
 
 
+@CachedFunction
+def build_annulus(Nphi, Nr, radii, alpha, dealias, dtype):
+    c = d3.PolarCoordinates('phi', 'r')
+    d = d3.Distributor(c, dtype=dtype)
+    b = d3.AnnulusBasis(c, (Nphi, Nr), radii=radii, alpha=alpha, dealias=dealias, dtype=dtype)
+    phi, r = b.local_grids()
+    x, y = c.cartesian(phi, r)
+    return c, d, b, phi, r, x, y
+
+
 @pytest.mark.parametrize('dtype', dtype_range)
 def test_algebraic(dtype):
     """Test algebraic equation."""
@@ -48,7 +58,7 @@ def test_algebraic(dtype):
 @pytest.mark.parametrize('dtype', dtype_range)
 @pytest.mark.parametrize('matrix_coupling', [False, True])
 def test_poisson_fourier(N, dtype, matrix_coupling):
-    """Test Poisson equation with Fourier d3."""
+    """Test Poisson equation with Fourier basis."""
     # Bases
     coord = d3.Coordinate('x')
     dist = d3.Distributor(coord, dtype=dtype)
@@ -75,7 +85,7 @@ def test_poisson_fourier(N, dtype, matrix_coupling):
 @pytest.mark.parametrize('a, b', [(-1/2, -1/2), (0, 0)])
 @pytest.mark.parametrize('dtype', dtype_range)
 def test_poisson_jacobi(N, a, b, dtype):
-    """Test Poisson equation with Jacobi d3."""
+    """Test Poisson equation with Jacobi basis."""
     # Bases
     coord = d3.Coordinate('x')
     dist = d3.Distributor(coord, dtype=dtype)
@@ -100,52 +110,76 @@ def test_poisson_jacobi(N, a, b, dtype):
     assert np.allclose(u['g'], u_true)
 
 
-@pytest.mark.parametrize('Nphi', [xfail_param(1, "Nphi=1 not supported yet in disk"), 4])
+@pytest.mark.parametrize('Nphi', [1, 8])
 @pytest.mark.parametrize('Nr', [8])
 @pytest.mark.parametrize('alpha', [0, 1])
 @pytest.mark.parametrize('dtype', dtype_range)
 @pytest.mark.parametrize('azimuth_coupling', disk_azimuth_coupling_range)
-def test_axisymmetric_poisson_disk(Nr, Nphi, alpha, dtype, azimuth_coupling):
-    """Test axisymmetric Poisson equation with disk d3."""
+def test_poisson_annulus(Nr, Nphi, alpha, dtype, azimuth_coupling):
+    """Test Poisson equation with annulus basis."""
+    if Nphi == 1 and dtype == np.float64:
+        pytest.xfail("Nphi=1 not supported for real dtypes.")
     # Bases
-    c, d, b, phi, r, x, y = build_disk(Nphi, Nr, radius=1.5, alpha=alpha, dealias=1, dtype=dtype)
+    c, d, b, phi, r, x, y = build_annulus(Nphi, Nr, radii=(0.4, 1.5), alpha=alpha, dealias=1, dtype=dtype)
     # Fields
     u = d.Field(bases=b)
-    tau = d.Field(bases=b.edge)
-    u_true = r**2 - 1
+    tau1 = d.Field(bases=b.outer_edge)
+    tau2 = d.Field(bases=b.outer_edge)
     f = d.Field(bases=b)
-    f['g'] = 4
-    g = d.Field(bases=b.edge)
-    g['g'] = b.radius**2 - 1
+    g0 = d.Field(bases=b.inner_edge)
+    g1 = d.Field(bases=b.outer_edge)
+    if Nphi == 1:
+        u_true = r**2 - 1
+        f['g'] = 4
+        g0['g'] = b.radii[0]**2 - 1
+        g1['g'] = b.radii[1]**2 - 1
+    else:
+        xr0 = b.radii[0] * np.cos(phi)
+        yr0 = b.radii[0] * np.sin(phi)
+        xr1 = b.radii[1] * np.cos(phi)
+        yr1 = b.radii[1] * np.sin(phi)
+        u_true = x**3 - y**2
+        f['g'] = 6*x - 2
+        g0['g'] = xr0**3 - yr0**2
+        g1['g'] = xr1**3 - yr1**2
     # Problem
-    lift = lambda A: d3.Lift(A, b, -1)
-    problem = d3.LBVP([u, tau], namespace=locals())
-    problem.add_equation("lap(u) + lift(tau) = f")
-    problem.add_equation("u(r=b.radius) = g")
+    b2 = b.derivative_basis(2)
+    taus = d3.Lift(tau1, b2, -1) + d3.Lift(tau2, b2, -2)
+    problem = d3.LBVP([u, tau1, tau2], namespace=locals())
+    problem.add_equation("lap(u) + taus = f")
+    problem.add_equation("u(r=b.radii[0]) = g0")
+    problem.add_equation("u(r=b.radii[1]) = g1")
     solver = problem.build_solver(matrix_coupling=[azimuth_coupling, True])
     solver.solve()
     assert np.allclose(u['g'], u_true)
 
 
-@pytest.mark.parametrize('Nphi', [8])
+@pytest.mark.parametrize('Nphi', [1, 8])
 @pytest.mark.parametrize('Nr', [8])
 @pytest.mark.parametrize('alpha', [0, 1])
 @pytest.mark.parametrize('dtype', dtype_range)
 @pytest.mark.parametrize('azimuth_coupling', disk_azimuth_coupling_range)
 def test_poisson_disk(Nr, Nphi, alpha, dtype, azimuth_coupling):
-    """Test Poisson equation with disk d3."""
+    """Test Poisson equation with disk basis."""
+    if Nphi == 1 and dtype == np.float64:
+        pytest.xfail("Nphi=1 not supported for real dtypes.")
     # Bases
     c, d, b, phi, r, x, y = build_disk(Nphi, Nr, radius=1.5, alpha=alpha, dealias=1, dtype=dtype)
-    xr = b.radius * np.cos(phi)
-    yr = b.radius * np.sin(phi)
     # Fields
     u = d.Field(bases=b)
     tau = d.Field(bases=b.edge)
-    u_true = x**3 - y**2
     f = d.Field(bases=b)
-    f['g'] = 6*x - 2
     g = d.Field(bases=b.edge)
-    g['g'] = xr**3 - yr**2
+    if Nphi == 1:
+        u_true = r**2 - 1
+        f['g'] = 4
+        g['g'] = b.radius**2 - 1
+    else:
+        xr = b.radius * np.cos(phi)
+        yr = b.radius * np.sin(phi)
+        u_true = x**3 - y**2
+        f['g'] = 6*x - 2
+        g['g'] = xr**3 - yr**2
     # Problem
     lift = lambda A: d3.Lift(A, b, -1)
     problem = d3.LBVP([u, tau], namespace=locals())
@@ -156,96 +190,111 @@ def test_poisson_disk(Nr, Nphi, alpha, dtype, azimuth_coupling):
     assert np.allclose(u['g'], u_true)
 
 
-@pytest.mark.parametrize('Nphi', [xfail_param(1, "Nphi=1 not supported yet in disk"), 4])
-@pytest.mark.parametrize('Nr', [8])
+@pytest.mark.parametrize('Nphi', [1, 12])
+@pytest.mark.parametrize('Nr', [6])
 @pytest.mark.parametrize('alpha', [0, 1])
 @pytest.mark.parametrize('dtype', dtype_range)
 @pytest.mark.parametrize('azimuth_coupling', disk_azimuth_coupling_range)
-def test_axisymmetric_vector_poisson_disk(Nr, Nphi, alpha, dtype, azimuth_coupling):
-    """Test axisymmetric vector Poisson equation with disk d3."""
+@pytest.mark.parametrize('component_bcs', [False, True])
+def test_vector_poisson_annulus(Nr, Nphi, alpha, dtype, azimuth_coupling, component_bcs):
+    """Test vector Poisson equation with annulus basis."""
+    if Nphi == 1 and dtype == np.float64:
+        pytest.xfail("Nphi=1 not supported for real dtypes.")
+    if component_bcs and dtype == np.float64:
+        pytest.xfail("Hermitian symmetry not fixed for polar coords")
     # Bases
-    c, d, b, phi, r, x, y = build_disk(Nphi, Nr, radius=1.5, alpha=alpha, dealias=1, dtype=dtype)
+    c, d, b, phi, r, x, y = build_annulus(Nphi, Nr, radii=(0.4, 1.5), alpha=alpha, dealias=1, dtype=dtype)
     # Fields
     u = d.VectorField(c, bases=b)
-    tau = d.VectorField(c, bases=b.edge)
-    u_true = np.zeros_like(u['g'])
-    u_true[1] = r**3
+    tau1 = d.VectorField(c, bases=b.outer_edge)
+    tau2 = d.VectorField(c, bases=b.outer_edge)
     f = d.VectorField(c, bases=b)
-    f['g'][1] = 8 * r
-    g = d.VectorField(c, bases=b.edge)
-    g['g'][1] = b.radius**3
+    g0 = d.VectorField(c, bases=b.inner_edge)
+    g1 = d.VectorField(c, bases=b.outer_edge)
+    if Nphi == 1:
+        u_true = np.zeros_like(u['g'])
+        u_true[1] = r**3
+        f['g'][1] = 8 * r
+        g0['g'][1] = b.radii[0]**3
+        g1['g'][1] = b.radii[1]**3
+    else:
+        ex = np.array([-np.sin(phi), np.cos(phi)])
+        ey = np.array([np.cos(phi), np.sin(phi)])
+        xr0 = b.radii[0] * np.cos(phi)
+        yr0 = b.radii[0] * np.sin(phi)
+        xr1 = b.radii[1] * np.cos(phi)
+        yr1 = b.radii[1] * np.sin(phi)
+        u_true = (x**2 + y**2)*ex + (x**3 + y)*ey
+        f['g'] = 4*ex + 6*x*ey
+        g0['g'] = (xr0**2 + yr0**2)*ex + (xr0**3 + yr0)*ey
+        g1['g'] = (xr1**2 + yr1**2)*ex + (xr1**3 + yr1)*ey
     # Problem
-    lift = lambda A: d3.Lift(A, b, -1)
-    problem = d3.LBVP([u, tau], namespace=locals())
-    problem.add_equation("lap(u) + lift(tau) = f")
-    problem.add_equation("u(r=b.radius) = g")
+    b2 = b.derivative_basis(2)
+    tau = d3.Lift(tau1, b2, -1) + d3.Lift(tau2, b2, -2)
+    problem = d3.LBVP([u, tau1, tau2], namespace=locals())
+    problem.add_equation("lap(u) + tau = f")
+    if component_bcs:
+        problem.add_equation("radial(u(r=b.radii[0])) = radial(g0)")
+        problem.add_equation("radial(u(r=b.radii[1])) = radial(g1)")
+        problem.add_equation("azimuthal(u(r=b.radii[0])) = azimuthal(g0)")
+        problem.add_equation("azimuthal(u(r=b.radii[1])) = azimuthal(g1)")
+    else:
+        problem.add_equation("u(r=b.radii[0]) = g0")
+        problem.add_equation("u(r=b.radii[1]) = g1")
     solver = problem.build_solver(matrix_coupling=[azimuth_coupling, True])
     solver.solve()
-    assert np.allclose(u['g'][1], u_true[1])
+    assert np.allclose(u['g'], u_true)
 
 
-@pytest.mark.parametrize('Nphi', [12])
-@pytest.mark.parametrize('Nr', [12])
+@pytest.mark.parametrize('Nphi', [1, 12])
+@pytest.mark.parametrize('Nr', [6])
 @pytest.mark.parametrize('alpha', [0, 1])
 @pytest.mark.parametrize('dtype', dtype_range)
 @pytest.mark.parametrize('azimuth_coupling', disk_azimuth_coupling_range)
-def test_vector_poisson_disk(Nr, Nphi, alpha, dtype, azimuth_coupling):
-    """Test vector Poisson equation with disk d3."""
+@pytest.mark.parametrize('component_bcs', [False, True])
+def test_vector_poisson_disk(Nr, Nphi, alpha, dtype, azimuth_coupling, component_bcs):
+    """Test vector Poisson equation with disk basis."""
+    if Nphi == 1 and dtype == np.float64:
+        pytest.xfail("Nphi=1 not supported for real dtypes.")
+    if component_bcs and dtype == np.float64:
+        pytest.xfail("Hermitian symmetry not fixed for polar coords")
     # Bases
     c, d, b, phi, r, x, y = build_disk(Nphi, Nr, radius=1.5, alpha=alpha, dealias=1, dtype=dtype)
-    ex = np.array([-np.sin(phi), np.cos(phi)])
-    ey = np.array([np.cos(phi), np.sin(phi)])
-    xr = b.radius * np.cos(phi)
-    yr = b.radius * np.sin(phi)
     # Fields
     u = d.VectorField(c, bases=b)
     tau = d.VectorField(c, bases=b.edge)
-    u_true = (x**2 + y**2)*ex + (x**3 + y)*ey
     f = d.VectorField(c, bases=b)
-    f['g'] = 4*ex + 6*x*ey
     g = d.VectorField(c, bases=b.edge)
-    g['g'] = (xr**2 + yr**2)*ex + (xr**3 + yr)*ey
+    if Nphi == 1:
+        u_true = np.zeros_like(u['g'])
+        u_true[1] = r**3
+        f = d.VectorField(c, bases=b)
+        f['g'][1] = 8 * r
+        g = d.VectorField(c, bases=b.edge)
+        g['g'][1] = b.radius**3
+    else:
+        ex = np.array([-np.sin(phi), np.cos(phi)])
+        ey = np.array([np.cos(phi), np.sin(phi)])
+        xr = b.radius * np.cos(phi)
+        yr = b.radius * np.sin(phi)
+        u_true = (x**2 + y**2)*ex + (x**3 + y)*ey
+        f['g'] = 4*ex + 6*x*ey
+        g['g'] = (xr**2 + yr**2)*ex + (xr**3 + yr)*ey
     # Problem
     lift = lambda A: d3.Lift(A, b, -1)
     problem = d3.LBVP([u, tau], namespace=locals())
     problem.add_equation("lap(u) + lift(tau) = f")
-    problem.add_equation("u(r=b.radius) = g")
+    if component_bcs:
+        problem.add_equation("radial(u(r=b.radius)) = radial(g)")
+        problem.add_equation("azimuthal(u(r=b.radius)) = azimuthal(g)")
+    else:
+        problem.add_equation("u(r=b.radius) = g")
     solver = problem.build_solver(matrix_coupling=[azimuth_coupling, True])
     solver.solve()
     assert np.allclose(u['g'], u_true)
 
 
-@pytest.mark.parametrize('Nphi', [12])
-@pytest.mark.parametrize('Nr', [12])
-@pytest.mark.parametrize('alpha', [0, 1])
-@pytest.mark.parametrize('dtype', [pytest.param(np.float64, marks=pytest.mark.xfail(reason="Hermitian symmetry not fixed for polar coords")),
-                                   np.complex128])
-@pytest.mark.parametrize('azimuth_coupling', disk_azimuth_coupling_range)
-def test_vector_poisson_disk_components(Nr, Nphi, alpha, dtype, azimuth_coupling):
-    """Test vector Poisson equation with disk basis and component-wise Dirichlet BCs."""
-    # Bases
-    c, d, b, phi, r, x, y = build_disk(Nphi, Nr, radius=1.5, alpha=alpha, dealias=1, dtype=dtype)
-    ex = np.array([-np.sin(phi), np.cos(phi)])
-    ey = np.array([np.cos(phi), np.sin(phi)])
-    xr = b.radius * np.cos(phi)
-    yr = b.radius * np.sin(phi)
-    # Fields
-    u = d.VectorField(c, bases=b)
-    tau = d.VectorField(c, bases=b.edge)
-    u_true = (x**2 + y**2)*ex + (x**3 + y)*ey
-    f = d.VectorField(c, bases=b)
-    f['g'] = 4*ex + 6*x*ey
-    g = d.VectorField(c, bases=b.edge)
-    g['g'] = (xr**2 + yr**2)*ex + (xr**3 + yr)*ey
-    # Problem
-    lift = lambda A: d3.Lift(A, b, -1)
-    problem = d3.LBVP([u, tau], namespace=locals())
-    problem.add_equation("lap(u) + lift(tau) = f")
-    problem.add_equation("radial(u(r=b.radius)) = radial(g)")
-    problem.add_equation("azimuthal(u(r=b.radius)) = azimuthal(g)")
-    solver = problem.build_solver(matrix_coupling=[azimuth_coupling, True])
-    solver.solve()
-    assert np.allclose(u['g'], u_true)
+## stopped cleanup
 
 
 radius_ball = 1

@@ -8,6 +8,7 @@ import pathlib
 import scipy.linalg
 
 from . import subsystems
+from . import timesteppers
 from .evaluator import Evaluator
 from ..libraries.matsolvers import matsolvers
 from ..tools.config import config
@@ -483,7 +484,7 @@ class InitialValueSolver(SolverBase):
     ----------
     problem : Problem object
         Dedalus problem.
-    timestepper : Timestepper class
+    timestepper : Timestepper class or str
         Timestepper to use in evolving initial conditions.
     enforce_real_cadence : int, optional
         Iteration cadence for enforcing Hermitian symmetry on real variables (default: 100).
@@ -535,6 +536,8 @@ class InitialValueSolver(SolverBase):
         F_handler.build_system()
         self.F = F_handler.fields
         # Initialize timestepper
+        if isinstance(timestepper, str):
+            timestepper = timesteppers.schemes[timestepper]
         self.timestepper = timestepper(self)
         # Attributes
         self.sim_time = self.initial_sim_time = problem.time.allreduce_data_max(layout='g')

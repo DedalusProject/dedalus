@@ -1,49 +1,49 @@
+"""Test simple NLBVPs."""
 
 import pytest
 import numpy as np
-import functools
-from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
+import dedalus.public as d3
 from dedalus.tools.cache import CachedFunction
 
 
-@pytest.mark.parametrize('Nx', [16])
-@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('N', [12])
+@pytest.mark.parametrize('a, b', [(-1/2, -1/2), (0, 0)])
 @pytest.mark.parametrize('dealias', [1, 1.5])
-@pytest.mark.parametrize('basis_class', [basis.ChebyshevT, basis.Legendre])
-def test_sin_nlbvp(Nx, dtype, dealias, basis_class):
-    ncc_cutoff = 1e-10
-    tolerance = 1e-10
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_sin_jacobi(N, a, b, dealias, dtype):
+    """Test finding sine function using Jacobi."""
+    ncc_cutoff = 1e-6
+    tolerance = 1e-6
     # Bases
-    c = coords.Coordinate('x')
-    d = distributor.Distributor((c,))
-    xb = basis_class(c, size=Nx, bounds=(0, 1), dealias=dealias)
-    x = xb.local_grid(1)
+    c = d3.Coordinate('x')
+    d = d3.Distributor(c, dtype=dtype)
+    b = d3.Jacobi(c, size=N, bounds=(0, 1), a=a, b=b, dealias=dealias)
+    x = b.local_grid(1)
     # Fields
-    u = field.Field(name='u', dist=d, bases=(xb,), dtype=dtype)
-    τ = field.Field(name='τ', dist=d, dtype=dtype)
-    xb1 = xb.clone_with(a=xb.a+1, b=xb.b+1)
-    P = field.Field(name='P', dist=d, bases=(xb1,), dtype=dtype)
-    P['c'][-1] = 1
+    u = d.Field(bases=b)
+    tau = d.Field()
     # Problem
-    dx = lambda A: operators.Differentiate(A, c)
-    problem = problems.NLBVP([u, τ])
-    problem.add_equation((dx(u) + τ*P, np.sqrt(1-u*u)))
-    problem.add_equation((u(x=0), 0))
-    # Solver
-    solver = solvers.NonlinearBoundaryValueSolver(problem, ncc_cutoff=ncc_cutoff)
-    # Initial guess
-    u['g'] = x
-    # Iterations
-    def error(perts):
-        return np.sum([np.sum(np.abs(pert['c'])) for pert in perts])
-    err = np.inf
-    while err > tolerance:
+    dx = lambda A: d3.Differentiate(A, c)
+    lift = lambda A: d3.Lift(A, b.derivative_basis(1), -1)
+    problem = d3.NLBVP([u, tau], namespace=locals())
+    problem.add_equation("dx(u)**2 + u**2 + lift(tau) = 1")
+    problem.add_equation("u(x=0) = 1")
+    solver = problem.build_solver(ncc_cutoff=ncc_cutoff)
+    u['g'] = 1 - x / 2
+    error = np.inf
+    while error > tolerance:
         solver.newton_iteration()
-        err = error(solver.perturbations)
+        error = sum(pert.allreduce_data_norm('c', 2) for pert in solver.perturbations)
+        print(error)
+        if solver.iteration > 20:
+            assert False
     # Check solution
-    u_true = np.sin(x)
+    u_true = np.cos(x)
     u.change_scales(1)
     assert np.allclose(u['g'], u_true)
+
+
+## stopped cleanup
 
 
 @pytest.mark.parametrize('Nr', [16])
@@ -54,24 +54,24 @@ def test_heat_ball_nlbvp(Nr, dtype, dealias):
     ncc_cutoff = 1e-10
     tolerance = 1e-10
     # Bases
-    c = coords.SphericalCoordinates('phi', 'theta', 'r')
-    d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (1, 1, Nr), radius=radius, dtype=dtype, dealias=dealias)
+    c = d3.SphericalCoordinates('phi', 'theta', 'r')
+    d = d3.Distributor((c,))
+    b = d3.BallBasis(c, (1, 1, Nr), radius=radius, dtype=dtype, dealias=dealias)
     bs = b.S2_basis(radius=radius)
     phi, theta, r = b.local_grids((1, 1, 1))
     # Fields
-    u = field.Field(name='u', dist=d, bases=(b,), dtype=dtype)
-    τ = field.Field(name='τ', dist=d, bases=(bs,), dtype=dtype)
-    F = field.Field(name='F', dist=d, bases=(b,), dtype=dtype) # todo: make this constant
+    u = d3.Field(name='u', dist=d, bases=(b,), dtype=dtype)
+    τ = d3.Field(name='τ', dist=d, bases=(bs,), dtype=dtype)
+    F = d3.Field(name='F', dist=d, bases=(b,), dtype=dtype) # todo: make this constant
     F['g'] = 6
     # Problem
-    Lap = lambda A: operators.Laplacian(A, c)
-    Lift = lambda A: operators.Lift(A, b, -1)
-    problem = problems.NLBVP([u, τ])
+    Lap = lambda A: d3.Laplacian(A, c)
+    Lift = lambda A: d3.Lift(A, b, -1)
+    problem = d3.NLBVP([u, τ])
     problem.add_equation((Lap(u) + Lift(τ), F))
     problem.add_equation((u(r=radius), 0))
     # Solver
-    solver = solvers.NonlinearBoundaryValueSolver(problem, ncc_cutoff=ncc_cutoff)
+    solver = problem.build_solver(ncc_cutoff=ncc_cutoff)
     # Initial guess
     u['g'] = 1
     # Iterations
@@ -85,7 +85,6 @@ def test_heat_ball_nlbvp(Nr, dtype, dealias):
     u.change_scales(1)
     assert np.allclose(u['g'], u_true)
 
-
 @pytest.mark.parametrize('Nr', [32])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 @pytest.mark.parametrize('dealias', [1, 1.5])
@@ -94,22 +93,22 @@ def test_lane_emden_floating_amp(Nr, dtype, dealias):
     ncc_cutoff = 1e-10
     tolerance = 1e-10
     # Bases
-    c = coords.SphericalCoordinates('phi', 'theta', 'r')
-    d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (1, 1, Nr), radius=1, dtype=dtype, dealias=dealias)
+    c = d3.SphericalCoordinates('phi', 'theta', 'r')
+    d = d3.Distributor((c,))
+    b = d3.BallBasis(c, (1, 1, Nr), radius=1, dtype=dtype, dealias=dealias)
     bs = b.S2_basis(radius=1)
     phi, theta, r = b.local_grids((1, 1, 1))
     # Fields
-    f = field.Field(dist=d, bases=(b,), dtype=dtype, name='f')
-    τ = field.Field(dist=d, bases=(bs,), dtype=dtype, name='τ')
+    f = d3.Field(dist=d, bases=(b,), dtype=dtype, name='f')
+    τ = d3.Field(dist=d, bases=(bs,), dtype=dtype, name='τ')
     # Problem
-    lap = lambda A: operators.Laplacian(A, c)
-    Lift = lambda A: operators.Lift(A, b, -1)
-    problem = problems.NLBVP([f, τ])
+    lap = lambda A: d3.Laplacian(A, c)
+    Lift = lambda A: d3.Lift(A, b, -1)
+    problem = d3.NLBVP([f, τ])
     problem.add_equation((lap(f) + Lift(τ), -f**n))
     problem.add_equation((f(r=1), 0))
     # Solver
-    solver = solvers.NonlinearBoundaryValueSolver(problem, ncc_cutoff=ncc_cutoff)
+    solver = problem.build_solver(ncc_cutoff=ncc_cutoff)
     # Initial guess
     f['g'] = 5 * np.cos(np.pi/2 * r)**2
     # Iterations
@@ -136,38 +135,35 @@ def test_lane_emden_floating_amp(Nr, dtype, dealias):
     assert np.allclose(R, R_ref[n])
 
 
-@pytest.mark.xfail(reason="Doesnt work, don't know why", run=False)
 @pytest.mark.parametrize('Nr', [32])
-@pytest.mark.parametrize('dtype', [np.complex128,
-    pytest.param(np.float64, marks=pytest.mark.xfail(reason="floats and constants still dont play nice"))])
-#@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 @pytest.mark.parametrize('dealias', [1, 1.5])
 def test_lane_emden_floating_R(Nr, dtype, dealias):
     n = 3.0
     ncc_cutoff = 1e-10
     tolerance = 1e-10
     # Bases
-    c = coords.SphericalCoordinates('phi', 'theta', 'r')
-    d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (1, 1, Nr), radius=1, dtype=dtype, dealias=dealias)
+    c = d3.SphericalCoordinates('phi', 'theta', 'r')
+    d = d3.Distributor((c,))
+    b = d3.BallBasis(c, (1, 1, Nr), radius=1, dtype=dtype, dealias=dealias)
     bs = b.S2_basis(radius=1)
     bs0 = b.S2_basis(radius=0)
     phi, theta, r = b.local_grids((1, 1, 1))
     # Fields
-    f = field.Field(dist=d, bases=(b,), dtype=dtype, name='f')
-    R = field.Field(dist=d, dtype=dtype, name='R')
-    τ = field.Field(dist=d, bases=(bs,), dtype=dtype, name='τ')
-    one = field.Field(dist=d, bases=(bs0,), dtype=dtype)
+    f = d3.Field(dist=d, bases=(b,), dtype=dtype, name='f')
+    R = d3.Field(dist=d, dtype=dtype, name='R')
+    τ = d3.Field(dist=d, bases=(bs,), dtype=dtype, name='τ')
+    one = d3.Field(dist=d, bases=(bs0,), dtype=dtype)
     one['g'] = 1
     # Problem
-    lap = lambda A: operators.Laplacian(A, c)
-    Lift = lambda A: operators.Lift(A, b, -1)
-    problem = problems.NLBVP([f, R, τ])
+    lap = lambda A: d3.Laplacian(A, c)
+    Lift = lambda A: d3.Lift(A, b, -1)
+    problem = d3.NLBVP([f, R, τ])
     problem.add_equation((lap(f) + Lift(τ), - R**2 * f**n))
     problem.add_equation((f(r=0), one))
     problem.add_equation((f(r=1), 0))
     # Solver
-    solver = solvers.NonlinearBoundaryValueSolver(problem, ncc_cutoff=ncc_cutoff)
+    solver = problem.build_solver(ncc_cutoff=ncc_cutoff)
     # Initial guess
     f['g'] = np.cos(np.pi/2 * r)**2
     R['g'] = 5
@@ -204,27 +200,27 @@ def test_lane_emden_first_order(Nr, dtype, dealias):
     ncc_cutoff = 1e-10
     tolerance = 1e-10
     # Bases
-    c = coords.SphericalCoordinates('phi', 'theta', 'r')
-    d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (1, 1, Nr), radius=1, dtype=dtype, dealias=dealias)
+    c = d3.SphericalCoordinates('phi', 'theta', 'r')
+    d = d3.Distributor((c,))
+    b = d3.BallBasis(c, (1, 1, Nr), radius=1, dtype=dtype, dealias=dealias)
     br = b.radial_basis
     phi, theta, r = b.local_grids((1, 1, 1))
     # Fields
-    p = field.Field(dist=d, bases=(br,), dtype=dtype, name='p')
-    ρ = field.Field(dist=d, bases=(br,), dtype=dtype, name='ρ')
-    φ = field.Field(dist=d, bases=(br,), dtype=dtype, name='φ')
-    τ = field.Field(dist=d, dtype=dtype, name='τ')
-    τ2 = field.Field(dist=d, dtype=dtype, name='τ2')
-    rf = field.Field(dist=d, bases=(br,), tensorsig=(c,), dtype=dtype, name='r')
+    p = d3.Field(dist=d, bases=(br,), dtype=dtype, name='p')
+    ρ = d3.Field(dist=d, bases=(br,), dtype=dtype, name='ρ')
+    φ = d3.Field(dist=d, bases=(br,), dtype=dtype, name='φ')
+    τ = d3.Field(dist=d, dtype=dtype, name='τ')
+    τ2 = d3.Field(dist=d, dtype=dtype, name='τ2')
+    rf = d3.Field(dist=d, bases=(br,), tensorsig=(c,), dtype=dtype, name='r')
     rf['g'][2] = r
     # Problem
-    lap = lambda A: operators.Laplacian(A, c)
-    grad = lambda A: operators.Gradient(A, c)
-    div = lambda A: operators.Divergence(A)
-    Lift = lambda A: operators.Lift(A, br, -1)
-    dot = lambda A, B: arithmetic.DotProduct(A, B)
+    lap = lambda A: d3.Laplacian(A, c)
+    grad = lambda A: d3.Gradient(A, c)
+    div = lambda A: d3.Divergence(A)
+    Lift = lambda A: d3.Lift(A, br, -1)
+    dot = lambda A, B: d3.DotProduct(A, B)
     rdr = lambda A: dot(rf, grad(A))
-    problem = problems.NLBVP([p, ρ, φ, τ, τ2])
+    problem = d3.NLBVP([p, ρ, φ, τ, τ2])
     problem.add_equation((p, ρ**(1+1/n)))
     problem.add_equation((lap(φ) + Lift(τ), ρ))
     problem.add_equation((φ(r=1), 0))
@@ -246,7 +242,7 @@ def test_lane_emden_first_order(Nr, dtype, dealias):
     # problem.add_equation((p(r=1), 0))
 
     # Solver
-    solver = solvers.NonlinearBoundaryValueSolver(problem, ncc_cutoff=ncc_cutoff)
+    solver = problem.build_solver(ncc_cutoff=ncc_cutoff)
     # Initial guess
     #φ['g'] = - 55 *  np.cos(np.pi/2 * r)
     #φ['g'] = - 50 *  (1 - r) * (1 + r)
