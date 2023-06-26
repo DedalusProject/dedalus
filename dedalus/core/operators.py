@@ -565,7 +565,7 @@ class UnaryGridFunction(NonlinearOperator, FutureField):
                     np.arctan: lambda x: (1 + x**2)**(-1),
                     np.sinh: lambda x: np.cosh(x),
                     np.cosh: lambda x: np.sinh(x),
-                    np.tanh: lambda x: np.cosh(x)**(-2),
+                    np.tanh: lambda x: 1-np.tanh(x)**2,
                     np.arcsinh: lambda x: (x**2 + 1)**(-1/2),
                     np.arccosh: lambda x: (x**2 - 1)**(-1/2),
                     np.arctanh: lambda x: (1 - x**2)**(-1)}
