@@ -1,4 +1,5 @@
 """Test spherical Clenshaw functions."""
+# TODO: add tests for regular Jacobi Clenshaw
 
 import pytest
 import numpy as np

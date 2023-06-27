@@ -1,4 +1,5 @@
 """Test Cartesian skew, trace, transpose, curl."""
+# TODO: add tests for other vector calculus operators, or split off cartesian_calculus.py
 
 import pytest
 import numpy as np

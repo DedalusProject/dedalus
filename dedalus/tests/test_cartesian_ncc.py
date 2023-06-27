@@ -1,4 +1,5 @@
 """Test Fourier and Jacobi NCCs."""
+# TODO: add tests inovlving constant NCCs/operands
 
 import pytest
 import numpy as np

@@ -1,4 +1,5 @@
-"""Test 1D EVPs."""
+"""Test simple EVPs."""
+# TODO: add 2d tests - FC?
 
 import pytest
 import numpy as np

@@ -1,4 +1,5 @@
 """Test simple LBVPs."""
+# TODO: finish cleanup, add sphere tests, and split off NCC tests
 
 import pytest
 import numpy as np
