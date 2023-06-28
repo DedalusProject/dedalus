@@ -6,6 +6,7 @@ Abstract and built-in classes defining deferred operations on fields.
 from collections import defaultdict
 from functools import partial, reduce
 import numpy as np
+import scipy.special as scp
 from scipy import sparse
 from numbers import Number
 from inspect import isclass
@@ -510,6 +511,7 @@ class UnaryGridFunction(NonlinearOperator, FutureField):
          np.log, np.log2, np.log10, np.log1p, np.sqrt, np.square,
          np.sin, np.cos, np.tan, np.arcsin, np.arccos, np.arctan,
          np.sinh, np.cosh, np.tanh, np.arcsinh, np.arccosh, np.arctanh,
+         scp.erf
          )}
     aliased = {'abs':np.absolute, 'conj':np.conjugate}
     # Add ufuncs and shortcuts to parseables
@@ -568,7 +570,8 @@ class UnaryGridFunction(NonlinearOperator, FutureField):
                     np.tanh: lambda x: 1-np.tanh(x)**2,
                     np.arcsinh: lambda x: (x**2 + 1)**(-1/2),
                     np.arccosh: lambda x: (x**2 - 1)**(-1/2),
-                    np.arctanh: lambda x: (1 - x**2)**(-1)}
+                    np.arctanh: lambda x: (1 - x**2)**(-1),
+                    scp.erf: lambda x: 2*(np.pi)**(-1/2)*np.exp(-x**2)}
         arg = self.args[0]
         arg_diff = arg.sym_diff(var)
         return diff_map[self.func](arg) * arg_diff
