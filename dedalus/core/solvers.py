@@ -17,7 +17,7 @@ from . import timesteppers
 from .evaluator import Evaluator
 from ..libraries.matsolvers import matsolvers
 from ..tools.config import config
-from ..tools.array import scipy_sparse_eigs
+from ..tools.array import scipy_sparse_eigs, scipy_sparse_eigs_adj
 from ..tools.parallel import ProfileWrapper, parallel_mkdir
 
 PROFILE_DEFAULT = config['profiling'].getboolean('PROFILE_DEFAULT')
@@ -619,7 +619,7 @@ class NonlinearBoundaryValueSolver(SolverBase):
         for sp in self.subproblems:
             n_ss = len(sp.subsystems)
             # Gather (contains adjoint right-precondition)
-            X = sp.gather_inputs(self.state_adj) 
+            X = sp.gather_inputs(self.state_adj)
             # Solve
             sp_matsolver = self.matsolver(np.conj(sp.dF_min).T, self)
             pX = - sp_matsolver.solve(X)
