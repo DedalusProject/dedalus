@@ -136,6 +136,7 @@ class _SuperluFactorizedBase(SparseSolver):
     def __init__(self, matrix, solver=None):
         if self.trans == "T":
             matrix = matrix.T
+            self.trans_adjoint = "N"
         elif self.trans == "H":
             matrix = matrix.conj().T
         self.LU = spla.splu(matrix.tocsc(),
