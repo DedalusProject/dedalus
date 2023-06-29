@@ -28,58 +28,51 @@ import dedalus.public as d3
 import logging
 logger = logging.getLogger(__name__)
 
-first_order_form = False
 
 def max_growth_rate(Rayleigh, Prandtl, kx, Nz, NEV=10, target=0):
     """Compute maximum linear growth rate."""
 
     # Parameters
     Lz = 1
+    # Build Fourier basis for x with prescribed kx as the fundamental mode
+    Nx = 2
+    Lx = 2 * np.pi / kx
 
     # Bases
     coords = d3.CartesianCoordinates('x', 'z')
     dist = d3.Distributor(coords, dtype=np.complex128, comm=MPI.COMM_SELF)
+    xbasis = d3.ComplexFourier(coords['x'], size=Nx, bounds=(0, Lx))
     zbasis = d3.ChebyshevT(coords['z'], size=Nz, bounds=(0, Lz))
 
     # Fields
     omega = dist.Field(name='omega')
-    p = dist.Field(name='p', bases=zbasis)
-    b = dist.Field(name='b', bases=zbasis)
-    u = dist.VectorField(coords, name='u', bases=zbasis)
+    p = dist.Field(name='p', bases=(xbasis,zbasis))
+    b = dist.Field(name='b', bases=(xbasis,zbasis))
+    u = dist.VectorField(coords, name='u', bases=(xbasis,zbasis))
     tau_p = dist.Field(name='tau_p')
-    tau_b1 = dist.Field(name='tau_b1')
-    tau_b2 = dist.Field(name='tau_b2')
-    tau_u1 = dist.VectorField(coords, name='tau_u1')
-    tau_u2 = dist.VectorField(coords, name='tau_u2')
+    tau_b1 = dist.Field(name='tau_b1', bases=xbasis)
+    tau_b2 = dist.Field(name='tau_b2', bases=xbasis)
+    tau_u1 = dist.VectorField(coords, name='tau_u1', bases=xbasis)
+    tau_u2 = dist.VectorField(coords, name='tau_u2', bases=xbasis)
 
     # Substitutions
     kappa = (Rayleigh * Prandtl)**(-1/2)
     nu = (Rayleigh / Prandtl)**(-1/2)
-    z = zbasis.local_grid(1)
+    x, z = dist.local_grids(xbasis, zbasis)
     ex, ez = coords.unit_vector_fields(dist)
     lift_basis = zbasis.derivative_basis(1)
     lift = lambda A: d3.Lift(A, lift_basis, -1)
-    lift2 = lambda A: d3.Lift(A, lift_basis, -2)
-    dx = lambda A: 1j*kx*A
-    grad = lambda A: d3.grad(A) + ex*dx(A)
-    div = lambda A: d3.div(A) + dx(ex@A)
-    lap = lambda A: d3.lap(A) + dx(dx(A))
-    grad_u = grad(u) + ez*lift(tau_u1) # First-order reduction
-    grad_b = grad(b) + ez*lift(tau_b1) # First-order reduction
+    grad_u = d3.grad(u) + ez*lift(tau_u1) # First-order reduction
+    grad_b = d3.grad(b) + ez*lift(tau_b1) # First-order reduction
     dt = lambda A: -1j*omega*A
 
     # Problem
     # First-order form: "div(f)" becomes "trace(grad_f)"
     # First-order form: "lap(f)" becomes "div(grad_f)"
     problem = d3.EVP([p, b, u, tau_p, tau_b1, tau_b2, tau_u1, tau_u2], namespace=locals(), eigenvalue=omega)
-    if first_order_form:
-        problem.add_equation("trace(grad_u) + tau_p = 0")
-        problem.add_equation("dt(b) - kappa*div(grad_b) + lift(tau_b2) - ez@u = 0")
-        problem.add_equation("dt(u) - nu*div(grad_u) + grad(p) - b*ez + lift(tau_u2) = 0")
-    else:
-        problem.add_equation("div(u) + tau_p = 0")
-        problem.add_equation("dt(b) - kappa*lap(b) + lift2(tau_b2) + lift(tau_b1) - ez@u = 0")
-        problem.add_equation("dt(u) - nu*lap(u) + grad(p) - b*ez + lift2(tau_u2) + lift(tau_u1)  = 0")
+    problem.add_equation("trace(grad_u) + tau_p = 0")
+    problem.add_equation("dt(b) - kappa*div(grad_b) + lift(tau_b2) - ez@u = 0")
+    problem.add_equation("dt(u) - nu*div(grad_u) + grad(p) - b*ez + lift(tau_u2) = 0")
     problem.add_equation("b(z=0) = 0")
     problem.add_equation("u(z=0) = 0")
     problem.add_equation("b(z=Lz) = 0")
@@ -88,7 +81,7 @@ def max_growth_rate(Rayleigh, Prandtl, kx, Nz, NEV=10, target=0):
 
     # Solver
     solver = problem.build_solver(entry_cutoff=0)
-    solver.solve_sparse(solver.subproblems[0], NEV, target=target)
+    solver.solve_sparse(solver.subproblems[1], NEV, target=target)
     return np.max(solver.eigenvalues.imag)
 
 
