@@ -4290,7 +4290,6 @@ class Spherical3DBasis(MultidimensionalBasis):
                 radius = self.radius
             else:
                 radius = max(self.radii)
-        print(self, radius)
         return SphereBasis(self.coordsystem, self.shape[:2], self.dtype, radius=radius, dealias=self.dealias[:2],
                     azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library)
 
