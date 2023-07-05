@@ -133,7 +133,7 @@ Here we'll take :math:`P(y)` to be the highest mode in the Chebyshev-U basis, in
     # Substitutions
     ex, ey = coords.unit_vector_fields(dist)
     lift_basis = ybasis.derivative_basis(1) # Chebyshev U basis
-    lift = lambda A, n: d3.Lift(A, lift_basis, -1) # Shortcut for multiplying by U_{N-1}(y)
+    lift = lambda A: d3.Lift(A, lift_basis, -1) # Shortcut for multiplying by U_{N-1}(y)
     grad_u = d3.grad(u) - ey*lift(tau_u1) # Operator representing G
 
 We can then create a problem and enter the tau-modified PDEs, boundary condtions, and pressure gauge in vectorial form using these substitutions.
@@ -177,7 +177,7 @@ We've found that using tau polynomials from the original bases seems to give goo
 .. code-block:: python
 
     # Substitutions
-    lift = lambda A, n: d3.Lift(A, disk_basis, -1)
+    lift = lambda A: d3.Lift(A, disk_basis, -1)
 
 Now we can enter the PDE with just the single tau term in the momentum equation:
 
