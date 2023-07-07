@@ -864,7 +864,6 @@ class FourierBase(IntervalBasis):
         self.dealias = dealias
         self.library = library
         # Other attributes
-        self.kmax = kmax = (size - 1) // 2
         self.constant_mode_value = 1
         # No permutations by default
         self.forward_coeff_permutation = None
@@ -975,9 +974,15 @@ class ComplexFourier(FourierBase, metaclass=CachedClass):
 
     @CachedAttribute
     def _native_wavenumbers(self):
-        # Includes Nyquist mode
-        kmax = self.kmax
-        return np.concatenate((np.arange(0, kmax+2), np.arange(-kmax, 0)))
+        kmax = self.size // 2
+        if self.size % 2:
+            # Odd size
+            # [0, 1, ..., kmax, -kmax, ..., -1]
+            return np.concatenate((np.arange(0, kmax+1), np.arange(-kmax, 0)))
+        else:
+            # Even size, include Nyquist mode
+            # [0, 1, ..., kmax, 1-kmax, ..., -1]
+            return np.concatenate((np.arange(0, kmax+1), np.arange(1-kmax, 0)))
 
     def valid_elements(self, tensorsig, grid_space, elements):
         vshape = tuple(cs.dim for cs in tensorsig) + elements[0].shape
@@ -1125,7 +1130,7 @@ class RealFourier(FourierBase, metaclass=CachedClass):
     @CachedAttribute
     def _native_wavenumbers(self):
         # Excludes Nyquist mode
-        kmax = self.kmax
+        kmax = (self.size - 1) // 2
         return np.repeat(np.arange(0, kmax+1), 2)
 
     def valid_elements(self, tensorsig, grid_space, elements):
