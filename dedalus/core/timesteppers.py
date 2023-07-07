@@ -165,7 +165,7 @@ class MultistepIMEX:
                     sp.LHS = (a0*sp.M_min + b0*sp.L_min) @ sp.pre_right  # CREATES TEMPORARY
                 sp.LHS_solver = solver.matsolver(sp.LHS, solver)
             # Slice out valid subdata, skipping invalid components
-            spRHS = RHS.get_subdata(sp)[:sp.LHS.shape[0]]
+            spRHS = RHS.get_subdata(sp)
             spX = sp.LHS_solver.solve(spRHS)  # CREATES TEMPORARY
             # Make output buffer including invalid components for scatter
             spX2 = np.zeros((sp.pre_right.shape[0], len(sp.subsystems)), dtype=spX.dtype)  # CREATES TEMPORARY
@@ -625,7 +625,7 @@ class RungeKuttaIMEX:
                         sp.LHS = (sp.M_min + (k*H[i,i])*sp.L_min) @ sp.pre_right  # CREATES TEMPORARY
                     sp.LHS_solvers[i] = solver.matsolver(sp.LHS, solver)
                 # Slice out valid subdata, skipping invalid components
-                spRHS = RHS.get_subdata(sp)[:sp.LHS.shape[0]]
+                spRHS = RHS.get_subdata(sp)
                 spX = sp.LHS_solvers[i].solve(spRHS)  # CREATES TEMPORARY
                 # Make output buffer including invalid components for scatter
                 spX2 = np.zeros((sp.pre_right.shape[0], len(sp.subsystems)), dtype=spX.dtype)  # CREATES TEMPORARY
