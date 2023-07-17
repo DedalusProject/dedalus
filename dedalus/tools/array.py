@@ -477,13 +477,21 @@ def scipy_sparse_eigs_adj(A, B, N, target, matsolver, **kw):
     solver = matsolver(C)
     def matvec(x):
         return solver.solve(B.dot(x))
-    def rmatvec(x):
-        return B.H.dot(solver.solve_adjoint(x))
-    D = spla.LinearOperator(dtype=A.dtype, shape=A.shape, matvec=matvec, rmatvec=rmatvec)
+    
+    D = spla.LinearOperator(dtype=A.dtype, shape=A.shape, matvec=matvec)
+
+    # Build sparse linear operator representing (A^H - σB^H)^I B^H = C^-H B^H = D_adj
+    # Note: D_adj is not equal to D^H
+
+    def matvec_adj(x):
+        return solver.solve_adjoint(B.H.dot(x))
+
+    D_adj = spla.LinearOperator(dtype=A.dtype, shape=A.shape, matvec=matvec_adj)
+
     # Solve using scipy sparse algorithm
     evals, evecs = spla.eigs(D, k=N, which='LM', sigma=None, **kw)
-    evals_adjoint, evecs_adjoint = spla.eigs(D.H, k=N, which='LM', sigma=None, **kw)
-    print('M',evals,evals_adjoint)
+    evals_adjoint, evecs_adjoint = spla.eigs(D_adj, k=N, which='LM', sigma=None, **kw)
+
     # Rectify eigenvalues
     evals = 1 / evals + target
     evals_adjoint = 1 / evals_adjoint + np.conj(target)
