@@ -5302,6 +5302,35 @@ class PolarAzimuthalAverage(AzimuthalAverage, operators.Average, operators.Polar
             return sparse.csr_matrix((0, n_size), dtype=self.dtype)
 
 
+class SphereAzimuthalAverage(AzimuthalAverage, operators.Average, operators.SpectralOperator):
+
+    input_basis_type = (SphereBasis,)
+    subaxis_dependence = [True, False]  # Depends on m only
+    subaxis_coupling = [False, False]  # No coupling
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        # Set output layout
+        layout = operand.layout
+        out.preset_layout(layout)
+        out.data[:] = 0
+        # Apply operator
+        azimuth_axis = self.input_basis.first_axis
+        domain_in = self.operand.domain
+        domain_out = self.domain
+        groups_in = layout.local_group_arrays(domain_in, scales=domain_in.dealias)
+        groups_out = layout.local_group_arrays(domain_out, scales=domain_out.dealias)
+        m0_in = (groups_in[azimuth_axis] == 0)
+        m0_out = (groups_out[azimuth_axis] == 0)
+        spincomps = self.input_basis.spin_weights(operand.tensorsig)
+        # Copy m = 0 for every component
+        for spinindex, spintotal in np.ndenumerate(spincomps):
+            comp_in = operand.data[spinindex]
+            comp_out = out.data[spinindex]
+            comp_out[m0_out] = comp_in[m0_in]
+
+
 class SphericalAzimuthalAverage(AzimuthalAverage, operators.Average, operators.SpectralOperator):
 
     input_basis_type = (BallBasis, ShellBasis)
