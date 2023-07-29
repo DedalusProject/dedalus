@@ -107,14 +107,19 @@ def get_version(rel_path):
     else:
         raise RuntimeError("Unable to find version string.")
 
-# C-dependency paths for extension compilation and linking
-include_dirs = ['dedalus/libraries/fftw/',
+def filter_none(l):
+   return [d for d in l if d is not None]
+
+# C-dependency paths for extension compilation and linking. Note that cythonize will later throw errors if any of the entries below turn out to be None.
+include_dirs = filter_none([
+                'dedalus/libraries/fftw/',
                 np.get_include(),
                 mpi4py.get_include(),
                 get_include('mpi'),
-                get_include('fftw')]
+                get_include('fftw'),
+                ])
 libraries = ['fftw3_mpi', 'fftw3', 'm']
-library_dirs = [get_lib('fftw'), get_lib('mpi')]
+library_dirs = filter_none([get_lib('fftw'), get_lib('mpi')])
 
 # Warning supression
 extra_compile_args = ["-DNPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION",
