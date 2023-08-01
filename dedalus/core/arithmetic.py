@@ -427,9 +427,8 @@ class Product(Future):
             Gamma = self.GammaCoord(arg.tensorsig, ncc.tensorsig, out.tensorsig)
             Gamma = Gamma.transpose((2, 0, 1))
         # Loop over NCC modes
-        data = []
-        rows = []
-        cols = []
+        shape = (subproblem.field_size(out), subproblem.field_size(arg))
+        matrix = sparse.csr_matrix(shape, dtype=self.dtype)
         subproblem_shape = subproblem.coeff_shape(out.domain)
         ncc_rank = len(ncc.tensorsig)
         select_all_comps = tuple(slice(None) for i in range(ncc_rank))
@@ -438,22 +437,8 @@ class Product(Future):
                 ncc_coeffs = self._ncc_data[select_all_comps + ncc_mode]
                 if np.max(np.abs(ncc_coeffs)) > ncc_cutoff:
                     mode_matrix = self.cartesian_mode_matrix(subproblem_shape, ncc.domain, arg.domain, out.domain, ncc_mode)
-                    matrix = sparse.kron(np.dot(Gamma, ncc_coeffs.ravel()), mode_matrix, format='coo')
-                    shape = matrix.shape
-                    data.append(matrix.data)
-                    rows.append(matrix.row)
-                    cols.append(matrix.col)
-            if data:
-                data = np.concatenate(data)
-                rows = np.concatenate(rows)
-                cols = np.concatenate(cols)
-                matrix = sparse.coo_matrix((data, (rows, cols)), shape=shape).tocsr()
-            else:
-                shape = (subproblem.field_size(out), subproblem.field_size(arg))
-                matrix = sparse.csr_matrix(shape, dtype=self.dtype)
-        else:
-            shape = (subproblem.field_size(out), subproblem.field_size(arg))
-            matrix = sparse.csr_matrix(shape, dtype=self.dtype)
+                    mode_matrix = sparse.kron(np.dot(Gamma, ncc_coeffs.ravel()), mode_matrix, format='csr')
+                    matrix = matrix + mode_matrix
         return matrix
 
     @classmethod
