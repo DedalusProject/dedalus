@@ -51,7 +51,7 @@ class DimWrapper:
             return self.dist.local_modes(self.basis).ravel()
 
 
-def plot_bot(dset, image_axes, data_slices, image_scales=(0,0), clim=None, even_scale=False, cmap='RdBu_r', axes=None, figkw={}, title=None, func=None, visible_axes=True):
+def plot_bot(dset, image_axes, data_slices, image_scales=(0,0), clim=None, even_scale=False, cmap='RdBu_r', axes=None, figkw={}, title=None, func=None, visible_axes=True, reorder=True):
     """
     Plot a 2d slice of the grid data of a dset/field.
 
@@ -81,6 +81,8 @@ def plot_bot(dset, image_axes, data_slices, image_scales=(0,0), clim=None, even_
         Function to apply to selected meshes and data before plotting (default: None)
     visible_axes : bool, optional
         Set to false to remove x and y ticks, ticklabels, and labels
+    reorder : bool, optional
+        Reorder grids in ascending order before plotting
 
     """
 
@@ -93,7 +95,7 @@ def plot_bot(dset, image_axes, data_slices, image_scales=(0,0), clim=None, even_
     xscale, yscale = image_scales
 
     # Get meshes and data
-    xmesh, ymesh, data = get_plane(dset, xaxis, yaxis, data_slices, xscale, yscale)
+    xmesh, ymesh, data = get_plane(dset, xaxis, yaxis, data_slices, xscale, yscale, reorder)
     if func is not None:
         xmesh, ymesh, data = func(xmesh, ymesh, data)
 
@@ -538,7 +540,7 @@ def pad_limits(xgrid, ygrid, xpad=0., ypad=0., square=None):
     return [x0, x1, y0, y1]
 
 
-def get_plane(dset, xaxis, yaxis, slices, xscale=0, yscale=0, **kw):
+def get_plane(dset, xaxis, yaxis, slices, xscale=0, yscale=0, reorder=True, **kw):
     """
     Select plane from dataset.
     Intended for use with e.g. plt.pcolor.
@@ -564,16 +566,20 @@ def get_plane(dset, xaxis, yaxis, slices, xscale=0, yscale=0, **kw):
     # Build quad meshes from sorted grids
     xgrid = dset.dims[xaxis][xscale][slices[xaxis]]
     ygrid = dset.dims[yaxis][yscale][slices[yaxis]]
-    xorder = np.argsort(xgrid)
-    yorder = np.argsort(ygrid)
-    xmesh, ymesh = quad_mesh(xgrid[xorder], ygrid[yorder], **kw)
+    if reorder:
+        xorder = np.argsort(xgrid)
+        yorder = np.argsort(ygrid)
+        xgrid = xgrid[xorder]
+        ygrid = ygrid[yorder]
+    xmesh, ymesh = quad_mesh(xgrid, ygrid, **kw)
 
     # Select and arrange data
     data = dset[slices]
     if xaxis < yaxis:
         data = data.T
-    data = data[yorder]
-    data = data[:, xorder]
+    if reorder:
+        data = data[yorder]
+        data = data[:, xorder]
 
     return xmesh, ymesh, data
 
