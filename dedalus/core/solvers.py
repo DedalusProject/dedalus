@@ -183,7 +183,7 @@ class EigenvalueSolver:
             if normalize_left:
                 unnormalized_modified_left_eigenvectors = np.conjugate(np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M))
                 norms = np.diag(unnormalized_modified_left_eigenvectors.T.conj() @ self.eigenvectors)
-                self.left_eigenvectors /= norms
+                self.left_eigenvectors /= np.conj(norms)
             self.modified_left_eigenvectors = np.conjugate(np.transpose(np.conjugate(self.left_eigenvectors.T) * -pencil.M))
         self.eigenvalue_pencil = pencil
 
