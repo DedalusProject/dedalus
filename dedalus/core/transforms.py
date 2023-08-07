@@ -1493,11 +1493,12 @@ class BallRadialTransform(Transform):
         Rb = np.array([-1, 1, 0], dtype=int)
         for ell in ell_list:
             if ell not in ell_matrices:
+                Nmin = dedalus_sphere.zernike.min_degree(ell)
                 if self.regindex != () and self.intertwiner(ell).forbidden_regularity(Rb[np.array(self.regindex)]):
-                    ell_matrices[ell] = np.zeros((self.N3c, self.N3g))
+                    ell_matrices[ell] = np.zeros((self.N3c-Nmin, self.N3g))
                 else:
                     # Gauss quadrature with base (k=0) polynomials
-                    Nmin = dedalus_sphere.zernike.min_degree(ell)
+
                     Nc = max(max(self.N3g, self.N3c) - Nmin, 0)
                     W = dedalus_sphere.zernike.polynomials(3, Nc, self.alpha, ell+self.regtotal, z_grid) # shape (Nc-Nmin, Ng)
                     W = W * weights
@@ -1527,11 +1528,11 @@ class BallRadialTransform(Transform):
         Rb = np.array([-1, 1, 0], dtype=int)
         for ell in ell_list:
             if ell not in ell_matrices:
+                Nmin = dedalus_sphere.zernike.min_degree(ell)
                 if self.regindex != () and self.intertwiner(ell).forbidden_regularity(Rb[np.array(self.regindex)]):
-                    ell_matrices[ell] = np.zeros((self.N3g, self.N3c))
+                    ell_matrices[ell] = np.zeros((self.N3g, self.N3c-Nmin))
                 else:
                     # Construct polynomials on the base grid
-                    Nmin = dedalus_sphere.zernike.min_degree(ell)
                     Nc = max(self.N3c - Nmin, 0)
                     W = dedalus_sphere.zernike.polynomials(3, Nc, self.alpha+self.k, ell+self.regtotal, z_grid)
                     # Zero higher coefficients than can be correctly computed with base Gauss quadrature
