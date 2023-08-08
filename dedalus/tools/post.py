@@ -426,7 +426,8 @@ def merge_sets(set_paths, joint_path=None, cleanup=False, virtual=True):
                         length = set_lengths[n]
                         stop += length
                         set_shape = (length,) + spatial_shape
-                        virtual_source = h5py.VirtualSource(set_path, set_dset.name, shape=set_shape)
+                        filename = str(set_path.relative_to(joint_path.parent))
+                        virtual_source = h5py.VirtualSource(filename, set_dset.name, shape=set_shape)
                         layout_slices = [slice(start,stop)] + [slice(size) for size in spatial_shape]
                         source_slices = [slice(length)] + [slice(size) for size in spatial_shape]
                         virtual_layout[tuple(layout_slices)] = virtual_source[tuple(source_slices)]
