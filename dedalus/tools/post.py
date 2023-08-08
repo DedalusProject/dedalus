@@ -344,6 +344,138 @@ def merge_data(joint_file, proc_path):
 
 merge_virtual = lambda joint_file, virtual_path: merge_setup(joint_file, [virtual_path,], virtual=True)
 
+def merge_sets(set_paths, joint_path=None, cleanup=False, virtual=True):
+    """
+    Merge analysis sets.
+
+    Parameters
+    ----------
+    set_paths : list of strings or pathlib.Path objects
+        Paths of all sets to be merged
+    joint_path : string or pathlib.Path, optional
+        Path for merged file.
+    cleanup : bool, optional
+        Delete set files after merging (default: False)
+    """
+    if joint_path is None:
+        try:
+            current_name = set_paths[0].name    
+        except AttributeError:
+            current_name = set_paths[0]
+        if virtual:
+            virt_marker = '_virt'
+        else:
+            virt_marker = ''
+        joint_path = current_name.split('_')[0] + virt_marker + '_joined.h5'
+
+    joint_path = pathlib.Path(joint_path)
+    set_paths = [pathlib.Path(sp) for sp in set_paths]
+
+    # Sort sets by minimum sim time
+    set_starts = []
+    for set_path in set_paths:
+        with h5py.File(str(set_path), mode='r') as file:
+            set_starts.append(np.min(file['scales']['sim_time'][:]))
+    set_starts, set_paths = zip(*[pair for pair in sorted(zip(set_starts, set_paths))])
+    # Find number of writes to extract from each set
+    # (only extract writes from sim times before start of next set)
+    set_lengths = []
+    for n, set_path in enumerate(set_paths):
+        with h5py.File(str(set_path), mode='r') as file:
+            sim_time = file['scales']['sim_time'][:]
+            if (n+1) < len(set_paths):
+                set_lengths.append(np.sum(sim_time < set_starts[n+1]))
+            else:
+                set_lengths.append(len(sim_time))
+
+    logger.info("Creating joint file {}".format(joint_path))
+    with h5py.File(str(joint_path), mode='w') as joint_file:
+        # Setup file
+        logger.debug("Merging setup from {}".format(set_paths[0]))
+        with h5py.File(str(set_paths[0]), mode='r') as set_file:
+            # File metadata
+            joint_file.attrs['handler_name'] = set_file.attrs['handler_name']
+            joint_file.attrs['writes'] = writes = np.sum(set_lengths)
+            # Copy non-time scales
+            time_scale_names = ['iteration', 'sim_time', 'timestep', 'wall_time', 'write_number']
+            joint_file.create_group('scales')
+            for s in set_file['scales']:
+                if s not in time_scale_names:
+                    set_file.copy(f'/scales/{s}', joint_file['scales'])
+            # create time scales with proper size
+            for scale_name in time_scale_names:
+                set_dset = set_file['scales'][scale_name]
+                joint_dset = joint_file['scales'].create_dataset(name=scale_name,
+                                                                  shape=(writes,),
+                                                                  dtype=set_dset.dtype,
+                                                                  chunks=True)
+                joint_dset[:] = 0
+                joint_dset.make_scale(scale_name)
+            # Tasks
+            joint_tasks = joint_file.create_group('tasks')
+            set_tasks = set_file['tasks']
+            for task_name in set_tasks:
+                # Setup dataset with automatic chunking
+                set_dset = set_tasks[task_name]
+                spatial_shape = set_dset.shape[1:]
+                joint_shape = (writes,) + tuple(spatial_shape)
+                if virtual:
+                    virtual_layout = h5py.VirtualLayout(shape=joint_shape, dtype=set_dset.dtype)
+                    start = stop = 0
+                    for n, set_path in enumerate(set_paths):
+                        length = set_lengths[n]
+                        stop += length
+                        set_shape = (length,) + spatial_shape
+                        virtual_source = h5py.VirtualSource(set_path, set_dset.name, shape=set_shape)
+                        layout_slices = [slice(start,stop)] + [slice(size) for size in spatial_shape]
+                        source_slices = [slice(length)] + [slice(size) for size in spatial_shape]
+                        virtual_layout[tuple(layout_slices)] = virtual_source[tuple(source_slices)]
+                        start += length
+                    joint_dset = joint_tasks.create_virtual_dataset(name=set_dset.name,
+                                                                    layout=virtual_layout,
+                                                                    fillvalue=None)
+                else:
+                    joint_dset = joint_tasks.create_dataset(name=set_dset.name,
+                                                            shape=joint_shape,
+                                                            dtype=set_dset.dtype,
+                                                            chunks=True)
+                # Dataset metadata
+                joint_dset.attrs['constant'] = set_dset.attrs['constant']
+                joint_dset.attrs['grid_space'] = set_dset.attrs['grid_space']
+                joint_dset.attrs['scales'] = set_dset.attrs['scales']
+                # Dimension scales
+                for i, set_dim in enumerate(set_dset.dims):
+                    joint_dset.dims[i].label = set_dim.label
+                    for j,scale_str in enumerate(set_dim):
+                        ref = set_dim[j].ref
+                        scale_name = set_file[ref].name
+                        scale = joint_file[scale_name]
+                        joint_dset.dims[i].attach_scale(scale)
+        # Merge sets
+        start = stop = 0
+        for n, set_path in enumerate(set_paths):
+            logger.debug("Merging data from {}".format(set_path))
+            length = set_lengths[n]
+            stop += length
+            with h5py.File(str(set_path), mode='r') as set_file:
+                # Copy scales
+                for scale_name in time_scale_names:
+                    set_dset = set_file['scales'][scale_name]
+                    joint_dset = joint_file['scales'][scale_name]
+                    joint_dset[start:stop] = set_dset[:length]
+                joint_file['scales']['write_number'][start:stop] = np.arange(start, stop)
+                if not virtual:
+                    # Copy tasks
+                    for task_name in set_file['tasks']:
+                        set_dset = set_file['tasks'][task_name]
+                        joint_dset = joint_file['tasks'][task_name]
+                        joint_dset[start:stop] = set_dset[:length]
+            start += length
+
+    # Cleanup after completed merge, if directed
+    if cleanup:
+        for set_path in set_paths:
+            set_path.unlink()
 
 def dedalus_h5_to_xarray(dset):
     """Convert Dedalus HDF5 dataset to an Xarray DataArray."""
