@@ -623,12 +623,12 @@ class NonlinearBoundaryValueSolver(SolverBase):
         for sp in self.subproblems:
             n_ss = len(sp.subsystems)
             # Gather and adjoint-right-precondition RHS
-            X = np.zeros((sp.pre_right.shape[0], n_ss), dtype=self.dtype)
+            X = np.zeros((sp.pre_right.shape[-1], n_ss), dtype=self.dtype)
             csr_matvecs(np.conj(sp.pre_right).T.tocsr(), sp.gather(self.state_adj), X)
             # Solve
             sp_matsolver = self.matsolver(np.conj(sp.dH_min @ sp.pre_right).T, self)
             pX = - sp_matsolver.solve(X)
-            pF = np.zeros((sp.pre_left.shape[0], n_ss), dtype=self.dtype)
+            pF = np.zeros((sp.pre_left.shape[-1], n_ss), dtype=self.dtype)
             csr_matvecs(np.conj(sp.pre_left).T.tocsr(), pX.reshape((-1, n_ss)), pF)
             sp.scatter(pF, self.F_adj)
 
