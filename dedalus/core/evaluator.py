@@ -545,7 +545,8 @@ class H5FileHandlerBase(Handler):
                     subaxis = axis - basis.axis
                     if layout.grid_space[axis]:
                         sn = basis.coordsystem.coords[subaxis].name
-                        data = basis.global_grids(scales)[subaxis].ravel()
+                        bscales = scales[basis.axis:]
+                        data = basis.global_grids(bscales)[subaxis].ravel()
                     else:
                         sn = 'k' + basis.coordsystem.coords[subaxis].name
                         data = layout.global_group_arrays(op.domain, scales)[subaxis]

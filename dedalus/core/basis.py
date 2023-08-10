@@ -1172,6 +1172,10 @@ class RealFourier(FourierBase, metaclass=CachedClass):
                 return sparse.eye(k_out.size, k_arg.size, format='csr')
             else:
                 return sparse.csr_matrix((k_out.size, k_arg.size))
+        if arg_basis is None:
+            matrix = sparse.csr_matrix((k_out.size, k_arg.size))
+            matrix[i, 0] = 1
+            return matrix
         # Find wavenumber couplings (this is crazy)
         _, rows_p, cols_p = np.intersect1d(k_out[::2], k_ncc + k_arg[::2], assume_unique=True, return_indices=True)
         _, rows_m, cols_m = np.intersect1d(k_out[::2], k_ncc - k_arg[::2], assume_unique=True, return_indices=True)

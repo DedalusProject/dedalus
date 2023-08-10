@@ -226,6 +226,7 @@ class NonlinearBoundaryValueProblem(ProblemBase):
         # Build perturbation variables
         self.perturbations = [var.copy() for var in self.variables]
         for pert, var in zip(self.perturbations, self.variables):
+            pert.valid_modes[:] = var.valid_modes
             pert['c'] = 0
             if var.name:
                 pert.name = 'δ'+var.name
