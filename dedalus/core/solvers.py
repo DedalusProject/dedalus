@@ -869,7 +869,7 @@ class InitialValueSolver(SolverBase):
             if self.iteration % self.enforce_real_cadence < self.timestepper.steps:
                 self.enforce_hermitian_symmetry(self.state)
         # Record times
-        wall_time = self.get_wall_time()
+        wall_time = self.wall_time
         # Advance using timestepper
         wall_elapsed = wall_time - self.init_time
         if(self.iteration==self.stop_iteration):
