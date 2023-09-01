@@ -829,14 +829,22 @@ class RungeKuttaIMEX:
             if update_LHS:
                 # Remove old solver references
                 sp.LHS_solvers = [None] * (self.stages+1)
+
+        # Final time condition
+        # Ensure coeff space before subsystem gathers
+        for field in state_fields:
+            field.require_coeff_space()
+
+        RHS.data.fill(0)
+        for sp in subproblems:
+            # Use adjoint state for RHS
+            spX2 = sp.gather(state_fields)
+            csr_matvecs(np.conj(sp.pre_right).T.tocsr(), spX2, RHS.get_subdata(sp))
         
         # Compute stages
         for i in reversed(range(1, self.stages+1)):
             # Solve for stage
-            # Ensure coeff space before subsystem gathers
-            for field in state_fields:
-                field.require_coeff_space()
-
+    
             # Clear coeff system for transposed data
             LXi = LX[i-1]
             LXi.data.fill(0)
@@ -849,19 +857,10 @@ class RungeKuttaIMEX:
 
             # WARNING: Not adjointed yet (assumed F is zero)
             # Compute F(n,i-1) (needs to be adjointed here...)
-            if i == 1:
-                evaluator.evaluate_scheduled(wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
-            else:
-                evaluator.evaluate_group('F', wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
-
-            # Compute adjoint RHS
-            if RHS.data.size:
-                RHS.data.fill(0)
-                for j in range(i+1, self.stages+1):
-                    # RHS.data += (k * A[j,i]) * FT[j-1].data
-                    axpy(a=(k*A[j,i]), x=F[j-1].data, y=RHS.data)
-                    # RHS.data -= (k * H[j,i]) * LXT[j].data
-                    axpy(a=-(k*H[j,i]), x=LX[j-1].data, y=RHS.data)
+            # if i == 1:
+            #     evaluator.evaluate_scheduled(wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
+            # else:
+            #     evaluator.evaluate_group('F', wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
 
             for sp in subproblems:
                 # Construct LHS(n,i)
@@ -873,35 +872,33 @@ class RungeKuttaIMEX:
                     # Create transposed solver
                     sp.LHS_solvers[i] = solver.matsolver(np.conj(sp.LHS).T, solver)
 
-                # Slice out valid subdata, skipping invalid components
-                if(i==self.stages):
-                    # Use adjoint state for RHS
-                    spX2 = sp.gather(state_fields)
-                    spRHS = np.zeros((sp.pre_right.shape[1], len(sp.subsystems)), dtype=spX2.dtype)  # CREATES TEMPORARY
-                    csr_matvecs(np.conj(sp.pre_right).T.tocsr(), spX2, spRHS)
-                else:
-                    # Use computed adjoint RHS
-                    spRHS = RHS.get_subdata(sp)
+                # Use computed adjoint RHS
+                spRHS = RHS.get_subdata(sp)
 
                 spX = sp.LHS_solvers[i].solve(spRHS)  # CREATES TEMPORARY
 
-                # Compute new transpose terms
+                # Compute new transpose terms and RHS
                 csr_matvecs((np.conj(sp.pre_right).T@np.conj(sp.L_min).T).tocsr(), spX, LXi.get_subdata(sp))  # Rectangular dot product skipping shape checks                
                 csr_matvecs((np.conj(sp.pre_right).T@np.conj(sp.M_min).T).tocsr(), spX, MXTi.get_subdata(sp))
 
                 # RHS similar but not implemented yet
                 # spX = sp.gather(F_fields) 
                 # csr_matvecs(np.conj(sp.pre_right).T.tocsr()np.conj(sp.pre_left).T.tocsr(), spX, Fi.get_subdata(sp))  # Rectangular dot product skipping shape checks             
-                
+                # Compute adjoint RHS
+
+                if RHS.data.size:
+                    RHS.data.fill(0)
+                    for j in range(i, self.stages+1):
+                        # RHS.data += (k * A[j,i]) * FT[j-1].data
+                        axpy(a=(k*A[j,i-1]), x=F[j-1].data, y=RHS.data)
+                        # RHS.data -= (k * H[j,i]) * LXT[j].data
+                        axpy(a=-(k*H[j,i-1]), x=LX[j-1].data, y=RHS.data)
+               
             solver.sim_time = sim_time_0 - k + k*c[i-1]
 
+        # At last stage add on MXT terms
         if RHS.data.size:
-            RHS.data.fill(0)
             for j in range(1, self.stages+1):
-                # RHS.data += (k * A[j,0]) * FT[j].data
-                # axpy(a=(k*A[j,0]), x=F[j-1].data, y=RHS.data)
-                # RHS.data -= (k * H[j,0]) * LXT[j].data
-                axpy(a=-(k*H[j,0]), x=LX[j-1].data, y=RHS.data)
                 # RHS.data += (1 * H[j,0]) * MXT[j].data
                 axpy(a=1, x=MXT[j-1].data, y=RHS.data)
 
