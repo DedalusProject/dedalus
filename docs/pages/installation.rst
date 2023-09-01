@@ -44,11 +44,11 @@ If linking to the existing MPI libraries on your cluster is recommended, see the
 #. Install Dedalus v2 and all its requirements from the conda-forge channel and upgrade to Dedalus v3 using pip::
 
        # Install Dedalus v2 from conda-forge to build stack
-       conda install -c conda-forge dedalus c-compiler "h5py=*=mpi*"
+       conda install -c conda-forge dedalus c-compiler "h5py=*=mpi*" "cython<3.0"
 
        # Upgrade to Dedalus v3
        conda uninstall --force dedalus
-       CC=mpicc pip3 install --no-cache http://github.com/dedalusproject/dedalus/zipball/master/
+       CC=mpicc pip3 install --no-cache --no-build-isolation http://github.com/dedalusproject/dedalus/zipball/master/
 
 To use Dedalus, you simply need to activate the new environment.
 You can test the installation using the command-line interface::
@@ -90,7 +90,14 @@ The Dedalus package within the environment can be updated using pip as described
 Installing the Dedalus package
 ==============================
 
-Once the necessary C dependencies and Python 3 are present, Dedalus can be installed from PyPI or built from source using pip.
+To install the Dedalus package, you must first have the necessary C and Python 3 dependencies.
+The required C packages are MPI, FFTW, and HDF5.
+In your Python 3 environment, you need mpi4py and h5py linked to your MPI and HDF5 installations (see the mpi4py and h5py docs for details).
+The other Python 3 build requirements are numpy, setuptools, wheel, and cython\<3.0 (note the strict Cython version requirement), which can all be installed via pip::
+
+    pip3 install --upgrade numpy setuptools wheel "cython\<3.0"
+
+You can then install Dedalus from the PyPI distributions or the source repository, as described below.
 
 **Note**: the instructions in this section assume the ``pip3`` command is hitting the right Python 3 installation.
 You can check this by making sure that ``which pip3`` and ``which python3`` reside in the same location.
@@ -122,26 +129,26 @@ To build and install the most recent version of Dedalus v3, first set the ``MPI_
 
 You can then install Dedalus directly from GitHub using pip, ensuring that the C extensions are properly linked to MPI by using ``mpicc``::
 
-    CC=mpicc pip3 install --no-cache http://github.com/dedalusproject/dedalus/zipball/master/
+    CC=mpicc pip3 install --no-cache --no-build-isolation http://github.com/dedalusproject/dedalus/zipball/master/
 
 Alternatively, you can clone the master branch from the source repository and install locally using pip::
 
     git clone -b master https://github.com/DedalusProject/dedalus
     cd dedalus
-    CC=mpicc pip3 install --no-cache .
+    CC=mpicc pip3 install --no-cache --no-build-isolation .
 
 Updating Dedalus
 ----------------
 
 If Dedalus was installed using the conda script or from GitHub with pip, it can also be updated using pip::
 
-    CC=mpicc pip3 install --upgrade --force-reinstall --no-deps --no-cache http://github.com/dedalusproject/dedalus/zipball/master/
+    CC=mpicc pip3 install --upgrade --force-reinstall --no-deps --no-cache --no-build-isolation http://github.com/dedalusproject/dedalus/zipball/master/
 
 If Dedalus was built from a clone of the source repository, first pull new changes and then reinstall with pip::
 
     cd /path/to/dedalus/repo
     git pull
-    CC=mpicc pip3 install --upgrade --force-reinstall --no-deps --no-cache .
+    CC=mpicc pip3 install --upgrade --force-reinstall --no-deps --no-cache --no-build-isolation .
 
 **Note**: any custom FFTW/MPI paths set in the conda script or during the original installation will also need to be exported for the upgrade commands to work.
 
