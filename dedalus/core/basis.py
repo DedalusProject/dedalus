@@ -550,8 +550,8 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
             if self.grid_params == other.grid_params:
                 # Everything matches except size, a, b
                 size = max(self.size, other.size)
-                a = max(self.a, other.a)
-                b = max(self.b, other.b)
+                a = self.a0
+                b = self.b0
                 return self.clone_with(size=size, a=a, b=b)
         if isinstance(other, SphereBasis):
             return other.__mul__(self)
@@ -566,7 +566,18 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
 
     def __rmatmul__(self, other):
         # NCC (other) * operand (self)
-        return self.__mul__(other)
+        if other is None or other is self:
+            return self
+        if isinstance(other, Jacobi):
+            if self.grid_params == other.grid_params:
+                # Everything matches except size, a, b
+                size = max(self.size, other.size)
+                a = self.a
+                b = self.b
+                return self.clone_with(size=size, a=a, b=b)
+        if isinstance(other, SphereBasis):
+            return other.__mul__(self)
+        return NotImplemented
 
     # def include_mode(self, mode):
     #     return (0 <= mode < self.space.coeff_size)

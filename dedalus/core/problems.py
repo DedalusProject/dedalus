@@ -44,6 +44,9 @@ class ProblemBase:
         # Build namespace via chainmap to react to upstream changes
         # Priority: local namespace, external namespace, parseables
         self.local_namespace = {}
+        for var in variables:
+            if var.name:
+                self.local_namespace[var.name] = var
         if namespace is None:
             self.namespace = ChainMap(self.local_namespace, parseables)
         else:
@@ -224,7 +227,8 @@ class NonlinearBoundaryValueProblem(ProblemBase):
         self.perturbations = [var.copy() for var in self.variables]
         for pert, var in zip(self.perturbations, self.variables):
             pert['c'] = 0
-            pert.name = 'δ'+var.name
+            if var.name:
+                pert.name = 'δ'+var.name
         self.LHS_variables = self.perturbations
 
     def _check_equation_conditions(self, eqn):

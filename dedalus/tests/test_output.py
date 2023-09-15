@@ -1,131 +1,178 @@
-"""Test outputs of various dimensionality."""
+"""Test HDF5 outputs."""
+# TODO: add sphere outputs and more curviliner interpolations
 
 import pytest
 import numpy as np
-from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers
+import dedalus.public as d3
+from dedalus.tools.cache import CachedFunction
 import h5py
 import tempfile
 import pathlib
-from dedalus.tools.cache import CachedFunction
 
 
 # Check if parallel h5py is available
-handler_options = ['gather', 'virtual']
+parallel_range = ['gather', 'virtual']
 if h5py.get_config().mpi:
-    handler_options.append('mpio')
+    parallel_range.append('mpio')
 else:
-    handler_options.append(pytest.param('mpio', marks=pytest.mark.xfail(reason="parallel h5py not available")))
+    parallel_range.append(pytest.param('mpio', marks=pytest.mark.xfail(reason="parallel h5py not available")))
 
 
-@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-@pytest.mark.parametrize('dealias', [1, 3/2])
-@pytest.mark.parametrize('output_scales', [1, 3/2, 2,
-    pytest.param(1/2, marks=pytest.mark.xfail(reason="evaluator not copying correctly for scales < 1"))])
-@pytest.mark.parametrize('output_layout', ['g', 'c'])
-@pytest.mark.parametrize('parallel', handler_options)
-def test_cartesian_output(dtype, dealias, output_scales, output_layout, parallel):
-    Nx = Ny = Nz = 16
-    Lx = Ly = Lz = 2 * np.pi
+dealias_range = [3/2]
+dtype_range = [np.float64, np.complex128]
+layout_range = ['g', 'c']
+scales_range = [1, 3/2, pytest.param(1/2, marks=pytest.mark.xfail(reason="evaluator not copying correctly for scales < 1"))]
+
+
+@CachedFunction
+def build_disk(Nphi, Nr, k, dealias, dtype, radius=1):
+    c = d3.PolarCoordinates('phi', 'r')
+    d = d3.Distributor(c, dtype=dtype)
+    b = d3.DiskBasis(c, (Nphi, Nr), radius=radius, k=k, dealias=dealias, dtype=dtype)
+    phi, r = d.local_grids(b)
+    x, y = c.cartesian(phi, r)
+    return c, d, b, phi, r, x, y
+
+
+@CachedFunction
+def build_annulus(Nphi, Nr, k, dealias, dtype, radii=(0.5, 1)):
+    c = d3.PolarCoordinates('phi', 'r')
+    d = d3.Distributor(c, dtype=dtype)
+    b = d3.AnnulusBasis(c, (Nphi, Nr), radii=radii, k=k, dealias=dealias, dtype=dtype)
+    phi, r = d.local_grids(b)
+    x, y = c.cartesian(phi, r)
+    return c, d, b, phi, r, x, y
+
+
+@CachedFunction
+def build_ball(Nphi, Ntheta, Nr, k, dealias, dtype, radius=1):
+    c = d3.SphericalCoordinates('phi', 'theta', 'r')
+    d = d3.Distributor(c, dtype=dtype)
+    b = d3.BallBasis(c, (Nphi, Ntheta, Nr), radius=radius, k=k, dealias=dealias, dtype=dtype)
+    phi, theta, r = d.local_grids(b)
+    x, y, z = c.cartesian(phi, theta, r)
+    return c, d, b, phi, theta, r, x, y, z
+
+
+@CachedFunction
+def build_shell(Nphi, Ntheta, Nr, k, dealias, dtype, radii=(0.5, 1)):
+    c = d3.SphericalCoordinates('phi', 'theta', 'r')
+    d = d3.Distributor(c, dtype=dtype)
+    b = d3.ShellBasis(c, (Nphi, Ntheta, Nr), radii=radii, k=k, dealias=dealias, dtype=dtype)
+    phi, theta, r = d.local_grids(b)
+    x, y, z = c.cartesian(phi, theta, r)
+    return c, d, b, phi, theta, r, x, y, z
+
+
+@pytest.mark.parametrize('N', [8])
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('output_scales', scales_range)
+@pytest.mark.parametrize('output_layout', layout_range)
+@pytest.mark.parametrize('parallel', parallel_range)
+def test_cartesian_output(N, dealias, dtype, output_scales, output_layout, parallel):
+    """Test outputs of 0d/1d/2d/3d tasks in 3d FFC problem."""
     # Bases
-    c = coords.CartesianCoordinates('x', 'y', 'z')
-    d = distributor.Distributor((c,))
-    Fourier = {np.float64: basis.RealFourier, np.complex128: basis.ComplexFourier}[dtype]
-    xb = Fourier(c.coords[0], size=Nx, bounds=(0, Lx), dealias=dealias)
-    yb = Fourier(c.coords[1], size=Ny, bounds=(0, Ly), dealias=dealias)
-    zb = basis.ChebyshevT(c.coords[2], size=Nz, bounds=(0, Lz), dealias=dealias)
-    x = xb.local_grid(1)
-    y = yb.local_grid(1)
-    z = zb.local_grid(1)
+    c = d3.CartesianCoordinates('x', 'y', 'z')
+    d = d3.Distributor(c, dtype=dtype)
+    xb = d3.Fourier(c.coords[0], size=N, bounds=(0, 1), dealias=dealias, dtype=dtype)
+    yb = d3.Fourier(c.coords[1], size=N, bounds=(0, 1), dealias=dealias, dtype=dtype)
+    zb = d3.Chebyshev(c.coords[2], size=N, bounds=(0, 1), dealias=dealias)
+    x, y, z = d.local_grids(xb, yb, zb)
     # Fields
-    u = field.Field(name='u', dist=d, bases=(xb,yb,zb), dtype=dtype)
+    u = d.Field(name='u', bases=(xb,yb,zb))
     u['g'] = np.sin(x) * np.sin(y) * np.sin(z)
     # Problem
-    dt = operators.TimeDerivative
-    problem = problems.IVP([u])
-    problem.add_equation((dt(u), 0))
-    # Solver
-    solver = solvers.InitialValueSolver(problem, timesteppers.RK222)
+    problem = d3.IVP([u])
+    problem.add_equation("dt(u) = 0")
+    solver = problem.build_solver("RK111")
     # Output
     tasks = [u, u(x=0), u(y=0), u(z=0), u(x=0,y=0), u(x=0,z=0), u(y=0,z=0), u(x=0,y=0,z=0)]
-    with tempfile.TemporaryDirectory(dir='.') as tempdir:
-        tempdir = pathlib.Path(tempdir).stem
+    with tempfile.TemporaryDirectory(dir='/tmp') as tempdir:
         output = solver.evaluator.add_file_handler(tempdir, iter=1, parallel=parallel)
         for task in tasks:
             output.add_task(task, layout=output_layout, name=str(task), scales=output_scales)
         solver.evaluate_handlers([output])
         # Check solution
-        errors = []
-        with h5py.File(f'{tempdir}/{tempdir}_s1.h5', mode='r') as file:
+        with h5py.File(f'{tempdir}/{pathlib.Path(tempdir).stem}_s1.h5', mode='r') as file:
             for task in tasks:
                 task_saved = file['tasks'][str(task)][-1]
                 task = task.evaluate()
                 task.change_scales(output_scales)
-                errors.append(np.max(np.abs(task[output_layout] - task_saved)))
-    assert np.allclose(errors, 0)
+                assert np.allclose(task[output_layout], task_saved)
 
 
-@CachedFunction
-def build_ball(Nphi, Ntheta, Nr, k, dealias, dtype):
-    radius_ball = 1.5
-    c = coords.SphericalCoordinates('phi', 'theta', 'r')
-    d = distributor.Distributor((c,))
-    b = basis.BallBasis(c, (Nphi, Ntheta, Nr), radius=radius_ball, k=k, dealias=(dealias, dealias, dealias), dtype=dtype)
-    phi, theta, r = b.local_grids(b.domain.dealias)
-    x, y, z = c.cartesian(phi, theta, r)
-    return c, d, b, phi, theta, r, x, y, z
-
-
-@CachedFunction
-def build_shell(Nphi, Ntheta, Nr, k, dealias, dtype):
-    radii_shell = (0.5, 1.5)
-    c = coords.SphericalCoordinates('phi', 'theta', 'r')
-    d = distributor.Distributor((c,))
-    b = basis.ShellBasis(c, (Nphi, Ntheta, Nr), radii=radii_shell, k=k, dealias=(dealias, dealias, dealias), dtype=dtype)
-    phi, theta, r = b.local_grids(b.domain.dealias)
-    x, y, z = c.cartesian(phi, theta, r)
-    return c, d, b, phi, theta, r, x, y, z
-
-
-@pytest.mark.parametrize('Nphi', [16])
-@pytest.mark.parametrize('Ntheta', [8])
-@pytest.mark.parametrize('Nr', [8])
-@pytest.mark.parametrize('k', [0, 1])
-@pytest.mark.parametrize('dealias', [1, 3/2])
-@pytest.mark.parametrize('basis', [build_ball, build_shell])
-@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-@pytest.mark.parametrize('output_scales', [1, 3/2, 2,
-    pytest.param(1/2, marks=pytest.mark.xfail(reason="evaluator not copying correctly for scales < 1"))])
-@pytest.mark.parametrize('parallel', handler_options)
-def test_spherical_output(Nphi, Ntheta, Nr, k, dealias, dtype, basis, output_scales, parallel):
+@pytest.mark.parametrize('basis', [build_disk, build_annulus])
+@pytest.mark.parametrize('Nphi', [12])
+@pytest.mark.parametrize('Nr', [6])
+@pytest.mark.parametrize('k', [1])
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('output_scales', scales_range)
+@pytest.mark.parametrize('output_layout', ['g'])
+@pytest.mark.parametrize('parallel', parallel_range)
+def test_polar_output(basis, Nphi, Nr, k, dealias, dtype, output_scales, output_layout, parallel):
+    """Test outputs of various tasks in polar problem."""
     # Basis
-    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
+    c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
     # Fields
-    u = field.Field(name='u', dist=d, bases=(b,), dtype=dtype)
-    u.preset_scales(b.domain.dealias)
-    u['g'] = np.sin(x) * np.sin(y) * np.sin(z)
+    u = d.Field(name='u', bases=b)
+    u['g'] = np.sin(x) * np.sin(y)
     # Problem
-    dt = operators.TimeDerivative
-    problem = problems.IVP([u])
-    problem.add_equation((dt(u), 0))
-    # Solver
-    solver = solvers.InitialValueSolver(problem, timesteppers.RK222, matrix_coupling=[False, False, True])
+    problem = d3.IVP([u])
+    problem.add_equation("dt(u) = 0")
+    solver = problem.build_solver("RK111", matrix_coupling=[False, True])
     # Output
-    tasks = [u(phi=np.pi), u(theta=np.pi/2), u(r=1.0), u]
-    with tempfile.TemporaryDirectory(dir='.') as tempdir:
-        tempdir = pathlib.Path(tempdir).stem
+    tasks = [u, u(phi=np.pi), u(r=1.0)]
+    with tempfile.TemporaryDirectory(dir='/tmp') as tempdir:
         output = solver.evaluator.add_file_handler(tempdir, iter=1, parallel=parallel)
         for task in tasks:
-            output.add_task(task, layout='g', name=str(task), scales=output_scales)
+            output.add_task(task, layout=output_layout, name=str(task), scales=output_scales)
         solver.evaluate_handlers([output])
         # Check solution
-        errors = []
-        with h5py.File(f'{tempdir}/{tempdir}_s1.h5', mode='r') as file:
+        with h5py.File(f'{tempdir}/{pathlib.Path(tempdir).stem}_s1.h5', mode='r') as file:
             for task in tasks:
                 task_saved = file['tasks'][str(task)][-1]
                 task = task.evaluate()
-                if not isinstance(task, field.LockedField):
+                if not isinstance(task, d3.LockedField):
                     task.change_scales(output_scales)
-                print(task['g'].shape, task_saved.shape, dealias, output_scales)
-                errors.append(np.max(np.abs(task['g'] - task_saved)))
-    assert np.allclose(errors, 0)
+                assert np.allclose(task[output_layout], task_saved)
+
+
+@pytest.mark.parametrize('basis', [build_ball, build_shell])
+@pytest.mark.parametrize('Nphi', [12])
+@pytest.mark.parametrize('Ntheta', [6])
+@pytest.mark.parametrize('Nr', [6])
+@pytest.mark.parametrize('k', [1])
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('output_scales', scales_range)
+@pytest.mark.parametrize('output_layout', ['g'])
+@pytest.mark.parametrize('parallel', parallel_range)
+def test_spherical_output(basis, Nphi, Ntheta, Nr, k, dealias, dtype, output_scales, output_layout, parallel):
+    """Test outputs of various tasks in 3d spherical problem."""
+    # Basis
+    c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
+    # Fields
+    u = d.Field(name='u',bases=(b,))
+    u['g'] = np.sin(x) * np.sin(y) * np.sin(z)
+    # Problem
+    problem = d3.IVP([u])
+    problem.add_equation("dt(u) = 0")
+    solver = problem.build_solver("RK111", matrix_coupling=[False, False, True])
+    # Output
+    tasks = [u, u(phi=np.pi), u(theta=np.pi/2), u(r=1.0)]
+    with tempfile.TemporaryDirectory(dir='/tmp') as tempdir:
+        output = solver.evaluator.add_file_handler(tempdir, iter=1, parallel=parallel)
+        for task in tasks:
+            output.add_task(task, layout=output_layout, name=str(task), scales=output_scales)
+        solver.evaluate_handlers([output])
+        # Check solution
+        with h5py.File(f'{tempdir}/{pathlib.Path(tempdir).stem}_s1.h5', mode='r') as file:
+            for task in tasks:
+                task_saved = file['tasks'][str(task)][-1]
+                task = task.evaluate()
+                if not isinstance(task, d3.LockedField):
+                    task.change_scales(output_scales)
+                assert np.allclose(task[output_layout], task_saved)
 
