@@ -56,7 +56,7 @@ def test_eval_jacobi_ncc(N, a0, b0, k_ncc, k_arg, dealias, dtype):
     assert np.allclose(w2['c'][:-2*k_arg], 0)
 
 
-@pytest.mark.parametrize('N', [16])
+@pytest.mark.parametrize('N', [24])
 @pytest.mark.parametrize('dealias', [3/2])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 def test_eval_fourier_ncc(N, dealias, dtype):

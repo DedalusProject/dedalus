@@ -1008,12 +1008,14 @@ class ComplexFourier(FourierBase, metaclass=CachedClass):
     @CachedMethod
     def product_matrix(self, arg_basis, out_basis, i):
         # Directly compare wavenumber arrays to handle any permutations
-        k_ncc = self.wavenumbers[i]
-        k_out = out_basis.wavenumbers
+        # First turn them into integer mode numbers to avoid floating point issues
+        k0 = self.wavenumbers[1]
+        k_ncc = np.round(self.wavenumbers[i]/k0).astype(int)
+        k_out = np.round(out_basis.wavenumbers/k0).astype(int)
         if arg_basis is None:
             k_arg = np.array([0])
         else:
-            k_arg = arg_basis.wavenumbers
+            k_arg = np.round(arg_basis.wavenumbers/k0).astype(int)
         k_prod = k_arg + k_ncc
         _, rows, cols = np.intersect1d(k_out, k_prod, assume_unique=True, return_indices=True)
         data = np.ones_like(rows)
@@ -1160,12 +1162,14 @@ class RealFourier(FourierBase, metaclass=CachedClass):
     @CachedMethod
     def product_matrix(self, arg_basis, out_basis, i):
         # Directly compare wavenumber arrays to handle any permutations
-        k_ncc = self.wavenumbers[i]
-        k_out = out_basis.wavenumbers
+        # First turn them into integer mode numbers to avoid floating point issues
+        k0 = self.wavenumbers[2]
+        k_ncc = np.round(self.wavenumbers[i]/k0).astype(int)
+        k_out = np.round(out_basis.wavenumbers/k0).astype(int)
         if arg_basis is None:
             k_arg = np.array([0])
         else:
-            k_arg = arg_basis.wavenumbers
+            k_arg = np.round(arg_basis.wavenumbers/k0).astype(int)
         # Skip multiplication by constant
         if k_ncc == 0:
             if i % 2 == 0:
