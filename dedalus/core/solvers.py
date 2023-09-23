@@ -161,8 +161,8 @@ class EigenvalueSolver(SolverBase):
         for i, sp in enumerate(subproblems):
             if not hasattr(sp, 'L_min'):
                 continue
-            L = (sp.L_min @ sp.pre_right).A
-            M = (sp.M_min @ sp.pre_right).A
+            L = sp.L_min.A
+            M = sp.M_min.A
             A = L + target * M
             print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {sp.group}, matrix rank: {np.linalg.matrix_rank(A)}/{A.shape[0]}, cond: {np.linalg.cond(A):.1e}")
 
@@ -203,8 +203,8 @@ class EigenvalueSolver(SolverBase):
         if rebuild_matrices or not hasattr(sp, 'L_min'):
             self.build_matrices([sp], ['M', 'L'])
         # Solve as dense general eigenvalue problem
-        A = (sp.L_min @ sp.pre_right).A
-        B = - (sp.M_min @ sp.pre_right).A
+        A = sp.L_min.A
+        B = - sp.M_min.A
         eig_output = scipy.linalg.eig(A, b=B, left=left, **kw)
         # Unpack output
         if left:
@@ -252,8 +252,8 @@ class EigenvalueSolver(SolverBase):
         if rebuild_matrices or not hasattr(sp, 'L_min'):
             self.build_matrices([sp], ['M', 'L'])
         # Solve as sparse general eigenvalue problem
-        A = (sp.L_min @ sp.pre_right)
-        B = - (sp.M_min @ sp.pre_right)
+        A = sp.L_min
+        B = - sp.M_min
         # Solve for the right eigenvectors
         self.eigenvalues, pre_eigenvectors = scipy_sparse_eigs(A=A, B=B, N=N, target=target, matsolver=self.matsolver, **kw)
         self.eigenvectors = sp.pre_right @ pre_eigenvectors
@@ -346,7 +346,7 @@ class LinearBoundaryValueSolver(SolverBase):
         for i, sp in enumerate(subproblems):
             if not hasattr(sp, 'L_min'):
                 continue
-            L = (sp.L_min @ sp.pre_right).A
+            L = sp.L_min.A
             print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {sp.group}, matrix rank: {np.linalg.matrix_rank(L)}/{L.shape[0]}, cond: {np.linalg.cond(L):.1e}")
 
     def solve(self, subproblems=None, rebuild_matrices=False):
@@ -373,8 +373,7 @@ class LinearBoundaryValueSolver(SolverBase):
         if sp_to_build:
             self.build_matrices(sp_to_build, ['L'])
             for sp in sp_to_build:
-                L = sp.L_min @ sp.pre_right
-                self.subproblem_matsolvers[sp] = self.matsolver(L, self)
+                self.subproblem_matsolvers[sp] = self.matsolver(sp.L_min, self)
         # Compute RHS
         self.evaluator.evaluate_scheduled(iteration=self.iteration)
         # Ensure coeff space before subsystem gathers/scatters
@@ -382,17 +381,14 @@ class LinearBoundaryValueSolver(SolverBase):
             field.change_layout('c')
         for field in self.state:
             field.preset_layout('c')
-        # Solve system for each subproblem, updating state
+        # Solve system for each subproblem
         for sp in subproblems:
-            n_ss = len(sp.subsystems)
-            # Gather and left-precondition RHS
-            pF = np.zeros((sp.pre_left.shape[0], n_ss), dtype=self.dtype)  # CREATES TEMPORARY
-            csr_matvecs(sp.pre_left, sp.gather(self.F), pF)
-            # Solve, right-precondition, and scatter X
-            pX = self.subproblem_matsolvers[sp].solve(pF)  # CREATES TEMPORARY
-            X = np.zeros((sp.pre_right.shape[0], n_ss), dtype=self.dtype)  # CREATES TEMPORARY
-            csr_matvecs(sp.pre_right, pX.reshape((-1, n_ss)), X)
-            sp.scatter(X, self.state)
+            # Gather RHS
+            spF = sp.gather_outputs(self.F)
+            # Solve
+            spX = self.subproblem_matsolvers[sp].solve(spF)  # CREATES TEMPORARY
+            # Scatter solution
+            sp.scatter_inputs(spX, self.state)
         self.iteration += 1
 
     def evaluate_handlers(self, handlers=None):
@@ -425,7 +421,7 @@ class NonlinearBoundaryValueSolver(SolverBase):
 
     # Default to solver since every iteration sees a new matrix
     matsolver_default = 'MATRIX_SOLVER'
-    matrices = ['dH']
+    matrices = ['dF']
 
     def __init__(self, problem, **kw):
         logger.debug('Beginning NLBVP instantiation')
@@ -435,7 +431,7 @@ class NonlinearBoundaryValueSolver(SolverBase):
         # Create RHS handler
         F_handler = self.evaluator.add_system_handler(iter=1, group='F')
         for eq in problem.eqs:
-            F_handler.add_task(eq['H'])
+            F_handler.add_task(eq['F'])
         F_handler.build_system()
         self.F = F_handler.fields
         logger.debug('Finished NLBVP instantiation')
@@ -446,7 +442,7 @@ class NonlinearBoundaryValueSolver(SolverBase):
         self.evaluator.evaluate_scheduled(iteration=self.iteration)
         # Recompute Jacobian
         # TODO: split out linear part for faster recomputation?
-        self.build_matrices(self.subproblems, ['dH'])
+        self.build_matrices(self.subproblems, ['dF'])
         # Ensure coeff space before subsystem gathers/scatters
         for field in self.F:
             field.change_layout('c')
@@ -454,19 +450,16 @@ class NonlinearBoundaryValueSolver(SolverBase):
             field.preset_layout('c')
         # Solve system for each subproblem, updating perturbations
         for sp in self.subproblems:
-            n_ss = len(sp.subsystems)
-            # Gather and left-precondition RHS
-            pF = np.zeros((sp.pre_left.shape[0], n_ss), dtype=self.dtype)
-            csr_matvecs(sp.pre_left, sp.gather(self.F), pF)
-            # Solve, right-precondition, and scatter X
-            sp_matsolver = self.matsolver(sp.dH_min @ sp.pre_right, self)
-            pX = - sp_matsolver.solve(pF)
-            X = np.zeros((sp.pre_right.shape[0], n_ss), dtype=self.dtype)
-            csr_matvecs(sp.pre_right, pX.reshape((-1, n_ss)), X)
-            sp.scatter(X, self.perturbations)
+            # Gather RHS
+            spF = sp.gather_outputs(self.F)
+            # Solve
+            sp_matsolver = self.matsolver(sp.dF_min, self)
+            spX = sp_matsolver.solve(spF)  # CREATES TEMPORARY
+            # Scatter solution to perturbations
+            sp.scatter_inputs(spX, self.perturbations)
         # Update state
         for var, pert in zip(self.state, self.perturbations):
-            var['c'] += damping * pert['c']
+            var['c'] -= damping * pert['c']
         self.iteration += 1
 
     def evaluate_handlers(self, handlers=None):
@@ -527,7 +520,7 @@ class InitialValueSolver(SolverBase):
         # Build LHS matrices
         self.build_matrices(self.subproblems, ['M', 'L'])
         # Compute total modes
-        local_modes = sum(ss.subproblem.pre_right.shape[1] for ss in self.subsystems)
+        local_modes = sum(np.prod(sp.shape) for sp in self.subproblems)
         self.total_modes = self.dist.comm.allreduce(local_modes, op=MPI.SUM)
         # Create RHS handler
         F_handler = self.evaluator.add_system_handler(iter=1, group='F')
@@ -688,8 +681,8 @@ class InitialValueSolver(SolverBase):
             subproblems = self.subproblems
         # Check matrix rank
         for i, sp in enumerate(subproblems):
-            M = sp.M_min @ sp.pre_right
-            L = sp.L_min @ sp.pre_right
+            M = sp.M_min
+            L = sp.L_min
             A = (M + dt*L).A
             print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {sp.group}, matrix rank: {np.linalg.matrix_rank(A)}/{A.shape[0]}, cond: {np.linalg.cond(A):.1e}")
 

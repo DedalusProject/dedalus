@@ -117,28 +117,26 @@ class MultistepIMEX:
         # Check on updating LHS
         update_LHS = ((a0, b0) != self._LHS_params)
         self._LHS_params = (a0, b0)
+        if update_LHS:
+            # Remove old solver references
+            for sp in subproblems:
+                sp.LHS_solver = None
 
         # Evaluate M.X0 and L.X0
         MX0.data.fill(0)
         LX0.data.fill(0)
-        # Ensure coeff space before subsystem gathers
-        for field in state_fields:
-            field.require_coeff_space()
+        evaluator.require_coeff_space(state_fields)
         for sp in subproblems:
-            spX = sp.gather(state_fields)  # CREATES TEMPORARY
-            csr_matvecs(sp.M_min, spX, MX0.get_subdata(sp))  # Rectangular dot product skipping shape checks
-            csr_matvecs(sp.L_min, spX, LX0.get_subdata(sp))  # Rectangular dot product skipping shape checks
-            if update_LHS:
-                # Remove old solver reference
-                sp.LHS_solver = None
+            spX = sp.gather_inputs(state_fields)
+            csr_matvecs(sp.M_min, spX, MX0.get_subdata(sp))
+            csr_matvecs(sp.L_min, spX, LX0.get_subdata(sp))
 
-        # Run evaluator
-        evaluator.evaluate_scheduled(iteration=iteration, wall_time=wall_time, sim_time=sim_time, timestep=dt)
+        # Evaluate F(X0)
         F0.data.fill(0)
+        evaluator.evaluate_scheduled(iteration=iteration, wall_time=wall_time, sim_time=sim_time, timestep=dt)
+        evaluator.require_coeff_space(F_fields)
         for sp in subproblems:
-            # F fields should be in coeff space from evaluator
-            spF = sp.gather(F_fields)  # CREATES TEMPORARY
-            csr_matvecs(sp.pre_left, spF, F0.get_subdata(sp))  # Rectangular dot product skipping shape checks
+            sp.gather_outputs(F_fields, out=F0.get_subdata(sp))
 
         # Build RHS
         if RHS.data.size:
@@ -160,17 +158,16 @@ class MultistepIMEX:
         for sp in subproblems:
             if update_LHS:
                 if STORE_EXPANDED_MATRICES:
-                    np.copyto(sp.LHS.data, a0*sp.M_exp.data + b0*sp.L_exp.data)  # CREATES TEMPORARY
+                    # sp.LHS.data[:] = a0*sp.M_exp.data + b0*sp.L_exp.data
+                    np.multiply(a0, sp.M_exp.data, out=sp.LHS.data)
+                    axpy(a=b0, x=sp.L_exp.data, y=sp.LHS.data)
                 else:
-                    sp.LHS = (a0*sp.M_min + b0*sp.L_min) @ sp.pre_right  # CREATES TEMPORARY
+                    sp.LHS = (a0*sp.M_min + b0*sp.L_min)  # CREATES TEMPORARY
                 sp.LHS_solver = solver.matsolver(sp.LHS, solver)
             # Slice out valid subdata, skipping invalid components
             spRHS = RHS.get_subdata(sp)
             spX = sp.LHS_solver.solve(spRHS)  # CREATES TEMPORARY
-            # Make output buffer including invalid components for scatter
-            spX2 = np.zeros((sp.pre_right.shape[0], len(sp.subsystems)), dtype=spX.dtype)  # CREATES TEMPORARY
-            csr_matvecs(sp.pre_right, spX, spX2)
-            sp.scatter(spX2, state_fields)
+            sp.scatter_inputs(spX, state_fields)
 
         # Update solver
         solver.sim_time += dt
@@ -565,18 +562,18 @@ class RungeKuttaIMEX:
         # Check on updating LHS
         update_LHS = (k != self._LHS_params)
         self._LHS_params = k
+        if update_LHS:
+            # Remove old solver references
+            for sp in subproblems:
+                sp.LHS_solvers = [None] * (self.stages+1)
 
         # Compute M.X(n,0)
         MX0.data.fill(0)
         # Ensure coeff space before subsystem gathers
-        for field in state_fields:
-            field.require_coeff_space()
+        evaluator.require_coeff_space(state_fields)
         for sp in subproblems:
-            spX = sp.gather(state_fields)  # CREATES TEMPORARY
-            csr_matvecs(sp.M_min, spX, MX0.get_subdata(sp))  # Rectangular dot product skipping shape checks
-            if update_LHS:
-                # Remove old solver references
-                sp.LHS_solvers = [None] * (self.stages+1)
+            spX = sp.gather_inputs(state_fields)
+            csr_matvecs(sp.M_min, spX, MX0.get_subdata(sp))
 
         # Compute stages
         # (M + k Hii L).X(n,i) = M.X(n,0) + k Aij F(n,j) - k Hij L.X(n,j)
@@ -588,8 +585,8 @@ class RungeKuttaIMEX:
             for field in state_fields:
                 field.require_coeff_space()
             for sp in subproblems:
-                spX = sp.gather(state_fields)  # CREATES TEMPORARY
-                csr_matvecs(sp.L_min, spX, LXi.get_subdata(sp))  # Rectangular dot product skipping shape checks
+                spX = sp.gather_inputs(state_fields)
+                csr_matvecs(sp.L_min, spX, LXi.get_subdata(sp))
 
             # Compute F(n,i-1), only doing output on first evaluation
             if i == 1:
@@ -600,8 +597,7 @@ class RungeKuttaIMEX:
             Fi.data.fill(0)
             for sp in subproblems:
                 # F fields should be in coeff space from evaluator
-                spX = sp.gather(F_fields)  # CREATES TEMPORARY
-                csr_matvecs(sp.pre_left, spX, Fi.get_subdata(sp))  # Rectangular dot product skipping shape checks
+                sp.gather_outputs(F_fields, out=Fi.get_subdata(sp))
 
             # Construct RHS(n,i)
             if RHS.data.size:
@@ -613,6 +609,7 @@ class RungeKuttaIMEX:
                     axpy(a=-(k*H[i,j]), x=LX[j].data, y=RHS.data)
 
             # Solve for stage
+            k_Hii = k * H[i,i]
             # Ensure coeff space before subsystem scatters
             for field in state_fields:
                 field.preset_layout('c')
@@ -620,17 +617,16 @@ class RungeKuttaIMEX:
                 # Construct LHS(n,i)
                 if update_LHS:
                     if STORE_EXPANDED_MATRICES:
-                        np.copyto(sp.LHS.data, sp.M_exp.data + (k*H[i,i])*sp.L_exp.data)  # CREATES TEMPORARY
+                        # sp.LHS.data[:] = sp.M_exp.data + k_Hii*sp.L_exp.data
+                        np.copyto(sp.LHS.data, sp.M_exp.data)
+                        axpy(a=k_Hii, x=sp.L_exp.data, y=sp.LHS.data)
                     else:
-                        sp.LHS = (sp.M_min + (k*H[i,i])*sp.L_min) @ sp.pre_right  # CREATES TEMPORARY
+                        sp.LHS = (sp.M_min + k_Hii*sp.L_min)  # CREATES TEMPORARY
                     sp.LHS_solvers[i] = solver.matsolver(sp.LHS, solver)
                 # Slice out valid subdata, skipping invalid components
                 spRHS = RHS.get_subdata(sp)
                 spX = sp.LHS_solvers[i].solve(spRHS)  # CREATES TEMPORARY
-                # Make output buffer including invalid components for scatter
-                spX2 = np.zeros((sp.pre_right.shape[0], len(sp.subsystems)), dtype=spX.dtype)  # CREATES TEMPORARY
-                csr_matvecs(sp.pre_right, spX, spX2)
-                sp.scatter(spX2, state_fields)
+                sp.scatter_inputs(spX, state_fields)
             solver.sim_time = sim_time_0 + k*c[i]
 
 

@@ -200,22 +200,22 @@ class NonlinearBoundaryValueProblem(ProblemBase):
     Notes
     -----
     This class supports nonlinear boundary value problems of the form:
-        F(X) = G(X)
+        G(X) = H(X)
     which are recombined to form the root-finding problem:
-        H(X) = F(X) - G(X) = 0
+        F(X) = G(X) - H(X) = 0
 
     The problem is reduced into a linear BVP for an update to the solution
     using the Newton-Kantorovich method and the symbolically-computed Frechet
     differential of the equation:
-        H(X[n+1]) = 0
-        H(X[n] + dX) = 0
-        H(X[n]) + dH(X[n]).dX = 0
-        dH(X[n]).dX = - H(X[n])
+        F(X[n+1]) = 0
+        F(X[n] + dX) = 0
+        F(X[n]) + dF(X[n]).dX = 0
+        dF(X[n]).dX = - F(X[n])
 
     Iteration procedure:
-        - Form dH(X[n])
-        - Evaluate H(X[n])
-        - Solve dX = - dH(X[n]) \ H(X[n])
+        - Form dF(X[n])
+        - Evaluate F(X[n])
+        - Solve dX = - dF(X[n]) \ F(X[n])
         - Update X[n+1] = X[n] + dX
     """
 
@@ -241,24 +241,24 @@ class NonlinearBoundaryValueProblem(ProblemBase):
         vars = self.variables
         perts = self.perturbations
         # Extract matrix expressions
-        H = eqn['LHS'] - eqn['RHS']
-        dH = H.frechet_differential(vars, perts)
+        F = eqn['LHS'] - eqn['RHS']
+        dF = F.frechet_differential(vars, perts)
         # Reinitialize and prep NCCs
-        dH = dH.reinitialize(ncc=True, ncc_vars=perts)
-        dH.prep_nccs(vars=perts)
+        dF = dF.reinitialize(ncc=True, ncc_vars=perts)
+        dF.prep_nccs(vars=perts)
         # Convert to same domain
-        domain = (dH + H).domain
-        H = operators.convert(H, domain.bases)
-        dH = operators.convert(dH, domain.bases)
+        domain = (dF + F).domain
+        F = operators.convert(F, domain.bases)
+        dF = operators.convert(dF, domain.bases)
         # Save expressions and metadata
-        eqn['H'] = H
-        eqn['dH'] = dH
+        eqn['F'] = F
+        eqn['dF'] = dF
         eqn['domain'] = domain
-        eqn['matrix_dependence'] = dH.matrix_dependence(*perts)
-        eqn['matrix_coupling'] = dH.matrix_coupling(*perts)
+        eqn['matrix_dependence'] = dF.matrix_dependence(*perts)
+        eqn['matrix_coupling'] = dF.matrix_coupling(*perts)
         # Debug logging
-        logger.debug(f"  H: {H}")
-        logger.debug(f"  dH: {dH}")
+        logger.debug(f"  F: {F}")
+        logger.debug(f"  dF: {dF}")
 
 
 class InitialValueProblem(ProblemBase):
