@@ -552,6 +552,7 @@ class RungeKuttaIMEX:
         RHS = self.RHS
         MX0 = self.MX0
         LX = self.LX
+        LX0 = LX[0]
         F = self.F
         A = self.A
         H = self.H
@@ -567,26 +568,29 @@ class RungeKuttaIMEX:
             for sp in subproblems:
                 sp.LHS_solvers = [None] * (self.stages+1)
 
-        # Compute M.X(n,0)
+        # Compute M.X(n,0) and L.X(n,0)
         MX0.data.fill(0)
+        LX0.data.fill(0)
         # Ensure coeff space before subsystem gathers
         evaluator.require_coeff_space(state_fields)
         for sp in subproblems:
             spX = sp.gather_inputs(state_fields)
             csr_matvecs(sp.M_min, spX, MX0.get_subdata(sp))
+            csr_matvecs(sp.L_min, spX, LX0.get_subdata(sp))
 
         # Compute stages
         # (M + k Hii L).X(n,i) = M.X(n,0) + k Aij F(n,j) - k Hij L.X(n,j)
         for i in range(1, self.stages+1):
-            # Compute L.X(n,i-1)
-            LXi = LX[i-1]
-            LXi.data.fill(0)
-            # Ensure coeff space before subsystem gathers
-            for field in state_fields:
-                field.require_coeff_space()
-            for sp in subproblems:
-                spX = sp.gather_inputs(state_fields)
-                csr_matvecs(sp.L_min, spX, LXi.get_subdata(sp))
+
+            # Compute L.X(n,i-1), already done for i=1
+            if i > 1:
+                LXi = LX[i-1]
+                LXi.data.fill(0)
+                # Ensure coeff space before subsystem gathers
+                evaluator.require_coeff_space(state_fields)
+                for sp in subproblems:
+                    spX = sp.gather_inputs(state_fields)
+                    csr_matvecs(sp.L_min, spX, LXi.get_subdata(sp))
 
             # Compute F(n,i-1), only doing output on first evaluation
             if i == 1:
