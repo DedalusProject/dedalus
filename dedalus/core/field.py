@@ -463,24 +463,34 @@ class Current(Operand):
             alloc_doubles = buffer_size // 8
             return fftw.create_buffer(alloc_doubles)
 
-    def preset_scales(self, scales, keep_data=True):
+    @CachedAttribute
+    def _dealias_buffer_size(self):
+        return self.dist.buffer_size(self.domain, self.domain.dealias, dtype=self.dtype)
+
+    @CachedAttribute
+    def _dealias_buffer(self):
+        """Build and cache buffer large enough for dealias-scale data."""
+        buffer_size = self._dealias_buffer_size
+        ncomp = int(np.prod([vs.dim for vs in self.tensorsig]))
+        return self._create_buffer(ncomp * buffer_size)
+
+    def preset_scales(self, scales):
         """Set new transform scales."""
         new_scales = self.dist.remedy_scales(scales)
         old_scales = self.scales
+        # Return if scales are unchanged
         if new_scales == old_scales:
             return
-        # Set metadata
-        self.scales = new_scales
-        # Get buffer size, floored at dealias buffer size
-        buffer_size_new = self.dist.buffer_size(self.domain, new_scales, dtype=self.dtype)
-        buffer_size_dealias = self.dist.buffer_size(self.domain, self.domain.dealias, dtype=self.dtype)
-        buffer_size = max(buffer_size_new, buffer_size_dealias)
-        # Build new buffer if current buffer is different size
-        if buffer_size != self.buffer_size:
+        # Get required buffer size
+        buffer_size = self.dist.buffer_size(self.domain, new_scales, dtype=self.dtype)
+        # Use dealias buffer if possible
+        if buffer_size <= self._dealias_buffer_size:
+            self.buffer = self._dealias_buffer
+        else:
             ncomp = int(np.prod([vs.dim for vs in self.tensorsig]))
-            self.buffer = self._create_buffer(buffer_size*ncomp)
-            self.buffer_size = buffer_size
+            self.buffer = self._create_buffer(ncomp * buffer_size)
         # Reset layout to build new data view
+        self.scales = new_scales
         self.preset_layout(self.layout)
 
     def preset_layout(self, layout):

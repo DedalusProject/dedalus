@@ -310,28 +310,47 @@ class Subproblem:
             views.append(field_views)
         return buffer, views
 
+    @CachedMethod
+    def _input_field_views(self, fields):
+        views = []
+        for field, buffer_data in zip(fields, self._input_views):
+            for buffer_view, field_slices in buffer_data:
+                field_view = field.data[field_slices]
+                views.append((buffer_view, field_view))
+        return tuple(views)
+
+    @CachedMethod
+    def _output_field_views(self, fields):
+        views = []
+        for field, buffer_data in zip(fields, self._output_views):
+            for buffer_view, field_slices in buffer_data:
+                field_view = field.data[field_slices]
+                views.append((buffer_view, field_view))
+        return tuple(views)
+
+    #@profile
     def gather_inputs(self, fields, out=None):
         """Gather and precondition subproblem data from input-like field list."""
+        # Gather from fields
+        views = self._input_field_views(tuple(fields))
+        for buffer_view, field_view in views:
+            np.copyto(buffer_view, field_view)
+        # Apply right preconditioner inverse to compress inputs
         if out is None:
             out = self._compressed_buffer
-        # Gather from fields
-        for field, views in zip(fields, self._input_views):
-            for ss_view, ss_slices in views:
-                copyto(ss_view, field.data[ss_slices])
-        # Apply right preconditioner inverse to compress inputs
         out.fill(0)
         csr_matvecs(self.pre_right_T, self._input_buffer, out)
         return out
 
     def gather_outputs(self, fields, out=None):
         """Gather and precondition subproblem data from output-like field list."""
+        # Gather from fields
+        views = self._output_field_views(tuple(fields))
+        for buffer_view, field_view in views:
+            np.copyto(buffer_view, field_view)
+        # Apply left preconditioner to compress outputs
         if out is None:
             out = self._compressed_buffer
-        # Gather from fields
-        for field, views in zip(fields, self._output_views):
-            for ss_view, ss_slices in views:
-                copyto(ss_view, field.data[ss_slices])
-        # Apply left preconditioner to compress outputs
         out.fill(0)
         csr_matvecs(self.pre_left, self._output_buffer, out)
         return out
@@ -342,9 +361,9 @@ class Subproblem:
         self._input_buffer.fill(0)
         csr_matvecs(self.pre_right, data, self._input_buffer)
         # Scatter to fields
-        for field, views in zip(fields, self._input_views):
-            for ss_view, ss_slices in views:
-                copyto(field.data[ss_slices], ss_view)
+        views = self._input_field_views(tuple(fields))
+        for buffer_view, field_view in views:
+            np.copyto(field_view, buffer_view)
 
     def scatter_outputs(self, data, fields):
         """Precondition and scatter subproblem data out to output-like field list."""
@@ -352,9 +371,9 @@ class Subproblem:
         self._output_buffer.fill(0)
         csr_matvecs(self.pre_left_T, data, self._output_buffer)
         # Scatter to fields
-        for field, views in zip(fields, self._output_views):
-            for ss_view, ss_slices in views:
-                copyto(field.data[ss_slices], ss_view)
+        views = self._output_field_views(tuple(fields))
+        for buffer_view, field_view in views:
+            np.copyto(field_view, buffer_view)
 
     def inclusion_matrices(self, bases):
         """List of inclusion matrices."""
