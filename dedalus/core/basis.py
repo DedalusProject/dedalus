@@ -3600,7 +3600,7 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
             Q = self.radial_recombinations(tensorsig, ell_list)
             # Flatten tensor axes
             shape = gdata.shape
-            temp = gdata.reshape((-1,)+shape[rank:])
+            temp = gdata.reshape((np.prod(shape[:rank]),)+shape[rank:])
             slices = [slice(None) for i in range(temp.ndim)]
             # Apply Q transformations for each ell to flattened tensor data
             for ell, m_ind, ell_ind in ell_maps:
@@ -3617,7 +3617,7 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
             Q = self.radial_recombinations(tensorsig, ell_list)
             # Flatten tensor axes
             shape = gdata.shape
-            temp = gdata.reshape((-1,)+shape[rank:])
+            temp = gdata.reshape((np.prod(shape[:rank]),)+shape[rank:])
             slices = [slice(None) for i in range(temp.ndim)]
             # Apply Q transformations for each ell to flattened tensor data
             for ell, m_ind, ell_ind in ell_maps:
