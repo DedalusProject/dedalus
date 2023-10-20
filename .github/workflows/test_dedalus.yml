@@ -32,7 +32,7 @@ jobs:
           conda activate dedalus
           conda env config vars set OMP_NUM_THREADS=1
           conda env config vars set NUMEXPR_MAX_THREADS=1
-          conda install -y -c conda-forge dedalus c-compiler "h5py=*=mpi*"
+          conda install -y -c conda-forge dedalus c-compiler cython "h5py=*=mpi*"
           conda uninstall -y --force dedalus
       - name: Checkout repository
         uses: actions/checkout@v2
@@ -40,7 +40,7 @@ jobs:
         shell: bash -l {0}
         run: |
           conda activate dedalus
-          CC=mpicc pip install --no-cache .
+          CC=mpicc pip install --no-cache --no-build-isolation .
       - name: Test Dedalus
         shell: bash -l {0}
         run: |
@@ -57,4 +57,4 @@ jobs:
           name: Test report (${{ matrix.os }})
           path: dedalus-test-junit.xml
           reporter: java-junit
-          
+

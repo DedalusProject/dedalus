@@ -1,5 +1,5 @@
 [build-system]
-requires = ["cython >= 0.22, < 3.0",
+requires = ["cython >= 3.0.5",
             "mpi4py >= 2.0.0",
             "numpy >= 1.20.0",
             "setuptools",

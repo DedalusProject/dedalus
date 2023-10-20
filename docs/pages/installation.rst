@@ -29,7 +29,7 @@ If linking to the existing MPI libraries on your cluster is recommended, see the
        conda activate dedalus3
 
 #. *(Apple Silicon only)* There are currently upstream issues in scipy that prevent Dedalus from natively running on arm64 at this time.
-   If you are using a Mac with an Apple Silicon processor, you will need to instruct the environment to use x86 packages::
+   If you are using a Mac with an Apple Silicon processor, ensure that Rosetta is installed following `these instructions <https://support.apple.com/en-us/HT211861>`_ and instruct the conda environment to use x86 packages::
 
        # Macs with Apple Silicon only!
        conda config --env --set subdir osx-64
@@ -44,7 +44,7 @@ If linking to the existing MPI libraries on your cluster is recommended, see the
 #. Install Dedalus v2 and all its requirements from the conda-forge channel and upgrade to Dedalus v3 using pip::
 
        # Install Dedalus v2 from conda-forge to build stack
-       conda install -c conda-forge dedalus c-compiler "h5py=*=mpi*" "cython<3.0"
+       conda install -c conda-forge dedalus c-compiler cython "h5py=*=mpi*"
 
        # Upgrade to Dedalus v3
        conda uninstall --force dedalus
@@ -93,9 +93,9 @@ Installing the Dedalus package
 To install the Dedalus package, you must first have the necessary C and Python 3 dependencies.
 The required C packages are MPI, FFTW, and HDF5.
 In your Python 3 environment, you need mpi4py and h5py linked to your MPI and HDF5 installations (see the mpi4py and h5py docs for details).
-The other Python 3 build requirements are numpy, setuptools, wheel, and cython\<3.0 (note the strict Cython version requirement), which can all be installed via pip::
+The other Python 3 build requirements are cython, numpy, setuptools, and wheel, which can all be installed via pip::
 
-    pip3 install --upgrade numpy setuptools wheel "cython\<3.0"
+    pip3 install --upgrade cython numpy setuptools wheel
 
 You can then install Dedalus from the PyPI distributions or the source repository, as described below.
 
