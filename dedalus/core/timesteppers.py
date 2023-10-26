@@ -276,9 +276,11 @@ class MultistepIMEX:
                 sp.LHS_solver = None
             if update_LHS:
                 if STORE_EXPANDED_MATRICES:
-                    np.copyto(sp.LHS.data, a0*sp.M_exp.data + b0*sp.L_exp.data)  # CREATES TEMPORARY
+                    # sp.LHS.data[:] = a0*sp.M_exp.data + b0*sp.L_exp.data
+                    np.multiply(a0, sp.M_exp.data, out=sp.LHS.data)
+                    axpy(a=b0, x=sp.L_exp.data, y=sp.LHS.data)
                 else:
-                    sp.LHS = (a0*sp.M_min + b0*sp.L_min) @ sp.pre_right  # CREATES TEMPORARY
+                    sp.LHS = (a0*sp.M_min + b0*sp.L_min)  # CREATES TEMPORARY
                 sp.LHS_solver = solver.matsolver(np.conj(sp.LHS).T.tocsr(), solver)
 
         # Ensure coeff space before subsystem gathers
@@ -287,23 +289,13 @@ class MultistepIMEX:
      
         for sp in subproblems:
             # Slice out valid subdata, skipping invalid components
-            if(solver.iteration==solver.stop_iteration):
-                # Use adjoint state for RHS
-                spX2 = sp.gather(state_fields)
-                spRHS = np.zeros((sp.pre_right.shape[1], len(sp.subsystems)), dtype=spX2.dtype)  # CREATES TEMPORARY
-                csr_matvecs(np.conj(sp.pre_right).T.tocsr(), spX2, spRHS)
-            else:
-                # Use computed adjoint RHS
-                spRHS = RHS.get_subdata(sp)
 
-            for field in state_fields:
-                field.preset_layout('c')
+            spRHS = sp.gather_inputs(state_fields)
 
-            
             spX = sp.LHS_solver.solve(spRHS)  # CREATES TEMPORARY
-            # sp.scatter(spX, state_fields)
-            csr_matvecs(np.conj(sp.pre_right).T.tocsr()@np.conj(sp.M_min).T.tocsr(), spX, MX0.get_subdata(sp))  # Rectangular dot product skipping shape checks
-            csr_matvecs(np.conj(sp.pre_right).T.tocsr()@np.conj(sp.L_min).T.tocsr(), spX, LX0.get_subdata(sp))  # Rectangular dot product skipping shape checks 
+
+            csr_matvecs(np.conj(sp.M_min).T.tocsr(), spX, MX0.get_subdata(sp))  # Rectangular dot product skipping shape checks
+            csr_matvecs(np.conj(sp.L_min).T.tocsr(), spX, LX0.get_subdata(sp))  # Rectangular dot product skipping shape checks 
 
         if RHS.data.size:
             np.multiply(c[0][1], F0.data, out=RHS.data)
@@ -317,15 +309,10 @@ class MultistepIMEX:
                 # RHS.data -= b[j] * LX[j-1].data
                 axpy(a=-b[j-1][j], x=LX[j-1].data, y=RHS.data)
         
-        if(solver.iteration==1):
-            # Here, the next un-preconditioned RHS is the adjoint state
-            for field in state_fields:
-                field.preset_layout('c')
-            for sp in subproblems:
-                spRHS = RHS.get_subdata(sp)
-                spRHS2 = np.zeros((sp.pre_right.shape[0], len(sp.subsystems)), dtype=spRHS.dtype)  # CREATES TEMPORARY
-                csr_matvecs(sp.pre_right, spRHS, spRHS2)
-                sp.scatter(spRHS2, state_fields)
+        for field in state_fields:
+            field.preset_layout('c')
+        for sp in subproblems:
+            sp.scatter_inputs(RHS.get_subdata(sp), state_fields)
 
         # Update solver
         solver.sim_time -= dt
@@ -834,12 +821,13 @@ class RungeKuttaIMEX:
         # Ensure coeff space before subsystem gathers
         for field in state_fields:
             field.require_coeff_space()
+        # Ensure coeff space before subsystem gathers
+        # evaluator.require_coeff_space(state_fields)
 
         RHS.data.fill(0)
         for sp in subproblems:
             # Use adjoint state for RHS
-            spX2 = sp.gather(state_fields)
-            csr_matvecs(np.conj(sp.pre_right).T.tocsr(), spX2, RHS.get_subdata(sp))
+            np.copyto(RHS.get_subdata(sp),sp.gather_inputs(state_fields))
         
         # Compute stages
         for i in reversed(range(1, self.stages+1)):
@@ -861,14 +849,19 @@ class RungeKuttaIMEX:
             #     evaluator.evaluate_scheduled(wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
             # else:
             #     evaluator.evaluate_group('F', wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
-
+            k_Hii = k * H[i,i]
+            for field in state_fields:
+                field.preset_layout('c')
             for sp in subproblems:
                 # Construct LHS(n,i)
                 if update_LHS: # just for now
                     if STORE_EXPANDED_MATRICES:
-                        np.copyto(sp.LHS.data, sp.M_exp.data + (k*H[i,i])*sp.L_exp.data)  # CREATES TEMPORARY
+                        # sp.LHS.data[:] = sp.M_exp.data + k_Hii*sp.L_exp.data
+                        np.copyto(sp.LHS.data, sp.M_exp.data)
+                        axpy(a=k_Hii, x=sp.L_exp.data, y=sp.LHS.data)
                     else:
-                        sp.LHS = (sp.M_min + (k*H[i,i])*sp.L_min) @ sp.pre_right  # CREATES TEMPORARY
+                        sp.LHS = (sp.M_min + k_Hii*sp.L_min)  # CREATES TEMPORARY
+
                     # Create transposed solver
                     sp.LHS_solvers[i] = solver.matsolver(np.conj(sp.LHS).T, solver)
 
@@ -878,21 +871,21 @@ class RungeKuttaIMEX:
                 spX = sp.LHS_solvers[i].solve(spRHS)  # CREATES TEMPORARY
 
                 # Compute new transpose terms and RHS
-                csr_matvecs((np.conj(sp.pre_right).T@np.conj(sp.L_min).T).tocsr(), spX, LXi.get_subdata(sp))  # Rectangular dot product skipping shape checks                
-                csr_matvecs((np.conj(sp.pre_right).T@np.conj(sp.M_min).T).tocsr(), spX, MXTi.get_subdata(sp))
+                csr_matvecs((np.conj(sp.L_min).T).tocsr(), spX, LXi.get_subdata(sp))  # Rectangular dot product skipping shape checks                
+                csr_matvecs((np.conj(sp.M_min).T).tocsr(), spX, MXTi.get_subdata(sp))
 
                 # RHS similar but not implemented yet
                 # spX = sp.gather(F_fields) 
                 # csr_matvecs(np.conj(sp.pre_right).T.tocsr()np.conj(sp.pre_left).T.tocsr(), spX, Fi.get_subdata(sp))  # Rectangular dot product skipping shape checks             
                 # Compute adjoint RHS
 
-                if RHS.data.size:
-                    RHS.data.fill(0)
-                    for j in range(i, self.stages+1):
-                        # RHS.data += (k * A[j,i]) * FT[j-1].data
-                        axpy(a=(k*A[j,i-1]), x=F[j-1].data, y=RHS.data)
-                        # RHS.data -= (k * H[j,i]) * LXT[j].data
-                        axpy(a=-(k*H[j,i-1]), x=LX[j-1].data, y=RHS.data)
+            if RHS.data.size:
+                RHS.data.fill(0)
+                for j in range(i, self.stages+1):
+                    # RHS.data += (k * A[j,i]) * FT[j-1].data
+                    axpy(a=(k*A[j,i-1]), x=F[j-1].data, y=RHS.data)
+                    # RHS.data -= (k * H[j,i]) * LXT[j].data
+                    axpy(a=-(k*H[j,i-1]), x=LX[j-1].data, y=RHS.data)
                
             solver.sim_time = sim_time_0 - k + k*c[i-1]
 
@@ -909,9 +902,7 @@ class RungeKuttaIMEX:
         for sp in subproblems:
             # Adjoint state is the RHS (Use pre-right to undo pre-conditioned RHS)        
             spRHS = RHS.get_subdata(sp)
-            spRHS2 = np.zeros((sp.pre_right.shape[0], len(sp.subsystems)), dtype=spRHS.dtype)  # CREATES TEMPORARY
-            csr_matvecs(sp.pre_right, spRHS, spRHS2)
-            sp.scatter(spRHS2, state_fields)
+            sp.scatter_inputs(spRHS, state_fields)
 
 @add_scheme
 class RK111(RungeKuttaIMEX):
