@@ -168,7 +168,7 @@ class EigenvalueSolver(SolverBase):
 
     def _build_modified_left_eigenvectors(self):
         sp = self.eigenvalue_subproblem
-        return - (self.left_eigenvectors.T.conj() * sp.M_min).T.conj()
+        return - sp.pre_right@sp.M_min.T.conj()@self.left_eigenvectors
 
     def _normalize_left_eigenvectors(self):
         modified_left_eigenvectors = self._build_modified_left_eigenvectors()
