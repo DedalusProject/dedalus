@@ -471,8 +471,7 @@ class LinearBoundaryValueSolver(SolverBase):
         if rebuild_subproblems:
             self.build_matrices(rebuild_subproblems)
             for sp in rebuild_subproblems:
-                L = sp.L_min @ sp.pre_right
-                self.subproblem_matsolvers_adjoint[sp] = self.matsolver(np.conj(L).T, self)
+                self.subproblem_matsolvers_adjoint[sp] = self.matsolver(np.conj(sp.L_min).T, self)
         # Compute RHS
         # self.evaluator.evaluate_group('F', sim_time=0, wall_time=0, iteration=0)
         # TODO: see if an evaluator for the adjoint is worthwhile
@@ -484,15 +483,12 @@ class LinearBoundaryValueSolver(SolverBase):
         # Solve system for each subproblem, updating state
         for sp in subproblems:
             n_ss = len(sp.subsystems)
-            # Gather and adjoint right--precondition RHS
-            pF = np.zeros((sp.pre_right.shape[1], n_ss), dtype=self.dtype)  # CREATES TEMPORARY
-            # TODO: get working with csr_matvecs. Tranposing changes csr to csc
-            csr_matvecs((np.conj(sp.pre_right).T).tocsr(), sp.gather(self.state_adj), pF)
-            # Adjoint solve, adjoint left-precondition, and scatter X
+            # Gather (includes adjoint right-precondition) RHS
+            pF = sp.gather_inputs(self.state_adj)
+            # Adjoint solve,
             pX = self.subproblem_matsolvers_adjoint[sp].solve(pF)  # CREATES TEMPORARY
-            X = np.zeros((sp.pre_left.shape[1], n_ss), dtype=self.dtype)  # CREATES TEMPORARY
-            csr_matvecs((np.conj(sp.pre_left).T).tocsr(), pX.reshape((-1, n_ss)), X)
-            sp.scatter(X, self.F_adj)
+            # Scatter (contains adjoint left-precondition)
+            sp.scatter_outputs(pX, self.F_adj)
 
 
 class NonlinearBoundaryValueSolver(SolverBase):
@@ -622,15 +618,14 @@ class NonlinearBoundaryValueSolver(SolverBase):
         # Solve system for each subproblem, updating perturbations
         for sp in self.subproblems:
             n_ss = len(sp.subsystems)
-            # Gather and adjoint-right-precondition RHS
-            X = np.zeros((sp.pre_right.shape[-1], n_ss), dtype=self.dtype)
-            csr_matvecs(np.conj(sp.pre_right).T.tocsr(), sp.gather(self.state_adj), X)
+            # Gather (contains adjoint right-precondition)
+            X = sp.gather_inputs(self.state_adj) 
             # Solve
-            sp_matsolver = self.matsolver(np.conj(sp.dH_min @ sp.pre_right).T, self)
+            sp_matsolver = self.matsolver(np.conj(sp.dF_min).T, self)
             pX = - sp_matsolver.solve(X)
-            pF = np.zeros((sp.pre_left.shape[-1], n_ss), dtype=self.dtype)
-            csr_matvecs(np.conj(sp.pre_left).T.tocsr(), pX.reshape((-1, n_ss)), pF)
-            sp.scatter(pF, self.F_adj)
+            # Scatter (contains adjoint left-precondition)
+            sp.scatter_outputs(pX, self.F_adj)
+
 
 class InitialValueSolver(SolverBase):
     """
