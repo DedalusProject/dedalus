@@ -12,7 +12,7 @@ from mpi4py import MPI
 import uuid
 
 from .domain import Domain
-from ..tools.array import zeros_with_pattern, expand_pattern, sparse_block_diag, copyto, perm_matrix, drop_empty_rows, csr_matvecs
+from ..tools.array import zeros_with_pattern, expand_pattern, sparse_block_diag, copyto, perm_matrix, drop_empty_rows, csr_matvecs, assert_sparse_pinv
 from ..tools.cache import CachedAttribute, CachedMethod
 from ..tools.general import replace, OrderedSet
 from ..tools.progress import log_progress
@@ -339,7 +339,7 @@ class Subproblem:
         if out is None:
             out = self._compressed_buffer
         out.fill(0)
-        csr_matvecs(self.pre_right_T, self._input_buffer, out)
+        csr_matvecs(self.pre_right_pinv, self._input_buffer, out)
         return out
 
     def gather_outputs(self, fields, out=None):
@@ -369,7 +369,7 @@ class Subproblem:
         """Precondition and scatter subproblem data out to output-like field list."""
         # Undo left preconditioner to expand outputs
         self._output_buffer.fill(0)
-        csr_matvecs(self.pre_left_T, data, self._output_buffer)
+        csr_matvecs(self.pre_left_pinv, data, self._output_buffer)
         # Scatter to fields
         views = self._output_field_views(tuple(fields))
         for buffer_view, field_view in views:
@@ -554,9 +554,13 @@ class Subproblem:
 
         # Preconditioners
         self.pre_left = drop_empty_rows(left_perm @ valid_eqn).tocsr()
-        self.pre_left_T = self.pre_left.T.tocsr()
-        self.pre_right_T = drop_empty_rows(right_perm @ valid_var).tocsr()
-        self.pre_right = self.pre_right_T.T.tocsr()
+        self.pre_left_pinv = self.pre_left.T.tocsr()
+        self.pre_right_pinv = drop_empty_rows(right_perm @ valid_var).tocsr()
+        self.pre_right = self.pre_right_pinv.T.tocsr()
+
+        # Check preconditioner pseudoinverses
+        assert_sparse_pinv(self.pre_left, self.pre_left_pinv)
+        assert_sparse_pinv(self.pre_right, self.pre_right_pinv)
 
         # Precondition matrices
         for name in matrices:

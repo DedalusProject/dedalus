@@ -383,3 +383,21 @@ def interleave_matrices(matrices):
         P[i, i] = 0
     return sum
 
+
+def sparse_allclose(A, B):
+    A = A.tocsr()
+    B = B.tocsr()
+    return (np.allclose(A.data, B.data) and
+            np.allclose(A.indices, B.indices) and
+            np.allclose(A.indptr, B.indptr))
+
+def assert_sparse_pinv(A, B):
+    if not sparse_allclose(A @ B @ A, A):
+        raise AssertionError("Not a pseudoinverse")
+    if not sparse_allclose(B @ A @ B, B):
+        raise AssertionError("Not a pseudoinverse")
+    if not sparse_allclose((A @ B).conj().T, A @ B):
+        raise AssertionError("Not a pseudoinverse")
+    if not sparse_allclose((B @ A).conj().T, B @ A):
+        raise AssertionError("Not a pseudoinverse")
+
