@@ -190,7 +190,7 @@ class MultistepIMEX:
         # Update solver
         solver.sim_time += dt
 
-    def step_adjoint(self, wall_time):
+    def step_adjoint(self, dt, wall_time):
         """Advance adjoint by one timestep."""
 
         # Solver references
@@ -211,7 +211,7 @@ class MultistepIMEX:
         axpy = self.axpy
 
         self._iteration -= 1
-        dt = self.timestep_history[self._iteration]
+        # dt = self.timestep_history[self._iteration]
 
         # This part of the code could probably be tidier
         # Compute IMEX coefficients at current iteration and up to steps-1 iterations in the future
@@ -715,6 +715,7 @@ class RungeKuttaIMEX:
 
         # Check on updating LHS
         update_LHS = (k != self._LHS_params)
+        # print(self._LHS_params,update_LHS)
         self._LHS_params = k
         if update_LHS:
             # Remove old solver references
@@ -782,7 +783,7 @@ class RungeKuttaIMEX:
                 sp.scatter_inputs(spX, state_fields)
             solver.sim_time = sim_time_0 + k*c[i]
 
-    def step_adjoint(self, wall_time):
+    def step_adjoint(self, dt, wall_time):
         """Advance solver by one timestep."""
 
         # Solver references
@@ -803,13 +804,15 @@ class RungeKuttaIMEX:
         A = self.A
         H = self.H
         c = self.c
-        k = dt = self.timestep_history[solver.iteration-1]
+        # k = dt = self.timestep_history[solver.iteration-1]
+        k = dt
         axpy = self.axpy
 
         MXT = self.MXT
 
         # Check on updating LHS
         update_LHS = solver.iteration==solver.stop_iteration or (k != self._LHS_params)
+        
         self._LHS_params = k
 
         for sp in subproblems:
