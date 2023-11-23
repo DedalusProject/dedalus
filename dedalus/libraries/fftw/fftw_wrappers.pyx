@@ -9,6 +9,7 @@ from mpi4py.MPI cimport Comm as py_comm_t
 from mpi4py.libmpi cimport MPI_Comm as mpi_comm_t
 from libc.stddef cimport ptrdiff_t as p_t
 from cython.view cimport array as cy_array
+from math import prod
 
 from . cimport fftw_c_api as cfftw
 from ...tools.array import axslice
@@ -41,9 +42,9 @@ def create_buffer(size_t alloc_doubles):
 def create_array(shape, dtype):
     """Create array using FFTW-aligned buffer."""
     if dtype == np.float64:
-        alloc_doubles = np.prod(shape)
+        alloc_doubles = prod(shape)
     elif dtype == np.complex128:
-        alloc_doubles = 2 * np.prod(shape)
+        alloc_doubles = 2 * prod(shape)
     else:
         raise ValueError("Unsupported dtype: %s" %str(dtype))
     buffer = create_buffer(alloc_doubles)
@@ -107,21 +108,21 @@ cdef class FourierTransform:
         cdef cfftw.fftw_iodim trans
         # Transform along `axis`
         trans.n = gshape[axis]
-        trans.in_stride  = np.prod(gshape[axis+1:])
-        trans.out_stride = np.prod(cshape[axis+1:])
+        trans.in_stride  = prod(gshape[axis+1:])
+        trans.out_stride = prod(cshape[axis+1:])
         cdef cfftw.fftw_iodim *trans_struct = [trans]
 
         # Build FFTW guru vector structures
         cdef int vec_rank = 2
         cdef cfftw.fftw_iodim vec0, vec1f, vec1b
         # Loop over higher axes
-        vec0.n = np.prod(gshape[axis+1:])
+        vec0.n = prod(gshape[axis+1:])
         vec0.in_stride = 1
         vec0.out_stride = 1
         # Loop over lower axes
-        vec1f.n = vec1b.n = np.prod(gshape[:axis])
-        vec1f.in_stride  = vec1b.out_stride = np.prod(gshape[axis:])
-        vec1f.out_stride = vec1b.in_stride  = np.prod(cshape[axis:])
+        vec1f.n = vec1b.n = prod(gshape[:axis])
+        vec1f.in_stride  = vec1b.out_stride = prod(gshape[axis:])
+        vec1f.out_stride = vec1b.in_stride  = prod(cshape[axis:])
         cdef cfftw.fftw_iodim *vec_struct_f = [vec0, vec1f]
         cdef cfftw.fftw_iodim *vec_struct_b = [vec0, vec1b]
 
@@ -135,8 +136,8 @@ cdef class FourierTransform:
         cdef complex *cg_temp
         cdef complex *cc_temp
         if grid_dtype == np.float64:
-            rg_temp = cfftw.fftw_alloc_real(np.prod(gshape))
-            cc_temp = cfftw.fftw_alloc_complex(np.prod(cshape))
+            rg_temp = cfftw.fftw_alloc_real(prod(gshape))
+            cc_temp = cfftw.fftw_alloc_complex(prod(cshape))
             self.forward_plan = cfftw.fftw_plan_guru_dft_r2c(trans_rank,
                                                              trans_struct,
                                                              vec_rank,
@@ -154,8 +155,8 @@ cdef class FourierTransform:
             cfftw.fftw_free(rg_temp)
             cfftw.fftw_free(cc_temp)
         elif grid_dtype == np.complex128:
-            cg_temp = cfftw.fftw_alloc_complex(np.prod(gshape))
-            cc_temp = cfftw.fftw_alloc_complex(np.prod(cshape))
+            cg_temp = cfftw.fftw_alloc_complex(prod(gshape))
+            cc_temp = cfftw.fftw_alloc_complex(prod(cshape))
             self.forward_plan = cfftw.fftw_plan_guru_dft(trans_rank,
                                                          trans_struct,
                                                          vec_rank,
@@ -253,21 +254,21 @@ cdef class R2RTransformBase:
         cdef cfftw.fftw_iodim trans
         # Transform along `axis`
         trans.n = gshape[axis]
-        trans.in_stride  = np.prod(gshape[axis+1:])
-        trans.out_stride = np.prod(cshape[axis+1:])
+        trans.in_stride  = prod(gshape[axis+1:])
+        trans.out_stride = prod(cshape[axis+1:])
         cdef cfftw.fftw_iodim *trans_struct = [trans]
 
         # Build FFTW guru vector structures
         cdef int vec_rank = 2
         cdef cfftw.fftw_iodim vec0, vec1f, vec1b
         # Loop over higher axes
-        vec0.n = np.prod(gshape[axis+1:])
+        vec0.n = prod(gshape[axis+1:])
         vec0.in_stride = 1
         vec0.out_stride = 1
         # Loop over lower axes
-        vec1f.n = vec1b.n = np.prod(gshape[:axis])
-        vec1f.in_stride  = vec1b.out_stride = np.prod(gshape[axis:])
-        vec1f.out_stride = vec1b.in_stride  = np.prod(cshape[axis:])
+        vec1f.n = vec1b.n = prod(gshape[:axis])
+        vec1f.in_stride  = vec1b.out_stride = prod(gshape[axis:])
+        vec1f.out_stride = vec1b.in_stride  = prod(cshape[axis:])
         cdef cfftw.fftw_iodim *vec_struct_f = [vec0, vec1f]
         cdef cfftw.fftw_iodim *vec_struct_b = [vec0, vec1b]
 
@@ -279,8 +280,8 @@ cdef class R2RTransformBase:
         # Create out-of-place plans using temporary memory allocations
         cdef double *gdata
         cdef double *cdata
-        gdata = cfftw.fftw_alloc_real(np.prod(gshape))
-        cdata = cfftw.fftw_alloc_real(np.prod(cshape))
+        gdata = cfftw.fftw_alloc_real(prod(gshape))
+        cdata = cfftw.fftw_alloc_real(prod(cshape))
         self.forward_plan = cfftw.fftw_plan_guru_r2r(trans_rank,
                                                      trans_struct,
                                                      vec_rank,

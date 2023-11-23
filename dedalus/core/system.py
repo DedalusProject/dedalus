@@ -4,6 +4,7 @@ Classes for systems of coefficients/fields.
 """
 
 import numpy as np
+from math import prod
 
 from ..tools.cache import CachedMethod
 from ..tools.general import unify
@@ -85,7 +86,7 @@ class FieldSystem(CoeffSystem):
 
         domain = unify_attributes(fields, 'domain')
         array_shapes = [coeff_layout.local_array_shape(f.subdomain) for f in fields]
-        array_sizes = [np.prod(shape) for shape in array_shapes]
+        array_sizes = [prod(shape) for shape in array_shapes]
         buffer_size = sum(array_sizes)
         starts = np.cumsum(array_sizes) - array_sizes
         buffer = np.zeros(buffer_size, dtype=domain.dtype)

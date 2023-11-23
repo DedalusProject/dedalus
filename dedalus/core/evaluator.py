@@ -9,6 +9,7 @@ import shutil
 import uuid
 import numpy as np
 import hashlib
+from math import prod
 
 from .future import FutureField, FutureLockedField
 from .field import Field, LockedField
@@ -456,7 +457,7 @@ class H5FileHandlerBase(Handler):
         task['global_shape'] = global_shape
         task['local_start'] = local_start
         task['local_shape'] = local_shape
-        task['local_size'] = np.prod(local_shape)
+        task['local_size'] = prod(local_shape)
         task['local_slices'] = tuple(slice(start, start+size) for start, size in zip(local_start, local_shape))
 
     def get_data_distribution(self, task, rank=None):
@@ -798,7 +799,7 @@ class H5VirtualFileHandler(H5FileHandlerBase):
         # Add virtual sources from nonempty processes
         for rank in range(self.comm.size):
             global_shape, local_start, local_shape = self.get_data_distribution(task, rank=rank)
-            if np.prod(local_shape):
+            if prod(local_shape):
                 shape = (1,) + local_shape
                 maxshape = (self.max_writes,) + local_shape
                 filename = str(self._current_process_file(rank).relative_to(self.base_path))

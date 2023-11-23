@@ -5,18 +5,9 @@ from scipy import sparse
 import scipy.sparse as sp
 from scipy.sparse import _sparsetools
 from scipy.sparse import linalg as spla
-from functools import reduce
-import operator
 from ..tools.config import config
 
 SPLIT_CSR_MATVECS = config['linear algebra'].getboolean('SPLIT_CSR_MATVECS')
-
-
-def prod(arg):
-    if arg:
-        return reduce(operator.mul, arg)
-    else:
-        return 1
 
 
 def interleaved_view(data):

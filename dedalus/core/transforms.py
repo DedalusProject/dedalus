@@ -7,11 +7,12 @@ import scipy
 import scipy.fft
 import scipy.fftpack
 from ..libraries import dedalus_sphere
+from math import prod
 
 from . import basis
 from ..libraries.fftw import fftw_wrappers as fftw
 from ..tools import jacobi
-from ..tools.array import apply_matrix, apply_dense, axslice, splu_inverse, apply_sparse, prod
+from ..tools.array import apply_matrix, apply_dense, axslice, splu_inverse, apply_sparse
 from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
 
@@ -1050,27 +1051,27 @@ class FFTWFastChebyshevTransform(FastChebyshevTransform, FFTWDCT):
 
 def reduced_view_3(data, axis):
     shape = data.shape
-    N0 = int(prod(shape[:axis]))
+    N0 = prod(shape[:axis])
     N1 = shape[axis]
-    N2 = int(prod(shape[axis+1:]))
+    N2 = prod(shape[axis+1:])
     return data.reshape((N0, N1, N2))
 
 
 def reduced_view_4(data, axis):
     shape = data.shape
-    N0 = int(prod(shape[:axis]))
+    N0 = prod(shape[:axis])
     N1 = shape[axis]
     N2 = shape[axis+1]
-    N3 = int(prod(shape[axis+2:]))
+    N3 = prod(shape[axis+2:])
     return data.reshape((N0, N1, N2, N3))
 
 def reduced_view_5(data, axis):
     shape = data.shape
-    N0 = int(prod(shape[:axis]))
+    N0 = prod(shape[:axis])
     N1 = shape[axis]
     N2 = shape[axis+1]
     N3 = shape[axis+2]
-    N4 = int(prod(shape[axis+3:]))
+    N4 = prod(shape[axis+3:])
     return data.reshape((N0, N1, N2, N3, N4))
 
 class PolynomialTransform(Transform):
@@ -1090,10 +1091,10 @@ class PolynomialTransform(Transform):
     #     if self.dtype == np.complex128:
     #         coeff_shape = list(coeff_shape) + [2]
 
-    #     self.N0 = N0 = np.prod(coeff_shape[:axis], dtype=int)
+    #     self.N0 = N0 = prod(coeff_shape[:axis])
     #     self.N1C = N1C = coeff_shape[axis]
     #     self.N1G = N1G = int(self.N1C * scale)
-    #     self.N2 = N2 = np.prod(coeff_shape[axis+1:], dtype=int)
+    #     self.N2 = N2 = prod(coeff_shape[axis+1:])
 
     #     self.gdata_reduced = np.zeros(shape=[N0, N1G, N2], dtype=np.float64)
     #     self.cdata_reduced = np.zeros(shape=[N0, N1C, N2], dtype=np.float64)
@@ -1172,9 +1173,9 @@ class PolynomialTransform(Transform):
 
 def reduce_array(data, axis):
     """Return reduced 3D view of array collapsed above and below specified axis."""
-    N0 = int(prod(data.shape[:axis]))
+    N0 = prod(data.shape[:axis])
     N1 = data.shape[axis]
-    N2 = int(prod(data.shape[axis+1:]))
+    N2 = prod(data.shape[axis+1:])
     return data.reshape((N0, N1, N2))
 
 def forward_DFT(gdata, cdata, axis):

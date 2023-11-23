@@ -4,10 +4,11 @@ import numpy as np
 from scipy import sparse
 from functools import reduce
 import inspect
+from math import prod
 
 from . import operators
 from ..libraries import spin_recombination
-from ..tools.array import kron, axslice, apply_matrix, permute_axis, prod
+from ..tools.array import kron, axslice, apply_matrix, permute_axis
 from ..tools.cache import CachedAttribute, CachedMethod, CachedClass
 from ..tools import jacobi
 from ..tools import clenshaw
@@ -300,8 +301,8 @@ class Basis:
             Gamma = product.Gamma(operand.tensorsig, ncc.tensorsig, product.tensorsig, group, ncc_group, group, axis)
             Gamma = Gamma.transpose((1,0,2))
         # Loop over input and output components to build matrix blocks
-        M = np.prod(subproblem.coeff_shape(product.domain)[:axis+1])
-        N = np.prod(subproblem.coeff_shape(operand.domain)[:axis+1])
+        M = prod(subproblem.coeff_shape(product.domain)[:axis+1])
+        N = prod(subproblem.coeff_shape(operand.domain)[:axis+1])
         blocks = []
         for ic, out_comp in enum_indices(product.tensorsig):
             block_row = []
@@ -1576,11 +1577,11 @@ class MultidimensionalBasis(Basis):
 
 def reduced_view_5(data, axis1, axis2):
     shape = data.shape
-    N0 = int(prod(shape[:axis1]))
+    N0 = prod(shape[:axis1])
     N1 = shape[axis1]
-    N2 = int(prod(shape[axis1+1:axis2]))
+    N2 = prod(shape[axis1+1:axis2])
     N3 = shape[axis2]
-    N4 = int(prod(shape[axis2+1:]))
+    N4 = prod(shape[axis2+1:])
     return data.reshape((N0, N1, N2, N3, N4))
 
 
@@ -4799,10 +4800,10 @@ class BallBasis(Spherical3DBasis, metaclass=CachedClass):
 
 def reduced_view(data, axis, dim):
     shape = data.shape
-    Na = (int(prod(shape[:axis])),)
+    Na = prod(shape[:axis])
     Nb = shape[axis:axis+dim]
-    Nc = (int(prod(shape[axis+dim:])),)
-    return data.reshape(Na+Nb+Nc)
+    Nc = prod(shape[axis+dim:])
+    return data.reshape((Na,)+Nb+(Nc,))
 
 
 class ConvertRegularity(operators.Convert, operators.SphericalEllOperator):

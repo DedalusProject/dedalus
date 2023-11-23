@@ -10,6 +10,7 @@ import numpy as np
 from scipy import sparse
 from mpi4py import MPI
 import uuid
+from math import prod
 
 from .domain import Domain
 from ..tools.array import zeros_with_pattern, expand_pattern, sparse_block_diag, copyto, perm_matrix, drop_empty_rows, csr_matvecs, assert_sparse_pinv
@@ -146,7 +147,7 @@ class Subsystem:
         return tuple(shape)
 
     def coeff_size(self, domain):
-        return np.prod(self.coeff_shape(domain))
+        return prod(self.coeff_shape(domain))
 
     @CachedMethod
     def field_slices(self, field):
@@ -162,7 +163,7 @@ class Subsystem:
 
     @CachedMethod
     def field_size(self, field):
-        return np.prod(self.field_shape(field))
+        return prod(self.field_shape(field))
 
     # @CachedMethod
     # def valid_field_slices(self, field):
@@ -186,7 +187,7 @@ class Subsystem:
 
     # @CachedMethod
     # def valid_field_size(self, field):
-    #     return np.prod(self.valid_field_shape(field))
+    #     return prod(self.valid_field_shape(field))
 
     @CachedMethod
     def _gather_scatter_setup(self, fields):
@@ -626,14 +627,14 @@ def left_permutation(subproblem, equations, bc_top, interleave_components):
         L1 = []
         vfshape = subproblem.field_shape(eqn['LHS'])
         rank = len(eqn['LHS'].tensorsig)
-        vfshape = (int(np.prod(vfshape[:rank])),) + vfshape[rank:]
+        vfshape = (prod(vfshape[:rank]),) + vfshape[rank:]
         if vfshape[0] == 0:
             L1.append([])
             L0.append(L1)
             continue
         for comp in range(vfshape[0]):
             L2 = []
-            for coeff in range(np.prod(vfshape[1:], dtype=int)):
+            for coeff in range(prod(vfshape[1:])):
                 L2.append(i)
                 i += 1
             L1.append(L2)
@@ -690,14 +691,14 @@ def right_permutation(subproblem, variables, tau_left, interleave_components):
         L1 = []
         vfshape = subproblem.field_shape(var)
         rank = len(var.tensorsig)
-        vfshape = (int(np.prod(vfshape[:rank])),) + vfshape[rank:]
+        vfshape = (prod(vfshape[:rank]),) + vfshape[rank:]
         if vfshape[0] == 0:
             L1.append([])
             L0.append(L1)
             continue
         for comp in range(vfshape[0]):
             L2 = []
-            for coeff in range(np.prod(vfshape[1:], dtype=int)):
+            for coeff in range(prod(vfshape[1:])):
                 L2.append(i)
                 i += 1
             L1.append(L2)

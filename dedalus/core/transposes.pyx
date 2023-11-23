@@ -4,6 +4,7 @@ cimport cython
 cimport numpy as cnp
 import numpy as np
 import math
+from math import prod
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -65,10 +66,10 @@ cdef class FFTWTranspose:
         self.axis = axis
         self.pycomm = pycomm
         # Reduced global shape (4d array)
-        self.N0 = N0 = np.prod(global_shape[:axis])
+        self.N0 = N0 = prod(global_shape[:axis])
         self.N1 = N1 = global_shape[axis]
         self.N2 = N2 = global_shape[axis+1]
-        self.N3 = N3 = np.prod(global_shape[axis+2:])
+        self.N3 = N3 = prod(global_shape[axis+2:])
         # Chunks
         C1 = chunk_shape[axis]
         C2 = chunk_shape[axis+1]
@@ -268,10 +269,10 @@ cdef class AlltoallvTranspose:
         self.axis = axis
         self.pycomm = pycomm
         # Reduced global shape (4d array)
-        self.N0 = N0 = np.prod(global_shape[:axis])
+        self.N0 = N0 = prod(global_shape[:axis])
         self.N1 = N1 = global_shape[axis]
         self.N2 = N2 = global_shape[axis+1]
-        self.N3 = N3 = np.prod(global_shape[axis+2:]) * self.datasize
+        self.N3 = N3 = prod(global_shape[axis+2:]) * self.datasize
         # Blocks
         B1 = math.ceil(global_shape[axis] / pycomm.size)
         B2 = math.ceil(global_shape[axis+1] / pycomm.size)
@@ -446,10 +447,10 @@ cdef class ColDistributor(AlltoallvTranspose):
         self.axis = axis
         self.pycomm = pycomm
         # Reduced global shape (4d array)
-        self.N0 = N0 = np.prod(global_shape[:axis])
+        self.N0 = N0 = prod(global_shape[:axis])
         self.N1 = N1 = global_shape[axis]
         self.N2 = N2 = global_shape[axis+1]
-        self.N3 = N3 = np.prod(global_shape[axis+2:]) * self.datasize
+        self.N3 = N3 = prod(global_shape[axis+2:]) * self.datasize
         # Blocks
         B1 = math.ceil(global_shape[axis] / pycomm.size)
         B2 = N2
@@ -530,10 +531,10 @@ cdef class RowDistributor(AlltoallvTranspose):
         self.axis = axis
         self.pycomm = pycomm
         # Reduced global shape (4d array)
-        self.N0 = N0 = np.prod(global_shape[:axis])
+        self.N0 = N0 = prod(global_shape[:axis])
         self.N1 = N1 = global_shape[axis]
         self.N2 = N2 = global_shape[axis+1]
-        self.N3 = N3 = np.prod(global_shape[axis+2:]) * self.datasize
+        self.N3 = N3 = prod(global_shape[axis+2:]) * self.datasize
         # Blocks
         B1 = N1
         B2 = math.ceil(global_shape[axis+1] / pycomm.size)

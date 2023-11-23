@@ -7,10 +7,10 @@ from mpi4py import MPI
 import numpy as np
 import itertools
 from collections import OrderedDict
+from math import prod
 
 from ..tools.cache import CachedMethod, CachedAttribute
 from ..tools.config import config
-from ..tools.array import prod
 from ..tools.general import OrderedSet
 
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -102,7 +102,7 @@ class Distributor:
         logger.debug('Mesh: %s' %str(mesh))
         if mesh.size >= dim:
             raise ValueError("Mesh (%s) must have lower dimension than distributor (%i)" %(mesh, dim))
-        if np.prod(mesh) != comm.size:
+        if prod(mesh) != comm.size:
             raise ValueError("Wrong number of processes (%i) for specified mesh (%s)" %(comm.size, mesh))
         self.dtype = dtype
         # Create cartesian communicator, ignoring axes with m=1
@@ -677,7 +677,7 @@ class Transpose:
 
     def _single_plan(self, field):
         """Build single transpose plan."""
-        ncomp = int(prod([cs.dim for cs in field.tensorsig]))
+        ncomp = prod([cs.dim for cs in field.tensorsig])
         sub_shape = self._sub_shape(field.domain, field.scales)
         chunk_shape = field.domain.chunk_shape(self.layout0)
         return self._plan(ncomp, sub_shape, chunk_shape, field.dtype)
@@ -698,7 +698,7 @@ class Transpose:
         for (sub_shape, chunk_shape), fields in field_groups.items():
             ncomp = 0
             for field in fields:
-                ncomp += int(prod([cs.dim for cs in field.tensorsig]))
+                ncomp += prod([cs.dim for cs in field.tensorsig])
             plan = self._plan(ncomp, sub_shape, chunk_shape, field.dtype) # Assumes last field's dtype is good for everybody
             plans.append((fields, plan))
         return plans
@@ -795,7 +795,7 @@ class Transpose:
                     # Split up transposed data
                     i = 0
                     for field in fields:
-                        ncomp = int(prod([cs.dim for cs in field.tensorsig]))
+                        ncomp = prod([cs.dim for cs in field.tensorsig])
                         data = data1[i:i+ncomp]
                         field.data[:] = data.reshape(field.data.shape)
                         i += ncomp
@@ -844,7 +844,7 @@ class Transpose:
                     # Split up transposed data
                     i = 0
                     for field in fields:
-                        ncomp = int(prod([cs.dim for cs in field.tensorsig]))
+                        ncomp = prod([cs.dim for cs in field.tensorsig])
                         data = data0[i:i+ncomp]
                         field.data[:] = data.reshape(field.data.shape)
                         i += ncomp

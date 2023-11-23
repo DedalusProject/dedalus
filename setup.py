@@ -233,6 +233,7 @@ setup(
     long_description_content_type='text/markdown',
     url='http://dedalus-project.org',
     classifiers=['Programming Language :: Python :: 3'],
+    python_requires='>=3.8',
     install_requires=install_requires,
     license='GPL3',
     packages=setuptools.find_packages(),

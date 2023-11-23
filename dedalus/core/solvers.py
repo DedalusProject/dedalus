@@ -6,6 +6,7 @@ import time
 import h5py
 import pathlib
 import scipy.linalg
+from math import prod
 
 from . import subsystems
 from . import timesteppers
@@ -520,7 +521,7 @@ class InitialValueSolver(SolverBase):
         # Build LHS matrices
         self.build_matrices(self.subproblems, ['M', 'L'])
         # Compute total modes
-        local_modes = sum(np.prod(sp.shape) for sp in self.subproblems)
+        local_modes = sum([prod(sp.shape) for sp in self.subproblems])
         self.total_modes = self.dist.comm.allreduce(local_modes, op=MPI.SUM)
         # Create RHS handler
         F_handler = self.evaluator.add_system_handler(iter=1, group='F')

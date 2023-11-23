@@ -12,6 +12,7 @@ from scipy import sparse
 from scipy.sparse import linalg as splinalg
 from numbers import Number
 import h5py
+from math import prod
 
 
 from ..libraries.fftw import fftw_wrappers as fftw
@@ -471,7 +472,7 @@ class Current(Operand):
     def _dealias_buffer(self):
         """Build and cache buffer large enough for dealias-scale data."""
         buffer_size = self._dealias_buffer_size
-        ncomp = int(np.prod([vs.dim for vs in self.tensorsig]))
+        ncomp = prod([vs.dim for vs in self.tensorsig])
         return self._create_buffer(ncomp * buffer_size)
 
     def preset_scales(self, scales):
@@ -487,7 +488,7 @@ class Current(Operand):
         if buffer_size <= self._dealias_buffer_size:
             self.buffer = self._dealias_buffer
         else:
-            ncomp = int(np.prod([vs.dim for vs in self.tensorsig]))
+            ncomp = prod([vs.dim for vs in self.tensorsig])
             self.buffer = self._create_buffer(ncomp * buffer_size)
         # Reset layout to build new data view
         self.scales = new_scales
@@ -756,7 +757,7 @@ class Field(Current):
         # Assemble on root node
         if self.dist.comm.rank == root:
             ext_mesh = self.layout.ext_mesh
-            combined = np.zeros(np.prod(ext_mesh), dtype=object)
+            combined = np.zeros(prod(ext_mesh), dtype=object)
             combined[:] = pieces
             return np.block(combined.reshape(ext_mesh).tolist())
 

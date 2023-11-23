@@ -5,8 +5,8 @@ Domain class definition.
 import logging
 import numpy as np
 from collections import OrderedDict
+from math import prod
 
-from ..tools.array import prod
 from ..tools.cache import CachedMethod, CachedClass, CachedAttribute
 from ..tools.general import unify_attributes, unify, OrderedSet
 from .coords import Coordinate, CartesianCoordinates

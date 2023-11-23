@@ -33,6 +33,6 @@ class TensorSignature:
         self.vector_spaces = vector_spaces
         self.tensor_order = len(vector_spaces)
         self.tensor_shape = tuple(vs.dim for vs in vector_spaces)
-        self.n_components = int(np.prod(self.tensor_shape))
+        self.n_components = prod(self.tensor_shape)
 
 

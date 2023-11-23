@@ -12,6 +12,7 @@ import shutil
 import uuid
 import numpy as np
 from mpi4py import MPI
+from math import prod
 
 from .system import FieldSystem
 from .operators import FieldCopy
@@ -508,7 +509,7 @@ class FileHandler(Handler):
             constant = task['operator'].meta[:]['constant']
             scales = task['scales']
             gnc_shape, gnc_start, write_shape, write_start, write_count = self.get_write_stats(layout, scales, constant, index=0)
-            if np.prod(write_shape) <= 1:
+            if prod(write_shape) <= 1:
                 # Start with shape[0] = 0 to chunk across writes for scalars
                 file_shape = (0,) + tuple(write_shape)
             else:

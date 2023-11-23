@@ -11,6 +11,7 @@ from scipy import sparse
 from numbers import Number
 from inspect import isclass
 from operator import add
+from math import prod
 from ..libraries import dedalus_sphere
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -19,7 +20,7 @@ from .domain import Domain
 from . import coords
 from .field import Operand, Field
 from .future import Future, FutureField, FutureLockedField
-from ..tools.array import reshape_vector, apply_matrix, add_sparse, axindex, axslice, perm_matrix, copyto, sparse_block_diag, prod, interleave_matrices
+from ..tools.array import reshape_vector, apply_matrix, add_sparse, axindex, axslice, perm_matrix, copyto, sparse_block_diag, interleave_matrices
 from ..tools.cache import CachedAttribute, CachedMethod
 from ..tools.dispatch import MultiClass
 from ..tools.exceptions import NonlinearOperatorError
@@ -80,10 +81,6 @@ def prefix(*names):
             prefixes[name] = op
         return op
     return register_op
-
-
-# TODO: use optimized import
-prod = np.prod
 
 
 # class Cast(FutureField, metaclass=MultiClass):
@@ -2430,18 +2427,18 @@ class CartesianGradient(Gradient):
 
 def reduced_view_4(data, axis):
     shape = data.shape
-    N0 = int(prod(shape[:axis]))
+    N0 = prod(shape[:axis])
     N1 = shape[axis]
     N2 = shape[axis+1]
-    N3 = int(prod(shape[axis+2:]))
+    N3 = prod(shape[axis+2:])
     return data.reshape((N0, N1, N2, N3))
 
 
 def reduced_view_3_ravel(data, axis, dim):
     shape = data.shape
-    N0 = int(prod(shape[:axis]))
-    N1 = int(prod(shape[axis:axis+dim]))
-    N2 = int(prod(shape[axis+dim:]))
+    N0 = prod(shape[:axis])
+    N1 = prod(shape[axis:axis+dim])
+    N2 = prod(shape[axis+dim:])
     return data.reshape((N0, N1, N2))
 
 
@@ -2521,7 +2518,7 @@ class SpectralOperatorS2(SpectralOperator):
                             if abs(spintotal_in) <= ell and abs(spintotal_out) <= ell:
                                 block = self.l_matrix(self.input_basis, self.output_basis, spinindex_in, spinindex_out, ell)
                             else:
-                                #block = sparse.csr_matrix((np.prod(subshape_out), np.prod(subshape_in)))
+                                #block = sparse.csr_matrix((prod(subshape_out), prod(subshape_in)))
                                 block = sparse.csr_matrix((1, 1)) # HACK!
                             blocks.append(block)
                         matrix = sparse_block_diag(blocks).tocsr()
@@ -2531,7 +2528,7 @@ class SpectralOperatorS2(SpectralOperator):
                     comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
                 else:
                     # Build zero matrix
-                    comp_matrix = sparse.csr_matrix((np.prod(subshape_out), np.prod(subshape_in)))
+                    comp_matrix = sparse.csr_matrix((prod(subshape_out), prod(subshape_in)))
                 submatrix_row.append(comp_matrix)
             submatrices.append(submatrix_row)
         matrix = sparse.bmat(submatrices)

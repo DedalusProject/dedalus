@@ -11,6 +11,7 @@ import operator
 import numbers
 import numexpr as ne
 from collections import defaultdict
+from math import prod
 
 from .domain import Domain
 from .field import Operand, Field
@@ -522,7 +523,7 @@ class Product(Future):
         # ncc_mat = projection @ self._ncc_matrix
 
         # # Add factor for components
-        # comps = np.prod([cs.dim for cs in operand.tensorsig], dtype=int)
+        # comps = prod([cs.dim for cs in operand.tensorsig])
         # blocks = []
         # for ncc_comp_mat in self._ncc_matrices:
         #     factors = [sparse.identity(comps, format='csr'), ncc_comp_mat]
@@ -643,9 +644,9 @@ class DotProduct(Product, FutureField):
         return DotProduct(arg0, arg1, indices=self.indices, **kw)
 
     def GammaCoord(self, A_tensorsig, B_tensorsig, C_tensorsig):
-        A_dim = int(np.prod([cs.dim for cs in A_tensorsig]))
-        B_dim = int(np.prod([cs.dim for cs in B_tensorsig]))
-        C_dim = int(np.prod([cs.dim for cs in C_tensorsig]))
+        A_dim = prod([cs.dim for cs in A_tensorsig])
+        B_dim = prod([cs.dim for cs in B_tensorsig])
+        C_dim = prod([cs.dim for cs in C_tensorsig])
         G = np.zeros((A_dim, B_dim, C_dim), dtype=int)
         for ia, a in enum_indices(A_tensorsig):
             a_other = list(a)
@@ -789,9 +790,9 @@ class Multiply(Product, metaclass=MultiClass):
         return Multiply(arg0, arg1, **kw)
 
     def GammaCoord(self, A_tensorsig, B_tensorsig, C_tensorsig):
-        A_dim = int(np.prod([cs.dim for cs in A_tensorsig]))
-        B_dim = int(np.prod([cs.dim for cs in B_tensorsig]))
-        C_dim = int(np.prod([cs.dim for cs in C_tensorsig]))
+        A_dim = prod([cs.dim for cs in A_tensorsig])
+        B_dim = prod([cs.dim for cs in B_tensorsig])
+        C_dim = prod([cs.dim for cs in C_tensorsig])
         G = np.zeros((A_dim, B_dim, C_dim), dtype=int)
         for ia, a in enum_indices(A_tensorsig):
             for ib, b in enum_indices(B_tensorsig):
