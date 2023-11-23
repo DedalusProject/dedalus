@@ -74,13 +74,14 @@ cdef extern from "fftw3.h":
                                      unsigned flags)
 
     # Guru real-to-real transforms (4.5.5)
+    ctypedef int fftw_r2r_kind
     fftw_plan fftw_plan_guru_r2r(int rank,
                                  fftw_iodim *dims,
                                  int howmany_rank,
                                  fftw_iodim *howmany_dims,
                                  double *in_,
                                  double *out,
-                                 int *kind,
+                                 fftw_r2r_kind *kind,
                                  unsigned flags)
 
     # New-array execute functions (4.6)

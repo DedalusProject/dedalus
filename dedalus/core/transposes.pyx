@@ -92,18 +92,19 @@ cdef class FFTWTranspose:
         # Counts
         self.col_counts = col_counts = col_ends - col_starts
         self.row_counts = row_counts = row_ends - row_starts
+        local_col_count = col_counts[<int> pycomm.rank]
+        local_row_count = row_counts[<int> pycomm.rank]
         # Local reduced shapes
-        rank = self.pycomm.rank
-        self.CL_reduced_shape = np.array([N0, N1, col_counts[rank], N3], dtype=np.int32)
-        self.RL_reduced_shape = np.array([N0, row_counts[rank], N2, N3], dtype=np.int32)
+        self.CL_reduced_shape = np.array([N0, N1, local_col_count, N3], dtype=np.int32)
+        self.RL_reduced_shape = np.array([N0, local_row_count, N2, N3], dtype=np.int32)
         # Build plans (sets up buffers)
         howmany = N0 * N3 * self.datasize
         flags = ['FFTW_'+PLANNING_RIGOR.upper()]
         self.build_plans(N1, N2, howmany, B1, B2, pycomm, IN_PLACE, flags=flags)
         # Transposed array views (contiguous)
         # For interfacing with FFTW transpose on first two dimensions
-        CL_tran_shape = [N1, col_counts[rank], N0, N3]
-        RL_tran_shape = [row_counts[rank], N2, N0, N3]
+        CL_tran_shape = [N1, local_col_count, N0, N3]
+        RL_tran_shape = [local_row_count, N2, N0, N3]
         CL_tran_view = np.ndarray(shape=CL_tran_shape, dtype=dtype, buffer=self.CL_buffer)
         RL_tran_view = np.ndarray(shape=RL_tran_shape, dtype=dtype, buffer=self.RL_buffer)
         # Anti-transposed array views (discontiguous)
@@ -260,6 +261,8 @@ cdef class AlltoallvTranspose:
     cdef readonly int[::1] RL_counts
     cdef readonly double[::1] CL_buffer
     cdef readonly double[::1] RL_buffer
+    cdef readonly int local_col_count
+    cdef readonly int local_row_count
 
     def __init__(self, global_shape, dtype, axis, pycomm):
         logger.debug("Building MPI transpose plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, global_shape, axis))
@@ -286,19 +289,20 @@ cdef class AlltoallvTranspose:
         # Counts
         self.col_counts = col_counts = col_ends - col_starts
         self.row_counts = row_counts = row_ends - row_starts
+        self.local_col_count = local_col_count = col_counts[<int> pycomm.rank]
+        self.local_row_count = local_row_count = row_counts[<int> pycomm.rank]
         # Local reduced shapes
-        rank = self.pycomm.rank
-        self.CL_reduced_shape = np.array([N0, N1, col_counts[rank], N3], dtype=np.int32)
-        self.RL_reduced_shape = np.array([N0, row_counts[rank], N2, N3], dtype=np.int32)
+        self.CL_reduced_shape = np.array([N0, N1, local_col_count, N3], dtype=np.int32)
+        self.RL_reduced_shape = np.array([N0, local_row_count, N2, N3], dtype=np.int32)
         # Alltoallv displacements
-        self.CL_displs = (N0 * col_counts[rank] * N3) * row_starts
-        self.RL_displs = (N0 * row_counts[rank] * N3) * col_starts
+        self.CL_displs = (N0 * local_col_count * N3) * row_starts
+        self.RL_displs = (N0 * local_row_count * N3) * col_starts
         # Alltoallv counts
-        self.CL_counts = (N0 * col_counts[rank] * N3) * row_counts
-        self.RL_counts = (N0 * row_counts[rank] * N3) * col_counts
+        self.CL_counts = (N0 * local_col_count * N3) * row_counts
+        self.RL_counts = (N0 * local_row_count * N3) * col_counts
         # Buffers
-        CL_size = N0 * N1 * col_counts[rank] * N3
-        RL_size = N0 * row_counts[rank] * N2 * N3
+        CL_size = N0 * N1 * local_col_count * N3
+        RL_size = N0 * local_row_count * N2 * N3
         self.CL_buffer = np.zeros(CL_size, dtype=np.float64)
         self.RL_buffer = np.zeros(RL_size, dtype=np.float64)
 
@@ -308,13 +312,13 @@ cdef class AlltoallvTranspose:
         CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=np.float64, buffer=CL)
         RL_reduced = np.ndarray(shape=self.RL_reduced_shape, dtype=np.float64, buffer=RL)
         # Rearrange from input array to buffer
-        if self.col_counts[self.pycomm.rank] > 0:
+        if self.local_col_count > 0:
             self.split_rows(CL_reduced, self.CL_buffer)
         # Communicate between buffers
         self.pycomm.Alltoallv([self.CL_buffer, self.CL_counts, self.CL_displs, MPI.DOUBLE],
                               [self.RL_buffer, self.RL_counts, self.RL_displs, MPI.DOUBLE])
         # Rearrange from buffer to output array
-        if self.row_counts[self.pycomm.rank] > 0:
+        if self.local_row_count > 0:
             self.combine_columns(self.RL_buffer, RL_reduced)
 
     def localize_columns(self, RL, CL):
@@ -323,13 +327,13 @@ cdef class AlltoallvTranspose:
         CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=np.float64, buffer=CL)
         RL_reduced = np.ndarray(shape=self.RL_reduced_shape, dtype=np.float64, buffer=RL)
         # Rearrange from input array to buffer
-        if self.row_counts[self.pycomm.rank] > 0:
+        if self.local_row_count > 0:
             self.split_columns(RL_reduced, self.RL_buffer)
         # Communicate between buffers
         self.pycomm.Alltoallv([self.RL_buffer, self.RL_counts, self.RL_displs, MPI.DOUBLE],
                               [self.CL_buffer, self.CL_counts, self.CL_displs, MPI.DOUBLE])
         # Rearrange from buffer to output array
-        if self.col_counts[self.pycomm.rank] > 0:
+        if self.local_col_count > 0:
             self.combine_rows(self.CL_buffer, CL_reduced)
 
     @cython.boundscheck(False)
@@ -337,7 +341,7 @@ cdef class AlltoallvTranspose:
         """Reorder column-local dataset into sending buffer of rows."""
         # Create local copies of fixed loop bounds
         cdef unsigned int N0 = self.N0
-        cdef unsigned int col_count = self.col_counts[self.pycomm.rank]
+        cdef unsigned int col_count = self.local_col_count
         cdef unsigned int N3 = self.N3
         # Allocate loop variables
         cdef unsigned int proc, row_start, row_end
@@ -359,7 +363,7 @@ cdef class AlltoallvTranspose:
         """Reorder receiving buffer of rows into column-local dataset."""
         # Create local copies of fixed loop bounds
         cdef unsigned int N0 = self.N0
-        cdef unsigned int col_count = self.col_counts[self.pycomm.rank]
+        cdef unsigned int col_count = self.local_col_count
         cdef unsigned int N3 = self.N3
         # Allocate loop variables
         cdef unsigned int proc, row_start, row_end
@@ -381,7 +385,7 @@ cdef class AlltoallvTranspose:
         """Reorder row-local dataset into sending buffer of columns."""
         # Create local copies of fixed loop bounds
         cdef unsigned int N0 = self.N0
-        cdef unsigned int row_count = self.row_counts[self.pycomm.rank]
+        cdef unsigned int row_count = self.local_row_count
         cdef unsigned int N3 = self.N3
         # Allocate loop variables
         cdef unsigned int proc, col_start, col_end
@@ -403,7 +407,7 @@ cdef class AlltoallvTranspose:
         """Reorder receiving buffer of columns into row-local dataset."""
         # Create local copies of fixed loop bounds
         cdef unsigned int N0 = self.N0
-        cdef unsigned int row_count = self.row_counts[self.pycomm.rank]
+        cdef unsigned int row_count = self.local_row_count
         cdef unsigned int N3 = self.N3
         # Allocate loop variables
         cdef unsigned int proc, col_start, col_end
@@ -439,6 +443,10 @@ cdef class ColDistributor(AlltoallvTranspose):
 
     """
 
+    cdef readonly int local_row_start
+    cdef readonly int local_row_end
+    cdef readonly int local_RL_count
+
     def __init__(self, global_shape, dtype, axis, pycomm):
         logger.debug("Building MPI transpose plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, global_shape, axis))
         # Attributes
@@ -458,25 +466,29 @@ cdef class ColDistributor(AlltoallvTranspose):
         ranks = np.arange(pycomm.size, dtype=np.int32)
         self.col_starts = col_starts = 0*ranks
         self.row_starts = row_starts = np.minimum(B1*ranks, global_shape[axis])
+        self.local_row_start = row_starts[<int> pycomm.rank]
         # Ending indices
         self.col_ends = col_ends = 0*ranks + B2
         self.row_ends = row_ends = np.minimum(B1*(ranks+1), global_shape[axis])
+        self.local_row_end = row_ends[<int> pycomm.rank]
         # Counts
         self.col_counts = col_counts = col_ends - col_starts
         self.row_counts = row_counts = row_ends - row_starts
+        self.local_row_count = local_row_count = row_counts[<int> pycomm.rank]
+        self.local_col_count = local_col_count = col_counts[<int> pycomm.rank]
         # Local reduced shapes
-        rank = self.pycomm.rank
-        self.CL_reduced_shape = np.array([N0, N1, col_counts[rank], N3], dtype=np.int32)
-        self.RL_reduced_shape = np.array([N0, row_counts[rank], N2, N3], dtype=np.int32)
+        self.CL_reduced_shape = np.array([N0, N1, local_col_count, N3], dtype=np.int32)
+        self.RL_reduced_shape = np.array([N0, local_row_count, N2, N3], dtype=np.int32)
         # Alltoallv displacements
-        self.CL_displs = (N0 * col_counts[rank] * N3) * row_starts
-        self.RL_displs = (N0 * row_counts[rank] * N3) * col_starts
+        self.CL_displs = (N0 * local_col_count * N3) * row_starts
+        self.RL_displs = (N0 * local_row_count * N3) * col_starts
         # Alltoallv counts
-        self.CL_counts = (N0 * col_counts[rank] * N3) * row_counts
-        self.RL_counts = (N0 * row_counts[rank] * N3) * col_counts
+        self.CL_counts = (N0 * local_col_count * N3) * row_counts
+        self.RL_counts = (N0 * local_row_count * N3) * col_counts
+        self.local_RL_count = self.RL_counts[<int> pycomm.rank]
         # Buffers
-        CL_size = N0 * N1 * col_counts[rank] * N3
-        RL_size = N0 * row_counts[rank] * N2 * N3
+        CL_size = N0 * N1 * local_col_count * N3
+        RL_size = N0 * local_row_count * N2 * N3
         self.CL_buffer = np.zeros(CL_size, dtype=np.float64)
         self.RL_buffer = np.zeros(RL_size, dtype=np.float64)
 
@@ -486,8 +498,8 @@ cdef class ColDistributor(AlltoallvTranspose):
         CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=np.float64, buffer=CL)
         RL_reduced = np.ndarray(shape=self.RL_reduced_shape, dtype=np.float64, buffer=RL)
         # Restrict to local columns
-        start = self.row_starts[self.pycomm.rank]
-        end = self.row_ends[self.pycomm.rank]
+        start = self.local_row_start
+        end = self.local_row_end
         np.copyto(RL_reduced, CL_reduced[:,start:end,:,:])
 
     def localize_columns(self, RL, CL):
@@ -499,7 +511,7 @@ cdef class ColDistributor(AlltoallvTranspose):
         cdef double[::1] temp = RL_reduced.ravel()
         self.RL_buffer[:] = temp
         # Communicate between buffers
-        self.pycomm.Allgatherv([self.RL_buffer, self.RL_counts[self.pycomm.rank], MPI.DOUBLE],
+        self.pycomm.Allgatherv([self.RL_buffer, self.local_RL_count, MPI.DOUBLE],
                                [self.CL_buffer, self.CL_counts, self.CL_displs, MPI.DOUBLE])
         # Rearrange from buffer to output array
         self.combine_rows(self.CL_buffer, CL_reduced)
@@ -523,6 +535,10 @@ cdef class RowDistributor(AlltoallvTranspose):
 
     """
 
+    cdef readonly int local_col_start
+    cdef readonly int local_col_end
+    cdef readonly int local_CL_count
+
     def __init__(self, global_shape, dtype, axis, pycomm):
         logger.debug("Building MPI transpose plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, global_shape, axis))
         # Attributes
@@ -542,25 +558,29 @@ cdef class RowDistributor(AlltoallvTranspose):
         ranks = np.arange(pycomm.size, dtype=np.int32)
         self.col_starts = col_starts = np.minimum(B2*ranks, global_shape[axis+1])
         self.row_starts = row_starts = 0*ranks
+        self.local_col_start = col_starts[<int> pycomm.rank]
         # Ending indices
         self.col_ends = col_ends = np.minimum(B2*(ranks+1), global_shape[axis+1])
         self.row_ends = row_ends = 0*ranks + B1
+        self.local_col_end = col_ends[<int> pycomm.rank]
         # Counts
         self.col_counts = col_counts = col_ends - col_starts
         self.row_counts = row_counts = row_ends - row_starts
+        self.local_col_count = local_col_count = col_counts[<int> pycomm.rank]
+        self.local_row_count = local_row_count = row_counts[<int> pycomm.rank]
         # Local reduced shapes
-        rank = self.pycomm.rank
-        self.CL_reduced_shape = np.array([N0, N1, col_counts[rank], N3], dtype=np.int32)
-        self.RL_reduced_shape = np.array([N0, row_counts[rank], N2, N3], dtype=np.int32)
+        self.CL_reduced_shape = np.array([N0, N1, local_col_count, N3], dtype=np.int32)
+        self.RL_reduced_shape = np.array([N0, local_row_count, N2, N3], dtype=np.int32)
         # Alltoallv displacements
-        self.CL_displs = (N0 * col_counts[rank] * N3) * row_starts
-        self.RL_displs = (N0 * row_counts[rank] * N3) * col_starts
+        self.CL_displs = (N0 * local_col_count * N3) * row_starts
+        self.RL_displs = (N0 * local_row_count * N3) * col_starts
         # Alltoallv counts
-        self.CL_counts = (N0 * col_counts[rank] * N3) * row_counts
-        self.RL_counts = (N0 * row_counts[rank] * N3) * col_counts
+        self.CL_counts = (N0 * local_col_count * N3) * row_counts
+        self.RL_counts = (N0 * local_row_count * N3) * col_counts
+        self.local_CL_count = self.CL_counts[<int> pycomm.rank]
         # Buffers
-        CL_size = N0 * N1 * col_counts[rank] * N3
-        RL_size = N0 * row_counts[rank] * N2 * N3
+        CL_size = N0 * N1 * local_col_count * N3
+        RL_size = N0 * local_row_count * N2 * N3
         self.CL_buffer = np.zeros(CL_size, dtype=np.float64)
         self.RL_buffer = np.zeros(RL_size, dtype=np.float64)
 
@@ -573,7 +593,7 @@ cdef class RowDistributor(AlltoallvTranspose):
         cdef double[::1] temp = CL_reduced.ravel()
         self.CL_buffer[:] = temp
         # Communicate between buffers
-        self.pycomm.Allgatherv([self.CL_buffer, self.CL_counts[self.pycomm.rank], MPI.DOUBLE],
+        self.pycomm.Allgatherv([self.CL_buffer, self.local_CL_count, MPI.DOUBLE],
                                [self.RL_buffer, self.RL_counts, self.RL_displs, MPI.DOUBLE])
         # Rearrange from buffer to output array
         self.combine_columns(self.RL_buffer, RL_reduced)
@@ -584,6 +604,6 @@ cdef class RowDistributor(AlltoallvTranspose):
         CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=np.float64, buffer=CL)
         RL_reduced = np.ndarray(shape=self.RL_reduced_shape, dtype=np.float64, buffer=RL)
         # Restrict to local columns
-        start = self.col_starts[self.pycomm.rank]
-        end = self.col_ends[self.pycomm.rank]
+        start = self.local_col_start
+        end = self.local_col_end
         np.copyto(CL_reduced, RL_reduced[:,:,start:end,:])

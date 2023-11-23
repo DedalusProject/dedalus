@@ -233,8 +233,8 @@ cdef class R2RTransformBase:
 
     cdef cfftw.fftw_plan forward_plan
     cdef cfftw.fftw_plan backward_plan
-    cdef int kind_f
-    cdef int kind_b
+    cdef cfftw.fftw_r2r_kind kind_f
+    cdef cfftw.fftw_r2r_kind kind_b
 
     def __init__(self, grid_dtype, grid_shape, int axis, flags=[]):
 
