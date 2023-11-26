@@ -5,7 +5,10 @@ from scipy import sparse
 import scipy.sparse as sp
 from scipy.sparse import _sparsetools
 from scipy.sparse import linalg as spla
-from ..tools.config import config
+from math import prod
+
+from .config import config
+from .linalg import solve_upper_csr_mid, solve_upper_csr_mid_omp, solve_upper_csr_last, solve_upper_csr_last_omp
 
 SPLIT_CSR_MATVECS = config['linear algebra'].getboolean('SPLIT_CSR_MATVECS')
 
@@ -162,6 +165,57 @@ def apply_sparse(matrix, array, axis, out=None):
     else:
         out[:] = temp # Copy
         return out
+
+
+def reduced_view_3(data, axis):
+    shape = data.shape
+    N0 = prod(shape[:axis])
+    N1 = shape[axis]
+    N2 = prod(shape[axis+1:])
+    return data.reshape((N0, N1, N2))
+
+
+def solve_upper_sparse(matrix, rhs, axis, out=None, num_threads=1):
+    """
+    Solve upper triangular sparse matrix along any axis of an array.
+    Matrix assumed to be nonzero on the diagonals.
+    """
+    # Setup matrix
+    matrix = matrix.tocsr()
+    matrix.sum_duplicates()
+    # Setup output
+    if out is None:
+        out = np.copy(rhs)
+    elif out is not rhs:
+        np.copyto(out, rhs)
+    # Promote datatypes
+    dtype = np.result_type(matrix.dtype, rhs.dtype)
+    matrix_data = matrix.data
+    if matrix_data.dtype != dtype:
+        matrix_data = matrix_data.astype(dtype)
+    if rhs.dtype != dtype:
+        raise ValueError("Incorrect dtype for rhs.")
+    if out.dtype != dtype:
+        raise ValueError("Incorrect dtype for output.")
+    # Reduced view
+    x3 = reduced_view_3(out, axis)
+    # Check contiguous
+    x3 = np.ascontiguousarray(x3)
+    # Check shapes
+    if not (matrix.shape[0] == matrix.shape[1] == x3.shape[1]):
+        raise ValueError("Matrix shape mismatch.")
+    # Dispatch to cython routines
+    if x3.shape[2] == 1:
+        if num_threads == 1:
+            solve_upper_csr_last(matrix.indptr, matrix.indices, matrix_data, x3[:,:,0])
+        else:
+            solve_upper_csr_last_omp(matrix.indptr, matrix.indices, matrix_data, x3[:,:,0], num_threads)
+    else:
+        if num_threads == 1:
+            solve_upper_csr_mid(matrix.indptr, matrix.indices, matrix_data, x3)
+        else:
+            solve_upper_csr_mid_omp(matrix.indptr, matrix.indices, matrix_data, x3, num_threads)
+    return out
 
 
 def csr_matvec(A_csr, x_vec, out_vec):

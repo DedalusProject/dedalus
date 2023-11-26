@@ -12,7 +12,7 @@ from math import prod
 from . import basis
 from ..libraries.fftw import fftw_wrappers as fftw
 from ..tools import jacobi
-from ..tools.array import apply_matrix, apply_dense, axslice, splu_inverse, apply_sparse
+from ..tools.array import apply_matrix, apply_dense, axslice, solve_upper_sparse, apply_sparse
 from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
 
@@ -818,13 +818,12 @@ class FastChebyshevTransform(JacobiTransform):
         else:
             # Conversion matrices
             if DEALIAS_BEFORE_CONVERTING() and (self.M_orig < self.N): # truncate prior to conversion matrix
-                self.forward_conversion = jacobi.conversion_matrix(self.M_orig, a0, b0, a, b)
+                self.forward_conversion = jacobi.conversion_matrix(self.M_orig, a0, b0, a, b).tocsr()
             else: # input to conversion matrix not truncated
                 self.forward_conversion = jacobi.conversion_matrix(self.N, a0, b0, a, b)
                 self.forward_conversion.resize(self.M_orig, self.N)
                 self.forward_conversion = self.forward_conversion.tocsr()
-            self.backward_conversion = jacobi.conversion_matrix(self.M_orig, a0, b0, a, b)
-            self.backward_conversion = splu_inverse(self.backward_conversion)
+            self.backward_conversion = jacobi.conversion_matrix(self.M_orig, a0, b0, a, b).tocsr()
             self.resize_rescale_forward = self._resize_rescale_forward_convert
             self.resize_rescale_backward = self._resize_rescale_backward_convert
 
@@ -868,7 +867,7 @@ class FastChebyshevTransform(JacobiTransform):
             # Truncate input before conversion
             data_in[badfreq] = 0
         # Ultraspherical conversion
-        apply_sparse(self.backward_conversion, data_in, axis, out=data_in)
+        solve_upper_sparse(self.backward_conversion, data_in, axis, out=data_in)
         # Change sign of odd modes
         if Kmax_orig > 0:
             posfreq_odd = axslice(axis, 1, Kmax_orig+1, 2)

@@ -129,7 +129,7 @@ extra_compile_args = [
     "-fopenmp"]
 
 # Optionally set static linking for FFTW
-extra_link_args = []
+extra_link_args = ["-fopenmp"]
 if INCLUDE_FFTW and FFTW_STATIC:
     print("Statically linking FFTW")
     fftw_lib_path = get_lib("fftw")
@@ -162,6 +162,7 @@ if INCLUDE_FFTW and FFTW_STATIC:
 # Extension objects for cython
 pyx_modules = [
     "dedalus.core.transposes",
+    "dedalus.tools.linalg",
     "dedalus.libraries.fftw.fftw_wrappers",
     "dedalus.libraries.spin_recombination"]
 extensions = []
