@@ -13,7 +13,7 @@ from . import timesteppers
 from .evaluator import Evaluator
 from ..libraries.matsolvers import matsolvers
 from ..tools.config import config
-from ..tools.array import csr_matvecs, scipy_sparse_eigs
+from ..tools.array import scipy_sparse_eigs
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])

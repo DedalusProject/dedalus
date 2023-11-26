@@ -8,9 +8,10 @@ from scipy.sparse import linalg as spla
 from math import prod
 
 from .config import config
-from .linalg import solve_upper_csr_mid, solve_upper_csr_mid_omp, solve_upper_csr_last, solve_upper_csr_last_omp
+from .linalg import solve_upper_csr_mid, solve_upper_csr_mid_omp, solve_upper_csr_last, solve_upper_csr_last_omp, apply_csr_mid, apply_csr_mid_omp, apply_csr_last, apply_csr_last_omp
 
 SPLIT_CSR_MATVECS = config['linear algebra'].getboolean('SPLIT_CSR_MATVECS')
+OLD_CSR_MATVECS = config['linear algebra'].getboolean('OLD_CSR_MATVECS')
 
 
 def interleaved_view(data):
@@ -139,7 +140,7 @@ def splu_inverse(matrix, permc_spec="NATURAL", **kw):
     return spla.LinearOperator(shape=matrix.shape, dtype=matrix.dtype, matvec=solve, matmat=solve)
 
 
-def apply_sparse(matrix, array, axis, out=None):
+def apply_sparse_dot(matrix, array, axis, out=None):
     """Apply sparse matrix along any axis of an array."""
     dim = array.ndim
     # Resolve wraparound axis
@@ -173,6 +174,56 @@ def reduced_view_3(data, axis):
     N1 = shape[axis]
     N2 = prod(shape[axis+1:])
     return data.reshape((N0, N1, N2))
+
+
+def apply_sparse(matrix, array, axis, out=None, num_threads=1):
+    """
+    Apply sparse matrix along any axis of an array.
+    Must be out of place if ouptut is specified.
+    Type casting is not supported.
+    """
+    if array.ndim == 2 and axis == 0 and OLD_CSR_MATVECS:
+        out.fill(0)
+        return csr_matvecs(matrix, array, out)
+    # Setup matrix
+    matrix = matrix.tocsr()
+    matrix.sum_duplicates()
+    # Setup output
+    if out is None:
+        out = np.empty_like(array)
+    elif out is array:
+        raise ValueError("Cannot apply in place")
+    # Promote datatypes
+    dtype = np.result_type(matrix.dtype, array.dtype)
+    matrix_data = matrix.data
+    if matrix_data.dtype != dtype:
+        matrix_data = matrix_data.astype(dtype)
+    if array.dtype != dtype:
+        raise ValueError("Incorrect dtype for array.")
+    if out.dtype != dtype:
+        raise ValueError("Incorrect dtype for output.")
+    # Reduced views
+    x3 = reduced_view_3(array, axis)
+    y3 = reduced_view_3(out, axis)
+    # Check contiguous
+    x3 = np.ascontiguousarray(x3)
+    # Check shapes
+    if y3.shape[0] != x3.shape[0] or y3.shape[2] != x3.shape[2]:
+        raise ValueError("Array shape mismatch.")
+    if matrix.shape[0] != y3.shape[1] or matrix.shape[1] != x3.shape[1]:
+        raise ValueError("Matrix shape mismatch.")
+    # Dispatch to cython routines based on n_after and num_threads
+    if x3.shape[2] == 1:
+        if num_threads == 1:
+            apply_csr_last(matrix.indptr, matrix.indices, matrix_data, x3[:,:,0], y3[:,:,0])
+        else:
+            apply_csr_last_omp(matrix.indptr, matrix.indices, matrix_data, x3[:,:,0], y3[:,:,0], num_threads)
+    else:
+        if num_threads == 1:
+            apply_csr_mid(matrix.indptr, matrix.indices, matrix_data, x3, y3)
+        else:
+            apply_csr_mid_omp(matrix.indptr, matrix.indices, matrix_data, x3, y3, num_threads)
+    return out
 
 
 def solve_upper_sparse(matrix, rhs, axis, out=None, num_threads=1):
