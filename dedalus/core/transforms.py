@@ -824,6 +824,7 @@ class FastChebyshevTransform(JacobiTransform):
                 self.forward_conversion.resize(self.M_orig, self.N)
                 self.forward_conversion = self.forward_conversion.tocsr()
             self.backward_conversion = jacobi.conversion_matrix(self.M_orig, a0, b0, a, b).tocsr()
+            self.backward_conversion.sum_duplicates() # for faster solve_upper
             self.resize_rescale_forward = self._resize_rescale_forward_convert
             self.resize_rescale_backward = self._resize_rescale_backward_convert
 
