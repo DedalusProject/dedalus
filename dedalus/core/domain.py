@@ -37,7 +37,7 @@ class Domain(metaclass=CachedClass):
         if len(set(cs)) < len(cs):
             raise ValueError("Overlapping bases specified.")
         # Sort by first axis
-        key = lambda basis: basis.first_axis
+        key = lambda basis: dist.get_basis_axis(basis)
         bases = tuple(sorted(bases, key=key))
         return (dist, bases), {}
 
@@ -54,7 +54,7 @@ class Domain(metaclass=CachedClass):
     def bases_by_axis(self):
         bases_by_axis = OrderedDict()
         for basis in self.bases:
-            for axis in range(basis.first_axis, basis.first_axis+basis.dim):
+            for axis in range(self.dist.get_basis_axis(basis), self.dist.get_basis_axis(basis)+basis.dim):
                 bases_by_axis[axis] = basis
         return bases_by_axis
 
@@ -62,7 +62,7 @@ class Domain(metaclass=CachedClass):
     def full_bases(self):
         full_bases = [None for i in range(self.dist.dim)]
         for basis in self.bases:
-            for axis in range(basis.first_axis, basis.first_axis+basis.dim):
+            for axis in range(self.dist.get_basis_axis(basis), self.dist.get_basis_axis(basis)+basis.dim):
                 full_bases[axis] = basis
         return tuple(full_bases)
 
@@ -84,7 +84,7 @@ class Domain(metaclass=CachedClass):
         dealias = [1] * self.dist.dim
         for basis in self.bases:
             for subaxis in range(basis.dim):
-                dealias[basis.first_axis+subaxis] = basis.dealias[subaxis]
+                dealias[self.dist.get_basis_axis(basis)+subaxis] = basis.dealias[subaxis]
         return tuple(dealias)
 
     def substitute_basis(self, old_basis, new_basis):
@@ -98,7 +98,7 @@ class Domain(metaclass=CachedClass):
         if isinstance(coords, int):
             axis = coords
         else:
-            axis = coords.axis
+            axis = self.dist.get_axis(coords)
         return self.full_bases[axis]
 
     def get_basis_subaxis(self, coord):
@@ -133,8 +133,9 @@ class Domain(metaclass=CachedClass):
         """Tuple of constant flags."""
         const = np.ones(self.dist.dim, dtype=bool)
         for basis in self.bases:
+            first_axis = self.dist.get_basis_axis(basis)
             for subaxis in range(basis.dim):
-                const[basis.axis+subaxis] = basis.constant[subaxis]
+                const[first_axis+subaxis] = basis.constant[subaxis]
         return tuple(const)
 
     @CachedAttribute
@@ -146,8 +147,9 @@ class Domain(metaclass=CachedClass):
         """Tuple of dependence flags."""
         dep = np.zeros(self.dist.dim, dtype=bool)
         for basis in self.bases:
+            first_axis = self.dist.get_basis_axis(basis)
             for subaxis in range(basis.dim):
-                dep[basis.axis+subaxis] = basis.subaxis_dependence[subaxis]
+                dep[first_axis+subaxis] = basis.subaxis_dependence[subaxis]
         return tuple(dep)
 
     @CachedAttribute
@@ -169,7 +171,8 @@ class Domain(metaclass=CachedClass):
     def global_shape(self, layout, scales):
         shape = np.ones(self.dist.dim, dtype=int)
         for basis in self.bases:
-            basis_axes = slice(basis.first_axis, basis.last_axis+1)
+            first_axis = self.dist.get_basis_axis(basis)
+            basis_axes = slice(first_axis, first_axis+basis.dim)
             shape[basis_axes] = basis.global_shape(layout.grid_space[basis_axes], scales[basis_axes])
         return tuple(shape)
 
@@ -178,7 +181,8 @@ class Domain(metaclass=CachedClass):
         """Compute chunk shape."""
         shape = np.ones(self.dist.dim, dtype=int)
         for basis in self.bases:
-            basis_axes = slice(basis.first_axis, basis.last_axis+1)
+            first_axis = self.dist.get_basis_axis(basis)
+            basis_axes = slice(first_axis, first_axis+basis.dim)
             shape[basis_axes] = basis.chunk_shape(layout.grid_space[basis_axes])
         return tuple(shape)
 
@@ -186,7 +190,8 @@ class Domain(metaclass=CachedClass):
         """Compute group shape."""
         group_shape = np.ones(self.dist.dim, dtype=int)
         for basis in self.bases:
-            basis_axes = slice(basis.first_axis, basis.last_axis+1)
+            first_axis = self.dist.get_basis_axis(basis)
+            basis_axes = slice(first_axis, first_axis+basis.dim)
             group_shape[basis_axes] = basis.group_shape
         group_shape[layout.grid_space] = 1
         return group_shape

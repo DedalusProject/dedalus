@@ -102,9 +102,10 @@ class Basis:
 
     def __init__(self, coords):
         self.coords = coords
-        self.dist = coords.dist
-        self.axis = coords.axis
-        self.domain = Domain(self.dist, bases=(self,))
+
+    @CachedMethod
+    def domain(self, dist):
+        return Domain(dist, (self,))
 
     def clone_with(self, **new_kw):
         (_, *argnames), _, _, _, _, _, _ = inspect.getfullargspec(type(self).__init__)
@@ -128,14 +129,6 @@ class Basis:
     def __rmul__(self, other):
         return self.__mul__(other)
 
-    @property
-    def first_axis(self):
-        return self.axis
-
-    @property
-    def last_axis(self):
-        return self.axis + self.dim - 1
-
     def grid_shape(self, scales):
         shape = np.array([int(np.ceil(s*n)) for s, n in zip(scales, self.shape)])
         shape[np.array(self.shape) == 1] = 1
@@ -151,14 +144,6 @@ class Basis:
 
     def elements_to_groups(self, grid_space, elements):
         # Subclasses must implement
-        raise NotImplementedError
-
-    def global_grid_spacing(self, *args, **kwargs):
-        """Global grids spacings."""
-        raise NotImplementedError
-
-    def local_grid_spacing(self, *args, **kwargs):
-        """Local grids spacings."""
         raise NotImplementedError
 
     def global_grids(self, scales):
@@ -362,55 +347,53 @@ class IntervalBasis(Basis):
     def matrix_dependence(self, matrix_coupling):
         return matrix_coupling
 
-    @CachedMethod
-    def global_grid_spacing(self, axis, scale=None):
-        """Global grids spacings."""
-        grid = self.global_grid(scale=scale)
-        return np.gradient(grid, axis=axis, edge_order=2)
-
-    @CachedMethod
-    def local_grid_spacing(self, axis, scale=None):
-        """Local grids spacings."""
-        global_spacing = self.global_grid_spacing(axis, scale=scale)
-        if scale is None: scale = 1
-        local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[axis]
-        return reshape_vector(np.ravel(global_spacing)[local_elements], dim=self.dist.dim, axis=axis)
-
-    # Why do we need this?
     def global_grids(self, scales=None):
         """Global grids."""
-        if scales == None: scales = (1,)
+        if scales == None:
+            scales = (1,)
         return (self.global_grid(scales[0]),)
 
     def global_grid(self, scale=None):
         """Global grid."""
-        if scale == None: scale = 1
+        if scale == None:
+            scale = 1
         native_grid = self._native_grid(scale)
         problem_grid = self.COV.problem_coord(native_grid)
-        return reshape_vector(problem_grid, dim=self.dist.dim, axis=self.axis)
+        return problem_grid
 
-    # Why do we need this?
-    def local_grids(self, scales=None):
+    def local_grids(self, dist, scales=None):
         """Local grids."""
-        if scales == None: scales = (1,)
-        return (self.local_grid(scales[0]),)
+        if scales == None:
+            scales = (1,)
+        return (self.local_grid(dist, scales[0]),)
 
-    def local_grid(self, scale=None):
+    def local_grid(self, dist, scale=None):
         """Local grid."""
         if scale == None: scale = 1
-        local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis]
-        native_grid = self._native_grid(scale)[local_elements]
+        local_elements = dist.grid_layout.local_elements(self.domain(dist), scales=scale)
+        native_grid = self._native_grid(scale)[local_elements[dist.get_basis_axis(self)]]
         problem_grid = self.COV.problem_coord(native_grid)
-        return reshape_vector(problem_grid, dim=self.dist.dim, axis=self.axis)
+        return reshape_vector(problem_grid, dim=dist.dim, axis=dist.get_basis_axis(self))
 
-    def local_modes(self):
+    def global_grid_spacing(self, scale=None):
+        """Global grid spacings."""
+        grid = self.global_grid(scale=scale)
+        return np.gradient(grid, edge_order=2)
+
+    def local_grid_spacing(self, dist, scale=None):
+        """Local grids spacings."""
+        if scale is None:
+            scale = 1
+        global_spacing = self.global_grid_spacing(scale=scale)
+        local_elements = dist.grid_layout.local_elements(self.domain(dist), scales=scale)
+        local_spacing_flat = global_spacing[local_elements[dist.get_basis_axis(self)]]
+        out = reshape_vector(local_spacing_flat, dim=dist.dim, axis=dist.get_basis_axis(self))
+        return out
+
+    def local_modes(self, dist):
         """Local grid."""
-        local_modes = self.local_elements()[0]
-        return reshape_vector(local_modes, dim=self.dist.dim, axis=self.axis)
-
-    def local_elements(self):
-        local_elements = self.dist.coeff_layout.local_elements(self.domain, scales=1)[self.axis]
-        return (local_elements,)
+        local_elements = dist.coeff_layout.local_elements(self.domain(dist), scales=1)
+        return reshape_vector(local_elements[dist.get_basis_axis(self)], dim=dist.dim, axis=dist.get_basis_axis(self))
 
     def _native_grid(self, scale):
         """Native flat global grid."""
@@ -830,7 +813,7 @@ class LiftJacobi(operators.Lift, operators.Copy):
         if n < 0:
             n += basis.size
         P = dist.Field(bases=basis)
-        axis = basis.first_axis
+        axis = dist.get_basis_axis(basis)
         P['c'][axslice(axis, n, n+1)] = 1
         return P
 
@@ -2450,7 +2433,7 @@ class DiskBasis(PolarBasis, metaclass=CachedClass):
 
     def local_grid_radius(self, scale):
         r = self.radial_COV.problem_coord(self._native_radius_grid(scale))
-        local_elements = self.dist.grid_layout.local_elements(self.domain, scales=scale)[self.axis+1]
+        local_elements = self.dist.grid_layout.local_elements(self.domain(dist), scales=scale)[self.axis+1]
         return reshape_vector(r[local_elements], dim=self.dist.dim, axis=self.axis+1)
 
     def _native_radius_grid(self, scale):
@@ -6124,11 +6107,11 @@ class CartesianAdvectiveCFL(operators.AdvectiveCFL):
             basis = velocity.domain.get_basis(c)
             if basis:
                 dealias = basis.dealias[0]
-                axis_spacing = basis.local_grid_spacing(i, dealias) * dealias
+                axis_spacing = basis.local_grid_spacing(self.dist, dealias) * dealias
                 N = basis.grid_shape((dealias,))[0]
             if isinstance(basis, Jacobi) and basis.a == -1/2 and basis.b == -1/2:
                 #Special case for ChebyshevT (a=b=-1/2)
-                local_elements = basis.dist.grid_layout.local_elements(basis.domain, scales=dealias)[i]
+                local_elements = self.dist.grid_layout.local_elements(basis.domain(self.dist), scales=dealias)[i]
                 i = np.arange(N)[local_elements].reshape(axis_spacing.shape)
                 theta = np.pi * (i + 1/2) / N
                 axis_spacing[:] = dealias * basis.COV.stretch * np.sin(theta) * np.pi / N

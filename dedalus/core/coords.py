@@ -9,6 +9,7 @@ from ..tools.cache import CachedMethod
 
 # Public interface
 __all__ = ['Coordinate',
+           'DirectProduct',
            'CartesianCoordinates',
            'S2Coordinates',
            'PolarCoordinates',
@@ -35,21 +36,8 @@ class CoordinateSystem:
         else:
             return self.coords[key]
 
-    def set_distributor(self, distributor):
-        self.dist = distributor
-        for coord in self.coords:
-            coord.dist = distributor
-
     def check_bounds(self, coord, bounds):
         pass
-
-    @property
-    def first_axis(self):
-        return self.dist.coords.index(self.coords[0])
-
-    @property
-    def axis(self):
-        return self.dist.coords.index(self.coords[0])
 
 
 class Coordinate:
@@ -72,18 +60,20 @@ class Coordinate:
     def __hash__(self):
         return id(self)
 
-    @property
-    def axis(self):
-        return self.dist.coords.index(self)
-
     def check_bounds(self, bounds):
         if self.cs == None: return
         else: self.cs.check_bounds(self, bounds)
 
-    def set_distributor(self, distributor):
-        self.dist = distributor
-        if self.cs:
-            self.cs.dist = distributor
+
+class DirectProduct(CoordinateSystem):
+
+    def __init__(self, *coords):
+        print(coords)
+        self.coords = coords
+        self.dim = sum(coord.dim for coord in coords)
+
+
+
 
 
 class CartesianCoordinates(CoordinateSystem):
@@ -100,10 +90,10 @@ class CartesianCoordinates(CoordinateSystem):
     def __str__(self):
         return '{' + ','.join([c.name for c in self.coords]) + '}'
 
-    def forward_intertwiner(self, axis, order, group):
+    def forward_intertwiner(self, first_axis, axis, order, group):
         return np.identity(self.dim**order)
 
-    def backward_intertwiner(self, axis, order, group):
+    def backward_intertwiner(self, first_axis, axis, order, group):
         return np.identity(self.dim**order)
 
     @CachedMethod
@@ -156,12 +146,8 @@ class S2Coordinates(CurvilinearCoordinateSystem):
         """Unitary transform from spin to coord components."""
         return cls._U_forward(order).T.conj()
 
-    @property
-    def axis(self):
-        return self.azimuth.axis
-
-    def forward_intertwiner(self, axis, order, group):
-        subaxis = axis - self.axis
+    def forward_intertwiner(self, first_axis, axis, order, group):
+        subaxis = axis - first_axis
         if subaxis == 0:
             # Azimuth intertwiner is identity, independent of group
             return np.identity(self.dim**order)
@@ -171,8 +157,8 @@ class S2Coordinates(CurvilinearCoordinateSystem):
         else:
             raise ValueError("Invalid axis")
 
-    def backward_intertwiner(self, axis, order, group):
-        subaxis = axis - self.axis
+    def backward_intertwiner(self, first_axis, axis, order, group):
+        subaxis = axis - first_axis
         if subaxis == 0:
             # Azimuth intertwiner is identity, independent of group
             return np.identity(self.dim**order)
@@ -214,12 +200,8 @@ class PolarCoordinates(CurvilinearCoordinateSystem):
         """Unitary transform from spin to coord components."""
         return cls._U_forward(order).T.conj()
 
-    @property
-    def axis(self):
-        return self.azimuth.axis
-
-    def forward_intertwiner(self, axis, order, group):
-        subaxis = axis - self.axis
+    def forward_intertwiner(self, first_axis, axis, order, group):
+        subaxis = axis - first_axis
         if subaxis == 0:
             # Azimuth intertwiner is identity, independent of group
             return np.identity(self.dim**order)
@@ -229,8 +211,8 @@ class PolarCoordinates(CurvilinearCoordinateSystem):
         else:
             raise ValueError("Invalid axis")
 
-    def backward_intertwiner(self, axis, order, group):
-        subaxis = axis - self.axis
+    def backward_intertwiner(self, first_axis, axis, order, group):
+        subaxis = axis - first_axis
         if subaxis == 0:
             # Azimuth intertwiner is identity, independent of group
             return np.identity(self.dim**order)
@@ -296,10 +278,6 @@ class SphericalCoordinates(CurvilinearCoordinateSystem):
         # This may not rebust to having spin and reg orderings be different?
         return dedalus_sphere.spin_operators.Intertwiner(ell, indexing=cls.reg_ordering)(order)
 
-    @property
-    def axis(self):
-        return self.azimuth.axis
-
     def check_bounds(self, coord, bounds):
         if coord == self.radius:
             if min(bounds) < 0:
@@ -316,11 +294,6 @@ class SphericalCoordinates(CurvilinearCoordinateSystem):
             else: return False
         return False
 
-    def set_distributor(self, distributor):
-        self.dist = distributor
-        super().set_distributor(distributor)
-        self.S2coordsys.set_distributor(distributor)
-
     @staticmethod
     def cartesian(phi, theta, r):
         x = r * np.sin(theta) * np.cos(phi)
@@ -328,8 +301,8 @@ class SphericalCoordinates(CurvilinearCoordinateSystem):
         z = r * np.cos(theta)
         return x, y, z
 
-    def forward_intertwiner(self, axis, order, group):
-        subaxis = axis - self.axis
+    def forward_intertwiner(self, first_axis, axis, order, group):
+        subaxis = axis - first_axis
         if subaxis == 0:
             # Azimuth intertwiner is identity, independent of group
             return np.identity(self.dim**order)
@@ -343,8 +316,8 @@ class SphericalCoordinates(CurvilinearCoordinateSystem):
         else:
             raise ValueError("Invalid axis")
 
-    def backward_intertwiner(self, axis, order, group):
-        subaxis = axis - self.axis
+    def backward_intertwiner(self, first_axis, axis, order, group):
+        subaxis = axis - first_axis
         if subaxis == 0:
             # Azimuth intertwiner is identity, independent of group
             return np.identity(self.dim**order)

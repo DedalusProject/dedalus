@@ -550,7 +550,7 @@ class H5FileHandlerBase(Handler):
                 if basis is None:
                     sn = lookup = 'constant'
                 else:
-                    subaxis = axis - basis.axis
+                    subaxis = axis - self.dist.get_basis_axis(basis)
                     if layout.grid_space[axis]:
                         sn = basis.coordsystem.coords[subaxis].name
                         data = basis.global_grids(scales)[subaxis].ravel()

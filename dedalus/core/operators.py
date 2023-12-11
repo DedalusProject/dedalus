@@ -1088,8 +1088,8 @@ class Interpolate(SpectralOperator, metaclass=MultiClass):
         self.coord = coord
         self.input_basis = operand.domain.get_basis(coord)
         self.output_basis = self._output_basis(self.input_basis, position)
-        self.first_axis = self.input_basis.first_axis
-        self.last_axis = self.input_basis.last_axis
+        self.first_axis = self.dist.get_basis_axis(self.input_basis)
+        self.last_axis = self.first_axis + self.input_basis.dim - 1
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements
@@ -1173,8 +1173,8 @@ class Integrate(LinearOperator, metaclass=MultiClass):
         self.coord = coord
         self.input_basis = operand.domain.get_basis(coord)
         self.output_basis = self._output_basis(self.input_basis)
-        self.first_axis = self.input_basis.first_axis
-        self.last_axis = self.input_basis.last_axis
+        self.first_axis = self.dist.get_basis_axis(self.input_basis)
+        self.last_axis = self.first_axis + self.input_basis.dim - 1
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements
@@ -1243,8 +1243,8 @@ class Average(LinearOperator, metaclass=MultiClass):
         self.coord = coord
         self.input_basis = operand.domain.get_basis(coord)
         self.output_basis = self._output_basis(self.input_basis)
-        self.first_axis = self.input_basis.first_axis
-        self.last_axis = self.input_basis.last_axis
+        self.first_axis = self.dist.get_basis_axis(self.input_basis)
+        self.last_axis = self.first_axis + self.input_basis.dim - 1
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements
@@ -1329,9 +1329,9 @@ class Differentiate(SpectralOperator1D, metaclass=MultiClass):
         self.coord = coord
         self.input_basis = operand.domain.get_basis(coord)
         self.output_basis = self._output_basis(self.input_basis)
-        self.first_axis = coord.axis
-        self.last_axis = coord.axis
-        self.axis = coord.axis
+        self.first_axis = self.dist.get_axis(coord)
+        self.last_axis = self.first_axis
+        self.axis = self.first_axis
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements
@@ -1517,8 +1517,8 @@ class Convert(SpectralOperator, metaclass=MultiClass):
         self.coords = output_basis.coords
         self.input_basis = operand.domain.get_basis(self.coords)
         self.output_basis = output_basis
-        self.first_axis = self.output_basis.first_axis
-        self.last_axis = self.output_basis.last_axis
+        self.first_axis = self.dist.get_basis_axis(self.output_basis)
+        self.last_axis = self.first_axis + self.output_basis.dim - 1
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements
@@ -1686,6 +1686,7 @@ class ConvertConstant(Convert):
 @alias("trace")
 class Trace(LinearOperator, metaclass=MultiClass):
     # TODO: contract arbitrary indices instead of the first two?
+    # TODO: check that the two indices have same coordsys
 
     name = "Trace"
 
@@ -3172,7 +3173,7 @@ class CartCompBase(LinearOperator, metaclass=MultiClass):
         self.index = index
         self.coord = coord
         self.coordsys = operand.tensorsig[index]
-        self.coord_subaxis = self.coord.axis - self.coordsys.first_axis
+        self.coord_subaxis = self.dist.get_axis(coord) - self.dist.get_axis(self.coordsys)
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements

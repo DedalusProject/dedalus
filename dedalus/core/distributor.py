@@ -9,6 +9,7 @@ import itertools
 from collections import OrderedDict
 from math import prod
 
+from .coords import CoordinateSystem
 from ..tools.cache import CachedMethod, CachedAttribute
 from ..tools.config import config
 from ..tools.general import OrderedSet
@@ -81,8 +82,6 @@ class Distributor:
             self.single_coordsys = False
         # Get coords
         self.coords = tuple([coord for coordsystem in coordsystems for coord in coordsystem.coords])
-        for coordsystem in coordsystems:
-            coordsystem.set_distributor(self)
         self.coordsystems = coordsystems
         # Defaults
         if comm is None:
@@ -194,7 +193,18 @@ class Distributor:
         return self.transforms[axis]
 
     def get_axis(self, coord):
+        if isinstance(coord, CoordinateSystem):
+            coord = coord.coords[0]
         return self.coords.index(coord)
+
+    def get_basis_axis(self, basis):
+        return self.get_axis(basis.coordsystem.coords[0])
+
+    def first_axis(self, basis):
+        return self.get_basis_axis(basis)
+
+    def last_axis(self, basis):
+        return self.first_axis(basis) + basis.dim - 1
 
     def Field(self, *args, **kw):
         """Alternate constructor for fields."""
@@ -227,13 +237,13 @@ class Distributor:
     def local_grid(self, basis, scale=None):
         # TODO: remove from bases and do it all here?
         if basis.dim == 1:
-            return basis.local_grid(scale=scale)
+            return basis.local_grid(self, scale=scale)
         else:
             raise ValueError("Use `local_grids` for multidimensional bases.")
 
     def local_grids(self, *bases, scales=None):
         # TODO: remove from bases and do it all here?
-        return sum((basis.local_grids(scales=scales) for basis in bases), ())
+        return sum((basis.local_grids(self, scales=scales) for basis in bases), ())
 
     def local_modes(self, basis):
         # TODO: remove from bases and do it all here?
@@ -347,7 +357,7 @@ class Layout:
         vshape = tuple(cs.dim for cs in tensorsig) + elements[0].shape
         valid = np.ones(shape=vshape, dtype=bool)
         for basis in domain.bases:
-            basis_axes = slice(basis.first_axis, basis.last_axis+1)
+            basis_axes = slice(self.dist.first_axis(basis), self.dist.last_axis(basis)+1)
             valid &= basis.valid_elements(tensorsig, grid_space[basis_axes], elements[basis_axes])
         return valid
 
@@ -357,7 +367,7 @@ class Layout:
         groups = np.zeros_like(elements)
         groups = np.ma.masked_array(groups)
         for basis in domain.bases:
-            basis_axes = slice(basis.first_axis, basis.last_axis+1)
+            basis_axes = slice(self.dist.first_axis(basis), self.dist.last_axis(basis)+1)
             groups[basis_axes] = basis.elements_to_groups(grid_space[basis_axes], elements[basis_axes])
         return groups
 

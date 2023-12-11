@@ -79,7 +79,8 @@ class SolverBase:
         self.matrix_dependence = np.array(problem.matrix_dependence)
         for eq in problem.eqs:
             for basis in eq['domain'].bases:
-                slices = slice(basis.first_axis, basis.last_axis+1)
+                first_axis = self.dist.get_basis_axis(basis)
+                slices = slice(first_axis, first_axis+basis.dim)
                 self.matrix_dependence[slices] = self.matrix_dependence[slices] | basis.matrix_dependence(matrix_coupling[slices])
         # Process config options
         if matsolver is None:
