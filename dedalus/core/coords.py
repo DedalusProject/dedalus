@@ -90,10 +90,10 @@ class CartesianCoordinates(CoordinateSystem):
     def __str__(self):
         return '{' + ','.join([c.name for c in self.coords]) + '}'
 
-    def forward_intertwiner(self, first_axis, axis, order, group):
+    def forward_intertwiner(self, subaxis, order, group):
         return np.identity(self.dim**order)
 
-    def backward_intertwiner(self, first_axis, axis, order, group):
+    def backward_intertwiner(self, subaxis, order, group):
         return np.identity(self.dim**order)
 
     @CachedMethod
@@ -146,8 +146,7 @@ class S2Coordinates(CurvilinearCoordinateSystem):
         """Unitary transform from spin to coord components."""
         return cls._U_forward(order).T.conj()
 
-    def forward_intertwiner(self, first_axis, axis, order, group):
-        subaxis = axis - first_axis
+    def forward_intertwiner(self, subaxis, order, group):
         if subaxis == 0:
             # Azimuth intertwiner is identity, independent of group
             return np.identity(self.dim**order)
@@ -157,8 +156,7 @@ class S2Coordinates(CurvilinearCoordinateSystem):
         else:
             raise ValueError("Invalid axis")
 
-    def backward_intertwiner(self, first_axis, axis, order, group):
-        subaxis = axis - first_axis
+    def backward_intertwiner(self, subaxis, order, group):
         if subaxis == 0:
             # Azimuth intertwiner is identity, independent of group
             return np.identity(self.dim**order)
@@ -200,8 +198,7 @@ class PolarCoordinates(CurvilinearCoordinateSystem):
         """Unitary transform from spin to coord components."""
         return cls._U_forward(order).T.conj()
 
-    def forward_intertwiner(self, first_axis, axis, order, group):
-        subaxis = axis - first_axis
+    def forward_intertwiner(self, subaxis, order, group):
         if subaxis == 0:
             # Azimuth intertwiner is identity, independent of group
             return np.identity(self.dim**order)
@@ -211,8 +208,7 @@ class PolarCoordinates(CurvilinearCoordinateSystem):
         else:
             raise ValueError("Invalid axis")
 
-    def backward_intertwiner(self, first_axis, axis, order, group):
-        subaxis = axis - first_axis
+    def backward_intertwiner(self, subaxis, order, group):
         if subaxis == 0:
             # Azimuth intertwiner is identity, independent of group
             return np.identity(self.dim**order)
@@ -301,8 +297,7 @@ class SphericalCoordinates(CurvilinearCoordinateSystem):
         z = r * np.cos(theta)
         return x, y, z
 
-    def forward_intertwiner(self, first_axis, axis, order, group):
-        subaxis = axis - first_axis
+    def forward_intertwiner(self, subaxis, order, group):
         if subaxis == 0:
             # Azimuth intertwiner is identity, independent of group
             return np.identity(self.dim**order)
@@ -311,13 +306,12 @@ class SphericalCoordinates(CurvilinearCoordinateSystem):
             return self._U_forward(order)
         elif subaxis == 2:
             # Radius intertwiner is reg-Q, dependent on ell
-            ell = group[axis-1]
+            ell = group[subaxis-1]
             return self._Q_forward(ell, order)
         else:
             raise ValueError("Invalid axis")
 
-    def backward_intertwiner(self, first_axis, axis, order, group):
-        subaxis = axis - first_axis
+    def backward_intertwiner(self, subaxis, order, group):
         if subaxis == 0:
             # Azimuth intertwiner is identity, independent of group
             return np.identity(self.dim**order)
@@ -326,7 +320,7 @@ class SphericalCoordinates(CurvilinearCoordinateSystem):
             return self._U_backward(order)
         elif subaxis == 2:
             # Radius intertwiner is reg-Q, dependent on ell
-            ell = group[axis-1]
+            ell = group[subaxis-1]
             return self._Q_backward(ell, order)
         else:
             raise ValueError("Invalid axis")

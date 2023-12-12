@@ -78,7 +78,7 @@ def test_laplace_jacobi_first_order(N, a, b, dtype):
     c = d3.Coordinate('x')
     d = d3.Distributor(c, dtype=dtype)
     b = d3.Jacobi(c, size=N, a=a, b=b, bounds=(0, np.pi))
-    x = b.local_grid(1)
+    x = d.local_grid(b, scale=1)
     # Fields
     u = d.Field(bases=b)
     s = d.Field()
@@ -156,7 +156,7 @@ def test_ball_bessel_eigenfunction(Nphi, Ntheta, Nr, radius, alpha, dtype, ell):
     c = d3.SphericalCoordinates('phi', 'theta', 'r')
     d = d3.Distributor(c, dtype=dtype)
     b = d3.BallBasis(c, (Nphi, Ntheta, Nr), radius=radius, alpha=alpha, dtype=dtype)
-    phi, theta, r = b.local_grids((1, 1, 1))
+    phi, theta, r = d.local_grids(b, scales=(1, 1, 1))
     # Fields
     u = d.Field(bases=b)
     tau = d.Field(bases=b.surface)

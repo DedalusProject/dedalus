@@ -18,7 +18,7 @@ def build_sphere(Nphi, Ntheta, dealias, dtype):
     c = coords.S2Coordinates('phi', 'theta')
     d = distributor.Distributor(c, dtype=dtype)
     b = basis.SphereBasis(c, (Nphi, Ntheta), radius=radius, dealias=(dealias, dealias), dtype=dtype)
-    phi, theta = b.local_grids(b.domain.dealias)
+    phi, theta = d.local_grids(b, scales=b.domain.dealias)
     return c, d, b, phi, theta
 
 

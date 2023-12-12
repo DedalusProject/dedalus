@@ -33,7 +33,7 @@ class Domain(metaclass=CachedClass):
         # Drop duplicate bases
         bases = tuple(OrderedSet(bases))
         # Make sure coordsystems don't overlap
-        cs = [b.coordsystem for b in bases]
+        cs = [b.coordsys for b in bases]
         if len(set(cs)) < len(cs):
             raise ValueError("Overlapping bases specified.")
         # Sort by first axis
@@ -76,7 +76,7 @@ class Domain(metaclass=CachedClass):
                 bases_by_coord[coord.cs] = None
         for basis in self.bases:
             bases_by_coord[basis.coords] = basis
-            #bases_by_coord[basis.coordsystem] = basis
+            #bases_by_coord[basis.coordsys] = basis
         return bases_by_coord
 
     @CachedAttribute

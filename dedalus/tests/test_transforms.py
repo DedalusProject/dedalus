@@ -64,7 +64,7 @@ def test_CF_scalar_roundtrip(N, dealias):
         c = coords.Coordinate('x')
         d = distributor.Distributor([c])
         xb = basis.ComplexFourier(c, size=N, bounds=(0, 1), dealias=dealias)
-        x = xb.local_grid(dealias)
+        x = d.local_grid(xb, scales=dealias)
         # Scalar transforms
         u = field.Field(dist=d, bases=(xb,), dtype=np.complex128)
         u.preset_scales(dealias)
@@ -82,7 +82,7 @@ def test_RF_scalar_roundtrip(N, dealias):
         c = coords.Coordinate('x')
         d = distributor.Distributor([c])
         xb = basis.RealFourier(c, size=N, bounds=(0, 1), dealias=dealias)
-        x = xb.local_grid(dealias)
+        x = d.local_grid(xb, scales=dealias)
         # Scalar transforms
         u = field.Field(dist=d, bases=(xb,), dtype=np.float64)
         u.preset_scales(dealias)
@@ -103,7 +103,7 @@ def test_J_scalar_roundtrip(a, b, N, dealias, dtype):
         c = coords.Coordinate('x')
         d = distributor.Distributor([c])
         xb = basis.Jacobi(c, a=a, b=b, size=N, bounds=(0, 1), dealias=dealias)
-        x = xb.local_grid(dealias)
+        x = d.local_grid(xb, scales=dealias)
         # Scalar transforms
         u = field.Field(dist=d, bases=(xb,), dtype=dtype)
         u.preset_scales(dealias)
@@ -164,8 +164,8 @@ def build_CF_CF(Nx, Ny, dealias_x, dealias_y):
     d = distributor.Distributor((c,))
     xb = basis.ComplexFourier(c.coords[0], size=Nx, bounds=(0, np.pi), dealias=dealias_x)
     yb = basis.ComplexFourier(c.coords[1], size=Ny, bounds=(0, np.pi), dealias=dealias_y)
-    x = xb.local_grid(dealias_x)
-    y = yb.local_grid(dealias_y)
+    x = d.local_grid(xb, scales=dealias_x)
+    y = d.local_grid(yb, scales=dealias_y)
     return c, d, xb, yb, x, y
 
 
@@ -188,8 +188,8 @@ def build_RF_RF(Nx, Ny, dealias_x, dealias_y):
     d = distributor.Distributor((c,))
     xb = basis.RealFourier(c.coords[0], size=Nx, bounds=(0, np.pi), dealias=dealias_x)
     yb = basis.RealFourier(c.coords[1], size=Ny, bounds=(0, np.pi), dealias=dealias_y)
-    x = xb.local_grid(dealias_x)
-    y = yb.local_grid(dealias_y)
+    x = d.local_grid(xb, scales=dealias_x)
+    y = d.local_grid(yb, scales=dealias_y)
     return c, d, xb, yb, x, y
 
 
@@ -212,8 +212,8 @@ def build_CF_J(a, b, Nx, Ny, dealias_x, dealias_y):
     d = distributor.Distributor((c,))
     xb = basis.ComplexFourier(c.coords[0], size=Nx, bounds=(0, np.pi), dealias=dealias_x)
     yb = basis.Jacobi(c.coords[1], a=a, b=b, size=Ny, bounds=(0, 1), dealias=dealias_y)
-    x = xb.local_grid(dealias_x)
-    y = yb.local_grid(dealias_y)
+    x = d.local_grid(xb, scales=dealias_x)
+    y = d.local_grid(yb, scales=dealias_y)
     return c, d, xb, yb, x, y
 
 
@@ -269,7 +269,7 @@ def build_sphere_2d(Nphi, Ntheta, radius, dealias, dtype):
     c = coords.S2Coordinates('phi', 'theta')
     d = distributor.Distributor((c,))
     b = basis.SphereBasis(c, (Nphi, Ntheta), radius=radius, dealias=(dealias, dealias), dtype=dtype)
-    phi, theta = b.local_grids((dealias, dealias))
+    phi, theta = d.local_grids(b, scales=(dealias, dealias))
     return c, d, b, phi, theta
 
 @CachedMethod
@@ -277,7 +277,7 @@ def build_sphere_3d(Nphi, Ntheta, radius, dealias, dtype):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
     b = basis.SphereBasis(c, (Nphi, Ntheta), radius=radius, dealias=(dealias, dealias), dtype=dtype)
-    phi, theta = b.local_grids((dealias, dealias, dealias))
+    phi, theta = d.local_grids(b, scales=(dealias, dealias, dealias))
     return c, d, b, phi, theta
 
 Nphi_range = [16]
@@ -404,7 +404,7 @@ def build_annulus(Nphi, Nr, radius, alpha, k, dealias, dtype):
 @pytest.mark.parametrize('build_basis', [build_annulus, build_disk])
 def test_polar_scalar_roundtrip(Nphi, Nr, radius, alpha, k, dealias, dtype, build_basis):
     c, d, b = build_basis(Nphi, Nr, radius, alpha, k, dealias, dtype)
-    phi, r = b.local_grids((dealias, dealias))
+    phi, r = d.local_grids(b, scales=(dealias, dealias))
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
     f.preset_scales((dealias, dealias))
     f['g'] = (r*np.cos(phi))**3
@@ -444,7 +444,7 @@ def test_polar_roundtrip_noise(Nphi, Nr, radius, alpha, k, dealias, dtype, layou
 @pytest.mark.parametrize('build_basis', [build_annulus, build_disk])
 def test_polar_scalar_roundtrip_mmax0(Nr, radius, alpha, k, dealias, dtype, build_basis):
     c, d, b = build_basis(1, Nr, radius, alpha, k, dealias, dtype)
-    phi, r = b.local_grids((dealias, dealias))
+    phi, r = d.local_grids(b, scales=(dealias, dealias))
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
     f.preset_scales((dealias, dealias))
     f['g'] = r**4 + 0*phi
@@ -463,7 +463,7 @@ def test_polar_scalar_roundtrip_mmax0(Nr, radius, alpha, k, dealias, dtype, buil
 @pytest.mark.parametrize('build_basis', [build_annulus, build_disk])
 def test_polar_vector_roundtrip(Nphi, Nr, radius, alpha, k, dealias, dtype, build_basis):
     c, d, b = build_basis(Nphi, Nr, radius, alpha, k, dealias, dtype=dtype)
-    phi, r = b.local_grids((dealias, dealias))
+    phi, r = d.local_grids(b, scales=(dealias, dealias))
     x = r*np.cos(phi)
     y = r*np.sin(phi)
     ex = np.array([-np.sin(phi)+0*r, np.cos(phi)+0*r])
@@ -484,7 +484,7 @@ def test_polar_vector_roundtrip(Nphi, Nr, radius, alpha, k, dealias, dtype, buil
 @pytest.mark.parametrize('build_basis', [build_annulus, build_disk])
 def test_polar_vector_roundtrip_mmax0(Nr, radius, alpha, k, dealias, dtype, build_basis):
     c, d, b = build_basis(1, Nr, radius, alpha, k, dealias, dtype=dtype)
-    phi, r = b.local_grids((dealias, dealias))
+    phi, r = d.local_grids(b, scales=(dealias, dealias))
     f = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
     f.preset_scales((dealias, dealias))
     f['g'][1] = 6*r**5 + 0*phi
@@ -503,7 +503,7 @@ def test_polar_vector_roundtrip_mmax0(Nr, radius, alpha, k, dealias, dtype, buil
 @pytest.mark.parametrize('build_basis', [build_annulus, build_disk])
 def test_polar_tensor_roundtrip(Nphi, Nr, radius, alpha, k, dealias, dtype, build_basis):
     c, d, b = build_basis(Nphi, Nr, radius, alpha, k, dealias, dtype=dtype)
-    phi, r = b.local_grids((dealias, dealias))
+    phi, r = d.local_grids(b, scales=(dealias, dealias))
     x = r*np.cos(phi)
     ex = np.array([-np.sin(phi)+0*r, np.cos(phi)+0*r])
     exex = ex[None, :, ...] * ex[:, None, ...]
@@ -524,7 +524,7 @@ def test_polar_tensor_roundtrip(Nphi, Nr, radius, alpha, k, dealias, dtype, buil
 @pytest.mark.parametrize('build_basis', [build_annulus, build_disk])
 def test_polar_tensor_roundtrip_mmax0(Nr, radius, alpha, k, dealias, dtype, build_basis):
     c, d, b = build_basis(1, Nr, radius, alpha, k, dealias, dtype=dtype)
-    phi, r = b.local_grids((dealias, dealias))
+    phi, r = d.local_grids(b, scales=(dealias, dealias))
     f = field.Field(dist=d, bases=(b,), tensorsig=(c,c), dtype=dtype)
     f.preset_scales((dealias, dealias))
     f['g'][1,1] = r**2 + 0*phi
@@ -540,7 +540,7 @@ def build_shell(Nphi, Ntheta, Nr, radii, alpha, k, dealias, dtype):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
     b  = basis.ShellBasis(c, (Nphi, Ntheta, Nr), radii=radii, alpha=alpha, k=k, dealias=(dealias, dealias, dealias), dtype=dtype)
-    phi, theta, r = b.local_grids((dealias, dealias, dealias))
+    phi, theta, r = d.local_grids(b, scales=(dealias, dealias, dealias))
     x = r * np.sin(theta) * np.cos(phi)
     y = r * np.sin(theta) * np.sin(phi)
     z = r * np.cos(theta)
@@ -605,7 +605,7 @@ def build_ball(Nphi, Ntheta, Nr, radius, alpha, k, dealias, dtype):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
     b = basis.BallBasis(c, (Nphi, Ntheta, Nr), radius=radius, alpha=alpha, k=k, dealias=(dealias, dealias, dealias), dtype=dtype)
-    phi, theta, r = b.local_grids((dealias, dealias, dealias))
+    phi, theta, r = d.local_grids(b, scales=(dealias, dealias, dealias))
     x = r * np.sin(theta) * np.cos(phi)
     y = r * np.sin(theta) * np.sin(phi)
     z = r * np.cos(theta)

@@ -569,9 +569,11 @@ class Product(Future):
             G = self.Gamma(A_tensorsig, B_tensorsig, C_tensorsig, A_group, B_group, C_group, axis-1)
         # Apply Q
         cs = self.dist.get_coordsystem(axis)
-        QA = cs.backward_intertwiner(axis, len(A_tensorsig), A_group).T
-        QB = cs.backward_intertwiner(axis, len(B_tensorsig), B_group).T
-        QC = cs.forward_intertwiner(axis, len(C_tensorsig), C_group)
+        cs_axis = self.dist.get_axis(cs)
+        subaxis = axis - cs_axis
+        QA = cs.backward_intertwiner(subaxis, len(A_tensorsig), A_group[cs_axis:]).T
+        QB = cs.backward_intertwiner(subaxis, len(B_tensorsig), B_group[cs_axis:]).T
+        QC = cs.forward_intertwiner(subaxis, len(C_tensorsig), C_group[cs_axis:])
         Q = kron(QA, QB, QC)
         G = (Q @ G.ravel()).reshape(G.shape)
         return G

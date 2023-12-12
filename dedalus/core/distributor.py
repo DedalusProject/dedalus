@@ -73,16 +73,16 @@ class Distributor:
     """
 
     def __init__(self, coordsystems, comm=None, mesh=None, dtype=None):
-        # Accept single coordsystem in place of tuple/list
+        # Accept single coordsys in place of tuple/list
         if not isinstance(coordsystems, (tuple, list)):
             coordsystems = (coordsystems,)
-        # Note if only a single coordsystem for simplicity
+        # Note if only a single coordsys for simplicity
         if len(coordsystems) == 1:
             self.single_coordsys = coordsystems[0]
         else:
             self.single_coordsys = False
         # Get coords
-        self.coords = tuple([coord for coordsystem in coordsystems for coord in coordsystem.coords])
+        self.coords = tuple([coord for coordsys in coordsystems for coord in coordsys.coords])
         self.coordsystems = coordsystems
         # Defaults
         if comm is None:
@@ -95,7 +95,7 @@ class Distributor:
         # Trim trailing ones
         mesh = 1 + np.trim_zeros(mesh - 1, trim='b')
         self.dim = dim = len(self.coords)
-#        self.dim = dim = sum(coordsystem.dim for coordsystem in coordsystems)
+#        self.dim = dim = sum(coordsys.dim for coordsys in coordsystems)
         self.comm = comm
         self.mesh = mesh = np.array(mesh)
         # Check mesh compatibility
@@ -117,7 +117,8 @@ class Distributor:
         cs_dict = {}
         for cs in self.coordsystems:
             for subaxis in range(cs.dim):
-                cs_dict[cs.axis+subaxis] = cs
+                axis = self.get_axis(cs)
+                cs_dict[axis+subaxis] = cs
         return cs_dict
 
     def get_coordsystem(self, axis):
@@ -237,6 +238,8 @@ class Distributor:
 
     def local_grid(self, basis, scale=None):
         # TODO: remove from bases and do it all here?
+        if scale is None:
+            scale = 1
         if basis.dim == 1:
             return basis.local_grid(self, scale=scale)
         else:
@@ -271,6 +274,7 @@ class Distributor:
     #     return tuple(grids)
 
     def local_grids(self, *bases, scales=None):
+        scales = self.remedy_scales(scales)
         # TODO: remove from bases and do it all here?
         return sum((basis.local_grids(self, scales=scales) for basis in bases), ())
 

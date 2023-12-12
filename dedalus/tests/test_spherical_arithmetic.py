@@ -19,7 +19,7 @@ def build_ball(Nphi, Ntheta, Nr, dealias, dtype):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
     b = basis.BallBasis(c, (Nphi, Ntheta, Nr), radius=radius_ball, dealias=(dealias, dealias, dealias), dtype=dtype)
-    phi, theta, r = b.local_grids()
+    phi, theta, r = d.local_grids(b)
     x, y, z = c.cartesian(phi, theta, r)
     return c, d, b, phi, theta, r, x, y, z
 
@@ -29,7 +29,7 @@ def build_shell(Nphi, Ntheta, Nr, dealias, dtype):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
     b = basis.ShellBasis(c, (Nphi, Ntheta, Nr), radii=radii_shell, dealias=(dealias, dealias, dealias), dtype=dtype)
-    phi, theta, r = b.local_grids()
+    phi, theta, r = d.local_grids(b)
     x, y, z = c.cartesian(phi, theta, r)
     return c, d, b, phi, theta, r, x, y, z
 
@@ -41,7 +41,7 @@ def test_S2_radial_scalar_scalar_multiplication(Nphi, Ntheta, Nr, dealias):
     c, d, b, phi, theta, r, x, y, z = build_shell(Nphi, Ntheta, Nr, dealias, np.complex128)
     f0 = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     f0.preset_scales(b.domain.dealias)
-    phi, theta, r = b.local_grids(b.domain.dealias)
+    phi, theta, r = d.local_grids(b, scales=b.domain.dealias)
     f0['g'] = (r**2 - 0.5*r**3)*(5*np.cos(theta)**2-1)*np.sin(theta)*np.exp(1j*phi)
 
     b_S2 = b.S2_basis()
@@ -64,7 +64,7 @@ def test_S2_radial_vector_scalar_multiplication(Nphi, Ntheta, Nr, dealias):
     c_S2 = c.S2coordsys
     v0 = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=np.complex128)
     v0.preset_scales(b.domain.dealias)
-    phi, theta, r = b.local_grids(b.domain.dealias)
+    phi, theta, r = d.local_grids(b, scales=b.domain.dealias)
     v0['g'][0] = (r**2 - 0.5*r**3)*(-1j * np.sin(theta)*np.exp(-2j*phi))
     v0['g'][1] = (r**2 - 0.5*r**3)*(np.cos(theta)*np.sin(theta)*np.exp(-2j*phi))
     v0['g'][2] = (r**2 - 0.5*r**3)*(5*np.cos(theta)**2-1)*np.sin(theta)*np.exp(1j*phi)
@@ -153,7 +153,7 @@ def test_multiply_number_scalar(Nphi, Ntheta, Nr, dealias, basis):
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     f['g'] = x**3 + 2*y**3 + 3*z**3
     h = (2 * f).evaluate()
-    phi, theta, r = b.local_grids(b.domain.dealias)
+    phi, theta, r = d.local_grids(b, scales=b.domain.dealias)
     x, y, z = c.cartesian(phi, theta, r)
     hg = 2*(x**3 + 2*y**3 + 3*z**3)
     assert np.allclose(h['g'], hg)
@@ -168,7 +168,7 @@ def test_multiply_scalar_number(Nphi, Ntheta, Nr, dealias, basis):
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     f['g'] = x**3 + 2*y**3 + 3*z**3
     h = (f * 2).evaluate()
-    phi, theta, r = b.local_grids(b.domain.dealias)
+    phi, theta, r = d.local_grids(b, scales=b.domain.dealias)
     x, y, z = c.cartesian(phi, theta, r)
     hg = 2*(x**3 + 2*y**3 + 3*z**3)
     assert np.allclose(h['g'], hg)
@@ -183,7 +183,7 @@ def test_multiply_scalar_scalar(Nphi, Ntheta, Nr, dealias, basis):
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     f['g'] = x**3 + 2*y**3 + 3*z**3
     h = (f * f).evaluate()
-    phi, theta, r = b.local_grids(b.domain.dealias)
+    phi, theta, r = d.local_grids(b, scales=b.domain.dealias)
     x, y, z = c.cartesian(phi, theta, r)
     hg = (x**3 + 2*y**3 + 3*z**3)**2
     assert np.allclose(h['g'], hg)
@@ -195,7 +195,7 @@ def test_multiply_scalar_scalar(Nphi, Ntheta, Nr, dealias, basis):
 @pytest.mark.parametrize('basis', [build_ball, build_shell])
 def test_multiply_scalar_vector(Nphi, Ntheta, Nr, dealias, basis):
     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, dealias, np.complex128)
-    phi, theta, r = b.local_grids(b.domain.dealias)
+    phi, theta, r = d.local_grids(b, scales=b.domain.dealias)
     x, y, z = c.cartesian(phi, theta, r)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     f.preset_scales(b.domain.dealias)

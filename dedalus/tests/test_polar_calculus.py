@@ -18,7 +18,7 @@ def build_disk(Nphi, Nr, dealias, dtype):
     c = coords.PolarCoordinates('phi', 'r')
     d = distributor.Distributor((c,))
     b = basis.DiskBasis(c, (Nphi, Nr), radius=radius_disk, dealias=(dealias, dealias), dtype=dtype)
-    phi, r = b.local_grids(b.domain.dealias)
+    phi, r = d.local_grids(b, scales=b.domain.dealias)
     x, y = c.cartesian(phi, r)
     return c, d, b, phi, r, x, y
 
@@ -28,7 +28,7 @@ def build_annulus(Nphi, Nr, dealias, dtype):
     c = coords.PolarCoordinates('phi', 'r')
     d = distributor.Distributor((c,))
     b = basis.AnnulusBasis(c, (Nphi, Nr), radii=radii_annulus, dealias=(dealias, dealias), dtype=dtype)
-    phi, r = b.local_grids(b.domain.dealias)
+    phi, r = d.local_grids(b, scales=b.domain.dealias)
     x, y = c.cartesian(phi, r)
     return c, d, b, phi, r, x, y
 

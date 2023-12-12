@@ -18,7 +18,7 @@ def build_jacobi(N, a, b, k, bounds, dealias, dtype):
     c = d3.Coordinate('x')
     d = d3.Distributor(c, dtype=dtype)
     b = d3.Jacobi(c, size=N, a0=a, b0=b, a=a+k, b=b+k, bounds=bounds, dealias=dealias)
-    x = b.local_grid(1)
+    x = d.local_grid(b, scale=1)
     return c, d, b, x
 
 

@@ -26,8 +26,7 @@ def build_FF(N, dealias, dtype):
         xb = d3.RealFourier(c.coords[0], size=N, bounds=(0, Lx), dealias=dealias)
         yb = d3.RealFourier(c.coords[1], size=N, bounds=(0, Ly), dealias=dealias)
     b = (xb, yb)
-    x = xb.local_grid(dealias)
-    y = yb.local_grid(dealias)
+    x, y = d.local_grids(xb, yb, scales=dealias)
     r = (x, y)
     return c, d, b, r
 
@@ -42,8 +41,7 @@ def build_FC(N, dealias, dtype):
         xb = d3.RealFourier(c.coords[0], size=N, bounds=(0, Lx), dealias=dealias)
     yb = d3.Chebyshev(c.coords[1], size=N, bounds=(0, Ly), dealias=dealias)
     b = (xb, yb)
-    x = xb.local_grid(dealias)
-    y = yb.local_grid(dealias)
+    x, y = d.local_grids(xb, yb, scales=dealias)
     r = (x, y)
     return c, d, b, r
 
@@ -55,8 +53,7 @@ def build_CC(N, dealias, dtype):
     xb = d3.Chebyshev(c.coords[0], size=N, bounds=(0, Lx), dealias=dealias)
     yb = d3.Chebyshev(c.coords[1], size=N, bounds=(0, Ly), dealias=dealias)
     b = (xb, yb)
-    x = xb.local_grid(dealias)
-    y = yb.local_grid(dealias)
+    x, y = d.local_grids(xb, yb, scales=dealias)
     r = (x, y)
     return c, d, b, r
 
@@ -74,9 +71,7 @@ def build_FFF(N, dealias, dtype):
         yb = d3.RealFourier(c.coords[1], size=N, bounds=(0, Ly), dealias=dealias)
         zb = d3.RealFourier(c.coords[2], size=N, bounds=(0, Lz), dealias=dealias)
     b = (xb, yb, zb)
-    x = xb.local_grid(dealias)
-    y = yb.local_grid(dealias)
-    z = zb.local_grid(dealias)
+    x, y, z = d.local_grids(xb, yb, zb, scales=dealias)
     r = (x, y, z)
     return c, d, b, r
 
@@ -93,9 +88,7 @@ def build_FFC(N, dealias, dtype):
         yb = d3.RealFourier(c.coords[1], size=N, bounds=(0, Ly), dealias=dealias)
     zb = d3.ChebyshevT(c.coords[2], size=N, bounds=(0, Lz), dealias=dealias)
     b = (xb, yb, zb)
-    x = xb.local_grid(dealias)
-    y = yb.local_grid(dealias)
-    z = zb.local_grid(dealias)
+    x, y, z = d.local_grids(xb, yb, zb, scales=dealias)
     r = (x, y, z)
     return c, d, b, r
 

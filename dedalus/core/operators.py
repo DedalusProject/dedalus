@@ -1076,7 +1076,7 @@ class Interpolate(SpectralOperator, metaclass=MultiClass):
         # Dispatch by operand basis and subaxis
         if isinstance(operand, Operand):
             basis = operand.domain.get_basis(coord)
-            subaxis = basis.coordsystem.coords.index(coord)
+            subaxis = basis.coordsys.coords.index(coord)
             if isinstance(basis, cls.input_basis_type) and cls.basis_subaxis == subaxis:
                 return True
         return False
@@ -1137,7 +1137,7 @@ class Integrate(LinearOperator, metaclass=MultiClass):
             raise SkipDispatchException(output=0)
         # Integrate over all operand bases by default
         if coord is None:
-            coord = [basis.coordsystem for basis in operand.domain.bases]
+            coord = [basis.coordsys for basis in operand.domain.bases]
         # Split Cartesian coordinates
         if isinstance(coord, coords.CartesianCoordinates):
             coord = coord.coords
@@ -1207,7 +1207,7 @@ class Average(LinearOperator, metaclass=MultiClass):
             raise SkipDispatchException(output=operand)
         # Average over all operand bases by default
         if coord is None:
-            coord = [basis.coordsystem for basis in operand.domain.bases]
+            coord = [basis.coordsys for basis in operand.domain.bases]
         # Split Cartesian coordinates
         if isinstance(coord, coords.CartesianCoordinates):
             coord = coord.coords
@@ -4031,7 +4031,7 @@ class Lift(LinearOperator, metaclass=MultiClass):
     def _check_args(cls, operand, output_basis, n, out=None):
         # Dispatch by output basis
         if isinstance(operand, Operand):
-            input_basis = operand.domain.get_basis(output_basis.coordsystem)
+            input_basis = operand.domain.get_basis(output_basis.coordsys)
             if (isinstance(input_basis, cls.input_basis_type) and
                 isinstance(output_basis, cls.output_basis_type)):
                 return True

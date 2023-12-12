@@ -261,6 +261,7 @@ class Basis:
 
     def build_ncc_matrix(self, product, subproblem, ncc_cutoff, max_ncc_terms):
         # Default to last axis only
+        dist = product.dist
         if any(product.ncc.domain.nonconstant[dist.first_axis(self):dist.last_axis(self)]):
             raise NotImplementedError("Only last-axis NCCs implemented for this basis.")
         axis = dist.last_axis(self)
@@ -332,7 +333,7 @@ class IntervalBasis(Basis):
     def __init__(self, coord, size, bounds, dealias):
         self.coord = coord
         coord.check_bounds(bounds)
-        self.coordsystem = coord
+        self.coordsys = coord
         self.size = size
         self.shape = (size,)
         self.bounds = bounds
@@ -347,29 +348,24 @@ class IntervalBasis(Basis):
     def matrix_dependence(self, matrix_coupling):
         return matrix_coupling
 
-    def global_grids(self, dist, scales=None):
+    def global_grids(self, dist, scales):
         """Global grids."""
-        if scales == None:
-            scales = (1,)
-        return (self.global_grid(dist, scales[0]),)
+        scale = scales[dist.first_axis(self)]
+        return (self.global_grid(dist, scale),)
 
-    def global_grid(self, dist, scale=None):
+    def global_grid(self, dist, scale):
         """Global grid."""
-        if scale == None:
-            scale = 1
         native_grid = self._native_grid(scale)
         problem_grid = self.COV.problem_coord(native_grid)
         return reshape_vector(problem_grid, dim=dist.dim, axis=dist.get_basis_axis(self))
 
-    def local_grids(self, dist, scales=None):
+    def local_grids(self, dist, scales):
         """Local grids."""
-        if scales == None:
-            scales = (1,)
-        return (self.local_grid(dist, scales[0]),)
+        scale = scales[dist.first_axis(self)]
+        return (self.local_grid(dist, scale),)
 
-    def local_grid(self, dist, scale=None):
+    def local_grid(self, dist, scale):
         """Local grid."""
-        if scale == None: scale = 1
         local_elements = dist.grid_layout.local_elements(self.domain(dist), scales=scale)
         native_grid = self._native_grid(scale)[local_elements[dist.get_basis_axis(self)]]
         problem_grid = self.COV.problem_coord(native_grid)
@@ -1580,15 +1576,15 @@ class SpinRecombinationBasis:
         # Perform unitary spin recombination along relevant tensor indeces
         U = []
         for i, cs in enumerate(tensorsig):
-            if (cs is self.coordsystem or
-                (type(cs) is SphericalCoordinates and self.coordsystem is cs.S2coordsys) or
-                (type(self.coordsystem) is SphericalCoordinates and self.coordsystem.S2coordsys is cs)):
+            if (cs is self.coordsys or
+                (type(cs) is SphericalCoordinates and self.coordsys is cs.S2coordsys) or
+                (type(self.coordsys) is SphericalCoordinates and self.coordsys.S2coordsys is cs)):
                 U.append(Us[cs.dim])
-            #if self.coordsystem is vs: # kludge before we decide how compound coordinate systems work
+            #if self.coordsys is vs: # kludge before we decide how compound coordinate systems work
             #    Ui = np.identity(vs.dim, dtype=np.complex128)
             #    Ui[:self.dim, :self.dim] = Us
             #    U.append(Ui)
-            #elif self.coordsystem in vs.spaces:
+            #elif self.coordsys in vs.spaces:
             #    n = vector_space.get_index(self.space)
             #    Ui = np.identity(vector_space.dim, dtype=np.complex128)
             #    Ui[n:n+self.dim, n:n+self.dim] = Us
@@ -1684,8 +1680,8 @@ class SpinRecombinationBasis:
 # These are common for S2 and D2
 class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):
 
-    def __init__(self, coordsystem, shape, dtype, dealias, azimuth_library=None):
-        self.coordsystem = coordsystem
+    def __init__(self, coordsys, shape, dtype, dealias, azimuth_library=None):
+        self.coordsys = coordsys
         self.shape = shape
         self.dtype = dtype
         if np.isscalar(dealias):
@@ -1697,14 +1693,14 @@ class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):
         self.azimuth_library = azimuth_library
         self.mmax = (shape[0] - 1) // 2
         if dtype == np.complex128:
-            self.azimuth_basis = ComplexFourier(coordsystem.coords[0], shape[0], bounds=(0, 2*np.pi), library=azimuth_library, dealias=self.dealias[0])
+            self.azimuth_basis = ComplexFourier(coordsys.coords[0], shape[0], bounds=(0, 2*np.pi), library=azimuth_library, dealias=self.dealias[0])
         elif dtype == np.float64:
-            self.azimuth_basis = RealFourier(coordsystem.coords[0], shape[0], bounds=(0, 2*np.pi), library=azimuth_library, dealias=self.dealias[0])
+            self.azimuth_basis = RealFourier(coordsys.coords[0], shape[0], bounds=(0, 2*np.pi), library=azimuth_library, dealias=self.dealias[0])
         else:
             raise NotImplementedError()
         self.global_grid_azimuth = self.azimuth_basis.global_grid
         self.local_grid_azimuth = self.azimuth_basis.local_grid
-        super().__init__(coordsystem)
+        super().__init__(coordsys)
 
     @CachedAttribute
     def constant(self):
@@ -1723,14 +1719,14 @@ class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):
         Ss = {2:np.array([-1, 1], dtype=int), 3:np.array([-1, 1, 0], dtype=int)}
         S = np.zeros([cs.dim for cs in tensorsig], dtype=int)
         for i, cs in enumerate(tensorsig):
-            if (self.coordsystem == cs or
-                (type(cs) is SphericalCoordinates and self.coordsystem == cs.S2coordsys) or
-                (type(self.coordsystem) is SphericalCoordinates and self.coordsystem.S2coordsys == cs)):
+            if (self.coordsys == cs or
+                (type(cs) is SphericalCoordinates and self.coordsys == cs.S2coordsys) or
+                (type(self.coordsys) is SphericalCoordinates and self.coordsys.S2coordsys == cs)):
                 S[axslice(i, 0, cs.dim)] += reshape_vector(Ss[cs.dim], dim=len(tensorsig), axis=i)
-            #if self.coordsystem is vs: # kludge before we decide how compound coordinate systems work
+            #if self.coordsys is vs: # kludge before we decide how compound coordinate systems work
             #    S[axslice(i, 0, self.dim)] += reshape_vector(Ss, dim=len(tensorsig), axis=i)
-            #elif self.coordsystem in vs:
-            #    n = vs.get_index(self.coordsystem)
+            #elif self.coordsys in vs:
+            #    n = vs.get_index(self.coordsys)
             #    S[axslice(i, n, n+self.dim)] += reshape_vector(Ss, dim=len(tensorsig), axis=i)
         return S
 
@@ -1747,8 +1743,8 @@ class PolarBasis(SpinBasis):
     dim = 2
     dims = ['azimuth', 'radius']
 
-    def __init__(self, coordsystem, shape, dtype, k=0, dealias=(1,1), azimuth_library=None):
-        super().__init__(coordsystem, shape, dtype, dealias, azimuth_library=azimuth_library)
+    def __init__(self, coordsys, shape, dtype, k=0, dealias=(1,1), azimuth_library=None):
+        super().__init__(coordsys, shape, dtype, dealias, azimuth_library=azimuth_library)
         self.k = k
         self.Nmax = shape[1] - 1
         if self.mmax == 0:
@@ -1823,9 +1819,9 @@ class PolarBasis(SpinBasis):
     @CachedMethod
     def S1_basis(self, radius=1):
         if self.dtype == np.complex128:
-            S1_basis = ComplexFourier(self.coordsystem.coords[0], self.shape[0], bounds=(0, 2*np.pi), dealias=self.dealias[0], library=self.azimuth_library)
+            S1_basis = ComplexFourier(self.coordsys.coords[0], self.shape[0], bounds=(0, 2*np.pi), dealias=self.dealias[0], library=self.azimuth_library)
         elif self.dtype == np.float64:
-            S1_basis = RealFourier(self.coordsystem.coords[0], self.shape[0], bounds=(0, 2*np.pi), dealias=self.dealias[0], library=self.azimuth_library)
+            S1_basis = RealFourier(self.coordsys.coords[0], self.shape[0], bounds=(0, 2*np.pi), dealias=self.dealias[0], library=self.azimuth_library)
         else:
             raise NotImplementedError()
         S1_basis.radius = radius
@@ -1919,7 +1915,7 @@ class PolarBasis(SpinBasis):
     def __eq__(self, other):
         if isinstance(other, type(self)):
             if self.dtype == other.dtype:
-                if self.coordsystem == other.coordsystem:
+                if self.coordsys == other.coordsys:
                     if self.grid_params == other.grid_params:
                         if self.k == other.k:
                             return True
@@ -1964,10 +1960,10 @@ class PolarBasis(SpinBasis):
             ell_reversed[m] = False
         return ell_reversed
 
-    def global_grids(self, dist, scales=None):
-        if scales == None: scales = (1, 1)
-        return (self.global_grid_azimuth(dist, scales[0]),
-                self.global_grid_radius(dist, scales[1]))
+    def global_grids(self, dist, scales):
+        first_axis = dist.first_axis(self)
+        return (self.global_grid_azimuth(dist, scales[first_axis]),
+                self.global_grid_radius(dist, scales[first_axis+1]))
 
     def global_grid_radius(self, dist, scale):
         r = self.radial_COV.problem_coord(self._native_radius_grid(scale))
@@ -1987,10 +1983,10 @@ class PolarBasis(SpinBasis):
         local_elements = dist.grid_layout.local_elements(self.domain(dist), scales=scales[axis])[axis]
         return reshape_vector(np.ravel(global_spacing)[local_elements], dim=dist.dim, axis=axis)
 
-    def local_grids(self, dist, scales=None):
-        if scales == None: scales = (1, 1)
-        return (self.local_grid_azimuth(dist, scales[0]),
-                self.local_grid_radius(dist, scales[1]))
+    def local_grids(self, dist, scales):
+        first_axis = dist.first_axis(self)
+        return (self.local_grid_azimuth(dist, scales[first_axis]),
+                self.local_grid_radius(dist, scales[first_axis+1]))
 
     def forward_transform_azimuth_Mmax0(self, field, axis, gdata, cdata):
         # slice_axis = axis + len(field.tensorsig)
@@ -2041,11 +2037,11 @@ class AnnulusBasis(PolarBasis, metaclass=CachedClass):
     subaxis_dependence = (False, True)
 
     @classmethod
-    def _preprocess_cache_args(cls, coordsystem, shape, dtype, radii, k, alpha, dealias, azimuth_library, radius_library):
+    def _preprocess_cache_args(cls, coordsys, shape, dtype, radii, k, alpha, dealias, azimuth_library, radius_library):
         """Preprocess arguments into canonical form for caching. Must accept and return __init__ arguments."""
-        # coordsystem: PolarCoordinates
-        if not isinstance(coordsystem, PolarCoordinates):
-            raise ValueError("Annulus coordsystem must be PolarCoordinates.")
+        # coordsys: PolarCoordinates
+        if not isinstance(coordsys, PolarCoordinates):
+            raise ValueError("Annulus coordsys must be PolarCoordinates.")
         # shape: length-2 tuple
         shape = tuple(shape)
         if len(shape) != 2:
@@ -2083,12 +2079,12 @@ class AnnulusBasis(PolarBasis, metaclass=CachedClass):
                 radius_library = Jacobi.default_dct
             else:
                 radius_library = Jacobi.default_library
-        return (coordsystem, shape, dtype, radii, k, alpha, dealias, azimuth_library, radius_library)
+        return (coordsys, shape, dtype, radii, k, alpha, dealias, azimuth_library, radius_library)
 
-    def __init__(self, coordsystem, shape, dtype, radii=(1,2), k=0, alpha=(-0.5,-0.5), dealias=(1,1), azimuth_library=None, radius_library=None):
-        super().__init__(coordsystem, shape, dtype, k=k, dealias=dealias, azimuth_library=azimuth_library)
+    def __init__(self, coordsys, shape, dtype, radii=(1,2), k=0, alpha=(-0.5,-0.5), dealias=(1,1), azimuth_library=None, radius_library=None):
+        super().__init__(coordsys, shape, dtype, k=k, dealias=dealias, azimuth_library=azimuth_library)
         # Save arguments without modification for caching
-        self.coordsystem = coordsystem
+        self.coordsys = coordsys
         self.shape = shape
         self.dtype = dtype
         self.radii = radii
@@ -2101,7 +2097,7 @@ class AnnulusBasis(PolarBasis, metaclass=CachedClass):
         self.volume = np.pi * (radii[1]**2 - radii[0]**2)
         self.dR = radii[1] - radii[0]
         self.rho = (radii[1] + radii[0])/self.dR
-        self.grid_params = (coordsystem, dtype, radii, alpha, dealias, azimuth_library, radius_library)
+        self.grid_params = (coordsys, dtype, radii, alpha, dealias, azimuth_library, radius_library)
         self.inner_edge = self.S1_basis(radii[0])
         self.outer_edge = self.S1_basis(radii[1])
 
@@ -2335,11 +2331,11 @@ class DiskBasis(PolarBasis, metaclass=CachedClass):
     default_library = "matrix"
 
     @classmethod
-    def _preprocess_cache_args(cls, coordsystem, shape, dtype, radius, k, alpha, dealias, azimuth_library, radius_library):
+    def _preprocess_cache_args(cls, coordsys, shape, dtype, radius, k, alpha, dealias, azimuth_library, radius_library):
         """Preprocess arguments into canonical form for caching. Must accept and return __init__ arguments."""
-        # coordsystem: PolarCoordinates
-        if not isinstance(coordsystem, PolarCoordinates):
-            raise ValueError("Disk coordsystem must be PolarCoordinates.")
+        # coordsys: PolarCoordinates
+        if not isinstance(coordsys, PolarCoordinates):
+            raise ValueError("Disk coordsys must be PolarCoordinates.")
         # shape: length-2 tuple
         shape = tuple(shape)
         if len(shape) != 2:
@@ -2363,12 +2359,12 @@ class DiskBasis(PolarBasis, metaclass=CachedClass):
         # radius_library: pick default
         if radius_library is None:
             radius_library = cls.default_library
-        return (coordsystem, shape, dtype, radius, k, alpha, dealias, azimuth_library, radius_library)
+        return (coordsys, shape, dtype, radius, k, alpha, dealias, azimuth_library, radius_library)
 
-    def __init__(self, coordsystem, shape, dtype, radius=1, k=0, alpha=0, dealias=(1,1), azimuth_library=None, radius_library=None):
-        super().__init__(coordsystem, shape, dtype, k=k, dealias=dealias, azimuth_library=azimuth_library)
+    def __init__(self, coordsys, shape, dtype, radius=1, k=0, alpha=0, dealias=(1,1), azimuth_library=None, radius_library=None):
+        super().__init__(coordsys, shape, dtype, k=k, dealias=dealias, azimuth_library=azimuth_library)
         # Save arguments without modification for caching
-        self.coordsystem = coordsystem
+        self.coordsys = coordsys
         self.shape = shape
         self.dtype = dtype
         self.radius = radius
@@ -2383,7 +2379,7 @@ class DiskBasis(PolarBasis, metaclass=CachedClass):
         if self.mmax > 2*self.Nmax:
             logger.warning("You are using more azimuthal modes than can be resolved with your current radial resolution")
             #raise ValueError("shape[0] cannot be more than twice shape[1].")
-        self.grid_params = (coordsystem, dtype, radius, alpha, dealias, azimuth_library, radius_library)
+        self.grid_params = (coordsys, dtype, radius, alpha, dealias, azimuth_library, radius_library)
         self.edge = self.S1_basis(radius)
 
     @CachedAttribute
@@ -2704,11 +2700,11 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
     default_library = "matrix"
 
     @classmethod
-    def _preprocess_cache_args(cls, coordsystem, shape, dtype, radius, dealias, azimuth_library, colatitude_library):
+    def _preprocess_cache_args(cls, coordsys, shape, dtype, radius, dealias, azimuth_library, colatitude_library):
         """Preprocess arguments into canonical form for caching. Must accept and return __init__ arguments."""
-        # coordsystem: S2Coordinates or SphericalCoordinates
-        if not isinstance(coordsystem, (S2Coordinates, SphericalCoordinates)):
-            raise ValueError("Sphere coordsystem must be S2Coordinates.")
+        # coordsys: S2Coordinates or SphericalCoordinates
+        if not isinstance(coordsys, (S2Coordinates, SphericalCoordinates)):
+            raise ValueError("Sphere coordsys must be S2Coordinates.")
         # shape: length-2 tuple
         shape = tuple(shape)
         if len(shape) != 2:
@@ -2730,12 +2726,12 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
         # colatitude_library: pick default
         if colatitude_library is None:
             colatitude_library = cls.default_library
-        return (coordsystem, shape, dtype, radius, dealias, azimuth_library, colatitude_library)
+        return (coordsys, shape, dtype, radius, dealias, azimuth_library, colatitude_library)
 
-    def __init__(self, coordsystem, shape, dtype, radius=1, dealias=(1,1), azimuth_library=None, colatitude_library=None):
-        super().__init__(coordsystem, shape, dtype, dealias, azimuth_library=azimuth_library)
+    def __init__(self, coordsys, shape, dtype, radius=1, dealias=(1,1), azimuth_library=None, colatitude_library=None):
+        super().__init__(coordsys, shape, dtype, dealias, azimuth_library=azimuth_library)
         # Save arguments without modification for caching
-        self.coordsystem = coordsystem
+        self.coordsys = coordsys
         self.shape = shape
         self.dtype = dtype
         self.radius = radius
@@ -2764,7 +2760,7 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
         self.backward_transforms = [self.backward_transform_azimuth,
                                     self.backward_transform_colatitude,
                                     self.backward_transform_radius]
-        self.grid_params = (coordsystem, dtype, radius, dealias, azimuth_library, colatitude_library)
+        self.grid_params = (coordsys, dtype, radius, dealias, azimuth_library, colatitude_library)
         if self.shape[0] > 1 and shape[0] % 2 != 0:
             raise ValueError("Don't use an odd phi resolution please")
         if self.shape[0] > 1 and self.dtype == np.float64 and shape[0] % 4 != 0:
@@ -3042,10 +3038,10 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
                 ell_maps.append((ell, m_slice, ell_slice))
         return tuple(ell_maps)
 
-    def global_grids(self, scales=None):
-        if scales == None: scales = (1, 1)
-        return (self.global_grid_azimuth(scales[0]),
-                self.global_grid_colatitude(scales[1]))
+    def global_grids(self, dist, scales):
+        first_axis = dist.first_axis(self)
+        return (self.global_grid_azimuth(scales[first_axis]),
+                self.global_grid_colatitude(scales[first_axis+1]))
 
     def global_grid_colatitude(self, dist, scale):
         theta = self._native_colatitude_grid(scale)
@@ -3065,10 +3061,10 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
         local_elements = dist.grid_layout.local_elements(self.domain(dist), scales=scales[axis])[axis]
         return reshape_vector(np.ravel(global_spacing)[local_elements], dim=dist.dim, axis=axis)
 
-    def local_grids(self, dist, scales=None):
-        if scales == None: scales = (1, 1)
-        return (self.local_grid_azimuth(dist, scales[0]),
-                self.local_grid_colatitude(dist, scales[1]))
+    def local_grids(self, dist, scales):
+        first_axis = dist.first_axis(self)
+        return (self.local_grid_azimuth(dist, scales[first_axis]),
+                self.local_grid_colatitude(dist, scales[first_axis+1]))
 
     def local_grid_colatitude(self, dist, scale):
         local_elements = dist.grid_layout.local_elements(self.domain(dist), scales=scale)[dist.get_basis_axis(self)+1]
@@ -3463,8 +3459,8 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
     dims = ['azimuth', 'colatitude', 'radius']
     subaxis_dependence = [False, False, True]
 
-    def __init__(self, coordsystem, radial_size, k, dealias, dtype):
-        self.coordsystem = coordsystem
+    def __init__(self, coordsys, radial_size, k, dealias, dtype):
+        self.coordsys = coordsys
         self.radial_size = radial_size
         self.shape = (1, 1, radial_size)
         self.k = k
@@ -3475,7 +3471,7 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
         self.Nmax = radial_size - 1
         self.dtype = dtype
         # Call at end because dealias is needed to build self.domain
-        Basis.__init__(self, coordsystem)
+        Basis.__init__(self, coordsys)
         if dtype == np.float64:
             self.group_shape = (2, 1, 1)
         elif dtype == np.complex128:
@@ -3587,7 +3583,7 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
     def radial_recombinations(self, tensorsig, ell_list):
         # For now only implement recombinations for sphere-only tensors
         for cs in tensorsig:
-            if self.coordsystem is not cs:
+            if self.coordsys is not cs:
                 raise ValueError("Only supports tensors over spherical coords.")
         order = len(tensorsig)
         Q_matrices = {}
@@ -3603,7 +3599,7 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
         Rb = np.array([-1, 1, 0], dtype=int)
         R = np.zeros([cs.dim for cs in tensorsig], dtype=int)
         for i, cs in enumerate(tensorsig):
-            if self.coordsystem is cs: # kludge before we decide how compound coordinate systems work
+            if self.coordsys is cs: # kludge before we decide how compound coordinate systems work
                 R[axslice(i, 0, cs.dim)] += reshape_vector(Rb, dim=len(tensorsig), axis=i)
             #elif self.space in vs.spaces:
             #    n = vs.get_index(self.space)
@@ -3615,7 +3611,7 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
         indices = []
         tshape = [cs.dim for cs in tensorsig]
         for i, cs in enumerate(tensorsig):
-            if self.coordsystem is cs:
+            if self.coordsys is cs:
                 index = np.zeros(tshape) + reshape_vector(np.array([-1, 1, 0]), dim=len(tshape), axis=i)
                 indices.append(index)
         return np.stack(indices, axis=-1)
@@ -3719,8 +3715,8 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
 
 class ShellRadialBasis(RegularityBasis, metaclass=CachedClass):
 
-    def __init__(self, coordsystem, radial_size, dtype, radii=(1,2), alpha=(-0.5,-0.5), dealias=(1,), k=0, radius_library=None):
-        super().__init__(coordsystem, radial_size, k=k, dealias=dealias, dtype=dtype)
+    def __init__(self, coordsys, radial_size, dtype, radii=(1,2), alpha=(-0.5,-0.5), dealias=(1,), k=0, radius_library=None):
+        super().__init__(coordsys, radial_size, k=k, dealias=dealias, dtype=dtype)
         if radii[0] <= 0:
             raise ValueError("Inner radius must be positive.")
         if radius_library is None:
@@ -3734,7 +3730,7 @@ class ShellRadialBasis(RegularityBasis, metaclass=CachedClass):
         self.rho = (self.radii[1] + self.radii[0])/self.dR
         self.alpha = alpha
         self.radius_library = radius_library
-        self.grid_params = (coordsystem, radii, alpha, self.dealias)
+        self.grid_params = (coordsys, radii, alpha, self.dealias)
         self.forward_transforms = [self.forward_transform_azimuth,
                                    self.forward_transform_colatitude,
                                    self.forward_transform_radius]
@@ -3744,7 +3740,7 @@ class ShellRadialBasis(RegularityBasis, metaclass=CachedClass):
 
     def __eq__(self, other):
         if isinstance(other, ShellRadialBasis):
-            if self.coordsystem == other.coordsystem:
+            if self.coordsys == other.coordsys:
                 if self.grid_params == other.grid_params:
                     if self.k == other.k:
                         return True
@@ -3774,9 +3770,9 @@ class ShellRadialBasis(RegularityBasis, metaclass=CachedClass):
                 k = self.k + other.k
                 return self.clone_with(radial_size=radial_size, k=k)
         if isinstance(other, SphereBasis):
-            unify((self.coordsystem, other.coordsystem))
+            unify((self.coordsys, other.coordsys))
             args = {}
-            args['coordsystem'] = self.coordsystem
+            args['coordsys'] = self.coordsys
             args['shape'] = other.shape + self.shape[-1:] # Because ShellRadialBasis shape is padded up to 3d
             args['radii'] = self.radii
             args['alpha'] = self.alpha
@@ -3958,8 +3954,8 @@ class BallRadialBasis(RegularityBasis, metaclass=CachedClass):
 
     transforms = {}
 
-    def __init__(self, coordsystem, radial_size, dtype, radius=1, k=0, alpha=0, dealias=(1,), radius_library=None):
-        super().__init__(coordsystem, radial_size, k=k, dealias=dealias, dtype=dtype)
+    def __init__(self, coordsys, radial_size, dtype, radius=1, k=0, alpha=0, dealias=(1,), radius_library=None):
+        super().__init__(coordsys, radial_size, k=k, dealias=dealias, dtype=dtype)
         if radius <= 0:
             raise ValueError("Radius must be positive.")
         if radius_library is None:
@@ -3969,7 +3965,7 @@ class BallRadialBasis(RegularityBasis, metaclass=CachedClass):
         self.alpha = alpha
         self.radial_COV = AffineCOV((0, 1), (0, radius))
         self.radius_library = radius_library
-        self.grid_params = (coordsystem, radius, alpha, self.dealias)
+        self.grid_params = (coordsys, radius, alpha, self.dealias)
         self.forward_transforms = [self.forward_transform_azimuth,
                                    self.forward_transform_colatitude,
                                    self.forward_transform_radius]
@@ -3979,7 +3975,7 @@ class BallRadialBasis(RegularityBasis, metaclass=CachedClass):
 
     def __eq__(self, other):
         if isinstance(other, BallRadialBasis):
-            if self.coordsystem == other.coordsystem:
+            if self.coordsys == other.coordsys:
                 if self.grid_params == other.grid_params:
                     if self.k == other.k:
                         return True
@@ -4186,8 +4182,8 @@ class Spherical3DBasis(MultidimensionalBasis):
     dims = ['azimuth', 'colatitude', 'radius']
     subaxis_dependence = [False, True, True]
 
-    def __init__(self, coordsystem, shape_angular, dealias_angular, radial_basis, dtype, azimuth_library=None, colatitude_library=None):
-        self.coordsystem = coordsystem
+    def __init__(self, coordsys, shape_angular, dealias_angular, radial_basis, dtype, azimuth_library=None, colatitude_library=None):
+        self.coordsys = coordsys
         self.shape = tuple( (*shape_angular, radial_basis.shape[2] ) )
         self.dtype = dtype
         if np.isscalar(dealias_angular):
@@ -4223,7 +4219,7 @@ class Spherical3DBasis(MultidimensionalBasis):
             self.group_shape = (2, 1, 1)
         elif dtype == np.complex128:
             self.group_shape = (1, 1, 1)
-        Basis.__init__(self, coordsystem)
+        Basis.__init__(self, coordsys)
 
     @CachedAttribute
     def ell_reversed(self):
@@ -4249,17 +4245,17 @@ class Spherical3DBasis(MultidimensionalBasis):
         # TODO: check this is right for regtotal != 0?
         return self.radial_basis.constant_mode_value / np.sqrt(2)
 
-    def global_grids(self, scales=None):
-        if scales == None: scales = (1,1,1)
-        return (self.global_grid_azimuth(scales[0]),
-                self.global_grid_colatitude(scales[1]),
-                self.global_grid_radius(scales[2]))
+    def global_grids(self, dist, scales):
+        first_axis = dist.first_axis(self)
+        return (self.global_grid_azimuth(scales[first_axis]),
+                self.global_grid_colatitude(scales[first_axis+1]),
+                self.global_grid_radius(scales[first_axis+2]))
 
-    def local_grids(self, dist, scales=None):
-        if scales == None: scales = (1,1,1)
-        return (self.local_grid_azimuth(dist, scales[0]),
-                self.local_grid_colatitude(dist, scales[1]),
-                self.local_grid_radius(dist, scales[2]))
+    def local_grids(self, dist, scales):
+        first_axis = dist.first_axis(self)
+        return (self.local_grid_azimuth(dist, scales[first_axis]),
+                self.local_grid_colatitude(dist, scales[first_axis+1]),
+                self.local_grid_radius(dist, scales[first_axis+2]))
 
     @CachedMethod
     def global_grid_spacing(self, dist, axis, scales=None):
@@ -4295,7 +4291,7 @@ class Spherical3DBasis(MultidimensionalBasis):
                 radius = self.radius
             else:
                 radius = max(self.radii)
-        return SphereBasis(self.coordsystem, self.shape[:2], self.dtype, radius=radius, dealias=self.dealias[:2],
+        return SphereBasis(self.coordsys, self.shape[:2], self.dtype, radius=radius, dealias=self.dealias[:2],
                     azimuth_library=self.azimuth_library, colatitude_library=self.colatitude_library)
 
     @CachedMethod
@@ -4383,11 +4379,11 @@ class Spherical3DBasis(MultidimensionalBasis):
 class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
 
     @classmethod
-    def _preprocess_cache_args(cls, coordsystem, shape, dtype, radii, k, alpha, dealias, azimuth_library, colatitude_library, radius_library):
+    def _preprocess_cache_args(cls, coordsys, shape, dtype, radii, k, alpha, dealias, azimuth_library, colatitude_library, radius_library):
         """Preprocess arguments into canonical form for caching. Must accept and return __init__ arguments."""
-        # coordsystem: SphericalCoordinates
-        if not isinstance(coordsystem, SphericalCoordinates):
-            raise ValueError("Shell coordsystem must be SphericalCoordinates.")
+        # coordsys: SphericalCoordinates
+        if not isinstance(coordsys, SphericalCoordinates):
+            raise ValueError("Shell coordsys must be SphericalCoordinates.")
         # shape: length-3 tuple
         shape = tuple(shape)
         if len(shape) != 3:
@@ -4428,11 +4424,11 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
                 radius_library = Jacobi.default_dct
             else:
                 radius_library = Jacobi.default_library
-        return (coordsystem, shape, dtype, radii, k, alpha, dealias, azimuth_library, colatitude_library, radius_library)
+        return (coordsys, shape, dtype, radii, k, alpha, dealias, azimuth_library, colatitude_library, radius_library)
 
-    def __init__(self, coordsystem, shape, dtype, radii=(1,2), k=0, alpha=(-0.5,-0.5), dealias=(1,1,1), azimuth_library=None, colatitude_library=None, radius_library=None):
+    def __init__(self, coordsys, shape, dtype, radii=(1,2), k=0, alpha=(-0.5,-0.5), dealias=(1,1,1), azimuth_library=None, colatitude_library=None, radius_library=None):
         # Save arguments without modification for caching
-        self.coordsystem = coordsystem
+        self.coordsys = coordsys
         self.shape = shape
         self.dtype = dtype
         self.radii = radii
@@ -4445,9 +4441,9 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
         # Other attributes
         self.volume = 4 / 3 * np.pi * (radii[1]**3 - radii[0]**3)
         self.radius_library = radius_library
-        self.radial_basis = ShellRadialBasis(coordsystem, shape[2], radii=radii, alpha=alpha, dealias=(dealias[2],), k=k, dtype=dtype, radius_library=radius_library)
-        Spherical3DBasis.__init__(self, coordsystem, shape[:2], dealias[:2], self.radial_basis, dtype=dtype, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
-        self.grid_params = (coordsystem, dtype, radii, alpha, dealias, azimuth_library, colatitude_library, radius_library)
+        self.radial_basis = ShellRadialBasis(coordsys, shape[2], radii=radii, alpha=alpha, dealias=(dealias[2],), k=k, dtype=dtype, radius_library=radius_library)
+        Spherical3DBasis.__init__(self, coordsys, shape[:2], dealias[:2], self.radial_basis, dtype=dtype, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
+        self.grid_params = (coordsys, dtype, radii, alpha, dealias, azimuth_library, colatitude_library, radius_library)
 #        self.forward_transform_radius = self.radial_basis.forward_transform
 #        self.backward_transform_radius = self.radial_basis.backward_transform
         self.forward_transforms = [self.forward_transform_azimuth,
@@ -4461,7 +4457,7 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
 
     def __eq__(self, other):
         if isinstance(other, ShellBasis):
-            if self.coordsystem == other.coordsystem:
+            if self.coordsys == other.coordsys:
                 if self.grid_params == other.grid_params:
                     if self.k == other.k:
                         return True
@@ -4625,11 +4621,11 @@ class BallBasis(Spherical3DBasis, metaclass=CachedClass):
     default_library = "matrix"
 
     @classmethod
-    def _preprocess_cache_args(cls, coordsystem, shape, dtype, radius, k, alpha, dealias, azimuth_library, colatitude_library, radius_library):
+    def _preprocess_cache_args(cls, coordsys, shape, dtype, radius, k, alpha, dealias, azimuth_library, colatitude_library, radius_library):
         """Preprocess arguments into canonical form for caching. Must accept and return __init__ arguments."""
-        # coordsystem: SphericalCoordinates
-        if not isinstance(coordsystem, SphericalCoordinates):
-            raise ValueError("Ball coordsystem must be SphericalCoordinates.")
+        # coordsys: SphericalCoordinates
+        if not isinstance(coordsys, SphericalCoordinates):
+            raise ValueError("Ball coordsys must be SphericalCoordinates.")
         # shape: length-3 tuple
         shape = tuple(shape)
         if len(shape) != 3:
@@ -4656,11 +4652,11 @@ class BallBasis(Spherical3DBasis, metaclass=CachedClass):
         # radius_library: pick default
         if radius_library is None:
             radius_library = cls.default_library
-        return (coordsystem, shape, dtype, radius, k, alpha, dealias, azimuth_library, colatitude_library, radius_library)
+        return (coordsys, shape, dtype, radius, k, alpha, dealias, azimuth_library, colatitude_library, radius_library)
 
-    def __init__(self, coordsystem, shape, dtype, radius=1, k=0, alpha=0, dealias=(1,1,1), azimuth_library=None, colatitude_library=None, radius_library=None):
+    def __init__(self, coordsys, shape, dtype, radius=1, k=0, alpha=0, dealias=(1,1,1), azimuth_library=None, colatitude_library=None, radius_library=None):
         # Save arguments without modification for caching
-        self.coordsystem = coordsystem
+        self.coordsys = coordsys
         self.shape = shape
         self.dtype = dtype
         self.radius = radius
@@ -4672,9 +4668,9 @@ class BallBasis(Spherical3DBasis, metaclass=CachedClass):
         self.radius_library = radius_library
         # Other attributes
         self.volume = 4 / 3 * np.pi * radius**3
-        self.radial_basis = BallRadialBasis(coordsystem, shape[2], radius=radius, k=k, alpha=alpha, dealias=(dealias[2],), dtype=dtype, radius_library=radius_library)
-        Spherical3DBasis.__init__(self, coordsystem, shape[:2], dealias[:2], self.radial_basis, dtype=dtype, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
-        self.grid_params = (coordsystem, dtype, radius, alpha, dealias, azimuth_library, colatitude_library, radius_library)
+        self.radial_basis = BallRadialBasis(coordsys, shape[2], radius=radius, k=k, alpha=alpha, dealias=(dealias[2],), dtype=dtype, radius_library=radius_library)
+        Spherical3DBasis.__init__(self, coordsys, shape[:2], dealias[:2], self.radial_basis, dtype=dtype, azimuth_library=azimuth_library, colatitude_library=colatitude_library)
+        self.grid_params = (coordsys, dtype, radius, alpha, dealias, azimuth_library, colatitude_library, radius_library)
         self.forward_transforms = [self.forward_transform_azimuth,
                                    self.forward_transform_colatitude,
                                    self.forward_transform_radius]
@@ -4685,7 +4681,7 @@ class BallBasis(Spherical3DBasis, metaclass=CachedClass):
 
     def __eq__(self, other):
         if isinstance(other, BallBasis):
-            if self.coordsystem == other.coordsystem:
+            if self.coordsys == other.coordsys:
                 if self.grid_params == other.grid_params:
                     if self.k == other.k:
                         return True
@@ -5115,9 +5111,10 @@ class LiftBall(operators.Lift, operators.SphericalEllOperator):
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
         radial_basis = self.output_basis.radial_basis  ## CHANGED RELATIVE TO POLARMOPERATOR
+        radial_axis = self.dist.last_axis(radial_basis)
         R_in = radial_basis.regularity_classes(operand.tensorsig)
         R_out = radial_basis.regularity_classes(self.tensorsig)  # Should this use output_basis?
-        ell = subproblem.group[self.dist.last_axis(self) - 1]
+        ell = subproblem.group[radial_axis - 1]
         # Loop over components
         submatrices = []
         for regindex_out, regtotal_out in np.ndenumerate(R_out):
@@ -5130,7 +5127,7 @@ class LiftBall(operators.Lift, operators.SphericalEllOperator):
                 if (regindex_out in self.regindex_out(regindex_in)) and radial_basis.regularity_allowed(ell, regindex_in) and radial_basis.regularity_allowed(ell, regindex_out):
                     # Substitute factor for radial axis
                     factors = [sparse.eye(m, n, format='csr') for m, n in zip(subshape_out, subshape_in)]
-                    factors[dist.last_axis(self)] = self.radial_matrix(regindex_in, regindex_out, ell)
+                    factors[radial_axis] = self.radial_matrix(regindex_in, regindex_out, ell)
                     comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
                 else:
                     # Build zero matrix
@@ -5776,7 +5773,7 @@ class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperato
             self.radial_basis = self.input_basis
 
     def subproblem_matrix(self, subproblem):
-        ell = subproblem.group[dist.last_axis(self) - 1]
+        ell = subproblem.group[self.dist.last_axis(self.radial_basis) - 1]
         matrix = super().subproblem_matrix(subproblem)
         radial_basis = self.radial_basis
         if self.tensorsig != ():
