@@ -49,7 +49,7 @@ def test_spherical_ell_product_scalar(Nphi, Ntheta, Nr, k, dealias, basis, dtype
     g = field.Field(dist=d, bases=(b,), dtype=dtype)
     f.preset_scales(b.domain.dealias)
     f['g'] = 3*x**2 + 2*y*z
-    for ell, m_ind, ell_ind in b.ell_maps:
+    for ell, m_ind, ell_ind in b.ell_maps(d):
         g['c'][m_ind, ell_ind, :] = (ell+3)*f['c'][m_ind, ell_ind, :]
     func = lambda ell: ell+3
     h = operators.SphericalEllProduct(f, c, func).evaluate()
@@ -75,7 +75,7 @@ def test_spherical_ell_product_vector(Nphi, Ntheta, Nr, k, dealias, basis, dtype
     uk0['g'] = u['g']
     v = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
     v.preset_scales(b.domain.dealias)
-    for ell, m_ind, ell_ind in b.ell_maps:
+    for ell, m_ind, ell_ind in b.ell_maps(d):
         v['c'][0, m_ind, ell_ind, :] = (ell+2)*uk0['c'][0, m_ind, ell_ind, :]
         v['c'][1, m_ind, ell_ind, :] = (ell+4)*uk0['c'][1, m_ind, ell_ind, :]
         v['c'][2, m_ind, ell_ind, :] = (ell+3)*uk0['c'][2, m_ind, ell_ind, :]

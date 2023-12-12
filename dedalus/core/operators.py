@@ -1989,7 +1989,7 @@ class SphericalTransposeComponents(TransposeComponents):
             out.data[:] = np.transpose(operand.data, self.new_axis_order)
         else:
             radial_basis = self.radial_basis
-            ell_maps = self.input_basis.ell_maps
+            ell_maps = self.input_basis.ell_maps(self.dist)
             # Copy to output for in-place regularity recombination
             copyto(out.data, operand.data)
             out.data[:] = operand.data
@@ -2492,6 +2492,7 @@ class SpectralOperatorS2(SpectralOperator):
         m_dep = self.subaxis_dependence[0]
         l_dep = self.subaxis_dependence[1]
         # Loop over components
+        m_axis = self.dist.first_axis(basis)
         submatrices = []
         for spinindex_out, spintotal_out in np.ndenumerate(S_out):
             submatrix_row = []
@@ -2507,8 +2508,8 @@ class SpectralOperatorS2(SpectralOperator):
                     elif l_coupled or (not m_dep):
                         if l_coupled:
                             local_groups = self.dist.coeff_layout.local_group_arrays(domain, scales=1)
-                            local_m = local_groups[basis.first_axis]
-                            local_ell = local_groups[basis.first_axis+1]
+                            local_m = local_groups[m_axis]
+                            local_ell = local_groups[m_axis+1]
                             ell_list = local_ell[local_m == m].ravel()
                         elif not m_dep:
                             ell_list = [l]
@@ -2570,7 +2571,7 @@ class SpectralOperatorS2(SpectralOperator):
         out.data[:] = 0
         # Apply operator
         S_in = input_basis.spin_weights(operand.tensorsig)
-        slices = [slice(None) for i in range(input_basis.dist.dim)]
+        slices = [slice(None) for i in range(self.dist.dim)]
         for spinindex_in, spintotal_in in np.ndenumerate(S_in):
             comp_in = operand.data[spinindex_in]
             reduced_in = reduced_view_3_ravel(comp_in, axis, dim)
@@ -2761,8 +2762,8 @@ class SphereEllProduct(SeparableSphereOperator, metaclass=MultiClass):
         self.operand = operand
         self.input_basis = operand.domain.get_basis(coordsys)
         self.output_basis = self.input_basis
-        self.first_axis = self.input_basis.first_axis
-        self.last_axis = self.input_basis.last_axis
+        self.first_axis = self.dist.first_axis(self.input_basis)
+        self.last_axis = self.dist.last_axis(self.input_basis)
         # FutureField requirements
         self.domain  = operand.domain
         self.tensorsig = operand.tensorsig
@@ -2792,8 +2793,8 @@ class PolarMOperator(SpectralOperator):
         # SpectralOperator requirements
         self.input_basis = input_basis
         self.output_basis = self._output_basis(self.input_basis)
-        self.first_axis = self.input_basis.first_axis
-        self.last_axis = self.input_basis.last_axis
+        self.first_axis = self.dist.first_axis(self.input_basis)
+        self.last_axis = self.dist.last_axis(self.input_basis)
         # LinearOperator requirements
         self.operand = operand
 
@@ -2804,18 +2805,18 @@ class PolarMOperator(SpectralOperator):
             basis = self.output_basis
         else:
             basis = self.input_basis
-        axis = basis.first_axis + 1
+        axis = self.last_axis
         # Set output layout
         out.preset_layout(operand.layout)
         out.data[:] = 0
         # Apply operator
         S_in = basis.spin_weights(operand.tensorsig)
-        slices = [slice(None) for i in range(basis.dist.dim)]
+        slices = [slice(None) for i in range(self.dist.dim)]
         for spinindex_in, spintotal_in in np.ndenumerate(S_in):
             for spinindex_out in self.spinindex_out(spinindex_in):
                 comp_in = operand.data[spinindex_in]
                 comp_out = out.data[spinindex_out]
-                for m, mg_slice, mc_slice, n_slice in basis.m_maps:
+                for m, mg_slice, mc_slice, n_slice in basis.m_maps(self.dist):
                     slices[axis-1] = mc_slice
                     slices[axis] = n_slice
                     vec_in  = comp_in[tuple(slices)]
@@ -2985,7 +2986,7 @@ class SphericalEllOperator(SpectralOperator):
 
     def __init__(self, operand, coordsys):
         self.coordsys = coordsys
-        self.radius_axis = coordsys.coords[2].axis
+        self.radius_axis = operand.dist.get_axis(coordsys) + 2
         input_basis = operand.domain.get_basis(coordsys)
         if input_basis is None:
             input_basis = operand.domain.get_basis(coordsys.radius)
@@ -2993,8 +2994,8 @@ class SphericalEllOperator(SpectralOperator):
         # SpectralOperator requirements
         self.input_basis = input_basis
         self.output_basis = self._output_basis(self.input_basis)
-        self.first_axis = self.input_basis.first_axis
-        self.last_axis = self.input_basis.last_axis
+        self.first_axis = self.radius_axis - 2
+        self.last_axis = self.radius_axis
         # LinearOperator requirements
         self.operand = operand
 
@@ -3014,19 +3015,19 @@ class SphericalEllOperator(SpectralOperator):
         else:
             basis = self.input_basis
         radial_basis = self.radial_basis
-        axis = radial_basis.radial_axis
+        axis = self.dist.last_axis(radial_basis)
         # Set output layout
         out.preset_layout(operand.layout)
         out.data[:] = 0
         # Apply operator
         R_in = radial_basis.regularity_classes(operand.tensorsig)
-        slices = [slice(None) for i in range(radial_basis.dist.dim)]
+        slices = [slice(None) for i in range(self.dist.dim)]
         for regindex_in, regtotal_in in np.ndenumerate(R_in):
             for regindex_out in self.regindex_out(regindex_in):
                 comp_in = operand.data[regindex_in]
                 comp_out = out.data[regindex_out]
                 # Should reorder to make ell loop first, check forbidden reg, remove reg from radial_vector_3
-                for ell, m_ind, ell_ind in basis.ell_maps:
+                for ell, m_ind, ell_ind in basis.ell_maps(self.dist):
                     allowed_in  = radial_basis.regularity_allowed(ell, regindex_in)
                     allowed_out = radial_basis.regularity_allowed(ell, regindex_out)
                     if allowed_in and allowed_out:
@@ -3625,19 +3626,19 @@ class SphericalCurl(Curl, SphericalEllOperator):
         operand = self.args[0]
         input_basis = self.input_basis
         radial_basis = self.radial_basis
-        axis = radial_basis.radial_axis
+        axis = self.dist.last_axis(self.radial_basis)
         # Set output layout
         out.preset_layout(operand.layout)
         out.data.fill(0)
         # Apply operator
         R_in = radial_basis.regularity_classes(operand.tensorsig)
-        slices = [slice(None) for i in range(input_basis.dist.dim)]
+        slices = [slice(None) for i in range(self.dist.dim)]
         for regindex_in, regtotal_in in np.ndenumerate(R_in):
             for regindex_out in self.regindex_out(regindex_in):
                 comp_in = operand.data[regindex_in]
                 comp_out = out.data[regindex_out]
                 # Should reorder to make ell loop first, check forbidden reg, remove reg from radial_vector_3
-                for ell, m_ind, ell_ind in input_basis.ell_maps:
+                for ell, m_ind, ell_ind in input_basis.ell_maps(self.dist):
                     allowed_in  = radial_basis.regularity_allowed(ell, regindex_in)
                     allowed_out = radial_basis.regularity_allowed(ell, regindex_out)
                     if allowed_in and allowed_out:
@@ -3769,13 +3770,13 @@ class PolarCurl(Curl, PolarMOperator):
         out.data[:] = 0
         # Apply operator
         S_in = input_basis.spin_weights(operand.tensorsig)
-        slices = [slice(None) for i in range(input_basis.dist.dim)]
+        slices = [slice(None) for i in range(self.dist.dim)]
         for spinindex_in, spintotal_in in np.ndenumerate(S_in):
             for spinindex_out in self.spinindex_out(spinindex_in):
                 comp_in = operand.data[spinindex_in]
                 comp_out = out.data[spinindex_out]
 
-                for m, mg_slice, mc_slice, n_slice in input_basis.m_maps:
+                for m, mg_slice, mc_slice, n_slice in input_basis.m_maps(self.dist):
                     slices[axis-1] = mc_slice
                     slices[axis] = n_slice
                     cos_slice = axslice(axis-1, 0, None, 2)
@@ -4046,8 +4047,8 @@ class Lift(LinearOperator, metaclass=MultiClass):
         self.output_basis = output_basis
         #self.first_axis = min(self.input_basis.first_axis, self.output_basis.first_axis)
         #self.last_axis = max(self.input_basis.last_axis, self.output_basis.last_axis)
-        self.first_axis = self.output_basis.first_axis
-        self.last_axis = self.output_basis.last_axis
+        self.first_axis = operand.dist.get_basis_axis(self.output_basis)
+        self.last_axis = self.first_axis + output_basis.dim - 1
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements

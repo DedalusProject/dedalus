@@ -102,10 +102,11 @@ class Domain(metaclass=CachedClass):
         return self.full_bases[axis]
 
     def get_basis_subaxis(self, coord):
-        axis = coord.axis
+        axis = self.dist.get_axis(coord)
         for basis in self.bases:
-            if (axis >= basis.axis) and (axis <= basis.axis + basis.dim):
-                return axis - basis.axis
+            basis_axis = self.dist.get_basis_axis(basis)
+            if (axis >= basis_axis) and (axis <= basis_axis + basis.dim):
+                return axis - basis_axis
 
     def get_coord(self, name):
         for basis in self.bases:

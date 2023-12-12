@@ -481,7 +481,7 @@ def test_sphere_ell_product_scalar(Nphi, Ntheta, dealias, dtype):
     g = field.Field(dist=d, bases=(b,), dtype=dtype)
     f.fill_random('g')
     func = lambda ell, r: ell + 3
-    for ell, m_ind, ell_ind in b.ell_maps:
+    for ell, m_ind, ell_ind in b.ell_maps(d):
         g['c'][m_ind, ell_ind] = func(ell, b.radius) * f['c'][m_ind, ell_ind]
     h = operators.SphereEllProduct(f, c, func).evaluate()
     assert np.allclose(g['c'], h['c'])
@@ -497,7 +497,7 @@ def test_sphere_ell_product_vector(Nphi, Ntheta, dealias, dtype):
     g = field.Field(dist=d, bases=(b,), dtype=dtype, tensorsig=(c,))
     f.fill_random('g')
     func = lambda ell, r: ell + 3
-    for ell, m_ind, ell_ind in b.ell_maps:
+    for ell, m_ind, ell_ind in b.ell_maps(d):
         for i in range(c.dim):
             g['c'][i, m_ind, ell_ind] = func(ell, b.radius) * f['c'][i, m_ind, ell_ind]
     h = operators.SphereEllProduct(f, c, func).evaluate()

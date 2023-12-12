@@ -10,6 +10,7 @@ from collections import OrderedDict
 from math import prod
 
 from .coords import CoordinateSystem
+from ..tools.array import reshape_vector
 from ..tools.cache import CachedMethod, CachedAttribute
 from ..tools.config import config
 from ..tools.general import OrderedSet
@@ -198,7 +199,7 @@ class Distributor:
         return self.coords.index(coord)
 
     def get_basis_axis(self, basis):
-        return self.get_axis(basis.coordsystem.coords[0])
+        return self.get_axis(basis.coordsys.coords[0])
 
     def first_axis(self, basis):
         return self.get_basis_axis(basis)
@@ -240,6 +241,34 @@ class Distributor:
             return basis.local_grid(self, scale=scale)
         else:
             raise ValueError("Use `local_grids` for multidimensional bases.")
+
+    # def global_grids(self, *bases, scales=None):
+    #     """Global grids."""
+    #     grids = []
+    #     scales = self.remedy_scales(scales)
+    #     for basis in bases:
+    #         basis_axis = self.get_basis_axis(basis)
+    #         basis_scales = scales[basis_axis:basis_axis+basis.dim]
+    #         global_grids = basis.global_grids(scales=basis_scales)
+    #         for subaxis in range(basis.dim):
+    #             axis = basis_axis + subaxis
+    #             grids.append(reshape_vector(global_grids[subaxis], dim=self.dim, axis=axis))
+    #     return tuple(grids)
+
+    # def local_grids(self, *bases, scales=None):
+    #     """Local grid."""
+    #     grids = []
+    #     scales = self.remedy_scales(scales)
+    #     for basis in bases:
+    #         basis_axis = self.get_basis_axis(basis)
+    #         basis_scales = scales[basis_axis:basis_axis+basis.dim]
+    #         local_elements = self.grid_layout.local_elements(basis.domain(self), scales=scales)
+    #         global_grids = basis.global_grids(scales=basis_scales)
+    #         for subaxis in range(basis.dim):
+    #             axis = basis_axis + subaxis
+    #             local_grid = global_grids[subaxis][local_elements[axis]]
+    #             grids.append(reshape_vector(local_grid, dim=self.dim, axis=axis))
+    #     return tuple(grids)
 
     def local_grids(self, *bases, scales=None):
         # TODO: remove from bases and do it all here?
