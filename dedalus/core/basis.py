@@ -2618,7 +2618,7 @@ class ConvertPolar(operators.Convert, operators.PolarMOperator):
 
     def __init__(self, operand, output_basis, out=None):
         operators.Convert.__init__(self, operand, output_basis, out=out)
-        self.radius_axis = dist.last_axis(self)
+        self.radius_axis = self.dist.last_axis(output_basis)
 
     def spinindex_out(self, spinindex_in):
         return (spinindex_in,)
@@ -3040,8 +3040,8 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
 
     def global_grids(self, dist, scales):
         first_axis = dist.first_axis(self)
-        return (self.global_grid_azimuth(scales[first_axis]),
-                self.global_grid_colatitude(scales[first_axis+1]))
+        return (self.global_grid_azimuth(dist, scales[first_axis]),
+                self.global_grid_colatitude(dist, scales[first_axis+1]))
 
     def global_grid_colatitude(self, dist, scale):
         theta = self._native_colatitude_grid(scale)
@@ -3874,7 +3874,7 @@ class ShellRadialBasis(RegularityBasis, metaclass=CachedClass):
            plan.backward(cdata[i], temp[i], axis)
         np.copyto(gdata, temp)
         # Regularity recombination
-        self.backward_regularity_recombination(field.tensorsig, axis, gdata)
+        self.backward_regularity_recombination(field.tensorsig, axis, gdata, self.ell_maps(field.dist))
         # Multiply by radial factor
         if self.k > 0:
             gdata *= self.radial_transform_factor(field.scales[axis], data_axis, self.k)
@@ -4079,7 +4079,7 @@ class BallRadialBasis(RegularityBasis, metaclass=CachedClass):
            plan.backward(cdata[regindex], temp[regindex], axis)
         np.copyto(gdata, temp)
         # Apply recombinations
-        self.backward_regularity_recombination(field.tensorsig, axis, gdata)
+        self.backward_regularity_recombination(field.tensorsig, axis, gdata, self.ell_maps(field.dist))
 
     @CachedMethod
     def operator_matrix(self, op, l, deg, size=None):
@@ -4221,9 +4221,9 @@ class Spherical3DBasis(MultidimensionalBasis):
             self.group_shape = (1, 1, 1)
         Basis.__init__(self, coordsys)
 
-    @CachedAttribute
-    def ell_reversed(self):
-        return self.S2_basis().ell_reversed
+    @CachedMethod
+    def ell_reversed(self, dist):
+        return self.S2_basis().ell_reversed(dist)
 
     def matrix_dependence(self, matrix_coupling):
         matrix_dependence = matrix_coupling.copy()
@@ -4247,9 +4247,9 @@ class Spherical3DBasis(MultidimensionalBasis):
 
     def global_grids(self, dist, scales):
         first_axis = dist.first_axis(self)
-        return (self.global_grid_azimuth(scales[first_axis]),
-                self.global_grid_colatitude(scales[first_axis+1]),
-                self.global_grid_radius(scales[first_axis+2]))
+        return (self.global_grid_azimuth(dist, scales[first_axis]),
+                self.global_grid_colatitude(dist, scales[first_axis+1]),
+                self.global_grid_radius(dist, scales[first_axis+2]))
 
     def local_grids(self, dist, scales):
         first_axis = dist.first_axis(self)
@@ -4558,7 +4558,7 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
             gdata *= radial_basis.radial_transform_factor(field.scales[axis], data_axis, self.k)
 
     def build_ncc_matrix(self, product, subproblem, ncc_cutoff, max_ncc_terms):
-        axis = dist.last_axis(self)
+        axis = product.dist.last_axis(self)
         ncc_basis = product.ncc.domain.get_basis(axis)
         if ncc_basis is None:
             # NCC is constant
@@ -4600,7 +4600,7 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
             # Apply forward Q transformations
             m = subproblem.group[axis-2]
             ells = np.arange(abs(m), self.Lmax+1)
-            if S2_basis.ell_reversed[m]:
+            if S2_basis.ell_reversed(product.dist)[m]:
                 ells = ells[::-1]
             ells = tuple(ells)
             Qout = self.radial_basis.radial_recombinations(product.tensorsig, ells)
@@ -4945,7 +4945,7 @@ class PolarRadialInterpolate(operators.Interpolate, operators.PolarMOperator):
         operators.Interpolate.__init__(self, operand, coord, position, out=None)
 
     def subproblem_matrix(self, subproblem):
-        m = subproblem.group[dist.last_axis(self) - 1]
+        m = subproblem.group[self.last_axis - 1]
         matrix = super().subproblem_matrix(subproblem)
         radial_basis = self.input_basis
         if self.tensorsig != ():
@@ -4959,7 +4959,7 @@ class PolarRadialInterpolate(operators.Interpolate, operators.PolarMOperator):
         input_basis = self.input_basis
         output_basis = self.output_basis
         radial_basis = self.input_basis
-        axis = dist.last_axis(self)
+        axis = self.last_axis
         # Set output layout
         out.preset_layout(operand.layout)
         # Apply operator
@@ -5009,7 +5009,8 @@ class LiftDisk(operators.Lift, operators.PolarMOperator):
         radial_basis = self.output_basis  ## CHANGED RELATIVE TO POLARMOPERATOR
         S_in = radial_basis.spin_weights(operand.tensorsig)
         S_out = radial_basis.spin_weights(self.tensorsig)  # Should this use output_basis?
-        m = subproblem.group[dist.last_axis(self) - 1]
+        radial_axis = self.dist.last_axis(self.output_basis)
+        m = subproblem.group[radial_axis - 1]
         # Loop over components
         submatrices = []
         for spinindex_out, spintotal_out in np.ndenumerate(S_out):
@@ -5021,7 +5022,7 @@ class LiftDisk(operators.Lift, operators.PolarMOperator):
                 if spinindex_out in self.spinindex_out(spinindex_in):
                     # Substitute factor for radial axis
                     factors = [sparse.eye(i, j, format='csr') for i, j in zip(subshape_out, subshape_in)]
-                    factors[dist.last_axis(self)] = self.radial_matrix(spinindex_in, spinindex_out, m)
+                    factors[radial_axis] = self.radial_matrix(spinindex_in, spinindex_out, m)
                     comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
                 else:
                     # Build zero matrix
@@ -5059,7 +5060,7 @@ class LiftAnnulus(operators.Lift, operators.PolarMOperator):
         radial_basis = self.output_basis  ## CHANGED RELATIVE TO POLARMOPERATOR
         S_in = radial_basis.spin_weights(operand.tensorsig)
         S_out = radial_basis.spin_weights(self.tensorsig)  # Should this use output_basis?
-        m = subproblem.group[dist.last_axis(self) - 1]
+        m = subproblem.group[self.last_axis - 1]
         # Loop over components
         submatrices = []
         for spinindex_out, spintotal_out in np.ndenumerate(S_out):
@@ -5071,7 +5072,7 @@ class LiftAnnulus(operators.Lift, operators.PolarMOperator):
                 if spinindex_out in self.spinindex_out(spinindex_in):
                     # Substitute factor for radial axis
                     factors = [sparse.eye(i, j, format='csr') for i, j in zip(subshape_out, subshape_in)]
-                    factors[dist.last_axis(self)] = self.radial_matrix(spinindex_in, spinindex_out, m)
+                    factors[self.last_axis] = self.radial_matrix(spinindex_in, spinindex_out, m)
                     comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
                 else:
                     # Build zero matrix
@@ -5168,7 +5169,7 @@ class LiftBallRadius(operators.Lift, operators.SphericalEllOperator):
         radial_basis = self.output_basis
         R_in = radial_basis.regularity_classes(operand.tensorsig)
         R_out = radial_basis.regularity_classes(self.tensorsig)  # Should this use output_basis?
-        ell = subproblem.group[dist.last_axis(self) - 1]
+        ell = subproblem.group[self.last_axis - 1]
         # Loop over components
         submatrices = []
         for regindex_out, regtotal_out in np.ndenumerate(R_out):
@@ -5181,7 +5182,7 @@ class LiftBallRadius(operators.Lift, operators.SphericalEllOperator):
                 if (regindex_out in self.regindex_out(regindex_in)) and radial_basis.regularity_allowed(ell, regindex_in) and radial_basis.regularity_allowed(ell, regindex_out):
                     # Substitute factor for radial axis
                     factors = [sparse.eye(m, n, format='csr') for m, n in zip(subshape_out, subshape_in)]
-                    factors[dist.last_axis(self)] = self.radial_matrix(regindex_in, regindex_out, ell)
+                    factors[self.last_axis] = self.radial_matrix(regindex_in, regindex_out, ell)
                     comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
                 else:
                     # Build zero matrix
@@ -5224,11 +5225,11 @@ class LiftShell(operators.Lift, operators.SphericalEllOperator):
     def subproblem_matrix(self, subproblem):
         matrix = super().subproblem_matrix(subproblem)
         # Get relevant Qs
-        m = subproblem.group[dist.last_axis(self) - 2]
-        ell = subproblem.group[dist.last_axis(self) - 1]
+        m = subproblem.group[self.last_axis - 2]
+        ell = subproblem.group[self.last_axis - 1]
         if ell is None:
             ell_list = np.arange(abs(m), self.input_basis.Lmax + 1)
-            if self.input_basis.ell_reversed[m]:
+            if self.input_basis.ell_reversed(self.dist)[m]:
                 ell_list = ell_list[::-1]
         else:
             ell_list = [ell]
@@ -5599,7 +5600,7 @@ class InterpolateAzimuth(FutureLockedField, operators.Interpolate):
     def check_conditions(self):
         """Check that arguments are in a proper layout."""
         arg0 = self.args[0]
-        azimuth_axis = dist.first_axis(self)
+        azimuth_axis = self.first_axis
         # Require grid space and locality along azimuthal axis
         is_grid = arg0.layout.grid_space[azimuth_axis]
         is_local = arg0.layout.local[azimuth_axis]
@@ -5608,7 +5609,7 @@ class InterpolateAzimuth(FutureLockedField, operators.Interpolate):
     def enforce_conditions(self):
         """Require arguments to be in a proper layout."""
         arg0 = self.args[0]
-        azimuth_axis = dist.first_axis(self)
+        azimuth_axis = self.first_axis
         # Require grid space and locality along azimuthal axis
         arg0.require_grid_space(azimuth_axis)
         arg0.require_local(azimuth_axis)
@@ -5637,9 +5638,9 @@ class InterpolateAzimuth(FutureLockedField, operators.Interpolate):
         # Set output layout
         out.preset_layout(layout)
         # Set output lock
-        out.lock_axis_to_grid(dist.first_axis(self))
+        out.lock_axis_to_grid(self.first_axis)
         # Apply matrix
-        data_axis = dist.first_axis(self) + len(arg.tensorsig)
+        data_axis = self.first_axis + len(arg.tensorsig)
         apply_matrix(self.interpolation_vector(), arg.data, data_axis, out=out.data)
 
 
@@ -5667,7 +5668,7 @@ class InterpolateColatitude(FutureLockedField, operators.Interpolate):
     def check_conditions(self):
         """Check that arguments are in a proper layout."""
         arg0 = self.args[0]
-        azimuth_axis = dist.first_axis(self)
+        azimuth_axis = self.first_axis
         colat_axis = azimuth_axis + 1
         # Require azimuth coeff, colat grid, colat, local
         az_coeff = not arg0.layout.grid_space[azimuth_axis]
@@ -5678,7 +5679,7 @@ class InterpolateColatitude(FutureLockedField, operators.Interpolate):
     def enforce_conditions(self):
         """Require arguments to be in a proper layout."""
         arg0 = self.args[0]
-        azimuth_axis = dist.first_axis(self)
+        azimuth_axis = self.first_axis
         colat_axis = azimuth_axis + 1
         # Require azimuth coeff, colat grid, colat, local
         arg0.require_coeff_space(azimuth_axis)
@@ -5718,7 +5719,7 @@ class InterpolateColatitude(FutureLockedField, operators.Interpolate):
         arg = self.args[0]
         basis = self.sphere_basis
         layout = arg.layout
-        azimuth_axis = dist.first_axis(self)
+        azimuth_axis = self.first_axis
         colat_axis = azimuth_axis + 1
         Ntheta = arg.data.shape[len(arg.tensorsig) + colat_axis]
         # Set output layout
@@ -5854,11 +5855,11 @@ class ShellRadialInterpolate(operators.Interpolate, operators.SphericalEllOperat
     def subproblem_matrix(self, subproblem):
         matrix = super().subproblem_matrix(subproblem)
         # Get relevant Qs
-        m = subproblem.group[dist.last_axis(self) - 2]
-        ell = subproblem.group[dist.last_axis(self) - 1]
+        m = subproblem.group[self.last_axis - 2]
+        ell = subproblem.group[self.last_axis - 1]
         if ell is None:
             ell_list = np.arange(abs(m), self.input_basis.Lmax + 1)
-            if self.input_basis.ell_reversed[m]:
+            if self.input_basis.ell_reversed(self.dist)[m]:
                 ell_list = ell_list[::-1]
         else:
             ell_list = [ell]
@@ -6139,14 +6140,14 @@ class PolarAdvectiveCFL(operators.AdvectiveCFL):
         #Assumes velocity is a 2-length vector over polar coordinates
         basis   = self.input_basis
         dealias = basis.dealias
-        azimuth_spacing = basis.local_grid_spacing(0, scales=dealias)
+        azimuth_spacing = basis.local_grid_spacing(self.dist, 0, scales=dealias)
         if basis.mmax == 0:
             azimuth_spacing[:] = np.inf
         elif isinstance(basis, DiskBasis):
             azimuth_spacing[:] = basis.radius / basis.mmax
         elif isinstance(basis, AnnulusBasis):
-            azimuth_spacing = basis.local_grid_radius(dealias[1]) / basis.mmax
-        radial_spacing = dealias[1] * basis.local_grid_spacing(1, scales=dealias)
+            azimuth_spacing = basis.local_grid_radius(self.dist, dealias[1]) / basis.mmax
+        radial_spacing = dealias[1] * basis.local_grid_spacing(self.dist, 1, scales=dealias)
         return [azimuth_spacing, radial_spacing]
 
     def compute_cfl_frequency(self, velocity, out):
@@ -6167,7 +6168,7 @@ class S2AdvectiveCFL(operators.AdvectiveCFL):
         basis   = self.input_basis
         dealias = basis.dealias
         if r is None: r = basis.radius
-        s2_spacing = basis.local_grid_spacing(0, scales=dealias)
+        s2_spacing = basis.local_grid_spacing(self.dist, 0, scales=dealias)
         if basis.Lmax == 0:
             s2_spacing[:] = np.inf
         else:
@@ -6197,8 +6198,8 @@ class Spherical3DAdvectiveCFL(operators.AdvectiveCFL):
             spacings = S2AdvectiveCFL.cfl_spacing(self, r=basis.radial_basis.radius)
         elif isinstance(basis, ShellBasis):
             spacings = S2AdvectiveCFL.cfl_spacing(self, r=1)
-            spacings[0] = spacings[0] * basis.local_grid_radius(dealias[2]) #get proper radial scaling for shell
-        spacings.append(basis.local_grid_spacing(2, scales=dealias) * dealias[2])
+            spacings[0] = spacings[0] * basis.local_grid_radius(self.dist, dealias[2]) #get proper radial scaling for shell
+        spacings.append(basis.local_grid_spacing(self.dist, 2, scales=dealias) * dealias[2])
         return spacings
 
     def compute_cfl_frequency(self, velocity, out):

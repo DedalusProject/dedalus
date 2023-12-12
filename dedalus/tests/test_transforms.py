@@ -64,7 +64,7 @@ def test_CF_scalar_roundtrip(N, dealias):
         c = coords.Coordinate('x')
         d = distributor.Distributor([c])
         xb = basis.ComplexFourier(c, size=N, bounds=(0, 1), dealias=dealias)
-        x = d.local_grid(xb, scales=dealias)
+        x = d.local_grid(xb, scale=dealias)
         # Scalar transforms
         u = field.Field(dist=d, bases=(xb,), dtype=np.complex128)
         u.preset_scales(dealias)
@@ -82,7 +82,7 @@ def test_RF_scalar_roundtrip(N, dealias):
         c = coords.Coordinate('x')
         d = distributor.Distributor([c])
         xb = basis.RealFourier(c, size=N, bounds=(0, 1), dealias=dealias)
-        x = d.local_grid(xb, scales=dealias)
+        x = d.local_grid(xb, scale=dealias)
         # Scalar transforms
         u = field.Field(dist=d, bases=(xb,), dtype=np.float64)
         u.preset_scales(dealias)
@@ -103,7 +103,7 @@ def test_J_scalar_roundtrip(a, b, N, dealias, dtype):
         c = coords.Coordinate('x')
         d = distributor.Distributor([c])
         xb = basis.Jacobi(c, a=a, b=b, size=N, bounds=(0, 1), dealias=dealias)
-        x = d.local_grid(xb, scales=dealias)
+        x = d.local_grid(xb, scale=dealias)
         # Scalar transforms
         u = field.Field(dist=d, bases=(xb,), dtype=dtype)
         u.preset_scales(dealias)
@@ -164,8 +164,8 @@ def build_CF_CF(Nx, Ny, dealias_x, dealias_y):
     d = distributor.Distributor((c,))
     xb = basis.ComplexFourier(c.coords[0], size=Nx, bounds=(0, np.pi), dealias=dealias_x)
     yb = basis.ComplexFourier(c.coords[1], size=Ny, bounds=(0, np.pi), dealias=dealias_y)
-    x = d.local_grid(xb, scales=dealias_x)
-    y = d.local_grid(yb, scales=dealias_y)
+    x = d.local_grid(xb, scale=dealias_x)
+    y = d.local_grid(yb, scale=dealias_y)
     return c, d, xb, yb, x, y
 
 
@@ -188,8 +188,8 @@ def build_RF_RF(Nx, Ny, dealias_x, dealias_y):
     d = distributor.Distributor((c,))
     xb = basis.RealFourier(c.coords[0], size=Nx, bounds=(0, np.pi), dealias=dealias_x)
     yb = basis.RealFourier(c.coords[1], size=Ny, bounds=(0, np.pi), dealias=dealias_y)
-    x = d.local_grid(xb, scales=dealias_x)
-    y = d.local_grid(yb, scales=dealias_y)
+    x = d.local_grid(xb, scale=dealias_x)
+    y = d.local_grid(yb, scale=dealias_y)
     return c, d, xb, yb, x, y
 
 
@@ -212,8 +212,8 @@ def build_CF_J(a, b, Nx, Ny, dealias_x, dealias_y):
     d = distributor.Distributor((c,))
     xb = basis.ComplexFourier(c.coords[0], size=Nx, bounds=(0, np.pi), dealias=dealias_x)
     yb = basis.Jacobi(c.coords[1], a=a, b=b, size=Ny, bounds=(0, 1), dealias=dealias_y)
-    x = d.local_grid(xb, scales=dealias_x)
-    y = d.local_grid(yb, scales=dealias_y)
+    x = d.local_grid(xb, scale=dealias_x)
+    y = d.local_grid(yb, scale=dealias_y)
     return c, d, xb, yb, x, y
 
 
@@ -298,7 +298,7 @@ def test_sphere_complex_scalar_backward(Nphi, Ntheta, radius, basis, dealias):
     c, d, b, phi, theta = basis(Nphi, Ntheta, radius, dealias, np.complex128)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     f.preset_scales(dealias)
-    m, ell, *_ = d.coeff_layout.local_group_arrays(b.domain, scales=1)
+    m, ell, *_ = d.coeff_layout.local_group_arrays(b.domain(d), scales=1)
     f['c'][(m == -2) * (ell == 2)] = 1
     fg = np.sqrt(15) / 4 * np.sin(theta)**2 * np.exp(-2j*phi)
     assert np.allclose(fg, f['g'])
@@ -312,7 +312,7 @@ def test_sphere_complex_scalar_forward(Nphi, Ntheta, radius, basis, dealias):
     c, d, b, phi, theta = basis(Nphi, Ntheta, radius, dealias, np.complex128)
     f = field.Field(dist=d, bases=(b,), dtype=np.complex128)
     f.preset_scales(dealias)
-    m, ell, *_  = d.coeff_layout.local_group_arrays(b.domain, scales=1)
+    m, ell, *_  = d.coeff_layout.local_group_arrays(b.domain(d), scales=1)
     f['g'] = np.sqrt(15) / 4 * np.sin(theta)**2 * np.exp(-2j*phi)
     fc = np.zeros_like(f['c'])
     fc[(m == -2) * (ell == 2)] = 1
@@ -327,7 +327,7 @@ def test_sphere_real_scalar_backward(Nphi, Ntheta, radius, basis, dealias):
     c, d, b, phi, theta = basis(Nphi, Ntheta, radius, dealias, np.float64)
     f = field.Field(dist=d, bases=(b,), dtype=np.float64)
     f.preset_scales(dealias)
-    m, ell, *_  = d.coeff_layout.local_group_arrays(b.domain, scales=1)
+    m, ell, *_  = d.coeff_layout.local_group_arrays(b.domain(d), scales=1)
     f['c'][(m == 2) * (ell == 2)] = 1
     fg = np.sqrt(15) / 4 * np.sin(theta)**2 * (np.cos(2*phi) - np.sin(2*phi))
     assert np.allclose(fg, f['g'])
@@ -341,7 +341,7 @@ def test_sphere_real_scalar_forward(Nphi, Ntheta, radius, basis, dealias):
     c, d, b, phi, theta = basis(Nphi, Ntheta, radius, dealias, np.float64)
     f = field.Field(dist=d, bases=(b,), dtype=np.float64)
     f.preset_scales(dealias)
-    m, ell, *_  = d.coeff_layout.local_group_arrays(b.domain, scales=1)
+    m, ell, *_  = d.coeff_layout.local_group_arrays(b.domain(d), scales=1)
     f['g'] = np.sqrt(15) / 4 * np.sin(theta)**2 * (np.cos(2*phi) - np.sin(2*phi))
     fc = np.zeros_like(f['c'])
     fc[(m == 2) * (ell == 2)] = 1

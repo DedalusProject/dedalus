@@ -82,7 +82,7 @@ class Distributor:
         else:
             self.single_coordsys = False
         # Get coords
-        self.coords = tuple([coord for coordsys in coordsystems for coord in coordsys.coords])
+        self.coords = sum((cs.coords for cs in coordsystems), ())
         self.coordsystems = coordsystems
         # Defaults
         if comm is None:
@@ -185,7 +185,7 @@ class Distributor:
         """Remedy different scale inputs."""
         if scales is None:
             scales = 1
-        if not hasattr(scales, "__len__"):
+        if not isinstance(scales, (list, tuple)):
             scales = [scales] * self.dim
         if 0 in scales:
             raise ValueError("Scales must be nonzero.")

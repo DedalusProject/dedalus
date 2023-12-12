@@ -21,7 +21,7 @@ def build_disk(Nphi, Nr, k, dealias, dtype):
     c = coords.PolarCoordinates('phi', 'r')
     d = distributor.Distributor((c,), dtype=dtype)
     b = basis.DiskBasis(c, (Nphi, Nr), radius=radius_disk, k=k, dealias=(dealias, dealias), dtype=dtype)
-    phi, r = d.local_grids(b, scales=b.domain.dealias)
+    phi, r = d.local_grids(b, scales=dealias)
     x, y = c.cartesian(phi, r)
     return c, d, b, phi, r, x, y
 
@@ -31,7 +31,7 @@ def build_annulus(Nphi, Nr, k, dealias, dtype):
     c = coords.PolarCoordinates('phi', 'r')
     d = distributor.Distributor((c,), dtype=dtype)
     b = basis.AnnulusBasis(c, (Nphi, Nr), radii=radii_annulus, k=k, dealias=(dealias, dealias), dtype=dtype)
-    phi, r = d.local_grids(b, scales=b.domain.dealias)
+    phi, r = d.local_grids(b, scales=dealias)
     x, y = c.cartesian(phi, r)
     return c, d, b, phi, r, x, y
 
@@ -47,13 +47,13 @@ def build_annulus(Nphi, Nr, k, dealias, dtype):
 #     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
 #     f = field.Field(dist=d, bases=(b,), dtype=dtype)
 #     g = field.Field(dist=d, bases=(b,), dtype=dtype)
-#     f.preset_scales(b.domain.dealias)
+#     f.preset_scales(dealias)
 #     f['g'] = 3*x**2 + 2*y*z
 #     for ell, m_ind, ell_ind in b.ell_maps:
 #         g['c'][m_ind, ell_ind, :] = (ell+3)*f['c'][m_ind, ell_ind, :]
 #     func = lambda ell: ell+3
 #     h = operators.SphericalEllProduct(f, c, func).evaluate()
-#     g.preset_scales(b.domain.dealias)
+#     g.preset_scales(dealias)
 #     assert np.allclose(h['g'], g['g'])
 
 
@@ -67,14 +67,14 @@ def build_annulus(Nphi, Nr, k, dealias, dtype):
 # def test_spherical_ell_product_vector(Nphi, Ntheta, Nr, k, dealias, basis, dtype):
 #     c, d, b, phi, theta, r, x, y, z = basis(Nphi, Ntheta, Nr, k, dealias, dtype)
 #     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-#     f.preset_scales(b.domain.dealias)
+#     f.preset_scales(dealias)
 #     f['g'] = 3*x**2 + 2*y*z
 #     u = operators.Gradient(f, c).evaluate()
 #     uk0 = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
-#     uk0.preset_scales(b.domain.dealias)
+#     uk0.preset_scales(dealias)
 #     uk0['g'] = u['g']
 #     v = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
-#     v.preset_scales(b.domain.dealias)
+#     v.preset_scales(dealias)
 #     for ell, m_ind, ell_ind in b.ell_maps:
 #         v['c'][0, m_ind, ell_ind, :] = (ell+2)*uk0['c'][0, m_ind, ell_ind, :]
 #         v['c'][1, m_ind, ell_ind, :] = (ell+4)*uk0['c'][1, m_ind, ell_ind, :]
@@ -123,7 +123,7 @@ def test_convert_constant_tensor(Nphi, Nr, k, dealias, basis, dtype):
 def test_convert_scalar(Nphi, Nr, k, dealias, basis, dtype, layout):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-    f.preset_scales(b.domain.dealias)
+    f.preset_scales(dealias)
     f['g'] = 3*x**2 + 2*y
     g = operators.Laplacian(f, c).evaluate()
     f.change_layout(layout)
@@ -191,8 +191,8 @@ def test_skew_implicit(basis, Nphi, Nr, k, dealias, dtype):
     problem.add_equation("skew(u) = skew(f)")
     solver = problem.build_solver()
     solver.solve()
-    u.change_scales(b.domain.dealias)
-    f.change_scales(b.domain.dealias)
+    u.change_scales(dealias)
+    f.change_scales(dealias)
     assert np.allclose(u['g'], f['g'])
 
 
@@ -206,7 +206,7 @@ def test_skew_implicit(basis, Nphi, Nr, k, dealias, dtype):
 def test_explicit_trace_tensor(Nphi, Nr, k, dealias, basis, dtype, layout):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
     u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
-    u.preset_scales(b.domain.dealias)
+    u.preset_scales(dealias)
     ex = np.array([-np.sin(phi)+0.*r,np.cos(phi)+0.*r])
     ey = np.array([np.cos(phi)+0.*r,np.sin(phi)+0.*r])
     u['g'] = 4*x**3*ey + 3*y**2*ey
@@ -276,8 +276,8 @@ def test_transpose_implicit(basis, Nphi, Nr, k, dealias, dtype):
     problem.add_equation("trans(u) = trans(f)")
     solver = problem.build_solver()
     solver.solve()
-    u.change_scales(b.domain.dealias)
-    f.change_scales(b.domain.dealias)
+    u.change_scales(dealias)
+    f.change_scales(dealias)
     assert np.allclose(u['g'], f['g'])
 
 
@@ -290,7 +290,7 @@ def test_transpose_implicit(basis, Nphi, Nr, k, dealias, dtype):
 def test_azimuthal_average_scalar(Nphi, Nr, k, dealias, dtype, basis):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-    f.preset_scales(b.domain.dealias)
+    f.preset_scales(dealias)
     f['g'] = r**2 + x
     h = operators.Average(f, c.coords[0]).evaluate()
     hg = r**2
@@ -307,7 +307,7 @@ def test_azimuthal_average_scalar(Nphi, Nr, k, dealias, dtype, basis):
 def test_integrate_scalar(Nphi, Nr, k, dealias, dtype, basis, n):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-    f.preset_scales(b.domain.dealias)
+    f.preset_scales(dealias)
     f['g'] = r**(2*n)
     h = operators.Integrate(f, c).evaluate()
     if isinstance(b, DiskBasis):
@@ -328,7 +328,7 @@ def test_integrate_scalar(Nphi, Nr, k, dealias, dtype, basis, n):
 def test_interpolate_azimuth_scalar(Nphi, Nr, k, dealias, basis, dtype, phi_interp):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-    f.preset_scales(b.domain.dealias)
+    f.preset_scales(dealias)
     f['g'] = x**4 + 2*y**4
     h = operators.interpolate(f, phi=phi_interp).evaluate()
     x, y = c.cartesian(np.array([[phi_interp]]), r)
@@ -346,7 +346,7 @@ def test_interpolate_azimuth_scalar(Nphi, Nr, k, dealias, basis, dtype, phi_inte
 def test_interpolate_radius_scalar(Nphi, Nr, k, dealias, basis, dtype, r_interp):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-    f.preset_scales(b.domain.dealias)
+    f.preset_scales(dealias)
     f['g'] = x**4 + 2*y**4
     h = operators.interpolate(f, r=r_interp).evaluate()
     x, y = c.cartesian(phi, np.array([[r_interp]]))
@@ -364,7 +364,7 @@ def test_interpolate_radius_scalar(Nphi, Nr, k, dealias, basis, dtype, r_interp)
 def test_interpolate_azimuth_vector(Nphi, Nr, k, dealias, basis, dtype, phi_interp):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-    f.preset_scales(b.domain.dealias)
+    f.preset_scales(dealias)
     f['g'] = x**4 + 2*y**4
     u = operators.Gradient(f, c)
     v = u(phi=phi_interp).evaluate()
@@ -386,7 +386,7 @@ def test_interpolate_azimuth_vector(Nphi, Nr, k, dealias, basis, dtype, phi_inte
 def test_interpolate_radius_vector(Nphi, Nr, k, dealias, basis, dtype, r_interp):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-    f.preset_scales(b.domain.dealias)
+    f.preset_scales(dealias)
     f['g'] = x**4 + 2*y**4
     u = operators.Gradient(f, c)
     v = u(r=r_interp).evaluate()
@@ -408,7 +408,7 @@ def test_interpolate_radius_vector(Nphi, Nr, k, dealias, basis, dtype, r_interp)
 def test_interpolate_azimuth_tensor(Nphi, Nr, k, dealias, basis, dtype, phi_interp):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-    f.preset_scales(b.domain.dealias)
+    f.preset_scales(dealias)
     f['g'] = x**4 + 2*y**4
     u = operators.Gradient(f, c)
     T = operators.Gradient(u, c)
@@ -433,7 +433,7 @@ def test_interpolate_azimuth_tensor(Nphi, Nr, k, dealias, basis, dtype, phi_inte
 def test_interpolate_radius_tensor(Nphi, Nr, k, dealias, basis, dtype, r_interp):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-    f.preset_scales(b.domain.dealias)
+    f.preset_scales(dealias)
     f['g'] = x**4 + 2*y**4
     u = operators.Gradient(f, c)
     T = operators.Gradient(u, c)
@@ -459,7 +459,7 @@ def test_radial_component_vector(Nphi, Nr, k, dealias, dtype, basis, radius):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
     cp, sp = np.cos(phi), np.sin(phi)
     u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
-    u.preset_scales(b.domain.dealias)
+    u.preset_scales(dealias)
     ex = np.array([-np.sin(phi), np.cos(phi)])
     ey = np.array([np.cos(phi), np.sin(phi)])
     u['g'] = (x**2*y - 2*x*y**5)*ex + (x**2*y + 7*x**3*y**2)*ey
@@ -479,7 +479,7 @@ def test_radial_component_tensor(Nphi, Nr, k, dealias, dtype, basis, radius):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
     cp, sp = np.cos(phi), np.sin(phi)
     T = field.Field(dist=d, bases=(b,), tensorsig=(c,c), dtype=dtype)
-    T.preset_scales(b.domain.dealias)
+    T.preset_scales(dealias)
     ex = np.array([-np.sin(phi), np.cos(phi)])
     ey = np.array([np.cos(phi), np.sin(phi)])
     exex = ex[:,None, ...] * ex[None,...]
@@ -503,7 +503,7 @@ def test_azimuthal_component_vector(Nphi, Nr, k, dealias, dtype, basis, radius):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
     cp, sp = np.cos(phi), np.sin(phi)
     u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
-    u.preset_scales(b.domain.dealias)
+    u.preset_scales(dealias)
     ex = np.array([-np.sin(phi), np.cos(phi)])
     ey = np.array([np.cos(phi), np.sin(phi)])
     u['g'] = (x**2*y - 2*x*y**5)*ex + (x**2*y + 7*x**3*y**2)*ey
@@ -523,7 +523,7 @@ def test_azimuthal_component_tensor(Nphi, Nr, k, dealias, dtype, basis, radius):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
     cp, sp = np.cos(phi), np.sin(phi)
     T = field.Field(dist=d, bases=(b,), tensorsig=(c,c), dtype=dtype)
-    T.preset_scales(b.domain.dealias)
+    T.preset_scales(dealias)
     ex = np.array([-np.sin(phi), np.cos(phi)])
     ey = np.array([np.cos(phi), np.sin(phi)])
     exex = ex[:,None, ...] * ex[None,...]

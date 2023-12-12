@@ -1753,7 +1753,7 @@ class SphericalTrace(Trace):
 
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
-        self.radius_axis = self.coordsys.coords[2].axis
+        self.radius_axis = self.dist.get_axis(self.coordsys.coords[2])
         self.radial_basis = self.input_basis.get_radial_basis()
 
     def subproblem_matrix(self, subproblem):
@@ -1770,7 +1770,7 @@ class SphericalTrace(Trace):
         # Stack ells
         if ell is None:
             ell_list = np.arange(np.abs(m), input_basis.Lmax+1)
-            if input_basis.ell_reversed[m]:
+            if input_basis.ell_reversed(self.dist)[m]:
                 ell_list = ell_list[::-1]
         else:
             ell_list = [ell]
@@ -1799,7 +1799,7 @@ class CylindricalTrace(Trace):
 
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
-        self.radius_axis = self.coordsys.coords[1].axis
+        self.radius_axis = self.dist.get_axis(self.coordsys.coords[1])
 
     def subproblem_matrix(self, subproblem):
         m = subproblem.group[self.radius_axis - 1]
@@ -1941,7 +1941,7 @@ class SphericalTransposeComponents(TransposeComponents):
 
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
-        self.radius_axis = self.coordsys.coords[2].axis
+        self.radius_axis = self.dist.get_axis(self.coordsys.coords[2])
         self.radial_basis = self.input_basis.get_radial_basis()
 
     def subproblem_matrix(self, subproblem):
@@ -1954,7 +1954,7 @@ class SphericalTransposeComponents(TransposeComponents):
         # Stack ells
         if ell is None:
             ell_list = np.arange(np.abs(m), input_basis.Lmax+1)
-            if input_basis.ell_reversed[m]:
+            if input_basis.ell_reversed(self.dist)[m]:
                 ell_list = ell_list[::-1]
         else:
             ell_list = [ell]
@@ -2786,7 +2786,7 @@ class PolarMOperator(SpectralOperator):
 
     def __init__(self, operand, coordsys):
         self.coordsys = coordsys
-        self.radius_axis = coordsys.coords[1].axis
+        self.radius_axis = self.dist.get_axis(coordsys.coords[1])
         input_basis = operand.domain.get_basis(coordsys)
         if input_basis is None:
             input_basis = operand.domain.get_basis(coordsys.radius)
@@ -2847,7 +2847,7 @@ class PolarMOperator(SpectralOperator):
                     factors = [sparse.eye(i, j, format='csr') for i, j in zip(subshape_out, subshape_in)]
                     radial_matrix = self.radial_matrix(spinindex_in, spinindex_out, m)
                     # Reverse matrices to match memory order for flipped groups
-                    if radial_basis.ell_reversed[m]:
+                    if radial_basis.ell_reversed(self.dist)[m]:
                         radial_matrix = radial_matrix[::-1, ::-1]
                     factors[self.last_axis] = radial_matrix
                     comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
@@ -3081,7 +3081,7 @@ class SphericalEllOperator(SpectralOperator):
         # Get ordered list of ells
         basis = self.S2_basis
         ell_list = np.arange(np.abs(m), basis.Lmax+1)
-        if basis.ell_reversed[m]:
+        if basis.ell_reversed(self.dist)[m]:
             ell_list = ell_list[::-1]
         # Assemble block-diagonal matrix over ells
         ell_matrices = [self._wrap_radial_matrix(regindex_in, regindex_out, ell, return_zeros=True) for ell in ell_list]

@@ -18,7 +18,7 @@ def build_sphere(Nphi, Ntheta, dealias, dtype):
     c = coords.S2Coordinates('phi', 'theta')
     d = distributor.Distributor(c, dtype=dtype)
     b = basis.SphereBasis(c, (Nphi, Ntheta), radius=radius, dealias=(dealias, dealias), dtype=dtype)
-    phi, theta = d.local_grids(b, scales=b.domain.dealias)
+    phi, theta = d.local_grids(b, scales=dealias)
     return c, d, b, phi, theta
 
 
@@ -56,8 +56,8 @@ def test_skew_implicit(Nphi,  Ntheta, dealias, dtype):
     problem.add_equation("skew(u) = skew(f)")
     solver = problem.build_solver()
     solver.solve()
-    u.change_scales(b.domain.dealias)
-    f.change_scales(b.domain.dealias)
+    u.change_scales(dealias)
+    f.change_scales(dealias)
     assert np.allclose(u['g'], f['g'])
 
 
@@ -94,8 +94,8 @@ def test_transpose_implicit(Nphi, Ntheta, dealias, dtype):
     problem.add_equation("trans(u) = trans(f)")
     solver = problem.build_solver()
     solver.solve()
-    u.change_scales(b.domain.dealias)
-    f.change_scales(b.domain.dealias)
+    u.change_scales(dealias)
+    f.change_scales(dealias)
     assert np.allclose(u['g'], f['g'])
 
 
@@ -122,7 +122,7 @@ def test_convert_constant_scalar_explicit(Nphi, Ntheta, dealias, dtype):
 def test_sphere_average_scalar_explicit(Nphi, Ntheta, dealias, dtype):
     c, d, b, phi, theta = build_sphere(Nphi, Ntheta, dealias, dtype)
     f = d.Field(bases=b)
-    f.preset_scales(b.domain.dealias)
+    f.preset_scales(dealias)
     x = np.sin(theta)*np.cos(phi)
     y = np.sin(theta)*np.sin(phi)
     z = np.cos(theta)
@@ -155,7 +155,7 @@ def test_gradient_scalar_explicit(Nphi, Ntheta, dealias, dtype):
     # Spherical harmonic input
     m, l = 2, 2
     f = d.Field(bases=b)
-    f.preset_scales(b.domain.dealias)
+    f.preset_scales(dealias)
     if np.iscomplexobj(dtype()):
         f['g'] = sph_harm(m, l, phi, theta)
     else:
@@ -183,8 +183,8 @@ def test_cosine_explicit(Nphi, Ntheta, dealias, dtype, rank):
     f.low_pass_filter(scales=0.75)
     # Cosine operator
     g = operators.MulCosine(f).evaluate()
-    g.change_scales(b.domain.dealias)
-    f.change_scales(b.domain.dealias)
+    g.change_scales(dealias)
+    f.change_scales(dealias)
     assert np.allclose(g['g'], np.cos(theta) * f['g'])
 
 
@@ -205,8 +205,8 @@ def test_cosine_implicit(Nphi,  Ntheta, dealias, dtype, rank):
     problem.add_equation("u + MulCosine(u) = f + MulCosine(f)")
     solver = problem.build_solver()
     solver.solve()
-    u.change_scales(b.domain.dealias)
-    f.change_scales(b.domain.dealias)
+    u.change_scales(dealias)
+    f.change_scales(dealias)
     assert np.allclose(u['g'], f['g'])
 
 
@@ -218,7 +218,7 @@ def test_cosine_implicit(Nphi,  Ntheta, dealias, dtype, rank):
 #     Nphi = 1
 #     c, d, b, phi, r, x, y = basis(Nphi, Ntheta, dealias, dtype)
 #     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-#     f.preset_scales(b.domain.dealias)
+#     f.preset_scales(dealias)
 #     f['g'] = r**4
 #     u = operators.Gradient(f, c).evaluate()
 #     ug = [0*r*phi, 4*r**3 + 0*phi]
@@ -233,7 +233,7 @@ def test_cosine_implicit(Nphi,  Ntheta, dealias, dtype, rank):
 # def test_gradient_vector(Nphi, Ntheta, dealias, basis, dtype):
 #     c, d, b, phi, r, x, y = basis(Nphi, Ntheta, dealias, dtype)
 #     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-#     f.preset_scales(b.domain.dealias)
+#     f.preset_scales(dealias)
 #     f['g'] = 3*x**4 + 2*y*x
 #     grad = lambda A: operators.Gradient(A, c)
 #     T = grad(grad(f)).evaluate()
@@ -255,7 +255,7 @@ def test_cosine_implicit(Nphi,  Ntheta, dealias, dtype, rank):
 #     Nphi = 1
 #     c, d, b, phi, r, x, y = basis(Nphi, Ntheta, dealias, dtype)
 #     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-#     f.preset_scales(b.domain.dealias)
+#     f.preset_scales(dealias)
 #     f['g'] = r**4
 #     grad = lambda A: operators.Gradient(A, c)
 #     T = grad(grad(f)).evaluate()
@@ -275,7 +275,7 @@ def test_cosine_implicit(Nphi,  Ntheta, dealias, dtype, rank):
 # def test_divergence_vector(Nphi, Ntheta, dealias, basis, dtype):
 #     c, d, b, phi, r, x, y = basis(Nphi, Ntheta, dealias, dtype)
 #     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-#     f.preset_scales(b.domain.dealias)
+#     f.preset_scales(dealias)
 #     f['g'] = 3*x**4 + 2*y*x
 #     grad = lambda A: operators.Gradient(A, c)
 #     div = lambda A: operators.Divergence(A)
@@ -292,7 +292,7 @@ def test_cosine_implicit(Nphi,  Ntheta, dealias, dtype, rank):
 #     Nphi = 1
 #     c, d, b, phi, r, x, y = basis(Nphi, Ntheta, dealias, dtype=dtype)
 #     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-#     f.preset_scales(b.domain.dealias)
+#     f.preset_scales(dealias)
 #     f['g'] = r**2
 #     grad = lambda A: operators.Gradient(A, c)
 #     div = lambda A: operators.Divergence(A)
@@ -309,7 +309,7 @@ def test_cosine_implicit(Nphi,  Ntheta, dealias, dtype, rank):
 # def test_divergence_tensor(Nphi, Ntheta, dealias, basis, dtype):
 #     c, d, b, phi, r, x, y = basis(Nphi, Ntheta, dealias, dtype)
 #     v = field.Field(dist=d, tensorsig=(c,), bases=(b,), dtype=dtype)
-#     v.preset_scales(b.domain.dealias)
+#     v.preset_scales(dealias)
 #     ex = np.array([-np.sin(phi)+0.*r,np.cos(phi)+0.*r])
 #     ey = np.array([np.cos(phi)+0.*r,np.sin(phi)+0.*r])
 #     v['g'] = 4*x**3*ey + 3*y**2*ey
@@ -328,7 +328,7 @@ def test_cosine_implicit(Nphi,  Ntheta, dealias, dtype, rank):
 # def test_curl_vector(Nphi, Ntheta, dealias, basis, dtype):
 #     c, d, b, phi, r, x, y = basis(Nphi, Ntheta, dealias, dtype)
 #     v = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
-#     v.preset_scales(b.domain.dealias)
+#     v.preset_scales(dealias)
 #     ex = np.array([-np.sin(phi)+0.*r,np.cos(phi)+0.*r])
 #     ey = np.array([np.cos(phi)+0.*r,np.sin(phi)+0.*r])
 #     v['g'] = 4*x**3*ey + 3*y**2*ey
@@ -346,7 +346,7 @@ def test_laplacian_scalar_explicit(Nphi,  Ntheta, dealias, dtype):
     # Spherical harmonic input
     m, l = 6, 10
     f = d.Field(bases=b)
-    f.preset_scales(b.domain.dealias)
+    f.preset_scales(dealias)
     if np.iscomplexobj(dtype()):
         f['g'] = sph_harm(m, l, phi, theta)
     else:
@@ -365,7 +365,7 @@ def test_laplacian_scalar_implicit(Nphi,  Ntheta, dealias, dtype):
     # Spherical harmonic forcing
     m, l = 5, 10
     f = d.Field(bases=b)
-    f.preset_scales(b.domain.dealias)
+    f.preset_scales(dealias)
     if np.iscomplexobj(dtype()):
         f['g'] = sph_harm(m, l, phi, theta)
     else:
@@ -391,8 +391,8 @@ def test_laplacian_scalar_implicit(Nphi,  Ntheta, dealias, dtype):
 #     c, d, b, phi, theta = build_sphere(Nphi, Ntheta, dealias, dtype)
 #     u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
 #     f = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
-#     f.preset_scales(b.domain.dealias)
-#     u.preset_scales(b.domain.dealias)
+#     f.preset_scales(dealias)
+#     u.preset_scales(dealias)
 #     m0 = 1
 #     l0 = 1
 #     m1 = 1
@@ -418,7 +418,7 @@ def test_laplacian_scalar_implicit(Nphi,  Ntheta, dealias, dtype):
 # def test_laplacian_vector(Nphi,  Ntheta, dealias, basis, dtype):
 #     c, d, b, phi, r, x, y = basis(Nphi, Ntheta, dealias, dtype)
 #     v = field.Field(dist=d, tensorsig=(c,), bases=(b,), dtype=dtype)
-#     v.preset_scales(b.domain.dealias)
+#     v.preset_scales(dealias)
 #     ex = np.array([-np.sin(phi)+0.*r,np.cos(phi)+0.*r])
 #     ey = np.array([np.cos(phi)+0.*r,np.sin(phi)+0.*r])
 #     v['g'] = 4*x**3*ey + 3*y**2*ey
@@ -435,7 +435,7 @@ def test_laplacian_scalar_implicit(Nphi,  Ntheta, dealias, dtype):
 #     Nphi = 1
 #     c, d, b, phi, r, x, y = basis(Nphi, Ntheta, dealias, dtype=dtype)
 #     u = field.Field(dist=d, bases=(b,), tensorsig=(c,), dtype=dtype)
-#     u.preset_scales(b.domain.dealias)
+#     u.preset_scales(dealias)
 #     u['g'][1] = 4 * r**3
 #     v = operators.Laplacian(u, c).evaluate()
 #     vg = 0 * v['g']

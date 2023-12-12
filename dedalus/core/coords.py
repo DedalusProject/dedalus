@@ -67,13 +67,10 @@ class Coordinate:
 
 class DirectProduct(CoordinateSystem):
 
-    def __init__(self, *coords):
-        print(coords)
-        self.coords = coords
-        self.dim = sum(coord.dim for coord in coords)
-
-
-
+    def __init__(self, *coordsystems):
+        self.coordsystems = coordsystems
+        self.coords = sum((cs.coords for cs in coordsystems), ())
+        self.dim = sum(cs.dim for cs in coordsystems)
 
 
 class CartesianCoordinates(CoordinateSystem):

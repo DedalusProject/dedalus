@@ -19,7 +19,7 @@ def test_sin_jacobi(N, a, b, dealias, dtype):
     c = d3.Coordinate('x')
     d = d3.Distributor(c, dtype=dtype)
     b = d3.Jacobi(c, size=N, bounds=(0, 1), a=a, b=b, dealias=dealias)
-    x = d.local_grid(b, scales=1)
+    x = d.local_grid(b, scale=1)
     # Fields
     u = d.Field(bases=b)
     tau = d.Field()
@@ -149,7 +149,7 @@ def test_lane_emden_floating_R(Nr, dtype, dealias):
     b = d3.BallBasis(c, (1, 1, Nr), radius=1, dtype=dtype, dealias=dealias)
     bs = b.S2_basis(radius=1)
     bs0 = b.S2_basis(radius=0)
-    phi, theta, r = ds(b, scales=(1, 1, 1))
+    phi, theta, r = d.local_grids(b, scales=(1, 1, 1))
     # Fields
     f = d3.Field(dist=d, bases=(b,), dtype=dtype, name='f')
     R = d3.Field(dist=d, dtype=dtype, name='R')
