@@ -1614,19 +1614,17 @@ class SpinRecombinationBasis:
                 # Recombinations alternate between using gdata/out as input/output
                 # For an even number of transforms, we need a final copy
                 num_recombinations = 0
+                coord0 = self.coordsys.coords[0]
                 for i, Ui in enumerate(factors):
                     if Ui is not None:
-                        dim = Ui.shape[0]
+                        subaxis = tensorsig[i].coords.index(coord0)
                         if num_recombinations % 2 == 0:
                             input_view = reduced_view_5(gdata, i, azimuth_axis+len(tensorsig))
                             output_view = reduced_view_5(out, i, azimuth_axis+len(tensorsig))
                         else:
                             input_view = reduced_view_5(out, i, azimuth_axis+len(tensorsig))
                             output_view = reduced_view_5(gdata, i, azimuth_axis+len(tensorsig))
-                        if dim == 3:
-                            spin_recombination.recombine_forward_dim3(input_view, output_view)
-                        elif dim == 2:
-                            spin_recombination.recombine_forward_dim2(input_view, output_view)
+                        spin_recombination.recombine_forward(subaxis, input_view, output_view)
                         num_recombinations += 1
                 if num_recombinations % 2 == 0:
                     np.copyto(out, gdata)
@@ -1651,19 +1649,17 @@ class SpinRecombinationBasis:
                 # Recombinations alternate between using gdata/out as input/output
                 # For an even number of transforms, we need a final copy
                 num_recombinations = 0
+                coord0 = self.coordsys.coords[0]
                 for i, Ui in enumerate(factors):
                     if Ui is not None:
-                        dim = Ui.shape[0]
+                        subaxis = tensorsig[i].coords.index(coord0)
                         if num_recombinations % 2 == 0:
                             input_view = reduced_view_5(gdata, i, azimuth_axis+len(tensorsig))
                             output_view = reduced_view_5(out, i, azimuth_axis+len(tensorsig))
                         else:
                             input_view = reduced_view_5(out, i, azimuth_axis+len(tensorsig))
                             output_view = reduced_view_5(gdata, i, azimuth_axis+len(tensorsig))
-                        if dim == 3:
-                            spin_recombination.recombine_backward_dim3(input_view, output_view)
-                        elif dim == 2:
-                            spin_recombination.recombine_backward_dim2(input_view, output_view)
+                        spin_recombination.recombine_backward(subaxis, input_view, output_view)
                         num_recombinations += 1
                 if num_recombinations % 2 == 0:
                     np.copyto(out, gdata)
