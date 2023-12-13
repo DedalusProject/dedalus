@@ -1567,35 +1567,27 @@ def reduced_view_5(data, axis1, axis2):
 class SpinRecombinationBasis:
 
     @CachedMethod
-    def spin_recombination_matrices(self, tensorsig):
-        """Build matrices for appling spin recombination to each tensor rank."""
-        # Setup unitary spin recombination
-        # [azimuth, colatitude] -> [-, +]
-        Us = {2:np.array([[-1j, 1], [1j, 1]]) / np.sqrt(2),
-              3:np.array([[-1j, 1, 0], [1j, 1, 0], [0, 0, np.sqrt(2)]]) / np.sqrt(2)}
-        # Perform unitary spin recombination along relevant tensor indeces
-        U = []
+    def spin_recombination_factors(self, tensorsig):
+        """Build matrices for applying spin recombination to each tensor rank."""
+        # Spin recombinations are separable over tensor index
+        factors = []
+        coord1 = self.coordsys.coords[1]
         for i, cs in enumerate(tensorsig):
-            if (cs is self.coordsys or
-                (type(cs) is SphericalCoordinates and self.coordsys is cs.S2coordsys) or
-                (type(self.coordsys) is SphericalCoordinates and self.coordsys.S2coordsys is cs)):
-                U.append(Us[cs.dim])
-            #if self.coordsys is vs: # kludge before we decide how compound coordinate systems work
-            #    Ui = np.identity(vs.dim, dtype=np.complex128)
-            #    Ui[:self.dim, :self.dim] = Us
-            #    U.append(Ui)
-            #elif self.coordsys in vs.spaces:
-            #    n = vector_space.get_index(self.space)
-            #    Ui = np.identity(vector_space.dim, dtype=np.complex128)
-            #    Ui[n:n+self.dim, n:n+self.dim] = Us
-            #    U.append(Ui)
+            if coord1 in cs.coords:
+                subaxis = cs.coords.index(coord1)
+                factors.append(cs.forward_intertwiner(subaxis, order=1, group=None))  # no group dependence
             else:
-                U.append(None)
-        return U
+                factors.append(None)
+        return factors
 
     def spin_recombination_matrix(self, tensorsig):
-        U = self.spin_recombination_matrices(tensorsig)
-        matrix = kron(*U)
+        # Combine factors, replacing None placeholders
+        factors = self.spin_recombination_factors(tensorsig)
+        for i, cs in enumerate(tensorsig):
+            if factors[i] is None:
+                factors[i] = np.identity(cs.dim)
+        matrix = kron(*factors)
+        # Expand for cos and msin parts
         if self.dtype == np.float64:
             #matrix = np.array([[matrix.real,-matrix.imag],[matrix.imag,matrix.real]])
             matrix = (np.kron(matrix.real,np.array([[1,0],[0,1]]))
@@ -1610,11 +1602,11 @@ class SpinRecombinationBasis:
             np.copyto(out, gdata)
         else:
             azimuth_axis = colat_axis - 1
-            U = self.spin_recombination_matrices(tensorsig)
+            factors = self.spin_recombination_factors(tensorsig)
             if gdata.dtype == np.complex128:
                 # HACK: just copying the data so we can apply_matrix repeatedly
                 np.copyto(out, gdata)
-                for i, Ui in enumerate(U):
+                for i, Ui in enumerate(factors):
                     if Ui is not None:
                         # Directly apply U
                         apply_matrix(Ui, out, axis=i, out=out)
@@ -1622,7 +1614,7 @@ class SpinRecombinationBasis:
                 # Recombinations alternate between using gdata/out as input/output
                 # For an even number of transforms, we need a final copy
                 num_recombinations = 0
-                for i, Ui in enumerate(U):
+                for i, Ui in enumerate(factors):
                     if Ui is not None:
                         dim = Ui.shape[0]
                         if num_recombinations % 2 == 0:
@@ -1647,11 +1639,11 @@ class SpinRecombinationBasis:
             np.copyto(out, gdata)
         else:
             azimuth_axis = colat_axis - 1
-            U = self.spin_recombination_matrices(tensorsig)
+            factors = self.spin_recombination_factors(tensorsig)
             if gdata.dtype == np.complex128:
                 # HACK: just copying the data so we can apply_matrix repeatedly
                 np.copyto(out, gdata)
-                for i, Ui in enumerate(U):
+                for i, Ui in enumerate(factors):
                     if Ui is not None:
                         # Directly apply U
                         apply_matrix(Ui.T.conj(), out, axis=i, out=out)
@@ -1659,7 +1651,7 @@ class SpinRecombinationBasis:
                 # Recombinations alternate between using gdata/out as input/output
                 # For an even number of transforms, we need a final copy
                 num_recombinations = 0
-                for i, Ui in enumerate(U):
+                for i, Ui in enumerate(factors):
                     if Ui is not None:
                         dim = Ui.shape[0]
                         if num_recombinations % 2 == 0:

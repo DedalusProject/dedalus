@@ -4,7 +4,7 @@ import numpy as np
 from ..libraries.dedalus_sphere import jacobi
 from ..libraries import dedalus_sphere
 
-from ..tools.array import nkron
+from ..tools.array import nkron, sparse_block_diag
 from ..tools.cache import CachedMethod
 
 # Public interface
@@ -39,8 +39,31 @@ class CoordinateSystem:
     def check_bounds(self, coord, bounds):
         pass
 
+    def forward_intertwiner(self, subaxis, order, group):
+        raise NotImplementedError("Subclasses must implement.")
 
-class Coordinate:
+    def backward_intertwiner(self, subaxis, order, group):
+        raise NotImplementedError("Subclasses must implement.")
+
+
+class SeparableIntertwiners:
+
+    def forward_vector_intertwiner(self, subaxis, group):
+        raise NotImplementedError("Subclasses must implement.")
+
+    def backward_vector_intertwiner(self, subaxis, group):
+        raise NotImplementedError("Subclasses must implement.")
+
+    def forward_intertwiner(self, subaxis, order, group):
+        vector = self.forward_vector_intertwiner(subaxis, group)
+        return nkron(vector, order)
+
+    def backward_intertwiner(self, subaxis, order, group):
+        vector = self.backward_vector_intertwiner(subaxis, group)
+        return nkron(vector, order)
+
+
+class Coordinate(SeparableIntertwiners):
     dim = 1
     default_nonconst_groups = (1,)
     curvilinear = False
@@ -64,16 +87,47 @@ class Coordinate:
         if self.cs == None: return
         else: self.cs.check_bounds(self, bounds)
 
+    def forward_vector_intertwiner(self, subaxis, group):
+        return np.array([[1]])
 
-class DirectProduct(CoordinateSystem):
+    def backward_vector_intertwiner(self, subaxis, group):
+        return np.array([[1]])
+
+
+class DirectProduct(SeparableIntertwiners, CoordinateSystem):
 
     def __init__(self, *coordsystems):
+        for cs in coordsystems:
+            if not isinstance(cs, SeparableIntertwiners):
+                raise NotImplementedError("Direct products only implemented for separable intertwiners.")
         self.coordsystems = coordsystems
         self.coords = sum((cs.coords for cs in coordsystems), ())
         self.dim = sum(cs.dim for cs in coordsystems)
 
+    def forward_vector_intertwiner(self, subaxis, group):
+        factors = []
+        start_axis = 0
+        for cs in self.coordsystems:
+            if start_axis <= subaxis < start_axis + cs.dim:
+                factors.append(cs.forward_vector_intertwiner(subaxis-start_axis, group))
+            else:
+                factors.append(np.identity(cs.dim))
+            start_axis += cs.dim
+        return sparse_block_diag(factors).A
 
-class CartesianCoordinates(CoordinateSystem):
+    def backward_vector_intertwiner(self, subaxis, group):
+        factors = []
+        start_axis = 0
+        for cs in self.coordsystems:
+            if start_axis <= subaxis < start_axis + cs.dim:
+                factors.append(cs.backward_vector_intertwiner(subaxis-start_axis, group))
+            else:
+                factors.append(np.identity(cs.dim))
+            start_axis += cs.dim
+        return sparse_block_diag(factors).A
+
+
+class CartesianCoordinates(SeparableIntertwiners, CoordinateSystem):
 
     curvilinear = False
 
@@ -87,11 +141,11 @@ class CartesianCoordinates(CoordinateSystem):
     def __str__(self):
         return '{' + ','.join([c.name for c in self.coords]) + '}'
 
-    def forward_intertwiner(self, subaxis, order, group):
-        return np.identity(self.dim**order)
+    def forward_vector_intertwiner(self, subaxis, group):
+        return np.identity(self.dim)
 
-    def backward_intertwiner(self, subaxis, order, group):
-        return np.identity(self.dim**order)
+    def backward_vector_intertwiner(self, subaxis, group):
+        return np.identity(self.dim)
 
     @CachedMethod
     def unit_vector_fields(self, dist):
@@ -112,7 +166,7 @@ class CurvilinearCoordinateSystem(CoordinateSystem):
     curvilinear = True
 
 
-class S2Coordinates(CurvilinearCoordinateSystem):
+class S2Coordinates(SeparableIntertwiners, CurvilinearCoordinateSystem):
     """
     S2 coordinate system: (azimuth, colatitude)
     Coord component ordering: (azimuth, colatitude)
@@ -136,35 +190,37 @@ class S2Coordinates(CurvilinearCoordinateSystem):
         Ui = {+1: np.array([+1j, 1]) / np.sqrt(2),
               -1: np.array([-1j, 1]) / np.sqrt(2)}
         U = np.array([Ui[spin] for spin in cls.spin_ordering])
-        return nkron(U, order)
+        if order > 1:
+            U = nkron(U, order)
+        return U
 
     @classmethod
     def _U_backward(cls, order):
         """Unitary transform from spin to coord components."""
         return cls._U_forward(order).T.conj()
 
-    def forward_intertwiner(self, subaxis, order, group):
+    def forward_vector_intertwiner(self, subaxis, group):
         if subaxis == 0:
             # Azimuth intertwiner is identity, independent of group
-            return np.identity(self.dim**order)
+            return np.identity(self.dim)
         elif subaxis == 1:
             # Colatitude intertwiner is spin-U, independent of group
-            return self._U_forward(order)
+            return self._U_forward(1)
         else:
             raise ValueError("Invalid axis")
 
-    def backward_intertwiner(self, subaxis, order, group):
+    def backward_vector_intertwiner(self, subaxis, group):
         if subaxis == 0:
             # Azimuth intertwiner is identity, independent of group
-            return np.identity(self.dim**order)
+            return np.identity(self.dim)
         elif subaxis == 1:
             # Colatitude intertwiner is spin-U, independent of group
-            return self._U_backward(order)
+            return self._U_backward(1)
         else:
             raise ValueError("Invalid axis")
 
 
-class PolarCoordinates(CurvilinearCoordinateSystem):
+class PolarCoordinates(SeparableIntertwiners, CurvilinearCoordinateSystem):
     """
     Polar coordinate system: (azimuth, radius)
     Coord component ordering: (azimuth, radius)
@@ -188,30 +244,32 @@ class PolarCoordinates(CurvilinearCoordinateSystem):
         Ui = {+1: np.array([+1j, 1]) / np.sqrt(2),
               -1: np.array([-1j, 1]) / np.sqrt(2)}
         U = np.array([Ui[spin] for spin in cls.spin_ordering])
-        return nkron(U, order)
+        if order > 1:
+            U = nkron(U, order)
+        return U
 
     @classmethod
     def _U_backward(cls, order):
         """Unitary transform from spin to coord components."""
         return cls._U_forward(order).T.conj()
 
-    def forward_intertwiner(self, subaxis, order, group):
+    def forward_vector_intertwiner(self, subaxis, group):
         if subaxis == 0:
             # Azimuth intertwiner is identity, independent of group
-            return np.identity(self.dim**order)
+            return np.identity(self.dim)
         elif subaxis == 1:
             # Radial intertwiner is spin-U, independent of group
-            return self._U_forward(order)
+            return self._U_forward(1)
         else:
             raise ValueError("Invalid axis")
 
-    def backward_intertwiner(self, subaxis, order, group):
+    def backward_vector_intertwiner(self, subaxis, group):
         if subaxis == 0:
             # Azimuth intertwiner is identity, independent of group
-            return np.identity(self.dim**order)
+            return np.identity(self.dim)
         elif subaxis == 1:
             # Radial intertwiner is spin-U, independent of group
-            return self._U_backward(order)
+            return self._U_backward(1)
         else:
             raise ValueError("Invalid axis")
 

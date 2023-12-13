@@ -533,6 +533,84 @@ def test_polar_tensor_roundtrip_mmax0(Nr, radius, alpha, k, dealias, dtype, buil
     assert np.allclose(f['g'], fg)
 
 
+## Cylinders
+
+@CachedMethod
+def build_periodic_cylinder(Nz, Nphi, Nr, length, radius, alpha, k, dealias, dtype):
+    cz = coords.Coordinate('z')
+    cp = coords.PolarCoordinates('phi', 'r')
+    c = coords.DirectProduct(cz, cp)
+    d = distributor.Distributor(c)
+    bz = basis.Fourier(cz, Nz, bounds=(0, length), dealias=dealias, dtype=dtype)
+    bp = basis.DiskBasis(cp, (Nphi, Nr), dtype=dtype, radius=radius, alpha=alpha, k=k, dealias=(dealias, dealias))
+    return c, d, (bz, bp)
+
+@CachedMethod
+def build_periodic_cylindrical_annulus(Nz, Nphi, Nr, length, radius, alpha, k, dealias, dtype):
+    cz = coords.Coordinate('z')
+    cp = coords.PolarCoordinates('phi', 'r')
+    c = coords.DirectProduct(cz, cp)
+    d = distributor.Distributor(c)
+    bz = basis.Fourier(cz, Nz, bounds=(0, length), dealias=dealias, dtype=dtype)
+    bp = basis.AnnulusBasis(cp, (Nphi, Nr), dtype=dtype, radii=(radius,radius+1.3), alpha=alpha, k=k, dealias=(dealias, dealias))
+    return c, d, (bz, bp)
+
+Nz_range = [8]
+Nphi_range = [16]
+Nr_range = [16]
+length_range = [1.7]
+radius_range = [2.5]
+alpha_range = [0, 1]
+k_range = [0, 1, 2]
+dealias_range = [1/2, 1, 3/2]
+dtype_range = [np.float64, np.complex128]
+layout_range = ['g', 'c']
+rank_range = [0, 1, 2]
+
+@pytest.mark.parametrize('Nz', Nr_range)
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('length', length_range)
+@pytest.mark.parametrize('radius', radius_range)
+@pytest.mark.parametrize('alpha', alpha_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('layout', layout_range)
+@pytest.mark.parametrize('rank', rank_range)
+@pytest.mark.parametrize('build_basis', [build_periodic_cylinder, build_periodic_cylindrical_annulus])
+def test_cylinder_roundtrip_noise(Nz, Nphi, Nr, length, radius, alpha, k, dealias, dtype, layout, rank, build_basis):
+    c, d, b = build_basis(Nz, Nphi, Nr, length, radius, alpha, k, dealias, dtype)
+    tensorsig = (c,) * rank
+    f = field.Field(dist=d, bases=b, tensorsig=tensorsig, dtype=dtype)
+    f.preset_scales(dealias)
+    other = {'g':'c', 'c':'g'}[layout]
+    f[other] = np.random.randn(*f[other].shape)
+    f_layout = f[layout].copy()
+    f[other]
+    assert np.allclose(f_layout, f[layout])
+
+@pytest.mark.parametrize('Nz', Nr_range)
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('length', length_range)
+@pytest.mark.parametrize('radius', radius_range)
+@pytest.mark.parametrize('alpha', alpha_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('layout', layout_range)
+@pytest.mark.parametrize('build_basis', [build_periodic_cylinder, build_periodic_cylindrical_annulus])
+def test_cylinder_axial_vector_roundtrip_noise(Nz, Nphi, Nr, length, radius, alpha, k, dealias, dtype, layout, build_basis):
+    c, d, b = build_basis(Nz, Nphi, Nr, length, radius, alpha, k, dealias, dtype)
+    tensorsig = (c,)
+    f = field.Field(dist=d, bases=b, tensorsig=tensorsig, dtype=dtype)
+    f.preset_scales(dealias)
+    other = {'g':'c', 'c':'g'}[layout]
+    f[other][0] = np.random.randn(*f[other][0].shape)
+    assert np.allclose(f[layout][1:], 0)
+
+
 ## Shell
 
 @CachedMethod
