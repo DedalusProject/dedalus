@@ -3253,29 +3253,13 @@ class CartCompBase(LinearOperator, metaclass=MultiClass):
 
     name = 'Comp'
 
-    def __init__(self, operand, index, coord, out=None):
-        super().__init__(operand, out=out)
-        self.index = index
-        self.coord = coord
-        self.coordsys = operand.tensorsig[index]
-        self.coord_subaxis = self.dist.get_axis(coord) - self.dist.get_axis(self.coordsys)
-        # LinearOperator requirements
-        self.operand = operand
-        # FutureField requirements
-        self.domain = operand.domain
-        self.tensorsig = operand.tensorsig[:index] + operand.tensorsig[index+1:]
-        self.dtype = operand.dtype
-
     @classmethod
-    def _check_args(cls, operand, index, coord, out=None):
+    def _check_args(cls, operand, index, comp, out=None):
         # Dispatch by coordinate system
         return isinstance(operand.tensorsig[index], cls.cs_type)
 
     def new_operand(self, operand, **kw):
-        return CartCompBase(operand, self.index, self.coord, **kw)
-
-    # def separability(self, *vars):
-    #     return self.operand.separability(*vars)
+        return CartCompBase(operand, self.index, self.comp, **kw)
 
     def matrix_dependence(self, *vars):
         return self.operand.matrix_dependence(*vars)
@@ -3286,7 +3270,20 @@ class CartCompBase(LinearOperator, metaclass=MultiClass):
 
 class CartesianComponent(CartCompBase):
 
-    cs_type = coords.CartesianCoordinates
+    cs_type = (coords.CartesianCoordinates, coords.Coordinate)
+
+    def __init__(self, operand, index, comp, out=None):
+        super().__init__(operand, out=out)
+        self.index = index
+        self.comp = comp
+        self.coordsys = operand.tensorsig[index]
+        self.coord_subaxis = self.dist.get_axis(comp) - self.dist.get_axis(self.coordsys)
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = operand.domain
+        self.tensorsig = operand.tensorsig[:index] + operand.tensorsig[index+1:]
+        self.dtype = operand.dtype
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""
@@ -3319,6 +3316,59 @@ class CartesianComponent(CartCompBase):
         out.data[:] = arg0.data[take_comp]
 
 
+class DirectProductComponent(CartCompBase):
+
+    cs_type = coords.DirectProduct
+
+    def __init__(self, operand, index, comp, out=None):
+        super().__init__(operand, out=out)
+        self.index = index
+        self.comp = comp
+        self.coordsys = operand.tensorsig[index]
+        self.comp_subaxis = self.dist.get_axis(comp) - self.dist.get_axis(self.coordsys)
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = operand.domain
+        tensorsig = list(operand.tensorsig)
+        tensorsig[index] = comp
+        self.tensorsig = tuple(tensorsig)
+        self.dtype = operand.dtype
+        # Slicing for component
+        comp_slice = slice(self.comp_subaxis, self.comp_subaxis+comp.dim)
+        self.comp_slices = tuple([None]*index + [comp_slice])
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Any layout
+        return True
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Any layout
+        pass
+
+    def subproblem_matrix(self, subproblem):
+        # Build identities for each tangent space
+        factors = [sparse.identity(cs.dim, format='csr') for cs in self.operand.tensorsig]
+        factors.append(sparse.identity(subproblem.coeff_size(self.domain), format='csr'))
+        # Build selection matrix for selected coord
+        index_factor = np.zeros((self.comp.dim, self.coordsys.dim))
+        for i in range(self.comp.dim):
+            index_factor[i, self.comp_subaxis+i] = 1
+        # Replace indexed factor with selection matrix
+        factors[self.index] = index_factor
+        return reduce(sparse.kron, factors, 1).tocsr()
+
+    def operate(self, out):
+        """Perform operation."""
+        arg0 = self.args[0]
+        # Set output layout
+        out.preset_layout(arg0.layout)
+        # Copy specified comonent
+        out.data[:] = arg0.data[self.comp_slices]
+
+
 @alias("div")
 class Divergence(LinearOperator, metaclass=MultiClass):
 
@@ -3345,13 +3395,65 @@ class Divergence(LinearOperator, metaclass=MultiClass):
 
 class CartesianDivergence(Divergence):
 
-    cs_type = coords.CartesianCoordinates
+    cs_type = (coords.CartesianCoordinates, coords.Coordinate)
+
+    def __init__(self, operand, index=0, out=None):
+        coordsys = operand.tensorsig[index]
+        # Wrap to handle gradient wrt single coordinate
+        if isinstance(coordsys, coords.Coordinate):
+            coordsys = coords.CartesianCoordinates(coordsys.name)
+        # Get components
+        comps = [CartesianComponent(operand, index=index, comp=c) for c in coordsys.coords]
+        comps = [Differentiate(comp, c) for comp, c in zip(comps, coordsys.coords)]
+        arg = sum(comps)
+        LinearOperator.__init__(self, arg, out=out)
+        self.index = index
+        self.coordsys = coordsys
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = arg.domain
+        self.tensorsig = arg.tensorsig
+        self.dtype = arg.dtype
+
+    def matrix_dependence(self, *vars):
+        return self.args[0].matrix_dependence(*vars)
+
+    def matrix_coupling(self, *vars):
+        return self.args[0].matrix_coupling(*vars)
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Any layout (addition is done)
+        return True
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Any layout (addition is done)
+        pass
+
+    def subproblem_matrix(self, subproblem):
+        """Build operator matrix for a specific subproblem."""
+        return self.args[0].expression_matrices(subproblem, [self.operand])[self.operand]
+
+    def operate(self, out):
+        """Perform operation."""
+        # OPTIMIZE: this has an extra copy
+        arg0 = self.args[0]
+        # Set output layout
+        out.preset_layout(arg0.layout)
+        np.copyto(out.data, arg0.data)
+
+
+class DirectProductDivergence(Divergence):
+
+    cs_type = coords.DirectProduct
 
     def __init__(self, operand, index=0, out=None):
         coordsys = operand.tensorsig[index]
         # Get components
-        comps = [CartesianComponent(operand, index=index, coord=c) for c in coordsys.coords]
-        comps = [Differentiate(comp, c) for comp, c in zip(comps, coordsys.coords)]
+        comps = [DirectProductComponent(operand, index=index, comp=cs) for cs in coordsys.coordsystems]
+        comps = [Divergence(comp, index) for comp, cs in zip(comps, coordsys.coordsystems)]
         arg = sum(comps)
         LinearOperator.__init__(self, arg, out=out)
         self.index = index
@@ -3534,6 +3636,7 @@ class Curl(LinearOperator, metaclass=MultiClass):
     def new_operand(self, operand, **kw):
         return Curl(operand, index=self.index, **kw)
 
+
 class CartesianCurl(Curl):
 
     cs_type = coords.CartesianCoordinates
@@ -3543,7 +3646,7 @@ class CartesianCurl(Curl):
         if coordsys.dim != 3:
             raise ValueError("CartesianCurl is only implemented for 3D vector fields. For 2D, use skew gradient.")
         # Get components
-        comps = [CartesianComponent(operand, index=index, coord=c) for c in coordsys.coords]
+        comps = [CartesianComponent(operand, index=index, comp=c) for c in coordsys.coords]
         x_comp = Differentiate(comps[2], coordsys.coords[1]) - Differentiate(comps[1], coordsys.coords[2])
         y_comp = Differentiate(comps[0], coordsys.coords[2]) - Differentiate(comps[2], coordsys.coords[0])
         z_comp = Differentiate(comps[1], coordsys.coords[0]) - Differentiate(comps[0], coordsys.coords[1])
@@ -3902,10 +4005,58 @@ class Laplacian(LinearOperator, metaclass=MultiClass):
 
 class CartesianLaplacian(Laplacian):
 
-    cs_type = coords.CartesianCoordinates
+    cs_type = (coords.CartesianCoordinates, coords.Coordinate)
 
     def __init__(self, operand, coordsys, out=None):
+        # Wrap to handle gradient wrt single coordinate
+        if isinstance(coordsys, coords.Coordinate):
+            coordsys = coords.CartesianCoordinates(coordsys.name)
         parts = [Differentiate(Differentiate(operand, c), c) for c in coordsys.coords]
+        arg = sum(parts)
+        LinearOperator.__init__(self, arg, out=out)
+        self.coordsys = coordsys
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = arg.domain
+        self.tensorsig = arg.tensorsig
+        self.dtype = arg.dtype
+
+    def matrix_dependence(self, *vars):
+        return self.args[0].matrix_dependence(*vars)
+
+    def matrix_coupling(self, *vars):
+        return self.args[0].matrix_coupling(*vars)
+
+    def subproblem_matrix(self, subproblem):
+        """Build operator matrix for a specific subproblem."""
+        return self.args[0].expression_matrices(subproblem, [self.operand])[self.operand]
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Any layout (addition is done)
+        return True
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Any layout (addition is done)
+        pass
+
+    def operate(self, out):
+        """Perform operation."""
+        # OPTIMIZE: this has an extra copy
+        arg0 = self.args[0]
+        # Set output layout
+        out.preset_layout(arg0.layout)
+        np.copyto(out.data, arg0.data)
+
+
+class DirectProductLaplacian(Laplacian):
+
+    cs_type = coords.DirectProduct
+
+    def __init__(self, operand, coordsys, out=None):
+        parts = [Laplacian(operand, cs) for cs in coordsys.coordsystems]
         arg = sum(parts)
         LinearOperator.__init__(self, arg, out=out)
         self.coordsys = coordsys

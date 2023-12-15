@@ -1580,12 +1580,16 @@ class SpinRecombinationBasis:
                 factors.append(None)
         return factors
 
-    def spin_recombination_matrix(self, tensorsig):
+    def spin_recombination_matrix(self, tensorsig, n_upstream):
         # Combine factors, replacing None placeholders
         factors = self.spin_recombination_factors(tensorsig)
         for i, cs in enumerate(tensorsig):
             if factors[i] is None:
                 factors[i] = np.identity(cs.dim)
+        # Add space for upstream groups
+        if n_upstream > 1:
+            # Create new list to avoid modifying cached list
+            factors = factors + [np.identity(n_upstream)]
         matrix = kron(*factors)
         # Expand for cos and msin parts
         if self.dtype == np.float64:
@@ -4925,7 +4929,8 @@ class PolarRadialInterpolate(operators.Interpolate, operators.PolarMOperator):
         matrix = super().subproblem_matrix(subproblem)
         radial_basis = self.input_basis
         if self.tensorsig != ():
-            U = radial_basis.spin_recombination_matrix(self.tensorsig)
+            n_upstream = prod(subproblem.coeff_shape(self.domain)[:self.last_axis-1])
+            U = radial_basis.spin_recombination_matrix(self.tensorsig, n_upstream=n_upstream)
             matrix = U.T.conj() @ matrix
         return matrix
 
@@ -4987,14 +4992,14 @@ class LiftDisk(operators.Lift, operators.PolarMOperator):
         S_out = radial_basis.spin_weights(self.tensorsig)  # Should this use output_basis?
         radial_axis = self.dist.last_axis(self.output_basis)
         m = subproblem.group[radial_axis - 1]
+        subshape_in = subproblem.coeff_shape(self.operand.domain)
+        subshape_out = subproblem.coeff_shape(self.domain)
         # Loop over components
         submatrices = []
         for spinindex_out, spintotal_out in np.ndenumerate(S_out):
             submatrix_row = []
             for spinindex_in, spintotal_in in np.ndenumerate(S_in):
                 # Build identity matrices for each axis
-                subshape_in = subproblem.coeff_shape(self.operand.domain)
-                subshape_out = subproblem.coeff_shape(self.domain)
                 if spinindex_out in self.spinindex_out(spinindex_in):
                     # Substitute factor for radial axis
                     factors = [sparse.eye(i, j, format='csr') for i, j in zip(subshape_out, subshape_in)]
@@ -5009,7 +5014,8 @@ class LiftDisk(operators.Lift, operators.PolarMOperator):
         matrix.tocsr()
         # Convert tau to spin first
         if self.tensorsig:
-            U = radial_basis.spin_recombination_matrix(self.tensorsig)
+            n_upstream = prod(subshape_out[:radial_axis-1])
+            U = radial_basis.spin_recombination_matrix(self.tensorsig, n_upstream=n_upstream)
             matrix = (matrix @ sparse.csr_matrix(U)).tocsr()
         return matrix
 
@@ -5037,14 +5043,14 @@ class LiftAnnulus(operators.Lift, operators.PolarMOperator):
         S_in = radial_basis.spin_weights(operand.tensorsig)
         S_out = radial_basis.spin_weights(self.tensorsig)  # Should this use output_basis?
         m = subproblem.group[self.last_axis - 1]
+        subshape_in = subproblem.coeff_shape(self.operand.domain)
+        subshape_out = subproblem.coeff_shape(self.domain)
         # Loop over components
         submatrices = []
         for spinindex_out, spintotal_out in np.ndenumerate(S_out):
             submatrix_row = []
             for spinindex_in, spintotal_in in np.ndenumerate(S_in):
                 # Build identity matrices for each axis
-                subshape_in = subproblem.coeff_shape(self.operand.domain)
-                subshape_out = subproblem.coeff_shape(self.domain)
                 if spinindex_out in self.spinindex_out(spinindex_in):
                     # Substitute factor for radial axis
                     factors = [sparse.eye(i, j, format='csr') for i, j in zip(subshape_out, subshape_in)]
@@ -5059,7 +5065,8 @@ class LiftAnnulus(operators.Lift, operators.PolarMOperator):
         matrix.tocsr()
         # Convert tau to spin first
         if self.tensorsig:
-            U = radial_basis.spin_recombination_matrix(self.tensorsig)
+            n_upstream = prod(subshape_out[:self.last_axis-1])
+            U = radial_basis.spin_recombination_matrix(self.tensorsig, n_upstream=n_upstream)
             matrix = (matrix @ sparse.csr_matrix(U)).tocsr()
         return matrix
 

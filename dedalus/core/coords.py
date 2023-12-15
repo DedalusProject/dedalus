@@ -5,7 +5,7 @@ from ..libraries.dedalus_sphere import jacobi
 from ..libraries import dedalus_sphere
 
 from ..tools.array import nkron, sparse_block_diag
-from ..tools.cache import CachedMethod
+from ..tools.cache import CachedMethod, CachedAttribute
 
 # Public interface
 __all__ = ['Coordinate',
@@ -127,6 +127,10 @@ class DirectProduct(SeparableIntertwiners, CoordinateSystem):
                 factors.append(np.identity(cs.dim))
             start_axis += cs.dim
         return sparse_block_diag(factors).A
+
+    @CachedAttribute
+    def default_nonconst_groups(self):
+        return sum((cs.default_nonconst_groups for cs in self.coordsystems), ())
 
 
 class CartesianCoordinates(SeparableIntertwiners, CoordinateSystem):
