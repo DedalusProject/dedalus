@@ -166,15 +166,6 @@ class EigenvalueSolver(SolverBase):
             A = L + target * M
             print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {sp.group}, matrix rank: {np.linalg.matrix_rank(A)}/{A.shape[0]}, cond: {np.linalg.cond(A):.1e}")
 
-    def _build_modified_left_eigenvectors(self):
-        sp = self.eigenvalue_subproblem
-        return - sp.pre_right@sp.M_min.T.conj()@self.left_eigenvectors
-
-    def _normalize_left_eigenvectors(self):
-        modified_left_eigenvectors = self._build_modified_left_eigenvectors()
-        norms = np.diag(modified_left_eigenvectors.T.conj() @ self.eigenvectors)
-        self.left_eigenvectors /= np.conj(norms)
-
     def solve_dense(self, subproblem, rebuild_matrices=False, left=False, normalize_left=True, **kw):
         """
         Perform dense eigenvector search for selected subproblem.
@@ -208,11 +199,14 @@ class EigenvalueSolver(SolverBase):
         eig_output = scipy.linalg.eig(A, b=B, left=left, **kw)
         # Unpack output
         if left:
-            self.eigenvalues, self.left_eigenvectors, pre_eigenvectors = eig_output
-            self.eigenvectors = sp.pre_right @ pre_eigenvectors
+            self.eigenvalues, pre_left_evecs, pre_right_evecs = eig_output
+            self.right_eigenvectors = self.eigenvectors = sp.pre_right @ pre_right_evecs
+            self.left_eigenvectors = sp.pre_left.H @ pre_left_evecs
+            self.modified_left_eigenvectors = (sp.M_min @ sp.pre_right_pinv).H @ pre_left_evecs
             if normalize_left:
-                self._normalize_left_eigenvectors()
-            self.modified_left_eigenvectors = self._build_modified_left_eigenvectors()
+                norms = np.diag(pre_left_evecs.T.conj() @ sp.M_min @ pre_right_evecs)
+                self.left_eigenvectors /= np.conj(norms)
+                self.modified_left_eigenvectors /= np.conj(norms)
         else:
             self.eigenvalues, pre_eigenvectors = eig_output
             self.eigenvectors = sp.pre_right @ pre_eigenvectors
@@ -255,15 +249,17 @@ class EigenvalueSolver(SolverBase):
         A = sp.L_min
         B = - sp.M_min
         # Solve for the right eigenvectors
-        self.eigenvalues, pre_eigenvectors = scipy_sparse_eigs(A=A, B=B, N=N, target=target, matsolver=self.matsolver, **kw)
-        self.eigenvectors = sp.pre_right @ pre_eigenvectors
+        self.eigenvalues, pre_right_evecs = scipy_sparse_eigs(A=A, B=B, N=N, target=target, matsolver=self.matsolver, **kw)
+        self.right_eigenvectors = self.eigenvectors = sp.pre_right @ pre_right_evecs
         if left:
             # Solve for the left eigenvectors
             # Note: this definition of "left eigenvectors" is consistent with the documentation for scipy.linalg.eig
-            self.left_eigenvalues, self.left_eigenvectors = scipy_sparse_eigs(A=A.getH(),
-                                                                              B=B.getH(),
-                                                                              N=N, target=np.conjugate(target),
-                                                                              matsolver=self.matsolver, **kw)
+            self.left_eigenvalues, pre_left_evecs = scipy_sparse_eigs(A=A.getH(), B=B.getH(),
+                                                                      N=N, target=np.conjugate(target),
+                                                                      matsolver=self.matsolver, **kw)
+            self.left_eigenvectors = sp.pre_left.H @ pre_left_evecs
+            self.modified_left_eigenvectors = (sp.M_min @ sp.pre_right_pinv).H @ pre_left_evecs
+            # Check that eigenvalues match
             if not np.allclose(self.eigenvalues, np.conjugate(self.left_eigenvalues)):
                 if raise_on_mismatch:
                     raise RuntimeError("Conjugate of left eigenvalues does not match right eigenvalues. "
@@ -272,11 +268,14 @@ class EigenvalueSolver(SolverBase):
                                        "solve_sparse().")
                 else:
                     logger.warning("Conjugate of left eigenvalues does not match right eigenvalues.")
-            # In absence of above warning, modified_left_eigenvectors forms a biorthogonal set with the right
-            # eigenvectors.
+                    if normalize_left:
+                        logger.warning("Cannot normalize left eigenvectors.")
+                        normalize_left = False
+            # Normalize
             if normalize_left:
-                self._normalize_left_eigenvectors()
-            self.modified_left_eigenvectors = self._build_modified_left_eigenvectors()
+                norms = np.diag(pre_left_evecs.T.conj() @ sp.M_min @ pre_right_evecs)
+                self.left_eigenvectors /= np.conj(norms)
+                self.modified_left_eigenvectors /= np.conj(norms)
 
     def set_state(self, index, subsystem):
         """
