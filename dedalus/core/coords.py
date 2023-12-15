@@ -102,6 +102,8 @@ class DirectProduct(SeparableIntertwiners, CoordinateSystem):
                 raise NotImplementedError("Direct products only implemented for separable intertwiners.")
         self.coordsystems = coordsystems
         self.coords = sum((cs.coords for cs in coordsystems), ())
+        if len(set(self.coords)) < len(self.coords):
+            raise ValueError("Cannot repeat coordinates in DirectProduct.")
         self.dim = sum(cs.dim for cs in coordsystems)
 
     def forward_vector_intertwiner(self, subaxis, group):
@@ -132,6 +134,8 @@ class CartesianCoordinates(SeparableIntertwiners, CoordinateSystem):
     curvilinear = False
 
     def __init__(self, *names, right_handed=True):
+        if len(set(names)) < len(names):
+            raise ValueError("Must specify unique names.")
         self.names = names
         self.dim = len(names)
         self.coords = tuple(Coordinate(name, cs=self) for name in names)

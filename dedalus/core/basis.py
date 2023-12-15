@@ -232,7 +232,7 @@ class Basis:
     #     return matrix[flags, :]
 
     @classmethod
-    def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff):
+    def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, ncc_tensorsig, arg_tensorsig, out_tensorsig, cutoff):
         # Simple matrix method by default
         return cls.ncc_matrix(ncc_basis, arg_basis, out_basis, coeffs.ravel(), cutoff=cutoff)
 
@@ -303,7 +303,7 @@ class Basis:
                                 raise NotImplementedError()
                             matrix = coeffs[ncc_comp].ravel()[0] * sparse.eye(M, N)
                         else:
-                            matrix = cls._last_axis_component_ncc_matrix(subproblem, ncc_basis, arg_basis, out_basis, coeffs[ncc_comp].squeeze(), ncc_comp, arg_comp, out_comp, cutoff=ncc_cutoff)
+                            matrix = cls._last_axis_component_ncc_matrix(subproblem, ncc_basis, arg_basis, out_basis, coeffs[ncc_comp].squeeze(), ncc_comp, arg_comp, out_comp, ncc.tensorsig, operand.tensorsig, product.tensorsig, cutoff=ncc_cutoff)
                             # Domains with real Fourier bases require kroneckering the Jacobi NCC matrix up to match the subsystem shape including the sin and cos parts of RealFourier data
                             # This fix assumes the Jacobi basis is on the last axis
                             if matrix.shape != (M,N):
@@ -605,10 +605,10 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
             return super().product_matrix(arg_basis, out_basis, i)
         coeffs = np.zeros(i+1)
         coeffs[i] = 1
-        return self._last_axis_component_ncc_matrix(None, self, arg_basis, out_basis, coeffs, None, None, None, 0)
+        return self._last_axis_component_ncc_matrix(None, self, arg_basis, out_basis, coeffs, None, None, None, None, None, None, 0)
 
     @classmethod
-    def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff):
+    def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, ncc_tensorsig, arg_tensorsig, out_tensorsig, cutoff):
         if arg_basis is None:
             return super().ncc_matrix(ncc_basis, arg_basis, out_basis, coeffs.ravel(), cutoff=cutoff)
         # Jacobi parameters
@@ -1703,27 +1703,20 @@ class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):
 
     @CachedMethod
     def spin_weights(self, tensorsig):
-        # Spin-component ordering: [-, +, 0]
-        Ss = {2:np.array([-1, 1], dtype=int), 3:np.array([-1, 1, 0], dtype=int)}
         S = np.zeros([cs.dim for cs in tensorsig], dtype=int)
+        coord1 = self.coordsys.coords[1]
+        spin_order = np.array(self.coordsys.spin_ordering)
         for i, cs in enumerate(tensorsig):
-            if (self.coordsys == cs or
-                (type(cs) is SphericalCoordinates and self.coordsys == cs.S2coordsys) or
-                (type(self.coordsys) is SphericalCoordinates and self.coordsys.S2coordsys == cs)):
-                S[axslice(i, 0, cs.dim)] += reshape_vector(Ss[cs.dim], dim=len(tensorsig), axis=i)
-            #if self.coordsys is vs: # kludge before we decide how compound coordinate systems work
-            #    S[axslice(i, 0, self.dim)] += reshape_vector(Ss, dim=len(tensorsig), axis=i)
-            #elif self.coordsys in vs:
-            #    n = vs.get_index(self.coordsys)
-            #    S[axslice(i, n, n+self.dim)] += reshape_vector(Ss, dim=len(tensorsig), axis=i)
+            if coord1 in cs.coords:
+                start = cs.coords.index(coord1) - 1
+                S[axslice(i, start, start+self.coordsys.dim)] += reshape_vector(spin_order[:cs.dim], dim=len(tensorsig), axis=i)
+                # The slice in spin_order is a hack so that 2-vectors on S2 with 3D spherical coordinates work
+                # Really it is more like cs.spin_ordering, but that fails for DirectProducts
         return S
 
-    @staticmethod
     @CachedMethod
-    def spintotal(spinindex):
-        spinorder = [-1, 1, 0]
-        spin = lambda index: spinorder[index]
-        return sum(spin(index) for index in spinindex)
+    def spintotal(self, tensorsig, spinindex):
+        return self.spin_weights(tensorsig)[spinindex]
 
 
 class PolarBasis(SpinBasis):
@@ -2285,9 +2278,9 @@ class AnnulusBasis(PolarBasis, metaclass=CachedClass):
         return operator(self.n_size(m), self.k).square.astype(np.float64)
 
     @classmethod
-    def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
+    def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, ncc_tensorsig, arg_tensorsig, out_tensorsig, cutoff=1e-6):
         m = subproblem.group[0]  # HACK
-        spintotal_arg = cls.spintotal(arg_comp)
+        spintotal_arg = out_basis.spintotal(arg_tensorsig, arg_comp)
         # Jacobi parameters
         a_ncc = ncc_basis.k + ncc_basis.alpha[0]
         b_ncc = ncc_basis.k + ncc_basis.alpha[1]
@@ -2562,11 +2555,11 @@ class DiskBasis(PolarBasis, metaclass=CachedClass):
         return operator(self.n_size(m), self.alpha + self.k, abs(m + spintotal)).square.astype(np.float64)
 
     @classmethod
-    def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
+    def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, ncc_tensorsig, arg_tensorsig, out_tensorsig, cutoff=1e-6):
         m = subproblem.group[0]  # HACK
-        spintotal_ncc = cls.spintotal(ncc_comp)
-        spintotal_arg = cls.spintotal(arg_comp)
-        spintotal_out = cls.spintotal(out_comp)
+        spintotal_ncc = out_basis.spintotal(ncc_tensorsig, ncc_comp)
+        spintotal_arg = out_basis.spintotal(arg_tensorsig, arg_comp)
+        spintotal_out = out_basis.spintotal(out_tensorsig, out_comp)
         regtotal_ncc = abs(spintotal_ncc)
         regtotal_arg = abs(m + spintotal_arg)
         regtotal_out = abs(m + spintotal_out)
@@ -2613,7 +2606,7 @@ class ConvertPolar(operators.Convert, operators.PolarMOperator):
 
     def radial_matrix(self, spinindex_in, spinindex_out, m):
         radial_basis = self.input_basis
-        spintotal = radial_basis.spintotal(spinindex_in)
+        spintotal = radial_basis.spintotal(self.operand.tensorsig, spinindex_in)
         dk = self.output_basis.k - radial_basis.k
         if spinindex_in == spinindex_out:
             return radial_basis.conversion_matrix(m, spintotal, dk)
@@ -2637,7 +2630,6 @@ class ConvertConstantDisk(operators.ConvertConstant, operators.PolarMOperator):
 
     def radial_matrix(self, spinindex_in, spinindex_out, m):
         radial_basis = self.output_basis
-        spintotal = radial_basis.spintotal(spinindex_in)
         coeff_size = radial_basis.shape[-1]
         if m == 0 and spinindex_in == spinindex_out:
             unit_amplitude = 1 / self.output_basis.constant_mode_value
@@ -2664,7 +2656,7 @@ class ConvertConstantAnnulus(operators.ConvertConstant, operators.PolarMOperator
 
     def radial_matrix(self, spinindex_in, spinindex_out, m):
         radial_basis = self.output_basis
-        spintotal = radial_basis.spintotal(spinindex_in)
+        spintotal = radial_basis.spintotal(self.operand.tensorsig, spinindex_in)
         coeff_size = radial_basis.shape[-1]
         if m == 0 and spinindex_in == spinindex_out:
             # Convert to k=0
@@ -3252,11 +3244,11 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
         return (-1)**(max(0,-order))*operator(size - 1 + max(abs(m), abs(spintotal)), m, spintotal).square.astype(np.float64)
 
     @classmethod
-    def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff):
+    def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, ncc_tensorsig, arg_tensorsig, out_tensorsig, cutoff):
         m = subproblem.group[0]  # HACK
-        spintotal_arg = cls.spintotal(arg_comp)
-        spintotal_ncc = cls.spintotal(ncc_comp)
-        spintotal_out = cls.spintotal(out_comp)
+        spintotal_arg = out_basis.spintotal(arg_tensorsig, arg_comp)
+        spintotal_ncc = out_basis.spintotal(ncc_tensorsig, ncc_comp)
+        spintotal_out = out_basis.spintotal(out_tensorsig, out_comp)
         # Jacobi parameters
         a_ncc = abs(spintotal_ncc)
         b_ncc = abs(spintotal_ncc)
@@ -3309,7 +3301,7 @@ class ConvertConstantSphere(operators.ConvertConstant, operators.SeparableSphere
         return (spinindex_in,)
 
     @staticmethod
-    def symbol(spinindex_in, spinindex_out, ell, radius):
+    def symbol(spinindex_in, spinindex_out, spintotal_in, spintotal_out, ell, radius):
         unit_amplitude = 1 / SphereBasis.constant_mode_value
         return unit_amplitude * (ell == 0) * (spinindex_in == spinindex_out)
 
@@ -3352,8 +3344,8 @@ class SphereDivergence(operators.Divergence, operators.SeparableSphereOperator):
             return tuple()
 
     @staticmethod
-    def symbol(spinindex_in, spinindex_out, ell, radius):
-        return SphereGradient.symbol(spinindex_in, spinindex_out, ell, radius)
+    def symbol(spinindex_in, spinindex_out, spintotal_in, spintotal_out, ell, radius):
+        return SphereGradient.symbol(spinindex_in, spinindex_out, spintotal_in, spintotal_out, ell, radius)
 
 
 class SphereGradient(operators.Gradient, operators.SeparableSphereOperator):
@@ -3387,9 +3379,7 @@ class SphereGradient(operators.Gradient, operators.SeparableSphereOperator):
         return ((0,) + spinindex_in, (1,) + spinindex_in)
 
     @staticmethod
-    def symbol(spinindex_in, spinindex_out, ell, radius):
-        spintotal_in = SphereBasis.spintotal(spinindex_in)
-        spintotal_out = SphereBasis.spintotal(spinindex_out)
+    def symbol(spinindex_in, spinindex_out, spintotal_in, spintotal_out, ell, radius):
         mu = spintotal_out - spintotal_in
         k = SphereBasis.k(ell, spintotal_in, mu)
         k[np.abs(spintotal_in) > ell] = 0
@@ -3426,9 +3416,7 @@ class SphereLaplacian(operators.Laplacian, operators.SeparableSphereOperator):
         return (spinindex_in,)
 
     @staticmethod
-    def symbol(spinindex_in, spinindex_out, ell, radius):
-        spintotal_in = SphereBasis.spintotal(spinindex_in)
-        spintotal_out = SphereBasis.spintotal(spinindex_out)
+    def symbol(spinindex_in, spinindex_out, spintotal_in, spintotal_out, ell, radius):
         k = SphereBasis.k
         kp = k(ell, spintotal_in, +1)
         km = k(ell, spintotal_in, -1)
@@ -3900,7 +3888,7 @@ class ShellRadialBasis(RegularityBasis, metaclass=CachedClass):
         return 0 * ell  # To have same array shape as ell
 
     @classmethod
-    def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
+    def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, ncc_tensorsig, arg_tensorsig, out_tensorsig, cutoff=1e-6):
         ell = 0  # HACK, independent of ell for shell
         arg_radial_basis = arg_basis.radial_basis
         regtotal_arg = cls.regtotal(arg_comp)
@@ -4115,7 +4103,7 @@ class BallRadialBasis(RegularityBasis, metaclass=CachedClass):
         return ell // 2
 
     @classmethod
-    def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, cutoff=1e-6):
+    def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, ncc_tensorsig, arg_tensorsig, out_tensorsig, cutoff=1e-6):
         ell = subproblem.group[1]  # HACK
         if isinstance(arg_basis, BallBasis):
             arg_radial_basis = arg_basis.radial_basis
@@ -4599,8 +4587,8 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
         subcoeff_vals = DeferredTuple(reg_NCC_matrix, size=len(subcoeff_norms))
         # Call last axis Clenshaw via ShellRadialBasis
         subcoeffs = (subcoeff_vals, subcoeff_norms)
-        ncc_comp = arg_comp = out_comp = tuple()
-        return self.radial_basis._last_axis_component_ncc_matrix(subproblem, ncc_basis, arg_basis, out_basis, subcoeffs, ncc_comp, arg_comp, out_comp, cutoff=ncc_cutoff)
+        ncc_comp = arg_comp = out_comp = ncc_tensorsig = arg_tensorsig = out_tensorsig = tuple()
+        return self.radial_basis._last_axis_component_ncc_matrix(subproblem, ncc_basis, arg_basis, out_basis, subcoeffs, ncc_comp, arg_comp, out_comp, ncc_tensorsig, arg_tensorsig, out_tensorsig, cutoff=ncc_cutoff)
 
 
 class BallBasis(Spherical3DBasis, metaclass=CachedClass):
@@ -4971,7 +4959,7 @@ class PolarRadialInterpolate(operators.Interpolate, operators.PolarMOperator):
         position = self.position
         basis = self.input_basis
         if spinindex_in == spinindex_out:
-            return self._radial_matrix(basis, m, basis.spintotal(spinindex_in), position)
+            return self._radial_matrix(basis, m, basis.spintotal(self.operand.tensorsig, spinindex_in), position)
         else:
             return np.zeros((1,basis.n_size(m)))
 
@@ -5356,7 +5344,7 @@ class SphereAverage(operators.Average, operators.SeparableSphereOperator):
         return (spinindex_in,)
 
     @staticmethod
-    def symbol(spinindex_in, spinindex_out, ell, radius):
+    def symbol(spinindex_in, spinindex_out, spintotal_in, spintotal_out, ell, radius):
         return 1.0 * (ell == 0) * (spinindex_in == spinindex_out)
 
 

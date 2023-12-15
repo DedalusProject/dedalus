@@ -2,7 +2,7 @@
 import pytest
 import numpy as np
 from dedalus.core import coords, distributor, basis, field, operators
-from dedalus.tools.cache import CachedMethod, CachedFunction
+from dedalus.tools.cache import CachedFunction
 from mpi4py import MPI
 
 comm = MPI.COMM_WORLD
@@ -264,7 +264,7 @@ def test_CF_J_1d_vector_roundtrip(a, b, Nx, Ny, dealias_x, dealias_y):
 
 ## Sphere
 
-@CachedMethod
+@CachedFunction
 def build_sphere_2d(Nphi, Ntheta, radius, dealias, dtype):
     c = coords.S2Coordinates('phi', 'theta')
     d = distributor.Distributor((c,))
@@ -272,7 +272,7 @@ def build_sphere_2d(Nphi, Ntheta, radius, dealias, dtype):
     phi, theta = d.local_grids(b, scales=(dealias, dealias))
     return c, d, b, phi, theta
 
-@CachedMethod
+@CachedFunction
 def build_sphere_3d(Nphi, Ntheta, radius, dealias, dtype):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
@@ -377,7 +377,7 @@ k_range = [0, 1, 2]
 dealias_range = [0.5, 1, 1.5]
 
 
-@CachedMethod
+@CachedFunction
 def build_disk(Nphi, Nr, radius, alpha, k, dealias, dtype):
     c = coords.PolarCoordinates('phi', 'r')
     d = distributor.Distributor((c,))
@@ -385,7 +385,7 @@ def build_disk(Nphi, Nr, radius, alpha, k, dealias, dtype):
     return c, d, b
 
 
-@CachedMethod
+@CachedFunction
 def build_annulus(Nphi, Nr, radius, alpha, k, dealias, dtype):
     c = coords.PolarCoordinates('phi', 'r')
     d = distributor.Distributor((c,))
@@ -535,7 +535,7 @@ def test_polar_tensor_roundtrip_mmax0(Nr, radius, alpha, k, dealias, dtype, buil
 
 ## Cylinders
 
-@CachedMethod
+@CachedFunction
 def build_periodic_cylinder(Nz, Nphi, Nr, length, radius, alpha, k, dealias, dtype):
     cz = coords.Coordinate('z')
     cp = coords.PolarCoordinates('phi', 'r')
@@ -545,7 +545,7 @@ def build_periodic_cylinder(Nz, Nphi, Nr, length, radius, alpha, k, dealias, dty
     bp = basis.DiskBasis(cp, (Nphi, Nr), dtype=dtype, radius=radius, alpha=alpha, k=k, dealias=(dealias, dealias))
     return c, d, (bz, bp)
 
-@CachedMethod
+@CachedFunction
 def build_periodic_cylindrical_annulus(Nz, Nphi, Nr, length, radius, alpha, k, dealias, dtype):
     cz = coords.Coordinate('z')
     cp = coords.PolarCoordinates('phi', 'r')
@@ -613,7 +613,7 @@ def test_cylinder_axial_vector_roundtrip_noise(Nz, Nphi, Nr, length, radius, alp
 
 ## Shell
 
-@CachedMethod
+@CachedFunction
 def build_shell(Nphi, Ntheta, Nr, radii, alpha, k, dealias, dtype):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))
@@ -678,7 +678,7 @@ def test_shell_roundtrip_noise(Nphi, Ntheta, Nr, radii, alpha, k, dealias, dtype
 
 ## Ball
 
-@CachedMethod
+@CachedFunction
 def build_ball(Nphi, Ntheta, Nr, radius, alpha, k, dealias, dtype):
     c = coords.SphericalCoordinates('phi', 'theta', 'r')
     d = distributor.Distributor((c,))

@@ -2300,10 +2300,15 @@ class Gradient(LinearOperator, metaclass=MultiClass):
 
 class CartesianGradient(Gradient):
 
-    cs_type = coords.CartesianCoordinates
+    cs_type = (coords.CartesianCoordinates, coords.Coordinate)
 
     def __init__(self, operand, coordsys, out=None):
+        # Wrap to handle gradient wrt single coordinate
+        if isinstance(coordsys, coords.Coordinate):
+            coordsys = coords.CartesianCoordinates(coordsys.name)
+        # Assemble partial derivatives along each coordinate
         args = [Differentiate(operand, coord) for coord in coordsys.coords]
+        # TODO: get rid of this hack
         for i in range(len(args)):
             if args[i] == 0:
                 args[i] = 2*operand
@@ -2362,6 +2367,86 @@ class CartesianGradient(Gradient):
                 out.data[i] = comp.data
             else:
                 out.data[i] = 0
+
+
+class DirectProductGradient(Gradient):
+
+    cs_type = coords.DirectProduct
+
+    def __init__(self, operand, coordsys, out=None):
+        args = [Gradient(operand, cs) for cs in coordsys.coordsystems]
+        bases = self._build_bases(operand, *args)
+        args = [convert(arg, bases) for arg in args]
+        LinearOperator.__init__(self, *args, out=out)
+        self.coordsys = coordsys
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = Domain(operand.dist, bases)
+        self.tensorsig = (coordsys,) + operand.tensorsig
+        self.dtype = operand.dtype
+
+    def _build_bases(self, *args):
+        """Build output bases."""
+        # Taken from Add operator
+        dist = unify_attributes(args, 'dist')
+        bases = []
+        for coord in args[0].domain.bases_by_coord:
+            ax_bases = tuple(arg.domain.bases_by_coord.get(coord, None) for arg in args)
+            # All constant bases yields constant basis
+            if all(basis is None for basis in ax_bases):
+                bases.append(None)
+            # Combine any constant bases to avoid adding None to None
+            elif any(basis is None for basis in ax_bases):
+                ax_bases = [basis for basis in ax_bases if basis is not None]
+                bases.append(np.sum(ax_bases) + None)
+            # Add all bases
+            else:
+                bases.append(np.sum(ax_bases))
+        return tuple(bases)
+
+    def matrix_dependence(self, *vars):
+        arg_vals = [arg.matrix_dependence(self, *vars) for arg in self.args]
+        return np.logical_or.reduce(arg_vals)
+
+    def matrix_coupling(self, *vars):
+        arg_vals = [arg.matrix_coupling(self, *vars) for arg in self.args]
+        return np.logical_or.reduce(arg_vals)
+
+    def subproblem_matrix(self, subproblem):
+        """Build operator matrix for a specific subproblem."""
+        return sparse.vstack(arg.expression_matrices(subproblem, [self.operand])[self.operand] for arg in self.args)
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Require operands to be in same layout
+        layouts = [operand.layout for operand in self.args if operand]
+        all_layouts_equal = (len(set(layouts)) == 1)
+        return all_layouts_equal
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Require operands to be in same layout
+        # Take coeff layout arbitrarily
+        layout = self.dist.coeff_layout
+        for arg in self.args:
+            if arg:
+                arg.change_layout(layout)
+
+    def operate(self, out):
+        """Perform operation."""
+        operands = self.args
+        layouts = [operand.layout for operand in self.args if operand]
+        # Set output layout
+        out.preset_layout(layouts[0])
+        # Copy operand data to output components
+        i0 = 0
+        for cs_grad, cs in zip(operands, self.coordsys.coordsystems):
+            if cs_grad:
+                out.data[i0:i0+cs.dim] = cs_grad.data
+            else:
+                out.data[i0:i0+cs.dim] = 0
+            i0 += cs.dim
 
 
 # class S2Gradient(Gradient, SpectralOperator):
@@ -2514,8 +2599,6 @@ class SpectralOperatorS2(SpectralOperator):
                         elif not m_dep:
                             ell_list = [l]
                         blocks = []
-                        spintotal_in = basis.spintotal(spinindex_in)
-                        spintotal_out = basis.spintotal(spinindex_out)
                         for ell in ell_list:
                             if abs(spintotal_in) <= ell and abs(spintotal_out) <= ell:
                                 block = self.l_matrix(self.input_basis, self.output_basis, spinindex_in, spinindex_out, ell)
@@ -2606,7 +2689,7 @@ class SeparableSphereOperator(SpectralOperator):
     subaxis_coupling = [False, False]  # No coupling
 
     @CachedMethod
-    def local_symbols(self, layout, spinindex_in, spinindex_out):
+    def local_symbols(self, layout, spinindex_in, spinindex_out, spintotal_in, spintotal_out):
         # TODO: improve caching specificity (e.g. for operators that depend only on spintotals)
         operand = self.args[0]
         if self.input_basis is None:
@@ -2620,12 +2703,12 @@ class SeparableSphereOperator(SpectralOperator):
         elif self.subaxis_dependence[1]:
             colat_axis = self.first_axis + 1
             local_ell = layout.local_group_arrays(domain, scales=domain.dealias)[colat_axis]
-            return self.symbol(spinindex_in, spinindex_out, local_ell, radius)
+            return self.symbol(spinindex_in, spinindex_out, spintotal_in, spintotal_out, local_ell, radius)
         else:
-            return self.symbol(spinindex_in, spinindex_out, radius)
+            return self.symbol(spinindex_in, spinindex_out, spintotal_in, spintotal_out, radius)
 
     @staticmethod
-    def symbol(spinindex_in, spinindex_out, ell):
+    def symbol(spinindex_in, spinindex_out, spintotal_in, spintotal_out, ell):
         raise NotImplementedError()
 
     def subproblem_matrix(self, subproblem):
@@ -2657,7 +2740,7 @@ class SeparableSphereOperator(SpectralOperator):
             for spinindex_in, spintotal_in in np.ndenumerate(S_in):
                 if (prod(subshape) > 0) and (spinindex_out in self.spinindex_out(spinindex_in)):
                     # Get symbols for overlapping data
-                    symbols = self.local_symbols(layout, spinindex_in, spinindex_out)
+                    symbols = self.local_symbols(layout, spinindex_in, spinindex_out, spintotal_in, spintotal_out)
                     if np.isscalar(symbols):
                         symbols = symbols * np.ones(prod(subshape))
                     else:
@@ -2721,7 +2804,8 @@ class SeparableSphereOperator(SpectralOperator):
                 comp_in = data_in[spinindex_in]
             for spinindex_out in self.spinindex_out(spinindex_in):
                 # Get symbols for overlapping data
-                symbols = self.local_symbols(layout, spinindex_in, spinindex_out)
+                spintotal_out = basis.spintotal(out.tensorsig, spinindex_out)
+                symbols = self.local_symbols(layout, spinindex_in, spinindex_out, spintotal_in, spintotal_out)
                 if slices and not np.isscalar(symbols):
                     symbols = symbols[slices]
                 # Multiply by symbols
@@ -2769,7 +2853,7 @@ class SphereEllProduct(SeparableSphereOperator, metaclass=MultiClass):
         self.tensorsig = operand.tensorsig
         self.dtype = operand.dtype
 
-    def symbol(self, spinindex_in, spinindex_out, local_ell, radius):
+    def symbol(self, spinindex_in, spinindex_out, spintotal_in, spintotal_out, local_ell, radius):
         return self.ell_r_func(local_ell, radius)
 
     def new_operand(self, operand, **kw):
@@ -2907,9 +2991,9 @@ class MulCosine(PolarMOperator, metaclass=MultiClass):
     @CachedMethod
     def radial_matrix(self, spinindex_in, spinindex_out, m):
         radial_basis = self.input_basis
-        spintotal = radial_basis.spintotal(spinindex_in)
+        spintotal_in = radial_basis.spintotal(self.operand.tensorsig, spinindex_in)
         if spinindex_out in self.spinindex_out(spinindex_in):
-            return self._radial_matrix(radial_basis.Lmax, spintotal, m, self.dtype)
+            return self._radial_matrix(radial_basis.Lmax, spintotal_in, m, self.dtype)
         else:
             raise ValueError("This should never happen")
 
@@ -2960,9 +3044,9 @@ class PolarGradient(Gradient, PolarMOperator):
     @CachedMethod
     def radial_matrix(self, spinindex_in, spinindex_out, m):
         radial_basis = self.input_basis
-        spintotal = radial_basis.spintotal(spinindex_in)
+        spintotal_in = radial_basis.spintotal(self.operand.tensorsig, spinindex_in)
         if spinindex_out in self.spinindex_out(spinindex_in):
-            return self._radial_matrix(radial_basis, spinindex_out[0], spintotal, m)
+            return self._radial_matrix(radial_basis, spinindex_out[0], spintotal_in, m)
         else:
             raise ValueError("This should never happen")
 
@@ -3411,9 +3495,9 @@ class PolarDivergence(Divergence, PolarMOperator):
     @CachedMethod
     def radial_matrix(self, spinindex_in, spinindex_out, m):
         radial_basis = self.input_basis
-        spintotal = radial_basis.spintotal(spinindex_in)
+        spintotal_in = radial_basis.spintotal(self.operand.tensorsig, spinindex_in)
         if spinindex_in[0] != 2 and spinindex_in[1:] == spinindex_out:
-            return self._radial_matrix(radial_basis, spinindex_in[0], spintotal, m)
+            return self._radial_matrix(radial_basis, spinindex_in[0], spintotal_in, m)
         else:
             raise ValueError("This should never happen")
 
@@ -3697,8 +3781,7 @@ class PolarCurl(Curl, PolarMOperator):
     @CachedMethod
     def radial_matrix(self, spinindex_in, spinindex_out, m):
         radial_basis = self.input_basis
-        spintotal_in = radial_basis.spintotal(spinindex_in)
-
+        spintotal_in = radial_basis.spintotal(self.operand.tensorsig, spinindex_in)
         if spinindex_in[1:] == spinindex_out:
             return self._radial_matrix(radial_basis, spinindex_in[0], spintotal_in, m)
         else:
@@ -4004,9 +4087,9 @@ class PolarLaplacian(Laplacian, PolarMOperator):
     @CachedMethod
     def radial_matrix(self, spinindex_in, spinindex_out, m):
         radial_basis = self.input_basis
-        spintotal = radial_basis.spintotal(spinindex_in)
+        spintotal_in = radial_basis.spintotal(self.operand.tensorsig, spinindex_in)
         if spinindex_in == spinindex_out:
-            return self._radial_matrix(radial_basis, spintotal, m)
+            return self._radial_matrix(radial_basis, spintotal_in, m)
         else:
             raise ValueError("This should never happen")
 
