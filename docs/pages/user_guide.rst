@@ -6,10 +6,11 @@ General user guide:
 .. toctree::
     :maxdepth: 1
 
-    changes_from_v2
-    configuration
+    problem_formulations
     performance_tips
+    configuration
     troubleshooting
+    changes_from_v2
 
 Specific how-to's:
 
