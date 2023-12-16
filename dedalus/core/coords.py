@@ -96,6 +96,8 @@ class Coordinate(SeparableIntertwiners):
 
 class DirectProduct(SeparableIntertwiners, CoordinateSystem):
 
+    curvilinear = True
+
     def __init__(self, *coordsystems):
         for cs in coordsystems:
             if not isinstance(cs, SeparableIntertwiners):
