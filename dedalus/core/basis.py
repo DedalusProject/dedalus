@@ -117,6 +117,15 @@ class Basis:
     def constant(self):
         return tuple(False for i in range(self.dim))
 
+    def __matmul__(self, other):
+        # NCC (self) * operand (other)
+        if other is None:
+            # All multiplications by constants return same basis
+            return self
+        else:
+            # Call __rmatmul__ codepath for operand basis
+            return other.__rmatmul__(self)
+
     # def __repr__(self):
     #     return '<%s %i>' %(self.__class__.__name__, id(self))
 
@@ -537,13 +546,6 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
             return other.__mul__(self)
         return NotImplemented
 
-    def __matmul__(self, other):
-        # NCC (self) * operand (other)
-        if other is None:
-            return self.__rmatmul__(other)
-        else:
-            return other.__rmatmul__(self)
-
     def __rmatmul__(self, other):
         # NCC (other) * operand (self)
         if other is None or other is self:
@@ -871,12 +873,6 @@ class FourierBase(IntervalBasis):
             return self
         # TODO: support different sizes
         return NotImplemented
-
-    def __matmul__(self, other):
-        if other is None:
-            return self.__rmatmul__(other)
-        else:
-            return other.__rmatmul__(self)
 
     def __rmatmul__(self, other):
         if other is None or other is self:
@@ -1720,7 +1716,7 @@ class SpinBasis(MultidimensionalBasis, SpinRecombinationBasis):
 
     @CachedMethod
     def spintotal(self, tensorsig, spinindex):
-        return self.spin_weights(tensorsig)[spinindex]
+        return int(self.spin_weights(tensorsig)[spinindex])
 
 
 class PolarBasis(SpinBasis):
@@ -2117,8 +2113,8 @@ class AnnulusBasis(PolarBasis, metaclass=CachedClass):
                 return self.clone_with(shape=shape, k=k)
         return NotImplemented
 
-    def __matmul__(self, other):
-        # NCC (self) * operand (other)
+    def __rmatmul__(self, other):
+        # NCC (other) * operand (self)
         # Same as __mul__ since conversion only needs to be upwards in k
         return self.__mul__(other)
 
@@ -2398,15 +2394,15 @@ class DiskBasis(PolarBasis, metaclass=CachedClass):
                 return self.clone_with(shape=shape, k=k)
         return NotImplemented
 
-    def __matmul__(self, other):
-        # NCC (self) * operand (other)
+    def __rmatmul__(self, other):
+        # NCC (other) * operand (self)
         if other is None:
             return self
         if isinstance(other, DiskBasis):
             if self.grid_params == other.grid_params:
                 # Everything matches except shape and k
                 shape = tuple(np.maximum(self.shape, other.shape))
-                k = other.k  # use operand's k value to minimize conversions
+                k = self.k  # use operand's k value to minimize conversions
                 return self.clone_with(shape=shape, k=k)
         return NotImplemented
 
@@ -2931,16 +2927,9 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
                 return self.clone_with(shape=shape)
         return NotImplemented
 
-    def __matmul__(self, other):
-        """NCC is self.
-
-        NB: This does not support NCCs with different number of modes than the fields.
-        """
-        if other is None:
-            return self
-        if isinstance(other, type(self)):
-            return other
-        return NotImplemented
+    def __rmatmul__(self, other):
+        # NCC (other) * operand (self)
+        return self.__mul__(other)
 
     # @staticmethod
     # @CachedAttribute
@@ -3766,10 +3755,8 @@ class ShellRadialBasis(RegularityBasis, metaclass=CachedClass):
             return ShellBasis(**args)
         return NotImplemented
 
-    def __matmul__(self, other):
-        return other.__rmatmul__(self)
-
     def __rmatmul__(self, other):
+        # NCC (other) * operand (self)
         if other is None:
             return self
         if isinstance(other, ShellRadialBasis):
@@ -3987,13 +3974,8 @@ class BallRadialBasis(RegularityBasis, metaclass=CachedClass):
                 return self.clone_with(radial_size=radial_size, k=k)
         return NotImplemented
 
-    def __matmul__(self, other):
-        if other is None:
-            return self
-        else:
-            return other.__rmatmul__(self)
-
     def __rmatmul__(self, other):
+        # NCC (other) * operand (self)
         if other is None:
             return self
         if isinstance(other, BallRadialBasis):
@@ -4472,13 +4454,6 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
             return self.clone_with(k=k)
         return NotImplemented
 
-    def __matmul__(self, other):
-        # NCC (self) * operand (other)
-        if other is None:
-            return self.__rmatmul__(other)
-        else:
-            return other.__rmatmul__(self)
-
     def __rmatmul__(self, other):
         # NCC (other) * operand (self)
         if other is None:
@@ -4695,13 +4670,6 @@ class BallBasis(Spherical3DBasis, metaclass=CachedClass):
             k = (other * self.radial_basis).k  # TODO: inline this
             return self.clone_with(k=k)
         return NotImplemented
-
-    def __matmul__(self, other):
-        # NCC (self) * operand (other)
-        if other is None:
-            return self.__rmatmul__(other)
-        else:
-            return other.__rmatmul__(self)
 
     def __rmatmul__(self, other):
         # NCC (other) * operand (self)

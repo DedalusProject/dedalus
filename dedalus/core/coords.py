@@ -77,8 +77,10 @@ class Coordinate(SeparableIntertwiners):
         return self.name
 
     def __eq__(self, other):
-        if self.name == other.name: return True
-        else: return False
+        if type(self) is type(other):
+            if self.name == other.name:
+                return True
+        return False
 
     def __hash__(self):
         return id(self)
@@ -96,9 +98,7 @@ class Coordinate(SeparableIntertwiners):
 
 class DirectProduct(SeparableIntertwiners, CoordinateSystem):
 
-    curvilinear = True
-
-    def __init__(self, *coordsystems):
+    def __init__(self, *coordsystems, right_handed=None):
         for cs in coordsystems:
             if not isinstance(cs, SeparableIntertwiners):
                 raise NotImplementedError("Direct products only implemented for separable intertwiners.")
@@ -107,6 +107,27 @@ class DirectProduct(SeparableIntertwiners, CoordinateSystem):
         if len(set(self.coords)) < len(self.coords):
             raise ValueError("Cannot repeat coordinates in DirectProduct.")
         self.dim = sum(cs.dim for cs in coordsystems)
+        if self.dim == 3:
+            if self.curvilinear:
+                if right_handed is None:
+                    right_handed = False
+            else:
+                if right_handed is None:
+                    right_handed = True
+            self.right_handed = right_handed
+
+    @CachedAttribute
+    def subaxis_by_cs(self):
+        subaxis_dict = {}
+        subaxis = 0
+        for cs in self.coordsystems:
+            subaxis_dict[cs] = subaxis
+            subaxis += cs.dim
+        return subaxis_dict
+
+    @CachedAttribute
+    def curvilinear(self):
+        return any(cs.curvilinear for cs in self.coordsystems)
 
     def forward_vector_intertwiner(self, subaxis, group):
         factors = []
@@ -145,7 +166,8 @@ class CartesianCoordinates(SeparableIntertwiners, CoordinateSystem):
         self.names = names
         self.dim = len(names)
         self.coords = tuple(Coordinate(name, cs=self) for name in names)
-        self.right_handed = right_handed
+        if self.dim == 3:
+            self.right_handed = right_handed
         self.default_nonconst_groups = (1,) * self.dim
 
     def __str__(self):

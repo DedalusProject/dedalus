@@ -27,7 +27,7 @@ from ..tools.exceptions import NonlinearOperatorError
 from ..tools.exceptions import SymbolicParsingError
 from ..tools.exceptions import UndefinedParityError
 from ..tools.exceptions import SkipDispatchException
-from ..tools.general import unify, unify_attributes
+from ..tools.general import unify, unify_attributes, is_complex_dtype
 
 # Public interface
 __all__ = ['GeneralFunction',
@@ -1141,6 +1141,9 @@ class Integrate(LinearOperator, metaclass=MultiClass):
         # Split Cartesian coordinates
         if isinstance(coord, coords.CartesianCoordinates):
             coord = coord.coords
+        # Split DirectProduct coordinates
+        if isinstance(coord, coords.DirectProduct):
+            coord = coord.coordsystems
         # Recurse over multiple coordinates
         if isinstance(coord, (tuple, list)):
             if len(coord) > 1:
@@ -1830,6 +1833,11 @@ class CartesianTrace(Trace):
         return matrix
 
 
+class DirectProductTrace(Trace):
+
+    cs_type = coords.DirectProduct
+
+
 @alias("transpose", "trans")
 class TransposeComponents(LinearOperator, metaclass=MultiClass):
 
@@ -2059,10 +2067,7 @@ class CartesianSkew(Skew):
         factors = [sparse.identity(cs.dim, format='csr') for cs in self.operand.tensorsig]
         factors.append(sparse.identity(subproblem.coeff_size(self.domain), format='csr'))
         # Substitute skew matrix
-        if self.coordsys.right_handed:
-            skew = np.array([[0, -1,], [1, 0]])
-        else:
-            skew = np.array([[0, 1,], [-1, 0]])
+        skew = np.array([[0, -1,], [1, 0]])
         factors[self.index] = skew
         return reduce(sparse.kron, factors, 1).tocsr()
 
@@ -2075,12 +2080,8 @@ class CartesianSkew(Skew):
         if arg.data.size:
             sx = axslice(self.index, 0, 1)
             sy = axslice(self.index, 1, 2)
-            out.data[sx] = arg.data[sy]
+            out.data[sx] = - arg.data[sy]
             out.data[sy] = arg.data[sx]
-            if self.coordsys.right_handed:
-                out.data[sx] *= -1
-            else:
-                out.data[sy] *= -1
 
 
 class SpinSkew(Skew):
@@ -2133,7 +2134,7 @@ class SpinSkew(Skew):
                 arg_minus = arg.data[minus]
                 out_plus = out.data[plus]
                 out_minus = out.data[minus]
-                if np.iscomplexobj(self.dtype()):
+                if is_complex_dtype(self.dtype):
                     # out = 1j * s * arg
                     np.multiply(arg_plus, 1j, out=out_plus)
                     np.multiply(arg_minus, -1j, out=out_minus)
@@ -3694,7 +3695,88 @@ class CartesianCurl(Curl):
         """Perform operation."""
         # OPTIMIZE: this has an extra copy
         arg0 = self.args[0]
+        # Set output layout
+        out.preset_layout(arg0.layout)
+        np.copyto(out.data, arg0.data)
 
+
+class DirectProductCurl(Curl):
+
+    cs_type = coords.DirectProduct
+
+    def __init__(self, operand, index=0, out=None):
+        coordsys = operand.tensorsig[index]
+        if coordsys.dim != 3:
+            raise ValueError("DirectProductCurl is only implemented for 3D vector fields.")
+        if len(operand.tensorsig) > 1 or index != 0:
+            raise ValueError("DirectProductCurl is only implemented for vector fields.")
+        # Get components
+        comps = [DirectProductComponent(operand, index=index, comp=cs) for cs in coordsys.coordsystems]
+        if comps[0].tensorsig[index].dim == 1 and comps[1].tensorsig[index].dim == 2:
+            az = 0
+            uz, uh = comps
+            cz, ch = coordsys.coordsystems
+        elif comps[0].dim == 2 and comps[1].dim == 1:
+            az = 2
+            uh, uz = comps
+            ch, cz = coordsys.coordsystems
+        else:
+            raise ValueError("DirectProductCurl is only implemented for direct product of 1D and 2D coordinate systems.")
+        # Compute curl components
+        # curl = ex*(dy(uz) - dz(uy)) + ey*(dz(ux) - dx(uz)) + ez*(dx(uy) - dy(ux))
+        #      = ex*dy(uz) - ex*dz(uy) + ey*dz(ux) - ey*dx(uz) + ez*dx(uy) - ez*dy(ux)
+        #      = dz(ux*ey - uy*ex) + (ex*dy - ey*dx)(uz)
+        #      = dz(skew(uh)) - skew(grad_h(uz)) - ez*div(skew(uh))
+        ez1 = operand.dist.VectorField(cz, name='ez', dtype=operand.dtype)
+        ez1['g'][0] = 1
+        ez3 = operand.dist.VectorField(coordsys, name='ez', dtype=operand.dtype)
+        ez3['g'][az] = 1
+        # This requires transposing different coordsystems, which is not yet supported
+        #curl_h = Differentiate(Skew(uh, index=index), cz) - ez1@TransposeComponents(Skew(Gradient(uz, ch), index=0), indices=(0,index+1))
+        #curl_z = - Divergence(TransposeComponents(ez3*Skew(uh, index=index), indices=(0,index+1)), index=0)
+        curl_h = Differentiate(Skew(uh), cz) - Skew(Gradient(ez1@uz, ch), index=0)
+        curl_z = - ez3*Divergence(Skew(uh))
+        I = operand.dist.IdentityTensor(ch, coordsys, dtype=operand.dtype)
+        arg = I@curl_h + curl_z
+        if coordsys.curvilinear == coordsys.right_handed:
+            # Skew implements the correct thing by default for left-handed curvilinear
+            # and right-handed Cartesian coordinate systems
+            arg *= -1
+        LinearOperator.__init__(self, arg, out=out)
+        self.index = index
+        self.coordsys = coordsys
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = arg.domain
+        self.tensorsig = arg.tensorsig
+        self.dtype = arg.dtype
+        self.expression_matrices = arg.expression_matrices
+
+    def matrix_dependence(self, *vars):
+        return self.args[0].matrix_dependence(*vars)
+
+    def matrix_coupling(self, *vars):
+        return self.args[0].matrix_coupling(*vars)
+
+    def subproblem_matrix(self, subproblem):
+        """Build operator matrix for a specific subproblem."""
+        pass
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Any layout (addition is done)
+        return True
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Any layout (addition is done)
+        pass
+
+    def operate(self, out):
+        """Perform operation."""
+        # OPTIMIZE: this has an extra copy
+        arg0 = self.args[0]
         # Set output layout
         out.preset_layout(arg0.layout)
         np.copyto(out.data, arg0.data)

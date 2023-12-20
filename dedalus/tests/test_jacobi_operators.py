@@ -112,7 +112,7 @@ def test_jacobi_interpolate(N, a, b, k, dealias, dtype):
 @pytest.mark.parametrize('k', k_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('dtype', dtype_range)
-def test_jacobi_intergrate(N, a, b, k, dealias, dtype):
+def test_jacobi_integrate(N, a, b, k, dealias, dtype):
     """Test integration in Jacobi basis."""
     c, d, b, x = build_jacobi(N, a, b, k, (0, 3), dealias, dtype)
     f = d.Field(bases=b)

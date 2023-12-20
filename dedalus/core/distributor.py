@@ -9,7 +9,7 @@ import itertools
 from collections import OrderedDict
 from math import prod
 
-from .coords import CoordinateSystem
+from .coords import CoordinateSystem, DirectProduct
 from ..tools.array import reshape_vector
 from ..tools.cache import CachedMethod, CachedAttribute
 from ..tools.config import config
@@ -228,12 +228,25 @@ class Distributor:
         from .field import TensorField
         return TensorField(self, *args, **kw)
 
-    def IdentityTensor(self, coordsys):
+    def IdentityTensor(self, coordsys_in, coordsys_out=None, dtype=None):
         """Identity tensor field."""
+        if coordsys_out is None:
+            coordsys_out = coordsys_in
         from .field import TensorField
-        I = TensorField(self, (coordsys, coordsys))
-        for i in range(coordsys.dim):
-            I['g'][i, i] = 1
+        I = TensorField(self, (coordsys_out, coordsys_in), dtype=dtype)
+        if coordsys_in is coordsys_out:
+            for i in range(coordsys_in.dim):
+                I['g'][i, i] = 1
+        elif isinstance(coordsys_in, DirectProduct) and (coordsys_out in coordsys_in.coordsystems):
+            i0 = coordsys_in.subaxis_by_cs[coordsys_out]
+            for i in range(coordsys_out.dim):
+                I['g'][i, i0+i] = 1
+        elif isinstance(coordsys_out, DirectProduct) and (coordsys_in in coordsys_out.coordsystems):
+            i0 = coordsys_out.subaxis_by_cs[coordsys_in]
+            for i in range(coordsys_in.dim):
+                I['g'][i0+i, i] = 1
+        else:
+            raise ValueError("Unsupported coordinate systems.")
         return I
 
     def local_grid(self, basis, scale=None):
