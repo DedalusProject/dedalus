@@ -11,7 +11,7 @@ testpath = str(root)
 
 def base_cmd():
     workers = os.getenv("PYTEST_WORKERS", "auto")
-    return ["--ignore=test_spherical_ncc.py", f"--workers={workers}"]
+    return [f"--ignore={testpath}/test_spherical_ncc.py", f"--workers={workers}"]
 
 def test(report=False):
     """Run tests."""
