@@ -1214,6 +1214,9 @@ class Average(LinearOperator, metaclass=MultiClass):
         # Split Cartesian coordinates
         if isinstance(coord, coords.CartesianCoordinates):
             coord = coord.coords
+        # Split DirectProduct coordinates
+        if isinstance(coord, coords.DirectProduct):
+            coord = coord.coordsystems
         # Recurse over multiple coordinates
         if isinstance(coord, (tuple, list)):
             if len(coord) > 1:
@@ -1796,7 +1799,7 @@ class SphericalTrace(Trace):
         return matrix
 
 
-class CylindricalTrace(Trace):
+class PolarTrace(Trace):
 
     cs_type = coords.PolarCoordinates
 
@@ -1810,19 +1813,18 @@ class CylindricalTrace(Trace):
         # [ 1,  2]
         trace_spin = np.zeros(4)
         trace_spin[[1, 2]] = 1
-        trace = sparse.kron(trace_spin, sparse.eye(2**len(self.tensorsig)))
-        # Assume all components have the same n_size
-        eye = sparse.identity(self.input_basis.n_size(m), self.dtype, format='csr')
-        matrix = sparse.kron(trace, eye)
-        # Block-diag for sin/cos parts for real dtype
-        if self.dtype == np.float64:
-            matrix = sparse.kron(matrix, sparse.identity(2, format='csr')).tocsr()
+        # Kronecker up identity for remaining tensor components
+        n_eye = prod(cs.dim for cs in self.tensorsig)
+        # Kronecker up identity for coeff size
+        n_eye *= subproblem.coeff_size(self.domain)
+        eye = sparse.identity(n_eye, self.dtype, format='csr')
+        matrix = sparse.kron(trace_spin, eye)
         return matrix
 
 
 class CartesianTrace(Trace):
 
-    cs_type = coords.CartesianCoordinates
+    cs_type = (coords.CartesianCoordinates, coords.Coordinate)
 
     def subproblem_matrix(self, subproblem):
         dim = self.coordsys.dim
@@ -1836,6 +1838,11 @@ class CartesianTrace(Trace):
 class DirectProductTrace(Trace):
 
     cs_type = coords.DirectProduct
+
+    def subproblem_matrix(self, subproblem):
+        comps = [DirectProductComponent(DirectProductComponent(self.operand, index=0, comp=cs), index=1, comp=cs) for cs in self.coordsys.coordsystems]
+        fulltrace = sum(Trace(comp) for comp in comps)
+        return fulltrace.expression_matrices(subproblem, [self.operand])[self.operand]
 
 
 @alias("transpose", "trans")
@@ -1926,7 +1933,8 @@ class StandardTransposeComponents(TransposeComponents):
 
     cs_type = (coords.CartesianCoordinates,
                coords.PolarCoordinates,
-               coords.S2Coordinates)
+               coords.S2Coordinates,
+               coords.DirectProduct)
 
     def subproblem_matrix(self, subproblem):
         """Build operator matrix for a specific subproblem."""
@@ -3736,8 +3744,13 @@ class DirectProductCurl(Curl):
         #curl_z = - Divergence(TransposeComponents(ez3*Skew(uh, index=index), indices=(0,index+1)), index=0)
         curl_h = Differentiate(Skew(uh), cz) - Skew(Gradient(ez1@uz, ch), index=0)
         curl_z = - ez3*Divergence(Skew(uh))
-        I = operand.dist.IdentityTensor(ch, coordsys, dtype=operand.dtype)
-        arg = I@curl_h + curl_z
+        # Hack to get multiplication by identity working for matrix constuction
+        if isinstance(ch, coords.PolarCoordinates):
+            bases = operand.domain.get_basis(ch).radial_basis
+        else:
+            bases = None
+        I = operand.dist.IdentityTensor(ch, coordsys, bases=bases, dtype=operand.dtype)
+        arg = I @ curl_h + curl_z
         if coordsys.curvilinear == coordsys.right_handed:
             # Skew implements the correct thing by default for left-handed curvilinear
             # and right-handed Cartesian coordinate systems
@@ -3923,139 +3936,6 @@ class SphericalCurl(Curl, SphericalEllOperator):
                         vec_out_complex = apply_matrix(A, vec_in_complex, axis=axis)
                         comp_out[tuple(slices)][cos_slice] += vec_out_complex.real
                         comp_out[tuple(slices)][msin_slice] += vec_out_complex.imag
-
-
-class PolarCurl(Curl, PolarMOperator):
-
-    cs_type = coords.PolarCoordinates
-
-    def __init__(self, operand, index=0, out=None):
-        Curl.__init__(self, operand, out=out)
-        if index != 0:
-            raise ValueError("Curl only implemented along index 0.")
-        self.index = index
-        coordsys = operand.tensorsig[index]
-        PolarMOperator.__init__(self, operand, coordsys)
-        # FutureField requirements
-        self.domain  = operand.domain.substitute_basis(self.input_basis, self.output_basis)
-        self.tensorsig = operand.tensorsig[:index] + operand.tensorsig[index+1:]
-        self.dtype = operand.dtype
-
-    @staticmethod
-    def _output_basis(input_basis):
-        return input_basis.derivative_basis(1)
-
-    def check_conditions(self):
-        """Check that operands are in a proper layout."""
-        # Require radius to be in coefficient space
-        layout = self.args[0].layout
-        return (not layout.grid_space[self.radius_axis]) and (layout.local[self.radius_axis])
-
-    def enforce_conditions(self):
-        """Require operands to be in a proper layout."""
-        # Require radius to be in coefficient space
-        self.args[0].require_coeff_space(self.radius_axis)
-        self.args[0].require_local(self.radius_axis)
-
-    def spinindex_out(self, spinindex_in):
-        # Spinorder: -, +, 0
-        # - and + map to 0
-        if spinindex_in[0] in (0, 1):
-            return (spinindex_in[1:],)
-
-    @CachedMethod
-    def radial_matrix(self, spinindex_in, spinindex_out, m):
-        radial_basis = self.input_basis
-        spintotal_in = radial_basis.spintotal(self.operand.tensorsig, spinindex_in)
-        if spinindex_in[1:] == spinindex_out:
-            return self._radial_matrix(radial_basis, spinindex_in[0], spintotal_in, m)
-        else:
-            raise ValueError("This should never happen")
-
-    @staticmethod
-    @CachedMethod
-    def _radial_matrix(radial_basis, spinindex_in0, spintotal_in, m):
-        # NB: the sign here is different than Vasil et al. (2019) eqn 84
-        # because det(Q) = -1
-        if spinindex_in0 == 0:
-            return 1j * 1/np.sqrt(2) * radial_basis.operator_matrix('D+', m, spintotal_in)
-        elif spinindex_in0 == 1:
-            return -1j * 1/np.sqrt(2) * radial_basis.operator_matrix('D-', m, spintotal_in)
-        else:
-            raise ValueError("This should never happen")
-
-    def subproblem_matrix(self, subproblem):
-        raise NotImplementedError("subproblem_matrix is not implemented.")
-        if self.dtype == np.complex128:
-            return super().subproblem_matrix(subproblem)
-        elif self.dtype == np.float64:
-            operand = self.args[0]
-            radial_basis = self.radial_basis
-            R_in = radial_basis.regularity_classes(operand.tensorsig)
-            R_out = radial_basis.regularity_classes(self.tensorsig)  # Should this use output_basis?
-            ell = subproblem.group[self.last_axis - 1]
-            # Loop over components
-            submatrices = []
-            for spinindex_out, spintotal_out in np.ndenumerate(R_out):
-                submatrix_row = []
-                for spinindex_in, spintotal_in in np.ndenumerate(R_in):
-                    # Build identity matrices for each axis
-                    subshape_in = subproblem.coeff_shape(self.operand.domain)
-                    subshape_out = subproblem.coeff_shape(self.domain)
-                    # Check if regularity component exists for this ell
-                    if (spinindex_out in self.spinindex_out(spinindex_in)) and radial_basis.regularity_allowed(ell, spinindex_in) and radial_basis.regularity_allowed(ell, spinindex_out):
-                        factors = [sparse.eye(m, n, format='csr') for m, n in zip(subshape_out, subshape_in)]
-                        radial_matrix = self.radial_matrix(spinindex_in, spinindex_out, ell)
-                        # Real part
-                        factors[self.last_axis] = radial_matrix.real
-                        comp_matrix_real = reduce(sparse.kron, factors, 1).tocsr()
-                        # Imaginary pary
-                        m_size = subshape_in[self.first_axis]
-                        mult_1j = np.array([[0, -1], [1, 0]])
-                        m_blocks = sparse.eye(m_size//2, m_size//2, format='csr')
-                        factors[self.first_axis] = sparse.kron(mult_1j, m_blocks)
-                        factors[self.last_axis] = radial_matrix.imag
-                        comp_matrix_imag = reduce(sparse.kron, factors, 1).tocsr()
-                        comp_matrix = comp_matrix_real + comp_matrix_imag
-                    else:
-                        # Build zero matrix
-                        comp_matrix = sparse.csr_matrix((prod(subshape_out), prod(subshape_in)))
-                    submatrix_row.append(comp_matrix)
-                submatrices.append(submatrix_row)
-            matrix = sparse.bmat(submatrices)
-            matrix.tocsr()
-            return matrix
-
-    def operate(self, out):
-        """Perform operation."""
-        if self.dtype == np.complex128:
-            return super().operate(out)
-        operand = self.args[0]
-        input_basis = self.input_basis
-        axis = self.radius_axis
-        # Set output layout
-        out.preset_layout(operand.layout)
-        out.data[:] = 0
-        # Apply operator
-        S_in = input_basis.spin_weights(operand.tensorsig)
-        slices = [slice(None) for i in range(self.dist.dim)]
-        for spinindex_in, spintotal_in in np.ndenumerate(S_in):
-            for spinindex_out in self.spinindex_out(spinindex_in):
-                comp_in = operand.data[spinindex_in]
-                comp_out = out.data[spinindex_out]
-
-                for m, mg_slice, mc_slice, n_slice in input_basis.m_maps(self.dist):
-                    slices[axis-1] = mc_slice
-                    slices[axis] = n_slice
-                    cos_slice = axslice(axis-1, 0, None, 2)
-                    msin_slice = axslice(axis-1, 1, None, 2)
-                    vec_in_cos = comp_in[tuple(slices)][cos_slice]
-                    vec_in_msin = comp_in[tuple(slices)][msin_slice]
-                    vec_in_complex = vec_in_cos + 1j*vec_in_msin
-                    A = self.radial_matrix(spinindex_in, spinindex_out, m)
-                    vec_out_complex = apply_matrix(A, vec_in_complex, axis=axis)
-                    comp_out[tuple(slices)][cos_slice] += vec_out_complex.real
-                    comp_out[tuple(slices)][msin_slice] += vec_out_complex.imag
 
 
 @alias("lap")

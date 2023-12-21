@@ -39,9 +39,9 @@ def build_periodic_cylindrical_annulus(Nz, Nphi, Nr, alpha, k, dealias, dtype):
 
 
 Nz_range = [8]
-Nphi_range = [16]
+Nphi_range = [8]
 Nr_range = [8]
-alpha_range = [0]
+alpha_range = [0, 1]
 k_range = [0]
 dealias_range = [1, 3/2]
 basis_range = [build_periodic_cylinder, build_periodic_cylindrical_annulus]
@@ -77,98 +77,107 @@ def test_explicit_trace_tensor(Nz, Nphi, Nr, alpha, k, dealias, dtype, basis):
 @pytest.mark.parametrize('basis', basis_range)
 def test_implicit_trace_tensor(Nz, Nphi, Nr, alpha, k, dealias, dtype, basis):
     c, d, b, z, phi, r, x, y = basis(Nz, Nphi, Nr, alpha, k, dealias, dtype)
-    I = d.IdentityTensor(c)
     f = d.Field(bases=b)
     g = d.Field(bases=b)
     g.fill_random('g')
     g.low_pass_filter(scales=0.5)
+    I = d.IdentityTensor(c, bases=b[1].radial_basis)
     problem = problems.LBVP([f])
     problem.add_equation((operators.Trace(I*f), 3*g))
-    solver = solvers.LinearBoundaryValueSolver(problem)
+    solver = solvers.LinearBoundaryValueSolver(problem, matrix_coupling=[False, False, True])
     solver.solve()
     assert np.allclose(f['c'], g['c'])
 
 
-# @pytest.mark.parametrize('basis', [build_disk, build_annulus])
-# @pytest.mark.parametrize('Nphi', Nphi_range)
-# @pytest.mark.parametrize('Nr', Nr_range)
-# @pytest.mark.parametrize('k', k_range)
-# @pytest.mark.parametrize('dealias', dealias_range)
-# @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-# @pytest.mark.parametrize('layout', ['c', 'g'])
-# def test_transpose_explicit(basis, Nphi, Nr, k, dealias, dtype, layout):
-#     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
-#     # Random tensor field
-#     f = d.TensorField((c, c), bases=b)
-#     f.fill_random(layout='g')
-#     f.low_pass_filter(scales=0.75)
-#     # Evaluate transpose
-#     f.change_layout(layout)
-#     g = operators.transpose(f).evaluate()
-#     assert np.allclose(g['g'], np.transpose(f['g'], (1,0,2,3)))
+@pytest.mark.parametrize('Nz', Nz_range)
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('alpha', alpha_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('basis', basis_range)
+@pytest.mark.parametrize('layout', ['c', 'g'])
+def test_transpose_explicit(Nz, Nphi, Nr, alpha, k, dealias, dtype, basis, layout):
+    c, d, b, z, phi, r, x, y = basis(Nz, Nphi, Nr, alpha, k, dealias, dtype)
+    # Random tensor field
+    f = d.TensorField((c, c), bases=b)
+    f.fill_random(layout='g')
+    f.low_pass_filter(scales=0.75)
+    # Evaluate transpose
+    f.change_layout(layout)
+    g = operators.transpose(f).evaluate()
+    assert np.allclose(g['g'], np.transpose(f['g'], (1,0,2,3,4)))
 
 
-# @pytest.mark.parametrize('basis', [build_disk, build_annulus])
-# @pytest.mark.parametrize('Nphi', Nphi_range)
-# @pytest.mark.parametrize('Nr', Nr_range)
-# @pytest.mark.parametrize('k', k_range)
-# @pytest.mark.parametrize('dealias', dealias_range)
-# @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-# def test_transpose_implicit(basis, Nphi, Nr, k, dealias, dtype):
-#     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
-#     # Random tensor field
-#     f = d.TensorField((c, c), bases=b)
-#     f.fill_random(layout='g')
-#     f.low_pass_filter(scales=0.75)
-#     # Transpose LBVP
-#     u = d.TensorField((c, c), bases=b)
-#     problem = problems.LBVP([u], namespace=locals())
-#     problem.add_equation("trans(u) = trans(f)")
-#     solver = problem.build_solver()
-#     solver.solve()
-#     u.change_scales(dealias)
-#     f.change_scales(dealias)
-#     assert np.allclose(u['g'], f['g'])
+@pytest.mark.parametrize('Nz', Nz_range)
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('alpha', alpha_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('basis', basis_range)
+@pytest.mark.parametrize('layout', ['c', 'g'])
+def test_transpose_implicit(Nz, Nphi, Nr, alpha, k, dealias, dtype, basis, layout):
+    c, d, b, z, phi, r, x, y = basis(Nz, Nphi, Nr, alpha, k, dealias, dtype)
+    # Random tensor field
+    f = d.TensorField((c, c), bases=b)
+    f.fill_random(layout='g')
+    f.low_pass_filter(scales=0.75)
+    # Transpose LBVP
+    u = d.TensorField((c, c), bases=b)
+    problem = problems.LBVP([u], namespace=locals())
+    problem.add_equation("trans(u) = trans(f)")
+    solver = problem.build_solver()
+    solver.solve()
+    u.change_scales(dealias)
+    f.change_scales(dealias)
+    assert np.allclose(u['g'], f['g'])
 
 
-# @pytest.mark.parametrize('Nphi', [16])
-# @pytest.mark.parametrize('Nr', [10])
-# @pytest.mark.parametrize('k', [0, 1, 2, 5])
-# @pytest.mark.parametrize('dealias', dealias_range)
-# @pytest.mark.parametrize('basis', [build_disk, build_annulus])
-# @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-# @pytest.mark.parametrize('n', [0, 1, 2])
-# def test_integrate_scalar(Nphi, Nr, k, dealias, dtype, basis, n):
-#     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
-#     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-#     f.preset_scales(dealias)
-#     f['g'] = r**(2*n)
-#     h = operators.Integrate(f, c).evaluate()
-#     if isinstance(b, DiskBasis):
-#         r_inner, r_outer = 0, b.radius
-#     else:
-#         r_inner, r_outer = b.radii
-#     hg = 2 * np.pi * (r_outer**(2 + 2*n) - r_inner**(2 + 2*n)) / (2 + 2*n)
-#     assert np.allclose(h['g'], hg)
+@pytest.mark.parametrize('Nz', Nz_range)
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('alpha', alpha_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('basis', basis_range)
+@pytest.mark.parametrize('n', [0, 1, 2])
+def test_integrate_scalar(Nz, Nphi, Nr, alpha, k, dealias, dtype, basis, n):
+    c, d, b, z, phi, r, x, y = basis(Nz, Nphi, Nr, alpha, k, dealias, dtype)
+    f = field.Field(dist=d, bases=b, dtype=dtype)
+    f.preset_scales(dealias)
+    f['g'] = r**(2*n) + np.sin(4*np.pi*z/length)
+    h = operators.Integrate(f, c).evaluate()
+    if isinstance(b[1], DiskBasis):
+        r_inner, r_outer = 0, b[1].radius
+    else:
+        r_inner, r_outer = b[1].radii
+    hg = 2 * np.pi * length * (r_outer**(2 + 2*n) - r_inner**(2 + 2*n)) / (2 + 2*n)
+    assert np.allclose(h['g'], hg)
 
 
-# @pytest.mark.parametrize('Nphi', [16])
-# @pytest.mark.parametrize('Nr', [10])
-# @pytest.mark.parametrize('k', [0, 1, 2, 5])
-# @pytest.mark.parametrize('dealias', dealias_range)
-# @pytest.mark.parametrize('basis', [build_disk, build_annulus])
-# @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-# @pytest.mark.parametrize('n', [0, 1, 2])
-# def test_average_scalar(Nphi, Nr, k, dealias, dtype, basis, n):
-#     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
-#     f = field.Field(dist=d, bases=(b,), dtype=dtype)
-#     f.preset_scales(dealias)
-#     f['g'] = r**(2*n)
-#     h = operators.Integrate(f, c).evaluate()
-#     if isinstance(b, DiskBasis):
-#         r_inner, r_outer = 0, b.radius
-#     else:
-#         r_inner, r_outer = b.radii
-#     hg = 2 * np.pi * (r_outer**(2 + 2*n) - r_inner**(2 + 2*n)) / (2 + 2*n)
-#     assert np.allclose(h['g'], hg)
+@pytest.mark.parametrize('Nz', Nz_range)
+@pytest.mark.parametrize('Nphi', Nphi_range)
+@pytest.mark.parametrize('Nr', Nr_range)
+@pytest.mark.parametrize('alpha', alpha_range)
+@pytest.mark.parametrize('k', k_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('basis', basis_range)
+@pytest.mark.parametrize('n', [0, 1, 2])
+def test_average_scalar(Nz, Nphi, Nr, alpha, k, dealias, dtype, basis, n):
+    c, d, b, z, phi, r, x, y = basis(Nz, Nphi, Nr, alpha, k, dealias, dtype)
+    f = field.Field(dist=d, bases=b, dtype=dtype)
+    f.preset_scales(dealias)
+    f['g'] = r**(2*n) + np.sin(4*np.pi*z/length)
+    h = operators.Average(f, c).evaluate()
+    if isinstance(b[1], DiskBasis):
+        r_inner, r_outer = 0, b[1].radius
+    else:
+        r_inner, r_outer = b[1].radii
+    hg = 2 * (r_outer**(2 + 2*n) - r_inner**(2 + 2*n)) / (2 + 2*n) / (r_outer**2 - r_inner**2)
+    assert np.allclose(h['g'], hg)
 

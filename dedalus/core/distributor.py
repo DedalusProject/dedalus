@@ -228,12 +228,12 @@ class Distributor:
         from .field import TensorField
         return TensorField(self, *args, **kw)
 
-    def IdentityTensor(self, coordsys_in, coordsys_out=None, dtype=None):
+    def IdentityTensor(self, coordsys_in, coordsys_out=None, bases=None, dtype=None):
         """Identity tensor field."""
         if coordsys_out is None:
             coordsys_out = coordsys_in
         from .field import TensorField
-        I = TensorField(self, (coordsys_out, coordsys_in), dtype=dtype)
+        I = TensorField(self, (coordsys_out, coordsys_in), bases=bases, dtype=dtype)
         if coordsys_in is coordsys_out:
             for i in range(coordsys_in.dim):
                 I['g'][i, i] = 1

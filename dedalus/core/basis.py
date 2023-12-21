@@ -5425,6 +5425,26 @@ class IntegrateDisk(operators.Integrate, IntegrateSpinBasis):
         return matrix
 
 
+class AverageDisk(operators.Average, IntegrateSpinBasis):
+    """Average DiskBasis scalar fields."""
+
+    input_basis_type = DiskBasis
+
+    @staticmethod
+    @CachedMethod
+    def _radial_matrix(basis, m):
+        n_size = basis.n_size(m)
+        if m == 0:
+            N = basis.shape[1]
+            z0, w0 = dedalus_sphere.zernike.quadrature(2, N, k=0)
+            Qk = dedalus_sphere.zernike.polynomials(2, n_size, basis.alpha+basis.k, abs(m), z0)
+            matrix = (w0[None, :] @ Qk.T).astype(basis.dtype)
+            matrix *= 2 # Fourier contribution
+        else:
+            matrix= sparse.csr_matrix((0, n_size), dtype=basis.dtype)
+        return matrix
+
+
 class IntegrateAnnulus(operators.Integrate, IntegrateSpinBasis):
     """Integrate AnnulusBasis scalar fields."""
 
@@ -5443,6 +5463,30 @@ class IntegrateAnnulus(operators.Integrate, IntegrateSpinBasis):
             matrix = (w0_geom[None, :] @ Qk.T).astype(basis.dtype)
             matrix *= basis.dR / 2
             matrix *= 2 * np.pi # Fourier contribution
+        else:
+            matrix= sparse.csr_matrix((0, n_size), dtype=basis.dtype)
+        return matrix
+
+
+class AverageAnnulus(operators.Average, IntegrateSpinBasis):
+    """Average AnnulusBasis scalar fields."""
+
+    input_basis_type = AnnulusBasis
+
+    @staticmethod
+    @CachedMethod
+    def _radial_matrix(basis, m):
+        n_size = basis.n_size(m)
+        if m == 0:
+            N = 2 * basis.shape[1]  # Add some dealiasing to help with large k
+            z0, w0 = dedalus_sphere.jacobi.quadrature(N, a=0, b=0)
+            r0 = basis.dR / 2 * (z0 + basis.rho)
+            Qk = dedalus_sphere.jacobi.polynomials(n_size, basis.alpha[0]+basis.k, basis.alpha[1]+basis.k, z0)
+            w0_geom = r0 * w0 * (r0 / basis.dR)**(-basis.k)
+            matrix = (w0_geom[None, :] @ Qk.T).astype(basis.dtype)
+            matrix *= basis.dR / 2
+            matrix *= 2 * np.pi # Fourier contribution
+            matrix /= np.pi * (basis.radii[1]**2 - basis.radii[0]**2)
         else:
             matrix= sparse.csr_matrix((0, n_size), dtype=basis.dtype)
         return matrix

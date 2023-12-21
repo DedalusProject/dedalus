@@ -172,7 +172,8 @@ def test_curl_vector(Nphi, Nr, dealias, basis, dtype):
     ex = np.array([-np.sin(phi)+0.*r,np.cos(phi)+0.*r])
     ey = np.array([np.cos(phi)+0.*r,np.sin(phi)+0.*r])
     v['g'] = 4*x**3*ey + 3*y**2*ey
-    u = operators.Curl(v).evaluate()
+    curl = lambda A: - operators.Divergence(operators.Skew(A))
+    u = curl(v).evaluate()
     ug = 12*x**2
     assert np.allclose(u['g'], ug)
 

@@ -227,13 +227,11 @@ def test_implicit_trace_tensor(Nphi, Nr, k, dealias, basis, dtype):
     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
     g = field.Field(dist=d, bases=(b,), dtype=dtype)
-    g.preset_scales(g.domain.dealias)
-    g['g'] = 3*x**2 + 2*y
-    I = field.Field(dist=d, bases=(b.clone_with(shape=(1,Nr), k=0),), tensorsig=(c,c), dtype=dtype)
-    I['g'][0,0] = I['g'][1,1] = 1
-    trace = lambda A: operators.Trace(A)
+    g.fill_random('g')
+    g.low_pass_filter(scales=0.5)
+    I = d.IdentityTensor(c, bases=b.radial_basis)
     problem = problems.LBVP([f])
-    problem.add_equation((trace(I*f), 2*g))
+    problem.add_equation((operators.Trace(I*f), 2*g))
     solver = solvers.LinearBoundaryValueSolver(problem, matrix_coupling=[False, True])
     solver.solve()
     assert np.allclose(f['c'], g['c'])
@@ -305,6 +303,7 @@ def test_azimuthal_average_scalar(Nphi, Nr, k, dealias, dtype, basis):
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 @pytest.mark.parametrize('n', [0, 1, 2])
 def test_integrate_scalar(Nphi, Nr, k, dealias, dtype, basis, n):
+    # Need to test if this fails for alpha != 0?
     c, d, b, phi, r, x, y = basis(Nphi, Nr, k, dealias, dtype)
     f = field.Field(dist=d, bases=(b,), dtype=dtype)
     f.preset_scales(dealias)

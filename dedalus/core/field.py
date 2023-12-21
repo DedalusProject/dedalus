@@ -303,6 +303,7 @@ class Operand:
     def H(self):
         from .operators import TransposeComponents
         return TransposeComponents(np.conj(self))
+
     @CachedAttribute
     def is_complex(self):
         from ..tools.general import is_complex_dtype
