@@ -105,7 +105,7 @@ class Domain(metaclass=CachedClass):
         axis = self.dist.get_axis(coord)
         for basis in self.bases:
             basis_axis = self.dist.get_basis_axis(basis)
-            if (axis >= basis_axis) and (axis <= basis_axis + basis.dim):
+            if basis_axis <= axis < basis_axis + basis.dim:
                 return axis - basis_axis
 
     def get_coord(self, name):
