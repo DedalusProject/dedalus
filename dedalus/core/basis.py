@@ -1952,10 +1952,10 @@ class PolarBasis(SpinBasis):
         return np.gradient(self.global_grids(dist, scales=scales)[subaxis], axis=axis, edge_order=2)
 
     @CachedMethod
-    def local_grid_spacing(self, dist, axis, scales):
+    def local_grid_spacing(self, dist, subaxis, scales):
         """Local grids spacings."""
-        subaxis = axis - dist.first_axis(self)
-        global_spacing = self.global_grid_spacing(dist, axis, scales=scales)
+        axis = dist.first_axis(self) + subaxis
+        global_spacing = self.global_grid_spacing(dist, subaxis, scales=scales)
         local_elements = dist.grid_layout.local_elements(self.domain(dist), scales=scales[subaxis])[axis]
         return reshape_vector(np.ravel(global_spacing)[local_elements], dim=dist.dim, axis=axis)
 
@@ -2353,7 +2353,6 @@ class DiskBasis(PolarBasis, metaclass=CachedClass):
         self.radial_COV = AffineCOV((0, 1), (0, radius))
         if self.mmax > 2*self.Nmax:
             logger.warning("You are using more azimuthal modes than can be resolved with your current radial resolution")
-            #raise ValueError("shape[0] cannot be more than twice shape[1].")
         self.grid_params = (coordsys, dtype, radius, alpha, dealias, azimuth_library, radius_library)
         self.edge = self.S1_basis(radius)
 
