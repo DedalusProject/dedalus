@@ -15,7 +15,7 @@ from ..tools import clenshaw
 from ..tools.array import reshape_vector, axindex, axslice, interleave_matrices
 from ..tools.dispatch import MultiClass, SkipDispatchException
 from ..tools.general import unify, DeferredTuple
-from .coords import Coordinate, CartesianCoordinates, S2Coordinates, SphericalCoordinates, PolarCoordinates, AzimuthalCoordinate
+from .coords import Coordinate, CartesianCoordinates, S2Coordinates, SphericalCoordinates, PolarCoordinates, AzimuthalCoordinate, DirectProduct
 from .domain import Domain
 from .field  import Operand, LockedField
 from .future import FutureLockedField
@@ -359,8 +359,7 @@ class IntervalBasis(Basis):
 
     def global_grids(self, dist, scales):
         """Global grids."""
-        scale = scales[dist.first_axis(self)]
-        return (self.global_grid(dist, scale),)
+        return (self.global_grid(dist, scales[0]),)
 
     def global_grid(self, dist, scale):
         """Global grid."""
@@ -370,8 +369,7 @@ class IntervalBasis(Basis):
 
     def local_grids(self, dist, scales):
         """Local grids."""
-        scale = scales[dist.first_axis(self)]
-        return (self.local_grid(dist, scale),)
+        return (self.local_grid(dist, scales[0]),)
 
     def local_grid(self, dist, scale):
         """Local grid."""
@@ -380,15 +378,13 @@ class IntervalBasis(Basis):
         problem_grid = self.COV.problem_coord(native_grid)
         return reshape_vector(problem_grid, dim=dist.dim, axis=dist.get_basis_axis(self))
 
-    def global_grid_spacing(self, dist, scale=None):
+    def global_grid_spacing(self, dist, scale):
         """Global grid spacings."""
         grid = self.global_grid(dist, scale=scale)
-        return np.gradient(grid, axis=dist.get_basis_axis(self), edge_order=2)
+        return np.gradient(grid, axis=dist.first_axis(self), edge_order=2)
 
-    def local_grid_spacing(self, dist, scale=None):
+    def local_grid_spacing(self, dist, scale):
         """Local grids spacings."""
-        if scale is None:
-            scale = 1
         global_spacing = self.global_grid_spacing(dist, scale=scale)
         local_elements = dist.grid_layout.local_elements(self.domain(dist), scales=scale)
         local_spacing_flat = np.ravel(global_spacing)[local_elements[dist.get_basis_axis(self)]]
@@ -1942,32 +1938,30 @@ class PolarBasis(SpinBasis):
         return ell_reversed
 
     def global_grids(self, dist, scales):
-        first_axis = dist.first_axis(self)
-        return (self.global_grid_azimuth(dist, scales[first_axis]),
-                self.global_grid_radius(dist, scales[first_axis+1]))
+        return (self.global_grid_azimuth(dist, scales[0]),
+                self.global_grid_radius(dist, scales[1]))
 
     def global_grid_radius(self, dist, scale):
         r = self.radial_COV.problem_coord(self._native_radius_grid(scale))
         return reshape_vector(r, dim=dist.dim, axis=dist.get_basis_axis(self)+1)
 
     @CachedMethod
-    def global_grid_spacing(self, dist, axis, scales=None):
+    def global_grid_spacing(self, dist, subaxis, scales):
         """Global grids spacings."""
-        if scales is None: scales = (1,1)
-        return np.gradient(self.global_grids(dist, scales=scales)[axis], axis=axis, edge_order=2)
+        axis = dist.first_axis(self) + subaxis
+        return np.gradient(self.global_grids(dist, scales=scales)[subaxis], axis=axis, edge_order=2)
 
     @CachedMethod
-    def local_grid_spacing(self, dist, axis, scales=None):
+    def local_grid_spacing(self, dist, axis, scales):
         """Local grids spacings."""
+        subaxis = axis - dist.first_axis(self)
         global_spacing = self.global_grid_spacing(dist, axis, scales=scales)
-        if scales is None: scales = (1,1)
-        local_elements = dist.grid_layout.local_elements(self.domain(dist), scales=scales[axis])[axis]
+        local_elements = dist.grid_layout.local_elements(self.domain(dist), scales=scales[subaxis])[axis]
         return reshape_vector(np.ravel(global_spacing)[local_elements], dim=dist.dim, axis=axis)
 
     def local_grids(self, dist, scales):
-        first_axis = dist.first_axis(self)
-        return (self.local_grid_azimuth(dist, scales[first_axis]),
-                self.local_grid_radius(dist, scales[first_axis+1]))
+        return (self.local_grid_azimuth(dist, scales[0]),
+                self.local_grid_radius(dist, scales[1]))
 
     def forward_transform_azimuth_Mmax0(self, field, axis, gdata, cdata):
         # slice_axis = axis + len(field.tensorsig)
@@ -2120,11 +2114,11 @@ class AnnulusBasis(PolarBasis, metaclass=CachedClass):
 
     def global_grid_radius(self, dist, scale):
         r = self._radius_grid(scale)
-        return reshape_vector(r, dim=dist.dim, axis=dist.get_basis_axis(self)+1)
+        return reshape_vector(r, dim=dist.dim, axis=dist.first_axis(self)+1)
 
     def local_grid_radius(self, dist, scale):
         r = self._radius_grid(scale)
-        local_elements = dist.grid_layout.local_elements(self.domain(dist), scales=scale)[dist.get_basis_axis(self)+1]
+        local_elements = dist.grid_layout.local_elements(self.domain(dist), scales=scale)[dist.first_axis(self)+1]
         return reshape_vector(r[local_elements], dim=dist.dim, axis=dist.get_basis_axis(self)+1)
 
     @CachedMethod
@@ -2623,8 +2617,11 @@ class ConvertConstantDisk(operators.ConvertConstant, operators.PolarMOperator):
 
     def __init__(self, operand, output_basis, out=None):
         super().__init__(operand, output_basis, out=out)
-        if self.coords in operand.tensorsig:
-            raise ValueError("Tensors not yet supported.")
+        for coordsys in operand.tensorsig:
+            if self.coords == coordsys:
+                raise ValueError("Tensors not yet supported.")
+            if isinstance(coordsys, DirectProduct) and self.coords in coordsys.coordsystems:
+                raise ValueError("DirectProduct tensors not yet supported.")
 
     def spinindex_out(self, spinindex_in):
         return (spinindex_in,)
@@ -3013,32 +3010,30 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
         return tuple(ell_maps)
 
     def global_grids(self, dist, scales):
-        first_axis = dist.first_axis(self)
-        return (self.global_grid_azimuth(dist, scales[first_axis]),
-                self.global_grid_colatitude(dist, scales[first_axis+1]))
+        return (self.global_grid_azimuth(dist, scales[0]),
+                self.global_grid_colatitude(dist, scales[1]))
 
     def global_grid_colatitude(self, dist, scale):
         theta = self._native_colatitude_grid(scale)
         return reshape_vector(theta, dim=dist.dim, axis=dist.get_basis_axis(self)+1)
 
     @CachedMethod
-    def global_grid_spacing(self, dist, axis, scales=None):
+    def global_grid_spacing(self, dist, subaxis, scales):
         """Global grids spacings."""
-        if scales is None: scales = (1,1)
-        return np.gradient(self.global_grids(dist, scales=scales)[axis], axis=axis, edge_order=2)
+        axis = dist.first_axis(self) + subaxis
+        return np.gradient(self.global_grids(dist, scales=scales)[subaxis], axis=axis, edge_order=2)
 
     @CachedMethod
-    def local_grid_spacing(self, dist, axis, scales=None):
+    def local_grid_spacing(self, dist, subaxis, scales):
         """Local grids spacings."""
-        global_spacing = self.global_grid_spacing(dist, axis, scales=scales)
-        if scales is None: scales = (1,1)
-        local_elements = dist.grid_layout.local_elements(self.domain(dist), scales=scales[axis])[axis]
+        axis = dist.first_axis(self) + subaxis
+        global_spacing = self.global_grid_spacing(dist, subaxis, scales=scales)
+        local_elements = dist.grid_layout.local_elements(self.domain(dist), scales=scales[subaxis])[axis]
         return reshape_vector(np.ravel(global_spacing)[local_elements], dim=dist.dim, axis=axis)
 
     def local_grids(self, dist, scales):
-        first_axis = dist.first_axis(self)
-        return (self.local_grid_azimuth(dist, scales[first_axis]),
-                self.local_grid_colatitude(dist, scales[first_axis+1]))
+        return (self.local_grid_azimuth(dist, scales[0]),
+                self.local_grid_colatitude(dist, scales[1]))
 
     def local_grid_colatitude(self, dist, scale):
         local_elements = dist.grid_layout.local_elements(self.domain(dist), scales=scale)[dist.get_basis_axis(self)+1]
@@ -4209,33 +4204,31 @@ class Spherical3DBasis(MultidimensionalBasis):
         return self.radial_basis.constant_mode_value / np.sqrt(2)
 
     def global_grids(self, dist, scales):
-        first_axis = dist.first_axis(self)
-        return (self.global_grid_azimuth(dist, scales[first_axis]),
-                self.global_grid_colatitude(dist, scales[first_axis+1]),
-                self.global_grid_radius(dist, scales[first_axis+2]))
+        return (self.global_grid_azimuth(dist, scales[0]),
+                self.global_grid_colatitude(dist, scales[1]),
+                self.global_grid_radius(dist, scales[2]))
 
     def local_grids(self, dist, scales):
-        first_axis = dist.first_axis(self)
-        return (self.local_grid_azimuth(dist, scales[first_axis]),
-                self.local_grid_colatitude(dist, scales[first_axis+1]),
-                self.local_grid_radius(dist, scales[first_axis+2]))
+        return (self.local_grid_azimuth(dist, scales[0]),
+                self.local_grid_colatitude(dist, scales[1]),
+                self.local_grid_radius(dist, scales[2]))
 
     @CachedMethod
-    def global_grid_spacing(self, dist, axis, scales=None):
+    def global_grid_spacing(self, dist, subaxis, scales):
         """Global grids spacings."""
-        if scales is None: scales = (1,1,1)
-        grid = self.global_grids(dist, scales=scales)[axis]
+        grid = self.global_grids(dist, scales=scales)[subaxis]
         if grid.size == 1:
             return np.array([np.inf,], dtype=grid.dtype)
         else:
+            axis = dist.first_axis(self) + subaxis
             return np.gradient(grid, axis=axis, edge_order=2)
 
     @CachedMethod
-    def local_grid_spacing(self, dist, axis, scales=None):
+    def local_grid_spacing(self, dist, subaxis, scales):
         """Local grids spacings."""
-        if scales is None: scales = (1,1,1)
-        global_spacing = self.global_grid_spacing(dist, axis, scales=scales)
-        local_elements = dist.grid_layout.local_elements(self.domain(dist), scales=scales[axis])[axis]
+        axis = dist.first_axis(self) + subaxis
+        global_spacing = self.global_grid_spacing(dist, subaxis, scales=scales)
+        local_elements = dist.grid_layout.local_elements(self.domain(dist), scales=scales[subaxis])[axis]
         return reshape_vector(np.ravel(global_spacing)[local_elements], dim=dist.dim, axis=axis)
 
     def local_elements(self):
@@ -6091,11 +6084,11 @@ class PolarAngularComponent(operators.AngularComponent):
 
 class CartesianAdvectiveCFL(operators.AdvectiveCFL):
 
-    input_coord_type = CartesianCoordinates
-    input_basis_type = (ComplexFourier, RealFourier, Jacobi)
+    input_coord_type = (CartesianCoordinates, Coordinate)
 
     @CachedMethod
-    def cfl_spacing(self, velocity):
+    def cfl_spacing(self):
+        velocity = self.operand
         coordsys = velocity.tensorsig[0]
         spacing = []
         for i, c in enumerate(coordsys.coords):
@@ -6120,16 +6113,30 @@ class CartesianAdvectiveCFL(operators.AdvectiveCFL):
         return spacing
 
     def compute_cfl_frequency(self, velocity, out):
-        u_mag = np.abs(velocity.data)
-        out.data[:] = 0
-        for i, dx in enumerate(self.cfl_spacing(velocity)):
-            out.data += u_mag[i] / dx
+        u_mag = np.abs(velocity)
+        for i, dx in enumerate(self.cfl_spacing()):
+            out += u_mag[i] / dx
+
+
+class DirectProductAdvectiveCFL(operators.AdvectiveCFL):
+
+    input_coord_type = DirectProduct
+
+    def __init__(self, operand, coords):
+        super().__init__(operand, coords)
+        self.comps = [operators.DirectProductComponent(operand, index=0, comp=cs) for cs in coords.coordsystems]
+        self.comp_cfls = [operators.AdvectiveCFL(comp, comp.comp) for comp in self.comps]
+
+    def compute_cfl_frequency(self, velocity, out):
+        # Add contributions from each component
+        for comp, comp_cfl in zip(self.comps, self.comp_cfls):
+            comp_velocity = velocity[comp.comp_slices]
+            comp_cfl.compute_cfl_frequency(comp_velocity, out)
 
 
 class PolarAdvectiveCFL(operators.AdvectiveCFL):
 
     input_coord_type = PolarCoordinates
-    input_basis_type = (DiskBasis, AnnulusBasis)
 
     @CachedMethod
     def cfl_spacing(self):
@@ -6148,22 +6155,22 @@ class PolarAdvectiveCFL(operators.AdvectiveCFL):
 
     def compute_cfl_frequency(self, velocity, out):
         #Assumes velocity is a 2-length vector over polar coordinates
-        u_theta, u_r = np.abs(velocity.data)
-        out.data[:] = u_theta / self.cfl_spacing()[0]
-        out.data += u_r / self.cfl_spacing()[1]
+        u_theta, u_r = np.abs(velocity)
+        out += u_theta / self.cfl_spacing()[0]
+        out += u_r / self.cfl_spacing()[1]
 
 
 class S2AdvectiveCFL(operators.AdvectiveCFL):
 
     input_coord_type = S2Coordinates
-    input_basis_type = SphereBasis
 
     @CachedMethod
     def cfl_spacing(self, r=None):
         #Assumes velocity is a 2-length vector over spherical coordinates
         basis   = self.input_basis
         dealias = basis.dealias
-        if r is None: r = basis.radius
+        if r is None:
+            r = basis.radius
         s2_spacing = basis.local_grid_spacing(self.dist, 0, scales=dealias)
         if basis.Lmax == 0:
             s2_spacing[:] = np.inf
@@ -6174,16 +6181,15 @@ class S2AdvectiveCFL(operators.AdvectiveCFL):
     def compute_cfl_frequency(self, velocity, out):
         #compute u_mag * sqrt(ell*(ell+1)) / r
         #Assumes velocity is a 2-length vector over spherical coordinates
-        u_phi, u_theta = velocity.data[0], velocity.data[1]
+        u_phi, u_theta = velocity[0], velocity[1]
         u_mag = np.sqrt(u_phi**2 + u_theta**2)
         #Again assumes that this field only has an S2 basis
-        out.data[:] = u_mag / self.cfl_spacing()[0]
+        out += u_mag / self.cfl_spacing()[0]
 
 
 class Spherical3DAdvectiveCFL(operators.AdvectiveCFL):
 
     input_coord_type = SphericalCoordinates
-    input_basis_type = (BallBasis, ShellBasis)
 
     @CachedMethod
     def cfl_spacing(self):
@@ -6201,8 +6207,8 @@ class Spherical3DAdvectiveCFL(operators.AdvectiveCFL):
     def compute_cfl_frequency(self, velocity, out):
         #Assumes velocity is a 3-length vector in spherical coordinates
         S2AdvectiveCFL.compute_cfl_frequency(self, velocity, out)
-        u_r = np.abs(velocity.data[2])
-        out.data += u_r / self.cfl_spacing()[1]
+        u_r = np.abs(velocity[2])
+        out += u_r / self.cfl_spacing()[1]
 
 
 from . import transforms

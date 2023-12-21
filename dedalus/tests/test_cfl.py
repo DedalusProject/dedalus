@@ -87,8 +87,8 @@ def test_full_cfl_fourier_chebyshev(Nx, Nz, dealias, dtype, timestepper, safety,
         solver.step(1)
     dt_cfl = cfl.compute_timestep()
     cfl_op = d3.AdvectiveCFL(u, c)
-    cfl_freq = np.abs(u['g'][0] / cfl_op.cfl_spacing(u)[0])
-    cfl_freq += np.abs(u['g'][1] / cfl_op.cfl_spacing(u)[1])
+    cfl_freq = np.abs(u['g'][0] / cfl_op.cfl_spacing()[0])
+    cfl_freq += np.abs(u['g'][1] / cfl_op.cfl_spacing()[1])
     cfl_freq = np.max(cfl_freq)
     dt_target = safety / cfl_freq
     assert np.allclose(dt_cfl, dt_target)
@@ -108,7 +108,7 @@ def test_cfl_fourier(N, L, dealias, dtype):
     u.fill_random(layout='g')
     cfl = d3.AdvectiveCFL(u, c)
     cfl_freq = cfl.evaluate()['g']
-    target_freq = np.abs(u['g']) / cfl.cfl_spacing(u)[0]
+    target_freq = np.abs(u['g']) / cfl.cfl_spacing()[0]
     assert np.allclose(cfl_freq, target_freq)
 
 
@@ -126,7 +126,7 @@ def test_cfl_chebyshev(N, L, dealias, dtype):
     u.fill_random(layout='g')
     cfl = d3.AdvectiveCFL(u, c)
     cfl_freq = cfl.evaluate()['g']
-    target_freq = np.abs(u['g']) / cfl.cfl_spacing(u)[0]
+    target_freq = np.abs(u['g']) / cfl.cfl_spacing()[0]
     assert np.allclose(cfl_freq, target_freq)
 
 
@@ -146,8 +146,8 @@ def test_cfl_fourier_chebyshev(Nx, Nz, dealias, dtype, z_velocity_mag):
     u.fill_random(layout='g')
     cfl = d3.AdvectiveCFL(u, c)
     cfl_freq = cfl.evaluate()['g']
-    target_freq = np.abs(u['g'][0]) / cfl.cfl_spacing(u)[0]
-    target_freq += np.abs(u['g'][1]) / cfl.cfl_spacing(u)[1]
+    target_freq = np.abs(u['g'][0]) / cfl.cfl_spacing()[0]
+    target_freq += np.abs(u['g'][1]) / cfl.cfl_spacing()[1]
     assert np.allclose(cfl_freq, target_freq)
 
 

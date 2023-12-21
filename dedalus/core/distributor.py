@@ -288,8 +288,11 @@ class Distributor:
 
     def local_grids(self, *bases, scales=None):
         scales = self.remedy_scales(scales)
-        # TODO: remove from bases and do it all here?
-        return sum((basis.local_grids(self, scales=scales) for basis in bases), ())
+        grids = []
+        for basis in bases:
+            basis_scales = scales[self.first_axis(basis):self.last_axis(basis)+1]
+            grids.extend(basis.local_grids(self, scales=basis_scales))
+        return grids
 
     def local_modes(self, basis):
         # TODO: remove from bases and do it all here?

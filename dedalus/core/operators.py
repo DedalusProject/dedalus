@@ -4319,9 +4319,7 @@ class AdvectiveCFL(FutureLockedField, metaclass=MultiClass):
         # Dispatch by operand basis
         if isinstance(operand, Operand):
             if isinstance(coords, cls.input_coord_type):
-                basis = operand.domain.get_basis(coords)
-                if isinstance(basis, cls.input_basis_type):
-                    return True
+                return True
         return False
 
     def __init__(self, operand, coords):
@@ -4357,7 +4355,8 @@ class AdvectiveCFL(FutureLockedField, metaclass=MultiClass):
         # Set output lock
         out.lock_axis_to_grid(0)
         # Compute CFL frequencies
-        self.compute_cfl_frequency(arg, out)
+        out.data[:] = 0
+        self.compute_cfl_frequency(arg.data, out.data)
 
     def compute_cfl_frequency(self, velocity, out):
         """Return a scalar multi-D field of the cfl frequency everywhere in the domain."""
