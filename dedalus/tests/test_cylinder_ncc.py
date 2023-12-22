@@ -11,7 +11,7 @@ from dedalus.tools.cache import CachedFunction
 dot = arithmetic.DotProduct
 length = 1.88
 radius_disk = 1.5
-radii_annulus = (0.5, 3)
+radii_annulus = (0.5, 1.1)
 
 @CachedFunction
 def build_periodic_cylinder(Nz, Nphi, Nr, alpha, k, dealias, dtype):

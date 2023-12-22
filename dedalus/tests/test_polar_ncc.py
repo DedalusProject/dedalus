@@ -8,6 +8,7 @@ from dedalus.tools.cache import CachedFunction
 
 # TODO: add in alpha and k
 # Seem to need higher resolution and allclose tolerance for k=1
+# or lowering annulus radius
 
 dot = arithmetic.DotProduct
 dtypes = [np.float64, np.complex128]
