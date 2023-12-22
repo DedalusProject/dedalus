@@ -24,9 +24,7 @@ def test_cartesian_output(dtype, dealias, output_scales):
     xb = Fourier(c.coords[0], size=Nx, bounds=(0, Lx), dealias=dealias)
     yb = Fourier(c.coords[1], size=Ny, bounds=(0, Ly), dealias=dealias)
     zb = Fourier(c.coords[2], size=Nz, bounds=(0, Lz), dealias=dealias)
-    x = xb.local_grid(1)
-    y = yb.local_grid(1)
-    z = zb.local_grid(1)
+    x, y, z = d.local_grids(xb, yb, zb, scales=1)
     # Fields
     u = field.Field(name='u', dist=d, bases=(xb,yb,zb), dtype=dtype)
     v = field.Field(name='v', dist=d, bases=(xb,yb,zb), tensorsig=(c,), dtype=dtype)
@@ -76,9 +74,7 @@ def test_cartesian_output_virtual(dtype, dealias, output_scales):
     xb = Fourier(c.coords[0], size=Nx, bounds=(0, Lx), dealias=dealias)
     yb = Fourier(c.coords[1], size=Ny, bounds=(0, Ly), dealias=dealias)
     zb = Fourier(c.coords[2], size=Nz, bounds=(0, Lz), dealias=dealias)
-    x = xb.local_grid(1)
-    y = yb.local_grid(1)
-    z = zb.local_grid(1)
+    x, y, z = d.local_grids(xb, yb, zb, scales=1)
     # Fields
     u = field.Field(name='u', dist=d, bases=(xb,yb,zb), dtype=dtype)
     v = field.Field(name='v', dist=d, bases=(xb,yb,zb), tensorsig=(c,), dtype=dtype)
@@ -130,9 +126,7 @@ def test_cartesian_output_merged_virtual(dtype, dealias, output_scales):
     xb = Fourier(c.coords[0], size=Nx, bounds=(0, Lx), dealias=dealias)
     yb = Fourier(c.coords[1], size=Ny, bounds=(0, Ly), dealias=dealias)
     zb = Fourier(c.coords[2], size=Nz, bounds=(0, Lz), dealias=dealias)
-    x = xb.local_grid(1)
-    y = yb.local_grid(1)
-    z = zb.local_grid(1)
+    x, y, z = d.local_grids(xb, yb, zb, scales=1)
     # Fields
     u = field.Field(name='u', dist=d, bases=(xb,yb,zb), dtype=dtype)
     v = field.Field(name='v', dist=d, bases=(xb,yb,zb), tensorsig=(c,), dtype=dtype)
@@ -153,7 +147,7 @@ def test_cartesian_output_merged_virtual(dtype, dealias, output_scales):
     solver.evaluator.evaluate_handlers([output])
     # Check solution
     errors = []
-    
+
     post.merge_virtual_analysis('test_output', cleanup=True)
     d.comm.Barrier()
 
@@ -187,9 +181,7 @@ def test_cartesian_output_merged(dtype, dealias, output_scales):
     xb = Fourier(c.coords[0], size=Nx, bounds=(0, Lx), dealias=dealias)
     yb = Fourier(c.coords[1], size=Ny, bounds=(0, Ly), dealias=dealias)
     zb = Fourier(c.coords[2], size=Nz, bounds=(0, Lz), dealias=dealias)
-    x = xb.local_grid(1)
-    y = yb.local_grid(1)
-    z = zb.local_grid(1)
+    x, y, z = d.local_grids(xb, yb, zb, scales=1)
     # Fields
     u = field.Field(name='u', dist=d, bases=(xb,yb,zb), dtype=dtype)
     v = field.Field(name='v', dist=d, bases=(xb,yb,zb), tensorsig=(c,), dtype=dtype)
@@ -210,7 +202,7 @@ def test_cartesian_output_merged(dtype, dealias, output_scales):
     solver.evaluator.evaluate_handlers([output])
     # Check solution
     errors = []
-    
+
     post.merge_analysis('test_output', cleanup=True)
     d.comm.Barrier()
 

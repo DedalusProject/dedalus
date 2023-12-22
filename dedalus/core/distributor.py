@@ -9,6 +9,8 @@ import itertools
 from collections import OrderedDict
 from math import prod
 
+from .coords import CoordinateSystem, DirectProduct
+from ..tools.array import reshape_vector
 from ..tools.cache import CachedMethod, CachedAttribute
 from ..tools.config import config
 from ..tools.general import OrderedSet
@@ -71,18 +73,16 @@ class Distributor:
     """
 
     def __init__(self, coordsystems, comm=None, mesh=None, dtype=None):
-        # Accept single coordsystem in place of tuple/list
+        # Accept single coordsys in place of tuple/list
         if not isinstance(coordsystems, (tuple, list)):
             coordsystems = (coordsystems,)
-        # Note if only a single coordsystem for simplicity
+        # Note if only a single coordsys for simplicity
         if len(coordsystems) == 1:
             self.single_coordsys = coordsystems[0]
         else:
             self.single_coordsys = False
         # Get coords
-        self.coords = tuple([coord for coordsystem in coordsystems for coord in coordsystem.coords])
-        for coordsystem in coordsystems:
-            coordsystem.set_distributor(self)
+        self.coords = sum((cs.coords for cs in coordsystems), ())
         self.coordsystems = coordsystems
         # Defaults
         if comm is None:
@@ -95,7 +95,7 @@ class Distributor:
         # Trim trailing ones
         mesh = 1 + np.trim_zeros(mesh - 1, trim='b')
         self.dim = dim = len(self.coords)
-#        self.dim = dim = sum(coordsystem.dim for coordsystem in coordsystems)
+#        self.dim = dim = sum(coordsys.dim for coordsys in coordsystems)
         self.comm = comm
         self.mesh = mesh = np.array(mesh)
         # Check mesh compatibility
@@ -117,7 +117,8 @@ class Distributor:
         cs_dict = {}
         for cs in self.coordsystems:
             for subaxis in range(cs.dim):
-                cs_dict[cs.axis+subaxis] = cs
+                axis = self.get_axis(cs)
+                cs_dict[axis+subaxis] = cs
         return cs_dict
 
     def get_coordsystem(self, axis):
@@ -184,7 +185,7 @@ class Distributor:
         """Remedy different scale inputs."""
         if scales is None:
             scales = 1
-        if not hasattr(scales, "__len__"):
+        if not isinstance(scales, (list, tuple)):
             scales = [scales] * self.dim
         if 0 in scales:
             raise ValueError("Scales must be nonzero.")
@@ -194,7 +195,18 @@ class Distributor:
         return self.transforms[axis]
 
     def get_axis(self, coord):
+        if isinstance(coord, CoordinateSystem):
+            coord = coord.coords[0]
         return self.coords.index(coord)
+
+    def get_basis_axis(self, basis):
+        return self.get_axis(basis.coordsys.coords[0])
+
+    def first_axis(self, basis):
+        return self.get_basis_axis(basis)
+
+    def last_axis(self, basis):
+        return self.first_axis(basis) + basis.dim - 1
 
     def Field(self, *args, **kw):
         """Alternate constructor for fields."""
@@ -216,24 +228,71 @@ class Distributor:
         from .field import TensorField
         return TensorField(self, *args, **kw)
 
-    def IdentityTensor(self, coordsys):
+    def IdentityTensor(self, coordsys_in, coordsys_out=None, bases=None, dtype=None):
         """Identity tensor field."""
+        if coordsys_out is None:
+            coordsys_out = coordsys_in
         from .field import TensorField
-        I = TensorField(self, (coordsys, coordsys))
-        for i in range(coordsys.dim):
-            I['g'][i, i] = 1
+        I = TensorField(self, (coordsys_out, coordsys_in), bases=bases, dtype=dtype)
+        if coordsys_in is coordsys_out:
+            for i in range(coordsys_in.dim):
+                I['g'][i, i] = 1
+        elif isinstance(coordsys_in, DirectProduct) and (coordsys_out in coordsys_in.coordsystems):
+            i0 = coordsys_in.subaxis_by_cs[coordsys_out]
+            for i in range(coordsys_out.dim):
+                I['g'][i, i0+i] = 1
+        elif isinstance(coordsys_out, DirectProduct) and (coordsys_in in coordsys_out.coordsystems):
+            i0 = coordsys_out.subaxis_by_cs[coordsys_in]
+            for i in range(coordsys_in.dim):
+                I['g'][i0+i, i] = 1
+        else:
+            raise ValueError("Unsupported coordinate systems.")
         return I
 
     def local_grid(self, basis, scale=None):
         # TODO: remove from bases and do it all here?
+        if scale is None:
+            scale = 1
         if basis.dim == 1:
-            return basis.local_grid(scale=scale)
+            return basis.local_grid(self, scale=scale)
         else:
             raise ValueError("Use `local_grids` for multidimensional bases.")
 
+    # def global_grids(self, *bases, scales=None):
+    #     """Global grids."""
+    #     grids = []
+    #     scales = self.remedy_scales(scales)
+    #     for basis in bases:
+    #         basis_axis = self.get_basis_axis(basis)
+    #         basis_scales = scales[basis_axis:basis_axis+basis.dim]
+    #         global_grids = basis.global_grids(scales=basis_scales)
+    #         for subaxis in range(basis.dim):
+    #             axis = basis_axis + subaxis
+    #             grids.append(reshape_vector(global_grids[subaxis], dim=self.dim, axis=axis))
+    #     return tuple(grids)
+
+    # def local_grids(self, *bases, scales=None):
+    #     """Local grid."""
+    #     grids = []
+    #     scales = self.remedy_scales(scales)
+    #     for basis in bases:
+    #         basis_axis = self.get_basis_axis(basis)
+    #         basis_scales = scales[basis_axis:basis_axis+basis.dim]
+    #         local_elements = self.grid_layout.local_elements(basis.domain(self), scales=scales)
+    #         global_grids = basis.global_grids(scales=basis_scales)
+    #         for subaxis in range(basis.dim):
+    #             axis = basis_axis + subaxis
+    #             local_grid = global_grids[subaxis][local_elements[axis]]
+    #             grids.append(reshape_vector(local_grid, dim=self.dim, axis=axis))
+    #     return tuple(grids)
+
     def local_grids(self, *bases, scales=None):
-        # TODO: remove from bases and do it all here?
-        return sum((basis.local_grids(scales=scales) for basis in bases), ())
+        scales = self.remedy_scales(scales)
+        grids = []
+        for basis in bases:
+            basis_scales = scales[self.first_axis(basis):self.last_axis(basis)+1]
+            grids.extend(basis.local_grids(self, scales=basis_scales))
+        return grids
 
     def local_modes(self, basis):
         # TODO: remove from bases and do it all here?
@@ -347,7 +406,7 @@ class Layout:
         vshape = tuple(cs.dim for cs in tensorsig) + elements[0].shape
         valid = np.ones(shape=vshape, dtype=bool)
         for basis in domain.bases:
-            basis_axes = slice(basis.first_axis, basis.last_axis+1)
+            basis_axes = slice(self.dist.first_axis(basis), self.dist.last_axis(basis)+1)
             valid &= basis.valid_elements(tensorsig, grid_space[basis_axes], elements[basis_axes])
         return valid
 
@@ -357,7 +416,7 @@ class Layout:
         groups = np.zeros_like(elements)
         groups = np.ma.masked_array(groups)
         for basis in domain.bases:
-            basis_axes = slice(basis.first_axis, basis.last_axis+1)
+            basis_axes = slice(self.dist.first_axis(basis), self.dist.last_axis(basis)+1)
             groups[basis_axes] = basis.elements_to_groups(grid_space[basis_axes], elements[basis_axes])
         return groups
 

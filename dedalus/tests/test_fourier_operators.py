@@ -17,7 +17,7 @@ def build_fourier(N, bounds, dealias, dtype):
     c = d3.Coordinate('x')
     d = d3.Distributor(c, dtype=dtype)
     b = d3.Fourier(c, size=N, bounds=bounds, dealias=dealias, dtype=dtype)
-    x = b.local_grid(1)
+    x = d.local_grid(b, scale=1)
     return c, d, b, x
 
 

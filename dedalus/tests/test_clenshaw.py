@@ -29,7 +29,7 @@ def test_ball_clenshaw_scalar(N, regtotal_in, k_ncc, k_arg, ell, dtype):
     d = d3.Distributor(c, dtype=dtype)
     ncc_basis = d3.BallBasis(c, (1, 1, N), dtype=dtype, k=k_ncc, radius=1)
     arg_basis = d3.BallBasis(c, (N, N, N), dtype=dtype, k=k_arg, radius=1)
-    phi, theta, r = arg_basis.local_grids((1, 1, 1))
+    phi, theta, r = d.local_grids(arg_basis, scales=(1, 1, 1))
     # Setup NCC to match Z operator
     ncc = d.Field(bases=ncc_basis.radial_basis)  # TODO: cleanup when radial bases are fixed
     ncc['g'] = 2*r**2-1
@@ -59,7 +59,7 @@ def test_ball_clenshaw_vector(N, regtotal_in, k_ncc, k_arg, ell, dtype):
     d = d3.Distributor(c, dtype=dtype)
     ncc_basis = d3.BallBasis(c, (1, 1, N), dtype=dtype, k=k_ncc, radius=1)
     arg_basis = d3.BallBasis(c, (N, N, N), dtype=dtype, k=k_arg, radius=1)
-    phi, theta, r = arg_basis.local_grids((1, 1, 1))
+    phi, theta, r = d.local_grids(arg_basis, scales=(1, 1, 1))
     # Setup NCC to match Z operator
     ncc = d.VectorField(c, bases=ncc_basis.radial_basis)  # TODO: cleanup when radial bases are fixed
     ncc['g'][2] = r*(2*r**2-1)

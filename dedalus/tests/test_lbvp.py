@@ -20,7 +20,7 @@ def build_disk(Nphi, Nr, radius, alpha, dealias, dtype):
     c = d3.PolarCoordinates('phi', 'r')
     d = d3.Distributor(c, dtype=dtype)
     b = d3.DiskBasis(c, (Nphi, Nr), radius=radius, alpha=alpha, dealias=dealias, dtype=dtype)
-    phi, r = b.local_grids()
+    phi, r = d.local_grids(b)
     x, y = c.cartesian(phi, r)
     return c, d, b, phi, r, x, y
 
@@ -30,7 +30,7 @@ def build_annulus(Nphi, Nr, radii, alpha, dealias, dtype):
     c = d3.PolarCoordinates('phi', 'r')
     d = d3.Distributor(c, dtype=dtype)
     b = d3.AnnulusBasis(c, (Nphi, Nr), radii=radii, alpha=alpha, dealias=dealias, dtype=dtype)
-    phi, r = b.local_grids()
+    phi, r = d.local_grids(b)
     x, y = c.cartesian(phi, r)
     return c, d, b, phi, r, x, y
 
@@ -306,7 +306,7 @@ def build_ball(Nphi, Ntheta, Nr, dealias, dtype):
     c = d3.SphericalCoordinates('phi', 'theta', 'r')
     d = d3.Distributor((c,), dtype=dtype)
     b = d3.BallBasis(c, (Nphi, Ntheta, Nr), radius=radius_ball, dealias=(dealias, dealias, dealias), dtype=dtype)
-    phi, theta, r = b.local_grids()
+    phi, theta, r = d.local_grids(b)
     x, y, z = c.cartesian(phi, theta, r)
     return c, d, b, phi, theta, r, x, y, z
 
@@ -376,7 +376,7 @@ def build_shell(Nphi, Ntheta, Nr, dealias, dtype):
     c = d3.SphericalCoordinates('phi', 'theta', 'r')
     d = d3.Distributor((c,), dtype=dtype)
     b = d3.ShellBasis(c, (Nphi, Ntheta, Nr), radii=radii_shell, dealias=(dealias, dealias, dealias), dtype=dtype)
-    phi, theta, r = b.local_grids()
+    phi, theta, r = d.local_grids(b)
     x, y, z = c.cartesian(phi, theta, r)
     return c, d, b, phi, theta, r, x, y, z
 

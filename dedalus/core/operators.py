@@ -27,7 +27,7 @@ from ..tools.exceptions import NonlinearOperatorError
 from ..tools.exceptions import SymbolicParsingError
 from ..tools.exceptions import UndefinedParityError
 from ..tools.exceptions import SkipDispatchException
-from ..tools.general import unify, unify_attributes
+from ..tools.general import unify, unify_attributes, is_complex_dtype
 
 # Public interface
 __all__ = ['GeneralFunction',
@@ -1076,7 +1076,7 @@ class Interpolate(SpectralOperator, metaclass=MultiClass):
         # Dispatch by operand basis and subaxis
         if isinstance(operand, Operand):
             basis = operand.domain.get_basis(coord)
-            subaxis = basis.coordsystem.coords.index(coord)
+            subaxis = basis.coordsys.coords.index(coord)
             if isinstance(basis, cls.input_basis_type) and cls.basis_subaxis == subaxis:
                 return True
         return False
@@ -1088,8 +1088,8 @@ class Interpolate(SpectralOperator, metaclass=MultiClass):
         self.coord = coord
         self.input_basis = operand.domain.get_basis(coord)
         self.output_basis = self._output_basis(self.input_basis, position)
-        self.first_axis = self.input_basis.first_axis
-        self.last_axis = self.input_basis.last_axis
+        self.first_axis = self.dist.get_basis_axis(self.input_basis)
+        self.last_axis = self.first_axis + self.input_basis.dim - 1
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements
@@ -1137,10 +1137,13 @@ class Integrate(LinearOperator, metaclass=MultiClass):
             raise SkipDispatchException(output=0)
         # Integrate over all operand bases by default
         if coord is None:
-            coord = [basis.coordsystem for basis in operand.domain.bases]
+            coord = [basis.coordsys for basis in operand.domain.bases]
         # Split Cartesian coordinates
         if isinstance(coord, coords.CartesianCoordinates):
             coord = coord.coords
+        # Split DirectProduct coordinates
+        if isinstance(coord, coords.DirectProduct):
+            coord = coord.coordsystems
         # Recurse over multiple coordinates
         if isinstance(coord, (tuple, list)):
             if len(coord) > 1:
@@ -1173,8 +1176,8 @@ class Integrate(LinearOperator, metaclass=MultiClass):
         self.coord = coord
         self.input_basis = operand.domain.get_basis(coord)
         self.output_basis = self._output_basis(self.input_basis)
-        self.first_axis = self.input_basis.first_axis
-        self.last_axis = self.input_basis.last_axis
+        self.first_axis = self.dist.get_basis_axis(self.input_basis)
+        self.last_axis = self.first_axis + self.input_basis.dim - 1
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements
@@ -1207,10 +1210,13 @@ class Average(LinearOperator, metaclass=MultiClass):
             raise SkipDispatchException(output=operand)
         # Average over all operand bases by default
         if coord is None:
-            coord = [basis.coordsystem for basis in operand.domain.bases]
+            coord = [basis.coordsys for basis in operand.domain.bases]
         # Split Cartesian coordinates
         if isinstance(coord, coords.CartesianCoordinates):
             coord = coord.coords
+        # Split DirectProduct coordinates
+        if isinstance(coord, coords.DirectProduct):
+            coord = coord.coordsystems
         # Recurse over multiple coordinates
         if isinstance(coord, (tuple, list)):
             if len(coord) > 1:
@@ -1243,8 +1249,8 @@ class Average(LinearOperator, metaclass=MultiClass):
         self.coord = coord
         self.input_basis = operand.domain.get_basis(coord)
         self.output_basis = self._output_basis(self.input_basis)
-        self.first_axis = self.input_basis.first_axis
-        self.last_axis = self.input_basis.last_axis
+        self.first_axis = self.dist.get_basis_axis(self.input_basis)
+        self.last_axis = self.first_axis + self.input_basis.dim - 1
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements
@@ -1329,9 +1335,9 @@ class Differentiate(SpectralOperator1D, metaclass=MultiClass):
         self.coord = coord
         self.input_basis = operand.domain.get_basis(coord)
         self.output_basis = self._output_basis(self.input_basis)
-        self.first_axis = coord.axis
-        self.last_axis = coord.axis
-        self.axis = coord.axis
+        self.first_axis = self.dist.get_axis(coord)
+        self.last_axis = self.first_axis
+        self.axis = self.first_axis
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements
@@ -1517,8 +1523,8 @@ class Convert(SpectralOperator, metaclass=MultiClass):
         self.coords = output_basis.coords
         self.input_basis = operand.domain.get_basis(self.coords)
         self.output_basis = output_basis
-        self.first_axis = self.output_basis.first_axis
-        self.last_axis = self.output_basis.last_axis
+        self.first_axis = self.dist.get_basis_axis(self.output_basis)
+        self.last_axis = self.first_axis + self.output_basis.dim - 1
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements
@@ -1686,6 +1692,7 @@ class ConvertConstant(Convert):
 @alias("trace")
 class Trace(LinearOperator, metaclass=MultiClass):
     # TODO: contract arbitrary indices instead of the first two?
+    # TODO: check that the two indices have same coordsys
 
     name = "Trace"
 
@@ -1752,7 +1759,7 @@ class SphericalTrace(Trace):
 
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
-        self.radius_axis = self.coordsys.coords[2].axis
+        self.radius_axis = self.dist.get_axis(self.coordsys.coords[2])
         self.radial_basis = self.input_basis.get_radial_basis()
 
     def subproblem_matrix(self, subproblem):
@@ -1769,7 +1776,7 @@ class SphericalTrace(Trace):
         # Stack ells
         if ell is None:
             ell_list = np.arange(np.abs(m), input_basis.Lmax+1)
-            if input_basis.ell_reversed[m]:
+            if input_basis.ell_reversed(self.dist)[m]:
                 ell_list = ell_list[::-1]
         else:
             ell_list = [ell]
@@ -1792,13 +1799,13 @@ class SphericalTrace(Trace):
         return matrix
 
 
-class CylindricalTrace(Trace):
+class PolarTrace(Trace):
 
     cs_type = coords.PolarCoordinates
 
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
-        self.radius_axis = self.coordsys.coords[1].axis
+        self.radius_axis = self.dist.get_axis(self.coordsys.coords[1])
 
     def subproblem_matrix(self, subproblem):
         m = subproblem.group[self.radius_axis - 1]
@@ -1806,19 +1813,18 @@ class CylindricalTrace(Trace):
         # [ 1,  2]
         trace_spin = np.zeros(4)
         trace_spin[[1, 2]] = 1
-        trace = sparse.kron(trace_spin, sparse.eye(2**len(self.tensorsig)))
-        # Assume all components have the same n_size
-        eye = sparse.identity(self.input_basis.n_size(m), self.dtype, format='csr')
-        matrix = sparse.kron(trace, eye)
-        # Block-diag for sin/cos parts for real dtype
-        if self.dtype == np.float64:
-            matrix = sparse.kron(matrix, sparse.identity(2, format='csr')).tocsr()
+        # Kronecker up identity for remaining tensor components
+        n_eye = prod(cs.dim for cs in self.tensorsig)
+        # Kronecker up identity for coeff size
+        n_eye *= subproblem.coeff_size(self.domain)
+        eye = sparse.identity(n_eye, self.dtype, format='csr')
+        matrix = sparse.kron(trace_spin, eye)
         return matrix
 
 
 class CartesianTrace(Trace):
 
-    cs_type = coords.CartesianCoordinates
+    cs_type = (coords.CartesianCoordinates, coords.Coordinate)
 
     def subproblem_matrix(self, subproblem):
         dim = self.coordsys.dim
@@ -1827,6 +1833,16 @@ class CartesianTrace(Trace):
         eye = sparse.identity(subproblem.coeff_size(self.domain), self.dtype, format='csr')
         matrix = sparse.kron(trace, eye)
         return matrix
+
+
+class DirectProductTrace(Trace):
+
+    cs_type = coords.DirectProduct
+
+    def subproblem_matrix(self, subproblem):
+        comps = [DirectProductComponent(DirectProductComponent(self.operand, index=0, comp=cs), index=1, comp=cs) for cs in self.coordsys.coordsystems]
+        fulltrace = sum(Trace(comp) for comp in comps)
+        return fulltrace.expression_matrices(subproblem, [self.operand])[self.operand]
 
 
 @alias("transpose", "trans")
@@ -1917,7 +1933,8 @@ class StandardTransposeComponents(TransposeComponents):
 
     cs_type = (coords.CartesianCoordinates,
                coords.PolarCoordinates,
-               coords.S2Coordinates)
+               coords.S2Coordinates,
+               coords.DirectProduct)
 
     def subproblem_matrix(self, subproblem):
         """Build operator matrix for a specific subproblem."""
@@ -1940,7 +1957,7 @@ class SphericalTransposeComponents(TransposeComponents):
 
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
-        self.radius_axis = self.coordsys.coords[2].axis
+        self.radius_axis = self.dist.get_axis(self.coordsys.coords[2])
         self.radial_basis = self.input_basis.get_radial_basis()
 
     def subproblem_matrix(self, subproblem):
@@ -1953,7 +1970,7 @@ class SphericalTransposeComponents(TransposeComponents):
         # Stack ells
         if ell is None:
             ell_list = np.arange(np.abs(m), input_basis.Lmax+1)
-            if input_basis.ell_reversed[m]:
+            if input_basis.ell_reversed(self.dist)[m]:
                 ell_list = ell_list[::-1]
         else:
             ell_list = [ell]
@@ -1988,7 +2005,7 @@ class SphericalTransposeComponents(TransposeComponents):
             out.data[:] = np.transpose(operand.data, self.new_axis_order)
         else:
             radial_basis = self.radial_basis
-            ell_maps = self.input_basis.ell_maps
+            ell_maps = self.input_basis.ell_maps(self.dist)
             # Copy to output for in-place regularity recombination
             copyto(out.data, operand.data)
             out.data[:] = operand.data
@@ -2058,10 +2075,7 @@ class CartesianSkew(Skew):
         factors = [sparse.identity(cs.dim, format='csr') for cs in self.operand.tensorsig]
         factors.append(sparse.identity(subproblem.coeff_size(self.domain), format='csr'))
         # Substitute skew matrix
-        if self.coordsys.right_handed:
-            skew = np.array([[0, -1,], [1, 0]])
-        else:
-            skew = np.array([[0, 1,], [-1, 0]])
+        skew = np.array([[0, -1,], [1, 0]])
         factors[self.index] = skew
         return reduce(sparse.kron, factors, 1).tocsr()
 
@@ -2074,12 +2088,8 @@ class CartesianSkew(Skew):
         if arg.data.size:
             sx = axslice(self.index, 0, 1)
             sy = axslice(self.index, 1, 2)
-            out.data[sx] = arg.data[sy]
+            out.data[sx] = - arg.data[sy]
             out.data[sy] = arg.data[sx]
-            if self.coordsys.right_handed:
-                out.data[sx] *= -1
-            else:
-                out.data[sy] *= -1
 
 
 class SpinSkew(Skew):
@@ -2132,7 +2142,7 @@ class SpinSkew(Skew):
                 arg_minus = arg.data[minus]
                 out_plus = out.data[plus]
                 out_minus = out.data[minus]
-                if np.iscomplexobj(self.dtype()):
+                if is_complex_dtype(self.dtype):
                     # out = 1j * s * arg
                     np.multiply(arg_plus, 1j, out=out_plus)
                     np.multiply(arg_minus, -1j, out=out_minus)
@@ -2299,10 +2309,15 @@ class Gradient(LinearOperator, metaclass=MultiClass):
 
 class CartesianGradient(Gradient):
 
-    cs_type = coords.CartesianCoordinates
+    cs_type = (coords.CartesianCoordinates, coords.Coordinate)
 
     def __init__(self, operand, coordsys, out=None):
+        # Wrap to handle gradient wrt single coordinate
+        if isinstance(coordsys, coords.Coordinate):
+            coordsys = coords.CartesianCoordinates(coordsys.name)
+        # Assemble partial derivatives along each coordinate
         args = [Differentiate(operand, coord) for coord in coordsys.coords]
+        # TODO: get rid of this hack
         for i in range(len(args)):
             if args[i] == 0:
                 args[i] = 2*operand
@@ -2361,6 +2376,86 @@ class CartesianGradient(Gradient):
                 out.data[i] = comp.data
             else:
                 out.data[i] = 0
+
+
+class DirectProductGradient(Gradient):
+
+    cs_type = coords.DirectProduct
+
+    def __init__(self, operand, coordsys, out=None):
+        args = [Gradient(operand, cs) for cs in coordsys.coordsystems]
+        bases = self._build_bases(operand, *args)
+        args = [convert(arg, bases) for arg in args]
+        LinearOperator.__init__(self, *args, out=out)
+        self.coordsys = coordsys
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = Domain(operand.dist, bases)
+        self.tensorsig = (coordsys,) + operand.tensorsig
+        self.dtype = operand.dtype
+
+    def _build_bases(self, *args):
+        """Build output bases."""
+        # Taken from Add operator
+        dist = unify_attributes(args, 'dist')
+        bases = []
+        for coord in args[0].domain.bases_by_coord:
+            ax_bases = tuple(arg.domain.bases_by_coord.get(coord, None) for arg in args)
+            # All constant bases yields constant basis
+            if all(basis is None for basis in ax_bases):
+                bases.append(None)
+            # Combine any constant bases to avoid adding None to None
+            elif any(basis is None for basis in ax_bases):
+                ax_bases = [basis for basis in ax_bases if basis is not None]
+                bases.append(np.sum(ax_bases) + None)
+            # Add all bases
+            else:
+                bases.append(np.sum(ax_bases))
+        return tuple(bases)
+
+    def matrix_dependence(self, *vars):
+        arg_vals = [arg.matrix_dependence(self, *vars) for arg in self.args]
+        return np.logical_or.reduce(arg_vals)
+
+    def matrix_coupling(self, *vars):
+        arg_vals = [arg.matrix_coupling(self, *vars) for arg in self.args]
+        return np.logical_or.reduce(arg_vals)
+
+    def subproblem_matrix(self, subproblem):
+        """Build operator matrix for a specific subproblem."""
+        return sparse.vstack(arg.expression_matrices(subproblem, [self.operand])[self.operand] for arg in self.args)
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Require operands to be in same layout
+        layouts = [operand.layout for operand in self.args if operand]
+        all_layouts_equal = (len(set(layouts)) == 1)
+        return all_layouts_equal
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Require operands to be in same layout
+        # Take coeff layout arbitrarily
+        layout = self.dist.coeff_layout
+        for arg in self.args:
+            if arg:
+                arg.change_layout(layout)
+
+    def operate(self, out):
+        """Perform operation."""
+        operands = self.args
+        layouts = [operand.layout for operand in self.args if operand]
+        # Set output layout
+        out.preset_layout(layouts[0])
+        # Copy operand data to output components
+        i0 = 0
+        for cs_grad, cs in zip(operands, self.coordsys.coordsystems):
+            if cs_grad:
+                out.data[i0:i0+cs.dim] = cs_grad.data
+            else:
+                out.data[i0:i0+cs.dim] = 0
+            i0 += cs.dim
 
 
 # class S2Gradient(Gradient, SpectralOperator):
@@ -2491,6 +2586,7 @@ class SpectralOperatorS2(SpectralOperator):
         m_dep = self.subaxis_dependence[0]
         l_dep = self.subaxis_dependence[1]
         # Loop over components
+        m_axis = self.dist.first_axis(basis)
         submatrices = []
         for spinindex_out, spintotal_out in np.ndenumerate(S_out):
             submatrix_row = []
@@ -2506,14 +2602,12 @@ class SpectralOperatorS2(SpectralOperator):
                     elif l_coupled or (not m_dep):
                         if l_coupled:
                             local_groups = self.dist.coeff_layout.local_group_arrays(domain, scales=1)
-                            local_m = local_groups[basis.first_axis]
-                            local_ell = local_groups[basis.first_axis+1]
+                            local_m = local_groups[m_axis]
+                            local_ell = local_groups[m_axis+1]
                             ell_list = local_ell[local_m == m].ravel()
                         elif not m_dep:
                             ell_list = [l]
                         blocks = []
-                        spintotal_in = basis.spintotal(spinindex_in)
-                        spintotal_out = basis.spintotal(spinindex_out)
                         for ell in ell_list:
                             if abs(spintotal_in) <= ell and abs(spintotal_out) <= ell:
                                 block = self.l_matrix(self.input_basis, self.output_basis, spinindex_in, spinindex_out, ell)
@@ -2569,7 +2663,7 @@ class SpectralOperatorS2(SpectralOperator):
         out.data[:] = 0
         # Apply operator
         S_in = input_basis.spin_weights(operand.tensorsig)
-        slices = [slice(None) for i in range(input_basis.dist.dim)]
+        slices = [slice(None) for i in range(self.dist.dim)]
         for spinindex_in, spintotal_in in np.ndenumerate(S_in):
             comp_in = operand.data[spinindex_in]
             reduced_in = reduced_view_3_ravel(comp_in, axis, dim)
@@ -2604,7 +2698,7 @@ class SeparableSphereOperator(SpectralOperator):
     subaxis_coupling = [False, False]  # No coupling
 
     @CachedMethod
-    def local_symbols(self, layout, spinindex_in, spinindex_out):
+    def local_symbols(self, layout, spinindex_in, spinindex_out, spintotal_in, spintotal_out):
         # TODO: improve caching specificity (e.g. for operators that depend only on spintotals)
         operand = self.args[0]
         if self.input_basis is None:
@@ -2618,12 +2712,12 @@ class SeparableSphereOperator(SpectralOperator):
         elif self.subaxis_dependence[1]:
             colat_axis = self.first_axis + 1
             local_ell = layout.local_group_arrays(domain, scales=domain.dealias)[colat_axis]
-            return self.symbol(spinindex_in, spinindex_out, local_ell, radius)
+            return self.symbol(spinindex_in, spinindex_out, spintotal_in, spintotal_out, local_ell, radius)
         else:
-            return self.symbol(spinindex_in, spinindex_out, radius)
+            return self.symbol(spinindex_in, spinindex_out, spintotal_in, spintotal_out, radius)
 
     @staticmethod
-    def symbol(spinindex_in, spinindex_out, ell):
+    def symbol(spinindex_in, spinindex_out, spintotal_in, spintotal_out, ell):
         raise NotImplementedError()
 
     def subproblem_matrix(self, subproblem):
@@ -2655,7 +2749,7 @@ class SeparableSphereOperator(SpectralOperator):
             for spinindex_in, spintotal_in in np.ndenumerate(S_in):
                 if (prod(subshape) > 0) and (spinindex_out in self.spinindex_out(spinindex_in)):
                     # Get symbols for overlapping data
-                    symbols = self.local_symbols(layout, spinindex_in, spinindex_out)
+                    symbols = self.local_symbols(layout, spinindex_in, spinindex_out, spintotal_in, spintotal_out)
                     if np.isscalar(symbols):
                         symbols = symbols * np.ones(prod(subshape))
                     else:
@@ -2719,7 +2813,8 @@ class SeparableSphereOperator(SpectralOperator):
                 comp_in = data_in[spinindex_in]
             for spinindex_out in self.spinindex_out(spinindex_in):
                 # Get symbols for overlapping data
-                symbols = self.local_symbols(layout, spinindex_in, spinindex_out)
+                spintotal_out = basis.spintotal(out.tensorsig, spinindex_out)
+                symbols = self.local_symbols(layout, spinindex_in, spinindex_out, spintotal_in, spintotal_out)
                 if slices and not np.isscalar(symbols):
                     symbols = symbols[slices]
                 # Multiply by symbols
@@ -2760,14 +2855,14 @@ class SphereEllProduct(SeparableSphereOperator, metaclass=MultiClass):
         self.operand = operand
         self.input_basis = operand.domain.get_basis(coordsys)
         self.output_basis = self.input_basis
-        self.first_axis = self.input_basis.first_axis
-        self.last_axis = self.input_basis.last_axis
+        self.first_axis = self.dist.first_axis(self.input_basis)
+        self.last_axis = self.dist.last_axis(self.input_basis)
         # FutureField requirements
         self.domain  = operand.domain
         self.tensorsig = operand.tensorsig
         self.dtype = operand.dtype
 
-    def symbol(self, spinindex_in, spinindex_out, local_ell, radius):
+    def symbol(self, spinindex_in, spinindex_out, spintotal_in, spintotal_out, local_ell, radius):
         return self.ell_r_func(local_ell, radius)
 
     def new_operand(self, operand, **kw):
@@ -2784,15 +2879,15 @@ class PolarMOperator(SpectralOperator):
 
     def __init__(self, operand, coordsys):
         self.coordsys = coordsys
-        self.radius_axis = coordsys.coords[1].axis
+        self.radius_axis = self.dist.get_axis(coordsys.coords[1])
         input_basis = operand.domain.get_basis(coordsys)
         if input_basis is None:
             input_basis = operand.domain.get_basis(coordsys.radius)
         # SpectralOperator requirements
         self.input_basis = input_basis
         self.output_basis = self._output_basis(self.input_basis)
-        self.first_axis = self.input_basis.first_axis
-        self.last_axis = self.input_basis.last_axis
+        self.first_axis = self.dist.first_axis(self.input_basis)
+        self.last_axis = self.dist.last_axis(self.input_basis)
         # LinearOperator requirements
         self.operand = operand
 
@@ -2803,18 +2898,18 @@ class PolarMOperator(SpectralOperator):
             basis = self.output_basis
         else:
             basis = self.input_basis
-        axis = basis.first_axis + 1
+        axis = self.last_axis
         # Set output layout
         out.preset_layout(operand.layout)
         out.data[:] = 0
         # Apply operator
         S_in = basis.spin_weights(operand.tensorsig)
-        slices = [slice(None) for i in range(basis.dist.dim)]
+        slices = [slice(None) for i in range(self.dist.dim)]
         for spinindex_in, spintotal_in in np.ndenumerate(S_in):
             for spinindex_out in self.spinindex_out(spinindex_in):
                 comp_in = operand.data[spinindex_in]
                 comp_out = out.data[spinindex_out]
-                for m, mg_slice, mc_slice, n_slice in basis.m_maps:
+                for m, mg_slice, mc_slice, n_slice in basis.m_maps(self.dist):
                     slices[axis-1] = mc_slice
                     slices[axis] = n_slice
                     vec_in  = comp_in[tuple(slices)]
@@ -2845,7 +2940,7 @@ class PolarMOperator(SpectralOperator):
                     factors = [sparse.eye(i, j, format='csr') for i, j in zip(subshape_out, subshape_in)]
                     radial_matrix = self.radial_matrix(spinindex_in, spinindex_out, m)
                     # Reverse matrices to match memory order for flipped groups
-                    if radial_basis.ell_reversed[m]:
+                    if radial_basis.ell_reversed(self.dist)[m]:
                         radial_matrix = radial_matrix[::-1, ::-1]
                     factors[self.last_axis] = radial_matrix
                     comp_matrix = reduce(sparse.kron, factors, 1).tocsr()
@@ -2905,9 +3000,9 @@ class MulCosine(PolarMOperator, metaclass=MultiClass):
     @CachedMethod
     def radial_matrix(self, spinindex_in, spinindex_out, m):
         radial_basis = self.input_basis
-        spintotal = radial_basis.spintotal(spinindex_in)
+        spintotal_in = radial_basis.spintotal(self.operand.tensorsig, spinindex_in)
         if spinindex_out in self.spinindex_out(spinindex_in):
-            return self._radial_matrix(radial_basis.Lmax, spintotal, m, self.dtype)
+            return self._radial_matrix(radial_basis.Lmax, spintotal_in, m, self.dtype)
         else:
             raise ValueError("This should never happen")
 
@@ -2958,9 +3053,9 @@ class PolarGradient(Gradient, PolarMOperator):
     @CachedMethod
     def radial_matrix(self, spinindex_in, spinindex_out, m):
         radial_basis = self.input_basis
-        spintotal = radial_basis.spintotal(spinindex_in)
+        spintotal_in = radial_basis.spintotal(self.operand.tensorsig, spinindex_in)
         if spinindex_out in self.spinindex_out(spinindex_in):
-            return self._radial_matrix(radial_basis, spinindex_out[0], spintotal, m)
+            return self._radial_matrix(radial_basis, spinindex_out[0], spintotal_in, m)
         else:
             raise ValueError("This should never happen")
 
@@ -2984,7 +3079,7 @@ class SphericalEllOperator(SpectralOperator):
 
     def __init__(self, operand, coordsys):
         self.coordsys = coordsys
-        self.radius_axis = coordsys.coords[2].axis
+        self.radius_axis = operand.dist.get_axis(coordsys) + 2
         input_basis = operand.domain.get_basis(coordsys)
         if input_basis is None:
             input_basis = operand.domain.get_basis(coordsys.radius)
@@ -2992,8 +3087,8 @@ class SphericalEllOperator(SpectralOperator):
         # SpectralOperator requirements
         self.input_basis = input_basis
         self.output_basis = self._output_basis(self.input_basis)
-        self.first_axis = self.input_basis.first_axis
-        self.last_axis = self.input_basis.last_axis
+        self.first_axis = self.radius_axis - 2
+        self.last_axis = self.radius_axis
         # LinearOperator requirements
         self.operand = operand
 
@@ -3013,19 +3108,19 @@ class SphericalEllOperator(SpectralOperator):
         else:
             basis = self.input_basis
         radial_basis = self.radial_basis
-        axis = radial_basis.radial_axis
+        axis = self.dist.last_axis(radial_basis)
         # Set output layout
         out.preset_layout(operand.layout)
         out.data[:] = 0
         # Apply operator
         R_in = radial_basis.regularity_classes(operand.tensorsig)
-        slices = [slice(None) for i in range(radial_basis.dist.dim)]
+        slices = [slice(None) for i in range(self.dist.dim)]
         for regindex_in, regtotal_in in np.ndenumerate(R_in):
             for regindex_out in self.regindex_out(regindex_in):
                 comp_in = operand.data[regindex_in]
                 comp_out = out.data[regindex_out]
                 # Should reorder to make ell loop first, check forbidden reg, remove reg from radial_vector_3
-                for ell, m_ind, ell_ind in basis.ell_maps:
+                for ell, m_ind, ell_ind in basis.ell_maps(self.dist):
                     allowed_in  = radial_basis.regularity_allowed(ell, regindex_in)
                     allowed_out = radial_basis.regularity_allowed(ell, regindex_out)
                     if allowed_in and allowed_out:
@@ -3079,7 +3174,7 @@ class SphericalEllOperator(SpectralOperator):
         # Get ordered list of ells
         basis = self.S2_basis
         ell_list = np.arange(np.abs(m), basis.Lmax+1)
-        if basis.ell_reversed[m]:
+        if basis.ell_reversed(self.dist)[m]:
             ell_list = ell_list[::-1]
         # Assemble block-diagonal matrix over ells
         ell_matrices = [self._wrap_radial_matrix(regindex_in, regindex_out, ell, return_zeros=True) for ell in ell_list]
@@ -3167,29 +3262,13 @@ class CartCompBase(LinearOperator, metaclass=MultiClass):
 
     name = 'Comp'
 
-    def __init__(self, operand, index, coord, out=None):
-        super().__init__(operand, out=out)
-        self.index = index
-        self.coord = coord
-        self.coordsys = operand.tensorsig[index]
-        self.coord_subaxis = self.coord.axis - self.coordsys.first_axis
-        # LinearOperator requirements
-        self.operand = operand
-        # FutureField requirements
-        self.domain = operand.domain
-        self.tensorsig = operand.tensorsig[:index] + operand.tensorsig[index+1:]
-        self.dtype = operand.dtype
-
     @classmethod
-    def _check_args(cls, operand, index, coord, out=None):
+    def _check_args(cls, operand, index, comp, out=None):
         # Dispatch by coordinate system
         return isinstance(operand.tensorsig[index], cls.cs_type)
 
     def new_operand(self, operand, **kw):
-        return CartCompBase(operand, self.index, self.coord, **kw)
-
-    # def separability(self, *vars):
-    #     return self.operand.separability(*vars)
+        return CartCompBase(operand, self.index, self.comp, **kw)
 
     def matrix_dependence(self, *vars):
         return self.operand.matrix_dependence(*vars)
@@ -3200,7 +3279,20 @@ class CartCompBase(LinearOperator, metaclass=MultiClass):
 
 class CartesianComponent(CartCompBase):
 
-    cs_type = coords.CartesianCoordinates
+    cs_type = (coords.CartesianCoordinates, coords.Coordinate)
+
+    def __init__(self, operand, index, comp, out=None):
+        super().__init__(operand, out=out)
+        self.index = index
+        self.comp = comp
+        self.coordsys = operand.tensorsig[index]
+        self.coord_subaxis = self.dist.get_axis(comp) - self.dist.get_axis(self.coordsys)
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = operand.domain
+        self.tensorsig = operand.tensorsig[:index] + operand.tensorsig[index+1:]
+        self.dtype = operand.dtype
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""
@@ -3233,6 +3325,59 @@ class CartesianComponent(CartCompBase):
         out.data[:] = arg0.data[take_comp]
 
 
+class DirectProductComponent(CartCompBase):
+
+    cs_type = coords.DirectProduct
+
+    def __init__(self, operand, index, comp, out=None):
+        super().__init__(operand, out=out)
+        self.index = index
+        self.comp = comp
+        self.coordsys = operand.tensorsig[index]
+        self.comp_subaxis = self.dist.get_axis(comp) - self.dist.get_axis(self.coordsys)
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = operand.domain
+        tensorsig = list(operand.tensorsig)
+        tensorsig[index] = comp
+        self.tensorsig = tuple(tensorsig)
+        self.dtype = operand.dtype
+        # Slicing for component
+        comp_slice = slice(self.comp_subaxis, self.comp_subaxis+comp.dim)
+        self.comp_slices = tuple([None]*index + [comp_slice])
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Any layout
+        return True
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Any layout
+        pass
+
+    def subproblem_matrix(self, subproblem):
+        # Build identities for each tangent space
+        factors = [sparse.identity(cs.dim, format='csr') for cs in self.operand.tensorsig]
+        factors.append(sparse.identity(subproblem.coeff_size(self.domain), format='csr'))
+        # Build selection matrix for selected coord
+        index_factor = np.zeros((self.comp.dim, self.coordsys.dim))
+        for i in range(self.comp.dim):
+            index_factor[i, self.comp_subaxis+i] = 1
+        # Replace indexed factor with selection matrix
+        factors[self.index] = index_factor
+        return reduce(sparse.kron, factors, 1).tocsr()
+
+    def operate(self, out):
+        """Perform operation."""
+        arg0 = self.args[0]
+        # Set output layout
+        out.preset_layout(arg0.layout)
+        # Copy specified comonent
+        out.data[:] = arg0.data[self.comp_slices]
+
+
 @alias("div")
 class Divergence(LinearOperator, metaclass=MultiClass):
 
@@ -3259,13 +3404,65 @@ class Divergence(LinearOperator, metaclass=MultiClass):
 
 class CartesianDivergence(Divergence):
 
-    cs_type = coords.CartesianCoordinates
+    cs_type = (coords.CartesianCoordinates, coords.Coordinate)
+
+    def __init__(self, operand, index=0, out=None):
+        coordsys = operand.tensorsig[index]
+        # Wrap to handle gradient wrt single coordinate
+        if isinstance(coordsys, coords.Coordinate):
+            coordsys = coords.CartesianCoordinates(coordsys.name)
+        # Get components
+        comps = [CartesianComponent(operand, index=index, comp=c) for c in coordsys.coords]
+        comps = [Differentiate(comp, c) for comp, c in zip(comps, coordsys.coords)]
+        arg = sum(comps)
+        LinearOperator.__init__(self, arg, out=out)
+        self.index = index
+        self.coordsys = coordsys
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = arg.domain
+        self.tensorsig = arg.tensorsig
+        self.dtype = arg.dtype
+
+    def matrix_dependence(self, *vars):
+        return self.args[0].matrix_dependence(*vars)
+
+    def matrix_coupling(self, *vars):
+        return self.args[0].matrix_coupling(*vars)
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Any layout (addition is done)
+        return True
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Any layout (addition is done)
+        pass
+
+    def subproblem_matrix(self, subproblem):
+        """Build operator matrix for a specific subproblem."""
+        return self.args[0].expression_matrices(subproblem, [self.operand])[self.operand]
+
+    def operate(self, out):
+        """Perform operation."""
+        # OPTIMIZE: this has an extra copy
+        arg0 = self.args[0]
+        # Set output layout
+        out.preset_layout(arg0.layout)
+        np.copyto(out.data, arg0.data)
+
+
+class DirectProductDivergence(Divergence):
+
+    cs_type = coords.DirectProduct
 
     def __init__(self, operand, index=0, out=None):
         coordsys = operand.tensorsig[index]
         # Get components
-        comps = [CartesianComponent(operand, index=index, coord=c) for c in coordsys.coords]
-        comps = [Differentiate(comp, c) for comp, c in zip(comps, coordsys.coords)]
+        comps = [DirectProductComponent(operand, index=index, comp=cs) for cs in coordsys.coordsystems]
+        comps = [Divergence(comp, index) for comp, cs in zip(comps, coordsys.coordsystems)]
         arg = sum(comps)
         LinearOperator.__init__(self, arg, out=out)
         self.index = index
@@ -3409,9 +3606,9 @@ class PolarDivergence(Divergence, PolarMOperator):
     @CachedMethod
     def radial_matrix(self, spinindex_in, spinindex_out, m):
         radial_basis = self.input_basis
-        spintotal = radial_basis.spintotal(spinindex_in)
+        spintotal_in = radial_basis.spintotal(self.operand.tensorsig, spinindex_in)
         if spinindex_in[0] != 2 and spinindex_in[1:] == spinindex_out:
-            return self._radial_matrix(radial_basis, spinindex_in[0], spintotal, m)
+            return self._radial_matrix(radial_basis, spinindex_in[0], spintotal_in, m)
         else:
             raise ValueError("This should never happen")
 
@@ -3448,6 +3645,7 @@ class Curl(LinearOperator, metaclass=MultiClass):
     def new_operand(self, operand, **kw):
         return Curl(operand, index=self.index, **kw)
 
+
 class CartesianCurl(Curl):
 
     cs_type = coords.CartesianCoordinates
@@ -3457,7 +3655,7 @@ class CartesianCurl(Curl):
         if coordsys.dim != 3:
             raise ValueError("CartesianCurl is only implemented for 3D vector fields. For 2D, use skew gradient.")
         # Get components
-        comps = [CartesianComponent(operand, index=index, coord=c) for c in coordsys.coords]
+        comps = [CartesianComponent(operand, index=index, comp=c) for c in coordsys.coords]
         x_comp = Differentiate(comps[2], coordsys.coords[1]) - Differentiate(comps[1], coordsys.coords[2])
         y_comp = Differentiate(comps[0], coordsys.coords[2]) - Differentiate(comps[2], coordsys.coords[0])
         z_comp = Differentiate(comps[1], coordsys.coords[0]) - Differentiate(comps[0], coordsys.coords[1])
@@ -3505,7 +3703,93 @@ class CartesianCurl(Curl):
         """Perform operation."""
         # OPTIMIZE: this has an extra copy
         arg0 = self.args[0]
+        # Set output layout
+        out.preset_layout(arg0.layout)
+        np.copyto(out.data, arg0.data)
 
+
+class DirectProductCurl(Curl):
+
+    cs_type = coords.DirectProduct
+
+    def __init__(self, operand, index=0, out=None):
+        coordsys = operand.tensorsig[index]
+        if coordsys.dim != 3:
+            raise ValueError("DirectProductCurl is only implemented for 3D vector fields.")
+        if len(operand.tensorsig) > 1 or index != 0:
+            raise ValueError("DirectProductCurl is only implemented for vector fields.")
+        # Get components
+        comps = [DirectProductComponent(operand, index=index, comp=cs) for cs in coordsys.coordsystems]
+        if comps[0].tensorsig[index].dim == 1 and comps[1].tensorsig[index].dim == 2:
+            az = 0
+            uz, uh = comps
+            cz, ch = coordsys.coordsystems
+        elif comps[0].dim == 2 and comps[1].dim == 1:
+            az = 2
+            uh, uz = comps
+            ch, cz = coordsys.coordsystems
+        else:
+            raise ValueError("DirectProductCurl is only implemented for direct product of 1D and 2D coordinate systems.")
+        # Compute curl components
+        # curl = ex*(dy(uz) - dz(uy)) + ey*(dz(ux) - dx(uz)) + ez*(dx(uy) - dy(ux))
+        #      = ex*dy(uz) - ex*dz(uy) + ey*dz(ux) - ey*dx(uz) + ez*dx(uy) - ez*dy(ux)
+        #      = dz(ux*ey - uy*ex) + (ex*dy - ey*dx)(uz)
+        #      = dz(skew(uh)) - skew(grad_h(uz)) - ez*div(skew(uh))
+        ez1 = operand.dist.VectorField(cz, name='ez', dtype=operand.dtype)
+        ez1['g'][0] = 1
+        ez3 = operand.dist.VectorField(coordsys, name='ez', dtype=operand.dtype)
+        ez3['g'][az] = 1
+        # This requires transposing different coordsystems, which is not yet supported
+        #curl_h = Differentiate(Skew(uh, index=index), cz) - ez1@TransposeComponents(Skew(Gradient(uz, ch), index=0), indices=(0,index+1))
+        #curl_z = - Divergence(TransposeComponents(ez3*Skew(uh, index=index), indices=(0,index+1)), index=0)
+        curl_h = Differentiate(Skew(uh), cz) - Skew(Gradient(ez1@uz, ch), index=0)
+        curl_z = - ez3*Divergence(Skew(uh))
+        # Hack to get multiplication by identity working for matrix constuction
+        if isinstance(ch, coords.PolarCoordinates):
+            bases = operand.domain.get_basis(ch).radial_basis
+        else:
+            bases = None
+        I = operand.dist.IdentityTensor(ch, coordsys, bases=bases, dtype=operand.dtype)
+        arg = I @ curl_h + curl_z
+        if coordsys.curvilinear == coordsys.right_handed:
+            # Skew implements the correct thing by default for left-handed curvilinear
+            # and right-handed Cartesian coordinate systems
+            arg *= -1
+        LinearOperator.__init__(self, arg, out=out)
+        self.index = index
+        self.coordsys = coordsys
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = arg.domain
+        self.tensorsig = arg.tensorsig
+        self.dtype = arg.dtype
+        self.expression_matrices = arg.expression_matrices
+
+    def matrix_dependence(self, *vars):
+        return self.args[0].matrix_dependence(*vars)
+
+    def matrix_coupling(self, *vars):
+        return self.args[0].matrix_coupling(*vars)
+
+    def subproblem_matrix(self, subproblem):
+        """Build operator matrix for a specific subproblem."""
+        pass
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Any layout (addition is done)
+        return True
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Any layout (addition is done)
+        pass
+
+    def operate(self, out):
+        """Perform operation."""
+        # OPTIMIZE: this has an extra copy
+        arg0 = self.args[0]
         # Set output layout
         out.preset_layout(arg0.layout)
         np.copyto(out.data, arg0.data)
@@ -3624,19 +3908,19 @@ class SphericalCurl(Curl, SphericalEllOperator):
         operand = self.args[0]
         input_basis = self.input_basis
         radial_basis = self.radial_basis
-        axis = radial_basis.radial_axis
+        axis = self.dist.last_axis(self.radial_basis)
         # Set output layout
         out.preset_layout(operand.layout)
         out.data.fill(0)
         # Apply operator
         R_in = radial_basis.regularity_classes(operand.tensorsig)
-        slices = [slice(None) for i in range(input_basis.dist.dim)]
+        slices = [slice(None) for i in range(self.dist.dim)]
         for regindex_in, regtotal_in in np.ndenumerate(R_in):
             for regindex_out in self.regindex_out(regindex_in):
                 comp_in = operand.data[regindex_in]
                 comp_out = out.data[regindex_out]
                 # Should reorder to make ell loop first, check forbidden reg, remove reg from radial_vector_3
-                for ell, m_ind, ell_ind in input_basis.ell_maps:
+                for ell, m_ind, ell_ind in input_basis.ell_maps(self.dist):
                     allowed_in  = radial_basis.regularity_allowed(ell, regindex_in)
                     allowed_out = radial_basis.regularity_allowed(ell, regindex_out)
                     if allowed_in and allowed_out:
@@ -3652,140 +3936,6 @@ class SphericalCurl(Curl, SphericalEllOperator):
                         vec_out_complex = apply_matrix(A, vec_in_complex, axis=axis)
                         comp_out[tuple(slices)][cos_slice] += vec_out_complex.real
                         comp_out[tuple(slices)][msin_slice] += vec_out_complex.imag
-
-
-class PolarCurl(Curl, PolarMOperator):
-
-    cs_type = coords.PolarCoordinates
-
-    def __init__(self, operand, index=0, out=None):
-        Curl.__init__(self, operand, out=out)
-        if index != 0:
-            raise ValueError("Curl only implemented along index 0.")
-        self.index = index
-        coordsys = operand.tensorsig[index]
-        PolarMOperator.__init__(self, operand, coordsys)
-        # FutureField requirements
-        self.domain  = operand.domain.substitute_basis(self.input_basis, self.output_basis)
-        self.tensorsig = operand.tensorsig[:index] + operand.tensorsig[index+1:]
-        self.dtype = operand.dtype
-
-    @staticmethod
-    def _output_basis(input_basis):
-        return input_basis.derivative_basis(1)
-
-    def check_conditions(self):
-        """Check that operands are in a proper layout."""
-        # Require radius to be in coefficient space
-        layout = self.args[0].layout
-        return (not layout.grid_space[self.radius_axis]) and (layout.local[self.radius_axis])
-
-    def enforce_conditions(self):
-        """Require operands to be in a proper layout."""
-        # Require radius to be in coefficient space
-        self.args[0].require_coeff_space(self.radius_axis)
-        self.args[0].require_local(self.radius_axis)
-
-    def spinindex_out(self, spinindex_in):
-        # Spinorder: -, +, 0
-        # - and + map to 0
-        if spinindex_in[0] in (0, 1):
-            return (spinindex_in[1:],)
-
-    @CachedMethod
-    def radial_matrix(self, spinindex_in, spinindex_out, m):
-        radial_basis = self.input_basis
-        spintotal_in = radial_basis.spintotal(spinindex_in)
-
-        if spinindex_in[1:] == spinindex_out:
-            return self._radial_matrix(radial_basis, spinindex_in[0], spintotal_in, m)
-        else:
-            raise ValueError("This should never happen")
-
-    @staticmethod
-    @CachedMethod
-    def _radial_matrix(radial_basis, spinindex_in0, spintotal_in, m):
-        # NB: the sign here is different than Vasil et al. (2019) eqn 84
-        # because det(Q) = -1
-        if spinindex_in0 == 0:
-            return 1j * 1/np.sqrt(2) * radial_basis.operator_matrix('D+', m, spintotal_in)
-        elif spinindex_in0 == 1:
-            return -1j * 1/np.sqrt(2) * radial_basis.operator_matrix('D-', m, spintotal_in)
-        else:
-            raise ValueError("This should never happen")
-
-    def subproblem_matrix(self, subproblem):
-        raise NotImplementedError("subproblem_matrix is not implemented.")
-        if self.dtype == np.complex128:
-            return super().subproblem_matrix(subproblem)
-        elif self.dtype == np.float64:
-            operand = self.args[0]
-            radial_basis = self.radial_basis
-            R_in = radial_basis.regularity_classes(operand.tensorsig)
-            R_out = radial_basis.regularity_classes(self.tensorsig)  # Should this use output_basis?
-            ell = subproblem.group[self.last_axis - 1]
-            # Loop over components
-            submatrices = []
-            for spinindex_out, spintotal_out in np.ndenumerate(R_out):
-                submatrix_row = []
-                for spinindex_in, spintotal_in in np.ndenumerate(R_in):
-                    # Build identity matrices for each axis
-                    subshape_in = subproblem.coeff_shape(self.operand.domain)
-                    subshape_out = subproblem.coeff_shape(self.domain)
-                    # Check if regularity component exists for this ell
-                    if (spinindex_out in self.spinindex_out(spinindex_in)) and radial_basis.regularity_allowed(ell, spinindex_in) and radial_basis.regularity_allowed(ell, spinindex_out):
-                        factors = [sparse.eye(m, n, format='csr') for m, n in zip(subshape_out, subshape_in)]
-                        radial_matrix = self.radial_matrix(spinindex_in, spinindex_out, ell)
-                        # Real part
-                        factors[self.last_axis] = radial_matrix.real
-                        comp_matrix_real = reduce(sparse.kron, factors, 1).tocsr()
-                        # Imaginary pary
-                        m_size = subshape_in[self.first_axis]
-                        mult_1j = np.array([[0, -1], [1, 0]])
-                        m_blocks = sparse.eye(m_size//2, m_size//2, format='csr')
-                        factors[self.first_axis] = sparse.kron(mult_1j, m_blocks)
-                        factors[self.last_axis] = radial_matrix.imag
-                        comp_matrix_imag = reduce(sparse.kron, factors, 1).tocsr()
-                        comp_matrix = comp_matrix_real + comp_matrix_imag
-                    else:
-                        # Build zero matrix
-                        comp_matrix = sparse.csr_matrix((prod(subshape_out), prod(subshape_in)))
-                    submatrix_row.append(comp_matrix)
-                submatrices.append(submatrix_row)
-            matrix = sparse.bmat(submatrices)
-            matrix.tocsr()
-            return matrix
-
-    def operate(self, out):
-        """Perform operation."""
-        if self.dtype == np.complex128:
-            return super().operate(out)
-        operand = self.args[0]
-        input_basis = self.input_basis
-        axis = self.radius_axis
-        # Set output layout
-        out.preset_layout(operand.layout)
-        out.data[:] = 0
-        # Apply operator
-        S_in = input_basis.spin_weights(operand.tensorsig)
-        slices = [slice(None) for i in range(input_basis.dist.dim)]
-        for spinindex_in, spintotal_in in np.ndenumerate(S_in):
-            for spinindex_out in self.spinindex_out(spinindex_in):
-                comp_in = operand.data[spinindex_in]
-                comp_out = out.data[spinindex_out]
-
-                for m, mg_slice, mc_slice, n_slice in input_basis.m_maps:
-                    slices[axis-1] = mc_slice
-                    slices[axis] = n_slice
-                    cos_slice = axslice(axis-1, 0, None, 2)
-                    msin_slice = axslice(axis-1, 1, None, 2)
-                    vec_in_cos = comp_in[tuple(slices)][cos_slice]
-                    vec_in_msin = comp_in[tuple(slices)][msin_slice]
-                    vec_in_complex = vec_in_cos + 1j*vec_in_msin
-                    A = self.radial_matrix(spinindex_in, spinindex_out, m)
-                    vec_out_complex = apply_matrix(A, vec_in_complex, axis=axis)
-                    comp_out[tuple(slices)][cos_slice] += vec_out_complex.real
-                    comp_out[tuple(slices)][msin_slice] += vec_out_complex.imag
 
 
 @alias("lap")
@@ -3817,10 +3967,58 @@ class Laplacian(LinearOperator, metaclass=MultiClass):
 
 class CartesianLaplacian(Laplacian):
 
-    cs_type = coords.CartesianCoordinates
+    cs_type = (coords.CartesianCoordinates, coords.Coordinate)
 
     def __init__(self, operand, coordsys, out=None):
+        # Wrap to handle gradient wrt single coordinate
+        if isinstance(coordsys, coords.Coordinate):
+            coordsys = coords.CartesianCoordinates(coordsys.name)
         parts = [Differentiate(Differentiate(operand, c), c) for c in coordsys.coords]
+        arg = sum(parts)
+        LinearOperator.__init__(self, arg, out=out)
+        self.coordsys = coordsys
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = arg.domain
+        self.tensorsig = arg.tensorsig
+        self.dtype = arg.dtype
+
+    def matrix_dependence(self, *vars):
+        return self.args[0].matrix_dependence(*vars)
+
+    def matrix_coupling(self, *vars):
+        return self.args[0].matrix_coupling(*vars)
+
+    def subproblem_matrix(self, subproblem):
+        """Build operator matrix for a specific subproblem."""
+        return self.args[0].expression_matrices(subproblem, [self.operand])[self.operand]
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Any layout (addition is done)
+        return True
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Any layout (addition is done)
+        pass
+
+    def operate(self, out):
+        """Perform operation."""
+        # OPTIMIZE: this has an extra copy
+        arg0 = self.args[0]
+        # Set output layout
+        out.preset_layout(arg0.layout)
+        np.copyto(out.data, arg0.data)
+
+
+class DirectProductLaplacian(Laplacian):
+
+    cs_type = coords.DirectProduct
+
+    def __init__(self, operand, coordsys, out=None):
+        parts = [Laplacian(operand, cs) for cs in coordsys.coordsystems]
         arg = sum(parts)
         LinearOperator.__init__(self, arg, out=out)
         self.coordsys = coordsys
@@ -4002,9 +4200,9 @@ class PolarLaplacian(Laplacian, PolarMOperator):
     @CachedMethod
     def radial_matrix(self, spinindex_in, spinindex_out, m):
         radial_basis = self.input_basis
-        spintotal = radial_basis.spintotal(spinindex_in)
+        spintotal_in = radial_basis.spintotal(self.operand.tensorsig, spinindex_in)
         if spinindex_in == spinindex_out:
-            return self._radial_matrix(radial_basis, spintotal, m)
+            return self._radial_matrix(radial_basis, spintotal_in, m)
         else:
             raise ValueError("This should never happen")
 
@@ -4029,7 +4227,7 @@ class Lift(LinearOperator, metaclass=MultiClass):
     def _check_args(cls, operand, output_basis, n, out=None):
         # Dispatch by output basis
         if isinstance(operand, Operand):
-            input_basis = operand.domain.get_basis(output_basis.coordsystem)
+            input_basis = operand.domain.get_basis(output_basis.coordsys)
             if (isinstance(input_basis, cls.input_basis_type) and
                 isinstance(output_basis, cls.output_basis_type)):
                 return True
@@ -4045,8 +4243,8 @@ class Lift(LinearOperator, metaclass=MultiClass):
         self.output_basis = output_basis
         #self.first_axis = min(self.input_basis.first_axis, self.output_basis.first_axis)
         #self.last_axis = max(self.input_basis.last_axis, self.output_basis.last_axis)
-        self.first_axis = self.output_basis.first_axis
-        self.last_axis = self.output_basis.last_axis
+        self.first_axis = operand.dist.get_basis_axis(self.output_basis)
+        self.last_axis = self.first_axis + output_basis.dim - 1
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements
@@ -4121,9 +4319,7 @@ class AdvectiveCFL(FutureLockedField, metaclass=MultiClass):
         # Dispatch by operand basis
         if isinstance(operand, Operand):
             if isinstance(coords, cls.input_coord_type):
-                basis = operand.domain.get_basis(coords)
-                if isinstance(basis, cls.input_basis_type):
-                    return True
+                return True
         return False
 
     def __init__(self, operand, coords):
@@ -4159,7 +4355,8 @@ class AdvectiveCFL(FutureLockedField, metaclass=MultiClass):
         # Set output lock
         out.lock_axis_to_grid(0)
         # Compute CFL frequencies
-        self.compute_cfl_frequency(arg, out)
+        out.data[:] = 0
+        self.compute_cfl_frequency(arg.data, out.data)
 
     def compute_cfl_frequency(self, velocity, out):
         """Return a scalar multi-D field of the cfl frequency everywhere in the domain."""

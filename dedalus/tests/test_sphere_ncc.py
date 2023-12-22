@@ -12,7 +12,7 @@ def build_sphere(Nphi, Ntheta, dealias, dtype):
     c = coords.S2Coordinates('phi', 'theta')
     d = distributor.Distributor(c, dtype=dtype)
     b = basis.SphereBasis(c, (Nphi, Ntheta), radius=1, dealias=(dealias, dealias), dtype=dtype)
-    phi, theta = b.local_grids()
+    phi, theta = d.local_grids(b)
     return c, d, b, phi, theta
 
 Nphi_range = [32]
@@ -187,11 +187,11 @@ def test_vector_dot_vector(Nphi, Ntheta, ncc_first, dealias, dtype):
     else:
         w0 = dot(v, u)
     w1 = w0.reinitialize(ncc=True, ncc_vars=vars)
-    problem = problems.LBVP(vars) 
+    problem = problems.LBVP(vars)
     problem.add_equation((dot(u,u)*v , 0))
     solver = solvers.LinearBoundaryValueSolver(problem)
     w1.store_ncc_matrices(vars, solver.subproblems)
-    w0 = w0.evaluate()   
+    w0 = w0.evaluate()
     w0.change_scales(1)
     w1 = w1.evaluate_as_ncc()
     assert np.allclose(w0['g'], w1['g'])

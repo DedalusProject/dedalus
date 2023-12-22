@@ -17,7 +17,7 @@ def build_ball(N, dealias, dtype, radius=1):
     c = d3.SphericalCoordinates('phi', 'theta', 'r')
     d = d3.Distributor(c, dtype=dtype)
     b = d3.BallBasis(c, (2*N, N, N), radius=radius, dtype=dtype, dealias=dealias)
-    phi, theta, r = b.local_grids()
+    phi, theta, r = d.local_grids(b)
     x, y, z = c.cartesian(phi, theta, r)
     return c, d, b, phi, theta, r, x, y, z
 
@@ -27,7 +27,7 @@ def build_shell(N, dealias, dtype, radii=(0.5,1)):
     c = d3.SphericalCoordinates('phi', 'theta', 'r')
     d = d3.Distributor(c, dtype=dtype)
     b = d3.ShellBasis(c, (2*N, N, N), radii=radii, dtype=dtype, dealias=dealias)
-    phi, theta, r = b.local_grids()
+    phi, theta, r = d.local_grids(b)
     x, y, z = c.cartesian(phi, theta, r)
     return c, d, b, phi, theta, r, x, y, z
 
@@ -42,7 +42,7 @@ def test_jacobi_ufunc_field(N, a, b, dealias, dtype, func):
     c = d3.Coordinate('x')
     d = d3.Distributor(c, dtype=dtype)
     b = d3.Jacobi(c, size=N, a=a, b=b, bounds=(0, 1), dealias=dealias)
-    x = b.local_grid(1)
+    x = d.local_grid(b, scale=1)
     f = d.Field(bases=b)
     if func is np.arccosh:
         f['g'] = 1 + x**2
@@ -94,7 +94,7 @@ def test_jacobi_GeneralFunction_coord(N, a, b, dealias, dtype):
     c = d3.Coordinate('x')
     d = d3.Distributor(c, dtype=dtype)
     b = d3.Jacobi(c, size=N, a=a, b=b, bounds=(0, 1), dealias=dealias)
-    x = b.local_grid(dealias)
+    x = d.local_grid(b, dealias)
     f = d.Field(bases=b)
     def F(x):
         return np.sin(x)
@@ -112,7 +112,7 @@ def test_jacobi_GeneralFunction_field(N, a, b, dealias, dtype):
     c = d3.Coordinate('x')
     d = d3.Distributor(c, dtype=dtype)
     b = d3.Jacobi(c, size=N, a=a, b=b, bounds=(0, 1), dealias=dealias)
-    x = b.local_grid(dealias)
+    x = d.local_grid(b, dealias)
     f = d.Field(bases=b)
     f.preset_scales(dealias)
     f['g'] = np.cos(x)

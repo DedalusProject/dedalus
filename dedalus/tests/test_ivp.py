@@ -28,7 +28,7 @@ def test_heat_periodic(basis, N,  dtype, dealias, timestepper):
     c = d3.Coordinate('x')
     d = d3.Distributor(c, dtype=dtype)
     b = basis(c, size=N, bounds=(0, 2*np.pi), dealias=dealias)
-    x = b.local_grid(1)
+    x = d.local_grid(b, scale=1)
     # Fields
     u = d.Field(bases=b)
     F = d.Field(bases=b)

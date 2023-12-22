@@ -19,7 +19,7 @@ def test_sin_jacobi(N, a, b, dealias, dtype):
     c = d3.Coordinate('x')
     d = d3.Distributor(c, dtype=dtype)
     b = d3.Jacobi(c, size=N, bounds=(0, 1), a=a, b=b, dealias=dealias)
-    x = b.local_grid(1)
+    x = d.local_grid(b, scale=1)
     # Fields
     u = d.Field(bases=b)
     tau = d.Field()
@@ -59,7 +59,7 @@ def test_heat_ball_nlbvp(Nr, dtype, dealias):
     d = d3.Distributor((c,))
     b = d3.BallBasis(c, (1, 1, Nr), radius=radius, dtype=dtype, dealias=dealias)
     bs = b.S2_basis(radius=radius)
-    phi, theta, r = b.local_grids((1, 1, 1))
+    phi, theta, r = d.local_grids(b, scales=(1, 1, 1))
     # Fields
     u = d3.Field(name='u', dist=d, bases=(b,), dtype=dtype)
     τ = d3.Field(name='τ', dist=d, bases=(bs,), dtype=dtype)
@@ -98,7 +98,7 @@ def test_lane_emden_floating_amp(Nr, dtype, dealias):
     d = d3.Distributor((c,))
     b = d3.BallBasis(c, (1, 1, Nr), radius=1, dtype=dtype, dealias=dealias)
     bs = b.S2_basis(radius=1)
-    phi, theta, r = b.local_grids((1, 1, 1))
+    phi, theta, r = d.local_grids(b, scales=(1, 1, 1))
     # Fields
     f = d3.Field(dist=d, bases=(b,), dtype=dtype, name='f')
     τ = d3.Field(dist=d, bases=(bs,), dtype=dtype, name='τ')
@@ -149,7 +149,7 @@ def test_lane_emden_floating_R(Nr, dtype, dealias):
     b = d3.BallBasis(c, (1, 1, Nr), radius=1, dtype=dtype, dealias=dealias)
     bs = b.S2_basis(radius=1)
     bs0 = b.S2_basis(radius=0)
-    phi, theta, r = b.local_grids((1, 1, 1))
+    phi, theta, r = d.local_grids(b, scales=(1, 1, 1))
     # Fields
     f = d3.Field(dist=d, bases=(b,), dtype=dtype, name='f')
     R = d3.Field(dist=d, dtype=dtype, name='R')
@@ -205,7 +205,7 @@ def test_lane_emden_first_order(Nr, dtype, dealias):
     d = d3.Distributor((c,))
     b = d3.BallBasis(c, (1, 1, Nr), radius=1, dtype=dtype, dealias=dealias)
     br = b.radial_basis
-    phi, theta, r = b.local_grids((1, 1, 1))
+    phi, theta, r = d.local_grids(b, scales=(1, 1, 1))
     # Fields
     p = d3.Field(dist=d, bases=(br,), dtype=dtype, name='p')
     ρ = d3.Field(dist=d, bases=(br,), dtype=dtype, name='ρ')
