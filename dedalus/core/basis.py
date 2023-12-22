@@ -2273,7 +2273,8 @@ class AnnulusBasis(PolarBasis, metaclass=CachedClass):
 
     @classmethod
     def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, ncc_tensorsig, arg_tensorsig, out_tensorsig, cutoff=1e-6):
-        m = subproblem.group[0]  # HACK
+        first_axis = subproblem.dist.first_axis(out_basis)
+        m = subproblem.group[first_axis]
         spintotal_arg = out_basis.spintotal(arg_tensorsig, arg_comp)
         # Jacobi parameters
         a_ncc = ncc_basis.k + ncc_basis.alpha[0]
@@ -2563,7 +2564,6 @@ class DiskBasis(PolarBasis, metaclass=CachedClass):
         b_ncc = regtotal_ncc
         N = ncc_basis.n_size(m)
         d = regtotal_ncc - abs(diff_regtotal)
-
         if (d >= 0) and (d % 2 == 0):
             J = arg_basis.operator_matrix('Z', m, spintotal_arg)
             A, B = clenshaw.jacobi_recursion(N, a_ncc, b_ncc, J)

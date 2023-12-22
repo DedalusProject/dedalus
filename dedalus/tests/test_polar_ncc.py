@@ -6,6 +6,8 @@ from dedalus.core import future
 from dedalus.tools.array import apply_matrix
 from dedalus.tools.cache import CachedFunction
 
+# TODO: add in alpha and k
+# Seem to need higher resolution and allclose tolerance for k=1
 
 dot = arithmetic.DotProduct
 dtypes = [np.float64, np.complex128]
