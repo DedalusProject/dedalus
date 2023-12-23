@@ -5228,9 +5228,9 @@ class PolarAzimuthalAverage(AzimuthalAverage, operators.Average, operators.Polar
             raise ValueError("This should never happen.")
         n_size = self.input_basis.n_size(m)
         if m == 0:
-            return sparse.identity(n_size)
+            return sparse.identity(n_size).tocsr()
         else:
-            return sparse.csr_matrix((0, n_size), dtype=self.dtype)
+            return sparse.csr_matrix((0, n_size), dtype=self.dtype).tocsr()
 
 
 class SphereAzimuthalAverage(AzimuthalAverage, operators.Average, operators.SpectralOperator):
@@ -5343,9 +5343,9 @@ class SphericalAverage(operators.Average, operators.SphericalEllOperator):
             raise ValueError("This should never happen.")
         n_size = self.input_basis.n_size(ell)
         if ell == 0:
-            return sparse.identity(n_size)
+            return sparse.identity(n_size).tocsr()
         else:
-            return sparse.csr_matrix((0, n_size), dtype=self.dtype)
+            return sparse.csr_matrix((0, n_size), dtype=self.dtype).tocsr()
 
 
 class IntegrateSpinBasis(operators.PolarMOperator):

@@ -193,8 +193,13 @@ def apply_sparse(matrix, array, axis, out=None, check_shapes=False, num_threads=
     if OLD_CSR_MATVECS and array.ndim == 2 and axis == 0:
         out.fill(0)
         return csr_matvecs(matrix, array, out)
+    # Promote datatypes
+    # TODO: find way to optimize this with fused types
+    matrix_data = matrix.data
+    if matrix_data.dtype != out.dtype:
+        matrix_data = matrix_data.astype(out.dtype)
     # Call cython routine
-    cython_linalg.apply_csr(matrix.indptr, matrix.indices, matrix.data, array, out, axis, num_threads)
+    cython_linalg.apply_csr(matrix.indptr, matrix.indices, matrix_data, array, out, axis, num_threads)
     return out
 
 

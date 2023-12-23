@@ -549,10 +549,11 @@ class Subproblem:
         right_perm = right_permutation(self, vars, tau_left=solver.tau_left, interleave_components=solver.interleave_components).tocsr()
 
         # Preconditioners
-        self.pre_left = drop_empty_rows(left_perm @ valid_eqn).tocsr()
-        self.pre_left_pinv = self.pre_left.T.tocsr()
-        self.pre_right_pinv = drop_empty_rows(right_perm @ valid_var).tocsr()
-        self.pre_right = self.pre_right_pinv.T.tocsr()
+        # TODO: remove astype casting, requires dealing with used types in apply_sparse
+        self.pre_left = drop_empty_rows(left_perm @ valid_eqn).tocsr().astype(dtype)
+        self.pre_left_pinv = self.pre_left.T.tocsr().astype(dtype)
+        self.pre_right_pinv = drop_empty_rows(right_perm @ valid_var).tocsr().astype(dtype)
+        self.pre_right = self.pre_right_pinv.T.tocsr().astype(dtype)
 
         # Check preconditioner pseudoinverses
         assert_sparse_pinv(self.pre_left, self.pre_left_pinv)
