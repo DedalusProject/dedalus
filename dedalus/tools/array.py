@@ -5,9 +5,13 @@ from scipy import sparse
 import scipy.sparse as sp
 from scipy.sparse import _sparsetools
 from scipy.sparse import linalg as spla
-from ..tools.config import config
+from math import prod
+
+from .config import config
+from . import linalg as cython_linalg
 
 SPLIT_CSR_MATVECS = config['linear algebra'].getboolean('SPLIT_CSR_MATVECS')
+OLD_CSR_MATVECS = config['linear algebra'].getboolean('OLD_CSR_MATVECS')
 
 
 def interleaved_view(data):
@@ -136,7 +140,7 @@ def splu_inverse(matrix, permc_spec="NATURAL", **kw):
     return spla.LinearOperator(shape=matrix.shape, dtype=matrix.dtype, matvec=solve, matmat=solve)
 
 
-def apply_sparse(matrix, array, axis, out=None):
+def apply_sparse_dot(matrix, array, axis, out=None):
     """Apply sparse matrix along any axis of an array."""
     dim = array.ndim
     # Resolve wraparound axis
@@ -162,6 +166,70 @@ def apply_sparse(matrix, array, axis, out=None):
     else:
         out[:] = temp # Copy
         return out
+
+
+def apply_sparse(matrix, array, axis, out=None, check_shapes=False, num_threads=1):
+    """
+    Apply sparse matrix along any axis of an array.
+    Must be out of place if ouptut is specified.
+    """
+    # Check matrix
+    if not isinstance(matrix, sparse.csr_matrix):
+        raise ValueError("Matrix must be in CSR format.")
+    # Check output
+    if out is None:
+        out_shape = list(array.shape)
+        out_shape[axis] = matrix.shape[0]
+        out = np.empty(out_shape, dtype=array.dtype)
+    elif out is array:
+        raise ValueError("Cannot apply in place")
+    # Check shapes
+    if check_shapes:
+        if not (0 <= axis < array.ndim):
+            raise ValueError("Axis out of bounds.")
+        if matrix.shape[1] != array.shape[axis] or matrix.shape[0] != out.shape[axis]:
+            raise ValueError("Matrix shape mismatch.")
+    # Old way if requested
+    if OLD_CSR_MATVECS and array.ndim == 2 and axis == 0:
+        out.fill(0)
+        return csr_matvecs(matrix, array, out)
+    # Promote datatypes
+    # TODO: find way to optimize this with fused types
+    matrix_data = matrix.data
+    if matrix_data.dtype != out.dtype:
+        matrix_data = matrix_data.astype(out.dtype)
+    # Call cython routine
+    cython_linalg.apply_csr(matrix.indptr, matrix.indices, matrix_data, array, out, axis, num_threads)
+    return out
+
+
+def solve_upper_sparse(matrix, rhs, axis, out=None, check_shapes=False, num_threads=1):
+    """
+    Solve upper triangular sparse matrix along any axis of an array.
+    Matrix assumed to be nonzero on the diagonals.
+    """
+    # Check matrix
+    if not isinstance(matrix, sparse.csr_matrix):
+        raise ValueError("Matrix must be in CSR format.")
+    if not matrix._has_canonical_format: # avoid property hook (without underscore)
+        matrix.sum_duplicates()
+    # Setup output = rhs
+    if out is None:
+        out = np.copy(rhs)
+    elif out is not rhs:
+        np.copyto(out, rhs)
+    # Promote datatypes
+    matrix_data = matrix.data
+    if matrix_data.dtype != rhs.dtype:
+        matrix_data = matrix_data.astype(rhs.dtype)
+    # Check shapes
+    if check_shapes:
+        if not (0 <= axis < rhs.ndim):
+            raise ValueError("Axis out of bounds.")
+        if not (matrix.shape[0] == matrix.shape[1] == rhs.shape[axis]):
+            raise ValueError("Matrix shape mismatch.")
+    # Call cython routine
+    cython_linalg.solve_upper_csr(matrix.indptr, matrix.indices, matrix_data, out, axis, num_threads)
 
 
 def csr_matvec(A_csr, x_vec, out_vec):

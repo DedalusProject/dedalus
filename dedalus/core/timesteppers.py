@@ -5,7 +5,7 @@ import numpy as np
 from scipy.linalg import blas
 
 from .system import CoeffSystem
-from ..tools.array import csr_matvecs
+from ..tools.array import apply_sparse
 
 # Track implemented schemes
 schemes = OrderedDict()
@@ -123,16 +123,13 @@ class MultistepIMEX:
                 sp.LHS_solver = None
 
         # Evaluate M.X0 and L.X0
-        MX0.data.fill(0)
-        LX0.data.fill(0)
         evaluator.require_coeff_space(state_fields)
         for sp in subproblems:
             spX = sp.gather_inputs(state_fields)
-            csr_matvecs(sp.M_min, spX, MX0.get_subdata(sp))
-            csr_matvecs(sp.L_min, spX, LX0.get_subdata(sp))
+            apply_sparse(sp.M_min, spX, axis=0, out=MX0.get_subdata(sp))
+            apply_sparse(sp.L_min, spX, axis=0, out=LX0.get_subdata(sp))
 
         # Evaluate F(X0)
-        F0.data.fill(0)
         evaluator.evaluate_scheduled(iteration=iteration, wall_time=wall_time, sim_time=sim_time, timestep=dt)
         evaluator.require_coeff_space(F_fields)
         for sp in subproblems:
@@ -569,14 +566,12 @@ class RungeKuttaIMEX:
                 sp.LHS_solvers = [None] * (self.stages+1)
 
         # Compute M.X(n,0) and L.X(n,0)
-        MX0.data.fill(0)
-        LX0.data.fill(0)
         # Ensure coeff space before subsystem gathers
         evaluator.require_coeff_space(state_fields)
         for sp in subproblems:
             spX = sp.gather_inputs(state_fields)
-            csr_matvecs(sp.M_min, spX, MX0.get_subdata(sp))
-            csr_matvecs(sp.L_min, spX, LX0.get_subdata(sp))
+            apply_sparse(sp.M_min, spX, axis=0, out=MX0.get_subdata(sp))
+            apply_sparse(sp.L_min, spX, axis=0, out=LX0.get_subdata(sp))
 
         # Compute stages
         # (M + k Hii L).X(n,i) = M.X(n,0) + k Aij F(n,j) - k Hij L.X(n,j)
@@ -585,12 +580,11 @@ class RungeKuttaIMEX:
             # Compute L.X(n,i-1), already done for i=1
             if i > 1:
                 LXi = LX[i-1]
-                LXi.data.fill(0)
                 # Ensure coeff space before subsystem gathers
                 evaluator.require_coeff_space(state_fields)
                 for sp in subproblems:
                     spX = sp.gather_inputs(state_fields)
-                    csr_matvecs(sp.L_min, spX, LXi.get_subdata(sp))
+                    apply_sparse(sp.L_min, spX, axis=0, out=LXi.get_subdata(sp))
 
             # Compute F(n,i-1), only doing output on first evaluation
             if i == 1:
@@ -598,7 +592,6 @@ class RungeKuttaIMEX:
             else:
                 evaluator.evaluate_group('F')
             Fi = F[i-1]
-            Fi.data.fill(0)
             for sp in subproblems:
                 # F fields should be in coeff space from evaluator
                 sp.gather_outputs(F_fields, out=Fi.get_subdata(sp))

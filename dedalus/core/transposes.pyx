@@ -1,4 +1,3 @@
-# cython: profile=True
 
 cimport cython
 cimport numpy as cnp

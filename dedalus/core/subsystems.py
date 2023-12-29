@@ -13,7 +13,7 @@ import uuid
 from math import prod
 
 from .domain import Domain
-from ..tools.array import zeros_with_pattern, expand_pattern, sparse_block_diag, copyto, perm_matrix, drop_empty_rows, csr_matvecs, assert_sparse_pinv
+from ..tools.array import zeros_with_pattern, expand_pattern, sparse_block_diag, copyto, perm_matrix, drop_empty_rows, apply_sparse, assert_sparse_pinv
 from ..tools.cache import CachedAttribute, CachedMethod
 from ..tools.general import replace, OrderedSet
 from ..tools.progress import log_progress
@@ -329,7 +329,6 @@ class Subproblem:
                 views.append((buffer_view, field_view))
         return tuple(views)
 
-    #@profile
     def gather_inputs(self, fields, out=None):
         """Gather and precondition subproblem data from input-like field list."""
         # Gather from fields
@@ -339,8 +338,7 @@ class Subproblem:
         # Apply right preconditioner inverse to compress inputs
         if out is None:
             out = self._compressed_buffer
-        out.fill(0)
-        csr_matvecs(self.pre_right_pinv, self._input_buffer, out)
+        apply_sparse(self.pre_right_pinv, self._input_buffer, axis=0, out=out)
         return out
 
     def gather_outputs(self, fields, out=None):
@@ -352,15 +350,13 @@ class Subproblem:
         # Apply left preconditioner to compress outputs
         if out is None:
             out = self._compressed_buffer
-        out.fill(0)
-        csr_matvecs(self.pre_left, self._output_buffer, out)
+        apply_sparse(self.pre_left, self._output_buffer, axis=0, out=out)
         return out
 
     def scatter_inputs(self, data, fields):
         """Precondition and scatter subproblem data out to input-like field list."""
         # Undo right preconditioner inverse to expand inputs
-        self._input_buffer.fill(0)
-        csr_matvecs(self.pre_right, data, self._input_buffer)
+        apply_sparse(self.pre_right, data, axis=0, out=self._input_buffer)
         # Scatter to fields
         views = self._input_field_views(tuple(fields))
         for buffer_view, field_view in views:
@@ -369,8 +365,7 @@ class Subproblem:
     def scatter_outputs(self, data, fields):
         """Precondition and scatter subproblem data out to output-like field list."""
         # Undo left preconditioner to expand outputs
-        self._output_buffer.fill(0)
-        csr_matvecs(self.pre_left_pinv, data, self._output_buffer)
+        apply_sparse(self.pre_left_pinv, data, axis=0, out=self._output_buffer)
         # Scatter to fields
         views = self._output_field_views(tuple(fields))
         for buffer_view, field_view in views:
@@ -554,10 +549,11 @@ class Subproblem:
         right_perm = right_permutation(self, vars, tau_left=solver.tau_left, interleave_components=solver.interleave_components).tocsr()
 
         # Preconditioners
-        self.pre_left = drop_empty_rows(left_perm @ valid_eqn).tocsr()
-        self.pre_left_pinv = self.pre_left.T.tocsr()
-        self.pre_right_pinv = drop_empty_rows(right_perm @ valid_var).tocsr()
-        self.pre_right = self.pre_right_pinv.T.tocsr()
+        # TODO: remove astype casting, requires dealing with used types in apply_sparse
+        self.pre_left = drop_empty_rows(left_perm @ valid_eqn).tocsr().astype(dtype)
+        self.pre_left_pinv = self.pre_left.T.tocsr().astype(dtype)
+        self.pre_right_pinv = drop_empty_rows(right_perm @ valid_var).tocsr().astype(dtype)
+        self.pre_right = self.pre_right_pinv.T.tocsr().astype(dtype)
 
         # Check preconditioner pseudoinverses
         assert_sparse_pinv(self.pre_left, self.pre_left_pinv)
