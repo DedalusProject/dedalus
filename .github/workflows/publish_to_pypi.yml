@@ -17,11 +17,12 @@ jobs:
         run: |
           conda create -y -n dedalus
           conda activate dedalus
-          conda install -y -c conda-forge dedalus c-compiler "h5py=*=mpi*"
+          conda install -y -c conda-forge dedalus c-compiler cython "h5py=*=mpi*"
           conda uninstall -y --force dedalus
       - name: Checkout repository
         uses: actions/checkout@v2
       - name: Build sdist
+        shell: bash -l {0}
         run: |
           conda activate dedalus
           pip install build
