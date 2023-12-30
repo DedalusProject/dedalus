@@ -74,6 +74,8 @@ Our numerical algorithms produce sparse and spectrally accurate discretizations 
     </th>
   </tr>
   <tr>
+  </tr>
+  <tr>
     <th width="25%">
       <a href="https://dedalus-project.readthedocs.io/en/latest/pages/examples/ivp_disk_libration.html">
         <figure>
@@ -122,7 +124,7 @@ See the [documentation](http://dedalus-project.readthedocs.org) for tutorials an
 ## Developers
 
 * [Keaton Burns (@kburns)](https://github.com/kburns)
-* [Geoff Vasil (@gmvasil)](https://github.com/geoffvasil)
+* [Geoff Vasil (@geoffvasil)](https://github.com/geoffvasil)
 * [Jeff Oishi (@jsoishi)](https://github.com/jsoishi)
 * [Daniel Lecoanet (@lecoanet)](https://github.com/lecoanet/)
 * [Ben Brown (@bpbrown)](https://github.com/bpbrown)
