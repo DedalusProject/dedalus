@@ -1,4 +1,22 @@
 cff-version: 1.2.0
+title: "Dedalus Project"
+authors:
+- family-names: "Burns"
+  given-names: "Keaton J"
+  orcid: "https://orcid.org/0000-0003-4761-4766"
+- family-names: "Vasil"
+  given-names: "Geoffrey M"
+  orcid: "https://orcid.org/0000-0002-8902-5030"
+- family-names: "Oishi"
+  given-names: "Jeffrey S"
+  orcid: "https://orcid.org/0000-0001-8531-6570"
+- family-names: "Lecoanet"
+  given-names: "Daniel"
+  orcid: "https://orcid.org/0000-0002-7635-9728"
+- family-names: "Brown"
+  given-names: "Benjamin P"
+  orcid: "https://orcid.org/0000-0001-8935-219X"
+message: "Please cite the following works when using this software."
 preferred-citation:
   type: article
   authors:
