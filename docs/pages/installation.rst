@@ -1,10 +1,6 @@
 Installing Dedalus
 ******************
 
-**Note: please check you're referencing the intended version of the documentation.
-This documentation is in reference to v3 of the code, which is currently under beta-release.
-Documentation for v2 (the latest on PyPI) can be accessed through the sidebar.**
-
 Dedalus is a Python 3 package that includes custom C-extensions (compiled with Cython) and that relies on MPI, FFTW, HDF5, and a basic scientific-Python stack (numpy, scipy, mpi4py, and h5py).
 
 The easiest way to install Dedalus and its dependencies is using conda.
@@ -15,8 +11,7 @@ Once you have the necessary C and Python dependencies, you can install and upgra
 Full-stack conda installation (recommended)
 ===========================================
 
-A full-stack installation of Dedalus v2 is available via conda-forge for Linux and macOS.
-This can be used to quickly install all dependencies before installing Dedalus3 via pip.
+A full-stack installation of Dedalus v3 is available via conda-forge for Linux and macOS.
 This installation route is recommended for laptops, workstations, and some cluster environments.
 If linking to the existing MPI libraries on your cluster is recommended, see the alternative "Custom conda installation" instructions below.
 
@@ -41,14 +36,10 @@ If linking to the existing MPI libraries on your cluster is recommended, see the
        conda env config vars set OMP_NUM_THREADS=1
        conda env config vars set NUMEXPR_MAX_THREADS=1
 
-#. Install Dedalus v2 and all its requirements from the conda-forge channel and upgrade to Dedalus v3 using pip::
+#. Install Dedalus v3 and all its requirements from the conda-forge channel::
 
-       # Install Dedalus v2 from conda-forge to build stack
-       conda install -c conda-forge dedalus c-compiler cython "h5py=*=mpi*"
-
-       # Upgrade to Dedalus v3
-       conda uninstall --force dedalus
-       CC=mpicc pip3 install --no-cache --no-build-isolation http://github.com/dedalusproject/dedalus/zipball/master/
+       # Install Dedalus v3 from conda-forge
+       conda install -c conda-forge dedalus
 
 To use Dedalus, you simply need to activate the new environment.
 You can test the installation using the command-line interface::
@@ -109,15 +100,12 @@ This is done automatically when Dedalus is installed using the conda build scrip
 Installing from PyPI
 --------------------
 
-**Note: Dedalus v3 is currently under beta-release, and not yet available on PyPI.
-Please build directly from source as described below.**
+We currently only provide Dedalus on PyPI as a source distribution so that the Cython extensions are properly linked to your FFTW/MPI libraries at build-time.
+To install Dedalus from PyPI, first set the ``FFTW_PATH`` and ``MPI_PATH`` environment variables to the prefix paths for FFTW/MPI and then install using pip, ensuring that the C extensions are properly linked to MPI by using ``mpicc``::
 
-.. We currently only provide Dedalus on PyPI as a source distribution so that the Cython extensions are properly linked to your FFTW/MPI libraries at build-time.
-.. To install Dedalus from PyPI, first set the ``FFTW_PATH`` and ``MPI_PATH`` environment variables to the prefix paths for FFTW/MPI and then install using pip::
-
-..     export FFTW_PATH=/path/to/your/fftw_prefix
-..     export MPI_PATH=/path/to/your/mpi_prefix
-..     pip3 install dedalus
+    export FFTW_PATH=/path/to/your/fftw_prefix
+    export MPI_PATH=/path/to/your/mpi_prefix
+    CC=mpicc pip3 install --no-cache --no-build-isolation dedalus
 
 Building from source
 --------------------

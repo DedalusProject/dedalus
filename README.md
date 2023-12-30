@@ -11,13 +11,17 @@
   <a href="http://dedalus-project.readthedocs.org">
     <img alt="Read the Docs" src="https://img.shields.io/readthedocs/dedalus-project">
   </a>
-  <img alt="PyPI - Python Version" src="https://img.shields.io/pypi/pyversions/dedalus">
-  <img alt="PyPI" src="https://img.shields.io/pypi/v/dedalus">
-  <img alt="PyPI - License" src="https://img.shields.io/pypi/l/dedalus">
+    <img alt="PyPI - Python Version" src="https://img.shields.io/pypi/pyversions/dedalus">
+  <a href="https://pypi.org/project/dedalus/">
+    <img alt="PyPI" src="https://img.shields.io/pypi/v/dedalus">
+  </a>
+  <a href="https://github.com/conda-forge/dedalus-feedstock">
+  <img alt="Conda Version" src="https://img.shields.io/conda/vn/conda-forge/dedalus">
+  </a>
+  <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">
+    <img alt="PyPI - License" src="https://img.shields.io/pypi/l/dedalus">
+  </a>
 </p>
-
-**Note: this branch is the development head of v3 of the codebase, which is currently under beta-release.
-The development head of v2 of the codebase is on the ["v2_master" branch](https://github.com/DedalusProject/dedalus/tree/v2_master).**
 
 Dedalus is a flexible framework for solving partial differential equations using modern spectral methods.
 The code is open-source and developed by a team of researchers studying astrophysical, geophysical, and biological fluid dynamics.
@@ -106,6 +110,7 @@ Our numerical algorithms produce sparse and spectrally accurate discretizations 
 </table>
 
 The resulting systems are efficiently solved using compiled libraries and are automatically parallelized using MPI.
+See the [documentation](http://dedalus-project.readthedocs.org) for tutorials and additional examples.
 
 ## Links
 
@@ -117,7 +122,7 @@ The resulting systems are efficiently solved using compiled libraries and are au
 ## Developers
 
 * [Keaton Burns (@kburns)](https://github.com/kburns)
-* [Geoff Vasil (@gmvasil)](https://github.com/gmvasil)
+* [Geoff Vasil (@gmvasil)](https://github.com/geoffvasil)
 * [Jeff Oishi (@jsoishi)](https://github.com/jsoishi)
 * [Daniel Lecoanet (@lecoanet)](https://github.com/lecoanet/)
 * [Ben Brown (@bpbrown)](https://github.com/bpbrown)
