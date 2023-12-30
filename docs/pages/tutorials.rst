@@ -23,11 +23,11 @@ These notebooks cover the basics of setting up and interacting with the primary 
 Example Scripts
 ===============
 
-A range of examples are available under the ``examples`` subdirectory of the main code repository, which you can browse :repo:`here <examples>` and preview below.
+A range of examples are available under the :repo:`examples subdirectory <examples>` of the main code repository, and several of these can be previewed below.
 These example scripts can be copied to any working directory with the command ``python3 -m dedalus get_examples``.
-These examples cover a wide range of use cases, including multidimensional problems designed for parallel execution.
+They cover a wide range of use cases but are generally designed to run with limited resources on a laptop or PC.
 Basic post-processing and plotting scripts are also provided with many problems.
-These simulation and processing scripts may be useful as a starting point for implementing different problems and equation sets.
+These simulation and processing scripts may be useful as a starting point for implementing different problems and equation sets, or for scaling up for larger simulations in HPC environments.
 
 Cartesian examples
 ------------------

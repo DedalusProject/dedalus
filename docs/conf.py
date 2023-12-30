@@ -185,6 +185,7 @@ texinfo_documents = [
 nbsphinx_thumbnails = {
     'pages/examples/evp_1d_waves_on_a_string': '_images/waves_on_a_string.png',
     'pages/examples/evp_1d_mathieu': '_images/mathieu_eigenvalues.png',
+    'pages/examples/evp_disk_pipe_flow': '_images/pipe_flow.png',
     'pages/examples/ivp_1d_kdv_burgers': '_images/kdv_burgers.png',
     'pages/examples/ivp_2d_rayleigh_benard': '_images/rayleigh_benard.png',
     'pages/examples/ivp_2d_shear_flow': '_images/shear_flow.png',
