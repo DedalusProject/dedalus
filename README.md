@@ -43,7 +43,7 @@ Our numerical algorithms produce sparse and spectrally accurate discretizations 
     <th width="25%">
       <a href="https://dedalus-project.readthedocs.io/en/latest/pages/examples/ivp_1d_kdv_burgers.html">
         <figure>
-          <img src="docs/pages/examples/images/kdv_burgers.png">
+          <img src="https://raw.githubusercontent.com/DedalusProject/dedalus/master/docs/pages/examples/images/kdv_burgers.png">
           <figcaption>KdV-Burgers equation (1D IVP)</figcaption>
         </figure>
       </a>
@@ -51,7 +51,7 @@ Our numerical algorithms produce sparse and spectrally accurate discretizations 
     <th width="25%">
       <a href="https://dedalus-project.readthedocs.io/en/latest/pages/examples/ivp_2d_rayleigh_benard.html">
         <figure>
-          <img src="docs/pages/examples/images/rayleigh_benard.png">
+          <img src="https://raw.githubusercontent.com/DedalusProject/dedalus/master/docs/pages/examples/images/rayleigh_benard.png">
           <figcaption>Rayleigh-Benard convection (2D IVP)</figcaption>
         </figure>
       </a>
@@ -59,7 +59,7 @@ Our numerical algorithms produce sparse and spectrally accurate discretizations 
     <th width="25%">
       <a href="https://dedalus-project.readthedocs.io/en/latest/pages/examples/ivp_2d_shear_flow.html">
         <figure>
-            <img src="docs/pages/examples/images/shear_flow.png">
+            <img src="https://raw.githubusercontent.com/DedalusProject/dedalus/master/docs/pages/examples/images/shear_flow.png">
             <figcaption>Periodic shear flow (2D IVP)</figcaption>
         </figure>
       </a>
@@ -67,7 +67,7 @@ Our numerical algorithms produce sparse and spectrally accurate discretizations 
     <th width="25%">
       <a href="https://dedalus-project.readthedocs.io/en/latest/pages/examples/lbvp_2d_poisson.html">
         <figure>
-            <img src="docs/pages/examples/images/poisson.png">
+            <img src="https://raw.githubusercontent.com/DedalusProject/dedalus/master/docs/pages/examples/images/poisson.png">
             <figcaption>Poisson equation (2D LBVP)</figcaption>
         </figure>
       </a>
@@ -79,7 +79,7 @@ Our numerical algorithms produce sparse and spectrally accurate discretizations 
     <th width="25%">
       <a href="https://dedalus-project.readthedocs.io/en/latest/pages/examples/ivp_disk_libration.html">
         <figure>
-          <img src="docs/pages/examples/images/libration.png">
+          <img src="https://raw.githubusercontent.com/DedalusProject/dedalus/master/docs/pages/examples/images/libration.png">
           <figcaption>Librational instability (disk IVP)</figcaption>
         </figure>
       </a>
@@ -87,7 +87,7 @@ Our numerical algorithms produce sparse and spectrally accurate discretizations 
     <th width="25%">
       <a href="https://dedalus-project.readthedocs.io/en/latest/pages/examples/ivp_sphere_shallow_water.html">
         <figure>
-          <img src="docs/pages/examples/images/shallow_water.png">
+          <img src="https://raw.githubusercontent.com/DedalusProject/dedalus/master/docs/pages/examples/images/shallow_water.png">
           <figcaption>Spherical shallow water (sphere IVP)</figcaption>
         </figure>
       </a>
@@ -95,7 +95,7 @@ Our numerical algorithms produce sparse and spectrally accurate discretizations 
     <th width="25%">
       <a href="https://dedalus-project.readthedocs.io/en/latest/pages/examples/ivp_shell_convection.html">
         <figure>
-            <img src="docs/pages/examples/images/shell_convection.png">
+            <img src="https://raw.githubusercontent.com/DedalusProject/dedalus/master/docs/pages/examples/images/shell_convection.png">
             <figcaption>Spherical shell convection (shell IVP)</figcaption>
         </figure>
       </a>
@@ -103,7 +103,7 @@ Our numerical algorithms produce sparse and spectrally accurate discretizations 
     <th width="25%">
       <a href="https://dedalus-project.readthedocs.io/en/latest/pages/examples/ivp_ball_internally_heated_convection.html">
         <figure>
-            <img src="docs/pages/examples/images/internally_heated_convection.png">
+            <img src="https://raw.githubusercontent.com/DedalusProject/dedalus/master/docs/pages/examples/images/internally_heated_convection.png">
             <figcaption>Internally heated convection (ball IVP)</figcaption>
         </figure>
       </a>
