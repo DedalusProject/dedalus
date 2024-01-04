@@ -477,7 +477,7 @@ def scipy_sparse_eigs_adj(A, B, N, target, matsolver, **kw):
     solver = matsolver(C)
     def matvec(x):
         return solver.solve(B.dot(x))
-    
+
     D = spla.LinearOperator(dtype=A.dtype, shape=A.shape, matvec=matvec)
 
     # Build sparse linear operator representing (A^H - σB^H)^I B^H = C^-H B^H = D_adj
