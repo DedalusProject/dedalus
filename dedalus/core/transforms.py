@@ -12,12 +12,7 @@ from math import prod
 from . import basis
 from ..libraries.fftw import fftw_wrappers as fftw
 from ..tools import jacobi
-<<<<<<< HEAD
 from ..tools.array import apply_matrix, apply_dense, axslice, solve_upper_sparse, apply_sparse
-from ..tools.array import apply_matrix, apply_dense, axslice, splu_inverse, apply_sparse, prod, splu_inverse_adjoint
-=======
-from ..tools.array import apply_matrix, apply_dense, axslice, splu_inverse, apply_sparse, prod
->>>>>>> c9e45ce (Add Hermitian multiplication to splu_inverse so that adjoint multiplication can be done from the same LU decomposision. Cleanup transforms to use this new version.)
 from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
 
@@ -1135,6 +1130,7 @@ class FastChebyshevTransform(JacobiTransform):
                 self.forward_conversion = self.forward_conversion.tocsr()
             self.backward_conversion = jacobi.conversion_matrix(self.M_orig, a0, b0, a, b).tocsr()
             self.backward_conversion.sum_duplicates() # for faster solve_upper
+
             # self.backward_conversion_adjoint = splu_inverse(np.conj(self.backward_conversion).T)
             # TODO: implement lower solve for backward_conversion_adjoint
             # self.backward_conversion = jacobi.conversion_matrix(self.M_orig, a0, b0, a, b)
