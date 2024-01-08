@@ -136,13 +136,8 @@ class _SuperluFactorizedBase(SparseSolver):
     def __init__(self, matrix, solver=None):
         if self.trans == "T":
             matrix = matrix.T
-            self.trans_H = "N"
         elif self.trans == "H":
             matrix = matrix.H
-            self.trans_H = "N"
-        else:
-            self.trans_H = "H"
-
         self.LU = spla.splu(matrix.tocsc(),
                             permc_spec=self.permc_spec,
                             diag_pivot_thresh=self.diag_pivot_thresh,
@@ -152,12 +147,14 @@ class _SuperluFactorizedBase(SparseSolver):
 
     def solve(self, vector):
         return self.LU.solve(vector, trans=self.trans)
-    
+
     def solve_H(self,vector):
-        if(self.trans=="T"):
-            return np.conj(self.LU.solve(np.conj(vector), trans=self.trans_H))
-        else:
-            return self.LU.solve(vector, trans=self.trans_H)
+        if self.trans == "N":
+            return self.LU.solve(vector, trans="H")
+        elif self.trans == "H":
+            return self.LU.solve(vector)
+        elif self.trans == "T":
+            return np.conj(self.LU.solve(np.conj(vector)))
 
 
 @add_solver
