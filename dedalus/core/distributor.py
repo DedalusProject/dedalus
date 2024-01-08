@@ -296,7 +296,7 @@ class Distributor:
 
     def local_modes(self, basis):
         # TODO: remove from bases and do it all here?
-        return basis.local_modes()
+        return basis.local_modes(self)
 
     @CachedAttribute
     def default_nonconst_groups(self):

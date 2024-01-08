@@ -34,6 +34,7 @@ class DimWrapper:
         self.field = field
         self.axis = axis
         self.basis = field.domain.bases[axis]
+        self.dist = field.dist
 
     @property
     def label(self):
@@ -45,9 +46,9 @@ class DimWrapper:
     def __getitem__(self, item):
         if self.field.layout.grid_space[self.axis]:
             scale = self.field.scales[self.axis]
-            return self.basis.global_grid(scale).ravel()
+            return self.basis.global_grid(self.dist, scale).ravel()
         else:
-            return self.basis.local_modes().ravel()
+            return self.dist.local_modes(self.basis).ravel()
 
 
 def plot_bot(dset, image_axes, data_slices, image_scales=(0,0), clim=None, even_scale=False, cmap='RdBu_r', axes=None, figkw={}, title=None, func=None, visible_axes=True):
