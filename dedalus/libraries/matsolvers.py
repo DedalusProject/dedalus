@@ -24,8 +24,8 @@ class SolverBase:
     def solve(self, vector):
         pass
 
-    def solve_adjoint(self,vector):
-        raise NotImplementedError("%s has not implemented 'solve_adjoint' method" % type(self))
+    def solve_H(self,vector):
+        raise NotImplementedError("%s has not implemented 'solve_H' method" % type(self))
 
 
 @add_solver
@@ -136,12 +136,12 @@ class _SuperluFactorizedBase(SparseSolver):
     def __init__(self, matrix, solver=None):
         if self.trans == "T":
             matrix = matrix.T
-            self.trans_adjoint = "N"
+            self.trans_H = "N"
         elif self.trans == "H":
             matrix = matrix.H
-            self.trans_adjoint = "N"
+            self.trans_H = "N"
         else:
-            self.trans_adjoint = "H"
+            self.trans_H = "H"
 
         self.LU = spla.splu(matrix.tocsc(),
                             permc_spec=self.permc_spec,
@@ -153,11 +153,11 @@ class _SuperluFactorizedBase(SparseSolver):
     def solve(self, vector):
         return self.LU.solve(vector, trans=self.trans)
     
-    def solve_adjoint(self,vector):
+    def solve_H(self,vector):
         if(self.trans=="T"):
-            return np.conj(self.LU.solve(np.conj(vector), trans=self.trans_adjoint))
+            return np.conj(self.LU.solve(np.conj(vector), trans=self.trans_H))
         else:
-            return self.LU.solve(vector, trans=self.trans_adjoint)
+            return self.LU.solve(vector, trans=self.trans_H)
 
 
 @add_solver
