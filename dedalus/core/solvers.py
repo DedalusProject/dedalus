@@ -250,15 +250,13 @@ class EigenvalueSolver(SolverBase):
         # Solve as sparse general eigenvalue problem
         A = sp.L_min
         B = - sp.M_min
-        # Solve for the right eigenvectors
-        self.eigenvalues, pre_right_evecs = scipy_sparse_eigs(A=A, B=B, N=N, target=target, matsolver=self.matsolver, **kw)
-        self.right_eigenvectors = self.eigenvectors = sp.pre_right @ pre_right_evecs
+        # Solve for the right (and optionally left) eigenvectors
+        eig_output = scipy_sparse_eigs(A=A, B=B, left=left, N=N, target=target, matsolver=self.matsolver, **kw)
+
         if left:
-            # Solve for the left eigenvectors
             # Note: this definition of "left eigenvectors" is consistent with the documentation for scipy.linalg.eig
-            self.left_eigenvalues, pre_left_evecs = scipy_sparse_eigs(A=A.getH(), B=B.getH(),
-                                                                      N=N, target=np.conjugate(target),
-                                                                      matsolver=self.matsolver, **kw)
+            self.eigenvalues, pre_right_evecs, self.left_eigenvalues, pre_left_evecs = eig_output
+            self.right_eigenvectors = self.eigenvectors = sp.pre_right @ pre_right_evecs
             self.left_eigenvectors = sp.pre_left.H @ pre_left_evecs
             self.modified_left_eigenvectors = (sp.M_min @ sp.pre_right_pinv).H @ pre_left_evecs
             # Check that eigenvalues match
@@ -278,6 +276,9 @@ class EigenvalueSolver(SolverBase):
                 norms = np.diag(pre_left_evecs.T.conj() @ sp.M_min @ pre_right_evecs)
                 self.left_eigenvectors /= np.conj(norms)
                 self.modified_left_eigenvectors /= np.conj(norms)
+        else:
+            self.eigenvalues, pre_right_evecs = eig_output
+            self.right_eigenvectors = self.eigenvectors = sp.pre_right @ pre_right_evecs
 
     def set_state(self, index, subsystem):
         """

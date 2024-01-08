@@ -24,6 +24,9 @@ class SolverBase:
     def solve(self, vector):
         pass
 
+    def solve_H(self,vector):
+        raise NotImplementedError("%s has not implemented 'solve_H' method" % type(self))
+
 
 @add_solver
 class DummySolver(SolverBase):
@@ -144,6 +147,14 @@ class _SuperluFactorizedBase(SparseSolver):
 
     def solve(self, vector):
         return self.LU.solve(vector, trans=self.trans)
+
+    def solve_H(self,vector):
+        if self.trans == "N":
+            return self.LU.solve(vector, trans="H")
+        elif self.trans == "H":
+            return self.LU.solve(vector)
+        elif self.trans == "T":
+            return np.conj(self.LU.solve(np.conj(vector)))
 
 
 @add_solver

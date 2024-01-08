@@ -395,7 +395,7 @@ def drop_empty_rows(mat):
     return mat[nonempty_rows]
 
 
-def scipy_sparse_eigs(A, B, N, target, matsolver, **kw):
+def scipy_sparse_eigs(A, B, left, N, target, matsolver, **kw):
     """
     Perform targeted eigenmode search using the scipy/ARPACK sparse solver
     for the reformulated generalized eigenvalue problem
@@ -410,6 +410,8 @@ def scipy_sparse_eigs(A, B, N, target, matsolver, **kw):
         Sparse matrices for generalized eigenvalue problem
     N : int
         Number of eigenmodes to return
+    left: boolean
+        Whether to solve for the left eigenvectors or not
     target : complex
         Target σ for eigenvalue search
     matsolver : matrix solver class
@@ -427,7 +429,19 @@ def scipy_sparse_eigs(A, B, N, target, matsolver, **kw):
     evals, evecs = spla.eigs(D, k=N, which='LM', sigma=None, **kw)
     # Rectify eigenvalues
     evals = 1 / evals + target
-    return evals, evecs
+    if left:
+        # Build sparse linear operator representing (A^H - conj(σ)B^H)^I B^H = C^-H B^H = left_D
+        # Note: left_D is not equal to D^H
+        def matvec_left(x):
+            return solver.solve_H(B.H.dot(x))
+        left_D = spla.LinearOperator(dtype=A.dtype, shape=A.shape, matvec=matvec_left)
+        # Solve using scipy sparse algorithm
+        left_evals, left_evecs = spla.eigs(left_D, k=N, which='LM', sigma=None, **kw)
+        # Rectify left eigenvalues
+        left_evals = 1 / left_evals + np.conj(target)
+        return evals, evecs, left_evals, left_evecs
+    else:
+        return evals, evecs
 
 
 def interleave_matrices(matrices):
