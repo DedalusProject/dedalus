@@ -6,6 +6,8 @@ import time
 import h5py
 import pathlib
 import scipy.linalg
+import cProfile
+import pstats
 from math import prod
 
 from . import subsystems
@@ -14,6 +16,7 @@ from .evaluator import Evaluator
 from ..libraries.matsolvers import matsolvers
 from ..tools.config import config
 from ..tools.array import scipy_sparse_eigs
+from ..tools.parallel import Sync
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -485,6 +488,8 @@ class InitialValueSolver(SolverBase):
         Iteration cadence for enforcing Hermitian symmetry on real variables (default: 100).
     warmup_iterations : int, optional
         Number of warmup iterations to disregard when computing runtime statistics (default: 10).
+    profile : bool, optional
+        Save profiles with cProfile (default: False).
     **kw :
         Other options passed to ProblemBase.
 
@@ -510,15 +515,20 @@ class InitialValueSolver(SolverBase):
     matsolver_default = 'MATRIX_FACTORIZER'
     matrices = ['M', 'L']
 
-    def __init__(self, problem, timestepper, enforce_real_cadence=100, warmup_iterations=10, **kw):
+    def __init__(self, problem, timestepper, enforce_real_cadence=100, warmup_iterations=10, profile=False, **kw):
         logger.debug('Beginning IVP instantiation')
-        super().__init__(problem, **kw)
-        if np.isrealobj(self.dtype.type()):
-            self.enforce_real_cadence = enforce_real_cadence
-        else:
-            self.enforce_real_cadence = None
+        # Setup timing and profiling
+        self.dist = problem.dist
         self._bcast_array = np.zeros(1, dtype=float)
         self.init_time = self.world_time
+        self.profile = profile
+        if profile:
+            self.setup_profiler = cProfile.Profile()
+            self.warmup_profiler = cProfile.Profile()
+            self.run_profiler = cProfile.Profile()
+            self.setup_profiler.enable()
+        # Build subsystems and subproblems
+        super().__init__(problem, **kw)
         # Build LHS matrices
         self.build_matrices(self.subproblems, ['M', 'L'])
         # Compute total modes
@@ -538,6 +548,10 @@ class InitialValueSolver(SolverBase):
         self.sim_time = self.initial_sim_time = problem.time.allreduce_data_max(layout='g')
         self.iteration = self.initial_iteration = 0
         self.warmup_iterations = warmup_iterations
+        if np.isrealobj(self.dtype.type()):
+            self.enforce_real_cadence = enforce_real_cadence
+        else:
+            self.enforce_real_cadence = None
         # Default integration parameters
         self.stop_sim_time = np.inf
         self.stop_wall_time = np.inf
@@ -648,8 +662,14 @@ class InitialValueSolver(SolverBase):
         wall_time = self.wall_time
         if self.iteration == self.initial_iteration:
             self.start_time = wall_time
+            if self.profile:
+                self.dump_profiles(self.setup_profiler, "setup")
+                self.warmup_profiler.enable()
         if self.iteration == self.initial_iteration + self.warmup_iterations:
             self.warmup_time = wall_time
+            if self.profile:
+                self.dump_profiles(self.warmup_profiler, "warmup")
+                self.run_profiler.enable()
         # Advance using timestepper
         self.timestepper.step(dt, wall_time)
         # Update iteration
@@ -704,6 +724,8 @@ class InitialValueSolver(SolverBase):
         logger.info(f"Final iteration: {self.iteration}")
         logger.info(f"Final sim time: {self.sim_time}")
         logger.info(f"Setup time (init - iter 0): {self.start_time:{format}} sec")
+        if self.profile:
+            self.dump_profiles(self.run_profiler, "runtime")
         if self.iteration >= self.initial_iteration + self.warmup_iterations:
             warmup_time = self.warmup_time - self.start_time
             run_time = log_time - self.warmup_time
@@ -716,3 +738,13 @@ class InitialValueSolver(SolverBase):
             logger.info(f"Speed: {(modes*stages/cpus/run_time):{format}} mode-stages/cpu-sec")
         else:
             logger.info(f"Timings unavailable because warmup did not complete.")
+
+    def dump_profiles(self, profiler, name):
+        comm = self.dist.comm
+        # Write stats from each process
+        profiler.dump_stats(f"/tmp/{name}_proc{comm.rank}.prof")
+        # Sum stats over processes
+        with Sync(comm):
+            if comm.rank == 0:
+                joint_stats = pstats.Stats(*(f"/tmp/{name}_proc{i}.prof" for i in range(comm.size)))
+                joint_stats.dump_stats(f"{name}.prof")
