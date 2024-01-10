@@ -56,3 +56,14 @@ class RotateProcesses:
     def __exit__(self, type, value, traceback):
         for i in range(self.size-self.rank):
             self.comm.Barrier()
+
+
+class ProfileWrapper:
+    """Pickleable wrapper for cProfile.Profile for use with pstats.Stats"""
+
+    def __init__(self, stats):
+        self.stats = stats
+
+    def create_stats(self):
+        pass
+

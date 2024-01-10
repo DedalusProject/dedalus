@@ -16,7 +16,7 @@ from .evaluator import Evaluator
 from ..libraries.matsolvers import matsolvers
 from ..tools.config import config
 from ..tools.array import scipy_sparse_eigs
-from ..tools.parallel import Sync
+from ..tools.parallel import ProfileWrapper
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -741,10 +741,12 @@ class InitialValueSolver(SolverBase):
 
     def dump_profiles(self, profiler, name):
         comm = self.dist.comm
-        # Write stats from each process
-        profiler.dump_stats(f"/tmp/{name}_proc{comm.rank}.prof")
-        # Sum stats over processes
-        with Sync(comm):
-            if comm.rank == 0:
-                joint_stats = pstats.Stats(*(f"/tmp/{name}_proc{i}.prof" for i in range(comm.size)))
-                joint_stats.dump_stats(f"{name}.prof")
+        # Disable and create stats on each process
+        profiler.create_stats()
+        # Gather using wrapper class to avoid pickling issues
+        profiles = comm.gather(ProfileWrapper(profiler.stats), root=0)
+        # Sum stats on root process
+        if comm.rank == 0:
+            joint_stats = pstats.Stats(*profiles)
+            joint_stats.dump_stats(f"{name}.prof")
+
