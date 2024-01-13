@@ -10,6 +10,9 @@ import cProfile
 import pstats
 from math import prod
 
+from collections import defaultdict
+import shelve
+
 from . import subsystems
 from . import timesteppers
 from .evaluator import Evaluator
@@ -743,10 +746,25 @@ class InitialValueSolver(SolverBase):
         comm = self.dist.comm
         # Disable and create stats on each process
         profiler.create_stats()
+        p = pstats.Stats(profiler)
+        p.strip_dirs()
         # Gather using wrapper class to avoid pickling issues
-        profiles = comm.gather(ProfileWrapper(profiler.stats), root=0)
+        profiles = comm.gather(ProfileWrapper(p.stats), root=0)
         # Sum stats on root process
         if comm.rank == 0:
+            if self.profile=='verbose':
+                profile_database = pathlib.Path(f"{name}_profiles")
+                stats = {'primcalls':defaultdict(list),'totcalls':defaultdict(list),'tottime':defaultdict(list),'cumtime':defaultdict(list)}
+                for profile in profiles:
+                    for func, (primcalls, totcalls, tottime, cumtime, callers) in profile.stats.items():
+                        stats['primcalls'][func].append(primcalls)
+                        stats['totcalls'][func].append(totcalls)
+                        stats['tottime'][func].append(tottime)
+                        stats['cumtime'][func].append(cumtime)
+                with shelve.open(str(profile_database), flag='n') as shelf:
+                    for key in stats:
+                        shelf[key] = stats[key]
+
+            # creation of joint_stats destroys profiles, so do this second
             joint_stats = pstats.Stats(*profiles)
             joint_stats.dump_stats(f"{name}.prof")
-
