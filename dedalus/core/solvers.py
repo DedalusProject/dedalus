@@ -21,6 +21,9 @@ from ..tools.config import config
 from ..tools.array import scipy_sparse_eigs
 from ..tools.parallel import ProfileWrapper
 
+PROFILE_SCRIPT = config['profiling'].getboolean('PROFILE_SCRIPT')
+PROFILE_MODE_DEFAULT = config['profiling'].get('PROFILE_MODE_DEFAULT')
+
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
 
@@ -493,6 +496,9 @@ class InitialValueSolver(SolverBase):
         Number of warmup iterations to disregard when computing runtime statistics (default: 10).
     profile : bool, optional
         Save profiles with cProfile (default: False).
+    profile_mode : string, optional
+        Output joined files [summary] or also include per-core analysis [full] (default: full).
+
     **kw :
         Other options passed to ProblemBase.
 
@@ -518,7 +524,7 @@ class InitialValueSolver(SolverBase):
     matsolver_default = 'MATRIX_FACTORIZER'
     matrices = ['M', 'L']
 
-    def __init__(self, problem, timestepper, enforce_real_cadence=100, warmup_iterations=10, profile=False, **kw):
+    def __init__(self, problem, timestepper, enforce_real_cadence=100, warmup_iterations=10, profile=PROFILE_SCRIPT, profile_mode=PROFILE_MODE_DEFAULT, **kw):
         logger.debug('Beginning IVP instantiation')
         # Setup timing and profiling
         self.dist = problem.dist
@@ -526,6 +532,7 @@ class InitialValueSolver(SolverBase):
         self.init_time = self.world_time
         self.profile = profile
         if profile:
+            self.profile_mode = profile_mode.lower()
             self.setup_profiler = cProfile.Profile()
             self.warmup_profiler = cProfile.Profile()
             self.run_profiler = cProfile.Profile()
@@ -752,7 +759,7 @@ class InitialValueSolver(SolverBase):
         profiles = comm.gather(ProfileWrapper(p.stats), root=0)
         # Sum stats on root process
         if comm.rank == 0:
-            if self.profile=='verbose':
+            if self.profile_mode=='full':
                 profile_database = pathlib.Path(f"{name}_profiles")
                 stats = {'primcalls':defaultdict(list),'totcalls':defaultdict(list),'tottime':defaultdict(list),'cumtime':defaultdict(list)}
                 for profile in profiles:
