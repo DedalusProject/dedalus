@@ -8,6 +8,7 @@ import numpy as np
 import itertools
 from collections import OrderedDict
 from math import prod
+import numbers
 
 from .coords import CoordinateSystem, DirectProduct
 from ..tools.array import reshape_vector
@@ -185,11 +186,12 @@ class Distributor:
         """Remedy different scale inputs."""
         if scales is None:
             scales = 1
-        if not isinstance(scales, (list, tuple)):
-            scales = [scales] * self.dim
+        if isinstance(scales, numbers.Number):
+            scales = (scales,) * self.dim
+        scales = tuple(scales)
         if 0 in scales:
             raise ValueError("Scales must be nonzero.")
-        return tuple(scales)
+        return scales
 
     def get_transform_object(self, axis):
         return self.transforms[axis]
