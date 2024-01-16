@@ -114,7 +114,8 @@ libraries = ["m"]
 library_dirs = []
 if INCLUDE_MPI:
     include_dirs += [mpi4py.get_include(), get_include("mpi")]
-    libraries += [get_lib("mpi")]
+    libraries += ["mpi"]
+    library_dirs += [get_lib("mpi")]
 if INCLUDE_FFTW:
     include_dirs += ["dedalus/libraries/fftw/", get_include("fftw")]
     libraries += ["fftw3_mpi", "fftw3"]
