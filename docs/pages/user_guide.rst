@@ -19,4 +19,5 @@ Specific how-to's:
 
     gauge_conditions
     tau_method
+    half_dimensions
 
