@@ -2346,7 +2346,7 @@ class CartesianGradient(Gradient):
 
     def subproblem_matrix(self, subproblem):
         """Build operator matrix for a specific subproblem."""
-        return sparse.vstack(arg.expression_matrices(subproblem, [self.operand])[self.operand] for arg in self.args)
+        return sparse.vstack([arg.expression_matrices(subproblem, [self.operand])[self.operand] for arg in self.args])
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""
@@ -2424,7 +2424,7 @@ class DirectProductGradient(Gradient):
 
     def subproblem_matrix(self, subproblem):
         """Build operator matrix for a specific subproblem."""
-        return sparse.vstack(arg.expression_matrices(subproblem, [self.operand])[self.operand] for arg in self.args)
+        return sparse.vstack([arg.expression_matrices(subproblem, [self.operand])[self.operand] for arg in self.args])
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""
