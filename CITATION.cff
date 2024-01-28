@@ -16,7 +16,7 @@ authors:
 - family-names: "Brown"
   given-names: "Benjamin P"
   orcid: "https://orcid.org/0000-0001-8935-219X"
-message: "Please cite the following works when using this software."
+message: "<p>Please cite the following works when using this software:</p>\n<ul>\n<li>Dedalus methods paper:\n<ul>\n<li>https://doi.org/10.1103/PhysRevResearch.2.023068</li>\n</ul>\n</li>\n<li>Zenodo DOI for relevant release</li>\n<li>Papers describing novel bases being used (if relevant):\n<ul>\n<li>Disk:\n<ul>\n<li>https://doi.org/10.1016/j.jcp.2016.08.013</li>\n</ul>\n</li>\n<li>Sphere / Ball:\n<ul>\n<li>https://doi.org/10.1016/j.jcpx.2019.100013</li>\n<li>https://doi.org/10.1016/j.jcpx.2019.100012</li>\n</ul>\n</li>\n</ul>\n</li>\n</ul>"
 preferred-citation:
   type: article
   authors:
