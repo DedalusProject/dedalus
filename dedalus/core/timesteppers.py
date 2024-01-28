@@ -7,9 +7,14 @@ from scipy.linalg import blas
 from .system import CoeffSystem
 from ..tools.array import apply_sparse
 
+
+# Public interface
+__all__ = []
+
 # Track implemented schemes
 schemes = OrderedDict()
 def add_scheme(scheme):
+    __all__.append(scheme.__name__)
     schemes[scheme.__name__] = scheme
     return scheme
 
