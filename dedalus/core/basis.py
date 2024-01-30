@@ -533,8 +533,9 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
             return self
         if isinstance(other, Jacobi):
             if self.grid_params == other.grid_params:
-                # Everything matches except size, a, b
+                # Take maximum size
                 size = max(self.size, other.size)
+                # Take grid (a0, b0) for minimal conversions
                 a = self.a0
                 b = self.b0
                 return self.clone_with(size=size, a=a, b=b)
@@ -548,8 +549,9 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
             return self
         if isinstance(other, Jacobi):
             if self.grid_params == other.grid_params:
-                # Everything matches except size, a, b
+                # Take maximum size
                 size = max(self.size, other.size)
+                # Take operand (a, b) for minimal conversions
                 a = self.a
                 b = self.b
                 return self.clone_with(size=size, a=a, b=b)

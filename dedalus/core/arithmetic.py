@@ -691,7 +691,7 @@ class CrossProduct(Product, FutureField):
         if arg0.tensorsig[0].dim != 3:
             raise ValueError("CrossProduct requires 3-component vector fields.")
         # FutureField requirements
-        self.domain = Domain(arg0.dist, self._build_bases(arg0, arg1))
+        self.domain = Domain(arg0.dist, self._build_bases(arg0, arg1, **kw))
         self.tensorsig = arg0.tensorsig
         self.dtype = np.result_type(arg0.dtype, arg1.dtype)
         # Setup ghost broadcasting
