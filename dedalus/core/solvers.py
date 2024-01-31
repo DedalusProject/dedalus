@@ -6,7 +6,11 @@ import time
 import h5py
 import pathlib
 import scipy.linalg
+import cProfile
+import pstats
 from math import prod
+from collections import defaultdict
+import pickle
 
 from . import subsystems
 from . import timesteppers
@@ -14,6 +18,11 @@ from .evaluator import Evaluator
 from ..libraries.matsolvers import matsolvers
 from ..tools.config import config
 from ..tools.array import scipy_sparse_eigs
+from ..tools.parallel import ProfileWrapper, parallel_mkdir
+
+PROFILE_DEFAULT = config['profiling'].getboolean('PROFILE_DEFAULT')
+PARALLEL_PROFILE_DEFAULT = config['profiling'].getboolean('PARALLEL_PROFILE_DEFAULT')
+PROFILE_DIRECTORY = pathlib.Path(config['profiling'].get('PROFILE_DIRECTORY'))
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -485,6 +494,10 @@ class InitialValueSolver(SolverBase):
         Iteration cadence for enforcing Hermitian symmetry on real variables (default: 100).
     warmup_iterations : int, optional
         Number of warmup iterations to disregard when computing runtime statistics (default: 10).
+    profile : bool, optional
+        Save accumulated profiles with cProfile (default: False).
+    parallel_profile : bool, optional
+        Save per-process and accumulated profiles with cProfile (default: False).
     **kw :
         Other options passed to ProblemBase.
 
@@ -510,15 +523,22 @@ class InitialValueSolver(SolverBase):
     matsolver_default = 'MATRIX_FACTORIZER'
     matrices = ['M', 'L']
 
-    def __init__(self, problem, timestepper, enforce_real_cadence=100, warmup_iterations=10, **kw):
+    def __init__(self, problem, timestepper, enforce_real_cadence=100, warmup_iterations=10, profile=PROFILE_DEFAULT, parallel_profile=PARALLEL_PROFILE_DEFAULT, **kw):
         logger.debug('Beginning IVP instantiation')
-        super().__init__(problem, **kw)
-        if np.isrealobj(self.dtype.type()):
-            self.enforce_real_cadence = enforce_real_cadence
-        else:
-            self.enforce_real_cadence = None
+        # Setup timing and profiling
+        self.dist = problem.dist
         self._bcast_array = np.zeros(1, dtype=float)
         self.init_time = self.world_time
+        if profile or parallel_profile:
+            parallel_mkdir(PROFILE_DIRECTORY, comm=self.dist.comm)
+            self.profile = True
+            self.parallel_profile = parallel_profile
+            self.setup_profiler = cProfile.Profile()
+            self.warmup_profiler = cProfile.Profile()
+            self.run_profiler = cProfile.Profile()
+            self.setup_profiler.enable()
+        # Build subsystems and subproblems
+        super().__init__(problem, **kw)
         # Build LHS matrices
         self.build_matrices(self.subproblems, ['M', 'L'])
         # Compute total modes
@@ -538,6 +558,10 @@ class InitialValueSolver(SolverBase):
         self.sim_time = self.initial_sim_time = problem.time.allreduce_data_max(layout='g')
         self.iteration = self.initial_iteration = 0
         self.warmup_iterations = warmup_iterations
+        if np.isrealobj(self.dtype.type()):
+            self.enforce_real_cadence = enforce_real_cadence
+        else:
+            self.enforce_real_cadence = None
         # Default integration parameters
         self.stop_sim_time = np.inf
         self.stop_wall_time = np.inf
@@ -648,8 +672,14 @@ class InitialValueSolver(SolverBase):
         wall_time = self.wall_time
         if self.iteration == self.initial_iteration:
             self.start_time = wall_time
+            if self.profile:
+                self.dump_profiles(self.setup_profiler, "setup")
+                self.warmup_profiler.enable()
         if self.iteration == self.initial_iteration + self.warmup_iterations:
             self.warmup_time = wall_time
+            if self.profile:
+                self.dump_profiles(self.warmup_profiler, "warmup")
+                self.run_profiler.enable()
         # Advance using timestepper
         self.timestepper.step(dt, wall_time)
         # Update iteration
@@ -704,6 +734,8 @@ class InitialValueSolver(SolverBase):
         logger.info(f"Final iteration: {self.iteration}")
         logger.info(f"Final sim time: {self.sim_time}")
         logger.info(f"Setup time (init - iter 0): {self.start_time:{format}} sec")
+        if self.profile:
+            self.dump_profiles(self.run_profiler, "runtime")
         if self.iteration >= self.initial_iteration + self.warmup_iterations:
             warmup_time = self.warmup_time - self.start_time
             run_time = log_time - self.warmup_time
@@ -716,3 +748,30 @@ class InitialValueSolver(SolverBase):
             logger.info(f"Speed: {(modes*stages/cpus/run_time):{format}} mode-stages/cpu-sec")
         else:
             logger.info(f"Timings unavailable because warmup did not complete.")
+
+    def dump_profiles(self, profiler, name):
+        "Save profiling data to disk."
+        comm = self.dist.comm
+        # Disable and create stats on each process
+        profiler.create_stats()
+        p = pstats.Stats(profiler)
+        p.strip_dirs()
+        # Gather using wrapper class to avoid pickling issues
+        profiles = comm.gather(ProfileWrapper(p.stats), root=0)
+        # Sum stats on root process
+        if comm.rank == 0:
+            if self.parallel_profile:
+                stats = {'primcalls': defaultdict(list),
+                         'totcalls': defaultdict(list),
+                         'tottime': defaultdict(list),
+                         'cumtime': defaultdict(list)}
+                for profile in profiles:
+                    for func, (primcalls, totcalls, tottime, cumtime, callers) in profile.stats.items():
+                        stats['primcalls'][func].append(primcalls)
+                        stats['totcalls'][func].append(totcalls)
+                        stats['tottime'][func].append(tottime)
+                        stats['cumtime'][func].append(cumtime)
+                pickle.dump(stats, open(PROFILE_DIRECTORY / f"{name}_parallel.pickle", 'wb'))
+            # Creation of joint_stats destroys profiles, so do this second
+            joint_stats = pstats.Stats(*profiles)
+            joint_stats.dump_stats(PROFILE_DIRECTORY / f"{name}.prof")

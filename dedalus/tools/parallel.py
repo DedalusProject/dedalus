@@ -3,6 +3,7 @@ Tools for running in parallel.
 
 """
 
+import pathlib
 from mpi4py import MPI
 
 
@@ -56,3 +57,23 @@ class RotateProcesses:
     def __exit__(self, type, value, traceback):
         for i in range(self.size-self.rank):
             self.comm.Barrier()
+
+
+class ProfileWrapper:
+    """Pickleable wrapper for cProfile.Profile for use with pstats.Stats"""
+
+    def __init__(self, stats):
+        self.stats = stats
+
+    def create_stats(self):
+        pass
+
+
+def parallel_mkdir(path, comm=MPI.COMM_WORLD):
+    """Create a directory from root process."""
+    path = pathlib.Path(path)
+    with Sync(comm=comm, enter=False, exit=True) as sync:
+        if sync.comm.rank == 0:
+            if not path.exists():
+                path.mkdir()
+
