@@ -9,9 +9,8 @@ import scipy.linalg
 import cProfile
 import pstats
 from math import prod
-
 from collections import defaultdict
-import shelve
+import pickle
 
 from . import subsystems
 from . import timesteppers
@@ -19,10 +18,11 @@ from .evaluator import Evaluator
 from ..libraries.matsolvers import matsolvers
 from ..tools.config import config
 from ..tools.array import scipy_sparse_eigs
-from ..tools.parallel import ProfileWrapper
+from ..tools.parallel import ProfileWrapper, parallel_mkdir
 
-PROFILE_SCRIPT = config['profiling'].getboolean('PROFILE_SCRIPT')
-PROFILE_MODE_DEFAULT = config['profiling'].get('PROFILE_MODE_DEFAULT')
+PROFILE_DEFAULT = config['profiling'].getboolean('PROFILE_DEFAULT')
+PARALLEL_PROFILE_DEFAULT = config['profiling'].getboolean('PARALLEL_PROFILE_DEFAULT')
+PROFILE_DIRECTORY = pathlib.Path(config['profiling'].get('PROFILE_DIRECTORY'))
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -495,10 +495,9 @@ class InitialValueSolver(SolverBase):
     warmup_iterations : int, optional
         Number of warmup iterations to disregard when computing runtime statistics (default: 10).
     profile : bool, optional
-        Save profiles with cProfile (default: False).
-    profile_mode : string, optional
-        Output joined files [summary] or also include per-core analysis [full] (default: full).
-
+        Save accumulated profiles with cProfile (default: False).
+    parallel_profile : bool, optional
+        Save per-process and accumulated profiles with cProfile (default: False).
     **kw :
         Other options passed to ProblemBase.
 
@@ -524,15 +523,16 @@ class InitialValueSolver(SolverBase):
     matsolver_default = 'MATRIX_FACTORIZER'
     matrices = ['M', 'L']
 
-    def __init__(self, problem, timestepper, enforce_real_cadence=100, warmup_iterations=10, profile=PROFILE_SCRIPT, profile_mode=PROFILE_MODE_DEFAULT, **kw):
+    def __init__(self, problem, timestepper, enforce_real_cadence=100, warmup_iterations=10, profile=PROFILE_DEFAULT, parallel_profile=PARALLEL_PROFILE_DEFAULT, **kw):
         logger.debug('Beginning IVP instantiation')
         # Setup timing and profiling
         self.dist = problem.dist
         self._bcast_array = np.zeros(1, dtype=float)
         self.init_time = self.world_time
-        self.profile = profile
-        if profile:
-            self.profile_mode = profile_mode.lower()
+        if profile or parallel_profile:
+            parallel_mkdir(PROFILE_DIRECTORY, comm=self.dist.comm)
+            self.profile = True
+            self.parallel_profile = parallel_profile
             self.setup_profiler = cProfile.Profile()
             self.warmup_profiler = cProfile.Profile()
             self.run_profiler = cProfile.Profile()
@@ -750,6 +750,7 @@ class InitialValueSolver(SolverBase):
             logger.info(f"Timings unavailable because warmup did not complete.")
 
     def dump_profiles(self, profiler, name):
+        "Save profiling data to disk."
         comm = self.dist.comm
         # Disable and create stats on each process
         profiler.create_stats()
@@ -759,19 +760,18 @@ class InitialValueSolver(SolverBase):
         profiles = comm.gather(ProfileWrapper(p.stats), root=0)
         # Sum stats on root process
         if comm.rank == 0:
-            if self.profile_mode=='full':
-                profile_database = pathlib.Path(f"{name}_profiles")
-                stats = {'primcalls':defaultdict(list),'totcalls':defaultdict(list),'tottime':defaultdict(list),'cumtime':defaultdict(list)}
+            if self.parallel_profile:
+                stats = {'primcalls': defaultdict(list),
+                         'totcalls': defaultdict(list),
+                         'tottime': defaultdict(list),
+                         'cumtime': defaultdict(list)}
                 for profile in profiles:
                     for func, (primcalls, totcalls, tottime, cumtime, callers) in profile.stats.items():
                         stats['primcalls'][func].append(primcalls)
                         stats['totcalls'][func].append(totcalls)
                         stats['tottime'][func].append(tottime)
                         stats['cumtime'][func].append(cumtime)
-                with shelve.open(str(profile_database), flag='n') as shelf:
-                    for key in stats:
-                        shelf[key] = stats[key]
-
-            # creation of joint_stats destroys profiles, so do this second
+                pickle.dump(stats, open(PROFILE_DIRECTORY / f"{name}_parallel.pickle", 'wb'))
+            # Creation of joint_stats destroys profiles, so do this second
             joint_stats = pstats.Stats(*profiles)
-            joint_stats.dump_stats(f"{name}.prof")
+            joint_stats.dump_stats(PROFILE_DIRECTORY / f"{name}.prof")

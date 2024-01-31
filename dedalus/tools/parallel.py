@@ -3,6 +3,7 @@ Tools for running in parallel.
 
 """
 
+import pathlib
 from mpi4py import MPI
 
 
@@ -66,4 +67,13 @@ class ProfileWrapper:
 
     def create_stats(self):
         pass
+
+
+def parallel_mkdir(path, comm=MPI.COMM_WORLD):
+    """Create a directory from root process."""
+    path = pathlib.Path(path)
+    with Sync(comm=comm, enter=False, exit=True) as sync:
+        if sync.comm.rank == 0:
+            if not path.exists():
+                path.mkdir()
 
