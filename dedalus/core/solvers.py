@@ -537,6 +537,8 @@ class InitialValueSolver(SolverBase):
             self.warmup_profiler = cProfile.Profile()
             self.run_profiler = cProfile.Profile()
             self.setup_profiler.enable()
+        else:
+            self.profile = False
         # Build subsystems and subproblems
         super().__init__(problem, **kw)
         # Build LHS matrices
