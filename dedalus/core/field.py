@@ -800,9 +800,10 @@ class Field(Current):
         else:
             raise ValueError("Norms only implemented up to rank-2 tensors.")
         # Compute L2 norm
-        norm_sq = operators.Integrate(self_inner_product).evaluate().allreduce_data_max()
         if normalize_volume:
-            norm_sq /= self.domain.volume
+            norm_sq = operators.Average(self_inner_product).evaluate().allreduce_data_max(layout='g')
+        else:
+            norm_sq = operators.Integrate(self_inner_product).evaluate().allreduce_data_max(layout='g')
         return norm_sq ** 0.5
 
     def normalize(self, normalize_volume=True):
