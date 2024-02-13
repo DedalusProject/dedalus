@@ -911,7 +911,7 @@ class MultiplyNumberField(Multiply, FutureField):
     argtypes = ((numbers.Number, (Field, FutureField)),
                 ((Field, FutureField), numbers.Number))
 
-    def __init__(self, arg0, arg1, out=None,**kw):
+    def __init__(self, arg0, arg1, out=None, **kw):
         # Make number come first
         if isinstance(arg1, numbers.Number):
             arg0, arg1 = arg1, arg0

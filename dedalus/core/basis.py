@@ -885,27 +885,33 @@ class FourierBase(IntervalBasis):
         if grid_space[0]:
             groups = elements
         else:
-            # Use native wavenumbers for readability
-            groups = self.native_wavenumbers[elements]
+            groups = self.group_indices[elements]
         return groups
 
+    def groups_to_wavenumbers(self, groups):
+        raise NotImplementedError("Subclasses must implement.")
+
     @CachedAttribute
-    def _wavenumbers(self):
-        return self._native_wavenumbers / self.COV.stretch
+    def _nonperm_group_indices(self):
+        raise NotImplementedError("Subclasses must implement.")
 
     @property
-    def native_wavenumbers(self):
+    def group_indices(self):
         if self.forward_coeff_permutation is None:
-            return self._native_wavenumbers
+            return self._nonperm_group_indices
         else:
-            return self._native_wavenumbers[self.forward_coeff_permutation]
+            return self._nonperm_group_indices[self.forward_coeff_permutation]
+
+    @CachedAttribute
+    def _nonperm_wavenumbers(self):
+        return self.groups_to_wavenumbers(self._nonperm_group_indices)
 
     @property
     def wavenumbers(self):
         if self.forward_coeff_permutation is None:
-            return self._wavenumbers
+            return self._nonperm_wavenumbers
         else:
-            return self._wavenumbers[self.forward_coeff_permutation]
+            return self._nonperm_wavenumbers[self.forward_coeff_permutation]
 
     def _native_grid(self, scale):
         """Native flat global grid."""
@@ -957,8 +963,13 @@ class ComplexFourier(FourierBase, metaclass=CachedClass):
     group_shape = (1,)
     transforms = {}
 
+    def groups_to_wavenumbers(self, groups):
+        # Use native wavenumbers as group indices
+        return groups / self.COV.stretch
+
     @CachedAttribute
-    def _native_wavenumbers(self):
+    def _nonperm_group_indices(self):
+        # Use native wavenumbers as group indices
         kmax = self.size // 2
         if self.size % 2:
             # Odd size
@@ -1005,8 +1016,8 @@ class ConvertConstantComplexFourier(operators.ConvertConstant, operators.Spectra
 
     @staticmethod
     def _group_matrix(group, input_basis, output_basis):
-        # Rescale group (native wavenumber) to get physical wavenumber
-        k = group / output_basis.COV.stretch
+        # Get physical wavenumber
+        k = output_basis.groups_to_wavenumbers(group)
         # 1 = exp(1j*0*x)
         if k == 0:
             unit_amplitude = 1 / output_basis.constant_mode_value
@@ -1028,8 +1039,8 @@ class DifferentiateComplexFourier(operators.Differentiate, operators.SpectralOpe
 
     @staticmethod
     def _group_matrix(group, input_basis, output_basis):
-        # Rescale group (native wavenumber) to get physical wavenumber
-        k = group / input_basis.COV.stretch
+        # Get physical wavenumber
+        k = input_basis.groups_to_wavenumbers(group)
         # dx exp(1j*k*x) = 1j * k * exp(1j*k*x)
         return np.array([[1j*k]])
 
@@ -1049,9 +1060,10 @@ class InterpolateComplexFourier(operators.Interpolate, operators.SpectralOperato
     @staticmethod
     def _full_matrix(input_basis, output_basis, position):
         # Build native interpolation vector
-        x = input_basis.COV.native_coord(position)
-        k = input_basis.native_wavenumbers
-        interp_vector = np.exp(1j * k * x)
+        x = input_basis.COV.problem_coord(input_basis.COV.native_coord(position))
+        x0 = input_basis.bounds[0]
+        k = input_basis.wavenumbers
+        interp_vector = np.exp(1j * k * (x - x0))
         # Return with shape (1, N)
         return interp_vector[None, :]
 
@@ -1070,8 +1082,8 @@ class IntegrateComplexFourier(operators.Integrate, operators.SpectralOperator1D)
 
     @staticmethod
     def _group_matrix(group, input_basis, output_basis):
-        # Rescale group (native wavenumber) to get physical wavenumber
-        k = group / input_basis.COV.stretch
+        # Get physical wavenumber
+        k = input_basis.groups_to_wavenumbers(group)
         # integ exp(1j*k*x) = L * δ(k, 0)
         if k == 0:
             L = input_basis.COV.problem_length
@@ -1095,8 +1107,8 @@ class AverageComplexFourier(operators.Average, operators.SpectralOperator1D):
 
     @staticmethod
     def _group_matrix(group, input_basis, output_basis):
-        # Rescale group (native wavenumber) to get physical wavenumber
-        k = group / input_basis.COV.stretch
+        # Get physical wavenumber
+        k = input_basis.groups_to_wavenumbers(group)
         # integ exp(1j*k*x) / L = δ(k, 0)
         if k == 0:
             return np.array([[1]])
@@ -1114,8 +1126,13 @@ class RealFourier(FourierBase, metaclass=CachedClass):
     group_shape = (2,)
     transforms = {}
 
+    def groups_to_wavenumbers(self, groups):
+        # Use native wavenumbers as group indices
+        return groups / self.COV.stretch
+
     @CachedAttribute
-    def _native_wavenumbers(self):
+    def _nonperm_group_indices(self):
+        # Use native wavenumbers as group indices
         # Excludes Nyquist mode
         kmax = (self.size - 1) // 2
         return np.repeat(np.arange(0, kmax+1), 2)
@@ -1127,9 +1144,10 @@ class RealFourier(FourierBase, metaclass=CachedClass):
             # Drop msin part of k=0 for all cartesian components and spin scalars
             if not isinstance(self.coord, AzimuthalCoordinate) or not tensorsig:
                 # Drop msin part of k=0
-                groups = self.elements_to_groups(grid_space, elements)
+                groups = self.elements_to_groups(grid_space, elements[0])
+                k = self.groups_to_wavenumbers(groups)
                 allcomps = tuple(slice(None) for cs in tensorsig)
-                selection = (groups[0] == 0) * (elements[0] % 2 == 1)
+                selection = (k == 0) * (elements[0] % 2 == 1)
                 valid[allcomps + (selection,)] = False
         return valid
 
@@ -1192,8 +1210,8 @@ class ConvertConstantRealFourier(operators.ConvertConstant, operators.SpectralOp
 
     @staticmethod
     def _group_matrix(group, input_basis, output_basis):
-        # Rescale group (native wavenumber) to get physical wavenumber
-        k = group / output_basis.COV.stretch
+        # Get physical wavenumber
+        k = output_basis.groups_to_wavenumbers(group)
         # 1 = cos(0*x)
         if k == 0:
             unit_amplitude = 1 / output_basis.constant_mode_value
@@ -1216,8 +1234,8 @@ class DifferentiateRealFourier(operators.Differentiate, operators.SpectralOperat
 
     @staticmethod
     def _group_matrix(group, input_basis, output_basis):
-        # Rescale group (native wavenumber) to get physical wavenumber
-        k = group / input_basis.COV.stretch
+        # Get physical wavenumber
+        k = input_basis.groups_to_wavenumbers(group)
         # dx  cos(k*x) = k * -sin(k*x)
         # dx -sin(k*x) = -k * cos(k*x)
         return np.array([[0, -k],
@@ -1240,11 +1258,12 @@ class InterpolateRealFourier(operators.Interpolate, operators.SpectralOperator1D
     def _full_matrix(input_basis, output_basis, position):
         # Build native interpolation vector
         # Interleaved cos(k*x), -sin(k*x)
-        x = input_basis.COV.native_coord(position)
-        k = input_basis.native_wavenumbers
+        x = input_basis.COV.problem_coord(input_basis.COV.native_coord(position))
+        x0 = input_basis.bounds[0]
+        k = input_basis.wavenumbers
         interp_vector = np.zeros(k.size)
-        interp_vector[0::2] = np.cos(k[0::2] * x)
-        interp_vector[1::2] = -np.sin(k[1::2] * x)
+        interp_vector[0::2] = np.cos(k[0::2] * (x - x0))
+        interp_vector[1::2] = -np.sin(k[1::2] * (x - x0))
         # Return with shape (1, N)
         return interp_vector[None, :]
 
@@ -1263,8 +1282,8 @@ class IntegrateRealFourier(operators.Integrate, operators.SpectralOperator1D):
 
     @staticmethod
     def _group_matrix(group, input_basis, output_basis):
-        # Rescale group (native wavenumber) to get physical wavenumber
-        k = group / input_basis.COV.stretch
+        # Get physical wavenumber
+        k = input_basis.groups_to_wavenumbers(group)
         # integ  cos(k*x) = L * δ(k, 0)
         # integ -sin(k*x) = 0
         if k == 0:
@@ -1289,8 +1308,8 @@ class AverageRealFourier(operators.Average, operators.SpectralOperator1D):
 
     @staticmethod
     def _group_matrix(group, input_basis, output_basis):
-        # Rescale group (native wavenumber) to get physical wavenumber
-        k = group / input_basis.COV.stretch
+        # Get physical wavenumber
+        k = input_basis.groups_to_wavenumbers(group)
         # integ  cos(k*x) / L = δ(k, 0)
         # integ -sin(k*x) / L = 0
         if k == 0:
@@ -2843,9 +2862,9 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
         elif grid_space[1]:
             # coeff-grid space
             # Unpacked m
-            permuted_native_wavenumbers = self.azimuth_basis.native_wavenumbers
+            m = self.azimuth_basis.group_indices
             groups = elements.copy()
-            groups[0] = permuted_native_wavenumbers[elements[0]]
+            groups[0] = m[elements[0]]
         else:
             # coeff-coeff space
             # Repacked triangular truncation
