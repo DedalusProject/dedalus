@@ -788,7 +788,7 @@ class Transpose:
             for field in fields:
                 self.decrement_single(field)
 
-    def increment_plan_localize_columns(self, plan, data0, data1):
+    def plan_localize_columns(self, plan, data0, data1):
         plan.localize_columns(data0, data1)
 
     def increment_single(self, field):
@@ -805,7 +805,7 @@ class Transpose:
             # No communication: just update field layout
             field.preset_layout(self.layout1)
 
-    def decrement_plan_localize_rows(self, plan, data0, data1):
+    def plan_localize_rows(self, plan, data0, data1):
         plan.localize_rows(data1, data0)
 
     def decrement_single(self, field):
