@@ -1211,7 +1211,7 @@ class FastChebyshevTransform(JacobiTransform):
     def _resize_rescale_forward_convert_adjoint(self, data_in, data_out, axis, Kmax_DCT):
         """Resize by padding/trunction and rescale for adjoint."""
         # Ultraspherical conversion
-        if DEALIAS_BEFORE_CONVERTING() and self.M_orig < self.N: # Enlarge data
+        if self.dealias_before_converting and self.M_orig < self.N: # Enlarge data
             apply_sparse(np.conj(self.forward_conversion).T, data_in, axis, out=data_in)
             goodfreq = axslice(axis, 0, self.M_orig)
             data_out[goodfreq] = data_in[goodfreq]
