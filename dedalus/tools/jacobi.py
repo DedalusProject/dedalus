@@ -241,8 +241,8 @@ def conversion_matrix(N, a0, b0, a1, b1):
 
     da, db = int(a1-a0), int(b1-b0)
     conv = A**da @ B**db
-
-    return conv(N, a0, b0).astype(output_dtype)
+    conv = conv(N, a0, b0).astype(output_dtype)
+    return sparse.csr_matrix(conv)
 
 def differentiation_matrix(N, a, b):
     return jacobi.operator('D')(+1)(N, a, b).square.astype(output_dtype)

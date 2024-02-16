@@ -12,7 +12,7 @@ from math import prod
 from . import basis
 from ..libraries.fftw import fftw_wrappers as fftw
 from ..tools import jacobi
-from ..tools.array import apply_matrix, apply_dense, axslice, solve_upper_sparse, apply_sparse
+from ..tools.array import apply_matrix, apply_dense, axslice, solve_upper_sparse, apply_sparse, solve_lower_sparse
 from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
 
@@ -1128,9 +1128,11 @@ class FastChebyshevTransform(JacobiTransform):
                 self.forward_conversion = jacobi.conversion_matrix(self.N, a0, b0, a, b)
                 self.forward_conversion.resize(self.M_orig, self.N)
                 self.forward_conversion = self.forward_conversion.tocsr()
+            self.forward_conversion_T = self.forward_conversion.T.tocsr()
             self.backward_conversion = jacobi.conversion_matrix(self.M_orig, a0, b0, a, b).tocsr()
             self.backward_conversion.sum_duplicates() # for faster solve_upper
-
+            self.backward_conversion_T = self.backward_conversion.T.tocsr()
+            self.backward_conversion_T.sum_duplicates() # for faster solve_lower
             # self.backward_conversion_adjoint = splu_inverse(np.conj(self.backward_conversion).T)
             # TODO: implement lower solve for backward_conversion_adjoint
             # self.backward_conversion = jacobi.conversion_matrix(self.M_orig, a0, b0, a, b)
@@ -1212,40 +1214,37 @@ class FastChebyshevTransform(JacobiTransform):
         """Resize by padding/trunction and rescale for adjoint."""
         # Ultraspherical conversion
         if self.dealias_before_converting and self.M_orig < self.N: # Enlarge data
-            apply_sparse(np.conj(self.forward_conversion).T, data_in, axis, out=data_in)
+            apply_sparse(self.forward_conversion_T, data_in, axis, out=data_in)
             goodfreq = axslice(axis, 0, self.M_orig)
             data_out[goodfreq] = data_in[goodfreq]
             # Zero all other freqs
             otherfreq = axslice(axis, self.M_orig, None)
             data_out[otherfreq] = 0
         else:
-            apply_sparse(np.conj(self.forward_conversion).T, data_in, axis, out=data_out)
+            apply_sparse(self.forward_conversion_T, data_in, axis, out=data_out)
         # Change sign of odd modes
         if Kmax_DCT > 0:
             posfreq_odd = axslice(axis, 1, Kmax_DCT+1, 2)
             data_out[posfreq_odd] *= -1
-
         super().resize_rescale_forward_adjoint(data_out, data_out, axis, Kmax_DCT)
-
 
 
     def _resize_rescale_backward_convert_adjoint(self, data_in, data_out, axis, Kmax_DCT):
         """Resize by padding/trunction and rescale for adjoint."""
-
         Kmax_orig = self.Kmax_orig
         super().resize_rescale_backward_adjoint(data_in, data_out, axis, Kmax_orig)
-
         # Change sign of odd modes
         if Kmax_orig > 0:
             posfreq_odd = axslice(axis, 1, Kmax_orig+1, 2)
             data_out[posfreq_odd] *= -1
-
         # Ultraspherical conversion
-        apply_sparse(self.backward_conversion.H, data_out, axis, out=data_out)
+            solve_lower_sparse(self.backward_conversion_T, data_out, axis, out=data_out)
+        #apply_sparse(self.backward_conversion.H, data_out, axis, out=data_out)
         badfreq = axslice(axis, Kmax_orig+1, None)
         if self.M_orig > self.N:
             # Truncate input before conversion
             data_out[badfreq] = 0
+
 
 @register_transform(basis.Jacobi, 'scipy_dct')
 class ScipyFastChebyshevTransform(FastChebyshevTransform, ScipyDCT):

@@ -239,6 +239,35 @@ def solve_upper_sparse(matrix, rhs, axis, out=None, check_shapes=False, num_thre
     cython_linalg.solve_upper_csr(matrix.indptr, matrix.indices, matrix_data, out, axis, num_threads)
 
 
+def solve_lower_sparse(matrix, rhs, axis, out=None, check_shapes=False, num_threads=1):
+    """
+    Solve lower triangular sparse matrix along any axis of an array.
+    Matrix assumed to be nonzero on the diagonals.
+    """
+    # Check matrix
+    if not isinstance(matrix, sparse.csr_matrix):
+        raise ValueError("Matrix must be in CSR format.")
+    if not matrix._has_canonical_format: # avoid property hook (without underscore)
+        matrix.sum_duplicates()
+    # Setup output = rhs
+    if out is None:
+        out = np.copy(rhs)
+    elif out is not rhs:
+        np.copyto(out, rhs)
+    # Promote datatypes
+    matrix_data = matrix.data
+    if matrix_data.dtype != rhs.dtype:
+        matrix_data = matrix_data.astype(rhs.dtype)
+    # Check shapes
+    if check_shapes:
+        if not (0 <= axis < rhs.ndim):
+            raise ValueError("Axis out of bounds.")
+        if not (matrix.shape[0] == matrix.shape[1] == rhs.shape[axis]):
+            raise ValueError("Matrix shape mismatch.")
+    # Call cython routine
+    cython_linalg.solve_lower_csr(matrix.indptr, matrix.indices, matrix_data, out, axis, num_threads)
+
+
 def csr_matvec(A_csr, x_vec, out_vec):
     """
     Fast CSR matvec with dense vector skipping output allocation. The result is
