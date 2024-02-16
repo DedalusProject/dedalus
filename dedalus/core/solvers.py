@@ -17,7 +17,7 @@ from . import timesteppers
 from .evaluator import Evaluator
 from ..libraries.matsolvers import matsolvers
 from ..tools.config import config
-from ..tools.array import scipy_sparse_eigs, scipy_sparse_eigs_adj
+from ..tools.array import scipy_sparse_eigs
 from ..tools.parallel import ProfileWrapper, parallel_mkdir
 
 PROFILE_DEFAULT = config['profiling'].getboolean('PROFILE_DEFAULT')
