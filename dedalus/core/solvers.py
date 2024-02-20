@@ -777,3 +777,4 @@ class InitialValueSolver(SolverBase):
             # Creation of joint_stats destroys profiles, so do this second
             joint_stats = pstats.Stats(*profiles)
             joint_stats.dump_stats(PROFILE_DIRECTORY / f"{name}.prof")
+        comm.Barrier()
