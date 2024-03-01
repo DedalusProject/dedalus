@@ -8,7 +8,7 @@ from math import prod
 
 from . import operators
 from ..libraries import spin_recombination
-from ..tools.array import kron, axslice, apply_matrix, permute_axis
+from ..tools.array import kron, axslice, apply_matrix, permute_axis, sparse_block_diag
 from ..tools.cache import CachedAttribute, CachedMethod, CachedClass
 from ..tools import jacobi
 from ..tools import clenshaw
@@ -1299,6 +1299,86 @@ class AverageRealFourier(operators.Average, operators.SpectralOperator1D):
             # Constructor should only loop over group 0.
             raise ValueError("This should never happen.")
 
+
+class FourierKProduct(operators.SpectralOperator):
+
+    name = 'KProduct'
+
+    def __init__(self, operand, k_func, out=None):
+        super().__init__(operand, out=out)
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = operand.domain
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
+        # SpectralOperator requirements
+        self.first_axis = 0
+        self.last_axis = self.domain.dim - 1
+        self.subaxis_dependence =  [True]*self.domain.dim
+        self.subaxis_coupling   = [False]*self.domain.dim
+        self.input_basis = self.domain.bases[-1]
+        self.output_basis = self.input_basis
+
+        self.k_func = k_func
+        bases = self.domain.bases
+        for basis in bases:
+           if type(basis) != RealFourier and type(basis) != ComplexFourier:
+               raise ValueError("Can only apply FourierKProduct on a fully-Fourier field")
+        self.ks = tuple([basis.wavenumbers for basis in bases])
+
+    def subproblem_matrix(self, subproblem):
+        """Build operator matrix for a specific subproblem."""
+        shape = subproblem.coeff_space(self.domain)
+        N_before = prod([cs.dim for cs in self.tensorsig]) * prod(shape[:axis])
+        matrix = self.subspace_matrix(subproblem.groups[:-1], self.dist.coeff_layout)
+        I = sparse.identity(N_before, format='coo')
+        matrix = sparse.kron(I_before, matrix)
+        return sparse.csr_matrix(matrix)
+
+    def subspace_matrix(self, groups, layout):
+        # groups does not include last axis
+        input_domain = Domain(layout.dist, bases=[self.input_basis])
+        # loop over groups along last axis
+        group_coupling = [True] * input_domain.dist.dim
+        group_coupling[-1] = False
+        group_coupling = tuple(group_coupling)
+        groupsets_last = layout.local_groupsets(group_coupling, input_domain, scales=input_domain.dealias, broadcast=True)
+        groups_last = [groupset[-1] for groupset in groupsets_last]
+        group_blocks = []
+        for group_last in groups_last:
+            if type(self.input_basis) == RealFourier:
+                k = DifferentiateRealFourier._group_matrix(group_last, self.input_basis, self.output_basis)
+            elif type(self.input_basis) == ComplexFourier:
+                k = DifferentiateComplexFourier._group_matrix(group_last, self.input_basis, self.output_basis)
+            block = k @ k
+            k2 = -block[0,0] + np.sum([self.ks[i][group]**2 for i, group in enumerate(groups)])
+            block = sparse.eye(block.shape[0])*self.k_func(np.sqrt(k2))
+            group_blocks.append(block)
+        size = layout.local_shape(input_domain, scales=1)[-1]
+        return sparse_block_diag(group_blocks, shape=(size, size))
+
+    def operate(self, out):
+        """Perform operation."""
+        arg = self.args[0]
+        layout = arg.layout
+        # Set output layout
+        out.preset_layout(layout)
+        # Apply matrix
+        if arg.data.size and out.data.size:
+            data_axis = self.last_axis + 1
+            shape = arg.data.shape
+            subshape = shape[len(arg.tensorsig):-1]
+            N0 = prod(shape[:len(arg.tensorsig)])
+            N1 = prod(subshape)
+            N2 = shape[-1]
+            arg_view = arg.data.reshape((N0, N1, N2))
+            out_view = out.data.reshape((N0, N1, N2))
+            for indices in np.ndindex(subshape):
+                group_index = np.ravel_multi_index(indices, subshape)
+                apply_matrix(self.subspace_matrix(indices, layout), arg_view[:,group_index,:], axis=1, out=out_view[:,group_index,:])
+        else:
+            out.data.fill(0)
 
 # class HilbertTransformFourier(operators.HilbertTransform):
 #     """Fourier series Hilbert transform."""

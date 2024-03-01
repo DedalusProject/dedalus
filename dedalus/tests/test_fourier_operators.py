@@ -4,7 +4,7 @@ import pytest
 import numpy as np
 import dedalus.public as d3
 from dedalus.tools.cache import CachedMethod
-
+from dedalus.core.basis import FourierKProduct
 
 N_range = [10]
 bounds_range = [(0.5, 1.666)]
@@ -93,4 +93,43 @@ def test_fourier_average(N, bounds, dealias, dtype):
     f['g'] = 1 + np.sin(k*x+0.1)
     g = d3.Average(f, c).evaluate()
     assert np.allclose(g['g'], 1)
+
+
+@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('bounds', bounds_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+def test_fourierkproduct_2D(N, bounds, dealias, dtype):
+    """Test multiplication by k in Fourier basis."""
+    c = d3.CartesianCoordinates('x', 'y')
+    d = d3.Distributor(c, dtype=dtype)
+    b1 = d3.Fourier(c['x'], size=N, bounds=bounds, dealias=dealias, dtype=dtype)
+    b2 = d3.Fourier(c['y'], size=N, bounds=bounds, dealias=dealias, dtype=dtype)
+    x, y = d.local_grids(b1, b2, scales=1)
+    f = d.Field(bases=(b1, b2))
+    k = 4 * np.pi / (bounds[1] - bounds[0])
+    f['g'] = np.sin(k*x)*np.cos(k*y)
+    k_func = lambda k: k**3
+    g = FourierKProduct(f, k_func)
+    assert np.allclose(g['g'], f['g']*(k*np.sqrt(2))**3)
+
+
+@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('bounds', bounds_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+def test_fourierkproduct_3D(N, bounds, dealias, dtype):
+    """Test multiplication by k in Fourier basis."""
+    c = d3.CartesianCoordinates('x', 'y', 'z')
+    d = d3.Distributor(c, dtype=dtype)
+    b1 = d3.Fourier(c['x'], size=N, bounds=bounds, dealias=dealias, dtype=dtype)
+    b2 = d3.Fourier(c['y'], size=N, bounds=bounds, dealias=dealias, dtype=dtype)
+    b3 = d3.Fourier(c['z'], size=N, bounds=bounds, dealias=dealias, dtype=dtype)
+    x, y, z = d.local_grids(b1, b2, b3, scales=1)
+    f = d.Field(bases=(b1, b2, b3))
+    k = 4 * np.pi / (bounds[1] - bounds[0])
+    f['g'] = np.sin(k*x)*np.cos(k*y)*np.sin(k*z)
+    k_func = lambda k: k**3
+    g = FourierKProduct(f, k_func)
+    assert np.allclose(g['g'], f['g']*(k*np.sqrt(3))**3)
 
