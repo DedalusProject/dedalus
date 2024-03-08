@@ -293,15 +293,23 @@ class MultistepIMEX:
             spRHS = sp.gather_inputs(state_fields)
 
             spX = sp.LHS_solver.solve(spRHS)  # CREATES TEMPORARY
+            # TODO: Do something better for the csr conversion
+            apply_sparse(np.conj(sp.M_min).T.tocsr(), spX, axis=0, out=MX0.get_subdata(sp))  # Rectangular dot product skipping shape checks
+            apply_sparse(np.conj(sp.L_min).T.tocsr(), spX, axis=0, out=LX0.get_subdata(sp))  # Rectangular dot product skipping shape checks
 
-            csr_matvecs(np.conj(sp.M_min).T.tocsr(), spX, MX0.get_subdata(sp))  # Rectangular dot product skipping shape checks
-            csr_matvecs(np.conj(sp.L_min).T.tocsr(), spX, LX0.get_subdata(sp))  # Rectangular dot product skipping shape checks 
+            sp.scatter_inputs(spX, state_fields) # 1
+
+        evaluator.evaluate_scheduled(wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
+        evaluator.evaluate_group('F_adjoint', wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
+            
+        for sp in subproblems:
+            sp.gather_outputs(solver.F_adjoint, out=F0.get_subdata(sp)) # 1
 
         if RHS.data.size:
             np.multiply(c[0][1], F0.data, out=RHS.data)
-            # for j in range(2, self.steps+1):
-                # RHS.data += c[j] * F[j-1].data
-                # axpy(a=c[j-2][j], x=F[j-1].data, y=RHS.data)
+            for j in range(2, self.steps+1):
+                RHS.data += c[j] * F[j-1].data
+                axpy(a=c[j-2][j], x=F[j-1].data, y=RHS.data)
             for j in range(1, len(a)+1):
                 # RHS.data -= a[j] * MX[j-1].data
                 axpy(a=-a[j-1][j], x=MX[j-1].data, y=RHS.data)
@@ -682,7 +690,7 @@ class RungeKuttaIMEX:
 
         # For adjoint for now
         self.MXT = [CoeffSystem(solver.subproblems, dtype=solver.dtype) for i in range(self.stages)]
-
+        
         self.timestep_history = []
 
     def step(self, dt, wall_time):
@@ -825,7 +833,7 @@ class RungeKuttaIMEX:
         for field in state_fields:
             field.require_coeff_space()
         # Ensure coeff space before subsystem gathers
-        # evaluator.require_coeff_space(state_fields)
+        evaluator.require_coeff_space(state_fields)
 
         RHS.data.fill(0)
         for sp in subproblems:
@@ -834,6 +842,9 @@ class RungeKuttaIMEX:
         
         # Compute stages
         for i in reversed(range(1, self.stages+1)):
+            if(i<self.stages):
+                # Ensure coeff space before subsystem gathers
+                evaluator.require_coeff_space(state_fields)
             # Solve for stage
     
             # Clear coeff system for transposed data
@@ -847,12 +858,9 @@ class RungeKuttaIMEX:
             MXTi.data.fill(0)
 
             # WARNING: Not adjointed yet (assumed F is zero)
-            # Compute F(n,i-1) (needs to be adjointed here...)
-            # if i == 1:
-            #     evaluator.evaluate_scheduled(wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
-            # else:
-            #     evaluator.evaluate_group('F', wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
+            # Compute F(n,i-1) (needs to be adjointed here...)            
             k_Hii = k * H[i,i]
+
             for field in state_fields:
                 field.preset_layout('c')
             for sp in subproblems:
@@ -874,11 +882,25 @@ class RungeKuttaIMEX:
                 spX = sp.LHS_solvers[i].solve(spRHS)  # CREATES TEMPORARY
 
                 # Compute new transpose terms and RHS
-                csr_matvecs((np.conj(sp.L_min).T).tocsr(), spX, LXi.get_subdata(sp))  # Rectangular dot product skipping shape checks                
-                csr_matvecs((np.conj(sp.M_min).T).tocsr(), spX, MXTi.get_subdata(sp))
-
+                # TODO: Do something better for the csr conversion
+                apply_sparse((np.conj(sp.L_min).T).tocsr(), spX, axis=0, out=LXi.get_subdata(sp))  # Rectangular dot product skipping shape checks                
+                apply_sparse((np.conj(sp.M_min).T).tocsr(), spX, axis=0, out=MXTi.get_subdata(sp))
+                # print(F_fields)
                 # RHS similar but not implemented yet
-                # spX = sp.gather(F_fields) 
+                # evaluator.evaluate_group('F_adjoint')
+                sp.scatter_inputs(spX, state_fields) # 1
+
+            if i == self.stages:
+                evaluator.evaluate_scheduled(wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
+                evaluator.evaluate_group('F_adjoint', wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
+            else:
+                evaluator.evaluate_group('F_adjoint', wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
+            
+            # for f in solver.F_adjoint:
+            #     print(f.layout.index)
+            for sp in subproblems:
+                sp.gather_outputs(solver.F_adjoint, out=Fi.get_subdata(sp)) # 1
+
                 # csr_matvecs(np.conj(sp.pre_right).T.tocsr()np.conj(sp.pre_left).T.tocsr(), spX, Fi.get_subdata(sp))  # Rectangular dot product skipping shape checks             
                 # Compute adjoint RHS
 
