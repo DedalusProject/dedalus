@@ -1,4 +1,3 @@
-
 cimport cython
 cimport numpy as cnp
 import numpy as np
@@ -199,30 +198,50 @@ cdef class FFTWTranspose:
         cfftw.fftw_destroy_plan(self.CL_to_RL_plan)
         cfftw.fftw_destroy_plan(self.RL_to_CL_plan)
 
+    def make_views(self, RL, CL):
+        CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=CL.dtype, buffer=CL)
+        RL_reduced = np.ndarray(shape=self.RL_reduced_shape, dtype=RL.dtype, buffer=RL)
+        return CL_reduced, RL_reduced
+
+    def fftw_CL_to_RL(self):
+        cfftw.fftw_execute(self.CL_to_RL_plan)
+
     def localize_rows(self, CL, RL):
         """Transpose from column-local to row-local data distribution."""
         # Create reduced views of data arrays
-        CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=CL.dtype, buffer=CL)
-        RL_reduced = np.ndarray(shape=self.RL_reduced_shape, dtype=RL.dtype, buffer=RL)
+        CL_reduced, RL_reduced = self.make_views(RL, CL)
         # Transpose from input array to buffer
-        np.copyto(self.CL_view, CL_reduced)
+        self.copy_in_CL_fftw(CL_reduced)
         # Communicate between buffers
-        cfftw.fftw_execute(self.CL_to_RL_plan)
+        self.fftw_CL_to_RL()
         # Transpose from buffer to output array
+        self.copy_out_RL_fftw(RL_reduced)
+
+    def fftw_RL_to_CL(self):
+        cfftw.fftw_execute(self.RL_to_CL_plan)
+
+    def copy_in_RL_fftw(self, RL_reduced):
+        np.copyto(self.RL_view, RL_reduced)
+
+    def copy_out_RL_fftw(self, RL_reduced):
         np.copyto(RL_reduced, self.RL_view)
+
+    def copy_in_CL_fftw(self, CL_reduced):
+        np.copyto(self.CL_view, CL_reduced)
+
+    def copy_out_CL_fftw(self, CL_reduced):
+        np.copyto(CL_reduced, self.CL_view)
 
     def localize_columns(self, RL, CL):
         """Transpose from row-local to column-local data distribution."""
         # Create reduced views of data arrays
-        CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=CL.dtype, buffer=CL)
-        RL_reduced = np.ndarray(shape=self.RL_reduced_shape, dtype=RL.dtype, buffer=RL)
+        CL_reduced, RL_reduced = self.make_views(RL, CL)
         # Transpose from input array to buffer
-        np.copyto(self.RL_view, RL_reduced)
+        self.copy_in_RL_fftw(RL_reduced)
         # Communicate between buffers
-        cfftw.fftw_execute(self.RL_to_CL_plan)
+        self.fftw_RL_to_CL()
         # Transpose from buffer to output array
-        np.copyto(CL_reduced, self.CL_view)
-
+        self.copy_out_CL_fftw(CL_reduced)
 
 cdef class AlltoallvTranspose:
     """

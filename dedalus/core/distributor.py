@@ -788,6 +788,9 @@ class Transpose:
             for field in fields:
                 self.decrement_single(field)
 
+    def plan_localize_columns(self, plan, data0, data1):
+        plan.localize_columns(data0, data1)
+
     def increment_single(self, field):
         """Backward transpose a field."""
         plan = self._single_plan(field)
@@ -797,10 +800,13 @@ class Transpose:
             field.preset_layout(self.layout1)
             data1 = field.data
             # Transpose between data views
-            plan.localize_columns(data0, data1)
+            self.plan_localize_columns(plan, data0, data1)
         else:
             # No communication: just update field layout
             field.preset_layout(self.layout1)
+
+    def plan_localize_rows(self, plan, data0, data1):
+        plan.localize_rows(data1, data0)
 
     def decrement_single(self, field):
         """Forward transpose a field."""
@@ -811,7 +817,7 @@ class Transpose:
             field.preset_layout(self.layout0)
             data0 = field.data
             # Transpose between data views
-            plan.localize_rows(data1, data0)
+            self.plan_localize_rows(plan, data0, data1)
         else:
             # No communication: just update field layout
             field.preset_layout(self.layout0)
@@ -828,7 +834,7 @@ class Transpose:
                     field.preset_layout(self.layout1)
                     data1 = field.data
                     # Transpose between data views
-                    plan.localize_columns(data0, data1)
+                    self.plan_localize_columns(plan, data0, data1)
                 else:
                     # Gather data across fields
                     data0 = []
@@ -852,7 +858,7 @@ class Transpose:
                     else:
                         data1 = np.zeros(0, dtype=fields[0].dtype) # Assumes same dtypes
                     # Transpose between data views
-                    plan.localize_columns(data0, data1)
+                    self.plan_localize_columns(plan, data0, data1)
                     # Split up transposed data
                     i = 0
                     for field in fields:
@@ -877,7 +883,7 @@ class Transpose:
                     field.preset_layout(self.layout0)
                     data0 = field.data
                     # Transpose between data views
-                    plan.localize_rows(data1, data0)
+                    self.plan_localize_rows(plan, data0, data1)
                 else:
                     # Gather data across fields
                     data0 = []
@@ -901,7 +907,7 @@ class Transpose:
                     else:
                         data1 = np.zeros(0, dtype=fields[0].dtype) # Assumes same dtypes
                     # Transpose between data views
-                    plan.localize_rows(data1, data0)
+                    self.plan_localize_rows(plan, data0, data1)
                     # Split up transposed data
                     i = 0
                     for field in fields:
@@ -951,4 +957,3 @@ class Transpose:
     #         # No data: just update field layouts
     #         for field in fields:
     #             field.preset_layout(self.layout0)
-
