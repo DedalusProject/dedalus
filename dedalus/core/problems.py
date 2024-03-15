@@ -87,7 +87,8 @@ class ProblemBase:
                'RHS': RHS,
                'condition': condition,
                'tensorsig': expr.tensorsig,
-               'dtype': expr.dtype}
+               'dtype': expr.dtype,
+               'valid_modes': LHS.valid_modes.copy()}
         self._check_equation_conditions(eqn)
         self._build_matrix_expressions(eqn)
         self.equations.append(eqn)
@@ -385,6 +386,11 @@ class InitialValueProblem(ProblemBase):
             eigenvalue = self.dist.Field(name='λ')
         if perturbations is None:
             perturbations = [var.copy() for var in variables]
+            for pert, var in zip(perturbations, variables):
+                if var.name:
+                    pert.name = 'δ'+var.name
+        for pert, var in zip(perturbations, variables):
+            pert.valid_modes[:] = var.valid_modes
         EVP = EigenvalueProblem(perturbations, eigenvalue, **kw)
         # Convert equations from IVP
         for eqn in self.equations:
@@ -404,8 +410,12 @@ class InitialValueProblem(ProblemBase):
             if F:
                 if F.has(self.time):
                     raise UnsupportedEquationError("Cannot convert time-dependent IVP to EVP.")
-                F = F.frechet_differential(variables=variables, perturbations=perturbations, backgrounds=backgrounds)
-            EVP.add_equation((M + L - F, 0))
+                dF = F.frechet_differential(variables=variables, perturbations=perturbations, backgrounds=backgrounds)
+            else:
+                dF = 0
+            # Add linearized equation and copy valid modes
+            evp_eqn = EVP.add_equation((M + L - dF, 0))
+            evp_eqn['valid_modes'][:] = eqn['valid_modes']
         return EVP
 
 

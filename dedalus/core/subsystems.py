@@ -469,8 +469,7 @@ class Subproblem:
     #     matrix = sparse.identity(fsize, format='csr')[indices]
     #     return matrix.tocsr()
 
-    def valid_modes(self, field):
-        valid_modes = field.valid_modes
+    def valid_modes(self, field, valid_modes):
         sp_slices = self.field_slices(field)
         return valid_modes[sp_slices]
 
@@ -534,8 +533,8 @@ class Subproblem:
             matrices[name] = sparse.coo_matrix((data, (rows, cols)), shape=(I, J), dtype=dtype).tocsr()
 
         # Valid modes
-        valid_eqn = [self.valid_modes(eqn['LHS']) for eqn in eqns]
-        valid_var = [self.valid_modes(var) for var in vars]
+        valid_eqn = [self.valid_modes(eqn['LHS'], eqn['valid_modes']) for eqn in eqns]
+        valid_var = [self.valid_modes(var, var.valid_modes) for var in vars]
         # Invalidate equations that fail condition test
         for n, eqn_cond in enumerate(eqn_conditions):
             if not eqn_cond:

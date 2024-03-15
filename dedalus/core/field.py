@@ -282,16 +282,20 @@ class Operand:
         dtype = self.dtype
         # Compute differential
         epsilon = Field(dist=dist, dtype=dtype)
+        # d/dε F(X0 + ε*X1)
         diff = self
         for var, pert in zip(variables, perturbations):
             diff = diff.replace(var, var + epsilon*pert)
         diff = diff.sym_diff(epsilon)
-        diff = Operand.cast(diff, self.dist, tensorsig=tensorsig, dtype=dtype)
-        diff = diff.replace(epsilon, 0)
-        # Replace backgrounds
-        if backgrounds:
-            for var, bg in zip(variables, backgrounds):
-                diff = diff.replace(var, bg)
+        # ε -> 0
+        if diff:
+            diff = Operand.cast(diff, self.dist, tensorsig=tensorsig, dtype=dtype)
+            diff = diff.replace(epsilon, 0)
+        # Replace variables with backgrounds, if specified
+        if diff:
+            if backgrounds:
+                for var, bg in zip(variables, backgrounds):
+                    diff = diff.replace(var, bg)
         return diff
 
     @property

@@ -438,6 +438,9 @@ class NonlinearBoundaryValueSolver(SolverBase):
         logger.debug('Beginning NLBVP instantiation')
         super().__init__(problem, **kw)
         self.perturbations = problem.perturbations
+        # Copy valid modes from variables to perturbations (may have been changed after problem instantiation)
+        for pert, var in zip(problem.perturbations, problem.variables):
+            pert.valid_modes[:] = var.valid_modes
         self.iteration = 0
         # Create RHS handler
         F_handler = self.evaluator.add_system_handler(iter=1, group='F')
@@ -734,7 +737,7 @@ class InitialValueSolver(SolverBase):
 
     def log_stats(self, format=".4g"):
         """Log timing statistics with specified string formatting (optional)."""
-        self.run_time_end = self.wall_time        
+        self.run_time_end = self.wall_time
         start_time = self.start_time_end
         logger.info(f"Final iteration: {self.iteration}")
         logger.info(f"Final sim time: {self.sim_time}")
