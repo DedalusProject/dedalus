@@ -270,6 +270,10 @@ class Subproblem:
         return (self.pre_left.shape[0], len(self.subsystems))
 
     @CachedAttribute
+    def size(self):
+        return self.shape[0] * self.shape[1]
+
+    @CachedAttribute
     def _compressed_buffer(self):
         return np.zeros(self.shape, dtype=self.dtype)
 

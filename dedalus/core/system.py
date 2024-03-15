@@ -51,7 +51,10 @@ class CoeffSystem:
                 views_sp[ss] = self.data[i0:i1]
                 i0 = i1
             i11 = i1
-            views_sp[None] = self.data[i00:i11].reshape((sp.LHS.shape[1], -1))
+            if i11 - i00 > 0:
+                views_sp[None] = self.data[i00:i11].reshape((sp.LHS.shape[1], -1))
+            else:
+                views_sp[None] = self.data[i00:i11].reshape((0, 0))
 
     def get_subdata(self, sp, ss=None):
         return self.views[sp][ss]

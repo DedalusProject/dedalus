@@ -85,7 +85,7 @@ class MultistepIMEX:
 
         # Solver references
         solver = self.solver
-        subproblems = solver.subproblems
+        subproblems = [sp for sp in solver.subproblems if sp.size] # Skip empty subproblems
         evaluator = solver.evaluator
         state_fields = solver.state
         F_fields = solver.F
@@ -542,7 +542,7 @@ class RungeKuttaIMEX:
 
         # Solver references
         solver = self.solver
-        subproblems = solver.subproblems
+        subproblems = [sp for sp in solver.subproblems if sp.size] # Skip empty subproblems
         evaluator = solver.evaluator
         state_fields = solver.state
         F_fields = solver.F
