@@ -222,7 +222,7 @@ class EigenvalueSolver(SolverBase):
             self.eigenvalues, pre_eigenvectors = eig_output
             self.eigenvectors = sp.pre_right @ pre_eigenvectors
 
-    def solve_sparse(self, subproblem, N, target, rebuild_matrices=False, left=False, normalize_left=True, raise_on_mismatch=True, **kw):
+    def solve_sparse(self, subproblem, N, target, rebuild_matrices=False, left=False, normalize_left=True, raise_on_mismatch=True, v0=None, **kw):
         """
         Perform targeted sparse eigenvector search for selected subproblem.
         This routine finds a subset of eigenvectors near the specified target.
@@ -249,6 +249,8 @@ class EigenvalueSolver(SolverBase):
             eigenvectors (default: True).
         raise_on_mismatch : bool, optional
             Raise a RuntimeError if the left and right eigenvalues do not match (default: True).
+        v0 : ndarray, optional
+            Initial guess for eigenvector, e.g. from subsystem.gather (default: None).
         **kw :
             Other keyword options passed to scipy.sparse.linalg.eig.
         """
@@ -259,9 +261,11 @@ class EigenvalueSolver(SolverBase):
         # Solve as sparse general eigenvalue problem
         A = sp.L_min
         B = - sp.M_min
+        # Precondition starting guess if provided
+        if v0 is not None:
+            v0 = sp.pre_right_pinv @ v0
         # Solve for the right (and optionally left) eigenvectors
-        eig_output = scipy_sparse_eigs(A=A, B=B, left=left, N=N, target=target, matsolver=self.matsolver, **kw)
-
+        eig_output = scipy_sparse_eigs(A=A, B=B, left=left, N=N, target=target, matsolver=self.matsolver, v0=v0, **kw)
         if left:
             # Note: this definition of "left eigenvectors" is consistent with the documentation for scipy.linalg.eig
             self.eigenvalues, pre_right_evecs, self.left_eigenvalues, pre_left_evecs = eig_output
