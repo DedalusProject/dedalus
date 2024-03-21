@@ -293,7 +293,7 @@ class EigenvalueSolver(SolverBase):
             self.eigenvalues, pre_right_evecs = eig_output
             self.right_eigenvectors = self.eigenvectors = sp.pre_right @ pre_right_evecs
 
-    def set_state(self, index, subsystem):
+    def set_state(self, index, subsystem=0):
         """
         Set state vector to the specified eigenmode.
 
@@ -301,10 +301,10 @@ class EigenvalueSolver(SolverBase):
         ----------
         index : int
             Index of desired eigenmode.
-        subsystem : Subsystem object or int
+        subsystem : Subsystem object or int, optional
             Subsystem that will be set to the corresponding eigenmode.
             If an integer, the corresponding subsystem of the last specified
-            eigenvalue_subproblem will be used.
+            eigenvalue_subproblem will be used. Default: 0.
         """
         # TODO: allow setting left modified eigenvectors?
         subproblem = self.eigenvalue_subproblem
@@ -317,6 +317,8 @@ class EigenvalueSolver(SolverBase):
         for var in self.state:
             var['c'] = 0
         subsystem.scatter(self.eigenvectors[:, index], self.state)
+        # Set eigenvalue
+        self.problem.eigenvalue['g'] = self.eigenvalues[index]
 
 
 class LinearBoundaryValueSolver(SolverBase):
