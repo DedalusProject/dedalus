@@ -73,6 +73,8 @@ class MultistepIMEX:
         self.solver = solver
         self.RHS = CoeffSystem(solver.subproblems, dtype=solver.dtype)
 
+        self.sensRHS = CoeffSystem(solver.subproblems, dtype=solver.dtype)
+
         # Create deque for storing recent timesteps
         self.dt = deque([0.] * self.steps)
 
@@ -80,12 +82,16 @@ class MultistepIMEX:
         self.MX = MX = deque()
         self.LX = LX = deque()
         self.F = F = deque()
+
+        self.sens = sens = deque()
         for j in range(self.amax):
             MX.append(CoeffSystem(solver.subproblems, dtype=solver.dtype))
         for j in range(self.bmax):
             LX.append(CoeffSystem(solver.subproblems, dtype=solver.dtype))
         for j in range(self.cmax):
             F.append(CoeffSystem(solver.subproblems, dtype=solver.dtype))
+        for j in range(self.cmax):
+            sens.append(CoeffSystem(solver.subproblems, dtype=solver.dtype))
 
         # For the adjoint
         self.timestep_history = []
@@ -198,6 +204,7 @@ class MultistepIMEX:
         subproblems = solver.subproblems
         evaluator = solver.evaluator
         state_fields = solver.state_adj
+        sens_fields = solver.sens_adj
         F_fields = solver.F
         sim_time = solver.sim_time
         iteration = solver.iteration
@@ -207,7 +214,10 @@ class MultistepIMEX:
         MX = self.MX
         LX = self.LX
         F = self.F
+        sens=self.sens
+
         RHS = self.RHS
+        sensRHS = self.sensRHS
         axpy = self.axpy
 
         self._iteration -= 1
@@ -243,10 +253,13 @@ class MultistepIMEX:
         MX.rotate()
         LX.rotate()
         F.rotate()
+        sens.rotate()
 
         MX0 = MX[0]
         LX0 = LX[0]
         F0 = F[0]
+        sens0 = sens[0]
+
         a0 = a[0][0]
         b0 = b[0][0]
 
@@ -299,17 +312,23 @@ class MultistepIMEX:
 
             sp.scatter_inputs(spX, state_fields) # 1
 
-        evaluator.evaluate_scheduled(wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
-        evaluator.evaluate_group('F_adjoint', wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
-            
-        for sp in subproblems:
-            sp.gather_outputs(solver.F_adjoint, out=F0.get_subdata(sp)) # 1
+        # evaluator.evaluate_scheduled(wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
+        if hasattr(solver,'F_adjoint'):
+            evaluator.evaluate_group('F_adjoint', wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
+            for sp in subproblems:
+                sp.gather_outputs(solver.F_adjoint, out=F0.get_subdata(sp)) 
+        if hasattr(solver,'F_sens'):
+            evaluator.evaluate_group('F_sens', wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
+            for sp in subproblems:
+                sp.gather_outputs(solver.F_sens, out=sens0.get_subdata(sp))
+
+        
 
         if RHS.data.size:
             np.multiply(c[0][1], F0.data, out=RHS.data)
-            for j in range(2, self.steps+1):
-                RHS.data += c[j] * F[j-1].data
-                axpy(a=c[j-2][j], x=F[j-1].data, y=RHS.data)
+            for j in range(2, len(c) + 1):
+                # RHS.data += c[j] * F[j-1].data
+                axpy(a=c[j-1][j], x=F[j-1].data, y=RHS.data)
             for j in range(1, len(a)+1):
                 # RHS.data -= a[j] * MX[j-1].data
                 axpy(a=-a[j-1][j], x=MX[j-1].data, y=RHS.data)
@@ -322,6 +341,17 @@ class MultistepIMEX:
         for sp in subproblems:
             sp.scatter_inputs(RHS.get_subdata(sp), state_fields)
 
+        if hasattr(solver,'F_sens'):
+            if sensRHS.data.size:
+                # np.multiply(c[0][1], sens0.data, out=sensRHS.data)
+                for j in range(1, len(c) + 1):
+                    # RHS.data += c[j] * F[j-1].data
+                    axpy(a=c[j-1][j], x=sens[j-1].data, y=sensRHS.data)
+            for field in sens_fields:
+                field.preset_layout('c')
+            for sp in subproblems:
+                sp.scatter_inputs(sensRHS.get_subdata(sp), sens_fields)
+            
         # Update solver
         solver.sim_time -= dt
 
@@ -890,16 +920,18 @@ class RungeKuttaIMEX:
                 # evaluator.evaluate_group('F_adjoint')
                 sp.scatter_inputs(spX, state_fields) # 1
 
-            if i == self.stages:
-                evaluator.evaluate_scheduled(wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
-                evaluator.evaluate_group('F_adjoint', wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
-            else:
+            # if i == self.stages:
+                # evaluator.evaluate_scheduled(wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
+                # evaluator.evaluate_group('F_adjoint', wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
+            # else:
+            
+            if hasattr(solver,'F_adjoint'):
                 evaluator.evaluate_group('F_adjoint', wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
             
             # for f in solver.F_adjoint:
             #     print(f.layout.index)
-            for sp in subproblems:
-                sp.gather_outputs(solver.F_adjoint, out=Fi.get_subdata(sp)) # 1
+                for sp in subproblems:
+                    sp.gather_outputs(solver.F_adjoint, out=Fi.get_subdata(sp)) # 1
 
                 # csr_matvecs(np.conj(sp.pre_right).T.tocsr()np.conj(sp.pre_left).T.tocsr(), spX, Fi.get_subdata(sp))  # Rectangular dot product skipping shape checks             
                 # Compute adjoint RHS

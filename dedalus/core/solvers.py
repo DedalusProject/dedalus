@@ -717,6 +717,7 @@ class InitialValueSolver(SolverBase):
         self.stop_iteration = np.inf
 
         self.state_adj = []
+        self.sens_adj = []
         self.build_adjoint()
         logger.debug('Finished IVP instantiation')
 
@@ -774,6 +775,17 @@ class InitialValueSolver(SolverBase):
                     # corresponding name
                     field_adj.name = '%s_adj' % field.name
                 self.state_adj.append(field_adj)
+
+        if not self.sens_adj:
+            for field in self.state:
+                field_adj = field.copy_adjoint()
+                # Zero the system
+                field_adj['c'] *= 0
+                if field.name:
+                    # If the direct field has a name, give the adjoint a
+                    # corresponding name
+                    field_adj.name = '%s_sens_adj' % field.name
+                self.sens_adj.append(field_adj)
 
     def load_state(self, path, index=-1, allow_missing=False):
         """
