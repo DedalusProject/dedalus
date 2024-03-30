@@ -456,6 +456,17 @@ class NonlinearBoundaryValueSolver(SolverBase):
         self.F = F_handler.fields
         logger.debug('Finished NLBVP instantiation')
 
+    def print_subproblem_ranks(self, subproblems=None):
+        """Print rank of each subproblem LHS."""
+        if subproblems is None:
+            subproblems = self.subproblems
+        # Check matrix rank
+        for i, sp in enumerate(subproblems):
+            if not hasattr(sp, 'dF_min'):
+                continue
+            dF = sp.dF_min.A
+            print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {sp.group}, matrix rank: {np.linalg.matrix_rank(dF)}/{dF.shape[0]}, cond: {np.linalg.cond(dF):.1e}")
+
     def newton_iteration(self, damping=1):
         """Update solution with a Newton iteration."""
         # Compute RHS
