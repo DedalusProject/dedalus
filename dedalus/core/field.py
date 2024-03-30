@@ -705,7 +705,7 @@ class Field(Current):
     #     return reduce()
 
     def load_from_hdf5(self, file, index, task=None):
-        """Load grid data from an hdf5 file. Task correpsonds to field name by default."""
+        """Load grid data from an hdf5 file. Task corresponds to field name by default."""
         if task is None:
             task = self.name
         dset = file['tasks'][task]

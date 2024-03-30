@@ -83,12 +83,13 @@ class ProblemBase:
         # Build basic equation dictionary
         # Note: domain determined after NCC reinitialization
         expr = LHS - RHS
-        eqn = {'LHS': LHS,
+        eqn = {'eqn': expr,
+               'LHS': LHS,
                'RHS': RHS,
                'condition': condition,
                'tensorsig': expr.tensorsig,
                'dtype': expr.dtype,
-               'valid_modes': LHS.valid_modes.copy()}
+               'valid_modes': expr.valid_modes.copy()}
         self._check_equation_conditions(eqn)
         self._build_matrix_expressions(eqn)
         self.equations.append(eqn)
@@ -227,6 +228,7 @@ class NonlinearBoundaryValueProblem(ProblemBase):
         # Build perturbation variables
         self.perturbations = [var.copy() for var in self.variables]
         for pert, var in zip(self.perturbations, self.variables):
+            pert.preset_scales(1)
             pert['c'] = 0
             if var.name:
                 pert.name = 'δ'+var.name

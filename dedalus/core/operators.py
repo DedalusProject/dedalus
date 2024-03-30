@@ -2894,7 +2894,7 @@ class PolarMOperator(SpectralOperator):
     def operate(self, out):
         """Perform operation."""
         operand = self.args[0]
-        if self.input_basis is None:
+        if hasattr(self.output_basis, "m_maps"):
             basis = self.output_basis
         else:
             basis = self.input_basis
@@ -3405,6 +3405,13 @@ class Divergence(LinearOperator, metaclass=MultiClass):
 class CartesianDivergence(Divergence):
 
     cs_type = (coords.CartesianCoordinates, coords.Coordinate)
+
+    @classmethod
+    def _preprocess_args(cls, operand, index=0, out=None):
+        coordsys = operand.tensorsig[index]
+        if operand.domain.get_basis(coordsys) is None:
+            raise SkipDispatchException(output=0)
+        return [operand], {'index': index, 'out': out}
 
     def __init__(self, operand, index=0, out=None):
         coordsys = operand.tensorsig[index]
@@ -3951,6 +3958,8 @@ class Laplacian(LinearOperator, metaclass=MultiClass):
             coordsys = operand.dist.single_coordsys
             if coordsys is False:
                 raise ValueError("coordsys must be specified.")
+        elif not isinstance(coordsys, coords.DirectProduct) and operand.domain.get_basis(coordsys) is None:
+            raise SkipDispatchException(output=0)
         return [operand, coordsys], {'out': out}
 
     @classmethod

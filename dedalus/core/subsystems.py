@@ -497,7 +497,7 @@ class Subproblem:
         eqns = self.problem.equations
         vars = self.problem.LHS_variables
         eqn_conditions = [self.check_condition(eqn) for eqn in eqns]  # HACK
-        eqn_sizes = [self.field_size(eqn['LHS']) for eqn in eqns]
+        eqn_sizes = [self.field_size(eqn['eqn']) for eqn in eqns]
         var_sizes = [self.field_size(var) for var in vars]
         I = sum(eqn_sizes)
         J = sum(var_sizes)
@@ -533,7 +533,7 @@ class Subproblem:
             matrices[name] = sparse.coo_matrix((data, (rows, cols)), shape=(I, J), dtype=dtype).tocsr()
 
         # Valid modes
-        valid_eqn = [self.valid_modes(eqn['LHS'], eqn['valid_modes']) for eqn in eqns]
+        valid_eqn = [self.valid_modes(eqn['eqn'], eqn['valid_modes']) for eqn in eqns]
         valid_var = [self.valid_modes(var, var.valid_modes) for var in vars]
         # Invalidate equations that fail condition test
         for n, eqn_cond in enumerate(eqn_conditions):
@@ -587,7 +587,7 @@ class Subproblem:
         eqn_dofs_by_dim = defaultdict(int)
         eqn_pass_cond = [eqn for eqn, cond in zip(eqns, eqn_conditions) if cond]
         for eqn in eqn_pass_cond:
-            eqn_dofs_by_dim[eqn['domain'].dim] += self.field_size(eqn['LHS'])
+            eqn_dofs_by_dim[eqn['domain'].dim] += self.field_size(eqn['eqn'])
         self.update_rank = sum(eqn_dofs_by_dim.values()) - eqn_dofs_by_dim[max(eqn_dofs_by_dim.keys())]
 
         # Store RHS conversion matrix
@@ -624,8 +624,8 @@ def left_permutation(subproblem, equations, bc_top, interleave_components):
     L0 = []
     for eqn in equations:
         L1 = []
-        vfshape = subproblem.field_shape(eqn['LHS'])
-        rank = len(eqn['LHS'].tensorsig)
+        vfshape = subproblem.field_shape(eqn['eqn'])
+        rank = len(eqn['tensorsig'])
         vfshape = (prod(vfshape[:rank]),) + vfshape[rank:]
         if vfshape[0] == 0:
             L1.append([])
