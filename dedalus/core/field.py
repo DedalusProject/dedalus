@@ -844,7 +844,7 @@ class Field(Current):
         comm_sub.Bcast(data, root=0)
         return data
 
-    def fill_random(self, layout=None, seed=None, chunk_size=2**20, distribution='standard_normal', **kw):
+    def fill_random(self, layout=None, scales=None, seed=None, chunk_size=2**20, distribution='standard_normal', **kw):
         """
         Fill field with random data. If a seed is specified, the global data is
         reproducibly generated for any process mesh.
@@ -853,6 +853,8 @@ class Field(Current):
         ----------
         layout : Layout object, 'c', or 'g', optional
             Layout for setting field data. Default: current layout.
+        scales : number or tuple of numbers, optional
+            Scales for setting field data. Default: current scales.
         seed : int, optional
             RNG seed. Default: None.
         chunk_size : int, optional
@@ -864,6 +866,12 @@ class Field(Current):
         **kw : dict
             Other keywords passed to the distribution method.
         """
+        init_layout = self.layout
+        # Set scales if requested
+        if scales is not None:
+            self.preset_scales(scales)
+            if layout is None:
+                self.preset_layout(init_layout)
         # Set layout if requested
         if layout is not None:
             self.preset_layout(layout)
