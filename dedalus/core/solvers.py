@@ -879,8 +879,8 @@ class InitialValueSolver(SolverBase):
         wall_time = self.wall_time
         # Advance using timestepper
         wall_elapsed = wall_time - self.init_time
-        if(self.iteration==self.stop_iteration):
-            logger.warning("Only works if F==0 and linear direct equation.")
+        # if(self.iteration==self.stop_iteration):
+            # logger.warning("Only works if F==0 and linear direct equation.")
         self.timestepper.step_adjoint(dt,wall_elapsed)
         # Update iteration
         self.iteration -= 1
