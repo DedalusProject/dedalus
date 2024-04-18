@@ -4054,7 +4054,7 @@ class CartesianLaplacian(Laplacian):
         # Wrap to handle gradient wrt single coordinate
         if isinstance(coordsys, coords.Coordinate):
             coordsys = coords.CartesianCoordinates(coordsys.name)
-        parts = [Differentiate(Differentiate(operand, c), c) for c in coordsys.coords]
+        parts = [Differentiate(operand, c, order=2) for c in coordsys.coords]
         arg = sum(parts)
         LinearOperator.__init__(self, arg, out=out)
         self.coordsys = coordsys
