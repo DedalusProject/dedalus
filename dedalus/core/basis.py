@@ -1037,6 +1037,25 @@ class DifferentiateComplexFourier(operators.Differentiate, operators.SpectralOpe
         return np.array([[1j*k]])
 
 
+class HilbertTransformComplexFourier(operators.HilbertTransform, operators.SpectralOperator1D):
+    """ComplexFourier Hilbert transform."""
+
+    input_basis_type = ComplexFourier
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
+
+    @staticmethod
+    def _output_basis(input_basis):
+        return input_basis
+
+    @staticmethod
+    def _group_matrix(group, input_basis, output_basis):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / input_basis.COV.stretch
+        # Hx exp(1j*k*x) = -1j * sgn(k) * exp(1j*k*x)
+        return np.array([[-1j*np.sign(k)]])
+
+
 class InterpolateComplexFourier(operators.Interpolate, operators.SpectralOperator1D):
     """ComplexFourier interpolation."""
 
@@ -1223,6 +1242,27 @@ class DifferentiateRealFourier(operators.Differentiate, operators.SpectralOperat
         # dx -sin(k*x) = -k * cos(k*x)
         return np.array([[0, -k],
                          [k,  0]])
+
+
+class HilbertTransformRealFourier(operators.HilbertTransform, operators.SpectralOperator1D):
+    """RealFourier Hilbert transform."""
+
+    input_basis_type = RealFourier
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
+
+    @staticmethod
+    def _output_basis(input_basis):
+        return input_basis
+
+    @staticmethod
+    def _group_matrix(group, input_basis, output_basis):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / input_basis.COV.stretch
+        # Hx  cos(n*x) = sin(n*x)
+        # Hx -sin(n*x) = cos(n*x)
+        return np.array([[0, 1],
+                         [1, 0]])
 
 
 class InterpolateRealFourier(operators.Interpolate, operators.SpectralOperator1D):

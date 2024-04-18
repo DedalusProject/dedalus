@@ -1442,33 +1442,59 @@ class HilbertTransform(SpectralOperator1D, metaclass=MultiClass):
 
     """
 
+    name = "Hilbert"
+
+    def __init__(self, operand, coord, out=None):
+        super().__init__(operand, out=out)
+        # SpectralOperator requirements
+        self.coord = coord
+        self.input_basis = operand.domain.get_basis(coord)
+        self.output_basis = self._output_basis(self.input_basis)
+        self.first_axis = self.dist.get_axis(coord)
+        self.last_axis = self.first_axis
+        self.axis = self.first_axis
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = operand.domain.substitute_basis(self.input_basis, self.output_basis)
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
+
     @classmethod
-    def _check_args(cls, operand, space, out=None):
+    def _check_args(cls, operand, coord, out=None):
         # Dispatch by operand basis
         if isinstance(operand, Operand):
-            if isinstance(operand.get_basis(space), cls.input_basis_type):
+            basis = operand.domain.get_basis(coord)
+            if isinstance(basis, cls.input_basis_type):
                 return True
         return False
 
-    @property
-    def base(self):
-        return HilbertTransform
+    def new_operand(self, operand, **kw):
+        return HilbertTransform(operand, self.coord, **kw)
+
+    @staticmethod
+    def _output_basis(input_basis):
+        # Subclasses must implement
+        raise NotImplementedError()
+
+    def __str__(self):
+        return 'H{!s}({!s})'.format(self.coord.name, self.operand)
 
 
 class HilbertTransformConstant(HilbertTransform):
     """Constant Hilbert transform."""
 
     @classmethod
-    def _check_args(cls, operand, space, out=None):
+    def _check_args(cls, operand, coord, out=None):
         # Dispatch for numbers of constant bases
         if isinstance(operand, Number):
             return True
         if isinstance(operand, Operand):
-            if operand.get_basis(space) is None:
+            if operand.domain.get_basis(coord) is None:
                 return True
         return False
 
-    def __new__(cls, operand, space, out=None):
+    def __new__(cls, operand, coord, out=None):
         return 0
 
 
