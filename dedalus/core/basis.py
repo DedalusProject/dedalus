@@ -708,16 +708,26 @@ class DifferentiateJacobi(operators.Differentiate, operators.SpectralOperator1D)
     subaxis_dependence = [True]
     subaxis_coupling = [True]
 
+    @classmethod
+    def _check_args(cls, operand, coord, order=1, out=None):
+        # Only integer derivatives implemented
+        if float(order).is_integer() and order > 0:
+            return super()._check_args(operand, coord, order=order, out=out)
+        return False
+
     @staticmethod
-    def _output_basis(input_basis):
-        return input_basis.derivative_basis(order=1)
+    def _output_basis(input_basis, order):
+        return input_basis.derivative_basis(order=int(order))
 
     @staticmethod
     @CachedMethod
-    def _full_matrix(input_basis, output_basis):
+    def _full_matrix(input_basis, output_basis, order):
         N = input_basis.size
         a, b = input_basis.a, input_basis.b
-        matrix = jacobi.differentiation_matrix(N, a, b) / input_basis.COV.stretch
+        matrix = jacobi.differentiation_matrix(N, a, b)
+        for i in range(1, int(order)):
+            matrix = jacobi.differentiation_matrix(N, a+i, b+i) @ matrix
+        matrix *= input_basis.COV.stretch ** (-order)
         return matrix.tocsr()
 
 
@@ -1026,15 +1036,16 @@ class DifferentiateComplexFourier(operators.Differentiate, operators.SpectralOpe
     subaxis_coupling = [False]
 
     @staticmethod
-    def _output_basis(input_basis):
+    def _output_basis(input_basis, order):
         return input_basis
 
     @staticmethod
-    def _group_matrix(group, input_basis, output_basis):
+    def _group_matrix(group, input_basis, output_basis, order):
         # Rescale group (native wavenumber) to get physical wavenumber
         k = group / input_basis.COV.stretch
-        # dx exp(1j*k*x) = 1j * k * exp(1j*k*x)
-        return np.array([[1j*k]])
+        # dx**n exp(1j*k*x) = (1j*k)**n * exp(1j*k*x)
+        S = (1j * k) ** order
+        return np.array([[S]])
 
 
 class HilbertTransformComplexFourier(operators.HilbertTransform, operators.SpectralOperator1D):
@@ -1231,17 +1242,20 @@ class DifferentiateRealFourier(operators.Differentiate, operators.SpectralOperat
     subaxis_coupling = [False]
 
     @staticmethod
-    def _output_basis(input_basis):
+    def _output_basis(input_basis, order):
         return input_basis
 
     @staticmethod
-    def _group_matrix(group, input_basis, output_basis):
+    def _group_matrix(group, input_basis, output_basis, order):
         # Rescale group (native wavenumber) to get physical wavenumber
         k = group / input_basis.COV.stretch
-        # dx  cos(k*x) = k * -sin(k*x)
-        # dx -sin(k*x) = -k * cos(k*x)
-        return np.array([[0, -k],
-                         [k,  0]])
+        # dx**n exp(1j*k*x) = (1j*k)**n * exp(1j*k*x) = S * exp(1j*k*x)
+        # dx**n [cos(k*x) + 1j*sin(k*x)] = S * [cos(k*x) + 1j*sin(k*x)]
+        # dx**n  cos(k*x) = R(S) *  cos(k*x) + I(S) * -sin(k*x)
+        # dx**n -sin(k*x) = R(S) * -sin(k*x) - I(S) *  cos(k*x)
+        S = (1j * k) ** order
+        return np.array([[S.real, -S.imag],
+                         [S.imag,  S.real]])
 
 
 class HilbertTransformRealFourier(operators.HilbertTransform, operators.SpectralOperator1D):

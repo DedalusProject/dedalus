@@ -1355,12 +1355,13 @@ class Differentiate(SpectralOperator1D, metaclass=MultiClass):
 
     name = "Diff"
 
-    def __init__(self, operand, coord, out=None):
+    def __init__(self, operand, coord, order=1, out=None):
         super().__init__(operand, out=out)
+        self.order = order
         # SpectralOperator requirements
         self.coord = coord
         self.input_basis = operand.domain.get_basis(coord)
-        self.output_basis = self._output_basis(self.input_basis)
+        self.output_basis = self._output_basis(self.input_basis, self.order)
         self.first_axis = self.dist.get_axis(coord)
         self.last_axis = self.first_axis
         self.axis = self.first_axis
@@ -1372,7 +1373,7 @@ class Differentiate(SpectralOperator1D, metaclass=MultiClass):
         self.dtype = operand.dtype
 
     @classmethod
-    def _check_args(cls, operand, coord, out=None):
+    def _check_args(cls, operand, coord, order=1, out=None):
         # Dispatch by operand basis
         if isinstance(operand, Operand):
             basis = operand.domain.get_basis(coord)
@@ -1381,29 +1382,38 @@ class Differentiate(SpectralOperator1D, metaclass=MultiClass):
         return False
 
     def new_operand(self, operand, **kw):
-        return Differentiate(operand, self.coord, **kw)
+        return Differentiate(operand, self.coord, self.order, **kw)
+
+    def subspace_matrix(self, layout):
+        return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis, self.order)
+
+    def group_matrix(self, group):
+        return self._group_matrix(group, self.input_basis, self.output_basis, self.order)
 
     @staticmethod
-    def _output_basis(input_basis):
+    def _output_basis(input_basis, order):
         # Subclasses must implement
         raise NotImplementedError()
 
     def __str__(self):
-        return 'd{!s}({!s})'.format(self.coord.name, self.operand)
+        if self.order == 1:
+            return 'd{!s}({!s})'.format(self.coord.name, self.operand)
+        else:
+            return 'd{!s}({!s},{!s})'.format(self.coord.name, self.operand, self.order)
 
-    def _expand_multiply(self, operand, vars):
-        """Expand over multiplication."""
-        args = operand.args
-        # Apply product rule to factors
-        partial_diff = lambda i: prod([self.new_operand(arg) if i==j else arg for j,arg in enumerate(args)])
-        return sum((partial_diff(i) for i in range(len(args))))
+    # def _expand_multiply(self, operand, vars):
+    #     """Expand over multiplication."""
+    #     args = operand.args
+    #     # Apply product rule to factors
+    #     partial_diff = lambda i: prod([self.new_operand(arg) if i==j else arg for j,arg in enumerate(args)])
+    #     return sum((partial_diff(i) for i in range(len(args))))
 
 
 class DifferentiateConstant(Differentiate):
     """Constant differentiation."""
 
     @classmethod
-    def _check_args(cls, operand, coord, out=None):
+    def _check_args(cls, operand, coord, order=1, out=None):
         # Dispatch for numbers of constant bases
         if isinstance(operand, Number):
             return True
@@ -1412,7 +1422,7 @@ class DifferentiateConstant(Differentiate):
                 return True
         return False
 
-    def __new__(cls, operand, coord, out=None):
+    def __new__(cls, operand, coord, order=1, out=None):
         return 0
 
 
