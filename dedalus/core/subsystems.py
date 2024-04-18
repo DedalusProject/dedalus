@@ -262,8 +262,12 @@ class Subproblem:
         # Build input and output buffers and views, except for EVPs
         from .problems import EigenvalueProblem
         if not isinstance(problem, EigenvalueProblem):
-            self._input_buffer, self._input_views = self._build_buffer_views(self.problem.LHS_variables)
-            self._output_buffer, self._output_views = self._build_buffer_views([eqn['F'] for eqn in problem.equations])
+            self._build_buffers()
+
+    def _build_buffers(self):
+        self._input_buffer, self._input_views = self._build_buffer_views(self.problem.LHS_variables)
+        if 'F' in self.problem.equations[0]:
+            self._output_buffer, self._output_views = self._build_buffer_views([eqn['F'] for eqn in self.problem.equations])
 
     @CachedAttribute
     def shape(self):

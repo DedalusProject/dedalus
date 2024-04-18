@@ -418,6 +418,9 @@ class InitialValueProblem(ProblemBase):
             # Add linearized equation and copy valid modes
             evp_eqn = EVP.add_equation((M + L - dF, 0))
             evp_eqn['valid_modes'][:] = eqn['valid_modes']
+        # Add backgrounds to EVP namespace
+        for var in backgrounds:
+            EVP.local_namespace[var.name] = var
         return EVP
 
 
