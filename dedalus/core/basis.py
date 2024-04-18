@@ -1048,6 +1048,26 @@ class DifferentiateComplexFourier(operators.Differentiate, operators.SpectralOpe
         return np.array([[S]])
 
 
+class RieszDerivativeComplexFourier(operators.RieszDerivative, operators.SpectralOperator1D):
+    """ComplexFourier Riesz derivative."""
+
+    input_basis_type = ComplexFourier
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
+
+    @staticmethod
+    def _output_basis(input_basis, order):
+        return input_basis
+
+    @staticmethod
+    def _group_matrix(group, input_basis, output_basis, order):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / input_basis.COV.stretch
+        # R_a exp(1j*k*x) = - |k|**a * exp(1j*k*x)
+        S = - abs(k) ** order
+        return np.array([[S]])
+
+
 class HilbertTransformComplexFourier(operators.HilbertTransform, operators.SpectralOperator1D):
     """ComplexFourier Hilbert transform."""
 
@@ -1256,6 +1276,30 @@ class DifferentiateRealFourier(operators.Differentiate, operators.SpectralOperat
         S = (1j * k) ** order
         return np.array([[S.real, -S.imag],
                          [S.imag,  S.real]])
+
+
+class RieszDerivativeRealFourier(operators.RieszDerivative, operators.SpectralOperator1D):
+    """RealFourier Riesz derivative."""
+
+    input_basis_type = RealFourier
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
+
+    @staticmethod
+    def _output_basis(input_basis, order):
+        return input_basis
+
+    @staticmethod
+    def _group_matrix(group, input_basis, output_basis, order):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / input_basis.COV.stretch
+        # R_a exp(1j*k*x) = - |k|**n * exp(1j*k*x) = S * exp(1j*k*x)
+        # R_a [cos(k*x) + 1j*sin(k*x)] = S * [cos(k*x) + 1j*sin(k*x)]
+        # R_a  cos(k*x) = S *  cos(k*x)
+        # R_a -sin(k*x) = S * -sin(k*x)
+        S = - abs(k) ** order
+        return np.array([[S, 0],
+                         [0, S]])
 
 
 class HilbertTransformRealFourier(operators.HilbertTransform, operators.SpectralOperator1D):
