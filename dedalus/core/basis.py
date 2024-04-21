@@ -1319,8 +1319,8 @@ class HilbertTransformRealFourier(operators.HilbertTransform, operators.Spectral
         k = group / input_basis.COV.stretch
         # Hx  cos(n*x) = sin(n*x)
         # Hx -sin(n*x) = cos(n*x)
-        return np.array([[0, -1],
-                         [1,  0]])
+        return np.array([[ 0, 1],
+                         [-1, 0]])
 
 
 class InterpolateRealFourier(operators.Interpolate, operators.SpectralOperator1D):
