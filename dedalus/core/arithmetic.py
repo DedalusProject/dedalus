@@ -193,24 +193,6 @@ class Add(Future, metaclass=MultiClass):
         return matrices
 
 
-# class AddArrayArray(Add, FutureArray):
-
-#     argtypes = (Array, FutureArray)
-
-#     def check_conditions(self):
-#         return True
-
-#     def enforce_conditions(self):
-#         pass
-
-#     def operate(self, out):
-#         arg0, arg1 = self.args
-#         if out.data.size:
-#             out.data.fill(0)
-#             self.add_subdata(arg0, out)
-#             self.add_subdata(arg1, out)
-
-
 class AddFields(Add, FutureField):
     """Addition operator for fields."""
 
@@ -246,9 +228,35 @@ class AddFields(Add, FutureField):
     def operate(self, out):
         """Perform operation."""
         arg0, arg1 = self.args
-        # Set output layout
         out.preset_layout(arg0.layout)
         np.add(arg0.data, arg1.data, out=out.data)
+
+    def operate_jvp(self, out, tangent):
+        """Perform operation and compute tangent."""
+        arg0, arg1 = self.args
+        out.preset_layout(arg0.layout)
+        np.add(arg0.data, arg1.data, out=out.data)
+        if tangent:
+            tan0, tan1 = self.arg_tangents
+            tangent.preset_layout(tan0.layout)
+            np.add(tan0.data, tan1.data, out=tangent.data)
+
+    def operate_vjp(self, cotangents):
+        arg_tangents = []
+        for orig_arg, arg in zip(self.original_args, self.args):
+            if isinstance(orig_arg, Future):
+                orig_arg.tangent.change_layout(arg.layout)
+                arg_tangents.append(orig_arg.tangent)
+            else:
+                if arg not in cotangents:
+                    tangent = arg.copy()
+                    tangent.data.fill(0)
+                    cotangents[arg] = tangent
+                arg_tangents.append(cotangents[arg])
+        tan0, tan1 = arg_tangents
+        # Add adjoint contribution in-place
+        np.add(self.tangent.data, tan0.data, out=tan0.data)
+        np.add(self.tangent.data, tan1.data, out=tan1.data)
 
 
 # used for einsum string manipulation
@@ -664,6 +672,7 @@ class DotProduct(Product, FutureField):
         return G
 
     def operate(self, out):
+        """Perform operation."""
         arg0, arg1 = self.args
         out.preset_layout(arg0.layout)
         # Broadcast
@@ -672,6 +681,26 @@ class DotProduct(Product, FutureField):
         # Call einsum
         if out.data.size:
             np.einsum(self.einsum_str, arg0_data, arg1_data, out=out.data, optimize=True)
+
+    def operate_jvp(self, out, tangent):
+        """Perform operation and compute tangent."""
+        arg0, arg1 = self.args
+        out.preset_layout(arg0.layout)
+        # Broadcast
+        arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
+        arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
+        # Call einsum
+        if out.data.size:
+            np.einsum(self.einsum_str, arg0_data, arg1_data, out=out.data, optimize=True)
+        if tangent:
+            tan0, tan1 = self.arg_tangents
+            tangent.preset_layout(tan0.layout)
+            # Broadcast
+            tan0_data = self.arg0_ghost_broadcaster.cast(tan0)
+            tan1_data = self.arg1_ghost_broadcaster.cast(tan1)
+            if tangent.data.size:
+                np.einsum(self.einsum_str, tan0_data, arg1_data, out=tangent.data, optimize=True)
+                np.add(tangent.data, np.einsum(self.einsum_str, arg0_data, tan1_data, optimize=True), out=tangent.data) # TEMPORARY
 
 
 @alias("cross")
@@ -865,6 +894,48 @@ class MultiplyFields(Multiply, FutureField):
         arg1_exp_data = arg1_data.reshape(self.arg1_exp_tshape + arg1_data.shape[len(arg1.tensorsig):])
         np.multiply(arg0_exp_data, arg1_exp_data, out=out.data)
 
+    def operate_jvp(self, out, tangent):
+        """Perform operation."""
+        arg0, arg1 = self.args
+        # Set output layout
+        out.preset_layout(arg0.layout)
+        # Broadcast
+        arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
+        arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
+        # Reshape arg data to broadcast properly for output tensorsig
+        arg0_exp_data = arg0_data.reshape(self.arg0_exp_tshape + arg0_data.shape[len(arg0.tensorsig):])
+        arg1_exp_data = arg1_data.reshape(self.arg1_exp_tshape + arg1_data.shape[len(arg1.tensorsig):])
+        np.multiply(arg0_exp_data, arg1_exp_data, out=out.data)
+        if tangent:
+            tan0, tan1 = self.arg_tangents
+            tangent.preset_layout(tan0.layout)
+            # Broadcast
+            tan0_data = self.arg0_ghost_broadcaster.cast(tan0)
+            tan1_data = self.arg1_ghost_broadcaster.cast(tan1)
+            # Reshape arg data to broadcast properly for output tensorsig
+            tan0_exp_data = tan0_data.reshape(self.arg0_exp_tshape + tan0_data.shape[len(tan0.tensorsig):])
+            tan1_exp_data = tan1_data.reshape(self.arg1_exp_tshape + tan1_data.shape[len(tan1.tensorsig):])
+            np.multiply(tan0_exp_data, arg1_exp_data, out=tangent.data)
+            np.add(tangent.data, np.multiply(arg0_exp_data, tan1_exp_data), out=tangent.data) # TEMPORARY
+
+    def operate_vjp(self, cotangents):
+        arg_tangents = []
+        for orig_arg, arg in zip(self.original_args, self.args):
+            if isinstance(orig_arg, Future):
+                orig_arg.tangent.change_layout(arg.layout)
+                arg_tangents.append(orig_arg.tangent)
+            else:
+                if arg not in cotangents:
+                    tangent = arg.copy()
+                    tangent.data.fill(0)
+                    cotangents[arg] = tangent
+                arg_tangents.append(cotangents[arg])
+        arg0, arg1 = self.args
+        tan0, tan1 = arg_tangents
+        # Add adjoint contribution in-place
+        np.add(np.multiply(self.tangent.data, arg1.data), tan0.data, out=tan0.data)
+        np.add(np.multiply(self.tangent.data, arg0.data), tan1.data, out=tan1.data)
+
 
 class GhostBroadcaster:
     """Copy field data over constant distributed dimensions for arithmetic broadcasting."""
@@ -940,10 +1011,38 @@ class MultiplyNumberField(Multiply, FutureField):
     def operate(self, out):
         """Perform operation."""
         arg0, arg1 = self.args
-        # Set output layout
         out.preset_layout(arg1.layout)
-        # Multiply argument data
         np.multiply(arg0, arg1.data, out=out.data)
+
+    def operate_jvp(self, out, tangent):
+        """Perform operation."""
+        arg0, arg1 = self.args
+        out.preset_layout(arg1.layout)
+        np.multiply(arg0, arg1.data, out=out.data)
+        # Compute tangent
+        if tangent:
+            tan0, tan1 = self.arg_tangents
+            tangent.preset_layout(tan1.layout)
+            np.multiply(arg0, tan1.data, out=tangent.data)
+
+    def operate_vjp(self, cotangents):
+        arg_tangents = []
+        for orig_arg, arg in zip(self.original_args, self.args):
+            if isinstance(orig_arg, Future):
+                orig_arg.tangent.change_layout(arg.layout)
+                arg_tangents.append(orig_arg.tangent)
+            elif isinstance(orig_arg, Field):
+                if arg not in cotangents:
+                    tangent = arg.copy() # TODO: should be adjoint field
+                    tangent.data.fill(0)
+                    cotangents[arg] = tangent
+                arg_tangents.append(cotangents[arg])
+            else:
+                arg_tangents.append(None)
+        arg0, arg1 = self.args
+        tan0, tan1 = arg_tangents
+        # Add adjoint contribution in-place
+        np.add(np.multiply(arg0, self.tangent.data), tan1.data, out=tan1.data)
 
     def matrix_dependence(self, *vars):
         return self.args[1].matrix_dependence(*vars)

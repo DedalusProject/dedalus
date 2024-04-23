@@ -41,7 +41,7 @@ class Future(Operand):
 
     store_last = STORE_LAST_DEFAULT
 
-    def __init__(self, *args, out=None):
+    def __init__(self, *args, out=None, tangent=None):
         # # Check output consistency
         # if out is not None:
         #     if out.bases != self.bases:
@@ -50,6 +50,7 @@ class Future(Operand):
         self.args = list(args)
         self.original_args = tuple(args)
         self.out = out
+        self.tangent = tangent
         self.dist = unify_attributes(args, 'dist', require=False)
         #self.domain = Domain(self.dist, self.bases)
         self._grid_layout = self.dist.grid_layout
@@ -95,6 +96,11 @@ class Future(Operand):
     def reset(self):
         """Restore original arguments."""
         self.args = list(self.original_args)
+
+    def reset_jvp(self):
+        """Restore original arguments."""
+        self.args = list(self.original_args)
+        self.arg_tangents = [None] * len(self.args)
 
     def atoms(self, *types):
         """Gather all leaf-operands of specified types."""
@@ -146,7 +152,7 @@ class Future(Operand):
         for arg in self.args:
             arg.gather_ncc_coeffs()
 
-    def evaluate(self, id=None, force=True):
+    def evaluate(self, id=None, force=True, tape=None, clean_tangent=False):
         """Recursively evaluate operation."""
 
         # Check storage
@@ -165,7 +171,7 @@ class Future(Operand):
             if isinstance(a, Field):
                 a.change_scales(a.domain.dealias)
             if isinstance(a, Future):
-                a_eval = a.evaluate(id=id, force=force)
+                a_eval = a.evaluate(id=id, force=force, tape=tape)
                 # If evaluation succeeds, substitute result
                 if a_eval is not None:
                     self.args[i] = a_eval
@@ -195,6 +201,10 @@ class Future(Operand):
         # Perform operation
         self.operate(out)
 
+        # Add to tape
+        if tape is not None:
+            tape.append(self)
+
         # Reset to free temporary field arguments
         self.reset()
 
@@ -203,7 +213,117 @@ class Future(Operand):
             self.last_id = id
             self.last_out = out
 
+        if clean_tangent:
+            self.tangent.data.fill(0)
+
         return out
+
+    def evaluate_jvp(self, tangents, id=None, force=True):
+        """Recursively evaluate operation."""
+
+        # Check storage
+        if self.store_last and (id is not None):
+            if id == self.last_id:
+                return self.last_out, self.last_tangent
+            else:
+                # Clear cache to free output field
+                self.last_id = None
+                self.last_out = None
+                self.last_tangent = NotImplementedError
+
+        # Recursively attempt evaluation of all operator arguments
+        # Track evaluation success with flag
+        self.arg_tangents = [None] * len(self.args)
+        all_eval = True
+        for i, a in enumerate(self.args):
+            if isinstance(a, Field):
+                a.change_scales(a.domain.dealias)
+                if a in tangents:
+                    tangents[a].change_scales(tangents[a].domain.dealias)
+                    self.arg_tangents[i] = tangents[a]
+            if isinstance(a, Future):
+                a_eval = a.evaluate_jvp(tangents, id=id, force=force)
+                # If evaluation succeeds, substitute result
+                if a_eval is not None:
+                    self.args[i] = a_eval[0]
+                    self.arg_tangents[i] = a_eval[1]
+                # Otherwise change flag
+                else:
+                    all_eval = False
+        # Return None if any arguments are not evaluable
+        if not all_eval:
+            return None
+
+        # Check conditions unless forcing evaluation
+        if force:
+            self.enforce_conditions()
+            # Match tangent layouts to arguments
+            for i in range(len(self.args)):
+                if self.arg_tangents[i] is not None:
+                    self.arg_tangents[i].change_layout(self.args[i].layout)
+        else:
+            # Return None if operator conditions are not satisfied
+            if not self.check_conditions():
+                return None
+
+        # Allocate output field if necessary
+        out = self.get_out()
+        if any(self.arg_tangents):
+            tangent = self.get_tangent()
+        else:
+            tangent = None
+
+        # Copy metadata
+        out.preset_scales(self.domain.dealias)
+        if tangent:
+            tangent.preset_scales(self.domain.dealias)
+
+        # Perform operation
+        self.operate_jvp(out, tangent)
+
+        # Reset to free temporary field arguments
+        self.reset_jvp()
+
+        # Update storage
+        if self.store_last and (id is not None):
+            self.last_id = id
+            self.last_out = out
+            self.last_tangent = tangent
+
+        return out, tangent
+
+    def evaluate_vjp(self, tangent, id=None, force=True):
+        """Recursively evaluate operation."""
+
+        # Force store_last
+        # TODO: enforce recursively
+        self.store_last = True
+
+        # Forward evaluate and save topological sorting
+        tape = []
+        out = self.evaluate(id=id, force=force, tape=tape)
+
+        # Clean tangents
+        for op in tape:
+            op.tangent.data.fill(0)
+
+        # Copy input tangent
+        self.tangent.preset_layout(tangent.layout)
+        self.tangent.data[:] = tangent.data
+
+        # Reverse topological sorting and evaluate adjoint
+        cotangents = {}
+        for op in tape[::-1]:
+            # Replace arguments with operator outputs
+            for i in range(len(op.args)):
+                if isinstance(op.args[i], Future):
+                    op.args[i] = op.args[i].out
+            # Enforce conditions
+            op.enforce_conditions()
+            # Evaluate adoint
+            op.operate_vjp(cotangents)
+
+        return out, cotangents
 
     def get_out(self):
         if self.out:
@@ -213,6 +333,15 @@ class Future(Operand):
             if STORE_OUTPUTS:
                 self.out = out
             return out
+
+    def get_tangent(self):
+        if self.tangent:
+            return self.tangent
+        else:
+            tangent = self.build_out()
+            if STORE_OUTPUTS:
+                self.tangent = tangent
+            return tangent
 
     def build_out(self):
         bases = self.domain.bases
@@ -230,29 +359,25 @@ class Future(Operand):
         # This method must be implemented in derived classes and should return
         # a boolean indicating whether the operation can be computed without
         # changing the layout of any of the field arguments.
-        raise NotImplementedError()
+        raise NotImplementedError(f"check_conditions not implemented for {type(self)}")
 
     def enforce_conditions(self):
         """Require arguments to be in a proper layout."""
-        raise NotImplementedError()
+        raise NotImplementedError(f"enforce_conditions not implemented for {type(self)}")
 
     def operate(self, out):
         """Perform operation."""
         # This method must be implemented in derived classes, take an output
         # field as its only argument, and evaluate the operation into this
         # field without modifying the data of the arguments.
-        raise NotImplementedError()
+        raise NotImplementedError(f"operate not implemented for {type(self)}")
 
-    # def order(self, *ops):
-    #     order = max(arg.order(*ops) for arg in self.args)
-    #     if type(self) in ops:
-    #         order += 1
-    #     return order
+    def operate_jvp(self, out, tangent):
+        """Perform operation."""
+        raise NotImplementedError(f"operate_jvp not implemented for {type(self)}")
 
-
-
-
-
+    def operate_vjp(self, cotangents):
+        raise NotImplementedError(f"operate_vjp not implemented for {type(self)}")
 
 
 class FutureField(Future):

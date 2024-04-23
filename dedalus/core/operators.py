@@ -379,10 +379,21 @@ class PowerFieldConstant(Power, FutureField):
 
     def operate(self, out):
         arg0, arg1 = self.args
-        # Multiply in grid layout
         out.preset_layout(arg0.layout)
         if out.data.size:
             np.power(arg0.data, arg1, out.data)
+
+    def operate_jvp(self, out, tangent):
+        arg0, arg1 = self.args
+        out.preset_layout(arg0.layout)
+        if out.data.size:
+            np.power(arg0.data, arg1, out=out.data)
+            if tangent:
+                tan0, tan1 = self.arg_tangents
+                tangent.preset_layout(tan0.layout)
+                np.power(arg0.data, arg1-1, out=tangent.data)
+                np.multiply(tangent.data, arg1, out=tangent.data)
+                np.multiply(tangent.data, tan0.data, out=tangent.data)
 
     def new_operands(self, arg0, arg1, **kw):
         return Power(arg0, arg1)
