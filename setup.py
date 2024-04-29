@@ -82,19 +82,6 @@ def get_lib(name):
     if prefix := get_library_prefix(name):
         return os.path.join(prefix, "lib")
 
-def get_version(rel_path):
-    """Read version from a file via text parsing, following PyPA guide."""
-    def read(rel_path):
-        here = os.path.abspath(os.path.dirname(__file__))
-        with codecs.open(os.path.join(here, rel_path), "r") as fp:
-            return fp.read()
-    for line in read(rel_path).splitlines():
-        if line.startswith("__version__"):
-            delim = '"' if '"' in line else "'"
-            return line.split(delim)[1]
-    else:
-        raise RuntimeError("Unable to find version string.")
-
 # Configuratin
 INCLUDE_MPI = True
 INCLUDE_FFTW = True
@@ -179,26 +166,6 @@ for name in pyx_modules:
             extra_compile_args=extra_compile_args,
             extra_link_args=extra_link_args))
 
-# Runtime requirements
-install_requires = [
-    "docopt",
-    "h5py >= 3.0.0",
-    "matplotlib",
-    "mpi4py >= 2.0.0",
-    "numexpr",
-    "numpy >= 1.20.0",
-    "py",
-    "pytest",
-    "pytest-benchmark",
-    "pytest-cov",
-    "pytest-parallel",
-    "scipy >= 1.4.0",
-    "xarray"]
-
-# Grab long_description from README
-with open("README.md") as f:
-    long_description = f.read()
-
 # Cython directives
 compiler_directives = {}
 compiler_directives["language_level"] = 3
@@ -217,24 +184,38 @@ class build(_build):
         # Run the original build command
         _build.run(self)
 
+# Set version
+if os.path.exists(".git"):
+    # If on a git repository, we can
+    # get the version from the commit sha
+    kwargs = {
+        "use_scm_version": {
+            "write_to": "dedalus/version.py",
+        },
+        "setup_requires": ["setuptools", "setuptools_scm"],
+    }
+else:
+    # As a backup, we read from the pyproject.toml
+    import re
+
+    with open(os.path.join(os.path.dirname(__file__), "pyproject.toml")) as f:
+        data = f.read()
+        version = re.search(r'version = "(.*)"', data).group(1)
+        # TODO: When limited to Python 3.11, can use tomllib from the standard library
+
+    # Write the version to version.py
+    with open(os.path.join(os.path.dirname(__file__), "dedalus", "version.py"), "w") as f:
+        f.write(f'__version__ = "{version}"')
+
+    kwargs = {
+        "use_scm_version": False,
+        "version": version,
+    }
+
+
 # Setup
 print()
 setup(
-    name="dedalus",
-    version=get_version("dedalus/__init__.py"),
-    author="Keaton J. Burns",
-    author_email="keaton.burns@gmail.com",
-    description="A flexible framework for solving PDEs with modern spectral methods.",
-    long_description=long_description,
-    long_description_content_type="text/markdown",
-    url="http://dedalus-project.org",
-    classifiers=["Programming Language :: Python :: 3"],
-    python_requires=">=3.9",
-    install_requires=install_requires,
-    license="GPL3",
-    packages=setuptools.find_packages(),
-    package_data={"": ["dedalus.cfg", "examples.tar.gz"]},
     ext_modules=cythonize(extensions, compiler_directives=compiler_directives),
-    cmdclass={"build": build},
-    entry_points={"xarray.backends": ["dedalus=dedalus.tools.post:DedalusXarrayBackend"]})
+    cmdclass={"build": build})
 
