@@ -242,21 +242,22 @@ class AddFields(Add, FutureField):
             np.add(tan0.data, tan1.data, out=tangent.data)
 
     def operate_vjp(self, cotangents):
-        arg_tangents = []
+        arg_cotangents = []
         for orig_arg, arg in zip(self.original_args, self.args):
             if isinstance(orig_arg, Future):
-                orig_arg.tangent.change_layout(arg.layout)
-                arg_tangents.append(orig_arg.tangent)
+                orig_arg.cotangent.change_layout(arg.layout)
+                arg_cotangents.append(orig_arg.cotangent)
             else:
                 if arg not in cotangents:
-                    tangent = arg.copy()
-                    tangent.data.fill(0)
-                    cotangents[arg] = tangent
-                arg_tangents.append(cotangents[arg])
-        tan0, tan1 = arg_tangents
+                    cotangent = arg.copy()
+                    cotangent.adjoint = True
+                    cotangent.data.fill(0)
+                    cotangents[arg] = cotangent
+                arg_cotangents.append(cotangents[arg])
+        cotan0, cotan1 = arg_cotangents
         # Add adjoint contribution in-place
-        np.add(self.tangent.data, tan0.data, out=tan0.data)
-        np.add(self.tangent.data, tan1.data, out=tan1.data)
+        np.add(self.cotangent.data, cotan0.data, out=cotan0.data)
+        np.add(self.cotangent.data, cotan1.data, out=cotan1.data)
 
 
 # used for einsum string manipulation
@@ -919,22 +920,23 @@ class MultiplyFields(Multiply, FutureField):
             np.add(tangent.data, np.multiply(arg0_exp_data, tan1_exp_data), out=tangent.data) # TEMPORARY
 
     def operate_vjp(self, cotangents):
-        arg_tangents = []
+        arg_cotangents = []
         for orig_arg, arg in zip(self.original_args, self.args):
             if isinstance(orig_arg, Future):
-                orig_arg.tangent.change_layout(arg.layout)
-                arg_tangents.append(orig_arg.tangent)
+                orig_arg.cotangent.change_layout(arg.layout)
+                arg_cotangents.append(orig_arg.cotangent)
             else:
                 if arg not in cotangents:
-                    tangent = arg.copy()
-                    tangent.data.fill(0)
-                    cotangents[arg] = tangent
-                arg_tangents.append(cotangents[arg])
+                    cotangent = arg.copy()
+                    cotangent.adjoint = True
+                    cotangent.data.fill(0)
+                    cotangents[arg] = cotangent
+                arg_cotangents.append(cotangents[arg])
         arg0, arg1 = self.args
-        tan0, tan1 = arg_tangents
+        cotan0, cotan1 = arg_cotangents
         # Add adjoint contribution in-place
-        np.add(np.multiply(self.tangent.data, arg1.data), tan0.data, out=tan0.data)
-        np.add(np.multiply(self.tangent.data, arg0.data), tan1.data, out=tan1.data)
+        np.add(np.multiply(self.cotangent.data, arg1.data), cotan0.data, out=cotan0.data)
+        np.add(np.multiply(self.cotangent.data, arg0.data), cotan1.data, out=cotan1.data)
 
 
 class GhostBroadcaster:
@@ -1026,23 +1028,20 @@ class MultiplyNumberField(Multiply, FutureField):
             np.multiply(arg0, tan1.data, out=tangent.data)
 
     def operate_vjp(self, cotangents):
-        arg_tangents = []
-        for orig_arg, arg in zip(self.original_args, self.args):
-            if isinstance(orig_arg, Future):
-                orig_arg.tangent.change_layout(arg.layout)
-                arg_tangents.append(orig_arg.tangent)
-            elif isinstance(orig_arg, Field):
-                if arg not in cotangents:
-                    tangent = arg.copy() # TODO: should be adjoint field
-                    tangent.data.fill(0)
-                    cotangents[arg] = tangent
-                arg_tangents.append(cotangents[arg])
-            else:
-                arg_tangents.append(None)
         arg0, arg1 = self.args
-        tan0, tan1 = arg_tangents
+        if isinstance(arg1, Future):
+            arg1.cotangent.change_layout(arg1.layout)
+            cotan1 = arg1.cotangent
+        elif isinstance(arg1, Field):
+            if arg1 not in cotangents:
+                cotan1 = arg1.copy()
+                cotan1.adjoint = True
+                cotan1.data.fill(0)
+                cotangents[arg1] = cotan1
+            else:
+                cotan1 = cotangents[arg1]
         # Add adjoint contribution in-place
-        np.add(np.multiply(arg0, self.tangent.data), tan1.data, out=tan1.data)
+        np.add(np.multiply(arg0, self.cotangent.data), cotan1.data, out=cotan1.data)
 
     def matrix_dependence(self, *vars):
         return self.args[1].matrix_dependence(*vars)

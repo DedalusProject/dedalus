@@ -41,7 +41,7 @@ class Future(Operand):
 
     store_last = STORE_LAST_DEFAULT
 
-    def __init__(self, *args, out=None, tangent=None):
+    def __init__(self, *args, out=None, tangent=None, cotangent=None):
         # # Check output consistency
         # if out is not None:
         #     if out.bases != self.bases:
@@ -51,6 +51,7 @@ class Future(Operand):
         self.original_args = tuple(args)
         self.out = out
         self.tangent = tangent
+        self.cotangent = cotangent
         self.dist = unify_attributes(args, 'dist', require=False)
         #self.domain = Domain(self.dist, self.bases)
         self._grid_layout = self.dist.grid_layout
@@ -292,24 +293,27 @@ class Future(Operand):
 
         return out, tangent
 
-    def evaluate_vjp(self, tangent, id=None, force=True):
+    def evaluate_vjp(self, cotangent, id=None, force=True):
         """Recursively evaluate operation."""
 
         # Force store_last
         # TODO: enforce recursively
         self.store_last = True
+        if id is None:
+            raise ValueError("id must be specified for vjp evaluation.")
 
         # Forward evaluate and save topological sorting
         tape = []
         out = self.evaluate(id=id, force=force, tape=tape)
 
-        # Clean tangents
+        # Clean cotangents
         for op in tape:
-            op.tangent.data.fill(0)
+            op.get_cotangent()
+            op.cotangent.data.fill(0)
 
         # Copy input tangent
-        self.tangent.preset_layout(tangent.layout)
-        self.tangent.data[:] = tangent.data
+        self.cotangent.preset_layout(cotangent.layout)
+        self.cotangent.data[:] = cotangent.data
 
         # Reverse topological sorting and evaluate adjoint
         cotangents = {}
@@ -322,6 +326,8 @@ class Future(Operand):
             op.enforce_conditions()
             # Evaluate adoint
             op.operate_vjp(cotangents)
+            # Reset arguments
+            op.reset()
 
         return out, cotangents
 
@@ -342,6 +348,16 @@ class Future(Operand):
             if STORE_OUTPUTS:
                 self.tangent = tangent
             return tangent
+
+    def get_cotangent(self):
+        if self.cotangent:
+            return self.cotangent
+        else:
+            cotangent = self.build_out()
+            cotangent.adjoint = True
+            if STORE_OUTPUTS:
+                self.cotangent = cotangent
+            return cotangent
 
     def build_out(self):
         bases = self.domain.bases
