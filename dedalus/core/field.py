@@ -704,16 +704,16 @@ class Field(Current):
     # def mode_mask(self):
     #     return reduce()
 
-    def load_from_hdf5(self, file, index, task=None):
+    def load_from_hdf5(self, file, index, task=None, func=None):
         """Load grid data from an hdf5 file. Task corresponds to field name by default."""
         if task is None:
             task = self.name
         dset = file['tasks'][task]
         if not np.all(dset.attrs['grid_space']):
             raise ValueError("Can only load data from grid space")
-        self.load_from_global_grid_data(dset, pre_slices=(index,))
+        self.load_from_global_grid_data(dset, pre_slices=(index,), func=func)
 
-    def load_from_global_grid_data(self, global_data, pre_slices=tuple()):
+    def load_from_global_grid_data(self, global_data, pre_slices=tuple(), func=None):
         """Load local grid data from array-like global grid data."""
         dim = self.dist.dim
         layout = self.dist.grid_layout
@@ -724,7 +724,10 @@ class Field(Current):
         component_slices = tuple(slice(None) for cs in self.tensorsig)
         spatial_slices = layout.slices(self.domain, scales)
         local_slices = pre_slices + component_slices + spatial_slices
-        self[layout] = global_data[local_slices]
+        if func is None:
+            self[layout] = global_data[local_slices]
+        else:
+            self[layout] = func(global_data[local_slices])
         # Change scales back to dealias scales
         self.change_scales(self.domain.dealias)
 
