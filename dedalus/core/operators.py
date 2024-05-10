@@ -55,7 +55,8 @@ __all__ = ['GeneralFunction',
            'AdvectiveCFL',
            'SphericalEllProduct',
            'UnaryGridFunction',
-           'MulCosine']
+           'MulCosine',
+           'GridNorm']
 
 # Use simple decorators to track parseable operators
 aliases = {}
@@ -499,6 +500,49 @@ class GeneralFunction(NonlinearOperator, FutureField):
     def operate(self, out):
         out.preset_layout(self.layout)
         np.copyto(out.data, self.func(*self.args, **self.kw))
+
+
+class GridNorm(NonlinearOperator, FutureField):
+    """
+    Discrete l_p norms of the data on the grid.
+    These generally differ from L_p function norms.
+    """
+
+    def __init__(self, arg, order, **kw):
+        #arg = Operand.cast(arg)
+        super().__init__(arg, **kw)
+        self.order = order
+        if arg.tensorsig:
+            raise ValueError("GridNorm not defined for non-scalar fields.")
+        # FutureField requirements
+        self.domain = Domain(arg.domain.dist, [])
+        self.tensorsig = arg.tensorsig
+        self.dtype = arg.dtype
+
+    @property
+    def name(self):
+        return "Norm"
+
+    def new_operands(self, arg):
+        return GridNorm(arg, self.order)
+
+    def reinitialize(self, **kw):
+        arg = self.args[0].reinitialize(**kw)
+        return self.new_operands(arg)
+
+    def check_conditions(self):
+        # Field must be in grid layout
+        return (self.args[0].layout is self._grid_layout)
+
+    def enforce_conditions(self):
+        self.args[0].require_grid_space()
+
+    def operate(self, out):
+        # References
+        arg0, = self.args
+        # Evaluate in grid layout
+        out.preset_layout(self._grid_layout)
+        out.data[:] = arg0.allreduce_data_norm(order=self.order)
 
 
 class UnaryGridFunction(NonlinearOperator, FutureField):
