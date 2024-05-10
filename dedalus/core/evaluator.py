@@ -447,7 +447,7 @@ class H5FileHandlerBase(Handler):
         # Create output folder
         with Sync(comm):
             if comm.rank == 0:
-                base_path.mkdir(exist_ok=True)
+                base_path.mkdir(exist_ok=True, parents=True)
 
     def add_task(self, *args, **kw):
         super().add_task(*args, **kw)
