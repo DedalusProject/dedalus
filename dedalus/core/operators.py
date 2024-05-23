@@ -394,6 +394,29 @@ class PowerFieldConstant(Power, FutureField):
                 np.power(arg0.data, arg1-1, out=tangent.data)
                 np.multiply(tangent.data, arg1, out=tangent.data)
                 np.multiply(tangent.data, tan0.data, out=tangent.data)
+    
+    def operate_vjp(self, cotangents):
+        arg_cotangents = []
+        # Only arg0 is a field
+        for orig_arg, arg in zip(self.original_args[:1], self.args[:1]):
+            if isinstance(orig_arg, Future):
+                orig_arg.cotangent.change_layout(arg.layout)
+                arg_cotangents.append(orig_arg.cotangent)
+            else:
+                if arg not in cotangents:
+                    cotangent = arg.copy()
+                    cotangent.adjoint = True
+                    cotangent.data.fill(0)
+                    cotangents[arg] = cotangent
+                arg_cotangents.append(cotangents[arg])
+
+        cotan = arg_cotangents[0]
+        cotan_data_copy = cotan.data.copy()
+        arg0, arg1 = self.args
+        if cotan.data.size:
+            np.power(arg0.data,arg1-1,out=cotan_data_copy)
+            np.multiply(cotan_data_copy,arg1,out=cotan_data_copy)
+            np.multiply(cotan_data_copy,self.cotangent.data,out=cotan.data)
 
     def new_operands(self, arg0, arg1, **kw):
         return Power(arg0, arg1)
@@ -1005,19 +1028,44 @@ class SpectralOperator1D(SpectralOperator):
         else:
             out.data.fill(0)
 
-    def operate_adjoint(self, input, out):
-        """Perform adjoint operation."""
-        arg = input
-        layout = arg.layout
-        # Set output layout
-        out.preset_layout(layout)
-        # Apply matrix
-        if arg.data.size and out.data.size:
-            data_axis = self.last_axis + len(arg.tensorsig)
-            apply_matrix(np.conj(self.subspace_matrix(layout)).T, arg.data, data_axis, out=out.data)
-        else:
-            out.data.fill(0)
+    def operate_jvp(self, out, tangent):
+        # Linear operator
+        self.operate(out)
 
+        tan = self.arg_tangents[0]
+        layout = tan.layout
+        # Set output layout
+        tangent.preset_layout(layout)
+        # Apply matrix
+        if tan.data.size and tangent.data.size:
+            data_axis = self.last_axis + len(tan.tensorsig)
+            apply_matrix(self.subspace_matrix(layout), tan.data, data_axis, out=tangent.data)
+        else:
+            tangent.data.fill(0)
+    
+    def operate_vjp(self, cotangents):
+        orig_arg = self.original_args[0]
+        arg = self.args[0]
+        if isinstance(orig_arg, Future):
+            orig_arg.cotangent.change_layout(arg.layout)
+            cotan = orig_arg.cotangent
+        else:
+            if arg not in cotangents:
+                cotangent = arg.copy()
+                cotangent.adjoint = True
+                cotangent.data.fill(0)
+                cotangents[arg] = cotangent
+            cotan = cotangents[arg]
+
+        # Apply matrix
+        if cotan.data.size and cotan.data.size:
+            # Can't apply inplace
+            tmpcotan_data = cotan.data.copy()
+            data_axis = self.last_axis + len(cotan.tensorsig)
+            apply_matrix((self.subspace_matrix(self.args[0].layout).T).tocsr(), self.cotangent.data, data_axis, out=tmpcotan_data)
+            np.copyto(cotan.data,tmpcotan_data)
+        else:
+            cotan.data.fill(0)
 
 @alias('dt')
 class TimeDerivative(LinearOperator):
