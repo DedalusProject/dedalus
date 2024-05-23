@@ -178,7 +178,7 @@ def apply_sparse_dot(matrix, array, axis, out=None):
 def apply_sparse(matrix, array, axis, out=None, check_shapes=False, num_threads=1):
     """
     Apply sparse matrix along any axis of an array.
-    Must be out of place if ouptut is specified.
+    Must be out of place if output is specified.
     """
     # Check matrix
     if not isinstance(matrix, sparse.csr_matrix):
