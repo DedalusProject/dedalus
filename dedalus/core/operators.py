@@ -376,6 +376,7 @@ class PowerFieldConstant(Power, FutureField):
         #     arg0.require_grid_space(axis=axis)
         # arg1.change_layout(arg0.layout)
         arg0.require_grid_space()
+        return self.dist.grid_layout
 
     def operate(self, out):
         arg0, arg1 = self.args
@@ -394,29 +395,26 @@ class PowerFieldConstant(Power, FutureField):
                 np.power(arg0.data, arg1-1, out=tangent.data)
                 np.multiply(tangent.data, arg1, out=tangent.data)
                 np.multiply(tangent.data, tan0.data, out=tangent.data)
-    
-    def operate_vjp(self, cotangents):
-        arg_cotangents = []
-        # Only arg0 is a field
-        for orig_arg, arg in zip(self.original_args[:1], self.args[:1]):
-            if isinstance(orig_arg, Future):
-                orig_arg.cotangent.change_layout(arg.layout)
-                arg_cotangents.append(orig_arg.cotangent)
-            else:
-                if arg not in cotangents:
-                    cotangent = arg.copy()
-                    cotangent.adjoint = True
-                    cotangent.data.fill(0)
-                    cotangents[arg] = cotangent
-                arg_cotangents.append(cotangents[arg])
 
-        cotan = arg_cotangents[0]
-        cotan_data_copy = cotan.data.copy()
+    def operate_vjp(self, layout, cotangents):
         arg0, arg1 = self.args
-        if cotan.data.size:
-            np.power(arg0.data,arg1-1,out=cotan_data_copy)
-            np.multiply(cotan_data_copy,arg1,out=cotan_data_copy)
-            np.multiply(cotan_data_copy,self.cotangent.data,out=cotan.data)
+        if isinstance(arg0, Future):
+            arg0.cotangent.change_layout(layout)
+            cotan0 = arg0.cotangent
+        elif isinstance(arg0, Field):
+            if arg0 not in cotangents:
+                cotan0 = arg0.copy()
+                cotan0.adjoint = True
+                cotan0.data.fill(0)
+                cotangents[arg0] = cotan0
+            else:
+                cotan0 = cotangents[arg0]
+        # Add adjoint contribution in-place (required for accumulation)
+        self.cotangent.change_layout(layout)
+        if self.cotangent.data.size:
+            # TODO: optimize with axpy
+            temp = arg1 * arg0.data ** (arg1-1) * self.cotangent.data
+            np.add(cotan0.data, temp, out=cotan0.data)
 
     def new_operands(self, arg0, arg1, **kw):
         return Power(arg0, arg1)
@@ -1042,30 +1040,30 @@ class SpectralOperator1D(SpectralOperator):
             apply_matrix(self.subspace_matrix(layout), tan.data, data_axis, out=tangent.data)
         else:
             tangent.data.fill(0)
-    
-    def operate_vjp(self, cotangents):
-        orig_arg = self.original_args[0]
-        arg = self.args[0]
-        if isinstance(orig_arg, Future):
-            orig_arg.cotangent.change_layout(arg.layout)
-            cotan = orig_arg.cotangent
-        else:
-            if arg not in cotangents:
-                cotangent = arg.copy()
-                cotangent.adjoint = True
-                cotangent.data.fill(0)
-                cotangents[arg] = cotangent
-            cotan = cotangents[arg]
 
-        # Apply matrix
-        if cotan.data.size and cotan.data.size:
-            # Can't apply inplace
-            tmpcotan_data = cotan.data.copy()
-            data_axis = self.last_axis + len(cotan.tensorsig)
-            apply_matrix((self.subspace_matrix(self.args[0].layout).T).tocsr(), self.cotangent.data, data_axis, out=tmpcotan_data)
-            np.copyto(cotan.data,tmpcotan_data)
+    def operate_vjp(self, layout, cotangents):
+        # TODO: fix this hack, which avoids return layouts from all enforce_conditions methods
+        if layout is None:
+            layout = self.args[0].layout
+        orig_arg0 = self.original_args[0]
+        arg0 = self.args[0]
+        if isinstance(orig_arg0, Future):
+            orig_arg0.cotangent.change_layout(layout)
+            cotan0 = orig_arg0.cotangent
         else:
-            cotan.data.fill(0)
+            if arg0 not in cotangents:
+                cotan0 = arg0.copy()
+                cotan0.adjoint = True
+                cotan0.data.fill(0)
+                cotangents[arg0] = cotan0
+            cotan0 = cotangents[arg0]
+        self.cotangent.change_layout(layout)
+        # Apply matrix
+        if self.cotangent.data.size and cotan0.data.size:
+            # Can't apply inplace
+            data_axis = self.last_axis + len(arg0.tensorsig)
+            temp = apply_matrix((self.subspace_matrix(layout).T).tocsr(), self.cotangent.data, data_axis)
+            np.add(cotan0.data, temp, out=cotan0.data)
 
 @alias('dt')
 class TimeDerivative(LinearOperator):

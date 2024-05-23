@@ -218,6 +218,7 @@ class AddFields(Add, FutureField):
         # Require layout for all args
         for arg in self.args:
             arg.change_layout(layout)
+        return layout
 
     def choose_layout(self):
         """Determine best target layout."""
@@ -241,11 +242,11 @@ class AddFields(Add, FutureField):
             tangent.preset_layout(tan0.layout)
             np.add(tan0.data, tan1.data, out=tangent.data)
 
-    def operate_vjp(self, cotangents):
+    def operate_vjp(self, layout, cotangents):
         arg_cotangents = []
         for orig_arg, arg in zip(self.original_args, self.args):
             if isinstance(orig_arg, Future):
-                orig_arg.cotangent.change_layout(arg.layout)
+                orig_arg.cotangent.change_layout(layout)
                 arg_cotangents.append(orig_arg.cotangent)
             else:
                 if arg not in cotangents:
@@ -255,7 +256,8 @@ class AddFields(Add, FutureField):
                     cotangents[arg] = cotangent
                 arg_cotangents.append(cotangents[arg])
         cotan0, cotan1 = arg_cotangents
-        # Add adjoint contribution in-place
+        # Add adjoint contribution in-place (required for accumulation)
+        self.cotangent.change_layout(layout)
         np.add(self.cotangent.data, cotan0.data, out=cotan0.data)
         np.add(self.cotangent.data, cotan1.data, out=cotan1.data)
 
@@ -565,6 +567,7 @@ class Product(Future):
         # Just do full grid space for now
         for arg in self.args:
             arg.require_grid_space()
+        return self.dist.grid_layout
 
     def Gamma(self, A_tensorsig, B_tensorsig, C_tensorsig, A_group, B_group, C_group, axis):
         """
@@ -919,11 +922,11 @@ class MultiplyFields(Multiply, FutureField):
             np.multiply(tan0_exp_data, arg1_exp_data, out=tangent.data)
             np.add(tangent.data, np.multiply(arg0_exp_data, tan1_exp_data), out=tangent.data) # TEMPORARY
 
-    def operate_vjp(self, cotangents):
+    def operate_vjp(self, layout, cotangents):
         arg_cotangents = []
         for orig_arg, arg in zip(self.original_args, self.args):
             if isinstance(orig_arg, Future):
-                orig_arg.cotangent.change_layout(arg.layout)
+                orig_arg.cotangent.change_layout(layout)
                 arg_cotangents.append(orig_arg.cotangent)
             else:
                 if arg not in cotangents:
@@ -934,7 +937,8 @@ class MultiplyFields(Multiply, FutureField):
                 arg_cotangents.append(cotangents[arg])
         arg0, arg1 = self.args
         cotan0, cotan1 = arg_cotangents
-        # Add adjoint contribution in-place
+        self.cotangent.change_layout(layout)
+        # Add adjoint contribution in-place (required for accumulation)
         np.add(np.multiply(self.cotangent.data, arg1.data), cotan0.data, out=cotan0.data)
         np.add(np.multiply(self.cotangent.data, arg0.data), cotan1.data, out=cotan1.data)
 
@@ -1008,7 +1012,7 @@ class MultiplyNumberField(Multiply, FutureField):
     def enforce_conditions(self):
         """Require arguments to be in a proper layout."""
         # Any layout
-        pass
+        return self.args[1].layout
 
     def operate(self, out):
         """Perform operation."""
@@ -1027,10 +1031,10 @@ class MultiplyNumberField(Multiply, FutureField):
             tangent.preset_layout(tan1.layout)
             np.multiply(arg0, tan1.data, out=tangent.data)
 
-    def operate_vjp(self, cotangents):
+    def operate_vjp(self, layout, cotangents):
         arg0, arg1 = self.args
         if isinstance(arg1, Future):
-            arg1.cotangent.change_layout(arg1.layout)
+            arg1.cotangent.change_layout(layout)
             cotan1 = arg1.cotangent
         elif isinstance(arg1, Field):
             if arg1 not in cotangents:
@@ -1040,7 +1044,8 @@ class MultiplyNumberField(Multiply, FutureField):
                 cotangents[arg1] = cotan1
             else:
                 cotan1 = cotangents[arg1]
-        # Add adjoint contribution in-place
+        # Add adjoint contribution in-place (required for accumulation)
+        self.cotangent.change_layout(layout)
         np.add(np.multiply(arg0, self.cotangent.data), cotan1.data, out=cotan1.data)
 
     def matrix_dependence(self, *vars):

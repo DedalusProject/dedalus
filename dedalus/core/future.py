@@ -302,6 +302,12 @@ class Future(Operand):
         if id is None:
             raise ValueError("id must be specified for vjp evaluation.")
 
+        # Check cotangent basis and adjoint status
+        if not cotangent.adjoint:
+            raise ValueError("Cotangent must be an adjoint field.")
+        if cotangent.domain != self.domain:
+            raise ValueError("Cotangent must have same domain as operator.")
+
         # Forward evaluate and save topological sorting
         tape = []
         out = self.evaluate(id=id, force=force, tape=tape)
@@ -322,10 +328,10 @@ class Future(Operand):
             for i in range(len(op.args)):
                 if isinstance(op.args[i], Future):
                     op.args[i] = op.args[i].out
-            # Enforce conditions
-            op.enforce_conditions()
+            # Enforce conditions to get correct arg layouts
+            layout = op.enforce_conditions()
             # Evaluate adoint
-            op.operate_vjp(cotangents)
+            op.operate_vjp(layout, cotangents)
             # Reset arguments
             op.reset()
 
