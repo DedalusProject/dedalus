@@ -1033,10 +1033,11 @@ class MultiplyNumberField(Multiply, FutureField):
 
     def operate_vjp(self, layout, cotangents):
         arg0, arg1 = self.args
-        if isinstance(arg1, Future):
-            arg1.cotangent.change_layout(layout)
-            cotan1 = arg1.cotangent
-        elif isinstance(arg1, Field):
+        orig_arg1 = self.original_args[1]
+        if isinstance(orig_arg1, Future):
+            orig_arg1.cotangent.change_layout(layout)
+            cotan1 = orig_arg1.cotangent
+        else:
             if arg1 not in cotangents:
                 cotan1 = arg1.copy()
                 cotan1.adjoint = True
