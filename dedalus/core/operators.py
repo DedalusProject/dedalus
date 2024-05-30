@@ -636,6 +636,7 @@ class UnaryGridFunction(NonlinearOperator, FutureField):
 
     def enforce_conditions(self):
         self.args[0].require_grid_space()
+        return self.dist.grid_layout
 
     def operate(self, out):
         # References
@@ -644,6 +645,33 @@ class UnaryGridFunction(NonlinearOperator, FutureField):
         out.preset_layout(self._grid_layout)
         self.func(arg0.data, out=out.data)
 
+    def operate_jvp(self, out, tangent):
+        arg0, = self.args
+        out.preset_layout(self._grid_layout)
+        self.func(arg0.data, out=out.data)
+        if tangent:
+            tan0, = self.arg_tangents
+            tangent.preset_layout(self._grid_layout)
+            np.multiply(self.diff_map[self.func](arg0.data),tan0.data,out=tangent.data)
+
+    def operate_vjp(self, layout, cotangents):
+        arg0, = self.args
+        if isinstance(arg0, Future):
+            arg0.cotangent.change_layout(layout)
+            cotan0 = arg0.cotangent
+        elif isinstance(arg0, Field):
+            if arg0 not in cotangents:
+                cotan0 = arg0.copy()
+                cotan0.adjoint = True
+                cotan0.data.fill(0)
+                cotangents[arg0] = cotan0
+            else:
+                cotan0 = cotangents[arg0]
+        # Add adjoint contribution in-place (required for accumulation)
+        self.cotangent.change_layout(layout)
+        temp = self.diff_map[self.func](arg0.data)*self.cotangent.data
+        # TODO: optimize with axpy
+        np.add(cotan0.data, temp, out=cotan0.data)
 
 class LinearOperator(FutureField):
     """
@@ -1062,7 +1090,10 @@ class SpectralOperator1D(SpectralOperator):
         if self.cotangent.data.size and cotan0.data.size:
             # Can't apply inplace
             data_axis = self.last_axis + len(arg0.tensorsig)
-            temp = apply_matrix((self.subspace_matrix(layout).T).tocsr(), self.cotangent.data, data_axis)
+            mat = np.conj(self.subspace_matrix(layout)).T
+            if sparse.isspmatrix(mat):
+                mat = mat.tocsr()
+            temp = apply_matrix(mat, self.cotangent.data, data_axis)
             np.add(cotan0.data, temp, out=cotan0.data)
 
 @alias('dt')
@@ -1707,17 +1738,7 @@ class Convert(SpectralOperator, metaclass=MultiClass):
         else:
             super().operate(out)
 
-    def operate_adjoint(self, input, out):
-        """Perform operation."""
-        arg = input
-        layout = arg.layout
-        # Copy for grid space
-        if layout.grid_space[self.last_axis]:
-            out.preset_layout(layout)
-            np.copyto(out.data, arg.data)
-        # Revert to matrix application for coeff space
-        else:
-            super().operate_adjoint(arg,out)
+    # TODO: jvp and vjp
 
 
 class ConvertSame(Convert):

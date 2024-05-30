@@ -624,6 +624,7 @@ class Field(Current):
         return copy
 
     def copy_adjoint(self):
+        # TODO: Is this function needed?
         copy = self.copy()
         copy.adjoint = True
         return copy
