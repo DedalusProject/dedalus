@@ -1829,8 +1829,11 @@ class CartesianTrace(Trace):
     def subproblem_matrix(self, subproblem):
         dim = self.coordsys.dim
         trace = np.ravel(np.eye(dim))
-        # Assume all components have the same n_size
-        eye = sparse.identity(subproblem.coeff_size(self.domain), self.dtype, format='csr')
+        # Kronecker up identity for remaining tensor components
+        n_eye = prod(cs.dim for cs in self.tensorsig)
+        # Kronecker up identity for coeff size
+        n_eye *= subproblem.coeff_size(self.domain)
+        eye = sparse.identity(n_eye, self.dtype, format='csr')
         matrix = sparse.kron(trace, eye)
         return matrix
 

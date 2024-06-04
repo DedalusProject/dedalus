@@ -151,6 +151,23 @@ def test_trace_explicit(basis, N, dealias, dtype, layout):
 @pytest.mark.parametrize('N', N_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('layout', ['c', 'g'])
+def test_trace_rank3_explicit(basis, N, dealias, dtype, layout):
+    """Test explicit evaluation of trace operator for correctness."""
+    c, d, b, r = basis(N, dealias, dtype)
+    # Random tensor field
+    f = d.TensorField((c,c,c), bases=b)
+    f.fill_random(layout='g')
+    # Evaluate trace
+    f.change_layout(layout)
+    g = d3.trace(f).evaluate()
+    assert np.allclose(g[layout], np.trace(f[layout]))
+
+
+@pytest.mark.parametrize('basis', [build_FF, build_FC, build_CC, build_FFF, build_FFC])
+@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
 def test_trace_implicit(basis, N, dealias, dtype):
     """Test implicit evaluation of trace operator for correctness."""
     c, d, b, r = basis(N, dealias, dtype)
@@ -159,6 +176,29 @@ def test_trace_implicit(basis, N, dealias, dtype):
     f.fill_random(layout='g')
     # Trace LBVP
     u = d.Field(bases=b)
+    I = d.TensorField((c,c))
+    dim = len(r)
+    for i in range(dim):
+        I['g'][i,i] = 1
+    problem = d3.LBVP([u], namespace=locals())
+    problem.add_equation("trace(I*u) = dim*f")
+    solver = problem.build_solver()
+    solver.solve()
+    assert np.allclose(u['c'], f['c'])
+
+
+@pytest.mark.parametrize('basis', [build_FF, build_FC, build_CC, build_FFF, build_FFC])
+@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+def test_trace_rank3_implicit(basis, N, dealias, dtype):
+    """Test implicit evaluation of trace operator for correctness."""
+    c, d, b, r = basis(N, dealias, dtype)
+    # Random scalar field
+    f = d.VectorField(c, bases=b)
+    f.fill_random(layout='g')
+    # Trace LBVP
+    u = d.VectorField(c, bases=b)
     I = d.TensorField((c,c))
     dim = len(r)
     for i in range(dim):
