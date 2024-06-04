@@ -6,7 +6,7 @@ from scipy.linalg import blas
 
 from .system import CoeffSystem
 from ..tools.array import apply_sparse
-
+from .field import Field
 
 # Public interface
 __all__ = ['CNAB1',
@@ -73,8 +73,6 @@ class MultistepIMEX:
         self.solver = solver
         self.RHS = CoeffSystem(solver.subproblems, dtype=solver.dtype)
 
-        self.sensRHS = CoeffSystem(solver.subproblems, dtype=solver.dtype)
-
         # Create deque for storing recent timesteps
         self.dt = deque([0.] * self.steps)
 
@@ -82,18 +80,19 @@ class MultistepIMEX:
         self.MX = MX = deque()
         self.LX = LX = deque()
         self.F = F = deque()
+        # For adjoint timestepping
+        self.Y = Y = deque()
 
-        self.sens = sens = deque()
         for j in range(self.amax):
             MX.append(CoeffSystem(solver.subproblems, dtype=solver.dtype))
         for j in range(self.bmax):
             LX.append(CoeffSystem(solver.subproblems, dtype=solver.dtype))
         for j in range(self.cmax):
             F.append(CoeffSystem(solver.subproblems, dtype=solver.dtype))
-        for j in range(self.cmax):
-            sens.append(CoeffSystem(solver.subproblems, dtype=solver.dtype))
-
+            Y.append(CoeffSystem(solver.subproblems, dtype=solver.dtype))
+        
         # For the adjoint
+        # TODO: How to handle checkpointing?
         self.timestep_history = []
         # Attributes
         self._iteration = 0
@@ -198,39 +197,34 @@ class MultistepIMEX:
 
     def step_adjoint(self, dt, wall_time):
         """Advance adjoint by one timestep."""
-
         # Solver references
         solver = self.solver
         subproblems = solver.subproblems
         evaluator = solver.evaluator
         state_fields = solver.state_adj
-        sens_fields = solver.sens_adj
+        dFdX_adj_fields = solver.dFdX_adj
+        Y_fields = solver.Y_fields
         F_fields = solver.F
         sim_time = solver.sim_time
         iteration = solver.iteration
         STORE_EXPANDED_MATRICES = solver.store_expanded_matrices
-
         # Other references
         MX = self.MX
         LX = self.LX
         F = self.F
-        sens=self.sens
-
+        Y = self.Y
         RHS = self.RHS
-        sensRHS = self.sensRHS
         axpy = self.axpy
-
         self._iteration -= 1
         # dt = self.timestep_history[self._iteration]
-
-        # This part of the code could probably be tidier
+        # TODO: Tidy this brute force approach with deque
         # Compute IMEX coefficients at current iteration and up to steps-1 iterations in the future
         a = []
         b = []
         c = []
         for k in range(self.steps):
             # If the future steps aren't beyond the last iteration
-            if(self._iteration+k < solver.stop_iteration):
+            if self._iteration+k < solver.stop_iteration:
                 # Compute the dt deque at iteration self._iteration+k
                 # Do not fill the deque with entries not present for initial start up iterations
                 # (put zero instead)
@@ -240,49 +234,42 @@ class MultistepIMEX:
                         self.dt[step] = self.timestep_history[self._iteration+k-step]
                     else:
                         self.dt[step] = 0
-
                 # Compute a,b,c at iteration self._iteration+k
                 a_, b_, c_ = self.compute_coefficients(self.dt, self._iteration+k)
                 a.append(a_)
                 b.append(b_)
                 c.append(c_)
-
-        
         # Update RHS components and LHS matrices
-
         MX.rotate()
         LX.rotate()
         F.rotate()
-        sens.rotate()
-
+        Y.rotate()
         MX0 = MX[0]
         LX0 = LX[0]
-        F0 = F[0]
-        sens0 = sens[0]
-
+        F0  = F[0]
+        Y0  = Y[0]
         a0 = a[0][0]
         b0 = b[0][0]
-
         # Check on updating LHS
-        if(solver.iteration==solver.stop_iteration):
-            # Must clear the deque
+        if solver.iteration==solver.stop_iteration:
+            # Must clear the whole deque
             for m in MX:
                 m.data.fill(0)
             for l in LX:
                 l.data.fill(0)
             for f in F:
                 f.data.fill(0)
-
+            for y in Y:
+                y.data.fill(0)
         update_LHS = ((a0, b0) != self._LHS_params) or solver.iteration==solver.stop_iteration
         self._LHS_params = (a0, b0)
-
+        # Clear current deque
         MX0.data.fill(0)
         LX0.data.fill(0)
         F0.data.fill(0)
-
+        Y0.data.fill(0)
         # Solve, form L, M, F terms, then form next RHS
-        # Ensure coeff space before subsystem gathers
-      
+        # Ensure coeff space before subsystem gathers 
         for sp in subproblems:
             if update_LHS:
                 # Remove old solver reference
@@ -295,35 +282,44 @@ class MultistepIMEX:
                 else:
                     sp.LHS = (a0*sp.M_min + b0*sp.L_min)  # CREATES TEMPORARY
                 sp.LHS_solver = solver.matsolver(np.conj(sp.LHS).T.tocsr(), solver)
-
+        # Ensure coeff space before subsystem scatters
+        for field in dFdX_adj_fields:
+            field.preset_layout('c')
         # Ensure coeff space before subsystem gathers
         for field in state_fields:
             field.require_coeff_space()
-     
         for sp in subproblems:
             # Slice out valid subdata, skipping invalid components
-
             spRHS = sp.gather_inputs(state_fields)
-
             spX = sp.LHS_solver.solve(spRHS)  # CREATES TEMPORARY
             # TODO: Do something better for the csr conversion
             apply_sparse(np.conj(sp.M_min).T.tocsr(), spX, axis=0, out=MX0.get_subdata(sp))  # Rectangular dot product skipping shape checks
             apply_sparse(np.conj(sp.L_min).T.tocsr(), spX, axis=0, out=LX0.get_subdata(sp))  # Rectangular dot product skipping shape checks
-
-            sp.scatter_inputs(spX, state_fields) # 1
-
-        # evaluator.evaluate_scheduled(wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
-        if hasattr(solver,'F_adjoint'):
-            evaluator.evaluate_group('F_adjoint', wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
+            sp.scatter_outputs(spX, Y_fields)
+            sp.gather_outputs(Y_fields,out=Y0.get_subdata(sp)) # Save in Y for buidling RHS 
+        # Calculate linearised F for all steps
+        for j in range(len(c)):
             for sp in subproblems:
-                sp.gather_outputs(solver.F_adjoint, out=F0.get_subdata(sp)) 
-        if hasattr(solver,'F_sens'):
-            evaluator.evaluate_group('F_sens', wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)
+                sp.scatter_outputs(Y[j].get_subdata(sp), Y_fields)
+            for f in dFdX_adj_fields:
+                f['c'] = 0 
+            for (y,rhs_term) in zip(Y_fields,self.solver.problem.equations):
+                if isinstance(rhs_term['F'], Field):
+                    # If the field is a variable, add the identity contribution
+                    for (index,variable) in enumerate(self.solver.state):
+                        if variable == rhs_term['F']:
+                            dFdX_adj_fields[index]['c'] += Y_fields[index]['c']
+                else:
+                    # Calculate vjp
+                    g, df_rev = rhs_term['F'].evaluate_vjp(y, id=np.random.randint(0, 1000000))
+                    # Accumulate contributions for each variable
+                    for (index,variable) in enumerate(self.solver.state):
+                        if variable in list(df_rev.keys()):
+                            dFdX_adj_fields[index]['c'] += df_rev[variable]['c']
+            for field in dFdX_adj_fields:
+                field.require_coeff_space()
             for sp in subproblems:
-                sp.gather_outputs(solver.F_sens, out=sens0.get_subdata(sp))
-
-        
-
+                sp.gather_outputs(dFdX_adj_fields,out=F[j].get_subdata(sp))
         if RHS.data.size:
             np.multiply(c[0][1], F0.data, out=RHS.data)
             for j in range(2, len(c) + 1):
@@ -335,26 +331,12 @@ class MultistepIMEX:
             for j in range(1, len(b)+1):
                 # RHS.data -= b[j] * LX[j-1].data
                 axpy(a=-b[j-1][j], x=LX[j-1].data, y=RHS.data)
-        
         for field in state_fields:
             field.preset_layout('c')
         for sp in subproblems:
             sp.scatter_inputs(RHS.get_subdata(sp), state_fields)
-
-        if hasattr(solver,'F_sens'):
-            if sensRHS.data.size:
-                # np.multiply(c[0][1], sens0.data, out=sensRHS.data)
-                for j in range(1, len(c) + 1):
-                    # RHS.data += c[j] * F[j-1].data
-                    axpy(a=c[j-1][j], x=sens[j-1].data, y=sensRHS.data)
-            for field in sens_fields:
-                field.preset_layout('c')
-            for sp in subproblems:
-                sp.scatter_inputs(sensRHS.get_subdata(sp), sens_fields)
-            
         # Update solver
         solver.sim_time -= dt
-
 
 @add_scheme
 class CNAB1(MultistepIMEX):
@@ -915,10 +897,9 @@ class RungeKuttaIMEX:
                 # TODO: Do something better for the csr conversion
                 apply_sparse((np.conj(sp.L_min).T).tocsr(), spX, axis=0, out=LXi.get_subdata(sp))  # Rectangular dot product skipping shape checks                
                 apply_sparse((np.conj(sp.M_min).T).tocsr(), spX, axis=0, out=MXTi.get_subdata(sp))
-                # print(F_fields)
                 # RHS similar but not implemented yet
                 # evaluator.evaluate_group('F_adjoint')
-                sp.scatter_inputs(spX, state_fields) # 1
+                sp.scatter_inputs(spX, state_fields)
 
             # if i == self.stages:
                 # evaluator.evaluate_scheduled(wall_time=wall_time, timestep=dt, sim_time=solver.sim_time, iteration=iteration)

@@ -19,6 +19,7 @@ from ..libraries.matsolvers import matsolvers
 from ..tools.config import config
 from ..tools.array import scipy_sparse_eigs
 from ..tools.parallel import ProfileWrapper, parallel_mkdir
+from .field import Field
 
 PROFILE_DEFAULT = config['profiling'].getboolean('PROFILE_DEFAULT')
 PARALLEL_PROFILE_DEFAULT = config['profiling'].getboolean('PARALLEL_PROFILE_DEFAULT')
@@ -354,9 +355,8 @@ class LinearBoundaryValueSolver(SolverBase):
             F_handler.add_task(eq['F'])
         F_handler.build_system()
         self.F = F_handler.fields
-
-        self.F_adj = []
-        self.state_adj = []
+        self.Y = []
+        self.dJdX = []
         self.build_adjoint()
         logger.debug('Finished LBVP instantiation')
 
@@ -422,10 +422,10 @@ class LinearBoundaryValueSolver(SolverBase):
     def build_adjoint(self):
         """
         Build a field system for the adjoint system
-        self.F_adj has the same layout as self.F
-        self.state_adj has the same layout as self.state
+        self.Y has the same layout as self.F
+        self.dJdX has the same layout as self.state
         """
-        if not self.F_adj:
+        if not self.Y:
             for field in self.F:
                 field_adj = field.copy_adjoint()
                 # Zero the system
@@ -433,10 +433,9 @@ class LinearBoundaryValueSolver(SolverBase):
                 if field.name:
                     # If the direct field has a name, give the adjoint a
                     # corresponding name
-                    field_adj.name = '%s_adj' % field.name
-                self.F_adj.append(field_adj)
-
-        if not self.state_adj:
+                    field_adj.name = 'Y_%s' % field.name
+                self.Y.append(field_adj)
+        if not self.dJdX:
             for field in self.state:
                 field_adj = field.copy_adjoint()
                 # Zero the system
@@ -444,10 +443,10 @@ class LinearBoundaryValueSolver(SolverBase):
                 if field.name:
                     # If the direct field has a name, give the adjoint a
                     # corresponding name
-                    field_adj.name = '%s_adj' % field.name
-                self.state_adj.append(field_adj)
+                    field_adj.name = 'dJd%s' % field.name
+                self.dJdX.append(field_adj)
 
-    def solve_adjoint(self, subproblems=None, rebuild_matrices=False):
+    def solve_adjoint(self, f, subproblems=None, rebuild_matrices=False):
         """
         Solve transposed BVP over selected subproblems.
 
@@ -476,19 +475,45 @@ class LinearBoundaryValueSolver(SolverBase):
         # self.evaluator.evaluate_group('F', sim_time=0, wall_time=0, iteration=0)
         # TODO: see if an evaluator for the adjoint is worthwhile
         # Ensure coeff space before subsystem gathers/scatters
-        for field in self.state_adj:
+        for field in self.dJdX:
             field.change_layout('c')
-        for field in self.F_adj:
+        for field in self.Y:
             field.preset_layout('c')
         # Solve system for each subproblem, updating state
         for sp in subproblems:
             n_ss = len(sp.subsystems)
             # Gather (includes adjoint right-precondition) RHS
-            pF = sp.gather_inputs(self.state_adj)
+            pF = sp.gather_inputs(self.dJdX)
             # Adjoint solve,
             pX = self.subproblem_matsolvers_adjoint[sp].solve(pF)  # CREATES TEMPORARY
             # Scatter (contains adjoint left-precondition)
-            sp.scatter_outputs(pX, self.F_adj)
+            sp.scatter_outputs(pX, self.Y)
+        # Create fields for output
+        dJdf = []
+        for field in f:
+            field_adj = field.copy_adjoint()
+            # Zero the system
+            field_adj['c'] *= 0
+            if field.name:
+                # If the direct field has a name, give the adjoint a
+                # corresponding name
+                field_adj.name = 'dJd%s' % field.name
+            dJdf.append(field_adj)
+        # Calculate gradients from Y - accumulate contributions to each output from each equation
+        for (y,rhs_term) in zip(self.Y,self.problem.equations):
+            if isinstance(rhs_term['F'], Field):
+                # If the field is a variable, add the identity contribution
+                for (index,variable) in enumerate(f):
+                    if variable == rhs_term['F']:
+                        dJdf[index]['c'] += self.Y[index]['c']
+            else:
+                # Calculate vjp
+                g, df_rev = rhs_term['F'].evaluate_vjp(y, id=np.random.randint(0, 1000000))
+                # Accumulate contributions for each variable
+                for (index,variable) in enumerate(f):
+                    if variable in list(df_rev.keys()):
+                        dJdf[index]['c'] += df_rev[variable]['c']
+        return dJdf
 
 
 class NonlinearBoundaryValueSolver(SolverBase):
@@ -717,7 +742,8 @@ class InitialValueSolver(SolverBase):
         self.stop_iteration = np.inf
 
         self.state_adj = []
-        self.sens_adj = []
+        self.Y_fields = []
+        self.dFdX_adj = []
         self.build_adjoint()
         logger.debug('Finished IVP instantiation')
 
@@ -775,17 +801,26 @@ class InitialValueSolver(SolverBase):
                     # corresponding name
                     field_adj.name = '%s_adj' % field.name
                 self.state_adj.append(field_adj)
-
-        if not self.sens_adj:
-            for field in self.state:
+        if not self.dFdX_adj:
+            for field in self.F:
                 field_adj = field.copy_adjoint()
                 # Zero the system
                 field_adj['c'] *= 0
                 if field.name:
                     # If the direct field has a name, give the adjoint a
                     # corresponding name
-                    field_adj.name = '%s_sens_adj' % field.name
-                self.sens_adj.append(field_adj)
+                    field_adj.name = 'dFdX_adj%s' % field.name
+                self.dFdX_adj.append(field_adj)
+        if not self.Y_fields:
+            for field in self.F:
+                field_adj = field.copy_adjoint()
+                # Zero the system
+                field_adj['c'] *= 0
+                if field.name:
+                    # If the direct field has a name, give the adjoint a
+                    # corresponding name
+                    field_adj.name = 'Y_adj%s' % field.name
+                self.Y_fields.append(field_adj)
 
     def load_state(self, path, index=-1, allow_missing=False):
         """
