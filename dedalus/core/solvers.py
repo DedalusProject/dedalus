@@ -11,6 +11,7 @@ import pstats
 from math import prod
 from collections import defaultdict
 import pickle
+import uuid
 
 from . import subsystems
 from . import timesteppers
@@ -19,7 +20,6 @@ from ..libraries.matsolvers import matsolvers
 from ..tools.config import config
 from ..tools.array import scipy_sparse_eigs
 from ..tools.parallel import ProfileWrapper, parallel_mkdir
-from .field import Field
 
 PROFILE_DEFAULT = config['profiling'].getboolean('PROFILE_DEFAULT')
 PARALLEL_PROFILE_DEFAULT = config['profiling'].getboolean('PARALLEL_PROFILE_DEFAULT')
@@ -355,9 +355,6 @@ class LinearBoundaryValueSolver(SolverBase):
             F_handler.add_task(eq['F'])
         F_handler.build_system()
         self.F = F_handler.fields
-        self.Y = []
-        self.dJdX = []
-        self.build_adjoint()
         logger.debug('Finished LBVP instantiation')
 
     def print_subproblem_ranks(self, subproblems=None):
@@ -419,101 +416,75 @@ class LinearBoundaryValueSolver(SolverBase):
             handlers = self.evaluator.handlers
         self.evaluator.evaluate_handlers(handlers, iteration=self.iteration)
 
-    def build_adjoint(self):
-        """
-        Build a field system for the adjoint system
-        self.Y has the same layout as self.F
-        self.dJdX has the same layout as self.state
-        """
-        if not self.Y:
-            for field in self.F:
-                field_adj = field.copy_adjoint()
-                # Zero the system
-                field_adj['c'] *= 0
-                if field.name:
-                    # If the direct field has a name, give the adjoint a
-                    # corresponding name
-                    field_adj.name = 'Y_%s' % field.name
-                self.Y.append(field_adj)
-        if not self.dJdX:
-            for field in self.state:
-                field_adj = field.copy_adjoint()
-                # Zero the system
-                field_adj['c'] *= 0
-                if field.name:
-                    # If the direct field has a name, give the adjoint a
-                    # corresponding name
-                    field_adj.name = 'dJd%s' % field.name
-                self.dJdX.append(field_adj)
-
-    def solve_adjoint(self, f, subproblems=None, rebuild_matrices=False):
+    def solve_adjoint(self, G, subproblems=None):
         """
         Solve transposed BVP over selected subproblems.
 
         Parameters
         ----------
+        G : List of adjoint fields/operators, one for each equation RHS.
         subproblems : Subproblem object or list of Subproblem objects, optional
             Subproblems for which to solve the BVP (default: None (all)).
-        rebuild_matrices : bool, optional
-            Rebuild LHS matrices if coefficients have changed (default: False).
         """
+        # Convert cotangents
+        for i in len(G):
+            if G[i].domain != self.problem.equations[i]['domain']:
+                raise ValueError("Adjoint field domain does not match equation domain")
         # Resolve subproblems
         if subproblems is None:
             subproblems = self.subproblems
         if isinstance(subproblems, subsystems.Subproblem):
             subproblems = [subproblems]
-        # Rebuild matrices and matsolvers if directed or not yet built
-        if rebuild_matrices:
-            rebuild_subproblems = subproblems
-        else:
-            rebuild_subproblems = [sp for sp in subproblems if sp not in self.subproblem_matsolvers_adjoint]
-        if rebuild_subproblems:
-            self.build_matrices(rebuild_subproblems)
-            for sp in rebuild_subproblems:
-                self.subproblem_matsolvers_adjoint[sp] = self.matsolver(np.conj(sp.L_min).T, self)
         # Compute RHS
+        G = [Gi.evaluate() for Gi in G]
         # self.evaluator.evaluate_group('F', sim_time=0, wall_time=0, iteration=0)
         # TODO: see if an evaluator for the adjoint is worthwhile
         # Ensure coeff space before subsystem gathers/scatters
-        for field in self.dJdX:
+        # Allocate adjoint fields
+        Y = []
+        for field in self.F:
+            field_adj = field.copy_adjoint()
+            # Zero the system
+            field_adj.preset_layout('c')
+            field_adj.data *= 0
+            if field.name:
+                # If the direct field has a name, give the adjoint a
+                # corresponding name
+                field_adj.name = 'Y_%s' % field.name
+            Y.append(field_adj)
+        # Transform before solve
+        for field in G:
             field.change_layout('c')
-        for field in self.Y:
+        for field in Y:
             field.preset_layout('c')
         # Solve system for each subproblem, updating state
         for sp in subproblems:
             n_ss = len(sp.subsystems)
             # Gather (includes adjoint right-precondition) RHS
-            pF = sp.gather_inputs(self.dJdX)
+            pF = sp.gather_inputs(G)
             # Adjoint solve,
-            pX = self.subproblem_matsolvers_adjoint[sp].solve(pF)  # CREATES TEMPORARY
+            pY = self.subproblem_matsolvers[sp].solve_H(pF)  # CREATES TEMPORARY
             # Scatter (contains adjoint left-precondition)
-            sp.scatter_outputs(pX, self.Y)
-        # Create fields for output
-        dJdf = []
-        for field in f:
-            field_adj = field.copy_adjoint()
-            # Zero the system
-            field_adj['c'] *= 0
-            if field.name:
-                # If the direct field has a name, give the adjoint a
-                # corresponding name
-                field_adj.name = 'dJd%s' % field.name
-            dJdf.append(field_adj)
+            sp.scatter_outputs(pY, Y)
+        return Y
+
+    def compute_sensitivities(self, G, id=None):
+        # TODO: compute G from cost?
+        # G = h.evaluate_vjp(1)[self.state]?
+        # Compute Y from L.H @ Y = G
+        Y = self.solve_adjoint(G)
+        # R(p) = L(p) @ X - F(p)
+        # dR/dp = dL/dp @ X - dF/dp
+        # Default to uuid to cache within evaluation, but not across evaluations
+        if id is None:
+            id = uuid.uuid4()
         # Calculate gradients from Y - accumulate contributions to each output from each equation
-        for (y,rhs_term) in zip(self.Y,self.problem.equations):
-            if isinstance(rhs_term['F'], Field):
-                # If the field is a variable, add the identity contribution
-                for (index,variable) in enumerate(f):
-                    if variable == rhs_term['F']:
-                        dJdf[index]['c'] += self.Y[index]['c']
-            else:
-                # Calculate vjp
-                g, df_rev = rhs_term['F'].evaluate_vjp(y, id=np.random.randint(0, 1000000))
-                # Accumulate contributions for each variable
-                for (index,variable) in enumerate(f):
-                    if variable in list(df_rev.keys()):
-                        dJdf[index]['c'] += df_rev[variable]['c']
-        return dJdf
+        cotangents = {}
+        for i, eqn in enumerate(self.problem.equations):
+            R = eqn['L'] - eqn['F']
+            cotangents[R] = Y[i]
+            _, cotangents = R.evaluate_vjp(cotangents, id=id)
+        return cotangents
 
 
 class NonlinearBoundaryValueSolver(SolverBase):

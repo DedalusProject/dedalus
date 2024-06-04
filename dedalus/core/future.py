@@ -4,6 +4,7 @@ Classes for future evaluation.
 """
 
 import numpy as np
+import uuid
 from functools import partial
 
 from .field import Operand, Field, LockedField
@@ -156,6 +157,10 @@ class Future(Operand):
     def evaluate(self, id=None, force=True, tape=None, clean_tangent=False):
         """Recursively evaluate operation."""
 
+        # Default to uuid to cache within evaluation, but not across evaluations
+        if id is None:
+            id = uuid.uuid4()
+
         # Check storage
         if self.store_last and (id is not None):
             if id == self.last_id:
@@ -221,6 +226,10 @@ class Future(Operand):
 
     def evaluate_jvp(self, tangents, id=None, force=True):
         """Recursively evaluate operation."""
+
+        # Default to uuid to cache within evaluation, but not across evaluations
+        if id is None:
+            id = uuid.uuid4()
 
         # Check storage
         if self.store_last and (id is not None):
@@ -293,8 +302,10 @@ class Future(Operand):
 
         return out, tangent
 
-    def evaluate_vjp(self, cotangent, id=None, force=True):
+    def evaluate_vjp(self, cotangents, id=None, force=False):
         """Recursively evaluate operation."""
+
+        cotangent = cotangents[self]
 
         # Force store_last
         # TODO: enforce recursively
