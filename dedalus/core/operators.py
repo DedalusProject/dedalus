@@ -1094,6 +1094,7 @@ class SpectralOperator1D(SpectralOperator):
             if sparse.isspmatrix(mat):
                 mat = mat.tocsr()
             temp = apply_matrix(mat, self.cotangent.data, data_axis)
+            # Add adjoint contribution in-place (required for accumulation)
             np.add(cotan0.data, temp, out=cotan0.data)
 
 @alias('dt')
@@ -1738,7 +1739,42 @@ class Convert(SpectralOperator, metaclass=MultiClass):
         else:
             super().operate(out)
 
-    # TODO: jvp and vjp
+    def operate_jvp(self, out, tangent): 
+        tan0 = self.arg_tangents[0]
+        layout = tan0.layout
+        # Copy for grid space
+        if layout.grid_space[self.last_axis]:
+            # Linear operator
+            self.operate(out)
+            tangent.preset_layout(layout)
+            np.copyto(tangent.data, tan0.data)
+        # Revert to matrix application for coeff space
+        else:
+            super().operate_jvp(out,tangent)
+
+    def operate_vjp(self, layout, cotangents):
+        if layout is None:
+            layout = self.args[0].layout
+        if layout.grid_space[self.last_axis]:
+            # TODO: fix this hack, which avoids return layouts from all enforce_conditions methods
+            orig_arg0 = self.original_args[0]
+            arg0 = self.args[0]
+            if isinstance(orig_arg0, Future):
+                orig_arg0.cotangent.change_layout(layout)
+                cotan0 = orig_arg0.cotangent
+            else:
+                if arg0 not in cotangents:
+                    cotan0 = arg0.copy()
+                    cotan0.adjoint = True
+                    cotan0.data.fill(0)
+                    cotangents[arg0] = cotan0
+                cotan0 = cotangents[arg0]
+            self.cotangent.change_layout(layout)
+            # Copy for grid space
+            # Add adjoint contribution in-place (required for accumulation)
+            np.add(cotan0.data, self.cotangent.data, out=cotan0.data)
+        else:
+            super().operate_jvp(layout,cotangents) 
 
 
 class ConvertSame(Convert):
