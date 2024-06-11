@@ -427,8 +427,8 @@ class LinearBoundaryValueSolver(SolverBase):
             Subproblems for which to solve the BVP (default: None (all)).
         """
         # Convert cotangents
-        for i in len(G):
-            if G[i].domain != self.problem.equations[i]['domain']:
+        for i in range(len(G)):
+            if G[i].domain != self.state[i].domain:
                 raise ValueError("Adjoint field domain does not match equation domain")
         # Resolve subproblems
         if subproblems is None:
@@ -461,9 +461,9 @@ class LinearBoundaryValueSolver(SolverBase):
         for sp in subproblems:
             n_ss = len(sp.subsystems)
             # Gather (includes adjoint right-precondition) RHS
-            pF = sp.gather_inputs(G)
+            pG = sp.gather_inputs(G)
             # Adjoint solve,
-            pY = self.subproblem_matsolvers[sp].solve_H(pF)  # CREATES TEMPORARY
+            pY = self.subproblem_matsolvers[sp].solve_H(pG)  # CREATES TEMPORARY
             # Scatter (contains adjoint left-precondition)
             sp.scatter_outputs(pY, Y)
         return Y
