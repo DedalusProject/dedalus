@@ -347,7 +347,6 @@ class Future(Operand):
         self.cotangent.data[:] = cotangent.data
 
         # Reverse topological sorting and evaluate adjoint
-        cotangents = {}
         for op in tape[::-1]:
             # Replace arguments with operator outputs
             for i in range(len(op.args)):
