@@ -102,18 +102,21 @@ def plot_bot(dset, image_axes, data_slices, image_scales=(0,0), clim=None, even_
         fig = plt.figure(**figkw)
         axes = fig.add_subplot(1, 1, 1)
 
-    # Setup axes
-    # Bounds (left, bottom, width, height) relative-to-axes
-    pbbox = transforms.Bbox.from_bounds(0.03, 0, 0.94, 0.94)
-    cbbox = transforms.Bbox.from_bounds(0.03, 0.95, 0.94, 0.05)
-    # Convert to relative-to-figure
-    to_axes_bbox = transforms.BboxTransformTo(axes.get_position())
-    pbbox = pbbox.transformed(to_axes_bbox)
-    cbbox = cbbox.transformed(to_axes_bbox)
-    # Create new axes and suppress base axes
-    paxes = axes.figure.add_axes(pbbox)
-    caxes = axes.figure.add_axes(cbbox)
-    axes.axis('off')
+    if isinstance(axes, (list, tuple)):
+        paxes, caxes = axes
+    else:
+        # Setup axes
+        # Bounds (left, bottom, width, height) relative-to-axes
+        pbbox = transforms.Bbox.from_bounds(0.03, 0, 0.94, 0.94)
+        cbbox = transforms.Bbox.from_bounds(0.03, 0.95, 0.94, 0.05)
+        # Convert to relative-to-figure
+        to_axes_bbox = transforms.BboxTransformTo(axes.get_position())
+        pbbox = pbbox.transformed(to_axes_bbox)
+        cbbox = cbbox.transformed(to_axes_bbox)
+        # Create new axes and suppress base axes
+        paxes = axes.figure.add_axes(pbbox)
+        caxes = axes.figure.add_axes(cbbox)
+        axes.axis('off')
 
     # Colormap options
     cmap = copy.copy(matplotlib.cm.get_cmap(cmap))
