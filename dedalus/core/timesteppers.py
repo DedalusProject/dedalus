@@ -207,7 +207,6 @@ class MultistepIMEX:
         subproblems = solver.subproblems
         evaluator = solver.evaluator
         state_fields = solver.state_adj
-        dFdX_adj_fields = solver.dFdX_adj
         Y_fields = solver.Y_fields
         F_fields = solver.F
         sim_time = solver.sim_time
@@ -262,9 +261,6 @@ class MultistepIMEX:
                 else:
                     sp.LHS = (a0*sp.M_min + b0*sp.L_min)  # CREATES TEMPORARY
                 sp.LHS_solver = solver.matsolver(sp.LHS, solver)
-        # Ensure coeff space before subsystem scatters
-        for field in dFdX_adj_fields:
-            field.preset_layout('c')
         # Ensure coeff space before subsystem gathers
         for field in state_fields:
             field.require_coeff_space()
@@ -281,28 +277,30 @@ class MultistepIMEX:
         for j in range(sum_len):
             for sp in subproblems:
                 sp.scatter_outputs(Y[j].get_subdata(sp), Y_fields)
-            for f in dFdX_adj_fields:
-                f['c'] = 0 
             id = uuid.uuid4()
-            for (y,rhs_term) in zip(Y_fields,self.solver.problem.equations):
-                if isinstance(rhs_term['F'], Field):
-                    # If the field is a variable, add the identity contribution
-                    for (index,variable) in enumerate(self.solver.state):
-                        if variable == rhs_term['F']:
-                            dFdX_adj_fields[index]['c'] += Y_fields[index]['c']
-                else:
-                    cotangents = {}
-                    cotangents[rhs_term['F']] = y
+            cotangents={}
+            for i, eqn in enumerate(solver.problem.equations):
+                # TODO: Fix this when fields have vjp
+                if not isinstance(eqn['F'], Field):
+                    cotangents[eqn['F']] = Y_fields[i]
                     # Calculate vjp
-                    g, df_rev = rhs_term['F'].evaluate_vjp(cotangents, id=id)
-                    # Accumulate contributions for each variable
-                    for (index,variable) in enumerate(self.solver.state):
-                        if variable in list(df_rev.keys()):
-                            dFdX_adj_fields[index]['c'] += df_rev[variable]['c']
-            for field in dFdX_adj_fields:
-                field.require_coeff_space()
+                    _, cotangents = eqn['F'].evaluate_vjp(cotangents, id=id, force=True)
+            dFDxH_Y = []
+            for field in solver.state:
+                # TODO: Must be a better way to do this
+                # If the state variable is in the cotagnents add it
+                if field in list(cotangents.keys()):
+                    # Require coeff space before subproblem gathers
+                    cotangents[field].require_coeff_space()
+                    dFDxH_Y.append(cotangents[field])
+                # Otherwise add an empty contribution
+                else:
+                    temp = field.copy_adjoint()
+                    temp.preset_layout('c')
+                    temp.data *= 0
+                    dFDxH_Y.append(temp)
             for sp in subproblems:
-                sp.gather_outputs(dFdX_adj_fields,out=F[j].get_subdata(sp))
+                sp.gather_inputs(dFDxH_Y,out=F[j].get_subdata(sp))
         if RHS.data.size:
             np.multiply(c[0][1], F0.data, out=RHS.data)
             for j in range(2, sum_len + 1):
