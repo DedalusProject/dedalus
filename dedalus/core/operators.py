@@ -398,10 +398,11 @@ class PowerFieldConstant(Power, FutureField):
 
     def operate_vjp(self, layout, cotangents):
         arg0, arg1 = self.args
-        if isinstance(arg0, Future):
-            arg0.cotangent.change_layout(layout)
-            cotan0 = arg0.cotangent
-        elif isinstance(arg0, Field):
+        orig_arg0 = self.original_args[0]
+        if isinstance(orig_arg0, Future):
+            orig_arg0.cotangent.change_layout(layout)
+            cotan0 = orig_arg0.cotangent
+        else:
             if arg0 not in cotangents:
                 cotan0 = arg0.copy()
                 cotan0.adjoint = True
@@ -656,10 +657,11 @@ class UnaryGridFunction(NonlinearOperator, FutureField):
 
     def operate_vjp(self, layout, cotangents):
         arg0, = self.args
-        if isinstance(arg0, Future):
-            arg0.cotangent.change_layout(layout)
-            cotan0 = arg0.cotangent
-        elif isinstance(arg0, Field):
+        orig_arg0 = self.original_args[0]
+        if isinstance(orig_arg0, Future):
+            orig_arg0.cotangent.change_layout(layout)
+            cotan0 = orig_arg0.cotangent
+        else:
             if arg0 not in cotangents:
                 cotan0 = arg0.copy()
                 cotan0.adjoint = True
