@@ -12,6 +12,7 @@ from math import prod
 from collections import defaultdict
 import pickle
 import uuid
+from .field import Field
 
 from . import subsystems
 from . import timesteppers
@@ -481,9 +482,13 @@ class LinearBoundaryValueSolver(SolverBase):
         # Calculate gradients from Y - accumulate contributions to each output from each equation
         cotangents = {}
         for i, eqn in enumerate(self.problem.equations):
-            R = eqn['L'] - eqn['F']
-            cotangents[R] = Y[i]
-            _, cotangents = R.evaluate_vjp(cotangents, id=id)
+            # TODO: Fix this when fields have vjp
+            if not isinstance(eqn['F'], Field):
+                # TODO: Change back to sensitivity of whole equation
+                # R = eqn['L'] - eqn['F']
+                R = eqn['F']
+                cotangents[R] = Y[i]
+                _, cotangents = R.evaluate_vjp(cotangents, id=id, force=True)
         return cotangents
 
 
