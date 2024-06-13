@@ -1086,7 +1086,9 @@ class SpectralOperator1D(SpectralOperator):
                 cotan0.adjoint = True
                 cotan0.data.fill(0)
                 cotangents[arg0] = cotan0
-            cotan0 = cotangents[arg0]
+            else:
+                cotan0 = cotangents[arg0]
+                cotan0.change_layout(layout)
         self.cotangent.change_layout(layout)
         # Apply matrix
         if self.cotangent.data.size and cotan0.data.size:
