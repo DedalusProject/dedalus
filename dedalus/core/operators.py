@@ -1774,7 +1774,7 @@ class Convert(SpectralOperator, metaclass=MultiClass):
             # Add adjoint contribution in-place (required for accumulation)
             np.add(cotan0.data, self.cotangent.data, out=cotan0.data)
         else:
-            super().operate_jvp(layout,cotangents) 
+            super().operate_vjp(layout,cotangents) 
 
 
 class ConvertSame(Convert):
