@@ -410,6 +410,7 @@ class PowerFieldConstant(Power, FutureField):
                 cotangents[arg0] = cotan0
             else:
                 cotan0 = cotangents[arg0]
+                cotan0.change_layout(layout)
         # Add adjoint contribution in-place (required for accumulation)
         self.cotangent.change_layout(layout)
         if self.cotangent.data.size:
@@ -669,6 +670,7 @@ class UnaryGridFunction(NonlinearOperator, FutureField):
                 cotangents[arg0] = cotan0
             else:
                 cotan0 = cotangents[arg0]
+                cotan0.change_layout(layout)
         # Add adjoint contribution in-place (required for accumulation)
         self.cotangent.change_layout(layout)
         temp = self.diff_map[self.func](arg0.data)*self.cotangent.data
@@ -1772,13 +1774,15 @@ class Convert(SpectralOperator, metaclass=MultiClass):
                     cotan0.adjoint = True
                     cotan0.data.fill(0)
                     cotangents[arg0] = cotan0
-                cotan0 = cotangents[arg0]
+                else:
+                    cotan0 = cotangents[arg0]
+                    cotan0.change_layout(layout)
             self.cotangent.change_layout(layout)
             # Copy for grid space
             # Add adjoint contribution in-place (required for accumulation)
             np.add(cotan0.data, self.cotangent.data, out=cotan0.data)
         else:
-            super().operate_vjp(layout,cotangents) 
+            super().operate_vjp(layout,cotangents)
 
 
 class ConvertSame(Convert):

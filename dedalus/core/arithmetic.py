@@ -254,6 +254,8 @@ class AddFields(Add, FutureField):
                     cotangent.adjoint = True
                     cotangent.data.fill(0)
                     cotangents[arg] = cotangent
+                else:
+                    cotangents[arg].change_layout(layout)
                 arg_cotangents.append(cotangents[arg])
         cotan0, cotan1 = arg_cotangents
         # Add adjoint contribution in-place (required for accumulation)
@@ -934,6 +936,8 @@ class MultiplyFields(Multiply, FutureField):
                     cotangent.adjoint = True
                     cotangent.data.fill(0)
                     cotangents[arg] = cotangent
+                else:
+                    cotangents[arg].change_layout(layout)
                 arg_cotangents.append(cotangents[arg])
         arg0, arg1 = self.args
         cotan0, cotan1 = arg_cotangents
@@ -1045,6 +1049,7 @@ class MultiplyNumberField(Multiply, FutureField):
                 cotangents[arg1] = cotan1
             else:
                 cotan1 = cotangents[arg1]
+                cotan1.change_layout(layout)
         # Add adjoint contribution in-place (required for accumulation)
         self.cotangent.change_layout(layout)
         np.add(np.multiply(arg0, self.cotangent.data), cotan1.data, out=cotan1.data)
