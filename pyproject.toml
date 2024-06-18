@@ -1,6 +1,43 @@
 [build-system]
-requires = ["cython >= 3.0.5",
-            "mpi4py >= 2.0.0",
-            "numpy >= 1.20.0",
-            "setuptools",
-            "wheel"]
+requires = [
+    "Cython >= 3.0.5",
+    "mpi4py >= 2.0.0",
+    "numpy >= 1.20.0",
+    "setuptools",
+    "wheel"
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dedalus"
+version = "3.0.2"
+authors = [
+    { name = "Keaton J. Burns", email = "keaton.burns@gmail.com" }
+]
+description = "A flexible framework for solving PDEs with modern spectral methods."
+long-description = { file = "README.md", content-type = "text/markdown" }
+readme = { file = "README.md", content-type = "text/markdown" }
+license = { file = "LICENSE", content-type = "text/plain" }
+classifiers = ["Programming Language :: Python :: 3"]
+requires-python = ">=3.9"
+dynamic = ["dependencies"]
+
+[project.urls]
+homepage = "http://dedalus-project.org"
+
+[project.entry-points."xarray.backends"]
+dedalus = "dedalus.tools.post:DedalusXarrayBackend"
+
+[tool.setuptools]
+packages = ["dedalus"]
+package-data = { dedalus = ["dedalus.cfg", "examples.tar.gz"] }
+
+[tool.setuptools.dynamic]
+dependencies = {file = "requirements.txt"}
+
+[project.optional-dependencies]
+xarray = ["xarray"]
+
+[project.scripts]
+dedalus = "dedalus.tools.post:DedalusXarrayBackend"
+
