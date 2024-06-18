@@ -3415,8 +3415,8 @@ class CartesianDivergence(Divergence):
     @classmethod
     def _preprocess_args(cls, operand, index=0, out=None):
         coordsys = operand.tensorsig[index]
-        if operand.domain.get_basis(coordsys) is None:
-            raise SkipDispatchException(output=0)
+        if not any([operand.domain.get_basis(cs) for cs in coordsys.coords]):
+                raise SkipDispatchException(output=0)
         return [operand], {'index': index, 'out': out}
 
     def __init__(self, operand, index=0, out=None):
@@ -3964,7 +3964,13 @@ class Laplacian(LinearOperator, metaclass=MultiClass):
             coordsys = operand.dist.single_coordsys
             if coordsys is False:
                 raise ValueError("coordsys must be specified.")
-        elif not isinstance(coordsys, coords.DirectProduct) and operand.domain.get_basis(coordsys) is None:
+        elif isinstance(coordsys, coords.DirectProduct):
+            if not any([operand.domain.get_basis(cs) for cs in coordsys.coordsystems]):
+                raise SkipDispatchException(output=0)
+        elif isinstance(coordsys, coords.CartesianCoordinates):
+            if not any([operand.domain.get_basis(cs) for cs in coordsys.coords]):
+                raise SkipDispatchException(output=0)
+        elif operand.domain.get_basis(coordsys) is None:
             raise SkipDispatchException(output=0)
         return [operand, coordsys], {'out': out}
 
