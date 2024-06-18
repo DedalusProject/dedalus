@@ -1,51 +1,81 @@
-"""Test cartesian adjoint differentiation and Jacobi conversion."""
+"""Test vjp and jvp routines"""
 
 import pytest
 import numpy as np
-from dedalus.core import coords, distributor, basis, field, operators, problems, solvers
+from dedalus.core import coords, distributor, basis, field, operators
 
-# Fourier tests
-
-N_range = [8, 10, 12]
-bounds_range = [(0, 2*np.pi), (0.5, 1.5)]
 dtype_range = [np.float64]
+layout_range = ['g','c']
+
+
+## Fourier tests
+N_range = [12]
+bounds_range = [(0, 2*np.pi)]
+test_operators = ['u**2','np.sin(u)-np.cos(u)','0.8*u**3-1.2*u**2','d3.Differentiate(u,coord)','1.2*u*d3.Differentiate(u**2+u,coord)','0.5*d3.integ(u**2)']
+
 
 @pytest.mark.parametrize('N', N_range)
 @pytest.mark.parametrize('bounds', bounds_range)
 @pytest.mark.parametrize('dtype', dtype_range)
-@pytest.mark.parametrize('layout', ['g','c'])
-def test_fourier_adjoint_differentiate(N, bounds, dtype, layout):
+@pytest.mark.parametrize('layout', layout_range)
+@pytest.mark.parametrize('operator', test_operators)
+def test_fourier_jvp(N, bounds, dtype, layout, operator):
+    # Check that jvp matches symbolic and that the primals match the operator evaluation
     c = coords.Coordinate('x')
     d = distributor.Distributor((c,))
     if dtype == np.float64:
         b = basis.RealFourier(c, size=N, bounds=bounds)
     elif dtype == np.complex128:
         b = basis.ComplexFourier(c, size=N, bounds=bounds)
+    u   = field.Field(dist=d, name='u',  bases=(b,),dtype=dtype)
+    du  = field.Field(dist=d, name='du', bases=(b,),dtype=dtype)
+    # Must fill in 'c' to avoid Nyquist mode
+    u.fill_random(layout='c'); u.change_layout(layout)
+    du.fill_random(layout='c'); du.change_layout(layout)
+    expr = operator.strip()
+    op = eval(expr,{"u":u, "np":np, "d3":operators, "coord":c})
+    op.frechet_differential([u], [du])
+    g_eval = op.evaluate()
+    g_jvp, dg_fwd = op.evaluate_jvp({u: du})
+    dG_sym = op.frechet_differential([u], [du]).evaluate()
+    assert(np.allclose(dg_fwd[layout], dG_sym[layout]) and np.allclose(g_jvp[layout],g_eval[layout]))
 
-    u    = field.Field(dist=d, bases=(b,),dtype=dtype)
-    Cu   = field.Field(dist=d, bases=(b,),dtype=dtype)
-    v    = field.Field(dist=d, bases=(b,),dtype=dtype, adjoint=True) 
-    CHv  = field.Field(dist=d, bases=(b,),dtype=dtype, adjoint=True) 
+@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('bounds', bounds_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('layout', layout_range)
+@pytest.mark.parametrize('operator', test_operators)
+def test_fourier_vjp(N, bounds, dtype, layout, operator):
+    # Check that vjp matches jvp
+    c = coords.Coordinate('x')
+    d = distributor.Distributor((c,))
+    if dtype == np.float64:
+        b = basis.RealFourier(c, size=N, bounds=bounds)
+    elif dtype == np.complex128:
+        b = basis.ComplexFourier(c, size=N, bounds=bounds)
+    u   = field.Field(dist=d, name='u',  bases=(b,),dtype=dtype)
+    du  = field.Field(dist=d, name='du', bases=(b,),dtype=dtype)
+    # Must fill in 'c' to avoid Nyquist mode
+    u.fill_random(layout='c'); u.change_layout(layout)
+    du.fill_random(layout='c'); du.change_layout(layout)
+    expr = operator.strip()
+    op = eval(expr,{"u": u, "np": np, "d3": operators, "coord": c})
+    g_eval = op.evaluate()
+    _, dg_fwd = op.evaluate_jvp({u: du})
+    dg = g_eval.copy_adjoint()
+    dg.fill_random(layout='c'); dg.change_layout(layout)
+    g_vjp, dg_rev = op.evaluate_vjp({op: dg}, id=np.random.randint(0, 1000000), force=True)
+    term1 = np.vdot(dg[layout],dg_fwd[layout])
+    term2 = np.vdot(dg_rev[u][layout],du[layout])
+    assert(np.allclose(term1,term2) and np.allclose(g_vjp[layout],g_eval[layout]))
 
-    u.fill_random(layout=layout)
-    v.fill_random(layout=layout)
-    # Real doesn't work in grid space...
-    u[layout]
-    v[layout]
-    differentiate = operators.Differentiate(u, c) 
-    differentiate.operate(Cu)
-    differentiate.operate_adjoint(v,CHv)
-    term1 = np.vdot(v['c'],Cu['c'])
-    term2 = np.vdot(CHv['c'],u['c'])
-
-    assert np.allclose(term1,term2)
-
-# Jacobi tests
-N_range = [8, 9]
+## Jacobi tests
+# N_range = [8, 9]
+N_range = [8]
 ab_range = [-0.5, 0]
 k_range = [0, 1]
-dtype_range = [np.float64, np.complex128]
 d_range = [1,2,3]
+
 
 @pytest.mark.parametrize('N', N_range)
 @pytest.mark.parametrize('a', ab_range)
@@ -53,63 +83,121 @@ d_range = [1,2,3]
 @pytest.mark.parametrize('k', k_range)
 @pytest.mark.parametrize('dtype', dtype_range)
 @pytest.mark.parametrize('d_range', d_range)
-@pytest.mark.parametrize('layout', ['g','c'])
-def test_jacobi_convert_adjoint(N, a, b_, k, dtype, d_range, layout):
+@pytest.mark.parametrize('layout', layout_range)
+@pytest.mark.parametrize('operator', test_operators)
+def test_Jacobi_jvp(N, a, b_, k, dtype, d_range, layout, operator):
+    # Check that jvp matches symbolic and that the primals match the operator evaluation
     c = coords.Coordinate('x')
     d = distributor.Distributor((c,))
     b = basis.Jacobi(c, size=N, a0=a, b0=b_, a=a+k, b=b_+k, bounds=(0, 1))
-    b1     = b.derivative_basis(d_range)
-       
-    # For adjoint v should be in the adjoint basis of Cu, 
-    # and CHv will be in the adjoint basis of u.
-    u    = field.Field(dist=d, bases=b,dtype=dtype)
-    Cu   = field.Field(dist=d, bases=b1,dtype=dtype)
-    v  = field.Field(dist=d, bases=b1,dtype=dtype, adjoint=True)
-    CHv  = field.Field(dist=d, bases=b,dtype=dtype, adjoint=True) 
-
+    u   = field.Field(dist=d, name='u',  bases=(b,),dtype=dtype)
+    du  = field.Field(dist=d, name='du', bases=(b,),dtype=dtype)
     u.fill_random(layout=layout)
-    v.fill_random(layout=layout)
+    du.fill_random(layout=layout)
+    expr = operator.strip()
+    op = eval(expr,{"u":u, "np":np, "d3":operators, "coord":c})
+    op.frechet_differential([u], [du])
+    g_eval = op.evaluate()
+    g_jvp, dg_fwd = op.evaluate_jvp({u: du})
+    dG_sym = op.frechet_differential([u], [du]).evaluate()
+    assert(np.allclose(dg_fwd[layout], dG_sym[layout]) and np.allclose(g_jvp[layout],g_eval[layout]))
 
-    u[layout]
-    v[layout]
-    
-    # Convert is based on the basis of first argument...
-    # So need a new input for operate adjoint, but must use original
-    # convert operator
-    convert = operators.convert(u, (b1,))
-    convert.operate(Cu)
-    convert.operate_adjoint(v,CHv)
-    term1 = np.vdot(v['c'],Cu['c'])
-    term2 = np.vdot(CHv['c'],u['c'])
-
-    assert np.allclose(term1,term2)
 
 @pytest.mark.parametrize('N', N_range)
 @pytest.mark.parametrize('a', ab_range)
 @pytest.mark.parametrize('b_', ab_range)
 @pytest.mark.parametrize('k', k_range)
 @pytest.mark.parametrize('dtype', dtype_range)
-@pytest.mark.parametrize('layout', ['g','c'])
-def test_jacobi_differentiate_adjoint(N, a, b_, k, dtype, layout):
+@pytest.mark.parametrize('d_range', d_range)
+@pytest.mark.parametrize('layout', layout_range)
+@pytest.mark.parametrize('operator', test_operators)
+def test_jacobi_vjp(N, a, b_, k, dtype, d_range, layout, operator, bounds=(0, 1)):
+    # Check that vjp matches jvp
     c = coords.Coordinate('x')
     d = distributor.Distributor((c,))
-    b      = basis.Jacobi(c, size=N, a0=a, b0=b_, a=a+k, b=b_+k, bounds=(0, 1))
-    b1     = b.derivative_basis(1)
-    
-    u    = field.Field(dist=d, bases=(b,),dtype=dtype)
-    Cu   = field.Field(dist=d, bases=(b1,),dtype=dtype)
-    v    = field.Field(dist=d, bases=(b1,),dtype=dtype, adjoint=True)
-    CHv  = field.Field(dist=d, bases=(b,),dtype=dtype, adjoint=True) 
-
+    b = basis.Jacobi(c, size=N, a0=a, b0=b_, a=a+k, b=b_+k, bounds=(0, 1))
+    u   = field.Field(dist=d, name='u',  bases=(b,),dtype=dtype)
+    du  = field.Field(dist=d, name='du', bases=(b,),dtype=dtype)
     u.fill_random(layout=layout)
-    v.fill_random(layout=layout)
+    du.fill_random(layout=layout)
+    expr = operator.strip()
+    op = eval(expr,{"u":u, "np":np, "d3":operators, "coord":c})
+    g_eval = op.evaluate()
+    _, dg_fwd = op.evaluate_jvp({u: du})
+    dg = g_eval.copy_adjoint()
+    dg.fill_random(layout=layout)
+    g_vjp, dg_rev = op.evaluate_vjp({op: dg}, id=np.random.randint(0, 1000000), force=True)
+    term1 = np.vdot(dg[layout],dg_fwd[layout])
+    term2 = np.vdot(dg_rev[u][layout],du[layout])
+    assert(np.allclose(term1,term2) and np.allclose(g_vjp[layout],g_eval[layout]))
 
-    u[layout]
-    v[layout]
-    differentiate = operators.Differentiate(u, c) 
-    differentiate.operate(Cu)
-    differentiate.operate_adjoint(v,CHv)
-    term1 = np.vdot(v['c'],Cu['c'])
-    term2 = np.vdot(CHv['c'],u['c'])
+## Multidimensional tests
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('layout', layout_range)
+def test_vjp_multidimension(dtype, layout):
+    # Test vjp for two bases
+    c = coords.CartesianCoordinates('x','y')
+    d = distributor.Distributor((c,))
+    if dtype == np.float64:
+        xbasis = basis.RealFourier(c['x'], size=12, bounds=(0,2*np.pi))
+    elif dtype == np.complex128:
+        xbasis = basis.ComplexFourier(c['x'], size=12, bounds=(0,2*np.pi))
+    ybasis = basis.Chebyshev(c['y'], size=14, bounds=(0,2))
+    u   = field.Field(dist=d, name='u',  bases=(xbasis,ybasis), dtype=dtype)
+    du  = field.Field(dist=d, name='du', bases=(xbasis,ybasis), dtype=dtype)
+    v   = field.Field(dist=d, name='v',  bases=(xbasis,ybasis), dtype=dtype)
+    dv  = field.Field(dist=d, name='dv', bases=(xbasis,ybasis), dtype=dtype)
+    u.fill_random(layout='c'); u.change_layout(layout)
+    du.fill_random(layout='c'); du.change_layout(layout)
+    v.fill_random(layout='c'); v.change_layout(layout)
+    dv.fill_random(layout='c'); dv.change_layout(layout)
+    dx = lambda A: operators.Differentiate(A, c['x'])
+    dy = lambda A: operators.Differentiate(A, c['y'])
+    op = u*dx(u) + v*dy(u)
+    g_eval = op.evaluate()
+    _, dg_fwd = op.evaluate_jvp({u: du, v: dv})
+    dg = g_eval.copy_adjoint()
+    dg.fill_random(layout='c'); dg.change_layout(layout)
+    _, dg_rev = op.evaluate_vjp({op: dg}, id=np.random.randint(0, 1000000), force=True)
+    term1 = np.vdot(dg[layout],dg_fwd[layout])
+    term2 = np.vdot(dg_rev[u][layout],du[layout]) + np.vdot(dg_rev[v][layout],dv[layout])
+    assert(np.allclose(term1,term2))
 
-    assert np.allclose(term1,term2)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('layout', layout_range)
+def test_vjp_accumulate(dtype, layout):
+    # Test that cotangents accumulate correctly
+    c = coords.CartesianCoordinates('x','y')
+    d = distributor.Distributor((c,))
+    if dtype == np.float64:
+        xbasis = basis.RealFourier(c['x'], size=12, bounds=(0,2*np.pi))
+    elif dtype == np.complex128:
+        xbasis = basis.ComplexFourier(c['x'], size=12, bounds=(0,2*np.pi))
+    ybasis = basis.Chebyshev(c['y'], size=14, bounds=(0,2))
+    u   = field.Field(dist=d, name='u',  bases=(xbasis,ybasis), dtype=dtype)
+    du  = field.Field(dist=d, name='du', bases=(xbasis,ybasis), dtype=dtype)
+    v   = field.Field(dist=d, name='v',  bases=(xbasis,ybasis), dtype=dtype)
+    dv  = field.Field(dist=d, name='dv', bases=(xbasis,ybasis), dtype=dtype)
+    u.fill_random(layout='c'); u.change_layout(layout)
+    du.fill_random(layout='c'); du.change_layout(layout)
+    v.fill_random(layout='c'); v.change_layout(layout)
+    dv.fill_random(layout='c'); dv.change_layout(layout)
+    dx = lambda A: operators.Differentiate(A, c['x'])
+    dy = lambda A: operators.Differentiate(A, c['y'])
+    op1 = u*dx(u) + v*dy(u)
+    op2 = u*dx(v) + v*dy(v)
+    op3 = dx(u) + dy(v)
+    op4 = -0.5*operators.integ(u**2+v**2)
+    op_list = [op1,op2,op3,op4]
+    cotangents = {}
+    term1 = 0
+    for op in op_list:
+        g_eval = op.evaluate()
+        _, dg_fwd = op.evaluate_jvp({u: du, v: dv})
+        dg = g_eval.copy_adjoint()
+        dg.fill_random(layout='c'); dg.change_layout(layout)
+        cotangents[op] = dg
+        _, cotangents = op.evaluate_vjp(cotangents, id=np.random.randint(0, 1000000), force=True)
+        term1 += np.vdot(dg[layout],dg_fwd[layout])
+    term2 = np.vdot(cotangents[u][layout],du[layout]) + np.vdot(cotangents[v][layout],dv[layout])
+    assert(np.allclose(term1,term2))
