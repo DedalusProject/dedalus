@@ -423,14 +423,14 @@ class LinearBoundaryValueSolver(SolverBase):
 
         Parameters
         ----------
-        G : List of adjoint fields/operators, one for each equation RHS.
+        G : List of adjoint fields/operators, one for each state variable.
         subproblems : Subproblem object or list of Subproblem objects, optional
             Subproblems for which to solve the BVP (default: None (all)).
         """
         # Convert cotangents
         for i in range(len(G)):
             if G[i].domain != self.state[i].domain:
-                raise ValueError("Adjoint field domain does not match equation domain")
+                raise ValueError("Adjoint field domain does not match state domain")
         # Resolve subproblems
         if subproblems is None:
             subproblems = self.subproblems
