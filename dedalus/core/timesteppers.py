@@ -223,7 +223,6 @@ class MultistepIMEX:
         RHS = self.RHS
         axpy = self.axpy
         self._iteration -= 1
-        # dt = self.timestep_history[self._iteration]
         # Compute IMEX coefficients at current iteration
         a.rotate()
         b.rotate()
@@ -271,7 +270,7 @@ class MultistepIMEX:
             # TODO: Do something better for the csr conversion
             apply_sparse(np.conj(sp.M_min).T.tocsr(), spX, axis=0, out=MX0.get_subdata(sp))  # Rectangular dot product skipping shape checks
             apply_sparse(np.conj(sp.L_min).T.tocsr(), spX, axis=0, out=LX0.get_subdata(sp))  # Rectangular dot product skipping shape checks
-            np.copyto(Y0.get_subdata(sp),spX) # TODO: check this line
+            np.copyto(Y0.get_subdata(sp),spX)
         sum_len = np.min([len(c),solver.stop_iteration-self._iteration])
         # Calculate linearised F for all steps
         for j in range(sum_len):
@@ -316,8 +315,15 @@ class MultistepIMEX:
             field.preset_layout('c')
         for sp in subproblems:
             sp.scatter_inputs(RHS.get_subdata(sp), state_fields)
-        # Update solver
+        # Update solver and self.dt
         solver.sim_time -= dt
+        # TODO: For now use timestep history to get correct self.dt deque,
+        # need to think about how step_adjoint is handled wrt dt.
+        self.dt.rotate(-1)
+        if self._iteration-self.steps>-1:
+            self.dt[-1] = self.timestep_history[self._iteration-self.steps]
+        else:
+            self.dt[-1] = 0
 
 @add_scheme
 class CNAB1(MultistepIMEX):
@@ -677,7 +683,8 @@ class RungeKuttaIMEX:
         self.MX0 = CoeffSystem(solver.subproblems, dtype=solver.dtype)
         self.LX = [CoeffSystem(solver.subproblems, dtype=solver.dtype) for i in range(self.stages)]
         self.F = [CoeffSystem(solver.subproblems, dtype=solver.dtype) for i in range(self.stages)]
-
+        self.Y = [CoeffSystem(solver.subproblems, dtype=solver.dtype) for i in range(self.stages)]
+        self.XStages = [CoeffSystem(solver.subproblems, dtype=solver.dtype) for i in range(self.stages)] 
         self._LHS_params = None
         self.axpy = blas.get_blas_funcs('axpy', dtype=solver.dtype)
 
@@ -686,9 +693,8 @@ class RungeKuttaIMEX:
         
         self.timestep_history = []
 
-    def step(self, dt, wall_time):
+    def step(self, dt, wall_time, recompute=False):
         """Advance solver by one timestep."""
-
         # Solver references
         solver = self.solver
         subproblems = [sp for sp in solver.subproblems if sp.size] # Skip empty subproblems
@@ -698,7 +704,6 @@ class RungeKuttaIMEX:
         sim_time_0 = solver.sim_time
         iteration = solver.iteration
         STORE_EXPANDED_MATRICES = solver.store_expanded_matrices
-
         # Other references
         RHS = self.RHS
         MX0 = self.MX0
@@ -710,10 +715,8 @@ class RungeKuttaIMEX:
         c = self.c
         k = dt
         axpy = self.axpy
-
         # Save dt for adjoint
         self.timestep_history.append(dt)
-
         # Check on updating LHS
         update_LHS = (k != self._LHS_params)
         # print(self._LHS_params,update_LHS)
@@ -722,7 +725,6 @@ class RungeKuttaIMEX:
             # Remove old solver references
             for sp in subproblems:
                 sp.LHS_solvers = [None] * (self.stages+1)
-
         # Compute M.X(n,0) and L.X(n,0)
         # Ensure coeff space before subsystem gathers
         evaluator.require_coeff_space(state_fields)
@@ -730,11 +732,12 @@ class RungeKuttaIMEX:
             spX = sp.gather_inputs(state_fields)
             apply_sparse(sp.M_min, spX, axis=0, out=MX0.get_subdata(sp))
             apply_sparse(sp.L_min, spX, axis=0, out=LX0.get_subdata(sp))
-
+            if recompute:
+                np.copyto(self.XStages[0].get_subdata(sp),spX)
+                # self.XStages[0] = np.copy(spX)
         # Compute stages
         # (M + k Hii L).X(n,i) = M.X(n,0) + k Aij F(n,j) - k Hij L.X(n,j)
         for i in range(1, self.stages+1):
-
             # Compute L.X(n,i-1), already done for i=1
             if i > 1:
                 LXi = LX[i-1]
@@ -743,9 +746,8 @@ class RungeKuttaIMEX:
                 for sp in subproblems:
                     spX = sp.gather_inputs(state_fields)
                     apply_sparse(sp.L_min, spX, axis=0, out=LXi.get_subdata(sp))
-
             # Compute F(n,i-1), only doing output on first evaluation
-            if i == 1:
+            if i == 1 and not recompute:
                 evaluator.evaluate_scheduled(iteration=iteration, wall_time=wall_time, sim_time=solver.sim_time, timestep=dt)
             else:
                 evaluator.evaluate_group('F')
@@ -753,7 +755,6 @@ class RungeKuttaIMEX:
             for sp in subproblems:
                 # F fields should be in coeff space from evaluator
                 sp.gather_outputs(F_fields, out=Fi.get_subdata(sp))
-
             # Construct RHS(n,i)
             if RHS.data.size:
                 np.copyto(RHS.data, MX0.data)
@@ -762,7 +763,6 @@ class RungeKuttaIMEX:
                     axpy(a=(k*A[i,j]), x=F[j].data, y=RHS.data)
                     # RHS.data -= (k * H[i,j]) * LX[j].data
                     axpy(a=-(k*H[i,j]), x=LX[j].data, y=RHS.data)
-
             # Solve for stage
             k_Hii = k * H[i,i]
             # Ensure coeff space before subsystem scatters
@@ -782,76 +782,77 @@ class RungeKuttaIMEX:
                 spRHS = RHS.get_subdata(sp)
                 spX = sp.LHS_solvers[i].solve(spRHS)  # CREATES TEMPORARY
                 sp.scatter_inputs(spX, state_fields)
+                if recompute and i<self.stages:
+                    if recompute:
+                        np.copyto(self.XStages[i].get_subdata(sp),spX)
             solver.sim_time = sim_time_0 + k*c[i]
 
     def step_adjoint(self, dt, wall_time):
         """Advance solver by one timestep."""
+        # Recompute stages and matrices
+        # TODO: Should only do this if necessary, otherwise
+        # just check on updating the LHS later as matrices 
+        # will not be changed otherwise.
+        self.step(dt, wall_time, recompute=True)
         # Solver references
         solver = self.solver
         subproblems = solver.subproblems
-        evaluator = solver.evaluator
         state_fields = solver.state_adj
-        F_fields = solver.F
+        Y_fields = solver.Y_fields
+        Y = self.Y
+        XStages = self.XStages
         sim_time_0 = solver.sim_time
-        iteration = solver.iteration
         STORE_EXPANDED_MATRICES = solver.store_expanded_matrices
         # Other references
         RHS = self.RHS
-        MX0 = self.MX0
         LX = self.LX
         F = self.F
         A = self.A
         H = self.H
         c = self.c
+        # TODO: How to handle dt
         # k = dt = self.timestep_history[solver.iteration-1]
         k = dt
         axpy = self.axpy
         MXT = self.MXT
-        # Check on updating LHS
-        update_LHS = (k != self._LHS_params)
-        self._LHS_params = k
-        for sp in subproblems:
-            if update_LHS:
-                # Remove old solver references
-                sp.LHS_solvers = [None] * (self.stages+1)
+        # # Check on updating LHS
+        # update_LHS = (k != self._LHS_params)
+        # self._LHS_params = k
+        # for sp in subproblems:
+        #     if update_LHS:
+        #         # Remove old solver references
+        #         sp.LHS_solvers = [None] * (self.stages+1)
         # Final time condition
         # Ensure coeff space before subsystem gathers
         for field in state_fields:
             field.require_coeff_space()
-        # Ensure coeff space before subsystem gathers
-        evaluator.require_coeff_space(state_fields)
         RHS.data.fill(0)
         for sp in subproblems:
             # Use adjoint state for RHS
             np.copyto(RHS.get_subdata(sp),sp.gather_inputs(state_fields))
         # Compute stages
         for i in reversed(range(1, self.stages+1)):
-            if i<self.stages:
-                # Ensure coeff space before subsystem gathers
-                evaluator.require_coeff_space(state_fields)
             # Solve for stage
             # Clear coeff system for transposed data
             LXi = LX[i-1]
-            LXi.data.fill(0)
-            Fi = F[i-1]
-            Fi.data.fill(0)
             MXTi = MXT[i-1]
             MXTi.data.fill(0)
-            # WARNING: Not all adjointed yet (assumed F is zero)
-            # Compute F(n,i-1) (needs to be adjointed here...)            
             k_Hii = k * H[i,i]
+            # Ensure coeff space before subsystem scatters
             for field in state_fields:
+                field.preset_layout('c')
+            for field in solver.state:
                 field.preset_layout('c')
             for sp in subproblems:
                 # Construct LHS(n,i)
-                if update_LHS:
-                    if STORE_EXPANDED_MATRICES:
-                        # sp.LHS.data[:] = sp.M_exp.data + k_Hii*sp.L_exp.data
-                        np.copyto(sp.LHS.data, sp.M_exp.data)
-                        axpy(a=k_Hii, x=sp.L_exp.data, y=sp.LHS.data)
-                    else:
-                        sp.LHS = (sp.M_min + k_Hii*sp.L_min)  # CREATES TEMPORARY
-                    sp.LHS_solvers[i] = solver.matsolver(sp.LHS, solver)
+                # if update_LHS:
+                #     if STORE_EXPANDED_MATRICES:
+                #         # sp.LHS.data[:] = sp.M_exp.data + k_Hii*sp.L_exp.data
+                #         np.copyto(sp.LHS.data, sp.M_exp.data)
+                #         axpy(a=k_Hii, x=sp.L_exp.data, y=sp.LHS.data)
+                #     else:
+                #         sp.LHS = (sp.M_min + k_Hii*sp.L_min)  # CREATES TEMPORARY
+                #     sp.LHS_solvers[i] = solver.matsolver(sp.LHS, solver)
                 # Use computed adjoint RHS
                 spRHS = RHS.get_subdata(sp)
                 spX = sp.LHS_solvers[i].solve_H(spRHS)  # CREATES TEMPORARY
@@ -859,8 +860,41 @@ class RungeKuttaIMEX:
                 # TODO: Do something better for the csr conversion
                 apply_sparse((np.conj(sp.L_min).T).tocsr(), spX, axis=0, out=LXi.get_subdata(sp))  # Rectangular dot product skipping shape checks                
                 apply_sparse((np.conj(sp.M_min).T).tocsr(), spX, axis=0, out=MXTi.get_subdata(sp))
-                # TODO: Implement RHS terms
                 sp.scatter_inputs(spX, state_fields)
+                # Linearised F vjp
+                sp.scatter_inputs(XStages[i-1].get_subdata(sp), solver.state)
+                np.copyto(Y[i-1].get_subdata(sp),spX)
+            # Note, similar code here to MultistepIMEX
+            for j in range(i,self.stages+1):
+                F[j-1].data.fill(0)
+                for field in Y_fields:
+                    field.preset_layout('c')
+                for sp in subproblems:
+                    sp.scatter_outputs(Y[j-1].get_subdata(sp), Y_fields)
+                id = uuid.uuid4()
+                cotangents={}
+                for eqn_index, eqn in enumerate(solver.problem.equations):
+                    # TODO: Fix this when fields have vjp
+                    if not isinstance(eqn['F'], Field):
+                        cotangents[eqn['F']] = Y_fields[eqn_index]
+                        # Calculate vjp
+                        _, cotangents = eqn['F'].evaluate_vjp(cotangents, id=id, force=True)
+                dFDxH_Y = []
+                for field in solver.state:
+                    # TODO: Must be a better way to do this
+                    # If the state variable is in the cotagnents add it
+                    if field in list(cotangents.keys()):
+                        # Require coeff space before subproblem gathers
+                        cotangents[field].require_coeff_space()
+                        dFDxH_Y.append(cotangents[field])
+                    # Otherwise add an empty contribution
+                    else:
+                        temp = field.copy_adjoint()
+                        temp.preset_layout('c')
+                        temp.data *= 0
+                        dFDxH_Y.append(temp)
+                for sp in subproblems:
+                    sp.gather_inputs(dFDxH_Y,out=F[j-1].get_subdata(sp))
             if RHS.data.size:
                 RHS.data.fill(0)
                 for j in range(i, self.stages+1):
