@@ -766,6 +766,7 @@ class InitialValueSolver(SolverBase):
         """
         Build a field system for the adjoint system
         self.state_adj has the same layout as self.state
+        self.Y_fields has the same layout as self.F
         """
         if not self.state_adj:
             for field in self.state:
@@ -777,16 +778,6 @@ class InitialValueSolver(SolverBase):
                     # corresponding name
                     field_adj.name = '%s_adj' % field.name
                 self.state_adj.append(field_adj)
-        if not self.dFdX_adj:
-            for field in self.F:
-                field_adj = field.copy_adjoint()
-                # Zero the system
-                field_adj['c'] *= 0
-                if field.name:
-                    # If the direct field has a name, give the adjoint a
-                    # corresponding name
-                    field_adj.name = 'dFdX_adj%s' % field.name
-                self.dFdX_adj.append(field_adj)
         if not self.Y_fields:
             for field in self.F:
                 field_adj = field.copy_adjoint()
@@ -890,8 +881,6 @@ class InitialValueSolver(SolverBase):
         wall_time = self.wall_time
         # Advance using timestepper
         wall_elapsed = wall_time - self.init_time
-        # if(self.iteration==self.stop_iteration):
-            # logger.warning("Only works if F==0 and linear direct equation.")
         self.timestepper.step_adjoint(dt,wall_elapsed)
         # Update iteration
         self.iteration -= 1
