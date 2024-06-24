@@ -114,6 +114,10 @@ class MultistepIMEX:
         self._LHS_params = None
         self.axpy = blas.get_blas_funcs('axpy', dtype=solver.dtype)
 
+    def reset(self):
+        """Reset timestepper so that it can be reused"""
+        self._iteration = 0
+
     def step(self, dt, wall_time):
         """Advance solver by one timestep."""
 
