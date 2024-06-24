@@ -716,11 +716,6 @@ class InitialValueSolver(SolverBase):
         self.stop_sim_time = np.inf
         self.stop_wall_time = np.inf
         self.stop_iteration = np.inf
-
-        self.state_adj = []
-        self.Y_fields = []
-        self.dFdX_adj = []
-        self.build_adjoint()
         logger.debug('Finished IVP instantiation')
 
     @property
@@ -761,33 +756,6 @@ class InitialValueSolver(SolverBase):
             return False
         else:
             return True
-
-    def build_adjoint(self):
-        """
-        Build a field system for the adjoint system
-        self.state_adj has the same layout as self.state
-        self.Y_fields has the same layout as self.F
-        """
-        if not self.state_adj:
-            for field in self.state:
-                field_adj = field.copy_adjoint()
-                # Zero the system
-                field_adj['c'] *= 0
-                if field.name:
-                    # If the direct field has a name, give the adjoint a
-                    # corresponding name
-                    field_adj.name = '%s_adj' % field.name
-                self.state_adj.append(field_adj)
-        if not self.Y_fields:
-            for field in self.F:
-                field_adj = field.copy_adjoint()
-                # Zero the system
-                field_adj['c'] *= 0
-                if field.name:
-                    # If the direct field has a name, give the adjoint a
-                    # corresponding name
-                    field_adj.name = 'Y_adj%s' % field.name
-                self.Y_fields.append(field_adj)
 
     def load_state(self, path, index=-1, allow_missing=False):
         """
@@ -886,7 +854,7 @@ class InitialValueSolver(SolverBase):
         self.iteration -= 1
         self.dt = dt # Needed?
 
-    def evolve(self, timestep_function, log_cadence=100):
+    def evolve(self, timestep_function, checkpoints={}, log_cadence=100):
         """Advance system until stopping criterion is reached."""
         # Check for a stopping criterion
         if np.isinf(self.stop_sim_time):
@@ -897,6 +865,9 @@ class InitialValueSolver(SolverBase):
         try:
             logger.info("Starting main loop")
             while self.proceed:
+                for state in self.state:
+                    if state in checkpoints:
+                        checkpoints[state].append(state['c'].copy())
                 timestep = timestep_function()
                 self.step(timestep)
                 if (self .iteration-1) % log_cadence == 0:
@@ -906,6 +877,40 @@ class InitialValueSolver(SolverBase):
             raise
         finally:
             self.log_stats()
+
+    def calculate_sensitivities(self, cotangents, checkpoints={}, timestep_function=None, log_cadence=100):
+        """Accumulate cotangents through an IVP solve"""
+        # Allocate adjoint fields
+        self.state_adj = []
+        for (i,state) in enumerate(self.state):
+            if state in cotangents:
+                self.state_adj.append(cotangents[state])
+            else:
+                adjoint_state = state.copy_adjoint()
+                adjoint_state.preset_layout('c')
+                adjoint_state.data *= 0
+                self.state_adj.append(adjoint_state)
+                cotangents[state] = adjoint_state
+        # Evolve adjoint backwards
+        try:
+            while self.iteration>0:
+                if checkpoints is not None:
+                    for state in self.state:
+                        if state in checkpoints:
+                            state['c'] = checkpoints[state][self.iteration-1]
+                if timestep_function is not None:
+                    timestep = timestep_function()
+                else:
+                    timestep = None
+                self.step_adjoint(timestep)
+                if (self.iteration-1) % log_cadence == 0:
+                    logger.info(f"Adjoint: Iteration={self.iteration}, Time={self.sim_time:e}")
+        except:
+            logger.error('Exception raised, triggering end of adjoint loop.')
+            raise
+        finally:
+            self.log_stats()
+        return cotangents
 
     def print_subproblem_ranks(self, subproblems=None, dt=1):
         """Print rank of each subproblem LHS."""

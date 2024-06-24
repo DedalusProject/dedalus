@@ -97,6 +97,16 @@ class MultistepIMEX:
             Y.append(CoeffSystem(solver.subproblems, dtype=solver.dtype))
             self.c_deque.append(None)
         # For the adjoint
+        self.Y_fields = []
+        for field in solver.F:
+            field_adj = field.copy_adjoint()
+            # Zero the system
+            field_adj['c'] *= 0
+            if field.name:
+                # If the direct field has a name, give the adjoint a
+                # corresponding name
+                field_adj.name = 'Y_adj%s' % field.name
+            self.Y_fields.append(field_adj)
         # TODO: How to handle checkpointing?
         self.timestep_history = []
         # Attributes
@@ -205,12 +215,8 @@ class MultistepIMEX:
         # Solver references
         solver = self.solver
         subproblems = solver.subproblems
-        evaluator = solver.evaluator
         state_fields = solver.state_adj
-        Y_fields = solver.Y_fields
-        F_fields = solver.F
-        sim_time = solver.sim_time
-        iteration = solver.iteration
+        Y_fields = self.Y_fields
         STORE_EXPANDED_MATRICES = solver.store_expanded_matrices
         # Other references
         MX = self.MX
@@ -316,7 +322,7 @@ class MultistepIMEX:
         for sp in subproblems:
             sp.scatter_inputs(RHS.get_subdata(sp), state_fields)
         # Update solver and self.dt
-        solver.sim_time -= dt
+        solver.sim_time -= self.dt[0]
         # TODO: For now use timestep history to get correct self.dt deque,
         # need to think about how step_adjoint is handled wrt dt.
         self.dt.rotate(-1)
@@ -683,15 +689,23 @@ class RungeKuttaIMEX:
         self.MX0 = CoeffSystem(solver.subproblems, dtype=solver.dtype)
         self.LX = [CoeffSystem(solver.subproblems, dtype=solver.dtype) for i in range(self.stages)]
         self.F = [CoeffSystem(solver.subproblems, dtype=solver.dtype) for i in range(self.stages)]
-        self.Y = [CoeffSystem(solver.subproblems, dtype=solver.dtype) for i in range(self.stages)]
-        self.XStages = [CoeffSystem(solver.subproblems, dtype=solver.dtype) for i in range(self.stages)] 
         self._LHS_params = None
         self.axpy = blas.get_blas_funcs('axpy', dtype=solver.dtype)
-
-        # For adjoint for now
+        # For adjoint
         self.MXT = [CoeffSystem(solver.subproblems, dtype=solver.dtype) for i in range(self.stages)]
-        
+        self.Y = [CoeffSystem(solver.subproblems, dtype=solver.dtype) for i in range(self.stages)]
+        self.XStages = [CoeffSystem(solver.subproblems, dtype=solver.dtype) for i in range(self.stages)] 
         self.timestep_history = []
+        self.Y_fields = []
+        for field in solver.F:
+            field_adj = field.copy_adjoint()
+            # Zero the system
+            field_adj['c'] *= 0
+            if field.name:
+                # If the direct field has a name, give the adjoint a
+                # corresponding name
+                field_adj.name = 'Y_adj%s' % field.name
+            self.Y_fields.append(field_adj)
 
     def step(self, dt, wall_time, recompute=False):
         """Advance solver by one timestep."""
@@ -793,12 +807,11 @@ class RungeKuttaIMEX:
         # TODO: Should only do this if necessary, otherwise
         # just check on updating the LHS later as matrices 
         # will not be changed otherwise.
-        self.step(dt, wall_time, recompute=True)
         # Solver references
         solver = self.solver
         subproblems = solver.subproblems
         state_fields = solver.state_adj
-        Y_fields = solver.Y_fields
+        Y_fields = self.Y_fields
         Y = self.Y
         XStages = self.XStages
         sim_time_0 = solver.sim_time
@@ -810,11 +823,15 @@ class RungeKuttaIMEX:
         A = self.A
         H = self.H
         c = self.c
-        # TODO: How to handle dt
-        # k = dt = self.timestep_history[solver.iteration-1]
-        k = dt
         axpy = self.axpy
         MXT = self.MXT
+        # TODO: How to handle dt
+        if dt is not None:
+            k = dt
+        else:
+            k = dt = self.timestep_history[solver.iteration-1]
+        # Recompute intermediate steps
+        self.step(dt, wall_time, recompute=True)
         # # Check on updating LHS
         # update_LHS = (k != self._LHS_params)
         # self._LHS_params = k
