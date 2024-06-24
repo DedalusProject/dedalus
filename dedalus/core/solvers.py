@@ -469,9 +469,20 @@ class LinearBoundaryValueSolver(SolverBase):
             sp.scatter_outputs(pY, Y)
         return Y
 
-    def compute_sensitivities(self, G, id=None):
+    def compute_sensitivities(self, cotangents, id=None):
         # TODO: compute G from cost?
         # G = h.evaluate_vjp(1)[self.state]?
+        # Allocate adjoint fields
+        G = []
+        for (i,state) in enumerate(self.state):
+            if state in cotangents:
+                G.append(cotangents[state])
+            else:
+                adjoint_state = state.copy_adjoint()
+                adjoint_state.preset_layout('c')
+                adjoint_state.data *= 0
+                G.append(adjoint_state)
+                cotangents[state] = adjoint_state
         # Compute Y from L.H @ Y = G
         Y = self.solve_adjoint(G)
         # R(p) = L(p) @ X - F(p)
@@ -480,7 +491,6 @@ class LinearBoundaryValueSolver(SolverBase):
         if id is None:
             id = uuid.uuid4()
         # Calculate gradients from Y - accumulate contributions to each output from each equation
-        cotangents = {}
         for i, eqn in enumerate(self.problem.equations):
             # TODO: Fix this when fields have vjp
             if not isinstance(eqn['F'], Field):
