@@ -897,7 +897,7 @@ class InitialValueSolver(SolverBase):
         finally:
             self.log_stats()
 
-    def calculate_sensitivities(self, cotangents, checkpoints={}, timestep_function=None, log_cadence=100):
+    def compute_sensitivities(self, cotangents, checkpoints={}, timestep_function=None, log_cadence=100):
         """Accumulate cotangents through an IVP solve"""
         # Allocate adjoint fields
         self.state_adj = []
