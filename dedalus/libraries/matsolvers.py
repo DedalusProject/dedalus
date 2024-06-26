@@ -137,7 +137,7 @@ class _SuperluFactorizedBase(SparseSolver):
         if self.trans == "T":
             matrix = matrix.T
         elif self.trans == "H":
-            matrix = matrix.H
+            matrix = matrix.conj().toarray()
         self.LU = spla.splu(matrix.tocsc(),
                             permc_spec=self.permc_spec,
                             diag_pivot_thresh=self.diag_pivot_thresh,
@@ -235,7 +235,7 @@ class DenseInverse(DenseSolver):
     """Dense inversion solve."""
 
     def __init__(self, matrix, solver=None):
-        self.matrix_inverse = sla.inv(matrix.A)
+        self.matrix_inverse = sla.inv(matrix.toarray())
 
     def solve(self, vector):
         return self.matrix_inverse @ vector
@@ -276,7 +276,7 @@ class ScipyDenseLU(DenseSolver):
     """Scipy dense LU factorized solve."""
 
     def __init__(self, matrix, solver=None):
-        self.LU = sla.lu_factor(matrix.A, check_finite=False)
+        self.LU = sla.lu_factor(matrix.toarray(), check_finite=False)
 
     def solve(self, vector):
         return sla.lu_solve(self.LU, vector, check_finite=False)
@@ -296,9 +296,9 @@ class Woodbury(SparseSolver):
         self.V = V = np.zeros((2*R, matrix.shape[1]), dtype=matrix.dtype)
         # Remove top border, leaving upper left subblock
         U[:R, :R] = np.identity(R)
-        V[:R, R:] = matrix[:R, R:].A
+        V[:R, R:] = matrix[:R, R:].toarray()
         # Remove right border, leaving upper right and lower right subblocks
-        U[R:-R, R:] = matrix[R:-R, -R:].A
+        U[R:-R, R:] = matrix[R:-R, -R:].toarray()
         V[-R:, -R:] = np.identity(R)
         self.A = matrix - sp.csr_matrix(U) @ sp.csr_matrix(V)
         # Solve A using specified matsolver

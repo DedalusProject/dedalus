@@ -138,7 +138,7 @@ class DirectProduct(SeparableIntertwiners, CoordinateSystem):
             else:
                 factors.append(np.identity(cs.dim))
             start_axis += cs.dim
-        return sparse_block_diag(factors).A
+        return sparse_block_diag(factors).toarray()
 
     def backward_vector_intertwiner(self, subaxis, group):
         factors = []
@@ -149,7 +149,7 @@ class DirectProduct(SeparableIntertwiners, CoordinateSystem):
             else:
                 factors.append(np.identity(cs.dim))
             start_axis += cs.dim
-        return sparse_block_diag(factors).A
+        return sparse_block_diag(factors).toarray()
 
     @CachedAttribute
     def default_nonconst_groups(self):

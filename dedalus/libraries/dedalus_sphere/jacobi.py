@@ -132,7 +132,7 @@ def grid_guess(n,a,b,dtype='longdouble',quick=False):
         quick = True
 
     if n == 1:
-        return operator('Z')(n,a,b).A[0]
+        return operator('Z')(n,a,b).toarray()[0]
 
     if quick:
         return np.cos(np.pi*(np.arange(4*n-1,2,-4,dtype=dtype)+2*a)/(4*n+2*(a+b+1)))

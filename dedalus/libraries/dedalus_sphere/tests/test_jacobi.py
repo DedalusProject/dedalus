@@ -87,7 +87,7 @@ def test_Ap_Bp_commutation(N, a, b):
     Bp00 = jacobi128.operator('B+', N, a, b)
     Ap01 = jacobi128.operator('A+', N, a, b+1)
     path2 = Ap01 @ Bp00
-    assert np.allclose(path1.A, path2.A)
+    assert np.allclose(path1.toarray(), path2.toarray())
 
 
 @pytest.mark.parametrize('N', N_range)
@@ -105,5 +105,5 @@ def test_App_Bpp_commutation(N, a, b):
     Ap02 = jacobi128.operator('A+', N, a, b+2)
     Ap12 = jacobi128.operator('A+', N, a+1, b+2)
     path2 = Ap12 @ Ap02 @ Bp01 @ Bp00
-    assert np.allclose(path1.A, path2.A)
+    assert np.allclose(path1.toarray(), path2.toarray())
 

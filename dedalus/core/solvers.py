@@ -172,8 +172,8 @@ class EigenvalueSolver(SolverBase):
         for i, sp in enumerate(subproblems):
             if not hasattr(sp, 'L_min'):
                 continue
-            L = sp.L_min.A
-            M = sp.M_min.A
+            L = sp.L_min.toarray()
+            M = sp.M_min.toarray()
             A = L + target * M
             print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {sp.group}, matrix rank: {np.linalg.matrix_rank(A)}/{A.shape[0]}, cond: {np.linalg.cond(A):.1e}")
 
@@ -205,15 +205,15 @@ class EigenvalueSolver(SolverBase):
         if rebuild_matrices or not hasattr(sp, 'L_min'):
             self.build_matrices([sp], ['M', 'L'])
         # Solve as dense general eigenvalue problem
-        A = sp.L_min.A
-        B = - sp.M_min.A
+        A = sp.L_min.toarray()
+        B = - sp.M_min.toarray()
         eig_output = scipy.linalg.eig(A, b=B, left=left, **kw)
         # Unpack output
         if left:
             self.eigenvalues, pre_left_evecs, pre_right_evecs = eig_output
             self.right_eigenvectors = self.eigenvectors = sp.pre_right @ pre_right_evecs
-            self.left_eigenvectors = sp.pre_left.H @ pre_left_evecs
-            self.modified_left_eigenvectors = (sp.M_min @ sp.pre_right_pinv).H @ pre_left_evecs
+            self.left_eigenvectors = sp.pre_left.conj().toarray() @ pre_left_evecs
+            self.modified_left_eigenvectors = (sp.M_min @ sp.pre_right_pinv).conj().toarray() @ pre_left_evecs
             if normalize_left:
                 norms = np.diag(pre_left_evecs.T.conj() @ sp.M_min @ pre_right_evecs)
                 self.left_eigenvectors /= np.conj(norms)
@@ -270,8 +270,8 @@ class EigenvalueSolver(SolverBase):
             # Note: this definition of "left eigenvectors" is consistent with the documentation for scipy.linalg.eig
             self.eigenvalues, pre_right_evecs, self.left_eigenvalues, pre_left_evecs = eig_output
             self.right_eigenvectors = self.eigenvectors = sp.pre_right @ pre_right_evecs
-            self.left_eigenvectors = sp.pre_left.H @ pre_left_evecs
-            self.modified_left_eigenvectors = (sp.M_min @ sp.pre_right_pinv).H @ pre_left_evecs
+            self.left_eigenvectors = sp.pre_left.conj().toarray() @ pre_left_evecs
+            self.modified_left_eigenvectors = (sp.M_min @ sp.pre_right_pinv).conj().toarray() @ pre_left_evecs
             # Check that eigenvalues match
             if not np.allclose(self.eigenvalues, np.conjugate(self.left_eigenvalues)):
                 if raise_on_mismatch:
@@ -363,7 +363,7 @@ class LinearBoundaryValueSolver(SolverBase):
         for i, sp in enumerate(subproblems):
             if not hasattr(sp, 'L_min'):
                 continue
-            L = sp.L_min.A
+            L = sp.L_min.toarray()
             print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {sp.group}, matrix rank: {np.linalg.matrix_rank(L)}/{L.shape[0]}, cond: {np.linalg.cond(L):.1e}")
 
     def solve(self, subproblems=None, rebuild_matrices=False):
@@ -464,7 +464,7 @@ class NonlinearBoundaryValueSolver(SolverBase):
         for i, sp in enumerate(subproblems):
             if not hasattr(sp, 'dF_min'):
                 continue
-            dF = sp.dF_min.A
+            dF = sp.dF_min.toarray()
             print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {sp.group}, matrix rank: {np.linalg.matrix_rank(dF)}/{dF.shape[0]}, cond: {np.linalg.cond(dF):.1e}")
 
     def newton_iteration(self, damping=1):
@@ -739,7 +739,7 @@ class InitialValueSolver(SolverBase):
         for i, sp in enumerate(subproblems):
             M = sp.M_min
             L = sp.L_min
-            A = (M + dt*L).A
+            A = (M + dt*L).toarray()
             print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {sp.group}, matrix rank: {np.linalg.matrix_rank(A)}/{A.shape[0]}, cond: {np.linalg.cond(A):.1e}")
 
     def evaluate_handlers_now(self, dt, handlers=None):

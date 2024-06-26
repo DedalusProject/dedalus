@@ -32,7 +32,7 @@ def jacobi_recursion(N, a, b, X):
     """
     # Jacobi matrix
     J = jacobi_matrix(N, a, b)
-    JA = J.A
+    JA = J.toarray()
     # Identity element
     if np.isscalar(X):
         I = 1

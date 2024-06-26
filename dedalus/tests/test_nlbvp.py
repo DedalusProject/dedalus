@@ -324,7 +324,7 @@ def test_lane_emden_first_order(Nr, dtype, dealias):
         R = -φcen  / (n+1)**(3/2)
         print(solver.iteration, φcen, R, err)
         dH = solver.subproblems[0].dH_min
-        print('%.2e' %np.linalg.cond(dH.A))
+        print('%.2e' %np.linalg.cond(dH.toarray()))
     if err > tolerance:
         raise ValueError("Did not converge")
     # Compare to reference solutions from Boyd
