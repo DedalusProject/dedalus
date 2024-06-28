@@ -137,7 +137,7 @@ class _SuperluFactorizedBase(SparseSolver):
         if self.trans == "T":
             matrix = matrix.T
         elif self.trans == "H":
-            matrix = matrix.conj().toarray()
+            matrix = matrix.conj().T
         self.LU = spla.splu(matrix.tocsc(),
                             permc_spec=self.permc_spec,
                             diag_pivot_thresh=self.diag_pivot_thresh,

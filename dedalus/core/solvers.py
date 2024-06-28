@@ -212,8 +212,8 @@ class EigenvalueSolver(SolverBase):
         if left:
             self.eigenvalues, pre_left_evecs, pre_right_evecs = eig_output
             self.right_eigenvectors = self.eigenvectors = sp.pre_right @ pre_right_evecs
-            self.left_eigenvectors = sp.pre_left.conj().toarray() @ pre_left_evecs
-            self.modified_left_eigenvectors = (sp.M_min @ sp.pre_right_pinv).conj().toarray() @ pre_left_evecs
+            self.left_eigenvectors = sp.pre_left.conj().T @ pre_left_evecs
+            self.modified_left_eigenvectors = (sp.M_min @ sp.pre_right_pinv).conj().T @ pre_left_evecs
             if normalize_left:
                 norms = np.diag(pre_left_evecs.T.conj() @ sp.M_min @ pre_right_evecs)
                 self.left_eigenvectors /= np.conj(norms)
@@ -270,8 +270,8 @@ class EigenvalueSolver(SolverBase):
             # Note: this definition of "left eigenvectors" is consistent with the documentation for scipy.linalg.eig
             self.eigenvalues, pre_right_evecs, self.left_eigenvalues, pre_left_evecs = eig_output
             self.right_eigenvectors = self.eigenvectors = sp.pre_right @ pre_right_evecs
-            self.left_eigenvectors = sp.pre_left.conj().toarray() @ pre_left_evecs
-            self.modified_left_eigenvectors = (sp.M_min @ sp.pre_right_pinv).conj().toarray() @ pre_left_evecs
+            self.left_eigenvectors = sp.pre_left.conj().T @ pre_left_evecs
+            self.modified_left_eigenvectors = (sp.M_min @ sp.pre_right_pinv).conj().T @ pre_left_evecs
             # Check that eigenvalues match
             if not np.allclose(self.eigenvalues, np.conjugate(self.left_eigenvalues)):
                 if raise_on_mismatch:

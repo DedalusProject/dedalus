@@ -433,7 +433,7 @@ def scipy_sparse_eigs(A, B, left, N, target, matsolver, **kw):
         # Build sparse linear operator representing (A^H - conj(σ)B^H)^I B^H = C^-H B^H = left_D
         # Note: left_D is not equal to D^H
         def matvec_left(x):
-            return solver.solve_H(B.conj().toarray().dot(x))
+            return solver.solve_H(B.conj().T.dot(x))
         left_D = spla.LinearOperator(dtype=A.dtype, shape=A.shape, matvec=matvec_left)
         # Solve using scipy sparse algorithm
         left_evals, left_evecs = spla.eigs(left_D, k=N, which='LM', sigma=None, **kw)
