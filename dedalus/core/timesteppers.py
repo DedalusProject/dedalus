@@ -117,6 +117,7 @@ class MultistepIMEX:
     def reset(self):
         """Reset timestepper so that it can be reused"""
         self._iteration = 0
+        self.timestep_history.clear()
 
     def step(self, dt, wall_time):
         """Advance solver by one timestep."""
@@ -710,6 +711,10 @@ class RungeKuttaIMEX:
                 # corresponding name
                 field_adj.name = 'Y_adj%s' % field.name
             self.Y_fields.append(field_adj)
+
+    def reset(self):
+        """Reset timestepper so that it can be reused"""
+        self.timestep_history.clear()
 
     def step(self, dt, wall_time, recompute=False):
         """Advance solver by one timestep."""
