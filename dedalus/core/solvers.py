@@ -853,9 +853,8 @@ class InitialValueSolver(SolverBase):
         self.iteration = 0
         self.initial_iteration = 0
         self.evaluator.handlers[0].last_iter_div = -1
-        if isinstance(self.timestepper,timesteppers.MultistepIMEX):
-            # reset timestepper
-            self.timestepper.reset()
+        # reset timestepper
+        self.timestepper.reset()
 
     def step_adjoint(self,dt):
         """Advance system by one iteration/timestep."""
