@@ -187,13 +187,18 @@ install_requires = [
     "mpi4py >= 2.0.0",
     "numexpr",
     "numpy >= 1.20.0",
-    "py",
-    "pytest",
-    "pytest-benchmark",
-    "pytest-cov",
-    "pytest-parallel",
     "scipy >= 1.4.0",
     "xarray"]
+
+extras_require = {
+    "test": [
+        "py",
+        "pytest",
+        "pytest-benchmark",
+        "pytest-cov",
+        "pytest-parallel",
+    ]
+}
 
 # Grab long_description from README
 with open("README.md") as f:
@@ -231,10 +236,10 @@ setup(
     classifiers=["Programming Language :: Python :: 3"],
     python_requires=">=3.9",
     install_requires=install_requires,
+    extras_require=extras_require,
     license="GPL3",
     packages=setuptools.find_packages(),
     package_data={"": ["dedalus.cfg", "examples.tar.gz"]},
     ext_modules=cythonize(extensions, compiler_directives=compiler_directives),
     cmdclass={"build": build},
     entry_points={"xarray.backends": ["dedalus=dedalus.tools.post:DedalusXarrayBackend"]})
-
