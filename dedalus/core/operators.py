@@ -3,14 +3,11 @@ Abstract and built-in classes defining deferred operations on fields.
 
 """
 
-from collections import defaultdict
-from functools import partial, reduce
+from functools import reduce
 import numpy as np
 import scipy.special as scp
 from scipy import sparse
 from numbers import Number
-from inspect import isclass
-from operator import add
 from math import prod
 from ..libraries import dedalus_sphere
 import logging
@@ -20,14 +17,12 @@ from .domain import Domain
 from . import coords
 from .field import Operand, Field
 from .future import Future, FutureField, FutureLockedField
-from ..tools.array import reshape_vector, apply_matrix, add_sparse, axindex, axslice, perm_matrix, copyto, sparse_block_diag, interleave_matrices
+from ..tools.array import apply_matrix, axslice, perm_matrix, copyto, sparse_block_diag, interleave_matrices
 from ..tools.cache import CachedAttribute, CachedMethod
 from ..tools.dispatch import MultiClass
 from ..tools.exceptions import NonlinearOperatorError
-from ..tools.exceptions import SymbolicParsingError
-from ..tools.exceptions import UndefinedParityError
 from ..tools.exceptions import SkipDispatchException
-from ..tools.general import unify, unify_attributes, is_complex_dtype
+from ..tools.general import unify_attributes, is_complex_dtype
 
 # Public interface
 __all__ = ['GeneralFunction',

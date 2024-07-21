@@ -3,7 +3,7 @@
 import os
 import pytest
 import numpy as np
-from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers, arithmetic
+from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, timesteppers
 from dedalus.tools.parallel import Sync
 from dedalus.tools import post
 import shutil

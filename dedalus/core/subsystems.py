@@ -2,20 +2,14 @@
 Classes for manipulating pencils.
 
 """
-
-from functools import partial, reduce
-from itertools import product
 from collections import defaultdict
 import numpy as np
 from scipy import sparse
-from mpi4py import MPI
-import uuid
 from math import prod
 
-from .domain import Domain
-from ..tools.array import zeros_with_pattern, expand_pattern, sparse_block_diag, copyto, perm_matrix, drop_empty_rows, apply_sparse, assert_sparse_pinv
+from ..tools.array import zeros_with_pattern, expand_pattern, copyto, perm_matrix, drop_empty_rows, apply_sparse, assert_sparse_pinv
 from ..tools.cache import CachedAttribute, CachedMethod
-from ..tools.general import replace, OrderedSet
+from ..tools.general import OrderedSet
 from ..tools.progress import log_progress
 
 import logging

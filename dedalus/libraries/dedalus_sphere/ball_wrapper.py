@@ -6,7 +6,6 @@ from . import ball128 as ball
 from dedalus.tools.cache import CachedMethod
 from dedalus.tools.array import reshape_vector
 from . import clenshaw
-from . import jacobi128 as jacobi
 import time
 
 from dedalus.tools.config import config

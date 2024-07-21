@@ -3,14 +3,11 @@ Arithmetic operators.
 
 """
 
-from functools import reduce
 import numpy as np
 from scipy import sparse
 import itertools
-import operator
 import numbers
 import numexpr as ne
-from collections import defaultdict
 from math import prod
 
 from .domain import Domain
@@ -19,12 +16,11 @@ from .future import Future, FutureField
 from .basis import Basis
 from .operators import convert
 from ..tools.array import kron
-from ..tools.cache import CachedAttribute, CachedMethod
+from ..tools.cache import CachedMethod
 from ..tools.dispatch import MultiClass
-from ..tools.exceptions import NonlinearOperatorError
 from ..tools.exceptions import SymbolicParsingError
 from ..tools.exceptions import SkipDispatchException
-from ..tools.general import unify_attributes, DeferredTuple
+from ..tools.general import unify_attributes
 
 # Public interface
 __all__ = ['Add',

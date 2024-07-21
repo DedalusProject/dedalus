@@ -2,8 +2,6 @@
 import pytest
 import numpy as np
 from dedalus.core import coords, distributor, basis, field, operators, problems, solvers, arithmetic
-from dedalus.core import future
-from dedalus.tools.array import apply_matrix
 from dedalus.tools.cache import CachedFunction
 
 # TODO: add in alpha and k

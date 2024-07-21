@@ -11,7 +11,6 @@ from math import prod
 import numbers
 
 from .coords import CoordinateSystem, DirectProduct
-from ..tools.array import reshape_vector
 from ..tools.cache import CachedMethod, CachedAttribute
 from ..tools.config import config
 from ..tools.general import OrderedSet
@@ -26,7 +25,6 @@ if TRANSPOSE_LIBRARY.upper() == 'FFTW':
     from .transposes import FFTWTranspose as TransposePlanner
 elif TRANSPOSE_LIBRARY.upper() == 'MPI':
     from .transposes import AlltoallvTranspose as TransposePlanner
-from .transposes import RowDistributor, ColDistributor
 
 # Public interface
 __all__ = ['Distributor']
