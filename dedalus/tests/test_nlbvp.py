@@ -4,7 +4,6 @@
 import pytest
 import numpy as np
 import dedalus.public as d3
-from dedalus.tools.cache import CachedFunction
 
 
 @pytest.mark.parametrize('N', [12])

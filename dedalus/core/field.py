@@ -3,26 +3,16 @@ Class for data fields.
 
 """
 
-import weakref
-from functools import partial, reduce
-from collections import defaultdict
 import numpy as np
 from mpi4py import MPI
 from scipy import sparse
-from scipy.sparse import linalg as splinalg
 from numbers import Number
-import h5py
 from math import prod
 
 
 from ..libraries.fftw import fftw_wrappers as fftw
-from ..tools.config import config
-from ..tools.cache import CachedMethod, CachedAttribute
-from ..tools.exceptions import UndefinedParityError
-from ..tools.exceptions import SymbolicParsingError
-from ..tools.exceptions import NonlinearOperatorError
-from ..tools.exceptions import DependentOperatorError
-from ..tools.general import unify, unify_attributes, DeferredTuple, OrderedSet
+from ..tools.cache import CachedAttribute
+from ..tools.general import OrderedSet
 from ..tools.random_arrays import ChunkedRandomArray
 
 import logging

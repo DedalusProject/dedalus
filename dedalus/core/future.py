@@ -3,14 +3,10 @@ Classes for future evaluation.
 
 """
 
-import numpy as np
-from functools import partial
-
 from .field import Operand, Field, LockedField
-from .domain import Domain
 #from .domain import Domain
 from ..tools.general import OrderedSet, unify_attributes
-from ..tools.cache import CachedAttribute, CachedMethod
+from ..tools.cache import CachedAttribute
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])

@@ -1,6 +1,5 @@
-import numpy as np
-from . import jacobi  as Jacobi
-from .operators    import Operator, Codomain, infinite_csr
+from . import jacobi as Jacobi
+from .operators import Operator, Codomain
 
 
 # The defalut configuration for the base Jacobi parameter.

@@ -1,7 +1,7 @@
 
 import pytest
 import numpy as np
-from dedalus.core import coords, distributor, basis, field, operators
+from dedalus.core import coords, distributor, basis, field
 from dedalus.tools.cache import CachedFunction
 from mpi4py import MPI
 
