@@ -5,7 +5,7 @@
 # have been included in the file 'LICENSE.txt', and is also available
 # online at <http://www.gnu.org/licenses/gpl-3.0.html>.
 
-__version__ = "3.0.2"
+from .version import __version__
 
 # Import custom logging to setup rootlogger
 from .tools import logging as _logging_setup
@@ -22,3 +22,5 @@ if os.getenv("OMP_NUM_THREADS") != "1":
 # Could remove pending https://github.com/pydata/numexpr/issues/344
 if os.getenv("NUMEXPR_MAX_THREADS") is None and os.getenv("OMP_NUM_THREADS") is not None:
     os.environ["NUMEXPR_MAX_THREADS"] = os.environ["OMP_NUM_THREADS"]
+
+__all__ = ["__version__"]
