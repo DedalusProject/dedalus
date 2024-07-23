@@ -107,6 +107,11 @@ class MultistepIMEX:
                 # corresponding name
                 field_adj.name = 'Y_adj%s' % field.name
             self.Y_fields.append(field_adj)
+        self.dFDxH_Y = []
+        for field in solver.state:
+            field_adj = field.copy_adjoint()
+            field_adj['c'] *= 0
+            self.dFDxH_Y.append(field_adj)
         # TODO: How to handle checkpointing?
         self.timestep_history = []
         # Attributes
@@ -288,29 +293,25 @@ class MultistepIMEX:
             for sp in subproblems:
                 sp.scatter_outputs(Y[j].get_subdata(sp), Y_fields)
             id = uuid.uuid4()
-            cotangents={}
+            cotangents = {}
             for i, eqn in enumerate(solver.problem.equations):
                 # TODO: Fix this when fields have vjp
                 if not isinstance(eqn['F'], Field):
                     cotangents[eqn['F']] = Y_fields[i]
                     # Calculate vjp
                     _, cotangents = eqn['F'].evaluate_vjp(cotangents, id=id, force=True)
-            dFDxH_Y = []
-            for field in solver.state:
+            for i, field in enumerate(solver.state):
                 # TODO: Must be a better way to do this
                 # If the state variable is in the cotagnents add it
                 if field in list(cotangents.keys()):
                     # Require coeff space before subproblem gathers
                     cotangents[field].require_coeff_space()
-                    dFDxH_Y.append(cotangents[field])
+                    np.copyto(self.dFDxH_Y[i]['c'], cotangents[field]['c'])
                 # Otherwise add an empty contribution
                 else:
-                    temp = field.copy_adjoint()
-                    temp.preset_layout('c')
-                    temp.data *= 0
-                    dFDxH_Y.append(temp)
+                    self.dFDxH_Y[i]['c'] *= 0
             for sp in subproblems:
-                sp.gather_inputs(dFDxH_Y,out=F[j].get_subdata(sp))
+                sp.gather_inputs(self.dFDxH_Y, out=F[j].get_subdata(sp))
         if RHS.data.size:
             np.multiply(c[0][1], F0.data, out=RHS.data)
             for j in range(2, sum_len + 1):
@@ -711,6 +712,11 @@ class RungeKuttaIMEX:
                 # corresponding name
                 field_adj.name = 'Y_adj%s' % field.name
             self.Y_fields.append(field_adj)
+        self.dFDxH_Y = []
+        for field in solver.state:
+            field_adj = field.copy_adjoint()
+            field_adj['c'] *= 0
+            self.dFDxH_Y.append(field_adj)
 
     def reset(self):
         """Reset timestepper so that it can be reused"""
@@ -905,22 +911,18 @@ class RungeKuttaIMEX:
                         cotangents[eqn['F']] = Y_fields[eqn_index]
                         # Calculate vjp
                         _, cotangents = eqn['F'].evaluate_vjp(cotangents, id=id, force=True)
-                dFDxH_Y = []
-                for field in solver.state:
+                for state_index, field in enumerate(solver.state):
                     # TODO: Must be a better way to do this
                     # If the state variable is in the cotagnents add it
                     if field in list(cotangents.keys()):
                         # Require coeff space before subproblem gathers
                         cotangents[field].require_coeff_space()
-                        dFDxH_Y.append(cotangents[field])
+                        np.copyto(self.dFDxH_Y[state_index]['c'], cotangents[field]['c'])
                     # Otherwise add an empty contribution
                     else:
-                        temp = field.copy_adjoint()
-                        temp.preset_layout('c')
-                        temp.data *= 0
-                        dFDxH_Y.append(temp)
+                        self.dFDxH_Y[state_index]['c'] *= 0
                 for sp in subproblems:
-                    sp.gather_inputs(dFDxH_Y,out=F[j-1].get_subdata(sp))
+                    sp.gather_inputs(self.dFDxH_Y, out=F[j-1].get_subdata(sp))
             if RHS.data.size:
                 RHS.data.fill(0)
                 for j in range(i, self.stages+1):
