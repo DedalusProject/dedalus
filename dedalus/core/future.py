@@ -326,11 +326,13 @@ class Future(Operand):
         # Clean cotangents
         for op in tape:
             op.get_cotangent()
+            op.cotangent.preset_scales(op.domain.dealias)
             op.cotangent.data.fill(0)
 
-        # Copy input tangent
+        # Copy input cotangent
         self.cotangent.preset_layout(cotangent.layout)
         self.cotangent.data[:] = cotangent.data
+        self.cotangent.change_scales(self.domain.dealias)
 
         # Reverse topological sorting and evaluate adjoint
         for op in tape[::-1]:
