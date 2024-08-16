@@ -41,6 +41,7 @@ cdef class FFTWTranspose:
     cdef readonly int datasize, axis
     cdef readonly int N0, N1, N2, N3
     cdef readonly int[::1] global_shape
+    cdef readonly int[::1] chunk_shape
     cdef readonly int[::1] col_starts
     cdef readonly int[::1] row_starts
     cdef readonly int[::1] col_ends
@@ -60,6 +61,7 @@ cdef class FFTWTranspose:
         logger.debug("Building FFTW transpose plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, global_shape, axis))
         # Attributes
         self.global_shape = global_shape = np.array(global_shape, dtype=np.int32)
+        self.chunk_shape = chunk_shape = np.array(chunk_shape, dtype=np.int32)
         self.datasize = {np.float64: 1, np.complex128: 2}[np.dtype(dtype).type]
         self.axis = axis
         self.pycomm = pycomm
