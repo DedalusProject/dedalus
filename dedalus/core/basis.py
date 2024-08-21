@@ -419,7 +419,7 @@ class IntervalBasis(Basis):
         data_axis = len(field.tensorsig) + axis
         grid_size = gdata.shape[data_axis]
         plan = self.transform_plan(field.dist, grid_size)
-        if(field.adjoint):
+        if field.adjoint:
             plan.backward_adjoint(gdata, cdata, data_axis)
         else:
             plan.forward(gdata, cdata, data_axis)
@@ -429,7 +429,7 @@ class IntervalBasis(Basis):
         data_axis = len(field.tensorsig) + axis
         grid_size = gdata.shape[data_axis]
         plan = self.transform_plan(field.dist, grid_size)
-        if(field.adjoint):
+        if field.adjoint:
             plan.forward_adjoint(cdata, gdata, data_axis)
         else:
             plan.backward(cdata, gdata, data_axis)
@@ -2187,7 +2187,10 @@ class AnnulusBasis(PolarBasis, metaclass=CachedClass):
         grid_size = gdata.shape[data_axis]
         # Multiply by radial factor
         if self.k > 0:
-            gdata *= self.radial_transform_factor(field.scales[axis], data_axis, -self.k)
+            if field.adjoint:
+                gdata *= self.radial_transform_factor(field.scales[axis], data_axis, self.k)
+            else:
+                gdata *= self.radial_transform_factor(field.scales[axis], data_axis, -self.k)
         # Expand gdata if mmax=0 and dtype=float for spin recombination
         if self.mmax == 0 and self.dtype == np.float64:
             m_axis = len(field.tensorsig) + axis - 1
@@ -2199,8 +2202,11 @@ class AnnulusBasis(PolarBasis, metaclass=CachedClass):
         # Transform component-by-component from temp to cdata
         S = self.spin_weights(field.tensorsig)
         for i, s in np.ndenumerate(S):
-           plan = self.transform_plan(field.dist, grid_size, self.k)
-           plan.forward(temp[i], cdata[i], axis)
+            plan = self.transform_plan(field.dist, grid_size, self.k)
+            if field.adjoint:
+                plan.backward_adjoint(temp[i], cdata[i], axis)
+            else:
+                plan.forward(temp[i], cdata[i], axis)
 
     def backward_transform_radius(self, field, axis, cdata, gdata):
         data_axis = len(field.tensorsig) + axis
@@ -2219,14 +2225,20 @@ class AnnulusBasis(PolarBasis, metaclass=CachedClass):
         # Transform component-by-component from cdata to temp
         S = self.spin_weights(field.tensorsig)
         for i, s in np.ndenumerate(S):
-           plan = self.transform_plan(field.dist, grid_size, self.k)
-           plan.backward(cdata[i], temp[i], axis)
+            plan = self.transform_plan(field.dist, grid_size, self.k)
+            if field.adjoint:
+                plan.forward_adjoint(cdata[i], temp[i], axis)
+            else:
+                plan.backward(cdata[i], temp[i], axis)
         # Apply spin recombination from temp to gdata
         gdata.fill(0)  # OPTIMIZE: shouldn't be necessary
         self.backward_spin_recombination(field.tensorsig, axis, temp, gdata)
         # Multiply by radial factor
         if self.k > 0:
-            gdata *= self.radial_transform_factor(field.scales[axis], data_axis, self.k)
+            if field.adjoint:
+                gdata *= self.radial_transform_factor(field.scales[axis], data_axis, -self.k)
+            else:
+                gdata *= self.radial_transform_factor(field.scales[axis], data_axis, self.k)
         if self.mmax == 0 and self.dtype == np.float64:
             gdata_orig[:] = gdata[axslice(m_axis, 0, 1)]
 
@@ -2471,7 +2483,10 @@ class DiskBasis(PolarBasis, metaclass=CachedClass):
         for i, s in np.ndenumerate(S):
             grid_shape = gdata[i].shape
             plan = self.transform_plan(field.dist, grid_shape, axis, s)
-            plan.forward(temp[i], cdata[i], axis)
+            if field.adjoint:
+                plan.backward_adjoint(temp[i], cdata[i], axis)
+            else:
+                plan.forward(temp[i], cdata[i], axis)
 
     def backward_transform_radius_Nmax0(self, field, axis, cdata, gdata):
         raise NotImplementedError("Not yet.")
@@ -2498,7 +2513,10 @@ class DiskBasis(PolarBasis, metaclass=CachedClass):
         for i, s in np.ndenumerate(S):
             grid_shape = gdata[i].shape
             plan = self.transform_plan(field.dist, grid_shape, axis, s)
-            plan.backward(cdata[i], temp[i], axis)
+            if field.adjoint:
+                plan.forward_adjoint(cdata[i], temp[i], axis)
+            else:
+                plan.backward(cdata[i], temp[i], axis)
         # Apply spin recombination from temp to gdata
         gdata.fill(0)  # OPTIMIZE: shouldn't be necessary
         self.backward_spin_recombination(field.tensorsig, axis, temp, gdata)
@@ -3124,7 +3142,10 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
         for i, s in np.ndenumerate(S):
             Ntheta = gdata[i].shape[axis]
             plan = self.transform_plan(field.dist, Ntheta, s)
-            plan.forward(temp[i], cdata[i], axis)
+            if field.adjoint:
+                plan.backward_adjoint(temp[i], cdata[i], axis)
+            else:
+                plan.forward(temp[i], cdata[i], axis)
 
     def backward_transform_colatitude_Lmax0(self, field, axis, cdata, gdata):
         # Copy from cdata to temp
@@ -3150,7 +3171,10 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
         for i, s in np.ndenumerate(S):
             Ntheta = gdata[i].shape[axis]
             plan = self.transform_plan(field.dist, Ntheta, s)
-            plan.backward(cdata[i], temp[i], axis)
+            if field.adjoint:
+                plan.forward_adjoint(cdata[i], temp[i], axis)
+            else:
+                plan.backward(cdata[i], temp[i], axis)
         # Apply spin recombination from temp to gdata
         gdata.fill(0)  # OPTIMIZE: shouldn't be necessary
         self.backward_spin_recombination(field.tensorsig, axis, temp, gdata)
