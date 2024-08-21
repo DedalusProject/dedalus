@@ -4506,7 +4506,10 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
         grid_size = gdata.shape[data_axis]
         # Multiply by radial factor
         if self.k > 0:
-            gdata *= radial_basis.radial_transform_factor(field.scales[axis], data_axis, -self.k)
+            if field.adjoint:
+                gdata *= radial_basis.radial_transform_factor(field.scales[axis], data_axis, self.k)
+            else:
+                gdata *= radial_basis.radial_transform_factor(field.scales[axis], data_axis, -self.k)
         # Apply regularity recombination using 3D ell map
         radial_basis.forward_regularity_recombination(field.tensorsig, axis, gdata, ell_maps=self.ell_maps(field.dist))
         # Perform radial transforms component-by-component
@@ -4515,7 +4518,10 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
         temp = np.copy(cdata)
         for regindex, regtotal in np.ndenumerate(R):
            plan = radial_basis.transform_plan(field.dist, grid_size, self.k)
-           plan.forward(gdata[regindex], temp[regindex], axis)
+           if field.adjoint:
+              plan.backward_adjoint(gdata[regindex], temp[regindex], axis) 
+           else:
+              plan.forward(gdata[regindex], temp[regindex], axis)
         np.copyto(cdata, temp)
 
     def backward_transform_radius(self, field, axis, cdata, gdata):
@@ -4528,13 +4534,19 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
         temp = np.copy(gdata)
         for i, r in np.ndenumerate(R):
            plan = radial_basis.transform_plan(field.dist, grid_size, self.k)
-           plan.backward(cdata[i], temp[i], axis)
+           if field.adjoint:
+              plan.forward_adjoint(cdata[i], temp[i], axis)
+           else: 
+              plan.backward(cdata[i], temp[i], axis)
         np.copyto(gdata, temp)
         # Apply regularity recombinations using 3D ell map
         radial_basis.backward_regularity_recombination(field.tensorsig, axis, gdata, ell_maps=self.ell_maps(field.dist))
         # Multiply by radial factor
         if self.k > 0:
-            gdata *= radial_basis.radial_transform_factor(field.scales[axis], data_axis, self.k)
+            if field.adjoint:
+                gdata *= radial_basis.radial_transform_factor(field.scales[axis], data_axis, -self.k)
+            else:
+                gdata *= radial_basis.radial_transform_factor(field.scales[axis], data_axis, self.k)
 
     def build_ncc_matrix(self, product, subproblem, ncc_cutoff, max_ncc_terms):
         axis = product.dist.last_axis(self)
@@ -4730,7 +4742,10 @@ class BallBasis(Spherical3DBasis, metaclass=CachedClass):
         for regindex, regtotal in np.ndenumerate(R):
            grid_shape = gdata[regindex].shape
            plan = self.transform_plan(field.dist, grid_shape, regindex, axis, regtotal, radial_basis.k, radial_basis.alpha)
-           plan.forward(gdata[regindex], temp[regindex], axis)
+           if field.adjoint:
+              plan.backward_adjoint(gdata[regindex], temp[regindex], axis)
+           else:
+              plan.forward(gdata[regindex], temp[regindex], axis)
         np.copyto(cdata, temp)
 
     def backward_transform_radius(self, field, axis, cdata, gdata):
@@ -4744,7 +4759,10 @@ class BallBasis(Spherical3DBasis, metaclass=CachedClass):
         for regindex, regtotal in np.ndenumerate(R):
            grid_shape = gdata[regindex].shape
            plan = self.transform_plan(field.dist, grid_shape, regindex, axis, regtotal, radial_basis.k, radial_basis.alpha)
-           plan.backward(cdata[regindex], temp[regindex], axis)
+           if field.adjoint:
+              plan.forward_adjoint(cdata[regindex], temp[regindex], axis)
+           else:
+              plan.backward(cdata[regindex], temp[regindex], axis)
         np.copyto(gdata, temp)
         # Apply regularity recombinations
         radial_basis.backward_regularity_recombination(field.tensorsig, axis, gdata, ell_maps=self.ell_maps(field.dist))
