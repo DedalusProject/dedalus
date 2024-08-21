@@ -279,7 +279,6 @@ def test_complex_fourier_adjoint_backward_matrix(N, dealias, dtype, library):
 @pytest.mark.parametrize('dealias', [0.5, 1, 1.5])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
 @pytest.mark.parametrize('library', ['scipy_dct', 'fftw_dct'])
-
 def test_chebyshev_adjoint_backward_matrix(N, alpha, dealias, dtype, library):
     """Tests adjoint backward Chebyshev transforms"""
 
@@ -297,3 +296,121 @@ def test_chebyshev_adjoint_backward_matrix(N, alpha, dealias, dtype, library):
     u_mat_adj['c'] = u_adj['c']
 
     assert np.allclose(u_adj['g'], u_mat_adj['g'])
+
+# Curvilinear
+
+# Disk
+@pytest.mark.parametrize('k', [0, 1, 2])
+@pytest.mark.parametrize('dealias', [0.5, 1, 1.5])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_disk_scalar(k, dealias, dtype):
+    """Tests adjoint disk transforms on scalars"""
+    Nphi = 4
+    Nr   = 8
+    c = coords.PolarCoordinates('phi', 'r')
+    dist = distributor.Distributor(c, dtype=dtype)
+    disk = basis.DiskBasis(c, shape=(Nphi, Nr), radius=1.4, dealias=dealias, dtype=dtype)
+    disk = disk.derivative_basis(k)
+    f     = dist.Field(name='f', bases=disk)
+    f_adj = dist.Field(name='f_adj', bases=disk, adjoint=True)
+    f.fill_random(layout='c')
+    f_adj.fill_random(layout='c')
+    inner_1 = np.vdot(f_adj['g'], f['g'])
+    inner_2 = np.vdot(f_adj['c'], f['c'])
+    assert np.allclose(inner_1, inner_2)
+
+@pytest.mark.parametrize('k', [0, 1, 2])
+@pytest.mark.parametrize('dealias', [0.5, 1, 1.5])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_disk_vector(k, dealias, dtype):
+    """Tests adjoint disk transforms on vectors"""
+    Nphi = 4
+    Nr   = 8
+    c = coords.PolarCoordinates('phi', 'r')
+    dist = distributor.Distributor(c, dtype=dtype)
+    disk = basis.DiskBasis(c, shape=(Nphi, Nr), radius=1.4, dealias=dealias, dtype=dtype)
+    disk = disk.derivative_basis(k)
+    f     = dist.VectorField(c, name='f', bases=disk)
+    f_adj = dist.VectorField(c, name='f_adj', bases=disk, adjoint=True)
+    f.fill_random(layout='c')
+    f_adj.fill_random(layout='c')
+    inner_1 = np.vdot(f_adj['g'], f['g'])
+    inner_2 = np.vdot(f_adj['c'], f['c'])
+    assert np.allclose(inner_1, inner_2)
+
+# Annulus
+@pytest.mark.parametrize('k', [0, 1, 2])
+@pytest.mark.parametrize('dealias', [0.5, 1, 1.5])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_annulus_scalar(k, dealias, dtype):
+    """Tests adjoint annulus transforms on scalars"""
+    Nphi = 4
+    Nr   = 8
+    c = coords.PolarCoordinates('phi', 'r')
+    dist = distributor.Distributor(c, dtype=dtype)
+    annulus = basis.AnnulusBasis(c, shape=(Nphi, Nr), radii=(0.6,1.4), dealias=dealias, dtype=dtype)
+    annulus = annulus.derivative_basis(k)
+    f     = dist.Field(name='f', bases=annulus)
+    f_adj = dist.Field(name='f_adj', bases=annulus, adjoint=True)
+    f.fill_random(layout='c')
+    f_adj.fill_random(layout='c')
+    inner_1 = np.vdot(f_adj['g'], f['g'])
+    inner_2 = np.vdot(f_adj['c'], f['c'])
+    assert np.allclose(inner_1, inner_2)
+
+@pytest.mark.parametrize('k', [0, 1, 2])
+@pytest.mark.parametrize('dealias', [0.5, 1, 1.5])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_annulus_vector(k, dealias, dtype):
+    """Tests adjoint annulus transforms on vectors"""
+    Nphi = 4
+    Nr   = 8
+    c = coords.PolarCoordinates('phi', 'r')
+    dist = distributor.Distributor(c, dtype=dtype)
+    annulus = basis.AnnulusBasis(c, shape=(Nphi, Nr), radii=(0.6,1.4), dealias=dealias, dtype=dtype)
+    annulus = annulus.derivative_basis(k)
+    f     = dist.VectorField(c, name='f', bases=annulus)
+    f_adj = dist.VectorField(c, name='f_adj', bases=annulus, adjoint=True)
+    f.fill_random(layout='c')
+    f_adj.fill_random(layout='c')
+    inner_1 = np.vdot(f_adj['g'], f['g'])
+    inner_2 = np.vdot(f_adj['c'], f['c'])
+    assert np.allclose(inner_1, inner_2)
+
+# Sphere
+
+@pytest.mark.parametrize('dealias', [0.5, 1, 1.5])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_sphere_scalar(dealias, dtype):
+    """Tests adjoint sphere transforms on scalars"""
+    lmax = 7
+    Ntheta = lmax+1
+    Nphi = 2*(lmax+1)
+    c = coords.S2Coordinates('phi', 'theta')
+    dist = distributor.Distributor(c, dtype=dtype)
+    sphere = basis.SphereBasis(c, shape=(Nphi, Ntheta), radius=1.4, dealias=dealias, dtype=dtype)
+    f     = dist.Field(name='f', bases=sphere)
+    f_adj = dist.Field(name='f_adj', bases=sphere, adjoint=True)
+    f.fill_random(layout='c')
+    f_adj.fill_random(layout='c')
+    inner_1 = np.vdot(f_adj['g'], f['g'])
+    inner_2 = np.vdot(f_adj['c'], f['c'])
+    assert np.allclose(inner_1, inner_2)
+
+@pytest.mark.parametrize('dealias', [0.5, 1, 1.5])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_sphere_vector(dealias, dtype):
+    """Tests adjoint sphere transforms on vectors"""
+    lmax = 7
+    Ntheta = lmax+1
+    Nphi = 2*(lmax+1)
+    c = coords.S2Coordinates('phi', 'theta')
+    dist = distributor.Distributor(c, dtype=dtype)
+    sphere = basis.SphereBasis(c, shape=(Nphi, Ntheta), radius=1.4, dealias=dealias, dtype=dtype)
+    f     = dist.VectorField(c, name='f', bases=sphere)
+    f_adj = dist.VectorField(c, name='f_adj', bases=sphere, adjoint=True)
+    f.fill_random(layout='c')
+    f_adj.fill_random(layout='c')
+    inner_1 = np.vdot(f_adj['g'], f['g'])
+    inner_2 = np.vdot(f_adj['c'], f['c'])
+    assert np.allclose(inner_1, inner_2)

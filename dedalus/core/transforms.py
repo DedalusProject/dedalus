@@ -1602,6 +1602,20 @@ class NonSeparableTransform(Transform):
         # Transform reduced arrays
         self.backward_reduced(cdata, gdata)
 
+    def forward_adjoint(self, cdata, gdata, axis):
+        # Make reduced view into input arrays
+        cdata = reduced_view_4(cdata, axis-1)
+        gdata = reduced_view_4(gdata, axis-1)
+        # Transform reduced arrays
+        self.forward_adjoint_reduced(cdata, gdata)
+
+    def backward_adjoint(self, gdata, cdata, axis):
+        # Make reduced view into input arrays
+        cdata = reduced_view_4(cdata, axis-1)
+        gdata = reduced_view_4(gdata, axis-1)
+        # Transform reduced arrays
+        self.backward_adjoint_reduced(gdata, cdata)
+
 
 @register_transform(basis.SphereBasis, 'matrix')
 class SWSHColatitudeTransform(NonSeparableTransform):
@@ -1641,6 +1655,36 @@ class SWSHColatitudeTransform(NonSeparableTransform):
                 grm = gdata[:, mg_slice, :, :]
                 crm = cdata[:, mc_slice, ell_slice, :]
                 apply_matrix(m_matrices[m], crm, axis=2, out=grm)
+    
+    def forward_adjoint_reduced(self, cdata, gdata):
+        # local_m = self.local_m
+        # if gdata.shape[1] != len(local_m): # do we want to do this check???
+        #     raise ValueError("gdata.shape[1]: %i, len(local_m): %i" %(gdata.shape[1], len(local_m)))
+        m_matrices = self._forward_SWSH_matrices
+        Lmax = self.Lmax
+        for m, mg_slice, mc_slice, ell_slice in self.m_maps:
+            # Skip transforms when |m| > Lmax
+            if abs(m) <= Lmax:
+                # Use rectangular transform matrix, padded with zeros when Lmin > abs(m)
+                grm = gdata[:, mg_slice, :, :]
+                crm = cdata[:, mc_slice, ell_slice, :]
+                apply_matrix(m_matrices[m].T, crm, axis=2, out=grm)
+
+    def backward_adjoint_reduced(self, gdata, cdata):
+        # local_m = self.local_m
+        # if gdata.shape[1] != len(local_m): # do we want to do this check???
+        #     raise ValueError("gdata.shape[1]: %i, len(local_m): %i" %(gdata.shape[1], len(local_m)))
+        m_matrices = self._backward_SWSH_matrices
+        Lmax = self.Lmax
+        for m, mg_slice, mc_slice, ell_slice in self.m_maps:
+            if abs(m) > Lmax:
+                # Write zeros because they'll be used by the inverse azimuthal transform
+                gdata[:, mg_slice, :, :] = 0
+            else:
+                # Use rectangular transform matrix, padded with zeros when Lmin > abs(m)
+                grm = gdata[:, mg_slice, :, :]
+                crm = cdata[:, mc_slice, ell_slice, :]
+                apply_matrix(m_matrices[m].T, grm, axis=2, out=crm)
 
     @CachedAttribute
     def _quadrature(self):
@@ -1744,6 +1788,32 @@ class DiskRadialTransform(NonSeparableTransform):
                 grm = gdata[:, mg_slice, :, :]
                 crm = cdata[:, mc_slice, n_slice, :]
                 apply_matrix(m_matrices[m], crm, axis=2, out=grm)
+
+    def forward_adjoint_reduced(self, cdata, gdata):
+        m_matrices = self._forward_matrices
+        Nphi = self.Nphi
+        Nmax = self.Nmax
+        for m, mg_slice, mc_slice, n_slice in self.m_maps:
+            # Skip transforms when |m| > 2*Nmax
+            if abs(m) <= 2*Nmax:
+                # Use rectangular transform matrix, padded with zeros when Nmin > abs(m)//2
+                grm = gdata[:, mg_slice, :, :]
+                crm = cdata[:, mc_slice, n_slice, :]
+                apply_matrix(m_matrices[m].T, crm, axis=2, out=grm)
+
+    def backward_adjoint_reduced(self, gdata, cdata):
+        m_matrices = self._backward_matrices
+        Nphi = self.Nphi
+        Nmax = self.Nmax
+        for m, mg_slice, mc_slice, n_slice in self.m_maps:
+            if abs(m) > 2*Nmax:
+                # Write zeros because they'll be used by the inverse azimuthal transform
+                cdata[:, mg_slice, n_slice, :] = 0
+            else:
+                # Use rectangular transform matrix, padded with zeros when Nmin > abs(m)//2
+                grm = gdata[:, mg_slice, :, :]
+                crm = cdata[:, mc_slice, n_slice, :]
+                apply_matrix(m_matrices[m].T, grm, axis=2, out=crm)
 
     @CachedAttribute
     def _quadrature(self):
