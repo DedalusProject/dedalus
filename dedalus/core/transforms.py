@@ -1902,6 +1902,20 @@ class BallRadialTransform(Transform):
         # Transform reduced arrays
         self.backward_reduced(cdata, gdata)
 
+    def forward_adjoint(self, cdata, gdata, axis):
+        # Make reduced view into input arrays
+        gdata = reduced_view_5(gdata, axis-2)
+        cdata = reduced_view_5(cdata, axis-2)
+        # Transform reduced arrays
+        self.forward_adjoint_reduced(cdata, gdata)
+
+    def backward_adjoint(self, gdata, cdata, axis):
+        # Make reduced view into input arrays
+        cdata = reduced_view_5(cdata, axis-2)
+        gdata = reduced_view_5(gdata, axis-2)
+        # Transform reduced arrays
+        self.backward_adjoint_reduced(gdata, cdata)
+
     def forward_reduced(self, gdata, cdata):
         #if gdata.shape[1] != len(local_l): # do we want to do this check???
         #    raise ValueError("Local l must match size of %i axis." %(self.axis-1) )
@@ -1923,6 +1937,24 @@ class BallRadialTransform(Transform):
             grl = gdata[:, m_ind, ell_ind, :, :]
             crl = cdata[:, m_ind, ell_ind, Nmin:, :]
             apply_matrix(ell_matrices[ell], crl, axis=3, out=grl)
+
+    def forward_adjoint_reduced(self, cdata, gdata):
+        # Apply transform for each l
+        ell_matrices = self._forward_GSZP_matrix
+        for ell, m_ind, ell_ind in self.ell_maps:
+            Nmin = dedalus_sphere.zernike.min_degree(ell)
+            grl = gdata[:, m_ind, ell_ind, :, :]
+            crl = cdata[:, m_ind, ell_ind, Nmin:, :]
+            apply_matrix(ell_matrices[ell].T, crl, axis=3, out=grl)
+
+    def backward_adjoint_reduced(self, gdata, cdata):
+        # Apply transform for each l
+        ell_matrices = self._backward_GSZP_matrix
+        for ell, m_ind, ell_ind in self.ell_maps:
+            Nmin = dedalus_sphere.zernike.min_degree(ell)
+            grl = gdata[:, m_ind, ell_ind, :, :]
+            crl = cdata[:, m_ind, ell_ind, Nmin:, :]
+            apply_matrix(ell_matrices[ell].T, grl, axis=3, out=crl)
 
     @CachedAttribute
     def _quadrature(self):
