@@ -515,17 +515,16 @@ class UnaryGridFunction(NonlinearOperator, FutureField):
         Unary function acting on grid data. Must be vectorized
         and include an output array argument, e.g. func(x, out).
     arg : dedalus operand
-        Argument field or operator
-    allow_tensors : bool, optional
-        Allow application to vectors and tensors (default: False)
+        Argument field or operator.
+    deriv : function, optional
+        Symbolic derivative of func. Defaults are provided
+        for some common numpy/scipy ufuncs (default: None).
     out : field, optional
-        Output field (default: new field)
+        Output field (default: new field).
 
     Notes
     -----
-    1. By default, only scalar fields are allowed as arguments. To allow
-    application to vector and tensor fields, set allow_tensors=True.
-    2. The supplied function must support an output argument called 'out'
+    The supplied function must support an output argument called 'out'
     and act in a vectorized fashion. The action is essentially:
 
         func(arg['g'], out=out['g'])
@@ -560,12 +559,13 @@ class UnaryGridFunction(NonlinearOperator, FutureField):
     aliases.update({ufunc.__name__: ufunc for ufunc in ufunc_derivatives})
     aliases.update({'abs': np.absolute, 'conj': np.conjugate})
 
-    def __init__(self, func, arg, allow_tensors=False, out=None):
-        if arg.tensorsig and not allow_tensors:
-            raise ValueError("ufuncs not defined for vector/tensor fields.")
+    def __init__(self, func, arg, deriv=None, out=None):
         super().__init__(arg, out=out)
         self.func = func
-        self.allow_tensors = allow_tensors
+        if deriv is None and func in self.ufunc_derivatives:
+            self.deriv = self.ufunc_derivatives[func]
+        else:
+            self.deriv = deriv
         # FutureField requirements
         self.domain = arg.domain
         self.tensorsig = arg.tensorsig
@@ -582,7 +582,7 @@ class UnaryGridFunction(NonlinearOperator, FutureField):
         return bases
 
     def new_operand(self, arg):
-        return UnaryGridFunction(self.func, arg, allow_tensors=self.allow_tensors)
+        return UnaryGridFunction(self.func, arg, deriv=self.deriv)
 
     def reinitialize(self, **kw):
         arg = self.args[0].reinitialize(**kw)
@@ -590,10 +590,10 @@ class UnaryGridFunction(NonlinearOperator, FutureField):
 
     def sym_diff(self, var):
         """Symbolically differentiate with respect to specified operand."""
-        if self.func not in self.ufunc_derivatives:
+        if self.deriv is None:
             raise ValueError(f"Symbolic derivative not implemented for {self.func.__name__}.")
         arg = self.args[0]
-        return self.ufunc_derivatives[self.func](arg) * arg.sym_diff(var)
+        return self.deriv(arg) * arg.sym_diff(var)
 
     def check_conditions(self):
         # Field must be in grid layout
