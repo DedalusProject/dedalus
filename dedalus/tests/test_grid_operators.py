@@ -9,7 +9,7 @@ from dedalus.tools.cache import CachedMethod
 N_range = [16]
 dealias_range = [1]
 dtype_range = [np.float64, np.complex128]
-ufuncs = d3.UnaryGridFunction.supported.values()
+ufuncs = d3.UnaryGridFunction.ufunc_derivatives.keys()
 
 
 @CachedMethod
