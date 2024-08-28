@@ -2,7 +2,7 @@
 
 import pytest
 import numpy as np
-from dedalus.core import coords, distributor, basis, field, operators, arithmetic
+from dedalus.core import coords, distributor, basis, field, operators
 from dedalus.tools.cache import CachedFunction
 
 

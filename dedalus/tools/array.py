@@ -5,7 +5,6 @@ from scipy import sparse
 import scipy.sparse as sp
 from scipy.sparse import _sparsetools
 from scipy.sparse import linalg as spla
-from math import prod
 
 from .config import config
 from . import linalg as cython_linalg

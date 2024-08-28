@@ -1,6 +1,6 @@
 import numpy as np
 from . import jacobi  as Jacobi
-from .operators    import Operator, infinite_csr
+from .operators    import Operator
 
 
 # The defalut configuration for the base Jacobi parameter.

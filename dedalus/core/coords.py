@@ -1,7 +1,6 @@
 """Coordinates and coordinate sytems."""
 
 import numpy as np
-from ..libraries.dedalus_sphere import jacobi
 from ..libraries import dedalus_sphere
 
 from ..tools.array import nkron, sparse_block_diag

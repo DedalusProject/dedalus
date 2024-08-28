@@ -6,9 +6,6 @@ Classes for systems of coefficients/fields.
 import numpy as np
 from math import prod
 
-from ..tools.cache import CachedMethod
-from ..tools.general import unify
-
 
 class CoeffSystem:
     """
