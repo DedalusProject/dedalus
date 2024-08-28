@@ -3,6 +3,7 @@ Abstract and built-in classes defining deferred operations on fields.
 
 """
 
+import sys
 from collections import defaultdict
 from functools import partial, reduce
 import numpy as np
@@ -454,7 +455,7 @@ class GeneralFunction(NonlinearOperator, FutureField):
 
     Notes
     -----
-    On evaluation, this wrapper evaluates the provided funciton with the given
+    On evaluation, this wrapper evaluates the provided function with the given
     arguments and keywords, and takes the output to be data in the specified
     layout, i.e.
 
@@ -502,27 +503,69 @@ class GeneralFunction(NonlinearOperator, FutureField):
 
 
 class UnaryGridFunction(NonlinearOperator, FutureField):
+    """
+    Wrapper for applying unary functions to fields in grid space.
+    This can be used with arbitrary user-defined functions, but
+    symbolic differentiation is only implemented for some scipy/numpy
+    universal functions.
 
-    supported = {ufunc.__name__: ufunc for ufunc in
-        (np.absolute, np.conj, np.exp, np.exp2, np.expm1,
-         np.log, np.log2, np.log10, np.log1p, np.sqrt, np.square,
-         np.sin, np.cos, np.tan, np.arcsin, np.arccos, np.arctan,
-         np.sinh, np.cosh, np.tanh, np.arcsinh, np.arccosh, np.arctanh,
-         scp.erf
-         )}
-    aliased = {'abs':np.absolute, 'conj':np.conjugate}
-    # Add ufuncs and shortcuts to parseables
-    parseables.update(supported)
-    parseables.update(aliased)
+    Parameters
+    ----------
+    func : function
+        Unary function acting on grid data. Must be vectorized
+        and include an output array argument, e.g. func(x, out).
+    arg : dedalus operand
+        Argument field or operator
+    allow_tensors : bool, optional
+        Allow application to vectors and tensors (default: False)
+    out : field, optional
+        Output field (default: new field)
 
-    def __init__(self, func, arg, **kw):
-        if func not in self.supported.values():
-            raise ValueError("Unsupported ufunc: %s" %func)
-        #arg = Operand.cast(arg)
-        super().__init__(arg, **kw)
+    Notes
+    -----
+    1. By default, only scalar fields are allowed as arguments. To allow
+    application to vector and tensor fields, set allow_tensors=True.
+    2. The supplied function must support an output argument called 'out'
+    and act in a vectorized fashion. The action is essentially:
+
+        func(arg['g'], out=out['g'])
+
+    """
+
+    ufunc_derivatives = {
+        np.absolute: lambda x: np.sign(x),
+        np.sign: lambda x: 0,
+        np.exp: lambda x: np.exp(x),
+        np.exp2: lambda x: np.exp2(x) * np.log(2),
+        np.log: lambda x: x**(-1),
+        np.log2: lambda x: (x * np.log(2))**(-1),
+        np.log10: lambda x: (x * np.log(10))**(-1),
+        np.sqrt: lambda x: (1/2) * x**(-1/2),
+        np.square: lambda x: 2*x,
+        np.sin: lambda x: np.cos(x),
+        np.cos: lambda x: -np.sin(x),
+        np.tan: lambda x: np.cos(x)**(-2),
+        np.arcsin: lambda x: (1 - x**2)**(-1/2),
+        np.arccos: lambda x: -(1 - x**2)**(-1/2),
+        np.arctan: lambda x: (1 + x**2)**(-1),
+        np.sinh: lambda x: np.cosh(x),
+        np.cosh: lambda x: np.sinh(x),
+        np.tanh: lambda x: 1-np.tanh(x)**2,
+        np.arcsinh: lambda x: (x**2 + 1)**(-1/2),
+        np.arccosh: lambda x: (x**2 - 1)**(-1/2),
+        np.arctanh: lambda x: (1 - x**2)**(-1),
+        scp.erf: lambda x: 2*(np.pi)**(-1/2)*np.exp(-x**2)}
+
+    # Add ufuncs and shortcuts to aliases
+    aliases.update({ufunc.__name__: ufunc for ufunc in ufunc_derivatives})
+    aliases.update({'abs': np.absolute, 'conj': np.conjugate})
+
+    def __init__(self, func, arg, allow_tensors=False, out=None):
+        if arg.tensorsig and not allow_tensors:
+            raise ValueError("ufuncs not defined for vector/tensor fields.")
+        super().__init__(arg, out=out)
         self.func = func
-        if arg.tensorsig:
-            raise ValueError("Ufuncs not defined for non-scalar fields.")
+        self.allow_tensors = allow_tensors
         # FutureField requirements
         self.domain = arg.domain
         self.tensorsig = arg.tensorsig
@@ -538,40 +581,19 @@ class UnaryGridFunction(NonlinearOperator, FutureField):
             bases = arg0.domain
         return bases
 
-    def new_operands(self, arg):
-        return UnaryGridFunction(self.func, arg)
+    def new_operand(self, arg):
+        return UnaryGridFunction(self.func, arg, allow_tensors=self.allow_tensors)
 
     def reinitialize(self, **kw):
         arg = self.args[0].reinitialize(**kw)
-        return self.new_operands(arg)
+        return self.new_operand(arg)
 
     def sym_diff(self, var):
         """Symbolically differentiate with respect to specified operand."""
-        diff_map = {np.absolute: lambda x: np.sign(x),
-                    np.sign: lambda x: 0,
-                    np.exp: lambda x: np.exp(x),
-                    np.exp2: lambda x: np.exp2(x) * np.log(2),
-                    np.log: lambda x: x**(-1),
-                    np.log2: lambda x: (x * np.log(2))**(-1),
-                    np.log10: lambda x: (x * np.log(10))**(-1),
-                    np.sqrt: lambda x: (1/2) * x**(-1/2),
-                    np.square: lambda x: 2*x,
-                    np.sin: lambda x: np.cos(x),
-                    np.cos: lambda x: -np.sin(x),
-                    np.tan: lambda x: np.cos(x)**(-2),
-                    np.arcsin: lambda x: (1 - x**2)**(-1/2),
-                    np.arccos: lambda x: -(1 - x**2)**(-1/2),
-                    np.arctan: lambda x: (1 + x**2)**(-1),
-                    np.sinh: lambda x: np.cosh(x),
-                    np.cosh: lambda x: np.sinh(x),
-                    np.tanh: lambda x: 1-np.tanh(x)**2,
-                    np.arcsinh: lambda x: (x**2 + 1)**(-1/2),
-                    np.arccosh: lambda x: (x**2 - 1)**(-1/2),
-                    np.arctanh: lambda x: (1 - x**2)**(-1),
-                    scp.erf: lambda x: 2*(np.pi)**(-1/2)*np.exp(-x**2)}
+        if self.func not in self.ufunc_derivatives:
+            raise ValueError(f"Symbolic derivative not implemented for {self.func.__name__}.")
         arg = self.args[0]
-        arg_diff = arg.sym_diff(var)
-        return diff_map[self.func](arg) * arg_diff
+        return self.ufunc_derivatives[self.func](arg) * arg.sym_diff(var)
 
     def check_conditions(self):
         # Field must be in grid layout
@@ -1024,7 +1046,7 @@ class TimeDerivative(LinearOperator):
         return self.operand.matrix_coupling(*vars)
 
 
-@parseable('interpolate', 'interp')
+#@parseable('interpolate', 'interp')
 def interpolate(arg, **positions):
     # Identify domain
     domain = unify_attributes((arg,)+tuple(positions), 'domain', require=False)
@@ -4386,7 +4408,7 @@ class AdvectiveCFL(FutureLockedField, metaclass=MultiClass):
 
 # Define aliases
 for key, value in aliases.items():
-    exec(f"{key} = {value.__name__}")
+    setattr(sys.modules[__name__], key, value)
 
 # Export aliases
 __all__.extend(aliases.keys())
