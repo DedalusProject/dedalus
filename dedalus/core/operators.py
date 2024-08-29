@@ -1014,6 +1014,11 @@ class SpectralOperator1D(SpectralOperator):
         # Caching layer to allow insertion of other arguments
         return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis)
 
+    def subspace_matrix_adjoint(self, layout):
+        """Build matrix operating on local subspace data."""
+        # Caching layer to allow insertion of other arguments
+        return self._subspace_matrix_adjoint(layout, self.input_basis, self.output_basis, self.first_axis)
+
     def group_matrix(self, group):
         return self._group_matrix(group, self.input_basis, self.output_basis)
 
@@ -1037,6 +1042,15 @@ class SpectralOperator1D(SpectralOperator):
             out_size = layout.local_shape(output_domain, scales=1)[axis]
             return sparse_block_diag(group_blocks, shape=(out_size, arg_size))
 
+    @classmethod
+    @CachedMethod
+    def _subspace_matrix_adjoint(cls, *args):
+        matrix = cls._subspace_matrix(*args)
+        adjoint = matrix.T.conj()
+        if sparse.isspmatrix(adjoint):
+            adjoint = adjoint.tocsr()
+        return adjoint
+
     @staticmethod
     def _full_matrix(input_basis, output_basis, *args):
         raise NotImplementedError()
@@ -1045,33 +1059,30 @@ class SpectralOperator1D(SpectralOperator):
     def _group_matrix(group, input_basis, output_basis, *args):
         raise NotImplementedError()
 
-    def operate(self, out):
-        """Perform operation."""
-        arg = self.args[0]
+    def _operate(self, arg, out, adjoint=False):
+        """Perform operation on generic argument."""
         layout = arg.layout
         # Set output layout
         out.preset_layout(layout)
         # Apply matrix
         if arg.data.size and out.data.size:
             data_axis = self.last_axis + len(arg.tensorsig)
-            apply_matrix(self.subspace_matrix(layout), arg.data, data_axis, out=out.data)
+            if adjoint:
+                # Apply out of place for accumulation
+                temp = apply_matrix(self.subspace_matrix_adjoint(layout), arg.data, data_axis)
+                np.add(out.data, temp, out=out.data)
+            else:
+                apply_matrix(self.subspace_matrix(layout), arg.data, data_axis, out=out.data)
         else:
             out.data.fill(0)
 
-    def operate_jvp(self, out, tangent):
-        # Linear operator
-        self.operate(out)
+    def operate(self, out):
+        """Perform operation."""
+        self._operate(self.args[0], out)
 
-        tan = self.arg_tangents[0]
-        layout = tan.layout
-        # Set output layout
-        tangent.preset_layout(layout)
-        # Apply matrix
-        if tan.data.size and tangent.data.size:
-            data_axis = self.last_axis + len(tan.tensorsig)
-            apply_matrix(self.subspace_matrix(layout), tan.data, data_axis, out=tangent.data)
-        else:
-            tangent.data.fill(0)
+    def operate_jvp(self, out, tangent):
+        self._operate(self.args[0], out)
+        self._operate(self.arg_tangents[0], tangent)
 
     def operate_vjp(self, layout, cotangents):
         # TODO: fix this hack, which avoids return layouts from all enforce_conditions methods
@@ -1093,15 +1104,7 @@ class SpectralOperator1D(SpectralOperator):
                 cotan0.change_layout(layout)
         self.cotangent.change_layout(layout)
         # Apply matrix
-        if self.cotangent.data.size and cotan0.data.size:
-            # Can't apply inplace
-            data_axis = self.last_axis + len(arg0.tensorsig)
-            mat = np.conj(self.subspace_matrix(layout)).T
-            if sparse.isspmatrix(mat):
-                mat = mat.tocsr()
-            temp = apply_matrix(mat, self.cotangent.data, data_axis)
-            # Add adjoint contribution in-place (required for accumulation)
-            np.add(cotan0.data, temp, out=cotan0.data)
+        self._operate(self.cotangent, cotan0, adjoint=True)
 
 @alias('dt')
 class TimeDerivative(LinearOperator):
@@ -1745,7 +1748,7 @@ class Convert(SpectralOperator, metaclass=MultiClass):
         else:
             super().operate(out)
 
-    def operate_jvp(self, out, tangent): 
+    def operate_jvp(self, out, tangent):
         tan0 = self.arg_tangents[0]
         layout = tan0.layout
         # Copy for grid space
@@ -2948,31 +2951,30 @@ class SeparableSphereOperator(SpectralOperator):
         matrix = sparse.bmat(blocks)
         return matrix.tocsr()
 
-    def operate(self, out):
+    def _operate(self, arg, out, adjoint=False):
         """Perform operation."""
-        operand = self.args[0]
-        layout = operand.layout
+        # TODO: check if its faster to make dense matrices of symbols across all components
+        layout = arg.layout
         basis = self.input_basis
         if basis is None:
             basis = self.output_basis
-        # Set output layout
-        out.preset_layout(layout)
-        out.data[:] = 0
+        if not adjoint:
+            out.data[:] = 0
         # Return for size-zero data
-        if operand.data.size == 0 or out.data.size == 0:
+        if arg.data.size == 0 or out.data.size == 0:
             return
         # Select overlapping data if necessary
-        rank_in = len(operand.tensorsig)
+        rank_in = len(arg.tensorsig)
         rank_out = len(out.tensorsig)
-        local_shape_in = operand.data.shape[rank_in:]
+        local_shape_in = arg.data.shape[rank_in:]
         local_shape_out = out.data.shape[rank_out:]
         if local_shape_in == local_shape_out:
             slices = None
-            data_in = operand.data
+            data_in = arg.data
             data_out = out.data
         else:
             slices = tuple(slice(n) for n in np.minimum(local_shape_in, local_shape_out))
-            data_in = operand.data[slices]
+            data_in = arg.data[slices]
             data_out = out.data[slices]
         # Prepare complexification if necessary
         complexify = (self.complex_operator and np.isrealobj(self.dtype()))
@@ -2983,7 +2985,7 @@ class SeparableSphereOperator(SpectralOperator):
             data_out_cos = data_out[axslice(rank_out+azimuth_axis, 0, None, 2)]
             data_out_msin = data_out[axslice(rank_out+azimuth_axis, 1, None, 2)]
         # Apply operator
-        S_in = basis.spin_weights(operand.tensorsig)
+        S_in = basis.spin_weights(arg.tensorsig)
         for spinindex_in, spintotal_in in np.ndenumerate(S_in):
             if complexify:
                 comp_in_cos = data_in_cos[spinindex_in]
@@ -2997,19 +2999,63 @@ class SeparableSphereOperator(SpectralOperator):
                 symbols = self.local_symbols(layout, spinindex_in, spinindex_out, spintotal_in, spintotal_out)
                 if slices and not np.isscalar(symbols):
                     symbols = symbols[slices]
+                if adjoint:
+                    symbols = np.conj(symbols)
                 # Multiply by symbols
                 if complexify:
+                    comp_out_cos = data_out_cos[spinindex_out]
+                    comp_out_msin = data_out_msin[spinindex_out]
                     # Skip repeated symbols
                     if not np.isscalar(symbols):
                         symbols = symbols[::2]
-                    comp_out_complex = symbols * comp_in_complex # TEMPORARY
-                    comp_out_cos = data_out_cos[spinindex_out]
-                    comp_out_msin = data_out_msin[spinindex_out]
-                    comp_out_cos += comp_out_complex.real
-                    comp_out_msin += comp_out_complex.imag
+                    if adjoint:
+                        comp_out_complex = comp_out_cos + 1j * comp_out_msin  # TEMPORARY
+                        comp_in_complex = np.conj(symbols) * comp_out_complex  # TEMPORARY
+                        comp_in_cos += comp_in_complex.real
+                        comp_in_msin += comp_in_complex.imag
+                    else:
+                        comp_out_complex = symbols * comp_in_complex # TEMPORARY
+                        comp_out_cos += comp_out_complex.real
+                        comp_out_msin += comp_out_complex.imag
                 else:
                     comp_out = data_out[spinindex_out]
-                    comp_out += symbols * comp_in # TEMPORARY
+                    if adjoint:
+                        comp_in += np.conj(symbols) * comp_out # TEMPORARY
+                    else:
+                        comp_out += symbols * comp_in # TEMPORARY
+
+    def operate(self, out):
+        """Perform operation."""
+        out.preset_layout(self.args[0].layout)
+        self._operate(self.args[0], out)
+
+    def operate_jvp(self, out, tangent):
+        out.preset_layout(self.args[0].layout)
+        tangent.preset_layout(self.arg_tangents[0].layout)
+        self._operate(self.args[0], out)
+        self._operate(self.arg_tangents[0], tangent)
+
+    def operate_vjp(self, layout, cotangents):
+        # TODO: fix this hack, which avoids return layouts from all enforce_conditions methods
+        if layout is None:
+            layout = self.args[0].layout
+        orig_arg0 = self.original_args[0]
+        arg0 = self.args[0]
+        if isinstance(orig_arg0, Future):
+            cotan0 = orig_arg0.cotangent
+            cotan0.change_layout(layout)
+        else:
+            if arg0 not in cotangents:
+                cotan0 = arg0.copy()
+                cotan0.adjoint = True
+                cotan0.data.fill(0)
+                cotangents[arg0] = cotan0
+            else:
+                cotan0 = cotangents[arg0]
+                cotan0.change_layout(layout)
+        # Apply adjoint of forward operator (original order for tensor sigs)
+        self.cotangent.change_layout(layout)
+        self._operate(cotan0, self.cotangent, adjoint=True)
 
 
 class SphereEllProduct(SeparableSphereOperator, metaclass=MultiClass):

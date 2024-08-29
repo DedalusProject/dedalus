@@ -4519,7 +4519,7 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
         for regindex, regtotal in np.ndenumerate(R):
            plan = radial_basis.transform_plan(field.dist, grid_size, self.k)
            if field.adjoint:
-              plan.backward_adjoint(gdata[regindex], temp[regindex], axis) 
+              plan.backward_adjoint(gdata[regindex], temp[regindex], axis)
            else:
               plan.forward(gdata[regindex], temp[regindex], axis)
         np.copyto(cdata, temp)
@@ -4536,7 +4536,7 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
            plan = radial_basis.transform_plan(field.dist, grid_size, self.k)
            if field.adjoint:
               plan.forward_adjoint(cdata[i], temp[i], axis)
-           else: 
+           else:
               plan.backward(cdata[i], temp[i], axis)
         np.copyto(gdata, temp)
         # Apply regularity recombinations using 3D ell map
