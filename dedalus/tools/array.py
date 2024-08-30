@@ -101,7 +101,7 @@ def move_single_axis(a, source, destination):
     return a.transpose(order)
 
 
-def apply_dense(matrix, array, axis, out=None):
+def apply_dense(matrix, array, axis, out=None, overwrite_out=True):
     """Apply dense matrix along any axis of an array."""
     dim = array.ndim
     # Resolve wraparound axis
@@ -125,7 +125,10 @@ def apply_dense(matrix, array, axis, out=None):
     if out is None:
         return temp
     else:
-        out[:] = temp # Copy
+        if overwrite_out:
+            out[:] = temp # Copy
+        else:
+            np.add(out, temp, out=out)
         return out
 
 
@@ -175,7 +178,7 @@ def apply_sparse_dot(matrix, array, axis, out=None):
         return out
 
 
-def apply_sparse(matrix, array, axis, out=None, check_shapes=False, num_threads=1):
+def apply_sparse(matrix, array, axis, out=None, check_shapes=False, num_threads=1, overwrite_out=True):
     """
     Apply sparse matrix along any axis of an array.
     Must be out of place if output is specified.
@@ -187,9 +190,11 @@ def apply_sparse(matrix, array, axis, out=None, check_shapes=False, num_threads=
     if out is None:
         out_shape = list(array.shape)
         out_shape[axis] = matrix.shape[0]
-        out = np.empty(out_shape, dtype=array.dtype)
+        out = np.zeros(out_shape, dtype=array.dtype)
     elif out is array:
         raise ValueError("Cannot apply in place")
+    elif overwrite_out:
+        out.fill(0)
     # Check shapes
     if check_shapes:
         if not (0 <= axis < array.ndim):
@@ -198,7 +203,6 @@ def apply_sparse(matrix, array, axis, out=None, check_shapes=False, num_threads=
             raise ValueError("Matrix shape mismatch.")
     # Old way if requested
     if OLD_CSR_MATVECS and array.ndim == 2 and axis == 0:
-        out.fill(0)
         return csr_matvecs(matrix, array, out)
     # Promote datatypes
     # TODO: find way to optimize this with fused types

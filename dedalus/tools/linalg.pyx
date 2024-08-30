@@ -363,7 +363,7 @@ def apply_csr(
     cnp.ndarray out,
     const int axis,
     const int num_threads):
-    """Apply CSR matrix to array along specified axis."""
+    """Apply CSR matrix to array along specified axis and add to output."""
     # Special-case based on dimension
     # This avoids overhead from reshaping small arrays
     cdef int ndim = array.ndim
@@ -427,7 +427,6 @@ def apply_csr(
                 apply_csr_mid(indptr, indices, entries, x3, y3, num_threads)
 
 
-
 @cython.boundscheck(False)
 @cython.wraparound(False)
 def apply_csr_vec(
@@ -437,12 +436,12 @@ def apply_csr_vec(
     const dtype [:] x,
           dtype [::1] y,
     const int num_threads):
-    """Apply CSR matrix along a vector."""
+    """Apply CSR matrix along a vector and add to output."""
     cdef int n_row = y.shape[0]
     cdef index i, jj
     cdef dtype sum
     for i in prange(n_row, nogil=True, num_threads=num_threads, schedule='static'):
-        sum = 0
+        sum = y[i]
         for jj in range(Ap[i], Ap[i+1]):
             sum = sum + Ax[jj] * x[Aj[jj]]
         y[i] = sum
@@ -457,14 +456,12 @@ def apply_csr_first(
     const dtype [:,:] x,
           dtype [:,::1] y,
     const int num_threads):
-    """Apply CSR matrix along first axis of 2D array."""
+    """Apply CSR matrix along first axis of 2D array and add to output."""
     cdef int n_row = y.shape[0]
     cdef int n_after = x.shape[1]
     cdef index i, jj, j, k
     cdef dtype a
     for i in prange(n_row, nogil=True, num_threads=num_threads, schedule='static'):
-        for k in range(n_after):
-            y[i,k] = 0
         for jj in range(Ap[i], Ap[i+1]):
             j = Aj[jj]
             a = Ax[jj]
@@ -482,7 +479,7 @@ def apply_csr_last(
     const dtype [:,:] x,
           dtype [:,::1] y,
     const int num_threads):
-    """Apply CSR matrix along last axis of 2D array."""
+    """Apply CSR matrix along last axis of 2D array and add to output."""
     cdef int n_before = x.shape[0]
     cdef int n_row = y.shape[1]
     cdef int hi
@@ -491,7 +488,7 @@ def apply_csr_last(
     for hi in prange(n_before*n_row, nogil=True, num_threads=num_threads, schedule='static'):
         h = hi / n_row
         i = hi % n_row
-        sum = 0
+        sum = y[h,i]
         for jj in range(Ap[i], Ap[i+1]):
             sum = sum + Ax[jj] * x[h,Aj[jj]]
         y[h,i] = sum
@@ -507,7 +504,7 @@ def apply_csr_mid(
     const dtype [:,:,:] x,
           dtype [:,:,::1] y,
     const int num_threads):
-    """Apply CSR matrix along middle axis of 3D array."""
+    """Apply CSR matrix along middle axis of 3D array and add to output."""
     cdef int n_before = x.shape[0]
     cdef int n_row = y.shape[1]
     cdef int n_after = x.shape[2]
@@ -517,8 +514,6 @@ def apply_csr_mid(
     for hi in prange(n_before*n_row, nogil=True, num_threads=num_threads, schedule='static'):
         h = hi / n_row
         i = hi % n_row
-        for k in range(n_after):
-            y[h,i,k] = 0
         for jj in range(Ap[i], Ap[i+1]):
             j = Aj[jj]
             a = Ax[jj]
