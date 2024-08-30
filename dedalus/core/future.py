@@ -267,29 +267,29 @@ class Future(Operand):
         # Check conditions unless forcing evaluation
         if force:
             self.enforce_conditions()
-            # Match tangent layouts to arguments
-            for i in range(len(self.args)):
-                if self.arg_tangents[i] is not None:
-                    self.arg_tangents[i].change_layout(self.args[i].layout)
         else:
             # Return None if operator conditions are not satisfied
             if not self.check_conditions():
                 return None
 
-        # Allocate output field if necessary
+        # Match tangent layouts to arguments
+        for i in range(len(self.args)):
+            if self.arg_tangents[i] is not None:
+                self.arg_tangents[i].change_layout(self.args[i].layout)
+
+        # Setup output field
         out = self.get_out()
+        out.preset_scales(self.domain.dealias)
+
+        # Call operation
         if any(self.arg_tangents):
+            # Setup tangent field
             tangent = self.get_tangent()
+            tangent.preset_scales(self.domain.dealias)
+            self.operate_jvp(out, tangent)
         else:
             tangent = None
-
-        # Copy metadata
-        out.preset_scales(self.domain.dealias)
-        if tangent:
-            tangent.preset_scales(self.domain.dealias)
-
-        # Perform operation
-        self.operate_jvp(out, tangent)
+            self.operate(out)
 
         # Reset to free temporary field arguments
         self.reset_jvp()
