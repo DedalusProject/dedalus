@@ -1062,49 +1062,52 @@ class SpectralOperator1D(SpectralOperator):
     def _operate(self, arg, out, adjoint=False):
         """Perform operation on generic argument."""
         layout = arg.layout
-        # Set output layout
-        out.preset_layout(layout)
         # Apply matrix
         if arg.data.size and out.data.size:
-            data_axis = self.last_axis + len(arg.tensorsig)
             if adjoint:
-                # Apply out of place for accumulation
-                temp = apply_matrix(self.subspace_matrix_adjoint(layout), arg.data, data_axis)
-                np.add(out.data, temp, out=out.data)
+                # arg += adjoint(matrix) @ out
+                data_axis = self.last_axis + len(out.tensorsig)
+                apply_matrix(self.subspace_matrix_adjoint(layout), out.data, data_axis, out=arg.data, overwrite_out=False)
             else:
+                # out = matrix @ arg
+                data_axis = self.last_axis + len(arg.tensorsig)
                 apply_matrix(self.subspace_matrix(layout), arg.data, data_axis, out=out.data)
+        elif adjoint:
+            arg.data.fill(0)
         else:
             out.data.fill(0)
 
     def operate(self, out):
-        """Perform operation."""
+        out.preset_layout(self.args[0].layout)
         self._operate(self.args[0], out)
 
     def operate_jvp(self, out, tangent):
+        out.preset_layout(self.args[0].layout)
         self._operate(self.args[0], out)
+        tangent.preset_layout(self.arg_tangents[0].layout)
         self._operate(self.arg_tangents[0], tangent)
 
     def operate_vjp(self, layout, cotangents):
         # TODO: fix this hack, which avoids return layouts from all enforce_conditions methods
         if layout is None:
             layout = self.args[0].layout
-        orig_arg0 = self.original_args[0]
-        arg0 = self.args[0]
-        if isinstance(orig_arg0, Future):
-            orig_arg0.cotangent.change_layout(layout)
-            cotan0 = orig_arg0.cotangent
+        orig_arg = self.original_args[0]
+        arg = self.args[0]
+        if isinstance(orig_arg, Future):
+            arg_cotangent = orig_arg.cotangent
         else:
-            if arg0 not in cotangents:
-                cotan0 = arg0.copy()
-                cotan0.adjoint = True
-                cotan0.data.fill(0)
-                cotangents[arg0] = cotan0
+            if arg not in cotangents:
+                arg_cotangent = arg.copy()
+                arg_cotangent.adjoint = True
+                arg_cotangent.data.fill(0)
+                cotangents[arg] = arg_cotangent
             else:
-                cotan0 = cotangents[arg0]
-                cotan0.change_layout(layout)
-        self.cotangent.change_layout(layout)
+                arg_cotangent = cotangents[arg]
         # Apply matrix
-        self._operate(self.cotangent, cotan0, adjoint=True)
+        out_cotangent = self.cotangent
+        arg_cotangent.change_layout(layout)
+        out_cotangent.change_layout(layout)
+        self._operate(arg_cotangent, out_cotangent, adjoint=True) # note order (adjoint of forward operator)
 
 @alias('dt')
 class TimeDerivative(LinearOperator):
