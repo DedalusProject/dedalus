@@ -958,6 +958,38 @@ class SpectralOperator(LinearOperator):
         if self.subaxis_coupling[-1]:
             arg0.require_local(last_axis)
 
+    def operate(self, out):
+        out.preset_layout(self.args[0].layout)
+        self._operate(self.args[0], out)
+
+    def operate_jvp(self, out, tangent):
+        out.preset_layout(self.args[0].layout)
+        tangent.preset_layout(self.arg_tangents[0].layout)
+        self._operate(self.args[0], out)
+        self._operate(self.arg_tangents[0], tangent)
+
+    def operate_vjp(self, layout, cotangents):
+        # TODO: fix this hack, which avoids return layouts from all enforce_conditions methods
+        if layout is None:
+            layout = self.args[0].layout
+        orig_arg = self.original_args[0]
+        arg = self.args[0]
+        if isinstance(orig_arg, Future):
+            arg_cotangent = orig_arg.cotangent
+        else:
+            if arg not in cotangents:
+                arg_cotangent = arg.copy()
+                arg_cotangent.adjoint = True
+                arg_cotangent.data.fill(0)
+                cotangents[arg] = arg_cotangent
+            else:
+                arg_cotangent = cotangents[arg]
+        # Apply matrix
+        out_cotangent = self.cotangent
+        arg_cotangent.change_layout(layout)
+        out_cotangent.change_layout(layout)
+        self._operate(arg_cotangent, out_cotangent, adjoint=True) # note order (adjoint of forward operator)
+
 
 class SpectralOperator1D(SpectralOperator):
     """
@@ -1077,37 +1109,6 @@ class SpectralOperator1D(SpectralOperator):
         else:
             out.data.fill(0)
 
-    def operate(self, out):
-        out.preset_layout(self.args[0].layout)
-        self._operate(self.args[0], out)
-
-    def operate_jvp(self, out, tangent):
-        out.preset_layout(self.args[0].layout)
-        self._operate(self.args[0], out)
-        tangent.preset_layout(self.arg_tangents[0].layout)
-        self._operate(self.arg_tangents[0], tangent)
-
-    def operate_vjp(self, layout, cotangents):
-        # TODO: fix this hack, which avoids return layouts from all enforce_conditions methods
-        if layout is None:
-            layout = self.args[0].layout
-        orig_arg = self.original_args[0]
-        arg = self.args[0]
-        if isinstance(orig_arg, Future):
-            arg_cotangent = orig_arg.cotangent
-        else:
-            if arg not in cotangents:
-                arg_cotangent = arg.copy()
-                arg_cotangent.adjoint = True
-                arg_cotangent.data.fill(0)
-                cotangents[arg] = arg_cotangent
-            else:
-                arg_cotangent = cotangents[arg]
-        # Apply matrix
-        out_cotangent = self.cotangent
-        arg_cotangent.change_layout(layout)
-        out_cotangent.change_layout(layout)
-        self._operate(arg_cotangent, out_cotangent, adjoint=True) # note order (adjoint of forward operator)
 
 @alias('dt')
 class TimeDerivative(LinearOperator):
@@ -3027,39 +3028,6 @@ class SeparableSphereOperator(SpectralOperator):
                     else:
                         comp_out += symbols * comp_in # TEMPORARY
 
-    def operate(self, out):
-        """Perform operation."""
-        out.preset_layout(self.args[0].layout)
-        self._operate(self.args[0], out)
-
-    def operate_jvp(self, out, tangent):
-        out.preset_layout(self.args[0].layout)
-        tangent.preset_layout(self.arg_tangents[0].layout)
-        self._operate(self.args[0], out)
-        self._operate(self.arg_tangents[0], tangent)
-
-    def operate_vjp(self, layout, cotangents):
-        # TODO: fix this hack, which avoids return layouts from all enforce_conditions methods
-        if layout is None:
-            layout = self.args[0].layout
-        orig_arg0 = self.original_args[0]
-        arg0 = self.args[0]
-        if isinstance(orig_arg0, Future):
-            cotan0 = orig_arg0.cotangent
-            cotan0.change_layout(layout)
-        else:
-            if arg0 not in cotangents:
-                cotan0 = arg0.copy()
-                cotan0.adjoint = True
-                cotan0.data.fill(0)
-                cotangents[arg0] = cotan0
-            else:
-                cotan0 = cotangents[arg0]
-                cotan0.change_layout(layout)
-        # Apply adjoint of forward operator (original order for tensor sigs)
-        self.cotangent.change_layout(layout)
-        self._operate(cotan0, self.cotangent, adjoint=True)
-
 
 class SphereEllProduct(SeparableSphereOperator, metaclass=MultiClass):
 
@@ -3120,23 +3088,25 @@ class PolarMOperator(SpectralOperator):
         # LinearOperator requirements
         self.operand = operand
 
-    def operate(self, out):
+    def _operate(self, arg, out, adjoint=False):
         """Perform operation."""
-        operand = self.args[0]
+        # TODO: check if its faster to make dense matrices of symbols across all components
         if hasattr(self.output_basis, "m_maps"):
             basis = self.output_basis
         else:
             basis = self.input_basis
         axis = self.last_axis
-        # Set output layout
-        out.preset_layout(operand.layout)
-        out.data[:] = 0
+        if not adjoint:
+            out.data[:] = 0
+        # Return for size-zero data
+        if arg.data.size == 0 or out.data.size == 0:
+            return
         # Apply operator
-        S_in = basis.spin_weights(operand.tensorsig)
+        S_in = basis.spin_weights(arg.tensorsig)
         slices = [slice(None) for i in range(self.dist.dim)]
         for spinindex_in, spintotal_in in np.ndenumerate(S_in):
             for spinindex_out in self.spinindex_out(spinindex_in):
-                comp_in = operand.data[spinindex_in]
+                comp_in = arg.data[spinindex_in]
                 comp_out = out.data[spinindex_out]
                 for m, mg_slice, mc_slice, n_slice in basis.m_maps(self.dist):
                     slices[axis-1] = mc_slice
@@ -3144,8 +3114,12 @@ class PolarMOperator(SpectralOperator):
                     vec_in  = comp_in[tuple(slices)]
                     vec_out = comp_out[tuple(slices)]
                     if vec_in.size and vec_out.size:
-                        A = self.radial_matrix(spinindex_in, spinindex_out, m)
-                        vec_out += apply_matrix(A, vec_in, axis=axis)
+                        if adjoint:
+                            matrix = self.radial_matrix_adjoint(spinindex_in, spinindex_out, m)
+                            vec_in += apply_matrix(matrix, vec_out, axis=axis) # TEMPORARY
+                        else:
+                            matrix = self.radial_matrix(spinindex_in, spinindex_out, m)
+                            vec_out += apply_matrix(matrix, vec_in, axis=axis) # TEMPORARY
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
@@ -3186,6 +3160,14 @@ class PolarMOperator(SpectralOperator):
 
     def radial_matrix(self, spinindex_in, spinindex_out, m):
         raise NotImplementedError()
+
+    @CachedMethod
+    def radial_matrix_adjoint(self, spinindex_in, spinindex_out, m):
+        matrix = self.radial_matrix(spinindex_in, spinindex_out, m)
+        adjoint = matrix.T.conj()
+        if sparse.isspmatrix(adjoint):
+            adjoint = adjoint.tocsr()
+        return adjoint
 
 
 class MulCosine(PolarMOperator, metaclass=MultiClass):
@@ -3329,24 +3311,26 @@ class SphericalEllOperator(SpectralOperator):
     def S2_basis(self):
         return self.input_basis.S2_basis()
 
-    def operate(self, out):
+    def _operate(self, arg, out, adjoint=False):
         """Perform operation."""
-        operand = self.args[0]
+        # TODO: check if its faster to make dense matrices of symbols across all components
         if self.input_basis is None:
             basis = self.output_basis
         else:
             basis = self.input_basis
         radial_basis = self.radial_basis
         axis = self.dist.last_axis(radial_basis)
-        # Set output layout
-        out.preset_layout(operand.layout)
-        out.data[:] = 0
+        if not adjoint:
+            out.data[:] = 0
+        # Return for size-zero data
+        if arg.data.size == 0 or out.data.size == 0:
+            return
         # Apply operator
-        R_in = radial_basis.regularity_classes(operand.tensorsig)
+        R_in = radial_basis.regularity_classes(arg.tensorsig)
         slices = [slice(None) for i in range(self.dist.dim)]
         for regindex_in, regtotal_in in np.ndenumerate(R_in):
             for regindex_out in self.regindex_out(regindex_in):
-                comp_in = operand.data[regindex_in]
+                comp_in = arg.data[regindex_in]
                 comp_out = out.data[regindex_out]
                 # Should reorder to make ell loop first, check forbidden reg, remove reg from radial_vector_3
                 for ell, m_ind, ell_ind in basis.ell_maps(self.dist):
@@ -3359,8 +3343,12 @@ class SphericalEllOperator(SpectralOperator):
                         vec_in  = comp_in[tuple(slices)]
                         vec_out = comp_out[tuple(slices)]
                         if vec_in.size and vec_out.size:
-                            A = self.radial_matrix(regindex_in, regindex_out, ell)
-                            vec_out += apply_matrix(A, vec_in, axis=axis)
+                            if adjoint:
+                                matrix = self.radial_matrix_adjoint(regindex_in, regindex_out, ell)
+                                vec_in += apply_matrix(matrix, vec_out, axis=axis) # TEMPORARY
+                            else:
+                                A = self.radial_matrix(regindex_in, regindex_out, ell)
+                                vec_out += apply_matrix(A, vec_in, axis=axis) # TEMPORARY
 
     def subproblem_matrix(self, subproblem):
         operand = self.args[0]
@@ -3431,6 +3419,14 @@ class SphericalEllOperator(SpectralOperator):
 
     def radial_matrix(regindex_in, regindex_out, ell):
         raise NotImplementedError()
+
+    @CachedMethod
+    def radial_matrix_adjoint(self, regindex_in, regindex_out, ell):
+        matrix = self.radial_matrix(regindex_in, regindex_out, ell)
+        adjoint = matrix.T.conj()
+        if sparse.isspmatrix(adjoint):
+            adjoint = adjoint.tocsr()
+        return adjoint
 
 
 class SphericalGradient(Gradient, SphericalEllOperator):
