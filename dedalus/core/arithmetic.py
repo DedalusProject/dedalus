@@ -621,7 +621,7 @@ class DotProduct(Product, FutureField):
         broadcast_dims = np.array(self.domain.nonconstant)
         self.arg0_ghost_broadcaster = GhostBroadcaster(arg0.domain, self.dist.grid_layout, broadcast_dims)
         self.arg1_ghost_broadcaster = GhostBroadcaster(arg1.domain, self.dist.grid_layout, broadcast_dims)
-        # Compose eigsum string
+        # Compose einsum string
         rank0 = len(arg0.tensorsig)
         rank1 = len(arg1.tensorsig)
         arg1_str = alphabet[:rank0]
@@ -630,6 +630,8 @@ class DotProduct(Product, FutureField):
         arg2_str = arg2_str.replace(arg2_str[indices[1]], 'z')
         out_str = (arg1_str + arg2_str).replace('z', '')
         self.einsum_str = arg1_str + '...,' + arg2_str + '...->' + out_str + '...'
+        self.einsum_adj0_str = arg2_str + '...,' + out_str + '...->' + arg1_str + '...'
+        self.einsum_adj1_str = arg1_str + '...,' + out_str + '...->' + arg2_str + '...'
 
     def _check_indices(self, arg0, arg1, indices):
         if (not isinstance(arg0, Operand)) or (not isinstance(arg1, Operand)):
@@ -708,6 +710,31 @@ class DotProduct(Product, FutureField):
                 np.einsum(self.einsum_str, tan0_data, arg1_data, out=tangent.data, optimize=True)
                 np.add(tangent.data, np.einsum(self.einsum_str, arg0_data, tan1_data, optimize=True), out=tangent.data) # TEMPORARY
 
+    def operate_vjp(self, layout, cotangents):
+        arg_cotangents = []
+        for orig_arg, arg in zip(self.original_args, self.args):
+            if isinstance(orig_arg, Future):
+                orig_arg.cotangent.change_layout(layout)
+                arg_cotangents.append(orig_arg.cotangent)
+            else:
+                if arg not in cotangents:
+                    cotangent = arg.copy()
+                    cotangent.adjoint = True
+                    cotangent.data.fill(0)
+                    cotangents[arg] = cotangent
+                else:
+                    cotangents[arg].change_layout(layout)
+                arg_cotangents.append(cotangents[arg])
+        arg0, arg1 = self.args
+        cotan0, cotan1 = arg_cotangents
+        self.cotangent.change_layout(layout)
+        # Broadcast
+        arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
+        arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
+        cotangent_data = self.arg0_ghost_broadcaster.cast(self.cotangent)
+        np.add(cotan0.data, np.einsum(self.einsum_adj0_str, arg1_data, cotangent_data, optimize=True), out=cotan0.data)#TEMPORARY
+        cotangent_data = self.arg1_ghost_broadcaster.cast(self.cotangent)
+        np.add(cotan1.data, np.einsum(self.einsum_adj1_str, arg0_data, cotangent_data, optimize=True), out=cotan1.data)#TEMPORARY
 
 @alias("cross")
 class CrossProduct(Product, FutureField):
@@ -737,8 +764,12 @@ class CrossProduct(Product, FutureField):
         # Pick operate method based on coordsys handedness
         if self.tensorsig[0].right_handed:
             self.operate = self.operate_right_handed
+            self.operate_jvp = self.operate_jvp_right_handed
+            self.operate_vjp = self.operate_vjp_right_handed
         else:
             self.operate = self.operate_left_handed
+            self.operate_jvp = self.operate_jvp_left_handed
+            self.operate_vjp = self.operate_vjp_left_handed
 
     def operate_right_handed(self, out):
         arg0, arg1 = self.args
@@ -761,6 +792,116 @@ class CrossProduct(Product, FutureField):
         ne.evaluate("data02*data11 - data01*data12", out=out.data[0])
         ne.evaluate("data00*data12 - data02*data10", out=out.data[1])
         ne.evaluate("data01*data10 - data00*data11", out=out.data[2])
+
+    def operate_jvp_right_handed(self, out, tangent):
+        arg0, arg1 = self.args
+        out.preset_layout(arg0.layout)
+        arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
+        arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
+        data00, data01, data02 = arg0_data[0], arg0_data[1], arg0_data[2]
+        data10, data11, data12 = arg1_data[0], arg1_data[1], arg1_data[2]
+        ne.evaluate("data01*data12 - data02*data11", out=out.data[0])
+        ne.evaluate("data02*data10 - data00*data12", out=out.data[1])
+        ne.evaluate("data00*data11 - data01*data10", out=out.data[2])
+        if tangent:
+            tan0, tan1 = self.arg_tangents
+            tangent.preset_layout(tan0.layout)
+            # Broadcast
+            tan0_data = self.arg0_ghost_broadcaster.cast(tan0)
+            tan1_data = self.arg1_ghost_broadcaster.cast(tan1)
+            tan0_data0, tan0_data1, tan0_data2 = tan0_data[0], tan0_data[1], tan0_data[2]
+            tan1_data0, tan1_data1, tan1_data2 = tan1_data[0], tan1_data[1], tan1_data[2]
+            ne.evaluate("tan0_data1*data12 - tan0_data2*data11 + data01*tan1_data2 - data02*tan1_data1", out=tangent.data[0])
+            ne.evaluate("tan0_data2*data10 - tan0_data0*data12 + data02*tan1_data0 - data00*tan1_data2", out=tangent.data[1])
+            ne.evaluate("tan0_data0*data11 - tan0_data1*data10 + data00*tan1_data1 - data01*tan1_data0", out=tangent.data[2])
+
+    def operate_vjp_right_handed(self, layout, cotangents):
+        arg_cotangents = []
+        for orig_arg, arg in zip(self.original_args, self.args):
+            if isinstance(orig_arg, Future):
+                orig_arg.cotangent.change_layout(layout)
+                arg_cotangents.append(orig_arg.cotangent)
+            else:
+                if arg not in cotangents:
+                    cotangent = arg.copy()
+                    cotangent.adjoint = True
+                    cotangent.data.fill(0)
+                    cotangents[arg] = cotangent
+                else:
+                    cotangents[arg].change_layout(layout)
+                arg_cotangents.append(cotangents[arg])
+        arg0, arg1 = self.args
+        arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
+        arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
+        data00, data01, data02 = arg0_data[0], arg0_data[1], arg0_data[2]
+        data10, data11, data12 = arg1_data[0], arg1_data[1], arg1_data[2]
+        cotan0, cotan1 = arg_cotangents
+        self.cotangent.change_layout(layout)
+        cotangent_data = self.arg0_ghost_broadcaster.cast(self.cotangent)
+        cotangent_data0, cotangent_data1, cotangent_data2 = cotangent_data[0], cotangent_data[1], cotangent_data[2]    
+        np.add(cotan0.data[0], -ne.evaluate("cotangent_data1*data12 - cotangent_data2*data11"), out=cotan0.data[0]) #TEMPORARY
+        np.add(cotan0.data[1], -ne.evaluate("cotangent_data2*data10 - cotangent_data0*data12"), out=cotan0.data[1]) #TEMPORARY
+        np.add(cotan0.data[2], -ne.evaluate("cotangent_data0*data11 - cotangent_data1*data10"), out=cotan0.data[2]) #TEMPORARY
+        cotangent_data = self.arg1_ghost_broadcaster.cast(self.cotangent)
+        cotangent_data0, cotangent_data1, cotangent_data2 = cotangent_data[0], cotangent_data[1], cotangent_data[2] 
+        np.add(cotan1.data[0], -ne.evaluate("data01*cotangent_data2 - data02*cotangent_data1"), out=cotan1.data[0]) #TEMPORARY
+        np.add(cotan1.data[1], -ne.evaluate("data02*cotangent_data0 - data00*cotangent_data2"), out=cotan1.data[1]) #TEMPORARY
+        np.add(cotan1.data[2], -ne.evaluate("data00*cotangent_data1 - data01*cotangent_data0"), out=cotan1.data[2]) #TEMPORARY
+
+    def operate_jvp_left_handed(self, out, tangent):
+        arg0, arg1 = self.args
+        out.preset_layout(arg0.layout)
+        arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
+        arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
+        data00, data01, data02 = arg0_data[0], arg0_data[1], arg0_data[2]
+        data10, data11, data12 = arg1_data[0], arg1_data[1], arg1_data[2]
+        ne.evaluate("data02*data11 - data01*data12", out=out.data[0])
+        ne.evaluate("data00*data12 - data02*data10", out=out.data[1])
+        ne.evaluate("data01*data10 - data00*data11", out=out.data[2])
+        if tangent:
+            tan0, tan1 = self.arg_tangents
+            tangent.preset_layout(tan0.layout)
+            # Broadcast
+            tan0_data = self.arg0_ghost_broadcaster.cast(tan0)
+            tan1_data = self.arg1_ghost_broadcaster.cast(tan1)
+            tan0_data0, tan0_data1, tan0_data2 = tan0_data[0], tan0_data[1], tan0_data[2]
+            tan1_data0, tan1_data1, tan1_data2 = tan1_data[0], tan1_data[1], tan1_data[2]
+            ne.evaluate("tan0_data2*data11 - tan0_data1*data12 + data02*tan1_data1 - data01*tan1_data2", out=tangent.data[0])
+            ne.evaluate("tan0_data0*data12 - tan0_data2*data10 + data00*tan1_data2 - data02*tan1_data0", out=tangent.data[1])
+            ne.evaluate("tan0_data1*data10 - tan0_data0*data11 + data01*tan1_data0 - data00*tan1_data1", out=tangent.data[2])
+
+    def operate_vjp_left_handed(self, layout, cotangents):
+        arg_cotangents = []
+        for orig_arg, arg in zip(self.original_args, self.args):
+            if isinstance(orig_arg, Future):
+                orig_arg.cotangent.change_layout(layout)
+                arg_cotangents.append(orig_arg.cotangent)
+            else:
+                if arg not in cotangents:
+                    cotangent = arg.copy()
+                    cotangent.adjoint = True
+                    cotangent.data.fill(0)
+                    cotangents[arg] = cotangent
+                else:
+                    cotangents[arg].change_layout(layout)
+                arg_cotangents.append(cotangents[arg])
+        arg0, arg1 = self.args
+        arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
+        arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
+        data00, data01, data02 = arg0_data[0], arg0_data[1], arg0_data[2]
+        data10, data11, data12 = arg1_data[0], arg1_data[1], arg1_data[2]
+        cotan0, cotan1 = arg_cotangents
+        self.cotangent.change_layout(layout)
+        cotangent_data = self.arg0_ghost_broadcaster.cast(self.cotangent)
+        cotangent_data0, cotangent_data1, cotangent_data2 = cotangent_data[0], cotangent_data[1], cotangent_data[2]    
+        np.add(cotan0.data[0], -ne.evaluate("cotangent_data2*data11 - cotangent_data1*data12"), out=cotan0.data[0]) #TEMPORARY
+        np.add(cotan0.data[1], -ne.evaluate("cotangent_data0*data12 - cotangent_data2*data10"), out=cotan0.data[1]) #TEMPORARY
+        np.add(cotan0.data[2], -ne.evaluate("cotangent_data1*data10 - cotangent_data0*data11"), out=cotan0.data[2]) #TEMPORARY
+        cotangent_data = self.arg1_ghost_broadcaster.cast(self.cotangent)
+        cotangent_data0, cotangent_data1, cotangent_data2 = cotangent_data[0], cotangent_data[1], cotangent_data[2] 
+        np.add(cotan1.data[0], -ne.evaluate("data02*cotangent_data1 - data01*cotangent_data2"), out=cotan1.data[0]) #TEMPORARY
+        np.add(cotan1.data[1], -ne.evaluate("data00*cotangent_data2 - data02*cotangent_data0"), out=cotan1.data[1]) #TEMPORARY
+        np.add(cotan1.data[2], -ne.evaluate("data01*cotangent_data0 - data00*cotangent_data1"), out=cotan1.data[2]) #TEMPORARY
 
     def new_operands(self, arg0, arg1, **kw):
         if arg0 == 0 or arg1 == 0:
