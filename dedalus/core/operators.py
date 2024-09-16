@@ -4077,6 +4077,14 @@ class SphericalCurl(Curl, SphericalEllOperator):
             return self._radial_matrix(radial_basis, regindex_in[0], regindex_out[0], regtotal_in, regtotal_out, ell)
         else:
             raise ValueError("This should never happen")
+        
+    @CachedMethod
+    def radial_matrix_adjoint(self, regindex_in, regindex_out, ell):
+        matrix = self.radial_matrix(regindex_in, regindex_out, ell)
+        adjoint = matrix.T.conj()
+        if sparse.isspmatrix(adjoint):
+            adjoint = adjoint.tocsr()
+        return adjoint
 
     @staticmethod
     @CachedMethod
@@ -4133,23 +4141,28 @@ class SphericalCurl(Curl, SphericalEllOperator):
             matrix.tocsr()
             return matrix
 
-    def operate(self, out):
+    def _operate(self, arg, out, adjoint=False):
         """Perform operation."""
         if self.dtype == np.complex128:
-            return super().operate(out)
-        operand = self.args[0]
+            return super()._operate(arg, out, adjoint)
+        layout = arg.layout
+        basis = self.input_basis
+        if basis is None:
+            basis = self.output_basis
+        if not adjoint:
+            out.data[:] = 0
+        # Return for size-zero data
+        if arg.data.size == 0 or out.data.size == 0:
+            return
         input_basis = self.input_basis
         radial_basis = self.radial_basis
-        axis = self.dist.last_axis(self.radial_basis)
-        # Set output layout
-        out.preset_layout(operand.layout)
-        out.data.fill(0)
+        axis = self.dist.last_axis(self.radial_basis) 
         # Apply operator
-        R_in = radial_basis.regularity_classes(operand.tensorsig)
+        R_in = radial_basis.regularity_classes(arg.tensorsig)
         slices = [slice(None) for i in range(self.dist.dim)]
         for regindex_in, regtotal_in in np.ndenumerate(R_in):
             for regindex_out in self.regindex_out(regindex_in):
-                comp_in = operand.data[regindex_in]
+                comp_in = arg.data[regindex_in]
                 comp_out = out.data[regindex_out]
                 # Should reorder to make ell loop first, check forbidden reg, remove reg from radial_vector_3
                 for ell, m_ind, ell_ind in input_basis.ell_maps(self.dist):
@@ -4161,13 +4174,26 @@ class SphericalCurl(Curl, SphericalEllOperator):
                         slices[axis] = radial_basis.n_slice(ell)
                         cos_slice = axslice(axis-2, 0, None, 2)
                         msin_slice = axslice(axis-2, 1, None, 2)
-                        vec_in_cos = comp_in[tuple(slices)][cos_slice]
-                        vec_in_msin = comp_in[tuple(slices)][msin_slice]
-                        vec_in_complex = vec_in_cos + 1j*vec_in_msin
-                        A = self.radial_matrix(regindex_in, regindex_out, ell)
-                        vec_out_complex = apply_matrix(A, vec_in_complex, axis=axis)
-                        comp_out[tuple(slices)][cos_slice] += vec_out_complex.real
-                        comp_out[tuple(slices)][msin_slice] += vec_out_complex.imag
+                        if adjoint:
+                            vec_out_cos = comp_out[tuple(slices)][cos_slice]
+                            vec_out_msin = comp_out[tuple(slices)][msin_slice]
+                            vec_out_complex = vec_out_cos + 1j*vec_out_msin
+                        else:
+                            vec_in_cos = comp_in[tuple(slices)][cos_slice]
+                            vec_in_msin = comp_in[tuple(slices)][msin_slice]
+                            vec_in_complex = vec_in_cos + 1j*vec_in_msin
+                        if adjoint:
+                            matrix = self.radial_matrix_adjoint(regindex_in, regindex_out, ell)
+                            vec_in_complex = apply_matrix(matrix, vec_out_complex, axis=axis) # TEMPORARY
+                        else:
+                            A = self.radial_matrix(regindex_in, regindex_out, ell)
+                            vec_out_complex = apply_matrix(A, vec_in_complex, axis=axis)
+                        if adjoint:
+                            comp_in[tuple(slices)][cos_slice] += vec_in_complex.real
+                            comp_in[tuple(slices)][msin_slice] += vec_in_complex.imag
+                        else:
+                            comp_out[tuple(slices)][cos_slice] += vec_out_complex.real
+                            comp_out[tuple(slices)][msin_slice] += vec_out_complex.imag
 
 
 @alias("lap")
