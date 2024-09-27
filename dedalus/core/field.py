@@ -16,6 +16,7 @@ from math import prod
 
 
 from ..libraries.fftw import fftw_wrappers as fftw
+from ..tools.array import copyto
 from ..tools.config import config
 from ..tools.cache import CachedMethod, CachedAttribute
 from ..tools.exceptions import UndefinedParityError
@@ -567,7 +568,7 @@ class Field(Current):
         """Set data viewed in a specified layout."""
         layout = self.dist.get_layout_object(layout)
         self.preset_layout(layout)
-        np.copyto(self.data, data)
+        copyto(self.data, data)
 
     def get_basis(self, coord):
         return self.domain.get_basis(coord)
@@ -599,7 +600,7 @@ class Field(Current):
         self.set_local_data(global_data[np.ix_(*elements)])
 
     def set_local_data(self, local_data):
-        np.copyto(self.data, local_data)
+        copyto(self.data, local_data)
 
     def change_scales(self, scales):
         """Change data to specified scales."""
@@ -619,7 +620,7 @@ class Field(Current):
         # Copy over scale change
         old_data = self.data
         self.preset_scales(scales)
-        np.copyto(self.data, old_data)
+        copyto(self.data, old_data)
 
     def change_layout(self, layout):
         """Change data to specified layout."""
