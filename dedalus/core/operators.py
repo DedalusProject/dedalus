@@ -2551,18 +2551,39 @@ class CartesianGradient(Gradient):
             if arg:
                 arg.change_layout(layout)
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        operands = self.args
-        layouts = [operand.layout for operand in self.args if operand]
-        # Set output layout
-        out.preset_layout(layouts[0])
-        # Copy operand data to output components
-        for i, comp in enumerate(operands):
-            if comp:
-                out.data[i] = comp.data
+        # Copy arg data to output components
+        for i, arg_i in enumerate(args):
+            if adjoint:
+                # Add instead of copy for VJP accumulation
+                np.add(arg_i.data, out.data[i], out=arg_i.data)
             else:
-                out.data[i] = 0
+                copyto(out.data[i], arg_i.data)
+
+    def operate(self, out):
+        out.preset_layout(self.args[0].layout)
+        self._operate(self.args, out)
+
+    def operate_jvp(self, out, tangent):
+        out.preset_layout(self.args[0].layout)
+        tangent.preset_layout(self.arg_tangents[0].layout)
+        self._operate(self.args, out)
+        self._operate(self.arg_tangents, tangent)
+
+    def operate_vjp(self, layout, cotangents):
+        # TODO: fix this hack, which avoids return layouts from all enforce_conditions methods
+        if layout is None:
+            layout = self.args[0].layout
+        orig_args = self.original_args
+        args = self.args
+        arg_cotangents = [orig_arg.cotangent for orig_arg in orig_args]
+        # Apply matrix
+        out_cotangent = self.cotangent
+        for arg_cotangent in arg_cotangents:
+            arg_cotangent.change_layout(layout)
+        out_cotangent.change_layout(layout)
+        self._operate(arg_cotangents, out_cotangent, adjoint=True) # note order (adjoint of forward operator)
 
 
 class DirectProductGradient(Gradient):
@@ -4077,7 +4098,7 @@ class SphericalCurl(Curl, SphericalEllOperator):
             return self._radial_matrix(radial_basis, regindex_in[0], regindex_out[0], regtotal_in, regtotal_out, ell)
         else:
             raise ValueError("This should never happen")
-        
+
     @CachedMethod
     def radial_matrix_adjoint(self, regindex_in, regindex_out, ell):
         matrix = self.radial_matrix(regindex_in, regindex_out, ell)
@@ -4156,7 +4177,7 @@ class SphericalCurl(Curl, SphericalEllOperator):
             return
         input_basis = self.input_basis
         radial_basis = self.radial_basis
-        axis = self.dist.last_axis(self.radial_basis) 
+        axis = self.dist.last_axis(self.radial_basis)
         # Apply operator
         R_in = radial_basis.regularity_classes(arg.tensorsig)
         slices = [slice(None) for i in range(self.dist.dim)]
