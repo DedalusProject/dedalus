@@ -3,6 +3,7 @@ Arithmetic operators.
 
 """
 
+import sys
 from functools import reduce
 import numpy as np
 from scipy import sparse
@@ -981,7 +982,7 @@ class MultiplyNumberField(Multiply, FutureField):
 
 # Define aliases
 for key, value in aliases.items():
-    exec(f"{key} = {value.__name__}")
+    setattr(sys.modules[__name__], key, value)
 
 # Export aliases
 __all__.extend(aliases.keys())
