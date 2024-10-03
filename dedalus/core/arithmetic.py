@@ -838,12 +838,12 @@ class CrossProduct(Product, FutureField):
         cotan0, cotan1 = arg_cotangents
         self.cotangent.change_layout(layout)
         cotangent_data = self.arg0_ghost_broadcaster.cast(self.cotangent)
-        cotangent_data0, cotangent_data1, cotangent_data2 = cotangent_data[0], cotangent_data[1], cotangent_data[2]    
+        cotangent_data0, cotangent_data1, cotangent_data2 = cotangent_data[0], cotangent_data[1], cotangent_data[2]
         np.add(cotan0.data[0], -ne.evaluate("cotangent_data1*data12 - cotangent_data2*data11"), out=cotan0.data[0]) #TEMPORARY
         np.add(cotan0.data[1], -ne.evaluate("cotangent_data2*data10 - cotangent_data0*data12"), out=cotan0.data[1]) #TEMPORARY
         np.add(cotan0.data[2], -ne.evaluate("cotangent_data0*data11 - cotangent_data1*data10"), out=cotan0.data[2]) #TEMPORARY
         cotangent_data = self.arg1_ghost_broadcaster.cast(self.cotangent)
-        cotangent_data0, cotangent_data1, cotangent_data2 = cotangent_data[0], cotangent_data[1], cotangent_data[2] 
+        cotangent_data0, cotangent_data1, cotangent_data2 = cotangent_data[0], cotangent_data[1], cotangent_data[2]
         np.add(cotan1.data[0], -ne.evaluate("data01*cotangent_data2 - data02*cotangent_data1"), out=cotan1.data[0]) #TEMPORARY
         np.add(cotan1.data[1], -ne.evaluate("data02*cotangent_data0 - data00*cotangent_data2"), out=cotan1.data[1]) #TEMPORARY
         np.add(cotan1.data[2], -ne.evaluate("data00*cotangent_data1 - data01*cotangent_data0"), out=cotan1.data[2]) #TEMPORARY
@@ -893,12 +893,12 @@ class CrossProduct(Product, FutureField):
         cotan0, cotan1 = arg_cotangents
         self.cotangent.change_layout(layout)
         cotangent_data = self.arg0_ghost_broadcaster.cast(self.cotangent)
-        cotangent_data0, cotangent_data1, cotangent_data2 = cotangent_data[0], cotangent_data[1], cotangent_data[2]    
+        cotangent_data0, cotangent_data1, cotangent_data2 = cotangent_data[0], cotangent_data[1], cotangent_data[2]
         np.add(cotan0.data[0], -ne.evaluate("cotangent_data2*data11 - cotangent_data1*data12"), out=cotan0.data[0]) #TEMPORARY
         np.add(cotan0.data[1], -ne.evaluate("cotangent_data0*data12 - cotangent_data2*data10"), out=cotan0.data[1]) #TEMPORARY
         np.add(cotan0.data[2], -ne.evaluate("cotangent_data1*data10 - cotangent_data0*data11"), out=cotan0.data[2]) #TEMPORARY
         cotangent_data = self.arg1_ghost_broadcaster.cast(self.cotangent)
-        cotangent_data0, cotangent_data1, cotangent_data2 = cotangent_data[0], cotangent_data[1], cotangent_data[2] 
+        cotangent_data0, cotangent_data1, cotangent_data2 = cotangent_data[0], cotangent_data[1], cotangent_data[2]
         np.add(cotan1.data[0], -ne.evaluate("data02*cotangent_data1 - data01*cotangent_data2"), out=cotan1.data[0]) #TEMPORARY
         np.add(cotan1.data[1], -ne.evaluate("data00*cotangent_data2 - data02*cotangent_data0"), out=cotan1.data[1]) #TEMPORARY
         np.add(cotan1.data[2], -ne.evaluate("data01*cotangent_data0 - data00*cotangent_data1"), out=cotan1.data[2]) #TEMPORARY
@@ -1083,9 +1083,17 @@ class MultiplyFields(Multiply, FutureField):
         arg0, arg1 = self.args
         cotan0, cotan1 = arg_cotangents
         self.cotangent.change_layout(layout)
+        # Sum cotangents over tensor dimensions of other argument
+        # This reduction is the adjoint of the tensor broadcast in the forward operation
+        rank0 = len(arg0.tensorsig)
+        rank1 = len(arg1.tensorsig)
+        cotan0_ = np.multiply(self.cotangent.data, arg1.data)
+        cotan0_ = cotan0_.sum(axis=tuple(range(rank0, rank0+rank1)))
+        cotan1_ = np.multiply(self.cotangent.data, arg0.data)
+        cotan1_ = cotan1_.sum(axis=tuple(range(rank0)))
         # Add adjoint contribution in-place (required for accumulation)
-        np.add(np.multiply(self.cotangent.data, arg1.data), cotan0.data, out=cotan0.data)
-        np.add(np.multiply(self.cotangent.data, arg0.data), cotan1.data, out=cotan1.data)
+        np.add(cotan0_, cotan0.data, out=cotan0.data)
+        np.add(cotan1_, cotan1.data, out=cotan1.data)
 
 
 class GhostBroadcaster:
