@@ -85,7 +85,7 @@ class MultistepIMEX:
 
         # Solver references
         solver = self.solver
-        subproblems = [sp for sp in solver.subproblems if sp.size] # Skip empty subproblems
+        subproblems = solver.subproblems
         evaluator = solver.evaluator
         state_fields = solver.state
         F_fields = solver.F
@@ -542,7 +542,7 @@ class RungeKuttaIMEX:
 
         # Solver references
         solver = self.solver
-        subproblems = [sp for sp in solver.subproblems if sp.size] # Skip empty subproblems
+        subproblems = solver.subproblems
         evaluator = solver.evaluator
         state_fields = solver.state
         F_fields = solver.F
@@ -629,6 +629,7 @@ class RungeKuttaIMEX:
                 spRHS = RHS.get_subdata(sp)
                 spX = sp.LHS_solvers[i].solve(spRHS)  # CREATES TEMPORARY
                 sp.scatter_inputs(spX, state_fields)
+
             solver.sim_time = sim_time_0 + k*c[i]
 
 
@@ -672,6 +673,9 @@ class RK443(RungeKuttaIMEX):
     """3rd-order 4-stage DIRK+ERK scheme [Ascher 1997 sec 2.8]"""
 
     stages = 4
+
+    # A = explicit
+    # H = Implicit
 
     c = np.array([0, 1/2, 2/3, 1/2, 1])
 
@@ -726,4 +730,230 @@ class RKGFY(RungeKuttaIMEX):
     H = np.array([[0   , 0  ,   0],
                   [0.5 , 0.5,   0],
                   [0.5 , 0  , 0.5]])
+
+class RungeKuttaIMEX_Adapt:
+    """
+    Base class for implicit-explicit multistep methods.
+
+    Parameters
+    ----------
+    nfields : int
+        Number of fields in problem
+    domain : domain object
+        Problem domain
+
+    Notes
+    -----
+    These timesteppers discretize the system
+        M.dt(X) + L.X = F
+    by constructing s stages
+        M.X(n,i) - M.X(n,0) + k Hij L.X(n,j) = k Aij F(n,j)
+    where j runs from {0, 0} to {i, i-1}, and F(n,i) is evaluated at time
+        t(n,i) = t(n,0) + k ci
+
+    The s stages are solved as
+        (M + k Hii L).X(n,i) = M.X(n,0) + k Aij F(n,j) - k Hij L.X(n,j)
+    where j runs from {0, 0} to {i-1, i-1}.
+
+    The final stage is used as the advanced solution*:
+        X(n+1,0) = X(n,s)
+        t(n+1,0) = t(n,s) = t(n,0) + k
+
+    * Equivalently the Butcher tableaus must follow
+        b_im = H[s, :]
+        b_ex = A[s, :]
+        c[s] = 1
+
+    References
+    ----------
+    U. M. Ascher, S. J. Ruuth, and R. J. Spiteri, Applied Numerical Mathematics (1997).
+
+    """
+
+    steps = 1
+
+    def __init__(self, solver):
+
+        self.solver = solver
+        self.RHS = CoeffSystem(solver.subproblems, dtype=solver.dtype)
+
+        # Create coefficient systems for multistep history
+        self.MX0 = CoeffSystem(solver.subproblems, dtype=solver.dtype)
+        self.LX = [CoeffSystem(solver.subproblems, dtype=solver.dtype) for i in range(self.stages)]
+        self.F = [CoeffSystem(solver.subproblems, dtype=solver.dtype) for i in range(self.stages)]
+
+        self._LHS_params = None
+        self.axpy = blas.get_blas_funcs('axpy', dtype=solver.dtype)
+
+    def step(self, dt, wall_time):
+        """Advance solver by one timestep."""
+
+        # Solver references
+        solver = self.solver
+        subproblems = solver.subproblems
+        evaluator = solver.evaluator
+        state_fields = solver.state
+        F_fields = solver.F
+        sim_time_0 = solver.sim_time
+        iteration = solver.iteration
+        STORE_EXPANDED_MATRICES = solver.store_expanded_matrices
+
+        error_tolerance = 1e-04
+        growth_factor = 0.9
+        max_dt = 1e-03
+        min_dt = 1e-14
+
+        # Other references
+        RHS = self.RHS
+        MX0 = self.MX0
+        LX = self.LX
+        LX0 = LX[0]
+        F = self.F
+        A = self.A
+        H = self.H
+        b_hat = self.b_hat
+        c = self.c
+        k = dt
+        axpy = self.axpy
+
+        # Check on updating LHS
+        update_LHS = (k != self._LHS_params)
+        self._LHS_params = k
+        if update_LHS:
+            # Remove old solver references
+            for sp in subproblems:
+                sp.LHS_solvers = [None] * (self.stages+1)
+
+        # Compute M.X(n,0) and L.X(n,0)
+        # Ensure coeff space before subsystem gathers
+        evaluator.require_coeff_space(state_fields)
+        for sp in subproblems:
+            spX = sp.gather_inputs(state_fields)
+            apply_sparse(sp.M_min, spX, axis=0, out=MX0.get_subdata(sp))
+            apply_sparse(sp.L_min, spX, axis=0, out=LX0.get_subdata(sp))
+
+        # Compute stages
+        # (M + k Hii L).X(n,i) = M.X(n,0) + k Aij F(n,j) - k Hij L.X(n,j)
+        for i in range(1, self.stages + 1):
+            # Compute L.X(n,i-1), already done for i=1
+            if i > 1:
+                LXi = LX[i-1]
+                # Ensure coeff space before subsystem gathers
+                evaluator.require_coeff_space(state_fields)
+                for sp in subproblems:
+                    spX = sp.gather_inputs(state_fields)
+                    apply_sparse(sp.L_min, spX, axis=0, out=LXi.get_subdata(sp))
+
+            # Compute F(n,i-1), only doing output on first evaluation
+            if i == 1:
+                evaluator.evaluate_scheduled(iteration=iteration, wall_time=wall_time, sim_time=solver.sim_time, timestep=dt)
+            else:
+                evaluator.evaluate_group('F')
+            Fi = F[i-1]
+            for sp in subproblems:
+                # F fields should be in coeff space from evaluator
+                sp.gather_outputs(F_fields, out=Fi.get_subdata(sp))
+
+            # Construct RHS(n,i)
+            if RHS.data.size:
+                np.copyto(RHS.data, MX0.data)
+                for j in range(0, i):
+                    # RHS.data += (k * A[i,j]) * F[j].data
+                    axpy(a=(k * A[i, j]), x=F[j].data, y=RHS.data)
+                    # RHS.data -= (k * H[i,j]) * LX[j].data
+                    axpy(a=-(k * H[i, j]), x=LX[j].data, y=RHS.data)
+
+            # Solve for stage (Compute X)
+            k_Hii = k * H[i, i]
+            # Ensure coeff space before subsystem scatters
+            for field in state_fields:
+                field.preset_layout('c')
+            for sp in subproblems:
+                # Construct LHS(n,i) using old H
+                if update_LHS:
+                    if STORE_EXPANDED_MATRICES:
+                        # sp.LHS.data[:] = sp.M_exp.data + k_Hii*sp.L_exp.data
+                        np.copyto(sp.LHS.data, sp.M_exp.data)
+                        axpy(a=k_Hii, x=sp.L_exp.data, y=sp.LHS.data)
+                    else:
+                        sp.LHS = (sp.M_min + k_Hii * sp.L_min)  # CREATES TEMPORARY
+                    sp.LHS_solvers[i] = solver.matsolver(sp.LHS, solver)
+                # Slice out valid subdata, skipping invalid components
+                spRHS = RHS.get_subdata(sp)
+                spX = sp.LHS_solvers[i].solve(spRHS)  # CREATES TEMPORARY
+                sp.scatter_inputs(spX, state_fields)
+
+            # If this is the last iteration, swap H's last row with b_hat and compute X_hat
+            if i == self.stages-1:
+                # Swap the last row of H with b_hat
+                H[-1, :] = b_hat
+
+                # Reconstruct RHS(n,i) with updated H
+                if RHS.data.size:
+                    np.copyto(RHS.data, MX0.data)
+                    for j in range(0, i):
+                        # RHS.data += (k * A[i,j]) * F[j].data
+                        axpy(a=(k * A[i, j]), x=F[j].data, y=RHS.data)
+                        # RHS.data -= (k * H[i,j]) * LX[j].data with updated H
+                        axpy(a=-(k * H[i, j]), x=LX[j].data, y=RHS.data)
+
+                # Solve again with updated H to compute X_hat
+                for sp in subproblems:
+                    # Recompute LHS with updated H
+                    k_Hii = k * H[i, i]
+                    if update_LHS:
+                        if STORE_EXPANDED_MATRICES:
+                            np.copyto(sp.LHS.data, sp.M_exp.data)
+                            axpy(a=k_Hii, x=sp.L_exp.data, y=sp.LHS.data)
+                        else:
+                            sp.LHS = (sp.M_min + k_Hii * sp.L_min)
+                        sp.LHS_solvers[i] = solver.matsolver(sp.LHS, solver)
+
+                    # Solve for X_hat using the updated H
+                    spX_hat = sp.LHS_solvers[i].solve(spRHS)
+                    #sp.scatter_inputs(spX_hat, state_fields)
+
+            solver.sim_time = sim_time_0 + k * c[i]
+
+        spX_diff = np.max(np.abs(spX - spX_hat))  # Element-wise difference
+        #print(spX_diff)
+
+        adapt_fac = 0.9
+        if spX_diff > error_tolerance:
+            # If the error exceeds the tolerance, decrease the time step proportionally
+            dt = dt * adapt_fac
+        else:
+            # If the error is within tolerance, increase the time step but cap it at max_dt
+            dt = min(dt / adapt_fac, max_dt)
+        dt = max(min(dt,max_dt), min_dt)
+        return dt
+        
+
+@add_scheme
+class ARK437L2SA(RungeKuttaIMEX_Adapt):
+    """4th-order 6-stage scheme from ..."""
+
+    stages = 6
+    γ = 1235/10000
+    c = np.array([0, 247/2000, 4276536705230/10142255878289, 67/200, 3/40, 7/10, 1.0])
+    #Explicit
+    A = np.array([[  0,  0, 0, 0, 0, 0, 0],
+              [247/1000, 0, 0, 0, 0, 0, 0],
+              [247/4000, 2694949928731/7487940209513, 0, 0, 0, 0, 0],  # Added comma here
+              [464650059369/8764239774964, 878889893998/2444806327765, -952945855348/12294611323341, 0, 0, 0, 0],
+              [476636172619/8159180917465, -1271469283451/7793814740893, -859560642026/4356155882851, 1723805262919/4571918432560, 0, 0, 0],
+              [6338158500785/11769362343261, -4970555480458/10924838743837, 3326578051521/2647936831840, -880713585975/1841400956686, -1428733748635/8843423958496, 0, 0],
+              [760814592956/3276306540349, 760814592956/3276306540349, -47223648122716/6934462133451, 71187472546993/9669769126921, -13330509492149/9695768672337, 11565764226357/8513123442827, 0]])  # Fixed the list
+
+    #Implicit
+    H = np.array([[0,  0, 0, 0, 0, 0, 0],
+                  [γ , γ, 0, 0, 0, 0, 0],
+                  [624185399699/4186980696204 , 624185399699/4186980696204, γ, 0, 0, 0, 0],
+                  [1258591069120/10082082980243, 1258591069120/10082082980243, -322722984531/8455138723562, γ, 0, 0, 0],
+                  [-436103496990/5971407786587, -436103496990/5971407786587, -2689175662187/11046760208243, 4431412449334/12995360898505, γ, 0, 0],
+                  [-2207373168298/14430576638973, -2207373168298/14430576638973, 242511121179/3358618340039, 3145666661981/7780404714551, 5882073923981/14490790706663, γ, 0],
+                  [0, 0, 9164257142617/17756377923965, -10812980402763/74029279521829, 1335994250573/5691609445217, 2273837961795/8368240463276, γ]]) #b 
+    
+    b_hat = np.array([[0, 0, 4469248916618/8635866897933, -621260224600/4094290005349, 696572312987/2942599194819, 1532940081127/5565293938103, 2441/20000]
+    ])
 
