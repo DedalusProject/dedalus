@@ -931,7 +931,7 @@ class RungeKuttaIMEX_Adapt:
 
 @add_scheme
 class ARK437L2SA(RungeKuttaIMEX_Adapt):
-    """4th-order 6-stage scheme from ..."""
+    """4th-order 6-stage scheme from Higher-order additive Runge–Kutta schemes for ordinary differential equations, Christopher A. Kennedy, Mark H. Carpenter"""
 
     stages = 6
     γ = 1235/10000
