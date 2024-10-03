@@ -13,6 +13,7 @@ import numbers
 import numexpr as ne
 from collections import defaultdict
 from math import prod
+from mpi4py import MPI
 
 from .domain import Domain
 from .field import Operand, Field
@@ -1033,12 +1034,13 @@ class MultiplyFields(Multiply, FutureField):
         arg0, arg1 = self.args
         # Set output layout
         out.preset_layout(arg0.layout)
-        # Broadcast
+        # Broadcast over processes
         arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
         arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
-        # Reshape arg data to broadcast properly for output tensorsig
+        # Reshape arg data for broadcasting over tensor dimensions
         arg0_exp_data = arg0_data.reshape(self.arg0_exp_tshape + arg0_data.shape[len(arg0.tensorsig):])
         arg1_exp_data = arg1_data.reshape(self.arg1_exp_tshape + arg1_data.shape[len(arg1.tensorsig):])
+        # Multiply, broadcasting over space and tensor dimensions
         np.multiply(arg0_exp_data, arg1_exp_data, out=out.data)
 
     def operate_jvp(self, out, tangent):
@@ -1046,22 +1048,24 @@ class MultiplyFields(Multiply, FutureField):
         arg0, arg1 = self.args
         # Set output layout
         out.preset_layout(arg0.layout)
-        # Broadcast
+        # Broadcast over processes
         arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
         arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
-        # Reshape arg data to broadcast properly for output tensorsig
+        # Reshape arg data for broadcasting over tensor dimensions
         arg0_exp_data = arg0_data.reshape(self.arg0_exp_tshape + arg0_data.shape[len(arg0.tensorsig):])
         arg1_exp_data = arg1_data.reshape(self.arg1_exp_tshape + arg1_data.shape[len(arg1.tensorsig):])
+        # Multiply, broadcasting over space and tensor dimensions
         np.multiply(arg0_exp_data, arg1_exp_data, out=out.data)
         if tangent:
             tan0, tan1 = self.arg_tangents
             tangent.preset_layout(tan0.layout)
-            # Broadcast
+            # Broadcast over processes
             tan0_data = self.arg0_ghost_broadcaster.cast(tan0)
             tan1_data = self.arg1_ghost_broadcaster.cast(tan1)
-            # Reshape arg data to broadcast properly for output tensorsig
+            # Reshape arg data for broadcasting over tensor dimensions
             tan0_exp_data = tan0_data.reshape(self.arg0_exp_tshape + tan0_data.shape[len(tan0.tensorsig):])
             tan1_exp_data = tan1_data.reshape(self.arg1_exp_tshape + tan1_data.shape[len(tan1.tensorsig):])
+            # Multiply, broadcasting over space and tensor dimensions
             np.multiply(tan0_exp_data, arg1_exp_data, out=tangent.data)
             np.add(tangent.data, np.multiply(arg0_exp_data, tan1_exp_data), out=tangent.data) # TEMPORARY
 
@@ -1083,17 +1087,25 @@ class MultiplyFields(Multiply, FutureField):
         arg0, arg1 = self.args
         cotan0, cotan1 = arg_cotangents
         self.cotangent.change_layout(layout)
-        # Sum cotangents over tensor dimensions of other argument
-        # This reduction is the adjoint of the tensor broadcast in the forward operation
+        # Compute raw cotangents
+        cotan0_raw = np.multiply(self.cotangent.data, arg1.data)
+        cotan1_raw = np.multiply(self.cotangent.data, arg0.data)
+        # Reduce over broadcasted tensor dimensions
         rank0 = len(arg0.tensorsig)
         rank1 = len(arg1.tensorsig)
-        cotan0_ = np.multiply(self.cotangent.data, arg1.data)
-        cotan0_ = cotan0_.sum(axis=tuple(range(rank0, rank0+rank1)))
-        cotan1_ = np.multiply(self.cotangent.data, arg0.data)
-        cotan1_ = cotan1_.sum(axis=tuple(range(rank0)))
+        cotan0_raw = np.multiply(self.cotangent.data, arg1.data)
+        cotan0_raw = cotan0_raw.sum(axis=tuple(range(rank0, rank0+rank1)))
+        cotan1_raw = np.multiply(self.cotangent.data, arg0.data)
+        cotan1_raw = cotan1_raw.sum(axis=tuple(range(rank0)))
+        # Reduce over broadcasted spatial dimensions
+        cotan0_raw = cotan0_raw.sum(axis=self.arg0_ghost_broadcaster.deploy_dims_ext_list)
+        cotan1_raw = cotan1_raw.sum(axis=self.arg1_ghost_broadcaster.deploy_dims_ext_list)
+        # Reduce over broadcasted processes
+        cotan0_raw = self.arg0_ghost_broadcaster.reduce(cotan0_raw)
+        cotan1_raw = self.arg1_ghost_broadcaster.reduce(cotan1_raw)
         # Add adjoint contribution in-place (required for accumulation)
-        np.add(cotan0_, cotan0.data, out=cotan0.data)
-        np.add(cotan1_, cotan1.data, out=cotan1.data)
+        np.add(cotan0_raw, cotan0.data, out=cotan0.data)
+        np.add(cotan1_raw, cotan1.data, out=cotan1.data)
 
 
 class GhostBroadcaster:
@@ -1104,13 +1116,15 @@ class GhostBroadcaster:
         self.layout = layout
         self.broadcast_dims = broadcast_dims
         # Determine deployment dimensions
-        deploy_dims_ext = np.array(broadcast_dims) & np.array(domain.constant)
-        deploy_dims = deploy_dims_ext[~layout.local]
+        self.deploy_dims_ext = np.array(broadcast_dims) & np.array(domain.constant)
+        self.deploy_dims_ext_list = tuple(np.where(self.deploy_dims_ext)[0])
+        self.deploy_dims = self.deploy_dims_ext[~layout.local]
         # Build subcomm or skip casting
-        if any(deploy_dims):
-            self.subcomm = domain.dist.comm_cart.Sub(remain_dims=deploy_dims.astype(int))
+        if any(self.deploy_dims):
+            self.subcomm = domain.dist.comm_cart.Sub(remain_dims=self.deploy_dims.astype(int))
         else:
             self.cast = self._skip_cast
+            self.reduce = self._skip_reduce
 
     @CachedMethod
     def ghost_data(self, shape, dtype):
@@ -1132,8 +1146,20 @@ class GhostBroadcaster:
             self.subcomm.Bcast(ghost_data, root=0)
         return ghost_data
 
+    def reduce(self, ghost_data):
+        # Skip broadcasting on empty subcomms
+        if ghost_data.size:
+            if self.subcomm.rank == 0:
+                self.subcomm.Reduce(MPI.IN_PLACE, ghost_data, op=MPI.SUM, root=0)
+            else:
+                self.subcomm.Reduce(ghost_data, ghost_data, op=MPI.SUM, root=0)
+        return ghost_data
+
     def _skip_cast(self, field):
         return field.data
+
+    def _skip_reduce(self, ghost_data):
+        return ghost_data
 
 
 class MultiplyNumberField(Multiply, FutureField):
