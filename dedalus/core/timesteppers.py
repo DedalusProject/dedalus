@@ -899,7 +899,6 @@ class RungeKuttaIMEX_Adapt:
 
                 # Solve again with updated H to compute X_hat
                 for sp in subproblems:
-                    # Recompute LHS with updated H
                     k_Hii = k * H[i, i]
                     if update_LHS:
                         if STORE_EXPANDED_MATRICES:
@@ -920,10 +919,8 @@ class RungeKuttaIMEX_Adapt:
 
         adapt_fac = 0.9
         if spX_diff > error_tolerance:
-            # If the error exceeds the tolerance, decrease the time step proportionally
             dt = dt * adapt_fac
         else:
-            # If the error is within tolerance, increase the time step but cap it at max_dt
             dt = min(dt / adapt_fac, max_dt)
         dt = max(min(dt,max_dt), min_dt)
         return dt
