@@ -3946,7 +3946,7 @@ class CartesianCurl(Curl):
         arg = args[0]
         if adjoint:
             # Add instead of copy for VJP accumulation
-            np.add(add.data, out.data, out=arg.data)
+            np.add(arg.data, out.data, out=arg.data)
         else:
             copyto(out.data, arg.data)
 
