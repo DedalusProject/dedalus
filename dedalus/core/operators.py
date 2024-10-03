@@ -847,6 +847,44 @@ class LinearOperator(FutureField):
         """Build operator matrix for a specific subproblem."""
         raise NotImplementedError("%s has not implemented a subproblem_matrix method." %type(self))
 
+    def _operate(self, args, out, adjoin=False):
+        raise NotImplementedError("%s has not implemented an _operate method." %type(self))
+
+    def operate(self, out):
+        out.preset_layout(self.args[0].layout)
+        self._operate(self.args, out)
+
+    def operate_jvp(self, out, tangent):
+        out.preset_layout(self.args[0].layout)
+        tangent.preset_layout(self.arg_tangents[0].layout)
+        self._operate(self.args, out)
+        self._operate(self.arg_tangents, tangent)
+
+    def operate_vjp(self, layout, cotangents):
+        # TODO: fix this hack, which avoids return layouts from all enforce_conditions methods
+        if layout is None:
+            layout = self.args[0].layout
+        orig_args = self.original_args
+        args = self.args
+        arg_cotangents = []
+        for arg, orig_arg in zip(args, orig_args):
+            if isinstance(orig_arg, Future):
+                arg_cotangent = orig_arg.cotangent
+            else:
+                if arg not in cotangents:
+                    arg_cotangent = arg.copy()
+                    arg_cotangent.adjoint = True
+                    arg_cotangent.data.fill(0)
+                    cotangents[arg] = arg_cotangent
+                else:
+                    arg_cotangent = cotangents[arg]
+            arg_cotangents.append(arg_cotangent)
+        for arg_cotangent in arg_cotangents:
+            arg_cotangent.change_layout(layout)
+        out_cotangent = self.cotangent
+        out_cotangent.change_layout(layout)
+        self._operate(arg_cotangents, out_cotangent, adjoint=True) # note order (adjoint of forward operator)
+
 
 class Lock(FutureLockedField, LinearOperator):
 
@@ -958,38 +996,6 @@ class SpectralOperator(LinearOperator):
         if self.subaxis_coupling[-1]:
             arg0.require_local(last_axis)
 
-    def operate(self, out):
-        out.preset_layout(self.args[0].layout)
-        self._operate(self.args[0], out)
-
-    def operate_jvp(self, out, tangent):
-        out.preset_layout(self.args[0].layout)
-        tangent.preset_layout(self.arg_tangents[0].layout)
-        self._operate(self.args[0], out)
-        self._operate(self.arg_tangents[0], tangent)
-
-    def operate_vjp(self, layout, cotangents):
-        # TODO: fix this hack, which avoids return layouts from all enforce_conditions methods
-        if layout is None:
-            layout = self.args[0].layout
-        orig_arg = self.original_args[0]
-        arg = self.args[0]
-        if isinstance(orig_arg, Future):
-            arg_cotangent = orig_arg.cotangent
-        else:
-            if arg not in cotangents:
-                arg_cotangent = arg.copy()
-                arg_cotangent.adjoint = True
-                arg_cotangent.data.fill(0)
-                cotangents[arg] = arg_cotangent
-            else:
-                arg_cotangent = cotangents[arg]
-        # Apply matrix
-        out_cotangent = self.cotangent
-        arg_cotangent.change_layout(layout)
-        out_cotangent.change_layout(layout)
-        self._operate(arg_cotangent, out_cotangent, adjoint=True) # note order (adjoint of forward operator)
-
 
 class SpectralOperator1D(SpectralOperator):
     """
@@ -1091,8 +1097,9 @@ class SpectralOperator1D(SpectralOperator):
     def _group_matrix(group, input_basis, output_basis, *args):
         raise NotImplementedError()
 
-    def _operate(self, arg, out, adjoint=False):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation on generic argument."""
+        arg = args[0]
         layout = arg.layout
         # Apply matrix
         if arg.data.size and out.data.size:
@@ -2561,30 +2568,6 @@ class CartesianGradient(Gradient):
             else:
                 copyto(out.data[i], arg_i.data)
 
-    def operate(self, out):
-        out.preset_layout(self.args[0].layout)
-        self._operate(self.args, out)
-
-    def operate_jvp(self, out, tangent):
-        out.preset_layout(self.args[0].layout)
-        tangent.preset_layout(self.arg_tangents[0].layout)
-        self._operate(self.args, out)
-        self._operate(self.arg_tangents, tangent)
-
-    def operate_vjp(self, layout, cotangents):
-        # TODO: fix this hack, which avoids return layouts from all enforce_conditions methods
-        if layout is None:
-            layout = self.args[0].layout
-        orig_args = self.original_args
-        args = self.args
-        arg_cotangents = [orig_arg.cotangent for orig_arg in orig_args]
-        # Apply matrix
-        out_cotangent = self.cotangent
-        for arg_cotangent in arg_cotangents:
-            arg_cotangent.change_layout(layout)
-        out_cotangent.change_layout(layout)
-        self._operate(arg_cotangents, out_cotangent, adjoint=True) # note order (adjoint of forward operator)
-
 
 class DirectProductGradient(Gradient):
 
@@ -2976,9 +2959,10 @@ class SeparableSphereOperator(SpectralOperator):
         matrix = sparse.bmat(blocks)
         return matrix.tocsr()
 
-    def _operate(self, arg, out, adjoint=False):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
         # TODO: check if its faster to make dense matrices of symbols across all components
+        arg = args[0]
         layout = arg.layout
         basis = self.input_basis
         if basis is None:
@@ -3109,9 +3093,10 @@ class PolarMOperator(SpectralOperator):
         # LinearOperator requirements
         self.operand = operand
 
-    def _operate(self, arg, out, adjoint=False):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
         # TODO: check if its faster to make dense matrices of symbols across all components
+        arg = args[0]
         if hasattr(self.output_basis, "m_maps"):
             basis = self.output_basis
         else:
@@ -3332,9 +3317,10 @@ class SphericalEllOperator(SpectralOperator):
     def S2_basis(self):
         return self.input_basis.S2_basis()
 
-    def _operate(self, arg, out, adjoint=False):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
         # TODO: check if its faster to make dense matrices of symbols across all components
+        arg = args[0]
         if self.input_basis is None:
             basis = self.output_basis
         else:
@@ -3561,14 +3547,16 @@ class CartesianComponent(CartCompBase):
         factors[self.index] = index_factor
         return reduce(sparse.kron, factors, 1).tocsr()
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        arg0 = self.args[0]
-        # Set output layout
-        out.preset_layout(arg0.layout)
-        # Copy specified comonent
-        take_comp = tuple([None] * self.index + [self.coord_subaxis])
-        out.data[:] = arg0.data[take_comp]
+        arg = args[0]
+        comp_slice = tuple([None] * self.index + [self.coord_subaxis])
+        if adjoint:
+            # Add instead of copy for VJP accumulation
+            np.add(arg.data[comp_slice], out.data, out=arg.data[comp_slice])
+        else:
+            # Copy specified component
+            copyto(out.data, arg.data[comp_slice])
 
 
 class DirectProductComponent(CartCompBase):
@@ -3952,13 +3940,15 @@ class CartesianCurl(Curl):
         # Any layout (addition is done)
         pass
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
         # OPTIMIZE: this has an extra copy
-        arg0 = self.args[0]
-        # Set output layout
-        out.preset_layout(arg0.layout)
-        np.copyto(out.data, arg0.data)
+        arg = args[0]
+        if adjoint:
+            # Add instead of copy for VJP accumulation
+            np.add(add.data, out.data, out=arg.data)
+        else:
+            copyto(out.data, arg.data)
 
 
 class DirectProductCurl(Curl):
@@ -4162,8 +4152,9 @@ class SphericalCurl(Curl, SphericalEllOperator):
             matrix.tocsr()
             return matrix
 
-    def _operate(self, arg, out, adjoint=False):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
+        arg = args[0]
         if self.dtype == np.complex128:
             return super()._operate(arg, out, adjoint)
         layout = arg.layout
