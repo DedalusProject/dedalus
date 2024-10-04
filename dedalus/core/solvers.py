@@ -6,7 +6,11 @@ import time
 import h5py
 import pathlib
 import scipy.linalg
+import cProfile
+import pstats
 from math import prod
+from collections import defaultdict
+import pickle
 
 from . import subsystems
 from . import timesteppers
@@ -14,6 +18,11 @@ from .evaluator import Evaluator
 from ..libraries.matsolvers import matsolvers
 from ..tools.config import config
 from ..tools.array import scipy_sparse_eigs
+from ..tools.parallel import ProfileWrapper, parallel_mkdir
+
+PROFILE_DEFAULT = config['profiling'].getboolean('PROFILE_DEFAULT')
+PARALLEL_PROFILE_DEFAULT = config['profiling'].getboolean('PARALLEL_PROFILE_DEFAULT')
+PROFILE_DIRECTORY = pathlib.Path(config['profiling'].get('PROFILE_DIRECTORY'))
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -163,8 +172,8 @@ class EigenvalueSolver(SolverBase):
         for i, sp in enumerate(subproblems):
             if not hasattr(sp, 'L_min'):
                 continue
-            L = sp.L_min.A
-            M = sp.M_min.A
+            L = sp.L_min.toarray()
+            M = sp.M_min.toarray()
             A = L + target * M
             print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {sp.group}, matrix rank: {np.linalg.matrix_rank(A)}/{A.shape[0]}, cond: {np.linalg.cond(A):.1e}")
 
@@ -196,15 +205,15 @@ class EigenvalueSolver(SolverBase):
         if rebuild_matrices or not hasattr(sp, 'L_min'):
             self.build_matrices([sp], ['M', 'L'])
         # Solve as dense general eigenvalue problem
-        A = sp.L_min.A
-        B = - sp.M_min.A
+        A = sp.L_min.toarray()
+        B = - sp.M_min.toarray()
         eig_output = scipy.linalg.eig(A, b=B, left=left, **kw)
         # Unpack output
         if left:
             self.eigenvalues, pre_left_evecs, pre_right_evecs = eig_output
             self.right_eigenvectors = self.eigenvectors = sp.pre_right @ pre_right_evecs
-            self.left_eigenvectors = sp.pre_left.H @ pre_left_evecs
-            self.modified_left_eigenvectors = (sp.M_min @ sp.pre_right_pinv).H @ pre_left_evecs
+            self.left_eigenvectors = sp.pre_left.conj().T @ pre_left_evecs
+            self.modified_left_eigenvectors = (sp.M_min @ sp.pre_right_pinv).conj().T @ pre_left_evecs
             if normalize_left:
                 norms = np.diag(pre_left_evecs.T.conj() @ sp.M_min @ pre_right_evecs)
                 self.left_eigenvectors /= np.conj(norms)
@@ -213,7 +222,7 @@ class EigenvalueSolver(SolverBase):
             self.eigenvalues, pre_eigenvectors = eig_output
             self.eigenvectors = sp.pre_right @ pre_eigenvectors
 
-    def solve_sparse(self, subproblem, N, target, rebuild_matrices=False, left=False, normalize_left=True, raise_on_mismatch=True, **kw):
+    def solve_sparse(self, subproblem, N, target, rebuild_matrices=False, left=False, normalize_left=True, raise_on_mismatch=True, v0=None, **kw):
         """
         Perform targeted sparse eigenvector search for selected subproblem.
         This routine finds a subset of eigenvectors near the specified target.
@@ -240,6 +249,8 @@ class EigenvalueSolver(SolverBase):
             eigenvectors (default: True).
         raise_on_mismatch : bool, optional
             Raise a RuntimeError if the left and right eigenvalues do not match (default: True).
+        v0 : ndarray, optional
+            Initial guess for eigenvector, e.g. from subsystem.gather (default: None).
         **kw :
             Other keyword options passed to scipy.sparse.linalg.eig.
         """
@@ -250,15 +261,17 @@ class EigenvalueSolver(SolverBase):
         # Solve as sparse general eigenvalue problem
         A = sp.L_min
         B = - sp.M_min
+        # Precondition starting guess if provided
+        if v0 is not None:
+            v0 = sp.pre_right_pinv @ v0
         # Solve for the right (and optionally left) eigenvectors
-        eig_output = scipy_sparse_eigs(A=A, B=B, left=left, N=N, target=target, matsolver=self.matsolver, **kw)
-
+        eig_output = scipy_sparse_eigs(A=A, B=B, left=left, N=N, target=target, matsolver=self.matsolver, v0=v0, **kw)
         if left:
             # Note: this definition of "left eigenvectors" is consistent with the documentation for scipy.linalg.eig
             self.eigenvalues, pre_right_evecs, self.left_eigenvalues, pre_left_evecs = eig_output
             self.right_eigenvectors = self.eigenvectors = sp.pre_right @ pre_right_evecs
-            self.left_eigenvectors = sp.pre_left.H @ pre_left_evecs
-            self.modified_left_eigenvectors = (sp.M_min @ sp.pre_right_pinv).H @ pre_left_evecs
+            self.left_eigenvectors = sp.pre_left.conj().T @ pre_left_evecs
+            self.modified_left_eigenvectors = (sp.M_min @ sp.pre_right_pinv).conj().T @ pre_left_evecs
             # Check that eigenvalues match
             if not np.allclose(self.eigenvalues, np.conjugate(self.left_eigenvalues)):
                 if raise_on_mismatch:
@@ -280,7 +293,7 @@ class EigenvalueSolver(SolverBase):
             self.eigenvalues, pre_right_evecs = eig_output
             self.right_eigenvectors = self.eigenvectors = sp.pre_right @ pre_right_evecs
 
-    def set_state(self, index, subsystem):
+    def set_state(self, index, subsystem=0):
         """
         Set state vector to the specified eigenmode.
 
@@ -288,10 +301,10 @@ class EigenvalueSolver(SolverBase):
         ----------
         index : int
             Index of desired eigenmode.
-        subsystem : Subsystem object or int
+        subsystem : Subsystem object or int, optional
             Subsystem that will be set to the corresponding eigenmode.
             If an integer, the corresponding subsystem of the last specified
-            eigenvalue_subproblem will be used.
+            eigenvalue_subproblem will be used. Default: 0.
         """
         # TODO: allow setting left modified eigenvectors?
         subproblem = self.eigenvalue_subproblem
@@ -304,6 +317,8 @@ class EigenvalueSolver(SolverBase):
         for var in self.state:
             var['c'] = 0
         subsystem.scatter(self.eigenvectors[:, index], self.state)
+        # Set eigenvalue
+        self.problem.eigenvalue['g'] = self.eigenvalues[index]
 
 
 class LinearBoundaryValueSolver(SolverBase):
@@ -348,7 +363,7 @@ class LinearBoundaryValueSolver(SolverBase):
         for i, sp in enumerate(subproblems):
             if not hasattr(sp, 'L_min'):
                 continue
-            L = sp.L_min.A
+            L = sp.L_min.toarray()
             print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {sp.group}, matrix rank: {np.linalg.matrix_rank(L)}/{L.shape[0]}, cond: {np.linalg.cond(L):.1e}")
 
     def solve(self, subproblems=None, rebuild_matrices=False):
@@ -429,6 +444,9 @@ class NonlinearBoundaryValueSolver(SolverBase):
         logger.debug('Beginning NLBVP instantiation')
         super().__init__(problem, **kw)
         self.perturbations = problem.perturbations
+        # Copy valid modes from variables to perturbations (may have been changed after problem instantiation)
+        for pert, var in zip(problem.perturbations, problem.variables):
+            pert.valid_modes[:] = var.valid_modes
         self.iteration = 0
         # Create RHS handler
         F_handler = self.evaluator.add_system_handler(iter=1, group='F')
@@ -437,6 +455,17 @@ class NonlinearBoundaryValueSolver(SolverBase):
         F_handler.build_system()
         self.F = F_handler.fields
         logger.debug('Finished NLBVP instantiation')
+
+    def print_subproblem_ranks(self, subproblems=None):
+        """Print rank of each subproblem LHS."""
+        if subproblems is None:
+            subproblems = self.subproblems
+        # Check matrix rank
+        for i, sp in enumerate(subproblems):
+            if not hasattr(sp, 'dF_min'):
+                continue
+            dF = sp.dF_min.toarray()
+            print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {sp.group}, matrix rank: {np.linalg.matrix_rank(dF)}/{dF.shape[0]}, cond: {np.linalg.cond(dF):.1e}")
 
     def newton_iteration(self, damping=1):
         """Update solution with a Newton iteration."""
@@ -485,6 +514,10 @@ class InitialValueSolver(SolverBase):
         Iteration cadence for enforcing Hermitian symmetry on real variables (default: 100).
     warmup_iterations : int, optional
         Number of warmup iterations to disregard when computing runtime statistics (default: 10).
+    profile : bool, optional
+        Save accumulated profiles with cProfile (default: False).
+    parallel_profile : bool, optional
+        Save per-process and accumulated profiles with cProfile (default: False).
     **kw :
         Other options passed to ProblemBase.
 
@@ -510,15 +543,24 @@ class InitialValueSolver(SolverBase):
     matsolver_default = 'MATRIX_FACTORIZER'
     matrices = ['M', 'L']
 
-    def __init__(self, problem, timestepper, enforce_real_cadence=100, warmup_iterations=10, **kw):
+    def __init__(self, problem, timestepper, enforce_real_cadence=100, warmup_iterations=10, profile=PROFILE_DEFAULT, parallel_profile=PARALLEL_PROFILE_DEFAULT, **kw):
         logger.debug('Beginning IVP instantiation')
-        super().__init__(problem, **kw)
-        if np.isrealobj(self.dtype.type()):
-            self.enforce_real_cadence = enforce_real_cadence
-        else:
-            self.enforce_real_cadence = None
+        # Setup timing and profiling
+        self.dist = problem.dist
         self._bcast_array = np.zeros(1, dtype=float)
         self.init_time = self.world_time
+        if profile or parallel_profile:
+            parallel_mkdir(PROFILE_DIRECTORY, comm=self.dist.comm)
+            self.profile = True
+            self.parallel_profile = parallel_profile
+            self.setup_profiler = cProfile.Profile()
+            self.warmup_profiler = cProfile.Profile()
+            self.run_profiler = cProfile.Profile()
+            self.setup_profiler.enable()
+        else:
+            self.profile = False
+        # Build subsystems and subproblems
+        super().__init__(problem, **kw)
         # Build LHS matrices
         self.build_matrices(self.subproblems, ['M', 'L'])
         # Compute total modes
@@ -538,6 +580,10 @@ class InitialValueSolver(SolverBase):
         self.sim_time = self.initial_sim_time = problem.time.allreduce_data_max(layout='g')
         self.iteration = self.initial_iteration = 0
         self.warmup_iterations = warmup_iterations
+        if np.isrealobj(self.dtype.type()):
+            self.enforce_real_cadence = enforce_real_cadence
+        else:
+            self.enforce_real_cadence = None
         # Default integration parameters
         self.stop_sim_time = np.inf
         self.stop_wall_time = np.inf
@@ -647,17 +693,24 @@ class InitialValueSolver(SolverBase):
         # Record times
         wall_time = self.wall_time
         if self.iteration == self.initial_iteration:
-            self.start_time = wall_time
+            self.start_time_end = wall_time
+            if self.profile:
+                self.dump_profiles(self.setup_profiler, "setup")
+                self.warmup_profiler.enable()
+            self.warmup_time_start = self.wall_time
         if self.iteration == self.initial_iteration + self.warmup_iterations:
-            self.warmup_time = wall_time
+            self.warmup_time_end = self.wall_time
+            if self.profile:
+                self.dump_profiles(self.warmup_profiler, "warmup")
+                self.run_profiler.enable()
+            self.run_time_start = self.wall_time
         # Advance using timestepper
-        dt = self.timestepper.step(dt, wall_time)
+        self.timestepper.step(dt, wall_time)
         # Update iteration
         self.iteration += 1
         self.dt = dt
         
         return dt
-    
 
     def evolve(self, timestep_function, log_cadence=100):
         """Advance system until stopping criterion is reached."""
@@ -688,7 +741,7 @@ class InitialValueSolver(SolverBase):
         for i, sp in enumerate(subproblems):
             M = sp.M_min
             L = sp.L_min
-            A = (M + dt*L).A
+            A = (M + dt*L).toarray()
             print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {sp.group}, matrix rank: {np.linalg.matrix_rank(A)}/{A.shape[0]}, cond: {np.linalg.cond(A):.1e}")
 
     def evaluate_handlers_now(self, dt, handlers=None):
@@ -703,17 +756,23 @@ class InitialValueSolver(SolverBase):
 
     def log_stats(self, format=".4g"):
         """Log timing statistics with specified string formatting (optional)."""
-        log_time = self.wall_time
+        self.run_time_end = self.wall_time
+        start_time = self.start_time_end
         logger.info(f"Final iteration: {self.iteration}")
         logger.info(f"Final sim time: {self.sim_time}")
-        logger.info(f"Setup time (init - iter 0): {self.start_time:{format}} sec")
+        logger.info(f"Setup time (init - iter 0): {start_time:{format}} sec")
+        if self.profile:
+            self.dump_profiles(self.run_profiler, "runtime")
         if self.iteration >= self.initial_iteration + self.warmup_iterations:
-            warmup_time = self.warmup_time - self.start_time
-            run_time = log_time - self.warmup_time
+            warmup_time = self.warmup_time_end - self.warmup_time_start
+            run_time = self.run_time_end - self.run_time_start
+            profile_output_time = (self.warmup_time_start-self.start_time_end) + (self.run_time_start-self.warmup_time_end)
             cpus = self.dist.comm.size
             modes = self.total_modes
             stages = (self.iteration - self.warmup_iterations - self.initial_iteration) * self.timestepper.stages
             logger.info(f"Warmup time (iter 0-{self.warmup_iterations}): {warmup_time:{format}} sec")
+            if self.profile:
+                logger.info(f"Profile output time: {profile_output_time:{format}} sec")
             logger.info(f"Run time (iter {self.warmup_iterations}-end): {run_time:{format}} sec")
             logger.info(f"CPU time (iter {self.warmup_iterations}-end): {run_time*cpus/3600:{format}} cpu-hr")
             logger.info(f"Speed: {(modes*stages/cpus/run_time):{format}} mode-stages/cpu-sec")
