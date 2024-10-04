@@ -887,6 +887,7 @@ class RungeKuttaIMEX_Adapt:
             if i == self.stages-1:
                 # Swap the last row of H with b_hat
                 H[-1, :] = b_hat
+                A[-1, :] = b_hat
 
                 # Reconstruct RHS(n,i) with updated H
                 if RHS.data.size:
