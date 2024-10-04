@@ -914,9 +914,11 @@ class RungeKuttaIMEX_Adapt:
 
             solver.sim_time = sim_time_0 + k * c[i]
 
-        spX_diff = np.max(np.abs(spX - spX_hat))  # Element-wise difference
+        # Maximum error could be something else
+        spX_diff = np.max(np.abs(spX - spX_hat))  
         #print(spX_diff)
 
+        # Evaluating the error and adjusting the step size
         adapt_fac = 0.9
         if spX_diff > error_tolerance:
             dt = dt * adapt_fac
