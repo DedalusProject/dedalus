@@ -1087,9 +1087,12 @@ class MultiplyFields(Multiply, FutureField):
         arg0, arg1 = self.args
         cotan0, cotan1 = arg_cotangents
         self.cotangent.change_layout(layout)
+        # Get distributed arg data
+        arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
+        arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
         # Compute raw cotangents
-        cotan0_raw = np.multiply(self.cotangent.data, arg1.data)
-        cotan1_raw = np.multiply(self.cotangent.data, arg0.data)
+        cotan0_raw = np.multiply(self.cotangent.data, arg1_data)
+        cotan1_raw = np.multiply(self.cotangent.data, arg0_data)
         # Reduce over broadcasted tensor dimensions
         rank0 = len(arg0.tensorsig)
         rank1 = len(arg1.tensorsig)
