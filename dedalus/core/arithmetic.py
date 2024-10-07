@@ -1093,13 +1093,13 @@ class MultiplyFields(Multiply, FutureField):
         # Reduce over broadcasted tensor dimensions
         rank0 = len(arg0.tensorsig)
         rank1 = len(arg1.tensorsig)
-        cotan0_raw = np.multiply(self.cotangent.data, arg1.data)
         cotan0_raw = cotan0_raw.sum(axis=tuple(range(rank0, rank0+rank1)))
-        cotan1_raw = np.multiply(self.cotangent.data, arg0.data)
         cotan1_raw = cotan1_raw.sum(axis=tuple(range(rank0)))
         # Reduce over broadcasted spatial dimensions
-        cotan0_raw = cotan0_raw.sum(axis=self.arg0_ghost_broadcaster.deploy_dims_ext_list)
-        cotan1_raw = cotan1_raw.sum(axis=self.arg1_ghost_broadcaster.deploy_dims_ext_list)
+        spatial_reduce_0 = tuple(axis + rank0 for axis in self.arg0_ghost_broadcaster.deploy_dims_ext_list)
+        spatial_reduce_1 = tuple(axis + rank1 for axis in self.arg1_ghost_broadcaster.deploy_dims_ext_list)
+        cotan0_raw = cotan0_raw.sum(axis=spatial_reduce_0, keepdims=True)
+        cotan1_raw = cotan1_raw.sum(axis=spatial_reduce_1, keepdims=True)
         # Reduce over broadcasted processes
         cotan0_raw = self.arg0_ghost_broadcaster.reduce(cotan0_raw)
         cotan1_raw = self.arg1_ghost_broadcaster.reduce(cotan1_raw)
