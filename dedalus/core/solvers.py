@@ -541,10 +541,6 @@ class NonlinearBoundaryValueSolver(SolverBase):
             F_handler.add_task(eq['F'])
         F_handler.build_system()
         self.F = F_handler.fields
-
-        self.F_adj = []
-        self.state_adj = []
-        self.build_adjoint()
         logger.debug('Finished NLBVP instantiation')
 
     def print_subproblem_ranks(self, subproblems=None):
@@ -557,34 +553,6 @@ class NonlinearBoundaryValueSolver(SolverBase):
                 continue
             dF = sp.dF_min.toarray()
             print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {sp.group}, matrix rank: {np.linalg.matrix_rank(dF)}/{dF.shape[0]}, cond: {np.linalg.cond(dF):.1e}")
-
-    def build_adjoint(self):
-        """
-        Build a field system for the adjoint system
-        self.F_adj has the same layout as self.F
-        self.state_adj has the same layout as self.state
-        """
-        if not self.F_adj:
-            for field in self.F:
-                field_adj = field.copy_adjoint()
-                # Zero the system
-                field_adj['c'] *= 0
-                if field.name:
-                    # If the direct field has a name, give the adjoint a
-                    # corresponding name
-                    field_adj.name = '%s_adj' % field.name
-                self.F_adj.append(field_adj)
-
-        if not self.state_adj:
-            for field in self.state:
-                field_adj = field.copy_adjoint()
-                # Zero the system
-                field_adj['c'] *= 0
-                if field.name:
-                    # If the direct field has a name, give the adjoint a
-                    # corresponding name
-                    field_adj.name = '%s_adj' % field.name
-                self.state_adj.append(field_adj)
 
     def newton_iteration(self, damping=1):
         """Update solution with a Newton iteration."""
@@ -617,25 +585,70 @@ class NonlinearBoundaryValueSolver(SolverBase):
         if handlers is None:
             handlers = self.evaluator.handlers
         self.evaluator.evaluate_handlers(handlers, iteration=self.iteration)
-
-    def solve_adjoint(self):
+    
+    def solve_adjoint(self, G):
         # subsystems.build_subproblem_matrices(self, self.subproblems, ['dH'])
         # Ensure coeff space before subsystem gathers/scatters
-        for field in self.F_adj:
-            field.preset_layout('c')
-        for field in self.state_adj:
+        # Allocate adjoint fields
+        Y = []
+        for field in self.F:
+            field_adj = field.copy_adjoint()
+            # Zero the system
+            field_adj.preset_layout('c')
+            field_adj.data *= 0
+            if field.name:
+                # If the direct field has a name, give the adjoint a
+                # corresponding name
+                field_adj.name = 'Y_%s' % field.name
+            Y.append(field_adj)
+        # Transform before solve
+        for field in G:
             field.change_layout('c')
-
+        for field in Y:
+            field.preset_layout('c')
         # Solve system for each subproblem, updating perturbations
         for sp in self.subproblems:
             n_ss = len(sp.subsystems)
             # Gather (contains adjoint right-precondition)
-            X = sp.gather_inputs(self.state_adj)
+            pG = sp.gather_inputs(G)
             # Solve
             sp_matsolver = self.matsolver(np.conj(sp.dF_min).T, self)
-            pX = - sp_matsolver.solve(X)
+            pY = - sp_matsolver.solve(pG)
             # Scatter (contains adjoint left-precondition)
-            sp.scatter_outputs(pX, self.F_adj)
+            sp.scatter_outputs(pY, Y)
+        return Y
+
+    def compute_sensitivities(self, cotangents, id=None):
+        # TODO: compute G from cost?
+        # G = h.evaluate_vjp(1)[self.state]?
+        # Allocate adjoint fields
+        G = []
+        for (i,state) in enumerate(self.state):
+            if state in cotangents:
+                G.append(cotangents[state])
+            else:
+                adjoint_state = state.copy_adjoint()
+                adjoint_state.preset_layout('c')
+                adjoint_state.data *= 0
+                G.append(adjoint_state)
+                cotangents[state] = adjoint_state
+        # Compute Y from L.H @ Y = G
+        Y = self.solve_adjoint(G)
+        # R(p) = L(p) @ X - F(p)
+        # dR/dp = dL/dp @ X - dF/dp
+        # Default to uuid to cache within evaluation, but not across evaluations
+        if id is None:
+            id = uuid.uuid4()
+        # Calculate gradients from Y - accumulate contributions to each output from each equation
+        for i, eqn in enumerate(self.problem.equations):
+            # TODO: Fix this when fields have vjp
+            if not isinstance(eqn['F'], Field):
+                # TODO: Change back to sensitivity of whole equation
+                # R = eqn['L'] - eqn['F']
+                R = eqn['F']
+                cotangents[R] = Y[i]
+                _, cotangents = R.evaluate_vjp(cotangents, id=id, force=True)
+        return cotangents
 
 
 class InitialValueSolver(SolverBase):
