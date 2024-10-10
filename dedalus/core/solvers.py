@@ -469,7 +469,7 @@ class LinearBoundaryValueSolver(SolverBase):
             sp.scatter_outputs(pY, Y)
         return Y
 
-    def compute_sensitivities(self, cotangents, id=None):
+    def compute_sensitivities(self, cotangents, id=None, subproblems=None):
         # TODO: compute G from cost?
         # G = h.evaluate_vjp(1)[self.state]?
         # Allocate adjoint fields
@@ -484,7 +484,7 @@ class LinearBoundaryValueSolver(SolverBase):
                 G.append(adjoint_state)
                 cotangents[state] = adjoint_state
         # Compute Y from L.H @ Y = G
-        Y = self.solve_adjoint(G)
+        Y = self.solve_adjoint(G, subproblems=subproblems)
         # R(p) = L(p) @ X - F(p)
         # dR/dp = dL/dp @ X - dF/dp
         # Default to uuid to cache within evaluation, but not across evaluations
