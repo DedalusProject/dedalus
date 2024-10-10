@@ -313,7 +313,7 @@ class Power(NonlinearOperator, metaclass=MultiClass):
 
     @classmethod
     def _preprocess_args(cls, *args, **kw):
-        domain = unify_attributes(args, 'domain', require=False)
+        domain = unify_attributes(args, 'dist', require=False)
         #args = tuple(Operand.cast(arg, domain) for arg in args)
         return args, kw
 
