@@ -323,14 +323,15 @@ class Power(NonlinearOperator, metaclass=MultiClass):
         #arg1_constant = all(b is None for b in args[1].bases)
         return all(match) #(all(match) and arg1_constant)
 
-    @property
-    def base(self):
-        return Power
+    def new_operands(self, arg0, arg1, **kw):
+        return Power(arg0, arg1)
 
-    def sym_diff(self, var):
-        """Symbolically differentiate with respect to specified operand."""
-        base, power = self.args
-        return power * base**(power-1) * base.sym_diff(var)
+    def require_first_order(self, *ops, **kw):
+        """Require expression to be maximally first order in specified operators."""
+        arg0 = self.args[0]
+        if arg0.has(*ops):
+            raise NonlinearOperatorError("This should never happen.")
+        #arg0.require_first_order(*ops, **kw)
 
 
 class PowerFieldConstant(Power, FutureField):
@@ -348,6 +349,8 @@ class PowerFieldConstant(Power, FutureField):
 
     def __init__(self, arg0, arg1, out=None):
         super().__init__(arg0, arg1, out=out)
+        if arg0.tensorsig:
+            raise ValueError("Power not defined for non-scalar fields.")
         self.domain = arg0.domain
         self.tensorsig = arg0.tensorsig
         self.dtype = arg0.dtype
@@ -418,18 +421,103 @@ class PowerFieldConstant(Power, FutureField):
             temp = arg1 * arg0.data ** (arg1-1) * self.cotangent.data
             np.add(cotan0.data, temp, out=cotan0.data)
 
-    def new_operands(self, arg0, arg1, **kw):
-        return Power(arg0, arg1)
-
     def reinitialize(self, **kw):
         arg0 = self.args[0].reinitialize(**kw)
         arg1 = self.args[1]
         return self.new_operands(arg0, arg1, **kw)
 
-    def require_first_order(self, *ops, **kw):
-        """Require expression to be maximally first order in specified operators."""
-        arg0 = self.args[0]
-        arg0.require_first_order(*ops, **kw)
+    def sym_diff(self, var):
+        """Symbolically differentiate with respect to specified operand."""
+        arg0, arg1 = self.args
+        return arg1 * arg0**(arg1-1) * arg0.sym_diff(var)
+
+
+class PowerFieldField(Power, FutureField):
+
+    argtypes = {0: (Field, FutureField),
+                1: (Field, FutureField,)}
+
+    def __init__(self, arg0, arg1, out=None):
+        super().__init__(arg0, arg1, out=out)
+        if arg0.tensorsig or arg1.tensorsig:
+            raise ValueError("Power not defined for non-scalar fields.")
+        self.domain = arg0.domain
+        self.tensorsig = arg0.tensorsig
+        self.dtype = arg0.dtype
+
+    def check_conditions(self):
+        layout0 = self.args[0].layout
+        layout1 = self.args[1].layout
+        return all(layout0.grid_space) and (layout0 is layout1)
+
+    def enforce_conditions(self):
+        arg0, arg1 = self.args
+        arg0.require_grid_space()
+        arg1.require_grid_space()
+        return self.dist.grid_layout
+
+    def operate(self, out):
+        arg0, arg1 = self.args
+        out.preset_layout(arg0.layout)
+        if out.data.size:
+            np.power(arg0.data, arg1.data, out.data)
+
+    def operate_jvp(self, out, tangent):
+        arg0, arg1 = self.args
+        out.preset_layout(arg0.layout)
+        if out.data.size:
+            np.power(arg0.data, arg1.data, out=out.data)
+            if tangent:
+                tan0, tan1 = self.arg_tangents
+                tangent.preset_layout(tan0.layout)
+                tangent.data[:] = arg1.data * arg0.data**(arg1.data-1) * tan0.data + out.data * np.log(arg0.data) * tan1.data
+
+    def operate_vjp(self, layout, cotangents):
+        arg0, arg1 = self.args
+        orig_arg0, orig_arg1 = self.original_args
+        if isinstance(orig_arg0, Future):
+            orig_arg0.cotangent.change_layout(layout)
+            cotan0 = orig_arg0.cotangent
+        else:
+            if arg0 not in cotangents:
+                cotan0 = arg0.copy()
+                cotan0.adjoint = True
+                cotan0.data.fill(0)
+                cotangents[arg0] = cotan0
+            else:
+                cotan0 = cotangents[arg0]
+                cotan0.change_layout(layout)
+        if isinstance(orig_arg1, Future):
+            orig_arg1.cotangent.change_layout(layout)
+            cotan1 = orig_arg1.cotangent
+        else:
+            if arg1 not in cotangents:
+                cotan1 = arg1.copy()
+                cotan1.adjoint = True
+                cotan1.data.fill(0)
+                cotangents[arg1] = cotan1
+            else:
+                cotan1 = cotangents[arg1]
+                cotan1.change_layout(layout)
+        # Add adjoint contribution in-place (required for accumulation)
+        self.cotangent.change_layout(layout)
+        if self.cotangent.data.size:
+            # TODO: optimize with axpy
+            temp = arg1.data * arg0.data ** (arg1.data-1) * self.cotangent.data
+            np.add(cotan0.data, temp, out=cotan0.data)
+            temp = arg0.data ** arg1.data * np.log(arg0.data) * self.cotangent.data
+            np.add(cotan1.data, temp, out=cotan1.data)
+
+    def reinitialize(self, **kw):
+        arg0 = self.args[0].reinitialize(**kw)
+        arg1 = self.args[1].reinitialize(**kw)
+        return self.new_operands(arg0, arg1, **kw)
+
+    def sym_diff(self, var):
+        """Symbolically differentiate with respect to specified operand."""
+        arg0, arg1 = self.args
+        return arg1 * arg0**(arg1-1) * arg0.sym_diff(var) + self * np.log(arg0) * arg1.sym_diff(var)
+
 
 # class PowerArrayScalar(PowerDataScalar, FutureArray):
 
