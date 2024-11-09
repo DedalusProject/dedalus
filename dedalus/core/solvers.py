@@ -861,15 +861,16 @@ class InitialValueSolver(SolverBase):
         self.iteration += 1
         self.dt = dt
 
-    def reset(self):
+    def reset(self, iter=0):
         """Reset solver so that it can be reused"""
-        self.iteration = 0
-        self.initial_iteration = 0
-        self.evaluator.handlers[0].last_iter_div = -1
+        self.iteration = iter
+        self.evaluator.handlers[0].last_iter_div = iter-1
+        # TODO: Fix this for checkpointing
+        self.sim_time = self.problem.time['g'] = self.initial_sim_time 
         # reset timestepper
         self.timestepper.reset()
 
-    def step_adjoint(self,dt):
+    def step_adjoint(self, dt):
         """Advance system by one iteration/timestep."""
         # Enforce Hermitian symmetry for real variables
         if np.isrealobj(self.dtype.type()):
@@ -879,8 +880,10 @@ class InitialValueSolver(SolverBase):
         # Record times
         wall_time = self.wall_time
         # Advance using timestepper
-        wall_elapsed = wall_time - self.init_time
-        self.timestepper.step_adjoint(dt,wall_elapsed)
+        if self.iteration == self.stop_iteration:
+            self.adjoint_start_time = wall_time
+        wall_elapsed = wall_time - self.adjoint_start_time
+        self.timestepper.step_adjoint(dt, wall_elapsed)
         # Update iteration
         self.iteration -= 1
         self.dt = dt # Needed?
@@ -940,7 +943,7 @@ class InitialValueSolver(SolverBase):
             logger.error('Exception raised, triggering end of adjoint loop.')
             raise
         finally:
-            self.log_stats()
+            self.log_stats_adjoint()
         return cotangents
 
     def print_subproblem_ranks(self, subproblems=None, dt=1):
@@ -989,6 +992,19 @@ class InitialValueSolver(SolverBase):
         else:
             logger.info(f"Timings unavailable because warmup did not complete.")
 
+    def log_stats_adjoint(self, format=".4g"):
+        """Log timing statistics for the adjoint solve with specified string formatting (optional)."""
+        self.run_time_end = self.wall_time
+        run_time = self.run_time_end - self.adjoint_start_time
+        cpus = self.dist.comm.size
+        modes = self.total_modes
+        stages = (self.stop_iteration - self.initial_iteration) * self.timestepper.stages
+        logger.info(f"Final iteration: {self.iteration}")
+        logger.info(f"Final sim time: {self.sim_time}")
+        logger.info(f"Run time (iter end-{self.initial_iteration}): {run_time:{format}} sec")
+        logger.info(f"CPU time (iter end-{self.initial_iteration}): {run_time*cpus/3600:{format}} cpu-hr")
+        logger.info(f"Speed: {(modes*stages/cpus/run_time):{format}} mode-stages/cpu-sec")
+        
     def dump_profiles(self, profiler, name):
         "Save profiling data to disk."
         comm = self.dist.comm
