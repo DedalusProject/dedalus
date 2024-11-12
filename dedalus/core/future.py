@@ -320,8 +320,13 @@ class Future(Operand):
             raise ValueError("Cotangent must have same domain as operator.")
 
         # Forward evaluate and save topological sorting
-        tape = []
-        out = self.evaluate(id=id, force=force, tape=tape)
+        if id == self.last_id:
+            tape = self.last_tape
+            out = self.last_out
+        else:
+            tape = []
+            out = self.evaluate(id=id, force=force, tape=tape)
+            self.last_tape = tape
 
         # Clean cotangents
         for op in tape:
