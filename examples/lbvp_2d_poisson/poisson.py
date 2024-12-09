@@ -64,8 +64,8 @@ solver = problem.build_solver()
 solver.solve()
 
 # Gather global data
-x = xbasis.global_grid()
-y = ybasis.global_grid()
+x = xbasis.global_grid(dist, scale=1)
+y = ybasis.global_grid(dist, scale=1)
 ug = u.allgather_data('g')
 
 # Plot
