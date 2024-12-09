@@ -28,9 +28,7 @@ __all__ = ['EigenvalueProblem',
 # Build basic parsing namespace
 parseables = {}
 parseables.update({name: getattr(operators, name) for name in operators.__all__})
-parseables.update(operators.aliases)
 parseables.update({name: getattr(arithmetic, name) for name in arithmetic.__all__})
-parseables.update(arithmetic.aliases)
 
 
 class ProblemBase:

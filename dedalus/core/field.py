@@ -326,6 +326,20 @@ class Operand:
         # Return copy to avoid mangling cached result from coeff_layout
         return valid_modes.copy()
 
+    @property
+    def real(self):
+        if self.is_real:
+            return self
+        else:
+            return (self + np.conj(self)) / 2
+
+    @property
+    def imag(self):
+        if self.is_real:
+            return 0
+        else:
+            return (self - np.conj(self)) / 2j
+
 
 class Current(Operand):
 
