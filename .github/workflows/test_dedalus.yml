@@ -32,7 +32,7 @@ jobs:
           conda activate dedalus
           conda env config vars set OMP_NUM_THREADS=1
           conda env config vars set NUMEXPR_MAX_THREADS=1
-          conda install -y -c conda-forge dedalus c-compiler cython "h5py=*=mpi*"
+          conda install -y -c conda-forge dedalus c-compiler cython setuptools wheel "h5py=*=mpi*"
           conda uninstall -y --force dedalus
       - name: Checkout repository
         uses: actions/checkout@v2
