@@ -724,9 +724,30 @@ class Field(Current):
         if task is None:
             task = self.name
         dset = file['tasks'][task]
-        if not np.all(dset.attrs['grid_space']):
-            raise ValueError("Can only load data from grid space")
-        self.load_from_global_grid_data(dset, pre_slices=(index,), func=func)
+        if np.all(dset.attrs['grid_space']):
+            self.load_from_global_grid_data(dset, pre_slices=(index,), func=func)
+        elif np.all(~dset.attrs['grid_space']):
+            self.load_from_global_coeff_data(dset, pre_slices=(index,), func=func)
+        else:
+            raise ValueError("Can only load global data from pure grid or coeff space")
+
+    def load_from_global_coeff_data(self, global_data, pre_slices=tuple(), func=None):
+        """Load local coeff data from array-like global coeff data."""
+        dim = self.dist.dim
+        layout = self.dist.coeff_layout
+        # Check shapes
+        data_shape = global_data.shape[-dim:]
+        self_shape = layout.global_shape(self.domain, scales=1)
+        if data_shape != self_shape:
+            raise ValueError("Cannot change global shape when loading coeff data.")
+        # Extract local data from global data
+        component_slices = tuple(slice(None) for cs in self.tensorsig)
+        spatial_slices = layout.slices(self.domain, scales=1)
+        local_slices = pre_slices + component_slices + spatial_slices
+        if func is None:
+            self[layout] = global_data[local_slices]
+        else:
+            self[layout] = func(global_data[local_slices])
 
     def load_from_global_grid_data(self, global_data, pre_slices=tuple(), func=None):
         """Load local grid data from array-like global grid data."""
