@@ -388,7 +388,7 @@ class H5FileHandlerBase(Handler):
             mode = FILEHANDLER_MODE_DEFAULT
         # Check base_path
         base_path = pathlib.Path(base_path).resolve()
-        if not base_path.is_dir():
+        if base_path.is_file():
             raise ValueError("base_path should indicate a folder for storing HDF5 files.")
         # Attributes
         self.base_path = base_path
