@@ -13,6 +13,7 @@ from math import prod
 
 from .future import FutureField, FutureLockedField
 from .field import Field, LockedField
+from .operators import Copy
 from ..tools.cache import CachedAttribute
 from ..tools.general import OrderedSet
 from ..tools.general import oscillate
@@ -127,21 +128,18 @@ class Evaluator:
             # Attempt evaluation
             tasks = self.attempt_tasks(tasks, id=id)
 
-        # # Transform all outputs to coefficient layout to dealias
-        ## D3 note: need to worry about this for redundent tasks?
-        # outputs = OrderedSet([t['out'] for h in handlers for t in h.tasks])
-        # self.require_coeff_space(outputs)
-
-        # # Copy redundant outputs so processing is independent
-        # outputs = set()
-        # for handler in handlers:
-        #     for task in handler.tasks:
-        #         if task['out'] in outputs:
-        #             task['out'] = task['out'].copy()
-        #         else:
-        #             outputs.add(task['out'])
+        # Transform all outputs to coefficient layout to dealias
         outputs = OrderedSet([t['out'] for h in handlers for t in h.tasks if not isinstance(t['out'], LockedField)])
         self.require_coeff_space(outputs)
+
+        # Copy redundant outputs so processing is independent
+        outputs = set()
+        for handler in handlers:
+            for task in handler.tasks:
+                if task['out'] in outputs:
+                    task['out'] = task['out'].copy()
+                else:
+                    outputs.add(task['out'])
 
         # Process
         for handler in handlers:
@@ -285,10 +283,9 @@ class Handler:
         # Create operator
         if isinstance(task, str):
             op = FutureField.parse(task, self.vars, self.dist)
+        elif isinstance(task, Field):
+            op = Copy(task)
         else:
-            # op = FutureField.cast(task, self.domain)
-            # op = Cast(task)
-            # TODO: figure out if we need to copying here
             op = task
         # Check scales
         if isinstance(op, (LockedField, FutureLockedField)):
