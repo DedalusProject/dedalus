@@ -9,6 +9,7 @@ import itertools
 from collections import OrderedDict
 from math import prod
 import numbers
+from weakref import WeakSet
 
 from .coords import CoordinateSystem, DirectProduct
 from ..tools.array import reshape_vector
@@ -112,6 +113,8 @@ class Distributor:
         self.comm_coords = np.array(self.comm_cart.coords, dtype=int)
         # Build layout objects
         self._build_layouts()
+        # Keep set of weak field references
+        self.fields = WeakSet()
 
     @CachedAttribute
     def cs_by_axis(self):

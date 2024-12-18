@@ -685,11 +685,6 @@ class InitialValueSolver(SolverBase):
         # Assert finite timestep
         if not np.isfinite(dt):
             raise ValueError("Invalid timestep")
-        # Enforce Hermitian symmetry for real variables
-        if self.enforce_real_cadence:
-            # Enforce for as many iterations as timestepper uses internally
-            if self.iteration % self.enforce_real_cadence < self.timestepper.steps:
-                self.enforce_hermitian_symmetry(self.state)
         # Record times
         wall_time = self.wall_time
         if self.iteration == self.initial_iteration:
@@ -706,6 +701,11 @@ class InitialValueSolver(SolverBase):
             self.run_time_start = self.wall_time
         # Advance using timestepper
         self.timestepper.step(dt, wall_time)
+        # Enforce Hermitian symmetry for real variables
+        if self.enforce_real_cadence:
+            # Enforce for as many iterations as timestepper uses internally
+            if self.iteration % self.enforce_real_cadence < self.timestepper.steps:
+                self.enforce_hermitian_symmetry(self.state)
         # Update iteration
         self.iteration += 1
         self.dt = dt
