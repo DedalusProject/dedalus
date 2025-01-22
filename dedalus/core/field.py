@@ -572,6 +572,8 @@ class Field(Current):
         self.layout = self.dist.get_layout_object('c')
         # Change scales to build buffer and data
         self.preset_scales((1,) * self.dist.dim)
+        # Add weak reference to distributor
+        dist.fields.add(self)
 
     def __getitem__(self, layout):
         """Return data viewed in specified layout."""
@@ -1021,4 +1023,11 @@ class LockedField(Field):
 
     def lock_axis_to_grid(self, axis):
         self.allowed_layouts = tuple(l for l in self.dist.layouts if l.grid_space[axis])
+
+    def unlock(self):
+        """Return regular Field object with same data and no layout locking."""
+        field = Field(self.dist, bases=self.domain.bases, name=self.name, tensorsig=self.tensorsig, dtype=self.dtype)
+        field.preset_scales(self.scales)
+        field[self.layout] = self.data
+        return field
 

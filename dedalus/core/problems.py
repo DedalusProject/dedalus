@@ -3,7 +3,7 @@
 import numpy as np
 from collections import ChainMap
 
-from .field import Operand, Field
+from .field import Operand, Field, LockedField
 from . import arithmetic
 from . import operators
 from . import solvers
@@ -244,6 +244,10 @@ class NonlinearBoundaryValueProblem(ProblemBase):
         # Extract matrix expressions
         F = eqn['LHS'] - eqn['RHS']
         dF = F.frechet_differential(vars, perts)
+        # Remove any field locks
+        dF = dF.replace(operators.Lock, lambda x: x)
+        for field in dF.atoms(LockedField):
+            dF = dF.replace(field, field.unlock())
         # Reinitialize and prep NCCs
         dF = dF.reinitialize(ncc=True, ncc_vars=perts)
         dF.prep_nccs(vars=perts)

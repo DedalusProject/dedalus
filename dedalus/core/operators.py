@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__.split('.')[-1])
 
 from .domain import Domain
 from . import coords
-from .field import Operand, Field
+from .field import Operand, Field, LockedField
 from .future import Future, FutureField, FutureLockedField
 from ..tools.array import reshape_vector, apply_matrix, add_sparse, axindex, axslice, perm_matrix, copyto, sparse_block_diag, interleave_matrices
 from ..tools.cache import CachedAttribute, CachedMethod
@@ -1492,6 +1492,8 @@ class Copy(LinearOperator):
 
     def __init__(self, operand, out=None):
         super().__init__(operand, out=out)
+        if isinstance(operand, (LockedField, FutureLockedField)):
+            raise ValueError("Not yet implemented for locked fields.")
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements
