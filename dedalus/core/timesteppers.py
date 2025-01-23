@@ -871,7 +871,7 @@ class RungeKuttaIMEX:
         # Recompute intermediate steps
         self.step(dt, wall_time, recompute=True)
         # # Check on updating LHS
-        # update_LHS = (k != self._LHS_params)
+        update_LHS = (k != self._LHS_params)
         # self._LHS_params = k
         # for sp in subproblems:
         #     if update_LHS:
@@ -900,14 +900,16 @@ class RungeKuttaIMEX:
                 field.preset_layout('c')
             for sp in subproblems:
                 # Construct LHS(n,i)
-                # if update_LHS:
-                #     if STORE_EXPANDED_MATRICES:
-                #         # sp.LHS.data[:] = sp.M_exp.data + k_Hii*sp.L_exp.data
-                #         np.copyto(sp.LHS.data, sp.M_exp.data)
-                #         axpy(a=k_Hii, x=sp.L_exp.data, y=sp.LHS.data)
-                #     else:
-                #         sp.LHS = (sp.M_min + k_Hii*sp.L_min)  # CREATES TEMPORARY
-                #     sp.LHS_solvers[i] = solver.matsolver(sp.LHS, solver)
+                # Only need to recompute last matrix (if needed), 
+                # as recompute has computed the rest
+                if update_LHS and i==self.stages:
+                    if STORE_EXPANDED_MATRICES:
+                        # sp.LHS.data[:] = sp.M_exp.data + k_Hii*sp.L_exp.data
+                        np.copyto(sp.LHS.data, sp.M_exp.data)
+                        axpy(a=k_Hii, x=sp.L_exp.data, y=sp.LHS.data)
+                    else:
+                        sp.LHS = (sp.M_min + k_Hii*sp.L_min)  # CREATES TEMPORARY
+                    sp.LHS_solvers[i] = solver.matsolver(sp.LHS, solver)
                 # Use computed adjoint RHS
                 spRHS = RHS.get_subdata(sp)
                 spX = sp.LHS_solvers[i].solve_H(spRHS)  # CREATES TEMPORARY
