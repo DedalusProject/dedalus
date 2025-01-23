@@ -300,7 +300,8 @@ class MultistepIMEX:
             np.copyto(Y0.get_subdata(sp),spX)
         sum_len = np.min([len(c), solver.stop_iteration-self._iteration])
         # Cache VJPs where solver.state does not change
-        id = uuid.uuid4()
+        # For now, make an id for each equation
+        ids = [uuid.uuid4() for eqn in solver.problem.equations]
         # Calculate linearised F for all steps
         for j in range(sum_len):
             for sp in subproblems:
@@ -311,11 +312,11 @@ class MultistepIMEX:
                     self.cotangents[field].preset_layout('c')
                     self.cotangents[field].data.fill(0)
             # Loop over equations and accumulate cotangents
-            for eqn in solver.problem.equations:
+            for eqn_num, eqn in enumerate(solver.problem.equations):
                 # TODO: Fix this when fields have vjp
                 if not isinstance(eqn['F'], Field):
                     # Calculate vjp
-                    _, self.cotangents = eqn['F'].evaluate_vjp(self.cotangents, id=id, force=True)
+                    _, self.cotangents = eqn['F'].evaluate_vjp(self.cotangents, id=ids[eqn_num], force=True)
             # Require coeff space before gathers
             for field in self.dFdxH_Y:
                 field.require_coeff_space()
@@ -922,7 +923,8 @@ class RungeKuttaIMEX:
                 sp.scatter_inputs(XStages[i-1].get_subdata(sp), solver.state)
                 np.copyto(Y[i-1].get_subdata(sp),spX)
             # Cache VJPs where solver.state does not change
-            id = uuid.uuid4()
+            # For now, make an id for each equation
+            ids = [uuid.uuid4() for eqn in solver.problem.equations]
             # Note, similar code here to MultistepIMEX
             for j in range(i,self.stages+1):
                 F[j-1].data.fill(0)
@@ -936,11 +938,11 @@ class RungeKuttaIMEX:
                         self.cotangents[field].preset_layout('c')
                         self.cotangents[field].data.fill(0)
                 # Loop over equations and accumulate cotangents
-                for eqn in solver.problem.equations:
+                for eqn_num, eqn in enumerate(solver.problem.equations):
                     # TODO: Fix this when fields have vjp
                     if not isinstance(eqn['F'], Field):
                         # Calculate vjp
-                        _, self.cotangents = eqn['F'].evaluate_vjp(self.cotangents, id=id, force=True)
+                        _, self.cotangents = eqn['F'].evaluate_vjp(self.cotangents, id=ids[eqn_num], force=True)
                 # Require coeff space before gathers
                 for field in self.dFdxH_Y:
                     field.require_coeff_space()
