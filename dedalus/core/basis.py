@@ -5317,13 +5317,14 @@ class SphericalAzimuthalAverage(AzimuthalAverage, operators.Average, operators.S
     subaxis_dependence = [True, False, False]  # Depends on m only
     subaxis_coupling = [False, False, False]  # No coupling
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        operand = self.args[0]
+        arg = args[0]
         # Set output layout
-        layout = operand.layout
+        layout = arg.layout
         out.preset_layout(layout)
-        out.data[:] = 0
+        if not adjoint:
+            out.data[:] = 0
         # Apply operator
         azimuth_axis = self.dist.first_axis(self.input_basis)
         domain_in = self.operand.domain
@@ -5332,12 +5333,16 @@ class SphericalAzimuthalAverage(AzimuthalAverage, operators.Average, operators.S
         groups_out = layout.local_group_arrays(domain_out, scales=domain_out.dealias)
         m0_in = (groups_in[azimuth_axis] == 0)
         m0_out = (groups_out[azimuth_axis] == 0)
-        regcomps = self.input_basis.radial_basis.regularity_classes(operand.tensorsig)
+        regcomps = self.input_basis.radial_basis.regularity_classes(arg.tensorsig)
         # Copy m = 0 for every component
         for regindex, regtotal in np.ndenumerate(regcomps):
-            comp_in = operand.data[regindex]
+            comp_in = arg.data[regindex]
             comp_out = out.data[regindex]
-            comp_out[m0_out] = comp_in[m0_in]
+            if adjoint:
+                # Add instead of copy for VJP accumulation
+                comp_in[m0_in] += comp_out[m0_out]
+            else:
+                comp_out[m0_out] = comp_in[m0_in]
 
 
 class SphereAverage(operators.Average, operators.SeparableSphereOperator):
