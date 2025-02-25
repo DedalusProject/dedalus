@@ -50,10 +50,10 @@ extensions += ['sphinx_gallery.load_style']
 extensions += ['sphinxcontrib.video']
 
 add_module_names = False
-autoapi_type = 'python'
 autoapi_dirs = ['../dedalus']
-autoapi_file_patterns = ['*.py']
+autoapi_ignore = ['*/dedalus/tests/*', '*/dedalus/libraries/dedalus_sphere/*']
 autoapi_options = ['members', 'undoc-members']
+autoapi_member_order = 'groupwise'
 autoapi_python_class_content = 'both'
 autoapi_add_toctree_entry = False
 

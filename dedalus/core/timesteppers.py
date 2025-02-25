@@ -9,12 +9,24 @@ from ..tools.array import apply_sparse
 
 
 # Public interface
-__all__ = []
+__all__ = ['CNAB1',
+           'SBDF1',
+           'CNAB2',
+           'MCNAB2',
+           'SBDF2',
+           'CNLF2',
+           'SBDF3',
+           'SBDF4',
+           'RK111',
+           'RK222',
+           'RK443',
+           'RKSMR',
+           'RKGFY']
+
 
 # Track implemented schemes
 schemes = OrderedDict()
 def add_scheme(scheme):
-    __all__.append(scheme.__name__)
     schemes[scheme.__name__] = scheme
     return scheme
 
