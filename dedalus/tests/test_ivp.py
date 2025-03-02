@@ -42,7 +42,7 @@ def test_heat_periodic(basis, N,  dtype, dealias, timestepper):
     dt = 1e-5
     iter = 20
     for i in range(iter):
-        solver.step(dt)
+        dt = solver.step(dt)
     # Check solution
     amp = 1 - np.exp(-solver.sim_time)
     u_true = amp * np.sin(x)
