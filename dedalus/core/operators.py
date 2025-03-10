@@ -3832,70 +3832,8 @@ class DirectProductCurl(Curl):
         np.copyto(out.data, arg0.data)
 
 
-class SphericalCurl(Curl, SphericalEllOperator):
-
-    cs_type = coords.SphericalCoordinates
-
-    def __init__(self, operand, index=0, out=None):
-        Curl.__init__(self, operand, out=out)
-        if index != 0:
-            raise ValueError("Curl only implemented along index 0.")
-        self.index = index
-        coordsys = operand.tensorsig[index]
-        SphericalEllOperator.__init__(self, operand, coordsys)
-        # FutureField requirements
-        self.domain  = operand.domain.substitute_basis(self.input_basis, self.output_basis)
-        self.tensorsig = (coordsys,) + operand.tensorsig[:index] + operand.tensorsig[index+1:]
-        self.dtype = operand.dtype
-
-    @staticmethod
-    def _output_basis(input_basis):
-        return input_basis.derivative_basis(1)
-
-    def check_conditions(self):
-        """Check that operands are in a proper layout."""
-        # Require radius to be in coefficient space
-        layout = self.args[0].layout
-        return (not layout.grid_space[self.radius_axis]) and (layout.local[self.radius_axis])
-
-    def enforce_conditions(self):
-        """Require operands to be in a proper layout."""
-        # Require radius to be in coefficient space
-        self.args[0].require_coeff_space(self.radius_axis)
-        self.args[0].require_local(self.radius_axis)
-
-    def regindex_out(self, regindex_in):
-        # Regorder: -, +, 0
-        # - and + map to 0
-        if regindex_in[0] in (0, 1):
-            return ((2,) + regindex_in[1:],)
-        # 0 maps to - and +
-        else:
-            return ((0,) + regindex_in[1:], (1,) + regindex_in[1:])
-
-    @CachedMethod
-    def radial_matrix(self, regindex_in, regindex_out, ell):
-        radial_basis = self.radial_basis
-        regtotal_in = radial_basis.regtotal(regindex_in)
-        regtotal_out = radial_basis.regtotal(regindex_out)
-        if regindex_in[1:] == regindex_out[1:]:
-            return self._radial_matrix(radial_basis, regindex_in[0], regindex_out[0], regtotal_in, regtotal_out, ell)
-        else:
-            raise ValueError("This should never happen")
-
-    @staticmethod
-    @CachedMethod
-    def _radial_matrix(radial_basis, regindex_in0, regindex_out0, regtotal_in, regtotal_out, ell):
-        if regindex_in0 == 0 and regindex_out0 == 2:
-            return -1j * radial_basis.xi(+1, ell+regtotal_in+1) * radial_basis.operator_matrix('D+', ell, regtotal_in)
-        elif regindex_in0 == 1 and regindex_out0 == 2:
-            return 1j * radial_basis.xi(-1, ell+regtotal_in-1) * radial_basis.operator_matrix('D-', ell, regtotal_in)
-        elif regindex_in0 == 2 and regindex_out0 == 0:
-            return -1j * radial_basis.xi(+1, ell+regtotal_in) * radial_basis.operator_matrix('D-', ell, regtotal_in)
-        elif regindex_in0 == 2 and regindex_out0 == 1:
-            return 1j * radial_basis.xi(-1, ell+regtotal_in) * radial_basis.operator_matrix('D+', ell, regtotal_in)
-        else:
-            raise ValueError("This should never happen")
+class ImaginarySphericalEllOperator(SphericalEllOperator):
+    """SphericalEllOperator with imaginary symbols."""
 
     def subproblem_matrix(self, subproblem):
         if self.dtype == np.complex128:
@@ -3973,6 +3911,158 @@ class SphericalCurl(Curl, SphericalEllOperator):
                         vec_out_complex = apply_matrix(A, vec_in_complex, axis=axis)
                         comp_out[tuple(slices)][cos_slice] += vec_out_complex.real
                         comp_out[tuple(slices)][msin_slice] += vec_out_complex.imag
+
+
+class SphericalCurl(Curl, ImaginarySphericalEllOperator):
+
+    cs_type = coords.SphericalCoordinates
+
+    def __init__(self, operand, index=0, out=None):
+        Curl.__init__(self, operand, out=out)
+        if index != 0:
+            raise ValueError("Curl only implemented along index 0.")
+        self.index = index
+        coordsys = operand.tensorsig[index]
+        SphericalEllOperator.__init__(self, operand, coordsys)
+        # FutureField requirements
+        self.domain  = operand.domain.substitute_basis(self.input_basis, self.output_basis)
+        self.tensorsig = (coordsys,) + operand.tensorsig[:index] + operand.tensorsig[index+1:]
+        self.dtype = operand.dtype
+
+    @staticmethod
+    def _output_basis(input_basis):
+        return input_basis.derivative_basis(1)
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Require radius to be in coefficient space
+        layout = self.args[0].layout
+        return (not layout.grid_space[self.radius_axis]) and (layout.local[self.radius_axis])
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Require radius to be in coefficient space
+        self.args[0].require_coeff_space(self.radius_axis)
+        self.args[0].require_local(self.radius_axis)
+
+    def regindex_out(self, regindex_in):
+        # Regorder: -, +, 0
+        # - and + map to 0
+        if regindex_in[0] in (0, 1):
+            return ((2,) + regindex_in[1:],)
+        # 0 maps to - and +
+        else:
+            return ((0,) + regindex_in[1:], (1,) + regindex_in[1:])
+
+    @CachedMethod
+    def radial_matrix(self, regindex_in, regindex_out, ell):
+        radial_basis = self.radial_basis
+        regtotal_in = radial_basis.regtotal(regindex_in)
+        regtotal_out = radial_basis.regtotal(regindex_out)
+        if regindex_in[1:] == regindex_out[1:]:
+            return self._radial_matrix(radial_basis, regindex_in[0], regindex_out[0], regtotal_in, regtotal_out, ell)
+        else:
+            raise ValueError("This should never happen")
+
+    @staticmethod
+    @CachedMethod
+    def _radial_matrix(radial_basis, regindex_in0, regindex_out0, regtotal_in, regtotal_out, ell):
+        if regindex_in0 == 0 and regindex_out0 == 2:
+            return -1j * radial_basis.xi(+1, ell+regtotal_in+1) * radial_basis.operator_matrix('D+', ell, regtotal_in)
+        elif regindex_in0 == 1 and regindex_out0 == 2:
+            return 1j * radial_basis.xi(-1, ell+regtotal_in-1) * radial_basis.operator_matrix('D-', ell, regtotal_in)
+        elif regindex_in0 == 2 and regindex_out0 == 0:
+            return -1j * radial_basis.xi(+1, ell+regtotal_in) * radial_basis.operator_matrix('D-', ell, regtotal_in)
+        elif regindex_in0 == 2 and regindex_out0 == 1:
+            return 1j * radial_basis.xi(-1, ell+regtotal_in) * radial_basis.operator_matrix('D+', ell, regtotal_in)
+        else:
+            raise ValueError("This should never happen")
+
+
+@alias("moment")
+class VectorMoment(LinearOperator, metaclass=MultiClass):
+
+    name = 'Moment'
+
+    @classmethod
+    def _check_args(cls, operand, index=0, out=None):
+        # Dispatch by coordinate system
+        if isinstance(operand, Operand):
+            if isinstance(operand.tensorsig[index], cls.cs_type):
+                return True
+        return False
+
+    def new_operand(self, operand, **kw):
+        return VectorMoment(operand, index=self.index, **kw)
+
+
+class SphericalVectorMoment(VectorMoment, ImaginarySphericalEllOperator):
+
+    cs_type = coords.SphericalCoordinates
+
+    def __init__(self, operand, index=0, out=None):
+        VectorMoment.__init__(self, operand, out=out)
+        if index != 0:
+            raise ValueError("Moment only implemented along index 0.")
+        self.index = index
+        coordsys = operand.tensorsig[index]
+        SphericalEllOperator.__init__(self, operand, coordsys)
+        # FutureField requirements
+        self.domain  = operand.domain.substitute_basis(self.input_basis, self.output_basis)
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
+
+    @staticmethod
+    def _output_basis(input_basis):
+        return input_basis
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Require radius to be in coefficient space
+        layout = self.args[0].layout
+        return (not layout.grid_space[self.radius_axis]) and (layout.local[self.radius_axis])
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Require radius to be in coefficient space
+        self.args[0].require_coeff_space(self.radius_axis)
+        self.args[0].require_local(self.radius_axis)
+
+    def regindex_out(self, regindex_in):
+        # Regorder: -, +, 0
+        Rm, Rp, R0 = 0, 1, 2
+        # - and + map to 0
+        if regindex_in[0] in (Rm, Rp):
+            return ((R0,) + regindex_in[1:],)
+        # 0 maps to - and +
+        else:
+            return ((Rm,) + regindex_in[1:], (Rp,) + regindex_in[1:])
+
+    @CachedMethod
+    def radial_matrix(self, regindex_in, regindex_out, ell):
+        radial_basis = self.radial_basis
+        regtotal_in = radial_basis.regtotal(regindex_in)
+        regtotal_out = radial_basis.regtotal(regindex_out)
+        if regindex_in[1:] == regindex_out[1:]:
+            return self._radial_matrix(radial_basis, regindex_in[0], regindex_out[0], regtotal_in, regtotal_out, ell)
+        else:
+            raise ValueError("This should never happen")
+
+    @staticmethod
+    @CachedMethod
+    def _radial_matrix(radial_basis, regindex_in0, regindex_out0, regtotal_in, regtotal_out, ell):
+        # Regorder: -, +, 0
+        Rm, Rp, R0 = 0, 1, 2
+        if regindex_in0 == Rm and regindex_out0 == R0:
+            return -1j * radial_basis.xi(+1, ell+regtotal_in+1) * radial_basis.operator_matrix('R+', ell, regtotal_in)
+        elif regindex_in0 == Rp and regindex_out0 == R0:
+            return 1j * radial_basis.xi(-1, ell+regtotal_in-1) * radial_basis.operator_matrix('R-', ell, regtotal_in)
+        elif regindex_in0 == R0 and regindex_out0 == Rm:
+            return -1j * radial_basis.xi(+1, ell+regtotal_in) * radial_basis.operator_matrix('R-', ell, regtotal_in)
+        elif regindex_in0 == R0 and regindex_out0 == Rp:
+            return 1j * radial_basis.xi(-1, ell+regtotal_in) * radial_basis.operator_matrix('R+', ell, regtotal_in)
+        else:
+            raise ValueError("This should never happen")
 
 
 @alias("lap")
