@@ -3985,6 +3985,12 @@ class VectorMoment(LinearOperator, metaclass=MultiClass):
     name = 'Moment'
 
     @classmethod
+    def _preprocess_args(cls, operand, index=0, out=None):
+        if operand == 0:
+            raise SkipDispatchException(output=0)
+        return [operand], {'index': index, 'out': out}
+
+    @classmethod
     def _check_args(cls, operand, index=0, out=None):
         # Dispatch by coordinate system
         if isinstance(operand, Operand):
