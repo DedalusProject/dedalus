@@ -5575,6 +5575,72 @@ class IntegrateShell(operators.Integrate, IntegrateSpherical):
         return matrix
 
 
+class HarmonicTraceBall(HarmonicTrace, SphericalEllOperator):
+    """Project against solid harmonics."""
+
+    input_coord_type = SphericalCoordinates
+    input_basis_type = BallBasis
+
+    @CachedAttribute
+    def radial_basis(self):
+        return self.input_basis.radial_basis
+
+    def regindex_out(self, regindex_in):
+        return (regindex_in,)
+
+    def _output_basis(self, input_basis):
+        return input_basis.S2_basis()
+
+    def operate(self, out):
+        """Perform operation."""
+        operand = self.args[0]
+        input_basis = self.input_basis
+        output_basis = self.output_basis
+        radial_basis = self.radial_basis
+        axis = self.dist.last_axis(radial_basis)
+        # Set output layout
+        out.preset_layout(operand.layout)
+        # Apply operator
+        R = radial_basis.regularity_classes(operand.tensorsig)
+        slices_in  = [slice(None) for i in range(self.dist.dim)]
+        slices_out = [slice(None) for i in range(self.dist.dim)]
+        for regindex, regtotal in np.ndenumerate(R):
+           comp_in = operand.data[regindex]
+           comp_out = out.data[regindex]
+           for ell, m_ind, ell_ind in input_basis.ell_maps(self.dist):
+               allowed  = radial_basis.regularity_allowed(ell, regindex)
+               if allowed:
+                   slices_in[axis-2] = slices_out[axis-2] = m_ind
+                   slices_in[axis-1] = slices_out[axis-1] = ell_ind
+                   slices_in[axis] = radial_basis.n_slice(ell)
+                   vec_in  = comp_in[tuple(slices_in)]
+                   vec_out = comp_out[tuple(slices_out)]
+                   A = self.radial_matrix(regindex, regindex, ell)
+                   apply_matrix(A, vec_in, axis=axis, out=vec_out)
+
+    def radial_matrix(self, regindex_in, regindex_out, ell):
+        return self._radial_matrix(self.radial_basis, ell)
+
+    @staticmethod
+    @CachedMethod
+    def _radial_matrix(basis, ell):
+        n_size = basis.n_size(ell)
+        if basis.alpha + basis.k == 0:
+            # Just first mode when α+k=0
+            matrix = np.zeros((1, n_size), dtype=basis.dtype)
+            matrix[0, 0] = 1
+        else:
+            # Otherwise calculate with quadrature
+            N = basis.shape[2] * 2 # maybe necessary for dealiasing?
+            z0, w0 = dedalus_sphere.zernike.quadrature(3, N, k=0)
+            Qk = dedalus_sphere.zernike.polynomials(3, n_size, basis.alpha+basis.k, ell, z0)
+            Q0 = Qk[0, :] # ~r**ell
+            matrix = ((Q0*w0)[None, :] @ Qk.T).astype(basis.dtype)
+        #matrix *= basis.radius**3
+        #matrix *= 4 * np.pi / np.sqrt(2) # SWSH contribution
+        return matrix
+
+
 class InterpolateAzimuth(FutureLockedField, operators.Interpolate):
 
     input_basis_type = (SphereBasis, BallBasis, ShellBasis, DiskBasis, AnnulusBasis)

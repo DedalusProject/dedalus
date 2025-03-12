@@ -4071,6 +4071,51 @@ class SphericalVectorMoment(VectorMoment, ImaginarySphericalEllOperator):
             raise ValueError("This should never happen")
 
 
+@alias("htrace")
+class HarmonicTrace(LinearOperator, metaclass=MultiClass):
+    """Trace of harmonic part of a scalar a field on the domain boundary."""
+
+    name = "htrace"
+
+    @classmethod
+    def _preprocess_args(cls, operand, coord):
+        # Handle zeros
+        if operand == 0:
+            raise SkipDispatchException(output=0)
+        return (operand, coord), {}
+
+    @classmethod
+    def _check_args(cls, operand, coord):
+        # Dispatch by operand basis
+        if isinstance(operand, Operand):
+            if isinstance(coord, cls.input_coord_type):
+                basis = operand.domain.get_basis(coord)
+                if isinstance(basis, cls.input_basis_type):
+                    return True
+        return False
+
+    def __init__(self, operand, coord):
+        SpectralOperator.__init__(self, operand)
+        # Require integrand is a scalar
+        if coord in operand.tensorsig:
+            raise ValueError("Can only take harmonic trace of scalars.")
+        # SpectralOperator requirements
+        self.coord = coord
+        self.input_basis = operand.domain.get_basis(coord)
+        self.output_basis = self._output_basis(self.input_basis)
+        self.first_axis = self.dist.get_basis_axis(self.input_basis)
+        self.last_axis = self.first_axis + self.input_basis.dim - 1
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = operand.domain.substitute_basis(self.input_basis, self.output_basis)
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
+
+    def new_operand(self, operand, **kw):
+        return HarmonicTrace(operand, self.coord, **kw)
+
+
 @alias("lap")
 class Laplacian(LinearOperator, metaclass=MultiClass):
 
