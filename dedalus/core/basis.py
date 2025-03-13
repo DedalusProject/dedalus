@@ -5575,7 +5575,7 @@ class IntegrateShell(operators.Integrate, IntegrateSpherical):
         return matrix
 
 
-class HarmonicTraceBall(HarmonicTrace, SphericalEllOperator):
+class HarmonicTraceBall(operators.HarmonicTrace, operators.SphericalEllOperator):
     """Project against solid harmonics."""
 
     input_coord_type = SphericalCoordinates
