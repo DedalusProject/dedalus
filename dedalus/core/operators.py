@@ -4071,6 +4071,97 @@ class SphericalVectorMoment(VectorMoment, ImaginarySphericalEllOperator):
             raise ValueError("This should never happen")
 
 
+@alias("momentdiv")
+class MomentDivergence(LinearOperator, metaclass=MultiClass):
+    """Divergence of vector moment: MomentDivergence(u) = div(cross(r, u))"""
+
+    name = 'MomentDivergence'
+
+    @classmethod
+    def _preprocess_args(cls, operand, index=0, out=None):
+        if operand == 0:
+            raise SkipDispatchException(output=0)
+        return [operand], {'index': index, 'out': out}
+
+    @classmethod
+    def _check_args(cls, operand, index=0, out=None):
+        # Dispatch by coordinate system
+        if isinstance(operand, Operand):
+            if isinstance(operand.tensorsig[index], cls.cs_type):
+                return True
+        return False
+
+    def new_operand(self, operand, **kw):
+        return MomentDivergence(operand, index=self.index, **kw)
+
+
+class SphericalMomentDivergence(MomentDivergence, ImaginarySphericalEllOperator):
+
+    cs_type = coords.SphericalCoordinates
+
+    def __init__(self, operand, index=0, out=None):
+        MomentDivergence.__init__(self, operand, out=out)
+        if index != 0:
+            raise ValueError("Moment only implemented along index 0.")
+        self.index = index
+        coordsys = operand.tensorsig[index]
+        SphericalEllOperator.__init__(self, operand, coordsys)
+        # FutureField requirements
+        self.domain  = operand.domain.substitute_basis(self.input_basis, self.output_basis)
+        self.tensorsig = operand.tensorsig[:index] + operand.tensorsig[index+1:]
+        self.dtype = operand.dtype
+
+    @staticmethod
+    def _output_basis(input_basis):
+        return input_basis
+
+    def check_conditions(self):
+        """Check that operands are in a proper layout."""
+        # Require radius to be in coefficient space
+        layout = self.args[0].layout
+        return (not layout.grid_space[self.radius_axis]) and (layout.local[self.radius_axis])
+
+    def enforce_conditions(self):
+        """Require operands to be in a proper layout."""
+        # Require radius to be in coefficient space
+        self.args[0].require_coeff_space(self.radius_axis)
+        self.args[0].require_local(self.radius_axis)
+
+    def regindex_out(self, regindex_in):
+        # Regorder: -, +, 0
+        Rm, Rp, R0 = 0, 1, 2
+        # 0 -> null
+        if regindex_in[0] == R0:
+            return (regindex_in[1:],)
+        else:
+            return tuple()
+
+    @CachedMethod
+    def radial_matrix(self, regindex_in, regindex_out, ell):
+        radial_basis = self.radial_basis
+        regtotal_in = radial_basis.regtotal(regindex_in)
+        if regindex_in[0] == 2 and regindex_in[1:] == regindex_out:
+            return self._radial_matrix(radial_basis, regindex_in[0], regtotal_in, ell)
+        else:
+            raise ValueError("This should never happen")
+
+    @staticmethod
+    @CachedMethod
+    def _radial_matrix(radial_basis, regindex_in0, regtotal_in, ell):
+        Rm = radial_basis.operator_matrix('R-', ell, regtotal_in)
+        Rp = radial_basis.operator_matrix('R+', ell, regtotal_in)
+        Dm = radial_basis.operator_matrix('D-', ell, regtotal_in+1)
+        Dp = radial_basis.operator_matrix('D+', ell, regtotal_in-1)
+        xim = radial_basis.xi(-1, ell+regtotal_in)
+        xip = radial_basis.xi(+1, ell+regtotal_in)
+        n = radial_basis.n_size(ell)
+        if regindex_in0 == 2:
+            # return 1j * xim * xip * (Dm * Rp - Dp * Rm)
+            return 1j * np.sqrt(ell*(ell+1)) * sparse.identity(n, radial_basis.dtype, format='csr')
+        else:
+            raise ValueError("This should never happen")
+
+
 @alias("htrace")
 class HarmonicTrace(LinearOperator, metaclass=MultiClass):
     """Trace of harmonic part of a scalar a field on the domain boundary."""
