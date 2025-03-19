@@ -99,7 +99,7 @@ class EigenvalueSolver:
             cacheid = None
         pencil.build_matrices(self.problem, ['M', 'L'], cacheid=cacheid)
         # Solve as dense general eigenvalue problem
-        eig_output = eig(pencil.L_exp.A, b=-pencil.M_exp.A, **kw)
+        eig_output = eig(pencil.L_exp.toarray(), b=-pencil.M_exp.toarray(), **kw)
         # Unpack output
         if len(eig_output) == 2:
             self.eigenvalues, self.eigenvectors = eig_output
