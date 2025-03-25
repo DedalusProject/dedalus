@@ -13,3 +13,4 @@ from .core.timesteppers import *
 # Temporary stuff
 from .extras.flow_tools import CFL, GlobalFlowProperty
 from .tools.post import load_tasks_to_xarray
+from .extras import quick_domains
