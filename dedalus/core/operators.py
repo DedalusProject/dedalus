@@ -935,7 +935,7 @@ class LinearOperator(FutureField):
         """Build operator matrix for a specific subproblem."""
         raise NotImplementedError("%s has not implemented a subproblem_matrix method." %type(self))
 
-    def _operate(self, args, out, adjoin=False):
+    def _operate(self, args, out, adjoint=False):
         raise NotImplementedError("%s has not implemented an _operate method." %type(self))
 
     def operate(self, out):
@@ -3774,13 +3774,14 @@ class CartesianDivergence(Divergence):
         """Build operator matrix for a specific subproblem."""
         return self.args[0].expression_matrices(subproblem, [self.operand])[self.operand]
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        # OPTIMIZE: this has an extra copy
-        arg0 = self.args[0]
-        # Set output layout
-        out.preset_layout(arg0.layout)
-        np.copyto(out.data, arg0.data)
+        # Copy arg data to output components
+        if adjoint:
+            # Add instead of copy for VJP accumulation
+            np.add(args[0].data, out.data, out=args[0].data)
+        else:
+            copyto(out.data, args[0].data)
 
 
 class DirectProductDivergence(Divergence):
