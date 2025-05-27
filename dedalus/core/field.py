@@ -7,6 +7,7 @@ import weakref
 from functools import partial, reduce
 from collections import defaultdict
 import numpy as np
+import array_api_compat
 from mpi4py import MPI
 from scipy import sparse
 from scipy.sparse import linalg as splinalg
@@ -525,8 +526,8 @@ class Current(Operand):
         tens_shape = [vs.dim for vs in self.tensorsig]
         local_shape = layout.local_shape(self.domain, self.scales)
         total_shape = tuple(tens_shape) + tuple(local_shape)
-        # Handle cupy allocation
-        if xp.__name__  == "cupy":
+        # Create view into buffer
+        if array_api_compat.is_cupy_namespace(xp):
             self.data = xp.ndarray(shape=total_shape, dtype=self.dtype, memptr=self.buffer.data)
         else:
             self.data = xp.ndarray(shape=total_shape, dtype=self.dtype, buffer=self.buffer)
