@@ -915,6 +915,7 @@ class Field(Current):
         **kw : dict
             Other keywords passed to the distribution method.
         """
+        xp = self.dist.array_namespace
         init_layout = self.layout
         # Set scales if requested
         if scales is not None:
@@ -934,11 +935,10 @@ class Field(Current):
         spatial_slices = self.layout.slices(self.domain, self.scales)
         local_slices = component_slices + spatial_slices
         local_data = global_data[local_slices]
-        if self.is_real:
-            self.data[:] = local_data
-        else:
-            self.data.real[:] = local_data[..., 0]
-            self.data.imag[:] = local_data[..., 1]
+        if self.is_complex:
+            local_data = local_data[..., 0] + 1j * local_data[..., 1]
+        # Copy to field data
+        self.data[:] = xp.asarray(local_data, dtype=self.dtype)
 
     def low_pass_filter(self, shape=None, scales=None):
         """
