@@ -915,11 +915,13 @@ class FourierBase(IntervalBasis):
     @CachedMethod
     def transform_plan(self, dist, grid_size):
         """Build transform plan."""
+        xp = dist.array_namespace
+        xp_name = xp.__name__.split('.')[-1]
         # Shortcut trivial transforms
         if grid_size == 1 or self.size == 1:
-            return self.transforms['matrix'](grid_size, self.size)
+            return self.transforms[f"matrix-{xp_name}"](grid_size, self.size)
         else:
-            return self.transforms[self.library](grid_size, self.size)
+            return self.transforms[f"{self.library}-{xp_name}"](grid_size, self.size)
 
     def forward_transform(self, field, axis, gdata, cdata):
         # Transform

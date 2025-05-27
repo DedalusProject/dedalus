@@ -191,50 +191,56 @@ class ComplexFourierTransform(SeparableTransform):
         If M is even, the ordering is [0, 1, 2, ..., KM, -KM, -KM+1, ..., -1].
     """
 
-    def __init__(self, grid_size, coeff_size):
+    def __init__(self, grid_size, coeff_size, array_namespace, dtype):
         self.N = grid_size
         self.M = coeff_size
         self.KN = (self.N - 1) // 2
         self.KM = (self.M - 1) // 2
         self.Kmax = min(self.KN, self.KM)
+        self.array_namespace = array_namespace
+        self.dtype = dtype
 
     @property
     def wavenumbers(self):
         """One-dimensional global wavenumber array."""
+        xp = self.array_namespace
         M = self.M
         KM = self.KM
-        k = np.arange(M)
+        k = xp.arange(M)
         # Wrap around Nyquist mode
         return (k + KM) % M - KM
 
 
-@register_transform(basis.ComplexFourier, 'matrix')
+@register_transform(basis.ComplexFourier, 'matrix-numpy')
+@register_transform(basis.ComplexFourier, 'matrix-cupy')
 class ComplexFourierMMT(ComplexFourierTransform, SeparableMatrixTransform):
     """Complex-to-complex Fourier MMT."""
 
     @CachedAttribute
     def forward_matrix(self):
         """Build forward transform matrix."""
+        xp = self.array_namespace
         K = self.wavenumbers[:, None]
-        X = np.arange(self.N)[None, :]
+        X = xp.arange(self.N)[None, :]
         dX = self.N / 2 / np.pi
-        quadrature = np.exp(-1j*K*X/dX) / self.N
+        quadrature = xp.exp(-1j*K*X/dX) / self.N
         # Zero Nyquist and higher modes for transforms with grid_size <= coeff_size
-        quadrature *= np.abs(K) <= self.Kmax
-        # Ensure C ordering for fast dot products
-        return np.asarray(quadrature, order='C')
+        quadrature *= xp.abs(K) <= self.Kmax
+        # Ensure C ordering for fast dot products, cast to specified dtype
+        return xp.asarray(quadrature, order='C', dtype=self.dtype)
 
     @CachedAttribute
     def backward_matrix(self):
         """Build backward transform matrix."""
+        xp = self.array_namespace
         K = self.wavenumbers[None, :]
-        X = np.arange(self.N)[:, None]
+        X = xp.arange(self.N)[:, None]
         dX = self.N / 2 / np.pi
-        functions = np.exp(1j*K*X/dX)
+        functions = xp.exp(1j*K*X/dX)
         # Zero Nyquist and higher modes for transforms with grid_size <= coeff_size
-        functions *= np.abs(K) <= self.Kmax
-        # Ensure C ordering for fast dot products
-        return np.asarray(functions, order='C')
+        functions *= xp.abs(K) <= self.Kmax
+        # Ensure C ordering for fast dot products, cast to specified dtype
+        return xp.asarray(functions, order='C', dtype=self.dtype)
 
 
 class ComplexFFT(ComplexFourierTransform):
@@ -267,7 +273,7 @@ class ComplexFFT(ComplexFourierTransform):
                 np.multiply(data_in[negfreq], rescale, data_out[negfreq])
 
 
-@register_transform(basis.ComplexFourier, 'scipy')
+@register_transform(basis.ComplexFourier, 'scipy-numpy')
 class ScipyComplexFFT(ComplexFFT):
     """Complex-to-complex FFT using scipy.fft."""
 
@@ -299,7 +305,7 @@ class FFTWBase:
         super().__init__(*args, **kw)
 
 
-@register_transform(basis.ComplexFourier, 'fftw')
+@register_transform(basis.ComplexFourier, 'fftw-numpy')
 class FFTWComplexFFT(FFTWBase, ComplexFFT):
     """Complex-to-complex FFT using FFTW."""
 
