@@ -525,9 +525,11 @@ class Current(Operand):
         tens_shape = [vs.dim for vs in self.tensorsig]
         local_shape = layout.local_shape(self.domain, self.scales)
         total_shape = tuple(tens_shape) + tuple(local_shape)
-        self.data = xp.ndarray(shape=total_shape,
-                               dtype=self.dtype,
-                               buffer=self.buffer)
+        # Handle cupy allocation
+        if xp.__name__  == "cupy":
+            self.data = xp.ndarray(shape=total_shape, dtype=self.dtype, memptr=self.buffer.data)
+        else:
+            self.data = xp.ndarray(shape=total_shape, dtype=self.dtype, buffer=self.buffer)
         #self.global_start = layout.start(self.domain, self.scales)
 
 
