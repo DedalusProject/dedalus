@@ -919,9 +919,9 @@ class FourierBase(IntervalBasis):
         xp_name = xp.__name__.split('.')[-1]
         # Shortcut trivial transforms
         if grid_size == 1 or self.size == 1:
-            return self.transforms[f"matrix-{xp_name}"](grid_size, self.size)
+            return self.transforms[f"matrix-{xp_name}"](grid_size, self.size, dist.array_namespace, dist.dtype)
         else:
-            return self.transforms[f"{self.library}-{xp_name}"](grid_size, self.size)
+            return self.transforms[f"{self.library}-{xp_name}"](grid_size, self.size, dist.array_namespace, dist.dtype)
 
     def forward_transform(self, field, axis, gdata, cdata):
         # Transform
