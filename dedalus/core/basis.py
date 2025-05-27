@@ -14,7 +14,7 @@ from ..tools import jacobi
 from ..tools import clenshaw
 from ..tools.array import reshape_vector, axindex, axslice, interleave_matrices
 from ..tools.dispatch import MultiClass, SkipDispatchException
-from ..tools.general import unify, DeferredTuple
+from ..tools.general import unify, DeferredTuple, is_real_dtype, is_complex_dtype
 from .coords import Coordinate, CartesianCoordinates, S2Coordinates, SphericalCoordinates, PolarCoordinates, AzimuthalCoordinate, DirectProduct
 from .domain import Domain
 from .field  import Operand, LockedField
@@ -942,9 +942,9 @@ def Fourier(*args, dtype=None, **kw):
     """Factory function dispatching to RealFourier and ComplexFourier based on provided dtype."""
     if dtype is None:
         raise ValueError("dtype must be specified")
-    elif dtype == np.float64:
+    elif is_real_dtype(dtype):
         return RealFourier(*args, **kw)
-    elif dtype == np.complex128:
+    elif is_complex_dtype(dtype):
         return ComplexFourier(*args, **kw)
     else:
         raise ValueError(f"Unrecognized dtype: {dtype}")
