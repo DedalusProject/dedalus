@@ -117,8 +117,10 @@ class Distributor:
         # Keep set of weak field references
         self.fields = WeakSet()
         # Array module
-        x = array_namespace.zeros(0)
-        self.array_namespace = array_api_compat.array_namespace(x)
+        if isinstance(array_namespace, str):
+            self.array_namespace = getattr(array_api_compat, array_namespace)
+        else:
+            self.array_namespace = array_api_compat.array_namespace(array_namespace.zeros(0))
 
     @CachedAttribute
     def cs_by_axis(self):
