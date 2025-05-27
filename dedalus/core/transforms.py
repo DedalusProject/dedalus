@@ -374,7 +374,7 @@ class RealFourierTransform(SeparableTransform):
         where the k = 0 minus-sine mode is zeroed in both directions.
     """
 
-    def __init__(self, grid_size, coeff_size):
+    def __init__(self, grid_size, coeff_size, array_namespace, dtype):
         if coeff_size % 2 != 0:
             pass#raise ValueError("coeff_size must be even.")
         self.N = grid_size
@@ -382,55 +382,61 @@ class RealFourierTransform(SeparableTransform):
         self.KN = (self.N - 1) // 2
         self.KM = (self.M - 1) // 2
         self.Kmax = min(self.KN, self.KM)
+        self.array_namespace = array_namespace
+        self.dtype = dtype
 
     @property
     def wavenumbers(self):
         """One-dimensional global wavenumber array."""
+        xp = self.array_namespace
         # Repeat k's for cos and msin parts
-        return np.repeat(np.arange(self.KM+1), 2)
+        return xp.repeat(xp.arange(self.KM+1), 2)
 
 
-@register_transform(basis.RealFourier, 'matrix')
+@register_transform(basis.RealFourier, 'matrix-numpy')
+@register_transform(basis.RealFourier, 'matrix-cupy')
 class RealFourierMMT(RealFourierTransform, SeparableMatrixTransform):
     """Real-to-real Fourier MMT."""
 
     @CachedAttribute
     def forward_matrix(self):
         """Build forward transform matrix."""
+        xp = self.array_namespace
         N = self.N
         M = max(2, self.M) # Account for sin and cos parts of m=0
         Kmax = self.Kmax
         K = self.wavenumbers[::2, None]
-        X = np.arange(N)[None, :]
+        X = xp.arange(N)[None, :]
         dX = N / 2 / np.pi
-        quadrature = np.zeros((M, N))
-        quadrature[0::2] = (2 / N) * np.cos(K*X/dX)
-        quadrature[1::2] = -(2 / N) * np.sin(K*X/dX)
+        quadrature = xp.zeros((M, N))
+        quadrature[0::2] = (2 / N) * xp.cos(K*X/dX)
+        quadrature[1::2] = -(2 / N) * xp.sin(K*X/dX)
         quadrature[0] = 1 / N
         # Zero Nyquist and higher modes for transforms with grid_size <= coeff_size
         quadrature *= self.wavenumbers[:,None] <= self.Kmax
         # Ensure C ordering for fast dot products
-        return np.asarray(quadrature, order='C')
+        return xp.asarray(quadrature, order='C', dtype=self.dtype)
 
     @CachedAttribute
     def backward_matrix(self):
         """Build backward transform matrix."""
+        xp = self.array_namespace
         N = self.N
         M = max(2, self.M) # Account for sin and cos parts of m=0
         Kmax = self.Kmax
         K = self.wavenumbers[None, ::2]
-        X = np.arange(N)[:, None]
+        X = xp.arange(N)[:, None]
         dX = N / 2 / np.pi
-        functions = np.zeros((N, M))
-        functions[:, 0::2] = np.cos(K*X/dX)
-        functions[:, 1::2] = -np.sin(K*X/dX)
+        functions = xp.zeros((N, M))
+        functions[:, 0::2] = xp.cos(K*X/dX)
+        functions[:, 1::2] = -xp.sin(K*X/dX)
         # Zero Nyquist and higher modes for transforms with grid_size <= coeff_size
         functions *= self.wavenumbers[None, :] <= self.Kmax
         # Ensure C ordering for fast dot products
-        return np.asarray(functions, order='C')
+        return xp.asarray(functions, order='C', dtype=self.dtype)
 
 
-@register_transform(basis.RealFourier, 'fftpack')
+@register_transform(basis.RealFourier, 'fftpack-numpy')
 class FFTPACKRealFFT(RealFourierTransform):
     """Real-to-real FFT using scipy.fftpack."""
 
@@ -515,7 +521,7 @@ class RealFFT(RealFourierTransform):
         temp[axslice(axis, Kmax+1, None)] = 0
 
 
-@register_transform(basis.RealFourier, 'scipy')
+@register_transform(basis.RealFourier, 'scipy-numpy')
 class ScipyRealFFT(RealFFT):
     """Real-to-real FFT using scipy.fft."""
 
@@ -540,7 +546,7 @@ class ScipyRealFFT(RealFFT):
         np.copyto(gdata, temp)
 
 
-@register_transform(basis.RealFourier, 'fftw')
+@register_transform(basis.RealFourier, 'fftw-numpy')
 class FFTWRealFFT(FFTWBase, RealFFT):
     """Real-to-real FFT using FFTW."""
 
@@ -571,7 +577,7 @@ class FFTWRealFFT(FFTWBase, RealFFT):
         plan.backward(temp, gdata)
 
 
-@register_transform(basis.RealFourier, 'fftw_hc')
+@register_transform(basis.RealFourier, 'fftw_hc-numpy')
 class FFTWHalfComplexFFT(FFTWBase, RealFourierTransform):
     """Real-to-real FFT using FFTW half-complex DFT."""
 
