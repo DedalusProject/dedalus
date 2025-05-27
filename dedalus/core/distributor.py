@@ -10,6 +10,7 @@ from collections import OrderedDict
 from math import prod
 import numbers
 from weakref import WeakSet
+import array_api_compat
 
 from .coords import CoordinateSystem, DirectProduct
 from ..tools.array import reshape_vector
@@ -74,7 +75,7 @@ class Distributor:
     states) and the paths between them (D transforms and R transposes).
     """
 
-    def __init__(self, coordsystems, comm=None, mesh=None, dtype=None):
+    def __init__(self, coordsystems, comm=None, mesh=None, dtype=None, array_namespace=np):
         # Accept single coordsys in place of tuple/list
         if not isinstance(coordsystems, (tuple, list)):
             coordsystems = (coordsystems,)
@@ -115,6 +116,9 @@ class Distributor:
         self._build_layouts()
         # Keep set of weak field references
         self.fields = WeakSet()
+        # Array module
+        x = array_namespace.zeros(0)
+        self.array_namespace = array_api_compat.array_namespace(x)
 
     @CachedAttribute
     def cs_by_axis(self):
