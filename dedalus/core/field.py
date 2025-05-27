@@ -473,16 +473,19 @@ class Current(Operand):
     def reinitialize(self, **kw):
         return self
 
-    @staticmethod
-    def _create_buffer(buffer_size):
+    def _create_buffer(self, buffer_size):
         """Create buffer for Field data."""
-        if buffer_size == 0:
-            # FFTW doesn't like allocating size-0 arrays
-            return np.zeros((0,), dtype=np.float64)
+        xp = self.array_namespace
+        if xp == np:
+            if buffer_size == 0:
+                # FFTW doesn't like allocating size-0 arrays
+                return np.zeros((0,), dtype=np.float64)
+            else:
+                # Use FFTW SIMD aligned allocation
+                alloc_doubles = buffer_size // 8
+                return fftw.create_buffer(alloc_doubles)
         else:
-            # Use FFTW SIMD aligned allocation
-            alloc_doubles = buffer_size // 8
-            return fftw.create_buffer(alloc_doubles)
+            return xp.zeros(buffer_size)
 
     @CachedAttribute
     def _dealias_buffer_size(self):
@@ -516,12 +519,13 @@ class Current(Operand):
 
     def preset_layout(self, layout):
         """Interpret buffer as data in specified layout."""
+        xp = self.array_namespace
         layout = self.dist.get_layout_object(layout)
         self.layout = layout
         tens_shape = [vs.dim for vs in self.tensorsig]
         local_shape = layout.local_shape(self.domain, self.scales)
         total_shape = tuple(tens_shape) + tuple(local_shape)
-        self.data = np.ndarray(shape=total_shape,
+        self.data = xp.ndarray(shape=total_shape,
                                dtype=self.dtype,
                                buffer=self.buffer)
         #self.global_start = layout.start(self.domain, self.scales)
@@ -561,6 +565,7 @@ class Field(Current):
             dtype = dist.dtype
         from .domain import Domain
         self.dist = dist
+        self.array_namespace = dist.array_namespace
         self.name = name
         self.tensorsig = tensorsig
         self.dtype = dtype
