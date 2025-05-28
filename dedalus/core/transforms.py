@@ -248,29 +248,30 @@ class ComplexFFT(ComplexFourierTransform):
 
     def resize_coeffs(self, data_in, data_out, axis, rescale):
         """Resize and rescale coefficients in standard FFT format by intermediate padding/truncation."""
+        xp = self.array_namespace
         M = self.M
         Kmax = self.Kmax
         if Kmax == 0:
             posfreq = axslice(axis, 0, 1)
             badfreq = axslice(axis, 1, None)
             if rescale is None:
-                np.copyto(data_out[posfreq], data_in[posfreq])
+                xp.copyto(data_out[posfreq], data_in[posfreq])
                 data_out[badfreq] = 0
             else:
-                np.multiply(data_in[posfreq], rescale, data_out[posfreq])
+                xp.multiply(data_in[posfreq], rescale, data_out[posfreq])
                 data_out[badfreq] = 0
         else:
             posfreq = axslice(axis, 0, Kmax+1)
             badfreq = axslice(axis, Kmax+1, -Kmax)
             negfreq = axslice(axis, -Kmax, None)
             if rescale is None:
-                np.copyto(data_out[posfreq], data_in[posfreq])
+                xp.copyto(data_out[posfreq], data_in[posfreq])
                 data_out[badfreq] = 0
-                np.copyto(data_out[negfreq], data_in[negfreq])
+                xp.copyto(data_out[negfreq], data_in[negfreq])
             else:
-                np.multiply(data_in[posfreq], rescale, data_out[posfreq])
+                xp.multiply(data_in[posfreq], rescale, data_out[posfreq])
                 data_out[badfreq] = 0
-                np.multiply(data_in[negfreq], rescale, data_out[negfreq])
+                xp.multiply(data_in[negfreq], rescale, data_out[negfreq])
 
 
 @register_transform(basis.ComplexFourier, 'scipy-numpy')
@@ -292,6 +293,33 @@ class ScipyComplexFFT(ComplexFFT):
         self.resize_coeffs(cdata, temp, axis, rescale=self.N)
         # Call FFT
         temp = scipy.fft.ifft(temp, axis=axis, overwrite_x=True) # Creates temporary
+        np.copyto(gdata, temp)
+
+
+@register_transform(basis.ComplexFourier, 'scipy-cupy')
+class CupyComplexFFT(ComplexFFT):
+    """Complex-to-complex FFT using scipy.fft."""
+
+    def __init__(self, *args, **kw):
+        import cupyx.scipy.fft as cufft
+        self.cufft = cufft
+        super().__init__(*args, **kw)
+
+    def forward(self, gdata, cdata, axis):
+        """Apply forward transform along specified axis."""
+        # Call FFT
+        temp = self.cufft.fft(gdata, axis=axis) # Creates temporary
+        # Resize and rescale for unit-amplitude normalization
+        self.resize_coeffs(temp, cdata, axis, rescale=1/self.N)
+
+    def backward(self, cdata, gdata, axis):
+        """Apply backward transform along specified axis."""
+        # Resize and rescale for unit-amplitude normalization
+        # Need temporary to avoid overwriting problems
+        temp = np.empty_like(gdata) # Creates temporary
+        self.resize_coeffs(cdata, temp, axis, rescale=self.N)
+        # Call FFT
+        temp = self.cufft.ifft(temp, axis=axis, overwrite_x=True) # Creates temporary
         np.copyto(gdata, temp)
 
 
