@@ -15,6 +15,7 @@ from ..tools import jacobi
 from ..tools.array import apply_matrix, apply_dense, axslice, solve_upper_sparse, apply_sparse
 from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
+from ..tools.general import float_to_complex
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -314,13 +315,14 @@ class CupyComplexFFT(ComplexFFT):
 
     def backward(self, cdata, gdata, axis):
         """Apply backward transform along specified axis."""
+        xp = self.array_namespace
         # Resize and rescale for unit-amplitude normalization
         # Need temporary to avoid overwriting problems
-        temp = np.empty_like(gdata) # Creates temporary
+        temp = xp.empty_like(gdata) # Creates temporary
         self.resize_coeffs(cdata, temp, axis, rescale=self.N)
         # Call FFT
         temp = self.cufft.ifft(temp, axis=axis, overwrite_x=True) # Creates temporary
-        np.copyto(gdata, temp)
+        xp.copyto(gdata, temp)
 
 
 class FFTWBase:
@@ -511,40 +513,42 @@ class RealFFT(RealFourierTransform):
 
     def unpack_rescale(self, temp, cdata, axis, rescale):
         """Unpack complex coefficients and rescale for unit-amplitude normalization."""
+        xp = self.array_namespace
         Kmax = self.Kmax
         # Scale k = 0 cos data
         meancos = axslice(axis, 0, 1)
-        np.multiply(temp[meancos].real, rescale, cdata[meancos])
+        xp.multiply(temp[meancos].real, rescale, cdata[meancos])
         # Zero k = 0 msin data
         cdata[axslice(axis, 1, 2)] = 0
         # Unpack and scale 1 < k <= Kmax data
         temp_posfreq = temp[axslice(axis, 1, Kmax+1)]
         cdata_posfreq_cos = cdata[axslice(axis, 2, 2*(Kmax+1), 2)]
         cdata_posfreq_msin = cdata[axslice(axis, 3, 2*(Kmax+1), 2)]
-        np.multiply(temp_posfreq.real, 2*rescale, cdata_posfreq_cos)
-        np.multiply(temp_posfreq.imag, 2*rescale, cdata_posfreq_msin)
+        xp.multiply(temp_posfreq.real, 2*rescale, cdata_posfreq_cos)
+        xp.multiply(temp_posfreq.imag, 2*rescale, cdata_posfreq_msin)
         # Zero k > Kmax data
         cdata[axslice(axis, 2*(Kmax+1), None)] = 0
 
     def repack_rescale(self, cdata, temp, axis, rescale):
         """Repack into complex coefficients and rescale for unit-amplitude normalization."""
+        xp = self.array_namespace
         Kmax = self.Kmax
         # Scale k = 0 data
         meancos = axslice(axis, 0, 1)
         if rescale is None:
-            np.copyto(temp[meancos], cdata[meancos])
+            xp.copyto(temp[meancos], cdata[meancos])
         else:
-            np.multiply(cdata[meancos], rescale, temp[meancos])
+            xp.multiply(cdata[meancos], rescale, temp[meancos])
         # Repack and scale 1 < k <= Kmax data
         temp_posfreq = temp[axslice(axis, 1, Kmax+1)]
         cdata_posfreq_cos = cdata[axslice(axis, 2, 2*(Kmax+1), 2)]
         cdata_posfreq_msin = cdata[axslice(axis, 3, 2*(Kmax+1), 2)]
         if rescale is None:
-            np.multiply(cdata_posfreq_cos, (1 / 2), temp_posfreq.real)
-            np.multiply(cdata_posfreq_msin, (1 / 2), temp_posfreq.imag)
+            xp.multiply(cdata_posfreq_cos, (1 / 2), temp_posfreq.real)
+            xp.multiply(cdata_posfreq_msin, (1 / 2), temp_posfreq.imag)
         else:
-            np.multiply(cdata_posfreq_cos, (rescale / 2), temp_posfreq.real)
-            np.multiply(cdata_posfreq_msin, (rescale / 2), temp_posfreq.imag)
+            xp.multiply(cdata_posfreq_cos, (rescale / 2), temp_posfreq.real)
+            xp.multiply(cdata_posfreq_msin, (rescale / 2), temp_posfreq.imag)
         # Zero k > Kmax data
         temp[axslice(axis, Kmax+1, None)] = 0
 
@@ -552,6 +556,10 @@ class RealFFT(RealFourierTransform):
 @register_transform(basis.RealFourier, 'scipy-numpy')
 class ScipyRealFFT(RealFFT):
     """Real-to-real FFT using scipy.fft."""
+
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self.complex_dtype = float_to_complex(self.dtype)
 
     def forward(self, gdata, cdata, axis):
         """Apply forward transform along specified axis."""
@@ -566,12 +574,44 @@ class ScipyRealFFT(RealFFT):
         # Rescale all modes and combine into complex form
         shape = list(gdata.shape)
         shape[axis] = N // 2 + 1
-        temp = np.empty(shape=shape, dtype=np.complex128) # Creates temporary
+        temp = np.empty(shape=shape, dtype=self.complex_dtype) # Creates temporary
         # Repack into complex form and rescale
         self.repack_rescale(cdata, temp, axis, rescale=N)
         # Call IRFFT
         temp = scipy.fft.irfft(temp, axis=axis, n=N, overwrite_x=True) # Creates temporary
         np.copyto(gdata, temp)
+
+
+@register_transform(basis.RealFourier, 'scipy-cupy')
+class CupyRealFFT(RealFFT):
+    """Real-to-real FFT using scipy.fft."""
+
+    def __init__(self, *args, **kw):
+        import cupyx.scipy.fft as cufft
+        self.cufft = cufft
+        super().__init__(*args, **kw)
+        self.complex_dtype = float_to_complex(self.dtype)
+
+    def forward(self, gdata, cdata, axis):
+        """Apply forward transform along specified axis."""
+        # Call RFFT
+        temp = self.cufft.rfft(gdata, axis=axis) # Creates temporary
+        # Unpack from complex form and rescale
+        self.unpack_rescale(temp, cdata, axis, rescale=1/self.N)
+
+    def backward(self, cdata, gdata, axis):
+        """Apply backward transform along specified axis."""
+        xp = self.array_namespace
+        N = self.N
+        # Rescale all modes and combine into complex form
+        shape = list(gdata.shape)
+        shape[axis] = N // 2 + 1
+        temp = xp.empty(shape=shape, dtype=self.complex_dtype) # Creates temporary
+        # Repack into complex form and rescale
+        self.repack_rescale(cdata, temp, axis, rescale=N)
+        # Call IRFFT
+        temp = self.cufft.irfft(temp, axis=axis, n=N, overwrite_x=True) # Creates temporary
+        xp.copyto(gdata, temp)
 
 
 @register_transform(basis.RealFourier, 'fftw-numpy')
