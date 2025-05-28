@@ -245,10 +245,11 @@ class AddFields(Add, FutureField):
 
     def operate(self, out):
         """Perform operation."""
+        xp = self.array_namespace
         arg0, arg1 = self.args
         # Set output layout
         out.preset_layout(arg0.layout)
-        np.add(arg0.data, arg1.data, out=out.data)
+        xp.add(arg0.data, arg1.data, out=out.data)
 
 
 # used for einsum string manipulation
@@ -854,6 +855,7 @@ class MultiplyFields(Multiply, FutureField):
 
     def operate(self, out):
         """Perform operation."""
+        xp = self.array_namespace
         arg0, arg1 = self.args
         # Set output layout
         out.preset_layout(arg0.layout)
@@ -863,7 +865,7 @@ class MultiplyFields(Multiply, FutureField):
         # Reshape arg data to broadcast properly for output tensorsig
         arg0_exp_data = arg0_data.reshape(self.arg0_exp_tshape + arg0_data.shape[len(arg0.tensorsig):])
         arg1_exp_data = arg1_data.reshape(self.arg1_exp_tshape + arg1_data.shape[len(arg1.tensorsig):])
-        np.multiply(arg0_exp_data, arg1_exp_data, out=out.data)
+        xp.multiply(arg0_exp_data, arg1_exp_data, out=out.data)
 
 
 class GhostBroadcaster:
@@ -939,11 +941,12 @@ class MultiplyNumberField(Multiply, FutureField):
 
     def operate(self, out):
         """Perform operation."""
+        xp = self.array_namespace
         arg0, arg1 = self.args
         # Set output layout
         out.preset_layout(arg1.layout)
         # Multiply argument data
-        np.multiply(arg0, arg1.data, out=out.data)
+        xp.multiply(arg0, arg1.data, out=out.data)
 
     def matrix_dependence(self, *vars):
         return self.args[1].matrix_dependence(*vars)
