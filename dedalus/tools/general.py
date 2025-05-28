@@ -124,3 +124,15 @@ def is_complex_dtype(dtype):
         dtype = dtype.type
     return np.iscomplexobj(dtype())
 
+
+def float_to_complex(dtype):
+    itemsize = np.dtype(dtype).itemsize
+    complex_dtype = np.dtype(f'complex{itemsize*2}')
+    return complex_dtype.type
+
+
+def complex_to_float(dtype):
+    itemsize = np.dtype(dtype).itemsize
+    float_dtype = np.dtype(f'float{itemsize//2}')
+    return float_dtype.type
+
