@@ -127,12 +127,12 @@ def is_complex_dtype(dtype):
 
 def float_to_complex(dtype):
     itemsize = np.dtype(dtype).itemsize
-    complex_dtype = np.dtype(f'complex{itemsize*2}')
+    complex_dtype = np.dtype(f'complex{16*itemsize}')
     return complex_dtype.type
 
 
 def complex_to_float(dtype):
     itemsize = np.dtype(dtype).itemsize
-    float_dtype = np.dtype(f'float{itemsize//2}')
+    float_dtype = np.dtype(f'float{4*itemsize}')
     return float_dtype.type
 
