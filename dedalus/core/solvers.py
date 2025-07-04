@@ -17,6 +17,7 @@ from .field import Field
 from . import subsystems
 from . import timesteppers
 from .evaluator import Evaluator
+from .operators import Convert
 from ..libraries.matsolvers import matsolvers
 from ..tools.config import config
 from ..tools.array import scipy_sparse_eigs
@@ -321,6 +322,51 @@ class EigenvalueSolver(SolverBase):
         subsystem.scatter(self.eigenvectors[:, index], self.state)
         # Set eigenvalue
         self.problem.eigenvalue['g'] = self.eigenvalues[index]
+
+    def set_state_adjoint(self, index, subsystem=0):
+        # Create adjoint state if it doesnt exist
+        if not hasattr(self, 'state_adjoint'):
+            self.state_adjoint = []
+            for field in self.state:
+                field_adj = field.copy_adjoint()
+                # Zero the system
+                field_adj.preset_layout('c')
+                field_adj.data *= 0
+                if field.name:
+                    # If the direct field has a name, give the adjoint a
+                    # corresponding name
+                    field_adj.name = 'Y_%s' % field.name
+                self.state_adjoint.append(field_adj)
+        # Fill the adjoint state with the left eigenvectors
+        subproblem = self.eigenvalue_subproblem
+        if isinstance(subsystem, int):
+            subsystem = subproblem.subsystems[subsystem]
+        # Check selection
+        if subsystem not in subproblem.subsystems:
+            raise ValueError("subsystem must be in eigenvalue_subproblem")
+        # Set coefficients
+        for var in self.state:
+            var['c'] = 0
+        subsystem.scatter(self.left_eigenvectors[:, index], self.state_adjoint)
+    
+    def compute_sensitivity(self, p, index, subsystem=0):
+        """
+        Computes the sensitivity of the (index)-eigenvector 
+        with respect to parameter p
+        """
+        # NOTE: What to do with different subsystems?
+        #       Maybe should zero field data first
+        # TODO: Include case where M(p)
+        self.set_state_adjoint(index, subsystem)
+        self.set_state(index, subsystem)
+        sensitivity = 0
+        for i, eqn in enumerate(self.problem.equations):
+            dLdp = eqn['L'].sym_diff(p)
+            if not isinstance(dLdp, int):
+                # Must convert gradient to same basis as equation
+                dLdp = Convert(dLdp, eqn['L'].domain.bases[0])
+                sensitivity += np.vdot(self.state_adjoint[i]['c'], (-dLdp)['c'])
+        return sensitivity
 
 
 class LinearBoundaryValueSolver(SolverBase):
