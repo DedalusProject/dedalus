@@ -325,17 +325,17 @@ class EigenvalueSolver(SolverBase):
 
     def set_state_adjoint(self, index, subsystem=0):
         # Create adjoint state if it doesnt exist
+        # TODO: Adjoint should be of equations!
         if not hasattr(self, 'state_adjoint'):
             self.state_adjoint = []
-            for field in self.state:
-                field_adj = field.copy_adjoint()
+            for i, eqn in enumerate(self.problem.equations):
+                L = eqn['L']
+                field_adj = Field(L.dist, bases=L.domain.bases, tensorsig=L.tensorsig, dtype=L.dtype, adjoint=True)
                 # Zero the system
                 field_adj.preset_layout('c')
+                field_adj.preset_scales(L.scales)
                 field_adj.data *= 0
-                if field.name:
-                    # If the direct field has a name, give the adjoint a
-                    # corresponding name
-                    field_adj.name = 'Y_%s' % field.name
+                field_adj.name = 'Y_%d' % i
                 self.state_adjoint.append(field_adj)
         # Fill the adjoint state with the left eigenvectors
         subproblem = self.eigenvalue_subproblem
