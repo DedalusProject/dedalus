@@ -12,6 +12,7 @@ from dedalus.extras.flow_tools import GlobalArrayReducer
 from scipy.stats import linregress
 import scipy.sparse as sp
 import scipy.linalg as la
+from ..core.field import Operand
 
 comm = MPI.COMM_WORLD
 size = comm.size
@@ -100,20 +101,26 @@ class direct_adjoint_loop:
                 A list of linaer Dedalus solvers to be excecuted
                 after solving the IVP
     """
-    def __init__(self, solver, max_iterations, timestep, cost_functional, adjoint_dependencies=[], pre_solvers=[], post_solvers=[]):
+    def __init__(self, solver, max_iterations, timestep, cost_functional, pre_solvers=[], post_solvers=[]):
         try:
             from checkpoint_schedules import StorageType
             self.StorageType = StorageType
         except:
             raise ImportError("Checkpoint schedules is required for this class")
         self.state = solver.state
-        self.adjoint_dependencies = adjoint_dependencies
         self.solver = solver
         self.solver.stop_iteration = max_iterations
         self.timestep = timestep
         self.J = cost_functional
         self.pre_solvers = pre_solvers
         self.post_solvers = post_solvers
+        # Compute adjoint dependencies
+        self.adjoint_dependencies = []
+        for eqn in self.solver.problem.equations:
+            RHS = Operand.cast(eqn['RHS'], self.solver.dist, tensorsig=eqn['tensorsig'], dtype=eqn['dtype'])
+            for var in self.state:
+                if RHS.has(var) and var not in self.adjoint_dependencies:
+                    self.adjoint_dependencies.append(var)
         # solve pre_solvers now to set IC for IVP
         for pre_solver in self.pre_solvers:
             pre_solver.solve()
