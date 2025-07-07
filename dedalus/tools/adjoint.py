@@ -12,7 +12,7 @@ from dedalus.extras.flow_tools import GlobalArrayReducer
 from scipy.stats import linregress
 import scipy.sparse as sp
 import scipy.linalg as la
-from ..core.field import Operand
+from ..core.field import Operand, Field
 
 comm = MPI.COMM_WORLD
 size = comm.size
@@ -283,8 +283,8 @@ class direct_adjoint_loop:
         Jadj = self.J.evaluate().copy_adjoint()
         Jadj['g'] = 1
         self.cotangents[self.J] = Jadj
-        id = uuid.uuid4()
-        _, self.cotangents =  self.J.evaluate_vjp(self.cotangents, id=id, force=True)
+        if not isinstance(self.J, Field):
+            _, self.cotangents =  self.J.evaluate_vjp(self.cotangents, id=uuid.uuid4(), force=True)
         for post_solver in reversed(self.post_solvers):
             self.cotangents = post_solver.compute_sensitivities(self.cotangents)
         self.solver.state_adj = []
