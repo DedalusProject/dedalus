@@ -424,7 +424,7 @@ class CheckpointingManager:
                 break
 
 # Manifolds
-def GeneralizedStiefel():
+def GeneralizedStiefelManifold():
     try:
         from pymanopt.manifolds.manifold import Manifold
     except:
