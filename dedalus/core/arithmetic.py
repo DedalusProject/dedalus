@@ -878,7 +878,7 @@ class GhostBroadcaster:
         deploy_dims = deploy_dims_ext[~layout.local]
         # Build subcomm or skip casting
         if any(deploy_dims):
-            self.subcomm = domain.dist.comm_cart.Sub(remain_dims=deploy_dims)
+            self.subcomm = domain.dist.comm_cart.Sub(remain_dims=deploy_dims.astype(int))
         else:
             self.cast = self._skip_cast
 

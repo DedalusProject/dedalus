@@ -874,7 +874,7 @@ class Field(Current):
         if not any(deploy_dims):
             return self.data
         # Broadcast on subgrid communicator
-        comm_sub = self.domain.dist.comm_cart.Sub(remain_dims=deploy_dims)
+        comm_sub = self.domain.dist.comm_cart.Sub(remain_dims=deploy_dims.astype(int))
         data = None
         if comm_sub.rank == 0:
             data = self.data
