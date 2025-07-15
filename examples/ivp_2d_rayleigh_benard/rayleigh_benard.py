@@ -103,7 +103,6 @@ flow = d3.GlobalFlowProperty(solver, cadence=10)
 flow.add_property(np.sqrt(u@u)/nu, name='Re')
 
 # Main loop
-startup_iter = 10
 try:
     logger.info('Starting main loop')
     while solver.proceed:
@@ -117,4 +116,3 @@ except:
     raise
 finally:
     solver.log_stats()
-

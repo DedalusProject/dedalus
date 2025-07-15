@@ -575,13 +575,23 @@ class Field(Current):
         # Add weak reference to distributor
         dist.fields.add(self)
 
-    def __getitem__(self, layout):
-        """Return data viewed in specified layout."""
+    def __getitem__(self, key):
+        """Return data viewed in specified layout and scales."""
+        if isinstance(key, tuple):
+            layout, scales = key
+            self.change_scales(scales)
+        else:
+            layout = key
         self.change_layout(layout)
         return self.data
 
-    def __setitem__(self, layout, data):
-        """Set data viewed in a specified layout."""
+    def __setitem__(self, key, data):
+        """Set data viewed in a specified layout and scales."""
+        if isinstance(key, tuple):
+            layout, scales = key
+            self.preset_scales(scales)
+        else:
+            layout = key
         layout = self.dist.get_layout_object(layout)
         self.preset_layout(layout)
         copyto(self.data, data)

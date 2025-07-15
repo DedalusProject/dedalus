@@ -79,8 +79,7 @@ f['g'] = R0**(2/(n-1)) * (1 - r**2)**2
 # Solver
 solver = problem.build_solver(ncc_cutoff=ncc_cutoff)
 pert_norm = np.inf
-f.change_scales(dealias)
-steps = [f['g'].ravel().copy()]
+steps = [f['g',1].copy().ravel()]
 while pert_norm > tolerance:
     solver.newton_iteration()
     pert_norm = sum(pert.allreduce_data_norm('c', 2) for pert in solver.perturbations)
@@ -88,7 +87,7 @@ while pert_norm > tolerance:
     f0 = f(r=0).evaluate().allgather_data('g')[0,0,0]
     Ri = f0**((n-1)/2)
     logger.info(f'R iterate: {Ri}')
-    steps.append(f['g'].ravel().copy())
+    steps.append(f['g',1].copy().ravel())
 
 # Compare to reference solutions from Boyd
 R_ref = {0.0: np.sqrt(6),
@@ -110,7 +109,6 @@ if n in R_ref:
 
 # Plot solution
 plt.figure(figsize=(6, 4))
-_, _, r = dist.local_grids(ball, scales=(dealias,dealias,dealias))
 alpha = np.linspace(0.2, 1, len(steps))
 color = ('C0',) * (len(steps)-1) + ('C1',)
 for i, step in enumerate(steps):
