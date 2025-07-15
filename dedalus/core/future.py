@@ -419,6 +419,63 @@ class Future(Operand):
         raise NotImplementedError(f"operate_vjp not implemented for {type(self)}")
 
 
+class ExpressionList:
+
+    def __init__(self, expressions):
+        self.expressions = expressions
+        self.last_id = None
+
+    def evaluate_vjp(self, cotangents, id=None, force=False):
+        if id is None:
+            raise ValueError("id must be specified for vjp evaluation.")
+        # Run forward evaluation and build joint tape (cached by id)
+        if id == self.last_id:
+            out = self.last_out
+            tape = self.last_tape
+        else:
+            out = []
+            tape = []
+            for expr in self.expressions:
+                # Force store_last
+                # TODO: enforce recursively
+                self.store_last = True
+                # Forward evaluate and save topological sorting
+                out.append(expr.evaluate(id=id, force=force, tape=tape))
+            self.last_id = id
+            self.last_out = out
+            self.last_tape = tape
+        # Clean cotangents
+        for op in tape:
+            op.get_cotangent()
+            op.cotangent.preset_scales(op.domain.dealias)
+            op.cotangent.data.fill(0)
+        # Initialize expresion cotangents
+        for expr in self.expressions:
+            cotangent = cotangents[expr]
+            # Check cotangent basis and adjoint status
+            if not cotangent.adjoint:
+                raise ValueError("Cotangent must be an adjoint field.")
+            if cotangent.domain != expr.domain:
+                raise ValueError("Cotangent must have same domain as operator.")
+            # Copy input cotangents
+            expr.cotangent.preset_layout(cotangent.layout)
+            expr.cotangent.data[:] = cotangent.data
+            expr.cotangent.change_scales(expr.domain.dealias)
+        # Reverse topological sorting and evaluate adjoints
+        for op in tape[::-1]:
+            # Replace arguments with operator outputs
+            for i in range(len(op.args)):
+                if isinstance(op.args[i], Future):
+                    op.args[i] = op.args[i].out
+            # Enforce conditions to get correct arg layouts
+            layout = op.enforce_conditions()
+            # Evaluate adoint
+            op.operate_vjp(layout, cotangents)
+            # Reset arguments
+            op.reset()
+        return out, cotangents
+
+
 class FutureField(Future):
     """Class for deferred operations producing a Field."""
     future_type = Field
