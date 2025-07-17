@@ -2437,14 +2437,14 @@ class DiskBasis(PolarBasis, metaclass=CachedClass):
     def global_radius_weights(self, dist, scale=None):
         if scale == None: scale = 1
         N = int(np.ceil(scale * self.shape[1]))
-        z, weights = dedalus_sphere.sphere.quadrature(2,N,k=self.alpha)
+        z, weights = dedalus_sphere.zernike.quadrature(2,N,k=self.alpha)
         return reshape_vector(weights.astype(np.float64), dim=dist.dim, axis=dist.get_basis_axis(self)+1)
 
     def local_radius_weights(self, dist, scale=None):
         if scale == None: scale = 1
         local_elements = dist.grid_layout.local_elements(self.domain(dist), scales=scale)[dist.get_basis_axis(self)+1]
         N = int(np.ceil(scale * self.shape[1]))
-        z, weights = dedalus_sphere.sphere.quadrature(2,N,k=self.alpha)
+        z, weights = dedalus_sphere.zernike.quadrature(2,N,k=self.alpha)
         return reshape_vector(weights.astype(np.float64)[local_elements], dim=dist.dim, axis=dist.get_basis_axis(self)+1)
 
     @CachedAttribute
@@ -2575,6 +2575,10 @@ class DiskBasis(PolarBasis, metaclass=CachedClass):
 
     @classmethod
     def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, ncc_tensorsig, arg_tensorsig, out_tensorsig, cutoff=1e-6):
+        if arg_basis is None:
+            # Reshape coeffs as column vector
+            matrix = coeffs.ravel()[:, None]
+            return sparse.csr_matrix(matrix)
         first_axis = subproblem.dist.first_axis(out_basis)
         m = subproblem.group[first_axis]
         spintotal_ncc = out_basis.spintotal(ncc_tensorsig, ncc_comp)
