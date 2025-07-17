@@ -444,6 +444,11 @@ class PowerFieldField(Power, FutureField):
         self.domain = arg0.domain
         self.tensorsig = arg0.tensorsig
         self.dtype = arg0.dtype
+        # Setup ghost broadcasting
+        from .arithmetic import GhostBroadcaster
+        broadcast_dims = np.array(self.domain.nonconstant)
+        self.arg0_ghost_broadcaster = GhostBroadcaster(arg0.domain, self.dist.grid_layout, broadcast_dims)
+        self.arg1_ghost_broadcaster = GhostBroadcaster(arg1.domain, self.dist.grid_layout, broadcast_dims)
 
     def check_conditions(self):
         layout0 = self.args[0].layout
@@ -503,10 +508,20 @@ class PowerFieldField(Power, FutureField):
         self.cotangent.change_layout(layout)
         if self.cotangent.data.size:
             # TODO: optimize with axpy
-            temp = arg1.data * arg0.data ** (arg1.data-1) * self.cotangent.data
-            np.add(cotan0.data, temp, out=cotan0.data)
-            temp = arg0.data ** arg1.data * np.log(arg0.data) * self.cotangent.data
-            np.add(cotan1.data, temp, out=cotan1.data)
+            # Compute raw cotangents
+            temp0 = arg1.data * arg0.data ** (arg1.data-1) * self.cotangent.data
+            temp1 = arg0.data ** arg1.data * np.log(arg0.data) * self.cotangent.data
+            # Reduce over broadcasted spatial dimensions
+            spatial_reduce_0 = self.arg0_ghost_broadcaster.deploy_dims_ext_list
+            spatial_reduce_1 = self.arg1_ghost_broadcaster.deploy_dims_ext_list
+            temp0 = temp0.sum(axis=spatial_reduce_0, keepdims=True)
+            temp1 = temp1.sum(axis=spatial_reduce_1, keepdims=True)
+            # Reduce over broadcasted processes
+            temp0 = self.arg0_ghost_broadcaster.reduce(temp0)
+            temp1 = self.arg1_ghost_broadcaster.reduce(temp1)
+            # Add adjoint contribution in-place (required for accumulation)
+            np.add(cotan0.data, temp0, out=cotan0.data)
+            np.add(cotan1.data, temp1, out=cotan1.data)
 
     def reinitialize(self, **kw):
         arg0 = self.args[0].reinitialize(**kw)
