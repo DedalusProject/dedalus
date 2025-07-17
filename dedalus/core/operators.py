@@ -441,7 +441,7 @@ class PowerFieldField(Power, FutureField):
         super().__init__(arg0, arg1, out=out)
         if arg0.tensorsig or arg1.tensorsig:
             raise ValueError("Power not defined for non-scalar fields.")
-        self.domain = arg0.domain
+        self.domain = Domain(self.dist, self._build_bases(arg0, arg1))
         self.tensorsig = arg0.tensorsig
         self.dtype = arg0.dtype
         # Setup ghost broadcasting
@@ -449,6 +449,21 @@ class PowerFieldField(Power, FutureField):
         broadcast_dims = np.array(self.domain.nonconstant)
         self.arg0_ghost_broadcaster = GhostBroadcaster(arg0.domain, self.dist.grid_layout, broadcast_dims)
         self.arg1_ghost_broadcaster = GhostBroadcaster(arg1.domain, self.dist.grid_layout, broadcast_dims)
+
+    def _build_bases(self, arg0, arg1):
+        """Build output bases."""
+        bases = []
+        arg0_bases = arg0.domain.bases_by_coord
+        arg1_bases = arg1.domain.bases_by_coord
+        for coord in arg0_bases:
+            b0 = arg0_bases[coord]
+            b1 = arg1_bases[coord]
+            # All constant bases yields constant basis
+            if b0 is None and b1 is None:
+                continue
+            # Multiply all bases
+            bases.append(b0 * b1)
+        return tuple(bases)
 
     def check_conditions(self):
         layout0 = self.args[0].layout
@@ -465,17 +480,23 @@ class PowerFieldField(Power, FutureField):
         arg0, arg1 = self.args
         out.preset_layout(arg0.layout)
         if out.data.size:
-            np.power(arg0.data, arg1.data, out.data)
+            arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
+            arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
+            np.power(arg0_data, arg1_data, out.data)
 
     def operate_jvp(self, out, tangent):
         arg0, arg1 = self.args
         out.preset_layout(arg0.layout)
         if out.data.size:
-            np.power(arg0.data, arg1.data, out=out.data)
+            arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
+            arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
+            np.power(arg0_data, arg1_data, out=out.data)
             if tangent:
                 tan0, tan1 = self.arg_tangents
                 tangent.preset_layout(tan0.layout)
-                tangent.data[:] = arg1.data * arg0.data**(arg1.data-1) * tan0.data + out.data * np.log(arg0.data) * tan1.data
+                tan0_data = self.arg0_ghost_broadcaster.cast(tan0)
+                tan1_data = self.arg1_ghost_broadcaster.cast(tan1)
+                tangent.data[:] = arg1_data * arg0_data**(arg1_data-1) * tan0_data + out.data * np.log(arg0_data) * tan1_data
 
     def operate_vjp(self, layout, cotangents):
         arg0, arg1 = self.args
@@ -508,9 +529,11 @@ class PowerFieldField(Power, FutureField):
         self.cotangent.change_layout(layout)
         if self.cotangent.data.size:
             # TODO: optimize with axpy
+            arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
+            arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
             # Compute raw cotangents
-            temp0 = arg1.data * arg0.data ** (arg1.data-1) * self.cotangent.data
-            temp1 = arg0.data ** arg1.data * np.log(arg0.data) * self.cotangent.data
+            temp0 = arg1_data * arg0_data ** (arg1_data-1) * self.cotangent.data
+            temp1 = arg0_data ** arg1_data * np.log(arg0_data) * self.cotangent.data
             # Reduce over broadcasted spatial dimensions
             spatial_reduce_0 = self.arg0_ghost_broadcaster.deploy_dims_ext_list
             spatial_reduce_1 = self.arg1_ghost_broadcaster.deploy_dims_ext_list
@@ -520,6 +543,8 @@ class PowerFieldField(Power, FutureField):
             temp0 = self.arg0_ghost_broadcaster.reduce(temp0)
             temp1 = self.arg1_ghost_broadcaster.reduce(temp1)
             # Add adjoint contribution in-place (required for accumulation)
+            # NOTE: this probably doesnt work under MPI because the reduced data
+            # still has the broadcasted, rather than field, shape
             np.add(cotan0.data, temp0, out=cotan0.data)
             np.add(cotan1.data, temp1, out=cotan1.data)
 
