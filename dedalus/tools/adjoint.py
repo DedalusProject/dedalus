@@ -88,7 +88,7 @@ class direct_adjoint_loop:
     ----------
     solver : solver
             A Dedalus IVP solver
-    max_iterations: int 
+    max_iterations: int
                   The stop iteration for the IVP
     timestep: float
              The constant timestep to use
@@ -96,7 +96,7 @@ class direct_adjoint_loop:
                     A Dedalus expression for the cost functional
     pre_solvers: list
                 A list of linear Dedalus solvers to be excecuted
-                before solving the IVP. 
+                before solving the IVP.
     post_solvers: list
                 A list of linaer Dedalus solvers to be excecuted
                 after solving the IVP
@@ -263,7 +263,7 @@ class direct_adjoint_loop:
                     state_data = []
                     for i in range(len(data.keys())):
                         state_data.append(data[str(i)])
-                    self.forward_work_memory[to_storage][step] = state_data 
+                    self.forward_work_memory[to_storage][step] = state_data
             if move:
                 os.remove(file_name)
         elif from_storage == self.StorageType.RAM:
@@ -276,7 +276,7 @@ class direct_adjoint_loop:
                     del self.restart_forward[from_storage][step]
         else:
             raise ValueError("This `StorageType` is not supported.")
-        
+
     def _initialize_adjoint(self):
         # For adjoint
         self.cotangents = {}
@@ -347,10 +347,10 @@ class CheckpointingManager:
         The schedule created by `checkpoint_schedules` package.
     solver : object
         A solver object used to solve the forward and adjoint solvers.
-    
+
     Notes
     -----
-    The `solver` object contains methods to execute the forward and adjoint. In 
+    The `solver` object contains methods to execute the forward and adjoint. In
     addition, it contains methods to copy data from one storage to another, and
     to set the initial condition for the adjoint.
     """
@@ -367,7 +367,7 @@ class CheckpointingManager:
             ImportError("checkpoint_schedules is required for this class")
         self.solver = solver
         self.create_schedule = create_schedule
-        
+
     def execute(self, mode='forward'):
         """Execute forward/adjoint using checkpointing.
         """
@@ -389,7 +389,7 @@ class CheckpointingManager:
         def action_reverse(cp_action):
             self.solver.adjoint(cp_action.n0, cp_action.n1, cp_action.clear_adj_deps)
             self.reverse_step += cp_action.n1 - cp_action.n0
-            
+
         @action.register(self.Copy)
         def action_copy(cp_action):
             self.solver.copy_data(cp_action.n, cp_action.from_storage,
@@ -399,12 +399,12 @@ class CheckpointingManager:
         def action_move(cp_action):
             self.solver.copy_data(cp_action.n, cp_action.from_storage,
                                     cp_action.to_storage, move=True)
-            
+
         @action.register(self.EndForward)
         def action_end_forward(cp_action):
             if self._schedule.max_n is None:
                 self._schedule._max_n = self.max_n
-            
+
         @action.register(self.EndReverse)
         def action_end_reverse(cp_action):
             # self.solver._clean_disk()
@@ -429,7 +429,7 @@ def GeneralizedStiefelManifold():
         from pymanopt.manifolds.manifold import Manifold
     except:
         ImportError("This class requires pymanopt")
-    
+
     class GeneralizedStiefel(Manifold):
         r"""The Generalized Stiefel manifold.
 
@@ -573,3 +573,13 @@ def GeneralizedStiefelManifold():
             X_T = la.solve_triangular(R.T, Y.T, lower=True)
             return X_T.T
     return GeneralizedStiefel
+
+
+def initialize_cotangents(cost):
+    """Setup cotangent dictionary after applying VJP to a cost functional."""
+    cotan = cost.get_cotangent()
+    cotan['g'] = 1
+    cotangents = {cost: cotan}
+    _, cotangents = cost.evaluate_vjp(cotangents, id=uuid.uuid4(), force=True)
+    return cotangents
+
