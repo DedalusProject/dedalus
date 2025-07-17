@@ -331,8 +331,9 @@ class Future(Operand):
         # Clean cotangents
         for op in tape:
             op.get_cotangent()
-            op.cotangent.preset_scales(op.domain.dealias)
-            op.cotangent.data.fill(0)
+            if op is not self:
+                op.cotangent.preset_scales(op.domain.dealias)
+                op.cotangent.data.fill(0)
 
         # Copy input cotangent
         self.cotangent.preset_layout(cotangent.layout)
@@ -447,8 +448,9 @@ class ExpressionList:
         # Clean cotangents
         for op in tape:
             op.get_cotangent()
-            op.cotangent.preset_scales(op.domain.dealias)
-            op.cotangent.data.fill(0)
+            if op not in self.expressions:
+                op.cotangent.preset_scales(op.domain.dealias)
+                op.cotangent.data.fill(0)
         # Initialize expresion cotangents
         for expr in self.expressions:
             cotangent = cotangents[expr]
