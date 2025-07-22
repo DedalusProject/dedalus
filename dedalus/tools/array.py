@@ -364,8 +364,10 @@ def copyto(dest, src):
 
 
 def copy_to_device(dest, src):
-    if array_api_compat.is_cupy_array(dest):
-        dest.set(src)
+    xp = array_api_compat.array_namespace(dest)
+    if array_api_compat.is_cupy_namespace(xp):
+        src = xp.asarray(src)
+        dest[:] = src
     else:
         dest[:] = src
 
