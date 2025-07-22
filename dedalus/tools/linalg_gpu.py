@@ -1,5 +1,7 @@
+"""Linear algebra routines using cupy."""
 
 import numpy as np
+import math
 try:
     import cupy as cp
     import cupyx.scipy.sparse as csp
@@ -14,25 +16,27 @@ def cupy_apply_csr(matrix, array, axis, out):
         raise ImportError("cupy must be installed to use GPU linear algebra")
     # Check matrix format
     if not isinstance(matrix, csp.csr_matrix):
-        raise ValueError("Matrix must be in CSR format.")
+        # TODO: avoid this explicit conversion
+        matrix = csp.csr_matrix(matrix)
+        #raise ValueError("Matrix must be in CSR format.")
     # Switch by dimension
     ndim = array.ndim
     if ndim == 1:
         if axis == 0:
-            out[:] = cupy_apply_csr_vec(matrix, array)
+            out[:] = matrix.dot(array)
         else:
             raise ValueError("axis must be 0 for 1D arrays")
     elif ndim == 2:
         if axis == 0:
             if array.shape[1] == 1:
-                out[:,0] = cupy_apply_csr_vec(matrix, array[:,0])
+                out[:,0] = matrix.dot(array[:,0])
             else:
-                out[:] = cupy_apply_csr_first(matrix, array)
+                out[:] = matrix.dot(array)
         elif axis == 1:
             if array.shape[0] == 1:
-                out[0,:] = cupy_apply_csr_vec(matrix, array[0,:])
+                out[0,:] = matrix.dot(array[0,:])
             else:
-                out[:] = cupy_apply_csr_last(matrix, array)
+                out[:] = matrix.dot(array.T).T
         else:
             raise ValueError("axis must be 0 or 1 for 2D arrays")
     else:
@@ -51,34 +55,71 @@ def cupy_apply_csr(matrix, array, axis, out):
             if N3 == 1:
                 # (1, N2, 1) -> (N2,)
                 x1 = array.reshape((N2,))
-                temp = cupy_apply_csr_vec(matrix, x1)
+                temp = matrix.dot(x1)
                 out[:] = temp.reshape(out.shape)
             else:
                 # (1, N2, N3) -> (N2, N3)
                 x2 = array.reshape((N2, N3))
-                temp = cupy_apply_csr_first(matrix, x2)
+                temp = matrix.dot(x2)
                 out[:] = temp.reshape(out.shape)
         else:
             if N3 == 1:
                 # (N1, N2, 1) -> (N1, N2)
                 x2 = array.reshape((N1, N2))
-                temp = cupy_apply_csr_last(matrix, x2)
+                temp = matrix.dot(x2.T).T
                 out[:] = temp.reshape(out.shape)
             else:
                 # (N1, N2, N3)
                 x3 = array.reshape((N1, N2, N3))
                 y3 = out.reshape(((N1, matrix.shape[0], N3)))
-                for n1 in range(N1):
-                    y3[n1] = cupy_apply_csr_first(matrix, x3[n1])
+                cupy_apply_csr_mid(matrix, x3, y3)
 
 
-def cupy_apply_csr_vec(matrix, vec):
-    return matrix.dot(vec)
+# Kernel for applying CSR matrix with parallelization over n1 and n3
+apply_csr_mid_kernel = cp.RawKernel(
+    r'''
+    extern "C" __global__ void apply_csr_mid_kernel(
+        const float* data,     // CSR data of shape (nnz,)
+        const int* indices,    // CSR column indices (nnz,)
+        const int* indptr,     // CSR row pointers (N2o + 1,)
+        const float* input,    // shape (N1, N2i, N3)
+        float* output,         // shape (N1, N2o, N3)
+        int N1, int N2i, int N2o, int N3)
+    {
+        int n1 = blockIdx.x * blockDim.x + threadIdx.x ;  // batch index
+        int n3 = blockIdx.y * blockDim.y + threadIdx.y;  // output column index
 
-def cupy_apply_csr_first(matrix, array):
-    return matrix.dot(array)
+        if (n1 >= N1 || n3 >= N3) return;
 
-def cupy_apply_csr_last(matrix, array):
-    return matrix.dot(array.T).T
+        // Loop over output rows = CSR matrix rows
+        for (int i = 0; i < N2o; ++i) {
+            float acc = 0.0f;
+            int start = indptr[i];
+            int end   = indptr[i + 1];
 
+            for (int k = start; k < end; ++k) {
+                int j = indices[k];  // input column
+                float val = data[k];
+                acc += val * input[n1 * N2i * N3 + j * N3 + n3];
+            }
+
+            output[n1 * N2o * N3 + i * N3 + n3] = acc;
+        }
+    }
+    ''',
+    'apply_csr_mid_kernel')
+
+
+def cupy_apply_csr_mid(matrix, array, out):
+    N1, N2i, N3 = array.shape
+    N2o = matrix.shape[0]
+    # Choose thread/block config
+    threads_y = min(1024, N3) # maximize concurrency along n3
+    threads_x = 1024 // threads_y # make block have 1024 threads
+    blockdim = (threads_x, threads_y)
+    blocks_x = (N1 + threads_x - 1) // threads_x
+    blocks_y = (N3 + threads_y - 1) // threads_y
+    griddim = (blocks_x, blocks_y)
+    # Launch kernel
+    apply_csr_mid_kernel(griddim, blockdim, (matrix.data, matrix.indices, matrix.indptr, array, out, N1, N2i, N2o, N3))
 
