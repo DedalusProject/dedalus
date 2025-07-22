@@ -834,7 +834,7 @@ class Field(Current):
             if self.dist.comm.size > 1:
                 norm = self.dist.comm.allreduce(norm, op=MPI.SUM)
             norm = norm ** (1 / order)
-        return norm
+        return float(norm)
 
     def allreduce_data_max(self, layout=None):
         return self.allreduce_data_norm(layout=layout, order=np.inf)
