@@ -261,11 +261,12 @@ class Distributor:
         return I
 
     def local_grid(self, basis, scale=None):
+        xp = self.array_namespace
         # TODO: remove from bases and do it all here?
         if scale is None:
             scale = 1
         if basis.dim == 1:
-            return basis.local_grid(self, scale=scale)
+            return xp.asarray(basis.local_grid(self, scale=scale))
         else:
             raise ValueError("Use `local_grids` for multidimensional bases.")
 
@@ -298,16 +299,18 @@ class Distributor:
     #     return tuple(grids)
 
     def local_grids(self, *bases, scales=None):
+        xp = self.array_namespace
         scales = self.remedy_scales(scales)
         grids = []
         for basis in bases:
             basis_scales = scales[self.first_axis(basis):self.last_axis(basis)+1]
-            grids.extend(basis.local_grids(self, scales=basis_scales))
+            grids.extend(xp.asarray(basis.local_grids(self, scales=basis_scales)))
         return grids
 
     def local_modes(self, basis):
         # TODO: remove from bases and do it all here?
-        return basis.local_modes(self)
+        xp = self.array_namespace
+        return xp.asarray(basis.local_modes(self))
 
     @CachedAttribute
     def default_nonconst_groups(self):
