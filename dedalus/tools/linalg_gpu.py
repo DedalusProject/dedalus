@@ -79,11 +79,11 @@ def cupy_apply_csr(matrix, array, axis, out):
 apply_csr_mid_kernel = cp.RawKernel(
     r'''
     extern "C" __global__ void apply_csr_mid_kernel(
-        const float* data,     // CSR data of shape (nnz,)
+        const double* data,     // CSR data of shape (nnz,)
         const int* indices,    // CSR column indices (nnz,)
         const int* indptr,     // CSR row pointers (N2o + 1,)
-        const float* input,    // shape (N1, N2i, N3)
-        float* output,         // shape (N1, N2o, N3)
+        const double* input,    // shape (N1, N2i, N3)
+        double* output,         // shape (N1, N2o, N3)
         int N1, int N2i, int N2o, int N3)
     {
         int n1 = blockIdx.x * blockDim.x + threadIdx.x ;  // batch index
@@ -93,13 +93,13 @@ apply_csr_mid_kernel = cp.RawKernel(
 
         // Loop over output rows = CSR matrix rows
         for (int i = 0; i < N2o; ++i) {
-            float acc = 0.0f;
+            double acc = 0;
             int start = indptr[i];
             int end   = indptr[i + 1];
 
             for (int k = start; k < end; ++k) {
                 int j = indices[k];  // input column
-                float val = data[k];
+                double val = data[k];
                 acc += val * input[n1 * N2i * N3 + j * N3 + n3];
             }
 
