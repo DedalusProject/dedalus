@@ -13,7 +13,7 @@ import uuid
 from math import prod
 
 from .domain import Domain
-from ..tools.array import zeros_with_pattern, expand_pattern, sparse_block_diag, copyto, perm_matrix, drop_empty_rows, apply_sparse, assert_sparse_pinv
+from ..tools.array import zeros_with_pattern, expand_pattern, sparse_block_diag, copyto, perm_matrix, drop_empty_rows, apply_sparse, assert_sparse_pinv, copy_to_device, copy_from_device
 from ..tools.cache import CachedAttribute, CachedMethod
 from ..tools.general import replace, OrderedSet
 from ..tools.progress import log_progress
@@ -342,7 +342,7 @@ class Subproblem:
         # Gather from fields
         views = self._input_field_views(tuple(fields))
         for buffer_view, field_view in views:
-            np.copyto(buffer_view, field_view)
+            copy_from_device(buffer_view, field_view)
         # Apply right preconditioner inverse to compress inputs
         if out is None:
             out = self._compressed_buffer
@@ -354,7 +354,7 @@ class Subproblem:
         # Gather from fields
         views = self._output_field_views(tuple(fields))
         for buffer_view, field_view in views:
-            np.copyto(buffer_view, field_view)
+            copy_from_device(buffer_view, field_view)
         # Apply left preconditioner to compress outputs
         if out is None:
             out = self._compressed_buffer
@@ -368,7 +368,7 @@ class Subproblem:
         # Scatter to fields
         views = self._input_field_views(tuple(fields))
         for buffer_view, field_view in views:
-            np.copyto(field_view, buffer_view)
+            copy_to_device(field_view, buffer_view)
 
     def scatter_outputs(self, data, fields):
         """Precondition and scatter subproblem data out to output-like field list."""
@@ -377,7 +377,7 @@ class Subproblem:
         # Scatter to fields
         views = self._output_field_views(tuple(fields))
         for buffer_view, field_view in views:
-            np.copyto(field_view, buffer_view)
+            copy_to_device(field_view, buffer_view)
 
     def inclusion_matrices(self, bases):
         """List of inclusion matrices."""

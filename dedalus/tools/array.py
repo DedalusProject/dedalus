@@ -363,6 +363,20 @@ def copyto(dest, src):
     dest[:] = src
 
 
+def copy_to_device(dest, src):
+    if array_api_compat.is_cupy_array(dest):
+        dest.set(src)
+    else:
+        dest[:] = src
+
+
+def copy_from_device(dest, src):
+    if array_api_compat.is_cupy_array(src):
+        src.get(out=dest)
+    else:
+        dest[:] = src
+
+
 def perm_matrix(perm, M=None, source_index=False, sparse=True):
     """
     Build sparse permutation matrix from permutation vector.
