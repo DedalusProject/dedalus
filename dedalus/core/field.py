@@ -782,9 +782,15 @@ class Field(Current):
         # Change layout
         if layout is not None:
             self.change_layout(layout)
+        # Convert to numpy if on GPU
+        xp = self.dist.array_namespace
+        if array_api_compat.is_cupy_namespace(xp):
+            data = xp.asnumpy(self.data)
+        else:
+            data = self.data.copy()
         # Shortcut for serial execution
         if self.dist.comm.size == 1:
-            return self.data.copy()
+            return data
         # Build global buffers
         tensor_shape = tuple(cs.dim for cs in self.tensorsig)
         global_shape = tensor_shape + self.layout.global_shape(self.domain, self.scales)
@@ -793,7 +799,7 @@ class Field(Current):
         recv_buff = np.empty_like(send_buff)
         # Combine data via allreduce -- easy but not communication-optimal
         # Should be optimized using Allgatherv if this is used past startup
-        send_buff[local_slices] = self.data
+        send_buff[local_slices] = data
         self.dist.comm.Allreduce(send_buff, recv_buff, op=MPI.SUM)
         return recv_buff
 
@@ -801,13 +807,19 @@ class Field(Current):
         # Change layout
         if layout is not None:
             self.change_layout(layout)
+        # Convert to numpy if on GPU
+        xp = self.dist.array_namespace
+        if array_api_compat.is_cupy_namespace(xp):
+            data = xp.asnumpy(self.data)
+        else:
+            data = self.data.copy()
         # Shortcut for serial execution
         if self.dist.comm.size == 1:
-            return self.data.copy()
+            return data
         # TODO: Shortcut this for constant fields
         # Gather data
         # Should be optimized via Gatherv eventually
-        pieces = self.dist.comm.gather(self.data, root=root)
+        pieces = self.dist.comm.gather(data, root=root)
         # Assemble on root node
         if self.dist.comm.rank == root:
             ext_mesh = self.layout.ext_mesh
