@@ -13,6 +13,7 @@ import numbers
 import numexpr as ne
 from collections import defaultdict
 from math import prod
+import array_api_compat
 
 from .domain import Domain
 from .field import Operand, Field
@@ -665,6 +666,7 @@ class DotProduct(Product, FutureField):
         return G
 
     def operate(self, out):
+        xp = self.array_namespace
         arg0, arg1 = self.args
         out.preset_layout(arg0.layout)
         # Broadcast
@@ -672,7 +674,11 @@ class DotProduct(Product, FutureField):
         arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
         # Call einsum
         if out.data.size:
-            np.einsum(self.einsum_str, arg0_data, arg1_data, out=out.data, optimize=True)
+            if array_api_compat.is_cupy_namespace(xp):
+                # Cupy does not support output keyword
+                out.data[:] = xp.einsum(self.einsum_str, arg0_data, arg1_data, optimize=True)
+            else:
+                xp.einsum(self.einsum_str, arg0_data, arg1_data, out=out.data, optimize=True)
 
 
 @alias("cross")
