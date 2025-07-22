@@ -6,6 +6,8 @@ import scipy.sparse as sp
 from scipy.sparse import _sparsetools
 from scipy.sparse import linalg as spla
 from math import prod
+from ..tools import linalg_gpu
+import array_api_compat
 
 from .config import config
 from . import linalg as cython_linalg
@@ -173,14 +175,12 @@ def apply_sparse(matrix, array, axis, out=None, check_shapes=False, num_threads=
     Apply sparse matrix along any axis of an array.
     Must be out of place if ouptut is specified.
     """
-    # Check matrix
-    if not isinstance(matrix, sparse.csr_matrix):
-        raise ValueError("Matrix must be in CSR format.")
+    xp = array_api_compat.array_namespace(array)
     # Check output
     if out is None:
         out_shape = list(array.shape)
         out_shape[axis] = matrix.shape[0]
-        out = np.empty(out_shape, dtype=array.dtype)
+        out = xp.empty(out_shape, dtype=array.dtype)
     elif out is array:
         raise ValueError("Cannot apply in place")
     # Check shapes
@@ -189,17 +189,27 @@ def apply_sparse(matrix, array, axis, out=None, check_shapes=False, num_threads=
             raise ValueError("Axis out of bounds.")
         if matrix.shape[1] != array.shape[axis] or matrix.shape[0] != out.shape[axis]:
             raise ValueError("Matrix shape mismatch.")
-    # Old way if requested
-    if OLD_CSR_MATVECS and array.ndim == 2 and axis == 0:
-        out.fill(0)
-        return csr_matvecs(matrix, array, out)
-    # Promote datatypes
-    # TODO: find way to optimize this with fused types
-    matrix_data = matrix.data
-    if matrix_data.dtype != out.dtype:
-        matrix_data = matrix_data.astype(out.dtype)
-    # Call cython routine
-    cython_linalg.apply_csr(matrix.indptr, matrix.indices, matrix_data, array, out, axis, num_threads)
+    # Dispatch on array type
+    if array_api_compat.is_numpy_namespace(xp):
+        # Check matrix
+        if not isinstance(matrix, sparse.csr_matrix):
+            raise ValueError("Matrix must be in CSR format.")
+        # Old way if requested
+        if OLD_CSR_MATVECS and array.ndim == 2 and axis == 0:
+            out.fill(0)
+            return csr_matvecs(matrix, array, out)
+        # Promote datatypes
+        # TODO: find way to optimize this with fused types
+        matrix_data = matrix.data
+        if matrix_data.dtype != out.dtype:
+            matrix_data = matrix_data.astype(out.dtype)
+        # Call cython routine
+        cython_linalg.apply_csr(matrix.indptr, matrix.indices, matrix_data, array, out, axis, num_threads)
+    elif array_api_compat.is_cupy_namespace(xp):
+        # TODO: check matrix format here without import cupy
+        linalg_gpu.cupy_apply_csr(matrix, array, axis, out)
+    else:
+        raise ValueError("Unsupported array type")
     return out
 
 
