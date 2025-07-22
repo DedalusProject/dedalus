@@ -6083,6 +6083,7 @@ class CartesianAdvectiveCFL(operators.AdvectiveCFL):
 
     @CachedMethod
     def cfl_spacing(self):
+        xp = self.array_namespace
         velocity = self.operand
         coordsys = velocity.tensorsig[0]
         spacing = []
@@ -6104,7 +6105,7 @@ class CartesianAdvectiveCFL(operators.AdvectiveCFL):
                 axis_spacing[:] = dealias * native_spacing * basis.COV.stretch
             elif basis is None:
                 axis_spacing = np.inf
-            spacing.append(axis_spacing)
+            spacing.append(xp.asarray(axis_spacing))
         return spacing
 
     def compute_cfl_frequency(self, velocity, out):
