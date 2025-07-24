@@ -101,13 +101,14 @@ class direct_adjoint_loop:
                 A list of linaer Dedalus solvers to be excecuted
                 after solving the IVP
     """
-    def __init__(self, solver, max_iterations, timestep, cost_functional, pre_solvers=[], post_solvers=[]):
+    def __init__(self, solver, max_iterations, timestep, cost_functional, pre_solvers=[], post_solvers=[], parameters=[]):
         try:
             from checkpoint_schedules import StorageType
             self.StorageType = StorageType
         except:
             raise ImportError("Checkpoint schedules is required for this class")
         self.state = solver.state
+        self.parameters = parameters
         self.solver = solver
         self.solver.stop_iteration = max_iterations
         self.timestep = timestep
@@ -277,22 +278,33 @@ class direct_adjoint_loop:
         else:
             raise ValueError("This `StorageType` is not supported.")
 
+    def get_or_create_adjoint(self, state):
+        if state in self.cotangents:
+            adj = self.cotangents[state]
+        else:
+            adj = state.copy_adjoint()
+            adj.preset_layout('c')
+            adj.data.fill(0)
+            self.cotangents[state] = adj
+        return adj
+    
     def _initialize_adjoint(self):
-        # For adjoint
-        self.cotangents = initialize_cotangents(self.J) 
+        self.cotangents = initialize_cotangents(self.J)
         for post_solver in reversed(self.post_solvers):
             self.cotangents = post_solver.compute_sensitivities(self.cotangents)
+        self.solver.parameters = self.parameters
         self.solver.state_adj = []
-        self.adjoint_state = self.solver.state_adj
-        for state in self.state:
-            if state in self.cotangents:
-                self.adjoint_state.append(self.cotangents[state])
+        self.solver.parameters_adj = []
+        self.adjoint_state = []
+        for state in self.state + self.parameters:
+            adjoint = self.get_or_create_adjoint(state)
+            # Add adjoint to dal adjoint state for checkpointing
+            self.adjoint_state.append(adjoint)
+            # Add state and parameter adjoints to solver seperately
+            if state in self.state:
+                self.solver.state_adj.append(adjoint)
             else:
-                adjoint_state = state.copy_adjoint()
-                adjoint_state.preset_layout('c')
-                adjoint_state.data.fill(0)
-                self.adjoint_state.append(adjoint_state)
-                self.cotangents[state] = adjoint_state
+                self.solver.parameters_adj.append(adjoint)
         self.adjoint_work_memory[self.StorageType.WORK][self.solver.stop_iteration] = copy.deepcopy([field['c'] for field in self.adjoint_state])
 
     def _store_data(self, data, step, storage, write_adj_deps, write_ics):
