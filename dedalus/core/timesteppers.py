@@ -106,7 +106,8 @@ class MultistepIMEX:
         for field in solver.F:
             field_adj = field.copy_adjoint()
             # Zero the system
-            field_adj['c'] *= 0
+            field_adj.preset_layout('c')
+            field_adj.data.fill(0)
             if field.name:
                 # If the direct field has a name, give the adjoint a
                 # corresponding name
@@ -123,7 +124,6 @@ class MultistepIMEX:
         self.dFdxH_Y = []
         for field in solver.state:
             field_adjoint = field.copy_adjoint()
-            field_adjoint.change_scales(field.domain.dealias)
             self.cotangents[field] = field_adjoint
             self.dFdxH_Y.append(field_adjoint)
         self.eqn_list = [eqn['F'] for eqn in solver.problem.equations]
@@ -302,7 +302,6 @@ class MultistepIMEX:
             np.copyto(Y0.get_subdata(sp),spX)
         sum_len = np.min([len(c), solver.stop_iteration-self._iteration])
         # Cache VJPs where solver.state does not change
-        # For now, make an id for each equation
         id = uuid.uuid4()
         # Calculate linearised F for all steps
         for j in range(sum_len):
@@ -722,7 +721,8 @@ class RungeKuttaIMEX:
         for field in solver.F:
             field_adj = field.copy_adjoint()
             # Zero the system
-            field_adj['c'] *= 0
+            field_adj.preset_layout('c')
+            field_adj.data.fill(0)
             if field.name:
                 # If the direct field has a name, give the adjoint a
                 # corresponding name
@@ -737,7 +737,6 @@ class RungeKuttaIMEX:
         self.dFdxH_Y = []
         for field in solver.state:
             field_adjoint = field.copy_adjoint()
-            field_adjoint.change_scales(field.domain.dealias)
             self.cotangents[field] = field_adjoint
             self.dFdxH_Y.append(field_adjoint)
         self.eqn_list = [eqn['F'] for eqn in solver.problem.equations]
