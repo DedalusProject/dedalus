@@ -785,6 +785,10 @@ class InitialValueSolver(SolverBase):
         self.stop_sim_time = np.inf
         self.stop_wall_time = np.inf
         self.stop_iteration = np.inf
+        # For adjoint
+        self.adjoint_state = []
+        self.parameters_adj = []
+        self.parameters = []
         logger.debug('Finished IVP instantiation')
 
     @property

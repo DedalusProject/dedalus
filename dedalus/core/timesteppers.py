@@ -320,6 +320,14 @@ class MultistepIMEX:
                 field.require_coeff_space()
             for sp in subproblems:
                 sp.gather_inputs(self.dFdxH_Y, out=F[j].get_subdata(sp))
+            # Accumulate parameter sensitivities here
+            # NOTE: Currently for parameters in F only
+            for field_adj, field in zip(self.solver.parameters_adj, self.solver.parameters):
+                field_adj.preset_layout('c')
+                self.cotangents[field].require_coeff_space()
+                # field_adj.data += c[j][j+1]*self.cotangents[field].data
+                if field_adj.data.size:
+                    axpy(a=c[j][j+1], x=self.cotangents[field].data.ravel(), y=field_adj.data.ravel())
         if RHS.data.size:
             np.multiply(c[0][1], F0.data, out=RHS.data)
             for j in range(2, sum_len + 1):
@@ -942,6 +950,14 @@ class RungeKuttaIMEX:
                     field.require_coeff_space()
                 for sp in subproblems:
                     sp.gather_inputs(self.dFdxH_Y, out=F[j-1].get_subdata(sp))
+                # Accumulate parameter sensitivities here
+                # NOTE: Currently for parameters in F only
+                for field_adj, field in zip(self.solver.parameters_adj, self.solver.parameters):
+                    field_adj.preset_layout('c')
+                    self.cotangents[field].require_coeff_space()
+                    # field_adj.data += k*A[j,i-1]*self.cotangents[field].data
+                    if field_adj.data.size:
+                        axpy(a=(k*A[j,i-1]), x=self.cotangents[field].data.ravel(), y=field_adj.data.ravel())
             if RHS.data.size:
                 RHS.data.fill(0)
                 for j in range(i, self.stages+1):
