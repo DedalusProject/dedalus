@@ -279,12 +279,7 @@ class direct_adjoint_loop:
 
     def _initialize_adjoint(self):
         # For adjoint
-        self.cotangents = {}
-        Jadj = self.J.evaluate().copy_adjoint()
-        Jadj['g'] = 1
-        self.cotangents[self.J] = Jadj
-        if not isinstance(self.J, Field):
-            _, self.cotangents =  self.J.evaluate_vjp(self.cotangents, id=uuid.uuid4(), force=True)
+        self.cotangents = initialize_cotangents(self.J) 
         for post_solver in reversed(self.post_solvers):
             self.cotangents = post_solver.compute_sensitivities(self.cotangents)
         self.solver.state_adj = []
@@ -295,7 +290,7 @@ class direct_adjoint_loop:
             else:
                 adjoint_state = state.copy_adjoint()
                 adjoint_state.preset_layout('c')
-                adjoint_state.data *= 0
+                adjoint_state.data.fill(0)
                 self.adjoint_state.append(adjoint_state)
                 self.cotangents[state] = adjoint_state
         self.adjoint_work_memory[self.StorageType.WORK][self.solver.stop_iteration] = copy.deepcopy([field['c'] for field in self.adjoint_state])
@@ -413,6 +408,7 @@ class CheckpointingManager:
                                  "is different from the number of steps in the"
                                  "forward phase.")
         if mode=='forward' or mode=='both':
+            self.solver.reset_initial_condition()
             self.max_n = sys.maxsize
             self._schedule = self.create_schedule()
         self.reverse_step = 0
