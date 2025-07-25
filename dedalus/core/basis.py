@@ -506,7 +506,13 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
     @CachedMethod
     def transform_plan(self, dist, grid_size):
         """Build transform plan."""
-        return self.transforms[self.library](grid_size, self.size, self.a, self.b, self.a0, self.b0)
+        xp = dist.array_namespace
+        xp_name = xp.__name__.split('.')[-1]
+        # Shortcut trivial transforms
+        if grid_size == 1 or self.size == 1:
+            return self.transforms[f"matrix-{xp_name}"](grid_size, self.size, self.a, self.b, self.a0, self.b0, dist.array_namespace, dist.dtype)
+        else:
+            return self.transforms[f"{self.library}-{xp_name}"](grid_size, self.size, self.a, self.b, self.a0, self.b0, dist.array_namespace, dist.dtype)
 
     # def weights(self, scales):
     #     """Gauss-Jacobi weights."""

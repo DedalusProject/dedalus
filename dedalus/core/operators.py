@@ -15,6 +15,7 @@ from operator import add
 from math import prod
 from ..libraries import dedalus_sphere
 import logging
+import array_api_compat
 logger = logging.getLogger(__name__.split('.')[-1])
 
 from .domain import Domain
@@ -950,6 +951,20 @@ class SpectralOperator1D(SpectralOperator):
         # Caching layer to allow insertion of other arguments
         return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis)
 
+    @CachedMethod
+    def subspace_matrix_device(self, layout):
+        """Build matrix operating on local subspace data on device."""
+        # Caching layer to allow insertion of other arguments
+        matrix = self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis)
+        if array_api_compat.is_cupy_namespace(self.array_namespace):
+            import cupy as cp
+            import cupyx.scipy.sparse as csp
+            if sparse.issparse(matrix):
+                matrix = csp.csr_matrix(matrix)
+            else:
+                matrix = cp.array(matrix)
+        return matrix
+
     def group_matrix(self, group):
         return self._group_matrix(group, self.input_basis, self.output_basis)
 
@@ -990,7 +1005,7 @@ class SpectralOperator1D(SpectralOperator):
         # Apply matrix
         if arg.data.size and out.data.size:
             data_axis = self.last_axis + len(arg.tensorsig)
-            apply_matrix(self.subspace_matrix(layout), arg.data, data_axis, out=out.data)
+            apply_matrix(self.subspace_matrix_device(layout), arg.data, data_axis, out=out.data)
         else:
             out.data.fill(0)
 
