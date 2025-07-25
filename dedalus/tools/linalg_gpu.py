@@ -5,14 +5,14 @@ import math
 try:
     import cupy as cp
     import cupyx.scipy.sparse as csp
-    HAVE_CUPY = True
+    cupy_available = True
 except ImportError:
-    HAVE_CUPY = False
+    cupy_available = False
 
 
 def cupy_apply_csr(matrix, array, axis, out):
     """Apply CSR matrix to arbitrary axis of array."""
-    if not HAVE_CUPY:
+    if not cupy_available:
         raise ImportError("cupy must be installed to use GPU linear algebra")
     # Check matrix format
     if not isinstance(matrix, csp.csr_matrix):

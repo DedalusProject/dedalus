@@ -5,6 +5,7 @@ from scipy import sparse
 import scipy.sparse as sp
 from scipy.sparse import _sparsetools
 from scipy.sparse import linalg as spla
+from scipy.linalg import blas
 from math import prod
 from ..tools import linalg_gpu
 import array_api_compat
@@ -500,3 +501,12 @@ def assert_sparse_pinv(A, B):
     if not sparse_allclose((B @ A).conj().T, B @ A):
         raise AssertionError("Not a pseudoinverse")
 
+
+def get_axpy(array_namespace, dtype):
+    if array_api_compat.is_numpy_namespace(array_namespace):
+        return blas.get_blas_funcs('axpy', dtype=dtype)
+    elif array_api_compat.is_cupy_namespace(array_namespace):
+        from cupy.cublas import axpy as cublas_axpy
+        return cublas_axpy
+    else:
+        raise ValueError("Unsupported array namespace")
