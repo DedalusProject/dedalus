@@ -5,7 +5,12 @@ import scipy.linalg as sla
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 from functools import partial
-
+import array_api_compat
+try:
+    import cupyx.scipy.sparse.linalg as cupy_spla
+    cupy_available = True
+except ImportError:
+    cupy_available = False
 
 matsolvers = {}
 def add_solver(solver):
@@ -144,6 +149,17 @@ class _SuperluFactorizedBase(SparseSolver):
                             relax=self.relax,
                             panel_size=self.panel_size,
                             options=self.options)
+        # Cupy conversion
+        if array_api_compat.is_cupy_namespace(solver.dist.array_namespace):
+            # Avoid cupy splu which requires GPU matrices but transfers them to factorize on CPU
+            # Run same typecheck as cupy splu
+            if matrix.dtype.char not in 'fdFD':
+                raise TypeError('Invalid dtype (actual: {})'.format(self.LU.dtype))
+            # Build cupy factorization from scipy factorization of CPU matrices
+            self.LU = cupy_spla.SuperLU(self.LU)
+            sp.save_npz("block1024.npz", matrix)
+            print(self.LU.shape)
+            print(self.LU.nnz)
 
     def solve(self, vector):
         return self.LU.solve(vector, trans=self.trans)
@@ -225,6 +241,9 @@ class SparseInverse(SparseSolver):
 
     def __init__(self, matrix, solver=None):
         self.matrix_inverse = spla.inv(matrix.tocsc())
+        # Cupy conversion
+        if array_api_compat.is_cupy_namespace(solver.dist.array_namespace):
+            self.matrix_inverse = cupy_spla.inv(matrix.tocsc())
 
     def solve(self, vector):
         return self.matrix_inverse @ vector

@@ -2,10 +2,9 @@
 
 from collections import deque, OrderedDict
 import numpy as np
-from scipy.linalg import blas
 
 from .system import CoeffSystem
-from ..tools.array import apply_sparse
+from ..tools.array import apply_sparse, get_axpy
 
 
 # Public interface
@@ -71,7 +70,8 @@ class MultistepIMEX:
     def __init__(self, solver):
 
         self.solver = solver
-        self.RHS = CoeffSystem(solver.subproblems, dtype=solver.dtype)
+        xp = solver.dist.array_namespace
+        self.RHS = CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=xp)
 
         # Create deque for storing recent timesteps
         self.dt = deque([0.] * self.steps)
@@ -81,16 +81,16 @@ class MultistepIMEX:
         self.LX = LX = deque()
         self.F = F = deque()
         for j in range(self.amax):
-            MX.append(CoeffSystem(solver.subproblems, dtype=solver.dtype))
+            MX.append(CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=xp))
         for j in range(self.bmax):
-            LX.append(CoeffSystem(solver.subproblems, dtype=solver.dtype))
+            LX.append(CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=xp))
         for j in range(self.cmax):
-            F.append(CoeffSystem(solver.subproblems, dtype=solver.dtype))
+            F.append(CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=xp))
 
         # Attributes
         self._iteration = 0
         self._LHS_params = None
-        self.axpy = blas.get_blas_funcs('axpy', dtype=solver.dtype)
+        self.axpy = get_axpy(xp, solver.dtype)
 
     def step(self, dt, wall_time):
         """Advance solver by one timestep."""
@@ -143,8 +143,8 @@ class MultistepIMEX:
         evaluator.require_coeff_space(state_fields)
         for sp in subproblems:
             spX = sp.gather_inputs(state_fields)
-            apply_sparse(sp.M_min, spX, axis=0, out=MX0.get_subdata(sp))
-            apply_sparse(sp.L_min, spX, axis=0, out=LX0.get_subdata(sp))
+            apply_sparse(sp.M_min_device, spX, axis=0, out=MX0.get_subdata(sp))
+            apply_sparse(sp.L_min_device, spX, axis=0, out=LX0.get_subdata(sp))
 
         # Evaluate F(X0)
         evaluator.evaluate_scheduled(iteration=iteration, wall_time=wall_time, sim_time=sim_time, timestep=dt)
@@ -539,15 +539,16 @@ class RungeKuttaIMEX:
     def __init__(self, solver):
 
         self.solver = solver
-        self.RHS = CoeffSystem(solver.subproblems, dtype=solver.dtype)
+        xp = solver.dist.array_namespace
+        self.RHS = CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=xp)
 
         # Create coefficient systems for multistep history
-        self.MX0 = CoeffSystem(solver.subproblems, dtype=solver.dtype)
-        self.LX = [CoeffSystem(solver.subproblems, dtype=solver.dtype) for i in range(self.stages)]
-        self.F = [CoeffSystem(solver.subproblems, dtype=solver.dtype) for i in range(self.stages)]
+        self.MX0 = CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=xp)
+        self.LX = [CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=xp) for i in range(self.stages)]
+        self.F = [CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=xp) for i in range(self.stages)]
 
         self._LHS_params = None
-        self.axpy = blas.get_blas_funcs('axpy', dtype=solver.dtype)
+        self.axpy = get_axpy(xp, solver.dtype)
 
     def step(self, dt, wall_time):
         """Advance solver by one timestep."""
@@ -584,11 +585,12 @@ class RungeKuttaIMEX:
 
         # Compute M.X(n,0) and L.X(n,0)
         # Ensure coeff space before subsystem gathers
+        # TODO: add option to evaluate this matrix-free (e.g for high-bandwidth NCCs when using fast transforms)
         evaluator.require_coeff_space(state_fields)
         for sp in subproblems:
             spX = sp.gather_inputs(state_fields)
-            apply_sparse(sp.M_min, spX, axis=0, out=MX0.get_subdata(sp))
-            apply_sparse(sp.L_min, spX, axis=0, out=LX0.get_subdata(sp))
+            apply_sparse(sp.M_min_device, spX, axis=0, out=MX0.get_subdata(sp))
+            apply_sparse(sp.L_min_device, spX, axis=0, out=LX0.get_subdata(sp))
 
         # Compute stages
         # (M + k Hii L).X(n,i) = M.X(n,0) + k Aij F(n,j) - k Hij L.X(n,j)
@@ -601,7 +603,7 @@ class RungeKuttaIMEX:
                 evaluator.require_coeff_space(state_fields)
                 for sp in subproblems:
                     spX = sp.gather_inputs(state_fields)
-                    apply_sparse(sp.L_min, spX, axis=0, out=LXi.get_subdata(sp))
+                    apply_sparse(sp.L_min_device, spX, axis=0, out=LXi.get_subdata(sp))
 
             # Compute F(n,i-1), only doing output on first evaluation
             if i == 1:

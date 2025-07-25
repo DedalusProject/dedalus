@@ -11,12 +11,19 @@ from scipy import sparse
 from mpi4py import MPI
 import uuid
 from math import prod
+import array_api_compat
 
 from .domain import Domain
 from ..tools.array import zeros_with_pattern, expand_pattern, sparse_block_diag, copyto, perm_matrix, drop_empty_rows, apply_sparse, assert_sparse_pinv, copy_to_device, copy_from_device
 from ..tools.cache import CachedAttribute, CachedMethod
 from ..tools.general import replace, OrderedSet
 from ..tools.progress import log_progress
+
+try:
+    import cupy as cp
+    import cupyx.scipy.sparse as csp
+except ImportError:
+    pass
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -118,6 +125,7 @@ class Subsystem:
         self.solver = solver
         self.problem = problem = solver.problem
         self.dist = solver.dist
+        self.array_namespace = solver.dist.array_namespace
         self.dtype = problem.dtype
         self.group = group
         # Determine matrix group using solver matrix dependence
@@ -191,11 +199,12 @@ class Subsystem:
 
     @CachedMethod
     def _gather_scatter_setup(self, fields):
+        xp = self.array_namespace
         # Allocate vector
         fsizes = tuple(self.field_size(f) for f in fields)
         fslices = tuple(self.field_slices(f) for f in fields)
         fshapes = tuple(self.field_shape(f) for f in fields)
-        data = np.empty(sum(fsizes), dtype=self.dtype)
+        data = xp.empty(sum(fsizes), dtype=self.dtype)
         # Make views into data
         fviews = []
         i0 = 0
@@ -248,6 +257,7 @@ class Subproblem:
         self.subsystems = subsystems
         self.group = group
         self.dist = problem.dist
+        self.array_namespace = self.dist.array_namespace
         self.domain = problem.variables[0].domain  # HACK
         self.dtype = problem.dtype
         # Cross reference from subsystems
@@ -279,7 +289,8 @@ class Subproblem:
 
     @CachedAttribute
     def _compressed_buffer(self):
-        return np.zeros(self.shape, dtype=self.dtype)
+        xp = self.array_namespace
+        return xp.zeros(self.shape, dtype=self.dtype)
 
     def coeff_slices(self, domain):
         return self.subsystems[0].coeff_slices(domain)
@@ -300,9 +311,10 @@ class Subproblem:
         return self.subsystems[0].field_size(field)
 
     def _build_buffer_views(self, fields):
+        xp = self.array_namespace
         # Allocate buffer
         fsizes = tuple(self.field_size(f) for f in fields)
-        buffer = np.zeros((sum(fsizes), len(self.subsystems)), dtype=self.dtype)
+        buffer = xp.zeros((sum(fsizes), len(self.subsystems)), dtype=self.dtype)
         # Make views into buffer
         views = []
         i0 = 0
@@ -342,7 +354,7 @@ class Subproblem:
         # Gather from fields
         views = self._input_field_views(tuple(fields))
         for buffer_view, field_view in views:
-            copy_from_device(buffer_view, field_view)
+            copyto(buffer_view, field_view)
         # Apply right preconditioner inverse to compress inputs
         if out is None:
             out = self._compressed_buffer
@@ -354,7 +366,7 @@ class Subproblem:
         # Gather from fields
         views = self._output_field_views(tuple(fields))
         for buffer_view, field_view in views:
-            copy_from_device(buffer_view, field_view)
+            copyto(buffer_view, field_view)
         # Apply left preconditioner to compress outputs
         if out is None:
             out = self._compressed_buffer
@@ -368,7 +380,7 @@ class Subproblem:
         # Scatter to fields
         views = self._input_field_views(tuple(fields))
         for buffer_view, field_view in views:
-            copy_to_device(field_view, buffer_view)
+            copyto(field_view, buffer_view)
 
     def scatter_outputs(self, data, fields):
         """Precondition and scatter subproblem data out to output-like field list."""
@@ -377,7 +389,7 @@ class Subproblem:
         # Scatter to fields
         views = self._output_field_views(tuple(fields))
         for buffer_view, field_view in views:
-            copy_to_device(field_view, buffer_view)
+            copyto(field_view, buffer_view)
 
     def inclusion_matrices(self, bases):
         """List of inclusion matrices."""
@@ -555,24 +567,45 @@ class Subproblem:
         left_perm = left_permutation(self, eqns, bc_top=solver.bc_top, interleave_components=solver.interleave_components).tocsr()
         right_perm = right_permutation(self, vars, tau_left=solver.tau_left, interleave_components=solver.interleave_components).tocsr()
 
-        # Preconditioners
+        # Preconditioners on CPU
         # TODO: remove astype casting, requires dealing with used types in apply_sparse
-        self.pre_left = drop_empty_rows(left_perm @ valid_eqn).tocsr().astype(dtype)
-        self.pre_left_pinv = self.pre_left.T.tocsr().astype(dtype)
-        self.pre_right_pinv = drop_empty_rows(right_perm @ valid_var).tocsr().astype(dtype)
-        self.pre_right = self.pre_right_pinv.T.tocsr().astype(dtype)
+        pre_left = drop_empty_rows(left_perm @ valid_eqn).tocsr().astype(dtype)
+        pre_left_pinv = pre_left.T.tocsr().astype(dtype)
+        pre_right_pinv = drop_empty_rows(right_perm @ valid_var).tocsr().astype(dtype)
+        pre_right = pre_right_pinv.T.tocsr().astype(dtype)
 
         # Check preconditioner pseudoinverses
-        assert_sparse_pinv(self.pre_left, self.pre_left_pinv)
-        assert_sparse_pinv(self.pre_right, self.pre_right_pinv)
+        assert_sparse_pinv(pre_left, pre_left_pinv)
+        assert_sparse_pinv(pre_right, pre_right_pinv)
 
         # Precondition matrices
         for name in matrices:
-            matrices[name] = self.pre_left @ matrices[name] @ self.pre_right
+            matrices[name] = pre_left @ matrices[name] @ pre_right
 
-        # Store minimal CSR matrices for fast dot products
+        # Store minimal CSR matrices on CPU
         for name, matrix in matrices.items():
-            setattr(self, '{:}_min'.format(name), matrix.tocsr())
+            setattr(self, f'{name}_min', matrix.tocsr())
+
+        # Store device copies for fast dot products
+        xp = solver.dist.array_namespace
+        if array_api_compat.is_numpy_namespace(xp):
+            self.pre_left = pre_left
+            self.pre_left_pinv = pre_left_pinv
+            self.pre_right_pinv = pre_right_pinv
+            self.pre_right = pre_right
+            # Reference current CPU matrices
+            for name, matrix in matrices.items():
+                setattr(self, f'{name}_min_device', getattr(self, f'{name}_min'))
+        elif array_api_compat.is_cupy_namespace(xp):
+            # Copy to device
+            self.pre_left = csp.csr_matrix(pre_left)
+            self.pre_left_pinv = csp.csr_matrix(pre_left_pinv)
+            self.pre_right_pinv = csp.csr_matrix(pre_right_pinv)
+            self.pre_right = csp.csr_matrix(pre_right)
+            for name, matrix in matrices.items():
+                setattr(self, f'{name}_min_device', csp.csr_matrix(matrix))
+        else:
+            raise ValueError("Unsupported array namespace: {}".format(xp))
 
         # Store expanded CSR matrices for fast recombination
         if len(matrices) > 1:
