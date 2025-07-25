@@ -123,3 +123,247 @@ def cupy_apply_csr_mid(matrix, array, out):
     # Launch kernel
     apply_csr_mid_kernel(griddim, blockdim, (matrix.data, matrix.indices, matrix.indptr, array, out, N1, N2i, N2o, N3))
 
+
+def custom_spsm(a, b, alpha=1.0, lower=True, unit_diag=False, transa=False, spsm_descr=None):
+    """Custom spsm wrapper to save spsm_descr, since spsm_analysis takes lots of time."""
+    """Solves a sparse triangular linear system op(a) * x = alpha * op(b).
+
+    Args:
+        a (cupyx.scipy.sparse.csr_matrix or cupyx.scipy.sparse.coo_matrix):
+            Sparse matrix with dimension ``(M, M)``.
+        b (cupy.ndarray): Dense matrix with dimension ``(M, K)``.
+        alpha (float or complex): Coefficient.
+        lower (bool):
+            True: ``a`` is lower triangle matrix.
+            False: ``a`` is upper triangle matrix.
+        unit_diag (bool):
+            True: diagonal part of ``a`` has unit elements.
+            False: diagonal part of ``a`` has non-unit elements.
+        transa (bool or str): True, False, 'N', 'T' or 'H'.
+            'N' or False: op(a) == ``a``.
+            'T' or True: op(a) == ``a.T``.
+            'H': op(a) == ``a.conj().T``.
+    """
+    import cupyx
+    from cupyx import cusparse
+    import cupy as _cupy
+    import numpy as _numpy
+    from cupy._core import _dtype
+    from cupy_backends.cuda.libs import cusparse as _cusparse
+    from cupy.cuda import device as _device
+    from cupyx.cusparse import SpMatDescriptor, DnMatDescriptor
+    if not cusparse.check_availability('spsm'):
+        raise RuntimeError('spsm is not available.')
+
+    # Canonicalise transa
+    if transa is False:
+        transa = 'N'
+    elif transa is True:
+        transa = 'T'
+    elif transa not in 'NTH':
+        raise ValueError(f'Unknown transa (actual: {transa})')
+
+    # Check A's type and sparse format
+    if cupyx.scipy.sparse.isspmatrix_csr(a):
+        pass
+    elif cupyx.scipy.sparse.isspmatrix_csc(a):
+        if transa == 'N':
+            a = a.T
+            transa = 'T'
+        elif transa == 'T':
+            a = a.T
+            transa = 'N'
+        elif transa == 'H':
+            a = a.conj().T
+            transa = 'N'
+        lower = not lower
+    elif cupyx.scipy.sparse.isspmatrix_coo(a):
+        pass
+    else:
+        raise ValueError('a must be CSR, CSC or COO sparse matrix')
+    assert a.has_canonical_format
+
+    # Check B's ndim
+    if b.ndim == 1:
+        is_b_vector = True
+        b = b.reshape(-1, 1)
+    elif b.ndim == 2:
+        is_b_vector = False
+    else:
+        raise ValueError('b.ndim must be 1 or 2')
+
+    # Check shapes
+    if not (a.shape[0] == a.shape[1] == b.shape[0]):
+        raise ValueError('mismatched shape')
+
+    # Check dtypes
+    dtype = a.dtype
+    if dtype.char not in 'fdFD':
+        raise TypeError('Invalid dtype (actual: {})'.format(dtype))
+    if dtype != b.dtype:
+        raise TypeError('dtype mismatch')
+
+    # Prepare fill mode
+    if lower is True:
+        fill_mode = _cusparse.CUSPARSE_FILL_MODE_LOWER
+    elif lower is False:
+        fill_mode = _cusparse.CUSPARSE_FILL_MODE_UPPER
+    else:
+        raise ValueError('Unknown lower (actual: {})'.format(lower))
+
+    # Prepare diag type
+    if unit_diag is False:
+        diag_type = _cusparse.CUSPARSE_DIAG_TYPE_NON_UNIT
+    elif unit_diag is True:
+        diag_type = _cusparse.CUSPARSE_DIAG_TYPE_UNIT
+    else:
+        raise ValueError('Unknown unit_diag (actual: {})'.format(unit_diag))
+
+    # Prepare op_a
+    if transa == 'N':
+        op_a = _cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE
+    elif transa == 'T':
+        op_a = _cusparse.CUSPARSE_OPERATION_TRANSPOSE
+    else:  # transa == 'H'
+        if dtype.char in 'fd':
+            op_a = _cusparse.CUSPARSE_OPERATION_TRANSPOSE
+        else:
+            op_a = _cusparse.CUSPARSE_OPERATION_CONJUGATE_TRANSPOSE
+
+    # Prepare op_b
+    if b._f_contiguous:
+        op_b = _cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE
+    elif b._c_contiguous:
+        if _cusparse.get_build_version() < 11701:  # earlier than CUDA 11.6
+            raise ValueError('b must be F-contiguous.')
+        b = b.T
+        op_b = _cusparse.CUSPARSE_OPERATION_TRANSPOSE
+    else:
+        raise ValueError('b must be F-contiguous or C-contiguous.')
+
+    # Allocate space for matrix C. Note that it is known cusparseSpSM requires
+    # the output matrix zero initialized.
+    m, _ = a.shape
+    if op_b == _cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE:
+        _, n = b.shape
+    else:
+        n, _ = b.shape
+    c_shape = m, n
+    c = _cupy.zeros(c_shape, dtype=a.dtype, order='f')
+
+    # Prepare descriptors and other parameters
+    handle = _device.get_cusparse_handle()
+    mat_a = SpMatDescriptor.create(a)
+    mat_b = DnMatDescriptor.create(b)
+    mat_c = DnMatDescriptor.create(c)
+    if spsm_descr is None:
+        spsm_descr = _cusparse.spSM_createDescr()
+        new_spsm_descr = True
+    else:
+        spsm_descr, buff = spsm_descr
+        new_spsm_descr = False
+    alpha = _numpy.array(alpha, dtype=c.dtype).ctypes
+    cuda_dtype = _dtype.to_cuda_dtype(c.dtype)
+    algo = _cusparse.CUSPARSE_SPSM_ALG_DEFAULT
+
+    try:
+        # Specify Lower|Upper fill mode
+        mat_a.set_attribute(_cusparse.CUSPARSE_SPMAT_FILL_MODE, fill_mode)
+
+        # Specify Unit|Non-Unit diagonal type
+        mat_a.set_attribute(_cusparse.CUSPARSE_SPMAT_DIAG_TYPE, diag_type)
+
+        # Allocate the workspace needed by the succeeding phases
+        if new_spsm_descr:
+            buff_size = _cusparse.spSM_bufferSize(
+                handle, op_a, op_b, alpha.data, mat_a.desc, mat_b.desc,
+                mat_c.desc, cuda_dtype, algo, spsm_descr)
+            buff = _cupy.empty(buff_size, dtype=_cupy.int8)
+
+        # Perform the analysis phase
+        if new_spsm_descr:
+            _cusparse.spSM_analysis(
+                handle, op_a, op_b, alpha.data, mat_a.desc, mat_b.desc,
+                mat_c.desc, cuda_dtype, algo, spsm_descr, buff.data.ptr)
+
+        # Executes the solve phase
+        _cusparse.spSM_solve(
+            handle, op_a, op_b, alpha.data, mat_a.desc, mat_b.desc,
+            mat_c.desc, cuda_dtype, algo, spsm_descr, buff.data.ptr)
+
+        # Reshape back if B was a vector
+        if is_b_vector:
+            c = c.reshape(-1)
+
+        return c, (spsm_descr, buff)
+
+    finally:
+        # Destroy matrix/vector descriptors
+        #_cusparse.spSM_destroyDescr(spsm_descr)
+        pass
+
+
+def custom_SuperLU_solve(self, rhs, trans='N', spsm_descr=None):
+    """Custom SuperLU solve wrapper to save spsm_descr, since spsm_analysis takes lots of time."""
+    """Solves linear system of equations with one or several right-hand sides.
+
+    Args:
+        rhs (cupy.ndarray): Right-hand side(s) of equation with dimension
+            ``(M)`` or ``(M, K)``.
+        trans (str): 'N', 'T' or 'H'.
+            'N': Solves ``A * x = rhs``.
+            'T': Solves ``A.T * x = rhs``.
+            'H': Solves ``A.conj().T * x = rhs``.
+
+    Returns:
+        cupy.ndarray:
+            Solution vector(s)
+    """  # NOQA
+    from cupyx import cusparse
+    import cupy
+    from cupyx.scipy.sparse.linalg._solve import _should_use_spsm
+
+    if not isinstance(rhs, cupy.ndarray):
+        raise TypeError('ojb must be cupy.ndarray')
+    if rhs.ndim not in (1, 2):
+        raise ValueError('rhs.ndim must be 1 or 2 (actual: {})'.
+                            format(rhs.ndim))
+    if rhs.shape[0] != self.shape[0]:
+        raise ValueError('shape mismatch (self.shape: {}, rhs.shape: {})'
+                            .format(self.shape, rhs.shape))
+    if trans not in ('N', 'T', 'H'):
+        raise ValueError('trans must be \'N\', \'T\', or \'H\'')
+
+    if cusparse.check_availability('spsm') and _should_use_spsm(rhs):
+        def spsm(A, B, lower, transa, spsm_descr):
+            return custom_spsm(A, B, lower=lower, transa=transa, spsm_descr=spsm_descr)
+        sm = spsm
+    else:
+        raise NotImplementedError
+
+    x = rhs.astype(self.L.dtype)
+    if trans == 'N':
+        if self.perm_r is not None:
+            if x.ndim == 2 and x._f_contiguous:
+                x = x.T[:, self._perm_r_rev].T  # want to keep f-order
+            else:
+                x = x[self._perm_r_rev]
+        x, self.spsm_L_descr = sm(self.L, x, lower=True, transa=trans, spsm_descr=self.spsm_L_descr)
+        x, self.spsm_U_descr = sm(self.U, x, lower=False, transa=trans, spsm_descr=self.spsm_U_descr)
+        if self.perm_c is not None:
+            x = x[self.perm_c]
+    else:
+        if self.perm_c is not None:
+            if x.ndim == 2 and x._f_contiguous:
+                x = x.T[:, self._perm_c_rev].T  # want to keep f-order
+            else:
+                x = x[self._perm_c_rev]
+        x, self.spsm_U_descr = sm(self.U, x, lower=False, transa=trans, spsm_descr=self.spsm_U_descr)
+        x, self.spsm_L_descr = sm(self.L, x, lower=True, transa=trans, spsm_descr=self.spsm_L_descr)
+        if self.perm_r is not None:
+            x = x[self.perm_r]
+
+    if not x._f_contiguous:
+        # For compatibility with SciPy
+        x = x.copy(order='F')
+    return x
