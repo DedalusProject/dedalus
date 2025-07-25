@@ -5,6 +5,7 @@ import math
 try:
     import cupy as cp
     import cupyx.scipy.sparse as csp
+    import cupyx.scipy.sparse.linalg as cupy_spla
     cupy_available = True
 except ImportError:
     cupy_available = False
@@ -17,6 +18,7 @@ def cupy_apply_csr(matrix, array, axis, out):
     # Check matrix format
     if not isinstance(matrix, csp.csr_matrix):
         # TODO: avoid this explicit conversion
+        print('WARNING: converting matrix to CSR format')
         matrix = csp.csr_matrix(matrix)
         #raise ValueError("Matrix must be in CSR format.")
     # Switch by dimension
@@ -367,3 +369,177 @@ def custom_SuperLU_solve(self, rhs, trans='N', spsm_descr=None):
         # For compatibility with SciPy
         x = x.copy(order='F')
     return x
+
+
+class CustomCupyUpperTriangularSolver:
+    """Hacky class to save spsm_descr for reuse in spsm for triangular solves."""
+
+    def __init__(self, matrix):
+        # Check matrix format
+        if not isinstance(matrix, csp.csr_matrix):
+            # TODO: avoid this explicit conversion
+            matrix = csp.csr_matrix(matrix)
+            print('WARNING: converting matrix to CSR format')
+            #raise ValueError("Matrix must be in CSR format.")
+        self.matrix = matrix
+        self.spsm_descr = None
+
+    def solve(self, b, lower=True, overwrite_A=False, overwrite_b=False,
+                        unit_diagonal=False):
+        """Solves a sparse triangular system ``A x = b``.
+
+        Args:
+            A (cupyx.scipy.sparse.spmatrix):
+                Sparse matrix with dimension ``(M, M)``.
+            b (cupy.ndarray):
+                Dense vector or matrix with dimension ``(M)`` or ``(M, K)``.
+            lower (bool):
+                Whether ``A`` is a lower or upper triangular matrix.
+                If True, it is lower triangular, otherwise, upper triangular.
+            overwrite_A (bool):
+                (not supported)
+            overwrite_b (bool):
+                Allows overwriting data in ``b``.
+            unit_diagonal (bool):
+                If True, diagonal elements of ``A`` are assumed to be 1 and will
+                not be referenced.
+
+        Returns:
+            cupy.ndarray:
+                Solution to the system ``A x = b``. The shape is the same as ``b``.
+        """
+        from cupyx import cusparse
+        from cupyx.scipy import sparse
+        import cupy
+        from cupyx.scipy.sparse.linalg._solve import _should_use_spsm
+
+        A = self.matrix
+
+        if not (cusparse.check_availability('spsm') or
+                cusparse.check_availability('csrsm2')):
+            raise NotImplementedError
+
+        if not sparse.isspmatrix(A):
+            raise TypeError('A must be cupyx.scipy.sparse.spmatrix')
+        if not isinstance(b, cupy.ndarray):
+            raise TypeError('b must be cupy.ndarray')
+        if A.shape[0] != A.shape[1]:
+            raise ValueError(f'A must be a square matrix (A.shape: {A.shape})')
+        if b.ndim not in [1, 2]:
+            raise ValueError(f'b must be 1D or 2D array (b.shape: {b.shape})')
+        if A.shape[0] != b.shape[0]:
+            raise ValueError('The size of dimensions of A must be equal to the '
+                            'size of the first dimension of b '
+                            f'(A.shape: {A.shape}, b.shape: {b.shape})')
+        if A.dtype.char not in 'fdFD':
+            raise TypeError(f'unsupported dtype (actual: {A.dtype})')
+
+        if cusparse.check_availability('spsm') and _should_use_spsm(b):
+            if not (sparse.isspmatrix_csr(A) or
+                    sparse.isspmatrix_csc(A) or
+                    sparse.isspmatrix_coo(A)):
+                warnings.warn('CSR, CSC or COO format is required. Converting to '
+                            'CSR format.', sparse.SparseEfficiencyWarning)
+                A = A.tocsr()
+            A.sum_duplicates()
+            x, self.spsm_descr = custom_spsm(A, b, lower=lower, unit_diag=unit_diagonal, spsm_descr=self.spsm_descr)
+        elif cusparse.check_availability('csrsm2'):
+            if not (sparse.isspmatrix_csr(A) or sparse.isspmatrix_csc(A)):
+                warnings.warn('CSR or CSC format is required. Converting to CSR '
+                            'format.', sparse.SparseEfficiencyWarning)
+                A = A.tocsr()
+            A.sum_duplicates()
+
+            if (overwrite_b and A.dtype == b.dtype and
+                    (b._c_contiguous or b._f_contiguous)):
+                x = b
+            else:
+                x = b.astype(A.dtype, copy=True)
+
+            cusparse.csrsm2(A, x, lower=lower, unit_diag=unit_diagonal)
+        else:
+            assert False
+
+        if x.dtype.char in 'fF':
+            # Note: This is for compatibility with SciPy.
+            dtype = numpy.promote_types(x.dtype, 'float64')
+            x = x.astype(dtype)
+        return x
+
+
+def cupy_solve_upper_csr(matrix, array, axis, out):
+    """Solve upper triangular CSR matrix along specified axis of an array."""
+    # Switch by dimension
+    ndim = array.ndim
+    if ndim == 1:
+        if axis == 0:
+            cupy_solve_upper_csr_vec(matrix, array, out)
+        else:
+            raise ValueError("axis must be 0 for 1D arrays")
+    elif ndim == 2:
+        if axis == 0:
+            if array.shape[1] == 1:
+                cupy_solve_upper_csr_vec(matrix, array[:,0], out[:,0])
+            else:
+                cupy_solve_upper_csr_first(matrix, array, out)
+        elif axis == 1:
+            if array.shape[0] == 1:
+                cupy_solve_upper_csr_vec(matrix, array[0,:], out[0,:])
+            else:
+                cupy_solve_upper_csr_last(matrix, array, out)
+        else:
+            raise ValueError("axis must be 0 or 1 for 2D arrays")
+    else:
+        # Treat as 3D array with specified axis in the middle
+        # Compute equivalent shape (N1, N2, N3)
+        if ndim == 3 and axis == 1:
+            N1 = shape[0]
+            N2 = shape[1]
+            N3 = shape[2]
+        else:
+            N1 = int(np.prod(array.shape[:axis]))
+            N2 = array.shape[axis]
+            N3 = int(np.prod(array.shape[axis+1:]))
+        # Dispatch to cupy routines
+        if N1 == 1:
+            if N3 == 1:
+                # (1, N2, 1) -> (N2,)
+                x1 = array.reshape((N2,))
+                y1 = out.reshape((N2,))
+                cupy_solve_upper_csr_vec(matrix, x1, y1)
+            else:
+                # (1, N2, N3) -> (N2, N3)
+                x2 = array.reshape((N2, N3))
+                y2 = out.reshape((N2, N3))
+                cupy_solve_upper_csr_first(matrix, x2, y2)
+        else:
+            if N3 == 1:
+                # (N1, N2, 1) -> (N1, N2)
+                x2 = array.reshape((N1, N2))
+                y2 = out.reshape((N1, N2))
+                cupy_solve_upper_csr_last(matrix, x2, y2)
+            else:
+                # (N1, N2, N3)
+                x3 = array.reshape((N1, N2, N3))
+                y3 = out.reshape((N1, N2, N3))
+                cupy_solve_upper_csr_mid(matrix, x3, y3)
+
+
+def cupy_solve_upper_csr_vec(matrix, vec, out):
+    """Solve upper triangular CSR matrix along a vector."""
+    out[:] = matrix.solve(vec, lower=False)
+
+
+def cupy_solve_upper_csr_first(matrix, array, out):
+    """Solve upper triangular CSR matrix along first axis of 2D array."""
+    out[:] = matrix.solve(array, lower=False)
+
+
+def cupy_solve_upper_csr_last(matrix, array, out):
+    """Solve upper triangular CSR matrix along last axis of 2D array."""
+    out.T[:] = matrix.solve(array.T, lower=False)
+
+
+def cupy_solve_upper_csr_mid(matrix, array, out):
+    """Solve upper triangular CSR matrix along middle axis of 3D array."""
+    raise NotImplementedError

@@ -8,14 +8,16 @@ import scipy.fft
 import scipy.fftpack
 from ..libraries import dedalus_sphere
 from math import prod
+import array_api_compat
 
 from . import basis
 from ..libraries.fftw import fftw_wrappers as fftw
 from ..tools import jacobi
-from ..tools.array import apply_matrix, apply_dense, axslice, solve_upper_sparse, apply_sparse
+from ..tools.array import apply_matrix, apply_dense, axslice, solve_upper_sparse, apply_sparse, copyto
 from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
 from ..tools.general import float_to_complex
+from ..tools.linalg_gpu import cupy_solve_upper_csr, CustomCupyUpperTriangularSolver
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -94,31 +96,39 @@ class JacobiTransform(SeparableTransform):
         Jacobi "a" parameter for the quadrature grid.
     b0 : int
         Jacobi "b" parameter for the quadrature grid.
+    array_namespace : array namespace
+        Array namespace for the transform.
+    dtype : dtype
+        Data type for the transform.
 
     Notes
     -----
     TODO: We need to define the normalization we use here.
     """
 
-    def __init__(self, grid_size, coeff_size, a, b, a0, b0, dealias_before_converting=None):
+    def __init__(self, grid_size, coeff_size, a, b, a0, b0, array_namespace, dtype, dealias_before_converting=None):
         self.N = grid_size
         self.M = coeff_size
         self.a = a
         self.b = b
         self.a0 = a0
         self.b0 = b0
+        self.array_namespace = array_namespace
+        self.dtype = dtype
         if dealias_before_converting is None:
             dealias_before_converting = GET_DEALIAS_BEFORE_CONVERTING()
         self.dealias_before_converting = dealias_before_converting
 
 
-@register_transform(basis.Jacobi, 'matrix')
+@register_transform(basis.Jacobi, 'matrix-numpy')
+@register_transform(basis.Jacobi, 'matrix-cupy')
 class JacobiMMT(JacobiTransform, SeparableMatrixTransform):
     """Jacobi polynomial MMTs."""
 
     @CachedAttribute
     def forward_matrix(self):
         """Build forward transform matrix."""
+        xp = self.array_namespace
         N, M = self.N, self.M
         a, a0 = self.a, self.a0
         b, b0 = self.b, self.b0
@@ -142,11 +152,12 @@ class JacobiMMT(JacobiTransform, SeparableMatrixTransform):
             # Truncate to specified coeff_size
             forward_matrix = forward_matrix[:M, :]
         # Ensure C ordering for fast dot products
-        return np.asarray(forward_matrix, order='C')
+        return xp.asarray(forward_matrix, order='C', dtype=self.dtype)
 
     @CachedAttribute
     def backward_matrix(self):
         """Build backward transform matrix."""
+        xp = self.array_namespace
         N, M = self.N, self.M
         a, a0 = self.a, self.a0
         b, b0 = self.b, self.b0
@@ -156,7 +167,7 @@ class JacobiMMT(JacobiTransform, SeparableMatrixTransform):
         # Zero higher polynomials for transforms with grid_size < coeff_size
         polynomials[N:, :] = 0
         # Transpose and ensure C ordering for fast dot products
-        return np.asarray(polynomials.T, order='C')
+        return xp.asarray(polynomials.T, order='C', dtype=self.dtype)
 
 
 class ComplexFourierTransform(SeparableTransform):
@@ -848,6 +859,33 @@ class ScipyDCT(FastCosineTransform):
         np.copyto(gdata, temp)
 
 
+class CupyDCT(FastCosineTransform):
+    """Fast cosine transform using cupy fft."""
+
+    def __init__(self, *args, **kw):
+        import cupyx.scipy.fft as cufft
+        self.cufft = cufft
+        super().__init__(*args, **kw)
+
+    def forward(self, gdata, cdata, axis):
+        """Apply forward transform along specified axis."""
+        # Call DCT
+        temp = self.cufft.dct(gdata, type=2, axis=axis) # Creates temporary
+        # Resize and rescale for unit-ampltidue normalization
+        self.resize_rescale_forward(temp, cdata, axis, self.Kmax)
+
+    def backward(self, cdata, gdata, axis):
+        """Apply backward transform along specified axis."""
+        xp = self.array_namespace
+        # Resize and rescale for unit-amplitude normalization
+        # Need temporary to avoid overwriting problems
+        temp = xp.empty_like(gdata) # Creates temporary
+        self.resize_rescale_backward(cdata, temp, axis, self.Kmax)
+        # Call IDCT
+        temp = self.cufft.dct(temp, type=3, axis=axis, overwrite_x=True) # Creates temporary
+        copyto(gdata, temp)
+
+
 #@register_transform(basis.Cosine, 'fftw')
 class FFTWDCT(FFTWBase, FastCosineTransform):
     """Fast cosine transform using FFTW."""
@@ -884,11 +922,11 @@ class FastChebyshevTransform(JacobiTransform):
     Subclasses should inherit from this class, then a FastCosineTransform subclass.
     """
 
-    def __init__(self, grid_size, coeff_size, a, b, a0, b0, **kw):
+    def __init__(self, grid_size, coeff_size, a, b, a0, b0, array_namespace, dtype, **kw):
         if not a0 == b0 == -1/2:
             raise ValueError("Fast Chebshev transform requires a0 == b0 == -1/2.")
         # Jacobi initialization
-        super().__init__(grid_size, coeff_size, a, b, a0, b0, **kw)
+        super().__init__(grid_size, coeff_size, a, b, a0, b0, array_namespace, dtype, **kw)
         # DCT initialization to set scaling factors
         if a != a0 or b != b0:
             # Modify coeff_size to avoid truncation before conversion
@@ -920,6 +958,13 @@ class FastChebyshevTransform(JacobiTransform):
             self.backward_conversion.sum_duplicates() # for faster solve_upper
             self.resize_rescale_forward = self._resize_rescale_forward_convert
             self.resize_rescale_backward = self._resize_rescale_backward_convert
+            if array_api_compat.is_cupy_namespace(self.array_namespace):
+                import cupyx.scipy.sparse as csp
+                self.forward_conversion = csp.csr_matrix(self.forward_conversion)
+                self.backward_conversion = csp.csr_matrix(self.backward_conversion)
+                self.forward_conversion.sum_duplicates()
+                self.backward_conversion.sum_duplicates()
+                self.backward_conversion_LU = CustomCupyUpperTriangularSolver(self.backward_conversion)
 
     def _resize_rescale_forward(self, data_in, data_out, axis, Kmax):
         """Resize by padding/trunction and rescale to unit amplitude."""
@@ -961,7 +1006,10 @@ class FastChebyshevTransform(JacobiTransform):
             # Truncate input before conversion
             data_in[badfreq] = 0
         # Ultraspherical conversion
-        solve_upper_sparse(self.backward_conversion, data_in, axis, out=data_in)
+        if array_api_compat.is_cupy_namespace(self.array_namespace):
+            cupy_solve_upper_csr(self.backward_conversion_LU, data_in, axis, out=data_in)
+        else:
+            solve_upper_sparse(self.backward_conversion, data_in, axis, out=data_in)
         # Change sign of odd modes
         if Kmax_orig > 0:
             posfreq_odd = axslice(axis, 1, Kmax_orig+1, 2)
@@ -970,15 +1018,21 @@ class FastChebyshevTransform(JacobiTransform):
         super().resize_rescale_backward(data_in, data_out, axis, Kmax_orig)
 
 
-@register_transform(basis.Jacobi, 'scipy_dct')
+@register_transform(basis.Jacobi, 'scipy_dct-numpy')
 class ScipyFastChebyshevTransform(FastChebyshevTransform, ScipyDCT):
     """Fast ultraspherical transform using scipy.fft and spectral conversion."""
     pass  # Implementation is complete via inheritance
 
 
-@register_transform(basis.Jacobi, 'fftw_dct')
+@register_transform(basis.Jacobi, 'fftw_dct-numpy')
 class FFTWFastChebyshevTransform(FastChebyshevTransform, FFTWDCT):
     """Fast ultraspherical transform using scipy.fft and spectral conversion."""
+    pass  # Implementation is complete via inheritance
+
+
+@register_transform(basis.Jacobi, 'scipy_dct-cupy')
+class CupyFastChebyshevTransform(FastChebyshevTransform, CupyDCT):
+    """Fast ultraspherical transform using cupy fft and spectral conversion."""
     pass  # Implementation is complete via inheritance
 
 
