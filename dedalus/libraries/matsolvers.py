@@ -157,9 +157,13 @@ class _SuperluFactorizedBase(SparseSolver):
                 raise TypeError('Invalid dtype (actual: {})'.format(self.LU.dtype))
             # Build cupy factorization from scipy factorization of CPU matrices
             self.LU = cupy_spla.SuperLU(self.LU)
-            sp.save_npz("block1024.npz", matrix)
-            print(self.LU.shape)
-            print(self.LU.nnz)
+            self.LU.spsm_L_descr = None
+            self.LU.spsm_U_descr = None
+            self.solve = self.cupy_solve
+
+    def cupy_solve(self, vector):
+        from dedalus.tools.linalg_gpu import custom_SuperLU_solve
+        return custom_SuperLU_solve(self.LU, vector, trans=self.trans)
 
     def solve(self, vector):
         return self.LU.solve(vector, trans=self.trans)
