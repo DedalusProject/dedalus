@@ -2136,7 +2136,7 @@ class SpinSkew(Skew):
         # Weight by spin (spinorder: -, +)
         factors[self.index] = np.array([[-1, 0], [0, 1]])
         # Multiply by 1j
-        if np.iscomplexobj(self.dtype()):
+        if is_complex_dtype(self.dtype):
             factors[self.index] = 1j * factors[self.index]
         else:
             azimuth_index = len(self.tensorsig) + self.azimuth_axis
