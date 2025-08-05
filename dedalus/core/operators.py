@@ -581,6 +581,9 @@ class UnaryGridFunction(NonlinearOperator, FutureField):
             bases = arg0.domain
         return bases
 
+    def new_operands(self, arg):
+        return self.new_operand(arg)
+
     def new_operand(self, arg):
         return UnaryGridFunction(self.func, arg, deriv=self.deriv)
 
