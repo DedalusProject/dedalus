@@ -36,6 +36,8 @@ __all__ = ['Jacobi',
            'RealFourier',
            'ComplexFourier',
            'Fourier',
+           'Sine',
+           'Cosine',
            'DiskBasis',
            'AnnulusBasis',
            'SphereBasis',
@@ -855,6 +857,7 @@ class FourierBase(IntervalBasis):
         self.dealias = dealias
         self.library = library
         # Other attributes
+        self.grid_params = (coord, bounds, dealias, library)
         self.constant_mode_value = 1
         # No permutations by default
         self.forward_coeff_permutation = None
@@ -1332,29 +1335,64 @@ class AverageRealFourier(operators.Average, operators.SpectralOperator1D):
 #                 return 0
 
 
-# class Sine(Basis, metaclass=CachedClass):
-#     """Sine series basis."""
-#     space_type = ParityInterval
-#     const = None
-#     supported_dtypes = {np.float64, np.complex128}
+class Sine(FourierBase, metaclass=CachedClass):
+    """Sine series basis."""
 
-#     def __add__(self, other):
-#         space = self.space
-#         if other is space.Sine:
-#             return space.Sine
-#         else:
-#             return NotImplemented
+    native_bounds = (0, np.pi)
+    default_library = "fftw"
+    group_shape = (1,)
+    transforms = {}
 
-#     def __mul__(self, other):
-#         space = self.space
-#         if other is None:
-#             return space.Sine
-#         elif other is space.Sine:
-#             return space.Cosine
-#         elif other is space.Cosine:
-#             return space.Sine
-#         else:
-#             return NotImplemented
+    @CachedAttribute
+    def _native_wavenumbers(self):
+        # Excludes Nyquist mode
+        kmax = self.size - 1
+        return np.arange(0, kmax+1)
+
+    def valid_elements(self, tensorsig, grid_space, elements):
+        vshape = tuple(cs.dim for cs in tensorsig) + elements[0].shape
+        valid = np.ones(shape=vshape, dtype=bool)
+        if not grid_space[0]:
+            # Drop sine part of k=0 for all cartesian components and spin scalars
+            if not isinstance(self.coord, AzimuthalCoordinate) or not tensorsig:
+                # Drop sine part of k=0
+                groups = self.elements_to_groups(grid_space, elements)
+                allcomps = tuple(slice(None) for cs in tensorsig)
+                selection = (groups[0] == 0)
+                valid[allcomps + (selection,)] = False
+        return valid
+
+    def __add__(self, other):
+        if other is self:
+            return self
+        if isinstance(other, Sine):
+            if self.grid_params == other.grid_params:
+                size = max(self.size, other.size)
+                return self.clone_with(size=size)
+        return NotImplemented
+
+    def __mul__(self, other):
+        if other is None:
+            return self
+        if other is self:
+            return Cosine(self.coord, self.size, self.bounds, self.dealias, self.library)
+        if isinstance(other, Sine):
+            if self.grid_params == other.grid_params:
+                size = max(self.size, other.size)
+                return Cosine(self.coord, size, self.bounds, self.dealias, self.library)
+        if isinstance(other, Cosine):
+            if self.grid_params == other.grid_params:
+                size = max(self.size, other.size)
+                return Sine(self.coord, size, self.bounds, self.dealias, self.library)
+        return NotImplemented
+
+    def _native_grid(self, scale):
+        """Native flat global grid."""
+        N, = self.grid_shape((scale,))
+        return (np.pi / N) * (1/2 + np.arange(N))
+
+    def __pow__(self, other):
+        return NotImplemented
 
 #     def __pow__(self, other):
 #         space = self.space
@@ -1365,44 +1403,59 @@ class AverageRealFourier(operators.Average, operators.SpectralOperator1D):
 #         else:
 #             return NotImplemented
 
-#     def include_mode(self, mode):
-#         # Drop k=0 and Nyquist mode
-#         k = mode
-#         return (1 <= k <= self.space.kmax)
 
+class Cosine(FourierBase, metaclass=CachedClass):
+    """Cosine series basis."""
 
-# class Cosine(Basis, metaclass=CachedClass):
-#     """Cosine series basis."""
-#     space_type = ParityInterval
-#     const = 1
+    native_bounds = (0, np.pi)
+    default_library = "fftw"
+    group_shape = (1,)
+    transforms = {}
 
-#     def __add__(self, other):
-#         space = self.space
-#         if other is None:
-#             return space.Cosine
-#         elif other is space.Cosine:
-#             return space.Cosine
-#         else:
-#             return NotImplemented
+    @CachedAttribute
+    def _native_wavenumbers(self):
+        # Excludes Nyquist mode
+        kmax = self.size - 1
+        return np.arange(0, kmax+1)
 
-#     def __mul__(self, other):
-#         space = self.space
-#         if other is None:
-#             return space.Cosine
-#         elif other is space.Sine:
-#             return space.Sine
-#         elif other is space.Cosine:
-#             return space.Cosine
-#         else:
-#             return NotImplemented
+    def valid_elements(self, tensorsig, grid_space, elements):
+        vshape = tuple(cs.dim for cs in tensorsig) + elements[0].shape
+        valid = np.ones(shape=vshape, dtype=bool)
+        return valid
 
-#     def __pow__(self, other):
-#         return self.space.Cosine
+    def __add__(self, other):
+        if other is None:
+            return self
+        if other is self:
+            return self
+        if isinstance(other, Cosine):
+            if self.grid_params == other.grid_params:
+                size = max(self.size, other.size)
+                return self.clone_with(size=size)
+        return NotImplemented
 
-#     def include_mode(self, mode):
-#         # Drop Nyquist mode
-#         k = mode
-#         return (0 <= k <= self.space.kmax)
+    def __mul__(self, other):
+        if other is None:
+            return self
+        if other is self:
+            return self
+        if isinstance(other, Sine):
+            if self.grid_params == other.grid_params:
+                size = max(self.size, other.size)
+                return Sine(self.coord, size, self.bounds, self.dealias, self.library)
+        if isinstance(other, Cosine):
+            if self.grid_params == other.grid_params:
+                size = max(self.size, other.size)
+                return Cosine(self.coord, size, self.bounds, self.dealias, self.library)
+        return NotImplemented
+
+    def _native_grid(self, scale):
+        """Native flat global grid."""
+        N, = self.grid_shape((scale,))
+        return (np.pi / N) * (1/2 + np.arange(N))
+
+    def __pow__(self, other):
+        return NotImplemented
 
 
 # class InterpolateSine(operators.Interpolate):
@@ -1457,44 +1510,42 @@ class AverageRealFourier(operators.Average, operators.SpectralOperator1D):
 #             return 0
 
 
-# class DifferentiateSine(operators.Differentiate):
-#     """Sine series differentiation."""
+class DifferentiateSine(operators.Differentiate, operators.SpectralOperator1D):
+    """Sine series differentiation."""
 
-#     input_basis_type = Sine
-#     bands = [0]
-#     separable = True
+    input_basis_type = Sine
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
 
-#     @staticmethod
-#     def output_basis(space, input_basis):
-#         return space.Cosine
+    @staticmethod
+    def _output_basis(input_basis):
+        return Cosine(input_basis.coord, input_basis.size, input_basis.bounds, input_basis.dealias, input_basis.library)
 
-#     @staticmethod
-#     def _build_subspace_entry(i, j, space, input_basis):
-#         # dx(sin(n*x)) = n*cos(n*x)
-#         if i == j:
-#             return j / space.COV.stretch
-#         else:
-#             return 0
+    @staticmethod
+    def _group_matrix(group, input_basis, output_basis):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / input_basis.COV.stretch
+        # dx sin(k*x) = k * cos(k*x)
+        return np.array([[k]])
 
 
-# class DifferentiateCosine(operators.Differentiate):
-#     """Cosine series differentiation."""
+class DifferentiateCosine(operators.Differentiate, operators.SpectralOperator1D):
+    """Cosine series differentiation."""
 
-#     input_basis_type = Cosine
-#     bands = [0]
-#     separable = True
+    input_basis_type = Cosine
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
 
-#     @staticmethod
-#     def output_basis(space, input_basis):
-#         return space.Sine
+    @staticmethod
+    def _output_basis(input_basis):
+        return Sine(input_basis.coord, input_basis.size, input_basis.bounds, input_basis.dealias, input_basis.library)
 
-#     @staticmethod
-#     def _build_subspace_entry(i, j, space, input_basis):
-#         # dx(cos(n*x)) = -n*sin(n*x)
-#         if i == j:
-#             return (-j) / space.COV.stretch
-#         else:
-#             return 0
+    @staticmethod
+    def _group_matrix(group, input_basis, output_basis):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / input_basis.COV.stretch
+        # dx cos(k*x) = -k * sin(k*x)
+        return np.array([[-k]])
 
 
 # class HilbertTransformSine(operators.HilbertTransform):

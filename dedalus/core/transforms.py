@@ -629,6 +629,88 @@ class FFTWHalfComplexFFT(FFTWBase, RealFourierTransform):
         plan.backward(temp, gdata)
 
 
+class SineTransform(SeparableTransform):
+    """
+    Abstract base class for sine transforms.
+
+    Parameters
+    ----------
+    grid_size : int
+        Grid size (N) along transform dimension.
+    coeff_size : int
+        Coefficient size (M) along transform dimension.
+
+    Notes
+    -----
+    Let KN = (N - 1) be the maximum (Nyquist) mode on the grid.
+    Let KM = (M - 1) be the maximum retained mode in coeff space.
+    Then K = min(KN, KM) is the maximum wavenumber used in the transforms.
+    A unit-amplitude normalization is used.
+
+    Forward transform:
+        if k == 0:
+            a(k) = 0
+        elif k <= K:
+            a(k) =  (2/N) \sum_{x=0}^{N-1} f(x) \sin(\pi k x / N)
+        else:
+            a(k) = 0
+
+    Backward transform:
+        f(x) = \sum_{k=1}^{K} a(k) \sin(\pi k x / N)
+
+    Coefficient ordering:
+        The sine coefficients are ordered simply as
+        [0, a(1), a(2), ..., a(KM)]
+    """
+
+    def __init__(self, grid_size, coeff_size):
+        self.N = grid_size
+        self.M = coeff_size
+        self.KN = (self.N - 1)
+        self.KM = (self.M - 1)
+        self.Kmax = min(self.KN, self.KM)
+
+    @property
+    def wavenumbers(self):
+        """One-dimensional global wavenumber array."""
+        return np.arange(self.KM + 1)
+
+
+@register_transform(basis.Sine, 'matrix')
+class SineMMT(SineTransform, SeparableMatrixTransform):
+    """Sine MMT."""
+
+    @CachedAttribute
+    def forward_matrix(self):
+        """Build forward transform matrix."""
+        N = self.N
+        M = self.M
+        Kmax = self.Kmax
+        K = self.wavenumbers[:, None]
+        X = np.arange(N)[None, :] + 1/2
+        dX = N / np.pi
+        quadrature = (2 / N) * np.sin(K*X/dX)
+        # Zero higher modes for transforms with grid_size < coeff_size
+        quadrature *= (K <= self.Kmax)
+        # Ensure C ordering for fast dot products
+        return np.asarray(quadrature, order='C')
+
+    @CachedAttribute
+    def backward_matrix(self):
+        """Build backward transform matrix."""
+        N = self.N
+        M = self.M
+        Kmax = self.Kmax
+        K = self.wavenumbers[None, :]
+        X = np.arange(N)[:, None] + 1/2
+        dX = N / np.pi
+        functions = np.sin(K*X/dX)
+        # Zero higher modes for transforms with grid_size < coeff_size
+        functions *= (K <= self.Kmax)
+        # Ensure C ordering for fast dot products
+        return np.asarray(functions, order='C')
+
+
 class CosineTransform(SeparableTransform):
     """
     Abstract base class for cosine transforms.
@@ -676,7 +758,7 @@ class CosineTransform(SeparableTransform):
         return np.arange(self.KM + 1)
 
 
-#@register_transform(basis.Cosine, 'matrix')
+@register_transform(basis.Cosine, 'matrix')
 class CosineMMT(CosineTransform, SeparableMatrixTransform):
     """Cosine MMT."""
 
@@ -687,7 +769,7 @@ class CosineMMT(CosineTransform, SeparableMatrixTransform):
         M = self.M
         Kmax = self.Kmax
         K = self.wavenumbers[:, None]
-        X = np.arange(N)[None, :]
+        X = np.arange(N)[None, :] + 1/2
         dX = N / np.pi
         quadrature = (2 / N) * np.cos(K*X/dX)
         quadrature[0] = 1 / N
