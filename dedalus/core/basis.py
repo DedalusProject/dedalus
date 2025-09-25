@@ -1458,56 +1458,93 @@ class Cosine(FourierBase, metaclass=CachedClass):
         return NotImplemented
 
 
-# class InterpolateSine(operators.Interpolate):
-#     """Sine series interpolation."""
+class InterpolateSine(operators.Interpolate, operators.SpectralOperator1D):
+    """RealFourier interpolation."""
 
-#     input_basis_type = Sine
+    input_basis_type = Sine
+    basis_subaxis = 0
+    subaxis_dependence = [True]
+    subaxis_coupling = [True]
 
-#     @staticmethod
-#     def _build_subspace_entry(j, space, input_basis, position):
-#         # sin(n*x)
-#         x = space.COV.native_coord(position)
-#         return math.sin(j*x)
+    @staticmethod
+    def _output_basis(input_basis, position):
+        return None
+
+    @staticmethod
+    def _full_matrix(input_basis, output_basis, position):
+        # Build native interpolation vector
+        x = input_basis.COV.native_coord(position)
+        k = input_basis.native_wavenumbers
+        interp_vector = np.zeros(k.size)
+        interp_vector[1:] = np.sin(k[1:] * x)
+        # Return with shape (1, N)
+        return interp_vector[None, :]
+
+class InterpolateCosine(operators.Interpolate, operators.SpectralOperator1D):
+    """RealFourier interpolation."""
+
+    input_basis_type = Cosine
+    basis_subaxis = 0
+    subaxis_dependence = [True]
+    subaxis_coupling = [True]
+
+    @staticmethod
+    def _output_basis(input_basis, position):
+        return None
+
+    @staticmethod
+    def _full_matrix(input_basis, output_basis, position):
+        # Build native interpolation vector
+        x = input_basis.COV.native_coord(position)
+        k = input_basis.native_wavenumbers
+        interp_vector = np.cos(k * x)
+        # Return with shape (1, N)
+        return interp_vector[None, :]
+
+class IntegrateSine(operators.Integrate, operators.SpectralOperator1D):
+    """RealFourier integration."""
+
+    input_coord_type = Coordinate
+    input_basis_type = Sine
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
+
+    @staticmethod
+    def _output_basis(input_basis):
+        return Cosine(input_basis.coord, input_basis.size, input_basis.bounds, input_basis.dealias, input_basis.library)
+
+    @staticmethod
+    def _group_matrix(group, input_basis, output_basis):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / input_basis.COV.stretch
+        #integral(sin(n*x), 0, pi) = (2 / n) * (n % 2)
+        # integ sin(k*x) = 0
+        if (group%2):
+            return np.array([[2/k]])
+        else:
+            return np.array([[0]])
 
 
-# class InterpolateCosine(operators.Interpolate):
-#     """Cosine series interpolation."""
+class IntegrateCosine(operators.Integrate, operators.SpectralOperator1D):
+    """RealFourier integration."""
 
-#     input_basis_type = Cosine
+    input_coord_type = Coordinate
+    input_basis_type = Cosine
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
 
-#     @staticmethod
-#     def _build_subspace_entry(j, space, input_basis, position):
-#         # cos(n*x)
-#         x = space.COV.native_coord(position)
-#         return math.cos(j*x)
+    @staticmethod
+    def _output_basis(input_basis):
+        return None
 
-
-# class IntegrateSine(operators.Integrate):
-#     """Sine series integration."""
-
-#     input_basis_type = Sine
-
-#     @staticmethod
-#     def _build_subspace_entry(j, space, input_basis):
-#         # integral(sin(n*x), 0, pi) = (2 / n) * (n % 2)
-#         if (j % 2):
-#             return 0
-#         else:
-#             return (2 / j) * space.COV.stretch
-
-
-# class IntegrateCosine(operators.Integrate):
-#     """Cosine series integration."""
-
-#     input_basis_type = Cosine
-
-#     @staticmethod
-#     def _build_subspace_entry(j, space, input_basis):
-#         # integral(cos(n*x), 0, pi) = pi * δ(n, 0)
-#         if j == 0:
-#             return np.pi * space.COV.stretch
-#         else:
-#             return 0
+    @staticmethod
+    def _group_matrix(group, input_basis, output_basis):
+        # integ  cos(k*x) = L * δ(k, 0)
+        if group == 0:
+            L = input_basis.COV.problem_length
+            return np.array([[L]])
+        else:
+            return np.array([[0]])
 
 
 class DifferentiateSine(operators.Differentiate, operators.SpectralOperator1D):
