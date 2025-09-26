@@ -1564,6 +1564,25 @@ class DifferentiateSine(operators.Differentiate, operators.SpectralOperator1D):
         return np.array([[k]])
 
 
+class ConvertConstantCosine(operators.ConvertConstant, operators.SpectralOperator1D):
+    """Upcast constants to Cosine."""
+
+    output_basis_type = Cosine
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
+
+    @staticmethod
+    def _group_matrix(group, input_basis, output_basis):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / output_basis.COV.stretch
+        # 1 = cos(0*x)
+        if k == 0:
+            unit_amplitude = 1 / output_basis.constant_mode_value
+            return np.array([[unit_amplitude]])
+        else:
+            return np.zeros(shape=(1, 0))
+
+
 class DifferentiateCosine(operators.Differentiate, operators.SpectralOperator1D):
     """Cosine series differentiation."""
 
