@@ -1507,22 +1507,20 @@ class IntegrateSine(operators.Integrate, operators.SpectralOperator1D):
     input_coord_type = Coordinate
     input_basis_type = Sine
     subaxis_dependence = [True]
-    subaxis_coupling = [False]
+    subaxis_coupling = [True]
 
     @staticmethod
     def _output_basis(input_basis):
-        return Cosine(input_basis.coord, input_basis.size, input_basis.bounds, input_basis.dealias, input_basis.library)
+        return None
 
     @staticmethod
-    def _group_matrix(group, input_basis, output_basis):
-        # Rescale group (native wavenumber) to get physical wavenumber
-        k = group / input_basis.COV.stretch
-        #integral(sin(n*x), 0, pi) = (2 / n) * (n % 2)
-        # integ sin(k*x) = 0
-        if (group%2):
-            return np.array([[2/k]])
-        else:
-            return np.array([[0]])
+    def _full_matrix(input_basis, output_basis):
+        # Build native integration vector
+        k = input_basis.native_wavenumbers
+        integ_vector = np.zeros(k.size)
+        integ_vector[1::2] = 2/k[1::2]/np.pi
+        # Return with shape (1, N)
+        return integ_vector[None, :]
 
 
 class IntegrateCosine(operators.Integrate, operators.SpectralOperator1D):
@@ -1544,7 +1542,7 @@ class IntegrateCosine(operators.Integrate, operators.SpectralOperator1D):
             L = input_basis.COV.problem_length
             return np.array([[L]])
         else:
-            return np.array([[0]])
+            raise ValueError("This should never happen.")
 
 
 class DifferentiateSine(operators.Differentiate, operators.SpectralOperator1D):
