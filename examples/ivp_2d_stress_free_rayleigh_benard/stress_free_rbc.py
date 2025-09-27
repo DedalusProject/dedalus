@@ -1,9 +1,11 @@
 """
-Dedalus script simulating 2D horizontally-periodic Rayleigh-Benard convection.
-This script demonstrates solving a 2D Cartesian initial value problem. It can
-be ran serially or in parallel, and uses the built-in analysis framework to save
-data snapshots to HDF5 files. The `plot_snapshots.py` script can be used to
-produce plots from the saved data. It should take about 5 cpu-minutes to run.
+Dedalus script simulating 2D horizontally-periodic Rayleigh-Benard
+convection with stress-free boundary conditions using Sine/Cosine
+bases in z.  This script demonstrates solving a 2D Cartesian initial
+value problem. It can be ran serially or in parallel, and uses the
+built-in analysis framework to save data snapshots to HDF5 files. The
+`plot_snapshots.py` script can be used to produce plots from the saved
+data. It should take about 5 cpu-minutes to run.
 
 The problem is non-dimensionalized using the box height and freefall time, so
 the resulting thermal diffusivity and viscosity are related to the Prandtl
@@ -12,15 +14,13 @@ and Rayleigh numbers as:
     kappa = (Rayleigh * Prandtl)**(-1/2)
     nu = (Rayleigh / Prandtl)**(-1/2)
 
-For incompressible hydro with two boundaries, we need two tau terms for each the
-velocity and buoyancy. Here we choose to use a first-order formulation, putting
-one tau term each on auxiliary first-order gradient variables and the others in
-the PDE, and lifting them all to the first derivative basis. This formulation puts
-a tau term in the divergence constraint, as required for this geometry.
+Note that unlike the no-slip Cheybshev example, here we solve for the
+buoyancy *perturbation* instead of the total buoyancy field.
 
 To run and plot using e.g. 4 processes:
     $ mpiexec -n 4 python3 rayleigh_benard.py
     $ mpiexec -n 4 python3 plot_snapshots.py snapshots/*.h5
+
 """
 
 import numpy as np
@@ -39,13 +39,14 @@ stop_sim_time = 50
 timestepper = d3.RK222
 max_timestep = 0.125
 dtype = np.float64
-
+library = 'fftw' # 'scipy', 'matrix'
+logger.info(f"Running with {library} DCT/DST library")
 # Bases
 coords = d3.CartesianCoordinates('x', 'z')
 dist = d3.Distributor(coords, dtype=dtype)
 xbasis = d3.RealFourier(coords['x'], size=Nx, bounds=(0, Lx), dealias=dealias)
-zsbasis = d3.Sine(coords['z'], size=Nz, bounds=(0, Lz), dealias=dealias, library='matrix')
-zcbasis = d3.Cosine(coords['z'], size=Nz, bounds=(0, Lz), dealias=dealias, library='matrix')
+zsbasis = d3.Sine(coords['z'], size=Nz, bounds=(0, Lz), dealias=dealias, library=library)
+zcbasis = d3.Cosine(coords['z'], size=Nz, bounds=(0, Lz), dealias=dealias, library=library)
 
 # Fields
 p = dist.Field(name='p', bases=(xbasis,zcbasis))
@@ -62,12 +63,11 @@ x, z = dist.local_grids(xbasis, zcbasis)
 dx = lambda A: d3.Differentiate(A,coords['x'])
 dz = lambda A: d3.Differentiate(A,coords['z'])
 lap = lambda A: dx(dx(A)) + dz(dz(A))
+
 # Problem
-# First-order form: "div(f)" becomes "trace(grad_f)"
-# First-order form: "lap(f)" becomes "div(grad_f)"
 problem = d3.IVP([p, b, u, w, tau_p], namespace=locals())
 problem.add_equation("dx(u) + dz(w) + tau_p = 0")
-problem.add_equation("dt(b) - kappa*lap(b) = - u*dx(b) - w*dz(b)")
+problem.add_equation("dt(b) - kappa*lap(b) - w = - u*dx(b) - w*dz(b)")
 problem.add_equation("dt(u) - nu*lap(u) + dx(p)         = - u*dx(u) - w*dz(u)")
 problem.add_equation("dt(w) - nu*lap(w) + dz(p) - b  = - u*dx(w) - w*dz(w)")
 problem.add_equation("integ(p) = 0") # Pressure gauge
@@ -79,7 +79,6 @@ solver.stop_sim_time = stop_sim_time
 # Initial conditions
 b.fill_random('g', seed=42, distribution='normal', scale=1e-3) # Random noise
 b['g'] *= z * (Lz - z) # Damp noise at walls
-b['g'] += Lz - z # Add linear background
 
 # Analysis
 snapshots = solver.evaluator.add_file_handler('snapshots', sim_dt=0.25, max_writes=50)
