@@ -2143,7 +2143,7 @@ class SpinSkew(Skew):
             factors[self.index] = 1j * factors[self.index]
         else:
             azimuth_index = len(self.tensorsig) + self.azimuth_axis
-            id_m = sparse.identity(shape[self.azimuth_axis]//2, format='csr')
+            id_m = sparse.identity(shape[azimuth_index]//2, format='csr')
             mul_1j = np.array([[0, -1], [1, 0]])
             factors[azimuth_index] = sparse.kron(id_m, mul_1j)
         return reduce(sparse.kron, factors, 1).tocsr()
