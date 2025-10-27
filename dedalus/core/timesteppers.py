@@ -124,6 +124,7 @@ class MultistepIMEX:
         self.dFdxH_Y = []
         for field in solver.state:
             field_adjoint = field.copy_adjoint()
+            field_adjoint.change_scales(field.domain.dealias)
             self.cotangents[field] = field_adjoint
             self.dFdxH_Y.append(field_adjoint)
         self.eqn_list = [eqn['F'] for eqn in solver.problem.equations]
@@ -737,6 +738,7 @@ class RungeKuttaIMEX:
         self.dFdxH_Y = []
         for field in solver.state:
             field_adjoint = field.copy_adjoint()
+            field_adjoint.change_scales(field.domain.dealias)
             self.cotangents[field] = field_adjoint
             self.dFdxH_Y.append(field_adjoint)
         self.eqn_list = [eqn['F'] for eqn in solver.problem.equations]
