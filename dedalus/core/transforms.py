@@ -642,21 +642,24 @@ class SineTransform(SeparableTransform):
 
     Notes
     -----
-    Let KN = (N - 1) be the maximum (Nyquist) mode on the grid.
+    Let KN = (N - 1) be the maximum fully resolved (non-Nyquist) mode on the grid.
     Let KM = (M - 1) be the maximum retained mode in coeff space.
     Then K = min(KN, KM) is the maximum wavenumber used in the transforms.
     A unit-amplitude normalization is used.
+
+    Grid:
+        x(n) = \pi (1/2 + n) / N,    n = 0 .. (N-1)
 
     Forward transform:
         if k == 0:
             a(k) = 0
         elif k <= K:
-            a(k) =  (2/N) \sum_{x=0}^{N-1} f(x) \sin(\pi k x / N)
+            a(k) = (2/N) \sum_{n=0}^{N-1} f(n) \sin(k x(n))
         else:
             a(k) = 0
 
     Backward transform:
-        f(x) = \sum_{k=1}^{K} a(k) \sin(\pi k x / N)
+        f(n) = \sum_{k=1}^{K} a(k) \sin(k x(n))
 
     Coefficient ordering:
         The sine coefficients are ordered simply as
@@ -673,7 +676,7 @@ class SineTransform(SeparableTransform):
     @property
     def wavenumbers(self):
         """One-dimensional global wavenumber array."""
-        return np.arange(self.KM + 1)
+        return np.arange(self.M)
 
 
 @register_transform(basis.ParityBase, 'matrix-sin')
@@ -684,8 +687,6 @@ class SineMMT(SineTransform, SeparableMatrixTransform):
     def forward_matrix(self):
         """Build forward transform matrix."""
         N = self.N
-        M = self.M
-        Kmax = self.Kmax
         K = self.wavenumbers[:, None]
         X = np.arange(N)[None, :] + 1/2
         dX = N / np.pi
@@ -699,8 +700,6 @@ class SineMMT(SineTransform, SeparableMatrixTransform):
     def backward_matrix(self):
         """Build backward transform matrix."""
         N = self.N
-        M = self.M
-        Kmax = self.Kmax
         K = self.wavenumbers[None, :]
         X = np.arange(N)[:, None] + 1/2
         dX = N / np.pi
@@ -717,41 +716,35 @@ class FastSineTransform(SineTransform):
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
         # Standard scaling factors for unit-amplitude normalization from DST-II
-        self.forward_rescale_zero = 0
-        self.forward_rescale_pos = 1 / self.N
-        self.backward_rescale_zero = 0
-        self.backward_rescale_pos = 1 / 2
+        self.forward_rescale = 1 / self.N
+        self.backward_rescale = 1 / 2
 
     def resize_rescale_forward(self, data_in, data_out, axis, Kmax):
         """Resize by padding/trunction and rescale to unit amplitude."""
-
-        # there is no zero frequency in the DST...
         zerofreq = axslice(axis, 0, 1)
-        Nyfreq = axslice(axis,Kmax,Kmax+1)
-        data_out[zerofreq] *= self.forward_rescale_zero
-        #data_out[Nyfreq] *= 0
+        data_out[zerofreq] = 0
         if Kmax > 0:
-            in_posfreq = axslice(axis, 0, Kmax)
-            out_posfreq = axslice(axis, 1, Kmax+1)
-            np.multiply(data_in[in_posfreq], self.forward_rescale_pos, data_out[out_posfreq])
-            if self.KM > Kmax:
-                badfreq = axslice(axis, Kmax+1, None)
-                data_out[badfreq] = 0
+            # Shift to account for zero frequency in output
+            posfreq_in = axslice(axis, 0, Kmax)
+            posfreq_out = axslice(axis, 1, Kmax+1)
+            np.multiply(data_in[posfreq_in], self.forward_rescale, data_out[posfreq_out])
+        if self.KM > Kmax:
+            badfreq = axslice(axis, Kmax+1, None)
+            data_out[badfreq] = 0
 
     def resize_rescale_backward(self, data_in, data_out, axis, Kmax):
         """Resize by padding/trunction and rescale to unit amplitude."""
-        # zerofreq = axslice(axis, 0, 1)
-        # np.multiply(data_in[zerofreq], self.backward_rescale_zero, data_out[zerofreq])
-        in_posfreq = axslice(axis, 1, Kmax+1)
-        out_posfreq = axslice(axis, 0, Kmax)
-        Nyfreq = axslice(axis,Kmax,Kmax+1)
-        data_out[Nyfreq] = 0
-        if Kmax > 0:
-            np.multiply(data_in[in_posfreq], self.backward_rescale_pos, data_out[out_posfreq])
-
-            if self.KN > Kmax:
-                badfreq = axslice(axis, Kmax+1, None)
-                data_out[badfreq] = 0
+        if Kmax == 0:
+            zerofreq = axslice(axis, 0, 1)
+            data_out[zerofreq] = 0
+        else:
+            # Shift to account for zero frequency in input
+            posfreq_in = axslice(axis, 1, Kmax+1)
+            posfreq_out = axslice(axis, 0, Kmax)
+            np.multiply(data_in[posfreq_in], self.backward_rescale, data_out[posfreq_out])
+        if self.KN >= Kmax:
+            badfreq = axslice(axis, Kmax, None)
+            data_out[badfreq] = 0
 
 
 @register_transform(basis.ParityBase, 'scipy-sin')
@@ -761,6 +754,7 @@ class ScipyDST(FastSineTransform):
     def forward(self, gdata, cdata, axis):
         """Apply forward transform along specified axis."""
         # Call DST
+        # Avoid overwrite_x to prevent overwriting problems
         temp = scipy.fft.dst(gdata, type=2, axis=axis) # Creates temporary
         # Resize and rescale for unit-ampltidue normalization
         self.resize_rescale_forward(temp, cdata, axis, self.Kmax)
@@ -772,7 +766,7 @@ class ScipyDST(FastSineTransform):
         temp = np.empty_like(gdata) # Creates temporary
         self.resize_rescale_backward(cdata, temp, axis, self.Kmax)
         # Call IDST
-        temp = scipy.fft.dst(temp, type=3, axis=axis, overwrite_x=True) # Creates temporary
+        temp = scipy.fft.dst(temp, type=3, axis=axis, overwrite_x=True)
         np.copyto(gdata, temp)
 
 
@@ -819,21 +813,24 @@ class CosineTransform(SeparableTransform):
 
     Notes
     -----
-    Let KN = (N - 1) be the maximum (Nyquist) mode on the grid.
+    Let KN = (N - 1) be the maximum fully resolved (non-Nyquist) mode on the grid.
     Let KM = (M - 1) be the maximum retained mode in coeff space.
     Then K = min(KN, KM) is the maximum wavenumber used in the transforms.
     A unit-amplitude normalization is used.
 
+    Grid:
+        x(n) = \pi (1/2 + n) / N,    n = 0 .. (N-1)
+
     Forward transform:
         if k == 0:
-            a(k) = (1/N) \sum_{x=0}^{N-1} f(x)
+            a(k) = (1/N) \sum_{n=0}^{N-1} f(n)
         elif k <= K:
-            a(k) =  (2/N) \sum_{x=0}^{N-1} f(x) \cos(\pi k x / N)
+            a(k) = (2/N) \sum_{n=0}^{N-1} f(n) \cos(k x(n))
         else:
             a(k) = 0
 
     Backward transform:
-        f(x) = \sum_{k=0}^{K} a(k) \cos(\pi k x / N)
+        f(n) = \sum_{k=0}^{K} a(k) \cos(k x(n))
 
     Coefficient ordering:
         The cosine coefficients are ordered simply as
@@ -850,7 +847,7 @@ class CosineTransform(SeparableTransform):
     @property
     def wavenumbers(self):
         """One-dimensional global wavenumber array."""
-        return np.arange(self.KM + 1)
+        return np.arange(self.M)
 
 
 @register_transform(basis.ParityBase, 'matrix-cos')
@@ -861,8 +858,6 @@ class CosineMMT(CosineTransform, SeparableMatrixTransform):
     def forward_matrix(self):
         """Build forward transform matrix."""
         N = self.N
-        M = self.M
-        Kmax = self.Kmax
         K = self.wavenumbers[:, None]
         X = np.arange(N)[None, :] + 1/2
         dX = N / np.pi
@@ -877,8 +872,6 @@ class CosineMMT(CosineTransform, SeparableMatrixTransform):
     def backward_matrix(self):
         """Build backward transform matrix."""
         N = self.N
-        M = self.M
-        Kmax = self.Kmax
         K = self.wavenumbers[None, :]
         X = np.arange(N)[:, None] + 1/2
         dX = N / np.pi
@@ -907,9 +900,9 @@ class FastCosineTransform(CosineTransform):
         if Kmax > 0:
             posfreq = axslice(axis, 1, Kmax+1)
             np.multiply(data_in[posfreq], self.forward_rescale_pos, data_out[posfreq])
-            if self.KM > Kmax:
-                badfreq = axslice(axis, Kmax+1, None)
-                data_out[badfreq] = 0
+        if self.KM > Kmax:
+            badfreq = axslice(axis, Kmax+1, None)
+            data_out[badfreq] = 0
 
     def resize_rescale_backward(self, data_in, data_out, axis, Kmax):
         """Resize by padding/trunction and rescale to unit amplitude."""
@@ -918,9 +911,9 @@ class FastCosineTransform(CosineTransform):
         if Kmax > 0:
             posfreq = axslice(axis, 1, Kmax+1)
             np.multiply(data_in[posfreq], self.backward_rescale_pos, data_out[posfreq])
-            if self.KN > Kmax:
-                badfreq = axslice(axis, Kmax+1, None)
-                data_out[badfreq] = 0
+        if self.KN > Kmax:
+            badfreq = axslice(axis, Kmax+1, None)
+            data_out[badfreq] = 0
 
 
 @register_transform(basis.ParityBase, 'scipy-cos')
@@ -930,8 +923,9 @@ class ScipyDCT(FastCosineTransform):
     def forward(self, gdata, cdata, axis):
         """Apply forward transform along specified axis."""
         # Call DCT
+        # Avoid overwrite_x to prevent overwriting problems
         temp = scipy.fft.dct(gdata, type=2, axis=axis) # Creates temporary
-        # Resize and rescale for unit-ampltidue normalization
+        # Resize and rescale for unit-amplitude normalization
         self.resize_rescale_forward(temp, cdata, axis, self.Kmax)
 
     def backward(self, cdata, gdata, axis):
@@ -941,7 +935,7 @@ class ScipyDCT(FastCosineTransform):
         temp = np.empty_like(gdata) # Creates temporary
         self.resize_rescale_backward(cdata, temp, axis, self.Kmax)
         # Call IDCT
-        temp = scipy.fft.dct(temp, type=3, axis=axis, overwrite_x=True) # Creates temporary
+        temp = scipy.fft.dct(temp, type=3, axis=axis, overwrite_x=True)
         np.copyto(gdata, temp)
 
 

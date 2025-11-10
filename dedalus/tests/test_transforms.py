@@ -57,6 +57,50 @@ def test_real_fourier_libraries_forward(N, dealias, dtype, library):
     assert np.allclose(u_mat['c'], u_lib['c'])
 
 
+@pytest.mark.parametrize('N', [16])
+@pytest.mark.parametrize('parity', [1, -1])
+@pytest.mark.parametrize('dealias', [0.5, 1, 1.5])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('library', ['scipy', 'fftw'])
+def test_parity_libraries_backward(N, parity, dealias, dtype, library):
+    """Tests that fast real Fourier transforms match matrix transforms."""
+    c = coords.Coordinate('x')
+    d = distributor.Distributor([c])
+    # Matrix
+    b_mat = basis.Parity(c, size=N, bounds=(0, 2*np.pi), parity=parity, dealias=dealias, library='matrix')
+    u_mat = field.Field(dist=d, bases=(b_mat,), dtype=dtype)
+    u_mat.preset_scales(dealias)
+    u_mat['c'] = np.random.randn(N)
+    # Library
+    b_lib = basis.Parity(c, size=N, bounds=(0, 2*np.pi), parity=parity, dealias=dealias, library=library)
+    u_lib = field.Field(dist=d, bases=(b_lib,), dtype=dtype)
+    u_lib.preset_scales(dealias)
+    u_lib['c'] = u_mat['c']
+    assert np.allclose(u_mat['g'], u_lib['g'])
+
+
+@pytest.mark.parametrize('N', [16])
+@pytest.mark.parametrize('parity', [1, -1])
+@pytest.mark.parametrize('dealias', [0.5, 1, 1.5])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+@pytest.mark.parametrize('library', ['scipy', 'fftw'])
+def test_parity_libraries_forward(N, parity, dealias, dtype, library):
+    """Tests that fast real Fourier transforms match matrix transforms."""
+    c = coords.Coordinate('x')
+    d = distributor.Distributor([c])
+    # Matrix
+    b_mat = basis.Parity(c, size=N, bounds=(0, 2*np.pi), parity=parity, dealias=dealias, library='matrix')
+    u_mat = field.Field(dist=d, bases=(b_mat,), dtype=dtype)
+    u_mat.preset_scales(dealias)
+    u_mat['g'] = np.random.randn(int(np.ceil(dealias * N)))
+    # Library
+    b_lib = basis.Parity(c, size=N, bounds=(0, 2*np.pi), parity=parity, dealias=dealias, library=library)
+    u_lib = field.Field(dist=d, bases=(b_lib,), dtype=dtype)
+    u_lib.preset_scales(dealias)
+    u_lib['g'] = u_mat['g']
+    assert np.allclose(u_mat['c'], u_lib['c'])
+
+
 @pytest.mark.parametrize('N', N_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 def test_CF_scalar_roundtrip(N, dealias):
