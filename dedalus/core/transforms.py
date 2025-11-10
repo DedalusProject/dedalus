@@ -676,7 +676,7 @@ class SineTransform(SeparableTransform):
         return np.arange(self.KM + 1)
 
 
-@register_transform(basis.Sine, 'matrix')
+@register_transform(basis.ParityBase, 'matrix-sin')
 class SineMMT(SineTransform, SeparableMatrixTransform):
     """Sine MMT."""
 
@@ -754,7 +754,7 @@ class FastSineTransform(SineTransform):
                 data_out[badfreq] = 0
 
 
-@register_transform(basis.Sine, 'scipy')
+@register_transform(basis.ParityBase, 'scipy-sin')
 class ScipyDST(FastSineTransform):
     """Fast sine transform using scipy.fft."""
 
@@ -776,7 +776,7 @@ class ScipyDST(FastSineTransform):
         np.copyto(gdata, temp)
 
 
-@register_transform(basis.Sine, 'fftw')
+@register_transform(basis.ParityBase, 'fftw-sin')
 class FFTWDST(FFTWBase, FastSineTransform):
     """Fast sine transform using FFTW."""
 
@@ -853,7 +853,7 @@ class CosineTransform(SeparableTransform):
         return np.arange(self.KM + 1)
 
 
-@register_transform(basis.Cosine, 'matrix')
+@register_transform(basis.ParityBase, 'matrix-cos')
 class CosineMMT(CosineTransform, SeparableMatrixTransform):
     """Cosine MMT."""
 
@@ -923,7 +923,7 @@ class FastCosineTransform(CosineTransform):
                 data_out[badfreq] = 0
 
 
-@register_transform(basis.Cosine, 'scipy')
+@register_transform(basis.ParityBase, 'scipy-cos')
 class ScipyDCT(FastCosineTransform):
     """Fast cosine transform using scipy.fft."""
 
@@ -945,7 +945,7 @@ class ScipyDCT(FastCosineTransform):
         np.copyto(gdata, temp)
 
 
-@register_transform(basis.Cosine, 'fftw')
+@register_transform(basis.ParityBase, 'fftw-cos')
 class FFTWDCT(FFTWBase, FastCosineTransform):
     """Fast cosine transform using FFTW."""
 

@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 # Parameters
 Lx, Lz = 4, 1
-Nx, Nz = 256, 64
+Nx, Nz = 8, 8
 Rayleigh = 2e6
 Prandtl = 1
 dealias = 3/2
@@ -45,8 +45,8 @@ logger.info(f"Running with {library} DCT/DST library")
 coords = d3.CartesianCoordinates('x', 'z')
 dist = d3.Distributor(coords, dtype=dtype)
 xbasis = d3.RealFourier(coords['x'], size=Nx, bounds=(0, Lx), dealias=dealias)
-zsbasis = d3.Sine(coords['z'], size=Nz, bounds=(0, Lz), dealias=dealias, library=library)
-zcbasis = d3.Cosine(coords['z'], size=Nz, bounds=(0, Lz), dealias=dealias, library=library)
+zsbasis = d3.OddParity(coords['z'], size=Nz, bounds=(0, Lz), dealias=dealias, library=library)
+zcbasis = d3.EvenParity(coords['z'], size=Nz, bounds=(0, Lz), dealias=dealias, library=library)
 
 # Fields
 p = dist.Field(name='p', bases=(xbasis,zcbasis))

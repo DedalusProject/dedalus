@@ -990,6 +990,7 @@ class SpectralOperator1D(SpectralOperator):
         # Apply matrix
         if arg.data.size and out.data.size:
             data_axis = self.last_axis + len(arg.tensorsig)
+            # TODO: special case to vector multiply when group size is 1
             apply_matrix(self.subspace_matrix(layout), arg.data, data_axis, out=out.data)
         else:
             out.data.fill(0)
@@ -1196,7 +1197,7 @@ class Integrate(LinearOperator, metaclass=MultiClass):
         SpectralOperator.__init__(self, operand)
         # Require integrand is a scalar
         if coord in operand.tensorsig:
-            raise ValueError("Can only integrate scalars.")
+            raise ValueError("Can only integrate scalar fields.")
         # SpectralOperator requirements
         self.coord = coord
         self.input_basis = operand.domain.get_basis(coord)
@@ -1269,7 +1270,7 @@ class Average(LinearOperator, metaclass=MultiClass):
         SpectralOperator.__init__(self, operand)
         # Require integrand is a scalar
         if coord in operand.tensorsig:
-            raise ValueError("Can only average scalars.")
+            raise ValueError("Can only average scalar fields.")
         # SpectralOperator requirements
         self.coord = coord
         self.input_basis = operand.domain.get_basis(coord)
@@ -1620,10 +1621,6 @@ class Convert(SpectralOperator, metaclass=MultiClass):
     #     """Simplify expression, except subtrees containing specified variables."""
     #     # Simplify operand, skipping conversion
     #     return self.operand.simplify(*vars)
-
-    def subspace_matrix(self, layout):
-        """Build matrix operating on global subspace data."""
-        return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis)
 
     def operate(self, out):
         """Perform operation."""
