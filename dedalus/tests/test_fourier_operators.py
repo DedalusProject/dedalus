@@ -21,6 +21,15 @@ def build_fourier(N, bounds, dealias, dtype):
     return c, d, b, x
 
 
+@CachedMethod
+def build_parity(N, bounds, dealias, parity, dtype):
+    c = d3.Coordinate('x')
+    d = d3.Distributor(c, dtype=dtype)
+    b = d3.Parity(c, size=N, bounds=bounds, dealias=dealias, parity=parity)
+    x = d.local_grid(b, scale=1)
+    return c, d, b, x
+
+
 @pytest.mark.parametrize('N', N_range)
 @pytest.mark.parametrize('bounds', bounds_range)
 @pytest.mark.parametrize('dealias', dealias_range)
@@ -40,14 +49,52 @@ def test_fourier_convert_constant(N, bounds, dealias, dtype, layout):
 @pytest.mark.parametrize('bounds', bounds_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('layout', ['g', 'c'])
+def test_parity_convert_constant(N, bounds, dealias, dtype, layout):
+    """Test conversion from constant to EvenParity basis."""
+    c, d, b, x = build_parity(N, bounds, dealias, 1, dtype)
+    f = d.Field()
+    f['g'] = 1
+    f.change_layout(layout)
+    g = d3.Convert(f, b).evaluate()
+    assert np.allclose(g['g'], f['g'])
+
+
+@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('bounds', bounds_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
 def test_fourier_differentiate(N, bounds, dealias, dtype):
     """Test differentiation in Fourier basis."""
     c, d, b, x = build_fourier(N, bounds, dealias, dtype)
     f = d.Field(bases=b)
-    k = 4 * np.pi / (bounds[1] - bounds[0])
+    L = bounds[1] - bounds[0]
+    k = 4 * np.pi / L
     f['g'] = 1 + np.sin(k*x+0.1)
     g = d3.Differentiate(f, c).evaluate()
     assert np.allclose(g['g'], k*np.cos(k*x+0.1))
+
+
+@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('bounds', bounds_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('parity', [1, -1])
+def test_parity_differentiate(N, bounds, dealias, dtype, parity):
+    """Test differentiation in Parity bases."""
+    c, d, b, x = build_parity(N, bounds, dealias, parity, dtype)
+    f = d.Field(bases=b)
+    x0 = bounds[0]
+    L = bounds[1] - bounds[0]
+    k = 3 * np.pi / L
+    if parity == 1:
+        f['g'] = 1 + np.cos(k*(x-x0))
+        g = d3.Differentiate(f, c).evaluate()
+        assert np.allclose(g['g'], -k*np.sin(k*(x-x0)))
+    elif parity == -1:
+        f['g'] = np.sin(k*(x-x0))
+        g = d3.Differentiate(f, c).evaluate()
+        assert np.allclose(g['g'], k*np.cos(k*(x-x0)))
 
 
 @pytest.mark.parametrize('N', N_range)
@@ -58,12 +105,38 @@ def test_fourier_interpolate(N, bounds, dealias, dtype):
     """Test interpolation in Fourier basis."""
     c, d, b, x = build_fourier(N, bounds, dealias, dtype)
     f = d.Field(bases=b)
-    k = 4 * np.pi / (bounds[1] - bounds[0])
-    f['g'] = 1 + np.sin(k*x+0.1)
+    L = bounds[1] - bounds[0]
+    k = 4 * np.pi / L
+    f0 = lambda x: 1 + np.sin(k*x+0.1)
+    f['g'] = f0(x)
+    results = []
+    for p in [bounds[0], bounds[1], bounds[0] + L*np.random.rand()]:
+        g = d3.Interpolate(f, c, p).evaluate()
+        results.append(np.allclose(g['g'], f0(p)))
+    assert all(results)
+
+
+@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('bounds', bounds_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('parity', [1, -1])
+def test_parity_interpolate(N, bounds, dealias, dtype, parity):
+    """Test interpolation in Parity bases."""
+    c, d, b, x = build_parity(N, bounds, dealias, parity, dtype)
+    f = d.Field(bases=b)
+    x0 = bounds[0]
+    L = bounds[1] - bounds[0]
+    k = 3 * np.pi / L
+    if parity == 1:
+        f0 = lambda x: 1 + np.cos(k*(x-x0))
+    elif parity == -1:
+        f0 = lambda x: np.sin(k*(x-x0))
+    f['g'] = f0(x)
     results = []
     for p in [bounds[0], bounds[1], bounds[0] + (bounds[1] - bounds[0]) * np.random.rand()]:
         g = d3.Interpolate(f, c, p).evaluate()
-        results.append(np.allclose(g['g'], 1 + np.sin(k*p+0.1)))
+        results.append(np.allclose(g['g'], f0(p)))
     assert all(results)
 
 
@@ -75,10 +148,33 @@ def test_fourier_integrate(N, bounds, dealias, dtype):
     """Test integration in Fourier basis."""
     c, d, b, x = build_fourier(N, bounds, dealias, dtype)
     f = d.Field(bases=b)
-    k = 4 * np.pi / (bounds[1] - bounds[0])
+    L = bounds[1] - bounds[0]
+    k = 4 * np.pi / L
     f['g'] = 1 + np.sin(k*x+0.1)
     g = d3.Integrate(f, c).evaluate()
-    assert np.allclose(g['g'], bounds[1] - bounds[0])
+    assert np.allclose(g['g'], L)
+
+
+@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('bounds', bounds_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('parity', [1, -1])
+def test_parity_integrate(N, bounds, dealias, dtype, parity):
+    """Test integration in Parity bases."""
+    c, d, b, x = build_parity(N, bounds, dealias, parity, dtype)
+    f = d.Field(bases=b)
+    x0 = bounds[0]
+    L = bounds[1] - bounds[0]
+    k = 3 * np.pi / L
+    if parity == 1:
+        f['g'] = 1 + np.cos(k*(x-x0))
+        g = d3.Integrate(f, c).evaluate()
+        assert np.allclose(g['g'], L)
+    elif parity == -1:
+        f['g'] = np.sin(k*(x-x0))
+        g = d3.Integrate(f, c).evaluate()
+        assert np.allclose(g['g'], L*2/3/np.pi)
 
 
 @pytest.mark.parametrize('N', N_range)
@@ -89,8 +185,30 @@ def test_fourier_average(N, bounds, dealias, dtype):
     """Test averaging in Fourier basis."""
     c, d, b, x = build_fourier(N, bounds, dealias, dtype)
     f = d.Field(bases=b)
-    k = 4 * np.pi / (bounds[1] - bounds[0])
+    L = bounds[1] - bounds[0]
+    k = 4 * np.pi / L
     f['g'] = 1 + np.sin(k*x+0.1)
     g = d3.Average(f, c).evaluate()
     assert np.allclose(g['g'], 1)
 
+
+@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('bounds', bounds_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('parity', [1, -1])
+def test_parity_average(N, bounds, dealias, dtype, parity):
+    """Test averaging in Parity bases."""
+    c, d, b, x = build_parity(N, bounds, dealias, parity, dtype)
+    f = d.Field(bases=b)
+    x0 = bounds[0]
+    L = bounds[1] - bounds[0]
+    k = 3 * np.pi / L
+    if parity == 1:
+        f['g'] = 1 + np.cos(k*(x-x0))
+        g = d3.Average(f, c).evaluate()
+        assert np.allclose(g['g'], 1)
+    elif parity == -1:
+        f['g'] = np.sin(k*(x-x0))
+        g = d3.Average(f, c).evaluate()
+        assert np.allclose(g['g'], 2/3/np.pi)
