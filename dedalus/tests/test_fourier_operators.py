@@ -64,15 +64,21 @@ def test_parity_convert_constant(N, bounds, dealias, dtype, layout):
 @pytest.mark.parametrize('bounds', bounds_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('dtype', dtype_range)
-def test_fourier_differentiate(N, bounds, dealias, dtype):
+@pytest.mark.parametrize('order', [1, 2, 3])
+def test_fourier_differentiate(N, bounds, dealias, dtype, order):
     """Test differentiation in Fourier basis."""
     c, d, b, x = build_fourier(N, bounds, dealias, dtype)
     f = d.Field(bases=b)
     L = bounds[1] - bounds[0]
     k = 4 * np.pi / L
     f['g'] = 1 + np.sin(k*x+0.1)
-    g = d3.Differentiate(f, c).evaluate()
-    assert np.allclose(g['g'], k*np.cos(k*x+0.1))
+    g = d3.Differentiate(f, c, order=order).evaluate()
+    if order == 1:
+        assert np.allclose(g['g'], k*np.cos(k*x+0.1))
+    elif order == 2:
+        assert np.allclose(g['g'], -k**2*np.sin(k*x+0.1))
+    elif order == 3:
+        assert np.allclose(g['g'], -k**3*np.cos(k*x+0.1))
 
 
 @pytest.mark.parametrize('N', N_range)
@@ -80,7 +86,8 @@ def test_fourier_differentiate(N, bounds, dealias, dtype):
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('dtype', dtype_range)
 @pytest.mark.parametrize('parity', [1, -1])
-def test_parity_differentiate(N, bounds, dealias, dtype, parity):
+@pytest.mark.parametrize('order', [1, 2, 3])
+def test_parity_differentiate(N, bounds, dealias, dtype, parity, order):
     """Test differentiation in Parity bases."""
     c, d, b, x = build_parity(N, bounds, dealias, parity, dtype)
     f = d.Field(bases=b)
@@ -89,12 +96,22 @@ def test_parity_differentiate(N, bounds, dealias, dtype, parity):
     k = 3 * np.pi / L
     if parity == 1:
         f['g'] = 1 + np.cos(k*(x-x0))
-        g = d3.Differentiate(f, c).evaluate()
-        assert np.allclose(g['g'], -k*np.sin(k*(x-x0)))
+        g = d3.Differentiate(f, c, order=order).evaluate()
+        if order == 1:
+            assert np.allclose(g['g'], -k*np.sin(k*(x-x0)))
+        elif order == 2:
+            assert np.allclose(g['g'], -k**2*np.cos(k*(x-x0)))
+        elif order == 3:
+            assert np.allclose(g['g'], k**3*np.sin(k*(x-x0)))
     elif parity == -1:
         f['g'] = np.sin(k*(x-x0))
-        g = d3.Differentiate(f, c).evaluate()
-        assert np.allclose(g['g'], k*np.cos(k*(x-x0)))
+        g = d3.Differentiate(f, c, order=order).evaluate()
+        if order == 1:
+            assert np.allclose(g['g'], k*np.cos(k*(x-x0)))
+        elif order == 2:
+            assert np.allclose(g['g'], -k**2*np.sin(k*(x-x0)))
+        elif order == 3:
+            assert np.allclose(g['g'], -k**3*np.cos(k*(x-x0)))
 
 
 @pytest.mark.parametrize('N', N_range)

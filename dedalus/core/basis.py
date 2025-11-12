@@ -1084,7 +1084,8 @@ class HilbertTransformComplexFourier(operators.HilbertTransform, operators.Spect
         # Rescale group (native wavenumber) to get physical wavenumber
         k = group / input_basis.COV.stretch
         # Hx exp(1j*k*x) = -1j * sgn(k) * exp(1j*k*x)
-        return np.array([[-1j*np.sign(k)]])
+        S = -1j * np.sign(k)
+        return np.array([[S]])
 
 
 class InterpolateComplexFourier(operators.Interpolate, operators.SpectralOperator1D):
@@ -1315,8 +1316,6 @@ class HilbertTransformRealFourier(operators.HilbertTransform, operators.Spectral
 
     @staticmethod
     def _group_matrix(group, input_basis, output_basis):
-        # Rescale group (native wavenumber) to get physical wavenumber
-        k = group / input_basis.COV.stretch
         # Hx  cos(n*x) = sin(n*x)
         # Hx -sin(n*x) = cos(n*x)
         return np.array([[ 0, 1],
@@ -1507,6 +1506,14 @@ def Parity(*args, parity=None, **kw):
 class EvenParity(ParityBase, metaclass=CachedClass):
     """Even parity basis (cosine series for scalars)."""
 
+    def derivative_basis(self, order=1):
+        if order % 2 == 0:
+            return self
+        elif order % 2 == 1:
+            return OddParity(self.coord, self.size, self.bounds, self.dealias, self.library)
+        else:
+            raise ValueError(f"Invalid derivative order: {order}")
+
     def valid_elements(self, tensorsig, grid_space, elements):
         vshape = tuple(cs.dim for cs in tensorsig) + elements[0].shape
         valid = np.ones(shape=vshape, dtype=bool)
@@ -1554,6 +1561,14 @@ class EvenParity(ParityBase, metaclass=CachedClass):
 
 class OddParity(ParityBase, metaclass=CachedClass):
     """Odd parity basis (sine series for scalars)."""
+
+    def derivative_basis(self, order=1):
+        if order % 2 == 0:
+            return self
+        elif order % 2 == 1:
+            return EvenParity(self.coord, self.size, self.bounds, self.dealias, self.library)
+        else:
+            raise ValueError(f"Invalid derivative order: {order}")
 
     def valid_elements(self, tensorsig, grid_space, elements):
         vshape = tuple(cs.dim for cs in tensorsig) + elements[0].shape
@@ -1733,25 +1748,26 @@ class DifferentiateParity(operators.Differentiate, SpectralOperatorParity):
     subaxis_coupling = [False]
 
     @staticmethod
-    def _output_basis(input_basis):
-        # Swap parity
-        if isinstance(input_basis, EvenParity):
-            return OddParity(input_basis.coord, input_basis.size, input_basis.bounds, input_basis.dealias, input_basis.library)
-        elif isinstance(input_basis, OddParity):
-            return EvenParity(input_basis.coord, input_basis.size, input_basis.bounds, input_basis.dealias, input_basis.library)
-        else:
-            raise ValueError(f"This should never happen: input_basis = {input_basis}")
+    def _output_basis(input_basis, order):
+        return input_basis.derivative_basis(order)
+
+    def subspace_matrix(self, layout, parity):
+        """Build matrix operating on local subspace data."""
+        # Caching layer to allow insertion of other arguments
+        return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis, self.order, parity)
 
     @staticmethod
-    def _group_matrix(group, input_basis, output_basis, parity):
+    def _group_matrix(group, input_basis, output_basis, order, parity):
         # Rescale group (native wavenumber) to get physical wavenumber
         k = group / input_basis.COV.stretch
         if parity == 1:
             # dx cos(k*x) = -k * sin(k*x)
-            return np.array([[-k]])
+            S = k**order * (-1)**((order+1)//2)
+            return np.array([[S]])
         elif parity == -1:
             # dx sin(k*x) = k * cos(k*x)
-            return np.array([[k]])
+            S = k**order * (-1)**(order//2)
+            return np.array([[S]])
         else:
             raise ValueError(f"This should never happen: parity = {parity}")
 
