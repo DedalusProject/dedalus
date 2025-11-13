@@ -118,6 +118,82 @@ def test_parity_differentiate(N, bounds, dealias, dtype, parity, order):
 @pytest.mark.parametrize('bounds', bounds_range)
 @pytest.mark.parametrize('dealias', dealias_range)
 @pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('order', [1, 1.5, 2])
+def test_fourier_riesz(N, bounds, dealias, dtype, order):
+    """Test Riesz derivative in Fourier basis."""
+    c, d, b, x = build_fourier(N, bounds, dealias, dtype)
+    f = d.Field(bases=b)
+    L = bounds[1] - bounds[0]
+    k = 4 * np.pi / L
+    f['g'] = 1 + np.sin(k*x+0.1)
+    g = d3.RieszDerivative(f, c, order=order).evaluate()
+    assert np.allclose(g['g'], -abs(k)**order*np.sin(k*x+0.1))
+
+
+@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('bounds', bounds_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('parity', [1, -1])
+@pytest.mark.parametrize('order', [1, 1.5, 2])
+def test_parity_riesz(N, bounds, dealias, dtype, parity, order):
+    """Test Riesz derivative in Fourier basis."""
+    c, d, b, x = build_parity(N, bounds, dealias, parity, dtype)
+    f = d.Field(bases=b)
+    x0 = bounds[0]
+    L = bounds[1] - bounds[0]
+    k = 4 * np.pi / L
+    if parity == 1:
+        f['g'] = 1 + np.cos(k*(x-x0))
+        g = d3.RieszDerivative(f, c, order=order).evaluate()
+        assert np.allclose(g['g'], -abs(k)**order*np.cos(k*(x-x0)))
+    elif parity == -1:
+        f['g'] = np.sin(k*(x-x0))
+        g = d3.RieszDerivative(f, c, order=order).evaluate()
+        assert np.allclose(g['g'], -abs(k)**order*np.sin(k*(x-x0)))
+
+
+@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('bounds', bounds_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+def test_fourier_hilbert(N, bounds, dealias, dtype):
+    """Test Hilbert transform in Fourier basis."""
+    c, d, b, x = build_fourier(N, bounds, dealias, dtype)
+    f = d.Field(bases=b)
+    L = bounds[1] - bounds[0]
+    k = 4 * np.pi / L
+    f['g'] = 1 + np.sin(k*x+0.1)
+    g = d3.HilbertTransform(f, c).evaluate()
+    assert np.allclose(g['g'], -np.cos(k*x+0.1))
+
+
+@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('bounds', bounds_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
+@pytest.mark.parametrize('parity', [1, -1])
+def test_parity_hilbert(N, bounds, dealias, dtype, parity):
+    """Test Hilbert transform in Parity bases."""
+    c, d, b, x = build_parity(N, bounds, dealias, parity, dtype)
+    f = d.Field(bases=b)
+    x0 = bounds[0]
+    L = bounds[1] - bounds[0]
+    k = 4 * np.pi / L
+    if parity == 1:
+        f['g'] = 1 + np.cos(k*(x-x0))
+        g = d3.HilbertTransform(f, c).evaluate()
+        assert np.allclose(g['g'], np.sin(k*(x-x0)))
+    elif parity == -1:
+        f['g'] = np.sin(k*(x-x0))
+        g = d3.HilbertTransform(f, c).evaluate()
+        assert np.allclose(g['g'], -np.cos(k*(x-x0)))
+
+
+@pytest.mark.parametrize('N', N_range)
+@pytest.mark.parametrize('bounds', bounds_range)
+@pytest.mark.parametrize('dealias', dealias_range)
+@pytest.mark.parametrize('dtype', dtype_range)
 def test_fourier_interpolate(N, bounds, dealias, dtype):
     """Test interpolation in Fourier basis."""
     c, d, b, x = build_fourier(N, bounds, dealias, dtype)

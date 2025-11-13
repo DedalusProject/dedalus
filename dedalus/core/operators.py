@@ -39,6 +39,8 @@ __all__ = ['GeneralFunction',
            'Integrate',
            'Average',
            'Differentiate',
+           'RieszDerivative',
+           'HilbertTransform',
            'Convert',
            'TransposeComponents',
            'RadialComponent',
@@ -1513,7 +1515,7 @@ class RieszDerivative(SpectralOperator1D, metaclass=MultiClass):
 
     name = "Riesz"
 
-    def __init__(self, operand, coord, order, out=None):
+    def __init__(self, operand, coord, order=1, out=None):
         super().__init__(operand, out=out)
         self.order = order
         # SpectralOperator requirements
@@ -1531,7 +1533,7 @@ class RieszDerivative(SpectralOperator1D, metaclass=MultiClass):
         self.dtype = operand.dtype
 
     @classmethod
-    def _check_args(cls, operand, coord, out=None):
+    def _check_args(cls, operand, coord, order=1, out=None):
         # Dispatch by operand basis
         if isinstance(operand, Operand):
             basis = operand.domain.get_basis(coord)
