@@ -1342,6 +1342,7 @@ class Average(LinearOperator, metaclass=MultiClass):
 #     return arg
 
 
+@alias("diff", "D")
 class Differentiate(SpectralOperator1D, metaclass=MultiClass):
     """
     Differentiation along one dimension.
@@ -1426,21 +1427,7 @@ class DifferentiateConstant(Differentiate):
         return 0
 
 
-# @prefix('H')
-# @parseable('hilbert_transform', 'hilbert', 'H')
-# def hilbert_transform(arg, *spaces, **space_kw):
-#     # Parse space/order keywords into space list
-#     for space, order in space_kw.items():
-#         spaces += (space,) * order
-#     # Identify domain
-#     domain = unify_attributes((arg,)+spaces, 'domain', require=False)
-#     # Apply iteratively
-#     for space in spaces:
-#         space = domain.get_space_object(space)
-#         arg = HilbertTransform(arg, space)
-#     return arg
-
-
+@alias("hilbert", "H")
 class HilbertTransform(SpectralOperator1D, metaclass=MultiClass):
     """
     Hilbert transform along one dimension.
@@ -1508,6 +1495,7 @@ class HilbertTransformConstant(HilbertTransform):
         return 0
 
 
+@alias("riesz", "R")
 class RieszDerivative(SpectralOperator1D, metaclass=MultiClass):
     """
     Riesz derivative along one dimension.

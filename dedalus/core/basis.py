@@ -1270,10 +1270,9 @@ class DifferentiateRealFourier(operators.Differentiate, operators.SpectralOperat
     def _group_matrix(group, input_basis, output_basis, order):
         # Rescale group (native wavenumber) to get physical wavenumber
         k = group / input_basis.COV.stretch
-        # dx**n exp(1j*k*x) = (1j*k)**n * exp(1j*k*x) = S * exp(1j*k*x)
-        # dx**n [cos(k*x) + 1j*sin(k*x)] = S * [cos(k*x) + 1j*sin(k*x)]
-        # dx**n  cos(k*x) = R(S) *  cos(k*x) + I(S) * -sin(k*x)
-        # dx**n -sin(k*x) = R(S) * -sin(k*x) - I(S) *  cos(k*x)
+        # dx^n exp(ikx) = (ik)^n exp(ikx) = S exp(ikx)
+        # dx^n cos(kx) = R(S) cos(kx) - I(S) sin(kx)
+        # dx^n sin(kx) = R(S) sin(kx) + I(S) cos(kx)
         S = (1j * k) ** order
         return np.array([[S.real, -S.imag],
                          [S.imag,  S.real]])
@@ -1294,10 +1293,9 @@ class RieszDerivativeRealFourier(operators.RieszDerivative, operators.SpectralOp
     def _group_matrix(group, input_basis, output_basis, order):
         # Rescale group (native wavenumber) to get physical wavenumber
         k = group / input_basis.COV.stretch
-        # R_a exp(1j*k*x) = - |k|**n * exp(1j*k*x) = S * exp(1j*k*x)
-        # R_a [cos(k*x) + 1j*sin(k*x)] = S * [cos(k*x) + 1j*sin(k*x)]
-        # R_a  cos(k*x) = S *  cos(k*x)
-        # R_a -sin(k*x) = S * -sin(k*x)
+        # R_a exp(ikx) = - |k|^n exp(ikx) = S exp(ikx)
+        # R_a cos(kx) = S cos(kx)
+        # R_a sin(kx) = S sin(kx)
         S = - abs(k) ** order
         return np.array([[S, 0],
                          [0, S]])
@@ -1316,8 +1314,8 @@ class HilbertTransformRealFourier(operators.HilbertTransform, operators.Spectral
 
     @staticmethod
     def _group_matrix(group, input_basis, output_basis):
-        # Hx  cos(n*x) = sin(n*x)
-        # Hx -sin(n*x) = cos(n*x)
+        # Hx cos(kx) = sin(kx)
+        # Hx sin(kx) = -cos(kx)
         return np.array([[ 0, 1],
                          [-1, 0]])
 
@@ -1337,7 +1335,6 @@ class InterpolateRealFourier(operators.Interpolate, operators.SpectralOperator1D
     @staticmethod
     def _full_matrix(input_basis, output_basis, position):
         # Build native interpolation vector
-        # Interleaved cos(k*x), -sin(k*x)
         x = input_basis.COV.native_coord(position)
         k = input_basis.native_wavenumbers
         interp_vector = np.zeros(k.size)
@@ -1363,8 +1360,8 @@ class IntegrateRealFourier(operators.Integrate, operators.SpectralOperator1D):
     def _group_matrix(group, input_basis, output_basis):
         # Rescale group (native wavenumber) to get physical wavenumber
         k = group / input_basis.COV.stretch
-        # integ  cos(k*x) = L * δ(k, 0)
-        # integ -sin(k*x) = 0
+        # integ cos(kx) dx = L (k==0)
+        # integ sin(kx) dx = 0
         if k == 0:
             L = input_basis.COV.problem_length
             return np.array([[L, 0]])
@@ -1389,45 +1386,13 @@ class AverageRealFourier(operators.Average, operators.SpectralOperator1D):
     def _group_matrix(group, input_basis, output_basis):
         # Rescale group (native wavenumber) to get physical wavenumber
         k = group / input_basis.COV.stretch
-        # integ  cos(k*x) / L = δ(k, 0)
-        # integ -sin(k*x) / L = 0
+        # integ cos(kx) dx / L = (k==0)
+        # integ sin(kx) dx / L = 0
         if k == 0:
             return np.array([[1, 0]])
         else:
             # Constructor should only loop over group 0
             raise ValueError(f"This should never happen: group = {group}")
-
-
-# class HilbertTransformFourier(operators.HilbertTransform):
-#     """Fourier series Hilbert transform."""
-
-#     input_basis_type = Fourier
-#     bands = [-1, 1]
-#     separable = True
-
-#     @staticmethod
-#     def output_basis(space, input_basis):
-#         return space.Fourier
-
-#     @staticmethod
-#     def _build_subspace_entry(i, j, space, input_basis):
-#         # Hx(cos(n*x)) = sin(n*x)
-#         # Hx(sin(n*x)) = -cos(n*x)
-#         n = j // 2
-#         if n == 0:
-#             return 0
-#         elif (j % 2) == 0:
-#             # Hx(cos(n*x)) = sin(n*x)
-#             if i == (j + 1):
-#                 return 1
-#             else:
-#                 return 0
-#         else:
-#             # Hx(sin(n*x)) = -cos(n*x)
-#             if i == (j - 1):
-#                 return (-1)
-#             else:
-#                 return 0
 
 
 class ParityBase(FourierBase):
@@ -1761,13 +1726,80 @@ class DifferentiateParity(operators.Differentiate, SpectralOperatorParity):
         # Rescale group (native wavenumber) to get physical wavenumber
         k = group / input_basis.COV.stretch
         if parity == 1:
-            # dx cos(k*x) = -k * sin(k*x)
+            # dx^1 cos(kx) = -k^1 sin(kx)
+            # dx^2 cos(kx) = -k^2 cos(kx)
+            # dx^3 cos(kx) =  k^3 sin(kx)
+            # dx^4 cos(kx) =  k^4 cos(kx)
             S = k**order * (-1)**((order+1)//2)
             return np.array([[S]])
         elif parity == -1:
-            # dx sin(k*x) = k * cos(k*x)
+            # dx^1 sin(kx) =  k^1 cos(kx)
+            # dx^2 sin(kx) = -k^2 sin(kx)
+            # dx^3 sin(kx) = -k^3 cos(kx)
+            # dx^4 sin(kx) =  k^4 sin(kx)
             S = k**order * (-1)**(order//2)
             return np.array([[S]])
+        else:
+            raise ValueError(f"This should never happen: parity = {parity}")
+
+
+class RieszDerivativeParity(operators.RieszDerivative, SpectralOperatorParity):
+    """
+    Parity basis Riesz derivative.
+    Note: this is a single implementation because tensor fields have both even and odd components.
+    """
+
+    input_basis_type = ParityBase
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
+
+    @staticmethod
+    def _output_basis(input_basis, order):
+        return input_basis
+
+    def subspace_matrix(self, layout, parity):
+        """Build matrix operating on local subspace data."""
+        # Caching layer to allow insertion of other arguments
+        return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis, self.order, parity)
+
+    @staticmethod
+    def _group_matrix(group, input_basis, output_basis, order, parity):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / input_basis.COV.stretch
+        # R_a exp(ikx) = - |k|^n exp(ikx) = S exp(ikx)
+        S = - abs(k) ** order
+        if parity == 1:
+             # R_a cos(kx) = S cos(kx)
+            return np.array([[S]])
+        elif parity == -1:
+            # R_a sin(kx) = S sin(kx)
+            return np.array([[S]])
+        else:
+            raise ValueError(f"This should never happen: parity = {parity}")
+
+
+class HilbertTransformParity(operators.HilbertTransform, SpectralOperatorParity):
+    """
+    Parity basis Hilbert transform.
+    Note: this is a single implementation because tensor fields have both even and odd components.
+    """
+
+    input_basis_type = ParityBase
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
+
+    @staticmethod
+    def _output_basis(input_basis):
+        return input_basis.derivative_basis()
+
+    @staticmethod
+    def _group_matrix(group, input_basis, output_basis, parity):
+        if parity == 1:
+            # Hx cos(kx) = sin(kx)
+            return np.array([[1]])
+        elif parity == -1:
+            # Hx sin(kx) = -cos(kx)
+            return np.array([[-1]])
         else:
             raise ValueError(f"This should never happen: parity = {parity}")
 
@@ -1864,46 +1896,6 @@ class AverageOddParity(operators.Average, operators.SpectralOperator1D):
         ave_vector = integ_vector / np.pi
         # Return with shape (1, N)
         return ave_vector[None, :]
-
-
-# class HilbertTransformSine(operators.HilbertTransform):
-#     """Sine series Hilbert transform."""
-
-#     input_basis_type = Sine
-#     bands = [0]
-#     separable = True
-
-#     @staticmethod
-#     def output_basis(space, input_basis):
-#         return space.Cosine
-
-#     @staticmethod
-#     def _build_subspace_entry(i, j, space, input_basis):
-#         # Hx(sin(n*x)) = -cos(n*x)
-#         if i == j:
-#             return (-1)
-#         else:
-#             return 0
-
-
-# class HilbertTransformCosine(operators.HilbertTransform):
-#     """Cosine series Hilbert transform."""
-
-#     input_basis_type = Cosine
-#     bands = [0]
-#     separable = True
-
-#     @staticmethod
-#     def output_basis(space, input_basis):
-#         return space.Sine
-
-#     @staticmethod
-#     def _build_subspace_entry(i, j, space, input_basis):
-#         # Hx(cos(n*x)) = sin(n*x)
-#         if i == j:
-#             return 1
-#         else:
-#             return 0
 
 
 class MultidimensionalBasis(Basis):
