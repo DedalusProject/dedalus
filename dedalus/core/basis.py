@@ -1617,6 +1617,9 @@ class SpectralOperatorParity(operators.SpectralOperator1D):
         blocks = [parity_matrices[p] for p in P.ravel()]
         return sparse_block_diag(blocks)
 
+    def group_matrix(self, group, parity):
+        return self._group_matrix(group, self.input_basis, self.output_basis, parity)
+
     def subspace_matrix(self, layout, parity):
         """Build matrix operating on local subspace data."""
         # Caching layer to allow insertion of other arguments
@@ -1721,6 +1724,9 @@ class DifferentiateParity(operators.Differentiate, SpectralOperatorParity):
         # Caching layer to allow insertion of other arguments
         return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis, self.order, parity)
 
+    def group_matrix(self, group, parity):
+        return self._group_matrix(group, self.input_basis, self.output_basis, self.order, parity)
+
     @staticmethod
     def _group_matrix(group, input_basis, output_basis, order, parity):
         # Rescale group (native wavenumber) to get physical wavenumber
@@ -1761,6 +1767,9 @@ class RieszDerivativeParity(operators.RieszDerivative, SpectralOperatorParity):
         """Build matrix operating on local subspace data."""
         # Caching layer to allow insertion of other arguments
         return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis, self.order, parity)
+
+    def group_matrix(self, group, parity):
+        return self._group_matrix(group, self.input_basis, self.output_basis, self.order, parity)
 
     @staticmethod
     def _group_matrix(group, input_basis, output_basis, order, parity):
