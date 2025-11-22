@@ -2433,7 +2433,7 @@ class DiskBasis(PolarBasis, metaclass=CachedClass):
     @CachedAttribute
     def constant_mode_value(self):
         Qk = dedalus_sphere.zernike.polynomials(2, 1, self.alpha+self.k, 0, np.array([0]))
-        return Qk[0]
+        return Qk[0,0]
 
     def _new_k(self, k):
         # TODO: replace this in all operators
@@ -3257,9 +3257,9 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
             # ell_min of data is based off |m|, but ell_min of matrix takes into account |s| and |m|
             lmin_out = max(abs(spintotal_out) - abs(m), 0)
             lmin_arg = max(abs(spintotal_arg) - abs(m), 0 )
-            matrix_cos = sparse.csr_matrix((N, N))
+            matrix_cos = sparse.lil_matrix((N, N))
             matrix_cos[lmin_out:,lmin_arg:] = (prefactor @ clenshaw.matrix_clenshaw(coeffs_cos_filter, A, B, f0, cutoff=cutoff))[:N-lmin_out,:N-lmin_arg]
-            matrix_msin = sparse.csr_matrix((N, N))
+            matrix_msin = sparse.lil_matrix((N, N))
             matrix_msin[lmin_out:,lmin_arg:] = (prefactor @ clenshaw.matrix_clenshaw(coeffs_msin_filter, A, B, f0, cutoff=cutoff))[:N-lmin_out,:N-lmin_arg]
             matrix = sparse.bmat([[matrix_cos, -matrix_msin], [matrix_msin, matrix_cos]], format='csr')
             if m >= arg_basis.mmax//4:
@@ -4003,7 +4003,7 @@ class BallRadialBasis(RegularityBasis, metaclass=CachedClass):
     @CachedAttribute
     def constant_mode_value(self):
         Qk = dedalus_sphere.zernike.polynomials(3, 1, self.alpha+self.k, 0, np.array([0]))
-        return Qk[0]
+        return Qk[0,0]
 
     @CachedMethod
     def interpolation(self, ell, regtotal, position):

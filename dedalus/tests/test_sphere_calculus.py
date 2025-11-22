@@ -4,7 +4,7 @@ import pytest
 import numpy as np
 from dedalus.core import coords, distributor, basis, field, operators, arithmetic, problems, solvers
 from dedalus.tools.cache import CachedFunction
-from scipy.special import sph_harm
+from scipy.special import sph_harm_y
 
 Nphi_range = [32]
 Ntheta_range = [16]
@@ -157,9 +157,9 @@ def test_gradient_scalar_explicit(Nphi, Ntheta, dealias, dtype):
     f = d.Field(bases=b)
     f.preset_scales(dealias)
     if np.iscomplexobj(dtype()):
-        f['g'] = sph_harm(m, l, phi, theta)
+        f['g'] = sph_harm_y(m, l, theta, phi)
     else:
-        f['g'] = sph_harm(m, l, phi, theta).real
+        f['g'] = sph_harm_y(m, l, theta, phi).real
     # Evaluate gradient
     u = operators.Gradient(f).evaluate()
     ug_phi = 1j*np.exp(2j*phi)*np.sqrt(15/(2*np.pi))*np.sin(theta)/2
@@ -167,6 +167,7 @@ def test_gradient_scalar_explicit(Nphi, Ntheta, dealias, dtype):
     ug = np.array([ug_phi, ug_theta]) / radius
     if np.isrealobj(dtype()):
         ug = ug.real
+    print(u['g']-ug)
     assert np.allclose(u['g'], ug)
 
 
@@ -348,9 +349,9 @@ def test_laplacian_scalar_explicit(Nphi,  Ntheta, dealias, dtype):
     f = d.Field(bases=b)
     f.preset_scales(dealias)
     if np.iscomplexobj(dtype()):
-        f['g'] = sph_harm(m, l, phi, theta)
+        f['g'] = sph_harm_y(m, l, theta, phi)
     else:
-        f['g'] = sph_harm(m, l, phi, theta).real
+        f['g'] = sph_harm_y(m, l, theta, phi).real
     # Evaluate Laplacian
     u = operators.Laplacian(f).evaluate()
     assert np.allclose(u['g'], -f['g']*(l*(l+1))/radius**2)
@@ -367,9 +368,9 @@ def test_laplacian_scalar_implicit(Nphi,  Ntheta, dealias, dtype):
     f = d.Field(bases=b)
     f.preset_scales(dealias)
     if np.iscomplexobj(dtype()):
-        f['g'] = sph_harm(m, l, phi, theta)
+        f['g'] = sph_harm_y(m, l, theta, phi)
     else:
-        f['g'] = sph_harm(m, l, phi, theta).real
+        f['g'] = sph_harm_y(m, l, theta, phi).real
     # Poisson LBVP
     u = d.Field(bases=b)
     tau = d.Field()
@@ -397,8 +398,8 @@ def test_laplacian_scalar_implicit(Nphi,  Ntheta, dealias, dtype):
 #     l0 = 1
 #     m1 = 1
 #     l1 = 2
-#     f['g'][0] = sph_harm(m0,l0,phi,theta)
-#     f['g'][1] = sph_harm(m1,l1,phi,theta)
+#     f['g'][0] = sph_harm_y(m0,l0,theta,phi)
+#     f['g'][1] = sph_harm_y(m1,l1,theta,phi)
 #     lap = lambda A: operators.Laplacian(A,c)
 #     problem = problems.LBVP([u])
 #     problem.add_equation((lap(u),f))
