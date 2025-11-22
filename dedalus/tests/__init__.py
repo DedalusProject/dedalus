@@ -11,7 +11,9 @@ testpath = str(root)
 
 def base_cmd():
     workers = os.getenv("PYTEST_WORKERS", "auto")
-    return [f"--ignore={testpath}/test_spherical_ncc.py", f"--ignore={testpath}/test_cylinder_ncc.py", f"--workers={workers}"]
+    ignore_options = [f"--ignore={testpath}/test_spherical_ncc.py", f"--ignore={testpath}/test_cylinder_ncc.py"]
+    xdist_options = [f"-n={workers}", "--dist=worksteal"]
+    return ignore_options + xdist_options
 
 def test(report=False):
     """Run tests."""

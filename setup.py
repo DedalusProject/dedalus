@@ -191,7 +191,7 @@ install_requires = [
     "pytest",
     "pytest-benchmark",
     "pytest-cov",
-    "pytest-parallel",
+    "pytest-xdist",
     "scipy >= 1.4.0",
     "xarray"]
 
