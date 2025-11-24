@@ -39,6 +39,8 @@ __all__ = ['GeneralFunction',
            'Integrate',
            'Average',
            'Differentiate',
+           'RieszDerivative',
+           'HilbertTransform',
            'Convert',
            'TransposeComponents',
            'RadialComponent',
@@ -990,6 +992,7 @@ class SpectralOperator1D(SpectralOperator):
         # Apply matrix
         if arg.data.size and out.data.size:
             data_axis = self.last_axis + len(arg.tensorsig)
+            # TODO: special case to vector multiply when group size is 1
             apply_matrix(self.subspace_matrix(layout), arg.data, data_axis, out=out.data)
         else:
             out.data.fill(0)
@@ -1196,7 +1199,7 @@ class Integrate(LinearOperator, metaclass=MultiClass):
         SpectralOperator.__init__(self, operand)
         # Require integrand is a scalar
         if coord in operand.tensorsig:
-            raise ValueError("Can only integrate scalars.")
+            raise ValueError("Can only integrate scalar fields.")
         # SpectralOperator requirements
         self.coord = coord
         self.input_basis = operand.domain.get_basis(coord)
@@ -1269,7 +1272,7 @@ class Average(LinearOperator, metaclass=MultiClass):
         SpectralOperator.__init__(self, operand)
         # Require integrand is a scalar
         if coord in operand.tensorsig:
-            raise ValueError("Can only average scalars.")
+            raise ValueError("Can only average scalar fields.")
         # SpectralOperator requirements
         self.coord = coord
         self.input_basis = operand.domain.get_basis(coord)
@@ -1341,6 +1344,7 @@ class Average(LinearOperator, metaclass=MultiClass):
 #     return arg
 
 
+@alias("diff", "D")
 class Differentiate(SpectralOperator1D, metaclass=MultiClass):
     """
     Differentiation along one dimension.
@@ -1353,6 +1357,91 @@ class Differentiate(SpectralOperator1D, metaclass=MultiClass):
     """
 
     name = "Diff"
+
+    def __init__(self, operand, coord, order=1, out=None):
+        super().__init__(operand, out=out)
+        self.order = order
+        # SpectralOperator requirements
+        self.coord = coord
+        self.input_basis = operand.domain.get_basis(coord)
+        self.output_basis = self._output_basis(self.input_basis, self.order)
+        self.first_axis = self.dist.get_axis(coord)
+        self.last_axis = self.first_axis
+        self.axis = self.first_axis
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = operand.domain.substitute_basis(self.input_basis, self.output_basis)
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
+
+    @classmethod
+    def _check_args(cls, operand, coord, order=1, out=None):
+        # Dispatch by operand basis
+        if isinstance(operand, Operand):
+            basis = operand.domain.get_basis(coord)
+            if isinstance(basis, cls.input_basis_type):
+                return True
+        return False
+
+    def new_operand(self, operand, **kw):
+        return Differentiate(operand, self.coord, self.order, **kw)
+
+    def subspace_matrix(self, layout):
+        return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis, self.order)
+
+    def group_matrix(self, group):
+        return self._group_matrix(group, self.input_basis, self.output_basis, self.order)
+
+    @staticmethod
+    def _output_basis(input_basis, order):
+        # Subclasses must implement
+        raise NotImplementedError()
+
+    def __str__(self):
+        if self.order == 1:
+            return 'd{!s}({!s})'.format(self.coord.name, self.operand)
+        else:
+            return 'd{!s}({!s},{!s})'.format(self.coord.name, self.operand, self.order)
+
+    # def _expand_multiply(self, operand, vars):
+    #     """Expand over multiplication."""
+    #     args = operand.args
+    #     # Apply product rule to factors
+    #     partial_diff = lambda i: prod([self.new_operand(arg) if i==j else arg for j,arg in enumerate(args)])
+    #     return sum((partial_diff(i) for i in range(len(args))))
+
+
+class DifferentiateConstant(Differentiate):
+    """Constant differentiation."""
+
+    @classmethod
+    def _check_args(cls, operand, coord, order=1, out=None):
+        # Dispatch for numbers of constant bases
+        if isinstance(operand, Number):
+            return True
+        if isinstance(operand, Operand):
+            if operand.domain.get_basis(coord) is None:
+                return True
+        return False
+
+    def __new__(cls, operand, coord, order=1, out=None):
+        return 0
+
+
+@alias("hilbert", "H")
+class HilbertTransform(SpectralOperator1D, metaclass=MultiClass):
+    """
+    Hilbert transform along one dimension.
+
+    Parameters
+    ----------
+    operand : number or Operand object
+    space : Space object
+
+    """
+
+    name = "Hilbert"
 
     def __init__(self, operand, coord, out=None):
         super().__init__(operand, out=out)
@@ -1380,7 +1469,7 @@ class Differentiate(SpectralOperator1D, metaclass=MultiClass):
         return False
 
     def new_operand(self, operand, **kw):
-        return Differentiate(operand, self.coord, **kw)
+        return HilbertTransform(operand, self.coord, **kw)
 
     @staticmethod
     def _output_basis(input_basis):
@@ -1388,18 +1477,11 @@ class Differentiate(SpectralOperator1D, metaclass=MultiClass):
         raise NotImplementedError()
 
     def __str__(self):
-        return 'd{!s}({!s})'.format(self.coord.name, self.operand)
-
-    def _expand_multiply(self, operand, vars):
-        """Expand over multiplication."""
-        args = operand.args
-        # Apply product rule to factors
-        partial_diff = lambda i: prod([self.new_operand(arg) if i==j else arg for j,arg in enumerate(args)])
-        return sum((partial_diff(i) for i in range(len(args))))
+        return 'H{!s}({!s})'.format(self.coord.name, self.operand)
 
 
-class DifferentiateConstant(Differentiate):
-    """Constant differentiation."""
+class HilbertTransformConstant(HilbertTransform):
+    """Constant Hilbert transform."""
 
     @classmethod
     def _check_args(cls, operand, coord, out=None):
@@ -1415,60 +1497,64 @@ class DifferentiateConstant(Differentiate):
         return 0
 
 
-# @prefix('H')
-# @parseable('hilbert_transform', 'hilbert', 'H')
-# def hilbert_transform(arg, *spaces, **space_kw):
-#     # Parse space/order keywords into space list
-#     for space, order in space_kw.items():
-#         spaces += (space,) * order
-#     # Identify domain
-#     domain = unify_attributes((arg,)+spaces, 'domain', require=False)
-#     # Apply iteratively
-#     for space in spaces:
-#         space = domain.get_space_object(space)
-#         arg = HilbertTransform(arg, space)
-#     return arg
-
-
-class HilbertTransform(SpectralOperator1D, metaclass=MultiClass):
+@alias("riesz", "R")
+class RieszDerivative(SpectralOperator1D, metaclass=MultiClass):
     """
-    Hilbert transform along one dimension.
+    Riesz derivative along one dimension.
 
     Parameters
     ----------
     operand : number or Operand object
     space : Space object
 
+    Notes
+    -----
+    R_a exp(1j*k*x) = - |k|**a * exp(1j*k*x).
+
     """
 
+    name = "Riesz"
+
+    def __init__(self, operand, coord, order=1, out=None):
+        super().__init__(operand, out=out)
+        self.order = order
+        # SpectralOperator requirements
+        self.coord = coord
+        self.input_basis = operand.domain.get_basis(coord)
+        self.output_basis = self._output_basis(self.input_basis, order)
+        self.first_axis = self.dist.get_axis(coord)
+        self.last_axis = self.first_axis
+        self.axis = self.first_axis
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = operand.domain.substitute_basis(self.input_basis, self.output_basis)
+        self.tensorsig = operand.tensorsig
+        self.dtype = operand.dtype
+
     @classmethod
-    def _check_args(cls, operand, space, out=None):
+    def _check_args(cls, operand, coord, order=1, out=None):
         # Dispatch by operand basis
         if isinstance(operand, Operand):
-            if isinstance(operand.get_basis(space), cls.input_basis_type):
+            basis = operand.domain.get_basis(coord)
+            if isinstance(basis, cls.input_basis_type):
                 return True
         return False
 
-    @property
-    def base(self):
-        return HilbertTransform
+    def new_operand(self, operand, **kw):
+        return RieszDerivative(operand, self.coord, self.order, **kw)
 
+    def subspace_matrix(self, layout):
+        return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis, self.order)
 
-class HilbertTransformConstant(HilbertTransform):
-    """Constant Hilbert transform."""
+    def group_matrix(self, group):
+        return self._group_matrix(group, self.input_basis, self.output_basis, self.order)
 
-    @classmethod
-    def _check_args(cls, operand, space, out=None):
-        # Dispatch for numbers of constant bases
-        if isinstance(operand, Number):
-            return True
-        if isinstance(operand, Operand):
-            if operand.get_basis(space) is None:
-                return True
-        return False
-
-    def __new__(cls, operand, space, out=None):
-        return 0
+    def __str__(self):
+        if self.order == 1:
+            return 'R{!s}({!s})'.format(self.coord.name, self.operand)
+        else:
+            return 'R{!s}({!s},{!s})'.format(self.coord.name, self.operand, self.order)
 
 
 def convert(arg, bases):
@@ -1620,10 +1706,6 @@ class Convert(SpectralOperator, metaclass=MultiClass):
     #     """Simplify expression, except subtrees containing specified variables."""
     #     # Simplify operand, skipping conversion
     #     return self.operand.simplify(*vars)
-
-    def subspace_matrix(self, layout):
-        """Build matrix operating on global subspace data."""
-        return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis)
 
     def operate(self, out):
         """Perform operation."""
@@ -2143,7 +2225,7 @@ class SpinSkew(Skew):
             factors[self.index] = 1j * factors[self.index]
         else:
             azimuth_index = len(self.tensorsig) + self.azimuth_axis
-            id_m = sparse.identity(shape[self.azimuth_axis]//2, format='csr')
+            id_m = sparse.identity(shape[azimuth_index]//2, format='csr')
             mul_1j = np.array([[0, -1], [1, 0]])
             factors[azimuth_index] = sparse.kron(id_m, mul_1j)
         return reduce(sparse.kron, factors, 1).tocsr()
@@ -4021,7 +4103,7 @@ class CartesianLaplacian(Laplacian):
         # Wrap to handle gradient wrt single coordinate
         if isinstance(coordsys, coords.Coordinate):
             coordsys = coords.CartesianCoordinates(coordsys.name)
-        parts = [Differentiate(Differentiate(operand, c), c) for c in coordsys.coords]
+        parts = [Differentiate(operand, c, order=2) for c in coordsys.coords]
         arg = sum(parts)
         LinearOperator.__init__(self, arg, out=out)
         self.coordsys = coordsys
