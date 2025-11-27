@@ -782,7 +782,7 @@ class UnaryGridFunction(NonlinearOperator, FutureField):
         if tangent:
             tan0, = self.arg_tangents
             tangent.preset_layout(self._grid_layout)
-            np.multiply(self.diff_map[self.func](arg0.data),tan0.data,out=tangent.data)
+            np.multiply(self.ufunc_derivatives[self.func](arg0.data), tan0.data, out=tangent.data)
 
     def operate_vjp(self, layout, cotangents):
         arg0, = self.args
@@ -801,7 +801,7 @@ class UnaryGridFunction(NonlinearOperator, FutureField):
                 cotan0.change_layout(layout)
         # Add adjoint contribution in-place (required for accumulation)
         self.cotangent.change_layout(layout)
-        temp = self.diff_map[self.func](arg0.data)*self.cotangent.data
+        temp = self.ufunc_derivatives[self.func](arg0.data)*self.cotangent.data
         # TODO: optimize with axpy
         np.add(cotan0.data, temp, out=cotan0.data)
 
