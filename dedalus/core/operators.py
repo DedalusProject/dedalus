@@ -4283,9 +4283,9 @@ class SphericalCurl(Curl, SphericalEllOperator):
 
     def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        arg = args[0]
         if self.dtype == np.complex128:
-            return super()._operate(arg, out, adjoint)
+            return super()._operate(args, out, adjoint)
+        arg = args[0]
         layout = arg.layout
         basis = self.input_basis
         if basis is None:
