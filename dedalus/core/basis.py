@@ -14,7 +14,7 @@ from ..tools import jacobi
 from ..tools import clenshaw
 from ..tools.array import reshape_vector, axindex, axslice, interleave_matrices
 from ..tools.dispatch import MultiClass, SkipDispatchException
-from ..tools.general import unify, DeferredTuple
+from ..tools.general import unify, DeferredTuple, is_real_dtype, is_complex_dtype
 from .coords import Coordinate, CartesianCoordinates, S2Coordinates, SphericalCoordinates, PolarCoordinates, AzimuthalCoordinate, DirectProduct
 from .domain import Domain
 from .field  import Operand, LockedField
@@ -506,7 +506,13 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
     @CachedMethod
     def transform_plan(self, dist, grid_size):
         """Build transform plan."""
-        return self.transforms[self.library](grid_size, self.size, self.a, self.b, self.a0, self.b0)
+        xp = dist.array_namespace
+        xp_name = xp.__name__.split('.')[-1]
+        # Shortcut trivial transforms
+        if grid_size == 1 or self.size == 1:
+            return self.transforms[f"matrix-{xp_name}"](grid_size, self.size, self.a, self.b, self.a0, self.b0, dist.array_namespace, dist.dtype)
+        else:
+            return self.transforms[f"{self.library}-{xp_name}"](grid_size, self.size, self.a, self.b, self.a0, self.b0, dist.array_namespace, dist.dtype)
 
     # def weights(self, scales):
     #     """Gauss-Jacobi weights."""
@@ -915,11 +921,13 @@ class FourierBase(IntervalBasis):
     @CachedMethod
     def transform_plan(self, dist, grid_size):
         """Build transform plan."""
+        xp = dist.array_namespace
+        xp_name = xp.__name__.split('.')[-1]
         # Shortcut trivial transforms
         if grid_size == 1 or self.size == 1:
-            return self.transforms['matrix'](grid_size, self.size)
+            return self.transforms[f"matrix-{xp_name}"](grid_size, self.size, dist.array_namespace, dist.dtype)
         else:
-            return self.transforms[self.library](grid_size, self.size)
+            return self.transforms[f"{self.library}-{xp_name}"](grid_size, self.size, dist.array_namespace, dist.dtype)
 
     def forward_transform(self, field, axis, gdata, cdata):
         # Transform
@@ -940,9 +948,9 @@ def Fourier(*args, dtype=None, **kw):
     """Factory function dispatching to RealFourier and ComplexFourier based on provided dtype."""
     if dtype is None:
         raise ValueError("dtype must be specified")
-    elif dtype == np.float64:
+    elif is_real_dtype(dtype):
         return RealFourier(*args, **kw)
-    elif dtype == np.complex128:
+    elif is_complex_dtype(dtype):
         return ComplexFourier(*args, **kw)
     else:
         raise ValueError(f"Unrecognized dtype: {dtype}")
@@ -6081,6 +6089,7 @@ class CartesianAdvectiveCFL(operators.AdvectiveCFL):
 
     @CachedMethod
     def cfl_spacing(self):
+        xp = self.array_namespace
         velocity = self.operand
         coordsys = velocity.tensorsig[0]
         spacing = []
@@ -6102,7 +6111,7 @@ class CartesianAdvectiveCFL(operators.AdvectiveCFL):
                 axis_spacing[:] = dealias * native_spacing * basis.COV.stretch
             elif basis is None:
                 axis_spacing = np.inf
-            spacing.append(axis_spacing)
+            spacing.append(xp.asarray(axis_spacing))
         return spacing
 
     def compute_cfl_frequency(self, velocity, out):

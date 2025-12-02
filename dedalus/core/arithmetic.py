@@ -13,6 +13,7 @@ import numbers
 import numexpr as ne
 from collections import defaultdict
 from math import prod
+import array_api_compat
 
 from .domain import Domain
 from .field import Operand, Field
@@ -245,10 +246,11 @@ class AddFields(Add, FutureField):
 
     def operate(self, out):
         """Perform operation."""
+        xp = self.array_namespace
         arg0, arg1 = self.args
         # Set output layout
         out.preset_layout(arg0.layout)
-        np.add(arg0.data, arg1.data, out=out.data)
+        xp.add(arg0.data, arg1.data, out=out.data)
 
 
 # used for einsum string manipulation
@@ -664,6 +666,7 @@ class DotProduct(Product, FutureField):
         return G
 
     def operate(self, out):
+        xp = self.array_namespace
         arg0, arg1 = self.args
         out.preset_layout(arg0.layout)
         # Broadcast
@@ -671,7 +674,11 @@ class DotProduct(Product, FutureField):
         arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
         # Call einsum
         if out.data.size:
-            np.einsum(self.einsum_str, arg0_data, arg1_data, out=out.data, optimize=True)
+            if array_api_compat.is_cupy_namespace(xp):
+                # Cupy does not support output keyword
+                out.data[:] = xp.einsum(self.einsum_str, arg0_data, arg1_data, optimize=True)
+            else:
+                xp.einsum(self.einsum_str, arg0_data, arg1_data, out=out.data, optimize=True)
 
 
 @alias("cross")
@@ -854,6 +861,7 @@ class MultiplyFields(Multiply, FutureField):
 
     def operate(self, out):
         """Perform operation."""
+        xp = self.array_namespace
         arg0, arg1 = self.args
         # Set output layout
         out.preset_layout(arg0.layout)
@@ -863,7 +871,7 @@ class MultiplyFields(Multiply, FutureField):
         # Reshape arg data to broadcast properly for output tensorsig
         arg0_exp_data = arg0_data.reshape(self.arg0_exp_tshape + arg0_data.shape[len(arg0.tensorsig):])
         arg1_exp_data = arg1_data.reshape(self.arg1_exp_tshape + arg1_data.shape[len(arg1.tensorsig):])
-        np.multiply(arg0_exp_data, arg1_exp_data, out=out.data)
+        xp.multiply(arg0_exp_data, arg1_exp_data, out=out.data)
 
 
 class GhostBroadcaster:
@@ -939,11 +947,12 @@ class MultiplyNumberField(Multiply, FutureField):
 
     def operate(self, out):
         """Perform operation."""
+        xp = self.array_namespace
         arg0, arg1 = self.args
         # Set output layout
         out.preset_layout(arg1.layout)
         # Multiply argument data
-        np.multiply(arg0, arg1.data, out=out.data)
+        xp.multiply(arg0, arg1.data, out=out.data)
 
     def matrix_dependence(self, *vars):
         return self.args[1].matrix_dependence(*vars)
