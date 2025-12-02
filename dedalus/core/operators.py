@@ -1773,11 +1773,13 @@ class Copy(LinearOperator):
         size = subproblem.field_size(self.operand)
         return sparse.identity(size, format='csr')
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        arg = self.args[0]
-        out.preset_layout(arg.layout)
-        np.copyto(out.data, arg.data)
+        arg = args[0]
+        if adjoint:
+            np.add(out.data, arg.data, out=arg.data)
+        else:
+            np.copyto(out.data, arg.data)
 
 
 class Convert(SpectralOperator, metaclass=MultiClass):
