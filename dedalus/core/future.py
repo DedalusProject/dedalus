@@ -451,7 +451,7 @@ class ExpressionList:
             if op not in self.expressions:
                 op.cotangent.preset_scales(op.domain.dealias)
                 op.cotangent.data.fill(0)
-        # Initialize expresion cotangents
+        # Initialize expression cotangents
         for expr in self.expressions:
             cotangent = cotangents[expr]
             # Check cotangent basis and adjoint status

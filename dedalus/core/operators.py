@@ -1877,56 +1877,19 @@ class Convert(SpectralOperator, metaclass=MultiClass):
         """Build matrix operating on global subspace data."""
         return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis)
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        arg = self.args[0]
+        arg = args[0]
         layout = arg.layout
         # Copy for grid space
         if layout.grid_space[self.last_axis]:
-            out.preset_layout(layout)
-            np.copyto(out.data, arg.data)
-        # Revert to matrix application for coeff space
-        else:
-            super().operate(out)
-
-    def operate_jvp(self, out, tangent):
-        tan0 = self.arg_tangents[0]
-        layout = tan0.layout
-        # Copy for grid space
-        if layout.grid_space[self.last_axis]:
-            # Linear operator
-            self.operate(out)
-            tangent.preset_layout(layout)
-            np.copyto(tangent.data, tan0.data)
-        # Revert to matrix application for coeff space
-        else:
-            super().operate_jvp(out,tangent)
-
-    def operate_vjp(self, layout, cotangents):
-        if layout is None:
-            layout = self.args[0].layout
-        if layout.grid_space[self.last_axis]:
-            # TODO: fix this hack, which avoids return layouts from all enforce_conditions methods
-            orig_arg0 = self.original_args[0]
-            arg0 = self.args[0]
-            if isinstance(orig_arg0, Future):
-                orig_arg0.cotangent.change_layout(layout)
-                cotan0 = orig_arg0.cotangent
+            if adjoint:
+                np.add(arg.data, out.data, out=arg.data)
             else:
-                if arg0 not in cotangents:
-                    cotan0 = arg0.copy()
-                    cotan0.adjoint = True
-                    cotan0.data.fill(0)
-                    cotangents[arg0] = cotan0
-                else:
-                    cotan0 = cotangents[arg0]
-                    cotan0.change_layout(layout)
-            self.cotangent.change_layout(layout)
-            # Copy for grid space
-            # Add adjoint contribution in-place (required for accumulation)
-            np.add(cotan0.data, self.cotangent.data, out=cotan0.data)
+                np.copyto(out.data, arg.data)
+        # Revert to matrix application for coeff space
         else:
-            super().operate_vjp(layout,cotangents)
+            super()._operate(args, out, adjoint=adjoint)
 
 
 class ConvertSame(Convert):
@@ -2005,6 +1968,24 @@ class ConvertConstant(Convert):
         else:
             # Require last axis in coeff space
             arg0.require_coeff_space(self.last_axis)
+
+    def _operate(self, args, out, adjoint=False):
+        """Perform operation."""
+        arg = args[0]
+        layout = arg.layout
+        # Copy for grid space
+        # Should only happen for 1D bases with the axis local
+        if layout.grid_space[self.last_axis]:
+            if adjoint:
+                # Accumulate out.data into arg.data (axis is required to be local)
+                reduction = np.sum(out.data, axis=self.last_axis, keepdims=True) # CREATES TEMPORARY
+                np.add(arg.data, reduction, out=arg.data)
+            else:
+                # Broadcasts across grid data (axis is required to be local)
+                np.copyto(out.data, arg.data)
+        # Revert to matrix application for coeff space
+        else:
+            super()._operate(args, out, adjoint=adjoint)
 
 
 @alias("trace")
