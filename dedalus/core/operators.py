@@ -4400,13 +4400,14 @@ class CartesianLaplacian(Laplacian):
         # Any layout (addition is done)
         pass
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        # OPTIMIZE: this has an extra copy
-        arg0 = self.args[0]
-        # Set output layout
-        out.preset_layout(arg0.layout)
-        np.copyto(out.data, arg0.data)
+        arg = args[0]
+        if adjoint:
+            np.add(arg.data, out.data, out=arg.data)
+        else:
+            # OPTIMIZE: this has an extra copy
+            np.copyto(out.data, arg.data)
 
 
 class DirectProductLaplacian(Laplacian):
