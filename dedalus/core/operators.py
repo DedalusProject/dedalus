@@ -2387,17 +2387,22 @@ class CartesianSkew(Skew):
         factors[self.index] = skew
         return reduce(sparse.kron, factors, 1).tocsr()
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        arg = self.args[0]
-        # Set output layout
-        out.preset_layout(arg.layout)
-        # Skew data
-        if arg.data.size:
+        arg = args[0]
+        if adjoint:
+            # Skew and accumulate data
             sx = axslice(self.index, 0, 1)
             sy = axslice(self.index, 1, 2)
-            out.data[sx] = - arg.data[sy]
-            out.data[sy] = arg.data[sx]
+            arg.data[sx] += out.data[sy]
+            arg.data[sy] -= out.data[sx]
+        else:
+            # Skew data
+            if arg.data.size:
+                sx = axslice(self.index, 0, 1)
+                sy = axslice(self.index, 1, 2)
+                out.data[sx] = - arg.data[sy]
+                out.data[sy] = arg.data[sx]
 
 
 class SpinSkew(Skew):
