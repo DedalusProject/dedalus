@@ -2062,11 +2062,15 @@ class Trace(LinearOperator, metaclass=MultiClass):
     def base(self):
         return Trace
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        arg = self.args[0]
-        out.preset_layout(arg.layout)
-        np.einsum('ii...', arg.data, out=out.data)
+        arg = args[0]
+        if adjoint:
+            # Add out.data to diagonal of arg.data
+            # (einsum returns a view of the diagonal)
+            np.einsum('ii...->i...', arg.data)[:] += out.data
+        else:
+            np.einsum('ii...', arg.data, out=out.data)
 
 
 class SphericalTrace(Trace):
