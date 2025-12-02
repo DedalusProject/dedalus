@@ -119,7 +119,7 @@ def plot_bot(dset, image_axes, data_slices, image_scales=(0,0), clim=None, even_
         axes.axis('off')
 
     # Colormap options
-    cmap = copy.copy(matplotlib.cm.get_cmap(cmap))
+    cmap = plt.get_cmap(cmap)
     cmap.set_bad('0.7')
 
     # Plot

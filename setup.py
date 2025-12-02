@@ -183,7 +183,7 @@ for name in pyx_modules:
 install_requires = [
     "docopt",
     "h5py >= 3.0.0",
-    "matplotlib",
+    "matplotlib >= 3.7.0",
     "mpi4py >= 2.0.0",
     "numexpr",
     "numpy >= 1.20.0",
