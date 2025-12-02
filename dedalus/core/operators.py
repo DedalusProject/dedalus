@@ -2265,13 +2265,15 @@ class StandardTransposeComponents(TransposeComponents):
         eye = sparse.identity(subproblem.coeff_size(self.domain), self.dtype, format='csr')
         return sparse.kron(transpose, eye)
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        operand = self.args[0]
-        # Set output layout
-        out.preset_layout(operand.layout)
-        # Transpose data
-        out.data[:] = np.transpose(operand.data, self.new_axis_order)  # CREATES TEMPORARY
+        arg = args[0]
+        if adjoint:
+            # Transpose data and accumulate
+            arg.data[:] += np.transpose(out.data, self.new_axis_order)  # CREATES TEMPORARY
+        else:
+            # Transpose data
+            out.data[:] = np.transpose(arg.data, self.new_axis_order)  # CREATES TEMPORARY
 
 
 class SphericalTransposeComponents(TransposeComponents):
