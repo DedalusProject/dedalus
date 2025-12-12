@@ -113,7 +113,7 @@ class MultistepIMEX:
                 # corresponding name
                 field_adj.name = 'Y_adj%s' % field.name
             self.Y_fields.append(field_adj)
-        self.F_expression_list = ExpressionList([eqn['F'] for eqn in solver.problem.equations if not isinstance(eqn['F'], Field)])
+        self.F_expression_list = ExpressionList(solver.evaluator, [eqn['F'] for eqn in solver.problem.equations if not isinstance(eqn['F'], Field)])
         # TODO: How to handle checkpointing?
         self.timestep_history = []
         self.cotangents = {}
@@ -277,7 +277,7 @@ class MultistepIMEX:
         F0.data.fill(0)
         Y0.data.fill(0)
         # Solve, form L, M, F terms, then form next RHS
-        # Ensure coeff space before subsystem gathers 
+        # Ensure coeff space before subsystem gathers
         for sp in subproblems:
             if update_LHS:
                 # Remove old solver reference
@@ -314,7 +314,7 @@ class MultistepIMEX:
                     self.cotangents[field].preset_layout('c')
                     self.cotangents[field].data.fill(0)
             # Loop over equations and accumulate cotangents
-            _, self.cotangents = self.F_expression_list.evaluate_vjp(self.cotangents, id=id, force=True)
+            _, self.cotangents = self.F_expression_list.evaluate_vjp(self.cotangents, id=id)
             # Require coeff space before gathers
             for field in self.dFdxH_Y:
                 field.require_coeff_space()
@@ -716,7 +716,7 @@ class RungeKuttaIMEX:
         # For adjoint
         self.MXT = [CoeffSystem(solver.subproblems, dtype=solver.dtype) for i in range(self.stages)]
         self.Y = [CoeffSystem(solver.subproblems, dtype=solver.dtype) for i in range(self.stages)]
-        self.XStages = [CoeffSystem(solver.subproblems, dtype=solver.dtype) for i in range(self.stages)] 
+        self.XStages = [CoeffSystem(solver.subproblems, dtype=solver.dtype) for i in range(self.stages)]
         self.timestep_history = []
         self.Y_fields = []
         for field in solver.F:
@@ -852,7 +852,7 @@ class RungeKuttaIMEX:
         """Advance solver by one timestep."""
         # Recompute stages and matrices
         # TODO: Should only do this if necessary, otherwise
-        # just check on updating the LHS later as matrices 
+        # just check on updating the LHS later as matrices
         # will not be changed otherwise.
         # Solver references
         solver = self.solver
@@ -909,7 +909,7 @@ class RungeKuttaIMEX:
                 field.preset_layout('c')
             for sp in subproblems:
                 # Construct LHS(n,i)
-                # Only need to recompute last matrix (if needed), 
+                # Only need to recompute last matrix (if needed),
                 # as recompute has computed the rest
                 if update_LHS and i==self.stages:
                     if STORE_EXPANDED_MATRICES:
@@ -924,7 +924,7 @@ class RungeKuttaIMEX:
                 spX = sp.LHS_solvers[i].solve_H(spRHS)  # CREATES TEMPORARY
                 # Compute new transpose terms and RHS
                 # TODO: Do something better for the csr conversion
-                apply_sparse(sp.L_min_H, spX, axis=0, out=LXi.get_subdata(sp))  # Rectangular dot product skipping shape checks                
+                apply_sparse(sp.L_min_H, spX, axis=0, out=LXi.get_subdata(sp))  # Rectangular dot product skipping shape checks
                 apply_sparse(sp.M_min_H, spX, axis=0, out=MXTi.get_subdata(sp))
                 sp.scatter_inputs(spX, state_fields)
                 # Linearised F vjp
@@ -945,7 +945,7 @@ class RungeKuttaIMEX:
                         self.cotangents[field].preset_layout('c')
                         self.cotangents[field].data.fill(0)
                 # Loop over equations and accumulate cotangents
-                _, self.cotangents = self.F_expression_list.evaluate_vjp(self.cotangents, id=id, force=True)
+                _, self.cotangents = self.F_expression_list.evaluate_vjp(self.cotangents, id=id)
                 # Require coeff space before gathers
                 for field in self.dFdxH_Y:
                     field.require_coeff_space()
@@ -976,7 +976,7 @@ class RungeKuttaIMEX:
         for field in state_fields:
             field.preset_layout('c')
         for sp in subproblems:
-            # Adjoint state is the RHS (Use pre-right to undo pre-conditioned RHS)        
+            # Adjoint state is the RHS (Use pre-right to undo pre-conditioned RHS)
             spRHS = RHS.get_subdata(sp)
             sp.scatter_inputs(spRHS, state_fields)
 

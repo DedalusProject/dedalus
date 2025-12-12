@@ -92,7 +92,7 @@ class Evaluator:
         handlers = [h for h in self.handlers if h.check_schedule(**kw)]
         self.evaluate_handlers(handlers, **kw)
 
-    def evaluate_handlers(self, handlers, id=None, **kw):
+    def evaluate_handlers(self, handlers, id=None, tape=None, **kw):
         """Evaluate a collection of handlers."""
 
         # Default to uuid to cache within evaluation, but not across evaluations
@@ -104,12 +104,12 @@ class Evaluator:
             task['out'] = None
 
         # Attempt initial evaluation
-        tasks = self.attempt_tasks(tasks, id=id)
+        tasks = self.attempt_tasks(tasks, id=id, tape=tape)
 
         # Move all fields to coefficient layout
         fields = self.get_fields(tasks)
         self.require_coeff_space(fields)
-        tasks = self.attempt_tasks(tasks, id=id)
+        tasks = self.attempt_tasks(tasks, id=id, tape=tape)
 
         # Oscillate through layouts until all tasks are evaluated
         # Limit to 10 passes to break on potential infinite loops
@@ -126,7 +126,7 @@ class Evaluator:
                 self.dist.paths[next_index].decrement(fields)
             current_index = next_index
             # Attempt evaluation
-            tasks = self.attempt_tasks(tasks, id=id)
+            tasks = self.attempt_tasks(tasks, id=id, tape=tape)
 
         # Transform all outputs to coefficient layout to dealias
         outputs = OrderedSet([t['out'] for h in handlers for t in h.tasks if not isinstance(t['out'], LockedField)])
