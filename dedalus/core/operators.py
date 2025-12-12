@@ -1240,7 +1240,7 @@ class SpectralOperator1D(SpectralOperator):
                 data_axis = self.last_axis + len(arg.tensorsig)
                 apply_matrix(self.subspace_matrix(layout), arg.data, data_axis, out=out.data)
         elif adjoint:
-            arg.data.fill(0)
+            pass # accumulating with zero
         else:
             out.data.fill(0)
 

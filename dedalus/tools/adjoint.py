@@ -287,7 +287,7 @@ class direct_adjoint_loop:
             adj.data.fill(0)
             self.cotangents[state] = adj
         return adj
-    
+
     def _initialize_adjoint(self):
         self.cotangents = initialize_cotangents(self.J)
         for post_solver in reversed(self.post_solvers):

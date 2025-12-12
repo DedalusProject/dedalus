@@ -390,9 +390,9 @@ class Future(Operand):
         else:
             return self.future_type(dist=self.dist, tensorsig=self.tensorsig, dtype=self.dtype, name=str(self))
 
-    def attempt(self, id=None):
+    def attempt(self, id=None, **kw):
         """Recursively attempt to evaluate operation."""
-        return self.evaluate(id=id, force=False)
+        return self.evaluate(id=id, force=False, **kw)
 
     def check_conditions(self):
         """Check that arguments are in a proper layout."""
@@ -421,30 +421,47 @@ class Future(Operand):
 
 
 class ExpressionList:
+    """TODO: decide to merge with SystemHandler"""
 
-    def __init__(self, expressions):
+    def __init__(self, evaluator, expressions):
+        self.evaluator = evaluator
+        self.system_handler = evaluator.add_system_handler()
+        self.system_handler.add_tasks(expressions)
+        #self.system_handler.build_system() # dont do this
         self.expressions = expressions
         self.last_id = None
+
+    def tape_evaluate(self, id=None, force=False):
+        if id is None:
+            raise ValueError("id must be specified for taped evaluation.")
+        if id == self.last_id:
+            out = self.last_out
+            tape = self.last_tape
+        else:
+            # Force store_last
+            # TODO: enforce recursively
+            for expr in self.expressions:
+                self.store_last = True
+            # Jointly evaluate
+            tape = []
+            if force:
+                out = []
+                for expr in self.expressions:
+                    out.append(expr.evaluate(id=id, force=force, tape=tape))
+            else:
+                self.evaluator.evaluate_handlers([self.system_handler], id=id, tape=tape)
+                out = [expr.out for expr in self.expressions]
+            # Update storage
+            self.last_id = id
+            self.last_out = out
+            self.last_tape = tape
+        return out, tape
 
     def evaluate_vjp(self, cotangents, id=None, force=False):
         if id is None:
             raise ValueError("id must be specified for vjp evaluation.")
         # Run forward evaluation and build joint tape (cached by id)
-        if id == self.last_id:
-            out = self.last_out
-            tape = self.last_tape
-        else:
-            out = []
-            tape = []
-            for expr in self.expressions:
-                # Force store_last
-                # TODO: enforce recursively
-                self.store_last = True
-                # Forward evaluate and save topological sorting
-                out.append(expr.evaluate(id=id, force=force, tape=tape))
-            self.last_id = id
-            self.last_out = out
-            self.last_tape = tape
+        out, tape = self.tape_evaluate(id, force=force)
         # Clean cotangents
         for op in tape:
             op.get_cotangent()
