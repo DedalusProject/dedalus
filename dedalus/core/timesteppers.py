@@ -729,7 +729,7 @@ class RungeKuttaIMEX:
                 # corresponding name
                 field_adj.name = 'Y_adj%s' % field.name
             self.Y_fields.append(field_adj)
-        self.F_expression_list = ExpressionList([eqn['F'] for eqn in solver.problem.equations if not isinstance(eqn['F'], Field)])
+        self.F_expression_list = ExpressionList(solver.evaluator, [eqn['F'] for eqn in solver.problem.equations if not isinstance(eqn['F'], Field)])
         self.cotangents = {}
         for i, eqn in enumerate(solver.problem.equations):
             # TODO: Fix this when fields have vjp
