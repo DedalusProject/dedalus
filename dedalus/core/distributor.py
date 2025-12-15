@@ -255,11 +255,8 @@ class Distributor:
         return I
 
     def local_grid(self, basis, scale=None):
-        # TODO: remove from bases and do it all here?
-        if scale is None:
-            scale = 1
         if basis.dim == 1:
-            return basis.local_grid(self, scale=scale)
+            return self.local_grids(basis, scales=scale)[0]
         else:
             raise ValueError("Use `local_grids` for multidimensional bases.")
 
@@ -299,9 +296,12 @@ class Distributor:
             grids.extend(basis.local_grids(self, scales=basis_scales))
         return grids
 
-    def local_modes(self, basis):
-        # TODO: remove from bases and do it all here?
-        return basis.local_modes(self)
+    @CachedMethod
+    def local_modes(self, *bases):
+        """Local mode arrays."""
+        from .domain import Domain
+        domain = Domain(self, bases)
+        return self.coeff_layout.local_mode_arrays(domain)
 
     @CachedAttribute
     def default_nonconst_groups(self):
@@ -425,6 +425,16 @@ class Layout:
             groups[basis_axes] = basis.elements_to_groups(grid_space[basis_axes], elements[basis_axes])
         return groups
 
+    def _mode_arrays(self, elements, domain):
+        # Convert to modes basis-by-basis
+        grid_space = self.grid_space
+        modes = np.zeros_like(elements, dtype=np.float64)
+        modes = np.ma.masked_array(modes)
+        for basis in domain.bases:
+            basis_axes = slice(self.dist.first_axis(basis), self.dist.last_axis(basis)+1)
+            modes[basis_axes] = basis.elements_to_modes(grid_space[basis_axes], elements[basis_axes])
+        return modes
+
     @CachedMethod
     def local_group_arrays(self, domain, scales, rank=None, broadcast=False):
         """Dense array of local groups (first axis)."""
@@ -432,6 +442,14 @@ class Layout:
         elements = self.local_elements(domain, scales, rank=rank, broadcast=broadcast)
         elements = np.array(np.meshgrid(*elements, indexing='ij'))
         return self._group_arrays(elements, domain)
+
+    @CachedMethod
+    def local_mode_arrays(self, domain, scales, rank=None, broadcast=False):
+        """Dense array of local modes (first axis)."""
+        # Make dense array of local elements
+        elements = self.local_elements(domain, scales, rank=rank, broadcast=broadcast)
+        elements = np.array(np.meshgrid(*elements, indexing='ij'))
+        return self._mode_arrays(elements, domain)
 
     @CachedMethod
     def global_group_arrays(self, domain, scales):

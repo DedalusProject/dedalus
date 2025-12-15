@@ -786,6 +786,132 @@ class LinearOperator(FutureField):
         raise NotImplementedError("%s has not implemented a subproblem_matrix method." %type(self))
 
 
+class QuasiDifferentialOperator(LinearOperator):
+    """Linear operator acting as an arbitrarty diagonal symbol on spectral coefficients."""
+
+    axis_dependence = None
+
+    def __init__(self, operand, out=None):
+        super().__init__(operand, out=out)
+        # LinearOperator requirements
+        self.operand = operand
+        # FutureField requirements
+        self.domain = operand.domain
+        self.tensorsig = operand.tensorsig
+        if self.tensorsig:
+            raise ValueError("Only scalar valued fields are supported.")
+        self.dtype = operand.dtype
+        # Default axis dependence
+        if self.axis_dependence is None:
+            self.axis_dependence = [True] * self.domain.dist.dim
+
+    def matrix_dependence(self, *vars):
+        operand_dependence = self.operand.matrix_dependence(*vars)
+        return np.logical_or(operand_dependence, self.axis_dependence)
+
+    def matrix_coupling(self, *vars):
+        # Does not alter coupling
+        return self.operand.matrix_coupling(*vars)
+
+    @CachedAttribute
+    def last_axis(self):
+        last_axis = None
+        for axis, dependence in enumerate(self.axis_dependence):
+            if dependence:
+                last_axis = axis
+        if last_axis is None:
+            raise ValueError("No axis dependence found.")
+        return last_axis
+
+    def check_conditions(self):
+        """Check that arguments are in a proper layout."""
+        # Require coefficient space through last axis
+        return self.args[0].layout.coeff_space[self.last_axis]
+
+    def enforce_conditions(self):
+        """Require arguments to be in a proper layout."""
+        # Require coefficient space through last axis
+        self.args[0].require_coeff_space(self.last_axis)
+
+
+
+
+
+    # def subproblem_matrix(self, subproblem):
+    #     """Build operator matrix for a specific subproblem."""
+    #     axis = self.last_axis
+    #     group = subproblem.group[axis]
+    #     # Track sizes for previous and subsequent axes
+    #     shape = subproblem.coeff_shape(self.domain)
+    #     N_before = prod([cs.dim for cs in self.tensorsig]) * prod(shape[:axis])
+    #     N_after = prod(shape[axis+1:])
+    #     # Build matrix for operator axis
+    #     if group is None:
+    #         matrix = self.subspace_matrix(self.dist.coeff_layout)
+    #     else:
+    #         matrix = self.group_matrix(group)
+    #     # Kronecker up to proper size
+    #     if N_before > 1:
+    #         I_before = sparse.identity(N_before, format='coo') # COO faster for kron
+    #         matrix = sparse.kron(I_before, matrix)
+    #     if N_after > 1:
+    #         I_after = sparse.identity(N_after, format='coo') # COO faster for kron
+    #         matrix = sparse.kron(matrix, I_after)
+    #     # Convert to CSR (might be numpy array)
+    #     return sparse.csr_matrix(matrix)
+
+    # def subspace_matrix(self, layout):
+    #     """Build matrix operating on local subspace data."""
+    #     # Caching layer to allow insertion of other arguments
+    #     return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis)
+
+    # def group_matrix(self, group):
+    #     return self._group_matrix(group, self.input_basis, self.output_basis)
+
+    # @classmethod
+    # @CachedMethod
+    # def _subspace_matrix(cls, layout, input_basis, output_basis, axis, *args):
+    #     if cls.subaxis_coupling[0]:
+    #         return cls._full_matrix(input_basis, output_basis, *args)
+    #     else:
+    #         input_domain = Domain(layout.dist, bases=[input_basis])
+    #         output_domain = Domain(layout.dist, bases=[output_basis])
+    #         group_coupling = [True] * input_domain.dist.dim
+    #         group_coupling[axis] = False
+    #         group_coupling = tuple(group_coupling)
+    #         input_groupsets = layout.local_groupsets(group_coupling, input_domain, scales=input_domain.dealias, broadcast=True)
+    #         output_groupsets = layout.local_groupsets(group_coupling, output_domain, scales=output_domain.dealias, broadcast=True)
+    #         # Take intersection of input and output groups
+    #         groups = [gs[axis] for gs in input_groupsets if gs in output_groupsets]
+    #         group_blocks = [cls._group_matrix(group, input_basis, output_basis, *args) for group in groups]
+    #         arg_size = layout.local_shape(input_domain, scales=1)[axis]
+    #         out_size = layout.local_shape(output_domain, scales=1)[axis]
+    #         return sparse_block_diag(group_blocks, shape=(out_size, arg_size))
+
+    # @staticmethod
+    # def _full_matrix(input_basis, output_basis, *args):
+    #     raise NotImplementedError()
+
+    # @staticmethod
+    # def _group_matrix(group, input_basis, output_basis, *args):
+    #     raise NotImplementedError()
+
+    @CachedAttribute
+    def local_symbols(self):
+        modes = self.dist.coeff_layout.local_mode_arrays(self.domain, scales=1)
+        return self.symbol(*modes)
+
+    def operate(self, out):
+        """Perform operation."""
+        arg = self.args[0]
+        layout = arg.layout
+        # Set output layout
+        out.preset_layout(layout)
+        # Apply local symbols
+        if arg.data.size:
+            np.multiply(arg.data, self.local_symbols, out=out.data)
+
+
 class Lock(FutureLockedField, LinearOperator):
 
     name = 'Lock'

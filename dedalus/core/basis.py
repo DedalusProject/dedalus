@@ -562,12 +562,13 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
             return other.__mul__(self)
         return NotImplemented
 
-    # def include_mode(self, mode):
-    #     return (0 <= mode < self.space.coeff_size)
-
     def elements_to_groups(self, grid_space, elements):
-        # No permutations
+        # Groups are polynomial degree
         return elements
+
+    def elements_to_modes(self, grid_space, elements):
+        # Modes are the same as groups
+        return self.elements_to_groups(grid_space, elements)
 
     def valid_elements(self, tensorsig, grid_space, elements):
         # No invalid modes
@@ -908,12 +909,22 @@ class FourierBase(IntervalBasis):
         return self
 
     def elements_to_groups(self, grid_space, elements):
+        """Convert element arrays to group arrays."""
         if grid_space[0]:
             groups = elements
         else:
-            # Use native wavenumbers for readability
+            # Groups are native wavenumbers
             groups = self.native_wavenumbers[elements]
         return groups
+
+    def elements_to_modes(self, grid_space, elements):
+        """Convert element arrays to mode arrays."""
+        if grid_space[0]:
+            modes = elements
+        else:
+            # Modes are physical wavenumbers
+            modes = self.wavenumbers[elements]
+        return modes
 
     @CachedAttribute
     def _wavenumbers(self):
@@ -2268,6 +2279,10 @@ class PolarBasis(SpinBasis):
             groups = np.ma.masked_array(groups)
             groups[:, n < nmin] = np.ma.masked
         return groups
+
+    def elements_to_modes(self, grid_space, elements):
+        # Modes are the same as groups
+        return self.elements_to_groups(grid_space, elements)
 
     @CachedMethod
     def n_size(self, m):
