@@ -1795,8 +1795,10 @@ class Trace(LinearOperator, metaclass=MultiClass):
         xp = self.array_namespace
         arg = self.args[0]
         out.preset_layout(arg.layout)
-        xp.einsum('ii...', arg.data, out=out.data)
-
+        if array_api_compat.is_cupy_namespace(xp):
+            out.data[:] = xp.einsum('ii...', arg.data)
+        else:
+            xp.einsum('ii...', arg.data, out=out.data)
 
 class SphericalTrace(Trace):
 
