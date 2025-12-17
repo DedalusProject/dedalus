@@ -2155,9 +2155,21 @@ class Skew(LinearOperator, metaclass=MultiClass):
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements
-        self.domain = operand.domain
+        bases = self._build_bases(operand, index)
+        self.domain = Domain(operand.dist, bases)
         self.tensorsig = operand.tensorsig
         self.dtype = operand.dtype
+
+    def _build_bases(self, operand, index):
+        input_bases = operand.domain.bases
+        output_bases = []
+        coordsys = operand.tensorsig[index]
+        for basis in input_bases:
+            if basis.coord in coordsys.coords:
+                output_bases.append(basis.skew_basis())
+            else:
+                output_bases.append(basis)
+        return tuple(output_bases)
 
     def new_operand(self, operand, **kw):
         return Skew(operand, index=self.index, **kw)
@@ -2434,11 +2446,10 @@ class CartesianGradient(Gradient):
             if args[i] == 0:
                 args[i] = 2*operand
                 args[i].args[0] = 0
-                original_args = list(args[i].original_args)
-                original_args[0] = 0
-                args[i].original_args = tuple(original_args)
-        bases = self._build_bases(*args)
-        args = [convert(arg, bases) for arg in args]
+                args[i].original_args = (0, args[i].original_args[1])
+        # Convert along orthogonal bases
+        bases = self._build_bases(operand, coordsys)
+        args = self._convert_args(coordsys, args, bases)
         LinearOperator.__init__(self, *args, out=out)
         self.coordsys = coordsys
         # LinearOperator requirements
@@ -2448,8 +2459,22 @@ class CartesianGradient(Gradient):
         self.tensorsig = (coordsys,) + operand.tensorsig
         self.dtype = operand.dtype
 
-    def _build_bases(self, *args):
-        return sum(args).domain.bases
+    def _build_bases(self, operand, coordsys):
+        input_bases = operand.domain.bases
+        output_bases = []
+        for basis in input_bases:
+            if basis.coord is coordsys or basis.coord in coordsys.coords:
+                output_bases.append(basis.gradient_basis())
+            else:
+                output_bases.append(basis)
+        return tuple(output_bases)
+
+    def _convert_args(self, coordsys, args, bases):
+        converted_args = []
+        for coord, arg in zip(coordsys.coords, args):
+            arg_bases = [b for b in bases if b.coord != coord]
+            converted_args.append(convert(arg, arg_bases))
+        return converted_args
 
     def matrix_dependence(self, *vars):
         arg_vals = [arg.matrix_dependence(self, *vars) for arg in self.args]
@@ -3405,9 +3430,20 @@ class CartesianComponent(CartCompBase):
         # LinearOperator requirements
         self.operand = operand
         # FutureField requirements
-        self.domain = operand.domain
+        bases = self._build_bases(operand, index, comp)
+        self.domain = Domain(operand.dist, bases)
         self.tensorsig = operand.tensorsig[:index] + operand.tensorsig[index+1:]
         self.dtype = operand.dtype
+
+    def _build_bases(self, operand, index, comp):
+        input_bases = operand.domain.bases
+        output_bases = []
+        for basis in input_bases:
+            if basis.coord is comp:
+                output_bases.append(basis.component_basis())
+            else:
+                output_bases.append(basis)
+        return tuple(output_bases)
 
     def check_conditions(self):
         """Check that operands are in a proper layout."""

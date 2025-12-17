@@ -895,6 +895,18 @@ class FourierBase(IntervalBasis):
     def __pow__(self, other):
         return self
 
+    def derivative_basis(self, order=1):
+        return self
+
+    def gradient_basis(self):
+        return self
+
+    def component_basis(self):
+        return self
+
+    def skew_basis(self):
+        return self
+
     def elements_to_groups(self, grid_space, elements):
         if grid_space[0]:
             groups = elements
@@ -1414,9 +1426,8 @@ class ParityBase(FourierBase):
         N, = self.grid_shape((scale,))
         return (np.pi / N) * (1/2 + np.arange(N))
 
-    @staticmethod
-    @CachedFunction
-    def _transform_plan(grid_size, coeff_size, parity, library):
+    @CachedMethod
+    def _transform_plan(self, grid_size, coeff_size, parity, library):
         """Caching layer to share plans across even/odd parity bases."""
         # Use matrix transforms for trivial cases
         if (grid_size == 1 or coeff_size == 1) and (library != "matrix"):
@@ -1435,6 +1446,7 @@ class ParityBase(FourierBase):
         P = self.component_parity(field.tensorsig)
         parity_plans = {p: self.transform_plan(grid_size, p) for p in np.unique(P)}
         # Transform component-by-component
+        gdata = gdata.copy() # Copy to avoid overwrite errors with dealiasing
         for i, p in np.ndenumerate(P):
             parity_plans[p].forward(gdata[i], cdata[i], axis)
         # Permute coefficients
@@ -1451,9 +1463,26 @@ class ParityBase(FourierBase):
         if self.backward_coeff_permutation is not None:
             permute_axis(cdata, axis+len(field.tensorsig), self.backward_coeff_permutation, out=cdata)
         # Transform component-by-component
-        P = self.component_parity(field.tensorsig)
+        cdata = cdata.copy() # Copy to avoid overwrite errors with dealiasing
         for i, p in np.ndenumerate(P):
             parity_plans[p].backward(cdata[i], gdata[i], axis)
+
+    def derivative_basis(self, order=1):
+        if order % 2 == 0:
+            return self
+        elif order % 2 == 1:
+            return self.opposite_parity()
+        else:
+            raise ValueError(f"Invalid derivative order: {order}")
+
+    def gradient_basis(self):
+        return self
+
+    def component_basis(self):
+        return self.opposite_parity()
+
+    def skew_basis(self):
+        return self.opposite_parity()
 
 
 def Parity(*args, parity=None, **kw):
@@ -1471,19 +1500,6 @@ def Parity(*args, parity=None, **kw):
 class EvenParity(ParityBase, metaclass=CachedClass):
     """Even parity basis (cosine series for scalars)."""
 
-    def derivative_basis(self, order=1):
-        if order % 2 == 0:
-            return self
-        elif order % 2 == 1:
-            return OddParity(self.coord, self.size, self.bounds, self.dealias, self.library)
-        else:
-            raise ValueError(f"Invalid derivative order: {order}")
-
-    def valid_elements(self, tensorsig, grid_space, elements):
-        vshape = tuple(cs.dim for cs in tensorsig) + elements[0].shape
-        valid = np.ones(shape=vshape, dtype=bool)
-        return valid
-
     def __add__(self, other):
         if other is None:
             return self
@@ -1512,6 +1528,14 @@ class EvenParity(ParityBase, metaclass=CachedClass):
 
     def __pow__(self, other):
         return NotImplemented
+
+    def valid_elements(self, tensorsig, grid_space, elements):
+        vshape = tuple(cs.dim for cs in tensorsig) + elements[0].shape
+        valid = np.ones(shape=vshape, dtype=bool)
+        return valid
+
+    def opposite_parity(self):
+        return OddParity(self.coord, self.size, self.bounds, self.dealias, self.library)
 
     @CachedMethod
     def component_parity(self, tensorsig):
@@ -1527,25 +1551,6 @@ class EvenParity(ParityBase, metaclass=CachedClass):
 class OddParity(ParityBase, metaclass=CachedClass):
     """Odd parity basis (sine series for scalars)."""
 
-    def derivative_basis(self, order=1):
-        if order % 2 == 0:
-            return self
-        elif order % 2 == 1:
-            return EvenParity(self.coord, self.size, self.bounds, self.dealias, self.library)
-        else:
-            raise ValueError(f"Invalid derivative order: {order}")
-
-    def valid_elements(self, tensorsig, grid_space, elements):
-        vshape = tuple(cs.dim for cs in tensorsig) + elements[0].shape
-        valid = np.ones(shape=vshape, dtype=bool)
-        if not grid_space[0]:
-            # Drop sine part of k=0
-            groups = self.elements_to_groups(grid_space, elements)
-            allcomps = tuple(slice(None) for cs in tensorsig)
-            selection = (groups[0] == 0)
-            valid[allcomps + (selection,)] = False
-        return valid
-
     def __add__(self, other):
         if other is self:
             return self
@@ -1572,6 +1577,20 @@ class OddParity(ParityBase, metaclass=CachedClass):
 
     def __pow__(self, other):
         return NotImplemented
+
+    def valid_elements(self, tensorsig, grid_space, elements):
+        vshape = tuple(cs.dim for cs in tensorsig) + elements[0].shape
+        valid = np.ones(shape=vshape, dtype=bool)
+        if not grid_space[0]:
+            # Drop sine part of k=0
+            groups = self.elements_to_groups(grid_space, elements)
+            allcomps = tuple(slice(None) for cs in tensorsig)
+            selection = (groups[0] == 0)
+            valid[allcomps + (selection,)] = False
+        return valid
+
+    def opposite_parity(self):
+        return EvenParity(self.coord, self.size, self.bounds, self.dealias, self.library)
 
     @CachedMethod
     def component_parity(self, tensorsig):
@@ -1628,13 +1647,14 @@ class SpectralOperatorParity(operators.SpectralOperator1D):
     def operate(self, out):
         operand = self.args[0]
         input_basis = self.input_basis
-        data_axis = len(operand.tensorsig) + self.last_axis
+        data_axis = self.last_axis
         # Set output layout
         out.preset_layout(operand.layout)
         # Apply operator to each component
         P = self.operand_component_parity
         parity_matrices = {p: self.subspace_matrix(operand.layout, p) for p in np.unique(P)}
         for i, p in np.ndenumerate(P):
+            # TODO: check shapes on first try
             apply_matrix(parity_matrices[p], operand.data[i], axis=data_axis, out=out.data[i])
 
 
