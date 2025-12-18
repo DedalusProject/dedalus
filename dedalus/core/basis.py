@@ -2792,6 +2792,9 @@ class DiskBasis(PolarBasis, metaclass=CachedClass):
                 return self.clone_with(shape=shape, k=k)
         return NotImplemented
 
+    def skew_basis(self):
+        return self
+
     def global_grid_radius(self, dist, scale):
         r = self.radial_COV.problem_coord(self._native_radius_grid(scale))
         return reshape_vector(r, dim=dist.dim, axis=dist.get_basis_axis(self)+1)

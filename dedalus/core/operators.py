@@ -2165,7 +2165,7 @@ class Skew(LinearOperator, metaclass=MultiClass):
         output_bases = []
         coordsys = operand.tensorsig[index]
         for basis in input_bases:
-            if basis.coord in coordsys.coords:
+            if (basis.coordsys is coordsys) or (basis.coord in coordsys.coords):
                 output_bases.append(basis.skew_basis())
             else:
                 output_bases.append(basis)
