@@ -62,9 +62,9 @@ tau_p = dist.Field(name='tau_p')
 kappa = (Rayleigh * Prandtl)**(-1/2)
 nu = (Rayleigh / Prandtl)**(-1/2)
 x, z = dist.local_grids(xbasis, zebasis)
-ex = dist.VectorField(coords, bases=(zebasis))
+ex = dist.VectorField(coords, bases=zebasis.clone_with(size=1))
 ex['g'][0] = 1
-ez = dist.VectorField(coords, bases=(zobasis))
+ez = dist.VectorField(coords, bases=zobasis.clone_with(size=1))
 ez['g'][1] = 1
 
 # Problem

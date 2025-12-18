@@ -1431,7 +1431,7 @@ class ParityBase(FourierBase):
         """Caching layer to share plans across even/odd parity bases."""
         # Use matrix transforms for trivial cases
         if (grid_size == 1 or coeff_size == 1) and (library != "matrix"):
-            return ParityBase._transform_plan(grid_size, coeff_size, parity, "matrix")
+            return self._transform_plan(grid_size, coeff_size, parity, "matrix")
         parity_name = {1: "cos", -1: "sin"}[parity]
         return ParityBase.transforms[f"{library}-{parity_name}"](grid_size, coeff_size)
 
