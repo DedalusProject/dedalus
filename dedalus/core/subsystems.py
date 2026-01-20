@@ -544,8 +544,8 @@ class Subproblem:
             if not eqn_cond:
                 valid_eqn[n] = False * valid_eqn[n] # Force copy instead of changing in place
         # Convert to filter matrices
-        valid_eqn = sparse.diags(np.concatenate([v.ravel() for v in valid_eqn], dtype=int)).tocsr()
-        valid_var = sparse.diags(np.concatenate([v.ravel() for v in valid_var], dtype=int)).tocsr()
+        valid_eqn = sparse.diags(np.concatenate([v.ravel() for v in valid_eqn]), dtype=int).tocsr()
+        valid_var = sparse.diags(np.concatenate([v.ravel() for v in valid_var]), dtype=int).tocsr()
 
         # Check squareness of restricted system
         if valid_eqn.nnz != valid_var.nnz:

@@ -2792,7 +2792,7 @@ class SeparableSphereOperator(SpectralOperator):
                         raise NotImplementedError("Complex operators not implemented yet for real fields.")
                     else:
                         # Directly multiply by symbols
-                        block = sparse.diags(symbols, format='csr', shape=(size_out, size_in))
+                        block = sparse.diags(symbols, format='csr', shape=(size_out, size_in), dtype=self.dtype)
                 else:
                     # Zeros
                     block = sparse.csr_matrix((size_out, size_in))
