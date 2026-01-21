@@ -9,10 +9,10 @@ from math import prod
 from . import operators
 from ..libraries import spin_recombination
 from ..tools.array import kron, axslice, apply_matrix, permute_axis
-from ..tools.cache import CachedAttribute, CachedMethod, CachedClass
+from ..tools.cache import CachedAttribute, CachedMethod, CachedClass, CachedFunction
 from ..tools import jacobi
 from ..tools import clenshaw
-from ..tools.array import reshape_vector, axindex, axslice, interleave_matrices
+from ..tools.array import reshape_vector, axindex, axslice, interleave_matrices, sparse_block_diag
 from ..tools.dispatch import MultiClass, SkipDispatchException
 from ..tools.general import unify, DeferredTuple
 from .coords import Coordinate, CartesianCoordinates, S2Coordinates, SphericalCoordinates, PolarCoordinates, AzimuthalCoordinate, DirectProduct
@@ -36,6 +36,9 @@ __all__ = ['Jacobi',
            'RealFourier',
            'ComplexFourier',
            'Fourier',
+           'EvenParity',
+           'OddParity',
+           'Parity',
            'DiskBasis',
            'AnnulusBasis',
            'SphereBasis',
@@ -694,8 +697,8 @@ class ConvertConstantJacobi(operators.ConvertConstant, operators.SpectralOperato
             unit_amplitude = 1 / output_basis.constant_mode_value
             return np.array([[unit_amplitude]])
         else:
-            # Constructor should only loop over group 0.
-            raise ValueError("This should never happen.")
+            # Constructor should only loop over group 0
+            raise ValueError(f"This should never happen: group = {group}")
 
 
 class DifferentiateJacobi(operators.Differentiate, operators.SpectralOperator1D):
@@ -705,16 +708,26 @@ class DifferentiateJacobi(operators.Differentiate, operators.SpectralOperator1D)
     subaxis_dependence = [True]
     subaxis_coupling = [True]
 
+    @classmethod
+    def _check_args(cls, operand, coord, order=1, out=None):
+        # Only integer derivatives implemented
+        if float(order).is_integer() and order > 0:
+            return super()._check_args(operand, coord, order=order, out=out)
+        return False
+
     @staticmethod
-    def _output_basis(input_basis):
-        return input_basis.derivative_basis(order=1)
+    def _output_basis(input_basis, order):
+        return input_basis.derivative_basis(order=int(order))
 
     @staticmethod
     @CachedMethod
-    def _full_matrix(input_basis, output_basis):
+    def _full_matrix(input_basis, output_basis, order):
         N = input_basis.size
         a, b = input_basis.a, input_basis.b
-        matrix = jacobi.differentiation_matrix(N, a, b) / input_basis.COV.stretch
+        matrix = jacobi.differentiation_matrix(N, a, b)
+        for i in range(1, int(order)):
+            matrix = jacobi.differentiation_matrix(N, a+i, b+i) @ matrix
+        matrix *= input_basis.COV.stretch ** (-order)
         return matrix.tocsr()
 
 
@@ -855,6 +868,7 @@ class FourierBase(IntervalBasis):
         self.dealias = dealias
         self.library = library
         # Other attributes
+        self.grid_params = (coord, bounds, dealias, library)
         self.constant_mode_value = 1
         # No permutations by default
         self.forward_coeff_permutation = None
@@ -879,6 +893,18 @@ class FourierBase(IntervalBasis):
         return NotImplemented
 
     def __pow__(self, other):
+        return self
+
+    def derivative_basis(self, order=1):
+        return self
+
+    def gradient_basis(self):
+        return self
+
+    def component_basis(self):
+        return self
+
+    def skew_basis(self):
         return self
 
     def elements_to_groups(self, grid_space, elements):
@@ -1005,18 +1031,57 @@ class ConvertConstantComplexFourier(operators.ConvertConstant, operators.Spectra
 
     @staticmethod
     def _group_matrix(group, input_basis, output_basis):
-        # Rescale group (native wavenumber) to get physical wavenumber
-        k = group / output_basis.COV.stretch
         # 1 = exp(1j*0*x)
-        if k == 0:
+        if group == 0:
             unit_amplitude = 1 / output_basis.constant_mode_value
             return np.array([[unit_amplitude]])
         else:
+            # Return zero-width column for subproblem construction
             return np.zeros(shape=(1, 0))
 
 
 class DifferentiateComplexFourier(operators.Differentiate, operators.SpectralOperator1D):
     """ComplexFourier differentiation."""
+
+    input_basis_type = ComplexFourier
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
+
+    @staticmethod
+    def _output_basis(input_basis, order):
+        return input_basis
+
+    @staticmethod
+    def _group_matrix(group, input_basis, output_basis, order):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / input_basis.COV.stretch
+        # dx**n exp(1j*k*x) = (1j*k)**n * exp(1j*k*x)
+        S = (1j * k) ** order
+        return np.array([[S]])
+
+
+class RieszDerivativeComplexFourier(operators.RieszDerivative, operators.SpectralOperator1D):
+    """ComplexFourier Riesz derivative."""
+
+    input_basis_type = ComplexFourier
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
+
+    @staticmethod
+    def _output_basis(input_basis, order):
+        return input_basis
+
+    @staticmethod
+    def _group_matrix(group, input_basis, output_basis, order):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / input_basis.COV.stretch
+        # R_a exp(1j*k*x) = - |k|**a * exp(1j*k*x)
+        S = - abs(k) ** order
+        return np.array([[S]])
+
+
+class HilbertTransformComplexFourier(operators.HilbertTransform, operators.SpectralOperator1D):
+    """ComplexFourier Hilbert transform."""
 
     input_basis_type = ComplexFourier
     subaxis_dependence = [True]
@@ -1030,8 +1095,9 @@ class DifferentiateComplexFourier(operators.Differentiate, operators.SpectralOpe
     def _group_matrix(group, input_basis, output_basis):
         # Rescale group (native wavenumber) to get physical wavenumber
         k = group / input_basis.COV.stretch
-        # dx exp(1j*k*x) = 1j * k * exp(1j*k*x)
-        return np.array([[1j*k]])
+        # Hx exp(1j*k*x) = -1j * sgn(k) * exp(1j*k*x)
+        S = -1j * np.sign(k)
+        return np.array([[S]])
 
 
 class InterpolateComplexFourier(operators.Interpolate, operators.SpectralOperator1D):
@@ -1077,8 +1143,8 @@ class IntegrateComplexFourier(operators.Integrate, operators.SpectralOperator1D)
             L = input_basis.COV.problem_length
             return np.array([[L]])
         else:
-            # Constructor should only loop over group 0.
-            raise ValueError("This should never happen.")
+            # Constructor should only loop over group 0
+            raise ValueError(f"This should never happen: group = {group}")
 
 
 class AverageComplexFourier(operators.Average, operators.SpectralOperator1D):
@@ -1101,8 +1167,8 @@ class AverageComplexFourier(operators.Average, operators.SpectralOperator1D):
         if k == 0:
             return np.array([[1]])
         else:
-            # Constructor should only loop over group 0.
-            raise ValueError("This should never happen.")
+            # Constructor should only loop over group 0
+            raise ValueError(f"This should never happen: group = {group}")
 
 
 class RealFourier(FourierBase, metaclass=CachedClass):
@@ -1192,14 +1258,12 @@ class ConvertConstantRealFourier(operators.ConvertConstant, operators.SpectralOp
 
     @staticmethod
     def _group_matrix(group, input_basis, output_basis):
-        # Rescale group (native wavenumber) to get physical wavenumber
-        k = group / output_basis.COV.stretch
         # 1 = cos(0*x)
-        if k == 0:
+        if group == 0:
             unit_amplitude = 1 / output_basis.constant_mode_value
-            return np.array([[unit_amplitude],
-                             [0]])
+            return np.array([[unit_amplitude], [0]])
         else:
+            # Return zero-width column for subproblem construction
             return np.zeros(shape=(2, 0))
 
 
@@ -1211,17 +1275,61 @@ class DifferentiateRealFourier(operators.Differentiate, operators.SpectralOperat
     subaxis_coupling = [False]
 
     @staticmethod
+    def _output_basis(input_basis, order):
+        return input_basis
+
+    @staticmethod
+    def _group_matrix(group, input_basis, output_basis, order):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / input_basis.COV.stretch
+        # dx^n exp(ikx) = (ik)^n exp(ikx) = S exp(ikx)
+        # dx^n cos(kx) = R(S) cos(kx) - I(S) sin(kx)
+        # dx^n sin(kx) = R(S) sin(kx) + I(S) cos(kx)
+        S = (1j * k) ** order
+        return np.array([[S.real, -S.imag],
+                         [S.imag,  S.real]])
+
+
+class RieszDerivativeRealFourier(operators.RieszDerivative, operators.SpectralOperator1D):
+    """RealFourier Riesz derivative."""
+
+    input_basis_type = RealFourier
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
+
+    @staticmethod
+    def _output_basis(input_basis, order):
+        return input_basis
+
+    @staticmethod
+    def _group_matrix(group, input_basis, output_basis, order):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / input_basis.COV.stretch
+        # R_a exp(ikx) = - |k|^n exp(ikx) = S exp(ikx)
+        # R_a cos(kx) = S cos(kx)
+        # R_a sin(kx) = S sin(kx)
+        S = - abs(k) ** order
+        return np.array([[S, 0],
+                         [0, S]])
+
+
+class HilbertTransformRealFourier(operators.HilbertTransform, operators.SpectralOperator1D):
+    """RealFourier Hilbert transform."""
+
+    input_basis_type = RealFourier
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
+
+    @staticmethod
     def _output_basis(input_basis):
         return input_basis
 
     @staticmethod
     def _group_matrix(group, input_basis, output_basis):
-        # Rescale group (native wavenumber) to get physical wavenumber
-        k = group / input_basis.COV.stretch
-        # dx  cos(k*x) = k * -sin(k*x)
-        # dx -sin(k*x) = -k * cos(k*x)
-        return np.array([[0, -k],
-                         [k,  0]])
+        # Hx cos(kx) = sin(kx)
+        # Hx sin(kx) = -cos(kx)
+        return np.array([[ 0, 1],
+                         [-1, 0]])
 
 
 class InterpolateRealFourier(operators.Interpolate, operators.SpectralOperator1D):
@@ -1239,7 +1347,6 @@ class InterpolateRealFourier(operators.Interpolate, operators.SpectralOperator1D
     @staticmethod
     def _full_matrix(input_basis, output_basis, position):
         # Build native interpolation vector
-        # Interleaved cos(k*x), -sin(k*x)
         x = input_basis.COV.native_coord(position)
         k = input_basis.native_wavenumbers
         interp_vector = np.zeros(k.size)
@@ -1265,14 +1372,14 @@ class IntegrateRealFourier(operators.Integrate, operators.SpectralOperator1D):
     def _group_matrix(group, input_basis, output_basis):
         # Rescale group (native wavenumber) to get physical wavenumber
         k = group / input_basis.COV.stretch
-        # integ  cos(k*x) = L * δ(k, 0)
-        # integ -sin(k*x) = 0
+        # integ cos(kx) dx = L (k==0)
+        # integ sin(kx) dx = 0
         if k == 0:
             L = input_basis.COV.problem_length
             return np.array([[L, 0]])
         else:
-            # Constructor should only loop over group 0.
-            raise ValueError("This should never happen.")
+            # Constructor should only loop over group 0
+            raise ValueError(f"This should never happen: group = {group}")
 
 
 class AverageRealFourier(operators.Average, operators.SpectralOperator1D):
@@ -1291,250 +1398,533 @@ class AverageRealFourier(operators.Average, operators.SpectralOperator1D):
     def _group_matrix(group, input_basis, output_basis):
         # Rescale group (native wavenumber) to get physical wavenumber
         k = group / input_basis.COV.stretch
-        # integ  cos(k*x) / L = δ(k, 0)
-        # integ -sin(k*x) / L = 0
+        # integ cos(kx) dx / L = (k==0)
+        # integ sin(kx) dx / L = 0
         if k == 0:
             return np.array([[1, 0]])
         else:
-            # Constructor should only loop over group 0.
-            raise ValueError("This should never happen.")
+            # Constructor should only loop over group 0
+            raise ValueError(f"This should never happen: group = {group}")
 
 
-# class HilbertTransformFourier(operators.HilbertTransform):
-#     """Fourier series Hilbert transform."""
+class ParityBase(FourierBase):
+    """Base class for parity-based bases."""
 
-#     input_basis_type = Fourier
-#     bands = [-1, 1]
-#     separable = True
+    native_bounds = (0, np.pi)
+    default_library = "fftw"
+    group_shape = (1,)
+    transforms = {}
 
-#     @staticmethod
-#     def output_basis(space, input_basis):
-#         return space.Fourier
+    @CachedAttribute
+    def _native_wavenumbers(self):
+        # Excludes Nyquist mode
+        kmax = self.size - 1
+        return np.arange(0, kmax+1)
 
-#     @staticmethod
-#     def _build_subspace_entry(i, j, space, input_basis):
-#         # Hx(cos(n*x)) = sin(n*x)
-#         # Hx(sin(n*x)) = -cos(n*x)
-#         n = j // 2
-#         if n == 0:
-#             return 0
-#         elif (j % 2) == 0:
-#             # Hx(cos(n*x)) = sin(n*x)
-#             if i == (j + 1):
-#                 return 1
-#             else:
-#                 return 0
-#         else:
-#             # Hx(sin(n*x)) = -cos(n*x)
-#             if i == (j - 1):
-#                 return (-1)
-#             else:
-#                 return 0
+    def _native_grid(self, scale):
+        """Native flat global grid."""
+        N, = self.grid_shape((scale,))
+        return (np.pi / N) * (1/2 + np.arange(N))
 
+    @CachedMethod
+    def _transform_plan(self, grid_size, coeff_size, parity, library):
+        """Caching layer to share plans across even/odd parity bases."""
+        # Use matrix transforms for trivial cases
+        if (grid_size == 1 or coeff_size == 1) and (library != "matrix"):
+            return self._transform_plan(grid_size, coeff_size, parity, "matrix")
+        parity_name = {1: "cos", -1: "sin"}[parity]
+        return ParityBase.transforms[f"{library}-{parity_name}"](grid_size, coeff_size)
 
-# class Sine(Basis, metaclass=CachedClass):
-#     """Sine series basis."""
-#     space_type = ParityInterval
-#     const = None
-#     supported_dtypes = {np.float64, np.complex128}
+    def transform_plan(self, grid_size, parity):
+        """Build transform plan."""
+        return self._transform_plan(grid_size, self.size, parity, self.library)
 
-#     def __add__(self, other):
-#         space = self.space
-#         if other is space.Sine:
-#             return space.Sine
-#         else:
-#             return NotImplemented
+    def forward_transform(self, field, axis, gdata, cdata):
+        # Get plans
+        data_axis = len(field.tensorsig) + axis
+        grid_size = gdata.shape[data_axis]
+        P = self.component_parity(field.tensorsig)
+        parity_plans = {p: self.transform_plan(grid_size, p) for p in np.unique(P)}
+        # Transform component-by-component
+        gdata = gdata.copy() # Copy to avoid overwrite errors with dealiasing
+        for i, p in np.ndenumerate(P):
+            parity_plans[p].forward(gdata[i], cdata[i], axis)
+        # Permute coefficients
+        if self.forward_coeff_permutation is not None:
+            permute_axis(cdata, axis+len(field.tensorsig), self.forward_coeff_permutation, out=cdata)
 
-#     def __mul__(self, other):
-#         space = self.space
-#         if other is None:
-#             return space.Sine
-#         elif other is space.Sine:
-#             return space.Cosine
-#         elif other is space.Cosine:
-#             return space.Sine
-#         else:
-#             return NotImplemented
+    def backward_transform(self, field, axis, cdata, gdata):
+        # Get plans
+        data_axis = len(field.tensorsig) + axis
+        grid_size = gdata.shape[data_axis]
+        P = self.component_parity(field.tensorsig)
+        parity_plans = {p: self.transform_plan(grid_size, p) for p in np.unique(P)}
+        # Permute coefficients
+        if self.backward_coeff_permutation is not None:
+            permute_axis(cdata, axis+len(field.tensorsig), self.backward_coeff_permutation, out=cdata)
+        # Transform component-by-component
+        cdata = cdata.copy() # Copy to avoid overwrite errors with dealiasing
+        for i, p in np.ndenumerate(P):
+            parity_plans[p].backward(cdata[i], gdata[i], axis)
 
-#     def __pow__(self, other):
-#         space = self.space
-#         if (other % 2) == 0:
-#             return space.Cosine
-#         elif (other % 2) == 1:
-#             return space.Sine
-#         else:
-#             return NotImplemented
+    def derivative_basis(self, order=1):
+        if order % 2 == 0:
+            return self
+        elif order % 2 == 1:
+            return self.opposite_parity()
+        else:
+            raise ValueError(f"Invalid derivative order: {order}")
 
-#     def include_mode(self, mode):
-#         # Drop k=0 and Nyquist mode
-#         k = mode
-#         return (1 <= k <= self.space.kmax)
+    def gradient_basis(self):
+        return self
 
+    def component_basis(self):
+        return self.opposite_parity()
 
-# class Cosine(Basis, metaclass=CachedClass):
-#     """Cosine series basis."""
-#     space_type = ParityInterval
-#     const = 1
-
-#     def __add__(self, other):
-#         space = self.space
-#         if other is None:
-#             return space.Cosine
-#         elif other is space.Cosine:
-#             return space.Cosine
-#         else:
-#             return NotImplemented
-
-#     def __mul__(self, other):
-#         space = self.space
-#         if other is None:
-#             return space.Cosine
-#         elif other is space.Sine:
-#             return space.Sine
-#         elif other is space.Cosine:
-#             return space.Cosine
-#         else:
-#             return NotImplemented
-
-#     def __pow__(self, other):
-#         return self.space.Cosine
-
-#     def include_mode(self, mode):
-#         # Drop Nyquist mode
-#         k = mode
-#         return (0 <= k <= self.space.kmax)
+    def skew_basis(self):
+        return self.opposite_parity()
 
 
-# class InterpolateSine(operators.Interpolate):
-#     """Sine series interpolation."""
-
-#     input_basis_type = Sine
-
-#     @staticmethod
-#     def _build_subspace_entry(j, space, input_basis, position):
-#         # sin(n*x)
-#         x = space.COV.native_coord(position)
-#         return math.sin(j*x)
-
-
-# class InterpolateCosine(operators.Interpolate):
-#     """Cosine series interpolation."""
-
-#     input_basis_type = Cosine
-
-#     @staticmethod
-#     def _build_subspace_entry(j, space, input_basis, position):
-#         # cos(n*x)
-#         x = space.COV.native_coord(position)
-#         return math.cos(j*x)
+def Parity(*args, parity=None, **kw):
+    """Factory function dispatching to EvenParity and OddParity based on provided parity."""
+    if parity is None:
+        raise ValueError("parity must be specified")
+    elif parity == 1:
+        return EvenParity(*args, **kw)
+    elif parity == -1:
+        return OddParity(*args, **kw)
+    else:
+        raise ValueError(f"Unrecognized parity: {parity}")
 
 
-# class IntegrateSine(operators.Integrate):
-#     """Sine series integration."""
+class EvenParity(ParityBase, metaclass=CachedClass):
+    """Even parity basis (cosine series for scalars)."""
 
-#     input_basis_type = Sine
+    def __add__(self, other):
+        if other is None:
+            return self
+        if other is self:
+            return self
+        if isinstance(other, EvenParity):
+            if self.grid_params == other.grid_params:
+                size = max(self.size, other.size)
+                return self.clone_with(size=size)
+        return NotImplemented
 
-#     @staticmethod
-#     def _build_subspace_entry(j, space, input_basis):
-#         # integral(sin(n*x), 0, pi) = (2 / n) * (n % 2)
-#         if (j % 2):
-#             return 0
-#         else:
-#             return (2 / j) * space.COV.stretch
+    def __mul__(self, other):
+        if other is None:
+            return self
+        if other is self:
+            return self
+        if isinstance(other, OddParity):
+            if self.grid_params == other.grid_params:
+                size = max(self.size, other.size)
+                return OddParity(self.coord, size, self.bounds, self.dealias, self.library)
+        if isinstance(other, EvenParity):
+            if self.grid_params == other.grid_params:
+                size = max(self.size, other.size)
+                return EvenParity(self.coord, size, self.bounds, self.dealias, self.library)
+        return NotImplemented
 
+    def __pow__(self, other):
+        return NotImplemented
 
-# class IntegrateCosine(operators.Integrate):
-#     """Cosine series integration."""
+    def valid_elements(self, tensorsig, grid_space, elements):
+        vshape = tuple(cs.dim for cs in tensorsig) + elements[0].shape
+        valid = np.ones(shape=vshape, dtype=bool)
+        return valid
 
-#     input_basis_type = Cosine
+    def opposite_parity(self):
+        return OddParity(self.coord, self.size, self.bounds, self.dealias, self.library)
 
-#     @staticmethod
-#     def _build_subspace_entry(j, space, input_basis):
-#         # integral(cos(n*x), 0, pi) = pi * δ(n, 0)
-#         if j == 0:
-#             return np.pi * space.COV.stretch
-#         else:
-#             return 0
-
-
-# class DifferentiateSine(operators.Differentiate):
-#     """Sine series differentiation."""
-
-#     input_basis_type = Sine
-#     bands = [0]
-#     separable = True
-
-#     @staticmethod
-#     def output_basis(space, input_basis):
-#         return space.Cosine
-
-#     @staticmethod
-#     def _build_subspace_entry(i, j, space, input_basis):
-#         # dx(sin(n*x)) = n*cos(n*x)
-#         if i == j:
-#             return j / space.COV.stretch
-#         else:
-#             return 0
-
-
-# class DifferentiateCosine(operators.Differentiate):
-#     """Cosine series differentiation."""
-
-#     input_basis_type = Cosine
-#     bands = [0]
-#     separable = True
-
-#     @staticmethod
-#     def output_basis(space, input_basis):
-#         return space.Sine
-
-#     @staticmethod
-#     def _build_subspace_entry(i, j, space, input_basis):
-#         # dx(cos(n*x)) = -n*sin(n*x)
-#         if i == j:
-#             return (-j) / space.COV.stretch
-#         else:
-#             return 0
+    @CachedMethod
+    def component_parity(self, tensorsig):
+        P = np.ones([cs.dim for cs in tensorsig], dtype=int)
+        coord = self.coord
+        for i, cs in enumerate(tensorsig):
+            if coord in cs.coords:
+                start = cs.coords.index(coord)
+                P[axslice(i, start, start+1)] *= -1
+        return P
 
 
-# class HilbertTransformSine(operators.HilbertTransform):
-#     """Sine series Hilbert transform."""
+class OddParity(ParityBase, metaclass=CachedClass):
+    """Odd parity basis (sine series for scalars)."""
 
-#     input_basis_type = Sine
-#     bands = [0]
-#     separable = True
+    def __add__(self, other):
+        if other is self:
+            return self
+        if isinstance(other, OddParity):
+            if self.grid_params == other.grid_params:
+                size = max(self.size, other.size)
+                return self.clone_with(size=size)
+        return NotImplemented
 
-#     @staticmethod
-#     def output_basis(space, input_basis):
-#         return space.Cosine
+    def __mul__(self, other):
+        if other is None:
+            return self
+        if other is self:
+            return EvenParity(self.coord, self.size, self.bounds, self.dealias, self.library)
+        if isinstance(other, OddParity):
+            if self.grid_params == other.grid_params:
+                size = max(self.size, other.size)
+                return EvenParity(self.coord, size, self.bounds, self.dealias, self.library)
+        if isinstance(other, EvenParity):
+            if self.grid_params == other.grid_params:
+                size = max(self.size, other.size)
+                return OddParity(self.coord, size, self.bounds, self.dealias, self.library)
+        return NotImplemented
 
-#     @staticmethod
-#     def _build_subspace_entry(i, j, space, input_basis):
-#         # Hx(sin(n*x)) = -cos(n*x)
-#         if i == j:
-#             return (-1)
-#         else:
-#             return 0
+    def __pow__(self, other):
+        return NotImplemented
+
+    def valid_elements(self, tensorsig, grid_space, elements):
+        vshape = tuple(cs.dim for cs in tensorsig) + elements[0].shape
+        valid = np.ones(shape=vshape, dtype=bool)
+        if not grid_space[0]:
+            # Drop sine part of k=0
+            groups = self.elements_to_groups(grid_space, elements)
+            allcomps = tuple(slice(None) for cs in tensorsig)
+            selection = (groups[0] == 0)
+            valid[allcomps + (selection,)] = False
+        return valid
+
+    def opposite_parity(self):
+        return EvenParity(self.coord, self.size, self.bounds, self.dealias, self.library)
+
+    @CachedMethod
+    def component_parity(self, tensorsig):
+        P = np.ones([cs.dim for cs in tensorsig], dtype=int)
+        coord = self.coord
+        for i, cs in enumerate(tensorsig):
+            if coord in cs.coords:
+                start = cs.coords.index(coord)
+                P[axslice(i, start, start+1)] *= -1
+        return -P
 
 
-# class HilbertTransformCosine(operators.HilbertTransform):
-#     """Cosine series Hilbert transform."""
+class SpectralOperatorParity(operators.SpectralOperator1D):
+    """Base class for spectral operators that operate on parity-based bases."""
 
-#     input_basis_type = Cosine
-#     bands = [0]
-#     separable = True
+    @CachedAttribute
+    def operand_component_parity(self):
+        return self.input_basis.component_parity(self.operand.tensorsig)
 
-#     @staticmethod
-#     def output_basis(space, input_basis):
-#         return space.Sine
+    def subproblem_matrix(self, subproblem):
+        """Build operator matrix for a specific subproblem."""
+        axis = self.last_axis
+        group = subproblem.group[axis]
+        # Build matrices for each parity
+        P = self.operand_component_parity
+        if group is None:
+            parity_matrices = {p: self.subspace_matrix(self.dist.coeff_layout, p) for p in np.unique(P)}
+        else:
+            parity_matrices = {p: self.group_matrix(group, p) for p in np.unique(P)}
+        # Kronecker up to proper size
+        shape = subproblem.coeff_shape(self.domain)
+        N_before = prod(shape[:axis])
+        if N_before > 1:
+            I_before = sparse.identity(N_before, format='coo') # COO faster for kron
+            for p in parity_matrices:
+                parity_matrices[p] = sparse.kron(I_before, parity_matrices[p])
+        N_after = prod(shape[axis+1:])
+        if N_after > 1:
+            I_after = sparse.identity(N_after, format='coo') # COO faster for kron
+            for p in parity_matrices:
+                parity_matrices[p] = sparse.kron(parity_matrices[p], I_after)
+        # Block diagonalize over components
+        blocks = [parity_matrices[p] for p in P.ravel()]
+        return sparse_block_diag(blocks)
 
-#     @staticmethod
-#     def _build_subspace_entry(i, j, space, input_basis):
-#         # Hx(cos(n*x)) = sin(n*x)
-#         if i == j:
-#             return 1
-#         else:
-#             return 0
+    def group_matrix(self, group, parity):
+        return self._group_matrix(group, self.input_basis, self.output_basis, parity)
+
+    def subspace_matrix(self, layout, parity):
+        """Build matrix operating on local subspace data."""
+        # Caching layer to allow insertion of other arguments
+        return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis, parity)
+
+    def operate(self, out):
+        operand = self.args[0]
+        input_basis = self.input_basis
+        data_axis = self.last_axis
+        # Set output layout
+        out.preset_layout(operand.layout)
+        # Apply operator to each component
+        P = self.operand_component_parity
+        parity_matrices = {p: self.subspace_matrix(operand.layout, p) for p in np.unique(P)}
+        for i, p in np.ndenumerate(P):
+            # TODO: check shapes on first try
+            apply_matrix(parity_matrices[p], operand.data[i], axis=data_axis, out=out.data[i])
+
+
+class ConvertConstantEvenParity(operators.ConvertConstant, SpectralOperatorParity):
+    """
+    Upcast constants to EvenParity.
+    Note: this is a single implementation because tensor fields have both even and odd components.
+    """
+
+    output_basis_type = EvenParity
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
+
+    def __init__(self, operand, output_basis, out=None):
+        super().__init__(operand, output_basis, out=out)
+        for cs in self.operand.tensorsig:
+            if self.coords in cs.coords:
+                raise NotImplementedError("Converting constant tensor fields to EvenParity is not supported.")
+
+    @CachedAttribute
+    def operand_component_parity(self):
+        return self.output_basis.component_parity(self.operand.tensorsig)
+
+    @staticmethod
+    def _group_matrix(group, input_basis, output_basis, parity):
+        if parity != 1:
+            raise ValueError(f"This should never happen: parity = {parity}")
+        # 1 = cos(0*x)
+        if group == 0:
+            unit_amplitude = 1 / output_basis.constant_mode_value
+            return np.array([[unit_amplitude]])
+        else:
+            # Return zero-width column for subproblem construction
+            return np.zeros(shape=(1, 0))
+
+
+class InterpolateParity(operators.Interpolate, SpectralOperatorParity):
+    """
+    Parity basis interpolation.
+    Note: this is a single implementation because tensor fields have both even and odd components.
+    """
+
+    input_basis_type = ParityBase
+    basis_subaxis = 0
+    subaxis_dependence = [True]
+    subaxis_coupling = [True]
+
+    @staticmethod
+    def _output_basis(input_basis, position):
+        return None
+
+    def subspace_matrix(self, layout, parity):
+        """Build matrix operating on global subspace data."""
+        return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis, self.position, parity)
+
+    @staticmethod
+    def _full_matrix(input_basis, output_basis, position, parity):
+        # Build native interpolation vector
+        x = input_basis.COV.native_coord(position)
+        k = input_basis.native_wavenumbers
+        if parity == 1:
+            interp_vector = np.cos(k * x)
+        elif parity == -1:
+            interp_vector = np.sin(k * x)
+        else:
+            raise ValueError(f"This should never happen: parity = {parity}")
+        # Return with shape (1, N)
+        return interp_vector[None, :]
+
+
+class DifferentiateParity(operators.Differentiate, SpectralOperatorParity):
+    """
+    Parity basis differentiation.
+    Note: this is a single implementation because tensor fields have both even and odd components.
+    """
+
+    input_basis_type = ParityBase
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
+
+    @staticmethod
+    def _output_basis(input_basis, order):
+        return input_basis.derivative_basis(order)
+
+    def subspace_matrix(self, layout, parity):
+        """Build matrix operating on local subspace data."""
+        # Caching layer to allow insertion of other arguments
+        return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis, self.order, parity)
+
+    def group_matrix(self, group, parity):
+        return self._group_matrix(group, self.input_basis, self.output_basis, self.order, parity)
+
+    @staticmethod
+    def _group_matrix(group, input_basis, output_basis, order, parity):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / input_basis.COV.stretch
+        if parity == 1:
+            # dx^1 cos(kx) = -k^1 sin(kx)
+            # dx^2 cos(kx) = -k^2 cos(kx)
+            # dx^3 cos(kx) =  k^3 sin(kx)
+            # dx^4 cos(kx) =  k^4 cos(kx)
+            S = k**order * (-1)**((order+1)//2)
+            return np.array([[S]])
+        elif parity == -1:
+            # dx^1 sin(kx) =  k^1 cos(kx)
+            # dx^2 sin(kx) = -k^2 sin(kx)
+            # dx^3 sin(kx) = -k^3 cos(kx)
+            # dx^4 sin(kx) =  k^4 sin(kx)
+            S = k**order * (-1)**(order//2)
+            return np.array([[S]])
+        else:
+            raise ValueError(f"This should never happen: parity = {parity}")
+
+
+class RieszDerivativeParity(operators.RieszDerivative, SpectralOperatorParity):
+    """
+    Parity basis Riesz derivative.
+    Note: this is a single implementation because tensor fields have both even and odd components.
+    """
+
+    input_basis_type = ParityBase
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
+
+    @staticmethod
+    def _output_basis(input_basis, order):
+        return input_basis
+
+    def subspace_matrix(self, layout, parity):
+        """Build matrix operating on local subspace data."""
+        # Caching layer to allow insertion of other arguments
+        return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis, self.order, parity)
+
+    def group_matrix(self, group, parity):
+        return self._group_matrix(group, self.input_basis, self.output_basis, self.order, parity)
+
+    @staticmethod
+    def _group_matrix(group, input_basis, output_basis, order, parity):
+        # Rescale group (native wavenumber) to get physical wavenumber
+        k = group / input_basis.COV.stretch
+        # R_a exp(ikx) = - |k|^n exp(ikx) = S exp(ikx)
+        S = - abs(k) ** order
+        if parity == 1:
+             # R_a cos(kx) = S cos(kx)
+            return np.array([[S]])
+        elif parity == -1:
+            # R_a sin(kx) = S sin(kx)
+            return np.array([[S]])
+        else:
+            raise ValueError(f"This should never happen: parity = {parity}")
+
+
+class HilbertTransformParity(operators.HilbertTransform, SpectralOperatorParity):
+    """
+    Parity basis Hilbert transform.
+    Note: this is a single implementation because tensor fields have both even and odd components.
+    """
+
+    input_basis_type = ParityBase
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
+
+    @staticmethod
+    def _output_basis(input_basis):
+        return input_basis.derivative_basis()
+
+    @staticmethod
+    def _group_matrix(group, input_basis, output_basis, parity):
+        if parity == 1:
+            # Hx cos(kx) = sin(kx)
+            return np.array([[1]])
+        elif parity == -1:
+            # Hx sin(kx) = -cos(kx)
+            return np.array([[-1]])
+        else:
+            raise ValueError(f"This should never happen: parity = {parity}")
+
+
+class IntegrateEvenParity(operators.Integrate, operators.SpectralOperator1D):
+    """EvenParity basis integration."""
+
+    input_coord_type = Coordinate
+    input_basis_type = EvenParity
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
+
+    @staticmethod
+    def _output_basis(input_basis):
+        return None
+
+    @staticmethod
+    def _group_matrix(group, input_basis, output_basis):
+        # \int_{0}^{\pi} cos(kx) dx = \pi (k=0)
+        if group == 0:
+            L = input_basis.COV.problem_length
+            return np.array([[L]])
+        else:
+            # Constructor should only loop over group 0
+            raise ValueError(f"This should never happen: group = {group}")
+
+
+class IntegrateOddParity(operators.Integrate, operators.SpectralOperator1D):
+    """OddParity basis integration."""
+
+    input_coord_type = Coordinate
+    input_basis_type = OddParity
+    subaxis_dependence = [True]
+    subaxis_coupling = [True]
+
+    @staticmethod
+    def _output_basis(input_basis):
+        return None
+
+    @staticmethod
+    def _full_matrix(input_basis, output_basis):
+        # Build native integration vector
+        # \int_{0}^{\pi} sin(kx) dx = (1 - (-1)^k) / k
+        k = input_basis.native_wavenumbers
+        k_odd = (k % 2 == 1)
+        integ_vector = np.zeros(k.size)
+        integ_vector[k_odd] = 2 / k[k_odd] * input_basis.COV.stretch
+        # Return with shape (1, N)
+        return integ_vector[None, :]
+
+
+class AverageEvenParity(operators.Average, operators.SpectralOperator1D):
+    """EvenParity basis averaging."""
+
+    input_coord_type = Coordinate
+    input_basis_type = EvenParity
+    subaxis_dependence = [True]
+    subaxis_coupling = [False]
+
+    @staticmethod
+    def _output_basis(input_basis):
+        return None
+
+    @staticmethod
+    def _group_matrix(group, input_basis, output_basis):
+        # \int_{0}^{\pi} cos(kx) dx = \pi (k=0)
+        if group == 0:
+            return np.array([[1]])
+        else:
+            # Constructor should only loop over group 0
+            raise ValueError(f"This should never happen: group = {group}")
+
+
+class AverageOddParity(operators.Average, operators.SpectralOperator1D):
+    """OddParity basis averaging."""
+
+    input_coord_type = Coordinate
+    input_basis_type = OddParity
+    subaxis_dependence = [True]
+    subaxis_coupling = [True]
+
+    @staticmethod
+    def _output_basis(input_basis):
+        return None
+
+    @staticmethod
+    def _full_matrix(input_basis, output_basis):
+        # Build native integration vector
+        # \int_{0}^{\pi} sin(kx) dx = (1 - (-1)^k) / k
+        k = input_basis.native_wavenumbers
+        k_odd = (k % 2 == 1)
+        integ_vector = np.zeros(k.size)
+        integ_vector[k_odd] = 2 / k[k_odd]
+        ave_vector = integ_vector / np.pi
+        # Return with shape (1, N)
+        return ave_vector[None, :]
 
 
 class MultidimensionalBasis(Basis):
@@ -2401,6 +2791,9 @@ class DiskBasis(PolarBasis, metaclass=CachedClass):
                 k = self.k  # use operand's k value to minimize conversions
                 return self.clone_with(shape=shape, k=k)
         return NotImplemented
+
+    def skew_basis(self):
+        return self
 
     def global_grid_radius(self, dist, scale):
         r = self.radial_COV.problem_coord(self._native_radius_grid(scale))
