@@ -709,6 +709,8 @@ class InitialValueSolver(SolverBase):
         # Update iteration
         self.iteration += 1
         self.dt = dt
+        
+        return dt
 
     def evolve(self, timestep_function, log_cadence=100):
         """Advance system until stopping criterion is reached."""
