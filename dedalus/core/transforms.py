@@ -8,13 +8,16 @@ import scipy.fft
 import scipy.fftpack
 from ..libraries import dedalus_sphere
 from math import prod
+import array_api_compat
 
 from . import basis
 from ..libraries.fftw import fftw_wrappers as fftw
 from ..tools import jacobi
-from ..tools.array import apply_matrix, apply_dense, axslice, solve_upper_sparse, apply_sparse
+from ..tools.array import apply_matrix, apply_dense, axslice, solve_upper_sparse, apply_sparse, copyto
 from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
+from ..tools.general import float_to_complex
+from ..tools.linalg_gpu import cupy_solve_upper_csr, CustomCupyUpperTriangularSolver
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -93,31 +96,39 @@ class JacobiTransform(SeparableTransform):
         Jacobi "a" parameter for the quadrature grid.
     b0 : int
         Jacobi "b" parameter for the quadrature grid.
+    array_namespace : array namespace
+        Array namespace for the transform.
+    dtype : dtype
+        Data type for the transform.
 
     Notes
     -----
     TODO: We need to define the normalization we use here.
     """
 
-    def __init__(self, grid_size, coeff_size, a, b, a0, b0, dealias_before_converting=None):
+    def __init__(self, grid_size, coeff_size, a, b, a0, b0, array_namespace, dtype, dealias_before_converting=None):
         self.N = grid_size
         self.M = coeff_size
         self.a = a
         self.b = b
         self.a0 = a0
         self.b0 = b0
+        self.array_namespace = array_namespace
+        self.dtype = dtype
         if dealias_before_converting is None:
             dealias_before_converting = GET_DEALIAS_BEFORE_CONVERTING()
         self.dealias_before_converting = dealias_before_converting
 
 
-@register_transform(basis.Jacobi, 'matrix')
+@register_transform(basis.Jacobi, 'matrix-numpy')
+@register_transform(basis.Jacobi, 'matrix-cupy')
 class JacobiMMT(JacobiTransform, SeparableMatrixTransform):
     """Jacobi polynomial MMTs."""
 
     @CachedAttribute
     def forward_matrix(self):
         """Build forward transform matrix."""
+        xp = self.array_namespace
         N, M = self.N, self.M
         a, a0 = self.a, self.a0
         b, b0 = self.b, self.b0
@@ -141,11 +152,12 @@ class JacobiMMT(JacobiTransform, SeparableMatrixTransform):
             # Truncate to specified coeff_size
             forward_matrix = forward_matrix[:M, :]
         # Ensure C ordering for fast dot products
-        return np.asarray(forward_matrix, order='C')
+        return xp.asarray(forward_matrix, order='C', dtype=self.dtype)
 
     @CachedAttribute
     def backward_matrix(self):
         """Build backward transform matrix."""
+        xp = self.array_namespace
         N, M = self.N, self.M
         a, a0 = self.a, self.a0
         b, b0 = self.b, self.b0
@@ -155,7 +167,7 @@ class JacobiMMT(JacobiTransform, SeparableMatrixTransform):
         # Zero higher polynomials for transforms with grid_size < coeff_size
         polynomials[N:, :] = 0
         # Transpose and ensure C ordering for fast dot products
-        return np.asarray(polynomials.T, order='C')
+        return xp.asarray(polynomials.T, order='C', dtype=self.dtype)
 
 
 class ComplexFourierTransform(SeparableTransform):
@@ -191,50 +203,56 @@ class ComplexFourierTransform(SeparableTransform):
         If M is even, the ordering is [0, 1, 2, ..., KM, -KM, -KM+1, ..., -1].
     """
 
-    def __init__(self, grid_size, coeff_size):
+    def __init__(self, grid_size, coeff_size, array_namespace, dtype):
         self.N = grid_size
         self.M = coeff_size
         self.KN = (self.N - 1) // 2
         self.KM = (self.M - 1) // 2
         self.Kmax = min(self.KN, self.KM)
+        self.array_namespace = array_namespace
+        self.dtype = dtype
 
     @property
     def wavenumbers(self):
         """One-dimensional global wavenumber array."""
+        xp = self.array_namespace
         M = self.M
         KM = self.KM
-        k = np.arange(M)
+        k = xp.arange(M)
         # Wrap around Nyquist mode
         return (k + KM) % M - KM
 
 
-@register_transform(basis.ComplexFourier, 'matrix')
+@register_transform(basis.ComplexFourier, 'matrix-numpy')
+@register_transform(basis.ComplexFourier, 'matrix-cupy')
 class ComplexFourierMMT(ComplexFourierTransform, SeparableMatrixTransform):
     """Complex-to-complex Fourier MMT."""
 
     @CachedAttribute
     def forward_matrix(self):
         """Build forward transform matrix."""
+        xp = self.array_namespace
         K = self.wavenumbers[:, None]
-        X = np.arange(self.N)[None, :]
+        X = xp.arange(self.N)[None, :]
         dX = self.N / 2 / np.pi
-        quadrature = np.exp(-1j*K*X/dX) / self.N
+        quadrature = xp.exp(-1j*K*X/dX) / self.N
         # Zero Nyquist and higher modes for transforms with grid_size <= coeff_size
-        quadrature *= np.abs(K) <= self.Kmax
-        # Ensure C ordering for fast dot products
-        return np.asarray(quadrature, order='C')
+        quadrature *= xp.abs(K) <= self.Kmax
+        # Ensure C ordering for fast dot products, cast to specified dtype
+        return xp.asarray(quadrature, order='C', dtype=self.dtype)
 
     @CachedAttribute
     def backward_matrix(self):
         """Build backward transform matrix."""
+        xp = self.array_namespace
         K = self.wavenumbers[None, :]
-        X = np.arange(self.N)[:, None]
+        X = xp.arange(self.N)[:, None]
         dX = self.N / 2 / np.pi
-        functions = np.exp(1j*K*X/dX)
+        functions = xp.exp(1j*K*X/dX)
         # Zero Nyquist and higher modes for transforms with grid_size <= coeff_size
-        functions *= np.abs(K) <= self.Kmax
-        # Ensure C ordering for fast dot products
-        return np.asarray(functions, order='C')
+        functions *= xp.abs(K) <= self.Kmax
+        # Ensure C ordering for fast dot products, cast to specified dtype
+        return xp.asarray(functions, order='C', dtype=self.dtype)
 
 
 class ComplexFFT(ComplexFourierTransform):
@@ -242,32 +260,33 @@ class ComplexFFT(ComplexFourierTransform):
 
     def resize_coeffs(self, data_in, data_out, axis, rescale):
         """Resize and rescale coefficients in standard FFT format by intermediate padding/truncation."""
+        xp = self.array_namespace
         M = self.M
         Kmax = self.Kmax
         if Kmax == 0:
             posfreq = axslice(axis, 0, 1)
             badfreq = axslice(axis, 1, None)
             if rescale is None:
-                np.copyto(data_out[posfreq], data_in[posfreq])
+                xp.copyto(data_out[posfreq], data_in[posfreq])
                 data_out[badfreq] = 0
             else:
-                np.multiply(data_in[posfreq], rescale, data_out[posfreq])
+                xp.multiply(data_in[posfreq], rescale, data_out[posfreq])
                 data_out[badfreq] = 0
         else:
             posfreq = axslice(axis, 0, Kmax+1)
             badfreq = axslice(axis, Kmax+1, -Kmax)
             negfreq = axslice(axis, -Kmax, None)
             if rescale is None:
-                np.copyto(data_out[posfreq], data_in[posfreq])
+                xp.copyto(data_out[posfreq], data_in[posfreq])
                 data_out[badfreq] = 0
-                np.copyto(data_out[negfreq], data_in[negfreq])
+                xp.copyto(data_out[negfreq], data_in[negfreq])
             else:
-                np.multiply(data_in[posfreq], rescale, data_out[posfreq])
+                xp.multiply(data_in[posfreq], rescale, data_out[posfreq])
                 data_out[badfreq] = 0
-                np.multiply(data_in[negfreq], rescale, data_out[negfreq])
+                xp.multiply(data_in[negfreq], rescale, data_out[negfreq])
 
 
-@register_transform(basis.ComplexFourier, 'scipy')
+@register_transform(basis.ComplexFourier, 'scipy-numpy')
 class ScipyComplexFFT(ComplexFFT):
     """Complex-to-complex FFT using scipy.fft."""
 
@@ -289,6 +308,34 @@ class ScipyComplexFFT(ComplexFFT):
         np.copyto(gdata, temp)
 
 
+@register_transform(basis.ComplexFourier, 'scipy-cupy')
+class CupyComplexFFT(ComplexFFT):
+    """Complex-to-complex FFT using scipy.fft."""
+
+    def __init__(self, *args, **kw):
+        import cupyx.scipy.fft as cufft
+        self.cufft = cufft
+        super().__init__(*args, **kw)
+
+    def forward(self, gdata, cdata, axis):
+        """Apply forward transform along specified axis."""
+        # Call FFT
+        temp = self.cufft.fft(gdata, axis=axis) # Creates temporary
+        # Resize and rescale for unit-amplitude normalization
+        self.resize_coeffs(temp, cdata, axis, rescale=1/self.N)
+
+    def backward(self, cdata, gdata, axis):
+        """Apply backward transform along specified axis."""
+        xp = self.array_namespace
+        # Resize and rescale for unit-amplitude normalization
+        # Need temporary to avoid overwriting problems
+        temp = xp.empty_like(gdata) # Creates temporary
+        self.resize_coeffs(cdata, temp, axis, rescale=self.N)
+        # Call FFT
+        temp = self.cufft.ifft(temp, axis=axis, overwrite_x=True) # Creates temporary
+        xp.copyto(gdata, temp)
+
+
 class FFTWBase:
     """Abstract base class for FFTW transforms."""
 
@@ -299,7 +346,7 @@ class FFTWBase:
         super().__init__(*args, **kw)
 
 
-@register_transform(basis.ComplexFourier, 'fftw')
+@register_transform(basis.ComplexFourier, 'fftw-numpy')
 class FFTWComplexFFT(FFTWBase, ComplexFFT):
     """Complex-to-complex FFT using FFTW."""
 
@@ -368,7 +415,7 @@ class RealFourierTransform(SeparableTransform):
         where the k = 0 minus-sine mode is zeroed in both directions.
     """
 
-    def __init__(self, grid_size, coeff_size):
+    def __init__(self, grid_size, coeff_size, array_namespace, dtype):
         if coeff_size % 2 != 0:
             pass#raise ValueError("coeff_size must be even.")
         self.N = grid_size
@@ -376,55 +423,61 @@ class RealFourierTransform(SeparableTransform):
         self.KN = (self.N - 1) // 2
         self.KM = (self.M - 1) // 2
         self.Kmax = min(self.KN, self.KM)
+        self.array_namespace = array_namespace
+        self.dtype = dtype
 
     @property
     def wavenumbers(self):
         """One-dimensional global wavenumber array."""
+        xp = self.array_namespace
         # Repeat k's for cos and msin parts
-        return np.repeat(np.arange(self.KM+1), 2)
+        return xp.repeat(xp.arange(self.KM+1), 2)
 
 
-@register_transform(basis.RealFourier, 'matrix')
+@register_transform(basis.RealFourier, 'matrix-numpy')
+@register_transform(basis.RealFourier, 'matrix-cupy')
 class RealFourierMMT(RealFourierTransform, SeparableMatrixTransform):
     """Real-to-real Fourier MMT."""
 
     @CachedAttribute
     def forward_matrix(self):
         """Build forward transform matrix."""
+        xp = self.array_namespace
         N = self.N
         M = max(2, self.M) # Account for sin and cos parts of m=0
         Kmax = self.Kmax
         K = self.wavenumbers[::2, None]
-        X = np.arange(N)[None, :]
+        X = xp.arange(N)[None, :]
         dX = N / 2 / np.pi
-        quadrature = np.zeros((M, N))
-        quadrature[0::2] = (2 / N) * np.cos(K*X/dX)
-        quadrature[1::2] = -(2 / N) * np.sin(K*X/dX)
+        quadrature = xp.zeros((M, N))
+        quadrature[0::2] = (2 / N) * xp.cos(K*X/dX)
+        quadrature[1::2] = -(2 / N) * xp.sin(K*X/dX)
         quadrature[0] = 1 / N
         # Zero Nyquist and higher modes for transforms with grid_size <= coeff_size
         quadrature *= self.wavenumbers[:,None] <= self.Kmax
         # Ensure C ordering for fast dot products
-        return np.asarray(quadrature, order='C')
+        return xp.asarray(quadrature, order='C', dtype=self.dtype)
 
     @CachedAttribute
     def backward_matrix(self):
         """Build backward transform matrix."""
+        xp = self.array_namespace
         N = self.N
         M = max(2, self.M) # Account for sin and cos parts of m=0
         Kmax = self.Kmax
         K = self.wavenumbers[None, ::2]
-        X = np.arange(N)[:, None]
+        X = xp.arange(N)[:, None]
         dX = N / 2 / np.pi
-        functions = np.zeros((N, M))
-        functions[:, 0::2] = np.cos(K*X/dX)
-        functions[:, 1::2] = -np.sin(K*X/dX)
+        functions = xp.zeros((N, M))
+        functions[:, 0::2] = xp.cos(K*X/dX)
+        functions[:, 1::2] = -xp.sin(K*X/dX)
         # Zero Nyquist and higher modes for transforms with grid_size <= coeff_size
         functions *= self.wavenumbers[None, :] <= self.Kmax
         # Ensure C ordering for fast dot products
-        return np.asarray(functions, order='C')
+        return xp.asarray(functions, order='C', dtype=self.dtype)
 
 
-@register_transform(basis.RealFourier, 'fftpack')
+@register_transform(basis.RealFourier, 'fftpack-numpy')
 class FFTPACKRealFFT(RealFourierTransform):
     """Real-to-real FFT using scipy.fftpack."""
 
@@ -471,47 +524,53 @@ class RealFFT(RealFourierTransform):
 
     def unpack_rescale(self, temp, cdata, axis, rescale):
         """Unpack complex coefficients and rescale for unit-amplitude normalization."""
+        xp = self.array_namespace
         Kmax = self.Kmax
         # Scale k = 0 cos data
         meancos = axslice(axis, 0, 1)
-        np.multiply(temp[meancos].real, rescale, cdata[meancos])
+        xp.multiply(temp[meancos].real, rescale, cdata[meancos])
         # Zero k = 0 msin data
         cdata[axslice(axis, 1, 2)] = 0
         # Unpack and scale 1 < k <= Kmax data
         temp_posfreq = temp[axslice(axis, 1, Kmax+1)]
         cdata_posfreq_cos = cdata[axslice(axis, 2, 2*(Kmax+1), 2)]
         cdata_posfreq_msin = cdata[axslice(axis, 3, 2*(Kmax+1), 2)]
-        np.multiply(temp_posfreq.real, 2*rescale, cdata_posfreq_cos)
-        np.multiply(temp_posfreq.imag, 2*rescale, cdata_posfreq_msin)
+        xp.multiply(temp_posfreq.real, 2*rescale, cdata_posfreq_cos)
+        xp.multiply(temp_posfreq.imag, 2*rescale, cdata_posfreq_msin)
         # Zero k > Kmax data
         cdata[axslice(axis, 2*(Kmax+1), None)] = 0
 
     def repack_rescale(self, cdata, temp, axis, rescale):
         """Repack into complex coefficients and rescale for unit-amplitude normalization."""
+        xp = self.array_namespace
         Kmax = self.Kmax
         # Scale k = 0 data
         meancos = axslice(axis, 0, 1)
         if rescale is None:
-            np.copyto(temp[meancos], cdata[meancos])
+            xp.copyto(temp[meancos], cdata[meancos])
         else:
-            np.multiply(cdata[meancos], rescale, temp[meancos])
+            xp.multiply(cdata[meancos], rescale, temp[meancos])
         # Repack and scale 1 < k <= Kmax data
         temp_posfreq = temp[axslice(axis, 1, Kmax+1)]
         cdata_posfreq_cos = cdata[axslice(axis, 2, 2*(Kmax+1), 2)]
         cdata_posfreq_msin = cdata[axslice(axis, 3, 2*(Kmax+1), 2)]
         if rescale is None:
-            np.multiply(cdata_posfreq_cos, (1 / 2), temp_posfreq.real)
-            np.multiply(cdata_posfreq_msin, (1 / 2), temp_posfreq.imag)
+            xp.multiply(cdata_posfreq_cos, (1 / 2), temp_posfreq.real)
+            xp.multiply(cdata_posfreq_msin, (1 / 2), temp_posfreq.imag)
         else:
-            np.multiply(cdata_posfreq_cos, (rescale / 2), temp_posfreq.real)
-            np.multiply(cdata_posfreq_msin, (rescale / 2), temp_posfreq.imag)
+            xp.multiply(cdata_posfreq_cos, (rescale / 2), temp_posfreq.real)
+            xp.multiply(cdata_posfreq_msin, (rescale / 2), temp_posfreq.imag)
         # Zero k > Kmax data
         temp[axslice(axis, Kmax+1, None)] = 0
 
 
-@register_transform(basis.RealFourier, 'scipy')
+@register_transform(basis.RealFourier, 'scipy-numpy')
 class ScipyRealFFT(RealFFT):
     """Real-to-real FFT using scipy.fft."""
+
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self.complex_dtype = float_to_complex(self.dtype)
 
     def forward(self, gdata, cdata, axis):
         """Apply forward transform along specified axis."""
@@ -526,7 +585,7 @@ class ScipyRealFFT(RealFFT):
         # Rescale all modes and combine into complex form
         shape = list(gdata.shape)
         shape[axis] = N // 2 + 1
-        temp = np.empty(shape=shape, dtype=np.complex128) # Creates temporary
+        temp = np.empty(shape=shape, dtype=self.complex_dtype) # Creates temporary
         # Repack into complex form and rescale
         self.repack_rescale(cdata, temp, axis, rescale=N)
         # Call IRFFT
@@ -534,7 +593,39 @@ class ScipyRealFFT(RealFFT):
         np.copyto(gdata, temp)
 
 
-@register_transform(basis.RealFourier, 'fftw')
+@register_transform(basis.RealFourier, 'scipy-cupy')
+class CupyRealFFT(RealFFT):
+    """Real-to-real FFT using scipy.fft."""
+
+    def __init__(self, *args, **kw):
+        import cupyx.scipy.fft as cufft
+        self.cufft = cufft
+        super().__init__(*args, **kw)
+        self.complex_dtype = float_to_complex(self.dtype)
+
+    def forward(self, gdata, cdata, axis):
+        """Apply forward transform along specified axis."""
+        # Call RFFT
+        temp = self.cufft.rfft(gdata, axis=axis) # Creates temporary
+        # Unpack from complex form and rescale
+        self.unpack_rescale(temp, cdata, axis, rescale=1/self.N)
+
+    def backward(self, cdata, gdata, axis):
+        """Apply backward transform along specified axis."""
+        xp = self.array_namespace
+        N = self.N
+        # Rescale all modes and combine into complex form
+        shape = list(gdata.shape)
+        shape[axis] = N // 2 + 1
+        temp = xp.empty(shape=shape, dtype=self.complex_dtype) # Creates temporary
+        # Repack into complex form and rescale
+        self.repack_rescale(cdata, temp, axis, rescale=N)
+        # Call IRFFT
+        temp = self.cufft.irfft(temp, axis=axis, n=N, overwrite_x=True) # Creates temporary
+        xp.copyto(gdata, temp)
+
+
+@register_transform(basis.RealFourier, 'fftw-numpy')
 class FFTWRealFFT(FFTWBase, RealFFT):
     """Real-to-real FFT using FFTW."""
 
@@ -565,7 +656,7 @@ class FFTWRealFFT(FFTWBase, RealFFT):
         plan.backward(temp, gdata)
 
 
-@register_transform(basis.RealFourier, 'fftw_hc')
+@register_transform(basis.RealFourier, 'fftw_hc-numpy')
 class FFTWHalfComplexFFT(FFTWBase, RealFourierTransform):
     """Real-to-real FFT using FFTW half-complex DFT."""
 
@@ -768,6 +859,33 @@ class ScipyDCT(FastCosineTransform):
         np.copyto(gdata, temp)
 
 
+class CupyDCT(FastCosineTransform):
+    """Fast cosine transform using cupy fft."""
+
+    def __init__(self, *args, **kw):
+        import cupyx.scipy.fft as cufft
+        self.cufft = cufft
+        super().__init__(*args, **kw)
+
+    def forward(self, gdata, cdata, axis):
+        """Apply forward transform along specified axis."""
+        # Call DCT
+        temp = self.cufft.dct(gdata, type=2, axis=axis) # Creates temporary
+        # Resize and rescale for unit-ampltidue normalization
+        self.resize_rescale_forward(temp, cdata, axis, self.Kmax)
+
+    def backward(self, cdata, gdata, axis):
+        """Apply backward transform along specified axis."""
+        xp = self.array_namespace
+        # Resize and rescale for unit-amplitude normalization
+        # Need temporary to avoid overwriting problems
+        temp = xp.empty_like(gdata) # Creates temporary
+        self.resize_rescale_backward(cdata, temp, axis, self.Kmax)
+        # Call IDCT
+        temp = self.cufft.dct(temp, type=3, axis=axis, overwrite_x=True) # Creates temporary
+        copyto(gdata, temp)
+
+
 #@register_transform(basis.Cosine, 'fftw')
 class FFTWDCT(FFTWBase, FastCosineTransform):
     """Fast cosine transform using FFTW."""
@@ -804,11 +922,11 @@ class FastChebyshevTransform(JacobiTransform):
     Subclasses should inherit from this class, then a FastCosineTransform subclass.
     """
 
-    def __init__(self, grid_size, coeff_size, a, b, a0, b0, **kw):
+    def __init__(self, grid_size, coeff_size, a, b, a0, b0, array_namespace, dtype, **kw):
         if not a0 == b0 == -1/2:
             raise ValueError("Fast Chebshev transform requires a0 == b0 == -1/2.")
         # Jacobi initialization
-        super().__init__(grid_size, coeff_size, a, b, a0, b0, **kw)
+        super().__init__(grid_size, coeff_size, a, b, a0, b0, array_namespace, dtype, **kw)
         # DCT initialization to set scaling factors
         if a != a0 or b != b0:
             # Modify coeff_size to avoid truncation before conversion
@@ -840,6 +958,13 @@ class FastChebyshevTransform(JacobiTransform):
             self.backward_conversion.sum_duplicates() # for faster solve_upper
             self.resize_rescale_forward = self._resize_rescale_forward_convert
             self.resize_rescale_backward = self._resize_rescale_backward_convert
+            if array_api_compat.is_cupy_namespace(self.array_namespace):
+                import cupyx.scipy.sparse as csp
+                self.forward_conversion = csp.csr_matrix(self.forward_conversion)
+                self.backward_conversion = csp.csr_matrix(self.backward_conversion)
+                self.forward_conversion.sum_duplicates()
+                self.backward_conversion.sum_duplicates()
+                self.backward_conversion_LU = CustomCupyUpperTriangularSolver(self.backward_conversion)
 
     def _resize_rescale_forward(self, data_in, data_out, axis, Kmax):
         """Resize by padding/trunction and rescale to unit amplitude."""
@@ -881,7 +1006,10 @@ class FastChebyshevTransform(JacobiTransform):
             # Truncate input before conversion
             data_in[badfreq] = 0
         # Ultraspherical conversion
-        solve_upper_sparse(self.backward_conversion, data_in, axis, out=data_in)
+        if array_api_compat.is_cupy_namespace(self.array_namespace):
+            cupy_solve_upper_csr(self.backward_conversion_LU, data_in, axis, out=data_in)
+        else:
+            solve_upper_sparse(self.backward_conversion, data_in, axis, out=data_in)
         # Change sign of odd modes
         if Kmax_orig > 0:
             posfreq_odd = axslice(axis, 1, Kmax_orig+1, 2)
@@ -890,15 +1018,21 @@ class FastChebyshevTransform(JacobiTransform):
         super().resize_rescale_backward(data_in, data_out, axis, Kmax_orig)
 
 
-@register_transform(basis.Jacobi, 'scipy_dct')
+@register_transform(basis.Jacobi, 'scipy_dct-numpy')
 class ScipyFastChebyshevTransform(FastChebyshevTransform, ScipyDCT):
     """Fast ultraspherical transform using scipy.fft and spectral conversion."""
     pass  # Implementation is complete via inheritance
 
 
-@register_transform(basis.Jacobi, 'fftw_dct')
+@register_transform(basis.Jacobi, 'fftw_dct-numpy')
 class FFTWFastChebyshevTransform(FastChebyshevTransform, FFTWDCT):
     """Fast ultraspherical transform using scipy.fft and spectral conversion."""
+    pass  # Implementation is complete via inheritance
+
+
+@register_transform(basis.Jacobi, 'scipy_dct-cupy')
+class CupyFastChebyshevTransform(FastChebyshevTransform, CupyDCT):
+    """Fast ultraspherical transform using cupy fft and spectral conversion."""
     pass  # Implementation is complete via inheritance
 
 

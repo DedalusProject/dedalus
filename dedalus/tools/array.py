@@ -5,7 +5,10 @@ from scipy import sparse
 import scipy.sparse as sp
 from scipy.sparse import _sparsetools
 from scipy.sparse import linalg as spla
+from scipy.linalg import blas
 from math import prod
+from ..tools import linalg_gpu
+import array_api_compat
 
 from .config import config
 from . import linalg as cython_linalg
@@ -76,10 +79,20 @@ def expand_pattern(input, pattern):
 
 def apply_matrix(matrix, array, axis, **kw):
     """Apply matrix along any axis of an array."""
-    if sparse.isspmatrix(matrix):
-        return apply_sparse(matrix, array, axis, **kw)
+    xp = array_api_compat.array_namespace(array)
+    if array_api_compat.is_numpy_namespace(xp):
+        if sparse.issparse(matrix):
+            return apply_sparse(matrix, array, axis, **kw)
+        else:
+            return apply_dense(matrix, array, axis, **kw)
+    elif array_api_compat.is_cupy_namespace(xp):
+        import cupyx.scipy.sparse as csp
+        if csp.issparse(matrix):
+            return apply_sparse(matrix, array, axis, **kw)
+        else:
+            return apply_dense(matrix, array, axis, **kw)
     else:
-        return apply_dense(matrix, array, axis, **kw)
+        raise ValueError("Unsupported array type")
 
 
 def apply_dense_einsum(matrix, array, axis, optimize=True, **kw):
@@ -173,14 +186,14 @@ def apply_sparse(matrix, array, axis, out=None, check_shapes=False, num_threads=
     Apply sparse matrix along any axis of an array.
     Must be out of place if ouptut is specified.
     """
-    # Check matrix
-    if not isinstance(matrix, sparse.csr_matrix):
-        raise ValueError("Matrix must be in CSR format.")
+    xp = array_api_compat.array_namespace(array)
+    matrix.sum_duplicates()
+    matrix.has_canonical_format = True
     # Check output
     if out is None:
         out_shape = list(array.shape)
         out_shape[axis] = matrix.shape[0]
-        out = np.empty(out_shape, dtype=array.dtype)
+        out = xp.empty(out_shape, dtype=array.dtype)
     elif out is array:
         raise ValueError("Cannot apply in place")
     # Check shapes
@@ -189,17 +202,27 @@ def apply_sparse(matrix, array, axis, out=None, check_shapes=False, num_threads=
             raise ValueError("Axis out of bounds.")
         if matrix.shape[1] != array.shape[axis] or matrix.shape[0] != out.shape[axis]:
             raise ValueError("Matrix shape mismatch.")
-    # Old way if requested
-    if OLD_CSR_MATVECS and array.ndim == 2 and axis == 0:
-        out.fill(0)
-        return csr_matvecs(matrix, array, out)
-    # Promote datatypes
-    # TODO: find way to optimize this with fused types
-    matrix_data = matrix.data
-    if matrix_data.dtype != out.dtype:
-        matrix_data = matrix_data.astype(out.dtype)
-    # Call cython routine
-    cython_linalg.apply_csr(matrix.indptr, matrix.indices, matrix_data, array, out, axis, num_threads)
+    # Dispatch on array type
+    if array_api_compat.is_numpy_namespace(xp):
+        # Check matrix
+        if not isinstance(matrix, sparse.csr_matrix):
+            raise ValueError("Matrix must be in CSR format.")
+        # Old way if requested
+        if OLD_CSR_MATVECS and array.ndim == 2 and axis == 0:
+            out.fill(0)
+            return csr_matvecs(matrix, array, out)
+        # Promote datatypes
+        # TODO: find way to optimize this with fused types
+        matrix_data = matrix.data
+        if matrix_data.dtype != out.dtype:
+            matrix_data = matrix_data.astype(out.dtype)
+        # Call cython routine
+        cython_linalg.apply_csr(matrix.indptr, matrix.indices, matrix_data, array, out, axis, num_threads)
+    elif array_api_compat.is_cupy_namespace(xp):
+        # TODO: check matrix format here without import cupy
+        linalg_gpu.cupy_apply_csr(matrix, array, axis, out)
+    else:
+        raise ValueError("Unsupported array type")
     return out
 
 
@@ -208,28 +231,40 @@ def solve_upper_sparse(matrix, rhs, axis, out=None, check_shapes=False, num_thre
     Solve upper triangular sparse matrix along any axis of an array.
     Matrix assumed to be nonzero on the diagonals.
     """
-    # Check matrix
-    if not isinstance(matrix, sparse.csr_matrix):
-        raise ValueError("Matrix must be in CSR format.")
-    if not matrix._has_canonical_format: # avoid property hook (without underscore)
-        matrix.sum_duplicates()
-    # Setup output = rhs
+    xp = array_api_compat.array_namespace(rhs)
+    matrix.sum_duplicates()
+    matrix.has_canonical_format = True
+    # Check output
     if out is None:
-        out = np.copy(rhs)
-    elif out is not rhs:
-        np.copyto(out, rhs)
-    # Promote datatypes
-    matrix_data = matrix.data
-    if matrix_data.dtype != rhs.dtype:
-        matrix_data = matrix_data.astype(rhs.dtype)
-    # Check shapes
-    if check_shapes:
-        if not (0 <= axis < rhs.ndim):
-            raise ValueError("Axis out of bounds.")
-        if not (matrix.shape[0] == matrix.shape[1] == rhs.shape[axis]):
-            raise ValueError("Matrix shape mismatch.")
-    # Call cython routine
-    cython_linalg.solve_upper_csr(matrix.indptr, matrix.indices, matrix_data, out, axis, num_threads)
+        out = xp.empty_like(rhs)
+    # Dispatch on array type
+    if array_api_compat.is_numpy_namespace(xp):
+        # Check matrix
+        if not isinstance(matrix, sparse.csr_matrix):
+            raise ValueError("Matrix must be in CSR format.")
+        if not matrix._has_canonical_format: # avoid property hook (without underscore)
+            matrix.sum_duplicates()
+        # Setup output = rhs
+        copyto(out, rhs)
+        # Promote datatypes
+        matrix_data = matrix.data
+        if matrix_data.dtype != rhs.dtype:
+            matrix_data = matrix_data.astype(rhs.dtype)
+        # Check shapes
+        if check_shapes:
+            if not (0 <= axis < rhs.ndim):
+                raise ValueError("Axis out of bounds.")
+            if not (matrix.shape[0] == matrix.shape[1] == rhs.shape[axis]):
+                raise ValueError("Matrix shape mismatch.")
+        # Call cython routine
+        cython_linalg.solve_upper_csr(matrix.indptr, matrix.indices, matrix_data, out, axis, num_threads)
+    elif array_api_compat.is_cupy_namespace(xp):
+        if not matrix._has_canonical_format: # avoid property hook (without underscore)
+            matrix.sum_duplicates()
+        linalg_gpu.cupy_solve_upper_csr(matrix, rhs, axis, out)
+    else:
+        raise ValueError("Unsupported array type")
+    return out
 
 
 def csr_matvec(A_csr, x_vec, out_vec):
@@ -353,6 +388,22 @@ def copyto(dest, src):
     dest[:] = src
 
 
+def copy_to_device(dest, src):
+    xp = array_api_compat.array_namespace(dest)
+    if array_api_compat.is_cupy_namespace(xp):
+        src = xp.asarray(src)
+        dest[:] = src
+    else:
+        dest[:] = src
+
+
+def copy_from_device(dest, src):
+    if array_api_compat.is_cupy_array(src):
+        src.get(out=dest)
+    else:
+        dest[:] = src
+
+
 def perm_matrix(perm, M=None, source_index=False, sparse=True):
     """
     Build sparse permutation matrix from permutation vector.
@@ -474,3 +525,12 @@ def assert_sparse_pinv(A, B):
     if not sparse_allclose((B @ A).conj().T, B @ A):
         raise AssertionError("Not a pseudoinverse")
 
+
+def get_axpy(array_namespace, dtype):
+    if array_api_compat.is_numpy_namespace(array_namespace):
+        return blas.get_blas_funcs('axpy', dtype=dtype)
+    elif array_api_compat.is_cupy_namespace(array_namespace):
+        from cupy.cublas import axpy as cublas_axpy
+        return cublas_axpy
+    else:
+        raise ValueError("Unsupported array namespace")
