@@ -33,7 +33,7 @@ Process meshes for better load balancing
 
 Dedalus uses multidimensional block distributions when decomposing domains in parallel.
 By default, problems are parallelized over a 1D process mesh of all available MPI processes.
-Multidimensional parallelization is easily enabled by specifing a mesh shape using the ``mesh`` keyword when instantiating a ``Distributor`` object.
+Multidimensional parallelization is easily enabled by specifying a mesh shape using the ``mesh`` keyword when instantiating a ``Distributor`` object.
 The specified mesh shape should be a tuple with a length one less than the problem dimension.
 
 Ideal load balancing occurs when the size of a distributed dimension is evenly divisible by the corresponding mesh size.
