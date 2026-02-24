@@ -439,6 +439,11 @@ class InterpolateCardinal(operators.Interpolate, operators.SpectralOperator1D):
     subaxis_dependence = [True]
     subaxis_coupling = [True]
 
+    def __init__(self, coord, size, position, out=None):
+        if not isinstance(position, (int, np.integer)):
+            raise TypeError("Cardinal interpolation position must be an integer")
+        super().__init__(coord, size, position, out=out)
+
     @staticmethod
     def _output_basis(input_basis, position):
         return None
