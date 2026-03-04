@@ -418,7 +418,7 @@ class PowerFieldConstant(Power, FutureField):
         self.cotangent.change_layout(layout)
         if self.cotangent.data.size:
             # TODO: optimize with axpy
-            temp = arg1 * arg0.data ** (arg1-1) * self.cotangent.data
+            temp = np.conj(arg1 * arg0.data ** (arg1-1)) * self.cotangent.data
             np.add(cotan0.data, temp, out=cotan0.data)
 
     def reinitialize(self, **kw):
@@ -532,8 +532,8 @@ class PowerFieldField(Power, FutureField):
             arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
             arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
             # Compute raw cotangents
-            temp0 = arg1_data * arg0_data ** (arg1_data-1) * self.cotangent.data
-            temp1 = arg0_data ** arg1_data * np.log(arg0_data) * self.cotangent.data
+            temp0 = np.conj(arg1_data * arg0_data ** (arg1_data-1)) * self.cotangent.data
+            temp1 = np.conj(arg0_data ** arg1_data * np.log(arg0_data)) * self.cotangent.data
             # Reduce over broadcasted spatial dimensions
             spatial_reduce_0 = self.arg0_ghost_broadcaster.deploy_dims_ext_list
             spatial_reduce_1 = self.arg1_ghost_broadcaster.deploy_dims_ext_list
@@ -801,7 +801,7 @@ class UnaryGridFunction(NonlinearOperator, FutureField):
                 cotan0.change_layout(layout)
         # Add adjoint contribution in-place (required for accumulation)
         self.cotangent.change_layout(layout)
-        temp = self.ufunc_derivatives[self.func](arg0.data)*self.cotangent.data
+        temp = np.conj(self.ufunc_derivatives[self.func](arg0.data))*self.cotangent.data
         # TODO: optimize with axpy
         np.add(cotan0.data, temp, out=cotan0.data)
 

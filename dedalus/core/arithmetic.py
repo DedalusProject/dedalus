@@ -733,9 +733,9 @@ class DotProduct(Product, FutureField):
         arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
         arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
         cotangent_data = self.arg0_ghost_broadcaster.cast(self.cotangent)
-        np.add(cotan0.data, np.einsum(self.einsum_adj0_str, arg1_data, cotangent_data, optimize=True), out=cotan0.data)#TEMPORARY
+        np.add(cotan0.data, np.einsum(self.einsum_adj0_str, np.conj(arg1_data), cotangent_data, optimize=True), out=cotan0.data)#TEMPORARY
         cotangent_data = self.arg1_ghost_broadcaster.cast(self.cotangent)
-        np.add(cotan1.data, np.einsum(self.einsum_adj1_str, arg0_data, cotangent_data, optimize=True), out=cotan1.data)#TEMPORARY
+        np.add(cotan1.data, np.einsum(self.einsum_adj1_str, np.conj(arg0_data), cotangent_data, optimize=True), out=cotan1.data)#TEMPORARY
 
 @alias("cross")
 class CrossProduct(Product, FutureField):
@@ -834,8 +834,8 @@ class CrossProduct(Product, FutureField):
         arg0, arg1 = self.args
         arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
         arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
-        data00, data01, data02 = arg0_data[0], arg0_data[1], arg0_data[2]
-        data10, data11, data12 = arg1_data[0], arg1_data[1], arg1_data[2]
+        data00, data01, data02 = np.conj(arg0_data[0]), np.conj(arg0_data[1]), np.conj(arg0_data[2])
+        data10, data11, data12 = np.conj(arg1_data[0]), np.conj(arg1_data[1]), np.conj(arg1_data[2])
         cotan0, cotan1 = arg_cotangents
         self.cotangent.change_layout(layout)
         cotangent_data = self.arg0_ghost_broadcaster.cast(self.cotangent)
@@ -889,8 +889,8 @@ class CrossProduct(Product, FutureField):
         arg0, arg1 = self.args
         arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
         arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
-        data00, data01, data02 = arg0_data[0], arg0_data[1], arg0_data[2]
-        data10, data11, data12 = arg1_data[0], arg1_data[1], arg1_data[2]
+        data00, data01, data02 = np.conj(arg0_data[0]), np.conj(arg0_data[1]), np.conj(arg0_data[2])
+        data10, data11, data12 = np.conj(arg1_data[0]), np.conj(arg1_data[1]), np.conj(arg1_data[2])
         cotan0, cotan1 = arg_cotangents
         self.cotangent.change_layout(layout)
         cotangent_data = self.arg0_ghost_broadcaster.cast(self.cotangent)
@@ -1091,8 +1091,8 @@ class MultiplyFields(Multiply, FutureField):
         arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
         arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
         # Compute raw cotangents
-        cotan0_raw = np.multiply(self.cotangent.data, arg1_data)
-        cotan1_raw = np.multiply(self.cotangent.data, arg0_data)
+        cotan0_raw = np.multiply(self.cotangent.data, np.conj(arg1_data))
+        cotan1_raw = np.multiply(self.cotangent.data, np.conj(arg0_data))
         # Reduce over broadcasted tensor dimensions
         rank0 = len(arg0.tensorsig)
         rank1 = len(arg1.tensorsig)
@@ -1230,7 +1230,7 @@ class MultiplyNumberField(Multiply, FutureField):
                 cotan1.change_layout(layout)
         # Add adjoint contribution in-place (required for accumulation)
         self.cotangent.change_layout(layout)
-        np.add(np.multiply(arg0, self.cotangent.data), cotan1.data, out=cotan1.data)
+        np.add(np.multiply(np.conj(arg0), self.cotangent.data), cotan1.data, out=cotan1.data)
 
     def matrix_dependence(self, *vars):
         return self.args[1].matrix_dependence(*vars)
