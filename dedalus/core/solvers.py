@@ -688,14 +688,15 @@ class NonlinearBoundaryValueSolver(SolverBase):
         if id is None:
             id = uuid.uuid4()
         # Calculate gradients from Y - accumulate contributions to each output from each equation
+        RHS_expressions = [] 
         for i, eqn in enumerate(self.problem.equations):
             # TODO: Fix this when fields have vjp
-            if not isinstance(eqn['F'], Field):
-                # TODO: Change back to sensitivity of whole equation
-                # R = eqn['L'] - eqn['F']
-                R = eqn['F']
+            R = eqn['F'] 
+            if not isinstance(R, Field):
+                RHS_expressions.append(R)
                 cotangents[R] = Y[i]
-                _, cotangents = R.evaluate_vjp(cotangents, id=id, force=True)
+        RHS_expression_list = ExpressionList(self.evaluator, RHS_expressions)
+        _, cotangents = RHS_expression_list.evaluate_vjp(cotangents, id=id)
         return cotangents
 
 
