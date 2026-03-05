@@ -330,11 +330,11 @@ class EigenvalueSolver(SolverBase):
         if not hasattr(self, 'state_adjoint'):
             self.state_adjoint = []
             for i, eqn in enumerate(self.problem.equations):
-                L = eqn['L']
-                field_adj = Field(L.dist, bases=L.domain.bases, tensorsig=L.tensorsig, dtype=L.dtype, adjoint=True)
+                R = eqn['R']
+                field_adj = Field(R.dist, bases=R.domain.bases, tensorsig=R.tensorsig, dtype=R.dtype, adjoint=True)
                 # Zero the system
                 field_adj.preset_layout('c')
-                field_adj.preset_scales(L.scales)
+                field_adj.preset_scales(R.scales)
                 field_adj.data *= 0
                 field_adj.name = 'Y_%d' % i
                 self.state_adjoint.append(field_adj)
@@ -346,28 +346,28 @@ class EigenvalueSolver(SolverBase):
         if subsystem not in subproblem.subsystems:
             raise ValueError("subsystem must be in eigenvalue_subproblem")
         # Set coefficients
-        for var in self.state:
+        for var in self.state_adjoint:
             var['c'] = 0
         subsystem.scatter(self.left_eigenvectors[:, index], self.state_adjoint)
 
-    def compute_sensitivity(self, p, index, subsystem=0):
-        """
-        Computes the sensitivity of the (index)-eigenvector
-        with respect to parameter p
-        """
-        # NOTE: What to do with different subsystems?
-        #       Maybe should zero field data first
-        # TODO: Include case where M(p)
-        self.set_state_adjoint(index, subsystem)
-        self.set_state(index, subsystem)
-        sensitivity = 0
+    def compute_eigenvalue_sensitivities(self, index, id=None, subsystem=0):
+        # Enforce adjoint state equation via left eigenvectors
+        self.set_state(index, subsystem=subsystem)
+        self.set_state_adjoint(index, subsystem=subsystem)
+        # Compute sensitivities from residual expressions R = L @ X - F
+        expressions = []
+        cotangents = {}
         for i, eqn in enumerate(self.problem.equations):
-            dLdp = eqn['L'].sym_diff(p)
-            if not isinstance(dLdp, int):
-                # Must convert gradient to same basis as equation
-                dLdp = Convert(dLdp, eqn['L'].domain.bases[0])
-                sensitivity += np.vdot(self.state_adjoint[i]['c'], (-dLdp)['c'])
-        return sensitivity
+            R = eqn['R']
+            if not isinstance(R, Field):
+                expressions.append(R)
+                cotangents[R] = self.state_adjoint[i]
+        expressions = ExpressionList(self.evaluator, expressions)
+        # Default to uuid to cache within evaluation, but not across evaluations
+        if id is None:
+            id = uuid.uuid4()
+        _, cotangents = expressions.evaluate_vjp(cotangents, id=id, force=True)
+        return cotangents
 
 
 class LinearBoundaryValueSolver(SolverBase):
@@ -529,24 +529,20 @@ class LinearBoundaryValueSolver(SolverBase):
                 adjoint_state.data *= 0
                 G.append(adjoint_state)
                 cotangents[state] = adjoint_state
-        # Compute Y from L.H @ Y = G
+        # Solve adjoint state equation: L.H @ Y = G
         Y = self.solve_adjoint(G, subproblems=subproblems)
-        # R(p) = L(p) @ X - F(p)
-        # dR/dp = dL/dp @ X - dF/dp
+        # Compute sensitivities from residual expressions R = L @ X - F
+        expressions = []
+        for i, eqn in enumerate(self.problem.equations):
+            R = eqn['R']
+            if not isinstance(R, Field):
+                expressions.append(R)
+                cotangents[R] = Y[i]
+        expressions = ExpressionList(self.evaluator, expressions)
         # Default to uuid to cache within evaluation, but not across evaluations
         if id is None:
             id = uuid.uuid4()
-        # Calculate gradients from Y - accumulate contributions to each output from each equation
-        # TODO: Change back to sensitivity of whole equation
-        # R = eqn['L'] - eqn['F']
-        RHS_expressions = [] 
-        for i, eqn in enumerate(self.problem.equations):
-            R = eqn['F'] 
-            if not isinstance(R, Field):
-                RHS_expressions.append(R)
-                cotangents[R] = Y[i]
-        RHS_expression_list = ExpressionList(self.evaluator, RHS_expressions)
-        _, cotangents = RHS_expression_list.evaluate_vjp(cotangents, id=id)
+        _, cotangents = expressions.evaluate_vjp(cotangents, id=id, force=True)
         return cotangents
 
 
@@ -680,23 +676,20 @@ class NonlinearBoundaryValueSolver(SolverBase):
                 adjoint_state.data *= 0
                 G.append(adjoint_state)
                 cotangents[state] = adjoint_state
-        # Compute Y from L.H @ Y = G
+        # Solve adjoint state equation: dF.H @ Y = G
         Y = self.solve_adjoint(G)
-        # R(p) = L(p) @ X - F(p)
-        # dR/dp = dL/dp @ X - dF/dp
+        # Compute sensitivities from residual expressions R = L @ X - F
+        expressions = []
+        for i, eqn in enumerate(self.problem.equations):
+            R = eqn['R']
+            if not isinstance(R, Field):
+                expressions.append(R)
+                cotangents[R] = Y[i]
+        expressions = ExpressionList(self.evaluator, expressions)
         # Default to uuid to cache within evaluation, but not across evaluations
         if id is None:
             id = uuid.uuid4()
-        # Calculate gradients from Y - accumulate contributions to each output from each equation
-        RHS_expressions = [] 
-        for i, eqn in enumerate(self.problem.equations):
-            # TODO: Fix this when fields have vjp
-            R = eqn['F'] 
-            if not isinstance(R, Field):
-                RHS_expressions.append(R)
-                cotangents[R] = Y[i]
-        RHS_expression_list = ExpressionList(self.evaluator, RHS_expressions)
-        _, cotangents = RHS_expression_list.evaluate_vjp(cotangents, id=id)
+        _, cotangents = expressions.evaluate_vjp(cotangents, id=id, force=True)
         return cotangents
 
 
