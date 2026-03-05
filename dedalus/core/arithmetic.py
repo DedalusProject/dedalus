@@ -733,12 +733,8 @@ class DotProduct(Product, FutureField):
         arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
         arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
         # Compute raw cotangents
-        cotan0_raw = np.einsum(
-            self.einsum_adj0_str, np.conj(arg1_data), self.cotangent.data, optimize=True
-        )
-        cotan1_raw = np.einsum(
-            self.einsum_adj1_str, np.conj(arg0_data), self.cotangent.data, optimize=True
-        )
+        cotan0_raw = np.einsum(self.einsum_adj0_str, np.conj(arg1_data), self.cotangent.data, optimize=True)
+        cotan1_raw = np.einsum(self.einsum_adj1_str, np.conj(arg0_data), self.cotangent.data, optimize=True)
         # Reduce over broadcasted spatial dimensions
         rank0 = len(arg0.tensorsig)
         rank1 = len(arg1.tensorsig)

@@ -1978,7 +1978,8 @@ class ConvertConstant(Convert):
         if layout.grid_space[self.last_axis]:
             if adjoint:
                 # Accumulate out.data into arg.data (axis is required to be local)
-                reduction = np.sum(out.data, axis=self.last_axis, keepdims=True) # CREATES TEMPORARY
+                axis = self.last_axis + len(arg.tensorsig)
+                reduction = np.sum(out.data, axis=axis, keepdims=True) # CREATES TEMPORARY
                 np.add(arg.data, reduction, out=arg.data)
             else:
                 # Broadcasts across grid data (axis is required to be local)
