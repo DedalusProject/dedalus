@@ -729,13 +729,31 @@ class DotProduct(Product, FutureField):
         arg0, arg1 = self.args
         cotan0, cotan1 = arg_cotangents
         self.cotangent.change_layout(layout)
-        # Broadcast
+        # Get distributed arg data
         arg0_data = self.arg0_ghost_broadcaster.cast(arg0)
         arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
-        cotangent_data = self.arg0_ghost_broadcaster.cast(self.cotangent)
-        np.add(cotan0.data, np.einsum(self.einsum_adj0_str, np.conj(arg1_data), cotangent_data, optimize=True), out=cotan0.data)#TEMPORARY
-        cotangent_data = self.arg1_ghost_broadcaster.cast(self.cotangent)
-        np.add(cotan1.data, np.einsum(self.einsum_adj1_str, np.conj(arg0_data), cotangent_data, optimize=True), out=cotan1.data)#TEMPORARY
+        # Compute raw cotangents
+        cotan0_raw = np.einsum(
+            self.einsum_adj0_str, np.conj(arg1_data), self.cotangent.data, optimize=True
+        )
+        cotan1_raw = np.einsum(
+            self.einsum_adj1_str, np.conj(arg0_data), self.cotangent.data, optimize=True
+        )
+        # Reduce over broadcasted spatial dimensions
+        rank0 = len(arg0.tensorsig)
+        rank1 = len(arg1.tensorsig)
+        spatial_reduce_0 = tuple(axis + rank0 for axis in self.arg0_ghost_broadcaster.deploy_dims_ext_list)
+        spatial_reduce_1 = tuple(axis + rank1 for axis in self.arg1_ghost_broadcaster.deploy_dims_ext_list)
+        cotan0_raw = cotan0_raw.sum(axis=spatial_reduce_0, keepdims=True)
+        cotan1_raw = cotan1_raw.sum(axis=spatial_reduce_1, keepdims=True)
+        # Reduce over broadcasted processes
+        cotan0_raw = self.arg0_ghost_broadcaster.reduce(cotan0_raw)
+        cotan1_raw = self.arg1_ghost_broadcaster.reduce(cotan1_raw)
+        # Accumulate
+        if cotan0.data.size:
+            np.add(cotan0.data, cotan0_raw, out=cotan0.data)
+        if cotan1.data.size:
+            np.add(cotan1.data, cotan1_raw, out=cotan1.data)
 
 @alias("cross")
 class CrossProduct(Product, FutureField):
