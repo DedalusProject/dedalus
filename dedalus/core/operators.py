@@ -1385,6 +1385,13 @@ class Interpolate(SpectralOperator, metaclass=MultiClass):
         """Build matrix operating on global subspace data."""
         return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis, self.position)
 
+    def subspace_matrix_adjoint(self, layout):
+        matrix = self.subspace_matrix(layout)
+        adjoint = matrix.T.conj()
+        if sparse.isspmatrix(adjoint):
+            adjoint = adjoint.tocsr()
+        return adjoint
+
     def _expand_multiply(self, operand, vars):
         """Expand over multiplication."""
         # Apply to each factor
