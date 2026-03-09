@@ -9,7 +9,7 @@ Cartesian problems
 
 In Cartesian coordinate systems, the constant dimensions (with no bases) should be placed as the last dimensions in the coordinate system.
 Note this may require marking the coordinate system as being left-handed so that the proper signs are used in curls and cross products.
-The reason is that Dedalus distributes problems over the leading axes, and if one of these is constant, the problem will end up entirely on a single core, bottleneckling the scaling.
+The reason is that Dedalus distributes problems over the leading axes, and if one of these is constant, the problem will end up entirely on a single core, bottlenecking the scaling.
 
 For instance, consider a 2.5D problem in a 3D Cartesian domain with coordinates :math:`(x, y, z)`, where the solution is independent of :math:`y`, and the coordinate system is defined normally with a 1D process mesh of size :math:`p=8`:
 
@@ -45,7 +45,7 @@ Curvilinear problems
 --------------------
 
 In curvilinear coordinates, axisymmetric problems can be handled by setting the azimuthal resolution to 1.
-However, unlike Cartesian coordinate, the coordinate ordering is fixed.
+However, unlike Cartesian coordinates, the coordinate ordering is fixed.
 Since the azimuthal coordinate is the first in the curvilinear coordinate systems, distributing over this dimension can be avoided by prepending a 1 to the process mesh shape.
 So for instance, an axisymmetric problem in the ball can be parallelized over :math:`p=8` processes as follows:
 

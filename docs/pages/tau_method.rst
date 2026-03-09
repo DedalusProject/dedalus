@@ -1,11 +1,11 @@
 Tau Method
 **********
 
-The *generalized tau method* is a system for imposing boundary boundary conditions (BCs) when solving partial differential equations (PDEs) using polynomial spectral methods.
+The *generalized tau method* is a system for imposing boundary conditions (BCs) when solving partial differential equations (PDEs) using polynomial spectral methods.
 It consists of explicitly adding *tau terms* to the PDE which introduce degrees of freedom that allow the problem to be solved exactly over polynomials.
 Determining the optimal tau terms to add to a given PDE is an open problem, and while we hope to eventually automate this process in Dedalus, currently these terms must be manually added when specifying equations in Dedalus v3.
 
-The underyling mathematical issue is that most PDEs that we wish to solve do not have exact polynomial solutions.
+The underlying mathematical issue is that most PDEs that we wish to solve do not have exact polynomial solutions.
 Instead, we seek polynomial solutions that approximate the true solution.
 All spectral methods find such a solution by modifying the underlying equations in some way, and then solve for the exact polynomial solution to the modified equations.
 The tau method makes these modifications explicit in the problem specification rather than hiding them within the solution algorithm.
@@ -76,14 +76,14 @@ If the RHS terms are truncated at degree :math:`N` in :math:`y` and the tau poly
 
 In Dedalus v2, equations were required to be entered in first-order form as above.
 Tau terms were then automatically added to the differential equations with :math:`P(y) = U_N(y)`, using the second-kind Chebyshev polynomials :math:`U_n(y)`.
-This system consituted a generalized tau method using a first-order form of the Cheybshev ultraspherical method.
+This system constituted a generalized tau method using a first-order form of the Chebyshev ultraspherical method.
 Algorithmically, it is equivalent to dropping the last rows from the differential equations after they have been discretized with the ultraspherical method (using sparse Chebyshev T-to-U operators).
 Enforcing boundary conditions in this fashion is easily automatable, but results in larger linear systems due to the first-order reduction.
 
 Higher-order systems
 --------------------
 
-To more efficiently handle high-order systems, and to more easily accomodate the singular equations arising in curvilinear domains, Dedalus v3 supports equations with arbitrary differential order.
+To more efficiently handle high-order systems, and to more easily accommodate the singular equations arising in curvilinear domains, Dedalus v3 supports equations with arbitrary differential order.
 For Chebyshev dimensions as well as annuli and spherical shells, we recommend adding tau terms to the equations in a manner consistent with the first-order formulations discussed above.
 For example, after adding the tau terms above, we can eliminate the first-order-reduction variables to recover the original second-order equations, but containing the same tau corrections:
 
@@ -136,8 +136,8 @@ Here we'll take :math:`P(y)` to be the highest mode in the Chebyshev-U basis, in
     lift = lambda A: d3.Lift(A, lift_basis, -1) # Shortcut for multiplying by U_{N-1}(y)
     grad_u = d3.grad(u) - ey*lift(tau_u1) # Operator representing G
 
-We can then create a problem and enter the tau-modified PDEs, boundary condtions, and pressure gauge in vectorial form using these substitutions.
-Note that we will need to add the contant tau variable to the divergence equation as described in the :doc:`gauge_conditions` page.
+We can then create a problem and enter the tau-modified PDEs, boundary conditions, and pressure gauge in vectorial form using these substitutions.
+Note that we will need to add the constant tau variable to the divergence equation as described in the :doc:`gauge_conditions` page.
 This allows us to impose the pressure gauge and removes the redundancy between the integral of the divergence equation and the integral of the inflow boundary conditions.
 
 .. code-block:: python
@@ -190,7 +190,7 @@ Now we can enter the PDE with just the single tau term in the momentum equation:
     problem.add_equation("u(r=1) = 0")
     problem.add_equation("integ(p) = 0")
 
-Again, the same appraoch can be used to add scalar taus for tracer fields/equations, as illustrated in the :doc:`example scripts <tutorials>`.
+Again, the same approach can be used to add scalar taus for tracer fields/equations, as illustrated in the :doc:`example scripts <tutorials>`.
 
 Summary
 -------
