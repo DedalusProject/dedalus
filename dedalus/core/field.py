@@ -7,6 +7,7 @@ import weakref
 from functools import partial, reduce
 from collections import defaultdict
 import numpy as np
+import array_api_compat
 from mpi4py import MPI
 from scipy import sparse
 from scipy.sparse import linalg as splinalg
@@ -473,16 +474,19 @@ class Current(Operand):
     def reinitialize(self, **kw):
         return self
 
-    @staticmethod
-    def _create_buffer(buffer_size):
+    def _create_buffer(self, buffer_size):
         """Create buffer for Field data."""
-        if buffer_size == 0:
-            # FFTW doesn't like allocating size-0 arrays
-            return np.zeros((0,), dtype=np.float64)
+        xp = self.array_namespace
+        if xp == np:
+            if buffer_size == 0:
+                # FFTW doesn't like allocating size-0 arrays
+                return np.zeros((0,), dtype=np.float64)
+            else:
+                # Use FFTW SIMD aligned allocation
+                alloc_doubles = buffer_size // 8
+                return fftw.create_buffer(alloc_doubles)
         else:
-            # Use FFTW SIMD aligned allocation
-            alloc_doubles = buffer_size // 8
-            return fftw.create_buffer(alloc_doubles)
+            return xp.zeros(buffer_size)
 
     @CachedAttribute
     def _dealias_buffer_size(self):
@@ -516,14 +520,17 @@ class Current(Operand):
 
     def preset_layout(self, layout):
         """Interpret buffer as data in specified layout."""
+        xp = self.array_namespace
         layout = self.dist.get_layout_object(layout)
         self.layout = layout
         tens_shape = [vs.dim for vs in self.tensorsig]
         local_shape = layout.local_shape(self.domain, self.scales)
         total_shape = tuple(tens_shape) + tuple(local_shape)
-        self.data = np.ndarray(shape=total_shape,
-                               dtype=self.dtype,
-                               buffer=self.buffer)
+        # Create view into buffer
+        if array_api_compat.is_cupy_namespace(xp):
+            self.data = xp.ndarray(shape=total_shape, dtype=self.dtype, memptr=self.buffer.data)
+        else:
+            self.data = xp.ndarray(shape=total_shape, dtype=self.dtype, buffer=self.buffer)
         #self.global_start = layout.start(self.domain, self.scales)
 
 
@@ -561,6 +568,7 @@ class Field(Current):
             dtype = dist.dtype
         from .domain import Domain
         self.dist = dist
+        self.array_namespace = dist.array_namespace
         self.name = name
         self.tensorsig = tensorsig
         self.dtype = dtype
@@ -784,9 +792,15 @@ class Field(Current):
         # Change layout
         if layout is not None:
             self.change_layout(layout)
+        # Convert to numpy if on GPU
+        xp = self.dist.array_namespace
+        if array_api_compat.is_cupy_namespace(xp):
+            data = xp.asnumpy(self.data)
+        else:
+            data = self.data.copy()
         # Shortcut for serial execution
         if self.dist.comm.size == 1:
-            return self.data.copy()
+            return data
         # Build global buffers
         tensor_shape = tuple(cs.dim for cs in self.tensorsig)
         global_shape = tensor_shape + self.layout.global_shape(self.domain, self.scales)
@@ -795,7 +809,7 @@ class Field(Current):
         recv_buff = np.empty_like(send_buff)
         # Combine data via allreduce -- easy but not communication-optimal
         # Should be optimized using Allgatherv if this is used past startup
-        send_buff[local_slices] = self.data
+        send_buff[local_slices] = data
         self.dist.comm.Allreduce(send_buff, recv_buff, op=MPI.SUM)
         return recv_buff
 
@@ -803,13 +817,19 @@ class Field(Current):
         # Change layout
         if layout is not None:
             self.change_layout(layout)
+        # Convert to numpy if on GPU
+        xp = self.dist.array_namespace
+        if array_api_compat.is_cupy_namespace(xp):
+            data = xp.asnumpy(self.data)
+        else:
+            data = self.data.copy()
         # Shortcut for serial execution
         if self.dist.comm.size == 1:
-            return self.data.copy()
+            return data
         # TODO: Shortcut this for constant fields
         # Gather data
         # Should be optimized via Gatherv eventually
-        pieces = self.dist.comm.gather(self.data, root=root)
+        pieces = self.dist.comm.gather(data, root=root)
         # Assemble on root node
         if self.dist.comm.rank == root:
             ext_mesh = self.layout.ext_mesh
@@ -836,7 +856,7 @@ class Field(Current):
             if self.dist.comm.size > 1:
                 norm = self.dist.comm.allreduce(norm, op=MPI.SUM)
             norm = norm ** (1 / order)
-        return norm
+        return float(norm)
 
     def allreduce_data_max(self, layout=None):
         return self.allreduce_data_norm(layout=layout, order=np.inf)
@@ -917,6 +937,7 @@ class Field(Current):
         **kw : dict
             Other keywords passed to the distribution method.
         """
+        xp = self.dist.array_namespace
         init_layout = self.layout
         # Set scales if requested
         if scales is not None:
@@ -936,11 +957,10 @@ class Field(Current):
         spatial_slices = self.layout.slices(self.domain, self.scales)
         local_slices = component_slices + spatial_slices
         local_data = global_data[local_slices]
-        if self.is_real:
-            self.data[:] = local_data
-        else:
-            self.data.real[:] = local_data[..., 0]
-            self.data.imag[:] = local_data[..., 1]
+        if self.is_complex:
+            local_data = local_data[..., 0] + 1j * local_data[..., 1]
+        # Copy to field data
+        self.data[:] = xp.asarray(local_data, dtype=self.dtype)
 
     def low_pass_filter(self, shape=None, scales=None):
         """

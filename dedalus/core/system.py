@@ -12,45 +12,44 @@ from ..tools.general import unify
 
 class CoeffSystem:
     """
-    Representation of a collection of fields that don't need to be transformed,
-    and are therefore stored as a contigous set of coefficient data for
-    efficient pencil and group manipulation.
+    Contiguous buffer for data from all subproblems.
 
     Parameters
     ----------
-    nfields : int
-        Number of fields to represent
-    domain : domain object
-        Problem domain
+    subproblems : list of Subproblem objects
+        Subproblems to represent
+    dtype : dtype
+        Data type
+    array_namespace : array namespace
+        Array namespace
 
     Attributes
     ----------
     data : ndarray
-        Contiguous buffer for field coefficients
+        Contiguous buffer for data from all subproblems
+    views : dict
+        Nested dictionary of views for each subproblem and subsystem
 
     """
 
-    """
-    var buffer
-
-
-    """
-
-    def __init__(self, subproblems, dtype):
+    def __init__(self, subproblems, dtype, array_namespace):
+        xp = array_namespace
         # Build buffer
         total_size = sum(sp.LHS.shape[1]*len(sp.subsystems) for sp in subproblems)
-        self.data = np.zeros(total_size, dtype=dtype)
+        self.data = xp.zeros(total_size, dtype=dtype)
         # Build views
         i0 = i1 = 0
         self.views = views = {}
         for sp in subproblems:
             views[sp] = views_sp = {}
+            # View for each individual subsystem
             i00 = i0
             for ss in sp.subsystems:
                 i1 += sp.LHS.shape[1]
                 views_sp[ss] = self.data[i0:i1]
                 i0 = i1
             i11 = i1
+            # View combining all subsystems as rows in a matrix
             if i11 - i00 > 0:
                 views_sp[None] = self.data[i00:i11].reshape((sp.LHS.shape[1], -1))
             else:
