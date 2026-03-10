@@ -927,7 +927,7 @@ class MultiplyNumberField(Multiply, FutureField):
         super().__init__(arg0, arg1, out=out)
         self.domain = arg1.domain
         self.tensorsig = arg1.tensorsig
-        self.dtype = np.result_type(type(arg0), arg1.dtype)
+        self.dtype = np.result_type(arg0, arg1.dtype)
 
     @classmethod
     def _check_args(cls, *args, **kw):
