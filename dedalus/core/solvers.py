@@ -416,6 +416,12 @@ class LinearBoundaryValueSolver(SolverBase):
             L = sp.L_min.toarray()
             print(f"MPI rank: {self.dist.comm.rank}, subproblem: {i}, group: {sp.group}, matrix rank: {np.linalg.matrix_rank(L)}/{L.shape[0]}, cond: {np.linalg.cond(L):.1e}")
 
+    def evaluate_handlers(self, handlers=None):
+        """Evaluate specified list of handlers (all by default)."""
+        if handlers is None:
+            handlers = self.evaluator.handlers
+        self.evaluator.evaluate_handlers(handlers, iteration=self.iteration)
+
     def solve(self, subproblems=None, rebuild_matrices=False):
         """
         Solve BVP over selected subproblems.
@@ -458,84 +464,76 @@ class LinearBoundaryValueSolver(SolverBase):
             sp.scatter_inputs(spX, self.state)
         self.iteration += 1
 
-    def evaluate_handlers(self, handlers=None):
-        """Evaluate specified list of handlers (all by default)."""
-        if handlers is None:
-            handlers = self.evaluator.handlers
-        self.evaluator.evaluate_handlers(handlers, iteration=self.iteration)
-
-    def solve_adjoint(self, G, subproblems=None):
+    def solve_adjoint(self, H, subproblems=None):
         """
-        Solve transposed BVP over selected subproblems.
+        Solve adjoint BVP over selected subproblems.
 
         Parameters
         ----------
-        G : List of adjoint fields/operators, one for each state variable.
+        H : list of cotangent fields
+            RHS for adjoint state equation, one cotangent field for each state variable.
         subproblems : Subproblem object or list of Subproblem objects, optional
             Subproblems for which to solve the BVP (default: None (all)).
         """
-        # Convert cotangents
-        for i in range(len(G)):
-            if G[i].domain != self.state[i].domain:
-                raise ValueError("Adjoint field domain does not match state domain")
         # Resolve subproblems
         if subproblems is None:
             subproblems = self.subproblems
         if isinstance(subproblems, subsystems.Subproblem):
             subproblems = [subproblems]
-        # Compute RHS
-        G = [Gi.evaluate() for Gi in G]
-        # self.evaluator.evaluate_group('F', sim_time=0, wall_time=0, iteration=0)
-        # TODO: see if an evaluator for the adjoint is worthwhile
+        # Evaluate RHS
+        # TODO: see if an evaluator for these is worthwhile
+        H = [Hi.evaluate() for Hi in H]
+        # Allocate adjoint state fields
+        Y = self.build_cotangent_list(self.F, {})
         # Ensure coeff space before subsystem gathers/scatters
-        # Allocate adjoint fields
-        Y = []
-        for field in self.F:
-            field_adj = field.copy_adjoint()
-            # Zero the system
-            field_adj.preset_layout('c')
-            field_adj.data *= 0
-            if field.name:
-                # If the direct field has a name, give the adjoint a
-                # corresponding name
-                field_adj.name = 'Y_%s' % field.name
-            Y.append(field_adj)
-        # Transform before solve
-        for field in G:
+        for field in H:
             field.change_layout('c')
         for field in Y:
             field.preset_layout('c')
         # Solve system for each subproblem, updating state
         for sp in subproblems:
-            # Gather (includes adjoint right-precondition) RHS
-            pG = sp.gather_inputs(G)
-            # Adjoint solve,
-            pY = self.subproblem_matsolvers[sp].solve_H(pG)  # CREATES TEMPORARY
-            # Scatter (contains adjoint left-precondition)
-            sp.scatter_outputs(pY, Y)
+            # Gather RHS (includes adjoint right-preconditioning)
+            H_sp = sp.gather_inputs(H)
+            # Adjoint solve
+            Y_sp = self.subproblem_matsolvers[sp].solve_H(H_sp)  # CREATES TEMPORARY
+            # Scatter state (contains adjoint left-preconditioning)
+            sp.scatter_outputs(Y_sp, Y)
         return Y
 
     def compute_sensitivities(self, cotangents, id=None, subproblems=None):
-        # TODO: compute G from cost?
-        # G = h.evaluate_vjp(1)[self.state]?
-        # Allocate adjoint fields
-        G = []
-        for (i,state) in enumerate(self.state):
-            if state in cotangents:
-                G.append(cotangents[state])
-            else:
-                adjoint_state = state.copy_adjoint()
-                adjoint_state.preset_layout('c')
-                adjoint_state.data *= 0
-                G.append(adjoint_state)
-                cotangents[state] = adjoint_state
-        # Solve adjoint state equation: L.H @ Y = G
-        Y = self.solve_adjoint(G, subproblems=subproblems)
-        # Compute sensitivities from residual expressions R = L @ X - F
+        """
+        Propagate cotangents through BVP via adjoint solution.
+
+        Parameters
+        ----------
+        cotangents : dict
+            Dictionary of cotangent fields.
+        id : uuid.UUID, optional
+            ID for caching evaluation.
+        subproblems : Subproblem object or list of Subproblem objects, optional
+            Subproblems for which to compute sensitivities (default: None (all)).
+
+        Returns
+        -------
+        cotangents : dict
+            Dictionary of cotangent fields.
+        """
+        # Retrieve or allocate adjoint fields for adjoint state solve
+        H = self.build_cotangent_list(self.state, cotangents)
+        # Solve adjoint state equation: L.H @ Y = H
+        Y = self.solve_adjoint(H, subproblems=subproblems)
+        # Negate adjoint values before VJP
+        for Yi in Y:
+            Yi.data *= -1
+        # Accumulate sensitivities from residual expressions R = L @ X - F
+        # TODO: store expression list for reevaluation
         expressions = []
         for i, eqn in enumerate(self.problem.equations):
             R = eqn['R']
-            if not isinstance(R, Field):
+            if isinstance(R, Field):
+                # Here R=X in the state, need to accumulate Y[i]
+                raise ValueError("Not implemented")
+            else:
                 expressions.append(R)
                 cotangents[R] = Y[i]
         expressions = ExpressionList(self.evaluator, expressions)
@@ -544,6 +542,22 @@ class LinearBoundaryValueSolver(SolverBase):
             id = uuid.uuid4()
         _, cotangents = expressions.evaluate_vjp(cotangents, id=id, force=True)
         return cotangents
+
+    @staticmethod
+    def build_cotangent_list(fields, cotangent_dict):
+        # Retrieve cotangets from dictionary or allocate
+        cotangent_list = []
+        for field in fields:
+            if field in cotangent_dict:
+                cotangent = cotangent_dict[field]
+                if cotangent.domain != field.domain:
+                    raise ValueError("Cotangent field has wrong domain.")
+                cotangent_list.append(cotangent)
+            else:
+                cotangent = field.build_cotangent()
+                cotangent_list.append(cotangent)
+                cotangent_dict[field] = cotangent
+        return cotangent_list
 
 
 class NonlinearBoundaryValueSolver(SolverBase):
