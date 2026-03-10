@@ -629,6 +629,12 @@ class Field(Current):
         copy.adjoint = True
         return copy
 
+    def build_cotangent(self):
+        cotangent = Field(self.dist, bases=self.domain.bases, tensorsig=self.tensorsig, dtype=self.dtype, adjoint=True)
+        if self.name:
+            cotangent.name = f"Y_{self.name}"
+        return cotangent
+
     def set_global_data(self, global_data):
         elements = self.layout.local_elements(self.domain, self.scales)
         self.set_local_data(global_data[np.ix_(*elements)])
