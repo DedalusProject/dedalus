@@ -881,7 +881,7 @@ class RungeKuttaIMEX:
         self.step(dt, wall_time, recompute=True)
         # # Check on updating LHS
         update_LHS = (k != self._LHS_params)
-        # self._LHS_params = k
+        self._LHS_params = k
         # for sp in subproblems:
         #     if update_LHS:
         #         # Remove old solver references
