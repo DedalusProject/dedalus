@@ -591,3 +591,19 @@ def initialize_cotangents(cost):
     _, cotangents = cost.evaluate_vjp(cotangents, id=uuid.uuid4(), force=True)
     return cotangents
 
+
+def build_cotangent_list(fields, cotangent_dict):
+    # Retrieve cotangets from dictionary or allocate
+    cotangent_list = []
+    for field in fields:
+        if field in cotangent_dict:
+            cotangent = cotangent_dict[field]
+            if cotangent.domain != field.domain:
+                raise ValueError("Cotangent field has wrong domain.")
+            cotangent_list.append(cotangent)
+        else:
+            cotangent = field.build_cotangent()
+            cotangent_list.append(cotangent)
+            cotangent_dict[field] = cotangent
+    return cotangent_list
+
