@@ -23,6 +23,7 @@ from ..libraries.matsolvers import matsolvers
 from ..tools.config import config
 from ..tools.array import scipy_sparse_eigs
 from ..tools.parallel import ProfileWrapper, parallel_mkdir
+from ..extras.adjoint import build_cotangent_list
 
 PROFILE_DEFAULT = config['profiling'].getboolean('PROFILE_DEFAULT')
 PARALLEL_PROFILE_DEFAULT = config['profiling'].getboolean('PARALLEL_PROFILE_DEFAULT')
@@ -480,23 +481,23 @@ class LinearBoundaryValueSolver(SolverBase):
             subproblems = self.subproblems
         if isinstance(subproblems, subsystems.Subproblem):
             subproblems = [subproblems]
-        # Evaluate RHS
+        # Evaluate RHS of adjoint state equation
         # TODO: see if an evaluator for these is worthwhile
         H = [Hi.evaluate() for Hi in H]
         # Allocate adjoint state fields
-        Y = self.build_cotangent_list(self.F, {})
+        Y = build_cotangent_list(self.F, {})
         # Ensure coeff space before subsystem gathers/scatters
         for field in H:
             field.change_layout('c')
         for field in Y:
             field.preset_layout('c')
-        # Solve system for each subproblem, updating state
+        # Solve adjoint state equation for each subproblem
         for sp in subproblems:
-            # Gather RHS (includes adjoint right-preconditioning)
+            # Gather RHS (includes adjoint of right preconditioner)
             H_sp = sp.gather_inputs(H)
             # Adjoint solve
             Y_sp = self.subproblem_matsolvers[sp].solve_H(H_sp)  # CREATES TEMPORARY
-            # Scatter state (contains adjoint left-preconditioning)
+            # Scatter state (contains adjoint of left preconditioner)
             sp.scatter_outputs(Y_sp, Y)
         return Y
 
@@ -519,7 +520,7 @@ class LinearBoundaryValueSolver(SolverBase):
             Dictionary of cotangent fields.
         """
         # Retrieve or allocate adjoint fields for adjoint state solve
-        H = self.build_cotangent_list(self.state, cotangents)
+        H = build_cotangent_list(self.state, cotangents)
         # Solve adjoint state equation: L.H @ Y = H
         Y = self.solve_adjoint(H, subproblems=subproblems)
         # Negate adjoint values before VJP
@@ -542,22 +543,6 @@ class LinearBoundaryValueSolver(SolverBase):
             id = uuid.uuid4()
         _, cotangents = expressions.evaluate_vjp(cotangents, id=id, force=True)
         return cotangents
-
-    @staticmethod
-    def build_cotangent_list(fields, cotangent_dict):
-        # Retrieve cotangets from dictionary or allocate
-        cotangent_list = []
-        for field in fields:
-            if field in cotangent_dict:
-                cotangent = cotangent_dict[field]
-                if cotangent.domain != field.domain:
-                    raise ValueError("Cotangent field has wrong domain.")
-                cotangent_list.append(cotangent)
-            else:
-                cotangent = field.build_cotangent()
-                cotangent_list.append(cotangent)
-                cotangent_dict[field] = cotangent
-        return cotangent_list
 
 
 class NonlinearBoundaryValueSolver(SolverBase):
@@ -644,59 +629,75 @@ class NonlinearBoundaryValueSolver(SolverBase):
             handlers = self.evaluator.handlers
         self.evaluator.evaluate_handlers(handlers, iteration=self.iteration)
 
-    def solve_adjoint(self, G):
-        # subsystems.build_subproblem_matrices(self, self.subproblems, ['dH'])
+    def solve_adjoint(self, H, rebuild_matrices=False):
+        """
+        Solve adjoint BVP over selected subproblems.
+
+        Parameters
+        ----------
+        H : list of cotangent fields
+            RHS for adjoint state equation, one cotangent field for each state variable.
+        rebuild_matrices : bool, optional
+            Rebuild Jacobians instead of using Jacobians from last iteration (default: False).
+        """
+        # Evaluate RHS of adjoint state equation
+        # TODO: see if an evaluator for these is worthwhile
+        H = [Hi.evaluate() for Hi in H]
+        # Allocate adjoint state fields
+        Y = build_cotangent_list(self.F, {})
         # Ensure coeff space before subsystem gathers/scatters
-        # Allocate adjoint fields
-        Y = []
-        for field in self.F:
-            field_adj = field.copy_adjoint()
-            # Zero the system
-            field_adj.preset_layout('c')
-            field_adj.data *= 0
-            if field.name:
-                # If the direct field has a name, give the adjoint a
-                # corresponding name
-                field_adj.name = 'Y_%s' % field.name
-            Y.append(field_adj)
-        # Transform before solve
-        for field in G:
+        for field in H:
             field.change_layout('c')
         for field in Y:
             field.preset_layout('c')
-        # Solve system for each subproblem, updating perturbations
+        # Rebuild Jacobians if required
+        if rebuild_matrices:
+            self.build_matrices(self.subproblems, ['dF'])
+        # Solve adjoint state equation for each subproblem
         for sp in self.subproblems:
-            n_ss = len(sp.subsystems)
-            # Gather (contains adjoint right-precondition)
-            pG = sp.gather_inputs(G)
-            # Solve
-            sp_matsolver = self.matsolver(np.conj(sp.dF_min).T, self)
-            pY = - sp_matsolver.solve(pG)
-            # Scatter (contains adjoint left-precondition)
-            sp.scatter_outputs(pY, Y)
+            # Gather RHS (includes adjoint of right preconditioner)
+            H_sp = sp.gather_inputs(H)
+            # Adjoint solve
+            sp_matsolver = self.matsolver(sp.dF_min, self)
+            Y_sp = sp_matsolver.solve_H(H_sp) # CREATES TEMPORARY
+            # Scatter state (contains adjoint of left preconditioner)
+            sp.scatter_outputs(Y_sp, Y)
         return Y
 
-    def accumulate_sensitivities(self, cotangents, id=None):
-        # TODO: compute G from cost?
-        # G = h.evaluate_vjp(1)[self.state]?
-        # Allocate adjoint fields
-        G = []
-        for (i,state) in enumerate(self.state):
-            if state in cotangents:
-                G.append(cotangents[state])
-            else:
-                adjoint_state = state.copy_adjoint()
-                adjoint_state.preset_layout('c')
-                adjoint_state.data *= 0
-                G.append(adjoint_state)
-                cotangents[state] = adjoint_state
-        # Solve adjoint state equation: dF.H @ Y = G
-        Y = self.solve_adjoint(G)
-        # Compute sensitivities from residual expressions R = L @ X - F
+    def compute_sensitivities(self, cotangents, rebuild_matrices=False, id=None):
+        """
+        Propagate cotangents through BVP via adjoint solution.
+
+        Parameters
+        ----------
+        cotangents : dict
+            Dictionary of cotangent fields.
+        rebuild_matrices : bool, optional
+            Rebuild Jacobians instead of using Jacobians from last iteration (default: False).
+        id : uuid.UUID, optional
+            ID for caching evaluation.
+
+        Returns
+        -------
+        cotangents : dict
+            Dictionary of cotangent fields.
+        """
+        # Retrieve or allocate adjoint fields for adjoint state solve
+        H = build_cotangent_list(self.state, cotangents)
+        # Solve adjoint state equation: dF.H @ Y = H
+        Y = self.solve_adjoint(H, rebuild_matrices=rebuild_matrices)
+        # Negate adjoint values before VJP
+        for Yi in Y:
+            Yi.data *= -1
+        # Accumulate sensitivities from residual expressions R = F
+        # TODO: store expression list for reevaluation
         expressions = []
         for i, eqn in enumerate(self.problem.equations):
-            R = eqn['R']
-            if not isinstance(R, Field):
+            R = eqn['F']
+            if isinstance(R, Field):
+                # Here R=X in the state, need to accumulate Y[i]
+                raise ValueError("Not implemented")
+            else:
                 expressions.append(R)
                 cotangents[R] = Y[i]
         expressions = ExpressionList(self.evaluator, expressions)
