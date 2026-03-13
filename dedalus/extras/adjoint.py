@@ -602,7 +602,7 @@ def build_cotangent_list(fields, cotangent_dict):
                 raise ValueError("Cotangent field has wrong domain.")
             cotangent_list.append(cotangent)
         else:
-            cotangent = field.build_cotangent()
+            cotangent = field.get_cotangent()
             cotangent_list.append(cotangent)
             cotangent_dict[field] = cotangent
     return cotangent_list

@@ -167,6 +167,7 @@ class EigenvalueSolver(SolverBase):
     def __init__(self, problem, **kw):
         logger.debug('Beginning EVP instantiation')
         super().__init__(problem, **kw)
+        self.adjoint_state = None
         logger.debug('Finished EVP instantiation')
 
     def print_subproblem_ranks(self, subproblems=None, target=0):
@@ -311,63 +312,73 @@ class EigenvalueSolver(SolverBase):
             If an integer, the corresponding subsystem of the last specified
             eigenvalue_subproblem will be used. Default: 0.
         """
-        # TODO: allow setting left modified eigenvectors?
         subproblem = self.eigenvalue_subproblem
         if isinstance(subsystem, int):
             subsystem = subproblem.subsystems[subsystem]
-        # Check selection
-        if subsystem not in subproblem.subsystems:
-            raise ValueError("subsystem must be in eigenvalue_subproblem")
-        # Set coefficients
+        elif subsystem not in subproblem.subsystems:
+            raise ValueError("subsystem must be in eigenvalue_subproblem.subsystems")
+        # Set state to right eigenvector
         for var in self.state:
             var['c'] = 0
         subsystem.scatter(self.eigenvectors[:, index], self.state)
         # Set eigenvalue
         self.problem.eigenvalue['g'] = self.eigenvalues[index]
 
-    def set_state_adjoint(self, index, subsystem=0):
-        # Create adjoint state if it doesnt exist
-        # TODO: Adjoint should be of equations!
-        if not hasattr(self, 'state_adjoint'):
-            self.state_adjoint = []
-            for i, eqn in enumerate(self.problem.equations):
-                R = eqn['R']
-                field_adj = Field(R.dist, bases=R.domain.bases, tensorsig=R.tensorsig, dtype=R.dtype, adjoint=True)
-                # Zero the system
-                field_adj.preset_layout('c')
-                field_adj.preset_scales(R.scales)
-                field_adj.data *= 0
-                field_adj.name = 'Y_%d' % i
-                self.state_adjoint.append(field_adj)
-        # Fill the adjoint state with the left eigenvectors
+    def set_adjoint_state(self, index, subsystem=0):
+        """
+        Set adjoint state vector to the specified left eigenmode.
+
+        Parameters
+        ----------
+        index : int
+            Index of desired eigenmode.
+        subsystem : Subsystem object or int, optional
+            Subsystem that will be set to the corresponding eigenmode.
+            If an integer, the corresponding subsystem of the last specified
+            eigenvalue_subproblem will be used. Default: 0.
+        """
         subproblem = self.eigenvalue_subproblem
         if isinstance(subsystem, int):
             subsystem = subproblem.subsystems[subsystem]
-        # Check selection
-        if subsystem not in subproblem.subsystems:
-            raise ValueError("subsystem must be in eigenvalue_subproblem")
-        # Set coefficients
-        for var in self.state_adjoint:
+        elif subsystem not in subproblem.subsystems:
+            raise ValueError("subsystem must be in eigenvalue_subproblem.subsystems")
+        # Allocate adjoint state fields
+        if self.adjoint_state is None:
+            R = [eqn['R'] for eqn in self.problem.equations]
+            self.adjoint_state = build_cotangent_list(R, {})
+        # Set adjoint state to left eigenvector
+        for var in self.adjoint_state:
             var['c'] = 0
-        subsystem.scatter(self.left_eigenvectors[:, index], self.state_adjoint)
+        subsystem.scatter(self.left_eigenvectors[:, index], self.adjoint_state)
+        # Set eigenvalue
+        self.problem.eigenvalue['g'] = self.eigenvalues[index]
 
-    def compute_eigenvalue_sensitivities(self, index, id=None, subsystem=0):
-        # Enforce adjoint state equation via left eigenvectors
+    def compute_eigenvalue_sensitivities(self, index, subsystem=0, id=None):
+        # Adjoint state solution for eigenvalue sensitivities is just left eigenvectors
         self.set_state(index, subsystem=subsystem)
-        self.set_state_adjoint(index, subsystem=subsystem)
-        # Compute sensitivities from residual expressions R = L @ X - F
-        expressions = []
+        self.set_adjoint_state(index, subsystem=subsystem)
+        # Negate adjoint values before VJP
+        for Yi in self.adjoint_state:
+            Yi.data *= -1
+        # Compute sensitivities from residual expressions R = λ*M.X + L.X
         cotangents = {}
+        expressions = []
         for i, eqn in enumerate(self.problem.equations):
             R = eqn['R']
-            if not isinstance(R, Field):
+            if isinstance(R, Field):
+                # Here R=X in the state, need to accumulate Y[i]
+                raise ValueError("Not implemented")
+            else:
                 expressions.append(R)
-                cotangents[R] = self.state_adjoint[i]
+                cotangents[R] = self.adjoint_state[i]
         expressions = ExpressionList(self.evaluator, expressions)
         # Default to uuid to cache within evaluation, but not across evaluations
         if id is None:
             id = uuid.uuid4()
         _, cotangents = expressions.evaluate_vjp(cotangents, id=id, force=True)
+        # Unnegate adjoint state after VJP for correct normalization
+        for Yi in self.adjoint_state:
+            Yi.data *= -1
         return cotangents
 
 

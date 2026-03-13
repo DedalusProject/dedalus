@@ -623,13 +623,7 @@ class Field(Current):
         copy[self.layout] = self.data
         return copy
 
-    def copy_adjoint(self):
-        # TODO: Is this function needed?
-        copy = self.copy()
-        copy.adjoint = True
-        return copy
-
-    def build_cotangent(self):
+    def get_cotangent(self):
         cotangent = Field(self.dist, bases=self.domain.bases, tensorsig=self.tensorsig, dtype=self.dtype, adjoint=True)
         if self.name:
             cotangent.name = f"Y_{self.name}"

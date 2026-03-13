@@ -473,27 +473,26 @@ class EigenvalueProblem(ProblemBase):
         """Build LHS matrix expressions."""
         vars = self.variables
         # Extract matrix expressions
-        M, L = eqn['LHS'].split(self.eigenvalue)
+        R = eqn['LHS']
+        M, L = R.split(self.eigenvalue)
         # Drop eigenvalue
         if M:
             M = M.replace(self.eigenvalue, 1)
-        # Reinitialize and prep NCCs
+        # Reinitialize, prep NCCs, and convert to same domain
+        R = R.reinitialize(ncc=True, ncc_vars=vars)
+        R.prep_nccs(vars=vars)
         if M:
             M = M.reinitialize(ncc=True, ncc_vars=vars)
+            M = operators.convert(M, R.domain.bases)
             M.prep_nccs(vars=vars)
         if L:
             L = L.reinitialize(ncc=True, ncc_vars=vars)
-            L.prep_nccs(vars=vars)
-        # Form residual and convert to same domain
-        R = self.eigenvalue*M + L
-        if M:
-            M = operators.convert(M, R.domain.bases)
-        if L:
             L = operators.convert(L, R.domain.bases)
+            L.prep_nccs(vars=vars)
         # Save expressions and metadata
+        eqn['R'] = R
         eqn['M'] = M
         eqn['L'] = L
-        eqn['R'] = R
         eqn['domain'] = R.domain
         eqn['matrix_dependence'] = R.matrix_dependence(*vars)
         eqn['matrix_coupling'] = R.matrix_coupling(*vars)
