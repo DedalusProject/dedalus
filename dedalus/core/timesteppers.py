@@ -104,7 +104,7 @@ class MultistepIMEX:
         # For the adjoint
         self.Y_fields = []
         for field in solver.F:
-            field_adj = field.copy_adjoint()
+            field_adj = field.get_cotangent()
             # Zero the system
             field_adj.preset_layout('c')
             field_adj.data.fill(0)
@@ -123,7 +123,7 @@ class MultistepIMEX:
                 self.cotangents[eqn['F']] = self.Y_fields[i]
         self.dFdxH_Y = []
         for field in solver.state:
-            field_adjoint = field.copy_adjoint()
+            field_adjoint = field.get_cotangent()
             field_adjoint.change_scales(field.domain.dealias)
             self.cotangents[field] = field_adjoint
             self.dFdxH_Y.append(field_adjoint)
@@ -720,7 +720,7 @@ class RungeKuttaIMEX:
         self.timestep_history = []
         self.Y_fields = []
         for field in solver.F:
-            field_adj = field.copy_adjoint()
+            field_adj = field.get_cotangent()
             # Zero the system
             field_adj.preset_layout('c')
             field_adj.data.fill(0)
@@ -737,7 +737,7 @@ class RungeKuttaIMEX:
                 self.cotangents[eqn['F']] = self.Y_fields[i]
         self.dFdxH_Y = []
         for field in solver.state:
-            field_adjoint = field.copy_adjoint()
+            field_adjoint = field.get_cotangent()
             field_adjoint.change_scales(field.domain.dealias)
             self.cotangents[field] = field_adjoint
             self.dFdxH_Y.append(field_adjoint)
