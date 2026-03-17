@@ -282,7 +282,7 @@ class direct_adjoint_loop:
         if state in self.cotangents:
             adj = self.cotangents[state]
         else:
-            adj = state.copy_adjoint()
+            adj = state.get_cotangent()
             adj.preset_layout('c')
             adj.data.fill(0)
             self.cotangents[state] = adj
