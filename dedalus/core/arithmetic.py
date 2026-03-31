@@ -1091,13 +1091,11 @@ class MultiplyFields(Multiply, FutureField):
                 arg_cotangents.append(orig_arg.cotangent)
             else:
                 if arg not in cotangents:
-                    cotangent = arg.copy()
-                    cotangent.adjoint = True
-                    cotangent.data.fill(0)
-                    cotangents[arg] = cotangent
-                else:
-                    cotangents[arg].change_layout(layout)
-                arg_cotangents.append(cotangents[arg])
+                    cotangents[arg] = arg.get_cotangent()
+                cotangent = cotangents[arg]
+                cotangent.change_scales(cotangent.domain.dealias)
+                cotangent.change_layout(layout)
+                arg_cotangents.append(cotangent)
         arg0, arg1 = self.args
         cotan0, cotan1 = arg_cotangents
         self.cotangent.change_layout(layout)
