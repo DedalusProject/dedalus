@@ -4812,9 +4812,12 @@ class ConvertConstantBall(operators.ConvertConstant, operators.SphericalEllOpera
         super().__init__(operand, output_basis, out=out)
         self.radial_basis = self.output_basis.get_radial_basis()
         if self.coords in operand.tensorsig:
-            raise ValueError("Tensors not yet supported.")
+            raise ValueError("Tensors not supported.")
 
     def regindex_out(self, regindex_in):
+        # Only valid for scalars
+        if regindex_in != ():
+            raise ValueError(f"Invalid regindex_in: {regindex_in}")
         return (regindex_in,)
 
     def radial_matrix(self, regindex_in, regindex_out, ell):
@@ -4828,6 +4831,34 @@ class ConvertConstantBall(operators.ConvertConstant, operators.SphericalEllOpera
             return matrix
         else:
             raise ValueError("This should never happen.")
+
+    def _operate(self, args, out, adjoint=False):
+        """Perform operation."""
+        arg = self.args[0]
+        basis = self.output_basis
+        axis = self.dist.last_axis(basis.radial_basis)
+        if not adjoint:
+            out.data[:] = 0
+        # Return early for size-zero data
+        if arg.data.size == 0 or out.data.size == 0:
+            return
+        # Apply operator
+        for ell, m_ind, ell_ind in basis.ell_maps(self.dist):
+            if ell == 0:
+                slices = [slice(None) for i in range(self.dist.dim)]
+                # Modify m slice to ignore sin component
+                slices[axis-2] = slice(m_ind.start, m_ind.start+1)
+                slices[axis-1] = ell_ind
+                slices[axis] = basis.n_slice(ell)
+                slices = tuple(slices)
+                vec_in  = arg.data[slices]
+                vec_out = out.data[slices]
+                if adjoint:
+                    A_adj = self.radial_matrix_adjoint((), (), ell)
+                    vec_in += apply_matrix(A_adj, vec_out, axis=axis)  # TEMPORARY
+                else:
+                    A = self.radial_matrix((), (), ell)
+                    vec_out += apply_matrix(A, vec_in, axis=axis)  # TEMPORARY
 
 
 class ConvertConstantShell(operators.ConvertConstant, operators.SphericalEllOperator):
