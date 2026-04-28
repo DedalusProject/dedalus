@@ -117,7 +117,7 @@ class MultistepIMEX:
         self.dt[0] = dt
 
         # Compute IMEX coefficients
-        a, b, c = self.compute_coefficients(self.dt, self._iteration)
+        a, b, c = self.compute_coefficients(self.dt, self._iteration, self.solver.dtype)
         self._iteration += 1
 
         # Update RHS components and LHS matrices
@@ -203,11 +203,11 @@ class CNAB1(MultistepIMEX):
     steps = 1
 
     @classmethod
-    def compute_coefficients(self, timesteps, iteration):
+    def compute_coefficients(self, timesteps, iteration, dtype):
 
-        a = np.zeros(self.amax+1)
-        b = np.zeros(self.bmax+1)
-        c = np.zeros(self.cmax+1)
+        a = np.zeros(self.amax+1, dtype=dtype)
+        b = np.zeros(self.bmax+1, dtype=dtype)
+        c = np.zeros(self.cmax+1, dtype=dtype)
 
         k0, *rest = timesteps
 
@@ -236,11 +236,11 @@ class SBDF1(MultistepIMEX):
     steps = 1
 
     @classmethod
-    def compute_coefficients(self, timesteps, iteration):
+    def compute_coefficients(self, timesteps, iteration, dtype):
 
-        a = np.zeros(self.amax+1)
-        b = np.zeros(self.bmax+1)
-        c = np.zeros(self.cmax+1)
+        a = np.zeros(self.amax+1, dtype=dtype)
+        b = np.zeros(self.bmax+1, dtype=dtype)
+        c = np.zeros(self.cmax+1, dtype=dtype)
 
         k0, *rest = timesteps
 
@@ -268,14 +268,14 @@ class CNAB2(MultistepIMEX):
     steps = 2
 
     @classmethod
-    def compute_coefficients(self, timesteps, iteration):
+    def compute_coefficients(self, timesteps, iteration, dtype):
 
         if iteration < 1:
-            return CNAB1.compute_coefficients(timesteps, iteration)
+            return CNAB1.compute_coefficients(timesteps, iteration, dtype)
 
-        a = np.zeros(self.amax+1)
-        b = np.zeros(self.bmax+1)
-        c = np.zeros(self.cmax+1)
+        a = np.zeros(self.amax+1, dtype=dtype)
+        b = np.zeros(self.bmax+1, dtype=dtype)
+        c = np.zeros(self.cmax+1, dtype=dtype)
 
         k1, k0, *rest = timesteps
         w1 = k1 / k0
@@ -306,14 +306,14 @@ class MCNAB2(MultistepIMEX):
     steps = 2
 
     @classmethod
-    def compute_coefficients(self, timesteps, iteration):
+    def compute_coefficients(self, timesteps, iteration, dtype):
 
         if iteration < 1:
-            return CNAB1.compute_coefficients(timesteps, iteration)
+            return CNAB1.compute_coefficients(timesteps, iteration, dtype)
 
-        a = np.zeros(self.amax+1)
-        b = np.zeros(self.bmax+1)
-        c = np.zeros(self.cmax+1)
+        a = np.zeros(self.amax+1, dtype=dtype)
+        b = np.zeros(self.bmax+1, dtype=dtype)
+        c = np.zeros(self.cmax+1, dtype=dtype)
 
         k1, k0, *rest = timesteps
         w1 = k1 / k0
@@ -345,14 +345,14 @@ class SBDF2(MultistepIMEX):
     steps = 2
 
     @classmethod
-    def compute_coefficients(self, timesteps, iteration):
+    def compute_coefficients(self, timesteps, iteration, dtype):
 
         if iteration < 1:
-            return SBDF1.compute_coefficients(timesteps, iteration)
+            return SBDF1.compute_coefficients(timesteps, iteration, dtype=dtype)
 
-        a = np.zeros(self.amax+1)
-        b = np.zeros(self.bmax+1)
-        c = np.zeros(self.cmax+1)
+        a = np.zeros(self.amax+1, dtype=dtype)
+        b = np.zeros(self.bmax+1, dtype=dtype)
+        c = np.zeros(self.cmax+1, dtype=dtype)
 
         k1, k0, *rest = timesteps
         w1 = k1 / k0
@@ -383,14 +383,14 @@ class CNLF2(MultistepIMEX):
     steps = 2
 
     @classmethod
-    def compute_coefficients(self, timesteps, iteration):
+    def compute_coefficients(self, timesteps, iteration, dtype):
 
         if iteration < 1:
-            return CNAB1.compute_coefficients(timesteps, iteration)
+            return CNAB1.compute_coefficients(timesteps, iteration, dtype)
 
-        a = np.zeros(self.amax+1)
-        b = np.zeros(self.bmax+1)
-        c = np.zeros(self.cmax+1)
+        a = np.zeros(self.amax+1, dtype=dtype)
+        b = np.zeros(self.bmax+1, dtype=dtype)
+        c = np.zeros(self.cmax+1, dtype=dtype)
 
         k1, k0, *rest = timesteps
         w1 = k1 / k0
@@ -422,14 +422,14 @@ class SBDF3(MultistepIMEX):
     steps = 3
 
     @classmethod
-    def compute_coefficients(self, timesteps, iteration):
+    def compute_coefficients(self, timesteps, iteration, dtype):
 
         if iteration < 2:
-            return SBDF2.compute_coefficients(timesteps, iteration)
+            return SBDF2.compute_coefficients(timesteps, iteration, dtype)
 
-        a = np.zeros(self.amax+1)
-        b = np.zeros(self.bmax+1)
-        c = np.zeros(self.cmax+1)
+        a = np.zeros(self.amax+1, dtype=dtype)
+        b = np.zeros(self.bmax+1, dtype=dtype)
+        c = np.zeros(self.cmax+1, dtype=dtype)
 
         k2, k1, k0, *rest = timesteps
         w2 = k2 / k1
@@ -463,14 +463,14 @@ class SBDF4(MultistepIMEX):
     steps = 4
 
     @classmethod
-    def compute_coefficients(self, timesteps, iteration):
+    def compute_coefficients(self, timesteps, iteration, dtype):
 
         if iteration < 3:
-            return SBDF3.compute_coefficients(timesteps, iteration)
+            return SBDF3.compute_coefficients(timesteps, iteration, dtype)
 
-        a = np.zeros(self.amax+1)
-        b = np.zeros(self.bmax+1)
-        c = np.zeros(self.cmax+1)
+        a = np.zeros(self.amax+1, dtype=dtype)
+        b = np.zeros(self.bmax+1, dtype=dtype)
+        c = np.zeros(self.cmax+1, dtype=dtype)
 
         k3, k2, k1, k0, *rest = timesteps
         w3 = k3 / k2
@@ -549,6 +549,11 @@ class RungeKuttaIMEX:
 
         self._LHS_params = None
         self.axpy = get_axpy(xp, solver.dtype)
+
+        # Cast scheme coefficients
+        self.A = self.A.astype(self.solver.dtype)
+        self.H = self.H.astype(self.solver.dtype)
+        self.c = self.c.astype(self.solver.dtype)
 
     def step(self, dt, wall_time):
         """Advance solver by one timestep."""
