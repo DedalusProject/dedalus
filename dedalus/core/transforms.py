@@ -949,12 +949,12 @@ class FastChebyshevTransform(JacobiTransform):
         else:
             # Conversion matrices
             if self.dealias_before_converting and (self.M_orig < self.N): # truncate prior to conversion matrix
-                self.forward_conversion = jacobi.conversion_matrix(self.M_orig, a0, b0, a, b).tocsr()
+                self.forward_conversion = jacobi.conversion_matrix(self.M_orig, a0, b0, a, b).tocsr().astype(dtype)
             else: # input to conversion matrix not truncated
                 self.forward_conversion = jacobi.conversion_matrix(self.N, a0, b0, a, b)
                 self.forward_conversion.resize(self.M_orig, self.N)
-                self.forward_conversion = self.forward_conversion.tocsr()
-            self.backward_conversion = jacobi.conversion_matrix(self.M_orig, a0, b0, a, b).tocsr()
+                self.forward_conversion = self.forward_conversion.tocsr().astype(dtype)
+            self.backward_conversion = jacobi.conversion_matrix(self.M_orig, a0, b0, a, b).tocsr().astype(dtype)
             self.backward_conversion.sum_duplicates() # for faster solve_upper
             self.resize_rescale_forward = self._resize_rescale_forward_convert
             self.resize_rescale_backward = self._resize_rescale_backward_convert
