@@ -181,7 +181,7 @@ class CFL:
         self.min_change = min_change
         self.threshold = threshold
 
-        self.reducer = GlobalArrayReducer(self.solver.dist.comm_cart)
+        self.reducer = GlobalArrayReducer(self.solver.dist.comm_cart, solver.dtype)
         self.frequencies = self.solver.evaluator.add_dictionary_handler(iter=cadence)
 
     def compute_dt(self):
