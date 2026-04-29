@@ -276,14 +276,24 @@ def custom_spsm(a, b, alpha=1.0, lower=True, unit_diag=False, transa=False, spsm
         mat_a.set_attribute(_cusparse.CUSPARSE_SPMAT_DIAG_TYPE, diag_type)
 
         # Allocate the workspace needed by the succeeding phases
-        if new_spsm_descr:
-            buff_size = _cusparse.spSM_bufferSize(
-                handle, op_a, op_b, alpha.data, mat_a.desc, mat_b.desc,
-                mat_c.desc, cuda_dtype, algo, spsm_descr)
+        # Always calculate workspace (buff_size can change even for same spsm
+        # descriptor)
+        buff_size = _cusparse.spSM_bufferSize(
+            handle, op_a, op_b, alpha.data, mat_a.desc, mat_b.desc,
+            mat_c.desc, cuda_dtype, algo, spsm_descr)
+
+        need_analysis = new_spsm_descr
+        if new_spsm_descr:    
             buff = _cupy.empty(buff_size, dtype=_cupy.int8)
+        else:
+            # Check if buff size grew from that in the cache
+            if buff is None or buff.size < buff_size:
+                buff = _cupy.empty(buff_size, dtype=_cupy.int8)
+                # buff changed so need the analysis phase
+                need_analysis = True
 
         # Perform the analysis phase
-        if new_spsm_descr:
+        if need_analysis:
             _cusparse.spSM_analysis(
                 handle, op_a, op_b, alpha.data, mat_a.desc, mat_b.desc,
                 mat_c.desc, cuda_dtype, algo, spsm_descr, buff.data.ptr)
