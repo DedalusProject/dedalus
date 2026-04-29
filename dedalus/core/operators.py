@@ -989,7 +989,7 @@ class SpectralOperator1D(SpectralOperator):
     @CachedMethod
     def _subspace_matrix(cls, layout, input_basis, output_basis, axis, *args):
         if cls.subaxis_coupling[0]:
-            return cls._full_matrix(input_basis, output_basis, *args)
+            return cls._full_matrix(input_basis, output_basis, *args).astype(layout.dist.dtype)
         else:
             input_domain = Domain(layout.dist, bases=[input_basis])
             output_domain = Domain(layout.dist, bases=[output_basis])
@@ -1003,7 +1003,7 @@ class SpectralOperator1D(SpectralOperator):
             group_blocks = [cls._group_matrix(group, input_basis, output_basis, *args) for group in groups]
             arg_size = layout.local_shape(input_domain, scales=1)[axis]
             out_size = layout.local_shape(output_domain, scales=1)[axis]
-            return sparse_block_diag(group_blocks, shape=(out_size, arg_size))
+            return sparse_block_diag(group_blocks, shape=(out_size, arg_size)).astype(layout.dist.dtype)
 
     @staticmethod
     def _full_matrix(input_basis, output_basis, *args):
