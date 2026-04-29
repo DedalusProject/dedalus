@@ -86,7 +86,7 @@ class GlobalFlowProperty:
 
         self.solver = solver
         self.cadence = cadence
-        self.reducer = GlobalArrayReducer(solver.dist.comm_cart)
+        self.reducer = GlobalArrayReducer(solver.dist.comm_cart, solver.dtype)
         self.properties = solver.evaluator.add_dictionary_handler(iter=cadence)
 
     def add_property(self, property, name, precompute_integral=False):
