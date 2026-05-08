@@ -629,6 +629,177 @@ class FFTWHalfComplexFFT(FFTWBase, RealFourierTransform):
         plan.backward(temp, gdata)
 
 
+class SineTransform(SeparableTransform):
+    """
+    Abstract base class for sine transforms.
+
+    Parameters
+    ----------
+    grid_size : int
+        Grid size (N) along transform dimension.
+    coeff_size : int
+        Coefficient size (M) along transform dimension.
+
+    Notes
+    -----
+    Let KN = (N - 1) be the maximum fully resolved (non-Nyquist) mode on the grid.
+    Let KM = (M - 1) be the maximum retained mode in coeff space.
+    Then K = min(KN, KM) is the maximum wavenumber used in the transforms.
+    A unit-amplitude normalization is used.
+
+    Grid:
+        x(n) = \pi (1/2 + n) / N,    n = 0 .. (N-1)
+
+    Forward transform:
+        if k == 0:
+            a(k) = 0
+        elif k <= K:
+            a(k) = (2/N) \sum_{n=0}^{N-1} f(n) \sin(k x(n))
+        else:
+            a(k) = 0
+
+    Backward transform:
+        f(n) = \sum_{k=1}^{K} a(k) \sin(k x(n))
+
+    Coefficient ordering:
+        The sine coefficients are ordered simply as
+        [0, a(1), a(2), ..., a(KM)]
+    """
+
+    def __init__(self, grid_size, coeff_size):
+        self.N = grid_size
+        self.M = coeff_size
+        self.KN = (self.N - 1)
+        self.KM = (self.M - 1)
+        self.Kmax = min(self.KN, self.KM)
+
+    @property
+    def wavenumbers(self):
+        """One-dimensional global wavenumber array."""
+        return np.arange(self.M)
+
+
+@register_transform(basis.ParityBase, 'matrix-sin')
+class SineMMT(SineTransform, SeparableMatrixTransform):
+    """Sine MMT."""
+
+    @CachedAttribute
+    def forward_matrix(self):
+        """Build forward transform matrix."""
+        N = self.N
+        K = self.wavenumbers[:, None]
+        X = np.arange(N)[None, :] + 1/2
+        dX = N / np.pi
+        quadrature = (2 / N) * np.sin(K*X/dX)
+        # Zero higher modes for transforms with grid_size < coeff_size
+        quadrature *= (K <= self.Kmax)
+        # Ensure C ordering for fast dot products
+        return np.asarray(quadrature, order='C')
+
+    @CachedAttribute
+    def backward_matrix(self):
+        """Build backward transform matrix."""
+        N = self.N
+        K = self.wavenumbers[None, :]
+        X = np.arange(N)[:, None] + 1/2
+        dX = N / np.pi
+        functions = np.sin(K*X/dX)
+        # Zero higher modes for transforms with grid_size < coeff_size
+        functions *= (K <= self.Kmax)
+        # Ensure C ordering for fast dot products
+        return np.asarray(functions, order='C')
+
+
+class FastSineTransform(SineTransform):
+    """Abstract base class for fast sine transforms."""
+
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        # Standard scaling factors for unit-amplitude normalization from DST-II
+        self.forward_rescale = 1 / self.N
+        self.backward_rescale = 1 / 2
+
+    def resize_rescale_forward(self, data_in, data_out, axis, Kmax):
+        """Resize by padding/trunction and rescale to unit amplitude."""
+        zerofreq = axslice(axis, 0, 1)
+        data_out[zerofreq] = 0
+        if Kmax > 0:
+            # Shift to account for zero frequency in output
+            posfreq_in = axslice(axis, 0, Kmax)
+            posfreq_out = axslice(axis, 1, Kmax+1)
+            np.multiply(data_in[posfreq_in], self.forward_rescale, data_out[posfreq_out])
+        if self.KM > Kmax:
+            badfreq = axslice(axis, Kmax+1, None)
+            data_out[badfreq] = 0
+
+    def resize_rescale_backward(self, data_in, data_out, axis, Kmax):
+        """Resize by padding/trunction and rescale to unit amplitude."""
+        if Kmax == 0:
+            zerofreq = axslice(axis, 0, 1)
+            data_out[zerofreq] = 0
+        else:
+            # Shift to account for zero frequency in input
+            posfreq_in = axslice(axis, 1, Kmax+1)
+            posfreq_out = axslice(axis, 0, Kmax)
+            np.multiply(data_in[posfreq_in], self.backward_rescale, data_out[posfreq_out])
+        if self.KN >= Kmax:
+            badfreq = axslice(axis, Kmax, None)
+            data_out[badfreq] = 0
+
+
+@register_transform(basis.ParityBase, 'scipy-sin')
+class ScipyDST(FastSineTransform):
+    """Fast sine transform using scipy.fft."""
+
+    def forward(self, gdata, cdata, axis):
+        """Apply forward transform along specified axis."""
+        # Call DST
+        # Avoid overwrite_x to prevent overwriting problems
+        temp = scipy.fft.dst(gdata, type=2, axis=axis) # Creates temporary
+        # Resize and rescale for unit-ampltidue normalization
+        self.resize_rescale_forward(temp, cdata, axis, self.Kmax)
+
+    def backward(self, cdata, gdata, axis):
+        """Apply backward transform along specified axis."""
+        # Resize and rescale for unit-amplitude normalization
+        # Need temporary to avoid overwriting problems
+        temp = np.empty_like(gdata) # Creates temporary
+        self.resize_rescale_backward(cdata, temp, axis, self.Kmax)
+        # Call IDST
+        temp = scipy.fft.dst(temp, type=3, axis=axis, overwrite_x=True)
+        np.copyto(gdata, temp)
+
+
+@register_transform(basis.ParityBase, 'fftw-sin')
+class FFTWDST(FFTWBase, FastSineTransform):
+    """Fast sine transform using FFTW."""
+
+    @CachedMethod
+    def _build_fftw_plan(self, dtype, gshape, axis):
+        """Build FFTW plans and temporary arrays."""
+        logger.debug("Building FFTW DST plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, gshape, axis))
+        flags = ['FFTW_'+self.rigor.upper()]
+        plan = fftw.DiscreteSineTransform(dtype, gshape, axis, flags=flags)
+        temp = fftw.create_array(gshape, dtype)
+        return plan, temp
+
+    def forward(self, gdata, cdata, axis):
+        """Apply forward transform along specified axis."""
+        plan, temp = self._build_fftw_plan(gdata.dtype, gdata.shape, axis)
+        # Execute FFTW plan
+        plan.forward(gdata, temp)
+        # Resize and rescale for unit-ampltidue normalization
+        self.resize_rescale_forward(temp, cdata, axis, self.Kmax)
+
+    def backward(self, cdata, gdata, axis):
+        """Apply backward transform along specified axis."""
+        plan, temp = self._build_fftw_plan(gdata.dtype, gdata.shape, axis)
+        # Resize and rescale for unit-amplitude normalization
+        self.resize_rescale_backward(cdata, temp, axis, self.Kmax)
+        # Execute FFTW plan
+        plan.backward(temp, gdata)
+
+
 class CosineTransform(SeparableTransform):
     """
     Abstract base class for cosine transforms.
@@ -642,21 +813,24 @@ class CosineTransform(SeparableTransform):
 
     Notes
     -----
-    Let KN = (N - 1) be the maximum (Nyquist) mode on the grid.
+    Let KN = (N - 1) be the maximum fully resolved (non-Nyquist) mode on the grid.
     Let KM = (M - 1) be the maximum retained mode in coeff space.
     Then K = min(KN, KM) is the maximum wavenumber used in the transforms.
     A unit-amplitude normalization is used.
 
+    Grid:
+        x(n) = \pi (1/2 + n) / N,    n = 0 .. (N-1)
+
     Forward transform:
         if k == 0:
-            a(k) = (1/N) \sum_{x=0}^{N-1} f(x)
+            a(k) = (1/N) \sum_{n=0}^{N-1} f(n)
         elif k <= K:
-            a(k) =  (2/N) \sum_{x=0}^{N-1} f(x) \cos(\pi k x / N)
+            a(k) = (2/N) \sum_{n=0}^{N-1} f(n) \cos(k x(n))
         else:
             a(k) = 0
 
     Backward transform:
-        f(x) = \sum_{k=0}^{K} a(k) \cos(\pi k x / N)
+        f(n) = \sum_{k=0}^{K} a(k) \cos(k x(n))
 
     Coefficient ordering:
         The cosine coefficients are ordered simply as
@@ -673,10 +847,10 @@ class CosineTransform(SeparableTransform):
     @property
     def wavenumbers(self):
         """One-dimensional global wavenumber array."""
-        return np.arange(self.KM + 1)
+        return np.arange(self.M)
 
 
-#@register_transform(basis.Cosine, 'matrix')
+@register_transform(basis.ParityBase, 'matrix-cos')
 class CosineMMT(CosineTransform, SeparableMatrixTransform):
     """Cosine MMT."""
 
@@ -684,10 +858,8 @@ class CosineMMT(CosineTransform, SeparableMatrixTransform):
     def forward_matrix(self):
         """Build forward transform matrix."""
         N = self.N
-        M = self.M
-        Kmax = self.Kmax
         K = self.wavenumbers[:, None]
-        X = np.arange(N)[None, :]
+        X = np.arange(N)[None, :] + 1/2
         dX = N / np.pi
         quadrature = (2 / N) * np.cos(K*X/dX)
         quadrature[0] = 1 / N
@@ -700,8 +872,6 @@ class CosineMMT(CosineTransform, SeparableMatrixTransform):
     def backward_matrix(self):
         """Build backward transform matrix."""
         N = self.N
-        M = self.M
-        Kmax = self.Kmax
         K = self.wavenumbers[None, :]
         X = np.arange(N)[:, None] + 1/2
         dX = N / np.pi
@@ -730,9 +900,9 @@ class FastCosineTransform(CosineTransform):
         if Kmax > 0:
             posfreq = axslice(axis, 1, Kmax+1)
             np.multiply(data_in[posfreq], self.forward_rescale_pos, data_out[posfreq])
-            if self.KM > Kmax:
-                badfreq = axslice(axis, Kmax+1, None)
-                data_out[badfreq] = 0
+        if self.KM > Kmax:
+            badfreq = axslice(axis, Kmax+1, None)
+            data_out[badfreq] = 0
 
     def resize_rescale_backward(self, data_in, data_out, axis, Kmax):
         """Resize by padding/trunction and rescale to unit amplitude."""
@@ -741,20 +911,21 @@ class FastCosineTransform(CosineTransform):
         if Kmax > 0:
             posfreq = axslice(axis, 1, Kmax+1)
             np.multiply(data_in[posfreq], self.backward_rescale_pos, data_out[posfreq])
-            if self.KN > Kmax:
-                badfreq = axslice(axis, Kmax+1, None)
-                data_out[badfreq] = 0
+        if self.KN > Kmax:
+            badfreq = axslice(axis, Kmax+1, None)
+            data_out[badfreq] = 0
 
 
-#@register_transform(basis.Cosine, 'scipy')
+@register_transform(basis.ParityBase, 'scipy-cos')
 class ScipyDCT(FastCosineTransform):
     """Fast cosine transform using scipy.fft."""
 
     def forward(self, gdata, cdata, axis):
         """Apply forward transform along specified axis."""
         # Call DCT
+        # Avoid overwrite_x to prevent overwriting problems
         temp = scipy.fft.dct(gdata, type=2, axis=axis) # Creates temporary
-        # Resize and rescale for unit-ampltidue normalization
+        # Resize and rescale for unit-amplitude normalization
         self.resize_rescale_forward(temp, cdata, axis, self.Kmax)
 
     def backward(self, cdata, gdata, axis):
@@ -764,11 +935,11 @@ class ScipyDCT(FastCosineTransform):
         temp = np.empty_like(gdata) # Creates temporary
         self.resize_rescale_backward(cdata, temp, axis, self.Kmax)
         # Call IDCT
-        temp = scipy.fft.dct(temp, type=3, axis=axis, overwrite_x=True) # Creates temporary
+        temp = scipy.fft.dct(temp, type=3, axis=axis, overwrite_x=True)
         np.copyto(gdata, temp)
 
 
-#@register_transform(basis.Cosine, 'fftw')
+@register_transform(basis.ParityBase, 'fftw-cos')
 class FFTWDCT(FFTWBase, FastCosineTransform):
     """Fast cosine transform using FFTW."""
 
