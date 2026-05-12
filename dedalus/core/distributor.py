@@ -125,6 +125,8 @@ class Distributor:
             self.array_namespace = getattr(array_api_compat, array_namespace)
         else:
             self.array_namespace = array_api_compat.array_namespace(array_namespace.zeros(0))
+        self.is_numpy_namespace = array_api_compat.is_numpy_namespace(self.array_namespace)
+        self.is_cupy_namespace = array_api_compat.is_cupy_namespace(self.array_namespace)
 
     @CachedAttribute
     def cs_by_axis(self):

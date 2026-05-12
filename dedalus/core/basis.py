@@ -661,12 +661,12 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         """Get library for transforms."""
         if self.library is None:
             if self.a0 == self.b0 == -1/2:
-                if array_api_compat.is_cupy_namespace(dist.array_namespace):
+                if dist.is_cupy_namespace:
                     return self.default_gpu_dct
                 else:
                     return self.default_cpu_dct
             else:
-                if array_api_compat.is_cupy_namespace(dist.array_namespace):
+                if dist.is_cupy_namespace:
                     return self.default_gpu_library
                 else:
                     return self.default_cpu_library
@@ -1087,7 +1087,7 @@ class FourierBase(IntervalBasis):
     def get_library(self, dist):
         """Get library for transforms."""
         if self.library is None:
-            if array_api_compat.is_cupy_namespace(dist.array_namespace):
+            if dist.is_cupy_namespace:
                 return self.default_gpu_library
             else:
                 return self.default_cpu_library

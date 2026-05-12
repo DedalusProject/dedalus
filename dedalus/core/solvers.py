@@ -67,11 +67,16 @@ class SolverBase:
         self.ncc_cutoff = ncc_cutoff
         self.max_ncc_terms = max_ncc_terms
         self.entry_cutoff = entry_cutoff
+        # Determing matrix coupling
         if matrix_coupling is None:
-            matrix_coupling = np.array(problem.matrix_coupling)
-            # Couple fully separable problems along last axis by default for efficiency
-            if not np.any(matrix_coupling):
-                matrix_coupling[-1] = True
+            # Override with full coupling according to config option
+            if self.dist.is_cupy_namespace and config['matrix construction'].getboolean('COUPLE_GPU_SUBPROBLEMS'):
+                matrix_coupling = np.ones_like(problem.matrix_coupling, dtype=bool)
+            else:
+                matrix_coupling = np.array(problem.matrix_coupling)
+                # Couple fully separable problems along last axis by default for efficiency
+                if not np.any(matrix_coupling):
+                    matrix_coupling[-1] = True
         else:
             # Check specified coupling for compatibility
             problem_coupling = np.array(problem.matrix_coupling)
