@@ -6,6 +6,7 @@ try:
     import cupy as cp
     import cupyx.scipy.sparse as csp
     import cupyx.scipy.sparse.linalg as cupy_spla
+    from cupyx import jit
     cupy_available = True
 except ImportError:
     cupy_available = False
@@ -77,76 +78,28 @@ def cupy_apply_csr(matrix, array, axis, out):
                 cupy_apply_csr_mid(matrix, x3, y3)
 
 
-# Kernel for applying CSR matrix with parallelization over n1 and n3
-apply_csr_mid_kernel_f64 = cp.RawKernel(
-    r'''
-    extern "C" __global__ void apply_csr_mid_kernel_f64(
-        const double* data,     // CSR data of shape (nnz,)
-        const int* indices,    // CSR column indices (nnz,)
-        const int* indptr,     // CSR row pointers (N2o + 1,)
-        const double* input,    // shape (N1, N2i, N3)
-        double* output,         // shape (N1, N2o, N3)
-        int N1, int N2i, int N2o, int N3)
-    {
-        int n1 = blockIdx.x * blockDim.x + threadIdx.x ;  // batch index
-        int n3 = blockIdx.y * blockDim.y + threadIdx.y;  // output column index
-
-        if (n1 >= N1 || n3 >= N3) return;
-
-        // Loop over output rows = CSR matrix rows
-        for (int i = 0; i < N2o; ++i) {
-            double acc = 0;
-            int start = indptr[i];
-            int end   = indptr[i + 1];
-
-            for (int k = start; k < end; ++k) {
-                int j = indices[k];  // input column
-                double val = data[k];
-                acc += val * input[n1 * N2i * N3 + j * N3 + n3];
-            }
-
-            output[n1 * N2o * N3 + i * N3 + n3] = acc;
-        }
-    }
-    ''',
-    'apply_csr_mid_kernel_f64')
-
-apply_csr_mid_kernel_f32 = cp.RawKernel(
-    r'''
-    extern "C" __global__ void apply_csr_mid_kernel_f32(
-        const float* data,     // CSR data of shape (nnz,)
-        const int* indices,    // CSR column indices (nnz,)
-        const int* indptr,     // CSR row pointers (N2o + 1,)
-        const float* input,    // shape (N1, N2i, N3)
-        float* output,         // shape (N1, N2o, N3)
-        int N1, int N2i, int N2o, int N3)
-    {
-        int n1 = blockIdx.x * blockDim.x + threadIdx.x ;  // batch index
-        int n3 = blockIdx.y * blockDim.y + threadIdx.y;  // output column index
-
-        if (n1 >= N1 || n3 >= N3) return;
-
-        // Loop over output rows = CSR matrix rows
-        for (int i = 0; i < N2o; ++i) {
-            float acc = 0;
-            int start = indptr[i];
-            int end   = indptr[i + 1];
-
-            for (int k = start; k < end; ++k) {
-                int j = indices[k];  // input column
-                float val = data[k];
-                acc += val * input[n1 * N2i * N3 + j * N3 + n3];
-            }
-
-            output[n1 * N2o * N3 + i * N3 + n3] = acc;
-        }
-    }
-    ''',
-    'apply_csr_mid_kernel_f32')
+@jit.rawkernel()
+def apply_csr_mid_kernel(data, indices, indptr, x3, y3, N1, N2i, N2o, N3):
+    n1 = jit.blockIdx.x * jit.blockDim.x + jit.threadIdx.x # batch index
+    n3 = jit.blockIdx.y * jit.blockDim.y + jit.threadIdx.y # output column index
+    if n1 >= N1 or n3 >= N3:
+        return
+    # Loop over output rows = CSR matrix rows
+    for i in range(N2o):
+        y3[n1, i, n3] = 0
+        start = indptr[i]
+        end = indptr[i + 1]
+        for k in range(start, end):
+            j = indices[k]
+            y3[n1, i, n3] += data[k] * x3[n1, j, n3]
 
 def cupy_apply_csr_mid(matrix, array, out):
     N1, N2i, N3 = array.shape
     N2o = matrix.shape[0]
+    N1 =  cp.uint32(N1)
+    N2i =  cp.uint32(N2i)
+    N3 =  cp.uint32(N3)
+    N2o =  cp.uint32(N2o)
     # Choose thread/block config
     threads_y = min(1024, N3) # maximize concurrency along n3
     threads_x = 1024 // threads_y # make block have 1024 threads
@@ -155,13 +108,7 @@ def cupy_apply_csr_mid(matrix, array, out):
     blocks_y = (N3 + threads_y - 1) // threads_y
     griddim = (blocks_x, blocks_y)
     # Launch kernel
-    if matrix.dtype == cp.float64:
-        apply_csr_mid_kernel_f64(griddim, blockdim, (matrix.data, matrix.indices, matrix.indptr, array, out, N1, N2i, N2o, N3))
-    elif matrix.dtype == cp.float32:
-        apply_csr_mid_kernel_f32(griddim, blockdim, (matrix.data, matrix.indices, matrix.indptr, array, out, N1, N2i, N2o, N3))
-    else:
-        raise NotImplementedError(f'No apply_csr_mid_kernel for dtype {matrix.dtype}')
-
+    apply_csr_mid_kernel(griddim, blockdim, (matrix.data, matrix.indices, matrix.indptr, array, out, N1, N2i, N2o, N3))
 
 
 def custom_spsm(a, b, alpha=1.0, lower=True, unit_diag=False, transa=False, spsm_descr=None):
