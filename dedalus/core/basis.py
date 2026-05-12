@@ -5,6 +5,7 @@ from scipy import sparse
 from functools import reduce
 import inspect
 from math import prod
+import array_api_compat
 
 from . import operators
 from ..libraries import spin_recombination
@@ -595,8 +596,10 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
     group_shape = (1,)
     native_bounds = (-1, 1)
     transforms = {}
-    default_dct = "fftw_dct"
-    default_library = "matrix"
+    default_cpu_library = "matrix"
+    default_gpu_library = "matrix"
+    default_cpu_dct = "fftw"
+    default_gpu_dct = "cupy"
 
     @classmethod
     def _preprocess_cache_args(cls, coord, size, bounds, a, b, a0, b0, dealias, library):
@@ -631,12 +634,6 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
             dealias = tuple(dealias)
         if len(dealias) != 1:
             raise ValueError("Jacobi dealias must have length 1.")
-        # library: pick default based on (a0, b0)
-        if library is None:
-            if a0 == b0 == -1/2:
-                library = cls.default_dct
-            else:
-                library = cls.default_library
         return (coord, size, bounds, a, b, a0, b0, dealias, library)
 
     def __init__(self, coord, size, bounds, a, b, a0=None, b0=None, dealias=(1,), library=None):
@@ -660,16 +657,30 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         N, = self.grid_shape((scale,))
         return jacobi.build_grid(N, a=self.a0, b=self.b0)
 
+    def get_library(self, dist):
+        """Get library for transforms."""
+        if self.library is None:
+            if self.a0 == self.b0 == -1/2:
+                if array_api_compat.is_cupy_namespace(dist.array_namespace):
+                    return self.default_gpu_dct
+                else:
+                    return self.default_cpu_dct
+            else:
+                if array_api_compat.is_cupy_namespace(dist.array_namespace):
+                    return self.default_gpu_library
+                else:
+                    return self.default_cpu_library
+        else:
+            return self.library
+
     @CachedMethod
     def transform_plan(self, dist, grid_size):
         """Build transform plan."""
-        xp = dist.array_namespace
-        xp_name = xp.__name__.split('.')[-1]
         # Shortcut trivial transforms
         if grid_size == 1 or self.size == 1:
-            return self.transforms[f"matrix-{xp_name}"](grid_size, self.size, self.a, self.b, self.a0, self.b0, dist.array_namespace, dist.dtype)
+            return self.transforms["matrix"](grid_size, self.size, self.a, self.b, self.a0, self.b0, dist.array_namespace, dist.dtype)
         else:
-            return self.transforms[f"{self.library}-{xp_name}"](grid_size, self.size, self.a, self.b, self.a0, self.b0, dist.array_namespace, dist.dtype)
+            return self.transforms[self.get_library(dist)](grid_size, self.size, self.a, self.b, self.a0, self.b0, dist.array_namespace, dist.dtype)
 
     # def weights(self, scales):
     #     """Gauss-Jacobi weights."""
@@ -981,7 +992,8 @@ class FourierBase(IntervalBasis):
     """Base class for RealFourier and ComplexFourier."""
 
     native_bounds = (0, 2*np.pi)
-    default_library = "fftw"
+    default_gpu_library = "cupy"
+    default_cpu_library = "fftw"
 
     @classmethod
     def _preprocess_cache_args(cls, coord, size, bounds, dealias, library):
@@ -1004,9 +1016,6 @@ class FourierBase(IntervalBasis):
             dealias = tuple(dealias)
         if len(dealias) != 1:
             raise ValueError("Fourier dealias must have length 1.")
-        # library: pick default based on (a0, b0)
-        if library is None:
-            library = cls.default_library
         return (coord, size, bounds, dealias, library)
 
     def __init__(self, coord, size, bounds, dealias=(1,), library=None):
@@ -1075,16 +1084,24 @@ class FourierBase(IntervalBasis):
         N, = self.grid_shape((scale,))
         return (2 * np.pi / N) * np.arange(N)
 
+    def get_library(self, dist):
+        """Get library for transforms."""
+        if self.library is None:
+            if array_api_compat.is_cupy_namespace(dist.array_namespace):
+                return self.default_gpu_library
+            else:
+                return self.default_cpu_library
+        else:
+            return self.library
+
     @CachedMethod
     def transform_plan(self, dist, grid_size):
         """Build transform plan."""
-        xp = dist.array_namespace
-        xp_name = xp.__name__.split('.')[-1]
         # Shortcut trivial transforms
         if grid_size == 1 or self.size == 1:
-            return self.transforms[f"matrix-{xp_name}"](grid_size, self.size, dist.array_namespace, dist.dtype)
+            return self.transforms["matrix"](grid_size, self.size, dist.array_namespace, dist.dtype)
         else:
-            return self.transforms[f"{self.library}-{xp_name}"](grid_size, self.size, dist.array_namespace, dist.dtype)
+            return self.transforms[self.get_library(dist)](grid_size, self.size, dist.array_namespace, dist.dtype)
 
     def forward_transform(self, field, axis, gdata, cdata):
         # Transform
@@ -2212,15 +2229,6 @@ class AnnulusBasis(PolarBasis, metaclass=CachedClass):
             dealias = tuple(dealias)
         if len(dealias) != 2:
             raise ValueError("Annulus dealias must have length 2.")
-        # azimuth_library: pick default
-        if azimuth_library is None:
-            azimuth_library = RealFourier.default_library
-        # radius_library: pick default based on alpha
-        if radius_library is None:
-            if alpha[0] == alpha[1] == -1/2:
-                radius_library = Jacobi.default_dct
-            else:
-                radius_library = Jacobi.default_library
         return (coordsys, shape, dtype, radii, k, alpha, dealias, azimuth_library, radius_library)
 
     def __init__(self, coordsys, shape, dtype, radii=(1,2), k=0, alpha=(-0.5,-0.5), dealias=(1,1), azimuth_library=None, radius_library=None):

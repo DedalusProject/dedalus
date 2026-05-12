@@ -120,8 +120,7 @@ class JacobiTransform(SeparableTransform):
         self.dealias_before_converting = dealias_before_converting
 
 
-@register_transform(basis.Jacobi, 'matrix-numpy')
-@register_transform(basis.Jacobi, 'matrix-cupy')
+@register_transform(basis.Jacobi, 'matrix')
 class JacobiMMT(JacobiTransform, SeparableMatrixTransform):
     """Jacobi polynomial MMTs."""
 
@@ -223,8 +222,7 @@ class ComplexFourierTransform(SeparableTransform):
         return (k + KM) % M - KM
 
 
-@register_transform(basis.ComplexFourier, 'matrix-numpy')
-@register_transform(basis.ComplexFourier, 'matrix-cupy')
+@register_transform(basis.ComplexFourier, 'matrix')
 class ComplexFourierMMT(ComplexFourierTransform, SeparableMatrixTransform):
     """Complex-to-complex Fourier MMT."""
 
@@ -286,7 +284,7 @@ class ComplexFFT(ComplexFourierTransform):
                 xp.multiply(data_in[negfreq], rescale, data_out[negfreq])
 
 
-@register_transform(basis.ComplexFourier, 'scipy-numpy')
+@register_transform(basis.ComplexFourier, 'scipy')
 class ScipyComplexFFT(ComplexFFT):
     """Complex-to-complex FFT using scipy.fft."""
 
@@ -308,7 +306,7 @@ class ScipyComplexFFT(ComplexFFT):
         np.copyto(gdata, temp)
 
 
-@register_transform(basis.ComplexFourier, 'scipy-cupy')
+@register_transform(basis.ComplexFourier, 'cupy')
 class CupyComplexFFT(ComplexFFT):
     """Complex-to-complex FFT using scipy.fft."""
 
@@ -346,7 +344,7 @@ class FFTWBase:
         super().__init__(*args, **kw)
 
 
-@register_transform(basis.ComplexFourier, 'fftw-numpy')
+@register_transform(basis.ComplexFourier, 'fftw')
 class FFTWComplexFFT(FFTWBase, ComplexFFT):
     """Complex-to-complex FFT using FFTW."""
 
@@ -434,8 +432,7 @@ class RealFourierTransform(SeparableTransform):
         return xp.repeat(xp.arange(self.KM+1), 2)
 
 
-@register_transform(basis.RealFourier, 'matrix-numpy')
-@register_transform(basis.RealFourier, 'matrix-cupy')
+@register_transform(basis.RealFourier, 'matrix')
 class RealFourierMMT(RealFourierTransform, SeparableMatrixTransform):
     """Real-to-real Fourier MMT."""
 
@@ -477,7 +474,7 @@ class RealFourierMMT(RealFourierTransform, SeparableMatrixTransform):
         return xp.asarray(functions, order='C', dtype=self.dtype)
 
 
-@register_transform(basis.RealFourier, 'fftpack-numpy')
+@register_transform(basis.RealFourier, 'fftpack')
 class FFTPACKRealFFT(RealFourierTransform):
     """Real-to-real FFT using scipy.fftpack."""
 
@@ -564,7 +561,7 @@ class RealFFT(RealFourierTransform):
         temp[axslice(axis, Kmax+1, None)] = 0
 
 
-@register_transform(basis.RealFourier, 'scipy-numpy')
+@register_transform(basis.RealFourier, 'scipy')
 class ScipyRealFFT(RealFFT):
     """Real-to-real FFT using scipy.fft."""
 
@@ -593,7 +590,7 @@ class ScipyRealFFT(RealFFT):
         np.copyto(gdata, temp)
 
 
-@register_transform(basis.RealFourier, 'scipy-cupy')
+@register_transform(basis.RealFourier, 'cupy')
 class CupyRealFFT(RealFFT):
     """Real-to-real FFT using scipy.fft."""
 
@@ -625,7 +622,7 @@ class CupyRealFFT(RealFFT):
         xp.copyto(gdata, temp)
 
 
-@register_transform(basis.RealFourier, 'fftw-numpy')
+@register_transform(basis.RealFourier, 'fftw')
 class FFTWRealFFT(FFTWBase, RealFFT):
     """Real-to-real FFT using FFTW."""
 
@@ -656,7 +653,7 @@ class FFTWRealFFT(FFTWBase, RealFFT):
         plan.backward(temp, gdata)
 
 
-@register_transform(basis.RealFourier, 'fftw_hc-numpy')
+@register_transform(basis.RealFourier, 'fftw_hc')
 class FFTWHalfComplexFFT(FFTWBase, RealFourierTransform):
     """Real-to-real FFT using FFTW half-complex DFT."""
 
@@ -1018,19 +1015,19 @@ class FastChebyshevTransform(JacobiTransform):
         super().resize_rescale_backward(data_in, data_out, axis, Kmax_orig)
 
 
-@register_transform(basis.Jacobi, 'scipy_dct-numpy')
+@register_transform(basis.Jacobi, 'scipy')
 class ScipyFastChebyshevTransform(FastChebyshevTransform, ScipyDCT):
     """Fast ultraspherical transform using scipy.fft and spectral conversion."""
     pass  # Implementation is complete via inheritance
 
 
-@register_transform(basis.Jacobi, 'fftw_dct-numpy')
+@register_transform(basis.Jacobi, 'fftw')
 class FFTWFastChebyshevTransform(FastChebyshevTransform, FFTWDCT):
     """Fast ultraspherical transform using scipy.fft and spectral conversion."""
     pass  # Implementation is complete via inheritance
 
 
-@register_transform(basis.Jacobi, 'scipy_dct-cupy')
+@register_transform(basis.Jacobi, 'cupy')
 class CupyFastChebyshevTransform(FastChebyshevTransform, CupyDCT):
     """Fast ultraspherical transform using cupy fft and spectral conversion."""
     pass  # Implementation is complete via inheritance
