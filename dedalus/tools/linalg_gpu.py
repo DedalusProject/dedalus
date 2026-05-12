@@ -86,12 +86,13 @@ def apply_csr_mid_kernel(data, indices, indptr, x3, y3, N1, N2i, N2o, N3):
         return
     # Loop over output rows = CSR matrix rows
     for i in range(N2o):
-        y3[n1, i, n3] = 0
+        acc = 0 * y3[n1, i, n3] # get right type
         start = indptr[i]
         end = indptr[i + 1]
         for k in range(start, end):
             j = indices[k]
-            y3[n1, i, n3] += data[k] * x3[n1, j, n3]
+            acc += data[k] * x3[n1, j, n3]
+        y3[n1, i, n3] = acc
 
 def cupy_apply_csr_mid(matrix, array, out):
     N1, N2i, N3 = array.shape
