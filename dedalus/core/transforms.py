@@ -170,7 +170,7 @@ class JacobiMMT(JacobiTransform, SeparableMatrixTransform):
 
 
 class ComplexFourierTransform(SeparableTransform):
-    """
+    r"""
     Abstract base class for complex-to-complex Fourier transforms.
 
     Parameters
@@ -376,7 +376,7 @@ class FFTWComplexFFT(FFTWBase, ComplexFFT):
 
 
 class RealFourierTransform(SeparableTransform):
-    """
+    r"""
     Abstract base class for real-to-real Fourier transforms.
 
     Parameters
@@ -718,7 +718,7 @@ class FFTWHalfComplexFFT(FFTWBase, RealFourierTransform):
 
 
 class CosineTransform(SeparableTransform):
-    """
+    r"""
     Abstract base class for cosine transforms.
 
     Parameters
