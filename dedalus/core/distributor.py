@@ -40,12 +40,16 @@ class Distributor:
 
     Parameters
     ----------
-    dim : int
-        Dimension
+    coordsystems : CoordinateSystem or tuple of CoordinateSystems
+        Problem coordinate systems
     comm : MPI communicator, optional
         MPI communicator (default: comm world)
     mesh : tuple of ints, optional
         Process mesh for parallelization (default: 1-D mesh of available processes)
+    dtype : data type, optional
+        Default data type for fields (default: None)
+    array_namespace : array namespace or string, optional
+        Array namespace for field data (e.g. numpy or cupy, default: numpy)
 
     Attributes
     ----------
