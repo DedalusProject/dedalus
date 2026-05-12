@@ -9,6 +9,13 @@ try:
     from cupyx import jit
     cupy_available = True
 except ImportError:
+    # Mock jit so module can still be imported without cupy
+    class jit:
+        @staticmethod
+        def rawkernel():
+            def decorator(func):
+                return func
+            return decorator
     cupy_available = False
 
 
@@ -269,7 +276,7 @@ def custom_spsm(a, b, alpha=1.0, lower=True, unit_diag=False, transa=False, spsm
             mat_c.desc, cuda_dtype, algo, spsm_descr)
 
         need_analysis = new_spsm_descr
-        if new_spsm_descr:    
+        if new_spsm_descr:
             buff = _cupy.empty(buff_size, dtype=_cupy.int8)
         else:
             # Check if buff size grew from that in the cache
