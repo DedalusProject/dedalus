@@ -70,8 +70,8 @@ class MultistepIMEX:
     def __init__(self, solver):
 
         self.solver = solver
-        xp = solver.dist.array_namespace
-        self.RHS = CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=xp)
+        self.xp = solver.dist.array_namespace
+        self.RHS = CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=self.xp)
 
         # Create deque for storing recent timesteps
         self.dt = deque([0.] * self.steps)
@@ -81,16 +81,16 @@ class MultistepIMEX:
         self.LX = LX = deque()
         self.F = F = deque()
         for j in range(self.amax):
-            MX.append(CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=xp))
+            MX.append(CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=self.xp))
         for j in range(self.bmax):
-            LX.append(CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=xp))
+            LX.append(CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=self.xp))
         for j in range(self.cmax):
-            F.append(CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=xp))
+            F.append(CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=self.xp))
 
         # Attributes
         self._iteration = 0
         self._LHS_params = None
-        self.axpy = get_axpy(xp, solver.dtype)
+        self.axpy = get_axpy(self.xp, solver.dtype)
 
     def step(self, dt, wall_time):
         """Advance solver by one timestep."""
@@ -154,7 +154,7 @@ class MultistepIMEX:
 
         # Build RHS
         if RHS.data.size:
-            np.multiply(c[1], F0.data, out=RHS.data)
+            self.xp.multiply(c[1], F0.data, out=RHS.data)
             for j in range(2, len(c)):
                 # RHS.data += c[j] * F[j-1].data
                 axpy(a=c[j], x=F[j-1].data, y=RHS.data)
@@ -173,7 +173,7 @@ class MultistepIMEX:
             if update_LHS:
                 if STORE_EXPANDED_MATRICES:
                     # sp.LHS.data[:] = a0*sp.M_exp.data + b0*sp.L_exp.data
-                    np.multiply(a0, sp.M_exp.data, out=sp.LHS.data)
+                    self.xp.multiply(a0, sp.M_exp.data, out=sp.LHS.data)
                     axpy(a=b0, x=sp.L_exp.data, y=sp.LHS.data)
                 else:
                     sp.LHS = (a0*sp.M_min + b0*sp.L_min)  # CREATES TEMPORARY
@@ -539,16 +539,16 @@ class RungeKuttaIMEX:
     def __init__(self, solver):
 
         self.solver = solver
-        xp = solver.dist.array_namespace
-        self.RHS = CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=xp)
+        self.xp = solver.dist.array_namespace
+        self.RHS = CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=self.xp)
 
         # Create coefficient systems for multistep history
-        self.MX0 = CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=xp)
-        self.LX = [CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=xp) for i in range(self.stages)]
-        self.F = [CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=xp) for i in range(self.stages)]
+        self.MX0 = CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=self.xp)
+        self.LX = [CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=self.xp) for i in range(self.stages)]
+        self.F = [CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=self.xp) for i in range(self.stages)]
 
         self._LHS_params = None
-        self.axpy = get_axpy(xp, solver.dtype)
+        self.axpy = get_axpy(self.xp, solver.dtype)
 
         # Cast scheme coefficients
         self.A = self.A.astype(self.solver.dtype)
@@ -622,7 +622,7 @@ class RungeKuttaIMEX:
 
             # Construct RHS(n,i)
             if RHS.data.size:
-                np.copyto(RHS.data, MX0.data)
+                self.xp.copyto(RHS.data, MX0.data)
                 for j in range(0, i):
                     # RHS.data += (k * A[i,j]) * F[j].data
                     axpy(a=(k*A[i,j]), x=F[j].data, y=RHS.data)
@@ -639,7 +639,7 @@ class RungeKuttaIMEX:
                 if update_LHS:
                     if STORE_EXPANDED_MATRICES:
                         # sp.LHS.data[:] = sp.M_exp.data + k_Hii*sp.L_exp.data
-                        np.copyto(sp.LHS.data, sp.M_exp.data)
+                        self.xp.copyto(sp.LHS.data, sp.M_exp.data)
                         axpy(a=k_Hii, x=sp.L_exp.data, y=sp.LHS.data)
                     else:
                         sp.LHS = (sp.M_min + k_Hii*sp.L_min)  # CREATES TEMPORARY
