@@ -757,12 +757,32 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
     #         raise ValueError("Jacobi ncc_matrix not implemented for basis type: %s" %type(arg_basis))
 
     @CachedMethod
-    def product_matrix(self, arg_basis, out_basis, i):
+    def product_matrix(self, arg_basis, out_basis, mode):
         if arg_basis is None:
-            return super().product_matrix(arg_basis, out_basis, i)
-        coeffs = np.zeros(i+1)
-        coeffs[i] = 1
-        return self._last_axis_component_ncc_matrix(None, self, arg_basis, out_basis, coeffs, None, None, None, None, None, None, 0)
+            return super().product_matrix(arg_basis, out_basis, mode)
+        # Cache on class
+        a_ncc, b_ncc = self.a, self.b
+        a_arg, b_arg = arg_basis.a, arg_basis.b
+        a_out, b_out = out_basis.a, out_basis.b
+        N = arg_basis.size
+        return self._product_matrix(a_ncc, b_ncc, a_arg, b_arg, a_out, b_out, mode, N)
+
+    @classmethod
+    @CachedMethod
+    def _product_matrix(cls, a_ncc, b_ncc, a_arg, b_arg, a_out, b_out, mode, N):
+        coeffs = np.zeros(mode+1)
+        coeffs[mode] = 1
+        da = int(np.round(a_out - a_arg))
+        db = int(np.round(b_out - b_arg))
+        # Pad for dealiasing with conversion
+        Nmat = 3*((N+1)//2) + min((N+1)//2, (da+db+1)//2)
+        J = dedalus_sphere.jacobi.operator('Z')(Nmat, a_arg, b_arg).square
+        A, B = clenshaw.jacobi_recursion(Nmat, a_ncc, b_ncc, J)
+        f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0] * sparse.identity(Nmat)
+        matrix = clenshaw.matrix_clenshaw(coeffs, A, B, f0, cutoff=0)
+        convert = jacobi.conversion_matrix(Nmat, a_arg, b_arg, a_out, b_out)
+        matrix = convert @ matrix
+        return matrix[:N, :N].tocoo()
 
     @classmethod
     def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, ncc_tensorsig, arg_tensorsig, out_tensorsig, cutoff):
