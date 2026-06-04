@@ -599,7 +599,7 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
     default_cpu_library = "matrix"
     default_gpu_library = "matrix"
     default_cpu_dct = "fftw"
-    default_gpu_dct = "cupy"
+    default_gpu_dct = "matrix"
 
     @classmethod
     def _preprocess_cache_args(cls, coord, size, bounds, a, b, a0, b0, dealias, library):
