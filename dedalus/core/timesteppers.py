@@ -258,6 +258,8 @@ class MultistepIMEX:
         b.rotate()
         c.rotate()
         a[0] ,b[0], c[0] = self.compute_coefficients(self.dt, self._iteration)
+        # Update sim_time before evaluators
+        solver.sim_time -= self.dt[0]
         # Update RHS components and LHS matrices
         MX.rotate()
         LX.rotate()
@@ -343,8 +345,7 @@ class MultistepIMEX:
             field.preset_layout('c')
         for sp in subproblems:
             sp.scatter_inputs(RHS.get_subdata(sp), state_fields)
-        # Update solver and self.dt
-        solver.sim_time -= self.dt[0]
+        # Update self.dt
         # TODO: For now use timestep history to get correct self.dt deque,
         # need to think about how step_adjoint is handled wrt dt.
         self.dt.rotate(-1)
@@ -777,7 +778,6 @@ class RungeKuttaIMEX:
         self.timestep_history.append(dt)
         # Check on updating LHS
         update_LHS = (k != self._LHS_params)
-        # print(self._LHS_params,update_LHS)
         self._LHS_params = k
         if update_LHS:
             # Remove old solver references
@@ -791,7 +791,7 @@ class RungeKuttaIMEX:
             apply_sparse(sp.M_min, spX, axis=0, out=MX0.get_subdata(sp))
             apply_sparse(sp.L_min, spX, axis=0, out=LX0.get_subdata(sp))
             if recompute:
-                np.copyto(self.XStages[0].get_subdata(sp),spX)
+                np.copyto(self.XStages[0].get_subdata(sp), spX)
                 # self.XStages[0] = np.copy(spX)
         # Compute stages
         # (M + k Hii L).X(n,i) = M.X(n,0) + k Aij F(n,j) - k Hij L.X(n,j)
@@ -877,6 +877,9 @@ class RungeKuttaIMEX:
             k = dt
         else:
             k = dt = self.timestep_history[solver.iteration-1]
+        # Reset time before recompute steps
+        sim_time_0 -= k
+        solver.sim_time = sim_time_0
         # Recompute intermediate steps
         self.step(dt, wall_time, recompute=True)
         # # Check on updating LHS
@@ -893,9 +896,14 @@ class RungeKuttaIMEX:
         RHS.data.fill(0)
         for sp in subproblems:
             # Use adjoint state for RHS
-            np.copyto(RHS.get_subdata(sp),sp.gather_inputs(state_fields))
+            np.copyto(RHS.get_subdata(sp), sp.gather_inputs(state_fields))
         # Compute stages
         for i in reversed(range(1, self.stages+1)):
+            # Update sim_time before evaluators
+            if i>1:
+                solver.sim_time = sim_time_0 + k*c[i-1]
+            else:
+                solver.sim_time = sim_time_0
             # Solve for stage
             # Clear coeff system for transposed data
             LXi = LX[i-1]
@@ -933,7 +941,7 @@ class RungeKuttaIMEX:
             # Cache VJPs where solver.state does not change
             id = uuid.uuid4()
             # Note, similar code here to MultistepIMEX
-            for j in range(i,self.stages+1):
+            for j in range(i,self.stages+1):  
                 F[j-1].data.fill(0)
                 for field in Y_fields:
                     field.preset_layout('c')
@@ -966,7 +974,6 @@ class RungeKuttaIMEX:
                     axpy(a=(k*A[j,i-1]), x=F[j-1].data, y=RHS.data)
                     # RHS.data -= (k * H[j,i]) * LXT[j].data
                     axpy(a=-(k*H[j,i-1]), x=LX[j-1].data, y=RHS.data)
-            solver.sim_time = sim_time_0 - k + k*c[i-1]
         # At last stage add on MXT terms
         if RHS.data.size:
             for j in range(1, self.stages+1):
