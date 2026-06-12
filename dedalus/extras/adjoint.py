@@ -117,15 +117,11 @@ class direct_adjoint_loop:
         self.post_solvers = post_solvers
         # Compute adjoint dependencies
         self.adjoint_dependencies = []
-        time = self.solver.problem.time
         for eqn in self.solver.problem.equations:
             RHS = Operand.cast(eqn['RHS'], self.solver.dist, tensorsig=eqn['tensorsig'], dtype=eqn['dtype'])
             for var in self.state:
                 if RHS.has(var) and var not in self.adjoint_dependencies:
                     self.adjoint_dependencies.append(var)
-            # Check for time dependence
-            if RHS.has(time) and time not in self.adjoint_dependencies:
-                self.adjoint_dependencies.append(time)
         # solve pre_solvers now to set IC for IVP
         for pre_solver in self.pre_solvers:
             pre_solver.solve()
