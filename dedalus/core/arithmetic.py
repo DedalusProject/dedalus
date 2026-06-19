@@ -618,6 +618,7 @@ class DotProduct(Product, FutureField):
         arg2_str = arg2_str.replace(arg2_str[indices[1]], 'z')
         out_str = (arg1_str + arg2_str).replace('z', '')
         self.einsum_str = arg1_str + '...,' + arg2_str + '...->' + out_str + '...'
+        self.einsum_path = None
 
     def _check_indices(self, arg0, arg1, indices):
         if (not isinstance(arg0, Operand)) or (not isinstance(arg1, Operand)):
@@ -675,10 +676,17 @@ class DotProduct(Product, FutureField):
         # Call einsum
         if out.data.size:
             if array_api_compat.is_cupy_namespace(xp):
+                if self.einsum_path is None:
+                    self.einsum_path = self.get_einsum_path(xp.asnumpy(arg0_data), xp.asnumpy(arg1_data))
                 # Cupy does not support output keyword
-                out.data[:] = xp.einsum(self.einsum_str, arg0_data, arg1_data, optimize=True)
+                out.data[:] = xp.einsum(self.einsum_str, arg0_data, arg1_data, optimize=self.einsum_path)
             else:
-                xp.einsum(self.einsum_str, arg0_data, arg1_data, out=out.data, optimize=True)
+                if self.einsum_path is None:
+                    self.einsum_path = self.get_einsum_path(arg0_data, arg1_data)
+                xp.einsum(self.einsum_str, arg0_data, arg1_data, out=out.data, optimize=self.einsum_path)
+
+    def get_einsum_path(self, arg0_data, arg1_data):
+        return np.einsum_path(self.einsum_str, arg0_data, arg1_data, optimize="optimal")[0]
 
 
 @alias("cross")
