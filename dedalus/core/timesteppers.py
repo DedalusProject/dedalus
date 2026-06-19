@@ -90,7 +90,8 @@ class MultistepIMEX:
         # Attributes
         self._iteration = 0
         self._LHS_params = None
-        self.axpy = get_axpy(self.xp, solver.dtype)
+        self.axpy_xp = get_axpy(self.xp, solver.dtype)
+        self.axpy_np = get_axpy(np, solver.dtype)
 
     def step(self, dt, wall_time):
         """Advance solver by one timestep."""
@@ -110,7 +111,6 @@ class MultistepIMEX:
         LX = self.LX
         F = self.F
         RHS = self.RHS
-        axpy = self.axpy
 
         # Cycle and compute timesteps
         self.dt.rotate()
@@ -157,13 +157,13 @@ class MultistepIMEX:
             self.xp.multiply(c[1], F0.data, out=RHS.data)
             for j in range(2, len(c)):
                 # RHS.data += c[j] * F[j-1].data
-                axpy(a=c[j], x=F[j-1].data, y=RHS.data)
+                self.axpy_xp(a=c[j], x=F[j-1].data, y=RHS.data)
             for j in range(1, len(a)):
                 # RHS.data -= a[j] * MX[j-1].data
-                axpy(a=-a[j], x=MX[j-1].data, y=RHS.data)
+                self.axpy_xp(a=-a[j], x=MX[j-1].data, y=RHS.data)
             for j in range(1, len(b)):
                 # RHS.data -= b[j] * LX[j-1].data
-                axpy(a=-b[j], x=LX[j-1].data, y=RHS.data)
+                self.axpy_xp(a=-b[j], x=LX[j-1].data, y=RHS.data)
 
         # Solve
         # Ensure coeff space before subsystem scatters
@@ -171,10 +171,11 @@ class MultistepIMEX:
             field.preset_layout('c')
         for sp in subproblems:
             if update_LHS:
+                # Form updated LHS matrix on CPU for factorization
                 if STORE_EXPANDED_MATRICES:
                     # sp.LHS.data[:] = a0*sp.M_exp.data + b0*sp.L_exp.data
-                    self.xp.multiply(a0, sp.M_exp.data, out=sp.LHS.data)
-                    axpy(a=b0, x=sp.L_exp.data, y=sp.LHS.data)
+                    np.multiply(a0, sp.M_exp.data, out=sp.LHS.data)
+                    self.axpy_np(a=b0, x=sp.L_exp.data, y=sp.LHS.data)
                 else:
                     sp.LHS = (a0*sp.M_min + b0*sp.L_min)  # CREATES TEMPORARY
                 sp.LHS_solver = solver.matsolver(sp.LHS, solver)
@@ -548,7 +549,8 @@ class RungeKuttaIMEX:
         self.F = [CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=self.xp) for i in range(self.stages)]
 
         self._LHS_params = None
-        self.axpy = get_axpy(self.xp, solver.dtype)
+        self.axpy_xp = get_axpy(self.xp, solver.dtype)
+        self.axpy_np = get_axpy(np, solver.dtype)
 
         # Cast scheme coefficients
         self.A = self.A.astype(self.solver.dtype)
@@ -578,7 +580,6 @@ class RungeKuttaIMEX:
         H = self.H
         c = self.c
         k = dt
-        axpy = self.axpy
 
         # Check on updating LHS
         update_LHS = (k != self._LHS_params)
@@ -625,9 +626,9 @@ class RungeKuttaIMEX:
                 self.xp.copyto(RHS.data, MX0.data)
                 for j in range(0, i):
                     # RHS.data += (k * A[i,j]) * F[j].data
-                    axpy(a=(k*A[i,j]), x=F[j].data, y=RHS.data)
+                    self.axpy_xp(a=(k*A[i,j]), x=F[j].data, y=RHS.data)
                     # RHS.data -= (k * H[i,j]) * LX[j].data
-                    axpy(a=-(k*H[i,j]), x=LX[j].data, y=RHS.data)
+                    self.axpy_xp(a=-(k*H[i,j]), x=LX[j].data, y=RHS.data)
 
             # Solve for stage
             k_Hii = k * H[i,i]
@@ -637,10 +638,11 @@ class RungeKuttaIMEX:
             for sp in subproblems:
                 # Construct LHS(n,i)
                 if update_LHS:
+                    # Form updated LHS matrix on CPU for factorization
                     if STORE_EXPANDED_MATRICES:
                         # sp.LHS.data[:] = sp.M_exp.data + k_Hii*sp.L_exp.data
-                        self.xp.copyto(sp.LHS.data, sp.M_exp.data)
-                        axpy(a=k_Hii, x=sp.L_exp.data, y=sp.LHS.data)
+                        np.copyto(sp.LHS.data, sp.M_exp.data)
+                        self.axpy_np(a=k_Hii, x=sp.L_exp.data, y=sp.LHS.data)
                     else:
                         sp.LHS = (sp.M_min + k_Hii*sp.L_min)  # CREATES TEMPORARY
                     sp.LHS_solvers[i] = solver.matsolver(sp.LHS, solver)
