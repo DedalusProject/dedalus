@@ -314,7 +314,9 @@ class Distributor:
         grids = []
         for basis in bases:
             basis_scales = scales[self.first_axis(basis):self.last_axis(basis)+1]
-            grids.extend(xp.asarray(basis.local_grids(self, scales=basis_scales)))
+            local_grids = basis.local_grids(self, scales=basis_scales)
+            for grid in local_grids:
+                grids.append(xp.asarray(grid))
         return grids
 
     def local_modes(self, basis):

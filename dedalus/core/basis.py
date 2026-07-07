@@ -2229,6 +2229,17 @@ class AnnulusBasis(PolarBasis, metaclass=CachedClass):
             dealias = tuple(dealias)
         if len(dealias) != 2:
             raise ValueError("Annulus dealias must have length 2.")
+        # azimuth_library: pick default
+        if azimuth_library is None:
+            # Todo: fix to work on GPUs
+            azimuth_library = RealFourier.default_cpu_library
+        # radius_library: pick default
+        if radius_library is None:
+            # Todo: fix to work with GPUs
+            if alpha[0] == alpha[1] == -1/2:
+                radius_library = Jacobi.default_cpu_dct
+            else:
+                radius_library = Jacobi.default_cpu_library
         return (coordsys, shape, dtype, radii, k, alpha, dealias, azimuth_library, radius_library)
 
     def __init__(self, coordsys, shape, dtype, radii=(1,2), k=0, alpha=(-0.5,-0.5), dealias=(1,1), azimuth_library=None, radius_library=None):
@@ -2343,7 +2354,7 @@ class AnnulusBasis(PolarBasis, metaclass=CachedClass):
         b = self.alpha[1] + k
         a0 = self.alpha[0]
         b0 = self.alpha[1]
-        return Jacobi.transforms[self.radius_library](grid_size, self.Nmax+1, a, b, a0, b0)
+        return Jacobi.transforms[self.radius_library](grid_size, self.Nmax+1, a, b, a0, b0, dist.array_namespace, dist.dtype)
 
     @CachedMethod
     def radial_transform_factor(self, scale, data_axis, dk):
@@ -2506,7 +2517,8 @@ class DiskBasis(PolarBasis, metaclass=CachedClass):
             raise ValueError("Disk dealias must have length 2.")
         # azimuth_library: pick default
         if azimuth_library is None:
-            azimuth_library = RealFourier.default_library
+            # Todo: fix to work on GPUs
+            azimuth_library = RealFourier.default_cpu_library
         # radius_library: pick default
         if radius_library is None:
             radius_library = cls.default_library
@@ -2873,8 +2885,9 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
         if len(dealias) != 2:
             raise ValueError("Sphere dealias must have length 2.")
         # azimuth_library: pick default
+        # todo: fix to work with GPUs
         if azimuth_library is None:
-            azimuth_library = RealFourier.default_library
+            azimuth_library = RealFourier.default_cpu_library
         # colatitude_library: pick default
         if colatitude_library is None:
             colatitude_library = cls.default_library
@@ -3859,10 +3872,11 @@ class ShellRadialBasis(RegularityBasis, metaclass=CachedClass):
         if radii[0] <= 0:
             raise ValueError("Inner radius must be positive.")
         if radius_library is None:
+            # Todo: fix to work with GPUs
             if alpha[0] == alpha[1] == -1/2:
-                radius_library = Jacobi.default_dct
+                radius_library = Jacobi.default_cpu_dct
             else:
-                radius_library = Jacobi.default_library
+                radius_library = Jacobi.default_cpu_library
         self.radii = radii
         self.volume = 4 / 3 * np.pi * (radii[1]**3 - radii[0]**3)
         self.dR = self.radii[1] - self.radii[0]
@@ -3982,7 +3996,7 @@ class ShellRadialBasis(RegularityBasis, metaclass=CachedClass):
         b = self.alpha[1] + k
         a0 = self.alpha[0]
         b0 = self.alpha[1]
-        return Jacobi.transforms[self.radius_library](grid_size, self.Nmax+1, a, b, a0, b0)
+        return Jacobi.transforms[self.radius_library](grid_size, self.Nmax+1, a, b, a0, b0, dist.array_namespace, dist.dtype)
 
     def forward_transform_radius(self, field, axis, gdata, cdata):
         data_axis = len(field.tensorsig) + axis
@@ -4544,16 +4558,18 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
             raise ValueError("Shell dealias must have length 3.")
         # azimuth_library: pick default
         if azimuth_library is None:
-            azimuth_library = RealFourier.default_library
+            # Todo: fix to work with GPUs
+            azimuth_library = RealFourier.default_cpu_library
         # colatitude_library: pick default
         if colatitude_library is None:
             colatitude_library = SphereBasis.default_library
         # radius_library: pick default based on alpha
         if radius_library is None:
+            # Todo: fix to work with GPUs
             if alpha[0] == alpha[1] == -1/2:
-                radius_library = Jacobi.default_dct
+                radius_library = Jacobi.default_cpu_dct
             else:
-                radius_library = Jacobi.default_library
+                radius_library = Jacobi.default_cpu_library
         return (coordsys, shape, dtype, radii, k, alpha, dealias, azimuth_library, colatitude_library, radius_library)
 
     def __init__(self, coordsys, shape, dtype, radii=(1,2), k=0, alpha=(-0.5,-0.5), dealias=(1,1,1), azimuth_library=None, colatitude_library=None, radius_library=None):
@@ -4768,7 +4784,8 @@ class BallBasis(Spherical3DBasis, metaclass=CachedClass):
             raise ValueError("Ball dealias must have length 3.")
         # azimuth_library: pick default
         if azimuth_library is None:
-            azimuth_library = RealFourier.default_library
+            # Todo: fix to work with GPUs
+            azimuth_library = RealFourier.default_cpu_library
         # colatitude_library: pick default
         if colatitude_library is None:
             colatitude_library = SphereBasis.default_library
@@ -5779,15 +5796,15 @@ class InterpolateAzimuth(FutureLockedField, operators.Interpolate):
 
     def interpolation_vector(self):
         # Wrap class-based caching
-        return self._interpolation_vector(self.input_basis, self.position)
+        return self._interpolation_vector(self.dist.array_namespace, self.input_basis, self.position)
 
     @staticmethod
     @CachedMethod
-    def _interpolation_vector(input_basis, position):
+    def _interpolation_vector(array_namespace, input_basis, position):
         # Construct collocation interpolation using forward transform matrix and spectral interpolation
         azimuth_basis = input_basis.azimuth_basis
         grid_size = azimuth_basis.grid_shape(scales=azimuth_basis.dealias)[0]
-        forward = azimuth_basis.transforms['matrix'](grid_size, azimuth_basis.size).forward_matrix[azimuth_basis.forward_coeff_permutation]
+        forward = azimuth_basis.transforms['matrix'](grid_size, azimuth_basis.size, array_namespace, input_basis.dtype).forward_matrix[azimuth_basis.forward_coeff_permutation]
         if input_basis.dtype is np.float64:
             interp = InterpolateRealFourier._full_matrix(azimuth_basis, None, position)
         elif input_basis.dtype is np.complex128:

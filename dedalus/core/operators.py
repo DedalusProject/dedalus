@@ -474,6 +474,7 @@ class GeneralFunction(NonlinearOperator, FutureField):
         self.last_id = None
         # Additional attributes
         self.dist = dist
+        self.array_namespace = dist.array_namespace
         self.layout = self.dist.get_layout_object(layout)
         self.func = func
         self.kw = kw
@@ -971,8 +972,7 @@ class SpectralOperator1D(SpectralOperator):
     @CachedMethod
     def subspace_matrix_device(self, layout):
         """Build matrix operating on local subspace data on device."""
-        # Caching layer to allow insertion of other arguments
-        matrix = self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis)
+        matrix = self.subspace_matrix(layout)
         if array_api_compat.is_cupy_namespace(self.array_namespace):
             import cupy as cp
             import cupyx.scipy.sparse as csp
