@@ -20,44 +20,52 @@ class GlobalArrayReducer:
     ----------
     comm : MPI communicator
         MPI communicator
-    dtype : data type, optional
-        Array data type (default: np.float64)
-
     """
 
-    def __init__(self, comm, dtype=np.float64):
-
+    def __init__(self, comm):
         self.comm = comm
-        self._scalar_buffer = np.zeros(1, dtype=dtype)
+        self.scalar_buffers = {}
 
-    def reduce_scalar(self, local_scalar, mpi_reduce_op):
-        """Compute global reduction of a scalar from each process."""
-        self._scalar_buffer[0] = local_scalar
-        self.comm.Allreduce(MPI.IN_PLACE, self._scalar_buffer, op=mpi_reduce_op)
-        return self._scalar_buffer[0]
+    def get_buffer(self, dtype):
+        """Allocate size-1 buffer for a given data type."""
+        if dtype not in self.scalar_buffers:
+            self.scalar_buffers[dtype] = np.zeros(1, dtype=dtype)
+        return self.scalar_buffers[dtype]
 
-    def global_min(self, data, empty=np.inf):
+    def global_min(self, data):
         """Compute global min of all array data."""
+        buffer = self.get_buffer(data.dtype)
+        # Compute local min
         if data.size:
-            local_min = np.min(data)
+            buffer[0] = np.min(data) # works on CPU or GPU
         else:
-            local_min = empty
-        return self.reduce_scalar(local_min, MPI.MIN)
+            buffer[0] = data.dtype.type(np.inf)
+        # Global reduction
+        self.comm.Allreduce(MPI.IN_PLACE, buffer, op=MPI.MIN)
+        return buffer[0]
 
-    def global_max(self, data, empty=-np.inf):
+    def global_max(self, data):
         """Compute global max of all array data."""
+        buffer = self.get_buffer(data.dtype)
         if data.size:
-            local_max = np.max(data)
+            buffer[0] = np.max(data) # works on CPU or GPU
         else:
-            local_max = empty
-        return self.reduce_scalar(local_max, MPI.MAX)
+            buffer[0] = data.dtype.type(-np.inf)
+        self.comm.Allreduce(MPI.IN_PLACE, buffer, op=MPI.MAX)
+        return buffer[0]
 
     def global_mean(self, data):
         """Compute global mean of all array data."""
-        local_sum = np.sum(data)
-        local_size = data.size
-        global_sum = self.reduce_scalar(local_sum, MPI.SUM)
-        global_size = self.reduce_scalar(local_size, MPI.SUM)
+        # Reduce sum
+        buffer = self.get_buffer(data.dtype)
+        buffer[0] = np.sum(data) # works on CPU or GPU
+        self.comm.Allreduce(MPI.IN_PLACE, buffer, op=MPI.SUM)
+        global_sum = buffer[0]
+        # Reduce size
+        buffer = self.get_buffer(int)
+        buffer[0] = data.size
+        self.comm.Allreduce(MPI.IN_PLACE, buffer, op=MPI.SUM)
+        global_size = buffer[0]
         return global_sum / global_size
 
 
@@ -83,10 +91,9 @@ class GlobalFlowProperty:
     """
 
     def __init__(self, solver, cadence=1):
-
         self.solver = solver
         self.cadence = cadence
-        self.reducer = GlobalArrayReducer(solver.dist.comm_cart, solver.dtype)
+        self.reducer = solver.dist.array_reducer
         self.properties = solver.evaluator.add_dictionary_handler(iter=cadence)
 
     def add_property(self, property, name, precompute_integral=False):
@@ -136,6 +143,7 @@ class GlobalFlowProperty:
         average_value = self.volume_integral(name) / self.solver.domain.hypervolume
         return average_value
 
+
 class CFL:
     """
     Computes CFL-limited timestep from a set of frequencies/velocities.
@@ -180,8 +188,7 @@ class CFL:
         self.max_change = max_change
         self.min_change = min_change
         self.threshold = threshold
-
-        self.reducer = GlobalArrayReducer(self.solver.dist.comm_cart, solver.dtype)
+        self.reducer = self.solver.dist.array_reducer
         self.frequencies = self.solver.evaluator.add_dictionary_handler(iter=cadence)
 
     def compute_dt(self):

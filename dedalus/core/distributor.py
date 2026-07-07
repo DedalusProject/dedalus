@@ -18,6 +18,7 @@ from ..tools.array import reshape_vector
 from ..tools.cache import CachedMethod, CachedAttribute
 from ..tools.config import config
 from ..tools.general import OrderedSet
+from ..extras.flow_tools import GlobalArrayReducer
 
 logger = logging.getLogger(__name__.split('.')[-1])
 GROUP_TRANSFORMS = config['transforms'].getboolean('GROUP_TRANSFORMS')
@@ -128,6 +129,8 @@ class Distributor:
             self.array_namespace = array_api_compat.array_namespace(array_namespace.zeros(0))
         self.is_numpy_namespace = array_api_compat.is_numpy_namespace(self.array_namespace)
         self.is_cupy_namespace = array_api_compat.is_cupy_namespace(self.array_namespace)
+        # Array reducer
+        self.array_reducer = GlobalArrayReducer(self.comm_cart)
         # Warnings for non-Cartesian problems
         if self.is_cupy_namespace and any(cs.curvilinear for cs in self.coordsystems):
             warnings.warn("Non-Cartesian coordinate systems not yet supported on GPU.")

@@ -534,3 +534,9 @@ def get_axpy(array_namespace, dtype):
         return cublas_axpy
     else:
         raise ValueError("Unsupported array namespace")
+
+
+def convert_to_cpu(array):
+    """Convert array to CPU (numpy) array."""
+    return np.from_dlpack(array, device="cpu")
+
