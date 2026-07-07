@@ -178,7 +178,7 @@ class MultistepIMEX:
                     self.axpy_np(a=b0, x=sp.L_exp.data, y=sp.LHS.data)
                 else:
                     sp.LHS = (a0*sp.M_min + b0*sp.L_min)  # CREATES TEMPORARY
-                sp.LHS_solver = solver.matsolver(sp.LHS, solver)
+                sp.LHS_solver = solver.matsolver(sp.LHS, array_namespace=self.xp, solver=solver)
             # Slice out valid subdata, skipping invalid components
             spRHS = RHS.get_subdata(sp)
             spX = sp.LHS_solver.solve(spRHS)  # CREATES TEMPORARY
@@ -645,7 +645,7 @@ class RungeKuttaIMEX:
                         self.axpy_np(a=k_Hii, x=sp.L_exp.data, y=sp.LHS.data)
                     else:
                         sp.LHS = (sp.M_min + k_Hii*sp.L_min)  # CREATES TEMPORARY
-                    sp.LHS_solvers[i] = solver.matsolver(sp.LHS, solver)
+                    sp.LHS_solvers[i] = solver.matsolver(sp.LHS, array_namespace=self.xp, solver=solver)
                 # Slice out valid subdata, skipping invalid components
                 spRHS = RHS.get_subdata(sp)
                 spX = sp.LHS_solvers[i].solve(spRHS)  # CREATES TEMPORARY

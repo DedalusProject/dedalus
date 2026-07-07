@@ -395,7 +395,7 @@ class LinearBoundaryValueSolver(SolverBase):
         if sp_to_build:
             self.build_matrices(sp_to_build, ['L'])
             for sp in sp_to_build:
-                self.subproblem_matsolvers[sp] = self.matsolver(sp.L_min, self)
+                self.subproblem_matsolvers[sp] = self.matsolver(sp.L_min, array_namespace=self.dist.array_namespace, solver=self)
         # Compute RHS
         self.evaluator.evaluate_scheduled(iteration=self.iteration)
         # Ensure coeff space before subsystem gathers/scatters
@@ -489,7 +489,7 @@ class NonlinearBoundaryValueSolver(SolverBase):
             # Gather RHS
             spF = sp.gather_outputs(self.F)
             # Solve
-            sp_matsolver = self.matsolver(sp.dF_min, self)
+            sp_matsolver = self.matsolver(sp.dF_min, array_namespace=self.dist.array_namespace, solver=self)
             spX = sp_matsolver.solve(spF)  # CREATES TEMPORARY
             # Scatter solution to perturbations
             sp.scatter_inputs(spX, self.perturbations)
