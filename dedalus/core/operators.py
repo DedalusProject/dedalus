@@ -833,40 +833,40 @@ class QuasiDifferentialOperator(LinearOperator):
         # Require coefficient space through last axis
         self.args[0].require_coeff_space(self.last_axis)
 
-
-
-
-
-    # def subproblem_matrix(self, subproblem):
-    #     """Build operator matrix for a specific subproblem."""
-    #     axis = self.last_axis
-    #     group = subproblem.group[axis]
-    #     # Track sizes for previous and subsequent axes
-    #     shape = subproblem.coeff_shape(self.domain)
-    #     N_before = prod([cs.dim for cs in self.tensorsig]) * prod(shape[:axis])
-    #     N_after = prod(shape[axis+1:])
-    #     # Build matrix for operator axis
-    #     if group is None:
-    #         matrix = self.subspace_matrix(self.dist.coeff_layout)
-    #     else:
-    #         matrix = self.group_matrix(group)
-    #     # Kronecker up to proper size
-    #     if N_before > 1:
-    #         I_before = sparse.identity(N_before, format='coo') # COO faster for kron
-    #         matrix = sparse.kron(I_before, matrix)
-    #     if N_after > 1:
-    #         I_after = sparse.identity(N_after, format='coo') # COO faster for kron
-    #         matrix = sparse.kron(matrix, I_after)
-    #     # Convert to CSR (might be numpy array)
-    #     return sparse.csr_matrix(matrix)
+    def subproblem_matrix(self, subproblem):
+        """Build operator matrix for a specific subproblem."""
+        group = subproblem.group
+        # Track sizes for previous and subsequent axes
+        shape = subproblem.coeff_shape(self.domain)
+        N_before = prod([cs.dim for cs in self.tensorsig])
+        N_after = 0
+        # Build matrix for operator axis
+        matrix = self.group_matrix(group, shape)
+        # Kronecker up to proper size
+        if N_before > 1:
+            I_before = sparse.identity(N_before, format='coo') # COO faster for kron
+            matrix = sparse.kron(I_before, matrix)
+        if N_after > 1:
+            I_after = sparse.identity(N_after, format='coo') # COO faster for kron
+            matrix = sparse.kron(matrix, I_after)
+        # Convert to CSR (might be numpy array)
+        return sparse.csr_matrix(matrix)
 
     # def subspace_matrix(self, layout):
     #     """Build matrix operating on local subspace data."""
     #     # Caching layer to allow insertion of other arguments
     #     return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis)
 
-    # def group_matrix(self, group):
-    #     return self._group_matrix(group, self.input_basis, self.output_basis)
+    def group_matrix(self, group, shape):
+        local_modes = self.dist.coeff_layout.local_mode_arrays(self.domain, scales=1)
+        modes = []
+        for i, g in enumerate(group):
+            if g is None:
+                modes.append(None)
+            else:
+                modes.append(g*np.ones(shape[i]) / self.domain.bases[i].COV.stretch)
+        matrix = sparse.diags(self.symbol(*modes).ravel(), format='csr')
+        return matrix
 
     # @classmethod
     # @CachedMethod
