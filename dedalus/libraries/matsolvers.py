@@ -5,7 +5,12 @@ import scipy.linalg as sla
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 from functools import partial
-
+import array_api_compat
+try:
+    import cupyx.scipy.sparse.linalg as cupy_spla
+    cupy_available = True
+except ImportError:
+    cupy_available = False
 
 matsolvers = {}
 def add_solver(solver):
@@ -18,7 +23,7 @@ class SolverBase:
 
     config = {}
 
-    def __init__(self, matrix, solver=None):
+    def __init__(self, matrix, array_namespace=np, solver=None):
         pass
 
     def solve(self, vector):
@@ -71,9 +76,13 @@ class DenseSolver(SolverBase):
 class UmfpackSpsolve(SparseSolver):
     """UMFPACK spsolve."""
 
-    def __init__(self, matrix, solver=None):
+    def __init__(self, matrix, array_namespace=np, solver=None):
         from scikits import umfpack
         self.matrix = matrix.copy()
+        self.array_namespace = array_namespace
+        if not array_api_compat.is_numpy_namespace(array_namespace):
+            raise ValueError("Only numpy namespace is currently supported.")
+        self.solver = solver
 
     def solve(self, vector):
         out = spla.spsolve(self.matrix, vector, use_umfpack=True)
@@ -88,8 +97,12 @@ class _SuperluSpsolveBase(SparseSolver):
 
     permc_spec = None
 
-    def __init__(self, matrix, solver=None):
+    def __init__(self, matrix, array_namespace=np, solver=None):
         self.matrix = matrix.copy()
+        self.array_namespace = array_namespace
+        if not array_api_compat.is_numpy_namespace(array_namespace):
+            raise ValueError("Only numpy namespace is currently supported.")
+        self.solver = solver
 
     def solve(self, vector):
         out = spla.spsolve(self.matrix, vector, permc_spec=self.permc_spec, use_umfpack=False)
@@ -115,8 +128,12 @@ class SuperluColamdSpsolve(_SuperluSpsolveBase):
 class UmfpackFactorized(SparseSolver):
     """UMFPACK LU factorized solve."""
 
-    def __init__(self, matrix, solver=None):
+    def __init__(self, matrix, array_namespace=np, solver=None):
         from scikits import umfpack
+        self.array_namespace = array_namespace
+        self.solver = solver
+        if not array_api_compat.is_numpy_namespace(array_namespace):
+            raise ValueError("Only numpy namespace is currently supported.")
         self.LU = umfpack.splu(matrix.tocsc())
 
     def solve(self, vector):
@@ -133,7 +150,9 @@ class _SuperluFactorizedBase(SparseSolver):
     options = {}
     trans = "N"
 
-    def __init__(self, matrix, solver=None):
+    def __init__(self, matrix, array_namespace=np, solver=None):
+        self.array_namespace = array_namespace
+        self.solver = solver
         if self.trans == "T":
             matrix = matrix.T
         elif self.trans == "H":
@@ -144,6 +163,21 @@ class _SuperluFactorizedBase(SparseSolver):
                             relax=self.relax,
                             panel_size=self.panel_size,
                             options=self.options)
+        # Cupy conversion
+        if array_api_compat.is_cupy_namespace(array_namespace):
+            # Avoid cupy splu which requires GPU matrices but transfers them to factorize on CPU
+            # Run same typecheck as cupy splu
+            if matrix.dtype.char not in 'fdFD':
+                raise TypeError('Invalid dtype (actual: {})'.format(self.LU.dtype))
+            # Build cupy factorization from scipy factorization of CPU matrices
+            self.LU = cupy_spla.SuperLU(self.LU)
+            self.LU.spsm_L_descr = None
+            self.LU.spsm_U_descr = None
+            self.solve = self.cupy_solve
+
+    def cupy_solve(self, vector):
+        from dedalus.tools.linalg_gpu import custom_SuperLU_solve
+        return custom_SuperLU_solve(self.LU, vector, trans=self.trans)
 
     def solve(self, vector):
         return self.LU.solve(vector, trans=self.trans)
@@ -187,7 +221,11 @@ class SuperluColamdFactorizedTranspose(_SuperluFactorizedBase):
 class ScipyBanded(BandedSolver):
     """Scipy banded solve."""
 
-    def __init__(self, matrix, solver=None):
+    def __init__(self, matrix, array_namespace=np, solver=None):
+        self.array_namespace = array_namespace
+        self.solver = solver
+        if not array_api_compat.is_numpy_namespace(array_namespace):
+            raise ValueError("Only numpy namespace is currently supported.")
         self.lu, self.ab = self.sparse_to_banded(matrix)
 
     def solve(self, vector):
@@ -198,8 +236,12 @@ class ScipyBanded(BandedSolver):
 class SPQR_solve(SparseSolver):
     """SuiteSparse QR solve."""
 
-    def __init__(self, matrix, solver=None):
+    def __init__(self, matrix, array_namespace=np, solver=None):
         import sparseqr
+        self.array_namespace = array_namespace
+        self.solver = solver
+        if not array_api_compat.is_numpy_namespace(array_namespace):
+            raise ValueError("Only numpy namespace is currently supported.")
         self.matrix = matrix.copy()
 
     def solve(self, vector):
@@ -210,9 +252,13 @@ class SPQR_solve(SparseSolver):
 class BandedQR(BandedSolver):
     """pybanded QR solve."""
 
-    def __init__(self, matrix, solver=None):
+    def __init__(self, matrix, array_namespace=np, solver=None):
         import pybanded
         matrix = pybanded.BandedMatrix.from_sparse(matrix)
+        self.array_namespace = array_namespace
+        self.solver = solver
+        if not array_api_compat.is_numpy_namespace(array_namespace):
+            raise ValueError("Only numpy namespace is currently supported.")
         self.QR = pybanded.BandedQR(matrix)
 
     def solve(self, vector):
@@ -223,8 +269,14 @@ class BandedQR(BandedSolver):
 class SparseInverse(SparseSolver):
     """Sparse inversion solve."""
 
-    def __init__(self, matrix, solver=None):
-        self.matrix_inverse = spla.inv(matrix.tocsc())
+    def __init__(self, matrix, array_namespace=np, solver=None):
+        self.array_namespace = array_namespace
+        self.solver = solver
+        # Cupy conversion
+        if array_api_compat.is_numpy_namespace(array_namespace):
+            self.matrix_inverse = spla.inv(matrix.tocsc())
+        if array_api_compat.is_cupy_namespace(array_namespace):
+            self.matrix_inverse = cupy_spla.inv(matrix.tocsc())
 
     def solve(self, vector):
         return self.matrix_inverse @ vector
@@ -234,8 +286,12 @@ class SparseInverse(SparseSolver):
 class DenseInverse(DenseSolver):
     """Dense inversion solve."""
 
-    def __init__(self, matrix, solver=None):
+    def __init__(self, matrix, array_namespace=np, solver=None):
         self.matrix_inverse = sla.inv(matrix.toarray())
+        array_namespace = array_namespace
+        if not array_api_compat.is_numpy_namespace(array_namespace):
+            raise ValueError("Only numpy namespace is currently supported.")
+        self.solver = solver
 
     def solve(self, vector):
         return self.matrix_inverse @ vector
@@ -245,9 +301,15 @@ class DenseInverse(DenseSolver):
 class BlockInverse(BandedSolver):
     """Block inversion solve."""
 
-    def __init__(self, matrix, solver):
+    def __init__(self, matrix, array_namespace=np, solver=None):
         from dedalus.tools.sparse import same_dense_block_diag
+        self.array_namespace = array_namespace
+        if not array_api_compat.is_numpy_namespace(array_namespace):
+            raise ValueError("Only numpy namespace is currently supported.")
         # Check separability
+        self.solver = solver
+        if solver is None:
+            raise ValueError("Block solver requires a solver object.")
         if solver.domain.bases[-1].coupled:
             raise ValueError("Block solver requires uncoupled problems.")
         block_size = b = len(solver.problem.variables)
@@ -275,7 +337,11 @@ class BlockInverse(BandedSolver):
 class ScipyDenseLU(DenseSolver):
     """Scipy dense LU factorized solve."""
 
-    def __init__(self, matrix, solver=None):
+    def __init__(self, matrix, array_namespace=np, solver=None):
+        self.array_namespace = array_namespace
+        if not array_api_compat.is_numpy_namespace(array_namespace):
+            raise ValueError("Only numpy namespace is currently supported.")
+        self.solver = solver
         self.LU = sla.lu_factor(matrix.toarray(), check_finite=False)
 
     def solve(self, vector):

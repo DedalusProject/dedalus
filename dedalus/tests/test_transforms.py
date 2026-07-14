@@ -118,7 +118,7 @@ def test_J_scalar_roundtrip(a, b, N, dealias, dtype):
 @pytest.mark.parametrize('alpha', [0, 1, 2])
 @pytest.mark.parametrize('dealias', [0.5, 1, 1.5])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-@pytest.mark.parametrize('library', ['scipy_dct', 'fftw_dct'])
+@pytest.mark.parametrize('library', ['scipy', 'fftw'])
 def test_chebyshev_libraries_backward(N, alpha, dealias, dtype, library):
     """Tests that fast Chebyshev transforms match matrix transforms."""
     c = coords.Coordinate('x')
@@ -140,7 +140,7 @@ def test_chebyshev_libraries_backward(N, alpha, dealias, dtype, library):
 @pytest.mark.parametrize('alpha', [0, 1, 2])
 @pytest.mark.parametrize('dealias', [0.5, 1, 1.5])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-@pytest.mark.parametrize('library', ['scipy_dct', 'fftw_dct'])
+@pytest.mark.parametrize('library', ['scipy', 'fftw'])
 def test_chebyshev_libraries_forward(N, alpha, dealias, dtype, library):
     """Tests that fast Chebyshev transforms match matrix transforms."""
     c = coords.Coordinate('x')

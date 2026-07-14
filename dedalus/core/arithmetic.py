@@ -13,6 +13,7 @@ import numbers
 import numexpr as ne
 from collections import defaultdict
 from math import prod
+import array_api_compat
 
 from .domain import Domain
 from .field import Operand, Field
@@ -245,10 +246,11 @@ class AddFields(Add, FutureField):
 
     def operate(self, out):
         """Perform operation."""
+        xp = self.array_namespace
         arg0, arg1 = self.args
         # Set output layout
         out.preset_layout(arg0.layout)
-        np.add(arg0.data, arg1.data, out=out.data)
+        xp.add(arg0.data, arg1.data, out=out.data)
 
 
 # used for einsum string manipulation
@@ -616,6 +618,7 @@ class DotProduct(Product, FutureField):
         arg2_str = arg2_str.replace(arg2_str[indices[1]], 'z')
         out_str = (arg1_str + arg2_str).replace('z', '')
         self.einsum_str = arg1_str + '...,' + arg2_str + '...->' + out_str + '...'
+        self.einsum_path = None
 
     def _check_indices(self, arg0, arg1, indices):
         if (not isinstance(arg0, Operand)) or (not isinstance(arg1, Operand)):
@@ -664,6 +667,7 @@ class DotProduct(Product, FutureField):
         return G
 
     def operate(self, out):
+        xp = self.array_namespace
         arg0, arg1 = self.args
         out.preset_layout(arg0.layout)
         # Broadcast
@@ -671,7 +675,18 @@ class DotProduct(Product, FutureField):
         arg1_data = self.arg1_ghost_broadcaster.cast(arg1)
         # Call einsum
         if out.data.size:
-            np.einsum(self.einsum_str, arg0_data, arg1_data, out=out.data, optimize=True)
+            if array_api_compat.is_cupy_namespace(xp):
+                if self.einsum_path is None:
+                    self.einsum_path = self.get_einsum_path(xp.asnumpy(arg0_data), xp.asnumpy(arg1_data))
+                # Cupy does not support output keyword
+                out.data[:] = xp.einsum(self.einsum_str, arg0_data, arg1_data, optimize=self.einsum_path)
+            else:
+                if self.einsum_path is None:
+                    self.einsum_path = self.get_einsum_path(arg0_data, arg1_data)
+                xp.einsum(self.einsum_str, arg0_data, arg1_data, out=out.data, optimize=self.einsum_path)
+
+    def get_einsum_path(self, arg0_data, arg1_data):
+        return np.einsum_path(self.einsum_str, arg0_data, arg1_data, optimize="optimal")[0]
 
 
 @alias("cross")
@@ -854,6 +869,7 @@ class MultiplyFields(Multiply, FutureField):
 
     def operate(self, out):
         """Perform operation."""
+        xp = self.array_namespace
         arg0, arg1 = self.args
         # Set output layout
         out.preset_layout(arg0.layout)
@@ -863,7 +879,7 @@ class MultiplyFields(Multiply, FutureField):
         # Reshape arg data to broadcast properly for output tensorsig
         arg0_exp_data = arg0_data.reshape(self.arg0_exp_tshape + arg0_data.shape[len(arg0.tensorsig):])
         arg1_exp_data = arg1_data.reshape(self.arg1_exp_tshape + arg1_data.shape[len(arg1.tensorsig):])
-        np.multiply(arg0_exp_data, arg1_exp_data, out=out.data)
+        xp.multiply(arg0_exp_data, arg1_exp_data, out=out.data)
 
 
 class GhostBroadcaster:
@@ -919,7 +935,7 @@ class MultiplyNumberField(Multiply, FutureField):
         super().__init__(arg0, arg1, out=out)
         self.domain = arg1.domain
         self.tensorsig = arg1.tensorsig
-        self.dtype = np.result_type(type(arg0), arg1.dtype)
+        self.dtype = np.result_type(arg0, arg1.dtype)
 
     @classmethod
     def _check_args(cls, *args, **kw):
@@ -939,11 +955,12 @@ class MultiplyNumberField(Multiply, FutureField):
 
     def operate(self, out):
         """Perform operation."""
+        xp = self.array_namespace
         arg0, arg1 = self.args
         # Set output layout
         out.preset_layout(arg1.layout)
         # Multiply argument data
-        np.multiply(arg0, arg1.data, out=out.data)
+        xp.multiply(arg0, arg1.data, out=out.data)
 
     def matrix_dependence(self, *vars):
         return self.args[1].matrix_dependence(*vars)
