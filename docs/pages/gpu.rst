@@ -32,6 +32,7 @@ Guidelines
 
 GPU support is preliminary and many standard Dedalus features have not yet been fully implemented or optimized for GPUs.
 Please keep in mind the following guidelines for best performance under the current capabilities:
+
 - Curvilinear problems are not yet supported.
 - Distributed GPUs (combining MPI will multiple GPUs) is not yet supported.
 - Single and double precision, real and complex, are supported.
