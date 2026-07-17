@@ -992,7 +992,7 @@ class InitialValueSolver(SolverBase):
             if state in cotangents:
                 self.state_adj.append(cotangents[state])
             else:
-                adjoint_state = state.copy_adjoint()
+                adjoint_state = state.get_cotangent()
                 adjoint_state.preset_layout('c')
                 adjoint_state.data *= 0
                 self.state_adj.append(adjoint_state)
