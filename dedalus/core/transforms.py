@@ -41,41 +41,57 @@ class Transform:
 
 
 class SeparableTransform(Transform):
-    """Abstract base class for transforms that only apply to one dimension, independent of all others."""
+    """
+    Abstract base class for transforms that only apply to one dimension, independent of all others.
 
-    def forward(self, gdata, cdata, axis):
-        """Apply forward transform along specified axis."""
+    Parameters
+    ----------
+    gdata_shape : tuple of int
+        Full shape of the grid-space data, including tensor component axes.
+    cdata_shape : tuple of int
+        Full shape of the coefficient-space data, including tensor component axes.
+    axis : int
+        Axis along which to transform.
+    array_namespace : array namespace
+        Array namespace for the transform.
+    dtype : dtype
+        Data type for the transform.
+    """
+
+    def __init__(self, gdata_shape, cdata_shape, axis, array_namespace, dtype):
+        self.gdata_shape = gdata_shape
+        self.cdata_shape = cdata_shape
+        self.axis = axis
+        self.N = gdata_shape[axis]
+        self.M = cdata_shape[axis]
+        self.array_namespace = array_namespace
+        self.dtype = dtype
+
+    def forward(self, gdata, cdata):
+        """Apply forward transform along the plan axis."""
         # Subclasses must implement
         raise NotImplementedError("%s has not implemented 'forward' method" %type(self))
 
-    def backward(self, cdata, gdata, axis):
-        """Apply backward transform along specified axis."""
+    def backward(self, cdata, gdata):
+        """Apply backward transform along the plan axis."""
         # Subclasses must implement
         raise NotImplementedError("%s has not implemented 'backward' method" %type(self))
 
 
 class SeparableMatrixTransform(SeparableTransform):
-    """Abstract base class for separable matrix-multiplication transforms."""
+    """
+    Abstract base class for separable matrix-multiplication transforms.
 
-    def forward(self, gdata, cdata, axis):
-        """Apply forward transform along specified axis."""
-        apply_dense(self.forward_matrix, gdata, axis=axis, out=cdata)
+    Subclasses must set the 'forward_matrix' and 'backward_matrix' attributes during initialization.
+    """
 
-    def backward(self, cdata, gdata, axis):
-        """Apply backward transform along specified axis."""
-        apply_dense(self.backward_matrix, cdata, axis=axis, out=gdata)
+    def forward(self, gdata, cdata):
+        """Apply forward transform along the plan axis."""
+        apply_dense(self.forward_matrix, gdata, axis=self.axis, out=cdata)
 
-    @CachedAttribute
-    def forward_matrix(self):
-        """Build forward transform matrix."""
-        # Subclasses must implement
-        raise NotImplementedError("%s has not implemented 'forward_matrix' method" %type(self))
-
-    @CachedAttribute
-    def backward_matrix(self):
-        """Build backward transform matrix."""
-        # Subclasses must implement
-        raise NotImplementedError("%s has not implemented 'backward_matrix' method" %type(self))
+    def backward(self, cdata, gdata):
+        """Apply backward transform along the plan axis."""
+        apply_dense(self.backward_matrix, cdata, axis=self.axis, out=gdata)
 
 
 class JacobiTransform(SeparableTransform):
@@ -84,10 +100,16 @@ class JacobiTransform(SeparableTransform):
 
     Parameters
     ----------
-    grid_size : int
-        Grid size (N) along transform dimension.
-    coeff_size : int
-        Coefficient size (M) along transform dimension.
+    gdata_shape : tuple of int
+        Full shape of the grid-space data, including tensor component axes.
+    cdata_shape : tuple of int
+        Full shape of the coefficient-space data, including tensor component axes.
+    axis : int
+        Axis along which to transform.
+    array_namespace : array namespace
+        Array namespace for the transform.
+    dtype : dtype
+        Data type for the transform.
     a : int
         Jacobi "a" parameter for polynomials.
     b : int
@@ -96,25 +118,18 @@ class JacobiTransform(SeparableTransform):
         Jacobi "a" parameter for the quadrature grid.
     b0 : int
         Jacobi "b" parameter for the quadrature grid.
-    array_namespace : array namespace
-        Array namespace for the transform.
-    dtype : dtype
-        Data type for the transform.
 
     Notes
     -----
     TODO: We need to define the normalization we use here.
     """
 
-    def __init__(self, grid_size, coeff_size, a, b, a0, b0, array_namespace, dtype, dealias_before_converting=None):
-        self.N = grid_size
-        self.M = coeff_size
+    def __init__(self, gdata_shape, cdata_shape, axis, array_namespace, dtype, a, b, a0, b0, dealias_before_converting=None):
+        super().__init__(gdata_shape, cdata_shape, axis, array_namespace, dtype)
         self.a = a
         self.b = b
         self.a0 = a0
         self.b0 = b0
-        self.array_namespace = array_namespace
-        self.dtype = dtype
         if dealias_before_converting is None:
             dealias_before_converting = GET_DEALIAS_BEFORE_CONVERTING()
         self.dealias_before_converting = dealias_before_converting
@@ -124,21 +139,26 @@ class JacobiTransform(SeparableTransform):
 class JacobiMMT(JacobiTransform, SeparableMatrixTransform):
     """Jacobi polynomial MMTs."""
 
-    @CachedAttribute
-    def forward_matrix(self):
-        """Build forward transform matrix."""
-        xp = self.array_namespace
-        N, M = self.N, self.M
-        a, a0 = self.a, self.a0
-        b, b0 = self.b, self.b0
-        # Gauss quadrature with base (a0, b0) polynomials
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self.forward_matrix, self.backward_matrix = self._build_matrices(
+            self.N, self.M, self.a, self.b, self.a0, self.b0,
+            self.array_namespace, self.dtype, self.dealias_before_converting)
+
+    @classmethod
+    @CachedMethod
+    def _build_matrices(cls, N, M, a, b, a0, b0, array_namespace, dtype, dealias_before_converting):
+        """
+        Build forward and backward transform matrices, cached on the 1D transform parameters so that plans can share matrices.
+        """
         base_grid = jacobi.build_grid(N, a=a0, b=b0)
+        # Forward: Gauss quadrature with base (a0, b0) polynomials and conversion
         base_polynomials = jacobi.build_polynomials(max(M, N), a0, b0, base_grid)
         base_weights = jacobi.build_weights(N, a=a0, b=b0)
         base_transform = (base_polynomials * base_weights)
         # Zero higher coefficients for transforms with grid_size < coeff_size
         base_transform[N:, :] = 0
-        if self.dealias_before_converting:
+        if dealias_before_converting:
             # Truncate to specified coeff_size
             base_transform = base_transform[:M, :]
         # Spectral conversion
@@ -147,26 +167,18 @@ class JacobiMMT(JacobiTransform, SeparableMatrixTransform):
         else:
             conversion = jacobi.conversion_matrix(base_transform.shape[0], a0, b0, a, b)
             forward_matrix = conversion @ base_transform
-        if not self.dealias_before_converting:
+        if not dealias_before_converting:
             # Truncate to specified coeff_size
             forward_matrix = forward_matrix[:M, :]
-        # Ensure C ordering for fast dot products
-        return xp.asarray(forward_matrix, order='C', dtype=self.dtype)
-
-    @CachedAttribute
-    def backward_matrix(self):
-        """Build backward transform matrix."""
-        xp = self.array_namespace
-        N, M = self.N, self.M
-        a, a0 = self.a, self.a0
-        b, b0 = self.b, self.b0
-        # Construct polynomials on the base grid
-        base_grid = jacobi.build_grid(N, a=a0, b=b0)
+        # Backward: construct polynomials on the base grid
         polynomials = jacobi.build_polynomials(M, a, b, base_grid)
         # Zero higher polynomials for transforms with grid_size < coeff_size
         polynomials[N:, :] = 0
-        # Transpose and ensure C ordering for fast dot products
-        return xp.asarray(polynomials.T, order='C', dtype=self.dtype)
+        # Ensure C ordering for fast dot products
+        xp = array_namespace
+        forward_matrix = xp.asarray(forward_matrix, order='C', dtype=dtype)
+        backward_matrix = xp.asarray(polynomials.T, order='C', dtype=dtype)
+        return forward_matrix, backward_matrix
 
 
 class ComplexFourierTransform(SeparableTransform):
@@ -175,13 +187,20 @@ class ComplexFourierTransform(SeparableTransform):
 
     Parameters
     ----------
-    grid_size : int
-        Grid size (N) along transform dimension.
-    coeff_size : int
-        Coefficient size (M) along transform dimension.
+    gdata_shape : tuple of int
+        Full shape of the grid-space data, including tensor component axes.
+    cdata_shape : tuple of int
+        Full shape of the coefficient-space data, including tensor component axes.
+    axis : int
+        Axis along which to transform.
+    array_namespace : array namespace
+        Array namespace for the transform.
+    dtype : dtype
+        Data type for the transform.
 
     Notes
     -----
+    Let N and M be the grid and coefficient sizes along the transform axis.
     Let KN = (N - 1) // 2 be the maximum fully resolved (non-Nyquist) mode on the grid.
     Let KM = (M - 1) // 2 be the maximum retained mode in coeff space.
     Then K = min(KN, KM) is the maximum wavenumber used in the transforms.
@@ -197,68 +216,66 @@ class ComplexFourierTransform(SeparableTransform):
         f(x) = \sum_{k=-K}^{K} F(k) \exp(2 \pi i k x / N)
 
     Coefficient ordering:
-        If M is odd, the ordering is [0, 1, 2, ..., KM, KM+1, -KM, -KM+1, ..., -1],
-        where the Nyquist mode k = KM + 1 is zeroed in both directions.
-        If M is even, the ordering is [0, 1, 2, ..., KM, -KM, -KM+1, ..., -1].
+        If M is even, the ordering is [0, 1, 2, ..., KM, KM+1, -KM, ..., -2, -1],
+        where the Nyquist mode k = KM+1 is zeroed in both directions.
+        If M is odd, the ordering is [0, 1, 2, ..., KM, -KM, ..., -2, -1].
     """
 
-    def __init__(self, grid_size, coeff_size, array_namespace, dtype):
-        self.N = grid_size
-        self.M = coeff_size
+    def __init__(self, gdata_shape, cdata_shape, axis, array_namespace, dtype):
+        super().__init__(gdata_shape, cdata_shape, axis, array_namespace, dtype)
         self.KN = (self.N - 1) // 2
         self.KM = (self.M - 1) // 2
         self.Kmax = min(self.KN, self.KM)
-        self.array_namespace = array_namespace
-        self.dtype = dtype
-
-    @property
-    def wavenumbers(self):
-        """One-dimensional global wavenumber array."""
-        xp = self.array_namespace
-        M = self.M
-        KM = self.KM
-        k = xp.arange(M)
-        # Wrap around Nyquist mode
-        return (k + KM) % M - KM
 
 
 @register_transform(basis.ComplexFourier, 'matrix')
 class ComplexFourierMMT(ComplexFourierTransform, SeparableMatrixTransform):
     """Complex-to-complex Fourier MMT."""
 
-    @CachedAttribute
-    def forward_matrix(self):
-        """Build forward transform matrix."""
-        xp = self.array_namespace
-        K = self.wavenumbers[:, None]
-        X = xp.arange(self.N)[None, :]
-        dX = self.N / 2 / np.pi
-        quadrature = xp.exp(-1j*K*X/dX) / self.N
-        # Zero Nyquist and higher modes for transforms with grid_size <= coeff_size
-        quadrature *= xp.abs(K) <= self.Kmax
-        # Ensure C ordering for fast dot products, cast to specified dtype
-        return xp.asarray(quadrature, order='C', dtype=self.dtype)
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self.forward_matrix, self.backward_matrix = self._build_matrices(
+            self.N, self.M, self.array_namespace, self.dtype)
 
-    @CachedAttribute
-    def backward_matrix(self):
-        """Build backward transform matrix."""
-        xp = self.array_namespace
-        K = self.wavenumbers[None, :]
-        X = xp.arange(self.N)[:, None]
-        dX = self.N / 2 / np.pi
-        functions = xp.exp(1j*K*X/dX)
+    @classmethod
+    @CachedMethod
+    def _build_matrices(cls, N, M, array_namespace, dtype):
+        """
+        Build forward and backward transform matrices, cached on the 1D transform parameters so that plans can share matrices.
+        """
+        xp = array_namespace
+        KN = (N - 1) // 2
+        KM = (M - 1) // 2
+        Kmax = min(KN, KM)
+        # Grid
+        x = (2 * np.pi / N) * xp.arange(N)
+        # Wavenumbers
+        k = (xp.arange(M) + KM) % M - KM
+        # Forward
+        K = k[:, None]
+        X = x[None, :]
+        quadrature = xp.exp(-1j*K*X) / N
         # Zero Nyquist and higher modes for transforms with grid_size <= coeff_size
-        functions *= xp.abs(K) <= self.Kmax
+        quadrature *= (xp.abs(K) <= Kmax)
+        # Backward
+        K = k[None, :]
+        X = x[:, None]
+        functions = xp.exp(1j*K*X)
+        # Zero Nyquist and higher modes for transforms with grid_size <= coeff_size
+        functions *= (xp.abs(K) <= Kmax)
         # Ensure C ordering for fast dot products, cast to specified dtype
-        return xp.asarray(functions, order='C', dtype=self.dtype)
+        forward_matrix = xp.asarray(quadrature, order='C', dtype=dtype)
+        backward_matrix = xp.asarray(functions, order='C', dtype=dtype)
+        return forward_matrix, backward_matrix
 
 
 class ComplexFFT(ComplexFourierTransform):
     """Abstract base class for complex-to-complex FFTs."""
 
-    def resize_coeffs(self, data_in, data_out, axis, rescale):
+    def resize_coeffs(self, data_in, data_out, rescale):
         """Resize and rescale coefficients in standard FFT format by intermediate padding/truncation."""
         xp = self.array_namespace
+        axis = self.axis
         M = self.M
         Kmax = self.Kmax
         if Kmax == 0:
@@ -288,91 +305,104 @@ class ComplexFFT(ComplexFourierTransform):
 class ScipyComplexFFT(ComplexFFT):
     """Complex-to-complex FFT using scipy.fft."""
 
-    def forward(self, gdata, cdata, axis):
-        """Apply forward transform along specified axis."""
-        # Call FFT
-        temp = scipy.fft.fft(gdata, axis=axis) # Creates temporary
-        # Resize and rescale for unit-amplitude normalization
-        self.resize_coeffs(temp, cdata, axis, rescale=1/self.N)
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self.grid_temp = np.zeros(self.gdata_shape, dtype=self.dtype)
 
-    def backward(self, cdata, gdata, axis):
-        """Apply backward transform along specified axis."""
+    def forward(self, gdata, cdata):
+        """Apply forward transform along the plan axis."""
+        axis = self.axis
+        # Call FFT
+        temp = scipy.fft.fft(gdata, axis=axis, overwrite_x=False) # Creates temporary
+        # Resize and rescale for unit-amplitude normalization
+        self.resize_coeffs(temp, cdata, rescale=1/self.N)
+
+    def backward(self, cdata, gdata):
+        """Apply backward transform along the plan axis."""
+        axis = self.axis
+        grid_temp = self.grid_temp
         # Resize and rescale for unit-amplitude normalization
         # Need temporary to avoid overwriting problems
-        temp = np.empty_like(gdata) # Creates temporary
-        self.resize_coeffs(cdata, temp, axis, rescale=self.N)
+        self.resize_coeffs(cdata, grid_temp, rescale=self.N)
         # Call FFT
-        temp = scipy.fft.ifft(temp, axis=axis, overwrite_x=True) # Creates temporary
+        temp = scipy.fft.ifft(grid_temp, axis=axis, overwrite_x=True) # Creates temporary
         np.copyto(gdata, temp)
 
 
 @register_transform(basis.ComplexFourier, 'cupy')
 class CupyComplexFFT(ComplexFFT):
-    """Complex-to-complex FFT using scipy.fft."""
+    """Complex-to-complex FFT using cupy.fft."""
 
     def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
         import cupyx.scipy.fft as cufft
         self.cufft = cufft
-        super().__init__(*args, **kw)
+        self.grid_temp = self.array_namespace.zeros(self.gdata_shape, dtype=self.dtype)
 
-    def forward(self, gdata, cdata, axis):
-        """Apply forward transform along specified axis."""
+    def forward(self, gdata, cdata):
+        """Apply forward transform along the plan axis."""
+        axis = self.axis
         # Call FFT
-        temp = self.cufft.fft(gdata, axis=axis) # Creates temporary
+        temp = self.cufft.fft(gdata, axis=axis, overwrite_x=False) # Creates temporary
         # Resize and rescale for unit-amplitude normalization
-        self.resize_coeffs(temp, cdata, axis, rescale=1/self.N)
+        self.resize_coeffs(temp, cdata, rescale=1/self.N)
 
-    def backward(self, cdata, gdata, axis):
-        """Apply backward transform along specified axis."""
+    def backward(self, cdata, gdata):
+        """Apply backward transform along the plan axis."""
         xp = self.array_namespace
+        axis = self.axis
+        grid_temp = self.grid_temp
         # Resize and rescale for unit-amplitude normalization
         # Need temporary to avoid overwriting problems
-        temp = xp.empty_like(gdata) # Creates temporary
-        self.resize_coeffs(cdata, temp, axis, rescale=self.N)
+        self.resize_coeffs(cdata, grid_temp, rescale=self.N)
         # Call FFT
-        temp = self.cufft.ifft(temp, axis=axis, overwrite_x=True) # Creates temporary
+        temp = self.cufft.ifft(grid_temp, axis=axis, overwrite_x=True) # Creates temporary
         xp.copyto(gdata, temp)
 
 
 class FFTWBase:
-    """Abstract base class for FFTW transforms."""
+    """
+    Abstract base class for FFTW transforms.
 
-    def __init__(self, *args, rigor=None, **kw):
-        if rigor is None:
-            rigor = GET_FFTW_RIGOR()
-        self.rigor = rigor
-        super().__init__(*args, **kw)
+    Deliberately has no __init__, so that it stays out of the constructor chain of the
+    multiply-inheriting Chebyshev transforms. Subclasses build their plans and temporary
+    arrays during initialization.
+    """
+
+    @property
+    def fftw_flags(self):
+        """FFTW planning flags."""
+        return ['FFTW_'+GET_FFTW_RIGOR().upper()]
 
 
 @register_transform(basis.ComplexFourier, 'fftw')
-class FFTWComplexFFT(FFTWBase, ComplexFFT):
+class FFTWComplexFFT(ComplexFFT, FFTWBase):
     """Complex-to-complex FFT using FFTW."""
 
-    @CachedMethod
-    def _build_fftw_plan(self, gshape, axis):
-        """Build FFTW plans and temporary arrays."""
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self._init_fftw_plan()
+
+    def _init_fftw_plan(self):
+        """Build FFTW plan and temporary array for the plan shapes."""
         dtype = np.complex128
-        logger.debug("Building FFTW FFT plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, gshape, axis))
-        flags = ['FFTW_'+self.rigor.upper()]
-        plan = fftw.FourierTransform(dtype, gshape, axis, flags=flags)
-        temp = fftw.create_array(plan.cshape, np.complex128)
-        return plan, temp
+        logger.debug("Building FFTW FFT plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, self.gdata_shape, self.axis))
+        self.fftw_plan = fftw.FourierTransform(dtype, self.gdata_shape, self.axis, flags=self.fftw_flags)
+        self.temp = fftw.create_array(self.fftw_plan.cshape, np.complex128)
 
-    def forward(self, gdata, cdata, axis):
-        """Apply forward transform along specified axis."""
-        plan, temp = self._build_fftw_plan(gdata.shape, axis)
+    def forward(self, gdata, cdata):
+        """Apply forward transform along the plan axis."""
         # Execute FFTW plan
-        plan.forward(gdata, temp)
+        self.fftw_plan.forward(gdata, self.temp)
         # Resize and rescale for unit-amplitude normalization
-        self.resize_coeffs(temp, cdata, axis, rescale=1/self.N)
+        self.resize_coeffs(self.temp, cdata, rescale=1/self.N)
 
-    def backward(self, cdata, gdata, axis):
-        """Apply backward transform along specified axis."""
-        plan, temp = self._build_fftw_plan(gdata.shape, axis)
+    def backward(self, cdata, gdata):
+        """Apply backward transform along the plan axis."""
         # Resize and rescale for unit-amplitude normalization
-        self.resize_coeffs(cdata, temp, axis, rescale=None)
+        self.resize_coeffs(cdata, self.temp, rescale=None)
         # Execute FFTW plan
-        plan.backward(temp, gdata)
+        self.fftw_plan.backward(self.temp, gdata)
 
 
 class RealFourierTransform(SeparableTransform):
@@ -381,13 +411,20 @@ class RealFourierTransform(SeparableTransform):
 
     Parameters
     ----------
-    grid_size : int
-        Grid size (N) along transform dimension.
-    coeff_size : int
-        Coefficient size (M) along transform dimension.
+    gdata_shape : tuple
+        The shape of the grid data.
+    cdata_shape : tuple
+        The shape of the coefficient data.
+    axis : int
+        The axis along which the transform is applied.
+    array_namespace : module
+        The array namespace to use.
+    dtype : numpy.dtype
+        The data type of the arrays.
 
     Notes
     -----
+    Let N and M be the grid and coefficient sizes along the transform axis.
     Let KN = (N - 1) // 2 be the maximum fully resolved (non-Nyquist) mode on the grid.
     Let KM = (M - 1) // 2 be the maximum retained mode in coeff space.
     Then K = min(KN, KM) is the maximum wavenumber used in the transforms.
@@ -398,8 +435,8 @@ class RealFourierTransform(SeparableTransform):
             a(k) = (1/N) \sum_{x=0}^{N-1} f(x)
             b(k) = 0
         elif k <= K:
-            a(k) =  (2/N) \sum_{x=0}^{N-1} f(x) \cos(-2 \pi k x / N)
-            b(k) = -(2/N) \sum_{x=0}^{N-1} f(x) \sin(-2 \pi k x / N)
+            a(k) =  (2/N) \sum_{x=0}^{N-1} f(x) \cos(2 \pi k x / N)
+            b(k) = -(2/N) \sum_{x=0}^{N-1} f(x) \sin(2 \pi k x / N)
         else:
             a(k) = 0
             b(k) = 0
@@ -410,76 +447,75 @@ class RealFourierTransform(SeparableTransform):
     Coefficient ordering:
         The cosine and minus-sine coefficients are interleaved as
         [a(0), b(0), a(1), b(1), a(2), b(2), ..., a(KM), b(KM)]
-        where the k = 0 minus-sine mode is zeroed in both directions.
+        where the mean minus-sine mode b(0) is zeroed in both directions.
     """
 
-    def __init__(self, grid_size, coeff_size, array_namespace, dtype):
-        if coeff_size % 2 != 0:
+    def __init__(self, gdata_shape, cdata_shape, axis, array_namespace, dtype):
+        super().__init__(gdata_shape, cdata_shape, axis, array_namespace, dtype)
+        if self.M % 2 != 0:
             pass#raise ValueError("coeff_size must be even.")
-        self.N = grid_size
-        self.M = coeff_size
         self.KN = (self.N - 1) // 2
         self.KM = (self.M - 1) // 2
         self.Kmax = min(self.KN, self.KM)
-        self.array_namespace = array_namespace
-        self.dtype = dtype
-
-    @property
-    def wavenumbers(self):
-        """One-dimensional global wavenumber array."""
-        xp = self.array_namespace
-        # Repeat k's for cos and msin parts
-        return xp.repeat(xp.arange(self.KM+1), 2)
 
 
 @register_transform(basis.RealFourier, 'matrix')
 class RealFourierMMT(RealFourierTransform, SeparableMatrixTransform):
     """Real-to-real Fourier MMT."""
 
-    @CachedAttribute
-    def forward_matrix(self):
-        """Build forward transform matrix."""
-        xp = self.array_namespace
-        N = self.N
-        M = max(2, self.M) # Account for sin and cos parts of m=0
-        Kmax = self.Kmax
-        K = self.wavenumbers[::2, None]
-        X = xp.arange(N)[None, :]
-        dX = N / 2 / np.pi
-        quadrature = xp.zeros((M, N))
-        quadrature[0::2] = (2 / N) * xp.cos(K*X/dX)
-        quadrature[1::2] = -(2 / N) * xp.sin(K*X/dX)
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self.forward_matrix, self.backward_matrix = self._build_matrices(
+            self.N, self.M, self.array_namespace, self.dtype)
+
+    @classmethod
+    @CachedMethod
+    def _build_matrices(cls, N, M, array_namespace, dtype):
+        """
+        Build forward and backward transform matrices, cached on the 1D transform parameters so that plans can share matrices.
+        """
+        xp = array_namespace
+        KN = (N - 1) // 2
+        KM = (M - 1) // 2
+        Kmax = min(KN, KM)
+        # Grid
+        x = (2 * np.pi / N) * xp.arange(N)
+        # Wavenumbers
+        k = xp.repeat(xp.arange(KM+1), 2)
+        # Forward
+        K = k[:, None]
+        X = x[None, :]
+        quadrature = xp.zeros((max(2, M), N))
+        quadrature[0::2] = (2 / N) * xp.cos(K[0::2]*X)
+        quadrature[1::2] = -(2 / N) * xp.sin(K[1::2]*X)
         quadrature[0] = 1 / N
         # Zero Nyquist and higher modes for transforms with grid_size <= coeff_size
-        quadrature *= self.wavenumbers[:,None] <= self.Kmax
-        # Ensure C ordering for fast dot products
-        return xp.asarray(quadrature, order='C', dtype=self.dtype)
-
-    @CachedAttribute
-    def backward_matrix(self):
-        """Build backward transform matrix."""
-        xp = self.array_namespace
-        N = self.N
-        M = max(2, self.M) # Account for sin and cos parts of m=0
-        Kmax = self.Kmax
-        K = self.wavenumbers[None, ::2]
-        X = xp.arange(N)[:, None]
-        dX = N / 2 / np.pi
-        functions = xp.zeros((N, M))
-        functions[:, 0::2] = xp.cos(K*X/dX)
-        functions[:, 1::2] = -xp.sin(K*X/dX)
+        quadrature *= (K <= Kmax)
+        # Backward
+        K = k[None, :]
+        X = x[:, None]
+        functions = xp.zeros((N, max(2, M)))
+        functions[:, 0::2] = xp.cos(K[:, 0::2]*X)
+        functions[:, 1::2] = -xp.sin(K[:, 1::2]*X)
         # Zero Nyquist and higher modes for transforms with grid_size <= coeff_size
-        functions *= self.wavenumbers[None, :] <= self.Kmax
-        # Ensure C ordering for fast dot products
-        return xp.asarray(functions, order='C', dtype=self.dtype)
+        functions *= (K <= Kmax)
+        # Ensure C ordering for fast dot products, cast to specified dtype
+        forward_matrix = xp.asarray(quadrature, order='C', dtype=dtype)
+        backward_matrix = xp.asarray(functions, order='C', dtype=dtype)
+        return forward_matrix, backward_matrix
 
 
 @register_transform(basis.RealFourier, 'fftpack')
 class FFTPACKRealFFT(RealFourierTransform):
     """Real-to-real FFT using scipy.fftpack."""
 
-    def forward(self, gdata, cdata, axis):
-        """Apply forward transform along specified axis."""
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self.grid_temp = np.zeros(self.gdata_shape, dtype=self.dtype)
+
+    def forward(self, gdata, cdata):
+        """Apply forward transform along the plan axis."""
+        axis = self.axis
         N = self.N
         Kmax = self.Kmax
         # Call RFFT
@@ -496,12 +532,13 @@ class FFTPACKRealFFT(RealFourierTransform):
         # Zero k > Kmax data
         cdata[axslice(axis, 2*(Kmax+1), None)] = 0
 
-    def backward(self, cdata, gdata, axis):
-        """Apply backward transform along specified axis."""
+    def backward(self, cdata, gdata):
+        """Apply backward transform along the plan axis."""
+        axis = self.axis
         N = self.N
         Kmax = self.Kmax
         # Need temporary to avoid overwriting problems
-        temp = np.empty_like(gdata) # Creates temporary
+        temp = self.grid_temp
         # Scale k = 0 cos data
         meancos = axslice(axis, 0, 1)
         np.multiply(cdata[meancos], N, temp[meancos])
@@ -518,6 +555,13 @@ class FFTPACKRealFFT(RealFourierTransform):
 
 class RealFFT(RealFourierTransform):
     """Abstract base class for real-to-real FFTs using real-to-complex algorithms."""
+
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self.complex_dtype = float_to_complex(self.dtype)
+        half_spectrum_shape = list(self.gdata_shape)
+        half_spectrum_shape[self.axis] = self.N // 2 + 1
+        self.half_spectrum_shape = tuple(half_spectrum_shape)
 
     def unpack_rescale(self, temp, cdata, axis, rescale):
         """Unpack complex coefficients and rescale for unit-amplitude normalization."""
@@ -567,22 +611,21 @@ class ScipyRealFFT(RealFFT):
 
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
-        self.complex_dtype = float_to_complex(self.dtype)
+        self.half_spectrum_temp = np.zeros(self.half_spectrum_shape, dtype=self.complex_dtype)
 
-    def forward(self, gdata, cdata, axis):
-        """Apply forward transform along specified axis."""
+    def forward(self, gdata, cdata):
+        """Apply forward transform along the plan axis."""
+        axis = self.axis
         # Call RFFT
-        temp = scipy.fft.rfft(gdata, axis=axis) # Creates temporary
+        temp = scipy.fft.rfft(gdata, axis=axis, overwrite_x=False) # Creates temporary
         # Unpack from complex form and rescale
         self.unpack_rescale(temp, cdata, axis, rescale=1/self.N)
 
-    def backward(self, cdata, gdata, axis):
-        """Apply backward transform along specified axis."""
+    def backward(self, cdata, gdata):
+        """Apply backward transform along the plan axis."""
+        axis = self.axis
         N = self.N
-        # Rescale all modes and combine into complex form
-        shape = list(gdata.shape)
-        shape[axis] = N // 2 + 1
-        temp = np.empty(shape=shape, dtype=self.complex_dtype) # Creates temporary
+        temp = self.half_spectrum_temp
         # Repack into complex form and rescale
         self.repack_rescale(cdata, temp, axis, rescale=N)
         # Call IRFFT
@@ -598,23 +641,22 @@ class CupyRealFFT(RealFFT):
         import cupyx.scipy.fft as cufft
         self.cufft = cufft
         super().__init__(*args, **kw)
-        self.complex_dtype = float_to_complex(self.dtype)
+        self.half_spectrum_temp = self.array_namespace.zeros(self.half_spectrum_shape, dtype=self.complex_dtype)
 
-    def forward(self, gdata, cdata, axis):
-        """Apply forward transform along specified axis."""
+    def forward(self, gdata, cdata):
+        """Apply forward transform along the plan axis."""
+        axis = self.axis
         # Call RFFT
         temp = self.cufft.rfft(gdata, axis=axis) # Creates temporary
         # Unpack from complex form and rescale
         self.unpack_rescale(temp, cdata, axis, rescale=1/self.N)
 
-    def backward(self, cdata, gdata, axis):
-        """Apply backward transform along specified axis."""
+    def backward(self, cdata, gdata):
+        """Apply backward transform along the plan axis."""
         xp = self.array_namespace
+        axis = self.axis
         N = self.N
-        # Rescale all modes and combine into complex form
-        shape = list(gdata.shape)
-        shape[axis] = N // 2 + 1
-        temp = xp.empty(shape=shape, dtype=self.complex_dtype) # Creates temporary
+        temp = self.half_spectrum_temp
         # Repack into complex form and rescale
         self.repack_rescale(cdata, temp, axis, rescale=N)
         # Call IRFFT
@@ -623,51 +665,55 @@ class CupyRealFFT(RealFFT):
 
 
 @register_transform(basis.RealFourier, 'fftw')
-class FFTWRealFFT(FFTWBase, RealFFT):
+class FFTWRealFFT(RealFFT, FFTWBase):
     """Real-to-real FFT using FFTW."""
 
-    @CachedMethod
-    def _build_fftw_plan(self, gshape, axis):
-        """Build FFTW plans and temporary arrays."""
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self._init_fftw_plan()
+
+    def _init_fftw_plan(self):
+        """Build FFTW plan and temporary array for the plan shapes."""
         dtype = np.float64
-        logger.debug("Building FFTW FFT plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, gshape, axis))
-        flags = ['FFTW_'+self.rigor.upper()]
-        plan = fftw.FourierTransform(dtype, gshape, axis, flags=flags)
-        temp = fftw.create_array(plan.cshape, np.complex128)
-        return plan, temp
+        logger.debug("Building FFTW FFT plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, self.gdata_shape, self.axis))
+        self.fftw_plan = fftw.FourierTransform(dtype, self.gdata_shape, self.axis, flags=self.fftw_flags)
+        self.temp = fftw.create_array(self.fftw_plan.cshape, np.complex128)
 
-    def forward(self, gdata, cdata, axis):
-        """Apply forward transform along specified axis."""
-        plan, temp = self._build_fftw_plan(gdata.shape, axis)
+    def forward(self, gdata, cdata):
+        """Apply forward transform along the plan axis."""
+        axis = self.axis
         # Execute FFTW plan
-        plan.forward(gdata, temp)
+        self.fftw_plan.forward(gdata, self.temp)
         # Unpack from complex form and rescale
-        self.unpack_rescale(temp, cdata, axis, rescale=1/self.N)
+        self.unpack_rescale(self.temp, cdata, axis, rescale=1/self.N)
 
-    def backward(self, cdata, gdata, axis):
-        """Apply backward transform along specified axis."""
-        plan, temp = self._build_fftw_plan(gdata.shape, axis)
+    def backward(self, cdata, gdata):
+        """Apply backward transform along the plan axis."""
+        axis = self.axis
         # Repack into complex form and rescale
-        self.repack_rescale(cdata, temp, axis, rescale=None)
+        self.repack_rescale(cdata, self.temp, axis, rescale=None)
         # Execute FFTW plan
-        plan.backward(temp, gdata)
+        self.fftw_plan.backward(self.temp, gdata)
 
 
 @register_transform(basis.RealFourier, 'fftw_hc')
-class FFTWHalfComplexFFT(FFTWBase, RealFourierTransform):
+class FFTWHalfComplexFFT(RealFourierTransform, FFTWBase):
     """Real-to-real FFT using FFTW half-complex DFT."""
 
-    @CachedMethod
-    def _build_fftw_plan(self, dtype, gshape, axis):
-        """Build FFTW plans and temporary arrays."""
-        logger.debug("Building FFTW R2HC plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, gshape, axis))
-        flags = ['FFTW_'+self.rigor.upper()]
-        plan = fftw.R2HCTransform(dtype, gshape, axis, flags=flags)
-        temp = fftw.create_array(gshape, dtype)
-        return plan, temp
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self._init_fftw_plan()
 
-    def unpack_rescale(self, temp, cdata, axis, rescale):
+    def _init_fftw_plan(self):
+        """Build FFTW plan and temporary array for the plan shapes."""
+        dtype = np.float64
+        logger.debug("Building FFTW R2HC plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, self.gdata_shape, self.axis))
+        self.fftw_plan = fftw.R2HCTransform(dtype, self.gdata_shape, self.axis, flags=self.fftw_flags)
+        self.temp = fftw.create_array(self.gdata_shape, dtype)
+
+    def unpack_rescale(self, temp, cdata, rescale):
         """Unpack halfcomplex coefficients and rescale for unit-amplitude normalization."""
+        axis = self.axis
         Kmax = self.Kmax
         # Scale k = 0 cos data
         meancos = axslice(axis, 0, 1)
@@ -684,8 +730,9 @@ class FFTWHalfComplexFFT(FFTWBase, RealFourierTransform):
         # Zero k > Kmax data
         cdata[axslice(axis, 2*(Kmax+1), None)] = 0
 
-    def repack(self, cdata, temp, axis):
+    def repack(self, cdata, temp):
         """Repack into complex coefficients and rescale for unit-amplitude normalization."""
+        axis = self.axis
         Kmax = self.Kmax
         # Copy k = 0 data
         meancos = axslice(axis, 0, 1)
@@ -700,21 +747,19 @@ class FFTWHalfComplexFFT(FFTWBase, RealFourierTransform):
         # Zero k > Kmax data
         temp[axslice(axis, Kmax+1, -Kmax)] = 0
 
-    def forward(self, gdata, cdata, axis):
-        """Apply forward transform along specified axis."""
-        plan, temp = self._build_fftw_plan(gdata.dtype, gdata.shape, axis)
+    def forward(self, gdata, cdata):
+        """Apply forward transform along the plan axis."""
         # Execute FFTW plan
-        plan.forward(gdata, temp)
+        self.fftw_plan.forward(gdata, self.temp)
         # Unpack from halfcomplex form and rescale
-        self.unpack_rescale(temp, cdata, axis, rescale=1/self.N)
+        self.unpack_rescale(self.temp, cdata, rescale=1/self.N)
 
-    def backward(self, cdata, gdata, axis):
-        """Apply backward transform along specified axis."""
-        plan, temp = self._build_fftw_plan(gdata.dtype, gdata.shape, axis)
+    def backward(self, cdata, gdata):
+        """Apply backward transform along the plan axis."""
         # Repack into halfcomplex form
-        self.repack(cdata, temp, axis)
+        self.repack(cdata, self.temp)
         # Execute FFTW plan
-        plan.backward(temp, gdata)
+        self.fftw_plan.backward(self.temp, gdata)
 
 
 class CosineTransform(SeparableTransform):
@@ -723,10 +768,16 @@ class CosineTransform(SeparableTransform):
 
     Parameters
     ----------
-    grid_size : int
-        Grid size (N) along transform dimension.
-    coeff_size : int
-        Coefficient size (M) along transform dimension.
+    gdata_shape : tuple
+        Shape of the global data array.
+    cdata_shape : tuple
+        Shape of the coefficient data array.
+    axis : int
+        Axis along which to apply the transform.
+    array_namespace : module
+        Array namespace (e.g., numpy, cupy).
+    dtype : type
+        Data type of the arrays.
 
     Notes
     -----
@@ -739,7 +790,7 @@ class CosineTransform(SeparableTransform):
         if k == 0:
             a(k) = (1/N) \sum_{x=0}^{N-1} f(x)
         elif k <= K:
-            a(k) =  (2/N) \sum_{x=0}^{N-1} f(x) \cos(\pi k x / N)
+            a(k) = (2/N) \sum_{x=0}^{N-1} f(x) \cos(\pi k x / N)
         else:
             a(k) = 0
 
@@ -751,53 +802,53 @@ class CosineTransform(SeparableTransform):
         [a(0), a(1), a(2), ..., a(KM)]
     """
 
-    def __init__(self, grid_size, coeff_size):
-        self.N = grid_size
-        self.M = coeff_size
-        self.KN = (self.N - 1)
-        self.KM = (self.M - 1)
+    def __init__(self, gdata_shape, cdata_shape, axis, array_namespace, dtype):
+        super().__init__(gdata_shape, cdata_shape, axis, array_namespace, dtype)
+        self.KN = self.N - 1
+        self.KM = self.M - 1
         self.Kmax = min(self.KN, self.KM)
 
-    @property
-    def wavenumbers(self):
-        """One-dimensional global wavenumber array."""
-        return np.arange(self.KM + 1)
 
+# #@register_transform(basis.Cosine, 'matrix')
+# class CosineMMT(CosineTransform, SeparableMatrixTransform):
+#     """Cosine MMT."""
 
-#@register_transform(basis.Cosine, 'matrix')
-class CosineMMT(CosineTransform, SeparableMatrixTransform):
-    """Cosine MMT."""
+#     def __init__(self, *args, **kw):
+#         super().__init__(*args, **kw)
+#         self.forward_matrix, self.backward_matrix = self._build_matrices(
+#             self.N, self.M, self.array_namespace, self.dtype)
 
-    @CachedAttribute
-    def forward_matrix(self):
-        """Build forward transform matrix."""
-        N = self.N
-        M = self.M
-        Kmax = self.Kmax
-        K = self.wavenumbers[:, None]
-        X = np.arange(N)[None, :]
-        dX = N / np.pi
-        quadrature = (2 / N) * np.cos(K*X/dX)
-        quadrature[0] = 1 / N
-        # Zero higher modes for transforms with grid_size < coeff_size
-        quadrature *= (K <= self.Kmax)
-        # Ensure C ordering for fast dot products
-        return np.asarray(quadrature, order='C')
-
-    @CachedAttribute
-    def backward_matrix(self):
-        """Build backward transform matrix."""
-        N = self.N
-        M = self.M
-        Kmax = self.Kmax
-        K = self.wavenumbers[None, :]
-        X = np.arange(N)[:, None] + 1/2
-        dX = N / np.pi
-        functions = np.cos(K*X/dX)
-        # Zero higher modes for transforms with grid_size < coeff_size
-        functions *= (K <= self.Kmax)
-        # Ensure C ordering for fast dot products
-        return np.asarray(functions, order='C')
+#     @classmethod
+#     @CachedMethod
+#     def _build_matrices(cls, N, M, array_namespace, dtype):
+#         """
+#         Build forward and backward transform matrices, cached on the 1D transform parameters so that plans can share matrices.
+#         """
+#         xp = array_namespace
+#         KN = N - 1
+#         KM = M - 1
+#         Kmax = min(KN, KM)
+#         # Grid
+#         x = (np.pi / N) * (xp.arange(N) + 1/2)
+#         # Wavenumbers
+#         k = xp.arange(M)
+#         # Forward
+#         K = k[:, None]
+#         X = x[None, :]
+#         quadrature = (2 / N) * xp.cos(K*X)
+#         quadrature[0] = 1 / N
+#         # Zero higher modes for transforms with grid_size < coeff_size
+#         quadrature *= (K <= Kmax)
+#         # Backward
+#         K = k[None, :]
+#         X = x[:, None]
+#         functions = xp.cos(K*X)
+#         # Zero higher modes for transforms with grid_size < coeff_size
+#         functions *= (K <= Kmax)
+#         # Ensure C ordering for fast dot products
+#         forward_matrix = xp.asarray(quadrature, order='C', dtype=dtype)
+#         backward_matrix = xp.asarray(functions, order='C', dtype=dtype)
+#         return forward_matrix, backward_matrix
 
 
 class FastCosineTransform(CosineTransform):
@@ -810,25 +861,35 @@ class FastCosineTransform(CosineTransform):
         self.forward_rescale_pos = 1 / self.N
         self.backward_rescale_zero = 1
         self.backward_rescale_pos = 1 / 2
+        self.setup_dct()
 
-    def resize_rescale_forward(self, data_in, data_out, axis, Kmax):
+    def setup_dct(self):
+        # Work array
+        xp = self.array_namespace
+        self.grid_temp = xp.zeros(self.gdata_shape, dtype=self.dtype)
+
+    def resize_rescale_forward(self, data_in, data_out, Kmax):
         """Resize by padding/trunction and rescale to unit amplitude."""
+        xp = self.array_namespace
+        axis = self.axis
         zerofreq = axslice(axis, 0, 1)
-        np.multiply(data_in[zerofreq], self.forward_rescale_zero, data_out[zerofreq])
+        xp.multiply(data_in[zerofreq], self.forward_rescale_zero, data_out[zerofreq])
         if Kmax > 0:
             posfreq = axslice(axis, 1, Kmax+1)
-            np.multiply(data_in[posfreq], self.forward_rescale_pos, data_out[posfreq])
+            xp.multiply(data_in[posfreq], self.forward_rescale_pos, data_out[posfreq])
             if self.KM > Kmax:
                 badfreq = axslice(axis, Kmax+1, None)
                 data_out[badfreq] = 0
 
-    def resize_rescale_backward(self, data_in, data_out, axis, Kmax):
+    def resize_rescale_backward(self, data_in, data_out, Kmax):
         """Resize by padding/trunction and rescale to unit amplitude."""
+        xp = self.array_namespace
+        axis = self.axis
         zerofreq = axslice(axis, 0, 1)
-        np.multiply(data_in[zerofreq], self.backward_rescale_zero, data_out[zerofreq])
+        xp.multiply(data_in[zerofreq], self.backward_rescale_zero, data_out[zerofreq])
         if Kmax > 0:
             posfreq = axslice(axis, 1, Kmax+1)
-            np.multiply(data_in[posfreq], self.backward_rescale_pos, data_out[posfreq])
+            xp.multiply(data_in[posfreq], self.backward_rescale_pos, data_out[posfreq])
             if self.KN > Kmax:
                 badfreq = axslice(axis, Kmax+1, None)
                 data_out[badfreq] = 0
@@ -838,21 +899,21 @@ class FastCosineTransform(CosineTransform):
 class ScipyDCT(FastCosineTransform):
     """Fast cosine transform using scipy.fft."""
 
-    def forward(self, gdata, cdata, axis):
-        """Apply forward transform along specified axis."""
+    def forward(self, gdata, cdata):
+        """Apply forward transform along the plan axis."""
         # Call DCT
-        temp = scipy.fft.dct(gdata, type=2, axis=axis) # Creates temporary
+        temp = scipy.fft.dct(gdata, type=2, axis=self.axis) # Creates temporary
         # Resize and rescale for unit-ampltidue normalization
-        self.resize_rescale_forward(temp, cdata, axis, self.Kmax)
+        self.resize_rescale_forward(temp, cdata, self.Kmax)
 
-    def backward(self, cdata, gdata, axis):
-        """Apply backward transform along specified axis."""
+    def backward(self, cdata, gdata):
+        """Apply backward transform along the plan axis."""
+        temp = self.grid_temp
         # Resize and rescale for unit-amplitude normalization
         # Need temporary to avoid overwriting problems
-        temp = np.empty_like(gdata) # Creates temporary
-        self.resize_rescale_backward(cdata, temp, axis, self.Kmax)
+        self.resize_rescale_backward(cdata, temp, self.Kmax)
         # Call IDCT
-        temp = scipy.fft.dct(temp, type=3, axis=axis, overwrite_x=True) # Creates temporary
+        temp = scipy.fft.dct(temp, type=3, axis=self.axis, overwrite_x=True) # Creates temporary
         np.copyto(gdata, temp)
 
 
@@ -860,23 +921,24 @@ class CupyDCT(FastCosineTransform):
     """Fast cosine transform using cupy fft."""
 
     def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
         import cupyx.scipy.fft as cufft
         self.cufft = cufft
-        super().__init__(*args, **kw)
 
-    def forward(self, gdata, cdata, axis):
-        """Apply forward transform along specified axis."""
+    def forward(self, gdata, cdata):
+        """Apply forward transform along the plan axis."""
+        axis = self.axis
         # Call DCT
         temp = self.cufft.dct(gdata, type=2, axis=axis) # Creates temporary
         # Resize and rescale for unit-ampltidue normalization
         self.resize_rescale_forward(temp, cdata, axis, self.Kmax)
 
-    def backward(self, cdata, gdata, axis):
-        """Apply backward transform along specified axis."""
-        xp = self.array_namespace
+    def backward(self, cdata, gdata):
+        """Apply backward transform along the plan axis."""
+        axis = self.axis
+        temp = self.grid_temp
         # Resize and rescale for unit-amplitude normalization
         # Need temporary to avoid overwriting problems
-        temp = xp.empty_like(gdata) # Creates temporary
         self.resize_rescale_backward(cdata, temp, axis, self.Kmax)
         # Call IDCT
         temp = self.cufft.dct(temp, type=3, axis=axis, overwrite_x=True) # Creates temporary
@@ -884,33 +946,32 @@ class CupyDCT(FastCosineTransform):
 
 
 #@register_transform(basis.Cosine, 'fftw')
-class FFTWDCT(FFTWBase, FastCosineTransform):
+class FFTWDCT(FastCosineTransform, FFTWBase):
     """Fast cosine transform using FFTW."""
 
-    @CachedMethod
-    def _build_fftw_plan(self, dtype, gshape, axis):
-        """Build FFTW plans and temporary arrays."""
-        logger.debug("Building FFTW DCT plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, gshape, axis))
-        flags = ['FFTW_'+self.rigor.upper()]
-        plan = fftw.DiscreteCosineTransform(dtype, gshape, axis, flags=flags)
-        temp = fftw.create_array(gshape, dtype)
-        return plan, temp
+    def setup_dct(self):
+        """Build FFTW plan and temporary array for the plan shapes."""
+        # FFTW plan
+        logger.debug("Building FFTW DCT plan for (dtype, gshape, axis) = (%s, %s, %s)" %(self.dtype, self.gdata_shape, self.axis))
+        self.fftw_plan = fftw.DiscreteCosineTransform(self.dtype, self.gdata_shape, self.axis, flags=self.fftw_flags)
+        # Work array
+        self.temp = fftw.create_array(self.gdata_shape, self.dtype)
 
-    def forward(self, gdata, cdata, axis):
-        """Apply forward transform along specified axis."""
-        plan, temp = self._build_fftw_plan(gdata.dtype, gdata.shape, axis)
+    def forward(self, gdata, cdata):
+        """Apply forward transform along the plan axis."""
+        temp = self.temp
         # Execute FFTW plan
-        plan.forward(gdata, temp)
+        self.fftw_plan.forward(gdata, temp)
         # Resize and rescale for unit-ampltidue normalization
-        self.resize_rescale_forward(temp, cdata, axis, self.Kmax)
+        self.resize_rescale_forward(temp, cdata, self.Kmax)
 
-    def backward(self, cdata, gdata, axis):
-        """Apply backward transform along specified axis."""
-        plan, temp = self._build_fftw_plan(gdata.dtype, gdata.shape, axis)
+    def backward(self, cdata, gdata):
+        """Apply backward transform along the plan axis."""
+        temp = self.temp
         # Resize and rescale for unit-amplitude normalization
-        self.resize_rescale_backward(cdata, temp, axis, self.Kmax)
+        self.resize_rescale_backward(cdata, temp, self.Kmax)
         # Execute FFTW plan
-        plan.backward(temp, gdata)
+        self.fftw_plan.backward(temp, gdata)
 
 
 class FastChebyshevTransform(JacobiTransform):
@@ -919,87 +980,91 @@ class FastChebyshevTransform(JacobiTransform):
     Subclasses should inherit from this class, then a FastCosineTransform subclass.
     """
 
-    def __init__(self, grid_size, coeff_size, a, b, a0, b0, array_namespace, dtype, **kw):
-        if not a0 == b0 == -1/2:
-            raise ValueError("Fast Chebshev transform requires a0 == b0 == -1/2.")
+    def __init__(self, *args, **kw):
         # Jacobi initialization
-        super().__init__(grid_size, coeff_size, a, b, a0, b0, array_namespace, dtype, **kw)
-        # DCT initialization to set scaling factors
-        if a != a0 or b != b0:
-            # Modify coeff_size to avoid truncation before conversion
-            super(JacobiTransform, self).__init__(grid_size, grid_size)
-        else:
-            super(JacobiTransform, self).__init__(grid_size, coeff_size)
-        # Make other attributes for M since they're overwritten by DCT initialization
-        self.M_orig = coeff_size
-        self.KM_orig = (self.M_orig - 1)
-        self.Kmax_orig = min(self.KN, self.KM_orig)
+        super().__init__(*args, **kw)
+        # Check grid
+        if not self.a0 == self.b0 == -1/2:
+            raise ValueError("Fast Chebshev transform requires a0 == b0 == -1/2.")
+        self.Kmax_orig = min(self.KN, self.M - 1)
         # Modify scaling factors to match Jacobi normalizations
         self.forward_rescale_zero *= np.sqrt(np.pi)
         self.forward_rescale_pos *= np.sqrt(np.pi / 2)
         self.backward_rescale_zero /= np.sqrt(np.pi)
         self.backward_rescale_pos /= np.sqrt(np.pi / 2)
         # Dispatch resize/rescale based on conversion
-        if a == a0 and b == b0:
+        if self.a == self.a0 and self.b == self.b0:
             self.resize_rescale_forward = self._resize_rescale_forward
             self.resize_rescale_backward = self._resize_rescale_backward
         else:
             # Conversion matrices
-            if self.dealias_before_converting and (self.M_orig < self.N): # truncate prior to conversion matrix
-                self.forward_conversion = jacobi.conversion_matrix(self.M_orig, a0, b0, a, b).tocsr().astype(dtype)
+            is_cupy = array_api_compat.is_cupy_namespace(self.array_namespace)
+            if self.dealias_before_converting and (self.M < self.N): # truncate prior to conversion matrix
+                forward_cols = self.M
             else: # input to conversion matrix not truncated
-                self.forward_conversion = jacobi.conversion_matrix(self.N, a0, b0, a, b)
-                self.forward_conversion.resize(self.M_orig, self.N)
-                self.forward_conversion = self.forward_conversion.tocsr().astype(dtype)
-            self.backward_conversion = jacobi.conversion_matrix(self.M_orig, a0, b0, a, b).tocsr().astype(dtype)
-            self.backward_conversion.sum_duplicates() # for faster solve_upper
+                forward_cols = self.N
+            self.forward_conversion = self._build_conversion(self.M, forward_cols, self.a0, self.b0, self.a, self.b, self.dtype, is_cupy)
+            self.backward_conversion = self._build_conversion(self.M, self.M, self.a0, self.b0, self.a, self.b, self.dtype, is_cupy)
             self.resize_rescale_forward = self._resize_rescale_forward_convert
             self.resize_rescale_backward = self._resize_rescale_backward_convert
-            if array_api_compat.is_cupy_namespace(self.array_namespace):
-                import cupyx.scipy.sparse as csp
-                self.forward_conversion = csp.csr_matrix(self.forward_conversion)
-                self.backward_conversion = csp.csr_matrix(self.backward_conversion)
-                self.forward_conversion.sum_duplicates()
-                self.backward_conversion.sum_duplicates()
+            if is_cupy:
+                # Stateful solver: keep per-plan, since its cuSPARSE analysis is sized to the RHS shape
                 self.backward_conversion_LU = CustomCupyUpperTriangularSolver(self.backward_conversion)
 
-    def _resize_rescale_forward(self, data_in, data_out, axis, Kmax):
+    @classmethod
+    @CachedMethod
+    def _build_conversion(cls, rows, cols, a0, b0, a, b, dtype, is_cupy):
+        conversion = jacobi.conversion_matrix(cols, a0, b0, a, b)
+        if rows != cols:
+            conversion.resize(rows, cols)
+        # Convert and canonicalize for faster upper triangular solves
+        conversion = conversion.tocsr().astype(dtype)
+        conversion.sum_duplicates()
+        if is_cupy:
+            import cupyx.scipy.sparse as csp
+            conversion = csp.csr_matrix(conversion)
+            conversion.sum_duplicates()
+        return conversion
+
+    def _resize_rescale_forward(self, data_in, data_out, Kmax):
         """Resize by padding/trunction and rescale to unit amplitude."""
         # DCT resize/rescale
-        super().resize_rescale_forward(data_in, data_out, axis, Kmax)
+        super().resize_rescale_forward(data_in, data_out, Kmax)
         # Change sign of odd modes
         if Kmax > 0:
-            posfreq_odd = axslice(axis, 1, Kmax+1, 2)
+            posfreq_odd = axslice(self.axis, 1, Kmax+1, 2)
             data_out[posfreq_odd] *= -1
 
-    def _resize_rescale_backward(self, data_in, data_out, axis, Kmax):
+    def _resize_rescale_backward(self, data_in, data_out, Kmax):
         """Resize by padding/trunction and rescale to unit amplitude."""
         # Change sign of odd modes
         if Kmax > 0:
-            posfreq_odd = axslice(axis, 1, Kmax+1, 2)
+            posfreq_odd = axslice(self.axis, 1, Kmax+1, 2)
             data_in[posfreq_odd] *= -1
         # DCT resize/rescale
-        super().resize_rescale_backward(data_in, data_out, axis, Kmax)
+        super().resize_rescale_backward(data_in, data_out, Kmax)
 
-    def _resize_rescale_forward_convert(self, data_in, data_out, axis, Kmax_DCT):
+    def _resize_rescale_forward_convert(self, data_in, data_out, Kmax_DCT):
         """Resize by padding/trunction and rescale to unit amplitude."""
+        axis = self.axis
         # DCT rescale in place
-        super().resize_rescale_forward(data_in, data_in, axis, Kmax_DCT)
+        super().resize_rescale_forward(data_in, data_in, Kmax_DCT)
         # Change sign of odd modes
         if Kmax_DCT > 0:
             posfreq_odd = axslice(axis, 1, Kmax_DCT+1, 2)
             data_in[posfreq_odd] *= -1
         # Ultraspherical conversion
-        if self.dealias_before_converting and self.M_orig < self.N: # truncate data
-            goodfreq = axslice(axis, 0, self.M_orig)
+        if self.dealias_before_converting and self.M < self.N: # truncate data
+            goodfreq = axslice(axis, 0, self.M)
             data_in = data_in[goodfreq]
         apply_sparse(self.forward_conversion, data_in, axis, out=data_out)
 
-    def _resize_rescale_backward_convert(self, data_in, data_out, axis, Kmax_DCT):
+    def _resize_rescale_backward_convert(self, data_in, data_out, Kmax_DCT):
         """Resize by padding/trunction and rescale to unit amplitude."""
+        axis = self.axis
         Kmax_orig = self.Kmax_orig
         badfreq = axslice(axis, Kmax_orig+1, None)
-        if self.M_orig > self.N:
+        if self.M > self.N:
             # Truncate input before conversion
             data_in[badfreq] = 0
         # Ultraspherical conversion
@@ -1012,7 +1077,7 @@ class FastChebyshevTransform(JacobiTransform):
             posfreq_odd = axslice(axis, 1, Kmax_orig+1, 2)
             data_in[posfreq_odd] *= -1
         # DCT resize/rescale
-        super().resize_rescale_backward(data_in, data_out, axis, Kmax_orig)
+        super().resize_rescale_backward(data_in, data_out, Kmax_orig)
 
 
 @register_transform(basis.Jacobi, 'scipy')
@@ -1224,21 +1289,21 @@ class PolynomialTransform(Transform):
         self.grid_size = self.N1G = grid_size
         self.coeff_size = self.N1C = coeff_size
 
-    # def __init__(self, basis, coeff_shape, dtype, axis, scale):
+    # def __init__(self, basis, cdata_shape, dtype, axis, scale):
     #     self.basis = basis
     #     self.dtype = dtype
-    #     self.coeff_shape = coeff_shape
+    #     self.cdata_shape = cdata_shape
     #     self.axis = axis
     #     self.scale = scale
 
     #     # Treat complex arrays as higher dimensional real arrays
     #     if self.dtype == np.complex128:
-    #         coeff_shape = list(coeff_shape) + [2]
+    #         cdata_shape = list(cdata_shape) + [2]
 
-    #     self.N0 = N0 = prod(coeff_shape[:axis])
-    #     self.N1C = N1C = coeff_shape[axis]
+    #     self.N0 = N0 = prod(cdata_shape[:axis])
+    #     self.N1C = N1C = cdata_shape[axis]
     #     self.N1G = N1G = int(self.N1C * scale)
-    #     self.N2 = N2 = prod(coeff_shape[axis+1:])
+    #     self.N2 = N2 = prod(cdata_shape[axis+1:])
 
     #     self.gdata_reduced = np.zeros(shape=[N0, N1G, N2], dtype=np.float64)
     #     self.cdata_reduced = np.zeros(shape=[N0, N1C, N2], dtype=np.float64)
@@ -1344,9 +1409,9 @@ def backward_DFT(cdata, gdata, axis):
 
 class NonSeparableTransform(Transform):
 
-    def __init__(self, grid_shape, coeff_size, axis, dtype):
+    def __init__(self, gdata_shape, coeff_size, axis, dtype):
 
-        self.N2g = grid_shape[axis]
+        self.N2g = gdata_shape[axis]
         self.N2c = coeff_size
 
 #    @staticmethod
@@ -1474,13 +1539,13 @@ class SWSHColatitudeTransform(NonSeparableTransform):
 class DiskRadialTransform(NonSeparableTransform):
     """
     TODO:
-        - Remove dependence on grid_shape?
+        - Remove dependence on gdata_shape?
     """
 
-    def __init__(self, grid_shape, basis_shape, axis, m_maps, s, k, alpha, dtype=np.complex128, dealias_before_converting=None):
+    def __init__(self, gdata_shape, basis_shape, axis, m_maps, s, k, alpha, dtype=np.complex128, dealias_before_converting=None):
         self.Nphi = basis_shape[0]
         self.Nmax = basis_shape[1] - 1
-        super().__init__(grid_shape, self.Nmax+1, axis, dtype)
+        super().__init__(gdata_shape, self.Nmax+1, axis, dtype)
         self.m_maps = m_maps
         self.s = s
         self.k = k
@@ -1581,8 +1646,8 @@ class DiskRadialTransform(NonSeparableTransform):
 @register_transform(basis.BallBasis, 'matrix')
 class BallRadialTransform(Transform):
 
-    def __init__(self, grid_shape, coeff_size, axis, ell_maps, regindex, regtotal, k, alpha, dtype=np.complex128, dealias_before_converting=None):
-        self.N3g = grid_shape[axis]
+    def __init__(self, gdata_shape, coeff_size, axis, ell_maps, regindex, regtotal, k, alpha, dtype=np.complex128, dealias_before_converting=None):
+        self.N3g = gdata_shape[axis]
         self.N3c = coeff_size
         self.ell_maps = ell_maps
         self.intertwiner = lambda l: dedalus_sphere.spin_operators.Intertwiner(l, indexing=(-1,+1,0))

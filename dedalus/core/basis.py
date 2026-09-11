@@ -573,19 +573,17 @@ class IntervalBasis(Basis):
 
     def forward_transform(self, field, axis, gdata, cdata):
         """Forward transform field data."""
-        data_axis = len(field.tensorsig) + axis
-        grid_size = gdata.shape[data_axis]
-        plan = self.transform_plan(field.dist, grid_size)
-        plan.forward(gdata, cdata, data_axis)
+        transform_axis = field.tensor_order + axis
+        plan = self.transform_plan(field.dist, gdata.shape, cdata.shape, transform_axis, field.dtype)
+        plan.forward(gdata, cdata)
 
     def backward_transform(self, field, axis, cdata, gdata):
         """Backward transform field data."""
-        data_axis = len(field.tensorsig) + axis
-        grid_size = gdata.shape[data_axis]
-        plan = self.transform_plan(field.dist, grid_size)
-        plan.backward(cdata, gdata, data_axis)
+        transform_axis = field.tensor_order + axis
+        plan = self.transform_plan(field.dist, gdata.shape, cdata.shape, transform_axis, field.dtype)
+        plan.backward(cdata, gdata)
 
-    def transform_plan(self, dist, grid_size):
+    def transform_plan(self, dist, grid_shape, coeff_shape, axis, dtype):
         # Subclasses must implement
         raise NotImplementedError
 
@@ -674,13 +672,14 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
             return self.library
 
     @CachedMethod
-    def transform_plan(self, dist, grid_size):
+    def transform_plan(self, dist, grid_shape, coeff_shape, axis, dtype):
         """Build transform plan."""
         # Shortcut trivial transforms
-        if grid_size == 1 or self.size == 1:
-            return self.transforms["matrix"](grid_size, self.size, self.a, self.b, self.a0, self.b0, dist.array_namespace, dist.dtype)
+        if grid_shape[axis] == 1 or self.size == 1:
+            library = "matrix"
         else:
-            return self.transforms[self.get_library(dist)](grid_size, self.size, self.a, self.b, self.a0, self.b0, dist.array_namespace, dist.dtype)
+            library = self.get_library(dist)
+        return self.transforms[library](grid_shape, coeff_shape, axis, dist.array_namespace, dtype, self.a, self.b, self.a0, self.b0)
 
     # def weights(self, scales):
     #     """Gauss-Jacobi weights."""
@@ -1095,13 +1094,14 @@ class FourierBase(IntervalBasis):
             return self.library
 
     @CachedMethod
-    def transform_plan(self, dist, grid_size):
+    def transform_plan(self, dist, grid_shape, coeff_shape, axis, dtype):
         """Build transform plan."""
         # Shortcut trivial transforms
-        if grid_size == 1 or self.size == 1:
-            return self.transforms["matrix"](grid_size, self.size, dist.array_namespace, dist.dtype)
+        if grid_shape[axis] == 1 or self.size == 1:
+            library = "matrix"
         else:
-            return self.transforms[self.get_library(dist)](grid_size, self.size, dist.array_namespace, dist.dtype)
+            library = self.get_library(dist)
+        return self.transforms[library](grid_shape, coeff_shape, axis, dist.array_namespace, dtype)
 
     def forward_transform(self, field, axis, gdata, cdata):
         # Transform
@@ -2348,13 +2348,13 @@ class AnnulusBasis(PolarBasis, metaclass=CachedClass):
         return self.clone_with(k=k)
 
     @CachedMethod
-    def transform_plan(self, dist, grid_size, k):
+    def transform_plan(self, dist, grid_shape, coeff_shape, axis, dtype, k):
         """Build transform plan."""
         a = self.alpha[0] + k
         b = self.alpha[1] + k
         a0 = self.alpha[0]
         b0 = self.alpha[1]
-        return Jacobi.transforms[self.radius_library](grid_size, self.Nmax+1, a, b, a0, b0, dist.array_namespace, dist.dtype)
+        return Jacobi.transforms[self.radius_library](grid_shape, coeff_shape, axis, dist.array_namespace, dtype, a, b, a0, b0)
 
     @CachedMethod
     def radial_transform_factor(self, scale, data_axis, dk):
@@ -2363,7 +2363,6 @@ class AnnulusBasis(PolarBasis, metaclass=CachedClass):
 
     def forward_transform_radius(self, field, axis, gdata, cdata):
         data_axis = len(field.tensorsig) + axis
-        grid_size = gdata.shape[data_axis]
         # Multiply by radial factor
         if self.k > 0:
             gdata *= self.radial_transform_factor(field.scales[axis], data_axis, -self.k)
@@ -2376,14 +2375,15 @@ class AnnulusBasis(PolarBasis, metaclass=CachedClass):
         self.forward_spin_recombination(field.tensorsig, axis, gdata, temp)
         cdata.fill(0)  # OPTIMIZE: shouldn't be necessary
         # Transform component-by-component from temp to cdata
+        # Shapes are taken from the component views, which strip the tensor component axes,
+        # and may be wider than the field data along the m axis due to the expansion above
         S = self.spin_weights(field.tensorsig)
         for i, s in np.ndenumerate(S):
-           plan = self.transform_plan(field.dist, grid_size, self.k)
-           plan.forward(temp[i], cdata[i], axis)
+           plan = self.transform_plan(field.dist, temp[i].shape, cdata[i].shape, axis, field.dtype, self.k)
+           plan.forward(temp[i], cdata[i])
 
     def backward_transform_radius(self, field, axis, cdata, gdata):
         data_axis = len(field.tensorsig) + axis
-        grid_size = gdata.shape[data_axis]
         # Create temporary
         if self.mmax == 0 and self.dtype == np.float64:
             m_axis = len(field.tensorsig) + axis - 1
@@ -2396,10 +2396,12 @@ class AnnulusBasis(PolarBasis, metaclass=CachedClass):
         else:
             temp = np.zeros_like(gdata)
         # Transform component-by-component from cdata to temp
+        # Shapes are taken from the component views, which strip the tensor component axes,
+        # and may be wider than the field data along the m axis due to the expansion above
         S = self.spin_weights(field.tensorsig)
         for i, s in np.ndenumerate(S):
-           plan = self.transform_plan(field.dist, grid_size, self.k)
-           plan.backward(cdata[i], temp[i], axis)
+           plan = self.transform_plan(field.dist, temp[i].shape, cdata[i].shape, axis, field.dtype, self.k)
+           plan.backward(cdata[i], temp[i])
         # Apply spin recombination from temp to gdata
         gdata.fill(0)  # OPTIMIZE: shouldn't be necessary
         self.backward_spin_recombination(field.tensorsig, axis, temp, gdata)
@@ -3990,17 +3992,16 @@ class ShellRadialBasis(RegularityBasis, metaclass=CachedClass):
         return radial_factor*dedalus_sphere.jacobi.polynomials(self.n_size(0), a, b, native_position)
 
     @CachedMethod
-    def transform_plan(self, dist, grid_size, k):
+    def transform_plan(self, dist, grid_shape, coeff_shape, axis, dtype, k):
         """Build transform plan."""
         a = self.alpha[0] + k
         b = self.alpha[1] + k
         a0 = self.alpha[0]
         b0 = self.alpha[1]
-        return Jacobi.transforms[self.radius_library](grid_size, self.Nmax+1, a, b, a0, b0, dist.array_namespace, dist.dtype)
+        return Jacobi.transforms[self.radius_library](grid_shape, coeff_shape, axis, dist.array_namespace, dtype, a, b, a0, b0)
 
     def forward_transform_radius(self, field, axis, gdata, cdata):
         data_axis = len(field.tensorsig) + axis
-        grid_size = gdata.shape[data_axis]
         # Multiply by radial factor
         if self.k > 0:
             gdata *= self.radial_transform_factor(field.scales[axis], data_axis, -self.k)
@@ -4010,19 +4011,18 @@ class ShellRadialBasis(RegularityBasis, metaclass=CachedClass):
         # Perform radial transforms component-by-component
         R = self.regularity_classes(field.tensorsig)
         for regindex, regtotal in np.ndenumerate(R):
-           plan = self.transform_plan(field.dist, grid_size, self.k)
-           plan.forward(temp[regindex], cdata[regindex], axis)
+           plan = self.transform_plan(field.dist, temp[regindex].shape, cdata[regindex].shape, axis, field.dtype, self.k)
+           plan.forward(temp[regindex], cdata[regindex])
 
     def backward_transform_radius(self, field, axis, cdata, gdata):
         data_axis = len(field.tensorsig) + axis
-        grid_size = gdata.shape[data_axis]
         # Perform radial transforms component-by-component
         R = self.regularity_classes(field.tensorsig)
         # HACK -- don't want to make a new array every transform
         temp = np.zeros_like(gdata)
         for i, r in np.ndenumerate(R):
-           plan = self.transform_plan(field.dist, grid_size, self.k)
-           plan.backward(cdata[i], temp[i], axis)
+           plan = self.transform_plan(field.dist, temp[i].shape, cdata[i].shape, axis, field.dtype, self.k)
+           plan.backward(cdata[i], temp[i])
         np.copyto(gdata, temp)
         # Regularity recombination
         self.backward_regularity_recombination(field.tensorsig, axis, gdata, self.ell_maps(field.dist))
@@ -4663,7 +4663,6 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
     def forward_transform_radius(self, field, axis, gdata, cdata):
         radial_basis = self.radial_basis
         data_axis = len(field.tensorsig) + axis
-        grid_size = gdata.shape[data_axis]
         # Multiply by radial factor
         if self.k > 0:
             gdata *= radial_basis.radial_transform_factor(field.scales[axis], data_axis, -self.k)
@@ -4674,21 +4673,21 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
         # HACK -- don't want to make a new array every transform
         temp = np.copy(cdata)
         for regindex, regtotal in np.ndenumerate(R):
-           plan = radial_basis.transform_plan(field.dist, grid_size, self.k)
-           plan.forward(gdata[regindex], temp[regindex], axis)
+           plan = radial_basis.transform_plan(field.dist, gdata[regindex].shape, temp[regindex].shape, axis, field.dtype, self.k)
+           plan.forward(gdata[regindex], temp[regindex])
         np.copyto(cdata, temp)
 
     def backward_transform_radius(self, field, axis, cdata, gdata):
         radial_basis = self.radial_basis
         data_axis = len(field.tensorsig) + axis
-        grid_size = gdata.shape[data_axis]
         # Perform radial transforms component-by-component
         R = radial_basis.regularity_classes(field.tensorsig)
         # HACK -- don't want to make a new array every transform
+        # TODO: fuse these all together?
         temp = np.copy(gdata)
         for i, r in np.ndenumerate(R):
-           plan = radial_basis.transform_plan(field.dist, grid_size, self.k)
-           plan.backward(cdata[i], temp[i], axis)
+           plan = radial_basis.transform_plan(field.dist, temp[i].shape, cdata[i].shape, axis, field.dtype, self.k)
+           plan.backward(cdata[i], temp[i])
         np.copyto(gdata, temp)
         # Apply regularity recombinations using 3D ell map
         radial_basis.backward_regularity_recombination(field.tensorsig, axis, gdata, ell_maps=self.ell_maps(field.dist))
@@ -5804,7 +5803,9 @@ class InterpolateAzimuth(FutureLockedField, operators.Interpolate):
         # Construct collocation interpolation using forward transform matrix and spectral interpolation
         azimuth_basis = input_basis.azimuth_basis
         grid_size = azimuth_basis.grid_shape(scales=azimuth_basis.dealias)[0]
-        forward = azimuth_basis.transforms['matrix'](grid_size, azimuth_basis.size, array_namespace, input_basis.dtype).forward_matrix[azimuth_basis.forward_coeff_permutation]
+        # Only the one-dimensional forward matrix is needed, so plan for one-dimensional data
+        plan = azimuth_basis.transforms['matrix']((grid_size,), (azimuth_basis.size,), 0, array_namespace, input_basis.dtype)
+        forward = plan.forward_matrix[azimuth_basis.forward_coeff_permutation]
         if input_basis.dtype is np.float64:
             interp = InterpolateRealFourier._full_matrix(azimuth_basis, None, position)
         elif input_basis.dtype is np.complex128:
