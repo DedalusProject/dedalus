@@ -2325,26 +2325,39 @@ class SphericalTransposeComponents(TransposeComponents):
         return matrix
 
     def operate(self, out):
-        """Perform operation."""
-        operand = self.args[0]
+        out.preset_layout(self.args[0].layout)
+        self._operate(self.args, out)
+
+    def _operate(self, args, out, adjoint=False):
+        """Forward: commute the transposition with the regularity recombination
+        (backward recombination on the input signature, transpose, forward
+        recombination on the output signature).  Adjoint: the same three steps
+        with the signatures swapped and the inverse axis order, accumulated."""
+        arg = args[0]
         radius_axis = self.radius_axis
-        # Set output layout
-        layout = operand.layout
-        out.preset_layout(layout)
-        # Transpose data
-        if layout.grid_space[radius_axis]:
-            # Not in regularity components: can directly transpose
-            out.data[:] = np.transpose(operand.data, self.new_axis_order)
+        layout = out.layout if adjoint else arg.layout
+        if adjoint:
+            inverse_order = np.argsort(self.new_axis_order)
+            if layout.grid_space[radius_axis]:
+                arg.data[:] += np.transpose(out.data, inverse_order)
+            else:
+                radial_basis = self.radial_basis
+                ell_maps = self.input_basis.ell_maps(self.dist)
+                tmp = np.array(out.data, copy=True)
+                radial_basis.backward_regularity_recombination(self.tensorsig, radius_axis, tmp, ell_maps=ell_maps)
+                tmp = np.ascontiguousarray(np.transpose(tmp, inverse_order))
+                radial_basis.forward_regularity_recombination(arg.tensorsig, radius_axis, tmp, ell_maps=ell_maps)
+                arg.data[:] += tmp
         else:
-            radial_basis = self.radial_basis
-            ell_maps = self.input_basis.ell_maps(self.dist)
-            # Copy to output for in-place regularity recombination
-            copyto(out.data, operand.data)
-            out.data[:] = operand.data
-            # Commute transposition with regularity recombination
-            radial_basis.backward_regularity_recombination(operand.tensorsig, radius_axis, out.data, ell_maps=ell_maps)
-            copyto(out.data, np.transpose(out.data, self.new_axis_order))
-            radial_basis.forward_regularity_recombination(operand.tensorsig, radius_axis, out.data, ell_maps=ell_maps)
+            if layout.grid_space[radius_axis]:
+                out.data[:] = np.transpose(arg.data, self.new_axis_order)
+            else:
+                radial_basis = self.radial_basis
+                ell_maps = self.input_basis.ell_maps(self.dist)
+                copyto(out.data, arg.data)
+                radial_basis.backward_regularity_recombination(arg.tensorsig, radius_axis, out.data, ell_maps=ell_maps)
+                copyto(out.data, np.transpose(out.data, self.new_axis_order))
+                radial_basis.forward_regularity_recombination(arg.tensorsig, radius_axis, out.data, ell_maps=ell_maps)
 
 
 @alias("skew")
