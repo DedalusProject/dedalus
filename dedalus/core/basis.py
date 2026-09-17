@@ -5418,7 +5418,16 @@ class SphereAzimuthalAverage(AzimuthalAverage, operators.Average, operators.Spec
         for spinindex, spintotal in np.ndenumerate(spincomps):
             comp_in = operand.data[spinindex]
             comp_out = out.data[spinindex]
-            comp_out[m0_out] = comp_in[m0_in]
+            src_idx = np.flatnonzero(m0_in)
+            dest_idx = np.flatnonzero(m0_out)
+            extra = [i for i in range(len(groups_in)) if i != azimuth_axis]
+            key_in = np.stack([groups_in[i].reshape(-1)[src_idx] for i in extra], axis=-1)
+            key_out = np.stack([groups_out[i].reshape(-1)[dest_idx] for i in extra], axis=-1)
+            table = {tuple(k.tolist()): j for j, k in enumerate(key_in)}
+            for j, k in enumerate(key_out):
+                src_j = table.get(tuple(k.tolist()))
+                if src_j is not None:
+                    comp_out.ravel()[dest_idx[j]] = comp_in.ravel()[src_idx[src_j]]
 
 
 class SphericalAzimuthalAverage(AzimuthalAverage, operators.Average, operators.SpectralOperator):
@@ -5447,7 +5456,16 @@ class SphericalAzimuthalAverage(AzimuthalAverage, operators.Average, operators.S
         for regindex, regtotal in np.ndenumerate(regcomps):
             comp_in = operand.data[regindex]
             comp_out = out.data[regindex]
-            comp_out[m0_out] = comp_in[m0_in]
+            src_idx = np.flatnonzero(m0_in)
+            dest_idx = np.flatnonzero(m0_out)
+            extra = [i for i in range(len(groups_in)) if i != azimuth_axis]
+            key_in = np.stack([groups_in[i].reshape(-1)[src_idx] for i in extra], axis=-1)
+            key_out = np.stack([groups_out[i].reshape(-1)[dest_idx] for i in extra], axis=-1)
+            table = {tuple(k.tolist()): j for j, k in enumerate(key_in)}
+            for j, k in enumerate(key_out):
+                src_j = table.get(tuple(k.tolist()))
+                if src_j is not None:
+                    comp_out.ravel()[dest_idx[j]] = comp_in.ravel()[src_idx[src_j]]
 
 
 class SphereAverage(operators.Average, operators.SeparableSphereOperator):
