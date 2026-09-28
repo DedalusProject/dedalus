@@ -1,5 +1,6 @@
 """Abstract and built-in classes for spectral bases."""
 
+import types
 import numpy as np
 from scipy import sparse
 from functools import reduce
@@ -6108,13 +6109,28 @@ class ShellRadialInterpolate(operators.Interpolate, operators.SphericalEllOperat
         return sparse.csr_matrix(matrix)
 
     def operate(self, out):
-        """Perform operation."""
-        operators.SphericalEllOperator.operate(self, out)
-        operand = self.args[0]
+        out.preset_layout(self.args[0].layout)
+        self._operate(self.args, out)
+
+    def _operate(self, args, out, adjoint=False):
+        """Forward: the generic ell-operator followed by the backward regularity
+        recombination (regularity -> spin components on the S2 output).  Adjoint:
+        the forward regularity recombination (its transpose) on the cotangent,
+        then the generic adjoint ell-operator.  Previously the JVP/VJP paths ran
+        the generic operator alone and were mutually consistent but were not the
+        tangent/adjoint of the forward map."""
+        arg = args[0]
         radial_basis = self.radial_basis
-        input_basis = self.input_basis
-        # Q matrix
-        radial_basis.backward_regularity_recombination(operand.tensorsig, self.basis_subaxis, out.data, ell_maps=input_basis.ell_maps(self.dist))
+        subaxis = self.basis_subaxis
+        ell_maps = self.input_basis.ell_maps(self.dist)
+        if adjoint:
+            tmp = np.array(out.data, copy=True)
+            radial_basis.forward_regularity_recombination(arg.tensorsig, subaxis, tmp, ell_maps=ell_maps)
+            proxy = types.SimpleNamespace(data=tmp, tensorsig=out.tensorsig, layout=out.layout)
+            operators.SphericalEllOperator._operate(self, args, proxy, adjoint=True)
+        else:
+            operators.SphericalEllOperator._operate(self, args, out)
+            radial_basis.backward_regularity_recombination(arg.tensorsig, subaxis, out.data, ell_maps=ell_maps)
 
     def radial_matrix(self, regindex_in, regindex_out, ell):
         position = self.position
@@ -6166,12 +6182,17 @@ class S2RadialComponent(operators.RadialComponent):
         return matrix
 
     def operate(self, out):
-        """Perform operation."""
-        operand = self.args[0]
-        # Set output layout
-        layout = operand.layout
-        out.preset_layout(layout)
-        np.copyto(out.data, operand.data[axindex(self.index,2)])
+        out.preset_layout(self.args[0].layout)
+        self._operate(self.args, out)
+
+    def _operate(self, args, out, adjoint=False):
+        """Radial component selection: forward takes the radial (index 2) slot of the
+        tensor axis; the adjoint accumulates the cotangent back into that slot."""
+        arg = args[0]
+        if adjoint:
+            arg.data[axindex(self.index, 2)] += out.data
+        else:
+            np.copyto(out.data, arg.data[axindex(self.index, 2)])
 
 
 class S2AngularComponent(operators.AngularComponent):
@@ -6205,12 +6226,17 @@ class S2AngularComponent(operators.AngularComponent):
         return matrix
 
     def operate(self, out):
-        """Perform operation."""
-        operand = self.args[0]
-        # Set output layout
-        layout = operand.layout
-        out.preset_layout(layout)
-        np.copyto(out.data, operand.data[axslice(self.index,0,2)])
+        out.preset_layout(self.args[0].layout)
+        self._operate(self.args, out)
+
+    def _operate(self, args, out, adjoint=False):
+        """Angular component selection: forward takes the two angular slots (0:2) of
+        the tensor axis; the adjoint accumulates the cotangent back into them."""
+        arg = args[0]
+        if adjoint:
+            arg.data[axslice(self.index, 0, 2)] += out.data
+        else:
+            np.copyto(out.data, arg.data[axslice(self.index, 0, 2)])
 
 
 class PolarAzimuthalComponent(operators.AzimuthalComponent):
