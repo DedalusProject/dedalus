@@ -150,6 +150,17 @@ def custom_spsm(a, b, alpha=1.0, lower=True, unit_diag=False, transa=False, spsm
     if not cusparse.check_availability('spsm'):
         raise RuntimeError('spsm is not available.')
 
+    # ROCm/hipSPARSE: do not reuse cached spSM descriptors. Reusing a
+    # descriptor while creating fresh matrix descriptors and skipping the
+    # analysis phase makes spSM_solve fail with
+    # HIPSPARSE_STATUS_INVALID_VALUE (verified on CuPy 14.2.0 / ROCm 6.3.4 /
+    # MI250X). CuPy itself avoids spSM on HIP (see _should_use_spsm in
+    # cupyx.scipy.sparse.linalg._solve, which returns False on HIP and
+    # routes to the legacy csrsm2 API). Dedalus has no csrsm2 path in
+    # custom_SuperLU_solve, so on HIP we use spSM with fresh descriptors.
+    if _cupy.cuda.runtime.is_hip:
+        spsm_descr = None
+
     # Canonicalise transa
     if transa is False:
         transa = 'N'
@@ -339,7 +350,18 @@ def custom_SuperLU_solve(self, rhs, trans='N', spsm_descr=None):
     if trans not in ('N', 'T', 'H'):
         raise ValueError('trans must be \'N\', \'T\', or \'H\'')
 
-    if cusparse.check_availability('spsm') and _should_use_spsm(rhs):
+    # CuPy <= 13: _should_use_spsm(rhs); CuPy >= 14: _should_use_spsm(),
+    # which returns False on HIP/ROCm (CuPy routes to the legacy csrsm2
+    # API there). This GPU solve path only implements spSM, so on HIP we
+    # use it unconditionally (with fresh descriptors, see custom_spsm).
+    if cupy.cuda.runtime.is_hip:
+        use_spsm = True
+    else:
+        try:
+            use_spsm = _should_use_spsm(rhs)
+        except TypeError:
+            use_spsm = _should_use_spsm()
+    if cusparse.check_availability('spsm') and use_spsm:
         def spsm(A, B, lower, transa, spsm_descr):
             return custom_spsm(A, B, lower=lower, transa=transa, spsm_descr=spsm_descr)
         sm = spsm
@@ -437,7 +459,15 @@ class CustomCupyUpperTriangularSolver:
         if A.dtype.char not in 'fdFD':
             raise TypeError(f'unsupported dtype (actual: {A.dtype})')
 
-        if cusparse.check_availability('spsm') and _should_use_spsm(b):
+        # CuPy version/HIP-aware gating, see custom_SuperLU_solve.
+        if cupy.cuda.runtime.is_hip:
+            use_spsm = True
+        else:
+            try:
+                use_spsm = _should_use_spsm(b)
+            except TypeError:
+                use_spsm = _should_use_spsm()
+        if cusparse.check_availability('spsm') and use_spsm:
             if not (sparse.isspmatrix_csr(A) or
                     sparse.isspmatrix_csc(A) or
                     sparse.isspmatrix_coo(A)):
