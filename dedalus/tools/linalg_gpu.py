@@ -319,6 +319,25 @@ def custom_spsm(a, b, alpha=1.0, lower=True, unit_diag=False, transa=False, spsm
         pass
 
 
+def _should_use_spsm(rhs):
+    """Determine if the spSM solve path should be used.
+
+    Wraps cupyx's private _should_use_spsm across CuPy versions: CuPy <= 13
+    calls _should_use_spsm(rhs), while CuPy >= 14 calls _should_use_spsm(),
+    which returns False on HIP/ROCm (CuPy routes to the legacy csrsm2 API
+    there). The GPU solve paths in this module only implement spSM, so on
+    HIP we use it unconditionally (with fresh descriptors, see custom_spsm).
+    """
+    import cupy
+    from cupyx.scipy.sparse.linalg._solve import _should_use_spsm as _cupy_should_use_spsm
+    if cupy.cuda.runtime.is_hip:
+        return True
+    try:
+        return _cupy_should_use_spsm(rhs)
+    except TypeError:
+        return _cupy_should_use_spsm()
+
+
 def custom_SuperLU_solve(self, rhs, trans='N', spsm_descr=None):
     """Custom SuperLU solve wrapper to save spsm_descr, since spsm_analysis takes lots of time."""
     """Solves linear system of equations with one or several right-hand sides.
@@ -337,7 +356,6 @@ def custom_SuperLU_solve(self, rhs, trans='N', spsm_descr=None):
     """  # NOQA
     from cupyx import cusparse
     import cupy
-    from cupyx.scipy.sparse.linalg._solve import _should_use_spsm
 
     if not isinstance(rhs, cupy.ndarray):
         raise TypeError('ojb must be cupy.ndarray')
@@ -350,18 +368,7 @@ def custom_SuperLU_solve(self, rhs, trans='N', spsm_descr=None):
     if trans not in ('N', 'T', 'H'):
         raise ValueError('trans must be \'N\', \'T\', or \'H\'')
 
-    # CuPy <= 13: _should_use_spsm(rhs); CuPy >= 14: _should_use_spsm(),
-    # which returns False on HIP/ROCm (CuPy routes to the legacy csrsm2
-    # API there). This GPU solve path only implements spSM, so on HIP we
-    # use it unconditionally (with fresh descriptors, see custom_spsm).
-    if cupy.cuda.runtime.is_hip:
-        use_spsm = True
-    else:
-        try:
-            use_spsm = _should_use_spsm(rhs)
-        except TypeError:
-            use_spsm = _should_use_spsm()
-    if cusparse.check_availability('spsm') and use_spsm:
+    if cusparse.check_availability('spsm') and _should_use_spsm(rhs):
         def spsm(A, B, lower, transa, spsm_descr):
             return custom_spsm(A, B, lower=lower, transa=transa, spsm_descr=spsm_descr)
         sm = spsm
@@ -436,7 +443,6 @@ class CustomCupyUpperTriangularSolver:
         from cupyx import cusparse
         from cupyx.scipy import sparse
         import cupy
-        from cupyx.scipy.sparse.linalg._solve import _should_use_spsm
 
         A = self.matrix
 
@@ -459,15 +465,7 @@ class CustomCupyUpperTriangularSolver:
         if A.dtype.char not in 'fdFD':
             raise TypeError(f'unsupported dtype (actual: {A.dtype})')
 
-        # CuPy version/HIP-aware gating, see custom_SuperLU_solve.
-        if cupy.cuda.runtime.is_hip:
-            use_spsm = True
-        else:
-            try:
-                use_spsm = _should_use_spsm(b)
-            except TypeError:
-                use_spsm = _should_use_spsm()
-        if cusparse.check_availability('spsm') and use_spsm:
+        if cusparse.check_availability('spsm') and _should_use_spsm(b):
             if not (sparse.isspmatrix_csr(A) or
                     sparse.isspmatrix_csc(A) or
                     sparse.isspmatrix_coo(A)):
