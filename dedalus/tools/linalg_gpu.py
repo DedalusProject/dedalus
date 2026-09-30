@@ -317,12 +317,20 @@ def _should_use_spsm(rhs):
     import cupy
     from cupyx.scipy.sparse.linalg._solve import _should_use_spsm as _cupy_should_use_spsm
 
-    # In CuPy 13 the function requiered an argument, but this was dropped in 14.
-    try:
-        return _cupy_should_use_spsm(rhs)
-    except TypeError:
-        return _cupy_should_use_spsm()
-
+    impl = getattr(_should_use_spsm, "_impl", None)
+    if impl is None:
+        # In CuPy 13 the function requiered an argument, but this was dropped in 14.
+        try:
+            def impl(rhs):
+                return _cupy_should_use_spsm(rhs)
+            return impl(rhs)
+        except TypeError:
+            def impl(rhs):
+                return _cupy_should_use_spsm()
+            return impl(rhs)
+        finally:
+            setattr(_should_use_spsm, "_impl", impl)
+    return impl(rhs)
 
 def custom_SuperLU_solve(self, rhs, trans='N', spsm_descr=None):
     """Custom SuperLU solve wrapper to save spsm_descr, since spsm_analysis takes lots of time."""
