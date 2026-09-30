@@ -323,16 +323,12 @@ def custom_spsm(a, b, alpha=1.0, lower=True, unit_diag=False, transa=False, spsm
 def _should_use_spsm(rhs):
     """Determine if the spSM solve path should be used.
 
-    Wraps cupyx's private _should_use_spsm across CuPy versions: CuPy <= 13
-    calls _should_use_spsm(rhs), while CuPy >= 14 calls _should_use_spsm(),
-    which returns False on HIP/ROCm (CuPy routes to the legacy csrsm2 API
-    there). The GPU solve paths in this module only implement spSM, so on
-    HIP we use it unconditionally (with fresh descriptors, see custom_spsm).
+    Copied from CuPy.
     """
     import cupy
     from cupyx.scipy.sparse.linalg._solve import _should_use_spsm as _cupy_should_use_spsm
-    if cupy.cuda.runtime.is_hip:
-        return True
+
+    # In CuPy 13 the function requiered an argument, but this was dropped in 14.
     try:
         return _cupy_should_use_spsm(rhs)
     except TypeError:
