@@ -151,17 +151,6 @@ def custom_spsm(a, b, alpha=1.0, lower=True, unit_diag=False, transa=False, spsm
     if not cusparse.check_availability('spsm'):
         raise RuntimeError('spsm is not available.')
 
-    # ROCm/hipSPARSE: do not reuse cached spSM descriptors. Reusing a
-    # descriptor while creating fresh matrix descriptors and skipping the
-    # analysis phase makes spSM_solve fail with
-    # HIPSPARSE_STATUS_INVALID_VALUE (verified on CuPy 14.2.0 / ROCm 6.3.4 /
-    # MI250X). CuPy itself avoids spSM on HIP (see _should_use_spsm in
-    # cupyx.scipy.sparse.linalg._solve, which returns False on HIP and
-    # routes to the legacy csrsm2 API). Dedalus has no csrsm2 path in
-    # custom_SuperLU_solve, so on HIP we use spSM with fresh descriptors.
-    if _cupy.cuda.runtime.is_hip:
-        spsm_descr = None
-
     # Canonicalise transa
     if transa is False:
         transa = 'N'
