@@ -581,6 +581,7 @@ class Field(Current):
         self.array_namespace = dist.array_namespace
         self.name = name
         self.tensorsig = tensorsig
+        self.tensor_order = len(tensorsig)
         self.dtype = dtype
         # Build domain
         self.domain = Domain(dist, bases)

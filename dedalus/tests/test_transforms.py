@@ -740,3 +740,14 @@ def test_ball_roundtrip_noise(Nphi, Ntheta, Nr, radius, alpha, k, dealias, dtype
     f[other]
     assert np.allclose(f_layout, f[layout])
 
+@pytest.mark.parametrize('N', [16])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_plan_matrices_shared_across_shapes(N, dtype):
+    """Tests that plans differing only in data shape share their transform matrices."""
+    a = b = a0 = b0 = -1/2
+    plan_a = basis.Jacobi.transforms['matrix']((N,), (N,), 0, np, dtype, a, b, a0, b0)
+    plan_b = basis.Jacobi.transforms['matrix']((3, N), (3, N), 1, np, dtype, a, b, a0, b0)
+    assert plan_a is not plan_b
+    assert plan_a.forward_matrix is plan_b.forward_matrix
+    assert plan_a.backward_matrix is plan_b.backward_matrix
+
