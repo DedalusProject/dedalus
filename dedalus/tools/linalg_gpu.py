@@ -147,6 +147,7 @@ def custom_spsm(a, b, alpha=1.0, lower=True, unit_diag=False, transa=False, spsm
     from cupy_backends.cuda.libs import cusparse as _cusparse
     from cupy.cuda import device as _device
     from cupyx.cusparse import SpMatDescriptor, DnMatDescriptor
+
     if not cusparse.check_availability('spsm'):
         raise RuntimeError('spsm is not available.')
 
@@ -372,6 +373,11 @@ def custom_SuperLU_solve(self, rhs, trans='N', spsm_descr=None):
         def spsm(A, B, lower, transa, spsm_descr):
             return custom_spsm(A, B, lower=lower, transa=transa, spsm_descr=spsm_descr)
         sm = spsm
+    elif cusparse.check_availability('csrsm2'):
+        def csrsm2(A, B, lower, transa, spsm_descr):
+            cusparse.csrsm2(A, B, lower=lower, transa=transa)
+            return B, None
+        sm = csrsm2
     else:
         raise NotImplementedError
 
