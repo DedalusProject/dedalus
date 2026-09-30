@@ -480,7 +480,7 @@ class CustomCupyUpperTriangularSolver:
 
             cusparse.csrsm2(A, x, lower=lower, unit_diag=unit_diagonal)
         else:
-            assert False
+            raise NotImplementedError()
 
         # TODO: Check if need this (breaks things for float32?)
         # if x.dtype.char in 'fF':
