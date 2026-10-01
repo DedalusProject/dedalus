@@ -57,6 +57,7 @@ cdef class FFTWTranspose:
     cdef readonly cnp.ndarray RL_view
     cdef cfftw.fftw_plan CL_to_RL_plan
     cdef cfftw.fftw_plan RL_to_CL_plan
+    cdef readonly object array_namespace
 
     def __init__(self, global_shape, chunk_shape, dtype, axis, pycomm, array_namespace):
         logger.debug("Building FFTW transpose plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, global_shape, axis))
@@ -69,6 +70,7 @@ cdef class FFTWTranspose:
         self.datasize = {np.float64: 1, np.complex128: 2}[np.dtype(dtype).type]
         self.axis = axis
         self.pycomm = pycomm
+        self.array_namespace = array_namespace
         # Reduced global shape (4d array)
         self.N0 = N0 = prod(global_shape[:axis])
         self.N1 = N1 = global_shape[axis]
@@ -288,6 +290,7 @@ cdef class AlltoallvTranspose:
     cdef readonly double[::1] RL_buffer
     cdef readonly int local_col_count
     cdef readonly int local_row_count
+    cdef readonly object array_namespace
 
     def __init__(self, global_shape, chunk_shape, dtype, axis, pycomm, array_namespace):
         logger.debug("Building MPI transpose plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, global_shape, axis))
