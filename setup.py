@@ -182,6 +182,7 @@ for name in pyx_modules:
 # Runtime requirements
 install_requires = [
     "array-api-compat",
+    "cupy >= 14.0.0",
     "docopt",
     "h5py >= 3.0.0",
     "matplotlib >= 3.7.0",
