@@ -337,11 +337,20 @@ cdef class AlltoallvTranspose:
         self.CL_buffer = np.zeros(CL_size, dtype=np.float64)
         self.RL_buffer = np.zeros(RL_size, dtype=np.float64)
 
+    def _to_cpu(self, A):
+        try:
+            import cupy as cp
+        except ImportError:
+            cp = None
+        if cp is None:
+            return A
+        return cp.asnumpy(A)
+
     def localize_rows(self, CL, RL):
         """Transpose from column-local to row-local data distribution."""
         # Create reduced views of data arrays
-        CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=np.float64, buffer=CL)
-        RL_reduced = np.ndarray(shape=self.RL_reduced_shape, dtype=np.float64, buffer=RL)
+        CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=np.float64, buffer=self._to_cpu(CL))
+        RL_reduced = np.ndarray(shape=self.RL_reduced_shape, dtype=np.float64, buffer=self._to_cpu(RL))
         # Rearrange from input array to buffer
         if self.local_col_count > 0:
             self.split_rows(CL_reduced, self.CL_buffer)
@@ -355,8 +364,8 @@ cdef class AlltoallvTranspose:
     def localize_columns(self, RL, CL):
         """Transpose from row-local to column-local data distribution."""
         # Create reduced views of data arrays
-        CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=np.float64, buffer=CL)
-        RL_reduced = np.ndarray(shape=self.RL_reduced_shape, dtype=np.float64, buffer=RL)
+        CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=np.float64, buffer=self._to_cpu(CL))
+        RL_reduced = np.ndarray(shape=self.RL_reduced_shape, dtype=np.float64, buffer=self._to_cpu(RL))
         # Rearrange from input array to buffer
         if self.local_row_count > 0:
             self.split_columns(RL_reduced, self.RL_buffer)
