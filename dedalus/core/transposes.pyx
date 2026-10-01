@@ -3,6 +3,7 @@ cimport numpy as cnp
 import numpy as np
 import math
 from math import prod
+import array_api_compat
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -57,8 +58,11 @@ cdef class FFTWTranspose:
     cdef cfftw.fftw_plan CL_to_RL_plan
     cdef cfftw.fftw_plan RL_to_CL_plan
 
-    def __init__(self, global_shape, chunk_shape, dtype, axis, pycomm):
+    def __init__(self, global_shape, chunk_shape, dtype, axis, pycomm, array_namespace):
         logger.debug("Building FFTW transpose plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, global_shape, axis))
+        # array_namespace is needed for compatibility with AlltoallvTranspose.
+        if not array_api_compat.is_numpy_namespace(array_namespace):
+            raise ValueError("Passed array namespace must be NumPy.")
         # Attributes
         self.global_shape = global_shape = np.array(global_shape, dtype=np.int32)
         self.chunk_shape = chunk_shape = np.array(chunk_shape, dtype=np.int32)
@@ -285,7 +289,7 @@ cdef class AlltoallvTranspose:
     cdef readonly int local_col_count
     cdef readonly int local_row_count
 
-    def __init__(self, global_shape, chunk_shape, dtype, axis, pycomm):
+    def __init__(self, global_shape, chunk_shape, dtype, axis, pycomm, array_namespace):
         logger.debug("Building MPI transpose plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, global_shape, axis))
         # Attributes
         self.global_shape = global_shape = np.array(global_shape, dtype=np.int32)
@@ -293,6 +297,7 @@ cdef class AlltoallvTranspose:
         self.datasize = {np.float64: 1, np.complex128: 2}[np.dtype(dtype).type]
         self.axis = axis
         self.pycomm = pycomm
+        self.array_namespace = array_namespace
         # Reduced global shape (4d array)
         self.N0 = N0 = prod(global_shape[:axis])
         self.N1 = N1 = global_shape[axis]
@@ -337,20 +342,17 @@ cdef class AlltoallvTranspose:
         self.CL_buffer = np.zeros(CL_size, dtype=np.float64)
         self.RL_buffer = np.zeros(RL_size, dtype=np.float64)
 
-    def _to_cpu(self, A):
-        try:
-            import cupy as cp
-        except ImportError:
-            cp = None
-        if cp is None:
-            return A
-        return cp.asnumpy(A)
-
     def localize_rows(self, CL, RL):
         """Transpose from column-local to row-local data distribution."""
+        on_device = not array_api_compat.is_numpy_namespace(self.array_namespace)
+        # If on GPU copy them to host to perform exchange.
+        if on_device:
+            RL_device = RL  # Keep for later to write back.
+            RL = self.array_namespace.assnumpy(RL)  # Copy it on the cpu.
+            CL = np.zeros(CL.shape, dtype=CL.dtype)
         # Create reduced views of data arrays
-        CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=np.float64, buffer=self._to_cpu(CL))
-        RL_reduced = np.ndarray(shape=self.RL_reduced_shape, dtype=np.float64, buffer=self._to_cpu(RL))
+        CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=np.float64, buffer=CL)
+        RL_reduced = np.ndarray(shape=self.RL_reduced_shape, dtype=np.float64, buffer=RL)
         # Rearrange from input array to buffer
         if self.local_col_count > 0:
             self.split_rows(CL_reduced, self.CL_buffer)
@@ -360,12 +362,20 @@ cdef class AlltoallvTranspose:
         # Rearrange from buffer to output array
         if self.local_row_count > 0:
             self.combine_columns(self.RL_buffer, RL_reduced)
+            if on_device:
+                RL_device.set(RL)
 
     def localize_columns(self, RL, CL):
         """Transpose from row-local to column-local data distribution."""
+        on_device = not array_api_compat.is_numpy_namespace(self.array_namespace)
+        # If on GPU copy them to host to perform exchange.
+        if on_device:
+            CL_device = CL
+            CL = self.array_namespace.asnumpy(CL)
+            RL = np.zeros(RL.shape, dtype=RL.dtype)
         # Create reduced views of data arrays
-        CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=np.float64, buffer=self._to_cpu(CL))
-        RL_reduced = np.ndarray(shape=self.RL_reduced_shape, dtype=np.float64, buffer=self._to_cpu(RL))
+        CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=np.float64, buffer=CL)
+        RL_reduced = np.ndarray(shape=self.RL_reduced_shape, dtype=np.float64, buffer=RL)
         # Rearrange from input array to buffer
         if self.local_row_count > 0:
             self.split_columns(RL_reduced, self.RL_buffer)
@@ -375,6 +385,8 @@ cdef class AlltoallvTranspose:
         # Rearrange from buffer to output array
         if self.local_col_count > 0:
             self.combine_rows(self.CL_buffer, CL_reduced)
+            if on_device:
+                CL_device.set(CL)
 
     @cython.boundscheck(False)
     cdef void split_rows(self, double[:,:,:,::1] A, double[::1] B):
