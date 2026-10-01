@@ -147,6 +147,7 @@ def custom_spsm(a, b, alpha=1.0, lower=True, unit_diag=False, transa=False, spsm
     from cupy_backends.cuda.libs import cusparse as _cusparse
     from cupy.cuda import device as _device
     from cupyx.cusparse import SpMatDescriptor, DnMatDescriptor
+
     if not cusparse.check_availability('spsm'):
         raise RuntimeError('spsm is not available.')
 
@@ -307,7 +308,6 @@ def custom_spsm(a, b, alpha=1.0, lower=True, unit_diag=False, transa=False, spsm
         #_cusparse.spSM_destroyDescr(spsm_descr)
         pass
 
-
 def custom_SuperLU_solve(self, rhs, trans='N', spsm_descr=None):
     """Custom SuperLU solve wrapper to save spsm_descr, since spsm_analysis takes lots of time."""
     """Solves linear system of equations with one or several right-hand sides.
@@ -324,8 +324,8 @@ def custom_SuperLU_solve(self, rhs, trans='N', spsm_descr=None):
         cupy.ndarray:
             Solution vector(s)
     """  # NOQA
-    from cupyx import cusparse
     import cupy
+    from cupyx import cusparse
     from cupyx.scipy.sparse.linalg._solve import _should_use_spsm
 
     if not isinstance(rhs, cupy.ndarray):
@@ -339,10 +339,15 @@ def custom_SuperLU_solve(self, rhs, trans='N', spsm_descr=None):
     if trans not in ('N', 'T', 'H'):
         raise ValueError('trans must be \'N\', \'T\', or \'H\'')
 
-    if cusparse.check_availability('spsm') and _should_use_spsm(rhs):
+    if cusparse.check_availability('spsm') and _should_use_spsm():
         def spsm(A, B, lower, transa, spsm_descr):
             return custom_spsm(A, B, lower=lower, transa=transa, spsm_descr=spsm_descr)
         sm = spsm
+    elif cusparse.check_availability('csrsm2'):
+        def csrsm2(A, B, lower, transa, spsm_descr):
+            cusparse.csrsm2(A, B, lower=lower, transa=transa)
+            return B, None
+        sm = csrsm2
     else:
         raise NotImplementedError
 
@@ -413,8 +418,8 @@ class CustomCupyUpperTriangularSolver:
         """
         from cupyx import cusparse
         from cupyx.scipy import sparse
-        import cupy
         from cupyx.scipy.sparse.linalg._solve import _should_use_spsm
+        import cupy
 
         A = self.matrix
 
@@ -437,7 +442,7 @@ class CustomCupyUpperTriangularSolver:
         if A.dtype.char not in 'fdFD':
             raise TypeError(f'unsupported dtype (actual: {A.dtype})')
 
-        if cusparse.check_availability('spsm') and _should_use_spsm(b):
+        if cusparse.check_availability('spsm') and _should_use_spsm():
             if not (sparse.isspmatrix_csr(A) or
                     sparse.isspmatrix_csc(A) or
                     sparse.isspmatrix_coo(A)):
@@ -461,7 +466,7 @@ class CustomCupyUpperTriangularSolver:
 
             cusparse.csrsm2(A, x, lower=lower, unit_diag=unit_diagonal)
         else:
-            assert False
+            raise NotImplementedError()
 
         # TODO: Check if need this (breaks things for float32?)
         # if x.dtype.char in 'fF':
