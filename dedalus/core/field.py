@@ -487,7 +487,7 @@ class Current(Operand):
     def _create_buffer(self, buffer_size):
         """Create buffer for Field data."""
         xp = self.array_namespace
-        if xp == np:
+        if self.dist.is_numpy_namespace:
             if buffer_size == 0:
                 # FFTW doesn't like allocating size-0 arrays
                 return np.zeros((0,), dtype=np.float64)
@@ -496,7 +496,7 @@ class Current(Operand):
                 alloc_doubles = buffer_size // 8
                 return fftw.create_buffer(alloc_doubles)
         else:
-            return xp.zeros(buffer_size)
+            return xp.zeros(buffer_size, dtype=np.uint8)
 
     @CachedAttribute
     def _dealias_buffer_size(self):
