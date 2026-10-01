@@ -291,6 +291,8 @@ cdef class AlltoallvTranspose:
     cdef readonly int local_col_count
     cdef readonly int local_row_count
     cdef readonly object array_namespace
+    cdef readonly object bufferRL
+    cdef readonly object bufferCL
 
     def __init__(self, global_shape, chunk_shape, dtype, axis, pycomm, array_namespace):
         logger.debug("Building MPI transpose plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, global_shape, axis))
@@ -301,6 +303,8 @@ cdef class AlltoallvTranspose:
         self.axis = axis
         self.pycomm = pycomm
         self.array_namespace = array_namespace
+        self.bufferRL = None
+        self.bufferCL = None
         # Reduced global shape (4d array)
         self.N0 = N0 = prod(global_shape[:axis])
         self.N1 = N1 = global_shape[axis]
@@ -352,7 +356,9 @@ cdef class AlltoallvTranspose:
         if on_device:
             RL_device = RL  # Keep for later to write back.
             CL = self.array_namespace.asnumpy(CL)  # Copy it on the cpu.
-            RL = np.zeros(RL.shape, dtype=RL.dtype)
+            if self.bufferRL is None:
+                self.bufferRL = np.zeros(RL.shape, dtype=RL.dtype)
+            RL = self.bufferRL
         # Create reduced views of data arrays
         CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=np.float64, buffer=CL)
         RL_reduced = np.ndarray(shape=self.RL_reduced_shape, dtype=np.float64, buffer=RL)
@@ -375,7 +381,9 @@ cdef class AlltoallvTranspose:
         if on_device:
             CL_device = CL
             RL = self.array_namespace.asnumpy(RL)
-            CL = np.zeros(CL.shape, dtype=CL.dtype)
+            if self.bufferCL is None:
+                self.bufferCL = np.zeros(CL.shape, dtype=CL.dtype)
+            CL = self.bufferCL
         # Create reduced views of data arrays
         CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=np.float64, buffer=CL)
         RL_reduced = np.ndarray(shape=self.RL_reduced_shape, dtype=np.float64, buffer=RL)
