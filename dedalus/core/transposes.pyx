@@ -267,6 +267,7 @@ cdef class AlltoallvTranspose:
     cdef readonly int datasize, axis
     cdef readonly int N0, N1, N2, N3
     cdef readonly int[::1] global_shape
+    cdef readonly int[::1] chunk_shape
     cdef readonly int[::1] col_starts
     cdef readonly int[::1] row_starts
     cdef readonly int[::1] col_ends
