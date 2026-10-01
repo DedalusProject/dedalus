@@ -308,30 +308,6 @@ def custom_spsm(a, b, alpha=1.0, lower=True, unit_diag=False, transa=False, spsm
         #_cusparse.spSM_destroyDescr(spsm_descr)
         pass
 
-
-def _should_use_spsm(rhs):
-    """Determine if the spSM solve path should be used.
-
-    Copied from CuPy.
-    """
-    import cupy
-    from cupyx.scipy.sparse.linalg._solve import _should_use_spsm as _cupy_should_use_spsm
-
-    impl = getattr(_should_use_spsm, "_impl", None)
-    if impl is None:
-        # In CuPy 13 the function requiered an argument, but this was dropped in 14.
-        try:
-            def impl(rhs):
-                return _cupy_should_use_spsm(rhs)
-            return impl(rhs)
-        except TypeError:
-            def impl(rhs):
-                return _cupy_should_use_spsm()
-            return impl(rhs)
-        finally:
-            setattr(_should_use_spsm, "_impl", impl)
-    return impl(rhs)
-
 def custom_SuperLU_solve(self, rhs, trans='N', spsm_descr=None):
     """Custom SuperLU solve wrapper to save spsm_descr, since spsm_analysis takes lots of time."""
     """Solves linear system of equations with one or several right-hand sides.
@@ -348,8 +324,9 @@ def custom_SuperLU_solve(self, rhs, trans='N', spsm_descr=None):
         cupy.ndarray:
             Solution vector(s)
     """  # NOQA
-    from cupyx import cusparse
     import cupy
+    from cupyx import cusparse
+    from cupyx.scipy.sparse.linalg._solve import _should_use_spsm
 
     if not isinstance(rhs, cupy.ndarray):
         raise TypeError('ojb must be cupy.ndarray')
@@ -362,7 +339,7 @@ def custom_SuperLU_solve(self, rhs, trans='N', spsm_descr=None):
     if trans not in ('N', 'T', 'H'):
         raise ValueError('trans must be \'N\', \'T\', or \'H\'')
 
-    if cusparse.check_availability('spsm') and _should_use_spsm(rhs):
+    if cusparse.check_availability('spsm') and _should_use_spsm():
         def spsm(A, B, lower, transa, spsm_descr):
             return custom_spsm(A, B, lower=lower, transa=transa, spsm_descr=spsm_descr)
         sm = spsm
@@ -441,6 +418,7 @@ class CustomCupyUpperTriangularSolver:
         """
         from cupyx import cusparse
         from cupyx.scipy import sparse
+        from cupyx.scipy.sparse.linalg._solve import _should_use_spsm
         import cupy
 
         A = self.matrix
@@ -464,7 +442,7 @@ class CustomCupyUpperTriangularSolver:
         if A.dtype.char not in 'fdFD':
             raise TypeError(f'unsupported dtype (actual: {A.dtype})')
 
-        if cusparse.check_availability('spsm') and _should_use_spsm(b):
+        if cusparse.check_availability('spsm') and _should_use_spsm():
             if not (sparse.isspmatrix_csr(A) or
                     sparse.isspmatrix_csc(A) or
                     sparse.isspmatrix_coo(A)):
