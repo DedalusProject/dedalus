@@ -351,8 +351,8 @@ cdef class AlltoallvTranspose:
         # If on GPU copy them to host to perform exchange.
         if on_device:
             RL_device = RL  # Keep for later to write back.
-            RL = self.array_namespace.asnumpy(RL)  # Copy it on the cpu.
-            CL = np.zeros(CL.shape, dtype=CL.dtype)
+            CL = self.array_namespace.asnumpy(CL)  # Copy it on the cpu.
+            RL = np.zeros(RL.shape, dtype=RL.dtype)
         # Create reduced views of data arrays
         CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=np.float64, buffer=CL)
         RL_reduced = np.ndarray(shape=self.RL_reduced_shape, dtype=np.float64, buffer=RL)
@@ -374,8 +374,8 @@ cdef class AlltoallvTranspose:
         # If on GPU copy them to host to perform exchange.
         if on_device:
             CL_device = CL
-            CL = self.array_namespace.asnumpy(CL)
-            RL = np.zeros(RL.shape, dtype=RL.dtype)
+            RL = self.array_namespace.asnumpy(RL)
+            CL = np.zeros(CL.shape, dtype=CL.dtype)
         # Create reduced views of data arrays
         CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=np.float64, buffer=CL)
         RL_reduced = np.ndarray(shape=self.RL_reduced_shape, dtype=np.float64, buffer=RL)
