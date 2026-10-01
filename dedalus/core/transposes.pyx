@@ -267,6 +267,7 @@ cdef class AlltoallvTranspose:
     cdef readonly int datasize, axis
     cdef readonly int N0, N1, N2, N3
     cdef readonly int[::1] global_shape
+    cdef readonly int[::1] chunk_shape
     cdef readonly int[::1] col_starts
     cdef readonly int[::1] row_starts
     cdef readonly int[::1] col_ends
@@ -284,10 +285,11 @@ cdef class AlltoallvTranspose:
     cdef readonly int local_col_count
     cdef readonly int local_row_count
 
-    def __init__(self, global_shape, dtype, axis, pycomm):
+    def __init__(self, global_shape, chunk_shape, dtype, axis, pycomm):
         logger.debug("Building MPI transpose plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, global_shape, axis))
         # Attributes
-        self.global_shape = global_shape = global_shape.astype(np.int32)
+        self.global_shape = global_shape = np.array(global_shape, dtype=np.int32)
+        self.chunk_shape = chunk_shape = np.array(chunk_shape, dtype=np.int32)
         self.datasize = {np.float64: 1, np.complex128: 2}[np.dtype(dtype).type]
         self.axis = axis
         self.pycomm = pycomm
@@ -296,9 +298,18 @@ cdef class AlltoallvTranspose:
         self.N1 = N1 = global_shape[axis]
         self.N2 = N2 = global_shape[axis+1]
         self.N3 = N3 = prod(global_shape[axis+2:]) * self.datasize
-        # Blocks
-        B1 = math.ceil(global_shape[axis] / pycomm.size)
-        B2 = math.ceil(global_shape[axis+1] / pycomm.size)
+        # Chunks
+        C1 = chunk_shape[axis]
+        C2 = chunk_shape[axis+1]
+        # Global number of chunks
+        CG1 = -(-global_shape[axis] // C1)  # ceil
+        CG2 = -(-global_shape[axis+1] // C2)  # ceil
+        # Local number of chunks
+        CL1 = -(-CG1 // pycomm.size)
+        CL2 = -(-CG2 // pycomm.size)
+        # Local number of elements
+        B1 = C1 * CL1
+        B2 = C2 * CL2 
         # Starting indices
         ranks = np.arange(pycomm.size, dtype=np.int32)
         self.col_starts = col_starts = np.minimum(B2*ranks, global_shape[axis+1])

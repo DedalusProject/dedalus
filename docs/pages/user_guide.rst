@@ -8,6 +8,7 @@ General user guide:
 
     problem_formulations
     performance_tips
+    gpu
     configuration
     troubleshooting
     changes_from_v2

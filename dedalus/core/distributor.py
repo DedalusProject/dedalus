@@ -10,12 +10,15 @@ from collections import OrderedDict
 from math import prod
 import numbers
 from weakref import WeakSet
+import array_api_compat
+import warnings
 
 from .coords import CoordinateSystem, DirectProduct
 from ..tools.array import reshape_vector
 from ..tools.cache import CachedMethod, CachedAttribute
 from ..tools.config import config
 from ..tools.general import OrderedSet
+from ..extras.flow_tools import GlobalArrayReducer
 
 logger = logging.getLogger(__name__.split('.')[-1])
 GROUP_TRANSFORMS = config['transforms'].getboolean('GROUP_TRANSFORMS')
@@ -39,12 +42,16 @@ class Distributor:
 
     Parameters
     ----------
-    dim : int
-        Dimension
+    coordsystems : CoordinateSystem or tuple of CoordinateSystems
+        Problem coordinate systems
     comm : MPI communicator, optional
         MPI communicator (default: comm world)
     mesh : tuple of ints, optional
         Process mesh for parallelization (default: 1-D mesh of available processes)
+    dtype : data type, optional
+        Default data type for fields (default: None)
+    array_namespace : array namespace or string, optional
+        Array namespace for field data (e.g. numpy or cupy, default: numpy)
 
     Attributes
     ----------
@@ -74,7 +81,7 @@ class Distributor:
     states) and the paths between them (D transforms and R transposes).
     """
 
-    def __init__(self, coordsystems, comm=None, mesh=None, dtype=None):
+    def __init__(self, coordsystems, comm=None, mesh=None, dtype=None, array_namespace=np):
         # Accept single coordsys in place of tuple/list
         if not isinstance(coordsystems, (tuple, list)):
             coordsystems = (coordsystems,)
@@ -115,6 +122,18 @@ class Distributor:
         self._build_layouts()
         # Keep set of weak field references
         self.fields = WeakSet()
+        # Array module
+        if isinstance(array_namespace, str):
+            self.array_namespace = getattr(array_api_compat, array_namespace)
+        else:
+            self.array_namespace = array_api_compat.array_namespace(array_namespace.zeros(0))
+        self.is_numpy_namespace = array_api_compat.is_numpy_namespace(self.array_namespace)
+        self.is_cupy_namespace = array_api_compat.is_cupy_namespace(self.array_namespace)
+        # Array reducer
+        self.array_reducer = GlobalArrayReducer(self.comm_cart)
+        # Warnings for non-Cartesian problems
+        if self.is_cupy_namespace and any(cs.curvilinear for cs in self.coordsystems):
+            warnings.warn("Non-Cartesian coordinate systems not yet supported on GPU.")
 
     @CachedAttribute
     def cs_by_axis(self):
@@ -255,11 +274,12 @@ class Distributor:
         return I
 
     def local_grid(self, basis, scale=None):
+        xp = self.array_namespace
         # TODO: remove from bases and do it all here?
         if scale is None:
             scale = 1
         if basis.dim == 1:
-            return basis.local_grid(self, scale=scale)
+            return xp.asarray(basis.local_grid(self, scale=scale))
         else:
             raise ValueError("Use `local_grids` for multidimensional bases.")
 
@@ -292,16 +312,20 @@ class Distributor:
     #     return tuple(grids)
 
     def local_grids(self, *bases, scales=None):
+        xp = self.array_namespace
         scales = self.remedy_scales(scales)
         grids = []
         for basis in bases:
             basis_scales = scales[self.first_axis(basis):self.last_axis(basis)+1]
-            grids.extend(basis.local_grids(self, scales=basis_scales))
+            local_grids = basis.local_grids(self, scales=basis_scales)
+            for grid in local_grids:
+                grids.append(xp.asarray(grid))
         return grids
 
     def local_modes(self, basis):
         # TODO: remove from bases and do it all here?
-        return basis.local_modes(self)
+        xp = self.array_namespace
+        return xp.asarray(basis.local_modes(self))
 
     @CachedAttribute
     def default_nonconst_groups(self):
