@@ -355,15 +355,16 @@ cdef class AlltoallvTranspose:
         on_device = not array_api_compat.is_numpy_namespace(self.array_namespace)
         # If on GPU copy them to host to perform exchange there.
         if on_device:
+            import cupyx
             RL_device = RL  # Keep for later to write back.
-            # TODO: This is slow as it does not use pinned memory. Find out why.
-            CL = self.array_namespace.asnumpy(CL)
+            CL_device = CL
+            CL = cupyx.empty_like_pinned(CL_device)
+            CL = CL_device.get(out=CL)
             # Because `RL` is on the device, but the exchange is performed on the host
             # we need a result buffer on the host which is then copied back to the
             # device. Caching it, instead of allocating it all the time, is for some
             # reason faster. Find out why.
             if self.bufferRL is None:
-                import cupyx
                 # NOTE: This is potentially unsafe, because the shape of `RL` might change.
                 self.bufferRL = cupyx.empty_like_pinned(RL)
             RL = self.bufferRL
@@ -389,10 +390,12 @@ cdef class AlltoallvTranspose:
         on_device = not array_api_compat.is_numpy_namespace(self.array_namespace)
         # If on GPU copy them to host to perform exchange. See `localize_rows()` for more more.
         if on_device:
+            import cupyx
             CL_device = CL
-            RL = self.array_namespace.asnumpy(RL)
+            RL_device = RL
+            RL = cupyx.empty_like_pinned(RL_device)
+            RL = RL_device.get(out=RL)
             if self.bufferCL is None:
-                import cupyx
                 self.bufferCL = cupyx.empty_like_pinned(CL)
             CL = self.bufferCL
         # Create reduced views of data arrays
