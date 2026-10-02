@@ -370,6 +370,8 @@ cdef class AlltoallvTranspose:
             RL_device = RL  # Keep for later to write back.
             if self.bufferRL is None:
                 # NOTE: This is potentially unsafe, because the shape of `RL` might change.
+                # Before the buffer is adapted a stream synchronize has to be performed to
+                # ensure that the operation has finished.
                 self.bufferRL = cupyx.empty_like_pinned(RL)
             RL = self.bufferRL
         # Create reduced views of data arrays
