@@ -360,13 +360,13 @@ cdef class AlltoallvTranspose:
         on_device = not array_api_compat.is_numpy_namespace(self.array_namespace)
         # If on GPU copy them to host to perform exchange there.
         if on_device:
-            # Create a pinned temporary on the host for storing the output.
+            # Create a pinned temporary on the host for storing the output. This call must
+            # be performed first and must be blocking. For more see the explanation for `set()`.
             CL_pinned = cupyx.empty_like_pinned(CL)
             CL = CL.get(out=CL_pinned, blocking=True)
-            # Because `RL` is on the device, but the exchange is performed on the host
-            # we need a result buffer on the host which is then copied back to the
-            # device. Caching it, instead of allocating it all the time, is for some
-            # reason faster. Find out why.
+            # We need to cache the temporary host buffer `RL`/`self.bufferRL` to ensure that
+            # the memory is not reused by someone else when it goes out of scope. See explanation
+            # for `set()` bellow.
             RL_device = RL  # Keep for later to write back.
             if self.bufferRL is None:
                 # NOTE: This is potentially unsafe, because the shape of `RL` might change.
@@ -384,14 +384,20 @@ cdef class AlltoallvTranspose:
         # Rearrange from buffer to output array
         if self.local_row_count > 0:
             self.combine_columns(self.RL_buffer, RL_reduced)
-            # If we are on the device the exchange was performed on the host, we need to
-            # copy it back.
+            # Copy temporary exchange buffer back to device.
             if on_device:
-                # NOTE: The documentation claims that this call is synchronous, because
-                # we do not set the stream and hence use the legacy stream and we are
-                # using pinned memory. However, the tracing is indicating that it is
-                # asynchronous. This is kind of safe because `RL` is pinned and cached
-                # in `self`, although not nice.
+                # Because we are using pinned memory, the H2D `set()` is asynchronous (same
+                # behaviour as Which is `{hip, cuda}MemcpyAsync()`) This means once `set()`
+                # returns the transfer might still be ongoing. From a memory perspective
+                # this is safe, because `RL` is cached by `self` and will thus not be
+                # collected and the backing memory will not be reused by another array.
+                # The case where _this_ method is called right after is also safe, because
+                # `RL` is not used before the D2H transfer, which is blocking, of `CL` has
+                # completed. In fact the `CL` transfer will not start until `RL` has been
+                # fully written back.
+                # Allowing this, i.e. not synchronize on the current stream, has the benefit
+                # that new GPU tasks can be submitted, but it leaves `self` in kind of an
+                # invalid state.
                 RL_device.set(RL)
 
     def localize_columns(self, RL, CL):
@@ -400,7 +406,7 @@ cdef class AlltoallvTranspose:
         # If on GPU copy them to host to perform exchange. See `localize_rows()` for more more.
         if on_device:
             RL_pinned = cupyx.empty_like_pinned(RL)
-            RL = RL.get(out=RL_pinned)
+            RL = RL.get(out=RL_pinned, blocking=True)
             CL_device = CL
             if self.bufferCL is None:
                 self.bufferCL = cupyx.empty_like_pinned(CL)
