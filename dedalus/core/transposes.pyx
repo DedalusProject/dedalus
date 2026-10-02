@@ -303,6 +303,7 @@ cdef class AlltoallvTranspose:
         self.axis = axis
         self.pycomm = pycomm
         self.array_namespace = array_namespace
+        # Buffer needed in `localize_rows()` and `localize_cols()` in GPU mode.
         self.bufferRL = None
         self.bufferCL = None
         # Reduced global shape (4d array)
@@ -352,11 +353,17 @@ cdef class AlltoallvTranspose:
     def localize_rows(self, CL, RL):
         """Transpose from column-local to row-local data distribution."""
         on_device = not array_api_compat.is_numpy_namespace(self.array_namespace)
-        # If on GPU copy them to host to perform exchange.
+        # If on GPU copy them to host to perform exchange there.
         if on_device:
             RL_device = RL  # Keep for later to write back.
-            CL = self.array_namespace.asnumpy(CL)  # Copy it on the cpu.
+            # TODO: This is slow as it does not use pinned memory. Find out why.
+            CL = self.array_namespace.asnumpy(CL)
+            # Because `RL` is on the device, but the exchange is performed on the host
+            # we need a result buffer on the host which is then copied back to the
+            # device. Caching it, instead of allocating it all the time, is for some
+            # reason faster. Find out why.
             if self.bufferRL is None:
+                # NOTE: This is potentially unsafe, because the shape of `RL` might change.
                 self.bufferRL = np.zeros(RL.shape, dtype=RL.dtype)
             RL = self.bufferRL
         # Create reduced views of data arrays
@@ -371,13 +378,15 @@ cdef class AlltoallvTranspose:
         # Rearrange from buffer to output array
         if self.local_row_count > 0:
             self.combine_columns(self.RL_buffer, RL_reduced)
+            # If we are on the device the exchange was performed on the host, we need to
+            # copy it back.
             if on_device:
                 RL_device.set(RL)
 
     def localize_columns(self, RL, CL):
         """Transpose from row-local to column-local data distribution."""
         on_device = not array_api_compat.is_numpy_namespace(self.array_namespace)
-        # If on GPU copy them to host to perform exchange.
+        # If on GPU copy them to host to perform exchange. See `localize_rows()` for more more.
         if on_device:
             CL_device = CL
             RL = self.array_namespace.asnumpy(RL)
