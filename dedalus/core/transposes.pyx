@@ -19,6 +19,11 @@ from ..tools.config import config
 IN_PLACE = config['parallelism-fftw'].getboolean('IN_PLACE')
 PLANNING_RIGOR = config['parallelism-fftw'].get('PLANNING_RIGOR')
 
+try:
+    import cupyx
+except ImportError:
+    cupyx = None
+
 
 cdef class FFTWTranspose:
     """
@@ -355,7 +360,6 @@ cdef class AlltoallvTranspose:
         on_device = not array_api_compat.is_numpy_namespace(self.array_namespace)
         # If on GPU copy them to host to perform exchange there.
         if on_device:
-            import cupyx
             # Create a pinned temporary on the host for storing the output.
             CL_pinned = cupyx.empty_like_pinned(CL)
             CL = CL.get(out=CL_pinned, blocking=True)
@@ -395,7 +399,6 @@ cdef class AlltoallvTranspose:
         on_device = not array_api_compat.is_numpy_namespace(self.array_namespace)
         # If on GPU copy them to host to perform exchange. See `localize_rows()` for more more.
         if on_device:
-            import cupyx
             RL_pinned = cupyx.empty_like_pinned(RL)
             RL = RL.get(out=RL_pinned)
             CL_device = CL
