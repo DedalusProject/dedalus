@@ -3,6 +3,7 @@ cimport numpy as cnp
 import numpy as np
 import math
 from math import prod
+import array_api_compat
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -17,6 +18,11 @@ from ..libraries.fftw cimport fftw_c_api as cfftw
 from ..tools.config import config
 IN_PLACE = config['parallelism-fftw'].getboolean('IN_PLACE')
 PLANNING_RIGOR = config['parallelism-fftw'].get('PLANNING_RIGOR')
+
+try:
+    import cupyx
+except ImportError:
+    cupyx = None
 
 
 cdef class FFTWTranspose:
@@ -56,15 +62,20 @@ cdef class FFTWTranspose:
     cdef readonly cnp.ndarray RL_view
     cdef cfftw.fftw_plan CL_to_RL_plan
     cdef cfftw.fftw_plan RL_to_CL_plan
+    cdef readonly object array_namespace
 
-    def __init__(self, global_shape, chunk_shape, dtype, axis, pycomm):
+    def __init__(self, global_shape, chunk_shape, dtype, axis, pycomm, array_namespace):
         logger.debug("Building FFTW transpose plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, global_shape, axis))
+        # array_namespace is needed for compatibility with AlltoallvTranspose.
+        if not array_api_compat.is_numpy_namespace(array_namespace):
+            raise ValueError("Passed array namespace must be NumPy.")
         # Attributes
         self.global_shape = global_shape = np.array(global_shape, dtype=np.int32)
         self.chunk_shape = chunk_shape = np.array(chunk_shape, dtype=np.int32)
         self.datasize = {np.float64: 1, np.complex128: 2}[np.dtype(dtype).type]
         self.axis = axis
         self.pycomm = pycomm
+        self.array_namespace = array_namespace
         # Reduced global shape (4d array)
         self.N0 = N0 = prod(global_shape[:axis])
         self.N1 = N1 = global_shape[axis]
@@ -284,8 +295,11 @@ cdef class AlltoallvTranspose:
     cdef readonly double[::1] RL_buffer
     cdef readonly int local_col_count
     cdef readonly int local_row_count
+    cdef readonly object array_namespace
+    cdef readonly object bufferRL
+    cdef readonly object bufferCL
 
-    def __init__(self, global_shape, chunk_shape, dtype, axis, pycomm):
+    def __init__(self, global_shape, chunk_shape, dtype, axis, pycomm, array_namespace):
         logger.debug("Building MPI transpose plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, global_shape, axis))
         # Attributes
         self.global_shape = global_shape = np.array(global_shape, dtype=np.int32)
@@ -293,6 +307,10 @@ cdef class AlltoallvTranspose:
         self.datasize = {np.float64: 1, np.complex128: 2}[np.dtype(dtype).type]
         self.axis = axis
         self.pycomm = pycomm
+        self.array_namespace = array_namespace
+        # Buffer needed in `localize_rows()` and `localize_cols()` in GPU mode.
+        self.bufferRL = None
+        self.bufferCL = None
         # Reduced global shape (4d array)
         self.N0 = N0 = prod(global_shape[:axis])
         self.N1 = N1 = global_shape[axis]
@@ -339,6 +357,23 @@ cdef class AlltoallvTranspose:
 
     def localize_rows(self, CL, RL):
         """Transpose from column-local to row-local data distribution."""
+        on_device = not array_api_compat.is_numpy_namespace(self.array_namespace)
+        # If on GPU copy them to host to perform exchange there.
+        if on_device:
+            # Create a pinned temporary on the host for storing the output. This call must
+            # be performed first and must be blocking. For more see the explanation for `set()`.
+            CL_pinned = cupyx.empty_like_pinned(CL)
+            CL = CL.get(out=CL_pinned, blocking=True)
+            # We need to cache the temporary host buffer `RL`/`self.bufferRL` to ensure that
+            # the memory is not reused by someone else when it goes out of scope. See explanation
+            # for `set()` bellow.
+            RL_device = RL  # Keep for later to write back.
+            if self.bufferRL is None:
+                # NOTE: This is potentially unsafe, because the shape of `RL` might change.
+                # Before the buffer is adapted a stream synchronize has to be performed to
+                # ensure that the operation has finished.
+                self.bufferRL = cupyx.empty_like_pinned(RL)
+            RL = self.bufferRL
         # Create reduced views of data arrays
         CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=np.float64, buffer=CL)
         RL_reduced = np.ndarray(shape=self.RL_reduced_shape, dtype=np.float64, buffer=RL)
@@ -351,9 +386,33 @@ cdef class AlltoallvTranspose:
         # Rearrange from buffer to output array
         if self.local_row_count > 0:
             self.combine_columns(self.RL_buffer, RL_reduced)
+            # Copy temporary exchange buffer back to device.
+            if on_device:
+                # Because we are using pinned memory, the H2D `set()` is asynchronous (same
+                # behaviour as Which is `{hip, cuda}MemcpyAsync()`) This means once `set()`
+                # returns the transfer might still be ongoing. From a memory perspective
+                # this is safe, because `RL` is cached by `self` and will thus not be
+                # collected and the backing memory will not be reused by another array.
+                # The case where _this_ method is called right after is also safe, because
+                # `RL` is not used before the D2H transfer, which is blocking, of `CL` has
+                # completed. In fact the `CL` transfer will not start until `RL` has been
+                # fully written back.
+                # Allowing this, i.e. not synchronize on the current stream, has the benefit
+                # that new GPU tasks can be submitted, but it leaves `self` in kind of an
+                # invalid state.
+                RL_device.set(RL)
 
     def localize_columns(self, RL, CL):
         """Transpose from row-local to column-local data distribution."""
+        on_device = not array_api_compat.is_numpy_namespace(self.array_namespace)
+        # If on GPU copy them to host to perform exchange. See `localize_rows()` for more more.
+        if on_device:
+            RL_pinned = cupyx.empty_like_pinned(RL)
+            RL = RL.get(out=RL_pinned, blocking=True)
+            CL_device = CL
+            if self.bufferCL is None:
+                self.bufferCL = cupyx.empty_like_pinned(CL)
+            CL = self.bufferCL
         # Create reduced views of data arrays
         CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=np.float64, buffer=CL)
         RL_reduced = np.ndarray(shape=self.RL_reduced_shape, dtype=np.float64, buffer=RL)
@@ -366,6 +425,8 @@ cdef class AlltoallvTranspose:
         # Rearrange from buffer to output array
         if self.local_col_count > 0:
             self.combine_rows(self.CL_buffer, CL_reduced)
+            if on_device:
+                CL_device.set(CL)
 
     @cython.boundscheck(False)
     cdef void split_rows(self, double[:,:,:,::1] A, double[::1] B):

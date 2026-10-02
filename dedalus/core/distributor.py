@@ -761,7 +761,14 @@ class Transpose:
             # Add axis for components
             full_sub_shape = (ncomp,) + sub_shape
             full_chunk_shape = (ncomp,) + chunk_shape
-            return TransposePlanner(full_sub_shape, full_chunk_shape, dtype, axis+1, self.comm_sub)
+            return TransposePlanner(
+                full_sub_shape,
+                full_chunk_shape,
+                dtype,
+                axis+1,
+                self.comm_sub,
+                self.layout0.dist.array_namespace
+            )
 
     def _single_plan(self, field):
         """Build single transpose plan."""
