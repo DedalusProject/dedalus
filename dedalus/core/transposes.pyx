@@ -356,14 +356,14 @@ cdef class AlltoallvTranspose:
         # If on GPU copy them to host to perform exchange there.
         if on_device:
             import cupyx
-            RL_device = RL  # Keep for later to write back.
-            CL_device = CL
-            CL = cupyx.empty_like_pinned(CL_device)
-            CL = CL_device.get(out=CL)
+            # Create a pinned temporary on the host for storing the output.
+            CL_pinned = cupyx.empty_like_pinned(CL)
+            CL = CL.get(out=CL_pinned, blocking=True)
             # Because `RL` is on the device, but the exchange is performed on the host
             # we need a result buffer on the host which is then copied back to the
             # device. Caching it, instead of allocating it all the time, is for some
             # reason faster. Find out why.
+            RL_device = RL  # Keep for later to write back.
             if self.bufferRL is None:
                 # NOTE: This is potentially unsafe, because the shape of `RL` might change.
                 self.bufferRL = cupyx.empty_like_pinned(RL)
@@ -383,6 +383,11 @@ cdef class AlltoallvTranspose:
             # If we are on the device the exchange was performed on the host, we need to
             # copy it back.
             if on_device:
+                # NOTE: The documentation claims that this call is synchronous, because
+                # we do not set the stream and hence use the legacy stream and we are
+                # using pinned memory. However, the tracing is indicating that it is
+                # asynchronous. This is kind of safe because `RL` is pinned and cached
+                # in `self`, although not nice.
                 RL_device.set(RL)
 
     def localize_columns(self, RL, CL):
@@ -391,10 +396,9 @@ cdef class AlltoallvTranspose:
         # If on GPU copy them to host to perform exchange. See `localize_rows()` for more more.
         if on_device:
             import cupyx
+            RL_pinned = cupyx.empty_like_pinned(RL)
+            RL = RL.get(out=RL_pinned)
             CL_device = CL
-            RL_device = RL
-            RL = cupyx.empty_like_pinned(RL_device)
-            RL = RL_device.get(out=RL)
             if self.bufferCL is None:
                 self.bufferCL = cupyx.empty_like_pinned(CL)
             CL = self.bufferCL
