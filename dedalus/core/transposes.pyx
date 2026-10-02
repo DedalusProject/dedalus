@@ -365,7 +365,7 @@ cdef class AlltoallvTranspose:
             if self.bufferRL is None:
                 import cupyx
                 # NOTE: This is potentially unsafe, because the shape of `RL` might change.
-                self.bufferRL = cupyx.empty_like_pinned(RL.shape, dtype=RL.dtype)
+                self.bufferRL = cupyx.empty_like_pinned(RL)
             RL = self.bufferRL
         # Create reduced views of data arrays
         CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=np.float64, buffer=CL)
@@ -393,7 +393,7 @@ cdef class AlltoallvTranspose:
             RL = self.array_namespace.asnumpy(RL)
             if self.bufferCL is None:
                 import cupyx
-                self.bufferCL = cupyx.empty_like_pinned(CL.shape, dtype=CL.dtype)
+                self.bufferCL = cupyx.empty_like_pinned(CL)
             CL = self.bufferCL
         # Create reduced views of data arrays
         CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=np.float64, buffer=CL)
