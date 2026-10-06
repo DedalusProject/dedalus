@@ -25,6 +25,7 @@ GROUP_TRANSFORMS = config['transforms'].getboolean('GROUP_TRANSFORMS')
 TRANSPOSE_LIBRARY = config['parallelism'].get('TRANSPOSE_LIBRARY')
 GROUP_TRANSPOSES = config['parallelism'].getboolean('GROUP_TRANSPOSES')
 SYNC_TRANSPOSES = config['parallelism'].getboolean('SYNC_TRANSPOSES')
+GPU_AWARE_MPI = config['parallelism'].getboolean('GPU_AWARE_MPI')
 
 if TRANSPOSE_LIBRARY.upper() == 'FFTW':
     from .transposes import FFTWTranspose as TransposePlanner
@@ -761,13 +762,15 @@ class Transpose:
             # Add axis for components
             full_sub_shape = (ncomp,) + sub_shape
             full_chunk_shape = (ncomp,) + chunk_shape
+            kwargs = {'device_mpi': GPU_AWARE_MPI} if TRANSPOSE_LIBRARY.upper() == 'MPI' else {}
             return TransposePlanner(
                 full_sub_shape,
                 full_chunk_shape,
                 dtype,
                 axis+1,
                 self.comm_sub,
-                self.layout0.dist.array_namespace
+                self.layout0.dist.array_namespace,
+                **kwargs
             )
 
     def _single_plan(self, field):

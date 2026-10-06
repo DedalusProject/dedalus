@@ -24,6 +24,31 @@ try:
 except ImportError:
     cupyx = None
 
+def _pack(A, B, displs, starts, ends, axis, nproc):
+    """Copy blocks of the 4D array A (split along `axis`) into consecutive segments of the flat buffer B."""
+    index = [slice(None)] * 4
+    for p in range(nproc):
+        if ends[p] > starts[p]:
+            index[axis] = slice(starts[p], ends[p])
+            block = A[tuple(index)]
+            B[displs[p]:displs[p] + block.size].reshape(block.shape)[...] = block
+
+
+def _unpack(B, A, displs, starts, ends, axis, nproc):
+    """Inverse of _pack."""
+    index = [slice(None)] * 4
+    for p in range(nproc):
+        if ends[p] > starts[p]:
+            index[axis] = slice(starts[p], ends[p])
+            block = A[tuple(index)]
+            block[...] = B[displs[p]:displs[p] + block.size].reshape(block.shape)
+
+
+def _sync(xp):
+    """Wait for queued GPU work (CuPy only)."""
+    if array_api_compat.is_cupy_namespace(xp):
+        import cupy
+        cupy.cuda.get_current_stream().synchronize()
 
 cdef class FFTWTranspose:
     """
@@ -297,8 +322,10 @@ cdef class AlltoallvTranspose:
     cdef readonly object array_namespace
     cdef readonly object bufferRL
     cdef readonly object bufferCL
+    cdef readonly bint device_mpi
+    cdef readonly object CL_dev, RL_dev
 
-    def __init__(self, global_shape, chunk_shape, dtype, axis, pycomm, array_namespace):
+    def __init__(self, global_shape, chunk_shape, dtype, axis, pycomm, array_namespace, device_mpi=False):
         logger.debug("Building MPI transpose plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, global_shape, axis))
         # Attributes
         self.global_shape = global_shape = np.array(global_shape, dtype=np.int32)
@@ -411,6 +438,36 @@ cdef class AlltoallvTranspose:
             if self.gpu:
                 # Set asynchronously since pinned buffers are kept here and RL_device.get is blocking
                 CL_device.set(CL, blocking=False)
+
+    def _device_buffers(self):
+        if self.CL_dev is None:
+            xp = self.array_namespace
+            self.CL_dev = xp.empty(self.CL_buffer.shape[0], dtype=np.float64)
+            self.RL_dev = xp.empty(self.RL_buffer.shape[0], dtype=np.float64)
+
+    def _device_rows(self, CL, RL):
+        """localize_rows with device buffers passed directly to GPU-aware MPI."""
+        self._device_buffers()
+        A = CL.view(np.float64).reshape(tuple(self.CL_reduced_shape))
+        B = RL.view(np.float64).reshape(tuple(self.RL_reduced_shape))
+        _pack(A, self.CL_dev, self.CL_displs, self.row_starts, self.row_ends, 1, self.pycomm.size)
+        _sync(self.array_namespace)
+        self.pycomm.Alltoallv([self.CL_dev, self.CL_counts, self.CL_displs, MPI.DOUBLE],
+                              [self.RL_dev, self.RL_counts, self.RL_displs, MPI.DOUBLE])
+        _sync(self.array_namespace)
+        _unpack(self.RL_dev, B, self.RL_displs, self.col_starts, self.col_ends, 2, self.pycomm.size)
+
+    def _device_columns(self, RL, CL):
+        """localize_columns with device buffers passed directly to GPU-aware MPI."""
+        self._device_buffers()
+        A = CL.view(np.float64).reshape(tuple(self.CL_reduced_shape))
+        B = RL.view(np.float64).reshape(tuple(self.RL_reduced_shape))
+        _pack(B, self.RL_dev, self.RL_displs, self.col_starts, self.col_ends, 2, self.pycomm.size)
+        _sync(self.array_namespace)
+        self.pycomm.Alltoallv([self.RL_dev, self.RL_counts, self.RL_displs, MPI.DOUBLE],
+                              [self.CL_dev, self.CL_counts, self.CL_displs, MPI.DOUBLE])
+        _sync(self.array_namespace)
+        _unpack(self.CL_dev, A, self.CL_displs, self.row_starts, self.row_ends, 1, self.pycomm.size)
 
     @cython.boundscheck(False)
     cdef void split_rows(self, double[:,:,:,::1] A, double[::1] B):
