@@ -2,10 +2,9 @@
 
 from collections import deque, OrderedDict
 import numpy as np
-from scipy.linalg import blas
 
 from .system import CoeffSystem
-from ..tools.array import apply_sparse
+from ..tools.array import apply_sparse, get_axpy
 
 
 # Public interface
@@ -71,7 +70,8 @@ class MultistepIMEX:
     def __init__(self, solver):
 
         self.solver = solver
-        self.RHS = CoeffSystem(solver.subproblems, dtype=solver.dtype)
+        self.xp = solver.dist.array_namespace
+        self.RHS = CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=self.xp)
 
         # Create deque for storing recent timesteps
         self.dt = deque([0.] * self.steps)
@@ -81,16 +81,17 @@ class MultistepIMEX:
         self.LX = LX = deque()
         self.F = F = deque()
         for j in range(self.amax):
-            MX.append(CoeffSystem(solver.subproblems, dtype=solver.dtype))
+            MX.append(CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=self.xp))
         for j in range(self.bmax):
-            LX.append(CoeffSystem(solver.subproblems, dtype=solver.dtype))
+            LX.append(CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=self.xp))
         for j in range(self.cmax):
-            F.append(CoeffSystem(solver.subproblems, dtype=solver.dtype))
+            F.append(CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=self.xp))
 
         # Attributes
         self._iteration = 0
         self._LHS_params = None
-        self.axpy = blas.get_blas_funcs('axpy', dtype=solver.dtype)
+        self.axpy_xp = get_axpy(self.xp, solver.dtype)
+        self.axpy_np = get_axpy(np, solver.dtype)
 
     def step(self, dt, wall_time):
         """Advance solver by one timestep."""
@@ -110,14 +111,13 @@ class MultistepIMEX:
         LX = self.LX
         F = self.F
         RHS = self.RHS
-        axpy = self.axpy
 
         # Cycle and compute timesteps
         self.dt.rotate()
         self.dt[0] = dt
 
         # Compute IMEX coefficients
-        a, b, c = self.compute_coefficients(self.dt, self._iteration)
+        a, b, c = self.compute_coefficients(self.dt, self._iteration, self.solver.dtype)
         self._iteration += 1
 
         # Update RHS components and LHS matrices
@@ -143,8 +143,8 @@ class MultistepIMEX:
         evaluator.require_coeff_space(state_fields)
         for sp in subproblems:
             spX = sp.gather_inputs(state_fields)
-            apply_sparse(sp.M_min, spX, axis=0, out=MX0.get_subdata(sp))
-            apply_sparse(sp.L_min, spX, axis=0, out=LX0.get_subdata(sp))
+            apply_sparse(sp.M_min_device, spX, axis=0, out=MX0.get_subdata(sp))
+            apply_sparse(sp.L_min_device, spX, axis=0, out=LX0.get_subdata(sp))
 
         # Evaluate F(X0)
         evaluator.evaluate_scheduled(iteration=iteration, wall_time=wall_time, sim_time=sim_time, timestep=dt)
@@ -154,16 +154,16 @@ class MultistepIMEX:
 
         # Build RHS
         if RHS.data.size:
-            np.multiply(c[1], F0.data, out=RHS.data)
+            self.xp.multiply(c[1], F0.data, out=RHS.data)
             for j in range(2, len(c)):
                 # RHS.data += c[j] * F[j-1].data
-                axpy(a=c[j], x=F[j-1].data, y=RHS.data)
+                self.axpy_xp(a=c[j], x=F[j-1].data, y=RHS.data)
             for j in range(1, len(a)):
                 # RHS.data -= a[j] * MX[j-1].data
-                axpy(a=-a[j], x=MX[j-1].data, y=RHS.data)
+                self.axpy_xp(a=-a[j], x=MX[j-1].data, y=RHS.data)
             for j in range(1, len(b)):
                 # RHS.data -= b[j] * LX[j-1].data
-                axpy(a=-b[j], x=LX[j-1].data, y=RHS.data)
+                self.axpy_xp(a=-b[j], x=LX[j-1].data, y=RHS.data)
 
         # Solve
         # Ensure coeff space before subsystem scatters
@@ -171,13 +171,14 @@ class MultistepIMEX:
             field.preset_layout('c')
         for sp in subproblems:
             if update_LHS:
+                # Form updated LHS matrix on CPU for factorization
                 if STORE_EXPANDED_MATRICES:
                     # sp.LHS.data[:] = a0*sp.M_exp.data + b0*sp.L_exp.data
                     np.multiply(a0, sp.M_exp.data, out=sp.LHS.data)
-                    axpy(a=b0, x=sp.L_exp.data, y=sp.LHS.data)
+                    self.axpy_np(a=b0, x=sp.L_exp.data, y=sp.LHS.data)
                 else:
                     sp.LHS = (a0*sp.M_min + b0*sp.L_min)  # CREATES TEMPORARY
-                sp.LHS_solver = solver.matsolver(sp.LHS, solver)
+                sp.LHS_solver = solver.matsolver(sp.LHS, array_namespace=self.xp, solver=solver)
             # Slice out valid subdata, skipping invalid components
             spRHS = RHS.get_subdata(sp)
             spX = sp.LHS_solver.solve(spRHS)  # CREATES TEMPORARY
@@ -203,11 +204,11 @@ class CNAB1(MultistepIMEX):
     steps = 1
 
     @classmethod
-    def compute_coefficients(self, timesteps, iteration):
+    def compute_coefficients(self, timesteps, iteration, dtype):
 
-        a = np.zeros(self.amax+1)
-        b = np.zeros(self.bmax+1)
-        c = np.zeros(self.cmax+1)
+        a = np.zeros(self.amax+1, dtype=dtype)
+        b = np.zeros(self.bmax+1, dtype=dtype)
+        c = np.zeros(self.cmax+1, dtype=dtype)
 
         k0, *rest = timesteps
 
@@ -236,11 +237,11 @@ class SBDF1(MultistepIMEX):
     steps = 1
 
     @classmethod
-    def compute_coefficients(self, timesteps, iteration):
+    def compute_coefficients(self, timesteps, iteration, dtype):
 
-        a = np.zeros(self.amax+1)
-        b = np.zeros(self.bmax+1)
-        c = np.zeros(self.cmax+1)
+        a = np.zeros(self.amax+1, dtype=dtype)
+        b = np.zeros(self.bmax+1, dtype=dtype)
+        c = np.zeros(self.cmax+1, dtype=dtype)
 
         k0, *rest = timesteps
 
@@ -268,14 +269,14 @@ class CNAB2(MultistepIMEX):
     steps = 2
 
     @classmethod
-    def compute_coefficients(self, timesteps, iteration):
+    def compute_coefficients(self, timesteps, iteration, dtype):
 
         if iteration < 1:
-            return CNAB1.compute_coefficients(timesteps, iteration)
+            return CNAB1.compute_coefficients(timesteps, iteration, dtype)
 
-        a = np.zeros(self.amax+1)
-        b = np.zeros(self.bmax+1)
-        c = np.zeros(self.cmax+1)
+        a = np.zeros(self.amax+1, dtype=dtype)
+        b = np.zeros(self.bmax+1, dtype=dtype)
+        c = np.zeros(self.cmax+1, dtype=dtype)
 
         k1, k0, *rest = timesteps
         w1 = k1 / k0
@@ -306,14 +307,14 @@ class MCNAB2(MultistepIMEX):
     steps = 2
 
     @classmethod
-    def compute_coefficients(self, timesteps, iteration):
+    def compute_coefficients(self, timesteps, iteration, dtype):
 
         if iteration < 1:
-            return CNAB1.compute_coefficients(timesteps, iteration)
+            return CNAB1.compute_coefficients(timesteps, iteration, dtype)
 
-        a = np.zeros(self.amax+1)
-        b = np.zeros(self.bmax+1)
-        c = np.zeros(self.cmax+1)
+        a = np.zeros(self.amax+1, dtype=dtype)
+        b = np.zeros(self.bmax+1, dtype=dtype)
+        c = np.zeros(self.cmax+1, dtype=dtype)
 
         k1, k0, *rest = timesteps
         w1 = k1 / k0
@@ -345,14 +346,14 @@ class SBDF2(MultistepIMEX):
     steps = 2
 
     @classmethod
-    def compute_coefficients(self, timesteps, iteration):
+    def compute_coefficients(self, timesteps, iteration, dtype):
 
         if iteration < 1:
-            return SBDF1.compute_coefficients(timesteps, iteration)
+            return SBDF1.compute_coefficients(timesteps, iteration, dtype=dtype)
 
-        a = np.zeros(self.amax+1)
-        b = np.zeros(self.bmax+1)
-        c = np.zeros(self.cmax+1)
+        a = np.zeros(self.amax+1, dtype=dtype)
+        b = np.zeros(self.bmax+1, dtype=dtype)
+        c = np.zeros(self.cmax+1, dtype=dtype)
 
         k1, k0, *rest = timesteps
         w1 = k1 / k0
@@ -383,14 +384,14 @@ class CNLF2(MultistepIMEX):
     steps = 2
 
     @classmethod
-    def compute_coefficients(self, timesteps, iteration):
+    def compute_coefficients(self, timesteps, iteration, dtype):
 
         if iteration < 1:
-            return CNAB1.compute_coefficients(timesteps, iteration)
+            return CNAB1.compute_coefficients(timesteps, iteration, dtype)
 
-        a = np.zeros(self.amax+1)
-        b = np.zeros(self.bmax+1)
-        c = np.zeros(self.cmax+1)
+        a = np.zeros(self.amax+1, dtype=dtype)
+        b = np.zeros(self.bmax+1, dtype=dtype)
+        c = np.zeros(self.cmax+1, dtype=dtype)
 
         k1, k0, *rest = timesteps
         w1 = k1 / k0
@@ -422,14 +423,14 @@ class SBDF3(MultistepIMEX):
     steps = 3
 
     @classmethod
-    def compute_coefficients(self, timesteps, iteration):
+    def compute_coefficients(self, timesteps, iteration, dtype):
 
         if iteration < 2:
-            return SBDF2.compute_coefficients(timesteps, iteration)
+            return SBDF2.compute_coefficients(timesteps, iteration, dtype)
 
-        a = np.zeros(self.amax+1)
-        b = np.zeros(self.bmax+1)
-        c = np.zeros(self.cmax+1)
+        a = np.zeros(self.amax+1, dtype=dtype)
+        b = np.zeros(self.bmax+1, dtype=dtype)
+        c = np.zeros(self.cmax+1, dtype=dtype)
 
         k2, k1, k0, *rest = timesteps
         w2 = k2 / k1
@@ -463,14 +464,14 @@ class SBDF4(MultistepIMEX):
     steps = 4
 
     @classmethod
-    def compute_coefficients(self, timesteps, iteration):
+    def compute_coefficients(self, timesteps, iteration, dtype):
 
         if iteration < 3:
-            return SBDF3.compute_coefficients(timesteps, iteration)
+            return SBDF3.compute_coefficients(timesteps, iteration, dtype)
 
-        a = np.zeros(self.amax+1)
-        b = np.zeros(self.bmax+1)
-        c = np.zeros(self.cmax+1)
+        a = np.zeros(self.amax+1, dtype=dtype)
+        b = np.zeros(self.bmax+1, dtype=dtype)
+        c = np.zeros(self.cmax+1, dtype=dtype)
 
         k3, k2, k1, k0, *rest = timesteps
         w3 = k3 / k2
@@ -539,15 +540,22 @@ class RungeKuttaIMEX:
     def __init__(self, solver):
 
         self.solver = solver
-        self.RHS = CoeffSystem(solver.subproblems, dtype=solver.dtype)
+        self.xp = solver.dist.array_namespace
+        self.RHS = CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=self.xp)
 
         # Create coefficient systems for multistep history
-        self.MX0 = CoeffSystem(solver.subproblems, dtype=solver.dtype)
-        self.LX = [CoeffSystem(solver.subproblems, dtype=solver.dtype) for i in range(self.stages)]
-        self.F = [CoeffSystem(solver.subproblems, dtype=solver.dtype) for i in range(self.stages)]
+        self.MX0 = CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=self.xp)
+        self.LX = [CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=self.xp) for i in range(self.stages)]
+        self.F = [CoeffSystem(solver.subproblems, dtype=solver.dtype, array_namespace=self.xp) for i in range(self.stages)]
 
         self._LHS_params = None
-        self.axpy = blas.get_blas_funcs('axpy', dtype=solver.dtype)
+        self.axpy_xp = get_axpy(self.xp, solver.dtype)
+        self.axpy_np = get_axpy(np, solver.dtype)
+
+        # Cast scheme coefficients
+        self.A = self.A.astype(self.solver.dtype)
+        self.H = self.H.astype(self.solver.dtype)
+        self.c = self.c.astype(self.solver.dtype)
 
     def step(self, dt, wall_time):
         """Advance solver by one timestep."""
@@ -572,7 +580,6 @@ class RungeKuttaIMEX:
         H = self.H
         c = self.c
         k = dt
-        axpy = self.axpy
 
         # Check on updating LHS
         update_LHS = (k != self._LHS_params)
@@ -584,11 +591,12 @@ class RungeKuttaIMEX:
 
         # Compute M.X(n,0) and L.X(n,0)
         # Ensure coeff space before subsystem gathers
+        # TODO: add option to evaluate this matrix-free (e.g for high-bandwidth NCCs when using fast transforms)
         evaluator.require_coeff_space(state_fields)
         for sp in subproblems:
             spX = sp.gather_inputs(state_fields)
-            apply_sparse(sp.M_min, spX, axis=0, out=MX0.get_subdata(sp))
-            apply_sparse(sp.L_min, spX, axis=0, out=LX0.get_subdata(sp))
+            apply_sparse(sp.M_min_device, spX, axis=0, out=MX0.get_subdata(sp))
+            apply_sparse(sp.L_min_device, spX, axis=0, out=LX0.get_subdata(sp))
 
         # Compute stages
         # (M + k Hii L).X(n,i) = M.X(n,0) + k Aij F(n,j) - k Hij L.X(n,j)
@@ -601,7 +609,7 @@ class RungeKuttaIMEX:
                 evaluator.require_coeff_space(state_fields)
                 for sp in subproblems:
                     spX = sp.gather_inputs(state_fields)
-                    apply_sparse(sp.L_min, spX, axis=0, out=LXi.get_subdata(sp))
+                    apply_sparse(sp.L_min_device, spX, axis=0, out=LXi.get_subdata(sp))
 
             # Compute F(n,i-1), only doing output on first evaluation
             if i == 1:
@@ -615,12 +623,12 @@ class RungeKuttaIMEX:
 
             # Construct RHS(n,i)
             if RHS.data.size:
-                np.copyto(RHS.data, MX0.data)
+                self.xp.copyto(RHS.data, MX0.data)
                 for j in range(0, i):
                     # RHS.data += (k * A[i,j]) * F[j].data
-                    axpy(a=(k*A[i,j]), x=F[j].data, y=RHS.data)
+                    self.axpy_xp(a=(k*A[i,j]), x=F[j].data, y=RHS.data)
                     # RHS.data -= (k * H[i,j]) * LX[j].data
-                    axpy(a=-(k*H[i,j]), x=LX[j].data, y=RHS.data)
+                    self.axpy_xp(a=-(k*H[i,j]), x=LX[j].data, y=RHS.data)
 
             # Solve for stage
             k_Hii = k * H[i,i]
@@ -630,13 +638,14 @@ class RungeKuttaIMEX:
             for sp in subproblems:
                 # Construct LHS(n,i)
                 if update_LHS:
+                    # Form updated LHS matrix on CPU for factorization
                     if STORE_EXPANDED_MATRICES:
                         # sp.LHS.data[:] = sp.M_exp.data + k_Hii*sp.L_exp.data
                         np.copyto(sp.LHS.data, sp.M_exp.data)
-                        axpy(a=k_Hii, x=sp.L_exp.data, y=sp.LHS.data)
+                        self.axpy_np(a=k_Hii, x=sp.L_exp.data, y=sp.LHS.data)
                     else:
                         sp.LHS = (sp.M_min + k_Hii*sp.L_min)  # CREATES TEMPORARY
-                    sp.LHS_solvers[i] = solver.matsolver(sp.LHS, solver)
+                    sp.LHS_solvers[i] = solver.matsolver(sp.LHS, array_namespace=self.xp, solver=solver)
                 # Slice out valid subdata, skipping invalid components
                 spRHS = RHS.get_subdata(sp)
                 spX = sp.LHS_solvers[i].solve(spRHS)  # CREATES TEMPORARY

@@ -51,6 +51,7 @@ class Future(Operand):
         self.original_args = tuple(args)
         self.out = out
         self.dist = unify_attributes(args, 'dist', require=False)
+        self.array_namespace = self.dist.array_namespace
         #self.domain = Domain(self.dist, self.bases)
         self._grid_layout = self.dist.grid_layout
         self._coeff_layout = self.dist.coeff_layout
