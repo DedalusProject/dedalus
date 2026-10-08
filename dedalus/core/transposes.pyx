@@ -335,6 +335,7 @@ cdef class AlltoallvTranspose:
         self.pycomm = pycomm
         self.array_namespace = array_namespace
         self.gpu = not array_api_compat.is_numpy_namespace(array_namespace)
+        self.device_mpi = device_mpi
         # Reduced global shape (4d array)
         self.N0 = N0 = prod(global_shape[:axis])
         self.N1 = N1 = global_shape[axis]
@@ -392,6 +393,8 @@ cdef class AlltoallvTranspose:
 
     def localize_rows(self, CL, RL):
         """Transpose from column-local to row-local data distribution."""
+        if self.gpu and self.device_mpi:
+            return self._device_rows(CL, RL)
         # Copy to pinned memory if on GPU
         if self.gpu:
             CL_device = CL
@@ -417,6 +420,8 @@ cdef class AlltoallvTranspose:
 
     def localize_columns(self, RL, CL):
         """Transpose from row-local to column-local data distribution."""
+        if self.gpu and self.device_mpi:
+            return self._device_columns(RL, CL)
         # Copy to pinned memory if on GPU
         if self.gpu:
             RL_device = RL
