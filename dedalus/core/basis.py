@@ -2826,6 +2826,10 @@ class ConvertConstantAnnulus(operators.ConvertConstant, operators.PolarMOperator
             raise ValueError("This should never happen.")
 
 
+# Cached S2 NCC polynomial stacks (SphereBasis._ncc_polynomial_stack)
+_S2_NCC_STACKS = {}
+
+
 class SphereBasis(SpinBasis, metaclass=CachedClass):
 
     dim = 2
@@ -3390,44 +3394,66 @@ class SphereBasis(SpinBasis, metaclass=CachedClass):
                 operator = S(+1)**abs(order)
         return (-1)**(max(0,-order))*operator(size - 1 + max(abs(m), abs(spintotal)), m, spintotal).square.astype(np.float64)
 
+    @staticmethod
+    def _ncc_polynomial_stack(ncc_basis, arg_basis, m, spintotal_arg, spintotal_ncc, Nmat, nterms):
+        """
+        Q[n] = prefactor @ phi_n(J) for n < nterms, cached: the NCC matrix of coefficients c is sum_n c_n Q[n].
+        phi_n are the Jacobi polynomials (a = b = |spintotal_ncc|) of J = Cos on the argument's spin space, from the forward recurrence
+        that the Clenshaw sum evaluates (phi_0 = f0 I, phi_{n+1} = A_n phi_n + B_n phi_{n-1}); they depend only on the bases, m, the spins
+        and the size, so one stack serves every radial mode and component of every NCC with the same key.
+        """
+        key = (ncc_basis, arg_basis, m, spintotal_arg, spintotal_ncc, Nmat, nterms)
+        Q = _S2_NCC_STACKS.get(key)
+        if Q is None:
+            a_ncc = b_ncc = abs(spintotal_ncc)
+            J = arg_basis.operator_matrix('Cos', m, spintotal_arg, size=Nmat)
+            A, B = clenshaw.jacobi_recursion(Nmat, a_ncc, b_ncc, J)
+            f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0]
+            prefactor = ncc_basis.sine_multiplication_matrix(m, spintotal_arg, spintotal_ncc, size=Nmat)
+            prefactor = prefactor.toarray() if sparse.issparse(prefactor) else np.asarray(prefactor)
+            def dense(M):
+                return M.toarray() if sparse.issparse(M) else np.asarray(M) * np.identity(Nmat)
+            Q = np.empty((nterms, Nmat, Nmat))
+            phi_prev = np.zeros((Nmat, Nmat))
+            phi = f0 * np.identity(Nmat)
+            for n in range(nterms):
+                Q[n] = prefactor @ phi
+                if n + 1 < nterms:
+                    phi, phi_prev = dense(A[n]) @ phi + dense(B[n]) @ phi_prev, phi
+            _S2_NCC_STACKS[key] = Q
+        return Q
+
     @classmethod
     def _last_axis_component_ncc_matrix(cls, subproblem, ncc_basis, arg_basis, out_basis, coeffs, ncc_comp, arg_comp, out_comp, ncc_tensorsig, arg_tensorsig, out_tensorsig, cutoff):
         m = subproblem.group[0]  # HACK
         spintotal_arg = out_basis.spintotal(arg_tensorsig, arg_comp)
         spintotal_ncc = out_basis.spintotal(ncc_tensorsig, ncc_comp)
         spintotal_out = out_basis.spintotal(out_tensorsig, out_comp)
-        # Jacobi parameters
-        a_ncc = abs(spintotal_ncc)
-        b_ncc = abs(spintotal_ncc)
         N = ncc_basis.ell_size(m)
         N0 = ncc_basis.ell_size(0)
         # Pad for dealiasing with conversion
         Nmat = 3*((N0+1)//2)
-        J = arg_basis.operator_matrix('Cos', m, spintotal_arg, size=Nmat)
-        A, B = clenshaw.jacobi_recursion(Nmat, a_ncc, b_ncc, J)
-        f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0] * sparse.identity(Nmat)
-        # Sine and sign prefactors
-        prefactor = ncc_basis.sine_multiplication_matrix(m, spintotal_arg, spintotal_ncc, size=Nmat)
+        # ell_min of data is based off |m|, but ell_min of matrix takes into account |s| and |m|
+        lmin_out = max(abs(spintotal_out) - abs(m), 0)
+        lmin_arg = max(abs(spintotal_arg) - abs(m), 0)
+        def ncc_sum(c, dtype):
+            # sum_n c_n Q[n] over the coefficients above the cutoff (matrix_clenshaw's rule), placed in the (N, N) matrix
+            c = np.asarray(c).ravel()[abs(spintotal_ncc):N0]
+            keep = np.nonzero(np.abs(c) > cutoff)[0]
+            matrix = sparse.lil_matrix((N, N), dtype=dtype)
+            if keep.size:
+                Q = cls._ncc_polynomial_stack(ncc_basis, arg_basis, m, spintotal_arg, spintotal_ncc, Nmat, c.size)
+                S = np.tensordot(c[keep].astype(dtype), Q[keep], axes=(0, 0))
+                matrix[lmin_out:, lmin_arg:] = S[:N-lmin_out, :N-lmin_arg]
+            return matrix
         if ncc_basis.dtype == np.float64:
-            coeffs_cos_filter = coeffs[0].ravel()[abs(spintotal_ncc):N0]
-            coeffs_msin_filter = coeffs[1].ravel()[abs(spintotal_ncc):N0]
-            # ell_min of data is based off |m|, but ell_min of matrix takes into account |s| and |m|
-            lmin_out = max(abs(spintotal_out) - abs(m), 0)
-            lmin_arg = max(abs(spintotal_arg) - abs(m), 0 )
-            matrix_cos = sparse.lil_matrix((N, N))
-            matrix_cos[lmin_out:,lmin_arg:] = (prefactor @ clenshaw.matrix_clenshaw(coeffs_cos_filter, A, B, f0, cutoff=cutoff))[:N-lmin_out,:N-lmin_arg]
-            matrix_msin = sparse.lil_matrix((N, N))
-            matrix_msin[lmin_out:,lmin_arg:] = (prefactor @ clenshaw.matrix_clenshaw(coeffs_msin_filter, A, B, f0, cutoff=cutoff))[:N-lmin_out,:N-lmin_arg]
+            matrix_cos = ncc_sum(coeffs[0], np.float64)
+            matrix_msin = ncc_sum(coeffs[1], np.float64)
             matrix = sparse.bmat([[matrix_cos, -matrix_msin], [matrix_msin, matrix_cos]], format='csr')
             if m >= arg_basis.mmax//4:
                 matrix = matrix[::-1, ::-1] #for second half of m's, ell's go in opposite direction
         elif ncc_basis.dtype == np.complex128:
-            coeffs_filter = coeffs.ravel()[abs(spintotal_ncc):N0]
-            # ell_min of data is based off |m|, but ell_min of matrix takes into account |s| and |m|
-            lmin_out = max(abs(spintotal_out) - abs(m), 0)
-            lmin_arg = max(abs(spintotal_arg) - abs(m), 0 )
-            matrix = sparse.lil_matrix((N, N), dtype=np.complex128)
-            matrix[lmin_out:,lmin_arg:] = (prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff))[:N-lmin_out,:N-lmin_arg]
+            matrix = ncc_sum(coeffs, np.complex128)
             if m < 0:
                 matrix = matrix[::-1, ::-1] #for negative m, ell's go in opposite direction
         return matrix.tocsr()
@@ -3836,6 +3862,10 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
         return slice(nmin, nmax+1)
 
 
+# Cached shell radial NCC polynomial stacks (ShellRadialBasis._radial_ncc_polynomial_stack)
+_SHELL_NCC_STACKS = {}
+
+
 class ShellRadialBasis(RegularityBasis, metaclass=CachedClass):
 
     def __init__(self, coordsys, radial_size, dtype, radii=(1,2), alpha=(-0.5,-0.5), dealias=(1,), k=0, radius_library=None):
@@ -4003,16 +4033,26 @@ class ShellRadialBasis(RegularityBasis, metaclass=CachedClass):
     @CachedMethod
     def operator_matrix(self, op, l, regtotal, size=None):
         l = l + regtotal
+        if size is None:
+            size = self.n_size(l)
+        if op in ['D+', 'D-', 'L']:
+            return self._ell_operator_matrix(op, l, size)
+        # The other shell operators do not depend on l: build once per (op, size)
+        return self._shell_operator_matrix(op, size)
+
+    @CachedMethod
+    def _ell_operator_matrix(self, op, l, size):
         if op in ['D+', 'D-']:
             p = int(op[-1]+'1')
             operator = dedalus_sphere.shell.operator(3, self.radii, 'D', self.alpha)(p, l)
-        elif op == 'L':
+        else:
             D = dedalus_sphere.shell.operator(3, self.radii, 'D', self.alpha)
             operator = D(-1, l+1) @ D(+1, l)
-        else:
-            operator = dedalus_sphere.shell.operator(3, self.radii, op, self.alpha)
-        if size is None:
-            size = self.n_size(l)
+        return operator(size, self.k).square.astype(np.float64)
+
+    @CachedMethod
+    def _shell_operator_matrix(self, op, size):
+        operator = dedalus_sphere.shell.operator(3, self.radii, op, self.alpha)
         return operator(size, self.k).square.astype(np.float64)
 
     def jacobi_conversion(self, l, dk, size=None):
@@ -4024,9 +4064,14 @@ class ShellRadialBasis(RegularityBasis, metaclass=CachedClass):
 
     @CachedMethod
     def conversion_matrix(self, l, regtotal, dk):
+        # The shell conversion does not depend on l or regtotal: build once per (dk, size)
+        return self._conversion_matrix(dk, self.n_size(l))
+
+    @CachedMethod
+    def _conversion_matrix(self, dk, size):
         E = dedalus_sphere.shell.operator(3, self.radii, 'E', self.alpha)
         operator = E**dk
-        return operator(self.n_size(l), self.k).square.astype(np.float64)
+        return operator(size, self.k).square.astype(np.float64)
 
     @staticmethod
     def _nmin(ell):
@@ -4060,15 +4105,62 @@ class ShellRadialBasis(RegularityBasis, metaclass=CachedClass):
             if np.isscalar(coeffs[0]):
                 matrix = (prefactor @ clenshaw.matrix_clenshaw(coeffs, A, B, f0, cutoff=cutoff))[:N,:N]
             else:
+                # Meridional NCC: the Kronecker-Clenshaw sum, with the prefactor and the dealiasing folded in, is
+                #     sum_n kron(V_n, R_n),  R_n = (prefactor @ phi_n(J))[:N, :N],
+                # V_n the angular matrix of radial mode n (included when its norm exceeds the cutoff, as kronecker_clenshaw does) and
+                # phi_n the radial Jacobi polynomials of J (phi_0 = f0 I, phi_{n+1} = A_n phi_n + B_n phi_{n-1}).  R_n depend only on the
+                # bases, the regularity and the sizes (cached).  Each block (i, j) of the result is sum_n V_n[i, j] R_n: one dense product
+                # over the union pattern of the V_n, in chunks, assembled directly in sparse form.
                 coeff_vals, coeff_norms = coeffs
+                keep = [n for n in range(len(coeff_norms)) if coeff_norms[n] > cutoff]
                 i0, i1 = coeff_vals[0].shape
-                I0 = sparse.identity(i0)
-                I1 = sparse.identity(i1)
-                matrix = sparse.kron(I0, prefactor) @ clenshaw.kronecker_clenshaw(coeff_vals, coeff_norms, A, B, f0, cutoff=cutoff)
-                dealias0 = sparse.kron(I0, sparse.eye(N, Nmat))
-                dealias1 = sparse.kron(I1, sparse.eye(N, Nmat))
-                matrix = dealias0 @ matrix @ dealias1.T
+                if not keep:
+                    return sparse.csr_matrix((i0*N, i1*N), dtype=np.complex128)
+                R = cls._radial_ncc_polynomial_stack(ncc_basis, arg_radial_basis, ell, regtotal_arg, a_ncc, b_ncc, Nmat, N, keep[-1]+1)
+                V = [sparse.coo_matrix(coeff_vals[n]) for n in keep]
+                rows = np.concatenate([v.row for v in V]).astype(np.int64)
+                cols = np.concatenate([v.col for v in V]).astype(np.int64)
+                which = np.concatenate([np.full(v.nnz, k) for k, v in enumerate(V)])
+                vals = np.concatenate([v.data for v in V]).astype(np.complex128)
+                pattern, pos = np.unique(rows * i1 + cols, return_inverse=True)
+                W = np.zeros((pattern.size, len(keep)), dtype=np.complex128)
+                np.add.at(W, (pos, which), vals)
+                Rk = R[keep].reshape(len(keep), N*N)
+                prow, pcol = pattern // i1, pattern % i1
+                rr, cc = np.divmod(np.arange(N*N), N)
+                chunk = max(1, int(2**22 // (N*N)))  # <= 64 MB of complex blocks per chunk
+                out_rows, out_cols, out_data = [], [], []
+                for c0 in range(0, pattern.size, chunk):
+                    blocks = W[c0:c0+chunk] @ Rk                              # (chunk, N*N)
+                    b, e = np.nonzero(blocks)
+                    out_rows.append(prow[c0:c0+chunk][b] * N + rr[e])
+                    out_cols.append(pcol[c0:c0+chunk][b] * N + cc[e])
+                    out_data.append(blocks[b, e])
+                matrix = sparse.csr_matrix((np.concatenate(out_data), (np.concatenate(out_rows), np.concatenate(out_cols))), shape=(i0*N, i1*N))
         return matrix
+
+    @staticmethod
+    def _radial_ncc_polynomial_stack(ncc_basis, arg_radial_basis, ell, regtotal_arg, a_ncc, b_ncc, Nmat, N, nterms):
+        """R[n] = (prefactor @ phi_n(J))[:N, :N] for n < nterms (cached); see _last_axis_component_ncc_matrix."""
+        key = (ncc_basis, arg_radial_basis, ell, regtotal_arg, a_ncc, b_ncc, Nmat, N, nterms)
+        R = _SHELL_NCC_STACKS.get(key)
+        if R is None:
+            J = arg_radial_basis.operator_matrix('Z', ell, regtotal_arg, size=Nmat)
+            A, B = clenshaw.jacobi_recursion(Nmat, a_ncc, b_ncc, J)
+            f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0]
+            prefactor = arg_radial_basis.jacobi_conversion(ell, dk=ncc_basis.k, size=Nmat)
+            prefactor = prefactor.toarray() if sparse.issparse(prefactor) else np.asarray(prefactor)
+            def dense(M):
+                return M.toarray() if sparse.issparse(M) else np.asarray(M) * np.identity(Nmat)
+            R = np.empty((nterms, N, N))
+            phi_prev = np.zeros((Nmat, Nmat))
+            phi = f0 * np.identity(Nmat)
+            for n in range(nterms):
+                R[n] = (prefactor @ phi)[:N, :N]
+                if n + 1 < nterms:
+                    phi, phi_prev = dense(A[n]) @ phi + dense(B[n]) @ phi_prev, phi
+            _SHELL_NCC_STACKS[key] = R
+        return R
 
 
 class BallRadialBasis(RegularityBasis, metaclass=CachedClass):
@@ -4699,22 +4791,23 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
         self.radial_basis.backward_regularity_recombination(product.ncc.tensorsig, axis, spin_coeffs, ell_maps=ncc_basis.ell_maps(product.dist))
         # Build deferred regcomp S2 NCC
         S2_basis = self.S2_basis()
+        # Forward Q transformations: the same for every radial index
+        m = subproblem.group[axis-2]
+        ells = np.arange(abs(m), self.Lmax+1)
+        if S2_basis.ell_reversed(product.dist)[m]:
+            ells = ells[::-1]
+        ells = tuple(ells)
+        Qout = self.radial_basis.radial_recombinations(product.tensorsig, ells)
+        Qout = interleave_matrices([Qout[ell].T for ell in ells])
+        Qarg = self.radial_basis.radial_recombinations(product.operand.tensorsig, ells)
+        Qarg = interleave_matrices([Qarg[ell].T for ell in ells])
+        QargT = Qarg.T
         def reg_NCC_matrix(radial_index):
             # Select radial spin data
             subcoeffs = spin_coeffs[..., radial_index]
             # Call S2 NCC
             submatrix = S2_basis._last_axis_field_ncc_matrix(product, subproblem, axis-1, ncc_basis.S2_basis(), arg_basis.S2_basis(), out_basis.S2_basis(), subcoeffs, ncc_cutoff, max_ncc_terms)
-            # Apply forward Q transformations
-            m = subproblem.group[axis-2]
-            ells = np.arange(abs(m), self.Lmax+1)
-            if S2_basis.ell_reversed(product.dist)[m]:
-                ells = ells[::-1]
-            ells = tuple(ells)
-            Qout = self.radial_basis.radial_recombinations(product.tensorsig, ells)
-            Qout = interleave_matrices([Qout[ell].T for ell in ells])
-            Qarg = self.radial_basis.radial_recombinations(product.operand.tensorsig, ells)
-            Qarg = interleave_matrices([Qarg[ell].T for ell in ells])
-            return Qout @ submatrix @ Qarg.T
+            return Qout @ submatrix @ QargT
         subcoeff_vals = DeferredTuple(reg_NCC_matrix, size=len(subcoeff_norms))
         # Call last axis Clenshaw via ShellRadialBasis
         subcoeffs = (subcoeff_vals, subcoeff_norms)
