@@ -20,6 +20,8 @@ from .domain import Domain
 from .field  import Operand, LockedField
 from .future import FutureLockedField
 from ..libraries import dedalus_sphere
+from ..tools.config import config
+from concurrent.futures import ThreadPoolExecutor
 
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
@@ -3864,6 +3866,8 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
 
 # Cached shell radial NCC polynomial stacks (ShellRadialBasis._radial_ncc_polynomial_stack)
 _SHELL_NCC_STACKS = {}
+# Threads for meridional NCC assembly (each also uses the BLAS threads)
+NCC_THREADS = config['matrix construction'].getint('NCC_THREADS', fallback=1)
 
 
 class ShellRadialBasis(RegularityBasis, metaclass=CachedClass):
@@ -4117,26 +4121,55 @@ class ShellRadialBasis(RegularityBasis, metaclass=CachedClass):
                 if not keep:
                     return sparse.csr_matrix((i0*N, i1*N), dtype=np.complex128)
                 R = cls._radial_ncc_polynomial_stack(ncc_basis, arg_radial_basis, ell, regtotal_arg, a_ncc, b_ncc, Nmat, N, keep[-1]+1)
-                V = [sparse.coo_matrix(coeff_vals[n]) for n in keep]
+                # Radial blocks restricted to their union support (banded: phi_n(J) has bandwidth n), in row-major order
+                Rk = R[keep].reshape(len(keep), N*N)
+                support = np.flatnonzero(np.any(Rk != 0, axis=0))
+                Rk = np.ascontiguousarray(Rk[:, support])
+                S = support.size
+                rr, cc = np.divmod(support, N)
+                row_len = np.bincount(rr, minlength=N)
+                row_start = np.concatenate([[0], np.cumsum(row_len)[:-1]])
+                # Union pattern of the angular matrices, sorted by (row, col), with W[p, k] = V_keep[k][pattern p]
+                V = []
+                for n in keep:
+                    v = sparse.coo_matrix(coeff_vals[n])
+                    v.sum_duplicates()
+                    V.append(v)
                 rows = np.concatenate([v.row for v in V]).astype(np.int64)
                 cols = np.concatenate([v.col for v in V]).astype(np.int64)
                 which = np.concatenate([np.full(v.nnz, k) for k, v in enumerate(V)])
-                vals = np.concatenate([v.data for v in V]).astype(np.complex128)
                 pattern, pos = np.unique(rows * i1 + cols, return_inverse=True)
                 W = np.zeros((pattern.size, len(keep)), dtype=np.complex128)
-                np.add.at(W, (pos, which), vals)
-                Rk = R[keep].reshape(len(keep), N*N)
-                prow, pcol = pattern // i1, pattern % i1
-                rr, cc = np.divmod(np.arange(N*N), N)
-                chunk = max(1, int(2**22 // (N*N)))  # <= 64 MB of complex blocks per chunk
-                out_rows, out_cols, out_data = [], [], []
-                for c0 in range(0, pattern.size, chunk):
-                    blocks = W[c0:c0+chunk] @ Rk                              # (chunk, N*N)
-                    b, e = np.nonzero(blocks)
-                    out_rows.append(prow[c0:c0+chunk][b] * N + rr[e])
-                    out_cols.append(pcol[c0:c0+chunk][b] * N + cc[e])
-                    out_data.append(blocks[b, e])
-                matrix = sparse.csr_matrix((np.concatenate(out_data), (np.concatenate(out_rows), np.concatenate(out_cols))), shape=(i0*N, i1*N))
+                W[pos, which] = np.concatenate([v.data for v in V])
+                prow, pcol = np.divmod(pattern, i1)
+                bounds = np.searchsorted(prow, np.arange(i0+1))
+                # CSR layout: output row (i, r) holds, for each pattern entry p of block row i (columns ascending), the support entries
+                # of radial row r (columns ascending): (number of p) * row_len[r] entries
+                indptr = np.zeros(i0*N + 1, dtype=np.int64)
+                np.cumsum(np.outer(np.diff(bounds), row_len).ravel(), out=indptr[1:])
+                data = np.empty(indptr[-1], dtype=np.complex128)
+                indices = np.empty(indptr[-1], dtype=np.int64)
+                within = np.arange(S) - row_start[rr]
+                def block_row(i):
+                    p0, p1 = bounds[i], bounds[i+1]
+                    k = p1 - p0
+                    if k == 0:
+                        return
+                    # entry (p, s) of block row i goes to k*row_start[rr[s]] + p*row_len[rr[s]] + within[s]
+                    dest = (k * row_start[rr] + within)[None, :] + np.arange(k)[:, None] * row_len[rr][None, :]
+                    off = indptr[i*N]
+                    data[off:off + k*S][dest] = W[p0:p1] @ Rk
+                    indices[off:off + k*S][dest] = (pcol[p0:p1] * N)[:, None] + cc[None, :]
+                if NCC_THREADS > 1:
+                    # numpy releases the GIL in the products and the scatters; block rows write disjoint slices
+                    with ThreadPoolExecutor(max_workers=NCC_THREADS) as pool:
+                        list(pool.map(block_row, range(i0)))
+                else:
+                    for i in range(i0):
+                        block_row(i)
+                matrix = sparse.csr_matrix((data, indices, indptr), shape=(i0*N, i1*N))
+                matrix.has_sorted_indices = True
+                matrix.eliminate_zeros()
         return matrix
 
     @staticmethod
