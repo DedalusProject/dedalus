@@ -1,5 +1,6 @@
 
 
+import functools
 import numpy as np
 from scipy import sparse
 
@@ -97,6 +98,9 @@ def jacobi_recursion(N, a, b, X):
             return (-JA[n,n-1] / JA[n,n+1]) * I
         else:
             return 0*I
+    # Memoize: the Clenshaw sums access each coefficient once per call, but the same recursion is reused across many calls
+    compute_A = functools.lru_cache(maxsize=None)(compute_A)
+    compute_B = functools.lru_cache(maxsize=None)(compute_B)
     A = DeferredTuple(compute_A, N+1)
     B = DeferredTuple(compute_B, N+1)
     return A, B
