@@ -4062,17 +4062,33 @@ class ShellRadialBasis(RegularityBasis, metaclass=CachedClass):
     @CachedMethod
     def operator_matrix(self, op, l, regtotal, size=None):
         l = l + regtotal
-        if op in ['D+', 'D-']:
-            p = int(op[-1]+'1')
-            operator = dedalus_sphere.shell.operator(3, self.radii, 'D', self.alpha)(p, l)
-        elif op == 'L':
-            D = dedalus_sphere.shell.operator(3, self.radii, 'D', self.alpha)
-            operator = D(-1, l+1) @ D(+1, l)
-        else:
-            operator = dedalus_sphere.shell.operator(3, self.radii, op, self.alpha)
         if size is None:
             size = self.n_size(l)
+        if op in ['D+', 'D-', 'L']:
+            return self._ell_operator_matrix(op, l, size)
+        operator = dedalus_sphere.shell.operator(3, self.radii, op, self.alpha)
         return operator(size, self.k).square.astype(np.float64)
+
+    @CachedMethod
+    def _ell_operator_matrix(self, op, l, size):
+        # The shell derivative D(dl, l) = (D Z - (A(0) - alpha_0 + dl*l + [dl = -1](2 - dim)) AB) / width is linear in l:
+        # D(dl, l) = D(dl, 0) - dl*l*AB/width, both pieces built once per (dl, size, k).  L = D(-1, l+1) D(+1, l), the second
+        # factor at k, the first at k + 1 (the composed operator's evaluation).
+        if op in ['D+', 'D-']:
+            p = int(op[-1]+'1')
+            return self._ell_derivative(p, l, size, self.k)
+        return (self._ell_derivative(-1, l+1, size, self.k+1) @ self._ell_derivative(+1, l, size, self.k)).tocsr()
+
+    def _ell_derivative(self, dl, l, size, k):
+        base, slope = self._ell_derivative_pieces(dl, size, k)
+        return (base - (dl*l) * slope).tocsr()
+
+    @CachedMethod
+    def _ell_derivative_pieces(self, dl, size, k):
+        base = dedalus_sphere.shell.operator(3, self.radii, 'D', self.alpha)(dl, 0)(size, k).square.astype(np.float64)
+        width = self.radii[1] - self.radii[0]
+        slope = dedalus_sphere.shell.operator(3, self.radii, 'AB', self.alpha)(size, k).square.astype(np.float64) / width
+        return sparse.csr_matrix(base), sparse.csr_matrix(slope)
 
     def jacobi_conversion(self, l, dk, size=None):
         AB = dedalus_sphere.shell.operator(3, self.radii, 'AB', self.alpha)
