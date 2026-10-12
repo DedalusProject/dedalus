@@ -589,6 +589,59 @@ class IntervalBasis(Basis):
         raise NotImplementedError
 
 
+class _NCCPolynomialStack:
+    """
+    The matrices S_n = (prefactor @ phi_n(J))[:rows, :cols] of a one-dimensional NCC expansion, built on demand and kept.
+
+    phi_n are the Jacobi polynomials of the argument's multiplication matrix J, from the forward recurrence that
+    clenshaw.matrix_clenshaw evaluates backward (phi_0 = f0 I, phi_{n+1} = A_n phi_n + B_n phi_{n-1}).  The NCC matrix of
+    coefficients c is then sum_n c_n S_n over the coefficients above the cutoff (matrix_clenshaw's rule).  The stack depends
+    only on the bases, the regularity and the sizes, so one stack serves every pencil, component and NCC with the same key;
+    it is sparse (phi_n is banded) and extended only as far as the largest kept coefficient.
+    """
+
+    def __init__(self, J, a, b, f0, prefactor, Nrec, Nmat, rows, cols):
+        self.A, self.B = clenshaw.jacobi_recursion(Nrec, a, b, J)
+        self.prefactor = sparse.csr_matrix(prefactor) if prefactor is not None else None
+        self.rows, self.cols = rows, cols
+        self.phi_prev = None
+        self.phi = sparse.csr_matrix(f0 * sparse.identity(Nmat))
+        self.S = []
+
+    def _extend(self, n):
+        while len(self.S) <= n:
+            k = len(self.S)
+            phi = self.phi if self.prefactor is None else self.prefactor @ self.phi
+            self.S.append(sparse.csr_matrix(phi[:self.rows, :self.cols]))
+            nxt = self.A[k] @ self.phi
+            if self.phi_prev is not None:
+                nxt = nxt + self.B[k] @ self.phi_prev
+            self.phi_prev, self.phi = self.phi, sparse.csr_matrix(nxt)
+
+    def matrix(self, c, cutoff, dtype=None):
+        c = np.asarray(c).ravel()
+        keep = np.flatnonzero(np.abs(c) > cutoff)
+        dtype = np.result_type(c.dtype, np.float64) if dtype is None else dtype
+        if not keep.size:
+            return sparse.csr_matrix((self.rows, self.cols), dtype=dtype)
+        self._extend(keep[-1])
+        matrix = c[keep[0]] * self.S[keep[0]]
+        for n in keep[1:]:
+            matrix = matrix + c[n] * self.S[n]
+        return sparse.csr_matrix(matrix, dtype=dtype)
+
+
+# Cached one-dimensional NCC polynomial stacks (_NCCPolynomialStack), keyed by bases, regularity and sizes
+_NCC_STACKS = {}
+
+
+def _ncc_stack(key, build):
+    stack = _NCC_STACKS.get(key)
+    if stack is None:
+        stack = _NCC_STACKS[key] = build()
+    return stack
+
+
 class Jacobi(IntervalBasis, metaclass=CachedClass):
     """Jacobi polynomial basis."""
 
@@ -776,13 +829,14 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         db = int(np.round(out_basis.b - arg_basis.b))
         # Pad for dealiasing with conversion
         Nmat = 3*((N+1)//2) + min((N+1)//2, (da+db+1)//2)
-        J = arg_basis.Jacobi_matrix(size=Nmat)
-        A, B = clenshaw.jacobi_recursion(Nmat, a_ncc, b_ncc, J)
-        f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0] * sparse.identity(Nmat)
-        matrix = clenshaw.matrix_clenshaw(coeffs.ravel(), A, B, f0, cutoff=cutoff)
-        convert = jacobi.conversion_matrix(Nmat, arg_basis.a, arg_basis.b, out_basis.a, out_basis.b)
-        matrix = convert @ matrix
-        return matrix[:N, :N]
+        # sum_n c_n (convert @ phi_n(J))[:N, :N]: one cached stack serves every pencil (e.g. all Fourier modes of a Cartesian problem)
+        def build():
+            J = arg_basis.Jacobi_matrix(size=Nmat)
+            f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0]
+            convert = jacobi.conversion_matrix(Nmat, arg_basis.a, arg_basis.b, out_basis.a, out_basis.b)
+            return _NCCPolynomialStack(J, a_ncc, b_ncc, f0, convert, Nmat, Nmat, N, N)
+        stack = _ncc_stack(('jacobi', ncc_basis, arg_basis, out_basis, Nmat, N), build)
+        return stack.matrix(coeffs, cutoff)
 
     def derivative_basis(self, order=1):
         a = self.a + order
@@ -2442,20 +2496,21 @@ class AnnulusBasis(PolarBasis, metaclass=CachedClass):
         N0 = ncc_basis.n_size(0)
         # Pad for dealiasing with conversion
         Nmat = 3*((N0+1)//2) + ncc_basis.k
-        J = arg_basis.operator_matrix('Z', m, spintotal_arg, size=Nmat)
-        A, B = clenshaw.jacobi_recursion(Nmat, a_ncc, b_ncc, J)
-        f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0] * sparse.identity(Nmat)
-        # Conversions to account for radial prefactors
-        prefactor = arg_basis.jacobi_conversion(m, dk=ncc_basis.k, size=Nmat)
+        # The annulus multiplication operator Z and the conversion do not depend on m or the spin: one cached stack of
+        # (prefactor @ phi_n(J))[:N, :N] serves every pencil
+        def build():
+            J = arg_basis.operator_matrix('Z', m, spintotal_arg, size=Nmat)
+            f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0]
+            # Conversions to account for radial prefactors
+            prefactor = arg_basis.jacobi_conversion(m, dk=ncc_basis.k, size=Nmat)
+            return _NCCPolynomialStack(J, a_ncc, b_ncc, f0, prefactor, Nmat, Nmat, N, N)
+        stack = _ncc_stack(('annulus', ncc_basis, arg_basis, Nmat, N), build)
         if ncc_basis.dtype == np.float64:
-            coeffs_cos_filter = coeffs[0].ravel()[:N0]
-            coeffs_msin_filter = coeffs[1].ravel()[:N0]
-            matrix_cos = (prefactor @ clenshaw.matrix_clenshaw(coeffs_cos_filter, A, B, f0, cutoff=cutoff))[:N,:N]
-            matrix_msin = (prefactor @ clenshaw.matrix_clenshaw(coeffs_msin_filter, A, B, f0, cutoff=cutoff))[:N,:N]
+            matrix_cos = stack.matrix(coeffs[0].ravel()[:N0], cutoff, np.float64)
+            matrix_msin = stack.matrix(coeffs[1].ravel()[:N0], cutoff, np.float64)
             matrix = sparse.bmat([[matrix_cos, -matrix_msin], [matrix_msin, matrix_cos]], format='csr')
         elif ncc_basis.dtype == np.complex128:
-            coeffs_filter = coeffs.ravel()[:N0]
-            matrix = (prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff))[:N,:N]
+            matrix = stack.matrix(coeffs.ravel()[:N0], cutoff, np.complex128)
         return matrix
 
 
@@ -2724,19 +2779,23 @@ class DiskBasis(PolarBasis, metaclass=CachedClass):
         N = ncc_basis.n_size(m)
         d = regtotal_ncc - abs(diff_regtotal)
         if (d >= 0) and (d % 2 == 0):
-            J = arg_basis.operator_matrix('Z', m, spintotal_arg)
-            A, B = clenshaw.jacobi_recursion(N, a_ncc, b_ncc, J)
-            # assuming that we're doing ball for now...
-            f0 = dedalus_sphere.zernike.polynomials(2, 1, a_ncc, b_ncc, 1)[0] * sparse.identity(N)
-            prefactor = arg_basis.radius_multiplication_matrix(m, spintotal_arg, diff_regtotal, d)
+            # sum_n c_n prefactor @ phi_n(J) from a cached stack (per m and regularity: reused across the NCC terms and
+            # fields of a pencil)
+            def build():
+                J = arg_basis.operator_matrix('Z', m, spintotal_arg)
+                # assuming that we're doing ball for now...
+                f0 = dedalus_sphere.zernike.polynomials(2, 1, a_ncc, b_ncc, 1)[0]
+                prefactor = arg_basis.radius_multiplication_matrix(m, spintotal_arg, diff_regtotal, d)
+                Nout = prefactor.shape[0]
+                return _NCCPolynomialStack(J, a_ncc, b_ncc, f0, prefactor, N, N, Nout, N)
+            stack = _ncc_stack(('disk', ncc_basis, arg_basis, m, spintotal_arg, diff_regtotal, d, a_ncc, b_ncc, N), build)
             if ncc_basis.dtype == np.float64:
                 coeffs_filter = coeffs.ravel()[:2*N]
-                matrix_cos = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter[:N], A, B, f0, cutoff=cutoff)
-                matrix_msin = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter[N:], A, B, f0, cutoff=cutoff)
+                matrix_cos = stack.matrix(coeffs_filter[:N], cutoff, np.float64)
+                matrix_msin = stack.matrix(coeffs_filter[N:], cutoff, np.float64)
                 matrix = sparse.bmat([[matrix_cos, -matrix_msin], [matrix_msin, matrix_cos]], format='csr')
             elif ncc_basis.dtype == np.complex128:
-                coeffs_filter = coeffs.ravel()[:N]
-                matrix = prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff)
+                matrix = stack.matrix(coeffs.ravel()[:N], cutoff, np.complex128)
         else:
             if ncc_basis.dtype == np.float64:
                 matrix = sparse.csr_matrix((2*N, 2*N))
@@ -4003,17 +4062,33 @@ class ShellRadialBasis(RegularityBasis, metaclass=CachedClass):
     @CachedMethod
     def operator_matrix(self, op, l, regtotal, size=None):
         l = l + regtotal
-        if op in ['D+', 'D-']:
-            p = int(op[-1]+'1')
-            operator = dedalus_sphere.shell.operator(3, self.radii, 'D', self.alpha)(p, l)
-        elif op == 'L':
-            D = dedalus_sphere.shell.operator(3, self.radii, 'D', self.alpha)
-            operator = D(-1, l+1) @ D(+1, l)
-        else:
-            operator = dedalus_sphere.shell.operator(3, self.radii, op, self.alpha)
         if size is None:
             size = self.n_size(l)
+        if op in ['D+', 'D-', 'L']:
+            return self._ell_operator_matrix(op, l, size)
+        operator = dedalus_sphere.shell.operator(3, self.radii, op, self.alpha)
         return operator(size, self.k).square.astype(np.float64)
+
+    @CachedMethod
+    def _ell_operator_matrix(self, op, l, size):
+        # The shell derivative D(dl, l) = (D Z - (A(0) - alpha_0 + dl*l + [dl = -1](2 - dim)) AB) / width is linear in l:
+        # D(dl, l) = D(dl, 0) - dl*l*AB/width, both pieces built once per (dl, size, k).  L = D(-1, l+1) D(+1, l), the second
+        # factor at k, the first at k + 1 (the composed operator's evaluation).
+        if op in ['D+', 'D-']:
+            p = int(op[-1]+'1')
+            return self._ell_derivative(p, l, size, self.k)
+        return (self._ell_derivative(-1, l+1, size, self.k+1) @ self._ell_derivative(+1, l, size, self.k)).tocsr()
+
+    def _ell_derivative(self, dl, l, size, k):
+        base, slope = self._ell_derivative_pieces(dl, size, k)
+        return (base - (dl*l) * slope).tocsr()
+
+    @CachedMethod
+    def _ell_derivative_pieces(self, dl, size, k):
+        base = dedalus_sphere.shell.operator(3, self.radii, 'D', self.alpha)(dl, 0)(size, k).square.astype(np.float64)
+        width = self.radii[1] - self.radii[0]
+        slope = dedalus_sphere.shell.operator(3, self.radii, 'AB', self.alpha)(size, k).square.astype(np.float64) / width
+        return sparse.csr_matrix(base), sparse.csr_matrix(slope)
 
     def jacobi_conversion(self, l, dk, size=None):
         AB = dedalus_sphere.shell.operator(3, self.radii, 'AB', self.alpha)
@@ -4269,21 +4344,22 @@ class BallRadialBasis(RegularityBasis, metaclass=CachedClass):
         # Pad for dealiasing with conversion
         Nmat = 3*((N0+1)//2) + (dk+1)//2
         if (d >= 0) and (d % 2 == 0):
-            J = arg_radial_basis.operator_matrix('Z', ell, regtotal_arg, size=Nmat)
-            A, B = clenshaw.jacobi_recursion(N0, a_ncc, b_ncc, J)
-            f0 = dedalus_sphere.zernike.polynomials(3, 1, a_ncc, regtotal_ncc, 1)[0] * sparse.identity(Nmat)
-            radial_factor = arg_radial_basis.radius_multiplication_matrix(ell, regtotal_arg, diff_regtotal, d, size=Nmat)
-            conversion = arg_radial_basis.conversion_matrix(ell, regtotal_out, dk, size=Nmat)
-            prefactor = conversion @ radial_factor
+            # sum_n c_n (prefactor @ phi_n(J))[:N, :N] from a cached stack (per ell and regularity: reused across the NCC
+            # terms and fields of a pencil)
+            def build():
+                J = arg_radial_basis.operator_matrix('Z', ell, regtotal_arg, size=Nmat)
+                f0 = dedalus_sphere.zernike.polynomials(3, 1, a_ncc, regtotal_ncc, 1)[0]
+                radial_factor = arg_radial_basis.radius_multiplication_matrix(ell, regtotal_arg, diff_regtotal, d, size=Nmat)
+                conversion = arg_radial_basis.conversion_matrix(ell, regtotal_out, dk, size=Nmat)
+                return _NCCPolynomialStack(J, a_ncc, b_ncc, f0, conversion @ radial_factor, N0, Nmat, N, N)
+            stack = _ncc_stack(('ball', ncc_basis, arg_radial_basis, ell, regtotal_ncc, regtotal_arg, regtotal_out, d, dk,
+                                Nmat, N, N0), build)
             if ncc_basis.dtype == np.float64:
-                coeffs_cos_filter = coeffs[0].ravel()[:N0]
-                coeffs_msin_filter = coeffs[1].ravel()[:N0]
-                matrix_cos = (prefactor @ clenshaw.matrix_clenshaw(coeffs_cos_filter, A, B, f0, cutoff=cutoff))[:N, :N]
-                matrix_msin = (prefactor @ clenshaw.matrix_clenshaw(coeffs_msin_filter, A, B, f0, cutoff=cutoff))[:N, :N]
+                matrix_cos = stack.matrix(coeffs[0].ravel()[:N0], cutoff, np.float64)
+                matrix_msin = stack.matrix(coeffs[1].ravel()[:N0], cutoff, np.float64)
                 matrix = sparse.bmat([[matrix_cos, -matrix_msin], [matrix_msin, matrix_cos]], format='csr')
             elif ncc_basis.dtype == np.complex128:
-                coeffs_filter = coeffs.ravel()[:N0]
-                matrix = (prefactor @ clenshaw.matrix_clenshaw(coeffs_filter, A, B, f0, cutoff=cutoff))[:N, :N]
+                matrix = stack.matrix(coeffs.ravel()[:N0], cutoff, np.complex128)
         else:
             if ncc_basis.dtype == np.float64:
                 matrix = sparse.csr_matrix((2*N, 2*N), dtype=np.float64)
