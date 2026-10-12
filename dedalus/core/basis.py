@@ -4093,21 +4093,29 @@ class ShellRadialBasis(RegularityBasis, metaclass=CachedClass):
         N0 = ncc_basis.n_size(0)
         # Pad for dealiasing with conversion
         Nmat = 3*((N0+1)//2) + ncc_basis.k
-        J = arg_radial_basis.operator_matrix('Z', ell, regtotal_arg, size=Nmat)
-        A, B = clenshaw.jacobi_recursion(Nmat, a_ncc, b_ncc, J)
-        f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0] * sparse.identity(Nmat)
-        # Conversions to account for radial prefactors
-        prefactor = arg_radial_basis.jacobi_conversion(ell, dk=ncc_basis.k, size=Nmat)
+
+        def radial_sum(c, dtype):
+            # Radial NCC (ell-independent pencils): the Clenshaw sum with the prefactor and the dealiasing folded in is
+            #     sum_n c_n R_n,  R_n = (prefactor @ phi_n(J))[:N, :N],
+            # over the coefficients above the cutoff (matrix_clenshaw's rule).  R_n depend only on the bases, the regularity and the
+            # sizes, so the stack is built once and every pencil, component and NCC with the same key takes one weighted sum.
+            c = np.asarray(c).ravel()
+            keep = np.flatnonzero(np.abs(c) > cutoff)
+            if not keep.size:
+                return sparse.csr_matrix((N, N), dtype=dtype)
+            R = cls._radial_ncc_polynomial_stack(ncc_basis, arg_radial_basis, ell, regtotal_arg, a_ncc, b_ncc, Nmat, N, c.size)
+            return sparse.csr_matrix(np.tensordot(c[keep].astype(dtype), R[keep], axes=(0, 0)))
+
         if ncc_basis.dtype == np.float64:
             coeffs_cos, coeffs_msin = coeffs
             if not np.isscalar(coeffs_cos[0]):
                 raise NotImplementedError("Recursive Clenshaw not finished for float64.")
-            matrix_cos = (prefactor @ clenshaw.kronecker_clenshaw(coeffs_cos, None, A, B, f0, cutoff=cutoff))[:N,:N]
-            matrix_msin = (prefactor @ clenshaw.kronecker_clenshaw(coeffs_msin, None, A, B, f0, cutoff=cutoff))[:N,:N]
+            matrix_cos = radial_sum(coeffs_cos, np.float64)
+            matrix_msin = radial_sum(coeffs_msin, np.float64)
             matrix = sparse.bmat([[matrix_cos, -matrix_msin], [matrix_msin, matrix_cos]], format='csr')
         elif ncc_basis.dtype == np.complex128:
             if np.isscalar(coeffs[0]):
-                matrix = (prefactor @ clenshaw.matrix_clenshaw(coeffs, A, B, f0, cutoff=cutoff))[:N,:N]
+                matrix = radial_sum(coeffs, np.complex128)
             else:
                 # Meridional NCC: the Kronecker-Clenshaw sum, with the prefactor and the dealiasing folded in, is
                 #     sum_n kron(V_n, R_n),  R_n = (prefactor @ phi_n(J))[:N, :N],
