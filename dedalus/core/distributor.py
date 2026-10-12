@@ -467,30 +467,31 @@ class Layout:
             if subgroup is not None:
                 selections *= (subgroup == groups[i])
                 # Note: seems to exclude masked elements for ==, unlike other comparisons
-        # determine which axes to loop over, which to find bounds for
-        slices = []
-        for i, subgroup in enumerate(groupset):
-            if subgroup is None:
-                subslices = [slice(None)]
-            else:
-                # loop over axis i but taking into account group_shape
-                subslices = [slice(j, j+group_shape[i]) for j in range(0, groups.shape[i+1], group_shape[i])]
-            slices.append(subslices)
+        # The matching elements (masked elements excluded, as np.any / np.where on the masked selections exclude them), and the
+        # group-shaped block of each along the enumerated axes.  Each block holding matches gives one slice: the block along
+        # the enumerated axes, the bounds of its matches along the others (assumed a cartesian product).  Blocks come out in
+        # lexicographic order, as itertools.product over the blocks of each axis enumerates them.
+        matches = np.nonzero(selections)
+        if matches[0].size == 0:
+            return []
+        enumerated = [i for i, subgroup in enumerate(groupset) if subgroup is not None]
+        if enumerated:
+            blocks = np.stack([matches[i] // group_shape[i] for i in enumerated], axis=1)
+            unique_blocks, which = np.unique(blocks, axis=0, return_inverse=True)
+            which = np.ravel(which)
+        else:
+            unique_blocks, which = np.zeros((1, 0), dtype=int), np.zeros(matches[0].size, dtype=int)
         group_slices = []
-        for s in itertools.product(*slices):
-            sliced_selections = selections[tuple(s)]
-            if np.any(sliced_selections): # some elements match group
-                # assume selected groups are cartesian product, find left and right bounds
-                lefts = list(map(np.min, np.where(sliced_selections)))
-                rights = list(map(np.max, np.where(sliced_selections)))
-                # build multidimensional group slice
-                group_slice = []
-                for i in range(dim):
-                    if s[i] != slice(None):
-                        group_slice.append(s[i])
-                    else:
-                        group_slice.append(slice(lefts[i], rights[i]+1))
-                group_slices.append(tuple(group_slice))
+        for b, block in enumerate(unique_blocks):
+            in_block = (which == b)
+            group_slice = []
+            for i in range(dim):
+                if groupset[i] is not None:
+                    j = int(block[enumerated.index(i)]) * group_shape[i]
+                    group_slice.append(slice(j, j+group_shape[i]))
+                else:
+                    group_slice.append(slice(int(matches[i][in_block].min()), int(matches[i][in_block].max())+1))
+            group_slices.append(tuple(group_slice))
         return group_slices
 
     def slices(self, domain, scales):
