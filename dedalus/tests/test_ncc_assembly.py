@@ -17,10 +17,10 @@ class FakeSubproblem:
         self.group = (m, None, None)
 
 
-def build_shell(Nphi, Ntheta, Nr, k):
+def build_shell(Nphi, Ntheta, Nr, k, dtype=np.complex128):
     coords = d3.SphericalCoordinates('phi', 'theta', 'r')
-    dist = d3.Distributor(coords, dtype=np.complex128)
-    shell = d3.ShellBasis(coords, shape=(Nphi, Ntheta, Nr), radii=(0.5, 1.5), k=k, dtype=np.complex128)
+    dist = d3.Distributor(coords, dtype=dtype)
+    shell = d3.ShellBasis(coords, shape=(Nphi, Ntheta, Nr), radii=(0.5, 1.5), k=k, dtype=dtype)
     return coords, shell
 
 
@@ -68,6 +68,28 @@ def reference_meridional(ncc_basis, arg_basis, coeff_vals, coeff_norms, cutoff):
     dealias0 = sparse.kron(I0, sparse.eye(N, Nmat))
     dealias1 = sparse.kron(I1, sparse.eye(N, Nmat))
     return (dealias0 @ matrix @ dealias1.T).tocsr()
+
+
+def reference_radial(ncc_basis, arg_basis, coeffs, arg_comp, cutoff):
+    # The Clenshaw evaluation of ShellRadialBasis._last_axis_component_ncc_matrix (radial-only branches) before the cached stack
+    ell = 0
+    arg_radial_basis = arg_basis.radial_basis
+    regtotal_arg = basis.ShellRadialBasis.regtotal(arg_comp)
+    a_ncc = ncc_basis.k + ncc_basis.alpha[0]
+    b_ncc = ncc_basis.k + ncc_basis.alpha[1]
+    N = ncc_basis.n_size(ell)
+    N0 = ncc_basis.n_size(0)
+    Nmat = 3*((N0+1)//2) + ncc_basis.k
+    J = arg_radial_basis.operator_matrix('Z', ell, regtotal_arg, size=Nmat)
+    A, B = clenshaw.jacobi_recursion(Nmat, a_ncc, b_ncc, J)
+    f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0] * sparse.identity(Nmat)
+    prefactor = arg_radial_basis.jacobi_conversion(ell, dk=ncc_basis.k, size=Nmat)
+    if ncc_basis.dtype == np.float64:
+        coeffs_cos, coeffs_msin = coeffs
+        matrix_cos = (prefactor @ clenshaw.kronecker_clenshaw(coeffs_cos, None, A, B, f0, cutoff=cutoff))[:N, :N]
+        matrix_msin = (prefactor @ clenshaw.kronecker_clenshaw(coeffs_msin, None, A, B, f0, cutoff=cutoff))[:N, :N]
+        return sparse.bmat([[matrix_cos, -matrix_msin], [matrix_msin, matrix_cos]], format='csr')
+    return sparse.csr_matrix((prefactor @ clenshaw.matrix_clenshaw(coeffs, A, B, f0, cutoff=cutoff))[:N, :N])
 
 
 def assert_close(A, B):
@@ -126,3 +148,28 @@ def test_meridional_component_ncc_matrix(Nr, k, threads, monkeypatch):
     assert_close(new, ref)
     new = sparse.csr_matrix(new)
     assert new.has_sorted_indices
+
+
+@pytest.mark.parametrize('Nr', [8, 13])
+@pytest.mark.parametrize('k', [0, 1])
+@pytest.mark.parametrize('arg_comp', [(), (0,), (2,)])
+@pytest.mark.parametrize('dtype', [np.complex128, np.float64])
+def test_radial_component_ncc_matrix(Nr, k, arg_comp, dtype):
+    # radial-only NCCs (ell-independent pencils): the cached stack's weighted sum against the per-call Clenshaw sum
+    coords, shell = build_shell(8, 6, Nr, k, dtype=dtype)
+    rng = np.random.default_rng(11)
+    nterms = shell.n_size(0)
+    cutoff = 1e-6
+    def random_coeffs():
+        c = rng.standard_normal(nterms) + (1j*rng.standard_normal(nterms) if dtype == np.complex128 else 0)
+        c[3::4] *= 1e-12   # below the cutoff
+        return c
+    coeffs = random_coeffs() if dtype == np.complex128 else (random_coeffs(), random_coeffs())
+    new = basis.ShellRadialBasis._last_axis_component_ncc_matrix(None, shell, shell, shell, coeffs, (), arg_comp, (), (), (), (), cutoff=cutoff)
+    ref = reference_radial(shell, shell, coeffs, arg_comp, cutoff)
+    assert_close(new, ref)
+    # every coefficient below the cutoff: the zero matrix, as before
+    tiny = 1e-12 * (coeffs if dtype == np.complex128 else coeffs[0])
+    zero = basis.ShellRadialBasis._last_axis_component_ncc_matrix(None, shell, shell, shell, tiny if dtype == np.complex128 else (tiny, tiny),
+                                                                  (), arg_comp, (), (), (), (), cutoff=cutoff)
+    assert sparse.csr_matrix(zero).count_nonzero() == 0
