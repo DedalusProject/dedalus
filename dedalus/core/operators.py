@@ -493,10 +493,19 @@ class PowerFieldField(Power, FutureField):
             np.power(arg0_data, arg1_data, out=out.data)
             if tangent:
                 tan0, tan1 = self.arg_tangents
-                tangent.preset_layout(tan0.layout)
-                tan0_data = self.arg0_ghost_broadcaster.cast(tan0)
-                tan1_data = self.arg1_ghost_broadcaster.cast(tan1)
-                tangent.data[:] = arg1_data * arg0_data**(arg1_data-1) * tan0_data + out.data * np.log(arg0_data) * tan1_data
+                # One of tan0 or tan1 may be None
+                # tangent has same layout as arg0 (not None)
+                tangent.preset_layout(arg0.layout)
+                if tan0 is None:
+                    tan1_data = self.arg1_ghost_broadcaster.cast(tan1)
+                    tangent.data[:] = out.data * np.log(arg0_data) * tan1_data
+                elif tan1 is None:
+                    tan0_data = self.arg0_ghost_broadcaster.cast(tan0)
+                    tangent.data[:] = arg1_data * arg0_data**(arg1_data-1) * tan0_data
+                else:
+                    tan0_data = self.arg0_ghost_broadcaster.cast(tan0)
+                    tan1_data = self.arg1_ghost_broadcaster.cast(tan1)
+                    tangent.data[:] = arg1_data * arg0_data**(arg1_data-1) * tan0_data + out.data * np.log(arg0_data) * tan1_data
 
     def operate_vjp(self, layout, cotangents):
         arg0, arg1 = self.args

@@ -240,8 +240,15 @@ class AddFields(Add, FutureField):
         np.add(arg0.data, arg1.data, out=out.data)
         if tangent:
             tan0, tan1 = self.arg_tangents
-            tangent.preset_layout(tan0.layout)
-            np.add(tan0.data, tan1.data, out=tangent.data)
+            # One of tan0 or tan1 may be None
+            # tangent has same layout as arg0 (not None)
+            tangent.preset_layout(arg0.layout)
+            if tan0 is None:
+                np.copyto(tangent.data, tan1.data)
+            elif tan1 is None:
+                np.copyto(tangent.data, tan0.data)
+            else:
+                np.add(tan0.data, tan1.data, out=tangent.data)
 
     def operate_vjp(self, layout, cotangents):
         arg_cotangents = []
@@ -703,13 +710,26 @@ class DotProduct(Product, FutureField):
             np.einsum(self.einsum_str, arg0_data, arg1_data, out=out.data, optimize=True)
         if tangent:
             tan0, tan1 = self.arg_tangents
-            tangent.preset_layout(tan0.layout)
-            # Broadcast
-            tan0_data = self.arg0_ghost_broadcaster.cast(tan0)
-            tan1_data = self.arg1_ghost_broadcaster.cast(tan1)
-            if tangent.data.size:
-                np.einsum(self.einsum_str, tan0_data, arg1_data, out=tangent.data, optimize=True)
-                np.add(tangent.data, np.einsum(self.einsum_str, arg0_data, tan1_data, optimize=True), out=tangent.data) # TEMPORARY
+            # One of tan0 or tan1 may be None
+            # tangent has same layout as arg0 (not None)
+            tangent.preset_layout(arg0.layout)
+            if tan0 is None:
+                # Broadcast
+                tan1_data = self.arg1_ghost_broadcaster.cast(tan1)
+                if tangent.data.size:
+                    np.einsum(self.einsum_str, arg0_data, tan1_data, out=tangent.data, optimize=True)
+            elif tan1 is None:
+                # Broadcast
+                tan0_data = self.arg0_ghost_broadcaster.cast(tan0)
+                if tangent.data.size:
+                    np.einsum(self.einsum_str, tan0_data, arg1_data, out=tangent.data, optimize=True)
+            else:
+                # Broadcast
+                tan0_data = self.arg0_ghost_broadcaster.cast(tan0)
+                tan1_data = self.arg1_ghost_broadcaster.cast(tan1)
+                if tangent.data.size:
+                    np.einsum(self.einsum_str, tan0_data, arg1_data, out=tangent.data, optimize=True)
+                    np.add(tangent.data, np.einsum(self.einsum_str, arg0_data, tan1_data, optimize=True), out=tangent.data) # TEMPORARY
 
     def operate_vjp(self, layout, cotangents):
         arg_cotangents = []
@@ -820,15 +840,32 @@ class CrossProduct(Product, FutureField):
         ne.evaluate("data00*data11 - data01*data10", out=out.data[2])
         if tangent:
             tan0, tan1 = self.arg_tangents
-            tangent.preset_layout(tan0.layout)
-            # Broadcast
-            tan0_data = self.arg0_ghost_broadcaster.cast(tan0)
-            tan1_data = self.arg1_ghost_broadcaster.cast(tan1)
-            tan0_data0, tan0_data1, tan0_data2 = tan0_data[0], tan0_data[1], tan0_data[2]
-            tan1_data0, tan1_data1, tan1_data2 = tan1_data[0], tan1_data[1], tan1_data[2]
-            ne.evaluate("tan0_data1*data12 - tan0_data2*data11 + data01*tan1_data2 - data02*tan1_data1", out=tangent.data[0])
-            ne.evaluate("tan0_data2*data10 - tan0_data0*data12 + data02*tan1_data0 - data00*tan1_data2", out=tangent.data[1])
-            ne.evaluate("tan0_data0*data11 - tan0_data1*data10 + data00*tan1_data1 - data01*tan1_data0", out=tangent.data[2])
+            # One of tan0 or tan1 may be None
+            # tangent has same layout as arg0 (not None)
+            tangent.preset_layout(arg0.layout)
+            if tan0 is None:
+                # Broadcast
+                tan1_data = self.arg1_ghost_broadcaster.cast(tan1)
+                tan1_data0, tan1_data1, tan1_data2 = tan1_data[0], tan1_data[1], tan1_data[2]
+                ne.evaluate("data01*tan1_data2 - data02*tan1_data1", out=tangent.data[0])
+                ne.evaluate("data02*tan1_data0 - data00*tan1_data2", out=tangent.data[1])
+                ne.evaluate("data00*tan1_data1 - data01*tan1_data0", out=tangent.data[2])
+            elif tan1 is None:
+                # Broadcast
+                tan0_data = self.arg0_ghost_broadcaster.cast(tan0)
+                tan0_data0, tan0_data1, tan0_data2 = tan0_data[0], tan0_data[1], tan0_data[2]
+                ne.evaluate("tan0_data1*data12 - tan0_data2*data11", out=tangent.data[0])
+                ne.evaluate("tan0_data2*data10 - tan0_data0*data12", out=tangent.data[1])
+                ne.evaluate("tan0_data0*data11 - tan0_data1*data10", out=tangent.data[2])
+            else:
+                # Broadcast
+                tan0_data = self.arg0_ghost_broadcaster.cast(tan0)
+                tan1_data = self.arg1_ghost_broadcaster.cast(tan1)
+                tan0_data0, tan0_data1, tan0_data2 = tan0_data[0], tan0_data[1], tan0_data[2]
+                tan1_data0, tan1_data1, tan1_data2 = tan1_data[0], tan1_data[1], tan1_data[2]
+                ne.evaluate("tan0_data1*data12 - tan0_data2*data11 + data01*tan1_data2 - data02*tan1_data1", out=tangent.data[0])
+                ne.evaluate("tan0_data2*data10 - tan0_data0*data12 + data02*tan1_data0 - data00*tan1_data2", out=tangent.data[1])
+                ne.evaluate("tan0_data0*data11 - tan0_data1*data10 + data00*tan1_data1 - data01*tan1_data0", out=tangent.data[2])
 
     def operate_vjp_right_handed(self, layout, cotangents):
         arg_cotangents = []
@@ -875,15 +912,32 @@ class CrossProduct(Product, FutureField):
         ne.evaluate("data01*data10 - data00*data11", out=out.data[2])
         if tangent:
             tan0, tan1 = self.arg_tangents
-            tangent.preset_layout(tan0.layout)
-            # Broadcast
-            tan0_data = self.arg0_ghost_broadcaster.cast(tan0)
-            tan1_data = self.arg1_ghost_broadcaster.cast(tan1)
-            tan0_data0, tan0_data1, tan0_data2 = tan0_data[0], tan0_data[1], tan0_data[2]
-            tan1_data0, tan1_data1, tan1_data2 = tan1_data[0], tan1_data[1], tan1_data[2]
-            ne.evaluate("tan0_data2*data11 - tan0_data1*data12 + data02*tan1_data1 - data01*tan1_data2", out=tangent.data[0])
-            ne.evaluate("tan0_data0*data12 - tan0_data2*data10 + data00*tan1_data2 - data02*tan1_data0", out=tangent.data[1])
-            ne.evaluate("tan0_data1*data10 - tan0_data0*data11 + data01*tan1_data0 - data00*tan1_data1", out=tangent.data[2])
+            # One of tan0 or tan1 may be None
+            # tangent has same layout as arg0 (not None)
+            tangent.preset_layout(arg0.layout)
+            if tan0 is None:
+                # Broadcast
+                tan1_data = self.arg1_ghost_broadcaster.cast(tan1)
+                tan1_data0, tan1_data1, tan1_data2 = tan1_data[0], tan1_data[1], tan1_data[2]
+                ne.evaluate("data02*tan1_data1 - data01*tan1_data2", out=tangent.data[0])
+                ne.evaluate("data00*tan1_data2 - data02*tan1_data0", out=tangent.data[1])
+                ne.evaluate("data01*tan1_data0 - data00*tan1_data1", out=tangent.data[2])
+            elif tan1 is None:
+                # Broadcast
+                tan0_data = self.arg0_ghost_broadcaster.cast(tan0)
+                tan0_data0, tan0_data1, tan0_data2 = tan0_data[0], tan0_data[1], tan0_data[2]
+                ne.evaluate("tan0_data2*data11 - tan0_data1*data12", out=tangent.data[0])
+                ne.evaluate("tan0_data0*data12 - tan0_data2*data10", out=tangent.data[1])
+                ne.evaluate("tan0_data1*data10 - tan0_data0*data11", out=tangent.data[2])
+            else:
+                # Broadcast
+                tan0_data = self.arg0_ghost_broadcaster.cast(tan0)
+                tan1_data = self.arg1_ghost_broadcaster.cast(tan1)
+                tan0_data0, tan0_data1, tan0_data2 = tan0_data[0], tan0_data[1], tan0_data[2]
+                tan1_data0, tan1_data1, tan1_data2 = tan1_data[0], tan1_data[1], tan1_data[2]
+                ne.evaluate("tan0_data2*data11 - tan0_data1*data12 + data02*tan1_data1 - data01*tan1_data2", out=tangent.data[0])
+                ne.evaluate("tan0_data0*data12 - tan0_data2*data10 + data00*tan1_data2 - data02*tan1_data0", out=tangent.data[1])
+                ne.evaluate("tan0_data1*data10 - tan0_data0*data11 + data01*tan1_data0 - data00*tan1_data1", out=tangent.data[2])
 
     def operate_vjp_left_handed(self, layout, cotangents):
         arg_cotangents = []
@@ -1072,16 +1126,33 @@ class MultiplyFields(Multiply, FutureField):
         np.multiply(arg0_exp_data, arg1_exp_data, out=out.data)
         if tangent:
             tan0, tan1 = self.arg_tangents
-            tangent.preset_layout(tan0.layout)
-            # Broadcast over processes
-            tan0_data = self.arg0_ghost_broadcaster.cast(tan0)
-            tan1_data = self.arg1_ghost_broadcaster.cast(tan1)
-            # Reshape arg data for broadcasting over tensor dimensions
-            tan0_exp_data = tan0_data.reshape(self.arg0_exp_tshape + tan0_data.shape[len(tan0.tensorsig):])
-            tan1_exp_data = tan1_data.reshape(self.arg1_exp_tshape + tan1_data.shape[len(tan1.tensorsig):])
-            # Multiply, broadcasting over space and tensor dimensions
-            np.multiply(tan0_exp_data, arg1_exp_data, out=tangent.data)
-            np.add(tangent.data, np.multiply(arg0_exp_data, tan1_exp_data), out=tangent.data) # TEMPORARY
+            # One of tan0 or tan1 may be None
+            # tangent has same layout as arg0 (not None)
+            tangent.preset_layout(arg0.layout)
+            if tan0 is None:
+                # Broadcast over processes
+                tan1_data = self.arg1_ghost_broadcaster.cast(tan1)
+                # Reshape arg data for broadcasting over tensor dimensions
+                tan1_exp_data = tan1_data.reshape(self.arg1_exp_tshape + tan1_data.shape[len(tan1.tensorsig):])
+                # Multiply, broadcasting over space and tensor dimensions
+                np.multiply(arg0_exp_data, tan1_exp_data, out=tangent.data)
+            elif tan1 is None:
+                # Broadcast over processes
+                tan0_data = self.arg0_ghost_broadcaster.cast(tan0)
+                # Reshape arg data for broadcasting over tensor dimensions
+                tan0_exp_data = tan0_data.reshape(self.arg0_exp_tshape + tan0_data.shape[len(tan0.tensorsig):])
+                # Multiply, broadcasting over space and tensor dimensions
+                np.multiply(tan0_exp_data, arg1_exp_data, out=tangent.data)
+            else:
+                # Broadcast over processes
+                tan0_data = self.arg0_ghost_broadcaster.cast(tan0)
+                tan1_data = self.arg1_ghost_broadcaster.cast(tan1)
+                # Reshape arg data for broadcasting over tensor dimensions
+                tan0_exp_data = tan0_data.reshape(self.arg0_exp_tshape + tan0_data.shape[len(tan0.tensorsig):])
+                tan1_exp_data = tan1_data.reshape(self.arg1_exp_tshape + tan1_data.shape[len(tan1.tensorsig):])
+                # Multiply, broadcasting over space and tensor dimensions
+                np.multiply(tan0_exp_data, arg1_exp_data, out=tangent.data)
+                np.add(tangent.data, np.multiply(arg0_exp_data, tan1_exp_data), out=tangent.data) # TEMPORARY
 
     def operate_vjp(self, layout, cotangents):
         arg_cotangents = []
