@@ -5470,14 +5470,22 @@ class IntegrateSpinBasis(operators.PolarMOperator):
         # Wrap cached method
         return self._radial_matrix(self.radial_basis, m)
 
-    def operate(self, out):
+    @CachedMethod
+    def _radial_matrix_adjoint(self, basis, m):
+        matrix = self._radial_matrix(basis, m)
+        adjoint = matrix.T.conj()
+        if sparse.isspmatrix(adjoint):
+            adjoint = adjoint.tocsr()
+        return adjoint
+
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        operand = self.args[0]
+        operand = args[0]
         basis = self.input_basis
         axis = self.dist.last_axis(self.radial_basis)
         # Set output layout
-        out.preset_layout(operand.layout)
-        out.data[:] = 0
+        if not adjoint:
+            out.data[:] = 0
         # Apply operator
         for m, mg_slice, mc_slice, n_slice in basis.m_maps(self.dist):
             if m == 0:
@@ -5488,8 +5496,12 @@ class IntegrateSpinBasis(operators.PolarMOperator):
                 slices = tuple(slices)
                 vec_in  = operand.data[slices]
                 vec_out = out.data[slices]
-                A = self._radial_matrix(self.radial_basis, m)
-                vec_out += apply_matrix(A, vec_in, axis=axis)
+                if adjoint:
+                    A_adj = self._radial_matrix_adjoint(self.radial_basis, m)
+                    vec_in += apply_matrix(A_adj, vec_out, axis=axis)
+                else:
+                    A = self._radial_matrix(self.radial_basis, m)
+                    vec_out += apply_matrix(A, vec_in, axis=axis)
 
 
 class IntegrateDisk(operators.Integrate, IntegrateSpinBasis):
