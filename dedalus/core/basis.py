@@ -4834,7 +4834,7 @@ class ConvertConstantBall(operators.ConvertConstant, operators.SphericalEllOpera
 
     def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        arg = self.args[0]
+        arg = args[0]
         basis = self.output_basis
         axis = self.dist.last_axis(basis.radial_basis)
         if not adjoint:
