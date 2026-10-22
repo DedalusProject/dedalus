@@ -5771,14 +5771,14 @@ class IntegrateSpherical(operators.SphericalEllOperator):
         # Wrap cached method
         return self._radial_matrix(self.radial_basis, ell)
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        operand = self.args[0]
+        operand = args[0]
         basis = self.input_basis
         axis = self.dist.last_axis(basis.radial_basis)
         # Set output layout
-        out.preset_layout(operand.layout)
-        out.data[:] = 0
+        if not adjoint:
+            out.data[:] = 0
         # Apply operator
         for ell, m_ind, ell_ind in basis.ell_maps(self.dist):
             if ell == 0:
@@ -5790,8 +5790,12 @@ class IntegrateSpherical(operators.SphericalEllOperator):
                 slices = tuple(slices)
                 vec_in  = operand.data[slices]
                 vec_out = out.data[slices]
-                A = self.radial_matrix(None, None, ell)
-                vec_out += apply_matrix(A, vec_in, axis=axis)
+                if adjoint:
+                    A_adj = self.radial_matrix_adjoint(None, None, ell)
+                    vec_in += apply_matrix(A_adj, vec_out, axis=axis)
+                else:
+                    A = self.radial_matrix(None, None, ell)
+                    vec_out += apply_matrix(A, vec_in, axis=axis)
 
 
 class IntegrateBall(operators.Integrate, IntegrateSpherical):
