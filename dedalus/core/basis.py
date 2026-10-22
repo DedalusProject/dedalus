@@ -4979,31 +4979,36 @@ class PolarRadialInterpolate(operators.Interpolate, operators.PolarMOperator):
             matrix = U.T.conj() @ matrix
         return matrix
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        operand = self.args[0]
+        operand = args[0]
         input_basis = self.input_basis
-        output_basis = self.output_basis
         radial_basis = self.input_basis
         axis = self.last_axis
-        # Set output layout
-        out.preset_layout(operand.layout)
+        if adjoint:
+            temp = np.copy(out.data)
+            radial_basis.forward_spin_recombination(operand.tensorsig, axis, temp, out.data)
         # Apply operator
         S = radial_basis.spin_weights(operand.tensorsig)
         slices_in  = [slice(None) for i in range(self.dist.dim)]
         slices_out = [slice(None) for i in range(self.dist.dim)]
         for spinindex, spintotal in np.ndenumerate(S):
-           comp_in = operand.data[spinindex]
-           comp_out = out.data[spinindex]
-           for m, mg_slice, mc_slice, n_slice in input_basis.m_maps(self.dist):
-               slices_in[axis-1] = slices_out[axis-1] = mc_slice
-               slices_in[axis] = n_slice
-               vec_in  = comp_in[tuple(slices_in)]
-               vec_out = comp_out[tuple(slices_out)]
-               A = self.radial_matrix(spinindex, spinindex, m)
-               apply_matrix(A, vec_in, axis=axis, out=vec_out)
-        temp = np.copy(out.data)
-        radial_basis.backward_spin_recombination(operand.tensorsig, axis, temp, out.data)
+            comp_in = operand.data[spinindex]
+            comp_out = out.data[spinindex]
+            for m, mg_slice, mc_slice, n_slice in input_basis.m_maps(self.dist):
+                slices_in[axis-1] = slices_out[axis-1] = mc_slice
+                slices_in[axis] = n_slice
+                vec_in  = comp_in[tuple(slices_in)]
+                vec_out = comp_out[tuple(slices_out)]
+                if adjoint:
+                    A_adj = self.radial_matrix_adjoint(spinindex, spinindex, m)
+                    vec_in += apply_matrix(A_adj, vec_out, axis=axis) # TEMPORARY
+                else:
+                    A = self.radial_matrix(spinindex, spinindex, m)
+                    apply_matrix(A, vec_in, axis=axis, out=vec_out)
+        if not adjoint:
+            temp = np.copy(out.data)
+            radial_basis.backward_spin_recombination(operand.tensorsig, axis, temp, out.data)
 
     def radial_matrix(self, spinindex_in, spinindex_out, m):
         position = self.position
