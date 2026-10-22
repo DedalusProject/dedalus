@@ -6019,33 +6019,37 @@ class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperato
             matrix = Q @ matrix
         return matrix
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        operand = self.args[0]
+        operand = args[0]
         input_basis = self.input_basis
-        output_basis = self.output_basis
         radial_basis = self.radial_basis
         axis = self.dist.last_axis(radial_basis)
-        # Set output layout
-        out.preset_layout(operand.layout)
+        if adjoint:
+            radial_basis.forward_regularity_recombination(operand.tensorsig, self.basis_subaxis, out.data, ell_maps=input_basis.ell_maps(self.dist))
         # Apply operator
         R = radial_basis.regularity_classes(operand.tensorsig)
         slices_in  = [slice(None) for i in range(self.dist.dim)]
         slices_out = [slice(None) for i in range(self.dist.dim)]
         for regindex, regtotal in np.ndenumerate(R):
-           comp_in = operand.data[regindex]
-           comp_out = out.data[regindex]
-           for ell, m_ind, ell_ind in input_basis.ell_maps(self.dist):
-               allowed  = radial_basis.regularity_allowed(ell, regindex)
-               if allowed:
-                   slices_in[axis-2] = slices_out[axis-2] = m_ind
-                   slices_in[axis-1] = slices_out[axis-1] = ell_ind
-                   slices_in[axis] = radial_basis.n_slice(ell)
-                   vec_in  = comp_in[tuple(slices_in)]
-                   vec_out = comp_out[tuple(slices_out)]
-                   A = self.radial_matrix(regindex, regindex, ell)
-                   apply_matrix(A, vec_in, axis=axis, out=vec_out)
-        radial_basis.backward_regularity_recombination(operand.tensorsig, self.basis_subaxis, out.data, ell_maps=input_basis.ell_maps(self.dist))
+            comp_in = operand.data[regindex]
+            comp_out = out.data[regindex]
+            for ell, m_ind, ell_ind in input_basis.ell_maps(self.dist):
+                allowed  = radial_basis.regularity_allowed(ell, regindex)
+                if allowed:
+                    slices_in[axis-2] = slices_out[axis-2] = m_ind
+                    slices_in[axis-1] = slices_out[axis-1] = ell_ind
+                    slices_in[axis] = radial_basis.n_slice(ell)
+                    vec_in  = comp_in[tuple(slices_in)]
+                    vec_out = comp_out[tuple(slices_out)]
+                    if adjoint:
+                        A_adj = self.radial_matrix_adjoint(regindex, regindex, ell)
+                        vec_in += apply_matrix(A_adj, vec_out, axis=axis) # TEMPORARY
+                    else:
+                        A = self.radial_matrix(regindex, regindex, ell)
+                        apply_matrix(A, vec_in, axis=axis, out=vec_out)
+        if not adjoint:
+            radial_basis.backward_regularity_recombination(operand.tensorsig, self.basis_subaxis, out.data, ell_maps=input_basis.ell_maps(self.dist))
 
     def radial_matrix(self, regindex_in, regindex_out, ell):
         position = self.position
