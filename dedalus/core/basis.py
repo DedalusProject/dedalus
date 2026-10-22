@@ -6290,13 +6290,13 @@ class PolarRadialComponent(operators.RadialComponent):
             matrix = sparse.kron(matrix, sparse.eye(2))
         return matrix
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        operand = self.args[0]
-        # Set output layout
-        layout = operand.layout
-        out.preset_layout(layout)
-        np.copyto(out.data, operand.data[axindex(self.index,1)])
+        operand = args[0]
+        if adjoint:
+            operand.data[axindex(self.index,1)] += out.data
+        else:
+            np.copyto(out.data, operand.data[axindex(self.index,1)])
 
 
 class PolarAngularComponent(operators.AngularComponent):
