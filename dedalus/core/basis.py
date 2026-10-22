@@ -5328,13 +5328,12 @@ class SphereAzimuthalAverage(AzimuthalAverage, operators.Average, operators.Spec
     subaxis_dependence = [True, False]  # Depends on m only
     subaxis_coupling = [False, False]  # No coupling
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        operand = self.args[0]
-        # Set output layout
+        operand = args[0]
         layout = operand.layout
-        out.preset_layout(layout)
-        out.data[:] = 0
+        if not adjoint:
+            out.data[:] = 0
         # Apply operator
         azimuth_axis = self.dist.first_axis(self.input_basis)
         domain_in = self.operand.domain
@@ -5348,7 +5347,10 @@ class SphereAzimuthalAverage(AzimuthalAverage, operators.Average, operators.Spec
         for spinindex, spintotal in np.ndenumerate(spincomps):
             comp_in = operand.data[spinindex]
             comp_out = out.data[spinindex]
-            comp_out[m0_out] = comp_in[m0_in]
+            if adjoint:
+                comp_in[m0_in] += comp_out[m0_out]
+            else:   
+                comp_out[m0_out] = comp_in[m0_in]
 
 
 class SphericalAzimuthalAverage(AzimuthalAverage, operators.Average, operators.SpectralOperator):
