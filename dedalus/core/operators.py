@@ -2476,22 +2476,24 @@ class SpinSkew(Skew):
             factors[azimuth_index] = sparse.kron(id_m, mul_1j)
         return reduce(sparse.kron, factors, 1).tocsr()
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        arg = self.args[0]
+        arg = args[0]
         index = self.index
         azimuth_axis = self.azimuth_axis
         rank = len(self.tensorsig)
-        # Set output layout
-        out.preset_layout(arg.layout)
         # Apply skew
         if arg.data.size:
             if arg.layout.grid_space[azimuth_axis+1]:
                 # Left handed
                 sx = axslice(self.index, 0, 1)
                 sy = axslice(self.index, 1, 2)
-                out.data[sx] = arg.data[sy]
-                np.multiply(arg.data[sx], -1, out=out.data[sy])
+                if adjoint:
+                    arg.data[sx] -= out.data[sy]
+                    arg.data[sy] += out.data[sx]
+                else:
+                    out.data[sx] = arg.data[sy]
+                    np.multiply(arg.data[sx], -1, out=out.data[sy])
             else:
                 # Spinorder: -, +
                 minus = axslice(index, 0, 1)
@@ -2501,18 +2503,28 @@ class SpinSkew(Skew):
                 out_plus = out.data[plus]
                 out_minus = out.data[minus]
                 if is_complex_dtype(self.dtype):
-                    # out = 1j * s * arg
-                    np.multiply(arg_plus, 1j, out=out_plus)
-                    np.multiply(arg_minus, -1j, out=out_minus)
+                    if adjoint:
+                        arg_plus += np.multiply(out_plus, -1j) # TEMPORARY
+                        arg_minus += np.multiply(out_minus, 1j) # TEMPORARY
+                    else:
+                        # out = 1j * s * arg
+                        np.multiply(arg_plus, 1j, out=out_plus)
+                        np.multiply(arg_minus, -1j, out=out_minus)
                 else:
                     # out_cos + 1j * out_msin = (1j * s) * (arg_cos + 1j * arg_msin)
                     #                         = - s * arg_msin +  1j * s * arg_cos
                     cos = axslice(rank+azimuth_axis, 0, None, 2)
                     msin = axslice(rank+azimuth_axis, 1, None, 2)
-                    np.multiply(arg_plus[msin], -1, out=out_plus[cos])
-                    copyto(out_plus[msin], arg_plus[cos])
-                    copyto(out_minus[cos], arg_minus[msin])
-                    np.multiply(arg_minus[cos], -1, out=out_minus[msin])
+                    if adjoint:
+                        arg_plus[msin] -= out_plus[cos]
+                        arg_plus[cos] += out_plus[msin]
+                        arg_minus[msin] += out_minus[cos]
+                        arg_minus[cos] -= out_minus[msin]
+                    else:
+                        np.multiply(arg_plus[msin], -1, out=out_plus[cos])
+                        copyto(out_plus[msin], arg_plus[cos])
+                        copyto(out_minus[cos], arg_minus[msin])
+                        np.multiply(arg_minus[cos], -1, out=out_minus[msin])
 
 
 class Component(LinearOperator):
