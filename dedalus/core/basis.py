@@ -6107,14 +6107,18 @@ class ShellRadialInterpolate(operators.Interpolate, operators.SphericalEllOperat
         matrix = Q_backward @ matrix
         return sparse.csr_matrix(matrix)
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        operators.SphericalEllOperator.operate(self, out)
-        operand = self.args[0]
+        arg = args[0]
         radial_basis = self.radial_basis
-        input_basis = self.input_basis
-        # Q matrix
-        radial_basis.backward_regularity_recombination(operand.tensorsig, self.basis_subaxis, out.data, ell_maps=input_basis.ell_maps(self.dist))
+        subaxis = self.basis_subaxis
+        ell_maps = self.input_basis.ell_maps(self.dist)
+        if adjoint:
+            radial_basis.forward_regularity_recombination(arg.tensorsig, subaxis, out.data, ell_maps=ell_maps)
+            operators.SphericalEllOperator._operate(self, args, out, adjoint=True)
+        else:
+            operators.SphericalEllOperator._operate(self, args, out)
+            radial_basis.backward_regularity_recombination(arg.tensorsig, subaxis, out.data, ell_maps=ell_maps)
 
     def radial_matrix(self, regindex_in, regindex_out, ell):
         position = self.position
@@ -6165,13 +6169,13 @@ class S2RadialComponent(operators.RadialComponent):
             matrix = sparse.kron(matrix, sparse.eye(n_ell))
         return matrix
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        operand = self.args[0]
-        # Set output layout
-        layout = operand.layout
-        out.preset_layout(layout)
-        np.copyto(out.data, operand.data[axindex(self.index,2)])
+        arg = args[0]
+        if adjoint:
+            arg.data[axindex(self.index, 2)] += out.data
+        else:
+            np.copyto(out.data, arg.data[axindex(self.index, 2)])
 
 
 class S2AngularComponent(operators.AngularComponent):
@@ -6204,13 +6208,13 @@ class S2AngularComponent(operators.AngularComponent):
             matrix = sparse.kron(matrix, sparse.eye(n_ell))
         return matrix
 
-    def operate(self, out):
+    def _operate(self, args, out, adjoint=False):
         """Perform operation."""
-        operand = self.args[0]
-        # Set output layout
-        layout = operand.layout
-        out.preset_layout(layout)
-        np.copyto(out.data, operand.data[axslice(self.index,0,2)])
+        arg = args[0]
+        if adjoint:
+            arg.data[axslice(self.index, 0, 2)] += out.data
+        else:
+            np.copyto(out.data, arg.data[axslice(self.index, 0, 2)])
 
 
 class PolarAzimuthalComponent(operators.AzimuthalComponent):

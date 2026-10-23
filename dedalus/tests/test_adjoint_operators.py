@@ -62,7 +62,7 @@ from dedalus.core import coords, distributor, basis, field, operators
 #     op = eval(expr,{"u": u, "np": np, "d3": operators, "coord": c})
 #     g_eval = op.evaluate()
 #     _, dg_fwd = op.evaluate_jvp({u: du})
-#     dg = g_eval.copy_adjoint()
+#     dg = g_eval.get_cotangent()
 #     dg.fill_random(layout='c'); dg.change_layout(layout)
 #     g_vjp, dg_rev = op.evaluate_vjp({op: dg}, id=np.random.randint(0, 1000000), force=True)
 #     term1 = np.vdot(dg[layout],dg_fwd[layout])
@@ -124,7 +124,7 @@ from dedalus.core import coords, distributor, basis, field, operators
 #     op = eval(expr,{"u":u, "np":np, "d3":operators, "coord":c})
 #     g_eval = op.evaluate()
 #     _, dg_fwd = op.evaluate_jvp({u: du})
-#     dg = g_eval.copy_adjoint()
+#     dg = g_eval.get_cotangent()
 #     dg.fill_random(layout=layout)
 #     g_vjp, dg_rev = op.evaluate_vjp({op: dg}, id=np.random.randint(0, 1000000), force=True)
 #     term1 = np.vdot(dg[layout],dg_fwd[layout])
@@ -156,7 +156,7 @@ from dedalus.core import coords, distributor, basis, field, operators
 #     op = u*dx(u) + v*dy(u)
 #     g_eval = op.evaluate()
 #     _, dg_fwd = op.evaluate_jvp({u: du, v: dv})
-#     dg = g_eval.copy_adjoint()
+#     dg = g_eval.get_cotangent()
 #     dg.fill_random(layout='c'); dg.change_layout(layout)
 #     _, dg_rev = op.evaluate_vjp({op: dg}, id=np.random.randint(0, 1000000), force=True)
 #     term1 = np.vdot(dg[layout],dg_fwd[layout])
@@ -194,7 +194,7 @@ from dedalus.core import coords, distributor, basis, field, operators
 #     for op in op_list:
 #         g_eval = op.evaluate()
 #         _, dg_fwd = op.evaluate_jvp({u: du, v: dv})
-#         dg = g_eval.copy_adjoint()
+#         dg = g_eval.get_cotangent()
 #         dg.fill_random(layout='c'); dg.change_layout(layout)
 #         cotangents[op] = dg
 #         _, cotangents = op.evaluate_vjp(cotangents, id=np.random.randint(0, 1000000), force=True)
@@ -217,7 +217,7 @@ def test_S2_operators():
     df = f.copy()
     g_eval = op.evaluate()
     _, dg_fwd = op.evaluate_jvp({f: df})
-    dg = g_eval.copy_adjoint()
+    dg = g_eval.get_cotangent()
     dg.fill_random(layout='c'); dg.change_layout('c')
     cotangents[op] = dg
     _, cotangents = op.evaluate_vjp(cotangents, id=np.random.randint(0, 1000000), force=True)
@@ -241,7 +241,7 @@ def test_S2_operators():
 #     df = f.copy()
 #     g_eval = op.evaluate()
 #     _, dg_fwd = op.evaluate_jvp({f: df})
-#     dg = g_eval.copy_adjoint()
+#     dg = g_eval.get_cotangent()
 #     dg.fill_random(layout='c'); dg.change_layout('c')
 #     cotangents[op] = dg
 #     _, cotangents = op.evaluate_vjp(cotangents, id=np.random.randint(0, 1000000), force=True)
