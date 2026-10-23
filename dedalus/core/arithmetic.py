@@ -854,16 +854,16 @@ class CrossProduct(Product, FutureField):
         self.cotangent.change_layout(layout)
         cotangent_data = self.arg0_ghost_broadcaster.cast(self.cotangent)
         cotangent_data0, cotangent_data1, cotangent_data2 = cotangent_data[0], cotangent_data[1], cotangent_data[2]
-        cotan0_raw = np.empty((3,) + cotangent_data0.shape, dtype=self.cotangent.data.dtype)
-        cotan0_raw[0] = -ne.evaluate("cotangent_data1*data12 - cotangent_data2*data11")
-        cotan0_raw[1] = -ne.evaluate("cotangent_data2*data10 - cotangent_data0*data12")
-        cotan0_raw[2] = -ne.evaluate("cotangent_data0*data11 - cotangent_data1*data10")
+        cotan0_raw = np.empty_like(cotangent_data)
+        ne.evaluate("cotangent_data2*data11 - cotangent_data1*data12", out=cotan0_raw[0])
+        ne.evaluate("cotangent_data0*data12 - cotangent_data2*data10", out=cotan0_raw[1])
+        ne.evaluate("cotangent_data1*data10 - cotangent_data0*data11", out=cotan0_raw[2])
         cotangent_data = self.arg1_ghost_broadcaster.cast(self.cotangent)
         cotangent_data0, cotangent_data1, cotangent_data2 = cotangent_data[0], cotangent_data[1], cotangent_data[2]
-        cotan1_raw = np.empty((3,) + cotangent_data0.shape, dtype=self.cotangent.data.dtype)
-        cotan1_raw[0] = -ne.evaluate("data01*cotangent_data2 - data02*cotangent_data1")
-        cotan1_raw[1] = -ne.evaluate("data02*cotangent_data0 - data00*cotangent_data2")
-        cotan1_raw[2] = -ne.evaluate("data00*cotangent_data1 - data01*cotangent_data0")
+        cotan1_raw = np.empty_like(cotangent_data)
+        ne.evaluate("data02*cotangent_data1 - data01*cotangent_data2", out=cotan1_raw[0])
+        ne.evaluate("data00*cotangent_data2 - data02*cotangent_data0", out=cotan1_raw[1])
+        ne.evaluate("data01*cotangent_data0 - data00*cotangent_data1", out=cotan1_raw[2])
         # Reduce over broadcasted spatial dimensions and processes (as MultiplyFields.operate_vjp),
         # so an operand on a sub-basis (e.g. an axisymmetric background field) accumulates correctly
         spatial_reduce_0 = tuple(axis + 1 for axis in self.arg0_ghost_broadcaster.deploy_dims_ext_list)
@@ -921,16 +921,16 @@ class CrossProduct(Product, FutureField):
         self.cotangent.change_layout(layout)
         cotangent_data = self.arg0_ghost_broadcaster.cast(self.cotangent)
         cotangent_data0, cotangent_data1, cotangent_data2 = cotangent_data[0], cotangent_data[1], cotangent_data[2]
-        cotan0_raw = np.empty((3,) + cotangent_data0.shape, dtype=self.cotangent.data.dtype)
-        cotan0_raw[0] = -ne.evaluate("cotangent_data2*data11 - cotangent_data1*data12")
-        cotan0_raw[1] = -ne.evaluate("cotangent_data0*data12 - cotangent_data2*data10")
-        cotan0_raw[2] = -ne.evaluate("cotangent_data1*data10 - cotangent_data0*data11")
+        cotan0_raw = np.empty_like(cotangent_data)
+        ne.evaluate("cotangent_data1*data12 - cotangent_data2*data11", out=cotan0_raw[0])
+        ne.evaluate("cotangent_data2*data10 - cotangent_data0*data12", out=cotan0_raw[1])
+        ne.evaluate("cotangent_data0*data11 - cotangent_data1*data10", out=cotan0_raw[2])
         cotangent_data = self.arg1_ghost_broadcaster.cast(self.cotangent)
         cotangent_data0, cotangent_data1, cotangent_data2 = cotangent_data[0], cotangent_data[1], cotangent_data[2]
-        cotan1_raw = np.empty((3,) + cotangent_data0.shape, dtype=self.cotangent.data.dtype)
-        cotan1_raw[0] = -ne.evaluate("data02*cotangent_data1 - data01*cotangent_data2")
-        cotan1_raw[1] = -ne.evaluate("data00*cotangent_data2 - data02*cotangent_data0")
-        cotan1_raw[2] = -ne.evaluate("data01*cotangent_data0 - data00*cotangent_data1")
+        cotan1_raw = np.empty_like(cotangent_data)
+        ne.evaluate("data01*cotangent_data2 - data02*cotangent_data1", out=cotan1_raw[0])
+        ne.evaluate("data02*cotangent_data0 - data00*cotangent_data2", out=cotan1_raw[1])
+        ne.evaluate("data00*cotangent_data1 - data01*cotangent_data0", out=cotan1_raw[2])
         # Reduce over broadcasted spatial dimensions and processes (as MultiplyFields.operate_vjp),
         # so an operand on a sub-basis (e.g. an axisymmetric background field) accumulates correctly
         spatial_reduce_0 = tuple(axis + 1 for axis in self.arg0_ghost_broadcaster.deploy_dims_ext_list)

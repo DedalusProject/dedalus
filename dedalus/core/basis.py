@@ -1,6 +1,5 @@
 """Abstract and built-in classes for spectral bases."""
 
-import types
 import numpy as np
 from scipy import sparse
 from functools import reduce
@@ -6108,26 +6107,15 @@ class ShellRadialInterpolate(operators.Interpolate, operators.SphericalEllOperat
         matrix = Q_backward @ matrix
         return sparse.csr_matrix(matrix)
 
-    def operate(self, out):
-        out.preset_layout(self.args[0].layout)
-        self._operate(self.args, out)
-
     def _operate(self, args, out, adjoint=False):
-        """Forward: the generic ell-operator followed by the backward regularity
-        recombination (regularity -> spin components on the S2 output).  Adjoint:
-        the forward regularity recombination (its transpose) on the cotangent,
-        then the generic adjoint ell-operator.  Previously the JVP/VJP paths ran
-        the generic operator alone and were mutually consistent but were not the
-        tangent/adjoint of the forward map."""
+        """Perform operation."""
         arg = args[0]
         radial_basis = self.radial_basis
         subaxis = self.basis_subaxis
         ell_maps = self.input_basis.ell_maps(self.dist)
         if adjoint:
-            tmp = np.array(out.data, copy=True)
-            radial_basis.forward_regularity_recombination(arg.tensorsig, subaxis, tmp, ell_maps=ell_maps)
-            proxy = types.SimpleNamespace(data=tmp, tensorsig=out.tensorsig, layout=out.layout)
-            operators.SphericalEllOperator._operate(self, args, proxy, adjoint=True)
+            radial_basis.forward_regularity_recombination(arg.tensorsig, subaxis, out.data, ell_maps=ell_maps)
+            operators.SphericalEllOperator._operate(self, args, out, adjoint=True)
         else:
             operators.SphericalEllOperator._operate(self, args, out)
             radial_basis.backward_regularity_recombination(arg.tensorsig, subaxis, out.data, ell_maps=ell_maps)
@@ -6181,13 +6169,8 @@ class S2RadialComponent(operators.RadialComponent):
             matrix = sparse.kron(matrix, sparse.eye(n_ell))
         return matrix
 
-    def operate(self, out):
-        out.preset_layout(self.args[0].layout)
-        self._operate(self.args, out)
-
     def _operate(self, args, out, adjoint=False):
-        """Radial component selection: forward takes the radial (index 2) slot of the
-        tensor axis; the adjoint accumulates the cotangent back into that slot."""
+        """Perform operation."""
         arg = args[0]
         if adjoint:
             arg.data[axindex(self.index, 2)] += out.data
@@ -6225,13 +6208,8 @@ class S2AngularComponent(operators.AngularComponent):
             matrix = sparse.kron(matrix, sparse.eye(n_ell))
         return matrix
 
-    def operate(self, out):
-        out.preset_layout(self.args[0].layout)
-        self._operate(self.args, out)
-
     def _operate(self, args, out, adjoint=False):
-        """Angular component selection: forward takes the two angular slots (0:2) of
-        the tensor axis; the adjoint accumulates the cotangent back into them."""
+        """Perform operation."""
         arg = args[0]
         if adjoint:
             arg.data[axslice(self.index, 0, 2)] += out.data

@@ -2324,15 +2324,8 @@ class SphericalTransposeComponents(TransposeComponents):
         matrix = sparse.kron(transpose, eye)
         return matrix
 
-    def operate(self, out):
-        out.preset_layout(self.args[0].layout)
-        self._operate(self.args, out)
-
     def _operate(self, args, out, adjoint=False):
-        """Forward: commute the transposition with the regularity recombination
-        (backward recombination on the input signature, transpose, forward
-        recombination on the output signature).  Adjoint: the same three steps
-        with the signatures swapped and the inverse axis order, accumulated."""
+        """Perform operation."""
         arg = args[0]
         radius_axis = self.radius_axis
         layout = out.layout if adjoint else arg.layout
@@ -2343,11 +2336,10 @@ class SphericalTransposeComponents(TransposeComponents):
             else:
                 radial_basis = self.radial_basis
                 ell_maps = self.input_basis.ell_maps(self.dist)
-                tmp = np.array(out.data, copy=True)
-                radial_basis.backward_regularity_recombination(self.tensorsig, radius_axis, tmp, ell_maps=ell_maps)
-                tmp = np.ascontiguousarray(np.transpose(tmp, inverse_order))
-                radial_basis.forward_regularity_recombination(arg.tensorsig, radius_axis, tmp, ell_maps=ell_maps)
-                arg.data[:] += tmp
+                radial_basis.backward_regularity_recombination(self.tensorsig, radius_axis, out.data, ell_maps=ell_maps)
+                copyto(out.data, np.transpose(out.data, inverse_order))
+                radial_basis.forward_regularity_recombination(arg.tensorsig, radius_axis, out.data, ell_maps=ell_maps)
+                arg.data[:] += out.data
         else:
             if layout.grid_space[radius_axis]:
                 out.data[:] = np.transpose(arg.data, self.new_axis_order)
