@@ -2822,6 +2822,34 @@ class ConvertConstantDisk(operators.ConvertConstant, operators.PolarMOperator):
         else:
             raise ValueError("This should never happen.")
 
+    def _operate(self, args, out, adjoint=False):
+        """Perform operation."""
+        arg = args[0]
+        basis = self.output_basis
+        axis = self.dist.last_axis(basis.radial_basis)
+        # Set output layout
+        if not adjoint:
+            out.data[:] = 0
+        # Return early for size-zero data
+        if arg.data.size == 0 or out.data.size == 0:
+            return
+        # Apply operator
+        for m, mg_slice, mc_slice, n_slice in basis.m_maps(self.dist):
+            if m == 0:
+                # Modify mc_slice to ignore sin component
+                slices = [slice(None) for i in range(self.dist.dim)]
+                slices[axis-1] = slice(mc_slice.start, mc_slice.start+1)
+                slices[axis] = n_slice
+                slices = tuple(slices)
+                vec_in  = arg.data[slices]
+                vec_out = out.data[slices]
+                if adjoint:
+                    A_adj = self.radial_matrix_adjoint((), (), m)
+                    vec_in += apply_matrix(A_adj, vec_out, axis=axis)
+                else:
+                    A = self.radial_matrix((), (), m)
+                    vec_out += apply_matrix(A, vec_in, axis=axis)
+
 
 class ConvertConstantAnnulus(operators.ConvertConstant, operators.PolarMOperator):
 
@@ -2851,6 +2879,34 @@ class ConvertConstantAnnulus(operators.ConvertConstant, operators.PolarMOperator
             return matrix
         else:
             raise ValueError("This should never happen.")
+
+    def _operate(self, args, out, adjoint=False):
+        """Perform operation."""
+        arg = args[0]
+        basis = self.output_basis
+        axis = self.dist.last_axis(basis.radial_basis)
+        # Set output layout
+        if not adjoint:
+            out.data[:] = 0
+        # Return early for size-zero data
+        if arg.data.size == 0 or out.data.size == 0:
+            return
+        # Apply operator
+        for m, mg_slice, mc_slice, n_slice in basis.m_maps(self.dist):
+            if m == 0:
+                # Modify mc_slice to ignore sin component
+                slices = [slice(None) for i in range(self.dist.dim)]
+                slices[axis-1] = slice(mc_slice.start, mc_slice.start+1)
+                slices[axis] = n_slice
+                slices = tuple(slices)
+                vec_in  = arg.data[slices]
+                vec_out = out.data[slices]
+                if adjoint:
+                    A_adj = self.radial_matrix_adjoint((), (), m)
+                    vec_in += apply_matrix(A_adj, vec_out, axis=axis)
+                else:
+                    A = self.radial_matrix((), (), m)
+                    vec_out += apply_matrix(A, vec_in, axis=axis)
 
 
 class SphereBasis(SpinBasis, metaclass=CachedClass):
