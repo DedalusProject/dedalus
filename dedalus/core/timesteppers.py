@@ -129,10 +129,6 @@ class MultistepIMEX:
             self.cotangents[field] = field_adjoint
             self.dFdxH_Y.append(field_adjoint)
         self.eqn_list = [eqn['F'] for eqn in solver.problem.equations]
-        # TODO: Is there a better place to cache these hermitian matrices?
-        for sp in solver.subproblems:
-            sp.M_min_H = np.conj(sp.M_min).T.tocsr()
-            sp.L_min_H = np.conj(sp.L_min).T.tocsr()
 
     def reset(self):
         """Reset timestepper so that it can be reused"""
@@ -297,9 +293,8 @@ class MultistepIMEX:
             # Slice out valid subdata, skipping invalid components
             spRHS = sp.gather_inputs(state_fields)
             spX = sp.LHS_solver.solve_H(spRHS)  # CREATES TEMPORARY
-            # TODO: Do something better for the csr conversion
-            apply_sparse(sp.M_min_H, spX, axis=0, out=MX0.get_subdata(sp))  # Rectangular dot product skipping shape checks
-            apply_sparse(sp.L_min_H, spX, axis=0, out=LX0.get_subdata(sp))  # Rectangular dot product skipping shape checks
+            apply_sparse(sp.M_min, spX, axis=0, out=MX0.get_subdata(sp), adjoint=True)  # Rectangular dot product skipping shape checks
+            apply_sparse(sp.L_min, spX, axis=0, out=LX0.get_subdata(sp), adjoint=True)  # Rectangular dot product skipping shape checks
             np.copyto(Y0.get_subdata(sp), spX)
         sum_len = np.min([len(c), solver.stop_iteration-self._iteration])
         # Calculate linearised F for all steps
@@ -742,10 +737,6 @@ class RungeKuttaIMEX:
             self.cotangents[field] = field_adjoint
             self.dFdxH_Y.append(field_adjoint)
         self.eqn_list = [eqn['F'] for eqn in solver.problem.equations]
-        # Just for now
-        for sp in solver.subproblems:
-            sp.M_min_H = np.conj(sp.M_min).T.tocsr()
-            sp.L_min_H = np.conj(sp.L_min).T.tocsr()
 
     def reset(self):
         """Reset timestepper so that it can be reused"""
@@ -929,9 +920,8 @@ class RungeKuttaIMEX:
                 spRHS = RHS.get_subdata(sp)
                 spX = sp.LHS_solvers[i].solve_H(spRHS)  # CREATES TEMPORARY
                 # Compute new transpose terms and RHS
-                # TODO: Do something better for the csr conversion
-                apply_sparse(sp.L_min_H, spX, axis=0, out=LXi.get_subdata(sp))  # Rectangular dot product skipping shape checks
-                apply_sparse(sp.M_min_H, spX, axis=0, out=MXTi.get_subdata(sp))
+                apply_sparse(sp.L_min, spX, axis=0, out=LXi.get_subdata(sp), adjoint=True)  # Rectangular dot product skipping shape checks
+                apply_sparse(sp.M_min, spX, axis=0, out=MXTi.get_subdata(sp), adjoint=True)
                 sp.scatter_inputs(spX, state_fields)
                 # Linearised F vjp
                 sp.scatter_inputs(XStages[i-1].get_subdata(sp), solver.state)
