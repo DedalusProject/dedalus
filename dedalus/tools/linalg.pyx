@@ -362,8 +362,9 @@ def apply_csr(
     cnp.ndarray array,
     cnp.ndarray out,
     const int axis,
-    const int num_threads):
-    """Apply CSR matrix to array along specified axis and add to output."""
+    const int num_threads,
+    bint adjoint=False):
+    """Apply CSR matrix (or its adjoint) to array along specified axis and add to output."""
     # Special-case based on dimension
     # This avoids overhead from reshaping small arrays
     cdef int ndim = array.ndim
@@ -373,18 +374,18 @@ def apply_csr(
     cdef int N3 = 1
     if ndim == 1:
         if axis == 0:
-            apply_csr_vec(indptr, indices, entries, array, out, num_threads)
+            apply_csr_vec(indptr, indices, entries, array, out, num_threads, adjoint)
     elif ndim == 2:
         if axis == 0:
             if array.shape[1] == 1:
-                apply_csr_vec(indptr, indices, entries, array[:,0], out[:,0], num_threads)
+                apply_csr_vec(indptr, indices, entries, array[:,0], out[:,0], num_threads, adjoint)
             else:
-                apply_csr_first(indptr, indices, entries, array, out, num_threads)
+                apply_csr_first(indptr, indices, entries, array, out, num_threads, adjoint)
         elif axis == 1:
             if array.shape[0] == 1:
-                apply_csr_vec(indptr, indices, entries, array[0,:], out[0,:], num_threads)
+                apply_csr_vec(indptr, indices, entries, array[0,:], out[0,:], num_threads, adjoint)
             else:
-                apply_csr_last(indptr, indices, entries, array, out, num_threads)
+                apply_csr_last(indptr, indices, entries, array, out, num_threads, adjoint)
     else:
         # Treat as 3D array with specified axis in the middle
         # Compute equivalent shape (N1, N2, N3)
@@ -408,23 +409,23 @@ def apply_csr(
                 # (1, N2, 1) -> (N2,)
                 x1 = array.reshape((N2_in,))
                 y1 = out.reshape((N2_out,))
-                apply_csr_vec(indptr, indices, entries, x1, y1, num_threads)
+                apply_csr_vec(indptr, indices, entries, x1, y1, num_threads, adjoint)
             else:
                 # (1, N2, N3) -> (N2, N3)
                 x2 = array.reshape((N2_in, N3))
                 y2 = out.reshape((N2_out, N3))
-                apply_csr_first(indptr, indices, entries, x2, y2, num_threads)
+                apply_csr_first(indptr, indices, entries, x2, y2, num_threads, adjoint)
         else:
             if N3 == 1:
                 # (N1, N2, 1) -> (N1, N2)
                 x2 = array.reshape((N1, N2_in))
                 y2 = out.reshape((N1, N2_out))
-                apply_csr_last(indptr, indices, entries, x2, y2, num_threads)
+                apply_csr_last(indptr, indices, entries, x2, y2, num_threads, adjoint)
             else:
                 # (N1, N2, N3)
                 x3 = array.reshape((N1, N2_in, N3))
                 y3 = out.reshape((N1, N2_out, N3))
-                apply_csr_mid(indptr, indices, entries, x3, y3, num_threads)
+                apply_csr_mid(indptr, indices, entries, x3, y3, num_threads, adjoint)
 
 
 @cython.boundscheck(False)
@@ -435,16 +436,26 @@ def apply_csr_vec(
     const dtype [::1] Ax,
     const dtype [:] x,
           dtype [::1] y,
-    const int num_threads):
-    """Apply CSR matrix along a vector and add to output."""
-    cdef int n_row = y.shape[0]
+    const int num_threads,
+    bint adjoint=False):
+    """Apply CSR matrix (or its adjoint) along a vector and add to output."""
+    cdef int n_row = Ap.shape[0] - 1
     cdef index i, jj
-    cdef dtype sum
-    for i in prange(n_row, nogil=True, num_threads=num_threads, schedule='static'):
-        sum = y[i]
-        for jj in range(Ap[i], Ap[i+1]):
-            sum = sum + Ax[jj] * x[Aj[jj]]
-        y[i] = sum
+    cdef dtype sum, a
+    if adjoint:
+        for i in range(n_row):
+            for jj in range(Ap[i], Ap[i+1]):
+                if dtype is float or dtype is double:
+                    a = Ax[jj]
+                else:
+                    a = Ax[jj].conjugate()
+                y[Aj[jj]] = y[Aj[jj]] + a * x[i]
+    else:
+        for i in prange(n_row, nogil=True, num_threads=num_threads, schedule='static'):
+            sum = y[i]
+            for jj in range(Ap[i], Ap[i+1]):
+                sum = sum + Ax[jj] * x[Aj[jj]]
+            y[i] = sum
 
 
 @cython.boundscheck(False)
@@ -455,18 +466,30 @@ def apply_csr_first(
     const dtype [::1] Ax,
     const dtype [:,:] x,
           dtype [:,::1] y,
-    const int num_threads):
-    """Apply CSR matrix along first axis of 2D array and add to output."""
-    cdef int n_row = y.shape[0]
+    const int num_threads,
+    bint adjoint=False):
+    """Apply CSR matrix (or its adjoint) along first axis of 2D array and add to output."""
+    cdef int n_row = Ap.shape[0] - 1
     cdef int n_after = x.shape[1]
     cdef index i, jj, j, k
     cdef dtype a
-    for i in prange(n_row, nogil=True, num_threads=num_threads, schedule='static'):
-        for jj in range(Ap[i], Ap[i+1]):
-            j = Aj[jj]
-            a = Ax[jj]
-            for k in range(n_after):
-                y[i,k] = y[i,k] + a * x[j,k]
+    if adjoint:
+        for i in range(n_row):
+            for jj in range(Ap[i], Ap[i+1]):
+                j = Aj[jj]
+                if dtype is float or dtype is double:
+                    a = Ax[jj]
+                else:
+                    a = Ax[jj].conjugate()
+                for k in range(n_after):
+                    y[j,k] = y[j,k] + a * x[i,k]
+    else:
+        for i in prange(n_row, nogil=True, num_threads=num_threads, schedule='static'):
+            for jj in range(Ap[i], Ap[i+1]):
+                j = Aj[jj]
+                a = Ax[jj]
+                for k in range(n_after):
+                    y[i,k] = y[i,k] + a * x[j,k]
 
 
 @cython.boundscheck(False)
@@ -478,20 +501,32 @@ def apply_csr_last(
     const dtype [::1] Ax,
     const dtype [:,:] x,
           dtype [:,::1] y,
-    const int num_threads):
-    """Apply CSR matrix along last axis of 2D array and add to output."""
+    const int num_threads,
+    bint adjoint=False):
+    """Apply CSR matrix (or its adjoint) along last axis of 2D array and add to output."""
     cdef int n_before = x.shape[0]
-    cdef int n_row = y.shape[1]
+    cdef int n_row = Ap.shape[0] - 1
     cdef int hi
     cdef index h, i, jj
-    cdef dtype sum
-    for hi in prange(n_before*n_row, nogil=True, num_threads=num_threads, schedule='static'):
-        h = hi / n_row
-        i = hi % n_row
-        sum = y[h,i]
-        for jj in range(Ap[i], Ap[i+1]):
-            sum = sum + Ax[jj] * x[h,Aj[jj]]
-        y[h,i] = sum
+    cdef dtype sum, a
+    if adjoint:
+        for hi in range(n_before*n_row):
+            h = hi / n_row
+            i = hi % n_row 
+            for jj in range(Ap[i], Ap[i+1]):
+                if dtype is float or dtype is double:
+                    a = Ax[jj]
+                else:
+                    a = Ax[jj].conjugate()
+                y[h,Aj[jj]] = y[h,Aj[jj]] + a * x[h,i]
+    else:
+        for hi in prange(n_before*n_row, nogil=True, num_threads=num_threads, schedule='static'):
+            h = hi / n_row
+            i = hi % n_row
+            sum = y[h,i]
+            for jj in range(Ap[i], Ap[i+1]):
+                sum = sum + Ax[jj] * x[h,Aj[jj]]
+            y[h,i] = sum
 
 
 @cython.boundscheck(False)
@@ -503,20 +538,33 @@ def apply_csr_mid(
     const dtype [::1] Ax,
     const dtype [:,:,:] x,
           dtype [:,:,::1] y,
-    const int num_threads):
-    """Apply CSR matrix along middle axis of 3D array and add to output."""
+    const int num_threads,
+    bint adjoint=False):
+    """Apply CSR matrix (or its adjoint) along middle axis of 3D array and add to output."""
     cdef int n_before = x.shape[0]
-    cdef int n_row = y.shape[1]
+    cdef int n_row = Ap.shape[0] - 1
     cdef int n_after = x.shape[2]
     cdef int hi
     cdef index h, i, jj, j, k
-    cdef dtype a
-    for hi in prange(n_before*n_row, nogil=True, num_threads=num_threads, schedule='static'):
-        h = hi / n_row
-        i = hi % n_row
-        for jj in range(Ap[i], Ap[i+1]):
-            j = Aj[jj]
-            a = Ax[jj]
-            for k in range(n_after):
-                y[h,i,k] = y[h,i,k] + a * x[h,j,k]
-
+    cdef dtype a, xi
+    if adjoint:
+        for hi in range(n_before*n_row):
+            h = hi / n_row
+            i = hi % n_row
+            for jj in range(Ap[i], Ap[i+1]):
+                j = Aj[jj]
+                if dtype is float or dtype is double:
+                    a = Ax[jj]
+                else:
+                    a = Ax[jj].conjugate()
+                for k in range(n_after):
+                    y[h,j,k] = y[h,j,k] + a * x[h,i,k]
+    else:
+        for hi in prange(n_before*n_row, nogil=True, num_threads=num_threads, schedule='static'):
+            h = hi / n_row
+            i = hi % n_row
+            for jj in range(Ap[i], Ap[i+1]):
+                j = Aj[jj]
+                a = Ax[jj]
+                for k in range(n_after):
+                    y[h,i,k] = y[h,i,k] + a * x[h,j,k]
