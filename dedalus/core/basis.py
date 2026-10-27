@@ -2843,9 +2843,9 @@ class ConvertConstantDisk(operators.ConvertConstant, operators.PolarMOperator):
                 slices = tuple(slices)
                 vec_in  = arg.data[slices]
                 vec_out = out.data[slices]
+                A = self.radial_matrix((), (), m)
                 if adjoint:
-                    A_adj = self.radial_matrix_adjoint((), (), m)
-                    vec_in += apply_matrix(A_adj, vec_out, axis=axis)
+                    vec_in += apply_matrix(A, vec_out, axis=axis, adjoint=True)
                 else:
                     A = self.radial_matrix((), (), m)
                     vec_out += apply_matrix(A, vec_in, axis=axis)
@@ -2901,11 +2901,10 @@ class ConvertConstantAnnulus(operators.ConvertConstant, operators.PolarMOperator
                 slices = tuple(slices)
                 vec_in  = arg.data[slices]
                 vec_out = out.data[slices]
+                A = self.radial_matrix((), (), m)
                 if adjoint:
-                    A_adj = self.radial_matrix_adjoint((), (), m)
-                    vec_in += apply_matrix(A_adj, vec_out, axis=axis)
+                    vec_in += apply_matrix(A, vec_out, axis=axis, adjoint=True)
                 else:
-                    A = self.radial_matrix((), (), m)
                     vec_out += apply_matrix(A, vec_in, axis=axis)
 
 
@@ -5066,11 +5065,10 @@ class ConvertConstantBall(operators.ConvertConstant, operators.SphericalEllOpera
                 slices = tuple(slices)
                 vec_in  = arg.data[slices]
                 vec_out = out.data[slices]
+                A = self.radial_matrix((), (), ell)
                 if adjoint:
-                    A_adj = self.radial_matrix_adjoint((), (), ell)
-                    vec_in += apply_matrix(A_adj, vec_out, axis=axis)  # TEMPORARY
+                    vec_in += apply_matrix(A, vec_out, axis=axis, adjoint=True)  # TEMPORARY
                 else:
-                    A = self.radial_matrix((), (), ell)
                     vec_out += apply_matrix(A, vec_in, axis=axis)  # TEMPORARY
 
 
@@ -5134,11 +5132,10 @@ class ConvertConstantShell(operators.ConvertConstant, operators.SphericalEllOper
                 slices = tuple(slices)
                 vec_in  = arg.data[slices]
                 vec_out = out.data[slices]
+                A = self.radial_matrix((), (), ell)
                 if adjoint:
-                    A_adj = self.radial_matrix_adjoint((), (), ell)
-                    vec_in += apply_matrix(A_adj, vec_out, axis=axis)  # TEMPORARY
+                    vec_in += apply_matrix(A, vec_out, axis=axis, adjoint=True)  # TEMPORARY
                 else:
-                    A = self.radial_matrix((), (), ell)
                     vec_out += apply_matrix(A, vec_in, axis=axis)  # TEMPORARY
 
 
@@ -5241,11 +5238,10 @@ class PolarRadialInterpolate(operators.Interpolate, operators.PolarMOperator):
                 slices_in[axis] = n_slice
                 vec_in  = comp_in[tuple(slices_in)]
                 vec_out = comp_out[tuple(slices_out)]
+                A = self.radial_matrix(spinindex, spinindex, m)
                 if adjoint:
-                    A_adj = self.radial_matrix_adjoint(spinindex, spinindex, m)
-                    vec_in += apply_matrix(A_adj, vec_out, axis=axis) # TEMPORARY
+                    vec_in += apply_matrix(A, vec_out, axis=axis, adjoint=True) # TEMPORARY
                 else:
-                    A = self.radial_matrix(spinindex, spinindex, m)
                     apply_matrix(A, vec_in, axis=axis, out=vec_out)
         if not adjoint:
             temp = np.copy(out.data)
@@ -5711,14 +5707,6 @@ class IntegrateSpinBasis(operators.PolarMOperator):
         # Wrap cached method
         return self._radial_matrix(self.radial_basis, m)
 
-    @CachedMethod
-    def _radial_matrix_adjoint(self, basis, m):
-        matrix = self._radial_matrix(basis, m)
-        adjoint = matrix.T.conj()
-        if sparse.isspmatrix(adjoint):
-            adjoint = adjoint.tocsr()
-        return adjoint
-
     def _operate(self, args, out, adjoint=False):
         """Perform operation."""
         operand = args[0]
@@ -5737,11 +5725,10 @@ class IntegrateSpinBasis(operators.PolarMOperator):
                 slices = tuple(slices)
                 vec_in  = operand.data[slices]
                 vec_out = out.data[slices]
+                A = self._radial_matrix(self.radial_basis, m)
                 if adjoint:
-                    A_adj = self._radial_matrix_adjoint(self.radial_basis, m)
-                    vec_in += apply_matrix(A_adj, vec_out, axis=axis)
+                    vec_in += apply_matrix(A, vec_out, axis=axis, adjoint=True)
                 else:
-                    A = self._radial_matrix(self.radial_basis, m)
                     vec_out += apply_matrix(A, vec_in, axis=axis)
 
 
@@ -5874,11 +5861,10 @@ class IntegrateSpherical(operators.SphericalEllOperator):
                 slices = tuple(slices)
                 vec_in  = operand.data[slices]
                 vec_out = out.data[slices]
+                A = self.radial_matrix(None, None, ell)
                 if adjoint:
-                    A_adj = self.radial_matrix_adjoint(None, None, ell)
-                    vec_in += apply_matrix(A_adj, vec_out, axis=axis)
+                    vec_in += apply_matrix(A, vec_out, axis=axis, adjoint=True)
                 else:
-                    A = self.radial_matrix(None, None, ell)
                     vec_out += apply_matrix(A, vec_in, axis=axis)
 
 
@@ -6149,11 +6135,10 @@ class BallRadialInterpolate(operators.Interpolate, operators.SphericalEllOperato
                     slices_in[axis] = radial_basis.n_slice(ell)
                     vec_in  = comp_in[tuple(slices_in)]
                     vec_out = comp_out[tuple(slices_out)]
+                    A = self.radial_matrix(regindex, regindex, ell)
                     if adjoint:
-                        A_adj = self.radial_matrix_adjoint(regindex, regindex, ell)
-                        vec_in += apply_matrix(A_adj, vec_out, axis=axis) # TEMPORARY
+                        vec_in += apply_matrix(A, vec_out, axis=axis, adjoint=True) # TEMPORARY
                     else:
-                        A = self.radial_matrix(regindex, regindex, ell)
                         apply_matrix(A, vec_in, axis=axis, out=vec_out)
         if not adjoint:
             radial_basis.backward_regularity_recombination(operand.tensorsig, self.basis_subaxis, out.data, ell_maps=input_basis.ell_maps(self.dist))
