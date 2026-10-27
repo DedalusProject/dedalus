@@ -26,11 +26,11 @@ TRANSPOSE_LIBRARY = config['parallelism'].get('TRANSPOSE_LIBRARY')
 GROUP_TRANSPOSES = config['parallelism'].getboolean('GROUP_TRANSPOSES')
 SYNC_TRANSPOSES = config['parallelism'].getboolean('SYNC_TRANSPOSES')
 
-if TRANSPOSE_LIBRARY.upper() == 'FFTW':
-    from .transposes import FFTWTranspose as TransposePlanner
-elif TRANSPOSE_LIBRARY.upper() == 'MPI':
-    from .transposes import AlltoallvTranspose as TransposePlanner
-from .transposes import RowDistributor, ColDistributor
+from .transposes import transpose_libraries
+try:
+    TransposePlanner = transpose_libraries[TRANSPOSE_LIBRARY.lower()]
+except KeyError:
+    raise ValueError(f"Unknown TRANSPOSE_LIBRARY: {TRANSPOSE_LIBRARY}. Options: {list(transpose_libraries)}")
 
 # Public interface
 __all__ = ['Distributor']
@@ -767,8 +767,7 @@ class Transpose:
                 dtype,
                 axis+1,
                 self.comm_sub,
-                self.layout0.dist.array_namespace
-            )
+                self.layout0.dist.array_namespace)
 
     def _single_plan(self, field):
         """Build single transpose plan."""
