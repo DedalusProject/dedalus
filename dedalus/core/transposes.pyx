@@ -46,17 +46,6 @@ cdef class FFTWTranspose:
         Array namespace (only numpy supported here).
     """
 
-    cdef readonly py_comm_t pycomm
-    cdef readonly int datasize, axis
-    cdef readonly int N0, N1, N2, N3
-    cdef readonly int[::1] global_shape
-    cdef readonly int[::1] chunk_shape
-    cdef readonly int[::1] col_starts
-    cdef readonly int[::1] row_starts
-    cdef readonly int[::1] col_ends
-    cdef readonly int[::1] row_ends
-    cdef readonly int[::1] col_counts
-    cdef readonly int[::1] row_counts
     cdef readonly int[::1] CL_reduced_shape
     cdef readonly int[::1] RL_reduced_shape
     cdef readonly double[::1] CL_buffer
@@ -65,24 +54,20 @@ cdef class FFTWTranspose:
     cdef readonly cnp.ndarray RL_view
     cdef cfftw.fftw_plan CL_to_RL_plan
     cdef cfftw.fftw_plan RL_to_CL_plan
-    cdef readonly object array_namespace
 
     def __init__(self, global_shape, chunk_shape, dtype, axis, pycomm, array_namespace):
         logger.debug("Building FFTW transpose plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, global_shape, axis))
         if not array_api_compat.is_numpy_namespace(array_namespace):
             raise ValueError("FFTWTranspose requires numpy array namespace.")
         # Attributes
-        self.global_shape = global_shape = np.array(global_shape, dtype=np.int32)
-        self.chunk_shape = chunk_shape = np.array(chunk_shape, dtype=np.int32)
-        self.datasize = {np.float64: 1, np.complex128: 2}[np.dtype(dtype).type]
-        self.axis = axis
-        self.pycomm = pycomm
-        self.array_namespace = array_namespace
+        global_shape = np.array(global_shape, dtype=np.int32)
+        chunk_shape = np.array(chunk_shape, dtype=np.int32)
+        datasize = {np.float64: 1, np.complex128: 2}[np.dtype(dtype).type]
         # Reduced global shape (4d array)
-        self.N0 = N0 = prod(global_shape[:axis])
-        self.N1 = N1 = global_shape[axis]
-        self.N2 = N2 = global_shape[axis+1]
-        self.N3 = N3 = prod(global_shape[axis+2:])
+        N0 = prod(global_shape[:axis])
+        N1 = global_shape[axis]
+        N2 = global_shape[axis+1]
+        N3 = prod(global_shape[axis+2:])
         # Chunks
         C1 = chunk_shape[axis]
         C2 = chunk_shape[axis+1]
@@ -97,21 +82,21 @@ cdef class FFTWTranspose:
         B2 = C2 * CL2
         # Starting indices
         ranks = np.arange(pycomm.size, dtype=np.int32)
-        self.col_starts = col_starts = np.minimum(B2*ranks, global_shape[axis+1])
-        self.row_starts = row_starts = np.minimum(B1*ranks, global_shape[axis])
+        col_starts = np.minimum(B2*ranks, global_shape[axis+1])
+        row_starts = np.minimum(B1*ranks, global_shape[axis])
         # Ending indices
-        self.col_ends = col_ends = np.minimum(B2*(ranks+1), global_shape[axis+1])
-        self.row_ends = row_ends = np.minimum(B1*(ranks+1), global_shape[axis])
+        col_ends = np.minimum(B2*(ranks+1), global_shape[axis+1])
+        row_ends = np.minimum(B1*(ranks+1), global_shape[axis])
         # Counts
-        self.col_counts = col_counts = col_ends - col_starts
-        self.row_counts = row_counts = row_ends - row_starts
+        col_counts = col_ends - col_starts
+        row_counts = row_ends - row_starts
         local_col_count = col_counts[<int> pycomm.rank]
         local_row_count = row_counts[<int> pycomm.rank]
         # Local reduced shapes
         self.CL_reduced_shape = np.array([N0, N1, local_col_count, N3], dtype=np.int32)
         self.RL_reduced_shape = np.array([N0, local_row_count, N2, N3], dtype=np.int32)
         # Build plans (sets up buffers)
-        howmany = N0 * N3 * self.datasize
+        howmany = N0 * N3 * datasize
         flags = ['FFTW_'+PLANNING_RIGOR.upper()]
         self.build_plans(N1, N2, howmany, B1, B2, pycomm, IN_PLACE, flags=flags)
         # Transposed array views (contiguous)
@@ -258,6 +243,7 @@ cdef class FFTWTranspose:
         # Transpose from buffer to output array
         self.copy_out_CL_fftw(CL_reduced)
 
+
 cdef class MPITranspose:
     """
     MPI Alltoallv-based distributed array transpose, for redistributing
@@ -285,16 +271,11 @@ cdef class MPITranspose:
     """
 
     cdef readonly py_comm_t pycomm
-    cdef readonly int datasize, axis
-    cdef readonly int N0, N1, N2, N3
-    cdef readonly int[::1] global_shape
-    cdef readonly int[::1] chunk_shape
+    cdef readonly int N0, N3
     cdef readonly int[::1] col_starts
     cdef readonly int[::1] row_starts
     cdef readonly int[::1] col_ends
     cdef readonly int[::1] row_ends
-    cdef readonly int[::1] col_counts
-    cdef readonly int[::1] row_counts
     cdef readonly int[::1] CL_reduced_shape
     cdef readonly int[::1] RL_reduced_shape
     cdef readonly int[::1] CL_displs
@@ -305,25 +286,23 @@ cdef class MPITranspose:
     cdef readonly double[::1] RL_buffer
     cdef readonly int local_col_count
     cdef readonly int local_row_count
-    cdef readonly object array_namespace
-    cdef readonly object bufferRL
-    cdef readonly object bufferCL
+    cdef readonly bint gpu
+    cdef readonly cnp.ndarray CL_pinned
+    cdef readonly cnp.ndarray RL_pinned
 
     def __init__(self, global_shape, chunk_shape, dtype, axis, pycomm, array_namespace):
         logger.debug("Building MPI transpose plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, global_shape, axis))
         # Attributes
-        self.global_shape = global_shape = np.array(global_shape, dtype=np.int32)
-        self.chunk_shape = chunk_shape = np.array(chunk_shape, dtype=np.int32)
-        self.datasize = {np.float64: 1, np.complex128: 2}[np.dtype(dtype).type]
-        self.axis = axis
+        global_shape = np.array(global_shape, dtype=np.int32)
+        chunk_shape = np.array(chunk_shape, dtype=np.int32)
+        datasize = {np.float64: 1, np.complex128: 2}[np.dtype(dtype).type]
         self.pycomm = pycomm
-        self.array_namespace = array_namespace
         self.gpu = not array_api_compat.is_numpy_namespace(array_namespace)
         # Reduced global shape (4d array)
         self.N0 = N0 = prod(global_shape[:axis])
-        self.N1 = N1 = global_shape[axis]
-        self.N2 = N2 = global_shape[axis+1]
-        self.N3 = N3 = prod(global_shape[axis+2:]) * self.datasize
+        N1 = global_shape[axis]
+        N2 = global_shape[axis+1]
+        self.N3 = N3 = prod(global_shape[axis+2:]) * datasize
         # Chunks
         C1 = chunk_shape[axis]
         C2 = chunk_shape[axis+1]
@@ -344,15 +323,15 @@ cdef class MPITranspose:
         self.col_ends = col_ends = np.minimum(B2*(ranks+1), global_shape[axis+1])
         self.row_ends = row_ends = np.minimum(B1*(ranks+1), global_shape[axis])
         # Counts
-        self.col_counts = col_counts = col_ends - col_starts
-        self.row_counts = row_counts = row_ends - row_starts
+        col_counts = col_ends - col_starts
+        row_counts = row_ends - row_starts
         self.local_col_count = local_col_count = col_counts[<int> pycomm.rank]
         self.local_row_count = local_row_count = row_counts[<int> pycomm.rank]
         # Local shapes
-        self.CL_shape = global_shape
-        self.CL_shape[axis+1] = local_col_count
-        self.RL_shape = global_shape
-        self.RL_shape[axis] = local_row_count
+        CL_shape = global_shape.copy()
+        CL_shape[axis+1] = local_col_count
+        RL_shape = global_shape.copy()
+        RL_shape[axis] = local_row_count
         # Local reduced shapes
         self.CL_reduced_shape = np.array([N0, N1, local_col_count, N3], dtype=np.int32)
         self.RL_reduced_shape = np.array([N0, local_row_count, N2, N3], dtype=np.int32)
@@ -369,10 +348,8 @@ cdef class MPITranspose:
         self.RL_buffer = np.zeros(RL_size, dtype=np.float64)
         if self.gpu:
             # Allocate pinned buffers for GPU transfers
-            self.RL_pinned = cupyx.empty_pinned(self.RL_shape, dtype=dtype)
-            self.CL_pinned = cupyx.empty_pinned(self.CL_shape, dtype=dtype)
-            self.RL_reduced = np.ndarray(shape=self.RL_reduced_shape, dtype=np.float64, buffer=self.RL_pinned)
-            self.CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=np.float64, buffer=self.CL_pinned)
+            self.RL_pinned = cupyx.empty_pinned(tuple(RL_shape), dtype=dtype)
+            self.CL_pinned = cupyx.empty_pinned(tuple(CL_shape), dtype=dtype)
 
     def localize_rows(self, CL, RL):
         """Transpose from column-local to row-local data distribution."""
@@ -531,47 +508,36 @@ cdef class CupyTranspose:
     """
 
     cdef readonly py_comm_t pycomm
-    cdef readonly int datasize, axis
-    cdef readonly int N0, N1, N2, N3
-    cdef readonly int[::1] global_shape
-    cdef readonly int[::1] chunk_shape
     cdef readonly int[::1] col_starts
     cdef readonly int[::1] row_starts
     cdef readonly int[::1] col_ends
     cdef readonly int[::1] row_ends
-    cdef readonly int[::1] col_counts
-    cdef readonly int[::1] row_counts
     cdef readonly int[::1] CL_reduced_shape
     cdef readonly int[::1] RL_reduced_shape
     cdef readonly int[::1] CL_displs
     cdef readonly int[::1] RL_displs
     cdef readonly int[::1] CL_counts
     cdef readonly int[::1] RL_counts
-    cdef readonly double[::1] CL_buffer
-    cdef readonly double[::1] RL_buffer
+    cdef readonly object CL_buffer, RL_buffer
     cdef readonly int local_col_count
     cdef readonly int local_row_count
     cdef readonly object array_namespace
-    cdef readonly object bufferRL
-    cdef readonly object bufferCL
-    cdef readonly object CL_dev, RL_dev
 
     def __init__(self, global_shape, chunk_shape, dtype, axis, pycomm, array_namespace):
         logger.debug("Building MPI transpose plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, global_shape, axis))
         if not array_api_compat.is_cupy_namespace(array_namespace):
             raise ValueError("CupyTranspose requires cupy array namespace.")
         # Attributes
-        self.global_shape = global_shape = np.array(global_shape, dtype=np.int32)
-        self.chunk_shape = chunk_shape = np.array(chunk_shape, dtype=np.int32)
-        self.datasize = {np.float64: 1, np.complex128: 2}[np.dtype(dtype).type]
-        self.axis = axis
+        global_shape = np.array(global_shape, dtype=np.int32)
+        chunk_shape = np.array(chunk_shape, dtype=np.int32)
+        datasize = {np.float64: 1, np.complex128: 2}[np.dtype(dtype).type]
         self.pycomm = pycomm
-        self.xp = self.array_namespace = array_namespace
+        self.array_namespace = array_namespace
         # Reduced global shape (4d array)
-        self.N0 = N0 = prod(global_shape[:axis])
-        self.N1 = N1 = global_shape[axis]
-        self.N2 = N2 = global_shape[axis+1]
-        self.N3 = N3 = prod(global_shape[axis+2:]) * self.datasize
+        N0 = prod(global_shape[:axis])
+        N1 = global_shape[axis]
+        N2 = global_shape[axis+1]
+        N3 = prod(global_shape[axis+2:]) * datasize
         # Chunks
         C1 = chunk_shape[axis]
         C2 = chunk_shape[axis+1]
@@ -592,15 +558,10 @@ cdef class CupyTranspose:
         self.col_ends = col_ends = np.minimum(B2*(ranks+1), global_shape[axis+1])
         self.row_ends = row_ends = np.minimum(B1*(ranks+1), global_shape[axis])
         # Counts
-        self.col_counts = col_counts = col_ends - col_starts
-        self.row_counts = row_counts = row_ends - row_starts
+        col_counts = col_ends - col_starts
+        row_counts = row_ends - row_starts
         self.local_col_count = local_col_count = col_counts[<int> pycomm.rank]
         self.local_row_count = local_row_count = row_counts[<int> pycomm.rank]
-        # Local shapes
-        self.CL_shape = global_shape
-        self.CL_shape[axis+1] = local_col_count
-        self.RL_shape = global_shape
-        self.RL_shape[axis] = local_row_count
         # Local reduced shapes
         self.CL_reduced_shape = np.array([N0, N1, local_col_count, N3], dtype=np.int32)
         self.RL_reduced_shape = np.array([N0, local_row_count, N2, N3], dtype=np.int32)
@@ -613,8 +574,8 @@ cdef class CupyTranspose:
         # Buffers
         CL_size = N0 * N1 * local_col_count * N3
         RL_size = N0 * local_row_count * N2 * N3
-        self.CL_buffer = self.xp.empty(CL_size, dtype=np.float64)
-        self.RL_buffer = self.xp.empty(RL_size, dtype=np.float64)
+        self.CL_buffer = array_namespace.empty(CL_size, dtype=np.float64)
+        self.RL_buffer = array_namespace.empty(RL_size, dtype=np.float64)
 
     def localize_rows(self, CL, RL):
         """Transpose from column-local to row-local data distribution."""
@@ -652,7 +613,7 @@ cdef class CupyTranspose:
 
     def _sync(self):
         """Wait for queued GPU work."""
-        self.xp.cuda.get_current_stream().synchronize() # cupy only
+        self.array_namespace.cuda.get_current_stream().synchronize() # cupy only
 
     def _pack(self, A, B, displs, starts, ends, axis, nproc):
         """Copy blocks of the 4D array A (split along `axis`) into consecutive segments of the flat buffer B."""
@@ -672,3 +633,6 @@ cdef class CupyTranspose:
                 block = A[tuple(index)]
                 block[...] = B[displs[p]:displs[p] + block.size].reshape(block.shape)
 
+
+# Transpose classes by config name
+transpose_libraries = {'fftw': FFTWTranspose, 'mpi': MPITranspose, 'cupy': CupyTranspose}
