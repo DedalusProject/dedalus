@@ -101,7 +101,7 @@ def move_single_axis(a, source, destination):
     return a.transpose(order)
 
 
-def apply_dense(matrix, array, axis, out=None, overwrite_out=True):
+def apply_dense(matrix, array, axis, out=None, overwrite_out=True, adjoint=False):
     """Apply dense matrix along any axis of an array."""
     dim = array.ndim
     # Resolve wraparound axis
@@ -114,7 +114,13 @@ def apply_dense(matrix, array, axis, out=None, overwrite_out=True):
         array_shape = array.shape
         array = array.reshape((array_shape[0], -1)) # May allocate copy
     # Apply matmul
-    temp = np.matmul(matrix, array) # Allocates temp
+    if adjoint:
+        if np.isrealobj(matrix):
+            temp = np.matmul(matrix.T, array) # Allocates temp
+        else:
+            temp = np.matmul(np.conj(matrix.T), array) # Allocates temp and copy of matrix
+    else:
+        temp = np.matmul(matrix, array) # Allocates temp
     # Unflatten later axes
     if dim > 2:
         temp = temp.reshape((temp.shape[0],) + array_shape[1:]) # View
