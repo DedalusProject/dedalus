@@ -12,7 +12,7 @@ from math import prod
 from . import basis
 from ..libraries.fftw import fftw_wrappers as fftw
 from ..tools import jacobi
-from ..tools.array import apply_matrix, apply_dense, axslice, solve_upper_sparse, apply_sparse, solve_lower_sparse
+from ..tools.array import apply_matrix, apply_dense, axslice, solve_upper_sparse, apply_sparse
 from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
 
@@ -74,11 +74,13 @@ class SeparableMatrixTransform(SeparableTransform):
 
     def forward_adjoint(self, cdata, gdata, axis):
         """Apply adjoint forward transform along specified axis."""
-        apply_dense(np.conj(self.forward_matrix).T, cdata, axis=axis, out=gdata)
+        # TODO: should maybe cache complex matrices
+        apply_dense(self.forward_matrix, cdata, axis=axis, out=gdata, adjoint=True)
 
     def backward_adjoint(self, gdata, cdata, axis):
         """Apply adjoint backward transform along specified axis."""
-        apply_dense(np.conj(self.backward_matrix).T, gdata, axis=axis, out=cdata)
+        # TODO: should maybe cache complex matrices
+        apply_dense(self.backward_matrix, gdata, axis=axis, out=cdata, adjoint=True)
 
     @CachedAttribute
     def forward_matrix(self):
@@ -1128,17 +1130,8 @@ class FastChebyshevTransform(JacobiTransform):
                 self.forward_conversion = jacobi.conversion_matrix(self.N, a0, b0, a, b)
                 self.forward_conversion.resize(self.M_orig, self.N)
                 self.forward_conversion = self.forward_conversion.tocsr()
-            self.forward_conversion_T = self.forward_conversion.T.tocsr()
             self.backward_conversion = jacobi.conversion_matrix(self.M_orig, a0, b0, a, b).tocsr()
             self.backward_conversion.sum_duplicates() # for faster solve_upper
-            self.backward_conversion_T = self.backward_conversion.T.tocsr()
-            self.backward_conversion_T.sum_duplicates() # for faster solve_lower
-            # self.backward_conversion_adjoint = splu_inverse(np.conj(self.backward_conversion).T)
-            # TODO: implement lower solve for backward_conversion_adjoint
-            # self.backward_conversion = jacobi.conversion_matrix(self.M_orig, a0, b0, a, b)
-            # self.backward_conversion_adjoint = jacobi.conversion_matrix(self.M_orig, a0, b0, a, b)
-            # self.backward_conversion = splu_inverse(self.backward_conversion)
-            # self.backward_conversion_adjoint = splu_inverse_adjoint(self.backward_conversion_adjoint)
             self.resize_rescale_forward = self._resize_rescale_forward_convert
             self.resize_rescale_backward = self._resize_rescale_backward_convert
             self.resize_rescale_forward_adjoint = self._resize_rescale_forward_convert_adjoint
@@ -1215,12 +1208,12 @@ class FastChebyshevTransform(JacobiTransform):
         # Ultraspherical conversion
         if self.dealias_before_converting and self.M_orig < self.N: # Enlarge data
             goodfreq = axslice(axis, 0, self.M_orig)
-            data_out[goodfreq] = apply_sparse(self.forward_conversion_T, data_in, axis) # Creates temporary
+            data_out[goodfreq] = apply_sparse(self.forward_conversion, data_in, axis, adjoint=True) # Creates temporary
             # Zero all other freqs
             otherfreq = axslice(axis, self.M_orig, None)
             data_out[otherfreq] = 0
         else:
-            apply_sparse(self.forward_conversion_T, data_in, axis, out=data_out)
+            apply_sparse(self.forward_conversion, data_in, axis, out=data_out, adjoint=True)
         # Change sign of odd modes
         if Kmax_DCT > 0:
             posfreq_odd = axslice(axis, 1, Kmax_DCT+1, 2)
@@ -1237,8 +1230,7 @@ class FastChebyshevTransform(JacobiTransform):
             posfreq_odd = axslice(axis, 1, Kmax_orig+1, 2)
             data_out[posfreq_odd] *= -1
         # Ultraspherical conversion
-        solve_lower_sparse(self.backward_conversion_T, data_out, axis, out=data_out)
-        #apply_sparse(self.backward_conversion.H, data_out, axis, out=data_out)
+        solve_upper_sparse(self.backward_conversion, data_out, axis, out=data_out, adjoint=True)
         badfreq = axslice(axis, Kmax_orig+1, None)
         if self.M_orig > self.N:
             # Truncate input before conversion
