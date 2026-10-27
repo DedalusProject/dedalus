@@ -1237,7 +1237,7 @@ class FastChebyshevTransform(JacobiTransform):
             posfreq_odd = axslice(axis, 1, Kmax_orig+1, 2)
             data_out[posfreq_odd] *= -1
         # Ultraspherical conversion
-            solve_lower_sparse(self.backward_conversion_T, data_out, axis, out=data_out)
+        solve_lower_sparse(self.backward_conversion_T, data_out, axis, out=data_out)
         #apply_sparse(self.backward_conversion.H, data_out, axis, out=data_out)
         badfreq = axslice(axis, Kmax_orig+1, None)
         if self.M_orig > self.N:
