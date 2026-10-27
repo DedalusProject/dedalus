@@ -922,7 +922,6 @@ class RungeKuttaIMEX:
                 # Compute new transpose terms and RHS
                 apply_sparse(sp.L_min, spX, axis=0, out=LXi.get_subdata(sp), adjoint=True)  # Rectangular dot product skipping shape checks
                 apply_sparse(sp.M_min, spX, axis=0, out=MXTi.get_subdata(sp), adjoint=True)
-                sp.scatter_inputs(spX, state_fields)
                 # Linearised F vjp
                 sp.scatter_inputs(XStages[i-1].get_subdata(sp), solver.state)
                 np.copyto(Y[i-1].get_subdata(sp),spX)
