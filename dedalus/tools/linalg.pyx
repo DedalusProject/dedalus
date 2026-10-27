@@ -23,8 +23,9 @@ def solve_upper_csr(
     const dtype [::1] entries,
     cnp.ndarray array,
     const int axis,
-    const int num_threads):
-    """Solve upper triangular CSR matrix along specified axis of an array."""
+    const int num_threads,
+    bint adjoint=False):
+    """Solve upper triangular CSR matrix (or its adjoint) along specified axis of an array."""
     cdef int ndim = array.ndim
     cdef int N1 = 1
     cdef int N2 = 1
@@ -34,18 +35,18 @@ def solve_upper_csr(
         shape[i] = array.shape[i]
     if ndim == 1:
         if axis == 0:
-            solve_upper_csr_vec(indptr, indices, entries, array, num_threads)
+            solve_upper_csr_vec(indptr, indices, entries, array, num_threads, adjoint)
     elif ndim == 2:
         if axis == 0:
             if shape[1] == 1:
-                solve_upper_csr_vec(indptr, indices, entries, array[:,0], num_threads)
+                solve_upper_csr_vec(indptr, indices, entries, array[:,0], num_threads, adjoint)
             else:
-                solve_upper_csr_first(indptr, indices, entries, array, num_threads)
+                solve_upper_csr_first(indptr, indices, entries, array, num_threads, adjoint)
         elif axis == 1:
             if shape[0] == 1:
-                solve_upper_csr_vec(indptr, indices, entries, array[0,:], num_threads)
+                solve_upper_csr_vec(indptr, indices, entries, array[0,:], num_threads, adjoint)
             else:
-                solve_upper_csr_last(indptr, indices, entries, array, num_threads)
+                solve_upper_csr_last(indptr, indices, entries, array, num_threads, adjoint)
     else:
         # Treat as 3D array with specified axis in the middle
         # Compute equivalent shape (N1, N2, N3)
@@ -66,20 +67,20 @@ def solve_upper_csr(
             if N3 == 1:
                 # (1, N2, 1) -> (N2,)
                 x1 = array.reshape((N2,))
-                solve_upper_csr_vec(indptr, indices, entries, x1, num_threads)
+                solve_upper_csr_vec(indptr, indices, entries, x1, num_threads, adjoint)
             else:
                 # (1, N2, N3) -> (N2, N3)
                 x2 = array.reshape((N2, N3))
-                solve_upper_csr_first(indptr, indices, entries, x2, num_threads)
+                solve_upper_csr_first(indptr, indices, entries, x2, num_threads, adjoint)
         else:
             if N3 == 1:
                 # (N1, N2, 1) -> (N1, N2)
                 x2 = array.reshape((N1, N2))
-                solve_upper_csr_last(indptr, indices, entries, x2, num_threads)
+                solve_upper_csr_last(indptr, indices, entries, x2, num_threads, adjoint)
             else:
                 # (N1, N2, N3)
                 x3 = array.reshape((N1, N2, N3))
-                solve_upper_csr_mid(indptr, indices, entries, x3, num_threads)
+                solve_upper_csr_mid(indptr, indices, entries, x3, num_threads, adjoint)
 
 
 @cython.boundscheck(False)
@@ -90,18 +91,36 @@ def solve_upper_csr_vec(
     const int [::1] Aj,
     const dtype [::1] Ax,
           dtype [::1] x,
-    const int num_threads):
-    """Solve upper triangular CSR matrix along a vector."""
+    const int num_threads,
+    bint adjoint=False):
+    """Solve upper triangular CSR matrix (or its adjoint) along a vector."""
     cdef int n_row = x.shape[0]
     cdef index i, jj
-    cdef dtype sum
-    for i in range(n_row-1, -1, -1):
-        # Subtract off-diagonal entries
-        sum = x[i]
-        for jj in range(Ap[i+1]-1, Ap[i], -1):
-            sum = sum - Ax[jj] * x[Aj[jj]]
-        # Divide by diagonal entry
-        x[i] = sum / Ax[Ap[i]]
+    cdef dtype sum, a, xi
+    if adjoint:
+        for i in range(n_row):
+            # Divide by diagonal entry
+            if dtype is float or dtype is double:
+                a = Ax[Ap[i]]
+            else:
+                a = Ax[Ap[i]].conjugate()
+            xi = x[i] / a # Reuse scalar entry
+            x[i] = xi
+            # Subtract off-diagonal entries
+            for jj in range(Ap[i]+1, Ap[i+1]):
+                if dtype is float or dtype is double:
+                    a = Ax[jj]
+                else:
+                    a = Ax[jj].conjugate()
+                x[Aj[jj]] = x[Aj[jj]] - a * xi
+    else:
+        for i in range(n_row-1, -1, -1):
+            # Subtract off-diagonal entries
+            sum = x[i]
+            for jj in range(Ap[i+1]-1, Ap[i], -1):
+                sum = sum - Ax[jj] * x[Aj[jj]]
+            # Divide by diagonal entry
+            x[i] = sum / Ax[Ap[i]]
 
 
 @cython.boundscheck(False)
@@ -112,23 +131,43 @@ def solve_upper_csr_first(
     const int [::1] Aj,
     const dtype [::1] Ax,
           dtype [:,::1] x,
-    const int num_threads):
-    """Solve upper triangular CSR matrix along first axis of 2D array."""
+    const int num_threads,
+    bint adjoint=False):
+    """Solve upper triangular CSR matrix (or its adjoint) along first axis of 2D array."""
     cdef int n_row = x.shape[0]
     cdef int n_after = x.shape[1]
     cdef index i, jj, j, k
     cdef dtype a
-    for i in range(n_row-1, -1, -1):
-        # Subtract off-diagonal entries
-        for jj in range(Ap[i+1]-1, Ap[i], -1):
-            j = Aj[jj]
-            a = Ax[jj]
+    if adjoint:
+        for i in range(n_row):
+            # Divide by diagonal entry
+            if dtype is float or dtype is double:
+                a = Ax[Ap[i]]
+            else:
+                a = Ax[Ap[i]].conjugate()
             for k in range(n_after):
-                x[i,k] = x[i,k] - a * x[j,k]
-        # Divide by diagonal entry
-        a = Ax[Ap[i]]
-        for k in range(n_after):
-            x[i,k] = x[i,k] / a
+                x[i,k] = x[i,k] / a
+            # Subtract off-diagonal entries
+            for jj in range(Ap[i]+1, Ap[i+1]):
+                j = Aj[jj]
+                if dtype is float or dtype is double:
+                    a = Ax[jj]
+                else:
+                    a = Ax[jj].conjugate()
+                for k in range(n_after):
+                    x[j,k] = x[j,k] - a * x[i,k]
+    else:
+        for i in range(n_row-1, -1, -1):
+            # Subtract off-diagonal entries
+            for jj in range(Ap[i+1]-1, Ap[i], -1):
+                j = Aj[jj]
+                a = Ax[jj]
+                for k in range(n_after):
+                    x[i,k] = x[i,k] - a * x[j,k]
+            # Divide by diagonal entry
+            a = Ax[Ap[i]]
+            for k in range(n_after):
+                x[i,k] = x[i,k] / a
 
 
 @cython.boundscheck(False)
@@ -139,20 +178,39 @@ def solve_upper_csr_last(
     const int [::1] Aj,
     const dtype [::1] Ax,
           dtype [:,::1] x,
-    const int num_threads):
-    """Solve upper triangular CSR matrix along last axis of 2D array."""
+    const int num_threads,
+    bint adjoint=False):
+    """Solve upper triangular CSR matrix (or its adjoint) along last axis of 2D array."""
     cdef int n_before = x.shape[0]
     cdef int n_row = x.shape[1]
     cdef index h, i, jj
-    cdef dtype sum
-    for h in prange(n_before, nogil=True, num_threads=num_threads, schedule='static'):
-        for i in range(n_row-1, -1, -1):
-            # Subtract off-diagonal entries
-            sum = x[h,i]
-            for jj in range(Ap[i+1]-1, Ap[i], -1):
-                sum = sum - Ax[jj] * x[h,Aj[jj]]
-            # Divide by diagonal entry
-            x[h,i] = sum / Ax[Ap[i]]
+    cdef dtype sum, a, xi
+    if adjoint:
+        for h in range(n_before):
+            for i in range(n_row):
+                # Divide by diagonal entry
+                if dtype is float or dtype is double:
+                    a = Ax[Ap[i]]
+                else:
+                    a = Ax[Ap[i]].conjugate()
+                xi = x[h,i] / a  # Reuse scalar entry
+                x[h,i] = xi
+                # Subtract off-diagonal entries
+                for jj in range(Ap[i]+1, Ap[i+1]):
+                    if dtype is float or dtype is double:
+                        a = Ax[jj]
+                    else:
+                        a = Ax[jj].conjugate()
+                    x[h,Aj[jj]] = x[h,Aj[jj]] - a * xi            
+    else:
+        for h in prange(n_before, nogil=True, num_threads=num_threads, schedule='static'):
+            for i in range(n_row-1, -1, -1):
+                # Subtract off-diagonal entries
+                sum = x[h,i]
+                for jj in range(Ap[i+1]-1, Ap[i], -1):
+                    sum = sum - Ax[jj] * x[h,Aj[jj]]
+                # Divide by diagonal entry
+                x[h,i] = sum / Ax[Ap[i]]
 
 
 @cython.boundscheck(False)
@@ -163,25 +221,46 @@ def solve_upper_csr_mid(
     const int [::1] Aj,
     const dtype [::1] Ax,
           dtype [:,:,::1] x,
-    const int num_threads):
-    """Solve upper triangular CSR matrix along middle axis of 3D array."""
+    const int num_threads,
+    bint adjoint=False):
+    """Solve upper triangular CSR matrix (or its adjoint) along middle axis of 3D array."""
     cdef int n_before = x.shape[0]
     cdef int n_row = x.shape[1]
     cdef int n_after = x.shape[2]
     cdef index h, i, jj, j, k
     cdef dtype a
-    for h in prange(n_before, nogil=True, num_threads=num_threads, schedule='static'):
-        for i in range(n_row-1, -1, -1):
-            # Subtract off-diagonal entries
-            for jj in range(Ap[i+1]-1, Ap[i], -1):
-                j = Aj[jj]
-                a = Ax[jj]
+    if adjoint:
+        for h in range(n_before):
+            for i in range(n_row):
+                # Divide by diagonal entry
+                if dtype is float or dtype is double:
+                    a = Ax[Ap[i]]
+                else:
+                    a = Ax[Ap[i]].conjugate()
                 for k in range(n_after):
-                    x[h,i,k] = x[h,i,k] - a * x[h,j,k]
-            # Divide by diagonal entry
-            a = Ax[Ap[i]]
-            for k in range(n_after):
-                x[h,i,k] = x[h,i,k] / a
+                    x[h,i,k] = x[h,i,k] / a
+                # Subtract off-diagonal entries
+                for jj in range(Ap[i]+1, Ap[i+1]):
+                    j = Aj[jj]
+                    if dtype is float or dtype is double:
+                        a = Ax[jj]
+                    else:
+                        a = Ax[jj].conjugate()
+                    for k in range(n_after):
+                        x[h,j,k] = x[h,j,k] - a * x[h,i,k]
+    else:
+        for h in prange(n_before, nogil=True, num_threads=num_threads, schedule='static'):
+            for i in range(n_row-1, -1, -1):
+                # Subtract off-diagonal entries
+                for jj in range(Ap[i+1]-1, Ap[i], -1):
+                    j = Aj[jj]
+                    a = Ax[jj]
+                    for k in range(n_after):
+                        x[h,i,k] = x[h,i,k] - a * x[h,j,k]
+                # Divide by diagonal entry
+                a = Ax[Ap[i]]
+                for k in range(n_after):
+                    x[h,i,k] = x[h,i,k] / a
 
 
 @cython.boundscheck(False)
