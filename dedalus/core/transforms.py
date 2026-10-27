@@ -607,25 +607,6 @@ class RealFFT(RealFourierTransform):
             xp.multiply(cdata_posfreq_msin, (rescale / 2), temp_posfreq.imag)
         # Zero k > Kmax data
         temp[axslice(axis, Kmax+1, None)] = 0
-
-        def repack(self, cdata, temp, axis):
-            """Repack into complex coefficients and rescale for unit-amplitude normalization."""
-            xp = np
-            Kmax = (np.shape(cdata)[axis] - 1) // 2
-
-            # Scale k = 0 data
-            meancos = axslice(axis, 0, 1)
-            xp.copyto(temp[meancos], cdata[meancos])
-
-            # Repack
-            temp_posfreq = temp[axslice(axis, 1, Kmax+1)]
-            cdata_posfreq_cos = cdata[axslice(axis, 2, 2*(Kmax+1), 2)]
-            cdata_posfreq_msin = cdata[axslice(axis, 3, 2*(Kmax+1), 2)]
-            temp_posfreq.real = cdata_posfreq_cos
-            temp_posfreq.imag = cdata_posfreq_msin
-
-            # Zero k > Kmax data
-            temp[axslice(axis, Kmax+1, None)] = 0
         
 
 @register_transform(basis.RealFourier, 'scipy')
