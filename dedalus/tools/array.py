@@ -225,9 +225,9 @@ def apply_sparse(matrix, array, axis, out=None, check_shapes=False, num_threads=
     return out
 
 
-def solve_upper_sparse(matrix, rhs, axis, out=None, check_shapes=False, num_threads=1):
+def solve_upper_sparse(matrix, rhs, axis, out=None, check_shapes=False, num_threads=1, adjoint=False):
     """
-    Solve upper triangular sparse matrix along any axis of an array.
+    Solve upper triangular sparse matrix (or its adjoint) along any axis of an array.
     Matrix assumed to be nonzero on the diagonals.
     """
     # Check matrix
@@ -251,7 +251,7 @@ def solve_upper_sparse(matrix, rhs, axis, out=None, check_shapes=False, num_thre
         if not (matrix.shape[0] == matrix.shape[1] == rhs.shape[axis]):
             raise ValueError("Matrix shape mismatch.")
     # Call cython routine
-    cython_linalg.solve_upper_csr(matrix.indptr, matrix.indices, matrix_data, out, axis, num_threads)
+    cython_linalg.solve_upper_csr(matrix.indptr, matrix.indices, matrix_data, out, axis, num_threads, adjoint)
 
 
 def solve_lower_sparse(matrix, rhs, axis, out=None, check_shapes=False, num_threads=1):
