@@ -9,6 +9,7 @@ import scipy.fftpack
 from ..libraries import dedalus_sphere
 from math import prod
 import array_api_compat
+from . import fast_irfft
 
 from . import basis
 from ..libraries.fftw import fftw_wrappers as fftw
@@ -18,7 +19,7 @@ from ..tools.cache import CachedAttribute
 from ..tools.cache import CachedMethod
 from ..tools.general import float_to_complex
 from ..tools.linalg_gpu import cupy_solve_upper_csr, CustomCupyUpperTriangularSolver
-
+from ..tools.roctx_range import roctx_range
 import logging
 logger = logging.getLogger(__name__.split('.')[-1])
 
@@ -272,6 +273,7 @@ class ComplexFourierMMT(ComplexFourierTransform, SeparableMatrixTransform):
 class ComplexFFT(ComplexFourierTransform):
     """Abstract base class for complex-to-complex FFTs."""
 
+    @roctx_range
     def resize_coeffs(self, data_in, data_out, rescale):
         """Resize and rescale coefficients in standard FFT format by intermediate padding/truncation."""
         xp = self.array_namespace
@@ -336,9 +338,10 @@ class CupyComplexFFT(ComplexFFT):
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
         import cupyx.scipy.fft as cufft
-        self.cufft = cufft
+        self.cufft = roctx_range('cufft')(cufft)
         self.grid_temp = self.array_namespace.zeros(self.gdata_shape, dtype=self.dtype)
-
+        
+    @roctx_range
     def forward(self, gdata, cdata):
         """Apply forward transform along the plan axis."""
         axis = self.axis
@@ -347,6 +350,7 @@ class CupyComplexFFT(ComplexFFT):
         # Resize and rescale for unit-amplitude normalization
         self.resize_coeffs(temp, cdata, rescale=1/self.N)
 
+    @roctx_range
     def backward(self, cdata, gdata):
         """Apply backward transform along the plan axis."""
         xp = self.array_namespace
@@ -603,7 +607,7 @@ class RealFFT(RealFourierTransform):
             xp.multiply(cdata_posfreq_msin, (rescale / 2), temp_posfreq.imag)
         # Zero k > Kmax data
         temp[axslice(axis, Kmax+1, None)] = 0
-
+        
 
 @register_transform(basis.RealFourier, 'scipy')
 class ScipyRealFFT(RealFFT):
@@ -639,10 +643,11 @@ class CupyRealFFT(RealFFT):
 
     def __init__(self, *args, **kw):
         import cupyx.scipy.fft as cufft
-        self.cufft = cufft
+        self.cufft = roctx_range('cufft')(cufft)
         super().__init__(*args, **kw)
         self.half_spectrum_temp = self.array_namespace.zeros(self.half_spectrum_shape, dtype=self.complex_dtype)
-
+        
+    @roctx_range
     def forward(self, gdata, cdata):
         """Apply forward transform along the plan axis."""
         axis = self.axis
@@ -651,19 +656,10 @@ class CupyRealFFT(RealFFT):
         # Unpack from complex form and rescale
         self.unpack_rescale(temp, cdata, axis, rescale=1/self.N)
 
+    @roctx_range
     def backward(self, cdata, gdata):
-        """Apply backward transform along the plan axis."""
-        xp = self.array_namespace
-        axis = self.axis
-        N = self.N
-        temp = self.half_spectrum_temp
-        # Repack into complex form and rescale
-        self.repack_rescale(cdata, temp, axis, rescale=N)
-        # Call IRFFT
-        temp = self.cufft.irfft(temp, axis=axis, n=N, overwrite_x=True) # Creates temporary
-        xp.copyto(gdata, temp)
-
-
+        fast_irfft.irfft_packed_into(cdata, gdata, self.axis, self.Kmax)
+    
 @register_transform(basis.RealFourier, 'fftw')
 class FFTWRealFFT(RealFFT, FFTWBase):
     """Real-to-real FFT using FFTW."""
@@ -923,8 +919,9 @@ class CupyDCT(FastCosineTransform):
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
         import cupyx.scipy.fft as cufft
-        self.cufft = cufft
+        self.cufft = roctx_range('cufft')(cufft)
 
+    @roctx_range
     def forward(self, gdata, cdata):
         """Apply forward transform along the plan axis."""
         axis = self.axis
@@ -933,6 +930,7 @@ class CupyDCT(FastCosineTransform):
         # Resize and rescale for unit-ampltidue normalization
         self.resize_rescale_forward(temp, cdata, axis, self.Kmax)
 
+    @roctx_range
     def backward(self, cdata, gdata):
         """Apply backward transform along the plan axis."""
         axis = self.axis
