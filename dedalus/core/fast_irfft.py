@@ -21,9 +21,9 @@ warnings.filterwarnings('ignore', message='cupyx.jit.rawkernel is experimental',
                         category=FutureWarning)
 
 THREADS = 256
-# Tile (rows, cols), powers of two; measured fastest on LUMI.
+# Tile (rows, cols), powers of two; measured fastest.
 REAL_TILE = (32, 32)
-SPECTRUM_TILE = {np.float64: (64, 16), np.float32: (64, 32)}
+SPECTRUM_TILE = {np.float64: (32, 32), np.float32: (32, 32)}
 
 
 @lru_cache(maxsize=None)
@@ -84,9 +84,9 @@ def _packed_transpose_kernel(real_type, n_modes, cols, packed_len, kmax):
     pitch = tile_cols + 1
     plane = tile_rows * pitch                    # real part, then imaginary part
     per_thread = tile_rows * tile_cols // THREADS
-    mode_tiles = math.ceil(n_modes / tile_rows)
+    mode_tiles = math.ceil((kmax + 1) / tile_rows)
     col_tiles = math.ceil(cols / tile_cols)
-    modes_on_grid_x = n_modes > cols
+    modes_on_grid_x = kmax + 1 > cols
     grid = (mode_tiles, col_tiles) if modes_on_grid_x else (col_tiles, mode_tiles)
 
     @jit.rawkernel()
@@ -108,17 +108,14 @@ def _packed_transpose_kernel(real_type, n_modes, cols, packed_len, kmax):
             position = tile_mode * pitch + tile_col
             mode = first_mode + tile_mode
             col = first_col + tile_col
-            if mode < n_modes and col < cols:
+            if mode <= kmax and col < cols:
                 if mode == 0:
                     tile[position] = packed[matrix * packed_len * cols + col] * mean_weight
                     tile[plane + position] = 0
-                elif mode <= kmax:
+                else:
                     cos_index = (matrix * packed_len + 2 * mode) * cols + col
                     tile[position] = packed[cos_index] * mode_weight
                     tile[plane + position] = packed[cos_index + cols] * mode_weight
-                else:
-                    tile[position] = 0
-                    tile[plane + position] = 0
         jit.syncthreads()
 
         for step in range(per_thread):
@@ -128,13 +125,12 @@ def _packed_transpose_kernel(real_type, n_modes, cols, packed_len, kmax):
             position = tile_mode * pitch + tile_col
             mode = first_mode + tile_mode
             col = first_col + tile_col
-            if mode < n_modes and col < cols:
+            if mode <= kmax and col < cols:
                 out = ((matrix * cols + col) * n_modes + mode) * 2
                 spectrum[out] = tile[position]
                 spectrum[out + 1] = tile[plane + position]
 
     return packed_transpose, grid
-
 
 
 @jit.rawkernel()
@@ -152,9 +148,6 @@ def _pack_kernel(packed, spectrum, mean_weight, mode_weight, packed_len, n_modes
             cos_index = row * packed_len + 2 * mode
             spectrum[2 * element] = packed[cos_index] * mode_weight
             spectrum[2 * element + 1] = packed[cos_index + 1] * mode_weight
-        else:
-            spectrum[2 * element] = 0
-            spectrum[2 * element + 1] = 0
 
 
 class _PackedC2R:
@@ -169,7 +162,7 @@ class _PackedC2R:
         self.plan = cufft_backend.Plan1d(
             self.n_grid, cufft_backend.CUFFT_Z2D if is_double else cufft_backend.CUFFT_C2R,
             self.n_transforms)
-        spectrum = cp.empty((self.n_transforms, n_modes),
+        spectrum = cp.zeros((self.n_transforms, n_modes),
                             np.complex128 if is_double else np.complex64)
         self.spectrum = spectrum
         self.spectrum_reals = spectrum.reshape(-1).view(self.real_type)
