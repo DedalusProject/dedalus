@@ -809,8 +809,6 @@ class InitialValueSolver(SolverBase):
         self.stop_iteration = np.inf
         # For adjoint
         self.adjoint_state = []
-        self.parameters_adj = []
-        self.parameters = []
         logger.debug('Finished IVP instantiation')
 
     @property
@@ -942,7 +940,7 @@ class InitialValueSolver(SolverBase):
         # reset timestepper
         self.timestepper.reset()
 
-    def step_adjoint(self, dt):
+    def step_adjoint(self, dt, cotangents):
         """Advance system by one iteration/timestep."""
         # Enforce Hermitian symmetry for real variables
         if np.isrealobj(self.dtype.type()):
@@ -955,7 +953,7 @@ class InitialValueSolver(SolverBase):
         if self.iteration == self.stop_iteration:
             self.adjoint_start_time = wall_time
         wall_elapsed = wall_time - self.adjoint_start_time
-        self.timestepper.step_adjoint(dt, wall_elapsed)
+        self.timestepper.step_adjoint(dt, wall_elapsed, cotangents)
         # Update iteration
         self.iteration -= 1
         self.dt = dt # Needed?
