@@ -985,15 +985,11 @@ class InitialValueSolver(SolverBase):
     def compute_sensitivities(self, cotangents, checkpoints={}, timestep_function=None, log_cadence=100):
         """Accumulate cotangents through an IVP solve"""
         # Allocate adjoint fields
-        self.state_adj = []
-        for (i,state) in enumerate(self.state):
-            if state in cotangents:
-                self.state_adj.append(cotangents[state])
-            else:
+        for state in self.state:
+            if state not in cotangents:
                 adjoint_state = state.get_cotangent()
                 adjoint_state.preset_layout('c')
-                adjoint_state.data *= 0
-                self.state_adj.append(adjoint_state)
+                adjoint_state.data.fill(0)
                 cotangents[state] = adjoint_state
         # Evolve adjoint backwards
         try:
@@ -1006,7 +1002,7 @@ class InitialValueSolver(SolverBase):
                     timestep = timestep_function()
                 else:
                     timestep = None
-                self.step_adjoint(timestep)
+                self.step_adjoint(timestep, cotangents)
                 if (self.iteration-1) % log_cadence == 0:
                     logger.info(f"Adjoint: Iteration={self.iteration}, Time={self.sim_time:e}")
         except:
