@@ -2332,21 +2332,28 @@ class SphericalTransposeComponents(TransposeComponents):
         if adjoint:
             inverse_order = np.argsort(self.new_axis_order)
             if layout.grid_space[radius_axis]:
+                # Not in regularity components: can directly transpose back and accumulate
                 arg.data[:] += np.transpose(out.data, inverse_order)
             else:
                 radial_basis = self.radial_basis
                 ell_maps = self.input_basis.ell_maps(self.dist)
+                # Adjoint of the forward steps in reverse order, in place on the output cotangent:
+                # the recombinations swap direction and signature, and the transposition is inverted
                 radial_basis.backward_regularity_recombination(self.tensorsig, radius_axis, out.data, ell_maps=ell_maps)
                 copyto(out.data, np.transpose(out.data, inverse_order))
                 radial_basis.forward_regularity_recombination(arg.tensorsig, radius_axis, out.data, ell_maps=ell_maps)
+                # Accumulate into the input cotangent
                 arg.data[:] += out.data
         else:
             if layout.grid_space[radius_axis]:
+                # Not in regularity components: can directly transpose
                 out.data[:] = np.transpose(arg.data, self.new_axis_order)
             else:
                 radial_basis = self.radial_basis
                 ell_maps = self.input_basis.ell_maps(self.dist)
+                # Copy to output for in-place regularity recombination
                 copyto(out.data, arg.data)
+                # Commute transposition with regularity recombination
                 radial_basis.backward_regularity_recombination(arg.tensorsig, radius_axis, out.data, ell_maps=ell_maps)
                 copyto(out.data, np.transpose(out.data, self.new_axis_order))
                 radial_basis.forward_regularity_recombination(arg.tensorsig, radius_axis, out.data, ell_maps=ell_maps)

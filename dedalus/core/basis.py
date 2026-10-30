@@ -6114,10 +6114,13 @@ class ShellRadialInterpolate(operators.Interpolate, operators.SphericalEllOperat
         subaxis = self.basis_subaxis
         ell_maps = self.input_basis.ell_maps(self.dist)
         if adjoint:
+            # Adjoint of the Q matrix (the forward regularity recombination), in place on the output cotangent,
+            # then the adjoint ell operator
             radial_basis.forward_regularity_recombination(arg.tensorsig, subaxis, out.data, ell_maps=ell_maps)
             operators.SphericalEllOperator._operate(self, args, out, adjoint=True)
         else:
             operators.SphericalEllOperator._operate(self, args, out)
+            # Q matrix
             radial_basis.backward_regularity_recombination(arg.tensorsig, subaxis, out.data, ell_maps=ell_maps)
 
     def radial_matrix(self, regindex_in, regindex_out, ell):
@@ -6173,6 +6176,7 @@ class S2RadialComponent(operators.RadialComponent):
         """Perform operation."""
         arg = args[0]
         if adjoint:
+            # Accumulate the cotangent into the radial component of the input
             arg.data[axindex(self.index, 2)] += out.data
         else:
             np.copyto(out.data, arg.data[axindex(self.index, 2)])
@@ -6212,6 +6216,7 @@ class S2AngularComponent(operators.AngularComponent):
         """Perform operation."""
         arg = args[0]
         if adjoint:
+            # Accumulate the cotangent into the angular components of the input
             arg.data[axslice(self.index, 0, 2)] += out.data
         else:
             np.copyto(out.data, arg.data[axslice(self.index, 0, 2)])
