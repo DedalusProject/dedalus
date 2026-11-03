@@ -12,7 +12,9 @@ Specifically, Dedalus utilizes the ``array-api-compat`` library to provide a uni
 Installation
 ------------
 
-In add  ition to the regular Dedalus dependencies, you will need to install CuPy to enable GPU support. CuPy itself can be installed using pip, but also requires a compatible CUDA or ROCm environment to be installed on your system.
+In addition to the regular Dedalus dependencies, you will need to install CuPy to enable GPU support.
+CuPy itself can be installed using pip, but also requires a compatible CUDA or ROCm environment to be installed on your system.
+See the CuPy installation instructions here: https://docs.cupy.dev/en/stable/install.html.
 
 Selecting GPUs
 --------------

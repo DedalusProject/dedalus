@@ -20,8 +20,10 @@ IN_PLACE = config['parallelism-fftw'].getboolean('IN_PLACE')
 PLANNING_RIGOR = config['parallelism-fftw'].get('PLANNING_RIGOR')
 
 try:
+    import cupy
     import cupyx
 except ImportError:
+    cupy = None
     cupyx = None
 
 
@@ -357,8 +359,11 @@ cdef class MPITranspose:
         if self.gpu:
             CL_device = CL
             RL_device = RL
-            CL = CL_device.get(out=self.CL_pinned, blocking=True) # must block
+            CL_device.get(out=self.CL_pinned, blocking=False)
+            CL = self.CL_pinned
             RL = self.RL_pinned
+            # Finish copy to pinned memory and prior async sets from pinned buffers
+            self._sync_device()
         # Create reduced views of data arrays
         CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=np.float64, buffer=CL)
         RL_reduced = np.ndarray(shape=self.RL_reduced_shape, dtype=np.float64, buffer=RL)
@@ -373,7 +378,7 @@ cdef class MPITranspose:
             self.combine_columns(self.RL_buffer, RL_reduced)
             # Copy back to device on GPU
             if self.gpu:
-                # Set asynchronously since pinned buffers are kept here and CL_device.get is blocking
+                # Async copy, pinned buffer reuse is guarded by sync in next call
                 RL_device.set(RL, blocking=False)
 
     def localize_columns(self, RL, CL):
@@ -382,8 +387,11 @@ cdef class MPITranspose:
         if self.gpu:
             RL_device = RL
             CL_device = CL
-            RL = RL_device.get(out=self.RL_pinned, blocking=True) # must block
+            RL_device.get(out=self.RL_pinned, blocking=False)
+            RL = self.RL_pinned
             CL = self.CL_pinned
+            # Finish copy to pinned memory and prior async sets from pinned buffers
+            self._sync_device()
         # Create reduced views of data arrays
         CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=np.float64, buffer=CL)
         RL_reduced = np.ndarray(shape=self.RL_reduced_shape, dtype=np.float64, buffer=RL)
@@ -397,8 +405,12 @@ cdef class MPITranspose:
         if self.local_col_count > 0:
             self.combine_rows(self.CL_buffer, CL_reduced)
             if self.gpu:
-                # Set asynchronously since pinned buffers are kept here and RL_device.get is blocking
+                # Async copy, pinned buffer reuse is guarded by sync in next call
                 CL_device.set(CL, blocking=False)
+
+    def _sync_device(self):
+        """Wait for queued work on all streams of the current device."""
+        cupy.cuda.Device().synchronize()
 
     @cython.boundscheck(False)
     cdef void split_rows(self, double[:,:,:,::1] A, double[::1] B):
@@ -521,7 +533,6 @@ cdef class CupyTranspose:
     cdef readonly object CL_buffer, RL_buffer
     cdef readonly int local_col_count
     cdef readonly int local_row_count
-    cdef readonly object array_namespace
 
     def __init__(self, global_shape, chunk_shape, dtype, axis, pycomm, array_namespace):
         logger.debug("Building MPI transpose plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, global_shape, axis))
@@ -532,7 +543,6 @@ cdef class CupyTranspose:
         chunk_shape = np.array(chunk_shape, dtype=np.int32)
         datasize = {np.float64: 1, np.complex128: 2}[np.dtype(dtype).type]
         self.pycomm = pycomm
-        self.array_namespace = array_namespace
         # Reduced global shape (4d array)
         N0 = prod(global_shape[:axis])
         N1 = global_shape[axis]
@@ -585,11 +595,13 @@ cdef class CupyTranspose:
         # Rearrange from input array to buffer
         if self.local_col_count > 0:
             self._pack(CL_reduced, self.CL_buffer, self.CL_displs, self.row_starts, self.row_ends, 1, self.pycomm.size)
-            self._sync()
+        # Finish packing and prior unpacking from receive buffer
+        self._sync_device()
         # Communicate between buffers
         self.pycomm.Alltoallv([self.CL_buffer, self.CL_counts, self.CL_displs, MPI.DOUBLE],
                               [self.RL_buffer, self.RL_counts, self.RL_displs, MPI.DOUBLE])
-        self._sync()
+        # Finish any device work queued by MPI
+        self._sync_device()
         # Rearrange from buffer to output array
         if self.local_row_count > 0:
             self._unpack(self.RL_buffer, RL_reduced, self.RL_displs, self.col_starts, self.col_ends, 2, self.pycomm.size)
@@ -602,21 +614,23 @@ cdef class CupyTranspose:
         # Rearrange from input array to buffer
         if self.local_row_count > 0:
             self._pack(RL_reduced, self.RL_buffer, self.RL_displs, self.col_starts, self.col_ends, 2, self.pycomm.size)
-            self._sync()
+        # Finish packing and prior unpacking from receive buffer
+        self._sync_device()
         # Communicate between buffers
         self.pycomm.Alltoallv([self.RL_buffer, self.RL_counts, self.RL_displs, MPI.DOUBLE],
                               [self.CL_buffer, self.CL_counts, self.CL_displs, MPI.DOUBLE])
-        self._sync()
+        # Finish any device work queued by MPI
+        self._sync_device()
         # Rearrange from buffer to output array
         if self.local_col_count > 0:
             self._unpack(self.CL_buffer, CL_reduced, self.CL_displs, self.row_starts, self.row_ends, 1, self.pycomm.size)
 
-    def _sync(self):
-        """Wait for queued GPU work."""
-        self.array_namespace.cuda.get_current_stream().synchronize() # cupy only
+    def _sync_device(self):
+        """Wait for queued work on all streams of the current device."""
+        cupy.cuda.Device().synchronize()
 
     def _pack(self, A, B, displs, starts, ends, axis, nproc):
-        """Copy blocks of the 4D array A (split along `axis`) into consecutive segments of the flat buffer B."""
+        """Copy blocks of the 4D reduced array A (split along `axis`) into consecutive segments of the flat buffer B."""
         index = [slice(None)] * 4
         for p in range(nproc):
             if ends[p] > starts[p]:
