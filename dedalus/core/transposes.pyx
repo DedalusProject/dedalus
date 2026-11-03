@@ -1,7 +1,6 @@
 cimport cython
 cimport numpy as cnp
 import numpy as np
-import math
 from math import prod
 import array_api_compat
 
@@ -25,6 +24,36 @@ try:
 except ImportError:
     cupy = None
     cupyx = None
+
+
+def _block_layout(global_shape, chunk_shape, axis, comm):
+    """Block distribution of the transposing axes (axis and axis+1) across a communicator."""
+    global_shape = np.array(global_shape, dtype=np.int32)
+    chunk_shape = np.array(chunk_shape, dtype=np.int32)
+    # Reduced global shape (4d array)
+    N0 = prod(global_shape[:axis])
+    N1 = global_shape[axis]
+    N2 = global_shape[axis+1]
+    N3 = prod(global_shape[axis+2:])
+    # Chunks
+    C1 = chunk_shape[axis]
+    C2 = chunk_shape[axis+1]
+    # Global number of chunks
+    CG1 = -(-N1 // C1)  # ceil
+    CG2 = -(-N2 // C2)  # ceil
+    # Local number of chunks
+    CL1 = -(-CG1 // comm.size)  # ceil
+    CL2 = -(-CG2 // comm.size)  # ceil
+    # Local number of elements
+    B1 = C1 * CL1
+    B2 = C2 * CL2
+    # Block bounds for each rank
+    ranks = np.arange(comm.size, dtype=np.int32)
+    row_starts = np.minimum(B1*ranks, N1)
+    row_ends = np.minimum(B1*(ranks+1), N1)
+    col_starts = np.minimum(B2*ranks, N2)
+    col_ends = np.minimum(B2*(ranks+1), N2)
+    return N0, N1, N2, N3, B1, B2, row_starts, row_ends, col_starts, col_ends
 
 
 cdef class FFTWTranspose:
@@ -61,39 +90,12 @@ cdef class FFTWTranspose:
         logger.debug("Building FFTW transpose plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, global_shape, axis))
         if not array_api_compat.is_numpy_namespace(array_namespace):
             raise ValueError("FFTWTranspose requires numpy array namespace.")
-        # Attributes
-        global_shape = np.array(global_shape, dtype=np.int32)
-        chunk_shape = np.array(chunk_shape, dtype=np.int32)
         datasize = {np.float64: 1, np.complex128: 2}[np.dtype(dtype).type]
-        # Reduced global shape (4d array)
-        N0 = prod(global_shape[:axis])
-        N1 = global_shape[axis]
-        N2 = global_shape[axis+1]
-        N3 = prod(global_shape[axis+2:])
-        # Chunks
-        C1 = chunk_shape[axis]
-        C2 = chunk_shape[axis+1]
-        # Global number of chunks
-        CG1 = -(-global_shape[axis] // C1)  # ceil
-        CG2 = -(-global_shape[axis+1] // C2)  # ceil
-        # Local number of chunks
-        CL1 = -(-CG1 // pycomm.size)
-        CL2 = -(-CG2 // pycomm.size)
-        # Local number of elements
-        B1 = C1 * CL1
-        B2 = C2 * CL2
-        # Starting indices
-        ranks = np.arange(pycomm.size, dtype=np.int32)
-        col_starts = np.minimum(B2*ranks, global_shape[axis+1])
-        row_starts = np.minimum(B1*ranks, global_shape[axis])
-        # Ending indices
-        col_ends = np.minimum(B2*(ranks+1), global_shape[axis+1])
-        row_ends = np.minimum(B1*(ranks+1), global_shape[axis])
-        # Counts
-        col_counts = col_ends - col_starts
-        row_counts = row_ends - row_starts
-        local_col_count = col_counts[<int> pycomm.rank]
-        local_row_count = row_counts[<int> pycomm.rank]
+        # Block distribution
+        N0, N1, N2, N3, B1, B2, row_starts, row_ends, col_starts, col_ends = _block_layout(global_shape, chunk_shape, axis, pycomm)
+        # Local counts
+        local_col_count = col_ends[pycomm.rank] - col_starts[pycomm.rank]
+        local_row_count = row_ends[pycomm.rank] - row_starts[pycomm.rank]
         # Local reduced shapes
         self.CL_reduced_shape = np.array([N0, N1, local_col_count, N3], dtype=np.int32)
         self.RL_reduced_shape = np.array([N0, local_row_count, N2, N3], dtype=np.int32)
@@ -111,9 +113,6 @@ cdef class FFTWTranspose:
         # For direct copying to and from original data
         self.CL_view = np.transpose(CL_tran_view, (2, 0, 1, 3))
         self.RL_view = np.transpose(RL_tran_view, (2, 0, 1, 3))
-
-        # def _fftw_setup(self, scales):
-        #     logger.debug("Building FFTW transpose plan for (scales, axis, in_place) = (%s, %s, %s)" %(scales, axis, IN_PLACE))
 
     def build_plans(self, p_t n0, p_t n1, p_t howmany, p_t block0, p_t block1,
                     py_comm_t pycomm, in_place, flags=['FFTW_MEASURE']):
@@ -200,7 +199,7 @@ cdef class FFTWTranspose:
         cfftw.fftw_destroy_plan(self.CL_to_RL_plan)
         cfftw.fftw_destroy_plan(self.RL_to_CL_plan)
 
-    def make_views(self, RL, CL):
+    def make_views(self, CL, RL):
         CL_reduced = np.ndarray(shape=self.CL_reduced_shape, dtype=CL.dtype, buffer=CL)
         RL_reduced = np.ndarray(shape=self.RL_reduced_shape, dtype=RL.dtype, buffer=RL)
         return CL_reduced, RL_reduced
@@ -211,7 +210,7 @@ cdef class FFTWTranspose:
     def localize_rows(self, CL, RL):
         """Transpose from column-local to row-local data distribution."""
         # Create reduced views of data arrays
-        CL_reduced, RL_reduced = self.make_views(RL, CL)
+        CL_reduced, RL_reduced = self.make_views(CL, RL)
         # Transpose from input array to buffer
         self.copy_in_CL_fftw(CL_reduced)
         # Communicate between buffers
@@ -237,7 +236,7 @@ cdef class FFTWTranspose:
     def localize_columns(self, RL, CL):
         """Transpose from row-local to column-local data distribution."""
         # Create reduced views of data arrays
-        CL_reduced, RL_reduced = self.make_views(RL, CL)
+        CL_reduced, RL_reduced = self.make_views(CL, RL)
         # Transpose from input array to buffer
         self.copy_in_RL_fftw(RL_reduced)
         # Communicate between buffers
@@ -294,45 +293,27 @@ cdef class MPITranspose:
 
     def __init__(self, global_shape, chunk_shape, dtype, axis, pycomm, array_namespace):
         logger.debug("Building MPI transpose plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, global_shape, axis))
-        # Attributes
-        global_shape = np.array(global_shape, dtype=np.int32)
-        chunk_shape = np.array(chunk_shape, dtype=np.int32)
         datasize = {np.float64: 1, np.complex128: 2}[np.dtype(dtype).type]
         self.pycomm = pycomm
         self.gpu = not array_api_compat.is_numpy_namespace(array_namespace)
-        # Reduced global shape (4d array)
-        self.N0 = N0 = prod(global_shape[:axis])
-        N1 = global_shape[axis]
-        N2 = global_shape[axis+1]
-        self.N3 = N3 = prod(global_shape[axis+2:]) * datasize
-        # Chunks
-        C1 = chunk_shape[axis]
-        C2 = chunk_shape[axis+1]
-        # Global number of chunks
-        CG1 = -(-global_shape[axis] // C1)  # ceil
-        CG2 = -(-global_shape[axis+1] // C2)  # ceil
-        # Local number of chunks
-        CL1 = -(-CG1 // pycomm.size)
-        CL2 = -(-CG2 // pycomm.size)
-        # Local number of elements
-        B1 = C1 * CL1
-        B2 = C2 * CL2
-        # Starting indices
-        ranks = np.arange(pycomm.size, dtype=np.int32)
-        self.col_starts = col_starts = np.minimum(B2*ranks, global_shape[axis+1])
-        self.row_starts = row_starts = np.minimum(B1*ranks, global_shape[axis])
-        # Ending indices
-        self.col_ends = col_ends = np.minimum(B2*(ranks+1), global_shape[axis+1])
-        self.row_ends = row_ends = np.minimum(B1*(ranks+1), global_shape[axis])
+        # Block distribution
+        N0, N1, N2, N3, B1, B2, row_starts, row_ends, col_starts, col_ends = _block_layout(global_shape, chunk_shape, axis, pycomm)
+        self.row_starts = row_starts
+        self.row_ends = row_ends
+        self.col_starts = col_starts
+        self.col_ends = col_ends
+        # Reduced views are float64, so last axis counts doubles
+        self.N0 = N0
+        self.N3 = N3 = N3 * datasize
         # Counts
         col_counts = col_ends - col_starts
         row_counts = row_ends - row_starts
         self.local_col_count = local_col_count = col_counts[<int> pycomm.rank]
         self.local_row_count = local_row_count = row_counts[<int> pycomm.rank]
         # Local shapes
-        CL_shape = global_shape.copy()
+        CL_shape = list(global_shape)
         CL_shape[axis+1] = local_col_count
-        RL_shape = global_shape.copy()
+        RL_shape = list(global_shape)
         RL_shape[axis] = local_row_count
         # Local reduced shapes
         self.CL_reduced_shape = np.array([N0, N1, local_col_count, N3], dtype=np.int32)
@@ -413,6 +394,7 @@ cdef class MPITranspose:
         cupy.cuda.Device().synchronize()
 
     @cython.boundscheck(False)
+    @cython.wraparound(False)
     cdef void split_rows(self, double[:,:,:,::1] A, double[::1] B):
         """Reorder column-local dataset into sending buffer of rows."""
         # Create local copies of fixed loop bounds
@@ -435,6 +417,7 @@ cdef class MPITranspose:
                             i = i + 1
 
     @cython.boundscheck(False)
+    @cython.wraparound(False)
     cdef void combine_rows(self, double[::1] B, double[:,:,:,::1] A):
         """Reorder receiving buffer of rows into column-local dataset."""
         # Create local copies of fixed loop bounds
@@ -457,6 +440,7 @@ cdef class MPITranspose:
                             i = i + 1
 
     @cython.boundscheck(False)
+    @cython.wraparound(False)
     cdef void split_columns(self, double[:,:,:,::1] A, double[::1] B):
         """Reorder row-local dataset into sending buffer of columns."""
         # Create local copies of fixed loop bounds
@@ -479,6 +463,7 @@ cdef class MPITranspose:
                             i = i + 1
 
     @cython.boundscheck(False)
+    @cython.wraparound(False)
     cdef void combine_columns(self, double[::1] B, double[:,:,:,::1] A):
         """Reorder receiving buffer of columns into row-local dataset."""
         # Create local copies of fixed loop bounds
@@ -503,20 +488,27 @@ cdef class MPITranspose:
 
 cdef class CupyTranspose:
     """
-    MPI Alltoallv-based distributed array transpose, for redistributing
-    a block-distributed multidimensional array across adjacent axes.
+    GPU-aware MPI Alltoallv-based distributed array transpose, for redistributing
+    a block-distributed multidimensional cupy array across adjacent axes.
 
     Parameters
     ----------
     global_shape : ndarray of np.int32
         Global array shape
+    chunk_shape : ndarray of np.int32
+        Chunk shape
     dtype : data type
         Data type
     axis : int
         Column axis of transposition plan (row axis is the next axis)
     pycomm : mpi4py communicator
         Communicator
+    array_namespace : array namespace
+        Array namespace (only cupy supported here).
 
+    Notes
+    -----
+    Device buffers are passed directly to MPI, which must be GPU-aware.
     """
 
     cdef readonly py_comm_t pycomm
@@ -535,38 +527,19 @@ cdef class CupyTranspose:
     cdef readonly int local_row_count
 
     def __init__(self, global_shape, chunk_shape, dtype, axis, pycomm, array_namespace):
-        logger.debug("Building MPI transpose plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, global_shape, axis))
+        logger.debug("Building Cupy transpose plan for (dtype, gshape, axis) = (%s, %s, %s)" %(dtype, global_shape, axis))
         if not array_api_compat.is_cupy_namespace(array_namespace):
             raise ValueError("CupyTranspose requires cupy array namespace.")
-        # Attributes
-        global_shape = np.array(global_shape, dtype=np.int32)
-        chunk_shape = np.array(chunk_shape, dtype=np.int32)
         datasize = {np.float64: 1, np.complex128: 2}[np.dtype(dtype).type]
         self.pycomm = pycomm
-        # Reduced global shape (4d array)
-        N0 = prod(global_shape[:axis])
-        N1 = global_shape[axis]
-        N2 = global_shape[axis+1]
-        N3 = prod(global_shape[axis+2:]) * datasize
-        # Chunks
-        C1 = chunk_shape[axis]
-        C2 = chunk_shape[axis+1]
-        # Global number of chunks
-        CG1 = -(-global_shape[axis] // C1)  # ceil
-        CG2 = -(-global_shape[axis+1] // C2)  # ceil
-        # Local number of chunks
-        CL1 = -(-CG1 // pycomm.size)
-        CL2 = -(-CG2 // pycomm.size)
-        # Local number of elements
-        B1 = C1 * CL1
-        B2 = C2 * CL2
-        # Starting indices
-        ranks = np.arange(pycomm.size, dtype=np.int32)
-        self.col_starts = col_starts = np.minimum(B2*ranks, global_shape[axis+1])
-        self.row_starts = row_starts = np.minimum(B1*ranks, global_shape[axis])
-        # Ending indices
-        self.col_ends = col_ends = np.minimum(B2*(ranks+1), global_shape[axis+1])
-        self.row_ends = row_ends = np.minimum(B1*(ranks+1), global_shape[axis])
+        # Block distribution
+        N0, N1, N2, N3, B1, B2, row_starts, row_ends, col_starts, col_ends = _block_layout(global_shape, chunk_shape, axis, pycomm)
+        self.row_starts = row_starts
+        self.row_ends = row_ends
+        self.col_starts = col_starts
+        self.col_ends = col_ends
+        # Reduced views are float64, so last axis counts doubles
+        N3 = N3 * datasize
         # Counts
         col_counts = col_ends - col_starts
         row_counts = row_ends - row_starts
