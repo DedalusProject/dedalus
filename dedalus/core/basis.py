@@ -2718,6 +2718,12 @@ class DiskBasis(PolarBasis, metaclass=CachedClass):
         regtotal_arg = abs(m + spintotal_arg)
         regtotal_out = abs(m + spintotal_out)
         diff_regtotal = regtotal_out - regtotal_arg
+        if arg_basis is None:
+            # Constant operand and radial NCC, only contributes at m = 0
+            matrix = coeffs.ravel()[:, None]
+            if m != 0:
+                matrix = 0 * matrix
+            return sparse.csr_matrix(matrix)
         # jacobi parameters
         a_ncc = ncc_basis.alpha + ncc_basis.k
         b_ncc = regtotal_ncc
