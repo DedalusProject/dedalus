@@ -660,19 +660,14 @@ class RealFFT_kernel(RealFourierTransform):
         self.n_modes = self.N // 2 + 1
         
     @staticmethod
-    def _transpose_kernel(real_type, rows, cols):
+    def _transpose_kernel(n_leading, rows, cols, real_type):
         """Slow axes: dst[m] (cols x rows) = src[m] (rows x cols) transposed."""
         tile_rows, tile_cols = (32, 32)
         col_shift, col_mask = tile_cols.bit_length() - 1, tile_cols - 1
         row_shift, row_mask = tile_rows.bit_length() - 1, tile_rows - 1
         pitch = tile_cols + 1                        # odd: no shared-memory bank conflicts
         per_thread = tile_rows * tile_cols // THREADS
-        row_tiles = ceil(rows / tile_rows)
-        col_tiles = ceil(cols / tile_cols)
-        # The longer side goes on grid x (grid y is limited to 65535); this order is
-        # also much faster for very long rows (4.5x for a 524288 x 1024 transpose).
         rows_on_grid_x = rows > cols
-        grid = (row_tiles, col_tiles) if rows_on_grid_x else (col_tiles, row_tiles)
 
         @jit.rawkernel()
         def transpose(src, dst):
@@ -705,10 +700,14 @@ class RealFFT_kernel(RealFourierTransform):
                 if row < rows and col < cols:
                     dst[matrix_start + col * rows + row] = tile[tile_row * pitch + tile_col]
 
-        return transpose, grid
+        row_tiles = ceil(rows / tile_rows)
+        col_tiles = ceil(cols / tile_cols)
+        grid = (row_tiles, col_tiles) if rows_on_grid_x else (col_tiles, row_tiles)
+        kernel = transpose[(*grid, n_leading), (THREADS, 1, 1)]
+        return kernel
 
     @staticmethod
-    def _packed_transpose_kernel(real_type, n_modes, cols, packed_len, kmax):
+    def _packed_transpose_kernel(n_leading, n_modes, cols, packed_len, kmax, real_type):
         """Slow axes: packed (packed_len x cols) -> transposed half spectrum (cols x n_modes), interleaved reals."""
         tile_rows, tile_cols = (32, 32)
         col_shift, col_mask = tile_cols.bit_length() - 1, tile_cols - 1
@@ -716,10 +715,7 @@ class RealFFT_kernel(RealFourierTransform):
         pitch = tile_cols + 1
         plane = tile_rows * pitch                    # real part, then imaginary part
         per_thread = tile_rows * tile_cols // THREADS
-        mode_tiles = ceil((kmax + 1) / tile_rows)
-        col_tiles = ceil(cols / tile_cols)
         modes_on_grid_x = kmax + 1 > cols
-        grid = (mode_tiles, col_tiles) if modes_on_grid_x else (col_tiles, mode_tiles)
 
         @jit.rawkernel()
         def packed_transpose(packed, spectrum):
@@ -762,7 +758,11 @@ class RealFFT_kernel(RealFourierTransform):
                     spectrum[out] = tile[position]
                     spectrum[out + 1] = tile[plane + position]
 
-        return packed_transpose, grid
+        mode_tiles = ceil((kmax + 1) / tile_rows)
+        col_tiles = ceil(cols / tile_cols)
+        grid = (mode_tiles, col_tiles) if modes_on_grid_x else (col_tiles, mode_tiles)
+        kernel = packed_transpose[(*grid, n_leading), (THREADS, 1, 1)]
+        return kernel
 
     @staticmethod
     def _pack_kernel(packed_len, n_modes, kmax, n_elements):
@@ -780,25 +780,21 @@ class RealFFT_kernel(RealFourierTransform):
                     cos_index = row * packed_len + 2 * mode
                     spectrum[2 * element] = packed[cos_index] * 0.5
                     spectrum[2 * element + 1] = packed[cos_index + 1] * 0.5
-        return _pack
+        kernel = _pack[(ceil(n_elements / THREADS), 1, 1), (THREADS, 1, 1)]
+        return kernel
         
     @classmethod
     @CachedMethod
-    def _get_kernels(cls, dtype, n_grid, n_leading, n_trailing, packed_len, kmax):
+    def _get_kernels(cls, n_leading, n_grid, n_trailing, packed_len, kmax, dtype):
         n_modes = n_grid // 2 + 1
-        n_transforms = n_leading * n_trailing
-        block = (THREADS, 1, 1)
 
         if n_trailing == 1:
-            n_elements = n_transforms * n_modes
-            pack_kernel = cls._pack_kernel(packed_len, n_modes, kmax, n_elements)
-            pack = pack_kernel[(ceil(n_elements / THREADS), 1, 1), block]
+            n_elements = n_leading * n_modes * n_trailing
+            pack = cls._pack_kernel(packed_len, n_modes, kmax, n_elements)
             transpose_back = None
         else:
-            kernel, grid = cls._packed_transpose_kernel(dtype, n_modes, n_trailing, packed_len, kmax)
-            pack = kernel[(*grid, n_leading), block]
-            kernel, grid = cls._transpose_kernel(dtype, n_trailing, n_grid)
-            transpose_back = kernel[(*grid, n_leading), block]
+            pack = cls._packed_transpose_kernel(n_leading, n_modes, n_trailing, packed_len, kmax, dtype)
+            transpose_back = cls._transpose_kernel(n_leading, n_trailing, n_grid, dtype)
 
         return pack, transpose_back
 
@@ -835,8 +831,8 @@ class CupyRealFFT(RealFFT_kernel, RealFFT):
 
     @roctx_range
     def backward(self, cdata, gdata):
-        pack_transpose, transpose_back = self._get_kernels(self.dtype, self.N, self.n_leading,
-                                                           self.n_trailing, self.M, self.Kmax)
+        pack_transpose, transpose_back = self._get_kernels(self.n_leading, self.N, self.n_trailing,
+                                                           self.M, self.Kmax, self.dtype)
         pack_transpose(cdata.reshape(-1), self.spectrum_reals) # Doesn't transpose for fast axis
         if transpose_back is None:
             self.plan.fft(self.spectrum, gdata.reshape(self.n_transforms, self.N),
