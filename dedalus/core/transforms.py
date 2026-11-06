@@ -9,8 +9,16 @@ import scipy.fftpack
 from ..libraries import dedalus_sphere
 from math import prod, ceil
 import array_api_compat
-from cupyx import jit
-from cupy.cuda import cufft as cufft_backend
+try:
+    from cupyx import jit
+except ImportError:
+    # Mock jit so module can still be imported without cupy
+    class jit:
+        @staticmethod
+        def rawkernel():
+            def decorator(func):
+                return func
+            return decorator
 
 from . import basis
 from ..libraries.fftw import fftw_wrappers as fftw
@@ -801,7 +809,9 @@ class CupyRealFFT(RealFFT_kernel, RealFFT):
 
     def __init__(self, *args, **kw):
         import cupyx.scipy.fft as cufft
+        from cupy.cuda import cufft as cufft_backend
         self.cufft = roctx_range('cufft')(cufft)
+        self.cufft_backend = cufft_backend
         super().__init__(*args, **kw)
 
         is_double = self.dtype == np.float64
@@ -830,9 +840,9 @@ class CupyRealFFT(RealFFT_kernel, RealFFT):
         pack_transpose(cdata.reshape(-1), self.spectrum_reals) # Doesn't transpose for fast axis
         if transpose_back is None:
             self.plan.fft(self.spectrum, gdata.reshape(self.n_transforms, self.N),
-                          cufft_backend.CUFFT_INVERSE)
+                          self.cufft_backend.CUFFT_INVERSE)
         else:
-            self.plan.fft(self.spectrum, self.c2r_output, cufft_backend.CUFFT_INVERSE)
+            self.plan.fft(self.spectrum, self.c2r_output, self.cufft_backend.CUFFT_INVERSE)
             transpose_back(self.c2r_output.reshape(-1), gdata.reshape(-1))
 
     
