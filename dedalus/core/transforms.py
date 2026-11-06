@@ -688,7 +688,7 @@ class RealFFT_kernel(RealFourierTransform):
                 col = first_col + tile_col
                 if row < rows and col < cols:
                     tile[tile_row * pitch + tile_col] = src[matrix_start + row * cols + col]
-                    jit.syncthreads()
+            jit.syncthreads()
 
             for step in range(per_thread):           # write along rows
                 index = thread + step * THREADS
@@ -742,7 +742,7 @@ class RealFFT_kernel(RealFourierTransform):
                         cos_index = (matrix * packed_len + 2 * mode) * cols + col
                         tile[position] = packed[cos_index] * 0.5
                         tile[plane + position] = packed[cos_index + cols] * 0.5
-                        jit.syncthreads()
+            jit.syncthreads()
 
             for step in range(per_thread):
                 index = thread + step * THREADS
@@ -758,6 +758,7 @@ class RealFFT_kernel(RealFourierTransform):
 
         return packed_transpose, grid
 
+    @staticmethod
     def _pack_kernel(packed_len, n_modes, kmax, n_elements):
         @jit.rawkernel()
         def _pack(packed, spectrum):
@@ -826,9 +827,9 @@ class CupyRealFFT(RealFFT_kernel, RealFFT):
 
     @roctx_range
     def backward(self, cdata, gdata):
-        transpose_pack, transpose_back = self._get_kernels(self.dtype, self.N, self.n_leading,
+        pack_transpose, transpose_back = self._get_kernels(self.dtype, self.N, self.n_leading,
                                                            self.n_trailing, self.M, self.Kmax)
-        transpose_pack(cdata.reshape(-1), self.spectrum_reals) # Doesn't transpose for fast axis
+        pack_transpose(cdata.reshape(-1), self.spectrum_reals) # Doesn't transpose for fast axis
         if transpose_back is None:
             self.plan.fft(self.spectrum, gdata.reshape(self.n_transforms, self.N),
                           cufft_backend.CUFFT_INVERSE)
