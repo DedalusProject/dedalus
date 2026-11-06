@@ -9,10 +9,8 @@ import scipy.fftpack
 from ..libraries import dedalus_sphere
 from math import prod, ceil
 import array_api_compat
-from functools import lru_cache
 from cupyx import jit
 from cupy.cuda import cufft as cufft_backend
-import cupy as cp
 
 from . import basis
 from ..libraries.fftw import fftw_wrappers as fftw
