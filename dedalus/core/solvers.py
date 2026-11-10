@@ -757,30 +757,42 @@ class InitialValueSolver(SolverBase):
             handlers = self.evaluator.handlers
         self.evaluator.evaluate_handlers(handlers, iteration=self.iteration, wall_time=self.wall_time, sim_time=self.sim_time, timestep=dt)
 
-    def log_stats(self, format=".4g"):
-        """Log timing statistics with specified string formatting (optional)."""
+    def compute_stats(self):
+        """Comput timing statistics and return as a dictionary."""
         self.run_time_end = self.wall_time
-        start_time = self.start_time_end
-        logger.info(f"Final iteration: {self.iteration}")
-        logger.info(f"Final sim time: {self.sim_time}")
-        logger.info(f"Setup time (init - iter 0): {start_time:{format}} sec")
+        stats = {}
+        stats['final_iteration'] = self.iteration
+        stats['final_sim_time'] = self.sim_time
+        stats['setup_time'] = self.start_time_end
         if self.profile:
             self.dump_profiles(self.run_profiler, "runtime")
         if self.iteration >= self.initial_iteration + self.warmup_iterations:
-            warmup_time = self.warmup_time_end - self.warmup_time_start
-            run_time = self.run_time_end - self.run_time_start
-            profile_output_time = (self.warmup_time_start-self.start_time_end) + (self.run_time_start-self.warmup_time_end)
-            cpus = self.dist.comm.size
-            modes = self.total_modes
-            stages = (self.iteration - self.warmup_iterations - self.initial_iteration) * self.timestepper.stages
-            logger.info(f"Warmup time (iter 0-{self.warmup_iterations}): {warmup_time:{format}} sec")
+            stats['warmup_time'] = self.warmup_time_end - self.warmup_time_start
+            stats['run_time'] = run_time = self.run_time_end - self.run_time_start
+            stats['profile_output_time'] = (self.warmup_time_start-self.start_time_end) + (self.run_time_start-self.warmup_time_end)
+            stats['cpus'] = cpus = self.dist.comm.size
+            stats['modes'] = modes = self.total_modes
+            stats['stages'] = stages = (self.iteration - self.warmup_iterations - self.initial_iteration) * self.timestepper.stages
+            stats['cpu_hours'] = cpus * run_time / 3600
+            stats['speed'] = modes * stages / cpus / run_time
+        return stats
+
+    def log_stats(self, format=".4g"):
+        """Log timing statistics with specified string formatting (optional)."""
+        stats = self.compute_stats()
+        logger.info(f"Final iteration: {stats['final_iteration']}")
+        logger.info(f"Final sim time: {stats['final_sim_time']}")
+        logger.info(f"Setup time (init - iter 0): {stats['setup_time']:{format}} sec")
+        if self.iteration >= self.initial_iteration + self.warmup_iterations:
+            logger.info(f"Warmup time (iter 0-{self.warmup_iterations}): {stats['warmup_time']:{format}} sec")
             if self.profile:
-                logger.info(f"Profile output time: {profile_output_time:{format}} sec")
-            logger.info(f"Run time (iter {self.warmup_iterations}-end): {run_time:{format}} sec")
-            logger.info(f"CPU time (iter {self.warmup_iterations}-end): {run_time*cpus/3600:{format}} cpu-hr")
-            logger.info(f"Speed: {(modes*stages/cpus/run_time):{format}} mode-stages/cpu-sec")
+                logger.info(f"Profile output time: {stats['profile_output_time']:{format}} sec")
+            logger.info(f"Run time (iter {self.warmup_iterations}-end): {stats['run_time']:{format}} sec")
+            logger.info(f"CPU time (iter {self.warmup_iterations}-end): {stats['cpu_hours']:{format}} cpu-hr")
+            logger.info(f"Speed: {(stats['speed']):{format}} mode-stages/cpu-sec")
         else:
             logger.info(f"Timings unavailable because warmup did not complete.")
+        return stats
 
     def dump_profiles(self, profiler, name):
         "Save profiling data to disk."
