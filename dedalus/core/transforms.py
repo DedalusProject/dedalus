@@ -727,7 +727,7 @@ class RealFFT_kernel(RealFourierTransform):
             else:
                 first_col = np.int64(jit.blockIdx.x) * tile_cols
                 first_mode = np.int64(jit.blockIdx.y) * tile_rows
-                matrix = np.int64(jit.blockIdx.z)
+            matrix = np.int64(jit.blockIdx.z)
 
             for step in range(per_thread):
                 index = thread + step * THREADS
