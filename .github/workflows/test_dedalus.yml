@@ -5,7 +5,17 @@ on:
     branches:
       - master
       - v2_master
+  pull_request:
   workflow_dispatch:
+permissions:
+  contents: read
+  checks: write
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+env:
+  OMP_NUM_THREADS: 1
+  NUMEXPR_MAX_THREADS: 1
 jobs:
   test_via_conda_forge:
     strategy:
@@ -15,46 +25,39 @@ jobs:
           - os: ubuntu-latest
             label: linux-64
           - os: macos-latest
-            label: osx-64
+            label: osx-arm64
     name: Test ${{ github.ref_name }} via conda-forge on ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
     steps:
       - name: Setup miniforge
-        uses: conda-incubator/setup-miniconda@v2
+        uses: conda-incubator/setup-miniconda@v4
         with:
           miniforge-version: latest
-          auto-activate-base: true
-          activate-environment: ""
+          activate-environment: dedalus
       - name: Build stack via conda-forge
         shell: bash -l {0}
         run: |
-          conda create -y -n dedalus
-          conda activate dedalus
-          conda env config vars set OMP_NUM_THREADS=1
-          conda env config vars set NUMEXPR_MAX_THREADS=1
-          conda install -y -c conda-forge dedalus c-compiler cython pip setuptools wheel "h5py=*=mpi*"
+          conda install -y dedalus c-compiler cython pip setuptools wheel "h5py=*=mpi*"
           conda uninstall -y --force dedalus
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v7
       - name: Install Dedalus from repository
         shell: bash -l {0}
         run: |
-          conda activate dedalus
           CC=mpicc pip install --no-cache --no-build-isolation .
       - name: Test Dedalus
         shell: bash -l {0}
         run: |
           # Move out of repository to run tests
           cd $HOME
-          conda activate dedalus
           python3 -m dedalus test --report
           # Copy report back to repository for test-reporter
           cp dedalus-test-junit.xml $GITHUB_WORKSPACE
       - name: Report test results
-        uses: dorny/test-reporter@v1
-        if: success() || failure()
+        uses: dorny/test-reporter@v3
+        if: (success() || failure()) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         with:
-          name: Test report (${{ matrix.os }})
+          name: Test report (${{ matrix.label }})
           path: dedalus-test-junit.xml
           reporter: java-junit
 
