@@ -293,7 +293,7 @@ class EigenvalueSolver(SolverBase):
             self.eigenvalues, pre_right_evecs = eig_output
             self.right_eigenvectors = self.eigenvectors = sp.pre_right @ pre_right_evecs
 
-    def set_state(self, index, subsystem=0):
+    def set_state(self, index, subsystem=0, set_left=False, set_modified_left=False):
         """
         Set state vector to the specified eigenmode.
 
@@ -305,18 +305,38 @@ class EigenvalueSolver(SolverBase):
             Subsystem that will be set to the corresponding eigenmode.
             If an integer, the corresponding subsystem of the last specified
             eigenvalue_subproblem will be used. Default: 0.
+        set_left : bool, optional
+            Set state with the corresponding left eigenmode. 
+            The solve must have specified left=True, otherwise an error will be raised.
+        set_modified_left : bool, optional
+            Set state with the corresponding modified left eigenmode.
+            The function will default to set_modified_left if both set_left=True and set_modified_left=True.
+            The solve must have specified left=True, otherwise an error will be raised.
         """
-        # TODO: allow setting left modified eigenvectors?
         subproblem = self.eigenvalue_subproblem
         if isinstance(subsystem, int):
             subsystem = subproblem.subsystems[subsystem]
         # Check selection
         if subsystem not in subproblem.subsystems:
             raise ValueError("subsystem must be in eigenvalue_subproblem")
+        # Ensure not both set_left and set_modified_left were requested
+        if set_left and set_modified_left:
+            logger.info("defaulting to set_modified_left because both set_left and set_modified_left were specified as True")
+            set_left=False
+        # Check availability of (modified) left eigenvectors if requested
+        if set_left and not hasattr(self, "left_eigenvectors"):
+            raise ValueError("left_eigenvectors solver attribute not found: need to specify left=True in solve")
+        if set_left and not hasattr(self, "modified_left_eigenvectors"):
+            raise ValueError("modified_left_eigenvectors solver attribute not found: need to specify left=True in solve")
         # Set coefficients
         for var in self.state:
             var['c'] = 0
-        subsystem.scatter(self.eigenvectors[:, index], self.state)
+        if set_left:
+            subsystem.scatter(self.left_eigenvectors[:, index], self.state)
+        elif set_modified_left:
+            subsystem.scatter(self.modified_left_eigenvectors[:, index], self.state)
+        else:
+            subsystem.scatter(self.eigenvectors[:, index], self.state)
         # Set eigenvalue
         self.problem.eigenvalue['g'] = self.eigenvalues[index]
 
