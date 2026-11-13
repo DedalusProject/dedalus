@@ -118,7 +118,7 @@ def test_J_scalar_roundtrip(a, b, N, dealias, dtype):
 @pytest.mark.parametrize('alpha', [0, 1, 2])
 @pytest.mark.parametrize('dealias', [0.5, 1, 1.5])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-@pytest.mark.parametrize('library', ['scipy_dct', 'fftw_dct'])
+@pytest.mark.parametrize('library', ['scipy', 'fftw'])
 def test_chebyshev_libraries_backward(N, alpha, dealias, dtype, library):
     """Tests that fast Chebyshev transforms match matrix transforms."""
     c = coords.Coordinate('x')
@@ -140,7 +140,7 @@ def test_chebyshev_libraries_backward(N, alpha, dealias, dtype, library):
 @pytest.mark.parametrize('alpha', [0, 1, 2])
 @pytest.mark.parametrize('dealias', [0.5, 1, 1.5])
 @pytest.mark.parametrize('dtype', [np.float64, np.complex128])
-@pytest.mark.parametrize('library', ['scipy_dct', 'fftw_dct'])
+@pytest.mark.parametrize('library', ['scipy', 'fftw'])
 def test_chebyshev_libraries_forward(N, alpha, dealias, dtype, library):
     """Tests that fast Chebyshev transforms match matrix transforms."""
     c = coords.Coordinate('x')
@@ -739,4 +739,15 @@ def test_ball_roundtrip_noise(Nphi, Ntheta, Nr, radius, alpha, k, dealias, dtype
     f_layout = f[layout].copy()
     f[other]
     assert np.allclose(f_layout, f[layout])
+
+@pytest.mark.parametrize('N', [16])
+@pytest.mark.parametrize('dtype', [np.float64, np.complex128])
+def test_plan_matrices_shared_across_shapes(N, dtype):
+    """Tests that plans differing only in data shape share their transform matrices."""
+    a = b = a0 = b0 = -1/2
+    plan_a = basis.Jacobi.transforms['matrix']((N,), (N,), 0, np, dtype, a, b, a0, b0)
+    plan_b = basis.Jacobi.transforms['matrix']((3, N), (3, N), 1, np, dtype, a, b, a0, b0)
+    assert plan_a is not plan_b
+    assert plan_a.forward_matrix is plan_b.forward_matrix
+    assert plan_a.backward_matrix is plan_b.backward_matrix
 

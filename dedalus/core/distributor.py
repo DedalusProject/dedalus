@@ -10,12 +10,16 @@ from collections import OrderedDict
 from math import prod
 import numbers
 from weakref import WeakSet
+import array_api_compat
+import warnings
+from packaging.version import Version
 
 from .coords import CoordinateSystem, DirectProduct
 from ..tools.array import reshape_vector
 from ..tools.cache import CachedMethod, CachedAttribute
 from ..tools.config import config
 from ..tools.general import OrderedSet
+from ..extras.flow_tools import GlobalArrayReducer
 
 logger = logging.getLogger(__name__.split('.')[-1])
 GROUP_TRANSFORMS = config['transforms'].getboolean('GROUP_TRANSFORMS')
@@ -23,11 +27,11 @@ TRANSPOSE_LIBRARY = config['parallelism'].get('TRANSPOSE_LIBRARY')
 GROUP_TRANSPOSES = config['parallelism'].getboolean('GROUP_TRANSPOSES')
 SYNC_TRANSPOSES = config['parallelism'].getboolean('SYNC_TRANSPOSES')
 
-if TRANSPOSE_LIBRARY.upper() == 'FFTW':
-    from .transposes import FFTWTranspose as TransposePlanner
-elif TRANSPOSE_LIBRARY.upper() == 'MPI':
-    from .transposes import AlltoallvTranspose as TransposePlanner
-from .transposes import RowDistributor, ColDistributor
+from .transposes import transpose_libraries
+try:
+    TransposePlanner = transpose_libraries[TRANSPOSE_LIBRARY.lower()]
+except KeyError:
+    raise ValueError(f"Unknown TRANSPOSE_LIBRARY: {TRANSPOSE_LIBRARY}. Options: {list(transpose_libraries)}")
 
 # Public interface
 __all__ = ['Distributor']
@@ -39,12 +43,16 @@ class Distributor:
 
     Parameters
     ----------
-    dim : int
-        Dimension
+    coordsystems : CoordinateSystem or tuple of CoordinateSystems
+        Problem coordinate systems
     comm : MPI communicator, optional
         MPI communicator (default: comm world)
     mesh : tuple of ints, optional
         Process mesh for parallelization (default: 1-D mesh of available processes)
+    dtype : data type, optional
+        Default data type for fields (default: None)
+    array_namespace : array namespace or string, optional
+        Array namespace for field data (e.g. numpy or cupy, default: numpy)
 
     Attributes
     ----------
@@ -74,7 +82,7 @@ class Distributor:
     states) and the paths between them (D transforms and R transposes).
     """
 
-    def __init__(self, coordsystems, comm=None, mesh=None, dtype=None):
+    def __init__(self, coordsystems, comm=None, mesh=None, dtype=None, array_namespace=np):
         # Accept single coordsys in place of tuple/list
         if not isinstance(coordsystems, (tuple, list)):
             coordsystems = (coordsystems,)
@@ -115,6 +123,22 @@ class Distributor:
         self._build_layouts()
         # Keep set of weak field references
         self.fields = WeakSet()
+        # Array module
+        if isinstance(array_namespace, str):
+            self.array_namespace = getattr(array_api_compat, array_namespace)
+        else:
+            self.array_namespace = array_api_compat.array_namespace(array_namespace.zeros(0))
+        self.is_numpy_namespace = array_api_compat.is_numpy_namespace(self.array_namespace)
+        self.is_cupy_namespace = array_api_compat.is_cupy_namespace(self.array_namespace)
+        if self.is_cupy_namespace:
+            import cupy
+            if Version(cupy.__version__) < Version("14.2"):
+                raise ImportError("Dedalus GPU support requires cupy >= 14.2")
+        # Array reducer
+        self.array_reducer = GlobalArrayReducer(self.comm_cart)
+        # Warnings for non-Cartesian problems
+        if self.is_cupy_namespace and any(cs.curvilinear for cs in self.coordsystems):
+            warnings.warn("Non-Cartesian coordinate systems not yet supported on GPU.")
 
     @CachedAttribute
     def cs_by_axis(self):
@@ -255,11 +279,12 @@ class Distributor:
         return I
 
     def local_grid(self, basis, scale=None):
+        xp = self.array_namespace
         # TODO: remove from bases and do it all here?
         if scale is None:
             scale = 1
         if basis.dim == 1:
-            return basis.local_grid(self, scale=scale)
+            return xp.asarray(basis.local_grid(self, scale=scale))
         else:
             raise ValueError("Use `local_grids` for multidimensional bases.")
 
@@ -292,16 +317,20 @@ class Distributor:
     #     return tuple(grids)
 
     def local_grids(self, *bases, scales=None):
+        xp = self.array_namespace
         scales = self.remedy_scales(scales)
         grids = []
         for basis in bases:
             basis_scales = scales[self.first_axis(basis):self.last_axis(basis)+1]
-            grids.extend(basis.local_grids(self, scales=basis_scales))
+            local_grids = basis.local_grids(self, scales=basis_scales)
+            for grid in local_grids:
+                grids.append(xp.asarray(grid))
         return grids
 
     def local_modes(self, basis):
         # TODO: remove from bases and do it all here?
-        return basis.local_modes(self)
+        xp = self.array_namespace
+        return xp.asarray(basis.local_modes(self))
 
     @CachedAttribute
     def default_nonconst_groups(self):
@@ -737,7 +766,13 @@ class Transpose:
             # Add axis for components
             full_sub_shape = (ncomp,) + sub_shape
             full_chunk_shape = (ncomp,) + chunk_shape
-            return TransposePlanner(full_sub_shape, full_chunk_shape, dtype, axis+1, self.comm_sub)
+            return TransposePlanner(
+                full_sub_shape,
+                full_chunk_shape,
+                dtype,
+                axis+1,
+                self.comm_sub,
+                self.layout0.dist.array_namespace)
 
     def _single_plan(self, field):
         """Build single transpose plan."""

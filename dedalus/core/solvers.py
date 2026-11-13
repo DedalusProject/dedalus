@@ -67,11 +67,16 @@ class SolverBase:
         self.ncc_cutoff = ncc_cutoff
         self.max_ncc_terms = max_ncc_terms
         self.entry_cutoff = entry_cutoff
+        # Determing matrix coupling
         if matrix_coupling is None:
-            matrix_coupling = np.array(problem.matrix_coupling)
-            # Couple fully separable problems along last axis by default for efficiency
-            if not np.any(matrix_coupling):
-                matrix_coupling[-1] = True
+            # Override with full coupling according to config option
+            if self.dist.is_cupy_namespace and config['matrix construction'].getboolean('COUPLE_GPU_SUBPROBLEMS'):
+                matrix_coupling = np.ones_like(problem.matrix_coupling, dtype=bool)
+            else:
+                matrix_coupling = np.array(problem.matrix_coupling)
+                # Couple fully separable problems along last axis by default for efficiency
+                if not np.any(matrix_coupling):
+                    matrix_coupling[-1] = True
         else:
             # Check specified coupling for compatibility
             problem_coupling = np.array(problem.matrix_coupling)
@@ -390,7 +395,7 @@ class LinearBoundaryValueSolver(SolverBase):
         if sp_to_build:
             self.build_matrices(sp_to_build, ['L'])
             for sp in sp_to_build:
-                self.subproblem_matsolvers[sp] = self.matsolver(sp.L_min, self)
+                self.subproblem_matsolvers[sp] = self.matsolver(sp.L_min, array_namespace=self.dist.array_namespace, solver=self)
         # Compute RHS
         self.evaluator.evaluate_scheduled(iteration=self.iteration)
         # Ensure coeff space before subsystem gathers/scatters
@@ -484,7 +489,7 @@ class NonlinearBoundaryValueSolver(SolverBase):
             # Gather RHS
             spF = sp.gather_outputs(self.F)
             # Solve
-            sp_matsolver = self.matsolver(sp.dF_min, self)
+            sp_matsolver = self.matsolver(sp.dF_min, array_namespace=self.dist.array_namespace, solver=self)
             spX = sp_matsolver.solve(spF)  # CREATES TEMPORARY
             # Scatter solution to perturbations
             sp.scatter_inputs(spX, self.perturbations)
@@ -752,30 +757,42 @@ class InitialValueSolver(SolverBase):
             handlers = self.evaluator.handlers
         self.evaluator.evaluate_handlers(handlers, iteration=self.iteration, wall_time=self.wall_time, sim_time=self.sim_time, timestep=dt)
 
-    def log_stats(self, format=".4g"):
-        """Log timing statistics with specified string formatting (optional)."""
+    def compute_stats(self):
+        """Comput timing statistics and return as a dictionary."""
         self.run_time_end = self.wall_time
-        start_time = self.start_time_end
-        logger.info(f"Final iteration: {self.iteration}")
-        logger.info(f"Final sim time: {self.sim_time}")
-        logger.info(f"Setup time (init - iter 0): {start_time:{format}} sec")
+        stats = {}
+        stats['final_iteration'] = self.iteration
+        stats['final_sim_time'] = self.sim_time
+        stats['setup_time'] = self.start_time_end
         if self.profile:
             self.dump_profiles(self.run_profiler, "runtime")
         if self.iteration >= self.initial_iteration + self.warmup_iterations:
-            warmup_time = self.warmup_time_end - self.warmup_time_start
-            run_time = self.run_time_end - self.run_time_start
-            profile_output_time = (self.warmup_time_start-self.start_time_end) + (self.run_time_start-self.warmup_time_end)
-            cpus = self.dist.comm.size
-            modes = self.total_modes
-            stages = (self.iteration - self.warmup_iterations - self.initial_iteration) * self.timestepper.stages
-            logger.info(f"Warmup time (iter 0-{self.warmup_iterations}): {warmup_time:{format}} sec")
+            stats['warmup_time'] = self.warmup_time_end - self.warmup_time_start
+            stats['run_time'] = run_time = self.run_time_end - self.run_time_start
+            stats['profile_output_time'] = (self.warmup_time_start-self.start_time_end) + (self.run_time_start-self.warmup_time_end)
+            stats['cpus'] = cpus = self.dist.comm.size
+            stats['modes'] = modes = self.total_modes
+            stats['stages'] = stages = (self.iteration - self.warmup_iterations - self.initial_iteration) * self.timestepper.stages
+            stats['cpu_hours'] = cpus * run_time / 3600
+            stats['speed'] = modes * stages / cpus / run_time
+        return stats
+
+    def log_stats(self, format=".4g"):
+        """Log timing statistics with specified string formatting (optional)."""
+        stats = self.compute_stats()
+        logger.info(f"Final iteration: {stats['final_iteration']}")
+        logger.info(f"Final sim time: {stats['final_sim_time']}")
+        logger.info(f"Setup time (init - iter 0): {stats['setup_time']:{format}} sec")
+        if self.iteration >= self.initial_iteration + self.warmup_iterations:
+            logger.info(f"Warmup time (iter 0-{self.warmup_iterations}): {stats['warmup_time']:{format}} sec")
             if self.profile:
-                logger.info(f"Profile output time: {profile_output_time:{format}} sec")
-            logger.info(f"Run time (iter {self.warmup_iterations}-end): {run_time:{format}} sec")
-            logger.info(f"CPU time (iter {self.warmup_iterations}-end): {run_time*cpus/3600:{format}} cpu-hr")
-            logger.info(f"Speed: {(modes*stages/cpus/run_time):{format}} mode-stages/cpu-sec")
+                logger.info(f"Profile output time: {stats['profile_output_time']:{format}} sec")
+            logger.info(f"Run time (iter {self.warmup_iterations}-end): {stats['run_time']:{format}} sec")
+            logger.info(f"CPU time (iter {self.warmup_iterations}-end): {stats['cpu_hours']:{format}} cpu-hr")
+            logger.info(f"Speed: {(stats['speed']):{format}} mode-stages/cpu-sec")
         else:
             logger.info(f"Timings unavailable because warmup did not complete.")
+        return stats
 
     def dump_profiles(self, profiler, name):
         "Save profiling data to disk."

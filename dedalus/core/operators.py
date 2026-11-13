@@ -15,6 +15,7 @@ from operator import add
 from math import prod
 from ..libraries import dedalus_sphere
 import logging
+import array_api_compat
 logger = logging.getLogger(__name__.split('.')[-1])
 
 from .domain import Domain
@@ -378,11 +379,12 @@ class PowerFieldConstant(Power, FutureField):
         arg0.require_grid_space()
 
     def operate(self, out):
+        xp = self.array_namespace
         arg0, arg1 = self.args
         # Multiply in grid layout
         out.preset_layout(arg0.layout)
         if out.data.size:
-            np.power(arg0.data, arg1, out.data)
+            xp.power(arg0.data, arg1, out.data)
 
     def new_operands(self, arg0, arg1, **kw):
         return Power(arg0, arg1)
@@ -472,6 +474,7 @@ class GeneralFunction(NonlinearOperator, FutureField):
         self.last_id = None
         # Additional attributes
         self.dist = dist
+        self.array_namespace = dist.array_namespace
         self.layout = self.dist.get_layout_object(layout)
         self.func = func
         self.kw = kw
@@ -498,8 +501,9 @@ class GeneralFunction(NonlinearOperator, FutureField):
                 self.args[i].change_layout(self.layout)
 
     def operate(self, out):
+        xp = self.array_namespace
         out.preset_layout(self.layout)
-        np.copyto(out.data, self.func(*self.args, **self.kw))
+        xp.copyto(out.data, self.func(*self.args, **self.kw))
 
 
 class UnaryGridFunction(NonlinearOperator, FutureField):
@@ -829,10 +833,11 @@ class Lock(FutureLockedField, LinearOperator):
 
     def operate(self, out):
         """Perform operation."""
+        xp = self.array_namespace
         arg0 = self.args[0]
         out.preset_layout(arg0.layout)
         out.lock_to_layouts(self.layouts)
-        np.copyto(out.data, arg0.data)
+        xp.copyto(out.data, arg0.data)
 
     def new_operand(self, operand, **kw):
         return Lock(operand, *self.layouts, **kw)
@@ -964,6 +969,19 @@ class SpectralOperator1D(SpectralOperator):
         # Caching layer to allow insertion of other arguments
         return self._subspace_matrix(layout, self.input_basis, self.output_basis, self.first_axis)
 
+    @CachedMethod
+    def subspace_matrix_device(self, layout):
+        """Build matrix operating on local subspace data on device."""
+        matrix = self.subspace_matrix(layout)
+        if array_api_compat.is_cupy_namespace(self.array_namespace):
+            import cupy as cp
+            import cupyx.scipy.sparse as csp
+            if sparse.issparse(matrix):
+                matrix = csp.csr_matrix(matrix)
+            else:
+                matrix = cp.array(matrix)
+        return matrix
+
     def group_matrix(self, group):
         return self._group_matrix(group, self.input_basis, self.output_basis)
 
@@ -971,7 +989,7 @@ class SpectralOperator1D(SpectralOperator):
     @CachedMethod
     def _subspace_matrix(cls, layout, input_basis, output_basis, axis, *args):
         if cls.subaxis_coupling[0]:
-            return cls._full_matrix(input_basis, output_basis, *args)
+            return cls._full_matrix(input_basis, output_basis, *args).astype(layout.dist.dtype)
         else:
             input_domain = Domain(layout.dist, bases=[input_basis])
             output_domain = Domain(layout.dist, bases=[output_basis])
@@ -985,7 +1003,7 @@ class SpectralOperator1D(SpectralOperator):
             group_blocks = [cls._group_matrix(group, input_basis, output_basis, *args) for group in groups]
             arg_size = layout.local_shape(input_domain, scales=1)[axis]
             out_size = layout.local_shape(output_domain, scales=1)[axis]
-            return sparse_block_diag(group_blocks, shape=(out_size, arg_size))
+            return sparse_block_diag(group_blocks, shape=(out_size, arg_size)).astype(layout.dist.dtype)
 
     @staticmethod
     def _full_matrix(input_basis, output_basis, *args):
@@ -1004,7 +1022,7 @@ class SpectralOperator1D(SpectralOperator):
         # Apply matrix
         if arg.data.size and out.data.size:
             data_axis = self.last_axis + len(arg.tensorsig)
-            apply_matrix(self.subspace_matrix(layout), arg.data, data_axis, out=out.data)
+            apply_matrix(self.subspace_matrix_device(layout), arg.data, data_axis, out=out.data)
         else:
             out.data.fill(0)
 
@@ -1539,9 +1557,10 @@ class Copy(LinearOperator):
 
     def operate(self, out):
         """Perform operation."""
+        xp = self.array_namespace
         arg = self.args[0]
         out.preset_layout(arg.layout)
-        np.copyto(out.data, arg.data)
+        xp.copyto(out.data, arg.data)
 
 
 class Convert(SpectralOperator, metaclass=MultiClass):
@@ -1646,12 +1665,13 @@ class Convert(SpectralOperator, metaclass=MultiClass):
 
     def operate(self, out):
         """Perform operation."""
+        xp = self.array_namespace
         arg = self.args[0]
         layout = arg.layout
         # Copy for grid space
         if layout.grid_space[self.last_axis]:
             out.preset_layout(layout)
-            np.copyto(out.data, arg.data)
+            xp.copyto(out.data, arg.data)
         # Revert to matrix application for coeff space
         else:
             super().operate(out)
@@ -1794,10 +1814,13 @@ class Trace(LinearOperator, metaclass=MultiClass):
 
     def operate(self, out):
         """Perform operation."""
+        xp = self.array_namespace
         arg = self.args[0]
         out.preset_layout(arg.layout)
-        np.einsum('ii...', arg.data, out=out.data)
-
+        if array_api_compat.is_cupy_namespace(xp):
+            out.data[:] = xp.einsum('ii...', arg.data)
+        else:
+            xp.einsum('ii...', arg.data, out=out.data)
 
 class SphericalTrace(Trace):
 
@@ -1993,6 +2016,7 @@ class StandardTransposeComponents(TransposeComponents):
 
     def operate(self, out):
         """Perform operation."""
+        xp = self.array_namespace
         operand = self.args[0]
         # Set output layout
         out.preset_layout(operand.layout)
@@ -3507,10 +3531,11 @@ class CartesianDivergence(Divergence):
     def operate(self, out):
         """Perform operation."""
         # OPTIMIZE: this has an extra copy
+        xp = self.array_namespace
         arg0 = self.args[0]
         # Set output layout
         out.preset_layout(arg0.layout)
-        np.copyto(out.data, arg0.data)
+        xp.copyto(out.data, arg0.data)
 
 
 class DirectProductDivergence(Divergence):
@@ -3556,10 +3581,11 @@ class DirectProductDivergence(Divergence):
     def operate(self, out):
         """Perform operation."""
         # OPTIMIZE: this has an extra copy
+        xp = self.array_namespace
         arg0 = self.args[0]
         # Set output layout
         out.preset_layout(arg0.layout)
-        np.copyto(out.data, arg0.data)
+        xp.copyto(out.data, arg0.data)
 
 
 class SphericalDivergence(Divergence, SphericalEllOperator):
@@ -3761,10 +3787,11 @@ class CartesianCurl(Curl):
     def operate(self, out):
         """Perform operation."""
         # OPTIMIZE: this has an extra copy
+        xp = self.array_namespace
         arg0 = self.args[0]
         # Set output layout
         out.preset_layout(arg0.layout)
-        np.copyto(out.data, arg0.data)
+        xp.copyto(out.data, arg0.data)
 
 
 class DirectProductCurl(Curl):
@@ -3848,10 +3875,11 @@ class DirectProductCurl(Curl):
     def operate(self, out):
         """Perform operation."""
         # OPTIMIZE: this has an extra copy
+        xp = self.array_namespace
         arg0 = self.args[0]
         # Set output layout
         out.preset_layout(arg0.layout)
-        np.copyto(out.data, arg0.data)
+        xp.copyto(out.data, arg0.data)
 
 
 class SphericalCurl(Curl, SphericalEllOperator):
@@ -4074,10 +4102,11 @@ class CartesianLaplacian(Laplacian):
     def operate(self, out):
         """Perform operation."""
         # OPTIMIZE: this has an extra copy
+        xp = self.array_namespace
         arg0 = self.args[0]
         # Set output layout
         out.preset_layout(arg0.layout)
-        np.copyto(out.data, arg0.data)
+        xp.copyto(out.data, arg0.data)
 
 
 class DirectProductLaplacian(Laplacian):
@@ -4119,10 +4148,11 @@ class DirectProductLaplacian(Laplacian):
     def operate(self, out):
         """Perform operation."""
         # OPTIMIZE: this has an extra copy
+        xp = self.array_namespace
         arg0 = self.args[0]
         # Set output layout
         out.preset_layout(arg0.layout)
-        np.copyto(out.data, arg0.data)
+        xp.copyto(out.data, arg0.data)
 
 
 class SphericalLaplacian(Laplacian, SphericalEllOperator):
