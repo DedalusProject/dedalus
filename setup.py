@@ -182,13 +182,13 @@ for name in pyx_modules:
 # Runtime requirements
 install_requires = [
     "array-api-compat",
-    "cupy >= 14.0.0",
     "docopt",
     "h5py >= 3.0.0",
     "matplotlib >= 3.7.0",
     "mpi4py >= 2.0.0",
     "numexpr",
     "numpy >= 1.20.0",
+    "packaging",
     "py",
     "pytest",
     "pytest-benchmark",
@@ -196,6 +196,12 @@ install_requires = [
     "pytest-xdist",
     "scipy >= 1.4.0",
     "xarray"]
+
+# Optional GPU backends (prebuilt cupy wheels; runtime check enforces cupy >= 14.2 for any install)
+extras_require = {
+    "cuda12": ["cupy-cuda12x >= 14.2"],
+    "cuda13": ["cupy-cuda13x >= 14.2"],
+    "rocm": ["cupy-rocm-7-0 >= 14.2"]}
 
 # Grab long_description from README
 with open("README.md") as f:
@@ -233,6 +239,7 @@ setup(
     classifiers=["Programming Language :: Python :: 3"],
     python_requires=">=3.9",
     install_requires=install_requires,
+    extras_require=extras_require,
     license="GPL3",
     packages=setuptools.find_packages(),
     package_data={"": ["dedalus.cfg", "examples.tar.gz"]},

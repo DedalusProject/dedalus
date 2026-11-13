@@ -12,6 +12,7 @@ import numbers
 from weakref import WeakSet
 import array_api_compat
 import warnings
+from packaging.version import Version
 
 from .coords import CoordinateSystem, DirectProduct
 from ..tools.array import reshape_vector
@@ -129,6 +130,10 @@ class Distributor:
             self.array_namespace = array_api_compat.array_namespace(array_namespace.zeros(0))
         self.is_numpy_namespace = array_api_compat.is_numpy_namespace(self.array_namespace)
         self.is_cupy_namespace = array_api_compat.is_cupy_namespace(self.array_namespace)
+        if self.is_cupy_namespace:
+            import cupy
+            if Version(cupy.__version__) < Version("14.2"):
+                raise ImportError("Dedalus GPU support requires cupy >= 14.2")
         # Array reducer
         self.array_reducer = GlobalArrayReducer(self.comm_cart)
         # Warnings for non-Cartesian problems
