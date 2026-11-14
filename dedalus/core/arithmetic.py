@@ -874,7 +874,8 @@ class GhostBroadcaster:
         self.layout = layout
         self.broadcast_dims = broadcast_dims
         # Determine deployment dimensions
-        deploy_dims_ext = np.array(broadcast_dims) & np.array(domain.constant)
+        constant_input_dims = np.array(domain.global_shape(layout, domain.dealias)) == 1 # includes None and size=1 bases
+        deploy_dims_ext = np.array(broadcast_dims) & constant_input_dims
         deploy_dims = deploy_dims_ext[~layout.local]
         # Build subcomm or skip casting
         if any(deploy_dims):
