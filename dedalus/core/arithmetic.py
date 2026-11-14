@@ -5,6 +5,7 @@ Arithmetic operators.
 
 import sys
 from functools import reduce
+import hashlib
 import numpy as np
 from scipy import sparse
 import itertools
@@ -416,6 +417,20 @@ class Product(Future):
             return Basis._last_axis_field_ncc_matrix(self, subproblem, 0, None, None, None, self._ncc_data, ncc_cutoff, max_ncc_terms)
 
     def build_cartesian_ncc_matrix(self, subproblem, ncc_cutoff, max_ncc_terms):
+        # The matrix depends on the subproblem only through its coefficient shape (cartesian_mode_matrix), so every subproblem
+        # of the same shape (e.g. all Fourier modes, for an NCC that is constant along the Fourier directions) gets the same
+        # matrix: built once per shape and NCC data, and reused.
+        data = self._ncc_data
+        digest = None if data is None else hashlib.sha1(np.ascontiguousarray(data).view(np.uint8)).hexdigest()
+        key = (subproblem.coeff_shape(self.domain), subproblem.field_size(self), subproblem.field_size(self.operand),
+               ncc_cutoff, max_ncc_terms, digest)
+        cache = self.__dict__.setdefault('_cartesian_ncc_cache', {})
+        matrix = cache.get(key)
+        if matrix is None:
+            matrix = cache[key] = self._build_cartesian_ncc_matrix(subproblem, ncc_cutoff, max_ncc_terms)
+        return matrix.copy()   # each subproblem owns its matrix
+
+    def _build_cartesian_ncc_matrix(self, subproblem, ncc_cutoff, max_ncc_terms):
         # Assumes no intertwiners
         # Assumes basis functions are independent of tensor component
         ncc = self.ncc
