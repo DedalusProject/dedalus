@@ -444,7 +444,7 @@ def scipy_sparse_eigs(A, B, left, N, target, matsolver, **kw):
         return evals, evecs
 
 
-def interleave_matrices(matrices):
+def interleave_matrices_kron(matrices):
     N = len(matrices)
     if N == 1:
         return matrices[0]
@@ -455,6 +455,29 @@ def interleave_matrices(matrices):
         sum += sparse.kron(matrix, P)
         P[i, i] = 0
     return sum
+
+
+def interleave_matrices(matrices):
+    N = len(matrices)
+    if N == 1:
+        return matrices[0]
+    # Get shapes and dtype
+    matrices = [sparse.coo_matrix(m) for m in matrices]
+    r, c = matrices[0].shape
+    dtype = matrices[0].dtype
+    # Build row/col indices
+    data = []
+    row = []
+    col = []
+    for i, m in enumerate(matrices):
+        # Each row/col is offset by i
+        data.append(m.data)
+        row.append(N*m.row + i)
+        col.append(N*m.col + i)
+    data = np.concatenate(data)
+    row = np.concatenate(row)
+    col = np.concatenate(col)
+    return sparse.coo_matrix((data, (row, col)), shape=(N*r, N*c), dtype=dtype)
 
 
 def sparse_allclose(A, B):

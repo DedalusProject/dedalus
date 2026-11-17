@@ -2460,6 +2460,10 @@ class AnnulusBasis(PolarBasis, metaclass=CachedClass):
         b_ncc = ncc_basis.k + ncc_basis.alpha[1]
         N = ncc_basis.n_size(m)
         N0 = ncc_basis.n_size(0)
+        if arg_basis is None:
+            # Reshape coeffs as column vector
+            matrix = coeffs.ravel()[:, None]
+            return sparse.csr_matrix(matrix)
         # Pad for dealiasing with conversion
         Nmat = 3*((N0+1)//2) + ncc_basis.k
         J = arg_basis.operator_matrix('Z', m, spintotal_arg, size=Nmat)
@@ -3729,17 +3733,18 @@ class RegularityBasis(SpinRecombinationBasis, MultidimensionalBasis):
         return np.sqrt( (l + (mu+1)//2 )/(2*l + 1) )
 
     @CachedMethod
-    def radial_recombinations(self, tensorsig, ell_list):
+    def radial_recombinations(self, tensorsig, ell_list, interleave=False):
         # For now only implement recombinations for sphere-only tensors
         for cs in tensorsig:
             if self.coordsys is not cs:
                 raise ValueError("Only supports tensors over spherical coords.")
-        order = len(tensorsig)
         Q_matrices = {}
+        order = len(tensorsig)
         for ell in ell_list:
             if ell not in Q_matrices:
-                Q = dedalus_sphere.spin_operators.Intertwiner(ell, indexing=(-1,+1,0))
-                Q_matrices[ell] = Q(order)
+                Q_matrices[ell] = self.coordsys._Q_backward(ell, order)
+        if interleave:
+            return interleave_matrices([Q_matrices[ell] for ell in ell_list])
         return Q_matrices
 
     @CachedMethod
@@ -4736,10 +4741,8 @@ class ShellBasis(Spherical3DBasis, metaclass=CachedClass):
             if S2_basis.ell_reversed(product.dist)[m]:
                 ells = ells[::-1]
             ells = tuple(ells)
-            Qout = self.radial_basis.radial_recombinations(product.tensorsig, ells)
-            Qout = interleave_matrices([Qout[ell].T for ell in ells])
-            Qarg = self.radial_basis.radial_recombinations(product.operand.tensorsig, ells)
-            Qarg = interleave_matrices([Qarg[ell].T for ell in ells])
+            Qout = self.radial_basis.radial_recombinations(product.tensorsig, ells, interleave=True).T
+            Qarg = self.radial_basis.radial_recombinations(product.operand.tensorsig, ells, interleave=True).T
             return Qout @ submatrix @ Qarg.T
         subcoeff_vals = DeferredTuple(reg_NCC_matrix, size=len(subcoeff_norms))
         # Call last axis Clenshaw via ShellRadialBasis

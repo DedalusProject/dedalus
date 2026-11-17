@@ -351,11 +351,13 @@ class SphericalCoordinates(CurvilinearCoordinateSystem):
         return cls._U_forward(order).T.conj()
 
     @classmethod
+    @CachedMethod
     def _Q_forward(cls, ell, order):
         """Orthogonal transform from spin to regularity components."""
         return cls._Q_backward(ell, order).T
 
     @classmethod
+    @CachedMethod
     def _Q_backward(cls, ell, order):
         """Orthogonal transform from regularity to spin components."""
         # This may not rebust to having spin and reg orderings be different?
