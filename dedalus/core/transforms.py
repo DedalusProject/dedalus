@@ -647,7 +647,6 @@ class ScipyRealFFT(RealFFT):
 
 
 THREADS = 256
-
 class RealFFT_kernel(RealFourierTransform):
     """Abstract base class for real-to-real FFTs using real-to-complex algorithms."""
 
@@ -679,7 +678,7 @@ class RealFFT_kernel(RealFourierTransform):
             else:
                 first_col = np.int64(jit.blockIdx.x) * tile_cols
                 first_row = np.int64(jit.blockIdx.y) * tile_rows
-                matrix_start = np.int64(jit.blockIdx.z) * rows * cols
+            matrix_start = np.int64(jit.blockIdx.z) * rows * cols
 
             for step in range(per_thread):           # read along columns
                 index = thread + step * THREADS
@@ -782,6 +781,90 @@ class RealFFT_kernel(RealFourierTransform):
                     spectrum[2 * element + 1] = packed[cos_index + 1] * 0.5
         kernel = _pack[(ceil(n_elements / THREADS), 1, 1), (THREADS, 1, 1)]
         return kernel
+
+    @staticmethod
+    def _transpose_unpack_kernel(n_leading, n_modes, cols, packed_len, kmax, scale, real_type):
+        """Slow axes: transposed half spectrum (cols x n_modes), interleaved reals -> rescaled packed (packed_len x cols)."""
+        tile_rows, tile_cols = (32, 32)
+        col_shift, col_mask = tile_cols.bit_length() - 1, tile_cols - 1
+        row_shift, row_mask = tile_rows.bit_length() - 1, tile_rows - 1
+        pitch = tile_cols + 1
+        plane = tile_rows * pitch                    # real part, then imaginary part
+        per_thread = tile_rows * tile_cols // THREADS
+        n_pairs = packed_len // 2                    # every (cos, msin) row pair; zeros above kmax
+        pairs_on_grid_x = n_pairs > cols
+        mean_scale, mode_scale = scale, 2 * scale
+
+        @jit.rawkernel()
+        def transpose_unpack(spectrum, packed):
+            tile = jit.shared_memory(real_type, 2 * plane)
+            thread = np.int32(jit.threadIdx.x)
+            if pairs_on_grid_x:
+                first_mode = np.int64(jit.blockIdx.x) * tile_rows
+                first_col = np.int64(jit.blockIdx.y) * tile_cols
+            else:
+                first_col = np.int64(jit.blockIdx.x) * tile_cols
+                first_mode = np.int64(jit.blockIdx.y) * tile_rows
+            matrix = np.int64(jit.blockIdx.z)
+
+            for step in range(per_thread):           # read along modes
+                index = thread + step * THREADS
+                tile_col = index >> row_shift
+                tile_mode = index & row_mask
+                position = tile_mode * pitch + tile_col
+                mode = first_mode + tile_mode
+                col = first_col + tile_col
+                if mode <= kmax and col < cols:
+                    src = ((matrix * cols + col) * n_modes + mode) * 2
+                    tile[position] = spectrum[src]
+                    tile[plane + position] = spectrum[src + 1]
+            jit.syncthreads()
+
+            for step in range(per_thread):           # write along columns
+                index = thread + step * THREADS
+                tile_mode = index >> col_shift
+                tile_col = index & col_mask
+                position = tile_mode * pitch + tile_col
+                mode = first_mode + tile_mode
+                col = first_col + tile_col
+                if mode < n_pairs and col < cols:
+                    cos_index = (matrix * packed_len + 2 * mode) * cols + col
+                    if mode > kmax:
+                        packed[cos_index] = 0
+                        packed[cos_index + cols] = 0
+                    elif mode == 0:
+                        packed[cos_index] = tile[position] * mean_scale
+                        packed[cos_index + cols] = 0
+                    else:
+                        packed[cos_index] = tile[position] * mode_scale
+                        packed[cos_index + cols] = tile[plane + position] * mode_scale
+
+        mode_tiles = ceil(n_pairs / tile_rows)
+        col_tiles = ceil(cols / tile_cols)
+        grid = (mode_tiles, col_tiles) if pairs_on_grid_x else (col_tiles, mode_tiles)
+        kernel = transpose_unpack[(*grid, n_leading), (THREADS, 1, 1)]
+        return kernel
+
+    @staticmethod
+    def _unpack_kernel(packed_len, n_modes, kmax, n_elements, scale):
+        mean_scale, mode_scale = scale, 2 * scale
+
+        @jit.rawkernel()
+        def _unpack(spectrum, packed):
+            """Fast axis: (rows x n_modes) interleaved spectrum -> rescaled (rows x packed_len) packed."""
+            element = np.int64(jit.blockIdx.x) * np.int64(jit.blockDim.x) + np.int64(jit.threadIdx.x)
+            if element < n_elements:
+                row = element // packed_len
+                index = element - row * packed_len
+                mode = index >> 1
+                if index == 1 or mode > kmax:
+                    packed[element] = 0
+                elif mode == 0:
+                    packed[element] = spectrum[2 * row * n_modes] * mean_scale
+                else:
+                    packed[element] = spectrum[2 * (row * n_modes + mode) + (index & 1)] * mode_scale
+        kernel = _unpack[(ceil(n_elements / THREADS), 1, 1), (THREADS, 1, 1)]
+        return kernel
         
     @classmethod
     @CachedMethod
@@ -798,6 +881,21 @@ class RealFFT_kernel(RealFourierTransform):
 
         return pack, transpose_back
 
+    @classmethod
+    @CachedMethod
+    def _get_forward_kernels(cls, n_leading, n_grid, n_trailing, packed_len, kmax, dtype):
+        n_modes = n_grid // 2 + 1
+        scale = 1 / n_grid
+
+        if n_trailing == 1:
+            transpose = None
+            unpack = cls._unpack_kernel(packed_len, n_modes, kmax, n_leading * packed_len, scale)
+        else:
+            transpose = cls._transpose_kernel(n_leading, n_grid, n_trailing, dtype)
+            unpack = cls._transpose_unpack_kernel(n_leading, n_modes, n_trailing, packed_len, kmax, scale, dtype)
+
+        return transpose, unpack
+
 
 @register_transform(basis.RealFourier, 'cupy')
 class CupyRealFFT(RealFFT_kernel, RealFFT):
@@ -813,9 +911,14 @@ class CupyRealFFT(RealFFT_kernel, RealFFT):
         is_double = self.dtype == np.float64
         fft_type = cufft_backend.CUFFT_Z2D if is_double else cufft_backend.CUFFT_C2R
         self.plan = cufft_backend.Plan1d(self.N, fft_type, self.n_transforms)
+        forward_type = cufft_backend.CUFFT_D2Z if is_double else cufft_backend.CUFFT_R2C
+        self.forward_plan = cufft_backend.Plan1d(self.N, forward_type, self.n_transforms)
 
         self.spectrum = self.array_namespace.zeros((self.n_transforms, self.n_modes), dtype=self.complex_dtype)
         self.spectrum_reals = self.spectrum.reshape(-1).view(self.dtype)
+        # Separate buffer: backward relies on self.spectrum staying zero above Kmax
+        self.forward_spectrum = self.array_namespace.empty((self.n_transforms, self.n_modes), dtype=self.complex_dtype)
+        self.forward_spectrum_reals = self.forward_spectrum.reshape(-1).view(self.dtype)
 
         if self.n_trailing != 1:
             self.c2r_output = self.array_namespace.empty((self.n_transforms, self.N), dtype=self.dtype)
@@ -823,11 +926,16 @@ class CupyRealFFT(RealFFT_kernel, RealFFT):
     @roctx_range
     def forward(self, gdata, cdata):
         """Apply forward transform along the plan axis."""
-        axis = self.axis
-        # Call RFFT
-        temp = self.cufft.rfft(gdata, axis=axis) # Creates temporary
-        # Unpack from complex form and rescale
-        self.unpack_rescale(temp, cdata, axis, rescale=1/self.N)
+        transpose, unpack = self._get_forward_kernels(self.n_leading, self.N, self.n_trailing,
+                                                      self.M, self.Kmax, self.dtype)
+        if transpose is None:
+            self.forward_plan.fft(gdata.reshape(self.n_transforms, self.N), self.forward_spectrum,
+                                  self.cufft_backend.CUFFT_FORWARD)
+        else:
+            # c2r_output doubles as the transposed R2C input; backward fully overwrites it
+            transpose(gdata.reshape(-1), self.c2r_output.reshape(-1))
+            self.forward_plan.fft(self.c2r_output, self.forward_spectrum, self.cufft_backend.CUFFT_FORWARD)
+        unpack(self.forward_spectrum_reals, cdata.reshape(-1)) # Doesn't transpose for fast axis
 
     @roctx_range
     def backward(self, cdata, gdata):
