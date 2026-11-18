@@ -776,10 +776,7 @@ class Jacobi(IntervalBasis, metaclass=CachedClass):
         db = int(np.round(b_out - b_arg))
         # Pad for dealiasing with conversion
         Nmat = 3*((N+1)//2) + min((N+1)//2, (da+db+1)//2)
-        J = dedalus_sphere.jacobi.operator('Z')(Nmat, a_arg, b_arg).square
-        A, B = clenshaw.jacobi_recursion(Nmat, a_ncc, b_ncc, J)
-        f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0] * sparse.identity(Nmat)
-        matrix = clenshaw.matrix_clenshaw(coeffs, A, B, f0, cutoff=0)
+        matrix = clenshaw.jacobi_ncc_matrix_csr(a_ncc, b_ncc, mode, a_arg, b_arg, Nmat)
         convert = jacobi.conversion_matrix(Nmat, a_arg, b_arg, a_out, b_out)
         matrix = convert @ matrix
         return matrix[:N, :N].tocoo()

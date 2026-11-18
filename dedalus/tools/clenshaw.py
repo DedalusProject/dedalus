@@ -4,6 +4,7 @@ import numpy as np
 from scipy import sparse
 
 from . import jacobi
+from .cache import CachedFunction
 from .general import DeferredTuple
 
 
@@ -101,4 +102,91 @@ def jacobi_recursion(N, a, b, X):
     B = DeferredTuple(compute_B, N+1)
     return A, B
 
+
+@CachedFunction
+def jacobi_matrix_bands(N, a, b):
+    J = jacobi.jacobi_matrix(N, a, b).todia()
+    rows = []
+    for offset in [0, 1, -1]:
+        if offset in J.offsets:
+            rows.append(J.data[np.where(J.offsets == offset)[0][0]])
+        else:
+            rows.append(np.zeros(N))
+    return np.array(rows)
+
+
+@CachedFunction
+def jacobi_matrix_dense(N, a, b):
+    J = jacobi.jacobi_matrix(N, a, b).toarray()
+    return J
+
+
+def jacobi_recursion_entry(N, n, a, b, X):
+    JB = jacobi_matrix_bands(N, a, b)
+    Jnn = JB[0, n]  # J[n,n]
+    Jnp = JB[1, n+1]  # J[n,n+1]
+    Jnm = JB[-1, n-1]  # J[n,n-1]
+    # Identity element
+    if np.isscalar(X):
+        I = 1
+    else:
+        X = X.tocsr()
+        I = sparse.identity(X.shape[0], format='csr')
+    # Clenshaw coefficients
+    if 0 <= n < (N-1):
+        An = (X - Jnn*I) / Jnp
+    else:
+        An = 0*I
+    if 0 < n < (N-1):
+        Bn = (-Jnm / Jnp) * I
+    else:
+        Bn = 0*I
+    return An, Bn
+
+from ..libraries import dedalus_sphere
+
+
+@CachedFunction
+def jacobi_ncc_matrix_csr(a_ncc, b_ncc, n, a_arg, b_arg, N):
+    """
+    Recursively compute a Jacobi polynomial of a Jacobi matrix.
+    Jacobi polynomial: params (a_ncc, b_ncc) and degree n.
+    Jacobi matrix: params (a_arg, b_arg) and size N.
+
+    Parameters
+    ----------
+    a_ncc, b_ncc : float
+        Jacobi polynomial parameters
+    n : int
+        Jacobi polynomial degree
+    a_arg, b_arg : float
+        Jacobi matrix parameters
+    N : int
+        Jacobi matrix size
+
+    Notes
+    -----
+    Computed via forward recursion on Jacobi matrix argument.
+        P[n+1] = A[n]*P[n] +B[n]*P[n-1]
+    """
+    if n == 0:
+        I = sparse.identity(N, dtype=np.float64, format='csr')
+        f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0]
+        return I * f0
+    elif n == 1:
+        Z = dedalus_sphere.jacobi.operator('Z')(N, a_arg, b_arg).square
+        A1, B1 = jacobi_recursion_entry(N, n-1, a_ncc, b_ncc, Z)
+        f0 = dedalus_sphere.jacobi.polynomials(1, a_ncc, b_ncc, 1)[0]
+        return A1 * f0
+    else:
+        f1 = jacobi_ncc_matrix_csr(a_ncc, b_ncc, n-1, a_arg, b_arg, N)
+        f2 = jacobi_ncc_matrix_csr(a_ncc, b_ncc, n-2, a_arg, b_arg, N)
+        Z = dedalus_sphere.jacobi.operator('Z')(N, a_arg, b_arg).square.tocsr()
+        A1, B1 = jacobi_recursion_entry(N, n-1, a_ncc, b_ncc, Z)
+        return A1 @ f1 + B1 @ f2
+
+
+@CachedFunction
+def jacobi_ncc_matrix_coo(*args):
+    return jacobi_ncc_matrix_csr(*args).tocoo()
 
